@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/coreyt/fathomdb/go/fathom-integrity/test/testutil"
@@ -76,6 +77,66 @@ func TestTraceCommandAgainstRealBridgeAndTempDB(t *testing.T) {
 	require.Contains(t, string(output), `"source_ref":"source-1"`)
 	require.Contains(t, string(output), `"node_rows":1`)
 	require.Contains(t, string(output), `"action_rows":1`)
+}
+
+func TestExciseCommandRestoresPriorVersion(t *testing.T) {
+	repoRoot := filepath.Join("..", "..")
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "fathom.db")
+	bridgePath := filepath.Join(tempDir, "bridge.sh")
+
+	bridgeScript := "#!/usr/bin/env bash\nset -euo pipefail\ncd " + repoRoot + "\ncargo run --quiet -p fathomdb-engine --bin fathomdb-admin-bridge\n"
+	require.NoError(t, os.WriteFile(bridgePath, []byte(bridgeScript), 0o755))
+
+	bootstrapBridgeDB(t, bridgePath, dbPath)
+	seedExciseScenario(t, repoRoot, dbPath)
+
+	cmd := exec.Command(
+		"go",
+		"run",
+		"./cmd/fathom-integrity",
+		"excise",
+		"--db", dbPath,
+		"--bridge", bridgePath,
+		"--source-ref", "source-2",
+	)
+	cmd.Dir = repoRoot
+	cmd.Env = os.Environ()
+
+	output, err := cmd.CombinedOutput()
+
+	require.NoError(t, err, string(output))
+	require.Contains(t, string(output), "source excised")
+
+	// Verify that the prior version (source-1) is now active.
+	activeRow := queryDB(t, dbPath, "SELECT row_id FROM nodes WHERE logical_id='meeting-1' AND superseded_at IS NULL")
+	require.Equal(t, "row-1", activeRow, "prior version should be restored as active")
+}
+
+func seedExciseScenario(t *testing.T, repoRoot, dbPath string) {
+	t.Helper()
+
+	// Insert v1 (source-1) already superseded, then v2 (source-2) active.
+	sql := `
+INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, superseded_at, source_ref)
+VALUES ('row-1', 'meeting-1', 'Meeting', '{}', 100, 200, 'source-1');
+INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref)
+VALUES ('row-2', 'meeting-1', 'Meeting', '{}', 200, 'source-2');
+`
+	cmd := exec.Command(testutil.SQLiteBinary(), dbPath, sql)
+	cmd.Env = os.Environ()
+
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(output))
+}
+
+func queryDB(t *testing.T, dbPath, query string) string {
+	t.Helper()
+	cmd := exec.Command(testutil.SQLiteBinary(), dbPath, query)
+	cmd.Env = os.Environ()
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(output))
+	return strings.TrimSpace(string(output))
 }
 
 func bootstrapBridgeDB(t *testing.T, bridgePath, dbPath string) {

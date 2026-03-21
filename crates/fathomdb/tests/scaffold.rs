@@ -114,6 +114,57 @@ fn typed_write_request_persists_nodes_chunks_and_derived_fts() {
     assert_eq!(integrity.missing_fts_rows, 0);
 }
 
+#[test]
+fn trace_report_includes_logical_ids() {
+    let db = NamedTempFile::new().expect("temporary db");
+    let engine = Engine::open(EngineOptions::new(db.path())).expect("engine opens");
+
+    engine
+        .writer()
+        .submit(meeting_write_request(r#"{"status":"active"}"#))
+        .expect("write completes");
+
+    let report = engine
+        .admin()
+        .service()
+        .trace_source("source-1")
+        .expect("trace");
+
+    assert_eq!(report.node_rows, 1);
+    assert_eq!(report.node_logical_ids, vec!["meeting-1"]);
+}
+
+#[test]
+fn excise_single_version_cleans_fts() {
+    let db = NamedTempFile::new().expect("temporary db");
+    let engine = Engine::open(EngineOptions::new(db.path())).expect("engine opens");
+
+    engine
+        .writer()
+        .submit(meeting_write_request(r#"{"status":"active"}"#))
+        .expect("write completes");
+
+    let before = engine
+        .admin()
+        .service()
+        .check_integrity()
+        .expect("pre-excise integrity");
+    assert_eq!(before.missing_fts_rows, 0);
+
+    engine
+        .admin()
+        .service()
+        .excise_source("source-1")
+        .expect("excise");
+
+    let after = engine
+        .admin()
+        .service()
+        .check_integrity()
+        .expect("post-excise integrity");
+    assert_eq!(after.missing_fts_rows, 0, "FTS should be clean after excise");
+}
+
 fn meeting_write_request(properties: &str) -> WriteRequest {
     WriteRequest {
         label: "seed".to_owned(),
