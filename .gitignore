@@ -1,0 +1,13 @@
+.wake/
+!.wake/shared/
+!.wake/shared/**
+.claude/
+target/
+go/fathom-integrity/fathom-integrity
+*.test
+*.out
+coverage.out
+.coverprofile
+.idea/
+.vscode/
+.DS_Store

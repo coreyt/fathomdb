@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  rust-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  rust-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@nextest
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo nextest run --workspace
+
+  rust-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --workspace
+
+  go-lint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go/fathom-integrity
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/fathom-integrity/go.mod
+          cache-dependency-path: go/fathom-integrity/go.mod
+      - run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+
+  go-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go/fathom-integrity
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/fathom-integrity/go.mod
+          cache-dependency-path: go/fathom-integrity/go.mod
+      - run: go test ./...
+
+  go-e2e:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go/fathom-integrity
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/fathom-integrity/go.mod
+          cache-dependency-path: go/fathom-integrity/go.mod
+      - run: go test ./test/e2e/...

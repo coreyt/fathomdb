@@ -1,0 +1,560 @@
+# ARCHITECTURE.md
+
+## 1. System Overview
+
+`fathomdb` is intentionally designed as a **graph/vector/FTS shim in front of SQLite**.
+
+That is the technical choice: rather than building a new storage engine, `fathomdb` uses SQLite as the durable local store and adds an opinionated access layer for the kinds of queries local AI agents need. The shim is responsible for:
+
+- mapping agent-world-model data into relational structures
+- exposing graph, document, full-text, and vector access through one API
+- compiling agent-friendly query builders into optimized SQL
+- managing derived search projections and their synchronization
+- preserving enough history and provenance to support replay, correction, and rollback
+
+At implementation time, this breaks down into four strata:
+
+1. **Fluent AST builder:** deterministic SDK surface for agents
+2. **Query compiler:** converts AST steps into one cohesive SQLite plan
+3. **Execution coordinator:** manages connections, WAL mode, prepared statements, and reader/writer discipline
+4. **Write/projection pipeline:** handles canonical writes, projection sync, and temporal/provenance metadata
+
+**Core stack**
+
+- **Storage engine:** SQLite
+- **Document functions:** SQLite `JSON1` / `JSONB`
+- **Full-text index:** `FTS5`
+- **Vector index:** `sqlite-vec`
+- **Shim language:** Rust
+- **SDK surfaces:** Python, TypeScript, and Rust
+
+Rust is the preferred core implementation language because the engine is
+compiler-heavy, FFI-heavy, and correctness-sensitive:
+
+- the query planner and AST compiler benefit from Rust's enums, pattern matching, and type system
+- the single-writer actor, prepared-statement cache, and projection pipeline benefit from explicit ownership and concurrency control
+- SQLite and extension integration fit well with Rust's systems-level interop
+- Python and TypeScript bindings can be layered on top of a Rust core without changing the engine boundary
+
+## 2. Canonical Persistence Model
+
+The canonical store remains SQLite, but the schema must represent more than generic documents. The shim should center the database around a graph-friendly backbone, an explicit chunk projection layer, and a small set of typed runtime tables for v1.
+
+### 2.1 Graph-Centric Backbone
+
+The base relational layer captures shared identity, relationships, and common metadata:
+
+```sql
+CREATE TABLE nodes (
+    row_id TEXT PRIMARY KEY,
+    logical_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    properties BLOB NOT NULL,      -- JSONB
+    created_at INTEGER NOT NULL,
+    superseded_at INTEGER,
+    source_ref TEXT,
+    confidence REAL
+);
+
+CREATE TABLE edges (
+    row_id TEXT PRIMARY KEY,
+    logical_id TEXT NOT NULL,
+    source_logical_id TEXT NOT NULL,
+    target_logical_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    properties BLOB NOT NULL,      -- JSONB
+    created_at INTEGER NOT NULL,
+    superseded_at INTEGER,
+    source_ref TEXT,
+    confidence REAL
+);
+```
+
+This gives the system a durable graph substrate for people, projects, meetings, tasks, claims, events, and other world-model entities.
+
+The split between `logical_id` and `row_id` is a core part of the append-only
+design:
+
+- `logical_id` identifies the real-world entity
+- `row_id` identifies a specific physical version of that entity
+- edges point to logical identities rather than a single physical version
+- the query compiler always resolves those identities to the currently active row
+
+Canonical entity properties should remain primarily in SQLite JSONB blobs rather
+than being aggressively normalized into many physical columns. The goal is to
+preserve schema flexibility for user-world entities while reserving explicit
+relational columns for system-owned fields such as timestamps, confidence, and
+provenance.
+
+### 2.2 Typed Runtime Tables
+
+Generic graph records alone are not enough, but the v1 engine should resist
+typed-table sprawl. The typed runtime schema should stay narrow:
+
+- `runs`: session-level or scheduler-level execution containers
+- `steps`: prompt/control/LLM-stage records
+- `actions`: concrete tool calls, observations, or emitted outcomes
+
+Higher-level semantic objects such as meeting artifacts, knowledge objects, and
+reviewable domain entities should stay in generic `nodes` with explicit `kind`
+values until their shapes are proven stable enough to deserve stricter tables.
+
+This keeps the storage engine lean while allowing the SDK layer to expose richer
+typed models.
+
+The broader set of deferred typed-table candidates is preserved in
+[ARCHITECTURE-deferred-expansion.md](./ARCHITECTURE-deferred-expansion.md).
+
+### 2.3 Chunk Projection Layer
+
+Chunked semantic retrieval requires an explicit mapping layer:
+
+```sql
+CREATE TABLE chunks (
+    id TEXT PRIMARY KEY,
+    node_logical_id TEXT NOT NULL,
+    text_content TEXT NOT NULL,
+    byte_start INTEGER,
+    byte_end INTEGER,
+    created_at INTEGER NOT NULL
+);
+```
+
+Vector and full-text search resolve through `chunks`, not directly to `nodes`.
+
+### 2.4 Metadata And Schema Control
+
+The shim owns the internal schema and migrations.
+
+- Agents do not write raw SQL directly.
+- Internal schema versions are tracked in metadata tables.
+- Migrations are applied by the shim on startup.
+- Provenance, confidence, timestamps, and correction lineage are stored as canonical metadata, not only derived annotations.
+
+For identity and locality:
+
+- canonical row identifiers should be time-sortable rather than random
+- the preferred default is ULID stored as text for debugging and operational clarity
+- UUIDv7 stored as a 16-byte blob remains an acceptable alternative if lower-level I/O efficiency becomes more important than human readability
+
+## 3. Derived Multi-Modal Projections
+
+The graph/vector/FTS layer is a technical decision in service of the user needs. These projections are derived from canonical SQLite state and managed by the shim.
+
+```sql
+CREATE VIRTUAL TABLE fts_nodes USING fts5(
+    chunk_id UNINDEXED,
+    node_logical_id UNINDEXED,
+    kind UNINDEXED,
+    text_content
+);
+
+CREATE VIRTUAL TABLE vec_nodes USING vec0(
+    chunk_id TEXT PRIMARY KEY,
+    embedding float[1536]
+);
+```
+
+The vector projection shown above represents the active embedding profile. In
+practice, vector storage should be versioned by embedding model and dimension,
+for example `vec_nodes_v1`, `vec_nodes_v2`, rather than altered in place across
+model migrations.
+
+### 3.1 Projection Rules
+
+- Text-bearing records are chunked and projected into FTS.
+- Embeddable content is chunked and projected into the vector index.
+- Graph traversals run over canonical relationships in `edges`.
+- Projection rows always retain linkage back to canonical records.
+- Vector and FTS candidate sets resolve through `vec_nodes -> chunks -> nodes`.
+
+Projection classes should be treated differently:
+
+- **Required projections:** low-cost lexical/search projections such as FTS and cheap metadata extraction must commit atomically with canonical writes
+- **Optional projections:** expensive semantic enrichments such as externally generated embeddings may be queued and backfilled for bulk/background ingestion workloads
+
+### 3.2 Synchronization Strategy
+
+This architecture deliberately avoids SQLite triggers for projection maintenance.
+
+**Decision:** the shim owns multi-write synchronization.
+
+That means a single write path is responsible for:
+
+1. writing canonical rows
+2. writing or updating graph relations
+3. updating required projections such as FTS
+4. updating inline semantic projections when they are available for the current workload
+5. enqueuing optional semantic projection work in memory when it is intentionally deferred
+6. recording provenance, control artifacts, and outcome telemetry
+
+All of this happens in one coordinated unit of work so failures are visible and repairable.
+
+## 4. Query Layer And API
+
+The API is intentionally agent-friendly. Rather than asking an LLM to invent bespoke SQL or another query language, the shim exposes deterministic SDKs and compiles them into SQL.
+
+```python
+results = (
+    db.nodes("Meeting")
+    .vector_search("stressful work discussion", limit=5)
+    .traverse(direction="in", label="ATTENDED")
+    .filter(lambda p: p.properties["status"] == "active")
+    .select("id", "properties.name")
+    .execute()
+)
+```
+
+### 4.1 Builder And AST Model
+
+- SDK calls build an internal query AST.
+- The compiler turns that AST into SQLite queries.
+- Agents work with predictable code constructs instead of fragile string synthesis.
+- Representative AST steps include vector search, text search, graph traversal, JSON predicates, temporal filters, chunk resolution, and joins against runtime tables.
+
+### 4.2 Query Capabilities
+
+The compiler must support one execution model that can combine:
+
+- graph traversal
+- JSON property filtering
+- full-text search
+- vector similarity
+- chunk-to-node resolution
+- temporal filtering
+- provenance-aware filtering
+- joins against runtime tables such as runs, steps, or actions
+
+### 4.3 Compilation Strategy
+
+The compiler should plan queries from the inside out by identifying the narrowest
+driving table first.
+
+In practice this means:
+
+- vector or full-text matches usually form the initial candidate set
+- chunk rows resolve those candidates back to canonical node identities
+- graph traversals join outward from those resolved identities
+- canonical node and edge reads happen after candidate reduction
+- JSON and relational filters are applied as late as possible over the already reduced set
+
+This planning discipline is what keeps multimodal queries inside SQLite's VM
+instead of spilling large intermediate sets into application memory.
+
+The main exception is a highly selective deterministic filter, such as a direct
+entity ID or foreign-key equality predicate. In those cases, the relational
+constraint should drive the query and FTS/vector search should be evaluated only
+inside that reduced scope.
+
+### 4.4 Top-K Pushdown
+
+To avoid N+1 behavior, the compiler should push the narrowest candidate step as deep as possible.
+
+Example:
+
+```sql
+SELECT target_node.row_id, target_node.properties
+FROM (
+    SELECT chunk_id
+    FROM vec_nodes
+    WHERE embedding MATCH ?
+    ORDER BY distance
+    LIMIT 5
+) v
+INNER JOIN chunks c ON c.id = v.chunk_id
+INNER JOIN nodes seed_node
+    ON c.node_logical_id = seed_node.logical_id
+    AND seed_node.superseded_at IS NULL
+INNER JOIN edges e
+    ON seed_node.logical_id = e.source_logical_id
+    AND e.superseded_at IS NULL
+INNER JOIN (
+    SELECT row_id, logical_id, properties
+    FROM nodes
+    WHERE superseded_at IS NULL
+) target_node
+    ON e.target_logical_id = target_node.logical_id
+WHERE e.kind = 'ATTENDED';
+```
+
+Known-depth traversals compile to joins. Variable-depth traversals compile to recursive CTEs.
+
+Recursive CTE plans must always be bounded. Generated traversal queries should
+include:
+
+- a strict depth ceiling
+- a hard scalar result limit
+- cycle detection over visited IDs
+
+The compiler should never emit an effectively unbounded recursive traversal.
+
+### 4.5 Execution Coordinator
+
+The execution layer should treat SQLite as a bytecode-executing VM and optimize
+around that reality.
+
+- enforce `PRAGMA journal_mode = WAL`
+- use `PRAGMA synchronous = NORMAL` unless a stricter durability profile is required
+- enforce `PRAGMA foreign_keys = ON`
+- set `PRAGMA busy_timeout = 5000`
+- prefer `PRAGMA temp_store = MEMORY`
+- use `PRAGMA mmap_size` aggressively on machines that can afford it
+- provide a pool of read-only connections for concurrent readers
+- provide exactly one coordinated write connection or equivalent serialized write path
+- cache prepared statements keyed by an AST-shape hash rather than raw literal values
+
+The AST-shape hash should include structural constants such as:
+
+- `LIMIT` values
+- recursion-depth ceilings
+- `IN (...)` list arity
+
+User-provided data such as strings, vectors, and timestamps remain parameterized.
+This preserves planner quality where SQLite behaves differently for structural
+constants versus bound values.
+
+This keeps read latency low while respecting SQLite's single-writer model.
+
+The recommended write architecture is an explicit in-process writer thread or
+actor from day one. All writes flow through a single queue rather than relying
+on `busy_timeout` as the main concurrency-control mechanism.
+
+## 5. Write Path And Ingestion
+
+The write path is responsible for more than saving documents.
+
+### 5.1 Canonical Write Pipeline
+
+When the agent writes memory, the shim should be able to:
+
+1. accept the raw source artifact
+2. perform heavy pre-flight work such as parsing, chunking, or embedding generation before taking a write lock
+3. normalize the artifact into canonical records
+4. create or update relevant graph entities and edges
+5. write runtime table records (`runs`, `steps`, `actions`) when applicable
+6. project searchable text into FTS
+7. project chunks into vector storage
+8. attach provenance, confidence, timestamps, and correction links
+
+### 5.2 Example Ingestion
+
+```python
+db.ingest(
+    kind="meeting_transcript",
+    content=large_transcript,
+    metadata={"meeting_id": "..."}
+)
+```
+
+The shim may then:
+
+- store the raw artifact
+- extract transcript segments and meeting artifacts
+- create follow-up tasks or commitments when promotion rules allow
+- index relevant text into FTS
+- embed chunks for semantic retrieval
+
+### 5.3 Transaction Discipline
+
+Long-running enrichment work cannot happen inside an active SQLite transaction.
+
+The intended write sequence is:
+
+1. **Pre-flight async stage:** parse the source, prepare canonical payloads, and obtain embeddings or other expensive enrichments
+2. **`BEGIN IMMEDIATE`:** acquire the write lock only after heavy computation completes
+3. **Canonical append/update:** write nodes, edges, and typed semantic side-table rows
+4. **Projection sync:** update required projections and any inline semantic projections in the same transaction
+5. **Commit:** release the write lock
+
+This preserves atomicity between canonical rows and required search projections
+while keeping expensive external computation off the locked path.
+
+For interactive writes, embeddings that are required for immediate agent use
+should be generated before `BEGIN IMMEDIATE` and then committed atomically with
+canonical rows.
+
+For bulk or background ingestion, canonical rows may commit first and enqueue
+optional semantic projection work into an in-memory worker queue. If the process
+crashes before that work completes, startup should run a
+`rebuild_missing_projections()` pass rather than depend on a durable queue table
+inside the same SQLite file.
+
+### 5.4 Control And Evaluation Writes
+
+The same datastore also needs write paths for:
+
+- prompt/control artifacts
+- tool and non-tool selected actions
+- observations and outcomes
+- approvals and review decisions
+- evaluation labels and replay metadata
+
+Those records are canonical data, not logging afterthoughts.
+
+## 6. Reversibility And Temporal Semantics
+
+The user need for trust becomes a technical requirement for versioned state.
+
+### 6.1 Versioned Writes
+
+Updates should be append-oriented rather than destructive when possible.
+
+- Existing rows are superseded rather than blindly overwritten.
+- Queries can be scoped to a time or session context.
+- Corrections preserve lineage instead of erasing prior state.
+
+Default reads should target active state, which in practice means a query shape
+equivalent to `superseded_at IS NULL`. Temporal-scoped reads replace that with
+`created_at <= ? AND (superseded_at IS NULL OR superseded_at > ?)`.
+
+This is intentionally a unitemporal append-oriented model, not a full bitemporal
+database design.
+
+### 6.2 Proposal And Approval Support
+
+The core engine should keep temporal state simple: active, superseded, or
+deleted. Proposal or approval semantics for v1 should live in application-layer
+JSON properties or SDK models rather than being baked into the engine's core
+visibility rules. The deferred engine-level approval model is preserved in
+[ARCHITECTURE-deferred-expansion.md](./ARCHITECTURE-deferred-expansion.md).
+
+### 6.3 Explainability And Provenance Joins
+
+Because canonical rows keep source references and typed semantic side tables
+store control and action history, the query layer can support explain-style
+queries that join a node or edge back to:
+
+- the control artifact that authorized or interpreted it
+- the action or observation that created it
+- the confidence, timestamp, and review status attached to it
+
+Direct `source_ref` foreign keys on canonical rows are preferred over a separate
+general-purpose lineage graph. This keeps explain queries cheap and operationally
+simple.
+
+### 6.4 Integrity And Recovery Model
+
+`fathomdb` should treat recovery as a first-class engine capability, not a
+backup-only afterthought. The architecture explicitly plans for three corruption
+classes:
+
+- **Physical corruption:** disk, filesystem, or crash-related damage
+- **Logical corruption:** derived projection drift or broken virtual-table state
+- **Semantic corruption:** bad agent reasoning that poisons the world model
+
+The corresponding recovery primitives are:
+
+- `rebuild_projections(target=[...])` for deterministic reconstruction of FTS
+  and vector projections from canonical state
+- `rebuild_missing_projections()` at startup or admin time when optional
+  semantic projection work was interrupted
+- rollback-by-time-window for broad semantic reversal
+- excision-by-`source_ref` for surgical containment of one bad run, step, or
+  action
+
+Because canonical state and derived projections are explicitly separated, the
+blast radius of logical corruption is bounded. Because canonical rows are
+append-oriented and provenance-linked, semantic corruption can be reversed
+without restoring a coarse external snapshot.
+
+### 6.5 Physical Recovery Protocol
+
+SQLite's built-in recovery tools remain useful, but `fathomdb` should recover
+canonical tables only and then rebuild projections. Physical repair should:
+
+1. isolate the database from live agent traffic
+2. recover or dump canonical tables such as `nodes`, `edges`, `chunks`, `runs`,
+   `steps`, and `actions`
+3. rebuild into a fresh database file
+4. run projection rebuilds from canonical state
+
+FTS5 and `sqlite-vec` shadow data should never be treated as canonical recovery
+material.
+
+### 6.6 Admin And Repair Surface
+
+The Rust engine should expose repair primitives directly, while a separate Go
+admin tool can orchestrate them operationally. Expected admin operations
+include:
+
+- projection rebuild
+- integrity checks
+- safe export / snapshot
+- trace by `source_ref`
+- excise bad lineage and emit a repair patch
+- apply a patch and re-run projection repair
+
+## 7. Operational Decisions
+
+### 7.1 Concurrency
+
+SQLite remains the durability layer, so the shim should assume:
+
+- WAL mode for concurrent readers
+- a coordinated writer path for updates
+- an in-memory write queue or equivalent serialization strategy to avoid `SQLITE_BUSY`
+
+### 7.2 Indexing Strategy
+
+JSON-heavy filters will need help over time.
+
+- The shim can monitor hot query paths.
+- Frequently queried JSON paths should default to expression indexes directly on JSON extraction.
+- FTS and vector projections remain rebuildable from canonical state.
+
+For example, a hot predicate such as `properties ->> '$.status'` can be indexed
+directly:
+
+```sql
+CREATE INDEX idx_node_status
+ON nodes(properties ->> '$.status');
+```
+
+Generated columns remain available when they are operationally useful, but they
+should not be the default indexing strategy.
+
+### 7.3 Integrity Checks And Repairability
+
+The operational model should include explicit integrity routines:
+
+- `PRAGMA integrity_check`
+- `PRAGMA foreign_key_check`
+- projection-shape and projection-presence checks
+- startup detection of missing optional semantic backfills
+
+Repairability is part of normal operation, not only disaster response.
+
+### 7.4 Embedding Pipeline
+
+Embedding work should not block the interactive loop unnecessarily.
+
+- chunking and embedding can run asynchronously
+- expensive enrichment should finish before the write transaction begins
+- required projections should commit atomically with canonical rows
+- backfills and rebuilds should still be visible and repairable if projection state must be regenerated later
+
+### 7.5 Dynamic Model Compatibility
+
+Vector dimensions and embedding providers cannot be hardcoded permanently.
+
+- vector projection tables should be configurable to the active embedding profile
+- metadata should record the embedding model and projection version used
+- model upgrades should create new versioned vector tables rather than mutating existing ones in place
+
+## 8. Key Trade-Offs
+
+1. **SQLite instead of a custom engine**
+   The gain is durability, portability, and zero-ops deployment. The cost is living within SQLite's single-writer constraints.
+
+2. **Shim-managed projections instead of trigger-heavy synchronization**
+   The gain is explicit control, debuggability, and better error handling. The cost is a more opinionated write path in the shim.
+
+3. **Typed canonical tables plus graph backbone instead of pure document blobs**
+   The gain is cleaner semantics for agent state, control artifacts, and evaluation records. The cost is more schema design and migration work.
+
+4. **Derived FTS/vector projections instead of direct-only canonical reads**
+   The gain is high-performance multimodal retrieval. The cost is projection maintenance and rebuild logic.
+
+## 9. Architectural Summary
+
+`fathomdb` is not trying to replace SQLite. It is using SQLite as a durable local substrate and adding an opinionated graph/vector/FTS shim for agent workloads. The architecture is aligned with the broader user need by making canonical agent state durable in SQLite while using graph traversal, FTS, and vector search as managed technical access paths over that state.
