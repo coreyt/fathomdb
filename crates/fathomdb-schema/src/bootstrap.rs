@@ -2,69 +2,10 @@ use rusqlite::{Connection, OptionalExtension};
 
 use crate::{Migration, SchemaError, SchemaVersion};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BootstrapReport {
-    pub sqlite_version: String,
-    pub applied_versions: Vec<SchemaVersion>,
-    pub vector_profile_enabled: bool,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct SchemaManager;
-
-impl SchemaManager {
-    pub fn new() -> Self {
-        Self
-    }
-
-    pub fn bootstrap(&self, conn: &Connection) -> Result<BootstrapReport, SchemaError> {
-        self.initialize_connection(conn)?;
-        self.ensure_metadata_tables(conn)?;
-
-        let mut applied_versions = Vec::new();
-        for migration in self.migrations() {
-            let already_applied = conn
-                .query_row(
-                    "SELECT 1 FROM fathom_schema_migrations WHERE version = ?1",
-                    [i64::from(migration.version.0)],
-                    |row| row.get::<_, i64>(0),
-                )
-                .optional()?
-                .is_some();
-
-            if already_applied {
-                continue;
-            }
-
-            conn.execute_batch(migration.sql)?;
-            conn.execute(
-                "INSERT INTO fathom_schema_migrations (version, description) VALUES (?1, ?2)",
-                (i64::from(migration.version.0), migration.description),
-            )?;
-            applied_versions.push(migration.version);
-        }
-
-        let sqlite_version = conn.query_row("SELECT sqlite_version()", [], |row| row.get(0))?;
-        Ok(BootstrapReport {
-            sqlite_version,
-            applied_versions,
-            vector_profile_enabled: false,
-        })
-    }
-
-    pub fn current_version(&self) -> SchemaVersion {
-        self.migrations()
-            .last()
-            .map(|migration| migration.version)
-            .unwrap_or(SchemaVersion(0))
-    }
-
-    pub fn migrations(&self) -> &'static [Migration] {
-        &[
-            Migration::new(
-                SchemaVersion(1),
-                "initial canonical schema and runtime tables",
-                r#"
+static MIGRATIONS: &[Migration] = &[Migration::new(
+    SchemaVersion(1),
+    "initial canonical schema and runtime tables",
+    r#"
                 CREATE TABLE IF NOT EXISTS nodes (
                     row_id TEXT PRIMARY KEY,
                     logical_id TEXT NOT NULL,
@@ -177,8 +118,67 @@ impl SchemaManager {
                 CREATE INDEX IF NOT EXISTS idx_actions_source_ref
                     ON actions(source_ref);
                 "#,
-            ),
-        ]
+)];
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BootstrapReport {
+    pub sqlite_version: String,
+    pub applied_versions: Vec<SchemaVersion>,
+    pub vector_profile_enabled: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct SchemaManager;
+
+impl SchemaManager {
+    pub fn new() -> Self {
+        Self
+    }
+
+    pub fn bootstrap(&self, conn: &Connection) -> Result<BootstrapReport, SchemaError> {
+        self.initialize_connection(conn)?;
+        self.ensure_metadata_tables(conn)?;
+
+        let mut applied_versions = Vec::new();
+        for migration in self.migrations() {
+            let already_applied = conn
+                .query_row(
+                    "SELECT 1 FROM fathom_schema_migrations WHERE version = ?1",
+                    [i64::from(migration.version.0)],
+                    |row| row.get::<_, i64>(0),
+                )
+                .optional()?
+                .is_some();
+
+            if already_applied {
+                continue;
+            }
+
+            conn.execute_batch(migration.sql)?;
+            conn.execute(
+                "INSERT INTO fathom_schema_migrations (version, description) VALUES (?1, ?2)",
+                (i64::from(migration.version.0), migration.description),
+            )?;
+            applied_versions.push(migration.version);
+        }
+
+        let sqlite_version = conn.query_row("SELECT sqlite_version()", [], |row| row.get(0))?;
+        Ok(BootstrapReport {
+            sqlite_version,
+            applied_versions,
+            vector_profile_enabled: false,
+        })
+    }
+
+    pub fn current_version(&self) -> SchemaVersion {
+        self.migrations()
+            .last()
+            .map(|migration| migration.version)
+            .unwrap_or(SchemaVersion(0))
+    }
+
+    pub fn migrations(&self) -> &'static [Migration] {
+        MIGRATIONS
     }
 
     pub fn initialize_connection(&self, conn: &Connection) -> Result<(), SchemaError> {
