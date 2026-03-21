@@ -1,13 +1,13 @@
-use std::path::{Path, PathBuf};
 use std::collections::HashMap;
-use std::sync::mpsc::{self, Sender};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::mpsc::{self, Sender};
 use std::thread;
 
 use fathomdb_schema::SchemaManager;
-use rusqlite::{params, TransactionBehavior};
+use rusqlite::{TransactionBehavior, params};
 
-use crate::{sqlite, projection::ProjectionTarget, EngineError};
+use crate::{EngineError, projection::ProjectionTarget, sqlite};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OptionalProjectionTask {
@@ -75,7 +75,10 @@ pub struct WriterActor {
 }
 
 impl WriterActor {
-    pub fn start(path: impl AsRef<Path>, schema_manager: Arc<SchemaManager>) -> Result<Self, EngineError> {
+    pub fn start(
+        path: impl AsRef<Path>,
+        schema_manager: Arc<SchemaManager>,
+    ) -> Result<Self, EngineError> {
         let database_path = path.as_ref().to_path_buf();
         let (sender, receiver) = mpsc::channel::<WriteMessage>();
 

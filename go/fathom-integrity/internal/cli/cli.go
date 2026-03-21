@@ -67,7 +67,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		}
 		request := bridge.Request{
 			DatabasePath: *db,
-			Command:      "trace_source",
+			Command:      bridge.CommandTraceSource,
 			SourceRef:    *sourceRef,
 		}
 		if err := commands.RunBridgeCommand(bridge.Client{BinaryPath: *bridgeBinary}, request, stdout); err != nil {
@@ -90,7 +90,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		}
 		request := bridge.Request{
 			DatabasePath: *db,
-			Command:      "rebuild_projections",
+			Command:      bridge.CommandRebuildProjections,
 			Target:       *target,
 		}
 		if err := commands.RunBridgeCommand(bridge.Client{BinaryPath: *bridgeBinary}, request, stdout); err != nil {
@@ -112,7 +112,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		}
 		request := bridge.Request{
 			DatabasePath: *db,
-			Command:      "rebuild_missing_projections",
+			Command:      bridge.CommandRebuildMissing,
 		}
 		if err := commands.RunBridgeCommand(bridge.Client{BinaryPath: *bridgeBinary}, request, stdout); err != nil {
 			fmt.Fprintln(stderr, err)
@@ -134,7 +134,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		}
 		request := bridge.Request{
 			DatabasePath: *db,
-			Command:      "excise_source",
+			Command:      bridge.CommandExciseSource,
 			SourceRef:    *sourceRef,
 		}
 		if err := commands.RunBridgeCommand(bridge.Client{BinaryPath: *bridgeBinary}, request, stdout); err != nil {

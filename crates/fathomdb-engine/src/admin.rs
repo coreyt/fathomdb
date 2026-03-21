@@ -5,7 +5,9 @@ use std::sync::Arc;
 use fathomdb_schema::SchemaManager;
 use serde::Serialize;
 
-use crate::{projection::ProjectionTarget, sqlite, EngineError, ProjectionRepairReport, ProjectionService};
+use crate::{
+    EngineError, ProjectionRepairReport, ProjectionService, projection::ProjectionTarget, sqlite,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct IntegrityReport {
@@ -62,9 +64,12 @@ impl AdminService {
         let conn = sqlite::open_connection(&self.database_path)?;
         self.schema_manager.bootstrap(&conn)?;
 
-        let physical_result: String = conn.query_row("PRAGMA integrity_check", [], |row| row.get(0))?;
+        let physical_result: String =
+            conn.query_row("PRAGMA integrity_check", [], |row| row.get(0))?;
         let foreign_key_count: i64 =
-            conn.query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| row.get(0))?;
+            conn.query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+                row.get(0)
+            })?;
         let missing_fts_rows: i64 = conn.query_row(
             r#"
             SELECT count(*)
@@ -95,7 +100,10 @@ impl AdminService {
         })
     }
 
-    pub fn rebuild_projections(&self, target: ProjectionTarget) -> Result<ProjectionRepairReport, EngineError> {
+    pub fn rebuild_projections(
+        &self,
+        target: ProjectionTarget,
+    ) -> Result<ProjectionRepairReport, EngineError> {
         self.projections.rebuild_projections(target)
     }
 

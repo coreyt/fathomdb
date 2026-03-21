@@ -12,14 +12,17 @@ This is a companion to:
 
 ## Current Repository State
 
-The bridge already exists and works for basic command dispatch:
+The bridge already exists and now has its first real protocol hardening slice:
 
 - one Rust binary reads a JSON request from stdin
-- a string command selects the admin operation
+- request and response payloads carry `protocol_version: 1`
+- typed command names are used on both the Rust and Go sides
 - a JSON response is written to stdout
 - the Go CLI wraps that response with timeout handling
+- Go and Rust tests cover protocol mismatch handling and basic happy paths
 
-What is missing is a more explicit protocol contract.
+What is still missing is structured error typing and exit-code mapping beyond
+basic protocol validation.
 
 ## Deliverables
 
@@ -68,12 +71,20 @@ That keeps the Go side simple and predictable.
 
 ## Implementation Sequence
 
-1. Add protocol version fields to request and response.
-2. Replace stringly typed command parsing with a typed internal command enum.
-3. Add structured error codes in Rust.
-4. Map those error codes to Go CLI exit behavior.
-5. Add contract tests around malformed JSON, unsupported versions, and one
-   happy-path command per command family.
+1. [x] Add protocol version fields to request and response.
+2. [x] Replace stringly typed command parsing with a typed internal command enum.
+3. [ ] Add structured error codes in Rust.
+4. [ ] Map those error codes to Go CLI exit behavior.
+5. [ ] Add contract tests around malformed JSON, unsupported versions, and one
+       happy-path command per command family.
+
+## Notes
+
+- The first bridge-backed Go e2e scenario now exists for `trace`; see
+  [setup-round-trip-fixtures.md](./setup-round-trip-fixtures.md).
+- SQLite version policy for local tooling is now centralized in
+  `tooling/sqlite.env`, with `3.41.0` as the minimum supported version and
+  `3.46.0` as the repo-local development target.
 
 ## Done When
 

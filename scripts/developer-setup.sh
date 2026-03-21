@@ -2,9 +2,20 @@
 
 set -euo pipefail
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SQLITE_POLICY_FILE="${SQLITE_POLICY_FILE:-$REPO_ROOT/tooling/sqlite.env}"
 RUST_TOOLCHAIN="${RUST_TOOLCHAIN:-stable}"
 GO_VERSION="${GO_VERSION:-1.24.1}"
 GO_INSTALL_DIR="${GO_INSTALL_DIR:-$HOME/.local/go}"
+
+if [[ -f "$SQLITE_POLICY_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$SQLITE_POLICY_FILE"
+fi
+
+SQLITE_MIN_VERSION="${SQLITE_MIN_VERSION:-3.41.0}"
+SQLITE_VERSION="${SQLITE_VERSION:-3.46.0}"
+SQLITE_INSTALL_DIR="${SQLITE_INSTALL_DIR:-$REPO_ROOT/.local/sqlite-$SQLITE_VERSION}"
 PROFILE_TARGETS=()
 
 if [[ -f "$HOME/.bashrc" ]]; then
@@ -52,14 +63,17 @@ append_once() {
 ensure_path_exports() {
   local cargo_line='export PATH="$HOME/.cargo/bin:$PATH"'
   local go_line
+  local sqlite_line
   go_line="export PATH=\"$GO_INSTALL_DIR/bin:\$PATH\""
+  sqlite_line="export PATH=\"$SQLITE_INSTALL_DIR/bin:\$PATH\""
 
   for profile in "${PROFILE_TARGETS[@]}"; do
+    append_once "$profile" "$sqlite_line"
     append_once "$profile" "$cargo_line"
     append_once "$profile" "$go_line"
   done
 
-  export PATH="$HOME/.cargo/bin:$GO_INSTALL_DIR/bin:$PATH"
+  export PATH="$SQLITE_INSTALL_DIR/bin:$HOME/.cargo/bin:$GO_INSTALL_DIR/bin:$PATH"
 }
 
 detect_os() {
@@ -80,6 +94,54 @@ detect_arch() {
     arm64|aarch64) printf 'arm64\n' ;;
     *) die "unsupported architecture: $arch" ;;
   esac
+}
+
+sqlite_numeric_version() {
+  local version="$1"
+  local major minor patch
+  IFS=. read -r major minor patch <<<"$version"
+  printf '%d%02d%02d00\n' "$major" "$minor" "$patch"
+}
+
+sqlite_version_at_least() {
+  local actual="$1"
+  local minimum="$2"
+  [[ "$(sqlite_numeric_version "$actual")" -ge "$(sqlite_numeric_version "$minimum")" ]]
+}
+
+sqlite_version_supported() {
+  local version="$1"
+  sqlite_version_at_least "$version" "$SQLITE_MIN_VERSION"
+}
+
+sqlite_project_install_needed() {
+  local installed_version="${1:-}"
+  [[ -z "$installed_version" || "$installed_version" != "$SQLITE_VERSION" ]]
+}
+
+sqlite_release_year() {
+  local version="$1"
+  case "$version" in
+    3.41.*|3.42.*|3.43.*|3.44.*) printf '2023\n' ;;
+    3.45.*|3.46.*) printf '2024\n' ;;
+    *) die "unsupported SQLite release year lookup for version: $version" ;;
+  esac
+}
+
+sqlite_download_url() {
+  local version="${1:-$SQLITE_VERSION}"
+  printf 'https://sqlite.org/%s/sqlite-autoconf-%s.tar.gz\n' \
+    "$(sqlite_release_year "$version")" \
+    "$(sqlite_numeric_version "$version")"
+}
+
+sqlite_installed_version() {
+  local sqlite_bin="${1:-$SQLITE_INSTALL_DIR/bin/sqlite3}"
+  if [[ ! -x "$sqlite_bin" ]]; then
+    return 1
+  fi
+
+  "$sqlite_bin" --version | awk '{print $1}'
 }
 
 run_with_privilege() {
@@ -216,6 +278,59 @@ install_go() {
   fi
 }
 
+install_project_sqlite() {
+  local archive_url archive_name tmp_dir source_dir jobs current_version
+  current_version="$(sqlite_installed_version 2>/dev/null || true)"
+
+  if ! sqlite_project_install_needed "$current_version"; then
+    log "project-local SQLite already installed: ${current_version}"
+    return
+  fi
+
+  tmp_dir="$(mktemp -d)"
+  archive_url="$(sqlite_download_url "$SQLITE_VERSION")"
+  archive_name="$(basename "$archive_url")"
+  source_dir="${tmp_dir}/sqlite-src"
+  jobs="${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf '2\n')}"
+
+  log "installing project-local SQLite ${SQLITE_VERSION} to ${SQLITE_INSTALL_DIR}"
+  curl -fsSL "$archive_url" -o "${tmp_dir}/${archive_name}"
+  mkdir -p "$source_dir"
+  tar -C "$source_dir" --strip-components=1 -xzf "${tmp_dir}/${archive_name}"
+
+  rm -rf "$SQLITE_INSTALL_DIR"
+  mkdir -p "$SQLITE_INSTALL_DIR"
+
+  (
+    cd "$source_dir"
+    ./configure --prefix="$SQLITE_INSTALL_DIR"
+    make -j "$jobs"
+    make install
+  )
+
+  rm -rf "$tmp_dir"
+}
+
+verify_sqlite() {
+  local project_sqlite_bin project_version
+  project_sqlite_bin="$SQLITE_INSTALL_DIR/bin/sqlite3"
+
+  if [[ ! -x "$project_sqlite_bin" ]]; then
+    die "project-local sqlite3 not found at $project_sqlite_bin"
+  fi
+
+  project_version="$(sqlite_installed_version "$project_sqlite_bin")"
+  if ! sqlite_version_supported "$project_version"; then
+    die "project-local sqlite3 version ${project_version} is below the supported minimum ${SQLITE_MIN_VERSION}"
+  fi
+
+  if [[ "$project_version" != "$SQLITE_VERSION" ]]; then
+    die "project-local sqlite3 version ${project_version} does not match the development target ${SQLITE_VERSION}"
+  fi
+
+  export PATH="$SQLITE_INSTALL_DIR/bin:$PATH"
+}
+
 install_cargo_tools() {
   local os
   os="$(detect_os)"
@@ -246,6 +361,7 @@ print_summary() {
   printf '  cargo: %s\n' "$(cargo --version)"
   printf '  cargo-nextest: %s\n' "$(cargo nextest --version)"
   printf '  go: %s\n' "$(go version)"
+  printf '  sqlite3: %s\n' "$(sqlite3 --version)"
   printf '\n'
   printf 'Suggested next commands:\n'
   printf '  cargo build --workspace\n'
@@ -268,8 +384,13 @@ main() {
   ensure_path_exports
   install_go
   ensure_path_exports
+  install_project_sqlite
+  ensure_path_exports
+  verify_sqlite
   install_cargo_tools
   print_summary
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

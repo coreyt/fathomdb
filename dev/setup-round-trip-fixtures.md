@@ -17,9 +17,10 @@ The repo already has useful smoke tests, but they are still mostly scaffold
 tests:
 
 - query compilation is tested
-- writer wiring is tested
+- typed write plus read execution roundtrips are now tested in Rust
 - admin wiring is tested
-- black-box tests do not yet prove true read/write/repair roundtrips
+- Go has one real bridge-backed temp-db e2e scenario for `trace`
+- repair and excision still do not have real roundtrip coverage
 
 The next phase needs fixtures that can support all three runtime layers without
 duplicating setup logic across crates.
@@ -74,12 +75,21 @@ That keeps Go tests focused on CLI and protocol behavior rather than SQL setup.
 
 ## Implementation Sequence
 
-1. Add Rust test helpers for temporary DB creation and canonical seeding.
-2. Convert the current black-box scaffold tests to use those helpers.
-3. Add one roundtrip read test and one repair/excision test in Rust.
-4. Add one Go e2e path that invokes the real admin bridge against a seeded temp
-   DB.
-5. Add vector-specific fixtures only after capability gating is real.
+1. [ ] Add Rust test helpers for temporary DB creation and canonical seeding.
+2. [ ] Convert the current black-box scaffold tests to use those helpers.
+3. [~] Add one roundtrip read test and one repair/excision test in Rust.
+       The read/write roundtrip exists; repair/excision coverage is still open.
+4. [x] Add one Go e2e path that invokes the real admin bridge against a seeded
+       temp DB.
+5. [ ] Add vector-specific fixtures only after capability gating is real.
+
+## Notes
+
+- The current Go e2e path resolves the repo-local `sqlite3` binary through a
+  shared test helper that reads `tooling/sqlite.env`, so `unixepoch()`-based
+  seed SQL now runs against the repo-standard SQLite `3.46.0`.
+- The next fixture improvement should remove handwritten SQL from the Go e2e
+  seed path and replace it with reusable scenario setup.
 
 ## Done When
 

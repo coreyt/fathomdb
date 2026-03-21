@@ -7,6 +7,12 @@ on:
   pull_request:
 
 jobs:
+  setup-script-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/test-developer-setup.sh
+
   rust-lint:
     runs-on: ubuntu-latest
     steps:

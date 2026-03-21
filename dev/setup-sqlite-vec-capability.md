@@ -18,6 +18,8 @@ Today the repo is intentionally incomplete:
 - `ensure_vector_profile()` returns `MissingCapability("sqlite-vec")`
 - vector rebuild paths are deferred
 - query compilation already assumes a vector-driven candidate path exists
+- local development now standardizes on a repo-local SQLite `3.46.0` install,
+  with `3.41.0` as the minimum supported version, via `tooling/sqlite.env`
 
 That mismatch is acceptable in the scaffold, but it should be closed before
 vector-driven reads and writes are treated as supported runtime features.

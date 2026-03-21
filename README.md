@@ -131,8 +131,17 @@ Bootstrap a local development environment with:
 ```
 
 That script installs the baseline Rust and Go toolchains used by this
-repository, adds the required shell `PATH` entries, and installs
-`cargo-nextest`.
+repository, installs a project-local `sqlite3` binary for this repo, adds the
+required shell `PATH` entries, and installs `cargo-nextest`.
+
+SQLite policy for local development:
+
+- minimum supported SQLite version: `3.41.0`
+- repo-local development target: `3.46.0`
+
+The setup script installs the repo-local SQLite under `.local/` and prepends it
+to `PATH` so local CLI-driven workflows do not depend on an older system
+`sqlite3`.
 
 ## What Is In Scope For v1
 

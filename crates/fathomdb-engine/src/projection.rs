@@ -4,7 +4,7 @@ use std::sync::Arc;
 use fathomdb_schema::SchemaManager;
 use serde::Serialize;
 
-use crate::{sqlite, EngineError};
+use crate::{EngineError, sqlite};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum ProjectionTarget {
@@ -34,7 +34,10 @@ impl ProjectionService {
         }
     }
 
-    pub fn rebuild_projections(&self, target: ProjectionTarget) -> Result<ProjectionRepairReport, EngineError> {
+    pub fn rebuild_projections(
+        &self,
+        target: ProjectionTarget,
+    ) -> Result<ProjectionRepairReport, EngineError> {
         let conn = sqlite::open_connection(&self.database_path)?;
         self.schema_manager.bootstrap(&conn)?;
 
@@ -42,12 +45,16 @@ impl ProjectionService {
         let rebuilt_rows = match target {
             ProjectionTarget::Fts => rebuild_fts(&conn)?,
             ProjectionTarget::Vec => {
-                notes.push("vector projection rebuild is deferred until sqlite-vec is enabled".to_owned());
+                notes.push(
+                    "vector projection rebuild is deferred until sqlite-vec is enabled".to_owned(),
+                );
                 0
             }
             ProjectionTarget::All => {
                 let rebuilt_fts = rebuild_fts(&conn)?;
-                notes.push("vector projection rebuild is deferred until sqlite-vec is enabled".to_owned());
+                notes.push(
+                    "vector projection rebuild is deferred until sqlite-vec is enabled".to_owned(),
+                );
                 rebuilt_fts
             }
         };

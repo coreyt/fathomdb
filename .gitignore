@@ -2,6 +2,7 @@
 !.wake/shared/
 !.wake/shared/**
 .claude/
+.local/
 target/
 go/fathom-integrity/fathom-integrity
 *.test

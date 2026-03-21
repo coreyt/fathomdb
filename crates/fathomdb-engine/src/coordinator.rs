@@ -6,7 +6,7 @@ use fathomdb_query::{CompiledQuery, ShapeHash};
 use fathomdb_schema::SchemaManager;
 use rusqlite::{params_from_iter, types::Value};
 
-use crate::{sqlite, EngineError};
+use crate::{EngineError, sqlite};
 
 #[derive(Clone, Debug)]
 pub struct DispatchedRead {
@@ -35,7 +35,10 @@ pub struct ExecutionCoordinator {
 }
 
 impl ExecutionCoordinator {
-    pub fn open(path: impl AsRef<Path>, schema_manager: Arc<SchemaManager>) -> Result<Self, EngineError> {
+    pub fn open(
+        path: impl AsRef<Path>,
+        schema_manager: Arc<SchemaManager>,
+    ) -> Result<Self, EngineError> {
         let path = path.as_ref().to_path_buf();
         let conn = sqlite::open_connection(&path)?;
         schema_manager.bootstrap(&conn)?;
@@ -50,7 +53,10 @@ impl ExecutionCoordinator {
         &self.database_path
     }
 
-    pub fn dispatch_compiled_read(&self, compiled: &CompiledQuery) -> Result<DispatchedRead, EngineError> {
+    pub fn dispatch_compiled_read(
+        &self,
+        compiled: &CompiledQuery,
+    ) -> Result<DispatchedRead, EngineError> {
         self.statement_cache
             .lock()
             .expect("statement cache mutex poisoned")
@@ -61,7 +67,10 @@ impl ExecutionCoordinator {
         })
     }
 
-    pub fn execute_compiled_read(&self, compiled: &CompiledQuery) -> Result<QueryRows, EngineError> {
+    pub fn execute_compiled_read(
+        &self,
+        compiled: &CompiledQuery,
+    ) -> Result<QueryRows, EngineError> {
         self.statement_cache
             .lock()
             .expect("statement cache mutex poisoned")
@@ -123,8 +132,8 @@ mod tests {
     #[test]
     fn coordinator_caches_by_shape_hash() {
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new())).expect("coordinator");
+        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()))
+            .expect("coordinator");
 
         let compiled = QueryBuilder::nodes("Meeting")
             .text_search("budget", 5)
@@ -140,8 +149,8 @@ mod tests {
     #[test]
     fn coordinator_executes_compiled_read() {
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new())).expect("coordinator");
+        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()))
+            .expect("coordinator");
         let conn = rusqlite::Connection::open(db.path()).expect("open db");
 
         conn.execute_batch(

@@ -25,5 +25,6 @@ func TestMainVersionCommand(t *testing.T) {
 
 	require.Equal(t, 0, exitCode)
 	require.Contains(t, stdout.String(), "fathom-integrity 0.1.0")
+	require.Contains(t, stdout.String(), "admin protocol 1")
 	require.Empty(t, stderr.String())
 }
