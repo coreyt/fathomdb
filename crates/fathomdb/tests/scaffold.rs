@@ -1,6 +1,6 @@
 use fathomdb::{
-    ChunkInsert, Engine, EngineOptions, NodeInsert, ProjectionTarget, TraverseDirection,
-    WriteRequest,
+    ActionInsert, ChunkInsert, Engine, EngineOptions, NodeInsert, ProjectionTarget, RunInsert,
+    StepInsert, TraverseDirection, WriteRequest,
 };
 use tempfile::NamedTempFile;
 
@@ -165,6 +165,117 @@ fn excise_single_version_cleans_fts() {
     assert_eq!(after.missing_fts_rows, 0, "FTS should be clean after excise");
 }
 
+#[test]
+fn upsert_write_promotes_new_version_and_read_returns_it() {
+    let db = NamedTempFile::new().expect("temporary db");
+    let engine = Engine::open(EngineOptions::new(db.path())).expect("engine opens");
+
+    engine
+        .writer()
+        .submit(meeting_write_request(r#"{"version":1}"#))
+        .expect("v1 write");
+
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "v2".to_owned(),
+            nodes: vec![NodeInsert {
+                row_id: "row-2".to_owned(),
+                logical_id: "meeting-1".to_owned(),
+                kind: "Meeting".to_owned(),
+                properties: r#"{"version":2}"#.to_owned(),
+                source_ref: Some("source-2".to_owned()),
+                upsert: true,
+            }],
+            chunks: vec![ChunkInsert {
+                id: "chunk-2".to_owned(),
+                node_logical_id: "meeting-1".to_owned(),
+                text_content: "second version discussion".to_owned(),
+                byte_start: None,
+                byte_end: None,
+            }],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+        })
+        .expect("v2 upsert write");
+
+    let compiled = engine
+        .query("Meeting")
+        .filter_logical_id_eq("meeting-1")
+        .compile()
+        .expect("query compiles");
+
+    let rows = engine
+        .coordinator()
+        .execute_compiled_read(&compiled)
+        .expect("read executes");
+
+    assert_eq!(rows.nodes.len(), 1);
+    assert!(
+        rows.nodes[0].properties.contains("\"version\":2"),
+        "read should return the upserted v2 row"
+    );
+}
+
+#[test]
+fn runtime_table_write_is_traced_by_source_ref() {
+    let db = NamedTempFile::new().expect("temporary db");
+    let engine = Engine::open(EngineOptions::new(db.path())).expect("engine opens");
+
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "session".to_owned(),
+            nodes: vec![NodeInsert {
+                row_id: "row-1".to_owned(),
+                logical_id: "meeting-1".to_owned(),
+                kind: "Meeting".to_owned(),
+                properties: "{}".to_owned(),
+                source_ref: Some("source-1".to_owned()),
+                upsert: false,
+            }],
+            chunks: vec![],
+            runs: vec![RunInsert {
+                id: "run-1".to_owned(),
+                kind: "session".to_owned(),
+                status: "completed".to_owned(),
+                properties: "{}".to_owned(),
+                source_ref: Some("source-1".to_owned()),
+            }],
+            steps: vec![StepInsert {
+                id: "step-1".to_owned(),
+                run_id: "run-1".to_owned(),
+                kind: "llm".to_owned(),
+                status: "completed".to_owned(),
+                properties: "{}".to_owned(),
+                source_ref: Some("source-1".to_owned()),
+            }],
+            actions: vec![ActionInsert {
+                id: "action-1".to_owned(),
+                step_id: "step-1".to_owned(),
+                kind: "emit".to_owned(),
+                status: "completed".to_owned(),
+                properties: "{}".to_owned(),
+                source_ref: Some("source-1".to_owned()),
+            }],
+            optional_backfills: vec![],
+        })
+        .expect("write completes");
+
+    let report = engine
+        .admin()
+        .service()
+        .trace_source("source-1")
+        .expect("trace");
+
+    assert_eq!(report.node_rows, 1);
+    assert_eq!(report.action_rows, 1);
+    assert_eq!(report.node_logical_ids, vec!["meeting-1"]);
+    assert_eq!(report.action_ids, vec!["action-1"]);
+}
+
 fn meeting_write_request(properties: &str) -> WriteRequest {
     WriteRequest {
         label: "seed".to_owned(),
@@ -174,6 +285,7 @@ fn meeting_write_request(properties: &str) -> WriteRequest {
             kind: "Meeting".to_owned(),
             properties: properties.to_owned(),
             source_ref: Some("source-1".to_owned()),
+            upsert: false,
         }],
         chunks: vec![ChunkInsert {
             id: "chunk-1".to_owned(),
@@ -182,6 +294,9 @@ fn meeting_write_request(properties: &str) -> WriteRequest {
             byte_start: None,
             byte_end: None,
         }],
+        runs: vec![],
+        steps: vec![],
+        actions: vec![],
         optional_backfills: vec![],
     }
 }

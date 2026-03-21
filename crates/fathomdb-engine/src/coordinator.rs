@@ -130,6 +130,55 @@ mod tests {
     use crate::ExecutionCoordinator;
 
     #[test]
+    fn same_shape_queries_share_one_cache_entry() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()))
+            .expect("coordinator");
+
+        let compiled_a = QueryBuilder::nodes("Meeting")
+            .text_search("budget", 5)
+            .limit(10)
+            .compile()
+            .expect("compiled a");
+        let compiled_b = QueryBuilder::nodes("Meeting")
+            .text_search("standup", 5)
+            .limit(10)
+            .compile()
+            .expect("compiled b");
+
+        coordinator
+            .execute_compiled_read(&compiled_a)
+            .expect("read a");
+        coordinator
+            .execute_compiled_read(&compiled_b)
+            .expect("read b");
+
+        assert_eq!(
+            compiled_a.shape_hash, compiled_b.shape_hash,
+            "different bind values, same structural shape → same hash"
+        );
+        assert_eq!(coordinator.cached_statement_count(), 1);
+    }
+
+    #[test]
+    fn vector_read_returns_error_when_table_absent() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()))
+            .expect("coordinator");
+
+        let compiled = QueryBuilder::nodes("Meeting")
+            .vector_search("budget embeddings", 5)
+            .compile()
+            .expect("vector query compiles");
+
+        let result = coordinator.execute_compiled_read(&compiled);
+        assert!(
+            result.is_err(),
+            "vector read must fail explicitly when vec_nodes_active table is absent"
+        );
+    }
+
+    #[test]
     fn coordinator_caches_by_shape_hash() {
         let db = NamedTempFile::new().expect("temporary db");
         let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()))

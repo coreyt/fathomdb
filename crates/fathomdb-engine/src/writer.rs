@@ -22,6 +22,9 @@ pub struct NodeInsert {
     pub kind: String,
     pub properties: String,
     pub source_ref: Option<String>,
+    /// When true the writer supersedes the current active row for this logical_id
+    /// before inserting this new version. The supersession and insert are atomic.
+    pub upsert: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -34,10 +37,42 @@ pub struct ChunkInsert {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RunInsert {
+    pub id: String,
+    pub kind: String,
+    pub status: String,
+    pub properties: String,
+    pub source_ref: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StepInsert {
+    pub id: String,
+    pub run_id: String,
+    pub kind: String,
+    pub status: String,
+    pub properties: String,
+    pub source_ref: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ActionInsert {
+    pub id: String,
+    pub step_id: String,
+    pub kind: String,
+    pub status: String,
+    pub properties: String,
+    pub source_ref: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WriteRequest {
     pub label: String,
     pub nodes: Vec<NodeInsert>,
     pub chunks: Vec<ChunkInsert>,
+    pub runs: Vec<RunInsert>,
+    pub steps: Vec<StepInsert>,
+    pub actions: Vec<ActionInsert>,
     pub optional_backfills: Vec<OptionalProjectionTask>,
 }
 
@@ -60,6 +95,9 @@ struct PreparedWrite {
     label: String,
     nodes: Vec<NodeInsert>,
     chunks: Vec<ChunkInsert>,
+    runs: Vec<RunInsert>,
+    steps: Vec<StepInsert>,
+    actions: Vec<ActionInsert>,
     required_fts_rows: Vec<FtsProjectionRow>,
     optional_backfills: Vec<OptionalProjectionTask>,
 }
@@ -134,6 +172,9 @@ fn prepare_write(request: WriteRequest) -> Result<PreparedWrite, EngineError> {
         label: request.label,
         nodes: request.nodes,
         chunks: request.chunks,
+        runs: request.runs,
+        steps: request.steps,
+        actions: request.actions,
         required_fts_rows,
         optional_backfills: request.optional_backfills,
     })
@@ -175,11 +216,16 @@ fn apply_write(
 ) -> Result<WriteReceipt, rusqlite::Error> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     for node in &prepared.nodes {
+        if node.upsert {
+            tx.execute(
+                "UPDATE nodes SET superseded_at = unixepoch() \
+                 WHERE logical_id = ?1 AND superseded_at IS NULL",
+                params![node.logical_id],
+            )?;
+        }
         tx.execute(
-            r#"
-            INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref)
-            VALUES (?1, ?2, ?3, ?4, unixepoch(), ?5)
-            "#,
+            "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+             VALUES (?1, ?2, ?3, ?4, unixepoch(), ?5)",
             params![
                 node.row_id,
                 node.logical_id,
@@ -191,10 +237,8 @@ fn apply_write(
     }
     for chunk in &prepared.chunks {
         tx.execute(
-            r#"
-            INSERT INTO chunks (id, node_logical_id, text_content, byte_start, byte_end, created_at)
-            VALUES (?1, ?2, ?3, ?4, ?5, unixepoch())
-            "#,
+            "INSERT INTO chunks (id, node_logical_id, text_content, byte_start, byte_end, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, unixepoch())",
             params![
                 chunk.id,
                 chunk.node_logical_id,
@@ -204,12 +248,45 @@ fn apply_write(
             ],
         )?;
     }
+    for run in &prepared.runs {
+        tx.execute(
+            "INSERT INTO runs (id, kind, status, properties, created_at, source_ref) \
+             VALUES (?1, ?2, ?3, ?4, unixepoch(), ?5)",
+            params![run.id, run.kind, run.status, run.properties, run.source_ref],
+        )?;
+    }
+    for step in &prepared.steps {
+        tx.execute(
+            "INSERT INTO steps (id, run_id, kind, status, properties, created_at, source_ref) \
+             VALUES (?1, ?2, ?3, ?4, ?5, unixepoch(), ?6)",
+            params![
+                step.id,
+                step.run_id,
+                step.kind,
+                step.status,
+                step.properties,
+                step.source_ref,
+            ],
+        )?;
+    }
+    for action in &prepared.actions {
+        tx.execute(
+            "INSERT INTO actions (id, step_id, kind, status, properties, created_at, source_ref) \
+             VALUES (?1, ?2, ?3, ?4, ?5, unixepoch(), ?6)",
+            params![
+                action.id,
+                action.step_id,
+                action.kind,
+                action.status,
+                action.properties,
+                action.source_ref,
+            ],
+        )?;
+    }
     for fts_row in &prepared.required_fts_rows {
         tx.execute(
-            r#"
-            INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content)
-            VALUES (?1, ?2, ?3, ?4)
-            "#,
+            "INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content) \
+             VALUES (?1, ?2, ?3, ?4)",
             params![
                 fts_row.chunk_id,
                 fts_row.node_logical_id,
@@ -233,7 +310,113 @@ mod tests {
     use fathomdb_schema::SchemaManager;
     use tempfile::NamedTempFile;
 
-    use crate::{ChunkInsert, NodeInsert, WriteRequest, WriterActor};
+    use crate::{
+        ActionInsert, ChunkInsert, NodeInsert, RunInsert, StepInsert, WriteRequest, WriterActor,
+    };
+
+    #[test]
+    fn writer_executes_runtime_table_rows() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let writer = WriterActor::start(db.path(), Arc::new(SchemaManager::new())).expect("writer");
+
+        let receipt = writer
+            .submit(WriteRequest {
+                label: "runtime".to_owned(),
+                nodes: vec![],
+                chunks: vec![],
+                runs: vec![RunInsert {
+                    id: "run-1".to_owned(),
+                    kind: "session".to_owned(),
+                    status: "completed".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                }],
+                steps: vec![StepInsert {
+                    id: "step-1".to_owned(),
+                    run_id: "run-1".to_owned(),
+                    kind: "llm".to_owned(),
+                    status: "completed".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                }],
+                actions: vec![ActionInsert {
+                    id: "action-1".to_owned(),
+                    step_id: "step-1".to_owned(),
+                    kind: "emit".to_owned(),
+                    status: "completed".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                }],
+                optional_backfills: vec![],
+            })
+            .expect("write receipt");
+
+        assert_eq!(receipt.label, "runtime");
+    }
+
+    #[test]
+    fn writer_upsert_supersedes_prior_active_node() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let writer = WriterActor::start(db.path(), Arc::new(SchemaManager::new())).expect("writer");
+
+        writer
+            .submit(WriteRequest {
+                label: "v1".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-1".to_owned(),
+                    logical_id: "lg-1".to_owned(),
+                    kind: "Meeting".to_owned(),
+                    properties: r#"{"version":1}"#.to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                }],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+            })
+            .expect("v1 write");
+
+        writer
+            .submit(WriteRequest {
+                label: "v2".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-2".to_owned(),
+                    logical_id: "lg-1".to_owned(),
+                    kind: "Meeting".to_owned(),
+                    properties: r#"{"version":2}"#.to_owned(),
+                    source_ref: Some("src-2".to_owned()),
+                    upsert: true,
+                }],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+            })
+            .expect("v2 upsert write");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let (active_row_id, props): (String, String) = conn
+            .query_row(
+                "SELECT row_id, properties FROM nodes WHERE logical_id = 'lg-1' AND superseded_at IS NULL",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("active row");
+        assert_eq!(active_row_id, "row-2");
+        assert!(props.contains("\"version\":2"));
+
+        let superseded: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM nodes WHERE row_id = 'row-1' AND superseded_at IS NOT NULL",
+                [],
+                |row| row.get(0),
+            )
+            .expect("superseded count");
+        assert_eq!(superseded, 1);
+    }
 
     #[test]
     fn writer_executes_typed_nodes_chunks_and_derived_projections() {
@@ -249,6 +432,7 @@ mod tests {
                     kind: "Meeting".to_owned(),
                     properties: "{}".to_owned(),
                     source_ref: None,
+                    upsert: false,
                 }],
                 chunks: vec![ChunkInsert {
                     id: "chunk-1".to_owned(),
@@ -257,6 +441,9 @@ mod tests {
                     byte_start: None,
                     byte_end: None,
                 }],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
                 optional_backfills: vec![],
             })
             .expect("write receipt");

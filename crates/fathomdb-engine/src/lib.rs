@@ -11,7 +11,8 @@ pub use projection::{ProjectionRepairReport, ProjectionService, ProjectionTarget
 pub use runtime::EngineRuntime;
 pub use sqlite::{SharedSqlitePolicy, shared_sqlite_policy};
 pub use writer::{
-    ChunkInsert, NodeInsert, OptionalProjectionTask, WriteReceipt, WriteRequest, WriterActor,
+    ActionInsert, ChunkInsert, NodeInsert, OptionalProjectionTask, RunInsert, StepInsert,
+    WriteReceipt, WriteRequest, WriterActor,
 };
 
 use thiserror::Error;

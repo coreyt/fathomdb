@@ -26,7 +26,7 @@ func TestVersionCommand(t *testing.T) {
 }
 
 func TestE2ESQLiteBinarySupportsUnixepoch(t *testing.T) {
-	sqlitePath := sqliteBinary(t)
+	sqlitePath := testutil.SQLiteBinary()
 
 	cmd := exec.Command(sqlitePath, ":memory:", "select unixepoch();")
 	cmd.Dir = filepath.Join("..", "..")
@@ -50,13 +50,10 @@ func TestTraceCommandAgainstRealBridgeAndTempDB(t *testing.T) {
 	repoRoot := filepath.Join("..", "..")
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "fathom.db")
-	bridgePath := filepath.Join(tempDir, "bridge.sh")
-
-	bridgeScript := "#!/usr/bin/env bash\nset -euo pipefail\ncd " + repoRoot + "\ncargo run --quiet -p fathomdb-engine --bin fathomdb-admin-bridge\n"
-	require.NoError(t, os.WriteFile(bridgePath, []byte(bridgeScript), 0o755))
+	bridgePath := makeBridgeScript(t, tempDir, repoRoot)
 
 	bootstrapBridgeDB(t, bridgePath, dbPath)
-	seedTraceScenario(t, repoRoot, dbPath)
+	testutil.SeedTraceScenario(t, dbPath)
 
 	cmd := exec.Command(
 		"go",
@@ -83,13 +80,10 @@ func TestExciseCommandRestoresPriorVersion(t *testing.T) {
 	repoRoot := filepath.Join("..", "..")
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "fathom.db")
-	bridgePath := filepath.Join(tempDir, "bridge.sh")
-
-	bridgeScript := "#!/usr/bin/env bash\nset -euo pipefail\ncd " + repoRoot + "\ncargo run --quiet -p fathomdb-engine --bin fathomdb-admin-bridge\n"
-	require.NoError(t, os.WriteFile(bridgePath, []byte(bridgeScript), 0o755))
+	bridgePath := makeBridgeScript(t, tempDir, repoRoot)
 
 	bootstrapBridgeDB(t, bridgePath, dbPath)
-	seedExciseScenario(t, repoRoot, dbPath)
+	testutil.SeedExciseScenario(t, dbPath)
 
 	cmd := exec.Command(
 		"go",
@@ -108,35 +102,52 @@ func TestExciseCommandRestoresPriorVersion(t *testing.T) {
 	require.NoError(t, err, string(output))
 	require.Contains(t, string(output), "source excised")
 
-	// Verify that the prior version (source-1) is now active.
 	activeRow := queryDB(t, dbPath, "SELECT row_id FROM nodes WHERE logical_id='meeting-1' AND superseded_at IS NULL")
 	require.Equal(t, "row-1", activeRow, "prior version should be restored as active")
 }
 
-func seedExciseScenario(t *testing.T, repoRoot, dbPath string) {
-	t.Helper()
+func TestRebuildCommandRepairsMissingFTS(t *testing.T) {
+	repoRoot := filepath.Join("..", "..")
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "fathom.db")
+	bridgePath := makeBridgeScript(t, tempDir, repoRoot)
 
-	// Insert v1 (source-1) already superseded, then v2 (source-2) active.
-	sql := `
-INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, superseded_at, source_ref)
-VALUES ('row-1', 'meeting-1', 'Meeting', '{}', 100, 200, 'source-1');
-INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref)
-VALUES ('row-2', 'meeting-1', 'Meeting', '{}', 200, 'source-2');
-`
-	cmd := exec.Command(testutil.SQLiteBinary(), dbPath, sql)
+	bootstrapBridgeDB(t, bridgePath, dbPath)
+	testutil.SeedFTSRepairScenario(t, dbPath)
+
+	// Confirm FTS is empty before rebuild.
+	before := queryDB(t, dbPath, "SELECT count(*) FROM fts_nodes")
+	require.Equal(t, "0", before, "FTS should be empty before rebuild")
+
+	cmd := exec.Command(
+		"go",
+		"run",
+		"./cmd/fathom-integrity",
+		"rebuild",
+		"--db", dbPath,
+		"--bridge", bridgePath,
+		"--target", "fts",
+	)
+	cmd.Dir = repoRoot
 	cmd.Env = os.Environ()
 
 	output, err := cmd.CombinedOutput()
+
 	require.NoError(t, err, string(output))
+	require.Contains(t, string(output), "projection rebuild completed")
+
+	after := queryDB(t, dbPath, "SELECT count(*) FROM fts_nodes")
+	require.Equal(t, "1", after, "FTS should have one row after rebuild")
 }
 
-func queryDB(t *testing.T, dbPath, query string) string {
+// --- helpers ---
+
+func makeBridgeScript(t *testing.T, tempDir, repoRoot string) string {
 	t.Helper()
-	cmd := exec.Command(testutil.SQLiteBinary(), dbPath, query)
-	cmd.Env = os.Environ()
-	output, err := cmd.CombinedOutput()
-	require.NoError(t, err, string(output))
-	return strings.TrimSpace(string(output))
+	bridgePath := filepath.Join(tempDir, "bridge.sh")
+	script := "#!/usr/bin/env bash\nset -euo pipefail\ncd " + repoRoot + "\ncargo run --quiet -p fathomdb-engine --bin fathomdb-admin-bridge\n"
+	require.NoError(t, os.WriteFile(bridgePath, []byte(script), 0o755))
+	return bridgePath
 }
 
 func bootstrapBridgeDB(t *testing.T, bridgePath, dbPath string) {
@@ -159,28 +170,11 @@ func bootstrapBridgeDB(t *testing.T, bridgePath, dbPath string) {
 	require.Contains(t, string(output), `"protocol_version":1`)
 }
 
-func seedTraceScenario(t *testing.T, repoRoot, dbPath string) {
+func queryDB(t *testing.T, dbPath, query string) string {
 	t.Helper()
-
-	sql := `
-INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref)
-VALUES ('row-1', 'meeting-1', 'Meeting', '{}', unixepoch(), 'source-1');
-INSERT INTO runs (id, kind, status, properties, created_at, source_ref)
-VALUES ('run-1', 'session', 'completed', '{}', unixepoch(), 'source-1');
-INSERT INTO steps (id, run_id, kind, status, properties, created_at, source_ref)
-VALUES ('step-1', 'run-1', 'llm', 'completed', '{}', unixepoch(), 'source-1');
-INSERT INTO actions (id, step_id, kind, status, properties, created_at, source_ref)
-VALUES ('action-1', 'step-1', 'emit', 'completed', '{}', unixepoch(), 'source-1');
-`
-
-	cmd := exec.Command(testutil.SQLiteBinary(), dbPath, sql)
+	cmd := exec.Command(testutil.SQLiteBinary(), dbPath, query)
 	cmd.Env = os.Environ()
-
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, string(output))
-}
-
-func sqliteBinary(t *testing.T) string {
-	t.Helper()
-	return testutil.SQLiteBinary()
+	return strings.TrimSpace(string(output))
 }
