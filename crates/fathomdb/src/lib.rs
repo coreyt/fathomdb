@@ -1,8 +1,9 @@
 use std::path::{Path, PathBuf};
 
 pub use fathomdb_engine::{
-    AdminHandle, EngineError, EngineRuntime, ExecutionCoordinator, OptionalProjectionTask,
-    ProjectionRepairReport, ProjectionTarget, WriteEnvelope, WriteReceipt, WriterActor,
+    AdminHandle, ChunkInsert, EngineError, EngineRuntime, ExecutionCoordinator, NodeInsert,
+    NodeRow, OptionalProjectionTask, ProjectionRepairReport, ProjectionTarget, QueryRows,
+    WriteReceipt, WriteRequest, WriterActor,
 };
 pub use fathomdb_query::{
     compile_query, BindValue, CompiledQuery, DrivingTable, ExecutionHints, Predicate, Query,
@@ -66,5 +67,3 @@ impl<'a> Session<'a> {
         self.engine.query(kind)
     }
 }
-
-pub type WriteRequest = WriteEnvelope;

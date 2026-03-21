@@ -6,10 +6,12 @@ mod sqlite;
 mod writer;
 
 pub use admin::{AdminHandle, AdminService, IntegrityReport, TraceReport};
-pub use coordinator::{DispatchedRead, ExecutionCoordinator};
+pub use coordinator::{DispatchedRead, ExecutionCoordinator, NodeRow, QueryRows};
 pub use projection::{ProjectionRepairReport, ProjectionService, ProjectionTarget};
 pub use runtime::EngineRuntime;
-pub use writer::{OptionalProjectionTask, WriteEnvelope, WriteReceipt, WriterActor};
+pub use writer::{
+    ChunkInsert, NodeInsert, OptionalProjectionTask, WriteReceipt, WriteRequest, WriterActor,
+};
 
 use thiserror::Error;
 
@@ -23,6 +25,8 @@ pub enum EngineError {
     Io(#[from] std::io::Error),
     #[error("writer actor rejected request: {0}")]
     WriterRejected(String),
+    #[error("invalid write request: {0}")]
+    InvalidWrite(String),
     #[error("bridge error: {0}")]
     Bridge(String),
 }
