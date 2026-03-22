@@ -1,10 +1,12 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use fathomdb_schema::SchemaManager;
 use rusqlite::OptionalExtension;
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 use crate::{
     EngineError, ProjectionRepairReport, ProjectionService, projection::ProjectionTarget, sqlite,
@@ -17,6 +19,14 @@ pub struct IntegrityReport {
     pub missing_fts_rows: usize,
     pub duplicate_active_logical_ids: usize,
     pub warnings: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SafeExportManifest {
+    /// Unix timestamp (seconds since epoch) when the export was created.
+    pub exported_at: u64,
+    /// SHA-256 hex digest of the exported database file.
+    pub sha256: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -220,13 +230,43 @@ impl AdminService {
         self.trace_source(source_ref)
     }
 
-    pub fn safe_export(&self, destination_path: impl AsRef<Path>) -> Result<(), EngineError> {
+    pub fn safe_export(
+        &self,
+        destination_path: impl AsRef<Path>,
+    ) -> Result<SafeExportManifest, EngineError> {
         let destination_path = destination_path.as_ref();
+
+        // 1. Checkpoint WAL before copying so the main DB file contains all committed data.
+        let conn = sqlite::open_connection(&self.database_path)?;
+        conn.execute_batch("PRAGMA wal_checkpoint(FULL);")?;
+        drop(conn);
+
+        // 2. Copy the database file.
         if let Some(parent) = destination_path.parent() {
             fs::create_dir_all(parent)?;
         }
         fs::copy(&self.database_path, destination_path)?;
-        Ok(())
+
+        // 3. Compute SHA-256 of the exported file.
+        let file_bytes = fs::read(destination_path)?;
+        let digest = Sha256::digest(&file_bytes);
+        let sha256 = format!("{:x}", digest);
+
+        // 4. Record when the export was created.
+        let exported_at = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let manifest = SafeExportManifest { exported_at, sha256 };
+
+        // 5. Write manifest alongside the exported file.
+        let manifest_path_str = format!("{}.export-manifest.json", destination_path.display());
+        let manifest_json = serde_json::to_string(&manifest)
+            .map_err(|e| EngineError::Bridge(e.to_string()))?;
+        fs::write(&manifest_path_str, manifest_json)?;
+
+        Ok(manifest)
     }
 }
 
@@ -327,6 +367,24 @@ mod tests {
                 .expect("active row exists after excise");
             assert_eq!(active_row_id, "r1");
         }
+    }
+
+    #[test]
+    fn safe_export_writes_manifest_with_sha256() {
+        let (_db, service) = setup();
+        let export_dir = tempfile::TempDir::new().expect("temp dir");
+        let export_path = export_dir.path().join("backup.db");
+
+        let manifest = service.safe_export(&export_path).expect("export");
+
+        assert!(export_path.exists(), "exported db should exist");
+        let manifest_path_str = format!("{}.export-manifest.json", export_path.display());
+        assert!(
+            std::path::Path::new(&manifest_path_str).exists(),
+            "manifest file should exist at {manifest_path_str}"
+        );
+        assert_eq!(manifest.sha256.len(), 64, "sha256 should be 64 hex chars");
+        assert!(manifest.exported_at > 0, "exported_at should be a unix timestamp");
     }
 
     #[test]

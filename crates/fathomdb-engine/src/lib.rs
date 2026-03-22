@@ -5,7 +5,7 @@ mod runtime;
 mod sqlite;
 mod writer;
 
-pub use admin::{AdminHandle, AdminService, IntegrityReport, TraceReport};
+pub use admin::{AdminHandle, AdminService, IntegrityReport, SafeExportManifest, TraceReport};
 pub use coordinator::{DispatchedRead, ExecutionCoordinator, NodeRow, QueryRows};
 pub use projection::{ProjectionRepairReport, ProjectionService, ProjectionTarget};
 pub use runtime::EngineRuntime;

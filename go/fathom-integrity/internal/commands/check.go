@@ -8,10 +8,15 @@ import (
 )
 
 func RunCheck(databasePath string, out io.Writer) error {
-	report, err := sqlitecheck.Run(databasePath)
+	report, err := sqlitecheck.Diagnose(databasePath, "")
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintln(out, sqlitecheck.Format(report))
-	return err
+	json, err := sqlitecheck.FormatDiagnostic(report)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(out, json)
+	fmt.Fprintln(out, "check completed")
+	return nil
 }

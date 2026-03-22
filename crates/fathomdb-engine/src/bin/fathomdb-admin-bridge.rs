@@ -121,11 +121,11 @@ fn main() {
         }
         BridgeCommand::SafeExport => match request.destination_path {
             Some(destination) => match service.safe_export(destination) {
-                Ok(()) => BridgeResponse {
+                Ok(manifest) => BridgeResponse {
                     protocol_version: PROTOCOL_VERSION,
                     ok: true,
                     message: "export created".to_owned(),
-                    payload: json!({}),
+                    payload: serde_json::to_value(&manifest).unwrap_or_else(|_| json!({})),
                 },
                 Err(error) => error_response(error),
             },

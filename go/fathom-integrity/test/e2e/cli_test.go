@@ -140,6 +140,90 @@ func TestRebuildCommandRepairsMissingFTS(t *testing.T) {
 	require.Equal(t, "1", after, "FTS should have one row after rebuild")
 }
 
+func TestCheckCommandOnCleanDB(t *testing.T) {
+	repoRoot := filepath.Join("..", "..")
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "fathom.db")
+	bridgePath := makeBridgeScript(t, tempDir, repoRoot)
+
+	bootstrapBridgeDB(t, bridgePath, dbPath)
+
+	cmd := exec.Command("go", "run", "./cmd/fathom-integrity", "check", "--db", dbPath)
+	cmd.Dir = repoRoot
+	cmd.Env = os.Environ()
+
+	output, err := cmd.CombinedOutput()
+
+	require.NoError(t, err, string(output))
+	require.Contains(t, string(output), "check completed")
+	require.Contains(t, string(output), `"overall":"clean"`)
+}
+
+func TestCheckDetectsStaleFTS(t *testing.T) {
+	repoRoot := filepath.Join("..", "..")
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "fathom.db")
+	bridgePath := makeBridgeScript(t, tempDir, repoRoot)
+
+	bootstrapBridgeDB(t, bridgePath, dbPath)
+	testutil.SeedFTSRepairScenario(t, dbPath)
+
+	cmd := exec.Command("go", "run", "./cmd/fathom-integrity", "check", "--db", dbPath)
+	cmd.Dir = repoRoot
+	cmd.Env = os.Environ()
+
+	output, err := cmd.CombinedOutput()
+
+	require.NoError(t, err, string(output))
+	require.Contains(t, string(output), "check completed")
+	require.Contains(t, string(output), `"stale_fts_rows":1`)
+	require.Contains(t, string(output), `"overall":"degraded"`)
+}
+
+func TestCheckDetectsNullSourceRef(t *testing.T) {
+	repoRoot := filepath.Join("..", "..")
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "fathom.db")
+	bridgePath := makeBridgeScript(t, tempDir, repoRoot)
+
+	bootstrapBridgeDB(t, bridgePath, dbPath)
+	testutil.SeedTraceScenario(t, dbPath)
+	testutil.InjectNullSourceRef(t, dbPath)
+
+	cmd := exec.Command("go", "run", "./cmd/fathom-integrity", "check", "--db", dbPath)
+	cmd.Dir = repoRoot
+	cmd.Env = os.Environ()
+
+	output, err := cmd.CombinedOutput()
+
+	require.NoError(t, err, string(output))
+	require.Contains(t, string(output), "check completed")
+	require.Contains(t, string(output), `"null_source_ref_nodes":1`)
+	require.Contains(t, string(output), `"overall":"degraded"`)
+}
+
+func TestCheckDetectsOrphanedChunk(t *testing.T) {
+	repoRoot := filepath.Join("..", "..")
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "fathom.db")
+	bridgePath := makeBridgeScript(t, tempDir, repoRoot)
+
+	bootstrapBridgeDB(t, bridgePath, dbPath)
+	testutil.SeedTraceScenario(t, dbPath)
+	testutil.InjectOrphanedChunk(t, dbPath)
+
+	cmd := exec.Command("go", "run", "./cmd/fathom-integrity", "check", "--db", dbPath)
+	cmd.Dir = repoRoot
+	cmd.Env = os.Environ()
+
+	output, err := cmd.CombinedOutput()
+
+	require.NoError(t, err, string(output))
+	require.Contains(t, string(output), "check completed")
+	require.Contains(t, string(output), `"orphaned_chunks":1`)
+	require.Contains(t, string(output), `"overall":"degraded"`)
+}
+
 // --- helpers ---
 
 func makeBridgeScript(t *testing.T, tempDir, repoRoot string) string {
