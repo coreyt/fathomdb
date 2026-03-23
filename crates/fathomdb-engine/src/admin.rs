@@ -87,9 +87,14 @@ impl AdminService {
         }
     }
 
-    pub fn check_integrity(&self) -> Result<IntegrityReport, EngineError> {
+    fn connect(&self) -> Result<rusqlite::Connection, EngineError> {
         let conn = sqlite::open_connection(&self.database_path)?;
         self.schema_manager.bootstrap(&conn)?;
+        Ok(conn)
+    }
+
+    pub fn check_integrity(&self) -> Result<IntegrityReport, EngineError> {
+        let conn = self.connect()?;
 
         let physical_result: String =
             conn.query_row("PRAGMA integrity_check", [], |row| row.get(0))?;
@@ -146,8 +151,7 @@ impl AdminService {
     }
 
     pub fn check_semantics(&self) -> Result<SemanticReport, EngineError> {
-        let conn = sqlite::open_connection(&self.database_path)?;
-        self.schema_manager.bootstrap(&conn)?;
+        let conn = self.connect()?;
 
         let orphaned_chunks: i64 = conn.query_row(
             r#"
@@ -225,8 +229,7 @@ impl AdminService {
     }
 
     pub fn trace_source(&self, source_ref: &str) -> Result<TraceReport, EngineError> {
-        let conn = sqlite::open_connection(&self.database_path)?;
-        self.schema_manager.bootstrap(&conn)?;
+        let conn = self.connect()?;
 
         let node_logical_ids = collect_strings(
             &conn,
@@ -250,8 +253,7 @@ impl AdminService {
     }
 
     pub fn excise_source(&self, source_ref: &str) -> Result<TraceReport, EngineError> {
-        let mut conn = sqlite::open_connection(&self.database_path)?;
-        self.schema_manager.bootstrap(&conn)?;
+        let mut conn = self.connect()?;
 
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
 
@@ -303,10 +305,22 @@ impl AdminService {
             }
         }
 
-        tx.commit()?;
+        // Rebuild FTS atomically within the same transaction so readers never
+        // observe a post-excise node state with a stale FTS index.
+        tx.execute("DELETE FROM fts_nodes", [])?;
+        tx.execute(
+            r#"
+            INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content)
+            SELECT c.id, n.logical_id, n.kind, c.text_content
+            FROM chunks c
+            JOIN nodes n
+              ON n.logical_id = c.node_logical_id
+             AND n.superseded_at IS NULL
+            "#,
+            [],
+        )?;
 
-        // Rebuild FTS to reflect the restored active state. Uses its own connection.
-        self.projections.rebuild_projections(ProjectionTarget::Fts)?;
+        tx.commit()?;
 
         self.trace_source(source_ref)
     }
@@ -318,7 +332,7 @@ impl AdminService {
         let destination_path = destination_path.as_ref();
 
         // 1. Checkpoint WAL before copying so the main DB file contains all committed data.
-        let conn = sqlite::open_connection(&self.database_path)?;
+        let conn = self.connect()?;
         conn.execute_batch("PRAGMA wal_checkpoint(FULL);")?;
         drop(conn);
 
@@ -336,16 +350,24 @@ impl AdminService {
         // 4. Record when the export was created.
         let exported_at = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or_default()
+            .map_err(|e| EngineError::Bridge(format!("system clock error: {e}")))?
             .as_secs();
 
         let manifest = SafeExportManifest { exported_at, sha256 };
 
-        // 5. Write manifest alongside the exported file.
-        let manifest_path_str = format!("{}.export-manifest.json", destination_path.display());
+        // 5. Write manifest alongside the exported file, using Path API for the name.
+        let manifest_path = {
+            let mut p = destination_path.to_path_buf();
+            let stem = p
+                .file_name()
+                .map(|n| format!("{}.export-manifest.json", n.to_string_lossy()))
+                .ok_or_else(|| EngineError::Bridge("destination path has no filename".to_owned()))?;
+            p.set_file_name(stem);
+            p
+        };
         let manifest_json = serde_json::to_string(&manifest)
             .map_err(|e| EngineError::Bridge(e.to_string()))?;
-        fs::write(&manifest_path_str, manifest_json)?;
+        fs::write(&manifest_path, manifest_json)?;
 
         Ok(manifest)
     }
@@ -356,12 +378,13 @@ fn count_source_ref(
     table: &str,
     source_ref: &str,
 ) -> Result<usize, EngineError> {
-    match table {
-        "nodes" | "edges" | "actions" => {}
+    let sql = match table {
+        "nodes" => "SELECT count(*) FROM nodes WHERE source_ref = ?1",
+        "edges" => "SELECT count(*) FROM edges WHERE source_ref = ?1",
+        "actions" => "SELECT count(*) FROM actions WHERE source_ref = ?1",
         other => return Err(EngineError::Bridge(format!("unknown table: {other}"))),
-    }
-    let sql = format!("SELECT count(*) FROM {table} WHERE source_ref = ?1");
-    let count: i64 = conn.query_row(&sql, [source_ref], |row| row.get(0))?;
+    };
+    let count: i64 = conn.query_row(sql, [source_ref], |row| row.get(0))?;
     Ok(count as usize)
 }
 
@@ -545,10 +568,11 @@ mod tests {
         let manifest = service.safe_export(&export_path).expect("export");
 
         assert!(export_path.exists(), "exported db should exist");
-        let manifest_path_str = format!("{}.export-manifest.json", export_path.display());
+        let manifest_path = export_dir.path().join("backup.db.export-manifest.json");
         assert!(
-            std::path::Path::new(&manifest_path_str).exists(),
-            "manifest file should exist at {manifest_path_str}"
+            manifest_path.exists(),
+            "manifest file should exist at {}",
+            manifest_path.display()
         );
         assert_eq!(manifest.sha256.len(), 64, "sha256 should be 64 hex chars");
         assert!(manifest.exported_at > 0, "exported_at should be a unix timestamp");

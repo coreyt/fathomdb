@@ -26,7 +26,7 @@ pub struct ExecutionCoordinator {
     database_path: PathBuf,
     schema_manager: Arc<SchemaManager>,
     conn: Mutex<Connection>,
-    statement_cache: Mutex<HashMap<ShapeHash, String>>,
+    shape_sql_map: Mutex<HashMap<ShapeHash, String>>,
 }
 
 impl fmt::Debug for ExecutionCoordinator {
@@ -49,7 +49,7 @@ impl ExecutionCoordinator {
             database_path: path,
             schema_manager,
             conn: Mutex::new(conn),
-            statement_cache: Mutex::new(HashMap::new()),
+            shape_sql_map: Mutex::new(HashMap::new()),
         })
     }
 
@@ -61,9 +61,9 @@ impl ExecutionCoordinator {
         &self,
         compiled: &CompiledQuery,
     ) -> Result<QueryRows, EngineError> {
-        self.statement_cache
+        self.shape_sql_map
             .lock()
-            .expect("statement cache mutex poisoned")
+            .expect("shape_sql_map mutex poisoned")
             .insert(compiled.shape_hash, compiled.sql.clone());
 
         let bind_values = compiled
@@ -94,10 +94,16 @@ impl ExecutionCoordinator {
         Ok(QueryRows { nodes })
     }
 
-    pub fn cached_statement_count(&self) -> usize {
-        self.statement_cache
+    /// Returns the number of shape→SQL entries currently indexed.
+    ///
+    /// Each distinct query shape (structural hash of kind + steps + limits)
+    /// maps to exactly one SQL string.  This is a test-oriented introspection
+    /// helper; it does not reflect rusqlite's internal prepared-statement
+    /// cache, which is keyed by SQL text.
+    pub fn shape_sql_count(&self) -> usize {
+        self.shape_sql_map
             .lock()
-            .expect("statement cache mutex poisoned")
+            .expect("shape_sql_map mutex poisoned")
             .len()
     }
 
@@ -188,7 +194,7 @@ mod tests {
             compiled_a.shape_hash, compiled_b.shape_hash,
             "different bind values, same structural shape → same hash"
         );
-        assert_eq!(coordinator.cached_statement_count(), 1);
+        assert_eq!(coordinator.shape_sql_count(), 1);
     }
 
     #[test]
@@ -223,7 +229,7 @@ mod tests {
         coordinator
             .execute_compiled_read(&compiled)
             .expect("execute compiled read");
-        assert_eq!(coordinator.cached_statement_count(), 1);
+        assert_eq!(coordinator.shape_sql_count(), 1);
     }
 
     #[test]

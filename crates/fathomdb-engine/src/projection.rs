@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use fathomdb_schema::SchemaManager;
+use rusqlite::TransactionBehavior;
 use serde::Serialize;
 
 use crate::{EngineError, sqlite};
@@ -34,16 +35,21 @@ impl ProjectionService {
         }
     }
 
+    fn connect(&self) -> Result<rusqlite::Connection, EngineError> {
+        let conn = sqlite::open_connection(&self.database_path)?;
+        self.schema_manager.bootstrap(&conn)?;
+        Ok(conn)
+    }
+
     pub fn rebuild_projections(
         &self,
         target: ProjectionTarget,
     ) -> Result<ProjectionRepairReport, EngineError> {
-        let conn = sqlite::open_connection(&self.database_path)?;
-        self.schema_manager.bootstrap(&conn)?;
+        let mut conn = self.connect()?;
 
         let mut notes = Vec::new();
         let rebuilt_rows = match target {
-            ProjectionTarget::Fts => rebuild_fts(&conn)?,
+            ProjectionTarget::Fts => rebuild_fts(&mut conn)?,
             ProjectionTarget::Vec => {
                 notes.push(
                     "vector projection rebuild is deferred until sqlite-vec is enabled".to_owned(),
@@ -51,7 +57,7 @@ impl ProjectionService {
                 0
             }
             ProjectionTarget::All => {
-                let rebuilt_fts = rebuild_fts(&conn)?;
+                let rebuilt_fts = rebuild_fts(&mut conn)?;
                 notes.push(
                     "vector projection rebuild is deferred until sqlite-vec is enabled".to_owned(),
                 );
@@ -67,8 +73,7 @@ impl ProjectionService {
     }
 
     pub fn rebuild_missing_projections(&self) -> Result<ProjectionRepairReport, EngineError> {
-        let conn = sqlite::open_connection(&self.database_path)?;
-        self.schema_manager.bootstrap(&conn)?;
+        let conn = self.connect()?;
 
         let inserted = conn.execute(
             r#"
@@ -95,9 +100,14 @@ impl ProjectionService {
     }
 }
 
-fn rebuild_fts(conn: &rusqlite::Connection) -> Result<usize, rusqlite::Error> {
-    conn.execute("DELETE FROM fts_nodes", [])?;
-    conn.execute(
+/// Atomically rebuild the FTS index: delete all existing rows and repopulate
+/// from the canonical `chunks`/`nodes` join.  The DELETE and INSERT are
+/// wrapped in a single `IMMEDIATE` transaction so a mid-rebuild failure
+/// cannot leave the index empty.
+fn rebuild_fts(conn: &mut rusqlite::Connection) -> Result<usize, rusqlite::Error> {
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    tx.execute("DELETE FROM fts_nodes", [])?;
+    let inserted = tx.execute(
         r#"
         INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content)
         SELECT c.id, n.logical_id, n.kind, c.text_content
@@ -107,7 +117,9 @@ fn rebuild_fts(conn: &rusqlite::Connection) -> Result<usize, rusqlite::Error> {
          AND n.superseded_at IS NULL
         "#,
         [],
-    )
+    )?;
+    tx.commit()?;
+    Ok(inserted)
 }
 
 fn expand_targets(target: ProjectionTarget) -> Vec<ProjectionTarget> {

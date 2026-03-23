@@ -1,6 +1,4 @@
-use std::collections::hash_map::DefaultHasher;
 use std::fmt::Write;
-use std::hash::{Hash, Hasher};
 
 use crate::plan::{choose_driving_table, execution_hints, shape_signature};
 use crate::{DrivingTable, Predicate, QueryAst, QueryStep, ScalarValue, TraverseDirection};
@@ -250,10 +248,17 @@ WHERE 1 = 1",
     })
 }
 
+/// FNV-1a 64-bit hash — deterministic across Rust versions and program
+/// invocations, unlike `DefaultHasher`.
 fn hash_signature(signature: &str) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    signature.hash(&mut hasher);
-    hasher.finish()
+    const OFFSET: u64 = 0xcbf29ce484222325;
+    const PRIME: u64 = 0x00000100000001b3;
+    let mut hash = OFFSET;
+    for byte in signature.bytes() {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(PRIME);
+    }
+    hash
 }
 
 #[cfg(test)]
