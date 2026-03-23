@@ -41,7 +41,7 @@ func TestDiagnoseCleanDB(t *testing.T) {
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, string(out))
 
-	report, err := Diagnose(dbPath, sqliteBin)
+	report, err := Diagnose(dbPath, sqliteBin, nil)
 
 	require.NoError(t, err)
 	require.True(t, report.Layer1.HeaderValid)
@@ -61,7 +61,7 @@ func TestDiagnoseDetectsHeaderCorruption(t *testing.T) {
 
 	testutil.InjectHeaderCorruption(t, dbPath)
 
-	report, err := Diagnose(dbPath, sqliteBin)
+	report, err := Diagnose(dbPath, sqliteBin, nil)
 
 	require.NoError(t, err)
 	require.False(t, report.Layer1.HeaderValid)
@@ -81,7 +81,7 @@ func TestDiagnoseDetectsWALPresence(t *testing.T) {
 	// and proceeds from the main database, so integrity_check still returns "ok".
 	require.NoError(t, os.WriteFile(dbPath+"-wal", []byte("WAL"), 0o644))
 
-	report, err := Diagnose(dbPath, sqliteBin)
+	report, err := Diagnose(dbPath, sqliteBin, nil)
 
 	require.NoError(t, err)
 	require.True(t, report.Layer1.WALPresent)

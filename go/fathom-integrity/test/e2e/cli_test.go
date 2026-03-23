@@ -140,6 +140,33 @@ func TestRebuildCommandRepairsMissingFTS(t *testing.T) {
 	require.Equal(t, "1", after, "FTS should have one row after rebuild")
 }
 
+func TestCheckLayer2DetectsDuplicateActive(t *testing.T) {
+	repoRoot := filepath.Join("..", "..")
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "fathom.db")
+	bridgePath := makeBridgeScript(t, tempDir, repoRoot)
+
+	bootstrapBridgeDB(t, bridgePath, dbPath)
+	testutil.SeedTraceScenario(t, dbPath)
+	testutil.InjectBrokenSupersession(t, dbPath)
+
+	cmd := exec.Command(
+		"go", "run", "./cmd/fathom-integrity",
+		"check",
+		"--db", dbPath,
+		"--bridge", bridgePath,
+	)
+	cmd.Dir = repoRoot
+	cmd.Env = os.Environ()
+
+	output, err := cmd.CombinedOutput()
+
+	require.NoError(t, err, string(output))
+	require.Contains(t, string(output), "check completed")
+	require.Contains(t, string(output), `"duplicate_active_logical_ids":1`)
+	require.Contains(t, string(output), `"overall":"corrupted"`)
+}
+
 func TestCheckCommandOnCleanDB(t *testing.T) {
 	repoRoot := filepath.Join("..", "..")
 	tempDir := t.TempDir()

@@ -23,6 +23,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		fs := flag.NewFlagSet("check", flag.ContinueOnError)
 		fs.SetOutput(stderr)
 		db := fs.String("db", cfg.DatabasePath, "path to sqlite database")
+		bridgeBinary := fs.String("bridge", "", "path to admin bridge binary (optional; enables Layer 2 engine checks)")
 		if err := fs.Parse(args[1:]); err != nil {
 			return 2
 		}
@@ -30,7 +31,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "--db is required")
 			return 2
 		}
-		if err := commands.RunCheck(*db, stdout); err != nil {
+		if err := commands.RunCheck(*db, *bridgeBinary, stdout); err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
 		}

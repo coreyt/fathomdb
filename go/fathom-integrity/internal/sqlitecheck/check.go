@@ -80,6 +80,15 @@ type Layer1Report struct {
 	Findings             []Finding `json:"findings"`
 }
 
+type Layer2Report struct {
+	Available                 bool      `json:"available"`
+	PhysicalOK                bool      `json:"physical_ok"`
+	ForeignKeysOK             bool      `json:"foreign_keys_ok"`
+	MissingFTSRows            int       `json:"missing_fts_rows"`
+	DuplicateActiveLogicalIDs int       `json:"duplicate_active_logical_ids"`
+	Findings                  []Finding `json:"findings"`
+}
+
 type Layer3Report struct {
 	StaleFTSRows       int       `json:"stale_fts_rows"`
 	OrphanedChunks     int       `json:"orphaned_chunks"`
@@ -91,6 +100,7 @@ type DiagnosticReport struct {
 	DatabasePath string       `json:"database_path"`
 	CheckedAt    string       `json:"checked_at"`
 	Layer1       Layer1Report `json:"layer1"`
+	Layer2       Layer2Report `json:"layer2"`
 	Layer3       Layer3Report `json:"layer3"`
 	Overall      string       `json:"overall"` // "clean", "degraded", "corrupted"
 	Suggestions  []string     `json:"suggestions"`
@@ -98,7 +108,8 @@ type DiagnosticReport struct {
 
 // Diagnose runs a layered diagnostic against a SQLite database.
 // sqliteBin is the path to the sqlite3 binary; pass "" to use exec.LookPath("sqlite3").
-func Diagnose(dbPath, sqliteBin string) (DiagnosticReport, error) {
+// layer2 is an optional pre-fetched Layer2Report from the admin bridge; pass nil to skip.
+func Diagnose(dbPath, sqliteBin string, layer2 *Layer2Report) (DiagnosticReport, error) {
 	if sqliteBin == "" {
 		bin, err := exec.LookPath("sqlite3")
 		if err != nil {
@@ -118,6 +129,12 @@ func Diagnose(dbPath, sqliteBin string) (DiagnosticReport, error) {
 		return DiagnosticReport{}, err
 	}
 	report.Layer1 = layer1
+
+	if layer2 != nil {
+		report.Layer2 = *layer2
+	} else {
+		report.Layer2 = Layer2Report{Findings: []Finding{}}
+	}
 
 	// Layer 3 only makes sense if we can open the file.
 	if layer1.HeaderValid {
@@ -257,7 +274,12 @@ func computeOverall(r DiagnosticReport) string {
 			return "corrupted"
 		}
 	}
-	all := append(r.Layer1.Findings, r.Layer3.Findings...) //nolint:gocritic
+	for _, f := range r.Layer2.Findings {
+		if f.Severity == "critical" || f.Severity == "error" {
+			return "corrupted"
+		}
+	}
+	all := append(append(r.Layer1.Findings, r.Layer2.Findings...), r.Layer3.Findings...) //nolint:gocritic
 	for _, f := range all {
 		if f.Severity == "warning" {
 			return "degraded"
