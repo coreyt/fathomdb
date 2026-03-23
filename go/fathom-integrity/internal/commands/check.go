@@ -45,25 +45,51 @@ type bridgeIntegrityReport struct {
 	Warnings                  []string `json:"warnings"`
 }
 
+// bridgeSemanticReport mirrors the Rust SemanticReport JSON shape.
+type bridgeSemanticReport struct {
+	OrphanedChunks     int      `json:"orphaned_chunks"`
+	NullSourceRefNodes int      `json:"null_source_ref_nodes"`
+	BrokenStepFK       int      `json:"broken_step_fk"`
+	BrokenActionFK     int      `json:"broken_action_fk"`
+	Warnings           []string `json:"warnings"`
+}
+
 func fetchLayer2(dbPath, bridgePath string) (sqlitecheck.Layer2Report, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	client := bridge.Client{BinaryPath: bridgePath}
-	resp, err := client.Execute(ctx, bridge.Request{
+
+	// --- check_integrity ---
+	iresp, err := client.Execute(ctx, bridge.Request{
 		DatabasePath: dbPath,
 		Command:      bridge.CommandCheckIntegrity,
 	})
 	if err != nil {
 		return sqlitecheck.Layer2Report{}, err
 	}
-	if !resp.OK {
-		return sqlitecheck.Layer2Report{}, fmt.Errorf("bridge check_integrity: %s", resp.Message)
+	if !iresp.OK {
+		return sqlitecheck.Layer2Report{}, fmt.Errorf("bridge check_integrity: %s", iresp.Message)
+	}
+	var ir bridgeIntegrityReport
+	if err := json.Unmarshal(iresp.Payload, &ir); err != nil {
+		return sqlitecheck.Layer2Report{}, fmt.Errorf("decode integrity report: %w", err)
 	}
 
-	var ir bridgeIntegrityReport
-	if err := json.Unmarshal(resp.Payload, &ir); err != nil {
-		return sqlitecheck.Layer2Report{}, fmt.Errorf("decode integrity report: %w", err)
+	// --- check_semantics ---
+	sresp, err := client.Execute(ctx, bridge.Request{
+		DatabasePath: dbPath,
+		Command:      bridge.CommandCheckSemantics,
+	})
+	if err != nil {
+		return sqlitecheck.Layer2Report{}, err
+	}
+	if !sresp.OK {
+		return sqlitecheck.Layer2Report{}, fmt.Errorf("bridge check_semantics: %s", sresp.Message)
+	}
+	var sr bridgeSemanticReport
+	if err := json.Unmarshal(sresp.Payload, &sr); err != nil {
+		return sqlitecheck.Layer2Report{}, fmt.Errorf("decode semantic report: %w", err)
 	}
 
 	layer2 := sqlitecheck.Layer2Report{
@@ -72,6 +98,8 @@ func fetchLayer2(dbPath, bridgePath string) (sqlitecheck.Layer2Report, error) {
 		ForeignKeysOK:             ir.ForeignKeysOK,
 		MissingFTSRows:            ir.MissingFTSRows,
 		DuplicateActiveLogicalIDs: ir.DuplicateActiveLogicalIDs,
+		BrokenStepFK:              sr.BrokenStepFK,
+		BrokenActionFK:            sr.BrokenActionFK,
 		Findings:                  []sqlitecheck.Finding{},
 	}
 
@@ -95,6 +123,18 @@ func fetchLayer2(dbPath, bridgePath string) (sqlitecheck.Layer2Report, error) {
 		layer2.Findings = append(layer2.Findings, sqlitecheck.Finding{
 			Layer: 2, Severity: "warning",
 			Message: fmt.Sprintf("%d missing FTS projection(s) detected by engine", ir.MissingFTSRows),
+		})
+	}
+	if sr.BrokenStepFK > 0 {
+		layer2.Findings = append(layer2.Findings, sqlitecheck.Finding{
+			Layer: 2, Severity: "error",
+			Message: fmt.Sprintf("%d step(s) with broken run_id FK", sr.BrokenStepFK),
+		})
+	}
+	if sr.BrokenActionFK > 0 {
+		layer2.Findings = append(layer2.Findings, sqlitecheck.Finding{
+			Layer: 2, Severity: "error",
+			Message: fmt.Sprintf("%d action(s) with broken step_id FK", sr.BrokenActionFK),
 		})
 	}
 

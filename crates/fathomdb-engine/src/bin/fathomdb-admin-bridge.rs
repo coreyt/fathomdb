@@ -24,6 +24,7 @@ struct BridgeRequest {
 #[serde(rename_all = "snake_case")]
 enum BridgeCommand {
     CheckIntegrity,
+    CheckSemantics,
     RebuildProjections,
     RebuildMissingProjections,
     TraceSource,
@@ -73,6 +74,15 @@ fn main() {
                 protocol_version: PROTOCOL_VERSION,
                 ok: true,
                 message: "integrity check completed".to_owned(),
+                payload: serde_json::to_value(report).unwrap_or_else(|_| json!({})),
+            },
+            Err(error) => error_response(error),
+        },
+        BridgeCommand::CheckSemantics => match service.check_semantics() {
+            Ok(report) => BridgeResponse {
+                protocol_version: PROTOCOL_VERSION,
+                ok: true,
+                message: "semantics check completed".to_owned(),
                 payload: serde_json::to_value(report).unwrap_or_else(|_| json!({})),
             },
             Err(error) => error_response(error),

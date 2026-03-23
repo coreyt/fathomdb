@@ -47,6 +47,15 @@ func InjectOrphanedChunk(t *testing.T, dbPath string) {
 VALUES ('orphan-chunk-1', 'does-not-exist', 'orphaned content', unixepoch());`)
 }
 
+// InjectBrokenStepFK inserts a step that references a non-existent run_id,
+// simulating a partial write failure that left an orphaned runtime table row.
+// The sqlite3 CLI has FK enforcement off by default, so the insert succeeds.
+func InjectBrokenStepFK(t *testing.T, dbPath string) {
+	t.Helper()
+	runSQLite(t, dbPath, `INSERT INTO steps (id, run_id, kind, status, properties, created_at)
+VALUES ('ghost-step-1', 'ghost-run', 'llm', 'completed', '{}', unixepoch());`)
+}
+
 // InjectBrokenSupersession creates two active rows for the same logical_id by
 // dropping the unique partial index before inserting the duplicate, simulating a
 // failed transaction during upsert.

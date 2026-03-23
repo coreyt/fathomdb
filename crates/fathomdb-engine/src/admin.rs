@@ -46,6 +46,19 @@ pub struct AdminService {
     projections: ProjectionService,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct SemanticReport {
+    /// Chunks whose node_logical_id has no active node.
+    pub orphaned_chunks: usize,
+    /// Active nodes with a NULL source_ref (loss of provenance).
+    pub null_source_ref_nodes: usize,
+    /// Steps referencing a run_id that does not exist in the runs table.
+    pub broken_step_fk: usize,
+    /// Actions referencing a step_id that does not exist in the steps table.
+    pub broken_action_fk: usize,
+    pub warnings: Vec<String>,
+}
+
 #[derive(Clone, Debug)]
 pub struct AdminHandle {
     inner: Arc<AdminService>,
@@ -128,6 +141,74 @@ impl AdminService {
             foreign_keys_ok: foreign_key_count == 0,
             missing_fts_rows: missing_fts_rows as usize,
             duplicate_active_logical_ids: duplicate_active as usize,
+            warnings,
+        })
+    }
+
+    pub fn check_semantics(&self) -> Result<SemanticReport, EngineError> {
+        let conn = sqlite::open_connection(&self.database_path)?;
+        self.schema_manager.bootstrap(&conn)?;
+
+        let orphaned_chunks: i64 = conn.query_row(
+            r#"
+            SELECT count(*)
+            FROM chunks c
+            WHERE NOT EXISTS (
+                SELECT 1 FROM nodes n
+                WHERE n.logical_id = c.node_logical_id AND n.superseded_at IS NULL
+            )
+            "#,
+            [],
+            |row| row.get(0),
+        )?;
+
+        let null_source_ref_nodes: i64 = conn.query_row(
+            "SELECT count(*) FROM nodes WHERE source_ref IS NULL AND superseded_at IS NULL",
+            [],
+            |row| row.get(0),
+        )?;
+
+        let broken_step_fk: i64 = conn.query_row(
+            r#"
+            SELECT count(*) FROM steps s
+            WHERE NOT EXISTS (SELECT 1 FROM runs r WHERE r.id = s.run_id)
+            "#,
+            [],
+            |row| row.get(0),
+        )?;
+
+        let broken_action_fk: i64 = conn.query_row(
+            r#"
+            SELECT count(*) FROM actions a
+            WHERE NOT EXISTS (SELECT 1 FROM steps s WHERE s.id = a.step_id)
+            "#,
+            [],
+            |row| row.get(0),
+        )?;
+
+        let mut warnings = Vec::new();
+        if orphaned_chunks > 0 {
+            warnings.push(format!("{orphaned_chunks} orphaned chunk(s) with no active node"));
+        }
+        if null_source_ref_nodes > 0 {
+            warnings.push(format!(
+                "{null_source_ref_nodes} active node(s) with null source_ref"
+            ));
+        }
+        if broken_step_fk > 0 {
+            warnings.push(format!("{broken_step_fk} step(s) referencing non-existent run"));
+        }
+        if broken_action_fk > 0 {
+            warnings.push(format!(
+                "{broken_action_fk} action(s) referencing non-existent step"
+            ));
+        }
+
+        Ok(SemanticReport {
+            orphaned_chunks: orphaned_chunks as usize,
+            null_source_ref_nodes: null_source_ref_nodes as usize,
+            broken_step_fk: broken_step_fk as usize,
+            broken_action_fk: broken_action_fk as usize,
             warnings,
         })
     }
@@ -367,6 +448,88 @@ mod tests {
                 .expect("active row exists after excise");
             assert_eq!(active_row_id, "r1");
         }
+    }
+
+    #[test]
+    fn check_semantics_clean_db_returns_zeros() {
+        let (_db, service) = setup();
+        let report = service.check_semantics().expect("semantics check");
+        assert_eq!(report.orphaned_chunks, 0);
+        assert_eq!(report.null_source_ref_nodes, 0);
+        assert_eq!(report.broken_step_fk, 0);
+        assert_eq!(report.broken_action_fk, 0);
+        assert!(report.warnings.is_empty());
+    }
+
+    #[test]
+    fn check_semantics_detects_orphaned_chunk() {
+        let (db, service) = setup();
+        {
+            // Open without FK enforcement to insert chunk with no active node.
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
+                 VALUES ('c1', 'ghost-node', 'text', 100)",
+                [],
+            )
+            .expect("insert orphaned chunk");
+        }
+        let report = service.check_semantics().expect("semantics check");
+        assert_eq!(report.orphaned_chunks, 1);
+    }
+
+    #[test]
+    fn check_semantics_detects_null_source_ref() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at) \
+                 VALUES ('r1', 'lg1', 'Meeting', '{}', 100)",
+                [],
+            )
+            .expect("insert node with null source_ref");
+        }
+        let report = service.check_semantics().expect("semantics check");
+        assert_eq!(report.null_source_ref_nodes, 1);
+    }
+
+    #[test]
+    fn check_semantics_detects_broken_step_fk() {
+        let (db, service) = setup();
+        {
+            // Explicitly disable FK enforcement for this connection so we can insert
+            // an orphaned step (ghost run_id) to simulate a partial-write failure.
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute_batch("PRAGMA foreign_keys = OFF;")
+                .expect("disable FK");
+            conn.execute(
+                "INSERT INTO steps (id, run_id, kind, status, properties, created_at) \
+                 VALUES ('s1', 'ghost-run', 'llm', 'completed', '{}', 100)",
+                [],
+            )
+            .expect("insert step with ghost run_id");
+        }
+        let report = service.check_semantics().expect("semantics check");
+        assert_eq!(report.broken_step_fk, 1);
+    }
+
+    #[test]
+    fn check_semantics_detects_broken_action_fk() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute_batch("PRAGMA foreign_keys = OFF;")
+                .expect("disable FK");
+            conn.execute(
+                "INSERT INTO actions (id, step_id, kind, status, properties, created_at) \
+                 VALUES ('a1', 'ghost-step', 'emit', 'completed', '{}', 100)",
+                [],
+            )
+            .expect("insert action with ghost step_id");
+        }
+        let report = service.check_semantics().expect("semantics check");
+        assert_eq!(report.broken_action_fk, 1);
     }
 
     #[test]

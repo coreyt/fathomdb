@@ -86,6 +86,8 @@ type Layer2Report struct {
 	ForeignKeysOK             bool      `json:"foreign_keys_ok"`
 	MissingFTSRows            int       `json:"missing_fts_rows"`
 	DuplicateActiveLogicalIDs int       `json:"duplicate_active_logical_ids"`
+	BrokenStepFK              int       `json:"broken_step_fk"`
+	BrokenActionFK            int       `json:"broken_action_fk"`
 	Findings                  []Finding `json:"findings"`
 }
 

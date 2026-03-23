@@ -14,6 +14,7 @@ type Command string
 
 const (
 	CommandCheckIntegrity     Command = "check_integrity"
+	CommandCheckSemantics     Command = "check_semantics"
 	CommandRebuildProjections Command = "rebuild_projections"
 	CommandRebuildMissing     Command = "rebuild_missing_projections"
 	CommandTraceSource        Command = "trace_source"
