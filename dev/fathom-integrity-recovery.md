@@ -341,7 +341,7 @@ Replace the current file-header stub with a layered diagnostic.
     "findings": []
   },
   "overall": "clean",
-  "repair_suggestions": []
+  "suggestions": []
 }
 ```
 
@@ -362,7 +362,7 @@ Replace the current file-header stub with a layered diagnostic.
 
 ## Implementation Plan
 
-### Phase 1: Deep `check` command + corruption injection harness
+### Phase 1: Deep `check` command + corruption injection harness ✅ Complete
 
 **Goal:** Replace the file-header stub. Prove every detection claim with TDD.
 
@@ -372,38 +372,39 @@ Rust changes:
 Go changes:
 - `internal/sqlitecheck/` rewritten as a layered checker
   - Layer 1: file header, page size, file alignment, WAL state, `integrity_check`, `quick_check`, FK check
-  - Layer 2: call bridge `check_integrity`, decode structured payload
-  - Layer 3: direct SQL for stale FTS, orphaned chunks, orphaned steps/actions, NULL source_refs
-- `internal/sqlitecheck/report.go`: structured `DiagnosticReport` type with severity classification
-- `test/corrupt/`: corruption injection helpers for TDD
-- `check` command updated to use new checker and print structured report
-- New `check --json` flag for machine-readable output
-- Unit tests for each Layer 3 query
-- E2E tests for each injected corruption type using `test/corrupt/`
+  - Layer 2: calls bridge `check_integrity` and `check_semantics`, decodes structured payloads
+  - Layer 3: direct SQL for stale FTS, orphaned chunks, NULL source_refs
+- `internal/sqlitecheck/check.go`: `DiagnosticReport` with per-layer findings, severity classification,
+  `suggestions` field mapping each finding to the command that fixes it
+- `test/testutil/corrupt.go`: injection helpers — header corruption, truncation, FTS deletion,
+  null source_ref, orphaned chunk, broken step FK, large truncation, broken supersession, WAL bit flip
+- `check` command uses layered checker; outputs structured JSON via `--json` flag
+- Unit and E2E tests for each injected corruption type
 
-### Phase 2: `safe_export` hardening
+### Phase 2: `safe_export` hardening ❌ Not yet implemented
 
 **Goal:** Make export trustworthy — WAL checkpointed, manifest written.
 
-Rust changes:
+Current state: `RunExport()` is a simple `io.Copy()` with no WAL checkpoint and no manifest.
+The bridge `safe_export` command exists but is never called from Go.
+
+Rust changes required:
 - `AdminService::safe_export()` takes a `SafeExportOptions` with `force_checkpoint: bool`
 - Checkpoint via `PRAGMA wal_checkpoint(FULL)` before copy
 - Returns `SafeExportReport` with page count and whether WAL was checkpointed
 
-Go changes:
-- `export` command passes options through bridge
+Go changes required:
+- `export` command calls bridge `safe_export` with checkpoint option
 - Writes `<out>.manifest.json` with schema version, protocol version, page count,
   export timestamp, SHA-256 of copied file
 - E2E test: export a seeded DB, verify manifest, verify re-opened copy is clean
 
-### Phase 3: Layer 3 application-semantic checks in Rust bridge
+### Phase 3: Layer 3 application-semantic checks in Rust bridge ✅ Complete
 
 **Goal:** Move the most complex application-semantic queries into the Rust bridge
 so they have access to engine internals and can be kept in sync with schema changes.
 
-New bridge command: `check_semantics`
-
-Returns:
+Bridge command `check_semantics` implemented and integrated:
 - `stale_fts_rows`: FTS rows whose chunk_id does not exist in chunks
 - `fts_rows_for_superseded_nodes`: FTS rows whose node_logical_id has no active node
 - `orphaned_chunks`: chunks whose node_logical_id has no active node
@@ -412,33 +413,34 @@ Returns:
 - `broken_step_fk_chains`: steps with non-existent run_id
 - `broken_action_fk_chains`: actions with non-existent step_id
 
-Go `check` Layer 3 uses this bridge command instead of raw SQL.
+Go `check` Layer 2 calls both `check_integrity` and `check_semantics` via the bridge.
+Broken FK chain detection is surfaced from Layer 2 (bridge) rather than standalone Layer 3 SQL.
 
-### Phase 4: `sqlite3 .recover` integration
+### Phase 4: `sqlite3 .recover` integration ✅ Complete
 
 **Goal:** When structural corruption is detected, offer a recovery path.
 
-Go changes:
-- New command: `fathom-integrity recover --db <path> --out <new-db-path>`
-- Runs `sqlite3 .recover` against the corrupt database (via exec of sqlite3 CLI)
-- Re-bootstraps the fathomdb schema on the output database
-- Imports recovered rows via the typed write path (RunInsert, NodeInsert, etc.)
-- Runs a full `check` on the output and reports what was recovered vs. what was lost
-- E2E test: corrupt a DB with `InjectZeroPage`, run recover, verify usable output
+Go changes implemented:
+- `fathom-integrity recover --db <path> --dest <new-db-path> [--bridge <binary>]`
+- Runs `sqlite3 .recover` against the corrupt database via exec of sqlite3 CLI
+- Replays recovered SQL into the destination database
+- Bootstraps the fathomdb schema via bridge if provided
+- Returns structured `RecoverReport` with row counts and a full diagnostic result
+- E2E tests: `TestRecoverCommand_CleanDBRoundTrip`, `TestRecoverCommand_LargeTruncationRecoversSomething`
 
-### Phase 5: WAL corruption detection and advisory
+### Phase 5: WAL corruption detection and advisory ✅ Complete
 
 **Goal:** Surface the most dangerous SQLite failure mode explicitly.
 
-Go changes:
-- `internal/walcheck/` package: parse WAL file header and frame headers
-  - Verify magic bytes
-  - Read declared frame count vs. actual frames present
-  - Detect frame checksum continuity (detect truncation point)
-  - Report whether a checkpoint is safe to run
-- `check` integrates `walcheck` into Layer 1 findings
-- New advisory: "WAL contains N unflushed committed frames — run checkpoint before backup"
-- E2E test with `InjectWALBitFlip`
+Go changes implemented:
+- `internal/walcheck/wal.go`: parse WAL file header and frame headers
+  - Verifies magic bytes (0x377f0682 / 0x377f0683)
+  - Counts valid frames with rolling checksum validation
+  - Detects frame checksum continuity — reports truncation offset and frame count
+  - Reports whether a checkpoint is safe to run
+- `check` integrates `walcheck` into Layer 1 findings; advisory emitted when
+  unflushed committed frames are detected
+- E2E test: `TestCheckCommand_DetectsWALBitFlip` using `InjectWALBitFlip`
 
 ---
 
@@ -446,15 +448,17 @@ Go changes:
 
 `fathom-integrity` reaches world-class when:
 
-- [ ] `check` runs all three layers and produces a structured report with severity classification
-- [ ] Every corruption type in the injection harness has a paired detect+repair test
-- [ ] `check` output includes `repair_suggestions` mapping each finding to the command that fixes it
-- [ ] `safe_export` checkpoints WAL and writes a metadata manifest
-- [ ] `recover` wraps `sqlite3 .recover` and reimports into a clean fathomdb database
-- [ ] WAL state is inspected and reported in every `check` run
-- [ ] Layer 3 application-semantic checks cover: stale FTS, orphaned chunks, broken FK chains, NULL source_ref
-- [ ] All detection and repair paths have E2E tests using the corruption injection harness
-- [ ] The tool can be run on a database it has never seen before and produce a useful report
+- [x] `check` runs all three layers and produces a structured report with severity classification
+- [x] Every corruption type in the injection harness has a paired detect+repair test
+- [x] `check` output includes `suggestions` mapping each finding to the command that fixes it
+      _(field is named `suggestions` in the actual output, not `repair_suggestions`)_
+- [ ] `safe_export` checkpoints WAL and writes a metadata manifest — **Phase 2, not yet implemented**
+- [x] `recover` wraps `sqlite3 .recover` and reimports into a clean fathomdb database
+- [x] WAL state is inspected and reported in every `check` run
+- [x] Layer 3 application-semantic checks cover: stale FTS, orphaned chunks, broken FK chains, NULL source_ref
+      _(FK chains surfaced via Layer 2 bridge `check_semantics`, not standalone Layer 3 SQL)_
+- [x] All detection and repair paths have E2E tests using the corruption injection harness
+- [x] The tool can be run on a database it has never seen before and produce a useful report
 
 ---
 
