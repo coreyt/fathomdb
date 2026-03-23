@@ -128,13 +128,12 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
         }
         DrivingTable::Nodes => {
             binds.push(BindValue::Text(ast.root_kind.clone()));
-            let mut sql = format!(
-                "base_candidates AS (
+            let mut sql = "base_candidates AS (
                     SELECT DISTINCT src.logical_id
                     FROM nodes src
                     WHERE src.superseded_at IS NULL
                       AND src.kind = ?1"
-            );
+                .to_owned();
             if let Some(logical_id) = ast.steps.iter().find_map(|step| {
                 if let QueryStep::Filter(Predicate::LogicalIdEq(logical_id)) = step {
                     Some(logical_id.as_str())

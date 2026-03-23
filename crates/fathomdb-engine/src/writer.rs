@@ -15,6 +15,13 @@ pub struct OptionalProjectionTask {
     pub payload: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum ChunkPolicy {
+    #[default]
+    Preserve,
+    Replace,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NodeInsert {
     pub row_id: String,
@@ -25,6 +32,8 @@ pub struct NodeInsert {
     /// When true the writer supersedes the current active row for this logical_id
     /// before inserting this new version. The supersession and insert are atomic.
     pub upsert: bool,
+    /// Controls whether existing chunks and FTS rows are deleted when upsert=true.
+    pub chunk_policy: ChunkPolicy,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -39,6 +48,18 @@ pub struct EdgeInsert {
     /// When true the writer supersedes the current active edge for this logical_id
     /// before inserting this new version. The supersession and insert are atomic.
     pub upsert: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NodeRetire {
+    pub logical_id: String,
+    pub source_ref: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EdgeRetire {
+    pub logical_id: String,
+    pub source_ref: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -57,6 +78,8 @@ pub struct RunInsert {
     pub status: String,
     pub properties: String,
     pub source_ref: Option<String>,
+    pub upsert: bool,
+    pub supersedes_id: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -67,6 +90,8 @@ pub struct StepInsert {
     pub status: String,
     pub properties: String,
     pub source_ref: Option<String>,
+    pub upsert: bool,
+    pub supersedes_id: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -77,13 +102,17 @@ pub struct ActionInsert {
     pub status: String,
     pub properties: String,
     pub source_ref: Option<String>,
+    pub upsert: bool,
+    pub supersedes_id: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WriteRequest {
     pub label: String,
     pub nodes: Vec<NodeInsert>,
+    pub node_retires: Vec<NodeRetire>,
     pub edges: Vec<EdgeInsert>,
+    pub edge_retires: Vec<EdgeRetire>,
     pub chunks: Vec<ChunkInsert>,
     pub runs: Vec<RunInsert>,
     pub steps: Vec<StepInsert>,
@@ -109,7 +138,9 @@ struct FtsProjectionRow {
 struct PreparedWrite {
     label: String,
     nodes: Vec<NodeInsert>,
+    node_retires: Vec<NodeRetire>,
     edges: Vec<EdgeInsert>,
+    edge_retires: Vec<EdgeRetire>,
     chunks: Vec<ChunkInsert>,
     runs: Vec<RunInsert>,
     steps: Vec<StepInsert>,
@@ -149,7 +180,7 @@ impl WriterActor {
     }
 
     pub fn submit(&self, request: WriteRequest) -> Result<WriteReceipt, EngineError> {
-        let prepared = prepare_write(request);
+        let prepared = prepare_write(request)?;
         let (reply_tx, reply_rx) = mpsc::channel();
         self.sender
             .send(WriteMessage {
@@ -165,17 +196,44 @@ impl WriterActor {
     }
 }
 
-fn prepare_write(request: WriteRequest) -> PreparedWrite {
+fn prepare_write(request: WriteRequest) -> Result<PreparedWrite, EngineError> {
+    for run in &request.runs {
+        if run.upsert && run.supersedes_id.is_none() {
+            return Err(EngineError::InvalidWrite(format!(
+                "run '{}': upsert=true requires supersedes_id to be set",
+                run.id
+            )));
+        }
+    }
+    for step in &request.steps {
+        if step.upsert && step.supersedes_id.is_none() {
+            return Err(EngineError::InvalidWrite(format!(
+                "step '{}': upsert=true requires supersedes_id to be set",
+                step.id
+            )));
+        }
+    }
+    for action in &request.actions {
+        if action.upsert && action.supersedes_id.is_none() {
+            return Err(EngineError::InvalidWrite(format!(
+                "action '{}': upsert=true requires supersedes_id to be set",
+                action.id
+            )));
+        }
+    }
+
     let node_kinds = request
         .nodes
         .iter()
         .map(|node| (node.logical_id.clone(), node.kind.clone()))
         .collect::<HashMap<_, _>>();
 
-    PreparedWrite {
+    Ok(PreparedWrite {
         label: request.label,
         nodes: request.nodes,
+        node_retires: request.node_retires,
         edges: request.edges,
+        edge_retires: request.edge_retires,
         chunks: request.chunks,
         runs: request.runs,
         steps: request.steps,
@@ -183,7 +241,7 @@ fn prepare_write(request: WriteRequest) -> PreparedWrite {
         node_kinds,
         required_fts_rows: Vec::new(),
         optional_backfills: request.optional_backfills,
-    }
+    })
 }
 
 fn writer_loop(
@@ -230,6 +288,20 @@ fn resolve_fts_rows(
     conn: &rusqlite::Connection,
     prepared: &mut PreparedWrite,
 ) -> Result<(), EngineError> {
+    let retiring_ids: std::collections::HashSet<&str> = prepared
+        .node_retires
+        .iter()
+        .map(|r| r.logical_id.as_str())
+        .collect();
+    for chunk in &prepared.chunks {
+        if retiring_ids.contains(chunk.node_logical_id.as_str()) {
+            return Err(EngineError::InvalidWrite(format!(
+                "chunk '{}' references node_logical_id '{}' which is being retired in the same \
+                 WriteRequest; retire and chunk insertion for the same node must not be combined",
+                chunk.id, chunk.node_logical_id
+            )));
+        }
+    }
     for chunk in &prepared.chunks {
         let kind = if let Some(k) = prepared.node_kinds.get(&chunk.node_logical_id) {
             k.clone()
@@ -275,8 +347,40 @@ fn apply_write(
     prepared: &PreparedWrite,
 ) -> Result<WriteReceipt, rusqlite::Error> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    for retire in &prepared.node_retires {
+        tx.execute(
+            "DELETE FROM fts_nodes WHERE node_logical_id = ?1",
+            params![retire.logical_id],
+        )?;
+        tx.execute(
+            "DELETE FROM chunks WHERE node_logical_id = ?1",
+            params![retire.logical_id],
+        )?;
+        tx.execute(
+            "UPDATE nodes SET superseded_at = unixepoch() \
+             WHERE logical_id = ?1 AND superseded_at IS NULL",
+            params![retire.logical_id],
+        )?;
+    }
+    for retire in &prepared.edge_retires {
+        tx.execute(
+            "UPDATE edges SET superseded_at = unixepoch() \
+             WHERE logical_id = ?1 AND superseded_at IS NULL",
+            params![retire.logical_id],
+        )?;
+    }
     for node in &prepared.nodes {
         if node.upsert {
+            if node.chunk_policy == ChunkPolicy::Replace {
+                tx.execute(
+                    "DELETE FROM fts_nodes WHERE node_logical_id = ?1",
+                    params![node.logical_id],
+                )?;
+                tx.execute(
+                    "DELETE FROM chunks WHERE node_logical_id = ?1",
+                    params![node.logical_id],
+                )?;
+            }
             tx.execute(
                 "UPDATE nodes SET superseded_at = unixepoch() \
                  WHERE logical_id = ?1 AND superseded_at IS NULL",
@@ -332,6 +436,12 @@ fn apply_write(
         )?;
     }
     for run in &prepared.runs {
+        if run.upsert && let Some(ref prior_id) = run.supersedes_id {
+            tx.execute(
+                "UPDATE runs SET superseded_at = unixepoch() WHERE id = ?1 AND superseded_at IS NULL",
+                params![prior_id],
+            )?;
+        }
         tx.execute(
             "INSERT INTO runs (id, kind, status, properties, created_at, source_ref) \
              VALUES (?1, ?2, ?3, ?4, unixepoch(), ?5)",
@@ -339,6 +449,12 @@ fn apply_write(
         )?;
     }
     for step in &prepared.steps {
+        if step.upsert && let Some(ref prior_id) = step.supersedes_id {
+            tx.execute(
+                "UPDATE steps SET superseded_at = unixepoch() WHERE id = ?1 AND superseded_at IS NULL",
+                params![prior_id],
+            )?;
+        }
         tx.execute(
             "INSERT INTO steps (id, run_id, kind, status, properties, created_at, source_ref) \
              VALUES (?1, ?2, ?3, ?4, ?5, unixepoch(), ?6)",
@@ -353,6 +469,12 @@ fn apply_write(
         )?;
     }
     for action in &prepared.actions {
+        if action.upsert && let Some(ref prior_id) = action.supersedes_id {
+            tx.execute(
+                "UPDATE actions SET superseded_at = unixepoch() WHERE id = ?1 AND superseded_at IS NULL",
+                params![prior_id],
+            )?;
+        }
         tx.execute(
             "INSERT INTO actions (id, step_id, kind, status, properties, created_at, source_ref) \
              VALUES (?1, ?2, ?3, ?4, ?5, unixepoch(), ?6)",
@@ -385,6 +507,48 @@ fn apply_write(
         .iter()
         .filter(|node| node.source_ref.is_none())
         .map(|node| format!("node '{}' has no source_ref", node.logical_id))
+        .chain(
+            prepared
+                .node_retires
+                .iter()
+                .filter(|r| r.source_ref.is_none())
+                .map(|r| format!("node retire '{}' has no source_ref", r.logical_id)),
+        )
+        .chain(
+            prepared
+                .edges
+                .iter()
+                .filter(|e| e.source_ref.is_none())
+                .map(|e| format!("edge '{}' has no source_ref", e.logical_id)),
+        )
+        .chain(
+            prepared
+                .edge_retires
+                .iter()
+                .filter(|r| r.source_ref.is_none())
+                .map(|r| format!("edge retire '{}' has no source_ref", r.logical_id)),
+        )
+        .chain(
+            prepared
+                .runs
+                .iter()
+                .filter(|r| r.source_ref.is_none())
+                .map(|r| format!("run '{}' has no source_ref", r.id)),
+        )
+        .chain(
+            prepared
+                .steps
+                .iter()
+                .filter(|s| s.source_ref.is_none())
+                .map(|s| format!("step '{}' has no source_ref", s.id)),
+        )
+        .chain(
+            prepared
+                .actions
+                .iter()
+                .filter(|a| a.source_ref.is_none())
+                .map(|a| format!("action '{}' has no source_ref", a.id)),
+        )
         .collect();
 
     Ok(WriteReceipt {
@@ -402,8 +566,8 @@ mod tests {
     use tempfile::NamedTempFile;
 
     use crate::{
-        ActionInsert, ChunkInsert, EdgeInsert, EngineError, NodeInsert, RunInsert, StepInsert,
-        WriteRequest, WriterActor,
+        ActionInsert, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire, EngineError, NodeInsert,
+        NodeRetire, RunInsert, StepInsert, WriteRequest, WriterActor,
     };
 
     #[test]
@@ -415,7 +579,9 @@ mod tests {
             .submit(WriteRequest {
                 label: "runtime".to_owned(),
                 nodes: vec![],
+                node_retires: vec![],
                 edges: vec![],
+                edge_retires: vec![],
                 chunks: vec![],
                 runs: vec![RunInsert {
                     id: "run-1".to_owned(),
@@ -423,6 +589,8 @@ mod tests {
                     status: "completed".to_owned(),
                     properties: "{}".to_owned(),
                     source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    supersedes_id: None,
                 }],
                 steps: vec![StepInsert {
                     id: "step-1".to_owned(),
@@ -431,6 +599,8 @@ mod tests {
                     status: "completed".to_owned(),
                     properties: "{}".to_owned(),
                     source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    supersedes_id: None,
                 }],
                 actions: vec![ActionInsert {
                     id: "action-1".to_owned(),
@@ -439,6 +609,8 @@ mod tests {
                     status: "completed".to_owned(),
                     properties: "{}".to_owned(),
                     source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    supersedes_id: None,
                 }],
                 optional_backfills: vec![],
             })
@@ -462,8 +634,11 @@ mod tests {
                     properties: r#"{"version":1}"#.to_owned(),
                     source_ref: Some("src-1".to_owned()),
                     upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
                 }],
+                node_retires: vec![],
                 edges: vec![],
+                edge_retires: vec![],
                 chunks: vec![],
                 runs: vec![],
                 steps: vec![],
@@ -482,8 +657,11 @@ mod tests {
                     properties: r#"{"version":2}"#.to_owned(),
                     source_ref: Some("src-2".to_owned()),
                     upsert: true,
+                    chunk_policy: ChunkPolicy::Preserve,
                 }],
+                node_retires: vec![],
                 edges: vec![],
+                edge_retires: vec![],
                 chunks: vec![],
                 runs: vec![],
                 steps: vec![],
@@ -529,6 +707,7 @@ mod tests {
                         properties: "{}".to_owned(),
                         source_ref: Some("src-1".to_owned()),
                         upsert: false,
+                        chunk_policy: ChunkPolicy::Preserve,
                     },
                     NodeInsert {
                         row_id: "row-task".to_owned(),
@@ -537,8 +716,10 @@ mod tests {
                         properties: "{}".to_owned(),
                         source_ref: Some("src-1".to_owned()),
                         upsert: false,
+                        chunk_policy: ChunkPolicy::Preserve,
                     },
                 ],
+                node_retires: vec![],
                 edges: vec![EdgeInsert {
                     row_id: "edge-1".to_owned(),
                     logical_id: "edge-lg-1".to_owned(),
@@ -549,6 +730,7 @@ mod tests {
                     source_ref: Some("src-1".to_owned()),
                     upsert: false,
                 }],
+                edge_retires: vec![],
                 chunks: vec![],
                 runs: vec![],
                 steps: vec![],
@@ -587,6 +769,7 @@ mod tests {
                         properties: "{}".to_owned(),
                         source_ref: Some("src-1".to_owned()),
                         upsert: false,
+                        chunk_policy: ChunkPolicy::Preserve,
                     },
                     NodeInsert {
                         row_id: "row-b".to_owned(),
@@ -595,9 +778,12 @@ mod tests {
                         properties: "{}".to_owned(),
                         source_ref: Some("src-1".to_owned()),
                         upsert: false,
+                        chunk_policy: ChunkPolicy::Preserve,
                     },
                 ],
+                node_retires: vec![],
                 edges: vec![],
+                edge_retires: vec![],
                 chunks: vec![],
                 runs: vec![],
                 steps: vec![],
@@ -611,6 +797,7 @@ mod tests {
             .submit(WriteRequest {
                 label: "edge-v1".to_owned(),
                 nodes: vec![],
+                node_retires: vec![],
                 edges: vec![EdgeInsert {
                     row_id: "edge-row-1".to_owned(),
                     logical_id: "edge-lg-1".to_owned(),
@@ -621,6 +808,7 @@ mod tests {
                     source_ref: Some("src-1".to_owned()),
                     upsert: false,
                 }],
+                edge_retires: vec![],
                 chunks: vec![],
                 runs: vec![],
                 steps: vec![],
@@ -634,6 +822,7 @@ mod tests {
             .submit(WriteRequest {
                 label: "edge-v2".to_owned(),
                 nodes: vec![],
+                node_retires: vec![],
                 edges: vec![EdgeInsert {
                     row_id: "edge-row-2".to_owned(),
                     logical_id: "edge-lg-1".to_owned(),
@@ -644,6 +833,7 @@ mod tests {
                     source_ref: Some("src-2".to_owned()),
                     upsert: true,
                 }],
+                edge_retires: vec![],
                 chunks: vec![],
                 runs: vec![],
                 steps: vec![],
@@ -688,8 +878,11 @@ mod tests {
                     properties: "{}".to_owned(),
                     source_ref: Some("src-1".to_owned()),
                     upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
                 }],
+                node_retires: vec![],
                 edges: vec![],
+                edge_retires: vec![],
                 chunks: vec![ChunkInsert {
                     id: "chunk-1".to_owned(),
                     node_logical_id: "logical-1".to_owned(),
@@ -734,8 +927,11 @@ mod tests {
                     properties: "{}".to_owned(),
                     source_ref: None,
                     upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
                 }],
+                node_retires: vec![],
                 edges: vec![],
+                edge_retires: vec![],
                 chunks: vec![],
                 runs: vec![],
                 steps: vec![],
@@ -763,8 +959,11 @@ mod tests {
                     properties: "{}".to_owned(),
                     source_ref: Some("src-1".to_owned()),
                     upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
                 }],
+                node_retires: vec![],
                 edges: vec![],
+                edge_retires: vec![],
                 chunks: vec![],
                 runs: vec![],
                 steps: vec![],
@@ -792,8 +991,11 @@ mod tests {
                     properties: "{}".to_owned(),
                     source_ref: Some("src-1".to_owned()),
                     upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
                 }],
+                node_retires: vec![],
                 edges: vec![],
+                edge_retires: vec![],
                 chunks: vec![],
                 runs: vec![],
                 steps: vec![],
@@ -807,7 +1009,9 @@ mod tests {
             .submit(WriteRequest {
                 label: "r2".to_owned(),
                 nodes: vec![],
+                node_retires: vec![],
                 edges: vec![],
+                edge_retires: vec![],
                 chunks: vec![ChunkInsert {
                     id: "chunk-1".to_owned(),
                     node_logical_id: "logical-1".to_owned(),
@@ -841,7 +1045,9 @@ mod tests {
         let result = writer.submit(WriteRequest {
             label: "bad".to_owned(),
             nodes: vec![],
+            node_retires: vec![],
             edges: vec![],
+            edge_retires: vec![],
             chunks: vec![ChunkInsert {
                 id: "chunk-1".to_owned(),
                 node_logical_id: "nonexistent".to_owned(),
@@ -876,8 +1082,11 @@ mod tests {
                     properties: "{}".to_owned(),
                     source_ref: None,
                     upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
                 }],
+                node_retires: vec![],
                 edges: vec![],
+                edge_retires: vec![],
                 chunks: vec![ChunkInsert {
                     id: "chunk-1".to_owned(),
                     node_logical_id: "logical-1".to_owned(),
@@ -893,5 +1102,998 @@ mod tests {
             .expect("write receipt");
 
         assert_eq!(receipt.label, "seed");
+    }
+
+    #[test]
+    fn writer_node_retire_supersedes_active_node() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let writer = WriterActor::start(db.path(), Arc::new(SchemaManager::new())).expect("writer");
+
+        writer
+            .submit(WriteRequest {
+                label: "seed".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-1".to_owned(),
+                    logical_id: "meeting-1".to_owned(),
+                    kind: "Meeting".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                }],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+            })
+            .expect("seed write");
+
+        writer
+            .submit(WriteRequest {
+                label: "retire".to_owned(),
+                nodes: vec![],
+                node_retires: vec![NodeRetire {
+                    logical_id: "meeting-1".to_owned(),
+                    source_ref: Some("src-2".to_owned()),
+                }],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+            })
+            .expect("retire write");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("open");
+        let active: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM nodes WHERE logical_id = 'meeting-1' AND superseded_at IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .expect("count active");
+        let historical: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM nodes WHERE logical_id = 'meeting-1' AND superseded_at IS NOT NULL",
+                [],
+                |r| r.get(0),
+            )
+            .expect("count historical");
+
+        assert_eq!(active, 0, "active count must be 0 after retire");
+        assert_eq!(historical, 1, "historical count must be 1 after retire");
+    }
+
+    #[test]
+    fn writer_node_retire_cleans_chunks_and_fts() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let writer = WriterActor::start(db.path(), Arc::new(SchemaManager::new())).expect("writer");
+
+        writer
+            .submit(WriteRequest {
+                label: "seed".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-1".to_owned(),
+                    logical_id: "meeting-1".to_owned(),
+                    kind: "Meeting".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                }],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![ChunkInsert {
+                    id: "chunk-1".to_owned(),
+                    node_logical_id: "meeting-1".to_owned(),
+                    text_content: "budget discussion".to_owned(),
+                    byte_start: None,
+                    byte_end: None,
+                }],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+            })
+            .expect("seed write");
+
+        writer
+            .submit(WriteRequest {
+                label: "retire".to_owned(),
+                nodes: vec![],
+                node_retires: vec![NodeRetire {
+                    logical_id: "meeting-1".to_owned(),
+                    source_ref: Some("src-2".to_owned()),
+                }],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+            })
+            .expect("retire write");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("open");
+        let chunk_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM chunks WHERE node_logical_id = 'meeting-1'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("chunk count");
+        let fts_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM fts_nodes WHERE node_logical_id = 'meeting-1'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("fts count");
+
+        assert_eq!(chunk_count, 0, "chunks must be deleted after node retire");
+        assert_eq!(fts_count, 0, "fts_nodes must be deleted after node retire");
+    }
+
+    #[test]
+    fn writer_edge_retire_supersedes_active_edge() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let writer = WriterActor::start(db.path(), Arc::new(SchemaManager::new())).expect("writer");
+
+        writer
+            .submit(WriteRequest {
+                label: "seed".to_owned(),
+                nodes: vec![
+                    NodeInsert {
+                        row_id: "row-a".to_owned(),
+                        logical_id: "node-a".to_owned(),
+                        kind: "Meeting".to_owned(),
+                        properties: "{}".to_owned(),
+                        source_ref: Some("src-1".to_owned()),
+                        upsert: false,
+                        chunk_policy: ChunkPolicy::Preserve,
+                    },
+                    NodeInsert {
+                        row_id: "row-b".to_owned(),
+                        logical_id: "node-b".to_owned(),
+                        kind: "Task".to_owned(),
+                        properties: "{}".to_owned(),
+                        source_ref: Some("src-1".to_owned()),
+                        upsert: false,
+                        chunk_policy: ChunkPolicy::Preserve,
+                    },
+                ],
+                node_retires: vec![],
+                edges: vec![EdgeInsert {
+                    row_id: "edge-1".to_owned(),
+                    logical_id: "edge-lg-1".to_owned(),
+                    source_logical_id: "node-a".to_owned(),
+                    target_logical_id: "node-b".to_owned(),
+                    kind: "HAS_TASK".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                }],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+            })
+            .expect("seed write");
+
+        writer
+            .submit(WriteRequest {
+                label: "retire-edge".to_owned(),
+                nodes: vec![],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![EdgeRetire {
+                    logical_id: "edge-lg-1".to_owned(),
+                    source_ref: Some("src-2".to_owned()),
+                }],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+            })
+            .expect("retire edge write");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("open");
+        let active: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM edges WHERE logical_id = 'edge-lg-1' AND superseded_at IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .expect("active edge count");
+
+        assert_eq!(active, 0, "active edge count must be 0 after retire");
+    }
+
+    #[test]
+    fn writer_retire_without_source_ref_emits_provenance_warning() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let writer = WriterActor::start(db.path(), Arc::new(SchemaManager::new())).expect("writer");
+
+        writer
+            .submit(WriteRequest {
+                label: "seed".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-1".to_owned(),
+                    logical_id: "meeting-1".to_owned(),
+                    kind: "Meeting".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                }],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+            })
+            .expect("seed write");
+
+        let receipt = writer
+            .submit(WriteRequest {
+                label: "retire-no-src".to_owned(),
+                nodes: vec![],
+                node_retires: vec![NodeRetire {
+                    logical_id: "meeting-1".to_owned(),
+                    source_ref: None,
+                }],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+            })
+            .expect("retire write");
+
+        assert!(
+            !receipt.provenance_warnings.is_empty(),
+            "retire without source_ref must emit a provenance warning"
+        );
+    }
+
+    #[test]
+    fn writer_upsert_with_chunk_policy_replace_clears_old_chunks() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let writer = WriterActor::start(db.path(), Arc::new(SchemaManager::new())).expect("writer");
+
+        writer
+            .submit(WriteRequest {
+                label: "v1".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-1".to_owned(),
+                    logical_id: "meeting-1".to_owned(),
+                    kind: "Meeting".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                }],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![ChunkInsert {
+                    id: "chunk-old".to_owned(),
+                    node_logical_id: "meeting-1".to_owned(),
+                    text_content: "old text".to_owned(),
+                    byte_start: None,
+                    byte_end: None,
+                }],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+            })
+            .expect("v1 write");
+
+        writer
+            .submit(WriteRequest {
+                label: "v2".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-2".to_owned(),
+                    logical_id: "meeting-1".to_owned(),
+                    kind: "Meeting".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-2".to_owned()),
+                    upsert: true,
+                    chunk_policy: ChunkPolicy::Replace,
+                }],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![ChunkInsert {
+                    id: "chunk-new".to_owned(),
+                    node_logical_id: "meeting-1".to_owned(),
+                    text_content: "new text".to_owned(),
+                    byte_start: None,
+                    byte_end: None,
+                }],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+            })
+            .expect("v2 write");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("open");
+        let old_chunk: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM chunks WHERE id = 'chunk-old'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("old chunk count");
+        let new_chunk: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM chunks WHERE id = 'chunk-new'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("new chunk count");
+        let fts_old: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM fts_nodes WHERE node_logical_id = 'meeting-1' AND text_content = 'old text'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("old fts count");
+
+        assert_eq!(old_chunk, 0, "old chunk must be deleted by ChunkPolicy::Replace");
+        assert_eq!(new_chunk, 1, "new chunk must exist after replace");
+        assert_eq!(fts_old, 0, "old FTS row must be deleted by ChunkPolicy::Replace");
+    }
+
+    #[test]
+    fn writer_upsert_with_chunk_policy_preserve_keeps_old_chunks() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let writer = WriterActor::start(db.path(), Arc::new(SchemaManager::new())).expect("writer");
+
+        writer
+            .submit(WriteRequest {
+                label: "v1".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-1".to_owned(),
+                    logical_id: "meeting-1".to_owned(),
+                    kind: "Meeting".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                }],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![ChunkInsert {
+                    id: "chunk-old".to_owned(),
+                    node_logical_id: "meeting-1".to_owned(),
+                    text_content: "old text".to_owned(),
+                    byte_start: None,
+                    byte_end: None,
+                }],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+            })
+            .expect("v1 write");
+
+        writer
+            .submit(WriteRequest {
+                label: "v2-props-only".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-2".to_owned(),
+                    logical_id: "meeting-1".to_owned(),
+                    kind: "Meeting".to_owned(),
+                    properties: r#"{"status":"updated"}"#.to_owned(),
+                    source_ref: Some("src-2".to_owned()),
+                    upsert: true,
+                    chunk_policy: ChunkPolicy::Preserve,
+                }],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+            })
+            .expect("v2 preserve write");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("open");
+        let old_chunk: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM chunks WHERE id = 'chunk-old'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("old chunk count");
+
+        assert_eq!(old_chunk, 1, "old chunk must be preserved by ChunkPolicy::Preserve");
+    }
+
+    #[test]
+    fn writer_chunk_policy_replace_without_upsert_is_a_no_op() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let writer = WriterActor::start(db.path(), Arc::new(SchemaManager::new())).expect("writer");
+
+        writer
+            .submit(WriteRequest {
+                label: "v1".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-1".to_owned(),
+                    logical_id: "meeting-1".to_owned(),
+                    kind: "Meeting".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                }],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![ChunkInsert {
+                    id: "chunk-existing".to_owned(),
+                    node_logical_id: "meeting-1".to_owned(),
+                    text_content: "existing text".to_owned(),
+                    byte_start: None,
+                    byte_end: None,
+                }],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+            })
+            .expect("v1 write");
+
+        // Insert a second node (not upsert) with ChunkPolicy::Replace — should NOT delete prior chunks
+        writer
+            .submit(WriteRequest {
+                label: "insert-no-upsert".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-2".to_owned(),
+                    logical_id: "meeting-2".to_owned(),
+                    kind: "Meeting".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-2".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Replace,
+                }],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+            })
+            .expect("insert no-upsert write");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("open");
+        let existing_chunk: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM chunks WHERE id = 'chunk-existing'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("chunk count");
+
+        assert_eq!(
+            existing_chunk, 1,
+            "ChunkPolicy::Replace without upsert must not delete existing chunks"
+        );
+    }
+
+    #[test]
+    fn writer_run_upsert_supersedes_prior_active_run() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let writer = WriterActor::start(db.path(), Arc::new(SchemaManager::new())).expect("writer");
+
+        writer
+            .submit(WriteRequest {
+                label: "v1".to_owned(),
+                nodes: vec![],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![RunInsert {
+                    id: "run-v1".to_owned(),
+                    kind: "session".to_owned(),
+                    status: "completed".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    supersedes_id: None,
+                }],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+            })
+            .expect("v1 run write");
+
+        writer
+            .submit(WriteRequest {
+                label: "v2".to_owned(),
+                nodes: vec![],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![RunInsert {
+                    id: "run-v2".to_owned(),
+                    kind: "session".to_owned(),
+                    status: "completed".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-2".to_owned()),
+                    upsert: true,
+                    supersedes_id: Some("run-v1".to_owned()),
+                }],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+            })
+            .expect("v2 run write");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("open");
+        let v1_historical: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM runs WHERE id = 'run-v1' AND superseded_at IS NOT NULL",
+                [],
+                |r| r.get(0),
+            )
+            .expect("v1 historical count");
+        let v2_active: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM runs WHERE id = 'run-v2' AND superseded_at IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .expect("v2 active count");
+
+        assert_eq!(v1_historical, 1, "run-v1 must be historical after upsert");
+        assert_eq!(v2_active, 1, "run-v2 must be active after upsert");
+    }
+
+    #[test]
+    fn writer_step_upsert_supersedes_prior_active_step() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let writer = WriterActor::start(db.path(), Arc::new(SchemaManager::new())).expect("writer");
+
+        writer
+            .submit(WriteRequest {
+                label: "v1".to_owned(),
+                nodes: vec![],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![RunInsert {
+                    id: "run-1".to_owned(),
+                    kind: "session".to_owned(),
+                    status: "completed".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    supersedes_id: None,
+                }],
+                steps: vec![StepInsert {
+                    id: "step-v1".to_owned(),
+                    run_id: "run-1".to_owned(),
+                    kind: "llm".to_owned(),
+                    status: "completed".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    supersedes_id: None,
+                }],
+                actions: vec![],
+                optional_backfills: vec![],
+            })
+            .expect("v1 step write");
+
+        writer
+            .submit(WriteRequest {
+                label: "v2".to_owned(),
+                nodes: vec![],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![StepInsert {
+                    id: "step-v2".to_owned(),
+                    run_id: "run-1".to_owned(),
+                    kind: "llm".to_owned(),
+                    status: "completed".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-2".to_owned()),
+                    upsert: true,
+                    supersedes_id: Some("step-v1".to_owned()),
+                }],
+                actions: vec![],
+                optional_backfills: vec![],
+            })
+            .expect("v2 step write");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("open");
+        let v1_historical: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM steps WHERE id = 'step-v1' AND superseded_at IS NOT NULL",
+                [],
+                |r| r.get(0),
+            )
+            .expect("v1 historical count");
+        let v2_active: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM steps WHERE id = 'step-v2' AND superseded_at IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .expect("v2 active count");
+
+        assert_eq!(v1_historical, 1, "step-v1 must be historical after upsert");
+        assert_eq!(v2_active, 1, "step-v2 must be active after upsert");
+    }
+
+    #[test]
+    fn writer_action_upsert_supersedes_prior_active_action() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let writer = WriterActor::start(db.path(), Arc::new(SchemaManager::new())).expect("writer");
+
+        writer
+            .submit(WriteRequest {
+                label: "v1".to_owned(),
+                nodes: vec![],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![RunInsert {
+                    id: "run-1".to_owned(),
+                    kind: "session".to_owned(),
+                    status: "completed".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    supersedes_id: None,
+                }],
+                steps: vec![StepInsert {
+                    id: "step-1".to_owned(),
+                    run_id: "run-1".to_owned(),
+                    kind: "llm".to_owned(),
+                    status: "completed".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    supersedes_id: None,
+                }],
+                actions: vec![ActionInsert {
+                    id: "action-v1".to_owned(),
+                    step_id: "step-1".to_owned(),
+                    kind: "emit".to_owned(),
+                    status: "completed".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    supersedes_id: None,
+                }],
+                optional_backfills: vec![],
+            })
+            .expect("v1 action write");
+
+        writer
+            .submit(WriteRequest {
+                label: "v2".to_owned(),
+                nodes: vec![],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![ActionInsert {
+                    id: "action-v2".to_owned(),
+                    step_id: "step-1".to_owned(),
+                    kind: "emit".to_owned(),
+                    status: "completed".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-2".to_owned()),
+                    upsert: true,
+                    supersedes_id: Some("action-v1".to_owned()),
+                }],
+                optional_backfills: vec![],
+            })
+            .expect("v2 action write");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("open");
+        let v1_historical: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM actions WHERE id = 'action-v1' AND superseded_at IS NOT NULL",
+                [],
+                |r| r.get(0),
+            )
+            .expect("v1 historical count");
+        let v2_active: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM actions WHERE id = 'action-v2' AND superseded_at IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .expect("v2 active count");
+
+        assert_eq!(v1_historical, 1, "action-v1 must be historical after upsert");
+        assert_eq!(v2_active, 1, "action-v2 must be active after upsert");
+    }
+
+    // P0: runtime upsert without supersedes_id must be rejected
+
+    #[test]
+    fn writer_run_upsert_without_supersedes_id_returns_invalid_write() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let writer = WriterActor::start(db.path(), Arc::new(SchemaManager::new())).expect("writer");
+
+        let result = writer.submit(WriteRequest {
+            label: "bad".to_owned(),
+            nodes: vec![],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![RunInsert {
+                id: "run-1".to_owned(),
+                kind: "session".to_owned(),
+                status: "completed".to_owned(),
+                properties: "{}".to_owned(),
+                source_ref: None,
+                upsert: true,
+                supersedes_id: None,
+            }],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+        });
+
+        assert!(
+            matches!(result, Err(EngineError::InvalidWrite(_))),
+            "run upsert=true without supersedes_id must return InvalidWrite"
+        );
+    }
+
+    #[test]
+    fn writer_step_upsert_without_supersedes_id_returns_invalid_write() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let writer = WriterActor::start(db.path(), Arc::new(SchemaManager::new())).expect("writer");
+
+        let result = writer.submit(WriteRequest {
+            label: "bad".to_owned(),
+            nodes: vec![],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![StepInsert {
+                id: "step-1".to_owned(),
+                run_id: "run-1".to_owned(),
+                kind: "llm".to_owned(),
+                status: "completed".to_owned(),
+                properties: "{}".to_owned(),
+                source_ref: None,
+                upsert: true,
+                supersedes_id: None,
+            }],
+            actions: vec![],
+            optional_backfills: vec![],
+        });
+
+        assert!(
+            matches!(result, Err(EngineError::InvalidWrite(_))),
+            "step upsert=true without supersedes_id must return InvalidWrite"
+        );
+    }
+
+    #[test]
+    fn writer_action_upsert_without_supersedes_id_returns_invalid_write() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let writer = WriterActor::start(db.path(), Arc::new(SchemaManager::new())).expect("writer");
+
+        let result = writer.submit(WriteRequest {
+            label: "bad".to_owned(),
+            nodes: vec![],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![ActionInsert {
+                id: "action-1".to_owned(),
+                step_id: "step-1".to_owned(),
+                kind: "emit".to_owned(),
+                status: "completed".to_owned(),
+                properties: "{}".to_owned(),
+                source_ref: None,
+                upsert: true,
+                supersedes_id: None,
+            }],
+            optional_backfills: vec![],
+        });
+
+        assert!(
+            matches!(result, Err(EngineError::InvalidWrite(_))),
+            "action upsert=true without supersedes_id must return InvalidWrite"
+        );
+    }
+
+    // P1a/b: provenance warnings for edge inserts and runtime table inserts
+
+    #[test]
+    fn writer_edge_insert_without_source_ref_emits_provenance_warning() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let writer = WriterActor::start(db.path(), Arc::new(SchemaManager::new())).expect("writer");
+
+        let receipt = writer
+            .submit(WriteRequest {
+                label: "test".to_owned(),
+                nodes: vec![
+                    NodeInsert {
+                        row_id: "row-a".to_owned(),
+                        logical_id: "node-a".to_owned(),
+                        kind: "Meeting".to_owned(),
+                        properties: "{}".to_owned(),
+                        source_ref: Some("src-1".to_owned()),
+                        upsert: false,
+                        chunk_policy: ChunkPolicy::Preserve,
+                    },
+                    NodeInsert {
+                        row_id: "row-b".to_owned(),
+                        logical_id: "node-b".to_owned(),
+                        kind: "Task".to_owned(),
+                        properties: "{}".to_owned(),
+                        source_ref: Some("src-1".to_owned()),
+                        upsert: false,
+                        chunk_policy: ChunkPolicy::Preserve,
+                    },
+                ],
+                node_retires: vec![],
+                edges: vec![EdgeInsert {
+                    row_id: "edge-1".to_owned(),
+                    logical_id: "edge-lg-1".to_owned(),
+                    source_logical_id: "node-a".to_owned(),
+                    target_logical_id: "node-b".to_owned(),
+                    kind: "HAS_TASK".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: None,
+                    upsert: false,
+                }],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+            })
+            .expect("write");
+
+        assert!(
+            !receipt.provenance_warnings.is_empty(),
+            "edge insert without source_ref must emit a provenance warning"
+        );
+    }
+
+    #[test]
+    fn writer_run_insert_without_source_ref_emits_provenance_warning() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let writer = WriterActor::start(db.path(), Arc::new(SchemaManager::new())).expect("writer");
+
+        let receipt = writer
+            .submit(WriteRequest {
+                label: "test".to_owned(),
+                nodes: vec![],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![RunInsert {
+                    id: "run-1".to_owned(),
+                    kind: "session".to_owned(),
+                    status: "completed".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: None,
+                    upsert: false,
+                    supersedes_id: None,
+                }],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+            })
+            .expect("write");
+
+        assert!(
+            !receipt.provenance_warnings.is_empty(),
+            "run insert without source_ref must emit a provenance warning"
+        );
+    }
+
+    // P1c: retire a node AND submit chunks for the same logical_id in one request
+
+    #[test]
+    fn writer_retire_node_with_chunk_in_same_request_returns_invalid_write() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let writer = WriterActor::start(db.path(), Arc::new(SchemaManager::new())).expect("writer");
+
+        // First seed the node so it exists
+        writer
+            .submit(WriteRequest {
+                label: "seed".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-1".to_owned(),
+                    logical_id: "meeting-1".to_owned(),
+                    kind: "Meeting".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                }],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+            })
+            .expect("seed write");
+
+        // Now try to retire it AND add a chunk for it in the same request
+        let result = writer.submit(WriteRequest {
+            label: "bad".to_owned(),
+            nodes: vec![],
+            node_retires: vec![NodeRetire {
+                logical_id: "meeting-1".to_owned(),
+                source_ref: Some("src-2".to_owned()),
+            }],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![ChunkInsert {
+                id: "chunk-bad".to_owned(),
+                node_logical_id: "meeting-1".to_owned(),
+                text_content: "some text".to_owned(),
+                byte_start: None,
+                byte_end: None,
+            }],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+        });
+
+        assert!(
+            matches!(result, Err(EngineError::InvalidWrite(_))),
+            "retiring a node AND adding chunks for it in the same request must return InvalidWrite"
+        );
     }
 }

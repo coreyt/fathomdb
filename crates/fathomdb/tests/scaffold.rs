@@ -1,6 +1,6 @@
 use fathomdb::{
-    ActionInsert, ChunkInsert, EdgeInsert, Engine, EngineOptions, NodeInsert, ProjectionTarget,
-    RunInsert, StepInsert, TraverseDirection, WriteRequest,
+    ActionInsert, ChunkInsert, ChunkPolicy, EdgeInsert, Engine, EngineOptions, NodeInsert,
+    ProjectionTarget, RunInsert, StepInsert, TraverseDirection, WriteRequest,
 };
 use tempfile::NamedTempFile;
 
@@ -181,8 +181,11 @@ fn upsert_write_promotes_new_version_and_read_returns_it() {
                 properties: r#"{"version":2}"#.to_owned(),
                 source_ref: Some("source-2".to_owned()),
                 upsert: true,
+                chunk_policy: ChunkPolicy::Preserve,
             }],
+            node_retires: vec![],
             edges: vec![],
+            edge_retires: vec![],
             chunks: vec![ChunkInsert {
                 id: "chunk-2".to_owned(),
                 node_logical_id: "meeting-1".to_owned(),
@@ -231,8 +234,11 @@ fn runtime_table_write_is_traced_by_source_ref() {
                 properties: "{}".to_owned(),
                 source_ref: Some("source-1".to_owned()),
                 upsert: false,
+                chunk_policy: ChunkPolicy::Preserve,
             }],
+            node_retires: vec![],
             edges: vec![],
+            edge_retires: vec![],
             chunks: vec![],
             runs: vec![RunInsert {
                 id: "run-1".to_owned(),
@@ -240,6 +246,8 @@ fn runtime_table_write_is_traced_by_source_ref() {
                 status: "completed".to_owned(),
                 properties: "{}".to_owned(),
                 source_ref: Some("source-1".to_owned()),
+                upsert: false,
+                supersedes_id: None,
             }],
             steps: vec![StepInsert {
                 id: "step-1".to_owned(),
@@ -248,6 +256,8 @@ fn runtime_table_write_is_traced_by_source_ref() {
                 status: "completed".to_owned(),
                 properties: "{}".to_owned(),
                 source_ref: Some("source-1".to_owned()),
+                upsert: false,
+                supersedes_id: None,
             }],
             actions: vec![ActionInsert {
                 id: "action-1".to_owned(),
@@ -256,6 +266,8 @@ fn runtime_table_write_is_traced_by_source_ref() {
                 status: "completed".to_owned(),
                 properties: "{}".to_owned(),
                 source_ref: Some("source-1".to_owned()),
+                upsert: false,
+                supersedes_id: None,
             }],
             optional_backfills: vec![],
         })
@@ -290,6 +302,7 @@ fn traversal_query_returns_connected_node_via_typed_writes() {
                     properties: "{}".to_owned(),
                     source_ref: Some("src-1".to_owned()),
                     upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
                 },
                 NodeInsert {
                     row_id: "row-task".to_owned(),
@@ -298,8 +311,10 @@ fn traversal_query_returns_connected_node_via_typed_writes() {
                     properties: "{}".to_owned(),
                     source_ref: Some("src-1".to_owned()),
                     upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
                 },
             ],
+            node_retires: vec![],
             edges: vec![EdgeInsert {
                 row_id: "edge-1".to_owned(),
                 logical_id: "edge-lg-1".to_owned(),
@@ -310,6 +325,7 @@ fn traversal_query_returns_connected_node_via_typed_writes() {
                 source_ref: Some("src-1".to_owned()),
                 upsert: false,
             }],
+            edge_retires: vec![],
             chunks: vec![],
             runs: vec![],
             steps: vec![],
@@ -346,8 +362,11 @@ fn meeting_write_request(properties: &str) -> WriteRequest {
             properties: properties.to_owned(),
             source_ref: Some("source-1".to_owned()),
             upsert: false,
+            chunk_policy: ChunkPolicy::Preserve,
         }],
+        node_retires: vec![],
         edges: vec![],
+        edge_retires: vec![],
         chunks: vec![ChunkInsert {
             id: "chunk-1".to_owned(),
             node_logical_id: "meeting-1".to_owned(),

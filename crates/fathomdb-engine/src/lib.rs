@@ -1,4 +1,5 @@
 mod admin;
+mod ids;
 mod coordinator;
 mod projection;
 mod runtime;
@@ -10,11 +11,12 @@ pub use admin::{
 };
 pub use coordinator::{ExecutionCoordinator, NodeRow, QueryRows};
 pub use projection::{ProjectionRepairReport, ProjectionService, ProjectionTarget};
+pub use ids::new_row_id;
 pub use runtime::EngineRuntime;
 pub use sqlite::{SharedSqlitePolicy, shared_sqlite_policy};
 pub use writer::{
-    ActionInsert, ChunkInsert, EdgeInsert, NodeInsert, OptionalProjectionTask, RunInsert,
-    StepInsert, WriteReceipt, WriteRequest, WriterActor,
+    ActionInsert, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire, NodeInsert, NodeRetire,
+    OptionalProjectionTask, RunInsert, StepInsert, WriteReceipt, WriteRequest, WriterActor,
 };
 
 use thiserror::Error;
