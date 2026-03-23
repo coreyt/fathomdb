@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
 pub use fathomdb_engine::{
-    ActionInsert, AdminHandle, ChunkInsert, EngineError, EngineRuntime, ExecutionCoordinator,
-    NodeInsert, NodeRow, OptionalProjectionTask, ProjectionRepairReport, ProjectionTarget,
-    QueryRows, RunInsert, StepInsert, WriteReceipt, WriteRequest, WriterActor,
+    ActionInsert, AdminHandle, ChunkInsert, EdgeInsert, EngineError, EngineRuntime,
+    ExecutionCoordinator, NodeInsert, NodeRow, OptionalProjectionTask, ProjectionRepairReport,
+    ProjectionTarget, QueryRows, RunInsert, StepInsert, WriteReceipt, WriteRequest, WriterActor,
 };
 pub use fathomdb_query::{
     compile_query, BindValue, CompiledQuery, DrivingTable, ExecutionHints, Predicate, Query,

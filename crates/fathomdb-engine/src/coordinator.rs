@@ -1,18 +1,13 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use fathomdb_query::{CompiledQuery, ShapeHash};
 use fathomdb_schema::SchemaManager;
-use rusqlite::{params_from_iter, types::Value};
+use rusqlite::{Connection, params_from_iter, types::Value};
 
 use crate::{EngineError, sqlite};
-
-#[derive(Clone, Debug)]
-pub struct DispatchedRead {
-    pub sql: String,
-    pub shape_hash: ShapeHash,
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NodeRow {
@@ -27,11 +22,19 @@ pub struct QueryRows {
     pub nodes: Vec<NodeRow>,
 }
 
-#[derive(Debug)]
 pub struct ExecutionCoordinator {
     database_path: PathBuf,
     schema_manager: Arc<SchemaManager>,
+    conn: Mutex<Connection>,
     statement_cache: Mutex<HashMap<ShapeHash, String>>,
+}
+
+impl fmt::Debug for ExecutionCoordinator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ExecutionCoordinator")
+            .field("database_path", &self.database_path)
+            .finish_non_exhaustive()
+    }
 }
 
 impl ExecutionCoordinator {
@@ -45,26 +48,13 @@ impl ExecutionCoordinator {
         Ok(Self {
             database_path: path,
             schema_manager,
+            conn: Mutex::new(conn),
             statement_cache: Mutex::new(HashMap::new()),
         })
     }
 
     pub fn database_path(&self) -> &Path {
         &self.database_path
-    }
-
-    pub fn dispatch_compiled_read(
-        &self,
-        compiled: &CompiledQuery,
-    ) -> Result<DispatchedRead, EngineError> {
-        self.statement_cache
-            .lock()
-            .expect("statement cache mutex poisoned")
-            .insert(compiled.shape_hash, compiled.sql.clone());
-        Ok(DispatchedRead {
-            sql: compiled.sql.clone(),
-            shape_hash: compiled.shape_hash,
-        })
     }
 
     pub fn execute_compiled_read(
@@ -76,27 +66,32 @@ impl ExecutionCoordinator {
             .expect("statement cache mutex poisoned")
             .insert(compiled.shape_hash, compiled.sql.clone());
 
-        let conn = sqlite::open_connection(&self.database_path)?;
-        self.schema_manager.bootstrap(&conn)?;
-
         let bind_values = compiled
             .binds
             .iter()
             .map(bind_value_to_sql)
             .collect::<Vec<_>>();
-        let mut statement = conn.prepare_cached(&compiled.sql)?;
-        let rows = statement.query_map(params_from_iter(bind_values.iter()), |row| {
-            Ok(NodeRow {
-                row_id: row.get(0)?,
-                logical_id: row.get(1)?,
-                kind: row.get(2)?,
-                properties: row.get(3)?,
-            })
-        })?;
 
-        Ok(QueryRows {
-            nodes: rows.collect::<Result<Vec<_>, _>>()?,
-        })
+        let conn_guard = self.conn.lock().expect("connection mutex poisoned");
+        let mut statement = conn_guard.prepare_cached(&compiled.sql).map_err(|e| {
+            if is_capability_missing_error(&e) {
+                EngineError::CapabilityMissing(e.to_string())
+            } else {
+                EngineError::Sqlite(e)
+            }
+        })?;
+        let nodes = statement
+            .query_map(params_from_iter(bind_values.iter()), |row| {
+                Ok(NodeRow {
+                    row_id: row.get(0)?,
+                    logical_id: row.get(1)?,
+                    kind: row.get(2)?,
+                    properties: row.get(3)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(QueryRows { nodes })
     }
 
     pub fn cached_statement_count(&self) -> usize {
@@ -108,6 +103,15 @@ impl ExecutionCoordinator {
 
     pub fn schema_manager(&self) -> Arc<SchemaManager> {
         Arc::clone(&self.schema_manager)
+    }
+}
+
+fn is_capability_missing_error(err: &rusqlite::Error) -> bool {
+    match err {
+        rusqlite::Error::SqliteFailure(_, Some(msg)) => {
+            msg.contains("no such table: vec_nodes_active")
+        }
+        _ => false,
     }
 }
 
@@ -123,11 +127,38 @@ fn bind_value_to_sql(value: &fathomdb_query::BindValue) -> Value {
 mod tests {
     use std::sync::Arc;
 
-    use fathomdb_query::QueryBuilder;
+    use fathomdb_query::{BindValue, QueryBuilder};
     use fathomdb_schema::SchemaManager;
+    use rusqlite::types::Value;
     use tempfile::NamedTempFile;
 
-    use crate::ExecutionCoordinator;
+    use crate::{EngineError, ExecutionCoordinator};
+
+    use super::bind_value_to_sql;
+
+    #[test]
+    fn bind_value_text_maps_to_sql_text() {
+        let val = bind_value_to_sql(&BindValue::Text("hello".to_owned()));
+        assert_eq!(val, Value::Text("hello".to_owned()));
+    }
+
+    #[test]
+    fn bind_value_integer_maps_to_sql_integer() {
+        let val = bind_value_to_sql(&BindValue::Integer(42));
+        assert_eq!(val, Value::Integer(42));
+    }
+
+    #[test]
+    fn bind_value_bool_true_maps_to_integer_one() {
+        let val = bind_value_to_sql(&BindValue::Bool(true));
+        assert_eq!(val, Value::Integer(1));
+    }
+
+    #[test]
+    fn bind_value_bool_false_maps_to_integer_zero() {
+        let val = bind_value_to_sql(&BindValue::Bool(false));
+        assert_eq!(val, Value::Integer(0));
+    }
 
     #[test]
     fn same_shape_queries_share_one_cache_entry() {
@@ -173,8 +204,8 @@ mod tests {
 
         let result = coordinator.execute_compiled_read(&compiled);
         assert!(
-            result.is_err(),
-            "vector read must fail explicitly when vec_nodes_active table is absent"
+            matches!(result, Err(EngineError::CapabilityMissing(_))),
+            "vector read must fail with CapabilityMissing when vec_nodes_active table is absent"
         );
     }
 
@@ -190,8 +221,8 @@ mod tests {
             .expect("compiled query");
 
         coordinator
-            .dispatch_compiled_read(&compiled)
-            .expect("dispatch read");
+            .execute_compiled_read(&compiled)
+            .expect("execute compiled read");
         assert_eq!(coordinator.cached_statement_count(), 1);
     }
 

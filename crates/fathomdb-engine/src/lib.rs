@@ -8,13 +8,13 @@ mod writer;
 pub use admin::{
     AdminHandle, AdminService, IntegrityReport, SafeExportManifest, SemanticReport, TraceReport,
 };
-pub use coordinator::{DispatchedRead, ExecutionCoordinator, NodeRow, QueryRows};
+pub use coordinator::{ExecutionCoordinator, NodeRow, QueryRows};
 pub use projection::{ProjectionRepairReport, ProjectionService, ProjectionTarget};
 pub use runtime::EngineRuntime;
 pub use sqlite::{SharedSqlitePolicy, shared_sqlite_policy};
 pub use writer::{
-    ActionInsert, ChunkInsert, NodeInsert, OptionalProjectionTask, RunInsert, StepInsert,
-    WriteReceipt, WriteRequest, WriterActor,
+    ActionInsert, ChunkInsert, EdgeInsert, NodeInsert, OptionalProjectionTask, RunInsert,
+    StepInsert, WriteReceipt, WriteRequest, WriterActor,
 };
 
 use thiserror::Error;
@@ -33,4 +33,6 @@ pub enum EngineError {
     InvalidWrite(String),
     #[error("bridge error: {0}")]
     Bridge(String),
+    #[error("capability missing: {0}")]
+    CapabilityMissing(String),
 }

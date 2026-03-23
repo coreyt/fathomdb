@@ -185,13 +185,13 @@ This layer is scaffolded enough when:
 
 ### Phase 2: Read Runtime Hardening
 
-- [ ] Decide whether the coordinator owns one reusable reader connection or a
-      small read pool in v1.
-- [ ] Add targeted unit coverage for bind translation and row decoding.
-- [ ] Add a cache-behavior test that proves repeated query shapes reuse the same
+- [x] Decide whether the coordinator owns one reusable reader connection or a
+      small read pool in v1. (Decision: one Mutex<Connection> stored at open time.)
+- [x] Add targeted unit coverage for bind translation and row decoding.
+- [x] Add a cache-behavior test that proves repeated query shapes reuse the same
       cached SQL entry.
-- [ ] Add an explicit failure test for vector-driven reads when `sqlite-vec` is
-      unavailable.
+- [x] Add an explicit failure test for vector-driven reads when `sqlite-vec` is
+      unavailable. (Asserts EngineError::CapabilityMissing.)
 - [ ] Decide whether read results should include diagnostics beyond decoded
       rows.
 

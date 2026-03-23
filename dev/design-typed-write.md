@@ -183,8 +183,8 @@ This layer is scaffolded enough when:
 
 ### Phase 3: Broader Canonical Coverage
 
-- [ ] Extend typed canonical inputs to `EdgeInsert`.
-- [ ] Extend typed canonical inputs to runtime tables:
+- [x] Extend typed canonical inputs to `EdgeInsert`.
+- [x] Extend typed canonical inputs to runtime tables:
       `RunInsert`, `StepInsert`, and `ActionInsert`.
 - [ ] Align vector projection handling with
       [setup-sqlite-vec-capability.md](./setup-sqlite-vec-capability.md).

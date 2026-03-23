@@ -1,6 +1,6 @@
 use fathomdb::{
-    ActionInsert, ChunkInsert, Engine, EngineOptions, NodeInsert, ProjectionTarget, RunInsert,
-    StepInsert, TraverseDirection, WriteRequest,
+    ActionInsert, ChunkInsert, EdgeInsert, Engine, EngineOptions, NodeInsert, ProjectionTarget,
+    RunInsert, StepInsert, TraverseDirection, WriteRequest,
 };
 use tempfile::NamedTempFile;
 
@@ -17,12 +17,7 @@ fn engine_bootstraps_and_compiles_queries() {
         .compile()
         .expect("query compiles");
 
-    let dispatched = engine
-        .coordinator()
-        .dispatch_compiled_read(&compiled)
-        .expect("read dispatched");
-
-    assert!(dispatched.sql.contains("WITH RECURSIVE"));
+    assert!(compiled.sql.contains("WITH RECURSIVE"));
 }
 
 #[test]
@@ -187,6 +182,7 @@ fn upsert_write_promotes_new_version_and_read_returns_it() {
                 source_ref: Some("source-2".to_owned()),
                 upsert: true,
             }],
+            edges: vec![],
             chunks: vec![ChunkInsert {
                 id: "chunk-2".to_owned(),
                 node_logical_id: "meeting-1".to_owned(),
@@ -236,6 +232,7 @@ fn runtime_table_write_is_traced_by_source_ref() {
                 source_ref: Some("source-1".to_owned()),
                 upsert: false,
             }],
+            edges: vec![],
             chunks: vec![],
             runs: vec![RunInsert {
                 id: "run-1".to_owned(),
@@ -276,6 +273,69 @@ fn runtime_table_write_is_traced_by_source_ref() {
     assert_eq!(report.action_ids, vec!["action-1"]);
 }
 
+#[test]
+fn traversal_query_returns_connected_node_via_typed_writes() {
+    let db = NamedTempFile::new().expect("temporary db");
+    let engine = Engine::open(EngineOptions::new(db.path())).expect("engine opens");
+
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "graph".to_owned(),
+            nodes: vec![
+                NodeInsert {
+                    row_id: "row-meeting".to_owned(),
+                    logical_id: "meeting-1".to_owned(),
+                    kind: "Meeting".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                },
+                NodeInsert {
+                    row_id: "row-task".to_owned(),
+                    logical_id: "task-1".to_owned(),
+                    kind: "Task".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                },
+            ],
+            edges: vec![EdgeInsert {
+                row_id: "edge-1".to_owned(),
+                logical_id: "edge-lg-1".to_owned(),
+                source_logical_id: "meeting-1".to_owned(),
+                target_logical_id: "task-1".to_owned(),
+                kind: "HAS_TASK".to_owned(),
+                properties: "{}".to_owned(),
+                source_ref: Some("src-1".to_owned()),
+                upsert: false,
+            }],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+        })
+        .expect("write nodes and edge");
+
+    let compiled = engine
+        .query("Meeting")
+        .traverse(TraverseDirection::Out, "HAS_TASK", 1)
+        .compile()
+        .expect("traversal query compiles");
+
+    let rows = engine
+        .coordinator()
+        .execute_compiled_read(&compiled)
+        .expect("traversal executes");
+
+    let logical_ids: Vec<&str> = rows.nodes.iter().map(|n| n.logical_id.as_str()).collect();
+    assert!(
+        logical_ids.contains(&"task-1"),
+        "traversal must return the connected task node; got: {logical_ids:?}"
+    );
+}
+
 fn meeting_write_request(properties: &str) -> WriteRequest {
     WriteRequest {
         label: "seed".to_owned(),
@@ -287,6 +347,7 @@ fn meeting_write_request(properties: &str) -> WriteRequest {
             source_ref: Some("source-1".to_owned()),
             upsert: false,
         }],
+        edges: vec![],
         chunks: vec![ChunkInsert {
             id: "chunk-1".to_owned(),
             node_logical_id: "meeting-1".to_owned(),
