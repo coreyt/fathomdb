@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used)]
+
 use fathomdb::{
     ActionInsert, ChunkInsert, ChunkPolicy, EdgeInsert, Engine, EngineOptions, NodeInsert,
     ProjectionTarget, RunInsert, StepInsert, TraverseDirection, WriteRequest,

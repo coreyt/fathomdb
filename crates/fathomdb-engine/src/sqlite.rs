@@ -23,6 +23,9 @@ pub fn open_connection(path: &Path) -> Result<Connection, EngineError> {
     Ok(conn)
 }
 
+/// # Errors
+/// Returns a `String` error if the embedded `sqlite.env` policy file is malformed or missing
+/// required keys (`SQLITE_MIN_VERSION`, `SQLITE_VERSION`).
 pub fn shared_sqlite_policy() -> Result<SharedSqlitePolicy, String> {
     let mut minimum_supported_version = None;
     let mut repo_dev_version = None;
@@ -58,6 +61,7 @@ pub fn shared_sqlite_policy() -> Result<SharedSqlitePolicy, String> {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::shared_sqlite_policy;
 

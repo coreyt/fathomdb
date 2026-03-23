@@ -9,6 +9,7 @@ pub struct QueryBuilder {
 }
 
 impl QueryBuilder {
+    #[must_use]
     pub fn nodes(kind: impl Into<String>) -> Self {
         Self {
             ast: QueryAst {
@@ -19,6 +20,7 @@ impl QueryBuilder {
         }
     }
 
+    #[must_use]
     pub fn vector_search(mut self, query: impl Into<String>, limit: usize) -> Self {
         self.ast.steps.push(QueryStep::VectorSearch {
             query: query.into(),
@@ -27,6 +29,7 @@ impl QueryBuilder {
         self
     }
 
+    #[must_use]
     pub fn text_search(mut self, query: impl Into<String>, limit: usize) -> Self {
         self.ast.steps.push(QueryStep::TextSearch {
             query: query.into(),
@@ -35,6 +38,7 @@ impl QueryBuilder {
         self
     }
 
+    #[must_use]
     pub fn traverse(
         mut self,
         direction: TraverseDirection,
@@ -49,6 +53,7 @@ impl QueryBuilder {
         self
     }
 
+    #[must_use]
     pub fn filter_logical_id_eq(mut self, logical_id: impl Into<String>) -> Self {
         self.ast
             .steps
@@ -56,6 +61,7 @@ impl QueryBuilder {
         self
     }
 
+    #[must_use]
     pub fn filter_kind_eq(mut self, kind: impl Into<String>) -> Self {
         self.ast
             .steps
@@ -63,6 +69,7 @@ impl QueryBuilder {
         self
     }
 
+    #[must_use]
     pub fn filter_source_ref_eq(mut self, source_ref: impl Into<String>) -> Self {
         self.ast
             .steps
@@ -70,6 +77,7 @@ impl QueryBuilder {
         self
     }
 
+    #[must_use]
     pub fn filter_json_text_eq(
         mut self,
         path: impl Into<String>,
@@ -82,19 +90,28 @@ impl QueryBuilder {
         self
     }
 
+    #[must_use]
     pub fn limit(mut self, limit: usize) -> Self {
         self.ast.final_limit = Some(limit);
         self
     }
 
+    #[must_use]
     pub fn ast(&self) -> &QueryAst {
         &self.ast
     }
 
+    #[must_use]
     pub fn into_ast(self) -> QueryAst {
         self.ast
     }
 
+    /// Compile this builder's AST into an executable [`CompiledQuery`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CompileError`] if the query violates structural constraints
+    /// (e.g. too many traversal steps or too many bind parameters).
     pub fn compile(&self) -> Result<CompiledQuery, CompileError> {
         compile_query(&self.ast)
     }

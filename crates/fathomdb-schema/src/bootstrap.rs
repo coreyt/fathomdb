@@ -5,7 +5,7 @@ use crate::{Migration, SchemaError, SchemaVersion};
 static MIGRATIONS: &[Migration] = &[Migration::new(
     SchemaVersion(1),
     "initial canonical schema and runtime tables",
-    r#"
+    r"
                 CREATE TABLE IF NOT EXISTS nodes (
                     row_id TEXT PRIMARY KEY,
                     logical_id TEXT NOT NULL,
@@ -117,7 +117,7 @@ static MIGRATIONS: &[Migration] = &[Migration::new(
                     ON steps(source_ref);
                 CREATE INDEX IF NOT EXISTS idx_actions_source_ref
                     ON actions(source_ref);
-                "#,
+                ",
 )];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -131,13 +131,19 @@ pub struct BootstrapReport {
 pub struct SchemaManager;
 
 impl SchemaManager {
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
 
+    /// Bootstrap the database schema, applying any pending migrations.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SchemaError`] if any migration or metadata-table SQL fails.
     pub fn bootstrap(&self, conn: &Connection) -> Result<BootstrapReport, SchemaError> {
         self.initialize_connection(conn)?;
-        self.ensure_metadata_tables(conn)?;
+        Self::ensure_metadata_tables(conn)?;
 
         let mut applied_versions = Vec::new();
         for migration in self.migrations() {
@@ -170,31 +176,43 @@ impl SchemaManager {
         })
     }
 
+    #[must_use]
     pub fn current_version(&self) -> SchemaVersion {
         self.migrations()
             .last()
-            .map(|migration| migration.version)
-            .unwrap_or(SchemaVersion(0))
+            .map_or(SchemaVersion(0), |migration| migration.version)
     }
 
+    #[must_use]
     pub fn migrations(&self) -> &'static [Migration] {
         MIGRATIONS
     }
 
+    /// Set the recommended `SQLite` connection pragmas for fathomdb.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SchemaError`] if any PRAGMA fails to execute.
     pub fn initialize_connection(&self, conn: &Connection) -> Result<(), SchemaError> {
         conn.execute_batch(
-            r#"
+            r"
             PRAGMA foreign_keys = ON;
             PRAGMA journal_mode = WAL;
             PRAGMA synchronous = NORMAL;
             PRAGMA busy_timeout = 5000;
             PRAGMA temp_store = MEMORY;
             PRAGMA mmap_size = 3000000000;
-            "#,
+            ",
         )?;
         Ok(())
     }
 
+    /// Ensure the sqlite-vec vector extension profile is registered.
+    ///
+    /// # Errors
+    ///
+    /// Always returns [`SchemaError::MissingCapability`] in this build
+    /// because the sqlite-vec feature is not enabled.
     pub fn ensure_vector_profile(
         &self,
         _conn: &Connection,
@@ -205,21 +223,27 @@ impl SchemaManager {
         Err(SchemaError::MissingCapability("sqlite-vec"))
     }
 
-    fn ensure_metadata_tables(&self, conn: &Connection) -> Result<(), SchemaError> {
+    /// Create the internal migration-tracking table if it does not exist.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SchemaError`] if the DDL fails to execute.
+    fn ensure_metadata_tables(conn: &Connection) -> Result<(), SchemaError> {
         conn.execute_batch(
-            r#"
+            r"
             CREATE TABLE IF NOT EXISTS fathom_schema_migrations (
                 version INTEGER PRIMARY KEY,
                 description TEXT NOT NULL,
                 applied_at INTEGER NOT NULL DEFAULT (unixepoch())
             );
-            "#,
+            ",
         )?;
         Ok(())
     }
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use rusqlite::Connection;
 

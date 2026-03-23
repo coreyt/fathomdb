@@ -41,6 +41,8 @@ impl ProjectionService {
         Ok(conn)
     }
 
+    /// # Errors
+    /// Returns [`EngineError`] if the database connection fails or the projection rebuild fails.
     pub fn rebuild_projections(
         &self,
         target: ProjectionTarget,
@@ -72,11 +74,13 @@ impl ProjectionService {
         })
     }
 
+    /// # Errors
+    /// Returns [`EngineError`] if the database connection fails or the INSERT query fails.
     pub fn rebuild_missing_projections(&self) -> Result<ProjectionRepairReport, EngineError> {
         let conn = self.connect()?;
 
         let inserted = conn.execute(
-            r#"
+            r"
             INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content)
             SELECT c.id, n.logical_id, n.kind, c.text_content
             FROM chunks c
@@ -88,7 +92,7 @@ impl ProjectionService {
                 FROM fts_nodes f
                 WHERE f.chunk_id = c.id
             )
-            "#,
+            ",
             [],
         )?;
 
@@ -108,14 +112,14 @@ fn rebuild_fts(conn: &mut rusqlite::Connection) -> Result<usize, rusqlite::Error
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     tx.execute("DELETE FROM fts_nodes", [])?;
     let inserted = tx.execute(
-        r#"
+        r"
         INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content)
         SELECT c.id, n.logical_id, n.kind, c.text_content
         FROM chunks c
         JOIN nodes n
           ON n.logical_id = c.node_logical_id
          AND n.superseded_at IS NULL
-        "#,
+        ",
         [],
     )?;
     tx.commit()?;

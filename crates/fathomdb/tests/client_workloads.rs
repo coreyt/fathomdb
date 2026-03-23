@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::missing_panics_doc, clippy::todo, clippy::doc_markdown)]
+
 mod helpers;
 mod injection;
 

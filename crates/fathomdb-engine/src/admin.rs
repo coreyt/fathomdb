@@ -21,9 +21,9 @@ pub struct IntegrityReport {
     pub warnings: Vec<String>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct SafeExportOptions {
-    /// When true, runs PRAGMA wal_checkpoint(FULL) before copying and fails if
+    /// When true, runs `PRAGMA wal_checkpoint(FULL)` before copying and fails if
     /// any WAL frames could not be applied (busy != 0). Set to false only in
     /// tests that seed a database without WAL mode.
     pub force_checkpoint: bool,
@@ -44,11 +44,11 @@ pub struct SafeExportManifest {
     pub exported_at: u64,
     /// SHA-256 hex digest of the exported database file.
     pub sha256: String,
-    /// Schema version recorded in fathom_schema_migrations at export time.
+    /// Schema version recorded in `fathom_schema_migrations` at export time.
     pub schema_version: u32,
     /// Bridge protocol version compiled into this binary.
     pub protocol_version: u32,
-    /// Number of SQLite pages in the exported database file.
+    /// Number of `SQLite` pages in the exported database file.
     pub page_count: u64,
 }
 
@@ -71,21 +71,21 @@ pub struct AdminService {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct SemanticReport {
-    /// Chunks whose node_logical_id has no active node.
+    /// Chunks whose `node_logical_id` has no active node.
     pub orphaned_chunks: usize,
-    /// Active nodes with a NULL source_ref (loss of provenance).
+    /// Active nodes with a NULL `source_ref` (loss of provenance).
     pub null_source_ref_nodes: usize,
-    /// Steps referencing a run_id that does not exist in the runs table.
+    /// Steps referencing a `run_id` that does not exist in the runs table.
     pub broken_step_fk: usize,
-    /// Actions referencing a step_id that does not exist in the steps table.
+    /// Actions referencing a `step_id` that does not exist in the steps table.
     pub broken_action_fk: usize,
-    /// FTS rows whose chunk_id does not exist in the chunks table.
+    /// FTS rows whose `chunk_id` does not exist in the chunks table.
     pub stale_fts_rows: usize,
-    /// FTS rows whose node has been superseded (superseded_at IS NOT NULL on all active rows).
+    /// FTS rows whose node has been superseded (`superseded_at` IS NOT NULL on all active rows).
     pub fts_rows_for_superseded_nodes: usize,
     /// Active edges where at least one endpoint has no active node.
     pub dangling_edges: usize,
-    /// logical_ids where every version has been superseded (no active row).
+    /// `logical_ids` where every version has been superseded (no active row).
     pub orphaned_supersession_chains: usize,
     pub warnings: Vec<String>,
 }
@@ -96,18 +96,21 @@ pub struct AdminHandle {
 }
 
 impl AdminHandle {
+    #[must_use]
     pub fn new(service: AdminService) -> Self {
         Self {
             inner: Arc::new(service),
         }
     }
 
+    #[must_use]
     pub fn service(&self) -> Arc<AdminService> {
         Arc::clone(&self.inner)
     }
 }
 
 impl AdminService {
+    #[must_use]
     pub fn new(path: impl AsRef<Path>, schema_manager: Arc<SchemaManager>) -> Self {
         let database_path = path.as_ref().to_path_buf();
         let projections = ProjectionService::new(&database_path, Arc::clone(&schema_manager));
@@ -124,6 +127,8 @@ impl AdminService {
         Ok(conn)
     }
 
+    /// # Errors
+    /// Returns [`EngineError`] if the database connection fails or any SQL query fails.
     pub fn check_integrity(&self) -> Result<IntegrityReport, EngineError> {
         let conn = self.connect()?;
 
@@ -134,7 +139,7 @@ impl AdminService {
                 row.get(0)
             })?;
         let missing_fts_rows: i64 = conn.query_row(
-            r#"
+            r"
             SELECT count(*)
             FROM chunks c
             JOIN nodes n
@@ -145,12 +150,12 @@ impl AdminService {
                 FROM fts_nodes f
                 WHERE f.chunk_id = c.id
             )
-            "#,
+            ",
             [],
             |row| row.get(0),
         )?;
         let duplicate_active: i64 = conn.query_row(
-            r#"
+            r"
             SELECT count(*)
             FROM (
                 SELECT logical_id
@@ -159,7 +164,7 @@ impl AdminService {
                 GROUP BY logical_id
                 HAVING count(*) > 1
             )
-            "#,
+            ",
             [],
             |row| row.get(0),
         )?;
@@ -175,24 +180,27 @@ impl AdminService {
         Ok(IntegrityReport {
             physical_ok: physical_result == "ok",
             foreign_keys_ok: foreign_key_count == 0,
-            missing_fts_rows: missing_fts_rows as usize,
-            duplicate_active_logical_ids: duplicate_active as usize,
+            missing_fts_rows: usize::try_from(missing_fts_rows).unwrap_or(0),
+            duplicate_active_logical_ids: usize::try_from(duplicate_active).unwrap_or(0),
             warnings,
         })
     }
 
+    /// # Errors
+    /// Returns [`EngineError`] if the database connection fails or any SQL query fails.
+    #[allow(clippy::too_many_lines)]
     pub fn check_semantics(&self) -> Result<SemanticReport, EngineError> {
         let conn = self.connect()?;
 
         let orphaned_chunks: i64 = conn.query_row(
-            r#"
+            r"
             SELECT count(*)
             FROM chunks c
             WHERE NOT EXISTS (
                 SELECT 1 FROM nodes n
                 WHERE n.logical_id = c.node_logical_id AND n.superseded_at IS NULL
             )
-            "#,
+            ",
             [],
             |row| row.get(0),
         )?;
@@ -204,65 +212,65 @@ impl AdminService {
         )?;
 
         let broken_step_fk: i64 = conn.query_row(
-            r#"
+            r"
             SELECT count(*) FROM steps s
             WHERE NOT EXISTS (SELECT 1 FROM runs r WHERE r.id = s.run_id)
-            "#,
+            ",
             [],
             |row| row.get(0),
         )?;
 
         let broken_action_fk: i64 = conn.query_row(
-            r#"
+            r"
             SELECT count(*) FROM actions a
             WHERE NOT EXISTS (SELECT 1 FROM steps s WHERE s.id = a.step_id)
-            "#,
+            ",
             [],
             |row| row.get(0),
         )?;
 
         let stale_fts_rows: i64 = conn.query_row(
-            r#"
+            r"
             SELECT count(*) FROM fts_nodes f
             WHERE NOT EXISTS (SELECT 1 FROM chunks c WHERE c.id = f.chunk_id)
-            "#,
+            ",
             [],
             |row| row.get(0),
         )?;
 
         let fts_rows_for_superseded_nodes: i64 = conn.query_row(
-            r#"
+            r"
             SELECT count(*) FROM fts_nodes f
             WHERE NOT EXISTS (
                 SELECT 1 FROM nodes n
                 WHERE n.logical_id = f.node_logical_id AND n.superseded_at IS NULL
             )
-            "#,
+            ",
             [],
             |row| row.get(0),
         )?;
 
         let dangling_edges: i64 = conn.query_row(
-            r#"
+            r"
             SELECT count(*) FROM edges e
             WHERE e.superseded_at IS NULL AND (
                 NOT EXISTS (SELECT 1 FROM nodes n WHERE n.logical_id = e.source_logical_id AND n.superseded_at IS NULL)
                 OR
                 NOT EXISTS (SELECT 1 FROM nodes n WHERE n.logical_id = e.target_logical_id AND n.superseded_at IS NULL)
             )
-            "#,
+            ",
             [],
             |row| row.get(0),
         )?;
 
         let orphaned_supersession_chains: i64 = conn.query_row(
-            r#"
+            r"
             SELECT count(*) FROM (
                 SELECT logical_id FROM nodes
                 GROUP BY logical_id
                 HAVING count(*) > 0 AND sum(CASE WHEN superseded_at IS NULL THEN 1 ELSE 0 END) = 0
             )
-            "#,
+            ",
             [],
             |row| row.get(0),
         )?;
@@ -302,18 +310,20 @@ impl AdminService {
         }
 
         Ok(SemanticReport {
-            orphaned_chunks: orphaned_chunks as usize,
-            null_source_ref_nodes: null_source_ref_nodes as usize,
-            broken_step_fk: broken_step_fk as usize,
-            broken_action_fk: broken_action_fk as usize,
-            stale_fts_rows: stale_fts_rows as usize,
-            fts_rows_for_superseded_nodes: fts_rows_for_superseded_nodes as usize,
-            dangling_edges: dangling_edges as usize,
-            orphaned_supersession_chains: orphaned_supersession_chains as usize,
+            orphaned_chunks: usize::try_from(orphaned_chunks).unwrap_or(0),
+            null_source_ref_nodes: usize::try_from(null_source_ref_nodes).unwrap_or(0),
+            broken_step_fk: usize::try_from(broken_step_fk).unwrap_or(0),
+            broken_action_fk: usize::try_from(broken_action_fk).unwrap_or(0),
+            stale_fts_rows: usize::try_from(stale_fts_rows).unwrap_or(0),
+            fts_rows_for_superseded_nodes: usize::try_from(fts_rows_for_superseded_nodes).unwrap_or(0),
+            dangling_edges: usize::try_from(dangling_edges).unwrap_or(0),
+            orphaned_supersession_chains: usize::try_from(orphaned_supersession_chains).unwrap_or(0),
             warnings,
         })
     }
 
+    /// # Errors
+    /// Returns [`EngineError`] if the database connection fails or the projection rebuild fails.
     pub fn rebuild_projections(
         &self,
         target: ProjectionTarget,
@@ -321,10 +331,14 @@ impl AdminService {
         self.projections.rebuild_projections(target)
     }
 
+    /// # Errors
+    /// Returns [`EngineError`] if the database connection fails or the projection rebuild fails.
     pub fn rebuild_missing_projections(&self) -> Result<ProjectionRepairReport, EngineError> {
         self.projections.rebuild_missing_projections()
     }
 
+    /// # Errors
+    /// Returns [`EngineError`] if the database connection fails or any SQL query fails.
     pub fn trace_source(&self, source_ref: &str) -> Result<TraceReport, EngineError> {
         let conn = self.connect()?;
 
@@ -349,6 +363,9 @@ impl AdminService {
         })
     }
 
+    /// # Errors
+    /// Returns [`EngineError`] if the database connection fails, the transaction cannot be
+    /// started, or any SQL statement fails.
     pub fn excise_source(&self, source_ref: &str) -> Result<TraceReport, EngineError> {
         let mut conn = self.connect()?;
 
@@ -406,14 +423,14 @@ impl AdminService {
         // observe a post-excise node state with a stale FTS index.
         tx.execute("DELETE FROM fts_nodes", [])?;
         tx.execute(
-            r#"
+            r"
             INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content)
             SELECT c.id, n.logical_id, n.kind, c.text_content
             FROM chunks c
             JOIN nodes n
               ON n.logical_id = c.node_logical_id
              AND n.superseded_at IS NULL
-            "#,
+            ",
             [],
         )?;
 
@@ -422,6 +439,9 @@ impl AdminService {
         self.trace_source(source_ref)
     }
 
+    /// # Errors
+    /// Returns [`EngineError`] if the WAL checkpoint fails, the database file cannot be copied,
+    /// the SHA-256 digest cannot be computed, or the manifest file cannot be written.
     pub fn safe_export(
         &self,
         destination_path: impl AsRef<Path>,
@@ -470,7 +490,7 @@ impl AdminService {
         // 3. Compute SHA-256 of the exported file.
         let file_bytes = fs::read(destination_path)?;
         let digest = Sha256::digest(&file_bytes);
-        let sha256 = format!("{:x}", digest);
+        let sha256 = format!("{digest:x}");
 
         // 4. Record when the export was created.
         let exported_at = SystemTime::now()
@@ -516,7 +536,7 @@ fn count_source_ref(
         other => return Err(EngineError::Bridge(format!("unknown table: {other}"))),
     };
     let count: i64 = conn.query_row(sql, [source_ref], |row| row.get(0))?;
-    Ok(count as usize)
+    Ok(usize::try_from(count).unwrap_or(0))
 }
 
 fn collect_strings(
@@ -532,6 +552,7 @@ fn collect_strings(
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use std::sync::Arc;
 
@@ -616,6 +637,10 @@ mod tests {
         assert_eq!(report.null_source_ref_nodes, 0);
         assert_eq!(report.broken_step_fk, 0);
         assert_eq!(report.broken_action_fk, 0);
+        assert_eq!(report.stale_fts_rows, 0);
+        assert_eq!(report.fts_rows_for_superseded_nodes, 0);
+        assert_eq!(report.dangling_edges, 0);
+        assert_eq!(report.orphaned_supersession_chains, 0);
         assert!(report.warnings.is_empty());
     }
 
@@ -688,6 +713,91 @@ mod tests {
         }
         let report = service.check_semantics().expect("semantics check");
         assert_eq!(report.broken_action_fk, 1);
+    }
+
+    #[test]
+    fn check_semantics_detects_stale_fts_rows() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            // FTS virtual tables have no FK constraints; insert a row referencing
+            // a chunk_id that does not exist in the chunks table.
+            conn.execute(
+                "INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content) \
+                 VALUES ('ghost-chunk', 'any-node', 'Meeting', 'stale content')",
+                [],
+            )
+            .expect("insert stale FTS row");
+        }
+        let report = service.check_semantics().expect("semantics check");
+        assert_eq!(report.stale_fts_rows, 1);
+    }
+
+    #[test]
+    fn check_semantics_detects_fts_rows_for_superseded_nodes() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            // Insert a node that has been fully superseded (superseded_at IS NOT NULL).
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, superseded_at, source_ref) \
+                 VALUES ('r1', 'lg-sup', 'Meeting', '{}', 100, 200, 'src-1')",
+                [],
+            )
+            .expect("insert superseded node");
+            // Insert an FTS row for the superseded node's logical_id.
+            conn.execute(
+                "INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content) \
+                 VALUES ('ck-x', 'lg-sup', 'Meeting', 'superseded content')",
+                [],
+            )
+            .expect("insert FTS row for superseded node");
+        }
+        let report = service.check_semantics().expect("semantics check");
+        assert_eq!(report.fts_rows_for_superseded_nodes, 1);
+    }
+
+    #[test]
+    fn check_semantics_detects_dangling_edges() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute_batch("PRAGMA foreign_keys = OFF;")
+                .expect("disable FK");
+            // One active node as source; target does not exist — edge is dangling.
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('r1', 'lg-src', 'Meeting', '{}', 100, 'src-1')",
+                [],
+            )
+            .expect("insert source node");
+            conn.execute(
+                "INSERT INTO edges \
+                 (row_id, logical_id, source_logical_id, target_logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('e1', 'edge-1', 'lg-src', 'ghost-target', 'LINKS', '{}', 100, 'src-1')",
+                [],
+            )
+            .expect("insert dangling edge");
+        }
+        let report = service.check_semantics().expect("semantics check");
+        assert_eq!(report.dangling_edges, 1);
+    }
+
+    #[test]
+    fn check_semantics_detects_orphaned_supersession_chains() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            // Every version of this logical_id is superseded — no active row remains.
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, superseded_at, source_ref) \
+                 VALUES ('r1', 'lg-orphaned', 'Meeting', '{}', 100, 200, 'src-1')",
+                [],
+            )
+            .expect("insert fully superseded node");
+        }
+        let report = service.check_semantics().expect("semantics check");
+        assert_eq!(report.orphaned_supersession_chains, 1);
     }
 
     #[test]

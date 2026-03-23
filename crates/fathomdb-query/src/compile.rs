@@ -32,6 +32,21 @@ pub enum CompileError {
 
 const MAX_BIND_PARAMETERS: usize = 15;
 
+/// Compile a [`QueryAst`] into a [`CompiledQuery`] ready for execution.
+///
+/// # Errors
+///
+/// Returns [`CompileError::TooManyTraversals`] if more than one traversal step
+/// is present, or [`CompileError::TooManyBindParameters`] if the resulting SQL
+/// would require more than 15 bind parameters.
+///
+/// # Panics
+///
+/// Panics (via `unreachable!`) if the AST is internally inconsistent — for
+/// example, if `choose_driving_table` selects `VecNodes` but no
+/// `VectorSearch` step is present in the AST. This cannot happen through the
+/// public [`QueryBuilder`] API.
+#[allow(clippy::too_many_lines)]
 pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
     let traversals = ast
         .steps
@@ -85,7 +100,7 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
                         None
                     }
                 })
-                .expect("vector search exists when vec_nodes drives");
+                .unwrap_or_else(|| unreachable!("VecNodes chosen but no VectorSearch step in AST"));
             binds.push(BindValue::Text(query.to_owned()));
             binds.push(BindValue::Text(ast.root_kind.clone()));
             format!(
@@ -111,7 +126,7 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
                         None
                     }
                 })
-                .expect("text search exists when fts_nodes drives");
+                .unwrap_or_else(|| unreachable!("FtsNodes chosen but no TextSearch step in AST"));
             binds.push(BindValue::Text(query.to_owned()));
             binds.push(BindValue::Text(ast.root_kind.clone()));
             format!(
@@ -250,17 +265,18 @@ WHERE 1 = 1",
 /// FNV-1a 64-bit hash — deterministic across Rust versions and program
 /// invocations, unlike `DefaultHasher`.
 fn hash_signature(signature: &str) -> u64 {
-    const OFFSET: u64 = 0xcbf29ce484222325;
-    const PRIME: u64 = 0x00000100000001b3;
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
     let mut hash = OFFSET;
     for byte in signature.bytes() {
-        hash ^= byte as u64;
+        hash ^= u64::from(byte);
         hash = hash.wrapping_mul(PRIME);
     }
     hash
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::items_after_statements)]
 mod tests {
     use rstest::rstest;
 

@@ -13,6 +13,9 @@ pub struct EngineRuntime {
 }
 
 impl EngineRuntime {
+    /// # Errors
+    /// Returns [`EngineError`] if the database connection cannot be opened, schema bootstrap fails,
+    /// or the writer actor cannot be started.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, EngineError> {
         let schema_manager = Arc::new(SchemaManager::new());
         let coordinator = ExecutionCoordinator::open(path.as_ref(), Arc::clone(&schema_manager))?;

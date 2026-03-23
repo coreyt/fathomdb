@@ -38,6 +38,8 @@ impl fmt::Debug for ExecutionCoordinator {
 }
 
 impl ExecutionCoordinator {
+    /// # Errors
+    /// Returns [`EngineError`] if the database connection cannot be opened or schema bootstrap fails.
     pub fn open(
         path: impl AsRef<Path>,
         schema_manager: Arc<SchemaManager>,
@@ -57,6 +59,12 @@ impl ExecutionCoordinator {
         &self.database_path
     }
 
+    /// # Errors
+    /// Returns [`EngineError`] if the SQL statement cannot be prepared or executed.
+    ///
+    /// # Panics
+    /// Panics if the internal connection or shape-SQL-map mutex is poisoned.
+    #[allow(clippy::expect_used)]
     pub fn execute_compiled_read(
         &self,
         compiled: &CompiledQuery,
@@ -100,6 +108,11 @@ impl ExecutionCoordinator {
     /// maps to exactly one SQL string.  This is a test-oriented introspection
     /// helper; it does not reflect rusqlite's internal prepared-statement
     /// cache, which is keyed by SQL text.
+    ///
+    /// # Panics
+    /// Panics if the internal shape-SQL-map mutex is poisoned.
+    #[must_use]
+    #[allow(clippy::expect_used)]
     pub fn shape_sql_count(&self) -> usize {
         self.shape_sql_map
             .lock()
@@ -107,12 +120,20 @@ impl ExecutionCoordinator {
             .len()
     }
 
+    #[must_use]
     pub fn schema_manager(&self) -> Arc<SchemaManager> {
         Arc::clone(&self.schema_manager)
     }
 
     /// Execute a named PRAGMA and return the result as a String.
     /// Used by Layer 1 tests to verify startup pragma initialization.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the PRAGMA query fails.
+    ///
+    /// # Panics
+    /// Panics if the internal connection mutex is poisoned.
+    #[allow(clippy::expect_used)]
     pub fn raw_pragma(&self, name: &str) -> Result<String, EngineError> {
         let conn = self.conn.lock().expect("coordinator connection mutex");
         let result: String = conn
@@ -140,6 +161,7 @@ fn bind_value_to_sql(value: &fathomdb_query::BindValue) -> Value {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use std::sync::Arc;
 

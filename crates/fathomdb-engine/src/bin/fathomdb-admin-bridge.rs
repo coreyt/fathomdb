@@ -40,6 +40,7 @@ struct BridgeResponse {
     payload: serde_json::Value,
 }
 
+#[allow(clippy::too_many_lines, clippy::print_stdout, clippy::expect_used)]
 fn main() {
     let mut stdin = String::new();
     if let Err(error) = io::stdin().read_to_string(&mut stdin) {
@@ -135,7 +136,9 @@ fn main() {
                     protocol_version: PROTOCOL_VERSION,
                     ok: true,
                     message: "export created".to_owned(),
-                    payload: serde_json::to_value(&manifest).unwrap_or_else(|_| json!({})),
+                    // SafeExportManifest contains only primitive types; serialization cannot fail.
+                    payload: serde_json::to_value(&manifest)
+                        .unwrap_or_else(|_| unreachable!("SafeExportManifest serialization is infallible")),
                 },
                 Err(error) => error_response(error),
             },
@@ -171,6 +174,7 @@ fn error_response(error: impl std::fmt::Display) -> BridgeResponse {
     }
 }
 
+#[allow(clippy::print_stdout, clippy::expect_used)]
 fn emit(ok: bool, message: String, payload: serde_json::Value) {
     let response = BridgeResponse {
         protocol_version: PROTOCOL_VERSION,

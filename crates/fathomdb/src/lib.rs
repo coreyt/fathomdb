@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 pub use fathomdb_engine::{
     ActionInsert, AdminHandle, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire, EngineError,
     EngineRuntime, ExecutionCoordinator, NodeInsert, NodeRetire, NodeRow, OptionalProjectionTask,
-    ProjectionRepairReport, ProjectionTarget, QueryRows, RunInsert, SafeExportOptions, StepInsert,
+    ProjectionRepairReport, ProjectionTarget, QueryRows, RunInsert, SafeExportManifest,
+    SafeExportOptions, StepInsert,
     WriteReceipt, WriteRequest, WriterActor, new_row_id,
 };
 pub use fathomdb_query::{
@@ -31,6 +32,12 @@ pub struct Engine {
 }
 
 impl Engine {
+    /// Open a fathomdb engine with the given options.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] if the database cannot be opened or the schema
+    /// bootstrap fails.
     pub fn open(options: EngineOptions) -> Result<Self, EngineError> {
         Ok(Self {
             runtime: EngineRuntime::open(options.database_path)?,

@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code, clippy::expect_used, clippy::missing_panics_doc, clippy::must_use_candidate, clippy::doc_markdown)]
 
 use std::path::Path;
 

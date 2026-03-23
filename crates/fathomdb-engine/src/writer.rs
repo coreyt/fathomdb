@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Sender};
 use std::thread;
@@ -29,7 +29,7 @@ pub struct NodeInsert {
     pub kind: String,
     pub properties: String,
     pub source_ref: Option<String>,
-    /// When true the writer supersedes the current active row for this logical_id
+    /// When true the writer supersedes the current active row for this `logical_id`
     /// before inserting this new version. The supersession and insert are atomic.
     pub upsert: bool,
     /// Controls whether existing chunks and FTS rows are deleted when upsert=true.
@@ -45,7 +45,7 @@ pub struct EdgeInsert {
     pub kind: String,
     pub properties: String,
     pub source_ref: Option<String>,
-    /// When true the writer supersedes the current active edge for this logical_id
+    /// When true the writer supersedes the current active edge for this `logical_id`
     /// before inserting this new version. The supersession and insert are atomic.
     pub upsert: bool,
 }
@@ -145,10 +145,10 @@ struct PreparedWrite {
     runs: Vec<RunInsert>,
     steps: Vec<StepInsert>,
     actions: Vec<ActionInsert>,
-    /// node_logical_id → kind for nodes co-submitted in this request.
-    /// Used by resolve_fts_rows to avoid a DB round-trip for the common case.
+    /// `node_logical_id` → kind for nodes co-submitted in this request.
+    /// Used by `resolve_fts_rows` to avoid a DB round-trip for the common case.
     node_kinds: HashMap<String, String>,
-    /// Filled in by resolve_fts_rows in the writer thread before BEGIN IMMEDIATE.
+    /// Filled in by `resolve_fts_rows` in the writer thread before BEGIN IMMEDIATE.
     required_fts_rows: Vec<FtsProjectionRow>,
     optional_backfills: Vec<OptionalProjectionTask>,
 }
@@ -164,6 +164,8 @@ pub struct WriterActor {
 }
 
 impl WriterActor {
+    /// # Errors
+    /// Returns [`EngineError`] if the writer thread cannot be spawned.
     pub fn start(
         path: impl AsRef<Path>,
         schema_manager: Arc<SchemaManager>,
@@ -173,12 +175,15 @@ impl WriterActor {
 
         thread::Builder::new()
             .name("fathomdb-writer".to_owned())
-            .spawn(move || writer_loop(database_path, schema_manager, receiver))
+            .spawn(move || writer_loop(&database_path, &schema_manager, receiver))
             .map_err(EngineError::Io)?;
 
         Ok(Self { sender })
     }
 
+    /// # Errors
+    /// Returns [`EngineError`] if the write request validation fails, the writer actor has shut
+    /// down, or the underlying `SQLite` transaction fails.
     pub fn submit(&self, request: WriteRequest) -> Result<WriteReceipt, EngineError> {
         let prepared = prepare_write(request)?;
         let (reply_tx, reply_rx) = mpsc::channel();
@@ -245,20 +250,20 @@ fn prepare_write(request: WriteRequest) -> Result<PreparedWrite, EngineError> {
 }
 
 fn writer_loop(
-    database_path: PathBuf,
-    schema_manager: Arc<SchemaManager>,
+    database_path: &Path,
+    schema_manager: &Arc<SchemaManager>,
     receiver: mpsc::Receiver<WriteMessage>,
 ) {
-    let mut conn = match sqlite::open_connection(&database_path) {
+    let mut conn = match sqlite::open_connection(database_path) {
         Ok(conn) => conn,
         Err(error) => {
-            reject_all(receiver, error.to_string());
+            reject_all(receiver, &error.to_string());
             return;
         }
     };
 
     if let Err(error) = schema_manager.bootstrap(&conn) {
-        reject_all(receiver, error.to_string());
+        reject_all(receiver, &error.to_string());
         return;
     }
 
@@ -269,11 +274,11 @@ fn writer_loop(
     }
 }
 
-fn reject_all(receiver: mpsc::Receiver<WriteMessage>, error: String) {
+fn reject_all(receiver: mpsc::Receiver<WriteMessage>, error: &str) {
     for message in receiver {
         let _ = message
             .reply
-            .send(Err(EngineError::WriterRejected(error.clone())));
+            .send(Err(EngineError::WriterRejected(error.to_string())));
     }
 }
 
@@ -342,6 +347,7 @@ fn resolve_and_apply(
     apply_write(conn, prepared).map_err(EngineError::Sqlite)
 }
 
+#[allow(clippy::too_many_lines)]
 fn apply_write(
     conn: &mut rusqlite::Connection,
     prepared: &PreparedWrite,
@@ -559,6 +565,7 @@ fn apply_write(
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use std::sync::Arc;
 

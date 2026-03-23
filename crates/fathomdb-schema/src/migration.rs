@@ -9,6 +9,7 @@ pub struct Migration {
 }
 
 impl Migration {
+    #[must_use]
     pub const fn new(
         version: SchemaVersion,
         description: &'static str,
