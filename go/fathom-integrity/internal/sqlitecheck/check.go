@@ -149,6 +149,7 @@ func Diagnose(dbPath, sqliteBin string, layer2 *Layer2Report) (DiagnosticReport,
 	}
 
 	report.Overall = computeOverall(report)
+	report.Suggestions = computeSuggestions(report)
 	return report, nil
 }
 
@@ -325,6 +326,69 @@ func computeOverall(r DiagnosticReport) string {
 		}
 	}
 	return "clean"
+}
+
+func computeSuggestions(r DiagnosticReport) []string {
+	var suggestions []string
+	emitted := map[string]bool{}
+	add := func(s string) {
+		if !emitted[s] {
+			emitted[s] = true
+			suggestions = append(suggestions, s)
+		}
+	}
+
+	// Layer 1 — storage-level suggestions.
+	if !r.Layer1.HeaderValid {
+		add(fmt.Sprintf("database header is corrupt; attempt recovery with: fathom-integrity recover --db %s --dest <recovery-path>", r.DatabasePath))
+	} else if !r.Layer1.IntegrityCheckOK {
+		add(fmt.Sprintf("structural corruption detected; attempt recovery with: fathom-integrity recover --db %s --dest <recovery-path>", r.DatabasePath))
+	}
+	if r.Layer1.ForeignKeyViolations > 0 {
+		add("foreign key violations present; investigate with: PRAGMA foreign_key_check;")
+	}
+	if r.Layer1.WAL.Present {
+		if !r.Layer1.WAL.HeaderValid {
+			add("WAL file has invalid header; remove if no writers are active: rm " + r.DatabasePath + "-wal")
+		} else {
+			if r.Layer1.WAL.Truncated {
+				add("WAL file is truncated; ensure no writers are active before proceeding")
+			}
+			if r.Layer1.WAL.CheckpointNeeded {
+				add(fmt.Sprintf("WAL has %d frames; reclaim space with: sqlite3 %s 'PRAGMA wal_checkpoint(TRUNCATE);'", r.Layer1.WAL.FrameCount, r.DatabasePath))
+			}
+		}
+	}
+
+	// Layer 2 — engine-invariant suggestions.
+	needsFTSRebuild := false
+	if r.Layer2.Available {
+		if r.Layer2.MissingFTSRows > 0 {
+			needsFTSRebuild = true
+		}
+		if r.Layer2.DuplicateActiveLogicalIDs > 0 {
+			add("duplicate active logical_ids require manual investigation; use: fathom-integrity trace --source-ref <ref>")
+		}
+		if r.Layer2.BrokenStepFK > 0 || r.Layer2.BrokenActionFK > 0 {
+			add("broken runtime FK chains detected; no automated repair available — investigate manually")
+		}
+	}
+
+	// Layer 3 — application-semantic suggestions.
+	if r.Layer3.StaleFTSRows > 0 {
+		needsFTSRebuild = true
+	}
+	if needsFTSRebuild {
+		add(fmt.Sprintf("repair FTS projections with: fathom-integrity rebuild --target fts --db %s", r.DatabasePath))
+	}
+	if r.Layer3.OrphanedChunks > 0 {
+		add("orphaned chunks have no active parent node; no automated repair available — investigate manually")
+	}
+	if r.Layer3.NullSourceRefNodes > 0 {
+		add("nodes missing source_ref cannot be excised by source; consider re-ingesting affected data")
+	}
+
+	return suggestions
 }
 
 func runSQLiteQuery(sqliteBin, dbPath, query string) (string, error) {

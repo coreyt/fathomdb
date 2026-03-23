@@ -5,8 +5,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/coreyt/fathomdb/go/fathom-integrity/internal/walcheck"
 	"github.com/coreyt/fathomdb/go/fathom-integrity/test/testutil"
 	"github.com/stretchr/testify/require"
 )
@@ -126,6 +128,190 @@ func TestDiagnoseDetectsWALPresence(t *testing.T) {
 	require.Equal(t, 0, report.Layer1.WAL.FrameCount)
 	// Valid WAL header with no frames generates no findings.
 	require.Equal(t, "clean", report.Overall)
+}
+
+// --- repair_suggestions tests ---
+
+func TestComputeSuggestions_CleanReport_NoSuggestions(t *testing.T) {
+	r := DiagnosticReport{
+		DatabasePath: "/tmp/test.db",
+		Layer1:       Layer1Report{HeaderValid: true, IntegrityCheckOK: true, Findings: []Finding{}},
+		Layer2:       Layer2Report{Available: true, PhysicalOK: true, ForeignKeysOK: true, Findings: []Finding{}},
+		Layer3:       Layer3Report{Findings: []Finding{}},
+	}
+
+	suggestions := computeSuggestions(r)
+
+	require.Empty(t, suggestions)
+}
+
+func TestComputeSuggestions_HeaderInvalid_SuggestsRecover(t *testing.T) {
+	r := DiagnosticReport{
+		DatabasePath: "/tmp/test.db",
+		Layer1:       Layer1Report{HeaderValid: false, Findings: []Finding{}},
+		Layer2:       Layer2Report{Findings: []Finding{}},
+		Layer3:       Layer3Report{Findings: []Finding{}},
+	}
+
+	suggestions := computeSuggestions(r)
+
+	require.Len(t, suggestions, 1)
+	require.Contains(t, suggestions[0], "recover")
+	require.Contains(t, suggestions[0], "/tmp/test.db")
+}
+
+func TestComputeSuggestions_IntegrityCheckFail_SuggestsRecover(t *testing.T) {
+	r := DiagnosticReport{
+		DatabasePath: "/tmp/test.db",
+		Layer1:       Layer1Report{HeaderValid: true, IntegrityCheckOK: false, Findings: []Finding{}},
+		Layer2:       Layer2Report{Findings: []Finding{}},
+		Layer3:       Layer3Report{Findings: []Finding{}},
+	}
+
+	suggestions := computeSuggestions(r)
+
+	require.NotEmpty(t, suggestions)
+	require.Contains(t, suggestions[0], "recover")
+}
+
+func TestComputeSuggestions_FKViolations_SuggestsCheck(t *testing.T) {
+	r := DiagnosticReport{
+		DatabasePath: "/tmp/test.db",
+		Layer1:       Layer1Report{HeaderValid: true, IntegrityCheckOK: true, ForeignKeyViolations: 3, Findings: []Finding{}},
+		Layer2:       Layer2Report{Findings: []Finding{}},
+		Layer3:       Layer3Report{Findings: []Finding{}},
+	}
+
+	suggestions := computeSuggestions(r)
+
+	require.NotEmpty(t, suggestions)
+	require.Contains(t, suggestions[0], "foreign_key_check")
+}
+
+func TestComputeSuggestions_WALCheckpointNeeded_SuggestsCheckpoint(t *testing.T) {
+	r := DiagnosticReport{
+		DatabasePath: "/tmp/test.db",
+		Layer1: Layer1Report{
+			HeaderValid:      true,
+			IntegrityCheckOK: true,
+			WAL: walcheck.WALReport{Present: true, HeaderValid: true, FrameCount: 150, CheckpointNeeded: true},
+			Findings:         []Finding{},
+		},
+		Layer2: Layer2Report{Findings: []Finding{}},
+		Layer3: Layer3Report{Findings: []Finding{}},
+	}
+
+	suggestions := computeSuggestions(r)
+
+	require.NotEmpty(t, suggestions)
+	found := false
+	for _, s := range suggestions {
+		if strings.Contains(s, "wal_checkpoint") {
+			found = true
+		}
+	}
+	require.True(t, found, "expected wal_checkpoint suggestion, got: %v", suggestions)
+}
+
+func TestComputeSuggestions_Layer2MissingFTS_SuggestsRebuild(t *testing.T) {
+	r := DiagnosticReport{
+		DatabasePath: "/tmp/test.db",
+		Layer1:       Layer1Report{HeaderValid: true, IntegrityCheckOK: true, Findings: []Finding{}},
+		Layer2:       Layer2Report{Available: true, MissingFTSRows: 5, Findings: []Finding{}},
+		Layer3:       Layer3Report{Findings: []Finding{}},
+	}
+
+	suggestions := computeSuggestions(r)
+
+	require.NotEmpty(t, suggestions)
+	found := false
+	for _, s := range suggestions {
+		if strings.Contains(s, "rebuild") && strings.Contains(s, "fts") {
+			found = true
+		}
+	}
+	require.True(t, found, "expected rebuild --target fts suggestion, got: %v", suggestions)
+}
+
+func TestComputeSuggestions_Layer3StaleFTS_SuggestsRebuild(t *testing.T) {
+	r := DiagnosticReport{
+		DatabasePath: "/tmp/test.db",
+		Layer1:       Layer1Report{HeaderValid: true, IntegrityCheckOK: true, Findings: []Finding{}},
+		Layer2:       Layer2Report{Available: true, Findings: []Finding{}},
+		Layer3:       Layer3Report{StaleFTSRows: 2, Findings: []Finding{}},
+	}
+
+	suggestions := computeSuggestions(r)
+
+	require.NotEmpty(t, suggestions)
+	found := false
+	for _, s := range suggestions {
+		if strings.Contains(s, "rebuild") && strings.Contains(s, "fts") {
+			found = true
+		}
+	}
+	require.True(t, found, "expected rebuild --target fts suggestion, got: %v", suggestions)
+}
+
+func TestComputeSuggestions_NoDuplicateRebuildWhenBothLayer2And3HaveFTS(t *testing.T) {
+	r := DiagnosticReport{
+		DatabasePath: "/tmp/test.db",
+		Layer1:       Layer1Report{HeaderValid: true, IntegrityCheckOK: true, Findings: []Finding{}},
+		Layer2:       Layer2Report{Available: true, MissingFTSRows: 3, Findings: []Finding{}},
+		Layer3:       Layer3Report{StaleFTSRows: 2, Findings: []Finding{}},
+	}
+
+	suggestions := computeSuggestions(r)
+
+	rebuildCount := 0
+	for _, s := range suggestions {
+		if strings.Contains(s, "rebuild") && strings.Contains(s, "fts") {
+			rebuildCount++
+		}
+	}
+	require.Equal(t, 1, rebuildCount, "expected exactly one rebuild fts suggestion")
+}
+
+func TestComputeSuggestions_OrphanedChunks_SuggestsInvestigate(t *testing.T) {
+	r := DiagnosticReport{
+		DatabasePath: "/tmp/test.db",
+		Layer1:       Layer1Report{HeaderValid: true, IntegrityCheckOK: true, Findings: []Finding{}},
+		Layer2:       Layer2Report{Available: true, Findings: []Finding{}},
+		Layer3:       Layer3Report{OrphanedChunks: 1, Findings: []Finding{}},
+	}
+
+	suggestions := computeSuggestions(r)
+
+	require.NotEmpty(t, suggestions)
+	require.Contains(t, suggestions[0], "orphaned")
+}
+
+func TestComputeSuggestions_NullSourceRef_SuggestsReingest(t *testing.T) {
+	r := DiagnosticReport{
+		DatabasePath: "/tmp/test.db",
+		Layer1:       Layer1Report{HeaderValid: true, IntegrityCheckOK: true, Findings: []Finding{}},
+		Layer2:       Layer2Report{Available: true, Findings: []Finding{}},
+		Layer3:       Layer3Report{NullSourceRefNodes: 4, Findings: []Finding{}},
+	}
+
+	suggestions := computeSuggestions(r)
+
+	require.NotEmpty(t, suggestions)
+	require.Contains(t, suggestions[0], "source_ref")
+}
+
+func TestDiagnoseCleanDB_SuggestionsIsEmpty(t *testing.T) {
+	sqliteBin := testutil.SQLiteBinary()
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+
+	out, err := exec.Command(sqliteBin, dbPath, "CREATE TABLE test (id INTEGER);").CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	report, err := Diagnose(dbPath, sqliteBin, nil)
+
+	require.NoError(t, err)
+	require.Empty(t, report.Suggestions)
 }
 
 func TestDiagnoseDetectsInvalidWALHeader(t *testing.T) {
