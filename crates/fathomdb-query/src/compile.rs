@@ -28,7 +28,11 @@ pub struct CompiledQuery {
 pub enum CompileError {
     #[error("multiple traversal steps are not supported in v1")]
     TooManyTraversals,
+    #[error("too many bind parameters: max 15, got {0}")]
+    TooManyBindParameters(usize),
 }
+
+const MAX_BIND_PARAMETERS: usize = 15;
 
 pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
     let traversals = ast
@@ -195,9 +199,14 @@ WHERE 1 = 1",
         if let QueryStep::Filter(predicate) = step {
             match predicate {
                 Predicate::LogicalIdEq(logical_id) => {
-                    binds.push(BindValue::Text(logical_id.clone()));
-                    let bind_index = binds.len();
-                    let _ = write!(&mut sql, "\n  AND n.logical_id = ?{bind_index}");
+                    // For the Nodes driving table the logical_id filter was already
+                    // applied inside base_candidates; applying it again would push a
+                    // duplicate bind value and add a redundant WHERE clause.
+                    if driving_table != DrivingTable::Nodes {
+                        binds.push(BindValue::Text(logical_id.clone()));
+                        let bind_index = binds.len();
+                        let _ = write!(&mut sql, "\n  AND n.logical_id = ?{bind_index}");
+                    }
                 }
                 Predicate::KindEq(kind) => {
                     binds.push(BindValue::Text(kind.clone()));
@@ -227,6 +236,10 @@ WHERE 1 = 1",
     }
 
     let _ = write!(&mut sql, "\nLIMIT {final_limit}");
+
+    if binds.len() > MAX_BIND_PARAMETERS {
+        return Err(CompileError::TooManyBindParameters(binds.len()));
+    }
 
     Ok(CompiledQuery {
         sql,
@@ -312,7 +325,33 @@ mod tests {
         )
         .expect("compiled query");
 
+        // LogicalIdEq is applied in base_candidates (src alias) for the Nodes driver,
+        // NOT duplicated in the final WHERE. The JOIN condition still contains
+        // "n.logical_id =" which satisfies this check.
         assert!(compiled.sql.contains("n.logical_id ="));
+        assert!(compiled.sql.contains("src.logical_id ="));
         assert!(compiled.sql.contains("json_extract"));
+        // Only one bind for the logical_id (not two).
+        use crate::BindValue;
+        assert_eq!(compiled.binds.iter().filter(|b| matches!(b, BindValue::Text(s) if s == "meeting-123")).count(), 1);
+    }
+
+    #[test]
+    fn compile_rejects_too_many_bind_parameters() {
+        use crate::{Predicate, QueryStep, ScalarValue};
+        let mut ast = QueryBuilder::nodes("Meeting").into_ast();
+        // kind already occupies 1 bind; add 15 json filters → 16 total > 15 limit.
+        for i in 0..15 {
+            ast.steps.push(QueryStep::Filter(Predicate::JsonPathEq {
+                path: format!("$.f{i}"),
+                value: ScalarValue::Text("v".to_owned()),
+            }));
+        }
+        use crate::CompileError;
+        let result = compile_query(&ast);
+        assert!(
+            matches!(result, Err(CompileError::TooManyBindParameters(16))),
+            "expected TooManyBindParameters(16), got {result:?}"
+        );
     }
 }

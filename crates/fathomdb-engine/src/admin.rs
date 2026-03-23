@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use fathomdb_schema::SchemaManager;
-use rusqlite::OptionalExtension;
+use rusqlite::{OptionalExtension, TransactionBehavior};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -250,64 +250,64 @@ impl AdminService {
     }
 
     pub fn excise_source(&self, source_ref: &str) -> Result<TraceReport, EngineError> {
-        let affected: Vec<(String, String)> = {
-            let conn = sqlite::open_connection(&self.database_path)?;
-            self.schema_manager.bootstrap(&conn)?;
+        let mut conn = sqlite::open_connection(&self.database_path)?;
+        self.schema_manager.bootstrap(&conn)?;
 
-            // Collect (row_id, logical_id) for active rows that will be excised.
-            let mut stmt = conn.prepare(
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+
+        // Collect (row_id, logical_id) for active rows that will be excised.
+        let pairs: Vec<(String, String)> = {
+            let mut stmt = tx.prepare(
                 "SELECT row_id, logical_id FROM nodes \
                  WHERE source_ref = ?1 AND superseded_at IS NULL",
             )?;
-            let pairs = stmt
-                .query_map([source_ref], |row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-                })?
-                .collect::<Result<Vec<_>, _>>()?;
-
-            // Supersede bad rows in all tables.
-            conn.execute(
-                "UPDATE nodes SET superseded_at = unixepoch() \
-                 WHERE source_ref = ?1 AND superseded_at IS NULL",
-                [source_ref],
-            )?;
-            conn.execute(
-                "UPDATE edges SET superseded_at = unixepoch() \
-                 WHERE source_ref = ?1 AND superseded_at IS NULL",
-                [source_ref],
-            )?;
-            conn.execute(
-                "UPDATE actions SET superseded_at = unixepoch() \
-                 WHERE source_ref = ?1 AND superseded_at IS NULL",
-                [source_ref],
-            )?;
-
-            // Restore the most recent prior version for each affected logical_id.
-            for (excised_row_id, logical_id) in &pairs {
-                let prior: Option<String> = conn
-                    .query_row(
-                        "SELECT row_id FROM nodes \
-                         WHERE logical_id = ?1 AND row_id != ?2 \
-                         ORDER BY created_at DESC LIMIT 1",
-                        [logical_id.as_str(), excised_row_id.as_str()],
-                        |row| row.get(0),
-                    )
-                    .optional()?;
-                if let Some(prior_id) = prior {
-                    conn.execute(
-                        "UPDATE nodes SET superseded_at = NULL WHERE row_id = ?1",
-                        [prior_id.as_str()],
-                    )?;
-                }
-            }
-
-            pairs
+            stmt.query_map([source_ref], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?
         };
+
+        // Supersede bad rows in all tables.
+        tx.execute(
+            "UPDATE nodes SET superseded_at = unixepoch() \
+             WHERE source_ref = ?1 AND superseded_at IS NULL",
+            [source_ref],
+        )?;
+        tx.execute(
+            "UPDATE edges SET superseded_at = unixepoch() \
+             WHERE source_ref = ?1 AND superseded_at IS NULL",
+            [source_ref],
+        )?;
+        tx.execute(
+            "UPDATE actions SET superseded_at = unixepoch() \
+             WHERE source_ref = ?1 AND superseded_at IS NULL",
+            [source_ref],
+        )?;
+
+        // Restore the most recent prior version for each affected logical_id.
+        for (excised_row_id, logical_id) in &pairs {
+            let prior: Option<String> = tx
+                .query_row(
+                    "SELECT row_id FROM nodes \
+                     WHERE logical_id = ?1 AND row_id != ?2 \
+                     ORDER BY created_at DESC LIMIT 1",
+                    [logical_id.as_str(), excised_row_id.as_str()],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if let Some(prior_id) = prior {
+                tx.execute(
+                    "UPDATE nodes SET superseded_at = NULL WHERE row_id = ?1",
+                    [prior_id.as_str()],
+                )?;
+            }
+        }
+
+        tx.commit()?;
 
         // Rebuild FTS to reflect the restored active state. Uses its own connection.
         self.projections.rebuild_projections(ProjectionTarget::Fts)?;
 
-        let _ = affected;
         self.trace_source(source_ref)
     }
 
@@ -356,6 +356,10 @@ fn count_source_ref(
     table: &str,
     source_ref: &str,
 ) -> Result<usize, EngineError> {
+    match table {
+        "nodes" | "edges" | "actions" => {}
+        other => return Err(EngineError::Bridge(format!("unknown table: {other}"))),
+    }
     let sql = format!("SELECT count(*) FROM {table} WHERE source_ref = ?1");
     let count: i64 = conn.query_row(&sql, [source_ref], |row| row.get(0))?;
     Ok(count as usize)

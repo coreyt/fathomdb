@@ -29,7 +29,14 @@ func copyFile(destinationPath, sourcePath string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer destination.Close()
 
-	return io.Copy(destination, source)
+	n, err := io.Copy(destination, source)
+	if err != nil {
+		destination.Close()
+		return n, err
+	}
+	if err := destination.Close(); err != nil {
+		return n, err
+	}
+	return n, nil
 }
