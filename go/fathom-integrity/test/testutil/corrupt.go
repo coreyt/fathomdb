@@ -56,6 +56,16 @@ func InjectBrokenStepFK(t *testing.T, dbPath string) {
 VALUES ('ghost-step-1', 'ghost-run', 'llm', 'completed', '{}', unixepoch());`)
 }
 
+// InjectLargeTruncation truncates the database to 50% of its current size,
+// preserving early pages (which are more likely to contain recoverable rows)
+// while discarding the latter half.
+func InjectLargeTruncation(t *testing.T, path string) {
+	t.Helper()
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	require.NoError(t, os.Truncate(path, info.Size()/2))
+}
+
 // InjectBrokenSupersession creates two active rows for the same logical_id by
 // dropping the unique partial index before inserting the duplicate, simulating a
 // failed transaction during upsert.

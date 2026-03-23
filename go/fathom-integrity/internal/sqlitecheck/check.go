@@ -149,6 +149,20 @@ func Diagnose(dbPath, sqliteBin string, layer2 *Layer2Report) (DiagnosticReport,
 	return report, nil
 }
 
+// CountTable returns the number of rows in the named table.
+// Returns (0, nil) if the table does not exist or the query otherwise fails.
+func CountTable(sqliteBin, dbPath, table string) (int, error) {
+	out, err := runSQLiteQuery(sqliteBin, dbPath, "SELECT count(*) FROM "+table+";")
+	if err != nil {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		return 0, fmt.Errorf("parse count for table %q: %w", table, err)
+	}
+	return n, nil
+}
+
 // FormatDiagnostic serialises the report as a compact JSON string.
 func FormatDiagnostic(r DiagnosticReport) (string, error) {
 	b, err := json.Marshal(r)

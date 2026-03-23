@@ -68,6 +68,34 @@ func TestDiagnoseDetectsHeaderCorruption(t *testing.T) {
 	require.Equal(t, "corrupted", report.Overall)
 }
 
+func TestCountTable_ReturnsZeroForEmptyTable(t *testing.T) {
+	sqliteBin := testutil.SQLiteBinary()
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+
+	cmd := exec.Command(sqliteBin, dbPath, "CREATE TABLE nodes (id INTEGER);")
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	n, err := CountTable(sqliteBin, dbPath, "nodes")
+	require.NoError(t, err)
+	require.Equal(t, 0, n)
+}
+
+func TestCountTable_ReturnsZeroForMissingTable(t *testing.T) {
+	sqliteBin := testutil.SQLiteBinary()
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+
+	cmd := exec.Command(sqliteBin, dbPath, "CREATE TABLE test (id INTEGER);")
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	n, err := CountTable(sqliteBin, dbPath, "nonexistent_table")
+	require.NoError(t, err)
+	require.Equal(t, 0, n)
+}
+
 func TestDiagnoseDetectsWALPresence(t *testing.T) {
 	sqliteBin := testutil.SQLiteBinary()
 	dir := t.TempDir()

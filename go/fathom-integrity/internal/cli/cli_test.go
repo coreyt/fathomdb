@@ -17,6 +17,15 @@ func TestMainRequiresCommand(t *testing.T) {
 	require.Contains(t, stderr.String(), "usage:")
 }
 
+func TestMainRecoverRequiresDBAndDest(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	exitCode := Main([]string{"recover"}, &stdout, &stderr)
+
+	require.Equal(t, 2, exitCode)
+	require.Contains(t, stderr.String(), "--db and --dest are required")
+}
+
 func TestMainVersionCommand(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

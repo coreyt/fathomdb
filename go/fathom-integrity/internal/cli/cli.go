@@ -143,6 +143,24 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 		return 0
+	case "recover":
+		fs := flag.NewFlagSet("recover", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		db := fs.String("db", cfg.DatabasePath, "path to the (possibly corrupt) source sqlite database")
+		dest := fs.String("dest", "", "path where the recovered database will be written (must not already exist)")
+		bridgeBinary := fs.String("bridge", "", "path to admin bridge binary (optional; bootstraps fathomdb schema and enables Layer 2 checks)")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if *db == "" || *dest == "" {
+			fmt.Fprintln(stderr, "--db and --dest are required")
+			return 2
+		}
+		if err := commands.RunRecover(*db, *dest, *bridgeBinary, "", stdout); err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		return 0
 	case "version":
 		if err := commands.RunVersion(stdout); err != nil {
 			fmt.Fprintln(stderr, err)
@@ -156,5 +174,5 @@ func Main(args []string, stdout, stderr io.Writer) int {
 }
 
 func usage() string {
-	return "usage: fathom-integrity <check|export|trace|rebuild|rebuild-missing|excise|version> [flags]"
+	return "usage: fathom-integrity <check|export|trace|rebuild|rebuild-missing|excise|recover|version> [flags]"
 }
