@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/coreyt/fathomdb/go/fathom-integrity/internal/walcheck"
 )
 
 const sqliteHeader = "SQLite format 3\x00"
@@ -72,12 +74,13 @@ type Finding struct {
 }
 
 type Layer1Report struct {
-	HeaderValid          bool      `json:"header_valid"`
-	WALPresent           bool      `json:"wal_present"`
-	IntegrityCheckOK     bool      `json:"integrity_check_ok"`
-	IntegrityCheckDetail string    `json:"integrity_check_detail"`
-	ForeignKeyViolations int       `json:"foreign_key_violations"`
-	Findings             []Finding `json:"findings"`
+	HeaderValid          bool               `json:"header_valid"`
+	WALPresent           bool               `json:"wal_present"`
+	WAL                  walcheck.WALReport `json:"wal"`
+	IntegrityCheckOK     bool               `json:"integrity_check_ok"`
+	IntegrityCheckDetail string             `json:"integrity_check_detail"`
+	ForeignKeyViolations int                `json:"foreign_key_violations"`
+	Findings             []Finding          `json:"findings"`
 }
 
 type Layer2Report struct {
@@ -198,9 +201,29 @@ func diagnoseLayer1(dbPath, sqliteBin string) (Layer1Report, error) {
 		return report, nil
 	}
 
-	// 2. Detect WAL file (no subprocess needed).
-	if _, err := os.Stat(dbPath + "-wal"); err == nil {
-		report.WALPresent = true
+	// 2. Inspect WAL file (no subprocess needed).
+	walReport, _ := walcheck.InspectWAL(dbPath + "-wal")
+	report.WAL = walReport
+	report.WALPresent = walReport.Present
+	if walReport.Present {
+		if !walReport.HeaderValid {
+			report.Findings = append(report.Findings, Finding{
+				Layer: 1, Severity: "error", Message: "WAL file has invalid header",
+			})
+		} else {
+			if walReport.Truncated {
+				report.Findings = append(report.Findings, Finding{
+					Layer: 1, Severity: "warning",
+					Message: fmt.Sprintf("WAL file truncated at byte %d", walReport.TruncationOffset),
+				})
+			}
+			if walReport.CheckpointNeeded {
+				report.Findings = append(report.Findings, Finding{
+					Layer: 1, Severity: "warning",
+					Message: fmt.Sprintf("WAL has %d frames; run PRAGMA wal_checkpoint(TRUNCATE)", walReport.FrameCount),
+				})
+			}
+		}
 	}
 
 	// 3. PRAGMA integrity_check
