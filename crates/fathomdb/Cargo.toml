@@ -11,4 +11,5 @@ fathomdb-query.workspace = true
 fathomdb-schema.workspace = true
 
 [dev-dependencies]
+rusqlite.workspace = true
 tempfile.workspace = true

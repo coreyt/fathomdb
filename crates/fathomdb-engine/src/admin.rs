@@ -21,12 +21,35 @@ pub struct IntegrityReport {
     pub warnings: Vec<String>,
 }
 
+#[derive(Clone, Debug)]
+pub struct SafeExportOptions {
+    /// When true, runs PRAGMA wal_checkpoint(FULL) before copying and fails if
+    /// any WAL frames could not be applied (busy != 0). Set to false only in
+    /// tests that seed a database without WAL mode.
+    pub force_checkpoint: bool,
+}
+
+impl Default for SafeExportOptions {
+    fn default() -> Self {
+        Self { force_checkpoint: true }
+    }
+}
+
+// Must match PROTOCOL_VERSION in fathomdb-admin-bridge.rs
+const EXPORT_PROTOCOL_VERSION: u32 = 1;
+
 #[derive(Clone, Debug, Serialize)]
 pub struct SafeExportManifest {
     /// Unix timestamp (seconds since epoch) when the export was created.
     pub exported_at: u64,
     /// SHA-256 hex digest of the exported database file.
     pub sha256: String,
+    /// Schema version recorded in fathom_schema_migrations at export time.
+    pub schema_version: u32,
+    /// Bridge protocol version compiled into this binary.
+    pub protocol_version: u32,
+    /// Number of SQLite pages in the exported database file.
+    pub page_count: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -56,6 +79,14 @@ pub struct SemanticReport {
     pub broken_step_fk: usize,
     /// Actions referencing a step_id that does not exist in the steps table.
     pub broken_action_fk: usize,
+    /// FTS rows whose chunk_id does not exist in the chunks table.
+    pub stale_fts_rows: usize,
+    /// FTS rows whose node has been superseded (superseded_at IS NOT NULL on all active rows).
+    pub fts_rows_for_superseded_nodes: usize,
+    /// Active edges where at least one endpoint has no active node.
+    pub dangling_edges: usize,
+    /// logical_ids where every version has been superseded (no active row).
+    pub orphaned_supersession_chains: usize,
     pub warnings: Vec<String>,
 }
 
@@ -190,6 +221,52 @@ impl AdminService {
             |row| row.get(0),
         )?;
 
+        let stale_fts_rows: i64 = conn.query_row(
+            r#"
+            SELECT count(*) FROM fts_nodes f
+            WHERE NOT EXISTS (SELECT 1 FROM chunks c WHERE c.id = f.chunk_id)
+            "#,
+            [],
+            |row| row.get(0),
+        )?;
+
+        let fts_rows_for_superseded_nodes: i64 = conn.query_row(
+            r#"
+            SELECT count(*) FROM fts_nodes f
+            WHERE NOT EXISTS (
+                SELECT 1 FROM nodes n
+                WHERE n.logical_id = f.node_logical_id AND n.superseded_at IS NULL
+            )
+            "#,
+            [],
+            |row| row.get(0),
+        )?;
+
+        let dangling_edges: i64 = conn.query_row(
+            r#"
+            SELECT count(*) FROM edges e
+            WHERE e.superseded_at IS NULL AND (
+                NOT EXISTS (SELECT 1 FROM nodes n WHERE n.logical_id = e.source_logical_id AND n.superseded_at IS NULL)
+                OR
+                NOT EXISTS (SELECT 1 FROM nodes n WHERE n.logical_id = e.target_logical_id AND n.superseded_at IS NULL)
+            )
+            "#,
+            [],
+            |row| row.get(0),
+        )?;
+
+        let orphaned_supersession_chains: i64 = conn.query_row(
+            r#"
+            SELECT count(*) FROM (
+                SELECT logical_id FROM nodes
+                GROUP BY logical_id
+                HAVING count(*) > 0 AND sum(CASE WHEN superseded_at IS NULL THEN 1 ELSE 0 END) = 0
+            )
+            "#,
+            [],
+            |row| row.get(0),
+        )?;
+
         let mut warnings = Vec::new();
         if orphaned_chunks > 0 {
             warnings.push(format!("{orphaned_chunks} orphaned chunk(s) with no active node"));
@@ -207,12 +284,32 @@ impl AdminService {
                 "{broken_action_fk} action(s) referencing non-existent step"
             ));
         }
+        if stale_fts_rows > 0 {
+            warnings.push(format!("{stale_fts_rows} stale FTS row(s) referencing missing chunk"));
+        }
+        if fts_rows_for_superseded_nodes > 0 {
+            warnings.push(format!(
+                "{fts_rows_for_superseded_nodes} FTS row(s) for superseded node(s)"
+            ));
+        }
+        if dangling_edges > 0 {
+            warnings.push(format!("{dangling_edges} active edge(s) with missing endpoint node"));
+        }
+        if orphaned_supersession_chains > 0 {
+            warnings.push(format!(
+                "{orphaned_supersession_chains} logical_id(s) with all versions superseded"
+            ));
+        }
 
         Ok(SemanticReport {
             orphaned_chunks: orphaned_chunks as usize,
             null_source_ref_nodes: null_source_ref_nodes as usize,
             broken_step_fk: broken_step_fk as usize,
             broken_action_fk: broken_action_fk as usize,
+            stale_fts_rows: stale_fts_rows as usize,
+            fts_rows_for_superseded_nodes: fts_rows_for_superseded_nodes as usize,
+            dangling_edges: dangling_edges as usize,
+            orphaned_supersession_chains: orphaned_supersession_chains as usize,
             warnings,
         })
     }
@@ -328,12 +425,40 @@ impl AdminService {
     pub fn safe_export(
         &self,
         destination_path: impl AsRef<Path>,
+        options: SafeExportOptions,
     ) -> Result<SafeExportManifest, EngineError> {
         let destination_path = destination_path.as_ref();
 
         // 1. Checkpoint WAL before copying so the main DB file contains all committed data.
         let conn = self.connect()?;
-        conn.execute_batch("PRAGMA wal_checkpoint(FULL);")?;
+
+        if options.force_checkpoint {
+            let (busy, log, checkpointed): (i64, i64, i64) = conn.query_row(
+                "PRAGMA wal_checkpoint(FULL)",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )?;
+            if busy != 0 {
+                return Err(EngineError::Bridge(format!(
+                    "WAL checkpoint blocked: {busy} active reader(s) prevented a full checkpoint; \
+                     log frames={log}, checkpointed={checkpointed}; \
+                     retry export when no readers are active"
+                )));
+            }
+        }
+
+        let schema_version: u32 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(version), 0) FROM fathom_schema_migrations",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+
+        let page_count: u64 = conn
+            .query_row("PRAGMA page_count", [], |row| row.get(0))
+            .unwrap_or(0);
+
         drop(conn);
 
         // 2. Copy the database file.
@@ -353,7 +478,13 @@ impl AdminService {
             .map_err(|e| EngineError::Bridge(format!("system clock error: {e}")))?
             .as_secs();
 
-        let manifest = SafeExportManifest { exported_at, sha256 };
+        let manifest = SafeExportManifest {
+            exported_at,
+            sha256,
+            schema_version,
+            protocol_version: EXPORT_PROTOCOL_VERSION,
+            page_count,
+        };
 
         // 5. Write manifest alongside the exported file, using Path API for the name.
         let manifest_path = {
@@ -407,7 +538,7 @@ mod tests {
     use fathomdb_schema::SchemaManager;
     use tempfile::NamedTempFile;
 
-    use super::AdminService;
+    use super::{AdminService, SafeExportOptions};
     use crate::sqlite;
 
     fn setup() -> (NamedTempFile, AdminService) {
@@ -565,7 +696,9 @@ mod tests {
         let export_dir = tempfile::TempDir::new().expect("temp dir");
         let export_path = export_dir.path().join("backup.db");
 
-        let manifest = service.safe_export(&export_path).expect("export");
+        let manifest = service
+            .safe_export(&export_path, SafeExportOptions { force_checkpoint: false })
+            .expect("export");
 
         assert!(export_path.exists(), "exported db should exist");
         let manifest_path = export_dir.path().join("backup.db.export-manifest.json");
@@ -576,6 +709,25 @@ mod tests {
         );
         assert_eq!(manifest.sha256.len(), 64, "sha256 should be 64 hex chars");
         assert!(manifest.exported_at > 0, "exported_at should be a unix timestamp");
+        assert_eq!(manifest.schema_version, 1, "schema_version should be 1");
+        assert_eq!(manifest.protocol_version, 1, "protocol_version should be 1");
+        assert!(manifest.page_count > 0, "page_count should be positive");
+    }
+
+    #[test]
+    fn safe_export_force_checkpoint_false_skips_wal_pragma() {
+        let (_db, service) = setup();
+        let export_dir = tempfile::TempDir::new().expect("temp dir");
+        let export_path = export_dir.path().join("no-wal.db");
+
+        // force_checkpoint: false must not error even on a non-WAL database
+        let manifest = service
+            .safe_export(&export_path, SafeExportOptions { force_checkpoint: false })
+            .expect("export with no checkpoint");
+
+        assert!(manifest.page_count > 0, "page_count must be populated regardless of checkpoint mode");
+        assert_eq!(manifest.schema_version, 1);
+        assert_eq!(manifest.protocol_version, 1);
     }
 
     #[test]

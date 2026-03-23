@@ -110,6 +110,16 @@ impl ExecutionCoordinator {
     pub fn schema_manager(&self) -> Arc<SchemaManager> {
         Arc::clone(&self.schema_manager)
     }
+
+    /// Execute a named PRAGMA and return the result as a String.
+    /// Used by Layer 1 tests to verify startup pragma initialization.
+    pub fn raw_pragma(&self, name: &str) -> Result<String, EngineError> {
+        let conn = self.conn.lock().expect("coordinator connection mutex");
+        let result: String = conn
+            .query_row(&format!("PRAGMA {name}"), [], |row| row.get(0))
+            .map_err(EngineError::Sqlite)?;
+        Ok(result)
+    }
 }
 
 fn is_capability_missing_error(err: &rusqlite::Error) -> bool {

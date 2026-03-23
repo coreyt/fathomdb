@@ -2,7 +2,7 @@ use std::io::{self, Read};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use fathomdb_engine::{AdminService, ProjectionTarget};
+use fathomdb_engine::{AdminService, ProjectionTarget, SafeExportOptions};
 use fathomdb_schema::SchemaManager;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -130,7 +130,7 @@ fn main() {
             }
         }
         BridgeCommand::SafeExport => match request.destination_path {
-            Some(destination) => match service.safe_export(destination) {
+            Some(destination) => match service.safe_export(destination, SafeExportOptions::default()) {
                 Ok(manifest) => BridgeResponse {
                     protocol_version: PROTOCOL_VERSION,
                     ok: true,

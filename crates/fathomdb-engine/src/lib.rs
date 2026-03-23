@@ -7,7 +7,8 @@ mod sqlite;
 mod writer;
 
 pub use admin::{
-    AdminHandle, AdminService, IntegrityReport, SafeExportManifest, SemanticReport, TraceReport,
+    AdminHandle, AdminService, IntegrityReport, SafeExportManifest, SafeExportOptions,
+    SemanticReport, TraceReport,
 };
 pub use coordinator::{ExecutionCoordinator, NodeRow, QueryRows};
 pub use projection::{ProjectionRepairReport, ProjectionService, ProjectionTarget};

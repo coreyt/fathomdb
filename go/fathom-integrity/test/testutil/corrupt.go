@@ -78,6 +78,32 @@ INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref)
 VALUES ('row-dup', 'meeting-1', 'Meeting', '{}', unixepoch(), 'source-duplicate');`)
 }
 
+// InjectStaleFTSRow inserts an FTS row that references a non-existent chunk_id.
+// Creates: stale_fts_rows detectable by check_semantics.
+func InjectStaleFTSRow(t *testing.T, dbPath string) {
+	t.Helper()
+	runSQLite(t, dbPath, `INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content)
+VALUES ('ghost-chunk-id', 'meeting-1', 'Meeting', 'stale fts content');`)
+}
+
+// InjectFTSForSupersededNode adds an FTS row for a node that has been superseded
+// (superseded_at IS NOT NULL). Creates: fts_rows_for_superseded_nodes.
+func InjectFTSForSupersededNode(t *testing.T, dbPath string) {
+	t.Helper()
+	runSQLite(t, dbPath, `
+UPDATE nodes SET superseded_at = datetime('now') WHERE logical_id = 'meeting-1' AND superseded_at IS NULL;
+INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content)
+VALUES ('chunk-superseded', 'meeting-1', 'Meeting', 'superseded node fts content');`)
+}
+
+// InjectPartialExcision partially excises a provenance chain: deletes the run
+// record for source-1 but leaves its child steps intact.
+// Creates: broken_step_fk chains detectable by check_semantics.
+func InjectPartialExcision(t *testing.T, dbPath string) {
+	t.Helper()
+	runSQLite(t, dbPath, `DELETE FROM runs WHERE source_ref = 'source-1';`)
+}
+
 // InjectWALBitFlip flips a single byte in the page data of the given WAL frame
 // (0-based frameIndex), at byteOffset within the page content area. This simulates
 // a silent storage bit-flip that corrupts the frame checksum chain from that frame

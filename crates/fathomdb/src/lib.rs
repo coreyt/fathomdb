@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 pub use fathomdb_engine::{
     ActionInsert, AdminHandle, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire, EngineError,
     EngineRuntime, ExecutionCoordinator, NodeInsert, NodeRetire, NodeRow, OptionalProjectionTask,
-    ProjectionRepairReport, ProjectionTarget, QueryRows, RunInsert, StepInsert, WriteReceipt,
-    WriteRequest, WriterActor, new_row_id,
+    ProjectionRepairReport, ProjectionTarget, QueryRows, RunInsert, SafeExportOptions, StepInsert,
+    WriteReceipt, WriteRequest, WriterActor, new_row_id,
 };
 pub use fathomdb_query::{
     compile_query, BindValue, CompiledQuery, DrivingTable, ExecutionHints, Predicate, Query,

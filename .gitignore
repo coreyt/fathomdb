@@ -12,3 +12,9 @@ coverage.out
 .idea/
 .vscode/
 .DS_Store
+
+# bream cache directory
+.bream-cache/
+
+# bosun cache directory
+.bosun-cache/

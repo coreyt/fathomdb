@@ -41,6 +41,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		fs.SetOutput(stderr)
 		db := fs.String("db", cfg.DatabasePath, "path to sqlite database")
 		destination := fs.String("out", "", "path to export destination")
+		bridgeBinary := fs.String("bridge", cfg.BridgeBinary, "path to admin bridge binary")
 		if err := fs.Parse(args[1:]); err != nil {
 			return 2
 		}
@@ -48,7 +49,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "--db and --out are required")
 			return 2
 		}
-		if err := commands.RunExport(*db, *destination, stdout); err != nil {
+		if err := commands.RunExport(*db, *destination, *bridgeBinary, stdout); err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
 		}

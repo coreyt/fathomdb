@@ -148,6 +148,7 @@ dependencies = [
  "fathomdb-engine",
  "fathomdb-query",
  "fathomdb-schema",
+ "rusqlite",
  "tempfile",
 ]
 

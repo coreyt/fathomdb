@@ -277,6 +277,49 @@ func TestCheckDetectsOrphanedChunk(t *testing.T) {
 	require.Contains(t, string(output), `"overall":"degraded"`)
 }
 
+func TestExportCommand_RoundTrip(t *testing.T) {
+	repoRoot := filepath.Join("..", "..")
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "fathom.db")
+	destPath := filepath.Join(tempDir, "backup.db")
+	bridgePath := makeBridgeScript(t, tempDir, repoRoot)
+
+	bootstrapBridgeDB(t, bridgePath, dbPath)
+
+	cmd := exec.Command(
+		"go", "run", "./cmd/fathom-integrity",
+		"export",
+		"--db", dbPath,
+		"--out", destPath,
+		"--bridge", bridgePath,
+	)
+	cmd.Dir = repoRoot
+	cmd.Env = os.Environ()
+	output, err := cmd.CombinedOutput()
+
+	require.NoError(t, err, string(output))
+	require.FileExists(t, destPath)
+
+	manifestPath := destPath + ".export-manifest.json"
+	require.FileExists(t, manifestPath)
+
+	data, readErr := os.ReadFile(manifestPath)
+	require.NoError(t, readErr)
+
+	var manifest map[string]any
+	require.NoError(t, json.Unmarshal(data, &manifest))
+	require.Equal(t, float64(1), manifest["schema_version"], "schema_version must be 1")
+	require.Equal(t, float64(1), manifest["protocol_version"], "protocol_version must be 1")
+	require.Greater(t, manifest["page_count"].(float64), float64(0), "page_count must be positive")
+
+	sha, _ := manifest["sha256"].(string)
+	require.Len(t, sha, 64, "sha256 must be 64 hex chars")
+
+	require.Contains(t, string(output), "sha256")
+	require.Contains(t, string(output), "pages")
+	require.Contains(t, string(output), "schema")
+}
+
 // --- helpers ---
 
 func makeBridgeScript(t *testing.T, tempDir, repoRoot string) string {

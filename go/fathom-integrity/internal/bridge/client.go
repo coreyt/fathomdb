@@ -47,8 +47,26 @@ func (r Request) MarshalJSON() ([]byte, error) {
 	return json.Marshal(payload)
 }
 
+// ExportManifest is the structured payload returned by the bridge safe_export
+// command and written as <destination>.export-manifest.json by the Rust engine.
+type ExportManifest struct {
+	ExportedAt      int64  `json:"exported_at"`
+	SHA256          string `json:"sha256"`
+	SchemaVersion   uint32 `json:"schema_version"`
+	ProtocolVersion uint32 `json:"protocol_version"`
+	PageCount       uint64 `json:"page_count"`
+}
+
 type Client struct {
 	BinaryPath string
+}
+
+func (c Client) SafeExport(ctx context.Context, databasePath, destinationPath string) (Response, error) {
+	return c.Execute(ctx, Request{
+		DatabasePath:    databasePath,
+		Command:         CommandSafeExport,
+		DestinationPath: destinationPath,
+	})
 }
 
 func (c Client) Execute(ctx context.Context, request Request) (Response, error) {
