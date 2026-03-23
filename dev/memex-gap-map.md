@@ -1,51 +1,111 @@
-# Memex Gap Map Against `fathomdb` Typed-Write + Read-Execution Plans
+# Memex Reference-Client Gap Map for `fathomdb`
 
 ## Scope
 
-This note compares:
+This note evaluates `fathomdb` from the perspective of a demanding reference
+client: **Memex**.
 
-- Memex's current storage requirements, as evidenced by its SQLite schema and
-  storage behavior
-- the planned work described in `dev/design-typed-write.md`
-- the planned work described in `dev/design-read-execution.md`
+The goal is not to define `fathomdb` as "the Memex database." The goal is to
+ask a better engineering question:
 
-This is intentionally narrower than "does all of fathomdb solve Memex." It is a
-gap map against the two planned slices named above.
+> What should `fathomdb` own as a reusable database substrate for local,
+> personal AI agents, and what should remain the responsibility of an agent
+> client such as Memex?
 
-## Bottom Line
+This review compares Memex's current datastore needs against:
 
-`fathomdb`'s planned typed-write and read-execution work is a strong fit for
-Memex's desired direction in one important area: **SQLite as canonical
-authority with engine-owned derived FTS/vector projections and explicit
-provenance**. That is already close to Memex's current SQLite-primary plus
-rebuildable-projection model.
+- `dev/design-typed-write.md`
+- `dev/design-read-execution.md`
+- `dev/design-detailed-supersession.md`
 
-Those planned slices are **not yet enough** for Memex's full storage/runtime
-surface. The main missing pieces are:
+## Design Boundary: Database vs Client
 
-- broad typed write coverage for Memex's many durable record classes
-- richer read result shapes than node-only rows
-- explicit update/supersession/version semantics
-- delete/restore/purge lifecycle semantics
-- graceful degradation behavior when vector/secondary capabilities are absent
-- operational admin/recovery surfaces on par with what Memex already depends on
+This is the abstraction line I would want if `fathomdb` is intended to support
+multiple clients rather than one application.
 
-## Memex Storage Surface
+### What `fathomdb` should own
 
-Memex currently persists much more than a knowledge graph:
+`fathomdb` should own the generic database-substrate concerns:
 
-- core knowledge objects: `items`, `sources`, `links`, `trails`,
-  `trail_items`, `item_versions`, `embeddings`
-- session/runtime state: `session_context`, `conversation_log`,
-  `conversation_embeddings`, `notifications`
-- operational state: `scheduled_tasks`, `task_runs`, `intake_log`,
-  `user_settings`, `audit_log`, `connector_health`
-- meetings: `meetings`, `meeting_recordings`, meeting link tables,
-  `meeting_intelligence_artifacts`, `meeting_extraction_runs`
-- planning/world model sidecars: `wm_entities`, `wm_intents`,
-  `wm_knowledge_objects`, `wm_actions`, `wm_events`, `wm_tasks`,
-  `wm_commitments`, `wm_goals`, `wm_action_plans`, `wm_plan_steps`,
-  `wm_execution_records`, `wm_knowledge_ingest_runs`, and related tables
+- canonical durability and transactional correctness
+- versioning, supersession, retire, restore, and retention primitives
+- derived projection management for FTS/vector/graph read surfaces
+- generic query execution and decoded result families
+- provenance, traceability, and excision primitives
+- capability detection, capability reporting, and degraded-execution semantics
+- integrity checking and repair-oriented admin surfaces
+- concurrency and performance discipline for local embedded use
+
+These are database responsibilities because every serious agent client will need
+them, even if their domain models differ.
+
+### What a client like Memex should own
+
+Memex should own application and product concerns:
+
+- domain-specific concepts such as meetings, notifications, reminders,
+  prompt-control artifacts, or planning objects
+- ingestion policy and orchestration
+- operator UX and product-level fallback choices
+- application-specific workflows and lifecycle rules
+- client-specific semantic overlays or domain meaning
+
+These are client responsibilities because they vary substantially across
+products.
+
+### What the contract between them should look like
+
+The contract should be explicit and well-engineered:
+
+- `fathomdb` provides stable generic storage primitives and read/write/admin
+  semantics
+- clients map their domain objects onto those primitives through a documented
+  extension model
+- `fathomdb` reports capabilities and integrity state explicitly
+- clients decide how to present or consume those states
+
+If `fathomdb` instead absorbs one product's table names and workflows directly,
+it stops being a reusable database substrate. If it stays too generic to model
+real operational state safely, it stops being useful.
+
+## Updated Bottom Line
+
+My view of `fathomdb` improved materially after reading
+`design-detailed-supersession.md`.
+
+Before that document, I considered lifecycle and update semantics one of the
+largest gaps. That is no longer true. The supersession design gives `fathomdb`
+a serious substrate story for:
+
+- append-oriented history
+- atomic replace and retire operations
+- chunk and FTS cleanup on text-changing replacements
+- explicit runtime-row status transitions for some operational records
+- transaction ordering designed for recoverability
+
+That is the right direction for a real agent database.
+
+But as a reference-client review, my assessment is now:
+
+- `fathomdb` is more credible as a future database substrate for Memex
+- it is not yet sufficient as a complete datastore substrate for Memex
+- the remaining gaps are less about basic mutation semantics and more about:
+  - abstraction clarity
+  - breadth of generic result and lifecycle surfaces
+  - semantic integrity guarantees
+  - operational completeness
+  - client-extensibility without product-specific coupling
+
+## Why Memex Is A Useful Reference Client
+
+Memex is a good stress test because it needs more than document storage. It
+persists:
+
+- knowledge objects: items, sources, links, trails, embeddings
+- conversation and session state
+- operational state: tasks, runs, intake, settings, notifications, audit
+- meetings and meeting-intelligence artifacts
+- planning and world-model sidecars
 
 Evidence:
 
@@ -53,273 +113,303 @@ Evidence:
 - `src/memex/migrations.py:293-690`
 - `src/memex/migrations.py:695-1253`
 
-## Capability Matrix
+This does **not** mean `fathomdb` should adopt Memex's schema. It means that a
+general-purpose agent database should be able to support a client with that kind
+of breadth through stable generic mechanisms.
 
-| Memex storage need | Evidence in Memex | Planned coverage in `fathomdb` | Assessment |
-|---|---|---|---|
-| SQLite canonical authority | `src/memex/store.py:860-866`, `src/memex/store.py:879-956` | Typed write assumes canonical rows plus derived projections inside one SQLite-backed writer path: `dev/design-typed-write.md:17-30`, `dev/design-typed-write.md:96-105` | Direct fit |
-| Single-writer discipline with WAL-friendly reads | `src/memex/store.py:862-865` | Explicitly in scope: writer-thread transaction discipline and WAL-friendly reader connections: `dev/design-typed-write.md:19-29`, `dev/design-read-execution.md:22-30` | Direct fit |
-| Engine-owned FTS derivation from canonical data | Memex already keeps SQLite FTS surfaces synchronized from canonical tables: `src/memex/migrations.py:177-196`, `src/memex/migrations.py:375-440` | Explicit goal: engine derives required projections; first slice derives FTS from chunks: `dev/design-typed-write.md:96-105`, `dev/design-typed-write.md:135-144` | Direct fit |
-| Vector search as a derived capability, not separate authority | Memex uses SQLite as primary and rebuilds/search projections from it: `src/memex/store.py:986-1045`, `src/memex/memory/migrate_to_ladybug.py:180-202` | Design keeps vectors as projection work, initially optional backfill, with runtime capability checks on reads: `dev/design-typed-write.md:107-115`, `dev/design-read-execution.md:123-134` | Strong fit |
-| Explicit provenance for later trace/excise | Memex stores provenance in `items` and many world-model tables: `src/memex/migrations.py:147-170`, `src/memex/migrations.py:795-1253` | Design makes `source_ref` first-class and "mandatory enough" for repair tooling: `dev/design-typed-write.md:88-95` | Direct fit |
-| Knowledge graph-ish records: nodes, chunks, eventually edges | Memex knowledge layer already has item/link/chunk/embedding style data, split across SQLite and Ladybug projection: `src/memex/migrations.py:130-244`, `src/memex/memory/ladybug_schema.py:15-115` | First slice covers nodes + chunks only; edges are deferred to phase 3: `dev/design-typed-write.md:75-86`, `dev/design-typed-write.md:184-191` | Partial fit; edges still missing in planned slice |
-| Broad durable runtime tables beyond graph data | Memex persists scheduler, meetings, intake, settings, notifications, audit, and many `wm_*` tables: `src/memex/migrations.py:293-690`, `src/memex/migrations.py:695-1253` | Design mentions `RunInsert`, `StepInsert`, `ActionInsert` but defers broader runtime coverage after the narrow slice: `dev/design-typed-write.md:79-85`, `dev/design-typed-write.md:184-191` | Missing for current planned work |
-| Rich read shapes across heterogeneous record types | Memex reads many non-node records from SQLite-backed stores and APIs | Read execution intentionally starts with one narrow node-shaped result (`row_id`, `logical_id`, `kind`, `properties`) and defers wider result decoders until later: `dev/design-read-execution.md:63-79`, `dev/design-read-execution.md:107-121`, `dev/design-read-execution.md:198-204` | Missing for current planned work |
-| In-place update plus append/history semantics | Memex uses both updates and history/version tables today: `src/memex/migrations.py:40-73`, `src/memex/memory/store.py:285-299`, `src/memex/memory/store.py:440-463` | Design recognizes supersession/version questions but does not resolve them yet: `dev/design-typed-write.md:117-132`, `dev/design-typed-write.md:173-183` | Missing / unresolved |
-| Soft-delete, restore, purge lifecycle | Memex uses `deleted_at`, soft delete, restore, purge, and soft-deleted listing: `src/memex/migrations.py:366-369`, `src/memex/memory/store.py:401-436` | Not covered in the typed-write/read-execution designs | Missing |
-| Deterministic projection rebuild from canonical state | Memex explicitly rebuilds Ladybug projection from SQLite: `src/memex/store.py:986-1045`, `src/memex/memory/migrate_to_ladybug.py:180-202` | Design direction supports this by separating canonical writes from derived projections, but the two docs do not yet define rebuild/admin APIs | Directionally aligned, but operational surface not yet provided |
-| Reverse recovery / import back into canonical store | Memex can repopulate SQLite knowledge tables from LadybugDB: `src/memex/memory/lbug2sqlite_recovery.py:15-122` | Not covered in either planned slice | Missing |
-| Graceful degraded operation when projection capability is unavailable | Memex degrades to SQLite-only when Ladybug is locked/unavailable and tracks degraded modes: `src/memex/store.py:883-955`, `src/memex/store.py:974-984`, `src/memex/memory/dual_write.py:58-64` | Read design prefers explicit capability error when vector support is unavailable: `dev/design-read-execution.md:123-134` | Mismatch; Memex currently wants graceful degradation more often than hard failure |
-| Backup/admin orchestration around the store | Memex already has online SQLite backup and orchestrated Ladybug backup/replay: `src/memex/backup.py:26-118`, `src/memex/backup.py:135-227` | Out of scope in these two design docs | Missing |
-| Path and file layout discipline for one canonical local DB | Memex centralizes path resolution for SQLite and projection stores: `src/memex/paths.py:1-42` | Consistent with `fathomdb`'s model, but not discussed in the two planned slices | Compatible, but not addressed here |
+## What The Supersession Design Fixes At The Database Layer
 
-## Concrete Mapping By Memex Area
+### 1. Replace and retire are now proper database primitives
 
-### 1. Knowledge Items, Chunks, FTS, and Vector Search
+This is a major improvement.
 
-Memex area:
+The supersession design explicitly distinguishes:
 
-- `items`
-- `sources`
-- `links`
-- `embeddings`
-- chunk/search projections
+- insert
+- replace
+- retire
 
-Fit:
+Evidence:
 
-- `items`/node-like canonical records are a good conceptual fit.
-- chunk-derived FTS is a good fit.
-- vector as a derived capability is a good fit.
+- `dev/design-detailed-supersession.md:113-180`
 
-Gaps:
+Why this matters at the substrate layer:
 
-- `sources` and `links` are not covered in the first typed-write slice.
-- Memex currently needs link reads and writes now, not after a later edge phase.
-- Memex also needs lifecycle semantics on these records, not just insert-only.
+- these are not Memex-specific operations
+- every long-lived agent datastore needs controlled history-preserving mutation
 
-Assessment:
+### 2. Projection correctness is treated as a database concern
 
-- Best candidate area for eventual migration.
-- Still requires extension before it can replace Memex's current storage layer.
+The supersession doc correctly treats stale chunks and stale FTS rows as a
+correctness problem in the storage layer, not just an application cleanup task.
 
-### 2. Versioning, Supersession, and Deletion Lifecycle
+Evidence:
 
-Memex area:
+- `dev/design-detailed-supersession.md:187-299`
 
-- `goals_history`
-- `item_versions`
-- `version` / `supersedes_id`
-- `deleted_at`, restore, purge
+That is the right separation of concerns. A client should not have to remember
+to clean up internal projection rows manually.
 
-Fit:
+### 3. Some operational-state transitions are becoming substrate-level writes
 
-- `fathomdb` already thinks in terms of `logical_id` vs `row_id` and
-  append-oriented state.
+Adding `upsert: bool` to `RunInsert`, `StepInsert`, and `ActionInsert` is a
+useful move, not because those exact structs are sacred, but because it admits
+that agent databases must support operational state transitions, not only
+knowledge inserts.
 
-Gaps:
+Evidence:
 
-- the typed-write design leaves ID generation unresolved
-- append-oriented supersession support is still on the checklist
-- soft delete / restore / purge semantics are absent from the planned slice
+- `dev/design-detailed-supersession.md:303-367`
 
-Assessment:
+### 4. Transaction ordering is designed for recovery
 
-- This is a major gap. Memex needs explicit lifecycle policy, not just an
-  eventual note that append-oriented updates will arrive later.
+The sequence for retires, replacements, chunk changes, and FTS row updates is
+trying to preserve detectable invariants under failure.
 
-### 3. Scheduler, Intake, Notifications, Settings, and Audit
+Evidence:
 
-Memex area:
+- `dev/design-detailed-supersession.md:454-486`
 
-- `scheduled_tasks`
-- `task_runs`
-- `intake_log`
-- `notifications`
-- `user_settings`
-- `audit_log`
-- `connector_health`
+That is a strong substrate signal.
 
-Fit:
+## Requirement Matrix: Substrate Expectations vs Memex Manifestation
 
-- some runtime records might map conceptually to future `RunInsert`,
-  `StepInsert`, and `ActionInsert`
+| Requirement class | Database-substrate expectation | Memex manifestation | Current `fathomdb` coverage | Assessment |
+|---|---|---|---|---|
+| Canonical durability | One canonical durable authority with transactional mutation | SQLite-primary store with rebuildable projections | Typed write path keeps canonical rows primary: `dev/design-typed-write.md:17-30` | Strong fit |
+| Concurrency discipline | Single-writer plus WAL-friendly readers for embedded local use | Memex already relies on WAL-backed SQLite | Explicit in write/read designs: `dev/design-typed-write.md:19-29`, `dev/design-read-execution.md:22-30` | Strong fit |
+| Projection derivation | Database owns derived FTS/vector projection maintenance | Memex already treats search surfaces as derivative | FTS derivation is owned by engine; FTS cleanup on supersession is now designed: `dev/design-typed-write.md:96-105`, `dev/design-detailed-supersession.md:221-243` | Strong fit for FTS |
+| Projection lifecycle completeness | Database should keep all derived surfaces consistent through replace/retire | Memex needs both text and vector correctness | Vector cleanup remains deferred: `dev/design-detailed-supersession.md:541-544` | Partial fit |
+| History-preserving mutation | Replace/retire/restore/purge must be explicit, safe, and auditable | Memex uses version/history and delete lifecycle today | Replace/retire now exist; restore/purge do not | Partial fit |
+| Durable correction trail | Why something changed or was retired should be queryable later | Memex needs operator trust and auditability | Retire provenance is warning-oriented, not a durable event model: `dev/design-detailed-supersession.md:419-428` | Missing |
+| Semantic graph integrity | Relationships should remain semantically coherent or be diagnosable | Memex depends on linked knowledge and world-model records | Replace semantics are good; retire can leave dangling edges, detection deferred | Partial fit |
+| Generic operational state support | Substrate should support durable operational records without becoming product-specific | Memex stores tasks, runs, intake, settings, notifications, meetings, planning state | Some runtime primitives exist, but coverage is still narrow | Partial fit |
+| Client extensibility model | Database should support multiple client schemas/workflows via generic primitives or sanctioned extension seams | Memex has much broader state than current `fathomdb` runtime structs | Not yet clearly defined in current docs | Missing / unclear |
+| Rich read model | Database should return more than node rows when clients need broader state families | Memex reads many heterogeneous record types | Read execution remains node-shaped first: `dev/design-read-execution.md:63-79`, `dev/design-read-execution.md:198-204` | Missing |
+| Capability negotiation | Database should report capabilities and enable degraded or alternate execution plans explicitly | Memex often wants continued operation without vectors | Current read plan prefers capability error when vector support is absent: `dev/design-read-execution.md:123-134` | Needs better abstraction |
+| Integrity and admin surface | Database should expose rebuild, diagnostics, and repair-oriented semantics | Memex relies on rebuild/recovery/admin flows | Directionally aligned, but current docs do not yet provide full contract | Partial fit |
 
-Gaps:
+## What Memex Needs Clearly, Without Requiring Memex-Specific Coupling
 
-- current planned work does not define typed shapes for most of this surface
-- current read execution does not define decoders for these record types
+From the database point of view, Memex needs the following classes of support:
 
-Assessment:
+### 1. Knowledge-state storage
 
-- Not provided by the planned work.
-- Memex would need a much broader canonical runtime schema and typed API before
-  this area could move.
+Memex needs durable support for:
 
-### 4. Meetings and Meeting-Intelligence Storage
+- entities/objects
+- relationships
+- text search
+- vector search
+- provenance
+- temporal history
 
-Memex area:
+This is generic agent-database territory. `fathomdb` is increasingly credible
+here.
 
-- `meetings`
-- `meeting_recordings`
-- `meeting_goal_links`
-- `meeting_entity_links`
-- `meeting_intelligence_artifacts`
-- `meeting_extraction_runs`
+### 2. Operational-state storage
 
-Fit:
+Memex needs durable support for:
 
-- meeting artifacts could eventually be represented as canonical typed nodes
-  plus linked runtime records
+- task and scheduler state
+- intake and replay state
+- operator-visible artifacts
+- long-running workflow state
 
-Gaps:
+This is still database territory, but the substrate should express it through
+generic operational-record primitives, not by absorbing Memex's table names.
 
-- none of the specific storage semantics are modeled in the two planned docs
-- the read model is too narrow for this data
-- update/state-machine semantics are not covered
+### 3. Semantic-memory integrity
 
-Assessment:
+Memex needs guarantees that:
 
-- Not provided by the planned work.
+- active search projections reflect active canonical state
+- relationship traversal does not silently drift into broken semantics
+- recovery and integrity tools can diagnose semantic corruption, not only
+  physical corruption
 
-### 5. World-Model and Planning Sidecars
+This must be owned primarily by the database substrate.
 
-Memex area:
+### 4. Client-visible capability and health reporting
 
-- `wm_entities`
-- `wm_intents`
-- `wm_knowledge_objects`
-- `wm_actions`
-- `wm_events`
-- `wm_tasks`
-- `wm_commitments`
-- `wm_goals`
-- `wm_action_plans`
-- `wm_plan_steps`
-- `wm_execution_records`
-- `wm_knowledge_ingest_runs`
+Memex needs to know:
 
-Fit:
+- which capabilities are currently available
+- which are degraded
+- when results are partial
+- when rebuild or repair is needed
 
-- conceptually aligned with `fathomdb`'s broader aim: typed canonical state with
-  provenance and graph-friendly structure
+The database should expose these states clearly. The client should decide how to
+surface them to users or operators.
 
-Gaps:
+## Revised View By Area
 
-- the current typed-write slice is far too narrow
-- the current read-execution slice is far too narrow
-- Memex needs queries across many typed record families, not just node rows
+### 1. Canonical knowledge storage
 
-Assessment:
+Updated view:
 
-- Strong conceptual fit, but large implementation gap.
-- This area likely needs a dedicated schema/result-model design in `fathomdb`,
-  not just incremental extension from nodes/chunks.
+- `fathomdb` now looks like a serious substrate candidate.
 
-### 6. Recovery, Rebuild, and Degraded Modes
+Good:
 
-Memex area:
+- append-oriented node history
+- explicit replace/retire semantics
+- chunk cleanup on replace
+- FTS cleanup on replace and retire
 
-- rebuild projection from canonical SQLite
-- recover knowledge back into SQLite from a secondary store
-- continue operating when the secondary capability is locked/unavailable
+Still missing for a world-class database substrate:
 
-Fit:
+- vector cleanup parity
+- chunk archival/history option
+- fuller audit trail on retire/excise
 
-- provenance discipline and canonical-vs-derived separation are the right
-  foundations
+### 2. Lifecycle and retention
 
-Gaps:
+Updated view:
 
-- explicit rebuild/recover/admin APIs are not in these two planned slices
-- vector capability is modeled as an execution error, whereas Memex often wants
-  a degraded but still-usable path
+- lifecycle is no longer a weak point at the level of basic replace/retire
+- lifecycle is still incomplete as a database contract
 
-Assessment:
+Still needed:
 
-- Foundations: yes
-- Memex-grade operational behavior: not yet
+- restore semantics
+- purge/retention semantics
+- durable event history for retire/excise/correction
 
-## What `fathomdb` Would Need Before Memex Could Realistically Adopt It
+This is substrate work, not client work.
 
-### Must-Have Extensions
+### 3. Graph integrity and semantic truth
 
-1. Expand typed writes well beyond `NodeInsert` and `ChunkInsert`.
-   Minimum practical surface for Memex would include:
-   - edges/relationships
-   - update/supersession operations
-   - soft-delete and restore operations
-   - typed runtime records for scheduler/intake/meeting/planning state
+Updated view:
 
-2. Expand read results beyond node rows.
-   Memex would need:
-   - typed decoders for multiple record families
-   - join-capable result paths for runtime tables
-   - enough diagnostics to debug planner/runtime behavior
+- replace semantics for edges are better than expected because traversal is by
+  `logical_id`
+- retire semantics still leave too much burden on the caller
 
-3. Define lifecycle semantics.
-   Memex needs explicit answers for:
-   - ID generation
-   - updates vs append-only replacement
-   - version history
-   - supersession
-   - deletion and purge
+For a world-class substrate, semantic graph damage should be:
 
-4. Define degraded-mode behavior.
-   For Memex, missing vector capability should often mean:
-   - continue with FTS/structured retrieval
-   - report degraded capability
-   not simply fail the read.
+- hard to create accidentally
+- easy to detect automatically
+- explicit in diagnostics
 
-5. Add operational/admin surfaces.
-   At minimum:
-   - deterministic projection rebuild
-   - backup/export/import story
-   - recovery/excision hooks that match the provenance model
+That means the integrity model still needs to grow.
 
-### Nice-To-Have Extensions
+### 4. Operational-state substrate
 
-- richer support for temporal/runtime record queries
-- compatibility layer for Memex's existing world-model sidecars
-- migration tooling from Memex's current SQLite schema into `fathomdb`'s
-  canonical schema
+Updated view:
 
-## Recommended Framing
+- current runtime primitives are a useful start
+- they are still too narrow to demonstrate a true multi-client operational
+  substrate
 
-The best current framing is:
+The key requirement is not "add Memex tables." It is:
 
-- `fathomdb` is a **good architectural target** for Memex's knowledge-storage
-  direction.
-- the specific typed-write and read-execution slices are **not yet a sufficient
-  storage substrate** for Memex as a whole.
-- the fastest path to Memex usefulness would be:
-  1. finish typed edges plus update/supersession semantics
-  2. widen read results beyond node rows
-  3. define graceful degraded-mode behavior
-  4. define runtime-table coverage for at least tasks/runs/intake and one
-     planning slice
+- define a generic, extensible operational-state model that can support clients
+  like Memex without bespoke database changes for each application
 
-## Verdict By Storage Area
+### 5. Read models and query surface
 
-### Good Fit Now
+Updated view:
 
-- canonical SQLite authority
-- single-writer plus WAL-reader discipline
-- engine-owned FTS derivation
-- provenance-first canonical writes
-- projection-first vector strategy
+- this remains one of the biggest gaps
 
-### Fits With Extension
+No matter how good writes become, the database substrate is incomplete if it can
+only return node-shaped rows while real clients need:
 
-- item/source/link knowledge storage
-- typed world-model entities and relationships
-- planning/runtime action records
-- deterministic projection rebuild
+- knowledge-state reads
+- operational-state reads
+- history and active-state views
+- diagnostics and explainability
 
-### Not Yet Provided By The Planned Work
+This is a substrate gap, not a Memex-specific request.
 
-- broad runtime-table persistence
-- rich heterogeneous read models
-- deletion/restore/purge lifecycle
-- explicit supersession/version semantics
-- Memex-style degraded capability behavior
-- Memex-grade operational backup/recovery/admin flows
+## What I Would Now Ask `fathomdb` To Build Next
+
+These asks are phrased at the right layer: they are database responsibilities
+that would help Memex, but they are not Memex-specific coupling requests.
+
+### 1. Write down the substrate/client extension contract
+
+Define clearly:
+
+- what kinds of record families `fathomdb` natively supports
+- what extension points clients can rely on
+- what invariants the engine guarantees across those extensions
+
+Without this, breadth discussions collapse into "add more tables."
+
+### 2. Finish lifecycle semantics as a full database contract
+
+Add:
+
+- restore semantics
+- retention/purge semantics
+- durable retire/excise/correction event records
+- vector lifecycle cleanup alongside FTS lifecycle cleanup
+
+### 3. Make semantic integrity a first-class product promise
+
+Expand integrity tooling so it can detect at minimum:
+
+- dangling active edges after retire
+- stale vector rows after chunk replacement
+- rows retired without usable provenance
+- mismatches between active canonical text and active search projections
+
+### 4. Define a generic operational-state model
+
+Rather than chasing one client's tables, provide a reusable model for durable:
+
+- runs
+- steps
+- actions
+- workflow/task state
+- operator-visible artifacts
+
+Then validate it against Memex-like workloads.
+
+### 5. Widen the read surface into stable result families
+
+Add result families for:
+
+- canonical knowledge objects
+- operational objects
+- historical views
+- diagnostics/explain plans
+
+This is required for real clients to treat `fathomdb` as a database rather than
+just a storage kernel.
+
+### 6. Revisit capability reporting and degraded execution
+
+The database should expose:
+
+- capability availability
+- degraded execution choices
+- partial-result semantics
+
+The client should choose policy, but the database should not force a single
+hard-fail posture where degraded execution is possible.
+
+## Final Judgment
+
+As a Memex reference-client review, I would now describe `fathomdb` this way:
+
+- It is becoming a credible database substrate for local, personal AI agents.
+- The detailed supersession work is a real quality inflection point.
+- The next step is not to become more Memex-specific.
+- The next step is to become more explicit and more complete as a reusable
+  substrate:
+  - better abstraction boundaries
+  - broader generic read and lifecycle surfaces
+  - stronger semantic-integrity guarantees
+  - clearer extension seams for multiple clients
+
+Memex remains a useful proving ground because its datastore needs are broad and
+operationally real. But the correct engineering target is:
+
+- `fathomdb` should satisfy Memex-like demands
+- without becoming a hardcoded Memex schema or workflow engine
+
+That is the separation of concerns I would want from a well-engineered agent
+database.
