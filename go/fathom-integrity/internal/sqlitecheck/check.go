@@ -153,12 +153,27 @@ func Diagnose(dbPath, sqliteBin string, layer2 *Layer2Report) (DiagnosticReport,
 	return report, nil
 }
 
+// validTableNames is the allowlist of table names that CountTable accepts.
+// Security fix H-2: Prevents SQL injection via table name concatenation by
+// rejecting any table name not in this set.
+var validTableNames = map[string]bool{
+	"nodes": true, "chunks": true, "runs": true, "steps": true, "actions": true,
+	"edges": true, "fts_nodes": true,
+}
+
 // CountTable returns the number of rows in the named table.
-// Returns (0, nil) if the table does not exist or the query otherwise fails.
+// Security fix M-3: Returns the error instead of silently returning (0, nil)
+// so callers can distinguish "table missing" from "zero rows".
 func CountTable(sqliteBin, dbPath, table string) (int, error) {
+	// Security fix H-2: Validate table name against an allowlist to prevent
+	// SQL injection. The table parameter is interpolated into the query string
+	// and cannot be parameterized in sqlite3 CLI invocations.
+	if !validTableNames[table] {
+		return 0, fmt.Errorf("CountTable: invalid table name %q", table)
+	}
 	out, err := runSQLiteQuery(sqliteBin, dbPath, "SELECT count(*) FROM "+table+";")
 	if err != nil {
-		return 0, nil
+		return 0, fmt.Errorf("CountTable(%q): %w", table, err)
 	}
 	n, err := strconv.Atoi(strings.TrimSpace(out))
 	if err != nil {
@@ -339,23 +354,25 @@ func computeSuggestions(r DiagnosticReport) []string {
 	}
 
 	// Layer 1 — storage-level suggestions.
+	// Security fix M-5: All database paths in suggestions are now single-quoted
+	// to prevent shell metacharacter injection when users copy-paste commands.
 	if !r.Layer1.HeaderValid {
-		add(fmt.Sprintf("database header is corrupt; attempt recovery with: fathom-integrity recover --db %s --dest <recovery-path>", r.DatabasePath))
+		add(fmt.Sprintf("database header is corrupt; attempt recovery with: fathom-integrity recover --db '%s' --dest <recovery-path>", r.DatabasePath))
 	} else if !r.Layer1.IntegrityCheckOK {
-		add(fmt.Sprintf("structural corruption detected; attempt recovery with: fathom-integrity recover --db %s --dest <recovery-path>", r.DatabasePath))
+		add(fmt.Sprintf("structural corruption detected; attempt recovery with: fathom-integrity recover --db '%s' --dest <recovery-path>", r.DatabasePath))
 	}
 	if r.Layer1.ForeignKeyViolations > 0 {
 		add("foreign key violations present; investigate with: PRAGMA foreign_key_check;")
 	}
 	if r.Layer1.WAL.Present {
 		if !r.Layer1.WAL.HeaderValid {
-			add("WAL file has invalid header; remove if no writers are active: rm " + r.DatabasePath + "-wal")
+			add(fmt.Sprintf("WAL file has invalid header; remove if no writers are active: rm '%s-wal'", r.DatabasePath))
 		} else {
 			if r.Layer1.WAL.Truncated {
 				add("WAL file is truncated; ensure no writers are active before proceeding")
 			}
 			if r.Layer1.WAL.CheckpointNeeded {
-				add(fmt.Sprintf("WAL has %d frames; reclaim space with: sqlite3 %s 'PRAGMA wal_checkpoint(TRUNCATE);'", r.Layer1.WAL.FrameCount, r.DatabasePath))
+				add(fmt.Sprintf("WAL has %d frames; reclaim space with: sqlite3 '%s' 'PRAGMA wal_checkpoint(TRUNCATE);'", r.Layer1.WAL.FrameCount, r.DatabasePath))
 			}
 		}
 	}
@@ -379,7 +396,7 @@ func computeSuggestions(r DiagnosticReport) []string {
 		needsFTSRebuild = true
 	}
 	if needsFTSRebuild {
-		add(fmt.Sprintf("repair FTS projections with: fathom-integrity rebuild --target fts --db %s", r.DatabasePath))
+		add(fmt.Sprintf("repair FTS projections with: fathom-integrity rebuild --target fts --db '%s'", r.DatabasePath))
 	}
 	if r.Layer3.OrphanedChunks > 0 {
 		add("orphaned chunks have no active parent node; no automated repair available — investigate manually")
