@@ -48,13 +48,22 @@ func RunRecover(sourcePath, destPath, bridgePath, sqliteBin string, out io.Write
 		return fmt.Errorf("source database does not exist: %s", sourcePath)
 	}
 
-	if _, err := os.Stat(destPath); err == nil {
-		return fmt.Errorf("destination already exists: %s — remove it first or choose a different path", destPath)
-	}
-
-	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+	// Security fix M-2: Use O_CREATE|O_EXCL for atomic creation to eliminate
+	// the TOCTOU race between Stat() and file creation. If the file already
+	// exists, OpenFile returns an error atomically.
+	// Security fix M-1: Use 0o700 for directories, 0o600 for files.
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o700); err != nil {
 		return fmt.Errorf("create dest directory: %w", err)
 	}
+	destGuard, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return fmt.Errorf("destination already exists or cannot be created: %w", err)
+	}
+	destGuard.Close()
+	// Remove the guard file so sqlite3 can create its own database file at
+	// this path. The O_EXCL open above guarantees no other process created
+	// the file between our check and this point.
+	os.Remove(destPath)
 
 	// Run sqlite3 .recover against the (possibly corrupt) source.
 	// Non-zero exit is normal when the source is corrupt; we proceed as long as

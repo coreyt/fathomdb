@@ -77,6 +77,10 @@ impl ExecutionCoordinator {
             .map(bind_value_to_sql)
             .collect::<Vec<_>>();
 
+        // FIX(review) + Security fix M-8: was .expect() — panics on mutex poisoning.
+        // shape_sql_map uses into_inner() (pure cache, safe to recover).
+        // conn uses map_err → EngineError (connection state may be corrupt after panic;
+        // into_inner() would risk using a connection with partial transaction state).
         let conn_guard = self.conn.lock().map_err(|_| {
             EngineError::Bridge("connection mutex poisoned".to_owned())
         })?;

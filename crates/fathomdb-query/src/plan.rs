@@ -19,7 +19,8 @@ pub fn choose_driving_table(ast: &QueryAst) -> DrivingTable {
     let has_deterministic_id_filter = ast.steps.iter().any(|step| {
         matches!(
             step,
-            QueryStep::Filter(Predicate::LogicalIdEq(_)) | QueryStep::Filter(Predicate::SourceRefEq(_))
+            QueryStep::Filter(Predicate::LogicalIdEq(_))
+                | QueryStep::Filter(Predicate::SourceRefEq(_))
         )
     });
 

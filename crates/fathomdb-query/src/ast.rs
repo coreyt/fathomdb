@@ -7,8 +7,14 @@ pub struct QueryAst {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum QueryStep {
-    VectorSearch { query: String, limit: usize },
-    TextSearch { query: String, limit: usize },
+    VectorSearch {
+        query: String,
+        limit: usize,
+    },
+    TextSearch {
+        query: String,
+        limit: usize,
+    },
     Traverse {
         direction: TraverseDirection,
         label: String,

@@ -81,7 +81,10 @@ fn typed_write_request_persists_nodes_chunks_and_derived_fts() {
 
     let write_request = meeting_write_request(r#"{"status":"active"}"#);
 
-    let receipt = engine.writer().submit(write_request).expect("write completes");
+    let receipt = engine
+        .writer()
+        .submit(write_request)
+        .expect("write completes");
     assert_eq!(receipt.label, "seed");
     assert_eq!(receipt.optional_backfill_count, 0);
 
@@ -157,7 +160,10 @@ fn excise_single_version_cleans_fts() {
         .service()
         .check_integrity()
         .expect("post-excise integrity");
-    assert_eq!(after.missing_fts_rows, 0, "FTS should be clean after excise");
+    assert_eq!(
+        after.missing_fts_rows, 0,
+        "FTS should be clean after excise"
+    );
 }
 
 #[test]

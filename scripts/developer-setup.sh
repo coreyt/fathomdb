@@ -3,10 +3,14 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SQLITE_POLICY_FILE="${SQLITE_POLICY_FILE:-$REPO_ROOT/tooling/sqlite.env}"
 RUST_TOOLCHAIN="${RUST_TOOLCHAIN:-stable}"
 GO_VERSION="${GO_VERSION:-1.24.1}"
 GO_INSTALL_DIR="${GO_INSTALL_DIR:-$HOME/.local/go}"
+
+# Security fix H-6: Hardcode the policy file path to the repository's own
+# tooling/sqlite.env. Previously SQLITE_POLICY_FILE could be overridden via
+# environment variable, allowing an attacker to source arbitrary bash code.
+SQLITE_POLICY_FILE="$REPO_ROOT/tooling/sqlite.env"
 
 if [[ -f "$SQLITE_POLICY_FILE" ]]; then
   # shellcheck disable=SC1090
@@ -238,6 +242,29 @@ install_rust() {
   rustup component add rustfmt clippy
 }
 
+# Security fix M-7: Verify downloaded archive integrity with SHA-256 checksums
+# before extraction. Prevents MITM or mirror-compromise attacks.
+verify_sha256() {
+  local file="$1"
+  local expected="$2"
+  local actual
+  actual="$(sha256sum "$file" | awk '{print $1}')"
+  if [[ "$actual" != "$expected" ]]; then
+    die "SHA-256 mismatch for $(basename "$file"): expected $expected, got $actual"
+  fi
+  log "SHA-256 verified for $(basename "$file")"
+}
+
+# Known SHA-256 checksums for Go releases.
+go_sha256() {
+  local version="$1" arch="$2"
+  case "${version}-${arch}" in
+    1.24.1-amd64) printf 'cb2396bae64183cdccf75c33a271e5e3a8bce8b3e53e52af4e5f64c39aef8596\n' ;;
+    1.24.1-arm64) printf '8e298f34519c82b773077e5e18a098e6e7da9768a3b68ab0cb3e295476a3dc3f\n' ;;
+    *) warn "no known SHA-256 for Go ${version}/${arch}; skipping verification"; return 1 ;;
+  esac
+}
+
 install_go_linux() {
   local os arch archive url tmp_dir
   os='linux'
@@ -248,6 +275,11 @@ install_go_linux() {
 
   log "installing Go ${GO_VERSION} to ${GO_INSTALL_DIR}"
   curl -fsSL "$url" -o "${tmp_dir}/${archive}"
+  # Security fix M-7: Verify download integrity before extracting.
+  local expected_sha
+  if expected_sha="$(go_sha256 "$GO_VERSION" "$arch")"; then
+    verify_sha256 "${tmp_dir}/${archive}" "$expected_sha"
+  fi
   rm -rf "$GO_INSTALL_DIR"
   mkdir -p "$GO_INSTALL_DIR"
   tar -C "$GO_INSTALL_DIR" --strip-components=1 -xzf "${tmp_dir}/${archive}"
@@ -295,6 +327,18 @@ install_project_sqlite() {
 
   log "installing project-local SQLite ${SQLITE_VERSION} to ${SQLITE_INSTALL_DIR}"
   curl -fsSL "$archive_url" -o "${tmp_dir}/${archive_name}"
+  # Security fix M-7: Verify SQLite archive checksum when available.
+  local sqlite_sha_url
+  sqlite_sha_url="$(printf 'https://sqlite.org/%s/sqlite-autoconf-%s.tar.gz.sha256' \
+    "$(sqlite_release_year "$SQLITE_VERSION")" \
+    "$(sqlite_numeric_version "$SQLITE_VERSION")")"
+  if curl -fsSL "$sqlite_sha_url" -o "${tmp_dir}/sha256.txt" 2>/dev/null; then
+    local expected_sha
+    expected_sha="$(awk '{print $1}' "${tmp_dir}/sha256.txt")"
+    verify_sha256 "${tmp_dir}/${archive_name}" "$expected_sha"
+  else
+    warn "could not fetch SHA-256 checksum for SQLite ${SQLITE_VERSION}; skipping verification"
+  fi
   mkdir -p "$source_dir"
   tar -C "$source_dir" --strip-components=1 -xzf "${tmp_dir}/${archive_name}"
 
