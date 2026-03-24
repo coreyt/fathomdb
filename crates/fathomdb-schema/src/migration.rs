@@ -9,11 +9,7 @@ pub struct Migration {
 }
 
 impl Migration {
-    pub const fn new(
-        version: SchemaVersion,
-        description: &'static str,
-        sql: &'static str,
-    ) -> Self {
+    pub const fn new(version: SchemaVersion, description: &'static str, sql: &'static str) -> Self {
         Self {
             version,
             description,

@@ -192,7 +192,9 @@ impl AdminService {
 
         let mut warnings = Vec::new();
         if orphaned_chunks > 0 {
-            warnings.push(format!("{orphaned_chunks} orphaned chunk(s) with no active node"));
+            warnings.push(format!(
+                "{orphaned_chunks} orphaned chunk(s) with no active node"
+            ));
         }
         if null_source_ref_nodes > 0 {
             warnings.push(format!(
@@ -200,7 +202,9 @@ impl AdminService {
             ));
         }
         if broken_step_fk > 0 {
-            warnings.push(format!("{broken_step_fk} step(s) referencing non-existent run"));
+            warnings.push(format!(
+                "{broken_step_fk} step(s) referencing non-existent run"
+            ));
         }
         if broken_action_fk > 0 {
             warnings.push(format!(
@@ -353,7 +357,10 @@ impl AdminService {
             .map_err(|e| EngineError::Bridge(format!("system clock error: {e}")))?
             .as_secs();
 
-        let manifest = SafeExportManifest { exported_at, sha256 };
+        let manifest = SafeExportManifest {
+            exported_at,
+            sha256,
+        };
 
         // 5. Write manifest alongside the exported file, using Path API for the name.
         let manifest_path = {
@@ -361,12 +368,14 @@ impl AdminService {
             let stem = p
                 .file_name()
                 .map(|n| format!("{}.export-manifest.json", n.to_string_lossy()))
-                .ok_or_else(|| EngineError::Bridge("destination path has no filename".to_owned()))?;
+                .ok_or_else(|| {
+                    EngineError::Bridge("destination path has no filename".to_owned())
+                })?;
             p.set_file_name(stem);
             p
         };
-        let manifest_json = serde_json::to_string(&manifest)
-            .map_err(|e| EngineError::Bridge(e.to_string()))?;
+        let manifest_json =
+            serde_json::to_string(&manifest).map_err(|e| EngineError::Bridge(e.to_string()))?;
         fs::write(&manifest_path, manifest_json)?;
 
         Ok(manifest)
@@ -575,7 +584,10 @@ mod tests {
             manifest_path.display()
         );
         assert_eq!(manifest.sha256.len(), 64, "sha256 should be 64 hex chars");
-        assert!(manifest.exported_at > 0, "exported_at should be a unix timestamp");
+        assert!(
+            manifest.exported_at > 0,
+            "exported_at should be a unix timestamp"
+        );
     }
 
     #[test]

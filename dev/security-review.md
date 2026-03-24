@@ -2,6 +2,7 @@
 
 **Date:** 2026-03-24
 **Scope:** Full codebase (Rust crates, Go integrity tool, CI/CD, scripts)
+**Status:** All findings remediated — see inline code comments tagged with fix IDs (e.g. `Security fix H-1`)
 
 ---
 

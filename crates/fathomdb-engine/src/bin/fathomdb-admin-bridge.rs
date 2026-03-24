@@ -107,8 +107,11 @@ fn main() {
             },
             Err(error) => error_response(error),
         },
-        BridgeCommand::TraceSource => {
-            match service.trace_source(request.source_ref.as_deref().unwrap_or_default()) {
+        // Security fix M-10: Require source_ref for TraceSource and ExciseSource
+        // instead of silently defaulting to "". An empty source_ref could cause
+        // unintended broad operations.
+        BridgeCommand::TraceSource => match request.source_ref.as_deref() {
+            Some(source_ref) if !source_ref.is_empty() => match service.trace_source(source_ref) {
                 Ok(report) => BridgeResponse {
                     protocol_version: PROTOCOL_VERSION,
                     ok: true,
@@ -116,10 +119,16 @@ fn main() {
                     payload: serde_json::to_value(report).unwrap_or_else(|_| json!({})),
                 },
                 Err(error) => error_response(error),
-            }
-        }
-        BridgeCommand::ExciseSource => {
-            match service.excise_source(request.source_ref.as_deref().unwrap_or_default()) {
+            },
+            _ => BridgeResponse {
+                protocol_version: PROTOCOL_VERSION,
+                ok: false,
+                message: "source_ref is required for trace_source".to_owned(),
+                payload: json!({}),
+            },
+        },
+        BridgeCommand::ExciseSource => match request.source_ref.as_deref() {
+            Some(source_ref) if !source_ref.is_empty() => match service.excise_source(source_ref) {
                 Ok(report) => BridgeResponse {
                     protocol_version: PROTOCOL_VERSION,
                     ok: true,
@@ -127,8 +136,14 @@ fn main() {
                     payload: serde_json::to_value(report).unwrap_or_else(|_| json!({})),
                 },
                 Err(error) => error_response(error),
-            }
-        }
+            },
+            _ => BridgeResponse {
+                protocol_version: PROTOCOL_VERSION,
+                ok: false,
+                message: "source_ref is required for excise_source".to_owned(),
+                payload: json!({}),
+            },
+        },
         BridgeCommand::SafeExport => match request.destination_path {
             Some(destination) => match service.safe_export(destination) {
                 Ok(manifest) => BridgeResponse {
@@ -162,11 +177,15 @@ fn parse_target(target: Option<&str>) -> ProjectionTarget {
     }
 }
 
+/// Security fix M-4: Sanitize error messages to avoid leaking internal paths,
+/// schema details, or system configuration in bridge responses. The full error
+/// is printed to stderr for operator debugging.
 fn error_response(error: impl std::fmt::Display) -> BridgeResponse {
+    eprintln!("[bridge] error: {error}");
     BridgeResponse {
         protocol_version: PROTOCOL_VERSION,
         ok: false,
-        message: error.to_string(),
+        message: "internal error; check bridge stderr for details".to_owned(),
         payload: json!({}),
     }
 }

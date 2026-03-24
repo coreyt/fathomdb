@@ -85,7 +85,9 @@ func TestCountTable_ReturnsZeroForEmptyTable(t *testing.T) {
 	require.Equal(t, 0, n)
 }
 
-func TestCountTable_ReturnsZeroForMissingTable(t *testing.T) {
+func TestCountTable_RejectsUnknownTable(t *testing.T) {
+	// Security fix H-2: CountTable now rejects table names not in the
+	// allowlist rather than concatenating them into SQL.
 	sqliteBin := testutil.SQLiteBinary()
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "test.db")
@@ -94,9 +96,9 @@ func TestCountTable_ReturnsZeroForMissingTable(t *testing.T) {
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, string(out))
 
-	n, err := CountTable(sqliteBin, dbPath, "nonexistent_table")
-	require.NoError(t, err)
-	require.Equal(t, 0, n)
+	_, err = CountTable(sqliteBin, dbPath, "nonexistent_table")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid table name")
 }
 
 func buildValidWALHeader(pageSize uint32) []byte {

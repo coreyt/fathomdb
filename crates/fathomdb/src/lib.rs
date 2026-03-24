@@ -6,8 +6,8 @@ pub use fathomdb_engine::{
     ProjectionTarget, QueryRows, RunInsert, StepInsert, WriteReceipt, WriteRequest, WriterActor,
 };
 pub use fathomdb_query::{
-    compile_query, BindValue, CompiledQuery, DrivingTable, ExecutionHints, Predicate, Query,
-    QueryAst, QueryBuilder, QueryStep, ScalarValue, ShapeHash, TraverseDirection,
+    BindValue, CompiledQuery, DrivingTable, ExecutionHints, Predicate, Query, QueryAst,
+    QueryBuilder, QueryStep, ScalarValue, ShapeHash, TraverseDirection, compile_query,
 };
 pub use fathomdb_schema::{BootstrapReport, Migration, SchemaManager, SchemaVersion};
 

@@ -66,7 +66,11 @@ func InspectWAL(walPath string) (WALReport, error) {
 	}
 
 	pageSize := int(order.Uint32(hdr[8:12]))
-	if pageSize < 512 {
+	// Security fix M-9: Enforce both lower and upper bounds on page size.
+	// SQLite supports page sizes from 512 to 65536 bytes. Without the upper
+	// bound, a malicious WAL could specify a huge page size causing excessive
+	// memory allocation when reading frames.
+	if pageSize < 512 || pageSize > 65536 {
 		return report, nil // implausible page size
 	}
 	checkpointSeq := order.Uint32(hdr[12:16])
