@@ -61,9 +61,14 @@ impl ExecutionCoordinator {
         &self,
         compiled: &CompiledQuery,
     ) -> Result<QueryRows, EngineError> {
+        // FIX(review): was .expect() — panics on mutex poisoning, cascading failure.
+        // Options: (A) into_inner() for all, (B) EngineError for all, (C) mixed.
+        // Chose (C): shape_sql_map is a pure cache — into_inner() is safe to recover.
+        // conn wraps a SQLite connection whose state may be corrupt after a thread panic,
+        // so we propagate EngineError there instead.
         self.shape_sql_map
             .lock()
-            .expect("shape_sql_map mutex poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .insert(compiled.shape_hash, compiled.sql.clone());
 
         let bind_values = compiled
@@ -72,7 +77,9 @@ impl ExecutionCoordinator {
             .map(bind_value_to_sql)
             .collect::<Vec<_>>();
 
-        let conn_guard = self.conn.lock().expect("connection mutex poisoned");
+        let conn_guard = self.conn.lock().map_err(|_| {
+            EngineError::Bridge("connection mutex poisoned".to_owned())
+        })?;
         let mut statement = conn_guard.prepare_cached(&compiled.sql).map_err(|e| {
             if is_capability_missing_error(&e) {
                 EngineError::CapabilityMissing(e.to_string())
@@ -103,7 +110,7 @@ impl ExecutionCoordinator {
     pub fn shape_sql_count(&self) -> usize {
         self.shape_sql_map
             .lock()
-            .expect("shape_sql_map mutex poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .len()
     }
 
