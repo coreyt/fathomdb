@@ -61,11 +61,13 @@ impl ExecutionCoordinator {
         &self,
         compiled: &CompiledQuery,
     ) -> Result<QueryRows, EngineError> {
+        // FIX(review): was .expect() — panics on mutex poisoning, cascading failure.
+        // Options: (A) into_inner() for all, (B) EngineError for all, (C) mixed.
+        // Chose (C): shape_sql_map is a pure cache — into_inner() is safe to recover.
+        // conn wraps a SQLite connection whose state may be corrupt after a thread panic,
+        // so we propagate EngineError there instead.
         self.shape_sql_map
             .lock()
-            // Security fix M-8: Recover from mutex poisoning instead of panicking.
-            // A panic in another thread should not cascade into a DoS for all
-            // subsequent operations on this coordinator.
             .unwrap_or_else(|e| e.into_inner())
             .insert(compiled.shape_hash, compiled.sql.clone());
 
@@ -75,8 +77,13 @@ impl ExecutionCoordinator {
             .map(bind_value_to_sql)
             .collect::<Vec<_>>();
 
-        // Security fix M-8: Recover from mutex poisoning instead of panicking.
-        let conn_guard = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        // FIX(review) + Security fix M-8: was .expect() — panics on mutex poisoning.
+        // shape_sql_map uses into_inner() (pure cache, safe to recover).
+        // conn uses map_err → EngineError (connection state may be corrupt after panic;
+        // into_inner() would risk using a connection with partial transaction state).
+        let conn_guard = self.conn.lock().map_err(|_| {
+            EngineError::Bridge("connection mutex poisoned".to_owned())
+        })?;
         let mut statement = conn_guard.prepare_cached(&compiled.sql).map_err(|e| {
             if is_capability_missing_error(&e) {
                 EngineError::CapabilityMissing(e.to_string())
@@ -107,9 +114,6 @@ impl ExecutionCoordinator {
     pub fn shape_sql_count(&self) -> usize {
         self.shape_sql_map
             .lock()
-            // Security fix M-8: Recover from mutex poisoning instead of panicking.
-            // A panic in another thread should not cascade into a DoS for all
-            // subsequent operations on this coordinator.
             .unwrap_or_else(|e| e.into_inner())
             .len()
     }

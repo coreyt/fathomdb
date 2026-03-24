@@ -58,7 +58,11 @@ pub fn execution_hints(ast: &QueryAst) -> ExecutionHints {
 
     ExecutionHints {
         recursion_limit,
-        hard_limit: ast.final_limit.unwrap_or(1000).max(1000),
+        // FIX(review): was .max(1000) — always produced >= 1000, ignoring user's final_limit.
+        // Options considered: (A) use final_limit directly with default, (B) .min(MAX) ceiling,
+        // (C) decouple from final_limit. Chose (A): the CTE LIMIT should honor the user's
+        // requested limit; the depth bound (compile.rs:177) already constrains recursion.
+        hard_limit: ast.final_limit.unwrap_or(1000),
     }
 }
 
@@ -108,9 +112,9 @@ pub fn shape_signature(ast: &QueryAst) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::{DrivingTable, QueryBuilder};
+    use crate::{DrivingTable, QueryBuilder, TraverseDirection};
 
-    use super::choose_driving_table;
+    use super::{choose_driving_table, execution_hints};
 
     #[test]
     fn deterministic_filter_overrides_vector_driver() {
@@ -120,5 +124,26 @@ mod tests {
             .into_ast();
 
         assert_eq!(choose_driving_table(&ast), DrivingTable::Nodes);
+    }
+
+    #[test]
+    fn hard_limit_honors_user_specified_limit_below_default() {
+        let ast = QueryBuilder::nodes("Meeting")
+            .traverse(TraverseDirection::Out, "HAS_TASK", 3)
+            .limit(10)
+            .into_ast();
+
+        let hints = execution_hints(&ast);
+        assert_eq!(hints.hard_limit, 10, "hard_limit must honor user's final_limit");
+    }
+
+    #[test]
+    fn hard_limit_defaults_to_1000_when_no_limit_set() {
+        let ast = QueryBuilder::nodes("Meeting")
+            .traverse(TraverseDirection::Out, "HAS_TASK", 3)
+            .into_ast();
+
+        let hints = execution_hints(&ast);
+        assert_eq!(hints.hard_limit, 1000, "hard_limit defaults to 1000");
     }
 }
