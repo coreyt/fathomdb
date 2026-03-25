@@ -36,7 +36,7 @@ pub enum CompileError {
 
 /// Security fix H-1: Validate JSON path against a strict allowlist pattern to
 /// prevent SQL injection. Retained as defense-in-depth even though the path is
-/// now parameterized (see FIX(review) in compile_query). Only paths like
+/// now parameterized (see `FIX(review)` in `compile_query`). Only paths like
 /// `$.foo`, `$.foo.bar_baz` are allowed.
 fn validate_json_path(path: &str) -> Result<(), CompileError> {
     let valid = path.starts_with('$')
@@ -519,7 +519,17 @@ mod tests {
         );
         // Path and value should both be in the bind list.
         use crate::BindValue;
-        assert!(compiled.binds.iter().any(|b| matches!(b, BindValue::Text(s) if s == "$.status")));
-        assert!(compiled.binds.iter().any(|b| matches!(b, BindValue::Text(s) if s == "active")));
+        assert!(
+            compiled
+                .binds
+                .iter()
+                .any(|b| matches!(b, BindValue::Text(s) if s == "$.status"))
+        );
+        assert!(
+            compiled
+                .binds
+                .iter()
+                .any(|b| matches!(b, BindValue::Text(s) if s == "active"))
+        );
     }
 }

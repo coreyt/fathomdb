@@ -133,7 +133,10 @@ mod tests {
             .into_ast();
 
         let hints = execution_hints(&ast);
-        assert_eq!(hints.hard_limit, 10, "hard_limit must honor user's final_limit");
+        assert_eq!(
+            hints.hard_limit, 10,
+            "hard_limit must honor user's final_limit"
+        );
     }
 
     #[test]

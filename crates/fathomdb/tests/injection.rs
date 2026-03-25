@@ -1,4 +1,9 @@
-#![allow(dead_code, clippy::expect_used, clippy::missing_panics_doc, clippy::doc_markdown)]
+#![allow(
+    dead_code,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::doc_markdown
+)]
 
 use std::path::Path;
 
@@ -16,14 +21,20 @@ pub fn delete_all_fts_rows(db_path: &Path) {
 /// Delete a single fts_nodes row by chunk_id — minimal projection gap.
 pub fn delete_fts_row(db_path: &Path, chunk_id: &str) {
     open(db_path)
-        .execute("DELETE FROM fts_nodes WHERE chunk_id = ?1", rusqlite::params![chunk_id])
+        .execute(
+            "DELETE FROM fts_nodes WHERE chunk_id = ?1",
+            rusqlite::params![chunk_id],
+        )
         .expect("delete_fts_row failed");
 }
 
 /// Delete a chunk row while leaving its FTS row intact — creates stale_fts_rows.
 pub fn delete_chunk_keep_fts(db_path: &Path, chunk_id: &str) {
     open(db_path)
-        .execute("DELETE FROM chunks WHERE id = ?1", rusqlite::params![chunk_id])
+        .execute(
+            "DELETE FROM chunks WHERE id = ?1",
+            rusqlite::params![chunk_id],
+        )
         .expect("delete_chunk_keep_fts failed");
 }
 

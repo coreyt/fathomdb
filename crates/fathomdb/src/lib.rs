@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 pub use fathomdb_engine::{
     ActionInsert, AdminHandle, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire, EngineError,
     EngineRuntime, ExecutionCoordinator, NodeInsert, NodeRetire, NodeRow, OptionalProjectionTask,
-    ProjectionRepairReport, ProjectionTarget, QueryRows, RunInsert, SafeExportManifest,
-    SafeExportOptions, StepInsert,
-    WriteReceipt, WriteRequest, WriterActor, new_row_id,
+    ProjectionRepairReport, ProjectionTarget, ProvenanceMode, QueryPlan, QueryRows, RunInsert,
+    SafeExportManifest, SafeExportOptions, StepInsert, WriteReceipt, WriteRequest, WriterActor,
+    new_id, new_row_id,
 };
 pub use fathomdb_query::{
     BindValue, CompiledQuery, DrivingTable, ExecutionHints, Predicate, Query, QueryAst,
@@ -16,12 +16,14 @@ pub use fathomdb_schema::{BootstrapReport, Migration, SchemaManager, SchemaVersi
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EngineOptions {
     pub database_path: PathBuf,
+    pub provenance_mode: ProvenanceMode,
 }
 
 impl EngineOptions {
     pub fn new(path: impl AsRef<Path>) -> Self {
         Self {
             database_path: path.as_ref().to_path_buf(),
+            provenance_mode: ProvenanceMode::Warn,
         }
     }
 }
@@ -40,7 +42,7 @@ impl Engine {
     /// bootstrap fails.
     pub fn open(options: EngineOptions) -> Result<Self, EngineError> {
         Ok(Self {
-            runtime: EngineRuntime::open(options.database_path)?,
+            runtime: EngineRuntime::open(options.database_path, options.provenance_mode)?,
         })
     }
 

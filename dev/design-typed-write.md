@@ -172,14 +172,14 @@ This layer is scaffolded enough when:
 
 ### Phase 2: Write Path Hardening
 
-- [ ] Decide the v1 ID-generation policy for typed writes.
-- [ ] Decide whether `PreparedWrite` stays typed to execution time or compiles
+- [x] Decide the v1 ID-generation policy for typed writes.
+- [x] Decide whether `PreparedWrite` stays typed to execution time or compiles
       down to SQL plus binds.
-- [ ] Require an explicit provenance policy for canonical rows that should be
+- [x] Require an explicit provenance policy for canonical rows that should be
       traceable or excisable.
-- [ ] Add coverage for required-projection derivation and optional-backfill
+- [x] Add coverage for required-projection derivation and optional-backfill
       accounting.
-- [ ] Add append-oriented supersession support for versioned updates.
+- [x] Add append-oriented supersession support for versioned updates.
 
 ### Phase 3: Broader Canonical Coverage
 

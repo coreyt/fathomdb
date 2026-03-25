@@ -32,7 +32,9 @@ pub struct SafeExportOptions {
 
 impl Default for SafeExportOptions {
     fn default() -> Self {
-        Self { force_checkpoint: true }
+        Self {
+            force_checkpoint: true,
+        }
     }
 }
 
@@ -302,7 +304,9 @@ impl AdminService {
             ));
         }
         if stale_fts_rows > 0 {
-            warnings.push(format!("{stale_fts_rows} stale FTS row(s) referencing missing chunk"));
+            warnings.push(format!(
+                "{stale_fts_rows} stale FTS row(s) referencing missing chunk"
+            ));
         }
         if fts_rows_for_superseded_nodes > 0 {
             warnings.push(format!(
@@ -310,7 +314,9 @@ impl AdminService {
             ));
         }
         if dangling_edges > 0 {
-            warnings.push(format!("{dangling_edges} active edge(s) with missing endpoint node"));
+            warnings.push(format!(
+                "{dangling_edges} active edge(s) with missing endpoint node"
+            ));
         }
         if orphaned_supersession_chains > 0 {
             warnings.push(format!(
@@ -470,11 +476,10 @@ impl AdminService {
         let conn = self.connect()?;
 
         if options.force_checkpoint {
-            let (busy, log, checkpointed): (i64, i64, i64) = conn.query_row(
-                "PRAGMA wal_checkpoint(FULL)",
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-            )?;
+            let (busy, log, checkpointed): (i64, i64, i64) =
+                conn.query_row("PRAGMA wal_checkpoint(FULL)", [], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                })?;
             if busy != 0 {
                 return Err(EngineError::Bridge(format!(
                     "WAL checkpoint blocked: {busy} active reader(s) prevented a full checkpoint; \
@@ -567,6 +572,7 @@ fn count_source_ref(
 
 /// Convert a non-negative i64 count to usize, panicking on negative values
 /// which would indicate data corruption.
+#[allow(clippy::expect_used)]
 fn i64_to_usize(val: i64) -> usize {
     usize::try_from(val).expect("count(*) must be non-negative")
 }
@@ -574,8 +580,8 @@ fn i64_to_usize(val: i64) -> usize {
 /// Runs a parameterized query and collects the first column as strings.
 ///
 /// NOTE(review): sql parameter must be a hardcoded query string, never user input.
-/// Options: (A) doc comment, (B) whitelist refactor like count_source_ref, (C) leave as-is.
-/// Chose (A): function is private, only called with hardcoded SQL from trace_source.
+/// Options: (A) doc comment, (B) whitelist refactor like `count_source_ref`, (C) leave as-is.
+/// Chose (A): function is private, only called with hardcoded SQL from `trace_source`.
 /// Whitelist refactor not practical — queries have different SELECT/ORDER BY per table.
 fn collect_strings(
     conn: &rusqlite::Connection,
@@ -845,7 +851,12 @@ mod tests {
         let export_path = export_dir.path().join("backup.db");
 
         let manifest = service
-            .safe_export(&export_path, SafeExportOptions { force_checkpoint: false })
+            .safe_export(
+                &export_path,
+                SafeExportOptions {
+                    force_checkpoint: false,
+                },
+            )
             .expect("export");
 
         assert!(export_path.exists(), "exported db should exist");
@@ -856,7 +867,10 @@ mod tests {
             manifest_path.display()
         );
         assert_eq!(manifest.sha256.len(), 64, "sha256 should be 64 hex chars");
-        assert!(manifest.exported_at > 0, "exported_at should be a unix timestamp");
+        assert!(
+            manifest.exported_at > 0,
+            "exported_at should be a unix timestamp"
+        );
         assert_eq!(manifest.schema_version, 1, "schema_version should be 1");
         assert_eq!(manifest.protocol_version, 1, "protocol_version should be 1");
         assert!(manifest.page_count > 0, "page_count should be positive");
@@ -870,10 +884,18 @@ mod tests {
 
         // force_checkpoint: false must not error even on a non-WAL database
         let manifest = service
-            .safe_export(&export_path, SafeExportOptions { force_checkpoint: false })
+            .safe_export(
+                &export_path,
+                SafeExportOptions {
+                    force_checkpoint: false,
+                },
+            )
             .expect("export with no checkpoint");
 
-        assert!(manifest.page_count > 0, "page_count must be populated regardless of checkpoint mode");
+        assert!(
+            manifest.page_count > 0,
+            "page_count must be populated regardless of checkpoint mode"
+        );
         assert_eq!(manifest.schema_version, 1);
         assert_eq!(manifest.protocol_version, 1);
     }

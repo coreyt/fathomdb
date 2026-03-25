@@ -146,17 +146,20 @@ fn main() {
             },
         },
         BridgeCommand::SafeExport => match request.destination_path {
-            Some(destination) => match service.safe_export(destination, SafeExportOptions::default()) {
-                Ok(manifest) => BridgeResponse {
-                    protocol_version: PROTOCOL_VERSION,
-                    ok: true,
-                    message: "export created".to_owned(),
-                    // SafeExportManifest contains only primitive types; serialization cannot fail.
-                    payload: serde_json::to_value(&manifest)
-                        .unwrap_or_else(|_| unreachable!("SafeExportManifest serialization is infallible")),
-                },
-                Err(error) => error_response(error),
-            },
+            Some(destination) => {
+                match service.safe_export(destination, SafeExportOptions::default()) {
+                    Ok(manifest) => BridgeResponse {
+                        protocol_version: PROTOCOL_VERSION,
+                        ok: true,
+                        message: "export created".to_owned(),
+                        // SafeExportManifest contains only primitive types; serialization cannot fail.
+                        payload: serde_json::to_value(&manifest).unwrap_or_else(|_| {
+                            unreachable!("SafeExportManifest serialization is infallible")
+                        }),
+                    },
+                    Err(error) => error_response(error),
+                }
+            }
             None => BridgeResponse {
                 protocol_version: PROTOCOL_VERSION,
                 ok: false,
@@ -184,7 +187,10 @@ fn parse_target(target: Option<&str>) -> ProjectionTarget {
 /// schema details, or system configuration in bridge responses. The full error
 /// is printed to stderr for operator debugging.
 fn error_response(error: impl std::fmt::Display) -> BridgeResponse {
-    eprintln!("[bridge] error: {error}");
+    #[allow(clippy::print_stderr)]
+    {
+        eprintln!("[bridge] error: {error}");
+    }
     BridgeResponse {
         protocol_version: PROTOCOL_VERSION,
         ok: false,

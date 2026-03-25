@@ -1,13 +1,25 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
-use fathomdb_query::{CompiledQuery, ShapeHash};
+use fathomdb_query::{CompiledQuery, DrivingTable, ShapeHash};
 use fathomdb_schema::SchemaManager;
 use rusqlite::{Connection, params_from_iter, types::Value};
 
 use crate::{EngineError, sqlite};
+
+/// Execution plan returned by [`ExecutionCoordinator::explain_compiled_read`].
+///
+/// This is a read-only introspection struct. It does not execute SQL.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QueryPlan {
+    pub sql: String,
+    pub bind_count: usize,
+    pub driving_table: DrivingTable,
+    pub shape_hash: ShapeHash,
+    pub cache_hit: bool,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NodeRow {
@@ -76,7 +88,7 @@ impl ExecutionCoordinator {
         // so we propagate EngineError there instead.
         self.shape_sql_map
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(PoisonError::into_inner)
             .insert(compiled.shape_hash, compiled.sql.clone());
 
         let bind_values = compiled
@@ -89,9 +101,10 @@ impl ExecutionCoordinator {
         // shape_sql_map uses into_inner() (pure cache, safe to recover).
         // conn uses map_err → EngineError (connection state may be corrupt after panic;
         // into_inner() would risk using a connection with partial transaction state).
-        let conn_guard = self.conn.lock().map_err(|_| {
-            EngineError::Bridge("connection mutex poisoned".to_owned())
-        })?;
+        let conn_guard = self
+            .conn
+            .lock()
+            .map_err(|_| EngineError::Bridge("connection mutex poisoned".to_owned()))?;
         let mut statement = conn_guard.prepare_cached(&compiled.sql).map_err(|e| {
             if is_capability_missing_error(&e) {
                 EngineError::CapabilityMissing(e.to_string())
@@ -127,13 +140,37 @@ impl ExecutionCoordinator {
     pub fn shape_sql_count(&self) -> usize {
         self.shape_sql_map
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(PoisonError::into_inner)
             .len()
     }
 
     #[must_use]
     pub fn schema_manager(&self) -> Arc<SchemaManager> {
         Arc::clone(&self.schema_manager)
+    }
+
+    /// Return the execution plan for a compiled query without executing it.
+    ///
+    /// Useful for debugging, testing shape-hash caching, and operator
+    /// diagnostics. Does not open a transaction or touch the database beyond
+    /// checking the statement cache.
+    ///
+    /// # Panics
+    /// Panics if the internal shape-SQL-map mutex is poisoned.
+    #[must_use]
+    pub fn explain_compiled_read(&self, compiled: &CompiledQuery) -> QueryPlan {
+        let cache_hit = self
+            .shape_sql_map
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .contains_key(&compiled.shape_hash);
+        QueryPlan {
+            sql: compiled.sql.clone(),
+            bind_count: compiled.binds.len(),
+            driving_table: compiled.driving_table,
+            shape_hash: compiled.shape_hash,
+            cache_hit,
+        }
     }
 
     /// Execute a named PRAGMA and return the result as a String.
@@ -273,6 +310,95 @@ mod tests {
             .execute_compiled_read(&compiled)
             .expect("execute compiled read");
         assert_eq!(coordinator.shape_sql_count(), 1);
+    }
+
+    // --- Item 6: explain_compiled_read tests ---
+
+    #[test]
+    fn explain_returns_correct_sql() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()))
+            .expect("coordinator");
+
+        let compiled = QueryBuilder::nodes("Meeting")
+            .text_search("budget", 5)
+            .compile()
+            .expect("compiled query");
+
+        let plan = coordinator.explain_compiled_read(&compiled);
+
+        assert_eq!(plan.sql, compiled.sql);
+    }
+
+    #[test]
+    fn explain_returns_correct_driving_table() {
+        use fathomdb_query::DrivingTable;
+
+        let db = NamedTempFile::new().expect("temporary db");
+        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()))
+            .expect("coordinator");
+
+        let compiled = QueryBuilder::nodes("Meeting")
+            .text_search("budget", 5)
+            .compile()
+            .expect("compiled query");
+
+        let plan = coordinator.explain_compiled_read(&compiled);
+
+        assert_eq!(plan.driving_table, DrivingTable::FtsNodes);
+    }
+
+    #[test]
+    fn explain_reports_cache_miss_then_hit() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()))
+            .expect("coordinator");
+
+        let compiled = QueryBuilder::nodes("Meeting")
+            .text_search("budget", 5)
+            .compile()
+            .expect("compiled query");
+
+        // Before execution: cache miss
+        let plan_before = coordinator.explain_compiled_read(&compiled);
+        assert!(
+            !plan_before.cache_hit,
+            "cache miss expected before first execute"
+        );
+
+        // Execute to populate cache
+        coordinator
+            .execute_compiled_read(&compiled)
+            .expect("execute read");
+
+        // After execution: cache hit
+        let plan_after = coordinator.explain_compiled_read(&compiled);
+        assert!(
+            plan_after.cache_hit,
+            "cache hit expected after first execute"
+        );
+    }
+
+    #[test]
+    fn explain_does_not_execute_query() {
+        // Call explain_compiled_read on an empty database. If explain were
+        // actually executing SQL, it would return Ok with 0 rows. But the
+        // key assertion is that it returns a QueryPlan (not an error) even
+        // without touching the database.
+        let db = NamedTempFile::new().expect("temporary db");
+        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()))
+            .expect("coordinator");
+
+        let compiled = QueryBuilder::nodes("Meeting")
+            .text_search("anything", 5)
+            .compile()
+            .expect("compiled query");
+
+        // This must not error, even though the database is empty
+        let plan = coordinator.explain_compiled_read(&compiled);
+
+        assert!(!plan.sql.is_empty(), "plan must carry the SQL text");
+        assert_eq!(plan.bind_count, compiled.binds.len());
     }
 
     #[test]

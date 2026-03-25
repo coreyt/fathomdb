@@ -1,15 +1,19 @@
-#![allow(dead_code, clippy::expect_used, clippy::missing_panics_doc, clippy::must_use_candidate, clippy::doc_markdown)]
+#![allow(
+    dead_code,
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::must_use_candidate,
+    clippy::doc_markdown
+)]
 
 use std::path::Path;
 
 /// Count all rows in a named table.
 pub fn count_rows(db_path: &Path, table: &str) -> i64 {
     let conn = rusqlite::Connection::open(db_path).expect("open db");
-    conn.query_row(
-        &format!("SELECT count(*) FROM {table}"),
-        [],
-        |row| row.get(0),
-    )
+    conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+        row.get(0)
+    })
     .unwrap_or(0)
 }
 

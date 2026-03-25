@@ -192,7 +192,7 @@ This layer is scaffolded enough when:
       cached SQL entry.
 - [x] Add an explicit failure test for vector-driven reads when `sqlite-vec` is
       unavailable. (Asserts EngineError::CapabilityMissing.)
-- [ ] Decide whether read results should include diagnostics beyond decoded
+- [x] Decide whether read results should include diagnostics beyond decoded
       rows.
 
 ### Phase 3: Follow-On Expansion
