@@ -88,22 +88,39 @@ provenance.
 
 ### 2.2 Typed Runtime Tables
 
-Generic graph records alone are not enough, but the v1 engine should resist
-typed-table sprawl. The typed runtime schema should stay narrow:
+Generic graph records alone are not enough, but the engine draws a firm
+boundary between storage primitives and application domain semantics. The typed
+runtime schema is narrow by design and stays narrow:
 
-- `runs`: session-level or scheduler-level execution containers
-- `steps`: prompt/control/LLM-stage records
-- `actions`: concrete tool calls, observations, or emitted outcomes
+- `runs`: execution containers (session-level, scheduler-level, or equivalent)
+- `steps`: prompt/control/LLM-stage records within a run
+- `actions`: concrete tool calls, observations, or emitted outcomes within a step
 
-Higher-level semantic objects such as meeting artifacts, knowledge objects, and
-reviewable domain entities should stay in generic `nodes` with explicit `kind`
-values until their shapes are proven stable enough to deserve stricter tables.
+These three tables are the **ceiling** for engine-owned typed tables. They
+exist because `source_ref` needs a typed provenance anchor with referential
+integrity, not because the engine has opinions about how agent execution should
+be structured. Applications that want a flat event stream use `kind = "event"`.
+Applications that want deeper nesting use edges between operation nodes. The
+three-table model accommodates both without engine changes.
 
-This keeps the storage engine lean while allowing the SDK layer to expose richer
-typed models.
+**The engine does not own domain semantics.** Concepts above this line —
+meetings, approvals, scheduling artifacts, intent frames, evaluation records,
+knowledge objects, or any other application domain concept — belong in
+application code, modeled as generic `nodes` and `edges` with
+application-chosen `kind` values. The engine provides graph, versioning,
+search, and provenance primitives; the application defines its own world-model
+ontology on top.
 
-The broader set of deferred typed-table candidates is preserved in
-[ARCHITECTURE-deferred-expansion.md](./ARCHITECTURE-deferred-expansion.md).
+This is a permanent design principle, not a v1 deferral. Domain-specific typed
+tables are not deferred engine features. They are application responsibility.
+Applications that need query performance on hot domain-specific paths should use
+expression indexes on JSONB properties (§7.2) rather than requesting new engine
+tables. That mechanism handles performance needs without growing the engine
+schema.
+
+[ARCHITECTURE-deferred-expansion.md](./ARCHITECTURE-deferred-expansion.md)
+documents domain patterns that applications can build on the engine's
+primitives.
 
 ### 2.3 Chunk Projection Layer
 
@@ -457,6 +474,16 @@ blast radius of logical corruption is bounded. Because canonical rows are
 append-oriented and provenance-linked, semantic corruption can be reversed
 without restoring a coarse external snapshot.
 
+**Success criterion:** A developer should be able to diagnose and repair a
+wrong agent memory in under 15 minutes using only SQLite tooling plus
+fathomdb's admin commands. The `trace_source` → `excise_source` →
+`rebuild_projections` workflow is designed for exactly this scenario.
+
+**Crash-consistency testing:** The test plan must cover crash scenarios
+explicitly: interrupted WAL checkpoints, partial projection sync failures, and
+write transactions interrupted mid-transaction. These are distinct from
+functional correctness tests and require deliberate injection.
+
 ### 6.5 Physical Recovery Protocol
 
 SQLite's built-in recovery tools remain useful, but `fathomdb` should recover
@@ -494,6 +521,14 @@ SQLite remains the durability layer, so the shim should assume:
 - a coordinated writer path for updates
 - an in-memory write queue or equivalent serialization strategy to avoid `SQLITE_BUSY`
 
+**Scale-out path:** If write throughput ever becomes a bottleneck, the correct
+expansion is sharding by workspace or agent identity (multiple database files),
+not multi-writer merge semantics. CRDT-style multi-writer sync requires
+relaxing `PRAGMA foreign_keys`, partial unique indexes, and referential
+integrity constraints — all of which fathomdb's corruption-class detection
+and provenance tracing depend on. Shard-by-workspace preserves the
+single-writer model and all integrity guarantees within each shard.
+
 ### 7.2 Indexing Strategy
 
 JSON-heavy filters will need help over time.
@@ -523,6 +558,12 @@ The operational model should include explicit integrity routines:
 - startup detection of missing optional semantic backfills
 
 Repairability is part of normal operation, not only disaster response.
+
+**WAL health observability:** WAL size, checkpoint lag, and long-running reader
+detection should be formalized as admin-surface signals. A WAL that grows
+without checkpointing degrades read performance and risks losing checkpoint
+progress. The admin surface should expose these as observable database health
+metrics, not require manual `PRAGMA` inspection.
 
 ### 7.4 Embedding Pipeline
 

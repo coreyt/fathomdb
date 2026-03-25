@@ -2,137 +2,155 @@
 
 ## Purpose
 
-This file preserves architecture and schema ideas that are intentionally **not**
-part of the tight v1 engine scope in [ARCHITECTURE.md](./ARCHITECTURE.md), but
-are still valuable as likely future expansion paths.
+This file documents the engine-application boundary concretely and shows how
+domain patterns that applications need can be implemented using fathomdb's
+existing graph, versioning, and provenance primitives — without requiring engine
+schema changes.
 
-The main architecture document now optimizes for implementation focus. This
-document keeps the broader design space so it is not lost.
+`ARCHITECTURE.md` §2.2 draws a firm line: `runs`, `steps`, and `actions` are
+the ceiling of engine-owned typed tables. Everything above that line is
+application domain logic. This file shows how to build those patterns on top of
+the engine.
 
-## 1. Broader Typed Semantic Table Candidates
+---
 
-Before narrowing the v1 runtime schema to `runs`, `steps`, and `actions`, the
-architecture carried a wider set of typed semantic tables. These remain useful
-candidates once the engine shape stabilizes:
+## 1. Why Domain Concepts Stay Out Of The Engine
 
-- `intent_frames`
-- `actions`
-- `observations`
-- `knowledge_objects`
-- `meeting_artifacts`
-- `control_artifacts`
-- `evaluation_records`
-- `approvals`
-- `scheduler_runs`
+Each engine-owned table is a schema the engine must migrate, version, and
+support in perpetuity. Every new domain concept adds:
 
-The likely progression is:
+- a migration every user must run, even if their application doesn't use it
+- a typed SDK surface the engine must maintain
+- an impedance mismatch for applications with a different domain model
 
-1. start with the narrow runtime triad in `ARCHITECTURE.md`
-2. keep world entities as generic `nodes` with explicit `kind` values
-3. promote only the semantic families that prove stable and performance-critical
-   into dedicated relational tables
+Applications using fathomdb will have different node taxonomies, different
+execution models, and different domain concepts. A meeting-centric agent, a
+code-review agent, and a research agent share the same storage and provenance
+primitives. They should not share a schema dictated by one application's domain.
 
-## 2. Deferred Approval And Proposal Model
+The engine's job is to store versioned graph data with provenance. The
+application's job is to define what that data means.
 
-The broader design previously included proposal and approval states such as:
+---
 
-- `proposed`
-- `approved`
-- `rejected`
-- `superseded`
+## 2. Application Domain Patterns
 
-These states are still relevant to the product and user-needs model, but are
-deferred from the v1 core engine because they complicate base visibility rules
-and temporal semantics.
+The following patterns cover domain concepts previously tracked as potential
+engine table candidates. Each shows how to implement the concept using nodes,
+edges, and JSONB properties.
 
-Near-term guidance:
+### 2.1 Meeting And Event Artifacts
 
-- keep the engine-level state model simple: active, superseded, deleted
-- represent proposal/review state in JSON properties or SDK-level models
-- revisit dedicated approval tables only after the query/compiler core is stable
+Model meetings as nodes with `kind = "meeting"`. Participants, decisions,
+commitments, and follow-ups become edges and child nodes.
 
-## 3. Deferred Persistent Queue Table
+```
+node kind="meeting"    properties: {title, started_at, ended_at, status}
+  edge kind="attended_by"  → node kind="person"
+  edge kind="produced"     → node kind="commitment"
+  edge kind="produced"     → node kind="action_item"
+```
 
-An earlier design path allowed for a persistent SQLite queue table such as
-`embedding_jobs` for optional semantic backfills.
+FTS and vector projections over meeting chunks work identically to any other
+node kind. Temporal queries work the same way. `source_ref` on the meeting node
+makes the entire cluster traceable and excisable.
 
-This remains a plausible later evolution if the product needs:
+### 2.2 Approval And Proposal Workflows
 
-- crash-resilient background job recovery
-- multiple long-running background workers
-- explicit introspection of queued and failed semantic backfills
+The engine's visibility model is simple: active, superseded, deleted. Proposal
+and review states belong in application JSONB properties or SDK models.
 
-It is deferred from v1 because a durable queue inside the same SQLite file can
-fight the interactive writer path for the single write lock.
+```
+node kind="proposal"  properties: {status: "pending|approved|rejected", ...}
+```
 
-Current v1 direction:
+A `source_ref` pointing to the run or step that created the proposal makes it
+traceable and excisable if rejected. The engine does not need to understand
+approval states. It stores and retrieves nodes. The application enforces its own
+workflow logic.
 
+### 2.3 Intent Frames And Control Artifacts
+
+Prompt interpretation, routing decisions, and response contracts are
+semantically important records but not engine concepts. Store them as nodes:
+
+```
+node kind="intent_frame"      properties: {input_summary, route, policy, ...}
+node kind="control_artifact"  properties: {type, contract, ...}
+```
+
+Link them to the run or step they came from via edges or `source_ref`.
+
+### 2.4 Evaluation Records And Comparison Runs
+
+Evaluation labels, rubric scores, and failure annotations are application data:
+
+```
+node kind="eval_record"  properties: {score, rubric, label, run_id, ...}
+edge kind="evaluates"    → node kind="action" (or run, step, as appropriate)
+```
+
+The engine's temporal model lets queries reconstruct behavior at any point in
+time. Comparison between two runs is a join through edges, not an engine
+feature.
+
+### 2.5 Scheduling And Reminders
+
+Scheduled work, reminders, and deadlines are nodes:
+
+```
+node kind="scheduled_task"  properties: {due_at, status, recurrence, ...}
+edge kind="depends_on"      → node kind="task"
+```
+
+Completion, deferral, and cancellation are modeled as supersession or status
+changes in JSONB properties. No engine-level queue table is needed for
+application scheduling semantics.
+
+---
+
+## 3. Persistent Queue Table (Deferred, Possible)
+
+A persistent SQLite queue table inside the engine (e.g., `embedding_jobs`) for
+optional semantic backfills remains a plausible addition if the product later
+needs crash-resilient background job recovery with explicit introspection of
+queued and failed work.
+
+It is deferred from v1 because a durable queue inside the same SQLite file
+competes with the interactive writer path for the write lock.
+
+Current direction:
 - use an in-memory async queue for optional semantic projection work
-- repair missing projections via startup rebuild checks
+- repair missing projections via startup rebuild checks (`rebuild_missing_projections`)
 
-## 4. Future Table Promotion Guidance
+---
 
-The following semantic families are the most plausible candidates to graduate
-from generic `nodes` to typed tables later:
+## 4. Multi-Database Sharding (Future Scale-Out)
 
-### 4.1 Prompt-Control And Governance
+fathomdb's v1 model is single-file. If write throughput ever becomes a
+bottleneck, the correct scale-out path is **sharding by workspace or agent
+identity** (multiple database files), not multi-writer merge semantics.
 
-- `intent_frames`
-- `control_artifacts`
-- `validation_results`
-- `response_contracts`
+CRDT-style multi-writer sync requires relaxing `PRAGMA foreign_keys`, partial
+unique indexes, and uniqueness constraints beyond primary key. fathomdb's
+corruption-class detection and provenance tracing depend on all of these. They
+are not optional.
 
-Promote these if:
+Shard-by-workspace preserves the single-writer model and all integrity
+guarantees within each shard. It is the only scale-out path compatible with
+fathomdb's integrity model.
 
-- explainability queries become hot
-- offline replay/evaluation becomes a primary workflow
-- JSON-based filtering on these records becomes a bottleneck
+---
 
-### 4.2 Meeting Intelligence
+## 5. What This File Is NOT
 
-- `meeting_artifacts`
-- `meeting_decisions`
-- `meeting_commitments`
-- `meeting_promotions`
+This file is not a list of features the engine will add later. The domain
+patterns above should be implemented in application code, not in future engine
+migrations.
 
-Promote these if:
-
-- meeting workflows become central to the product
-- meeting-specific joins dominate retrieval or audit paths
-
-### 4.3 Evaluation And Benchmarking
-
-- `evaluation_records`
-- `rubric_scores`
-- `failure_labels`
-- `comparison_runs`
-
-Promote these if:
-
-- controlled experimentation and version comparisons become routine
-- evaluation workloads justify stricter schemas than generic nodes/actions
-
-## 5. Broader Runtime Schema Possibility
-
-If `runs`, `steps`, and `actions` eventually prove too narrow, the next natural
-expansion is:
-
-- `runs` for session/scheduler containers
-- `steps` for control and LLM stages
-- `actions` for concrete operations
-- `observations` for normalized result records
-- `control_artifacts` for parser/router/policy outputs
-
-That progression preserves the v1 core while allowing more specialized read
-paths later.
-
-## 6. Why This File Exists
-
-This file exists to separate two concerns cleanly:
-
-- **Main architecture:** what should be built first
-- **Deferred expansion:** what should not be forgotten
+If a pattern becomes so universally needed and so performance-critical that it
+genuinely belongs in the engine, that case must be argued explicitly against the
+cost framework in §1: migration burden on all users, schema lock-in, and
+impedance mismatch with applications that don't use that concept.
 
 Use [ARCHITECTURE.md](./ARCHITECTURE.md) for implementation-driving decisions.
-Use this file when revisiting schema expansion, approvals, background job
-durability, and richer semantic-family promotion.

@@ -1,201 +1,281 @@
 # USER_NEEDS.md
 
+## Scope: Engine-Level Needs vs Application-Layer Needs
+
+This document is organized in two parts.
+
+**Part 1** (§1–7) describes what any local agent datastore must provide,
+regardless of the application built on top. These needs drive fathomdb's
+engine design: the graph backbone, query compiler, write pipeline, provenance
+model, and recovery surface.
+
+**Part 2** (§8) describes the needs of one example application — a
+personal AI agent that manages meetings, scheduling, email, and long-running
+goals. These are valid and important needs, but they are application-layer
+responsibilities. They should be built on top of the engine's primitives, not
+baked into the engine schema.
+
+---
+
+# Part 1: Engine-Level User Needs
+
 ## 1. Executive Summary
 
-`fathomdb` exists to serve **local AI agents that maintain an ongoing relationship with a human and their work**. In this domain, the datastore is not only a place to put documents. It must help the system remember what matters, connect related information, support action over time, and remain inspectable and reversible when the agent is wrong.
+`fathomdb` exists to serve **local AI agents that maintain an ongoing
+relationship with a human and their work**. In this domain, the datastore is
+not only a place to put documents. It must help the system remember what
+matters, connect related information, support action over time, and remain
+inspectable and reversible when the agent is wrong.
 
-The key user need is a datastore that can support a durable world model for the human and agent while also supporting multimodal recall: structured facts, relationships, full-text lookup, semantic similarity, temporal context, provenance, and operational history. It must be fast enough for interactive use, safe enough for high-trust personal workflows, and simple enough to run locally.
+The key engine-level need is a datastore that supports a durable world model
+with multimodal recall: structured facts, relationships, full-text lookup,
+semantic similarity, temporal context, provenance, and operational history. It
+must be fast enough for interactive use, safe enough for high-trust personal
+workflows, and simple enough to run locally without infrastructure.
 
 ## 2. Who This Serves
 
 ### 2.1 The Human Principal
 
-The human relies on the agent to manage sensitive, interconnected personal and professional information such as notes, goals, schedules, meetings, email-derived work, and long-running projects.
-
-The human needs:
+The human relies on the agent to manage sensitive, interconnected personal and
+professional information. The human needs:
 
 - strong privacy and local control over data
 - fast recall and continuity across sessions and interfaces
 - a way to inspect why the agent answered, acted, or stored something
-- the ability to approve, reject, correct, or undo harmful changes
+- the ability to correct or undo harmful changes
 - confidence that the system will not silently lose or distort important context
 
 ### 2.2 The Agent Runtime
 
-The agent is the primary operator of the datastore. It works under token limits, imperfect reasoning, and pressure to act across many kinds of information.
+The agent is the primary operator of the datastore. It works under token
+limits, imperfect reasoning, and pressure to act across many kinds of
+information. The agent needs:
 
-The agent needs:
-
-- deterministic, programmatic access patterns instead of brittle bespoke query strings
-- a unified way to work with documents, relationships, semantic similarity, full-text lookup, and temporal state
-- help with ingestion, indexing, and housekeeping so it does not have to manually synchronize multiple memory surfaces
-- a durable place to store intent, actions, observations, corrections, outcomes, and learned context over time
+- deterministic, programmatic access patterns instead of brittle query strings
+- a unified way to work with documents, relationships, semantic similarity,
+  full-text lookup, and temporal state
+- help with ingestion, indexing, and housekeeping
+- a durable place to store intent, actions, observations, corrections, and
+  learned context over time
 
 ### 2.3 The Application Developer And Operator
 
-The surrounding application needs a datastore that is embeddable, observable, and maintainable.
-
-The developer or operator needs:
+The surrounding application needs a datastore that is embeddable, observable,
+and maintainable. The developer or operator needs:
 
 - a zero-ops local deployment model
 - reliable schema evolution and repair paths
 - visibility into failures, degraded modes, and behavioral regressions
 - replay and auditability for debugging, evaluation, and trust
 
-## 3. Domain Context
+## 3. Core Engine Needs
 
-The target system is a local-first human-agent partnership rather than a stateless chatbot. Systems in this space typically:
+### 3.1 Versioned Graph Storage With Flexible Schemas
 
-- run through multiple interfaces such as CLI, TUI, chat, messaging, MCP, and meeting workflows
-- ingest mixed sources such as notes, URLs, files, email, calendars, transcripts, and system events
-- track long-lived goals, tasks, commitments, reminders, and blocked work
-- perform background work through tools, schedulers, queues, and review flows
-- need to balance fast retrieval, durable memory, human approval, and error recovery
+The engine must store a graph of typed entities (nodes) and relationships
+(edges) with flexible JSONB properties. Applications define their own node and
+edge `kind` taxonomy. The engine must support:
 
-Because of this, the datastore must support both **recall** and **governed action over time**.
+- create, update (supersede), and retire operations on nodes and edges
+- append-oriented history: prior versions are preserved, not overwritten
+- logical identity (`logical_id`) that persists across physical versions
+- temporal queries: the graph as it was at any point in time
 
-## 4. Core User Needs
-
-### 4.1 Persistent World Model
-
-The system needs more than a pile of saved documents. It needs durable memory of:
-
-- the human's preferences, goals, working context, and recurring patterns
-- the agent's own state, limitations, and recent activity
-- ongoing tasks, plans, commitments, and blockers
-- observations and events that change what the agent should do next
-- what has been learned, corrected, promoted, or superseded over time
-
-### 4.2 Multi-Modal Recall And Reasoning
+### 3.2 Multi-Modal Recall
 
 The agent must be able to retrieve and combine:
 
 - structured records and typed facts
 - document content and attached metadata
-- graph-like relationships between people, projects, events, tasks, and ideas
-- full-text matches
-- semantic similarity matches
-- temporal context such as recency, chronology, and session continuity
-- provenance about where information came from and how trustworthy it is
+- graph-like relationships between entities
+- full-text matches (FTS5)
+- semantic similarity matches (vector search)
+- temporal context: recency, chronology, session continuity
+- provenance: where information came from and how trustworthy it is
 
-This is a user need because agent questions are rarely only lexical or only relational. They often combine all of these at once.
+This is a core engine need because agent questions are rarely only lexical or
+only relational. They combine all of these at once.
 
-### 4.3 Deterministic Agent Ergonomics
+### 3.3 Deterministic Agent Ergonomics
 
-Agents do not perform well when forced to invent fragile query dialects or manually orchestrate multiple stores.
+Agents do not perform well when forced to invent fragile query dialects or
+manually orchestrate multiple stores. The engine must support:
 
-The datastore should support:
-
-- deterministic, code-friendly interaction patterns
+- deterministic, code-friendly interaction patterns (fluent SDK, typed writes)
 - clear data shapes and predictable access patterns
-- minimal boilerplate for common agent tasks
-- safe defaults for reading, writing, updating, and promoting memory
+- safe defaults for reading, writing, updating, and superseding memory
+- a query compiler that prevents agents from generating raw SQL
 
-This is not only a developer preference. It directly affects agent correctness and reliability.
+### 3.4 Provenance On Every Write
 
-### 4.4 Automated Housekeeping
+Every canonical row must carry a `source_ref` that links it to the execution
+context that created it. The engine must support:
 
-The agent should not have to think about low-level synchronization work every time it writes memory.
+- `trace_source`: show everything created by a given source reference
+- `excise_source`: remove everything created by a source and restore prior state
+- provenance warnings or enforcement when `source_ref` is missing
 
-The system needs built-in help for:
+Without provenance, surgical repair is impossible.
 
-- ingesting raw content from many sources
-- maintaining searchable and semantically useful memory
-- keeping related memory surfaces consistent
-- promoting raw observations into durable knowledge, tasks, decisions, and commitments
-- repairing or rebuilding derived memory surfaces when needed
+### 3.5 Reversibility Without Losing History
 
-### 4.5 Prompt-Control, Governance, And Trust
+Autonomous agents make mistakes. The engine must support:
 
-A local AI agent must store more than end-state knowledge. It must preserve the reasoning and control context around action.
+- selective undo via supersession rather than destructive overwrite
+- correction that preserves lineage instead of erasing prior state
+- excision that reverses bad writes while restoring previously active versions
+- time-window rollback for broader semantic reversal
 
-The system needs durable records of:
+### 3.6 Automated Housekeeping
 
-- what the human asked
-- how the request was interpreted
-- whether the system was uncertain, ambiguous, or high-risk
-- what route, policy, or response contract was chosen
-- whether clarification, abstention, approval, or escalation was required
-- what memory writes were attempted or suppressed
+The agent should not manage low-level synchronization work manually. The engine
+must handle:
 
-Without this, the human cannot understand or trust the system's behavior.
+- FTS and vector projection synchronization on every canonical write
+- startup detection and repair of missing optional projections
+- deterministic projection rebuild from canonical state at any time
 
-### 4.6 Provenance, Replay, And Evaluation
+### 3.7 Recovery From All Corruption Classes
 
-The system needs to answer questions such as:
+The engine must treat recovery as a first-class capability across three
+corruption classes:
 
-- Why did the agent say or do this?
-- What source caused this fact or task to appear?
-- What changed after a policy or routing update?
-- Which layer failed: interpretation, retrieval, validation, tool execution, or answer quality?
+- **Physical:** disk, filesystem, or crash-related damage
+- **Logical:** derived projection drift or broken virtual-table state
+- **Semantic:** bad agent reasoning that poisons the world model
 
-That means the datastore must support:
+Each class has a distinct detection and recovery path. Physical recovery
+restores canonical tables and rebuilds projections. Logical recovery rebuilds
+projections from canonical state. Semantic recovery uses `excise_source` to
+remove bad data surgically.
 
-- source tracking
-- temporal history
-- correction history
-- replayable interaction traces
-- explicit and implicit feedback
-- evaluation and comparison of behavior over time
+### 3.8 Local-First, Zero-Ops Operation
 
-### 4.7 Reversibility And Human Control
+The engine must run on a developer's machine or small server without:
 
-Autonomous agents will make mistakes. The datastore must support:
+- external infrastructure or network dependencies
+- heavyweight operational burden
+- high resource footprint that conflicts with local inference
 
-- selective undo rather than only irreversible mutation
-- correction without losing history
-- branch-like or proposal-oriented workflows for risky changes
-- approvals for high-impact actions
-- durable records of what was accepted, rejected, or revised
+A single SQLite file is the deployment unit. Moving it is the backup plan.
 
-This is a core human trust requirement.
+## 4. Non-Functional Needs
 
-### 4.8 Operational Continuity
+- **Privacy and locality:** data lives on the user's device or private
+  infrastructure by default.
+- **Interactive speed:** recall and writes must be responsive for conversational
+  use.
+- **Reliability:** failures are visible and recoverable, not silent or
+  corrupting.
+- **Portability:** the datastore moves cleanly between common local
+  environments.
+- **Low resource footprint:** coexists with local inference and normal
+  application workloads.
+- **Scalable enough for personal knowledge growth:** remains practical as years
+  of agent memory accumulate.
 
-The datastore must support a system that works across:
+## 5. Memory Layers The Engine Must Support
 
-- interactive chat and review loops
-- background scheduling and reminders
-- meeting ingestion and follow-up workflows
-- notifications, approvals, and blocked-item review
-- audits, logs, and self-diagnostic surfaces
+Not all data should be treated the same. The engine must allow applications to
+distinguish between:
 
-This is necessary because the agent is not just answering questions. It is participating in ongoing work.
+- ephemeral turn state (not persisted or short-lived)
+- session continuity state (persisted for the duration of a session)
+- durable semantic memory (long-lived, versioned, provenance-linked)
+- correction history (preserved for audit and replay)
 
-## 5. Non-Functional Needs
+This is necessary to avoid both amnesia and unbounded memory pollution. The
+engine provides the versioning and temporal primitives; the application defines
+its own retention policy.
 
-- **Privacy and locality:** data should live on the user's device or private infrastructure by default.
-- **Low operational burden:** the system should be easy to embed and run without heavyweight infrastructure.
-- **Interactive speed:** recall and writes must be responsive enough for conversational use.
-- **Reliability:** failures should be visible and recoverable rather than silent or corrupting.
-- **Portability:** the datastore should move cleanly between common local environments such as a laptop or home server.
-- **Low resource footprint:** it must coexist with local inference and normal application workloads.
-- **Scalable enough for personal knowledge growth:** it should remain practical as years of agent memory accumulate.
-
-## 6. Important Memory Layers
-
-Not all memory should be treated the same. The system needs distinctions between:
-
-- ephemeral turn state
-- session continuity state
-- durable semantic memory
-- learned preferences and interaction patterns
-- correction history
-- intentionally non-persistent or suppressed artifacts
-
-This is necessary to avoid both amnesia and unbounded memory pollution.
-
-## 7. Failure Modes The Datastore Must Make Visible Or Recoverable
+## 6. Failure Modes The Engine Must Make Visible Or Recoverable
 
 - harmful or hallucinated writes with no practical undo path
-- missing or distorted provenance for facts, tasks, or commitments
-- inability to tell whether failure came from interpretation, retrieval, tool use, or policy
-- silent loss of synchronization between different memory surfaces
-- poor retrieval of relevant context across text, relationships, semantics, and time
+- missing or distorted provenance for facts or observations
+- silent loss of synchronization between canonical tables and derived projections
+- poor retrieval of relevant context across text, relationships, semantics, and
+  time
 - history being overwritten instead of corrected transparently
-- background ingestion or scheduler failures that disappear without reviewable traces
-- latency or resource spikes that make the agent unusable in interactive workflows
+- background ingestion failures that disappear without reviewable traces
 
-## 8. Summary
+## 7. Summary
 
-The user need is a **local, high-trust datastore for persistent AI agents**. It must support multimodal recall, durable world modeling, deterministic agent ergonomics, automated housekeeping, provenance, replay, evaluation, approvals, and reversible memory. If it only stores documents or only accelerates search, it does not solve the real problem space.
+The engine need is a **local, high-trust datastore for persistent AI agents**.
+It must provide versioned graph storage, multimodal recall, deterministic agent
+ergonomics, provenance on every write, reversibility without history loss,
+automated housekeeping, and recovery from all corruption classes.
+
+If it only stores documents or only accelerates search, it does not solve the
+real problem.
+
+---
+
+# Part 2: Application-Layer Needs (Personal Agent Example)
+
+The needs below describe what a personal AI agent application — one that manages
+the human's professional and personal life — requires from an application built
+on top of fathomdb. These are **not engine requirements**. They should be
+implemented using the engine's graph backbone, provenance primitives, and query
+compiler.
+
+They are documented here so that fathomdb's design can be validated against a
+concrete consumer, not because the engine will provide these directly.
+
+## 8. Personal Agent Application Needs
+
+### 8.1 Meeting Intelligence
+
+The application needs to ingest meeting transcripts, extract participants,
+decisions, commitments, and follow-up tasks, and link them to the relevant
+people, projects, and goals already in the world model.
+
+*Engine primitives used:* nodes with `kind = "meeting"`, edges for
+relationships, FTS for transcript search, vector search for semantic retrieval,
+`source_ref` for excision if a meeting is erroneous.
+
+### 8.2 Scheduling, Reminders, And Background Work
+
+The application needs to schedule reminders, track deadlines, and run
+background workflows. It needs to review blocked items and escalate when
+necessary.
+
+*Engine primitives used:* nodes with `kind = "scheduled_task"`, edges for
+dependencies, temporal queries for due-date filtering.
+
+### 8.3 Approval And Review Workflows
+
+The application needs human approval for high-impact actions. Proposals should
+be stored, reviewed, and either committed or rejected without losing the
+decision record.
+
+*Engine primitives used:* nodes with `kind = "proposal"` and a status property,
+`source_ref` for traceability, supersession for committed vs. rejected state.
+
+### 8.4 Prompt Control And Governance
+
+The application needs to record how requests were interpreted, which policies
+were applied, and what actions were taken or suppressed, so the human can audit
+agent behavior.
+
+*Engine primitives used:* nodes with `kind = "intent_frame"` or
+`kind = "control_artifact"`, linked to runs and steps via `source_ref` and
+edges.
+
+### 8.5 Evaluation And Behavioral Regression Detection
+
+The application needs to compare agent behavior across versions and label
+failures for debugging and rubric-based evaluation.
+
+*Engine primitives used:* nodes with `kind = "eval_record"`, edges linking
+evaluations to actions or runs, temporal queries for before/after comparisons.
+
+### 8.6 Multi-Source Ingestion
+
+The application ingests from notes, URLs, files, email, calendars, and system
+events. It needs to normalize these into the world model and index them for
+retrieval.
+
+*Engine primitives used:* generic nodes with appropriate `kind` values, chunks
+and FTS for text, vector projections for semantic search, `source_ref` for
+origin tracking.
