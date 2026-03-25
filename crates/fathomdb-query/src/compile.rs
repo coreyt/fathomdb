@@ -28,9 +28,40 @@ pub enum CompileError {
     TooManyTraversals,
     #[error("too many bind parameters: max 15, got {0}")]
     TooManyBindParameters(usize),
+    #[error("traversal depth {0} exceeds maximum of {MAX_TRAVERSAL_DEPTH}")]
+    TraversalTooDeep(usize),
+    #[error("invalid JSON path: must match $(.key)+ pattern, got {0:?}")]
+    InvalidJsonPath(String),
+}
+
+/// Security fix H-1: Validate JSON path against a strict allowlist pattern to
+/// prevent SQL injection. Retained as defense-in-depth even though the path is
+/// now parameterized (see FIX(review) in compile_query). Only paths like
+/// `$.foo`, `$.foo.bar_baz` are allowed.
+fn validate_json_path(path: &str) -> Result<(), CompileError> {
+    let valid = path.starts_with('$')
+        && path.len() > 1
+        && path[1..].split('.').all(|segment| {
+            segment.is_empty()
+                || segment
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_')
+                    && !segment.is_empty()
+        })
+        && path.contains('.');
+    if !valid {
+        return Err(CompileError::InvalidJsonPath(path.to_owned()));
+    }
+    Ok(())
 }
 
 const MAX_BIND_PARAMETERS: usize = 15;
+
+// FIX(review): max_depth was unbounded — usize::MAX produces an effectively infinite CTE.
+// Options: (A) silent clamp at compile, (B) reject with CompileError, (C) validate in builder.
+// Chose (B): consistent with existing TooManyTraversals/TooManyBindParameters pattern.
+// The compiler is the validation boundary; silent clamping would surprise callers.
+const MAX_TRAVERSAL_DEPTH: usize = 50;
 
 /// Compile a [`QueryAst`] into a [`CompiledQuery`] ready for execution.
 ///
@@ -55,6 +86,18 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
         .count();
     if traversals > 1 {
         return Err(CompileError::TooManyTraversals);
+    }
+
+    let excessive_depth = ast.steps.iter().find_map(|step| {
+        if let QueryStep::Traverse { max_depth, .. } = step
+            && *max_depth > MAX_TRAVERSAL_DEPTH
+        {
+            return Some(*max_depth);
+        }
+        None
+    });
+    if let Some(depth) = excessive_depth {
+        return Err(CompileError::TraversalTooDeep(depth));
     }
 
     let driving_table = choose_driving_table(ast);
@@ -158,9 +201,15 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
             }) {
                 binds.push(BindValue::Text(logical_id.to_owned()));
                 let bind_index = binds.len();
-                let _ = write!(&mut sql, "\n                      AND src.logical_id = ?{bind_index}");
+                let _ = write!(
+                    &mut sql,
+                    "\n                      AND src.logical_id = ?{bind_index}"
+                );
             }
-            let _ = write!(&mut sql, "\n                    LIMIT {base_limit}\n                )");
+            let _ = write!(
+                &mut sql,
+                "\n                    LIMIT {base_limit}\n                )"
+            );
             sql
         }
     };
@@ -204,7 +253,11 @@ FROM {} {source_alias}
 JOIN nodes n ON n.logical_id = {source_alias}.logical_id
     AND n.superseded_at IS NULL
 WHERE 1 = 1",
-        if traversal.is_some() { "traversed" } else { "base_candidates" }
+        if traversal.is_some() {
+            "traversed"
+        } else {
+            "base_candidates"
+        }
     );
 
     for step in &ast.steps {
@@ -226,17 +279,26 @@ WHERE 1 = 1",
                     let _ = write!(&mut sql, "\n  AND n.kind = ?{bind_index}");
                 }
                 Predicate::JsonPathEq { path, value } => {
-                    let escaped_path = path.replace('\'', "''");
-                    let _ = write!(
-                        &mut sql,
-                        "\n  AND json_extract(n.properties, '{escaped_path}') = ?{}",
-                        binds.len() + 1
-                    );
+                    // Security fix H-1: Validate JSON path as defense-in-depth.
+                    validate_json_path(path)?;
+                    // FIX(review): path was previously string-interpolated with single-quote
+                    // escaping. Options considered: (A) parameterize path as bind variable,
+                    // (B) harden escaping, (C) validate path against strict regex. Chose (A):
+                    // SQLite json_extract supports parameterized paths since 3.9.0 (our minimum
+                    // is 3.41), eliminating the injection surface entirely. validate_json_path
+                    // is retained above as defense-in-depth from Security fix H-1.
+                    binds.push(BindValue::Text(path.clone()));
+                    let path_index = binds.len();
                     binds.push(match value {
                         ScalarValue::Text(text) => BindValue::Text(text.clone()),
                         ScalarValue::Integer(integer) => BindValue::Integer(*integer),
                         ScalarValue::Bool(boolean) => BindValue::Bool(*boolean),
                     });
+                    let value_index = binds.len();
+                    let _ = write!(
+                        &mut sql,
+                        "\n  AND json_extract(n.properties, ?{path_index}) = ?{value_index}",
+                    );
                 }
                 Predicate::SourceRefEq(source_ref) => {
                     binds.push(BindValue::Text(source_ref.clone()));
@@ -280,7 +342,7 @@ fn hash_signature(signature: &str) -> u64 {
 mod tests {
     use rstest::rstest;
 
-    use crate::{compile_query, DrivingTable, QueryBuilder, TraverseDirection};
+    use crate::{DrivingTable, QueryBuilder, TraverseDirection, compile_query};
 
     #[test]
     fn vector_query_compiles_to_chunk_resolution() {
@@ -294,7 +356,11 @@ mod tests {
 
         assert_eq!(compiled.driving_table, DrivingTable::VecNodes);
         assert!(compiled.sql.contains("JOIN chunks c ON c.id = vc.chunk_id"));
-        assert!(compiled.sql.contains("JOIN nodes src ON src.logical_id = c.node_logical_id"));
+        assert!(
+            compiled
+                .sql
+                .contains("JOIN nodes src ON src.logical_id = c.node_logical_id")
+        );
     }
 
     #[rstest]
@@ -353,15 +419,56 @@ mod tests {
         assert!(compiled.sql.contains("json_extract"));
         // Only one bind for the logical_id (not two).
         use crate::BindValue;
-        assert_eq!(compiled.binds.iter().filter(|b| matches!(b, BindValue::Text(s) if s == "meeting-123")).count(), 1);
+        assert_eq!(
+            compiled
+                .binds
+                .iter()
+                .filter(|b| matches!(b, BindValue::Text(s) if s == "meeting-123"))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn compile_rejects_invalid_json_path() {
+        use crate::{Predicate, QueryStep, ScalarValue};
+        let mut ast = QueryBuilder::nodes("Meeting").into_ast();
+        // Attempt SQL injection via JSON path.
+        ast.steps.push(QueryStep::Filter(Predicate::JsonPathEq {
+            path: "$') OR 1=1 --".to_owned(),
+            value: ScalarValue::Text("x".to_owned()),
+        }));
+        use crate::CompileError;
+        let result = compile_query(&ast);
+        assert!(
+            matches!(result, Err(CompileError::InvalidJsonPath(_))),
+            "expected InvalidJsonPath, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn compile_accepts_valid_json_paths() {
+        use crate::{Predicate, QueryStep, ScalarValue};
+        for valid_path in ["$.status", "$.foo.bar", "$.a_b.c2"] {
+            let mut ast = QueryBuilder::nodes("Meeting").into_ast();
+            ast.steps.push(QueryStep::Filter(Predicate::JsonPathEq {
+                path: valid_path.to_owned(),
+                value: ScalarValue::Text("v".to_owned()),
+            }));
+            assert!(
+                compile_query(&ast).is_ok(),
+                "expected valid path {valid_path:?} to compile"
+            );
+        }
     }
 
     #[test]
     fn compile_rejects_too_many_bind_parameters() {
         use crate::{Predicate, QueryStep, ScalarValue};
         let mut ast = QueryBuilder::nodes("Meeting").into_ast();
-        // kind already occupies 1 bind; add 15 json filters → 16 total > 15 limit.
-        for i in 0..15 {
+        // kind occupies 1 bind; each json filter now occupies 2 binds (path + value).
+        // 7 json filters → 1 + 14 = 15 (ok), 8 → 1 + 16 = 17 (exceeds limit of 15).
+        for i in 0..8 {
             ast.steps.push(QueryStep::Filter(Predicate::JsonPathEq {
                 path: format!("$.f{i}"),
                 value: ScalarValue::Text("v".to_owned()),
@@ -370,8 +477,49 @@ mod tests {
         use crate::CompileError;
         let result = compile_query(&ast);
         assert!(
-            matches!(result, Err(CompileError::TooManyBindParameters(16))),
-            "expected TooManyBindParameters(16), got {result:?}"
+            matches!(result, Err(CompileError::TooManyBindParameters(17))),
+            "expected TooManyBindParameters(17), got {result:?}"
         );
+    }
+
+    #[test]
+    fn compile_rejects_excessive_traversal_depth() {
+        use crate::CompileError;
+        let result = compile_query(
+            &QueryBuilder::nodes("Meeting")
+                .text_search("budget", 5)
+                .traverse(TraverseDirection::Out, "HAS_TASK", 51)
+                .limit(10)
+                .into_ast(),
+        );
+        assert!(
+            matches!(result, Err(CompileError::TraversalTooDeep(51))),
+            "expected TraversalTooDeep(51), got {result:?}"
+        );
+    }
+
+    #[test]
+    fn json_path_compiled_as_bind_parameter() {
+        let compiled = compile_query(
+            &QueryBuilder::nodes("Meeting")
+                .filter_json_text_eq("$.status", "active")
+                .limit(1)
+                .into_ast(),
+        )
+        .expect("compiled query");
+
+        // Path must be parameterized, not interpolated into the SQL string.
+        assert!(
+            !compiled.sql.contains("'$.status'"),
+            "JSON path must not appear as a SQL string literal"
+        );
+        assert!(
+            compiled.sql.contains("json_extract(n.properties, ?"),
+            "JSON path must be a bind parameter"
+        );
+        // Path and value should both be in the bind list.
+        use crate::BindValue;
+        assert!(compiled.binds.iter().any(|b| matches!(b, BindValue::Text(s) if s == "$.status")));
+        assert!(compiled.binds.iter().any(|b| matches!(b, BindValue::Text(s) if s == "active")));
     }
 }

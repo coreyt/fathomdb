@@ -23,7 +23,9 @@ func RunExport(databasePath, destinationPath, bridgePath string, out io.Writer) 
 				"without it the WAL cannot be checkpointed and the copy may be incomplete")
 	}
 
-	if err := os.MkdirAll(filepath.Dir(destinationPath), 0o755); err != nil {
+	// Security fix M-1: Use restrictive permissions for the destination directory
+	// so other users on a shared system cannot read exported database files.
+	if err := os.MkdirAll(filepath.Dir(destinationPath), 0o700); err != nil {
 		return fmt.Errorf("creating destination directory: %w", err)
 	}
 

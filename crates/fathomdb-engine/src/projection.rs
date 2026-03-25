@@ -77,9 +77,15 @@ impl ProjectionService {
     /// # Errors
     /// Returns [`EngineError`] if the database connection fails or the INSERT query fails.
     pub fn rebuild_missing_projections(&self) -> Result<ProjectionRepairReport, EngineError> {
-        let conn = self.connect()?;
+        // FIX(review): was bare execute without explicit transaction.
+        // Options: (A) IMMEDIATE tx matching rebuild_fts(), (B) DEFERRED tx, (C) leave as-is
+        // (autocommit wraps single statements atomically). Chose (A): explicit transaction
+        // communicates intent, matches sibling rebuild_fts(), and protects against future
+        // refactoring that might add additional statements.
+        let mut conn = self.connect()?;
 
-        let inserted = conn.execute(
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let inserted = tx.execute(
             r"
             INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content)
             SELECT c.id, n.logical_id, n.kind, c.text_content
@@ -95,6 +101,7 @@ impl ProjectionService {
             ",
             [],
         )?;
+        tx.commit()?;
 
         Ok(ProjectionRepairReport {
             targets: vec![ProjectionTarget::Fts],

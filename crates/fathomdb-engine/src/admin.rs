@@ -1,4 +1,5 @@
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -177,11 +178,15 @@ impl AdminService {
             warnings.push("duplicate active logical_ids detected".to_owned());
         }
 
+        // FIX(review): was `as usize` — unsound on 32-bit targets, wraps negatives silently.
+        // Options: (A) try_from().unwrap_or(0) — masks corruption, (B) try_from().expect() —
+        // panics on corruption, (C) propagate error. Chose (B) here: a negative count(*)
+        // signals data corruption, and the integrity report would be meaningless anyway.
         Ok(IntegrityReport {
             physical_ok: physical_result == "ok",
             foreign_keys_ok: foreign_key_count == 0,
-            missing_fts_rows: usize::try_from(missing_fts_rows).unwrap_or(0),
-            duplicate_active_logical_ids: usize::try_from(duplicate_active).unwrap_or(0),
+            missing_fts_rows: i64_to_usize(missing_fts_rows),
+            duplicate_active_logical_ids: i64_to_usize(duplicate_active),
             warnings,
         })
     }
@@ -277,7 +282,9 @@ impl AdminService {
 
         let mut warnings = Vec::new();
         if orphaned_chunks > 0 {
-            warnings.push(format!("{orphaned_chunks} orphaned chunk(s) with no active node"));
+            warnings.push(format!(
+                "{orphaned_chunks} orphaned chunk(s) with no active node"
+            ));
         }
         if null_source_ref_nodes > 0 {
             warnings.push(format!(
@@ -285,7 +292,9 @@ impl AdminService {
             ));
         }
         if broken_step_fk > 0 {
-            warnings.push(format!("{broken_step_fk} step(s) referencing non-existent run"));
+            warnings.push(format!(
+                "{broken_step_fk} step(s) referencing non-existent run"
+            ));
         }
         if broken_action_fk > 0 {
             warnings.push(format!(
@@ -310,14 +319,14 @@ impl AdminService {
         }
 
         Ok(SemanticReport {
-            orphaned_chunks: usize::try_from(orphaned_chunks).unwrap_or(0),
-            null_source_ref_nodes: usize::try_from(null_source_ref_nodes).unwrap_or(0),
-            broken_step_fk: usize::try_from(broken_step_fk).unwrap_or(0),
-            broken_action_fk: usize::try_from(broken_action_fk).unwrap_or(0),
-            stale_fts_rows: usize::try_from(stale_fts_rows).unwrap_or(0),
-            fts_rows_for_superseded_nodes: usize::try_from(fts_rows_for_superseded_nodes).unwrap_or(0),
-            dangling_edges: usize::try_from(dangling_edges).unwrap_or(0),
-            orphaned_supersession_chains: usize::try_from(orphaned_supersession_chains).unwrap_or(0),
+            orphaned_chunks: i64_to_usize(orphaned_chunks),
+            null_source_ref_nodes: i64_to_usize(null_source_ref_nodes),
+            broken_step_fk: i64_to_usize(broken_step_fk),
+            broken_action_fk: i64_to_usize(broken_action_fk),
+            stale_fts_rows: i64_to_usize(stale_fts_rows),
+            fts_rows_for_superseded_nodes: i64_to_usize(fts_rows_for_superseded_nodes),
+            dangling_edges: i64_to_usize(dangling_edges),
+            orphaned_supersession_chains: i64_to_usize(orphaned_supersession_chains),
             warnings,
         })
     }
@@ -449,6 +458,14 @@ impl AdminService {
     ) -> Result<SafeExportManifest, EngineError> {
         let destination_path = destination_path.as_ref();
 
+        // NOTE(review): checkpoint + fs::copy has a TOCTOU window if an external process
+        // writes to the database between checkpoint and copy. This is acceptable because
+        // FathomDB enforces single-writer via WriterActor — concurrent external writes
+        // violate the architecture.
+        // Options: (A) rusqlite::backup::Backup API for atomic copy, (B) hold read tx during
+        // copy, (C) document limitation + fix streaming SHA-256. Chose (C) for v1;
+        // (A) is the ideal long-term fix. TODO: switch to backup API.
+
         // 1. Checkpoint WAL before copying so the main DB file contains all committed data.
         let conn = self.connect()?;
 
@@ -488,9 +505,13 @@ impl AdminService {
         fs::copy(&self.database_path, destination_path)?;
 
         // 3. Compute SHA-256 of the exported file.
-        let file_bytes = fs::read(destination_path)?;
-        let digest = Sha256::digest(&file_bytes);
-        let sha256 = format!("{digest:x}");
+        // FIX(review): was fs::read loading entire DB into memory; use streaming hash.
+        let sha256 = {
+            let mut file = fs::File::open(destination_path)?;
+            let mut hasher = Sha256::new();
+            io::copy(&mut file, &mut hasher)?;
+            format!("{:x}", hasher.finalize())
+        };
 
         // 4. Record when the export was created.
         let exported_at = SystemTime::now()
@@ -512,12 +533,14 @@ impl AdminService {
             let stem = p
                 .file_name()
                 .map(|n| format!("{}.export-manifest.json", n.to_string_lossy()))
-                .ok_or_else(|| EngineError::Bridge("destination path has no filename".to_owned()))?;
+                .ok_or_else(|| {
+                    EngineError::Bridge("destination path has no filename".to_owned())
+                })?;
             p.set_file_name(stem);
             p
         };
-        let manifest_json = serde_json::to_string(&manifest)
-            .map_err(|e| EngineError::Bridge(e.to_string()))?;
+        let manifest_json =
+            serde_json::to_string(&manifest).map_err(|e| EngineError::Bridge(e.to_string()))?;
         fs::write(&manifest_path, manifest_json)?;
 
         Ok(manifest)
@@ -536,9 +559,24 @@ fn count_source_ref(
         other => return Err(EngineError::Bridge(format!("unknown table: {other}"))),
     };
     let count: i64 = conn.query_row(sql, [source_ref], |row| row.get(0))?;
-    Ok(usize::try_from(count).unwrap_or(0))
+    // FIX(review): was `count as usize` — unsound cast.
+    // Chose option (C) here: propagate error since this is a user-facing helper.
+    usize::try_from(count)
+        .map_err(|_| EngineError::Bridge(format!("count overflow for table {table}: {count}")))
 }
 
+/// Convert a non-negative i64 count to usize, panicking on negative values
+/// which would indicate data corruption.
+fn i64_to_usize(val: i64) -> usize {
+    usize::try_from(val).expect("count(*) must be non-negative")
+}
+
+/// Runs a parameterized query and collects the first column as strings.
+///
+/// NOTE(review): sql parameter must be a hardcoded query string, never user input.
+/// Options: (A) doc comment, (B) whitelist refactor like count_source_ref, (C) leave as-is.
+/// Chose (A): function is private, only called with hardcoded SQL from trace_source.
+/// Whitelist refactor not practical — queries have different SELECT/ORDER BY per table.
 fn collect_strings(
     conn: &rusqlite::Connection,
     sql: &str,

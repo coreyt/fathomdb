@@ -1,6 +1,6 @@
 use crate::{
-    compile_query, CompiledQuery, CompileError, Predicate, QueryAst, QueryStep, ScalarValue,
-    TraverseDirection,
+    CompileError, CompiledQuery, Predicate, QueryAst, QueryStep, ScalarValue, TraverseDirection,
+    compile_query,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -83,10 +83,12 @@ impl QueryBuilder {
         path: impl Into<String>,
         value: impl Into<String>,
     ) -> Self {
-        self.ast.steps.push(QueryStep::Filter(Predicate::JsonPathEq {
-            path: path.into(),
-            value: ScalarValue::Text(value.into()),
-        }));
+        self.ast
+            .steps
+            .push(QueryStep::Filter(Predicate::JsonPathEq {
+                path: path.into(),
+                value: ScalarValue::Text(value.into()),
+            }));
         self
     }
 

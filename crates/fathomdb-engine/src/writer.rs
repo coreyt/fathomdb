@@ -905,8 +905,8 @@ mod tests {
             .expect("write receipt");
 
         let conn = rusqlite::Connection::open(db.path()).expect("conn");
-        let (chunk_id, node_logical_id, kind, text_content): (String, String, String, String) = conn
-            .query_row(
+        let (chunk_id, node_logical_id, kind, text_content): (String, String, String, String) =
+            conn.query_row(
                 "SELECT chunk_id, node_logical_id, kind, text_content \
                  FROM fts_nodes WHERE chunk_id = 'chunk-1'",
                 [],
@@ -1041,7 +1041,10 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("fts count");
-        assert_eq!(count, 1, "FTS row must exist for chunk attached to pre-existing node");
+        assert_eq!(
+            count, 1,
+            "FTS row must exist for chunk attached to pre-existing node"
+        );
     }
 
     #[test]

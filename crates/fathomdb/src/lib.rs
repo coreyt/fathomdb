@@ -8,8 +8,8 @@ pub use fathomdb_engine::{
     WriteReceipt, WriteRequest, WriterActor, new_row_id,
 };
 pub use fathomdb_query::{
-    compile_query, BindValue, CompiledQuery, DrivingTable, ExecutionHints, Predicate, Query,
-    QueryAst, QueryBuilder, QueryStep, ScalarValue, ShapeHash, TraverseDirection,
+    BindValue, CompiledQuery, DrivingTable, ExecutionHints, Predicate, Query, QueryAst,
+    QueryBuilder, QueryStep, ScalarValue, ShapeHash, TraverseDirection, compile_query,
 };
 pub use fathomdb_schema::{BootstrapReport, Migration, SchemaManager, SchemaVersion};
 

@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 )
 
 const ProtocolVersion = 1
@@ -61,6 +63,24 @@ type Client struct {
 	BinaryPath string
 }
 
+// Security fix H-3: validateBinaryPath checks that the bridge binary exists,
+// uses an absolute path, and is not world-writable. This prevents execution of
+// arbitrary binaries via the FATHOM_ADMIN_BRIDGE env var or --bridge flag.
+func validateBinaryPath(path string) error {
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("bridge binary path must be absolute, got %q", path)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("bridge binary not found: %w", err)
+	}
+	// Reject world-writable binaries (unix permission bit 0o002).
+	if info.Mode().Perm()&0o002 != 0 {
+		return fmt.Errorf("bridge binary %q is world-writable, refusing to execute", path)
+	}
+	return nil
+}
+
 func (c Client) SafeExport(ctx context.Context, databasePath, destinationPath string) (Response, error) {
 	return c.Execute(ctx, Request{
 		DatabasePath:    databasePath,
@@ -70,6 +90,11 @@ func (c Client) SafeExport(ctx context.Context, databasePath, destinationPath st
 }
 
 func (c Client) Execute(ctx context.Context, request Request) (Response, error) {
+	// Security fix H-3: Validate the bridge binary path before execution.
+	if err := validateBinaryPath(c.BinaryPath); err != nil {
+		return Response{}, err
+	}
+
 	body, err := json.Marshal(request)
 	if err != nil {
 		return Response{}, fmt.Errorf("marshal request: %w", err)

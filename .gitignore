@@ -18,3 +18,16 @@ coverage.out
 
 # bosun cache directory
 .bosun-cache/
+
+# Security fix M-6: Prevent accidental commit of secrets and sensitive files.
+.env
+.env.*
+!tooling/sqlite.env
+*.pem
+*.key
+*.p12
+*.crt
+credentials.*
+*.swp
+*.swo
+*~
