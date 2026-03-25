@@ -360,10 +360,24 @@ impl ExecutionCoordinator {
     #[allow(clippy::expect_used)]
     pub fn raw_pragma(&self, name: &str) -> Result<String, EngineError> {
         let conn = self.conn.lock().expect("coordinator connection mutex");
-        let result: String = conn
-            .query_row(&format!("PRAGMA {name}"), [], |row| row.get(0))
+        let result = conn
+            .query_row(&format!("PRAGMA {name}"), [], |row| {
+                // PRAGMAs may return TEXT or INTEGER; normalise to String.
+                row.get::<_, rusqlite::types::Value>(0)
+            })
             .map_err(EngineError::Sqlite)?;
-        Ok(result)
+        let s = match result {
+            rusqlite::types::Value::Text(t) => t,
+            rusqlite::types::Value::Integer(i) => i.to_string(),
+            rusqlite::types::Value::Real(f) => f.to_string(),
+            rusqlite::types::Value::Blob(_) => {
+                return Err(EngineError::InvalidWrite(format!(
+                    "PRAGMA {name} returned an unexpected BLOB value"
+                )));
+            }
+            rusqlite::types::Value::Null => String::new(),
+        };
+        Ok(s)
     }
 }
 
