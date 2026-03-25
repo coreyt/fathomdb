@@ -1408,8 +1408,9 @@ fn v1_vector_search_round_trip() {
         })
         .expect("v1 write");
 
+    // sqlite-vec MATCH requires a JSON float array as the query vector.
     let compiled = fathomdb::QueryBuilder::nodes("Document")
-        .vector_search("query placeholder", 5)
+        .vector_search("[0.1, 0.2, 0.3, 0.4]", 5)
         .compile()
         .expect("compile vector query");
 

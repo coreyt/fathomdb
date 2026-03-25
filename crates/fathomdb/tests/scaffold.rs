@@ -4,8 +4,8 @@ mod helpers;
 
 use fathomdb::{
     ActionInsert, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire, Engine, EngineOptions,
-    NodeInsert, ProjectionTarget, RunInsert, StepInsert, TraverseDirection, WriteRequest,
-    new_row_id,
+    NodeInsert, NodeRetire, ProjectionTarget, RunInsert, StepInsert, TraverseDirection,
+    WriteRequest, new_row_id,
 };
 use rusqlite::Connection;
 use tempfile::NamedTempFile;
@@ -1064,6 +1064,268 @@ fn new_row_id_is_valid_as_node_insert_row_id() {
 
     let f = helpers::node_fields(db.path(), "id-gen-node");
     assert_eq!(f.row_id, generated);
+}
+
+#[test]
+fn retire_node_leaves_dangling_edge_detected_by_check_semantics() {
+    let db = NamedTempFile::new().expect("temporary db");
+    let engine = Engine::open(EngineOptions::new(db.path())).expect("engine opens");
+
+    // Write node-A, node-B, and an edge A→B.
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "setup".to_owned(),
+            nodes: vec![
+                NodeInsert {
+                    row_id: "row-A".to_owned(),
+                    logical_id: "node-A".to_owned(),
+                    kind: "Source".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                },
+                NodeInsert {
+                    row_id: "row-B".to_owned(),
+                    logical_id: "node-B".to_owned(),
+                    kind: "Target".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                },
+            ],
+            node_retires: vec![],
+            edges: vec![EdgeInsert {
+                row_id: "edge-row-1".to_owned(),
+                logical_id: "edge-A-B".to_owned(),
+                source_logical_id: "node-A".to_owned(),
+                target_logical_id: "node-B".to_owned(),
+                kind: "LINKS_TO".to_owned(),
+                properties: "{}".to_owned(),
+                source_ref: Some("src".to_owned()),
+                upsert: false,
+            }],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+        })
+        .expect("setup write");
+
+    // Retire node-A — edge A→B now dangles.
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "retire-A".to_owned(),
+            nodes: vec![],
+            node_retires: vec![NodeRetire {
+                logical_id: "node-A".to_owned(),
+                source_ref: Some("src".to_owned()),
+            }],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+        })
+        .expect("retire write");
+
+    let report = engine
+        .admin()
+        .service()
+        .check_semantics()
+        .expect("semantics check");
+
+    assert!(
+        report.dangling_edges >= 1,
+        "retiring node-A must leave a dangling edge; got dangling_edges={}",
+        report.dangling_edges
+    );
+    assert!(
+        report.warnings.iter().any(|w| w.contains("edge")),
+        "warnings must mention dangling edges; got: {:?}",
+        report.warnings
+    );
+}
+
+#[test]
+fn retire_node_records_provenance_event() {
+    let db = NamedTempFile::new().expect("temporary db");
+    let engine = Engine::open(EngineOptions::new(db.path())).expect("engine opens");
+
+    // Insert a node.
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "setup".to_owned(),
+            nodes: vec![NodeInsert {
+                row_id: "row-prov-1".to_owned(),
+                logical_id: "prov-node-1".to_owned(),
+                kind: "Doc".to_owned(),
+                properties: "{}".to_owned(),
+                source_ref: Some("src-prov".to_owned()),
+                upsert: false,
+                chunk_policy: ChunkPolicy::Preserve,
+            }],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+        })
+        .expect("setup write");
+
+    // Retire the node.
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "retire".to_owned(),
+            nodes: vec![],
+            node_retires: vec![NodeRetire {
+                logical_id: "prov-node-1".to_owned(),
+                source_ref: Some("src-retire".to_owned()),
+            }],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+        })
+        .expect("retire write");
+
+    let events = engine
+        .coordinator()
+        .query_provenance_events("prov-node-1")
+        .expect("query provenance events");
+
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event_type, "node_retire");
+    assert_eq!(events[0].subject, "prov-node-1");
+}
+
+#[test]
+fn excise_source_records_provenance_event() {
+    let db = NamedTempFile::new().expect("temporary db");
+    let engine = Engine::open(EngineOptions::new(db.path())).expect("engine opens");
+
+    engine
+        .writer()
+        .submit(meeting_write_request(r#"{"v":1}"#))
+        .expect("setup write");
+
+    engine
+        .admin()
+        .service()
+        .excise_source("source-1")
+        .expect("excise");
+
+    let events = engine
+        .coordinator()
+        .query_provenance_events("source-1")
+        .expect("query provenance events");
+
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event_type, "excise_source");
+    assert_eq!(events[0].subject, "source-1");
+}
+
+#[test]
+fn provenance_events_are_isolated_per_subject() {
+    let db = NamedTempFile::new().expect("temporary db");
+    let engine = Engine::open(EngineOptions::new(db.path())).expect("engine opens");
+
+    // Insert two nodes.
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "setup".to_owned(),
+            nodes: vec![
+                NodeInsert {
+                    row_id: "row-iso-A".to_owned(),
+                    logical_id: "iso-node-A".to_owned(),
+                    kind: "Doc".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                },
+                NodeInsert {
+                    row_id: "row-iso-B".to_owned(),
+                    logical_id: "iso-node-B".to_owned(),
+                    kind: "Doc".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                },
+            ],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+        })
+        .expect("setup write");
+
+    // Retire both nodes in one request.
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "retire-both".to_owned(),
+            nodes: vec![],
+            node_retires: vec![
+                NodeRetire {
+                    logical_id: "iso-node-A".to_owned(),
+                    source_ref: Some("src".to_owned()),
+                },
+                NodeRetire {
+                    logical_id: "iso-node-B".to_owned(),
+                    source_ref: Some("src".to_owned()),
+                },
+            ],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+        })
+        .expect("retire write");
+
+    let events_a = engine
+        .coordinator()
+        .query_provenance_events("iso-node-A")
+        .expect("query A");
+    let events_b = engine
+        .coordinator()
+        .query_provenance_events("iso-node-B")
+        .expect("query B");
+
+    assert_eq!(events_a.len(), 1, "node-A must have exactly one event");
+    assert_eq!(events_b.len(), 1, "node-B must have exactly one event");
+    assert_eq!(events_a[0].subject, "iso-node-A");
+    assert_eq!(events_b[0].subject, "iso-node-B");
 }
 
 fn meeting_write_request(properties: &str) -> WriteRequest {

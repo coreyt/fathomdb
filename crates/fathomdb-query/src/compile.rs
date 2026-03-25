@@ -146,15 +146,20 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
                 .unwrap_or_else(|| unreachable!("VecNodes chosen but no VectorSearch step in AST"));
             binds.push(BindValue::Text(query.to_owned()));
             binds.push(BindValue::Text(ast.root_kind.clone()));
+            // sqlite-vec requires the LIMIT/k constraint to be visible directly on the
+            // vec0 KNN scan. Using a sub-select isolates the vec0 LIMIT so the join
+            // with chunks/nodes does not prevent the query planner from recognising it.
             format!(
                 "base_candidates AS (
                     SELECT DISTINCT src.logical_id
-                    FROM vec_nodes_active vc
+                    FROM (
+                        SELECT chunk_id FROM vec_nodes_active
+                        WHERE embedding MATCH ?1
+                        LIMIT {base_limit}
+                    ) vc
                     JOIN chunks c ON c.id = vc.chunk_id
                     JOIN nodes src ON src.logical_id = c.node_logical_id AND src.superseded_at IS NULL
-                    WHERE vc.embedding MATCH ?1
-                      AND src.kind = ?2
-                    LIMIT {base_limit}
+                    WHERE src.kind = ?2
                 )"
             )
         }

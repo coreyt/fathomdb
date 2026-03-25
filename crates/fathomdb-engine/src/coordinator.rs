@@ -55,12 +55,25 @@ pub struct ActionRow {
     pub properties: String,
 }
 
+/// A single row from the `provenance_events` table.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProvenanceEvent {
+    pub id: String,
+    pub event_type: String,
+    pub subject: String,
+    pub source_ref: Option<String>,
+    pub created_at: i64,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct QueryRows {
     pub nodes: Vec<NodeRow>,
     pub runs: Vec<RunRow>,
     pub steps: Vec<StepRow>,
     pub actions: Vec<ActionRow>,
+    /// `true` when a capability miss (e.g. missing sqlite-vec) caused the query
+    /// to degrade to an empty result instead of propagating an error.
+    pub was_degraded: bool,
 }
 
 pub struct ExecutionCoordinator {
@@ -100,7 +113,7 @@ impl ExecutionCoordinator {
         let report = schema_manager.bootstrap(&conn)?;
 
         #[cfg(feature = "sqlite-vec")]
-        let vector_enabled = report.vector_profile_enabled;
+        let mut vector_enabled = report.vector_profile_enabled;
         #[cfg(not(feature = "sqlite-vec"))]
         let vector_enabled = {
             let _ = &report;
@@ -111,6 +124,11 @@ impl ExecutionCoordinator {
             schema_manager
                 .ensure_vector_profile(&conn, "default", "vec_nodes_active", dim)
                 .map_err(EngineError::Schema)?;
+            // Profile was just created or updated — mark as enabled.
+            #[cfg(feature = "sqlite-vec")]
+            {
+                vector_enabled = true;
+            }
         }
 
         Ok(Self {
@@ -166,13 +184,16 @@ impl ExecutionCoordinator {
             .conn
             .lock()
             .map_err(|_| EngineError::Bridge("connection mutex poisoned".to_owned()))?;
-        let mut statement = conn_guard.prepare_cached(&compiled.sql).map_err(|e| {
-            if is_capability_missing_error(&e) {
-                EngineError::CapabilityMissing(e.to_string())
-            } else {
-                EngineError::Sqlite(e)
+        let mut statement = match conn_guard.prepare_cached(&compiled.sql) {
+            Ok(stmt) => stmt,
+            Err(e) if is_capability_missing_error(&e) => {
+                return Ok(QueryRows {
+                    was_degraded: true,
+                    ..Default::default()
+                });
             }
-        })?;
+            Err(e) => return Err(EngineError::Sqlite(e)),
+        };
         let nodes = statement
             .query_map(params_from_iter(bind_values.iter()), |row| {
                 Ok(NodeRow {
@@ -189,6 +210,7 @@ impl ExecutionCoordinator {
             runs: Vec::new(),
             steps: Vec::new(),
             actions: Vec::new(),
+            was_degraded: false,
         })
     }
 
@@ -379,6 +401,44 @@ impl ExecutionCoordinator {
         };
         Ok(s)
     }
+
+    /// Return all provenance events whose `subject` matches the given value.
+    ///
+    /// Subjects are logical node IDs (for retire/upsert events) or `source_ref`
+    /// values (for excise events).
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the query fails.
+    ///
+    /// # Panics
+    /// Panics if the internal connection mutex is poisoned.
+    #[allow(clippy::expect_used)]
+    pub fn query_provenance_events(
+        &self,
+        subject: &str,
+    ) -> Result<Vec<ProvenanceEvent>, EngineError> {
+        let conn = self.conn.lock().expect("coordinator connection mutex");
+        let mut stmt = conn
+            .prepare_cached(
+                "SELECT id, event_type, subject, source_ref, created_at \
+                 FROM provenance_events WHERE subject = ?1 ORDER BY created_at",
+            )
+            .map_err(EngineError::Sqlite)?;
+        let events = stmt
+            .query_map(rusqlite::params![subject], |row| {
+                Ok(ProvenanceEvent {
+                    id: row.get(0)?,
+                    event_type: row.get(1)?,
+                    subject: row.get(2)?,
+                    source_ref: row.get(3)?,
+                    created_at: row.get(4)?,
+                })
+            })
+            .map_err(EngineError::Sqlite)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(EngineError::Sqlite)?;
+        Ok(events)
+    }
 }
 
 fn is_capability_missing_error(err: &rusqlite::Error) -> bool {
@@ -408,7 +468,7 @@ mod tests {
     use rusqlite::types::Value;
     use tempfile::NamedTempFile;
 
-    use crate::{EngineError, ExecutionCoordinator};
+    use crate::ExecutionCoordinator;
 
     use super::bind_value_to_sql;
 
@@ -469,7 +529,7 @@ mod tests {
     }
 
     #[test]
-    fn vector_read_returns_error_when_table_absent() {
+    fn vector_read_degrades_gracefully_when_vec_table_absent() {
         let db = NamedTempFile::new().expect("temporary db");
         let coordinator =
             ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
@@ -481,9 +541,14 @@ mod tests {
             .expect("vector query compiles");
 
         let result = coordinator.execute_compiled_read(&compiled);
+        let rows = result.expect("degraded read must succeed, not error");
         assert!(
-            matches!(result, Err(EngineError::CapabilityMissing(_))),
-            "vector read must fail with CapabilityMissing when vec_nodes_active table is absent"
+            rows.was_degraded,
+            "result must be flagged as degraded when vec_nodes_active is absent"
+        );
+        assert!(
+            rows.nodes.is_empty(),
+            "degraded result must return empty nodes"
         );
     }
 

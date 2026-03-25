@@ -10,7 +10,8 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    EngineError, ProjectionRepairReport, ProjectionService, projection::ProjectionTarget, sqlite,
+    EngineError, ProjectionRepairReport, ProjectionService, ids::new_id,
+    projection::ProjectionTarget, sqlite,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -90,6 +91,10 @@ pub struct SemanticReport {
     pub dangling_edges: usize,
     /// `logical_ids` where every version has been superseded (no active row).
     pub orphaned_supersession_chains: usize,
+    /// Vec rows whose backing chunk no longer exists in the chunks table.
+    pub stale_vec_rows: usize,
+    /// Vec rows whose node has been superseded or retired.
+    pub vec_rows_for_superseded_nodes: usize,
     pub warnings: Vec<String>,
 }
 
@@ -282,6 +287,49 @@ impl AdminService {
             |row| row.get(0),
         )?;
 
+        // Vec stale row detection — degrades to 0 when the vec profile is absent.
+        #[cfg(feature = "sqlite-vec")]
+        let stale_vec_rows: i64 = match conn.query_row(
+            r"
+            SELECT count(*) FROM vec_nodes_active v
+            WHERE NOT EXISTS (SELECT 1 FROM chunks c WHERE c.id = v.chunk_id)
+            ",
+            [],
+            |row| row.get(0),
+        ) {
+            Ok(n) => n,
+            Err(rusqlite::Error::SqliteFailure(_, Some(ref msg)))
+                if msg.contains("vec_nodes_active") || msg.contains("vec0") =>
+            {
+                0
+            }
+            Err(e) => return Err(EngineError::Sqlite(e)),
+        };
+        #[cfg(not(feature = "sqlite-vec"))]
+        let stale_vec_rows: i64 = 0;
+
+        #[cfg(feature = "sqlite-vec")]
+        let vec_rows_for_superseded_nodes: i64 = match conn.query_row(
+            r"
+            SELECT count(*) FROM vec_nodes_active v
+            JOIN chunks c ON c.id = v.chunk_id
+            JOIN nodes n  ON n.logical_id = c.node_logical_id
+            WHERE n.superseded_at IS NOT NULL
+            ",
+            [],
+            |row| row.get(0),
+        ) {
+            Ok(n) => n,
+            Err(rusqlite::Error::SqliteFailure(_, Some(ref msg)))
+                if msg.contains("vec_nodes_active") || msg.contains("vec0") =>
+            {
+                0
+            }
+            Err(e) => return Err(EngineError::Sqlite(e)),
+        };
+        #[cfg(not(feature = "sqlite-vec"))]
+        let vec_rows_for_superseded_nodes: i64 = 0;
+
         let mut warnings = Vec::new();
         if orphaned_chunks > 0 {
             warnings.push(format!(
@@ -323,6 +371,16 @@ impl AdminService {
                 "{orphaned_supersession_chains} logical_id(s) with all versions superseded"
             ));
         }
+        if stale_vec_rows > 0 {
+            warnings.push(format!(
+                "{stale_vec_rows} stale vec row(s) referencing missing chunk"
+            ));
+        }
+        if vec_rows_for_superseded_nodes > 0 {
+            warnings.push(format!(
+                "{vec_rows_for_superseded_nodes} vec row(s) for superseded node(s)"
+            ));
+        }
 
         Ok(SemanticReport {
             orphaned_chunks: i64_to_usize(orphaned_chunks),
@@ -333,6 +391,8 @@ impl AdminService {
             fts_rows_for_superseded_nodes: i64_to_usize(fts_rows_for_superseded_nodes),
             dangling_edges: i64_to_usize(dangling_edges),
             orphaned_supersession_chains: i64_to_usize(orphaned_supersession_chains),
+            stale_vec_rows: i64_to_usize(stale_vec_rows),
+            vec_rows_for_superseded_nodes: i64_to_usize(vec_rows_for_superseded_nodes),
             warnings,
         })
     }
@@ -450,6 +510,16 @@ impl AdminService {
         )?;
 
         tx.commit()?;
+
+        // Record a durable audit event for this excision.
+        // A fresh connection (outside the excise tx) ensures the event is committed
+        // after the transaction that excised the source data.
+        let audit_conn = self.connect()?;
+        audit_conn.execute(
+            "INSERT INTO provenance_events (id, event_type, subject, source_ref) \
+             VALUES (?1, 'excise_source', ?2, ?2)",
+            rusqlite::params![new_id(), source_ref],
+        )?;
 
         self.trace_source(source_ref)
     }
@@ -685,7 +755,42 @@ mod tests {
         assert_eq!(report.fts_rows_for_superseded_nodes, 0);
         assert_eq!(report.dangling_edges, 0);
         assert_eq!(report.orphaned_supersession_chains, 0);
+        assert_eq!(report.stale_vec_rows, 0);
+        assert_eq!(report.vec_rows_for_superseded_nodes, 0);
         assert!(report.warnings.is_empty());
+    }
+
+    #[cfg(feature = "sqlite-vec")]
+    #[test]
+    fn check_semantics_detects_stale_vec_rows() {
+        use crate::sqlite::open_connection_with_vec;
+
+        let db = NamedTempFile::new().expect("temp file");
+        let schema = Arc::new(SchemaManager::new());
+        {
+            let conn = open_connection_with_vec(db.path()).expect("vec conn");
+            schema.bootstrap(&conn).expect("bootstrap");
+            schema
+                .ensure_vector_profile(&conn, "default", "vec_nodes_active", 3)
+                .expect("vec profile");
+            // Insert a vec row whose chunk does not exist.
+            let bytes: Vec<u8> = [0.1f32, 0.2f32, 0.3f32]
+                .iter()
+                .flat_map(|f| f.to_le_bytes())
+                .collect();
+            conn.execute(
+                "INSERT INTO vec_nodes_active (chunk_id, embedding) VALUES ('ghost-chunk', ?1)",
+                rusqlite::params![bytes],
+            )
+            .expect("insert stale vec row");
+        }
+        let service = AdminService::new(db.path(), Arc::clone(&schema));
+        let report = service.check_semantics().expect("semantics check");
+        assert_eq!(report.stale_vec_rows, 1);
+        assert!(
+            report.warnings.iter().any(|w| w.contains("stale vec")),
+            "warning must mention stale vec"
+        );
     }
 
     #[test]
@@ -871,7 +976,7 @@ mod tests {
             manifest.exported_at > 0,
             "exported_at should be a unix timestamp"
         );
-        assert_eq!(manifest.schema_version, 1, "schema_version should be 1");
+        assert_eq!(manifest.schema_version, 2, "schema_version should be 2");
         assert_eq!(manifest.protocol_version, 1, "protocol_version should be 1");
         assert!(manifest.page_count > 0, "page_count should be positive");
     }
@@ -896,7 +1001,7 @@ mod tests {
             manifest.page_count > 0,
             "page_count must be populated regardless of checkpoint mode"
         );
-        assert_eq!(manifest.schema_version, 1);
+        assert_eq!(manifest.schema_version, 2);
         assert_eq!(manifest.protocol_version, 1);
     }
 

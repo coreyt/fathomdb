@@ -2,10 +2,11 @@ use rusqlite::{Connection, OptionalExtension};
 
 use crate::{Migration, SchemaError, SchemaVersion};
 
-static MIGRATIONS: &[Migration] = &[Migration::new(
-    SchemaVersion(1),
-    "initial canonical schema and runtime tables",
-    r"
+static MIGRATIONS: &[Migration] = &[
+    Migration::new(
+        SchemaVersion(1),
+        "initial canonical schema and runtime tables",
+        r"
                 CREATE TABLE IF NOT EXISTS nodes (
                     row_id TEXT PRIMARY KEY,
                     logical_id TEXT NOT NULL,
@@ -118,7 +119,23 @@ static MIGRATIONS: &[Migration] = &[Migration::new(
                 CREATE INDEX IF NOT EXISTS idx_actions_source_ref
                     ON actions(source_ref);
                 ",
-)];
+    ),
+    Migration::new(
+        SchemaVersion(2),
+        "durable audit trail: provenance_events table",
+        r"
+                CREATE TABLE IF NOT EXISTS provenance_events (
+                    id         TEXT PRIMARY KEY,
+                    event_type TEXT NOT NULL,
+                    subject    TEXT NOT NULL,
+                    source_ref TEXT,
+                    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+                );
+                CREATE INDEX IF NOT EXISTS idx_provenance_events_subject
+                    ON provenance_events (subject, event_type);
+                ",
+    ),
+];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BootstrapReport {
@@ -293,7 +310,7 @@ mod tests {
 
         let report = manager.bootstrap(&conn).expect("bootstrap report");
 
-        assert_eq!(report.applied_versions.len(), 1);
+        assert_eq!(report.applied_versions.len(), 2);
         assert!(report.sqlite_version.starts_with('3'));
         let table_count: i64 = conn
             .query_row(
@@ -362,6 +379,13 @@ mod tests {
     #[cfg(feature = "sqlite-vec")]
     #[test]
     fn vector_profile_created_when_feature_enabled() {
+        // Register the sqlite-vec extension globally so the in-memory
+        // connection can use the vec0 module.
+        unsafe {
+            rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute(
+                sqlite_vec::sqlite3_vec_init as *const (),
+            )));
+        }
         let conn = Connection::open_in_memory().expect("in-memory sqlite");
         let manager = SchemaManager::new();
         manager.bootstrap(&conn).expect("bootstrap");

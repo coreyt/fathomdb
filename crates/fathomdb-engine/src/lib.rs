@@ -11,7 +11,8 @@ pub use admin::{
     SemanticReport, TraceReport,
 };
 pub use coordinator::{
-    ActionRow, ExecutionCoordinator, NodeRow, QueryPlan, QueryRows, RunRow, StepRow,
+    ActionRow, ExecutionCoordinator, NodeRow, ProvenanceEvent, QueryPlan, QueryRows, RunRow,
+    StepRow,
 };
 pub use ids::{new_id, new_row_id};
 pub use projection::{ProjectionRepairReport, ProjectionService, ProjectionTarget};

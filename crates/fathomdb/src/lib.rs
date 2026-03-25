@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 pub use fathomdb_engine::{
     ActionInsert, ActionRow, AdminHandle, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire,
     EngineError, EngineRuntime, ExecutionCoordinator, NodeInsert, NodeRetire, NodeRow,
-    OptionalProjectionTask, ProjectionRepairReport, ProjectionTarget, ProvenanceMode, QueryPlan,
-    QueryRows, RunInsert, RunRow, SafeExportManifest, SafeExportOptions, StepInsert, StepRow,
-    VecInsert, WriteReceipt, WriteRequest, WriterActor, new_id, new_row_id,
+    OptionalProjectionTask, ProjectionRepairReport, ProjectionTarget, ProvenanceEvent,
+    ProvenanceMode, QueryPlan, QueryRows, RunInsert, RunRow, SafeExportManifest, SafeExportOptions,
+    StepInsert, StepRow, VecInsert, WriteReceipt, WriteRequest, WriterActor, new_id, new_row_id,
 };
 pub use fathomdb_query::{
     BindValue, CompiledQuery, DrivingTable, ExecutionHints, Predicate, Query, QueryAst,

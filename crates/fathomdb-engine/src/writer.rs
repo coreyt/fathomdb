@@ -7,7 +7,7 @@ use std::thread;
 use fathomdb_schema::SchemaManager;
 use rusqlite::{TransactionBehavior, params};
 
-use crate::{EngineError, projection::ProjectionTarget, sqlite};
+use crate::{EngineError, ids::new_id, projection::ProjectionTarget, sqlite};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OptionalProjectionTask {
@@ -554,7 +554,7 @@ fn apply_write(
 ) -> Result<WriteReceipt, rusqlite::Error> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
 
-    // Node retires: clear FTS, clear chunks, mark superseded.
+    // Node retires: clear FTS, clear chunks, mark superseded, record audit event.
     {
         let mut del_fts = tx.prepare_cached("DELETE FROM fts_nodes WHERE node_logical_id = ?1")?;
         let mut del_chunks = tx.prepare_cached("DELETE FROM chunks WHERE node_logical_id = ?1")?;
@@ -562,21 +562,48 @@ fn apply_write(
             "UPDATE nodes SET superseded_at = unixepoch() \
              WHERE logical_id = ?1 AND superseded_at IS NULL",
         )?;
+        let mut ins_event = tx.prepare_cached(
+            "INSERT INTO provenance_events (id, event_type, subject, source_ref) \
+             VALUES (?1, 'node_retire', ?2, ?3)",
+        )?;
+        #[cfg(feature = "sqlite-vec")]
+        let vec_del_sql = "DELETE FROM vec_nodes_active WHERE chunk_id IN \
+                           (SELECT id FROM chunks WHERE node_logical_id = ?1)";
+        #[cfg(feature = "sqlite-vec")]
+        let mut del_vec = match tx.prepare_cached(vec_del_sql) {
+            Ok(stmt) => Some(stmt),
+            Err(rusqlite::Error::SqliteFailure(_, Some(ref msg)))
+                if msg.contains("vec_nodes_active") || msg.contains("vec0") =>
+            {
+                None
+            }
+            Err(e) => return Err(e),
+        };
         for retire in &prepared.node_retires {
+            #[cfg(feature = "sqlite-vec")]
+            if let Some(ref mut stmt) = del_vec {
+                stmt.execute(params![retire.logical_id])?;
+            }
             del_fts.execute(params![retire.logical_id])?;
             del_chunks.execute(params![retire.logical_id])?;
             sup_node.execute(params![retire.logical_id])?;
+            ins_event.execute(params![new_id(), retire.logical_id, retire.source_ref])?;
         }
     }
 
-    // Edge retires: mark superseded.
+    // Edge retires: mark superseded, record audit event.
     {
         let mut sup_edge = tx.prepare_cached(
             "UPDATE edges SET superseded_at = unixepoch() \
              WHERE logical_id = ?1 AND superseded_at IS NULL",
         )?;
+        let mut ins_event = tx.prepare_cached(
+            "INSERT INTO provenance_events (id, event_type, subject, source_ref) \
+             VALUES (?1, 'edge_retire', ?2, ?3)",
+        )?;
         for retire in &prepared.edge_retires {
             sup_edge.execute(params![retire.logical_id])?;
+            ins_event.execute(params![new_id(), retire.logical_id, retire.source_ref])?;
         }
     }
 
@@ -592,9 +619,26 @@ fn apply_write(
             "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
              VALUES (?1, ?2, ?3, ?4, unixepoch(), ?5)",
         )?;
+        #[cfg(feature = "sqlite-vec")]
+        let vec_del_sql2 = "DELETE FROM vec_nodes_active WHERE chunk_id IN \
+                            (SELECT id FROM chunks WHERE node_logical_id = ?1)";
+        #[cfg(feature = "sqlite-vec")]
+        let mut del_vec = match tx.prepare_cached(vec_del_sql2) {
+            Ok(stmt) => Some(stmt),
+            Err(rusqlite::Error::SqliteFailure(_, Some(ref msg)))
+                if msg.contains("vec_nodes_active") || msg.contains("vec0") =>
+            {
+                None
+            }
+            Err(e) => return Err(e),
+        };
         for node in &prepared.nodes {
             if node.upsert {
                 if node.chunk_policy == ChunkPolicy::Replace {
+                    #[cfg(feature = "sqlite-vec")]
+                    if let Some(ref mut stmt) = del_vec {
+                        stmt.execute(params![node.logical_id])?;
+                    }
                     del_fts.execute(params![node.logical_id])?;
                     del_chunks.execute(params![node.logical_id])?;
                 }
@@ -747,14 +791,25 @@ fn apply_write(
         }
     }
 
-    // Vec inserts (feature-gated; silently skipped when sqlite-vec is absent).
+    // Vec inserts (feature-gated; silently skipped when sqlite-vec is absent or table missing).
     #[cfg(feature = "sqlite-vec")]
     {
-        let mut ins_vec = tx
-            .prepare_cached("INSERT INTO vec_nodes_active (chunk_id, embedding) VALUES (?1, ?2)")?;
-        for vi in &prepared.vec_inserts {
-            let bytes: Vec<u8> = vi.embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
-            ins_vec.execute(params![vi.chunk_id, bytes])?;
+        match tx
+            .prepare_cached("INSERT INTO vec_nodes_active (chunk_id, embedding) VALUES (?1, ?2)")
+        {
+            Ok(mut ins_vec) => {
+                for vi in &prepared.vec_inserts {
+                    let bytes: Vec<u8> =
+                        vi.embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
+                    ins_vec.execute(params![vi.chunk_id, bytes])?;
+                }
+            }
+            Err(rusqlite::Error::SqliteFailure(_, Some(ref msg)))
+                if msg.contains("vec_nodes_active") || msg.contains("vec0") =>
+            {
+                // vec profile absent: vec inserts are silently skipped.
+            }
+            Err(e) => return Err(e),
         }
     }
 
@@ -3871,6 +3926,204 @@ mod tests {
         // The result variable is used above; silence unused warning for cfg-on path.
         #[cfg(feature = "sqlite-vec")]
         let _ = result;
+    }
+
+    #[cfg(feature = "sqlite-vec")]
+    #[test]
+    fn vec_cleanup_on_node_retire_removes_vec_rows() {
+        use crate::sqlite::open_connection_with_vec;
+
+        let db = NamedTempFile::new().expect("temporary db");
+        let schema_manager = Arc::new(SchemaManager::new());
+
+        {
+            let conn = open_connection_with_vec(db.path()).expect("vec connection");
+            schema_manager.bootstrap(&conn).expect("bootstrap");
+            schema_manager
+                .ensure_vector_profile(&conn, "default", "vec_nodes_active", 3)
+                .expect("ensure profile");
+        }
+
+        let writer =
+            WriterActor::start(db.path(), Arc::clone(&schema_manager), ProvenanceMode::Warn)
+                .expect("writer");
+
+        // Insert node + chunk + vec row
+        writer
+            .submit(WriteRequest {
+                label: "setup".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-retire-vec".to_owned(),
+                    logical_id: "node-retire-vec".to_owned(),
+                    kind: "Doc".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                }],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![ChunkInsert {
+                    id: "chunk-retire-vec".to_owned(),
+                    node_logical_id: "node-retire-vec".to_owned(),
+                    text_content: "text".to_owned(),
+                    byte_start: None,
+                    byte_end: None,
+                }],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![VecInsert {
+                    chunk_id: "chunk-retire-vec".to_owned(),
+                    embedding: vec![0.1, 0.2, 0.3],
+                }],
+            })
+            .expect("setup write");
+
+        // Retire the node
+        writer
+            .submit(WriteRequest {
+                label: "retire".to_owned(),
+                nodes: vec![],
+                node_retires: vec![NodeRetire {
+                    logical_id: "node-retire-vec".to_owned(),
+                    source_ref: Some("src".to_owned()),
+                }],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+            })
+            .expect("retire write");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM vec_nodes_active WHERE chunk_id = 'chunk-retire-vec'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count");
+        assert_eq!(count, 0, "vec rows must be deleted when node is retired");
+    }
+
+    #[cfg(feature = "sqlite-vec")]
+    #[test]
+    fn vec_cleanup_on_chunk_replace_removes_old_vec_rows() {
+        use crate::sqlite::open_connection_with_vec;
+
+        let db = NamedTempFile::new().expect("temporary db");
+        let schema_manager = Arc::new(SchemaManager::new());
+
+        {
+            let conn = open_connection_with_vec(db.path()).expect("vec connection");
+            schema_manager.bootstrap(&conn).expect("bootstrap");
+            schema_manager
+                .ensure_vector_profile(&conn, "default", "vec_nodes_active", 3)
+                .expect("ensure profile");
+        }
+
+        let writer =
+            WriterActor::start(db.path(), Arc::clone(&schema_manager), ProvenanceMode::Warn)
+                .expect("writer");
+
+        // Insert node + chunk-A + vec-A
+        writer
+            .submit(WriteRequest {
+                label: "v1".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-replace-v1".to_owned(),
+                    logical_id: "node-replace-vec".to_owned(),
+                    kind: "Doc".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                }],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![ChunkInsert {
+                    id: "chunk-replace-A".to_owned(),
+                    node_logical_id: "node-replace-vec".to_owned(),
+                    text_content: "version one".to_owned(),
+                    byte_start: None,
+                    byte_end: None,
+                }],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![VecInsert {
+                    chunk_id: "chunk-replace-A".to_owned(),
+                    embedding: vec![0.1, 0.2, 0.3],
+                }],
+            })
+            .expect("v1 write");
+
+        // Upsert with Replace + chunk-B + vec-B
+        writer
+            .submit(WriteRequest {
+                label: "v2".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-replace-v2".to_owned(),
+                    logical_id: "node-replace-vec".to_owned(),
+                    kind: "Doc".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src".to_owned()),
+                    upsert: true,
+                    chunk_policy: ChunkPolicy::Replace,
+                }],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![ChunkInsert {
+                    id: "chunk-replace-B".to_owned(),
+                    node_logical_id: "node-replace-vec".to_owned(),
+                    text_content: "version two".to_owned(),
+                    byte_start: None,
+                    byte_end: None,
+                }],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![VecInsert {
+                    chunk_id: "chunk-replace-B".to_owned(),
+                    embedding: vec![0.4, 0.5, 0.6],
+                }],
+            })
+            .expect("v2 write");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let count_a: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM vec_nodes_active WHERE chunk_id = 'chunk-replace-A'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count A");
+        let count_b: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM vec_nodes_active WHERE chunk_id = 'chunk-replace-B'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count B");
+        assert_eq!(
+            count_a, 0,
+            "old vec row (chunk-A) must be deleted on Replace"
+        );
+        assert_eq!(
+            count_b, 1,
+            "new vec row (chunk-B) must be present after Replace"
+        );
     }
 
     #[cfg(feature = "sqlite-vec")]
