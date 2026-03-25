@@ -8,6 +8,9 @@ repository.workspace = true
 [lints]
 workspace = true
 
+[features]
+sqlite-vec = ["fathomdb-engine/sqlite-vec"]
+
 [dependencies]
 fathomdb-engine.workspace = true
 fathomdb-query.workspace = true

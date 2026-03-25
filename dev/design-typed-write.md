@@ -190,5 +190,8 @@ This layer is scaffolded enough when:
       [setup-sqlite-vec-capability.md](./setup-sqlite-vec-capability.md).
       `VecInsert` added; `vec_inserts` wired through `WriteRequest`/`PreparedWrite`/`apply_write`;
       feature-gated INSERT into `vec_nodes_active` using sqlite-vec embedding bytes.
-- [ ] Remove the remaining raw-SQL write escape hatches once the typed path is
+- [x] Remove the remaining raw-SQL write escape hatches once the typed path is
       sufficient for normal engine use.
+      No raw-SQL write paths remain. `ExecutionCoordinator::raw_pragma()` is a
+      read-only diagnostic utility for pragma-initialization tests, not a write
+      escape hatch. All canonical mutations go through the typed WriteRequest path.

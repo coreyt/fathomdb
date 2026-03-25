@@ -750,9 +750,8 @@ fn apply_write(
     // Vec inserts (feature-gated; silently skipped when sqlite-vec is absent).
     #[cfg(feature = "sqlite-vec")]
     {
-        let mut ins_vec = tx.prepare_cached(
-            "INSERT INTO vec_nodes_active (chunk_id, embedding) VALUES (?1, ?2)",
-        )?;
+        let mut ins_vec = tx
+            .prepare_cached("INSERT INTO vec_nodes_active (chunk_id, embedding) VALUES (?1, ?2)")?;
         for vi in &prepared.vec_inserts {
             let bytes: Vec<u8> = vi.embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
             ins_vec.execute(params![vi.chunk_id, bytes])?;
@@ -1033,6 +1032,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn writer_upsert_supersedes_prior_active_edge() {
         let db = NamedTempFile::new().expect("temporary db");
         let writer = WriterActor::start(
@@ -3780,9 +3780,12 @@ mod tests {
     #[test]
     fn vec_insert_empty_chunk_id_is_rejected() {
         let db = NamedTempFile::new().expect("temporary db");
-        let writer =
-            WriterActor::start(db.path(), Arc::new(SchemaManager::new()), ProvenanceMode::Warn)
-                .expect("writer");
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            ProvenanceMode::Warn,
+        )
+        .expect("writer");
         let result = writer.submit(WriteRequest {
             label: "vec-test".to_owned(),
             nodes: vec![],
@@ -3808,9 +3811,12 @@ mod tests {
     #[test]
     fn vec_insert_empty_embedding_is_rejected() {
         let db = NamedTempFile::new().expect("temporary db");
-        let writer =
-            WriterActor::start(db.path(), Arc::new(SchemaManager::new()), ProvenanceMode::Warn)
-                .expect("writer");
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            ProvenanceMode::Warn,
+        )
+        .expect("writer");
         let result = writer.submit(WriteRequest {
             label: "vec-test".to_owned(),
             nodes: vec![],
@@ -3838,9 +3844,12 @@ mod tests {
         // Without the sqlite-vec feature, a well-formed VecInsert must succeed
         // (no error) but not write to any vec table.
         let db = NamedTempFile::new().expect("temporary db");
-        let writer =
-            WriterActor::start(db.path(), Arc::new(SchemaManager::new()), ProvenanceMode::Warn)
-                .expect("writer");
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            ProvenanceMode::Warn,
+        )
+        .expect("writer");
         let result = writer.submit(WriteRequest {
             label: "vec-noop".to_owned(),
             nodes: vec![],

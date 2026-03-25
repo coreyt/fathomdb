@@ -1,16 +1,11 @@
-#![allow(
-    clippy::expect_used,
-    clippy::missing_panics_doc,
-    clippy::doc_markdown
-)]
+#![allow(clippy::expect_used, clippy::missing_panics_doc, clippy::doc_markdown)]
 
 mod helpers;
 mod injection;
 
 use fathomdb::{
     ActionInsert, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire, Engine, EngineOptions,
-    NodeInsert, NodeRetire, RunInsert, SafeExportOptions, StepInsert, TraverseDirection,
-    VecInsert, WriteRequest,
+    NodeInsert, RunInsert, SafeExportOptions, StepInsert, TraverseDirection, WriteRequest,
 };
 use tempfile::NamedTempFile;
 
@@ -119,7 +114,10 @@ fn m2_meeting_note_correction_via_upsert() {
         .expect("m2 v2 write");
 
     assert_eq!(helpers::active_count(db.path(), "nodes", "meeting-m2"), 1);
-    assert_eq!(helpers::historical_count(db.path(), "nodes", "meeting-m2"), 1);
+    assert_eq!(
+        helpers::historical_count(db.path(), "nodes", "meeting-m2"),
+        1
+    );
 
     let props = helpers::active_properties(db.path(), "meeting-m2").expect("active props");
     assert!(props.contains("Final"));
@@ -211,7 +209,10 @@ fn m4_history_preserved_after_upsert() {
     }
 
     assert_eq!(helpers::active_count(db.path(), "nodes", "meeting-m4"), 1);
-    assert_eq!(helpers::historical_count(db.path(), "nodes", "meeting-m4"), 2);
+    assert_eq!(
+        helpers::historical_count(db.path(), "nodes", "meeting-m4"),
+        2
+    );
 }
 
 /// M-5: Excise a meeting by source_ref and verify all descendants are removed.
@@ -479,11 +480,23 @@ fn oc3_write_provenance_run_step_action() {
     assert_eq!(helpers::count_rows(db.path(), "steps"), 1);
     assert_eq!(helpers::count_rows(db.path(), "actions"), 1);
 
-    let run = engine.coordinator().read_run("run-oc3").expect("read_run").expect("run exists");
+    let run = engine
+        .coordinator()
+        .read_run("run-oc3")
+        .expect("read_run")
+        .expect("run exists");
     assert_eq!(run.kind, "session");
-    let step = engine.coordinator().read_step("step-oc3").expect("read_step").expect("step exists");
+    let step = engine
+        .coordinator()
+        .read_step("step-oc3")
+        .expect("read_step")
+        .expect("step exists");
     assert_eq!(step.run_id, "run-oc3");
-    let action = engine.coordinator().read_action("action-oc3").expect("read_action").expect("action exists");
+    let action = engine
+        .coordinator()
+        .read_action("action-oc3")
+        .expect("read_action")
+        .expect("action exists");
     assert_eq!(action.step_id, "step-oc3");
 
     let _ = db;
@@ -551,7 +564,10 @@ fn oc4_traverse_task_dependency_graph() {
         .expect("read");
 
     // task-a traverses to task-b
-    assert!(!rows.nodes.is_empty(), "traversal must return at least one node");
+    assert!(
+        !rows.nodes.is_empty(),
+        "traversal must return at least one node"
+    );
 
     let _ = db;
 }
@@ -1026,7 +1042,7 @@ fn nc1_bulk_ingest_documents() {
         })
         .expect("nc1 bulk write");
 
-    assert_eq!(helpers::count_rows(db.path(), "nodes"), count as i64);
+    assert_eq!(helpers::count_rows(db.path(), "nodes"), i64::from(count));
 }
 
 /// NC-2: Verify FTS search across bulk-ingested documents.
@@ -1104,7 +1120,11 @@ fn nc3_excise_documents_by_source_ref() {
     let mut chunks = Vec::new();
     for i in 0..15 {
         let logical_id = format!("doc-nc3-{i}");
-        let src = if i < 5 { "nc3-src-a".to_owned() } else { "nc3-src-b".to_owned() };
+        let src = if i < 5 {
+            "nc3-src-a".to_owned()
+        } else {
+            "nc3-src-b".to_owned()
+        };
         nodes.push(NodeInsert {
             row_id: format!("nc3-row-{i}"),
             logical_id: logical_id.clone(),
@@ -1155,9 +1175,16 @@ fn nc3_excise_documents_by_source_ref() {
             |row| row.get(0),
         )
         .expect("active count");
-    assert_eq!(active, 10, "10 src-b nodes remain active after excising src-a");
+    assert_eq!(
+        active, 10,
+        "10 src-b nodes remain active after excising src-a"
+    );
     // FTS is rebuilt atomically: no stale FTS rows
-    let report = engine.admin().service().check_semantics().expect("semantics");
+    let report = engine
+        .admin()
+        .service()
+        .check_semantics()
+        .expect("semantics");
     assert_eq!(report.stale_fts_rows, 0, "no stale FTS rows after excise");
 }
 
@@ -1197,15 +1224,23 @@ fn nc4_safe_export_manifest_completeness() {
         .service()
         .safe_export(
             export_dest.path(),
-            SafeExportOptions { force_checkpoint: false },
+            SafeExportOptions {
+                force_checkpoint: false,
+            },
         )
         .expect("safe_export");
 
     assert!(!manifest.sha256.is_empty(), "manifest must have SHA-256");
-    assert!(manifest.schema_version > 0, "schema_version must be positive");
+    assert!(
+        manifest.schema_version > 0,
+        "schema_version must be positive"
+    );
     assert_eq!(manifest.protocol_version, 1, "protocol version must be 1");
     assert!(manifest.page_count > 0, "page_count must be positive");
-    assert!(manifest.exported_at > 0, "exported_at must be a valid timestamp");
+    assert!(
+        manifest.exported_at > 0,
+        "exported_at must be a valid timestamp"
+    );
 
     let _ = db;
 }
@@ -1302,11 +1337,18 @@ fn nc5_check_integrity_clean_after_enterprise_workload() {
         })
         .expect("nc5 write");
 
-    let integrity = engine.admin().service().check_integrity().expect("check_integrity");
+    let integrity = engine
+        .admin()
+        .service()
+        .check_integrity()
+        .expect("check_integrity");
     assert!(integrity.physical_ok, "physical integrity must pass");
     assert!(integrity.foreign_keys_ok, "foreign keys must be valid");
     assert_eq!(integrity.missing_fts_rows, 0, "no missing FTS rows");
-    assert_eq!(integrity.duplicate_active_logical_ids, 0, "no duplicate active logical ids");
+    assert_eq!(
+        integrity.duplicate_active_logical_ids, 0,
+        "no duplicate active logical ids"
+    );
 
     let _ = db;
 }
@@ -1317,7 +1359,7 @@ fn nc5_check_integrity_clean_after_enterprise_workload() {
 #[cfg(feature = "sqlite-vec")]
 #[test]
 fn v1_vector_search_round_trip() {
-    use fathomdb::new_id;
+    use fathomdb::{VecInsert, new_id};
 
     let db = NamedTempFile::new().expect("temporary db");
     let mut opts = EngineOptions::new(db.path());

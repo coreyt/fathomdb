@@ -68,9 +68,9 @@
 ## Item 6: Checklist + Doc Updates
 
 - [x] Mark Phase 3 items done in `dev/phase3-tasks.md`
-- [ ] Mark Phase 3 items done in `dev/design-typed-write.md`
-- [ ] Mark Phase 3 items done in `dev/design-read-execution.md`
-- [ ] Update `dev/setup-sqlite-vec-capability.md` with decisions made
+- [x] Mark Phase 3 items done in `dev/design-typed-write.md`
+- [x] Mark Phase 3 items done in `dev/design-read-execution.md`
+- [x] Update `dev/setup-sqlite-vec-capability.md` with decisions made
 
 ## Verification
 

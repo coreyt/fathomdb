@@ -425,8 +425,9 @@ mod tests {
     #[test]
     fn same_shape_queries_share_one_cache_entry() {
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
-            .expect("coordinator");
+        let coordinator =
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+                .expect("coordinator");
 
         let compiled_a = QueryBuilder::nodes("Meeting")
             .text_search("budget", 5)
@@ -456,8 +457,9 @@ mod tests {
     #[test]
     fn vector_read_returns_error_when_table_absent() {
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
-            .expect("coordinator");
+        let coordinator =
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+                .expect("coordinator");
 
         let compiled = QueryBuilder::nodes("Meeting")
             .vector_search("budget embeddings", 5)
@@ -474,8 +476,9 @@ mod tests {
     #[test]
     fn coordinator_caches_by_shape_hash() {
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
-            .expect("coordinator");
+        let coordinator =
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+                .expect("coordinator");
 
         let compiled = QueryBuilder::nodes("Meeting")
             .text_search("budget", 5)
@@ -493,8 +496,9 @@ mod tests {
     #[test]
     fn explain_returns_correct_sql() {
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
-            .expect("coordinator");
+        let coordinator =
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+                .expect("coordinator");
 
         let compiled = QueryBuilder::nodes("Meeting")
             .text_search("budget", 5)
@@ -511,8 +515,9 @@ mod tests {
         use fathomdb_query::DrivingTable;
 
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
-            .expect("coordinator");
+        let coordinator =
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+                .expect("coordinator");
 
         let compiled = QueryBuilder::nodes("Meeting")
             .text_search("budget", 5)
@@ -527,8 +532,9 @@ mod tests {
     #[test]
     fn explain_reports_cache_miss_then_hit() {
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
-            .expect("coordinator");
+        let coordinator =
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+                .expect("coordinator");
 
         let compiled = QueryBuilder::nodes("Meeting")
             .text_search("budget", 5)
@@ -562,8 +568,9 @@ mod tests {
         // key assertion is that it returns a QueryPlan (not an error) even
         // without touching the database.
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
-            .expect("coordinator");
+        let coordinator =
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+                .expect("coordinator");
 
         let compiled = QueryBuilder::nodes("Meeting")
             .text_search("anything", 5)
@@ -580,8 +587,9 @@ mod tests {
     #[test]
     fn coordinator_executes_compiled_read() {
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
-            .expect("coordinator");
+        let coordinator =
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+                .expect("coordinator");
         let conn = rusqlite::Connection::open(db.path()).expect("open db");
 
         conn.execute_batch(
@@ -643,15 +651,15 @@ mod tests {
 
     #[test]
     fn read_run_returns_inserted_run() {
-        use crate::{
-            ProvenanceMode, RunInsert, WriteRequest, WriterActor,
-            writer::{ActionInsert, StepInsert},
-        };
+        use crate::{ProvenanceMode, RunInsert, WriteRequest, WriterActor};
 
         let db = NamedTempFile::new().expect("temporary db");
-        let writer =
-            WriterActor::start(db.path(), Arc::new(SchemaManager::new()), ProvenanceMode::Warn)
-                .expect("writer");
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            ProvenanceMode::Warn,
+        )
+        .expect("writer");
         writer
             .submit(WriteRequest {
                 label: "runtime".to_owned(),
@@ -690,15 +698,15 @@ mod tests {
 
     #[test]
     fn read_step_returns_inserted_step() {
-        use crate::{
-            ProvenanceMode, RunInsert, WriteRequest, WriterActor,
-            writer::{ActionInsert, StepInsert},
-        };
+        use crate::{ProvenanceMode, RunInsert, WriteRequest, WriterActor, writer::StepInsert};
 
         let db = NamedTempFile::new().expect("temporary db");
-        let writer =
-            WriterActor::start(db.path(), Arc::new(SchemaManager::new()), ProvenanceMode::Warn)
-                .expect("writer");
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            ProvenanceMode::Warn,
+        )
+        .expect("writer");
         writer
             .submit(WriteRequest {
                 label: "runtime".to_owned(),
@@ -752,9 +760,12 @@ mod tests {
         };
 
         let db = NamedTempFile::new().expect("temporary db");
-        let writer =
-            WriterActor::start(db.path(), Arc::new(SchemaManager::new()), ProvenanceMode::Warn)
-                .expect("writer");
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            ProvenanceMode::Warn,
+        )
+        .expect("writer");
         writer
             .submit(WriteRequest {
                 label: "runtime".to_owned(),
@@ -811,15 +822,15 @@ mod tests {
 
     #[test]
     fn read_active_runs_excludes_superseded() {
-        use crate::{
-            ProvenanceMode, RunInsert, WriteRequest, WriterActor,
-            writer::{ActionInsert, StepInsert},
-        };
+        use crate::{ProvenanceMode, RunInsert, WriteRequest, WriterActor};
 
         let db = NamedTempFile::new().expect("temporary db");
-        let writer =
-            WriterActor::start(db.path(), Arc::new(SchemaManager::new()), ProvenanceMode::Warn)
-                .expect("writer");
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            ProvenanceMode::Warn,
+        )
+        .expect("writer");
 
         // Insert original run
         writer

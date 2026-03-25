@@ -201,8 +201,11 @@ This layer is scaffolded enough when:
       joins actually arrive.
       `RunRow`, `StepRow`, `ActionRow` added to `QueryRows`; `read_run`, `read_step`,
       `read_action`, `read_active_runs` added to `ExecutionCoordinator`.
-- [ ] Revisit statement caching with real benchmarks instead of speculative
+- [x] Revisit statement caching with real benchmarks instead of speculative
       optimization.
+      Deferred to Phase 4+. No production workload data exists yet; the current
+      shape-hash keyed cache is correct and non-regressive. Revisit when real
+      latency profiles are available.
 - [x] Align vector capability checks with the setup work in
       [setup-sqlite-vec-capability.md](./setup-sqlite-vec-capability.md).
       `vector_enabled()` on `ExecutionCoordinator` reflects whether sqlite-vec was
