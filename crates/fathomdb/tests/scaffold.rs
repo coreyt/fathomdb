@@ -1157,6 +1157,133 @@ fn retire_node_leaves_dangling_edge_detected_by_check_semantics() {
 }
 
 #[test]
+fn retire_only_version_reports_orphaned_supersession_chain() {
+    let db = NamedTempFile::new().expect("temporary db");
+    let engine = Engine::open(EngineOptions::new(db.path())).expect("engine opens");
+
+    engine
+        .writer()
+        .submit(meeting_write_request(r#"{"version":1}"#))
+        .expect("seed write");
+
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "retire".to_owned(),
+            nodes: vec![],
+            node_retires: vec![NodeRetire {
+                logical_id: "meeting-1".to_owned(),
+                source_ref: Some("source-retire".to_owned()),
+            }],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+        })
+        .expect("retire write");
+
+    let report = engine
+        .admin()
+        .service()
+        .check_semantics()
+        .expect("semantics check");
+    assert!(
+        report.orphaned_supersession_chains >= 1,
+        "retiring the only version should surface an orphaned supersession chain"
+    );
+}
+
+#[test]
+fn excise_source_is_idempotent() {
+    let db = NamedTempFile::new().expect("temporary db");
+    let engine = Engine::open(EngineOptions::new(db.path())).expect("engine opens");
+
+    engine
+        .writer()
+        .submit(meeting_write_request(r#"{"status":"active"}"#))
+        .expect("seed write");
+
+    let first = engine
+        .admin()
+        .service()
+        .excise_source("source-1")
+        .expect("first excise");
+    let historical_after_first = helpers::historical_count(db.path(), "nodes", "meeting-1");
+    let second = engine
+        .admin()
+        .service()
+        .excise_source("source-1")
+        .expect("second excise");
+    let historical_after_second = helpers::historical_count(db.path(), "nodes", "meeting-1");
+
+    assert_eq!(first.node_rows, 1, "first excise must supersede one row");
+    assert_eq!(
+        second.node_rows, first.node_rows,
+        "trace counts are source-scoped totals and remain stable"
+    );
+    assert_eq!(helpers::active_count(db.path(), "nodes", "meeting-1"), 0);
+    assert_eq!(
+        historical_after_second, historical_after_first,
+        "second excise must not mutate supersession state"
+    );
+}
+
+#[test]
+fn excise_source_does_not_affect_other_sources() {
+    let db = NamedTempFile::new().expect("temporary db");
+    let engine = Engine::open(EngineOptions::new(db.path())).expect("engine opens");
+
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "seed".to_owned(),
+            nodes: vec![
+                NodeInsert {
+                    row_id: "row-src-a".to_owned(),
+                    logical_id: "node-src-a".to_owned(),
+                    kind: "Doc".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("source-a".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                },
+                NodeInsert {
+                    row_id: "row-src-b".to_owned(),
+                    logical_id: "node-src-b".to_owned(),
+                    kind: "Doc".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("source-b".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                },
+            ],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+        })
+        .expect("seed write");
+
+    engine
+        .admin()
+        .service()
+        .excise_source("source-a")
+        .expect("excise source-a");
+
+    assert_eq!(helpers::active_count(db.path(), "nodes", "node-src-a"), 0);
+    assert_eq!(helpers::active_count(db.path(), "nodes", "node-src-b"), 1);
+}
+
+#[test]
 fn retire_node_records_provenance_event() {
     let db = NamedTempFile::new().expect("temporary db");
     let engine = Engine::open(EngineOptions::new(db.path())).expect("engine opens");

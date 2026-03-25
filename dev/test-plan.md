@@ -193,8 +193,8 @@ hold their contracts under both normal and degraded conditions.
 |---|---|---|
 | `excise_source_supersedes_all_matching_nodes` | Write nodes with `source_ref = "bad-run"`; excise; verify all superseded | — |
 | `excise_source_cleans_fts_projections` | Write node + chunk with `source_ref = "bad-run"`; excise; `check_integrity()` → `missing_fts_rows = 0` | ✅ covered |
-| `excise_source_is_idempotent` | Excise same source twice; verify second call succeeds, state unchanged | — |
-| `excise_source_does_not_affect_other_sources` | Write two sources; excise one; verify other source's nodes still active | — |
+| `excise_source_is_idempotent` | Excise same source twice; verify second call succeeds, state unchanged | ✅ covered |
+| `excise_source_does_not_affect_other_sources` | Write two sources; excise one; verify other source's nodes still active | ✅ covered |
 | `excise_source_restores_prior_active_version_when_available` | Write v1 (source A), write v2 (source B, upsert); excise B; verify v1 becomes active again | — |
 
 ### 3.3 Integrity Checks
@@ -520,16 +520,15 @@ injections use bad `WriteRequest` values or deliberate raw SQL.
 - Detection: `InjectPartialExcision` → `check_semantics()` → broken FK or orphaned rows reported
 - Recovery: Re-run `excise_source` on same `source_ref` → verify clean
 
-**Dangling edges after node retire (currently undetected)**
+**Dangling edges after node retire**
 - Prevention: Not yet enforced; caller must explicitly retire or update incident edges
-- Detection: Retire a node without retiring its edges → run `check_semantics()` → currently **not reported** (known gap)
-- Status: Open item — add detection query to `check_semantics` for active edges pointing to `logical_id` with no active node
-- Interim: document that `WriteRequest` should pair `NodeRetire` with `EdgeRetire` for incident edges
+- Detection: Retire a node without retiring its edges → run `check_semantics()` → `dangling_edges > 0`
+- Recovery: retire or supersede incident edges; then re-run `check_semantics()` until clean
 
 **Broken supersession chain (all versions retired, no active successor)**
 - Prevention: Write path atomically supersedes and inserts in one transaction; crash leaves either both or neither
-- Detection: Manually supersede without inserting replacement → `check_semantics()` → currently **not reported** (known gap)
-- Status: Open item — add `orphaned_supersession_chains` count to `check_semantics`
+- Detection: Manually supersede without inserting replacement → `check_semantics()` → `orphaned_supersession_chains > 0`
+- Recovery: insert/supersede to restore one active version for the affected `logical_id`
 
 **Malformed JSON in node properties (lazy failure)**
 - Prevention: Validate JSON on the client before submission
@@ -647,8 +646,6 @@ become a tracked task before the affected layer is considered complete.
 
 | Gap | Layer | Severity | Resolution |
 |---|---|---|---|
-| Dangling edges after node retire not detected by `check_semantics` | Layer 3 | Warning | Add detection query; advisory to retire edges alongside nodes |
-| Broken supersession chain (all rows retired) not detected | Layer 3 | Info | Add `orphaned_supersession_chains` count to `check_semantics` |
 | B-tree cell-count-too-low is undetectable via SQLite pragma | Layer 1 | Critical (blind spot) | Document; recommend periodic `.recover` spot checks |
 | `safe_export` does not checkpoint WAL or write manifest | Layer 3 | Error | Phase 2 implementation required (see `fathom-integrity-recovery.md`) |
 | Vector projection cleanup on chunk delete is deferred | Layer 2 | Warning | Implement when sqlite-vec capability gate is real |

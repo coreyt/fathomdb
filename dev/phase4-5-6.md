@@ -10,19 +10,19 @@
 
 ## Semantic integrity gaps (memex-gap-map.md)
 
-- **Dangling edge detection** — retire a node; engine should detect edges that now point nowhere
-- **Stale vec row detection** — chunk replaced but `vec_nodes_active` not cleaned up
-- **Durable audit trail** — retire/excise/correction events as queryable records (currently only provenance warnings)
+- ✅ **Dangling edge detection** — `check_semantics` now reports `dangling_edges`
+- ✅ **Stale vec row detection** — `check_semantics` reports stale vec rows and vec rows for superseded nodes
+- ✅ **Durable audit trail (retire/excise)** — provenance events are persisted and queryable
 
 ## Vector lifecycle completeness
 
-- Vec cleanup on `NodeRetire` / `ChunkPolicy::Replace` (parallel to existing FTS cleanup)
-- `rebuild --target vec` path through the admin surface
+- ✅ Vec cleanup on `NodeRetire` / `ChunkPolicy::Replace` (parallel to existing FTS cleanup)
+- ✅ `rebuild --target vec` path through the admin surface
 
 ## Read surface breadth
 
 - Wider `QueryRows` result families (currently nodes + sparse runtime rows)
-- `execute_compiled_read` returning graph traversal results, not just flat node rows
+- ✅ `execute_compiled_read` returns graph traversal results
 - Capability degradation model (return partial results when `sqlite-vec` absent, rather than hard error)
 
 ---
