@@ -10,19 +10,31 @@ This is a companion to:
 - [design-read-execution.md](./design-read-execution.md)
 - [design-typed-write.md](./design-typed-write.md)
 
-## Current Repository State
+## Current Repository State (updated Phase 3)
 
-Today the repo is intentionally incomplete:
+The Phase 3 deliverables are implemented:
 
-- schema bootstrap creates `vector_profiles`
-- `ensure_vector_profile()` returns `MissingCapability("sqlite-vec")`
-- vector rebuild paths are deferred
-- query compilation already assumes a vector-driven candidate path exists
-- local development now standardizes on a repo-local SQLite `3.46.0` install,
-  with `3.41.0` as the minimum supported version, via `tooling/sqlite.env`
+- `sqlite-vec = "0.1"` added as an optional workspace dep; `load_extension` feature enabled in rusqlite
+- `crates/fathomdb-engine`: `[features] sqlite-vec = ["dep:sqlite-vec", "fathomdb-schema/sqlite-vec"]`
+- `crates/fathomdb-schema`: `[features] sqlite-vec = ["dep:sqlite-vec"]`
+- `open_connection_with_vec()` in `sqlite.rs` registers `sqlite3_vec_init` via `sqlite3_auto_extension`
+- `ensure_vector_profile()` in `bootstrap.rs` has `#[cfg(feature = "sqlite-vec")]` real impl and non-feature stub
+- `BootstrapReport.vector_profile_enabled` queries `vector_profiles WHERE enabled = 1`
+- `EngineOptions.vector_dimension: Option<usize>` threads through `Engine::open` → `EngineRuntime::open` → `ExecutionCoordinator::open`
+- `ExecutionCoordinator.vector_enabled()` returns true iff feature is on and a profile was bootstrapped
+- `VecInsert { chunk_id, embedding: Vec<f32> }` added; wired through `WriteRequest`, `PreparedWrite`, and `apply_write` (cfg-gated INSERT)
+- `vec_nodes_active` virtual table naming: `profile="default"`, `table_name="vec_nodes_active"`
 
-That mismatch is acceptable in the scaffold, but it should be closed before
-vector-driven reads and writes are treated as supported runtime features.
+**Decisions made:**
+- Loading strategy: `sqlite3_auto_extension` (global, idempotent) not per-connection `load_extension` from disk
+- Table naming: `vec_nodes_active` as the active profile table name for v1
+- Dimension source: `EngineOptions.vector_dimension` → stored in `vector_profiles` table
+
+**Done when** criteria met:
+- vector availability is reported explicitly ✓ (`vector_enabled()`)
+- the engine can tell whether vector search is runnable ✓ (`CapabilityMissing` error)
+- the active profile metadata has one concrete v1 shape ✓ (`vec_nodes_active`, `embedding float[N]`)
+- vector-disabled behavior is deterministic in tests ✓ (`vec_insert_noop_without_feature`, `capability_gate_reports_false_without_feature`)
 
 ## Deliverables
 

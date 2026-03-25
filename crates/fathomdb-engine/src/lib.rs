@@ -10,15 +10,17 @@ pub use admin::{
     AdminHandle, AdminService, IntegrityReport, SafeExportManifest, SafeExportOptions,
     SemanticReport, TraceReport,
 };
-pub use coordinator::{ExecutionCoordinator, NodeRow, QueryPlan, QueryRows};
+pub use coordinator::{
+    ActionRow, ExecutionCoordinator, NodeRow, QueryPlan, QueryRows, RunRow, StepRow,
+};
 pub use ids::{new_id, new_row_id};
 pub use projection::{ProjectionRepairReport, ProjectionService, ProjectionTarget};
 pub use runtime::EngineRuntime;
 pub use sqlite::{SharedSqlitePolicy, shared_sqlite_policy};
 pub use writer::{
     ActionInsert, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire, NodeInsert, NodeRetire,
-    OptionalProjectionTask, ProvenanceMode, RunInsert, StepInsert, WriteReceipt, WriteRequest,
-    WriterActor,
+    OptionalProjectionTask, ProvenanceMode, RunInsert, StepInsert, VecInsert, WriteReceipt,
+    WriteRequest, WriterActor,
 };
 
 use thiserror::Error;

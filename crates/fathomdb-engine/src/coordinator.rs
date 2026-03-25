@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use fathomdb_query::{CompiledQuery, DrivingTable, ShapeHash};
 use fathomdb_schema::SchemaManager;
-use rusqlite::{Connection, params_from_iter, types::Value};
+use rusqlite::{Connection, OptionalExtension, params_from_iter, types::Value};
 
 use crate::{EngineError, sqlite};
 
@@ -29,9 +29,38 @@ pub struct NodeRow {
     pub properties: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RunRow {
+    pub id: String,
+    pub kind: String,
+    pub status: String,
+    pub properties: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StepRow {
+    pub id: String,
+    pub run_id: String,
+    pub kind: String,
+    pub status: String,
+    pub properties: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ActionRow {
+    pub id: String,
+    pub step_id: String,
+    pub kind: String,
+    pub status: String,
+    pub properties: String,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct QueryRows {
     pub nodes: Vec<NodeRow>,
+    pub runs: Vec<RunRow>,
+    pub steps: Vec<StepRow>,
+    pub actions: Vec<ActionRow>,
 }
 
 pub struct ExecutionCoordinator {
@@ -39,6 +68,7 @@ pub struct ExecutionCoordinator {
     schema_manager: Arc<SchemaManager>,
     conn: Mutex<Connection>,
     shape_sql_map: Mutex<HashMap<ShapeHash, String>>,
+    vector_enabled: bool,
 }
 
 impl fmt::Debug for ExecutionCoordinator {
@@ -55,20 +85,51 @@ impl ExecutionCoordinator {
     pub fn open(
         path: impl AsRef<Path>,
         schema_manager: Arc<SchemaManager>,
+        vector_dimension: Option<usize>,
     ) -> Result<Self, EngineError> {
         let path = path.as_ref().to_path_buf();
+        #[cfg(feature = "sqlite-vec")]
+        let conn = if vector_dimension.is_some() {
+            sqlite::open_connection_with_vec(&path)?
+        } else {
+            sqlite::open_connection(&path)?
+        };
+        #[cfg(not(feature = "sqlite-vec"))]
         let conn = sqlite::open_connection(&path)?;
-        schema_manager.bootstrap(&conn)?;
+
+        let report = schema_manager.bootstrap(&conn)?;
+
+        #[cfg(feature = "sqlite-vec")]
+        let vector_enabled = report.vector_profile_enabled;
+        #[cfg(not(feature = "sqlite-vec"))]
+        let vector_enabled = {
+            let _ = &report;
+            false
+        };
+
+        if let Some(dim) = vector_dimension {
+            schema_manager
+                .ensure_vector_profile(&conn, "default", "vec_nodes_active", dim)
+                .map_err(EngineError::Schema)?;
+        }
+
         Ok(Self {
             database_path: path,
             schema_manager,
             conn: Mutex::new(conn),
             shape_sql_map: Mutex::new(HashMap::new()),
+            vector_enabled,
         })
     }
 
     pub fn database_path(&self) -> &Path {
         &self.database_path
+    }
+
+    /// Returns `true` when sqlite-vec was loaded and a vector profile is active.
+    #[must_use]
+    pub fn vector_enabled(&self) -> bool {
+        self.vector_enabled
     }
 
     /// # Errors
@@ -123,7 +184,122 @@ impl ExecutionCoordinator {
             })?
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(QueryRows { nodes })
+        Ok(QueryRows {
+            nodes,
+            runs: Vec::new(),
+            steps: Vec::new(),
+            actions: Vec::new(),
+        })
+    }
+
+    /// Read a single run by id.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the query fails.
+    ///
+    /// # Panics
+    /// Panics if the internal connection mutex is poisoned.
+    #[allow(clippy::expect_used)]
+    pub fn read_run(&self, id: &str) -> Result<Option<RunRow>, EngineError> {
+        let conn = self.conn.lock().expect("coordinator connection mutex");
+        conn.query_row(
+            "SELECT id, kind, status, properties FROM runs WHERE id = ?1",
+            rusqlite::params![id],
+            |row| {
+                Ok(RunRow {
+                    id: row.get(0)?,
+                    kind: row.get(1)?,
+                    status: row.get(2)?,
+                    properties: row.get(3)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(EngineError::Sqlite)
+    }
+
+    /// Read a single step by id.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the query fails.
+    ///
+    /// # Panics
+    /// Panics if the internal connection mutex is poisoned.
+    #[allow(clippy::expect_used)]
+    pub fn read_step(&self, id: &str) -> Result<Option<StepRow>, EngineError> {
+        let conn = self.conn.lock().expect("coordinator connection mutex");
+        conn.query_row(
+            "SELECT id, run_id, kind, status, properties FROM steps WHERE id = ?1",
+            rusqlite::params![id],
+            |row| {
+                Ok(StepRow {
+                    id: row.get(0)?,
+                    run_id: row.get(1)?,
+                    kind: row.get(2)?,
+                    status: row.get(3)?,
+                    properties: row.get(4)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(EngineError::Sqlite)
+    }
+
+    /// Read a single action by id.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the query fails.
+    ///
+    /// # Panics
+    /// Panics if the internal connection mutex is poisoned.
+    #[allow(clippy::expect_used)]
+    pub fn read_action(&self, id: &str) -> Result<Option<ActionRow>, EngineError> {
+        let conn = self.conn.lock().expect("coordinator connection mutex");
+        conn.query_row(
+            "SELECT id, step_id, kind, status, properties FROM actions WHERE id = ?1",
+            rusqlite::params![id],
+            |row| {
+                Ok(ActionRow {
+                    id: row.get(0)?,
+                    step_id: row.get(1)?,
+                    kind: row.get(2)?,
+                    status: row.get(3)?,
+                    properties: row.get(4)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(EngineError::Sqlite)
+    }
+
+    /// Read all active (non-superseded) runs.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the query fails.
+    ///
+    /// # Panics
+    /// Panics if the internal connection mutex is poisoned.
+    #[allow(clippy::expect_used)]
+    pub fn read_active_runs(&self) -> Result<Vec<RunRow>, EngineError> {
+        let conn = self.conn.lock().expect("coordinator connection mutex");
+        let mut stmt = conn
+            .prepare_cached(
+                "SELECT id, kind, status, properties FROM runs WHERE superseded_at IS NULL",
+            )
+            .map_err(EngineError::Sqlite)?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(RunRow {
+                    id: row.get(0)?,
+                    kind: row.get(1)?,
+                    status: row.get(2)?,
+                    properties: row.get(3)?,
+                })
+            })
+            .map_err(EngineError::Sqlite)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(EngineError::Sqlite)?;
+        Ok(rows)
     }
 
     /// Returns the number of shape→SQL entries currently indexed.
@@ -249,7 +425,7 @@ mod tests {
     #[test]
     fn same_shape_queries_share_one_cache_entry() {
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()))
+        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
             .expect("coordinator");
 
         let compiled_a = QueryBuilder::nodes("Meeting")
@@ -280,7 +456,7 @@ mod tests {
     #[test]
     fn vector_read_returns_error_when_table_absent() {
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()))
+        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
             .expect("coordinator");
 
         let compiled = QueryBuilder::nodes("Meeting")
@@ -298,7 +474,7 @@ mod tests {
     #[test]
     fn coordinator_caches_by_shape_hash() {
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()))
+        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
             .expect("coordinator");
 
         let compiled = QueryBuilder::nodes("Meeting")
@@ -317,7 +493,7 @@ mod tests {
     #[test]
     fn explain_returns_correct_sql() {
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()))
+        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
             .expect("coordinator");
 
         let compiled = QueryBuilder::nodes("Meeting")
@@ -335,7 +511,7 @@ mod tests {
         use fathomdb_query::DrivingTable;
 
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()))
+        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
             .expect("coordinator");
 
         let compiled = QueryBuilder::nodes("Meeting")
@@ -351,7 +527,7 @@ mod tests {
     #[test]
     fn explain_reports_cache_miss_then_hit() {
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()))
+        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
             .expect("coordinator");
 
         let compiled = QueryBuilder::nodes("Meeting")
@@ -386,7 +562,7 @@ mod tests {
         // key assertion is that it returns a QueryPlan (not an error) even
         // without touching the database.
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()))
+        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
             .expect("coordinator");
 
         let compiled = QueryBuilder::nodes("Meeting")
@@ -404,7 +580,7 @@ mod tests {
     #[test]
     fn coordinator_executes_compiled_read() {
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()))
+        let coordinator = ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
             .expect("coordinator");
         let conn = rusqlite::Connection::open(db.path()).expect("open db");
 
@@ -432,5 +608,275 @@ mod tests {
 
         assert_eq!(rows.nodes.len(), 1);
         assert_eq!(rows.nodes[0].logical_id, "meeting-1");
+    }
+
+    // --- Item 1: capability gate tests ---
+
+    #[test]
+    fn capability_gate_reports_false_without_feature() {
+        let db = NamedTempFile::new().expect("temporary db");
+        // Open without vector_dimension: regardless of feature flag, vector_enabled must be false
+        // when no dimension is requested (the vector profile is never bootstrapped).
+        let coordinator =
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+                .expect("coordinator");
+        assert!(
+            !coordinator.vector_enabled(),
+            "vector_enabled must be false when no dimension is requested"
+        );
+    }
+
+    #[cfg(feature = "sqlite-vec")]
+    #[test]
+    fn capability_gate_reports_true_when_feature_enabled() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let coordinator =
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), Some(128))
+                .expect("coordinator");
+        assert!(
+            coordinator.vector_enabled(),
+            "vector_enabled must be true when sqlite-vec feature is active and dimension is set"
+        );
+    }
+
+    // --- Item 4: runtime table read tests ---
+
+    #[test]
+    fn read_run_returns_inserted_run() {
+        use crate::{
+            ProvenanceMode, RunInsert, WriteRequest, WriterActor,
+            writer::{ActionInsert, StepInsert},
+        };
+
+        let db = NamedTempFile::new().expect("temporary db");
+        let writer =
+            WriterActor::start(db.path(), Arc::new(SchemaManager::new()), ProvenanceMode::Warn)
+                .expect("writer");
+        writer
+            .submit(WriteRequest {
+                label: "runtime".to_owned(),
+                nodes: vec![],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![RunInsert {
+                    id: "run-r1".to_owned(),
+                    kind: "session".to_owned(),
+                    status: "active".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    supersedes_id: None,
+                }],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+            })
+            .expect("write run");
+
+        let coordinator =
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+                .expect("coordinator");
+        let row = coordinator
+            .read_run("run-r1")
+            .expect("read_run")
+            .expect("row exists");
+        assert_eq!(row.id, "run-r1");
+        assert_eq!(row.kind, "session");
+        assert_eq!(row.status, "active");
+    }
+
+    #[test]
+    fn read_step_returns_inserted_step() {
+        use crate::{
+            ProvenanceMode, RunInsert, WriteRequest, WriterActor,
+            writer::{ActionInsert, StepInsert},
+        };
+
+        let db = NamedTempFile::new().expect("temporary db");
+        let writer =
+            WriterActor::start(db.path(), Arc::new(SchemaManager::new()), ProvenanceMode::Warn)
+                .expect("writer");
+        writer
+            .submit(WriteRequest {
+                label: "runtime".to_owned(),
+                nodes: vec![],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![RunInsert {
+                    id: "run-s1".to_owned(),
+                    kind: "session".to_owned(),
+                    status: "active".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    supersedes_id: None,
+                }],
+                steps: vec![StepInsert {
+                    id: "step-s1".to_owned(),
+                    run_id: "run-s1".to_owned(),
+                    kind: "llm".to_owned(),
+                    status: "completed".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    supersedes_id: None,
+                }],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+            })
+            .expect("write step");
+
+        let coordinator =
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+                .expect("coordinator");
+        let row = coordinator
+            .read_step("step-s1")
+            .expect("read_step")
+            .expect("row exists");
+        assert_eq!(row.id, "step-s1");
+        assert_eq!(row.run_id, "run-s1");
+        assert_eq!(row.kind, "llm");
+    }
+
+    #[test]
+    fn read_action_returns_inserted_action() {
+        use crate::{
+            ProvenanceMode, RunInsert, WriteRequest, WriterActor,
+            writer::{ActionInsert, StepInsert},
+        };
+
+        let db = NamedTempFile::new().expect("temporary db");
+        let writer =
+            WriterActor::start(db.path(), Arc::new(SchemaManager::new()), ProvenanceMode::Warn)
+                .expect("writer");
+        writer
+            .submit(WriteRequest {
+                label: "runtime".to_owned(),
+                nodes: vec![],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![RunInsert {
+                    id: "run-a1".to_owned(),
+                    kind: "session".to_owned(),
+                    status: "active".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    supersedes_id: None,
+                }],
+                steps: vec![StepInsert {
+                    id: "step-a1".to_owned(),
+                    run_id: "run-a1".to_owned(),
+                    kind: "llm".to_owned(),
+                    status: "completed".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    supersedes_id: None,
+                }],
+                actions: vec![ActionInsert {
+                    id: "action-a1".to_owned(),
+                    step_id: "step-a1".to_owned(),
+                    kind: "emit".to_owned(),
+                    status: "completed".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    supersedes_id: None,
+                }],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+            })
+            .expect("write action");
+
+        let coordinator =
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+                .expect("coordinator");
+        let row = coordinator
+            .read_action("action-a1")
+            .expect("read_action")
+            .expect("row exists");
+        assert_eq!(row.id, "action-a1");
+        assert_eq!(row.step_id, "step-a1");
+        assert_eq!(row.kind, "emit");
+    }
+
+    #[test]
+    fn read_active_runs_excludes_superseded() {
+        use crate::{
+            ProvenanceMode, RunInsert, WriteRequest, WriterActor,
+            writer::{ActionInsert, StepInsert},
+        };
+
+        let db = NamedTempFile::new().expect("temporary db");
+        let writer =
+            WriterActor::start(db.path(), Arc::new(SchemaManager::new()), ProvenanceMode::Warn)
+                .expect("writer");
+
+        // Insert original run
+        writer
+            .submit(WriteRequest {
+                label: "v1".to_owned(),
+                nodes: vec![],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![RunInsert {
+                    id: "run-v1".to_owned(),
+                    kind: "session".to_owned(),
+                    status: "active".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    supersedes_id: None,
+                }],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+            })
+            .expect("v1 write");
+
+        // Supersede original run with v2
+        writer
+            .submit(WriteRequest {
+                label: "v2".to_owned(),
+                nodes: vec![],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![RunInsert {
+                    id: "run-v2".to_owned(),
+                    kind: "session".to_owned(),
+                    status: "completed".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-2".to_owned()),
+                    upsert: true,
+                    supersedes_id: Some("run-v1".to_owned()),
+                }],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+            })
+            .expect("v2 write");
+
+        let coordinator =
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+                .expect("coordinator");
+        let active = coordinator.read_active_runs().expect("read_active_runs");
+
+        assert_eq!(active.len(), 1, "only the non-superseded run should appear");
+        assert_eq!(active[0].id, "run-v2");
     }
 }

@@ -205,6 +205,7 @@ fn upsert_write_promotes_new_version_and_read_returns_it() {
             steps: vec![],
             actions: vec![],
             optional_backfills: vec![],
+            vec_inserts: vec![],
         })
         .expect("v2 upsert write");
 
@@ -278,6 +279,7 @@ fn runtime_table_write_is_traced_by_source_ref() {
                 supersedes_id: None,
             }],
             optional_backfills: vec![],
+            vec_inserts: vec![],
         })
         .expect("write completes");
 
@@ -339,6 +341,7 @@ fn traversal_query_returns_connected_node_via_typed_writes() {
             steps: vec![],
             actions: vec![],
             optional_backfills: vec![],
+            vec_inserts: vec![],
         })
         .expect("write nodes and edge");
 
@@ -386,5 +389,6 @@ fn meeting_write_request(properties: &str) -> WriteRequest {
         steps: vec![],
         actions: vec![],
         optional_backfills: vec![],
+        vec_inserts: vec![],
     }
 }

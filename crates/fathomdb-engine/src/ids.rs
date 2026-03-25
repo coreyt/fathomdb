@@ -100,6 +100,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("write with new_id must succeed");
     }

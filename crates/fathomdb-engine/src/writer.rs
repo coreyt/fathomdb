@@ -82,6 +82,18 @@ pub struct ChunkInsert {
     pub byte_end: Option<i64>,
 }
 
+/// A vector embedding to attach to an existing chunk.
+///
+/// The `chunk_id` must reference a chunk already present in the database or
+/// co-submitted in the same [`WriteRequest`].  The embedding is stored in the
+/// `vec_nodes_active` virtual table when the `sqlite-vec` feature is enabled;
+/// without the feature the insert is silently skipped.
+#[derive(Clone, Debug, PartialEq)]
+pub struct VecInsert {
+    pub chunk_id: String,
+    pub embedding: Vec<f32>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RunInsert {
     pub id: String,
@@ -117,7 +129,7 @@ pub struct ActionInsert {
     pub supersedes_id: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct WriteRequest {
     pub label: String,
     pub nodes: Vec<NodeInsert>,
@@ -129,6 +141,9 @@ pub struct WriteRequest {
     pub steps: Vec<StepInsert>,
     pub actions: Vec<ActionInsert>,
     pub optional_backfills: Vec<OptionalProjectionTask>,
+    /// Vector embeddings to persist alongside chunks.  Silently skipped when the
+    /// `sqlite-vec` feature is absent.
+    pub vec_inserts: Vec<VecInsert>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -156,6 +171,10 @@ struct PreparedWrite {
     runs: Vec<RunInsert>,
     steps: Vec<StepInsert>,
     actions: Vec<ActionInsert>,
+    /// Suppressed when sqlite-vec feature is absent: field is set by `prepare_write` but only
+    /// consumed by the cfg-gated apply block.
+    #[cfg_attr(not(feature = "sqlite-vec"), allow(dead_code))]
+    vec_inserts: Vec<VecInsert>,
     /// `node_logical_id` → kind for nodes co-submitted in this request.
     /// Used by `resolve_fts_rows` to avoid a DB round-trip for the common case.
     node_kinds: HashMap<String, String>,
@@ -341,6 +360,19 @@ fn prepare_write(
             ));
         }
     }
+    for vi in &request.vec_inserts {
+        if vi.chunk_id.is_empty() {
+            return Err(EngineError::InvalidWrite(
+                "VecInsert has empty chunk_id".to_owned(),
+            ));
+        }
+        if vi.embedding.is_empty() {
+            return Err(EngineError::InvalidWrite(format!(
+                "VecInsert for chunk '{}' has empty embedding",
+                vi.chunk_id
+            )));
+        }
+    }
 
     // --- ID validation: reject duplicate row_ids within the request ---
     {
@@ -410,6 +442,7 @@ fn prepare_write(
         runs: request.runs,
         steps: request.steps,
         actions: request.actions,
+        vec_inserts: request.vec_inserts,
         node_kinds,
         required_fts_rows: Vec::new(),
         optional_backfills: request.optional_backfills,
@@ -714,6 +747,18 @@ fn apply_write(
         }
     }
 
+    // Vec inserts (feature-gated; silently skipped when sqlite-vec is absent).
+    #[cfg(feature = "sqlite-vec")]
+    {
+        let mut ins_vec = tx.prepare_cached(
+            "INSERT INTO vec_nodes_active (chunk_id, embedding) VALUES (?1, ?2)",
+        )?;
+        for vi in &prepared.vec_inserts {
+            let bytes: Vec<u8> = vi.embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
+            ins_vec.execute(params![vi.chunk_id, bytes])?;
+        }
+    }
+
     tx.commit()?;
 
     let provenance_warnings: Vec<String> = prepared
@@ -782,8 +827,8 @@ mod tests {
 
     use crate::{
         ActionInsert, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire, EngineError, NodeInsert,
-        NodeRetire, OptionalProjectionTask, ProvenanceMode, RunInsert, StepInsert, WriteRequest,
-        WriterActor, projection::ProjectionTarget,
+        NodeRetire, OptionalProjectionTask, ProvenanceMode, RunInsert, StepInsert, VecInsert,
+        WriteRequest, WriterActor, projection::ProjectionTarget,
     };
 
     #[test]
@@ -834,6 +879,7 @@ mod tests {
                     supersedes_id: None,
                 }],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("write receipt");
 
@@ -870,6 +916,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("v1 write");
 
@@ -893,6 +940,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("v2 upsert write");
 
@@ -967,6 +1015,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("write receipt");
 
@@ -1025,6 +1074,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("nodes write");
 
@@ -1050,6 +1100,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("edge v1 write");
 
@@ -1075,6 +1126,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("edge v2 upsert");
 
@@ -1135,6 +1187,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("write receipt");
 
@@ -1183,6 +1236,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("write receipt");
 
@@ -1220,6 +1274,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("write receipt");
 
@@ -1257,6 +1312,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("r1 write");
 
@@ -1279,6 +1335,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("r2 write — chunk for pre-existing node");
 
@@ -1323,6 +1380,7 @@ mod tests {
             steps: vec![],
             actions: vec![],
             optional_backfills: vec![],
+            vec_inserts: vec![],
         });
 
         assert!(
@@ -1367,6 +1425,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("write receipt");
 
@@ -1403,6 +1462,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("seed write");
 
@@ -1421,6 +1481,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("retire write");
 
@@ -1480,6 +1541,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("seed write");
 
@@ -1498,6 +1560,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("retire write");
 
@@ -1571,6 +1634,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("seed write");
 
@@ -1589,6 +1653,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("retire edge write");
 
@@ -1634,6 +1699,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("seed write");
 
@@ -1652,6 +1718,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("retire write");
 
@@ -1697,6 +1764,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("v1 write");
 
@@ -1726,6 +1794,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("v2 write");
 
@@ -1799,6 +1868,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("v1 write");
 
@@ -1822,6 +1892,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("v2 preserve write");
 
@@ -1876,6 +1947,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("v1 write");
 
@@ -1900,6 +1972,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("insert no-upsert write");
 
@@ -1948,6 +2021,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("v1 run write");
 
@@ -1971,6 +2045,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("v2 run write");
 
@@ -2033,6 +2108,7 @@ mod tests {
                 }],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("v1 step write");
 
@@ -2057,6 +2133,7 @@ mod tests {
                 }],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("v2 step write");
 
@@ -2128,6 +2205,7 @@ mod tests {
                     supersedes_id: None,
                 }],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("v1 action write");
 
@@ -2152,6 +2230,7 @@ mod tests {
                     supersedes_id: Some("action-v1".to_owned()),
                 }],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("v2 action write");
 
@@ -2209,6 +2288,7 @@ mod tests {
             steps: vec![],
             actions: vec![],
             optional_backfills: vec![],
+            vec_inserts: vec![],
         });
 
         assert!(
@@ -2247,6 +2327,7 @@ mod tests {
             }],
             actions: vec![],
             optional_backfills: vec![],
+            vec_inserts: vec![],
         });
 
         assert!(
@@ -2285,6 +2366,7 @@ mod tests {
                 supersedes_id: None,
             }],
             optional_backfills: vec![],
+            vec_inserts: vec![],
         });
 
         assert!(
@@ -2345,6 +2427,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("write");
 
@@ -2384,6 +2467,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("write");
 
@@ -2426,6 +2510,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("seed write");
 
@@ -2450,6 +2535,7 @@ mod tests {
             steps: vec![],
             actions: vec![],
             optional_backfills: vec![],
+            vec_inserts: vec![],
         });
 
         assert!(
@@ -2494,6 +2580,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("batch write");
 
@@ -2538,6 +2625,7 @@ mod tests {
             steps: vec![],
             actions: vec![],
             optional_backfills: vec![],
+            vec_inserts: vec![],
         });
 
         assert!(
@@ -2575,6 +2663,7 @@ mod tests {
             steps: vec![],
             actions: vec![],
             optional_backfills: vec![],
+            vec_inserts: vec![],
         });
 
         assert!(
@@ -2623,6 +2712,7 @@ mod tests {
             steps: vec![],
             actions: vec![],
             optional_backfills: vec![],
+            vec_inserts: vec![],
         });
 
         assert!(
@@ -2666,6 +2756,7 @@ mod tests {
             steps: vec![],
             actions: vec![],
             optional_backfills: vec![],
+            vec_inserts: vec![],
         });
 
         assert!(
@@ -2707,6 +2798,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("seed run");
 
@@ -2731,6 +2823,7 @@ mod tests {
                 }],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("write");
 
@@ -2780,6 +2873,7 @@ mod tests {
                 }],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("seed");
 
@@ -2804,6 +2898,7 @@ mod tests {
                     supersedes_id: None,
                 }],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("write");
 
@@ -2869,6 +2964,7 @@ mod tests {
                     supersedes_id: None,
                 }],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("write");
 
@@ -2912,6 +3008,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("Warn mode must not reject missing source_ref");
 
@@ -2950,6 +3047,7 @@ mod tests {
             steps: vec![],
             actions: vec![],
             optional_backfills: vec![],
+            vec_inserts: vec![],
         });
 
         assert!(
@@ -2987,6 +3085,7 @@ mod tests {
             steps: vec![],
             actions: vec![],
             optional_backfills: vec![],
+            vec_inserts: vec![],
         });
 
         assert!(
@@ -3045,6 +3144,7 @@ mod tests {
             steps: vec![],
             actions: vec![],
             optional_backfills: vec![],
+            vec_inserts: vec![],
         });
 
         assert!(
@@ -3091,6 +3191,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("write");
 
@@ -3142,6 +3243,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("write");
 
@@ -3188,6 +3290,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("r1 write");
 
@@ -3210,6 +3313,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("r2 write");
 
@@ -3277,6 +3381,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("write");
 
@@ -3323,6 +3428,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("seed");
 
@@ -3362,6 +3468,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("mixed write");
 
@@ -3420,6 +3527,7 @@ mod tests {
             steps: vec![],
             actions: vec![],
             optional_backfills: vec![],
+            vec_inserts: vec![],
         });
 
         assert!(
@@ -3458,6 +3566,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("write");
 
@@ -3507,6 +3616,7 @@ mod tests {
                         payload: "p3".to_owned(),
                     },
                 ],
+                vec_inserts: vec![],
             })
             .expect("write");
 
@@ -3554,6 +3664,7 @@ mod tests {
                     target: ProjectionTarget::Fts,
                     payload: "backfill-payload".to_owned(),
                 }],
+                vec_inserts: vec![],
             })
             .expect("write");
 
@@ -3606,6 +3717,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("v1 write");
 
@@ -3636,6 +3748,7 @@ mod tests {
                 steps: vec![],
                 actions: vec![],
                 optional_backfills: vec![],
+                vec_inserts: vec![],
             })
             .expect("v2 write");
 
@@ -3660,5 +3773,145 @@ mod tests {
             )
             .expect("new fts row");
         assert_eq!(new_kind, "Meeting", "FTS row must use updated node kind");
+    }
+
+    // --- Item 3: VecInsert tests ---
+
+    #[test]
+    fn vec_insert_empty_chunk_id_is_rejected() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let writer =
+            WriterActor::start(db.path(), Arc::new(SchemaManager::new()), ProvenanceMode::Warn)
+                .expect("writer");
+        let result = writer.submit(WriteRequest {
+            label: "vec-test".to_owned(),
+            nodes: vec![],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![VecInsert {
+                chunk_id: String::new(),
+                embedding: vec![0.1, 0.2, 0.3],
+            }],
+        });
+        assert!(
+            matches!(result, Err(EngineError::InvalidWrite(_))),
+            "empty chunk_id in VecInsert must be rejected"
+        );
+    }
+
+    #[test]
+    fn vec_insert_empty_embedding_is_rejected() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let writer =
+            WriterActor::start(db.path(), Arc::new(SchemaManager::new()), ProvenanceMode::Warn)
+                .expect("writer");
+        let result = writer.submit(WriteRequest {
+            label: "vec-test".to_owned(),
+            nodes: vec![],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![VecInsert {
+                chunk_id: "chunk-1".to_owned(),
+                embedding: vec![],
+            }],
+        });
+        assert!(
+            matches!(result, Err(EngineError::InvalidWrite(_))),
+            "empty embedding in VecInsert must be rejected"
+        );
+    }
+
+    #[test]
+    fn vec_insert_noop_without_feature() {
+        // Without the sqlite-vec feature, a well-formed VecInsert must succeed
+        // (no error) but not write to any vec table.
+        let db = NamedTempFile::new().expect("temporary db");
+        let writer =
+            WriterActor::start(db.path(), Arc::new(SchemaManager::new()), ProvenanceMode::Warn)
+                .expect("writer");
+        let result = writer.submit(WriteRequest {
+            label: "vec-noop".to_owned(),
+            nodes: vec![],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![VecInsert {
+                chunk_id: "chunk-noop".to_owned(),
+                embedding: vec![1.0, 2.0, 3.0],
+            }],
+        });
+        #[cfg(not(feature = "sqlite-vec"))]
+        result.expect("noop VecInsert without feature must succeed");
+        // The result variable is used above; silence unused warning for cfg-on path.
+        #[cfg(feature = "sqlite-vec")]
+        let _ = result;
+    }
+
+    #[cfg(feature = "sqlite-vec")]
+    #[test]
+    fn vec_insert_is_persisted_when_feature_enabled() {
+        use crate::sqlite::open_connection_with_vec;
+
+        let db = NamedTempFile::new().expect("temporary db");
+        let schema_manager = Arc::new(SchemaManager::new());
+
+        // Open a vec-capable connection and bootstrap + ensure profile
+        {
+            let conn = open_connection_with_vec(db.path()).expect("vec connection");
+            schema_manager.bootstrap(&conn).expect("bootstrap");
+            schema_manager
+                .ensure_vector_profile(&conn, "default", "vec_nodes_active", 3)
+                .expect("ensure profile");
+        }
+
+        let writer =
+            WriterActor::start(db.path(), Arc::clone(&schema_manager), ProvenanceMode::Warn)
+                .expect("writer");
+
+        writer
+            .submit(WriteRequest {
+                label: "vec-insert".to_owned(),
+                nodes: vec![],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![VecInsert {
+                    chunk_id: "chunk-vec".to_owned(),
+                    embedding: vec![0.1, 0.2, 0.3],
+                }],
+            })
+            .expect("vec insert write");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM vec_nodes_active WHERE chunk_id = 'chunk-vec'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count");
+        assert_eq!(count, 1, "VecInsert must persist a row in vec_nodes_active");
     }
 }

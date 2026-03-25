@@ -186,7 +186,9 @@ This layer is scaffolded enough when:
 - [x] Extend typed canonical inputs to `EdgeInsert`.
 - [x] Extend typed canonical inputs to runtime tables:
       `RunInsert`, `StepInsert`, and `ActionInsert`.
-- [ ] Align vector projection handling with
+- [x] Align vector projection handling with
       [setup-sqlite-vec-capability.md](./setup-sqlite-vec-capability.md).
+      `VecInsert` added; `vec_inserts` wired through `WriteRequest`/`PreparedWrite`/`apply_write`;
+      feature-gated INSERT into `vec_nodes_active` using sqlite-vec embedding bytes.
 - [ ] Remove the remaining raw-SQL write escape hatches once the typed path is
       sufficient for normal engine use.

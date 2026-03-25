@@ -21,9 +21,14 @@ impl EngineRuntime {
     pub fn open(
         path: impl AsRef<Path>,
         provenance_mode: ProvenanceMode,
+        vector_dimension: Option<usize>,
     ) -> Result<Self, EngineError> {
         let schema_manager = Arc::new(SchemaManager::new());
-        let coordinator = ExecutionCoordinator::open(path.as_ref(), Arc::clone(&schema_manager))?;
+        let coordinator = ExecutionCoordinator::open(
+            path.as_ref(),
+            Arc::clone(&schema_manager),
+            vector_dimension,
+        )?;
         let writer =
             WriterActor::start(path.as_ref(), Arc::clone(&schema_manager), provenance_mode)?;
         let admin = AdminHandle::new(AdminService::new(path.as_ref(), schema_manager));

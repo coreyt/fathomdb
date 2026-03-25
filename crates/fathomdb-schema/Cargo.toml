@@ -8,6 +8,10 @@ repository.workspace = true
 [lints]
 workspace = true
 
+[features]
+sqlite-vec = ["dep:sqlite-vec"]
+
 [dependencies]
 rusqlite.workspace = true
+sqlite-vec = { workspace = true, optional = true }
 thiserror.workspace = true

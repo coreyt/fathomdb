@@ -87,3 +87,18 @@ pub fn exec_sql1(db_path: &Path, sql: &str, param: &str) {
     conn.execute(sql, rusqlite::params![param])
         .expect("exec_sql1 failed");
 }
+
+/// Count rows in the `runs` table.
+pub fn run_count(db_path: &Path) -> i64 {
+    count_rows(db_path, "runs")
+}
+
+/// Count rows in the `steps` table.
+pub fn step_count(db_path: &Path) -> i64 {
+    count_rows(db_path, "steps")
+}
+
+/// Count rows in the `actions` table.
+pub fn action_count(db_path: &Path) -> i64 {
+    count_rows(db_path, "actions")
+}

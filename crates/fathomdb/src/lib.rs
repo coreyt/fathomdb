@@ -1,11 +1,11 @@
 use std::path::{Path, PathBuf};
 
 pub use fathomdb_engine::{
-    ActionInsert, AdminHandle, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire, EngineError,
-    EngineRuntime, ExecutionCoordinator, NodeInsert, NodeRetire, NodeRow, OptionalProjectionTask,
-    ProjectionRepairReport, ProjectionTarget, ProvenanceMode, QueryPlan, QueryRows, RunInsert,
-    SafeExportManifest, SafeExportOptions, StepInsert, WriteReceipt, WriteRequest, WriterActor,
-    new_id, new_row_id,
+    ActionInsert, ActionRow, AdminHandle, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire,
+    EngineError, EngineRuntime, ExecutionCoordinator, NodeInsert, NodeRetire, NodeRow,
+    OptionalProjectionTask, ProjectionRepairReport, ProjectionTarget, ProvenanceMode, QueryPlan,
+    QueryRows, RunInsert, RunRow, SafeExportManifest, SafeExportOptions, StepInsert, StepRow,
+    VecInsert, WriteReceipt, WriteRequest, WriterActor, new_id, new_row_id,
 };
 pub use fathomdb_query::{
     BindValue, CompiledQuery, DrivingTable, ExecutionHints, Predicate, Query, QueryAst,
@@ -17,6 +17,10 @@ pub use fathomdb_schema::{BootstrapReport, Migration, SchemaManager, SchemaVersi
 pub struct EngineOptions {
     pub database_path: PathBuf,
     pub provenance_mode: ProvenanceMode,
+    /// When `Some(dim)`, the engine opens a vector-capable connection and
+    /// bootstraps a `vec_nodes_active` vector table with the given dimension.
+    /// Requires the `sqlite-vec` crate feature; ignored if the feature is absent.
+    pub vector_dimension: Option<usize>,
 }
 
 impl EngineOptions {
@@ -24,6 +28,7 @@ impl EngineOptions {
         Self {
             database_path: path.as_ref().to_path_buf(),
             provenance_mode: ProvenanceMode::Warn,
+            vector_dimension: None,
         }
     }
 }
@@ -42,7 +47,11 @@ impl Engine {
     /// bootstrap fails.
     pub fn open(options: EngineOptions) -> Result<Self, EngineError> {
         Ok(Self {
-            runtime: EngineRuntime::open(options.database_path, options.provenance_mode)?,
+            runtime: EngineRuntime::open(
+                options.database_path,
+                options.provenance_mode,
+                options.vector_dimension,
+            )?,
         })
     }
 

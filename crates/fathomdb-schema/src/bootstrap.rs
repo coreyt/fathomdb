@@ -169,10 +169,15 @@ impl SchemaManager {
         }
 
         let sqlite_version = conn.query_row("SELECT sqlite_version()", [], |row| row.get(0))?;
+        let vector_profile_count: i64 = conn.query_row(
+            "SELECT count(*) FROM vector_profiles WHERE enabled = 1",
+            [],
+            |row| row.get(0),
+        )?;
         Ok(BootstrapReport {
             sqlite_version,
             applied_versions,
-            vector_profile_enabled: false,
+            vector_profile_enabled: vector_profile_count > 0,
         })
     }
 
@@ -207,12 +212,44 @@ impl SchemaManager {
         Ok(())
     }
 
-    /// Ensure the sqlite-vec vector extension profile is registered.
+    /// Ensure the sqlite-vec vector extension profile is registered and the
+    /// virtual vec table exists.
+    ///
+    /// When the `sqlite-vec` feature is enabled this creates the virtual table
+    /// and records the profile in `vector_profiles` (with `enabled = 1`).
+    /// When the feature is absent the call always returns
+    /// [`SchemaError::MissingCapability`].
     ///
     /// # Errors
     ///
-    /// Always returns [`SchemaError::MissingCapability`] in this build
-    /// because the sqlite-vec feature is not enabled.
+    /// Returns [`SchemaError`] if the DDL fails or the feature is absent.
+    #[cfg(feature = "sqlite-vec")]
+    pub fn ensure_vector_profile(
+        &self,
+        conn: &Connection,
+        profile: &str,
+        table_name: &str,
+        dimension: usize,
+    ) -> Result<(), SchemaError> {
+        conn.execute_batch(&format!(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS {table_name} USING vec0(\
+                chunk_id TEXT PRIMARY KEY,\
+                embedding float[{dimension}]\
+            )"
+        ))?;
+        conn.execute(
+            "INSERT OR REPLACE INTO vector_profiles \
+             (profile, table_name, dimension, enabled) VALUES (?1, ?2, ?3, 1)",
+            rusqlite::params![profile, table_name, dimension as i64],
+        )?;
+        Ok(())
+    }
+
+    /// # Errors
+    ///
+    /// Always returns [`SchemaError::MissingCapability`] when the `sqlite-vec`
+    /// feature is not compiled in.
+    #[cfg(not(feature = "sqlite-vec"))]
     pub fn ensure_vector_profile(
         &self,
         _conn: &Connection,
@@ -266,5 +303,82 @@ mod tests {
             )
             .expect("nodes table exists");
         assert_eq!(table_count, 1);
+    }
+
+    // --- Item 2: vector profile tests ---
+
+    #[test]
+    fn vector_profile_not_enabled_without_feature() {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        let manager = SchemaManager::new();
+        let report = manager.bootstrap(&conn).expect("bootstrap");
+        assert!(
+            !report.vector_profile_enabled,
+            "vector_profile_enabled must be false on a fresh bootstrap"
+        );
+    }
+
+    #[test]
+    fn vector_profile_skipped_when_dimension_absent() {
+        // ensure_vector_profile is never called → enabled stays false
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        let manager = SchemaManager::new();
+        manager.bootstrap(&conn).expect("bootstrap");
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM vector_profiles WHERE enabled = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count");
+        assert_eq!(count, 0, "no enabled profile without calling ensure_vector_profile");
+    }
+
+    #[test]
+    fn bootstrap_report_reflects_actual_vector_state() {
+        // After a fresh bootstrap with no vector profile, the report reflects reality.
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        let manager = SchemaManager::new();
+        let report = manager.bootstrap(&conn).expect("bootstrap");
+
+        let db_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM vector_profiles WHERE enabled = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count");
+        assert_eq!(
+            report.vector_profile_enabled,
+            db_count > 0,
+            "BootstrapReport.vector_profile_enabled must match actual DB state"
+        );
+    }
+
+    #[cfg(feature = "sqlite-vec")]
+    #[test]
+    fn vector_profile_created_when_feature_enabled() {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        let manager = SchemaManager::new();
+        manager.bootstrap(&conn).expect("bootstrap");
+
+        manager
+            .ensure_vector_profile(&conn, "default", "vec_nodes_active", 128)
+            .expect("ensure_vector_profile");
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM vector_profiles WHERE enabled = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count");
+        assert_eq!(count, 1, "vector profile must be enabled after ensure_vector_profile");
+
+        // Verify the virtual table exists by querying it
+        let _: i64 = conn
+            .query_row("SELECT count(*) FROM vec_nodes_active", [], |row| row.get(0))
+            .expect("vec_nodes_active table must exist after ensure_vector_profile");
     }
 }

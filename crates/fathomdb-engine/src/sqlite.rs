@@ -23,6 +23,29 @@ pub fn open_connection(path: &Path) -> Result<Connection, EngineError> {
     Ok(conn)
 }
 
+/// Open a database connection with the sqlite-vec extension loaded.
+///
+/// Registers `sqlite3_vec_init` as a global auto-extension so the extension is
+/// available in every connection opened after this call.  The registration is
+/// idempotent — SQLite deduplicates identical function-pointer registrations.
+///
+/// # Errors
+/// Returns [`EngineError`] if the underlying database connection cannot be
+/// opened (same failure modes as [`open_connection`]).
+#[cfg(feature = "sqlite-vec")]
+pub fn open_connection_with_vec(path: &Path) -> Result<Connection, EngineError> {
+    // Safety: sqlite3_auto_extension is idempotent for the same function pointer.
+    // The transmute converts the sqlite-vec init signature
+    // (db, pz_err_msg, p_api) -> c_int to the erased () -> c_int expected by
+    // sqlite3_auto_extension; SQLite passes the real args at load time.
+    unsafe {
+        rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute(
+            sqlite_vec::sqlite3_vec_init as *const (),
+        )));
+    }
+    open_connection(path)
+}
+
 /// # Errors
 /// Returns a `String` error if the embedded `sqlite.env` policy file is malformed or missing
 /// required keys (`SQLITE_MIN_VERSION`, `SQLITE_VERSION`).

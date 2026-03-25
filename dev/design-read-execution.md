@@ -197,9 +197,14 @@ This layer is scaffolded enough when:
 
 ### Phase 3: Follow-On Expansion
 
-- [ ] Extend decoded result support beyond node-shaped reads when runtime-table
+- [x] Extend decoded result support beyond node-shaped reads when runtime-table
       joins actually arrive.
+      `RunRow`, `StepRow`, `ActionRow` added to `QueryRows`; `read_run`, `read_step`,
+      `read_action`, `read_active_runs` added to `ExecutionCoordinator`.
 - [ ] Revisit statement caching with real benchmarks instead of speculative
       optimization.
-- [ ] Align vector capability checks with the setup work in
+- [x] Align vector capability checks with the setup work in
       [setup-sqlite-vec-capability.md](./setup-sqlite-vec-capability.md).
+      `vector_enabled()` on `ExecutionCoordinator` reflects whether sqlite-vec was
+      loaded and a profile bootstrapped; `capability_gate_reports_false_without_feature`
+      and `capability_gate_reports_true_when_feature_enabled` verify this.
