@@ -186,7 +186,7 @@ impl ExecutionCoordinator {
             .map_err(|_| EngineError::Bridge("connection mutex poisoned".to_owned()))?;
         let mut statement = match conn_guard.prepare_cached(&compiled.sql) {
             Ok(stmt) => stmt,
-            Err(e) if is_capability_missing_error(&e) => {
+            Err(e) if is_vec_table_absent(&e) => {
                 return Ok(QueryRows {
                     was_degraded: true,
                     ..Default::default()
@@ -441,10 +441,12 @@ impl ExecutionCoordinator {
     }
 }
 
-fn is_capability_missing_error(err: &rusqlite::Error) -> bool {
+/// Returns `true` when `err` indicates the vec virtual table is absent
+/// (sqlite-vec feature enabled but `vec_nodes_active` not yet created).
+pub(crate) fn is_vec_table_absent(err: &rusqlite::Error) -> bool {
     match err {
         rusqlite::Error::SqliteFailure(_, Some(msg)) => {
-            msg.contains("no such table: vec_nodes_active")
+            msg.contains("vec_nodes_active") || msg.contains("vec0")
         }
         _ => false,
     }
@@ -470,7 +472,27 @@ mod tests {
 
     use crate::ExecutionCoordinator;
 
-    use super::bind_value_to_sql;
+    use super::{bind_value_to_sql, is_vec_table_absent};
+
+    #[test]
+    fn is_vec_table_absent_matches_known_error_messages() {
+        use rusqlite::ffi;
+        fn make_err(msg: &str) -> rusqlite::Error {
+            rusqlite::Error::SqliteFailure(
+                ffi::Error {
+                    code: ffi::ErrorCode::Unknown,
+                    extended_code: 1,
+                },
+                Some(msg.to_owned()),
+            )
+        }
+        assert!(is_vec_table_absent(&make_err(
+            "no such table: vec_nodes_active"
+        )));
+        assert!(is_vec_table_absent(&make_err("vec0 error: something")));
+        assert!(!is_vec_table_absent(&make_err("no such table: nodes")));
+        assert!(!is_vec_table_absent(&rusqlite::Error::QueryReturnedNoRows));
+    }
 
     #[test]
     fn bind_value_text_maps_to_sql_text() {

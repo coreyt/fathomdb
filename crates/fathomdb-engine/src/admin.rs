@@ -509,17 +509,16 @@ impl AdminService {
             [],
         )?;
 
-        tx.commit()?;
-
-        // Record a durable audit event for this excision.
-        // A fresh connection (outside the excise tx) ensures the event is committed
-        // after the transaction that excised the source data.
-        let audit_conn = self.connect()?;
-        audit_conn.execute(
+        // Record the audit event inside the same transaction so the excision and its
+        // audit record are committed atomically — no window where the excision is
+        // durable but unaudited.
+        tx.execute(
             "INSERT INTO provenance_events (id, event_type, subject, source_ref) \
              VALUES (?1, 'excise_source', ?2, ?2)",
             rusqlite::params![new_id(), source_ref],
         )?;
+
+        tx.commit()?;
 
         self.trace_source(source_ref)
     }

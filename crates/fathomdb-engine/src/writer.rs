@@ -572,11 +572,7 @@ fn apply_write(
         #[cfg(feature = "sqlite-vec")]
         let mut del_vec = match tx.prepare_cached(vec_del_sql) {
             Ok(stmt) => Some(stmt),
-            Err(rusqlite::Error::SqliteFailure(_, Some(ref msg)))
-                if msg.contains("vec_nodes_active") || msg.contains("vec0") =>
-            {
-                None
-            }
+            Err(ref e) if crate::coordinator::is_vec_table_absent(e) => None,
             Err(e) => return Err(e),
         };
         for retire in &prepared.node_retires {
@@ -625,11 +621,7 @@ fn apply_write(
         #[cfg(feature = "sqlite-vec")]
         let mut del_vec = match tx.prepare_cached(vec_del_sql2) {
             Ok(stmt) => Some(stmt),
-            Err(rusqlite::Error::SqliteFailure(_, Some(ref msg)))
-                if msg.contains("vec_nodes_active") || msg.contains("vec0") =>
-            {
-                None
-            }
+            Err(ref e) if crate::coordinator::is_vec_table_absent(e) => None,
             Err(e) => return Err(e),
         };
         for node in &prepared.nodes {
@@ -804,9 +796,7 @@ fn apply_write(
                     ins_vec.execute(params![vi.chunk_id, bytes])?;
                 }
             }
-            Err(rusqlite::Error::SqliteFailure(_, Some(ref msg)))
-                if msg.contains("vec_nodes_active") || msg.contains("vec0") =>
-            {
+            Err(ref e) if crate::coordinator::is_vec_table_absent(e) => {
                 // vec profile absent: vec inserts are silently skipped.
             }
             Err(e) => return Err(e),
