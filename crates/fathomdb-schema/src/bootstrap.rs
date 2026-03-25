@@ -332,7 +332,10 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("count");
-        assert_eq!(count, 0, "no enabled profile without calling ensure_vector_profile");
+        assert_eq!(
+            count, 0,
+            "no enabled profile without calling ensure_vector_profile"
+        );
     }
 
     #[test]
@@ -374,11 +377,16 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("count");
-        assert_eq!(count, 1, "vector profile must be enabled after ensure_vector_profile");
+        assert_eq!(
+            count, 1,
+            "vector profile must be enabled after ensure_vector_profile"
+        );
 
         // Verify the virtual table exists by querying it
         let _: i64 = conn
-            .query_row("SELECT count(*) FROM vec_nodes_active", [], |row| row.get(0))
+            .query_row("SELECT count(*) FROM vec_nodes_active", [], |row| {
+                row.get(0)
+            })
             .expect("vec_nodes_active table must exist after ensure_vector_profile");
     }
 }
