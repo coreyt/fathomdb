@@ -5,16 +5,23 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lib]
+crate-type = ["rlib", "cdylib"]
+
 [lints]
 workspace = true
 
 [features]
+python = ["dep:pyo3"]
 sqlite-vec = ["fathomdb-engine/sqlite-vec"]
 
 [dependencies]
 fathomdb-engine.workspace = true
 fathomdb-query.workspace = true
 fathomdb-schema.workspace = true
+pyo3 = { workspace = true, optional = true }
+serde.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 rusqlite.workspace = true

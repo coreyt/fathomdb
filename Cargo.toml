@@ -34,6 +34,7 @@ fathomdb-engine = { path = "crates/fathomdb-engine" }
 fathomdb-query = { path = "crates/fathomdb-query" }
 fathomdb-schema = { path = "crates/fathomdb-schema" }
 insta = { version = "1.42.2", features = ["yaml"] }
+pyo3 = { version = "0.23.4", features = ["extension-module"] }
 rstest = "0.24.0"
 rusqlite = { version = "0.32.1", features = ["bundled", "load_extension"] }
 serde = { version = "1.0.219", features = ["derive"] }

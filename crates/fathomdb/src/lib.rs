@@ -1,5 +1,10 @@
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "python")]
+mod python;
+#[cfg(feature = "python")]
+mod python_types;
+
 pub use fathomdb_engine::{
     ActionInsert, ActionRow, AdminHandle, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire,
     EngineError, EngineRuntime, ExecutionCoordinator, NodeInsert, NodeRetire, NodeRow,
