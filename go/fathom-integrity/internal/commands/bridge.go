@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -18,8 +17,8 @@ func RunBridgeCommand(client bridge.Client, request bridge.Request, out io.Write
 	if err != nil {
 		return err
 	}
-	if !response.OK {
-		return errors.New(response.Message)
+	if err := bridge.ErrorFromResponse(response); err != nil {
+		return err
 	}
 	if len(response.Payload) > 0 && string(response.Payload) != "{}" {
 		_, err = fmt.Fprintf(out, "%s\n%s\n", response.Message, response.Payload)

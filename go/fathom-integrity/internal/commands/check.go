@@ -68,8 +68,8 @@ func fetchLayer2(dbPath, bridgePath string) (sqlitecheck.Layer2Report, error) {
 	if err != nil {
 		return sqlitecheck.Layer2Report{}, err
 	}
-	if !iresp.OK {
-		return sqlitecheck.Layer2Report{}, fmt.Errorf("bridge check_integrity: %s", iresp.Message)
+	if err := bridge.ErrorFromResponse(iresp); err != nil {
+		return sqlitecheck.Layer2Report{}, fmt.Errorf("bridge check_integrity: %w", err)
 	}
 	var ir bridgeIntegrityReport
 	if err := json.Unmarshal(iresp.Payload, &ir); err != nil {
@@ -84,8 +84,8 @@ func fetchLayer2(dbPath, bridgePath string) (sqlitecheck.Layer2Report, error) {
 	if err != nil {
 		return sqlitecheck.Layer2Report{}, err
 	}
-	if !sresp.OK {
-		return sqlitecheck.Layer2Report{}, fmt.Errorf("bridge check_semantics: %s", sresp.Message)
+	if err := bridge.ErrorFromResponse(sresp); err != nil {
+		return sqlitecheck.Layer2Report{}, fmt.Errorf("bridge check_semantics: %w", err)
 	}
 	var sr bridgeSemanticReport
 	if err := json.Unmarshal(sresp.Payload, &sr); err != nil {

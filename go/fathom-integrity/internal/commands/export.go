@@ -34,8 +34,8 @@ func RunExport(databasePath, destinationPath, bridgePath string, out io.Writer) 
 	if err != nil {
 		return fmt.Errorf("safe_export bridge call failed: %w", err)
 	}
-	if !resp.OK {
-		return fmt.Errorf("safe_export failed: %s", resp.Message)
+	if err := bridge.ErrorFromResponse(resp); err != nil {
+		return fmt.Errorf("safe_export failed: %w", err)
 	}
 
 	var manifest bridge.ExportManifest
