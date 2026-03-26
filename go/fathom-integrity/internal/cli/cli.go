@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -33,7 +34,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		}
 		if err := commands.RunCheck(*db, *bridgeBinary, stdout); err != nil {
 			fmt.Fprintln(stderr, err)
-			return 1
+			return commandExitCode(err)
 		}
 		return 0
 	case "export":
@@ -51,7 +52,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		}
 		if err := commands.RunExport(*db, *destination, *bridgeBinary, stdout); err != nil {
 			fmt.Fprintln(stderr, err)
-			return 1
+			return commandExitCode(err)
 		}
 		return 0
 	case "trace":
@@ -74,7 +75,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		}
 		if err := commands.RunBridgeCommand(bridge.Client{BinaryPath: *bridgeBinary}, request, stdout); err != nil {
 			fmt.Fprintln(stderr, err)
-			return 1
+			return commandExitCode(err)
 		}
 		return 0
 	case "rebuild":
@@ -97,7 +98,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		}
 		if err := commands.RunBridgeCommand(bridge.Client{BinaryPath: *bridgeBinary}, request, stdout); err != nil {
 			fmt.Fprintln(stderr, err)
-			return 1
+			return commandExitCode(err)
 		}
 		return 0
 	case "rebuild-missing":
@@ -118,7 +119,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		}
 		if err := commands.RunBridgeCommand(bridge.Client{BinaryPath: *bridgeBinary}, request, stdout); err != nil {
 			fmt.Fprintln(stderr, err)
-			return 1
+			return commandExitCode(err)
 		}
 		return 0
 	case "excise":
@@ -141,7 +142,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		}
 		if err := commands.RunBridgeCommand(bridge.Client{BinaryPath: *bridgeBinary}, request, stdout); err != nil {
 			fmt.Fprintln(stderr, err)
-			return 1
+			return commandExitCode(err)
 		}
 		return 0
 	case "recover":
@@ -159,7 +160,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		}
 		if err := commands.RunRecover(*db, *dest, *bridgeBinary, "", stdout); err != nil {
 			fmt.Fprintln(stderr, err)
-			return 1
+			return commandExitCode(err)
 		}
 		return 0
 	case "version":
@@ -172,6 +173,14 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, usage())
 		return 2
 	}
+}
+
+func commandExitCode(err error) int {
+	var coded interface{ ExitCode() int }
+	if errors.As(err, &coded) {
+		return coded.ExitCode()
+	}
+	return bridge.ExitCodeFromError(err)
 }
 
 func usage() string {

@@ -43,3 +43,21 @@ printf '%s\n' '{"protocol_version":99,"ok":true,"message":"ok","payload":{}}'
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "bridge protocol version mismatch")
 }
+
+func TestErrorFromResponseReturnsBridgeErrorWithExitCode(t *testing.T) {
+	err := ErrorFromResponse(Response{
+		ProtocolVersion: ProtocolVersion,
+		OK:              false,
+		Message:         "missing source_ref",
+		ErrorCode:       ErrorBadRequest,
+	})
+	require.Error(t, err)
+
+	var bridgeErr BridgeError
+	require.ErrorAs(t, err, &bridgeErr)
+	require.Equal(t, 2, bridgeErr.ExitCode())
+}
+
+func TestExitCodeFromErrorDefaultsToOneForNonBridgeErrors(t *testing.T) {
+	require.Equal(t, 1, ExitCodeFromError(os.ErrInvalid))
+}

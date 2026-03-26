@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -37,7 +38,63 @@ type Response struct {
 	ProtocolVersion int             `json:"protocol_version"`
 	OK              bool            `json:"ok"`
 	Message         string          `json:"message"`
+	ErrorCode       string          `json:"error_code,omitempty"`
 	Payload         json.RawMessage `json:"payload"`
+}
+
+const (
+	ErrorBadRequest            = "bad_request"
+	ErrorUnsupportedCommand    = "unsupported_command"
+	ErrorUnsupportedCapability = "unsupported_capability"
+	ErrorIntegrityFailure      = "integrity_failure"
+	ErrorExecutionFailure      = "execution_failure"
+)
+
+type BridgeError struct {
+	Code    string
+	Message string
+}
+
+func (e BridgeError) Error() string {
+	if e.Message == "" {
+		return "bridge command failed"
+	}
+	return e.Message
+}
+
+func (e BridgeError) ExitCode() int {
+	switch e.Code {
+	case ErrorBadRequest, ErrorUnsupportedCommand:
+		return 2
+	case ErrorUnsupportedCapability:
+		return 3
+	case ErrorIntegrityFailure:
+		return 4
+	default:
+		return 1
+	}
+}
+
+func ErrorFromResponse(response Response) error {
+	if response.OK {
+		return nil
+	}
+	code := response.ErrorCode
+	if code == "" {
+		code = ErrorExecutionFailure
+	}
+	return BridgeError{
+		Code:    code,
+		Message: response.Message,
+	}
+}
+
+func ExitCodeFromError(err error) int {
+	var bridgeError BridgeError
+	if errors.As(err, &bridgeError) {
+		return bridgeError.ExitCode()
+	}
+	return 1
 }
 
 func (r Request) MarshalJSON() ([]byte, error) {
