@@ -153,6 +153,31 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			return commandExitCode(err)
 		}
 		return 0
+	case "regenerate-vectors":
+		fs := flag.NewFlagSet("regenerate-vectors", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		db := fs.String("db", cfg.DatabasePath, "path to sqlite database")
+		bridgeBinary := fs.String("bridge", cfg.BridgeBinary, "path to admin bridge binary")
+		configPath := fs.String("config", "", "path to TOML or JSON vector regeneration contract")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if *db == "" || *configPath == "" {
+			fmt.Fprintln(stderr, "--db and --config are required")
+			return 2
+		}
+		if err := commands.RunRegenerateVectorsWithFeedback(
+			*db,
+			*bridgeBinary,
+			*configPath,
+			stdout,
+			newFeedbackObserver(stderr),
+			bridge.FeedbackConfig{},
+		); err != nil {
+			fmt.Fprintln(stderr, err)
+			return commandExitCode(err)
+		}
+		return 0
 	case "excise":
 		fs := flag.NewFlagSet("excise", flag.ContinueOnError)
 		fs.SetOutput(stderr)
@@ -208,6 +233,34 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			return commandExitCode(err)
 		}
 		return 0
+	case "repair":
+		fs := flag.NewFlagSet("repair", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		db := fs.String("db", cfg.DatabasePath, "path to sqlite database")
+		bridgeBinary := fs.String("bridge", cfg.BridgeBinary, "path to admin bridge binary (optional; used for follow-up checks only)")
+		target := fs.String("target", commands.RepairTargetAll, "repair target: all|duplicate-active|runtime-fk|orphaned-chunks")
+		dryRun := fs.Bool("dry-run", false, "report planned repairs without mutating the database")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if *db == "" {
+			fmt.Fprintln(stderr, "--db is required")
+			return 2
+		}
+		if err := commands.RunRepairWithFeedback(
+			*db,
+			*bridgeBinary,
+			"",
+			*target,
+			*dryRun,
+			stdout,
+			newFeedbackObserver(stderr),
+			bridge.FeedbackConfig{},
+		); err != nil {
+			fmt.Fprintln(stderr, err)
+			return commandExitCode(err)
+		}
+		return 0
 	case "version":
 		if err := commands.RunVersion(stdout); err != nil {
 			fmt.Fprintln(stderr, err)
@@ -229,5 +282,5 @@ func commandExitCode(err error) int {
 }
 
 func usage() string {
-	return "usage: fathom-integrity <check|export|trace|rebuild|rebuild-missing|excise|recover|version> [flags]"
+	return "usage: fathom-integrity <check|export|trace|rebuild|rebuild-missing|regenerate-vectors|excise|recover|repair|version> [flags]"
 }

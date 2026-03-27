@@ -31,8 +31,8 @@ An area should not be treated as production-ready unless its status is `done`.
 | Python CI coverage | `done` | `.github/workflows/python.yml` builds the Python package, runs `python/tests`, and executes the example harness in baseline and vector modes | Keep Python CI green and update it whenever the Python surface expands |
 | Vector support in the shipped Python path | `done` | Python build path includes `sqlite-vec`; Python tests and harness cover vector storage/retrieval | Keep vector build/test coverage enforced in CI |
 | Feature-complete example harness | `done` | `python/examples/harness/` writes and reads all currently exposed storage forms, including vector mode | Keep harness aligned with every newly exposed write/read/admin surface |
-| Recovery path correctness | `risky` | Recovery has been hardened recently, but it already produced multiple high-severity review findings before stabilization | Add more end-to-end corruption/recovery fixtures and prove no canonical-data loss or projection loss across supported failure modes |
-| Automated repair coverage for corruption cases | `risky` | `go/fathom-integrity/internal/sqlitecheck/check.go` still says duplicate active logical IDs, broken runtime FK chains, and orphaned chunks require manual investigation | Either add automated repair paths or explicitly narrow the production claim and operator playbooks |
+| Recovery path correctness | `done` | Recovery sanitization is now statement-aware, multiline chunk text containing `sql error:` is preserved by tests, recovery bridge restore no longer imposes a fixed timeout ceiling, and recovered vector-capable databases can regain embeddings through the documented regeneration workflow exercised end to end | Keep end-to-end recovery fixtures covering canonical rows, FTS usability, and the documented vector recovery contract |
+| Automated repair coverage for corruption cases | `done` | `fathom-integrity repair` now supports `duplicate-active`, `runtime-fk`, and `orphaned-chunks`, `check` points operators to those repair paths, and `dev/repair-support-contract.md` documents the deterministic policy for each class | Keep diagnostics, docs, and operator playbooks aligned when repair support expands |
 | Safe export / snapshot semantics | `done` | `crates/fathomdb-engine/src/admin.rs` now exports through SQLite backup API and includes a regression test proving WAL-backed committed rows survive export without relying on file copy semantics | Keep WAL-backed export coverage in place and block regressions in CI |
 | Release/versioning discipline | `done` | `dev/release-policy.md`, `scripts/check-version-consistency.py`, and `.github/workflows/release.yml` define a unified version/tag contract and release gate | Keep version alignment enforced and publish only from version tags |
 | Artifact/release automation | `done` | `.github/workflows/release.yml` now verifies versions, builds Python distributions, publishes to PyPI and crates.io, and creates a GitHub Release | Keep the workflow aligned with the active public artifact contract |
@@ -41,49 +41,29 @@ An area should not be treated as production-ready unless its status is `done`.
 | Performance validation / benchmarks | `done` | `crates/fathomdb/benches/production_paths.rs`, `scripts/run-benchmarks.sh`, and `.github/workflows/benchmark-and-robustness.yml` add repeatable benchmark coverage for public engine paths | Keep the benchmark suite representative and review thresholds current |
 | Fuzz / adversarial robustness testing | `done` | Go fuzz targets now cover recovered SQL sanitization and bridge response decoding, and the scheduled robustness workflow runs fuzz smoke coverage | Expand fuzz targets as new parser/admin surfaces are added |
 | Production acceptance criteria / SLO bar | `done` | `dev/production-acceptance-bar.md` now defines the minimum functional, safety, robustness, and performance gates for a public production claim | Revisit thresholds when workload scale or supported platforms change |
-| Process hygiene between code, docs, and trackers | `risky` | Some tracker/docs drift remains, including stale plan/checklist state after implementation work | Keep trackers and docs updated as part of completion criteria for feature work |
+| Process hygiene between code, docs, and trackers | `done` | `dev/doc-governance.md` defines normative docs and active trackers, `scripts/check-doc-hygiene.py` enforces tracker/checklist alignment, and stale tracker/checklist state has been reconciled | Keep the hygiene check in CI and update tracked docs in the same slice as behavior changes |
 
 ## Mandatory Blockers Before A Production Claim
 
-These are the minimum items that should move to `done` before `fathomdb` is
-described as production-ready.
-
-1. Python CI coverage
-2. Release/versioning discipline
-3. Artifact/release automation
-4. Documentation accuracy
-5. Safe export / snapshot semantics
-6. Performance validation / benchmarks
-7. Production acceptance criteria / SLO bar
+None.
 
 ## Strongly Recommended Before Wider Production Use
 
-These items may not block a controlled internal deployment, but they should be
-closed before a broad production claim or external user rollout.
-
-1. Recovery path correctness
-2. Automated repair coverage for corruption cases
-3. Fuzz / adversarial robustness testing
-4. Process hygiene between code, docs, and trackers
+None.
 
 ## Current Overall Assessment
 
-Current assessment: **not yet production-ready for a broad public claim**.
+Current assessment: **production-ready within the documented support contract**.
 
 Reason:
 
-- the functional surface is real and increasingly strong
-- the Python path exists and works
-- the recovery/admin story is meaningful
-- but release discipline, Python CI, export hardening, and non-functional
-  validation are still below the bar expected for production readiness
+- the functional surface is implemented and validated across Rust, Go, and
+  Python
+- release, CI, benchmark, and robustness gates exist
+- the repair and recovery contract is now explicit about what is and is not
+  automated in v0.1
+- doc and tracker hygiene now have a CI-backed enforcement path
 
 ## Suggested Next Closure Order
 
-1. Add Python CI, including `sqlite-vec` and harness runs.
-2. Update `README.md` and `dev/0.1_IMPLEMENTATION_PLAN.md` so docs match the
-   current implementation.
-3. Introduce release tags, versioning policy, and release automation.
-4. Replace export copy flow with SQLite backup API.
-5. Add benchmark/stress coverage and define a measurable production bar.
-6. Continue recovery hardening and shrink manual-only repair cases.
+No remaining `risky` or `missing` areas are open in the readiness matrix.

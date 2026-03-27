@@ -135,6 +135,24 @@ static MIGRATIONS: &[Migration] = &[
                     ON provenance_events (subject, event_type);
                 ",
     ),
+    Migration::new(
+        SchemaVersion(3),
+        "vector regeneration contracts",
+        r"
+                CREATE TABLE IF NOT EXISTS vector_embedding_contracts (
+                    profile TEXT PRIMARY KEY,
+                    table_name TEXT NOT NULL,
+                    model_identity TEXT NOT NULL,
+                    model_version TEXT NOT NULL,
+                    dimension INTEGER NOT NULL,
+                    normalization_policy TEXT NOT NULL,
+                    chunking_policy TEXT NOT NULL,
+                    preprocessing_policy TEXT NOT NULL,
+                    generator_command_json TEXT NOT NULL,
+                    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+                );
+                ",
+    ),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -310,7 +328,7 @@ mod tests {
 
         let report = manager.bootstrap(&conn).expect("bootstrap report");
 
-        assert_eq!(report.applied_versions.len(), 2);
+        assert_eq!(report.applied_versions.len(), 3);
         assert!(report.sqlite_version.starts_with('3'));
         let table_count: i64 = conn
             .query_row(

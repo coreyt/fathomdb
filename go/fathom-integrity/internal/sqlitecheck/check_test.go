@@ -196,7 +196,7 @@ func TestComputeSuggestions_WALCheckpointNeeded_SuggestsCheckpoint(t *testing.T)
 		Layer1: Layer1Report{
 			HeaderValid:      true,
 			IntegrityCheckOK: true,
-			WAL: walcheck.WALReport{Present: true, HeaderValid: true, FrameCount: 150, CheckpointNeeded: true},
+			WAL:              walcheck.WALReport{Present: true, HeaderValid: true, FrameCount: 150, CheckpointNeeded: true},
 			Findings:         []Finding{},
 		},
 		Layer2: Layer2Report{Findings: []Finding{}},
@@ -274,7 +274,7 @@ func TestComputeSuggestions_NoDuplicateRebuildWhenBothLayer2And3HaveFTS(t *testi
 	require.Equal(t, 1, rebuildCount, "expected exactly one rebuild fts suggestion")
 }
 
-func TestComputeSuggestions_OrphanedChunks_SuggestsInvestigate(t *testing.T) {
+func TestComputeSuggestions_OrphanedChunks_SuggestsRepair(t *testing.T) {
 	r := DiagnosticReport{
 		DatabasePath: "/tmp/test.db",
 		Layer1:       Layer1Report{HeaderValid: true, IntegrityCheckOK: true, Findings: []Finding{}},
@@ -285,7 +285,49 @@ func TestComputeSuggestions_OrphanedChunks_SuggestsInvestigate(t *testing.T) {
 	suggestions := computeSuggestions(r)
 
 	require.NotEmpty(t, suggestions)
-	require.Contains(t, suggestions[0], "orphaned")
+	require.Contains(t, strings.Join(suggestions, "\n"), "repair --target orphaned-chunks")
+}
+
+func TestComputeSuggestions_DuplicateActiveSuggestsRepair(t *testing.T) {
+	r := DiagnosticReport{
+		DatabasePath: "/tmp/test.db",
+		Layer1:       Layer1Report{HeaderValid: true, IntegrityCheckOK: true, Findings: []Finding{}},
+		Layer2:       Layer2Report{Available: true, DuplicateActiveLogicalIDs: 1, Findings: []Finding{}},
+		Layer3:       Layer3Report{Findings: []Finding{}},
+	}
+
+	suggestions := computeSuggestions(r)
+
+	require.NotEmpty(t, suggestions)
+	require.Contains(t, strings.Join(suggestions, "\n"), "repair --target duplicate-active")
+}
+
+func TestComputeSuggestions_BrokenRuntimeFkSuggestsRepair(t *testing.T) {
+	r := DiagnosticReport{
+		DatabasePath: "/tmp/test.db",
+		Layer1:       Layer1Report{HeaderValid: true, IntegrityCheckOK: true, Findings: []Finding{}},
+		Layer2:       Layer2Report{Available: true, BrokenStepFK: 1, Findings: []Finding{}},
+		Layer3:       Layer3Report{Findings: []Finding{}},
+	}
+
+	suggestions := computeSuggestions(r)
+
+	require.NotEmpty(t, suggestions)
+	require.Contains(t, strings.Join(suggestions, "\n"), "repair --target runtime-fk")
+}
+
+func TestComputeSuggestions_OrphanedChunksSuggestsTargetedRepair(t *testing.T) {
+	r := DiagnosticReport{
+		DatabasePath: "/tmp/test.db",
+		Layer1:       Layer1Report{HeaderValid: true, IntegrityCheckOK: true, Findings: []Finding{}},
+		Layer2:       Layer2Report{Available: true, Findings: []Finding{}},
+		Layer3:       Layer3Report{OrphanedChunks: 1, Findings: []Finding{}},
+	}
+
+	suggestions := computeSuggestions(r)
+
+	require.NotEmpty(t, suggestions)
+	require.Contains(t, strings.Join(suggestions, "\n"), "repair --target orphaned-chunks")
 }
 
 func TestComputeSuggestions_NullSourceRef_SuggestsReingest(t *testing.T) {

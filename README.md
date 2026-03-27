@@ -94,7 +94,8 @@ The design treats recovery as a first-class feature. It explicitly plans for:
 - **physical corruption**
   - recover canonical tables, then rebuild projections
 - **logical corruption**
-  - deterministically rebuild FTS/vector projections
+  - deterministically rebuild FTS projections and restore vector capability
+  - regenerate vector embeddings through the admin-owned regeneration workflow
 - **semantic corruption**
   - rollback or excise bad agent outputs by time window or `source_ref`
 
@@ -114,10 +115,21 @@ The repository is beyond the initial scaffold stage:
   vector modes
 - response-cycle feedback across Rust, Python, and Go/CLI
 - GitHub Actions CI for Rust, Go, and Python
+- automated repair commands for:
+  - duplicate active logical IDs
+  - broken runtime FK chains
+  - orphaned chunks
+- an admin-owned vector regeneration workflow driven by application-supplied
+  TOML or JSON contract files
 
-The engine is functional, but the production-readiness work is still active.
 See [dev/production-readiness-checklist.md](./dev/production-readiness-checklist.md)
-for the current gate.
+for the production gate and
+[dev/repair-support-contract.md](./dev/repair-support-contract.md) for the
+exact repair and recovery boundary. The current repo position is:
+
+- production-ready within the documented support contract
+- explicit about what is canonical, what is projection material, and what
+  recovery guarantees currently apply
 
 The main design docs are:
 
@@ -179,11 +191,9 @@ rather than being lost.
 - depend on a cloud-first control plane
 - hide recovery behind backup-only workflows
 
-## Next Step
+## Architecture Decisions
 
-The next practical step is to close the remaining production-readiness gaps:
+Current open-ended architecture choices that go beyond the shipped v0.1 support
+contract are documented separately, for example:
 
-- formalize release/versioning and public artifact publishing
-- keep recovery and export guarantees strong under adversarial conditions
-- build non-functional confidence through benchmark and fuzz workflows
-- maintain doc and checklist accuracy as the shipped surface evolves
+- [arch-decision-vector-embedding-recovery.md](./dev/arch-decision-vector-embedding-recovery.md)

@@ -58,6 +58,14 @@ func InjectBrokenStepFK(t *testing.T, dbPath string) {
 VALUES ('ghost-step-1', 'ghost-run', 'llm', 'completed', '{}', unixepoch());`)
 }
 
+// InjectBrokenActionFK inserts an action that references a non-existent step_id,
+// simulating a partial write failure that left a dangling action row.
+func InjectBrokenActionFK(t *testing.T, dbPath string) {
+	t.Helper()
+	runSQLite(t, dbPath, `INSERT INTO actions (id, step_id, kind, status, properties, created_at)
+VALUES ('ghost-action-1', 'ghost-step', 'emit', 'completed', '{}', unixepoch());`)
+}
+
 // InjectLargeTruncation truncates the database to 50% of its current size,
 // preserving early pages (which are more likely to contain recoverable rows)
 // while discarding the latter half.

@@ -21,6 +21,7 @@ const (
 	CommandRebuildProjections Command = "rebuild_projections"
 	CommandRebuildMissing     Command = "rebuild_missing_projections"
 	CommandRestoreVector      Command = "restore_vector_profiles"
+	CommandRegenerateVectors  Command = "regenerate_vector_embeddings"
 	CommandTraceSource        Command = "trace_source"
 	CommandExciseSource       Command = "excise_source"
 	CommandSafeExport         Command = "safe_export"
@@ -33,6 +34,7 @@ type Request struct {
 	Target          string  `json:"target,omitempty"`
 	SourceRef       string  `json:"source_ref,omitempty"`
 	DestinationPath string  `json:"destination_path,omitempty"`
+	ConfigPath      string  `json:"config_path,omitempty"`
 }
 
 type Response struct {
@@ -160,6 +162,30 @@ func (c Client) SafeExportWithFeedback(
 	}, observer, config)
 }
 
+func (c Client) RegenerateVectors(
+	ctx context.Context,
+	databasePath, configPath string,
+) (Response, error) {
+	return c.Execute(ctx, Request{
+		DatabasePath: databasePath,
+		Command:      CommandRegenerateVectors,
+		ConfigPath:   configPath,
+	})
+}
+
+func (c Client) RegenerateVectorsWithFeedback(
+	ctx context.Context,
+	databasePath, configPath string,
+	observer Observer,
+	config FeedbackConfig,
+) (Response, error) {
+	return c.ExecuteWithFeedback(ctx, Request{
+		DatabasePath: databasePath,
+		Command:      CommandRegenerateVectors,
+		ConfigPath:   configPath,
+	}, observer, config)
+}
+
 func (c Client) Execute(ctx context.Context, request Request) (Response, error) {
 	return c.ExecuteWithFeedback(ctx, request, nil, FeedbackConfig{})
 }
@@ -181,6 +207,9 @@ func (c Client) ExecuteWithFeedback(
 	}
 	if request.DestinationPath != "" {
 		metadata["destination_path"] = request.DestinationPath
+	}
+	if request.ConfigPath != "" {
+		metadata["config_path"] = request.ConfigPath
 	}
 	return RunWithFeedback(ctx, "go", string(request.Command), metadata, observer, config, func(context.Context) (Response, error) {
 		// Security fix H-3: Validate the bridge binary path before execution.

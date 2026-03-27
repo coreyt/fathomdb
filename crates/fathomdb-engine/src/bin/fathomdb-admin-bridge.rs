@@ -2,7 +2,9 @@ use std::io::{self, Read};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use fathomdb_engine::{AdminService, EngineError, ProjectionTarget, SafeExportOptions};
+use fathomdb_engine::{
+    AdminService, EngineError, ProjectionTarget, SafeExportOptions, load_vector_regeneration_config,
+};
 use fathomdb_schema::{SchemaError, SchemaManager};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -28,6 +30,7 @@ struct BridgeRequest {
     target: Option<String>,
     source_ref: Option<String>,
     destination_path: Option<PathBuf>,
+    config_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -38,6 +41,7 @@ enum BridgeCommand {
     RebuildProjections,
     RebuildMissingProjections,
     RestoreVectorProfiles,
+    RegenerateVectorEmbeddings,
     TraceSource,
     ExciseSource,
     SafeExport,
@@ -148,6 +152,22 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
             ),
             Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
         },
+        BridgeCommand::RegenerateVectorEmbeddings => match request.config_path {
+            Some(config_path) => match load_vector_regeneration_config(&config_path) {
+                Ok(config) => match service.regenerate_vector_embeddings(&config) {
+                    Ok(report) => success_response(
+                        "vector embeddings regenerated".to_owned(),
+                        serde_json::to_value(report).unwrap_or_else(|_| json!({})),
+                    ),
+                    Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                },
+                Err(error) => error_response(error, BridgeErrorCode::BadRequest),
+            },
+            None => error_response_with_message(
+                BridgeErrorCode::BadRequest,
+                "config_path is required".to_owned(),
+            ),
+        },
         // Security fix M-10: Require source_ref for TraceSource and ExciseSource
         // instead of silently defaulting to "". An empty source_ref could cause
         // unintended broad operations.
@@ -214,6 +234,7 @@ fn parse_command(command: &str) -> Result<BridgeCommand, BridgeErrorCode> {
         "rebuild_projections" => Ok(BridgeCommand::RebuildProjections),
         "rebuild_missing_projections" => Ok(BridgeCommand::RebuildMissingProjections),
         "restore_vector_profiles" => Ok(BridgeCommand::RestoreVectorProfiles),
+        "regenerate_vector_embeddings" => Ok(BridgeCommand::RegenerateVectorEmbeddings),
         "trace_source" => Ok(BridgeCommand::TraceSource),
         "excise_source" => Ok(BridgeCommand::ExciseSource),
         "safe_export" => Ok(BridgeCommand::SafeExport),

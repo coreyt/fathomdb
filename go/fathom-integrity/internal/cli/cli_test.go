@@ -30,6 +30,15 @@ func TestMainRecoverRequiresDBAndDest(t *testing.T) {
 	require.Contains(t, stderr.String(), "--db and --dest are required")
 }
 
+func TestMainRepairRequiresDB(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	exitCode := Main([]string{"repair"}, &stdout, &stderr)
+
+	require.Equal(t, 2, exitCode)
+	require.Contains(t, stderr.String(), "--db is required")
+}
+
 func TestMainVersionCommand(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -85,6 +94,16 @@ printf '%s\n' '{"protocol_version":1,"ok":false,"message":"sqlite-vec unavailabl
 	exitCode := Main([]string{"rebuild", "--db", "/tmp/fathom.db", "--bridge", bridgePath}, &stdout, &stderr)
 	require.Equal(t, 3, exitCode)
 	require.Contains(t, stderr.String(), "sqlite-vec unavailable")
+}
+
+func TestMainRepairMapsInvalidTargetToUsageExitCode(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{"repair", "--db", "/tmp/fathom.db", "--target", "weird"}, &stdout, &stderr)
+
+	require.Equal(t, 2, exitCode)
+	require.Contains(t, stderr.String(), "invalid repair target")
 }
 
 func TestFeedbackObserverWritesSlowAndHeartbeatMessages(t *testing.T) {

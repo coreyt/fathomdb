@@ -384,10 +384,16 @@ func computeSuggestions(r DiagnosticReport) []string {
 			needsFTSRebuild = true
 		}
 		if r.Layer2.DuplicateActiveLogicalIDs > 0 {
-			add("duplicate active logical_ids require manual investigation; use: fathom-integrity trace --source-ref <ref>")
+			add(fmt.Sprintf(
+				"repair duplicate active logical_ids with: fathom-integrity repair --target duplicate-active --db '%s'",
+				r.DatabasePath,
+			))
 		}
 		if r.Layer2.BrokenStepFK > 0 || r.Layer2.BrokenActionFK > 0 {
-			add("broken runtime FK chains detected; no automated repair available — investigate manually")
+			add(fmt.Sprintf(
+				"repair broken runtime FK chains with: fathom-integrity repair --target runtime-fk --db '%s'",
+				r.DatabasePath,
+			))
 		}
 	}
 
@@ -399,7 +405,10 @@ func computeSuggestions(r DiagnosticReport) []string {
 		add(fmt.Sprintf("repair FTS projections with: fathom-integrity rebuild --target fts --db '%s'", r.DatabasePath))
 	}
 	if r.Layer3.OrphanedChunks > 0 {
-		add("orphaned chunks have no active parent node; no automated repair available — investigate manually")
+		add(fmt.Sprintf(
+			"repair orphaned chunks with: fathom-integrity repair --target orphaned-chunks --db '%s'",
+			r.DatabasePath,
+		))
 	}
 	if r.Layer3.NullSourceRefNodes > 0 {
 		add("nodes missing source_ref cannot be excised by source; consider re-ingesting affected data")

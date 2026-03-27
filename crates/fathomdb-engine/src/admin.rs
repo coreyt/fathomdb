@@ -1,12 +1,13 @@
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::SystemTime;
 
 use fathomdb_schema::SchemaManager;
 use rusqlite::{DatabaseName, OptionalExtension, TransactionBehavior};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::{
@@ -96,6 +97,31 @@ pub struct SemanticReport {
     /// Vec rows whose node has been superseded or retired.
     pub vec_rows_for_superseded_nodes: usize,
     pub warnings: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct VectorRegenerationConfig {
+    pub profile: String,
+    pub table_name: String,
+    pub model_identity: String,
+    pub model_version: String,
+    pub dimension: usize,
+    pub normalization_policy: String,
+    pub chunking_policy: String,
+    pub preprocessing_policy: String,
+    pub generator_command: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct VectorRegenerationReport {
+    pub profile: String,
+    pub table_name: String,
+    pub dimension: usize,
+    pub total_chunks: usize,
+    pub regenerated_rows: usize,
+    pub contract_persisted: bool,
+    pub notes: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -452,6 +478,121 @@ impl AdminService {
         })
     }
 
+    /// Rebuild vector embeddings using an application-supplied regeneration
+    /// contract and generator command.
+    ///
+    /// The config is persisted in `vector_embedding_contracts` so the metadata
+    /// required for recovery survives future repair runs.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the database connection fails, the config is
+    /// invalid, the generator command fails, or the regenerated embeddings are
+    /// malformed.
+    #[allow(clippy::too_many_lines)]
+    pub fn regenerate_vector_embeddings(
+        &self,
+        config: &VectorRegenerationConfig,
+    ) -> Result<VectorRegenerationReport, EngineError> {
+        if config.table_name != "vec_nodes_active" {
+            return Err(EngineError::Bridge(format!(
+                "unsupported vector table name: {}",
+                config.table_name
+            )));
+        }
+        if config.generator_command.is_empty() {
+            return Err(EngineError::Bridge(
+                "generator_command must contain at least one executable".to_owned(),
+            ));
+        }
+        if config.dimension == 0 {
+            return Err(EngineError::Bridge(
+                "vector embedding dimension must be greater than zero".to_owned(),
+            ));
+        }
+
+        let conn = self.connect()?;
+        self.schema_manager
+            .ensure_vector_profile(&conn, &config.profile, &config.table_name, config.dimension)
+            .map_err(EngineError::Schema)?;
+        persist_vector_contract(&conn, config)?;
+
+        let chunks = collect_regeneration_chunks(&conn)?;
+        let payload = VectorRegenerationInput {
+            profile: config.profile.clone(),
+            table_name: config.table_name.clone(),
+            model_identity: config.model_identity.clone(),
+            model_version: config.model_version.clone(),
+            dimension: config.dimension,
+            normalization_policy: config.normalization_policy.clone(),
+            chunking_policy: config.chunking_policy.clone(),
+            preprocessing_policy: config.preprocessing_policy.clone(),
+            chunks: chunks.clone(),
+        };
+        let generated = run_vector_generator(config, &payload)?;
+
+        if generated.embeddings.len() != chunks.len() {
+            return Err(EngineError::Bridge(format!(
+                "generator returned {} embedding(s) for {} chunk(s)",
+                generated.embeddings.len(),
+                chunks.len()
+            )));
+        }
+
+        let mut embedding_map = std::collections::HashMap::new();
+        for embedding in generated.embeddings {
+            if embedding.embedding.len() != config.dimension {
+                return Err(EngineError::Bridge(format!(
+                    "embedding for chunk '{}' has dimension {}, expected {}",
+                    embedding.chunk_id,
+                    embedding.embedding.len(),
+                    config.dimension
+                )));
+            }
+            if embedding_map
+                .insert(embedding.chunk_id.clone(), embedding.embedding)
+                .is_some()
+            {
+                return Err(EngineError::Bridge(format!(
+                    "duplicate embedding returned for chunk '{}'",
+                    embedding.chunk_id
+                )));
+            }
+        }
+
+        let mut conn = conn;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute("DELETE FROM vec_nodes_active", [])?;
+        let mut stmt = tx
+            .prepare_cached("INSERT INTO vec_nodes_active (chunk_id, embedding) VALUES (?1, ?2)")?;
+        let mut regenerated_rows = 0usize;
+        for chunk in &chunks {
+            let embedding = embedding_map.remove(&chunk.chunk_id).ok_or_else(|| {
+                EngineError::Bridge(format!(
+                    "generator did not return embedding for chunk '{}'",
+                    chunk.chunk_id
+                ))
+            })?;
+            let bytes: Vec<u8> = embedding
+                .iter()
+                .flat_map(|value| value.to_le_bytes())
+                .collect();
+            stmt.execute(rusqlite::params![chunk.chunk_id.as_str(), bytes])?;
+            regenerated_rows += 1;
+        }
+        drop(stmt);
+        tx.commit()?;
+
+        Ok(VectorRegenerationReport {
+            profile: config.profile.clone(),
+            table_name: config.table_name.clone(),
+            dimension: config.dimension,
+            total_chunks: chunks.len(),
+            regenerated_rows,
+            contract_persisted: true,
+            notes: vec!["vector embeddings regenerated from application contract".to_owned()],
+        })
+    }
+
     /// # Errors
     /// Returns [`EngineError`] if the database connection fails or any SQL query fails.
     pub fn trace_source(&self, source_ref: &str) -> Result<TraceReport, EngineError> {
@@ -656,6 +797,177 @@ impl AdminService {
     }
 }
 
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct VectorEmbeddingContractRecord {
+    profile: String,
+    table_name: String,
+    model_identity: String,
+    model_version: String,
+    dimension: usize,
+    normalization_policy: String,
+    chunking_policy: String,
+    preprocessing_policy: String,
+    generator_command_json: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+struct VectorRegenerationInputChunk {
+    chunk_id: String,
+    node_logical_id: String,
+    kind: String,
+    text_content: String,
+    byte_start: Option<i64>,
+    byte_end: Option<i64>,
+    source_ref: Option<String>,
+    created_at: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+struct VectorRegenerationInput {
+    profile: String,
+    table_name: String,
+    model_identity: String,
+    model_version: String,
+    dimension: usize,
+    normalization_policy: String,
+    chunking_policy: String,
+    preprocessing_policy: String,
+    chunks: Vec<VectorRegenerationInputChunk>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct GeneratedEmbedding {
+    chunk_id: String,
+    embedding: Vec<f32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct GeneratedEmbeddings {
+    embeddings: Vec<GeneratedEmbedding>,
+}
+
+pub fn load_vector_regeneration_config(
+    path: impl AsRef<Path>,
+) -> Result<VectorRegenerationConfig, EngineError> {
+    let path = path.as_ref();
+    let raw = fs::read_to_string(path)?;
+    match path.extension().and_then(|ext| ext.to_str()) {
+        Some("toml") => {
+            toml::from_str(&raw).map_err(|error| EngineError::Bridge(error.to_string()))
+        }
+        Some("json") | None => {
+            serde_json::from_str(&raw).map_err(|error| EngineError::Bridge(error.to_string()))
+        }
+        Some(other) => Err(EngineError::Bridge(format!(
+            "unsupported vector regeneration config extension: {other}"
+        ))),
+    }
+}
+
+fn persist_vector_contract(
+    conn: &rusqlite::Connection,
+    config: &VectorRegenerationConfig,
+) -> Result<(), EngineError> {
+    let generator_command_json = serde_json::to_string(&config.generator_command)
+        .map_err(|error| EngineError::Bridge(error.to_string()))?;
+    conn.execute(
+        r"
+        INSERT OR REPLACE INTO vector_embedding_contracts (
+            profile,
+            table_name,
+            model_identity,
+            model_version,
+            dimension,
+            normalization_policy,
+            chunking_policy,
+            preprocessing_policy,
+            generator_command_json
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+        ",
+        rusqlite::params![
+            config.profile.as_str(),
+            config.table_name.as_str(),
+            config.model_identity.as_str(),
+            config.model_version.as_str(),
+            config.dimension as i64,
+            config.normalization_policy.as_str(),
+            config.chunking_policy.as_str(),
+            config.preprocessing_policy.as_str(),
+            generator_command_json,
+        ],
+    )?;
+    Ok(())
+}
+
+fn collect_regeneration_chunks(
+    conn: &rusqlite::Connection,
+) -> Result<Vec<VectorRegenerationInputChunk>, EngineError> {
+    let mut stmt = conn.prepare(
+        r"
+        SELECT c.id, c.node_logical_id, n.kind, c.text_content, c.byte_start, c.byte_end, n.source_ref, c.created_at
+        FROM chunks c
+        JOIN nodes n
+          ON n.logical_id = c.node_logical_id
+         AND n.superseded_at IS NULL
+        ORDER BY c.created_at, c.id
+        ",
+    )?;
+    let chunks = stmt
+        .query_map([], |row| {
+            Ok(VectorRegenerationInputChunk {
+                chunk_id: row.get(0)?,
+                node_logical_id: row.get(1)?,
+                kind: row.get(2)?,
+                text_content: row.get(3)?,
+                byte_start: row.get(4)?,
+                byte_end: row.get(5)?,
+                source_ref: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(chunks)
+}
+
+fn run_vector_generator(
+    config: &VectorRegenerationConfig,
+    payload: &VectorRegenerationInput,
+) -> Result<GeneratedEmbeddings, EngineError> {
+    let mut command = Command::new(
+        config
+            .generator_command
+            .first()
+            .ok_or_else(|| EngineError::Bridge("missing generator executable".to_owned()))?,
+    );
+    command.args(config.generator_command.iter().skip(1));
+    command.stdin(Stdio::piped());
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
+
+    let mut child = command.spawn()?;
+    if let Some(mut stdin) = child.stdin.take() {
+        let input =
+            serde_json::to_vec(payload).map_err(|error| EngineError::Bridge(error.to_string()))?;
+        stdin.write_all(&input)?;
+    } else {
+        return Err(EngineError::Bridge(
+            "failed to open generator stdin".to_owned(),
+        ));
+    }
+
+    let output = child.wait_with_output()?;
+    if !output.status.success() {
+        return Err(EngineError::Bridge(format!(
+            "vector generator failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )));
+    }
+
+    serde_json::from_slice(&output.stdout)
+        .map_err(|error| EngineError::Bridge(format!("decode generator output: {error}")))
+}
+
 fn count_source_ref(
     conn: &rusqlite::Connection,
     table: &str,
@@ -702,12 +1014,16 @@ fn collect_strings(
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
     use std::sync::Arc;
 
     use fathomdb_schema::SchemaManager;
     use tempfile::NamedTempFile;
 
-    use super::{AdminService, SafeExportOptions};
+    use super::{
+        AdminService, SafeExportOptions, VectorRegenerationConfig, load_vector_regeneration_config,
+    };
     use crate::sqlite;
 
     fn setup() -> (NamedTempFile, AdminService) {
@@ -862,6 +1178,130 @@ mod tests {
             )
             .expect("vec schema count");
         assert_eq!(count, 1, "vec table should exist after restore");
+    }
+
+    #[cfg(feature = "sqlite-vec")]
+    #[test]
+    fn load_vector_regeneration_config_supports_json_and_toml() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let json_path = dir.path().join("regen.json");
+        let toml_path = dir.path().join("regen.toml");
+
+        let config = VectorRegenerationConfig {
+            profile: "default".to_owned(),
+            table_name: "vec_nodes_active".to_owned(),
+            model_identity: "model-a".to_owned(),
+            model_version: "1.0".to_owned(),
+            dimension: 4,
+            normalization_policy: "l2".to_owned(),
+            chunking_policy: "per_chunk".to_owned(),
+            preprocessing_policy: "trim".to_owned(),
+            generator_command: vec!["/bin/echo".to_owned()],
+        };
+
+        fs::write(&json_path, serde_json::to_string(&config).expect("json")).expect("write json");
+        fs::write(&toml_path, toml::to_string(&config).expect("toml")).expect("write toml");
+
+        let parsed_json = load_vector_regeneration_config(&json_path).expect("json parse");
+        let parsed_toml = load_vector_regeneration_config(&toml_path).expect("toml parse");
+
+        assert_eq!(parsed_json, config);
+        assert_eq!(parsed_toml, config);
+    }
+
+    #[cfg(feature = "sqlite-vec")]
+    #[test]
+    fn regenerate_vector_embeddings_rebuilds_embeddings_from_generator() {
+        let db = NamedTempFile::new().expect("temp file");
+        let schema = Arc::new(SchemaManager::new());
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let script_path = temp_dir.path().join("vector-generator.sh");
+
+        fs::write(
+            &script_path,
+            r#"#!/usr/bin/env bash
+set -euo pipefail
+python3 -c 'import json, sys
+payload = json.load(sys.stdin)
+embeddings = []
+for chunk in payload["chunks"]:
+    text = chunk["text_content"].lower()
+    if "budget" in text:
+        embedding = [1.0, 0.0, 0.0, 0.0]
+    else:
+        embedding = [0.0, 1.0, 0.0, 0.0]
+    embeddings.append({"chunk_id": chunk["chunk_id"], "embedding": embedding})
+json.dump({"embeddings": embeddings}, sys.stdout)'
+"#,
+        )
+        .expect("write generator script");
+        let mut perms = fs::metadata(&script_path)
+            .expect("script metadata")
+            .permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&script_path, perms).expect("chmod");
+
+        {
+            let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
+            schema.bootstrap(&conn).expect("bootstrap");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('row-1', 'doc-1', 'Document', '{}', 100, 'source-1')",
+                [],
+            )
+            .expect("insert node");
+            conn.execute(
+                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
+                 VALUES ('chunk-1', 'doc-1', 'budget discussion', 100)",
+                [],
+            )
+            .expect("insert chunk 1");
+            conn.execute(
+                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
+                 VALUES ('chunk-2', 'doc-1', 'travel plan', 101)",
+                [],
+            )
+            .expect("insert chunk 2");
+        }
+
+        let service = AdminService::new(db.path(), Arc::clone(&schema));
+        let report = service
+            .regenerate_vector_embeddings(&VectorRegenerationConfig {
+                profile: "default".to_owned(),
+                table_name: "vec_nodes_active".to_owned(),
+                model_identity: "test-model".to_owned(),
+                model_version: "1.0.0".to_owned(),
+                dimension: 4,
+                normalization_policy: "l2".to_owned(),
+                chunking_policy: "per_chunk".to_owned(),
+                preprocessing_policy: "trim".to_owned(),
+                generator_command: vec![script_path.to_string_lossy().to_string()],
+            })
+            .expect("regenerate vectors");
+
+        assert_eq!(report.profile, "default");
+        assert_eq!(report.table_name, "vec_nodes_active");
+        assert_eq!(report.dimension, 4);
+        assert_eq!(report.total_chunks, 2);
+        assert_eq!(report.regenerated_rows, 2);
+        assert!(report.contract_persisted);
+
+        let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
+        let vec_count: i64 = conn
+            .query_row("SELECT count(*) FROM vec_nodes_active", [], |row| {
+                row.get(0)
+            })
+            .expect("vec count");
+        assert_eq!(vec_count, 2);
+
+        let contract_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM vector_embedding_contracts WHERE profile = 'default'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("contract count");
+        assert_eq!(contract_count, 1);
     }
 
     #[test]
@@ -1047,7 +1487,7 @@ mod tests {
             manifest.exported_at > 0,
             "exported_at should be a unix timestamp"
         );
-        assert_eq!(manifest.schema_version, 2, "schema_version should be 2");
+        assert_eq!(manifest.schema_version, 3, "schema_version should be 3");
         assert_eq!(manifest.protocol_version, 1, "protocol_version should be 1");
         assert!(manifest.page_count > 0, "page_count should be positive");
     }
@@ -1072,7 +1512,7 @@ mod tests {
             manifest.page_count > 0,
             "page_count must be populated regardless of checkpoint mode"
         );
-        assert_eq!(manifest.schema_version, 2);
+        assert_eq!(manifest.schema_version, 3);
         assert_eq!(manifest.protocol_version, 1);
     }
 

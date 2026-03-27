@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -62,6 +63,34 @@ func TestRecoverCommand_RebuildsFTSAfterSanitizedReplay(t *testing.T) {
 	require.Equal(t, "1", queryDB(t, destPath, "SELECT count(*) FROM fts_nodes"))
 }
 
+func TestRecoverCommand_PreservesMultilineChunkTextWithSqlErrorPrefix(t *testing.T) {
+	repoRoot := filepath.Join("..", "..")
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "fathom.db")
+	destPath := filepath.Join(tempDir, "recovered.db")
+	bridgePath := makeBridgeScript(t, tempDir, repoRoot)
+
+	bootstrapBridgeDB(t, bridgePath, dbPath)
+	testutil.SeedMultilineChunkScenario(t, dbPath)
+
+	cmd := buildCmd(repoRoot,
+		"recover",
+		"--db", dbPath,
+		"--dest", destPath,
+		"--bridge", bridgePath,
+	)
+
+	output, err := cmd.CombinedOutput()
+
+	require.NoError(t, err, string(output))
+	require.Contains(t, string(output), "recover completed")
+	require.Equal(
+		t,
+		"line 1\nsql error: preserved text inside chunk\nline 3",
+		queryDB(t, destPath, "SELECT text_content FROM chunks WHERE id = 'chunk-1'"),
+	)
+}
+
 func TestRecoverCommand_PreservesAndRestoresVectorProfileMetadata(t *testing.T) {
 	repoRoot := filepath.Join("..", "..")
 	tempDir := t.TempDir()
@@ -85,6 +114,74 @@ func TestRecoverCommand_PreservesAndRestoresVectorProfileMetadata(t *testing.T) 
 	require.Contains(t, string(output), "recover completed")
 	require.Equal(t, "4", queryDB(t, destPath, "SELECT dimension FROM vector_profiles WHERE profile = 'default'"))
 	require.Equal(t, "1", queryDB(t, destPath, "SELECT count(*) FROM sqlite_schema WHERE name = 'vec_nodes_active'"))
+}
+
+func TestRecoverCommand_RegeneratesVectorEmbeddingsAndSupportsVectorSearch(t *testing.T) {
+	repoRoot := filepath.Join("..", "..")
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "fathom.db")
+	destPath := filepath.Join(tempDir, "recovered.db")
+	bridgePath := makeVecBridgeScript(t, tempDir, repoRoot)
+	configPath := filepath.Join(tempDir, "vector-regen.toml")
+	generatorPath := filepath.Join(tempDir, "vector-generator.sh")
+
+	bootstrapBridgeDB(t, bridgePath, dbPath)
+	testutil.SeedVectorRegenerationScenario(t, dbPath)
+
+	cmd := buildCmd(repoRoot,
+		"recover",
+		"--db", dbPath,
+		"--dest", destPath,
+		"--bridge", bridgePath,
+	)
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(output))
+	require.Contains(t, string(output), "recover completed")
+	require.Equal(
+		t,
+		"1",
+		queryDB(t, destPath, "SELECT count(*) FROM vector_embedding_contracts WHERE profile = 'default'"),
+	)
+
+	require.NoError(t, os.WriteFile(generatorPath, []byte(`#!/usr/bin/env bash
+set -euo pipefail
+python3 -c 'import json, sys
+payload = json.load(sys.stdin)
+embeddings = []
+for chunk in payload["chunks"]:
+    if "budget" in chunk["text_content"].lower():
+        embedding = [1.0, 0.0, 0.0, 0.0]
+    else:
+        embedding = [0.0, 1.0, 0.0, 0.0]
+    embeddings.append({"chunk_id": chunk["chunk_id"], "embedding": embedding})
+json.dump({"embeddings": embeddings}, sys.stdout)'
+`), 0o755))
+	require.NoError(t, os.WriteFile(configPath, []byte(fmt.Sprintf(`
+profile = "default"
+table_name = "vec_nodes_active"
+model_identity = "test-model"
+model_version = "1.0.0"
+dimension = 4
+normalization_policy = "l2"
+chunking_policy = "per_chunk"
+preprocessing_policy = "trim"
+generator_command = [%q]
+`, generatorPath)), 0o644))
+
+	cmd = buildCmd(repoRoot,
+		"regenerate-vectors",
+		"--db", destPath,
+		"--bridge", bridgePath,
+		"--config", configPath,
+	)
+	output, err = cmd.CombinedOutput()
+	require.NoError(t, err, string(output))
+	require.Contains(t, string(output), "vector embeddings regenerated")
+	require.Equal(t, "1", queryDB(t, destPath, "SELECT count(*) FROM vector_embedding_contracts WHERE profile = 'default'"))
+
+	result := pythonVectorSearch(t, repoRoot, destPath)
+	require.False(t, result.WasDegraded, "vector search must not degrade after regeneration")
+	require.Contains(t, result.LogicalIDs, "doc-1")
 }
 
 func TestRecoverCommand_LargeTruncationRecoversSomething(t *testing.T) {
