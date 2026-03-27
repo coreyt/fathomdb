@@ -79,10 +79,10 @@ Unless explicitly overridden by caller configuration:
 
 ### 1. Canonical Event Model
 
-- [ ] Define one canonical response-cycle event model shared across surfaces.
-- [ ] Define the operation taxonomy used by Rust, Python, and Go.
-- [ ] Define `FeedbackConfig` with default thresholds.
-- [ ] Document the terminal-state and monotonic-time guarantees in code comments
+- [x] Define one canonical response-cycle event model shared across surfaces.
+- [x] Define the operation taxonomy used by Rust, Python, and Go.
+- [x] Define `FeedbackConfig` with default thresholds.
+- [x] Document the terminal-state and monotonic-time guarantees in code comments
       and public docs.
 
 Acceptance:
@@ -92,18 +92,18 @@ Acceptance:
 
 ### 2. Rust Core Feedback Wrapper
 
-- [ ] Add a reusable internal lifecycle wrapper that owns:
+- [x] Add a reusable internal lifecycle wrapper that owns:
   - operation id creation
   - monotonic timing
   - timer scheduling
   - terminal-state suppression
-- [ ] Add public Rust feedback types:
+- [x] Add public Rust feedback types:
   - `ResponseCycleEvent`
   - `OperationObserver`
   - `FeedbackConfig`
-- [ ] Add additive `_with_feedback` Rust entrypoints for all covered
+- [x] Add additive `_with_feedback` Rust entrypoints for all covered
       operations.
-- [ ] Keep existing methods as wrappers with no feedback observer.
+- [x] Keep existing methods as wrappers with no feedback observer.
 
 Acceptance:
 
@@ -116,16 +116,16 @@ Acceptance:
 
 ### 3. Python Public API
 
-- [ ] Add `ResponseCycleEvent` and `FeedbackConfig` Python types.
-- [ ] Add optional `progress_callback` and `feedback_config` to:
+- [x] Add `ResponseCycleEvent` and `FeedbackConfig` Python types.
+- [x] Add optional `progress_callback` and `feedback_config` to:
   - `Engine.open`
   - `Engine.write` / `Engine.submit`
   - `Query.compile`
   - `Query.explain`
   - `Query.execute`
   - all `AdminClient` blocking methods
-- [ ] Route Python feedback through the Rust timer-based implementation.
-- [ ] Ensure callback failures do not fail the DB operation.
+- [x] Route Python feedback through the Rust timer-based implementation.
+- [x] Ensure callback failures do not fail the DB operation.
 
 Acceptance:
 
@@ -138,11 +138,11 @@ Acceptance:
 
 ### 4. Go Bridge Client And CLI
 
-- [ ] Add additive `ExecuteWithFeedback(...)` to the Go bridge client.
-- [ ] Keep existing `Execute(...)` behavior unchanged.
-- [ ] Add timer-based lifecycle feedback around whole bridge request duration.
-- [ ] Add a CLI renderer for `slow` and `heartbeat` messages to stderr.
-- [ ] Use feedback-aware execution in user-visible command paths.
+- [x] Add additive `ExecuteWithFeedback(...)` to the Go bridge client.
+- [x] Keep existing `Execute(...)` behavior unchanged.
+- [x] Add timer-based lifecycle feedback around whole bridge request duration.
+- [x] Add a CLI renderer for `slow` and `heartbeat` messages to stderr.
+- [x] Use feedback-aware execution in user-visible command paths.
 
 Acceptance:
 
@@ -154,13 +154,13 @@ Acceptance:
 
 ### 5. Feature-Completeness Coverage
 
-- [ ] Add end-to-end tests that prove the feature exists on all supported
+- [x] Add end-to-end tests that prove the feature exists on all supported
       blocking operation classes:
   - query
   - write
   - admin/recovery
-- [ ] Add coverage proving feedback is optional and non-breaking.
-- [ ] Add coverage proving the same semantic contract across Rust, Python, and
+- [x] Add coverage proving feedback is optional and non-breaking.
+- [x] Add coverage proving the same semantic contract across Rust, Python, and
       Go/CLI.
 
 Acceptance:

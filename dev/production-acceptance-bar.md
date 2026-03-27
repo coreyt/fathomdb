@@ -23,7 +23,8 @@ The following must be proven by automated tests:
 - `safe_export` includes committed WAL-backed state
 - recovered databases preserve canonical rows
 - recovered databases restore FTS usability
-- recovered vector-enabled databases retain vector usability
+- recovered vector-enabled databases preserve vector profile metadata and table
+  capability according to `dev/repair-support-contract.md`
 - `excise_source` preserves auditability and leaves projections consistent
 
 ## Required Performance Review Gates
@@ -60,6 +61,8 @@ Before a release:
   future work
 - `dev/production-readiness-checklist.md` must reflect actual status
 - `dev/release-policy.md` must match the active automation
+- `dev/repair-support-contract.md` must match the current supported repair and
+  recovery contract
 
 ## Release Blocking Conditions
 

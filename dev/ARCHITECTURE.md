@@ -462,7 +462,10 @@ classes:
 The corresponding recovery primitives are:
 
 - `rebuild_projections(target=[...])` for deterministic reconstruction of FTS
-  and vector projections from canonical state
+  projections from canonical state and restoration of vector profile capability
+  metadata
+- `regenerate-vectors` for admin-owned regeneration of vector embeddings from a
+  persisted TOML or JSON contract
 - `rebuild_missing_projections()` at startup or admin time when optional
   semantic projection work was interrupted
 - rollback-by-time-window for broad semantic reversal
@@ -495,8 +498,17 @@ canonical tables only and then rebuild projections. Physical repair should:
 3. rebuild into a fresh database file
 4. run projection rebuilds from canonical state
 
-FTS5 and `sqlite-vec` shadow data should never be treated as canonical recovery
-material.
+FTS5 shadow data should never be treated as canonical recovery material.
+
+Vector profile metadata is recoverable and should be restored so vector-capable
+databases reopen with the correct table shape. Embedding rows written through
+optional semantic projection work are not canonical recovery material in v0.1
+and may need to be regenerated after physical recovery through the
+`regenerate-vectors` admin workflow. The contract that drives regeneration is
+persisted in `vector_embedding_contracts` so the application can supply the
+model identity, version, normalization policy, chunking policy, preprocessing
+policy, and generator command needed to rebuild embeddings deterministically
+enough for recovery.
 
 ### 6.6 Admin And Repair Surface
 

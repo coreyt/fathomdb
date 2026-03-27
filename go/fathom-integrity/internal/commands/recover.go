@@ -11,13 +11,14 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 	"unicode"
 
 	"github.com/coreyt/fathomdb/go/fathom-integrity/internal/bridge"
 
 	"github.com/coreyt/fathomdb/go/fathom-integrity/internal/sqlitecheck"
 )
+
+type bridgeExecuteFunc func(context.Context, bridge.Request) (bridge.Response, error)
 
 // RecoverRowCounts holds the count of recovered rows for each key table.
 type RecoverRowCounts struct {
@@ -210,7 +211,7 @@ func runRecover(sourcePath, destPath, bridgePath, sqliteBin string, out io.Write
 }
 
 func sanitizeRecoveredSQL(sql string) string {
-	statements := splitRecoveredStatements(stripRecoverNoiseLines(sql))
+	statements := splitRecoveredStatements(sql)
 	kept := make([]string, 0, len(statements))
 	for _, stmt := range statements {
 		if shouldSkipRecoveredStatement(stmt) {
@@ -222,18 +223,6 @@ func sanitizeRecoveredSQL(sql string) string {
 		return ""
 	}
 	return strings.Join(kept, "\n") + "\n"
-}
-
-func stripRecoverNoiseLines(sql string) string {
-	lines := strings.Split(sql, "\n")
-	kept := make([]string, 0, len(lines))
-	for _, line := range lines {
-		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(line)), "sql error:") {
-			continue
-		}
-		kept = append(kept, line)
-	}
-	return strings.Join(kept, "\n")
 }
 
 func restoreRecoveredProjections(destPath, bridgePath, sqliteBin string) error {
@@ -259,10 +248,12 @@ func restoreRecoveredProjections(destPath, bridgePath, sqliteBin string) error {
 }
 
 func runBridgeCommand(client bridge.Client, dbPath string, command bridge.Command) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	resp, err := client.Execute(
-		ctx,
+	return runBridgeCommandWithExecute(client.Execute, dbPath, command)
+}
+
+func runBridgeCommandWithExecute(execute bridgeExecuteFunc, dbPath string, command bridge.Command) error {
+	resp, err := execute(
+		context.Background(),
 		bridge.Request{
 			DatabasePath: dbPath,
 			Command:      command,
@@ -298,6 +289,8 @@ func splitRecoveredStatements(sql string) []string {
 	statements := make([]string, 0, 32)
 	var current strings.Builder
 	var quote rune
+	lineStart := true
+	statementStarted := false
 
 	flush := func() {
 		statement := strings.TrimSpace(current.String())
@@ -305,11 +298,28 @@ func splitRecoveredStatements(sql string) []string {
 			statements = append(statements, statement)
 		}
 		current.Reset()
+		statementStarted = false
 	}
 
 	for i := 0; i < len(sql); i++ {
+		if quote == 0 && lineStart && !statementStarted {
+			lineEnd := strings.IndexByte(sql[i:], '\n')
+			if lineEnd < 0 {
+				lineEnd = len(sql) - i
+			}
+			line := sql[i : i+lineEnd]
+			if strings.HasPrefix(strings.ToLower(strings.TrimSpace(line)), "sql error:") {
+				i += lineEnd
+				lineStart = true
+				continue
+			}
+		}
+
 		ch := rune(sql[i])
 		current.WriteByte(sql[i])
+		if quote == 0 && !unicode.IsSpace(ch) {
+			statementStarted = true
+		}
 
 		switch quote {
 		case '\'':
@@ -350,6 +360,7 @@ func splitRecoveredStatements(sql string) []string {
 		case ';':
 			flush()
 		}
+		lineStart = ch == '\n'
 	}
 
 	flush()

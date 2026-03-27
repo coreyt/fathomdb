@@ -1,8 +1,10 @@
 package commands
 
 import (
+	"context"
 	"testing"
 
+	"github.com/coreyt/fathomdb/go/fathom-integrity/internal/bridge"
 	"github.com/stretchr/testify/require"
 )
 
@@ -59,4 +61,37 @@ func TestSanitizeRecoveredSQL_PreservesVectorProfilesAndUserDataWithReservedWord
 	require.Contains(t, output, "INSERT INTO vector_profiles VALUES('default', 'vec_nodes_active', 4, 1);")
 	require.Contains(t, output, "text mentions fts_nodes and sqlite_schema and vector_profiles")
 	require.Contains(t, output, "{\"note\":\"vec_nodes_active appears in json\"}")
+}
+
+func TestSanitizeRecoveredSQL_PreservesMultilineTextContainingSqlErrorPrefix(t *testing.T) {
+	input := "" +
+		"BEGIN;\n" +
+		"INSERT INTO chunks VALUES('chunk-1', 'node-1', 'line 1\nsql error: preserved text inside chunk\nline 3', 100, NULL, NULL);\n" +
+		"COMMIT;\n"
+
+	output := sanitizeRecoveredSQL(input)
+
+	require.Contains(t, output, "sql error: preserved text inside chunk")
+	require.Contains(t, output, "INSERT INTO chunks")
+}
+
+func TestRunBridgeCommandDoesNotInstallFixedDeadline(t *testing.T) {
+	var sawDeadline bool
+	err := runBridgeCommandWithExecute(
+		func(ctx context.Context, request bridge.Request) (bridge.Response, error) {
+			var ok bool
+			_, ok = ctx.Deadline()
+			sawDeadline = ok
+			return bridge.Response{
+				ProtocolVersion: bridge.ProtocolVersion,
+				OK:              true,
+				Message:         "ok",
+			}, nil
+		},
+		"/tmp/fathom.db",
+		bridge.CommandRebuildMissing,
+	)
+
+	require.NoError(t, err)
+	require.False(t, sawDeadline, "recovery bridge restore path must not impose a fixed deadline")
 }
