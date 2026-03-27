@@ -84,6 +84,8 @@ The implementation split is:
 
 - **Python and TypeScript for SDKs**
   - language-facing interfaces over the Rust core
+  - Python bindings are implemented today
+  - TypeScript remains future work
 
 ## Integrity And Recovery
 
@@ -101,15 +103,21 @@ projections and keeps provenance directly attached to canonical rows.
 
 ## Current Status
 
-The initial repository scaffold is now in place:
+The repository is beyond the initial scaffold stage:
 
 - a Rust workspace with `fathomdb`, `fathomdb-schema`, `fathomdb-query`, and
   `fathomdb-engine`
 - a sibling Go module at `go/fathom-integrity`
-- baseline GitHub Actions CI for Rust and Go
+- Python bindings under `python/fathomdb`
+- vector-capable Python builds with `sqlite-vec`
+- a Python example harness that exercises write/read/admin flows in baseline and
+  vector modes
+- response-cycle feedback across Rust, Python, and Go/CLI
+- GitHub Actions CI for Rust, Go, and Python
 
-The implementation is still early. The current code establishes boundaries,
-entrypoints, and test surfaces rather than a complete production engine.
+The engine is functional, but the production-readiness work is still active.
+See [dev/production-readiness-checklist.md](./dev/production-readiness-checklist.md)
+for the current gate.
 
 The main design docs are:
 
@@ -173,10 +181,9 @@ rather than being lost.
 
 ## Next Step
 
-The next practical step is to turn the scaffold into a functioning v1 engine:
+The next practical step is to close the remaining production-readiness gaps:
 
-- implement real SQLite-backed read execution in the coordinator
-- replace placeholder vector-profile handling with actual `sqlite-vec`
-  integration
-- flesh out canonical write envelopes and projection rebuild flows
-- add Python and TypeScript bindings over the Rust facade
+- formalize release/versioning and public artifact publishing
+- keep recovery and export guarantees strong under adversarial conditions
+- build non-functional confidence through benchmark and fuzz workflows
+- maintain doc and checklist accuracy as the shipped surface evolves

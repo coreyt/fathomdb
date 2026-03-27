@@ -1,0 +1,35 @@
+name: Benchmark And Robustness
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 7 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  rust-benchmarks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.11"
+      - uses: dtolnay/rust-toolchain@7b1c307e0dcbda6122208f10795a713336a9b35a # stable
+      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
+      - run: bash scripts/run-benchmarks.sh
+
+  go-fuzz-smoke:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go/fathom-integrity
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go/fathom-integrity/go.mod
+          cache-dependency-path: go/fathom-integrity/go.mod
+      - run: go test ./internal/commands -run='^$' -fuzz=FuzzSanitizeRecoveredSQL_Idempotent -fuzztime=10s
+      - run: go test ./internal/bridge -run='^$' -fuzz=FuzzDecodeResponse -fuzztime=10s

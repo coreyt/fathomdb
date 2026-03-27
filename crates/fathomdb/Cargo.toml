@@ -8,6 +8,10 @@ repository.workspace = true
 [lib]
 crate-type = ["rlib", "cdylib"]
 
+[[bench]]
+name = "production_paths"
+harness = false
+
 [lints]
 workspace = true
 
@@ -24,5 +28,6 @@ serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
+criterion.workspace = true
 rusqlite.workspace = true
 tempfile.workspace = true

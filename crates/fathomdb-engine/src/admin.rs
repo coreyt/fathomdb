@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use fathomdb_schema::SchemaManager;
-use rusqlite::{OptionalExtension, TransactionBehavior};
+use rusqlite::{DatabaseName, OptionalExtension, TransactionBehavior};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -564,7 +564,7 @@ impl AdminService {
     }
 
     /// # Errors
-    /// Returns [`EngineError`] if the WAL checkpoint fails, the database file cannot be copied,
+    /// Returns [`EngineError`] if the WAL checkpoint fails, the SQLite backup fails,
     /// the SHA-256 digest cannot be computed, or the manifest file cannot be written.
     pub fn safe_export(
         &self,
@@ -573,15 +573,9 @@ impl AdminService {
     ) -> Result<SafeExportManifest, EngineError> {
         let destination_path = destination_path.as_ref();
 
-        // NOTE(review): checkpoint + fs::copy has a TOCTOU window if an external process
-        // writes to the database between checkpoint and copy. This is acceptable because
-        // FathomDB enforces single-writer via WriterActor — concurrent external writes
-        // violate the architecture.
-        // Options: (A) rusqlite::backup::Backup API for atomic copy, (B) hold read tx during
-        // copy, (C) document limitation + fix streaming SHA-256. Chose (C) for v1;
-        // (A) is the ideal long-term fix. TODO: switch to backup API.
-
-        // 1. Checkpoint WAL before copying so the main DB file contains all committed data.
+        // 1. Optionally checkpoint WAL before exporting. This keeps the on-disk file tidy for
+        // callers that want a fully checkpointed export, but export correctness does not depend
+        // on it because the backup API copies from the live SQLite connection state.
         let conn = self.connect()?;
 
         if options.force_checkpoint {
@@ -610,13 +604,14 @@ impl AdminService {
             .query_row("PRAGMA page_count", [], |row| row.get(0))
             .unwrap_or(0);
 
-        drop(conn);
-
-        // 2. Copy the database file.
+        // 2. Export the database through SQLite's online backup API so committed data in the WAL
+        // is included even when `force_checkpoint` is false.
         if let Some(parent) = destination_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::copy(&self.database_path, destination_path)?;
+        conn.backup(DatabaseName::Main, destination_path, None)?;
+
+        drop(conn);
 
         // 3. Compute SHA-256 of the exported file.
         // FIX(review): was fs::read loading entire DB into memory; use streaming hash.
@@ -1079,6 +1074,50 @@ mod tests {
         );
         assert_eq!(manifest.schema_version, 2);
         assert_eq!(manifest.protocol_version, 1);
+    }
+
+    #[test]
+    fn safe_export_force_checkpoint_false_still_captures_wal_backed_changes() {
+        let (db, service) = setup();
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let journal_mode: String = conn
+            .query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))
+            .expect("enable wal");
+        assert_eq!(journal_mode.to_lowercase(), "wal");
+        let auto_checkpoint_pages: i64 = conn
+            .query_row("PRAGMA wal_autocheckpoint=0", [], |row| row.get(0))
+            .expect("disable auto checkpoint");
+        assert_eq!(auto_checkpoint_pages, 0);
+        conn.execute(
+            "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+             VALUES ('r-wal', 'lg-wal', 'Meeting', '{}', 100, 'src-wal')",
+            [],
+        )
+        .expect("insert wal-backed node");
+
+        let export_dir = tempfile::TempDir::new().expect("temp dir");
+        let export_path = export_dir.path().join("wal-backed.db");
+        service
+            .safe_export(
+                &export_path,
+                SafeExportOptions {
+                    force_checkpoint: false,
+                },
+            )
+            .expect("export wal-backed db");
+
+        let exported = sqlite::open_connection(&export_path).expect("open exported db");
+        let exported_count: i64 = exported
+            .query_row(
+                "SELECT count(*) FROM nodes WHERE logical_id = 'lg-wal'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count exported nodes");
+        assert_eq!(
+            exported_count, 1,
+            "safe_export must include committed rows that are still resident in the WAL"
+        );
     }
 
     #[test]

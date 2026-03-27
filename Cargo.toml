@@ -30,13 +30,14 @@ must_use_candidate = "warn"
 module_name_repetitions = "allow"
 
 [workspace.dependencies]
+criterion = "0.5.1"
 fathomdb-engine = { path = "crates/fathomdb-engine" }
 fathomdb-query = { path = "crates/fathomdb-query" }
 fathomdb-schema = { path = "crates/fathomdb-schema" }
 insta = { version = "1.42.2", features = ["yaml"] }
 pyo3 = { version = "0.23.4", features = ["extension-module"] }
 rstest = "0.24.0"
-rusqlite = { version = "0.32.1", features = ["bundled", "load_extension"] }
+rusqlite = { version = "0.32.1", features = ["bundled", "load_extension", "backup"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 sha2 = "0.10"

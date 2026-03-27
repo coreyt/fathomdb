@@ -205,17 +205,21 @@ func (c Client) ExecuteWithFeedback(
 			return Response{}, fmt.Errorf("run bridge: %w: %s", err, stderr.String())
 		}
 
-		var response Response
-		if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
-			return Response{}, fmt.Errorf("decode bridge response: %w", err)
-		}
-		if response.ProtocolVersion != ProtocolVersion {
-			return Response{}, fmt.Errorf(
-				"bridge protocol version mismatch: expected %d, got %d",
-				ProtocolVersion,
-				response.ProtocolVersion,
-			)
-		}
-		return response, nil
+		return decodeResponse(stdout.Bytes())
 	})
+}
+
+func decodeResponse(body []byte) (Response, error) {
+	var response Response
+	if err := json.Unmarshal(body, &response); err != nil {
+		return Response{}, fmt.Errorf("decode bridge response: %w", err)
+	}
+	if response.ProtocolVersion != ProtocolVersion {
+		return Response{}, fmt.Errorf(
+			"bridge protocol version mismatch: expected %d, got %d",
+			ProtocolVersion,
+			response.ProtocolVersion,
+		)
+	}
+	return response, nil
 }
