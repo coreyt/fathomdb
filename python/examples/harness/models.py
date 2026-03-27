@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
-from fathomdb import Engine
+from fathomdb import Engine, FeedbackConfig, ProvenanceMode, ResponseCycleEvent
 
 
 @dataclass(frozen=True)
@@ -15,14 +15,38 @@ class ScenarioResult:
 
 @dataclass(frozen=True)
 class HarnessContext:
-    engine: Engine
+    engine: Any
     db_path: Path
     mode: str
     vector_dimension: int
+    progress_callback: Callable[[ResponseCycleEvent], None] | None = None
+    feedback_config: FeedbackConfig | None = None
 
     def sibling_db(self, suffix: str) -> Path:
         extension = self.db_path.suffix or ".db"
         return self.db_path.with_name(f"{self.db_path.stem}-{suffix}{extension}")
+
+    def open_engine(
+        self,
+        database_path: str | Path,
+        *,
+        provenance_mode: ProvenanceMode | str = ProvenanceMode.WARN,
+        vector_dimension: int | None = None,
+    ) -> Any:
+        from .engine_factory import open_engine
+
+        target_mode = "vector" if vector_dimension is not None else "baseline"
+        resolved_vector_dimension = (
+            self.vector_dimension if vector_dimension is None else vector_dimension
+        )
+        return open_engine(
+            database_path,
+            mode=target_mode,
+            vector_dimension=resolved_vector_dimension,
+            provenance_mode=provenance_mode,
+            progress_callback=self.progress_callback,
+            feedback_config=self.feedback_config,
+        )
 
 
 CANONICAL_MEETING_ID = "meeting:q1-budget"

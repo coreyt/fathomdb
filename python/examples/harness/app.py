@@ -4,6 +4,8 @@ import argparse
 from pathlib import Path
 from typing import Callable
 
+from fathomdb import FeedbackConfig, ResponseCycleEvent, ResponseCyclePhase
+
 from .engine_factory import DEFAULT_VECTOR_DIMENSION, open_engine, supports_vector_mode
 from .models import HarnessContext, ScenarioResult
 from .scenarios import (
@@ -53,17 +55,50 @@ def run_harness(
     *,
     mode: str,
     vector_dimension: int = DEFAULT_VECTOR_DIMENSION,
+    telemetry_callback: Callable[[ResponseCycleEvent], None] | None = None,
+    feedback_config: FeedbackConfig | None = None,
 ) -> list[ScenarioResult]:
     path = Path(db_path)
     if mode == "vector" and not supports_vector_mode():
         raise RuntimeError("vector mode requires a sqlite-vec-enabled Python binding build")
     context = HarnessContext(
-        engine=open_engine(path, mode=mode, vector_dimension=vector_dimension),
+        engine=open_engine(
+            path,
+            mode=mode,
+            vector_dimension=vector_dimension,
+            progress_callback=telemetry_callback,
+            feedback_config=feedback_config,
+        ),
         db_path=path,
         mode=mode,
         vector_dimension=vector_dimension,
+        progress_callback=telemetry_callback,
+        feedback_config=feedback_config,
     )
     return [scenario(context) for scenario in _scenario_functions(mode)]
+
+
+def _make_cli_telemetry_callback(mode: str) -> Callable[[ResponseCycleEvent], None] | None:
+    if mode == "off":
+        return None
+
+    def callback(event: ResponseCycleEvent) -> None:
+        if mode == "slow" and event.phase not in {
+            ResponseCyclePhase.SLOW,
+            ResponseCyclePhase.HEARTBEAT,
+            ResponseCyclePhase.FAILED,
+        }:
+            return
+        metadata = " ".join(
+            f"{key}={value}" for key, value in sorted(event.metadata.items())
+        )
+        details = f" {metadata}" if metadata else ""
+        print(
+            f"TELEMETRY phase={event.phase.value} op={event.operation_kind} "
+            f"surface={event.surface} elapsed_ms={event.elapsed_ms}{details}"
+        )
+
+    return callback
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -81,6 +116,24 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_VECTOR_DIMENSION,
         help="Vector dimension to use in vector mode",
     )
+    parser.add_argument(
+        "--telemetry",
+        choices=["off", "slow", "all"],
+        default="off",
+        help="Telemetry output mode for response-cycle feedback",
+    )
+    parser.add_argument(
+        "--slow-threshold-ms",
+        type=int,
+        default=500,
+        help="Slow threshold for telemetry in milliseconds",
+    )
+    parser.add_argument(
+        "--heartbeat-interval-ms",
+        type=int,
+        default=2000,
+        help="Heartbeat interval for telemetry in milliseconds",
+    )
     args = parser.parse_args(argv)
 
     path = Path(args.db)
@@ -88,11 +141,25 @@ def main(argv: list[str] | None = None) -> int:
         print("FAIL vector_support vector mode requires a sqlite-vec-enabled Python binding build")
         return 1
 
+    feedback_config = FeedbackConfig(
+        slow_threshold_ms=args.slow_threshold_ms,
+        heartbeat_interval_ms=args.heartbeat_interval_ms,
+    )
+    telemetry_callback = _make_cli_telemetry_callback(args.telemetry)
+
     context = HarnessContext(
-        engine=open_engine(path, mode=args.mode, vector_dimension=args.vector_dimension),
+        engine=open_engine(
+            path,
+            mode=args.mode,
+            vector_dimension=args.vector_dimension,
+            progress_callback=telemetry_callback,
+            feedback_config=feedback_config,
+        ),
         db_path=path,
         mode=args.mode,
         vector_dimension=args.vector_dimension,
+        progress_callback=telemetry_callback,
+        feedback_config=feedback_config,
     )
 
     scenarios = _scenario_functions(args.mode)

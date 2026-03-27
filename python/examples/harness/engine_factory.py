@@ -3,18 +3,24 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Callable
 
 from fathomdb import (
     CapabilityMissingError,
     ChunkInsert,
     ChunkPolicy,
     Engine,
+    FeedbackConfig,
     NodeInsert,
+    ProvenanceMode,
+    ResponseCycleEvent,
     SchemaError,
     VecInsert,
     WriteRequest,
     new_row_id,
 )
+
+from .telemetry import TelemetryEngine, wrap_engine
 
 
 DEFAULT_VECTOR_DIMENSION = 4
@@ -25,13 +31,37 @@ def open_engine(
     *,
     mode: str,
     vector_dimension: int = DEFAULT_VECTOR_DIMENSION,
-) -> Engine:
+    provenance_mode: ProvenanceMode | str = ProvenanceMode.WARN,
+    progress_callback: Callable[[ResponseCycleEvent], None] | None = None,
+    feedback_config: FeedbackConfig | None = None,
+) -> TelemetryEngine:
     path = Path(database_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     if mode == "baseline":
-        return Engine.open(path)
+        engine = Engine.open(
+            path,
+            provenance_mode=provenance_mode,
+            progress_callback=progress_callback,
+            feedback_config=feedback_config,
+        )
+        return wrap_engine(
+            engine,
+            progress_callback=progress_callback,
+            feedback_config=feedback_config,
+        )
     if mode == "vector":
-        return Engine.open(path, vector_dimension=vector_dimension)
+        engine = Engine.open(
+            path,
+            provenance_mode=provenance_mode,
+            vector_dimension=vector_dimension,
+            progress_callback=progress_callback,
+            feedback_config=feedback_config,
+        )
+        return wrap_engine(
+            engine,
+            progress_callback=progress_callback,
+            feedback_config=feedback_config,
+        )
     raise ValueError(f"unsupported harness mode: {mode}")
 
 

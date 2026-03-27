@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from fathomdb import (
-    Engine,
     InvalidWriteError,
     NodeInsert,
     ProvenanceMode,
@@ -94,7 +93,10 @@ def runtime_tables(context: HarnessContext) -> ScenarioResult:
 
 
 def provenance_warn_require(context: HarnessContext) -> ScenarioResult:
-    warn_db = Engine.open(context.sibling_db("provenance-warn"), provenance_mode=ProvenanceMode.WARN)
+    warn_db = context.open_engine(
+        context.sibling_db("provenance-warn"),
+        provenance_mode=ProvenanceMode.WARN,
+    )
     warn_receipt = warn_db.write(
         WriteRequest(
             label="provenance-warn",
@@ -112,7 +114,7 @@ def provenance_warn_require(context: HarnessContext) -> ScenarioResult:
     )
     assert warn_receipt.provenance_warnings, "warn mode should emit provenance warnings"
 
-    require_db = Engine.open(
+    require_db = context.open_engine(
         context.sibling_db("provenance-require"),
         provenance_mode=ProvenanceMode.REQUIRE,
     )
