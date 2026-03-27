@@ -33,6 +33,33 @@ class DrivingTable(str, Enum):
     VEC_NODES = "vec_nodes"
 
 
+class ResponseCyclePhase(str, Enum):
+    STARTED = "started"
+    SLOW = "slow"
+    HEARTBEAT = "heartbeat"
+    FINISHED = "finished"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class FeedbackConfig:
+    slow_threshold_ms: int = 500
+    heartbeat_interval_ms: int = 2000
+
+
+@dataclass(frozen=True)
+class ResponseCycleEvent:
+    operation_id: str
+    operation_kind: str
+    surface: str
+    phase: ResponseCyclePhase
+    elapsed_ms: int
+    slow_threshold_ms: int
+    metadata: dict[str, str]
+    error_code: str | None = None
+    error_message: str | None = None
+
+
 @dataclass(frozen=True)
 class RawJson:
     text: str

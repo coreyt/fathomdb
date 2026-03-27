@@ -10,10 +10,20 @@ import (
 )
 
 func RunBridgeCommand(client bridge.Client, request bridge.Request, out io.Writer) error {
+	return RunBridgeCommandWithFeedback(client, request, out, nil, bridge.FeedbackConfig{})
+}
+
+func RunBridgeCommandWithFeedback(
+	client bridge.Client,
+	request bridge.Request,
+	out io.Writer,
+	observer bridge.Observer,
+	config bridge.FeedbackConfig,
+) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	response, err := client.Execute(ctx, request)
+	response, err := client.ExecuteWithFeedback(ctx, request, observer, config)
 	if err != nil {
 		return err
 	}

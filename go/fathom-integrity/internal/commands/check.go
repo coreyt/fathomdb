@@ -14,26 +14,46 @@ import (
 // RunCheck runs a layered diagnostic on databasePath.  If bridgePath is
 // non-empty the admin bridge is called to populate Layer 2 engine invariants.
 func RunCheck(databasePath, bridgePath string, out io.Writer) error {
-	var layer2 *sqlitecheck.Layer2Report
-	if bridgePath != "" {
-		l2, err := fetchLayer2(databasePath, bridgePath)
-		if err != nil {
-			return fmt.Errorf("layer2 bridge call failed: %w", err)
-		}
-		layer2 = &l2
-	}
+	return RunCheckWithFeedback(databasePath, bridgePath, out, nil, bridge.FeedbackConfig{})
+}
 
-	report, err := sqlitecheck.Diagnose(databasePath, "", layer2)
-	if err != nil {
-		return err
-	}
-	jsonStr, err := sqlitecheck.FormatDiagnostic(report)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintln(out, jsonStr)
-	fmt.Fprintln(out, "check completed")
-	return nil
+func RunCheckWithFeedback(
+	databasePath, bridgePath string,
+	out io.Writer,
+	observer bridge.Observer,
+	config bridge.FeedbackConfig,
+) error {
+	_, err := bridge.RunWithFeedback(
+		context.Background(),
+		"go",
+		"check",
+		map[string]string{"database_path": databasePath},
+		observer,
+		config,
+		func(context.Context) (struct{}, error) {
+			var layer2 *sqlitecheck.Layer2Report
+			if bridgePath != "" {
+				l2, err := fetchLayer2(databasePath, bridgePath)
+				if err != nil {
+					return struct{}{}, fmt.Errorf("layer2 bridge call failed: %w", err)
+				}
+				layer2 = &l2
+			}
+
+			report, err := sqlitecheck.Diagnose(databasePath, "", layer2)
+			if err != nil {
+				return struct{}{}, err
+			}
+			jsonStr, err := sqlitecheck.FormatDiagnostic(report)
+			if err != nil {
+				return struct{}{}, err
+			}
+			fmt.Fprintln(out, jsonStr)
+			fmt.Fprintln(out, "check completed")
+			return struct{}{}, nil
+		},
+	)
+	return err
 }
 
 // bridgeIntegrityReport mirrors the Rust IntegrityReport JSON shape.

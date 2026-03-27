@@ -43,6 +43,41 @@ type RecoverReport struct {
 // Pass sqliteBin="" to use exec.LookPath("sqlite3").
 // Pass bridgePath="" to skip bootstrap and Layer 2 checks.
 func RunRecover(sourcePath, destPath, bridgePath, sqliteBin string, out io.Writer) error {
+	return RunRecoverWithFeedback(
+		sourcePath,
+		destPath,
+		bridgePath,
+		sqliteBin,
+		out,
+		nil,
+		bridge.FeedbackConfig{},
+	)
+}
+
+func RunRecoverWithFeedback(
+	sourcePath, destPath, bridgePath, sqliteBin string,
+	out io.Writer,
+	observer bridge.Observer,
+	config bridge.FeedbackConfig,
+) error {
+	_, err := bridge.RunWithFeedback(
+		context.Background(),
+		"go",
+		"recover",
+		map[string]string{
+			"source_path": sourcePath,
+			"dest_path":   destPath,
+		},
+		observer,
+		config,
+		func(context.Context) (struct{}, error) {
+			return struct{}{}, runRecover(sourcePath, destPath, bridgePath, sqliteBin, out)
+		},
+	)
+	return err
+}
+
+func runRecover(sourcePath, destPath, bridgePath, sqliteBin string, out io.Writer) error {
 	if sqliteBin == "" {
 		bin, err := exec.LookPath("sqlite3")
 		if err != nil {

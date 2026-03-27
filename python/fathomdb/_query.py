@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 
+from ._feedback import run_with_feedback
 from ._fathomdb import EngineCore
 from ._types import (
     CompiledQuery,
+    FeedbackConfig,
     QueryPlan,
     QueryRows,
     TraverseDirection,
@@ -83,11 +85,44 @@ class Query:
     def limit(self, limit: int) -> "Query":
         return self._with_limit(limit)
 
-    def compile(self) -> CompiledQuery:
-        return CompiledQuery.from_wire(json.loads(self._core.compile_ast(self._ast_payload())))
+    def compile(self, *, progress_callback=None, feedback_config: FeedbackConfig | None = None) -> CompiledQuery:
+        return CompiledQuery.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="query.compile",
+                    metadata={"root_kind": self._root_kind},
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=lambda: self._core.compile_ast(self._ast_payload()),
+                )
+            )
+        )
 
-    def explain(self) -> QueryPlan:
-        return QueryPlan.from_wire(json.loads(self._core.explain_ast(self._ast_payload())))
+    def explain(self, *, progress_callback=None, feedback_config: FeedbackConfig | None = None) -> QueryPlan:
+        return QueryPlan.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="query.explain",
+                    metadata={"root_kind": self._root_kind},
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=lambda: self._core.explain_ast(self._ast_payload()),
+                )
+            )
+        )
 
-    def execute(self) -> QueryRows:
-        return QueryRows.from_wire(json.loads(self._core.execute_ast(self._ast_payload())))
+    def execute(self, *, progress_callback=None, feedback_config: FeedbackConfig | None = None) -> QueryRows:
+        return QueryRows.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="query.execute",
+                    metadata={"root_kind": self._root_kind},
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=lambda: self._core.execute_ast(self._ast_payload()),
+                )
+            )
+        )

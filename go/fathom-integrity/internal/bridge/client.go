@@ -147,39 +147,75 @@ func (c Client) SafeExport(ctx context.Context, databasePath, destinationPath st
 	})
 }
 
+func (c Client) SafeExportWithFeedback(
+	ctx context.Context,
+	databasePath, destinationPath string,
+	observer Observer,
+	config FeedbackConfig,
+) (Response, error) {
+	return c.ExecuteWithFeedback(ctx, Request{
+		DatabasePath:    databasePath,
+		Command:         CommandSafeExport,
+		DestinationPath: destinationPath,
+	}, observer, config)
+}
+
 func (c Client) Execute(ctx context.Context, request Request) (Response, error) {
-	// Security fix H-3: Validate the bridge binary path before execution.
-	if err := validateBinaryPath(c.BinaryPath); err != nil {
-		return Response{}, err
-	}
+	return c.ExecuteWithFeedback(ctx, request, nil, FeedbackConfig{})
+}
 
-	body, err := json.Marshal(request)
-	if err != nil {
-		return Response{}, fmt.Errorf("marshal request: %w", err)
+func (c Client) ExecuteWithFeedback(
+	ctx context.Context,
+	request Request,
+	observer Observer,
+	config FeedbackConfig,
+) (Response, error) {
+	metadata := map[string]string{
+		"command": string(request.Command),
 	}
-
-	cmd := exec.CommandContext(ctx, c.BinaryPath)
-	cmd.Stdin = bytes.NewReader(body)
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return Response{}, fmt.Errorf("run bridge: %w: %s", err, stderr.String())
+	if request.Target != "" {
+		metadata["target"] = request.Target
 	}
+	if request.SourceRef != "" {
+		metadata["source_ref"] = request.SourceRef
+	}
+	if request.DestinationPath != "" {
+		metadata["destination_path"] = request.DestinationPath
+	}
+	return RunWithFeedback(ctx, "go", string(request.Command), metadata, observer, config, func(context.Context) (Response, error) {
+		// Security fix H-3: Validate the bridge binary path before execution.
+		if err := validateBinaryPath(c.BinaryPath); err != nil {
+			return Response{}, err
+		}
 
-	var response Response
-	if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
-		return Response{}, fmt.Errorf("decode bridge response: %w", err)
-	}
-	if response.ProtocolVersion != ProtocolVersion {
-		return Response{}, fmt.Errorf(
-			"bridge protocol version mismatch: expected %d, got %d",
-			ProtocolVersion,
-			response.ProtocolVersion,
-		)
-	}
-	return response, nil
+		body, err := json.Marshal(request)
+		if err != nil {
+			return Response{}, fmt.Errorf("marshal request: %w", err)
+		}
+
+		cmd := exec.CommandContext(ctx, c.BinaryPath)
+		cmd.Stdin = bytes.NewReader(body)
+
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+
+		if err := cmd.Run(); err != nil {
+			return Response{}, fmt.Errorf("run bridge: %w: %s", err, stderr.String())
+		}
+
+		var response Response
+		if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
+			return Response{}, fmt.Errorf("decode bridge response: %w", err)
+		}
+		if response.ProtocolVersion != ProtocolVersion {
+			return Response{}, fmt.Errorf(
+				"bridge protocol version mismatch: expected %d, got %d",
+				ProtocolVersion,
+				response.ProtocolVersion,
+			)
+		}
+		return response, nil
+	})
 }

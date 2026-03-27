@@ -32,7 +32,13 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "--db is required")
 			return 2
 		}
-		if err := commands.RunCheck(*db, *bridgeBinary, stdout); err != nil {
+		if err := commands.RunCheckWithFeedback(
+			*db,
+			*bridgeBinary,
+			stdout,
+			newFeedbackObserver(stderr),
+			bridge.FeedbackConfig{},
+		); err != nil {
 			fmt.Fprintln(stderr, err)
 			return commandExitCode(err)
 		}
@@ -50,7 +56,14 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "--db and --out are required")
 			return 2
 		}
-		if err := commands.RunExport(*db, *destination, *bridgeBinary, stdout); err != nil {
+		if err := commands.RunExportWithFeedback(
+			*db,
+			*destination,
+			*bridgeBinary,
+			stdout,
+			newFeedbackObserver(stderr),
+			bridge.FeedbackConfig{},
+		); err != nil {
 			fmt.Fprintln(stderr, err)
 			return commandExitCode(err)
 		}
@@ -73,7 +86,13 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			Command:      bridge.CommandTraceSource,
 			SourceRef:    *sourceRef,
 		}
-		if err := commands.RunBridgeCommand(bridge.Client{BinaryPath: *bridgeBinary}, request, stdout); err != nil {
+		if err := commands.RunBridgeCommandWithFeedback(
+			bridge.Client{BinaryPath: *bridgeBinary},
+			request,
+			stdout,
+			newFeedbackObserver(stderr),
+			bridge.FeedbackConfig{},
+		); err != nil {
 			fmt.Fprintln(stderr, err)
 			return commandExitCode(err)
 		}
@@ -96,7 +115,13 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			Command:      bridge.CommandRebuildProjections,
 			Target:       *target,
 		}
-		if err := commands.RunBridgeCommand(bridge.Client{BinaryPath: *bridgeBinary}, request, stdout); err != nil {
+		if err := commands.RunBridgeCommandWithFeedback(
+			bridge.Client{BinaryPath: *bridgeBinary},
+			request,
+			stdout,
+			newFeedbackObserver(stderr),
+			bridge.FeedbackConfig{},
+		); err != nil {
 			fmt.Fprintln(stderr, err)
 			return commandExitCode(err)
 		}
@@ -117,7 +142,13 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			DatabasePath: *db,
 			Command:      bridge.CommandRebuildMissing,
 		}
-		if err := commands.RunBridgeCommand(bridge.Client{BinaryPath: *bridgeBinary}, request, stdout); err != nil {
+		if err := commands.RunBridgeCommandWithFeedback(
+			bridge.Client{BinaryPath: *bridgeBinary},
+			request,
+			stdout,
+			newFeedbackObserver(stderr),
+			bridge.FeedbackConfig{},
+		); err != nil {
 			fmt.Fprintln(stderr, err)
 			return commandExitCode(err)
 		}
@@ -140,7 +171,13 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			Command:      bridge.CommandExciseSource,
 			SourceRef:    *sourceRef,
 		}
-		if err := commands.RunBridgeCommand(bridge.Client{BinaryPath: *bridgeBinary}, request, stdout); err != nil {
+		if err := commands.RunBridgeCommandWithFeedback(
+			bridge.Client{BinaryPath: *bridgeBinary},
+			request,
+			stdout,
+			newFeedbackObserver(stderr),
+			bridge.FeedbackConfig{},
+		); err != nil {
 			fmt.Fprintln(stderr, err)
 			return commandExitCode(err)
 		}
@@ -158,7 +195,15 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "--db and --dest are required")
 			return 2
 		}
-		if err := commands.RunRecover(*db, *dest, *bridgeBinary, "", stdout); err != nil {
+		if err := commands.RunRecoverWithFeedback(
+			*db,
+			*dest,
+			*bridgeBinary,
+			"",
+			stdout,
+			newFeedbackObserver(stderr),
+			bridge.FeedbackConfig{},
+		); err != nil {
 			fmt.Fprintln(stderr, err)
 			return commandExitCode(err)
 		}
