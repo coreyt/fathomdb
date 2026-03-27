@@ -326,6 +326,7 @@ dependencies = [
  "thiserror",
  "toml",
  "ulid",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

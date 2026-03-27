@@ -4,12 +4,23 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
 	"github.com/coreyt/fathomdb/go/fathom-integrity/internal/bridge"
 	"github.com/stretchr/testify/require"
 )
+
+func writeShellBridge(t *testing.T, script string) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-backed bridge tests are unix-only")
+	}
+	bridgePath := filepath.Join(t.TempDir(), "bridge.sh")
+	require.NoError(t, os.WriteFile(bridgePath, []byte(script), 0o755))
+	return bridgePath
+}
 
 func TestMainRequiresCommand(t *testing.T) {
 	var stdout bytes.Buffer
@@ -52,11 +63,10 @@ func TestMainVersionCommand(t *testing.T) {
 }
 
 func TestMainRebuildMapsBadRequestToUsageExitCode(t *testing.T) {
-	bridgePath := filepath.Join(t.TempDir(), "bridge.sh")
 	script := `#!/usr/bin/env bash
 printf '%s\n' '{"protocol_version":1,"ok":false,"message":"invalid target","error_code":"bad_request","payload":{}}'
 `
-	require.NoError(t, os.WriteFile(bridgePath, []byte(script), 0o755))
+	bridgePath := writeShellBridge(t, script)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -67,11 +77,10 @@ printf '%s\n' '{"protocol_version":1,"ok":false,"message":"invalid target","erro
 }
 
 func TestMainRebuildMapsIntegrityFailureToExitCodeFour(t *testing.T) {
-	bridgePath := filepath.Join(t.TempDir(), "bridge.sh")
 	script := `#!/usr/bin/env bash
 printf '%s\n' '{"protocol_version":1,"ok":false,"message":"integrity failed","error_code":"integrity_failure","payload":{}}'
 `
-	require.NoError(t, os.WriteFile(bridgePath, []byte(script), 0o755))
+	bridgePath := writeShellBridge(t, script)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -82,11 +91,10 @@ printf '%s\n' '{"protocol_version":1,"ok":false,"message":"integrity failed","er
 }
 
 func TestMainRebuildMapsUnsupportedCapabilityToExitCodeThree(t *testing.T) {
-	bridgePath := filepath.Join(t.TempDir(), "bridge.sh")
 	script := `#!/usr/bin/env bash
 printf '%s\n' '{"protocol_version":1,"ok":false,"message":"sqlite-vec unavailable","error_code":"unsupported_capability","payload":{}}'
 `
-	require.NoError(t, os.WriteFile(bridgePath, []byte(script), 0o755))
+	bridgePath := writeShellBridge(t, script)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -122,10 +130,9 @@ func TestMainRegenerateVectorsRejectsNonPositiveGeneratorLimits(t *testing.T) {
 
 func TestMainRegenerateVectorsForwardsGeneratorPolicy(t *testing.T) {
 	tempDir := t.TempDir()
-	bridgePath := filepath.Join(tempDir, "bridge.sh")
 	requestPath := filepath.Join(tempDir, "request.json")
 	script := "#!/usr/bin/env bash\ncat >" + requestPath + "\nprintf '%s\\n' '{\"protocol_version\":1,\"ok\":true,\"message\":\"ok\",\"payload\":{}}'\n"
-	require.NoError(t, os.WriteFile(bridgePath, []byte(script), 0o755))
+	bridgePath := writeShellBridge(t, script)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -140,6 +147,8 @@ func TestMainRegenerateVectorsForwardsGeneratorPolicy(t *testing.T) {
 		"--generator-max-stderr-bytes", "3333",
 		"--generator-max-input-bytes", "4444",
 		"--generator-max-chunks", "55",
+		"--generator-allowed-root", "/usr/local/bin",
+		"--generator-preserve-env", "OPENAI_API_KEY",
 	}, &stdout, &stderr)
 
 	require.Equal(t, 0, exitCode)
@@ -151,6 +160,31 @@ func TestMainRegenerateVectorsForwardsGeneratorPolicy(t *testing.T) {
 	require.Contains(t, string(body), `"max_stderr_bytes":3333`)
 	require.Contains(t, string(body), `"max_input_bytes":4444`)
 	require.Contains(t, string(body), `"max_chunks":55`)
+	require.Contains(t, string(body), `"require_absolute_executable":true`)
+	require.Contains(t, string(body), `"reject_world_writable_executable":true`)
+	require.Contains(t, string(body), `"allowed_executable_roots":["/usr/local/bin"]`)
+	require.Contains(t, string(body), `"preserve_env_vars":["OPENAI_API_KEY"]`)
+}
+
+func TestMainRegenerateVectorsDisplaysRetryableFailureMessage(t *testing.T) {
+	script := `#!/usr/bin/env bash
+printf '%s\n' '{"protocol_version":1,"ok":false,"message":"vector regeneration snapshot drift: chunk snapshot changed during generation; retry [retryable]","error_code":"execution_failure","payload":{}}'
+`
+	bridgePath := writeShellBridge(t, script)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{
+		"regenerate-vectors",
+		"--db", "/tmp/fathom.db",
+		"--bridge", bridgePath,
+		"--config", "/tmp/vector.toml",
+	}, &stdout, &stderr)
+
+	require.Equal(t, 1, exitCode)
+	require.Contains(t, stderr.String(), "snapshot drift")
+	require.Contains(t, stderr.String(), "[retryable]")
 }
 
 func TestFeedbackObserverWritesSlowAndHeartbeatMessages(t *testing.T) {
@@ -185,12 +219,11 @@ func TestFeedbackObserverWritesSlowAndHeartbeatMessages(t *testing.T) {
 }
 
 func TestMainRebuildEmitsSlowFeedbackOnStderr(t *testing.T) {
-	bridgePath := filepath.Join(t.TempDir(), "bridge.sh")
 	script := `#!/usr/bin/env bash
 sleep 0.6
 printf '%s\n' '{"protocol_version":1,"ok":true,"message":"ok","payload":{}}'
 `
-	require.NoError(t, os.WriteFile(bridgePath, []byte(script), 0o755))
+	bridgePath := writeShellBridge(t, script)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

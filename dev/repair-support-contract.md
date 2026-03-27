@@ -105,6 +105,24 @@ application.
 The supported regeneration contract is:
 
 1. application supplies a TOML or JSON vector contract
-2. admin tool persists the contract in `vector_embedding_contracts`
-3. admin tool invokes the configured generator command to rebuild embeddings
-4. regenerated embeddings are written back to `vec_nodes_active`
+2. admin tool validates the contract and executable policy before any durable
+   state change
+3. admin tool records a bounded regeneration request audit event
+4. admin tool invokes the configured generator command to rebuild embeddings
+   under operator policy:
+   absolute executable path by default, world-writable executable rejection by
+   default, optional allowed roots, and reduced environment inheritance
+5. regenerated embeddings and the currently applied semantic contract are
+   written back atomically, with contract format version and snapshot hash
+   persisted in `vector_embedding_contracts`
+6. request, failure, and apply events are recorded in `provenance_events`
+   without storing raw embeddings, full payload text, or unbounded stderr/stdout
+7. once the request event exists, unsupported `sqlite-vec` capability failures
+   are also recorded through `vector_regeneration_failed`
+
+Current platform boundary:
+
+- Unix and Windows builds both enforce regeneration contract validation and
+  executable trust policy
+- Linux remains the supported environment for `sqlite-vec` packaging and
+  recovery-sensitive end-to-end vector regeneration coverage

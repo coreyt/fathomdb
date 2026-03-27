@@ -173,6 +173,25 @@ static MIGRATIONS: &[Migration] = &[
                     END;
                 ",
     ),
+    Migration::new(
+        SchemaVersion(5),
+        "vector regeneration contract format version",
+        r"
+                ALTER TABLE vector_embedding_contracts
+                    ADD COLUMN contract_format_version INTEGER NOT NULL DEFAULT 1;
+                UPDATE vector_embedding_contracts
+                SET contract_format_version = 1
+                WHERE contract_format_version = 0;
+                ",
+    ),
+    Migration::new(
+        SchemaVersion(6),
+        "provenance metadata payloads",
+        r"
+                ALTER TABLE provenance_events
+                    ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '';
+                ",
+    ),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -215,10 +234,11 @@ impl SchemaManager {
                 continue;
             }
 
-            if migration.version == SchemaVersion(4) {
-                Self::ensure_vector_regeneration_apply_metadata(conn)?;
-            } else {
-                conn.execute_batch(migration.sql)?;
+            match migration.version {
+                SchemaVersion(4) => Self::ensure_vector_regeneration_apply_metadata(conn)?,
+                SchemaVersion(5) => Self::ensure_vector_contract_format_version(conn)?,
+                SchemaVersion(6) => Self::ensure_provenance_metadata(conn)?,
+                _ => conn.execute_batch(migration.sql)?,
             }
             conn.execute(
                 "INSERT INTO fathom_schema_migrations (version, description) VALUES (?1, ?2)",
@@ -275,6 +295,48 @@ impl SchemaManager {
             ",
             [],
         )?;
+        Ok(())
+    }
+
+    fn ensure_vector_contract_format_version(conn: &Connection) -> Result<(), SchemaError> {
+        let mut stmt = conn.prepare("PRAGMA table_info(vector_embedding_contracts)")?;
+        let columns = stmt
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<Result<Vec<_>, _>>()?;
+        let has_contract_format_version = columns
+            .iter()
+            .any(|column| column == "contract_format_version");
+
+        if !has_contract_format_version {
+            conn.execute(
+                "ALTER TABLE vector_embedding_contracts ADD COLUMN contract_format_version INTEGER NOT NULL DEFAULT 1",
+                [],
+            )?;
+        }
+        conn.execute(
+            r"
+            UPDATE vector_embedding_contracts
+            SET contract_format_version = 1
+            WHERE contract_format_version = 0
+            ",
+            [],
+        )?;
+        Ok(())
+    }
+
+    fn ensure_provenance_metadata(conn: &Connection) -> Result<(), SchemaError> {
+        let mut stmt = conn.prepare("PRAGMA table_info(provenance_events)")?;
+        let columns = stmt
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<Result<Vec<_>, _>>()?;
+        let has_metadata_json = columns.iter().any(|column| column == "metadata_json");
+
+        if !has_metadata_json {
+            conn.execute(
+                "ALTER TABLE provenance_events ADD COLUMN metadata_json TEXT NOT NULL DEFAULT ''",
+                [],
+            )?;
+        }
         Ok(())
     }
 
@@ -390,7 +452,7 @@ mod tests {
 
         let report = manager.bootstrap(&conn).expect("bootstrap report");
 
-        assert_eq!(report.applied_versions.len(), 3);
+        assert_eq!(report.applied_versions.len(), 6);
         assert!(report.sqlite_version.starts_with('3'));
         let table_count: i64 = conn
             .query_row(
@@ -454,6 +516,88 @@ mod tests {
             db_count > 0,
             "BootstrapReport.vector_profile_enabled must match actual DB state"
         );
+    }
+
+    #[test]
+    fn bootstrap_backfills_vector_contract_format_and_provenance_metadata_columns() {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        conn.execute_batch(
+            r#"
+            CREATE TABLE provenance_events (
+                id         TEXT PRIMARY KEY,
+                event_type TEXT NOT NULL,
+                subject    TEXT NOT NULL,
+                source_ref TEXT,
+                created_at INTEGER NOT NULL DEFAULT (unixepoch())
+            );
+            CREATE TABLE vector_embedding_contracts (
+                profile TEXT PRIMARY KEY,
+                table_name TEXT NOT NULL,
+                model_identity TEXT NOT NULL,
+                model_version TEXT NOT NULL,
+                dimension INTEGER NOT NULL,
+                normalization_policy TEXT NOT NULL,
+                chunking_policy TEXT NOT NULL,
+                preprocessing_policy TEXT NOT NULL,
+                generator_command_json TEXT NOT NULL,
+                updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                applied_at INTEGER NOT NULL DEFAULT 0,
+                snapshot_hash TEXT NOT NULL DEFAULT ''
+            );
+            INSERT INTO vector_embedding_contracts (
+                profile,
+                table_name,
+                model_identity,
+                model_version,
+                dimension,
+                normalization_policy,
+                chunking_policy,
+                preprocessing_policy,
+                generator_command_json,
+                updated_at,
+                applied_at,
+                snapshot_hash
+            ) VALUES (
+                'default',
+                'vec_nodes_active',
+                'legacy-model',
+                '0.9.0',
+                4,
+                'l2',
+                'per_chunk',
+                'trim',
+                '["/bin/echo"]',
+                100,
+                100,
+                'legacy'
+            );
+            "#,
+        )
+        .expect("seed legacy schema");
+        let manager = SchemaManager::new();
+
+        let report = manager.bootstrap(&conn).expect("bootstrap");
+
+        assert!(
+            report.applied_versions.iter().any(|version| version.0 >= 5),
+            "bootstrap should apply hardening migrations"
+        );
+        let format_version: i64 = conn
+            .query_row(
+                "SELECT contract_format_version FROM vector_embedding_contracts WHERE profile = 'default'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("contract_format_version");
+        assert_eq!(format_version, 1);
+        let metadata_column_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('provenance_events') WHERE name = 'metadata_json'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("metadata_json column count");
+        assert_eq!(metadata_column_count, 1);
     }
 
     #[cfg(feature = "sqlite-vec")]

@@ -39,22 +39,28 @@ type Request struct {
 }
 
 type VectorGeneratorPolicy struct {
-	TimeoutMS          uint64 `json:"timeout_ms"`
-	MaxStdoutBytes     int    `json:"max_stdout_bytes"`
-	MaxStderrBytes     int    `json:"max_stderr_bytes"`
-	MaxInputBytes      int    `json:"max_input_bytes"`
-	MaxChunks          int    `json:"max_chunks"`
-	WarnExecutablePath bool   `json:"warn_executable_path"`
+	TimeoutMS                     uint64   `json:"timeout_ms"`
+	MaxStdoutBytes                int      `json:"max_stdout_bytes"`
+	MaxStderrBytes                int      `json:"max_stderr_bytes"`
+	MaxInputBytes                 int      `json:"max_input_bytes"`
+	MaxChunks                     int      `json:"max_chunks"`
+	RequireAbsoluteExecutable     bool     `json:"require_absolute_executable"`
+	RejectWorldWritableExecutable bool     `json:"reject_world_writable_executable"`
+	AllowedExecutableRoots        []string `json:"allowed_executable_roots,omitempty"`
+	PreserveEnvVars               []string `json:"preserve_env_vars,omitempty"`
 }
 
 func DefaultVectorGeneratorPolicy() VectorGeneratorPolicy {
 	return VectorGeneratorPolicy{
-		TimeoutMS:          300000,
-		MaxStdoutBytes:     64 * 1024 * 1024,
-		MaxStderrBytes:     1024 * 1024,
-		MaxInputBytes:      64 * 1024 * 1024,
-		MaxChunks:          1000000,
-		WarnExecutablePath: true,
+		TimeoutMS:                     300000,
+		MaxStdoutBytes:                64 * 1024 * 1024,
+		MaxStderrBytes:                1024 * 1024,
+		MaxInputBytes:                 64 * 1024 * 1024,
+		MaxChunks:                     1000000,
+		RequireAbsoluteExecutable:     true,
+		RejectWorldWritableExecutable: true,
+		AllowedExecutableRoots:        nil,
+		PreserveEnvVars:               nil,
 	}
 }
 

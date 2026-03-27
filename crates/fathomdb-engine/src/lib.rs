@@ -1,5 +1,6 @@
 mod admin;
 mod coordinator;
+mod executable_trust;
 mod ids;
 mod projection;
 mod runtime;

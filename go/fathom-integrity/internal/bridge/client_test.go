@@ -5,11 +5,22 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+func writeShellBridge(t *testing.T, script string) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-backed bridge tests are unix-only")
+	}
+	binaryPath := filepath.Join(t.TempDir(), "bridge.sh")
+	require.NoError(t, os.WriteFile(binaryPath, []byte(script), 0o755))
+	return binaryPath
+}
 
 func TestRequestJSONShape(t *testing.T) {
 	request := Request{
@@ -17,12 +28,15 @@ func TestRequestJSONShape(t *testing.T) {
 		Command:      CommandRegenerateVectors,
 		ConfigPath:   "/tmp/vector-regen.toml",
 		VectorGeneratorPolicy: &VectorGeneratorPolicy{
-			TimeoutMS:          1234,
-			MaxStdoutBytes:     2048,
-			MaxStderrBytes:     1024,
-			MaxInputBytes:      4096,
-			MaxChunks:          77,
-			WarnExecutablePath: true,
+			TimeoutMS:                     1234,
+			MaxStdoutBytes:                2048,
+			MaxStderrBytes:                1024,
+			MaxInputBytes:                 4096,
+			MaxChunks:                     77,
+			RequireAbsoluteExecutable:     true,
+			RejectWorldWritableExecutable: true,
+			AllowedExecutableRoots:        []string{"/usr/local/bin"},
+			PreserveEnvVars:               []string{"OPENAI_API_KEY"},
 		},
 	}
 
@@ -36,14 +50,17 @@ func TestRequestJSONShape(t *testing.T) {
 	require.Contains(t, string(body), `"vector_generator_policy"`)
 	require.Contains(t, string(body), `"timeout_ms":1234`)
 	require.Contains(t, string(body), `"max_chunks":77`)
+	require.Contains(t, string(body), `"require_absolute_executable":true`)
+	require.Contains(t, string(body), `"reject_world_writable_executable":true`)
+	require.Contains(t, string(body), `"allowed_executable_roots":["/usr/local/bin"]`)
+	require.Contains(t, string(body), `"preserve_env_vars":["OPENAI_API_KEY"]`)
 }
 
 func TestClientRejectsProtocolMismatch(t *testing.T) {
-	binaryPath := filepath.Join(t.TempDir(), "bridge.sh")
 	script := `#!/usr/bin/env bash
 printf '%s\n' '{"protocol_version":99,"ok":true,"message":"ok","payload":{}}'
 `
-	require.NoError(t, os.WriteFile(binaryPath, []byte(script), 0o755))
+	binaryPath := writeShellBridge(t, script)
 
 	client := Client{BinaryPath: binaryPath}
 	_, err := client.Execute(context.Background(), Request{
@@ -75,12 +92,11 @@ func TestExitCodeFromErrorDefaultsToOneForNonBridgeErrors(t *testing.T) {
 }
 
 func TestExecuteWithFeedbackEmitsLifecycleEvents(t *testing.T) {
-	binaryPath := filepath.Join(t.TempDir(), "bridge.sh")
 	script := `#!/usr/bin/env bash
 sleep 0.05
 printf '%s\n' '{"protocol_version":1,"ok":true,"message":"ok","payload":{}}'
 `
-	require.NoError(t, os.WriteFile(binaryPath, []byte(script), 0o755))
+	binaryPath := writeShellBridge(t, script)
 
 	client := Client{BinaryPath: binaryPath}
 	var events []ResponseCycleEvent
@@ -111,12 +127,11 @@ printf '%s\n' '{"protocol_version":1,"ok":true,"message":"ok","payload":{}}'
 }
 
 func TestRegenerateVectorsWithFeedbackEmitsLifecycleEvents(t *testing.T) {
-	binaryPath := filepath.Join(t.TempDir(), "bridge.sh")
 	script := `#!/usr/bin/env bash
 sleep 0.05
 printf '%s\n' '{"protocol_version":1,"ok":true,"message":"vector embeddings regenerated","payload":{"profile":"default","table_name":"vec_nodes_active","dimension":4,"total_chunks":1,"regenerated_rows":1,"contract_persisted":true,"notes":["ok"]}}'
 `
-	require.NoError(t, os.WriteFile(binaryPath, []byte(script), 0o755))
+	binaryPath := writeShellBridge(t, script)
 
 	client := Client{BinaryPath: binaryPath}
 	var events []ResponseCycleEvent

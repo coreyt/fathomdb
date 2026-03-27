@@ -62,6 +62,7 @@ pub struct ProvenanceEvent {
     pub event_type: String,
     pub subject: String,
     pub source_ref: Option<String>,
+    pub metadata_json: String,
     pub created_at: i64,
 }
 
@@ -420,7 +421,7 @@ impl ExecutionCoordinator {
         let conn = self.conn.lock().expect("coordinator connection mutex");
         let mut stmt = conn
             .prepare_cached(
-                "SELECT id, event_type, subject, source_ref, created_at \
+                "SELECT id, event_type, subject, source_ref, metadata_json, created_at \
                  FROM provenance_events WHERE subject = ?1 ORDER BY created_at",
             )
             .map_err(EngineError::Sqlite)?;
@@ -431,7 +432,8 @@ impl ExecutionCoordinator {
                     event_type: row.get(1)?,
                     subject: row.get(2)?,
                     source_ref: row.get(3)?,
-                    created_at: row.get(4)?,
+                    metadata_json: row.get(4)?,
+                    created_at: row.get(5)?,
                 })
             })
             .map_err(EngineError::Sqlite)?

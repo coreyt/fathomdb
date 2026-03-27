@@ -53,6 +53,10 @@ Optional operator policy flags:
 - `--generator-max-stderr-bytes`: stderr cap for the external generator
 - `--generator-max-input-bytes`: stdin JSON payload cap
 - `--generator-max-chunks`: chunk-count cap for a single run
+- `--generator-allowed-root`: allowlisted root for the generator executable
+  path; repeatable
+- `--generator-preserve-env`: environment variable to preserve for the child
+  process; repeatable
 
 These limits are operator policy, not application contract. They are not
 persisted in `vector_embedding_contracts`.
@@ -165,8 +169,11 @@ The generator must return JSON on stdout in this shape:
 
 Rules:
 
+- string fields must be non-empty after trimming and stay within engine bounds
+- `table_name` must be `vec_nodes_active`
 - every active chunk must have exactly one returned embedding
 - embedding length must match `dimension`
+- embeddings must contain only finite numeric values
 - duplicate `chunk_id` outputs are invalid
 - malformed JSON or generator failure causes the command to fail
 
@@ -185,6 +192,7 @@ That persisted record includes:
 - chunking policy
 - preprocessing policy
 - generator command JSON
+- contract format version
 - applied timestamp
 - snapshot hash for the chunk set that was actually applied
 
@@ -217,6 +225,13 @@ In other words:
 
 - The generator command is application-controlled. `fathomdb` does not ship an
   embedding model.
+- The executable trust boundary is operator-controlled. By default the
+  executable path must be absolute, must not be world-writable, and inherits no
+  environment variables unless explicitly allowlisted with
+  `--generator-preserve-env`.
+- Core regeneration validation and executable-trust enforcement are supported on
+  both Unix and Windows builds. `sqlite-vec` packaging and end-to-end recovery
+  coverage remain Linux-scoped until Windows vector packaging is proven.
 - Regeneration replaces the contents of `vec_nodes_active` for the targeted
   profile table only after the generated output has been fully validated and the
   chunk snapshot is revalidated inside the apply transaction.
@@ -224,6 +239,11 @@ In other words:
   instead of silently degrading.
 - The external generator is bounded by timeout, stdout/stderr caps, input-size
   caps, and max-chunk limits.
+- Regeneration writes bounded provenance events for request, failure, and apply
+  so operators can review the attempted profile, model metadata, snapshot hash,
+  and coarse failure class after an incident. Once the request event exists,
+  unsupported `sqlite-vec` capability failures are included in that failed
+  audit lifecycle.
 - The surrounding Rust, Go, and end-to-end coverage exists for this path, but
   it should still be treated as a recovery-sensitive surface.
 
