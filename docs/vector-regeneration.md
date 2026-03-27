@@ -32,7 +32,12 @@ Run regeneration through `fathom-integrity`:
 fathom-integrity regenerate-vectors \
   --db /path/to/fathom.db \
   --bridge /path/to/fathomdb-admin-bridge \
-  --config /path/to/vector-regeneration.toml
+  --config /path/to/vector-regeneration.toml \
+  --generator-timeout-ms 300000 \
+  --generator-max-stdout-bytes 67108864 \
+  --generator-max-stderr-bytes 1048576 \
+  --generator-max-input-bytes 67108864 \
+  --generator-max-chunks 1000000
 ```
 
 Required flags:
@@ -40,6 +45,17 @@ Required flags:
 - `--db`: database to regenerate
 - `--bridge`: admin bridge binary
 - `--config`: TOML or JSON vector regeneration contract
+
+Optional operator policy flags:
+
+- `--generator-timeout-ms`: wall-clock timeout for the external generator
+- `--generator-max-stdout-bytes`: stdout cap for the external generator
+- `--generator-max-stderr-bytes`: stderr cap for the external generator
+- `--generator-max-input-bytes`: stdin JSON payload cap
+- `--generator-max-chunks`: chunk-count cap for a single run
+
+These limits are operator policy, not application contract. They are not
+persisted in `vector_embedding_contracts`.
 
 ## Configuration Contract
 
@@ -169,6 +185,8 @@ That persisted record includes:
 - chunking policy
 - preprocessing policy
 - generator command JSON
+- applied timestamp
+- snapshot hash for the chunk set that was actually applied
 
 This lets recovered databases retain the metadata required to perform
 regeneration later, even though embedding rows themselves are still treated as
@@ -183,20 +201,29 @@ Current behavior:
 - embeddings written through `VecInsert` are not treated as canonical recovery
   material
 - embeddings are regained through `regenerate-vectors`
+- regeneration snapshots the active chunk set, runs the external generator
+  outside the write transaction, then rechecks the same snapshot before apply
+- if the chunk set changed during generation, the command fails and asks the
+  operator to retry instead of mixing new metadata with stale embeddings
 
 In other words:
 
 - `recover` restores vector capability
 - `regenerate-vectors` restores vector contents
+- a failed regeneration leaves both the previously applied contract row and the
+  current vec contents unchanged
 
 ## Operational Notes
 
 - The generator command is application-controlled. `fathomdb` does not ship an
   embedding model.
 - Regeneration replaces the contents of `vec_nodes_active` for the targeted
-  profile table.
+  profile table only after the generated output has been fully validated and the
+  chunk snapshot is revalidated inside the apply transaction.
 - If the generator is unavailable or returns invalid output, regeneration fails
   instead of silently degrading.
+- The external generator is bounded by timeout, stdout/stderr caps, input-size
+  caps, and max-chunk limits.
 - The surrounding Rust, Go, and end-to-end coverage exists for this path, but
   it should still be treated as a recovery-sensitive surface.
 

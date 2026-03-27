@@ -16,6 +16,14 @@ func TestRequestJSONShape(t *testing.T) {
 		DatabasePath: "/tmp/fathom.db",
 		Command:      CommandRegenerateVectors,
 		ConfigPath:   "/tmp/vector-regen.toml",
+		VectorGeneratorPolicy: &VectorGeneratorPolicy{
+			TimeoutMS:          1234,
+			MaxStdoutBytes:     2048,
+			MaxStderrBytes:     1024,
+			MaxInputBytes:      4096,
+			MaxChunks:          77,
+			WarnExecutablePath: true,
+		},
 	}
 
 	body, err := json.Marshal(request)
@@ -25,6 +33,9 @@ func TestRequestJSONShape(t *testing.T) {
 	require.Contains(t, string(body), `"database_path":"/tmp/fathom.db"`)
 	require.Contains(t, string(body), `"command":"regenerate_vector_embeddings"`)
 	require.Contains(t, string(body), `"config_path":"/tmp/vector-regen.toml"`)
+	require.Contains(t, string(body), `"vector_generator_policy"`)
+	require.Contains(t, string(body), `"timeout_ms":1234`)
+	require.Contains(t, string(body), `"max_chunks":77`)
 }
 
 func TestClientRejectsProtocolMismatch(t *testing.T) {

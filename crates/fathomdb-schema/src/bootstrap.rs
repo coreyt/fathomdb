@@ -153,6 +153,26 @@ static MIGRATIONS: &[Migration] = &[
                 );
                 ",
     ),
+    Migration::new(
+        SchemaVersion(4),
+        "vector regeneration apply metadata",
+        r"
+                ALTER TABLE vector_embedding_contracts
+                    ADD COLUMN applied_at INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE vector_embedding_contracts
+                    ADD COLUMN snapshot_hash TEXT NOT NULL DEFAULT '';
+                UPDATE vector_embedding_contracts
+                SET
+                    applied_at = CASE
+                        WHEN applied_at = 0 THEN updated_at
+                        ELSE applied_at
+                    END,
+                    snapshot_hash = CASE
+                        WHEN snapshot_hash = '' THEN 'legacy'
+                        ELSE snapshot_hash
+                    END;
+                ",
+    ),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -195,7 +215,11 @@ impl SchemaManager {
                 continue;
             }
 
-            conn.execute_batch(migration.sql)?;
+            if migration.version == SchemaVersion(4) {
+                Self::ensure_vector_regeneration_apply_metadata(conn)?;
+            } else {
+                conn.execute_batch(migration.sql)?;
+            }
             conn.execute(
                 "INSERT INTO fathom_schema_migrations (version, description) VALUES (?1, ?2)",
                 (i64::from(migration.version.0), migration.description),
@@ -214,6 +238,44 @@ impl SchemaManager {
             applied_versions,
             vector_profile_enabled: vector_profile_count > 0,
         })
+    }
+
+    fn ensure_vector_regeneration_apply_metadata(conn: &Connection) -> Result<(), SchemaError> {
+        let mut stmt = conn.prepare("PRAGMA table_info(vector_embedding_contracts)")?;
+        let columns = stmt
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<Result<Vec<_>, _>>()?;
+        let has_applied_at = columns.iter().any(|column| column == "applied_at");
+        let has_snapshot_hash = columns.iter().any(|column| column == "snapshot_hash");
+
+        if !has_applied_at {
+            conn.execute(
+                "ALTER TABLE vector_embedding_contracts ADD COLUMN applied_at INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
+        if !has_snapshot_hash {
+            conn.execute(
+                "ALTER TABLE vector_embedding_contracts ADD COLUMN snapshot_hash TEXT NOT NULL DEFAULT ''",
+                [],
+            )?;
+        }
+        conn.execute(
+            r"
+            UPDATE vector_embedding_contracts
+            SET
+                applied_at = CASE
+                    WHEN applied_at = 0 THEN updated_at
+                    ELSE applied_at
+                END,
+                snapshot_hash = CASE
+                    WHEN snapshot_hash = '' THEN 'legacy'
+                    ELSE snapshot_hash
+                END
+            ",
+            [],
+        )?;
+        Ok(())
     }
 
     #[must_use]

@@ -15,6 +15,7 @@ func RunRegenerateVectors(databasePath, bridgePath, configPath string, out io.Wr
 		databasePath,
 		bridgePath,
 		configPath,
+		nil,
 		out,
 		nil,
 		bridge.FeedbackConfig{},
@@ -23,6 +24,7 @@ func RunRegenerateVectors(databasePath, bridgePath, configPath string, out io.Wr
 
 func RunRegenerateVectorsWithFeedback(
 	databasePath, bridgePath, configPath string,
+	policy *bridge.VectorGeneratorPolicy,
 	out io.Writer,
 	observer bridge.Observer,
 	config bridge.FeedbackConfig,
@@ -47,7 +49,7 @@ func RunRegenerateVectorsWithFeedback(
 			}
 
 			client := bridge.Client{BinaryPath: bridgePath}
-			resp, err := client.RegenerateVectors(ctx, databasePath, configPath)
+			resp, err := client.RegenerateVectorsWithPolicy(ctx, databasePath, configPath, policy)
 			if err != nil {
 				return struct{}{}, fmt.Errorf("regenerate vectors bridge call failed: %w", err)
 			}

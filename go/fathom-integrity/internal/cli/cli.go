@@ -159,6 +159,12 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		db := fs.String("db", cfg.DatabasePath, "path to sqlite database")
 		bridgeBinary := fs.String("bridge", cfg.BridgeBinary, "path to admin bridge binary")
 		configPath := fs.String("config", "", "path to TOML or JSON vector regeneration contract")
+		defaultPolicy := bridge.DefaultVectorGeneratorPolicy()
+		generatorTimeoutMS := fs.Uint64("generator-timeout-ms", defaultPolicy.TimeoutMS, "wall-clock timeout for the external vector generator")
+		generatorMaxStdoutBytes := fs.Int("generator-max-stdout-bytes", defaultPolicy.MaxStdoutBytes, "maximum stdout bytes allowed from the external vector generator")
+		generatorMaxStderrBytes := fs.Int("generator-max-stderr-bytes", defaultPolicy.MaxStderrBytes, "maximum stderr bytes allowed from the external vector generator")
+		generatorMaxInputBytes := fs.Int("generator-max-input-bytes", defaultPolicy.MaxInputBytes, "maximum JSON stdin bytes sent to the external vector generator")
+		generatorMaxChunks := fs.Int("generator-max-chunks", defaultPolicy.MaxChunks, "maximum chunk count allowed in one vector regeneration run")
 		if err := fs.Parse(args[1:]); err != nil {
 			return 2
 		}
@@ -166,10 +172,22 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "--db and --config are required")
 			return 2
 		}
+		if *generatorMaxStdoutBytes <= 0 || *generatorMaxStderrBytes <= 0 || *generatorMaxInputBytes <= 0 || *generatorMaxChunks <= 0 {
+			fmt.Fprintln(stderr, "generator limits must be greater than zero")
+			return 2
+		}
 		if err := commands.RunRegenerateVectorsWithFeedback(
 			*db,
 			*bridgeBinary,
 			*configPath,
+			&bridge.VectorGeneratorPolicy{
+				TimeoutMS:          *generatorTimeoutMS,
+				MaxStdoutBytes:     *generatorMaxStdoutBytes,
+				MaxStderrBytes:     *generatorMaxStderrBytes,
+				MaxInputBytes:      *generatorMaxInputBytes,
+				MaxChunks:          *generatorMaxChunks,
+				WarnExecutablePath: true,
+			},
 			stdout,
 			newFeedbackObserver(stderr),
 			bridge.FeedbackConfig{},

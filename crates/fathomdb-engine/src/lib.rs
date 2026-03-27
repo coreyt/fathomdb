@@ -8,8 +8,8 @@ mod writer;
 
 pub use admin::{
     AdminHandle, AdminService, IntegrityReport, SafeExportManifest, SafeExportOptions,
-    SemanticReport, TraceReport, VectorRegenerationConfig, VectorRegenerationReport,
-    load_vector_regeneration_config,
+    SemanticReport, TraceReport, VectorGeneratorPolicy, VectorRegenerationConfig,
+    VectorRegenerationReport, load_vector_regeneration_config,
 };
 pub use coordinator::{
     ActionRow, ExecutionCoordinator, NodeRow, ProvenanceEvent, QueryPlan, QueryRows, RunRow,

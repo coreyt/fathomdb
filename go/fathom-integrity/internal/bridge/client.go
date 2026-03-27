@@ -28,13 +28,34 @@ const (
 )
 
 type Request struct {
-	ProtocolVersion int     `json:"protocol_version"`
-	DatabasePath    string  `json:"database_path"`
-	Command         Command `json:"command"`
-	Target          string  `json:"target,omitempty"`
-	SourceRef       string  `json:"source_ref,omitempty"`
-	DestinationPath string  `json:"destination_path,omitempty"`
-	ConfigPath      string  `json:"config_path,omitempty"`
+	ProtocolVersion       int                    `json:"protocol_version"`
+	DatabasePath          string                 `json:"database_path"`
+	Command               Command                `json:"command"`
+	Target                string                 `json:"target,omitempty"`
+	SourceRef             string                 `json:"source_ref,omitempty"`
+	DestinationPath       string                 `json:"destination_path,omitempty"`
+	ConfigPath            string                 `json:"config_path,omitempty"`
+	VectorGeneratorPolicy *VectorGeneratorPolicy `json:"vector_generator_policy,omitempty"`
+}
+
+type VectorGeneratorPolicy struct {
+	TimeoutMS          uint64 `json:"timeout_ms"`
+	MaxStdoutBytes     int    `json:"max_stdout_bytes"`
+	MaxStderrBytes     int    `json:"max_stderr_bytes"`
+	MaxInputBytes      int    `json:"max_input_bytes"`
+	MaxChunks          int    `json:"max_chunks"`
+	WarnExecutablePath bool   `json:"warn_executable_path"`
+}
+
+func DefaultVectorGeneratorPolicy() VectorGeneratorPolicy {
+	return VectorGeneratorPolicy{
+		TimeoutMS:          300000,
+		MaxStdoutBytes:     64 * 1024 * 1024,
+		MaxStderrBytes:     1024 * 1024,
+		MaxInputBytes:      64 * 1024 * 1024,
+		MaxChunks:          1000000,
+		WarnExecutablePath: true,
+	}
 }
 
 type Response struct {
@@ -166,10 +187,19 @@ func (c Client) RegenerateVectors(
 	ctx context.Context,
 	databasePath, configPath string,
 ) (Response, error) {
+	return c.RegenerateVectorsWithPolicy(ctx, databasePath, configPath, nil)
+}
+
+func (c Client) RegenerateVectorsWithPolicy(
+	ctx context.Context,
+	databasePath, configPath string,
+	policy *VectorGeneratorPolicy,
+) (Response, error) {
 	return c.Execute(ctx, Request{
-		DatabasePath: databasePath,
-		Command:      CommandRegenerateVectors,
-		ConfigPath:   configPath,
+		DatabasePath:          databasePath,
+		Command:               CommandRegenerateVectors,
+		ConfigPath:            configPath,
+		VectorGeneratorPolicy: policy,
 	})
 }
 
@@ -179,10 +209,28 @@ func (c Client) RegenerateVectorsWithFeedback(
 	observer Observer,
 	config FeedbackConfig,
 ) (Response, error) {
+	return c.RegenerateVectorsWithFeedbackAndPolicy(
+		ctx,
+		databasePath,
+		configPath,
+		nil,
+		observer,
+		config,
+	)
+}
+
+func (c Client) RegenerateVectorsWithFeedbackAndPolicy(
+	ctx context.Context,
+	databasePath, configPath string,
+	policy *VectorGeneratorPolicy,
+	observer Observer,
+	config FeedbackConfig,
+) (Response, error) {
 	return c.ExecuteWithFeedback(ctx, Request{
-		DatabasePath: databasePath,
-		Command:      CommandRegenerateVectors,
-		ConfigPath:   configPath,
+		DatabasePath:          databasePath,
+		Command:               CommandRegenerateVectors,
+		ConfigPath:            configPath,
+		VectorGeneratorPolicy: policy,
 	}, observer, config)
 }
 
@@ -210,6 +258,9 @@ func (c Client) ExecuteWithFeedback(
 	}
 	if request.ConfigPath != "" {
 		metadata["config_path"] = request.ConfigPath
+	}
+	if request.VectorGeneratorPolicy != nil {
+		metadata["vector_generator_policy"] = "configured"
 	}
 	return RunWithFeedback(ctx, "go", string(request.Command), metadata, observer, config, func(context.Context) (Response, error) {
 		// Security fix H-3: Validate the bridge binary path before execution.

@@ -106,6 +106,53 @@ func TestMainRepairMapsInvalidTargetToUsageExitCode(t *testing.T) {
 	require.Contains(t, stderr.String(), "invalid repair target")
 }
 
+func TestMainRegenerateVectorsRejectsNonPositiveGeneratorLimits(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	exitCode := Main([]string{
+		"regenerate-vectors",
+		"--db", "/tmp/fathom.db",
+		"--config", "/tmp/vector.toml",
+		"--generator-max-chunks", "0",
+	}, &stdout, &stderr)
+
+	require.Equal(t, 2, exitCode)
+	require.Contains(t, stderr.String(), "generator limits must be greater than zero")
+}
+
+func TestMainRegenerateVectorsForwardsGeneratorPolicy(t *testing.T) {
+	tempDir := t.TempDir()
+	bridgePath := filepath.Join(tempDir, "bridge.sh")
+	requestPath := filepath.Join(tempDir, "request.json")
+	script := "#!/usr/bin/env bash\ncat >" + requestPath + "\nprintf '%s\\n' '{\"protocol_version\":1,\"ok\":true,\"message\":\"ok\",\"payload\":{}}'\n"
+	require.NoError(t, os.WriteFile(bridgePath, []byte(script), 0o755))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{
+		"regenerate-vectors",
+		"--db", "/tmp/fathom.db",
+		"--bridge", bridgePath,
+		"--config", "/tmp/vector.toml",
+		"--generator-timeout-ms", "1234",
+		"--generator-max-stdout-bytes", "2222",
+		"--generator-max-stderr-bytes", "3333",
+		"--generator-max-input-bytes", "4444",
+		"--generator-max-chunks", "55",
+	}, &stdout, &stderr)
+
+	require.Equal(t, 0, exitCode)
+	body, err := os.ReadFile(requestPath)
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"vector_generator_policy"`)
+	require.Contains(t, string(body), `"timeout_ms":1234`)
+	require.Contains(t, string(body), `"max_stdout_bytes":2222`)
+	require.Contains(t, string(body), `"max_stderr_bytes":3333`)
+	require.Contains(t, string(body), `"max_input_bytes":4444`)
+	require.Contains(t, string(body), `"max_chunks":55`)
+}
+
 func TestFeedbackObserverWritesSlowAndHeartbeatMessages(t *testing.T) {
 	var stderr bytes.Buffer
 	observer := newFeedbackObserver(&stderr)

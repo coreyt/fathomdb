@@ -184,6 +184,65 @@ generator_command = [%q]
 	require.Contains(t, result.LogicalIDs, "doc-1")
 }
 
+func TestRecoverCommand_RegenerateVectorsRejectsConcurrentChunkChange(t *testing.T) {
+	repoRoot := filepath.Join("..", "..")
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "fathom.db")
+	destPath := filepath.Join(tempDir, "recovered.db")
+	bridgePath := makeVecBridgeScript(t, tempDir, repoRoot)
+	configPath := filepath.Join(tempDir, "vector-regen.toml")
+	generatorPath := filepath.Join(tempDir, "vector-generator-drift.sh")
+
+	bootstrapBridgeDB(t, bridgePath, dbPath)
+	testutil.SeedVectorRegenerationScenario(t, dbPath)
+
+	cmd := buildCmd(repoRoot,
+		"recover",
+		"--db", dbPath,
+		"--dest", destPath,
+		"--bridge", bridgePath,
+	)
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(output))
+
+	require.NoError(t, os.WriteFile(generatorPath, []byte(fmt.Sprintf(`#!/usr/bin/env bash
+set -euo pipefail
+python3 -c 'import json, sqlite3, sys
+payload = json.load(sys.stdin)
+conn = sqlite3.connect(%q)
+conn.execute("INSERT INTO chunks (id, node_logical_id, text_content, created_at) VALUES (?, ?, ?, unixepoch())", ("chunk-2", "doc-1", "late arriving text"))
+conn.commit()
+conn.close()
+embeddings = [{"chunk_id": chunk["chunk_id"], "embedding": [1.0, 0.0, 0.0, 0.0]} for chunk in payload["chunks"]]
+json.dump({"embeddings": embeddings}, sys.stdout)'
+`, destPath)), 0o755))
+	require.NoError(t, os.WriteFile(configPath, []byte(fmt.Sprintf(`
+profile = "default"
+table_name = "vec_nodes_active"
+model_identity = "test-model"
+model_version = "1.0.0"
+dimension = 4
+normalization_policy = "l2"
+chunking_policy = "per_chunk"
+preprocessing_policy = "trim"
+generator_command = [%q]
+`, generatorPath)), 0o644))
+
+	cmd = buildCmd(repoRoot,
+		"regenerate-vectors",
+		"--db", destPath,
+		"--bridge", bridgePath,
+		"--config", configPath,
+	)
+	output, err = cmd.CombinedOutput()
+	require.Error(t, err, string(output))
+	require.Contains(t, string(output), "regenerate vectors failed")
+	require.Equal(t, "test-model", queryDB(t, destPath, "SELECT model_identity FROM vector_embedding_contracts WHERE profile = 'default'"))
+	result := pythonVectorSearch(t, repoRoot, destPath)
+	require.False(t, result.WasDegraded, "vector capability should still be present after failed regeneration")
+	require.Empty(t, result.LogicalIDs)
+}
+
 func TestRecoverCommand_LargeTruncationRecoversSomething(t *testing.T) {
 	repoRoot := filepath.Join("..", "..")
 	tempDir := t.TempDir()

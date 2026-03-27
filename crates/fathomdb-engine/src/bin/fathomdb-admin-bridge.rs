@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use fathomdb_engine::{
-    AdminService, EngineError, ProjectionTarget, SafeExportOptions, load_vector_regeneration_config,
+    AdminService, EngineError, ProjectionTarget, SafeExportOptions, VectorGeneratorPolicy,
+    load_vector_regeneration_config,
 };
 use fathomdb_schema::{SchemaError, SchemaManager};
 use serde::{Deserialize, Serialize};
@@ -31,6 +32,7 @@ struct BridgeRequest {
     source_ref: Option<String>,
     destination_path: Option<PathBuf>,
     config_path: Option<PathBuf>,
+    vector_generator_policy: Option<VectorGeneratorPolicy>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -154,7 +156,10 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
         },
         BridgeCommand::RegenerateVectorEmbeddings => match request.config_path {
             Some(config_path) => match load_vector_regeneration_config(&config_path) {
-                Ok(config) => match service.regenerate_vector_embeddings(&config) {
+                Ok(config) => match service.regenerate_vector_embeddings_with_policy(
+                    &config,
+                    &request.vector_generator_policy.unwrap_or_default(),
+                ) {
                     Ok(report) => success_response(
                         "vector embeddings regenerated".to_owned(),
                         serde_json::to_value(report).unwrap_or_else(|_| json!({})),
