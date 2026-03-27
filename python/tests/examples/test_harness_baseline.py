@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -75,3 +78,29 @@ def test_main_baseline_emits_telemetry_lines_when_enabled(tmp_path: Path, capsys
     assert exit_code == 0
     assert "TELEMETRY phase=started op=engine.open" in output
     assert "TELEMETRY phase=finished op=write.submit" in output
+
+
+def test_python_module_entrypoint_has_no_runpy_warning(tmp_path: Path) -> None:
+    env = os.environ.copy()
+    pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = "python" if not pythonpath else f"python:{pythonpath}"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "examples.harness.app",
+            "--db",
+            str(tmp_path / "module.db"),
+            "--mode",
+            "baseline",
+        ],
+        cwd="/home/coreyt/projects/fathomdb",
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert "RuntimeWarning" not in result.stderr
+    assert "12/12 scenarios passed" in result.stdout
