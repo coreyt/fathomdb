@@ -12,6 +12,7 @@ coverage.out
 .idea/
 .vscode/
 .DS_Store
+__pycache__/
 
 # bream cache directory
 .bream-cache/
