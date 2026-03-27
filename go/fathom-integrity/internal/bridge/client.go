@@ -20,6 +20,7 @@ const (
 	CommandCheckSemantics     Command = "check_semantics"
 	CommandRebuildProjections Command = "rebuild_projections"
 	CommandRebuildMissing     Command = "rebuild_missing_projections"
+	CommandRestoreVector      Command = "restore_vector_profiles"
 	CommandTraceSource        Command = "trace_source"
 	CommandExciseSource       Command = "excise_source"
 	CommandSafeExport         Command = "safe_export"

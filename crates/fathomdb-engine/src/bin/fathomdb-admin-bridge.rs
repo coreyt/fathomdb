@@ -2,16 +2,22 @@ use std::io::{self, Read};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use fathomdb_engine::{AdminService, ProjectionTarget, SafeExportOptions};
-use fathomdb_schema::SchemaManager;
+use fathomdb_engine::{AdminService, EngineError, ProjectionTarget, SafeExportOptions};
+use fathomdb_schema::{SchemaError, SchemaManager};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 const PROTOCOL_VERSION: u32 = 1;
-const ERROR_BAD_REQUEST: &str = "bad_request";
-const ERROR_UNSUPPORTED_COMMAND: &str = "unsupported_command";
-const ERROR_INTEGRITY_FAILURE: &str = "integrity_failure";
-const ERROR_EXECUTION_FAILURE: &str = "execution_failure";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum BridgeErrorCode {
+    BadRequest,
+    UnsupportedCommand,
+    UnsupportedCapability,
+    IntegrityFailure,
+    ExecutionFailure,
+}
 
 #[derive(Debug, Deserialize)]
 struct BridgeRequest {
@@ -31,6 +37,7 @@ enum BridgeCommand {
     CheckSemantics,
     RebuildProjections,
     RebuildMissingProjections,
+    RestoreVectorProfiles,
     TraceSource,
     ExciseSource,
     SafeExport,
@@ -42,7 +49,7 @@ struct BridgeResponse {
     ok: bool,
     message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    error_code: Option<&'static str>,
+    error_code: Option<BridgeErrorCode>,
     payload: serde_json::Value,
 }
 
@@ -50,70 +57,96 @@ struct BridgeResponse {
 fn main() {
     let mut stdin = String::new();
     if let Err(error) = io::stdin().read_to_string(&mut stdin) {
-        emit_error(ERROR_BAD_REQUEST, format!("failed to read stdin: {error}"));
+        emit_error(
+            BridgeErrorCode::BadRequest,
+            format!("failed to read stdin: {error}"),
+        );
         return;
     }
 
-    let request: BridgeRequest = match serde_json::from_str(&stdin) {
+    let response = handle_request_body(&stdin);
+    println!(
+        "{}",
+        serde_json::to_string(&response).expect("bridge response serializes")
+    );
+}
+
+fn handle_request_body(stdin: &str) -> BridgeResponse {
+    let request: BridgeRequest = match serde_json::from_str(stdin) {
         Ok(request) => request,
         Err(error) => {
-            emit_error(
+            return error_response_with_message(
                 classify_parse_error(&error),
                 format!("invalid request: {error}"),
             );
-            return;
         }
     };
 
     if request.protocol_version != PROTOCOL_VERSION {
-        emit_error(
-            ERROR_BAD_REQUEST,
+        return error_response_with_message(
+            BridgeErrorCode::BadRequest,
             format!(
                 "unsupported protocol version: expected {PROTOCOL_VERSION}, got {}",
                 request.protocol_version
             ),
         );
-        return;
     }
 
+    handle_request(request)
+}
+
+fn handle_request(request: BridgeRequest) -> BridgeResponse {
     let service = AdminService::new(&request.database_path, Arc::new(SchemaManager::new()));
     let command = match parse_command(&request.command) {
         Ok(cmd) => cmd,
         Err(code) => {
-            emit_error(code, format!("unsupported command: {}", request.command));
-            return;
+            return error_response_with_message(
+                code,
+                format!("unsupported command: {}", request.command),
+            );
         }
     };
-    let response = match command {
+    match command {
         BridgeCommand::CheckIntegrity => match service.check_integrity() {
             Ok(report) => success_response(
                 "integrity check completed".to_owned(),
                 serde_json::to_value(report).unwrap_or_else(|_| json!({})),
             ),
-            Err(error) => error_response(error, ERROR_INTEGRITY_FAILURE),
+            Err(error) => error_response(error, BridgeErrorCode::IntegrityFailure),
         },
         BridgeCommand::CheckSemantics => match service.check_semantics() {
             Ok(report) => success_response(
                 "semantics check completed".to_owned(),
                 serde_json::to_value(report).unwrap_or_else(|_| json!({})),
             ),
-            Err(error) => error_response(error, ERROR_INTEGRITY_FAILURE),
+            Err(error) => error_response(error, BridgeErrorCode::IntegrityFailure),
         },
-        BridgeCommand::RebuildProjections => {
-            match service.rebuild_projections(parse_target(request.target.as_deref())) {
+        BridgeCommand::RebuildProjections => match parse_target(request.target.as_deref()) {
+            Ok(target) => match service.rebuild_projections(target) {
                 Ok(report) => success_response(
                     "projection rebuild completed".to_owned(),
                     serde_json::to_value(report).unwrap_or_else(|_| json!({})),
                 ),
-                Err(error) => error_response(error, ERROR_EXECUTION_FAILURE),
-            }
-        }
+                Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+            },
+            Err(code) => error_response_with_message(
+                code,
+                "invalid projection target: expected fts, vec, or all".to_owned(),
+            ),
+        },
         BridgeCommand::RebuildMissingProjections => match service.rebuild_missing_projections() {
             Ok(report) => success_response(
                 "missing projection rebuild completed".to_owned(),
                 serde_json::to_value(report).unwrap_or_else(|_| json!({})),
             ),
-            Err(error) => error_response(error, ERROR_EXECUTION_FAILURE),
+            Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+        },
+        BridgeCommand::RestoreVectorProfiles => match service.restore_vector_profiles() {
+            Ok(report) => success_response(
+                "vector profiles restored".to_owned(),
+                serde_json::to_value(report).unwrap_or_else(|_| json!({})),
+            ),
+            Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
         },
         // Security fix M-10: Require source_ref for TraceSource and ExciseSource
         // instead of silently defaulting to "". An empty source_ref could cause
@@ -124,10 +157,10 @@ fn main() {
                     "trace completed".to_owned(),
                     serde_json::to_value(report).unwrap_or_else(|_| json!({})),
                 ),
-                Err(error) => error_response(error, ERROR_EXECUTION_FAILURE),
+                Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
             },
             _ => error_response_with_message(
-                ERROR_BAD_REQUEST,
+                BridgeErrorCode::BadRequest,
                 "source_ref is required for trace_source".to_owned(),
             ),
         },
@@ -137,10 +170,10 @@ fn main() {
                     "source excised".to_owned(),
                     serde_json::to_value(report).unwrap_or_else(|_| json!({})),
                 ),
-                Err(error) => error_response(error, ERROR_EXECUTION_FAILURE),
+                Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
             },
             _ => error_response_with_message(
-                ERROR_BAD_REQUEST,
+                BridgeErrorCode::BadRequest,
                 "source_ref is required for excise_source".to_owned(),
             ),
         },
@@ -154,57 +187,60 @@ fn main() {
                             unreachable!("SafeExportManifest serialization is infallible")
                         }),
                     ),
-                    Err(error) => error_response(error, ERROR_EXECUTION_FAILURE),
+                    Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
                 }
             }
             None => error_response_with_message(
-                ERROR_BAD_REQUEST,
+                BridgeErrorCode::BadRequest,
                 "destination_path is required".to_owned(),
             ),
         },
-    };
-
-    println!(
-        "{}",
-        serde_json::to_string(&response).expect("bridge response serializes")
-    );
-}
-
-fn parse_target(target: Option<&str>) -> ProjectionTarget {
-    match target.unwrap_or("all") {
-        "fts" => ProjectionTarget::Fts,
-        "vec" => ProjectionTarget::Vec,
-        _ => ProjectionTarget::All,
     }
 }
 
-fn parse_command(command: &str) -> Result<BridgeCommand, &'static str> {
+fn parse_target(target: Option<&str>) -> Result<ProjectionTarget, BridgeErrorCode> {
+    match target.unwrap_or("all") {
+        "fts" => Ok(ProjectionTarget::Fts),
+        "vec" => Ok(ProjectionTarget::Vec),
+        "all" => Ok(ProjectionTarget::All),
+        _ => Err(BridgeErrorCode::BadRequest),
+    }
+}
+
+fn parse_command(command: &str) -> Result<BridgeCommand, BridgeErrorCode> {
     match command {
         "check_integrity" => Ok(BridgeCommand::CheckIntegrity),
         "check_semantics" => Ok(BridgeCommand::CheckSemantics),
         "rebuild_projections" => Ok(BridgeCommand::RebuildProjections),
         "rebuild_missing_projections" => Ok(BridgeCommand::RebuildMissingProjections),
+        "restore_vector_profiles" => Ok(BridgeCommand::RestoreVectorProfiles),
         "trace_source" => Ok(BridgeCommand::TraceSource),
         "excise_source" => Ok(BridgeCommand::ExciseSource),
         "safe_export" => Ok(BridgeCommand::SafeExport),
-        _ => Err(ERROR_UNSUPPORTED_COMMAND),
+        _ => Err(BridgeErrorCode::UnsupportedCommand),
     }
 }
 
-fn classify_parse_error(error: &serde_json::Error) -> &'static str {
-    if error.to_string().contains("missing field `command`") {
-        ERROR_BAD_REQUEST
-    } else if error.to_string().contains("unknown field") {
-        ERROR_BAD_REQUEST
-    } else {
-        ERROR_BAD_REQUEST
+fn classify_parse_error(_error: &serde_json::Error) -> BridgeErrorCode {
+    BridgeErrorCode::BadRequest
+}
+
+fn classify_engine_error(error: &EngineError, default: BridgeErrorCode) -> BridgeErrorCode {
+    match error {
+        EngineError::CapabilityMissing(_) => BridgeErrorCode::UnsupportedCapability,
+        EngineError::Schema(SchemaError::MissingCapability(_)) => {
+            BridgeErrorCode::UnsupportedCapability
+        }
+        EngineError::InvalidWrite(_) => BridgeErrorCode::BadRequest,
+        _ => default,
     }
 }
 
 /// Security fix M-4: Sanitize error messages to avoid leaking internal paths,
 /// schema details, or system configuration in bridge responses. The full error
 /// is printed to stderr for operator debugging.
-fn error_response(error: impl std::fmt::Display, code: &'static str) -> BridgeResponse {
+fn error_response(error: EngineError, default_code: BridgeErrorCode) -> BridgeResponse {
+    let code = classify_engine_error(&error, default_code);
     #[allow(clippy::print_stderr)]
     {
         eprintln!("[bridge] error: {error}");
@@ -225,7 +261,7 @@ fn success_response(message: String, payload: serde_json::Value) -> BridgeRespon
     }
 }
 
-fn error_response_with_message(code: &'static str, message: String) -> BridgeResponse {
+fn error_response_with_message(code: BridgeErrorCode, message: String) -> BridgeResponse {
     BridgeResponse {
         protocol_version: PROTOCOL_VERSION,
         ok: false,
@@ -236,7 +272,7 @@ fn error_response_with_message(code: &'static str, message: String) -> BridgeRes
 }
 
 #[allow(clippy::print_stdout, clippy::expect_used)]
-fn emit_error(code: &'static str, message: String) {
+fn emit_error(code: BridgeErrorCode, message: String) {
     let response = error_response_with_message(code, message);
     println!(
         "{}",
@@ -246,17 +282,90 @@ fn emit_error(code: &'static str, message: String) {
 
 #[cfg(test)]
 mod tests {
-    use super::{ERROR_UNSUPPORTED_COMMAND, parse_command, parse_target};
-    use fathomdb_engine::ProjectionTarget;
+    use super::{
+        BridgeErrorCode, classify_engine_error, handle_request_body, parse_command, parse_target,
+    };
+    use fathomdb_engine::{EngineError, ProjectionTarget};
+    use fathomdb_schema::SchemaError;
 
     #[test]
     fn parse_command_reports_unsupported_command() {
         let result = parse_command("does_not_exist");
-        assert_eq!(result.err(), Some(ERROR_UNSUPPORTED_COMMAND));
+        assert_eq!(result.err(), Some(BridgeErrorCode::UnsupportedCommand));
     }
 
     #[test]
-    fn parse_target_defaults_to_all_for_unknown_value() {
-        assert_eq!(parse_target(Some("weird")), ProjectionTarget::All);
+    fn parse_target_defaults_to_all_when_omitted() {
+        assert_eq!(parse_target(None), Ok(ProjectionTarget::All));
+    }
+
+    #[test]
+    fn parse_target_reports_bad_request_for_invalid_value() {
+        let result = parse_target(Some("weird"));
+        assert_eq!(result.err(), Some(BridgeErrorCode::BadRequest));
+    }
+
+    #[test]
+    fn classify_engine_error_maps_capability_missing() {
+        let code = classify_engine_error(
+            &EngineError::CapabilityMissing("sqlite-vec unavailable".to_owned()),
+            BridgeErrorCode::ExecutionFailure,
+        );
+        assert_eq!(code, BridgeErrorCode::UnsupportedCapability);
+    }
+
+    #[test]
+    fn classify_engine_error_maps_schema_missing_capability() {
+        let code = classify_engine_error(
+            &EngineError::Schema(SchemaError::MissingCapability("sqlite-vec")),
+            BridgeErrorCode::ExecutionFailure,
+        );
+        assert_eq!(code, BridgeErrorCode::UnsupportedCapability);
+    }
+
+    #[test]
+    fn classify_engine_error_preserves_default_for_schema_failures() {
+        let code = classify_engine_error(
+            &EngineError::Schema(SchemaError::Sqlite(rusqlite::Error::InvalidQuery)),
+            BridgeErrorCode::IntegrityFailure,
+        );
+        assert_eq!(code, BridgeErrorCode::IntegrityFailure);
+    }
+
+    #[test]
+    fn handle_request_body_rejects_malformed_json() {
+        let response = handle_request_body("{");
+        assert!(!response.ok);
+        assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
+        assert!(response.message.contains("invalid request"));
+    }
+
+    #[test]
+    fn handle_request_body_rejects_unsupported_protocol_version() {
+        let response = handle_request_body(
+            r#"{"protocol_version":99,"database_path":"/tmp/fathom.db","command":"check_integrity"}"#,
+        );
+        assert!(!response.ok);
+        assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
+        assert!(response.message.contains("unsupported protocol version"));
+    }
+
+    #[test]
+    fn handle_request_body_rejects_missing_command_field() {
+        let response =
+            handle_request_body(r#"{"protocol_version":1,"database_path":"/tmp/fathom.db"}"#);
+        assert!(!response.ok);
+        assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
+        assert!(response.message.contains("invalid request"));
+    }
+
+    #[test]
+    fn handle_request_body_rejects_invalid_projection_target() {
+        let response = handle_request_body(
+            r#"{"protocol_version":1,"database_path":"/tmp/fathom.db","command":"rebuild_projections","target":"weird"}"#,
+        );
+        assert!(!response.ok);
+        assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
+        assert!(response.message.contains("invalid projection target"));
     }
 }

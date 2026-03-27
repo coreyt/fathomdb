@@ -124,3 +124,54 @@ def test_vector_query_degrades_when_vector_table_absent(tmp_path: Path) -> None:
     db = Engine.open(tmp_path / "agent.db")
     rows = db.nodes("Meeting").vector_search("budget", limit=3).execute()
     assert rows.was_degraded is True
+
+
+def test_vector_write_and_search_round_trip(tmp_path: Path) -> None:
+    from fathomdb import ChunkInsert, ChunkPolicy, Engine, NodeInsert, ProjectionTarget, VecInsert, WriteRequest, new_row_id
+
+    db = Engine.open(tmp_path / "agent.db", vector_dimension=4)
+
+    receipt = db.write(
+        WriteRequest(
+            label="vector-ingest",
+            nodes=[
+                NodeInsert(
+                    row_id=new_row_id(),
+                    logical_id="document:vector-2026-03-26",
+                    kind="Document",
+                    properties={"title": "Vector retrieval", "status": "active"},
+                    source_ref="action:vector-import",
+                    upsert=True,
+                    chunk_policy=ChunkPolicy.REPLACE,
+                )
+            ],
+            chunks=[
+                ChunkInsert(
+                    id="chunk:document:vector-2026-03-26:0",
+                    node_logical_id="document:vector-2026-03-26",
+                    text_content="Vector retrieval payload",
+                )
+            ],
+            vec_inserts=[
+                VecInsert(
+                    chunk_id="chunk:document:vector-2026-03-26:0",
+                    embedding=[0.1, 0.2, 0.3, 0.4],
+                )
+            ],
+        )
+    )
+
+    assert receipt.provenance_warnings == []
+
+    rows = db.nodes("Document").vector_search("[0.1, 0.2, 0.3, 0.4]", limit=5).execute()
+
+    assert rows.was_degraded is False
+    assert len(rows.nodes) >= 1
+    assert any(node.logical_id == "document:vector-2026-03-26" for node in rows.nodes)
+
+    repair = db.admin.rebuild(target=ProjectionTarget.VEC)
+    assert repair.targets == [ProjectionTarget.VEC]
+
+    semantics = db.admin.check_semantics()
+    assert semantics.stale_vec_rows == 0
+    assert semantics.vec_rows_for_superseded_nodes == 0

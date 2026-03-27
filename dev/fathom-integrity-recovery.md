@@ -284,22 +284,18 @@ Direct the operator to `sqlite3 .recover`.
 | Orphaned chunks | No automated repair yet — requires operator decision |
 | Broken runtime FK chain | No automated repair yet — surface as error |
 
-### `safe_export` hardening (required before export is trustworthy)
+### `safe_export` hardening ✅ Implemented
 
-Current `safe_export` copies the database file without:
-1. Checkpointing the WAL (the copy may be missing committed transactions)
-2. Writing a metadata manifest alongside the copy
-
-Required behavior:
-1. Force WAL checkpoint: `PRAGMA wal_checkpoint(FULL)` — fail export if this fails
-2. Copy the checkpointed `.sqlite` file only (not the WAL or SHM files)
-3. Write a companion `<db>.export-manifest.json` containing:
+Current `safe_export` behavior:
+1. Forces `PRAGMA wal_checkpoint(FULL)` before copy and fails if the checkpoint is blocked
+2. Copies the checkpointed database via the Rust admin bridge rather than a naive Go-side file copy
+3. Writes a companion `<db>.export-manifest.json` containing:
    - Schema version
    - Protocol version
    - Page count
    - Export timestamp (UTC)
    - SHA-256 of the exported file
-4. The Go CLI exposes this via `fathom-integrity export --out <path>`
+4. Exposes the workflow through `fathom-integrity export --out <path> --bridge <binary>`
 
 ---
 
@@ -381,23 +377,23 @@ Go changes:
 - `check` command uses layered checker; outputs structured JSON via `--json` flag
 - Unit and E2E tests for each injected corruption type
 
-### Phase 2: `safe_export` hardening ❌ Not yet implemented
+### Phase 2: `safe_export` hardening ✅ Complete
 
 **Goal:** Make export trustworthy — WAL checkpointed, manifest written.
 
-Current state: `RunExport()` is a simple `io.Copy()` with no WAL checkpoint and no manifest.
-The bridge `safe_export` command exists but is never called from Go.
+Current state: `RunExport()` is bridge-backed and decodes the manifest returned
+by the Rust `safe_export` command. The Rust admin service checkpoints WAL,
+writes the export manifest, and returns schema/protocol/page-count metadata.
 
-Rust changes required:
+Rust changes implemented:
 - `AdminService::safe_export()` takes a `SafeExportOptions` with `force_checkpoint: bool`
 - Checkpoint via `PRAGMA wal_checkpoint(FULL)` before copy
-- Returns `SafeExportReport` with page count and whether WAL was checkpointed
+- Returns structured manifest data with page count, schema version, protocol version, timestamp, and SHA-256
 
-Go changes required:
+Go changes implemented:
 - `export` command calls bridge `safe_export` with checkpoint option
-- Writes `<out>.manifest.json` with schema version, protocol version, page count,
-  export timestamp, SHA-256 of copied file
-- E2E test: export a seeded DB, verify manifest, verify re-opened copy is clean
+- Prints the returned manifest details to stdout for operators
+- E2E test exports a temp DB, verifies the manifest file, and checks schema/protocol/page-count fields
 
 ### Phase 3: Layer 3 application-semantic checks in Rust bridge ✅ Complete
 
@@ -452,7 +448,7 @@ Go changes implemented:
 - [x] Every corruption type in the injection harness has a paired detect+repair test
 - [x] `check` output includes `suggestions` mapping each finding to the command that fixes it
       _(field is named `suggestions` in the actual output, not `repair_suggestions`)_
-- [ ] `safe_export` checkpoints WAL and writes a metadata manifest — **Phase 2, not yet implemented**
+- [x] `safe_export` checkpoints WAL and writes a metadata manifest
 - [x] `recover` wraps `sqlite3 .recover` and reimports into a clean fathomdb database
 - [x] WAL state is inspected and reported in every `check` run
 - [x] Layer 3 application-semantic checks cover: stale FTS, orphaned chunks, broken FK chains, NULL source_ref

@@ -3,6 +3,7 @@ package e2e
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -138,6 +139,64 @@ func TestRebuildCommandRepairsMissingFTS(t *testing.T) {
 
 	after := queryDB(t, dbPath, "SELECT count(*) FROM fts_nodes")
 	require.Equal(t, "1", after, "FTS should have one row after rebuild")
+}
+
+func TestRebuildMissingCommandRepairsMissingFTS(t *testing.T) {
+	repoRoot := filepath.Join("..", "..")
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "fathom.db")
+	bridgePath := makeBridgeScript(t, tempDir, repoRoot)
+
+	bootstrapBridgeDB(t, bridgePath, dbPath)
+	testutil.SeedFTSRepairScenario(t, dbPath)
+
+	before := queryDB(t, dbPath, "SELECT count(*) FROM fts_nodes")
+	require.Equal(t, "0", before, "FTS should be empty before rebuild-missing")
+
+	cmd := exec.Command(
+		"go",
+		"run",
+		"./cmd/fathom-integrity",
+		"rebuild-missing",
+		"--db", dbPath,
+		"--bridge", bridgePath,
+	)
+	cmd.Dir = repoRoot
+	cmd.Env = os.Environ()
+
+	output, err := cmd.CombinedOutput()
+
+	require.NoError(t, err, string(output))
+	require.Contains(t, string(output), "missing projection rebuild completed")
+
+	after := queryDB(t, dbPath, "SELECT count(*) FROM fts_nodes")
+	require.Equal(t, "1", after, "FTS should have one row after rebuild-missing")
+}
+
+func TestRebuildCommandRejectsInvalidTarget(t *testing.T) {
+	repoRoot := filepath.Join("..", "..")
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "fathom.db")
+	bridgePath := makeBridgeScript(t, tempDir, repoRoot)
+
+	bootstrapBridgeDB(t, bridgePath, dbPath)
+
+	cmd := exec.Command(
+		"go",
+		"run",
+		"./cmd/fathom-integrity",
+		"rebuild",
+		"--db", dbPath,
+		"--bridge", bridgePath,
+		"--target", "weird",
+	)
+	cmd.Dir = repoRoot
+	cmd.Env = os.Environ()
+
+	output, err := cmd.CombinedOutput()
+
+	require.Error(t, err, string(output))
+	require.Contains(t, string(output), "invalid projection target")
 }
 
 func TestCheckLayer2DetectsBrokenStepFK(t *testing.T) {
@@ -308,9 +367,11 @@ func TestExportCommand_RoundTrip(t *testing.T) {
 
 	var manifest map[string]any
 	require.NoError(t, json.Unmarshal(data, &manifest))
-	require.Equal(t, float64(1), manifest["schema_version"], "schema_version must be 1")
 	require.Equal(t, float64(1), manifest["protocol_version"], "protocol_version must be 1")
 	require.Greater(t, manifest["page_count"].(float64), float64(0), "page_count must be positive")
+
+	currentSchemaVersion := queryDB(t, destPath, "SELECT max(version) FROM fathom_schema_migrations")
+	require.Equal(t, currentSchemaVersion, fmt.Sprintf("%.0f", manifest["schema_version"]))
 
 	sha, _ := manifest["sha256"].(string)
 	require.Len(t, sha, 64, "sha256 must be 64 hex chars")
@@ -326,6 +387,14 @@ func makeBridgeScript(t *testing.T, tempDir, repoRoot string) string {
 	t.Helper()
 	bridgePath := filepath.Join(tempDir, "bridge.sh")
 	script := "#!/usr/bin/env bash\nset -euo pipefail\ncd " + repoRoot + "\ncargo run --quiet -p fathomdb-engine --bin fathomdb-admin-bridge\n"
+	require.NoError(t, os.WriteFile(bridgePath, []byte(script), 0o755))
+	return bridgePath
+}
+
+func makeVecBridgeScript(t *testing.T, tempDir, repoRoot string) string {
+	t.Helper()
+	bridgePath := filepath.Join(tempDir, "bridge-vec.sh")
+	script := "#!/usr/bin/env bash\nset -euo pipefail\ncd " + repoRoot + "\ncargo run --quiet -p fathomdb-engine --features sqlite-vec --bin fathomdb-admin-bridge\n"
 	require.NoError(t, os.WriteFile(bridgePath, []byte(script), 0o755))
 	return bridgePath
 }

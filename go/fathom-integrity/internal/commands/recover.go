@@ -2,12 +2,19 @@ package commands
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+	"unicode"
+
+	"github.com/coreyt/fathomdb/go/fathom-integrity/internal/bridge"
 
 	"github.com/coreyt/fathomdb/go/fathom-integrity/internal/sqlitecheck"
 )
@@ -75,9 +82,10 @@ func RunRecover(sourcePath, destPath, bridgePath, sqliteBin string, out io.Write
 	_ = recoverCmd.Run()
 
 	// Replay the recovered SQL into the destination database.
-	if recoveredSQL.Len() > 0 {
+	sanitizedSQL := sanitizeRecoveredSQL(recoveredSQL.String())
+	if strings.TrimSpace(sanitizedSQL) != "" {
 		replayCmd := exec.Command(sqliteBin, destPath)
-		replayCmd.Stdin = &recoveredSQL
+		replayCmd.Stdin = bytes.NewBufferString(sanitizedSQL)
 		var replayStderr bytes.Buffer
 		replayCmd.Stderr = &replayStderr
 		if err := replayCmd.Run(); err != nil {
@@ -100,9 +108,30 @@ func RunRecover(sourcePath, destPath, bridgePath, sqliteBin string, out io.Write
 	// from the recovered database (e.g. the fts_nodes virtual table).
 	var layer2 *sqlitecheck.Layer2Report
 	if bridgePath != "" {
+		// Recovery deliberately strips rebuildable projection schema from sqlite3
+		// .recover output. Reset migration history so bridge bootstrap reapplies
+		// the current fathomdb schema idempotently before Layer 2 checks run.
+		resetMigrationsCmd := exec.Command(
+			sqliteBin,
+			destPath,
+			"DROP TABLE IF EXISTS fathom_schema_migrations;",
+		)
+		if output, err := resetMigrationsCmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("reset recovered migration history: %w: %s", err, output)
+		}
+
 		l2, err := fetchLayer2(destPath, bridgePath)
 		if err != nil {
 			return fmt.Errorf("bootstrap and layer2 check: %w", err)
+		}
+
+		if err := restoreRecoveredProjections(destPath, bridgePath, sqliteBin); err != nil {
+			return fmt.Errorf("restore recovered projections: %w", err)
+		}
+
+		l2, err = fetchLayer2(destPath, bridgePath)
+		if err != nil {
+			return fmt.Errorf("layer2 check after projection restore: %w", err)
 		}
 		layer2 = &l2
 	}
@@ -143,4 +172,292 @@ func RunRecover(sourcePath, destPath, bridgePath, sqliteBin string, out io.Write
 	fmt.Fprintln(out, string(b))
 	fmt.Fprintln(out, "recover completed")
 	return nil
+}
+
+func sanitizeRecoveredSQL(sql string) string {
+	statements := splitRecoveredStatements(stripRecoverNoiseLines(sql))
+	kept := make([]string, 0, len(statements))
+	for _, stmt := range statements {
+		if shouldSkipRecoveredStatement(stmt) {
+			continue
+		}
+		kept = append(kept, stmt)
+	}
+	if len(kept) == 0 {
+		return ""
+	}
+	return strings.Join(kept, "\n") + "\n"
+}
+
+func stripRecoverNoiseLines(sql string) string {
+	lines := strings.Split(sql, "\n")
+	kept := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(line)), "sql error:") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n")
+}
+
+func restoreRecoveredProjections(destPath, bridgePath, sqliteBin string) error {
+	client := bridge.Client{BinaryPath: bridgePath}
+
+	if enabledProfiles, err := queryScalarInt(
+		sqliteBin,
+		destPath,
+		"SELECT count(*) FROM vector_profiles WHERE enabled = 1;",
+	); err != nil {
+		return fmt.Errorf("count enabled vector profiles: %w", err)
+	} else if enabledProfiles > 0 {
+		if err := runBridgeCommand(client, destPath, bridge.CommandRestoreVector); err != nil {
+			return fmt.Errorf("restore vector profiles: %w", err)
+		}
+	}
+
+	if err := runBridgeCommand(client, destPath, bridge.CommandRebuildMissing); err != nil {
+		return fmt.Errorf("rebuild missing projections: %w", err)
+	}
+
+	return nil
+}
+
+func runBridgeCommand(client bridge.Client, dbPath string, command bridge.Command) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	resp, err := client.Execute(
+		ctx,
+		bridge.Request{
+			DatabasePath: dbPath,
+			Command:      command,
+		},
+	)
+	if err != nil {
+		return err
+	}
+	if err := bridge.ErrorFromResponse(resp); err != nil {
+		return err
+	}
+	return nil
+}
+
+func queryScalarInt(sqliteBin, dbPath, query string) (int, error) {
+	cmd := exec.Command(sqliteBin, dbPath, query)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, fmt.Errorf("%w: %s", err, output)
+	}
+	value := strings.TrimSpace(string(output))
+	if value == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("parse scalar %q: %w", value, err)
+	}
+	return n, nil
+}
+
+func splitRecoveredStatements(sql string) []string {
+	statements := make([]string, 0, 32)
+	var current strings.Builder
+	var quote rune
+
+	flush := func() {
+		statement := strings.TrimSpace(current.String())
+		if statement != "" {
+			statements = append(statements, statement)
+		}
+		current.Reset()
+	}
+
+	for i := 0; i < len(sql); i++ {
+		ch := rune(sql[i])
+		current.WriteByte(sql[i])
+
+		switch quote {
+		case '\'':
+			if ch == '\'' {
+				if i+1 < len(sql) && sql[i+1] == '\'' {
+					current.WriteByte(sql[i+1])
+					i++
+				} else {
+					quote = 0
+				}
+			}
+			continue
+		case '"':
+			if ch == '"' {
+				if i+1 < len(sql) && sql[i+1] == '"' {
+					current.WriteByte(sql[i+1])
+					i++
+				} else {
+					quote = 0
+				}
+			}
+			continue
+		case '`':
+			if ch == '`' {
+				quote = 0
+			}
+			continue
+		case '[':
+			if ch == ']' {
+				quote = 0
+			}
+			continue
+		}
+
+		switch ch {
+		case '\'', '"', '`', '[':
+			quote = ch
+		case ';':
+			flush()
+		}
+	}
+
+	flush()
+	return statements
+}
+
+func shouldSkipRecoveredStatement(statement string) bool {
+	trimmed := strings.TrimSpace(statement)
+	if trimmed == "" {
+		return true
+	}
+
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "sql error:") {
+		return true
+	}
+	if strings.HasPrefix(lower, "pragma writable_schema") {
+		return true
+	}
+
+	objectName, kind := recoveredStatementObject(trimmed)
+	switch kind {
+	case "sqlite_schema_insert":
+		return true
+	case "object":
+		return isRecoveredProjectionObject(objectName) || isRecoveredSchemaCatalog(objectName)
+	default:
+		return false
+	}
+}
+
+func recoveredStatementObject(statement string) (string, string) {
+	trimmed := strings.TrimSpace(statement)
+	lower := strings.ToLower(trimmed)
+
+	switch {
+	case strings.HasPrefix(lower, "insert into sqlite_schema"),
+		strings.HasPrefix(lower, "insert into sqlite_master"),
+		strings.HasPrefix(lower, "insert into \"sqlite_schema\""),
+		strings.HasPrefix(lower, "insert into \"sqlite_master\""),
+		strings.HasPrefix(lower, "insert into 'sqlite_schema'"),
+		strings.HasPrefix(lower, "insert into 'sqlite_master'"):
+		return "sqlite_schema", "sqlite_schema_insert"
+	case strings.HasPrefix(lower, "create virtual table"):
+		return extractObjectName(trimmed, "create virtual table"), "object"
+	case strings.HasPrefix(lower, "create table"):
+		return extractObjectName(trimmed, "create table"), "object"
+	case strings.HasPrefix(lower, "insert "):
+		if objectName := extractInsertObjectName(trimmed); objectName != "" {
+			if objectName == "sqlite_schema" || objectName == "sqlite_master" {
+				return "sqlite_schema", "sqlite_schema_insert"
+			}
+			return objectName, "object"
+		}
+		return "", ""
+	case strings.HasPrefix(lower, "delete from"):
+		return extractObjectName(trimmed, "delete from"), "object"
+	case strings.HasPrefix(lower, "drop table"):
+		return extractObjectName(trimmed, "drop table"), "object"
+	default:
+		return "", ""
+	}
+}
+
+func extractObjectName(statement, prefix string) string {
+	rest := strings.TrimSpace(statement[len(prefix):])
+	lowerRest := strings.ToLower(rest)
+	if strings.HasPrefix(lowerRest, "if not exists") {
+		rest = strings.TrimSpace(rest[len("if not exists"):])
+	}
+	if rest == "" {
+		return ""
+	}
+
+	identifier, _ := readRecoveredIdentifier(rest)
+	parts := strings.Split(identifier, ".")
+	return strings.ToLower(strings.TrimSpace(parts[len(parts)-1]))
+}
+
+func extractInsertObjectName(statement string) string {
+	rest := strings.TrimSpace(statement[len("insert"):])
+	lowerRest := strings.ToLower(rest)
+	if strings.HasPrefix(lowerRest, "or ") {
+		rest = strings.TrimSpace(rest[len("or "):])
+		lowerRest = strings.ToLower(rest)
+		if idx := strings.IndexFunc(lowerRest, unicode.IsSpace); idx >= 0 {
+			rest = strings.TrimSpace(rest[idx:])
+			lowerRest = strings.ToLower(rest)
+		} else {
+			return ""
+		}
+	}
+	if !strings.HasPrefix(lowerRest, "into") {
+		return ""
+	}
+	return extractObjectName("into "+strings.TrimSpace(rest[len("into"):]), "into")
+}
+
+func readRecoveredIdentifier(input string) (string, int) {
+	if input == "" {
+		return "", 0
+	}
+
+	switch input[0] {
+	case '"', '\'', '`':
+		quote := input[0]
+		var ident strings.Builder
+		for i := 1; i < len(input); i++ {
+			if input[i] == quote {
+				if i+1 < len(input) && input[i+1] == quote {
+					ident.WriteByte(quote)
+					i++
+					continue
+				}
+				return ident.String(), i + 1
+			}
+			ident.WriteByte(input[i])
+		}
+	case '[':
+		end := strings.IndexByte(input, ']')
+		if end >= 0 {
+			return input[1:end], end + 1
+		}
+	default:
+		var ident strings.Builder
+		for i, r := range input {
+			if unicode.IsSpace(r) || r == '(' || r == ';' {
+				return ident.String(), i
+			}
+			ident.WriteRune(r)
+		}
+		return ident.String(), len(input)
+	}
+
+	return "", 0
+}
+
+func isRecoveredProjectionObject(name string) bool {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	return lower == "fts_nodes" || strings.HasPrefix(lower, "fts_nodes_") || lower == "vec_nodes_active"
+}
+
+func isRecoveredSchemaCatalog(name string) bool {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	return lower == "sqlite_master" || lower == "sqlite_schema"
 }

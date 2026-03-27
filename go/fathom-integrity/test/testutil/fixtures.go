@@ -59,6 +59,21 @@ DELETE FROM fts_nodes;
 	runSQLite(t, dbPath, sql)
 }
 
+// SeedFTSScenario inserts a node, chunk, and matching FTS row.
+func SeedFTSScenario(t *testing.T, dbPath string) {
+	t.Helper()
+
+	sql := `
+INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref)
+VALUES ('row-1', 'meeting-1', 'Meeting', '{}', unixepoch(), 'source-1');
+INSERT INTO chunks (id, node_logical_id, text_content, created_at)
+VALUES ('chunk-1', 'meeting-1', 'budget discussion', unixepoch());
+INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content)
+VALUES ('chunk-1', 'meeting-1', 'Meeting', 'budget discussion');
+`
+	runSQLite(t, dbPath, sql)
+}
+
 func runSQLite(t *testing.T, dbPath, sql string) {
 	t.Helper()
 

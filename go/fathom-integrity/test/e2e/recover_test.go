@@ -38,6 +38,55 @@ func TestRecoverCommand_CleanDBRoundTrip(t *testing.T) {
 	require.FileExists(t, destPath)
 }
 
+func TestRecoverCommand_RebuildsFTSAfterSanitizedReplay(t *testing.T) {
+	repoRoot := filepath.Join("..", "..")
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "fathom.db")
+	destPath := filepath.Join(tempDir, "recovered.db")
+	bridgePath := makeBridgeScript(t, tempDir, repoRoot)
+
+	bootstrapBridgeDB(t, bridgePath, dbPath)
+	testutil.SeedFTSScenario(t, dbPath)
+
+	cmd := buildCmd(repoRoot,
+		"recover",
+		"--db", dbPath,
+		"--dest", destPath,
+		"--bridge", bridgePath,
+	)
+
+	output, err := cmd.CombinedOutput()
+
+	require.NoError(t, err, string(output))
+	require.Contains(t, string(output), "recover completed")
+	require.Equal(t, "1", queryDB(t, destPath, "SELECT count(*) FROM fts_nodes"))
+}
+
+func TestRecoverCommand_PreservesAndRestoresVectorProfileMetadata(t *testing.T) {
+	repoRoot := filepath.Join("..", "..")
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "fathom.db")
+	destPath := filepath.Join(tempDir, "recovered.db")
+	bridgePath := makeVecBridgeScript(t, tempDir, repoRoot)
+
+	bootstrapBridgeDB(t, bridgePath, dbPath)
+	queryDB(t, dbPath, "INSERT INTO vector_profiles (profile, table_name, dimension, enabled) VALUES ('default', 'vec_nodes_active', 4, 1)")
+
+	cmd := buildCmd(repoRoot,
+		"recover",
+		"--db", dbPath,
+		"--dest", destPath,
+		"--bridge", bridgePath,
+	)
+
+	output, err := cmd.CombinedOutput()
+
+	require.NoError(t, err, string(output))
+	require.Contains(t, string(output), "recover completed")
+	require.Equal(t, "4", queryDB(t, destPath, "SELECT dimension FROM vector_profiles WHERE profile = 'default'"))
+	require.Equal(t, "1", queryDB(t, destPath, "SELECT count(*) FROM sqlite_schema WHERE name = 'vec_nodes_active'"))
+}
+
 func TestRecoverCommand_LargeTruncationRecoversSomething(t *testing.T) {
 	repoRoot := filepath.Join("..", "..")
 	tempDir := t.TempDir()

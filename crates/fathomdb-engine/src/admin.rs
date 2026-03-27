@@ -130,6 +130,9 @@ impl AdminService {
     }
 
     fn connect(&self) -> Result<rusqlite::Connection, EngineError> {
+        #[cfg(feature = "sqlite-vec")]
+        let conn = sqlite::open_connection_with_vec(&self.database_path)?;
+        #[cfg(not(feature = "sqlite-vec"))]
         let conn = sqlite::open_connection(&self.database_path)?;
         self.schema_manager.bootstrap(&conn)?;
         Ok(conn)
@@ -410,6 +413,43 @@ impl AdminService {
     /// Returns [`EngineError`] if the database connection fails or the projection rebuild fails.
     pub fn rebuild_missing_projections(&self) -> Result<ProjectionRepairReport, EngineError> {
         self.projections.rebuild_missing_projections()
+    }
+
+    /// Recreate enabled vector profiles from persisted `vector_profiles` metadata.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the database connection fails, reading metadata fails,
+    /// or sqlite-vec support is unavailable while enabled profiles are present.
+    pub fn restore_vector_profiles(&self) -> Result<ProjectionRepairReport, EngineError> {
+        let conn = self.connect()?;
+        let profiles: Vec<(String, String, i64)> = {
+            let mut stmt = conn.prepare(
+                "SELECT profile, table_name, dimension \
+                 FROM vector_profiles WHERE enabled = 1 ORDER BY profile",
+            )?;
+            stmt.query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?
+        };
+
+        for (profile, table_name, dimension) in &profiles {
+            let dimension = usize::try_from(*dimension).map_err(|_| {
+                EngineError::Bridge(format!("invalid vector profile dimension: {dimension}"))
+            })?;
+            self.schema_manager
+                .ensure_vector_profile(&conn, profile, table_name, dimension)?;
+        }
+
+        Ok(ProjectionRepairReport {
+            targets: vec![ProjectionTarget::Vec],
+            rebuilt_rows: profiles.len(),
+            notes: vec![],
+        })
     }
 
     /// # Errors
@@ -790,6 +830,43 @@ mod tests {
             report.warnings.iter().any(|w| w.contains("stale vec")),
             "warning must mention stale vec"
         );
+    }
+
+    #[cfg(feature = "sqlite-vec")]
+    #[test]
+    fn restore_vector_profiles_recreates_vec_table_from_metadata() {
+        let db = NamedTempFile::new().expect("temp file");
+        let schema = Arc::new(SchemaManager::new());
+        {
+            let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
+            schema.bootstrap(&conn).expect("bootstrap");
+            conn.execute(
+                "INSERT INTO vector_profiles (profile, table_name, dimension, enabled) \
+                 VALUES ('default', 'vec_nodes_active', 3, 1)",
+                [],
+            )
+            .expect("insert vector profile");
+        }
+
+        let service = AdminService::new(db.path(), Arc::clone(&schema));
+        let report = service
+            .restore_vector_profiles()
+            .expect("restore vector profiles");
+        assert_eq!(
+            report.targets,
+            vec![crate::projection::ProjectionTarget::Vec]
+        );
+        assert_eq!(report.rebuilt_rows, 1);
+
+        let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_schema WHERE name = 'vec_nodes_active'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("vec schema count");
+        assert_eq!(count, 1, "vec table should exist after restore");
     }
 
     #[test]

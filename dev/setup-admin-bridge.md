@@ -12,17 +12,19 @@ This is a companion to:
 
 ## Current Repository State
 
-The bridge already exists and now has its first real protocol hardening slice:
+The bridge already exists and is now operating as a stable protocol `v1`
+operator surface:
 
 - one Rust binary reads a JSON request from stdin
 - request and response payloads carry `protocol_version: 1`
 - typed command names are used on both the Rust and Go sides
+- stable structured `error_code` values are emitted by the Rust bridge
+- Go CLI exit codes are mapped from those error codes
 - a JSON response is written to stdout
-- the Go CLI wraps that response with timeout handling
-- Go and Rust tests cover protocol mismatch handling and basic happy paths
-
-What is still missing is structured error typing and exit-code mapping beyond
-basic protocol validation.
+- stderr is reserved for diagnostics only
+- compatibility is enforced by exact protocol-version matching and bridge-path validation
+- Go and Rust tests cover malformed input, protocol mismatch, invalid targets,
+  and real bridge-backed happy paths across the command families in use today
 
 ## Deliverables
 
@@ -73,14 +75,15 @@ That keeps the Go side simple and predictable.
 
 1. [x] Add protocol version fields to request and response.
 2. [x] Replace stringly typed command parsing with a typed internal command enum.
-3. [ ] Add structured error codes in Rust.
-4. [ ] Map those error codes to Go CLI exit behavior.
-5. [ ] Add contract tests around malformed JSON, unsupported versions, and one
+3. [x] Add structured error codes in Rust.
+4. [x] Map those error codes to Go CLI exit behavior.
+5. [x] Add contract tests around malformed JSON, unsupported versions, and one
        happy-path command per command family.
 
 ## Notes
 
-- The first bridge-backed Go e2e scenario now exists for `trace`; see
+- Bridge-backed Go e2e scenarios now exist for `trace`, `rebuild`,
+  `rebuild-missing`, `excise`, `check`, and `export`; see
   [setup-round-trip-fixtures.md](./setup-round-trip-fixtures.md).
 - SQLite version policy for local tooling is now centralized in
   `tooling/sqlite.env`, with `3.41.0` as the minimum supported version and

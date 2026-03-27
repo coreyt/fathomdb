@@ -12,4 +12,4 @@ requires-python = ">=3.11"
 manifest-path = "../crates/fathomdb/Cargo.toml"
 module-name = "fathomdb._fathomdb"
 python-source = "."
-features = ["python"]
+features = ["python", "sqlite-vec"]

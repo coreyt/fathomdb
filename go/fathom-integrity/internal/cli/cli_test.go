@@ -69,3 +69,16 @@ printf '%s\n' '{"protocol_version":1,"ok":false,"message":"integrity failed","er
 	require.Equal(t, 4, exitCode)
 	require.Contains(t, stderr.String(), "integrity failed")
 }
+
+func TestMainRebuildMapsUnsupportedCapabilityToExitCodeThree(t *testing.T) {
+	bridgePath := filepath.Join(t.TempDir(), "bridge.sh")
+	script := `#!/usr/bin/env bash
+printf '%s\n' '{"protocol_version":1,"ok":false,"message":"sqlite-vec unavailable","error_code":"unsupported_capability","payload":{}}'
+`
+	require.NoError(t, os.WriteFile(bridgePath, []byte(script), 0o755))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{"rebuild", "--db", "/tmp/fathom.db", "--bridge", bridgePath}, &stdout, &stderr)
+	require.Equal(t, 3, exitCode)
