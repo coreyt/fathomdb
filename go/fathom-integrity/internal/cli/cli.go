@@ -14,6 +14,8 @@ import (
 	"github.com/coreyt/fathomdb/go/fathom-integrity/internal/config"
 )
 
+// Main parses CLI arguments, dispatches to the appropriate subcommand, and
+// returns the process exit code.
 func Main(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, usage())

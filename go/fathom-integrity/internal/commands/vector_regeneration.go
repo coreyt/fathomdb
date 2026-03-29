@@ -22,6 +22,8 @@ func RunRegenerateVectors(databasePath, bridgePath, configPath string, out io.Wr
 	)
 }
 
+// RunRegenerateVectorsWithFeedback is like RunRegenerateVectors but emits lifecycle
+// feedback events via the observer.
 func RunRegenerateVectorsWithFeedback(
 	databasePath, bridgePath, configPath string,
 	policy *bridge.VectorGeneratorPolicy,

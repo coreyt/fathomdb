@@ -17,6 +17,7 @@ func RunCheck(databasePath, bridgePath string, out io.Writer) error {
 	return RunCheckWithFeedback(databasePath, bridgePath, out, nil, bridge.FeedbackConfig{})
 }
 
+// RunCheckWithFeedback is like RunCheck but emits lifecycle feedback events via the observer.
 func RunCheckWithFeedback(
 	databasePath, bridgePath string,
 	out io.Writer,
