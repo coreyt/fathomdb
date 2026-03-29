@@ -384,10 +384,27 @@ impl SchemaManager {
     ///
     /// # Errors
     ///
-    /// Returns [`SchemaError`] if any migration or metadata-table SQL fails.
+    /// Returns [`SchemaError`] if any migration or metadata-table SQL fails,
+    /// or [`SchemaError::VersionMismatch`] if the database has been migrated
+    /// to a version newer than this engine supports.
     pub fn bootstrap(&self, conn: &Connection) -> Result<BootstrapReport, SchemaError> {
         self.initialize_connection(conn)?;
         Self::ensure_metadata_tables(conn)?;
+
+        // Downgrade protection
+        let max_applied: u32 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(version), 0) FROM fathom_schema_migrations",
+                [],
+                |row| row.get(0),
+            )?;
+        let engine_version = self.current_version().0;
+        if max_applied > engine_version {
+            return Err(SchemaError::VersionMismatch {
+                database_version: max_applied,
+                engine_version,
+            });
+        }
 
         let mut applied_versions = Vec::new();
         for migration in self.migrations() {
@@ -404,22 +421,24 @@ impl SchemaManager {
                 continue;
             }
 
+            let tx = conn.unchecked_transaction()?;
             match migration.version {
-                SchemaVersion(4) => Self::ensure_vector_regeneration_apply_metadata(conn)?,
-                SchemaVersion(5) => Self::ensure_vector_contract_format_version(conn)?,
-                SchemaVersion(6) => Self::ensure_provenance_metadata(conn)?,
-                SchemaVersion(8) => Self::ensure_operational_mutation_order(conn)?,
-                SchemaVersion(9) => Self::ensure_node_access_metadata(conn)?,
-                SchemaVersion(10) => Self::ensure_operational_filter_contract(conn)?,
-                SchemaVersion(11) => Self::ensure_operational_validation_contract(conn)?,
-                SchemaVersion(12) => Self::ensure_operational_secondary_indexes(conn)?,
-                SchemaVersion(13) => Self::ensure_operational_retention_runs(conn)?,
-                _ => conn.execute_batch(migration.sql)?,
+                SchemaVersion(4) => Self::ensure_vector_regeneration_apply_metadata(&tx)?,
+                SchemaVersion(5) => Self::ensure_vector_contract_format_version(&tx)?,
+                SchemaVersion(6) => Self::ensure_provenance_metadata(&tx)?,
+                SchemaVersion(8) => Self::ensure_operational_mutation_order(&tx)?,
+                SchemaVersion(9) => Self::ensure_node_access_metadata(&tx)?,
+                SchemaVersion(10) => Self::ensure_operational_filter_contract(&tx)?,
+                SchemaVersion(11) => Self::ensure_operational_validation_contract(&tx)?,
+                SchemaVersion(12) => Self::ensure_operational_secondary_indexes(&tx)?,
+                SchemaVersion(13) => Self::ensure_operational_retention_runs(&tx)?,
+                _ => tx.execute_batch(migration.sql)?,
             }
-            conn.execute(
+            tx.execute(
                 "INSERT INTO fathom_schema_migrations (version, description) VALUES (?1, ?2)",
                 (i64::from(migration.version.0), migration.description),
             )?;
+            tx.commit()?;
             applied_versions.push(migration.version);
         }
 
@@ -722,6 +741,7 @@ impl SchemaManager {
             PRAGMA busy_timeout = 5000;
             PRAGMA temp_store = MEMORY;
             PRAGMA mmap_size = 3000000000;
+            PRAGMA journal_size_limit = 536870912;
             ",
         )?;
         Ok(())
@@ -1213,6 +1233,49 @@ mod tests {
             )
             .unwrap_or_default();
         assert_eq!(validation_json, "");
+    }
+
+    #[test]
+    fn downgrade_detected_returns_version_mismatch() {
+        use crate::SchemaError;
+
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        let manager = SchemaManager::new();
+        manager.bootstrap(&conn).expect("initial bootstrap");
+
+        conn.execute(
+            "INSERT INTO fathom_schema_migrations (version, description) VALUES (?1, ?2)",
+            (999_i64, "future migration"),
+        )
+        .expect("insert future version");
+
+        let err = manager
+            .bootstrap(&conn)
+            .expect_err("should fail on downgrade");
+        assert!(
+            matches!(
+                err,
+                SchemaError::VersionMismatch {
+                    database_version: 999,
+                    ..
+                }
+            ),
+            "expected VersionMismatch with database_version 999, got: {err}"
+        );
+    }
+
+    #[test]
+    fn journal_size_limit_is_set() {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        let manager = SchemaManager::new();
+        manager
+            .initialize_connection(&conn)
+            .expect("initialize_connection");
+
+        let limit: i64 = conn
+            .query_row("PRAGMA journal_size_limit", [], |row| row.get(0))
+            .expect("journal_size_limit pragma");
+        assert_eq!(limit, 536_870_912);
     }
 
     #[cfg(feature = "sqlite-vec")]
