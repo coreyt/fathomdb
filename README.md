@@ -1,199 +1,113 @@
 # fathomdb
 
-`fathomdb` is a local datastore for persistent AI agents.
+Local datastore for persistent AI agents. Graph, vector, and full-text search
+on SQLite.
 
-It is designed for agent systems that need more than a pile of documents: they
-need a durable world model, multimodal recall, provenance, replay, correction,
-and high-trust local operation. Technically, `fathomdb` is a **graph/vector/FTS
-shim in front of SQLite**. SQLite remains the canonical store; `fathomdb` adds
-an agent-friendly query compiler, derived search projections, and a governed
-write path.
+## What It Does
 
-## What Problem It Solves
+fathomdb is canonical local storage for AI agent systems that need a durable
+world model, not just a pile of documents. It provides a graph backbone with
+logical identity and supersession, chunk-based full-text search (FTS5), vector
+search (sqlite-vec), an operational state store with append-only logs and
+latest-state collections, and provenance tracking with source attribution.
+SQLite remains the single durable file; fathomdb adds an agent-friendly query
+compiler, derived search projections, and a governed write path. The engine is
+designed for recoverability: canonical state is separated from derived
+projections so recovery and rebuild are normal admin operations.
 
-Local AI agents need to:
+## Architecture
 
-- remember people, projects, meetings, tasks, and evolving context over time
-- retrieve across structure, relationships, text, semantics, and time
-- preserve why a fact, task, or action exists
-- recover cleanly from bad agent reasoning or projection drift
-- run locally without a multi-service database stack
+Three layers:
 
-`fathomdb` is aimed at that problem space.
+- **Rust engine** (`fathomdb` crate) -- all business logic, query compilation,
+  write coordination, schema management. Single-writer execution model with
+  WAL-backed reader pool. The query compiler works inside-out: start from the
+  narrowest indexed candidate set, resolve vector/FTS hits through chunks, join
+  into canonical graph state, apply late filtering.
 
-## Core Idea
+- **Python SDK** (`fathomdb` package) -- PyO3 bindings exposing the full Rust
+  API surface. pip-installable with optional sqlite-vec support for
+  vector-capable builds.
 
-The current design has three key commitments:
+- **Go operator CLI** (`fathom-integrity`) -- integrity checks, recovery,
+  repair, projection rebuild, safe export, provenance trace/excise,
+  operational collection management, and vector regeneration. Communicates with
+  the Rust engine via a JSON bridge binary.
 
-1. **SQLite is the canonical store**
-   - no custom storage engine
-   - no split authority across multiple databases
-   - one durable local file
+## Key Capabilities
 
-2. **Graph, FTS, and vector access are derived capabilities**
-   - canonical state lives in relational tables
-   - FTS and vector search are projection layers
-   - projection rebuild is a normal admin operation, not an emergency hack
+- **Graph backbone**: nodes, edges, logical identity, supersession (upsert
+  without mutation), runs, steps, actions
+- **Chunk-based FTS** via SQLite FTS5
+- **Vector search** via sqlite-vec with admin-owned regeneration workflow
+- **Operational state store**: append-only logs, latest-state collections,
+  retention policies, secondary indexes, compaction, validation contracts
+- **Provenance tracking**: source attribution on every write, trace by
+  source_ref, excise bad lineage, purge provenance events with selective
+  preservation
+- **Safe export** with WAL checkpoint and manifest
+- **Integrity checks**: physical (sqlite3 integrity_check), semantic (FK
+  consistency, orphan detection), and engine-level checks via bridge
+- **Projection rebuild**: deterministic rebuild of FTS and vector projections
+  from canonical state, including rebuild-missing for gap repair
+- **Restore/purge lifecycle**: restore retired logical IDs, permanently purge
+  retired objects and their edges
+- **Repair commands**: duplicate active logical IDs, broken runtime FK chains,
+  orphaned chunks (with dry-run support)
+- **Crash recovery**: full database recovery from corrupt SQLite files with
+  schema bootstrap
+- **Response-cycle feedback**: operation progress reporting across Rust, Python,
+  and Go/CLI surfaces
 
-3. **The engine is built for agent workloads**
-   - deterministic SDK-driven query building
-   - inside-out query planning and top-k pushdown
-   - append-oriented history with provenance and recovery tooling
+## Quick Start
 
-## Architecture Snapshot
-
-The current architecture centers on:
-
-- a **graph-friendly canonical backbone** in SQLite
-- explicit **`logical_id` vs `row_id`** versioning for append-oriented state
-- a **`chunks`** layer for text/vector projection
-- derived **FTS5** and **`sqlite-vec`** search surfaces
-- a **single-writer execution model** with WAL-backed readers
-- a **Rust core engine**
-
-At the query layer, the compiler works from the inside out:
-
-- start from the narrowest indexed candidate set
-- resolve vector/FTS hits through chunks
-- join into canonical graph state
-- apply late JSON and relational filtering
-
-At the write layer, the engine uses:
-
-- pre-flight enrichment before write lock acquisition
-- `BEGIN IMMEDIATE` only when payloads are ready
-- atomic canonical writes plus required projection updates
-- optional semantic backfills for heavier background workloads
-
-## Language Split
-
-The implementation split is:
-
-- **Rust for the engine**
-  - AST compiler
-  - SQLite execution layer
-  - single-writer core
-  - projection/write-path logic close to SQLite internals
-
-- **Go for separate surrounding services**
-  - sync and backup daemon
-  - remote ingestion worker
-  - gRPC/HTTP gateway
-  - operational tooling and observability utilities
-  - external-system connector services
-
-- **Python and TypeScript for SDKs**
-  - language-facing interfaces over the Rust core
-  - Python bindings are implemented today
-  - TypeScript remains future work
-
-## Integrity And Recovery
-
-The design treats recovery as a first-class feature. It explicitly plans for:
-
-- **physical corruption**
-  - recover canonical tables, then rebuild projections
-- **logical corruption**
-  - deterministically rebuild FTS projections and restore vector capability
-  - regenerate vector embeddings through the admin-owned regeneration workflow
-- **semantic corruption**
-  - rollback or excise bad agent outputs by time window or `source_ref`
-
-This is possible because the design separates canonical state from derived
-projections and keeps provenance directly attached to canonical rows.
-
-## Current Status
-
-The repository is beyond the initial scaffold stage:
-
-- a Rust workspace with `fathomdb`, `fathomdb-schema`, `fathomdb-query`, and
-  `fathomdb-engine`
-- a sibling Go module at `go/fathom-integrity`
-- Python bindings under `python/fathomdb`
-- vector-capable Python builds with `sqlite-vec`
-- a Python example harness that exercises write/read/admin flows in baseline and
-  vector modes
-- response-cycle feedback across Rust, Python, and Go/CLI
-- GitHub Actions CI for Rust, Go, and Python
-- automated repair commands for:
-  - duplicate active logical IDs
-  - broken runtime FK chains
-  - orphaned chunks
-- an admin-owned vector regeneration workflow driven by application-supplied
-  TOML or JSON contract files
-
-See [dev/production-readiness-checklist.md](./dev/production-readiness-checklist.md)
-for the production gate and
-[dev/repair-support-contract.md](./dev/repair-support-contract.md) for the
-exact repair and recovery boundary. The current repo position is:
-
-- production-ready within the documented support contract
-- explicit about what is canonical, what is projection material, and what
-  recovery guarantees currently apply
-
-The main design docs are:
-
-- [USER_NEEDS.md](./dev/USER_NEEDS.md)
-- [ARCHITECTURE.md](./dev/ARCHITECTURE.md)
-- [preliminary-solution-design.md](./dev/preliminary-solution-design.md)
-- [ARCHITECTURE-deferred-expansion.md](./dev/ARCHITECTURE-deferred-expansion.md)
-- [dbim-playbook.md](./dev/dbim-playbook.md)
-- [db-integrity-management.md](./dev/db-integrity-management.md)
-- [experts-view.md](./dev/experts-view.md)
-- [0.1_IMPLEMENTATION_PLAN.md](./dev/0.1_IMPLEMENTATION_PLAN.md)
-
-## Developer Setup
-
-Bootstrap a local development environment with:
+**Developer setup:**
 
 ```bash
-./scripts/developer-setup.sh
+bash scripts/developer-setup.sh
 ```
 
-That script installs the baseline Rust and Go toolchains used by this
-repository, installs a project-local `sqlite3` binary for this repo, adds the
-required shell `PATH` entries, and installs `cargo-nextest`.
+**Run tests:**
 
-SQLite policy for local development:
+```bash
+cargo test --workspace
+```
 
-- minimum supported SQLite version: `3.41.0`
-- repo-local development target: `3.46.0`
+**Python SDK:**
 
-The setup script installs the repo-local SQLite under `.local/` and prepends it
-to `PATH` so local CLI-driven workflows do not depend on an older system
-`sqlite3`.
+```bash
+pip install fathomdb
+# or for development:
+cd python && pip install -e . --no-build-isolation
+```
 
-## What Is In Scope For v1
+**Go operator CLI:**
 
-The current MVP direction is to prove the core engine shape first:
+```bash
+cd go/fathom-integrity && go build ./cmd/fathom-integrity
+```
 
-- canonical SQLite graph backbone
-- `chunks`, `fts_nodes`, and `vec_nodes`
-- AST compiler with inside-out planning
-- single serialized writer
-- atomic canonical writes plus required projections
-- minimal repair/admin operations:
-  - rebuild projections
-  - safe export
-  - trace by `source_ref`
-  - excise bad lineage
+**Documentation:** see the `docs/` directory and design documents in `dev/`.
 
-Deferred expansions are preserved in
-[ARCHITECTURE-deferred-expansion.md](./dev/ARCHITECTURE-deferred-expansion.md)
-rather than being lost.
+## Repository Structure
 
-## Non-Goals
+```
+crates/           Rust workspace (fathomdb, fathomdb-engine, fathomdb-query, fathomdb-schema)
+python/           Python SDK (PyO3 bindings) and examples
+go/               Go operator tooling (fathom-integrity CLI)
+docs/             User and operator documentation
+dev/              Design documents and internal notes
+scripts/          Developer setup and CI helpers
+tooling/          Build-time configuration (SQLite env)
+.github/          CI workflows (Rust, Go, Python)
+```
 
-`fathomdb` is not trying to:
+## Test Coverage
 
-- replace SQLite with a custom engine
-- become a generic distributed database
-- depend on a cloud-first control plane
-- hide recovery behind backup-only workflows
+296+ tests across Rust, Go, and Python, organized in a 5-layer test plan
+covering unit tests, integration tests, cross-language round-trips, CLI
+smoke tests, and fuzz testing.
 
-## Architecture Decisions
+## License
 
-Current open-ended architecture choices that go beyond the shipped v0.1 support
-contract are documented separately, for example:
-
-- [arch-decision-vector-embedding-recovery.md](./dev/arch-decision-vector-embedding-recovery.md)
+No license file is currently included in this repository.

@@ -7,7 +7,7 @@ This document is organized in two parts.
 **Part 1** (§1–7) describes what any local agent datastore must provide,
 regardless of the application built on top. These needs drive fathomdb's
 engine design: the graph backbone, query compiler, write pipeline, provenance
-model, and recovery surface.
+model, operational store, and recovery surface.
 
 **Part 2** (§8) describes the needs of one example application — a
 personal AI agent that manages meetings, scheduling, email, and long-running
@@ -30,8 +30,12 @@ inspectable and reversible when the agent is wrong.
 The key engine-level need is a datastore that supports a durable world model
 with multimodal recall: structured facts, relationships, full-text lookup,
 semantic similarity, temporal context, provenance, and operational history. It
-must be fast enough for interactive use, safe enough for high-trust personal
-workflows, and simple enough to run locally without infrastructure.
+must also manage ephemeral operational state that does not belong in the
+graph, control the lifecycle of its own metadata, stay safe under bursty
+write loads, evolve its schema without risking data loss, and keep its wire
+types consistent across every language layer. It must be fast enough for
+interactive use, safe enough for high-trust personal workflows, and simple
+enough to run locally without infrastructure.
 
 ## 2. Who This Serves
 
@@ -118,6 +122,17 @@ context that created it. The engine must support:
 
 Without provenance, surgical repair is impossible.
 
+### 3.4.1 Provenance Lifecycle
+
+Appending provenance events forever is not viable. Operators need to purge old
+events while preserving specific event types that serve as permanent audit
+trails (e.g., excision and purge records). The engine must support:
+
+- time-bounded purge of provenance events
+- selective retention: certain event types survive purges regardless of age
+- configurable defaults so that safety-critical audit records are never
+  accidentally deleted
+
 ### 3.5 Reversibility Without Losing History
 
 Autonomous agents make mistakes. The engine must support:
@@ -127,7 +142,26 @@ Autonomous agents make mistakes. The engine must support:
 - excision that reverses bad writes while restoring previously active versions
 - time-window rollback for broader semantic reversal
 
-### 3.6 Automated Housekeeping
+### 3.6 Operational State Management
+
+Agents need to track ephemeral operational state that does not belong in the
+versioned graph: connector health checks, scheduler cursors, sync bookmarks,
+rate-limit counters, and similar high-churn data. This state has different
+retention semantics, different query patterns, and different mutation styles
+than canonical graph data. The engine must support:
+
+- a dedicated operational store organized by named collections
+- mutation semantics appropriate to collection kind (append-only logs vs.
+  latest-state key-value tables)
+- filtered reads and secondary indexes within operational collections
+- retention and compaction policies independent of the graph's history model
+- provenance tracking on operational mutations so they participate in
+  `excise_source` and traceability
+
+Forcing operational state into the graph model creates schema pollution,
+unbounded version history, and misleading provenance chains.
+
+### 3.7 Automated Housekeeping
 
 The agent should not manage low-level synchronization work manually. The engine
 must handle:
@@ -136,7 +170,7 @@ must handle:
 - startup detection and repair of missing optional projections
 - deterministic projection rebuild from canonical state at any time
 
-### 3.7 Recovery From All Corruption Classes
+### 3.8 Recovery From All Corruption Classes
 
 The engine must treat recovery as a first-class capability across three
 corruption classes:
@@ -150,7 +184,7 @@ restores canonical tables and rebuilds projections. Logical recovery rebuilds
 projections from canonical state. Semantic recovery uses `excise_source` to
 remove bad data surgically.
 
-### 3.8 Local-First, Zero-Ops Operation
+### 3.9 Local-First, Zero-Ops Operation
 
 The engine must run on a developer's machine or small server without:
 
@@ -159,6 +193,48 @@ The engine must run on a developer's machine or small server without:
 - high resource footprint that conflicts with local inference
 
 A single SQLite file is the deployment unit. Moving it is the backup plan.
+
+### 3.10 Write Safety Under Load
+
+Agents may burst large volumes of writes during ingestion, backfill, or
+catch-up synchronization. The engine must remain safe under load:
+
+- bounded write channel depth so callers experience back-pressure rather than
+  unbounded memory growth
+- per-request size limits on nodes, edges, chunks, vectors, and operational
+  mutations so that a single oversized request cannot destabilize the writer
+- recovery from internal writer failures (including panics) without losing
+  queued data or hanging callers
+
+### 3.11 Schema Evolution Safety
+
+As the engine evolves, databases created by newer versions will contain
+migrations that older engines do not understand. Opening such a database must
+fail cleanly with a clear version-mismatch error rather than silently operating
+on a schema it cannot interpret. The engine must:
+
+- record applied migration versions in the database
+- compare the database's highest migration against the engine's known set at
+  open time
+- reject the database with a descriptive error when the database is ahead of
+  the engine
+
+### 3.12 Cross-Layer Type Safety
+
+The engine is accessed from multiple languages — Rust (core), Python
+(application harness), and Go (integrity tooling). Wire types that cross these
+boundaries (write requests, admin commands, read reports, export manifests) must
+stay in sync. The engine must support:
+
+- a single source of truth for wire-format structures, with derived types in
+  each language layer
+- CI-enforced version consistency checks across Cargo and Python package
+  metadata
+- integration tests in each language layer that verify request and response
+  shapes against the engine's expectations
+
+Drift between language layers produces silent data corruption or opaque runtime
+failures that are difficult to diagnose in production.
 
 ## 4. Non-Functional Needs
 
@@ -203,8 +279,10 @@ its own retention policy.
 
 The engine need is a **local, high-trust datastore for persistent AI agents**.
 It must provide versioned graph storage, multimodal recall, deterministic agent
-ergonomics, provenance on every write, reversibility without history loss,
-automated housekeeping, and recovery from all corruption classes.
+ergonomics, provenance on every write with managed lifecycle, reversibility
+without history loss, a dedicated operational store for high-churn state,
+automated housekeeping, recovery from all corruption classes, write safety
+under load, safe schema evolution, and cross-layer type consistency.
 
 If it only stores documents or only accelerates search, it does not solve the
 real problem.

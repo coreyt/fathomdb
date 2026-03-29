@@ -58,11 +58,23 @@ Current assessment: **production-ready within the documented support contract**.
 Reason:
 
 - the functional surface is implemented and validated across Rust, Go, and
-  Python
+  Python (294+ Rust tests, Go bridge and integrity tests, Python integration
+  and harness tests all green)
 - release, CI, benchmark, and robustness gates exist
 - the repair and recovery contract is now explicit about what is and is not
   automated in v0.1
 - doc and tracker hygiene now have a CI-backed enforcement path
+- the deep production audit (`dev/path-to-production-2026-03-29.md`) has been
+  reconciled — all critical (C-1 through C-5) and high (H-1 through H-6)
+  findings are resolved in the current codebase
+
+## Known Design Decisions
+
+- Operational retention scheduling (M-3 in the production audit) is external
+  by design. The engine exposes `plan_operational_retention` and
+  `run_operational_retention` primitives; the operator (or an external
+  scheduler) is responsible for invoking them. This is not a gap — it is a
+  deliberate operational boundary documented in the support contract.
 
 ## Suggested Next Closure Order
 

@@ -434,6 +434,25 @@ Ranked by how many clients use the capability and what breaks if it fails.
 - Verify FTS-only query on the same engine succeeds normally
 - Verify engine continues to accept writes and non-vector reads
 
+### Python Binding Tests (`test_bindings.py`)
+
+The Python test suite (`test_bindings.py`) exercises the engine through the
+PyO3 binding layer, validating that the full operational lifecycle works
+end-to-end from Python. Coverage includes:
+
+- **Operational lifecycle**: open engine, write, read, close, reopen, verify
+  data survives
+- **Write/read roundtrips**: `NodeInsert`, `ChunkInsert`, `EdgeInsert` through
+  the Python `WriteRequest` builder; read back via compiled queries
+- **Vector degradation**: verify that queries requesting vector search on an
+  engine without sqlite-vec return a meaningful error rather than crashing
+- **Grouped reads**: multi-entity read requests that exercise the coordinator's
+  batch path from Python
+- **FTS search**: text search queries through the Python binding confirm FTS
+  projections are visible to the Python caller
+- **Upsert and retire**: supersession and retire operations through the Python
+  API, verifying chunk cleanup and FTS consistency
+
 ---
 
 ## Layer 5: Prevent and Recover
@@ -605,6 +624,16 @@ injections use bad `WriteRequest` values or deliberate raw SQL.
 
 ## Test Execution Reference
 
+### Current test counts (296+ across the workspace)
+
+| Crate / target | Approximate count | Focus areas |
+|---|---|---|
+| fathomdb-engine | ~158 | writer, admin, coordinator, operational, IDs, sqlite |
+| fathomdb-query | ~18 | builder, compile, plan |
+| fathomdb-schema | ~12 | bootstrap, migration |
+| fathomdb (facade) | ~34 integration + ~27 client workload | end-to-end lifecycle, client scenarios |
+| fathomdb `--features python` | additional | PyQueryStep roundtrips, report parity, write request coverage |
+
 ### Rust test suite
 ```bash
 # All workspace tests (unit + integration)
@@ -618,6 +647,12 @@ cargo nextest run -p fathomdb-engine
 
 # Schema unit tests only
 cargo nextest run -p fathomdb-schema
+
+# Query unit tests only
+cargo nextest run -p fathomdb-query
+
+# Python binding tests (requires --features python)
+cargo test -p fathomdb --features python
 ```
 
 ### Go test suite
@@ -637,6 +672,35 @@ go test -run TestCheck_Detects_ ./...
 go test -run TestRepair_Fixes_ ./...
 ```
 
+### Parity and Bridge Test Coverage
+
+These tests guard the boundary between the Rust engine and external callers
+(Python bindings, Go tooling). They catch struct divergence, serialization
+drift, and shape mismatches at compile time or in fast unit tests rather
+than in production.
+
+| Category | Count | What it covers |
+|---|---|---|
+| Report-type field-parity tests (`python_types.rs`) | 15 | Catches struct divergence between Rust report types and their Python representations at compile time |
+| PyQueryStep deserialization roundtrips | 16 | Every variant including `FilterJsonBoolEq`; verifies JSON round-trip fidelity |
+| WriteRequest field preservation tests | — | Confirms all `WriteRequest` fields survive serialization across the Python bridge |
+| EngineError variant coverage test | 1 | Ensures every `EngineError` variant is representable in the Python binding layer |
+| PyBindValue serialization coverage | — | Validates that all `BindValue` variants serialize correctly for Python consumption |
+| Go bridge request JSON shape tests (`client_test.go`) | 18+ | Validates that Go-constructed JSON payloads match the shapes the Rust engine expects |
+
+### CI Coverage
+
+The base CI (`cargo test --workspace`) does not compile Python binding code.
+The `python.yml` workflow adds a `python-rust-lint` job that runs:
+
+```bash
+cargo clippy --features python
+cargo test -p fathomdb --features python
+```
+
+This catches Python binding compile errors, struct divergence, and
+serialization regressions that base CI misses.
+
 ---
 
 ## Known Gaps and Open Items
@@ -650,7 +714,8 @@ become a tracked task before the affected layer is considered complete.
 | `safe_export` does not checkpoint WAL or write manifest | Layer 3 | Error | Phase 2 implementation required (see `fathom-integrity-recovery.md`) |
 | Vector projection cleanup on chunk delete is deferred | Layer 2 | Warning | Implement when sqlite-vec capability gate is real |
 | Restore semantics for retired rows not implemented | Layer 3 | Feature gap | Design (see `design-detailed-supersession.md` open items) |
-| Purge/retention semantics not implemented | Layer 3 | Feature gap | Design and implement |
 | Durable retire event table not implemented | Layer 3 | Warning | Future `retire_events` table; currently only `provenance_warnings` |
 | Read surface only returns node-shaped rows | Layer 2/3 | Feature gap | Extend `QueryRows` to runtime table result families |
 | Degraded execution (FTS fallback when vector missing) | Layer 2 | Warning | Hard fail today; degraded path should be available |
+| sqlite-vec e2e tests are Unix-scoped | Layer 2 | Warning | Windows vector packaging is unproven; vector tests may not run on Windows CI |
+| Go tests require sandbox workaround for build cache path | Layer 5 | Warning | Build cache path must be configured for sandboxed test environments |

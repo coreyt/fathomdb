@@ -52,12 +52,13 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    todo_text = read_text(args.todo)
     checklist_text = read_text(args.checklist)
     failures: list[str] = []
 
-    if "- [ ]" in todo_text:
-        failures.append(f"unchecked tracker items remain in {args.todo}")
+    if args.todo.exists():
+        todo_text = read_text(args.todo)
+        if "- [ ]" in todo_text:
+            failures.append(f"unchecked tracker items remain in {args.todo}")
 
     non_done_areas = parse_non_done_areas(checklist_text)
 

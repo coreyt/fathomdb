@@ -139,13 +139,79 @@ CREATE TABLE chunks (
 
 Vector and full-text search resolve through `chunks`, not directly to `nodes`.
 
-### 2.4 Metadata And Schema Control
+### 2.4 Operational Store
+
+The engine provides a general-purpose operational store alongside the graph
+backbone. Operational data is organized into **collections**, each declared with
+a `kind` that controls mutation semantics:
+
+- **`append_only_log`:** immutable event streams. Mutations use `Append` only;
+  records are never updated in place. Suitable for audit logs, provenance
+  streams, and event sourcing.
+- **`latest_state`:** key-value current-state tables. Mutations use `Put` and
+  `Delete`; the derived current-state view (`operational_current`) always
+  reflects the most recent value for each record key.
+
+Each collection is registered in `operational_collections` with its schema,
+retention policy, and optional contracts.
+
+**Mutations and ordering.** Every write is recorded in `operational_mutations`
+with a monotonically increasing `mutation_order` column (seeded from `rowid`).
+Mutations are indexed by `(collection_name, record_key, mutation_order DESC)`
+for efficient latest-state resolution and historical replay.
+
+**Current-state derived view.** For `latest_state` collections, the
+`operational_current` table maintains a materialized latest-value-per-key view
+with a foreign key back to the originating mutation.
+
+**Filter fields and secondary indexes.** Collections may declare
+`filter_fields_json` to enable extracted-value filtering on mutations.
+Extracted scalar values (string or integer) are stored in
+`operational_filter_values` and indexed for efficient filtered reads.
+Collections may also declare `secondary_indexes_json`; indexed entries are
+stored in `operational_secondary_index_entries` with up to three typed slots per
+entry.
+
+**Validation contracts.** Collections may declare `validation_json` to enforce
+structural constraints on mutation payloads at write time.
+
+**Retention.** Each collection carries a `retention_json` policy (e.g.
+`max_age_seconds`, `max_rows`, or `keep_all`). Retention is executed as an
+explicit operator action through two primitives:
+
+- `plan_operational_retention`: evaluates retention policies and reports what
+  would be deleted
+- `run_operational_retention`: executes the plan, deleting expired mutations and
+  recording the run in `operational_retention_runs`
+
+The engine does not run retention automatically; scheduling is the
+responsibility of the external operator or orchestration layer.
+
+**Compact and purge.** Two additional primitives operate on `append_only_log`
+collections:
+
+- `compact_operational_collection`: identifies and removes compaction candidates
+  according to the collection's retention policy
+- `purge_operational_collection`: deletes mutations matching purge criteria and
+  records the operation
+
+### 2.5 Metadata And Schema Control
 
 The shim owns the internal schema and migrations.
 
 - Agents do not write raw SQL directly.
-- Internal schema versions are tracked in metadata tables.
-- Migrations are applied by the shim on startup.
+- Internal schema versions are tracked in `fathom_schema_migrations`.
+- Migrations are applied by the shim on startup. Each migration is wrapped in
+  an `unchecked_transaction()` and committed individually, so a failure mid-run
+  leaves earlier migrations intact.
+- **Downgrade protection:** on bootstrap, the engine compares the highest
+  applied schema version against its own compiled version. If the database has
+  been migrated by a newer engine, bootstrap rejects the open with a
+  `VersionMismatch` error rather than silently running against an incompatible
+  schema.
+- The WAL journal size limit is set to 512 MB
+  (`PRAGMA journal_size_limit = 536870912`) to bound disk usage from
+  long-running write workloads.
 - Provenance, confidence, timestamps, and correction lineage are stored as canonical metadata, not only derived annotations.
 
 For identity and locality:
@@ -320,6 +386,13 @@ around that reality.
 - provide exactly one coordinated write connection or equivalent serialized write path
 - cache prepared statements keyed by an AST-shape hash rather than raw literal values
 
+**Reader pool.** The `ReadPool` maintains a configurable number of read-only
+connections (default `pool_size = 4`). Each connection is wrapped in its own
+`Mutex`, so concurrent readers that acquire different slots proceed in parallel
+without contention. The shape cache that maps AST-shape hashes to compiled SQL
+is bounded at 4096 entries; when the limit is reached, the entire cache is
+cleared rather than partially evicted.
+
 The AST-shape hash should include structural constants such as:
 
 - `LIMIT` values
@@ -332,9 +405,22 @@ constants versus bound values.
 
 This keeps read latency low while respecting SQLite's single-writer model.
 
-The recommended write architecture is an explicit in-process writer thread or
-actor from day one. All writes flow through a single queue rather than relying
-on `busy_timeout` as the main concurrency-control mechanism.
+**Writer thread.** The write architecture uses an explicit in-process writer
+thread. All writes flow through a bounded `sync_channel(256)` rather than
+relying on `busy_timeout` as the main concurrency-control mechanism.
+
+The writer thread applies several safety measures:
+
+- **Panic recovery:** each call to `resolve_and_apply` is wrapped in
+  `catch_unwind`. If the closure panics, the writer issues `ROLLBACK` to clean
+  up any open transaction and returns an error to the caller rather than
+  poisoning the thread.
+- **Reply timeout:** callers wait at most 30 seconds (`recv_timeout`) for the
+  writer to reply. If the writer is stuck or overloaded, the caller receives a
+  timeout error instead of blocking indefinitely.
+- **Per-type write limits:** a single `WriteRequest` is bounded to 10,000
+  nodes, 10,000 edges, 50,000 chunks, and 100,000 total items. These limits
+  prevent a single request from monopolizing the writer or exhausting memory.
 
 ## 5. Write Path And Ingestion
 
@@ -449,7 +535,26 @@ Direct `source_ref` foreign keys on canonical rows are preferred over a separate
 general-purpose lineage graph. This keeps explain queries cheap and operationally
 simple.
 
-### 6.4 Integrity And Recovery Model
+### 6.4 Provenance Lifecycle
+
+Provenance events accumulate over time. The engine provides
+`purge_provenance_events` as an explicit operator primitive for managing this
+growth:
+
+- Deletes events older than a caller-supplied `before_timestamp`.
+- Deletes in batches of 10,000 rows per loop iteration to avoid holding the
+  write lock for an unbounded duration.
+- Certain event types are preserved by default (`excise` and `purge_logical_id`)
+  so that audit-critical records survive routine purges. Callers may override
+  the preserved set via `preserve_event_types`.
+- Supports `dry_run` mode, which counts matching events without deleting.
+- Returns a report including `events_deleted`, `total_after`, and
+  `oldest_remaining` timestamp.
+
+Like operational retention, provenance purge is an explicit operator action. The
+engine does not schedule or auto-run provenance cleanup.
+
+### 6.5 Integrity And Recovery Model
 
 `fathomdb` should treat recovery as a first-class engine capability, not a
 backup-only afterthought. The architecture explicitly plans for three corruption
@@ -487,7 +592,7 @@ explicitly: interrupted WAL checkpoints, partial projection sync failures, and
 write transactions interrupted mid-transaction. These are distinct from
 functional correctness tests and require deliberate injection.
 
-### 6.5 Physical Recovery Protocol
+### 6.6 Physical Recovery Protocol
 
 SQLite's built-in recovery tools remain useful, but `fathomdb` should recover
 canonical tables only and then rebuild projections. Physical repair should:
@@ -510,7 +615,7 @@ model identity, version, normalization policy, chunking policy, preprocessing
 policy, and generator command needed to rebuild embeddings deterministically
 enough for recovery.
 
-### 6.6 Admin And Repair Surface
+### 6.7 Admin And Repair Surface
 
 The Rust engine should expose repair primitives directly, while a separate Go
 admin tool can orchestrate them operationally. Expected admin operations
@@ -608,6 +713,36 @@ Vector dimensions and embedding providers cannot be hardcoded permanently.
 4. **Derived FTS/vector projections instead of direct-only canonical reads**
    The gain is high-performance multimodal retrieval. The cost is projection maintenance and rebuild logic.
 
-## 9. Architectural Summary
+## 9. Cross-Layer Protocol
+
+The engine is accessed from multiple language runtimes. Each integration path
+has its own protocol and safety properties.
+
+### 9.1 Go to Rust: JSON-Over-Stdio Bridge
+
+The `fathomdb-admin-bridge` binary implements a single-shot JSON request/response
+protocol over stdin/stdout. The Go admin tool (`fathom-integrity`) serializes a
+`BridgeRequest` as JSON, invokes the binary, and deserializes the JSON response.
+
+- Protocol version is negotiated in each request (`protocol_version` field).
+- Input is capped at 64 MB (`MAX_BRIDGE_INPUT_BYTES`).
+- **Path validation:** database and destination paths must be absolute and must
+  not contain `..` components. The bridge rejects requests that violate these
+  constraints before opening any database.
+
+### 9.2 Python to Rust: PyO3 In-Process Embedding
+
+The Python SDK binds to the Rust engine via PyO3. The engine runs in-process
+with no serialization boundary for read/write operations; Python objects are
+converted to Rust types at the FFI layer.
+
+### 9.3 Type Parity
+
+Report-type field parity between Rust structs and their Python representations
+is enforced by compile-time tests (`python_types.rs`). These tests catch struct
+divergence early rather than allowing silent field drops at the serialization
+boundary.
+
+## 10. Architectural Summary
 
 `fathomdb` is not trying to replace SQLite. It is using SQLite as a durable local substrate and adding an opinionated graph/vector/FTS shim for agent workloads. The architecture is aligned with the broader user need by making canonical agent state durable in SQLite while using graph traversal, FTS, and vector search as managed technical access paths over that state.
