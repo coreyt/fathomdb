@@ -34,6 +34,7 @@ use crate::{
     sqlite,
 };
 
+/// Results of a physical and structural integrity check on the database.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct IntegrityReport {
     pub physical_ok: bool,
@@ -45,6 +46,7 @@ pub struct IntegrityReport {
     pub warnings: Vec<String>,
 }
 
+/// Options controlling how a safe database export is performed.
 #[derive(Clone, Copy, Debug)]
 pub struct SafeExportOptions {
     /// When true, runs `PRAGMA wal_checkpoint(FULL)` before copying and fails if
@@ -64,6 +66,7 @@ impl Default for SafeExportOptions {
 // Must match PROTOCOL_VERSION in fathomdb-admin-bridge.rs
 const EXPORT_PROTOCOL_VERSION: u32 = 1;
 
+/// Manifest describing a completed safe export.
 #[derive(Clone, Debug, Serialize)]
 pub struct SafeExportManifest {
     /// Unix timestamp (seconds since epoch) when the export was created.
@@ -78,6 +81,7 @@ pub struct SafeExportManifest {
     pub page_count: u64,
 }
 
+/// Report from tracing all rows associated with a given `source_ref`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct TraceReport {
     pub source_ref: String,
@@ -90,12 +94,14 @@ pub struct TraceReport {
     pub operational_mutation_ids: Vec<String>,
 }
 
+/// An edge that was skipped during a restore because an endpoint is missing.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct SkippedEdge {
     pub edge_logical_id: String,
     pub missing_endpoint: String,
 }
 
+/// Report from restoring a retired logical ID back to active state.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct LogicalRestoreReport {
     pub logical_id: String,
@@ -109,6 +115,7 @@ pub struct LogicalRestoreReport {
     pub notes: Vec<String>,
 }
 
+/// Report from permanently purging all rows for a logical ID.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct LogicalPurgeReport {
     pub logical_id: String,
@@ -121,6 +128,7 @@ pub struct LogicalPurgeReport {
     pub notes: Vec<String>,
 }
 
+/// Options controlling provenance event purging behavior.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProvenancePurgeOptions {
     pub dry_run: bool,
@@ -128,6 +136,7 @@ pub struct ProvenancePurgeOptions {
     pub preserve_event_types: Vec<String>,
 }
 
+/// Report from a provenance event purge operation.
 #[derive(Clone, Debug, Serialize)]
 pub struct ProvenancePurgeReport {
     pub events_deleted: u64,
@@ -135,6 +144,7 @@ pub struct ProvenancePurgeReport {
     pub oldest_remaining: Option<i64>,
 }
 
+/// Service providing administrative operations (integrity checks, exports, restores, purges).
 #[derive(Debug)]
 pub struct AdminService {
     database_path: PathBuf,
@@ -142,6 +152,7 @@ pub struct AdminService {
     projections: ProjectionService,
 }
 
+/// Results of a semantic consistency check on the graph data.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct SemanticReport {
     /// Chunks whose `node_logical_id` has no active node.
@@ -175,6 +186,7 @@ pub struct SemanticReport {
     pub warnings: Vec<String>,
 }
 
+/// Configuration for regenerating vector embeddings via an external generator command.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct VectorRegenerationConfig {
@@ -189,6 +201,7 @@ pub struct VectorRegenerationConfig {
     pub generator_command: Vec<String>,
 }
 
+/// Report from a vector embedding regeneration run.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct VectorRegenerationReport {
     pub profile: String,
@@ -200,6 +213,7 @@ pub struct VectorRegenerationReport {
     pub notes: Vec<String>,
 }
 
+/// Security and resource policy for the external vector generator subprocess.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct VectorGeneratorPolicy {
@@ -254,12 +268,14 @@ const MAX_AUDIT_METADATA_BYTES: usize = 2048;
 const DEFAULT_OPERATIONAL_READ_LIMIT: usize = 100;
 const MAX_OPERATIONAL_READ_LIMIT: usize = 1000;
 
+/// Thread-safe handle to the shared [`AdminService`].
 #[derive(Clone, Debug)]
 pub struct AdminHandle {
     inner: Arc<AdminService>,
 }
 
 impl AdminHandle {
+    /// Wrap an [`AdminService`] in a shared handle.
     #[must_use]
     pub fn new(service: AdminService) -> Self {
         Self {
@@ -267,6 +283,7 @@ impl AdminHandle {
         }
     }
 
+    /// Clone the inner `Arc` to the [`AdminService`].
     #[must_use]
     pub fn service(&self) -> Arc<AdminService> {
         Arc::clone(&self.inner)
@@ -274,6 +291,7 @@ impl AdminHandle {
 }
 
 impl AdminService {
+    /// Create a new admin service for the database at the given path.
     #[must_use]
     pub fn new(path: impl AsRef<Path>, schema_manager: Arc<SchemaManager>) -> Self {
         let database_path = path.as_ref().to_path_buf();

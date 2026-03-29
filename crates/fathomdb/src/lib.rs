@@ -44,9 +44,12 @@ use std::collections::BTreeMap;
 
 use feedback::{OperationContext, run_with_feedback};
 
+/// Configuration for opening an [`Engine`] instance.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EngineOptions {
+    /// Filesystem path to the `SQLite` database file.
     pub database_path: PathBuf,
+    /// Controls enforcement of `source_ref` provenance on writes.
     pub provenance_mode: ProvenanceMode,
     /// When `Some(dim)`, the engine opens a vector-capable connection and
     /// bootstraps a `vec_nodes_active` vector table with the given dimension.
@@ -58,6 +61,7 @@ pub struct EngineOptions {
 }
 
 impl EngineOptions {
+    /// Create default engine options pointing at the given database path.
     pub fn new(path: impl AsRef<Path>) -> Self {
         Self {
             database_path: path.as_ref().to_path_buf(),
@@ -68,6 +72,10 @@ impl EngineOptions {
     }
 }
 
+/// Top-level handle to a fathomdb graph database.
+///
+/// An [`Engine`] owns the underlying `SQLite` connections, writer thread, and
+/// read pool. Create one via [`Engine::open`] or [`Engine::open_with_feedback`].
 #[derive(Debug)]
 pub struct Engine {
     runtime: EngineRuntime,
@@ -92,6 +100,12 @@ impl Engine {
         })
     }
 
+    /// Open a fathomdb engine, emitting feedback events to the observer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] if the database cannot be opened or the schema
+    /// bootstrap fails.
     pub fn open_with_feedback(
         options: EngineOptions,
         observer: &dyn OperationObserver,
@@ -115,22 +129,32 @@ impl Engine {
         )
     }
 
+    /// Start building a node query for the given kind.
     pub fn query(&self, kind: impl Into<String>) -> QueryBuilder {
         QueryBuilder::nodes(kind)
     }
 
+    /// Returns a handle to the administrative service.
     pub fn admin(&self) -> &AdminHandle {
         self.runtime.admin()
     }
 
+    /// Returns a handle to the single-threaded writer actor.
     pub fn writer(&self) -> &WriterActor {
         self.runtime.writer()
     }
 
+    /// Returns the read-side execution coordinator.
     pub fn coordinator(&self) -> &ExecutionCoordinator {
         self.runtime.coordinator()
     }
 
+    /// Update `last_accessed_at` timestamps for a batch of logical IDs.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] if the writer rejects the request or the
+    /// underlying `SQLite` transaction fails.
     pub fn touch_last_accessed(
         &self,
         request: LastAccessTouchRequest,
@@ -138,6 +162,11 @@ impl Engine {
         self.writer().touch_last_accessed(request)
     }
 
+    /// Register a new operational collection.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] if the collection cannot be created.
     pub fn register_operational_collection(
         &self,
         request: &OperationalRegisterRequest,
@@ -147,6 +176,11 @@ impl Engine {
             .register_operational_collection(request)
     }
 
+    /// Look up metadata for an operational collection by name.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] on database failure.
     pub fn describe_operational_collection(
         &self,
         name: &str,
@@ -154,6 +188,11 @@ impl Engine {
         self.admin().service().describe_operational_collection(name)
     }
 
+    /// Replace the filter field definitions for an operational collection.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] if the collection does not exist or the JSON is invalid.
     pub fn update_operational_collection_filters(
         &self,
         name: &str,
@@ -164,6 +203,11 @@ impl Engine {
             .update_operational_collection_filters(name, filter_fields_json)
     }
 
+    /// Replace the validation contract for an operational collection.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] if the collection does not exist or the JSON is invalid.
     pub fn update_operational_collection_validation(
         &self,
         name: &str,
@@ -174,6 +218,11 @@ impl Engine {
             .update_operational_collection_validation(name, validation_json)
     }
 
+    /// Replace the secondary index definitions for an operational collection.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] if the collection does not exist or the JSON is invalid.
     pub fn update_operational_collection_secondary_indexes(
         &self,
         name: &str,
@@ -184,6 +233,11 @@ impl Engine {
             .update_operational_collection_secondary_indexes(name, secondary_indexes_json)
     }
 
+    /// Return the mutation history for an operational collection, optionally filtered to a single record key.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] on database failure.
     pub fn trace_operational_collection(
         &self,
         collection_name: &str,
@@ -194,6 +248,11 @@ impl Engine {
             .trace_operational_collection(collection_name, record_key)
     }
 
+    /// Read current-state rows from an operational collection.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] on database failure.
     pub fn read_operational_collection(
         &self,
         request: &OperationalReadRequest,
@@ -201,6 +260,11 @@ impl Engine {
         self.admin().service().read_operational_collection(request)
     }
 
+    /// Rebuild the `operational_current` materialized view, optionally scoped to one collection.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] on database failure.
     pub fn rebuild_operational_current(
         &self,
         collection_name: Option<&str>,
@@ -210,6 +274,11 @@ impl Engine {
             .rebuild_operational_current(collection_name)
     }
 
+    /// Validate the mutation history of an operational collection against its contract.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] on database failure.
     pub fn validate_operational_collection_history(
         &self,
         collection_name: &str,
@@ -219,6 +288,11 @@ impl Engine {
             .validate_operational_collection_history(collection_name)
     }
 
+    /// Drop and recreate secondary index entries for an operational collection.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] on database failure.
     pub fn rebuild_operational_secondary_indexes(
         &self,
         collection_name: &str,
@@ -228,6 +302,11 @@ impl Engine {
             .rebuild_operational_secondary_indexes(collection_name)
     }
 
+    /// Compute a retention plan for operational collections without applying it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] on database failure.
     pub fn plan_operational_retention(
         &self,
         now_timestamp: i64,
@@ -241,6 +320,11 @@ impl Engine {
         )
     }
 
+    /// Execute the retention plan for operational collections, deleting expired mutations.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] on database failure.
     pub fn run_operational_retention(
         &self,
         now_timestamp: i64,
@@ -256,6 +340,11 @@ impl Engine {
         )
     }
 
+    /// Mark an operational collection as disabled, preventing future mutations.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] if the collection does not exist or cannot be updated.
     pub fn disable_operational_collection(
         &self,
         name: &str,
@@ -263,6 +352,11 @@ impl Engine {
         self.admin().service().disable_operational_collection(name)
     }
 
+    /// Compact an operational collection by merging superseded mutation rows.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] if the collection does not exist or on database failure.
     pub fn compact_operational_collection(
         &self,
         name: &str,
@@ -273,6 +367,11 @@ impl Engine {
             .compact_operational_collection(name, dry_run)
     }
 
+    /// Permanently delete mutations older than the given timestamp from an operational collection.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] if the collection does not exist or on database failure.
     pub fn purge_operational_collection(
         &self,
         name: &str,
@@ -283,6 +382,11 @@ impl Engine {
             .purge_operational_collection(name, before_timestamp)
     }
 
+    /// Restore a previously retired node and its associated edges by logical ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] on database failure.
     pub fn restore_logical_id(
         &self,
         logical_id: &str,
@@ -290,10 +394,20 @@ impl Engine {
         self.admin().service().restore_logical_id(logical_id)
     }
 
+    /// Permanently delete all rows associated with a logical ID (nodes, edges, chunks, FTS, vec).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] on database failure.
     pub fn purge_logical_id(&self, logical_id: &str) -> Result<LogicalPurgeReport, EngineError> {
         self.admin().service().purge_logical_id(logical_id)
     }
 
+    /// Delete provenance events older than the given timestamp.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] on database failure.
     pub fn purge_provenance_events(
         &self,
         before_timestamp: i64,
@@ -304,6 +418,11 @@ impl Engine {
             .purge_provenance_events(before_timestamp, options)
     }
 
+    /// Return the execution plan for a compiled query, with feedback.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] on database failure.
     pub fn explain_compiled_query_with_feedback(
         &self,
         compiled: &CompiledQuery,
@@ -325,6 +444,11 @@ impl Engine {
         )
     }
 
+    /// Execute a compiled query and return matching rows, with feedback.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] on database failure.
     pub fn execute_compiled_query_with_feedback(
         &self,
         compiled: &CompiledQuery,
@@ -346,6 +470,11 @@ impl Engine {
         )
     }
 
+    /// Execute a compiled grouped query and return root rows plus expansion slots, with feedback.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] on database failure.
     pub fn execute_compiled_grouped_query_with_feedback(
         &self,
         compiled: &CompiledGroupedQuery,
@@ -367,6 +496,11 @@ impl Engine {
         )
     }
 
+    /// Submit a write request to the writer actor, with feedback.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] if the write is invalid or the transaction fails.
     pub fn submit_write_with_feedback(
         &self,
         request: WriteRequest,
@@ -388,6 +522,11 @@ impl Engine {
         )
     }
 
+    /// Run `SQLite` integrity and structural consistency checks, with feedback.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] on database failure.
     pub fn check_integrity_with_feedback(
         &self,
         observer: &dyn OperationObserver,
@@ -406,6 +545,11 @@ impl Engine {
         )
     }
 
+    /// Run semantic consistency checks (orphaned chunks, dangling edges, etc.), with feedback.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] on database failure.
     pub fn check_semantics_with_feedback(
         &self,
         observer: &dyn OperationObserver,
@@ -424,6 +568,11 @@ impl Engine {
         )
     }
 
+    /// Rebuild projection tables (FTS, vec) for a given target, with feedback.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] on database failure.
     pub fn rebuild_projections_with_feedback(
         &self,
         target: ProjectionTarget,
@@ -445,6 +594,11 @@ impl Engine {
         )
     }
 
+    /// Rebuild only missing projection rows (FTS, vec), with feedback.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] on database failure.
     pub fn rebuild_missing_projections_with_feedback(
         &self,
         observer: &dyn OperationObserver,
@@ -463,6 +617,11 @@ impl Engine {
         )
     }
 
+    /// List all rows associated with a `source_ref`, with feedback.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] on database failure.
     pub fn trace_source_with_feedback(
         &self,
         source_ref: &str,
@@ -484,6 +643,11 @@ impl Engine {
         )
     }
 
+    /// Delete all rows associated with a `source_ref`, with feedback.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] on database failure.
     pub fn excise_source_with_feedback(
         &self,
         source_ref: &str,
@@ -505,6 +669,11 @@ impl Engine {
         )
     }
 
+    /// Export the database to a new file at `destination_path`, with feedback.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] if the checkpoint or file copy fails.
     pub fn safe_export_with_feedback(
         &self,
         destination_path: &str,
@@ -568,16 +737,22 @@ fn engine_error_code(error: &EngineError) -> Option<String> {
     Some(code.to_owned())
 }
 
+/// A lightweight session borrowing an [`Engine`] reference.
+///
+/// Sessions do not own any state beyond the engine reference and are
+/// intended for scoped, short-lived interaction patterns.
 #[derive(Debug)]
 pub struct Session<'a> {
     engine: &'a Engine,
 }
 
 impl<'a> Session<'a> {
+    /// Create a new session bound to the given engine.
     pub fn new(engine: &'a Engine) -> Self {
         Self { engine }
     }
 
+    /// Start building a node query for the given kind.
     pub fn query(&self, kind: impl Into<String>) -> QueryBuilder {
         self.engine.query(kind)
     }

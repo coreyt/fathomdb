@@ -18,16 +18,22 @@ use crate::operational::{
 };
 use crate::{EngineError, ids::new_id, projection::ProjectionTarget, sqlite};
 
+/// A deferred projection backfill task submitted alongside a write.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OptionalProjectionTask {
+    /// Which projection to backfill (FTS, vec, etc.).
     pub target: ProjectionTarget,
+    /// JSON payload describing the backfill work.
     pub payload: String,
 }
 
+/// Policy for handling existing chunks when upserting a node.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ChunkPolicy {
+    /// Keep existing chunks and FTS rows.
     #[default]
     Preserve,
+    /// Delete existing chunks and FTS rows before inserting new ones.
     Replace,
 }
 
@@ -42,6 +48,7 @@ pub enum ProvenanceMode {
     Require,
 }
 
+/// A node to be inserted in a [`WriteRequest`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NodeInsert {
     pub row_id: String,
@@ -56,6 +63,7 @@ pub struct NodeInsert {
     pub chunk_policy: ChunkPolicy,
 }
 
+/// An edge to be inserted in a [`WriteRequest`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EdgeInsert {
     pub row_id: String,
@@ -70,18 +78,21 @@ pub struct EdgeInsert {
     pub upsert: bool,
 }
 
+/// A node to be retired (soft-deleted) in a [`WriteRequest`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NodeRetire {
     pub logical_id: String,
     pub source_ref: Option<String>,
 }
 
+/// An edge to be retired (soft-deleted) in a [`WriteRequest`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EdgeRetire {
     pub logical_id: String,
     pub source_ref: Option<String>,
 }
 
+/// A text chunk to be inserted in a [`WriteRequest`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChunkInsert {
     pub id: String,
@@ -103,6 +114,7 @@ pub struct VecInsert {
     pub embedding: Vec<f32>,
 }
 
+/// A mutation to an operational collection submitted as part of a write request.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum OperationalWrite {
     Append {
@@ -124,6 +136,7 @@ pub enum OperationalWrite {
     },
 }
 
+/// A run to be inserted in a [`WriteRequest`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RunInsert {
     pub id: String,
@@ -135,6 +148,7 @@ pub struct RunInsert {
     pub supersedes_id: Option<String>,
 }
 
+/// A step to be inserted in a [`WriteRequest`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StepInsert {
     pub id: String,
@@ -147,6 +161,7 @@ pub struct StepInsert {
     pub supersedes_id: Option<String>,
 }
 
+/// An action to be inserted in a [`WriteRequest`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ActionInsert {
     pub id: String,
@@ -171,6 +186,7 @@ const MAX_TOTAL_ITEMS: usize = 100_000;
 /// How long `submit` / `touch_last_accessed` wait for the writer thread to reply.
 const WRITER_REPLY_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// A batch of graph mutations to be applied atomically in a single `SQLite` transaction.
 #[derive(Clone, Debug, PartialEq)]
 pub struct WriteRequest {
     pub label: String,
@@ -189,6 +205,7 @@ pub struct WriteRequest {
     pub operational_writes: Vec<OperationalWrite>,
 }
 
+/// Receipt returned after a successful write transaction.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WriteReceipt {
     pub label: String,
@@ -197,6 +214,7 @@ pub struct WriteReceipt {
     pub provenance_warnings: Vec<String>,
 }
 
+/// Request to update `last_accessed_at` timestamps for a batch of nodes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LastAccessTouchRequest {
     pub logical_ids: Vec<String>,
@@ -204,6 +222,7 @@ pub struct LastAccessTouchRequest {
     pub source_ref: Option<String>,
 }
 
+/// Report from a last-access touch operation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LastAccessTouchReport {
     pub touched_logical_ids: usize,
@@ -255,6 +274,7 @@ enum WriteMessage {
     },
 }
 
+/// Single-threaded writer that serializes all mutations through one `SQLite` connection.
 #[derive(Debug)]
 pub struct WriterActor {
     sender: SyncSender<WriteMessage>,

@@ -8,15 +8,22 @@ use std::time::Instant;
 
 use crate::new_row_id;
 
+/// Phase of an operation's lifecycle as reported to an [`OperationObserver`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResponseCyclePhase {
+    /// The operation has started.
     Started,
+    /// The operation exceeded the slow threshold without completing.
     Slow,
+    /// A periodic heartbeat while the operation is still running.
     Heartbeat,
+    /// The operation completed successfully.
     Finished,
+    /// The operation completed with an error.
     Failed,
 }
 
+/// A feedback event emitted during an operation's lifecycle.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ResponseCycleEvent {
     pub operation_id: String,
@@ -30,9 +37,12 @@ pub struct ResponseCycleEvent {
     pub error_message: Option<String>,
 }
 
+/// Timing configuration for the feedback system.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FeedbackConfig {
+    /// Milliseconds before an operation is considered slow.
     pub slow_threshold_ms: u64,
+    /// Milliseconds between heartbeat events while an operation is running.
     pub heartbeat_interval_ms: u64,
 }
 
@@ -46,6 +56,7 @@ impl Default for FeedbackConfig {
 }
 
 impl FeedbackConfig {
+    /// Create a feedback config with explicit thresholds.
     #[must_use]
     pub fn new(slow_threshold_ms: u64, heartbeat_interval_ms: u64) -> Self {
         Self {
@@ -55,7 +66,12 @@ impl FeedbackConfig {
     }
 }
 
+/// Observer that receives [`ResponseCycleEvent`]s during engine operations.
+///
+/// Implement this trait to hook into feedback for logging, metrics, or
+/// progress reporting.
 pub trait OperationObserver: Send + Sync {
+    /// Called each time a lifecycle event occurs for an operation.
     fn on_event(&self, event: &ResponseCycleEvent);
 }
 
