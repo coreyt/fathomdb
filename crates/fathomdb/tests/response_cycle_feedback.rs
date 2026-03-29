@@ -69,7 +69,7 @@ fn compile_write_query_and_admin_feedback_are_publicly_available() {
             .limit(5)
             .into_ast(),
         &observer,
-        config.clone(),
+        config,
     )
     .expect("query compiles");
 
@@ -104,17 +104,17 @@ fn compile_write_query_and_admin_feedback_are_publicly_available() {
                 operational_writes: vec![],
             },
             &observer,
-            config.clone(),
+            config,
         )
         .expect("write succeeds");
 
     let rows = engine
-        .execute_compiled_query_with_feedback(&compiled, &observer, config.clone())
+        .execute_compiled_query_with_feedback(&compiled, &observer, config)
         .expect("query executes");
     assert_eq!(rows.nodes.len(), 1);
 
     let repair = engine
-        .rebuild_projections_with_feedback(ProjectionTarget::Fts, &observer, config.clone())
+        .rebuild_projections_with_feedback(ProjectionTarget::Fts, &observer, config)
         .expect("rebuild succeeds");
     assert_eq!(repair.targets, vec![ProjectionTarget::Fts]);
 

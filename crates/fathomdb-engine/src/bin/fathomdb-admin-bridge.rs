@@ -167,14 +167,15 @@ fn validate_path(path: &Path, label: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 fn handle_request(request: BridgeRequest) -> BridgeResponse {
     if let Err(msg) = validate_path(&request.database_path, "database_path") {
         return error_response_with_message(BridgeErrorCode::BadRequest, msg);
     }
-    if let Some(ref dest) = request.destination_path {
-        if let Err(msg) = validate_path(dest, "destination_path") {
-            return error_response_with_message(BridgeErrorCode::BadRequest, msg);
-        }
+    if let Some(ref dest) = request.destination_path
+        && let Err(msg) = validate_path(dest, "destination_path")
+    {
+        return error_response_with_message(BridgeErrorCode::BadRequest, msg);
     }
 
     let service = AdminService::new(&request.database_path, Arc::new(SchemaManager::new()));
@@ -193,14 +194,14 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                 "integrity check completed".to_owned(),
                 serde_json::to_value(report).unwrap_or_else(|_| json!({})),
             ),
-            Err(error) => error_response(error, BridgeErrorCode::IntegrityFailure),
+            Err(error) => error_response(&error, BridgeErrorCode::IntegrityFailure),
         },
         BridgeCommand::CheckSemantics => match service.check_semantics() {
             Ok(report) => success_response(
                 "semantics check completed".to_owned(),
                 serde_json::to_value(report).unwrap_or_else(|_| json!({})),
             ),
-            Err(error) => error_response(error, BridgeErrorCode::IntegrityFailure),
+            Err(error) => error_response(&error, BridgeErrorCode::IntegrityFailure),
         },
         BridgeCommand::RebuildProjections => match parse_target(request.target.as_deref()) {
             Ok(target) => match service.rebuild_projections(target) {
@@ -208,7 +209,7 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                     "projection rebuild completed".to_owned(),
                     serde_json::to_value(report).unwrap_or_else(|_| json!({})),
                 ),
-                Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
             },
             Err(code) => error_response_with_message(
                 code,
@@ -220,14 +221,14 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                 "missing projection rebuild completed".to_owned(),
                 serde_json::to_value(report).unwrap_or_else(|_| json!({})),
             ),
-            Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+            Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
         },
         BridgeCommand::RestoreVectorProfiles => match service.restore_vector_profiles() {
             Ok(report) => success_response(
                 "vector profiles restored".to_owned(),
                 serde_json::to_value(report).unwrap_or_else(|_| json!({})),
             ),
-            Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+            Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
         },
         BridgeCommand::RegenerateVectorEmbeddings => match request.config_path {
             Some(config_path) => match load_vector_regeneration_config(&config_path) {
@@ -239,9 +240,9 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                         "vector embeddings regenerated".to_owned(),
                         serde_json::to_value(report).unwrap_or_else(|_| json!({})),
                     ),
-                    Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                    Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
                 },
-                Err(error) => error_response(error, BridgeErrorCode::BadRequest),
+                Err(error) => error_response(&error, BridgeErrorCode::BadRequest),
             },
             None => error_response_with_message(
                 BridgeErrorCode::BadRequest,
@@ -255,7 +256,7 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                         "logical_id restored".to_owned(),
                         serde_json::to_value(report).unwrap_or_else(|_| json!({})),
                     ),
-                    Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                    Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
                 }
             }
             _ => error_response_with_message(
@@ -270,7 +271,7 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                         "logical_id purged".to_owned(),
                         serde_json::to_value(report).unwrap_or_else(|_| json!({})),
                     ),
-                    Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                    Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
                 }
             }
             _ => error_response_with_message(
@@ -287,7 +288,7 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                     "trace completed".to_owned(),
                     serde_json::to_value(report).unwrap_or_else(|_| json!({})),
                 ),
-                Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
             },
             _ => error_response_with_message(
                 BridgeErrorCode::BadRequest,
@@ -300,7 +301,7 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                     "source excised".to_owned(),
                     serde_json::to_value(report).unwrap_or_else(|_| json!({})),
                 ),
-                Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
             },
             _ => error_response_with_message(
                 BridgeErrorCode::BadRequest,
@@ -323,7 +324,7 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                             unreachable!("SafeExportManifest serialization is infallible")
                         }),
                     ),
-                    Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                    Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
                 }
             }
             None => error_response_with_message(
@@ -338,7 +339,7 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                         "operational collection registered".to_owned(),
                         serde_json::to_value(record).unwrap_or_else(|_| json!({})),
                     ),
-                    Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                    Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
                 }
             }
             None => error_response_with_message(
@@ -357,7 +358,7 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                         BridgeErrorCode::BadRequest,
                         "operational collection not found".to_owned(),
                     ),
-                    Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                    Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
                 }
             }
             _ => error_response_with_message(
@@ -380,7 +381,7 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                             "operational collection filters updated".to_owned(),
                             serde_json::to_value(record).unwrap_or_else(|_| json!({})),
                         ),
-                        Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                        Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
                     }
                 }
                 (Some(collection_name), _) if !collection_name.is_empty() => {
@@ -408,7 +409,7 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                             "operational collection validation updated".to_owned(),
                             serde_json::to_value(record).unwrap_or_else(|_| json!({})),
                         ),
-                        Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                        Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
                     }
                 }
                 (Some(collection_name), None) if !collection_name.is_empty() => {
@@ -439,7 +440,7 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                             "operational collection secondary indexes updated".to_owned(),
                             serde_json::to_value(record).unwrap_or_else(|_| json!({})),
                         ),
-                        Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                        Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
                     }
                 }
                 (Some(collection_name), _) if !collection_name.is_empty() => {
@@ -461,7 +462,7 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                         "operational collection disabled".to_owned(),
                         serde_json::to_value(record).unwrap_or_else(|_| json!({})),
                     ),
-                    Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                    Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
                 }
             }
             _ => error_response_with_message(
@@ -476,7 +477,7 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                         "operational collection compacted".to_owned(),
                         serde_json::to_value(report).unwrap_or_else(|_| json!({})),
                     ),
-                    Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                    Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
                 }
             }
             _ => error_response_with_message(
@@ -492,7 +493,7 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                             "operational collection purged".to_owned(),
                             serde_json::to_value(report).unwrap_or_else(|_| json!({})),
                         ),
-                        Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                        Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
                     }
                 }
                 (Some(collection_name), None) if !collection_name.is_empty() => {
@@ -513,7 +514,7 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                     "operational current rebuilt".to_owned(),
                     serde_json::to_value(report).unwrap_or_else(|_| json!({})),
                 ),
-                Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
             }
         }
         BridgeCommand::RebuildOperationalSecondaryIndexes => {
@@ -524,7 +525,7 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                             "operational secondary indexes rebuilt".to_owned(),
                             serde_json::to_value(report).unwrap_or_else(|_| json!({})),
                         ),
-                        Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                        Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
                     }
                 }
                 _ => error_response_with_message(
@@ -542,7 +543,7 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                         "operational collection traced".to_owned(),
                         serde_json::to_value(report).unwrap_or_else(|_| json!({})),
                     ),
-                    Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                    Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
                 }
             }
             _ => error_response_with_message(
@@ -556,7 +557,7 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                     "operational collection read completed".to_owned(),
                     serde_json::to_value(report).unwrap_or_else(|_| json!({})),
                 ),
-                Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
             },
             None => error_response_with_message(
                 BridgeErrorCode::BadRequest,
@@ -571,7 +572,7 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                             "operational collection history validation completed".to_owned(),
                             serde_json::to_value(report).unwrap_or_else(|_| json!({})),
                         ),
-                        Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                        Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
                     }
                 }
                 _ => error_response_with_message(
@@ -590,7 +591,7 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                     "operational retention plan completed".to_owned(),
                     serde_json::to_value(report).unwrap_or_else(|_| json!({})),
                 ),
-                Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
             },
             None => error_response_with_message(
                 BridgeErrorCode::BadRequest,
@@ -608,7 +609,7 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                     "operational retention run completed".to_owned(),
                     serde_json::to_value(report).unwrap_or_else(|_| json!({})),
                 ),
-                Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
             },
             None => error_response_with_message(
                 BridgeErrorCode::BadRequest,
@@ -626,7 +627,7 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                         "provenance events purged".to_owned(),
                         serde_json::to_value(report).unwrap_or_else(|_| json!({})),
                     ),
-                    Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                    Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
                 }
             }
             None => error_response_with_message(
@@ -707,8 +708,8 @@ fn classify_engine_error(error: &EngineError, default: BridgeErrorCode) -> Bridg
 /// Security fix M-4: Sanitize error messages to avoid leaking internal paths,
 /// schema details, or system configuration in bridge responses. The full error
 /// is printed to stderr for operator debugging.
-fn error_response(error: EngineError, default_code: BridgeErrorCode) -> BridgeResponse {
-    let code = classify_engine_error(&error, default_code);
+fn error_response(error: &EngineError, default_code: BridgeErrorCode) -> BridgeResponse {
+    let code = classify_engine_error(error, default_code);
     #[allow(clippy::print_stderr)]
     {
         eprintln!("[bridge] error: {error}");
@@ -749,6 +750,7 @@ fn emit_error(code: BridgeErrorCode, message: String) {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::{
         BridgeErrorCode, BridgeRequest, classify_engine_error, handle_request_body, parse_command,

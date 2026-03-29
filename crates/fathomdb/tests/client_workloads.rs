@@ -22,7 +22,7 @@ fn operational_admin_methods_register_trace_rebuild_and_disable() {
     let (_db, engine) = open_engine();
 
     let record = engine
-        .register_operational_collection(OperationalRegisterRequest {
+        .register_operational_collection(&OperationalRegisterRequest {
             name: "connector_health".to_owned(),
             kind: OperationalCollectionKind::LatestState,
             schema_json: "{}".to_owned(),
@@ -59,7 +59,7 @@ fn operational_admin_methods_compact_append_only_history() {
     let (_db, engine) = open_engine();
 
     engine
-        .register_operational_collection(OperationalRegisterRequest {
+        .register_operational_collection(&OperationalRegisterRequest {
             name: "audit_log".to_owned(),
             kind: OperationalCollectionKind::AppendOnlyLog,
             schema_json: "{}".to_owned(),
@@ -131,7 +131,7 @@ fn operational_admin_methods_read_append_only_rows_by_declared_fields() {
     let (_db, engine) = open_engine();
 
     engine
-        .register_operational_collection(OperationalRegisterRequest {
+        .register_operational_collection(&OperationalRegisterRequest {
             name: "audit_log".to_owned(),
             kind: OperationalCollectionKind::AppendOnlyLog,
             schema_json: "{}".to_owned(),
@@ -175,7 +175,7 @@ fn operational_admin_methods_read_append_only_rows_by_declared_fields() {
         .expect("append operational history");
 
     let report = engine
-        .read_operational_collection(OperationalReadRequest {
+        .read_operational_collection(&OperationalReadRequest {
             collection_name: "audit_log".to_owned(),
             filters: vec![
                 OperationalFilterClause::Prefix {
@@ -194,10 +194,10 @@ fn operational_admin_methods_read_append_only_rows_by_declared_fields() {
 
     assert_eq!(report.row_count, 1);
     assert_eq!(report.rows[0].record_key, "evt-2");
-    assert_eq!(report.was_limited, false);
+    assert!(!report.was_limited);
 
     let exact = engine
-        .read_operational_collection(OperationalReadRequest {
+        .read_operational_collection(&OperationalReadRequest {
             collection_name: "audit_log".to_owned(),
             filters: vec![OperationalFilterClause::Exact {
                 field: "actor".to_owned(),
@@ -215,7 +215,7 @@ fn operational_admin_methods_can_update_filters_for_existing_collection() {
     let (_db, engine) = open_engine();
 
     engine
-        .register_operational_collection(OperationalRegisterRequest {
+        .register_operational_collection(&OperationalRegisterRequest {
             name: "audit_log".to_owned(),
             kind: OperationalCollectionKind::AppendOnlyLog,
             schema_json: "{}".to_owned(),
@@ -228,7 +228,7 @@ fn operational_admin_methods_can_update_filters_for_existing_collection() {
         .expect("register operational collection");
 
     let before = engine
-        .read_operational_collection(OperationalReadRequest {
+        .read_operational_collection(&OperationalReadRequest {
             collection_name: "audit_log".to_owned(),
             filters: vec![OperationalFilterClause::Exact {
                 field: "actor".to_owned(),
@@ -253,7 +253,7 @@ fn operational_admin_methods_can_update_and_validate_payload_contracts() {
     let (_db, engine) = open_engine();
 
     engine
-        .register_operational_collection(OperationalRegisterRequest {
+        .register_operational_collection(&OperationalRegisterRequest {
             name: "audit_log".to_owned(),
             kind: OperationalCollectionKind::AppendOnlyLog,
             schema_json: "{}".to_owned(),

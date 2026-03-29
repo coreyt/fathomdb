@@ -344,8 +344,7 @@ fn validate_operational_secondary_indexes(
         }
         if !seen.insert(name) {
             return Err(format!(
-                "secondary_indexes_json contains duplicate index '{}'",
-                name
+                "secondary_indexes_json contains duplicate index '{name}'"
             ));
         }
         validate_operational_secondary_index(index, collection_kind)?;
@@ -422,6 +421,7 @@ fn validate_operational_secondary_index(
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 fn validate_operational_validation_field(field: &OperationalValidationField) -> Result<(), String> {
     if let (Some(minimum), Some(maximum)) = (field.minimum, field.maximum)
         && minimum > maximum
@@ -581,6 +581,7 @@ fn validate_operational_payload_value(
     Ok(())
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn validate_operational_field_value(
     field: &OperationalValidationField,
     value: &Value,

@@ -52,7 +52,7 @@ pub struct EngineOptions {
     /// bootstraps a `vec_nodes_active` vector table with the given dimension.
     /// Requires the `sqlite-vec` crate feature; ignored if the feature is absent.
     pub vector_dimension: Option<usize>,
-    /// Number of read-only SQLite connections in the reader pool.
+    /// Number of read-only `SQLite` connections in the reader pool.
     /// Defaults to 4 when `None`.
     pub read_pool_size: Option<usize>,
 }
@@ -73,6 +73,7 @@ pub struct Engine {
     runtime: EngineRuntime,
 }
 
+#[allow(clippy::missing_errors_doc)]
 impl Engine {
     /// Open a fathomdb engine with the given options.
     ///
@@ -139,11 +140,11 @@ impl Engine {
 
     pub fn register_operational_collection(
         &self,
-        request: OperationalRegisterRequest,
+        request: &OperationalRegisterRequest,
     ) -> Result<OperationalCollectionRecord, EngineError> {
         self.admin()
             .service()
-            .register_operational_collection(&request)
+            .register_operational_collection(request)
     }
 
     pub fn describe_operational_collection(
@@ -195,9 +196,9 @@ impl Engine {
 
     pub fn read_operational_collection(
         &self,
-        request: OperationalReadRequest,
+        request: &OperationalReadRequest,
     ) -> Result<OperationalReadReport, EngineError> {
-        self.admin().service().read_operational_collection(&request)
+        self.admin().service().read_operational_collection(request)
     }
 
     pub fn rebuild_operational_current(
@@ -531,6 +532,8 @@ impl Engine {
     }
 }
 
+/// # Errors
+/// Returns the underlying compilation error if query compilation fails.
 pub fn compile_query_with_feedback(
     ast: &QueryAst,
     observer: &dyn OperationObserver,
@@ -551,6 +554,7 @@ pub fn compile_query_with_feedback(
     )
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn engine_error_code(error: &EngineError) -> Option<String> {
     let code = match error {
         EngineError::Sqlite(_) => "sqlite_error",

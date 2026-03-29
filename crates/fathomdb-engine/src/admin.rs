@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -169,7 +170,7 @@ pub struct SemanticReport {
     pub stale_operational_current_rows: usize,
     /// Mutations written after the owning collection was disabled.
     pub disabled_collection_mutations: usize,
-    /// Access metadata rows whose logical_id no longer has any node history.
+    /// Access metadata rows whose `logical_id` no longer has any node history.
     pub orphaned_last_access_metadata_rows: usize,
     pub warnings: Vec<String>,
 }
@@ -902,7 +903,7 @@ impl AdminService {
             rusqlite::params![name, secondary_indexes_json],
         )?;
         let (mutation_entries_rebuilt, current_entries_rebuilt) =
-            rebuild_operational_secondary_index_entries(&tx, &record.name, &record.kind, &indexes)?;
+            rebuild_operational_secondary_index_entries(&tx, &record.name, record.kind, &indexes)?;
         persist_simple_provenance_event(
             &tx,
             "operational_collection_secondary_indexes_updated",
@@ -937,7 +938,7 @@ impl AdminService {
             parse_operational_secondary_indexes_json(&record.secondary_indexes_json, record.kind)
                 .map_err(EngineError::InvalidWrite)?;
         let (mutation_entries_rebuilt, current_entries_rebuilt) =
-            rebuild_operational_secondary_index_entries(&tx, &record.name, &record.kind, &indexes)?;
+            rebuild_operational_secondary_index_entries(&tx, &record.name, record.kind, &indexes)?;
         persist_simple_provenance_event(
             &tx,
             "operational_secondary_indexes_rebuilt",
@@ -1351,7 +1352,7 @@ impl AdminService {
                 rebuild_operational_secondary_index_entries(
                     &tx,
                     &record.name,
-                    &record.kind,
+                    record.kind,
                     &indexes,
                 )?;
             }
@@ -1649,6 +1650,7 @@ impl AdminService {
     /// # Errors
     /// Returns [`EngineError`] if the database connection fails, the transaction cannot be
     /// started, or lifecycle restoration prerequisites are missing.
+    #[allow(clippy::too_many_lines)]
     pub fn restore_logical_id(
         &self,
         logical_id: &str,
@@ -1955,6 +1957,7 @@ impl AdminService {
     /// # Errors
     /// Returns [`EngineError`] if the database connection fails, the transaction cannot be
     /// started, or any SQL statement fails.
+    #[allow(clippy::too_many_lines)]
     pub fn excise_source(&self, source_ref: &str) -> Result<TraceReport, EngineError> {
         let mut conn = self.connect()?;
 
@@ -2082,7 +2085,7 @@ impl AdminService {
     }
 
     /// # Errors
-    /// Returns [`EngineError`] if the WAL checkpoint fails, the SQLite backup fails,
+    /// Returns [`EngineError`] if the WAL checkpoint fails, the `SQLite` backup fails,
     /// the SHA-256 digest cannot be computed, or the manifest file cannot be written.
     pub fn safe_export(
         &self,
@@ -2329,6 +2332,8 @@ enum OperationalRetentionPolicy {
     KeepLast { max_rows: usize },
 }
 
+/// # Errors
+/// Returns [`EngineError`] if the file cannot be read or the config is invalid.
 pub fn load_vector_regeneration_config(
     path: impl AsRef<Path>,
 ) -> Result<VectorRegenerationConfig, EngineError> {
@@ -2390,16 +2395,16 @@ fn validate_vector_regeneration_config(
     )?;
     let generator_command = validate_generator_command(&config.generator_command, policy)?;
 
-    if let Some(existing_dimension) = current_vector_profile_dimension(conn, &profile)? {
-        if existing_dimension != config.dimension {
-            return Err(VectorRegenerationFailure::new(
-                VectorRegenerationFailureClass::InvalidContract,
-                format!(
-                    "dimension {} does not match existing vector profile dimension {}",
-                    config.dimension, existing_dimension
-                ),
-            ));
-        }
+    if let Some(existing_dimension) = current_vector_profile_dimension(conn, &profile)?
+        && existing_dimension != config.dimension
+    {
+        return Err(VectorRegenerationFailure::new(
+            VectorRegenerationFailureClass::InvalidContract,
+            format!(
+                "dimension {} does not match existing vector profile dimension {}",
+                config.dimension, existing_dimension
+            ),
+        ));
     }
 
     validate_existing_contract_version(conn, &profile)?;
@@ -2424,16 +2429,14 @@ fn validate_vector_regeneration_config(
     if serialized.len() > MAX_CONTRACT_JSON_BYTES {
         return Err(VectorRegenerationFailure::new(
             VectorRegenerationFailureClass::InvalidContract,
-            format!(
-                "serialized contract exceeds {} bytes",
-                MAX_CONTRACT_JSON_BYTES
-            ),
+            format!("serialized contract exceeds {MAX_CONTRACT_JSON_BYTES} bytes"),
         ));
     }
 
     Ok(normalized)
 }
 
+#[allow(clippy::cast_possible_wrap)]
 fn persist_vector_contract(
     conn: &rusqlite::Connection,
     config: &VectorRegenerationConfig,
@@ -2683,10 +2686,7 @@ fn validate_generator_command(
         if argument.len() > MAX_GENERATOR_COMMAND_ARG_LEN {
             return Err(VectorRegenerationFailure::new(
                 VectorRegenerationFailureClass::InvalidContract,
-                format!(
-                    "generator_command argument exceeds max length {}",
-                    MAX_GENERATOR_COMMAND_ARG_LEN
-                ),
+                format!("generator_command argument exceeds max length {MAX_GENERATOR_COMMAND_ARG_LEN}"),
             ));
         }
         total_len += argument.len();
@@ -2694,10 +2694,7 @@ fn validate_generator_command(
     if total_len > MAX_GENERATOR_COMMAND_TOTAL_LEN {
         return Err(VectorRegenerationFailure::new(
             VectorRegenerationFailureClass::InvalidContract,
-            format!(
-                "generator_command exceeds max serialized length {}",
-                MAX_GENERATOR_COMMAND_TOTAL_LEN
-            ),
+            format!("generator_command exceeds max serialized length {MAX_GENERATOR_COMMAND_TOTAL_LEN}"),
         ));
     }
     executable_trust::validate_generator_executable(&command[0], policy)?;
@@ -2750,16 +2747,15 @@ fn validate_existing_contract_version(
                 error.to_string(),
             )
         })?;
-    if let Some(version) = version {
-        if version > CURRENT_VECTOR_CONTRACT_FORMAT_VERSION {
-            return Err(VectorRegenerationFailure::new(
-                VectorRegenerationFailureClass::InvalidContract,
-                format!(
-                    "persisted contract format version {} is unsupported; supported version is {}",
-                    version, CURRENT_VECTOR_CONTRACT_FORMAT_VERSION
-                ),
-            ));
-        }
+    if let Some(version) = version
+        && version > CURRENT_VECTOR_CONTRACT_FORMAT_VERSION
+    {
+        return Err(VectorRegenerationFailure::new(
+            VectorRegenerationFailureClass::InvalidContract,
+            format!(
+                "persisted contract format version {version} is unsupported; supported version is {CURRENT_VECTOR_CONTRACT_FORMAT_VERSION}"
+            ),
+        ));
     }
     Ok(())
 }
@@ -2772,13 +2768,14 @@ fn serialize_audit_metadata(
     if json.len() > MAX_AUDIT_METADATA_BYTES {
         return Err(VectorRegenerationFailure::new(
             VectorRegenerationFailureClass::InvalidContract,
-            format!("audit metadata exceeds {} bytes", MAX_AUDIT_METADATA_BYTES),
+            format!("audit metadata exceeds {MAX_AUDIT_METADATA_BYTES} bytes"),
         )
         .to_engine_error());
     }
     Ok(json)
 }
 
+#[allow(clippy::too_many_lines)]
 fn run_vector_generator_bounded(
     config: &VectorRegenerationConfig,
     payload: &VectorRegenerationInput,
@@ -2988,7 +2985,7 @@ fn run_vector_generator_bounded(
         )
     })?;
     if !status.success() {
-        let stderr = truncate_error_text(stderr_bytes.unwrap_or_default(), policy.max_stderr_bytes);
+        let stderr = truncate_error_text(&stderr_bytes.unwrap_or_default(), policy.max_stderr_bytes);
         return Err(VectorRegenerationFailure::new(
             VectorRegenerationFailureClass::GeneratorNonzeroExit,
             stderr,
@@ -3035,8 +3032,8 @@ fn spawn_capped_reader<R: Read + Send + 'static>(
     })
 }
 
-fn truncate_error_text(bytes: Vec<u8>, max_bytes: usize) -> String {
-    let mut text = String::from_utf8_lossy(&bytes).into_owned();
+fn truncate_error_text(bytes: &[u8], max_bytes: usize) -> String {
+    let mut text = String::from_utf8_lossy(bytes).into_owned();
     if bytes.len() > max_bytes {
         text.push_str(" [truncated]");
     }
@@ -3184,13 +3181,13 @@ fn insert_operational_secondary_index_entry(
 fn rebuild_operational_secondary_index_entries(
     tx: &rusqlite::Transaction<'_>,
     collection_name: &str,
-    collection_kind: &OperationalCollectionKind,
+    collection_kind: OperationalCollectionKind,
     indexes: &[OperationalSecondaryIndexDefinition],
 ) -> Result<(usize, usize), EngineError> {
     clear_operational_secondary_index_entries(tx, collection_name)?;
 
     let mut mutation_entries_rebuilt = 0usize;
-    if *collection_kind == OperationalCollectionKind::AppendOnlyLog {
+    if collection_kind == OperationalCollectionKind::AppendOnlyLog {
         let mut stmt = tx.prepare(
             "SELECT id, record_key, payload_json FROM operational_mutations \
              WHERE collection_name = ?1 ORDER BY mutation_order",
@@ -3221,7 +3218,7 @@ fn rebuild_operational_secondary_index_entries(
     }
 
     let mut current_entries_rebuilt = 0usize;
-    if *collection_kind == OperationalCollectionKind::LatestState {
+    if collection_kind == OperationalCollectionKind::LatestState {
         let mut stmt = tx.prepare(
             "SELECT record_key, payload_json, updated_at, last_mutation_id FROM operational_current \
              WHERE collection_name = ?1 ORDER BY updated_at DESC, record_key",
@@ -3416,6 +3413,7 @@ fn count_vec_rows_for_logical_id(
 }
 
 #[cfg(not(feature = "sqlite-vec"))]
+#[allow(clippy::unnecessary_wraps)]
 fn count_vec_rows_for_logical_id(
     _tx: &rusqlite::Transaction<'_>,
     _logical_id: &str,
@@ -3444,6 +3442,7 @@ fn delete_vec_rows_for_logical_id(
 }
 
 #[cfg(not(feature = "sqlite-vec"))]
+#[allow(clippy::unnecessary_wraps)]
 fn delete_vec_rows_for_logical_id(
     _tx: &rusqlite::Transaction<'_>,
     _logical_id: &str,
@@ -3746,15 +3745,15 @@ fn execute_operational_secondary_index_read(
 
     match &matched.value_filter.condition {
         OperationalReadCondition::ExactString(value) => {
-            sql.push_str(&format!("AND s.slot1_text = ?{} ", params.len() + 1));
+            let _ = write!(sql, "AND s.slot1_text = ?{} ", params.len() + 1);
             params.push(Value::from(value.clone()));
         }
         OperationalReadCondition::Prefix(value) => {
-            sql.push_str(&format!("AND s.slot1_text GLOB ?{} ", params.len() + 1));
+            let _ = write!(sql, "AND s.slot1_text GLOB ?{} ", params.len() + 1);
             params.push(Value::from(glob_prefix_pattern(value)));
         }
         OperationalReadCondition::ExactInteger(value) => {
-            sql.push_str(&format!("AND s.slot1_integer = ?{} ", params.len() + 1));
+            let _ = write!(sql, "AND s.slot1_integer = ?{} ", params.len() + 1);
             params.push(Value::from(*value));
         }
         OperationalReadCondition::Range { .. } => return Ok(None),
@@ -3764,19 +3763,20 @@ fn execute_operational_secondary_index_read(
         && let OperationalReadCondition::Range { lower, upper } = &time_range.condition
     {
         if let Some(lower) = lower {
-            sql.push_str(&format!("AND s.sort_timestamp >= ?{} ", params.len() + 1));
+            let _ = write!(sql, "AND s.sort_timestamp >= ?{} ", params.len() + 1);
             params.push(Value::from(*lower));
         }
         if let Some(upper) = upper {
-            sql.push_str(&format!("AND s.sort_timestamp <= ?{} ", params.len() + 1));
+            let _ = write!(sql, "AND s.sort_timestamp <= ?{} ", params.len() + 1);
             params.push(Value::from(*upper));
         }
     }
 
-    sql.push_str(&format!(
+    let _ = write!(
+        sql,
         "ORDER BY s.sort_timestamp DESC, m.mutation_order DESC LIMIT ?{}",
         params.len() + 1
-    ));
+    );
     params.push(Value::from(i64::try_from(applied_limit + 1).map_err(
         |_| EngineError::Bridge("operational read limit overflow".to_owned()),
     )?));
@@ -3816,63 +3816,70 @@ fn execute_operational_filtered_read(
     );
     let mut params = vec![Value::from(collection_name.to_owned())];
     for (index, filter) in filters.iter().enumerate() {
-        sql.push_str(&format!(
+        let _ = write!(
+            sql,
             "JOIN operational_filter_values f{index} \
              ON f{index}.mutation_id = m.id \
             AND f{index}.collection_name = m.collection_name "
-        ));
+        );
         match &filter.condition {
             OperationalReadCondition::ExactString(value) => {
-                sql.push_str(&format!(
+                let _ = write!(
+                    sql,
                     "AND f{index}.field_name = ?{} AND f{index}.string_value = ?{} ",
                     params.len() + 1,
                     params.len() + 2
-                ));
+                );
                 params.push(Value::from(filter.field.clone()));
                 params.push(Value::from(value.clone()));
             }
             OperationalReadCondition::ExactInteger(value) => {
-                sql.push_str(&format!(
+                let _ = write!(
+                    sql,
                     "AND f{index}.field_name = ?{} AND f{index}.integer_value = ?{} ",
                     params.len() + 1,
                     params.len() + 2
-                ));
+                );
                 params.push(Value::from(filter.field.clone()));
                 params.push(Value::from(*value));
             }
             OperationalReadCondition::Prefix(value) => {
-                sql.push_str(&format!(
+                let _ = write!(
+                    sql,
                     "AND f{index}.field_name = ?{} AND f{index}.string_value GLOB ?{} ",
                     params.len() + 1,
                     params.len() + 2
-                ));
+                );
                 params.push(Value::from(filter.field.clone()));
                 params.push(Value::from(glob_prefix_pattern(value)));
             }
             OperationalReadCondition::Range { lower, upper } => {
-                sql.push_str(&format!("AND f{index}.field_name = ?{} ", params.len() + 1));
+                let _ = write!(sql, "AND f{index}.field_name = ?{} ", params.len() + 1);
                 params.push(Value::from(filter.field.clone()));
                 if let Some(lower) = lower {
-                    sql.push_str(&format!(
+                    let _ = write!(
+                        sql,
                         "AND f{index}.integer_value >= ?{} ",
                         params.len() + 1
-                    ));
+                    );
                     params.push(Value::from(*lower));
                 }
                 if let Some(upper) = upper {
-                    sql.push_str(&format!(
+                    let _ = write!(
+                        sql,
                         "AND f{index}.integer_value <= ?{} ",
                         params.len() + 1
-                    ));
+                    );
                     params.push(Value::from(*upper));
                 }
             }
         }
     }
-    sql.push_str(&format!(
+    let _ = write!(
+        sql,
         "WHERE m.collection_name = ?1 ORDER BY m.mutation_order DESC LIMIT ?{}",
         params.len() + 1
-    ));
+    );
     params.push(Value::from(i64::try_from(applied_limit + 1).map_err(
         |_| EngineError::Bridge("operational read limit overflow".to_owned()),
     )?));
@@ -4081,7 +4088,7 @@ fn last_operational_retention_run_at(
     )
     .optional()
     .map_err(EngineError::Sqlite)
-    .map(|value| value.flatten())
+    .map(Option::flatten)
 }
 
 fn count_operational_mutations_for_collection(
@@ -4108,7 +4115,7 @@ fn retention_action_kind_and_limit(
         }
         OperationalRetentionPolicy::KeepLast { max_rows } => (
             OperationalRetentionActionKind::KeepLast,
-            Some(*max_rows as usize),
+            Some(*max_rows),
         ),
     }
 }
@@ -4212,7 +4219,7 @@ fn run_operational_retention_item(
                     .unwrap_or_else(|_| "\"noop\"".to_owned())
                     .trim_matches('"')
                     .to_owned(),
-                if dry_run { 1 } else { 0 },
+                i32::from(dry_run),
                 deleted_mutations,
                 rows_remaining,
                 serde_json::json!({
@@ -6123,7 +6130,7 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
 
         assert_eq!(report.collection_name, "audit_log");
         assert_eq!(report.row_count, 1);
-        assert_eq!(report.was_limited, false);
+        assert!(!report.was_limited);
         assert_eq!(report.rows.len(), 1);
         assert_eq!(report.rows[0].record_key, "evt-2");
         assert_eq!(
@@ -8089,7 +8096,7 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
 
         let tmp_files: Vec<_> = fs::read_dir(export_dir.path())
             .expect("read export dir")
-            .filter_map(|e| e.ok())
+            .filter_map(Result::ok)
             .filter(|e| {
                 e.path()
                     .extension()

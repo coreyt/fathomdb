@@ -276,6 +276,7 @@ pub struct WriteRequestBuilder {
     operational_writes: Vec<OperationalWrite>,
 }
 
+#[allow(clippy::too_many_arguments, clippy::missing_errors_doc, clippy::too_many_lines)]
 impl WriteRequestBuilder {
     #[must_use]
     pub fn new(label: impl Into<String>) -> Self {

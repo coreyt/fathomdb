@@ -1,9 +1,11 @@
+#![allow(clippy::expect_used)]
+
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use fathomdb::{
     ChunkInsert, ChunkPolicy, Engine, EngineOptions, NodeInsert, QueryBuilder, SafeExportOptions,
-    VecInsert, WriteRequest,
+    WriteRequest,
 };
 use tempfile::TempDir;
 

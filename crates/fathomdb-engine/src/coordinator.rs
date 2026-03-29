@@ -462,7 +462,6 @@ impl ExecutionCoordinator {
             ORDER BY root_id, logical_id",
             edge_kind_param = root_ids.len() + 1,
             max_depth = expansion.max_depth,
-            hard_limit = hard_limit,
         );
 
         let conn_guard = self.lock_connection()?;
@@ -552,7 +551,6 @@ impl ExecutionCoordinator {
             WHERE t.depth > 0
             ORDER BY n.logical_id",
             max_depth = expansion.max_depth,
-            hard_limit = hard_limit,
         );
 
         let conn_guard = self.lock_connection()?;
@@ -1353,6 +1351,7 @@ mod tests {
         assert_eq!(active[0].id, "run-v2");
     }
 
+    #[allow(clippy::panic)]
     fn poison_connection(coordinator: &ExecutionCoordinator) {
         let result = catch_unwind(AssertUnwindSafe(|| {
             let _guard = coordinator
@@ -1368,6 +1367,7 @@ mod tests {
         );
     }
 
+    #[allow(clippy::panic)]
     fn assert_poisoned_connection_error<T, F>(coordinator: &ExecutionCoordinator, op: F)
     where
         F: FnOnce(&ExecutionCoordinator) -> Result<T, EngineError>,
@@ -1393,7 +1393,7 @@ mod tests {
         assert_poisoned_connection_error(&coordinator, |c| c.read_run("run-r1"));
         assert_poisoned_connection_error(&coordinator, |c| c.read_step("step-s1"));
         assert_poisoned_connection_error(&coordinator, |c| c.read_action("action-a1"));
-        assert_poisoned_connection_error(&coordinator, |c| c.read_active_runs());
+        assert_poisoned_connection_error(&coordinator, super::ExecutionCoordinator::read_active_runs);
         assert_poisoned_connection_error(&coordinator, |c| c.raw_pragma("journal_mode"));
         assert_poisoned_connection_error(&coordinator, |c| c.query_provenance_events("source-1"));
     }

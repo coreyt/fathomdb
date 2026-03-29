@@ -30,7 +30,7 @@ pub struct ResponseCycleEvent {
     pub error_message: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FeedbackConfig {
     pub slow_threshold_ms: u64,
     pub heartbeat_interval_ms: u64,
@@ -79,17 +79,18 @@ struct SafeObserver<'a> {
     disabled: Arc<AtomicBool>,
 }
 
-impl<'a> SafeObserver<'a> {
-    fn emit(&self, event: ResponseCycleEvent) {
+impl SafeObserver<'_> {
+    fn emit(&self, event: &ResponseCycleEvent) {
         if self.disabled.load(Ordering::SeqCst) {
             return;
         }
-        if catch_unwind(AssertUnwindSafe(|| self.inner.on_event(&event))).is_err() {
+        if catch_unwind(AssertUnwindSafe(|| self.inner.on_event(event))).is_err() {
             self.disabled.store(true, Ordering::SeqCst);
         }
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub(crate) fn run_with_feedback<T, E, F, C>(
     context: OperationContext<'_>,
     metadata: BTreeMap<String, String>,
@@ -115,7 +116,7 @@ where
         disabled: Arc::clone(&disabled),
     };
 
-    safe_observer.emit(build_event(
+    safe_observer.emit(&build_event(
         &operation_id,
         context,
         ResponseCyclePhase::Started,
@@ -141,7 +142,7 @@ where
             {
                 return;
             }
-            timer_observer.emit(build_event(
+            timer_observer.emit(&build_event(
                 &timer_operation_id,
                 context,
                 ResponseCyclePhase::Slow,
@@ -160,7 +161,7 @@ where
                 {
                     return;
                 }
-                timer_observer.emit(build_event(
+                timer_observer.emit(&build_event(
                     &timer_operation_id,
                     context,
                     ResponseCyclePhase::Heartbeat,
@@ -179,7 +180,7 @@ where
 
         match outcome {
             Ok(Ok(value)) => {
-                safe_observer.emit(build_event(
+                safe_observer.emit(&build_event(
                     &operation_id,
                     context,
                     ResponseCyclePhase::Finished,
@@ -192,7 +193,7 @@ where
                 Ok(value)
             }
             Ok(Err(error)) => {
-                safe_observer.emit(build_event(
+                safe_observer.emit(&build_event(
                     &operation_id,
                     context,
                     ResponseCyclePhase::Failed,
@@ -205,7 +206,7 @@ where
                 Err(error)
             }
             Err(payload) => {
-                safe_observer.emit(build_event(
+                safe_observer.emit(&build_event(
                     &operation_id,
                     context,
                     ResponseCyclePhase::Failed,
@@ -221,6 +222,7 @@ where
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_event(
     operation_id: &str,
     context: OperationContext<'_>,
@@ -253,6 +255,7 @@ fn elapsed_ms(started_at: Instant) -> u64 {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
