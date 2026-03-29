@@ -398,6 +398,12 @@ class TraceReport:
 
 
 @dataclass(frozen=True)
+class SkippedEdge:
+    edge_logical_id: str = ""
+    missing_endpoint: str = ""
+
+
+@dataclass(frozen=True)
 class LogicalRestoreReport:
     logical_id: str = ""
     was_noop: bool = False
@@ -406,11 +412,19 @@ class LogicalRestoreReport:
     restored_chunk_rows: int = 0
     restored_fts_rows: int = 0
     restored_vec_rows: int = 0
+    skipped_edges: list[SkippedEdge] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
     @classmethod
     def from_wire(cls, payload: dict[str, Any]) -> "LogicalRestoreReport":
-        return _from_wire_dataclass(cls, payload)
+        raw_skipped = payload.get("skipped_edges", [])
+        skipped = [SkippedEdge(**item) for item in raw_skipped]
+        filtered = {
+            key: value
+            for key, value in payload.items()
+            if key in {f.name for f in fields(cls)} and key != "skipped_edges"
+        }
+        return cls(skipped_edges=skipped, **filtered)
 
 
 @dataclass(frozen=True)

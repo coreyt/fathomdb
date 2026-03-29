@@ -90,6 +90,12 @@ pub struct TraceReport {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct SkippedEdge {
+    pub edge_logical_id: String,
+    pub missing_endpoint: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct LogicalRestoreReport {
     pub logical_id: String,
     pub was_noop: bool,
@@ -98,6 +104,7 @@ pub struct LogicalRestoreReport {
     pub restored_chunk_rows: usize,
     pub restored_fts_rows: usize,
     pub restored_vec_rows: usize,
+    pub skipped_edges: Vec<SkippedEdge>,
     pub notes: Vec<String>,
 }
 
@@ -1663,6 +1670,7 @@ impl AdminService {
                 restored_chunk_rows: 0,
                 restored_fts_rows: 0,
                 restored_vec_rows: 0,
+                skipped_edges: Vec::new(),
                 notes: vec!["logical_id already active".to_owned()],
             });
         }
@@ -1694,40 +1702,21 @@ impl AdminService {
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .optional()?;
-        let restored_edge_rows = if let Some((
+        let (restored_edge_rows, skipped_edges) = if let Some((
             retire_event_rowid,
             retire_source_ref,
             retire_created_at,
         )) = retire_scope
         {
-            let edge_logical_ids = collect_edge_logical_ids_for_restore(
+            restore_validated_edges(
                 &tx,
                 logical_id,
                 retire_source_ref.as_deref(),
                 retire_created_at,
                 retire_event_rowid,
-            )?;
-            let mut restored = 0usize;
-            for edge_logical_id in edge_logical_ids {
-                let edge_row_id: Option<String> = tx
-                    .query_row(
-                        "SELECT row_id FROM edges \
-                         WHERE logical_id = ?1 AND superseded_at IS NOT NULL \
-                         ORDER BY superseded_at DESC, created_at DESC, rowid DESC LIMIT 1",
-                        [edge_logical_id.as_str()],
-                        |row| row.get(0),
-                    )
-                    .optional()?;
-                if let Some(edge_row_id) = edge_row_id {
-                    restored += tx.execute(
-                        "UPDATE edges SET superseded_at = NULL WHERE row_id = ?1",
-                        [edge_row_id.as_str()],
-                    )?;
-                }
-            }
-            restored
+            )?
         } else {
-            0
+            (0, Vec::new())
         };
 
         let restored_chunk_rows: usize = tx
@@ -1771,6 +1760,7 @@ impl AdminService {
             restored_chunk_rows,
             restored_fts_rows,
             restored_vec_rows,
+            skipped_edges,
             notes: Vec::new(),
         })
     }
@@ -3344,6 +3334,65 @@ fn collect_edge_logical_ids_for_restore(
     Ok(edge_ids)
 }
 
+/// Restores edges for a node being restored, skipping any whose counterpart
+/// endpoint is not active (e.g. still retired or purged).
+fn restore_validated_edges(
+    tx: &rusqlite::Transaction<'_>,
+    logical_id: &str,
+    retire_source_ref: Option<&str>,
+    retire_created_at: i64,
+    retire_event_rowid: i64,
+) -> Result<(usize, Vec<SkippedEdge>), EngineError> {
+    let edge_logical_ids = collect_edge_logical_ids_for_restore(
+        tx,
+        logical_id,
+        retire_source_ref,
+        retire_created_at,
+        retire_event_rowid,
+    )?;
+    let mut restored = 0usize;
+    let mut skipped = Vec::new();
+    for edge_logical_id in &edge_logical_ids {
+        let edge_detail: Option<(String, String, String)> = tx
+            .query_row(
+                "SELECT row_id, source_logical_id, target_logical_id FROM edges \
+                 WHERE logical_id = ?1 AND superseded_at IS NOT NULL \
+                 ORDER BY superseded_at DESC, created_at DESC, rowid DESC LIMIT 1",
+                [edge_logical_id.as_str()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?;
+        let Some((edge_row_id, source_lid, target_lid)) = edge_detail else {
+            continue;
+        };
+        let other_endpoint = if source_lid == logical_id {
+            &target_lid
+        } else {
+            &source_lid
+        };
+        let endpoint_active: bool = tx
+            .query_row(
+                "SELECT 1 FROM nodes WHERE logical_id = ?1 AND superseded_at IS NULL LIMIT 1",
+                [other_endpoint.as_str()],
+                |_| Ok(true),
+            )
+            .optional()?
+            .unwrap_or(false);
+        if !endpoint_active {
+            skipped.push(SkippedEdge {
+                edge_logical_id: edge_logical_id.clone(),
+                missing_endpoint: other_endpoint.clone(),
+            });
+            continue;
+        }
+        restored += tx.execute(
+            "UPDATE edges SET superseded_at = NULL WHERE row_id = ?1",
+            [edge_row_id.as_str()],
+        )?;
+    }
+    Ok((restored, skipped))
+}
+
 #[cfg(feature = "sqlite-vec")]
 fn count_vec_rows_for_logical_id(
     tx: &rusqlite::Transaction<'_>,
@@ -4456,6 +4505,12 @@ mod tests {
             )
             .expect("insert node");
             conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('node-row-topic', 'topic-1', 'Topic', '{}', 100, 'seed')",
+                [],
+            )
+            .expect("insert target node");
+            conn.execute(
                 "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
                  VALUES ('chunk-1', 'doc-1', 'budget narrative', 100)",
                 [],
@@ -4540,6 +4595,12 @@ mod tests {
                 [],
             )
             .expect("insert node");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('node-row-topic', 'topic-1', 'Topic', '{}', 100, 'seed')",
+                [],
+            )
+            .expect("insert target node");
             conn.execute(
                 "INSERT INTO edges \
                  (row_id, logical_id, source_logical_id, target_logical_id, kind, properties, created_at, source_ref) \
@@ -8241,5 +8302,242 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
         assert_eq!(report.events_deleted, 0);
         assert_eq!(report.events_preserved, 1);
         assert_eq!(report.oldest_remaining, Some(100));
+    }
+
+    #[test]
+    fn restore_skips_edge_when_counterpart_purged() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            // Create node A (doc-1) and node B (doc-2)
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('node-row-a', 'doc-1', 'Document', '{}', 100, 'seed')",
+                [],
+            )
+            .expect("insert node A");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('node-row-b', 'doc-2', 'Document', '{}', 100, 'seed')",
+                [],
+            )
+            .expect("insert node B");
+            // Create edge between A and B
+            conn.execute(
+                "INSERT INTO edges \
+                 (row_id, logical_id, source_logical_id, target_logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('edge-row-1', 'edge-1', 'doc-1', 'doc-2', 'RELATED', '{}', 100, 'seed')",
+                [],
+            )
+            .expect("insert edge");
+            // Retire both A and B, and the edge
+            conn.execute(
+                "INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at, metadata_json) \
+                 VALUES ('evt-retire-a', 'node_retire', 'doc-1', 'forget-1', 200, '')",
+                [],
+            )
+            .expect("insert retire event A");
+            conn.execute(
+                "INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at, metadata_json) \
+                 VALUES ('evt-edge-retire', 'edge_retire', 'edge-1', 'forget-1', 200, '')",
+                [],
+            )
+            .expect("insert edge retire event");
+            conn.execute(
+                "UPDATE nodes SET superseded_at = 200 WHERE logical_id = 'doc-1'",
+                [],
+            )
+            .expect("retire node A");
+            conn.execute(
+                "UPDATE nodes SET superseded_at = 200 WHERE logical_id = 'doc-2'",
+                [],
+            )
+            .expect("retire node B");
+            conn.execute(
+                "UPDATE edges SET superseded_at = 200 WHERE logical_id = 'edge-1'",
+                [],
+            )
+            .expect("retire edge");
+            // Simulate purge of B: delete node rows but leave the edge intact
+            // to reproduce the dangling-edge scenario the validation guards against.
+            conn.execute(
+                "DELETE FROM nodes WHERE logical_id = 'doc-2'",
+                [],
+            )
+            .expect("purge node B rows");
+        }
+
+        // Restore A — the edge should be skipped because B has no active node
+        let report = service.restore_logical_id("doc-1").expect("restore A");
+        assert!(!report.was_noop);
+        assert_eq!(report.restored_node_rows, 1);
+        assert_eq!(report.restored_edge_rows, 0, "edge should not be restored");
+        assert_eq!(report.skipped_edges.len(), 1);
+        assert_eq!(report.skipped_edges[0].edge_logical_id, "edge-1");
+        assert_eq!(report.skipped_edges[0].missing_endpoint, "doc-2");
+
+        // Verify the edge is still retired in the database
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let active_edge_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM edges WHERE logical_id = 'edge-1' AND superseded_at IS NULL",
+                [],
+                |row| row.get(0),
+            )
+            .expect("active edge count");
+        assert_eq!(active_edge_count, 0, "edge must remain retired");
+    }
+
+    #[test]
+    fn restore_restores_edges_to_active_nodes() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            // Create node A and node B (B stays active)
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('node-row-a', 'doc-1', 'Document', '{}', 100, 'seed')",
+                [],
+            )
+            .expect("insert node A");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('node-row-b', 'doc-2', 'Document', '{}', 100, 'seed')",
+                [],
+            )
+            .expect("insert node B");
+            // Create edge between A and B
+            conn.execute(
+                "INSERT INTO edges \
+                 (row_id, logical_id, source_logical_id, target_logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('edge-row-1', 'edge-1', 'doc-1', 'doc-2', 'RELATED', '{}', 100, 'seed')",
+                [],
+            )
+            .expect("insert edge");
+            // Retire only A
+            conn.execute(
+                "INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at, metadata_json) \
+                 VALUES ('evt-retire-a', 'node_retire', 'doc-1', 'forget-1', 200, '')",
+                [],
+            )
+            .expect("insert retire event A");
+            conn.execute(
+                "INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at, metadata_json) \
+                 VALUES ('evt-edge-retire', 'edge_retire', 'edge-1', 'forget-1', 200, '')",
+                [],
+            )
+            .expect("insert edge retire event");
+            conn.execute(
+                "UPDATE nodes SET superseded_at = 200 WHERE logical_id = 'doc-1'",
+                [],
+            )
+            .expect("retire node A");
+            conn.execute(
+                "UPDATE edges SET superseded_at = 200 WHERE logical_id = 'edge-1'",
+                [],
+            )
+            .expect("retire edge");
+        }
+
+        // Restore A — B is active, so the edge should be restored normally
+        let report = service.restore_logical_id("doc-1").expect("restore A");
+        assert!(!report.was_noop);
+        assert_eq!(report.restored_node_rows, 1);
+        assert!(report.restored_edge_rows > 0, "edge should be restored");
+        assert!(report.skipped_edges.is_empty(), "no edges should be skipped");
+
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let active_edge_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM edges WHERE logical_id = 'edge-1' AND superseded_at IS NULL",
+                [],
+                |row| row.get(0),
+            )
+            .expect("active edge count");
+        assert_eq!(active_edge_count, 1, "edge must be active");
+    }
+
+    #[test]
+    fn restore_restores_edges_when_both_restored() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            // Create node A and node B
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('node-row-a', 'doc-1', 'Document', '{}', 100, 'seed')",
+                [],
+            )
+            .expect("insert node A");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('node-row-b', 'doc-2', 'Document', '{}', 100, 'seed')",
+                [],
+            )
+            .expect("insert node B");
+            // Create edge between A and B
+            conn.execute(
+                "INSERT INTO edges \
+                 (row_id, logical_id, source_logical_id, target_logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('edge-row-1', 'edge-1', 'doc-1', 'doc-2', 'RELATED', '{}', 100, 'seed')",
+                [],
+            )
+            .expect("insert edge");
+            // Retire both A and B
+            conn.execute(
+                "INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at, metadata_json) \
+                 VALUES ('evt-retire-a', 'node_retire', 'doc-1', 'forget-1', 200, '')",
+                [],
+            )
+            .expect("insert retire event A");
+            conn.execute(
+                "INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at, metadata_json) \
+                 VALUES ('evt-retire-b', 'node_retire', 'doc-2', 'forget-1', 200, '')",
+                [],
+            )
+            .expect("insert retire event B");
+            conn.execute(
+                "INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at, metadata_json) \
+                 VALUES ('evt-edge-retire', 'edge_retire', 'edge-1', 'forget-1', 200, '')",
+                [],
+            )
+            .expect("insert edge retire event");
+            conn.execute(
+                "UPDATE nodes SET superseded_at = 200 WHERE logical_id = 'doc-1'",
+                [],
+            )
+            .expect("retire node A");
+            conn.execute(
+                "UPDATE nodes SET superseded_at = 200 WHERE logical_id = 'doc-2'",
+                [],
+            )
+            .expect("retire node B");
+            conn.execute(
+                "UPDATE edges SET superseded_at = 200 WHERE logical_id = 'edge-1'",
+                [],
+            )
+            .expect("retire edge");
+        }
+
+        // Restore B first — edge is skipped because A is still retired
+        let report_b = service.restore_logical_id("doc-2").expect("restore B");
+        assert!(!report_b.was_noop);
+
+        // Restore A — B is now active, so the edge should be restored
+        let report_a = service.restore_logical_id("doc-1").expect("restore A");
+        assert!(!report_a.was_noop);
+        assert_eq!(report_a.restored_node_rows, 1);
+        assert!(report_a.restored_edge_rows > 0, "edge should be restored when both endpoints active");
+        assert!(report_a.skipped_edges.is_empty(), "no edges should be skipped");
+
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let active_edge_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM edges WHERE logical_id = 'edge-1' AND superseded_at IS NULL",
+                [],
+                |row| row.get(0),
+            )
+            .expect("active edge count");
+        assert_eq!(active_edge_count, 1, "edge must be active after both endpoints restored");
     }
 }

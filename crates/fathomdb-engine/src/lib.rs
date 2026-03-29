@@ -11,7 +11,7 @@ mod writer;
 pub use admin::{
     AdminHandle, AdminService, IntegrityReport, LogicalPurgeReport, LogicalRestoreReport,
     ProvenancePurgeOptions, ProvenancePurgeReport, SafeExportManifest, SafeExportOptions,
-    SemanticReport, TraceReport, VectorGeneratorPolicy, VectorRegenerationConfig,
+    SemanticReport, SkippedEdge, TraceReport, VectorGeneratorPolicy, VectorRegenerationConfig,
     VectorRegenerationReport, load_vector_regeneration_config,
 };
 pub use coordinator::{
