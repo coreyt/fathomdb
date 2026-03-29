@@ -235,9 +235,9 @@ type ExportManifest struct {
 // ProvenancePurgeReport is the structured payload returned by the bridge
 // purge_provenance_events command.
 type ProvenancePurgeReport struct {
-	EventsDeleted    int    `json:"events_deleted"`
-	EventsPreserved  int    `json:"events_preserved"`
-	OldestRemaining  *int64 `json:"oldest_remaining"`
+	EventsDeleted   int    `json:"events_deleted"`
+	EventsPreserved int    `json:"events_preserved"`
+	OldestRemaining *int64 `json:"oldest_remaining"`
 }
 
 // Client wraps the fathomdb-admin-bridge subprocess for administrative operations.
