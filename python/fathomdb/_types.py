@@ -1109,6 +1109,21 @@ class OperationalRetentionRunReport:
         )
 
 
+@dataclass(frozen=True)
+class ProvenancePurgeReport:
+    events_deleted: int
+    events_preserved: int
+    oldest_remaining: int | None = None
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "ProvenancePurgeReport":
+        return cls(
+            events_deleted=payload["events_deleted"],
+            events_preserved=payload["events_preserved"],
+            oldest_remaining=payload.get("oldest_remaining"),
+        )
+
+
 @dataclass(slots=True)
 class LastAccessTouchRequest:
     logical_ids: list[str]

@@ -24,6 +24,7 @@ from ._types import (
     OperationalTraceReport,
     ProjectionRepairReport,
     ProjectionTarget,
+    ProvenancePurgeReport,
     SafeExportManifest,
     SemanticReport,
     TraceReport,
@@ -533,6 +534,34 @@ class AdminClient:
                     feedback_config=feedback_config,
                     operation=lambda: self._core.purge_operational_collection(
                         name, before_timestamp
+                    ),
+                )
+            )
+        )
+
+    def purge_provenance_events(
+        self,
+        before_timestamp: int,
+        *,
+        dry_run: bool = False,
+        preserve_event_types: list[str] | None = None,
+        progress_callback=None,
+        feedback_config: FeedbackConfig | None = None,
+    ) -> ProvenancePurgeReport:
+        options = {
+            "dry_run": dry_run,
+            "preserve_event_types": preserve_event_types or [],
+        }
+        return ProvenancePurgeReport.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="admin.purge_provenance_events",
+                    metadata={"before_timestamp": str(before_timestamp)},
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=lambda: self._core.purge_provenance_events(
+                        before_timestamp, json.dumps(options)
                     ),
                 )
             )

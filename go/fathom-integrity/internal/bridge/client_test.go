@@ -282,6 +282,38 @@ func TestOperationalRetentionRequestJSONShape(t *testing.T) {
 	require.Contains(t, string(body), `"dry_run":true`)
 }
 
+func TestPurgeProvenanceEventsRequestJSONShape(t *testing.T) {
+	request := Request{
+		DatabasePath:    "/tmp/fathom.db",
+		Command:         CommandPurgeProvenanceEvents,
+		BeforeTimestamp: 1700000000,
+	}
+
+	body, err := json.Marshal(request)
+
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"protocol_version":1`)
+	require.Contains(t, string(body), `"command":"purge_provenance_events"`)
+	require.Contains(t, string(body), `"before_timestamp":1700000000`)
+	require.NotContains(t, string(body), `"preserve_event_types"`)
+}
+
+func TestPurgeProvenanceEventsRequestWithPreserveTypes(t *testing.T) {
+	request := Request{
+		DatabasePath:       "/tmp/fathom.db",
+		Command:            CommandPurgeProvenanceEvents,
+		BeforeTimestamp:    1700000000,
+		PreserveEventTypes: []string{"excise", "restore"},
+	}
+
+	body, err := json.Marshal(request)
+
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"command":"purge_provenance_events"`)
+	require.Contains(t, string(body), `"before_timestamp":1700000000`)
+	require.Contains(t, string(body), `"preserve_event_types":["excise","restore"]`)
+}
+
 func TestLogicalLifecycleRequestJSONShape(t *testing.T) {
 	request := Request{
 		DatabasePath: "/tmp/fathom.db",

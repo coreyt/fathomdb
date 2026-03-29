@@ -1265,6 +1265,428 @@ mod tests {
             .expect("serialize bool");
         assert!(boolean.contains("\"type\":\"bool\""));
     }
+
+    // ---------------------------------------------------------------
+    // Cross-layer parity: engine report → Py* report serialization.
+    // Each test constructs an engine struct with non-default values,
+    // converts via From, serializes to JSON, and asserts every field
+    // is present with the expected value.  If a field is added to the
+    // engine type but not the Py* type, these tests will fail to
+    // compile (missing field in the engine constructor) or will fail
+    // at runtime (missing key in the serialized JSON).
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn integrity_report_serializes_all_fields() {
+        use super::PyIntegrityReport;
+        use fathomdb_engine::IntegrityReport;
+
+        let report = IntegrityReport {
+            physical_ok: true,
+            foreign_keys_ok: false,
+            missing_fts_rows: 3,
+            duplicate_active_logical_ids: 1,
+            operational_missing_collections: 2,
+            operational_missing_last_mutations: 4,
+            warnings: vec!["warn-1".into(), "warn-2".into()],
+        };
+        let py = PyIntegrityReport::from(report);
+        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+
+        assert_eq!(json["physical_ok"], true);
+        assert_eq!(json["foreign_keys_ok"], false);
+        assert_eq!(json["missing_fts_rows"], 3);
+        assert_eq!(json["duplicate_active_logical_ids"], 1);
+        assert_eq!(json["operational_missing_collections"], 2);
+        assert_eq!(json["operational_missing_last_mutations"], 4);
+        let warnings = json["warnings"].as_array().expect("warnings array");
+        assert_eq!(warnings.len(), 2);
+        assert_eq!(warnings[0], "warn-1");
+        assert_eq!(warnings[1], "warn-2");
+    }
+
+    #[test]
+    fn semantic_report_serializes_all_fields() {
+        use super::PySemanticReport;
+        use fathomdb_engine::SemanticReport;
+
+        let report = SemanticReport {
+            orphaned_chunks: 1,
+            null_source_ref_nodes: 2,
+            broken_step_fk: 3,
+            broken_action_fk: 4,
+            stale_fts_rows: 5,
+            fts_rows_for_superseded_nodes: 6,
+            dangling_edges: 7,
+            orphaned_supersession_chains: 8,
+            stale_vec_rows: 9,
+            vec_rows_for_superseded_nodes: 10,
+            missing_operational_current_rows: 11,
+            stale_operational_current_rows: 12,
+            disabled_collection_mutations: 13,
+            orphaned_last_access_metadata_rows: 14,
+            warnings: vec!["sem-warn".into()],
+        };
+        let py = PySemanticReport::from(report);
+        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+
+        assert_eq!(json["orphaned_chunks"], 1);
+        assert_eq!(json["null_source_ref_nodes"], 2);
+        assert_eq!(json["broken_step_fk"], 3);
+        assert_eq!(json["broken_action_fk"], 4);
+        assert_eq!(json["stale_fts_rows"], 5);
+        assert_eq!(json["fts_rows_for_superseded_nodes"], 6);
+        assert_eq!(json["dangling_edges"], 7);
+        assert_eq!(json["orphaned_supersession_chains"], 8);
+        assert_eq!(json["stale_vec_rows"], 9);
+        assert_eq!(json["vec_rows_for_superseded_nodes"], 10);
+        assert_eq!(json["missing_operational_current_rows"], 11);
+        assert_eq!(json["stale_operational_current_rows"], 12);
+        assert_eq!(json["disabled_collection_mutations"], 13);
+        assert_eq!(json["orphaned_last_access_metadata_rows"], 14);
+        let warnings = json["warnings"].as_array().expect("warnings array");
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0], "sem-warn");
+    }
+
+    #[test]
+    fn trace_report_serializes_all_fields() {
+        use super::PyTraceReport;
+        use fathomdb_engine::TraceReport;
+
+        let report = TraceReport {
+            source_ref: "src-42".into(),
+            node_rows: 10,
+            edge_rows: 20,
+            action_rows: 30,
+            operational_mutation_rows: 5,
+            node_logical_ids: vec!["n1".into(), "n2".into()],
+            action_ids: vec!["a1".into()],
+            operational_mutation_ids: vec!["om1".into(), "om2".into()],
+        };
+        let py = PyTraceReport::from(report);
+        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+
+        assert_eq!(json["source_ref"], "src-42");
+        assert_eq!(json["node_rows"], 10);
+        assert_eq!(json["edge_rows"], 20);
+        assert_eq!(json["action_rows"], 30);
+        assert_eq!(json["operational_mutation_rows"], 5);
+        let node_ids = json["node_logical_ids"].as_array().expect("node_logical_ids");
+        assert_eq!(node_ids.len(), 2);
+        assert_eq!(node_ids[0], "n1");
+        let action_ids = json["action_ids"].as_array().expect("action_ids");
+        assert_eq!(action_ids.len(), 1);
+        assert_eq!(action_ids[0], "a1");
+        let op_ids = json["operational_mutation_ids"]
+            .as_array()
+            .expect("operational_mutation_ids");
+        assert_eq!(op_ids.len(), 2);
+    }
+
+    #[test]
+    fn projection_repair_report_serializes_all_fields() {
+        use super::PyProjectionRepairReport;
+        use crate::{ProjectionRepairReport, ProjectionTarget};
+
+        let report = ProjectionRepairReport {
+            targets: vec![ProjectionTarget::Fts, ProjectionTarget::Vec],
+            rebuilt_rows: 42,
+            notes: vec!["rebuilt fts".into()],
+        };
+        let py = PyProjectionRepairReport::from(report);
+        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+
+        let targets = json["targets"].as_array().expect("targets");
+        assert_eq!(targets.len(), 2);
+        assert_eq!(targets[0], "fts");
+        assert_eq!(targets[1], "vec");
+        assert_eq!(json["rebuilt_rows"], 42);
+        let notes = json["notes"].as_array().expect("notes");
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0], "rebuilt fts");
+    }
+
+    #[test]
+    fn safe_export_manifest_serializes_all_fields() {
+        use super::PySafeExportManifest;
+        use crate::SafeExportManifest;
+
+        let manifest = SafeExportManifest {
+            exported_at: 1_700_000_000,
+            sha256: "abcdef1234567890".into(),
+            schema_version: 15,
+            protocol_version: 1,
+            page_count: 256,
+        };
+        let py = PySafeExportManifest::from(manifest);
+        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+
+        assert_eq!(json["exported_at"], 1_700_000_000_u64);
+        assert_eq!(json["sha256"], "abcdef1234567890");
+        assert_eq!(json["schema_version"], 15);
+        assert_eq!(json["protocol_version"], 1);
+        assert_eq!(json["page_count"], 256);
+    }
+
+    #[test]
+    fn write_receipt_serializes_all_fields() {
+        use super::PyWriteReceipt;
+        use crate::WriteReceipt;
+
+        let receipt = WriteReceipt {
+            label: "batch-1".into(),
+            optional_backfill_count: 7,
+            warnings: vec!["w1".into()],
+            provenance_warnings: vec!["pw1".into(), "pw2".into()],
+        };
+        let py = PyWriteReceipt::from(receipt);
+        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+
+        assert_eq!(json["label"], "batch-1");
+        assert_eq!(json["optional_backfill_count"], 7);
+        let warnings = json["warnings"].as_array().expect("warnings");
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0], "w1");
+        let prov = json["provenance_warnings"].as_array().expect("provenance_warnings");
+        assert_eq!(prov.len(), 2);
+        assert_eq!(prov[0], "pw1");
+        assert_eq!(prov[1], "pw2");
+    }
+
+    #[test]
+    fn query_rows_serializes_all_fields_with_populated_arrays() {
+        use super::PyQueryRows;
+        use crate::{ActionRow, NodeRow, QueryRows, RunRow, StepRow};
+
+        let rows = QueryRows {
+            nodes: vec![NodeRow {
+                row_id: "nr1".into(),
+                logical_id: "nl1".into(),
+                kind: "Doc".into(),
+                properties: r#"{"a":1}"#.into(),
+                last_accessed_at: Some(1_700_000_000),
+            }],
+            runs: vec![RunRow {
+                id: "run1".into(),
+                kind: "ingest".into(),
+                status: "done".into(),
+                properties: "{}".into(),
+            }],
+            steps: vec![StepRow {
+                id: "step1".into(),
+                run_id: "run1".into(),
+                kind: "parse".into(),
+                status: "ok".into(),
+                properties: "{}".into(),
+            }],
+            actions: vec![ActionRow {
+                id: "act1".into(),
+                step_id: "step1".into(),
+                kind: "fetch".into(),
+                status: "done".into(),
+                properties: "{}".into(),
+            }],
+            was_degraded: true,
+        };
+        let py = PyQueryRows::from(rows);
+        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+
+        // Top-level fields
+        assert_eq!(json["was_degraded"], true);
+
+        // Nodes array
+        let nodes = json["nodes"].as_array().expect("nodes");
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0]["row_id"], "nr1");
+        assert_eq!(nodes[0]["logical_id"], "nl1");
+        assert_eq!(nodes[0]["kind"], "Doc");
+        assert_eq!(nodes[0]["properties"], r#"{"a":1}"#);
+        assert_eq!(nodes[0]["last_accessed_at"], 1_700_000_000_i64);
+
+        // Runs array
+        let runs = json["runs"].as_array().expect("runs");
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0]["id"], "run1");
+        assert_eq!(runs[0]["kind"], "ingest");
+        assert_eq!(runs[0]["status"], "done");
+        assert_eq!(runs[0]["properties"], "{}");
+
+        // Steps array
+        let steps = json["steps"].as_array().expect("steps");
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0]["id"], "step1");
+        assert_eq!(steps[0]["run_id"], "run1");
+        assert_eq!(steps[0]["kind"], "parse");
+        assert_eq!(steps[0]["status"], "ok");
+
+        // Actions array
+        let actions = json["actions"].as_array().expect("actions");
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0]["id"], "act1");
+        assert_eq!(actions[0]["step_id"], "step1");
+        assert_eq!(actions[0]["kind"], "fetch");
+        assert_eq!(actions[0]["status"], "done");
+    }
+
+    #[test]
+    fn last_access_touch_report_serializes_all_fields() {
+        use super::PyLastAccessTouchReport;
+        use crate::LastAccessTouchReport;
+
+        let report = LastAccessTouchReport {
+            touched_logical_ids: 5,
+            touched_at: 1_700_000_000,
+        };
+        let py = PyLastAccessTouchReport::from(report);
+        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+
+        assert_eq!(json["touched_logical_ids"], 5);
+        assert_eq!(json["touched_at"], 1_700_000_000_i64);
+    }
+
+    // ---------------------------------------------------------------
+    // Operational report parity: OperationalCompactionReport is
+    // serialized directly (no Py* wrapper), so we test its serde
+    // output to catch field drift (e.g. the dry_run gap).
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn operational_compaction_report_serializes_dry_run() {
+        use crate::OperationalCompactionReport;
+
+        let report = OperationalCompactionReport {
+            collection_name: "audit_log".into(),
+            deleted_mutations: 42,
+            dry_run: true,
+            before_timestamp: Some(1_700_000_000),
+        };
+        let json: serde_json::Value = serde_json::to_value(&report).expect("serialize");
+
+        assert_eq!(json["collection_name"], "audit_log");
+        assert_eq!(json["deleted_mutations"], 42);
+        assert_eq!(json["dry_run"], true);
+        assert_eq!(json["before_timestamp"], 1_700_000_000_i64);
+
+        // Also verify dry_run=false
+        let report_no_dry = OperationalCompactionReport {
+            collection_name: "logs".into(),
+            deleted_mutations: 0,
+            dry_run: false,
+            before_timestamp: None,
+        };
+        let json2: serde_json::Value = serde_json::to_value(&report_no_dry).expect("serialize");
+        assert_eq!(json2["dry_run"], false);
+        assert!(json2["before_timestamp"].is_null());
+    }
+
+    // ---------------------------------------------------------------
+    // Row-level parity: NodeRow, RunRow, StepRow, ActionRow
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn node_row_serializes_all_fields_including_last_accessed_at() {
+        use super::PyNodeRow;
+        use crate::NodeRow;
+
+        let row = NodeRow {
+            row_id: "row-abc".into(),
+            logical_id: "log-xyz".into(),
+            kind: "Meeting".into(),
+            properties: r#"{"title":"standup"}"#.into(),
+            last_accessed_at: Some(1_710_000_000),
+        };
+        let py = PyNodeRow::from(row);
+        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+
+        assert_eq!(json["row_id"], "row-abc");
+        assert_eq!(json["logical_id"], "log-xyz");
+        assert_eq!(json["kind"], "Meeting");
+        assert_eq!(json["properties"], r#"{"title":"standup"}"#);
+        assert_eq!(json["last_accessed_at"], 1_710_000_000_i64);
+    }
+
+    #[test]
+    fn node_row_serializes_null_last_accessed_at() {
+        use super::PyNodeRow;
+        use crate::NodeRow;
+
+        let row = NodeRow {
+            row_id: "r1".into(),
+            logical_id: "l1".into(),
+            kind: "Doc".into(),
+            properties: "{}".into(),
+            last_accessed_at: None,
+        };
+        let py = PyNodeRow::from(row);
+        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+
+        assert!(json["last_accessed_at"].is_null());
+    }
+
+    #[test]
+    fn run_row_serializes_all_fields() {
+        use super::PyRunRow;
+        use crate::RunRow;
+
+        let row = RunRow {
+            id: "run-99".into(),
+            kind: "ingest".into(),
+            status: "completed".into(),
+            properties: r#"{"source":"api"}"#.into(),
+        };
+        let py = PyRunRow::from(row);
+        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+
+        assert_eq!(json["id"], "run-99");
+        assert_eq!(json["kind"], "ingest");
+        assert_eq!(json["status"], "completed");
+        assert_eq!(json["properties"], r#"{"source":"api"}"#);
+    }
+
+    #[test]
+    fn step_row_serializes_all_fields() {
+        use super::PyStepRow;
+        use crate::StepRow;
+
+        let row = StepRow {
+            id: "step-55".into(),
+            run_id: "run-99".into(),
+            kind: "extract".into(),
+            status: "running".into(),
+            properties: r#"{"page":1}"#.into(),
+        };
+        let py = PyStepRow::from(row);
+        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+
+        assert_eq!(json["id"], "step-55");
+        assert_eq!(json["run_id"], "run-99");
+        assert_eq!(json["kind"], "extract");
+        assert_eq!(json["status"], "running");
+        assert_eq!(json["properties"], r#"{"page":1}"#);
+    }
+
+    #[test]
+    fn action_row_serializes_all_fields() {
+        use super::PyActionRow;
+        use crate::ActionRow;
+
+        let row = ActionRow {
+            id: "act-77".into(),
+            step_id: "step-55".into(),
+            kind: "download".into(),
+            status: "failed".into(),
+            properties: r#"{"url":"https://example.com"}"#.into(),
+        };
+        let py = PyActionRow::from(row);
+        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+
+        assert_eq!(json["id"], "act-77");
+        assert_eq!(json["step_id"], "step-55");
+        assert_eq!(json["kind"], "download");
+        assert_eq!(json["status"], "failed");
+        assert_eq!(json["properties"], r#"{"url":"https://example.com"}"#);
+    }
 }
 
 #[derive(Debug, Serialize)]

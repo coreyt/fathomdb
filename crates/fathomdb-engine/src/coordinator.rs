@@ -14,10 +14,11 @@ use crate::{EngineError, sqlite};
 /// and the cost of re-compiling on a miss is negligible.
 const MAX_SHAPE_CACHE_SIZE: usize = 4096;
 
-/// Threshold above which grouped-read expansion queries fall back to per-root
-/// instead of batched `IN (...)` to stay within `SQLITE_MAX_VARIABLE_NUMBER`
-/// (default 999).
-const BATCH_THRESHOLD: usize = 200;
+/// Maximum number of root IDs per batched expansion query.  Kept well below
+/// `SQLITE_MAX_VARIABLE_NUMBER` (default 999) because each batch also binds
+/// the edge-kind parameter.  Larger root sets are chunked into multiple
+/// batches of this size rather than falling back to per-root queries.
+const BATCH_CHUNK_SIZE: usize = 200;
 
 /// A pool of read-only `SQLite` connections for concurrent read access.
 ///
@@ -359,10 +360,10 @@ impl ExecutionCoordinator {
         let roots = root_rows.nodes;
         let mut expansions = Vec::with_capacity(compiled.expansions.len());
         for expansion in &compiled.expansions {
-            let slot_rows = if roots.len() <= BATCH_THRESHOLD && !roots.is_empty() {
-                self.read_expansion_nodes_batched(&roots, expansion, compiled.hints.hard_limit)?
+            let slot_rows = if roots.is_empty() {
+                Vec::new()
             } else {
-                self.read_expansion_nodes_per_root(&roots, expansion, compiled.hints.hard_limit)?
+                self.read_expansion_nodes_chunked(&roots, expansion, compiled.hints.hard_limit)?
             };
             expansions.push(ExpansionSlotRows {
                 slot: expansion.slot.clone(),
@@ -377,22 +378,40 @@ impl ExecutionCoordinator {
         })
     }
 
-    /// Per-root fallback: one query per root node.
-    fn read_expansion_nodes_per_root(
+    /// Chunked batched expansion: splits roots into chunks of
+    /// `BATCH_CHUNK_SIZE` and runs one batched query per chunk, then merges
+    /// results while preserving root ordering.  This keeps bind-parameter
+    /// counts within `SQLite` limits while avoiding the N+1 per-root pattern
+    /// for large result sets.
+    fn read_expansion_nodes_chunked(
         &self,
         roots: &[NodeRow],
         expansion: &ExpansionSlot,
         hard_limit: usize,
     ) -> Result<Vec<ExpansionRootRows>, EngineError> {
-        let mut root_groups = Vec::with_capacity(roots.len());
-        for root in roots {
-            let nodes = self.read_expansion_nodes(&root.logical_id, expansion, hard_limit)?;
-            root_groups.push(ExpansionRootRows {
-                root_logical_id: root.logical_id.clone(),
-                nodes,
-            });
+        if roots.len() <= BATCH_CHUNK_SIZE {
+            return self.read_expansion_nodes_batched(roots, expansion, hard_limit);
         }
-        Ok(root_groups)
+
+        // Merge chunk results keyed by root logical_id, then reassemble in
+        // root order.
+        let mut per_root: HashMap<String, Vec<NodeRow>> = HashMap::new();
+        for chunk in roots.chunks(BATCH_CHUNK_SIZE) {
+            for group in self.read_expansion_nodes_batched(chunk, expansion, hard_limit)? {
+                per_root
+                    .entry(group.root_logical_id)
+                    .or_default()
+                    .extend(group.nodes);
+            }
+        }
+
+        Ok(roots
+            .iter()
+            .map(|root| ExpansionRootRows {
+                root_logical_id: root.logical_id.clone(),
+                nodes: per_root.remove(&root.logical_id).unwrap_or_default(),
+            })
+            .collect())
     }
 
     /// Batched expansion: one recursive CTE query per expansion slot that
@@ -508,72 +527,6 @@ impl ExecutionCoordinator {
             .collect();
 
         Ok(root_groups)
-    }
-
-    fn read_expansion_nodes(
-        &self,
-        root_logical_id: &str,
-        expansion: &ExpansionSlot,
-        hard_limit: usize,
-    ) -> Result<Vec<NodeRow>, EngineError> {
-        let (join_condition, next_logical_id) = match expansion.direction {
-            fathomdb_query::TraverseDirection::Out => {
-                ("e.source_logical_id = t.logical_id", "e.target_logical_id")
-            }
-            fathomdb_query::TraverseDirection::In => {
-                ("e.target_logical_id = t.logical_id", "e.source_logical_id")
-            }
-        };
-
-        let sql = format!(
-            "WITH RECURSIVE traversed(logical_id, depth, visited, emitted) AS (
-                SELECT ?1, 0, printf(',%s,', ?1), 0
-                UNION ALL
-                SELECT
-                    {next_logical_id},
-                    t.depth + 1,
-                    t.visited || {next_logical_id} || ',',
-                    t.emitted + 1
-                FROM traversed t
-                JOIN edges e ON {join_condition}
-                    AND e.kind = ?2
-                    AND e.superseded_at IS NULL
-                WHERE t.depth < {max_depth}
-                  AND t.emitted < {hard_limit}
-                  AND instr(t.visited, printf(',%s,', {next_logical_id})) = 0
-            )
-            SELECT DISTINCT n.row_id, n.logical_id, n.kind, n.properties
-                 , am.last_accessed_at
-            FROM traversed t
-            JOIN nodes n ON n.logical_id = t.logical_id
-                AND n.superseded_at IS NULL
-            LEFT JOIN node_access_metadata am ON am.logical_id = n.logical_id
-            WHERE t.depth > 0
-            ORDER BY n.logical_id",
-            max_depth = expansion.max_depth,
-        );
-
-        let conn_guard = self.lock_connection()?;
-        let mut statement = conn_guard
-            .prepare_cached(&sql)
-            .map_err(EngineError::Sqlite)?;
-        let nodes = statement
-            .query_map(
-                rusqlite::params![root_logical_id, expansion.label.as_str()],
-                |row| {
-                    Ok(NodeRow {
-                        row_id: row.get(0)?,
-                        logical_id: row.get(1)?,
-                        kind: row.get(2)?,
-                        properties: row.get(3)?,
-                        last_accessed_at: row.get(4)?,
-                    })
-                },
-            )
-            .map_err(EngineError::Sqlite)?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(EngineError::Sqlite)?;
-        Ok(nodes)
     }
 
     /// Read a single run by id.

@@ -574,6 +574,41 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			return commandExitCode(err)
 		}
 		return 0
+	case "purge-provenance-events":
+		fs := flag.NewFlagSet("purge-provenance-events", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		db := fs.String("db", cfg.DatabasePath, "path to sqlite database")
+		bridgeBinary := fs.String("bridge", cfg.BridgeBinary, "path to admin bridge binary")
+		beforeTimestamp := fs.Int64("before-timestamp", 0, "delete provenance events older than this unix timestamp")
+		preserveEventTypes := fs.String("preserve-event-types", "", "comma-separated event types to preserve")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if *db == "" || *beforeTimestamp == 0 {
+			fmt.Fprintln(stderr, "--db and --before-timestamp are required")
+			return 2
+		}
+		var preserveTypes []string
+		if *preserveEventTypes != "" {
+			preserveTypes = strings.Split(*preserveEventTypes, ",")
+		}
+		request := bridge.Request{
+			DatabasePath:       *db,
+			Command:            bridge.CommandPurgeProvenanceEvents,
+			BeforeTimestamp:    *beforeTimestamp,
+			PreserveEventTypes: preserveTypes,
+		}
+		if err := commands.RunBridgeCommandWithFeedback(
+			bridge.Client{BinaryPath: *bridgeBinary},
+			request,
+			stdout,
+			newFeedbackObserver(stderr),
+			bridge.FeedbackConfig{},
+		); err != nil {
+			fmt.Fprintln(stderr, err)
+			return commandExitCode(err)
+		}
+		return 0
 	case "rebuild":
 		fs := flag.NewFlagSet("rebuild", flag.ContinueOnError)
 		fs.SetOutput(stderr)
@@ -824,5 +859,5 @@ func commandExitCode(err error) int {
 }
 
 func usage() string {
-	return "usage: fathom-integrity <check|export|trace|restore-logical-id|purge-logical-id|trace-operational|read-operational|update-operational-filters|update-operational-validation|validate-operational-history|disable-operational|compact-operational|purge-operational|rebuild|rebuild-operational-current|rebuild-missing|regenerate-vectors|excise|recover|repair|version> [flags]"
+	return "usage: fathom-integrity <check|export|trace|restore-logical-id|purge-logical-id|trace-operational|read-operational|update-operational-filters|update-operational-validation|validate-operational-history|disable-operational|compact-operational|purge-operational|purge-provenance-events|rebuild|rebuild-operational-current|rebuild-missing|regenerate-vectors|excise|recover|repair|version> [flags]"
 }

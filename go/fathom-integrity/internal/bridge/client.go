@@ -42,6 +42,7 @@ const (
 	CommandValidateOperationalHistory    Command = "validate_operational_collection_history"
 	CommandPlanOperationalRetention      Command = "plan_operational_retention"
 	CommandRunOperationalRetention       Command = "run_operational_retention"
+	CommandPurgeProvenanceEvents         Command = "purge_provenance_events"
 )
 
 type Request struct {
@@ -61,6 +62,7 @@ type Request struct {
 	MaxCollections        int                     `json:"max_collections,omitempty"`
 	BeforeTimestamp       int64                   `json:"before_timestamp,omitempty"`
 	DryRun                bool                    `json:"dry_run,omitempty"`
+	PreserveEventTypes    []string                `json:"preserve_event_types,omitempty"`
 	DestinationPath       string                  `json:"destination_path,omitempty"`
 	ForceCheckpoint       *bool                   `json:"force_checkpoint,omitempty"`
 	ConfigPath            string                  `json:"config_path,omitempty"`
@@ -202,6 +204,14 @@ type ExportManifest struct {
 	PageCount       uint64 `json:"page_count"`
 }
 
+// ProvenancePurgeReport is the structured payload returned by the bridge
+// purge_provenance_events command.
+type ProvenancePurgeReport struct {
+	EventsDeleted    int    `json:"events_deleted"`
+	EventsPreserved  int    `json:"events_preserved"`
+	OldestRemaining  *int64 `json:"oldest_remaining"`
+}
+
 type Client struct {
 	BinaryPath string
 }
@@ -248,6 +258,26 @@ func (c Client) SafeExportWithFeedback(
 		DestinationPath: destinationPath,
 		ForceCheckpoint: &forceCheckpointValue,
 	}, observer, config)
+}
+
+func (c Client) PurgeProvenanceEvents(ctx context.Context, databasePath string, beforeTimestamp int64, preserveEventTypes []string) (*ProvenancePurgeReport, error) {
+	resp, err := c.Execute(ctx, Request{
+		DatabasePath:       databasePath,
+		Command:            CommandPurgeProvenanceEvents,
+		BeforeTimestamp:    beforeTimestamp,
+		PreserveEventTypes: preserveEventTypes,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if respErr := ErrorFromResponse(resp); respErr != nil {
+		return nil, respErr
+	}
+	var report ProvenancePurgeReport
+	if err := json.Unmarshal(resp.Payload, &report); err != nil {
+		return nil, fmt.Errorf("decode provenance purge report: %w", err)
+	}
+	return &report, nil
 }
 
 func (c Client) RegenerateVectors(
