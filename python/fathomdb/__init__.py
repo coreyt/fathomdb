@@ -1,3 +1,5 @@
+"""Python SDK for fathomdb, a graph-aware document store backed by SQLite."""
+
 from ._admin import AdminClient
 from ._engine import Engine
 from ._query import Query
