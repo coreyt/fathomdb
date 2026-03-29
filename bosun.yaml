@@ -5,11 +5,9 @@ tools:
   clippy:
     enabled: true
     config_path: Cargo.toml
-
   rustfmt:
     enabled: true
     config_path: rustfmt.toml
-
   golangci-lint:
     enabled: true
     config_path: go/fathom-integrity/.golangci.yml
