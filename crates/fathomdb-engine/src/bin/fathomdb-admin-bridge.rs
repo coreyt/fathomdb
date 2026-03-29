@@ -1,5 +1,5 @@
 use std::io::{self, Read};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use fathomdb_engine::{
@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 const PROTOCOL_VERSION: u32 = 1;
+const MAX_BRIDGE_INPUT_BYTES: u64 = 64 * 1024 * 1024; // 64 MB
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -94,10 +95,21 @@ struct BridgeResponse {
 #[allow(clippy::too_many_lines, clippy::print_stdout, clippy::expect_used)]
 fn main() {
     let mut stdin = String::new();
-    if let Err(error) = io::stdin().read_to_string(&mut stdin) {
+    if let Err(error) = io::stdin()
+        .take(MAX_BRIDGE_INPUT_BYTES)
+        .read_to_string(&mut stdin)
+    {
         emit_error(
             BridgeErrorCode::BadRequest,
             format!("failed to read stdin: {error}"),
+        );
+        return;
+    }
+
+    if stdin.len() as u64 >= MAX_BRIDGE_INPUT_BYTES {
+        emit_error(
+            BridgeErrorCode::BadRequest,
+            "input exceeds maximum size".to_owned(),
         );
         return;
     }
@@ -133,7 +145,34 @@ fn handle_request_body(stdin: &str) -> BridgeResponse {
     handle_request(request)
 }
 
+fn validate_path(path: &Path, label: &str) -> Result<(), String> {
+    if !path.is_absolute() {
+        return Err(format!(
+            "{label} must be an absolute path: {}",
+            path.display()
+        ));
+    }
+    for component in path.components() {
+        if matches!(component, std::path::Component::ParentDir) {
+            return Err(format!(
+                "{label} must not contain '..' components: {}",
+                path.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn handle_request(request: BridgeRequest) -> BridgeResponse {
+    if let Err(msg) = validate_path(&request.database_path, "database_path") {
+        return error_response_with_message(BridgeErrorCode::BadRequest, msg);
+    }
+    if let Some(ref dest) = request.destination_path {
+        if let Err(msg) = validate_path(dest, "destination_path") {
+            return error_response_with_message(BridgeErrorCode::BadRequest, msg);
+        }
+    }
+
     let service = AdminService::new(&request.database_path, Arc::new(SchemaManager::new()));
     let command = match parse_command(&request.command) {
         Ok(cmd) => cmd,
@@ -689,8 +728,9 @@ fn emit_error(code: BridgeErrorCode, message: String) {
 mod tests {
     use super::{
         BridgeErrorCode, BridgeRequest, classify_engine_error, handle_request_body, parse_command,
-        parse_target,
+        parse_target, validate_path,
     };
+    use std::path::Path;
     use fathomdb_engine::{EngineError, ProjectionTarget};
     use fathomdb_schema::SchemaError;
 
@@ -854,5 +894,54 @@ mod tests {
         .expect("request parses");
 
         assert_eq!(request.force_checkpoint, None);
+    }
+
+    #[test]
+    fn validate_path_rejects_relative_path() {
+        let err = validate_path(Path::new("relative/path"), "test").unwrap_err();
+        assert!(err.contains("must be an absolute path"));
+    }
+
+    #[test]
+    fn validate_path_rejects_parent_traversal() {
+        let err = validate_path(Path::new("/foo/../bar"), "test").unwrap_err();
+        assert!(err.contains("must not contain '..' components"));
+    }
+
+    #[test]
+    fn validate_path_accepts_absolute_path() {
+        let result = validate_path(Path::new("/valid/absolute/path"), "test");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn bridge_rejects_relative_database_path() {
+        let response = handle_request_body(
+            r#"{"protocol_version":1,"database_path":"relative/path.db","command":"check_integrity"}"#,
+        );
+        assert!(!response.ok);
+        assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
+        assert!(response.message.contains("must be an absolute path"));
+    }
+
+    #[test]
+    fn bridge_rejects_database_path_with_parent_traversal() {
+        let response = handle_request_body(
+            r#"{"protocol_version":1,"database_path":"/tmp/../etc/passwd","command":"check_integrity"}"#,
+        );
+        assert!(!response.ok);
+        assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
+        assert!(response.message.contains("must not contain '..' components"));
+    }
+
+    #[test]
+    fn bridge_rejects_destination_path_with_parent_traversal() {
+        let response = handle_request_body(
+            r#"{"protocol_version":1,"database_path":"/tmp/fathom.db","command":"safe_export","destination_path":"/tmp/../etc/export"}"#,
+        );
+        assert!(!response.ok);
+        assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
+        assert!(response.message.contains("destination_path"));
+        assert!(response.message.contains("must not contain '..' components"));
     }
 }
