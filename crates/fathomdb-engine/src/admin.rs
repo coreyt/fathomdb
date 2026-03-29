@@ -2009,10 +2009,6 @@ impl AdminService {
             )
             .unwrap_or(0);
 
-        let page_count: u64 = conn
-            .query_row("PRAGMA page_count", [], |row| row.get(0))
-            .unwrap_or(0);
-
         // 2. Export the database through SQLite's online backup API so committed data in the WAL
         // is included even when `force_checkpoint` is false.
         if let Some(parent) = destination_path.parent() {
@@ -2021,6 +2017,18 @@ impl AdminService {
         conn.backup(DatabaseName::Main, destination_path, None)?;
 
         drop(conn);
+
+        // 2b. Query page_count from the EXPORTED file so the manifest reflects what was
+        // actually backed up, not the source (which may have changed between the PRAGMA
+        // and the backup call).
+        let page_count: u64 = {
+            let export_conn = rusqlite::Connection::open_with_flags(
+                destination_path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+                    | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            )?;
+            export_conn.query_row("PRAGMA page_count", [], |row| row.get(0))?
+        };
 
         // 3. Compute SHA-256 of the exported file.
         // FIX(review): was fs::read loading entire DB into memory; use streaming hash.
@@ -2059,7 +2067,16 @@ impl AdminService {
         };
         let manifest_json =
             serde_json::to_string(&manifest).map_err(|e| EngineError::Bridge(e.to_string()))?;
-        fs::write(&manifest_path, manifest_json)?;
+
+        // Atomic manifest write: write to a temp file then rename so readers never
+        // observe a partially-written manifest.
+        let manifest_tmp = manifest_path.with_extension("json.tmp");
+        if let Err(e) = fs::write(&manifest_tmp, &manifest_json)
+            .and_then(|()| fs::rename(&manifest_tmp, &manifest_path))
+        {
+            let _ = fs::remove_file(&manifest_tmp);
+            return Err(e.into());
+        }
 
         Ok(manifest)
     }
@@ -7848,6 +7865,105 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
         assert_eq!(
             fts_count, 0,
             "excised source content must not remain searchable"
+        );
+    }
+
+    #[test]
+    fn export_page_count_matches_exported_file() {
+        let (_db, service) = setup();
+        let export_dir = tempfile::TempDir::new().expect("temp dir");
+        let export_path = export_dir.path().join("page-count.db");
+
+        let manifest = service
+            .safe_export(
+                &export_path,
+                SafeExportOptions {
+                    force_checkpoint: false,
+                },
+            )
+            .expect("export");
+
+        let exported = sqlite::open_connection(&export_path).expect("open exported db");
+        let actual_page_count: u64 = exported
+            .query_row("PRAGMA page_count", [], |row| row.get(0))
+            .expect("page_count from exported file");
+
+        assert_eq!(
+            manifest.page_count, actual_page_count,
+            "manifest page_count must match the exported file's PRAGMA page_count"
+        );
+    }
+
+    #[test]
+    fn no_temp_file_after_successful_export() {
+        let (_db, service) = setup();
+        let export_dir = tempfile::TempDir::new().expect("temp dir");
+        let export_path = export_dir.path().join("no-tmp.db");
+
+        service
+            .safe_export(
+                &export_path,
+                SafeExportOptions {
+                    force_checkpoint: false,
+                },
+            )
+            .expect("export");
+
+        let tmp_files: Vec<_> = fs::read_dir(export_dir.path())
+            .expect("read export dir")
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .is_some_and(|ext| ext == "tmp")
+            })
+            .collect();
+
+        assert!(
+            tmp_files.is_empty(),
+            "no .tmp files should remain after a successful export, found: {tmp_files:?}"
+        );
+    }
+
+    #[test]
+    fn export_manifest_is_valid_json() {
+        let (_db, service) = setup();
+        let export_dir = tempfile::TempDir::new().expect("temp dir");
+        let export_path = export_dir.path().join("valid-json.db");
+
+        service
+            .safe_export(
+                &export_path,
+                SafeExportOptions {
+                    force_checkpoint: false,
+                },
+            )
+            .expect("export");
+
+        let manifest_path = export_dir.path().join("valid-json.db.export-manifest.json");
+        let manifest_contents = fs::read_to_string(&manifest_path).expect("read manifest");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&manifest_contents).expect("manifest must be valid JSON");
+
+        assert!(
+            parsed.get("exported_at").is_some(),
+            "manifest must contain exported_at"
+        );
+        assert!(
+            parsed.get("sha256").is_some(),
+            "manifest must contain sha256"
+        );
+        assert!(
+            parsed.get("schema_version").is_some(),
+            "manifest must contain schema_version"
+        );
+        assert!(
+            parsed.get("protocol_version").is_some(),
+            "manifest must contain protocol_version"
+        );
+        assert!(
+            parsed.get("page_count").is_some(),
+            "manifest must contain page_count"
         );
     }
 }
