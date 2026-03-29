@@ -1255,8 +1255,7 @@ fn apply_write(
         ensure_operational_collections_writable(&tx, prepared)?;
         prepared.operational_validation_warnings =
             validate_operational_writes_against_live_contracts(&tx, prepared)?;
-        let collection_secondary_indexes =
-            load_live_operational_secondary_indexes(&tx, prepared)?;
+        let collection_secondary_indexes = load_live_operational_secondary_indexes(&tx, prepared)?;
 
         let mut next_mutation_order: i64 = tx.query_row(
             "SELECT COALESCE(MAX(mutation_order), 0) FROM operational_mutations",
@@ -1316,9 +1315,7 @@ fn apply_write(
                 next_mutation_order,
             ])?;
             if let Some(indexes) = collection_secondary_indexes.get(collection) {
-                for entry in
-                    extract_secondary_index_entries_for_mutation(indexes, payload_json)
-                {
+                for entry in extract_secondary_index_entries_for_mutation(indexes, payload_json) {
                     ins_secondary_index.execute(params![
                         collection,
                         entry.index_name,
@@ -1367,9 +1364,10 @@ fn apply_write(
                                 String,
                                 i64,
                                 String,
-                            ) = current_row_stmt.query_row(params![collection, record_key], |row| {
-                                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-                            })?;
+                            ) = current_row_stmt
+                                .query_row(params![collection, record_key], |row| {
+                                    Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                                })?;
                             for entry in extract_secondary_index_entries_for_current(
                                 indexes,
                                 &current_payload_json,
@@ -2182,7 +2180,8 @@ mod tests {
                 operational_writes: vec![OperationalWrite::Put {
                     collection: "connector_health".to_owned(),
                     record_key: "gmail".to_owned(),
-                    payload_json: r#"{"status":"degraded","tenant":"acme","category":"mail"}"#.to_owned(),
+                    payload_json: r#"{"status":"degraded","tenant":"acme","category":"mail"}"#
+                        .to_owned(),
                     source_ref: Some("src-1".to_owned()),
                 }],
             })

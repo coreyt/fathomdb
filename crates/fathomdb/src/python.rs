@@ -317,7 +317,10 @@ impl EngineCore {
         collection_name: &str,
     ) -> PyResult<String> {
         let report = py
-            .allow_threads(|| self.engine.rebuild_operational_secondary_indexes(collection_name))
+            .allow_threads(|| {
+                self.engine
+                    .rebuild_operational_secondary_indexes(collection_name)
+            })
             .map_err(map_engine_error)?;
         encode_json(report)
     }

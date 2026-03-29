@@ -359,9 +359,7 @@ fn validate_operational_secondary_index(
 ) -> Result<(), String> {
     match index {
         OperationalSecondaryIndexDefinition::AppendOnlyFieldTime {
-            field,
-            time_field,
-            ..
+            field, time_field, ..
         } => {
             if collection_kind != OperationalCollectionKind::AppendOnlyLog {
                 return Err(format!(
@@ -845,7 +843,9 @@ pub(crate) fn extract_secondary_index_entries_for_current(
             OperationalSecondaryIndexDefinition::LatestStateComposite { name, fields } => {
                 let slots = fields
                     .iter()
-                    .map(|field| extract_secondary_index_slot(object, &field.name, field.value_type))
+                    .map(|field| {
+                        extract_secondary_index_slot(object, &field.name, field.value_type)
+                    })
                     .collect::<Option<Vec<_>>>()?;
                 Some(OperationalSecondaryIndexEntry {
                     index_name: name.clone(),
@@ -977,8 +977,8 @@ pub struct OperationalPurgeReport {
 #[allow(clippy::expect_used)]
 mod tests {
     use super::{
-        parse_operational_validation_contract, validate_operational_payload_against_contract,
         OperationalValidationContract, OperationalValidationMode,
+        parse_operational_validation_contract, validate_operational_payload_against_contract,
     };
 
     #[test]
@@ -1001,7 +1001,10 @@ mod tests {
         .expect("contract parses")
         .expect("contract present");
 
-        assert!(matches!(contract.mode, OperationalValidationMode::ReportOnly));
+        assert!(matches!(
+            contract.mode,
+            OperationalValidationMode::ReportOnly
+        ));
         assert!(
             validate_operational_payload_against_contract(&contract, r#"{"status":"bogus"}"#)
                 .is_err()
@@ -1015,7 +1018,10 @@ mod tests {
         )
         .expect("deserialize");
 
-        assert!(matches!(contract.mode, OperationalValidationMode::ReportOnly));
+        assert!(matches!(
+            contract.mode,
+            OperationalValidationMode::ReportOnly
+        ));
         assert_eq!(
             serde_json::to_string(&contract).expect("serialize"),
             r#"{"format_version":1,"mode":"report_only","additional_properties":true,"fields":[]}"#

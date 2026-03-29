@@ -52,6 +52,11 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		db := fs.String("db", cfg.DatabasePath, "path to sqlite database")
 		destination := fs.String("out", "", "path to export destination")
 		bridgeBinary := fs.String("bridge", cfg.BridgeBinary, "path to admin bridge binary")
+		forceCheckpoint := fs.Bool(
+			"force-checkpoint",
+			false,
+			"request a full WAL checkpoint before export; stricter but may fail while readers are active",
+		)
 		if err := fs.Parse(args[1:]); err != nil {
 			return 2
 		}
@@ -63,6 +68,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			*db,
 			*destination,
 			*bridgeBinary,
+			*forceCheckpoint,
 			stdout,
 			newFeedbackObserver(stderr),
 			bridge.FeedbackConfig{},
@@ -443,11 +449,11 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			now = time.Now().Unix()
 		}
 		request := bridge.Request{
-			DatabasePath:   *db,
-			Command:        bridge.CommandPlanOperationalRetention,
+			DatabasePath:    *db,
+			Command:         bridge.CommandPlanOperationalRetention,
 			CollectionNames: collectionNames,
-			NowTimestamp:   now,
-			MaxCollections: *maxCollections,
+			NowTimestamp:    now,
+			MaxCollections:  *maxCollections,
 		}
 		if err := commands.RunBridgeCommandWithFeedback(
 			bridge.Client{BinaryPath: *bridgeBinary},

@@ -22,13 +22,12 @@ use crate::{
         OperationalHistoryValidationIssue, OperationalHistoryValidationReport,
         OperationalMutationRow, OperationalPurgeReport, OperationalReadReport,
         OperationalReadRequest, OperationalRegisterRequest, OperationalRepairReport,
-        OperationalSecondaryIndexDefinition, OperationalSecondaryIndexRebuildReport,
         OperationalRetentionActionKind, OperationalRetentionPlanItem,
-        OperationalRetentionPlanReport, OperationalRetentionRunItem,
-        OperationalRetentionRunReport, OperationalTraceReport,
-        extract_secondary_index_entries_for_current, extract_secondary_index_entries_for_mutation,
-        parse_operational_secondary_indexes_json, parse_operational_validation_contract,
-        validate_operational_payload_against_contract,
+        OperationalRetentionPlanReport, OperationalRetentionRunItem, OperationalRetentionRunReport,
+        OperationalSecondaryIndexDefinition, OperationalSecondaryIndexRebuildReport,
+        OperationalTraceReport, extract_secondary_index_entries_for_current,
+        extract_secondary_index_entries_for_mutation, parse_operational_secondary_indexes_json,
+        parse_operational_validation_contract, validate_operational_payload_against_contract,
     },
     projection::ProjectionTarget,
     sqlite,
@@ -875,9 +874,8 @@ impl AdminService {
         let record = load_operational_collection_record(&tx, name)?.ok_or_else(|| {
             EngineError::InvalidWrite(format!("operational collection '{name}' is not registered"))
         })?;
-        let indexes =
-            parse_operational_secondary_indexes_json(secondary_indexes_json, record.kind)
-                .map_err(EngineError::InvalidWrite)?;
+        let indexes = parse_operational_secondary_indexes_json(secondary_indexes_json, record.kind)
+            .map_err(EngineError::InvalidWrite)?;
         tx.execute(
             "UPDATE operational_collections SET secondary_indexes_json = ?2 WHERE name = ?1",
             rusqlite::params![name, secondary_indexes_json],
@@ -895,7 +893,9 @@ impl AdminService {
             })),
         )?;
         let updated = load_operational_collection_record(&tx, name)?.ok_or_else(|| {
-            EngineError::Bridge("operational collection missing after secondary index update".to_owned())
+            EngineError::Bridge(
+                "operational collection missing after secondary index update".to_owned(),
+            )
         })?;
         tx.commit()?;
         Ok(updated)
@@ -912,11 +912,9 @@ impl AdminService {
         let record = load_operational_collection_record(&tx, name)?.ok_or_else(|| {
             EngineError::InvalidWrite(format!("operational collection '{name}' is not registered"))
         })?;
-        let indexes = parse_operational_secondary_indexes_json(
-            &record.secondary_indexes_json,
-            record.kind,
-        )
-        .map_err(EngineError::InvalidWrite)?;
+        let indexes =
+            parse_operational_secondary_indexes_json(&record.secondary_indexes_json, record.kind)
+                .map_err(EngineError::InvalidWrite)?;
         let (mutation_entries_rebuilt, current_entries_rebuilt) =
             rebuild_operational_secondary_index_entries(&tx, &record.name, &record.kind, &indexes)?;
         persist_simple_provenance_event(
@@ -1264,11 +1262,9 @@ impl AdminService {
         validate_append_only_operational_collection(&record, "read")?;
         let declared_fields = parse_operational_filter_fields(&record.filter_fields_json)
             .map_err(EngineError::InvalidWrite)?;
-        let secondary_indexes = parse_operational_secondary_indexes_json(
-            &record.secondary_indexes_json,
-            record.kind,
-        )
-        .map_err(EngineError::InvalidWrite)?;
+        let secondary_indexes =
+            parse_operational_secondary_indexes_json(&record.secondary_indexes_json, record.kind)
+                .map_err(EngineError::InvalidWrite)?;
         let applied_limit = operational_read_limit(request.limit)?;
         let filters = compile_operational_read_filters(&request.filters, &declared_fields)?;
         if let Some(report) = execute_operational_secondary_index_read(
@@ -3116,7 +3112,8 @@ fn rebuild_operational_secondary_index_entries(
             .collect::<Result<Vec<_>, _>>()?;
         drop(stmt);
         for (record_key, payload_json, updated_at, last_mutation_id) in rows {
-            for entry in extract_secondary_index_entries_for_current(indexes, &payload_json, updated_at)
+            for entry in
+                extract_secondary_index_entries_for_current(indexes, &payload_json, updated_at)
             {
                 insert_operational_secondary_index_entry(
                     tx,
@@ -3502,13 +3499,17 @@ fn match_append_only_secondary_index_read<'a>(
             if filter.field == *field {
                 let supported = matches!(
                     (&filter.condition, value_type),
-                    (OperationalReadCondition::ExactString(_), crate::operational::OperationalSecondaryIndexValueType::String)
-                        | (OperationalReadCondition::Prefix(_), crate::operational::OperationalSecondaryIndexValueType::String)
-                        | (
-                            OperationalReadCondition::ExactInteger(_),
-                            crate::operational::OperationalSecondaryIndexValueType::Integer
-                                | crate::operational::OperationalSecondaryIndexValueType::Timestamp
-                        )
+                    (
+                        OperationalReadCondition::ExactString(_),
+                        crate::operational::OperationalSecondaryIndexValueType::String
+                    ) | (
+                        OperationalReadCondition::Prefix(_),
+                        crate::operational::OperationalSecondaryIndexValueType::String
+                    ) | (
+                        OperationalReadCondition::ExactInteger(_),
+                        crate::operational::OperationalSecondaryIndexValueType::Integer
+                            | crate::operational::OperationalSecondaryIndexValueType::Timestamp
+                    )
                 );
                 if !supported || value_filter.is_some() {
                     return None;
@@ -3866,7 +3867,9 @@ fn load_operational_retention_records(
     if let Some(collection_names) = collection_names {
         for name in collection_names.iter().take(limit) {
             let record = load_operational_collection_record(conn, name)?.ok_or_else(|| {
-                EngineError::InvalidWrite(format!("operational collection '{name}' is not registered"))
+                EngineError::InvalidWrite(format!(
+                    "operational collection '{name}' is not registered"
+                ))
             })?;
             records.push(record);
         }
@@ -3907,8 +3910,9 @@ fn count_operational_mutations_for_collection(
         [collection_name],
         |row| row.get(0),
     )?;
-    usize::try_from(count)
-        .map_err(|_| EngineError::Bridge(format!("count overflow for collection {collection_name}")))
+    usize::try_from(count).map_err(|_| {
+        EngineError::Bridge(format!("count overflow for collection {collection_name}"))
+    })
 }
 
 fn retention_action_kind_and_limit(

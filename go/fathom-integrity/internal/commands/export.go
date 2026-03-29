@@ -13,15 +13,26 @@ import (
 )
 
 // RunExport exports a fathomdb database to destinationPath using the Rust admin
-// bridge to ensure the WAL is fully checkpointed before the copy.
+// bridge-backed SQLite backup path. When forceCheckpoint is true, the bridge
+// requests a full WAL checkpoint before exporting; when false, export still
+// produces a correct snapshot without requiring readers to clear first.
 // bridgePath must point to the fathomdb-admin-bridge binary; if empty, the
 // function returns an error immediately rather than falling back to a naive copy.
-func RunExport(databasePath, destinationPath, bridgePath string, out io.Writer) error {
-	return RunExportWithFeedback(databasePath, destinationPath, bridgePath, out, nil, bridge.FeedbackConfig{})
+func RunExport(databasePath, destinationPath, bridgePath string, forceCheckpoint bool, out io.Writer) error {
+	return RunExportWithFeedback(
+		databasePath,
+		destinationPath,
+		bridgePath,
+		forceCheckpoint,
+		out,
+		nil,
+		bridge.FeedbackConfig{},
+	)
 }
 
 func RunExportWithFeedback(
 	databasePath, destinationPath, bridgePath string,
+	forceCheckpoint bool,
 	out io.Writer,
 	observer bridge.Observer,
 	config bridge.FeedbackConfig,
@@ -40,7 +51,7 @@ func RunExportWithFeedback(
 			if bridgePath == "" {
 				return struct{}{}, fmt.Errorf(
 					"safe export requires the admin bridge binary (--bridge); " +
-						"without it the WAL cannot be checkpointed and the copy may be incomplete")
+						"there is no supported fallback copy path")
 			}
 
 			// Security fix M-1: Use restrictive permissions for the destination directory
@@ -50,7 +61,7 @@ func RunExportWithFeedback(
 			}
 
 			client := bridge.Client{BinaryPath: bridgePath}
-			resp, err := client.SafeExport(ctx, databasePath, destinationPath)
+			resp, err := client.SafeExport(ctx, databasePath, destinationPath, forceCheckpoint)
 			if err != nil {
 				return struct{}{}, fmt.Errorf("safe_export bridge call failed: %w", err)
 			}

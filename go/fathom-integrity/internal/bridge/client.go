@@ -62,6 +62,7 @@ type Request struct {
 	BeforeTimestamp       int64                   `json:"before_timestamp,omitempty"`
 	DryRun                bool                    `json:"dry_run,omitempty"`
 	DestinationPath       string                  `json:"destination_path,omitempty"`
+	ForceCheckpoint       *bool                   `json:"force_checkpoint,omitempty"`
 	ConfigPath            string                  `json:"config_path,omitempty"`
 	VectorGeneratorPolicy *VectorGeneratorPolicy  `json:"vector_generator_policy,omitempty"`
 	OperationalCollection *OperationalCollection  `json:"operational_collection,omitempty"`
@@ -69,14 +70,14 @@ type Request struct {
 }
 
 type OperationalCollection struct {
-	Name             string `json:"name"`
-	Kind             string `json:"kind"`
-	SchemaJSON       string `json:"schema_json"`
-	RetentionJSON    string `json:"retention_json"`
-	FilterFieldsJSON string `json:"filter_fields_json"`
-	ValidationJSON   string `json:"validation_json"`
+	Name                 string `json:"name"`
+	Kind                 string `json:"kind"`
+	SchemaJSON           string `json:"schema_json"`
+	RetentionJSON        string `json:"retention_json"`
+	FilterFieldsJSON     string `json:"filter_fields_json"`
+	ValidationJSON       string `json:"validation_json"`
 	SecondaryIndexesJSON string `json:"secondary_indexes_json"`
-	FormatVersion    int64  `json:"format_version"`
+	FormatVersion        int64  `json:"format_version"`
 }
 
 type OperationalFilterClause struct {
@@ -223,24 +224,29 @@ func validateBinaryPath(path string) error {
 	return nil
 }
 
-func (c Client) SafeExport(ctx context.Context, databasePath, destinationPath string) (Response, error) {
+func (c Client) SafeExport(ctx context.Context, databasePath, destinationPath string, forceCheckpoint bool) (Response, error) {
+	forceCheckpointValue := forceCheckpoint
 	return c.Execute(ctx, Request{
 		DatabasePath:    databasePath,
 		Command:         CommandSafeExport,
 		DestinationPath: destinationPath,
+		ForceCheckpoint: &forceCheckpointValue,
 	})
 }
 
 func (c Client) SafeExportWithFeedback(
 	ctx context.Context,
 	databasePath, destinationPath string,
+	forceCheckpoint bool,
 	observer Observer,
 	config FeedbackConfig,
 ) (Response, error) {
+	forceCheckpointValue := forceCheckpoint
 	return c.ExecuteWithFeedback(ctx, Request{
 		DatabasePath:    databasePath,
 		Command:         CommandSafeExport,
 		DestinationPath: destinationPath,
+		ForceCheckpoint: &forceCheckpointValue,
 	}, observer, config)
 }
 

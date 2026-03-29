@@ -101,6 +101,37 @@ func TestCountTable_RejectsUnknownTable(t *testing.T) {
 	require.Contains(t, err.Error(), "invalid table name")
 }
 
+func TestCountTable_AcceptsOperationalTables(t *testing.T) {
+	sqliteBin := testutil.SQLiteBinary()
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+
+	cmd := exec.Command(
+		sqliteBin,
+		dbPath,
+		"CREATE TABLE operational_collections (name TEXT); "+
+			"CREATE TABLE operational_mutations (id TEXT); "+
+			"CREATE TABLE operational_current (record_key TEXT); "+
+			"INSERT INTO operational_collections VALUES ('audit_log'); "+
+			"INSERT INTO operational_mutations VALUES ('mut-1'); "+
+			"INSERT INTO operational_current VALUES ('entry-1');",
+	)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+
+	n, err := CountTable(sqliteBin, dbPath, "operational_collections")
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+
+	n, err = CountTable(sqliteBin, dbPath, "operational_mutations")
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+
+	n, err = CountTable(sqliteBin, dbPath, "operational_current")
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+}
+
 func buildValidWALHeader(pageSize uint32) []byte {
 	buf := make([]byte, 32)
 	binary.BigEndian.PutUint32(buf[0:4], 0x377f0682) // WAL magic BE

@@ -30,17 +30,19 @@ A production release consists of:
 
 Before publishing a release tag:
 
-1. baseline CI must be green
-2. Python CI must be green
-3. benchmark and robustness workflows must have recent green runs
-4. `dev/production-readiness-checklist.md` must have no `missing` mandatory
-   blockers
+1. the release verification workflow must pass
+2. baseline CI must be green for the tagged commit
+3. Python CI must be green for the tagged commit
+4. `Benchmark And Robustness` must have a successful run on `main` within the
+   last 10 days
 5. `scripts/check-version-consistency.py --tag vX.Y.Z` must pass
 
 ## Release Workflow Shape
 
 - baseline CI remains separate from release publishing
 - release publishing is tag-driven
+- `verify-release` enforces the CI, Python, benchmark freshness, and version
+  consistency gates before any artifact publish job starts
 - GitHub Release is created only after PyPI and crates.io publication succeed
 
 ## Manual Fallback

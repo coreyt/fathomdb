@@ -24,9 +24,8 @@ pub use fathomdb_engine::{
     OperationalTraceReport, OperationalValidationContract, OperationalValidationField,
     OperationalValidationFieldType, OperationalValidationMode, OperationalWrite,
     OptionalProjectionTask, ProjectionRepairReport, ProjectionTarget, ProvenanceEvent,
-    ProvenanceMode, QueryPlan, QueryRows, RunInsert, RunRow, SafeExportManifest,
-    SafeExportOptions, StepInsert, StepRow, VecInsert, WriteReceipt, WriteRequest, WriterActor,
-    new_id, new_row_id,
+    ProvenanceMode, QueryPlan, QueryRows, RunInsert, RunRow, SafeExportManifest, SafeExportOptions,
+    StepInsert, StepRow, VecInsert, WriteReceipt, WriteRequest, WriterActor, new_id, new_row_id,
 };
 pub use fathomdb_query::{
     BindValue, ComparisonOp, CompileError, CompiledGroupedQuery, CompiledQuery, DrivingTable,
@@ -228,9 +227,11 @@ impl Engine {
         collection_names: Option<&[String]>,
         max_collections: Option<usize>,
     ) -> Result<OperationalRetentionPlanReport, EngineError> {
-        self.admin()
-            .service()
-            .plan_operational_retention(now_timestamp, collection_names, max_collections)
+        self.admin().service().plan_operational_retention(
+            now_timestamp,
+            collection_names,
+            max_collections,
+        )
     }
 
     pub fn run_operational_retention(

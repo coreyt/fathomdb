@@ -159,7 +159,8 @@ func Diagnose(dbPath, sqliteBin string, layer2 *Layer2Report) (DiagnosticReport,
 // rejecting any table name not in this set.
 var validTableNames = map[string]bool{
 	"nodes": true, "chunks": true, "runs": true, "steps": true, "actions": true,
-	"edges": true, "fts_nodes": true,
+	"edges": true, "fts_nodes": true, "operational_collections": true,
+	"operational_mutations": true, "operational_current": true,
 }
 
 // CountTable returns the number of rows in the named table.

@@ -1,10 +1,17 @@
 package commands
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/coreyt/fathomdb/go/fathom-integrity/internal/bridge"
+	"github.com/coreyt/fathomdb/go/fathom-integrity/test/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -94,4 +101,117 @@ func TestRunBridgeCommandDoesNotInstallFixedDeadline(t *testing.T) {
 
 	require.NoError(t, err)
 	require.False(t, sawDeadline, "recovery bridge restore path must not impose a fixed deadline")
+}
+
+func TestCountRecoveredRowsIncludesOperationalTables(t *testing.T) {
+	sqliteBin := testutil.SQLiteBinary()
+	sourcePath := seedRecoverSourceDB(t, sqliteBin)
+	destPath := filepath.Join(t.TempDir(), "recovered.db")
+	var out bytes.Buffer
+
+	err := runRecover(sourcePath, destPath, "", sqliteBin, &out)
+
+	require.NoError(t, err, out.String())
+	report := decodeRecoverReport(t, out.String())
+	require.Equal(t, 1, report.RowCounts.OperationalCollections)
+	require.Equal(t, 1, report.RowCounts.OperationalMutations)
+	require.Equal(t, 1, report.RowCounts.OperationalCurrent)
+}
+
+func TestRunRecover_BestEffortWithoutBridgeIgnoresCountFailures(t *testing.T) {
+	sqliteBin := testutil.SQLiteBinary()
+	sourcePath := seedRecoverSourceDB(t, sqliteBin)
+	destPath := filepath.Join(t.TempDir(), "recovered.db")
+	failingSQLite := makeFailingSQLiteWrapper(t, sqliteBin)
+	var out bytes.Buffer
+
+	err := runRecover(sourcePath, destPath, "", failingSQLite, &out)
+
+	require.NoError(t, err, out.String())
+	report := decodeRecoverReport(t, out.String())
+	require.Equal(t, 1, report.RowCounts.OperationalCollections)
+	require.Equal(t, 1, report.RowCounts.OperationalMutations)
+	require.Equal(t, 0, report.RowCounts.OperationalCurrent)
+}
+
+func TestRunRecover_BridgeBackedCountFailuresAreFatal(t *testing.T) {
+	sqliteBin := testutil.SQLiteBinary()
+	sourcePath := seedRecoverSourceDB(t, sqliteBin)
+	destPath := filepath.Join(t.TempDir(), "recovered.db")
+	failingSQLite := makeFailingSQLiteWrapper(t, sqliteBin)
+	bridgePath := makeSuccessBridgeScript(t)
+	var out bytes.Buffer
+
+	err := runRecover(sourcePath, destPath, bridgePath, failingSQLite, &out)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "count recovered operational_current rows")
+}
+
+func seedRecoverSourceDB(t *testing.T, sqliteBin string) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "source.db")
+	sql := strings.Join([]string{
+		"CREATE TABLE nodes (id TEXT);",
+		"CREATE TABLE chunks (id TEXT);",
+		"CREATE TABLE runs (id TEXT);",
+		"CREATE TABLE steps (id TEXT);",
+		"CREATE TABLE actions (id TEXT);",
+		"CREATE TABLE vector_profiles (profile TEXT, enabled INTEGER);",
+		"CREATE TABLE operational_collections (name TEXT);",
+		"CREATE TABLE operational_mutations (id TEXT);",
+		"CREATE TABLE operational_current (record_key TEXT);",
+		"INSERT INTO nodes VALUES ('node-1');",
+		"INSERT INTO chunks VALUES ('chunk-1');",
+		"INSERT INTO runs VALUES ('run-1');",
+		"INSERT INTO steps VALUES ('step-1');",
+		"INSERT INTO actions VALUES ('action-1');",
+		"INSERT INTO vector_profiles VALUES ('default', 0);",
+		"INSERT INTO operational_collections VALUES ('audit_log');",
+		"INSERT INTO operational_mutations VALUES ('mut-1');",
+		"INSERT INTO operational_current VALUES ('entry-1');",
+	}, " ")
+
+	cmd := exec.Command(sqliteBin, dbPath, sql)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+	return dbPath
+}
+
+func makeFailingSQLiteWrapper(t *testing.T, realSQLite string) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sqlite-wrapper.sh")
+	script := "#!/usr/bin/env bash\nset -euo pipefail\ncase \"$*\" in\n  *operational_current*)\n    echo \"forced count failure for operational_current\" >&2\n    exit 1\n    ;;\nesac\nexec " + shellQuote(realSQLite) + " \"$@\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
+	return path
+}
+
+func makeSuccessBridgeScript(t *testing.T) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bridge.sh")
+	script := "#!/usr/bin/env bash\nset -euo pipefail\ncat >/dev/null\nprintf '%s\\n' '{\"protocol_version\":1,\"ok\":true,\"message\":\"ok\",\"payload\":{}}'\n"
+	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
+	return path
+}
+
+func decodeRecoverReport(t *testing.T, output string) RecoverReport {
+	t.Helper()
+
+	firstLine := strings.TrimSpace(output)
+	if idx := strings.IndexByte(firstLine, '\n'); idx >= 0 {
+		firstLine = firstLine[:idx]
+	}
+	var report RecoverReport
+	require.NoError(t, json.Unmarshal([]byte(firstLine), &report), output)
+	return report
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }

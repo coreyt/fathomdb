@@ -95,6 +95,51 @@ func TestMainPurgeLogicalIDRequiresDBAndLogicalID(t *testing.T) {
 	require.Contains(t, stderr.String(), "--db and --logical-id are required")
 }
 
+func TestMainExportDefaultsToExplicitNonCheckpointedBridgeExport(t *testing.T) {
+	tempDir := t.TempDir()
+	requestPath := filepath.Join(tempDir, "request.json")
+	script := "#!/usr/bin/env bash\ncat >" + requestPath + "\nprintf '%s\\n' '{\"protocol_version\":1,\"ok\":true,\"message\":\"export created\",\"payload\":{\"exported_at\":1742741234,\"sha256\":\"a3f1c2d4e5b6a7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2\",\"schema_version\":1,\"protocol_version\":1,\"page_count\":32}}'\n"
+	bridgePath := writeShellBridge(t, script)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{
+		"export",
+		"--db", "/tmp/fathom.db",
+		"--out", "/tmp/export.db",
+		"--bridge", bridgePath,
+	}, &stdout, &stderr)
+
+	require.Equal(t, 0, exitCode)
+	body, err := os.ReadFile(requestPath)
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"force_checkpoint":false`)
+}
+
+func TestMainExportForwardsForceCheckpointFlag(t *testing.T) {
+	tempDir := t.TempDir()
+	requestPath := filepath.Join(tempDir, "request.json")
+	script := "#!/usr/bin/env bash\ncat >" + requestPath + "\nprintf '%s\\n' '{\"protocol_version\":1,\"ok\":true,\"message\":\"export created\",\"payload\":{\"exported_at\":1742741234,\"sha256\":\"a3f1c2d4e5b6a7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2\",\"schema_version\":1,\"protocol_version\":1,\"page_count\":32}}'\n"
+	bridgePath := writeShellBridge(t, script)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{
+		"export",
+		"--db", "/tmp/fathom.db",
+		"--out", "/tmp/export.db",
+		"--bridge", bridgePath,
+		"--force-checkpoint",
+	}, &stdout, &stderr)
+
+	require.Equal(t, 0, exitCode)
+	body, err := os.ReadFile(requestPath)
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"force_checkpoint":true`)
+}
+
 func TestMainVersionCommand(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

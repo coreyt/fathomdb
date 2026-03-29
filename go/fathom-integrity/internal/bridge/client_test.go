@@ -56,6 +56,53 @@ func TestRequestJSONShape(t *testing.T) {
 	require.Contains(t, string(body), `"preserve_env_vars":["OPENAI_API_KEY"]`)
 }
 
+func TestSafeExportRequestJSONShapeOmitsForceCheckpointByDefault(t *testing.T) {
+	request := Request{
+		DatabasePath:    "/tmp/fathom.db",
+		Command:         CommandSafeExport,
+		DestinationPath: "/tmp/export.db",
+	}
+
+	body, err := json.Marshal(request)
+
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"command":"safe_export"`)
+	require.Contains(t, string(body), `"destination_path":"/tmp/export.db"`)
+	require.NotContains(t, string(body), `"force_checkpoint"`)
+}
+
+func TestSafeExportRequestJSONShapeIncludesExplicitFalseForceCheckpoint(t *testing.T) {
+	forceCheckpoint := false
+	request := Request{
+		DatabasePath:    "/tmp/fathom.db",
+		Command:         CommandSafeExport,
+		DestinationPath: "/tmp/export.db",
+		ForceCheckpoint: &forceCheckpoint,
+	}
+
+	body, err := json.Marshal(request)
+
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"command":"safe_export"`)
+	require.Contains(t, string(body), `"force_checkpoint":false`)
+}
+
+func TestSafeExportRequestJSONShapeIncludesForceCheckpointWhenRequested(t *testing.T) {
+	forceCheckpoint := true
+	request := Request{
+		DatabasePath:    "/tmp/fathom.db",
+		Command:         CommandSafeExport,
+		DestinationPath: "/tmp/export.db",
+		ForceCheckpoint: &forceCheckpoint,
+	}
+
+	body, err := json.Marshal(request)
+
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"command":"safe_export"`)
+	require.Contains(t, string(body), `"force_checkpoint":true`)
+}
+
 func TestOperationalRequestJSONShape(t *testing.T) {
 	request := Request{
 		DatabasePath:   "/tmp/fathom.db",

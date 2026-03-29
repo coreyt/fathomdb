@@ -176,22 +176,9 @@ func runRecover(sourcePath, destPath, bridgePath, sqliteBin string, out io.Write
 	}
 
 	// Count rows in the key fathomdb tables.
-	rowCounts := RecoverRowCounts{}
-	for _, pair := range []struct {
-		field *int
-		table string
-	}{
-		{&rowCounts.Nodes, "nodes"},
-		{&rowCounts.Chunks, "chunks"},
-		{&rowCounts.Runs, "runs"},
-		{&rowCounts.Steps, "steps"},
-		{&rowCounts.Actions, "actions"},
-		{&rowCounts.OperationalCollections, "operational_collections"},
-		{&rowCounts.OperationalMutations, "operational_mutations"},
-		{&rowCounts.OperationalCurrent, "operational_current"},
-	} {
-		n, _ := sqlitecheck.CountTable(sqliteBin, destPath, pair.table)
-		*pair.field = n
+	rowCounts, err := countRecoveredRows(sqliteBin, destPath, bridgePath != "")
+	if err != nil {
+		return err
 	}
 
 	// Run a full three-layer diagnostic on the recovered database.
@@ -275,6 +262,33 @@ func runBridgeCommandWithExecute(execute bridgeExecuteFunc, dbPath string, comma
 		return err
 	}
 	return nil
+}
+
+func countRecoveredRows(sqliteBin, dbPath string, strict bool) (RecoverRowCounts, error) {
+	rowCounts := RecoverRowCounts{}
+	for _, pair := range []struct {
+		field *int
+		table string
+	}{
+		{&rowCounts.Nodes, "nodes"},
+		{&rowCounts.Chunks, "chunks"},
+		{&rowCounts.Runs, "runs"},
+		{&rowCounts.Steps, "steps"},
+		{&rowCounts.Actions, "actions"},
+		{&rowCounts.OperationalCollections, "operational_collections"},
+		{&rowCounts.OperationalMutations, "operational_mutations"},
+		{&rowCounts.OperationalCurrent, "operational_current"},
+	} {
+		n, err := sqlitecheck.CountTable(sqliteBin, dbPath, pair.table)
+		if err != nil {
+			if strict {
+				return RecoverRowCounts{}, fmt.Errorf("count recovered %s rows: %w", pair.table, err)
+			}
+			continue
+		}
+		*pair.field = n
+	}
+	return rowCounts, nil
 }
 
 func queryScalarInt(sqliteBin, dbPath, query string) (int, error) {

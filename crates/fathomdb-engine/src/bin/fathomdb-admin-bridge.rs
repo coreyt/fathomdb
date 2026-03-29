@@ -38,6 +38,7 @@ struct BridgeRequest {
     validation_json: Option<String>,
     secondary_indexes_json: Option<String>,
     destination_path: Option<PathBuf>,
+    force_checkpoint: Option<bool>,
     config_path: Option<PathBuf>,
     now_timestamp: Option<i64>,
     max_collections: Option<usize>,
@@ -265,7 +266,13 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
         },
         BridgeCommand::SafeExport => match request.destination_path {
             Some(destination) => {
-                match service.safe_export(destination, SafeExportOptions::default()) {
+                match service.safe_export(
+                    destination,
+                    request
+                        .force_checkpoint
+                        .map(|force_checkpoint| SafeExportOptions { force_checkpoint })
+                        .unwrap_or_default(),
+                ) {
                     Ok(manifest) => success_response(
                         "export created".to_owned(),
                         // SafeExportManifest contains only primitive types; serialization cannot fail.
@@ -466,21 +473,23 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                 Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
             }
         }
-        BridgeCommand::RebuildOperationalSecondaryIndexes => match request.collection_name.as_deref() {
-            Some(collection_name) if !collection_name.is_empty() => {
-                match service.rebuild_operational_secondary_indexes(collection_name) {
-                    Ok(report) => success_response(
-                        "operational secondary indexes rebuilt".to_owned(),
-                        serde_json::to_value(report).unwrap_or_else(|_| json!({})),
-                    ),
-                    Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+        BridgeCommand::RebuildOperationalSecondaryIndexes => {
+            match request.collection_name.as_deref() {
+                Some(collection_name) if !collection_name.is_empty() => {
+                    match service.rebuild_operational_secondary_indexes(collection_name) {
+                        Ok(report) => success_response(
+                            "operational secondary indexes rebuilt".to_owned(),
+                            serde_json::to_value(report).unwrap_or_else(|_| json!({})),
+                        ),
+                        Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                    }
                 }
+                _ => error_response_with_message(
+                    BridgeErrorCode::BadRequest,
+                    "collection_name is required".to_owned(),
+                ),
             }
-            _ => error_response_with_message(
-                BridgeErrorCode::BadRequest,
-                "collection_name is required".to_owned(),
-            ),
-        },
+        }
         BridgeCommand::TraceOperationalCollection => match request.collection_name.as_deref() {
             Some(collection_name) if !collection_name.is_empty() => {
                 match service
@@ -679,7 +688,8 @@ fn emit_error(code: BridgeErrorCode, message: String) {
 #[cfg(test)]
 mod tests {
     use super::{
-        BridgeErrorCode, classify_engine_error, handle_request_body, parse_command, parse_target,
+        BridgeErrorCode, BridgeRequest, classify_engine_error, handle_request_body, parse_command,
+        parse_target,
     };
     use fathomdb_engine::{EngineError, ProjectionTarget};
     use fathomdb_schema::SchemaError;
@@ -824,5 +834,25 @@ mod tests {
         assert!(!response.ok);
         assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
         assert!(response.message.contains("logical_id is required"));
+    }
+
+    #[test]
+    fn bridge_request_parses_force_checkpoint_for_safe_export() {
+        let request: BridgeRequest = serde_json::from_str(
+            r#"{"protocol_version":1,"database_path":"/tmp/fathom.db","command":"safe_export","destination_path":"/tmp/export.db","force_checkpoint":true}"#,
+        )
+        .expect("request parses");
+
+        assert_eq!(request.force_checkpoint, Some(true));
+    }
+
+    #[test]
+    fn bridge_request_omits_force_checkpoint_when_not_requested() {
+        let request: BridgeRequest = serde_json::from_str(
+            r#"{"protocol_version":1,"database_path":"/tmp/fathom.db","command":"safe_export","destination_path":"/tmp/export.db"}"#,
+        )
+        .expect("request parses");
+
+        assert_eq!(request.force_checkpoint, None);
     }
 }

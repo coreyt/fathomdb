@@ -171,11 +171,14 @@ impl ExecutionCoordinator {
         self.vector_enabled
     }
 
+    fn lock_connection(&self) -> Result<std::sync::MutexGuard<'_, Connection>, EngineError> {
+        self.conn
+            .lock()
+            .map_err(|_| EngineError::Bridge("connection mutex poisoned".to_owned()))
+    }
+
     /// # Errors
     /// Returns [`EngineError`] if the SQL statement cannot be prepared or executed.
-    ///
-    /// # Panics
-    /// Panics if the internal connection or shape-SQL-map mutex is poisoned.
     #[allow(clippy::expect_used)]
     pub fn execute_compiled_read(
         &self,
@@ -202,10 +205,7 @@ impl ExecutionCoordinator {
         // shape_sql_map uses into_inner() (pure cache, safe to recover).
         // conn uses map_err → EngineError (connection state may be corrupt after panic;
         // into_inner() would risk using a connection with partial transaction state).
-        let conn_guard = self
-            .conn
-            .lock()
-            .map_err(|_| EngineError::Bridge("connection mutex poisoned".to_owned()))?;
+        let conn_guard = self.lock_connection()?;
         let mut statement = match conn_guard.prepare_cached(&row_sql) {
             Ok(stmt) => stmt,
             Err(e) if is_vec_table_absent(&e) => {
@@ -354,13 +354,10 @@ impl ExecutionCoordinator {
     /// Read a single run by id.
     ///
     /// # Errors
-    /// Returns [`EngineError`] if the query fails.
-    ///
-    /// # Panics
-    /// Panics if the internal connection mutex is poisoned.
-    #[allow(clippy::expect_used)]
+    /// Returns [`EngineError`] if the query fails or if the connection mutex
+    /// has been poisoned.
     pub fn read_run(&self, id: &str) -> Result<Option<RunRow>, EngineError> {
-        let conn = self.conn.lock().expect("coordinator connection mutex");
+        let conn = self.lock_connection()?;
         conn.query_row(
             "SELECT id, kind, status, properties FROM runs WHERE id = ?1",
             rusqlite::params![id],
@@ -380,13 +377,10 @@ impl ExecutionCoordinator {
     /// Read a single step by id.
     ///
     /// # Errors
-    /// Returns [`EngineError`] if the query fails.
-    ///
-    /// # Panics
-    /// Panics if the internal connection mutex is poisoned.
-    #[allow(clippy::expect_used)]
+    /// Returns [`EngineError`] if the query fails or if the connection mutex
+    /// has been poisoned.
     pub fn read_step(&self, id: &str) -> Result<Option<StepRow>, EngineError> {
-        let conn = self.conn.lock().expect("coordinator connection mutex");
+        let conn = self.lock_connection()?;
         conn.query_row(
             "SELECT id, run_id, kind, status, properties FROM steps WHERE id = ?1",
             rusqlite::params![id],
@@ -407,13 +401,10 @@ impl ExecutionCoordinator {
     /// Read a single action by id.
     ///
     /// # Errors
-    /// Returns [`EngineError`] if the query fails.
-    ///
-    /// # Panics
-    /// Panics if the internal connection mutex is poisoned.
-    #[allow(clippy::expect_used)]
+    /// Returns [`EngineError`] if the query fails or if the connection mutex
+    /// has been poisoned.
     pub fn read_action(&self, id: &str) -> Result<Option<ActionRow>, EngineError> {
-        let conn = self.conn.lock().expect("coordinator connection mutex");
+        let conn = self.lock_connection()?;
         conn.query_row(
             "SELECT id, step_id, kind, status, properties FROM actions WHERE id = ?1",
             rusqlite::params![id],
@@ -434,13 +425,10 @@ impl ExecutionCoordinator {
     /// Read all active (non-superseded) runs.
     ///
     /// # Errors
-    /// Returns [`EngineError`] if the query fails.
-    ///
-    /// # Panics
-    /// Panics if the internal connection mutex is poisoned.
-    #[allow(clippy::expect_used)]
+    /// Returns [`EngineError`] if the query fails or if the connection mutex
+    /// has been poisoned.
     pub fn read_active_runs(&self) -> Result<Vec<RunRow>, EngineError> {
-        let conn = self.conn.lock().expect("coordinator connection mutex");
+        let conn = self.lock_connection()?;
         let mut stmt = conn
             .prepare_cached(
                 "SELECT id, kind, status, properties FROM runs WHERE superseded_at IS NULL",
@@ -512,13 +500,10 @@ impl ExecutionCoordinator {
     /// Used by Layer 1 tests to verify startup pragma initialization.
     ///
     /// # Errors
-    /// Returns [`EngineError`] if the PRAGMA query fails.
-    ///
-    /// # Panics
-    /// Panics if the internal connection mutex is poisoned.
-    #[allow(clippy::expect_used)]
+    /// Returns [`EngineError`] if the PRAGMA query fails or if the connection
+    /// mutex has been poisoned.
     pub fn raw_pragma(&self, name: &str) -> Result<String, EngineError> {
-        let conn = self.conn.lock().expect("coordinator connection mutex");
+        let conn = self.lock_connection()?;
         let result = conn
             .query_row(&format!("PRAGMA {name}"), [], |row| {
                 // PRAGMAs may return TEXT or INTEGER; normalise to String.
@@ -545,16 +530,13 @@ impl ExecutionCoordinator {
     /// values (for excise events).
     ///
     /// # Errors
-    /// Returns [`EngineError`] if the query fails.
-    ///
-    /// # Panics
-    /// Panics if the internal connection mutex is poisoned.
-    #[allow(clippy::expect_used)]
+    /// Returns [`EngineError`] if the query fails or if the connection mutex
+    /// has been poisoned.
     pub fn query_provenance_events(
         &self,
         subject: &str,
     ) -> Result<Vec<ProvenanceEvent>, EngineError> {
-        let conn = self.conn.lock().expect("coordinator connection mutex");
+        let conn = self.lock_connection()?;
         let mut stmt = conn
             .prepare_cached(
                 "SELECT id, event_type, subject, source_ref, metadata_json, created_at \
@@ -609,6 +591,7 @@ fn bind_value_to_sql(value: &fathomdb_query::BindValue) -> Value {
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
     use std::sync::Arc;
 
     use fathomdb_query::{BindValue, QueryBuilder};
@@ -616,7 +599,7 @@ mod tests {
     use rusqlite::types::Value;
     use tempfile::NamedTempFile;
 
-    use crate::ExecutionCoordinator;
+    use crate::{EngineError, ExecutionCoordinator};
 
     use super::{bind_value_to_sql, is_vec_table_absent, wrap_node_row_projection_sql};
 
@@ -1141,5 +1124,46 @@ mod tests {
 
         assert_eq!(active.len(), 1, "only the non-superseded run should appear");
         assert_eq!(active[0].id, "run-v2");
+    }
+
+    fn poison_connection(coordinator: &ExecutionCoordinator) {
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            let _guard = coordinator.conn.lock().expect("poison test lock");
+            panic!("poison coordinator connection mutex");
+        }));
+        assert!(
+            result.is_err(),
+            "poison test must unwind while holding the connection mutex"
+        );
+    }
+
+    fn assert_poisoned_connection_error<T, F>(coordinator: &ExecutionCoordinator, op: F)
+    where
+        F: FnOnce(&ExecutionCoordinator) -> Result<T, EngineError>,
+    {
+        match op(coordinator) {
+            Err(EngineError::Bridge(message)) => {
+                assert_eq!(message, "connection mutex poisoned");
+            }
+            Ok(_) => panic!("expected poisoned connection error, got Ok(_)"),
+            Err(error) => panic!("expected poisoned connection error, got {error:?}"),
+        }
+    }
+
+    #[test]
+    fn poisoned_connection_returns_bridge_error_for_read_helpers() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let coordinator =
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+                .expect("coordinator");
+
+        poison_connection(&coordinator);
+
+        assert_poisoned_connection_error(&coordinator, |c| c.read_run("run-r1"));
+        assert_poisoned_connection_error(&coordinator, |c| c.read_step("step-s1"));
+        assert_poisoned_connection_error(&coordinator, |c| c.read_action("action-a1"));
+        assert_poisoned_connection_error(&coordinator, |c| c.read_active_runs());
+        assert_poisoned_connection_error(&coordinator, |c| c.raw_pragma("journal_mode"));
+        assert_poisoned_connection_error(&coordinator, |c| c.query_provenance_events("source-1"));
     }
 }
