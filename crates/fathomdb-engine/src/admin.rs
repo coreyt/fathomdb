@@ -4682,7 +4682,7 @@ mod tests {
         assert_eq!(report.restored_vec_rows, 1);
 
         let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), Some(4))
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), Some(4), 1)
                 .expect("coordinator");
         let compiled = QueryBuilder::nodes("Document")
             .vector_search("[0.0, 0.0, 0.0, 0.0]", 5)
@@ -4809,7 +4809,7 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
         assert_eq!(report.restored_vec_rows, 1);
 
         let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), Some(4))
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), Some(4), 1)
                 .expect("coordinator");
         let compiled = QueryBuilder::nodes("Document")
             .vector_search("[0.0, 0.0, 0.0, 0.0]", 5)

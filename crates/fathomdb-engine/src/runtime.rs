@@ -22,12 +22,14 @@ impl EngineRuntime {
         path: impl AsRef<Path>,
         provenance_mode: ProvenanceMode,
         vector_dimension: Option<usize>,
+        read_pool_size: usize,
     ) -> Result<Self, EngineError> {
         let schema_manager = Arc::new(SchemaManager::new());
         let coordinator = ExecutionCoordinator::open(
             path.as_ref(),
             Arc::clone(&schema_manager),
             vector_dimension,
+            read_pool_size,
         )?;
         let writer =
             WriterActor::start(path.as_ref(), Arc::clone(&schema_manager), provenance_mode)?;
