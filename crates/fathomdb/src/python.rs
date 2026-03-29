@@ -402,13 +402,28 @@ impl EngineCore {
     }
 }
 
+const MAX_AST_JSON_BYTES: usize = 16 * 1024 * 1024; // 16 MB
+const MAX_WRITE_JSON_BYTES: usize = 64 * 1024 * 1024; // 64 MB
+
 fn parse_ast(ast_json: &str) -> PyResult<crate::QueryAst> {
+    if ast_json.len() > MAX_AST_JSON_BYTES {
+        return Err(PyValueError::new_err(format!(
+            "AST JSON exceeds maximum size of {} bytes",
+            MAX_AST_JSON_BYTES
+        )));
+    }
     let ast: PyQueryAst = serde_json::from_str(ast_json)
         .map_err(|error| PyValueError::new_err(format!("invalid query AST JSON: {error}")))?;
     Ok(ast.into())
 }
 
 fn parse_write_request(request_json: &str) -> PyResult<crate::WriteRequest> {
+    if request_json.len() > MAX_WRITE_JSON_BYTES {
+        return Err(PyValueError::new_err(format!(
+            "write request JSON exceeds maximum size of {} bytes",
+            MAX_WRITE_JSON_BYTES
+        )));
+    }
     let request: PyWriteRequest = serde_json::from_str(request_json)
         .map_err(|error| PyValueError::new_err(format!("invalid write request JSON: {error}")))?;
     Ok(request.into())

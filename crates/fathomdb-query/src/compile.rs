@@ -374,6 +374,13 @@ WHERE 1 = 1",
     })
 }
 
+/// Compile a [`QueryAst`] into a [`CompiledGroupedQuery`] for grouped execution.
+///
+/// # Errors
+///
+/// Returns a [`CompileError`] if the AST exceeds expansion-slot limits,
+/// contains empty slot names, or specifies a traversal depth beyond the
+/// configured maximum.
 pub fn compile_grouped_query(ast: &QueryAst) -> Result<CompiledGroupedQuery, CompileError> {
     if ast.expansions.len() > MAX_EXPANSION_SLOTS {
         return Err(CompileError::TooManyExpansionSlots(ast.expansions.len()));
