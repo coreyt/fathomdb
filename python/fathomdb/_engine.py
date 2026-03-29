@@ -19,6 +19,13 @@ from ._types import (
 
 
 class Engine:
+    """Entry point for interacting with a fathomdb database.
+
+    Use :meth:`open` to create an instance, then call :meth:`nodes` to build
+    queries or :meth:`write` to submit mutations.  Administrative operations
+    are available via the :attr:`admin` attribute.
+    """
+
     def __init__(self, core: EngineCore) -> None:
         self._core = core
         self.admin = AdminClient(core)
@@ -33,6 +40,21 @@ class Engine:
         progress_callback=None,
         feedback_config: FeedbackConfig | None = None,
     ) -> "Engine":
+        """Open a fathomdb database at the given path.
+
+        Args:
+            database_path: Path to the SQLite database file.
+            provenance_mode: Provenance enforcement level ("warn" or "require").
+            vector_dimension: Embedding dimension for vector search, or None to disable.
+            progress_callback: Optional callback invoked with feedback events.
+            feedback_config: Timing thresholds for progress feedback.
+
+        Returns:
+            A new Engine instance connected to the database.
+
+        Raises:
+            FathomError: If the database cannot be opened or schema bootstrap fails.
+        """
         mode = provenance_mode.value if isinstance(provenance_mode, ProvenanceMode) else provenance_mode
         path = os.fspath(Path(database_path))
         core = run_with_feedback(
@@ -46,9 +68,11 @@ class Engine:
         return cls(core)
 
     def nodes(self, kind: str) -> Query:
+        """Start building a query rooted at nodes of the given kind."""
         return Query(self._core, kind)
 
     def query(self, kind: str) -> Query:
+        """Alias for :meth:`nodes`."""
         return self.nodes(kind)
 
     def write(
@@ -58,6 +82,20 @@ class Engine:
         progress_callback=None,
         feedback_config: FeedbackConfig | None = None,
     ) -> WriteReceipt:
+        """Submit a write request (nodes, edges, chunks, etc.) to the database.
+
+        Args:
+            request: The write request to submit.
+            progress_callback: Optional callback invoked with feedback events.
+            feedback_config: Timing thresholds for progress feedback.
+
+        Returns:
+            A WriteReceipt summarizing the committed changes.
+
+        Raises:
+            InvalidWriteError: If the request contains invalid data.
+            WriterRejectedError: If the write is rejected by the engine.
+        """
         payload = run_with_feedback(
             surface="python",
             operation_kind="write.submit",
@@ -75,6 +113,7 @@ class Engine:
         progress_callback=None,
         feedback_config: FeedbackConfig | None = None,
     ) -> WriteReceipt:
+        """Alias for :meth:`write`."""
         return self.write(
             request,
             progress_callback=progress_callback,
@@ -88,6 +127,16 @@ class Engine:
         progress_callback=None,
         feedback_config: FeedbackConfig | None = None,
     ) -> LastAccessTouchReport:
+        """Update the last-accessed timestamp for a set of nodes.
+
+        Args:
+            request: Specifies which logical IDs to touch and the timestamp.
+            progress_callback: Optional callback invoked with feedback events.
+            feedback_config: Timing thresholds for progress feedback.
+
+        Returns:
+            A report indicating how many nodes were touched.
+        """
         payload = run_with_feedback(
             surface="python",
             operation_kind="write.touch_last_accessed",

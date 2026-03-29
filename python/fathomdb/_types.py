@@ -7,50 +7,68 @@ from typing import Any
 
 
 class ProvenanceMode(str, Enum):
+    """Provenance enforcement level for write operations."""
+
     WARN = "warn"
     REQUIRE = "require"
 
 
 class ChunkPolicy(str, Enum):
+    """Policy for handling existing chunks when upserting a node."""
+
     PRESERVE = "preserve"
     REPLACE = "replace"
 
 
 class ProjectionTarget(str, Enum):
+    """Which projection indexes to target in rebuild operations."""
+
     FTS = "fts"
     VEC = "vec"
     ALL = "all"
 
 
 class OperationalCollectionKind(str, Enum):
+    """Storage model for an operational collection."""
+
     APPEND_ONLY_LOG = "append_only_log"
     LATEST_STATE = "latest_state"
 
 
 class OperationalFilterMode(str, Enum):
+    """Match mode for an operational collection filter clause."""
+
     EXACT = "exact"
     PREFIX = "prefix"
     RANGE = "range"
 
 
 class OperationalFilterFieldType(str, Enum):
+    """Data type of an operational collection filter field."""
+
     STRING = "string"
     INTEGER = "integer"
     TIMESTAMP = "timestamp"
 
 
 class TraverseDirection(str, Enum):
+    """Direction of edge traversal in a graph query."""
+
     IN = "in"
     OUT = "out"
 
 
 class DrivingTable(str, Enum):
+    """Primary table used to drive query execution."""
+
     NODES = "nodes"
     FTS_NODES = "fts_nodes"
     VEC_NODES = "vec_nodes"
 
 
 class ResponseCyclePhase(str, Enum):
+    """Phase within a feedback response cycle."""
+
     STARTED = "started"
     SLOW = "slow"
     HEARTBEAT = "heartbeat"
@@ -60,12 +78,16 @@ class ResponseCyclePhase(str, Enum):
 
 @dataclass(frozen=True)
 class FeedbackConfig:
+    """Timing thresholds for progress feedback during long operations."""
+
     slow_threshold_ms: int = 500
     heartbeat_interval_ms: int = 2000
 
 
 @dataclass(frozen=True)
 class ResponseCycleEvent:
+    """A single feedback event emitted during an engine operation."""
+
     operation_id: str
     operation_kind: str
     surface: str
@@ -79,6 +101,8 @@ class ResponseCycleEvent:
 
 @dataclass(frozen=True)
 class RawJson:
+    """Pre-serialized JSON string that bypasses automatic encoding."""
+
     text: str
 
 
@@ -116,6 +140,8 @@ def _enum_value(value: Enum | str | None) -> str | None:
 
 @dataclass(frozen=True)
 class BindValue:
+    """A typed bind parameter in a compiled query."""
+
     kind: str
     value: Any
 
@@ -126,6 +152,8 @@ class BindValue:
 
 @dataclass(frozen=True)
 class ExecutionHints:
+    """Engine-provided limits applied during query execution."""
+
     recursion_limit: int
     hard_limit: int
 
@@ -139,6 +167,8 @@ class ExecutionHints:
 
 @dataclass(frozen=True)
 class CompiledQuery:
+    """A query compiled to SQL with bind parameters, ready for execution."""
+
     sql: str
     binds: list[BindValue]
     shape_hash: int
@@ -158,6 +188,8 @@ class CompiledQuery:
 
 @dataclass(frozen=True)
 class ExpansionSlot:
+    """Definition of a named expansion traversal within a grouped query."""
+
     slot: str
     direction: TraverseDirection
     label: str
@@ -175,6 +207,8 @@ class ExpansionSlot:
 
 @dataclass(frozen=True)
 class CompiledGroupedQuery:
+    """A grouped query compiled to SQL with expansion slot definitions."""
+
     root: CompiledQuery
     expansions: list[ExpansionSlot]
     shape_hash: int
@@ -192,6 +226,8 @@ class CompiledGroupedQuery:
 
 @dataclass(frozen=True)
 class QueryPlan:
+    """Execution plan metadata for a query, without running it."""
+
     sql: str
     bind_count: int
     driving_table: DrivingTable
@@ -211,6 +247,8 @@ class QueryPlan:
 
 @dataclass(frozen=True)
 class NodeRow:
+    """A node returned from a query result set."""
+
     row_id: str
     logical_id: str
     kind: str
@@ -230,6 +268,8 @@ class NodeRow:
 
 @dataclass(frozen=True)
 class RunRow:
+    """A run returned from a query result set."""
+
     id: str
     kind: str
     status: str
@@ -247,6 +287,8 @@ class RunRow:
 
 @dataclass(frozen=True)
 class StepRow:
+    """A step returned from a query result set."""
+
     id: str
     run_id: str
     kind: str
@@ -266,6 +308,8 @@ class StepRow:
 
 @dataclass(frozen=True)
 class ActionRow:
+    """An action returned from a query result set."""
+
     id: str
     step_id: str
     kind: str
@@ -285,6 +329,8 @@ class ActionRow:
 
 @dataclass(frozen=True)
 class QueryRows:
+    """Result set from a flat (non-grouped) query execution."""
+
     nodes: list[NodeRow]
     runs: list[RunRow]
     steps: list[StepRow]
@@ -304,6 +350,8 @@ class QueryRows:
 
 @dataclass(frozen=True)
 class ExpansionRootRows:
+    """Expanded nodes reached from a single root in a grouped query."""
+
     root_logical_id: str
     nodes: list[NodeRow]
 
@@ -317,6 +365,8 @@ class ExpansionRootRows:
 
 @dataclass(frozen=True)
 class ExpansionSlotRows:
+    """All expansion results for a named slot across all root nodes."""
+
     slot: str
     roots: list[ExpansionRootRows]
 
@@ -330,6 +380,8 @@ class ExpansionSlotRows:
 
 @dataclass(frozen=True)
 class GroupedQueryRows:
+    """Result set from a grouped query execution with expansions."""
+
     roots: list[NodeRow]
     expansions: list[ExpansionSlotRows]
     was_degraded: bool
@@ -345,6 +397,8 @@ class GroupedQueryRows:
 
 @dataclass(frozen=True)
 class IntegrityReport:
+    """Result of a database physical and logical integrity check."""
+
     physical_ok: bool = False
     foreign_keys_ok: bool = False
     missing_fts_rows: int = 0
@@ -360,6 +414,8 @@ class IntegrityReport:
 
 @dataclass(frozen=True)
 class SemanticReport:
+    """Result of a semantic consistency check across graph entities."""
+
     orphaned_chunks: int = 0
     null_source_ref_nodes: int = 0
     broken_step_fk: int = 0
@@ -383,6 +439,8 @@ class SemanticReport:
 
 @dataclass(frozen=True)
 class TraceReport:
+    """Summary of all entities associated with a source reference."""
+
     source_ref: str = ""
     node_rows: int = 0
     edge_rows: int = 0
@@ -399,12 +457,16 @@ class TraceReport:
 
 @dataclass(frozen=True)
 class SkippedEdge:
+    """An edge that was skipped during restore because an endpoint is missing."""
+
     edge_logical_id: str = ""
     missing_endpoint: str = ""
 
 
 @dataclass(frozen=True)
 class LogicalRestoreReport:
+    """Result of restoring a retired node by logical ID."""
+
     logical_id: str = ""
     was_noop: bool = False
     restored_node_rows: int = 0
@@ -429,6 +491,8 @@ class LogicalRestoreReport:
 
 @dataclass(frozen=True)
 class LogicalPurgeReport:
+    """Result of permanently purging all rows for a logical ID."""
+
     logical_id: str = ""
     was_noop: bool = False
     deleted_node_rows: int = 0
@@ -445,6 +509,8 @@ class LogicalPurgeReport:
 
 @dataclass(frozen=True)
 class ProjectionRepairReport:
+    """Result of rebuilding projection indexes."""
+
     targets: list[ProjectionTarget]
     rebuilt_rows: int
     notes: list[str]
@@ -460,6 +526,8 @@ class ProjectionRepairReport:
 
 @dataclass(frozen=True)
 class SafeExportManifest:
+    """Manifest describing a safely exported database snapshot."""
+
     exported_at: int
     sha256: str
     schema_version: int
@@ -473,6 +541,8 @@ class SafeExportManifest:
 
 @dataclass(frozen=True)
 class OperationalCollectionRecord:
+    """Metadata record describing a registered operational collection."""
+
     name: str
     kind: OperationalCollectionKind
     schema_json: str
@@ -502,6 +572,8 @@ class OperationalCollectionRecord:
 
 @dataclass(slots=True)
 class OperationalRegisterRequest:
+    """Request payload for registering a new operational collection."""
+
     name: str
     kind: OperationalCollectionKind
     schema_json: str
@@ -526,6 +598,8 @@ class OperationalRegisterRequest:
 
 @dataclass(frozen=True)
 class OperationalFilterValue:
+    """A typed value used in an operational collection filter clause."""
+
     value: str | int
 
     @classmethod
@@ -542,6 +616,8 @@ class OperationalFilterValue:
 
 @dataclass(frozen=True)
 class OperationalFilterClause:
+    """A filter clause for querying an operational collection."""
+
     mode: OperationalFilterMode
     field: str
     value: str | OperationalFilterValue | None = None
@@ -589,6 +665,8 @@ class OperationalFilterClause:
 
 @dataclass(frozen=True)
 class OperationalMutationRow:
+    """A single mutation row from an operational collection."""
+
     id: str
     collection_name: str
     record_key: str
@@ -612,6 +690,8 @@ class OperationalMutationRow:
 
 @dataclass(frozen=True)
 class OperationalCurrentRow:
+    """The current materialized state of a record in an operational collection."""
+
     collection_name: str
     record_key: str
     payload_json: Any
@@ -631,6 +711,8 @@ class OperationalCurrentRow:
 
 @dataclass(frozen=True)
 class OperationalTraceReport:
+    """Trace of mutations and current state for an operational collection."""
+
     collection_name: str
     record_key: str | None
     mutation_count: int
@@ -652,6 +734,8 @@ class OperationalTraceReport:
 
 @dataclass(slots=True)
 class OperationalReadRequest:
+    """Request payload for reading filtered rows from an operational collection."""
+
     collection_name: str
     filters: list[OperationalFilterClause]
     limit: int | None = None
@@ -666,6 +750,8 @@ class OperationalReadRequest:
 
 @dataclass(frozen=True)
 class OperationalReadReport:
+    """Result of reading filtered rows from an operational collection."""
+
     collection_name: str
     row_count: int
     applied_limit: int
@@ -685,6 +771,8 @@ class OperationalReadReport:
 
 @dataclass(frozen=True)
 class OperationalRepairReport:
+    """Result of rebuilding current-state views for operational collections."""
+
     collections_rebuilt: int
     current_rows_rebuilt: int
 
@@ -695,6 +783,8 @@ class OperationalRepairReport:
 
 @dataclass(frozen=True)
 class OperationalHistoryValidationIssue:
+    """A single validation issue found in an operational collection's history."""
+
     mutation_id: str
     record_key: str
     op_kind: str
@@ -707,6 +797,8 @@ class OperationalHistoryValidationIssue:
 
 @dataclass(frozen=True)
 class OperationalHistoryValidationReport:
+    """Result of validating the mutation history of an operational collection."""
+
     collection_name: str
     checked_rows: int
     invalid_row_count: int
@@ -727,6 +819,8 @@ class OperationalHistoryValidationReport:
 
 @dataclass(frozen=True)
 class OperationalCompactionReport:
+    """Result of compacting an operational collection."""
+
     collection_name: str
     deleted_mutations: int
     dry_run: bool
@@ -739,6 +833,8 @@ class OperationalCompactionReport:
 
 @dataclass(frozen=True)
 class OperationalPurgeReport:
+    """Result of purging old mutations from an operational collection."""
+
     collection_name: str
     deleted_mutations: int
     before_timestamp: int
@@ -750,6 +846,8 @@ class OperationalPurgeReport:
 
 @dataclass(slots=True)
 class OptionalProjectionTask:
+    """A deferred projection backfill task included in a write request."""
+
     target: ProjectionTarget
     payload: Any
 
@@ -762,6 +860,8 @@ class OptionalProjectionTask:
 
 @dataclass(slots=True)
 class NodeInsert:
+    """Wire representation of a node to be inserted or upserted."""
+
     row_id: str
     logical_id: str
     kind: str
@@ -784,6 +884,8 @@ class NodeInsert:
 
 @dataclass(slots=True)
 class EdgeInsert:
+    """Wire representation of an edge to be inserted or upserted."""
+
     row_id: str
     logical_id: str
     source_logical_id: str
@@ -808,6 +910,8 @@ class EdgeInsert:
 
 @dataclass(slots=True)
 class NodeRetire:
+    """Wire representation of a node retirement (soft-delete)."""
+
     logical_id: str
     source_ref: str | None = None
 
@@ -817,6 +921,8 @@ class NodeRetire:
 
 @dataclass(slots=True)
 class EdgeRetire:
+    """Wire representation of an edge retirement (soft-delete)."""
+
     logical_id: str
     source_ref: str | None = None
 
@@ -826,6 +932,8 @@ class EdgeRetire:
 
 @dataclass(slots=True)
 class ChunkInsert:
+    """Wire representation of a text chunk to be inserted."""
+
     id: str
     node_logical_id: str
     text_content: str
@@ -844,6 +952,8 @@ class ChunkInsert:
 
 @dataclass(slots=True)
 class VecInsert:
+    """Wire representation of a vector embedding to be inserted."""
+
     chunk_id: str
     embedding: list[float]
 
@@ -853,6 +963,8 @@ class VecInsert:
 
 @dataclass(slots=True)
 class OperationalAppend:
+    """An append mutation for an operational collection."""
+
     collection: str
     record_key: str
     payload_json: Any
@@ -870,6 +982,8 @@ class OperationalAppend:
 
 @dataclass(slots=True)
 class OperationalPut:
+    """A put (upsert) mutation for an operational collection."""
+
     collection: str
     record_key: str
     payload_json: Any
@@ -887,6 +1001,8 @@ class OperationalPut:
 
 @dataclass(slots=True)
 class OperationalDelete:
+    """A delete mutation for an operational collection."""
+
     collection: str
     record_key: str
     source_ref: str | None = None
@@ -902,6 +1018,8 @@ class OperationalDelete:
 
 @dataclass(slots=True)
 class RunInsert:
+    """Wire representation of a run to be inserted or upserted."""
+
     id: str
     kind: str
     status: str
@@ -924,6 +1042,8 @@ class RunInsert:
 
 @dataclass(slots=True)
 class StepInsert:
+    """Wire representation of a step to be inserted or upserted."""
+
     id: str
     run_id: str
     kind: str
@@ -948,6 +1068,8 @@ class StepInsert:
 
 @dataclass(slots=True)
 class ActionInsert:
+    """Wire representation of an action to be inserted or upserted."""
+
     id: str
     step_id: str
     kind: str
@@ -972,6 +1094,8 @@ class ActionInsert:
 
 @dataclass(slots=True)
 class WriteRequest:
+    """A batch of mutations (nodes, edges, chunks, etc.) to submit atomically."""
+
     label: str
     nodes: list[NodeInsert] = field(default_factory=list)
     node_retires: list[NodeRetire] = field(default_factory=list)
@@ -1006,6 +1130,8 @@ class WriteRequest:
 
 @dataclass(frozen=True)
 class WriteReceipt:
+    """Confirmation returned after a successful write submission."""
+
     label: str
     optional_backfill_count: int
     warnings: list[str] = field(default_factory=list)
@@ -1018,6 +1144,8 @@ class WriteReceipt:
 
 @dataclass(frozen=True)
 class OperationalSecondaryIndexRebuildReport:
+    """Result of rebuilding secondary indexes for an operational collection."""
+
     collection_name: str
     mutation_entries_rebuilt: int
     current_entries_rebuilt: int
@@ -1028,6 +1156,8 @@ class OperationalSecondaryIndexRebuildReport:
 
 
 class OperationalRetentionActionKind(str, Enum):
+    """Kind of retention action applied to an operational collection."""
+
     NOOP = "noop"
     PURGE_BEFORE_SECONDS = "purge_before_seconds"
     KEEP_LAST = "keep_last"
@@ -1035,6 +1165,8 @@ class OperationalRetentionActionKind(str, Enum):
 
 @dataclass(frozen=True)
 class OperationalRetentionPlanItem:
+    """Planned retention action for a single operational collection."""
+
     collection_name: str
     action_kind: OperationalRetentionActionKind
     candidate_deletions: int
@@ -1056,6 +1188,8 @@ class OperationalRetentionPlanItem:
 
 @dataclass(frozen=True)
 class OperationalRetentionPlanReport:
+    """Result of planning retention across operational collections."""
+
     planned_at: int
     collections_examined: int
     items: list[OperationalRetentionPlanItem]
@@ -1071,6 +1205,8 @@ class OperationalRetentionPlanReport:
 
 @dataclass(frozen=True)
 class OperationalRetentionRunItem:
+    """Result of executing retention for a single operational collection."""
+
     collection_name: str
     action_kind: OperationalRetentionActionKind
     deleted_mutations: int
@@ -1092,6 +1228,8 @@ class OperationalRetentionRunItem:
 
 @dataclass(frozen=True)
 class OperationalRetentionRunReport:
+    """Result of executing retention across operational collections."""
+
     executed_at: int
     collections_examined: int
     collections_acted_on: int
@@ -1111,6 +1249,8 @@ class OperationalRetentionRunReport:
 
 @dataclass(frozen=True)
 class ProvenancePurgeReport:
+    """Result of purging old provenance events."""
+
     events_deleted: int
     events_preserved: int
     oldest_remaining: int | None = None
@@ -1126,6 +1266,8 @@ class ProvenancePurgeReport:
 
 @dataclass(slots=True)
 class LastAccessTouchRequest:
+    """Request to update last-accessed timestamps for a set of nodes."""
+
     logical_ids: list[str]
     touched_at: int
     source_ref: str | None = None
@@ -1140,6 +1282,8 @@ class LastAccessTouchRequest:
 
 @dataclass(frozen=True)
 class LastAccessTouchReport:
+    """Result of updating last-accessed timestamps."""
+
     touched_logical_ids: int
     touched_at: int
 

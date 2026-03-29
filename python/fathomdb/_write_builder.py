@@ -29,6 +29,8 @@ _builder_ids = count(1)
 
 @dataclass(frozen=True)
 class NodeHandle:
+    """Opaque reference to a node added via WriteRequestBuilder."""
+
     row_id: str
     logical_id: str
     _builder_id: int
@@ -36,30 +38,40 @@ class NodeHandle:
 
 @dataclass(frozen=True)
 class EdgeHandle:
+    """Opaque reference to an edge added via WriteRequestBuilder."""
+
     logical_id: str
     _builder_id: int
 
 
 @dataclass(frozen=True)
 class RunHandle:
+    """Opaque reference to a run added via WriteRequestBuilder."""
+
     id: str
     _builder_id: int
 
 
 @dataclass(frozen=True)
 class StepHandle:
+    """Opaque reference to a step added via WriteRequestBuilder."""
+
     id: str
     _builder_id: int
 
 
 @dataclass(frozen=True)
 class ActionHandle:
+    """Opaque reference to an action added via WriteRequestBuilder."""
+
     id: str
     _builder_id: int
 
 
 @dataclass(frozen=True)
 class ChunkHandle:
+    """Opaque reference to a chunk added via WriteRequestBuilder."""
+
     id: str
     _builder_id: int
 
@@ -128,6 +140,13 @@ class _PendingVec:
 
 
 class WriteRequestBuilder:
+    """Mutable builder that assembles a WriteRequest from individual mutations.
+
+    Handles are returned when adding nodes, edges, runs, steps, actions, and
+    chunks so they can be cross-referenced within the same request.  Call
+    :meth:`build` to produce the final :class:`WriteRequest`.
+    """
+
     def __init__(self, label: str) -> None:
         self._builder_id = next(_builder_ids)
         self._label = label
@@ -154,6 +173,21 @@ class WriteRequestBuilder:
         upsert: bool = False,
         chunk_policy: ChunkPolicy = ChunkPolicy.PRESERVE,
     ) -> NodeHandle:
+        """Add a node insert to the write request.
+
+        Args:
+            row_id: Unique row identifier for this version of the node.
+            logical_id: Stable logical identifier for the node.
+            kind: Node kind (type label).
+            properties: JSON-serializable properties payload.
+            source_ref: Optional provenance source reference.
+            upsert: If True, replace an existing node with the same logical ID.
+            chunk_policy: How to handle existing chunks on upsert.
+
+        Returns:
+            A NodeHandle that can be used to reference this node elsewhere
+            in the same builder.
+        """
         handle = NodeHandle(row_id=row_id, logical_id=logical_id, _builder_id=self._builder_id)
         self._nodes.append(
             NodeInsert(
@@ -169,6 +203,7 @@ class WriteRequestBuilder:
         return handle
 
     def retire_node(self, *, logical_id: NodeHandle | str, source_ref: str | None = None) -> None:
+        """Mark a node as retired (soft-delete) by logical ID or handle."""
         self._node_retires.append(_PendingNodeRetire(logical_id=logical_id, source_ref=source_ref))
 
     def add_edge(
@@ -183,6 +218,22 @@ class WriteRequestBuilder:
         source_ref: str | None = None,
         upsert: bool = False,
     ) -> EdgeHandle:
+        """Add an edge insert connecting two nodes.
+
+        Args:
+            row_id: Unique row identifier for this version of the edge.
+            logical_id: Stable logical identifier for the edge.
+            source: Source node (handle or logical ID string).
+            target: Target node (handle or logical ID string).
+            kind: Edge kind (type label).
+            properties: JSON-serializable properties payload.
+            source_ref: Optional provenance source reference.
+            upsert: If True, replace an existing edge with the same logical ID.
+
+        Returns:
+            An EdgeHandle that can be used to reference this edge elsewhere
+            in the same builder.
+        """
         handle = EdgeHandle(logical_id=logical_id, _builder_id=self._builder_id)
         self._edges.append(
             _PendingEdge(
@@ -199,6 +250,7 @@ class WriteRequestBuilder:
         return handle
 
     def retire_edge(self, *, logical_id: EdgeHandle | str, source_ref: str | None = None) -> None:
+        """Mark an edge as retired (soft-delete) by logical ID or handle."""
         self._edge_retires.append(_PendingEdgeRetire(logical_id=logical_id, source_ref=source_ref))
 
     def add_chunk(
@@ -210,6 +262,18 @@ class WriteRequestBuilder:
         byte_start: int | None = None,
         byte_end: int | None = None,
     ) -> ChunkHandle:
+        """Add a text chunk associated with a node.
+
+        Args:
+            id: Unique chunk identifier.
+            node: Owning node (handle or logical ID string).
+            text_content: The text content of the chunk.
+            byte_start: Optional byte offset where the chunk starts in the source.
+            byte_end: Optional byte offset where the chunk ends in the source.
+
+        Returns:
+            A ChunkHandle for referencing this chunk in vector inserts.
+        """
         handle = ChunkHandle(id=id, _builder_id=self._builder_id)
         self._chunks.append(
             _PendingChunk(
@@ -233,6 +297,11 @@ class WriteRequestBuilder:
         upsert: bool = False,
         supersedes_id: str | None = None,
     ) -> RunHandle:
+        """Add a run insert to the write request.
+
+        Returns:
+            A RunHandle for referencing this run when adding steps.
+        """
         handle = RunHandle(id=id, _builder_id=self._builder_id)
         self._runs.append(
             RunInsert(
@@ -259,6 +328,11 @@ class WriteRequestBuilder:
         upsert: bool = False,
         supersedes_id: str | None = None,
     ) -> StepHandle:
+        """Add a step insert belonging to a run.
+
+        Returns:
+            A StepHandle for referencing this step when adding actions.
+        """
         handle = StepHandle(id=id, _builder_id=self._builder_id)
         self._steps.append(
             _PendingStep(
@@ -286,6 +360,11 @@ class WriteRequestBuilder:
         upsert: bool = False,
         supersedes_id: str | None = None,
     ) -> ActionHandle:
+        """Add an action insert belonging to a step.
+
+        Returns:
+            An ActionHandle for referencing this action.
+        """
         handle = ActionHandle(id=id, _builder_id=self._builder_id)
         self._actions.append(
             _PendingAction(
@@ -302,10 +381,12 @@ class WriteRequestBuilder:
         return handle
 
     def add_optional_backfill(self, target: ProjectionTarget | str, payload: Any) -> None:
+        """Queue an optional projection backfill task (e.g. FTS or vector)."""
         value = target if isinstance(target, ProjectionTarget) else ProjectionTarget(target)
         self._optional_backfills.append(OptionalProjectionTask(target=value, payload=payload))
 
     def add_vec_insert(self, *, chunk: ChunkHandle | str, embedding: list[float]) -> None:
+        """Add a vector embedding associated with a chunk."""
         self._vec_inserts.append(_PendingVec(chunk=chunk, embedding=embedding))
 
     def add_operational_append(
@@ -316,6 +397,7 @@ class WriteRequestBuilder:
         payload_json: Any,
         source_ref: str | None = None,
     ) -> None:
+        """Append a mutation to an operational collection."""
         self._operational_writes.append(
             OperationalAppend(
                 collection=collection,
@@ -333,6 +415,7 @@ class WriteRequestBuilder:
         payload_json: Any,
         source_ref: str | None = None,
     ) -> None:
+        """Put (upsert) a record into an operational collection."""
         self._operational_writes.append(
             OperationalPut(
                 collection=collection,
@@ -349,6 +432,7 @@ class WriteRequestBuilder:
         record_key: str,
         source_ref: str | None = None,
     ) -> None:
+        """Delete a record from an operational collection."""
         self._operational_writes.append(
             OperationalDelete(
                 collection=collection,
@@ -358,6 +442,11 @@ class WriteRequestBuilder:
         )
 
     def build(self) -> WriteRequest:
+        """Resolve all handles and produce a finalized WriteRequest.
+
+        Raises:
+            BuilderValidationError: If any handle belongs to a different builder.
+        """
         return WriteRequest(
             label=self._label,
             nodes=list(self._nodes),
