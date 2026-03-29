@@ -1,8 +1,10 @@
 use std::collections::HashMap;
+use std::panic::AssertUnwindSafe;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc::{self, Sender, SyncSender};
 use std::thread;
+use std::time::Duration;
 
 use fathomdb_schema::SchemaManager;
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
@@ -157,6 +159,18 @@ pub struct ActionInsert {
     pub supersedes_id: Option<String>,
 }
 
+// --- Write-request size limits ---
+const MAX_NODES: usize = 10_000;
+const MAX_EDGES: usize = 10_000;
+const MAX_CHUNKS: usize = 50_000;
+const MAX_RETIRES: usize = 10_000;
+const MAX_RUNTIME_ITEMS: usize = 10_000;
+const MAX_OPERATIONAL: usize = 10_000;
+const MAX_TOTAL_ITEMS: usize = 100_000;
+
+/// How long `submit` / `touch_last_accessed` wait for the writer thread to reply.
+const WRITER_REPLY_TIMEOUT: Duration = Duration::from_secs(30);
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct WriteRequest {
     pub label: String,
@@ -232,7 +246,7 @@ struct PreparedWrite {
 
 enum WriteMessage {
     Submit {
-        prepared: PreparedWrite,
+        prepared: Box<PreparedWrite>,
         reply: Sender<Result<WriteReceipt, EngineError>>,
     },
     TouchLastAccessed {
@@ -243,7 +257,8 @@ enum WriteMessage {
 
 #[derive(Debug)]
 pub struct WriterActor {
-    sender: Sender<WriteMessage>,
+    sender: SyncSender<WriteMessage>,
+    thread_handle: Option<thread::JoinHandle<()>>,
     provenance_mode: ProvenanceMode,
 }
 
@@ -256,36 +271,53 @@ impl WriterActor {
         provenance_mode: ProvenanceMode,
     ) -> Result<Self, EngineError> {
         let database_path = path.as_ref().to_path_buf();
-        let (sender, receiver) = mpsc::channel::<WriteMessage>();
+        let (sender, receiver) = mpsc::sync_channel::<WriteMessage>(256);
 
-        thread::Builder::new()
+        let handle = thread::Builder::new()
             .name("fathomdb-writer".to_owned())
             .spawn(move || writer_loop(&database_path, &schema_manager, receiver))
             .map_err(EngineError::Io)?;
 
         Ok(Self {
             sender,
+            thread_handle: Some(handle),
             provenance_mode,
         })
+    }
+
+    /// Returns `true` if the writer thread is still running.
+    fn is_thread_alive(&self) -> bool {
+        self.thread_handle
+            .as_ref()
+            .is_some_and(|h| !h.is_finished())
+    }
+
+    /// Returns `WriterRejected` if the writer thread has exited.
+    fn check_thread_alive(&self) -> Result<(), EngineError> {
+        if self.is_thread_alive() {
+            Ok(())
+        } else {
+            Err(EngineError::WriterRejected(
+                "writer thread has exited".to_owned(),
+            ))
+        }
     }
 
     /// # Errors
     /// Returns [`EngineError`] if the write request validation fails, the writer actor has shut
     /// down, or the underlying `SQLite` transaction fails.
     pub fn submit(&self, request: WriteRequest) -> Result<WriteReceipt, EngineError> {
+        self.check_thread_alive()?;
         let prepared = prepare_write(request, self.provenance_mode)?;
         let (reply_tx, reply_rx) = mpsc::channel();
         self.sender
             .send(WriteMessage::Submit {
-                prepared,
+                prepared: Box::new(prepared),
                 reply: reply_tx,
             })
             .map_err(|error| EngineError::WriterRejected(error.to_string()))?;
 
-        reply_rx
-            .recv()
-            .map_err(|error| EngineError::WriterRejected(error.to_string()))
-            .and_then(|result| result)
+        recv_with_timeout(&reply_rx)
     }
 
     /// # Errors
@@ -295,6 +327,7 @@ impl WriterActor {
         &self,
         request: LastAccessTouchRequest,
     ) -> Result<LastAccessTouchReport, EngineError> {
+        self.check_thread_alive()?;
         prepare_touch_last_accessed(&request, self.provenance_mode)?;
         let (reply_tx, reply_rx) = mpsc::channel();
         self.sender
@@ -304,11 +337,22 @@ impl WriterActor {
             })
             .map_err(|error| EngineError::WriterRejected(error.to_string()))?;
 
-        reply_rx
-            .recv()
-            .map_err(|error| EngineError::WriterRejected(error.to_string()))
-            .and_then(|result| result)
+        recv_with_timeout(&reply_rx)
     }
+}
+
+/// Wait for a reply from the writer thread, with a timeout.
+fn recv_with_timeout<T>(rx: &mpsc::Receiver<Result<T, EngineError>>) -> Result<T, EngineError> {
+    rx.recv_timeout(WRITER_REPLY_TIMEOUT)
+        .map_err(|error| {
+            EngineError::WriterRejected(match error {
+                mpsc::RecvTimeoutError::Timeout => {
+                    "write timed out waiting for writer thread reply".to_owned()
+                }
+                mpsc::RecvTimeoutError::Disconnected => error.to_string(),
+            })
+        })
+        .and_then(|result| result)
 }
 
 fn prepare_touch_last_accessed(
@@ -410,11 +454,68 @@ fn check_require_provenance(request: &WriteRequest) -> Result<(), EngineError> {
     }
 }
 
+fn validate_request_size(request: &WriteRequest) -> Result<(), EngineError> {
+    if request.nodes.len() > MAX_NODES {
+        return Err(EngineError::InvalidWrite(format!(
+            "too many nodes: {} exceeds limit of {MAX_NODES}",
+            request.nodes.len()
+        )));
+    }
+    if request.edges.len() > MAX_EDGES {
+        return Err(EngineError::InvalidWrite(format!(
+            "too many edges: {} exceeds limit of {MAX_EDGES}",
+            request.edges.len()
+        )));
+    }
+    if request.chunks.len() > MAX_CHUNKS {
+        return Err(EngineError::InvalidWrite(format!(
+            "too many chunks: {} exceeds limit of {MAX_CHUNKS}",
+            request.chunks.len()
+        )));
+    }
+    let retires = request.node_retires.len() + request.edge_retires.len();
+    if retires > MAX_RETIRES {
+        return Err(EngineError::InvalidWrite(format!(
+            "too many retires: {retires} exceeds limit of {MAX_RETIRES}"
+        )));
+    }
+    let runtime_items = request.runs.len() + request.steps.len() + request.actions.len();
+    if runtime_items > MAX_RUNTIME_ITEMS {
+        return Err(EngineError::InvalidWrite(format!(
+            "too many runtime items: {runtime_items} exceeds limit of {MAX_RUNTIME_ITEMS}"
+        )));
+    }
+    if request.operational_writes.len() > MAX_OPERATIONAL {
+        return Err(EngineError::InvalidWrite(format!(
+            "too many operational writes: {} exceeds limit of {MAX_OPERATIONAL}",
+            request.operational_writes.len()
+        )));
+    }
+    let total = request.nodes.len()
+        + request.node_retires.len()
+        + request.edges.len()
+        + request.edge_retires.len()
+        + request.chunks.len()
+        + request.runs.len()
+        + request.steps.len()
+        + request.actions.len()
+        + request.vec_inserts.len()
+        + request.operational_writes.len();
+    if total > MAX_TOTAL_ITEMS {
+        return Err(EngineError::InvalidWrite(format!(
+            "too many total items: {total} exceeds limit of {MAX_TOTAL_ITEMS}"
+        )));
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_lines)]
 fn prepare_write(
     request: WriteRequest,
     mode: ProvenanceMode,
 ) -> Result<PreparedWrite, EngineError> {
+    validate_request_size(&request)?;
+
     // --- ID validation: reject empty IDs ---
     for node in &request.nodes {
         if node.row_id.is_empty() {
@@ -618,8 +719,18 @@ fn writer_loop(
                 mut prepared,
                 reply,
             } => {
-                let result = resolve_and_apply(&mut conn, &mut prepared);
-                let _ = reply.send(result);
+                let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                    resolve_and_apply(&mut conn, &mut prepared)
+                }));
+                if let Ok(inner) = result {
+                    let _ = reply.send(inner);
+                } else {
+                    // Attempt to clean up any open transaction after a panic.
+                    let _ = conn.execute_batch("ROLLBACK");
+                    let _ = reply.send(Err(EngineError::WriterRejected(
+                        "writer thread panic during resolve_and_apply".to_owned(),
+                    )));
+                }
             }
             WriteMessage::TouchLastAccessed { request, reply } => {
                 let result = apply_touch_last_accessed(&mut conn, &request);
@@ -743,8 +854,10 @@ fn resolve_operational_writes(
         })?;
         match (kind, write) {
             (OperationalCollectionKind::AppendOnlyLog, OperationalWrite::Append { .. })
-            | (OperationalCollectionKind::LatestState, OperationalWrite::Put { .. })
-            | (OperationalCollectionKind::LatestState, OperationalWrite::Delete { .. }) => {}
+            | (
+                OperationalCollectionKind::LatestState,
+                OperationalWrite::Put { .. } | OperationalWrite::Delete { .. },
+            ) => {}
             (OperationalCollectionKind::AppendOnlyLog, _) => {
                 return Err(EngineError::InvalidWrite(format!(
                     "operational collection '{collection}' is append_only_log and only accepts Append"
@@ -969,10 +1082,9 @@ fn validate_operational_writes_against_live_contracts(
     for write in &prepared.operational_writes {
         if let Some(Some(contract)) =
             collection_validation_contracts.get(operational_write_collection(write))
+            && let Some(warning) = check_operational_write_against_contract(write, contract)?
         {
-            if let Some(warning) = check_operational_write_against_contract(write, contract)? {
-                warnings.push(warning);
-            }
+            warnings.push(warning);
         }
     }
 
@@ -5823,5 +5935,154 @@ mod tests {
             )
             .expect("count");
         assert_eq!(count, 1, "VecInsert must persist a row in vec_nodes_active");
+    }
+
+    // --- WriteRequest size validation tests ---
+
+    #[test]
+    fn write_request_exceeding_node_limit_is_rejected() {
+        let nodes: Vec<NodeInsert> = (0..10_001)
+            .map(|i| NodeInsert {
+                row_id: format!("row-{i}"),
+                logical_id: format!("lg-{i}"),
+                kind: "Note".to_owned(),
+                properties: "{}".to_owned(),
+                source_ref: None,
+                upsert: false,
+                chunk_policy: ChunkPolicy::Preserve,
+            })
+            .collect();
+
+        let request = WriteRequest {
+            label: "too-many-nodes".to_owned(),
+            nodes,
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![],
+        };
+
+        let result = prepare_write(request, ProvenanceMode::Warn)
+            .map(|_| ())
+            .map_err(|e| format!("{e}"));
+        assert!(
+            matches!(result, Err(ref msg) if msg.contains("too many nodes")),
+            "exceeding node limit must return InvalidWrite: got {result:?}"
+        );
+    }
+
+    #[test]
+    fn write_request_exceeding_total_limit_is_rejected() {
+        // Spread items across fields to exceed 100_000 total
+        // without exceeding any single per-field limit.
+        // nodes(10k) + edges(10k) + chunks(50k) + vec_inserts(20001) + operational(10k) = 100_001
+        let request = WriteRequest {
+            label: "too-many-total".to_owned(),
+            nodes: (0..10_000)
+                .map(|i| NodeInsert {
+                    row_id: format!("row-{i}"),
+                    logical_id: format!("lg-{i}"),
+                    kind: "Note".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: None,
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                })
+                .collect(),
+            node_retires: vec![],
+            edges: (0..10_000)
+                .map(|i| EdgeInsert {
+                    row_id: format!("edge-row-{i}"),
+                    logical_id: format!("edge-lg-{i}"),
+                    kind: "link".to_owned(),
+                    source_logical_id: format!("lg-{i}"),
+                    target_logical_id: format!("lg-{}", i + 1),
+                    properties: "{}".to_owned(),
+                    source_ref: None,
+                    upsert: false,
+                })
+                .collect(),
+            edge_retires: vec![],
+            chunks: (0..50_000)
+                .map(|i| ChunkInsert {
+                    id: format!("chunk-{i}"),
+                    node_logical_id: "lg-0".to_owned(),
+                    text_content: "text".to_owned(),
+                    byte_start: None,
+                    byte_end: None,
+                })
+                .collect(),
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: (0..20_001)
+                .map(|i| VecInsert {
+                    chunk_id: format!("vec-chunk-{i}"),
+                    embedding: vec![0.1],
+                })
+                .collect(),
+            operational_writes: (0..10_000)
+                .map(|i| OperationalWrite::Append {
+                    collection: format!("col-{i}"),
+                    record_key: format!("key-{i}"),
+                    payload_json: "{}".to_owned(),
+                    source_ref: None,
+                })
+                .collect(),
+        };
+
+        let result = prepare_write(request, ProvenanceMode::Warn)
+            .map(|_| ())
+            .map_err(|e| format!("{e}"));
+        assert!(
+            matches!(result, Err(ref msg) if msg.contains("too many total items")),
+            "exceeding total item limit must return InvalidWrite: got {result:?}"
+        );
+    }
+
+    #[test]
+    fn write_request_within_limits_succeeds() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            ProvenanceMode::Warn,
+        )
+        .expect("writer");
+
+        let result = writer.submit(WriteRequest {
+            label: "within-limits".to_owned(),
+            nodes: vec![NodeInsert {
+                row_id: "row-1".to_owned(),
+                logical_id: "lg-1".to_owned(),
+                kind: "Note".to_owned(),
+                properties: "{}".to_owned(),
+                source_ref: None,
+                upsert: false,
+                chunk_policy: ChunkPolicy::Preserve,
+            }],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![],
+        });
+
+        assert!(
+            result.is_ok(),
+            "write request within limits must succeed: got {result:?}"
+        );
     }
 }
