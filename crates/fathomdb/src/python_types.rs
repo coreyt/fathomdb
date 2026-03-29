@@ -877,6 +877,7 @@ impl From<ActionRow> for PyActionRow {
 pub struct PyWriteReceipt {
     pub label: String,
     pub optional_backfill_count: usize,
+    pub warnings: Vec<String>,
     pub provenance_warnings: Vec<String>,
 }
 
@@ -885,6 +886,7 @@ impl From<WriteReceipt> for PyWriteReceipt {
         Self {
             label: value.label,
             optional_backfill_count: value.optional_backfill_count,
+            warnings: value.warnings,
             provenance_warnings: value.provenance_warnings,
         }
     }

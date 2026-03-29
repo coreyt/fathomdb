@@ -28,6 +28,8 @@ fn operational_admin_methods_register_trace_rebuild_and_disable() {
             schema_json: "{}".to_owned(),
             retention_json: "{}".to_owned(),
             filter_fields_json: "[]".to_owned(),
+            validation_json: String::new(),
+            secondary_indexes_json: "[]".to_owned(),
             format_version: 1,
         })
         .expect("register operational collection");
@@ -63,6 +65,8 @@ fn operational_admin_methods_compact_append_only_history() {
             schema_json: "{}".to_owned(),
             retention_json: r#"{"mode":"keep_last","max_rows":2}"#.to_owned(),
             filter_fields_json: "[]".to_owned(),
+            validation_json: String::new(),
+            secondary_indexes_json: "[]".to_owned(),
             format_version: 1,
         })
         .expect("register operational collection");
@@ -133,6 +137,8 @@ fn operational_admin_methods_read_append_only_rows_by_declared_fields() {
             schema_json: "{}".to_owned(),
             retention_json: r#"{"mode":"keep_all"}"#.to_owned(),
             filter_fields_json: r#"[{"name":"actor","type":"string","modes":["exact","prefix"]},{"name":"ts","type":"timestamp","modes":["range"]}]"#.to_owned(),
+            validation_json: String::new(),
+            secondary_indexes_json: "[]".to_owned(),
             format_version: 1,
         })
         .expect("register operational collection");
@@ -215,6 +221,8 @@ fn operational_admin_methods_can_update_filters_for_existing_collection() {
             schema_json: "{}".to_owned(),
             retention_json: r#"{"mode":"keep_all"}"#.to_owned(),
             filter_fields_json: "[]".to_owned(),
+            validation_json: String::new(),
+            secondary_indexes_json: "[]".to_owned(),
             format_version: 1,
         })
         .expect("register operational collection");
@@ -238,6 +246,68 @@ fn operational_admin_methods_can_update_filters_for_existing_collection() {
         )
         .expect("update filters");
     assert!(updated.filter_fields_json.contains("\"actor\""));
+}
+
+#[test]
+fn operational_admin_methods_can_update_and_validate_payload_contracts() {
+    let (_db, engine) = open_engine();
+
+    engine
+        .register_operational_collection(OperationalRegisterRequest {
+            name: "audit_log".to_owned(),
+            kind: OperationalCollectionKind::AppendOnlyLog,
+            schema_json: "{}".to_owned(),
+            retention_json: r#"{"mode":"keep_all"}"#.to_owned(),
+            filter_fields_json: "[]".to_owned(),
+            validation_json: String::new(),
+            secondary_indexes_json: "[]".to_owned(),
+            format_version: 1,
+        })
+        .expect("register operational collection");
+
+    let validation_json = r#"{"format_version":1,"mode":"disabled","additional_properties":false,"fields":[{"name":"status","type":"string","required":true,"enum":["ok","failed"]}]}"#;
+    let updated = engine
+        .update_operational_collection_validation("audit_log", validation_json)
+        .expect("update validation");
+    assert_eq!(updated.validation_json, validation_json);
+
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "history-validation".to_owned(),
+            nodes: vec![],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![
+                OperationalWrite::Append {
+                    collection: "audit_log".to_owned(),
+                    record_key: "evt-1".to_owned(),
+                    payload_json: r#"{"status":"ok"}"#.to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                },
+                OperationalWrite::Append {
+                    collection: "audit_log".to_owned(),
+                    record_key: "evt-2".to_owned(),
+                    payload_json: r#"{"status":"bogus"}"#.to_owned(),
+                    source_ref: Some("src-2".to_owned()),
+                },
+            ],
+        })
+        .expect("append operational history");
+
+    let report = engine
+        .validate_operational_collection_history("audit_log")
+        .expect("validate history");
+    assert_eq!(report.checked_rows, 2);
+    assert_eq!(report.invalid_row_count, 1);
+    assert_eq!(report.issues[0].record_key, "evt-2");
 }
 
 // ── Memex workloads ──────────────────────────────────────────────────────────
@@ -1656,6 +1726,7 @@ fn v1_vector_search_round_trip() {
                 chunk_id: chunk_id.clone(),
                 embedding: vec![0.1, 0.2, 0.3, 0.4],
             }],
+            operational_writes: vec![],
         })
         .expect("v1 write");
 

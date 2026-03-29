@@ -81,6 +81,7 @@ func TestOperationalRequestJSONShape(t *testing.T) {
 	require.Contains(t, string(body), `"schema_json":"{}"`)
 	require.Contains(t, string(body), `"retention_json":"{}"`)
 	require.Contains(t, string(body), `"filter_fields_json":"[]"`)
+	require.Contains(t, string(body), `"secondary_indexes_json":""`)
 	require.Contains(t, string(body), `"format_version":1`)
 }
 
@@ -116,6 +117,22 @@ func TestOperationalFilterUpdateRequestJSONShape(t *testing.T) {
 	require.Contains(t, string(body), `"command":"update_operational_collection_filters"`)
 	require.Contains(t, string(body), `"collection_name":"audit_log"`)
 	require.Contains(t, string(body), `"filter_fields_json":"[{\"name\":\"actor\",\"type\":\"string\",\"modes\":[\"exact\"]}]"`)
+}
+
+func TestOperationalValidationUpdateRequestPreservesEmptyString(t *testing.T) {
+	request := Request{
+		DatabasePath:   "/tmp/fathom.db",
+		Command:        CommandUpdateOperationalValidation,
+		CollectionName: "audit_log",
+		ValidationJSON: "",
+	}
+
+	body, err := json.Marshal(request)
+
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"command":"update_operational_collection_validation"`)
+	require.Contains(t, string(body), `"collection_name":"audit_log"`)
+	require.Contains(t, string(body), `"validation_json":""`)
 }
 
 func TestOperationalReadRequestJSONShape(t *testing.T) {
@@ -181,6 +198,41 @@ func TestOperationalReadRequestJSONShapePreservesZeroRangeBounds(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(body), `"lower":0`)
 	require.Contains(t, string(body), `"upper":0`)
+}
+
+func TestOperationalSecondaryIndexUpdateRequestJSONShape(t *testing.T) {
+	request := Request{
+		DatabasePath:         "/tmp/fathom.db",
+		Command:              CommandUpdateOperationalIndexes,
+		CollectionName:       "audit_log",
+		SecondaryIndexesJSON: `[{"name":"actor_ts","kind":"append_only_field_time","field":"actor","value_type":"string","time_field":"ts"}]`,
+	}
+
+	body, err := json.Marshal(request)
+
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"command":"update_operational_collection_secondary_indexes"`)
+	require.Contains(t, string(body), `"secondary_indexes_json":"[{\"name\":\"actor_ts\",\"kind\":\"append_only_field_time\",\"field\":\"actor\",\"value_type\":\"string\",\"time_field\":\"ts\"}]"`)
+}
+
+func TestOperationalRetentionRequestJSONShape(t *testing.T) {
+	request := Request{
+		DatabasePath:    "/tmp/fathom.db",
+		Command:         CommandRunOperationalRetention,
+		CollectionNames: []string{"audit_log"},
+		NowTimestamp:    1000,
+		MaxCollections:  5,
+		DryRun:          true,
+	}
+
+	body, err := json.Marshal(request)
+
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"command":"run_operational_retention"`)
+	require.Contains(t, string(body), `"collection_names":["audit_log"]`)
+	require.Contains(t, string(body), `"now_timestamp":1000`)
+	require.Contains(t, string(body), `"max_collections":5`)
+	require.Contains(t, string(body), `"dry_run":true`)
 }
 
 func TestLogicalLifecycleRequestJSONShape(t *testing.T) {

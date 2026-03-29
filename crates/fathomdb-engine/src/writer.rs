@@ -9,7 +9,10 @@ use rusqlite::{OptionalExtension, TransactionBehavior, params};
 
 use crate::operational::{
     OperationalCollectionKind, OperationalFilterField, OperationalFilterFieldType,
-    OperationalFilterMode,
+    OperationalFilterMode, OperationalSecondaryIndexDefinition, OperationalValidationContract,
+    OperationalValidationMode, extract_secondary_index_entries_for_current,
+    extract_secondary_index_entries_for_mutation, parse_operational_secondary_indexes_json,
+    parse_operational_validation_contract, validate_operational_payload_against_contract,
 };
 use crate::{EngineError, ids::new_id, projection::ProjectionTarget, sqlite};
 
@@ -176,6 +179,7 @@ pub struct WriteRequest {
 pub struct WriteReceipt {
     pub label: String,
     pub optional_backfill_count: usize,
+    pub warnings: Vec<String>,
     pub provenance_warnings: Vec<String>,
 }
 
@@ -217,6 +221,7 @@ struct PreparedWrite {
     operational_writes: Vec<OperationalWrite>,
     operational_collection_kinds: HashMap<String, OperationalCollectionKind>,
     operational_collection_filter_fields: HashMap<String, Vec<OperationalFilterField>>,
+    operational_validation_warnings: Vec<String>,
     /// `node_logical_id` → kind for nodes co-submitted in this request.
     /// Used by `resolve_fts_rows` to avoid a DB round-trip for the common case.
     node_kinds: HashMap<String, String>,
@@ -582,6 +587,7 @@ fn prepare_write(
         operational_writes: request.operational_writes,
         operational_collection_kinds: HashMap::new(),
         operational_collection_filter_fields: HashMap::new(),
+        operational_validation_warnings: Vec::new(),
         node_kinds,
         required_fts_rows: Vec::new(),
         optional_backfills: request.optional_backfills,
@@ -699,22 +705,24 @@ fn resolve_operational_writes(
 ) -> Result<(), EngineError> {
     let mut collection_kinds = HashMap::new();
     let mut collection_filter_fields = HashMap::new();
+    let mut collection_validation_contracts = HashMap::new();
     for write in &prepared.operational_writes {
         let collection = operational_write_collection(write);
         if !collection_kinds.contains_key(collection) {
-            let maybe_row: Option<(String, Option<i64>, String)> = conn
+            let maybe_row: Option<(String, Option<i64>, String, String)> = conn
                 .query_row(
-                    "SELECT kind, disabled_at, filter_fields_json FROM operational_collections WHERE name = ?1",
+                    "SELECT kind, disabled_at, filter_fields_json, validation_json FROM operational_collections WHERE name = ?1",
                     params![collection],
-                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
                 )
                 .optional()
                 .map_err(EngineError::Sqlite)?;
-            let (kind_text, disabled_at, filter_fields_json) = maybe_row.ok_or_else(|| {
-                EngineError::InvalidWrite(format!(
-                    "operational collection '{collection}' is not registered"
-                ))
-            })?;
+            let (kind_text, disabled_at, filter_fields_json, validation_json) = maybe_row
+                .ok_or_else(|| {
+                    EngineError::InvalidWrite(format!(
+                        "operational collection '{collection}' is not registered"
+                    ))
+                })?;
             if disabled_at.is_some() {
                 return Err(EngineError::InvalidWrite(format!(
                     "operational collection '{collection}' is disabled"
@@ -723,8 +731,11 @@ fn resolve_operational_writes(
             let kind = OperationalCollectionKind::try_from(kind_text.as_str())
                 .map_err(EngineError::InvalidWrite)?;
             let filter_fields = parse_operational_filter_fields(&filter_fields_json)?;
+            let validation_contract = parse_operational_validation_contract(&validation_json)
+                .map_err(EngineError::InvalidWrite)?;
             collection_kinds.insert(collection.to_owned(), kind);
             collection_filter_fields.insert(collection.to_owned(), filter_fields);
+            collection_validation_contracts.insert(collection.to_owned(), validation_contract);
         }
 
         let kind = collection_kinds.get(collection).copied().ok_or_else(|| {
@@ -744,6 +755,9 @@ fn resolve_operational_writes(
                     "operational collection '{collection}' is latest_state and only accepts Put/Delete"
                 )));
             }
+        }
+        if let Some(Some(contract)) = collection_validation_contracts.get(collection) {
+            let _ = check_operational_write_against_contract(write, contract)?;
         }
     }
     prepared.operational_collection_kinds = collection_kinds;
@@ -932,10 +946,108 @@ fn ensure_operational_collections_writable(
     Ok(())
 }
 
+fn validate_operational_writes_against_live_contracts(
+    tx: &rusqlite::Transaction<'_>,
+    prepared: &PreparedWrite,
+) -> Result<Vec<String>, EngineError> {
+    let mut collection_validation_contracts =
+        HashMap::<String, Option<OperationalValidationContract>>::new();
+    for collection in prepared.operational_collection_kinds.keys() {
+        let validation_json: String = tx
+            .query_row(
+                "SELECT validation_json FROM operational_collections WHERE name = ?1",
+                params![collection],
+                |row| row.get(0),
+            )
+            .map_err(EngineError::Sqlite)?;
+        let validation_contract = parse_operational_validation_contract(&validation_json)
+            .map_err(EngineError::InvalidWrite)?;
+        collection_validation_contracts.insert(collection.clone(), validation_contract);
+    }
+
+    let mut warnings = Vec::new();
+    for write in &prepared.operational_writes {
+        if let Some(Some(contract)) =
+            collection_validation_contracts.get(operational_write_collection(write))
+        {
+            if let Some(warning) = check_operational_write_against_contract(write, contract)? {
+                warnings.push(warning);
+            }
+        }
+    }
+
+    Ok(warnings)
+}
+
+fn load_live_operational_secondary_indexes(
+    tx: &rusqlite::Transaction<'_>,
+    prepared: &PreparedWrite,
+) -> Result<HashMap<String, Vec<OperationalSecondaryIndexDefinition>>, EngineError> {
+    let mut collection_indexes = HashMap::new();
+    for (collection, collection_kind) in &prepared.operational_collection_kinds {
+        let secondary_indexes_json: String = tx
+            .query_row(
+                "SELECT secondary_indexes_json FROM operational_collections WHERE name = ?1",
+                params![collection],
+                |row| row.get(0),
+            )
+            .map_err(EngineError::Sqlite)?;
+        let indexes =
+            parse_operational_secondary_indexes_json(&secondary_indexes_json, *collection_kind)
+                .map_err(EngineError::InvalidWrite)?;
+        collection_indexes.insert(collection.clone(), indexes);
+    }
+    Ok(collection_indexes)
+}
+
+fn check_operational_write_against_contract(
+    write: &OperationalWrite,
+    contract: &OperationalValidationContract,
+) -> Result<Option<String>, EngineError> {
+    if contract.mode == OperationalValidationMode::Disabled {
+        return Ok(None);
+    }
+
+    let (payload_json, collection, record_key) = match write {
+        OperationalWrite::Append {
+            collection,
+            record_key,
+            payload_json,
+            ..
+        }
+        | OperationalWrite::Put {
+            collection,
+            record_key,
+            payload_json,
+            ..
+        } => (
+            payload_json.as_str(),
+            collection.as_str(),
+            record_key.as_str(),
+        ),
+        OperationalWrite::Delete { .. } => return Ok(None),
+    };
+
+    match validate_operational_payload_against_contract(contract, payload_json) {
+        Ok(()) => Ok(None),
+        Err(message) => match contract.mode {
+            OperationalValidationMode::Disabled => Ok(None),
+            OperationalValidationMode::ReportOnly => Ok(Some(format!(
+                "invalid operational payload for collection '{collection}' {kind} '{record_key}': {message}",
+                kind = operational_write_kind(write)
+            ))),
+            OperationalValidationMode::Enforce => Err(EngineError::InvalidWrite(format!(
+                "invalid operational payload for collection '{collection}' {kind} '{record_key}': {message}",
+                kind = operational_write_kind(write)
+            ))),
+        },
+    }
+}
+
 #[allow(clippy::too_many_lines)]
 fn apply_write(
     conn: &mut rusqlite::Connection,
-    prepared: &PreparedWrite,
+    prepared: &mut PreparedWrite,
 ) -> Result<WriteReceipt, EngineError> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
 
@@ -1141,6 +1253,10 @@ fn apply_write(
     // Operational mutation log writes and latest-state current rows.
     {
         ensure_operational_collections_writable(&tx, prepared)?;
+        prepared.operational_validation_warnings =
+            validate_operational_writes_against_live_contracts(&tx, prepared)?;
+        let collection_secondary_indexes =
+            load_live_operational_secondary_indexes(&tx, prepared)?;
 
         let mut next_mutation_order: i64 = tx.query_row(
             "SELECT COALESCE(MAX(mutation_order), 0) FROM operational_mutations",
@@ -1169,6 +1285,20 @@ fn apply_write(
         let mut del_current = tx.prepare_cached(
             "DELETE FROM operational_current WHERE collection_name = ?1 AND record_key = ?2",
         )?;
+        let mut del_current_secondary_indexes = tx.prepare_cached(
+            "DELETE FROM operational_secondary_index_entries \
+             WHERE collection_name = ?1 AND subject_kind = 'current' AND record_key = ?2",
+        )?;
+        let mut ins_secondary_index = tx.prepare_cached(
+            "INSERT INTO operational_secondary_index_entries \
+             (collection_name, index_name, subject_kind, mutation_id, record_key, sort_timestamp, \
+              slot1_text, slot1_integer, slot2_text, slot2_integer, slot3_text, slot3_integer) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+        )?;
+        let mut current_row_stmt = tx.prepare_cached(
+            "SELECT payload_json, updated_at, last_mutation_id FROM operational_current \
+             WHERE collection_name = ?1 AND record_key = ?2",
+        )?;
 
         for write in &prepared.operational_writes {
             let collection = operational_write_collection(write);
@@ -1177,7 +1307,7 @@ fn apply_write(
             next_mutation_order += 1;
             let payload_json = operational_write_payload(write);
             ins_mutation.execute(params![
-                mutation_id,
+                &mutation_id,
                 collection,
                 record_key,
                 operational_write_kind(write),
@@ -1185,13 +1315,33 @@ fn apply_write(
                 operational_write_source_ref(write),
                 next_mutation_order,
             ])?;
+            if let Some(indexes) = collection_secondary_indexes.get(collection) {
+                for entry in
+                    extract_secondary_index_entries_for_mutation(indexes, payload_json)
+                {
+                    ins_secondary_index.execute(params![
+                        collection,
+                        entry.index_name,
+                        "mutation",
+                        &mutation_id,
+                        record_key,
+                        entry.sort_timestamp,
+                        entry.slot1_text,
+                        entry.slot1_integer,
+                        entry.slot2_text,
+                        entry.slot2_integer,
+                        entry.slot3_text,
+                        entry.slot3_integer,
+                    ])?;
+                }
+            }
             if let Some(filter_fields) = prepared
                 .operational_collection_filter_fields
                 .get(collection)
             {
                 for filter_value in extract_operational_filter_values(filter_fields, payload_json) {
                     ins_filter_value.execute(params![
-                        mutation_id,
+                        &mutation_id,
                         collection,
                         filter_value.field_name,
                         filter_value.string_value,
@@ -1203,14 +1353,44 @@ fn apply_write(
             if prepared.operational_collection_kinds.get(collection)
                 == Some(&OperationalCollectionKind::LatestState)
             {
+                del_current_secondary_indexes.execute(params![collection, record_key])?;
                 match write {
                     OperationalWrite::Put { payload_json, .. } => {
                         upsert_current.execute(params![
                             collection,
                             record_key,
                             payload_json,
-                            mutation_id,
+                            &mutation_id,
                         ])?;
+                        if let Some(indexes) = collection_secondary_indexes.get(collection) {
+                            let (current_payload_json, updated_at, last_mutation_id): (
+                                String,
+                                i64,
+                                String,
+                            ) = current_row_stmt.query_row(params![collection, record_key], |row| {
+                                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                            })?;
+                            for entry in extract_secondary_index_entries_for_current(
+                                indexes,
+                                &current_payload_json,
+                                updated_at,
+                            ) {
+                                ins_secondary_index.execute(params![
+                                    collection,
+                                    entry.index_name,
+                                    "current",
+                                    last_mutation_id.as_str(),
+                                    record_key,
+                                    entry.sort_timestamp,
+                                    entry.slot1_text,
+                                    entry.slot1_integer,
+                                    entry.slot2_text,
+                                    entry.slot2_integer,
+                                    entry.slot3_text,
+                                    entry.slot3_integer,
+                                ])?;
+                            }
+                        }
                     }
                     OperationalWrite::Delete { .. } => {
                         del_current.execute(params![collection, record_key])?;
@@ -1322,9 +1502,13 @@ fn apply_write(
         )
         .collect();
 
+    let mut warnings = provenance_warnings.clone();
+    warnings.extend(prepared.operational_validation_warnings.clone());
+
     Ok(WriteReceipt {
         label: prepared.label.clone(),
         optional_backfill_count: prepared.optional_backfills.len(),
+        warnings,
         provenance_warnings,
     })
 }
@@ -1519,6 +1703,123 @@ mod tests {
     }
 
     #[test]
+    fn writer_disabled_validation_mode_allows_invalid_operational_payloads() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        SchemaManager::new().bootstrap(&conn).expect("bootstrap");
+        conn.execute(
+            "INSERT INTO operational_collections (name, kind, schema_json, retention_json, validation_json) \
+             VALUES ('connector_health', 'latest_state', '{}', '{}', ?1)",
+            [r#"{"format_version":1,"mode":"disabled","additional_properties":false,"fields":[{"name":"status","type":"string","required":true,"enum":["ok","failed"]}]}"#],
+        )
+        .expect("seed collection");
+        drop(conn);
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            ProvenanceMode::Warn,
+        )
+        .expect("writer");
+
+        writer
+            .submit(WriteRequest {
+                label: "disabled-validation".to_owned(),
+                nodes: vec![],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+                operational_writes: vec![OperationalWrite::Put {
+                    collection: "connector_health".to_owned(),
+                    record_key: "gmail".to_owned(),
+                    payload_json: r#"{"bogus":true}"#.to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                }],
+            })
+            .expect("write receipt");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let payload: String = conn
+            .query_row(
+                "SELECT payload_json FROM operational_current \
+                 WHERE collection_name = 'connector_health' AND record_key = 'gmail'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("current payload");
+        assert_eq!(payload, r#"{"bogus":true}"#);
+    }
+
+    #[test]
+    fn writer_report_only_validation_allows_invalid_payload_and_emits_warning() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        SchemaManager::new().bootstrap(&conn).expect("bootstrap");
+        conn.execute(
+            "INSERT INTO operational_collections (name, kind, schema_json, retention_json, validation_json) \
+             VALUES ('connector_health', 'latest_state', '{}', '{}', ?1)",
+            [r#"{"format_version":1,"mode":"report_only","additional_properties":false,"fields":[{"name":"status","type":"string","required":true,"enum":["ok","failed"]}]}"#],
+        )
+        .expect("seed collection");
+        drop(conn);
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            ProvenanceMode::Warn,
+        )
+        .expect("writer");
+
+        let receipt = writer
+            .submit(WriteRequest {
+                label: "report-only-validation".to_owned(),
+                nodes: vec![],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+                operational_writes: vec![OperationalWrite::Put {
+                    collection: "connector_health".to_owned(),
+                    record_key: "gmail".to_owned(),
+                    payload_json: r#"{"status":"bogus"}"#.to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                }],
+            })
+            .expect("report_only write should succeed");
+
+        assert_eq!(receipt.provenance_warnings, Vec::<String>::new());
+        assert_eq!(receipt.warnings.len(), 1);
+        assert!(
+            receipt.warnings[0].contains("connector_health"),
+            "warning should identify collection"
+        );
+        assert!(
+            receipt.warnings[0].contains("must be one of"),
+            "warning should explain validation failure"
+        );
+
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let payload: String = conn
+            .query_row(
+                "SELECT payload_json FROM operational_current \
+                 WHERE collection_name = 'connector_health' AND record_key = 'gmail'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("current payload");
+        assert_eq!(payload, r#"{"status":"bogus"}"#);
+    }
+
+    #[test]
     fn writer_rejects_operational_write_for_missing_collection() {
         let db = NamedTempFile::new().expect("temporary db");
         let conn = rusqlite::Connection::open(db.path()).expect("conn");
@@ -1621,6 +1922,70 @@ mod tests {
     }
 
     #[test]
+    fn writer_enforce_validation_rejects_invalid_append_without_side_effects() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        SchemaManager::new().bootstrap(&conn).expect("bootstrap");
+        conn.execute(
+            "INSERT INTO operational_collections \
+             (name, kind, schema_json, retention_json, filter_fields_json, validation_json) \
+             VALUES ('audit_log', 'append_only_log', '{}', '{}', \
+                     '[{\"name\":\"status\",\"type\":\"string\",\"modes\":[\"exact\"]}]', ?1)",
+            [r#"{"format_version":1,"mode":"enforce","additional_properties":false,"fields":[{"name":"status","type":"string","required":true,"enum":["ok","failed"]}]}"#],
+        )
+        .expect("seed collection");
+        drop(conn);
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            ProvenanceMode::Warn,
+        )
+        .expect("writer");
+
+        let error = writer
+            .submit(WriteRequest {
+                label: "invalid-append".to_owned(),
+                nodes: vec![],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+                operational_writes: vec![OperationalWrite::Append {
+                    collection: "audit_log".to_owned(),
+                    record_key: "evt-1".to_owned(),
+                    payload_json: r#"{"status":"bogus"}"#.to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                }],
+            })
+            .expect_err("invalid append must reject");
+        assert!(matches!(error, EngineError::InvalidWrite(_)));
+        assert!(error.to_string().contains("must be one of"));
+
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let mutation_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM operational_mutations WHERE collection_name = 'audit_log'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("mutation count");
+        assert_eq!(mutation_count, 0);
+        let filter_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM operational_filter_values WHERE collection_name = 'audit_log'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("filter count");
+        assert_eq!(filter_count, 0);
+    }
+
+    #[test]
     fn writer_delete_operational_write_removes_current_row_and_keeps_history() {
         let db = NamedTempFile::new().expect("temporary db");
         let conn = rusqlite::Connection::open(db.path()).expect("conn");
@@ -1706,6 +2071,166 @@ mod tests {
             )
             .expect("current count");
         assert_eq!(current_count, 0);
+    }
+
+    #[test]
+    fn writer_delete_bypasses_validation_contract() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        SchemaManager::new().bootstrap(&conn).expect("bootstrap");
+        conn.execute(
+            "INSERT INTO operational_collections (name, kind, schema_json, retention_json, validation_json) \
+             VALUES ('connector_health', 'latest_state', '{}', '{}', ?1)",
+            [r#"{"format_version":1,"mode":"enforce","additional_properties":false,"fields":[{"name":"status","type":"string","required":true,"enum":["ok","failed"]}]}"#],
+        )
+        .expect("seed collection");
+        drop(conn);
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            ProvenanceMode::Warn,
+        )
+        .expect("writer");
+
+        writer
+            .submit(WriteRequest {
+                label: "valid-put".to_owned(),
+                nodes: vec![],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+                operational_writes: vec![OperationalWrite::Put {
+                    collection: "connector_health".to_owned(),
+                    record_key: "gmail".to_owned(),
+                    payload_json: r#"{"status":"ok"}"#.to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                }],
+            })
+            .expect("put receipt");
+        writer
+            .submit(WriteRequest {
+                label: "delete-after-put".to_owned(),
+                nodes: vec![],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+                operational_writes: vec![OperationalWrite::Delete {
+                    collection: "connector_health".to_owned(),
+                    record_key: "gmail".to_owned(),
+                    source_ref: Some("src-2".to_owned()),
+                }],
+            })
+            .expect("delete receipt");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let current_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM operational_current \
+                 WHERE collection_name = 'connector_health' AND record_key = 'gmail'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("current count");
+        assert_eq!(current_count, 0);
+    }
+
+    #[test]
+    fn writer_latest_state_secondary_indexes_track_put_and_delete() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        SchemaManager::new().bootstrap(&conn).expect("bootstrap");
+        conn.execute(
+            "INSERT INTO operational_collections \
+             (name, kind, schema_json, retention_json, secondary_indexes_json) \
+             VALUES ('connector_health', 'latest_state', '{}', '{}', ?1)",
+            [r#"[{"name":"status_current","kind":"latest_state_field","field":"status","value_type":"string"},{"name":"tenant_category","kind":"latest_state_composite","fields":[{"name":"tenant","value_type":"string"},{"name":"category","value_type":"string"}]}]"#],
+        )
+        .expect("seed collection");
+        drop(conn);
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            ProvenanceMode::Warn,
+        )
+        .expect("writer");
+
+        writer
+            .submit(WriteRequest {
+                label: "secondary-index-put".to_owned(),
+                nodes: vec![],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+                operational_writes: vec![OperationalWrite::Put {
+                    collection: "connector_health".to_owned(),
+                    record_key: "gmail".to_owned(),
+                    payload_json: r#"{"status":"degraded","tenant":"acme","category":"mail"}"#.to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                }],
+            })
+            .expect("put receipt");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let current_entry_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM operational_secondary_index_entries \
+                 WHERE collection_name = 'connector_health' AND subject_kind = 'current'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("current secondary index count");
+        assert_eq!(current_entry_count, 2);
+        drop(conn);
+
+        writer
+            .submit(WriteRequest {
+                label: "secondary-index-delete".to_owned(),
+                nodes: vec![],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+                operational_writes: vec![OperationalWrite::Delete {
+                    collection: "connector_health".to_owned(),
+                    record_key: "gmail".to_owned(),
+                    source_ref: Some("src-2".to_owned()),
+                }],
+            })
+            .expect("delete receipt");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let current_entry_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM operational_secondary_index_entries \
+                 WHERE collection_name = 'connector_health' AND subject_kind = 'current'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("current secondary index count");
+        assert_eq!(current_entry_count, 0);
     }
 
     #[test]
@@ -1836,7 +2361,8 @@ mod tests {
         )
         .expect("disable collection after preflight");
 
-        let error = apply_write(&mut conn, &prepared).expect_err("disabled collection must reject");
+        let error =
+            apply_write(&mut conn, &mut prepared).expect_err("disabled collection must reject");
         assert!(matches!(error, EngineError::InvalidWrite(_)));
         assert!(error.to_string().contains("is disabled"));
 
@@ -1849,6 +2375,84 @@ mod tests {
             .expect("mutation count");
         assert_eq!(mutation_count, 0);
 
+        let current_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM operational_current WHERE collection_name = 'connector_health'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("current count");
+        assert_eq!(current_count, 0);
+    }
+
+    #[test]
+    fn writer_enforce_validation_rejects_invalid_put_atomically() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        SchemaManager::new().bootstrap(&conn).expect("bootstrap");
+        conn.execute(
+            "INSERT INTO operational_collections (name, kind, schema_json, retention_json, validation_json) \
+             VALUES ('connector_health', 'latest_state', '{}', '{}', ?1)",
+            [r#"{"format_version":1,"mode":"enforce","additional_properties":false,"fields":[{"name":"status","type":"string","required":true,"enum":["ok","failed"]}]}"#],
+        )
+        .expect("seed collection");
+        drop(conn);
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            ProvenanceMode::Warn,
+        )
+        .expect("writer");
+
+        let error = writer
+            .submit(WriteRequest {
+                label: "invalid-put".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-1".to_owned(),
+                    logical_id: "lg-1".to_owned(),
+                    kind: "Meeting".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                }],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+                operational_writes: vec![OperationalWrite::Put {
+                    collection: "connector_health".to_owned(),
+                    record_key: "gmail".to_owned(),
+                    payload_json: r#"{"status":"bogus"}"#.to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                }],
+            })
+            .expect_err("invalid put must reject");
+        assert!(matches!(error, EngineError::InvalidWrite(_)));
+        assert!(error.to_string().contains("must be one of"));
+
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let node_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM nodes WHERE logical_id = 'lg-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("node count");
+        assert_eq!(node_count, 0);
+        let mutation_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM operational_mutations WHERE collection_name = 'connector_health'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("mutation count");
+        assert_eq!(mutation_count, 0);
         let current_count: i64 = conn
             .query_row(
                 "SELECT count(*) FROM operational_current WHERE collection_name = 'connector_health'",

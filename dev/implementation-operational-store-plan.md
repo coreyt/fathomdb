@@ -3,7 +3,8 @@
 ## Status
 
 - Current phase: complete
-- Overall status: operational-store foundation and all planned active Memex-support phases are implemented; only explicit deferred items remain
+- Overall status: operational-store foundation, all planned Memex-support
+  phases, and the follow-on operational hardening slices are implemented
 
 ## Locked Decisions
 
@@ -35,7 +36,16 @@
   3. richer read/query result shapes
   4. lightweight `last_accessed` support
   5. filtered operational reads
-- Optional operational schema validation is deferred.
+- Operational payload validation now ships as an opt-in `validation_json`
+  contract with `disabled`, `report_only`, and `enforce` modes plus
+  history-validation diagnostics; generic write warnings travel through
+  `WriteReceipt.warnings`.
+- Collection-declared operational secondary indexes now ship through
+  `secondary_indexes_json` plus engine-maintained derived entries and explicit
+  rebuild support.
+- Operational retention now ships through explicit plan/run admin primitives
+  and operator tooling, while recurring scheduling remains intentionally
+  external to the engine.
 - TDD is mandatory for all remaining phases: write failing requirement-level
   tests first, implement the minimum behavior to pass, refactor after green,
   then update this tracker.
@@ -212,11 +222,26 @@ Acceptance criteria:
 - filter support remains bounded and does not become arbitrary SQL
 - export/recovery/bootstrap remain compatible with the collection contract
 
-## Deferred
+## Follow-On Slices Completed
 
-- optional operational payload schema validation
-- collection-declared secondary indexes beyond what filtered reads require
-- automatic/background retention execution beyond explicit admin compact/purge
+- [x] `report_only` operational payload validation warnings through the generic
+  write-receipt warning surface
+- [x] collection-declared secondary indexes through
+  `secondary_indexes_json`, derived index entries, and rebuild support
+- [x] automatic/background retention primitives through explicit
+  plan/run retention admin and operator surfaces
+
+Design notes:
+
+- [`dev/design-operational-payload-schema-validation.md`](/home/coreyt/projects/fathomdb/dev/design-operational-payload-schema-validation.md)
+- [`dev/design-operational-secondary-indexes.md`](/home/coreyt/projects/fathomdb/dev/design-operational-secondary-indexes.md)
+- [`dev/design-automatic-background-retention.md`](/home/coreyt/projects/fathomdb/dev/design-automatic-background-retention.md)
+
+Implementation plans:
+
+- [`dev/plan-operational-payload-schema-validation.md`](/home/coreyt/projects/fathomdb/dev/plan-operational-payload-schema-validation.md)
+- [`dev/plan-operational-secondary-indexes.md`](/home/coreyt/projects/fathomdb/dev/plan-operational-secondary-indexes.md)
+- [`dev/plan-automatic-background-retention.md`](/home/coreyt/projects/fathomdb/dev/plan-automatic-background-retention.md)
 
 ## Verification
 
@@ -230,7 +255,7 @@ Acceptance criteria:
 
 ### Remaining-phase verification
 
-- [ ] All remaining verification stays requirement-first, not code-first
+- [x] All remaining verification stays requirement-first, not code-first
 - [x] Full-fidelity restore tests for the initial logical-id lifecycle slice
 - [x] Purge scope/finality tests for the initial logical-id lifecycle slice
 - [x] Restore/purge reporting and provenance tests for the initial
@@ -243,6 +268,9 @@ Acceptance criteria:
 - [x] Richer read/query result tests
 - [x] Batched touch/update tests
 - [x] Filtered operational read tests
+- [x] Report-only operational payload validation tests
+- [x] Operational secondary-index maintenance/rebuild/read-path tests
+- [x] Operational retention plan/run tests
 
 ## Notes
 
@@ -307,6 +335,11 @@ Acceptance criteria:
   can now gain declared filter contracts through an explicit update path that
   backfills extracted filter values for existing mutation history, and Go
   bridge/CLI range filters now preserve explicit `0` lower/upper bounds.
+- The formerly deferred operational hardening items are now implemented:
+  `report_only` validation uses generic write warnings, collection-declared
+  secondary indexes use derived engine-managed entries plus rebuild support,
+  and retention planning/execution is available through explicit plan/run
+  surfaces with recurring scheduling kept outside the engine by design.
 - Stale vector-doc cleanup is not tracked as a standalone phase; its remaining
   proof obligations are carried by the restore/purge lifecycle phase.
 - Python-feature verification remains environment-dependent for full Rust

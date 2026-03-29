@@ -30,12 +30,18 @@ const (
 	CommandRegisterOperationalCollection Command = "register_operational_collection"
 	CommandDescribeOperationalCollection Command = "describe_operational_collection"
 	CommandUpdateOperationalFilters      Command = "update_operational_collection_filters"
+	CommandUpdateOperationalValidation   Command = "update_operational_collection_validation"
+	CommandUpdateOperationalIndexes      Command = "update_operational_collection_secondary_indexes"
 	CommandDisableOperationalCollection  Command = "disable_operational_collection"
 	CommandCompactOperationalCollection  Command = "compact_operational_collection"
 	CommandPurgeOperationalCollection    Command = "purge_operational_collection"
 	CommandRebuildOperationalCurrent     Command = "rebuild_operational_current"
+	CommandRebuildOperationalIndexes     Command = "rebuild_operational_secondary_indexes"
 	CommandTraceOperationalCollection    Command = "trace_operational_collection"
 	CommandReadOperationalCollection     Command = "read_operational_collection"
+	CommandValidateOperationalHistory    Command = "validate_operational_collection_history"
+	CommandPlanOperationalRetention      Command = "plan_operational_retention"
+	CommandRunOperationalRetention       Command = "run_operational_retention"
 )
 
 type Request struct {
@@ -46,8 +52,13 @@ type Request struct {
 	Target                string                  `json:"target,omitempty"`
 	SourceRef             string                  `json:"source_ref,omitempty"`
 	CollectionName        string                  `json:"collection_name,omitempty"`
+	CollectionNames       []string                `json:"collection_names,omitempty"`
 	RecordKey             string                  `json:"record_key,omitempty"`
 	FilterFieldsJSON      string                  `json:"filter_fields_json,omitempty"`
+	ValidationJSON        string                  `json:"validation_json"`
+	SecondaryIndexesJSON  string                  `json:"secondary_indexes_json,omitempty"`
+	NowTimestamp          int64                   `json:"now_timestamp,omitempty"`
+	MaxCollections        int                     `json:"max_collections,omitempty"`
 	BeforeTimestamp       int64                   `json:"before_timestamp,omitempty"`
 	DryRun                bool                    `json:"dry_run,omitempty"`
 	DestinationPath       string                  `json:"destination_path,omitempty"`
@@ -63,6 +74,8 @@ type OperationalCollection struct {
 	SchemaJSON       string `json:"schema_json"`
 	RetentionJSON    string `json:"retention_json"`
 	FilterFieldsJSON string `json:"filter_fields_json"`
+	ValidationJSON   string `json:"validation_json"`
+	SecondaryIndexesJSON string `json:"secondary_indexes_json"`
 	FormatVersion    int64  `json:"format_version"`
 }
 

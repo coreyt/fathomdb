@@ -64,10 +64,10 @@ type checkReport struct {
 	Layer1 struct {
 		WALPresent bool `json:"wal_present"`
 		WAL        struct {
-			Present         bool  `json:"present"`
-			HeaderValid     bool  `json:"header_valid"`
-			FrameCount      int   `json:"frame_count"`
-			Truncated       bool  `json:"truncated"`
+			Present          bool  `json:"present"`
+			HeaderValid      bool  `json:"header_valid"`
+			FrameCount       int   `json:"frame_count"`
+			Truncated        bool  `json:"truncated"`
 			TruncationOffset int64 `json:"truncation_offset"`
 		} `json:"wal"`
 		Findings []struct {
@@ -103,7 +103,7 @@ func TestCheckCommand_DetectsWALBitFlip(t *testing.T) {
 		"--db", dbPath,
 	)
 	cmd.Dir = repoRoot
-	cmd.Env = os.Environ()
+	cmd.Env = commandEnv(t)
 	output, err := cmd.CombinedOutput()
 
 	// check exits 0 even on findings — it's a diagnostic, not a gate.
@@ -153,7 +153,7 @@ func TestCheckCommand_CleanWAL_NoTruncationFinding(t *testing.T) {
 		"--db", dbPath,
 	)
 	cmd.Dir = repoRoot
-	cmd.Env = os.Environ()
+	cmd.Env = commandEnv(t)
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, string(output))
 

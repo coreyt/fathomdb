@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/coreyt/fathomdb/go/fathom-integrity/internal/bridge"
 	"github.com/coreyt/fathomdb/go/fathom-integrity/internal/commands"
@@ -260,6 +261,132 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			return commandExitCode(err)
 		}
 		return 0
+	case "update-operational-validation":
+		fs := flag.NewFlagSet("update-operational-validation", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		db := fs.String("db", cfg.DatabasePath, "path to sqlite database")
+		bridgeBinary := fs.String("bridge", cfg.BridgeBinary, "path to admin bridge binary")
+		collectionName := fs.String("collection", "", "operational collection name to update")
+		validationJSON := fs.String("validation-json", "", "JSON validation contract for the collection")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		hasValidationJSON := false
+		fs.Visit(func(flag *flag.Flag) {
+			if flag.Name == "validation-json" {
+				hasValidationJSON = true
+			}
+		})
+		if *db == "" || *collectionName == "" || !hasValidationJSON {
+			fmt.Fprintln(stderr, "--db, --collection, and --validation-json are required")
+			return 2
+		}
+		request := bridge.Request{
+			DatabasePath:   *db,
+			Command:        bridge.CommandUpdateOperationalValidation,
+			CollectionName: *collectionName,
+			ValidationJSON: *validationJSON,
+		}
+		if err := commands.RunBridgeCommandWithFeedback(
+			bridge.Client{BinaryPath: *bridgeBinary},
+			request,
+			stdout,
+			newFeedbackObserver(stderr),
+			bridge.FeedbackConfig{},
+		); err != nil {
+			fmt.Fprintln(stderr, err)
+			return commandExitCode(err)
+		}
+		return 0
+	case "update-operational-secondary-indexes":
+		fs := flag.NewFlagSet("update-operational-secondary-indexes", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		db := fs.String("db", cfg.DatabasePath, "path to sqlite database")
+		bridgeBinary := fs.String("bridge", cfg.BridgeBinary, "path to admin bridge binary")
+		collectionName := fs.String("collection", "", "operational collection name to update")
+		secondaryIndexesJSON := fs.String("secondary-indexes-json", "", "JSON array of declared secondary index definitions")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if *db == "" || *collectionName == "" || *secondaryIndexesJSON == "" {
+			fmt.Fprintln(stderr, "--db, --collection, and --secondary-indexes-json are required")
+			return 2
+		}
+		request := bridge.Request{
+			DatabasePath:         *db,
+			Command:              bridge.CommandUpdateOperationalIndexes,
+			CollectionName:       *collectionName,
+			SecondaryIndexesJSON: *secondaryIndexesJSON,
+		}
+		if err := commands.RunBridgeCommandWithFeedback(
+			bridge.Client{BinaryPath: *bridgeBinary},
+			request,
+			stdout,
+			newFeedbackObserver(stderr),
+			bridge.FeedbackConfig{},
+		); err != nil {
+			fmt.Fprintln(stderr, err)
+			return commandExitCode(err)
+		}
+		return 0
+	case "validate-operational-history":
+		fs := flag.NewFlagSet("validate-operational-history", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		db := fs.String("db", cfg.DatabasePath, "path to sqlite database")
+		bridgeBinary := fs.String("bridge", cfg.BridgeBinary, "path to admin bridge binary")
+		collectionName := fs.String("collection", "", "operational collection name to validate")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if *db == "" || *collectionName == "" {
+			fmt.Fprintln(stderr, "--db and --collection are required")
+			return 2
+		}
+		request := bridge.Request{
+			DatabasePath:   *db,
+			Command:        bridge.CommandValidateOperationalHistory,
+			CollectionName: *collectionName,
+		}
+		if err := commands.RunBridgeCommandWithFeedback(
+			bridge.Client{BinaryPath: *bridgeBinary},
+			request,
+			stdout,
+			newFeedbackObserver(stderr),
+			bridge.FeedbackConfig{},
+		); err != nil {
+			fmt.Fprintln(stderr, err)
+			return commandExitCode(err)
+		}
+		return 0
+	case "rebuild-operational-secondary-indexes":
+		fs := flag.NewFlagSet("rebuild-operational-secondary-indexes", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		db := fs.String("db", cfg.DatabasePath, "path to sqlite database")
+		bridgeBinary := fs.String("bridge", cfg.BridgeBinary, "path to admin bridge binary")
+		collectionName := fs.String("collection", "", "operational collection name to rebuild")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if *db == "" || *collectionName == "" {
+			fmt.Fprintln(stderr, "--db and --collection are required")
+			return 2
+		}
+		request := bridge.Request{
+			DatabasePath:   *db,
+			Command:        bridge.CommandRebuildOperationalIndexes,
+			CollectionName: *collectionName,
+		}
+		if err := commands.RunBridgeCommandWithFeedback(
+			bridge.Client{BinaryPath: *bridgeBinary},
+			request,
+			stdout,
+			newFeedbackObserver(stderr),
+			bridge.FeedbackConfig{},
+		); err != nil {
+			fmt.Fprintln(stderr, err)
+			return commandExitCode(err)
+		}
+		return 0
 	case "disable-operational":
 		fs := flag.NewFlagSet("disable-operational", flag.ContinueOnError)
 		fs.SetOutput(stderr)
@@ -277,6 +404,96 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			DatabasePath:   *db,
 			Command:        bridge.CommandDisableOperationalCollection,
 			CollectionName: *collectionName,
+		}
+		if err := commands.RunBridgeCommandWithFeedback(
+			bridge.Client{BinaryPath: *bridgeBinary},
+			request,
+			stdout,
+			newFeedbackObserver(stderr),
+			bridge.FeedbackConfig{},
+		); err != nil {
+			fmt.Fprintln(stderr, err)
+			return commandExitCode(err)
+		}
+		return 0
+	case "plan-operational-retention":
+		fs := flag.NewFlagSet("plan-operational-retention", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		db := fs.String("db", cfg.DatabasePath, "path to sqlite database")
+		bridgeBinary := fs.String("bridge", cfg.BridgeBinary, "path to admin bridge binary")
+		collectionsJSON := fs.String("collections-json", "", "optional JSON array of collection names")
+		nowTimestamp := fs.Int64("now", 0, "optional unix timestamp override")
+		maxCollections := fs.Int("max-collections", 0, "optional maximum collections to examine")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if *db == "" {
+			fmt.Fprintln(stderr, "--db is required")
+			return 2
+		}
+		var collectionNames []string
+		if *collectionsJSON != "" {
+			if err := json.Unmarshal([]byte(*collectionsJSON), &collectionNames); err != nil {
+				fmt.Fprintf(stderr, "invalid --collections-json: %v\n", err)
+				return 2
+			}
+		}
+		now := *nowTimestamp
+		if now == 0 {
+			now = time.Now().Unix()
+		}
+		request := bridge.Request{
+			DatabasePath:   *db,
+			Command:        bridge.CommandPlanOperationalRetention,
+			CollectionNames: collectionNames,
+			NowTimestamp:   now,
+			MaxCollections: *maxCollections,
+		}
+		if err := commands.RunBridgeCommandWithFeedback(
+			bridge.Client{BinaryPath: *bridgeBinary},
+			request,
+			stdout,
+			newFeedbackObserver(stderr),
+			bridge.FeedbackConfig{},
+		); err != nil {
+			fmt.Fprintln(stderr, err)
+			return commandExitCode(err)
+		}
+		return 0
+	case "run-operational-retention":
+		fs := flag.NewFlagSet("run-operational-retention", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		db := fs.String("db", cfg.DatabasePath, "path to sqlite database")
+		bridgeBinary := fs.String("bridge", cfg.BridgeBinary, "path to admin bridge binary")
+		collectionsJSON := fs.String("collections-json", "", "optional JSON array of collection names")
+		nowTimestamp := fs.Int64("now", 0, "optional unix timestamp override")
+		maxCollections := fs.Int("max-collections", 0, "optional maximum collections to examine")
+		dryRun := fs.Bool("dry-run", false, "report retention actions without mutation")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if *db == "" {
+			fmt.Fprintln(stderr, "--db is required")
+			return 2
+		}
+		var collectionNames []string
+		if *collectionsJSON != "" {
+			if err := json.Unmarshal([]byte(*collectionsJSON), &collectionNames); err != nil {
+				fmt.Fprintf(stderr, "invalid --collections-json: %v\n", err)
+				return 2
+			}
+		}
+		now := *nowTimestamp
+		if now == 0 {
+			now = time.Now().Unix()
+		}
+		request := bridge.Request{
+			DatabasePath:    *db,
+			Command:         bridge.CommandRunOperationalRetention,
+			CollectionNames: collectionNames,
+			NowTimestamp:    now,
+			MaxCollections:  *maxCollections,
+			DryRun:          *dryRun,
 		}
 		if err := commands.RunBridgeCommandWithFeedback(
 			bridge.Client{BinaryPath: *bridgeBinary},
@@ -601,5 +818,5 @@ func commandExitCode(err error) int {
 }
 
 func usage() string {
-	return "usage: fathom-integrity <check|export|trace|restore-logical-id|purge-logical-id|trace-operational|read-operational|update-operational-filters|disable-operational|compact-operational|purge-operational|rebuild|rebuild-operational-current|rebuild-missing|regenerate-vectors|excise|recover|repair|version> [flags]"
+	return "usage: fathom-integrity <check|export|trace|restore-logical-id|purge-logical-id|trace-operational|read-operational|update-operational-filters|update-operational-validation|validate-operational-history|disable-operational|compact-operational|purge-operational|rebuild|rebuild-operational-current|rebuild-missing|regenerate-vectors|excise|recover|repair|version> [flags]"
 }

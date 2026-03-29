@@ -618,7 +618,7 @@ mod tests {
 
     use crate::ExecutionCoordinator;
 
-    use super::{bind_value_to_sql, is_vec_table_absent};
+    use super::{bind_value_to_sql, is_vec_table_absent, wrap_node_row_projection_sql};
 
     #[test]
     fn is_vec_table_absent_matches_known_error_messages() {
@@ -754,7 +754,7 @@ mod tests {
 
         let plan = coordinator.explain_compiled_read(&compiled);
 
-        assert_eq!(plan.sql, compiled.sql);
+        assert_eq!(plan.sql, wrap_node_row_projection_sql(&compiled.sql));
     }
 
     #[test]

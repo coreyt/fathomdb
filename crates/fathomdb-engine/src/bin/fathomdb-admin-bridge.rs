@@ -32,10 +32,15 @@ struct BridgeRequest {
     target: Option<String>,
     source_ref: Option<String>,
     collection_name: Option<String>,
+    collection_names: Option<Vec<String>>,
     record_key: Option<String>,
     filter_fields_json: Option<String>,
+    validation_json: Option<String>,
+    secondary_indexes_json: Option<String>,
     destination_path: Option<PathBuf>,
     config_path: Option<PathBuf>,
+    now_timestamp: Option<i64>,
+    max_collections: Option<usize>,
     before_timestamp: Option<i64>,
     #[serde(default)]
     dry_run: bool,
@@ -61,12 +66,18 @@ enum BridgeCommand {
     RegisterOperationalCollection,
     DescribeOperationalCollection,
     UpdateOperationalCollectionFilters,
+    UpdateOperationalCollectionValidation,
+    UpdateOperationalCollectionSecondaryIndexes,
     DisableOperationalCollection,
     CompactOperationalCollection,
     PurgeOperationalCollection,
     RebuildOperationalCurrent,
+    RebuildOperationalSecondaryIndexes,
     TraceOperationalCollection,
     ReadOperationalCollection,
+    ValidateOperationalCollectionHistory,
+    PlanOperationalRetention,
+    RunOperationalRetention,
 }
 
 #[derive(Debug, Serialize)]
@@ -334,6 +345,65 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                 ),
             }
         }
+        BridgeCommand::UpdateOperationalCollectionValidation => {
+            match (
+                request.collection_name.as_deref(),
+                request.validation_json.as_deref(),
+            ) {
+                (Some(collection_name), Some(validation_json)) if !collection_name.is_empty() => {
+                    match service
+                        .update_operational_collection_validation(collection_name, validation_json)
+                    {
+                        Ok(record) => success_response(
+                            "operational collection validation updated".to_owned(),
+                            serde_json::to_value(record).unwrap_or_else(|_| json!({})),
+                        ),
+                        Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                    }
+                }
+                (Some(collection_name), None) if !collection_name.is_empty() => {
+                    error_response_with_message(
+                        BridgeErrorCode::BadRequest,
+                        "validation_json is required".to_owned(),
+                    )
+                }
+                _ => error_response_with_message(
+                    BridgeErrorCode::BadRequest,
+                    "collection_name is required".to_owned(),
+                ),
+            }
+        }
+        BridgeCommand::UpdateOperationalCollectionSecondaryIndexes => {
+            match (
+                request.collection_name.as_deref(),
+                request.secondary_indexes_json.as_deref(),
+            ) {
+                (Some(collection_name), Some(secondary_indexes_json))
+                    if !collection_name.is_empty() && !secondary_indexes_json.is_empty() =>
+                {
+                    match service.update_operational_collection_secondary_indexes(
+                        collection_name,
+                        secondary_indexes_json,
+                    ) {
+                        Ok(record) => success_response(
+                            "operational collection secondary indexes updated".to_owned(),
+                            serde_json::to_value(record).unwrap_or_else(|_| json!({})),
+                        ),
+                        Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                    }
+                }
+                (Some(collection_name), _) if !collection_name.is_empty() => {
+                    error_response_with_message(
+                        BridgeErrorCode::BadRequest,
+                        "secondary_indexes_json is required".to_owned(),
+                    )
+                }
+                _ => error_response_with_message(
+                    BridgeErrorCode::BadRequest,
+                    "collection_name is required".to_owned(),
+                ),
+            }
+        }
         BridgeCommand::DisableOperationalCollection => match request.collection_name.as_deref() {
             Some(collection_name) if !collection_name.is_empty() => {
                 match service.disable_operational_collection(collection_name) {
@@ -396,6 +466,21 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                 Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
             }
         }
+        BridgeCommand::RebuildOperationalSecondaryIndexes => match request.collection_name.as_deref() {
+            Some(collection_name) if !collection_name.is_empty() => {
+                match service.rebuild_operational_secondary_indexes(collection_name) {
+                    Ok(report) => success_response(
+                        "operational secondary indexes rebuilt".to_owned(),
+                        serde_json::to_value(report).unwrap_or_else(|_| json!({})),
+                    ),
+                    Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                }
+            }
+            _ => error_response_with_message(
+                BridgeErrorCode::BadRequest,
+                "collection_name is required".to_owned(),
+            ),
+        },
         BridgeCommand::TraceOperationalCollection => match request.collection_name.as_deref() {
             Some(collection_name) if !collection_name.is_empty() => {
                 match service
@@ -424,6 +509,58 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
             None => error_response_with_message(
                 BridgeErrorCode::BadRequest,
                 "operational_read is required".to_owned(),
+            ),
+        },
+        BridgeCommand::ValidateOperationalCollectionHistory => {
+            match request.collection_name.as_deref() {
+                Some(collection_name) if !collection_name.is_empty() => {
+                    match service.validate_operational_collection_history(collection_name) {
+                        Ok(report) => success_response(
+                            "operational collection history validation completed".to_owned(),
+                            serde_json::to_value(report).unwrap_or_else(|_| json!({})),
+                        ),
+                        Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                    }
+                }
+                _ => error_response_with_message(
+                    BridgeErrorCode::BadRequest,
+                    "collection_name is required".to_owned(),
+                ),
+            }
+        }
+        BridgeCommand::PlanOperationalRetention => match request.now_timestamp {
+            Some(now_timestamp) => match service.plan_operational_retention(
+                now_timestamp,
+                request.collection_names.as_deref(),
+                request.max_collections,
+            ) {
+                Ok(report) => success_response(
+                    "operational retention plan completed".to_owned(),
+                    serde_json::to_value(report).unwrap_or_else(|_| json!({})),
+                ),
+                Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+            },
+            None => error_response_with_message(
+                BridgeErrorCode::BadRequest,
+                "now_timestamp is required".to_owned(),
+            ),
+        },
+        BridgeCommand::RunOperationalRetention => match request.now_timestamp {
+            Some(now_timestamp) => match service.run_operational_retention(
+                now_timestamp,
+                request.collection_names.as_deref(),
+                request.max_collections,
+                request.dry_run,
+            ) {
+                Ok(report) => success_response(
+                    "operational retention run completed".to_owned(),
+                    serde_json::to_value(report).unwrap_or_else(|_| json!({})),
+                ),
+                Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+            },
+            None => error_response_with_message(
+                BridgeErrorCode::BadRequest,
+                "now_timestamp is required".to_owned(),
             ),
         },
     }
@@ -456,12 +593,26 @@ fn parse_command(command: &str) -> Result<BridgeCommand, BridgeErrorCode> {
         "update_operational_collection_filters" => {
             Ok(BridgeCommand::UpdateOperationalCollectionFilters)
         }
+        "update_operational_collection_validation" => {
+            Ok(BridgeCommand::UpdateOperationalCollectionValidation)
+        }
+        "update_operational_collection_secondary_indexes" => {
+            Ok(BridgeCommand::UpdateOperationalCollectionSecondaryIndexes)
+        }
         "disable_operational_collection" => Ok(BridgeCommand::DisableOperationalCollection),
         "compact_operational_collection" => Ok(BridgeCommand::CompactOperationalCollection),
         "purge_operational_collection" => Ok(BridgeCommand::PurgeOperationalCollection),
         "rebuild_operational_current" => Ok(BridgeCommand::RebuildOperationalCurrent),
+        "rebuild_operational_secondary_indexes" => {
+            Ok(BridgeCommand::RebuildOperationalSecondaryIndexes)
+        }
         "trace_operational_collection" => Ok(BridgeCommand::TraceOperationalCollection),
         "read_operational_collection" => Ok(BridgeCommand::ReadOperationalCollection),
+        "validate_operational_collection_history" => {
+            Ok(BridgeCommand::ValidateOperationalCollectionHistory)
+        }
+        "plan_operational_retention" => Ok(BridgeCommand::PlanOperationalRetention),
+        "run_operational_retention" => Ok(BridgeCommand::RunOperationalRetention),
         _ => Err(BridgeErrorCode::UnsupportedCommand),
     }
 }

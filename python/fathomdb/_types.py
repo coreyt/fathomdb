@@ -463,6 +463,8 @@ class OperationalCollectionRecord:
     kind: OperationalCollectionKind
     schema_json: str
     retention_json: str
+    validation_json: str
+    secondary_indexes_json: str
     format_version: int
     created_at: int
     filter_fields_json: str = "[]"
@@ -475,6 +477,8 @@ class OperationalCollectionRecord:
             kind=OperationalCollectionKind(payload["kind"]),
             schema_json=payload["schema_json"],
             retention_json=payload["retention_json"],
+            validation_json=payload.get("validation_json", ""),
+            secondary_indexes_json=payload.get("secondary_indexes_json", "[]"),
             filter_fields_json=payload.get("filter_fields_json", "[]"),
             format_version=payload["format_version"],
             created_at=payload["created_at"],
@@ -490,6 +494,8 @@ class OperationalRegisterRequest:
     retention_json: str
     format_version: int
     filter_fields_json: str = "[]"
+    validation_json: str = ""
+    secondary_indexes_json: str = "[]"
 
     def to_wire(self) -> dict[str, Any]:
         return {
@@ -498,6 +504,8 @@ class OperationalRegisterRequest:
             "schema_json": self.schema_json,
             "retention_json": self.retention_json,
             "filter_fields_json": self.filter_fields_json,
+            "validation_json": self.validation_json,
+            "secondary_indexes_json": self.secondary_indexes_json,
             "format_version": self.format_version,
         }
 
@@ -669,6 +677,38 @@ class OperationalRepairReport:
     @classmethod
     def from_wire(cls, payload: dict[str, Any]) -> "OperationalRepairReport":
         return cls(**payload)
+
+
+@dataclass(frozen=True)
+class OperationalHistoryValidationIssue:
+    mutation_id: str
+    record_key: str
+    op_kind: str
+    message: str
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "OperationalHistoryValidationIssue":
+        return cls(**payload)
+
+
+@dataclass(frozen=True)
+class OperationalHistoryValidationReport:
+    collection_name: str
+    checked_rows: int
+    invalid_row_count: int
+    issues: list[OperationalHistoryValidationIssue]
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "OperationalHistoryValidationReport":
+        return cls(
+            collection_name=payload["collection_name"],
+            checked_rows=payload["checked_rows"],
+            invalid_row_count=payload["invalid_row_count"],
+            issues=[
+                OperationalHistoryValidationIssue.from_wire(item)
+                for item in payload["issues"]
+            ],
+        )
 
 
 @dataclass(frozen=True)
@@ -954,11 +994,105 @@ class WriteRequest:
 class WriteReceipt:
     label: str
     optional_backfill_count: int
-    provenance_warnings: list[str]
+    warnings: list[str] = field(default_factory=list)
+    provenance_warnings: list[str] = field(default_factory=list)
 
     @classmethod
     def from_wire(cls, payload: dict[str, Any]) -> "WriteReceipt":
+        return _from_wire_dataclass(cls, payload)
+
+
+@dataclass(frozen=True)
+class OperationalSecondaryIndexRebuildReport:
+    collection_name: str
+    mutation_entries_rebuilt: int
+    current_entries_rebuilt: int
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "OperationalSecondaryIndexRebuildReport":
         return cls(**payload)
+
+
+class OperationalRetentionActionKind(str, Enum):
+    NOOP = "noop"
+    PURGE_BEFORE_SECONDS = "purge_before_seconds"
+    KEEP_LAST = "keep_last"
+
+
+@dataclass(frozen=True)
+class OperationalRetentionPlanItem:
+    collection_name: str
+    action_kind: OperationalRetentionActionKind
+    candidate_deletions: int
+    before_timestamp: int | None = None
+    max_rows: int | None = None
+    last_run_at: int | None = None
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "OperationalRetentionPlanItem":
+        return cls(
+            collection_name=payload["collection_name"],
+            action_kind=OperationalRetentionActionKind(payload["action_kind"]),
+            candidate_deletions=payload["candidate_deletions"],
+            before_timestamp=payload.get("before_timestamp"),
+            max_rows=payload.get("max_rows"),
+            last_run_at=payload.get("last_run_at"),
+        )
+
+
+@dataclass(frozen=True)
+class OperationalRetentionPlanReport:
+    planned_at: int
+    collections_examined: int
+    items: list[OperationalRetentionPlanItem]
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "OperationalRetentionPlanReport":
+        return cls(
+            planned_at=payload["planned_at"],
+            collections_examined=payload["collections_examined"],
+            items=[OperationalRetentionPlanItem.from_wire(item) for item in payload["items"]],
+        )
+
+
+@dataclass(frozen=True)
+class OperationalRetentionRunItem:
+    collection_name: str
+    action_kind: OperationalRetentionActionKind
+    deleted_mutations: int
+    before_timestamp: int | None = None
+    max_rows: int | None = None
+    rows_remaining: int = 0
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "OperationalRetentionRunItem":
+        return cls(
+            collection_name=payload["collection_name"],
+            action_kind=OperationalRetentionActionKind(payload["action_kind"]),
+            deleted_mutations=payload["deleted_mutations"],
+            before_timestamp=payload.get("before_timestamp"),
+            max_rows=payload.get("max_rows"),
+            rows_remaining=payload["rows_remaining"],
+        )
+
+
+@dataclass(frozen=True)
+class OperationalRetentionRunReport:
+    executed_at: int
+    collections_examined: int
+    collections_acted_on: int
+    dry_run: bool
+    items: list[OperationalRetentionRunItem]
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "OperationalRetentionRunReport":
+        return cls(
+            executed_at=payload["executed_at"],
+            collections_examined=payload["collections_examined"],
+            collections_acted_on=payload["collections_acted_on"],
+            dry_run=payload["dry_run"],
+            items=[OperationalRetentionRunItem.from_wire(item) for item in payload["items"]],
+        )
 
 
 @dataclass(slots=True)

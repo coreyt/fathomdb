@@ -22,8 +22,14 @@ pub use operational::{
     OperationalCollectionKind, OperationalCollectionRecord, OperationalCompactionReport,
     OperationalCurrentRow, OperationalFilterClause, OperationalFilterField,
     OperationalFilterFieldType, OperationalFilterMode, OperationalFilterValue,
-    OperationalMutationRow, OperationalPurgeReport, OperationalReadReport, OperationalReadRequest,
-    OperationalRegisterRequest, OperationalRepairReport, OperationalTraceReport,
+    OperationalHistoryValidationIssue, OperationalHistoryValidationReport, OperationalMutationRow,
+    OperationalPurgeReport, OperationalReadReport, OperationalReadRequest,
+    OperationalRegisterRequest, OperationalRepairReport, OperationalRetentionActionKind,
+    OperationalRetentionPlanItem, OperationalRetentionPlanReport, OperationalRetentionRunItem,
+    OperationalRetentionRunReport, OperationalSecondaryIndexDefinition,
+    OperationalSecondaryIndexField, OperationalSecondaryIndexRebuildReport,
+    OperationalSecondaryIndexValueType, OperationalTraceReport, OperationalValidationContract,
+    OperationalValidationField, OperationalValidationFieldType, OperationalValidationMode,
 };
 pub use projection::{ProjectionRepairReport, ProjectionService, ProjectionTarget};
 pub use runtime::EngineRuntime;

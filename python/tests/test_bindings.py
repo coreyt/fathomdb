@@ -174,12 +174,14 @@ def test_public_python_admin_client_exposes_operational_collection_lifecycle(tmp
             kind=OperationalCollectionKind.LATEST_STATE,
             schema_json="{}",
             retention_json="{}",
+            validation_json="",
             format_version=1,
         )
     )
     assert latest_state.name == "connector_health"
     assert latest_state.kind is OperationalCollectionKind.LATEST_STATE
     assert latest_state.disabled_at is None
+    assert latest_state.validation_json == ""
 
     registered = db.admin.register_operational_collection(
         OperationalRegisterRequest(
@@ -187,12 +189,14 @@ def test_public_python_admin_client_exposes_operational_collection_lifecycle(tmp
             kind=OperationalCollectionKind.APPEND_ONLY_LOG,
             schema_json="{}",
             retention_json='{"mode":"keep_last","max_rows":2}',
+            validation_json="",
             format_version=1,
         )
     )
     assert registered.name == "audit_log"
     assert registered.kind is OperationalCollectionKind.APPEND_ONLY_LOG
     assert registered.disabled_at is None
+    assert registered.validation_json == ""
 
     described = db.admin.describe_operational_collection("audit_log")
     assert described is not None
@@ -241,6 +245,7 @@ def test_public_python_admin_client_reads_operational_rows_by_declared_fields(tm
             schema_json="{}",
             retention_json='{"mode":"keep_all"}',
             filter_fields_json='[{"name":"actor","type":"string","modes":["exact","prefix"]},{"name":"ts","type":"timestamp","modes":["range"]}]',
+            validation_json="",
             format_version=1,
         )
     )
@@ -308,6 +313,7 @@ def test_public_python_admin_client_can_update_operational_filter_contract(tmp_p
             schema_json="{}",
             retention_json='{"mode":"keep_all"}',
             filter_fields_json="[]",
+            validation_json="",
             format_version=1,
         )
     )
@@ -319,6 +325,179 @@ def test_public_python_admin_client_can_update_operational_filter_contract(tmp_p
 
     assert updated.filter_fields_json.startswith("[")
     assert '"actor"' in updated.filter_fields_json
+
+
+def test_public_python_admin_client_updates_and_validates_operational_validation_contract(
+    tmp_path: Path,
+) -> None:
+    from fathomdb import (
+        Engine,
+        OperationalAppend,
+        OperationalCollectionKind,
+        OperationalRegisterRequest,
+        WriteRequest,
+    )
+
+    db = Engine.open(tmp_path / "agent.db")
+
+    db.admin.register_operational_collection(
+        OperationalRegisterRequest(
+            name="audit_log",
+            kind=OperationalCollectionKind.APPEND_ONLY_LOG,
+            schema_json="{}",
+            retention_json='{"mode":"keep_all"}',
+            validation_json="",
+            format_version=1,
+        )
+    )
+
+    validation_json = (
+        '{"format_version":1,"mode":"disabled","additional_properties":false,'
+        '"fields":[{"name":"status","type":"string","required":true,'
+        '"enum":["ok","failed"]}]}'
+    )
+    updated = db.admin.update_operational_collection_validation(
+        "audit_log", validation_json
+    )
+    assert updated.validation_json == validation_json
+
+    db.write(
+        WriteRequest(
+            label="history-validation",
+            operational_writes=[
+                OperationalAppend(
+                    collection="audit_log",
+                    record_key="evt-1",
+                    payload_json={"status": "ok"},
+                    source_ref="source:1",
+                ),
+                OperationalAppend(
+                    collection="audit_log",
+                    record_key="evt-2",
+                    payload_json={"status": "bogus"},
+                    source_ref="source:2",
+                ),
+            ],
+        )
+    )
+
+    report = db.admin.validate_operational_collection_history("audit_log")
+    assert report.collection_name == "audit_log"
+    assert report.checked_rows == 2
+    assert report.invalid_row_count == 1
+    assert report.issues[0].record_key == "evt-2"
+
+
+def test_report_only_operational_validation_emits_write_warning(tmp_path: Path) -> None:
+    from fathomdb import (
+        Engine,
+        OperationalCollectionKind,
+        OperationalPut,
+        OperationalRegisterRequest,
+        WriteRequest,
+    )
+
+    db = Engine.open(tmp_path / "agent.db")
+    db.admin.register_operational_collection(
+        OperationalRegisterRequest(
+            name="connector_health",
+            kind=OperationalCollectionKind.LATEST_STATE,
+            schema_json="{}",
+            retention_json="{}",
+            validation_json='{"format_version":1,"mode":"report_only","additional_properties":false,"fields":[{"name":"status","type":"string","required":true,"enum":["ok","failed"]}]}',
+            format_version=1,
+        )
+    )
+
+    receipt = db.write(
+        WriteRequest(
+            label="report-only",
+            operational_writes=[
+                OperationalPut(
+                    collection="connector_health",
+                    record_key="gmail",
+                    payload_json={"status": "bogus"},
+                    source_ref="source:1",
+                )
+            ],
+        )
+    )
+
+    assert receipt.provenance_warnings == []
+    assert len(receipt.warnings) == 1
+    assert "connector_health" in receipt.warnings[0]
+
+
+def test_public_python_admin_client_manages_secondary_indexes_and_retention(tmp_path: Path) -> None:
+    from fathomdb import (
+        Engine,
+        OperationalAppend,
+        OperationalCollectionKind,
+        OperationalRegisterRequest,
+        WriteRequest,
+    )
+
+    db = Engine.open(tmp_path / "agent.db")
+
+    record = db.admin.register_operational_collection(
+        OperationalRegisterRequest(
+            name="audit_log",
+            kind=OperationalCollectionKind.APPEND_ONLY_LOG,
+            schema_json="{}",
+            retention_json='{"mode":"keep_last","max_rows":2}',
+            filter_fields_json='[{"name":"actor","type":"string","modes":["exact","prefix"]},{"name":"ts","type":"timestamp","modes":["range"]}]',
+            validation_json="",
+            secondary_indexes_json="[]",
+            format_version=1,
+        )
+    )
+    assert record.secondary_indexes_json == "[]"
+
+    db.write(
+        WriteRequest(
+            label="secondary-index-seed",
+            operational_writes=[
+                OperationalAppend(
+                    collection="audit_log",
+                    record_key="evt-1",
+                    payload_json={"actor": "alice", "ts": 100},
+                    source_ref="source:1",
+                ),
+                OperationalAppend(
+                    collection="audit_log",
+                    record_key="evt-2",
+                    payload_json={"actor": "alice-admin", "ts": 200},
+                    source_ref="source:2",
+                ),
+                OperationalAppend(
+                    collection="audit_log",
+                    record_key="evt-3",
+                    payload_json={"actor": "bob", "ts": 300},
+                    source_ref="source:3",
+                ),
+            ],
+        )
+    )
+
+    updated = db.admin.update_operational_collection_secondary_indexes(
+        "audit_log",
+        '[{"name":"actor_ts","kind":"append_only_field_time","field":"actor","value_type":"string","time_field":"ts"}]',
+    )
+    assert '"actor_ts"' in updated.secondary_indexes_json
+
+    rebuild = db.admin.rebuild_operational_secondary_indexes("audit_log")
+    assert rebuild.collection_name == "audit_log"
+    assert rebuild.mutation_entries_rebuilt == 3
+
+    plan = db.admin.plan_operational_retention(1_000, max_collections=10)
+    assert plan.collections_examined >= 1
+    audit_item = next(item for item in plan.items if item.collection_name == "audit_log")
+    assert audit_item.action_kind.value == "keep_last"
+    assert audit_item.candidate_deletions == 1
+
+    dry_run = db.admin.run_operational_retention(1_000, max_collections=10, dry_run=True)
+    audit_run = next(item for item in dry_run.items if item.collection_name == "audit_log")
+    assert audit_run.deleted_mutations == 1
 
 
 def test_vector_write_and_search_round_trip(tmp_path: Path) -> None:

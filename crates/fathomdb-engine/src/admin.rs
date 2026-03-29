@@ -19,9 +19,16 @@ use crate::{
         OperationalCollectionKind, OperationalCollectionRecord, OperationalCompactionReport,
         OperationalCurrentRow, OperationalFilterClause, OperationalFilterField,
         OperationalFilterFieldType, OperationalFilterMode, OperationalFilterValue,
+        OperationalHistoryValidationIssue, OperationalHistoryValidationReport,
         OperationalMutationRow, OperationalPurgeReport, OperationalReadReport,
         OperationalReadRequest, OperationalRegisterRequest, OperationalRepairReport,
-        OperationalTraceReport,
+        OperationalSecondaryIndexDefinition, OperationalSecondaryIndexRebuildReport,
+        OperationalRetentionActionKind, OperationalRetentionPlanItem,
+        OperationalRetentionPlanReport, OperationalRetentionRunItem,
+        OperationalRetentionRunReport, OperationalTraceReport,
+        extract_secondary_index_entries_for_current, extract_secondary_index_entries_for_mutation,
+        parse_operational_secondary_indexes_json, parse_operational_validation_contract,
+        validate_operational_payload_against_contract,
     },
     projection::ProjectionTarget,
     sqlite,
@@ -685,6 +692,10 @@ impl AdminService {
                 "operational collection filter_fields_json must not be empty".to_owned(),
             ));
         }
+        parse_operational_validation_contract(&request.validation_json)
+            .map_err(EngineError::InvalidWrite)?;
+        parse_operational_secondary_indexes_json(&request.secondary_indexes_json, request.kind)
+            .map_err(EngineError::InvalidWrite)?;
         if request.format_version <= 0 {
             return Err(EngineError::InvalidWrite(
                 "operational collection format_version must be positive".to_owned(),
@@ -697,14 +708,16 @@ impl AdminService {
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         tx.execute(
             "INSERT INTO operational_collections \
-             (name, kind, schema_json, retention_json, filter_fields_json, format_version, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, unixepoch())",
+             (name, kind, schema_json, retention_json, filter_fields_json, validation_json, secondary_indexes_json, format_version, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, unixepoch())",
             rusqlite::params![
                 request.name.as_str(),
                 request.kind.as_str(),
                 request.schema_json.as_str(),
                 request.retention_json.as_str(),
                 request.filter_fields_json.as_str(),
+                request.validation_json.as_str(),
+                request.secondary_indexes_json.as_str(),
                 request.format_version,
             ],
         )?;
@@ -813,6 +826,176 @@ impl AdminService {
         })?;
         tx.commit()?;
         Ok(updated)
+    }
+
+    /// # Errors
+    /// Returns [`EngineError`] if the collection is missing or the validation contract is invalid.
+    pub fn update_operational_collection_validation(
+        &self,
+        name: &str,
+        validation_json: &str,
+    ) -> Result<OperationalCollectionRecord, EngineError> {
+        parse_operational_validation_contract(validation_json)
+            .map_err(EngineError::InvalidWrite)?;
+
+        let mut conn = self.connect()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        load_operational_collection_record(&tx, name)?.ok_or_else(|| {
+            EngineError::InvalidWrite(format!("operational collection '{name}' is not registered"))
+        })?;
+        tx.execute(
+            "UPDATE operational_collections SET validation_json = ?2 WHERE name = ?1",
+            rusqlite::params![name, validation_json],
+        )?;
+        persist_simple_provenance_event(
+            &tx,
+            "operational_collection_validation_updated",
+            name,
+            Some(serde_json::json!({
+                "has_validation": !validation_json.is_empty(),
+            })),
+        )?;
+        let updated = load_operational_collection_record(&tx, name)?.ok_or_else(|| {
+            EngineError::Bridge("operational collection missing after validation update".to_owned())
+        })?;
+        tx.commit()?;
+        Ok(updated)
+    }
+
+    /// # Errors
+    /// Returns [`EngineError`] if the collection is missing, the contract is invalid,
+    /// or derived index rebuild fails.
+    pub fn update_operational_collection_secondary_indexes(
+        &self,
+        name: &str,
+        secondary_indexes_json: &str,
+    ) -> Result<OperationalCollectionRecord, EngineError> {
+        let mut conn = self.connect()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let record = load_operational_collection_record(&tx, name)?.ok_or_else(|| {
+            EngineError::InvalidWrite(format!("operational collection '{name}' is not registered"))
+        })?;
+        let indexes =
+            parse_operational_secondary_indexes_json(secondary_indexes_json, record.kind)
+                .map_err(EngineError::InvalidWrite)?;
+        tx.execute(
+            "UPDATE operational_collections SET secondary_indexes_json = ?2 WHERE name = ?1",
+            rusqlite::params![name, secondary_indexes_json],
+        )?;
+        let (mutation_entries_rebuilt, current_entries_rebuilt) =
+            rebuild_operational_secondary_index_entries(&tx, &record.name, &record.kind, &indexes)?;
+        persist_simple_provenance_event(
+            &tx,
+            "operational_collection_secondary_indexes_updated",
+            name,
+            Some(serde_json::json!({
+                "index_count": indexes.len(),
+                "mutation_entries_rebuilt": mutation_entries_rebuilt,
+                "current_entries_rebuilt": current_entries_rebuilt,
+            })),
+        )?;
+        let updated = load_operational_collection_record(&tx, name)?.ok_or_else(|| {
+            EngineError::Bridge("operational collection missing after secondary index update".to_owned())
+        })?;
+        tx.commit()?;
+        Ok(updated)
+    }
+
+    /// # Errors
+    /// Returns [`EngineError`] if the collection is missing or rebuild fails.
+    pub fn rebuild_operational_secondary_indexes(
+        &self,
+        name: &str,
+    ) -> Result<OperationalSecondaryIndexRebuildReport, EngineError> {
+        let mut conn = self.connect()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let record = load_operational_collection_record(&tx, name)?.ok_or_else(|| {
+            EngineError::InvalidWrite(format!("operational collection '{name}' is not registered"))
+        })?;
+        let indexes = parse_operational_secondary_indexes_json(
+            &record.secondary_indexes_json,
+            record.kind,
+        )
+        .map_err(EngineError::InvalidWrite)?;
+        let (mutation_entries_rebuilt, current_entries_rebuilt) =
+            rebuild_operational_secondary_index_entries(&tx, &record.name, &record.kind, &indexes)?;
+        persist_simple_provenance_event(
+            &tx,
+            "operational_secondary_indexes_rebuilt",
+            name,
+            Some(serde_json::json!({
+                "index_count": indexes.len(),
+                "mutation_entries_rebuilt": mutation_entries_rebuilt,
+                "current_entries_rebuilt": current_entries_rebuilt,
+            })),
+        )?;
+        tx.commit()?;
+        Ok(OperationalSecondaryIndexRebuildReport {
+            collection_name: name.to_owned(),
+            mutation_entries_rebuilt,
+            current_entries_rebuilt,
+        })
+    }
+
+    /// # Errors
+    /// Returns [`EngineError`] if the collection is missing or its validation contract is invalid.
+    pub fn validate_operational_collection_history(
+        &self,
+        name: &str,
+    ) -> Result<OperationalHistoryValidationReport, EngineError> {
+        let conn = self.connect()?;
+        let record = load_operational_collection_record(&conn, name)?.ok_or_else(|| {
+            EngineError::InvalidWrite(format!("operational collection '{name}' is not registered"))
+        })?;
+        let Some(contract) = parse_operational_validation_contract(&record.validation_json)
+            .map_err(EngineError::InvalidWrite)?
+        else {
+            return Err(EngineError::InvalidWrite(format!(
+                "operational collection '{name}' has no validation_json configured"
+            )));
+        };
+
+        let mut stmt = conn.prepare(
+            "SELECT id, record_key, op_kind, payload_json FROM operational_mutations \
+             WHERE collection_name = ?1 ORDER BY mutation_order",
+        )?;
+        let rows = stmt
+            .query_map([name], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(stmt);
+
+        let mut checked_rows = 0usize;
+        let mut issues = Vec::new();
+        for (mutation_id, record_key, op_kind, payload_json) in rows {
+            if op_kind == "delete" {
+                continue;
+            }
+            checked_rows += 1;
+            if let Err(message) =
+                validate_operational_payload_against_contract(&contract, payload_json.as_str())
+            {
+                issues.push(OperationalHistoryValidationIssue {
+                    mutation_id,
+                    record_key,
+                    op_kind,
+                    message,
+                });
+            }
+        }
+
+        Ok(OperationalHistoryValidationReport {
+            collection_name: name.to_owned(),
+            checked_rows,
+            invalid_row_count: issues.len(),
+            issues,
+        })
     }
 
     /// # Errors
@@ -934,6 +1117,68 @@ impl AdminService {
     }
 
     /// # Errors
+    /// Returns [`EngineError`] if collection selection or policy parsing fails.
+    pub fn plan_operational_retention(
+        &self,
+        now_timestamp: i64,
+        collection_names: Option<&[String]>,
+        max_collections: Option<usize>,
+    ) -> Result<OperationalRetentionPlanReport, EngineError> {
+        let conn = self.connect()?;
+        let records = load_operational_retention_records(&conn, collection_names, max_collections)?;
+        let mut items = Vec::with_capacity(records.len());
+        for record in records {
+            items.push(plan_operational_retention_item(
+                &conn,
+                &record,
+                now_timestamp,
+            )?);
+        }
+        Ok(OperationalRetentionPlanReport {
+            planned_at: now_timestamp,
+            collections_examined: items.len(),
+            items,
+        })
+    }
+
+    /// # Errors
+    /// Returns [`EngineError`] if collection selection, policy parsing, or execution fails.
+    pub fn run_operational_retention(
+        &self,
+        now_timestamp: i64,
+        collection_names: Option<&[String]>,
+        max_collections: Option<usize>,
+        dry_run: bool,
+    ) -> Result<OperationalRetentionRunReport, EngineError> {
+        let mut conn = self.connect()?;
+        let records = load_operational_retention_records(&conn, collection_names, max_collections)?;
+        let mut items = Vec::with_capacity(records.len());
+        let mut collections_acted_on = 0usize;
+
+        for record in records {
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let item = run_operational_retention_item(&tx, &record, now_timestamp, dry_run)?;
+            if item.deleted_mutations > 0 {
+                collections_acted_on += 1;
+            }
+            if dry_run || item.action_kind == OperationalRetentionActionKind::Noop {
+                drop(tx);
+            } else {
+                tx.commit()?;
+            }
+            items.push(item);
+        }
+
+        Ok(OperationalRetentionRunReport {
+            executed_at: now_timestamp,
+            collections_examined: items.len(),
+            collections_acted_on,
+            dry_run,
+            items,
+        })
+    }
+
+    /// # Errors
     /// Returns [`EngineError`] if the database query fails.
     pub fn trace_operational_collection(
         &self,
@@ -1019,8 +1264,22 @@ impl AdminService {
         validate_append_only_operational_collection(&record, "read")?;
         let declared_fields = parse_operational_filter_fields(&record.filter_fields_json)
             .map_err(EngineError::InvalidWrite)?;
+        let secondary_indexes = parse_operational_secondary_indexes_json(
+            &record.secondary_indexes_json,
+            record.kind,
+        )
+        .map_err(EngineError::InvalidWrite)?;
         let applied_limit = operational_read_limit(request.limit)?;
         let filters = compile_operational_read_filters(&request.filters, &declared_fields)?;
+        if let Some(report) = execute_operational_secondary_index_read(
+            &conn,
+            &request.collection_name,
+            &filters,
+            &secondary_indexes,
+            applied_limit,
+        )? {
+            return Ok(report);
+        }
         execute_operational_filtered_read(&conn, &request.collection_name, &filters, applied_limit)
     }
 
@@ -1060,6 +1319,26 @@ impl AdminService {
         };
 
         let rebuilt_rows = rebuild_operational_current_rows(&tx, &collections)?;
+        for collection in &collections {
+            let record = load_operational_collection_record(&tx, collection)?.ok_or_else(|| {
+                EngineError::Bridge(format!(
+                    "operational collection '{collection}' missing during current rebuild"
+                ))
+            })?;
+            let indexes = parse_operational_secondary_indexes_json(
+                &record.secondary_indexes_json,
+                record.kind,
+            )
+            .map_err(EngineError::InvalidWrite)?;
+            if !indexes.is_empty() {
+                rebuild_operational_secondary_index_entries(
+                    &tx,
+                    &record.name,
+                    &record.kind,
+                    &indexes,
+                )?;
+            }
+        }
 
         persist_simple_provenance_event(
             &tx,
@@ -2725,11 +3004,134 @@ fn clear_operational_current_rows(
 ) -> Result<(), EngineError> {
     let mut delete_current =
         tx.prepare_cached("DELETE FROM operational_current WHERE collection_name = ?1")?;
+    let mut delete_secondary_current = tx.prepare_cached(
+        "DELETE FROM operational_secondary_index_entries \
+         WHERE collection_name = ?1 AND subject_kind = 'current'",
+    )?;
     for collection in collections {
+        delete_secondary_current.execute([collection])?;
         delete_current.execute([collection])?;
     }
+    drop(delete_secondary_current);
     drop(delete_current);
     Ok(())
+}
+
+fn clear_operational_secondary_index_entries(
+    tx: &rusqlite::Transaction<'_>,
+    collection_name: &str,
+) -> Result<(), EngineError> {
+    tx.execute(
+        "DELETE FROM operational_secondary_index_entries WHERE collection_name = ?1",
+        [collection_name],
+    )?;
+    Ok(())
+}
+
+fn insert_operational_secondary_index_entry(
+    tx: &rusqlite::Transaction<'_>,
+    collection_name: &str,
+    subject_kind: &str,
+    mutation_id: &str,
+    record_key: &str,
+    entry: &crate::operational::OperationalSecondaryIndexEntry,
+) -> Result<(), EngineError> {
+    tx.execute(
+        "INSERT INTO operational_secondary_index_entries \
+         (collection_name, index_name, subject_kind, mutation_id, record_key, sort_timestamp, \
+          slot1_text, slot1_integer, slot2_text, slot2_integer, slot3_text, slot3_integer) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+        rusqlite::params![
+            collection_name,
+            entry.index_name,
+            subject_kind,
+            mutation_id,
+            record_key,
+            entry.sort_timestamp,
+            entry.slot1_text,
+            entry.slot1_integer,
+            entry.slot2_text,
+            entry.slot2_integer,
+            entry.slot3_text,
+            entry.slot3_integer,
+        ],
+    )?;
+    Ok(())
+}
+
+fn rebuild_operational_secondary_index_entries(
+    tx: &rusqlite::Transaction<'_>,
+    collection_name: &str,
+    collection_kind: &OperationalCollectionKind,
+    indexes: &[OperationalSecondaryIndexDefinition],
+) -> Result<(usize, usize), EngineError> {
+    clear_operational_secondary_index_entries(tx, collection_name)?;
+
+    let mut mutation_entries_rebuilt = 0usize;
+    if *collection_kind == OperationalCollectionKind::AppendOnlyLog {
+        let mut stmt = tx.prepare(
+            "SELECT id, record_key, payload_json FROM operational_mutations \
+             WHERE collection_name = ?1 ORDER BY mutation_order",
+        )?;
+        let rows = stmt
+            .query_map([collection_name], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(stmt);
+        for (mutation_id, record_key, payload_json) in rows {
+            for entry in extract_secondary_index_entries_for_mutation(indexes, &payload_json) {
+                insert_operational_secondary_index_entry(
+                    tx,
+                    collection_name,
+                    "mutation",
+                    &mutation_id,
+                    &record_key,
+                    &entry,
+                )?;
+                mutation_entries_rebuilt += 1;
+            }
+        }
+    }
+
+    let mut current_entries_rebuilt = 0usize;
+    if *collection_kind == OperationalCollectionKind::LatestState {
+        let mut stmt = tx.prepare(
+            "SELECT record_key, payload_json, updated_at, last_mutation_id FROM operational_current \
+             WHERE collection_name = ?1 ORDER BY updated_at DESC, record_key",
+        )?;
+        let rows = stmt
+            .query_map([collection_name], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(stmt);
+        for (record_key, payload_json, updated_at, last_mutation_id) in rows {
+            for entry in extract_secondary_index_entries_for_current(indexes, &payload_json, updated_at)
+            {
+                insert_operational_secondary_index_entry(
+                    tx,
+                    collection_name,
+                    "current",
+                    &last_mutation_id,
+                    &record_key,
+                    &entry,
+                )?;
+                current_entries_rebuilt += 1;
+            }
+        }
+    }
+
+    Ok((mutation_entries_rebuilt, current_entries_rebuilt))
 }
 
 fn collect_strings_tx(
@@ -2884,7 +3286,7 @@ fn load_operational_collection_record(
     name: &str,
 ) -> Result<Option<OperationalCollectionRecord>, EngineError> {
     conn.query_row(
-        "SELECT name, kind, schema_json, retention_json, filter_fields_json, format_version, created_at, disabled_at \
+        "SELECT name, kind, schema_json, retention_json, filter_fields_json, validation_json, secondary_indexes_json, format_version, created_at, disabled_at \
          FROM operational_collections WHERE name = ?1",
         [name],
         map_operational_collection_row,
@@ -2910,6 +3312,13 @@ fn validate_append_only_operational_collection(
 struct CompiledOperationalReadFilter {
     field: String,
     condition: OperationalReadCondition,
+}
+
+#[derive(Clone, Debug)]
+struct MatchedAppendOnlySecondaryIndexRead<'a> {
+    index_name: &'a str,
+    value_filter: &'a CompiledOperationalReadFilter,
+    time_range: Option<&'a CompiledOperationalReadFilter>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -3067,6 +3476,146 @@ fn compile_operational_read_filters(
             }
         })
         .collect()
+}
+
+fn match_append_only_secondary_index_read<'a>(
+    filters: &'a [CompiledOperationalReadFilter],
+    indexes: &'a [OperationalSecondaryIndexDefinition],
+) -> Option<MatchedAppendOnlySecondaryIndexRead<'a>> {
+    indexes.iter().find_map(|index| {
+        let OperationalSecondaryIndexDefinition::AppendOnlyFieldTime {
+            name,
+            field,
+            value_type,
+            time_field,
+        } = index
+        else {
+            return None;
+        };
+        if !(1..=2).contains(&filters.len()) {
+            return None;
+        }
+
+        let mut value_filter = None;
+        let mut time_range = None;
+        for filter in filters {
+            if filter.field == *field {
+                let supported = matches!(
+                    (&filter.condition, value_type),
+                    (OperationalReadCondition::ExactString(_), crate::operational::OperationalSecondaryIndexValueType::String)
+                        | (OperationalReadCondition::Prefix(_), crate::operational::OperationalSecondaryIndexValueType::String)
+                        | (
+                            OperationalReadCondition::ExactInteger(_),
+                            crate::operational::OperationalSecondaryIndexValueType::Integer
+                                | crate::operational::OperationalSecondaryIndexValueType::Timestamp
+                        )
+                );
+                if !supported || value_filter.is_some() {
+                    return None;
+                }
+                value_filter = Some(filter);
+                continue;
+            }
+            if filter.field == *time_field {
+                if !matches!(filter.condition, OperationalReadCondition::Range { .. })
+                    || time_range.is_some()
+                {
+                    return None;
+                }
+                time_range = Some(filter);
+                continue;
+            }
+            return None;
+        }
+
+        value_filter.map(|value_filter| MatchedAppendOnlySecondaryIndexRead {
+            index_name: name.as_str(),
+            value_filter,
+            time_range,
+        })
+    })
+}
+
+fn execute_operational_secondary_index_read(
+    conn: &rusqlite::Connection,
+    collection_name: &str,
+    filters: &[CompiledOperationalReadFilter],
+    indexes: &[OperationalSecondaryIndexDefinition],
+    applied_limit: usize,
+) -> Result<Option<OperationalReadReport>, EngineError> {
+    use rusqlite::types::Value;
+
+    let Some(matched) = match_append_only_secondary_index_read(filters, indexes) else {
+        return Ok(None);
+    };
+
+    let mut sql = String::from(
+        "SELECT m.id, m.collection_name, m.record_key, m.op_kind, m.payload_json, m.source_ref, m.created_at \
+         FROM operational_secondary_index_entries s \
+         JOIN operational_mutations m ON m.id = s.mutation_id \
+         WHERE s.collection_name = ?1 AND s.index_name = ?2 AND s.subject_kind = 'mutation' ",
+    );
+    let mut params = vec![
+        Value::from(collection_name.to_owned()),
+        Value::from(matched.index_name.to_owned()),
+    ];
+
+    match &matched.value_filter.condition {
+        OperationalReadCondition::ExactString(value) => {
+            sql.push_str(&format!("AND s.slot1_text = ?{} ", params.len() + 1));
+            params.push(Value::from(value.clone()));
+        }
+        OperationalReadCondition::Prefix(value) => {
+            sql.push_str(&format!("AND s.slot1_text GLOB ?{} ", params.len() + 1));
+            params.push(Value::from(glob_prefix_pattern(value)));
+        }
+        OperationalReadCondition::ExactInteger(value) => {
+            sql.push_str(&format!("AND s.slot1_integer = ?{} ", params.len() + 1));
+            params.push(Value::from(*value));
+        }
+        OperationalReadCondition::Range { .. } => return Ok(None),
+    }
+
+    if let Some(time_range) = matched.time_range
+        && let OperationalReadCondition::Range { lower, upper } = &time_range.condition
+    {
+        if let Some(lower) = lower {
+            sql.push_str(&format!("AND s.sort_timestamp >= ?{} ", params.len() + 1));
+            params.push(Value::from(*lower));
+        }
+        if let Some(upper) = upper {
+            sql.push_str(&format!("AND s.sort_timestamp <= ?{} ", params.len() + 1));
+            params.push(Value::from(*upper));
+        }
+    }
+
+    sql.push_str(&format!(
+        "ORDER BY s.sort_timestamp DESC, m.mutation_order DESC LIMIT ?{}",
+        params.len() + 1
+    ));
+    params.push(Value::from(i64::try_from(applied_limit + 1).map_err(
+        |_| EngineError::Bridge("operational read limit overflow".to_owned()),
+    )?));
+
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt
+        .query_map(
+            rusqlite::params_from_iter(params),
+            map_operational_mutation_row,
+        )?
+        .collect::<Result<Vec<_>, _>>()?;
+    let was_limited = rows.len() > applied_limit;
+    if was_limited {
+        rows.truncate(applied_limit);
+    }
+
+    Ok(Some(OperationalReadReport {
+        collection_name: collection_name.to_owned(),
+        row_count: rows.len(),
+        applied_limit,
+        was_limited,
+        rows,
+    }))
 }
 
 fn execute_operational_filtered_read(
@@ -3229,11 +3778,25 @@ fn operational_compaction_candidates(
     retention_json: &str,
     collection_name: &str,
 ) -> Result<(Vec<String>, Option<i64>), EngineError> {
+    operational_compaction_candidates_at(
+        conn,
+        retention_json,
+        collection_name,
+        current_unix_timestamp()?,
+    )
+}
+
+fn operational_compaction_candidates_at(
+    conn: &rusqlite::Connection,
+    retention_json: &str,
+    collection_name: &str,
+    now_timestamp: i64,
+) -> Result<(Vec<String>, Option<i64>), EngineError> {
     let policy = parse_operational_retention_policy(retention_json)?;
     match policy {
         OperationalRetentionPolicy::KeepAll => Ok((Vec::new(), None)),
         OperationalRetentionPolicy::PurgeBeforeSeconds { max_age_seconds } => {
-            let before_timestamp = current_unix_timestamp()? - max_age_seconds;
+            let before_timestamp = now_timestamp - max_age_seconds;
             let mut stmt = conn.prepare(
                 "SELECT id FROM operational_mutations \
                  WHERE collection_name = ?1 AND created_at < ?2 \
@@ -3287,6 +3850,203 @@ fn parse_operational_retention_policy(
     }
 }
 
+fn load_operational_retention_records(
+    conn: &rusqlite::Connection,
+    collection_names: Option<&[String]>,
+    max_collections: Option<usize>,
+) -> Result<Vec<OperationalCollectionRecord>, EngineError> {
+    let limit = max_collections.unwrap_or(usize::MAX);
+    if limit == 0 {
+        return Err(EngineError::InvalidWrite(
+            "max_collections must be greater than zero".to_owned(),
+        ));
+    }
+
+    let mut records = Vec::new();
+    if let Some(collection_names) = collection_names {
+        for name in collection_names.iter().take(limit) {
+            let record = load_operational_collection_record(conn, name)?.ok_or_else(|| {
+                EngineError::InvalidWrite(format!("operational collection '{name}' is not registered"))
+            })?;
+            records.push(record);
+        }
+        return Ok(records);
+    }
+
+    let mut stmt = conn.prepare(
+        "SELECT name, kind, schema_json, retention_json, filter_fields_json, validation_json, secondary_indexes_json, format_version, created_at, disabled_at \
+         FROM operational_collections ORDER BY name",
+    )?;
+    let rows = stmt
+        .query_map([], map_operational_collection_row)?
+        .take(limit)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+fn last_operational_retention_run_at(
+    conn: &rusqlite::Connection,
+    collection_name: &str,
+) -> Result<Option<i64>, EngineError> {
+    conn.query_row(
+        "SELECT MAX(executed_at) FROM operational_retention_runs WHERE collection_name = ?1",
+        [collection_name],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(EngineError::Sqlite)
+    .map(|value| value.flatten())
+}
+
+fn count_operational_mutations_for_collection(
+    conn: &rusqlite::Connection,
+    collection_name: &str,
+) -> Result<usize, EngineError> {
+    let count: i64 = conn.query_row(
+        "SELECT count(*) FROM operational_mutations WHERE collection_name = ?1",
+        [collection_name],
+        |row| row.get(0),
+    )?;
+    usize::try_from(count)
+        .map_err(|_| EngineError::Bridge(format!("count overflow for collection {collection_name}")))
+}
+
+fn retention_action_kind_and_limit(
+    policy: &OperationalRetentionPolicy,
+) -> (OperationalRetentionActionKind, Option<usize>) {
+    match policy {
+        OperationalRetentionPolicy::KeepAll => (OperationalRetentionActionKind::Noop, None),
+        OperationalRetentionPolicy::PurgeBeforeSeconds { .. } => {
+            (OperationalRetentionActionKind::PurgeBeforeSeconds, None)
+        }
+        OperationalRetentionPolicy::KeepLast { max_rows } => (
+            OperationalRetentionActionKind::KeepLast,
+            Some(*max_rows as usize),
+        ),
+    }
+}
+
+fn plan_operational_retention_item(
+    conn: &rusqlite::Connection,
+    record: &OperationalCollectionRecord,
+    now_timestamp: i64,
+) -> Result<OperationalRetentionPlanItem, EngineError> {
+    let last_run_at = last_operational_retention_run_at(conn, &record.name)?;
+    if record.kind != OperationalCollectionKind::AppendOnlyLog {
+        return Ok(OperationalRetentionPlanItem {
+            collection_name: record.name.clone(),
+            action_kind: OperationalRetentionActionKind::Noop,
+            candidate_deletions: 0,
+            before_timestamp: None,
+            max_rows: None,
+            last_run_at,
+        });
+    }
+    let policy = parse_operational_retention_policy(&record.retention_json)?;
+    let (action_kind, max_rows) = retention_action_kind_and_limit(&policy);
+    let (candidate_ids, before_timestamp) = operational_compaction_candidates_at(
+        conn,
+        &record.retention_json,
+        &record.name,
+        now_timestamp,
+    )?;
+    Ok(OperationalRetentionPlanItem {
+        collection_name: record.name.clone(),
+        action_kind,
+        candidate_deletions: candidate_ids.len(),
+        before_timestamp,
+        max_rows,
+        last_run_at,
+    })
+}
+
+fn run_operational_retention_item(
+    tx: &rusqlite::Transaction<'_>,
+    record: &OperationalCollectionRecord,
+    now_timestamp: i64,
+    dry_run: bool,
+) -> Result<OperationalRetentionRunItem, EngineError> {
+    let plan = plan_operational_retention_item(tx, record, now_timestamp)?;
+    let mut deleted_mutations = 0usize;
+    if record.kind == OperationalCollectionKind::AppendOnlyLog
+        && plan.action_kind != OperationalRetentionActionKind::Noop
+        && plan.candidate_deletions > 0
+        && !dry_run
+    {
+        let (candidate_ids, _) = operational_compaction_candidates_at(
+            tx,
+            &record.retention_json,
+            &record.name,
+            now_timestamp,
+        )?;
+        let mut delete_stmt =
+            tx.prepare_cached("DELETE FROM operational_mutations WHERE id = ?1")?;
+        for mutation_id in &candidate_ids {
+            delete_stmt.execute([mutation_id.as_str()])?;
+            deleted_mutations += 1;
+        }
+        drop(delete_stmt);
+
+        persist_simple_provenance_event(
+            tx,
+            "operational_retention_run",
+            &record.name,
+            Some(serde_json::json!({
+                "action_kind": plan.action_kind,
+                "deleted_mutations": deleted_mutations,
+                "before_timestamp": plan.before_timestamp,
+                "max_rows": plan.max_rows,
+                "executed_at": now_timestamp,
+            })),
+        )?;
+    }
+
+    let live_rows_remaining = count_operational_mutations_for_collection(tx, &record.name)?;
+    let effective_deleted_mutations = if dry_run {
+        plan.candidate_deletions
+    } else {
+        deleted_mutations
+    };
+    let rows_remaining = if dry_run {
+        live_rows_remaining.saturating_sub(effective_deleted_mutations)
+    } else {
+        live_rows_remaining
+    };
+    if !dry_run && plan.action_kind != OperationalRetentionActionKind::Noop {
+        tx.execute(
+            "INSERT INTO operational_retention_runs \
+             (id, collection_name, executed_at, action_kind, dry_run, deleted_mutations, rows_remaining, metadata_json) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![
+                new_id(),
+                record.name,
+                now_timestamp,
+                serde_json::to_string(&plan.action_kind)
+                    .unwrap_or_else(|_| "\"noop\"".to_owned())
+                    .trim_matches('"')
+                    .to_owned(),
+                if dry_run { 1 } else { 0 },
+                deleted_mutations,
+                rows_remaining,
+                serde_json::json!({
+                    "before_timestamp": plan.before_timestamp,
+                    "max_rows": plan.max_rows,
+                })
+                .to_string(),
+            ],
+        )?;
+    }
+
+    Ok(OperationalRetentionRunItem {
+        collection_name: plan.collection_name,
+        action_kind: plan.action_kind,
+        deleted_mutations: effective_deleted_mutations,
+        before_timestamp: plan.before_timestamp,
+        max_rows: plan.max_rows,
+        rows_remaining,
+    })
+}
+
 fn current_unix_timestamp() -> Result<i64, EngineError> {
     let now = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -3312,9 +4072,11 @@ fn map_operational_collection_row(
         schema_json: row.get(2)?,
         retention_json: row.get(3)?,
         filter_fields_json: row.get(4)?,
-        format_version: row.get(5)?,
-        created_at: row.get(6)?,
-        disabled_at: row.get(7)?,
+        validation_json: row.get(5)?,
+        secondary_indexes_json: row.get(6)?,
+        format_version: row.get(7)?,
+        created_at: row.get(8)?,
+        disabled_at: row.get(9)?,
     })
 }
 
@@ -4088,6 +4850,8 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
                 schema_json: "{}".to_owned(),
                 retention_json: "{}".to_owned(),
                 filter_fields_json: "[]".to_owned(),
+                validation_json: String::new(),
+                secondary_indexes_json: "[]".to_owned(),
                 format_version: 1,
             })
             .expect("register collection");
@@ -4119,6 +4883,238 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
     }
 
     #[test]
+    fn register_and_update_operational_collection_validation_round_trip() {
+        let (db, service) = setup();
+        let record = service
+            .register_operational_collection(&OperationalRegisterRequest {
+                name: "connector_health".to_owned(),
+                kind: OperationalCollectionKind::LatestState,
+                schema_json: "{}".to_owned(),
+                retention_json: "{}".to_owned(),
+                filter_fields_json: "[]".to_owned(),
+                validation_json: String::new(),
+                secondary_indexes_json: "[]".to_owned(),
+                format_version: 1,
+            })
+            .expect("register collection");
+        assert_eq!(record.validation_json, "");
+
+        let validation_json = r#"{"format_version":1,"mode":"enforce","additional_properties":false,"fields":[{"name":"status","type":"string","required":true,"enum":["ok","failed"]}]}"#;
+        let updated = service
+            .update_operational_collection_validation("connector_health", validation_json)
+            .expect("update validation");
+        assert_eq!(updated.validation_json, validation_json);
+
+        let described = service
+            .describe_operational_collection("connector_health")
+            .expect("describe collection")
+            .expect("collection exists");
+        assert_eq!(described.validation_json, validation_json);
+
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let provenance_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM provenance_events \
+                 WHERE event_type = 'operational_collection_validation_updated' \
+                   AND subject = 'connector_health'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("provenance count");
+        assert_eq!(provenance_count, 1);
+    }
+
+    #[test]
+    fn register_update_and_rebuild_operational_secondary_indexes_round_trip() {
+        let (db, service) = setup();
+        let record = service
+            .register_operational_collection(&OperationalRegisterRequest {
+                name: "audit_log".to_owned(),
+                kind: OperationalCollectionKind::AppendOnlyLog,
+                schema_json: "{}".to_owned(),
+                retention_json: r#"{"mode":"keep_all"}"#.to_owned(),
+                filter_fields_json: r#"[{"name":"actor","type":"string","modes":["exact","prefix"]},{"name":"ts","type":"timestamp","modes":["range"]}]"#.to_owned(),
+                validation_json: String::new(),
+                secondary_indexes_json: "[]".to_owned(),
+                format_version: 1,
+            })
+            .expect("register collection");
+        assert_eq!(record.secondary_indexes_json, "[]");
+
+        {
+            let writer = crate::WriterActor::start(
+                db.path(),
+                Arc::new(SchemaManager::new()),
+                crate::ProvenanceMode::Warn,
+            )
+            .expect("writer");
+            writer
+                .submit(crate::WriteRequest {
+                    label: "secondary-index-seed".to_owned(),
+                    nodes: vec![],
+                    node_retires: vec![],
+                    edges: vec![],
+                    edge_retires: vec![],
+                    chunks: vec![],
+                    runs: vec![],
+                    steps: vec![],
+                    actions: vec![],
+                    optional_backfills: vec![],
+                    vec_inserts: vec![],
+                    operational_writes: vec![
+                        crate::OperationalWrite::Append {
+                            collection: "audit_log".to_owned(),
+                            record_key: "evt-1".to_owned(),
+                            payload_json: r#"{"actor":"alice","ts":100}"#.to_owned(),
+                            source_ref: Some("src-1".to_owned()),
+                        },
+                        crate::OperationalWrite::Append {
+                            collection: "audit_log".to_owned(),
+                            record_key: "evt-2".to_owned(),
+                            payload_json: r#"{"actor":"bob","ts":200}"#.to_owned(),
+                            source_ref: Some("src-2".to_owned()),
+                        },
+                    ],
+                })
+                .expect("seed writes");
+        }
+
+        let secondary_indexes_json = r#"[{"name":"actor_ts","kind":"append_only_field_time","field":"actor","value_type":"string","time_field":"ts"}]"#;
+        let updated = service
+            .update_operational_collection_secondary_indexes("audit_log", secondary_indexes_json)
+            .expect("update secondary indexes");
+        assert_eq!(updated.secondary_indexes_json, secondary_indexes_json);
+
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let entry_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM operational_secondary_index_entries \
+                 WHERE collection_name = 'audit_log' AND index_name = 'actor_ts'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("secondary index count");
+        assert_eq!(entry_count, 2);
+        conn.execute(
+            "DELETE FROM operational_secondary_index_entries WHERE collection_name = 'audit_log'",
+            [],
+        )
+        .expect("clear index entries");
+        drop(conn);
+
+        let rebuild = service
+            .rebuild_operational_secondary_indexes("audit_log")
+            .expect("rebuild secondary indexes");
+        assert_eq!(rebuild.collection_name, "audit_log");
+        assert_eq!(rebuild.mutation_entries_rebuilt, 2);
+        assert_eq!(rebuild.current_entries_rebuilt, 0);
+    }
+
+    #[test]
+    fn register_operational_collection_rejects_invalid_validation_contract() {
+        let (_db, service) = setup();
+
+        let error = service
+            .register_operational_collection(&OperationalRegisterRequest {
+                name: "connector_health".to_owned(),
+                kind: OperationalCollectionKind::LatestState,
+                schema_json: "{}".to_owned(),
+                retention_json: "{}".to_owned(),
+                filter_fields_json: "[]".to_owned(),
+                validation_json: r#"{"format_version":1,"mode":"enforce","fields":[{"name":"status","type":"string","minimum":0}]}"#
+                    .to_owned(),
+                secondary_indexes_json: "[]".to_owned(),
+                format_version: 1,
+            })
+            .expect_err("invalid validation contract should reject");
+
+        assert!(matches!(error, EngineError::InvalidWrite(_)));
+        assert!(error.to_string().contains("minimum/maximum"));
+    }
+
+    #[test]
+    fn validate_operational_collection_history_reports_invalid_rows_without_mutation() {
+        let (db, service) = setup();
+        service
+            .register_operational_collection(&OperationalRegisterRequest {
+                name: "audit_log".to_owned(),
+                kind: OperationalCollectionKind::AppendOnlyLog,
+                schema_json: "{}".to_owned(),
+                retention_json: r#"{"mode":"keep_all"}"#.to_owned(),
+                filter_fields_json: "[]".to_owned(),
+                validation_json: r#"{"format_version":1,"mode":"disabled","additional_properties":false,"fields":[{"name":"status","type":"string","required":true,"enum":["ok","failed"]}]}"#
+                    .to_owned(),
+                secondary_indexes_json: "[]".to_owned(),
+                format_version: 1,
+            })
+            .expect("register collection");
+        {
+            let writer = crate::WriterActor::start(
+                db.path(),
+                Arc::new(SchemaManager::new()),
+                crate::ProvenanceMode::Warn,
+            )
+            .expect("writer");
+            writer
+                .submit(crate::WriteRequest {
+                    label: "history-validation".to_owned(),
+                    nodes: vec![],
+                    node_retires: vec![],
+                    edges: vec![],
+                    edge_retires: vec![],
+                    chunks: vec![],
+                    runs: vec![],
+                    steps: vec![],
+                    actions: vec![],
+                    optional_backfills: vec![],
+                    vec_inserts: vec![],
+                    operational_writes: vec![
+                        crate::OperationalWrite::Append {
+                            collection: "audit_log".to_owned(),
+                            record_key: "evt-1".to_owned(),
+                            payload_json: r#"{"status":"ok"}"#.to_owned(),
+                            source_ref: Some("src-1".to_owned()),
+                        },
+                        crate::OperationalWrite::Append {
+                            collection: "audit_log".to_owned(),
+                            record_key: "evt-2".to_owned(),
+                            payload_json: r#"{"status":"bogus"}"#.to_owned(),
+                            source_ref: Some("src-2".to_owned()),
+                        },
+                    ],
+                })
+                .expect("write");
+        }
+
+        let report = service
+            .validate_operational_collection_history("audit_log")
+            .expect("validate history");
+        assert_eq!(report.collection_name, "audit_log");
+        assert_eq!(report.checked_rows, 2);
+        assert_eq!(report.invalid_row_count, 1);
+        assert_eq!(report.issues.len(), 1);
+        assert_eq!(report.issues[0].record_key, "evt-2");
+        assert!(report.issues[0].message.contains("must be one of"));
+
+        let trace = service
+            .trace_operational_collection("audit_log", None)
+            .expect("trace");
+        assert_eq!(trace.mutation_count, 2);
+
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let provenance_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM provenance_events \
+                 WHERE event_type = 'operational_collection_history_validated' \
+                   AND subject = 'audit_log'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("provenance count");
+        assert_eq!(provenance_count, 0);
+    }
+
+    #[test]
     fn trace_operational_collection_returns_mutations_and_current_rows() {
         let (db, service) = setup();
         service
@@ -4128,6 +5124,8 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
                 schema_json: "{}".to_owned(),
                 retention_json: "{}".to_owned(),
                 filter_fields_json: "[]".to_owned(),
+                validation_json: String::new(),
+                secondary_indexes_json: "[]".to_owned(),
                 format_version: 1,
             })
             .expect("register collection");
@@ -4194,6 +5192,8 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
                 schema_json: "{}".to_owned(),
                 retention_json: "{}".to_owned(),
                 filter_fields_json: "[]".to_owned(),
+                validation_json: String::new(),
+                secondary_indexes_json: "[]".to_owned(),
                 format_version: 1,
             })
             .expect("register collection");
@@ -4257,6 +5257,84 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
             )
             .expect("restored payload");
         assert_eq!(payload, r#"{"status":"ok"}"#);
+    }
+
+    #[test]
+    fn rebuild_operational_current_restores_latest_state_secondary_index_entries() {
+        let (db, service) = setup();
+        service
+            .register_operational_collection(&OperationalRegisterRequest {
+                name: "connector_health".to_owned(),
+                kind: OperationalCollectionKind::LatestState,
+                schema_json: "{}".to_owned(),
+                retention_json: "{}".to_owned(),
+                filter_fields_json: "[]".to_owned(),
+                validation_json: String::new(),
+                secondary_indexes_json: r#"[{"name":"status_current","kind":"latest_state_field","field":"status","value_type":"string"}]"#.to_owned(),
+                format_version: 1,
+            })
+            .expect("register collection");
+        {
+            let writer = crate::WriterActor::start(
+                db.path(),
+                Arc::new(SchemaManager::new()),
+                crate::ProvenanceMode::Warn,
+            )
+            .expect("writer");
+            writer
+                .submit(crate::WriteRequest {
+                    label: "operational".to_owned(),
+                    nodes: vec![],
+                    node_retires: vec![],
+                    edges: vec![],
+                    edge_retires: vec![],
+                    chunks: vec![],
+                    runs: vec![],
+                    steps: vec![],
+                    actions: vec![],
+                    optional_backfills: vec![],
+                    vec_inserts: vec![],
+                    operational_writes: vec![crate::OperationalWrite::Put {
+                        collection: "connector_health".to_owned(),
+                        record_key: "gmail".to_owned(),
+                        payload_json: r#"{"status":"ok"}"#.to_owned(),
+                        source_ref: Some("src-1".to_owned()),
+                    }],
+                })
+                .expect("write");
+        }
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            let entry_count: i64 = conn
+                .query_row(
+                    "SELECT count(*) FROM operational_secondary_index_entries \
+                     WHERE collection_name = 'connector_health' AND subject_kind = 'current'",
+                    [],
+                    |row| row.get(0),
+                )
+                .expect("secondary index count before repair");
+            assert_eq!(entry_count, 1);
+            conn.execute(
+                "DELETE FROM operational_current WHERE collection_name = 'connector_health' AND record_key = 'gmail'",
+                [],
+            )
+            .expect("delete current row");
+        }
+
+        service
+            .rebuild_operational_current(Some("connector_health"))
+            .expect("rebuild current");
+
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let entry_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM operational_secondary_index_entries \
+                 WHERE collection_name = 'connector_health' AND subject_kind = 'current'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("secondary index count after repair");
+        assert_eq!(entry_count, 1);
     }
 
     #[test]
@@ -4347,6 +5425,8 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
                 schema_json: "{}".to_owned(),
                 retention_json: r#"{"mode":"keep_all"}"#.to_owned(),
                 filter_fields_json: "[]".to_owned(),
+                validation_json: String::new(),
+                secondary_indexes_json: "[]".to_owned(),
                 format_version: 1,
             })
             .expect("register collection");
@@ -4586,6 +5666,140 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
     }
 
     #[test]
+    fn plan_and_run_operational_retention_keep_last() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO operational_collections (name, kind, schema_json, retention_json, format_version, created_at) \
+                 VALUES ('audit_log', 'append_only_log', '{}', '{\"mode\":\"keep_last\",\"max_rows\":2}', 1, 100)",
+                [],
+            )
+            .expect("seed collection");
+            for (index, created_at) in [(1_i64, 100_i64), (2, 200), (3, 300)] {
+                conn.execute(
+                    "INSERT INTO operational_mutations \
+                     (id, collection_name, record_key, op_kind, payload_json, source_ref, created_at, mutation_order) \
+                     VALUES (?1, 'audit_log', ?1, 'append', ?2, 'src', ?3, ?4)",
+                    rusqlite::params![
+                        format!("evt-{index}"),
+                        format!("{{\"seq\":{index}}}"),
+                        created_at,
+                        index,
+                    ],
+                )
+                .expect("seed event");
+            }
+        }
+
+        let plan = service
+            .plan_operational_retention(1_000, None, Some(10))
+            .expect("plan retention");
+        assert_eq!(plan.collections_examined, 1);
+        assert_eq!(plan.items[0].collection_name, "audit_log");
+        assert_eq!(
+            plan.items[0].action_kind,
+            crate::operational::OperationalRetentionActionKind::KeepLast
+        );
+        assert_eq!(plan.items[0].candidate_deletions, 1);
+        assert_eq!(plan.items[0].max_rows, Some(2));
+        assert_eq!(plan.items[0].last_run_at, None);
+
+        let dry_run = service
+            .run_operational_retention(1_000, None, Some(10), true)
+            .expect("dry-run retention");
+        assert!(dry_run.dry_run);
+        assert_eq!(dry_run.collections_acted_on, 1);
+        assert_eq!(dry_run.items[0].deleted_mutations, 1);
+        assert_eq!(dry_run.items[0].rows_remaining, 2);
+
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let remaining_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM operational_mutations WHERE collection_name = 'audit_log'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("remaining count after dry run");
+        assert_eq!(remaining_count, 3);
+        let retention_run_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM operational_retention_runs WHERE collection_name = 'audit_log'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("retention run count");
+        assert_eq!(retention_run_count, 0);
+        drop(conn);
+
+        let executed = service
+            .run_operational_retention(1_000, None, Some(10), false)
+            .expect("execute retention");
+        assert_eq!(executed.collections_acted_on, 1);
+        assert_eq!(executed.items[0].deleted_mutations, 1);
+        assert_eq!(executed.items[0].rows_remaining, 2);
+
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let remaining: Vec<String> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT id FROM operational_mutations \
+                     WHERE collection_name = 'audit_log' ORDER BY mutation_order",
+                )
+                .expect("stmt");
+            stmt.query_map([], |row| row.get(0))
+                .expect("rows")
+                .collect::<Result<_, _>>()
+                .expect("collect")
+        };
+        assert_eq!(remaining, vec!["evt-2".to_owned(), "evt-3".to_owned()]);
+        let last_run_at: i64 = conn
+            .query_row(
+                "SELECT executed_at FROM operational_retention_runs \
+                 WHERE collection_name = 'audit_log' ORDER BY executed_at DESC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("last run at");
+        assert_eq!(last_run_at, 1_000);
+    }
+
+    #[test]
+    fn dry_run_operational_retention_does_not_mark_noop_collection_as_acted_on() {
+        let (db, service) = setup();
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        conn.execute(
+            "INSERT INTO operational_collections (name, kind, schema_json, retention_json, format_version, created_at) \
+             VALUES ('audit_log', 'append_only_log', '{}', '{\"mode\":\"keep_last\",\"max_rows\":2}', 1, 100)",
+            [],
+        )
+        .expect("seed collection");
+        for (index, created_at) in [(1_i64, 100_i64), (2, 200)] {
+            conn.execute(
+                "INSERT INTO operational_mutations \
+                 (id, collection_name, record_key, op_kind, payload_json, source_ref, created_at, mutation_order) \
+                 VALUES (?1, 'audit_log', ?1, 'append', ?2, 'src', ?3, ?4)",
+                rusqlite::params![
+                    format!("evt-{index}"),
+                    format!("{{\"seq\":{index}}}"),
+                    created_at,
+                    index,
+                ],
+            )
+            .expect("seed event");
+        }
+        drop(conn);
+
+        let dry_run = service
+            .run_operational_retention(1_000, None, Some(10), true)
+            .expect("dry-run retention");
+        assert!(dry_run.dry_run);
+        assert_eq!(dry_run.collections_acted_on, 0);
+        assert_eq!(dry_run.items[0].deleted_mutations, 0);
+        assert_eq!(dry_run.items[0].rows_remaining, 2);
+    }
+
+    #[test]
     fn compact_operational_collection_rejects_latest_state() {
         let (_db, service) = setup();
         service
@@ -4595,6 +5809,8 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
                 schema_json: "{}".to_owned(),
                 retention_json: r#"{"mode":"keep_all"}"#.to_owned(),
                 filter_fields_json: "[]".to_owned(),
+                validation_json: String::new(),
+                secondary_indexes_json: "[]".to_owned(),
                 format_version: 1,
             })
             .expect("register collection");
@@ -4617,6 +5833,8 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
                 schema_json: "{}".to_owned(),
                 retention_json: r#"{"mode":"keep_all"}"#.to_owned(),
                 filter_fields_json: r#"[{"name":"actor","type":"string","modes":["exact","prefix"]},{"name":"ts","type":"timestamp","modes":["range"]}]"#.to_owned(),
+                validation_json: String::new(),
+                secondary_indexes_json: "[]".to_owned(),
                 format_version: 1,
             })
             .expect("register collection");
@@ -4637,6 +5855,8 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
                 schema_json: "{}".to_owned(),
                 retention_json: r#"{"mode":"keep_all"}"#.to_owned(),
                 filter_fields_json: r#"[{"name":"actor","type":"string","modes":["exact","prefix"]},{"name":"seq","type":"integer","modes":["exact","range"]},{"name":"ts","type":"timestamp","modes":["exact","range"]}]"#.to_owned(),
+                validation_json: String::new(),
+                secondary_indexes_json: "[]".to_owned(),
                 format_version: 1,
             })
             .expect("register collection");
@@ -4714,6 +5934,88 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
     }
 
     #[test]
+    fn read_operational_collection_uses_secondary_index_when_filter_values_are_missing() {
+        let (db, service) = setup();
+        service
+            .register_operational_collection(&OperationalRegisterRequest {
+                name: "audit_log".to_owned(),
+                kind: OperationalCollectionKind::AppendOnlyLog,
+                schema_json: "{}".to_owned(),
+                retention_json: r#"{"mode":"keep_all"}"#.to_owned(),
+                filter_fields_json: r#"[{"name":"actor","type":"string","modes":["exact","prefix"]},{"name":"ts","type":"timestamp","modes":["range"]}]"#.to_owned(),
+                validation_json: String::new(),
+                secondary_indexes_json: r#"[{"name":"actor_ts","kind":"append_only_field_time","field":"actor","value_type":"string","time_field":"ts"}]"#.to_owned(),
+                format_version: 1,
+            })
+            .expect("register collection");
+        {
+            let writer = crate::WriterActor::start(
+                db.path(),
+                Arc::new(SchemaManager::new()),
+                crate::ProvenanceMode::Warn,
+            )
+            .expect("writer");
+            writer
+                .submit(crate::WriteRequest {
+                    label: "operational".to_owned(),
+                    nodes: vec![],
+                    node_retires: vec![],
+                    edges: vec![],
+                    edge_retires: vec![],
+                    chunks: vec![],
+                    runs: vec![],
+                    steps: vec![],
+                    actions: vec![],
+                    optional_backfills: vec![],
+                    vec_inserts: vec![],
+                    operational_writes: vec![
+                        crate::OperationalWrite::Append {
+                            collection: "audit_log".to_owned(),
+                            record_key: "evt-1".to_owned(),
+                            payload_json: r#"{"actor":"alice","ts":100}"#.to_owned(),
+                            source_ref: Some("src-1".to_owned()),
+                        },
+                        crate::OperationalWrite::Append {
+                            collection: "audit_log".to_owned(),
+                            record_key: "evt-2".to_owned(),
+                            payload_json: r#"{"actor":"alice-admin","ts":200}"#.to_owned(),
+                            source_ref: Some("src-2".to_owned()),
+                        },
+                    ],
+                })
+                .expect("write");
+        }
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        conn.execute(
+            "DELETE FROM operational_filter_values WHERE collection_name = 'audit_log'",
+            [],
+        )
+        .expect("clear filter values");
+        drop(conn);
+
+        let report = service
+            .read_operational_collection(&crate::operational::OperationalReadRequest {
+                collection_name: "audit_log".to_owned(),
+                filters: vec![
+                    crate::operational::OperationalFilterClause::Prefix {
+                        field: "actor".to_owned(),
+                        value: "alice".to_owned(),
+                    },
+                    crate::operational::OperationalFilterClause::Range {
+                        field: "ts".to_owned(),
+                        lower: Some(150),
+                        upper: Some(250),
+                    },
+                ],
+                limit: Some(10),
+            })
+            .expect("secondary-index read");
+
+        assert_eq!(report.row_count, 1);
+        assert_eq!(report.rows[0].record_key, "evt-2");
+    }
+
+    #[test]
     fn read_operational_collection_rejects_undeclared_fields_and_latest_state_collections() {
         let (_db, service) = setup();
         service
@@ -4724,6 +6026,8 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
                 retention_json: "{}".to_owned(),
                 filter_fields_json: r#"[{"name":"status","type":"string","modes":["exact"]}]"#
                     .to_owned(),
+                validation_json: String::new(),
+                secondary_indexes_json: "[]".to_owned(),
                 format_version: 1,
             })
             .expect("register collection");
@@ -4748,6 +6052,8 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
                 retention_json: r#"{"mode":"keep_all"}"#.to_owned(),
                 filter_fields_json: r#"[{"name":"actor","type":"string","modes":["exact"]}]"#
                     .to_owned(),
+                validation_json: String::new(),
+                secondary_indexes_json: "[]".to_owned(),
                 format_version: 1,
             })
             .expect("register append-only collection");
@@ -4776,6 +6082,8 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
                 retention_json: r#"{"mode":"keep_all"}"#.to_owned(),
                 filter_fields_json: r#"[{"name":"actor","type":"string","modes":["prefix"]}]"#
                     .to_owned(),
+                validation_json: String::new(),
+                secondary_indexes_json: "[]".to_owned(),
                 format_version: 1,
             })
             .expect("register collection");
@@ -6303,9 +7611,52 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
             manifest.exported_at > 0,
             "exported_at should be a unix timestamp"
         );
-        assert_eq!(manifest.schema_version, 4, "schema_version should be 4");
+        assert_eq!(
+            manifest.schema_version,
+            SchemaManager::new().current_version().0,
+            "schema_version should match the live schema version"
+        );
         assert_eq!(manifest.protocol_version, 1, "protocol_version should be 1");
         assert!(manifest.page_count > 0, "page_count should be positive");
+    }
+
+    #[test]
+    fn safe_export_preserves_operational_validation_contracts() {
+        let (_db, service) = setup();
+        let validation_json = r#"{"format_version":1,"mode":"enforce","additional_properties":false,"fields":[{"name":"status","type":"string","required":true,"enum":["ok","failed"]}]}"#;
+        service
+            .register_operational_collection(&OperationalRegisterRequest {
+                name: "connector_health".to_owned(),
+                kind: OperationalCollectionKind::LatestState,
+                schema_json: "{}".to_owned(),
+                retention_json: "{}".to_owned(),
+                filter_fields_json: "[]".to_owned(),
+                validation_json: validation_json.to_owned(),
+                secondary_indexes_json: "[]".to_owned(),
+                format_version: 1,
+            })
+            .expect("register collection");
+
+        let export_dir = tempfile::TempDir::new().expect("temp dir");
+        let export_path = export_dir.path().join("backup.db");
+        service
+            .safe_export(
+                &export_path,
+                SafeExportOptions {
+                    force_checkpoint: false,
+                },
+            )
+            .expect("export");
+
+        let exported = sqlite::open_connection(&export_path).expect("exported conn");
+        let exported_validation_json: String = exported
+            .query_row(
+                "SELECT validation_json FROM operational_collections WHERE name = 'connector_health'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("validation_json");
+        assert_eq!(exported_validation_json, validation_json);
     }
 
     #[test]
@@ -6328,7 +7679,10 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
             manifest.page_count > 0,
             "page_count must be populated regardless of checkpoint mode"
         );
-        assert_eq!(manifest.schema_version, 4);
+        assert_eq!(
+            manifest.schema_version,
+            SchemaManager::new().current_version().0
+        );
         assert_eq!(manifest.protocol_version, 1);
     }
 

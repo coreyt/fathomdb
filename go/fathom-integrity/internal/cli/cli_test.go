@@ -335,6 +335,84 @@ func TestMainUpdateOperationalFiltersForwardsContract(t *testing.T) {
 	require.Contains(t, string(body), `"filter_fields_json":"[{\"name\":\"actor\",\"type\":\"string\",\"modes\":[\"exact\"]}]"`)
 }
 
+func TestMainUpdateOperationalValidationPreservesEmptyString(t *testing.T) {
+	tempDir := t.TempDir()
+	requestPath := filepath.Join(tempDir, "request.json")
+	script := "#!/usr/bin/env bash\ncat >" + requestPath + "\nprintf '%s\\n' '{\"protocol_version\":1,\"ok\":true,\"message\":\"ok\",\"payload\":{}}'\n"
+	bridgePath := writeShellBridge(t, script)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{
+		"update-operational-validation",
+		"--db", "/tmp/fathom.db",
+		"--bridge", bridgePath,
+		"--collection", "audit_log",
+		"--validation-json", "",
+	}, &stdout, &stderr)
+
+	require.Equal(t, 0, exitCode)
+	body, err := os.ReadFile(requestPath)
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"command":"update_operational_collection_validation"`)
+	require.Contains(t, string(body), `"collection_name":"audit_log"`)
+	require.Contains(t, string(body), `"validation_json":""`)
+}
+
+func TestMainUpdateOperationalSecondaryIndexesForwardsContract(t *testing.T) {
+	tempDir := t.TempDir()
+	requestPath := filepath.Join(tempDir, "request.json")
+	script := "#!/usr/bin/env bash\ncat >" + requestPath + "\nprintf '%s\\n' '{\"protocol_version\":1,\"ok\":true,\"message\":\"ok\",\"payload\":{}}'\n"
+	bridgePath := writeShellBridge(t, script)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{
+		"update-operational-secondary-indexes",
+		"--db", "/tmp/fathom.db",
+		"--bridge", bridgePath,
+		"--collection", "audit_log",
+		"--secondary-indexes-json", `[{"name":"actor_ts","kind":"append_only_field_time","field":"actor","value_type":"string","time_field":"ts"}]`,
+	}, &stdout, &stderr)
+
+	require.Equal(t, 0, exitCode)
+	body, err := os.ReadFile(requestPath)
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"command":"update_operational_collection_secondary_indexes"`)
+	require.Contains(t, string(body), `"secondary_indexes_json":"[{\"name\":\"actor_ts\",\"kind\":\"append_only_field_time\",\"field\":\"actor\",\"value_type\":\"string\",\"time_field\":\"ts\"}]"`)
+}
+
+func TestMainRunOperationalRetentionForwardsRequest(t *testing.T) {
+	tempDir := t.TempDir()
+	requestPath := filepath.Join(tempDir, "request.json")
+	script := "#!/usr/bin/env bash\ncat >" + requestPath + "\nprintf '%s\\n' '{\"protocol_version\":1,\"ok\":true,\"message\":\"ok\",\"payload\":{}}'\n"
+	bridgePath := writeShellBridge(t, script)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{
+		"run-operational-retention",
+		"--db", "/tmp/fathom.db",
+		"--bridge", bridgePath,
+		"--collections-json", `["audit_log"]`,
+		"--now", "1000",
+		"--max-collections", "5",
+		"--dry-run",
+	}, &stdout, &stderr)
+
+	require.Equal(t, 0, exitCode)
+	body, err := os.ReadFile(requestPath)
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"command":"run_operational_retention"`)
+	require.Contains(t, string(body), `"collection_names":["audit_log"]`)
+	require.Contains(t, string(body), `"now_timestamp":1000`)
+	require.Contains(t, string(body), `"max_collections":5`)
+	require.Contains(t, string(body), `"dry_run":true`)
+}
+
 func TestMainRestoreLogicalIDForwardsLogicalID(t *testing.T) {
 	tempDir := t.TempDir()
 	requestPath := filepath.Join(tempDir, "request.json")

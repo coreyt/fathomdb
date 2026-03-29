@@ -291,6 +291,77 @@ static MIGRATIONS: &[Migration] = &[
                     ON operational_filter_values(collection_name, field_name, integer_value, mutation_id);
                 ",
     ),
+    Migration::new(
+        SchemaVersion(11),
+        "operational payload validation contracts",
+        r"
+                ALTER TABLE operational_collections
+                    ADD COLUMN validation_json TEXT NOT NULL DEFAULT '';
+                ",
+    ),
+    Migration::new(
+        SchemaVersion(12),
+        "operational secondary indexes",
+        r"
+                ALTER TABLE operational_collections
+                    ADD COLUMN secondary_indexes_json TEXT NOT NULL DEFAULT '[]';
+
+                CREATE TABLE IF NOT EXISTS operational_secondary_index_entries (
+                    collection_name TEXT NOT NULL,
+                    index_name TEXT NOT NULL,
+                    subject_kind TEXT NOT NULL,
+                    mutation_id TEXT NOT NULL DEFAULT '',
+                    record_key TEXT NOT NULL DEFAULT '',
+                    sort_timestamp INTEGER,
+                    slot1_text TEXT,
+                    slot1_integer INTEGER,
+                    slot2_text TEXT,
+                    slot2_integer INTEGER,
+                    slot3_text TEXT,
+                    slot3_integer INTEGER,
+                    PRIMARY KEY(collection_name, index_name, subject_kind, mutation_id, record_key),
+                    FOREIGN KEY(collection_name) REFERENCES operational_collections(name),
+                    FOREIGN KEY(mutation_id) REFERENCES operational_mutations(id) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_operational_secondary_entries_slot1_text
+                    ON operational_secondary_index_entries(
+                        collection_name, index_name, subject_kind, slot1_text, sort_timestamp DESC, mutation_id, record_key
+                    );
+                CREATE INDEX IF NOT EXISTS idx_operational_secondary_entries_slot1_integer
+                    ON operational_secondary_index_entries(
+                        collection_name, index_name, subject_kind, slot1_integer, sort_timestamp DESC, mutation_id, record_key
+                    );
+                CREATE INDEX IF NOT EXISTS idx_operational_secondary_entries_composite_text
+                    ON operational_secondary_index_entries(
+                        collection_name, index_name, subject_kind, slot1_text, slot2_text, slot3_text, sort_timestamp DESC, record_key
+                    );
+                CREATE INDEX IF NOT EXISTS idx_operational_secondary_entries_composite_integer
+                    ON operational_secondary_index_entries(
+                        collection_name, index_name, subject_kind, slot1_integer, slot2_integer, slot3_integer, sort_timestamp DESC, record_key
+                );
+                ",
+    ),
+    Migration::new(
+        SchemaVersion(13),
+        "operational retention run metadata",
+        r"
+                CREATE TABLE IF NOT EXISTS operational_retention_runs (
+                    id TEXT PRIMARY KEY,
+                    collection_name TEXT NOT NULL,
+                    executed_at INTEGER NOT NULL,
+                    action_kind TEXT NOT NULL,
+                    dry_run INTEGER NOT NULL DEFAULT 0,
+                    deleted_mutations INTEGER NOT NULL,
+                    rows_remaining INTEGER NOT NULL,
+                    metadata_json TEXT NOT NULL DEFAULT '',
+                    FOREIGN KEY(collection_name) REFERENCES operational_collections(name)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_operational_retention_runs_collection_time
+                    ON operational_retention_runs(collection_name, executed_at DESC);
+                ",
+    ),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -339,6 +410,10 @@ impl SchemaManager {
                 SchemaVersion(6) => Self::ensure_provenance_metadata(conn)?,
                 SchemaVersion(8) => Self::ensure_operational_mutation_order(conn)?,
                 SchemaVersion(9) => Self::ensure_node_access_metadata(conn)?,
+                SchemaVersion(10) => Self::ensure_operational_filter_contract(conn)?,
+                SchemaVersion(11) => Self::ensure_operational_validation_contract(conn)?,
+                SchemaVersion(12) => Self::ensure_operational_secondary_indexes(conn)?,
+                SchemaVersion(13) => Self::ensure_operational_retention_runs(conn)?,
                 _ => conn.execute_batch(migration.sql)?,
             }
             conn.execute(
@@ -488,6 +563,139 @@ impl SchemaManager {
         Ok(())
     }
 
+    fn ensure_operational_filter_contract(conn: &Connection) -> Result<(), SchemaError> {
+        let mut stmt = conn.prepare("PRAGMA table_info(operational_collections)")?;
+        let columns = stmt
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<Result<Vec<_>, _>>()?;
+        let has_filter_fields_json = columns.iter().any(|column| column == "filter_fields_json");
+
+        if !has_filter_fields_json {
+            conn.execute(
+                "ALTER TABLE operational_collections ADD COLUMN filter_fields_json TEXT NOT NULL DEFAULT '[]'",
+                [],
+            )?;
+        }
+
+        conn.execute_batch(
+            r"
+            CREATE TABLE IF NOT EXISTS operational_filter_values (
+                mutation_id TEXT NOT NULL,
+                collection_name TEXT NOT NULL,
+                field_name TEXT NOT NULL,
+                string_value TEXT,
+                integer_value INTEGER,
+                PRIMARY KEY(mutation_id, field_name),
+                FOREIGN KEY(mutation_id) REFERENCES operational_mutations(id) ON DELETE CASCADE,
+                FOREIGN KEY(collection_name) REFERENCES operational_collections(name)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_operational_filter_values_text
+                ON operational_filter_values(collection_name, field_name, string_value, mutation_id);
+            CREATE INDEX IF NOT EXISTS idx_operational_filter_values_integer
+                ON operational_filter_values(collection_name, field_name, integer_value, mutation_id);
+            ",
+        )?;
+        Ok(())
+    }
+
+    fn ensure_operational_validation_contract(conn: &Connection) -> Result<(), SchemaError> {
+        let mut stmt = conn.prepare("PRAGMA table_info(operational_collections)")?;
+        let columns = stmt
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<Result<Vec<_>, _>>()?;
+        let has_validation_json = columns.iter().any(|column| column == "validation_json");
+
+        if !has_validation_json {
+            conn.execute(
+                "ALTER TABLE operational_collections ADD COLUMN validation_json TEXT NOT NULL DEFAULT ''",
+                [],
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn ensure_operational_secondary_indexes(conn: &Connection) -> Result<(), SchemaError> {
+        let mut stmt = conn.prepare("PRAGMA table_info(operational_collections)")?;
+        let columns = stmt
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<Result<Vec<_>, _>>()?;
+        let has_secondary_indexes_json = columns
+            .iter()
+            .any(|column| column == "secondary_indexes_json");
+
+        if !has_secondary_indexes_json {
+            conn.execute(
+                "ALTER TABLE operational_collections ADD COLUMN secondary_indexes_json TEXT NOT NULL DEFAULT '[]'",
+                [],
+            )?;
+        }
+
+        conn.execute_batch(
+            r"
+            CREATE TABLE IF NOT EXISTS operational_secondary_index_entries (
+                collection_name TEXT NOT NULL,
+                index_name TEXT NOT NULL,
+                subject_kind TEXT NOT NULL,
+                mutation_id TEXT NOT NULL DEFAULT '',
+                record_key TEXT NOT NULL DEFAULT '',
+                sort_timestamp INTEGER,
+                slot1_text TEXT,
+                slot1_integer INTEGER,
+                slot2_text TEXT,
+                slot2_integer INTEGER,
+                slot3_text TEXT,
+                slot3_integer INTEGER,
+                PRIMARY KEY(collection_name, index_name, subject_kind, mutation_id, record_key),
+                FOREIGN KEY(collection_name) REFERENCES operational_collections(name),
+                FOREIGN KEY(mutation_id) REFERENCES operational_mutations(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_operational_secondary_entries_slot1_text
+                ON operational_secondary_index_entries(
+                    collection_name, index_name, subject_kind, slot1_text, sort_timestamp DESC, mutation_id, record_key
+                );
+            CREATE INDEX IF NOT EXISTS idx_operational_secondary_entries_slot1_integer
+                ON operational_secondary_index_entries(
+                    collection_name, index_name, subject_kind, slot1_integer, sort_timestamp DESC, mutation_id, record_key
+                );
+            CREATE INDEX IF NOT EXISTS idx_operational_secondary_entries_composite_text
+                ON operational_secondary_index_entries(
+                    collection_name, index_name, subject_kind, slot1_text, slot2_text, slot3_text, sort_timestamp DESC, record_key
+                );
+            CREATE INDEX IF NOT EXISTS idx_operational_secondary_entries_composite_integer
+                ON operational_secondary_index_entries(
+                    collection_name, index_name, subject_kind, slot1_integer, slot2_integer, slot3_integer, sort_timestamp DESC, record_key
+                );
+            ",
+        )?;
+
+        Ok(())
+    }
+
+    fn ensure_operational_retention_runs(conn: &Connection) -> Result<(), SchemaError> {
+        conn.execute_batch(
+            r"
+            CREATE TABLE IF NOT EXISTS operational_retention_runs (
+                id TEXT PRIMARY KEY,
+                collection_name TEXT NOT NULL,
+                executed_at INTEGER NOT NULL,
+                action_kind TEXT NOT NULL,
+                dry_run INTEGER NOT NULL DEFAULT 0,
+                deleted_mutations INTEGER NOT NULL,
+                rows_remaining INTEGER NOT NULL,
+                metadata_json TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY(collection_name) REFERENCES operational_collections(name)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_operational_retention_runs_collection_time
+                ON operational_retention_runs(collection_name, executed_at DESC);
+            ",
+        )?;
+        Ok(())
+    }
+
     #[must_use]
     pub fn current_version(&self) -> SchemaVersion {
         self.migrations()
@@ -600,7 +808,10 @@ mod tests {
 
         let report = manager.bootstrap(&conn).expect("bootstrap report");
 
-        assert_eq!(report.applied_versions.len(), 8);
+        assert_eq!(
+            report.applied_versions.len(),
+            manager.current_version().0 as usize
+        );
         assert!(report.sqlite_version.starts_with('3'));
         let table_count: i64 = conn
             .query_row(
@@ -925,6 +1136,13 @@ mod tests {
                 .any(|version| version.0 == 10),
             "bootstrap should record operational filtered read migration"
         );
+        assert!(
+            report
+                .applied_versions
+                .iter()
+                .any(|version| version.0 == 11),
+            "bootstrap should record operational validation migration"
+        );
         let filter_fields_json: String = conn
             .query_row(
                 "SELECT filter_fields_json FROM operational_collections WHERE name = 'audit_log'",
@@ -933,14 +1151,68 @@ mod tests {
             )
             .expect("filter_fields_json added");
         assert_eq!(filter_fields_json, "[]");
+        let validation_json: String = conn
+            .query_row(
+                "SELECT validation_json FROM operational_collections WHERE name = 'audit_log'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("validation_json added");
+        assert_eq!(validation_json, "");
         let table_count: i64 = conn
             .query_row(
                 "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'operational_filter_values'",
                 [],
                 |row| row.get(0),
-            )
-            .expect("filter table exists");
+        )
+        .expect("filter table exists");
         assert_eq!(table_count, 1);
+    }
+
+    #[test]
+    fn bootstrap_reapplies_migration_history_without_readding_filter_contract_columns() {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        let manager = SchemaManager::new();
+        manager.bootstrap(&conn).expect("initial bootstrap");
+
+        conn.execute("DROP TABLE fathom_schema_migrations", [])
+            .expect("drop migration history");
+        SchemaManager::ensure_metadata_tables(&conn).expect("recreate migration metadata");
+
+        let report = manager
+            .bootstrap(&conn)
+            .expect("rebootstrap existing schema");
+
+        assert!(
+            report
+                .applied_versions
+                .iter()
+                .any(|version| version.0 == 10),
+            "rebootstrap should re-record migration 10"
+        );
+        assert!(
+            report
+                .applied_versions
+                .iter()
+                .any(|version| version.0 == 11),
+            "rebootstrap should re-record migration 11"
+        );
+        let filter_fields_json: String = conn
+            .query_row(
+                "SELECT filter_fields_json FROM operational_collections LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or_else(|_| "[]".to_string());
+        assert_eq!(filter_fields_json, "[]");
+        let validation_json: String = conn
+            .query_row(
+                "SELECT validation_json FROM operational_collections LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or_default();
+        assert_eq!(validation_json, "");
     }
 
     #[cfg(feature = "sqlite-vec")]

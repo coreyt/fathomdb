@@ -14,12 +14,19 @@ pub use fathomdb_engine::{
     LogicalRestoreReport, NodeInsert, NodeRetire, NodeRow, OperationalCollectionKind,
     OperationalCollectionRecord, OperationalCompactionReport, OperationalCurrentRow,
     OperationalFilterClause, OperationalFilterField, OperationalFilterFieldType,
-    OperationalFilterMode, OperationalFilterValue, OperationalMutationRow, OperationalPurgeReport,
+    OperationalFilterMode, OperationalFilterValue, OperationalHistoryValidationIssue,
+    OperationalHistoryValidationReport, OperationalMutationRow, OperationalPurgeReport,
     OperationalReadReport, OperationalReadRequest, OperationalRegisterRequest,
-    OperationalRepairReport, OperationalTraceReport, OperationalWrite, OptionalProjectionTask,
-    ProjectionRepairReport, ProjectionTarget, ProvenanceEvent, ProvenanceMode, QueryPlan,
-    QueryRows, RunInsert, RunRow, SafeExportManifest, SafeExportOptions, StepInsert, StepRow,
-    VecInsert, WriteReceipt, WriteRequest, WriterActor, new_id, new_row_id,
+    OperationalRepairReport, OperationalRetentionActionKind, OperationalRetentionPlanItem,
+    OperationalRetentionPlanReport, OperationalRetentionRunItem, OperationalRetentionRunReport,
+    OperationalSecondaryIndexDefinition, OperationalSecondaryIndexField,
+    OperationalSecondaryIndexRebuildReport, OperationalSecondaryIndexValueType,
+    OperationalTraceReport, OperationalValidationContract, OperationalValidationField,
+    OperationalValidationFieldType, OperationalValidationMode, OperationalWrite,
+    OptionalProjectionTask, ProjectionRepairReport, ProjectionTarget, ProvenanceEvent,
+    ProvenanceMode, QueryPlan, QueryRows, RunInsert, RunRow, SafeExportManifest,
+    SafeExportOptions, StepInsert, StepRow, VecInsert, WriteReceipt, WriteRequest, WriterActor,
+    new_id, new_row_id,
 };
 pub use fathomdb_query::{
     BindValue, ComparisonOp, CompileError, CompiledGroupedQuery, CompiledQuery, DrivingTable,
@@ -151,6 +158,26 @@ impl Engine {
             .update_operational_collection_filters(name, filter_fields_json)
     }
 
+    pub fn update_operational_collection_validation(
+        &self,
+        name: &str,
+        validation_json: &str,
+    ) -> Result<OperationalCollectionRecord, EngineError> {
+        self.admin()
+            .service()
+            .update_operational_collection_validation(name, validation_json)
+    }
+
+    pub fn update_operational_collection_secondary_indexes(
+        &self,
+        name: &str,
+        secondary_indexes_json: &str,
+    ) -> Result<OperationalCollectionRecord, EngineError> {
+        self.admin()
+            .service()
+            .update_operational_collection_secondary_indexes(name, secondary_indexes_json)
+    }
+
     pub fn trace_operational_collection(
         &self,
         collection_name: &str,
@@ -175,6 +202,50 @@ impl Engine {
         self.admin()
             .service()
             .rebuild_operational_current(collection_name)
+    }
+
+    pub fn validate_operational_collection_history(
+        &self,
+        collection_name: &str,
+    ) -> Result<OperationalHistoryValidationReport, EngineError> {
+        self.admin()
+            .service()
+            .validate_operational_collection_history(collection_name)
+    }
+
+    pub fn rebuild_operational_secondary_indexes(
+        &self,
+        collection_name: &str,
+    ) -> Result<OperationalSecondaryIndexRebuildReport, EngineError> {
+        self.admin()
+            .service()
+            .rebuild_operational_secondary_indexes(collection_name)
+    }
+
+    pub fn plan_operational_retention(
+        &self,
+        now_timestamp: i64,
+        collection_names: Option<&[String]>,
+        max_collections: Option<usize>,
+    ) -> Result<OperationalRetentionPlanReport, EngineError> {
+        self.admin()
+            .service()
+            .plan_operational_retention(now_timestamp, collection_names, max_collections)
+    }
+
+    pub fn run_operational_retention(
+        &self,
+        now_timestamp: i64,
+        collection_names: Option<&[String]>,
+        max_collections: Option<usize>,
+        dry_run: bool,
+    ) -> Result<OperationalRetentionRunReport, EngineError> {
+        self.admin().service().run_operational_retention(
+            now_timestamp,
+            collection_names,
+            max_collections,
+            dry_run,
+        )
     }
 
     pub fn disable_operational_collection(

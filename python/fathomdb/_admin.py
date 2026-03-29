@@ -12,11 +12,15 @@ from ._types import (
     LogicalRestoreReport,
     OperationalCollectionRecord,
     OperationalCompactionReport,
+    OperationalHistoryValidationReport,
     OperationalPurgeReport,
     OperationalReadReport,
     OperationalReadRequest,
     OperationalRegisterRequest,
     OperationalRepairReport,
+    OperationalRetentionPlanReport,
+    OperationalRetentionRunReport,
+    OperationalSecondaryIndexRebuildReport,
     OperationalTraceReport,
     ProjectionRepairReport,
     ProjectionTarget,
@@ -262,6 +266,52 @@ class AdminClient:
             )
         )
 
+    def update_operational_collection_validation(
+        self,
+        name: str,
+        validation_json: str,
+        *,
+        progress_callback=None,
+        feedback_config: FeedbackConfig | None = None,
+    ) -> OperationalCollectionRecord:
+        return OperationalCollectionRecord.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="admin.update_operational_collection_validation",
+                    metadata={"name": name},
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=lambda: self._core.update_operational_collection_validation(
+                        name, validation_json
+                    ),
+                )
+            )
+        )
+
+    def update_operational_collection_secondary_indexes(
+        self,
+        name: str,
+        secondary_indexes_json: str,
+        *,
+        progress_callback=None,
+        feedback_config: FeedbackConfig | None = None,
+    ) -> OperationalCollectionRecord:
+        return OperationalCollectionRecord.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="admin.update_operational_collection_secondary_indexes",
+                    metadata={"name": name},
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=lambda: self._core.update_operational_collection_secondary_indexes(
+                        name, secondary_indexes_json
+                    ),
+                )
+            )
+        )
+
     def trace_operational_collection(
         self,
         collection_name: str,
@@ -327,6 +377,99 @@ class AdminClient:
                     progress_callback=progress_callback,
                     feedback_config=feedback_config,
                     operation=lambda: self._core.rebuild_operational_current(collection_name),
+                )
+            )
+        )
+
+    def validate_operational_collection_history(
+        self,
+        collection_name: str,
+        *,
+        progress_callback=None,
+        feedback_config: FeedbackConfig | None = None,
+    ) -> OperationalHistoryValidationReport:
+        return OperationalHistoryValidationReport.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="admin.validate_operational_collection_history",
+                    metadata={"collection_name": collection_name},
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=lambda: self._core.validate_operational_collection_history(
+                        collection_name
+                    ),
+                )
+            )
+        )
+
+    def rebuild_operational_secondary_indexes(
+        self,
+        collection_name: str,
+        *,
+        progress_callback=None,
+        feedback_config: FeedbackConfig | None = None,
+    ) -> OperationalSecondaryIndexRebuildReport:
+        return OperationalSecondaryIndexRebuildReport.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="admin.rebuild_operational_secondary_indexes",
+                    metadata={"collection_name": collection_name},
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=lambda: self._core.rebuild_operational_secondary_indexes(
+                        collection_name
+                    ),
+                )
+            )
+        )
+
+    def plan_operational_retention(
+        self,
+        now_timestamp: int,
+        *,
+        collection_names: list[str] | None = None,
+        max_collections: int | None = None,
+        progress_callback=None,
+        feedback_config: FeedbackConfig | None = None,
+    ) -> OperationalRetentionPlanReport:
+        return OperationalRetentionPlanReport.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="admin.plan_operational_retention",
+                    metadata={"now_timestamp": str(now_timestamp)},
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=lambda: self._core.plan_operational_retention(
+                        now_timestamp, collection_names, max_collections
+                    ),
+                )
+            )
+        )
+
+    def run_operational_retention(
+        self,
+        now_timestamp: int,
+        *,
+        collection_names: list[str] | None = None,
+        max_collections: int | None = None,
+        dry_run: bool = False,
+        progress_callback=None,
+        feedback_config: FeedbackConfig | None = None,
+    ) -> OperationalRetentionRunReport:
+        return OperationalRetentionRunReport.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="admin.run_operational_retention",
+                    metadata={"now_timestamp": str(now_timestamp), "dry_run": str(dry_run).lower()},
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=lambda: self._core.run_operational_retention(
+                        now_timestamp, collection_names, max_collections, dry_run
+                    ),
                 )
             )
         )

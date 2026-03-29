@@ -18,7 +18,7 @@ import (
 func TestVersionCommand(t *testing.T) {
 	cmd := exec.Command("go", "run", "./cmd/fathom-integrity", "version")
 	cmd.Dir = filepath.Join("..", "..")
-	cmd.Env = os.Environ()
+	cmd.Env = commandEnv(t)
 
 	output, err := cmd.CombinedOutput()
 
@@ -67,7 +67,7 @@ func TestTraceCommandAgainstRealBridgeAndTempDB(t *testing.T) {
 		"--source-ref", "source-1",
 	)
 	cmd.Dir = repoRoot
-	cmd.Env = os.Environ()
+	cmd.Env = commandEnv(t)
 
 	output, err := cmd.CombinedOutput()
 
@@ -97,7 +97,7 @@ func TestExciseCommandRestoresPriorVersion(t *testing.T) {
 		"--source-ref", "source-2",
 	)
 	cmd.Dir = repoRoot
-	cmd.Env = os.Environ()
+	cmd.Env = commandEnv(t)
 
 	output, err := cmd.CombinedOutput()
 
@@ -131,7 +131,7 @@ func TestRebuildCommandRepairsMissingFTS(t *testing.T) {
 		"--target", "fts",
 	)
 	cmd.Dir = repoRoot
-	cmd.Env = os.Environ()
+	cmd.Env = commandEnv(t)
 
 	output, err := cmd.CombinedOutput()
 
@@ -163,7 +163,7 @@ func TestRebuildMissingCommandRepairsMissingFTS(t *testing.T) {
 		"--bridge", bridgePath,
 	)
 	cmd.Dir = repoRoot
-	cmd.Env = os.Environ()
+	cmd.Env = commandEnv(t)
 
 	output, err := cmd.CombinedOutput()
 
@@ -192,7 +192,7 @@ func TestRebuildCommandRejectsInvalidTarget(t *testing.T) {
 		"--target", "weird",
 	)
 	cmd.Dir = repoRoot
-	cmd.Env = os.Environ()
+	cmd.Env = commandEnv(t)
 
 	output, err := cmd.CombinedOutput()
 
@@ -216,7 +216,7 @@ func TestCheckLayer2DetectsBrokenStepFK(t *testing.T) {
 		"--bridge", bridgePath,
 	)
 	cmd.Dir = repoRoot
-	cmd.Env = os.Environ()
+	cmd.Env = commandEnv(t)
 
 	output, err := cmd.CombinedOutput()
 
@@ -243,7 +243,7 @@ func TestCheckLayer2DetectsDuplicateActive(t *testing.T) {
 		"--bridge", bridgePath,
 	)
 	cmd.Dir = repoRoot
-	cmd.Env = os.Environ()
+	cmd.Env = commandEnv(t)
 
 	output, err := cmd.CombinedOutput()
 
@@ -279,7 +279,7 @@ VALUES ('chunk-1', 'meeting-1', 'Meeting', 'budget discussion');
 		"--target", "all",
 	)
 	repairCmd.Dir = repoRoot
-	repairCmd.Env = os.Environ()
+	repairCmd.Env = commandEnv(t)
 
 	repairOutput, err := repairCmd.CombinedOutput()
 	require.NoError(t, err, string(repairOutput))
@@ -296,7 +296,7 @@ VALUES ('chunk-1', 'meeting-1', 'Meeting', 'budget discussion');
 		"--bridge", bridgePath,
 	)
 	checkCmd.Dir = repoRoot
-	checkCmd.Env = os.Environ()
+	checkCmd.Env = commandEnv(t)
 
 	checkOutput, err := checkCmd.CombinedOutput()
 	require.NoError(t, err, string(checkOutput))
@@ -316,7 +316,7 @@ func TestCheckCommandOnCleanDB(t *testing.T) {
 
 	cmd := exec.Command("go", "run", "./cmd/fathom-integrity", "check", "--db", dbPath)
 	cmd.Dir = repoRoot
-	cmd.Env = os.Environ()
+	cmd.Env = commandEnv(t)
 
 	output, err := cmd.CombinedOutput()
 
@@ -336,7 +336,7 @@ func TestCheckDetectsStaleFTS(t *testing.T) {
 
 	cmd := exec.Command("go", "run", "./cmd/fathom-integrity", "check", "--db", dbPath)
 	cmd.Dir = repoRoot
-	cmd.Env = os.Environ()
+	cmd.Env = commandEnv(t)
 
 	output, err := cmd.CombinedOutput()
 
@@ -358,7 +358,7 @@ func TestCheckDetectsNullSourceRef(t *testing.T) {
 
 	cmd := exec.Command("go", "run", "./cmd/fathom-integrity", "check", "--db", dbPath)
 	cmd.Dir = repoRoot
-	cmd.Env = os.Environ()
+	cmd.Env = commandEnv(t)
 
 	output, err := cmd.CombinedOutput()
 
@@ -380,7 +380,7 @@ func TestCheckDetectsOrphanedChunk(t *testing.T) {
 
 	cmd := exec.Command("go", "run", "./cmd/fathom-integrity", "check", "--db", dbPath)
 	cmd.Dir = repoRoot
-	cmd.Env = os.Environ()
+	cmd.Env = commandEnv(t)
 
 	output, err := cmd.CombinedOutput()
 
@@ -407,7 +407,7 @@ func TestExportCommand_RoundTrip(t *testing.T) {
 		"--bridge", bridgePath,
 	)
 	cmd.Dir = repoRoot
-	cmd.Env = os.Environ()
+	cmd.Env = commandEnv(t)
 	output, err := cmd.CombinedOutput()
 
 	require.NoError(t, err, string(output))
@@ -466,7 +466,7 @@ func bootstrapBridgeDB(t *testing.T, bridgePath, dbPath string) {
 	cmd := exec.Command(bridgePath)
 	cmd.Stdin = bytes.NewReader(requestBody)
 	cmd.Dir = filepath.Join("..", "..")
-	cmd.Env = os.Environ()
+	cmd.Env = commandEnv(t)
 
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, string(output))
@@ -499,7 +499,7 @@ func ensurePythonFathomdb(t *testing.T, repoRoot string) {
 
 	pythonFathomdbInstallOnce.Do(func() {
 		probe := exec.Command("python3", "-c", "import fathomdb")
-		probe.Env = append(os.Environ(), "PYTHONPATH="+filepath.Join(projectRoot, "python"))
+		probe.Env = append(commandEnv(t), "PYTHONPATH="+filepath.Join(projectRoot, "python"))
 		if err := probe.Run(); err == nil {
 			return
 		}
@@ -513,7 +513,7 @@ func ensurePythonFathomdb(t *testing.T, repoRoot string) {
 			filepath.Join(projectRoot, "python"),
 			"--no-build-isolation",
 		)
-		install.Env = os.Environ()
+		install.Env = append(commandEnv(t), "PYTHONPATH="+filepath.Join(projectRoot, "python"))
 		output, err := install.CombinedOutput()
 		if err != nil {
 			pythonFathomdbInstallErr = fmt.Errorf("install python fathomdb: %w: %s", err, output)
@@ -521,7 +521,7 @@ func ensurePythonFathomdb(t *testing.T, repoRoot string) {
 		}
 
 		probe = exec.Command("python3", "-c", "import fathomdb")
-		probe.Env = append(os.Environ(), "PYTHONPATH="+filepath.Join(projectRoot, "python"))
+		probe.Env = append(commandEnv(t), "PYTHONPATH="+filepath.Join(projectRoot, "python"))
 		output, err = probe.CombinedOutput()
 		if err != nil {
 			pythonFathomdbInstallErr = fmt.Errorf("import fathomdb after install: %w: %s", err, output)
@@ -558,7 +558,7 @@ print(json.dumps({
 `
 
 	cmd := exec.Command("python3", "-c", script, projectRoot, dbPath)
-	cmd.Env = append(os.Environ(), "PYTHONPATH="+filepath.Join(projectRoot, "python"))
+	cmd.Env = append(commandEnv(t), "PYTHONPATH="+filepath.Join(projectRoot, "python"))
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, string(output))
 

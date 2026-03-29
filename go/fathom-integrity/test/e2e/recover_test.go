@@ -21,7 +21,7 @@ func TestRecoverCommand_CleanDBRoundTrip(t *testing.T) {
 	bootstrapBridgeDB(t, bridgePath, dbPath)
 	testutil.SeedTraceScenario(t, dbPath)
 
-	cmd := buildCmd(repoRoot,
+	cmd := buildCmd(t, repoRoot,
 		"recover",
 		"--db", dbPath,
 		"--dest", destPath,
@@ -49,7 +49,7 @@ func TestRecoverCommand_RebuildsFTSAfterSanitizedReplay(t *testing.T) {
 	bootstrapBridgeDB(t, bridgePath, dbPath)
 	testutil.SeedFTSScenario(t, dbPath)
 
-	cmd := buildCmd(repoRoot,
+	cmd := buildCmd(t, repoRoot,
 		"recover",
 		"--db", dbPath,
 		"--dest", destPath,
@@ -73,7 +73,7 @@ func TestRecoverCommand_PreservesMultilineChunkTextWithSqlErrorPrefix(t *testing
 	bootstrapBridgeDB(t, bridgePath, dbPath)
 	testutil.SeedMultilineChunkScenario(t, dbPath)
 
-	cmd := buildCmd(repoRoot,
+	cmd := buildCmd(t, repoRoot,
 		"recover",
 		"--db", dbPath,
 		"--dest", destPath,
@@ -101,7 +101,7 @@ func TestRecoverCommand_PreservesAndRestoresVectorProfileMetadata(t *testing.T) 
 	bootstrapBridgeDB(t, bridgePath, dbPath)
 	queryDB(t, dbPath, "INSERT INTO vector_profiles (profile, table_name, dimension, enabled) VALUES ('default', 'vec_nodes_active', 4, 1)")
 
-	cmd := buildCmd(repoRoot,
+	cmd := buildCmd(t, repoRoot,
 		"recover",
 		"--db", dbPath,
 		"--dest", destPath,
@@ -128,7 +128,7 @@ func TestRecoverCommand_RegeneratesVectorEmbeddingsAndSupportsVectorSearch(t *te
 	bootstrapBridgeDB(t, bridgePath, dbPath)
 	testutil.SeedVectorRegenerationScenario(t, dbPath)
 
-	cmd := buildCmd(repoRoot,
+	cmd := buildCmd(t, repoRoot,
 		"recover",
 		"--db", dbPath,
 		"--dest", destPath,
@@ -168,7 +168,7 @@ preprocessing_policy = "trim"
 generator_command = [%q]
 `, generatorPath)), 0o644))
 
-	cmd = buildCmd(repoRoot,
+	cmd = buildCmd(t, repoRoot,
 		"regenerate-vectors",
 		"--db", destPath,
 		"--bridge", bridgePath,
@@ -196,7 +196,7 @@ func TestRecoverCommand_RegenerateVectorsRejectsConcurrentChunkChange(t *testing
 	bootstrapBridgeDB(t, bridgePath, dbPath)
 	testutil.SeedVectorRegenerationScenario(t, dbPath)
 
-	cmd := buildCmd(repoRoot,
+	cmd := buildCmd(t, repoRoot,
 		"recover",
 		"--db", dbPath,
 		"--dest", destPath,
@@ -228,7 +228,7 @@ preprocessing_policy = "trim"
 generator_command = [%q]
 `, generatorPath)), 0o644))
 
-	cmd = buildCmd(repoRoot,
+	cmd = buildCmd(t, repoRoot,
 		"regenerate-vectors",
 		"--db", destPath,
 		"--bridge", bridgePath,
@@ -260,7 +260,7 @@ INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at, 
 VALUES ('evt-1', 'node_retire', 'doc-1', 'forget-1', 200, '');
 `)
 
-	cmd := buildCmd(repoRoot,
+	cmd := buildCmd(t, repoRoot,
 		"recover",
 		"--db", dbPath,
 		"--dest", destPath,
@@ -288,7 +288,7 @@ func TestRecoverCommand_LargeTruncationRecoversSomething(t *testing.T) {
 	testutil.SeedTraceScenario(t, dbPath)
 	testutil.InjectLargeTruncation(t, dbPath)
 
-	cmd := buildCmd(repoRoot,
+	cmd := buildCmd(t, repoRoot,
 		"recover",
 		"--db", dbPath,
 		"--dest", destPath,
@@ -313,7 +313,7 @@ func TestRecoverCommand_TruncatedDBHandlesZeroRows(t *testing.T) {
 	testutil.SeedTraceScenario(t, dbPath)
 	testutil.InjectTruncation(t, dbPath)
 
-	cmd := buildCmd(repoRoot,
+	cmd := buildCmd(t, repoRoot,
 		"recover",
 		"--db", dbPath,
 		"--dest", destPath,
@@ -338,7 +338,7 @@ func TestRecoverCommand_HeaderCorruptedDBHandlesZeroRows(t *testing.T) {
 	testutil.SeedTraceScenario(t, dbPath)
 	testutil.InjectHeaderCorruption(t, dbPath)
 
-	cmd := buildCmd(repoRoot,
+	cmd := buildCmd(t, repoRoot,
 		"recover",
 		"--db", dbPath,
 		"--dest", destPath,
@@ -362,7 +362,7 @@ func TestRecoverCommand_MissingDestDirIsCreated(t *testing.T) {
 
 	bootstrapBridgeDB(t, bridgePath, dbPath)
 
-	cmd := buildCmd(repoRoot,
+	cmd := buildCmd(t, repoRoot,
 		"recover",
 		"--db", dbPath,
 		"--dest", destPath,
@@ -387,7 +387,7 @@ func TestRecoverCommand_DestAlreadyExistsIsRejected(t *testing.T) {
 	// Create dest file before running recover.
 	require.NoError(t, os.WriteFile(destPath, []byte("placeholder"), 0o644))
 
-	cmd := buildCmd(repoRoot,
+	cmd := buildCmd(t, repoRoot,
 		"recover",
 		"--db", dbPath,
 		"--dest", destPath,
@@ -405,7 +405,7 @@ func TestRecoverCommand_MissingDBIsRejected(t *testing.T) {
 	tempDir := t.TempDir()
 	destPath := filepath.Join(tempDir, "recovered.db")
 
-	cmd := buildCmd(repoRoot,
+	cmd := buildCmd(t, repoRoot,
 		"recover",
 		"--db", "/nonexistent-fathom-db.db",
 		"--dest", destPath,
@@ -418,10 +418,10 @@ func TestRecoverCommand_MissingDBIsRejected(t *testing.T) {
 }
 
 // buildCmd is a helper that constructs a `go run ./cmd/fathom-integrity` command.
-func buildCmd(repoRoot string, args ...string) *exec.Cmd {
+func buildCmd(t *testing.T, repoRoot string, args ...string) *exec.Cmd {
 	allArgs := append([]string{"run", "./cmd/fathom-integrity"}, args...)
 	cmd := exec.Command("go", allArgs...)
 	cmd.Dir = repoRoot
-	cmd.Env = os.Environ()
+	cmd.Env = commandEnv(t)
 	return cmd
 }

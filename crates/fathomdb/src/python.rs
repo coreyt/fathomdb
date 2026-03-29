@@ -224,6 +224,36 @@ impl EngineCore {
         encode_json(record)
     }
 
+    pub fn update_operational_collection_validation(
+        &self,
+        py: Python<'_>,
+        name: &str,
+        validation_json: &str,
+    ) -> PyResult<String> {
+        let record = py
+            .allow_threads(|| {
+                self.engine
+                    .update_operational_collection_validation(name, validation_json)
+            })
+            .map_err(map_engine_error)?;
+        encode_json(record)
+    }
+
+    pub fn update_operational_collection_secondary_indexes(
+        &self,
+        py: Python<'_>,
+        name: &str,
+        secondary_indexes_json: &str,
+    ) -> PyResult<String> {
+        let record = py
+            .allow_threads(|| {
+                self.engine
+                    .update_operational_collection_secondary_indexes(name, secondary_indexes_json)
+            })
+            .map_err(map_engine_error)?;
+        encode_json(record)
+    }
+
     #[pyo3(signature = (collection_name, record_key=None))]
     pub fn trace_operational_collection(
         &self,
@@ -263,6 +293,73 @@ impl EngineCore {
     ) -> PyResult<String> {
         let report = py
             .allow_threads(|| self.engine.rebuild_operational_current(collection_name))
+            .map_err(map_engine_error)?;
+        encode_json(report)
+    }
+
+    pub fn validate_operational_collection_history(
+        &self,
+        py: Python<'_>,
+        collection_name: &str,
+    ) -> PyResult<String> {
+        let report = py
+            .allow_threads(|| {
+                self.engine
+                    .validate_operational_collection_history(collection_name)
+            })
+            .map_err(map_engine_error)?;
+        encode_json(report)
+    }
+
+    pub fn rebuild_operational_secondary_indexes(
+        &self,
+        py: Python<'_>,
+        collection_name: &str,
+    ) -> PyResult<String> {
+        let report = py
+            .allow_threads(|| self.engine.rebuild_operational_secondary_indexes(collection_name))
+            .map_err(map_engine_error)?;
+        encode_json(report)
+    }
+
+    #[pyo3(signature = (now_timestamp, collection_names=None, max_collections=None))]
+    pub fn plan_operational_retention(
+        &self,
+        py: Python<'_>,
+        now_timestamp: i64,
+        collection_names: Option<Vec<String>>,
+        max_collections: Option<usize>,
+    ) -> PyResult<String> {
+        let report = py
+            .allow_threads(|| {
+                self.engine.plan_operational_retention(
+                    now_timestamp,
+                    collection_names.as_deref(),
+                    max_collections,
+                )
+            })
+            .map_err(map_engine_error)?;
+        encode_json(report)
+    }
+
+    #[pyo3(signature = (now_timestamp, collection_names=None, max_collections=None, dry_run=false))]
+    pub fn run_operational_retention(
+        &self,
+        py: Python<'_>,
+        now_timestamp: i64,
+        collection_names: Option<Vec<String>>,
+        max_collections: Option<usize>,
+        dry_run: bool,
+    ) -> PyResult<String> {
+        let report = py
+            .allow_threads(|| {
+                self.engine.run_operational_retention(
+                    now_timestamp,
+                    collection_names.as_deref(),
+                    max_collections,
+                    dry_run,
+                )
+            })
             .map_err(map_engine_error)?;
         encode_json(report)
     }
