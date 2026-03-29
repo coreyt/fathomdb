@@ -1,13 +1,106 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use fathomdb_query::{CompiledGroupedQuery, CompiledQuery, DrivingTable, ExpansionSlot, ShapeHash};
 use fathomdb_schema::SchemaManager;
 use rusqlite::{Connection, OptionalExtension, params_from_iter, types::Value};
 
 use crate::{EngineError, sqlite};
+
+/// Maximum number of cached shape-hash to SQL mappings before the cache is
+/// cleared entirely.  A clear-all strategy is simpler than partial eviction
+/// and the cost of re-compiling on a miss is negligible.
+const MAX_SHAPE_CACHE_SIZE: usize = 4096;
+
+/// Threshold above which grouped-read expansion queries fall back to per-root
+/// instead of batched `IN (...)` to stay within `SQLITE_MAX_VARIABLE_NUMBER`
+/// (default 999).
+const BATCH_THRESHOLD: usize = 200;
+
+/// A pool of read-only `SQLite` connections for concurrent read access.
+///
+/// Each connection is wrapped in its own [`Mutex`] so multiple readers can
+/// proceed in parallel when they happen to grab different slots.
+struct ReadPool {
+    connections: Vec<Mutex<Connection>>,
+}
+
+impl fmt::Debug for ReadPool {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ReadPool")
+            .field("size", &self.connections.len())
+            .finish()
+    }
+}
+
+impl ReadPool {
+    /// Open `pool_size` read-only connections to the database at `path`.
+    ///
+    /// Each connection has PRAGMAs initialized via
+    /// [`SchemaManager::initialize_connection`] and, when the `sqlite-vec`
+    /// feature is enabled and `vector_enabled` is true, the vec extension
+    /// auto-loaded.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] if any connection fails to open or initialize.
+    fn new(
+        db_path: &Path,
+        pool_size: usize,
+        schema_manager: &SchemaManager,
+        vector_enabled: bool,
+    ) -> Result<Self, EngineError> {
+        let mut connections = Vec::with_capacity(pool_size);
+        for _ in 0..pool_size {
+            let conn = if vector_enabled {
+                #[cfg(feature = "sqlite-vec")]
+                {
+                    sqlite::open_connection_with_vec(db_path)?
+                }
+                #[cfg(not(feature = "sqlite-vec"))]
+                {
+                    sqlite::open_connection(db_path)?
+                }
+            } else {
+                sqlite::open_connection(db_path)?
+            };
+            schema_manager
+                .initialize_connection(&conn)
+                .map_err(EngineError::Schema)?;
+            connections.push(Mutex::new(conn));
+        }
+        Ok(Self { connections })
+    }
+
+    /// Acquire a connection from the pool.
+    ///
+    /// Tries [`Mutex::try_lock`] on each slot first (fast non-blocking path).
+    /// If every slot is held, falls back to a blocking lock on the first slot.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError::Bridge`] if the underlying mutex is poisoned.
+    fn acquire(&self) -> Result<MutexGuard<'_, Connection>, EngineError> {
+        // Fast path: try each connection without blocking.
+        for conn in &self.connections {
+            if let Ok(guard) = conn.try_lock() {
+                return Ok(guard);
+            }
+        }
+        // Fallback: block on the first connection.
+        self.connections[0]
+            .lock()
+            .map_err(|_| EngineError::Bridge("connection mutex poisoned".to_owned()))
+    }
+
+    /// Return the number of connections in the pool.
+    #[cfg(test)]
+    fn size(&self) -> usize {
+        self.connections.len()
+    }
+}
 
 /// Execution plan returned by [`ExecutionCoordinator::explain_compiled_read`].
 ///
@@ -100,7 +193,7 @@ pub struct GroupedQueryRows {
 pub struct ExecutionCoordinator {
     database_path: PathBuf,
     schema_manager: Arc<SchemaManager>,
-    conn: Mutex<Connection>,
+    pool: ReadPool,
     shape_sql_map: Mutex<HashMap<ShapeHash, String>>,
     vector_enabled: bool,
 }
@@ -120,6 +213,7 @@ impl ExecutionCoordinator {
         path: impl AsRef<Path>,
         schema_manager: Arc<SchemaManager>,
         vector_dimension: Option<usize>,
+        pool_size: usize,
     ) -> Result<Self, EngineError> {
         let path = path.as_ref().to_path_buf();
         #[cfg(feature = "sqlite-vec")]
@@ -152,10 +246,15 @@ impl ExecutionCoordinator {
             }
         }
 
+        // Drop the bootstrap connection — pool connections are used for reads.
+        drop(conn);
+
+        let pool = ReadPool::new(&path, pool_size, &schema_manager, vector_enabled)?;
+
         Ok(Self {
             database_path: path,
             schema_manager,
-            conn: Mutex::new(conn),
+            pool,
             shape_sql_map: Mutex::new(HashMap::new()),
             vector_enabled,
         })
@@ -171,10 +270,8 @@ impl ExecutionCoordinator {
         self.vector_enabled
     }
 
-    fn lock_connection(&self) -> Result<std::sync::MutexGuard<'_, Connection>, EngineError> {
-        self.conn
-            .lock()
-            .map_err(|_| EngineError::Bridge("connection mutex poisoned".to_owned()))
+    fn lock_connection(&self) -> Result<MutexGuard<'_, Connection>, EngineError> {
+        self.pool.acquire()
     }
 
     /// # Errors
@@ -190,10 +287,16 @@ impl ExecutionCoordinator {
         // Chose (C): shape_sql_map is a pure cache — into_inner() is safe to recover.
         // conn wraps a SQLite connection whose state may be corrupt after a thread panic,
         // so we propagate EngineError there instead.
-        self.shape_sql_map
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(compiled.shape_hash, row_sql.clone());
+        {
+            let mut cache = self
+                .shape_sql_map
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            if cache.len() >= MAX_SHAPE_CACHE_SIZE {
+                cache.clear();
+            }
+            cache.insert(compiled.shape_hash, row_sql.clone());
+        }
 
         let bind_values = compiled
             .binds
@@ -256,21 +359,14 @@ impl ExecutionCoordinator {
         let roots = root_rows.nodes;
         let mut expansions = Vec::with_capacity(compiled.expansions.len());
         for expansion in &compiled.expansions {
-            let mut root_groups = Vec::with_capacity(roots.len());
-            for root in &roots {
-                let nodes = self.read_expansion_nodes(
-                    &root.logical_id,
-                    expansion,
-                    compiled.hints.hard_limit,
-                )?;
-                root_groups.push(ExpansionRootRows {
-                    root_logical_id: root.logical_id.clone(),
-                    nodes,
-                });
-            }
+            let slot_rows = if roots.len() <= BATCH_THRESHOLD && !roots.is_empty() {
+                self.read_expansion_nodes_batched(&roots, expansion, compiled.hints.hard_limit)?
+            } else {
+                self.read_expansion_nodes_per_root(&roots, expansion, compiled.hints.hard_limit)?
+            };
             expansions.push(ExpansionSlotRows {
                 slot: expansion.slot.clone(),
-                roots: root_groups,
+                roots: slot_rows,
             });
         }
 
@@ -279,6 +375,140 @@ impl ExecutionCoordinator {
             expansions,
             was_degraded: false,
         })
+    }
+
+    /// Per-root fallback: one query per root node.
+    fn read_expansion_nodes_per_root(
+        &self,
+        roots: &[NodeRow],
+        expansion: &ExpansionSlot,
+        hard_limit: usize,
+    ) -> Result<Vec<ExpansionRootRows>, EngineError> {
+        let mut root_groups = Vec::with_capacity(roots.len());
+        for root in roots {
+            let nodes = self.read_expansion_nodes(&root.logical_id, expansion, hard_limit)?;
+            root_groups.push(ExpansionRootRows {
+                root_logical_id: root.logical_id.clone(),
+                nodes,
+            });
+        }
+        Ok(root_groups)
+    }
+
+    /// Batched expansion: one recursive CTE query per expansion slot that
+    /// processes all root IDs at once. Uses `ROW_NUMBER() OVER (PARTITION BY
+    /// source_logical_id ...)` to enforce the per-root hard limit inside the
+    /// database rather than in Rust.
+    fn read_expansion_nodes_batched(
+        &self,
+        roots: &[NodeRow],
+        expansion: &ExpansionSlot,
+        hard_limit: usize,
+    ) -> Result<Vec<ExpansionRootRows>, EngineError> {
+        let root_ids: Vec<&str> = roots.iter().map(|r| r.logical_id.as_str()).collect();
+        let (join_condition, next_logical_id) = match expansion.direction {
+            fathomdb_query::TraverseDirection::Out => {
+                ("e.source_logical_id = t.logical_id", "e.target_logical_id")
+            }
+            fathomdb_query::TraverseDirection::In => {
+                ("e.target_logical_id = t.logical_id", "e.source_logical_id")
+            }
+        };
+
+        // Build a UNION ALL of SELECT literals for the root seed rows.
+        // SQLite does not support `VALUES ... AS alias(col)` in older versions,
+        // so we use `SELECT ?1 UNION ALL SELECT ?2 ...` instead.
+        let root_seed_union: String = (1..=root_ids.len())
+            .map(|i| format!("SELECT ?{i}"))
+            .collect::<Vec<_>>()
+            .join(" UNION ALL ");
+
+        // The `root_id` column tracks which root each traversal path
+        // originated from. The `ROW_NUMBER()` window in the outer query
+        // enforces the per-root hard limit.
+        let sql = format!(
+            "WITH RECURSIVE root_ids(rid) AS ({root_seed_union}),
+            traversed(root_id, logical_id, depth, visited, emitted) AS (
+                SELECT rid, rid, 0, printf(',%s,', rid), 0
+                FROM root_ids
+                UNION ALL
+                SELECT
+                    t.root_id,
+                    {next_logical_id},
+                    t.depth + 1,
+                    t.visited || {next_logical_id} || ',',
+                    t.emitted + 1
+                FROM traversed t
+                JOIN edges e ON {join_condition}
+                    AND e.kind = ?{edge_kind_param}
+                    AND e.superseded_at IS NULL
+                WHERE t.depth < {max_depth}
+                  AND t.emitted < {hard_limit}
+                  AND instr(t.visited, printf(',%s,', {next_logical_id})) = 0
+            ),
+            numbered AS (
+                SELECT t.root_id, n.row_id, n.logical_id, n.kind, n.properties
+                     , am.last_accessed_at
+                     , ROW_NUMBER() OVER (PARTITION BY t.root_id ORDER BY n.logical_id) AS rn
+                FROM traversed t
+                JOIN nodes n ON n.logical_id = t.logical_id
+                    AND n.superseded_at IS NULL
+                LEFT JOIN node_access_metadata am ON am.logical_id = n.logical_id
+                WHERE t.depth > 0
+            )
+            SELECT root_id, row_id, logical_id, kind, properties, last_accessed_at
+            FROM numbered
+            WHERE rn <= {hard_limit}
+            ORDER BY root_id, logical_id",
+            edge_kind_param = root_ids.len() + 1,
+            max_depth = expansion.max_depth,
+            hard_limit = hard_limit,
+        );
+
+        let conn_guard = self.lock_connection()?;
+        let mut statement = conn_guard
+            .prepare_cached(&sql)
+            .map_err(EngineError::Sqlite)?;
+
+        // Bind root IDs (1..=N) and edge kind (N+1).
+        let mut bind_values: Vec<Value> = root_ids
+            .iter()
+            .map(|id| Value::Text((*id).to_owned()))
+            .collect();
+        bind_values.push(Value::Text(expansion.label.clone()));
+
+        let rows = statement
+            .query_map(params_from_iter(bind_values.iter()), |row| {
+                Ok((
+                    row.get::<_, String>(0)?, // root_id
+                    NodeRow {
+                        row_id: row.get(1)?,
+                        logical_id: row.get(2)?,
+                        kind: row.get(3)?,
+                        properties: row.get(4)?,
+                        last_accessed_at: row.get(5)?,
+                    },
+                ))
+            })
+            .map_err(EngineError::Sqlite)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(EngineError::Sqlite)?;
+
+        // Partition results back into per-root groups, preserving root order.
+        let mut per_root: HashMap<String, Vec<NodeRow>> = HashMap::new();
+        for (root_id, node) in rows {
+            per_root.entry(root_id).or_default().push(node);
+        }
+
+        let root_groups = roots
+            .iter()
+            .map(|root| ExpansionRootRows {
+                root_logical_id: root.logical_id.clone(),
+                nodes: per_root.remove(&root.logical_id).unwrap_or_default(),
+            })
+            .collect();
+
+        Ok(root_groups)
     }
 
     fn read_expansion_nodes(
@@ -325,10 +555,7 @@ impl ExecutionCoordinator {
             hard_limit = hard_limit,
         );
 
-        let conn_guard = self
-            .conn
-            .lock()
-            .map_err(|_| EngineError::Bridge("connection mutex poisoned".to_owned()))?;
+        let conn_guard = self.lock_connection()?;
         let mut statement = conn_guard
             .prepare_cached(&sql)
             .map_err(EngineError::Sqlite)?;
@@ -651,7 +878,7 @@ mod tests {
     fn same_shape_queries_share_one_cache_entry() {
         let db = NamedTempFile::new().expect("temporary db");
         let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
                 .expect("coordinator");
 
         let compiled_a = QueryBuilder::nodes("Meeting")
@@ -683,7 +910,7 @@ mod tests {
     fn vector_read_degrades_gracefully_when_vec_table_absent() {
         let db = NamedTempFile::new().expect("temporary db");
         let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
                 .expect("coordinator");
 
         let compiled = QueryBuilder::nodes("Meeting")
@@ -707,7 +934,7 @@ mod tests {
     fn coordinator_caches_by_shape_hash() {
         let db = NamedTempFile::new().expect("temporary db");
         let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
                 .expect("coordinator");
 
         let compiled = QueryBuilder::nodes("Meeting")
@@ -727,7 +954,7 @@ mod tests {
     fn explain_returns_correct_sql() {
         let db = NamedTempFile::new().expect("temporary db");
         let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
                 .expect("coordinator");
 
         let compiled = QueryBuilder::nodes("Meeting")
@@ -746,7 +973,7 @@ mod tests {
 
         let db = NamedTempFile::new().expect("temporary db");
         let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
                 .expect("coordinator");
 
         let compiled = QueryBuilder::nodes("Meeting")
@@ -763,7 +990,7 @@ mod tests {
     fn explain_reports_cache_miss_then_hit() {
         let db = NamedTempFile::new().expect("temporary db");
         let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
                 .expect("coordinator");
 
         let compiled = QueryBuilder::nodes("Meeting")
@@ -799,7 +1026,7 @@ mod tests {
         // without touching the database.
         let db = NamedTempFile::new().expect("temporary db");
         let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
                 .expect("coordinator");
 
         let compiled = QueryBuilder::nodes("Meeting")
@@ -818,7 +1045,7 @@ mod tests {
     fn coordinator_executes_compiled_read() {
         let db = NamedTempFile::new().expect("temporary db");
         let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
                 .expect("coordinator");
         let conn = rusqlite::Connection::open(db.path()).expect("open db");
 
@@ -856,7 +1083,7 @@ mod tests {
         // Open without vector_dimension: regardless of feature flag, vector_enabled must be false
         // when no dimension is requested (the vector profile is never bootstrapped).
         let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
                 .expect("coordinator");
         assert!(
             !coordinator.vector_enabled(),
@@ -869,7 +1096,7 @@ mod tests {
     fn capability_gate_reports_true_when_feature_enabled() {
         let db = NamedTempFile::new().expect("temporary db");
         let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), Some(128))
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), Some(128), 1)
                 .expect("coordinator");
         assert!(
             coordinator.vector_enabled(),
@@ -916,7 +1143,7 @@ mod tests {
             .expect("write run");
 
         let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
                 .expect("coordinator");
         let row = coordinator
             .read_run("run-r1")
@@ -973,7 +1200,7 @@ mod tests {
             .expect("write step");
 
         let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
                 .expect("coordinator");
         let row = coordinator
             .read_step("step-s1")
@@ -1042,7 +1269,7 @@ mod tests {
             .expect("write action");
 
         let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
                 .expect("coordinator");
         let row = coordinator
             .read_action("action-a1")
@@ -1118,7 +1345,7 @@ mod tests {
             .expect("v2 write");
 
         let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
                 .expect("coordinator");
         let active = coordinator.read_active_runs().expect("read_active_runs");
 
@@ -1128,7 +1355,11 @@ mod tests {
 
     fn poison_connection(coordinator: &ExecutionCoordinator) {
         let result = catch_unwind(AssertUnwindSafe(|| {
-            let _guard = coordinator.conn.lock().expect("poison test lock");
+            let _guard = coordinator
+                .pool
+                .connections[0]
+                .lock()
+                .expect("poison test lock");
             panic!("poison coordinator connection mutex");
         }));
         assert!(
@@ -1154,7 +1385,7 @@ mod tests {
     fn poisoned_connection_returns_bridge_error_for_read_helpers() {
         let db = NamedTempFile::new().expect("temporary db");
         let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None)
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
                 .expect("coordinator");
 
         poison_connection(&coordinator);
@@ -1165,5 +1396,151 @@ mod tests {
         assert_poisoned_connection_error(&coordinator, |c| c.read_active_runs());
         assert_poisoned_connection_error(&coordinator, |c| c.raw_pragma("journal_mode"));
         assert_poisoned_connection_error(&coordinator, |c| c.query_provenance_events("source-1"));
+    }
+
+    // --- M-2: Bounded shape cache ---
+
+    #[test]
+    fn shape_cache_stays_bounded() {
+        use fathomdb_query::ShapeHash;
+
+        let db = NamedTempFile::new().expect("temporary db");
+        let coordinator =
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
+                .expect("coordinator");
+
+        // Directly populate the cache with MAX_SHAPE_CACHE_SIZE + 1 entries.
+        {
+            let mut cache = coordinator
+                .shape_sql_map
+                .lock()
+                .expect("lock shape cache");
+            for i in 0..=super::MAX_SHAPE_CACHE_SIZE {
+                cache.insert(ShapeHash(i as u64), format!("SELECT {i}"));
+            }
+        }
+        // The cache is now over the limit but hasn't been pruned yet (pruning
+        // happens on the insert path in execute_compiled_read).
+
+        // Execute a compiled read to trigger the bounded-cache check.
+        let compiled = QueryBuilder::nodes("Meeting")
+            .text_search("budget", 5)
+            .limit(10)
+            .compile()
+            .expect("compiled query");
+
+        coordinator
+            .execute_compiled_read(&compiled)
+            .expect("execute read");
+
+        assert!(
+            coordinator.shape_sql_count() <= super::MAX_SHAPE_CACHE_SIZE,
+            "shape cache must stay bounded: got {} entries, max {}",
+            coordinator.shape_sql_count(),
+            super::MAX_SHAPE_CACHE_SIZE
+        );
+    }
+
+    // --- M-1: Read pool size ---
+
+    #[test]
+    fn read_pool_size_configurable() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let coordinator =
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 2)
+                .expect("coordinator with pool_size=2");
+
+        assert_eq!(coordinator.pool.size(), 2);
+
+        // Basic read should succeed through the pool.
+        let compiled = QueryBuilder::nodes("Meeting")
+            .text_search("budget", 5)
+            .limit(10)
+            .compile()
+            .expect("compiled query");
+
+        let result = coordinator.execute_compiled_read(&compiled);
+        assert!(result.is_ok(), "read through pool must succeed");
+    }
+
+    // --- M-4: Grouped read batching ---
+
+    #[test]
+    fn grouped_read_results_match_baseline() {
+        use fathomdb_query::TraverseDirection;
+
+        let db = NamedTempFile::new().expect("temporary db");
+
+        // Bootstrap the database via coordinator (creates schema).
+        let coordinator =
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
+                .expect("coordinator");
+
+        // Seed data: 10 root nodes (Meeting-0..9) with 2 outbound edges each
+        // to expansion nodes (Task-0-a, Task-0-b, etc.).
+        {
+            let conn = rusqlite::Connection::open(db.path()).expect("open db for seeding");
+            for i in 0..10 {
+                conn.execute_batch(&format!(
+                    r#"
+                    INSERT INTO nodes (row_id, logical_id, kind, properties, created_at)
+                    VALUES ('row-meeting-{i}', 'meeting-{i}', 'Meeting', '{{"n":{i}}}', unixepoch());
+                    INSERT INTO chunks (id, node_logical_id, text_content, created_at)
+                    VALUES ('chunk-m-{i}', 'meeting-{i}', 'meeting search text {i}', unixepoch());
+                    INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content)
+                    VALUES ('chunk-m-{i}', 'meeting-{i}', 'Meeting', 'meeting search text {i}');
+
+                    INSERT INTO nodes (row_id, logical_id, kind, properties, created_at)
+                    VALUES ('row-task-{i}-a', 'task-{i}-a', 'Task', '{{"parent":{i},"sub":"a"}}', unixepoch());
+                    INSERT INTO nodes (row_id, logical_id, kind, properties, created_at)
+                    VALUES ('row-task-{i}-b', 'task-{i}-b', 'Task', '{{"parent":{i},"sub":"b"}}', unixepoch());
+
+                    INSERT INTO edges (row_id, logical_id, source_logical_id, target_logical_id, kind, properties, created_at)
+                    VALUES ('edge-{i}-a', 'edge-lid-{i}-a', 'meeting-{i}', 'task-{i}-a', 'HAS_TASK', '{{}}', unixepoch());
+                    INSERT INTO edges (row_id, logical_id, source_logical_id, target_logical_id, kind, properties, created_at)
+                    VALUES ('edge-{i}-b', 'edge-lid-{i}-b', 'meeting-{i}', 'task-{i}-b', 'HAS_TASK', '{{}}', unixepoch());
+                    "#,
+                )).expect("seed data");
+            }
+        }
+
+        let compiled = QueryBuilder::nodes("Meeting")
+            .text_search("meeting", 10)
+            .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1)
+            .limit(10)
+            .compile_grouped()
+            .expect("compiled grouped query");
+
+        let result = coordinator
+            .execute_compiled_grouped_read(&compiled)
+            .expect("grouped read");
+
+        assert!(
+            !result.was_degraded,
+            "grouped read should not be degraded"
+        );
+        assert_eq!(result.roots.len(), 10, "expected 10 root nodes");
+        assert_eq!(
+            result.expansions.len(),
+            1,
+            "expected 1 expansion slot"
+        );
+        assert_eq!(result.expansions[0].slot, "tasks");
+        assert_eq!(
+            result.expansions[0].roots.len(),
+            10,
+            "each expansion slot should have entries for all 10 roots"
+        );
+
+        // Each root should have exactly 2 expansion nodes (task-X-a, task-X-b).
+        for root_expansion in &result.expansions[0].roots {
+            assert_eq!(
+                root_expansion.nodes.len(),
+                2,
+                "root {} should have 2 expansion nodes, got {}",
+                root_expansion.root_logical_id,
+                root_expansion.nodes.len()
+            );
+        }
     }
 }

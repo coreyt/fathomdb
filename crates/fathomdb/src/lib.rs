@@ -51,6 +51,9 @@ pub struct EngineOptions {
     /// bootstraps a `vec_nodes_active` vector table with the given dimension.
     /// Requires the `sqlite-vec` crate feature; ignored if the feature is absent.
     pub vector_dimension: Option<usize>,
+    /// Number of read-only SQLite connections in the reader pool.
+    /// Defaults to 4 when `None`.
+    pub read_pool_size: Option<usize>,
 }
 
 impl EngineOptions {
@@ -59,6 +62,7 @@ impl EngineOptions {
             database_path: path.as_ref().to_path_buf(),
             provenance_mode: ProvenanceMode::Warn,
             vector_dimension: None,
+            read_pool_size: None,
         }
     }
 }
@@ -81,6 +85,7 @@ impl Engine {
                 options.database_path,
                 options.provenance_mode,
                 options.vector_dimension,
+                options.read_pool_size.unwrap_or(4),
             )?,
         })
     }
