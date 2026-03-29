@@ -10,8 +10,9 @@ mod writer;
 
 pub use admin::{
     AdminHandle, AdminService, IntegrityReport, LogicalPurgeReport, LogicalRestoreReport,
-    SafeExportManifest, SafeExportOptions, SemanticReport, TraceReport, VectorGeneratorPolicy,
-    VectorRegenerationConfig, VectorRegenerationReport, load_vector_regeneration_config,
+    ProvenancePurgeOptions, ProvenancePurgeReport, SafeExportManifest, SafeExportOptions,
+    SemanticReport, TraceReport, VectorGeneratorPolicy, VectorRegenerationConfig,
+    VectorRegenerationReport, load_vector_regeneration_config,
 };
 pub use coordinator::{
     ActionRow, ExecutionCoordinator, ExpansionRootRows, ExpansionSlotRows, GroupedQueryRows,

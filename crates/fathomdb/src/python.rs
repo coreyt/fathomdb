@@ -400,6 +400,25 @@ impl EngineCore {
             .map_err(map_engine_error)?;
         encode_json(report)
     }
+
+    pub fn purge_provenance_events(
+        &self,
+        py: Python<'_>,
+        before_timestamp: i64,
+        options_json: &str,
+    ) -> PyResult<String> {
+        let options: crate::ProvenancePurgeOptions =
+            serde_json::from_str(options_json).map_err(|e| {
+                PyValueError::new_err(format!("invalid options JSON: {e}"))
+            })?;
+        let report = py
+            .allow_threads(|| {
+                self.engine
+                    .purge_provenance_events(before_timestamp, &options)
+            })
+            .map_err(map_engine_error)?;
+        encode_json(report)
+    }
 }
 
 const MAX_AST_JSON_BYTES: usize = 16 * 1024 * 1024; // 16 MB

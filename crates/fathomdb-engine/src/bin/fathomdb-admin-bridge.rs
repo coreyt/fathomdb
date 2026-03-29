@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use fathomdb_engine::{
     AdminService, EngineError, OperationalReadRequest, OperationalRegisterRequest,
-    ProjectionTarget, SafeExportOptions, VectorGeneratorPolicy, load_vector_regeneration_config,
+    ProjectionTarget, ProvenancePurgeOptions, SafeExportOptions, VectorGeneratorPolicy,
+    load_vector_regeneration_config,
 };
 use fathomdb_schema::{SchemaError, SchemaManager};
 use serde::{Deserialize, Serialize};
@@ -46,6 +47,8 @@ struct BridgeRequest {
     before_timestamp: Option<i64>,
     #[serde(default)]
     dry_run: bool,
+    #[serde(default)]
+    preserve_event_types: Vec<String>,
     vector_generator_policy: Option<VectorGeneratorPolicy>,
     operational_collection: Option<OperationalRegisterRequest>,
     operational_read: Option<OperationalReadRequest>,
@@ -80,6 +83,7 @@ enum BridgeCommand {
     ValidateOperationalCollectionHistory,
     PlanOperationalRetention,
     RunOperationalRetention,
+    PurgeProvenanceEvents,
 }
 
 #[derive(Debug, Serialize)]
@@ -611,6 +615,25 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                 "now_timestamp is required".to_owned(),
             ),
         },
+        BridgeCommand::PurgeProvenanceEvents => match request.before_timestamp {
+            Some(before_timestamp) => {
+                let options = ProvenancePurgeOptions {
+                    dry_run: request.dry_run,
+                    preserve_event_types: request.preserve_event_types,
+                };
+                match service.purge_provenance_events(before_timestamp, &options) {
+                    Ok(report) => success_response(
+                        "provenance events purged".to_owned(),
+                        serde_json::to_value(report).unwrap_or_else(|_| json!({})),
+                    ),
+                    Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                }
+            }
+            None => error_response_with_message(
+                BridgeErrorCode::BadRequest,
+                "before_timestamp is required".to_owned(),
+            ),
+        },
     }
 }
 
@@ -661,6 +684,7 @@ fn parse_command(command: &str) -> Result<BridgeCommand, BridgeErrorCode> {
         }
         "plan_operational_retention" => Ok(BridgeCommand::PlanOperationalRetention),
         "run_operational_retention" => Ok(BridgeCommand::RunOperationalRetention),
+        "purge_provenance_events" => Ok(BridgeCommand::PurgeProvenanceEvents),
         _ => Err(BridgeErrorCode::UnsupportedCommand),
     }
 }

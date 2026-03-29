@@ -113,6 +113,20 @@ pub struct LogicalPurgeReport {
     pub notes: Vec<String>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ProvenancePurgeOptions {
+    pub dry_run: bool,
+    #[serde(default)]
+    pub preserve_event_types: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ProvenancePurgeReport {
+    pub events_deleted: u64,
+    pub events_preserved: u64,
+    pub oldest_remaining: Option<i64>,
+}
+
 #[derive(Debug)]
 pub struct AdminService {
     database_path: PathBuf,
@@ -1843,6 +1857,111 @@ impl AdminService {
         })
     }
 
+    /// Purge provenance events older than `before_timestamp`.
+    ///
+    /// By default, `excise` and `purge_logical_id` event types are preserved so that
+    /// data-deletion audit trails survive. Pass an explicit
+    /// `preserve_event_types` list to override this default.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the database connection fails, the transaction
+    /// cannot be started, or any SQL statement fails.
+    pub fn purge_provenance_events(
+        &self,
+        before_timestamp: i64,
+        options: &ProvenancePurgeOptions,
+    ) -> Result<ProvenancePurgeReport, EngineError> {
+        let mut conn = self.connect()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+
+        let preserved_types: Vec<&str> = if options.preserve_event_types.is_empty() {
+            vec!["excise", "purge_logical_id"]
+        } else {
+            options
+                .preserve_event_types
+                .iter()
+                .map(String::as_str)
+                .collect()
+        };
+
+        // Build the NOT IN clause dynamically based on preserved types.
+        let placeholders: String = (0..preserved_types.len())
+            .map(|i| format!("?{}", i + 2))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let count_query = format!(
+            "SELECT count(*) FROM provenance_events \
+             WHERE created_at < ?1 AND event_type NOT IN ({placeholders})"
+        );
+        let delete_query = format!(
+            "DELETE FROM provenance_events WHERE rowid IN (\
+             SELECT rowid FROM provenance_events \
+             WHERE created_at < ?1 AND event_type NOT IN ({placeholders}) \
+             LIMIT 10000)"
+        );
+
+        let bind_params = |stmt: &mut rusqlite::Statement<'_>| -> Result<(), rusqlite::Error> {
+            stmt.raw_bind_parameter(1, before_timestamp)?;
+            for (i, event_type) in preserved_types.iter().enumerate() {
+                stmt.raw_bind_parameter(i + 2, *event_type)?;
+            }
+            Ok(())
+        };
+
+        let events_deleted = if options.dry_run {
+            let mut stmt = tx.prepare(&count_query)?;
+            bind_params(&mut stmt)?;
+            stmt.raw_query()
+                .next()?
+                .map_or(0, |row| row.get::<_, u64>(0).unwrap_or(0))
+        } else {
+            let mut total_deleted: u64 = 0;
+            loop {
+                let mut stmt = tx.prepare(&delete_query)?;
+                bind_params(&mut stmt)?;
+                let deleted = stmt.raw_execute()?;
+                if deleted == 0 {
+                    break;
+                }
+                total_deleted += deleted as u64;
+            }
+            total_deleted
+        };
+
+        let total_after: u64 = tx.query_row(
+            "SELECT count(*) FROM provenance_events",
+            [],
+            |row| row.get(0),
+        )?;
+
+        let oldest_remaining: Option<i64> = tx
+            .query_row(
+                "SELECT MIN(created_at) FROM provenance_events",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?
+            .flatten();
+
+        if !options.dry_run {
+            tx.commit()?;
+        }
+
+        // In dry_run mode nothing was deleted, so total_after includes the
+        // would-be-deleted rows; subtract to get the preserved count.
+        let events_preserved = if options.dry_run {
+            total_after - events_deleted
+        } else {
+            total_after
+        };
+
+        Ok(ProvenancePurgeReport {
+            events_deleted,
+            events_preserved,
+            oldest_remaining,
+        })
+    }
+
     /// # Errors
     /// Returns [`EngineError`] if the database connection fails, the transaction cannot be
     /// started, or any SQL statement fails.
@@ -3517,10 +3636,8 @@ fn match_append_only_secondary_index_read<'a>(
                 let supported = matches!(
                     (&filter.condition, value_type),
                     (
-                        OperationalReadCondition::ExactString(_),
-                        crate::operational::OperationalSecondaryIndexValueType::String
-                    ) | (
-                        OperationalReadCondition::Prefix(_),
+                        OperationalReadCondition::ExactString(_)
+                            | OperationalReadCondition::Prefix(_),
                         crate::operational::OperationalSecondaryIndexValueType::String
                     ) | (
                         OperationalReadCondition::ExactInteger(_),
@@ -7965,5 +8082,164 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
             parsed.get("page_count").is_some(),
             "manifest must contain page_count"
         );
+    }
+
+    #[test]
+    fn provenance_purge_dry_run_reports_counts() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at) \
+                 VALUES ('p1', 'node_insert', 'lg1', 'src-1', 100)",
+                [],
+            )
+            .expect("insert p1");
+            conn.execute(
+                "INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at) \
+                 VALUES ('p2', 'node_insert', 'lg2', 'src-1', 200)",
+                [],
+            )
+            .expect("insert p2");
+            conn.execute(
+                "INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at) \
+                 VALUES ('p3', 'excise', 'lg3', 'src-1', 300)",
+                [],
+            )
+            .expect("insert p3");
+        }
+
+        let options = super::ProvenancePurgeOptions {
+            dry_run: true,
+            preserve_event_types: Vec::new(),
+        };
+        let report = service
+            .purge_provenance_events(250, &options)
+            .expect("dry run purge");
+
+        assert_eq!(report.events_deleted, 2);
+        assert_eq!(report.events_preserved, 1);
+        assert!(report.oldest_remaining.is_some());
+
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let total: i64 = conn
+            .query_row("SELECT count(*) FROM provenance_events", [], |row| {
+                row.get(0)
+            })
+            .expect("count");
+        assert_eq!(total, 3, "dry_run must not delete any events");
+    }
+
+    #[test]
+    fn provenance_purge_deletes_old_events() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at) \
+                 VALUES ('p1', 'node_insert', 'lg1', 'src-1', 100)",
+                [],
+            )
+            .expect("insert p1");
+            conn.execute(
+                "INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at) \
+                 VALUES ('p2', 'node_insert', 'lg2', 'src-1', 200)",
+                [],
+            )
+            .expect("insert p2");
+        }
+
+        let options = super::ProvenancePurgeOptions {
+            dry_run: false,
+            preserve_event_types: Vec::new(),
+        };
+        let report = service
+            .purge_provenance_events(150, &options)
+            .expect("purge");
+
+        assert_eq!(report.events_deleted, 1);
+        assert_eq!(report.events_preserved, 1);
+        assert_eq!(report.oldest_remaining, Some(200));
+
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let remaining: i64 = conn
+            .query_row("SELECT count(*) FROM provenance_events", [], |row| {
+                row.get(0)
+            })
+            .expect("count");
+        assert_eq!(remaining, 1);
+    }
+
+    #[test]
+    fn provenance_purge_preserves_specified_types() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at) \
+                 VALUES ('p1', 'excise', 'lg1', 'src-1', 100)",
+                [],
+            )
+            .expect("insert p1");
+            conn.execute(
+                "INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at) \
+                 VALUES ('p2', 'node_insert', 'lg2', 'src-1', 100)",
+                [],
+            )
+            .expect("insert p2");
+            conn.execute(
+                "INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at) \
+                 VALUES ('p3', 'node_insert', 'lg3', 'src-1', 100)",
+                [],
+            )
+            .expect("insert p3");
+        }
+
+        let options = super::ProvenancePurgeOptions {
+            dry_run: false,
+            preserve_event_types: Vec::new(),
+        };
+        let report = service
+            .purge_provenance_events(500, &options)
+            .expect("purge");
+
+        assert_eq!(report.events_deleted, 2);
+        assert_eq!(report.events_preserved, 1);
+
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let remaining_type: String = conn
+            .query_row(
+                "SELECT event_type FROM provenance_events",
+                [],
+                |row| row.get(0),
+            )
+            .expect("remaining event type");
+        assert_eq!(remaining_type, "excise");
+    }
+
+    #[test]
+    fn provenance_purge_noop_with_zero_timestamp() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at) \
+                 VALUES ('p1', 'node_insert', 'lg1', 'src-1', 100)",
+                [],
+            )
+            .expect("insert p1");
+        }
+
+        let options = super::ProvenancePurgeOptions {
+            dry_run: false,
+            preserve_event_types: Vec::new(),
+        };
+        let report = service
+            .purge_provenance_events(0, &options)
+            .expect("purge");
+
+        assert_eq!(report.events_deleted, 0);
+        assert_eq!(report.events_preserved, 1);
+        assert_eq!(report.oldest_remaining, Some(100));
     }
 }
