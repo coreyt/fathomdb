@@ -6,33 +6,50 @@ use crate::{
     TraverseDirection,
 };
 
+/// A typed bind value for a compiled SQL query parameter.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BindValue {
+    /// A UTF-8 text parameter.
     Text(String),
+    /// A 64-bit signed integer parameter.
     Integer(i64),
+    /// A boolean parameter.
     Bool(bool),
 }
 
+/// A deterministic hash of a query's structural shape, independent of bind values.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ShapeHash(pub u64);
 
+/// A fully compiled query ready for execution against `SQLite`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CompiledQuery {
+    /// The generated SQL text.
     pub sql: String,
+    /// Positional bind parameters for the SQL.
     pub binds: Vec<BindValue>,
+    /// Structural shape hash for caching.
     pub shape_hash: ShapeHash,
+    /// The driving table chosen by the query planner.
     pub driving_table: DrivingTable,
+    /// Execution hints derived from the query shape.
     pub hints: crate::ExecutionHints,
 }
 
+/// A compiled grouped query containing a root query and expansion slots.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CompiledGroupedQuery {
+    /// The root flat query.
     pub root: CompiledQuery,
+    /// Expansion slots to evaluate per root result.
     pub expansions: Vec<ExpansionSlot>,
+    /// Structural shape hash covering the root query and all expansion slots.
     pub shape_hash: ShapeHash,
+    /// Execution hints derived from the grouped query shape.
     pub hints: crate::ExecutionHints,
 }
 
+/// Errors that can occur during query compilation.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum CompileError {
     #[error("multiple traversal steps are not supported in v1")]

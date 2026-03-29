@@ -3,12 +3,18 @@ use crate::{
     QueryAst, QueryStep, ScalarValue, TraverseDirection, compile_grouped_query, compile_query,
 };
 
+/// Fluent builder for constructing a [`QueryAst`].
+///
+/// Start with [`QueryBuilder::nodes`] and chain filtering, traversal, and
+/// expansion steps before calling [`compile`](QueryBuilder::compile) or
+/// [`compile_grouped`](QueryBuilder::compile_grouped).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct QueryBuilder {
     ast: QueryAst,
 }
 
 impl QueryBuilder {
+    /// Create a builder that queries nodes of the given kind.
     #[must_use]
     pub fn nodes(kind: impl Into<String>) -> Self {
         Self {
@@ -21,6 +27,7 @@ impl QueryBuilder {
         }
     }
 
+    /// Add a vector similarity search step.
     #[must_use]
     pub fn vector_search(mut self, query: impl Into<String>, limit: usize) -> Self {
         self.ast.steps.push(QueryStep::VectorSearch {
@@ -30,6 +37,7 @@ impl QueryBuilder {
         self
     }
 
+    /// Add a full-text search step.
     #[must_use]
     pub fn text_search(mut self, query: impl Into<String>, limit: usize) -> Self {
         self.ast.steps.push(QueryStep::TextSearch {
@@ -39,6 +47,7 @@ impl QueryBuilder {
         self
     }
 
+    /// Add a graph traversal step following edges of the given label.
     #[must_use]
     pub fn traverse(
         mut self,
@@ -54,6 +63,7 @@ impl QueryBuilder {
         self
     }
 
+    /// Filter results to a single logical ID.
     #[must_use]
     pub fn filter_logical_id_eq(mut self, logical_id: impl Into<String>) -> Self {
         self.ast
@@ -62,6 +72,7 @@ impl QueryBuilder {
         self
     }
 
+    /// Filter results to nodes matching the given kind.
     #[must_use]
     pub fn filter_kind_eq(mut self, kind: impl Into<String>) -> Self {
         self.ast
@@ -70,6 +81,7 @@ impl QueryBuilder {
         self
     }
 
+    /// Filter results to nodes matching the given `source_ref`.
     #[must_use]
     pub fn filter_source_ref_eq(mut self, source_ref: impl Into<String>) -> Self {
         self.ast
@@ -78,6 +90,7 @@ impl QueryBuilder {
         self
     }
 
+    /// Filter results where a JSON property at `path` equals the given text value.
     #[must_use]
     pub fn filter_json_text_eq(
         mut self,
@@ -93,6 +106,7 @@ impl QueryBuilder {
         self
     }
 
+    /// Filter results where a JSON property at `path` equals the given boolean value.
     #[must_use]
     pub fn filter_json_bool_eq(mut self, path: impl Into<String>, value: bool) -> Self {
         self.ast
@@ -104,6 +118,7 @@ impl QueryBuilder {
         self
     }
 
+    /// Filter results where a JSON integer at `path` is greater than `value`.
     #[must_use]
     pub fn filter_json_integer_gt(mut self, path: impl Into<String>, value: i64) -> Self {
         self.ast
@@ -116,6 +131,7 @@ impl QueryBuilder {
         self
     }
 
+    /// Filter results where a JSON integer at `path` is greater than or equal to `value`.
     #[must_use]
     pub fn filter_json_integer_gte(mut self, path: impl Into<String>, value: i64) -> Self {
         self.ast
@@ -128,6 +144,7 @@ impl QueryBuilder {
         self
     }
 
+    /// Filter results where a JSON integer at `path` is less than `value`.
     #[must_use]
     pub fn filter_json_integer_lt(mut self, path: impl Into<String>, value: i64) -> Self {
         self.ast
@@ -140,6 +157,7 @@ impl QueryBuilder {
         self
     }
 
+    /// Filter results where a JSON integer at `path` is less than or equal to `value`.
     #[must_use]
     pub fn filter_json_integer_lte(mut self, path: impl Into<String>, value: i64) -> Self {
         self.ast
@@ -152,26 +170,31 @@ impl QueryBuilder {
         self
     }
 
+    /// Filter results where a JSON timestamp at `path` is after `value` (epoch seconds).
     #[must_use]
     pub fn filter_json_timestamp_gt(self, path: impl Into<String>, value: i64) -> Self {
         self.filter_json_integer_gt(path, value)
     }
 
+    /// Filter results where a JSON timestamp at `path` is at or after `value`.
     #[must_use]
     pub fn filter_json_timestamp_gte(self, path: impl Into<String>, value: i64) -> Self {
         self.filter_json_integer_gte(path, value)
     }
 
+    /// Filter results where a JSON timestamp at `path` is before `value`.
     #[must_use]
     pub fn filter_json_timestamp_lt(self, path: impl Into<String>, value: i64) -> Self {
         self.filter_json_integer_lt(path, value)
     }
 
+    /// Filter results where a JSON timestamp at `path` is at or before `value`.
     #[must_use]
     pub fn filter_json_timestamp_lte(self, path: impl Into<String>, value: i64) -> Self {
         self.filter_json_integer_lte(path, value)
     }
 
+    /// Add an expansion slot that traverses edges of the given label for each root result.
     #[must_use]
     pub fn expand(
         mut self,
@@ -189,17 +212,20 @@ impl QueryBuilder {
         self
     }
 
+    /// Set the maximum number of result rows.
     #[must_use]
     pub fn limit(mut self, limit: usize) -> Self {
         self.ast.final_limit = Some(limit);
         self
     }
 
+    /// Borrow the underlying [`QueryAst`].
     #[must_use]
     pub fn ast(&self) -> &QueryAst {
         &self.ast
     }
 
+    /// Consume the builder and return the underlying [`QueryAst`].
     #[must_use]
     pub fn into_ast(self) -> QueryAst {
         self.ast

@@ -115,38 +115,61 @@ pub struct QueryPlan {
     pub cache_hit: bool,
 }
 
+/// A single node row returned from a query.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NodeRow {
+    /// Physical row ID.
     pub row_id: String,
+    /// Logical ID of the node.
     pub logical_id: String,
+    /// Node kind.
     pub kind: String,
+    /// JSON-encoded node properties.
     pub properties: String,
+    /// Unix timestamp of last access, if tracked.
     pub last_accessed_at: Option<i64>,
 }
 
+/// A single run row returned from a query.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RunRow {
+    /// Unique run ID.
     pub id: String,
+    /// Run kind.
     pub kind: String,
+    /// Current status.
     pub status: String,
+    /// JSON-encoded run properties.
     pub properties: String,
 }
 
+/// A single step row returned from a query.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StepRow {
+    /// Unique step ID.
     pub id: String,
+    /// ID of the parent run.
     pub run_id: String,
+    /// Step kind.
     pub kind: String,
+    /// Current status.
     pub status: String,
+    /// JSON-encoded step properties.
     pub properties: String,
 }
 
+/// A single action row returned from a query.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ActionRow {
+    /// Unique action ID.
     pub id: String,
+    /// ID of the parent step.
     pub step_id: String,
+    /// Action kind.
     pub kind: String,
+    /// Current status.
     pub status: String,
+    /// JSON-encoded action properties.
     pub properties: String,
 }
 
@@ -161,36 +184,52 @@ pub struct ProvenanceEvent {
     pub created_at: i64,
 }
 
+/// Result set from executing a flat (non-grouped) compiled query.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct QueryRows {
+    /// Matched node rows.
     pub nodes: Vec<NodeRow>,
+    /// Runs associated with the matched nodes.
     pub runs: Vec<RunRow>,
+    /// Steps associated with the matched runs.
     pub steps: Vec<StepRow>,
+    /// Actions associated with the matched steps.
     pub actions: Vec<ActionRow>,
     /// `true` when a capability miss (e.g. missing sqlite-vec) caused the query
     /// to degrade to an empty result instead of propagating an error.
     pub was_degraded: bool,
 }
 
+/// Expansion results for a single root node within a grouped query.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExpansionRootRows {
+    /// Logical ID of the root node that seeded this expansion.
     pub root_logical_id: String,
+    /// Nodes reached by traversing from the root.
     pub nodes: Vec<NodeRow>,
 }
 
+/// All expansion results for a single named slot across all roots.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExpansionSlotRows {
+    /// Name of the expansion slot.
     pub slot: String,
+    /// Per-root expansion results.
     pub roots: Vec<ExpansionRootRows>,
 }
 
+/// Result set from executing a grouped compiled query.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct GroupedQueryRows {
+    /// Root node rows matched by the base query.
     pub roots: Vec<NodeRow>,
+    /// Per-slot expansion results.
     pub expansions: Vec<ExpansionSlotRows>,
+    /// `true` when a capability miss caused the query to degrade to an empty result.
     pub was_degraded: bool,
 }
 
+/// Manages a pool of read-only `SQLite` connections and executes compiled queries.
 pub struct ExecutionCoordinator {
     database_path: PathBuf,
     schema_manager: Arc<SchemaManager>,
@@ -261,6 +300,7 @@ impl ExecutionCoordinator {
         })
     }
 
+    /// Returns the filesystem path to the `SQLite` database.
     pub fn database_path(&self) -> &Path {
         &self.database_path
     }
@@ -645,6 +685,7 @@ impl ExecutionCoordinator {
             .len()
     }
 
+    /// Returns a cloned `Arc` to the schema manager.
     #[must_use]
     pub fn schema_manager(&self) -> Arc<SchemaManager> {
         Arc::clone(&self.schema_manager)

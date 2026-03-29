@@ -8,71 +8,100 @@ use crate::{
 
 static NEXT_BUILDER_ID: AtomicU64 = AtomicU64::new(1);
 
+/// Handle returned when a node is added to a [`WriteRequestBuilder`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NodeHandle {
     builder_id: u64,
+    /// Physical row ID assigned to this node.
     pub row_id: String,
+    /// Logical ID of the node.
     pub logical_id: String,
 }
 
+/// Handle returned when an edge is added to a [`WriteRequestBuilder`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EdgeHandle {
     builder_id: u64,
+    /// Logical ID of the edge.
     pub logical_id: String,
 }
 
+/// Handle returned when a run is added to a [`WriteRequestBuilder`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RunHandle {
     builder_id: u64,
+    /// Unique ID of the run.
     pub id: String,
 }
 
+/// Handle returned when a step is added to a [`WriteRequestBuilder`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StepHandle {
     builder_id: u64,
+    /// Unique ID of the step.
     pub id: String,
 }
 
+/// Handle returned when an action is added to a [`WriteRequestBuilder`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ActionHandle {
     builder_id: u64,
+    /// Unique ID of the action.
     pub id: String,
 }
 
+/// Handle returned when a chunk is added to a [`WriteRequestBuilder`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChunkHandle {
     builder_id: u64,
+    /// Unique ID of the chunk.
     pub id: String,
+    /// Logical ID of the parent node.
     pub node_logical_id: String,
 }
 
+/// Reference to a node by existing logical ID or by a builder handle.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NodeRef {
+    /// An already-persisted logical ID.
     Existing(String),
+    /// A handle from the same [`WriteRequestBuilder`].
     Handle(NodeHandle),
 }
 
+/// Reference to an edge by existing logical ID or by a builder handle.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EdgeRef {
+    /// An already-persisted logical ID.
     Existing(String),
+    /// A handle from the same [`WriteRequestBuilder`].
     Handle(EdgeHandle),
 }
 
+/// Reference to a run by existing ID or by a builder handle.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RunRef {
+    /// An already-persisted run ID.
     Existing(String),
+    /// A handle from the same [`WriteRequestBuilder`].
     Handle(RunHandle),
 }
 
+/// Reference to a step by existing ID or by a builder handle.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StepRef {
+    /// An already-persisted step ID.
     Existing(String),
+    /// A handle from the same [`WriteRequestBuilder`].
     Handle(StepHandle),
 }
 
+/// Reference to a chunk by existing ID or by a builder handle.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ChunkRef {
+    /// An already-persisted chunk ID.
     Existing(String),
+    /// A handle from the same [`WriteRequestBuilder`].
     Handle(ChunkHandle),
 }
 
@@ -259,6 +288,11 @@ struct PendingVecInsert {
     embedding: Vec<f32>,
 }
 
+/// Collects nodes, edges, chunks, runs, steps, actions, and operational writes
+/// into a validated [`WriteRequest`].
+///
+/// Handles returned from `add_*` methods can be passed to later calls within
+/// the same builder, allowing forward references between co-submitted items.
 #[derive(Clone, Debug, PartialEq)]
 pub struct WriteRequestBuilder {
     builder_id: u64,
@@ -278,6 +312,7 @@ pub struct WriteRequestBuilder {
 
 #[allow(clippy::too_many_arguments, clippy::missing_errors_doc, clippy::too_many_lines)]
 impl WriteRequestBuilder {
+    /// Create a new builder with the given human-readable label.
     #[must_use]
     pub fn new(label: impl Into<String>) -> Self {
         Self {
@@ -297,6 +332,7 @@ impl WriteRequestBuilder {
         }
     }
 
+    /// Add a node insert to this write request and return its handle.
     pub fn add_node(
         &mut self,
         row_id: impl Into<String>,
@@ -324,6 +360,7 @@ impl WriteRequestBuilder {
         handle
     }
 
+    /// Mark a node for retirement (soft-delete) in this write request.
     pub fn retire_node(&mut self, logical_id: impl Into<NodeRef>, source_ref: Option<String>) {
         self.node_retires.push(PendingNodeRetire {
             logical_id: logical_id.into(),
@@ -331,6 +368,7 @@ impl WriteRequestBuilder {
         });
     }
 
+    /// Add an edge insert to this write request and return its handle.
     pub fn add_edge(
         &mut self,
         row_id: impl Into<String>,
@@ -359,6 +397,7 @@ impl WriteRequestBuilder {
         handle
     }
 
+    /// Mark an edge for retirement (soft-delete) in this write request.
     pub fn retire_edge(&mut self, logical_id: impl Into<EdgeRef>, source_ref: Option<String>) {
         self.edge_retires.push(PendingEdgeRetire {
             logical_id: logical_id.into(),
@@ -366,6 +405,7 @@ impl WriteRequestBuilder {
         });
     }
 
+    /// Add a text chunk attached to a node and return its handle.
     pub fn add_chunk(
         &mut self,
         id: impl Into<String>,
@@ -394,6 +434,7 @@ impl WriteRequestBuilder {
         }
     }
 
+    /// Add a run insert to this write request and return its handle.
     pub fn add_run(
         &mut self,
         id: impl Into<String>,
@@ -420,6 +461,7 @@ impl WriteRequestBuilder {
         handle
     }
 
+    /// Add a step insert to this write request and return its handle.
     pub fn add_step(
         &mut self,
         id: impl Into<String>,
@@ -448,6 +490,7 @@ impl WriteRequestBuilder {
         handle
     }
 
+    /// Add an action insert to this write request and return its handle.
     pub fn add_action(
         &mut self,
         id: impl Into<String>,
@@ -476,6 +519,7 @@ impl WriteRequestBuilder {
         handle
     }
 
+    /// Enqueue an optional projection backfill task to run after the write commits.
     pub fn add_optional_backfill(&mut self, target: ProjectionTarget, payload: impl Into<String>) {
         self.optional_backfills.push(OptionalProjectionTask {
             target,
@@ -483,6 +527,7 @@ impl WriteRequestBuilder {
         });
     }
 
+    /// Attach a vector embedding to a chunk in this write request.
     pub fn add_vec_insert(&mut self, chunk: impl Into<ChunkRef>, embedding: Vec<f32>) {
         self.vec_inserts.push(PendingVecInsert {
             chunk: chunk.into(),
@@ -490,6 +535,7 @@ impl WriteRequestBuilder {
         });
     }
 
+    /// Append a mutation to an operational collection (log-style, preserves history).
     pub fn add_operational_append(
         &mut self,
         collection: impl Into<String>,
@@ -505,6 +551,7 @@ impl WriteRequestBuilder {
         });
     }
 
+    /// Put (upsert) a record into an operational collection, replacing any previous value.
     pub fn add_operational_put(
         &mut self,
         collection: impl Into<String>,
@@ -520,6 +567,7 @@ impl WriteRequestBuilder {
         });
     }
 
+    /// Delete a record from an operational collection by key.
     pub fn add_operational_delete(
         &mut self,
         collection: impl Into<String>,
@@ -533,6 +581,12 @@ impl WriteRequestBuilder {
         });
     }
 
+    /// Resolve all handles and produce a finalized [`WriteRequest`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError::InvalidWrite`] if any handle references a
+    /// different builder instance.
     pub fn build(self) -> Result<WriteRequest, EngineError> {
         let builder_id = self.builder_id;
         let nodes = self.nodes;

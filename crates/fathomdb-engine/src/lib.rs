@@ -43,6 +43,7 @@ pub use writer::{
 
 use thiserror::Error;
 
+/// Top-level error type for all engine operations.
 #[derive(Debug, Error)]
 pub enum EngineError {
     #[error("sqlite error: {0}")]
