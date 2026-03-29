@@ -11,8 +11,11 @@ import (
 	"path/filepath"
 )
 
+// ProtocolVersion is the JSON protocol version exchanged between the Go CLI and
+// the fathomdb-admin-bridge Rust binary. Both sides must agree on this value.
 const ProtocolVersion = 1
 
+// Command identifies a bridge operation sent to the fathomdb-admin-bridge binary.
 type Command string
 
 const (
@@ -45,6 +48,7 @@ const (
 	CommandPurgeProvenanceEvents         Command = "purge_provenance_events"
 )
 
+// Request is the JSON envelope sent on stdin to the fathomdb-admin-bridge binary.
 type Request struct {
 	ProtocolVersion       int                     `json:"protocol_version"`
 	DatabasePath          string                  `json:"database_path"`
@@ -71,6 +75,8 @@ type Request struct {
 	OperationalRead       *OperationalReadRequest `json:"operational_read,omitempty"`
 }
 
+// OperationalCollection describes the schema and configuration for a registered
+// operational collection within a fathomdb database.
 type OperationalCollection struct {
 	Name                 string `json:"name"`
 	Kind                 string `json:"kind"`
@@ -82,6 +88,8 @@ type OperationalCollection struct {
 	FormatVersion        int64  `json:"format_version"`
 }
 
+// OperationalFilterClause specifies a single filter predicate for querying an
+// operational collection.
 type OperationalFilterClause struct {
 	Mode  string `json:"mode"`
 	Field string `json:"field"`
@@ -90,12 +98,16 @@ type OperationalFilterClause struct {
 	Upper *int64 `json:"upper,omitempty"`
 }
 
+// OperationalReadRequest contains the parameters for reading records from an
+// operational collection via the bridge.
 type OperationalReadRequest struct {
 	CollectionName string                    `json:"collection_name"`
 	Filters        []OperationalFilterClause `json:"filters"`
 	Limit          int                       `json:"limit,omitempty"`
 }
 
+// VectorGeneratorPolicy constrains how the Rust engine spawns external vector
+// generator executables during embedding regeneration.
 type VectorGeneratorPolicy struct {
 	TimeoutMS                     uint64   `json:"timeout_ms"`
 	MaxStdoutBytes                int      `json:"max_stdout_bytes"`
@@ -108,6 +120,8 @@ type VectorGeneratorPolicy struct {
 	PreserveEnvVars               []string `json:"preserve_env_vars,omitempty"`
 }
 
+// DefaultVectorGeneratorPolicy returns a VectorGeneratorPolicy with conservative
+// defaults suitable for production use.
 func DefaultVectorGeneratorPolicy() VectorGeneratorPolicy {
 	return VectorGeneratorPolicy{
 		TimeoutMS:                     300000,
@@ -122,6 +136,7 @@ func DefaultVectorGeneratorPolicy() VectorGeneratorPolicy {
 	}
 }
 
+// Response is the JSON envelope returned on stdout by the fathomdb-admin-bridge binary.
 type Response struct {
 	ProtocolVersion int             `json:"protocol_version"`
 	OK              bool            `json:"ok"`
@@ -130,19 +145,28 @@ type Response struct {
 	Payload         json.RawMessage `json:"payload"`
 }
 
+// Error code constants returned in the Response ErrorCode field.
 const (
-	ErrorBadRequest            = "bad_request"
-	ErrorUnsupportedCommand    = "unsupported_command"
+	// ErrorBadRequest indicates the request was malformed or missing required fields.
+	ErrorBadRequest = "bad_request"
+	// ErrorUnsupportedCommand indicates the bridge does not recognize the command.
+	ErrorUnsupportedCommand = "unsupported_command"
+	// ErrorUnsupportedCapability indicates the bridge lacks a required capability.
 	ErrorUnsupportedCapability = "unsupported_capability"
-	ErrorIntegrityFailure      = "integrity_failure"
-	ErrorExecutionFailure      = "execution_failure"
+	// ErrorIntegrityFailure indicates the database failed an integrity check.
+	ErrorIntegrityFailure = "integrity_failure"
+	// ErrorExecutionFailure indicates a general execution error in the bridge.
+	ErrorExecutionFailure = "execution_failure"
 )
 
+// BridgeError represents a structured error returned by the fathomdb-admin-bridge
+// binary, carrying both an error code and a human-readable message.
 type BridgeError struct {
 	Code    string
 	Message string
 }
 
+// Error returns the human-readable error message, implementing the error interface.
 func (e BridgeError) Error() string {
 	if e.Message == "" {
 		return "bridge command failed"
@@ -150,6 +174,7 @@ func (e BridgeError) Error() string {
 	return e.Message
 }
 
+// ExitCode maps the error code to a CLI process exit code.
 func (e BridgeError) ExitCode() int {
 	switch e.Code {
 	case ErrorBadRequest, ErrorUnsupportedCommand:
@@ -163,6 +188,7 @@ func (e BridgeError) ExitCode() int {
 	}
 }
 
+// ErrorFromResponse returns a BridgeError if the response indicates failure, or nil on success.
 func ErrorFromResponse(response Response) error {
 	if response.OK {
 		return nil
@@ -177,6 +203,7 @@ func ErrorFromResponse(response Response) error {
 	}
 }
 
+// ExitCodeFromError extracts the CLI exit code from a BridgeError, defaulting to 1.
 func ExitCodeFromError(err error) int {
 	var bridgeError BridgeError
 	if errors.As(err, &bridgeError) {
@@ -185,6 +212,7 @@ func ExitCodeFromError(err error) int {
 	return 1
 }
 
+// MarshalJSON encodes the request to JSON, injecting ProtocolVersion when unset.
 func (r Request) MarshalJSON() ([]byte, error) {
 	type alias Request
 	payload := alias(r)
@@ -212,6 +240,7 @@ type ProvenancePurgeReport struct {
 	OldestRemaining  *int64 `json:"oldest_remaining"`
 }
 
+// Client wraps the fathomdb-admin-bridge subprocess for administrative operations.
 type Client struct {
 	BinaryPath string
 }
@@ -234,6 +263,7 @@ func validateBinaryPath(path string) error {
 	return nil
 }
 
+// SafeExport performs a bridge-backed SQLite backup of the database to destinationPath.
 func (c Client) SafeExport(ctx context.Context, databasePath, destinationPath string, forceCheckpoint bool) (Response, error) {
 	forceCheckpointValue := forceCheckpoint
 	return c.Execute(ctx, Request{
@@ -244,6 +274,7 @@ func (c Client) SafeExport(ctx context.Context, databasePath, destinationPath st
 	})
 }
 
+// SafeExportWithFeedback is like SafeExport but emits lifecycle feedback events via the observer.
 func (c Client) SafeExportWithFeedback(
 	ctx context.Context,
 	databasePath, destinationPath string,
@@ -260,6 +291,8 @@ func (c Client) SafeExportWithFeedback(
 	}, observer, config)
 }
 
+// PurgeProvenanceEvents deletes provenance events older than beforeTimestamp,
+// preserving any event types listed in preserveEventTypes.
 func (c Client) PurgeProvenanceEvents(ctx context.Context, databasePath string, beforeTimestamp int64, preserveEventTypes []string) (*ProvenancePurgeReport, error) {
 	resp, err := c.Execute(ctx, Request{
 		DatabasePath:       databasePath,
@@ -280,6 +313,8 @@ func (c Client) PurgeProvenanceEvents(ctx context.Context, databasePath string, 
 	return &report, nil
 }
 
+// RegenerateVectors regenerates vector embeddings for the database using the
+// default vector generator policy.
 func (c Client) RegenerateVectors(
 	ctx context.Context,
 	databasePath, configPath string,
@@ -287,6 +322,8 @@ func (c Client) RegenerateVectors(
 	return c.RegenerateVectorsWithPolicy(ctx, databasePath, configPath, nil)
 }
 
+// RegenerateVectorsWithPolicy is like RegenerateVectors but accepts an explicit
+// VectorGeneratorPolicy to constrain generator subprocess execution.
 func (c Client) RegenerateVectorsWithPolicy(
 	ctx context.Context,
 	databasePath, configPath string,
@@ -300,6 +337,8 @@ func (c Client) RegenerateVectorsWithPolicy(
 	})
 }
 
+// RegenerateVectorsWithFeedback is like RegenerateVectors but emits lifecycle
+// feedback events via the observer.
 func (c Client) RegenerateVectorsWithFeedback(
 	ctx context.Context,
 	databasePath, configPath string,
@@ -316,6 +355,8 @@ func (c Client) RegenerateVectorsWithFeedback(
 	)
 }
 
+// RegenerateVectorsWithFeedbackAndPolicy is like RegenerateVectorsWithPolicy but
+// also emits lifecycle feedback events via the observer.
 func (c Client) RegenerateVectorsWithFeedbackAndPolicy(
 	ctx context.Context,
 	databasePath, configPath string,
@@ -331,10 +372,14 @@ func (c Client) RegenerateVectorsWithFeedbackAndPolicy(
 	}, observer, config)
 }
 
+// Execute sends a bridge request and returns the parsed response.
+//
+// The bridge binary is spawned as a subprocess with JSON on stdin/stdout.
 func (c Client) Execute(ctx context.Context, request Request) (Response, error) {
 	return c.ExecuteWithFeedback(ctx, request, nil, FeedbackConfig{})
 }
 
+// ExecuteWithFeedback is like Execute but emits lifecycle feedback events via the observer.
 func (c Client) ExecuteWithFeedback(
 	ctx context.Context,
 	request Request,

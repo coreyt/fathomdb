@@ -11,13 +11,20 @@ import (
 	"github.com/coreyt/fathomdb/go/fathom-integrity/internal/bridge"
 )
 
+// Repair target constants select which repair operations to run.
 const (
-	RepairTargetAll             = "all"
+	// RepairTargetAll runs all available repair operations.
+	RepairTargetAll = "all"
+	// RepairTargetDuplicateActive repairs duplicate active rows for a logical ID.
 	RepairTargetDuplicateActive = "duplicate-active"
-	RepairTargetRuntimeFK       = "runtime-fk"
-	RepairTargetOrphanedChunks  = "orphaned-chunks"
+	// RepairTargetRuntimeFK removes runtime steps and actions with broken foreign keys.
+	RepairTargetRuntimeFK = "runtime-fk"
+	// RepairTargetOrphanedChunks removes chunks whose parent node has been superseded.
+	RepairTargetOrphanedChunks = "orphaned-chunks"
 )
 
+// RepairReport is the structured output of a repair operation, containing
+// per-target statistics about what was found and fixed.
 type RepairReport struct {
 	DatabasePath string               `json:"database_path"`
 	Target       string               `json:"target"`
@@ -27,26 +34,35 @@ type RepairReport struct {
 	Orphaned     OrphanedRepairStats  `json:"orphaned_chunks"`
 }
 
+// DuplicateRepairStats records how many duplicate-active logical IDs were found
+// and how many rows were superseded to resolve them.
 type DuplicateRepairStats struct {
 	LogicalIDsRepaired int `json:"logical_ids_repaired"`
 	RowsSuperseded     int `json:"rows_superseded"`
 }
 
+// RuntimeRepairStats records how many orphaned runtime steps and actions were
+// deleted due to broken foreign key references.
 type RuntimeRepairStats struct {
 	StepsDeleted   int `json:"steps_deleted"`
 	ActionsDeleted int `json:"actions_deleted"`
 }
 
+// OrphanedRepairStats records how many orphaned chunks, FTS rows, and vector
+// rows were deleted because their parent node was superseded.
 type OrphanedRepairStats struct {
 	ChunksDeleted int `json:"chunks_deleted"`
 	FTSDeleted    int `json:"fts_deleted"`
 	VecDeleted    int `json:"vec_deleted"`
 }
 
+// RunRepair runs SQLite-level repair operations against the database, targeting
+// the specified repair category or all categories when target is "all".
 func RunRepair(databasePath, bridgePath, sqliteBin, target string, dryRun bool, out io.Writer) error {
 	return RunRepairWithFeedback(databasePath, bridgePath, sqliteBin, target, dryRun, out, nil, bridge.FeedbackConfig{})
 }
 
+// RunRepairWithFeedback is like RunRepair but emits lifecycle feedback events via the observer.
 func RunRepairWithFeedback(
 	databasePath, bridgePath, sqliteBin, target string,
 	dryRun bool,

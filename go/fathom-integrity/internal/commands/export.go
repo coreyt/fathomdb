@@ -30,6 +30,7 @@ func RunExport(databasePath, destinationPath, bridgePath string, forceCheckpoint
 	)
 }
 
+// RunExportWithFeedback is like RunExport but emits lifecycle feedback events via the observer.
 func RunExportWithFeedback(
 	databasePath, destinationPath, bridgePath string,
 	forceCheckpoint bool,

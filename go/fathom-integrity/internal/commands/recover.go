@@ -58,6 +58,7 @@ func RunRecover(sourcePath, destPath, bridgePath, sqliteBin string, out io.Write
 	)
 }
 
+// RunRecoverWithFeedback is like RunRecover but emits lifecycle feedback events via the observer.
 func RunRecoverWithFeedback(
 	sourcePath, destPath, bridgePath, sqliteBin string,
 	out io.Writer,
