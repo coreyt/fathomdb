@@ -10,7 +10,11 @@ from ._fathomdb import (
     WriterRejectedError,
 )
 
+class BuilderValidationError(ValueError):
+    pass
+
 __all__ = [
+    "BuilderValidationError",
     "BridgeError",
     "CapabilityMissingError",
     "CompileError",

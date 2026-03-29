@@ -101,6 +101,7 @@ fn compile_write_query_and_admin_feedback_are_publicly_available() {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             },
             &observer,
             config.clone(),

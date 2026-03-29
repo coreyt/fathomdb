@@ -98,6 +98,186 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			return commandExitCode(err)
 		}
 		return 0
+	case "restore-logical-id":
+		fs := flag.NewFlagSet("restore-logical-id", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		db := fs.String("db", cfg.DatabasePath, "path to sqlite database")
+		bridgeBinary := fs.String("bridge", cfg.BridgeBinary, "path to admin bridge binary")
+		logicalID := fs.String("logical-id", "", "logical id to restore")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if *db == "" || *logicalID == "" {
+			fmt.Fprintln(stderr, "--db and --logical-id are required")
+			return 2
+		}
+		request := bridge.Request{
+			DatabasePath: *db,
+			Command:      bridge.CommandRestoreLogicalID,
+			LogicalID:    *logicalID,
+		}
+		if err := commands.RunBridgeCommandWithFeedback(
+			bridge.Client{BinaryPath: *bridgeBinary},
+			request,
+			stdout,
+			newFeedbackObserver(stderr),
+			bridge.FeedbackConfig{},
+		); err != nil {
+			fmt.Fprintln(stderr, err)
+			return commandExitCode(err)
+		}
+		return 0
+	case "purge-logical-id":
+		fs := flag.NewFlagSet("purge-logical-id", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		db := fs.String("db", cfg.DatabasePath, "path to sqlite database")
+		bridgeBinary := fs.String("bridge", cfg.BridgeBinary, "path to admin bridge binary")
+		logicalID := fs.String("logical-id", "", "retired logical id to purge")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if *db == "" || *logicalID == "" {
+			fmt.Fprintln(stderr, "--db and --logical-id are required")
+			return 2
+		}
+		request := bridge.Request{
+			DatabasePath: *db,
+			Command:      bridge.CommandPurgeLogicalID,
+			LogicalID:    *logicalID,
+		}
+		if err := commands.RunBridgeCommandWithFeedback(
+			bridge.Client{BinaryPath: *bridgeBinary},
+			request,
+			stdout,
+			newFeedbackObserver(stderr),
+			bridge.FeedbackConfig{},
+		); err != nil {
+			fmt.Fprintln(stderr, err)
+			return commandExitCode(err)
+		}
+		return 0
+	case "trace-operational":
+		fs := flag.NewFlagSet("trace-operational", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		db := fs.String("db", cfg.DatabasePath, "path to sqlite database")
+		bridgeBinary := fs.String("bridge", cfg.BridgeBinary, "path to admin bridge binary")
+		collectionName := fs.String("collection", "", "operational collection name to trace")
+		recordKey := fs.String("record-key", "", "optional record key to narrow the trace")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if *db == "" || *collectionName == "" {
+			fmt.Fprintln(stderr, "--db and --collection are required")
+			return 2
+		}
+		request := bridge.Request{
+			DatabasePath:   *db,
+			Command:        bridge.CommandTraceOperationalCollection,
+			CollectionName: *collectionName,
+			RecordKey:      *recordKey,
+		}
+		if err := commands.RunBridgeCommandWithFeedback(
+			bridge.Client{BinaryPath: *bridgeBinary},
+			request,
+			stdout,
+			newFeedbackObserver(stderr),
+			bridge.FeedbackConfig{},
+		); err != nil {
+			fmt.Fprintln(stderr, err)
+			return commandExitCode(err)
+		}
+		return 0
+	case "disable-operational":
+		fs := flag.NewFlagSet("disable-operational", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		db := fs.String("db", cfg.DatabasePath, "path to sqlite database")
+		bridgeBinary := fs.String("bridge", cfg.BridgeBinary, "path to admin bridge binary")
+		collectionName := fs.String("collection", "", "operational collection name to disable")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if *db == "" || *collectionName == "" {
+			fmt.Fprintln(stderr, "--db and --collection are required")
+			return 2
+		}
+		request := bridge.Request{
+			DatabasePath:   *db,
+			Command:        bridge.CommandDisableOperationalCollection,
+			CollectionName: *collectionName,
+		}
+		if err := commands.RunBridgeCommandWithFeedback(
+			bridge.Client{BinaryPath: *bridgeBinary},
+			request,
+			stdout,
+			newFeedbackObserver(stderr),
+			bridge.FeedbackConfig{},
+		); err != nil {
+			fmt.Fprintln(stderr, err)
+			return commandExitCode(err)
+		}
+		return 0
+	case "compact-operational":
+		fs := flag.NewFlagSet("compact-operational", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		db := fs.String("db", cfg.DatabasePath, "path to sqlite database")
+		bridgeBinary := fs.String("bridge", cfg.BridgeBinary, "path to admin bridge binary")
+		collectionName := fs.String("collection", "", "operational collection name to compact")
+		dryRun := fs.Bool("dry-run", false, "report the compaction result without mutating the database")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if *db == "" || *collectionName == "" {
+			fmt.Fprintln(stderr, "--db and --collection are required")
+			return 2
+		}
+		request := bridge.Request{
+			DatabasePath:   *db,
+			Command:        bridge.CommandCompactOperationalCollection,
+			CollectionName: *collectionName,
+			DryRun:         *dryRun,
+		}
+		if err := commands.RunBridgeCommandWithFeedback(
+			bridge.Client{BinaryPath: *bridgeBinary},
+			request,
+			stdout,
+			newFeedbackObserver(stderr),
+			bridge.FeedbackConfig{},
+		); err != nil {
+			fmt.Fprintln(stderr, err)
+			return commandExitCode(err)
+		}
+		return 0
+	case "purge-operational":
+		fs := flag.NewFlagSet("purge-operational", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		db := fs.String("db", cfg.DatabasePath, "path to sqlite database")
+		bridgeBinary := fs.String("bridge", cfg.BridgeBinary, "path to admin bridge binary")
+		collectionName := fs.String("collection", "", "operational collection name to purge")
+		beforeTimestamp := fs.Int64("before", 0, "delete mutations older than this unix timestamp")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if *db == "" || *collectionName == "" || *beforeTimestamp == 0 {
+			fmt.Fprintln(stderr, "--db, --collection, and --before are required")
+			return 2
+		}
+		request := bridge.Request{
+			DatabasePath:    *db,
+			Command:         bridge.CommandPurgeOperationalCollection,
+			CollectionName:  *collectionName,
+			BeforeTimestamp: *beforeTimestamp,
+		}
+		if err := commands.RunBridgeCommandWithFeedback(
+			bridge.Client{BinaryPath: *bridgeBinary},
+			request,
+			stdout,
+			newFeedbackObserver(stderr),
+			bridge.FeedbackConfig{},
+		); err != nil {
+			fmt.Fprintln(stderr, err)
+			return commandExitCode(err)
+		}
+		return 0
 	case "rebuild":
 		fs := flag.NewFlagSet("rebuild", flag.ContinueOnError)
 		fs.SetOutput(stderr)
@@ -115,6 +295,35 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			DatabasePath: *db,
 			Command:      bridge.CommandRebuildProjections,
 			Target:       *target,
+		}
+		if err := commands.RunBridgeCommandWithFeedback(
+			bridge.Client{BinaryPath: *bridgeBinary},
+			request,
+			stdout,
+			newFeedbackObserver(stderr),
+			bridge.FeedbackConfig{},
+		); err != nil {
+			fmt.Fprintln(stderr, err)
+			return commandExitCode(err)
+		}
+		return 0
+	case "rebuild-operational-current":
+		fs := flag.NewFlagSet("rebuild-operational-current", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		db := fs.String("db", cfg.DatabasePath, "path to sqlite database")
+		bridgeBinary := fs.String("bridge", cfg.BridgeBinary, "path to admin bridge binary")
+		collectionName := fs.String("collection", "", "optional operational collection name to rebuild")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if *db == "" {
+			fmt.Fprintln(stderr, "--db is required")
+			return 2
+		}
+		request := bridge.Request{
+			DatabasePath:   *db,
+			Command:        bridge.CommandRebuildOperationalCurrent,
+			CollectionName: *collectionName,
 		}
 		if err := commands.RunBridgeCommandWithFeedback(
 			bridge.Client{BinaryPath: *bridgeBinary},
@@ -319,5 +528,5 @@ func commandExitCode(err error) int {
 }
 
 func usage() string {
-	return "usage: fathom-integrity <check|export|trace|rebuild|rebuild-missing|regenerate-vectors|excise|recover|repair|version> [flags]"
+	return "usage: fathom-integrity <check|export|trace|restore-logical-id|purge-logical-id|trace-operational|disable-operational|compact-operational|purge-operational|rebuild|rebuild-operational-current|rebuild-missing|regenerate-vectors|excise|recover|repair|version> [flags]"
 }

@@ -5,7 +5,8 @@ mod injection;
 
 use fathomdb::{
     ActionInsert, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire, Engine, EngineOptions,
-    NodeInsert, RunInsert, SafeExportOptions, StepInsert, TraverseDirection, WriteRequest,
+    NodeInsert, OperationalCollectionKind, OperationalRegisterRequest, OperationalWrite, RunInsert,
+    SafeExportOptions, StepInsert, TraverseDirection, WriteRequest,
 };
 use tempfile::NamedTempFile;
 
@@ -13,6 +14,109 @@ fn open_engine() -> (NamedTempFile, Engine) {
     let db = NamedTempFile::new().expect("temporary db");
     let engine = Engine::open(EngineOptions::new(db.path())).expect("engine opens");
     (db, engine)
+}
+
+#[test]
+fn operational_admin_methods_register_trace_rebuild_and_disable() {
+    let (_db, engine) = open_engine();
+
+    let record = engine
+        .register_operational_collection(OperationalRegisterRequest {
+            name: "connector_health".to_owned(),
+            kind: OperationalCollectionKind::LatestState,
+            schema_json: "{}".to_owned(),
+            retention_json: "{}".to_owned(),
+            format_version: 1,
+        })
+        .expect("register operational collection");
+    assert_eq!(record.name, "connector_health");
+
+    let traced = engine
+        .trace_operational_collection("connector_health", Some("gmail"))
+        .expect("trace operational collection");
+    assert_eq!(traced.mutation_count, 0);
+    assert_eq!(traced.current_count, 0);
+
+    let rebuilt = engine
+        .rebuild_operational_current(Some("connector_health"))
+        .expect("rebuild operational current");
+    assert_eq!(rebuilt.collections_rebuilt, 1);
+    assert_eq!(rebuilt.current_rows_rebuilt, 0);
+
+    let disabled = engine
+        .disable_operational_collection("connector_health")
+        .expect("disable operational collection");
+    assert_eq!(disabled.name, "connector_health");
+    assert!(disabled.disabled_at.is_some());
+}
+
+#[test]
+fn operational_admin_methods_compact_append_only_history() {
+    let (_db, engine) = open_engine();
+
+    engine
+        .register_operational_collection(OperationalRegisterRequest {
+            name: "audit_log".to_owned(),
+            kind: OperationalCollectionKind::AppendOnlyLog,
+            schema_json: "{}".to_owned(),
+            retention_json: r#"{"mode":"keep_last","max_rows":2}"#.to_owned(),
+            format_version: 1,
+        })
+        .expect("register operational collection");
+
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "append-audit".to_owned(),
+            nodes: vec![],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![
+                OperationalWrite::Append {
+                    collection: "audit_log".to_owned(),
+                    record_key: "evt-1".to_owned(),
+                    payload_json: r#"{"seq":1}"#.to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                },
+                OperationalWrite::Append {
+                    collection: "audit_log".to_owned(),
+                    record_key: "evt-2".to_owned(),
+                    payload_json: r#"{"seq":2}"#.to_owned(),
+                    source_ref: Some("src-2".to_owned()),
+                },
+                OperationalWrite::Append {
+                    collection: "audit_log".to_owned(),
+                    record_key: "evt-3".to_owned(),
+                    payload_json: r#"{"seq":3}"#.to_owned(),
+                    source_ref: Some("src-3".to_owned()),
+                },
+            ],
+        })
+        .expect("append operational history");
+
+    let dry_run = engine
+        .compact_operational_collection("audit_log", true)
+        .expect("dry-run compact");
+    assert_eq!(dry_run.deleted_mutations, 1);
+    assert!(dry_run.dry_run);
+
+    let compacted = engine
+        .compact_operational_collection("audit_log", false)
+        .expect("compact");
+    assert_eq!(compacted.deleted_mutations, 1);
+    assert!(!compacted.dry_run);
+
+    let traced = engine
+        .trace_operational_collection("audit_log", None)
+        .expect("trace compacted collection");
+    assert_eq!(traced.mutation_count, 2);
 }
 
 // ── Memex workloads ──────────────────────────────────────────────────────────
@@ -50,6 +154,7 @@ fn m1_meeting_transcript_ingestion() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("m1 write");
 
@@ -85,6 +190,7 @@ fn m2_meeting_note_correction_via_upsert() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("m2 v1 write");
 
@@ -110,6 +216,7 @@ fn m2_meeting_note_correction_via_upsert() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("m2 v2 write");
 
@@ -156,6 +263,7 @@ fn m3_fts_search_returns_meeting_transcript() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("m3 write");
 
@@ -204,6 +312,7 @@ fn m4_history_preserved_after_upsert() {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("m4 write");
     }
@@ -248,6 +357,7 @@ fn m5_excise_by_source_ref() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("m5 write");
 
@@ -296,6 +406,7 @@ fn m6_fts_rebuild_restores_integrity() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("m6 write");
 
@@ -351,6 +462,7 @@ fn oc1_persist_and_retrieve_agent_context() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("oc1 write");
 
@@ -396,6 +508,7 @@ fn oc2_context_versioning_via_supersession() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("oc2 v1");
 
@@ -421,6 +534,7 @@ fn oc2_context_versioning_via_supersession() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("oc2 v2");
 
@@ -473,6 +587,7 @@ fn oc3_write_provenance_run_step_action() {
             }],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("oc3 write");
 
@@ -550,6 +665,7 @@ fn oc4_traverse_task_dependency_graph() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("oc4 write");
 
@@ -620,6 +736,7 @@ fn oc5_edge_retire_removes_from_traversal() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("oc5 setup");
 
@@ -641,6 +758,7 @@ fn oc5_edge_retire_removes_from_traversal() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("oc5 retire");
 
@@ -708,6 +826,7 @@ fn oc6_check_semantics_clean_after_workload() {
             }],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("oc6 write");
 
@@ -761,6 +880,7 @@ fn hc1_self_evaluation_node_round_trip() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("hc1 write");
 
@@ -806,6 +926,7 @@ fn hc2_evaluation_update_supersession_chain() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("hc2 v1");
 
@@ -831,6 +952,7 @@ fn hc2_evaluation_update_supersession_chain() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("hc2 v2");
 
@@ -874,6 +996,7 @@ fn hc3_excise_flagged_evaluation() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("hc3 write");
 
@@ -929,6 +1052,7 @@ fn hc4_projection_rebuild_after_data_loss() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("hc4 write");
 
@@ -979,6 +1103,7 @@ fn hc5_fts_search_after_rebuild() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("hc5 write");
 
@@ -1039,6 +1164,7 @@ fn nc1_bulk_ingest_documents() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("nc1 bulk write");
 
@@ -1092,6 +1218,7 @@ fn nc2_fts_search_bulk_documents() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("nc2 write");
 
@@ -1157,6 +1284,7 @@ fn nc3_excise_documents_by_source_ref() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("nc3 write");
 
@@ -1215,6 +1343,7 @@ fn nc4_safe_export_manifest_completeness() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("nc4 write");
 
@@ -1334,6 +1463,7 @@ fn nc5_check_integrity_clean_after_enterprise_workload() {
             }],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("nc5 write");
 

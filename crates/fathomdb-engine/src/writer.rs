@@ -5,8 +5,9 @@ use std::sync::mpsc::{self, Sender};
 use std::thread;
 
 use fathomdb_schema::SchemaManager;
-use rusqlite::{TransactionBehavior, params};
+use rusqlite::{OptionalExtension, TransactionBehavior, params};
 
+use crate::operational::OperationalCollectionKind;
 use crate::{EngineError, ids::new_id, projection::ProjectionTarget, sqlite};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -95,6 +96,27 @@ pub struct VecInsert {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub enum OperationalWrite {
+    Append {
+        collection: String,
+        record_key: String,
+        payload_json: String,
+        source_ref: Option<String>,
+    },
+    Put {
+        collection: String,
+        record_key: String,
+        payload_json: String,
+        source_ref: Option<String>,
+    },
+    Delete {
+        collection: String,
+        record_key: String,
+        source_ref: Option<String>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RunInsert {
     pub id: String,
     pub kind: String,
@@ -144,6 +166,7 @@ pub struct WriteRequest {
     /// Vector embeddings to persist alongside chunks.  Silently skipped when the
     /// `sqlite-vec` feature is absent.
     pub vec_inserts: Vec<VecInsert>,
+    pub operational_writes: Vec<OperationalWrite>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -151,6 +174,19 @@ pub struct WriteReceipt {
     pub label: String,
     pub optional_backfill_count: usize,
     pub provenance_warnings: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LastAccessTouchRequest {
+    pub logical_ids: Vec<String>,
+    pub touched_at: i64,
+    pub source_ref: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LastAccessTouchReport {
+    pub touched_logical_ids: usize,
+    pub touched_at: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -175,6 +211,8 @@ struct PreparedWrite {
     /// consumed by the cfg-gated apply block.
     #[cfg_attr(not(feature = "sqlite-vec"), allow(dead_code))]
     vec_inserts: Vec<VecInsert>,
+    operational_writes: Vec<OperationalWrite>,
+    operational_collection_kinds: HashMap<String, OperationalCollectionKind>,
     /// `node_logical_id` → kind for nodes co-submitted in this request.
     /// Used by `resolve_fts_rows` to avoid a DB round-trip for the common case.
     node_kinds: HashMap<String, String>,
@@ -183,9 +221,15 @@ struct PreparedWrite {
     optional_backfills: Vec<OptionalProjectionTask>,
 }
 
-struct WriteMessage {
-    prepared: PreparedWrite,
-    reply: Sender<Result<WriteReceipt, EngineError>>,
+enum WriteMessage {
+    Submit {
+        prepared: PreparedWrite,
+        reply: Sender<Result<WriteReceipt, EngineError>>,
+    },
+    TouchLastAccessed {
+        request: LastAccessTouchRequest,
+        reply: Sender<Result<LastAccessTouchReport, EngineError>>,
+    },
 }
 
 #[derive(Debug)]
@@ -223,7 +267,7 @@ impl WriterActor {
         let prepared = prepare_write(request, self.provenance_mode)?;
         let (reply_tx, reply_rx) = mpsc::channel();
         self.sender
-            .send(WriteMessage {
+            .send(WriteMessage::Submit {
                 prepared,
                 reply: reply_tx,
             })
@@ -234,6 +278,53 @@ impl WriterActor {
             .map_err(|error| EngineError::WriterRejected(error.to_string()))
             .and_then(|result| result)
     }
+
+    /// # Errors
+    /// Returns [`EngineError`] if validation fails, the writer actor has shut down,
+    /// or the underlying `SQLite` transaction fails.
+    pub fn touch_last_accessed(
+        &self,
+        request: LastAccessTouchRequest,
+    ) -> Result<LastAccessTouchReport, EngineError> {
+        prepare_touch_last_accessed(&request, self.provenance_mode)?;
+        let (reply_tx, reply_rx) = mpsc::channel();
+        self.sender
+            .send(WriteMessage::TouchLastAccessed {
+                request,
+                reply: reply_tx,
+            })
+            .map_err(|error| EngineError::WriterRejected(error.to_string()))?;
+
+        reply_rx
+            .recv()
+            .map_err(|error| EngineError::WriterRejected(error.to_string()))
+            .and_then(|result| result)
+    }
+}
+
+fn prepare_touch_last_accessed(
+    request: &LastAccessTouchRequest,
+    mode: ProvenanceMode,
+) -> Result<(), EngineError> {
+    if request.logical_ids.is_empty() {
+        return Err(EngineError::InvalidWrite(
+            "touch_last_accessed requires at least one logical_id".to_owned(),
+        ));
+    }
+    for logical_id in &request.logical_ids {
+        if logical_id.trim().is_empty() {
+            return Err(EngineError::InvalidWrite(
+                "touch_last_accessed requires non-empty logical_ids".to_owned(),
+            ));
+        }
+    }
+    if mode == ProvenanceMode::Require && request.source_ref.is_none() {
+        return Err(EngineError::InvalidWrite(
+            "touch_last_accessed requires source_ref when ProvenanceMode::Require is active"
+                .to_owned(),
+        ));
+    }
+    Ok(())
 }
 
 fn check_require_provenance(request: &WriteRequest) -> Result<(), EngineError> {
@@ -283,6 +374,20 @@ fn check_require_provenance(request: &WriteRequest) -> Result<(), EngineError> {
                 .iter()
                 .filter(|a| a.source_ref.is_none())
                 .map(|a| format!("action '{}'", a.id)),
+        )
+        .chain(
+            request
+                .operational_writes
+                .iter()
+                .filter(|write| operational_write_source_ref(write).is_none())
+                .map(|write| {
+                    format!(
+                        "operational {} '{}:{}'",
+                        operational_write_kind(write),
+                        operational_write_collection(write),
+                        operational_write_record_key(write)
+                    )
+                }),
         )
         .collect();
 
@@ -373,6 +478,33 @@ fn prepare_write(
             )));
         }
     }
+    for operational in &request.operational_writes {
+        if operational_write_collection(operational).is_empty() {
+            return Err(EngineError::InvalidWrite(
+                "OperationalWrite has empty collection".to_owned(),
+            ));
+        }
+        if operational_write_record_key(operational).is_empty() {
+            return Err(EngineError::InvalidWrite(format!(
+                "OperationalWrite for collection '{}' has empty record_key",
+                operational_write_collection(operational)
+            )));
+        }
+        match operational {
+            OperationalWrite::Append { payload_json, .. }
+            | OperationalWrite::Put { payload_json, .. } => {
+                if payload_json.is_empty() {
+                    return Err(EngineError::InvalidWrite(format!(
+                        "OperationalWrite {} '{}:{}' has empty payload_json",
+                        operational_write_kind(operational),
+                        operational_write_collection(operational),
+                        operational_write_record_key(operational)
+                    )));
+                }
+            }
+            OperationalWrite::Delete { .. } => {}
+        }
+    }
 
     // --- ID validation: reject duplicate row_ids within the request ---
     {
@@ -443,6 +575,8 @@ fn prepare_write(
         steps: request.steps,
         actions: request.actions,
         vec_inserts: request.vec_inserts,
+        operational_writes: request.operational_writes,
+        operational_collection_kinds: HashMap::new(),
         node_kinds,
         required_fts_rows: Vec::new(),
         optional_backfills: request.optional_backfills,
@@ -468,17 +602,29 @@ fn writer_loop(
     }
 
     for message in receiver {
-        let mut prepared = message.prepared;
-        let result = resolve_and_apply(&mut conn, &mut prepared);
-        let _ = message.reply.send(result);
+        match message {
+            WriteMessage::Submit { mut prepared, reply } => {
+                let result = resolve_and_apply(&mut conn, &mut prepared);
+                let _ = reply.send(result);
+            }
+            WriteMessage::TouchLastAccessed { request, reply } => {
+                let result = apply_touch_last_accessed(&mut conn, &request);
+                let _ = reply.send(result);
+            }
+        }
     }
 }
 
 fn reject_all(receiver: mpsc::Receiver<WriteMessage>, error: &str) {
     for message in receiver {
-        let _ = message
-            .reply
-            .send(Err(EngineError::WriterRejected(error.to_string())));
+        match message {
+            WriteMessage::Submit { reply, .. } => {
+                let _ = reply.send(Err(EngineError::WriterRejected(error.to_string())));
+            }
+            WriteMessage::TouchLastAccessed { reply, .. } => {
+                let _ = reply.send(Err(EngineError::WriterRejected(error.to_string())));
+            }
+        }
     }
 }
 
@@ -539,25 +685,168 @@ fn resolve_fts_rows(
     Ok(())
 }
 
+fn resolve_operational_writes(
+    conn: &rusqlite::Connection,
+    prepared: &mut PreparedWrite,
+) -> Result<(), EngineError> {
+    let mut collection_kinds = HashMap::new();
+    for write in &prepared.operational_writes {
+        let collection = operational_write_collection(write);
+        if !collection_kinds.contains_key(collection) {
+            let maybe_row: Option<(String, Option<i64>)> = conn
+                .query_row(
+                    "SELECT kind, disabled_at FROM operational_collections WHERE name = ?1",
+                    params![collection],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()
+                .map_err(EngineError::Sqlite)?;
+            let (kind_text, disabled_at) = maybe_row.ok_or_else(|| {
+                EngineError::InvalidWrite(format!(
+                    "operational collection '{collection}' is not registered"
+                ))
+            })?;
+            if disabled_at.is_some() {
+                return Err(EngineError::InvalidWrite(format!(
+                    "operational collection '{collection}' is disabled"
+                )));
+            }
+            let kind = OperationalCollectionKind::try_from(kind_text.as_str())
+                .map_err(EngineError::InvalidWrite)?;
+            collection_kinds.insert(collection.to_owned(), kind);
+        }
+
+        let kind = collection_kinds.get(collection).copied().ok_or_else(|| {
+            EngineError::InvalidWrite("missing operational collection kind".to_owned())
+        })?;
+        match (kind, write) {
+            (OperationalCollectionKind::AppendOnlyLog, OperationalWrite::Append { .. })
+            | (OperationalCollectionKind::LatestState, OperationalWrite::Put { .. })
+            | (OperationalCollectionKind::LatestState, OperationalWrite::Delete { .. }) => {}
+            (OperationalCollectionKind::AppendOnlyLog, _) => {
+                return Err(EngineError::InvalidWrite(format!(
+                    "operational collection '{collection}' is append_only_log and only accepts Append"
+                )));
+            }
+            (OperationalCollectionKind::LatestState, _) => {
+                return Err(EngineError::InvalidWrite(format!(
+                    "operational collection '{collection}' is latest_state and only accepts Put/Delete"
+                )));
+            }
+        }
+    }
+    prepared.operational_collection_kinds = collection_kinds;
+    Ok(())
+}
+
 fn resolve_and_apply(
     conn: &mut rusqlite::Connection,
     prepared: &mut PreparedWrite,
 ) -> Result<WriteReceipt, EngineError> {
     resolve_fts_rows(conn, prepared)?;
-    apply_write(conn, prepared).map_err(EngineError::Sqlite)
+    resolve_operational_writes(conn, prepared)?;
+    apply_write(conn, prepared)
+}
+
+fn apply_touch_last_accessed(
+    conn: &mut rusqlite::Connection,
+    request: &LastAccessTouchRequest,
+) -> Result<LastAccessTouchReport, EngineError> {
+    let mut seen = std::collections::HashSet::new();
+    let logical_ids = request
+        .logical_ids
+        .iter()
+        .filter(|logical_id| seen.insert(logical_id.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+
+    for logical_id in &logical_ids {
+        let exists = tx
+            .query_row(
+                "SELECT 1 FROM nodes WHERE logical_id = ?1 AND superseded_at IS NULL LIMIT 1",
+                params![logical_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?
+            .is_some();
+        if !exists {
+            return Err(EngineError::InvalidWrite(format!(
+                "touch_last_accessed requires an active node for logical_id '{logical_id}'"
+            )));
+        }
+    }
+
+    {
+        let mut upsert_metadata = tx.prepare_cached(
+            "INSERT INTO node_access_metadata (logical_id, last_accessed_at, updated_at) \
+             VALUES (?1, ?2, ?2) \
+             ON CONFLICT(logical_id) DO UPDATE SET \
+                 last_accessed_at = excluded.last_accessed_at, \
+                 updated_at = excluded.updated_at",
+        )?;
+        let mut insert_provenance = tx.prepare_cached(
+            "INSERT INTO provenance_events (id, event_type, subject, source_ref, metadata_json) \
+             VALUES (?1, 'node_last_accessed_touched', ?2, ?3, ?4)",
+        )?;
+        for logical_id in &logical_ids {
+            upsert_metadata.execute(params![logical_id, request.touched_at])?;
+            insert_provenance.execute(params![
+                new_id(),
+                logical_id,
+                request.source_ref.as_deref(),
+                format!("{{\"touched_at\":{}}}", request.touched_at),
+            ])?;
+        }
+    }
+
+    tx.commit()?;
+    Ok(LastAccessTouchReport {
+        touched_logical_ids: logical_ids.len(),
+        touched_at: request.touched_at,
+    })
+}
+
+fn ensure_operational_collections_writable(
+    tx: &rusqlite::Transaction<'_>,
+    prepared: &PreparedWrite,
+) -> Result<(), EngineError> {
+    for collection in prepared.operational_collection_kinds.keys() {
+        let disabled_at: Option<Option<i64>> = tx
+            .query_row(
+                "SELECT disabled_at FROM operational_collections WHERE name = ?1",
+                params![collection],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .optional()?;
+        match disabled_at {
+            Some(Some(_)) => {
+                return Err(EngineError::InvalidWrite(format!(
+                    "operational collection '{collection}' is disabled"
+                )));
+            }
+            Some(None) => {}
+            None => {
+                return Err(EngineError::InvalidWrite(format!(
+                    "operational collection '{collection}' is not registered"
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_lines)]
 fn apply_write(
     conn: &mut rusqlite::Connection,
     prepared: &PreparedWrite,
-) -> Result<WriteReceipt, rusqlite::Error> {
+) -> Result<WriteReceipt, EngineError> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
 
-    // Node retires: clear FTS, clear chunks, mark superseded, record audit event.
+    // Node retires: clear rebuildable FTS rows, preserve chunks/vec for possible restore,
+    // mark superseded, record audit event.
     {
         let mut del_fts = tx.prepare_cached("DELETE FROM fts_nodes WHERE node_logical_id = ?1")?;
-        let mut del_chunks = tx.prepare_cached("DELETE FROM chunks WHERE node_logical_id = ?1")?;
         let mut sup_node = tx.prepare_cached(
             "UPDATE nodes SET superseded_at = unixepoch() \
              WHERE logical_id = ?1 AND superseded_at IS NULL",
@@ -566,22 +855,8 @@ fn apply_write(
             "INSERT INTO provenance_events (id, event_type, subject, source_ref) \
              VALUES (?1, 'node_retire', ?2, ?3)",
         )?;
-        #[cfg(feature = "sqlite-vec")]
-        let vec_del_sql = "DELETE FROM vec_nodes_active WHERE chunk_id IN \
-                           (SELECT id FROM chunks WHERE node_logical_id = ?1)";
-        #[cfg(feature = "sqlite-vec")]
-        let mut del_vec = match tx.prepare_cached(vec_del_sql) {
-            Ok(stmt) => Some(stmt),
-            Err(ref e) if crate::coordinator::is_vec_table_absent(e) => None,
-            Err(e) => return Err(e),
-        };
         for retire in &prepared.node_retires {
-            #[cfg(feature = "sqlite-vec")]
-            if let Some(ref mut stmt) = del_vec {
-                stmt.execute(params![retire.logical_id])?;
-            }
             del_fts.execute(params![retire.logical_id])?;
-            del_chunks.execute(params![retire.logical_id])?;
             sup_node.execute(params![retire.logical_id])?;
             ins_event.execute(params![new_id(), retire.logical_id, retire.source_ref])?;
         }
@@ -622,7 +897,7 @@ fn apply_write(
         let mut del_vec = match tx.prepare_cached(vec_del_sql2) {
             Ok(stmt) => Some(stmt),
             Err(ref e) if crate::coordinator::is_vec_table_absent(e) => None,
-            Err(e) => return Err(e),
+            Err(e) => return Err(e.into()),
         };
         for node in &prepared.nodes {
             if node.upsert {
@@ -767,6 +1042,70 @@ fn apply_write(
         }
     }
 
+    // Operational mutation log writes and latest-state current rows.
+    {
+        ensure_operational_collections_writable(&tx, prepared)?;
+
+        let mut next_mutation_order: i64 = tx.query_row(
+            "SELECT COALESCE(MAX(mutation_order), 0) FROM operational_mutations",
+            [],
+            |row| row.get(0),
+        )?;
+        let mut ins_mutation = tx.prepare_cached(
+            "INSERT INTO operational_mutations \
+             (id, collection_name, record_key, op_kind, payload_json, source_ref, created_at, mutation_order) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, unixepoch(), ?7)",
+        )?;
+        let mut upsert_current = tx.prepare_cached(
+            "INSERT INTO operational_current \
+             (collection_name, record_key, payload_json, updated_at, last_mutation_id) \
+             VALUES (?1, ?2, ?3, unixepoch(), ?4) \
+             ON CONFLICT(collection_name, record_key) DO UPDATE SET \
+                 payload_json = excluded.payload_json, \
+                 updated_at = excluded.updated_at, \
+                 last_mutation_id = excluded.last_mutation_id",
+        )?;
+        let mut del_current = tx.prepare_cached(
+            "DELETE FROM operational_current WHERE collection_name = ?1 AND record_key = ?2",
+        )?;
+
+        for write in &prepared.operational_writes {
+            let collection = operational_write_collection(write);
+            let record_key = operational_write_record_key(write);
+            let mutation_id = new_id();
+            next_mutation_order += 1;
+            let payload_json = operational_write_payload(write);
+            ins_mutation.execute(params![
+                mutation_id,
+                collection,
+                record_key,
+                operational_write_kind(write),
+                payload_json,
+                operational_write_source_ref(write),
+                next_mutation_order,
+            ])?;
+
+            if prepared.operational_collection_kinds.get(collection)
+                == Some(&OperationalCollectionKind::LatestState)
+            {
+                match write {
+                    OperationalWrite::Put { payload_json, .. } => {
+                        upsert_current.execute(params![
+                            collection,
+                            record_key,
+                            payload_json,
+                            mutation_id,
+                        ])?;
+                    }
+                    OperationalWrite::Delete { .. } => {
+                        del_current.execute(params![collection, record_key])?;
+                    }
+                    OperationalWrite::Append { .. } => {}
+                }
+            }
+        }
+    }
+
     // FTS row inserts.
     {
         let mut ins_fts = tx.prepare_cached(
@@ -799,7 +1138,7 @@ fn apply_write(
             Err(ref e) if crate::coordinator::is_vec_table_absent(e) => {
                 // vec profile absent: vec inserts are silently skipped.
             }
-            Err(e) => return Err(e),
+            Err(e) => return Err(e.into()),
         }
     }
 
@@ -852,6 +1191,20 @@ fn apply_write(
                 .filter(|a| a.source_ref.is_none())
                 .map(|a| format!("action '{}' has no source_ref", a.id)),
         )
+        .chain(
+            prepared
+                .operational_writes
+                .iter()
+                .filter(|write| operational_write_source_ref(write).is_none())
+                .map(|write| {
+                    format!(
+                        "operational {} '{}:{}' has no source_ref",
+                        operational_write_kind(write),
+                        operational_write_collection(write),
+                        operational_write_record_key(write)
+                    )
+                }),
+        )
         .collect();
 
     Ok(WriteReceipt {
@@ -859,6 +1212,46 @@ fn apply_write(
         optional_backfill_count: prepared.optional_backfills.len(),
         provenance_warnings,
     })
+}
+
+fn operational_write_collection(write: &OperationalWrite) -> &str {
+    match write {
+        OperationalWrite::Append { collection, .. }
+        | OperationalWrite::Put { collection, .. }
+        | OperationalWrite::Delete { collection, .. } => collection,
+    }
+}
+
+fn operational_write_record_key(write: &OperationalWrite) -> &str {
+    match write {
+        OperationalWrite::Append { record_key, .. }
+        | OperationalWrite::Put { record_key, .. }
+        | OperationalWrite::Delete { record_key, .. } => record_key,
+    }
+}
+
+fn operational_write_kind(write: &OperationalWrite) -> &'static str {
+    match write {
+        OperationalWrite::Append { .. } => "append",
+        OperationalWrite::Put { .. } => "put",
+        OperationalWrite::Delete { .. } => "delete",
+    }
+}
+
+fn operational_write_payload(write: &OperationalWrite) -> &str {
+    match write {
+        OperationalWrite::Append { payload_json, .. }
+        | OperationalWrite::Put { payload_json, .. } => payload_json,
+        OperationalWrite::Delete { .. } => "null",
+    }
+}
+
+fn operational_write_source_ref(write: &OperationalWrite) -> Option<&str> {
+    match write {
+        OperationalWrite::Append { source_ref, .. }
+        | OperationalWrite::Put { source_ref, .. }
+        | OperationalWrite::Delete { source_ref, .. } => source_ref.as_deref(),
+    }
 }
 
 #[cfg(test)]
@@ -869,10 +1262,11 @@ mod tests {
     use fathomdb_schema::SchemaManager;
     use tempfile::NamedTempFile;
 
+    use super::{apply_write, prepare_write, resolve_operational_writes};
     use crate::{
         ActionInsert, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire, EngineError, NodeInsert,
-        NodeRetire, OptionalProjectionTask, ProvenanceMode, RunInsert, StepInsert, VecInsert,
-        WriteRequest, WriterActor, projection::ProjectionTarget,
+        NodeRetire, OperationalWrite, OptionalProjectionTask, ProvenanceMode, RunInsert,
+        StepInsert, VecInsert, WriteRequest, WriterActor, projection::ProjectionTarget,
     };
 
     #[test]
@@ -924,10 +1318,475 @@ mod tests {
                 }],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("write receipt");
 
         assert_eq!(receipt.label, "runtime");
+    }
+
+    #[test]
+    fn writer_put_operational_write_updates_current_and_mutations() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        SchemaManager::new().bootstrap(&conn).expect("bootstrap");
+        conn.execute(
+            "INSERT INTO operational_collections (name, kind, schema_json, retention_json) \
+             VALUES ('connector_health', 'latest_state', '{}', '{}')",
+            [],
+        )
+        .expect("seed collection");
+        drop(conn);
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            ProvenanceMode::Warn,
+        )
+        .expect("writer");
+
+        writer
+            .submit(WriteRequest {
+                label: "node-and-operational".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-1".to_owned(),
+                    logical_id: "lg-1".to_owned(),
+                    kind: "Meeting".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                }],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+                operational_writes: vec![OperationalWrite::Put {
+                    collection: "connector_health".to_owned(),
+                    record_key: "gmail".to_owned(),
+                    payload_json: r#"{"status":"ok"}"#.to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                }],
+            })
+            .expect("write receipt");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let node_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM nodes WHERE logical_id = 'lg-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("node count");
+        assert_eq!(node_count, 1);
+        let mutation_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM operational_mutations WHERE collection_name = 'connector_health' \
+                 AND record_key = 'gmail'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("mutation count");
+        assert_eq!(mutation_count, 1);
+        let payload: String = conn
+            .query_row(
+                "SELECT payload_json FROM operational_current \
+                 WHERE collection_name = 'connector_health' AND record_key = 'gmail'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("current payload");
+        assert_eq!(payload, r#"{"status":"ok"}"#);
+    }
+
+    #[test]
+    fn writer_rejects_operational_write_for_missing_collection() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        SchemaManager::new().bootstrap(&conn).expect("bootstrap");
+        drop(conn);
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            ProvenanceMode::Warn,
+        )
+        .expect("writer");
+
+        let result = writer.submit(WriteRequest {
+            label: "missing-operational-collection".to_owned(),
+            nodes: vec![],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![OperationalWrite::Put {
+                collection: "connector_health".to_owned(),
+                record_key: "gmail".to_owned(),
+                payload_json: r#"{"status":"ok"}"#.to_owned(),
+                source_ref: Some("src-1".to_owned()),
+            }],
+        });
+
+        assert!(
+            matches!(result, Err(EngineError::InvalidWrite(_))),
+            "missing operational collection must return InvalidWrite"
+        );
+    }
+
+    #[test]
+    fn writer_append_operational_write_records_history_without_current_row() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        SchemaManager::new().bootstrap(&conn).expect("bootstrap");
+        conn.execute(
+            "INSERT INTO operational_collections (name, kind, schema_json, retention_json) \
+             VALUES ('audit_log', 'append_only_log', '{}', '{}')",
+            [],
+        )
+        .expect("seed collection");
+        drop(conn);
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            ProvenanceMode::Warn,
+        )
+        .expect("writer");
+
+        writer
+            .submit(WriteRequest {
+                label: "append-operational".to_owned(),
+                nodes: vec![],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+                operational_writes: vec![OperationalWrite::Append {
+                    collection: "audit_log".to_owned(),
+                    record_key: "evt-1".to_owned(),
+                    payload_json: r#"{"type":"sync"}"#.to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                }],
+            })
+            .expect("write receipt");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let mutation: (String, String) = conn
+            .query_row(
+                "SELECT op_kind, payload_json FROM operational_mutations \
+                 WHERE collection_name = 'audit_log' AND record_key = 'evt-1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("mutation row");
+        assert_eq!(mutation.0, "append");
+        assert_eq!(mutation.1, r#"{"type":"sync"}"#);
+        let current_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM operational_current \
+                 WHERE collection_name = 'audit_log' AND record_key = 'evt-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("current count");
+        assert_eq!(current_count, 0);
+    }
+
+    #[test]
+    fn writer_delete_operational_write_removes_current_row_and_keeps_history() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        SchemaManager::new().bootstrap(&conn).expect("bootstrap");
+        conn.execute(
+            "INSERT INTO operational_collections (name, kind, schema_json, retention_json) \
+             VALUES ('connector_health', 'latest_state', '{}', '{}')",
+            [],
+        )
+        .expect("seed collection");
+        drop(conn);
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            ProvenanceMode::Warn,
+        )
+        .expect("writer");
+
+        writer
+            .submit(WriteRequest {
+                label: "put-operational".to_owned(),
+                nodes: vec![],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+                operational_writes: vec![OperationalWrite::Put {
+                    collection: "connector_health".to_owned(),
+                    record_key: "gmail".to_owned(),
+                    payload_json: r#"{"status":"ok"}"#.to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                }],
+            })
+            .expect("put receipt");
+
+        writer
+            .submit(WriteRequest {
+                label: "delete-operational".to_owned(),
+                nodes: vec![],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+                operational_writes: vec![OperationalWrite::Delete {
+                    collection: "connector_health".to_owned(),
+                    record_key: "gmail".to_owned(),
+                    source_ref: Some("src-2".to_owned()),
+                }],
+            })
+            .expect("delete receipt");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let mutation_kinds: Vec<String> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT op_kind FROM operational_mutations \
+                     WHERE collection_name = 'connector_health' AND record_key = 'gmail' \
+                     ORDER BY mutation_order ASC",
+                )
+                .expect("stmt");
+            stmt.query_map([], |row| row.get(0))
+                .expect("rows")
+                .collect::<Result<_, _>>()
+                .expect("collect")
+        };
+        assert_eq!(mutation_kinds, vec!["put".to_owned(), "delete".to_owned()]);
+        let current_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM operational_current \
+                 WHERE collection_name = 'connector_health' AND record_key = 'gmail'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("current count");
+        assert_eq!(current_count, 0);
+    }
+
+    #[test]
+    fn writer_latest_state_operational_writes_persist_mutation_order() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        SchemaManager::new().bootstrap(&conn).expect("bootstrap");
+        conn.execute(
+            "INSERT INTO operational_collections (name, kind, schema_json, retention_json) \
+             VALUES ('connector_health', 'latest_state', '{}', '{}')",
+            [],
+        )
+        .expect("seed collection");
+        drop(conn);
+
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            ProvenanceMode::Warn,
+        )
+        .expect("writer");
+
+        writer
+            .submit(WriteRequest {
+                label: "ordered-operational-batch".to_owned(),
+                nodes: vec![],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+                operational_writes: vec![
+                    OperationalWrite::Put {
+                        collection: "connector_health".to_owned(),
+                        record_key: "gmail".to_owned(),
+                        payload_json: r#"{"status":"old"}"#.to_owned(),
+                        source_ref: Some("src-1".to_owned()),
+                    },
+                    OperationalWrite::Delete {
+                        collection: "connector_health".to_owned(),
+                        record_key: "gmail".to_owned(),
+                        source_ref: Some("src-2".to_owned()),
+                    },
+                    OperationalWrite::Put {
+                        collection: "connector_health".to_owned(),
+                        record_key: "gmail".to_owned(),
+                        payload_json: r#"{"status":"new"}"#.to_owned(),
+                        source_ref: Some("src-3".to_owned()),
+                    },
+                ],
+            })
+            .expect("write receipt");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let rows: Vec<(String, i64)> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT op_kind, mutation_order FROM operational_mutations \
+                     WHERE collection_name = 'connector_health' AND record_key = 'gmail' \
+                     ORDER BY mutation_order ASC",
+                )
+                .expect("stmt");
+            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                .expect("rows")
+                .collect::<Result<_, _>>()
+                .expect("collect")
+        };
+        assert_eq!(
+            rows,
+            vec![
+                ("put".to_owned(), 1),
+                ("delete".to_owned(), 2),
+                ("put".to_owned(), 3),
+            ]
+        );
+        let payload: String = conn
+            .query_row(
+                "SELECT payload_json FROM operational_current \
+                 WHERE collection_name = 'connector_health' AND record_key = 'gmail'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("current payload");
+        assert_eq!(payload, r#"{"status":"new"}"#);
+    }
+
+    #[test]
+    fn apply_write_rechecks_collection_disabled_state_inside_transaction() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let mut conn = rusqlite::Connection::open(db.path()).expect("conn");
+        SchemaManager::new().bootstrap(&conn).expect("bootstrap");
+        conn.execute(
+            "INSERT INTO operational_collections (name, kind, schema_json, retention_json) \
+             VALUES ('connector_health', 'latest_state', '{}', '{}')",
+            [],
+        )
+        .expect("seed collection");
+
+        let request = WriteRequest {
+            label: "disabled-race".to_owned(),
+            nodes: vec![],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![OperationalWrite::Put {
+                collection: "connector_health".to_owned(),
+                record_key: "gmail".to_owned(),
+                payload_json: r#"{"status":"ok"}"#.to_owned(),
+                source_ref: Some("src-1".to_owned()),
+            }],
+        };
+        let mut prepared = prepare_write(request, ProvenanceMode::Warn).expect("prepare");
+        resolve_operational_writes(&conn, &mut prepared).expect("preflight resolve");
+
+        conn.execute(
+            "UPDATE operational_collections SET disabled_at = 123 WHERE name = 'connector_health'",
+            [],
+        )
+        .expect("disable collection after preflight");
+
+        let error = apply_write(&mut conn, &prepared).expect_err("disabled collection must reject");
+        assert!(matches!(error, EngineError::InvalidWrite(_)));
+        assert!(error.to_string().contains("is disabled"));
+
+        let mutation_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM operational_mutations WHERE collection_name = 'connector_health'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("mutation count");
+        assert_eq!(mutation_count, 0);
+
+        let current_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM operational_current WHERE collection_name = 'connector_health'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("current count");
+        assert_eq!(current_count, 0);
+    }
+
+    #[test]
+    fn writer_rejects_append_against_latest_state_collection() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        SchemaManager::new().bootstrap(&conn).expect("bootstrap");
+        conn.execute(
+            "INSERT INTO operational_collections (name, kind, schema_json, retention_json) \
+             VALUES ('connector_health', 'latest_state', '{}', '{}')",
+            [],
+        )
+        .expect("seed collection");
+        drop(conn);
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            ProvenanceMode::Warn,
+        )
+        .expect("writer");
+
+        let result = writer.submit(WriteRequest {
+            label: "bad-append".to_owned(),
+            nodes: vec![],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![OperationalWrite::Append {
+                collection: "connector_health".to_owned(),
+                record_key: "gmail".to_owned(),
+                payload_json: r#"{"status":"ok"}"#.to_owned(),
+                source_ref: Some("src-1".to_owned()),
+            }],
+        });
+
+        assert!(
+            matches!(result, Err(EngineError::InvalidWrite(_))),
+            "latest_state collection must reject Append"
+        );
     }
 
     #[test]
@@ -961,6 +1820,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("v1 write");
 
@@ -985,6 +1845,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("v2 upsert write");
 
@@ -1060,6 +1921,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("write receipt");
 
@@ -1120,6 +1982,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("nodes write");
 
@@ -1146,6 +2009,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("edge v1 write");
 
@@ -1172,6 +2036,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("edge v2 upsert");
 
@@ -1233,6 +2098,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("write receipt");
 
@@ -1282,6 +2148,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("write receipt");
 
@@ -1320,6 +2187,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("write receipt");
 
@@ -1358,6 +2226,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("r1 write");
 
@@ -1381,6 +2250,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("r2 write — chunk for pre-existing node");
 
@@ -1426,6 +2296,7 @@ mod tests {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         });
 
         assert!(
@@ -1471,6 +2342,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("write receipt");
 
@@ -1508,6 +2380,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("seed write");
 
@@ -1527,6 +2400,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("retire write");
 
@@ -1551,7 +2425,7 @@ mod tests {
     }
 
     #[test]
-    fn writer_node_retire_cleans_chunks_and_fts() {
+    fn writer_node_retire_preserves_chunks_and_clears_fts() {
         let db = NamedTempFile::new().expect("temporary db");
         let writer = WriterActor::start(
             db.path(),
@@ -1587,6 +2461,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("seed write");
 
@@ -1606,6 +2481,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("retire write");
 
@@ -1625,7 +2501,10 @@ mod tests {
             )
             .expect("fts count");
 
-        assert_eq!(chunk_count, 0, "chunks must be deleted after node retire");
+        assert_eq!(
+            chunk_count, 1,
+            "chunks must remain after node retire so restore can re-establish content"
+        );
         assert_eq!(fts_count, 0, "fts_nodes must be deleted after node retire");
     }
 
@@ -1680,6 +2559,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("seed write");
 
@@ -1699,6 +2579,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("retire edge write");
 
@@ -1745,6 +2626,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("seed write");
 
@@ -1764,6 +2646,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("retire write");
 
@@ -1810,6 +2693,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("v1 write");
 
@@ -1840,6 +2724,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("v2 write");
 
@@ -1914,6 +2799,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("v1 write");
 
@@ -1938,6 +2824,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("v2 preserve write");
 
@@ -1993,6 +2880,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("v1 write");
 
@@ -2018,6 +2906,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("insert no-upsert write");
 
@@ -2067,6 +2956,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("v1 run write");
 
@@ -2091,6 +2981,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("v2 run write");
 
@@ -2154,6 +3045,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("v1 step write");
 
@@ -2179,6 +3071,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("v2 step write");
 
@@ -2251,6 +3144,7 @@ mod tests {
                 }],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("v1 action write");
 
@@ -2276,6 +3170,7 @@ mod tests {
                 }],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("v2 action write");
 
@@ -2334,6 +3229,7 @@ mod tests {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         });
 
         assert!(
@@ -2373,6 +3269,7 @@ mod tests {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         });
 
         assert!(
@@ -2412,6 +3309,7 @@ mod tests {
             }],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         });
 
         assert!(
@@ -2473,6 +3371,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("write");
 
@@ -2513,6 +3412,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("write");
 
@@ -2556,6 +3456,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("seed write");
 
@@ -2581,6 +3482,7 @@ mod tests {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         });
 
         assert!(
@@ -2626,6 +3528,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("batch write");
 
@@ -2671,6 +3574,7 @@ mod tests {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         });
 
         assert!(
@@ -2709,6 +3613,7 @@ mod tests {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         });
 
         assert!(
@@ -2758,6 +3663,7 @@ mod tests {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         });
 
         assert!(
@@ -2802,6 +3708,7 @@ mod tests {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         });
 
         assert!(
@@ -2844,6 +3751,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("seed run");
 
@@ -2869,6 +3777,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("write");
 
@@ -2919,6 +3828,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("seed");
 
@@ -2944,6 +3854,7 @@ mod tests {
                 }],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("write");
 
@@ -3010,6 +3921,7 @@ mod tests {
                 }],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("write");
 
@@ -3054,6 +3966,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("Warn mode must not reject missing source_ref");
 
@@ -3093,6 +4006,7 @@ mod tests {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         });
 
         assert!(
@@ -3131,6 +4045,7 @@ mod tests {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         });
 
         assert!(
@@ -3190,6 +4105,7 @@ mod tests {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         });
 
         assert!(
@@ -3237,6 +4153,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("write");
 
@@ -3289,6 +4206,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("write");
 
@@ -3336,6 +4254,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("r1 write");
 
@@ -3359,6 +4278,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("r2 write");
 
@@ -3427,6 +4347,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("write");
 
@@ -3474,6 +4395,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("seed");
 
@@ -3514,6 +4436,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("mixed write");
 
@@ -3573,6 +4496,7 @@ mod tests {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         });
 
         assert!(
@@ -3612,6 +4536,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("write");
 
@@ -3662,6 +4587,7 @@ mod tests {
                     },
                 ],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("write");
 
@@ -3710,6 +4636,7 @@ mod tests {
                     payload: "backfill-payload".to_owned(),
                 }],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("write");
 
@@ -3763,6 +4690,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("v1 write");
 
@@ -3794,6 +4722,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("v2 write");
 
@@ -3846,6 +4775,7 @@ mod tests {
                 chunk_id: String::new(),
                 embedding: vec![0.1, 0.2, 0.3],
             }],
+            operational_writes: vec![],
         });
         assert!(
             matches!(result, Err(EngineError::InvalidWrite(_))),
@@ -3877,6 +4807,7 @@ mod tests {
                 chunk_id: "chunk-1".to_owned(),
                 embedding: vec![],
             }],
+            operational_writes: vec![],
         });
         assert!(
             matches!(result, Err(EngineError::InvalidWrite(_))),
@@ -3910,6 +4841,7 @@ mod tests {
                 chunk_id: "chunk-noop".to_owned(),
                 embedding: vec![1.0, 2.0, 3.0],
             }],
+            operational_writes: vec![],
         });
         #[cfg(not(feature = "sqlite-vec"))]
         result.expect("noop VecInsert without feature must succeed");
@@ -3920,7 +4852,7 @@ mod tests {
 
     #[cfg(feature = "sqlite-vec")]
     #[test]
-    fn vec_cleanup_on_node_retire_removes_vec_rows() {
+    fn node_retire_preserves_vec_rows_for_later_restore() {
         use crate::sqlite::open_connection_with_vec;
 
         let db = NamedTempFile::new().expect("temporary db");
@@ -3969,6 +4901,7 @@ mod tests {
                     chunk_id: "chunk-retire-vec".to_owned(),
                     embedding: vec![0.1, 0.2, 0.3],
                 }],
+                operational_writes: vec![],
             })
             .expect("setup write");
 
@@ -3989,6 +4922,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("retire write");
 
@@ -4000,7 +4934,10 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("count");
-        assert_eq!(count, 0, "vec rows must be deleted when node is retired");
+        assert_eq!(
+            count, 1,
+            "vec rows must remain available while the node is retired so restore can re-establish vector behavior"
+        );
     }
 
     #[cfg(feature = "sqlite-vec")]
@@ -4054,6 +4991,7 @@ mod tests {
                     chunk_id: "chunk-replace-A".to_owned(),
                     embedding: vec![0.1, 0.2, 0.3],
                 }],
+                operational_writes: vec![],
             })
             .expect("v1 write");
 
@@ -4088,6 +5026,7 @@ mod tests {
                     chunk_id: "chunk-replace-B".to_owned(),
                     embedding: vec![0.4, 0.5, 0.6],
                 }],
+                operational_writes: vec![],
             })
             .expect("v2 write");
 
@@ -4153,6 +5092,7 @@ mod tests {
                     chunk_id: "chunk-vec".to_owned(),
                     embedding: vec![0.1, 0.2, 0.3],
                 }],
+                operational_writes: vec![],
             })
             .expect("vec insert write");
 

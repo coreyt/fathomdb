@@ -13,8 +13,15 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    EngineError, ProjectionRepairReport, ProjectionService, executable_trust, ids::new_id,
-    projection::ProjectionTarget, sqlite,
+    EngineError, ProjectionRepairReport, ProjectionService, executable_trust,
+    ids::new_id,
+    operational::{
+        OperationalCollectionKind, OperationalCollectionRecord, OperationalCompactionReport,
+        OperationalCurrentRow, OperationalMutationRow, OperationalPurgeReport,
+        OperationalRegisterRequest, OperationalRepairReport, OperationalTraceReport,
+    },
+    projection::ProjectionTarget,
+    sqlite,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -23,6 +30,8 @@ pub struct IntegrityReport {
     pub foreign_keys_ok: bool,
     pub missing_fts_rows: usize,
     pub duplicate_active_logical_ids: usize,
+    pub operational_missing_collections: usize,
+    pub operational_missing_last_mutations: usize,
     pub warnings: Vec<String>,
 }
 
@@ -65,8 +74,34 @@ pub struct TraceReport {
     pub node_rows: usize,
     pub edge_rows: usize,
     pub action_rows: usize,
+    pub operational_mutation_rows: usize,
     pub node_logical_ids: Vec<String>,
     pub action_ids: Vec<String>,
+    pub operational_mutation_ids: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct LogicalRestoreReport {
+    pub logical_id: String,
+    pub was_noop: bool,
+    pub restored_node_rows: usize,
+    pub restored_edge_rows: usize,
+    pub restored_chunk_rows: usize,
+    pub restored_fts_rows: usize,
+    pub restored_vec_rows: usize,
+    pub notes: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct LogicalPurgeReport {
+    pub logical_id: String,
+    pub was_noop: bool,
+    pub deleted_node_rows: usize,
+    pub deleted_edge_rows: usize,
+    pub deleted_chunk_rows: usize,
+    pub deleted_fts_rows: usize,
+    pub deleted_vec_rows: usize,
+    pub notes: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -96,8 +131,16 @@ pub struct SemanticReport {
     pub orphaned_supersession_chains: usize,
     /// Vec rows whose backing chunk no longer exists in the chunks table.
     pub stale_vec_rows: usize,
-    /// Vec rows whose node has been superseded or retired.
+    /// Compatibility counter for vec rows whose chunk points at missing node history.
     pub vec_rows_for_superseded_nodes: usize,
+    /// Latest-state keys whose latest mutation is a `put` but no current row exists.
+    pub missing_operational_current_rows: usize,
+    /// Current rows that do not match the latest mutation state.
+    pub stale_operational_current_rows: usize,
+    /// Mutations written after the owning collection was disabled.
+    pub disabled_collection_mutations: usize,
+    /// Access metadata rows whose logical_id no longer has any node history.
+    pub orphaned_last_access_metadata_rows: usize,
     pub warnings: Vec<String>,
 }
 
@@ -259,6 +302,33 @@ impl AdminService {
             [],
             |row| row.get(0),
         )?;
+        let operational_missing_collections: i64 = conn.query_row(
+            r"
+            SELECT (
+                SELECT count(*)
+                FROM operational_mutations m
+                LEFT JOIN operational_collections c ON c.name = m.collection_name
+                WHERE c.name IS NULL
+            ) + (
+                SELECT count(*)
+                FROM operational_current oc
+                LEFT JOIN operational_collections c ON c.name = oc.collection_name
+                WHERE c.name IS NULL
+            )
+            ",
+            [],
+            |row| row.get(0),
+        )?;
+        let operational_missing_last_mutations: i64 = conn.query_row(
+            r"
+            SELECT count(*)
+            FROM operational_current oc
+            LEFT JOIN operational_mutations m ON m.id = oc.last_mutation_id
+            WHERE m.id IS NULL
+            ",
+            [],
+            |row| row.get(0),
+        )?;
 
         let mut warnings = Vec::new();
         if missing_fts_rows > 0 {
@@ -266,6 +336,12 @@ impl AdminService {
         }
         if duplicate_active > 0 {
             warnings.push("duplicate active logical_ids detected".to_owned());
+        }
+        if operational_missing_collections > 0 {
+            warnings.push("operational rows reference missing collections".to_owned());
+        }
+        if operational_missing_last_mutations > 0 {
+            warnings.push("operational current rows reference missing last mutations".to_owned());
         }
 
         // FIX(review): was `as usize` — unsound on 32-bit targets, wraps negatives silently.
@@ -277,6 +353,8 @@ impl AdminService {
             foreign_keys_ok: foreign_key_count == 0,
             missing_fts_rows: i64_to_usize(missing_fts_rows),
             duplicate_active_logical_ids: i64_to_usize(duplicate_active),
+            operational_missing_collections: i64_to_usize(operational_missing_collections),
+            operational_missing_last_mutations: i64_to_usize(operational_missing_last_mutations),
             warnings,
         })
     }
@@ -293,7 +371,7 @@ impl AdminService {
             FROM chunks c
             WHERE NOT EXISTS (
                 SELECT 1 FROM nodes n
-                WHERE n.logical_id = c.node_logical_id AND n.superseded_at IS NULL
+                WHERE n.logical_id = c.node_logical_id
             )
             ",
             [],
@@ -396,8 +474,10 @@ impl AdminService {
             r"
             SELECT count(*) FROM vec_nodes_active v
             JOIN chunks c ON c.id = v.chunk_id
-            JOIN nodes n  ON n.logical_id = c.node_logical_id
-            WHERE n.superseded_at IS NOT NULL
+            WHERE NOT EXISTS (
+                SELECT 1 FROM nodes n
+                WHERE n.logical_id = c.node_logical_id
+            )
             ",
             [],
             |row| row.get(0),
@@ -412,11 +492,81 @@ impl AdminService {
         };
         #[cfg(not(feature = "sqlite-vec"))]
         let vec_rows_for_superseded_nodes: i64 = 0;
+        let missing_operational_current_rows: i64 = conn.query_row(
+            r"
+            SELECT count(*)
+            FROM operational_mutations m
+            JOIN operational_collections c
+              ON c.name = m.collection_name
+             AND c.kind = 'latest_state'
+            WHERE m.op_kind = 'put'
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM operational_mutations newer
+                    WHERE newer.collection_name = m.collection_name
+                      AND newer.record_key = m.record_key
+                      AND newer.mutation_order > m.mutation_order
+                )
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM operational_current oc
+                    WHERE oc.collection_name = m.collection_name
+                      AND oc.record_key = m.record_key
+                )
+            ",
+            [],
+            |row| row.get(0),
+        )?;
+        let stale_operational_current_rows: i64 = conn.query_row(
+            r"
+            SELECT count(*)
+            FROM operational_current oc
+            JOIN operational_collections c
+              ON c.name = oc.collection_name
+             AND c.kind = 'latest_state'
+            LEFT JOIN operational_mutations m ON m.id = oc.last_mutation_id
+            WHERE m.id IS NULL
+               OR m.collection_name != oc.collection_name
+               OR m.record_key != oc.record_key
+               OR m.op_kind != 'put'
+               OR m.payload_json != oc.payload_json
+               OR EXISTS (
+                    SELECT 1
+                    FROM operational_mutations newer
+                    WHERE newer.collection_name = oc.collection_name
+                      AND newer.record_key = oc.record_key
+                      AND newer.mutation_order > m.mutation_order
+                )
+            ",
+            [],
+            |row| row.get(0),
+        )?;
+        let disabled_collection_mutations: i64 = conn.query_row(
+            r"
+            SELECT count(*)
+            FROM operational_mutations m
+            JOIN operational_collections c ON c.name = m.collection_name
+            WHERE c.disabled_at IS NOT NULL AND m.created_at > c.disabled_at
+            ",
+            [],
+            |row| row.get(0),
+        )?;
+        let orphaned_last_access_metadata_rows: i64 = conn.query_row(
+            r"
+            SELECT count(*)
+            FROM node_access_metadata am
+            WHERE NOT EXISTS (
+                SELECT 1 FROM nodes n WHERE n.logical_id = am.logical_id
+            )
+            ",
+            [],
+            |row| row.get(0),
+        )?;
 
         let mut warnings = Vec::new();
         if orphaned_chunks > 0 {
             warnings.push(format!(
-                "{orphaned_chunks} orphaned chunk(s) with no active node"
+                "{orphaned_chunks} orphaned chunk(s) with no surviving node history"
             ));
         }
         if null_source_ref_nodes > 0 {
@@ -461,7 +611,27 @@ impl AdminService {
         }
         if vec_rows_for_superseded_nodes > 0 {
             warnings.push(format!(
-                "{vec_rows_for_superseded_nodes} vec row(s) for superseded node(s)"
+                "{vec_rows_for_superseded_nodes} vec row(s) whose node history is missing"
+            ));
+        }
+        if missing_operational_current_rows > 0 {
+            warnings.push(format!(
+                "{missing_operational_current_rows} latest-state key(s) missing operational_current rows"
+            ));
+        }
+        if stale_operational_current_rows > 0 {
+            warnings.push(format!(
+                "{stale_operational_current_rows} stale operational_current row(s)"
+            ));
+        }
+        if disabled_collection_mutations > 0 {
+            warnings.push(format!(
+                "{disabled_collection_mutations} mutation(s) were written after collection disable"
+            ));
+        }
+        if orphaned_last_access_metadata_rows > 0 {
+            warnings.push(format!(
+                "{orphaned_last_access_metadata_rows} last_access metadata row(s) reference missing node history"
             ));
         }
 
@@ -476,7 +646,309 @@ impl AdminService {
             orphaned_supersession_chains: i64_to_usize(orphaned_supersession_chains),
             stale_vec_rows: i64_to_usize(stale_vec_rows),
             vec_rows_for_superseded_nodes: i64_to_usize(vec_rows_for_superseded_nodes),
+            missing_operational_current_rows: i64_to_usize(missing_operational_current_rows),
+            stale_operational_current_rows: i64_to_usize(stale_operational_current_rows),
+            disabled_collection_mutations: i64_to_usize(disabled_collection_mutations),
+            orphaned_last_access_metadata_rows: i64_to_usize(orphaned_last_access_metadata_rows),
             warnings,
+        })
+    }
+
+    /// # Errors
+    /// Returns [`EngineError`] if the collection metadata is invalid or the insert fails.
+    pub fn register_operational_collection(
+        &self,
+        request: &OperationalRegisterRequest,
+    ) -> Result<OperationalCollectionRecord, EngineError> {
+        if request.name.trim().is_empty() {
+            return Err(EngineError::InvalidWrite(
+                "operational collection name must not be empty".to_owned(),
+            ));
+        }
+        if request.schema_json.is_empty() {
+            return Err(EngineError::InvalidWrite(
+                "operational collection schema_json must not be empty".to_owned(),
+            ));
+        }
+        if request.retention_json.is_empty() {
+            return Err(EngineError::InvalidWrite(
+                "operational collection retention_json must not be empty".to_owned(),
+            ));
+        }
+        if request.format_version <= 0 {
+            return Err(EngineError::InvalidWrite(
+                "operational collection format_version must be positive".to_owned(),
+            ));
+        }
+
+        let mut conn = self.connect()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute(
+            "INSERT INTO operational_collections \
+             (name, kind, schema_json, retention_json, format_version, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, unixepoch())",
+            rusqlite::params![
+                request.name.as_str(),
+                request.kind.as_str(),
+                request.schema_json.as_str(),
+                request.retention_json.as_str(),
+                request.format_version,
+            ],
+        )?;
+        persist_simple_provenance_event(
+            &tx,
+            "operational_collection_registered",
+            request.name.as_str(),
+            Some(serde_json::json!({
+                "kind": request.kind.as_str(),
+                "format_version": request.format_version,
+            })),
+        )?;
+        tx.commit()?;
+
+        self.describe_operational_collection(&request.name)?
+            .ok_or_else(|| {
+                EngineError::Bridge("registered collection missing after commit".to_owned())
+            })
+    }
+
+    /// # Errors
+    /// Returns [`EngineError`] if the database query fails.
+    pub fn describe_operational_collection(
+        &self,
+        name: &str,
+    ) -> Result<Option<OperationalCollectionRecord>, EngineError> {
+        let conn = self.connect()?;
+        load_operational_collection_record(&conn, name)
+    }
+
+    /// # Errors
+    /// Returns [`EngineError`] if the database query fails.
+    pub fn disable_operational_collection(
+        &self,
+        name: &str,
+    ) -> Result<OperationalCollectionRecord, EngineError> {
+        let mut conn = self.connect()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let record = load_operational_collection_record(&tx, name)?.ok_or_else(|| {
+            EngineError::InvalidWrite(format!("operational collection '{name}' is not registered"))
+        })?;
+        let changed = if record.disabled_at.is_none() {
+            tx.execute(
+                "UPDATE operational_collections SET disabled_at = unixepoch() WHERE name = ?1",
+                [name],
+            )?;
+            true
+        } else {
+            false
+        };
+        let record = load_operational_collection_record(&tx, name)?.ok_or_else(|| {
+            EngineError::Bridge("operational collection missing after disable".to_owned())
+        })?;
+        persist_simple_provenance_event(
+            &tx,
+            "operational_collection_disabled",
+            name,
+            Some(serde_json::json!({
+                "disabled_at": record.disabled_at,
+                "changed": changed,
+            })),
+        )?;
+        tx.commit()?;
+        Ok(record)
+    }
+
+    /// # Errors
+    /// Returns [`EngineError`] if the database query fails.
+    pub fn compact_operational_collection(
+        &self,
+        name: &str,
+        dry_run: bool,
+    ) -> Result<OperationalCompactionReport, EngineError> {
+        let mut conn = self.connect()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let collection = load_operational_collection_record(&tx, name)?.ok_or_else(|| {
+            EngineError::InvalidWrite(format!("operational collection '{name}' is not registered"))
+        })?;
+        validate_append_only_operational_collection(&collection, "compact")?;
+        let (mutation_ids, before_timestamp) =
+            operational_compaction_candidates(&tx, &collection.retention_json, name)?;
+        if dry_run {
+            drop(tx);
+            return Ok(OperationalCompactionReport {
+                collection_name: name.to_owned(),
+                deleted_mutations: mutation_ids.len(),
+                dry_run: true,
+                before_timestamp,
+            });
+        }
+        let mut delete_stmt =
+            tx.prepare_cached("DELETE FROM operational_mutations WHERE id = ?1")?;
+        for mutation_id in &mutation_ids {
+            delete_stmt.execute([mutation_id.as_str()])?;
+        }
+        drop(delete_stmt);
+        persist_simple_provenance_event(
+            &tx,
+            "operational_collection_compacted",
+            name,
+            Some(serde_json::json!({
+                "deleted_mutations": mutation_ids.len(),
+                "before_timestamp": before_timestamp,
+            })),
+        )?;
+        tx.commit()?;
+        Ok(OperationalCompactionReport {
+            collection_name: name.to_owned(),
+            deleted_mutations: mutation_ids.len(),
+            dry_run: false,
+            before_timestamp,
+        })
+    }
+
+    /// # Errors
+    /// Returns [`EngineError`] if the database query fails.
+    pub fn purge_operational_collection(
+        &self,
+        name: &str,
+        before_timestamp: i64,
+    ) -> Result<OperationalPurgeReport, EngineError> {
+        let mut conn = self.connect()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let collection = load_operational_collection_record(&tx, name)?.ok_or_else(|| {
+            EngineError::InvalidWrite(format!("operational collection '{name}' is not registered"))
+        })?;
+        validate_append_only_operational_collection(&collection, "purge")?;
+        let deleted_mutations = tx.execute(
+            "DELETE FROM operational_mutations WHERE collection_name = ?1 AND created_at < ?2",
+            rusqlite::params![name, before_timestamp],
+        )?;
+        persist_simple_provenance_event(
+            &tx,
+            "operational_collection_purged",
+            name,
+            Some(serde_json::json!({
+                "deleted_mutations": deleted_mutations,
+                "before_timestamp": before_timestamp,
+            })),
+        )?;
+        tx.commit()?;
+        Ok(OperationalPurgeReport {
+            collection_name: name.to_owned(),
+            deleted_mutations,
+            before_timestamp,
+        })
+    }
+
+    /// # Errors
+    /// Returns [`EngineError`] if the database query fails.
+    pub fn trace_operational_collection(
+        &self,
+        collection_name: &str,
+        record_key: Option<&str>,
+    ) -> Result<OperationalTraceReport, EngineError> {
+        let conn = self.connect()?;
+        ensure_operational_collection_registered(&conn, collection_name)?;
+        let mutations = if let Some(record_key) = record_key {
+            let mut stmt = conn.prepare(
+                "SELECT id, collection_name, record_key, op_kind, payload_json, source_ref, created_at \
+                 FROM operational_mutations \
+                 WHERE collection_name = ?1 AND record_key = ?2 \
+                 ORDER BY mutation_order",
+            )?;
+            stmt.query_map([collection_name, record_key], map_operational_mutation_row)?
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            let mut stmt = conn.prepare(
+                "SELECT id, collection_name, record_key, op_kind, payload_json, source_ref, created_at \
+                 FROM operational_mutations \
+                 WHERE collection_name = ?1 \
+                 ORDER BY mutation_order",
+            )?;
+            stmt.query_map([collection_name], map_operational_mutation_row)?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        let current_rows = if let Some(record_key) = record_key {
+            let mut stmt = conn.prepare(
+                "SELECT collection_name, record_key, payload_json, updated_at, last_mutation_id \
+                 FROM operational_current \
+                 WHERE collection_name = ?1 AND record_key = ?2 \
+                 ORDER BY updated_at, record_key",
+            )?;
+            stmt.query_map([collection_name, record_key], map_operational_current_row)?
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            let mut stmt = conn.prepare(
+                "SELECT collection_name, record_key, payload_json, updated_at, last_mutation_id \
+                 FROM operational_current \
+                 WHERE collection_name = ?1 \
+                 ORDER BY updated_at, record_key",
+            )?;
+            stmt.query_map([collection_name], map_operational_current_row)?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+
+        Ok(OperationalTraceReport {
+            collection_name: collection_name.to_owned(),
+            record_key: record_key.map(str::to_owned),
+            mutation_count: mutations.len(),
+            current_count: current_rows.len(),
+            mutations,
+            current_rows,
+        })
+    }
+
+    /// # Errors
+    /// Returns [`EngineError`] if the database query fails or collection validation fails.
+    pub fn rebuild_operational_current(
+        &self,
+        collection_name: Option<&str>,
+    ) -> Result<OperationalRepairReport, EngineError> {
+        let mut conn = self.connect()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let collections = if let Some(name) = collection_name {
+            let maybe_kind: Option<String> = tx
+                .query_row(
+                    "SELECT kind FROM operational_collections WHERE name = ?1",
+                    [name],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            let Some(kind) = maybe_kind else {
+                return Err(EngineError::InvalidWrite(format!(
+                    "operational collection '{name}' is not registered"
+                )));
+            };
+            if kind != OperationalCollectionKind::LatestState.as_str() {
+                return Err(EngineError::InvalidWrite(format!(
+                    "operational collection '{name}' is not latest_state"
+                )));
+            }
+            vec![name.to_owned()]
+        } else {
+            let mut stmt = tx.prepare(
+                "SELECT name FROM operational_collections WHERE kind = 'latest_state' ORDER BY name",
+            )?;
+            stmt.query_map([], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+
+        let rebuilt_rows = rebuild_operational_current_rows(&tx, &collections)?;
+
+        persist_simple_provenance_event(
+            &tx,
+            "operational_current_rebuilt",
+            collection_name.unwrap_or("*"),
+            Some(serde_json::json!({
+                "collections_rebuilt": collections.len(),
+                "current_rows_rebuilt": rebuilt_rows,
+            })),
+        )?;
+        tx.commit()?;
+
+        Ok(OperationalRepairReport {
+            collections_rebuilt: collections.len(),
+            current_rows_rebuilt: rebuilt_rows,
         })
     }
 
@@ -730,14 +1202,240 @@ impl AdminService {
             "SELECT id FROM actions WHERE source_ref = ?1 ORDER BY created_at",
             source_ref,
         )?;
+        let operational_mutation_ids = collect_strings(
+            &conn,
+            "SELECT id FROM operational_mutations WHERE source_ref = ?1 ORDER BY mutation_order",
+            source_ref,
+        )?;
 
         Ok(TraceReport {
             source_ref: source_ref.to_owned(),
             node_rows: count_source_ref(&conn, "nodes", source_ref)?,
             edge_rows: count_source_ref(&conn, "edges", source_ref)?,
             action_rows: count_source_ref(&conn, "actions", source_ref)?,
+            operational_mutation_rows: count_source_ref(
+                &conn,
+                "operational_mutations",
+                source_ref,
+            )?,
             node_logical_ids,
             action_ids,
+            operational_mutation_ids,
+        })
+    }
+
+    /// # Errors
+    /// Returns [`EngineError`] if the database connection fails, the transaction cannot be
+    /// started, or lifecycle restoration prerequisites are missing.
+    pub fn restore_logical_id(
+        &self,
+        logical_id: &str,
+    ) -> Result<LogicalRestoreReport, EngineError> {
+        let mut conn = self.connect()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+
+        let active_count: i64 = tx.query_row(
+            "SELECT count(*) FROM nodes WHERE logical_id = ?1 AND superseded_at IS NULL",
+            [logical_id],
+            |row| row.get(0),
+        )?;
+        if active_count > 0 {
+            return Ok(LogicalRestoreReport {
+                logical_id: logical_id.to_owned(),
+                was_noop: true,
+                restored_node_rows: 0,
+                restored_edge_rows: 0,
+                restored_chunk_rows: 0,
+                restored_fts_rows: 0,
+                restored_vec_rows: 0,
+                notes: vec!["logical_id already active".to_owned()],
+            });
+        }
+
+        let restored_node: Option<(String, String)> = tx
+            .query_row(
+                "SELECT row_id, kind FROM nodes \
+                 WHERE logical_id = ?1 AND superseded_at IS NOT NULL \
+                 ORDER BY superseded_at DESC, created_at DESC, rowid DESC LIMIT 1",
+                [logical_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let (restored_node_row_id, restored_kind) = restored_node.ok_or_else(|| {
+            EngineError::InvalidWrite(format!("logical_id '{logical_id}' is not retired"))
+        })?;
+
+        tx.execute(
+            "UPDATE nodes SET superseded_at = NULL WHERE row_id = ?1",
+            [restored_node_row_id.as_str()],
+        )?;
+
+        let retire_scope: Option<(i64, Option<String>, i64)> = tx
+            .query_row(
+                "SELECT rowid, source_ref, created_at FROM provenance_events \
+                 WHERE event_type = 'node_retire' AND subject = ?1 \
+                 ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                [logical_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?;
+        let restored_edge_rows =
+            if let Some((retire_event_rowid, retire_source_ref, retire_created_at)) = retire_scope
+        {
+            let edge_logical_ids = collect_edge_logical_ids_for_restore(
+                &tx,
+                logical_id,
+                retire_source_ref.as_deref(),
+                retire_created_at,
+                retire_event_rowid,
+            )?;
+            let mut restored = 0usize;
+            for edge_logical_id in edge_logical_ids {
+                let edge_row_id: Option<String> = tx
+                    .query_row(
+                        "SELECT row_id FROM edges \
+                         WHERE logical_id = ?1 AND superseded_at IS NOT NULL \
+                         ORDER BY superseded_at DESC, created_at DESC, rowid DESC LIMIT 1",
+                        [edge_logical_id.as_str()],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                if let Some(edge_row_id) = edge_row_id {
+                    restored += tx.execute(
+                        "UPDATE edges SET superseded_at = NULL WHERE row_id = ?1",
+                        [edge_row_id.as_str()],
+                    )?;
+                }
+            }
+            restored
+        } else {
+            0
+        };
+
+        let restored_chunk_rows: usize = tx
+            .query_row(
+                "SELECT count(*) FROM chunks WHERE node_logical_id = ?1",
+                [logical_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(i64_to_usize)?;
+        tx.execute(
+            "DELETE FROM fts_nodes WHERE node_logical_id = ?1",
+            [logical_id],
+        )?;
+        let restored_fts_rows = tx.execute(
+            "INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content) \
+             SELECT id, node_logical_id, ?2, text_content \
+             FROM chunks WHERE node_logical_id = ?1",
+            rusqlite::params![logical_id, restored_kind],
+        )?;
+        let restored_vec_rows = count_vec_rows_for_logical_id(&tx, logical_id)?;
+
+        persist_simple_provenance_event(
+            &tx,
+            "restore_logical_id",
+            logical_id,
+            Some(serde_json::json!({
+                "restored_node_rows": 1,
+                "restored_edge_rows": restored_edge_rows,
+                "restored_chunk_rows": restored_chunk_rows,
+                "restored_fts_rows": restored_fts_rows,
+                "restored_vec_rows": restored_vec_rows,
+            })),
+        )?;
+        tx.commit()?;
+
+        Ok(LogicalRestoreReport {
+            logical_id: logical_id.to_owned(),
+            was_noop: false,
+            restored_node_rows: 1,
+            restored_edge_rows,
+            restored_chunk_rows,
+            restored_fts_rows,
+            restored_vec_rows,
+            notes: Vec::new(),
+        })
+    }
+
+    /// # Errors
+    /// Returns [`EngineError`] if the database connection fails, the transaction cannot be
+    /// started, or the purge mutation fails.
+    pub fn purge_logical_id(&self, logical_id: &str) -> Result<LogicalPurgeReport, EngineError> {
+        let mut conn = self.connect()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+
+        let active_count: i64 = tx.query_row(
+            "SELECT count(*) FROM nodes WHERE logical_id = ?1 AND superseded_at IS NULL",
+            [logical_id],
+            |row| row.get(0),
+        )?;
+        if active_count > 0 {
+            return Ok(LogicalPurgeReport {
+                logical_id: logical_id.to_owned(),
+                was_noop: true,
+                deleted_node_rows: 0,
+                deleted_edge_rows: 0,
+                deleted_chunk_rows: 0,
+                deleted_fts_rows: 0,
+                deleted_vec_rows: 0,
+                notes: vec!["logical_id is active; purge skipped".to_owned()],
+            });
+        }
+
+        let node_rows: i64 = tx.query_row(
+            "SELECT count(*) FROM nodes WHERE logical_id = ?1",
+            [logical_id],
+            |row| row.get(0),
+        )?;
+        if node_rows == 0 {
+            return Err(EngineError::InvalidWrite(format!(
+                "logical_id '{logical_id}' does not exist"
+            )));
+        }
+
+        let deleted_vec_rows = delete_vec_rows_for_logical_id(&tx, logical_id)?;
+        let deleted_fts_rows = tx.execute(
+            "DELETE FROM fts_nodes WHERE node_logical_id = ?1",
+            [logical_id],
+        )?;
+        let deleted_edge_rows = tx.execute(
+            "DELETE FROM edges WHERE source_logical_id = ?1 OR target_logical_id = ?1",
+            [logical_id],
+        )?;
+        let deleted_chunk_rows = tx.execute(
+            "DELETE FROM chunks WHERE node_logical_id = ?1",
+            [logical_id],
+        )?;
+        let deleted_node_rows =
+            tx.execute("DELETE FROM nodes WHERE logical_id = ?1", [logical_id])?;
+        tx.execute(
+            "DELETE FROM node_access_metadata WHERE logical_id = ?1",
+            [logical_id],
+        )?;
+
+        persist_simple_provenance_event(
+            &tx,
+            "purge_logical_id",
+            logical_id,
+            Some(serde_json::json!({
+                "deleted_node_rows": deleted_node_rows,
+                "deleted_edge_rows": deleted_edge_rows,
+                "deleted_chunk_rows": deleted_chunk_rows,
+                "deleted_fts_rows": deleted_fts_rows,
+                "deleted_vec_rows": deleted_vec_rows,
+            })),
+        )?;
+        tx.commit()?;
+
+        Ok(LogicalPurgeReport {
+            logical_id: logical_id.to_owned(),
+            was_noop: false,
+            deleted_node_rows,
+            deleted_edge_rows,
+            deleted_chunk_rows,
+            deleted_fts_rows,
+            deleted_vec_rows,
+            notes: Vec::new(),
         })
     }
 
@@ -748,6 +1446,15 @@ impl AdminService {
         let mut conn = self.connect()?;
 
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let affected_operational_collections = collect_strings_tx(
+            &tx,
+            "SELECT DISTINCT m.collection_name \
+             FROM operational_mutations m \
+             JOIN operational_collections c ON c.name = m.collection_name \
+             WHERE m.source_ref = ?1 AND c.kind = 'latest_state' \
+             ORDER BY m.collection_name",
+            source_ref,
+        )?;
 
         // Collect (row_id, logical_id) for active rows that will be excised.
         let pairs: Vec<(String, String)> = {
@@ -760,6 +1467,10 @@ impl AdminService {
             })?
             .collect::<Result<Vec<_>, _>>()?
         };
+        let affected_logical_ids: Vec<String> = pairs
+            .iter()
+            .map(|(_, logical_id)| logical_id.clone())
+            .collect();
 
         // Supersede bad rows in all tables.
         tx.execute(
@@ -777,6 +1488,18 @@ impl AdminService {
              WHERE source_ref = ?1 AND superseded_at IS NULL",
             [source_ref],
         )?;
+        clear_operational_current_rows(&tx, &affected_operational_collections)?;
+        tx.execute(
+            "DELETE FROM operational_mutations WHERE source_ref = ?1",
+            [source_ref],
+        )?;
+        for logical_id in &affected_logical_ids {
+            delete_vec_rows_for_logical_id(&tx, logical_id)?;
+            tx.execute(
+                "DELETE FROM chunks WHERE node_logical_id = ?1",
+                [logical_id.as_str()],
+            )?;
+        }
 
         // Restore the most recent prior version for each affected logical_id.
         for (excised_row_id, logical_id) in &pairs {
@@ -796,6 +1519,25 @@ impl AdminService {
                 )?;
             }
         }
+
+        for logical_id in &affected_logical_ids {
+            let has_active_node = tx
+                .query_row(
+                    "SELECT 1 FROM nodes WHERE logical_id = ?1 AND superseded_at IS NULL LIMIT 1",
+                    [logical_id.as_str()],
+                    |row| row.get::<_, i64>(0),
+                )
+                .optional()?
+                .is_some();
+            if !has_active_node {
+                tx.execute(
+                    "DELETE FROM node_access_metadata WHERE logical_id = ?1",
+                    [logical_id.as_str()],
+                )?;
+            }
+        }
+
+        rebuild_operational_current_rows(&tx, &affected_operational_collections)?;
 
         // Rebuild FTS atomically within the same transaction so readers never
         // observe a post-excise node state with a stale FTS index.
@@ -1049,6 +1791,14 @@ struct VectorRegenerationAuditMetadata {
     failure_class: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+enum OperationalRetentionPolicy {
+    KeepAll,
+    PurgeBeforeSeconds { max_age_seconds: i64 },
+    KeepLast { max_rows: usize },
+}
+
 pub fn load_vector_regeneration_config(
     path: impl AsRef<Path>,
 ) -> Result<VectorRegenerationConfig, EngineError> {
@@ -1203,6 +1953,20 @@ fn persist_vector_regeneration_event(
     metadata: &VectorRegenerationAuditMetadata,
 ) -> Result<(), EngineError> {
     let metadata_json = serialize_audit_metadata(metadata)?;
+    conn.execute(
+        "INSERT INTO provenance_events (id, event_type, subject, metadata_json) VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![new_id(), event_type, subject, metadata_json],
+    )?;
+    Ok(())
+}
+
+fn persist_simple_provenance_event(
+    conn: &rusqlite::Connection,
+    event_type: &str,
+    subject: &str,
+    metadata: Option<serde_json::Value>,
+) -> Result<(), EngineError> {
+    let metadata_json = metadata.map(|value| value.to_string()).unwrap_or_default();
     conn.execute(
         "INSERT INTO provenance_events (id, event_type, subject, metadata_json) VALUES (?1, ?2, ?3, ?4)",
         rusqlite::params![new_id(), event_type, subject, metadata_json],
@@ -1758,6 +2522,9 @@ fn count_source_ref(
         "nodes" => "SELECT count(*) FROM nodes WHERE source_ref = ?1",
         "edges" => "SELECT count(*) FROM edges WHERE source_ref = ?1",
         "actions" => "SELECT count(*) FROM actions WHERE source_ref = ?1",
+        "operational_mutations" => {
+            "SELECT count(*) FROM operational_mutations WHERE source_ref = ?1"
+        }
         other => return Err(EngineError::Bridge(format!("unknown table: {other}"))),
     };
     let count: i64 = conn.query_row(sql, [source_ref], |row| row.get(0))?;
@@ -1765,6 +2532,86 @@ fn count_source_ref(
     // Chose option (C) here: propagate error since this is a user-facing helper.
     usize::try_from(count)
         .map_err(|_| EngineError::Bridge(format!("count overflow for table {table}: {count}")))
+}
+
+fn rebuild_operational_current_rows(
+    tx: &rusqlite::Transaction<'_>,
+    collections: &[String],
+) -> Result<usize, EngineError> {
+    let mut rebuilt_rows = 0usize;
+    clear_operational_current_rows(tx, collections)?;
+    let mut ins_current = tx.prepare_cached(
+        "INSERT INTO operational_current \
+         (collection_name, record_key, payload_json, updated_at, last_mutation_id) \
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+    )?;
+
+    for collection in collections {
+        let mut stmt = tx.prepare(
+            "SELECT id, collection_name, record_key, op_kind, payload_json, source_ref, created_at \
+             FROM operational_mutations \
+             WHERE collection_name = ?1 \
+             ORDER BY record_key, mutation_order",
+        )?;
+        let mut latest_by_key: std::collections::HashMap<String, Option<(String, i64, String)>> =
+            std::collections::HashMap::new();
+        let rows = stmt.query_map([collection], map_operational_mutation_row)?;
+        for row in rows {
+            let mutation = row?;
+            match mutation.op_kind.as_str() {
+                "put" => {
+                    latest_by_key.insert(
+                        mutation.record_key,
+                        Some((mutation.payload_json, mutation.created_at, mutation.id)),
+                    );
+                }
+                "delete" => {
+                    latest_by_key.insert(mutation.record_key, None);
+                }
+                _ => {}
+            }
+        }
+
+        for (record_key, state) in latest_by_key {
+            if let Some((payload_json, updated_at, last_mutation_id)) = state {
+                ins_current.execute(rusqlite::params![
+                    collection,
+                    record_key,
+                    payload_json,
+                    updated_at,
+                    last_mutation_id,
+                ])?;
+                rebuilt_rows += 1;
+            }
+        }
+    }
+
+    drop(ins_current);
+    Ok(rebuilt_rows)
+}
+
+fn clear_operational_current_rows(
+    tx: &rusqlite::Transaction<'_>,
+    collections: &[String],
+) -> Result<(), EngineError> {
+    let mut delete_current =
+        tx.prepare_cached("DELETE FROM operational_current WHERE collection_name = ?1")?;
+    for collection in collections {
+        delete_current.execute([collection])?;
+    }
+    drop(delete_current);
+    Ok(())
+}
+
+fn collect_strings_tx(
+    tx: &rusqlite::Transaction<'_>,
+    sql: &str,
+    value: &str,
+) -> Result<Vec<String>, EngineError> {
+    let mut stmt = tx.prepare(sql)?;
+    let rows = stmt.query_map([value], |row| row.get::<_, String>(0))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(EngineError::from)
 }
 
 /// Convert a non-negative i64 count to usize, panicking on negative values
@@ -1792,6 +2639,263 @@ fn collect_strings(
     Ok(values)
 }
 
+fn collect_edge_logical_ids_for_restore(
+    tx: &rusqlite::Transaction<'_>,
+    logical_id: &str,
+    retire_source_ref: Option<&str>,
+    retire_created_at: i64,
+    retire_event_rowid: i64,
+) -> Result<Vec<String>, EngineError> {
+    let mut stmt = tx.prepare(
+        "SELECT DISTINCT e.logical_id \
+         FROM edges e \
+         JOIN provenance_events p \
+           ON p.subject = e.logical_id \
+          AND p.event_type = 'edge_retire' \
+          AND ( \
+                p.created_at > ?3 \
+                OR (p.created_at = ?3 AND p.rowid >= ?4) \
+          ) \
+          AND ((?2 IS NULL AND p.source_ref IS NULL) OR p.source_ref = ?2) \
+         WHERE e.superseded_at IS NOT NULL \
+           AND (e.source_logical_id = ?1 OR e.target_logical_id = ?1) \
+           AND NOT EXISTS ( \
+                SELECT 1 FROM edges active \
+                WHERE active.logical_id = e.logical_id \
+                  AND active.superseded_at IS NULL \
+           ) \
+         ORDER BY e.logical_id",
+    )?;
+    let edge_ids = stmt
+        .query_map(
+            rusqlite::params![
+                logical_id,
+                retire_source_ref,
+                retire_created_at,
+                retire_event_rowid
+            ],
+            |row| row.get::<_, String>(0),
+        )?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(edge_ids)
+}
+
+#[cfg(feature = "sqlite-vec")]
+fn count_vec_rows_for_logical_id(
+    tx: &rusqlite::Transaction<'_>,
+    logical_id: &str,
+) -> Result<usize, EngineError> {
+    match tx.query_row(
+        "SELECT count(*) FROM vec_nodes_active v \
+         JOIN chunks c ON c.id = v.chunk_id \
+         WHERE c.node_logical_id = ?1",
+        [logical_id],
+        |row| row.get::<_, i64>(0),
+    ) {
+        Ok(count) => Ok(i64_to_usize(count)),
+        Err(rusqlite::Error::SqliteFailure(_, Some(ref msg)))
+            if msg.contains("vec_nodes_active") || msg.contains("vec0") =>
+        {
+            Ok(0)
+        }
+        Err(error) => Err(EngineError::Sqlite(error)),
+    }
+}
+
+#[cfg(not(feature = "sqlite-vec"))]
+fn count_vec_rows_for_logical_id(
+    _tx: &rusqlite::Transaction<'_>,
+    _logical_id: &str,
+) -> Result<usize, EngineError> {
+    Ok(0)
+}
+
+#[cfg(feature = "sqlite-vec")]
+fn delete_vec_rows_for_logical_id(
+    tx: &rusqlite::Transaction<'_>,
+    logical_id: &str,
+) -> Result<usize, EngineError> {
+    match tx.execute(
+        "DELETE FROM vec_nodes_active \
+         WHERE chunk_id IN (SELECT id FROM chunks WHERE node_logical_id = ?1)",
+        [logical_id],
+    ) {
+        Ok(count) => Ok(count),
+        Err(rusqlite::Error::SqliteFailure(_, Some(ref msg)))
+            if msg.contains("vec_nodes_active") || msg.contains("vec0") =>
+        {
+            Ok(0)
+        }
+        Err(error) => Err(EngineError::Sqlite(error)),
+    }
+}
+
+#[cfg(not(feature = "sqlite-vec"))]
+fn delete_vec_rows_for_logical_id(
+    _tx: &rusqlite::Transaction<'_>,
+    _logical_id: &str,
+) -> Result<usize, EngineError> {
+    Ok(0)
+}
+
+fn ensure_operational_collection_registered(
+    conn: &rusqlite::Connection,
+    collection_name: &str,
+) -> Result<(), EngineError> {
+    if load_operational_collection_record(conn, collection_name)?.is_none() {
+        return Err(EngineError::InvalidWrite(format!(
+            "operational collection '{collection_name}' is not registered"
+        )));
+    }
+    Ok(())
+}
+
+fn load_operational_collection_record(
+    conn: &rusqlite::Connection,
+    name: &str,
+) -> Result<Option<OperationalCollectionRecord>, EngineError> {
+    conn.query_row(
+        "SELECT name, kind, schema_json, retention_json, format_version, created_at, disabled_at \
+         FROM operational_collections WHERE name = ?1",
+        [name],
+        map_operational_collection_row,
+    )
+    .optional()
+    .map_err(EngineError::Sqlite)
+}
+
+fn validate_append_only_operational_collection(
+    record: &OperationalCollectionRecord,
+    operation: &str,
+) -> Result<(), EngineError> {
+    if record.kind != OperationalCollectionKind::AppendOnlyLog {
+        return Err(EngineError::InvalidWrite(format!(
+            "operational collection '{}' must be append_only_log to {operation}",
+            record.name
+        )));
+    }
+    Ok(())
+}
+
+fn operational_compaction_candidates(
+    conn: &rusqlite::Connection,
+    retention_json: &str,
+    collection_name: &str,
+) -> Result<(Vec<String>, Option<i64>), EngineError> {
+    let policy = parse_operational_retention_policy(retention_json)?;
+    match policy {
+        OperationalRetentionPolicy::KeepAll => Ok((Vec::new(), None)),
+        OperationalRetentionPolicy::PurgeBeforeSeconds { max_age_seconds } => {
+            let before_timestamp = current_unix_timestamp()? - max_age_seconds;
+            let mut stmt = conn.prepare(
+                "SELECT id FROM operational_mutations \
+                 WHERE collection_name = ?1 AND created_at < ?2 \
+                 ORDER BY mutation_order",
+            )?;
+            let mutation_ids = stmt
+                .query_map(
+                    rusqlite::params![collection_name, before_timestamp],
+                    |row| row.get::<_, String>(0),
+                )?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok((mutation_ids, Some(before_timestamp)))
+        }
+        OperationalRetentionPolicy::KeepLast { max_rows } => {
+            let mut stmt = conn.prepare(
+                "SELECT id FROM operational_mutations \
+                 WHERE collection_name = ?1 \
+                 ORDER BY mutation_order DESC",
+            )?;
+            let ordered_ids = stmt
+                .query_map([collection_name], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok((ordered_ids.into_iter().skip(max_rows).collect(), None))
+        }
+    }
+}
+
+fn parse_operational_retention_policy(
+    retention_json: &str,
+) -> Result<OperationalRetentionPolicy, EngineError> {
+    let policy: OperationalRetentionPolicy = serde_json::from_str(retention_json)
+        .map_err(|error| EngineError::InvalidWrite(format!("invalid retention_json: {error}")))?;
+    match policy {
+        OperationalRetentionPolicy::KeepAll => Ok(policy),
+        OperationalRetentionPolicy::PurgeBeforeSeconds { max_age_seconds } => {
+            if max_age_seconds <= 0 {
+                return Err(EngineError::InvalidWrite(
+                    "retention_json max_age_seconds must be greater than zero".to_owned(),
+                ));
+            }
+            Ok(policy)
+        }
+        OperationalRetentionPolicy::KeepLast { max_rows } => {
+            if max_rows == 0 {
+                return Err(EngineError::InvalidWrite(
+                    "retention_json max_rows must be greater than zero".to_owned(),
+                ));
+            }
+            Ok(policy)
+        }
+    }
+}
+
+fn current_unix_timestamp() -> Result<i64, EngineError> {
+    let now = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_err(|error| EngineError::Bridge(format!("system clock error: {error}")))?;
+    i64::try_from(now.as_secs())
+        .map_err(|_| EngineError::Bridge("unix timestamp overflow".to_owned()))
+}
+
+fn map_operational_collection_row(
+    row: &rusqlite::Row<'_>,
+) -> Result<OperationalCollectionRecord, rusqlite::Error> {
+    let kind_text: String = row.get(1)?;
+    let kind = OperationalCollectionKind::try_from(kind_text.as_str()).map_err(|message| {
+        rusqlite::Error::FromSqlConversionFailure(
+            1,
+            rusqlite::types::Type::Text,
+            Box::new(io::Error::new(io::ErrorKind::InvalidData, message)),
+        )
+    })?;
+    Ok(OperationalCollectionRecord {
+        name: row.get(0)?,
+        kind,
+        schema_json: row.get(2)?,
+        retention_json: row.get(3)?,
+        format_version: row.get(4)?,
+        created_at: row.get(5)?,
+        disabled_at: row.get(6)?,
+    })
+}
+
+fn map_operational_mutation_row(
+    row: &rusqlite::Row<'_>,
+) -> Result<OperationalMutationRow, rusqlite::Error> {
+    Ok(OperationalMutationRow {
+        id: row.get(0)?,
+        collection_name: row.get(1)?,
+        record_key: row.get(2)?,
+        op_kind: row.get(3)?,
+        payload_json: row.get(4)?,
+        source_ref: row.get(5)?,
+        created_at: row.get(6)?,
+    })
+}
+
+fn map_operational_current_row(
+    row: &rusqlite::Row<'_>,
+) -> Result<OperationalCurrentRow, rusqlite::Error> {
+    Ok(OperationalCurrentRow {
+        collection_name: row.get(0)?,
+        record_key: row.get(1)?,
+        payload_json: row.get(2)?,
+        updated_at: row.get(3)?,
+        last_mutation_id: row.get(4)?,
+    })
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {
@@ -1803,9 +2907,16 @@ mod tests {
 
     use super::{AdminService, SafeExportOptions, VectorRegenerationConfig};
     use crate::sqlite;
+    use crate::{EngineError, OperationalCollectionKind, OperationalRegisterRequest};
+
+    #[cfg(feature = "sqlite-vec")]
+    use fathomdb_query::QueryBuilder;
 
     #[cfg(feature = "sqlite-vec")]
     use super::{VectorGeneratorPolicy, load_vector_regeneration_config};
+
+    #[cfg(feature = "sqlite-vec")]
+    use crate::ExecutionCoordinator;
 
     #[allow(dead_code)]
     #[cfg(unix)]
@@ -1837,6 +2948,8 @@ mod tests {
         let (_db, service) = setup();
         let report = service.check_integrity().expect("integrity check");
         assert_eq!(report.duplicate_active_logical_ids, 0);
+        assert_eq!(report.operational_missing_collections, 0);
+        assert_eq!(report.operational_missing_last_mutations, 0);
     }
 
     #[test]
@@ -1854,6 +2967,32 @@ mod tests {
         let report = service.trace_source("source-1").expect("trace");
         assert_eq!(report.node_rows, 1);
         assert_eq!(report.node_logical_ids, vec!["lg1"]);
+    }
+
+    #[test]
+    fn trace_source_includes_operational_mutations() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO operational_collections \
+                 (name, kind, schema_json, retention_json, format_version, created_at) \
+                 VALUES ('connector_health', 'latest_state', '{}', '{}', 1, 100)",
+                [],
+            )
+            .expect("insert collection");
+            conn.execute(
+                "INSERT INTO operational_mutations \
+                 (id, collection_name, record_key, op_kind, payload_json, source_ref, created_at, mutation_order) \
+                 VALUES ('m1', 'connector_health', 'gmail', 'put', '{\"status\":\"ok\"}', 'source-1', 100, 1)",
+                [],
+            )
+            .expect("insert mutation");
+        }
+
+        let report = service.trace_source("source-1").expect("trace");
+        assert_eq!(report.operational_mutation_rows, 1);
+        assert_eq!(report.operational_mutation_ids, vec!["m1"]);
     }
 
     #[test]
@@ -1889,6 +3028,589 @@ mod tests {
     }
 
     #[test]
+    fn excise_source_deletes_operational_mutations_and_repairs_latest_state_current() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO operational_collections \
+                 (name, kind, schema_json, retention_json, format_version, created_at) \
+                 VALUES ('connector_health', 'latest_state', '{}', '{}', 1, 100)",
+                [],
+            )
+            .expect("insert collection");
+            conn.execute(
+                "INSERT INTO operational_mutations \
+                 (id, collection_name, record_key, op_kind, payload_json, source_ref, created_at, mutation_order) \
+                 VALUES ('m1', 'connector_health', 'gmail', 'put', '{\"status\":\"old\"}', 'source-1', 100, 1)",
+                [],
+            )
+            .expect("insert prior mutation");
+            conn.execute(
+                "INSERT INTO operational_mutations \
+                 (id, collection_name, record_key, op_kind, payload_json, source_ref, created_at, mutation_order) \
+                 VALUES ('m2', 'connector_health', 'gmail', 'put', '{\"status\":\"new\"}', 'source-2', 200, 2)",
+                [],
+            )
+            .expect("insert excised mutation");
+            conn.execute(
+                "INSERT INTO operational_current \
+                 (collection_name, record_key, payload_json, updated_at, last_mutation_id) \
+                 VALUES ('connector_health', 'gmail', '{\"status\":\"new\"}', 200, 'm2')",
+                [],
+            )
+            .expect("insert current row");
+        }
+
+        let traced = service
+            .trace_source("source-2")
+            .expect("trace before excise");
+        assert_eq!(traced.operational_mutation_rows, 1);
+        assert_eq!(traced.operational_mutation_ids, vec!["m2"]);
+
+        let excised = service.excise_source("source-2").expect("excise");
+        assert_eq!(excised.operational_mutation_rows, 0);
+        assert!(excised.operational_mutation_ids.is_empty());
+
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            let remaining: i64 = conn
+                .query_row(
+                    "SELECT count(*) FROM operational_mutations WHERE source_ref = 'source-2'",
+                    [],
+                    |row| row.get(0),
+                )
+                .expect("remaining count");
+            assert_eq!(remaining, 0);
+
+            let current: (String, String) = conn
+                .query_row(
+                    "SELECT payload_json, last_mutation_id FROM operational_current \
+                     WHERE collection_name = 'connector_health' AND record_key = 'gmail'",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .expect("rebuilt current row");
+            assert_eq!(current.0, "{\"status\":\"old\"}");
+            assert_eq!(current.1, "m1");
+        }
+    }
+
+    #[test]
+    fn restore_logical_id_reestablishes_last_pre_retire_content_and_attached_edges() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('node-row-1', 'doc-1', 'Document', '{\"title\":\"Budget\"}', 100, 'seed')",
+                [],
+            )
+            .expect("insert node");
+            conn.execute(
+                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
+                 VALUES ('chunk-1', 'doc-1', 'budget narrative', 100)",
+                [],
+            )
+            .expect("insert chunk");
+            conn.execute(
+                "INSERT INTO edges \
+                 (row_id, logical_id, source_logical_id, target_logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('edge-row-1', 'edge-1', 'doc-1', 'topic-1', 'TAGGED', '{}', 100, 'seed')",
+                [],
+            )
+            .expect("insert edge");
+            conn.execute(
+                "INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at, metadata_json) \
+                 VALUES ('evt-node-retire', 'node_retire', 'doc-1', 'forget-1', 200, '')",
+                [],
+            )
+            .expect("insert node retire event");
+            conn.execute(
+                "INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at, metadata_json) \
+                 VALUES ('evt-edge-retire', 'edge_retire', 'edge-1', 'forget-1', 200, '')",
+                [],
+            )
+            .expect("insert edge retire event");
+            conn.execute(
+                "UPDATE nodes SET superseded_at = 200 WHERE logical_id = 'doc-1'",
+                [],
+            )
+            .expect("retire node");
+            conn.execute(
+                "UPDATE edges SET superseded_at = 200 WHERE logical_id = 'edge-1'",
+                [],
+            )
+            .expect("retire edge");
+            conn.execute("DELETE FROM fts_nodes", [])
+                .expect("clear fts");
+        }
+
+        let report = service.restore_logical_id("doc-1").expect("restore");
+        assert_eq!(report.logical_id, "doc-1");
+        assert!(!report.was_noop);
+        assert_eq!(report.restored_node_rows, 1);
+        assert_eq!(report.restored_edge_rows, 1);
+        assert_eq!(report.restored_chunk_rows, 1);
+        assert_eq!(report.restored_fts_rows, 1);
+
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let active_node_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM nodes WHERE logical_id = 'doc-1' AND superseded_at IS NULL",
+                [],
+                |row| row.get(0),
+            )
+            .expect("active node count");
+        assert_eq!(active_node_count, 1);
+        let active_edge_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM edges WHERE logical_id = 'edge-1' AND superseded_at IS NULL",
+                [],
+                |row| row.get(0),
+            )
+            .expect("active edge count");
+        assert_eq!(active_edge_count, 1);
+        let fts_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM fts_nodes WHERE chunk_id = 'chunk-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("fts count");
+        assert_eq!(fts_count, 1);
+    }
+
+    #[test]
+    fn restore_logical_id_restores_edges_retired_after_the_node_retire_event() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('node-row-1', 'doc-1', 'Document', '{\"title\":\"Budget\"}', 100, 'seed')",
+                [],
+            )
+            .expect("insert node");
+            conn.execute(
+                "INSERT INTO edges \
+                 (row_id, logical_id, source_logical_id, target_logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('edge-row-1', 'edge-1', 'doc-1', 'topic-1', 'TAGGED', '{}', 100, 'seed')",
+                [],
+            )
+            .expect("insert edge");
+            conn.execute(
+                "INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at, metadata_json) \
+                 VALUES ('evt-node-retire', 'node_retire', 'doc-1', 'forget-1', 200, '')",
+                [],
+            )
+            .expect("insert node retire event");
+            conn.execute(
+                "INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at, metadata_json) \
+                 VALUES ('evt-edge-retire', 'edge_retire', 'edge-1', 'forget-1', 201, '')",
+                [],
+            )
+            .expect("insert edge retire event");
+            conn.execute(
+                "UPDATE nodes SET superseded_at = 200 WHERE logical_id = 'doc-1'",
+                [],
+            )
+            .expect("retire node");
+            conn.execute(
+                "UPDATE edges SET superseded_at = 201 WHERE logical_id = 'edge-1'",
+                [],
+            )
+            .expect("retire edge");
+        }
+
+        let report = service.restore_logical_id("doc-1").expect("restore");
+        assert_eq!(report.restored_edge_rows, 1);
+
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let active_edge_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM edges WHERE logical_id = 'edge-1' AND superseded_at IS NULL",
+                [],
+                |row| row.get(0),
+            )
+            .expect("active edge count");
+        assert_eq!(active_edge_count, 1);
+    }
+
+    #[test]
+    fn restore_logical_id_prefers_latest_retired_revision_when_timestamps_tie() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO nodes \
+                 (row_id, logical_id, kind, properties, created_at, superseded_at, source_ref) \
+                 VALUES ('node-row-older', 'doc-1', 'Document', '{\"title\":\"older\"}', 100, 200, 'forget-1')",
+                [],
+            )
+            .expect("insert older retired node");
+            conn.execute(
+                "INSERT INTO nodes \
+                 (row_id, logical_id, kind, properties, created_at, superseded_at, source_ref) \
+                 VALUES ('node-row-newer', 'doc-1', 'Document', '{\"title\":\"newer\"}', 100, 200, 'forget-1')",
+                [],
+            )
+            .expect("insert newer retired node");
+            conn.execute(
+                "INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at, metadata_json) \
+                 VALUES ('evt-retire-older', 'node_retire', 'doc-1', 'forget-1', 200, '')",
+                [],
+            )
+            .expect("insert older retire event");
+            conn.execute(
+                "INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at, metadata_json) \
+                 VALUES ('evt-retire-newer', 'node_retire', 'doc-1', 'forget-1', 200, '')",
+                [],
+            )
+            .expect("insert newer retire event");
+        }
+
+        let report = service.restore_logical_id("doc-1").expect("restore");
+
+        assert!(!report.was_noop);
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let active_row: (String, String) = conn
+            .query_row(
+                "SELECT row_id, properties FROM nodes \
+                 WHERE logical_id = 'doc-1' AND superseded_at IS NULL",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("restored active row");
+        assert_eq!(active_row.0, "node-row-newer");
+        assert_eq!(active_row.1, "{\"title\":\"newer\"}");
+    }
+
+    #[test]
+    fn purge_logical_id_removes_retired_content_and_records_tombstone() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, superseded_at, source_ref) \
+                 VALUES ('node-row-1', 'doc-1', 'Document', '{\"title\":\"Budget\"}', 100, 200, 'seed')",
+                [],
+            )
+            .expect("insert retired node");
+            conn.execute(
+                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
+                 VALUES ('chunk-1', 'doc-1', 'budget narrative', 100)",
+                [],
+            )
+            .expect("insert chunk");
+            conn.execute(
+                "INSERT INTO edges \
+                 (row_id, logical_id, source_logical_id, target_logical_id, kind, properties, created_at, superseded_at, source_ref) \
+                 VALUES ('edge-row-1', 'edge-1', 'doc-1', 'topic-1', 'TAGGED', '{}', 100, 200, 'seed')",
+                [],
+            )
+            .expect("insert retired edge");
+            conn.execute(
+                "INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content) \
+                 VALUES ('chunk-1', 'doc-1', 'Document', 'budget narrative')",
+                [],
+            )
+            .expect("insert fts");
+        }
+
+        let report = service.purge_logical_id("doc-1").expect("purge");
+        assert_eq!(report.logical_id, "doc-1");
+        assert!(!report.was_noop);
+        assert_eq!(report.deleted_node_rows, 1);
+        assert_eq!(report.deleted_edge_rows, 1);
+        assert_eq!(report.deleted_chunk_rows, 1);
+        assert_eq!(report.deleted_fts_rows, 1);
+
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let remaining_nodes: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM nodes WHERE logical_id = 'doc-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("remaining nodes");
+        assert_eq!(remaining_nodes, 0);
+        let remaining_edges: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM edges WHERE logical_id = 'edge-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("remaining edges");
+        assert_eq!(remaining_edges, 0);
+        let remaining_chunks: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM chunks WHERE id = 'chunk-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("remaining chunks");
+        assert_eq!(remaining_chunks, 0);
+        let purge_events: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM provenance_events WHERE event_type = 'purge_logical_id' AND subject = 'doc-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("purge events");
+        assert_eq!(purge_events, 1);
+    }
+
+    #[test]
+    fn check_semantics_accepts_preserved_retired_chunks() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, superseded_at, source_ref) \
+                 VALUES ('node-row-1', 'doc-1', 'Document', '{}', 100, 200, 'seed')",
+                [],
+            )
+            .expect("insert retired node");
+            conn.execute(
+                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
+                 VALUES ('chunk-1', 'doc-1', 'budget narrative', 100)",
+                [],
+            )
+            .expect("insert chunk");
+        }
+
+        let report = service.check_semantics().expect("semantics");
+        assert_eq!(report.orphaned_chunks, 0);
+    }
+
+    #[test]
+    fn check_semantics_detects_missing_retired_node_history_for_preserved_chunks() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
+                 VALUES ('chunk-1', 'ghost-doc', 'budget narrative', 100)",
+                [],
+            )
+            .expect("insert orphaned chunk");
+        }
+
+        let report = service.check_semantics().expect("semantics");
+        assert_eq!(report.orphaned_chunks, 1);
+    }
+
+    #[cfg(feature = "sqlite-vec")]
+    #[test]
+    fn check_semantics_detects_missing_retired_node_history_for_preserved_vec_rows() {
+        let (db, service) = setup();
+        {
+            let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
+            service
+                .schema_manager
+                .ensure_vector_profile(&conn, "default", "vec_nodes_active", 4)
+                .expect("ensure vec profile");
+            conn.execute(
+                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
+                 VALUES ('chunk-1', 'ghost-doc', 'budget narrative', 100)",
+                [],
+            )
+            .expect("insert orphaned chunk");
+            conn.execute(
+                "INSERT INTO vec_nodes_active (chunk_id, embedding) VALUES ('chunk-1', zeroblob(16))",
+                [],
+            )
+            .expect("insert vec row");
+        }
+
+        let report = service.check_semantics().expect("semantics");
+        assert_eq!(report.orphaned_chunks, 1);
+        assert_eq!(report.vec_rows_for_superseded_nodes, 1);
+    }
+
+    #[cfg(feature = "sqlite-vec")]
+    #[test]
+    fn restore_logical_id_reestablishes_vector_search_without_reingest() {
+        let (db, service) = setup();
+        {
+            let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
+            service
+                .schema_manager
+                .ensure_vector_profile(&conn, "default", "vec_nodes_active", 4)
+                .expect("ensure vec profile");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, superseded_at, source_ref) \
+                 VALUES ('node-row-1', 'doc-1', 'Document', '{\"title\":\"Budget\"}', 100, 200, 'seed')",
+                [],
+            )
+            .expect("insert retired node");
+            conn.execute(
+                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
+                 VALUES ('chunk-1', 'doc-1', 'budget narrative', 100)",
+                [],
+            )
+            .expect("insert chunk");
+            conn.execute(
+                "INSERT INTO vec_nodes_active (chunk_id, embedding) VALUES ('chunk-1', zeroblob(16))",
+                [],
+            )
+            .expect("insert vec row");
+            conn.execute(
+                "INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at, metadata_json) \
+                 VALUES ('evt-node-retire', 'node_retire', 'doc-1', 'forget-1', 200, '')",
+                [],
+            )
+            .expect("insert retire event");
+        }
+
+        let report = service.restore_logical_id("doc-1").expect("restore");
+        assert_eq!(report.restored_vec_rows, 1);
+
+        let coordinator =
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), Some(4))
+                .expect("coordinator");
+        let compiled = QueryBuilder::nodes("Document")
+            .vector_search("[0.0, 0.0, 0.0, 0.0]", 5)
+            .compile()
+            .expect("compile");
+        let rows = coordinator
+            .execute_compiled_read(&compiled)
+            .expect("vector read");
+        assert!(
+            rows.nodes.iter().any(|row| row.logical_id == "doc-1"),
+            "restore should make the preserved vec row visible again without re-ingest"
+        );
+    }
+
+    #[cfg(feature = "sqlite-vec")]
+    #[test]
+    fn purge_logical_id_deletes_vec_rows_for_retired_content() {
+        let (db, service) = setup();
+        {
+            let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
+            service
+                .schema_manager
+                .ensure_vector_profile(&conn, "default", "vec_nodes_active", 4)
+                .expect("ensure vec profile");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, superseded_at, source_ref) \
+                 VALUES ('node-row-1', 'doc-1', 'Document', '{\"title\":\"Budget\"}', 100, 200, 'seed')",
+                [],
+            )
+            .expect("insert retired node");
+            conn.execute(
+                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
+                 VALUES ('chunk-1', 'doc-1', 'budget narrative', 100)",
+                [],
+            )
+            .expect("insert chunk");
+            conn.execute(
+                "INSERT INTO vec_nodes_active (chunk_id, embedding) VALUES ('chunk-1', zeroblob(16))",
+                [],
+            )
+            .expect("insert vec row");
+        }
+
+        let report = service.purge_logical_id("doc-1").expect("purge");
+        assert_eq!(report.deleted_vec_rows, 1);
+
+        let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
+        let vec_count: i64 = conn
+            .query_row("SELECT count(*) FROM vec_nodes_active", [], |row| {
+                row.get(0)
+            })
+            .expect("vec count");
+        assert_eq!(vec_count, 0);
+    }
+
+    #[cfg(feature = "sqlite-vec")]
+    #[test]
+    fn restore_logical_id_restores_visibility_of_regenerated_vectors() {
+        let (db, service) = setup();
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let script_path = temp_dir.path().join("vector-generator-restore.sh");
+        fs::write(
+            &script_path,
+            r#"#!/usr/bin/env bash
+set -euo pipefail
+python3 -c 'import json, sys
+payload = json.load(sys.stdin)
+json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedding": [0.0, 0.0, 0.0, 0.0]}]}, sys.stdout)'
+"#,
+        )
+        .expect("write script");
+        set_file_mode(&script_path, 0o755);
+
+        {
+            let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
+            service
+                .schema_manager
+                .ensure_vector_profile(&conn, "default", "vec_nodes_active", 4)
+                .expect("ensure vec profile");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('node-row-1', 'doc-1', 'Document', '{\"title\":\"Budget\"}', 100, 'seed')",
+                [],
+            )
+            .expect("insert node");
+            conn.execute(
+                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
+                 VALUES ('chunk-1', 'doc-1', 'budget narrative', 100)",
+                [],
+            )
+            .expect("insert chunk");
+        }
+
+        service
+            .regenerate_vector_embeddings(&VectorRegenerationConfig {
+                profile: "default".to_owned(),
+                table_name: "vec_nodes_active".to_owned(),
+                model_identity: "model".to_owned(),
+                model_version: "1.0.0".to_owned(),
+                dimension: 4,
+                normalization_policy: "l2".to_owned(),
+                chunking_policy: "per_chunk".to_owned(),
+                preprocessing_policy: "trim".to_owned(),
+                generator_command: vec![script_path.to_string_lossy().to_string()],
+            })
+            .expect("regenerate");
+
+        {
+            let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
+            conn.execute(
+                "INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at, metadata_json) \
+                 VALUES ('evt-node-retire', 'node_retire', 'doc-1', 'forget-1', 200, '')",
+                [],
+            )
+            .expect("insert retire event");
+            conn.execute(
+                "UPDATE nodes SET superseded_at = 200 WHERE logical_id = 'doc-1'",
+                [],
+            )
+            .expect("retire node");
+        }
+
+        let report = service.restore_logical_id("doc-1").expect("restore");
+        assert_eq!(report.restored_vec_rows, 1);
+
+        let coordinator =
+            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), Some(4))
+                .expect("coordinator");
+        let compiled = QueryBuilder::nodes("Document")
+            .vector_search("[0.0, 0.0, 0.0, 0.0]", 5)
+            .compile()
+            .expect("compile");
+        let rows = coordinator
+            .execute_compiled_read(&compiled)
+            .expect("vector read");
+        assert!(
+            rows.nodes.iter().any(|row| row.logical_id == "doc-1"),
+            "restored logical_id should become visible through regenerated vectors"
+        );
+    }
+
+    #[test]
     fn check_semantics_clean_db_returns_zeros() {
         let (_db, service) = setup();
         let report = service.check_semantics().expect("semantics check");
@@ -1902,7 +3624,532 @@ mod tests {
         assert_eq!(report.orphaned_supersession_chains, 0);
         assert_eq!(report.stale_vec_rows, 0);
         assert_eq!(report.vec_rows_for_superseded_nodes, 0);
+        assert_eq!(report.missing_operational_current_rows, 0);
+        assert_eq!(report.stale_operational_current_rows, 0);
+        assert_eq!(report.disabled_collection_mutations, 0);
         assert!(report.warnings.is_empty());
+    }
+
+    #[test]
+    fn register_operational_collection_persists_and_emits_provenance() {
+        let (db, service) = setup();
+        let record = service
+            .register_operational_collection(&OperationalRegisterRequest {
+                name: "connector_health".to_owned(),
+                kind: OperationalCollectionKind::LatestState,
+                schema_json: "{}".to_owned(),
+                retention_json: "{}".to_owned(),
+                format_version: 1,
+            })
+            .expect("register collection");
+
+        assert_eq!(record.name, "connector_health");
+        assert_eq!(record.kind, OperationalCollectionKind::LatestState);
+        assert_eq!(record.schema_json, "{}");
+        assert_eq!(record.retention_json, "{}");
+        assert!(record.created_at > 0);
+        assert_eq!(record.disabled_at, None);
+
+        let described = service
+            .describe_operational_collection("connector_health")
+            .expect("describe collection")
+            .expect("collection exists");
+        assert_eq!(described, record);
+
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let provenance_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM provenance_events \
+                 WHERE event_type = 'operational_collection_registered' AND subject = 'connector_health'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("provenance count");
+        assert_eq!(provenance_count, 1);
+    }
+
+    #[test]
+    fn trace_operational_collection_returns_mutations_and_current_rows() {
+        let (db, service) = setup();
+        service
+            .register_operational_collection(&OperationalRegisterRequest {
+                name: "connector_health".to_owned(),
+                kind: OperationalCollectionKind::LatestState,
+                schema_json: "{}".to_owned(),
+                retention_json: "{}".to_owned(),
+                format_version: 1,
+            })
+            .expect("register collection");
+        {
+            let writer = crate::WriterActor::start(
+                db.path(),
+                Arc::new(SchemaManager::new()),
+                crate::ProvenanceMode::Warn,
+            )
+            .expect("writer");
+            writer
+                .submit(crate::WriteRequest {
+                    label: "operational".to_owned(),
+                    nodes: vec![],
+                    node_retires: vec![],
+                    edges: vec![],
+                    edge_retires: vec![],
+                    chunks: vec![],
+                    runs: vec![],
+                    steps: vec![],
+                    actions: vec![],
+                    optional_backfills: vec![],
+                    vec_inserts: vec![],
+                    operational_writes: vec![crate::OperationalWrite::Put {
+                        collection: "connector_health".to_owned(),
+                        record_key: "gmail".to_owned(),
+                        payload_json: r#"{"status":"ok"}"#.to_owned(),
+                        source_ref: Some("src-1".to_owned()),
+                    }],
+                })
+                .expect("write");
+        }
+
+        let report = service
+            .trace_operational_collection("connector_health", Some("gmail"))
+            .expect("trace");
+        assert_eq!(report.collection_name, "connector_health");
+        assert_eq!(report.record_key.as_deref(), Some("gmail"));
+        assert_eq!(report.mutation_count, 1);
+        assert_eq!(report.current_count, 1);
+        assert_eq!(report.mutations[0].op_kind, "put");
+        assert_eq!(report.current_rows[0].payload_json, r#"{"status":"ok"}"#);
+    }
+
+    #[test]
+    fn trace_operational_collection_rejects_unknown_collection() {
+        let (_db, service) = setup();
+
+        let error = service
+            .trace_operational_collection("missing_collection", None)
+            .expect_err("unknown collection should fail");
+
+        assert!(matches!(error, EngineError::InvalidWrite(_)));
+        assert!(error.to_string().contains("is not registered"));
+    }
+
+    #[test]
+    fn rebuild_operational_current_repairs_missing_latest_state_rows() {
+        let (db, service) = setup();
+        service
+            .register_operational_collection(&OperationalRegisterRequest {
+                name: "connector_health".to_owned(),
+                kind: OperationalCollectionKind::LatestState,
+                schema_json: "{}".to_owned(),
+                retention_json: "{}".to_owned(),
+                format_version: 1,
+            })
+            .expect("register collection");
+        {
+            let writer = crate::WriterActor::start(
+                db.path(),
+                Arc::new(SchemaManager::new()),
+                crate::ProvenanceMode::Warn,
+            )
+            .expect("writer");
+            writer
+                .submit(crate::WriteRequest {
+                    label: "operational".to_owned(),
+                    nodes: vec![],
+                    node_retires: vec![],
+                    edges: vec![],
+                    edge_retires: vec![],
+                    chunks: vec![],
+                    runs: vec![],
+                    steps: vec![],
+                    actions: vec![],
+                    optional_backfills: vec![],
+                    vec_inserts: vec![],
+                    operational_writes: vec![crate::OperationalWrite::Put {
+                        collection: "connector_health".to_owned(),
+                        record_key: "gmail".to_owned(),
+                        payload_json: r#"{"status":"ok"}"#.to_owned(),
+                        source_ref: Some("src-1".to_owned()),
+                    }],
+                })
+                .expect("write");
+        }
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "DELETE FROM operational_current WHERE collection_name = 'connector_health' AND record_key = 'gmail'",
+                [],
+            )
+            .expect("delete current row");
+        }
+
+        let before = service.check_semantics().expect("semantics before rebuild");
+        assert_eq!(before.missing_operational_current_rows, 1);
+
+        let repair = service
+            .rebuild_operational_current(Some("connector_health"))
+            .expect("rebuild current");
+        assert_eq!(repair.collections_rebuilt, 1);
+        assert_eq!(repair.current_rows_rebuilt, 1);
+
+        let after = service.check_semantics().expect("semantics after rebuild");
+        assert_eq!(after.missing_operational_current_rows, 0);
+
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let payload: String = conn
+            .query_row(
+                "SELECT payload_json FROM operational_current \
+                 WHERE collection_name = 'connector_health' AND record_key = 'gmail'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("restored payload");
+        assert_eq!(payload, r#"{"status":"ok"}"#);
+    }
+
+    #[test]
+    fn operational_current_semantics_and_rebuild_follow_mutation_order() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO operational_collections (name, kind, schema_json, retention_json, format_version, created_at) \
+                 VALUES ('connector_health', 'latest_state', '{}', '{}', 1, 100)",
+                [],
+            )
+            .expect("seed collection");
+            conn.execute(
+                "INSERT INTO operational_mutations \
+                 (id, collection_name, record_key, op_kind, payload_json, source_ref, created_at, mutation_order) \
+                 VALUES ('m3', 'connector_health', 'gmail', 'put', '{\"status\":\"old\"}', 'src-1', 100, 1)",
+                [],
+            )
+            .expect("seed first put");
+            conn.execute(
+                "INSERT INTO operational_mutations \
+                 (id, collection_name, record_key, op_kind, payload_json, source_ref, created_at, mutation_order) \
+                 VALUES ('m2', 'connector_health', 'gmail', 'delete', '', 'src-2', 100, 2)",
+                [],
+            )
+            .expect("seed delete");
+            conn.execute(
+                "INSERT INTO operational_mutations \
+                 (id, collection_name, record_key, op_kind, payload_json, source_ref, created_at, mutation_order) \
+                 VALUES ('m1', 'connector_health', 'gmail', 'put', '{\"status\":\"new\"}', 'src-3', 100, 3)",
+                [],
+            )
+            .expect("seed final put");
+            conn.execute(
+                "INSERT INTO operational_current \
+                 (collection_name, record_key, payload_json, updated_at, last_mutation_id) \
+                 VALUES ('connector_health', 'gmail', '{\"status\":\"new\"}', 100, 'm1')",
+                [],
+            )
+            .expect("seed current");
+        }
+
+        let before = service.check_semantics().expect("semantics before rebuild");
+        assert_eq!(before.missing_operational_current_rows, 0);
+        assert_eq!(before.stale_operational_current_rows, 0);
+
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "DELETE FROM operational_current WHERE collection_name = 'connector_health' AND record_key = 'gmail'",
+                [],
+            )
+            .expect("delete current row");
+        }
+
+        let missing = service.check_semantics().expect("semantics after delete");
+        assert_eq!(missing.missing_operational_current_rows, 1);
+        assert_eq!(missing.stale_operational_current_rows, 0);
+
+        service
+            .rebuild_operational_current(Some("connector_health"))
+            .expect("rebuild current");
+
+        let after = service.check_semantics().expect("semantics after rebuild");
+        assert_eq!(after.missing_operational_current_rows, 0);
+        assert_eq!(after.stale_operational_current_rows, 0);
+
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let payload: String = conn
+            .query_row(
+                "SELECT payload_json FROM operational_current \
+                 WHERE collection_name = 'connector_health' AND record_key = 'gmail'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("restored payload");
+        assert_eq!(payload, r#"{"status":"new"}"#);
+    }
+
+    #[test]
+    fn disable_operational_collection_sets_disabled_at_and_emits_provenance() {
+        let (db, service) = setup();
+        service
+            .register_operational_collection(&OperationalRegisterRequest {
+                name: "audit_log".to_owned(),
+                kind: OperationalCollectionKind::AppendOnlyLog,
+                schema_json: "{}".to_owned(),
+                retention_json: r#"{"mode":"keep_all"}"#.to_owned(),
+                format_version: 1,
+            })
+            .expect("register collection");
+
+        let record = service
+            .disable_operational_collection("audit_log")
+            .expect("disable collection");
+        assert_eq!(record.name, "audit_log");
+        assert!(record.disabled_at.is_some());
+
+        let disabled_at = record.disabled_at.expect("disabled_at");
+        let described = service
+            .describe_operational_collection("audit_log")
+            .expect("describe collection")
+            .expect("collection exists");
+        assert_eq!(described.disabled_at, Some(disabled_at));
+
+        let writer = crate::WriterActor::start(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            crate::ProvenanceMode::Warn,
+        )
+        .expect("writer");
+        let error = writer
+            .submit(crate::WriteRequest {
+                label: "disabled-operational".to_owned(),
+                nodes: vec![],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+                operational_writes: vec![crate::OperationalWrite::Append {
+                    collection: "audit_log".to_owned(),
+                    record_key: "evt-1".to_owned(),
+                    payload_json: r#"{"type":"sync"}"#.to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                }],
+            })
+            .expect_err("disabled collection should reject writes");
+        assert!(matches!(error, EngineError::InvalidWrite(_)));
+        assert!(error.to_string().contains("is disabled"));
+
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let provenance_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM provenance_events \
+                 WHERE event_type = 'operational_collection_disabled' AND subject = 'audit_log'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("provenance count");
+        assert_eq!(provenance_count, 1);
+    }
+
+    #[test]
+    fn purge_operational_collection_deletes_append_only_rows_before_cutoff() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO operational_collections (name, kind, schema_json, retention_json, format_version, created_at) \
+                 VALUES ('audit_log', 'append_only_log', '{}', '{\"mode\":\"keep_all\"}', 1, 100)",
+                [],
+            )
+            .expect("seed collection");
+            conn.execute(
+                "INSERT INTO operational_mutations \
+                 (id, collection_name, record_key, op_kind, payload_json, source_ref, created_at, mutation_order) \
+                 VALUES ('evt-1', 'audit_log', 'evt-1', 'append', '{\"seq\":1}', 'src-1', 100, 1)",
+                [],
+            )
+            .expect("seed event 1");
+            conn.execute(
+                "INSERT INTO operational_mutations \
+                 (id, collection_name, record_key, op_kind, payload_json, source_ref, created_at, mutation_order) \
+                 VALUES ('evt-2', 'audit_log', 'evt-2', 'append', '{\"seq\":2}', 'src-2', 200, 2)",
+                [],
+            )
+            .expect("seed event 2");
+            conn.execute(
+                "INSERT INTO operational_mutations \
+                 (id, collection_name, record_key, op_kind, payload_json, source_ref, created_at, mutation_order) \
+                 VALUES ('evt-3', 'audit_log', 'evt-3', 'append', '{\"seq\":3}', 'src-3', 300, 3)",
+                [],
+            )
+            .expect("seed event 3");
+        }
+
+        let report = service
+            .purge_operational_collection("audit_log", 250)
+            .expect("purge collection");
+        assert_eq!(report.collection_name, "audit_log");
+        assert_eq!(report.deleted_mutations, 2);
+        assert_eq!(report.before_timestamp, 250);
+
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let remaining: Vec<String> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT id FROM operational_mutations \
+                     WHERE collection_name = 'audit_log' ORDER BY mutation_order",
+                )
+                .expect("stmt");
+            stmt.query_map([], |row| row.get(0))
+                .expect("rows")
+                .collect::<Result<_, _>>()
+                .expect("collect")
+        };
+        assert_eq!(remaining, vec!["evt-3".to_owned()]);
+        let provenance_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM provenance_events \
+                 WHERE event_type = 'operational_collection_purged' AND subject = 'audit_log'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("provenance count");
+        assert_eq!(provenance_count, 1);
+    }
+
+    #[test]
+    fn compact_operational_collection_dry_run_reports_without_mutation() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO operational_collections (name, kind, schema_json, retention_json, format_version, created_at) \
+                 VALUES ('audit_log', 'append_only_log', '{}', '{\"mode\":\"keep_last\",\"max_rows\":2}', 1, 100)",
+                [],
+            )
+            .expect("seed collection");
+            for (index, created_at) in [(1_i64, 100_i64), (2, 200), (3, 300)] {
+                conn.execute(
+                    "INSERT INTO operational_mutations \
+                     (id, collection_name, record_key, op_kind, payload_json, source_ref, created_at, mutation_order) \
+                     VALUES (?1, 'audit_log', ?1, 'append', ?2, 'src', ?3, ?4)",
+                    rusqlite::params![
+                        format!("evt-{index}"),
+                        format!("{{\"seq\":{index}}}"),
+                        created_at,
+                        index,
+                    ],
+                )
+                .expect("seed event");
+            }
+        }
+
+        let report = service
+            .compact_operational_collection("audit_log", true)
+            .expect("compact collection");
+        assert_eq!(report.collection_name, "audit_log");
+        assert_eq!(report.deleted_mutations, 1);
+        assert!(report.dry_run);
+        assert_eq!(report.before_timestamp, None);
+
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let remaining_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM operational_mutations WHERE collection_name = 'audit_log'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("remaining count");
+        assert_eq!(remaining_count, 3);
+        let provenance_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM provenance_events \
+                 WHERE event_type = 'operational_collection_compacted' AND subject = 'audit_log'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("provenance count");
+        assert_eq!(provenance_count, 0);
+    }
+
+    #[test]
+    fn compact_operational_collection_keep_last_deletes_oldest_rows() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO operational_collections (name, kind, schema_json, retention_json, format_version, created_at) \
+                 VALUES ('audit_log', 'append_only_log', '{}', '{\"mode\":\"keep_last\",\"max_rows\":2}', 1, 100)",
+                [],
+            )
+            .expect("seed collection");
+            for (index, created_at) in [(1_i64, 100_i64), (2, 200), (3, 300)] {
+                conn.execute(
+                    "INSERT INTO operational_mutations \
+                     (id, collection_name, record_key, op_kind, payload_json, source_ref, created_at, mutation_order) \
+                     VALUES (?1, 'audit_log', ?1, 'append', ?2, 'src', ?3, ?4)",
+                    rusqlite::params![
+                        format!("evt-{index}"),
+                        format!("{{\"seq\":{index}}}"),
+                        created_at,
+                        index,
+                    ],
+                )
+                .expect("seed event");
+            }
+        }
+
+        let report = service
+            .compact_operational_collection("audit_log", false)
+            .expect("compact collection");
+        assert_eq!(report.deleted_mutations, 1);
+        assert!(!report.dry_run);
+
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let remaining: Vec<String> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT id FROM operational_mutations \
+                     WHERE collection_name = 'audit_log' ORDER BY mutation_order",
+                )
+                .expect("stmt");
+            stmt.query_map([], |row| row.get(0))
+                .expect("rows")
+                .collect::<Result<_, _>>()
+                .expect("collect")
+        };
+        assert_eq!(remaining, vec!["evt-2".to_owned(), "evt-3".to_owned()]);
+        let provenance_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM provenance_events \
+                 WHERE event_type = 'operational_collection_compacted' AND subject = 'audit_log'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("provenance count");
+        assert_eq!(provenance_count, 1);
+    }
+
+    #[test]
+    fn compact_operational_collection_rejects_latest_state() {
+        let (_db, service) = setup();
+        service
+            .register_operational_collection(&OperationalRegisterRequest {
+                name: "connector_health".to_owned(),
+                kind: OperationalCollectionKind::LatestState,
+                schema_json: "{}".to_owned(),
+                retention_json: r#"{"mode":"keep_all"}"#.to_owned(),
+                format_version: 1,
+            })
+            .expect("register collection");
+
+        let error = service
+            .compact_operational_collection("connector_health", false)
+            .expect_err("latest_state compaction should be rejected");
+        assert!(matches!(error, EngineError::InvalidWrite(_)));
+        assert!(error.to_string().contains("append_only_log"));
     }
 
     #[cfg(feature = "sqlite-vec")]
@@ -3376,7 +5623,7 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
     }
 
     #[test]
-    fn excise_source_repairs_fts_after_excision() {
+    fn excise_source_removes_searchable_content_after_excision() {
         let (db, service) = setup();
         {
             let conn = sqlite::open_connection(db.path()).expect("conn");
@@ -3409,7 +5656,86 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
                     |row| row.get(0),
                 )
                 .expect("fts count");
-            assert_eq!(fts_count, 1, "FTS should be rebuilt after excise");
+            assert_eq!(
+                fts_count, 0,
+                "excised content should not remain searchable after excise"
+            );
         }
+    }
+
+    #[cfg(feature = "sqlite-vec")]
+    #[test]
+    fn excise_source_cleans_chunks_and_vec_rows_for_excised_version() {
+        let (db, service) = setup();
+        {
+            let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
+            service
+                .schema_manager
+                .ensure_vector_profile(&conn, "default", "vec_nodes_active", 4)
+                .expect("ensure vec profile");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, superseded_at, source_ref) \
+                 VALUES ('r1', 'lg1', 'Meeting', '{}', 100, 200, 'source-1')",
+                [],
+            )
+            .expect("insert v1");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('r2', 'lg1', 'Meeting', '{}', 200, 'source-2')",
+                [],
+            )
+            .expect("insert v2");
+            conn.execute(
+                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
+                 VALUES ('ck1', 'lg1', 'new content', 200)",
+                [],
+            )
+            .expect("insert chunk");
+            conn.execute(
+                "INSERT INTO vec_nodes_active (chunk_id, embedding) VALUES ('ck1', zeroblob(16))",
+                [],
+            )
+            .expect("insert vec row");
+        }
+
+        service.excise_source("source-2").expect("excise");
+
+        let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
+        let active_row: String = conn
+            .query_row(
+                "SELECT row_id FROM nodes WHERE logical_id = 'lg1' AND superseded_at IS NULL",
+                [],
+                |row| row.get(0),
+            )
+            .expect("restored active row");
+        assert_eq!(active_row, "r1");
+        let chunk_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM chunks WHERE node_logical_id = 'lg1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("chunk count");
+        assert_eq!(
+            chunk_count, 0,
+            "excised source content must not survive as chunks"
+        );
+        let vec_count: i64 = conn
+            .query_row("SELECT count(*) FROM vec_nodes_active", [], |row| {
+                row.get(0)
+            })
+            .expect("vec count");
+        assert_eq!(vec_count, 0, "excised source vec rows must be removed");
+        let fts_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM fts_nodes WHERE node_logical_id = 'lg1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("fts count");
+        assert_eq!(
+            fts_count, 0,
+            "excised source content must not remain searchable"
+        );
     }
 }

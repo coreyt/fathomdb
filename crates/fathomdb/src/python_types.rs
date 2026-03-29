@@ -3,11 +3,14 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ActionInsert, ActionRow, BindValue, ChunkInsert, ChunkPolicy, CompiledQuery, DrivingTable,
-    EdgeInsert, EdgeRetire, ExecutionHints, NodeInsert, NodeRetire, NodeRow,
-    OptionalProjectionTask, Predicate, ProjectionRepairReport, ProjectionTarget, QueryAst,
-    QueryPlan, QueryRows, QueryStep, RunInsert, RunRow, SafeExportManifest, ScalarValue,
-    StepInsert, StepRow, TraverseDirection, VecInsert, WriteReceipt, WriteRequest,
+    ActionInsert, ActionRow, BindValue, ChunkInsert, ChunkPolicy, ComparisonOp,
+    CompiledGroupedQuery, CompiledQuery, DrivingTable, EdgeInsert, EdgeRetire,
+    ExecutionHints, ExpansionRootRows, ExpansionSlot, ExpansionSlotRows, GroupedQueryRows,
+    LastAccessTouchReport, LastAccessTouchRequest, NodeInsert, NodeRetire, NodeRow,
+    OperationalWrite, OptionalProjectionTask, Predicate, ProjectionRepairReport,
+    ProjectionTarget, QueryAst, QueryPlan, QueryRows, QueryStep, RunInsert, RunRow,
+    SafeExportManifest, ScalarValue, StepInsert, StepRow, TraverseDirection, VecInsert,
+    WriteReceipt, WriteRequest,
 };
 use fathomdb_engine::{IntegrityReport, SemanticReport, TraceReport};
 
@@ -16,7 +19,17 @@ pub struct PyQueryAst {
     pub root_kind: String,
     #[serde(default)]
     pub steps: Vec<PyQueryStep>,
+    #[serde(default)]
+    pub expansions: Vec<PyExpansionSlot>,
     pub final_limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct PyExpansionSlot {
+    pub slot: String,
+    pub direction: PyTraverseDirection,
+    pub label: String,
+    pub max_depth: usize,
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,9 +61,41 @@ pub enum PyQueryStep {
         path: String,
         value: String,
     },
+    FilterJsonIntegerGt {
+        path: String,
+        value: i64,
+    },
+    FilterJsonIntegerGte {
+        path: String,
+        value: i64,
+    },
+    FilterJsonIntegerLt {
+        path: String,
+        value: i64,
+    },
+    FilterJsonIntegerLte {
+        path: String,
+        value: i64,
+    },
+    FilterJsonTimestampGt {
+        path: String,
+        value: i64,
+    },
+    FilterJsonTimestampGte {
+        path: String,
+        value: i64,
+    },
+    FilterJsonTimestampLt {
+        path: String,
+        value: i64,
+    },
+    FilterJsonTimestampLte {
+        path: String,
+        value: i64,
+    },
 }
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PyTraverseDirection {
     In,
@@ -98,12 +143,55 @@ impl From<PyQueryAst> for QueryAst {
                         value: ScalarValue::Text(value),
                     })
                 }
+                PyQueryStep::FilterJsonIntegerGt { path, value }
+                | PyQueryStep::FilterJsonTimestampGt { path, value } => {
+                    QueryStep::Filter(Predicate::JsonPathCompare {
+                        path,
+                        op: ComparisonOp::Gt,
+                        value: ScalarValue::Integer(value),
+                    })
+                }
+                PyQueryStep::FilterJsonIntegerGte { path, value }
+                | PyQueryStep::FilterJsonTimestampGte { path, value } => {
+                    QueryStep::Filter(Predicate::JsonPathCompare {
+                        path,
+                        op: ComparisonOp::Gte,
+                        value: ScalarValue::Integer(value),
+                    })
+                }
+                PyQueryStep::FilterJsonIntegerLt { path, value }
+                | PyQueryStep::FilterJsonTimestampLt { path, value } => {
+                    QueryStep::Filter(Predicate::JsonPathCompare {
+                        path,
+                        op: ComparisonOp::Lt,
+                        value: ScalarValue::Integer(value),
+                    })
+                }
+                PyQueryStep::FilterJsonIntegerLte { path, value }
+                | PyQueryStep::FilterJsonTimestampLte { path, value } => {
+                    QueryStep::Filter(Predicate::JsonPathCompare {
+                        path,
+                        op: ComparisonOp::Lte,
+                        value: ScalarValue::Integer(value),
+                    })
+                }
+            })
+            .collect();
+        let expansions = value
+            .expansions
+            .into_iter()
+            .map(|slot| ExpansionSlot {
+                slot: slot.slot,
+                direction: slot.direction.into(),
+                label: slot.label,
+                max_depth: slot.max_depth,
             })
             .collect();
 
         Self {
             root_kind: value.root_kind,
             steps,
+            expansions,
             final_limit: value.final_limit,
         }
     }
@@ -132,6 +220,15 @@ pub struct PyWriteRequest {
     pub optional_backfills: Vec<PyOptionalProjectionTask>,
     #[serde(default)]
     pub vec_inserts: Vec<PyVecInsert>,
+    #[serde(default)]
+    pub operational_writes: Vec<PyOperationalWrite>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PyLastAccessTouchRequest {
+    pub logical_ids: Vec<String>,
+    pub touched_at: i64,
+    pub source_ref: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -184,6 +281,28 @@ pub struct PyChunkInsert {
 pub struct PyVecInsert {
     pub chunk_id: String,
     pub embedding: Vec<f32>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PyOperationalWrite {
+    Append {
+        collection: String,
+        record_key: String,
+        payload_json: String,
+        source_ref: Option<String>,
+    },
+    Put {
+        collection: String,
+        record_key: String,
+        payload_json: String,
+        source_ref: Option<String>,
+    },
+    Delete {
+        collection: String,
+        record_key: String,
+        source_ref: Option<String>,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -389,6 +508,53 @@ impl From<PyWriteRequest> for WriteRequest {
                     embedding: vec_insert.embedding,
                 })
                 .collect(),
+            operational_writes: value
+                .operational_writes
+                .into_iter()
+                .map(|write| match write {
+                    PyOperationalWrite::Append {
+                        collection,
+                        record_key,
+                        payload_json,
+                        source_ref,
+                    } => OperationalWrite::Append {
+                        collection,
+                        record_key,
+                        payload_json,
+                        source_ref,
+                    },
+                    PyOperationalWrite::Put {
+                        collection,
+                        record_key,
+                        payload_json,
+                        source_ref,
+                    } => OperationalWrite::Put {
+                        collection,
+                        record_key,
+                        payload_json,
+                        source_ref,
+                    },
+                    PyOperationalWrite::Delete {
+                        collection,
+                        record_key,
+                        source_ref,
+                    } => OperationalWrite::Delete {
+                        collection,
+                        record_key,
+                        source_ref,
+                    },
+                })
+                .collect(),
+        }
+    }
+}
+
+impl From<PyLastAccessTouchRequest> for LastAccessTouchRequest {
+    fn from(value: PyLastAccessTouchRequest) -> Self {
+        Self {
+            logical_ids: value.logical_ids,
+            touched_at: value.touched_at,
+            source_ref: value.source_ref,
         }
     }
 }
@@ -409,6 +575,37 @@ impl From<CompiledQuery> for PyCompiledQuery {
             binds: value.binds.into_iter().map(Into::into).collect(),
             shape_hash: value.shape_hash.0,
             driving_table: value.driving_table.into(),
+            hints: value.hints.into(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct PyCompiledGroupedQuery {
+    pub root: PyCompiledQuery,
+    pub expansions: Vec<PyExpansionSlot>,
+    pub shape_hash: u64,
+    pub hints: PyExecutionHints,
+}
+
+impl From<CompiledGroupedQuery> for PyCompiledGroupedQuery {
+    fn from(value: CompiledGroupedQuery) -> Self {
+        Self {
+            root: value.root.into(),
+            expansions: value
+                .expansions
+                .into_iter()
+                .map(|slot| PyExpansionSlot {
+                    slot: slot.slot,
+                    direction: match slot.direction {
+                        TraverseDirection::In => PyTraverseDirection::In,
+                        TraverseDirection::Out => PyTraverseDirection::Out,
+                    },
+                    label: slot.label,
+                    max_depth: slot.max_depth,
+                })
+                .collect(),
+            shape_hash: value.shape_hash.0,
             hints: value.hints.into(),
         }
     }
@@ -508,11 +705,100 @@ impl From<QueryRows> for PyQueryRows {
 }
 
 #[derive(Debug, Serialize)]
+pub struct PyExpansionRootRows {
+    pub root_logical_id: String,
+    pub nodes: Vec<PyNodeRow>,
+}
+
+impl From<ExpansionRootRows> for PyExpansionRootRows {
+    fn from(value: ExpansionRootRows) -> Self {
+        Self {
+            root_logical_id: value.root_logical_id,
+            nodes: value.nodes.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct PyExpansionSlotRows {
+    pub slot: String,
+    pub roots: Vec<PyExpansionRootRows>,
+}
+
+impl From<ExpansionSlotRows> for PyExpansionSlotRows {
+    fn from(value: ExpansionSlotRows) -> Self {
+        Self {
+            slot: value.slot,
+            roots: value.roots.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct PyGroupedQueryRows {
+    pub roots: Vec<PyNodeRow>,
+    pub expansions: Vec<PyExpansionSlotRows>,
+    pub was_degraded: bool,
+}
+
+impl From<GroupedQueryRows> for PyGroupedQueryRows {
+    fn from(value: GroupedQueryRows) -> Self {
+        Self {
+            roots: value.roots.into_iter().map(Into::into).collect(),
+            expansions: value.expansions.into_iter().map(Into::into).collect(),
+            was_degraded: value.was_degraded,
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use super::{PyOperationalWrite, PyWriteRequest};
+
+    #[test]
+    fn py_write_request_deserializes_operational_writes() {
+        let request: PyWriteRequest = serde_json::from_str(
+            r#"{
+                "label": "operational",
+                "operational_writes": [
+                    {
+                        "type": "put",
+                        "collection": "connector_health",
+                        "record_key": "gmail",
+                        "payload_json": "{\"status\":\"ok\"}",
+                        "source_ref": "src-1"
+                    }
+                ]
+            }"#,
+        )
+        .expect("parse request");
+
+        assert_eq!(request.operational_writes.len(), 1);
+        match &request.operational_writes[0] {
+            PyOperationalWrite::Put {
+                collection,
+                record_key,
+                payload_json,
+                source_ref,
+            } => {
+                assert_eq!(collection, "connector_health");
+                assert_eq!(record_key, "gmail");
+                assert_eq!(payload_json, "{\"status\":\"ok\"}");
+                assert_eq!(source_ref.as_deref(), Some("src-1"));
+            }
+            other => panic!("unexpected operational write: {other:?}"),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
 pub struct PyNodeRow {
     pub row_id: String,
     pub logical_id: String,
     pub kind: String,
     pub properties: String,
+    pub last_accessed_at: Option<i64>,
 }
 
 impl From<NodeRow> for PyNodeRow {
@@ -522,6 +808,7 @@ impl From<NodeRow> for PyNodeRow {
             logical_id: value.logical_id,
             kind: value.kind,
             properties: value.properties,
+            last_accessed_at: value.last_accessed_at,
         }
     }
 }
@@ -605,11 +892,28 @@ impl From<WriteReceipt> for PyWriteReceipt {
 }
 
 #[derive(Debug, Serialize)]
+pub struct PyLastAccessTouchReport {
+    pub touched_logical_ids: usize,
+    pub touched_at: i64,
+}
+
+impl From<LastAccessTouchReport> for PyLastAccessTouchReport {
+    fn from(value: LastAccessTouchReport) -> Self {
+        Self {
+            touched_logical_ids: value.touched_logical_ids,
+            touched_at: value.touched_at,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
 pub struct PyIntegrityReport {
     pub physical_ok: bool,
     pub foreign_keys_ok: bool,
     pub missing_fts_rows: usize,
     pub duplicate_active_logical_ids: usize,
+    pub operational_missing_collections: usize,
+    pub operational_missing_last_mutations: usize,
     pub warnings: Vec<String>,
 }
 
@@ -620,6 +924,8 @@ impl From<IntegrityReport> for PyIntegrityReport {
             foreign_keys_ok: value.foreign_keys_ok,
             missing_fts_rows: value.missing_fts_rows,
             duplicate_active_logical_ids: value.duplicate_active_logical_ids,
+            operational_missing_collections: value.operational_missing_collections,
+            operational_missing_last_mutations: value.operational_missing_last_mutations,
             warnings: value.warnings,
         }
     }
@@ -637,6 +943,10 @@ pub struct PySemanticReport {
     pub orphaned_supersession_chains: usize,
     pub stale_vec_rows: usize,
     pub vec_rows_for_superseded_nodes: usize,
+    pub missing_operational_current_rows: usize,
+    pub stale_operational_current_rows: usize,
+    pub disabled_collection_mutations: usize,
+    pub orphaned_last_access_metadata_rows: usize,
     pub warnings: Vec<String>,
 }
 
@@ -653,6 +963,10 @@ impl From<SemanticReport> for PySemanticReport {
             orphaned_supersession_chains: value.orphaned_supersession_chains,
             stale_vec_rows: value.stale_vec_rows,
             vec_rows_for_superseded_nodes: value.vec_rows_for_superseded_nodes,
+            missing_operational_current_rows: value.missing_operational_current_rows,
+            stale_operational_current_rows: value.stale_operational_current_rows,
+            disabled_collection_mutations: value.disabled_collection_mutations,
+            orphaned_last_access_metadata_rows: value.orphaned_last_access_metadata_rows,
             warnings: value.warnings,
         }
     }
@@ -664,8 +978,10 @@ pub struct PyTraceReport {
     pub node_rows: usize,
     pub edge_rows: usize,
     pub action_rows: usize,
+    pub operational_mutation_rows: usize,
     pub node_logical_ids: Vec<String>,
     pub action_ids: Vec<String>,
+    pub operational_mutation_ids: Vec<String>,
 }
 
 impl From<TraceReport> for PyTraceReport {
@@ -675,8 +991,10 @@ impl From<TraceReport> for PyTraceReport {
             node_rows: value.node_rows,
             edge_rows: value.edge_rows,
             action_rows: value.action_rows,
+            operational_mutation_rows: value.operational_mutation_rows,
             node_logical_ids: value.node_logical_ids,
             action_ids: value.action_ids,
+            operational_mutation_ids: value.operational_mutation_ids,
         }
     }
 }

@@ -7,13 +7,14 @@ use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
 
 use crate::python_types::{
-    PyCompiledQuery, PyIntegrityReport, PyProjectionRepairReport, PyQueryAst, PyQueryPlan,
-    PyQueryRows, PySafeExportManifest, PySemanticReport, PyTraceReport, PyWriteReceipt,
-    PyWriteRequest,
+    PyCompiledGroupedQuery, PyCompiledQuery, PyGroupedQueryRows, PyIntegrityReport,
+    PyLastAccessTouchReport, PyLastAccessTouchRequest, PyProjectionRepairReport, PyQueryAst,
+    PyQueryPlan, PyQueryRows, PySafeExportManifest, PySemanticReport, PyTraceReport,
+    PyWriteReceipt, PyWriteRequest,
 };
 use crate::{
-    Engine, EngineError, EngineOptions, ProjectionTarget, ProvenanceMode, SafeExportOptions,
-    compile_query, new_id, new_row_id,
+    Engine, EngineError, EngineOptions, OperationalRegisterRequest, ProjectionTarget,
+    ProvenanceMode, SafeExportOptions, compile_grouped_query, compile_query, new_id, new_row_id,
 };
 use fathomdb_query::CompileError as RustCompileError;
 
@@ -56,6 +57,12 @@ impl EngineCore {
         encode_json(PyCompiledQuery::from(compiled))
     }
 
+    pub fn compile_grouped_ast(&self, ast_json: &str) -> PyResult<String> {
+        let ast = parse_ast(ast_json)?;
+        let compiled = compile_grouped_query(&ast).map_err(map_compile_error)?;
+        encode_json(PyCompiledGroupedQuery::from(compiled))
+    }
+
     pub fn explain_ast(&self, ast_json: &str) -> PyResult<String> {
         let ast = parse_ast(ast_json)?;
         let compiled = compile_query(&ast).map_err(map_compile_error)?;
@@ -72,12 +79,29 @@ impl EngineCore {
         encode_json(PyQueryRows::from(rows))
     }
 
+    pub fn execute_grouped_ast(&self, py: Python<'_>, ast_json: &str) -> PyResult<String> {
+        let ast = parse_ast(ast_json)?;
+        let compiled = compile_grouped_query(&ast).map_err(map_compile_error)?;
+        let rows = py
+            .allow_threads(|| self.engine.coordinator().execute_compiled_grouped_read(&compiled))
+            .map_err(map_engine_error)?;
+        encode_json(PyGroupedQueryRows::from(rows))
+    }
+
     pub fn submit_write(&self, py: Python<'_>, request_json: &str) -> PyResult<String> {
         let request = parse_write_request(request_json)?;
         let receipt = py
             .allow_threads(|| self.engine.writer().submit(request))
             .map_err(map_engine_error)?;
         encode_json(PyWriteReceipt::from(receipt))
+    }
+
+    pub fn touch_last_accessed(&self, py: Python<'_>, request_json: &str) -> PyResult<String> {
+        let request = parse_last_access_touch_request(request_json)?;
+        let report = py
+            .allow_threads(|| self.engine.touch_last_accessed(request))
+            .map_err(map_engine_error)?;
+        encode_json(PyLastAccessTouchReport::from(report))
     }
 
     pub fn check_integrity(&self, py: Python<'_>) -> PyResult<String> {
@@ -129,6 +153,20 @@ impl EngineCore {
         encode_json(PyTraceReport::from(report))
     }
 
+    pub fn restore_logical_id(&self, py: Python<'_>, logical_id: &str) -> PyResult<String> {
+        let report = py
+            .allow_threads(|| self.engine.restore_logical_id(logical_id))
+            .map_err(map_engine_error)?;
+        encode_json(report)
+    }
+
+    pub fn purge_logical_id(&self, py: Python<'_>, logical_id: &str) -> PyResult<String> {
+        let report = py
+            .allow_threads(|| self.engine.purge_logical_id(logical_id))
+            .map_err(map_engine_error)?;
+        encode_json(report)
+    }
+
     pub fn safe_export(
         &self,
         py: Python<'_>,
@@ -143,6 +181,90 @@ impl EngineCore {
             .map_err(map_engine_error)?;
         encode_json(PySafeExportManifest::from(manifest))
     }
+
+    pub fn register_operational_collection(
+        &self,
+        py: Python<'_>,
+        request_json: &str,
+    ) -> PyResult<String> {
+        let request: OperationalRegisterRequest =
+            serde_json::from_str(request_json).map_err(|error| {
+                PyValueError::new_err(format!("invalid operational collection JSON: {error}"))
+            })?;
+        let record = py
+            .allow_threads(|| self.engine.register_operational_collection(request))
+            .map_err(map_engine_error)?;
+        encode_json(record)
+    }
+
+    pub fn describe_operational_collection(&self, py: Python<'_>, name: &str) -> PyResult<String> {
+        let record = py
+            .allow_threads(|| self.engine.describe_operational_collection(name))
+            .map_err(map_engine_error)?;
+        encode_json(record)
+    }
+
+    #[pyo3(signature = (collection_name, record_key=None))]
+    pub fn trace_operational_collection(
+        &self,
+        py: Python<'_>,
+        collection_name: &str,
+        record_key: Option<&str>,
+    ) -> PyResult<String> {
+        let report = py
+            .allow_threads(|| {
+                self.engine
+                    .trace_operational_collection(collection_name, record_key)
+            })
+            .map_err(map_engine_error)?;
+        encode_json(report)
+    }
+
+    #[pyo3(signature = (collection_name=None))]
+    pub fn rebuild_operational_current(
+        &self,
+        py: Python<'_>,
+        collection_name: Option<&str>,
+    ) -> PyResult<String> {
+        let report = py
+            .allow_threads(|| self.engine.rebuild_operational_current(collection_name))
+            .map_err(map_engine_error)?;
+        encode_json(report)
+    }
+
+    pub fn disable_operational_collection(&self, py: Python<'_>, name: &str) -> PyResult<String> {
+        let record = py
+            .allow_threads(|| self.engine.disable_operational_collection(name))
+            .map_err(map_engine_error)?;
+        encode_json(record)
+    }
+
+    pub fn compact_operational_collection(
+        &self,
+        py: Python<'_>,
+        name: &str,
+        dry_run: bool,
+    ) -> PyResult<String> {
+        let report = py
+            .allow_threads(|| self.engine.compact_operational_collection(name, dry_run))
+            .map_err(map_engine_error)?;
+        encode_json(report)
+    }
+
+    pub fn purge_operational_collection(
+        &self,
+        py: Python<'_>,
+        name: &str,
+        before_timestamp: i64,
+    ) -> PyResult<String> {
+        let report = py
+            .allow_threads(|| {
+                self.engine
+                    .purge_operational_collection(name, before_timestamp)
+            })
+            .map_err(map_engine_error)?;
+        encode_json(report)
+    }
 }
 
 fn parse_ast(ast_json: &str) -> PyResult<crate::QueryAst> {
@@ -154,6 +276,15 @@ fn parse_ast(ast_json: &str) -> PyResult<crate::QueryAst> {
 fn parse_write_request(request_json: &str) -> PyResult<crate::WriteRequest> {
     let request: PyWriteRequest = serde_json::from_str(request_json)
         .map_err(|error| PyValueError::new_err(format!("invalid write request JSON: {error}")))?;
+    Ok(request.into())
+}
+
+fn parse_last_access_touch_request(request_json: &str) -> PyResult<crate::LastAccessTouchRequest> {
+    let request: PyLastAccessTouchRequest = serde_json::from_str(request_json).map_err(|error| {
+        PyValueError::new_err(format!(
+            "invalid last_access touch request JSON: {error}"
+        ))
+    })?;
     Ok(request.into())
 }
 
@@ -234,4 +365,74 @@ fn py_new_id() -> String {
 #[pyfunction(name = "new_row_id")]
 fn py_new_row_id() -> String {
     new_row_id()
+}
+
+#[cfg(test)]
+mod tests {
+    use pyo3::Python;
+    use serde_json::Value;
+    use tempfile::NamedTempFile;
+
+    use super::EngineCore;
+
+    #[test]
+    fn engine_core_exposes_operational_admin_methods() {
+        let db = NamedTempFile::new().expect("temp db");
+        Python::with_gil(|py| {
+            let engine = EngineCore::open(db.path().to_str().expect("db path"), "warn", None)
+                .expect("open engine");
+
+            let record: Value = serde_json::from_str(
+                &engine
+                    .register_operational_collection(
+                        py,
+                        r#"{
+                            "name":"audit_log",
+                            "kind":"append_only_log",
+                            "schema_json":"{}",
+                            "retention_json":"{\"mode\":\"keep_last\",\"max_rows\":2}",
+                            "format_version":1
+                        }"#,
+                    )
+                    .expect("register"),
+            )
+            .expect("decode register");
+            assert_eq!(record["name"], "audit_log");
+
+            let described: Value = serde_json::from_str(
+                &engine
+                    .describe_operational_collection(py, "audit_log")
+                    .expect("describe"),
+            )
+            .expect("decode describe");
+            assert_eq!(described["name"], "audit_log");
+
+            let compacted: Value = serde_json::from_str(
+                &engine
+                    .compact_operational_collection(py, "audit_log", true)
+                    .expect("compact"),
+            )
+            .expect("decode compact");
+            assert_eq!(compacted["collection_name"], "audit_log");
+            assert_eq!(compacted["dry_run"], true);
+
+            let purged: Value = serde_json::from_str(
+                &engine
+                    .purge_operational_collection(py, "audit_log", 250)
+                    .expect("purge"),
+            )
+            .expect("decode purge");
+            assert_eq!(purged["collection_name"], "audit_log");
+            assert_eq!(purged["before_timestamp"], 250);
+
+            let disabled: Value = serde_json::from_str(
+                &engine
+                    .disable_operational_collection(py, "audit_log")
+                    .expect("disable"),
+            )
+            .expect("decode disable");
+            assert_eq!(disabled["name"], "audit_log");
+            assert!(disabled["disabled_at"].as_i64().is_some());
+        });
+    }
 }

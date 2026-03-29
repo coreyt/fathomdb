@@ -58,20 +58,26 @@ func RunCheckWithFeedback(
 
 // bridgeIntegrityReport mirrors the Rust IntegrityReport JSON shape.
 type bridgeIntegrityReport struct {
-	PhysicalOK                bool     `json:"physical_ok"`
-	ForeignKeysOK             bool     `json:"foreign_keys_ok"`
-	MissingFTSRows            int      `json:"missing_fts_rows"`
-	DuplicateActiveLogicalIDs int      `json:"duplicate_active_logical_ids"`
-	Warnings                  []string `json:"warnings"`
+	PhysicalOK                      bool     `json:"physical_ok"`
+	ForeignKeysOK                   bool     `json:"foreign_keys_ok"`
+	MissingFTSRows                  int      `json:"missing_fts_rows"`
+	DuplicateActiveLogicalIDs       int      `json:"duplicate_active_logical_ids"`
+	OperationalMissingCollections   int      `json:"operational_missing_collections"`
+	OperationalMissingLastMutations int      `json:"operational_missing_last_mutations"`
+	Warnings                        []string `json:"warnings"`
 }
 
 // bridgeSemanticReport mirrors the Rust SemanticReport JSON shape.
 type bridgeSemanticReport struct {
-	OrphanedChunks     int      `json:"orphaned_chunks"`
-	NullSourceRefNodes int      `json:"null_source_ref_nodes"`
-	BrokenStepFK       int      `json:"broken_step_fk"`
-	BrokenActionFK     int      `json:"broken_action_fk"`
-	Warnings           []string `json:"warnings"`
+	OrphanedChunks                 int      `json:"orphaned_chunks"`
+	NullSourceRefNodes             int      `json:"null_source_ref_nodes"`
+	BrokenStepFK                   int      `json:"broken_step_fk"`
+	BrokenActionFK                 int      `json:"broken_action_fk"`
+	MissingOperationalCurrentRows  int      `json:"missing_operational_current_rows"`
+	StaleOperationalCurrentRows    int      `json:"stale_operational_current_rows"`
+	DisabledCollectionMutations    int      `json:"disabled_collection_mutations"`
+	OrphanedLastAccessMetadataRows int      `json:"orphaned_last_access_metadata_rows"`
+	Warnings                       []string `json:"warnings"`
 }
 
 func fetchLayer2(dbPath, bridgePath string) (sqlitecheck.Layer2Report, error) {
@@ -112,15 +118,23 @@ func fetchLayer2(dbPath, bridgePath string) (sqlitecheck.Layer2Report, error) {
 		return sqlitecheck.Layer2Report{}, fmt.Errorf("decode semantic report: %w", err)
 	}
 
+	return buildLayer2Report(ir, sr), nil
+}
+
+func buildLayer2Report(
+	ir bridgeIntegrityReport,
+	sr bridgeSemanticReport,
+) sqlitecheck.Layer2Report {
 	layer2 := sqlitecheck.Layer2Report{
-		Available:                 true,
-		PhysicalOK:                ir.PhysicalOK,
-		ForeignKeysOK:             ir.ForeignKeysOK,
-		MissingFTSRows:            ir.MissingFTSRows,
-		DuplicateActiveLogicalIDs: ir.DuplicateActiveLogicalIDs,
-		BrokenStepFK:              sr.BrokenStepFK,
-		BrokenActionFK:            sr.BrokenActionFK,
-		Findings:                  []sqlitecheck.Finding{},
+		Available:                      true,
+		PhysicalOK:                     ir.PhysicalOK,
+		ForeignKeysOK:                  ir.ForeignKeysOK,
+		MissingFTSRows:                 ir.MissingFTSRows,
+		DuplicateActiveLogicalIDs:      ir.DuplicateActiveLogicalIDs,
+		BrokenStepFK:                   sr.BrokenStepFK,
+		BrokenActionFK:                 sr.BrokenActionFK,
+		OrphanedLastAccessMetadataRows: sr.OrphanedLastAccessMetadataRows,
+		Findings:                       []sqlitecheck.Finding{},
 	}
 
 	if !ir.PhysicalOK {
@@ -145,6 +159,18 @@ func fetchLayer2(dbPath, bridgePath string) (sqlitecheck.Layer2Report, error) {
 			Message: fmt.Sprintf("%d missing FTS projection(s) detected by engine", ir.MissingFTSRows),
 		})
 	}
+	if ir.OperationalMissingCollections > 0 {
+		layer2.Findings = append(layer2.Findings, sqlitecheck.Finding{
+			Layer: 2, Severity: "error",
+			Message: fmt.Sprintf("%d operational row(s) reference missing collections", ir.OperationalMissingCollections),
+		})
+	}
+	if ir.OperationalMissingLastMutations > 0 {
+		layer2.Findings = append(layer2.Findings, sqlitecheck.Finding{
+			Layer: 2, Severity: "error",
+			Message: fmt.Sprintf("%d operational_current row(s) reference missing last mutations", ir.OperationalMissingLastMutations),
+		})
+	}
 	if sr.BrokenStepFK > 0 {
 		layer2.Findings = append(layer2.Findings, sqlitecheck.Finding{
 			Layer: 2, Severity: "error",
@@ -157,6 +183,30 @@ func fetchLayer2(dbPath, bridgePath string) (sqlitecheck.Layer2Report, error) {
 			Message: fmt.Sprintf("%d action(s) with broken step_id FK", sr.BrokenActionFK),
 		})
 	}
+	if sr.MissingOperationalCurrentRows > 0 {
+		layer2.Findings = append(layer2.Findings, sqlitecheck.Finding{
+			Layer: 2, Severity: "warning",
+			Message: fmt.Sprintf("%d latest-state key(s) missing operational_current rows", sr.MissingOperationalCurrentRows),
+		})
+	}
+	if sr.StaleOperationalCurrentRows > 0 {
+		layer2.Findings = append(layer2.Findings, sqlitecheck.Finding{
+			Layer: 2, Severity: "warning",
+			Message: fmt.Sprintf("%d stale operational_current row(s)", sr.StaleOperationalCurrentRows),
+		})
+	}
+	if sr.DisabledCollectionMutations > 0 {
+		layer2.Findings = append(layer2.Findings, sqlitecheck.Finding{
+			Layer: 2, Severity: "warning",
+			Message: fmt.Sprintf("%d operational mutation(s) occurred after collection disable", sr.DisabledCollectionMutations),
+		})
+	}
+	if sr.OrphanedLastAccessMetadataRows > 0 {
+		layer2.Findings = append(layer2.Findings, sqlitecheck.Finding{
+			Layer: 2, Severity: "warning",
+			Message: fmt.Sprintf("%d orphaned last_access metadata row(s)", sr.OrphanedLastAccessMetadataRows),
+		})
+	}
 
-	return layer2, nil
+	return layer2
 }

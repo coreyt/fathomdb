@@ -22,11 +22,14 @@ type bridgeExecuteFunc func(context.Context, bridge.Request) (bridge.Response, e
 
 // RecoverRowCounts holds the count of recovered rows for each key table.
 type RecoverRowCounts struct {
-	Nodes   int `json:"nodes"`
-	Chunks  int `json:"chunks"`
-	Runs    int `json:"runs"`
-	Steps   int `json:"steps"`
-	Actions int `json:"actions"`
+	Nodes                  int `json:"nodes"`
+	Chunks                 int `json:"chunks"`
+	Runs                   int `json:"runs"`
+	Steps                  int `json:"steps"`
+	Actions                int `json:"actions"`
+	OperationalCollections int `json:"operational_collections"`
+	OperationalMutations   int `json:"operational_mutations"`
+	OperationalCurrent     int `json:"operational_current"`
 }
 
 // RecoverReport is the structured output of a recover operation.
@@ -183,6 +186,9 @@ func runRecover(sourcePath, destPath, bridgePath, sqliteBin string, out io.Write
 		{&rowCounts.Runs, "runs"},
 		{&rowCounts.Steps, "steps"},
 		{&rowCounts.Actions, "actions"},
+		{&rowCounts.OperationalCollections, "operational_collections"},
+		{&rowCounts.OperationalMutations, "operational_mutations"},
+		{&rowCounts.OperationalCurrent, "operational_current"},
 	} {
 		n, _ := sqlitecheck.CountTable(sqliteBin, destPath, pair.table)
 		*pair.field = n
@@ -242,6 +248,9 @@ func restoreRecoveredProjections(destPath, bridgePath, sqliteBin string) error {
 
 	if err := runBridgeCommand(client, destPath, bridge.CommandRebuildMissing); err != nil {
 		return fmt.Errorf("rebuild missing projections: %w", err)
+	}
+	if err := runBridgeCommand(client, destPath, bridge.CommandRebuildOperationalCurrent); err != nil {
+		return fmt.Errorf("rebuild operational current: %w", err)
 	}
 
 	return nil

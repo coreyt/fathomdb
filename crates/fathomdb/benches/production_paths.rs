@@ -42,6 +42,7 @@ fn single_node_chunk_request(index: u64) -> WriteRequest {
         actions: vec![],
         optional_backfills: vec![],
         vec_inserts: vec![],
+        operational_writes: vec![],
     }
 }
 

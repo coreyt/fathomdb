@@ -5,20 +5,31 @@ mod feedback;
 mod python;
 #[cfg(feature = "python")]
 mod python_types;
+mod write_request_builder;
 
 pub use fathomdb_engine::{
     ActionInsert, ActionRow, AdminHandle, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire,
-    EngineError, EngineRuntime, ExecutionCoordinator, NodeInsert, NodeRetire, NodeRow,
-    OptionalProjectionTask, ProjectionRepairReport, ProjectionTarget, ProvenanceEvent,
-    ProvenanceMode, QueryPlan, QueryRows, RunInsert, RunRow, SafeExportManifest, SafeExportOptions,
-    StepInsert, StepRow, VecInsert, WriteReceipt, WriteRequest, WriterActor, new_id, new_row_id,
+    EngineError, EngineRuntime, ExecutionCoordinator, ExpansionRootRows, ExpansionSlotRows,
+    GroupedQueryRows, LastAccessTouchReport, LastAccessTouchRequest, LogicalPurgeReport,
+    LogicalRestoreReport, NodeInsert, NodeRetire, NodeRow, OperationalCollectionKind,
+    OperationalCollectionRecord, OperationalCompactionReport, OperationalCurrentRow,
+    OperationalMutationRow, OperationalPurgeReport, OperationalRegisterRequest,
+    OperationalRepairReport, OperationalTraceReport, OperationalWrite, OptionalProjectionTask,
+    ProjectionRepairReport, ProjectionTarget, ProvenanceEvent, ProvenanceMode, QueryPlan,
+    QueryRows, RunInsert, RunRow, SafeExportManifest, SafeExportOptions, StepInsert, StepRow,
+    VecInsert, WriteReceipt, WriteRequest, WriterActor, new_id, new_row_id,
 };
 pub use fathomdb_query::{
-    BindValue, CompiledQuery, DrivingTable, ExecutionHints, Predicate, Query, QueryAst,
-    QueryBuilder, QueryStep, ScalarValue, ShapeHash, TraverseDirection, compile_query,
+    BindValue, ComparisonOp, CompileError, CompiledGroupedQuery, CompiledQuery, DrivingTable,
+    ExecutionHints, ExpansionSlot, Predicate, Query, QueryAst, QueryBuilder, QueryStep,
+    ScalarValue, ShapeHash, TraverseDirection, compile_grouped_query, compile_query,
 };
 pub use fathomdb_schema::{BootstrapReport, Migration, SchemaManager, SchemaVersion};
 pub use feedback::{FeedbackConfig, OperationObserver, ResponseCycleEvent, ResponseCyclePhase};
+pub use write_request_builder::{
+    ActionHandle, ChunkHandle, ChunkRef, EdgeHandle, EdgeRef, NodeHandle, NodeRef, RunHandle,
+    RunRef, StepHandle, StepRef, WriteRequestBuilder,
+};
 
 use std::collections::BTreeMap;
 
@@ -105,6 +116,86 @@ impl Engine {
         self.runtime.coordinator()
     }
 
+    pub fn touch_last_accessed(
+        &self,
+        request: LastAccessTouchRequest,
+    ) -> Result<LastAccessTouchReport, EngineError> {
+        self.writer().touch_last_accessed(request)
+    }
+
+    pub fn register_operational_collection(
+        &self,
+        request: OperationalRegisterRequest,
+    ) -> Result<OperationalCollectionRecord, EngineError> {
+        self.admin()
+            .service()
+            .register_operational_collection(&request)
+    }
+
+    pub fn describe_operational_collection(
+        &self,
+        name: &str,
+    ) -> Result<Option<OperationalCollectionRecord>, EngineError> {
+        self.admin().service().describe_operational_collection(name)
+    }
+
+    pub fn trace_operational_collection(
+        &self,
+        collection_name: &str,
+        record_key: Option<&str>,
+    ) -> Result<OperationalTraceReport, EngineError> {
+        self.admin()
+            .service()
+            .trace_operational_collection(collection_name, record_key)
+    }
+
+    pub fn rebuild_operational_current(
+        &self,
+        collection_name: Option<&str>,
+    ) -> Result<OperationalRepairReport, EngineError> {
+        self.admin()
+            .service()
+            .rebuild_operational_current(collection_name)
+    }
+
+    pub fn disable_operational_collection(
+        &self,
+        name: &str,
+    ) -> Result<OperationalCollectionRecord, EngineError> {
+        self.admin().service().disable_operational_collection(name)
+    }
+
+    pub fn compact_operational_collection(
+        &self,
+        name: &str,
+        dry_run: bool,
+    ) -> Result<OperationalCompactionReport, EngineError> {
+        self.admin()
+            .service()
+            .compact_operational_collection(name, dry_run)
+    }
+
+    pub fn purge_operational_collection(
+        &self,
+        name: &str,
+        before_timestamp: i64,
+    ) -> Result<OperationalPurgeReport, EngineError> {
+        self.admin()
+            .service()
+            .purge_operational_collection(name, before_timestamp)
+    }
+
+    pub fn restore_logical_id(
+        &self,
+        logical_id: &str,
+    ) -> Result<LogicalRestoreReport, EngineError> {
+        self.admin().service().restore_logical_id(logical_id)
+    }
+
+    pub fn purge_logical_id(&self, logical_id: &str) -> Result<LogicalPurgeReport, EngineError> {
+        self.admin().service().purge_logical_id(logical_id)
+    }
+
     pub fn explain_compiled_query_with_feedback(
         &self,
         compiled: &CompiledQuery,
@@ -144,6 +235,27 @@ impl Engine {
             config,
             engine_error_code,
             || self.coordinator().execute_compiled_read(compiled),
+        )
+    }
+
+    pub fn execute_compiled_grouped_query_with_feedback(
+        &self,
+        compiled: &CompiledGroupedQuery,
+        observer: &dyn OperationObserver,
+        config: FeedbackConfig,
+    ) -> Result<GroupedQueryRows, EngineError> {
+        let mut metadata = BTreeMap::new();
+        metadata.insert("shape_hash".to_owned(), compiled.shape_hash.0.to_string());
+        run_with_feedback(
+            OperationContext {
+                surface: "rust",
+                operation_kind: "query.execute_grouped",
+            },
+            metadata,
+            Some(observer),
+            config,
+            engine_error_code,
+            || self.coordinator().execute_compiled_grouped_read(compiled),
         )
     }
 

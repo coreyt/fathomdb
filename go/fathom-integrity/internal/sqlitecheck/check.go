@@ -84,14 +84,15 @@ type Layer1Report struct {
 }
 
 type Layer2Report struct {
-	Available                 bool      `json:"available"`
-	PhysicalOK                bool      `json:"physical_ok"`
-	ForeignKeysOK             bool      `json:"foreign_keys_ok"`
-	MissingFTSRows            int       `json:"missing_fts_rows"`
-	DuplicateActiveLogicalIDs int       `json:"duplicate_active_logical_ids"`
-	BrokenStepFK              int       `json:"broken_step_fk"`
-	BrokenActionFK            int       `json:"broken_action_fk"`
-	Findings                  []Finding `json:"findings"`
+	Available                      bool      `json:"available"`
+	PhysicalOK                     bool      `json:"physical_ok"`
+	ForeignKeysOK                  bool      `json:"foreign_keys_ok"`
+	MissingFTSRows                 int       `json:"missing_fts_rows"`
+	DuplicateActiveLogicalIDs      int       `json:"duplicate_active_logical_ids"`
+	BrokenStepFK                   int       `json:"broken_step_fk"`
+	BrokenActionFK                 int       `json:"broken_action_fk"`
+	OrphanedLastAccessMetadataRows int       `json:"orphaned_last_access_metadata_rows"`
+	Findings                       []Finding `json:"findings"`
 }
 
 type Layer3Report struct {

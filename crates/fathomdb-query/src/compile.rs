@@ -1,7 +1,10 @@
 use std::fmt::Write;
 
 use crate::plan::{choose_driving_table, execution_hints, shape_signature};
-use crate::{DrivingTable, Predicate, QueryAst, QueryStep, ScalarValue, TraverseDirection};
+use crate::{
+    ComparisonOp, DrivingTable, ExpansionSlot, Predicate, QueryAst, QueryStep, ScalarValue,
+    TraverseDirection,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BindValue {
@@ -22,10 +25,26 @@ pub struct CompiledQuery {
     pub hints: crate::ExecutionHints,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CompiledGroupedQuery {
+    pub root: CompiledQuery,
+    pub expansions: Vec<ExpansionSlot>,
+    pub shape_hash: ShapeHash,
+    pub hints: crate::ExecutionHints,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum CompileError {
     #[error("multiple traversal steps are not supported in v1")]
     TooManyTraversals,
+    #[error("flat query compilation does not support expansions; use compile_grouped")]
+    FlatCompileDoesNotSupportExpansions,
+    #[error("duplicate expansion slot name: {0}")]
+    DuplicateExpansionSlot(String),
+    #[error("expansion slot name must be non-empty")]
+    EmptyExpansionSlotName,
+    #[error("too many expansion slots: max {MAX_EXPANSION_SLOTS}, got {0}")]
+    TooManyExpansionSlots(usize),
     #[error("too many bind parameters: max 15, got {0}")]
     TooManyBindParameters(usize),
     #[error("traversal depth {0} exceeds maximum of {MAX_TRAVERSAL_DEPTH}")]
@@ -56,6 +75,7 @@ fn validate_json_path(path: &str) -> Result<(), CompileError> {
 }
 
 const MAX_BIND_PARAMETERS: usize = 15;
+const MAX_EXPANSION_SLOTS: usize = 8;
 
 // FIX(review): max_depth was unbounded — usize::MAX produces an effectively infinite CTE.
 // Options: (A) silent clamp at compile, (B) reject with CompileError, (C) validate in builder.
@@ -79,6 +99,10 @@ const MAX_TRAVERSAL_DEPTH: usize = 50;
 /// public [`QueryBuilder`] API.
 #[allow(clippy::too_many_lines)]
 pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
+    if !ast.expansions.is_empty() {
+        return Err(CompileError::FlatCompileDoesNotSupportExpansions);
+    }
+
     let traversals = ast
         .steps
         .iter()
@@ -305,6 +329,27 @@ WHERE 1 = 1",
                         "\n  AND json_extract(n.properties, ?{path_index}) = ?{value_index}",
                     );
                 }
+                Predicate::JsonPathCompare { path, op, value } => {
+                    validate_json_path(path)?;
+                    binds.push(BindValue::Text(path.clone()));
+                    let path_index = binds.len();
+                    binds.push(match value {
+                        ScalarValue::Text(text) => BindValue::Text(text.clone()),
+                        ScalarValue::Integer(integer) => BindValue::Integer(*integer),
+                        ScalarValue::Bool(boolean) => BindValue::Bool(*boolean),
+                    });
+                    let value_index = binds.len();
+                    let operator = match op {
+                        ComparisonOp::Gt => ">",
+                        ComparisonOp::Gte => ">=",
+                        ComparisonOp::Lt => "<",
+                        ComparisonOp::Lte => "<=",
+                    };
+                    let _ = write!(
+                        &mut sql,
+                        "\n  AND json_extract(n.properties, ?{path_index}) {operator} ?{value_index}",
+                    );
+                }
                 Predicate::SourceRefEq(source_ref) => {
                     binds.push(BindValue::Text(source_ref.clone()));
                     let bind_index = binds.len();
@@ -329,6 +374,40 @@ WHERE 1 = 1",
     })
 }
 
+pub fn compile_grouped_query(ast: &QueryAst) -> Result<CompiledGroupedQuery, CompileError> {
+    if ast.expansions.len() > MAX_EXPANSION_SLOTS {
+        return Err(CompileError::TooManyExpansionSlots(ast.expansions.len()));
+    }
+
+    let mut seen = std::collections::BTreeSet::new();
+    for expansion in &ast.expansions {
+        if expansion.slot.trim().is_empty() {
+            return Err(CompileError::EmptyExpansionSlotName);
+        }
+        if expansion.max_depth > MAX_TRAVERSAL_DEPTH {
+            return Err(CompileError::TraversalTooDeep(expansion.max_depth));
+        }
+        if !seen.insert(expansion.slot.clone()) {
+            return Err(CompileError::DuplicateExpansionSlot(
+                expansion.slot.clone(),
+            ));
+        }
+    }
+
+    let mut root_ast = ast.clone();
+    root_ast.expansions.clear();
+    let root = compile_query(&root_ast)?;
+    let hints = execution_hints(ast);
+    let shape_hash = ShapeHash(hash_signature(&shape_signature(ast)));
+
+    Ok(CompiledGroupedQuery {
+        root,
+        expansions: ast.expansions.clone(),
+        shape_hash,
+        hints,
+    })
+}
+
 /// FNV-1a 64-bit hash — deterministic across Rust versions and program
 /// invocations, unlike `DefaultHasher`.
 fn hash_signature(signature: &str) -> u64 {
@@ -347,7 +426,10 @@ fn hash_signature(signature: &str) -> u64 {
 mod tests {
     use rstest::rstest;
 
-    use crate::{DrivingTable, QueryBuilder, TraverseDirection, compile_query};
+    use crate::{
+        CompileError, DrivingTable, QueryBuilder, TraverseDirection, compile_grouped_query,
+        compile_query,
+    };
 
     #[test]
     fn vector_query_compiles_to_chunk_resolution() {
@@ -489,7 +571,6 @@ mod tests {
 
     #[test]
     fn compile_rejects_excessive_traversal_depth() {
-        use crate::CompileError;
         let result = compile_query(
             &QueryBuilder::nodes("Meeting")
                 .text_search("budget", 5)
@@ -500,6 +581,57 @@ mod tests {
         assert!(
             matches!(result, Err(CompileError::TraversalTooDeep(51))),
             "expected TraversalTooDeep(51), got {result:?}"
+        );
+    }
+
+    #[test]
+    fn grouped_queries_with_same_structure_share_shape_hash() {
+        let left = compile_grouped_query(
+            &QueryBuilder::nodes("Meeting")
+                .text_search("budget", 5)
+                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1)
+                .limit(10)
+                .into_ast(),
+        )
+        .expect("left grouped query");
+        let right = compile_grouped_query(
+            &QueryBuilder::nodes("Meeting")
+                .text_search("planning", 5)
+                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1)
+                .limit(10)
+                .into_ast(),
+        )
+        .expect("right grouped query");
+
+        assert_eq!(left.shape_hash, right.shape_hash);
+    }
+
+    #[test]
+    fn compile_grouped_rejects_duplicate_expansion_slot_names() {
+        let result = compile_grouped_query(
+            &QueryBuilder::nodes("Meeting")
+                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1)
+                .expand("tasks", TraverseDirection::Out, "HAS_DECISION", 1)
+                .into_ast(),
+        );
+
+        assert!(
+            matches!(result, Err(CompileError::DuplicateExpansionSlot(ref slot)) if slot == "tasks"),
+            "expected DuplicateExpansionSlot(\"tasks\"), got {result:?}"
+        );
+    }
+
+    #[test]
+    fn flat_compile_rejects_queries_with_expansions() {
+        let result = compile_query(
+            &QueryBuilder::nodes("Meeting")
+                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1)
+                .into_ast(),
+        );
+
+        assert!(
+            matches!(result, Err(CompileError::FlatCompileDoesNotSupportExpansions)),
+            "expected FlatCompileDoesNotSupportExpansions, got {result:?}"
         );
     }
 

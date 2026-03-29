@@ -1,6 +1,6 @@
 use crate::{
-    CompileError, CompiledQuery, Predicate, QueryAst, QueryStep, ScalarValue, TraverseDirection,
-    compile_query,
+    ComparisonOp, CompileError, CompiledGroupedQuery, CompiledQuery, ExpansionSlot, Predicate,
+    QueryAst, QueryStep, ScalarValue, TraverseDirection, compile_grouped_query, compile_query,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -15,6 +15,7 @@ impl QueryBuilder {
             ast: QueryAst {
                 root_kind: kind.into(),
                 steps: Vec::new(),
+                expansions: Vec::new(),
                 final_limit: None,
             },
         }
@@ -93,6 +94,91 @@ impl QueryBuilder {
     }
 
     #[must_use]
+    pub fn filter_json_integer_gt(mut self, path: impl Into<String>, value: i64) -> Self {
+        self.ast
+            .steps
+            .push(QueryStep::Filter(Predicate::JsonPathCompare {
+                path: path.into(),
+                op: ComparisonOp::Gt,
+                value: ScalarValue::Integer(value),
+            }));
+        self
+    }
+
+    #[must_use]
+    pub fn filter_json_integer_gte(mut self, path: impl Into<String>, value: i64) -> Self {
+        self.ast
+            .steps
+            .push(QueryStep::Filter(Predicate::JsonPathCompare {
+                path: path.into(),
+                op: ComparisonOp::Gte,
+                value: ScalarValue::Integer(value),
+            }));
+        self
+    }
+
+    #[must_use]
+    pub fn filter_json_integer_lt(mut self, path: impl Into<String>, value: i64) -> Self {
+        self.ast
+            .steps
+            .push(QueryStep::Filter(Predicate::JsonPathCompare {
+                path: path.into(),
+                op: ComparisonOp::Lt,
+                value: ScalarValue::Integer(value),
+            }));
+        self
+    }
+
+    #[must_use]
+    pub fn filter_json_integer_lte(mut self, path: impl Into<String>, value: i64) -> Self {
+        self.ast
+            .steps
+            .push(QueryStep::Filter(Predicate::JsonPathCompare {
+                path: path.into(),
+                op: ComparisonOp::Lte,
+                value: ScalarValue::Integer(value),
+            }));
+        self
+    }
+
+    #[must_use]
+    pub fn filter_json_timestamp_gt(self, path: impl Into<String>, value: i64) -> Self {
+        self.filter_json_integer_gt(path, value)
+    }
+
+    #[must_use]
+    pub fn filter_json_timestamp_gte(self, path: impl Into<String>, value: i64) -> Self {
+        self.filter_json_integer_gte(path, value)
+    }
+
+    #[must_use]
+    pub fn filter_json_timestamp_lt(self, path: impl Into<String>, value: i64) -> Self {
+        self.filter_json_integer_lt(path, value)
+    }
+
+    #[must_use]
+    pub fn filter_json_timestamp_lte(self, path: impl Into<String>, value: i64) -> Self {
+        self.filter_json_integer_lte(path, value)
+    }
+
+    #[must_use]
+    pub fn expand(
+        mut self,
+        slot: impl Into<String>,
+        direction: TraverseDirection,
+        label: impl Into<String>,
+        max_depth: usize,
+    ) -> Self {
+        self.ast.expansions.push(ExpansionSlot {
+            slot: slot.into(),
+            direction,
+            label: label.into(),
+            max_depth,
+        });
+        self
+    }
+
+    #[must_use]
     pub fn limit(mut self, limit: usize) -> Self {
         self.ast.final_limit = Some(limit);
         self
@@ -116,6 +202,16 @@ impl QueryBuilder {
     /// (e.g. too many traversal steps or too many bind parameters).
     pub fn compile(&self) -> Result<CompiledQuery, CompileError> {
         compile_query(&self.ast)
+    }
+
+    /// Compile this builder's AST into an executable grouped query.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CompileError`] if the query violates grouped-query structural
+    /// constraints such as duplicate slot names or excessive depth.
+    pub fn compile_grouped(&self) -> Result<CompiledGroupedQuery, CompileError> {
+        compile_grouped_query(&self.ast)
     }
 }
 

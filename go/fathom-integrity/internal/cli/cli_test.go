@@ -50,6 +50,33 @@ func TestMainRepairRequiresDB(t *testing.T) {
 	require.Contains(t, stderr.String(), "--db is required")
 }
 
+func TestMainTraceOperationalRequiresDBAndCollection(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	exitCode := Main([]string{"trace-operational"}, &stdout, &stderr)
+
+	require.Equal(t, 2, exitCode)
+	require.Contains(t, stderr.String(), "--db and --collection are required")
+}
+
+func TestMainRestoreLogicalIDRequiresDBAndLogicalID(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	exitCode := Main([]string{"restore-logical-id"}, &stdout, &stderr)
+
+	require.Equal(t, 2, exitCode)
+	require.Contains(t, stderr.String(), "--db and --logical-id are required")
+}
+
+func TestMainPurgeLogicalIDRequiresDBAndLogicalID(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	exitCode := Main([]string{"purge-logical-id"}, &stdout, &stderr)
+
+	require.Equal(t, 2, exitCode)
+	require.Contains(t, stderr.String(), "--db and --logical-id are required")
+}
+
 func TestMainVersionCommand(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -185,6 +212,187 @@ printf '%s\n' '{"protocol_version":1,"ok":false,"message":"vector regeneration s
 	require.Equal(t, 1, exitCode)
 	require.Contains(t, stderr.String(), "snapshot drift")
 	require.Contains(t, stderr.String(), "[retryable]")
+}
+
+func TestMainTraceOperationalForwardsCollectionAndRecordKey(t *testing.T) {
+	tempDir := t.TempDir()
+	requestPath := filepath.Join(tempDir, "request.json")
+	script := "#!/usr/bin/env bash\ncat >" + requestPath + "\nprintf '%s\\n' '{\"protocol_version\":1,\"ok\":true,\"message\":\"ok\",\"payload\":{}}'\n"
+	bridgePath := writeShellBridge(t, script)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{
+		"trace-operational",
+		"--db", "/tmp/fathom.db",
+		"--bridge", bridgePath,
+		"--collection", "connector_health",
+		"--record-key", "gmail",
+	}, &stdout, &stderr)
+
+	require.Equal(t, 0, exitCode)
+	body, err := os.ReadFile(requestPath)
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"command":"trace_operational_collection"`)
+	require.Contains(t, string(body), `"collection_name":"connector_health"`)
+	require.Contains(t, string(body), `"record_key":"gmail"`)
+}
+
+func TestMainRestoreLogicalIDForwardsLogicalID(t *testing.T) {
+	tempDir := t.TempDir()
+	requestPath := filepath.Join(tempDir, "request.json")
+	script := "#!/usr/bin/env bash\ncat >" + requestPath + "\nprintf '%s\\n' '{\"protocol_version\":1,\"ok\":true,\"message\":\"ok\",\"payload\":{}}'\n"
+	bridgePath := writeShellBridge(t, script)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{
+		"restore-logical-id",
+		"--db", "/tmp/fathom.db",
+		"--bridge", bridgePath,
+		"--logical-id", "doc-1",
+	}, &stdout, &stderr)
+
+	require.Equal(t, 0, exitCode)
+	body, err := os.ReadFile(requestPath)
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"command":"restore_logical_id"`)
+	require.Contains(t, string(body), `"logical_id":"doc-1"`)
+}
+
+func TestMainPurgeLogicalIDForwardsLogicalID(t *testing.T) {
+	tempDir := t.TempDir()
+	requestPath := filepath.Join(tempDir, "request.json")
+	script := "#!/usr/bin/env bash\ncat >" + requestPath + "\nprintf '%s\\n' '{\"protocol_version\":1,\"ok\":true,\"message\":\"ok\",\"payload\":{}}'\n"
+	bridgePath := writeShellBridge(t, script)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{
+		"purge-logical-id",
+		"--db", "/tmp/fathom.db",
+		"--bridge", bridgePath,
+		"--logical-id", "doc-1",
+	}, &stdout, &stderr)
+
+	require.Equal(t, 0, exitCode)
+	body, err := os.ReadFile(requestPath)
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"command":"purge_logical_id"`)
+	require.Contains(t, string(body), `"logical_id":"doc-1"`)
+}
+
+func TestMainRebuildOperationalCurrentForwardsCollection(t *testing.T) {
+	tempDir := t.TempDir()
+	requestPath := filepath.Join(tempDir, "request.json")
+	script := "#!/usr/bin/env bash\ncat >" + requestPath + "\nprintf '%s\\n' '{\"protocol_version\":1,\"ok\":true,\"message\":\"ok\",\"payload\":{}}'\n"
+	bridgePath := writeShellBridge(t, script)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{
+		"rebuild-operational-current",
+		"--db", "/tmp/fathom.db",
+		"--bridge", bridgePath,
+		"--collection", "connector_health",
+	}, &stdout, &stderr)
+
+	require.Equal(t, 0, exitCode)
+	body, err := os.ReadFile(requestPath)
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"command":"rebuild_operational_current"`)
+	require.Contains(t, string(body), `"collection_name":"connector_health"`)
+}
+
+func TestMainDisableOperationalForwardsCollection(t *testing.T) {
+	tempDir := t.TempDir()
+	requestPath := filepath.Join(tempDir, "request.json")
+	script := "#!/usr/bin/env bash\ncat >" + requestPath + "\nprintf '%s\\n' '{\"protocol_version\":1,\"ok\":true,\"message\":\"ok\",\"payload\":{}}'\n"
+	bridgePath := writeShellBridge(t, script)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{
+		"disable-operational",
+		"--db", "/tmp/fathom.db",
+		"--bridge", bridgePath,
+		"--collection", "audit_log",
+	}, &stdout, &stderr)
+
+	require.Equal(t, 0, exitCode)
+	body, err := os.ReadFile(requestPath)
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"command":"disable_operational_collection"`)
+	require.Contains(t, string(body), `"collection_name":"audit_log"`)
+}
+
+func TestMainCompactOperationalForwardsCollectionAndDryRun(t *testing.T) {
+	tempDir := t.TempDir()
+	requestPath := filepath.Join(tempDir, "request.json")
+	script := "#!/usr/bin/env bash\ncat >" + requestPath + "\nprintf '%s\\n' '{\"protocol_version\":1,\"ok\":true,\"message\":\"ok\",\"payload\":{}}'\n"
+	bridgePath := writeShellBridge(t, script)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{
+		"compact-operational",
+		"--db", "/tmp/fathom.db",
+		"--bridge", bridgePath,
+		"--collection", "audit_log",
+		"--dry-run",
+	}, &stdout, &stderr)
+
+	require.Equal(t, 0, exitCode)
+	body, err := os.ReadFile(requestPath)
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"command":"compact_operational_collection"`)
+	require.Contains(t, string(body), `"collection_name":"audit_log"`)
+	require.Contains(t, string(body), `"dry_run":true`)
+}
+
+func TestMainPurgeOperationalRequiresBefore(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{
+		"purge-operational",
+		"--db", "/tmp/fathom.db",
+		"--collection", "audit_log",
+	}, &stdout, &stderr)
+
+	require.Equal(t, 2, exitCode)
+	require.Contains(t, stderr.String(), "--db, --collection, and --before are required")
+}
+
+func TestMainPurgeOperationalForwardsCollectionAndBefore(t *testing.T) {
+	tempDir := t.TempDir()
+	requestPath := filepath.Join(tempDir, "request.json")
+	script := "#!/usr/bin/env bash\ncat >" + requestPath + "\nprintf '%s\\n' '{\"protocol_version\":1,\"ok\":true,\"message\":\"ok\",\"payload\":{}}'\n"
+	bridgePath := writeShellBridge(t, script)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{
+		"purge-operational",
+		"--db", "/tmp/fathom.db",
+		"--bridge", bridgePath,
+		"--collection", "audit_log",
+		"--before", "250",
+	}, &stdout, &stderr)
+
+	require.Equal(t, 0, exitCode)
+	body, err := os.ReadFile(requestPath)
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"command":"purge_operational_collection"`)
+	require.Contains(t, string(body), `"collection_name":"audit_log"`)
+	require.Contains(t, string(body), `"before_timestamp":250`)
 }
 
 func TestFeedbackObserverWritesSlowAndHeartbeatMessages(t *testing.T) {

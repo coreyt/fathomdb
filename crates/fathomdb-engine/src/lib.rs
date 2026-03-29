@@ -2,28 +2,34 @@ mod admin;
 mod coordinator;
 mod executable_trust;
 mod ids;
+mod operational;
 mod projection;
 mod runtime;
 mod sqlite;
 mod writer;
 
 pub use admin::{
-    AdminHandle, AdminService, IntegrityReport, SafeExportManifest, SafeExportOptions,
-    SemanticReport, TraceReport, VectorGeneratorPolicy, VectorRegenerationConfig,
-    VectorRegenerationReport, load_vector_regeneration_config,
+    AdminHandle, AdminService, IntegrityReport, LogicalPurgeReport, LogicalRestoreReport,
+    SafeExportManifest, SafeExportOptions, SemanticReport, TraceReport, VectorGeneratorPolicy,
+    VectorRegenerationConfig, VectorRegenerationReport, load_vector_regeneration_config,
 };
 pub use coordinator::{
-    ActionRow, ExecutionCoordinator, NodeRow, ProvenanceEvent, QueryPlan, QueryRows, RunRow,
-    StepRow,
+    ActionRow, ExecutionCoordinator, ExpansionRootRows, ExpansionSlotRows, GroupedQueryRows,
+    NodeRow, ProvenanceEvent, QueryPlan, QueryRows, RunRow, StepRow,
 };
 pub use ids::{new_id, new_row_id};
+pub use operational::{
+    OperationalCollectionKind, OperationalCollectionRecord, OperationalCompactionReport,
+    OperationalCurrentRow, OperationalMutationRow, OperationalPurgeReport,
+    OperationalRegisterRequest, OperationalRepairReport, OperationalTraceReport,
+};
 pub use projection::{ProjectionRepairReport, ProjectionService, ProjectionTarget};
 pub use runtime::EngineRuntime;
 pub use sqlite::{SharedSqlitePolicy, shared_sqlite_policy};
 pub use writer::{
-    ActionInsert, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire, NodeInsert, NodeRetire,
-    OptionalProjectionTask, ProvenanceMode, RunInsert, StepInsert, VecInsert, WriteReceipt,
-    WriteRequest, WriterActor,
+    ActionInsert, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire, LastAccessTouchReport,
+    LastAccessTouchRequest, NodeInsert, NodeRetire, OperationalWrite, OptionalProjectionTask,
+    ProvenanceMode, RunInsert, StepInsert, VecInsert, WriteReceipt, WriteRequest, WriterActor,
 };
 
 use thiserror::Error;

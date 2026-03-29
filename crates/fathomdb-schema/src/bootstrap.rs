@@ -192,6 +192,81 @@ static MIGRATIONS: &[Migration] = &[
                     ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '';
                 ",
     ),
+    Migration::new(
+        SchemaVersion(7),
+        "operational store canonical and derived tables",
+        r"
+                CREATE TABLE IF NOT EXISTS operational_collections (
+                    name TEXT PRIMARY KEY,
+                    kind TEXT NOT NULL,
+                    schema_json TEXT NOT NULL,
+                    retention_json TEXT NOT NULL,
+                    format_version INTEGER NOT NULL DEFAULT 1,
+                    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                    disabled_at INTEGER
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_operational_collections_kind
+                    ON operational_collections(kind, disabled_at);
+
+                CREATE TABLE IF NOT EXISTS operational_mutations (
+                    id TEXT PRIMARY KEY,
+                    collection_name TEXT NOT NULL,
+                    record_key TEXT NOT NULL,
+                    op_kind TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    source_ref TEXT,
+                    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                    FOREIGN KEY(collection_name) REFERENCES operational_collections(name)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_operational_mutations_collection_key_created
+                    ON operational_mutations(collection_name, record_key, created_at DESC, id DESC);
+                CREATE INDEX IF NOT EXISTS idx_operational_mutations_source_ref
+                    ON operational_mutations(source_ref);
+
+                CREATE TABLE IF NOT EXISTS operational_current (
+                    collection_name TEXT NOT NULL,
+                    record_key TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    last_mutation_id TEXT NOT NULL,
+                    PRIMARY KEY(collection_name, record_key),
+                    FOREIGN KEY(collection_name) REFERENCES operational_collections(name),
+                    FOREIGN KEY(last_mutation_id) REFERENCES operational_mutations(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_operational_current_collection_updated
+                    ON operational_current(collection_name, updated_at DESC);
+                ",
+    ),
+    Migration::new(
+        SchemaVersion(8),
+        "operational mutation ordering hardening",
+        r"
+                ALTER TABLE operational_mutations
+                    ADD COLUMN mutation_order INTEGER NOT NULL DEFAULT 0;
+                UPDATE operational_mutations
+                SET mutation_order = rowid
+                WHERE mutation_order = 0;
+                CREATE INDEX IF NOT EXISTS idx_operational_mutations_collection_key_order
+                    ON operational_mutations(collection_name, record_key, mutation_order DESC);
+                ",
+    ),
+    Migration::new(
+        SchemaVersion(9),
+        "node last_accessed metadata",
+        r"
+                CREATE TABLE IF NOT EXISTS node_access_metadata (
+                    logical_id TEXT PRIMARY KEY,
+                    last_accessed_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_node_access_metadata_last_accessed
+                    ON node_access_metadata(last_accessed_at DESC);
+                ",
+    ),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -238,6 +313,8 @@ impl SchemaManager {
                 SchemaVersion(4) => Self::ensure_vector_regeneration_apply_metadata(conn)?,
                 SchemaVersion(5) => Self::ensure_vector_contract_format_version(conn)?,
                 SchemaVersion(6) => Self::ensure_provenance_metadata(conn)?,
+                SchemaVersion(8) => Self::ensure_operational_mutation_order(conn)?,
+                SchemaVersion(9) => Self::ensure_node_access_metadata(conn)?,
                 _ => conn.execute_batch(migration.sql)?,
             }
             conn.execute(
@@ -337,6 +414,53 @@ impl SchemaManager {
                 [],
             )?;
         }
+        Ok(())
+    }
+
+    fn ensure_operational_mutation_order(conn: &Connection) -> Result<(), SchemaError> {
+        let mut stmt = conn.prepare("PRAGMA table_info(operational_mutations)")?;
+        let columns = stmt
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<Result<Vec<_>, _>>()?;
+        let has_mutation_order = columns.iter().any(|column| column == "mutation_order");
+
+        if !has_mutation_order {
+            conn.execute(
+                "ALTER TABLE operational_mutations ADD COLUMN mutation_order INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
+        conn.execute(
+            r"
+            UPDATE operational_mutations
+            SET mutation_order = rowid
+            WHERE mutation_order = 0
+            ",
+            [],
+        )?;
+        conn.execute(
+            r"
+            CREATE INDEX IF NOT EXISTS idx_operational_mutations_collection_key_order
+                ON operational_mutations(collection_name, record_key, mutation_order DESC)
+            ",
+            [],
+        )?;
+        Ok(())
+    }
+
+    fn ensure_node_access_metadata(conn: &Connection) -> Result<(), SchemaError> {
+        conn.execute_batch(
+            r"
+            CREATE TABLE IF NOT EXISTS node_access_metadata (
+                logical_id TEXT PRIMARY KEY,
+                last_accessed_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_node_access_metadata_last_accessed
+                ON node_access_metadata(last_accessed_at DESC);
+            ",
+        )?;
         Ok(())
     }
 
@@ -452,7 +576,7 @@ mod tests {
 
         let report = manager.bootstrap(&conn).expect("bootstrap report");
 
-        assert_eq!(report.applied_versions.len(), 6);
+        assert_eq!(report.applied_versions.len(), 8);
         assert!(report.sqlite_version.starts_with('3'));
         let table_count: i64 = conn
             .query_row(
@@ -598,6 +722,138 @@ mod tests {
             )
             .expect("metadata_json column count");
         assert_eq!(metadata_column_count, 1);
+    }
+
+    #[test]
+    fn bootstrap_creates_operational_store_tables() {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        let manager = SchemaManager::new();
+
+        manager.bootstrap(&conn).expect("bootstrap");
+
+        for table in [
+            "operational_collections",
+            "operational_mutations",
+            "operational_current",
+        ] {
+            let count: i64 = conn
+                .query_row(
+                    "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    [table],
+                    |row| row.get(0),
+                )
+                .expect("table existence");
+            assert_eq!(count, 1, "{table} should exist after bootstrap");
+        }
+        let mutation_order_columns: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('operational_mutations') WHERE name = 'mutation_order'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("mutation_order column exists");
+        assert_eq!(mutation_order_columns, 1);
+    }
+
+    #[test]
+    fn bootstrap_is_idempotent_with_operational_store_tables() {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        let manager = SchemaManager::new();
+
+        manager.bootstrap(&conn).expect("first bootstrap");
+        let report = manager.bootstrap(&conn).expect("second bootstrap");
+
+        assert!(
+            report.applied_versions.is_empty(),
+            "second bootstrap should apply no new migrations"
+        );
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'operational_collections'",
+                [],
+                |row| row.get(0),
+        )
+        .expect("operational_collections table exists");
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn bootstrap_is_idempotent_for_recovered_operational_tables_without_migration_history() {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        conn.execute_batch(
+            r#"
+            CREATE TABLE operational_collections (
+                name TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                schema_json TEXT NOT NULL,
+                retention_json TEXT NOT NULL,
+                format_version INTEGER NOT NULL DEFAULT 1,
+                created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                disabled_at INTEGER
+            );
+
+            CREATE TABLE operational_mutations (
+                id TEXT PRIMARY KEY,
+                collection_name TEXT NOT NULL,
+                record_key TEXT NOT NULL,
+                op_kind TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                source_ref TEXT,
+                created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                mutation_order INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(collection_name) REFERENCES operational_collections(name)
+            );
+
+            CREATE TABLE operational_current (
+                collection_name TEXT NOT NULL,
+                record_key TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                updated_at INTEGER NOT NULL,
+                last_mutation_id TEXT NOT NULL,
+                PRIMARY KEY(collection_name, record_key),
+                FOREIGN KEY(collection_name) REFERENCES operational_collections(name),
+                FOREIGN KEY(last_mutation_id) REFERENCES operational_mutations(id)
+            );
+
+            INSERT INTO operational_collections (name, kind, schema_json, retention_json)
+            VALUES ('audit_log', 'append_only_log', '{}', '{"mode":"keep_all"}');
+            INSERT INTO operational_mutations (
+                id, collection_name, record_key, op_kind, payload_json, created_at, mutation_order
+            ) VALUES (
+                'mut-1', 'audit_log', 'entry-1', 'put', '{"ok":true}', 10, 0
+            );
+            "#,
+        )
+        .expect("seed recovered operational tables");
+
+        let manager = SchemaManager::new();
+        let report = manager
+            .bootstrap(&conn)
+            .expect("bootstrap recovered schema");
+
+        assert!(
+            report.applied_versions.iter().any(|version| version.0 == 8),
+            "bootstrap should record operational mutation ordering hardening"
+        );
+        let mutation_order: i64 = conn
+            .query_row(
+                "SELECT mutation_order FROM operational_mutations WHERE id = 'mut-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("mutation_order");
+        assert_ne!(
+            mutation_order, 0,
+            "bootstrap should backfill recovered operational rows"
+        );
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_operational_mutations_collection_key_order'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("ordering index exists");
+        assert_eq!(count, 1);
     }
 
     #[cfg(feature = "sqlite-vec")]

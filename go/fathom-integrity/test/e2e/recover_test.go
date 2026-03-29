@@ -243,6 +243,40 @@ generator_command = [%q]
 	require.Empty(t, result.LogicalIDs)
 }
 
+func TestRecoverCommand_PreservesRetiredRestorableStateWithoutTreatingItAsCorruption(t *testing.T) {
+	repoRoot := filepath.Join("..", "..")
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "fathom.db")
+	destPath := filepath.Join(tempDir, "recovered.db")
+	bridgePath := makeBridgeScript(t, tempDir, repoRoot)
+
+	bootstrapBridgeDB(t, bridgePath, dbPath)
+	queryDB(t, dbPath, `
+INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, superseded_at, source_ref)
+VALUES ('row-1', 'doc-1', 'Document', '{}', 100, 200, 'source-1');
+INSERT INTO chunks (id, node_logical_id, text_content, created_at)
+VALUES ('chunk-1', 'doc-1', 'budget discussion', 100);
+INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at, metadata_json)
+VALUES ('evt-1', 'node_retire', 'doc-1', 'forget-1', 200, '');
+`)
+
+	cmd := buildCmd(repoRoot,
+		"recover",
+		"--db", dbPath,
+		"--dest", destPath,
+		"--bridge", bridgePath,
+	)
+
+	output, err := cmd.CombinedOutput()
+
+	require.NoError(t, err, string(output))
+	require.Contains(t, string(output), "recover completed")
+	require.Equal(t, "1", queryDB(t, destPath, "SELECT count(*) FROM nodes WHERE logical_id = 'doc-1'"))
+	require.Equal(t, "0", queryDB(t, destPath, "SELECT count(*) FROM nodes WHERE logical_id = 'doc-1' AND superseded_at IS NULL"))
+	require.Equal(t, "1", queryDB(t, destPath, "SELECT count(*) FROM chunks WHERE node_logical_id = 'doc-1'"))
+	require.Equal(t, "0", queryDB(t, destPath, "SELECT count(*) FROM fts_nodes WHERE node_logical_id = 'doc-1'"))
+}
+
 func TestRecoverCommand_LargeTruncationRecoversSomething(t *testing.T) {
 	repoRoot := filepath.Join("..", "..")
 	tempDir := t.TempDir()

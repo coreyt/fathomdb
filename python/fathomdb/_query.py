@@ -5,8 +5,10 @@ import json
 from ._feedback import run_with_feedback
 from ._fathomdb import EngineCore
 from ._types import (
+    CompiledGroupedQuery,
     CompiledQuery,
     FeedbackConfig,
+    GroupedQueryRows,
     QueryPlan,
     QueryRows,
     TraverseDirection,
@@ -20,11 +22,13 @@ class Query:
         root_kind: str,
         *,
         steps: list[dict] | None = None,
+        expansions: list[dict] | None = None,
         final_limit: int | None = None,
     ) -> None:
         self._core = core
         self._root_kind = root_kind
         self._steps = list(steps or [])
+        self._expansions = list(expansions or [])
         self._final_limit = final_limit
 
     def _with_step(self, step: dict) -> "Query":
@@ -32,17 +36,34 @@ class Query:
             self._core,
             self._root_kind,
             steps=[*self._steps, step],
+            expansions=self._expansions,
+            final_limit=self._final_limit,
+        )
+
+    def _with_expansion(self, expansion: dict) -> "Query":
+        return Query(
+            self._core,
+            self._root_kind,
+            steps=self._steps,
+            expansions=[*self._expansions, expansion],
             final_limit=self._final_limit,
         )
 
     def _with_limit(self, limit: int | None) -> "Query":
-        return Query(self._core, self._root_kind, steps=self._steps, final_limit=limit)
+        return Query(
+            self._core,
+            self._root_kind,
+            steps=self._steps,
+            expansions=self._expansions,
+            final_limit=limit,
+        )
 
     def _ast_payload(self) -> str:
         return json.dumps(
             {
                 "root_kind": self._root_kind,
                 "steps": self._steps,
+                "expansions": self._expansions,
                 "final_limit": self._final_limit,
             }
         )
@@ -82,6 +103,48 @@ class Query:
     def filter_json_text_eq(self, path: str, value: str) -> "Query":
         return self._with_step({"type": "filter_json_text_eq", "path": path, "value": value})
 
+    def filter_json_integer_gt(self, path: str, value: int) -> "Query":
+        return self._with_step({"type": "filter_json_integer_gt", "path": path, "value": value})
+
+    def filter_json_integer_gte(self, path: str, value: int) -> "Query":
+        return self._with_step({"type": "filter_json_integer_gte", "path": path, "value": value})
+
+    def filter_json_integer_lt(self, path: str, value: int) -> "Query":
+        return self._with_step({"type": "filter_json_integer_lt", "path": path, "value": value})
+
+    def filter_json_integer_lte(self, path: str, value: int) -> "Query":
+        return self._with_step({"type": "filter_json_integer_lte", "path": path, "value": value})
+
+    def filter_json_timestamp_gt(self, path: str, value: int) -> "Query":
+        return self._with_step({"type": "filter_json_timestamp_gt", "path": path, "value": value})
+
+    def filter_json_timestamp_gte(self, path: str, value: int) -> "Query":
+        return self._with_step({"type": "filter_json_timestamp_gte", "path": path, "value": value})
+
+    def filter_json_timestamp_lt(self, path: str, value: int) -> "Query":
+        return self._with_step({"type": "filter_json_timestamp_lt", "path": path, "value": value})
+
+    def filter_json_timestamp_lte(self, path: str, value: int) -> "Query":
+        return self._with_step({"type": "filter_json_timestamp_lte", "path": path, "value": value})
+
+    def expand(
+        self,
+        *,
+        slot: str,
+        direction: TraverseDirection | str,
+        label: str,
+        max_depth: int,
+    ) -> "Query":
+        value = direction.value if isinstance(direction, TraverseDirection) else direction
+        return self._with_expansion(
+            {
+                "slot": slot,
+                "direction": value,
+                "label": label,
+                "max_depth": max_depth,
+            }
+        )
+
     def limit(self, limit: int) -> "Query":
         return self._with_limit(limit)
 
@@ -95,6 +158,22 @@ class Query:
                     progress_callback=progress_callback,
                     feedback_config=feedback_config,
                     operation=lambda: self._core.compile_ast(self._ast_payload()),
+                )
+            )
+        )
+
+    def compile_grouped(
+        self, *, progress_callback=None, feedback_config: FeedbackConfig | None = None
+    ) -> CompiledGroupedQuery:
+        return CompiledGroupedQuery.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="query.compile_grouped",
+                    metadata={"root_kind": self._root_kind},
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=lambda: self._core.compile_grouped_ast(self._ast_payload()),
                 )
             )
         )
@@ -123,6 +202,22 @@ class Query:
                     progress_callback=progress_callback,
                     feedback_config=feedback_config,
                     operation=lambda: self._core.execute_ast(self._ast_payload()),
+                )
+            )
+        )
+
+    def execute_grouped(
+        self, *, progress_callback=None, feedback_config: FeedbackConfig | None = None
+    ) -> GroupedQueryRows:
+        return GroupedQueryRows.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="query.execute_grouped",
+                    metadata={"root_kind": self._root_kind},
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=lambda: self._core.execute_grouped_ast(self._ast_payload()),
                 )
             )
         )

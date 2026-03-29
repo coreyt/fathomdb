@@ -8,7 +8,14 @@ from ._admin import AdminClient
 from ._feedback import run_with_feedback
 from ._fathomdb import EngineCore
 from ._query import Query
-from ._types import FeedbackConfig, ProvenanceMode, WriteReceipt, WriteRequest
+from ._types import (
+    FeedbackConfig,
+    LastAccessTouchReport,
+    LastAccessTouchRequest,
+    ProvenanceMode,
+    WriteReceipt,
+    WriteRequest,
+)
 
 
 class Engine:
@@ -73,3 +80,23 @@ class Engine:
             progress_callback=progress_callback,
             feedback_config=feedback_config,
         )
+
+    def touch_last_accessed(
+        self,
+        request: LastAccessTouchRequest,
+        *,
+        progress_callback=None,
+        feedback_config: FeedbackConfig | None = None,
+    ) -> LastAccessTouchReport:
+        payload = run_with_feedback(
+            surface="python",
+            operation_kind="write.touch_last_accessed",
+            metadata={
+                "logical_ids": str(len(request.logical_ids)),
+                "touched_at": str(request.touched_at),
+            },
+            progress_callback=progress_callback,
+            feedback_config=feedback_config,
+            operation=lambda: self._core.touch_last_accessed(json.dumps(request.to_wire())),
+        )
+        return LastAccessTouchReport.from_wire(json.loads(payload))

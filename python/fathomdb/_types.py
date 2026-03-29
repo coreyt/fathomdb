@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from enum import Enum
 from typing import Any
 
@@ -20,6 +20,11 @@ class ProjectionTarget(str, Enum):
     FTS = "fts"
     VEC = "vec"
     ALL = "all"
+
+
+class OperationalCollectionKind(str, Enum):
+    APPEND_ONLY_LOG = "append_only_log"
+    LATEST_STATE = "latest_state"
 
 
 class TraverseDirection(str, Enum):
@@ -71,8 +76,22 @@ def _encode_json(value: Any) -> str:
     return json.dumps(value)
 
 
+def _encode_compat_json_payload(value: Any) -> str:
+    if isinstance(value, RawJson):
+        return value.text
+    if isinstance(value, str):
+        return value
+    return json.dumps(value)
+
+
 def _decode_json(value: str) -> Any:
     return json.loads(value)
+
+
+def _from_wire_dataclass(cls, payload: dict[str, Any]):
+    allowed = {item.name for item in fields(cls)}
+    filtered = {key: value for key, value in payload.items() if key in allowed}
+    return cls(**filtered)
 
 
 def _enum_value(value: Enum | str | None) -> str | None:
@@ -126,6 +145,40 @@ class CompiledQuery:
 
 
 @dataclass(frozen=True)
+class ExpansionSlot:
+    slot: str
+    direction: TraverseDirection
+    label: str
+    max_depth: int
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "ExpansionSlot":
+        return cls(
+            slot=payload["slot"],
+            direction=TraverseDirection(payload["direction"]),
+            label=payload["label"],
+            max_depth=payload["max_depth"],
+        )
+
+
+@dataclass(frozen=True)
+class CompiledGroupedQuery:
+    root: CompiledQuery
+    expansions: list[ExpansionSlot]
+    shape_hash: int
+    hints: ExecutionHints
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "CompiledGroupedQuery":
+        return cls(
+            root=CompiledQuery.from_wire(payload["root"]),
+            expansions=[ExpansionSlot.from_wire(item) for item in payload["expansions"]],
+            shape_hash=payload["shape_hash"],
+            hints=ExecutionHints.from_wire(payload["hints"]),
+        )
+
+
+@dataclass(frozen=True)
 class QueryPlan:
     sql: str
     bind_count: int
@@ -150,6 +203,7 @@ class NodeRow:
     logical_id: str
     kind: str
     properties: Any
+    last_accessed_at: int | None = None
 
     @classmethod
     def from_wire(cls, payload: dict[str, Any]) -> "NodeRow":
@@ -158,6 +212,7 @@ class NodeRow:
             logical_id=payload["logical_id"],
             kind=payload["kind"],
             properties=_decode_json(payload["properties"]),
+            last_accessed_at=payload.get("last_accessed_at"),
         )
 
 
@@ -236,49 +291,130 @@ class QueryRows:
 
 
 @dataclass(frozen=True)
+class ExpansionRootRows:
+    root_logical_id: str
+    nodes: list[NodeRow]
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "ExpansionRootRows":
+        return cls(
+            root_logical_id=payload["root_logical_id"],
+            nodes=[NodeRow.from_wire(item) for item in payload["nodes"]],
+        )
+
+
+@dataclass(frozen=True)
+class ExpansionSlotRows:
+    slot: str
+    roots: list[ExpansionRootRows]
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "ExpansionSlotRows":
+        return cls(
+            slot=payload["slot"],
+            roots=[ExpansionRootRows.from_wire(item) for item in payload["roots"]],
+        )
+
+
+@dataclass(frozen=True)
+class GroupedQueryRows:
+    roots: list[NodeRow]
+    expansions: list[ExpansionSlotRows]
+    was_degraded: bool
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "GroupedQueryRows":
+        return cls(
+            roots=[NodeRow.from_wire(item) for item in payload["roots"]],
+            expansions=[ExpansionSlotRows.from_wire(item) for item in payload["expansions"]],
+            was_degraded=payload["was_degraded"],
+        )
+
+
+@dataclass(frozen=True)
 class IntegrityReport:
-    physical_ok: bool
-    foreign_keys_ok: bool
-    missing_fts_rows: int
-    duplicate_active_logical_ids: int
-    warnings: list[str]
+    physical_ok: bool = False
+    foreign_keys_ok: bool = False
+    missing_fts_rows: int = 0
+    duplicate_active_logical_ids: int = 0
+    operational_missing_collections: int = 0
+    operational_missing_last_mutations: int = 0
+    warnings: list[str] = field(default_factory=list)
 
     @classmethod
     def from_wire(cls, payload: dict[str, Any]) -> "IntegrityReport":
-        return cls(**payload)
+        return _from_wire_dataclass(cls, payload)
 
 
 @dataclass(frozen=True)
 class SemanticReport:
-    orphaned_chunks: int
-    null_source_ref_nodes: int
-    broken_step_fk: int
-    broken_action_fk: int
-    stale_fts_rows: int
-    fts_rows_for_superseded_nodes: int
-    dangling_edges: int
-    orphaned_supersession_chains: int
-    stale_vec_rows: int
-    vec_rows_for_superseded_nodes: int
-    warnings: list[str]
+    orphaned_chunks: int = 0
+    null_source_ref_nodes: int = 0
+    broken_step_fk: int = 0
+    broken_action_fk: int = 0
+    stale_fts_rows: int = 0
+    fts_rows_for_superseded_nodes: int = 0
+    dangling_edges: int = 0
+    orphaned_supersession_chains: int = 0
+    stale_vec_rows: int = 0
+    vec_rows_for_superseded_nodes: int = 0
+    missing_operational_current_rows: int = 0
+    stale_operational_current_rows: int = 0
+    disabled_collection_mutations: int = 0
+    orphaned_last_access_metadata_rows: int = 0
+    warnings: list[str] = field(default_factory=list)
 
     @classmethod
     def from_wire(cls, payload: dict[str, Any]) -> "SemanticReport":
-        return cls(**payload)
+        return _from_wire_dataclass(cls, payload)
 
 
 @dataclass(frozen=True)
 class TraceReport:
-    source_ref: str
-    node_rows: int
-    edge_rows: int
-    action_rows: int
-    node_logical_ids: list[str]
-    action_ids: list[str]
+    source_ref: str = ""
+    node_rows: int = 0
+    edge_rows: int = 0
+    action_rows: int = 0
+    operational_mutation_rows: int = 0
+    node_logical_ids: list[str] = field(default_factory=list)
+    action_ids: list[str] = field(default_factory=list)
+    operational_mutation_ids: list[str] = field(default_factory=list)
 
     @classmethod
     def from_wire(cls, payload: dict[str, Any]) -> "TraceReport":
-        return cls(**payload)
+        return _from_wire_dataclass(cls, payload)
+
+
+@dataclass(frozen=True)
+class LogicalRestoreReport:
+    logical_id: str = ""
+    was_noop: bool = False
+    restored_node_rows: int = 0
+    restored_edge_rows: int = 0
+    restored_chunk_rows: int = 0
+    restored_fts_rows: int = 0
+    restored_vec_rows: int = 0
+    notes: list[str] = field(default_factory=list)
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "LogicalRestoreReport":
+        return _from_wire_dataclass(cls, payload)
+
+
+@dataclass(frozen=True)
+class LogicalPurgeReport:
+    logical_id: str = ""
+    was_noop: bool = False
+    deleted_node_rows: int = 0
+    deleted_edge_rows: int = 0
+    deleted_chunk_rows: int = 0
+    deleted_fts_rows: int = 0
+    deleted_vec_rows: int = 0
+    notes: list[str] = field(default_factory=list)
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "LogicalPurgeReport":
+        return _from_wire_dataclass(cls, payload)
 
 
 @dataclass(frozen=True)
@@ -309,13 +445,153 @@ class SafeExportManifest:
         return cls(**payload)
 
 
+@dataclass(frozen=True)
+class OperationalCollectionRecord:
+    name: str
+    kind: OperationalCollectionKind
+    schema_json: str
+    retention_json: str
+    format_version: int
+    created_at: int
+    disabled_at: int | None = None
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "OperationalCollectionRecord":
+        return cls(
+            name=payload["name"],
+            kind=OperationalCollectionKind(payload["kind"]),
+            schema_json=payload["schema_json"],
+            retention_json=payload["retention_json"],
+            format_version=payload["format_version"],
+            created_at=payload["created_at"],
+            disabled_at=payload.get("disabled_at"),
+        )
+
+
+@dataclass(slots=True)
+class OperationalRegisterRequest:
+    name: str
+    kind: OperationalCollectionKind
+    schema_json: str
+    retention_json: str
+    format_version: int
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "kind": _enum_value(self.kind),
+            "schema_json": self.schema_json,
+            "retention_json": self.retention_json,
+            "format_version": self.format_version,
+        }
+
+
+@dataclass(frozen=True)
+class OperationalMutationRow:
+    id: str
+    collection_name: str
+    record_key: str
+    op_kind: str
+    payload_json: Any
+    source_ref: str | None
+    created_at: int
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "OperationalMutationRow":
+        return cls(
+            id=payload["id"],
+            collection_name=payload["collection_name"],
+            record_key=payload["record_key"],
+            op_kind=payload["op_kind"],
+            payload_json=_decode_json(payload["payload_json"]),
+            source_ref=payload.get("source_ref"),
+            created_at=payload["created_at"],
+        )
+
+
+@dataclass(frozen=True)
+class OperationalCurrentRow:
+    collection_name: str
+    record_key: str
+    payload_json: Any
+    updated_at: int
+    last_mutation_id: str
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "OperationalCurrentRow":
+        return cls(
+            collection_name=payload["collection_name"],
+            record_key=payload["record_key"],
+            payload_json=_decode_json(payload["payload_json"]),
+            updated_at=payload["updated_at"],
+            last_mutation_id=payload["last_mutation_id"],
+        )
+
+
+@dataclass(frozen=True)
+class OperationalTraceReport:
+    collection_name: str
+    record_key: str | None
+    mutation_count: int
+    current_count: int
+    mutations: list[OperationalMutationRow]
+    current_rows: list[OperationalCurrentRow]
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "OperationalTraceReport":
+        return cls(
+            collection_name=payload["collection_name"],
+            record_key=payload.get("record_key"),
+            mutation_count=payload["mutation_count"],
+            current_count=payload["current_count"],
+            mutations=[OperationalMutationRow.from_wire(item) for item in payload["mutations"]],
+            current_rows=[OperationalCurrentRow.from_wire(item) for item in payload["current_rows"]],
+        )
+
+
+@dataclass(frozen=True)
+class OperationalRepairReport:
+    collections_rebuilt: int
+    current_rows_rebuilt: int
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "OperationalRepairReport":
+        return cls(**payload)
+
+
+@dataclass(frozen=True)
+class OperationalCompactionReport:
+    collection_name: str
+    deleted_mutations: int
+    dry_run: bool
+    before_timestamp: int | None
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "OperationalCompactionReport":
+        return cls(**payload)
+
+
+@dataclass(frozen=True)
+class OperationalPurgeReport:
+    collection_name: str
+    deleted_mutations: int
+    before_timestamp: int
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "OperationalPurgeReport":
+        return cls(**payload)
+
+
 @dataclass(slots=True)
 class OptionalProjectionTask:
     target: ProjectionTarget
-    payload: str
+    payload: Any
 
     def to_wire(self) -> dict[str, Any]:
-        return {"target": _enum_value(self.target), "payload": self.payload}
+        return {
+            "target": _enum_value(self.target),
+            "payload": _encode_compat_json_payload(self.payload),
+        }
 
 
 @dataclass(slots=True)
@@ -410,6 +686,55 @@ class VecInsert:
 
 
 @dataclass(slots=True)
+class OperationalAppend:
+    collection: str
+    record_key: str
+    payload_json: Any
+    source_ref: str | None = None
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "type": "append",
+            "collection": self.collection,
+            "record_key": self.record_key,
+            "payload_json": _encode_json(self.payload_json),
+            "source_ref": self.source_ref,
+        }
+
+
+@dataclass(slots=True)
+class OperationalPut:
+    collection: str
+    record_key: str
+    payload_json: Any
+    source_ref: str | None = None
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "type": "put",
+            "collection": self.collection,
+            "record_key": self.record_key,
+            "payload_json": _encode_json(self.payload_json),
+            "source_ref": self.source_ref,
+        }
+
+
+@dataclass(slots=True)
+class OperationalDelete:
+    collection: str
+    record_key: str
+    source_ref: str | None = None
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "type": "delete",
+            "collection": self.collection,
+            "record_key": self.record_key,
+            "source_ref": self.source_ref,
+        }
+
+
+@dataclass(slots=True)
 class RunInsert:
     id: str
     kind: str
@@ -492,6 +817,9 @@ class WriteRequest:
     actions: list[ActionInsert] = field(default_factory=list)
     optional_backfills: list[OptionalProjectionTask] = field(default_factory=list)
     vec_inserts: list[VecInsert] = field(default_factory=list)
+    operational_writes: list[OperationalAppend | OperationalPut | OperationalDelete] = field(
+        default_factory=list
+    )
 
     def to_wire(self) -> dict[str, Any]:
         return {
@@ -506,6 +834,7 @@ class WriteRequest:
             "actions": [item.to_wire() for item in self.actions],
             "optional_backfills": [item.to_wire() for item in self.optional_backfills],
             "vec_inserts": [item.to_wire() for item in self.vec_inserts],
+            "operational_writes": [item.to_wire() for item in self.operational_writes],
         }
 
 
@@ -517,4 +846,28 @@ class WriteReceipt:
 
     @classmethod
     def from_wire(cls, payload: dict[str, Any]) -> "WriteReceipt":
+        return cls(**payload)
+
+
+@dataclass(slots=True)
+class LastAccessTouchRequest:
+    logical_ids: list[str]
+    touched_at: int
+    source_ref: str | None = None
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "logical_ids": list(self.logical_ids),
+            "touched_at": self.touched_at,
+            "source_ref": self.source_ref,
+        }
+
+
+@dataclass(frozen=True)
+class LastAccessTouchReport:
+    touched_logical_ids: int
+    touched_at: int
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "LastAccessTouchReport":
         return cls(**payload)

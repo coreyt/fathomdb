@@ -3,7 +3,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use fathomdb_query::{CompiledQuery, DrivingTable, ShapeHash};
+use fathomdb_query::{CompiledGroupedQuery, CompiledQuery, DrivingTable, ExpansionSlot, ShapeHash};
 use fathomdb_schema::SchemaManager;
 use rusqlite::{Connection, OptionalExtension, params_from_iter, types::Value};
 
@@ -27,6 +27,7 @@ pub struct NodeRow {
     pub logical_id: String,
     pub kind: String,
     pub properties: String,
+    pub last_accessed_at: Option<i64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -74,6 +75,25 @@ pub struct QueryRows {
     pub actions: Vec<ActionRow>,
     /// `true` when a capability miss (e.g. missing sqlite-vec) caused the query
     /// to degrade to an empty result instead of propagating an error.
+    pub was_degraded: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExpansionRootRows {
+    pub root_logical_id: String,
+    pub nodes: Vec<NodeRow>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExpansionSlotRows {
+    pub slot: String,
+    pub roots: Vec<ExpansionRootRows>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct GroupedQueryRows {
+    pub roots: Vec<NodeRow>,
+    pub expansions: Vec<ExpansionSlotRows>,
     pub was_degraded: bool,
 }
 
@@ -161,6 +181,7 @@ impl ExecutionCoordinator {
         &self,
         compiled: &CompiledQuery,
     ) -> Result<QueryRows, EngineError> {
+        let row_sql = wrap_node_row_projection_sql(&compiled.sql);
         // FIX(review): was .expect() — panics on mutex poisoning, cascading failure.
         // Options: (A) into_inner() for all, (B) EngineError for all, (C) mixed.
         // Chose (C): shape_sql_map is a pure cache — into_inner() is safe to recover.
@@ -169,7 +190,7 @@ impl ExecutionCoordinator {
         self.shape_sql_map
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .insert(compiled.shape_hash, compiled.sql.clone());
+            .insert(compiled.shape_hash, row_sql.clone());
 
         let bind_values = compiled
             .binds
@@ -185,7 +206,7 @@ impl ExecutionCoordinator {
             .conn
             .lock()
             .map_err(|_| EngineError::Bridge("connection mutex poisoned".to_owned()))?;
-        let mut statement = match conn_guard.prepare_cached(&compiled.sql) {
+        let mut statement = match conn_guard.prepare_cached(&row_sql) {
             Ok(stmt) => stmt,
             Err(e) if is_vec_table_absent(&e) => {
                 return Ok(QueryRows {
@@ -202,6 +223,7 @@ impl ExecutionCoordinator {
                     logical_id: row.get(1)?,
                     kind: row.get(2)?,
                     properties: row.get(3)?,
+                    last_accessed_at: row.get(4)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -213,6 +235,117 @@ impl ExecutionCoordinator {
             actions: Vec::new(),
             was_degraded: false,
         })
+    }
+
+    /// # Errors
+    /// Returns [`EngineError`] if the root query or any bounded expansion
+    /// query cannot be prepared or executed.
+    pub fn execute_compiled_grouped_read(
+        &self,
+        compiled: &CompiledGroupedQuery,
+    ) -> Result<GroupedQueryRows, EngineError> {
+        let root_rows = self.execute_compiled_read(&compiled.root)?;
+        if root_rows.was_degraded {
+            return Ok(GroupedQueryRows {
+                roots: Vec::new(),
+                expansions: Vec::new(),
+                was_degraded: true,
+            });
+        }
+
+        let roots = root_rows.nodes;
+        let mut expansions = Vec::with_capacity(compiled.expansions.len());
+        for expansion in &compiled.expansions {
+            let mut root_groups = Vec::with_capacity(roots.len());
+            for root in &roots {
+                let nodes = self.read_expansion_nodes(
+                    &root.logical_id,
+                    expansion,
+                    compiled.hints.hard_limit,
+                )?;
+                root_groups.push(ExpansionRootRows {
+                    root_logical_id: root.logical_id.clone(),
+                    nodes,
+                });
+            }
+            expansions.push(ExpansionSlotRows {
+                slot: expansion.slot.clone(),
+                roots: root_groups,
+            });
+        }
+
+        Ok(GroupedQueryRows {
+            roots,
+            expansions,
+            was_degraded: false,
+        })
+    }
+
+    fn read_expansion_nodes(
+        &self,
+        root_logical_id: &str,
+        expansion: &ExpansionSlot,
+        hard_limit: usize,
+    ) -> Result<Vec<NodeRow>, EngineError> {
+        let (join_condition, next_logical_id) = match expansion.direction {
+            fathomdb_query::TraverseDirection::Out => {
+                ("e.source_logical_id = t.logical_id", "e.target_logical_id")
+            }
+            fathomdb_query::TraverseDirection::In => {
+                ("e.target_logical_id = t.logical_id", "e.source_logical_id")
+            }
+        };
+
+        let sql = format!(
+            "WITH RECURSIVE traversed(logical_id, depth, visited, emitted) AS (
+                SELECT ?1, 0, printf(',%s,', ?1), 0
+                UNION ALL
+                SELECT
+                    {next_logical_id},
+                    t.depth + 1,
+                    t.visited || {next_logical_id} || ',',
+                    t.emitted + 1
+                FROM traversed t
+                JOIN edges e ON {join_condition}
+                    AND e.kind = ?2
+                    AND e.superseded_at IS NULL
+                WHERE t.depth < {max_depth}
+                  AND t.emitted < {hard_limit}
+                  AND instr(t.visited, printf(',%s,', {next_logical_id})) = 0
+            )
+            SELECT DISTINCT n.row_id, n.logical_id, n.kind, n.properties
+                 , am.last_accessed_at
+            FROM traversed t
+            JOIN nodes n ON n.logical_id = t.logical_id
+                AND n.superseded_at IS NULL
+            LEFT JOIN node_access_metadata am ON am.logical_id = n.logical_id
+            WHERE t.depth > 0
+            ORDER BY n.logical_id",
+            max_depth = expansion.max_depth,
+            hard_limit = hard_limit,
+        );
+
+        let conn_guard = self
+            .conn
+            .lock()
+            .map_err(|_| EngineError::Bridge("connection mutex poisoned".to_owned()))?;
+        let mut statement = conn_guard
+            .prepare_cached(&sql)
+            .map_err(EngineError::Sqlite)?;
+        let nodes = statement
+            .query_map(rusqlite::params![root_logical_id, expansion.label.as_str()], |row| {
+                Ok(NodeRow {
+                    row_id: row.get(0)?,
+                    logical_id: row.get(1)?,
+                    kind: row.get(2)?,
+                    properties: row.get(3)?,
+                    last_accessed_at: row.get(4)?,
+                })
+            })
+            .map_err(EngineError::Sqlite)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(EngineError::Sqlite)?;
+        Ok(nodes)
     }
 
     /// Read a single run by id.
@@ -364,7 +497,7 @@ impl ExecutionCoordinator {
             .unwrap_or_else(PoisonError::into_inner)
             .contains_key(&compiled.shape_hash);
         QueryPlan {
-            sql: compiled.sql.clone(),
+            sql: wrap_node_row_projection_sql(&compiled.sql),
             bind_count: compiled.binds.len(),
             driving_table: compiled.driving_table,
             shape_hash: compiled.shape_hash,
@@ -441,6 +574,14 @@ impl ExecutionCoordinator {
             .map_err(EngineError::Sqlite)?;
         Ok(events)
     }
+}
+
+fn wrap_node_row_projection_sql(base_sql: &str) -> String {
+    format!(
+        "SELECT q.row_id, q.logical_id, q.kind, q.properties, am.last_accessed_at \
+         FROM ({base_sql}) q \
+         LEFT JOIN node_access_metadata am ON am.logical_id = q.logical_id"
+    )
 }
 
 /// Returns `true` when `err` indicates the vec virtual table is absent
@@ -784,6 +925,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("write run");
 
@@ -840,6 +982,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("write step");
 
@@ -908,6 +1051,7 @@ mod tests {
                 }],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("write action");
 
@@ -957,6 +1101,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("v1 write");
 
@@ -982,6 +1127,7 @@ mod tests {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("v2 write");
 

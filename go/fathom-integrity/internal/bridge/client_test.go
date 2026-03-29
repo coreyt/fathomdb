@@ -56,6 +56,64 @@ func TestRequestJSONShape(t *testing.T) {
 	require.Contains(t, string(body), `"preserve_env_vars":["OPENAI_API_KEY"]`)
 }
 
+func TestOperationalRequestJSONShape(t *testing.T) {
+	request := Request{
+		DatabasePath:   "/tmp/fathom.db",
+		Command:        CommandRegisterOperationalCollection,
+		CollectionName: "connector_health",
+		OperationalCollection: &OperationalCollection{
+			Name:          "connector_health",
+			Kind:          "latest_state",
+			SchemaJSON:    "{}",
+			RetentionJSON: "{}",
+			FormatVersion: 1,
+		},
+	}
+
+	body, err := json.Marshal(request)
+
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"command":"register_operational_collection"`)
+	require.Contains(t, string(body), `"collection_name":"connector_health"`)
+	require.Contains(t, string(body), `"operational_collection"`)
+	require.Contains(t, string(body), `"kind":"latest_state"`)
+	require.Contains(t, string(body), `"schema_json":"{}"`)
+	require.Contains(t, string(body), `"retention_json":"{}"`)
+	require.Contains(t, string(body), `"format_version":1`)
+}
+
+func TestOperationalLifecycleRequestJSONShape(t *testing.T) {
+	request := Request{
+		DatabasePath:    "/tmp/fathom.db",
+		Command:         CommandPurgeOperationalCollection,
+		CollectionName:  "audit_log",
+		BeforeTimestamp: 250,
+		DryRun:          true,
+	}
+
+	body, err := json.Marshal(request)
+
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"command":"purge_operational_collection"`)
+	require.Contains(t, string(body), `"collection_name":"audit_log"`)
+	require.Contains(t, string(body), `"before_timestamp":250`)
+	require.Contains(t, string(body), `"dry_run":true`)
+}
+
+func TestLogicalLifecycleRequestJSONShape(t *testing.T) {
+	request := Request{
+		DatabasePath: "/tmp/fathom.db",
+		Command:      CommandRestoreLogicalID,
+		LogicalID:    "doc-1",
+	}
+
+	body, err := json.Marshal(request)
+
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"command":"restore_logical_id"`)
+	require.Contains(t, string(body), `"logical_id":"doc-1"`)
+}
+
 func TestClientRejectsProtocolMismatch(t *testing.T) {
 	script := `#!/usr/bin/env bash
 printf '%s\n' '{"protocol_version":99,"ok":true,"message":"ok","payload":{}}'

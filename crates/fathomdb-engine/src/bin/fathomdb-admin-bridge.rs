@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use fathomdb_engine::{
-    AdminService, EngineError, ProjectionTarget, SafeExportOptions, VectorGeneratorPolicy,
-    load_vector_regeneration_config,
+    AdminService, EngineError, OperationalRegisterRequest, ProjectionTarget, SafeExportOptions,
+    VectorGeneratorPolicy, load_vector_regeneration_config,
 };
 use fathomdb_schema::{SchemaError, SchemaManager};
 use serde::{Deserialize, Serialize};
@@ -28,11 +28,18 @@ struct BridgeRequest {
     protocol_version: u32,
     database_path: PathBuf,
     command: String,
+    logical_id: Option<String>,
     target: Option<String>,
     source_ref: Option<String>,
+    collection_name: Option<String>,
+    record_key: Option<String>,
     destination_path: Option<PathBuf>,
     config_path: Option<PathBuf>,
+    before_timestamp: Option<i64>,
+    #[serde(default)]
+    dry_run: bool,
     vector_generator_policy: Option<VectorGeneratorPolicy>,
+    operational_collection: Option<OperationalRegisterRequest>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -44,9 +51,18 @@ enum BridgeCommand {
     RebuildMissingProjections,
     RestoreVectorProfiles,
     RegenerateVectorEmbeddings,
+    RestoreLogicalId,
+    PurgeLogicalId,
     TraceSource,
     ExciseSource,
     SafeExport,
+    RegisterOperationalCollection,
+    DescribeOperationalCollection,
+    DisableOperationalCollection,
+    CompactOperationalCollection,
+    PurgeOperationalCollection,
+    RebuildOperationalCurrent,
+    TraceOperationalCollection,
 }
 
 #[derive(Debug, Serialize)]
@@ -173,6 +189,36 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                 "config_path is required".to_owned(),
             ),
         },
+        BridgeCommand::RestoreLogicalId => match request.logical_id.as_deref() {
+            Some(logical_id) if !logical_id.is_empty() => {
+                match service.restore_logical_id(logical_id) {
+                    Ok(report) => success_response(
+                        "logical_id restored".to_owned(),
+                        serde_json::to_value(report).unwrap_or_else(|_| json!({})),
+                    ),
+                    Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                }
+            }
+            _ => error_response_with_message(
+                BridgeErrorCode::BadRequest,
+                "logical_id is required".to_owned(),
+            ),
+        },
+        BridgeCommand::PurgeLogicalId => match request.logical_id.as_deref() {
+            Some(logical_id) if !logical_id.is_empty() => {
+                match service.purge_logical_id(logical_id) {
+                    Ok(report) => success_response(
+                        "logical_id purged".to_owned(),
+                        serde_json::to_value(report).unwrap_or_else(|_| json!({})),
+                    ),
+                    Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                }
+            }
+            _ => error_response_with_message(
+                BridgeErrorCode::BadRequest,
+                "logical_id is required".to_owned(),
+            ),
+        },
         // Security fix M-10: Require source_ref for TraceSource and ExciseSource
         // instead of silently defaulting to "". An empty source_ref could cause
         // unintended broad operations.
@@ -220,6 +266,119 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                 "destination_path is required".to_owned(),
             ),
         },
+        BridgeCommand::RegisterOperationalCollection => match request.operational_collection {
+            Some(register_request) => {
+                match service.register_operational_collection(&register_request) {
+                    Ok(record) => success_response(
+                        "operational collection registered".to_owned(),
+                        serde_json::to_value(record).unwrap_or_else(|_| json!({})),
+                    ),
+                    Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                }
+            }
+            None => error_response_with_message(
+                BridgeErrorCode::BadRequest,
+                "operational_collection is required".to_owned(),
+            ),
+        },
+        BridgeCommand::DescribeOperationalCollection => match request.collection_name.as_deref() {
+            Some(collection_name) if !collection_name.is_empty() => {
+                match service.describe_operational_collection(collection_name) {
+                    Ok(Some(record)) => success_response(
+                        "operational collection described".to_owned(),
+                        serde_json::to_value(record).unwrap_or_else(|_| json!({})),
+                    ),
+                    Ok(None) => error_response_with_message(
+                        BridgeErrorCode::BadRequest,
+                        "operational collection not found".to_owned(),
+                    ),
+                    Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                }
+            }
+            _ => error_response_with_message(
+                BridgeErrorCode::BadRequest,
+                "collection_name is required".to_owned(),
+            ),
+        },
+        BridgeCommand::DisableOperationalCollection => match request.collection_name.as_deref() {
+            Some(collection_name) if !collection_name.is_empty() => {
+                match service.disable_operational_collection(collection_name) {
+                    Ok(record) => success_response(
+                        "operational collection disabled".to_owned(),
+                        serde_json::to_value(record).unwrap_or_else(|_| json!({})),
+                    ),
+                    Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                }
+            }
+            _ => error_response_with_message(
+                BridgeErrorCode::BadRequest,
+                "collection_name is required".to_owned(),
+            ),
+        },
+        BridgeCommand::CompactOperationalCollection => match request.collection_name.as_deref() {
+            Some(collection_name) if !collection_name.is_empty() => {
+                match service.compact_operational_collection(collection_name, request.dry_run) {
+                    Ok(report) => success_response(
+                        "operational collection compacted".to_owned(),
+                        serde_json::to_value(report).unwrap_or_else(|_| json!({})),
+                    ),
+                    Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                }
+            }
+            _ => error_response_with_message(
+                BridgeErrorCode::BadRequest,
+                "collection_name is required".to_owned(),
+            ),
+        },
+        BridgeCommand::PurgeOperationalCollection => {
+            match (request.collection_name.as_deref(), request.before_timestamp) {
+                (Some(collection_name), Some(before_timestamp)) if !collection_name.is_empty() => {
+                    match service.purge_operational_collection(collection_name, before_timestamp) {
+                        Ok(report) => success_response(
+                            "operational collection purged".to_owned(),
+                            serde_json::to_value(report).unwrap_or_else(|_| json!({})),
+                        ),
+                        Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                    }
+                }
+                (Some(collection_name), None) if !collection_name.is_empty() => {
+                    error_response_with_message(
+                        BridgeErrorCode::BadRequest,
+                        "before_timestamp is required".to_owned(),
+                    )
+                }
+                _ => error_response_with_message(
+                    BridgeErrorCode::BadRequest,
+                    "collection_name is required".to_owned(),
+                ),
+            }
+        }
+        BridgeCommand::RebuildOperationalCurrent => {
+            match service.rebuild_operational_current(request.collection_name.as_deref()) {
+                Ok(report) => success_response(
+                    "operational current rebuilt".to_owned(),
+                    serde_json::to_value(report).unwrap_or_else(|_| json!({})),
+                ),
+                Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+            }
+        }
+        BridgeCommand::TraceOperationalCollection => match request.collection_name.as_deref() {
+            Some(collection_name) if !collection_name.is_empty() => {
+                match service
+                    .trace_operational_collection(collection_name, request.record_key.as_deref())
+                {
+                    Ok(report) => success_response(
+                        "operational collection traced".to_owned(),
+                        serde_json::to_value(report).unwrap_or_else(|_| json!({})),
+                    ),
+                    Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                }
+            }
+            _ => error_response_with_message(
+                BridgeErrorCode::BadRequest,
+                "collection_name is required".to_owned(),
+            ),
+        },
     }
 }
 
@@ -240,9 +399,18 @@ fn parse_command(command: &str) -> Result<BridgeCommand, BridgeErrorCode> {
         "rebuild_missing_projections" => Ok(BridgeCommand::RebuildMissingProjections),
         "restore_vector_profiles" => Ok(BridgeCommand::RestoreVectorProfiles),
         "regenerate_vector_embeddings" => Ok(BridgeCommand::RegenerateVectorEmbeddings),
+        "restore_logical_id" => Ok(BridgeCommand::RestoreLogicalId),
+        "purge_logical_id" => Ok(BridgeCommand::PurgeLogicalId),
         "trace_source" => Ok(BridgeCommand::TraceSource),
         "excise_source" => Ok(BridgeCommand::ExciseSource),
         "safe_export" => Ok(BridgeCommand::SafeExport),
+        "register_operational_collection" => Ok(BridgeCommand::RegisterOperationalCollection),
+        "describe_operational_collection" => Ok(BridgeCommand::DescribeOperationalCollection),
+        "disable_operational_collection" => Ok(BridgeCommand::DisableOperationalCollection),
+        "compact_operational_collection" => Ok(BridgeCommand::CompactOperationalCollection),
+        "purge_operational_collection" => Ok(BridgeCommand::PurgeOperationalCollection),
+        "rebuild_operational_current" => Ok(BridgeCommand::RebuildOperationalCurrent),
+        "trace_operational_collection" => Ok(BridgeCommand::TraceOperationalCollection),
         _ => Err(BridgeErrorCode::UnsupportedCommand),
     }
 }
@@ -393,5 +561,45 @@ mod tests {
         assert!(!response.ok);
         assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
         assert!(response.message.contains("invalid projection target"));
+    }
+
+    #[test]
+    fn handle_request_body_rejects_missing_collection_name_for_disable_operational_collection() {
+        let response = handle_request_body(
+            r#"{"protocol_version":1,"database_path":"/tmp/fathom.db","command":"disable_operational_collection"}"#,
+        );
+        assert!(!response.ok);
+        assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
+        assert!(response.message.contains("collection_name is required"));
+    }
+
+    #[test]
+    fn handle_request_body_rejects_missing_before_timestamp_for_purge_operational_collection() {
+        let response = handle_request_body(
+            r#"{"protocol_version":1,"database_path":"/tmp/fathom.db","command":"purge_operational_collection","collection_name":"audit_log"}"#,
+        );
+        assert!(!response.ok);
+        assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
+        assert!(response.message.contains("before_timestamp is required"));
+    }
+
+    #[test]
+    fn handle_request_body_rejects_missing_logical_id_for_restore_logical_id() {
+        let response = handle_request_body(
+            r#"{"protocol_version":1,"database_path":"/tmp/fathom.db","command":"restore_logical_id"}"#,
+        );
+        assert!(!response.ok);
+        assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
+        assert!(response.message.contains("logical_id is required"));
+    }
+
+    #[test]
+    fn handle_request_body_rejects_missing_logical_id_for_purge_logical_id() {
+        let response = handle_request_body(
+            r#"{"protocol_version":1,"database_path":"/tmp/fathom.db","command":"purge_logical_id"}"#,
+        );
+        assert!(!response.ok);
+        assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
+        assert!(response.message.contains("logical_id is required"));
     }
 }

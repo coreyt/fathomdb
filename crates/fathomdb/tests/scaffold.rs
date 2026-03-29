@@ -139,6 +139,107 @@ fn trace_report_includes_logical_ids() {
 }
 
 #[test]
+fn engine_restore_logical_id_reactivates_retired_object() {
+    let db = NamedTempFile::new().expect("temporary db");
+    let engine = Engine::open(EngineOptions::new(db.path())).expect("engine opens");
+
+    engine
+        .writer()
+        .submit(meeting_write_request(r#"{"status":"active"}"#))
+        .expect("seed write");
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "retire".to_owned(),
+            nodes: vec![],
+            node_retires: vec![NodeRetire {
+                logical_id: "meeting-1".to_owned(),
+                source_ref: Some("forget-1".to_owned()),
+            }],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![],
+        })
+        .expect("retire write");
+
+    let report = engine
+        .restore_logical_id("meeting-1")
+        .expect("restore logical id");
+    assert_eq!(report.logical_id, "meeting-1");
+    assert_eq!(report.restored_node_rows, 1);
+    assert_eq!(report.restored_chunk_rows, 1);
+
+    let compiled = engine
+        .query("Meeting")
+        .text_search("budget", 5)
+        .limit(5)
+        .compile()
+        .expect("query compiles");
+    let rows = engine
+        .coordinator()
+        .execute_compiled_read(&compiled)
+        .expect("read executes");
+    assert_eq!(rows.nodes.len(), 1);
+    assert_eq!(rows.nodes[0].logical_id, "meeting-1");
+}
+
+#[test]
+fn engine_purge_logical_id_removes_retired_object() {
+    let db = NamedTempFile::new().expect("temporary db");
+    let engine = Engine::open(EngineOptions::new(db.path())).expect("engine opens");
+
+    engine
+        .writer()
+        .submit(meeting_write_request(r#"{"status":"active"}"#))
+        .expect("seed write");
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "retire".to_owned(),
+            nodes: vec![],
+            node_retires: vec![NodeRetire {
+                logical_id: "meeting-1".to_owned(),
+                source_ref: Some("forget-1".to_owned()),
+            }],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![],
+        })
+        .expect("retire write");
+
+    let report = engine
+        .purge_logical_id("meeting-1")
+        .expect("purge logical id");
+    assert_eq!(report.logical_id, "meeting-1");
+    assert_eq!(report.deleted_node_rows, 1);
+    assert_eq!(report.deleted_chunk_rows, 1);
+
+    let compiled = engine
+        .query("Meeting")
+        .text_search("budget", 5)
+        .limit(5)
+        .compile()
+        .expect("query compiles");
+    let rows = engine
+        .coordinator()
+        .execute_compiled_read(&compiled)
+        .expect("read executes");
+    assert!(rows.nodes.is_empty());
+}
+
+#[test]
 fn excise_single_version_cleans_fts() {
     let db = NamedTempFile::new().expect("temporary db");
     let engine = Engine::open(EngineOptions::new(db.path())).expect("engine opens");
@@ -210,6 +311,7 @@ fn upsert_write_promotes_new_version_and_read_returns_it() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("v2 upsert write");
 
@@ -284,6 +386,7 @@ fn runtime_table_write_is_traced_by_source_ref() {
             }],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("write completes");
 
@@ -346,6 +449,7 @@ fn traversal_query_returns_connected_node_via_typed_writes() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("write nodes and edge");
 
@@ -520,6 +624,7 @@ fn wal_checkpoint_does_not_lose_committed_data() {
                 actions: vec![],
                 optional_backfills: vec![],
                 vec_inserts: vec![],
+                operational_writes: vec![],
             })
             .expect("write");
     }
@@ -575,6 +680,7 @@ fn wal_mode_allows_concurrent_readers() {
         actions: vec![],
         optional_backfills: vec![],
         vec_inserts: vec![],
+        operational_writes: vec![],
     });
 
     reader.execute_batch("COMMIT").expect("commit read tx");
@@ -610,6 +716,7 @@ fn node_insert_writes_all_fields_to_nodes_table() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("write");
 
@@ -662,6 +769,7 @@ fn chunk_insert_writes_to_chunks_table() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("write");
 
@@ -709,6 +817,7 @@ fn chunk_policy_replace_is_atomic() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("v1 write");
 
@@ -741,6 +850,7 @@ fn chunk_policy_replace_is_atomic() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("v2 replace write");
 
@@ -812,6 +922,7 @@ fn execute_compiled_read_only_returns_active_rows() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("v2 upsert");
 
@@ -882,6 +993,7 @@ fn traversal_does_not_follow_retired_edges() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("setup write");
 
@@ -902,6 +1014,7 @@ fn traversal_does_not_follow_retired_edges() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("retire edge");
 
@@ -971,6 +1084,7 @@ fn traversal_follows_logical_id_through_superseded_node() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("setup write");
 
@@ -997,6 +1111,7 @@ fn traversal_follows_logical_id_through_superseded_node() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("supersede root");
 
@@ -1059,6 +1174,7 @@ fn new_row_id_is_valid_as_node_insert_row_id() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("write with generated row_id must succeed");
 
@@ -1114,6 +1230,7 @@ fn retire_node_leaves_dangling_edge_detected_by_check_semantics() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("setup write");
 
@@ -1135,6 +1252,7 @@ fn retire_node_leaves_dangling_edge_detected_by_check_semantics() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("retire write");
 
@@ -1183,6 +1301,7 @@ fn retire_only_version_reports_orphaned_supersession_chain() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("retire write");
 
@@ -1270,6 +1389,7 @@ fn excise_source_does_not_affect_other_sources() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("seed write");
 
@@ -1311,6 +1431,7 @@ fn retire_node_records_provenance_event() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("setup write");
 
@@ -1332,6 +1453,7 @@ fn retire_node_records_provenance_event() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("retire write");
 
@@ -1410,6 +1532,7 @@ fn provenance_events_are_isolated_per_subject() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("setup write");
 
@@ -1437,6 +1560,7 @@ fn provenance_events_are_isolated_per_subject() {
             actions: vec![],
             optional_backfills: vec![],
             vec_inserts: vec![],
+            operational_writes: vec![],
         })
         .expect("retire write");
 
@@ -1482,5 +1606,6 @@ fn meeting_write_request(properties: &str) -> WriteRequest {
         actions: vec![],
         optional_backfills: vec![],
         vec_inserts: vec![],
+        operational_writes: vec![],
     }
 }

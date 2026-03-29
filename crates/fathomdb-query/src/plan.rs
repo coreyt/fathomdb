@@ -43,7 +43,7 @@ pub fn choose_driving_table(ast: &QueryAst) -> DrivingTable {
 }
 
 pub fn execution_hints(ast: &QueryAst) -> ExecutionHints {
-    let recursion_limit = ast
+    let step_limit = ast
         .steps
         .iter()
         .find_map(|step| {
@@ -54,6 +54,13 @@ pub fn execution_hints(ast: &QueryAst) -> ExecutionHints {
             }
         })
         .unwrap_or(0);
+    let expansion_limit = ast
+        .expansions
+        .iter()
+        .map(|expansion| expansion.max_depth)
+        .max()
+        .unwrap_or(0);
+    let recursion_limit = step_limit.max(expansion_limit);
 
     ExecutionHints {
         recursion_limit,
@@ -97,9 +104,30 @@ pub fn shape_signature(ast: &QueryAst) -> String {
                 Predicate::JsonPathEq { path, .. } => {
                     let _ = write!(&mut signature, "-Filter(json_eq:{path})");
                 }
+                Predicate::JsonPathCompare { path, op, .. } => {
+                    let op = match op {
+                        crate::ComparisonOp::Gt => "gt",
+                        crate::ComparisonOp::Gte => "gte",
+                        crate::ComparisonOp::Lt => "lt",
+                        crate::ComparisonOp::Lte => "lte",
+                    };
+                    let _ = write!(&mut signature, "-Filter(json_cmp:{path}:{op})");
+                }
                 Predicate::SourceRefEq(_) => signature.push_str("-Filter(source_ref_eq)"),
             },
         }
+    }
+
+    for expansion in &ast.expansions {
+        let dir = match expansion.direction {
+            TraverseDirection::In => "in",
+            TraverseDirection::Out => "out",
+        };
+        let _ = write!(
+            &mut signature,
+            "-Expand(slot={},direction={dir},label={},depth={})",
+            expansion.slot, expansion.label, expansion.max_depth
+        );
     }
 
     if let Some(limit) = ast.final_limit {

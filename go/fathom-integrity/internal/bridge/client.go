@@ -16,26 +16,49 @@ const ProtocolVersion = 1
 type Command string
 
 const (
-	CommandCheckIntegrity     Command = "check_integrity"
-	CommandCheckSemantics     Command = "check_semantics"
-	CommandRebuildProjections Command = "rebuild_projections"
-	CommandRebuildMissing     Command = "rebuild_missing_projections"
-	CommandRestoreVector      Command = "restore_vector_profiles"
-	CommandRegenerateVectors  Command = "regenerate_vector_embeddings"
-	CommandTraceSource        Command = "trace_source"
-	CommandExciseSource       Command = "excise_source"
-	CommandSafeExport         Command = "safe_export"
+	CommandCheckIntegrity                Command = "check_integrity"
+	CommandCheckSemantics                Command = "check_semantics"
+	CommandRebuildProjections            Command = "rebuild_projections"
+	CommandRebuildMissing                Command = "rebuild_missing_projections"
+	CommandRestoreVector                 Command = "restore_vector_profiles"
+	CommandRegenerateVectors             Command = "regenerate_vector_embeddings"
+	CommandRestoreLogicalID              Command = "restore_logical_id"
+	CommandPurgeLogicalID                Command = "purge_logical_id"
+	CommandTraceSource                   Command = "trace_source"
+	CommandExciseSource                  Command = "excise_source"
+	CommandSafeExport                    Command = "safe_export"
+	CommandRegisterOperationalCollection Command = "register_operational_collection"
+	CommandDescribeOperationalCollection Command = "describe_operational_collection"
+	CommandDisableOperationalCollection  Command = "disable_operational_collection"
+	CommandCompactOperationalCollection  Command = "compact_operational_collection"
+	CommandPurgeOperationalCollection    Command = "purge_operational_collection"
+	CommandRebuildOperationalCurrent     Command = "rebuild_operational_current"
+	CommandTraceOperationalCollection    Command = "trace_operational_collection"
 )
 
 type Request struct {
 	ProtocolVersion       int                    `json:"protocol_version"`
 	DatabasePath          string                 `json:"database_path"`
 	Command               Command                `json:"command"`
+	LogicalID             string                 `json:"logical_id,omitempty"`
 	Target                string                 `json:"target,omitempty"`
 	SourceRef             string                 `json:"source_ref,omitempty"`
+	CollectionName        string                 `json:"collection_name,omitempty"`
+	RecordKey             string                 `json:"record_key,omitempty"`
+	BeforeTimestamp       int64                  `json:"before_timestamp,omitempty"`
+	DryRun                bool                   `json:"dry_run,omitempty"`
 	DestinationPath       string                 `json:"destination_path,omitempty"`
 	ConfigPath            string                 `json:"config_path,omitempty"`
 	VectorGeneratorPolicy *VectorGeneratorPolicy `json:"vector_generator_policy,omitempty"`
+	OperationalCollection *OperationalCollection `json:"operational_collection,omitempty"`
+}
+
+type OperationalCollection struct {
+	Name          string `json:"name"`
+	Kind          string `json:"kind"`
+	SchemaJSON    string `json:"schema_json"`
+	RetentionJSON string `json:"retention_json"`
+	FormatVersion int64  `json:"format_version"`
 }
 
 type VectorGeneratorPolicy struct {
@@ -258,6 +281,9 @@ func (c Client) ExecuteWithFeedback(
 	}
 	if request.SourceRef != "" {
 		metadata["source_ref"] = request.SourceRef
+	}
+	if request.LogicalID != "" {
+		metadata["logical_id"] = request.LogicalID
 	}
 	if request.DestinationPath != "" {
 		metadata["destination_path"] = request.DestinationPath
