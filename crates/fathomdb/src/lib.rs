@@ -24,7 +24,8 @@ pub use fathomdb_engine::{
     OperationalTraceReport, OperationalValidationContract, OperationalValidationField,
     OperationalValidationFieldType, OperationalValidationMode, OperationalWrite,
     OptionalProjectionTask, ProjectionRepairReport, ProjectionTarget, ProvenanceEvent,
-    ProvenanceMode, QueryPlan, QueryRows, RunInsert, RunRow, SafeExportManifest, SafeExportOptions,
+    ProvenanceMode, ProvenancePurgeOptions, ProvenancePurgeReport, QueryPlan, QueryRows,
+    RunInsert, RunRow, SafeExportManifest, SafeExportOptions,
     StepInsert, StepRow, VecInsert, WriteReceipt, WriteRequest, WriterActor, new_id, new_row_id,
 };
 pub use fathomdb_query::{
@@ -290,6 +291,16 @@ impl Engine {
 
     pub fn purge_logical_id(&self, logical_id: &str) -> Result<LogicalPurgeReport, EngineError> {
         self.admin().service().purge_logical_id(logical_id)
+    }
+
+    pub fn purge_provenance_events(
+        &self,
+        before_timestamp: i64,
+        options: &ProvenancePurgeOptions,
+    ) -> Result<ProvenancePurgeReport, EngineError> {
+        self.admin()
+            .service()
+            .purge_provenance_events(before_timestamp, options)
     }
 
     pub fn explain_compiled_query_with_feedback(
