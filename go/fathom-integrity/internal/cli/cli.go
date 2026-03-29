@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -175,6 +176,78 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			Command:        bridge.CommandTraceOperationalCollection,
 			CollectionName: *collectionName,
 			RecordKey:      *recordKey,
+		}
+		if err := commands.RunBridgeCommandWithFeedback(
+			bridge.Client{BinaryPath: *bridgeBinary},
+			request,
+			stdout,
+			newFeedbackObserver(stderr),
+			bridge.FeedbackConfig{},
+		); err != nil {
+			fmt.Fprintln(stderr, err)
+			return commandExitCode(err)
+		}
+		return 0
+	case "read-operational":
+		fs := flag.NewFlagSet("read-operational", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		db := fs.String("db", cfg.DatabasePath, "path to sqlite database")
+		bridgeBinary := fs.String("bridge", cfg.BridgeBinary, "path to admin bridge binary")
+		collectionName := fs.String("collection", "", "operational collection name to read")
+		filtersJSON := fs.String("filters-json", "", "JSON array of declared operational filter clauses")
+		limit := fs.Int("limit", 0, "optional maximum number of rows to return")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if *db == "" || *collectionName == "" || *filtersJSON == "" {
+			fmt.Fprintln(stderr, "--db, --collection, and --filters-json are required")
+			return 2
+		}
+		var filters []bridge.OperationalFilterClause
+		if err := json.Unmarshal([]byte(*filtersJSON), &filters); err != nil {
+			fmt.Fprintf(stderr, "invalid --filters-json: %v\n", err)
+			return 2
+		}
+		request := bridge.Request{
+			DatabasePath:   *db,
+			Command:        bridge.CommandReadOperationalCollection,
+			CollectionName: *collectionName,
+			OperationalRead: &bridge.OperationalReadRequest{
+				CollectionName: *collectionName,
+				Filters:        filters,
+				Limit:          *limit,
+			},
+		}
+		if err := commands.RunBridgeCommandWithFeedback(
+			bridge.Client{BinaryPath: *bridgeBinary},
+			request,
+			stdout,
+			newFeedbackObserver(stderr),
+			bridge.FeedbackConfig{},
+		); err != nil {
+			fmt.Fprintln(stderr, err)
+			return commandExitCode(err)
+		}
+		return 0
+	case "update-operational-filters":
+		fs := flag.NewFlagSet("update-operational-filters", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		db := fs.String("db", cfg.DatabasePath, "path to sqlite database")
+		bridgeBinary := fs.String("bridge", cfg.BridgeBinary, "path to admin bridge binary")
+		collectionName := fs.String("collection", "", "operational collection name to update")
+		filterFieldsJSON := fs.String("filter-fields-json", "", "JSON array of declared filter field definitions")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2
+		}
+		if *db == "" || *collectionName == "" || *filterFieldsJSON == "" {
+			fmt.Fprintln(stderr, "--db, --collection, and --filter-fields-json are required")
+			return 2
+		}
+		request := bridge.Request{
+			DatabasePath:     *db,
+			Command:          bridge.CommandUpdateOperationalFilters,
+			CollectionName:   *collectionName,
+			FilterFieldsJSON: *filterFieldsJSON,
 		}
 		if err := commands.RunBridgeCommandWithFeedback(
 			bridge.Client{BinaryPath: *bridgeBinary},
@@ -528,5 +601,5 @@ func commandExitCode(err error) int {
 }
 
 func usage() string {
-	return "usage: fathom-integrity <check|export|trace|restore-logical-id|purge-logical-id|trace-operational|disable-operational|compact-operational|purge-operational|rebuild|rebuild-operational-current|rebuild-missing|regenerate-vectors|excise|recover|repair|version> [flags]"
+	return "usage: fathom-integrity <check|export|trace|restore-logical-id|purge-logical-id|trace-operational|read-operational|update-operational-filters|disable-operational|compact-operational|purge-operational|rebuild|rebuild-operational-current|rebuild-missing|regenerate-vectors|excise|recover|repair|version> [flags]"
 }

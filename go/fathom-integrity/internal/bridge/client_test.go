@@ -62,11 +62,12 @@ func TestOperationalRequestJSONShape(t *testing.T) {
 		Command:        CommandRegisterOperationalCollection,
 		CollectionName: "connector_health",
 		OperationalCollection: &OperationalCollection{
-			Name:          "connector_health",
-			Kind:          "latest_state",
-			SchemaJSON:    "{}",
-			RetentionJSON: "{}",
-			FormatVersion: 1,
+			Name:             "connector_health",
+			Kind:             "latest_state",
+			SchemaJSON:       "{}",
+			RetentionJSON:    "{}",
+			FilterFieldsJSON: "[]",
+			FormatVersion:    1,
 		},
 	}
 
@@ -79,6 +80,7 @@ func TestOperationalRequestJSONShape(t *testing.T) {
 	require.Contains(t, string(body), `"kind":"latest_state"`)
 	require.Contains(t, string(body), `"schema_json":"{}"`)
 	require.Contains(t, string(body), `"retention_json":"{}"`)
+	require.Contains(t, string(body), `"filter_fields_json":"[]"`)
 	require.Contains(t, string(body), `"format_version":1`)
 }
 
@@ -98,6 +100,87 @@ func TestOperationalLifecycleRequestJSONShape(t *testing.T) {
 	require.Contains(t, string(body), `"collection_name":"audit_log"`)
 	require.Contains(t, string(body), `"before_timestamp":250`)
 	require.Contains(t, string(body), `"dry_run":true`)
+}
+
+func TestOperationalFilterUpdateRequestJSONShape(t *testing.T) {
+	request := Request{
+		DatabasePath:     "/tmp/fathom.db",
+		Command:          CommandUpdateOperationalFilters,
+		CollectionName:   "audit_log",
+		FilterFieldsJSON: `[{"name":"actor","type":"string","modes":["exact"]}]`,
+	}
+
+	body, err := json.Marshal(request)
+
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"command":"update_operational_collection_filters"`)
+	require.Contains(t, string(body), `"collection_name":"audit_log"`)
+	require.Contains(t, string(body), `"filter_fields_json":"[{\"name\":\"actor\",\"type\":\"string\",\"modes\":[\"exact\"]}]"`)
+}
+
+func TestOperationalReadRequestJSONShape(t *testing.T) {
+	lower := int64(150)
+	upper := int64(250)
+	request := Request{
+		DatabasePath: "/tmp/fathom.db",
+		Command:      CommandReadOperationalCollection,
+		OperationalRead: &OperationalReadRequest{
+			CollectionName: "audit_log",
+			Filters: []OperationalFilterClause{
+				{
+					Mode:  "prefix",
+					Field: "actor",
+					Value: "alice",
+				},
+				{
+					Mode:  "range",
+					Field: "ts",
+					Lower: &lower,
+					Upper: &upper,
+				},
+			},
+			Limit: 10,
+		},
+	}
+
+	body, err := json.Marshal(request)
+
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"command":"read_operational_collection"`)
+	require.Contains(t, string(body), `"operational_read"`)
+	require.Contains(t, string(body), `"collection_name":"audit_log"`)
+	require.Contains(t, string(body), `"mode":"prefix"`)
+	require.Contains(t, string(body), `"field":"actor"`)
+	require.Contains(t, string(body), `"value":"alice"`)
+	require.Contains(t, string(body), `"mode":"range"`)
+	require.Contains(t, string(body), `"lower":150`)
+	require.Contains(t, string(body), `"upper":250`)
+	require.Contains(t, string(body), `"limit":10`)
+}
+
+func TestOperationalReadRequestJSONShapePreservesZeroRangeBounds(t *testing.T) {
+	zero := int64(0)
+	request := Request{
+		DatabasePath: "/tmp/fathom.db",
+		Command:      CommandReadOperationalCollection,
+		OperationalRead: &OperationalReadRequest{
+			CollectionName: "audit_log",
+			Filters: []OperationalFilterClause{
+				{
+					Mode:  "range",
+					Field: "ts",
+					Lower: &zero,
+					Upper: &zero,
+				},
+			},
+		},
+	}
+
+	body, err := json.Marshal(request)
+
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"lower":0`)
+	require.Contains(t, string(body), `"upper":0`)
 }
 
 func TestLogicalLifecycleRequestJSONShape(t *testing.T) {

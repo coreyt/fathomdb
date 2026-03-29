@@ -267,6 +267,30 @@ static MIGRATIONS: &[Migration] = &[
                     ON node_access_metadata(last_accessed_at DESC);
                 ",
     ),
+    Migration::new(
+        SchemaVersion(10),
+        "operational filtered read contracts and extracted values",
+        r"
+                ALTER TABLE operational_collections
+                    ADD COLUMN filter_fields_json TEXT NOT NULL DEFAULT '[]';
+
+                CREATE TABLE IF NOT EXISTS operational_filter_values (
+                    mutation_id TEXT NOT NULL,
+                    collection_name TEXT NOT NULL,
+                    field_name TEXT NOT NULL,
+                    string_value TEXT,
+                    integer_value INTEGER,
+                    PRIMARY KEY(mutation_id, field_name),
+                    FOREIGN KEY(mutation_id) REFERENCES operational_mutations(id) ON DELETE CASCADE,
+                    FOREIGN KEY(collection_name) REFERENCES operational_collections(name)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_operational_filter_values_text
+                    ON operational_filter_values(collection_name, field_name, string_value, mutation_id);
+                CREATE INDEX IF NOT EXISTS idx_operational_filter_values_integer
+                    ON operational_filter_values(collection_name, field_name, integer_value, mutation_id);
+                ",
+    ),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -854,6 +878,69 @@ mod tests {
             )
             .expect("ordering index exists");
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn bootstrap_adds_operational_filter_contract_and_index_table() {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        conn.execute_batch(
+            r#"
+            CREATE TABLE operational_collections (
+                name TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                schema_json TEXT NOT NULL,
+                retention_json TEXT NOT NULL,
+                format_version INTEGER NOT NULL DEFAULT 1,
+                created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                disabled_at INTEGER
+            );
+
+            CREATE TABLE operational_mutations (
+                id TEXT PRIMARY KEY,
+                collection_name TEXT NOT NULL,
+                record_key TEXT NOT NULL,
+                op_kind TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                source_ref TEXT,
+                created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                mutation_order INTEGER NOT NULL DEFAULT 1,
+                FOREIGN KEY(collection_name) REFERENCES operational_collections(name)
+            );
+
+            INSERT INTO operational_collections (name, kind, schema_json, retention_json)
+            VALUES ('audit_log', 'append_only_log', '{}', '{"mode":"keep_all"}');
+            "#,
+        )
+        .expect("seed recovered operational schema");
+
+        let manager = SchemaManager::new();
+        let report = manager
+            .bootstrap(&conn)
+            .expect("bootstrap recovered schema");
+
+        assert!(
+            report
+                .applied_versions
+                .iter()
+                .any(|version| version.0 == 10),
+            "bootstrap should record operational filtered read migration"
+        );
+        let filter_fields_json: String = conn
+            .query_row(
+                "SELECT filter_fields_json FROM operational_collections WHERE name = 'audit_log'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("filter_fields_json added");
+        assert_eq!(filter_fields_json, "[]");
+        let table_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'operational_filter_values'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("filter table exists");
+        assert_eq!(table_count, 1);
     }
 
     #[cfg(feature = "sqlite-vec")]

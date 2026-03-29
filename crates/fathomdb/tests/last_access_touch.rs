@@ -170,7 +170,9 @@ fn touch_last_accessed_rejects_unknown_logical_ids_atomically() {
 
     let conn = Connection::open(db.path()).expect("open db");
     let metadata_rows: i64 = conn
-        .query_row("SELECT count(*) FROM node_access_metadata", [], |row| row.get(0))
+        .query_row("SELECT count(*) FROM node_access_metadata", [], |row| {
+            row.get(0)
+        })
         .expect("count metadata rows");
     assert_eq!(metadata_rows, 0);
 }
@@ -372,7 +374,11 @@ fn check_semantics_detects_orphaned_last_access_metadata_rows() {
     )
     .expect("insert orphaned metadata");
 
-    let report = engine.admin().service().check_semantics().expect("semantics");
+    let report = engine
+        .admin()
+        .service()
+        .check_semantics()
+        .expect("semantics");
     assert_eq!(report.orphaned_last_access_metadata_rows, 1);
 }
 

@@ -297,13 +297,30 @@ Acceptance criteria:
 
 ### Design Outline
 
-- Add filtered operational reads only through declared collection metadata.
-- Prefer a narrow model: exact/prefix/range filters over explicitly declared
-  fields, not arbitrary JSON predicates.
-- For `append_only_log`, optimize for timestamp plus a small number of declared
-  payload dimensions commonly used in audit queries.
-- Store any needed filter/index metadata as part of the engine-owned
-  collection contract rather than exposing raw secondary-index DDL.
+- Declare filterability in a dedicated engine-owned contract field
+  (`filter_fields_json`), not inside `schema_json` or `retention_json`.
+- Older collections need an explicit post-upgrade contract update path for
+  `filter_fields_json`; do not infer filterable fields from historical payloads
+  during migration.
+- Add a separate filtered read surface rather than overloading
+  `trace_operational_collection`; trace remains the diagnostic/history API.
+- Prefer a narrow model: conjunctive exact/prefix/range filters over declared
+  top-level payload fields, not arbitrary JSON predicates or nested boolean
+  logic.
+- Support `append_only_log` in v1 and reject unsupported collection kinds such
+  as `latest_state` clearly rather than degrading silently.
+- Materialize engine-owned extracted filter values for declared fields in a
+  dedicated table so `audit_log`-style reads do not require client-side scans
+  or arbitrary payload-JSON querying.
+- Updating `filter_fields_json` for an existing collection must rebuild the
+  extracted filter values for that collection’s existing mutation history in
+  the same transaction so upgraded databases can use filtered reads without
+  re-registering or rewriting the collection.
+- Bridge/CLI filter transport must preserve explicit zero-valued range bounds;
+  `0` is a valid timestamp/integer boundary, not equivalent to “bound absent”.
+- Treat declared field types as read semantics only: `schema_json` remains
+  documentation-only by default, so write-time payload validation is still
+  deferred.
 - Keep exact-key and history streaming semantics unchanged; filtered reads are
   an additional access mode, not a replacement.
 

@@ -4,13 +4,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ActionInsert, ActionRow, BindValue, ChunkInsert, ChunkPolicy, ComparisonOp,
-    CompiledGroupedQuery, CompiledQuery, DrivingTable, EdgeInsert, EdgeRetire,
-    ExecutionHints, ExpansionRootRows, ExpansionSlot, ExpansionSlotRows, GroupedQueryRows,
-    LastAccessTouchReport, LastAccessTouchRequest, NodeInsert, NodeRetire, NodeRow,
-    OperationalWrite, OptionalProjectionTask, Predicate, ProjectionRepairReport,
-    ProjectionTarget, QueryAst, QueryPlan, QueryRows, QueryStep, RunInsert, RunRow,
-    SafeExportManifest, ScalarValue, StepInsert, StepRow, TraverseDirection, VecInsert,
-    WriteReceipt, WriteRequest,
+    CompiledGroupedQuery, CompiledQuery, DrivingTable, EdgeInsert, EdgeRetire, ExecutionHints,
+    ExpansionRootRows, ExpansionSlot, ExpansionSlotRows, GroupedQueryRows, LastAccessTouchReport,
+    LastAccessTouchRequest, NodeInsert, NodeRetire, NodeRow, OperationalWrite,
+    OptionalProjectionTask, Predicate, ProjectionRepairReport, ProjectionTarget, QueryAst,
+    QueryPlan, QueryRows, QueryStep, RunInsert, RunRow, SafeExportManifest, ScalarValue,
+    StepInsert, StepRow, TraverseDirection, VecInsert, WriteReceipt, WriteRequest,
 };
 use fathomdb_engine::{IntegrityReport, SemanticReport, TraceReport};
 

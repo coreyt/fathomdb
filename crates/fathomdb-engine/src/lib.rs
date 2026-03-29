@@ -20,7 +20,9 @@ pub use coordinator::{
 pub use ids::{new_id, new_row_id};
 pub use operational::{
     OperationalCollectionKind, OperationalCollectionRecord, OperationalCompactionReport,
-    OperationalCurrentRow, OperationalMutationRow, OperationalPurgeReport,
+    OperationalCurrentRow, OperationalFilterClause, OperationalFilterField,
+    OperationalFilterFieldType, OperationalFilterMode, OperationalFilterValue,
+    OperationalMutationRow, OperationalPurgeReport, OperationalReadReport, OperationalReadRequest,
     OperationalRegisterRequest, OperationalRepairReport, OperationalTraceReport,
 };
 pub use projection::{ProjectionRepairReport, ProjectionService, ProjectionTarget};

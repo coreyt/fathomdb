@@ -59,6 +59,24 @@ func TestMainTraceOperationalRequiresDBAndCollection(t *testing.T) {
 	require.Contains(t, stderr.String(), "--db and --collection are required")
 }
 
+func TestMainReadOperationalRequiresDBCollectionAndFilters(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	exitCode := Main([]string{"read-operational"}, &stdout, &stderr)
+
+	require.Equal(t, 2, exitCode)
+	require.Contains(t, stderr.String(), "--db, --collection, and --filters-json are required")
+}
+
+func TestMainUpdateOperationalFiltersRequiresDBCollectionAndFilterFields(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	exitCode := Main([]string{"update-operational-filters"}, &stdout, &stderr)
+
+	require.Equal(t, 2, exitCode)
+	require.Contains(t, stderr.String(), "--db, --collection, and --filter-fields-json are required")
+}
+
 func TestMainRestoreLogicalIDRequiresDBAndLogicalID(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
@@ -237,6 +255,84 @@ func TestMainTraceOperationalForwardsCollectionAndRecordKey(t *testing.T) {
 	require.Contains(t, string(body), `"command":"trace_operational_collection"`)
 	require.Contains(t, string(body), `"collection_name":"connector_health"`)
 	require.Contains(t, string(body), `"record_key":"gmail"`)
+}
+
+func TestMainReadOperationalForwardsStructuredFilters(t *testing.T) {
+	tempDir := t.TempDir()
+	requestPath := filepath.Join(tempDir, "request.json")
+	script := "#!/usr/bin/env bash\ncat >" + requestPath + "\nprintf '%s\\n' '{\"protocol_version\":1,\"ok\":true,\"message\":\"ok\",\"payload\":{}}'\n"
+	bridgePath := writeShellBridge(t, script)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{
+		"read-operational",
+		"--db", "/tmp/fathom.db",
+		"--bridge", bridgePath,
+		"--collection", "audit_log",
+		"--filters-json", `[{"mode":"prefix","field":"actor","value":"alice"},{"mode":"range","field":"ts","lower":150,"upper":250}]`,
+		"--limit", "10",
+	}, &stdout, &stderr)
+
+	require.Equal(t, 0, exitCode)
+	body, err := os.ReadFile(requestPath)
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"command":"read_operational_collection"`)
+	require.Contains(t, string(body), `"collection_name":"audit_log"`)
+	require.Contains(t, string(body), `"operational_read"`)
+	require.Contains(t, string(body), `"mode":"prefix"`)
+	require.Contains(t, string(body), `"mode":"range"`)
+	require.Contains(t, string(body), `"limit":10`)
+}
+
+func TestMainReadOperationalPreservesZeroRangeBounds(t *testing.T) {
+	tempDir := t.TempDir()
+	requestPath := filepath.Join(tempDir, "request.json")
+	script := "#!/usr/bin/env bash\ncat >" + requestPath + "\nprintf '%s\\n' '{\"protocol_version\":1,\"ok\":true,\"message\":\"ok\",\"payload\":{}}'\n"
+	bridgePath := writeShellBridge(t, script)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{
+		"read-operational",
+		"--db", "/tmp/fathom.db",
+		"--bridge", bridgePath,
+		"--collection", "audit_log",
+		"--filters-json", `[{"mode":"range","field":"ts","lower":0,"upper":0}]`,
+	}, &stdout, &stderr)
+
+	require.Equal(t, 0, exitCode)
+	body, err := os.ReadFile(requestPath)
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"lower":0`)
+	require.Contains(t, string(body), `"upper":0`)
+}
+
+func TestMainUpdateOperationalFiltersForwardsContract(t *testing.T) {
+	tempDir := t.TempDir()
+	requestPath := filepath.Join(tempDir, "request.json")
+	script := "#!/usr/bin/env bash\ncat >" + requestPath + "\nprintf '%s\\n' '{\"protocol_version\":1,\"ok\":true,\"message\":\"ok\",\"payload\":{}}'\n"
+	bridgePath := writeShellBridge(t, script)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := Main([]string{
+		"update-operational-filters",
+		"--db", "/tmp/fathom.db",
+		"--bridge", bridgePath,
+		"--collection", "audit_log",
+		"--filter-fields-json", `[{"name":"actor","type":"string","modes":["exact"]}]`,
+	}, &stdout, &stderr)
+
+	require.Equal(t, 0, exitCode)
+	body, err := os.ReadFile(requestPath)
+	require.NoError(t, err)
+	require.Contains(t, string(body), `"command":"update_operational_collection_filters"`)
+	require.Contains(t, string(body), `"collection_name":"audit_log"`)
+	require.Contains(t, string(body), `"filter_fields_json":"[{\"name\":\"actor\",\"type\":\"string\",\"modes\":[\"exact\"]}]"`)
 }
 
 func TestMainRestoreLogicalIDForwardsLogicalID(t *testing.T) {

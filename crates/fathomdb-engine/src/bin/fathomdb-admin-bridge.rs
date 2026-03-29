@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use fathomdb_engine::{
-    AdminService, EngineError, OperationalRegisterRequest, ProjectionTarget, SafeExportOptions,
-    VectorGeneratorPolicy, load_vector_regeneration_config,
+    AdminService, EngineError, OperationalReadRequest, OperationalRegisterRequest,
+    ProjectionTarget, SafeExportOptions, VectorGeneratorPolicy, load_vector_regeneration_config,
 };
 use fathomdb_schema::{SchemaError, SchemaManager};
 use serde::{Deserialize, Serialize};
@@ -33,6 +33,7 @@ struct BridgeRequest {
     source_ref: Option<String>,
     collection_name: Option<String>,
     record_key: Option<String>,
+    filter_fields_json: Option<String>,
     destination_path: Option<PathBuf>,
     config_path: Option<PathBuf>,
     before_timestamp: Option<i64>,
@@ -40,6 +41,7 @@ struct BridgeRequest {
     dry_run: bool,
     vector_generator_policy: Option<VectorGeneratorPolicy>,
     operational_collection: Option<OperationalRegisterRequest>,
+    operational_read: Option<OperationalReadRequest>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -58,11 +60,13 @@ enum BridgeCommand {
     SafeExport,
     RegisterOperationalCollection,
     DescribeOperationalCollection,
+    UpdateOperationalCollectionFilters,
     DisableOperationalCollection,
     CompactOperationalCollection,
     PurgeOperationalCollection,
     RebuildOperationalCurrent,
     TraceOperationalCollection,
+    ReadOperationalCollection,
 }
 
 #[derive(Debug, Serialize)]
@@ -300,6 +304,36 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                 "collection_name is required".to_owned(),
             ),
         },
+        BridgeCommand::UpdateOperationalCollectionFilters => {
+            match (
+                request.collection_name.as_deref(),
+                request.filter_fields_json.as_deref(),
+            ) {
+                (Some(collection_name), Some(filter_fields_json))
+                    if !collection_name.is_empty() && !filter_fields_json.is_empty() =>
+                {
+                    match service
+                        .update_operational_collection_filters(collection_name, filter_fields_json)
+                    {
+                        Ok(record) => success_response(
+                            "operational collection filters updated".to_owned(),
+                            serde_json::to_value(record).unwrap_or_else(|_| json!({})),
+                        ),
+                        Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+                    }
+                }
+                (Some(collection_name), _) if !collection_name.is_empty() => {
+                    error_response_with_message(
+                        BridgeErrorCode::BadRequest,
+                        "filter_fields_json is required".to_owned(),
+                    )
+                }
+                _ => error_response_with_message(
+                    BridgeErrorCode::BadRequest,
+                    "collection_name is required".to_owned(),
+                ),
+            }
+        }
         BridgeCommand::DisableOperationalCollection => match request.collection_name.as_deref() {
             Some(collection_name) if !collection_name.is_empty() => {
                 match service.disable_operational_collection(collection_name) {
@@ -379,6 +413,19 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                 "collection_name is required".to_owned(),
             ),
         },
+        BridgeCommand::ReadOperationalCollection => match request.operational_read.as_ref() {
+            Some(operational_read) => match service.read_operational_collection(operational_read) {
+                Ok(report) => success_response(
+                    "operational collection read completed".to_owned(),
+                    serde_json::to_value(report).unwrap_or_else(|_| json!({})),
+                ),
+                Err(error) => error_response(error, BridgeErrorCode::ExecutionFailure),
+            },
+            None => error_response_with_message(
+                BridgeErrorCode::BadRequest,
+                "operational_read is required".to_owned(),
+            ),
+        },
     }
 }
 
@@ -406,11 +453,15 @@ fn parse_command(command: &str) -> Result<BridgeCommand, BridgeErrorCode> {
         "safe_export" => Ok(BridgeCommand::SafeExport),
         "register_operational_collection" => Ok(BridgeCommand::RegisterOperationalCollection),
         "describe_operational_collection" => Ok(BridgeCommand::DescribeOperationalCollection),
+        "update_operational_collection_filters" => {
+            Ok(BridgeCommand::UpdateOperationalCollectionFilters)
+        }
         "disable_operational_collection" => Ok(BridgeCommand::DisableOperationalCollection),
         "compact_operational_collection" => Ok(BridgeCommand::CompactOperationalCollection),
         "purge_operational_collection" => Ok(BridgeCommand::PurgeOperationalCollection),
         "rebuild_operational_current" => Ok(BridgeCommand::RebuildOperationalCurrent),
         "trace_operational_collection" => Ok(BridgeCommand::TraceOperationalCollection),
+        "read_operational_collection" => Ok(BridgeCommand::ReadOperationalCollection),
         _ => Err(BridgeErrorCode::UnsupportedCommand),
     }
 }
@@ -574,6 +625,17 @@ mod tests {
     }
 
     #[test]
+    fn handle_request_body_rejects_missing_filter_fields_json_for_update_operational_collection_filters()
+     {
+        let response = handle_request_body(
+            r#"{"protocol_version":1,"database_path":"/tmp/fathom.db","command":"update_operational_collection_filters","collection_name":"audit_log"}"#,
+        );
+        assert!(!response.ok);
+        assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
+        assert!(response.message.contains("filter_fields_json is required"));
+    }
+
+    #[test]
     fn handle_request_body_rejects_missing_before_timestamp_for_purge_operational_collection() {
         let response = handle_request_body(
             r#"{"protocol_version":1,"database_path":"/tmp/fathom.db","command":"purge_operational_collection","collection_name":"audit_log"}"#,
@@ -581,6 +643,16 @@ mod tests {
         assert!(!response.ok);
         assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
         assert!(response.message.contains("before_timestamp is required"));
+    }
+
+    #[test]
+    fn handle_request_body_rejects_missing_operational_read_for_read_operational_collection() {
+        let response = handle_request_body(
+            r#"{"protocol_version":1,"database_path":"/tmp/fathom.db","command":"read_operational_collection"}"#,
+        );
+        assert!(!response.ok);
+        assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
+        assert!(response.message.contains("operational_read is required"));
     }
 
     #[test]

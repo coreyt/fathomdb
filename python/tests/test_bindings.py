@@ -220,6 +220,107 @@ def test_public_python_admin_client_exposes_operational_collection_lifecycle(tmp
     assert disabled.disabled_at is not None
 
 
+def test_public_python_admin_client_reads_operational_rows_by_declared_fields(tmp_path: Path) -> None:
+    from fathomdb import (
+        Engine,
+        OperationalAppend,
+        OperationalCollectionKind,
+        OperationalFilterClause,
+        OperationalFilterValue,
+        OperationalReadRequest,
+        OperationalRegisterRequest,
+        WriteRequest,
+    )
+
+    db = Engine.open(tmp_path / "agent.db")
+
+    record = db.admin.register_operational_collection(
+        OperationalRegisterRequest(
+            name="audit_log",
+            kind=OperationalCollectionKind.APPEND_ONLY_LOG,
+            schema_json="{}",
+            retention_json='{"mode":"keep_all"}',
+            filter_fields_json='[{"name":"actor","type":"string","modes":["exact","prefix"]},{"name":"ts","type":"timestamp","modes":["range"]}]',
+            format_version=1,
+        )
+    )
+    assert record.filter_fields_json.startswith("[")
+
+    db.write(
+        WriteRequest(
+            label="audit-log",
+            operational_writes=[
+                OperationalAppend(
+                    collection="audit_log",
+                    record_key="evt-1",
+                    payload_json={"actor": "alice", "ts": 100},
+                    source_ref="source:1",
+                ),
+                OperationalAppend(
+                    collection="audit_log",
+                    record_key="evt-2",
+                    payload_json={"actor": "alice-admin", "ts": 200},
+                    source_ref="source:2",
+                ),
+            ],
+        )
+    )
+
+    report = db.admin.read_operational_collection(
+        OperationalReadRequest(
+            collection_name="audit_log",
+            filters=[
+                OperationalFilterClause.prefix("actor", "alice"),
+                OperationalFilterClause.range("ts", lower=150, upper=250),
+            ],
+            limit=10,
+        )
+    )
+    assert report.collection_name == "audit_log"
+    assert report.row_count == 1
+    assert report.was_limited is False
+    assert [row.record_key for row in report.rows] == ["evt-2"]
+
+    exact = db.admin.read_operational_collection(
+        OperationalReadRequest(
+            collection_name="audit_log",
+            filters=[
+                OperationalFilterClause.exact(
+                    "actor", OperationalFilterValue.string("alice")
+                )
+            ],
+            limit=10,
+        )
+    )
+    assert exact.row_count == 1
+    assert exact.rows[0].record_key == "evt-1"
+
+
+def test_public_python_admin_client_can_update_operational_filter_contract(tmp_path: Path) -> None:
+    from fathomdb import Engine, OperationalCollectionKind, OperationalRegisterRequest
+
+    db = Engine.open(tmp_path / "agent.db")
+
+    db.admin.register_operational_collection(
+        OperationalRegisterRequest(
+            name="audit_log",
+            kind=OperationalCollectionKind.APPEND_ONLY_LOG,
+            schema_json="{}",
+            retention_json='{"mode":"keep_all"}',
+            filter_fields_json="[]",
+            format_version=1,
+        )
+    )
+
+    updated = db.admin.update_operational_collection_filters(
+        "audit_log",
+        '[{"name":"actor","type":"string","modes":["exact"]}]',
+    )
+
+    assert updated.filter_fields_json.startswith("[")
+    assert '"actor"' in updated.filter_fields_json
+
+
 def test_vector_write_and_search_round_trip(tmp_path: Path) -> None:
     from fathomdb import ChunkInsert, ChunkPolicy, Engine, NodeInsert, ProjectionTarget, VecInsert, WriteRequest, new_row_id
 

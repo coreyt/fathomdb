@@ -13,7 +13,9 @@ pub use fathomdb_engine::{
     GroupedQueryRows, LastAccessTouchReport, LastAccessTouchRequest, LogicalPurgeReport,
     LogicalRestoreReport, NodeInsert, NodeRetire, NodeRow, OperationalCollectionKind,
     OperationalCollectionRecord, OperationalCompactionReport, OperationalCurrentRow,
-    OperationalMutationRow, OperationalPurgeReport, OperationalRegisterRequest,
+    OperationalFilterClause, OperationalFilterField, OperationalFilterFieldType,
+    OperationalFilterMode, OperationalFilterValue, OperationalMutationRow, OperationalPurgeReport,
+    OperationalReadReport, OperationalReadRequest, OperationalRegisterRequest,
     OperationalRepairReport, OperationalTraceReport, OperationalWrite, OptionalProjectionTask,
     ProjectionRepairReport, ProjectionTarget, ProvenanceEvent, ProvenanceMode, QueryPlan,
     QueryRows, RunInsert, RunRow, SafeExportManifest, SafeExportOptions, StepInsert, StepRow,
@@ -139,6 +141,16 @@ impl Engine {
         self.admin().service().describe_operational_collection(name)
     }
 
+    pub fn update_operational_collection_filters(
+        &self,
+        name: &str,
+        filter_fields_json: &str,
+    ) -> Result<OperationalCollectionRecord, EngineError> {
+        self.admin()
+            .service()
+            .update_operational_collection_filters(name, filter_fields_json)
+    }
+
     pub fn trace_operational_collection(
         &self,
         collection_name: &str,
@@ -147,6 +159,13 @@ impl Engine {
         self.admin()
             .service()
             .trace_operational_collection(collection_name, record_key)
+    }
+
+    pub fn read_operational_collection(
+        &self,
+        request: OperationalReadRequest,
+    ) -> Result<OperationalReadReport, EngineError> {
+        self.admin().service().read_operational_collection(&request)
     }
 
     pub fn rebuild_operational_current(

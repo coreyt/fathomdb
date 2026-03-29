@@ -7,7 +7,10 @@ use std::thread;
 use fathomdb_schema::SchemaManager;
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
 
-use crate::operational::OperationalCollectionKind;
+use crate::operational::{
+    OperationalCollectionKind, OperationalFilterField, OperationalFilterFieldType,
+    OperationalFilterMode,
+};
 use crate::{EngineError, ids::new_id, projection::ProjectionTarget, sqlite};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -213,6 +216,7 @@ struct PreparedWrite {
     vec_inserts: Vec<VecInsert>,
     operational_writes: Vec<OperationalWrite>,
     operational_collection_kinds: HashMap<String, OperationalCollectionKind>,
+    operational_collection_filter_fields: HashMap<String, Vec<OperationalFilterField>>,
     /// `node_logical_id` → kind for nodes co-submitted in this request.
     /// Used by `resolve_fts_rows` to avoid a DB round-trip for the common case.
     node_kinds: HashMap<String, String>,
@@ -577,6 +581,7 @@ fn prepare_write(
         vec_inserts: request.vec_inserts,
         operational_writes: request.operational_writes,
         operational_collection_kinds: HashMap::new(),
+        operational_collection_filter_fields: HashMap::new(),
         node_kinds,
         required_fts_rows: Vec::new(),
         optional_backfills: request.optional_backfills,
@@ -603,7 +608,10 @@ fn writer_loop(
 
     for message in receiver {
         match message {
-            WriteMessage::Submit { mut prepared, reply } => {
+            WriteMessage::Submit {
+                mut prepared,
+                reply,
+            } => {
                 let result = resolve_and_apply(&mut conn, &mut prepared);
                 let _ = reply.send(result);
             }
@@ -690,18 +698,19 @@ fn resolve_operational_writes(
     prepared: &mut PreparedWrite,
 ) -> Result<(), EngineError> {
     let mut collection_kinds = HashMap::new();
+    let mut collection_filter_fields = HashMap::new();
     for write in &prepared.operational_writes {
         let collection = operational_write_collection(write);
         if !collection_kinds.contains_key(collection) {
-            let maybe_row: Option<(String, Option<i64>)> = conn
+            let maybe_row: Option<(String, Option<i64>, String)> = conn
                 .query_row(
-                    "SELECT kind, disabled_at FROM operational_collections WHERE name = ?1",
+                    "SELECT kind, disabled_at, filter_fields_json FROM operational_collections WHERE name = ?1",
                     params![collection],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
                 )
                 .optional()
                 .map_err(EngineError::Sqlite)?;
-            let (kind_text, disabled_at) = maybe_row.ok_or_else(|| {
+            let (kind_text, disabled_at, filter_fields_json) = maybe_row.ok_or_else(|| {
                 EngineError::InvalidWrite(format!(
                     "operational collection '{collection}' is not registered"
                 ))
@@ -713,7 +722,9 @@ fn resolve_operational_writes(
             }
             let kind = OperationalCollectionKind::try_from(kind_text.as_str())
                 .map_err(EngineError::InvalidWrite)?;
+            let filter_fields = parse_operational_filter_fields(&filter_fields_json)?;
             collection_kinds.insert(collection.to_owned(), kind);
+            collection_filter_fields.insert(collection.to_owned(), filter_fields);
         }
 
         let kind = collection_kinds.get(collection).copied().ok_or_else(|| {
@@ -736,7 +747,92 @@ fn resolve_operational_writes(
         }
     }
     prepared.operational_collection_kinds = collection_kinds;
+    prepared.operational_collection_filter_fields = collection_filter_fields;
     Ok(())
+}
+
+fn parse_operational_filter_fields(
+    filter_fields_json: &str,
+) -> Result<Vec<OperationalFilterField>, EngineError> {
+    let fields: Vec<OperationalFilterField> =
+        serde_json::from_str(filter_fields_json).map_err(|error| {
+            EngineError::InvalidWrite(format!("invalid filter_fields_json: {error}"))
+        })?;
+    let mut seen = std::collections::HashSet::new();
+    for field in &fields {
+        if field.name.trim().is_empty() {
+            return Err(EngineError::InvalidWrite(
+                "filter_fields_json field names must not be empty".to_owned(),
+            ));
+        }
+        if !seen.insert(field.name.as_str()) {
+            return Err(EngineError::InvalidWrite(format!(
+                "filter_fields_json contains duplicate field '{}'",
+                field.name
+            )));
+        }
+        if field.modes.is_empty() {
+            return Err(EngineError::InvalidWrite(format!(
+                "filter_fields_json field '{}' must declare at least one mode",
+                field.name
+            )));
+        }
+        if field.modes.contains(&OperationalFilterMode::Prefix)
+            && field.field_type != OperationalFilterFieldType::String
+        {
+            return Err(EngineError::InvalidWrite(format!(
+                "filter field '{}' only supports prefix for string types",
+                field.name
+            )));
+        }
+    }
+    Ok(fields)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct OperationalFilterValueRow {
+    field_name: String,
+    string_value: Option<String>,
+    integer_value: Option<i64>,
+}
+
+fn extract_operational_filter_values(
+    filter_fields: &[OperationalFilterField],
+    payload_json: &str,
+) -> Vec<OperationalFilterValueRow> {
+    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(payload_json) else {
+        return Vec::new();
+    };
+    let Some(object) = parsed.as_object() else {
+        return Vec::new();
+    };
+
+    filter_fields
+        .iter()
+        .filter_map(|field| {
+            let value = object.get(&field.name)?;
+            match field.field_type {
+                OperationalFilterFieldType::String => {
+                    value
+                        .as_str()
+                        .map(|string_value| OperationalFilterValueRow {
+                            field_name: field.name.clone(),
+                            string_value: Some(string_value.to_owned()),
+                            integer_value: None,
+                        })
+                }
+                OperationalFilterFieldType::Integer | OperationalFilterFieldType::Timestamp => {
+                    value
+                        .as_i64()
+                        .map(|integer_value| OperationalFilterValueRow {
+                            field_name: field.name.clone(),
+                            string_value: None,
+                            integer_value: Some(integer_value),
+                        })
+                }
+            }
+        })
+        .collect()
 }
 
 fn resolve_and_apply(
@@ -1056,6 +1152,11 @@ fn apply_write(
              (id, collection_name, record_key, op_kind, payload_json, source_ref, created_at, mutation_order) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, unixepoch(), ?7)",
         )?;
+        let mut ins_filter_value = tx.prepare_cached(
+            "INSERT INTO operational_filter_values \
+             (mutation_id, collection_name, field_name, string_value, integer_value) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+        )?;
         let mut upsert_current = tx.prepare_cached(
             "INSERT INTO operational_current \
              (collection_name, record_key, payload_json, updated_at, last_mutation_id) \
@@ -1084,6 +1185,20 @@ fn apply_write(
                 operational_write_source_ref(write),
                 next_mutation_order,
             ])?;
+            if let Some(filter_fields) = prepared
+                .operational_collection_filter_fields
+                .get(collection)
+            {
+                for filter_value in extract_operational_filter_values(filter_fields, payload_json) {
+                    ins_filter_value.execute(params![
+                        mutation_id,
+                        collection,
+                        filter_value.field_name,
+                        filter_value.string_value,
+                        filter_value.integer_value,
+                    ])?;
+                }
+            }
 
             if prepared.operational_collection_kinds.get(collection)
                 == Some(&OperationalCollectionKind::LatestState)

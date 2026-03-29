@@ -388,9 +388,7 @@ pub fn compile_grouped_query(ast: &QueryAst) -> Result<CompiledGroupedQuery, Com
             return Err(CompileError::TraversalTooDeep(expansion.max_depth));
         }
         if !seen.insert(expansion.slot.clone()) {
-            return Err(CompileError::DuplicateExpansionSlot(
-                expansion.slot.clone(),
-            ));
+            return Err(CompileError::DuplicateExpansionSlot(expansion.slot.clone()));
         }
     }
 
@@ -630,7 +628,10 @@ mod tests {
         );
 
         assert!(
-            matches!(result, Err(CompileError::FlatCompileDoesNotSupportExpansions)),
+            matches!(
+                result,
+                Err(CompileError::FlatCompileDoesNotSupportExpansions)
+            ),
             "expected FlatCompileDoesNotSupportExpansions, got {result:?}"
         );
     }

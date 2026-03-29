@@ -32,8 +32,9 @@ fn seed_meeting_graph(engine: &Engine) {
                     row_id: new_row_id(),
                     logical_id: "meeting-2".to_owned(),
                     kind: "Meeting".to_owned(),
-                    properties: r#"{"title":"Backlog grooming","priority":2,"updated_at":1700000000}"#
-                        .to_owned(),
+                    properties:
+                        r#"{"title":"Backlog grooming","priority":2,"updated_at":1700000000}"#
+                            .to_owned(),
                     source_ref: Some("source:meeting-2".to_owned()),
                     upsert: false,
                     chunk_policy: ChunkPolicy::Replace,
@@ -168,7 +169,10 @@ fn grouped_query_returns_root_plus_named_expansion_slots_for_bounded_context() {
 
     assert_eq!(rows.expansions[2].slot, "decisions");
     assert_eq!(rows.expansions[2].roots[0].nodes.len(), 1);
-    assert_eq!(rows.expansions[2].roots[0].nodes[0].logical_id, "decision-1");
+    assert_eq!(
+        rows.expansions[2].roots[0].nodes[0].logical_id,
+        "decision-1"
+    );
 }
 
 #[test]
@@ -218,7 +222,10 @@ fn grouped_text_search_enrichment_returns_requested_context_in_one_result() {
     assert_eq!(rows.roots[0].logical_id, "meeting-1");
     assert_eq!(rows.expansions.len(), 2);
     assert_eq!(rows.expansions[0].roots[0].nodes[0].logical_id, "task-1");
-    assert_eq!(rows.expansions[1].roots[0].nodes[0].logical_id, "decision-1");
+    assert_eq!(
+        rows.expansions[1].roots[0].nodes[0].logical_id,
+        "decision-1"
+    );
 }
 
 #[test]

@@ -13,8 +13,9 @@ use crate::python_types::{
     PyWriteReceipt, PyWriteRequest,
 };
 use crate::{
-    Engine, EngineError, EngineOptions, OperationalRegisterRequest, ProjectionTarget,
-    ProvenanceMode, SafeExportOptions, compile_grouped_query, compile_query, new_id, new_row_id,
+    Engine, EngineError, EngineOptions, OperationalReadRequest, OperationalRegisterRequest,
+    ProjectionTarget, ProvenanceMode, SafeExportOptions, compile_grouped_query, compile_query,
+    new_id, new_row_id,
 };
 use fathomdb_query::CompileError as RustCompileError;
 
@@ -83,7 +84,11 @@ impl EngineCore {
         let ast = parse_ast(ast_json)?;
         let compiled = compile_grouped_query(&ast).map_err(map_compile_error)?;
         let rows = py
-            .allow_threads(|| self.engine.coordinator().execute_compiled_grouped_read(&compiled))
+            .allow_threads(|| {
+                self.engine
+                    .coordinator()
+                    .execute_compiled_grouped_read(&compiled)
+            })
             .map_err(map_engine_error)?;
         encode_json(PyGroupedQueryRows::from(rows))
     }
@@ -204,6 +209,21 @@ impl EngineCore {
         encode_json(record)
     }
 
+    pub fn update_operational_collection_filters(
+        &self,
+        py: Python<'_>,
+        name: &str,
+        filter_fields_json: &str,
+    ) -> PyResult<String> {
+        let record = py
+            .allow_threads(|| {
+                self.engine
+                    .update_operational_collection_filters(name, filter_fields_json)
+            })
+            .map_err(map_engine_error)?;
+        encode_json(record)
+    }
+
     #[pyo3(signature = (collection_name, record_key=None))]
     pub fn trace_operational_collection(
         &self,
@@ -216,6 +236,21 @@ impl EngineCore {
                 self.engine
                     .trace_operational_collection(collection_name, record_key)
             })
+            .map_err(map_engine_error)?;
+        encode_json(report)
+    }
+
+    pub fn read_operational_collection(
+        &self,
+        py: Python<'_>,
+        request_json: &str,
+    ) -> PyResult<String> {
+        let request: OperationalReadRequest =
+            serde_json::from_str(request_json).map_err(|error| {
+                PyValueError::new_err(format!("invalid operational read JSON: {error}"))
+            })?;
+        let report = py
+            .allow_threads(|| self.engine.read_operational_collection(request))
             .map_err(map_engine_error)?;
         encode_json(report)
     }
@@ -280,11 +315,10 @@ fn parse_write_request(request_json: &str) -> PyResult<crate::WriteRequest> {
 }
 
 fn parse_last_access_touch_request(request_json: &str) -> PyResult<crate::LastAccessTouchRequest> {
-    let request: PyLastAccessTouchRequest = serde_json::from_str(request_json).map_err(|error| {
-        PyValueError::new_err(format!(
-            "invalid last_access touch request JSON: {error}"
-        ))
-    })?;
+    let request: PyLastAccessTouchRequest =
+        serde_json::from_str(request_json).map_err(|error| {
+            PyValueError::new_err(format!("invalid last_access touch request JSON: {error}"))
+        })?;
     Ok(request.into())
 }
 
@@ -391,6 +425,7 @@ mod tests {
                             "kind":"append_only_log",
                             "schema_json":"{}",
                             "retention_json":"{\"mode\":\"keep_last\",\"max_rows\":2}",
+                            "filter_fields_json":"[{\"name\":\"actor\",\"type\":\"string\",\"modes\":[\"exact\"]}]",
                             "format_version":1
                         }"#,
                     )
@@ -406,6 +441,21 @@ mod tests {
             )
             .expect("decode describe");
             assert_eq!(described["name"], "audit_log");
+
+            let read: Value = serde_json::from_str(
+                &engine
+                    .read_operational_collection(
+                        py,
+                        r#"{
+                            "collection_name":"audit_log",
+                            "filters":[{"mode":"exact","field":"actor","value":"alice"}],
+                            "limit":10
+                        }"#,
+                    )
+                    .expect("read"),
+            )
+            .expect("decode read");
+            assert_eq!(read["collection_name"], "audit_log");
 
             let compacted: Value = serde_json::from_str(
                 &engine

@@ -17,8 +17,11 @@ use crate::{
     ids::new_id,
     operational::{
         OperationalCollectionKind, OperationalCollectionRecord, OperationalCompactionReport,
-        OperationalCurrentRow, OperationalMutationRow, OperationalPurgeReport,
-        OperationalRegisterRequest, OperationalRepairReport, OperationalTraceReport,
+        OperationalCurrentRow, OperationalFilterClause, OperationalFilterField,
+        OperationalFilterFieldType, OperationalFilterMode, OperationalFilterValue,
+        OperationalMutationRow, OperationalPurgeReport, OperationalReadReport,
+        OperationalReadRequest, OperationalRegisterRequest, OperationalRepairReport,
+        OperationalTraceReport,
     },
     projection::ProjectionTarget,
     sqlite,
@@ -220,6 +223,8 @@ const MAX_GENERATOR_COMMAND_ARG_LEN: usize = 4096;
 const MAX_GENERATOR_COMMAND_TOTAL_LEN: usize = 16 * 1024;
 const MAX_CONTRACT_JSON_BYTES: usize = 32 * 1024;
 const MAX_AUDIT_METADATA_BYTES: usize = 2048;
+const DEFAULT_OPERATIONAL_READ_LIMIT: usize = 100;
+const MAX_OPERATIONAL_READ_LIMIT: usize = 1000;
 
 #[derive(Clone, Debug)]
 pub struct AdminHandle {
@@ -675,23 +680,31 @@ impl AdminService {
                 "operational collection retention_json must not be empty".to_owned(),
             ));
         }
+        if request.filter_fields_json.is_empty() {
+            return Err(EngineError::InvalidWrite(
+                "operational collection filter_fields_json must not be empty".to_owned(),
+            ));
+        }
         if request.format_version <= 0 {
             return Err(EngineError::InvalidWrite(
                 "operational collection format_version must be positive".to_owned(),
             ));
         }
+        parse_operational_filter_fields(&request.filter_fields_json)
+            .map_err(EngineError::InvalidWrite)?;
 
         let mut conn = self.connect()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         tx.execute(
             "INSERT INTO operational_collections \
-             (name, kind, schema_json, retention_json, format_version, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, unixepoch())",
+             (name, kind, schema_json, retention_json, filter_fields_json, format_version, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, unixepoch())",
             rusqlite::params![
                 request.name.as_str(),
                 request.kind.as_str(),
                 request.schema_json.as_str(),
                 request.retention_json.as_str(),
+                request.filter_fields_json.as_str(),
                 request.format_version,
             ],
         )?;
@@ -720,6 +733,86 @@ impl AdminService {
     ) -> Result<Option<OperationalCollectionRecord>, EngineError> {
         let conn = self.connect()?;
         load_operational_collection_record(&conn, name)
+    }
+
+    /// # Errors
+    /// Returns [`EngineError`] if the collection is missing, the filter contract is invalid,
+    /// or existing mutation backfill fails.
+    pub fn update_operational_collection_filters(
+        &self,
+        name: &str,
+        filter_fields_json: &str,
+    ) -> Result<OperationalCollectionRecord, EngineError> {
+        if filter_fields_json.is_empty() {
+            return Err(EngineError::InvalidWrite(
+                "operational collection filter_fields_json must not be empty".to_owned(),
+            ));
+        }
+        let declared_fields = parse_operational_filter_fields(filter_fields_json)
+            .map_err(EngineError::InvalidWrite)?;
+
+        let mut conn = self.connect()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        load_operational_collection_record(&tx, name)?.ok_or_else(|| {
+            EngineError::InvalidWrite(format!("operational collection '{name}' is not registered"))
+        })?;
+        tx.execute(
+            "UPDATE operational_collections SET filter_fields_json = ?2 WHERE name = ?1",
+            rusqlite::params![name, filter_fields_json],
+        )?;
+        tx.execute(
+            "DELETE FROM operational_filter_values WHERE collection_name = ?1",
+            [name],
+        )?;
+
+        let mut mutation_stmt = tx.prepare(
+            "SELECT id, payload_json FROM operational_mutations \
+             WHERE collection_name = ?1 ORDER BY mutation_order",
+        )?;
+        let mutations = mutation_stmt
+            .query_map([name], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(mutation_stmt);
+
+        let mut insert_filter_value = tx.prepare_cached(
+            "INSERT INTO operational_filter_values \
+             (mutation_id, collection_name, field_name, string_value, integer_value) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+        )?;
+        let mut inserted_values = 0usize;
+        for (mutation_id, payload_json) in &mutations {
+            for filter_value in
+                extract_operational_filter_values(&declared_fields, payload_json.as_str())
+            {
+                insert_filter_value.execute(rusqlite::params![
+                    mutation_id,
+                    name,
+                    filter_value.field_name,
+                    filter_value.string_value,
+                    filter_value.integer_value,
+                ])?;
+                inserted_values += 1;
+            }
+        }
+        drop(insert_filter_value);
+
+        persist_simple_provenance_event(
+            &tx,
+            "operational_collection_filter_fields_updated",
+            name,
+            Some(serde_json::json!({
+                "field_count": declared_fields.len(),
+                "mutations_backfilled": mutations.len(),
+                "inserted_filter_values": inserted_values,
+            })),
+        )?;
+        let updated = load_operational_collection_record(&tx, name)?.ok_or_else(|| {
+            EngineError::Bridge("operational collection missing after filter update".to_owned())
+        })?;
+        tx.commit()?;
+        Ok(updated)
     }
 
     /// # Errors
@@ -896,6 +989,39 @@ impl AdminService {
             mutations,
             current_rows,
         })
+    }
+
+    /// # Errors
+    /// Returns [`EngineError`] if the collection contract is invalid or the filtered read fails.
+    pub fn read_operational_collection(
+        &self,
+        request: &OperationalReadRequest,
+    ) -> Result<OperationalReadReport, EngineError> {
+        if request.collection_name.trim().is_empty() {
+            return Err(EngineError::InvalidWrite(
+                "operational read collection_name must not be empty".to_owned(),
+            ));
+        }
+        if request.filters.is_empty() {
+            return Err(EngineError::InvalidWrite(
+                "operational read requires at least one filter clause".to_owned(),
+            ));
+        }
+
+        let conn = self.connect()?;
+        let record = load_operational_collection_record(&conn, &request.collection_name)?
+            .ok_or_else(|| {
+                EngineError::InvalidWrite(format!(
+                    "operational collection '{}' is not registered",
+                    request.collection_name
+                ))
+            })?;
+        validate_append_only_operational_collection(&record, "read")?;
+        let declared_fields = parse_operational_filter_fields(&record.filter_fields_json)
+            .map_err(EngineError::InvalidWrite)?;
+        let applied_limit = operational_read_limit(request.limit)?;
+        let filters = compile_operational_read_filters(&request.filters, &declared_fields)?;
+        execute_operational_filtered_read(&conn, &request.collection_name, &filters, applied_limit)
     }
 
     /// # Errors
@@ -1279,8 +1405,11 @@ impl AdminService {
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .optional()?;
-        let restored_edge_rows =
-            if let Some((retire_event_rowid, retire_source_ref, retire_created_at)) = retire_scope
+        let restored_edge_rows = if let Some((
+            retire_event_rowid,
+            retire_source_ref,
+            retire_created_at,
+        )) = retire_scope
         {
             let edge_logical_ids = collect_edge_logical_ids_for_restore(
                 &tx,
@@ -2755,7 +2884,7 @@ fn load_operational_collection_record(
     name: &str,
 ) -> Result<Option<OperationalCollectionRecord>, EngineError> {
     conn.query_row(
-        "SELECT name, kind, schema_json, retention_json, format_version, created_at, disabled_at \
+        "SELECT name, kind, schema_json, retention_json, filter_fields_json, format_version, created_at, disabled_at \
          FROM operational_collections WHERE name = ?1",
         [name],
         map_operational_collection_row,
@@ -2775,6 +2904,324 @@ fn validate_append_only_operational_collection(
         )));
     }
     Ok(())
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CompiledOperationalReadFilter {
+    field: String,
+    condition: OperationalReadCondition,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum OperationalReadCondition {
+    ExactString(String),
+    ExactInteger(i64),
+    Prefix(String),
+    Range {
+        lower: Option<i64>,
+        upper: Option<i64>,
+    },
+}
+
+fn operational_read_limit(limit: Option<usize>) -> Result<usize, EngineError> {
+    let applied_limit = limit.unwrap_or(DEFAULT_OPERATIONAL_READ_LIMIT);
+    if applied_limit == 0 {
+        return Err(EngineError::InvalidWrite(
+            "operational read limit must be greater than zero".to_owned(),
+        ));
+    }
+    Ok(applied_limit.min(MAX_OPERATIONAL_READ_LIMIT))
+}
+
+fn parse_operational_filter_fields(
+    filter_fields_json: &str,
+) -> Result<Vec<OperationalFilterField>, String> {
+    let fields: Vec<OperationalFilterField> = serde_json::from_str(filter_fields_json)
+        .map_err(|error| format!("invalid filter_fields_json: {error}"))?;
+    let mut seen = std::collections::HashSet::new();
+    for field in &fields {
+        if field.name.trim().is_empty() {
+            return Err("filter_fields_json field names must not be empty".to_owned());
+        }
+        if !seen.insert(field.name.as_str()) {
+            return Err(format!(
+                "filter_fields_json contains duplicate field '{}'",
+                field.name
+            ));
+        }
+        if field.modes.is_empty() {
+            return Err(format!(
+                "filter_fields_json field '{}' must declare at least one mode",
+                field.name
+            ));
+        }
+        if field.modes.contains(&OperationalFilterMode::Prefix)
+            && field.field_type != OperationalFilterFieldType::String
+        {
+            return Err(format!(
+                "filter field '{}' only supports prefix for string types",
+                field.name
+            ));
+        }
+    }
+    Ok(fields)
+}
+
+fn compile_operational_read_filters(
+    filters: &[OperationalFilterClause],
+    declared_fields: &[OperationalFilterField],
+) -> Result<Vec<CompiledOperationalReadFilter>, EngineError> {
+    let field_map = declared_fields
+        .iter()
+        .map(|field| (field.name.as_str(), field))
+        .collect::<std::collections::HashMap<_, _>>();
+    filters
+        .iter()
+        .map(|filter| match filter {
+            OperationalFilterClause::Exact { field, value } => {
+                let declared = field_map.get(field.as_str()).ok_or_else(|| {
+                    EngineError::InvalidWrite(format!(
+                        "operational read filter uses undeclared field '{field}'"
+                    ))
+                })?;
+                if !declared.modes.contains(&OperationalFilterMode::Exact) {
+                    return Err(EngineError::InvalidWrite(format!(
+                        "operational read field '{field}' does not allow exact filters"
+                    )));
+                }
+                let condition = match (declared.field_type, value) {
+                    (OperationalFilterFieldType::String, OperationalFilterValue::String(value)) => {
+                        OperationalReadCondition::ExactString(value.clone())
+                    }
+                    (
+                        OperationalFilterFieldType::Integer | OperationalFilterFieldType::Timestamp,
+                        OperationalFilterValue::Integer(value),
+                    ) => OperationalReadCondition::ExactInteger(*value),
+                    _ => {
+                        return Err(EngineError::InvalidWrite(format!(
+                            "operational read field '{field}' received a value with the wrong type"
+                        )));
+                    }
+                };
+                Ok(CompiledOperationalReadFilter {
+                    field: field.clone(),
+                    condition,
+                })
+            }
+            OperationalFilterClause::Prefix { field, value } => {
+                let declared = field_map.get(field.as_str()).ok_or_else(|| {
+                    EngineError::InvalidWrite(format!(
+                        "operational read filter uses undeclared field '{field}'"
+                    ))
+                })?;
+                if !declared.modes.contains(&OperationalFilterMode::Prefix) {
+                    return Err(EngineError::InvalidWrite(format!(
+                        "operational read field '{field}' does not allow prefix filters"
+                    )));
+                }
+                if declared.field_type != OperationalFilterFieldType::String {
+                    return Err(EngineError::InvalidWrite(format!(
+                        "operational read field '{field}' only supports prefix filters for strings"
+                    )));
+                }
+                Ok(CompiledOperationalReadFilter {
+                    field: field.clone(),
+                    condition: OperationalReadCondition::Prefix(value.clone()),
+                })
+            }
+            OperationalFilterClause::Range {
+                field,
+                lower,
+                upper,
+            } => {
+                let declared = field_map.get(field.as_str()).ok_or_else(|| {
+                    EngineError::InvalidWrite(format!(
+                        "operational read filter uses undeclared field '{field}'"
+                    ))
+                })?;
+                if !declared.modes.contains(&OperationalFilterMode::Range) {
+                    return Err(EngineError::InvalidWrite(format!(
+                        "operational read field '{field}' does not allow range filters"
+                    )));
+                }
+                if !matches!(
+                    declared.field_type,
+                    OperationalFilterFieldType::Integer | OperationalFilterFieldType::Timestamp
+                ) {
+                    return Err(EngineError::InvalidWrite(format!(
+                        "operational read field '{field}' only supports range filters for integer/timestamp fields"
+                    )));
+                }
+                if lower.is_none() && upper.is_none() {
+                    return Err(EngineError::InvalidWrite(format!(
+                        "operational read range filter for '{field}' must specify a lower or upper bound"
+                    )));
+                }
+                Ok(CompiledOperationalReadFilter {
+                    field: field.clone(),
+                    condition: OperationalReadCondition::Range {
+                        lower: *lower,
+                        upper: *upper,
+                    },
+                })
+            }
+        })
+        .collect()
+}
+
+fn execute_operational_filtered_read(
+    conn: &rusqlite::Connection,
+    collection_name: &str,
+    filters: &[CompiledOperationalReadFilter],
+    applied_limit: usize,
+) -> Result<OperationalReadReport, EngineError> {
+    use rusqlite::types::Value;
+
+    let mut sql = String::from(
+        "SELECT m.id, m.collection_name, m.record_key, m.op_kind, m.payload_json, m.source_ref, m.created_at \
+         FROM operational_mutations m ",
+    );
+    let mut params = vec![Value::from(collection_name.to_owned())];
+    for (index, filter) in filters.iter().enumerate() {
+        sql.push_str(&format!(
+            "JOIN operational_filter_values f{index} \
+             ON f{index}.mutation_id = m.id \
+            AND f{index}.collection_name = m.collection_name "
+        ));
+        match &filter.condition {
+            OperationalReadCondition::ExactString(value) => {
+                sql.push_str(&format!(
+                    "AND f{index}.field_name = ?{} AND f{index}.string_value = ?{} ",
+                    params.len() + 1,
+                    params.len() + 2
+                ));
+                params.push(Value::from(filter.field.clone()));
+                params.push(Value::from(value.clone()));
+            }
+            OperationalReadCondition::ExactInteger(value) => {
+                sql.push_str(&format!(
+                    "AND f{index}.field_name = ?{} AND f{index}.integer_value = ?{} ",
+                    params.len() + 1,
+                    params.len() + 2
+                ));
+                params.push(Value::from(filter.field.clone()));
+                params.push(Value::from(*value));
+            }
+            OperationalReadCondition::Prefix(value) => {
+                sql.push_str(&format!(
+                    "AND f{index}.field_name = ?{} AND f{index}.string_value GLOB ?{} ",
+                    params.len() + 1,
+                    params.len() + 2
+                ));
+                params.push(Value::from(filter.field.clone()));
+                params.push(Value::from(glob_prefix_pattern(value)));
+            }
+            OperationalReadCondition::Range { lower, upper } => {
+                sql.push_str(&format!("AND f{index}.field_name = ?{} ", params.len() + 1));
+                params.push(Value::from(filter.field.clone()));
+                if let Some(lower) = lower {
+                    sql.push_str(&format!(
+                        "AND f{index}.integer_value >= ?{} ",
+                        params.len() + 1
+                    ));
+                    params.push(Value::from(*lower));
+                }
+                if let Some(upper) = upper {
+                    sql.push_str(&format!(
+                        "AND f{index}.integer_value <= ?{} ",
+                        params.len() + 1
+                    ));
+                    params.push(Value::from(*upper));
+                }
+            }
+        }
+    }
+    sql.push_str(&format!(
+        "WHERE m.collection_name = ?1 ORDER BY m.mutation_order DESC LIMIT ?{}",
+        params.len() + 1
+    ));
+    params.push(Value::from(i64::try_from(applied_limit + 1).map_err(
+        |_| EngineError::Bridge("operational read limit overflow".to_owned()),
+    )?));
+
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt
+        .query_map(
+            rusqlite::params_from_iter(params),
+            map_operational_mutation_row,
+        )?
+        .collect::<Result<Vec<_>, _>>()?;
+    let was_limited = rows.len() > applied_limit;
+    if was_limited {
+        rows.truncate(applied_limit);
+    }
+    Ok(OperationalReadReport {
+        collection_name: collection_name.to_owned(),
+        row_count: rows.len(),
+        applied_limit,
+        was_limited,
+        rows,
+    })
+}
+
+fn glob_prefix_pattern(value: &str) -> String {
+    let mut pattern = String::with_capacity(value.len() + 1);
+    for ch in value.chars() {
+        match ch {
+            '*' => pattern.push_str("[*]"),
+            '?' => pattern.push_str("[?]"),
+            '[' => pattern.push_str("[[]"),
+            _ => pattern.push(ch),
+        }
+    }
+    pattern.push('*');
+    pattern
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ExtractedOperationalFilterValue {
+    field_name: String,
+    string_value: Option<String>,
+    integer_value: Option<i64>,
+}
+
+fn extract_operational_filter_values(
+    filter_fields: &[OperationalFilterField],
+    payload_json: &str,
+) -> Vec<ExtractedOperationalFilterValue> {
+    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(payload_json) else {
+        return Vec::new();
+    };
+    let Some(object) = parsed.as_object() else {
+        return Vec::new();
+    };
+
+    filter_fields
+        .iter()
+        .filter_map(|field| {
+            let value = object.get(&field.name)?;
+            match field.field_type {
+                OperationalFilterFieldType::String => {
+                    value
+                        .as_str()
+                        .map(|string_value| ExtractedOperationalFilterValue {
+                            field_name: field.name.clone(),
+                            string_value: Some(string_value.to_owned()),
+                            integer_value: None,
+                        })
+                }
+                OperationalFilterFieldType::Integer | OperationalFilterFieldType::Timestamp => {
+                    value
+                        .as_i64()
+                        .map(|integer_value| ExtractedOperationalFilterValue {
+                            field_name: field.name.clone(),
+                            string_value: None,
+                            integer_value: Some(integer_value),
+                        })
+                }
+            }
+        })
+        .collect()
 }
 
 fn operational_compaction_candidates(
@@ -2864,9 +3311,10 @@ fn map_operational_collection_row(
         kind,
         schema_json: row.get(2)?,
         retention_json: row.get(3)?,
-        format_version: row.get(4)?,
-        created_at: row.get(5)?,
-        disabled_at: row.get(6)?,
+        filter_fields_json: row.get(4)?,
+        format_version: row.get(5)?,
+        created_at: row.get(6)?,
+        disabled_at: row.get(7)?,
     })
 }
 
@@ -3639,6 +4087,7 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
                 kind: OperationalCollectionKind::LatestState,
                 schema_json: "{}".to_owned(),
                 retention_json: "{}".to_owned(),
+                filter_fields_json: "[]".to_owned(),
                 format_version: 1,
             })
             .expect("register collection");
@@ -3647,6 +4096,7 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
         assert_eq!(record.kind, OperationalCollectionKind::LatestState);
         assert_eq!(record.schema_json, "{}");
         assert_eq!(record.retention_json, "{}");
+        assert_eq!(record.filter_fields_json, "[]");
         assert!(record.created_at > 0);
         assert_eq!(record.disabled_at, None);
 
@@ -3677,6 +4127,7 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
                 kind: OperationalCollectionKind::LatestState,
                 schema_json: "{}".to_owned(),
                 retention_json: "{}".to_owned(),
+                filter_fields_json: "[]".to_owned(),
                 format_version: 1,
             })
             .expect("register collection");
@@ -3742,6 +4193,7 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
                 kind: OperationalCollectionKind::LatestState,
                 schema_json: "{}".to_owned(),
                 retention_json: "{}".to_owned(),
+                filter_fields_json: "[]".to_owned(),
                 format_version: 1,
             })
             .expect("register collection");
@@ -3894,6 +4346,7 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
                 kind: OperationalCollectionKind::AppendOnlyLog,
                 schema_json: "{}".to_owned(),
                 retention_json: r#"{"mode":"keep_all"}"#.to_owned(),
+                filter_fields_json: "[]".to_owned(),
                 format_version: 1,
             })
             .expect("register collection");
@@ -4141,6 +4594,7 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
                 kind: OperationalCollectionKind::LatestState,
                 schema_json: "{}".to_owned(),
                 retention_json: r#"{"mode":"keep_all"}"#.to_owned(),
+                filter_fields_json: "[]".to_owned(),
                 format_version: 1,
             })
             .expect("register collection");
@@ -4150,6 +4604,306 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
             .expect_err("latest_state compaction should be rejected");
         assert!(matches!(error, EngineError::InvalidWrite(_)));
         assert!(error.to_string().contains("append_only_log"));
+    }
+
+    #[test]
+    fn register_operational_collection_persists_filter_fields_json() {
+        let (_db, service) = setup();
+
+        let record = service
+            .register_operational_collection(&OperationalRegisterRequest {
+                name: "audit_log".to_owned(),
+                kind: OperationalCollectionKind::AppendOnlyLog,
+                schema_json: "{}".to_owned(),
+                retention_json: r#"{"mode":"keep_all"}"#.to_owned(),
+                filter_fields_json: r#"[{"name":"actor","type":"string","modes":["exact","prefix"]},{"name":"ts","type":"timestamp","modes":["range"]}]"#.to_owned(),
+                format_version: 1,
+            })
+            .expect("register collection");
+
+        assert_eq!(
+            record.filter_fields_json,
+            r#"[{"name":"actor","type":"string","modes":["exact","prefix"]},{"name":"ts","type":"timestamp","modes":["range"]}]"#
+        );
+    }
+
+    #[test]
+    fn read_operational_collection_filters_append_only_rows_by_declared_fields() {
+        let (db, service) = setup();
+        service
+            .register_operational_collection(&OperationalRegisterRequest {
+                name: "audit_log".to_owned(),
+                kind: OperationalCollectionKind::AppendOnlyLog,
+                schema_json: "{}".to_owned(),
+                retention_json: r#"{"mode":"keep_all"}"#.to_owned(),
+                filter_fields_json: r#"[{"name":"actor","type":"string","modes":["exact","prefix"]},{"name":"seq","type":"integer","modes":["exact","range"]},{"name":"ts","type":"timestamp","modes":["exact","range"]}]"#.to_owned(),
+                format_version: 1,
+            })
+            .expect("register collection");
+        {
+            let writer = crate::WriterActor::start(
+                db.path(),
+                Arc::new(SchemaManager::new()),
+                crate::ProvenanceMode::Warn,
+            )
+            .expect("writer");
+            writer
+                .submit(crate::WriteRequest {
+                    label: "operational".to_owned(),
+                    nodes: vec![],
+                    node_retires: vec![],
+                    edges: vec![],
+                    edge_retires: vec![],
+                    chunks: vec![],
+                    runs: vec![],
+                    steps: vec![],
+                    actions: vec![],
+                    optional_backfills: vec![],
+                    vec_inserts: vec![],
+                    operational_writes: vec![
+                        crate::OperationalWrite::Append {
+                            collection: "audit_log".to_owned(),
+                            record_key: "evt-1".to_owned(),
+                            payload_json: r#"{"actor":"alice","seq":1,"ts":100}"#.to_owned(),
+                            source_ref: Some("src-1".to_owned()),
+                        },
+                        crate::OperationalWrite::Append {
+                            collection: "audit_log".to_owned(),
+                            record_key: "evt-2".to_owned(),
+                            payload_json: r#"{"actor":"alice-admin","seq":2,"ts":200}"#.to_owned(),
+                            source_ref: Some("src-2".to_owned()),
+                        },
+                        crate::OperationalWrite::Append {
+                            collection: "audit_log".to_owned(),
+                            record_key: "evt-3".to_owned(),
+                            payload_json: r#"{"actor":"bob","seq":3,"ts":300}"#.to_owned(),
+                            source_ref: Some("src-3".to_owned()),
+                        },
+                    ],
+                })
+                .expect("write");
+        }
+
+        let report = service
+            .read_operational_collection(&crate::operational::OperationalReadRequest {
+                collection_name: "audit_log".to_owned(),
+                filters: vec![
+                    crate::operational::OperationalFilterClause::Prefix {
+                        field: "actor".to_owned(),
+                        value: "alice".to_owned(),
+                    },
+                    crate::operational::OperationalFilterClause::Range {
+                        field: "ts".to_owned(),
+                        lower: Some(150),
+                        upper: Some(250),
+                    },
+                ],
+                limit: Some(10),
+            })
+            .expect("filtered read");
+
+        assert_eq!(report.collection_name, "audit_log");
+        assert_eq!(report.row_count, 1);
+        assert_eq!(report.was_limited, false);
+        assert_eq!(report.rows.len(), 1);
+        assert_eq!(report.rows[0].record_key, "evt-2");
+        assert_eq!(
+            report.rows[0].payload_json,
+            r#"{"actor":"alice-admin","seq":2,"ts":200}"#
+        );
+    }
+
+    #[test]
+    fn read_operational_collection_rejects_undeclared_fields_and_latest_state_collections() {
+        let (_db, service) = setup();
+        service
+            .register_operational_collection(&OperationalRegisterRequest {
+                name: "connector_health".to_owned(),
+                kind: OperationalCollectionKind::LatestState,
+                schema_json: "{}".to_owned(),
+                retention_json: "{}".to_owned(),
+                filter_fields_json: r#"[{"name":"status","type":"string","modes":["exact"]}]"#
+                    .to_owned(),
+                format_version: 1,
+            })
+            .expect("register collection");
+
+        let latest_state_error = service
+            .read_operational_collection(&crate::operational::OperationalReadRequest {
+                collection_name: "connector_health".to_owned(),
+                filters: vec![crate::operational::OperationalFilterClause::Exact {
+                    field: "status".to_owned(),
+                    value: crate::operational::OperationalFilterValue::String("ok".to_owned()),
+                }],
+                limit: Some(10),
+            })
+            .expect_err("latest_state filtered reads should be rejected");
+        assert!(latest_state_error.to_string().contains("append_only_log"));
+
+        service
+            .register_operational_collection(&OperationalRegisterRequest {
+                name: "audit_log".to_owned(),
+                kind: OperationalCollectionKind::AppendOnlyLog,
+                schema_json: "{}".to_owned(),
+                retention_json: r#"{"mode":"keep_all"}"#.to_owned(),
+                filter_fields_json: r#"[{"name":"actor","type":"string","modes":["exact"]}]"#
+                    .to_owned(),
+                format_version: 1,
+            })
+            .expect("register append-only collection");
+
+        let undeclared_error = service
+            .read_operational_collection(&crate::operational::OperationalReadRequest {
+                collection_name: "audit_log".to_owned(),
+                filters: vec![crate::operational::OperationalFilterClause::Exact {
+                    field: "missing".to_owned(),
+                    value: crate::operational::OperationalFilterValue::String("x".to_owned()),
+                }],
+                limit: Some(10),
+            })
+            .expect_err("undeclared field should be rejected");
+        assert!(undeclared_error.to_string().contains("undeclared"));
+    }
+
+    #[test]
+    fn read_operational_collection_applies_limit_and_reports_truncation() {
+        let (db, service) = setup();
+        service
+            .register_operational_collection(&OperationalRegisterRequest {
+                name: "audit_log".to_owned(),
+                kind: OperationalCollectionKind::AppendOnlyLog,
+                schema_json: "{}".to_owned(),
+                retention_json: r#"{"mode":"keep_all"}"#.to_owned(),
+                filter_fields_json: r#"[{"name":"actor","type":"string","modes":["prefix"]}]"#
+                    .to_owned(),
+                format_version: 1,
+            })
+            .expect("register collection");
+        {
+            let writer = crate::WriterActor::start(
+                db.path(),
+                Arc::new(SchemaManager::new()),
+                crate::ProvenanceMode::Warn,
+            )
+            .expect("writer");
+            writer
+                .submit(crate::WriteRequest {
+                    label: "operational".to_owned(),
+                    nodes: vec![],
+                    node_retires: vec![],
+                    edges: vec![],
+                    edge_retires: vec![],
+                    chunks: vec![],
+                    runs: vec![],
+                    steps: vec![],
+                    actions: vec![],
+                    optional_backfills: vec![],
+                    vec_inserts: vec![],
+                    operational_writes: vec![
+                        crate::OperationalWrite::Append {
+                            collection: "audit_log".to_owned(),
+                            record_key: "evt-1".to_owned(),
+                            payload_json: r#"{"actor":"alice-1"}"#.to_owned(),
+                            source_ref: Some("src-1".to_owned()),
+                        },
+                        crate::OperationalWrite::Append {
+                            collection: "audit_log".to_owned(),
+                            record_key: "evt-2".to_owned(),
+                            payload_json: r#"{"actor":"alice-2"}"#.to_owned(),
+                            source_ref: Some("src-2".to_owned()),
+                        },
+                    ],
+                })
+                .expect("write");
+        }
+
+        let report = service
+            .read_operational_collection(&crate::operational::OperationalReadRequest {
+                collection_name: "audit_log".to_owned(),
+                filters: vec![crate::operational::OperationalFilterClause::Prefix {
+                    field: "actor".to_owned(),
+                    value: "alice".to_owned(),
+                }],
+                limit: Some(1),
+            })
+            .expect("limited read");
+
+        assert_eq!(report.row_count, 1);
+        assert_eq!(report.applied_limit, 1);
+        assert!(report.was_limited);
+        assert_eq!(report.rows[0].record_key, "evt-2");
+    }
+
+    #[test]
+    fn preexisting_operational_collection_can_gain_filter_contract_after_upgrade() {
+        let db = NamedTempFile::new().expect("temp db");
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        conn.execute_batch(
+            r#"
+            CREATE TABLE operational_collections (
+                name TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                schema_json TEXT NOT NULL,
+                retention_json TEXT NOT NULL,
+                format_version INTEGER NOT NULL DEFAULT 1,
+                created_at INTEGER NOT NULL DEFAULT 100,
+                disabled_at INTEGER
+            );
+            CREATE TABLE operational_mutations (
+                id TEXT PRIMARY KEY,
+                collection_name TEXT NOT NULL,
+                record_key TEXT NOT NULL,
+                op_kind TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                source_ref TEXT,
+                created_at INTEGER NOT NULL DEFAULT 100,
+                mutation_order INTEGER NOT NULL DEFAULT 1
+            );
+            INSERT INTO operational_collections (name, kind, schema_json, retention_json, format_version, created_at)
+            VALUES ('audit_log', 'append_only_log', '{}', '{"mode":"keep_all"}', 1, 100);
+            INSERT INTO operational_mutations
+                (id, collection_name, record_key, op_kind, payload_json, source_ref, created_at, mutation_order)
+            VALUES
+                ('evt-1', 'audit_log', 'evt-1', 'append', '{"actor":"alice","ts":0}', 'src-1', 100, 1);
+            "#,
+        )
+        .expect("seed pre-v10 schema");
+        drop(conn);
+
+        let service = AdminService::new(db.path(), Arc::new(SchemaManager::new()));
+        let pre_update = service
+            .read_operational_collection(&crate::operational::OperationalReadRequest {
+                collection_name: "audit_log".to_owned(),
+                filters: vec![crate::operational::OperationalFilterClause::Exact {
+                    field: "actor".to_owned(),
+                    value: crate::operational::OperationalFilterValue::String("alice".to_owned()),
+                }],
+                limit: Some(10),
+            })
+            .expect_err("read should reject undeclared fields before migration update");
+        assert!(pre_update.to_string().contains("undeclared"));
+
+        let updated = service
+            .update_operational_collection_filters(
+                "audit_log",
+                r#"[{"name":"actor","type":"string","modes":["exact"]},{"name":"ts","type":"timestamp","modes":["range"]}]"#,
+            )
+            .expect("update filter contract");
+        assert!(updated.filter_fields_json.contains("\"actor\""));
+
+        let report = service
+            .read_operational_collection(&crate::operational::OperationalReadRequest {
+                collection_name: "audit_log".to_owned(),
+                filters: vec![crate::operational::OperationalFilterClause::Range {
+                    field: "ts".to_owned(),
+                    lower: Some(0),
+                    upper: Some(0),
+                }],
+                limit: Some(10),
+            })
+            .expect("read after explicit filter update");
+        assert_eq!(report.row_count, 1);
+        assert_eq!(report.rows[0].record_key, "evt-1");
     }
 
     #[cfg(feature = "sqlite-vec")]

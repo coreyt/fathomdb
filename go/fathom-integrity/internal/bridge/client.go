@@ -29,36 +29,55 @@ const (
 	CommandSafeExport                    Command = "safe_export"
 	CommandRegisterOperationalCollection Command = "register_operational_collection"
 	CommandDescribeOperationalCollection Command = "describe_operational_collection"
+	CommandUpdateOperationalFilters      Command = "update_operational_collection_filters"
 	CommandDisableOperationalCollection  Command = "disable_operational_collection"
 	CommandCompactOperationalCollection  Command = "compact_operational_collection"
 	CommandPurgeOperationalCollection    Command = "purge_operational_collection"
 	CommandRebuildOperationalCurrent     Command = "rebuild_operational_current"
 	CommandTraceOperationalCollection    Command = "trace_operational_collection"
+	CommandReadOperationalCollection     Command = "read_operational_collection"
 )
 
 type Request struct {
-	ProtocolVersion       int                    `json:"protocol_version"`
-	DatabasePath          string                 `json:"database_path"`
-	Command               Command                `json:"command"`
-	LogicalID             string                 `json:"logical_id,omitempty"`
-	Target                string                 `json:"target,omitempty"`
-	SourceRef             string                 `json:"source_ref,omitempty"`
-	CollectionName        string                 `json:"collection_name,omitempty"`
-	RecordKey             string                 `json:"record_key,omitempty"`
-	BeforeTimestamp       int64                  `json:"before_timestamp,omitempty"`
-	DryRun                bool                   `json:"dry_run,omitempty"`
-	DestinationPath       string                 `json:"destination_path,omitempty"`
-	ConfigPath            string                 `json:"config_path,omitempty"`
-	VectorGeneratorPolicy *VectorGeneratorPolicy `json:"vector_generator_policy,omitempty"`
-	OperationalCollection *OperationalCollection `json:"operational_collection,omitempty"`
+	ProtocolVersion       int                     `json:"protocol_version"`
+	DatabasePath          string                  `json:"database_path"`
+	Command               Command                 `json:"command"`
+	LogicalID             string                  `json:"logical_id,omitempty"`
+	Target                string                  `json:"target,omitempty"`
+	SourceRef             string                  `json:"source_ref,omitempty"`
+	CollectionName        string                  `json:"collection_name,omitempty"`
+	RecordKey             string                  `json:"record_key,omitempty"`
+	FilterFieldsJSON      string                  `json:"filter_fields_json,omitempty"`
+	BeforeTimestamp       int64                   `json:"before_timestamp,omitempty"`
+	DryRun                bool                    `json:"dry_run,omitempty"`
+	DestinationPath       string                  `json:"destination_path,omitempty"`
+	ConfigPath            string                  `json:"config_path,omitempty"`
+	VectorGeneratorPolicy *VectorGeneratorPolicy  `json:"vector_generator_policy,omitempty"`
+	OperationalCollection *OperationalCollection  `json:"operational_collection,omitempty"`
+	OperationalRead       *OperationalReadRequest `json:"operational_read,omitempty"`
 }
 
 type OperationalCollection struct {
-	Name          string `json:"name"`
-	Kind          string `json:"kind"`
-	SchemaJSON    string `json:"schema_json"`
-	RetentionJSON string `json:"retention_json"`
-	FormatVersion int64  `json:"format_version"`
+	Name             string `json:"name"`
+	Kind             string `json:"kind"`
+	SchemaJSON       string `json:"schema_json"`
+	RetentionJSON    string `json:"retention_json"`
+	FilterFieldsJSON string `json:"filter_fields_json"`
+	FormatVersion    int64  `json:"format_version"`
+}
+
+type OperationalFilterClause struct {
+	Mode  string `json:"mode"`
+	Field string `json:"field"`
+	Value any    `json:"value,omitempty"`
+	Lower *int64 `json:"lower,omitempty"`
+	Upper *int64 `json:"upper,omitempty"`
+}
+
+type OperationalReadRequest struct {
+	CollectionName string                    `json:"collection_name"`
+	Filters        []OperationalFilterClause `json:"filters"`
+	Limit          int                       `json:"limit,omitempty"`
 }
 
 type VectorGeneratorPolicy struct {

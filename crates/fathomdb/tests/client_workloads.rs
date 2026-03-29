@@ -5,7 +5,8 @@ mod injection;
 
 use fathomdb::{
     ActionInsert, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire, Engine, EngineOptions,
-    NodeInsert, OperationalCollectionKind, OperationalRegisterRequest, OperationalWrite, RunInsert,
+    NodeInsert, OperationalCollectionKind, OperationalFilterClause, OperationalFilterValue,
+    OperationalReadRequest, OperationalRegisterRequest, OperationalWrite, RunInsert,
     SafeExportOptions, StepInsert, TraverseDirection, WriteRequest,
 };
 use tempfile::NamedTempFile;
@@ -26,6 +27,7 @@ fn operational_admin_methods_register_trace_rebuild_and_disable() {
             kind: OperationalCollectionKind::LatestState,
             schema_json: "{}".to_owned(),
             retention_json: "{}".to_owned(),
+            filter_fields_json: "[]".to_owned(),
             format_version: 1,
         })
         .expect("register operational collection");
@@ -60,6 +62,7 @@ fn operational_admin_methods_compact_append_only_history() {
             kind: OperationalCollectionKind::AppendOnlyLog,
             schema_json: "{}".to_owned(),
             retention_json: r#"{"mode":"keep_last","max_rows":2}"#.to_owned(),
+            filter_fields_json: "[]".to_owned(),
             format_version: 1,
         })
         .expect("register operational collection");
@@ -117,6 +120,124 @@ fn operational_admin_methods_compact_append_only_history() {
         .trace_operational_collection("audit_log", None)
         .expect("trace compacted collection");
     assert_eq!(traced.mutation_count, 2);
+}
+
+#[test]
+fn operational_admin_methods_read_append_only_rows_by_declared_fields() {
+    let (_db, engine) = open_engine();
+
+    engine
+        .register_operational_collection(OperationalRegisterRequest {
+            name: "audit_log".to_owned(),
+            kind: OperationalCollectionKind::AppendOnlyLog,
+            schema_json: "{}".to_owned(),
+            retention_json: r#"{"mode":"keep_all"}"#.to_owned(),
+            filter_fields_json: r#"[{"name":"actor","type":"string","modes":["exact","prefix"]},{"name":"ts","type":"timestamp","modes":["range"]}]"#.to_owned(),
+            format_version: 1,
+        })
+        .expect("register operational collection");
+
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "append-audit".to_owned(),
+            nodes: vec![],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![
+                OperationalWrite::Append {
+                    collection: "audit_log".to_owned(),
+                    record_key: "evt-1".to_owned(),
+                    payload_json: r#"{"actor":"alice","ts":100}"#.to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                },
+                OperationalWrite::Append {
+                    collection: "audit_log".to_owned(),
+                    record_key: "evt-2".to_owned(),
+                    payload_json: r#"{"actor":"alice-admin","ts":200}"#.to_owned(),
+                    source_ref: Some("src-2".to_owned()),
+                },
+            ],
+        })
+        .expect("append operational history");
+
+    let report = engine
+        .read_operational_collection(OperationalReadRequest {
+            collection_name: "audit_log".to_owned(),
+            filters: vec![
+                OperationalFilterClause::Prefix {
+                    field: "actor".to_owned(),
+                    value: "alice".to_owned(),
+                },
+                OperationalFilterClause::Range {
+                    field: "ts".to_owned(),
+                    lower: Some(150),
+                    upper: Some(250),
+                },
+            ],
+            limit: Some(10),
+        })
+        .expect("filtered operational read");
+
+    assert_eq!(report.row_count, 1);
+    assert_eq!(report.rows[0].record_key, "evt-2");
+    assert_eq!(report.was_limited, false);
+
+    let exact = engine
+        .read_operational_collection(OperationalReadRequest {
+            collection_name: "audit_log".to_owned(),
+            filters: vec![OperationalFilterClause::Exact {
+                field: "actor".to_owned(),
+                value: OperationalFilterValue::String("alice".to_owned()),
+            }],
+            limit: Some(10),
+        })
+        .expect("exact filtered operational read");
+    assert_eq!(exact.row_count, 1);
+    assert_eq!(exact.rows[0].record_key, "evt-1");
+}
+
+#[test]
+fn operational_admin_methods_can_update_filters_for_existing_collection() {
+    let (_db, engine) = open_engine();
+
+    engine
+        .register_operational_collection(OperationalRegisterRequest {
+            name: "audit_log".to_owned(),
+            kind: OperationalCollectionKind::AppendOnlyLog,
+            schema_json: "{}".to_owned(),
+            retention_json: r#"{"mode":"keep_all"}"#.to_owned(),
+            filter_fields_json: "[]".to_owned(),
+            format_version: 1,
+        })
+        .expect("register operational collection");
+
+    let before = engine
+        .read_operational_collection(OperationalReadRequest {
+            collection_name: "audit_log".to_owned(),
+            filters: vec![OperationalFilterClause::Exact {
+                field: "actor".to_owned(),
+                value: OperationalFilterValue::String("alice".to_owned()),
+            }],
+            limit: Some(10),
+        })
+        .expect_err("undeclared fields should reject before update");
+    assert!(before.to_string().contains("undeclared"));
+
+    let updated = engine
+        .update_operational_collection_filters(
+            "audit_log",
+            r#"[{"name":"actor","type":"string","modes":["exact"]}]"#,
+        )
+        .expect("update filters");
+    assert!(updated.filter_fields_json.contains("\"actor\""));
 }
 
 // ── Memex workloads ──────────────────────────────────────────────────────────

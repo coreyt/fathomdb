@@ -2,8 +2,8 @@
 
 ## Status
 
-- Current phase: 5. Filtered operational reads
-- Overall status: operational-store foundation is implemented; broader Memex-support phases remain
+- Current phase: complete
+- Overall status: operational-store foundation and all planned active Memex-support phases are implemented; only explicit deferred items remain
 
 ## Locked Decisions
 
@@ -53,6 +53,22 @@
   or inactive, and de-duplicate repeated IDs before apply/reporting.
 - Phase 4 touch batches remain subject to provenance policy: when
   `ProvenanceMode::Require` is active they must carry a source reference.
+- Phase 5 declares operational filterability in a dedicated
+  `filter_fields_json` contract field rather than overloading `schema_json` or
+  `retention_json`.
+- Phase 5 adds a separate `read_operational_collection` surface and keeps
+  `trace_operational_collection` stable as the diagnostic/history API.
+- Phase 5 filtered reads are bounded, conjunctive, and append-only-first:
+  exact/prefix/range over declared top-level payload fields for
+  `append_only_log`, with unsupported collection kinds rejected clearly.
+- Phase 5 uses engine-maintained extracted filter values for declared fields so
+  `audit_log`-style reads do not require client-side filtering or arbitrary
+  payload-JSON querying.
+- Phase 5 includes an explicit post-upgrade filter-contract update path for
+  preexisting operational collections; filterability is never inferred from
+  historical payloads during schema migration.
+- Phase 5 bridge/CLI range filters must preserve explicit zero-valued bounds;
+  `0` is a valid integer/timestamp boundary, not the same as “unset”.
 
 ## Completed Foundation
 
@@ -185,10 +201,10 @@ Acceptance criteria:
 
 ### 5. Filtered Operational Reads
 
-- [ ] Add failing tests for declared-field filtering on operational collections
-- [ ] Add filter metadata to the collection contract as needed
-- [ ] Add bounded exact/prefix/range filtering for declared operational fields
-- [ ] Add `append_only_log` coverage for `audit_log`-style reads
+- [x] Add failing tests for declared-field filtering on operational collections
+- [x] Add filter metadata to the collection contract as needed
+- [x] Add bounded exact/prefix/range filtering for declared operational fields
+- [x] Add `append_only_log` coverage for `audit_log`-style reads
 
 Acceptance criteria:
 
@@ -226,7 +242,7 @@ Acceptance criteria:
 - [x] Write-bundle builder tests in Rust and Python
 - [x] Richer read/query result tests
 - [x] Batched touch/update tests
-- [ ] Filtered operational read tests
+- [x] Filtered operational read tests
 
 ## Notes
 
@@ -281,6 +297,16 @@ Acceptance criteria:
   metadata rows reported by the engine.
 - Go layer-2 checks must mirror newly added engine semantic counters so
   recovery tooling does not under-report access-metadata inconsistencies.
+- Phase 5 is complete: operational collections can now declare bounded
+  filterable fields in `filter_fields_json`, append-only histories can be read
+  through a separate `read_operational_collection` API, filtering is limited
+  to conjunctive exact/prefix/range predicates over declared top-level payload
+  fields, and Rust/Python/Go surfaces all preserve `trace_operational_collection`
+  as the unchanged diagnostic history path.
+- Follow-up hardening closed two Phase 5 review gaps: preexisting collections
+  can now gain declared filter contracts through an explicit update path that
+  backfills extracted filter values for existing mutation history, and Go
+  bridge/CLI range filters now preserve explicit `0` lower/upper bounds.
 - Stale vector-doc cleanup is not tracked as a standalone phase; its remaining
   proof obligations are carried by the restore/purge lifecycle phase.
 - Python-feature verification remains environment-dependent for full Rust

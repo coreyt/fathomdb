@@ -13,6 +13,8 @@ from ._types import (
     OperationalCollectionRecord,
     OperationalCompactionReport,
     OperationalPurgeReport,
+    OperationalReadReport,
+    OperationalReadRequest,
     OperationalRegisterRequest,
     OperationalRepairReport,
     OperationalTraceReport,
@@ -237,6 +239,29 @@ class AdminClient:
             return None
         return OperationalCollectionRecord.from_wire(payload)
 
+    def update_operational_collection_filters(
+        self,
+        name: str,
+        filter_fields_json: str,
+        *,
+        progress_callback=None,
+        feedback_config: FeedbackConfig | None = None,
+    ) -> OperationalCollectionRecord:
+        return OperationalCollectionRecord.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="admin.update_operational_collection_filters",
+                    metadata={"name": name},
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=lambda: self._core.update_operational_collection_filters(
+                        name, filter_fields_json
+                    ),
+                )
+            )
+        )
+
     def trace_operational_collection(
         self,
         collection_name: str,
@@ -258,6 +283,28 @@ class AdminClient:
                     feedback_config=feedback_config,
                     operation=lambda: self._core.trace_operational_collection(
                         collection_name, record_key
+                    ),
+                )
+            )
+        )
+
+    def read_operational_collection(
+        self,
+        request: OperationalReadRequest,
+        *,
+        progress_callback=None,
+        feedback_config: FeedbackConfig | None = None,
+    ) -> OperationalReadReport:
+        return OperationalReadReport.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="admin.read_operational_collection",
+                    metadata={"collection_name": request.collection_name},
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=lambda: self._core.read_operational_collection(
+                        json.dumps(request.to_wire())
                     ),
                 )
             )

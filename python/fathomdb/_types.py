@@ -27,6 +27,18 @@ class OperationalCollectionKind(str, Enum):
     LATEST_STATE = "latest_state"
 
 
+class OperationalFilterMode(str, Enum):
+    EXACT = "exact"
+    PREFIX = "prefix"
+    RANGE = "range"
+
+
+class OperationalFilterFieldType(str, Enum):
+    STRING = "string"
+    INTEGER = "integer"
+    TIMESTAMP = "timestamp"
+
+
 class TraverseDirection(str, Enum):
     IN = "in"
     OUT = "out"
@@ -453,6 +465,7 @@ class OperationalCollectionRecord:
     retention_json: str
     format_version: int
     created_at: int
+    filter_fields_json: str = "[]"
     disabled_at: int | None = None
 
     @classmethod
@@ -462,6 +475,7 @@ class OperationalCollectionRecord:
             kind=OperationalCollectionKind(payload["kind"]),
             schema_json=payload["schema_json"],
             retention_json=payload["retention_json"],
+            filter_fields_json=payload.get("filter_fields_json", "[]"),
             format_version=payload["format_version"],
             created_at=payload["created_at"],
             disabled_at=payload.get("disabled_at"),
@@ -475,6 +489,7 @@ class OperationalRegisterRequest:
     schema_json: str
     retention_json: str
     format_version: int
+    filter_fields_json: str = "[]"
 
     def to_wire(self) -> dict[str, Any]:
         return {
@@ -482,8 +497,72 @@ class OperationalRegisterRequest:
             "kind": _enum_value(self.kind),
             "schema_json": self.schema_json,
             "retention_json": self.retention_json,
+            "filter_fields_json": self.filter_fields_json,
             "format_version": self.format_version,
         }
+
+
+@dataclass(frozen=True)
+class OperationalFilterValue:
+    value: str | int
+
+    @classmethod
+    def string(cls, value: str) -> "OperationalFilterValue":
+        return cls(value=value)
+
+    @classmethod
+    def integer(cls, value: int) -> "OperationalFilterValue":
+        return cls(value=value)
+
+    def to_wire(self) -> str | int:
+        return self.value
+
+
+@dataclass(frozen=True)
+class OperationalFilterClause:
+    mode: OperationalFilterMode
+    field: str
+    value: str | OperationalFilterValue | None = None
+    lower: int | None = None
+    upper: int | None = None
+
+    @classmethod
+    def exact(cls, field: str, value: OperationalFilterValue) -> "OperationalFilterClause":
+        return cls(mode=OperationalFilterMode.EXACT, field=field, value=value)
+
+    @classmethod
+    def prefix(cls, field: str, value: str) -> "OperationalFilterClause":
+        return cls(mode=OperationalFilterMode.PREFIX, field=field, value=value)
+
+    @classmethod
+    def range(
+        cls, field: str, *, lower: int | None = None, upper: int | None = None
+    ) -> "OperationalFilterClause":
+        return cls(
+            mode=OperationalFilterMode.RANGE,
+            field=field,
+            lower=lower,
+            upper=upper,
+        )
+
+    def to_wire(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "mode": _enum_value(self.mode),
+            "field": self.field,
+        }
+        if self.mode is OperationalFilterMode.EXACT:
+            assert self.value is not None
+            payload["value"] = (
+                self.value.to_wire()
+                if isinstance(self.value, OperationalFilterValue)
+                else self.value
+            )
+        elif self.mode is OperationalFilterMode.PREFIX:
+            payload["value"] = self.value
+        else:
+            payload["lower"] = self.lower
+            payload["upper"] = self.upper
+        return payload
 
 
 @dataclass(frozen=True)
@@ -546,6 +625,39 @@ class OperationalTraceReport:
             current_count=payload["current_count"],
             mutations=[OperationalMutationRow.from_wire(item) for item in payload["mutations"]],
             current_rows=[OperationalCurrentRow.from_wire(item) for item in payload["current_rows"]],
+        )
+
+
+@dataclass(slots=True)
+class OperationalReadRequest:
+    collection_name: str
+    filters: list[OperationalFilterClause]
+    limit: int | None = None
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "collection_name": self.collection_name,
+            "filters": [item.to_wire() for item in self.filters],
+            "limit": self.limit,
+        }
+
+
+@dataclass(frozen=True)
+class OperationalReadReport:
+    collection_name: str
+    row_count: int
+    applied_limit: int
+    was_limited: bool
+    rows: list[OperationalMutationRow]
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "OperationalReadReport":
+        return cls(
+            collection_name=payload["collection_name"],
+            row_count=payload["row_count"],
+            applied_limit=payload["applied_limit"],
+            was_limited=payload["was_limited"],
+            rows=[OperationalMutationRow.from_wire(item) for item in payload["rows"]],
         )
 
 

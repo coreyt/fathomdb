@@ -1,5 +1,9 @@
 use serde::{Deserialize, Serialize};
 
+fn default_filter_fields_json() -> String {
+    "[]".to_owned()
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OperationalCollectionKind {
@@ -35,6 +39,8 @@ pub struct OperationalCollectionRecord {
     pub kind: OperationalCollectionKind,
     pub schema_json: String,
     pub retention_json: String,
+    #[serde(default = "default_filter_fields_json")]
+    pub filter_fields_json: String,
     pub format_version: i64,
     pub created_at: i64,
     pub disabled_at: Option<i64>,
@@ -66,7 +72,74 @@ pub struct OperationalRegisterRequest {
     pub kind: OperationalCollectionKind,
     pub schema_json: String,
     pub retention_json: String,
+    #[serde(default = "default_filter_fields_json")]
+    pub filter_fields_json: String,
     pub format_version: i64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OperationalFilterMode {
+    Exact,
+    Prefix,
+    Range,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OperationalFilterFieldType {
+    String,
+    Integer,
+    Timestamp,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OperationalFilterField {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub field_type: OperationalFilterFieldType,
+    pub modes: Vec<OperationalFilterMode>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum OperationalFilterValue {
+    String(String),
+    Integer(i64),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum OperationalFilterClause {
+    Exact {
+        field: String,
+        value: OperationalFilterValue,
+    },
+    Prefix {
+        field: String,
+        value: String,
+    },
+    Range {
+        field: String,
+        lower: Option<i64>,
+        upper: Option<i64>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OperationalReadRequest {
+    pub collection_name: String,
+    pub filters: Vec<OperationalFilterClause>,
+    pub limit: Option<usize>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OperationalReadReport {
+    pub collection_name: String,
+    pub row_count: usize,
+    pub applied_limit: usize,
+    pub was_limited: bool,
+    pub rows: Vec<OperationalMutationRow>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

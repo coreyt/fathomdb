@@ -36,7 +36,10 @@ pub enum QueryStep {
 pub enum Predicate {
     LogicalIdEq(String),
     KindEq(String),
-    JsonPathEq { path: String, value: ScalarValue },
+    JsonPathEq {
+        path: String,
+        value: ScalarValue,
+    },
     JsonPathCompare {
         path: String,
         op: ComparisonOp,

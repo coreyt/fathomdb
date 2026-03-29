@@ -333,15 +333,18 @@ impl ExecutionCoordinator {
             .prepare_cached(&sql)
             .map_err(EngineError::Sqlite)?;
         let nodes = statement
-            .query_map(rusqlite::params![root_logical_id, expansion.label.as_str()], |row| {
-                Ok(NodeRow {
-                    row_id: row.get(0)?,
-                    logical_id: row.get(1)?,
-                    kind: row.get(2)?,
-                    properties: row.get(3)?,
-                    last_accessed_at: row.get(4)?,
-                })
-            })
+            .query_map(
+                rusqlite::params![root_logical_id, expansion.label.as_str()],
+                |row| {
+                    Ok(NodeRow {
+                        row_id: row.get(0)?,
+                        logical_id: row.get(1)?,
+                        kind: row.get(2)?,
+                        properties: row.get(3)?,
+                        last_accessed_at: row.get(4)?,
+                    })
+                },
+            )
             .map_err(EngineError::Sqlite)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(EngineError::Sqlite)?;
