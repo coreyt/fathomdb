@@ -94,6 +94,17 @@ impl QueryBuilder {
     }
 
     #[must_use]
+    pub fn filter_json_bool_eq(mut self, path: impl Into<String>, value: bool) -> Self {
+        self.ast
+            .steps
+            .push(QueryStep::Filter(Predicate::JsonPathEq {
+                path: path.into(),
+                value: ScalarValue::Bool(value),
+            }));
+        self
+    }
+
+    #[must_use]
     pub fn filter_json_integer_gt(mut self, path: impl Into<String>, value: i64) -> Self {
         self.ast
             .steps
@@ -216,8 +227,9 @@ impl QueryBuilder {
 }
 
 #[cfg(test)]
+#[allow(clippy::panic)]
 mod tests {
-    use crate::{QueryBuilder, TraverseDirection};
+    use crate::{Predicate, QueryBuilder, QueryStep, ScalarValue, TraverseDirection};
 
     #[test]
     fn builder_accumulates_expected_steps() {
@@ -229,5 +241,20 @@ mod tests {
 
         assert_eq!(query.ast().steps.len(), 3);
         assert_eq!(query.ast().final_limit, Some(10));
+    }
+
+    #[test]
+    fn builder_filter_json_bool_eq_produces_correct_predicate() {
+        let query = QueryBuilder::nodes("Feature")
+            .filter_json_bool_eq("$.enabled", true);
+
+        assert_eq!(query.ast().steps.len(), 1);
+        match &query.ast().steps[0] {
+            QueryStep::Filter(Predicate::JsonPathEq { path, value }) => {
+                assert_eq!(path, "$.enabled");
+                assert_eq!(*value, ScalarValue::Bool(true));
+            }
+            other => panic!("expected JsonPathEq/Bool, got {other:?}"),
+        }
     }
 }

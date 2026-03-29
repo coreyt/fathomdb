@@ -103,6 +103,9 @@ class Query:
     def filter_json_text_eq(self, path: str, value: str) -> "Query":
         return self._with_step({"type": "filter_json_text_eq", "path": path, "value": value})
 
+    def filter_json_bool_eq(self, path: str, value: bool) -> "Query":
+        return self._with_step({"type": "filter_json_bool_eq", "path": path, "value": value})
+
     def filter_json_integer_gt(self, path: str, value: int) -> "Query":
         return self._with_step({"type": "filter_json_integer_gt", "path": path, "value": value})
 

@@ -1,4 +1,7 @@
 #![cfg(feature = "python")]
+// PyO3 #[pymethods] require &self even for methods that delegate to free functions;
+// Option<Vec<String>> parameters are required by the PyO3 signature contract.
+#![allow(clippy::unused_self, clippy::needless_pass_by_value)]
 
 use std::path::PathBuf;
 
@@ -47,6 +50,7 @@ impl EngineCore {
             database_path: PathBuf::from(database_path),
             provenance_mode: parse_provenance_mode(provenance_mode)?,
             vector_dimension,
+            read_pool_size: None,
         };
         let engine = Engine::open(options).map_err(map_engine_error)?;
         Ok(Self { engine })
@@ -197,7 +201,7 @@ impl EngineCore {
                 PyValueError::new_err(format!("invalid operational collection JSON: {error}"))
             })?;
         let record = py
-            .allow_threads(|| self.engine.register_operational_collection(request))
+            .allow_threads(|| self.engine.register_operational_collection(&request))
             .map_err(map_engine_error)?;
         encode_json(record)
     }
@@ -280,7 +284,7 @@ impl EngineCore {
                 PyValueError::new_err(format!("invalid operational read JSON: {error}"))
             })?;
         let report = py
-            .allow_threads(|| self.engine.read_operational_collection(request))
+            .allow_threads(|| self.engine.read_operational_collection(&request))
             .map_err(map_engine_error)?;
         encode_json(report)
     }
@@ -427,8 +431,7 @@ const MAX_WRITE_JSON_BYTES: usize = 64 * 1024 * 1024; // 64 MB
 fn parse_ast(ast_json: &str) -> PyResult<crate::QueryAst> {
     if ast_json.len() > MAX_AST_JSON_BYTES {
         return Err(PyValueError::new_err(format!(
-            "AST JSON exceeds maximum size of {} bytes",
-            MAX_AST_JSON_BYTES
+            "AST JSON exceeds maximum size of {MAX_AST_JSON_BYTES} bytes"
         )));
     }
     let ast: PyQueryAst = serde_json::from_str(ast_json)
@@ -439,8 +442,7 @@ fn parse_ast(ast_json: &str) -> PyResult<crate::QueryAst> {
 fn parse_write_request(request_json: &str) -> PyResult<crate::WriteRequest> {
     if request_json.len() > MAX_WRITE_JSON_BYTES {
         return Err(PyValueError::new_err(format!(
-            "write request JSON exceeds maximum size of {} bytes",
-            MAX_WRITE_JSON_BYTES
+            "write request JSON exceeds maximum size of {MAX_WRITE_JSON_BYTES} bytes"
         )));
     }
     let request: PyWriteRequest = serde_json::from_str(request_json)
@@ -536,12 +538,85 @@ fn py_new_row_id() -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use pyo3::Python;
     use serde_json::Value;
     use tempfile::NamedTempFile;
 
     use super::EngineCore;
+
+    /// Regression: `EngineOptions` gained `read_pool_size` but the Python binding
+    /// constructor was not updated, causing a compile error only visible with
+    /// `--features python`.
+    #[test]
+    fn open_constructs_engine_options_with_all_fields() {
+        let db = NamedTempFile::new().expect("temp db");
+        let engine = EngineCore::open(db.path().to_str().expect("db path"), "warn", None);
+        assert!(engine.is_ok(), "open must succeed: {:?}", engine.err());
+    }
+
+    /// Regression: `Engine::register_operational_collection` changed to take
+    /// `&OperationalRegisterRequest` but the Python binding still passed owned.
+    #[test]
+    fn register_operational_collection_accepts_deserialized_request() {
+        let db = NamedTempFile::new().expect("temp db");
+        Python::with_gil(|py| {
+            let engine = EngineCore::open(db.path().to_str().expect("db path"), "warn", None)
+                .expect("open engine");
+            let result = engine.register_operational_collection(
+                py,
+                r#"{
+                    "name":"reg_test",
+                    "kind":"append_only_log",
+                    "schema_json":"{}",
+                    "retention_json":"{}",
+                    "format_version":1
+                }"#,
+            );
+            assert!(result.is_ok(), "register must succeed: {:?}", result.err());
+            let record: Value =
+                serde_json::from_str(&result.unwrap()).expect("decode register");
+            assert_eq!(record["name"], "reg_test");
+        });
+    }
+
+    /// Regression: `Engine::read_operational_collection` changed to take
+    /// `&OperationalReadRequest` but the Python binding still passed owned.
+    #[test]
+    fn read_operational_collection_accepts_deserialized_request() {
+        let db = NamedTempFile::new().expect("temp db");
+        Python::with_gil(|py| {
+            let engine = EngineCore::open(db.path().to_str().expect("db path"), "warn", None)
+                .expect("open engine");
+            // Register first so the collection exists
+            engine
+                .register_operational_collection(
+                    py,
+                    r#"{
+                        "name":"read_test",
+                        "kind":"append_only_log",
+                        "schema_json":"{}",
+                        "retention_json":"{}",
+                        "filter_fields_json":"[{\"name\":\"actor\",\"type\":\"string\",\"modes\":[\"exact\"]}]",
+                        "format_version":1
+                    }"#,
+                )
+                .expect("register");
+            let result = engine.read_operational_collection(
+                py,
+                r#"{
+                    "collection_name":"read_test",
+                    "filters":[{"mode":"exact","field":"actor","value":"alice"}],
+                    "limit":10
+                }"#,
+            );
+            assert!(result.is_ok(), "read must succeed: {:?}", result.err());
+            let report: Value =
+                serde_json::from_str(&result.unwrap()).expect("decode read");
+            assert_eq!(report["collection_name"], "read_test");
+        });
+    }
 
     #[test]
     fn engine_core_exposes_operational_admin_methods() {
