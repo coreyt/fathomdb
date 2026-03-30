@@ -198,11 +198,10 @@ mod windows_acl {
             if ace.Mask & WRITE_MASK == 0 {
                 continue;
             }
-            let sid = unsafe { (&ace.SidStart as *const u32).cast_mut().cast() };
-            if broad_sids
-                .iter()
-                .any(|candidate| unsafe { EqualSid(sid, candidate.as_ptr().cast()) } != 0)
-            {
+            let sid: PSID = unsafe { (&ace.SidStart as *const u32).cast_mut().cast() };
+            if broad_sids.iter().any(|candidate| unsafe {
+                EqualSid(sid, candidate.as_ptr().cast_mut().cast()) != 0
+            }) {
                 drop(security_descriptor);
                 return Ok(true);
             }
@@ -216,10 +215,11 @@ mod windows_acl {
         value.encode_wide().chain(std::iter::once(0)).collect()
     }
 
-    fn well_known_sid(kind: u32) -> io::Result<Vec<u8>> {
+    fn well_known_sid(kind: i32) -> io::Result<Vec<u8>> {
         let mut size = windows_sys::Win32::Security::SECURITY_MAX_SID_SIZE as u32;
         let mut buffer = vec![0u8; size as usize];
-        let ok = unsafe { CreateWellKnownSid(kind, null(), buffer.as_mut_ptr().cast(), &mut size) };
+        let ok =
+            unsafe { CreateWellKnownSid(kind, null_mut(), buffer.as_mut_ptr().cast(), &mut size) };
         if ok == 0 {
             return Err(io::Error::last_os_error());
         }
