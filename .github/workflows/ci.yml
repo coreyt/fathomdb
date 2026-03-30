@@ -100,18 +100,12 @@ jobs:
         with:
           go-version-file: go/fathom-integrity/go.mod
           cache-dependency-path: go/fathom-integrity/go.mod
-      - name: Install project-local SQLite 3.46.0
+      - name: Install project-local SQLite
         working-directory: .
         run: |
-          SQLITE_VERSION=3.46.0
-          INSTALL_DIR=$GITHUB_WORKSPACE/.local/sqlite-$SQLITE_VERSION
-          curl -fsSL "https://sqlite.org/2024/sqlite-autoconf-3460000.tar.gz" -o /tmp/sqlite.tar.gz
-          tar xzf /tmp/sqlite.tar.gz -C /tmp
-          cd /tmp/sqlite-autoconf-3460000
-          ./configure --prefix="$INSTALL_DIR" --disable-shared --quiet
-          make -j"$(nproc)" --quiet
-          make install --quiet
-          echo "$INSTALL_DIR/bin" >> "$GITHUB_PATH"
+          bash scripts/install-project-sqlite.sh
+          . tooling/sqlite.env
+          echo "$GITHUB_WORKSPACE/.local/sqlite-$SQLITE_VERSION/bin" >> "$GITHUB_PATH"
       - run: go test $(go list ./... | grep -v /test/e2e)
 
   go-test-windows:
@@ -146,16 +140,10 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install maturin
-      - name: Install project-local SQLite 3.46.0
+      - name: Install project-local SQLite
         working-directory: .
         run: |
-          SQLITE_VERSION=3.46.0
-          INSTALL_DIR=$GITHUB_WORKSPACE/.local/sqlite-$SQLITE_VERSION
-          curl -fsSL "https://sqlite.org/2024/sqlite-autoconf-3460000.tar.gz" -o /tmp/sqlite.tar.gz
-          tar xzf /tmp/sqlite.tar.gz -C /tmp
-          cd /tmp/sqlite-autoconf-3460000
-          ./configure --prefix="$INSTALL_DIR" --disable-shared --quiet
-          make -j"$(nproc)" --quiet
-          make install --quiet
-          echo "$INSTALL_DIR/bin" >> "$GITHUB_PATH"
+          bash scripts/install-project-sqlite.sh
+          . tooling/sqlite.env
+          echo "$GITHUB_WORKSPACE/.local/sqlite-$SQLITE_VERSION/bin" >> "$GITHUB_PATH"
       - run: go test ./test/e2e/...
