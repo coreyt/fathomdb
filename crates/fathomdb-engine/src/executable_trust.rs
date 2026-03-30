@@ -118,13 +118,17 @@ mod windows_acl {
     use windows_sys::Win32::Security::Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT};
     use windows_sys::Win32::Security::{
         ACCESS_ALLOWED_ACE, ACE_HEADER, ACL, ACL_SIZE_INFORMATION, AclSizeInformation,
-        CreateWellKnownSid, DACL_SECURITY_INFORMATION, EqualSid, GetAce, GetAclInformation,
-        PSID, WRITE_DAC, WRITE_OWNER, WinAuthenticatedUserSid, WinBuiltinUsersSid, WinWorldSid,
+        CreateWellKnownSid, DACL_SECURITY_INFORMATION, EqualSid, GetAce, GetAclInformation, PSID,
+        WinAuthenticatedUserSid, WinBuiltinUsersSid, WinWorldSid,
     };
     use windows_sys::Win32::Storage::FileSystem::{
         FILE_APPEND_DATA, FILE_GENERIC_WRITE, FILE_WRITE_DATA,
     };
     use windows_sys::Win32::System::SystemServices::ACCESS_ALLOWED_ACE_TYPE;
+
+    // Standard Windows access rights not re-exported by windows-sys 0.59.
+    const WRITE_DAC: u32 = 0x0004_0000;
+    const WRITE_OWNER: u32 = 0x0008_0000;
 
     const WRITE_MASK: u32 = FILE_WRITE_DATA
         | FILE_APPEND_DATA
@@ -187,7 +191,7 @@ mod windows_acl {
                 return Err(io::Error::last_os_error());
             }
             let header = unsafe { &*(ace_ptr as *const ACE_HEADER) };
-            if header.AceType != ACCESS_ALLOWED_ACE_TYPE {
+            if header.AceType as u32 != ACCESS_ALLOWED_ACE_TYPE {
                 continue;
             }
             let ace = unsafe { &*(ace_ptr as *const ACCESS_ALLOWED_ACE) };
@@ -229,7 +233,7 @@ mod windows_acl {
         fn drop(&mut self) {
             if !self.0.is_null() {
                 unsafe {
-                    LocalFree(self.0 as isize);
+                    LocalFree(self.0);
                 }
             }
         }
