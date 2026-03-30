@@ -384,6 +384,7 @@ around that reality.
 - use `PRAGMA mmap_size` aggressively on machines that can afford it
 - provide a pool of read-only connections for concurrent readers
 - provide exactly one coordinated write connection or equivalent serialized write path
+- acquire an exclusive file lock on open to prevent multiple engine instances per database
 - cache prepared statements keyed by an AST-shape hash rather than raw literal values
 
 **Reader pool.** The `ReadPool` maintains a configurable number of read-only
@@ -637,6 +638,15 @@ SQLite remains the durability layer, so the shim should assume:
 - WAL mode for concurrent readers
 - a coordinated writer path for updates
 - an in-memory write queue or equivalent serialization strategy to avoid `SQLITE_BUSY`
+
+**Exclusive file lock.**  `EngineRuntime::open` acquires an exclusive `flock`
+on `{database_path}.lock` before opening any SQLite connections.  Only one
+`Engine` instance may be open per database file at a time, across all
+processes and threads.  A second open fails immediately with
+`EngineError::DatabaseLocked`, including the PID of the holding process for
+diagnostics.  The lock is released automatically when the engine is closed or
+dropped.  This enforces the single-writer architecture at the process level
+and prevents WAL-contention deadlocks between independent writer threads.
 
 **Scale-out path:** If write throughput ever becomes a bottleneck, the correct
 expansion is sharding by workspace or agent identity (multiple database files),

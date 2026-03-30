@@ -315,7 +315,8 @@ SQLite's WAL recovery is automatic and requires no engine changes:
 Python: engine.close()  /  with Engine(...) as db:  /  GC collects EngineCore
             |
             v
-Rust:   EngineCore.close() -> Mutex<Option<Engine>>.take()
+Rust:   EngineCore.close() -> RwLock<Option<Engine>>.take()
+        (or EngineCore::Drop -> get_mut().take(), both inside py.allow_threads())
             |
             v
         Engine dropped -> EngineRuntime dropped
@@ -332,18 +333,50 @@ Rust:   EngineCore.close() -> Mutex<Option<Engine>>.take()
             |       4. handle.join()                -- propagates panic if any
             |
             +-- admin dropped (AdminHandle: no persistent connections)
+            |
+            +-- _lock dropped (DatabaseLock: fd closed, flock released)
 ```
 
-## Files To Change
+## Exclusive File Lock
 
-| File | Change |
-|------|--------|
-| `crates/fathomdb-engine/src/writer.rs` | `ManuallyDrop` on sender, `Drop` impl |
-| `crates/fathomdb-engine/src/runtime.rs` | Doc comment on field ordering invariant |
-| `crates/fathomdb/src/python.rs` | `Mutex<Option<Engine>>`, `close()`, `__enter__/__exit__`, `with_engine` helper |
-| `python/fathomdb/_engine.py` | `close()`, `__enter__/__exit__` |
-| `python/tests/test_bindings.py` | Test: close() idempotency, post-close error, context manager |
-| `crates/fathomdb-engine/src/runtime.rs` | Test: Drop joins writer thread (verify no thread leak) |
+`EngineRuntime::open` acquires an exclusive `flock` on `{database_path}.lock`
+before opening any connections.  This enforces the single-writer architecture
+at the process level.  A second open (same or different process) fails
+immediately with `EngineError::DatabaseLocked`.
+
+The lock file also contains the PID of the holding process as a diagnostic
+aid.  The PID is best-effort — it is not part of the locking protocol.
+
+The `_lock` field is declared last in `EngineRuntime` so it drops after all
+connections are closed, ensuring the file lock is released only after the
+WAL checkpoint completes.
+
+## GC-Safe Drop (Python)
+
+`EngineCore` implements `Drop` to safely handle Python GC finalization.
+When Python GC drops the Rust object without an explicit `close()` call,
+`WriterActor::Drop` would call `thread.join()` with the GIL held, while the
+writer thread needs the GIL for pyo3-log — a deadlock.
+
+The `EngineCore::Drop` impl takes the engine out via `get_mut().take()` and
+drops it inside `Python::with_gil(|py| py.allow_threads(move || drop(engine)))`.
+This releases the GIL so the writer thread can finish its pyo3-log calls
+during shutdown.  Explicit `close()` is still preferred.
+
+## Files Changed
+
+| File | Change | Status |
+|------|--------|--------|
+| `crates/fathomdb-engine/src/writer.rs` | `ManuallyDrop` on sender, `Drop` impl | done |
+| `crates/fathomdb-engine/src/runtime.rs` | Field ordering invariant, `DatabaseLock` field, integration tests | done |
+| `crates/fathomdb-engine/src/database_lock.rs` | Exclusive file lock with PID diagnostics | done |
+| `crates/fathomdb-engine/src/lib.rs` | `EngineError::DatabaseLocked` variant | done |
+| `crates/fathomdb/src/python.rs` | `RwLock<Option<Engine>>`, `close()`, `__enter__/__exit__`, GC-safe `Drop`, `DatabaseLockedError` | done |
+| `crates/fathomdb/src/lib.rs` | `engine_error_code` mapping for `DatabaseLocked` | done |
+| `python/fathomdb/_engine.py` | `close()`, `__enter__/__exit__` | done |
+| `python/fathomdb/errors.py` | `DatabaseLockedError` export | done |
+| `python/tests/test_bindings.py` | Tests: close, context manager, database lock, reopen after close | done |
+| `python/tests/test_concurrency_deadlocks.py` | Test: GC drop without close does not deadlock | done |
 
 ## Risks
 

@@ -84,6 +84,18 @@ pip install fathomdb
 cd python && pip install -e . --no-build-isolation
 ```
 
+```python
+from fathomdb import Engine
+
+with Engine.open("agent.db") as db:
+    db.write(...)
+    rows = db.nodes("Document").limit(10).execute()
+```
+
+Only one `Engine` may be open per database file (enforced by exclusive file
+lock).  Use the context manager or call `db.close()` explicitly to release
+resources.
+
 **Go operator CLI:**
 
 ```bash

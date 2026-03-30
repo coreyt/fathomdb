@@ -5,6 +5,7 @@ use fathomdb_schema::SchemaManager;
 
 use crate::{
     AdminHandle, AdminService, EngineError, ExecutionCoordinator, ProvenanceMode, WriterActor,
+    database_lock::DatabaseLock,
 };
 
 /// Core engine runtime.
@@ -12,15 +13,17 @@ use crate::{
 /// # Drop order invariant
 ///
 /// Fields are ordered so that `coordinator` (reader connections) drops before
-/// `writer` (writer thread + connection). This ensures the writer's
+/// `writer` (writer thread + connection).  This ensures the writer's
 /// `sqlite3_close()` is the last connection to the database, which triggers
 /// `SQLite`'s automatic passive WAL checkpoint and WAL/shm file cleanup.
-/// Do not reorder these fields.
+/// `_lock` drops last so the exclusive file lock is released only after all
+/// connections are closed.  Do not reorder these fields.
 #[derive(Debug)]
 pub struct EngineRuntime {
     coordinator: ExecutionCoordinator,
     writer: WriterActor,
     admin: AdminHandle,
+    _lock: DatabaseLock,
 }
 
 // Required by #[pyclass(frozen)] — guards against future fields breaking thread safety.
@@ -42,6 +45,8 @@ impl EngineRuntime {
         vector_dimension: Option<usize>,
         read_pool_size: usize,
     ) -> Result<Self, EngineError> {
+        let lock = DatabaseLock::acquire(path.as_ref())?;
+
         trace_info!(
             path = %path.as_ref().display(),
             provenance_mode = ?provenance_mode,
@@ -65,6 +70,7 @@ impl EngineRuntime {
             coordinator,
             writer,
             admin,
+            _lock: lock,
         })
     }
 
@@ -155,6 +161,64 @@ mod tests {
         for h in handles {
             h.join().expect("worker thread panicked");
         }
+    }
+
+    #[test]
+    fn open_same_database_twice_returns_database_locked() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let db_path = dir.path().join("test.db");
+
+        let _first = EngineRuntime::open(&db_path, ProvenanceMode::Warn, None, 4).expect("open");
+        let second = EngineRuntime::open(&db_path, ProvenanceMode::Warn, None, 4);
+
+        assert!(second.is_err(), "second open must fail");
+        let err = second.unwrap_err();
+        assert!(
+            matches!(err, crate::EngineError::DatabaseLocked(_)),
+            "expected DatabaseLocked, got: {err:?}"
+        );
+        assert!(
+            err.to_string().contains("already in use"),
+            "error must mention 'already in use': {err}"
+        );
+    }
+
+    #[test]
+    fn database_reopens_after_drop() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let db_path = dir.path().join("test.db");
+
+        {
+            let _runtime =
+                EngineRuntime::open(&db_path, ProvenanceMode::Warn, None, 4).expect("first open");
+        }
+
+        let runtime = EngineRuntime::open(&db_path, ProvenanceMode::Warn, None, 4).expect("reopen");
+        let compiled = QueryBuilder::nodes("Test")
+            .limit(10)
+            .compile()
+            .expect("compile");
+        let rows = runtime
+            .coordinator()
+            .execute_compiled_read(&compiled)
+            .expect("query");
+        assert!(rows.nodes.is_empty());
+    }
+
+    #[test]
+    fn lock_error_includes_pid() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let db_path = dir.path().join("test.db");
+
+        let _first = EngineRuntime::open(&db_path, ProvenanceMode::Warn, None, 4).expect("open");
+        let err = EngineRuntime::open(&db_path, ProvenanceMode::Warn, None, 4).unwrap_err();
+
+        let msg = err.to_string();
+        let our_pid = std::process::id().to_string();
+        assert!(
+            msg.contains(&our_pid),
+            "error must contain holder pid {our_pid}: {msg}"
+        );
     }
 
     /// Verify that dropping `EngineRuntime` joins the writer thread and triggers

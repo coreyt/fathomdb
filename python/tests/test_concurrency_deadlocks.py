@@ -212,3 +212,31 @@ def test_context_manager_with_debug_logging(tmp_path: Path) -> None:
     with Engine.open(db_path) as engine:
         engine.write(_make_write("ctx-test"))
     # Engine closed by context manager — must not deadlock
+
+
+@pytest.mark.usefixtures("_debug_logging")
+def test_gc_drop_without_close_no_deadlock(tmp_path: Path) -> None:
+    """Regression: dropping an engine without close() caused GIL deadlock.
+
+    When Python GC drops the Rust engine object, WriterActor::Drop calls
+    thread.join() with the GIL held.  The writer thread needs the GIL for
+    pyo3-log → deadlock.  The EngineCore Drop impl now releases the GIL
+    via allow_threads() before dropping the engine.
+    """
+    import gc
+
+    db_path = tmp_path / "gc_drop.db"
+    engine = Engine.open(db_path)
+    engine.write(_make_write("gc-drop-test"))
+
+    # Drop without calling close() — simulate a user forgetting to close,
+    # or FathomStore.close() that only does `self._engine = None`.
+    del engine
+    gc.collect()
+
+    # If we reach here, no deadlock occurred.
+    # Verify the database can be reopened.
+    engine2 = Engine.open(db_path)
+    rows = engine2.nodes("Document").limit(10).execute()
+    assert len(rows.nodes) == 1
+    engine2.close()

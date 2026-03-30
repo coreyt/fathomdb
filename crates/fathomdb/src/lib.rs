@@ -733,6 +733,7 @@ fn engine_error_code(error: &EngineError) -> Option<String> {
         EngineError::InvalidWrite(_) => "invalid_write",
         EngineError::Bridge(_) => "bridge_error",
         EngineError::CapabilityMissing(_) => "capability_missing",
+        EngineError::DatabaseLocked(_) => "database_locked",
     };
     Some(code.to_owned())
 }

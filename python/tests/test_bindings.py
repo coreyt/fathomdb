@@ -976,3 +976,40 @@ def test_context_manager_closes_on_exception(tmp_path: Path) -> None:
 
     with pytest.raises(FathomError, match="engine is closed"):
         db.nodes("Test").limit(10).execute()
+
+
+def test_second_open_raises_database_locked(tmp_path: Path) -> None:
+    """Opening the same database twice must raise DatabaseLockedError."""
+    import os
+
+    import pytest
+
+    from fathomdb import DatabaseLockedError, Engine
+
+    db = Engine.open(tmp_path / "agent.db")
+    with pytest.raises(DatabaseLockedError, match="already in use"):
+        Engine.open(tmp_path / "agent.db")
+
+    # Verify error includes holding PID.
+    try:
+        Engine.open(tmp_path / "agent.db")
+    except DatabaseLockedError as exc:
+        assert str(os.getpid()) in str(exc), f"error must contain pid: {exc}"
+
+    # First engine should still be functional.
+    rows = db.nodes("Test").limit(10).execute()
+    assert rows.nodes == []
+    db.close()
+
+
+def test_reopen_after_close_succeeds(tmp_path: Path) -> None:
+    """After close(), re-opening the same database must succeed."""
+    from fathomdb import Engine
+
+    db = Engine.open(tmp_path / "agent.db")
+    db.close()
+
+    db2 = Engine.open(tmp_path / "agent.db")
+    rows = db2.nodes("Test").limit(10).execute()
+    assert rows.nodes == []
+    db2.close()

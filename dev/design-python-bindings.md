@@ -203,6 +203,35 @@ Notes:
   raw handles initially. That split is useful inside Rust, but too mechanical
   for Python.
 
+### Lifecycle and Resource Management
+
+Only one `Engine` may be open per database file.  A second `Engine.open()` on
+the same path raises `DatabaseLockedError` immediately, with the holder PID
+in the message.
+
+```python
+# Preferred: context manager guarantees cleanup
+with Engine.open("agent.db") as db:
+    db.write(...)
+
+# Manual lifecycle
+db = Engine.open("agent.db")
+try:
+    db.write(...)
+finally:
+    db.close()
+```
+
+`close()` is idempotent.  Any operation after close raises
+`FathomError: engine is closed`.
+
+**GC-safe Drop:**  If the Python object is garbage-collected without an
+explicit `close()` call, the Rust `Drop` impl releases the GIL via
+`py.allow_threads()` before shutting down the writer thread.  This prevents
+a GIL deadlock where the writer thread needs the GIL for pyo3-log but the
+main thread holds it while waiting for the thread join.  Explicit `close()`
+or context manager usage is still recommended.
+
 Also expose ID helpers at module scope:
 
 ```python
@@ -454,6 +483,7 @@ class SchemaError(FathomError): ...
 class InvalidWriteError(FathomError): ...
 class CapabilityMissingError(FathomError): ...
 class WriterRejectedError(FathomError): ...
+class DatabaseLockedError(FathomError): ...
 class BridgeError(FathomError): ...
 class IoError(FathomError): ...
 class CompileError(FathomError): ...

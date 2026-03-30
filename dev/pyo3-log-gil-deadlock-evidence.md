@@ -223,3 +223,41 @@ If the deadlock persists after this rebuild, the cause is a second deadlock
 site beyond `EngineCore::open()` — likely an operation in the Memex startup
 path that calls into Rust without releasing the GIL. Report which operation
 hangs and we will add `py.allow_threads()` there.
+
+---
+
+## GC-Triggered Drop Deadlock (2026-03-30)
+
+A second GIL deadlock was discovered in Memex where `FathomStore.close()` set
+`self._engine = None` without calling `engine.close()` first.  When Python GC
+finalized the Rust `EngineCore` object:
+
+1. GC runs on the main Python thread, holding the GIL
+2. Rust `Drop` for `WriterActor` calls `thread.join()` to wait for the writer
+3. The writer thread tries to acquire the GIL for pyo3-log logging
+4. Deadlock: main thread holds GIL waiting for writer, writer needs GIL
+
+This was compounded by a second issue: the old stale process held a WAL write
+lock, and the new process's writer thread blocked on it.  Two writer threads
+on the same database file contending via WAL locking is a recipe for hangs.
+
+### Fixes Applied
+
+**1. Exclusive file lock** (`database_lock.rs`): `EngineRuntime::open` now
+acquires `flock(LOCK_EX|LOCK_NB)` on `{database_path}.lock`.  A second open
+fails immediately with `DatabaseLockedError` instead of silently contending
+on WAL locks.  The error message includes the PID of the holding process.
+
+**2. GC-safe `Drop`** (`python.rs`): `EngineCore` now implements `Drop` that
+takes the engine out via `get_mut().take()` and drops it inside
+`Python::with_gil(|py| py.allow_threads(move || drop(engine)))`.  This
+releases the GIL so the writer thread can finish its pyo3-log calls during
+shutdown, even when triggered by GC rather than explicit `close()`.
+
+### Verification
+
+- `test_gc_drop_without_close_no_deadlock`: opens engine, writes, `del engine`
+  + `gc.collect()` without calling `close()` — no deadlock, database reopens.
+- `test_second_open_raises_database_locked`: second `Engine.open()` on same
+  path raises `DatabaseLockedError` with holder PID.
+- All 34 Python tests pass, including 8 concurrency/deadlock regression tests.

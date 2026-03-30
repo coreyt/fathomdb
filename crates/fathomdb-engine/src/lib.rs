@@ -3,6 +3,7 @@ mod trace_support;
 
 mod admin;
 mod coordinator;
+mod database_lock;
 mod executable_trust;
 mod ids;
 mod operational;
@@ -63,4 +64,6 @@ pub enum EngineError {
     Bridge(String),
     #[error("capability missing: {0}")]
     CapabilityMissing(String),
+    #[error("database locked: {0}")]
+    DatabaseLocked(String),
 }

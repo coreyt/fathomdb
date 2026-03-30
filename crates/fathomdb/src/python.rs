@@ -30,12 +30,29 @@ create_exception!(_fathomdb, InvalidWriteError, FathomError);
 create_exception!(_fathomdb, CapabilityMissingError, FathomError);
 create_exception!(_fathomdb, WriterRejectedError, FathomError);
 create_exception!(_fathomdb, BridgeError, FathomError);
+create_exception!(_fathomdb, DatabaseLockedError, FathomError);
 create_exception!(_fathomdb, IoError, FathomError);
 create_exception!(_fathomdb, CompileError, FathomError);
 
 #[pyclass(frozen)]
 pub struct EngineCore {
     engine: RwLock<Option<Engine>>,
+}
+
+/// Safety net: if the user drops the Python object without calling `close()`,
+/// Python GC runs Rust's `Drop` with the GIL held.  `WriterActor::Drop` calls
+/// `thread.join()`, and the writer thread may need the GIL for pyo3-log calls
+/// → deadlock.  This `Drop` impl takes the engine out and drops it inside
+/// `allow_threads()` so the GIL is released during shutdown.
+impl Drop for EngineCore {
+    fn drop(&mut self) {
+        let engine = self.engine.get_mut().ok().and_then(|opt| opt.take());
+        if let Some(engine) = engine {
+            Python::with_gil(|py| {
+                py.allow_threads(move || drop(engine));
+            });
+        }
+    }
 }
 
 impl EngineCore {
@@ -595,6 +612,7 @@ fn map_engine_error(error: EngineError) -> PyErr {
         EngineError::InvalidWrite(message) => InvalidWriteError::new_err(message),
         EngineError::Bridge(message) => BridgeError::new_err(message),
         EngineError::CapabilityMissing(message) => CapabilityMissingError::new_err(message),
+        EngineError::DatabaseLocked(message) => DatabaseLockedError::new_err(message),
     }
 }
 
@@ -621,6 +639,10 @@ fn _fathomdb(module: &Bound<'_, PyModule>) -> PyResult<()> {
         module.py().get_type::<WriterRejectedError>(),
     )?;
     module.add("BridgeError", module.py().get_type::<BridgeError>())?;
+    module.add(
+        "DatabaseLockedError",
+        module.py().get_type::<DatabaseLockedError>(),
+    )?;
     module.add("IoError", module.py().get_type::<IoError>())?;
     module.add("CompileError", module.py().get_type::<CompileError>())?;
     module.add_function(wrap_pyfunction!(py_new_id, module)?)?;
@@ -646,7 +668,7 @@ mod tests {
     use serde_json::Value;
     use tempfile::NamedTempFile;
 
-    use super::{EngineCore, FathomError};
+    use super::{DatabaseLockedError, EngineCore, FathomError};
 
     /// Regression: `EngineOptions` gained `read_pool_size` but the Python binding
     /// constructor was not updated, causing a compile error only visible with
@@ -682,6 +704,23 @@ mod tests {
                 .expect("open");
             engine.close(py).expect("first close");
             engine.close(py).expect("second close");
+        });
+    }
+
+    #[test]
+    fn open_locked_database_raises_database_locked_error() {
+        let db = NamedTempFile::new().expect("temp db");
+        Python::with_gil(|py| {
+            let _first = EngineCore::open(py, db.path().to_str().expect("path"), "warn", None)
+                .expect("open");
+            let result = EngineCore::open(py, db.path().to_str().expect("path"), "warn", None);
+            match result {
+                Ok(_) => panic!("second open must fail"),
+                Err(err) => assert!(
+                    err.is_instance_of::<DatabaseLockedError>(py),
+                    "expected DatabaseLockedError"
+                ),
+            }
         });
     }
 
