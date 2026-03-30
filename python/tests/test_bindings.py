@@ -856,3 +856,51 @@ def test_python_write_request_exposes_operational_writes_round_trip(tmp_path: Pa
             "source_ref": "source:ops",
         }
     ]
+
+
+def test_concurrent_reads_from_multiple_threads(tmp_path: Path) -> None:
+    """Issue #30: Engine must be usable from HTTP handler threads.
+
+    Seeds data on the main thread, then reads concurrently from spawned
+    threads — the exact pattern that panicked with the old `unsendable`
+    marker.
+    """
+    import threading
+
+    from fathomdb import ChunkPolicy, Engine, NodeInsert, WriteRequest, new_row_id
+
+    db = Engine.open(tmp_path / "agent.db")
+
+    db.write(
+        WriteRequest(
+            label="seed",
+            nodes=[
+                NodeInsert(
+                    row_id=new_row_id(),
+                    logical_id="t:1",
+                    kind="Test",
+                    properties={"value": "hello"},
+                    source_ref="test",
+                    upsert=False,
+                    chunk_policy=ChunkPolicy.PRESERVE,
+                )
+            ],
+        )
+    )
+
+    errors: list[Exception] = []
+
+    def worker() -> None:
+        try:
+            rows = db.nodes("Test").limit(10).execute()
+            assert len(rows.nodes) == 1
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errors == [], f"worker threads failed: {errors}"

@@ -32,7 +32,7 @@ create_exception!(_fathomdb, BridgeError, FathomError);
 create_exception!(_fathomdb, IoError, FathomError);
 create_exception!(_fathomdb, CompileError, FathomError);
 
-#[pyclass(unsendable)]
+#[pyclass(frozen)]
 pub struct EngineCore {
     engine: Engine,
 }
@@ -690,4 +690,5 @@ mod tests {
             assert!(disabled["disabled_at"].as_i64().is_some());
         });
     }
+
 }
