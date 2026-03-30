@@ -95,7 +95,7 @@ def test_python_module_entrypoint_has_no_runpy_warning(tmp_path: Path) -> None:
             "--mode",
             "baseline",
         ],
-        cwd="/home/coreyt/projects/fathomdb",
+        cwd=Path(__file__).resolve().parents[3],
         env=env,
         capture_output=True,
         text=True,
