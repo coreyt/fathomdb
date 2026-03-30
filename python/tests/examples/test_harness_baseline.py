@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
 
 def test_run_harness_baseline_returns_expected_scenarios(tmp_path: Path) -> None:
     from examples.harness.app import run_harness
@@ -95,7 +97,7 @@ def test_python_module_entrypoint_has_no_runpy_warning(tmp_path: Path) -> None:
             "--mode",
             "baseline",
         ],
-        cwd="/home/coreyt/projects/fathomdb",
+        cwd=REPO_ROOT,
         env=env,
         capture_output=True,
         text=True,

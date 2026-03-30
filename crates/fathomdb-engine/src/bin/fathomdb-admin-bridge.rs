@@ -756,9 +756,36 @@ mod tests {
         BridgeErrorCode, BridgeRequest, classify_engine_error, handle_request_body, parse_command,
         parse_target, validate_path,
     };
-    use std::path::Path;
     use fathomdb_engine::{EngineError, ProjectionTarget};
     use fathomdb_schema::SchemaError;
+    use std::path::Path;
+
+    /// Returns a platform-appropriate absolute path string for use in test JSON.
+    fn test_db_path() -> &'static str {
+        if cfg!(windows) {
+            "C:\\\\tmp\\\\fathom.db"
+        } else {
+            "/tmp/fathom.db"
+        }
+    }
+
+    /// Returns a platform-appropriate absolute `Path` for direct `validate_path` tests.
+    fn test_absolute_path() -> &'static Path {
+        if cfg!(windows) {
+            Path::new("C:\\tmp\\fathom.db")
+        } else {
+            Path::new("/tmp/fathom.db")
+        }
+    }
+
+    /// Returns a platform-appropriate path with `..` traversal for tests.
+    fn test_traversal_path() -> &'static Path {
+        if cfg!(windows) {
+            Path::new("C:\\foo\\..\\bar")
+        } else {
+            Path::new("/foo/../bar")
+        }
+    }
 
     #[test]
     fn parse_command_reports_unsupported_command() {
@@ -814,9 +841,10 @@ mod tests {
 
     #[test]
     fn handle_request_body_rejects_unsupported_protocol_version() {
-        let response = handle_request_body(
-            r#"{"protocol_version":99,"database_path":"/tmp/fathom.db","command":"check_integrity"}"#,
-        );
+        let db = test_db_path();
+        let response = handle_request_body(&format!(
+            r#"{{"protocol_version":99,"database_path":"{db}","command":"check_integrity"}}"#
+        ));
         assert!(!response.ok);
         assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
         assert!(response.message.contains("unsupported protocol version"));
@@ -824,8 +852,10 @@ mod tests {
 
     #[test]
     fn handle_request_body_rejects_missing_command_field() {
-        let response =
-            handle_request_body(r#"{"protocol_version":1,"database_path":"/tmp/fathom.db"}"#);
+        let db = test_db_path();
+        let response = handle_request_body(&format!(
+            r#"{{"protocol_version":1,"database_path":"{db}"}}"#
+        ));
         assert!(!response.ok);
         assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
         assert!(response.message.contains("invalid request"));
@@ -833,9 +863,10 @@ mod tests {
 
     #[test]
     fn handle_request_body_rejects_invalid_projection_target() {
-        let response = handle_request_body(
-            r#"{"protocol_version":1,"database_path":"/tmp/fathom.db","command":"rebuild_projections","target":"weird"}"#,
-        );
+        let db = test_db_path();
+        let response = handle_request_body(&format!(
+            r#"{{"protocol_version":1,"database_path":"{db}","command":"rebuild_projections","target":"weird"}}"#
+        ));
         assert!(!response.ok);
         assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
         assert!(response.message.contains("invalid projection target"));
@@ -843,9 +874,10 @@ mod tests {
 
     #[test]
     fn handle_request_body_rejects_missing_collection_name_for_disable_operational_collection() {
-        let response = handle_request_body(
-            r#"{"protocol_version":1,"database_path":"/tmp/fathom.db","command":"disable_operational_collection"}"#,
-        );
+        let db = test_db_path();
+        let response = handle_request_body(&format!(
+            r#"{{"protocol_version":1,"database_path":"{db}","command":"disable_operational_collection"}}"#
+        ));
         assert!(!response.ok);
         assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
         assert!(response.message.contains("collection_name is required"));
@@ -854,9 +886,10 @@ mod tests {
     #[test]
     fn handle_request_body_rejects_missing_filter_fields_json_for_update_operational_collection_filters()
      {
-        let response = handle_request_body(
-            r#"{"protocol_version":1,"database_path":"/tmp/fathom.db","command":"update_operational_collection_filters","collection_name":"audit_log"}"#,
-        );
+        let db = test_db_path();
+        let response = handle_request_body(&format!(
+            r#"{{"protocol_version":1,"database_path":"{db}","command":"update_operational_collection_filters","collection_name":"audit_log"}}"#
+        ));
         assert!(!response.ok);
         assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
         assert!(response.message.contains("filter_fields_json is required"));
@@ -864,9 +897,10 @@ mod tests {
 
     #[test]
     fn handle_request_body_rejects_missing_before_timestamp_for_purge_operational_collection() {
-        let response = handle_request_body(
-            r#"{"protocol_version":1,"database_path":"/tmp/fathom.db","command":"purge_operational_collection","collection_name":"audit_log"}"#,
-        );
+        let db = test_db_path();
+        let response = handle_request_body(&format!(
+            r#"{{"protocol_version":1,"database_path":"{db}","command":"purge_operational_collection","collection_name":"audit_log"}}"#
+        ));
         assert!(!response.ok);
         assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
         assert!(response.message.contains("before_timestamp is required"));
@@ -874,9 +908,10 @@ mod tests {
 
     #[test]
     fn handle_request_body_rejects_missing_operational_read_for_read_operational_collection() {
-        let response = handle_request_body(
-            r#"{"protocol_version":1,"database_path":"/tmp/fathom.db","command":"read_operational_collection"}"#,
-        );
+        let db = test_db_path();
+        let response = handle_request_body(&format!(
+            r#"{{"protocol_version":1,"database_path":"{db}","command":"read_operational_collection"}}"#
+        ));
         assert!(!response.ok);
         assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
         assert!(response.message.contains("operational_read is required"));
@@ -884,9 +919,10 @@ mod tests {
 
     #[test]
     fn handle_request_body_rejects_missing_logical_id_for_restore_logical_id() {
-        let response = handle_request_body(
-            r#"{"protocol_version":1,"database_path":"/tmp/fathom.db","command":"restore_logical_id"}"#,
-        );
+        let db = test_db_path();
+        let response = handle_request_body(&format!(
+            r#"{{"protocol_version":1,"database_path":"{db}","command":"restore_logical_id"}}"#
+        ));
         assert!(!response.ok);
         assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
         assert!(response.message.contains("logical_id is required"));
@@ -894,9 +930,10 @@ mod tests {
 
     #[test]
     fn handle_request_body_rejects_missing_logical_id_for_purge_logical_id() {
-        let response = handle_request_body(
-            r#"{"protocol_version":1,"database_path":"/tmp/fathom.db","command":"purge_logical_id"}"#,
-        );
+        let db = test_db_path();
+        let response = handle_request_body(&format!(
+            r#"{{"protocol_version":1,"database_path":"{db}","command":"purge_logical_id"}}"#
+        ));
         assert!(!response.ok);
         assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
         assert!(response.message.contains("logical_id is required"));
@@ -904,9 +941,10 @@ mod tests {
 
     #[test]
     fn bridge_request_parses_force_checkpoint_for_safe_export() {
-        let request: BridgeRequest = serde_json::from_str(
-            r#"{"protocol_version":1,"database_path":"/tmp/fathom.db","command":"safe_export","destination_path":"/tmp/export.db","force_checkpoint":true}"#,
-        )
+        let db = test_db_path();
+        let request: BridgeRequest = serde_json::from_str(&format!(
+            r#"{{"protocol_version":1,"database_path":"{db}","command":"safe_export","destination_path":"{db}","force_checkpoint":true}}"#
+        ))
         .expect("request parses");
 
         assert_eq!(request.force_checkpoint, Some(true));
@@ -914,9 +952,10 @@ mod tests {
 
     #[test]
     fn bridge_request_omits_force_checkpoint_when_not_requested() {
-        let request: BridgeRequest = serde_json::from_str(
-            r#"{"protocol_version":1,"database_path":"/tmp/fathom.db","command":"safe_export","destination_path":"/tmp/export.db"}"#,
-        )
+        let db = test_db_path();
+        let request: BridgeRequest = serde_json::from_str(&format!(
+            r#"{{"protocol_version":1,"database_path":"{db}","command":"safe_export","destination_path":"{db}"}}"#
+        ))
         .expect("request parses");
 
         assert_eq!(request.force_checkpoint, None);
@@ -930,13 +969,13 @@ mod tests {
 
     #[test]
     fn validate_path_rejects_parent_traversal() {
-        let err = validate_path(Path::new("/foo/../bar"), "test").unwrap_err();
+        let err = validate_path(test_traversal_path(), "test").unwrap_err();
         assert!(err.contains("must not contain '..' components"));
     }
 
     #[test]
     fn validate_path_accepts_absolute_path() {
-        let result = validate_path(Path::new("/valid/absolute/path"), "test");
+        let result = validate_path(test_absolute_path(), "test");
         assert!(result.is_ok());
     }
 
@@ -952,22 +991,41 @@ mod tests {
 
     #[test]
     fn bridge_rejects_database_path_with_parent_traversal() {
-        let response = handle_request_body(
-            r#"{"protocol_version":1,"database_path":"/tmp/../etc/passwd","command":"check_integrity"}"#,
-        );
+        let traversal = if cfg!(windows) {
+            r"C:\\tmp\\..\\etc\\passwd"
+        } else {
+            "/tmp/../etc/passwd"
+        };
+        let response = handle_request_body(&format!(
+            r#"{{"protocol_version":1,"database_path":"{traversal}","command":"check_integrity"}}"#
+        ));
         assert!(!response.ok);
         assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
-        assert!(response.message.contains("must not contain '..' components"));
+        assert!(
+            response
+                .message
+                .contains("must not contain '..' components")
+        );
     }
 
     #[test]
     fn bridge_rejects_destination_path_with_parent_traversal() {
-        let response = handle_request_body(
-            r#"{"protocol_version":1,"database_path":"/tmp/fathom.db","command":"safe_export","destination_path":"/tmp/../etc/export"}"#,
-        );
+        let db = test_db_path();
+        let dest_traversal = if cfg!(windows) {
+            r"C:\\tmp\\..\\etc\\export"
+        } else {
+            "/tmp/../etc/export"
+        };
+        let response = handle_request_body(&format!(
+            r#"{{"protocol_version":1,"database_path":"{db}","command":"safe_export","destination_path":"{dest_traversal}"}}"#
+        ));
         assert!(!response.ok);
         assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
         assert!(response.message.contains("destination_path"));
-        assert!(response.message.contains("must not contain '..' components"));
+        assert!(
+            response
+                .message
+                .contains("must not contain '..' components")
+        );
     }
 }

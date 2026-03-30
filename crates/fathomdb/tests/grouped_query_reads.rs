@@ -1,4 +1,8 @@
-#![allow(clippy::expect_used, clippy::too_many_lines, clippy::unreadable_literal)]
+#![allow(
+    clippy::expect_used,
+    clippy::too_many_lines,
+    clippy::unreadable_literal
+)]
 
 use fathomdb::{
     ChunkInsert, ChunkPolicy, CompileError, EdgeInsert, Engine, EngineOptions, NodeInsert,

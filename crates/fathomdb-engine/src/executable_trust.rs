@@ -114,18 +114,21 @@ mod windows_acl {
     use std::path::Path;
     use std::ptr::{null, null_mut};
 
-    use windows_sys::Win32::Foundation::{ERROR_SUCCESS, PSID};
+    use windows_sys::Win32::Foundation::{ERROR_SUCCESS, GENERIC_WRITE, LocalFree};
     use windows_sys::Win32::Security::Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT};
     use windows_sys::Win32::Security::{
-        ACCESS_ALLOWED_ACE, ACCESS_ALLOWED_ACE_TYPE, ACE_HEADER, ACL, ACL_SIZE_INFORMATION,
-        AclSizeInformation, CreateWellKnownSid, DACL_SECURITY_INFORMATION, EqualSid, GetAce,
-        GetAclInformation, WinAuthenticatedUserSid, WinBuiltinUsersSid, WinWorldSid,
+        ACCESS_ALLOWED_ACE, ACE_HEADER, ACL, ACL_SIZE_INFORMATION, AclSizeInformation,
+        CreateWellKnownSid, DACL_SECURITY_INFORMATION, EqualSid, GetAce, GetAclInformation, PSID,
+        WinAuthenticatedUserSid, WinBuiltinUsersSid, WinWorldSid,
     };
     use windows_sys::Win32::Storage::FileSystem::{
         FILE_APPEND_DATA, FILE_GENERIC_WRITE, FILE_WRITE_DATA,
     };
-    use windows_sys::Win32::System::Memory::LocalFree;
-    use windows_sys::Win32::System::SystemServices::{GENERIC_WRITE, WRITE_DAC, WRITE_OWNER};
+    use windows_sys::Win32::System::SystemServices::ACCESS_ALLOWED_ACE_TYPE;
+
+    // Standard Windows access rights not re-exported by windows-sys 0.59.
+    const WRITE_DAC: u32 = 0x0004_0000;
+    const WRITE_OWNER: u32 = 0x0008_0000;
 
     const WRITE_MASK: u32 = FILE_WRITE_DATA
         | FILE_APPEND_DATA
@@ -188,18 +191,17 @@ mod windows_acl {
                 return Err(io::Error::last_os_error());
             }
             let header = unsafe { &*(ace_ptr as *const ACE_HEADER) };
-            if header.AceType != ACCESS_ALLOWED_ACE_TYPE {
+            if header.AceType as u32 != ACCESS_ALLOWED_ACE_TYPE {
                 continue;
             }
             let ace = unsafe { &*(ace_ptr as *const ACCESS_ALLOWED_ACE) };
             if ace.Mask & WRITE_MASK == 0 {
                 continue;
             }
-            let sid = unsafe { (&ace.SidStart as *const u32).cast_mut().cast() };
-            if broad_sids
-                .iter()
-                .any(|candidate| unsafe { EqualSid(sid, candidate.as_ptr().cast()) } != 0)
-            {
+            let sid: PSID = unsafe { (&ace.SidStart as *const u32).cast_mut().cast() };
+            if broad_sids.iter().any(|candidate| unsafe {
+                EqualSid(sid, candidate.as_ptr().cast_mut().cast()) != 0
+            }) {
                 drop(security_descriptor);
                 return Ok(true);
             }
@@ -213,10 +215,11 @@ mod windows_acl {
         value.encode_wide().chain(std::iter::once(0)).collect()
     }
 
-    fn well_known_sid(kind: u32) -> io::Result<Vec<u8>> {
+    fn well_known_sid(kind: i32) -> io::Result<Vec<u8>> {
         let mut size = windows_sys::Win32::Security::SECURITY_MAX_SID_SIZE as u32;
         let mut buffer = vec![0u8; size as usize];
-        let ok = unsafe { CreateWellKnownSid(kind, null(), buffer.as_mut_ptr().cast(), &mut size) };
+        let ok =
+            unsafe { CreateWellKnownSid(kind, null_mut(), buffer.as_mut_ptr().cast(), &mut size) };
         if ok == 0 {
             return Err(io::Error::last_os_error());
         }
@@ -230,7 +233,7 @@ mod windows_acl {
         fn drop(&mut self) {
             if !self.0.is_null() {
                 unsafe {
-                    LocalFree(self.0 as isize);
+                    LocalFree(self.0);
                 }
             }
         }

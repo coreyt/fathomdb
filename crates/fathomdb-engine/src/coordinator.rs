@@ -1348,9 +1348,7 @@ mod tests {
     #[allow(clippy::panic)]
     fn poison_connection(coordinator: &ExecutionCoordinator) {
         let result = catch_unwind(AssertUnwindSafe(|| {
-            let _guard = coordinator
-                .pool
-                .connections[0]
+            let _guard = coordinator.pool.connections[0]
                 .lock()
                 .expect("poison test lock");
             panic!("poison coordinator connection mutex");
@@ -1387,7 +1385,10 @@ mod tests {
         assert_poisoned_connection_error(&coordinator, |c| c.read_run("run-r1"));
         assert_poisoned_connection_error(&coordinator, |c| c.read_step("step-s1"));
         assert_poisoned_connection_error(&coordinator, |c| c.read_action("action-a1"));
-        assert_poisoned_connection_error(&coordinator, super::ExecutionCoordinator::read_active_runs);
+        assert_poisoned_connection_error(
+            &coordinator,
+            super::ExecutionCoordinator::read_active_runs,
+        );
         assert_poisoned_connection_error(&coordinator, |c| c.raw_pragma("journal_mode"));
         assert_poisoned_connection_error(&coordinator, |c| c.query_provenance_events("source-1"));
     }
@@ -1405,10 +1406,7 @@ mod tests {
 
         // Directly populate the cache with MAX_SHAPE_CACHE_SIZE + 1 entries.
         {
-            let mut cache = coordinator
-                .shape_sql_map
-                .lock()
-                .expect("lock shape cache");
+            let mut cache = coordinator.shape_sql_map.lock().expect("lock shape cache");
             for i in 0..=super::MAX_SHAPE_CACHE_SIZE {
                 cache.insert(ShapeHash(i as u64), format!("SELECT {i}"));
             }
@@ -1509,16 +1507,9 @@ mod tests {
             .execute_compiled_grouped_read(&compiled)
             .expect("grouped read");
 
-        assert!(
-            !result.was_degraded,
-            "grouped read should not be degraded"
-        );
+        assert!(!result.was_degraded, "grouped read should not be degraded");
         assert_eq!(result.roots.len(), 10, "expected 10 root nodes");
-        assert_eq!(
-            result.expansions.len(),
-            1,
-            "expected 1 expansion slot"
-        );
+        assert_eq!(result.expansions.len(), 1, "expected 1 expansion slot");
         assert_eq!(result.expansions[0].slot, "tasks");
         assert_eq!(
             result.expansions[0].roots.len(),

@@ -222,13 +222,13 @@ func sanitizeRecoveredSQL(sql string) string {
 func restoreRecoveredProjections(destPath, bridgePath, sqliteBin string) error {
 	client := bridge.Client{BinaryPath: bridgePath}
 
-	if enabledProfiles, err := queryScalarInt(
-		sqliteBin,
-		destPath,
+	// Query enabled vector profiles directly; treat errors (e.g. missing table
+	// when the source lacked a full fathomdb schema) as zero enabled profiles.
+	enabledProfiles, _ := queryScalarInt(
+		sqliteBin, destPath,
 		"SELECT count(*) FROM vector_profiles WHERE enabled = 1;",
-	); err != nil {
-		return fmt.Errorf("count enabled vector profiles: %w", err)
-	} else if enabledProfiles > 0 {
+	)
+	if enabledProfiles > 0 {
 		if err := runBridgeCommand(client, destPath, bridge.CommandRestoreVector); err != nil {
 			return fmt.Errorf("restore vector profiles: %w", err)
 		}

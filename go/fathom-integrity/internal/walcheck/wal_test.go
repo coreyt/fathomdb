@@ -103,7 +103,7 @@ func TestInspectWAL_TruncatedMidFrame(t *testing.T) {
 	// Header + 24-byte frame header + 100 bytes of page data (short by pageSize-100)
 	var data []byte
 	data = append(data, buildWALHeader(pageSize, 0)...)
-	data = append(data, buildWALFrame(pageSize)...)  // one complete frame
+	data = append(data, buildWALFrame(pageSize)...) // one complete frame
 	partial := make([]byte, WALFrameHeaderSize+100) // partial second frame
 	data = append(data, partial...)
 	path := writeWALFile(t, data)

@@ -271,8 +271,7 @@ mod tests {
 
     #[test]
     fn builder_filter_json_bool_eq_produces_correct_predicate() {
-        let query = QueryBuilder::nodes("Feature")
-            .filter_json_bool_eq("$.enabled", true);
+        let query = QueryBuilder::nodes("Feature").filter_json_bool_eq("$.enabled", true);
 
         assert_eq!(query.ast().steps.len(), 1);
         match &query.ast().steps[0] {
