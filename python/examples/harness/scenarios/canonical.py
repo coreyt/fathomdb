@@ -1,3 +1,5 @@
+"""Scenarios for canonical node/chunk/FTS operations and upsert supersession."""
+
 from __future__ import annotations
 
 from fathomdb import ChunkInsert, ChunkPolicy, NodeInsert, WriteRequest, new_row_id
@@ -16,6 +18,7 @@ from ..verify import assert_integrity_clean, assert_semantics_clean, assert_sing
 
 
 def canonical_node_chunk_fts(context: HarnessContext) -> ScenarioResult:
+    """Validate node insert, chunk attach, and full-text search round-trip."""
     context.engine.write(
         WriteRequest(
             label="canonical-node-chunk-fts",
@@ -63,6 +66,7 @@ def canonical_node_chunk_fts(context: HarnessContext) -> ScenarioResult:
 
 
 def node_upsert_supersession(context: HarnessContext) -> ScenarioResult:
+    """Validate that upserting a node supersedes the prior version cleanly."""
     context.engine.write(
         WriteRequest(
             label="upsert-v1",

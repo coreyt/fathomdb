@@ -1,9 +1,12 @@
+"""Assertion helpers for validating harness scenario outcomes."""
+
 from __future__ import annotations
 
 from fathomdb import IntegrityReport, QueryRows, SemanticReport, TraceReport
 
 
 def assert_single_node(rows: QueryRows, logical_id: str) -> None:
+    """Assert the result contains exactly one non-degraded node with the given ID."""
     assert rows.was_degraded is False, "query unexpectedly degraded"
     assert len(rows.nodes) == 1, f"expected exactly one node, got {len(rows.nodes)}"
     assert rows.nodes[0].logical_id == logical_id, (
@@ -12,11 +15,13 @@ def assert_single_node(rows: QueryRows, logical_id: str) -> None:
 
 
 def assert_no_nodes(rows: QueryRows) -> None:
+    """Assert the result is non-degraded and contains zero nodes."""
     assert rows.was_degraded is False, "query unexpectedly degraded"
     assert rows.nodes == [], f"expected no nodes, got {[node.logical_id for node in rows.nodes]}"
 
 
 def assert_integrity_clean(report: IntegrityReport) -> None:
+    """Assert the integrity report has no physical or structural issues."""
     assert report.physical_ok is True, f"physical integrity failed: {report.warnings}"
     assert report.foreign_keys_ok is True, f"foreign keys failed: {report.warnings}"
     assert report.missing_fts_rows == 0, f"missing_fts_rows={report.missing_fts_rows}"
@@ -26,6 +31,7 @@ def assert_integrity_clean(report: IntegrityReport) -> None:
 
 
 def assert_semantics_clean(report: SemanticReport) -> None:
+    """Assert the semantic report has no orphans, dangling refs, or stale rows."""
     assert report.orphaned_chunks == 0, f"orphaned_chunks={report.orphaned_chunks}"
     assert report.null_source_ref_nodes == 0, (
         f"null_source_ref_nodes={report.null_source_ref_nodes}"
@@ -55,6 +61,7 @@ def assert_trace(
     node_logical_ids: list[str] | None = None,
     action_ids: list[str] | None = None,
 ) -> None:
+    """Assert selected fields of a trace report match expected values."""
     if node_rows is not None:
         assert report.node_rows == node_rows, (
             f"expected node_rows={node_rows}, got {report.node_rows}"

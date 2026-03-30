@@ -18,7 +18,7 @@ func writeShellBridge(t *testing.T, script string) string {
 		t.Skip("shell-backed bridge tests are unix-only")
 	}
 	binaryPath := filepath.Join(t.TempDir(), "bridge.sh")
-	require.NoError(t, os.WriteFile(binaryPath, []byte(script), 0o755))
+	require.NoError(t, os.WriteFile(binaryPath, []byte(script), 0o755)) //nolint:gosec // G306: test executable in t.TempDir()
 	return binaryPath
 }
 

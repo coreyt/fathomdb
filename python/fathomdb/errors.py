@@ -1,3 +1,5 @@
+"""Error types for the fathomdb Python bindings."""
+
 from ._fathomdb import (
     BridgeError,
     CapabilityMissingError,
@@ -11,7 +13,7 @@ from ._fathomdb import (
 )
 
 class BuilderValidationError(ValueError):
-    pass
+    """Raised when a WriteRequestBuilder detects an invalid handle or reference."""
 
 __all__ = [
     "BuilderValidationError",

@@ -184,7 +184,8 @@ class WriteRequestBuilder:
             upsert: If True, replace an existing node with the same logical ID.
             chunk_policy: How to handle existing chunks on upsert.
 
-        Returns:
+        Returns
+        -------
             A NodeHandle that can be used to reference this node elsewhere
             in the same builder.
         """
@@ -230,7 +231,8 @@ class WriteRequestBuilder:
             source_ref: Optional provenance source reference.
             upsert: If True, replace an existing edge with the same logical ID.
 
-        Returns:
+        Returns
+        -------
             An EdgeHandle that can be used to reference this edge elsewhere
             in the same builder.
         """
@@ -271,7 +273,8 @@ class WriteRequestBuilder:
             byte_start: Optional byte offset where the chunk starts in the source.
             byte_end: Optional byte offset where the chunk ends in the source.
 
-        Returns:
+        Returns
+        -------
             A ChunkHandle for referencing this chunk in vector inserts.
         """
         handle = ChunkHandle(id=id, _builder_id=self._builder_id)
@@ -299,7 +302,8 @@ class WriteRequestBuilder:
     ) -> RunHandle:
         """Add a run insert to the write request.
 
-        Returns:
+        Returns
+        -------
             A RunHandle for referencing this run when adding steps.
         """
         handle = RunHandle(id=id, _builder_id=self._builder_id)
@@ -330,7 +334,8 @@ class WriteRequestBuilder:
     ) -> StepHandle:
         """Add a step insert belonging to a run.
 
-        Returns:
+        Returns
+        -------
             A StepHandle for referencing this step when adding actions.
         """
         handle = StepHandle(id=id, _builder_id=self._builder_id)
@@ -362,7 +367,8 @@ class WriteRequestBuilder:
     ) -> ActionHandle:
         """Add an action insert belonging to a step.
 
-        Returns:
+        Returns
+        -------
             An ActionHandle for referencing this action.
         """
         handle = ActionHandle(id=id, _builder_id=self._builder_id)
@@ -444,7 +450,8 @@ class WriteRequestBuilder:
     def build(self) -> WriteRequest:
         """Resolve all handles and produce a finalized WriteRequest.
 
-        Raises:
+        Raises
+        ------
             BuilderValidationError: If any handle belongs to a different builder.
         """
         return WriteRequest(

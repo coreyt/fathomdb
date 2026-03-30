@@ -135,7 +135,7 @@ INSERT INTO vector_embedding_contracts (
 func runSQLite(t *testing.T, dbPath, sql string) {
 	t.Helper()
 
-	cmd := exec.Command(SQLiteBinary(), dbPath, sql)
+	cmd := exec.Command(SQLiteBinary(), dbPath, sql) //nolint:gosec // G204: SQLiteBinary() returns controlled path from policy or hardcoded default
 	cmd.Env = os.Environ()
 
 	output, err := cmd.CombinedOutput()

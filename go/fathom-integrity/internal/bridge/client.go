@@ -418,7 +418,7 @@ func (c Client) ExecuteWithFeedback(
 			return Response{}, fmt.Errorf("marshal request: %w", err)
 		}
 
-		cmd := exec.CommandContext(ctx, c.BinaryPath)
+		cmd := exec.CommandContext(ctx, c.BinaryPath) //nolint:gosec // G204: BinaryPath validated by validateBinaryPath at line 412
 		cmd.Stdin = bytes.NewReader(body)
 
 		var stdout bytes.Buffer

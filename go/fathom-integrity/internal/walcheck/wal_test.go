@@ -31,7 +31,7 @@ func writeWALFile(t *testing.T, data []byte) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "fathom.db-wal")
-	require.NoError(t, os.WriteFile(path, data, 0o644))
+	require.NoError(t, os.WriteFile(path, data, 0o644)) //nolint:gosec // G306: test data file with conservative 0o644 permissions
 	return path
 }
 
@@ -189,7 +189,7 @@ func buildChecksummedWAL(t *testing.T, pageSize uint32, numFrames int) []byte {
 
 	for i := 0; i < numFrames; i++ {
 		frame := make([]byte, WALFrameHeaderSize+int(pageSize))
-		binary.BigEndian.PutUint32(frame[0:4], uint32(i+1)) // page number (1-based)
+		binary.BigEndian.PutUint32(frame[0:4], uint32(i+1)) //nolint:gosec // G115: loop index bounded by small test frame count, fits uint32
 		binary.BigEndian.PutUint32(frame[4:8], 0)           // db size (non-commit frame)
 		binary.BigEndian.PutUint32(frame[8:12], salt1)
 		binary.BigEndian.PutUint32(frame[12:16], salt2)

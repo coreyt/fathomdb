@@ -1,3 +1,5 @@
+"""Data models and shared constants for the harness scenarios."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -9,12 +11,16 @@ from fathomdb import Engine, FeedbackConfig, ProvenanceMode, ResponseCycleEvent
 
 @dataclass(frozen=True)
 class ScenarioResult:
+    """Outcome of a single harness scenario execution."""
+
     name: str
     details: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class HarnessContext:
+    """Shared state passed to every scenario during a harness run."""
+
     engine: Any
     db_path: Path
     mode: str
@@ -23,6 +29,7 @@ class HarnessContext:
     feedback_config: FeedbackConfig | None = None
 
     def sibling_db(self, suffix: str) -> Path:
+        """Derive a sibling database path with the given suffix."""
         extension = self.db_path.suffix or ".db"
         return self.db_path.with_name(f"{self.db_path.stem}-{suffix}{extension}")
 
@@ -33,6 +40,7 @@ class HarnessContext:
         provenance_mode: ProvenanceMode | str = ProvenanceMode.WARN,
         vector_dimension: int | None = None,
     ) -> Any:
+        """Open an engine inheriting this context's telemetry settings."""
         from .engine_factory import open_engine
 
         target_mode = "vector" if vector_dimension is not None else "baseline"

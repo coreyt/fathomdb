@@ -1,3 +1,5 @@
+"""Factory helpers for opening telemetry-wrapped fathomdb engines."""
+
 from __future__ import annotations
 
 from functools import lru_cache
@@ -35,6 +37,7 @@ def open_engine(
     progress_callback: Callable[[ResponseCycleEvent], None] | None = None,
     feedback_config: FeedbackConfig | None = None,
 ) -> TelemetryEngine:
+    """Open a fathomdb engine wrapped with telemetry for the given mode."""
     path = Path(database_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     if mode == "baseline":
@@ -67,6 +70,7 @@ def open_engine(
 
 @lru_cache(maxsize=1)
 def supports_vector_mode() -> bool:
+    """Probe whether the current build supports sqlite-vec vector operations."""
     with TemporaryDirectory(prefix="fathomdb-py-harness-") as temp_dir:
         db_path = Path(temp_dir) / "probe.db"
         try:

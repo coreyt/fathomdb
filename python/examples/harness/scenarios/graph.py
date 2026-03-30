@@ -1,3 +1,5 @@
+"""Scenarios for graph edge traversal and node/edge retirement."""
+
 from __future__ import annotations
 
 from fathomdb import EdgeInsert, EdgeRetire, NodeInsert, NodeRetire, TraverseDirection, WriteRequest, new_row_id
@@ -24,6 +26,7 @@ from ..verify import assert_no_nodes, assert_semantics_clean
 
 
 def graph_edge_traversal(context: HarnessContext) -> ScenarioResult:
+    """Validate outbound edge traversal returns the expected target node."""
     context.engine.write(
         WriteRequest(
             label="graph-edge-traversal",
@@ -73,6 +76,7 @@ def graph_edge_traversal(context: HarnessContext) -> ScenarioResult:
 
 
 def edge_retire(context: HarnessContext) -> ScenarioResult:
+    """Validate that retiring an edge removes it from traversal results."""
     context.engine.write(
         WriteRequest(
             label="edge-retire",
@@ -96,6 +100,7 @@ def edge_retire(context: HarnessContext) -> ScenarioResult:
 
 
 def node_retire_clean(context: HarnessContext) -> ScenarioResult:
+    """Validate node retirement with co-retired edges leaves no dangling refs."""
     engine = open_engine(
         context.sibling_db("node-retire-clean"),
         mode=context.mode,
@@ -167,6 +172,7 @@ def node_retire_clean(context: HarnessContext) -> ScenarioResult:
 
 
 def node_retire_dangling(context: HarnessContext) -> ScenarioResult:
+    """Validate that retiring a node without its edges produces dangling edges."""
     engine = open_engine(
         context.sibling_db("node-retire-dangling"),
         mode=context.mode,

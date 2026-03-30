@@ -1,3 +1,5 @@
+"""Scenarios for runtime tables (runs/steps/actions) and provenance mode enforcement."""
+
 from __future__ import annotations
 
 from fathomdb import (
@@ -24,6 +26,7 @@ from ..verify import assert_semantics_clean, assert_single_node, assert_trace
 
 
 def runtime_tables(context: HarnessContext) -> ScenarioResult:
+    """Validate run/step/action insert and source tracing through runtime tables."""
     context.engine.write(
         WriteRequest(
             label="runtime-tables",
@@ -93,6 +96,7 @@ def runtime_tables(context: HarnessContext) -> ScenarioResult:
 
 
 def provenance_warn_require(context: HarnessContext) -> ScenarioResult:
+    """Validate that WARN mode emits warnings and REQUIRE mode rejects missing provenance."""
     warn_db = context.open_engine(
         context.sibling_db("provenance-warn"),
         provenance_mode=ProvenanceMode.WARN,

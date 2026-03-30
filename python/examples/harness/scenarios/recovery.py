@@ -1,3 +1,5 @@
+"""Scenarios for provenance tracing, excision, safe export, and projection rebuild."""
+
 from __future__ import annotations
 
 from fathomdb import ChunkInsert, ChunkPolicy, NodeInsert, ProjectionTarget, WriteRequest, new_row_id
@@ -17,6 +19,7 @@ from ..verify import assert_integrity_clean, assert_no_nodes, assert_semantics_c
 
 
 def trace_and_excise(context: HarnessContext) -> ScenarioResult:
+    """Validate source tracing and excision removes all associated data."""
     engine = open_engine(
         context.sibling_db("trace-and-excise"),
         mode=context.mode,
@@ -76,6 +79,7 @@ def trace_and_excise(context: HarnessContext) -> ScenarioResult:
 
 
 def safe_export(context: HarnessContext) -> ScenarioResult:
+    """Validate safe export produces a manifest with a checksum and page count."""
     context.engine.write(
         WriteRequest(
             label="safe-export-seed",
@@ -110,6 +114,7 @@ def safe_export(context: HarnessContext) -> ScenarioResult:
 
 
 def projection_rebuild(context: HarnessContext) -> ScenarioResult:
+    """Validate rebuild and rebuild-missing repair FTS and VEC projections."""
     missing = context.engine.admin.rebuild_missing()
     assert missing.targets == [ProjectionTarget.FTS], f"unexpected targets={missing.targets}"
 

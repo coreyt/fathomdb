@@ -1,3 +1,5 @@
+"""CLI entry point and runner for the fathomdb example harness."""
+
 from __future__ import annotations
 
 import argparse
@@ -58,6 +60,7 @@ def run_harness(
     telemetry_callback: Callable[[ResponseCycleEvent], None] | None = None,
     feedback_config: FeedbackConfig | None = None,
 ) -> list[ScenarioResult]:
+    """Execute all harness scenarios and return their results."""
     path = Path(db_path)
     if mode == "vector" and not supports_vector_mode():
         raise RuntimeError("vector mode requires a sqlite-vec-enabled Python binding build")
@@ -102,6 +105,7 @@ def _make_cli_telemetry_callback(mode: str) -> Callable[[ResponseCycleEvent], No
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Parse CLI arguments and run the harness, printing results to stdout."""
     parser = argparse.ArgumentParser(description="Run the fathomdb Python example harness")
     parser.add_argument("--db", required=True, help="Path to the harness database")
     parser.add_argument(

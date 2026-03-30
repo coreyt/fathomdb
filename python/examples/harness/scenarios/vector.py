@@ -1,3 +1,5 @@
+"""Scenarios for vector search degradation and sqlite-vec insert/search."""
+
 from __future__ import annotations
 
 from fathomdb import ChunkInsert, ChunkPolicy, NodeInsert, ProjectionTarget, VecInsert, WriteRequest, new_row_id
@@ -13,6 +15,7 @@ from ..models import (
 
 
 def vector_degradation(context: HarnessContext) -> ScenarioResult:
+    """Validate that vector search gracefully degrades in baseline mode."""
     rows = context.engine.nodes("Document").vector_search(VECTOR_QUERY, limit=3).execute()
     assert rows.was_degraded is True, "baseline vector query should degrade"
     assert rows.nodes == [], f"expected no vector rows, got {[node.logical_id for node in rows.nodes]}"
@@ -20,6 +23,7 @@ def vector_degradation(context: HarnessContext) -> ScenarioResult:
 
 
 def vector_insert_and_search(context: HarnessContext) -> ScenarioResult:
+    """Validate vector insert and nearest-neighbor search returns the expected node."""
     context.engine.write(
         WriteRequest(
             label="vector-insert-and-search",

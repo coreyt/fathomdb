@@ -475,7 +475,7 @@ func bootstrapBridgeDB(t *testing.T, bridgePath, dbPath string) {
 
 func queryDB(t *testing.T, dbPath, query string) string {
 	t.Helper()
-	cmd := exec.Command(testutil.SQLiteBinary(), dbPath, query)
+	cmd := exec.Command(testutil.SQLiteBinary(), dbPath, query) //nolint:gosec // G204: SQLiteBinary() returns controlled path
 	cmd.Env = os.Environ()
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, string(output))
