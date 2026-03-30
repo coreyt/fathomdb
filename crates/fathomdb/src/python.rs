@@ -4,6 +4,7 @@
 #![allow(clippy::unused_self, clippy::needless_pass_by_value)]
 
 use std::path::PathBuf;
+use std::sync::RwLock;
 
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyValueError};
@@ -34,7 +35,23 @@ create_exception!(_fathomdb, CompileError, FathomError);
 
 #[pyclass(frozen)]
 pub struct EngineCore {
-    engine: Engine,
+    engine: RwLock<Option<Engine>>,
+}
+
+impl EngineCore {
+    fn with_engine<F, R>(&self, f: F) -> PyResult<R>
+    where
+        F: FnOnce(&Engine) -> PyResult<R>,
+    {
+        let guard = self
+            .engine
+            .read()
+            .map_err(|_| BridgeError::new_err("engine lock poisoned"))?;
+        match guard.as_ref() {
+            Some(engine) => f(engine),
+            None => Err(FathomError::new_err("engine is closed")),
+        }
+    }
 }
 
 #[pymethods]
@@ -53,7 +70,39 @@ impl EngineCore {
             read_pool_size: None,
         };
         let engine = Engine::open(options).map_err(map_engine_error)?;
-        Ok(Self { engine })
+        Ok(Self {
+            engine: RwLock::new(Some(engine)),
+        })
+    }
+
+    /// Close the engine, flushing pending writes and releasing all resources.
+    ///
+    /// Idempotent — calling on an already-closed engine is a no-op.
+    pub fn close(&self, py: Python<'_>) -> PyResult<()> {
+        py.allow_threads(|| {
+            let mut guard = self
+                .engine
+                .write()
+                .map_err(|_| BridgeError::new_err("engine lock poisoned"))?;
+            let _ = guard.take();
+            Ok(())
+        })
+    }
+
+    pub fn __enter__(slf: Py<Self>) -> Py<Self> {
+        slf
+    }
+
+    #[pyo3(signature = (_exc_type=None, _exc_val=None, _exc_tb=None))]
+    pub fn __exit__(
+        &self,
+        py: Python<'_>,
+        _exc_type: Option<&Bound<'_, PyAny>>,
+        _exc_val: Option<&Bound<'_, PyAny>>,
+        _exc_tb: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<bool> {
+        self.close(py)?;
+        Ok(false)
     }
 
     pub fn compile_ast(&self, ast_json: &str) -> PyResult<String> {
@@ -71,109 +120,135 @@ impl EngineCore {
     pub fn explain_ast(&self, ast_json: &str) -> PyResult<String> {
         let ast = parse_ast(ast_json)?;
         let compiled = compile_query(&ast).map_err(map_compile_error)?;
-        let plan = self.engine.coordinator().explain_compiled_read(&compiled);
-        encode_json(PyQueryPlan::from(plan))
+        self.with_engine(|engine| {
+            let plan = engine.coordinator().explain_compiled_read(&compiled);
+            encode_json(PyQueryPlan::from(plan))
+        })
     }
 
     pub fn execute_ast(&self, py: Python<'_>, ast_json: &str) -> PyResult<String> {
         let ast = parse_ast(ast_json)?;
         let compiled = compile_query(&ast).map_err(map_compile_error)?;
-        let rows = py
-            .allow_threads(|| self.engine.coordinator().execute_compiled_read(&compiled))
-            .map_err(map_engine_error)?;
-        encode_json(PyQueryRows::from(rows))
+        self.with_engine(|engine| {
+            let rows = py
+                .allow_threads(|| engine.coordinator().execute_compiled_read(&compiled))
+                .map_err(map_engine_error)?;
+            encode_json(PyQueryRows::from(rows))
+        })
     }
 
     pub fn execute_grouped_ast(&self, py: Python<'_>, ast_json: &str) -> PyResult<String> {
         let ast = parse_ast(ast_json)?;
         let compiled = compile_grouped_query(&ast).map_err(map_compile_error)?;
-        let rows = py
-            .allow_threads(|| {
-                self.engine
-                    .coordinator()
-                    .execute_compiled_grouped_read(&compiled)
-            })
-            .map_err(map_engine_error)?;
-        encode_json(PyGroupedQueryRows::from(rows))
+        self.with_engine(|engine| {
+            let rows = py
+                .allow_threads(|| {
+                    engine
+                        .coordinator()
+                        .execute_compiled_grouped_read(&compiled)
+                })
+                .map_err(map_engine_error)?;
+            encode_json(PyGroupedQueryRows::from(rows))
+        })
     }
 
     pub fn submit_write(&self, py: Python<'_>, request_json: &str) -> PyResult<String> {
         let request = parse_write_request(request_json)?;
-        let receipt = py
-            .allow_threads(|| self.engine.writer().submit(request))
-            .map_err(map_engine_error)?;
-        encode_json(PyWriteReceipt::from(receipt))
+        self.with_engine(|engine| {
+            let receipt = py
+                .allow_threads(|| engine.writer().submit(request))
+                .map_err(map_engine_error)?;
+            encode_json(PyWriteReceipt::from(receipt))
+        })
     }
 
     pub fn touch_last_accessed(&self, py: Python<'_>, request_json: &str) -> PyResult<String> {
         let request = parse_last_access_touch_request(request_json)?;
-        let report = py
-            .allow_threads(|| self.engine.touch_last_accessed(request))
-            .map_err(map_engine_error)?;
-        encode_json(PyLastAccessTouchReport::from(report))
+        self.with_engine(|engine| {
+            let report = py
+                .allow_threads(|| engine.touch_last_accessed(request))
+                .map_err(map_engine_error)?;
+            encode_json(PyLastAccessTouchReport::from(report))
+        })
     }
 
     pub fn check_integrity(&self, py: Python<'_>) -> PyResult<String> {
-        let admin = self.engine.admin().service();
-        let report = py
-            .allow_threads(|| admin.check_integrity())
-            .map_err(map_engine_error)?;
-        encode_json(PyIntegrityReport::from(report))
+        self.with_engine(|engine| {
+            let admin = engine.admin().service();
+            let report = py
+                .allow_threads(|| admin.check_integrity())
+                .map_err(map_engine_error)?;
+            encode_json(PyIntegrityReport::from(report))
+        })
     }
 
     pub fn check_semantics(&self, py: Python<'_>) -> PyResult<String> {
-        let admin = self.engine.admin().service();
-        let report = py
-            .allow_threads(|| admin.check_semantics())
-            .map_err(map_engine_error)?;
-        encode_json(PySemanticReport::from(report))
+        self.with_engine(|engine| {
+            let admin = engine.admin().service();
+            let report = py
+                .allow_threads(|| admin.check_semantics())
+                .map_err(map_engine_error)?;
+            encode_json(PySemanticReport::from(report))
+        })
     }
 
     pub fn rebuild_projections(&self, py: Python<'_>, target: &str) -> PyResult<String> {
-        let admin = self.engine.admin().service();
         let target = parse_projection_target(target)?;
-        let report = py
-            .allow_threads(|| admin.rebuild_projections(target))
-            .map_err(map_engine_error)?;
-        encode_json(PyProjectionRepairReport::from(report))
+        self.with_engine(|engine| {
+            let admin = engine.admin().service();
+            let report = py
+                .allow_threads(|| admin.rebuild_projections(target))
+                .map_err(map_engine_error)?;
+            encode_json(PyProjectionRepairReport::from(report))
+        })
     }
 
     pub fn rebuild_missing_projections(&self, py: Python<'_>) -> PyResult<String> {
-        let admin = self.engine.admin().service();
-        let report = py
-            .allow_threads(|| admin.rebuild_missing_projections())
-            .map_err(map_engine_error)?;
-        encode_json(PyProjectionRepairReport::from(report))
+        self.with_engine(|engine| {
+            let admin = engine.admin().service();
+            let report = py
+                .allow_threads(|| admin.rebuild_missing_projections())
+                .map_err(map_engine_error)?;
+            encode_json(PyProjectionRepairReport::from(report))
+        })
     }
 
     pub fn trace_source(&self, py: Python<'_>, source_ref: &str) -> PyResult<String> {
-        let admin = self.engine.admin().service();
-        let report = py
-            .allow_threads(|| admin.trace_source(source_ref))
-            .map_err(map_engine_error)?;
-        encode_json(PyTraceReport::from(report))
+        self.with_engine(|engine| {
+            let admin = engine.admin().service();
+            let report = py
+                .allow_threads(|| admin.trace_source(source_ref))
+                .map_err(map_engine_error)?;
+            encode_json(PyTraceReport::from(report))
+        })
     }
 
     pub fn excise_source(&self, py: Python<'_>, source_ref: &str) -> PyResult<String> {
-        let admin = self.engine.admin().service();
-        let report = py
-            .allow_threads(|| admin.excise_source(source_ref))
-            .map_err(map_engine_error)?;
-        encode_json(PyTraceReport::from(report))
+        self.with_engine(|engine| {
+            let admin = engine.admin().service();
+            let report = py
+                .allow_threads(|| admin.excise_source(source_ref))
+                .map_err(map_engine_error)?;
+            encode_json(PyTraceReport::from(report))
+        })
     }
 
     pub fn restore_logical_id(&self, py: Python<'_>, logical_id: &str) -> PyResult<String> {
-        let report = py
-            .allow_threads(|| self.engine.restore_logical_id(logical_id))
-            .map_err(map_engine_error)?;
-        encode_json(report)
+        self.with_engine(|engine| {
+            let report = py
+                .allow_threads(|| engine.restore_logical_id(logical_id))
+                .map_err(map_engine_error)?;
+            encode_json(report)
+        })
     }
 
     pub fn purge_logical_id(&self, py: Python<'_>, logical_id: &str) -> PyResult<String> {
-        let report = py
-            .allow_threads(|| self.engine.purge_logical_id(logical_id))
-            .map_err(map_engine_error)?;
-        encode_json(report)
+        self.with_engine(|engine| {
+            let report = py
+                .allow_threads(|| engine.purge_logical_id(logical_id))
+                .map_err(map_engine_error)?;
+            encode_json(report)
+        })
     }
 
     pub fn safe_export(
@@ -182,13 +257,15 @@ impl EngineCore {
         destination_path: &str,
         force_checkpoint: bool,
     ) -> PyResult<String> {
-        let admin = self.engine.admin().service();
-        let manifest = py
-            .allow_threads(|| {
-                admin.safe_export(destination_path, SafeExportOptions { force_checkpoint })
-            })
-            .map_err(map_engine_error)?;
-        encode_json(PySafeExportManifest::from(manifest))
+        self.with_engine(|engine| {
+            let admin = engine.admin().service();
+            let manifest = py
+                .allow_threads(|| {
+                    admin.safe_export(destination_path, SafeExportOptions { force_checkpoint })
+                })
+                .map_err(map_engine_error)?;
+            encode_json(PySafeExportManifest::from(manifest))
+        })
     }
 
     pub fn register_operational_collection(
@@ -200,17 +277,21 @@ impl EngineCore {
             serde_json::from_str(request_json).map_err(|error| {
                 PyValueError::new_err(format!("invalid operational collection JSON: {error}"))
             })?;
-        let record = py
-            .allow_threads(|| self.engine.register_operational_collection(&request))
-            .map_err(map_engine_error)?;
-        encode_json(record)
+        self.with_engine(|engine| {
+            let record = py
+                .allow_threads(|| engine.register_operational_collection(&request))
+                .map_err(map_engine_error)?;
+            encode_json(record)
+        })
     }
 
     pub fn describe_operational_collection(&self, py: Python<'_>, name: &str) -> PyResult<String> {
-        let record = py
-            .allow_threads(|| self.engine.describe_operational_collection(name))
-            .map_err(map_engine_error)?;
-        encode_json(record)
+        self.with_engine(|engine| {
+            let record = py
+                .allow_threads(|| engine.describe_operational_collection(name))
+                .map_err(map_engine_error)?;
+            encode_json(record)
+        })
     }
 
     pub fn update_operational_collection_filters(
@@ -219,13 +300,14 @@ impl EngineCore {
         name: &str,
         filter_fields_json: &str,
     ) -> PyResult<String> {
-        let record = py
-            .allow_threads(|| {
-                self.engine
-                    .update_operational_collection_filters(name, filter_fields_json)
-            })
-            .map_err(map_engine_error)?;
-        encode_json(record)
+        self.with_engine(|engine| {
+            let record = py
+                .allow_threads(|| {
+                    engine.update_operational_collection_filters(name, filter_fields_json)
+                })
+                .map_err(map_engine_error)?;
+            encode_json(record)
+        })
     }
 
     pub fn update_operational_collection_validation(
@@ -234,13 +316,14 @@ impl EngineCore {
         name: &str,
         validation_json: &str,
     ) -> PyResult<String> {
-        let record = py
-            .allow_threads(|| {
-                self.engine
-                    .update_operational_collection_validation(name, validation_json)
-            })
-            .map_err(map_engine_error)?;
-        encode_json(record)
+        self.with_engine(|engine| {
+            let record = py
+                .allow_threads(|| {
+                    engine.update_operational_collection_validation(name, validation_json)
+                })
+                .map_err(map_engine_error)?;
+            encode_json(record)
+        })
     }
 
     pub fn update_operational_collection_secondary_indexes(
@@ -249,13 +332,17 @@ impl EngineCore {
         name: &str,
         secondary_indexes_json: &str,
     ) -> PyResult<String> {
-        let record = py
-            .allow_threads(|| {
-                self.engine
-                    .update_operational_collection_secondary_indexes(name, secondary_indexes_json)
-            })
-            .map_err(map_engine_error)?;
-        encode_json(record)
+        self.with_engine(|engine| {
+            let record = py
+                .allow_threads(|| {
+                    engine.update_operational_collection_secondary_indexes(
+                        name,
+                        secondary_indexes_json,
+                    )
+                })
+                .map_err(map_engine_error)?;
+            encode_json(record)
+        })
     }
 
     #[pyo3(signature = (collection_name, record_key=None))]
@@ -265,13 +352,12 @@ impl EngineCore {
         collection_name: &str,
         record_key: Option<&str>,
     ) -> PyResult<String> {
-        let report = py
-            .allow_threads(|| {
-                self.engine
-                    .trace_operational_collection(collection_name, record_key)
-            })
-            .map_err(map_engine_error)?;
-        encode_json(report)
+        self.with_engine(|engine| {
+            let report = py
+                .allow_threads(|| engine.trace_operational_collection(collection_name, record_key))
+                .map_err(map_engine_error)?;
+            encode_json(report)
+        })
     }
 
     pub fn read_operational_collection(
@@ -283,10 +369,12 @@ impl EngineCore {
             serde_json::from_str(request_json).map_err(|error| {
                 PyValueError::new_err(format!("invalid operational read JSON: {error}"))
             })?;
-        let report = py
-            .allow_threads(|| self.engine.read_operational_collection(&request))
-            .map_err(map_engine_error)?;
-        encode_json(report)
+        self.with_engine(|engine| {
+            let report = py
+                .allow_threads(|| engine.read_operational_collection(&request))
+                .map_err(map_engine_error)?;
+            encode_json(report)
+        })
     }
 
     #[pyo3(signature = (collection_name=None))]
@@ -295,10 +383,12 @@ impl EngineCore {
         py: Python<'_>,
         collection_name: Option<&str>,
     ) -> PyResult<String> {
-        let report = py
-            .allow_threads(|| self.engine.rebuild_operational_current(collection_name))
-            .map_err(map_engine_error)?;
-        encode_json(report)
+        self.with_engine(|engine| {
+            let report = py
+                .allow_threads(|| engine.rebuild_operational_current(collection_name))
+                .map_err(map_engine_error)?;
+            encode_json(report)
+        })
     }
 
     pub fn validate_operational_collection_history(
@@ -306,13 +396,12 @@ impl EngineCore {
         py: Python<'_>,
         collection_name: &str,
     ) -> PyResult<String> {
-        let report = py
-            .allow_threads(|| {
-                self.engine
-                    .validate_operational_collection_history(collection_name)
-            })
-            .map_err(map_engine_error)?;
-        encode_json(report)
+        self.with_engine(|engine| {
+            let report = py
+                .allow_threads(|| engine.validate_operational_collection_history(collection_name))
+                .map_err(map_engine_error)?;
+            encode_json(report)
+        })
     }
 
     pub fn rebuild_operational_secondary_indexes(
@@ -320,13 +409,12 @@ impl EngineCore {
         py: Python<'_>,
         collection_name: &str,
     ) -> PyResult<String> {
-        let report = py
-            .allow_threads(|| {
-                self.engine
-                    .rebuild_operational_secondary_indexes(collection_name)
-            })
-            .map_err(map_engine_error)?;
-        encode_json(report)
+        self.with_engine(|engine| {
+            let report = py
+                .allow_threads(|| engine.rebuild_operational_secondary_indexes(collection_name))
+                .map_err(map_engine_error)?;
+            encode_json(report)
+        })
     }
 
     #[pyo3(signature = (now_timestamp, collection_names=None, max_collections=None))]
@@ -337,16 +425,18 @@ impl EngineCore {
         collection_names: Option<Vec<String>>,
         max_collections: Option<usize>,
     ) -> PyResult<String> {
-        let report = py
-            .allow_threads(|| {
-                self.engine.plan_operational_retention(
-                    now_timestamp,
-                    collection_names.as_deref(),
-                    max_collections,
-                )
-            })
-            .map_err(map_engine_error)?;
-        encode_json(report)
+        self.with_engine(|engine| {
+            let report = py
+                .allow_threads(|| {
+                    engine.plan_operational_retention(
+                        now_timestamp,
+                        collection_names.as_deref(),
+                        max_collections,
+                    )
+                })
+                .map_err(map_engine_error)?;
+            encode_json(report)
+        })
     }
 
     #[pyo3(signature = (now_timestamp, collection_names=None, max_collections=None, dry_run=false))]
@@ -358,24 +448,28 @@ impl EngineCore {
         max_collections: Option<usize>,
         dry_run: bool,
     ) -> PyResult<String> {
-        let report = py
-            .allow_threads(|| {
-                self.engine.run_operational_retention(
-                    now_timestamp,
-                    collection_names.as_deref(),
-                    max_collections,
-                    dry_run,
-                )
-            })
-            .map_err(map_engine_error)?;
-        encode_json(report)
+        self.with_engine(|engine| {
+            let report = py
+                .allow_threads(|| {
+                    engine.run_operational_retention(
+                        now_timestamp,
+                        collection_names.as_deref(),
+                        max_collections,
+                        dry_run,
+                    )
+                })
+                .map_err(map_engine_error)?;
+            encode_json(report)
+        })
     }
 
     pub fn disable_operational_collection(&self, py: Python<'_>, name: &str) -> PyResult<String> {
-        let record = py
-            .allow_threads(|| self.engine.disable_operational_collection(name))
-            .map_err(map_engine_error)?;
-        encode_json(record)
+        self.with_engine(|engine| {
+            let record = py
+                .allow_threads(|| engine.disable_operational_collection(name))
+                .map_err(map_engine_error)?;
+            encode_json(record)
+        })
     }
 
     pub fn compact_operational_collection(
@@ -384,10 +478,12 @@ impl EngineCore {
         name: &str,
         dry_run: bool,
     ) -> PyResult<String> {
-        let report = py
-            .allow_threads(|| self.engine.compact_operational_collection(name, dry_run))
-            .map_err(map_engine_error)?;
-        encode_json(report)
+        self.with_engine(|engine| {
+            let report = py
+                .allow_threads(|| engine.compact_operational_collection(name, dry_run))
+                .map_err(map_engine_error)?;
+            encode_json(report)
+        })
     }
 
     pub fn purge_operational_collection(
@@ -396,13 +492,12 @@ impl EngineCore {
         name: &str,
         before_timestamp: i64,
     ) -> PyResult<String> {
-        let report = py
-            .allow_threads(|| {
-                self.engine
-                    .purge_operational_collection(name, before_timestamp)
-            })
-            .map_err(map_engine_error)?;
-        encode_json(report)
+        self.with_engine(|engine| {
+            let report = py
+                .allow_threads(|| engine.purge_operational_collection(name, before_timestamp))
+                .map_err(map_engine_error)?;
+            encode_json(report)
+        })
     }
 
     pub fn purge_provenance_events(
@@ -413,13 +508,12 @@ impl EngineCore {
     ) -> PyResult<String> {
         let options: crate::ProvenancePurgeOptions = serde_json::from_str(options_json)
             .map_err(|e| PyValueError::new_err(format!("invalid options JSON: {e}")))?;
-        let report = py
-            .allow_threads(|| {
-                self.engine
-                    .purge_provenance_events(before_timestamp, &options)
-            })
-            .map_err(map_engine_error)?;
-        encode_json(report)
+        self.with_engine(|engine| {
+            let report = py
+                .allow_threads(|| engine.purge_provenance_events(before_timestamp, &options))
+                .map_err(map_engine_error)?;
+            encode_json(report)
+        })
     }
 }
 
@@ -542,7 +636,7 @@ mod tests {
     use serde_json::Value;
     use tempfile::NamedTempFile;
 
-    use super::EngineCore;
+    use super::{EngineCore, FathomError};
 
     /// Regression: `EngineOptions` gained `read_pool_size` but the Python binding
     /// constructor was not updated, causing a compile error only visible with
@@ -552,6 +646,31 @@ mod tests {
         let db = NamedTempFile::new().expect("temp db");
         let engine = EngineCore::open(db.path().to_str().expect("db path"), "warn", None);
         assert!(engine.is_ok(), "open must succeed: {:?}", engine.err());
+    }
+
+    #[test]
+    fn close_makes_subsequent_calls_fail() {
+        let db = NamedTempFile::new().expect("temp db");
+        Python::with_gil(|py| {
+            let engine =
+                EngineCore::open(db.path().to_str().expect("path"), "warn", None).expect("open");
+            engine.close(py).expect("close");
+            let result = engine.check_integrity(py);
+            assert!(result.is_err(), "call after close must fail");
+            let err = result.unwrap_err();
+            assert!(err.is_instance_of::<FathomError>(py));
+        });
+    }
+
+    #[test]
+    fn close_is_idempotent() {
+        let db = NamedTempFile::new().expect("temp db");
+        Python::with_gil(|py| {
+            let engine =
+                EngineCore::open(db.path().to_str().expect("path"), "warn", None).expect("open");
+            engine.close(py).expect("first close");
+            engine.close(py).expect("second close");
+        });
     }
 
     /// Regression: `Engine::register_operational_collection` changed to take
@@ -690,5 +809,4 @@ mod tests {
             assert!(disabled["disabled_at"].as_i64().is_some());
         });
     }
-
 }

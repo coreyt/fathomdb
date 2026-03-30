@@ -236,6 +236,25 @@ stay in sync. The engine must support:
 Drift between language layers produces silent data corruption or opaque runtime
 failures that are difficult to diagnose in production.
 
+### 3.13 Explicit Lifecycle Management
+
+The engine must support explicit, deterministic shutdown so that applications
+can guarantee all pending writes are flushed and all resources are released
+before process exit. The engine must support:
+
+- an explicit `close()` operation that drains pending writes, joins the writer
+  thread, and closes all SQLite connections in the correct order (readers
+  before writer) so that SQLite's automatic passive WAL checkpoint runs
+- context manager protocol in every SDK language so applications can use
+  idiomatic resource management (`with` in Python, `Drop` in Rust)
+- clear error reporting when operations are attempted on a closed engine
+- idempotent close: calling `close()` on an already-closed engine is a no-op
+
+Without explicit lifecycle management, applications risk silent data loss
+(queued writes dropped on process exit), stale WAL files (no checkpoint on
+unclean shutdown), and resource leaks (writer thread not joined, connections
+not closed).
+
 ## 4. Non-Functional Needs
 
 - **Privacy and locality:** data lives on the user's device or private
@@ -282,7 +301,8 @@ It must provide versioned graph storage, multimodal recall, deterministic agent
 ergonomics, provenance on every write with managed lifecycle, reversibility
 without history loss, a dedicated operational store for high-churn state,
 automated housekeeping, recovery from all corruption classes, write safety
-under load, safe schema evolution, and cross-layer type consistency.
+under load, safe schema evolution, cross-layer type consistency, and explicit
+lifecycle management with deterministic shutdown.
 
 If it only stores documents or only accelerates search, it does not solve the
 real problem.

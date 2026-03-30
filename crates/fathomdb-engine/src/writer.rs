@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::mem::ManuallyDrop;
 use std::panic::AssertUnwindSafe;
 use std::path::Path;
 use std::sync::Arc;
@@ -275,9 +276,12 @@ enum WriteMessage {
 }
 
 /// Single-threaded writer that serializes all mutations through one `SQLite` connection.
+///
+/// On drop, the channel is closed and the writer thread is joined, ensuring all
+/// in-flight writes complete and the `SQLite` connection closes cleanly.
 #[derive(Debug)]
 pub struct WriterActor {
-    sender: SyncSender<WriteMessage>,
+    sender: ManuallyDrop<SyncSender<WriteMessage>>,
     thread_handle: Option<thread::JoinHandle<()>>,
     provenance_mode: ProvenanceMode,
 }
@@ -299,7 +303,7 @@ impl WriterActor {
             .map_err(EngineError::Io)?;
 
         Ok(Self {
-            sender,
+            sender: ManuallyDrop::new(sender),
             thread_handle: Some(handle),
             provenance_mode,
         })
@@ -358,6 +362,35 @@ impl WriterActor {
             .map_err(|error| EngineError::WriterRejected(error.to_string()))?;
 
         recv_with_timeout(&reply_rx)
+    }
+}
+
+impl Drop for WriterActor {
+    #[allow(clippy::print_stderr)] // Last resort during panic — no logging framework available
+    fn drop(&mut self) {
+        // Phase 1: close the channel so the writer thread's `for msg in receiver`
+        // loop exits after finishing any in-progress message.
+        // Must happen BEFORE join to avoid deadlock.
+        //
+        // SAFETY: drop is called exactly once, and no method accesses the sender
+        // after drop begins.
+        unsafe { ManuallyDrop::drop(&mut self.sender) };
+
+        // Phase 2: join the writer thread to ensure the SQLite connection closes.
+        if let Some(handle) = self.thread_handle.take() {
+            match handle.join() {
+                Ok(()) => {}
+                Err(payload) => {
+                    if std::thread::panicking() {
+                        eprintln!(
+                            "fathomdb-writer panicked during shutdown (suppressed: already panicking)"
+                        );
+                    } else {
+                        std::panic::resume_unwind(payload);
+                    }
+                }
+            }
+        }
     }
 }
 

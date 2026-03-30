@@ -49,10 +49,12 @@ class Engine:
             progress_callback: Optional callback invoked with feedback events.
             feedback_config: Timing thresholds for progress feedback.
 
-        Returns:
+        Returns
+        -------
             A new Engine instance connected to the database.
 
-        Raises:
+        Raises
+        ------
             FathomError: If the database cannot be opened or schema bootstrap fails.
         """
         mode = provenance_mode.value if isinstance(provenance_mode, ProvenanceMode) else provenance_mode
@@ -66,6 +68,20 @@ class Engine:
             operation=lambda: EngineCore.open(path, mode, vector_dimension),
         )
         return cls(core)
+
+    def close(self) -> None:
+        """Close the engine, flushing pending writes and releasing resources.
+
+        Idempotent — safe to call multiple times.
+        """
+        self._core.close()
+
+    def __enter__(self) -> "Engine":
+        return self
+
+    def __exit__(self, *exc) -> bool:
+        self.close()
+        return False
 
     def nodes(self, kind: str) -> Query:
         """Start building a query rooted at nodes of the given kind."""
@@ -89,10 +105,12 @@ class Engine:
             progress_callback: Optional callback invoked with feedback events.
             feedback_config: Timing thresholds for progress feedback.
 
-        Returns:
+        Returns
+        -------
             A WriteReceipt summarizing the committed changes.
 
-        Raises:
+        Raises
+        ------
             InvalidWriteError: If the request contains invalid data.
             WriterRejectedError: If the write is rejected by the engine.
         """
@@ -134,7 +152,8 @@ class Engine:
             progress_callback: Optional callback invoked with feedback events.
             feedback_config: Timing thresholds for progress feedback.
 
-        Returns:
+        Returns
+        -------
             A report indicating how many nodes were touched.
         """
         payload = run_with_feedback(

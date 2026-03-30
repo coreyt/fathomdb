@@ -904,3 +904,75 @@ def test_concurrent_reads_from_multiple_threads(tmp_path: Path) -> None:
         t.join()
 
     assert errors == [], f"worker threads failed: {errors}"
+
+
+def test_close_is_idempotent(tmp_path: Path) -> None:
+    """Calling close() twice must not raise."""
+    from fathomdb import Engine
+
+    db = Engine.open(tmp_path / "agent.db")
+    db.close()
+    db.close()
+
+
+def test_operations_after_close_raise(tmp_path: Path) -> None:
+    """Any engine operation after close() must raise FathomError."""
+    import pytest
+
+    from fathomdb import Engine, FathomError
+
+    db = Engine.open(tmp_path / "agent.db")
+    db.close()
+    with pytest.raises(FathomError, match="engine is closed"):
+        db.nodes("Test").limit(10).execute()
+
+
+def test_context_manager_closes_on_exit(tmp_path: Path) -> None:
+    """The with-block must close the engine on normal exit."""
+    import pytest
+
+    from fathomdb import (
+        ChunkPolicy,
+        Engine,
+        FathomError,
+        NodeInsert,
+        WriteRequest,
+        new_row_id,
+    )
+
+    with Engine.open(tmp_path / "agent.db") as db:
+        db.write(
+            WriteRequest(
+                label="seed",
+                nodes=[
+                    NodeInsert(
+                        row_id=new_row_id(),
+                        logical_id="t:1",
+                        kind="Test",
+                        properties={"value": "hello"},
+                        source_ref="test",
+                        upsert=False,
+                        chunk_policy=ChunkPolicy.PRESERVE,
+                    )
+                ],
+            )
+        )
+
+    with pytest.raises(FathomError, match="engine is closed"):
+        db.nodes("Test").limit(10).execute()
+
+
+def test_context_manager_closes_on_exception(tmp_path: Path) -> None:
+    """The with-block must close the engine even when an exception is raised."""
+    import pytest
+
+    from fathomdb import Engine, FathomError
+
+    try:
+        with Engine.open(tmp_path / "agent.db") as db:
+            raise RuntimeError("deliberate test error")
+    except RuntimeError:
+        pass
+
+    with pytest.raises(FathomError, match="engine is closed"):
+        db.nodes("Test").limit(10).execute()
