@@ -3,12 +3,12 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
+#[cfg(feature = "sqlite-vec")]
+use fathomdb::VecInsert;
 use fathomdb::{
     ChunkInsert, ChunkPolicy, Engine, EngineOptions, NodeInsert, QueryBuilder, SafeExportOptions,
     WriteRequest,
 };
-#[cfg(feature = "sqlite-vec")]
-use fathomdb::VecInsert;
 use tempfile::TempDir;
 
 fn open_engine(vector_dimension: Option<usize>) -> (TempDir, Engine) {
