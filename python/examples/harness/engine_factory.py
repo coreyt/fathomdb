@@ -77,34 +77,37 @@ def supports_vector_mode() -> bool:
             db = Engine.open(db_path, vector_dimension=DEFAULT_VECTOR_DIMENSION)
         except (CapabilityMissingError, SchemaError):
             return False
-        db.write(
-            WriteRequest(
-                label="vector-probe",
-                nodes=[
-                    NodeInsert(
-                        row_id=new_row_id(),
-                        logical_id="document:vector-probe",
-                        kind="Document",
-                        properties={"title": "Vector probe"},
-                        source_ref="source:vector-probe",
-                        upsert=True,
-                        chunk_policy=ChunkPolicy.REPLACE,
-                    )
-                ],
-                chunks=[
-                    ChunkInsert(
-                        id="chunk:document:vector-probe:0",
-                        node_logical_id="document:vector-probe",
-                        text_content="vector probe chunk",
-                    )
-                ],
-                vec_inserts=[
-                    VecInsert(
-                        chunk_id="chunk:document:vector-probe:0",
-                        embedding=[0.1, 0.2, 0.3, 0.4],
-                    )
-                ],
+        try:
+            db.write(
+                WriteRequest(
+                    label="vector-probe",
+                    nodes=[
+                        NodeInsert(
+                            row_id=new_row_id(),
+                            logical_id="document:vector-probe",
+                            kind="Document",
+                            properties={"title": "Vector probe"},
+                            source_ref="source:vector-probe",
+                            upsert=True,
+                            chunk_policy=ChunkPolicy.REPLACE,
+                        )
+                    ],
+                    chunks=[
+                        ChunkInsert(
+                            id="chunk:document:vector-probe:0",
+                            node_logical_id="document:vector-probe",
+                            text_content="vector probe chunk",
+                        )
+                    ],
+                    vec_inserts=[
+                        VecInsert(
+                            chunk_id="chunk:document:vector-probe:0",
+                            embedding=[0.1, 0.2, 0.3, 0.4],
+                        )
+                    ],
+                )
             )
-        )
-        rows = db.nodes("Document").vector_search("[0.1, 0.2, 0.3, 0.4]", limit=1).execute()
-        return rows.was_degraded is False
+            rows = db.nodes("Document").vector_search("[0.1, 0.2, 0.3, 0.4]", limit=1).execute()
+            return rows.was_degraded is False
+        finally:
+            db.close()
