@@ -13,3 +13,14 @@ manifest-path = "../crates/fathomdb/Cargo.toml"
 module-name = "fathomdb._fathomdb"
 python-source = "."
 features = ["python", "sqlite-vec"]
+
+[tool.ruff.lint]
+select = ["D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint.per-file-ignores]
+"**/__init__.py" = ["D"]
+"**/tests/**" = ["D"]
+"**/test_*.py" = ["D"]

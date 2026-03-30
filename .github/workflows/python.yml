@@ -24,7 +24,7 @@ jobs:
           toolchain: stable
           components: clippy
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - run: cargo clippy --workspace --all-targets --features python -- -D warnings
+      - run: cargo clippy --workspace --all-targets --features python -- -D warnings -A missing-docs
       # Unit tests with --features python require linking against libpython,
       # which is not available in a standalone cargo test binary. cargo check
       # validates test code compiles without linking; python-test exercises
@@ -42,7 +42,8 @@ jobs:
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - run: python -m pip install --upgrade pip maturin pytest
+      - run: python -m pip install --upgrade pip maturin pytest ruff
+      - run: ruff check python/
       - run: python scripts/check-version-consistency.py
       - run: python -m pip install -e python --no-build-isolation
       - run: PYTHONPATH=python pytest python/tests -q

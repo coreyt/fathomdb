@@ -14,3 +14,9 @@ linters:
     - revive
     - wrapcheck
     - exhaustive
+
+linters-settings:
+  revive:
+    rules:
+      - name: exported
+        severity: warning
