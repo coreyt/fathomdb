@@ -46,7 +46,7 @@ pub struct EngineCore {
 /// `allow_threads()` so the GIL is released during shutdown.
 impl Drop for EngineCore {
     fn drop(&mut self) {
-        let engine = self.engine.get_mut().ok().and_then(|opt| opt.take());
+        let engine = self.engine.get_mut().ok().and_then(Option::take);
         if let Some(engine) = engine {
             Python::with_gil(|py| {
                 py.allow_threads(move || drop(engine));
