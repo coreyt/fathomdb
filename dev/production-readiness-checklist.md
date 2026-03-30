@@ -41,6 +41,7 @@ An area should not be treated as production-ready unless its status is `done`.
 | Performance validation / benchmarks | `done` | `crates/fathomdb/benches/production_paths.rs`, `scripts/run-benchmarks.sh`, and `.github/workflows/benchmark-and-robustness.yml` add repeatable benchmark coverage for public engine paths | Keep the benchmark suite representative and review thresholds current |
 | Fuzz / adversarial robustness testing | `done` | Go fuzz targets now cover recovered SQL sanitization and bridge response decoding, and the scheduled robustness workflow runs fuzz smoke coverage | Expand fuzz targets as new parser/admin surfaces are added |
 | Production acceptance criteria / SLO bar | `done` | `dev/production-acceptance-bar.md` now defines the minimum functional, safety, robustness, and performance gates for a public production claim | Revisit thresholds when workload scale or supported platforms change |
+| Structured logging and tracing | `done` | Feature-gated `tracing` crate across all library crates, SQLITE_CONFIG_LOG bridge, tiered instrumentation (writer, coordinator, admin, bootstrap, projection), bridge binary JSON stderr subscriber (`FATHOMDB_LOG`), `pyo3-log` Python logging bridge, CI jobs for tracing-enabled lint and test. Design: `dev/design-logging-and-tracing.md` | Keep instrumentation aligned with new engine seams; extend coverage when public operations are added |
 | Process hygiene between code, docs, and trackers | `done` | `dev/doc-governance.md` defines normative docs and active trackers, `scripts/check-doc-hygiene.py` enforces tracker/checklist alignment, and stale tracker/checklist state has been reconciled | Keep the hygiene check in CI and update tracked docs in the same slice as behavior changes |
 
 ## Mandatory Blockers Before A Production Claim
@@ -58,7 +59,7 @@ Current assessment: **production-ready within the documented support contract**.
 Reason:
 
 - the functional surface is implemented and validated across Rust, Go, and
-  Python (294+ Rust tests, Go bridge and integrity tests, Python integration
+  Python (298+ Rust tests, Go bridge and integrity tests, Python integration
   and harness tests all green)
 - release, CI, benchmark, and robustness gates exist
 - the repair and recovery contract is now explicit about what is and is not

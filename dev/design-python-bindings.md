@@ -465,6 +465,26 @@ Rules:
 - map by semantic category, not by every internal enum variant
 - keep Python stack traces readable
 
+## Logging
+
+`pyo3-log` is initialized in the `#[pymodule]` init function and bridges Rust
+diagnostic events into Python's standard `logging` module.  The bridge is
+automatic and requires no configuration from the Python caller — events appear
+under logger names like `fathomdb_engine.writer`, `fathomdb_engine.sqlite`, etc.
+
+Python applications control fathomdb log verbosity through normal Python
+logging configuration:
+
+```python
+import logging
+logging.getLogger("fathomdb_engine").setLevel(logging.DEBUG)
+```
+
+The bridge works via tracing's `"log"` feature: when no native Rust tracing
+subscriber is active (the normal case in Python), tracing events are emitted as
+`log` records, which `pyo3-log` forwards to Python.  This is zero-configuration
+for the application developer.
+
 ## Rust/Python Boundary
 
 ### Decision

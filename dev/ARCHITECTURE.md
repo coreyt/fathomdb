@@ -729,12 +729,20 @@ protocol over stdin/stdout. The Go admin tool (`fathom-integrity`) serializes a
 - **Path validation:** database and destination paths must be absolute and must
   not contain `..` components. The bridge rejects requests that violate these
   constraints before opening any database.
+- **Output discipline:** stdout carries only the final JSON response.  When the
+  `tracing` feature is enabled, stderr carries structured JSON diagnostic events
+  controlled by the `FATHOMDB_LOG` environment variable (default: `warn`).
 
 ### 9.2 Python to Rust: PyO3 In-Process Embedding
 
 The Python SDK binds to the Rust engine via PyO3. The engine runs in-process
 with no serialization boundary for read/write operations; Python objects are
 converted to Rust types at the FFI layer.
+
+`pyo3-log` is initialized at module import time and bridges Rust diagnostic
+events into Python's standard `logging` module.  Python applications configure
+log level, format, and destination through normal Python logging configuration;
+fathomdb events appear under `fathomdb_engine.*` logger names.
 
 ### 9.3 Type Parity
 
@@ -743,6 +751,47 @@ is enforced by compile-time tests (`python_types.rs`). These tests catch struct
 divergence early rather than allowing silent field drops at the serialization
 boundary.
 
-## 10. Architectural Summary
+## 10. Observability
+
+The engine separates three observability concerns, following the RocksDB
+EventListener/Logger/Statistics model:
+
+| Layer | Purpose | Infrastructure |
+|---|---|---|
+| **Structured tracing** | Diagnostic events with context at engine seams | `tracing` crate (feature-gated) |
+| **Response-cycle feedback** | Public API lifecycle events (started/slow/heartbeat/finished/failed) | `feedback.rs` observer pattern |
+| **Metrics** | Counters and histograms for monitoring | Deferred |
+
+### 10.1 Tracing
+
+All tracing is behind an optional `tracing` Cargo feature.  When disabled, every
+instrumentation point compiles away to zero cost.  When enabled, libraries emit
+events via the `tracing` facade; they never configure subscribers.
+
+- **SQLite internal events** are bridged into tracing via `SQLITE_CONFIG_LOG`
+  (registered once per process before any connections open).
+- **Per-statement profiling** uses `sqlite3_trace_v2` with `SQLITE_TRACE_PROFILE`
+  via FFI (debug builds only; TRACE-level events are compiled out in release by
+  `release_max_level_info`).
+- **Instrumentation tiers**: ERROR/WARN for failures and lifecycle, INFO for
+  operational events (writes, migrations, checkpoints), DEBUG for diagnostics
+  (FTS resolution, pool contention, cache management).
+
+Each consumer surface configures its own output:
+
+- **Rust callers** install a `tracing-subscriber` of their choice.
+- **Python callers** receive events through Python's `logging` module
+  via `pyo3-log`, which bridges `log` records emitted by tracing's `"log"`
+  feature when no native subscriber is active.
+- **Go bridge callers** receive structured JSON log lines on stderr; the
+  bridge binary configures its own subscriber controlled by `FATHOMDB_LOG`.
+
+### 10.2 Response-Cycle Feedback
+
+The `OperationObserver` trait provides application-facing lifecycle events for
+every public `Engine` method.  This is a stable, semantic contract; tracing is
+an unstable diagnostic supplement.  The two systems are independent.
+
+## 11. Architectural Summary
 
 `fathomdb` is not trying to replace SQLite. It is using SQLite as a durable local substrate and adding an opinionated graph/vector/FTS shim for agent workloads. The architecture is aligned with the broader user need by making canonical agent state durable in SQLite while using graph traversal, FTS, and vector search as managed technical access paths over that state.

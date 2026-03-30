@@ -21,7 +21,9 @@ operator surface:
 - stable structured `error_code` values are emitted by the Rust bridge
 - Go CLI exit codes are mapped from those error codes
 - a JSON response is written to stdout
-- stderr is reserved for diagnostics only
+- stderr carries structured JSON tracing events when the `tracing` feature is
+  enabled (controlled by `FATHOMDB_LOG` env var, default: `warn`); otherwise
+  reserved for unstructured diagnostic messages
 - compatibility is enforced by exact protocol-version matching and bridge-path validation
 - Go and Rust tests cover malformed input, protocol mismatch, invalid targets,
   and real bridge-backed happy paths across the command families in use today

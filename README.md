@@ -58,6 +58,9 @@ Three layers:
   schema bootstrap
 - **Response-cycle feedback**: operation progress reporting across Rust, Python,
   and Go/CLI surfaces
+- **Structured tracing**: feature-gated `tracing` instrumentation across all
+  engine seams, SQLite internal event bridging, per-consumer configuration
+  (Rust subscriber, Python logging via pyo3-log, Go bridge JSON stderr)
 
 ## Quick Start
 
@@ -104,7 +107,7 @@ tooling/          Build-time configuration (SQLite env)
 
 ## Test Coverage
 
-296+ tests across Rust, Go, and Python, organized in a 5-layer test plan
+298+ tests across Rust, Go, and Python, organized in a 5-layer test plan
 covering unit tests, integration tests, cross-language round-trips, CLI
 smoke tests, and fuzz testing.
 
