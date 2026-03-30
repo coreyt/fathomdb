@@ -167,6 +167,28 @@ but may need to be restored if the deadlock persists after a confirmed clean reb
 
 ---
 
+## Memex Verification: Fix Confirmed (2026-03-30 16:07)
+
+After a full `cargo clean` + `uv pip install -e --no-build-isolation` targeting Python 3.12
+(1m43s compile, 4.7MB .so), the `d09deb4` fix resolves the deadlock completely.
+
+The earlier failed verification was caused by **stale cargo cache**: `cargo clean` was run
+before a Python 3.11 rebuild, but when the 3.12 rebuild ran afterward, cargo reused the
+3.11-era object files (which did not contain the fix). The `.so` mtime updated but the
+binary content was unchanged.
+
+**Correct rebuild procedure for editable installs across Python versions:**
+```bash
+cd ~/projects/fathomdb
+rm -rf target python/build python/*.egg-info python/fathomdb/_fathomdb*.so
+uv pip install -e python/ --no-build-isolation   # from the consuming venv
+```
+
+**Memex logging state:** `fathomdb_engine` restored to DEBUG. Only `fathomdb_schema`
+suppressed to WARNING (noisy bootstrap lines, not a deadlock concern).
+
+---
+
 ## Response: Full Rebuild Completed (2026-03-30 15:15)
 
 The previous rebuild did not recompile Rust. There are two caches that must
