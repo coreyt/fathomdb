@@ -59,6 +59,7 @@ impl EngineCore {
     #[staticmethod]
     #[pyo3(signature = (database_path, provenance_mode, vector_dimension=None))]
     pub fn open(
+        py: Python<'_>,
         database_path: &str,
         provenance_mode: &str,
         vector_dimension: Option<usize>,
@@ -69,7 +70,12 @@ impl EngineCore {
             vector_dimension,
             read_pool_size: None,
         };
-        let engine = Engine::open(options).map_err(map_engine_error)?;
+        // Release the GIL during engine open — schema bootstrap emits tracing
+        // events that pyo3-log forwards to Python logging.  Holding the GIL
+        // here while another engine's writer thread also logs causes a deadlock.
+        let engine = py
+            .allow_threads(|| Engine::open(options))
+            .map_err(map_engine_error)?;
         Ok(Self {
             engine: RwLock::new(Some(engine)),
         })
@@ -648,16 +654,18 @@ mod tests {
     #[test]
     fn open_constructs_engine_options_with_all_fields() {
         let db = NamedTempFile::new().expect("temp db");
-        let engine = EngineCore::open(db.path().to_str().expect("db path"), "warn", None);
-        assert!(engine.is_ok(), "open must succeed: {:?}", engine.err());
+        Python::with_gil(|py| {
+            let engine = EngineCore::open(py, db.path().to_str().expect("db path"), "warn", None);
+            assert!(engine.is_ok(), "open must succeed: {:?}", engine.err());
+        });
     }
 
     #[test]
     fn close_makes_subsequent_calls_fail() {
         let db = NamedTempFile::new().expect("temp db");
         Python::with_gil(|py| {
-            let engine =
-                EngineCore::open(db.path().to_str().expect("path"), "warn", None).expect("open");
+            let engine = EngineCore::open(py, db.path().to_str().expect("path"), "warn", None)
+                .expect("open");
             engine.close(py).expect("close");
             let result = engine.check_integrity(py);
             assert!(result.is_err(), "call after close must fail");
@@ -670,8 +678,8 @@ mod tests {
     fn close_is_idempotent() {
         let db = NamedTempFile::new().expect("temp db");
         Python::with_gil(|py| {
-            let engine =
-                EngineCore::open(db.path().to_str().expect("path"), "warn", None).expect("open");
+            let engine = EngineCore::open(py, db.path().to_str().expect("path"), "warn", None)
+                .expect("open");
             engine.close(py).expect("first close");
             engine.close(py).expect("second close");
         });
@@ -683,7 +691,7 @@ mod tests {
     fn register_operational_collection_accepts_deserialized_request() {
         let db = NamedTempFile::new().expect("temp db");
         Python::with_gil(|py| {
-            let engine = EngineCore::open(db.path().to_str().expect("db path"), "warn", None)
+            let engine = EngineCore::open(py, db.path().to_str().expect("db path"), "warn", None)
                 .expect("open engine");
             let result = engine.register_operational_collection(
                 py,
@@ -707,7 +715,7 @@ mod tests {
     fn read_operational_collection_accepts_deserialized_request() {
         let db = NamedTempFile::new().expect("temp db");
         Python::with_gil(|py| {
-            let engine = EngineCore::open(db.path().to_str().expect("db path"), "warn", None)
+            let engine = EngineCore::open(py, db.path().to_str().expect("db path"), "warn", None)
                 .expect("open engine");
             // Register first so the collection exists
             engine
@@ -741,7 +749,7 @@ mod tests {
     fn engine_core_exposes_operational_admin_methods() {
         let db = NamedTempFile::new().expect("temp db");
         Python::with_gil(|py| {
-            let engine = EngineCore::open(db.path().to_str().expect("db path"), "warn", None)
+            let engine = EngineCore::open(py, db.path().to_str().expect("db path"), "warn", None)
                 .expect("open engine");
 
             let record: Value = serde_json::from_str(
