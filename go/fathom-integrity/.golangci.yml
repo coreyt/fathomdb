@@ -20,3 +20,20 @@ linters-settings:
     rules:
       - name: exported
         severity: warning
+
+issues:
+  exclude-rules:
+    # G306: test files intentionally write executables and data files to
+    # t.TempDir() with 0o755/0o644 permissions.
+    - linters: [gosec]
+      text: "G306"
+      path: (_test\.go|test/)
+    # G204: test helpers and fixtures use controlled binary paths
+    # (SQLiteBinary(), validated bridge paths) — not tainted input.
+    - linters: [gosec]
+      text: "G204"
+      path: (_test\.go|test/)
+    # G115: test loops use small bounded indices that always fit uint32.
+    - linters: [gosec]
+      text: "G115"
+      path: (_test\.go|test/)
