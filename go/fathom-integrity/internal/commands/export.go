@@ -85,5 +85,8 @@ func RunExportWithFeedback(
 			return struct{}{}, nil
 		},
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("run export with feedback: %w", err)
+	}
+	return nil
 }

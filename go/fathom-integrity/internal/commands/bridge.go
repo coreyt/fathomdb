@@ -28,15 +28,19 @@ func RunBridgeCommandWithFeedback(
 
 	response, err := client.ExecuteWithFeedback(ctx, request, observer, config)
 	if err != nil {
-		return err
+		return fmt.Errorf("execute bridge command: %w", err)
 	}
 	if err := bridge.ErrorFromResponse(response); err != nil {
-		return err
+		return fmt.Errorf("bridge command failed: %w", err)
 	}
 	if len(response.Payload) > 0 && string(response.Payload) != "{}" {
-		_, err = fmt.Fprintf(out, "%s\n%s\n", response.Message, response.Payload)
-		return err
+		if _, err = fmt.Fprintf(out, "%s\n%s\n", response.Message, response.Payload); err != nil {
+			return fmt.Errorf("write bridge response: %w", err)
+		}
+		return nil
 	}
-	_, err = fmt.Fprintln(out, response.Message)
-	return err
+	if _, err = fmt.Fprintln(out, response.Message); err != nil {
+		return fmt.Errorf("write bridge message: %w", err)
+	}
+	return nil
 }

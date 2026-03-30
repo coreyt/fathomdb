@@ -60,11 +60,15 @@ func RunRegenerateVectorsWithFeedback(
 			}
 
 			if len(resp.Payload) > 0 && string(resp.Payload) != "{}" {
-				_, err = fmt.Fprintf(out, "%s\n%s\n", resp.Message, resp.Payload)
-				return struct{}{}, err
+				if _, err = fmt.Fprintf(out, "%s\n%s\n", resp.Message, resp.Payload); err != nil {
+					return struct{}{}, fmt.Errorf("write vector regeneration response: %w", err)
+				}
+				return struct{}{}, nil
 			}
-			_, err = fmt.Fprintln(out, resp.Message)
-			return struct{}{}, err
+			if _, err = fmt.Fprintln(out, resp.Message); err != nil {
+				return struct{}{}, fmt.Errorf("write vector regeneration message: %w", err)
+			}
+			return struct{}{}, nil
 		},
 	)
 	return err

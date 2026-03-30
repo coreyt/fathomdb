@@ -12,6 +12,8 @@ const Version = "0.1.0"
 
 // RunVersion prints the fathom-integrity version and protocol version to out.
 func RunVersion(out io.Writer) error {
-	_, err := fmt.Fprintf(out, "fathom-integrity %s (admin protocol %d)\n", Version, bridge.ProtocolVersion)
-	return err
+	if _, err := fmt.Fprintf(out, "fathom-integrity %s (admin protocol %d)\n", Version, bridge.ProtocolVersion); err != nil {
+		return fmt.Errorf("write version output: %w", err)
+	}
+	return nil
 }

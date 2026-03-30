@@ -43,18 +43,21 @@ func RunCheckWithFeedback(
 
 			report, err := sqlitecheck.Diagnose(databasePath, "", layer2)
 			if err != nil {
-				return struct{}{}, err
+				return struct{}{}, fmt.Errorf("diagnose database: %w", err)
 			}
 			jsonStr, err := sqlitecheck.FormatDiagnostic(report)
 			if err != nil {
-				return struct{}{}, err
+				return struct{}{}, fmt.Errorf("format diagnostic report: %w", err)
 			}
 			fmt.Fprintln(out, jsonStr)
 			fmt.Fprintln(out, "check completed")
 			return struct{}{}, nil
 		},
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("run check with feedback: %w", err)
+	}
+	return nil
 }
 
 // bridgeIntegrityReport mirrors the Rust IntegrityReport JSON shape.
@@ -93,7 +96,7 @@ func fetchLayer2(dbPath, bridgePath string) (sqlitecheck.Layer2Report, error) {
 		Command:      bridge.CommandCheckIntegrity,
 	})
 	if err != nil {
-		return sqlitecheck.Layer2Report{}, err
+		return sqlitecheck.Layer2Report{}, fmt.Errorf("execute check_integrity: %w", err)
 	}
 	if err := bridge.ErrorFromResponse(iresp); err != nil {
 		return sqlitecheck.Layer2Report{}, fmt.Errorf("bridge check_integrity: %w", err)
@@ -109,7 +112,7 @@ func fetchLayer2(dbPath, bridgePath string) (sqlitecheck.Layer2Report, error) {
 		Command:      bridge.CommandCheckSemantics,
 	})
 	if err != nil {
-		return sqlitecheck.Layer2Report{}, err
+		return sqlitecheck.Layer2Report{}, fmt.Errorf("execute check_semantics: %w", err)
 	}
 	if err := bridge.ErrorFromResponse(sresp); err != nil {
 		return sqlitecheck.Layer2Report{}, fmt.Errorf("bridge check_semantics: %w", err)

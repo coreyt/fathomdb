@@ -79,7 +79,10 @@ func RunRecoverWithFeedback(
 			return struct{}{}, runRecover(sourcePath, destPath, bridgePath, sqliteBin, out)
 		},
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("run recover with feedback: %w", err)
+	}
+	return nil
 }
 
 func runRecover(sourcePath, destPath, bridgePath, sqliteBin string, out io.Writer) error {
@@ -257,10 +260,10 @@ func runBridgeCommandWithExecute(execute bridgeExecuteFunc, dbPath string, comma
 		},
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("execute bridge %s: %w", command, err)
 	}
 	if err := bridge.ErrorFromResponse(resp); err != nil {
-		return err
+		return fmt.Errorf("bridge %s failed: %w", command, err)
 	}
 	return nil
 }

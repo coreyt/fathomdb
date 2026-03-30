@@ -441,7 +441,7 @@ func makeBridgeScript(t *testing.T, tempDir, repoRoot string) string {
 	t.Helper()
 	bridgePath := filepath.Join(tempDir, "bridge.sh")
 	script := "#!/usr/bin/env bash\nset -euo pipefail\ncd " + repoRoot + "\ncargo run --quiet -p fathomdb-engine --bin fathomdb-admin-bridge\n"
-	require.NoError(t, os.WriteFile(bridgePath, []byte(script), 0o755))
+	require.NoError(t, os.WriteFile(bridgePath, []byte(script), 0o755)) //nolint:gosec // G306: test helper creates executable bridge script
 	return bridgePath
 }
 
@@ -449,7 +449,7 @@ func makeVecBridgeScript(t *testing.T, tempDir, repoRoot string) string {
 	t.Helper()
 	bridgePath := filepath.Join(tempDir, "bridge-vec.sh")
 	script := "#!/usr/bin/env bash\nset -euo pipefail\ncd " + repoRoot + "\ncargo run --quiet -p fathomdb-engine --features sqlite-vec --bin fathomdb-admin-bridge\n"
-	require.NoError(t, os.WriteFile(bridgePath, []byte(script), 0o755))
+	require.NoError(t, os.WriteFile(bridgePath, []byte(script), 0o755)) //nolint:gosec // G306: test helper creates executable bridge script
 	return bridgePath
 }
 
@@ -504,7 +504,7 @@ func ensurePythonFathomdb(t *testing.T, repoRoot string) {
 			return
 		}
 
-		install := exec.Command(
+		install := exec.Command( //nolint:gosec // G204: projectRoot is derived from test repo root, not user input
 			"python3",
 			"-m",
 			"pip",

@@ -134,5 +134,5 @@ func InjectWALBitFlip(t *testing.T, walPath string, frameIndex int, byteOffset i
 	require.Less(t, offset, len(data), "bit flip offset %d is beyond WAL file size %d", offset, len(data))
 
 	data[offset] ^= 0xFF
-	require.NoError(t, os.WriteFile(walPath, data, 0o644))
+	require.NoError(t, os.WriteFile(walPath, data, 0o644)) //nolint:gosec // G306: test helper writes WAL file with standard permissions
 }

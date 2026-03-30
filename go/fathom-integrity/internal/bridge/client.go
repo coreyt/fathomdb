@@ -159,15 +159,15 @@ const (
 	ErrorExecutionFailure = "execution_failure"
 )
 
-// BridgeError represents a structured error returned by the fathomdb-admin-bridge
+// Error represents a structured error returned by the fathomdb-admin-bridge
 // binary, carrying both an error code and a human-readable message.
-type BridgeError struct {
+type Error struct {
 	Code    string
 	Message string
 }
 
 // Error returns the human-readable error message, implementing the error interface.
-func (e BridgeError) Error() string {
+func (e Error) Error() string {
 	if e.Message == "" {
 		return "bridge command failed"
 	}
@@ -175,7 +175,7 @@ func (e BridgeError) Error() string {
 }
 
 // ExitCode maps the error code to a CLI process exit code.
-func (e BridgeError) ExitCode() int {
+func (e Error) ExitCode() int {
 	switch e.Code {
 	case ErrorBadRequest, ErrorUnsupportedCommand:
 		return 2
@@ -188,7 +188,7 @@ func (e BridgeError) ExitCode() int {
 	}
 }
 
-// ErrorFromResponse returns a BridgeError if the response indicates failure, or nil on success.
+// ErrorFromResponse returns an Error if the response indicates failure, or nil on success.
 func ErrorFromResponse(response Response) error {
 	if response.OK {
 		return nil
@@ -197,15 +197,15 @@ func ErrorFromResponse(response Response) error {
 	if code == "" {
 		code = ErrorExecutionFailure
 	}
-	return BridgeError{
+	return Error{
 		Code:    code,
 		Message: response.Message,
 	}
 }
 
-// ExitCodeFromError extracts the CLI exit code from a BridgeError, defaulting to 1.
+// ExitCodeFromError extracts the CLI exit code from an Error, defaulting to 1.
 func ExitCodeFromError(err error) int {
-	var bridgeError BridgeError
+	var bridgeError Error
 	if errors.As(err, &bridgeError) {
 		return bridgeError.ExitCode()
 	}
@@ -219,7 +219,11 @@ func (r Request) MarshalJSON() ([]byte, error) {
 	if payload.ProtocolVersion == 0 {
 		payload.ProtocolVersion = ProtocolVersion
 	}
-	return json.Marshal(payload)
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal bridge request: %w", err)
+	}
+	return data, nil
 }
 
 // ExportManifest is the structured payload returned by the bridge safe_export

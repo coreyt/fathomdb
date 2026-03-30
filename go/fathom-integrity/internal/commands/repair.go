@@ -417,7 +417,7 @@ func validateRepairTarget(target string) error {
 	case RepairTargetAll, RepairTargetDuplicateActive, RepairTargetRuntimeFK, RepairTargetOrphanedChunks:
 		return nil
 	default:
-		return bridge.BridgeError{
+		return bridge.Error{
 			Code: bridge.ErrorBadRequest,
 			Message: fmt.Sprintf(
 				"invalid repair target %q (expected one of: %s, %s, %s, %s)",

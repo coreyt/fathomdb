@@ -31,5 +31,7 @@ func (o feedbackObserver) OnEvent(event bridge.ResponseCycleEvent) {
 			event.OperationKind,
 			event.ElapsedMS,
 		)
+	case bridge.PhaseStarted, bridge.PhaseFinished, bridge.PhaseFailed:
+		// No CLI output needed for lifecycle bookkeeping phases.
 	}
 }

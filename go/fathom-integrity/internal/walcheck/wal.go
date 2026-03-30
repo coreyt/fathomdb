@@ -4,6 +4,7 @@ package walcheck
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 )
@@ -41,7 +42,7 @@ func InspectWAL(walPath string) (WALReport, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return WALReport{}, nil
 		}
-		return WALReport{}, err
+		return WALReport{}, fmt.Errorf("open WAL file: %w", err)
 	}
 	defer f.Close()
 

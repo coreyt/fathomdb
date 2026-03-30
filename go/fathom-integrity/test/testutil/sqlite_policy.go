@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -55,7 +56,7 @@ func LoadSQLitePolicy() (SQLitePolicy, error) {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return SQLitePolicy{}, err
+		return SQLitePolicy{}, fmt.Errorf("scan sqlite policy file: %w", err)
 	}
 	if policy.MinimumSupportedVersion == "" || policy.RepoDevVersion == "" {
 		return SQLitePolicy{}, os.ErrInvalid

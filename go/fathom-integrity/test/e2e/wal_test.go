@@ -47,7 +47,7 @@ func buildTestWAL(t *testing.T, pageSize uint32, numFrames int) []byte {
 	running := [2]uint32{salt1, salt2}
 	for i := 0; i < numFrames; i++ {
 		frame := make([]byte, walcheck.WALFrameHeaderSize+int(pageSize))
-		binary.BigEndian.PutUint32(frame[0:4], uint32(i+1))
+		binary.BigEndian.PutUint32(frame[0:4], uint32(i+1)) //nolint:gosec // G115: i is bounded by numFrames which is a small test value
 		binary.BigEndian.PutUint32(frame[8:12], salt1)
 		binary.BigEndian.PutUint32(frame[12:16], salt2)
 		running = buildWALChecksumBytes(frame[:8], running)

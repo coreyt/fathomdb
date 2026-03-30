@@ -27,18 +27,18 @@ type Report struct {
 func Run(path string) (Report, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return Report{}, err
+		return Report{}, fmt.Errorf("open database %s: %w", path, err)
 	}
 	defer file.Close()
 
 	header := make([]byte, len(sqliteHeader))
 	if _, err := io.ReadFull(file, header); err != nil {
-		return Report{}, err
+		return Report{}, fmt.Errorf("read database header: %w", err)
 	}
 
 	info, err := file.Stat()
 	if err != nil {
-		return Report{}, err
+		return Report{}, fmt.Errorf("stat database file: %w", err)
 	}
 
 	report := Report{
@@ -188,7 +188,7 @@ func CountTable(sqliteBin, dbPath, table string) (int, error) {
 func FormatDiagnostic(r DiagnosticReport) (string, error) {
 	b, err := json.Marshal(r)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("marshal diagnostic report: %w", err)
 	}
 	return string(b), nil
 }
@@ -199,13 +199,13 @@ func diagnoseLayer1(dbPath, sqliteBin string) (Layer1Report, error) {
 	// 1. Read and validate the SQLite header (no subprocess needed).
 	f, err := os.Open(dbPath)
 	if err != nil {
-		return report, err
+		return report, fmt.Errorf("open database for layer1 check: %w", err)
 	}
 	hdr := make([]byte, len(sqliteHeader))
 	_, err = io.ReadFull(f, hdr)
 	f.Close()
 	if err != nil {
-		return report, err
+		return report, fmt.Errorf("read database header for layer1 check: %w", err)
 	}
 
 	report.HeaderValid = string(hdr) == sqliteHeader
