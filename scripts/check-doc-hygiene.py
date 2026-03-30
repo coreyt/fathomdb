@@ -48,7 +48,7 @@ def main() -> int:
     parser.add_argument(
         "--checklist",
         type=Path,
-        default=repo_root / "dev" / "production-readiness-checklist.md",
+        default=repo_root / "dev" / "fathomdb-v1-path-to-production-checklist.md",
     )
     args = parser.parse_args()
 

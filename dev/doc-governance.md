@@ -14,7 +14,7 @@ These must match the shipped behavior and current support contract:
 - `README.md`
 - `dev/ARCHITECTURE.md`
 - `dev/0.1_IMPLEMENTATION_PLAN.md`
-- `dev/production-readiness-checklist.md`
+- `dev/fathomdb-v1-path-to-production-checklist.md`
 - `dev/production-acceptance-bar.md`
 - `dev/release-policy.md`
 - `dev/repair-support-contract.md`
