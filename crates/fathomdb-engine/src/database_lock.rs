@@ -147,9 +147,14 @@ mod tests {
 
         let _lock = DatabaseLock::acquire(&db_path).expect("acquire");
 
-        let contents = std::fs::read_to_string(lock_path_for(&db_path)).expect("read lock file");
-        let pid: u32 = contents.trim().parse().expect("parse pid");
-        assert_eq!(pid, std::process::id());
+        // On Windows, exclusive file locks prevent reading from other handles,
+        // so we can only verify the lock file content on Unix.
+        if cfg!(unix) {
+            let contents =
+                std::fs::read_to_string(lock_path_for(&db_path)).expect("read lock file");
+            let pid: u32 = contents.trim().parse().expect("parse pid");
+            assert_eq!(pid, std::process::id());
+        }
     }
 
     #[test]
@@ -161,11 +166,19 @@ mod tests {
         let err = DatabaseLock::acquire(&db_path).unwrap_err();
 
         let msg = err.to_string();
-        let our_pid = std::process::id().to_string();
         assert!(
-            msg.contains(&our_pid),
-            "error must contain holder pid {our_pid}: {msg}"
+            msg.contains("already in use"),
+            "error must mention 'already in use': {msg}"
         );
+        // PID is best-effort diagnostic; on Windows exclusive locks prevent
+        // read_pid from reading the lock file held by another handle.
+        if cfg!(unix) {
+            let our_pid = std::process::id().to_string();
+            assert!(
+                msg.contains(&our_pid),
+                "error must contain holder pid {our_pid}: {msg}"
+            );
+        }
     }
 
     #[test]

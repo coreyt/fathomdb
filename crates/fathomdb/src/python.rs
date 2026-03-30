@@ -662,7 +662,7 @@ fn py_new_row_id() -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used)]
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use pyo3::Python;
     use serde_json::Value;

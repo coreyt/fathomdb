@@ -215,11 +215,19 @@ mod tests {
             .expect_err("second open must fail");
 
         let msg = err.to_string();
-        let our_pid = std::process::id().to_string();
         assert!(
-            msg.contains(&our_pid),
-            "error must contain holder pid {our_pid}: {msg}"
+            msg.contains("already in use"),
+            "error must mention 'already in use': {msg}"
         );
+        // PID is best-effort; on Windows exclusive locks prevent reading the
+        // lock file from a second handle.
+        if cfg!(unix) {
+            let our_pid = std::process::id().to_string();
+            assert!(
+                msg.contains(&our_pid),
+                "error must contain holder pid {our_pid}: {msg}"
+            );
+        }
     }
 
     /// Verify that dropping `EngineRuntime` joins the writer thread and triggers
