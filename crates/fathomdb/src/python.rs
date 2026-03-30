@@ -411,10 +411,8 @@ impl EngineCore {
         before_timestamp: i64,
         options_json: &str,
     ) -> PyResult<String> {
-        let options: crate::ProvenancePurgeOptions =
-            serde_json::from_str(options_json).map_err(|e| {
-                PyValueError::new_err(format!("invalid options JSON: {e}"))
-            })?;
+        let options: crate::ProvenancePurgeOptions = serde_json::from_str(options_json)
+            .map_err(|e| PyValueError::new_err(format!("invalid options JSON: {e}")))?;
         let report = py
             .allow_threads(|| {
                 self.engine
@@ -575,8 +573,7 @@ mod tests {
                 }"#,
             );
             assert!(result.is_ok(), "register must succeed: {:?}", result.err());
-            let record: Value =
-                serde_json::from_str(&result.unwrap()).expect("decode register");
+            let record: Value = serde_json::from_str(&result.unwrap()).expect("decode register");
             assert_eq!(record["name"], "reg_test");
         });
     }
@@ -612,8 +609,7 @@ mod tests {
                 }"#,
             );
             assert!(result.is_ok(), "read must succeed: {:?}", result.err());
-            let report: Value =
-                serde_json::from_str(&result.unwrap()).expect("decode read");
+            let report: Value = serde_json::from_str(&result.unwrap()).expect("decode read");
             assert_eq!(report["collection_name"], "read_test");
         });
     }

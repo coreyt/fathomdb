@@ -114,18 +114,17 @@ mod windows_acl {
     use std::path::Path;
     use std::ptr::{null, null_mut};
 
-    use windows_sys::Win32::Foundation::{ERROR_SUCCESS, PSID};
+    use windows_sys::Win32::Foundation::{ERROR_SUCCESS, GENERIC_WRITE, LocalFree};
     use windows_sys::Win32::Security::Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT};
     use windows_sys::Win32::Security::{
-        ACCESS_ALLOWED_ACE, ACCESS_ALLOWED_ACE_TYPE, ACE_HEADER, ACL, ACL_SIZE_INFORMATION,
-        AclSizeInformation, CreateWellKnownSid, DACL_SECURITY_INFORMATION, EqualSid, GetAce,
-        GetAclInformation, WinAuthenticatedUserSid, WinBuiltinUsersSid, WinWorldSid,
+        ACCESS_ALLOWED_ACE, ACE_HEADER, ACL, ACL_SIZE_INFORMATION, AclSizeInformation,
+        CreateWellKnownSid, DACL_SECURITY_INFORMATION, EqualSid, GetAce, GetAclInformation,
+        PSID, WRITE_DAC, WRITE_OWNER, WinAuthenticatedUserSid, WinBuiltinUsersSid, WinWorldSid,
     };
     use windows_sys::Win32::Storage::FileSystem::{
         FILE_APPEND_DATA, FILE_GENERIC_WRITE, FILE_WRITE_DATA,
     };
-    use windows_sys::Win32::System::Memory::LocalFree;
-    use windows_sys::Win32::System::SystemServices::{GENERIC_WRITE, WRITE_DAC, WRITE_OWNER};
+    use windows_sys::Win32::System::SystemServices::ACCESS_ALLOWED_ACE_TYPE;
 
     const WRITE_MASK: u32 = FILE_WRITE_DATA
         | FILE_APPEND_DATA

@@ -392,12 +392,11 @@ impl SchemaManager {
         Self::ensure_metadata_tables(conn)?;
 
         // Downgrade protection
-        let max_applied: u32 = conn
-            .query_row(
-                "SELECT COALESCE(MAX(version), 0) FROM fathom_schema_migrations",
-                [],
-                |row| row.get(0),
-            )?;
+        let max_applied: u32 = conn.query_row(
+            "SELECT COALESCE(MAX(version), 0) FROM fathom_schema_migrations",
+            [],
+            |row| row.get(0),
+        )?;
         let engine_version = self.current_version().0;
         if max_applied > engine_version {
             return Err(SchemaError::VersionMismatch {

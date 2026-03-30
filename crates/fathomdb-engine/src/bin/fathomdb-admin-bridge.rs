@@ -756,9 +756,9 @@ mod tests {
         BridgeErrorCode, BridgeRequest, classify_engine_error, handle_request_body, parse_command,
         parse_target, validate_path,
     };
-    use std::path::Path;
     use fathomdb_engine::{EngineError, ProjectionTarget};
     use fathomdb_schema::SchemaError;
+    use std::path::Path;
 
     #[test]
     fn parse_command_reports_unsupported_command() {
@@ -957,7 +957,11 @@ mod tests {
         );
         assert!(!response.ok);
         assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
-        assert!(response.message.contains("must not contain '..' components"));
+        assert!(
+            response
+                .message
+                .contains("must not contain '..' components")
+        );
     }
 
     #[test]
@@ -968,6 +972,10 @@ mod tests {
         assert!(!response.ok);
         assert_eq!(response.error_code, Some(BridgeErrorCode::BadRequest));
         assert!(response.message.contains("destination_path"));
-        assert!(response.message.contains("must not contain '..' components"));
+        assert!(
+            response
+                .message
+                .contains("must not contain '..' components")
+        );
     }
 }

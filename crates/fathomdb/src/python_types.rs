@@ -777,11 +777,8 @@ mod tests {
     }
 
     fn parse_ast_with_step(step_json: &str) -> QueryAst {
-        let ast_json = format!(
-            r#"{{"root_kind":"Node","steps":[{step_json}]}}"#
-        );
-        let py_ast: PyQueryAst =
-            serde_json::from_str(&ast_json).expect("parse PyQueryAst");
+        let ast_json = format!(r#"{{"root_kind":"Node","steps":[{step_json}]}}"#);
+        let py_ast: PyQueryAst = serde_json::from_str(&ast_json).expect("parse PyQueryAst");
         QueryAst::from(py_ast)
     }
 
@@ -790,7 +787,10 @@ mod tests {
         let step = parse_step(r#"{"type":"vector_search","query":"hello","limit":5}"#);
         assert!(matches!(step, PyQueryStep::VectorSearch { limit: 5, .. }));
         let ast = parse_ast_with_step(r#"{"type":"vector_search","query":"hello","limit":5}"#);
-        assert!(matches!(&ast.steps[0], QueryStep::VectorSearch { limit: 5, .. }));
+        assert!(matches!(
+            &ast.steps[0],
+            QueryStep::VectorSearch { limit: 5, .. }
+        ));
     }
 
     #[test]
@@ -798,7 +798,10 @@ mod tests {
         let step = parse_step(r#"{"type":"text_search","query":"budget","limit":10}"#);
         assert!(matches!(step, PyQueryStep::TextSearch { limit: 10, .. }));
         let ast = parse_ast_with_step(r#"{"type":"text_search","query":"budget","limit":10}"#);
-        assert!(matches!(&ast.steps[0], QueryStep::TextSearch { limit: 10, .. }));
+        assert!(matches!(
+            &ast.steps[0],
+            QueryStep::TextSearch { limit: 10, .. }
+        ));
     }
 
     #[test]
@@ -807,7 +810,9 @@ mod tests {
             r#"{"type":"traverse","direction":"out","label":"OWNS","max_depth":2}"#,
         );
         match &ast.steps[0] {
-            QueryStep::Traverse { label, max_depth, .. } => {
+            QueryStep::Traverse {
+                label, max_depth, ..
+            } => {
                 assert_eq!(label, "OWNS");
                 assert_eq!(*max_depth, 2);
             }
@@ -817,9 +822,7 @@ mod tests {
 
     #[test]
     fn step_filter_logical_id_eq_roundtrip() {
-        let ast = parse_ast_with_step(
-            r#"{"type":"filter_logical_id_eq","logical_id":"node-1"}"#,
-        );
+        let ast = parse_ast_with_step(r#"{"type":"filter_logical_id_eq","logical_id":"node-1"}"#);
         match &ast.steps[0] {
             QueryStep::Filter(Predicate::LogicalIdEq(id)) => assert_eq!(id, "node-1"),
             other => panic!("expected LogicalIdEq, got {other:?}"),
@@ -837,9 +840,7 @@ mod tests {
 
     #[test]
     fn step_filter_source_ref_eq_roundtrip() {
-        let ast = parse_ast_with_step(
-            r#"{"type":"filter_source_ref_eq","source_ref":"src-abc"}"#,
-        );
+        let ast = parse_ast_with_step(r#"{"type":"filter_source_ref_eq","source_ref":"src-abc"}"#);
         match &ast.steps[0] {
             QueryStep::Filter(Predicate::SourceRefEq(src)) => assert_eq!(src, "src-abc"),
             other => panic!("expected SourceRefEq, got {other:?}"),
@@ -867,9 +868,8 @@ mod tests {
     fn step_filter_json_bool_eq_roundtrip() {
         // This tests that the PyQueryStep enum can deserialize the
         // filter_json_bool_eq tag and converts to the correct Predicate.
-        let ast = parse_ast_with_step(
-            r#"{"type":"filter_json_bool_eq","path":"$.active","value":true}"#,
-        );
+        let ast =
+            parse_ast_with_step(r#"{"type":"filter_json_bool_eq","path":"$.active","value":true}"#);
         match &ast.steps[0] {
             QueryStep::Filter(Predicate::JsonPathEq { path, value }) => {
                 assert_eq!(path, "$.active");
@@ -937,9 +937,8 @@ mod tests {
 
     #[test]
     fn step_filter_json_integer_lte_roundtrip() {
-        let ast = parse_ast_with_step(
-            r#"{"type":"filter_json_integer_lte","path":"$.rank","value":10}"#,
-        );
+        let ast =
+            parse_ast_with_step(r#"{"type":"filter_json_integer_lte","path":"$.rank","value":10}"#);
         match &ast.steps[0] {
             QueryStep::Filter(Predicate::JsonPathCompare { op, .. }) => {
                 assert_eq!(*op, ComparisonOp::Lte);
@@ -964,34 +963,40 @@ mod tests {
 
     #[test]
     fn step_filter_json_timestamp_gte_roundtrip() {
-        let ast = parse_ast_with_step(
-            r#"{"type":"filter_json_timestamp_gte","path":"$.ts","value":1}"#,
-        );
+        let ast =
+            parse_ast_with_step(r#"{"type":"filter_json_timestamp_gte","path":"$.ts","value":1}"#);
         assert!(matches!(
             &ast.steps[0],
-            QueryStep::Filter(Predicate::JsonPathCompare { op: ComparisonOp::Gte, .. })
+            QueryStep::Filter(Predicate::JsonPathCompare {
+                op: ComparisonOp::Gte,
+                ..
+            })
         ));
     }
 
     #[test]
     fn step_filter_json_timestamp_lt_roundtrip() {
-        let ast = parse_ast_with_step(
-            r#"{"type":"filter_json_timestamp_lt","path":"$.ts","value":9}"#,
-        );
+        let ast =
+            parse_ast_with_step(r#"{"type":"filter_json_timestamp_lt","path":"$.ts","value":9}"#);
         assert!(matches!(
             &ast.steps[0],
-            QueryStep::Filter(Predicate::JsonPathCompare { op: ComparisonOp::Lt, .. })
+            QueryStep::Filter(Predicate::JsonPathCompare {
+                op: ComparisonOp::Lt,
+                ..
+            })
         ));
     }
 
     #[test]
     fn step_filter_json_timestamp_lte_roundtrip() {
-        let ast = parse_ast_with_step(
-            r#"{"type":"filter_json_timestamp_lte","path":"$.ts","value":99}"#,
-        );
+        let ast =
+            parse_ast_with_step(r#"{"type":"filter_json_timestamp_lte","path":"$.ts","value":99}"#);
         assert!(matches!(
             &ast.steps[0],
-            QueryStep::Filter(Predicate::JsonPathCompare { op: ComparisonOp::Lte, .. })
+            QueryStep::Filter(Predicate::JsonPathCompare {
+                op: ComparisonOp::Lte,
+                ..
+            })
         ));
     }
 
@@ -1002,7 +1007,10 @@ mod tests {
         let result = serde_json::from_str::<PyQueryStep>(
             r#"{"type":"filter_json_float_eq","path":"$.x","value":1.5}"#,
         );
-        assert!(result.is_err(), "unknown step type should fail deserialization");
+        assert!(
+            result.is_err(),
+            "unknown step type should fail deserialization"
+        );
     }
 
     // ---------------------------------------------------------------
@@ -1257,12 +1265,12 @@ mod tests {
         .expect("serialize text");
         assert!(text.contains("\"type\":\"text\""));
 
-        let integer = serde_json::to_string(&PyBindValue::Integer { value: 42 })
-            .expect("serialize integer");
+        let integer =
+            serde_json::to_string(&PyBindValue::Integer { value: 42 }).expect("serialize integer");
         assert!(integer.contains("\"type\":\"integer\""));
 
-        let boolean = serde_json::to_string(&PyBindValue::Bool { value: true })
-            .expect("serialize bool");
+        let boolean =
+            serde_json::to_string(&PyBindValue::Bool { value: true }).expect("serialize bool");
         assert!(boolean.contains("\"type\":\"bool\""));
     }
 
@@ -1372,7 +1380,9 @@ mod tests {
         assert_eq!(json["edge_rows"], 20);
         assert_eq!(json["action_rows"], 30);
         assert_eq!(json["operational_mutation_rows"], 5);
-        let node_ids = json["node_logical_ids"].as_array().expect("node_logical_ids");
+        let node_ids = json["node_logical_ids"]
+            .as_array()
+            .expect("node_logical_ids");
         assert_eq!(node_ids.len(), 2);
         assert_eq!(node_ids[0], "n1");
         let action_ids = json["action_ids"].as_array().expect("action_ids");
@@ -1448,7 +1458,9 @@ mod tests {
         let warnings = json["warnings"].as_array().expect("warnings");
         assert_eq!(warnings.len(), 1);
         assert_eq!(warnings[0], "w1");
-        let prov = json["provenance_warnings"].as_array().expect("provenance_warnings");
+        let prov = json["provenance_warnings"]
+            .as_array()
+            .expect("provenance_warnings");
         assert_eq!(prov.len(), 2);
         assert_eq!(prov[0], "pw1");
         assert_eq!(prov[1], "pw2");

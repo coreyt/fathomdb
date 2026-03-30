@@ -1938,18 +1938,15 @@ impl AdminService {
             total_deleted
         };
 
-        let total_after: u64 = tx.query_row(
-            "SELECT count(*) FROM provenance_events",
-            [],
-            |row| row.get(0),
-        )?;
+        let total_after: u64 =
+            tx.query_row("SELECT count(*) FROM provenance_events", [], |row| {
+                row.get(0)
+            })?;
 
         let oldest_remaining: Option<i64> = tx
-            .query_row(
-                "SELECT MIN(created_at) FROM provenance_events",
-                [],
-                |row| row.get(0),
-            )
+            .query_row("SELECT MIN(created_at) FROM provenance_events", [], |row| {
+                row.get(0)
+            })
             .optional()?
             .flatten();
 
@@ -2704,7 +2701,9 @@ fn validate_generator_command(
         if argument.len() > MAX_GENERATOR_COMMAND_ARG_LEN {
             return Err(VectorRegenerationFailure::new(
                 VectorRegenerationFailureClass::InvalidContract,
-                format!("generator_command argument exceeds max length {MAX_GENERATOR_COMMAND_ARG_LEN}"),
+                format!(
+                    "generator_command argument exceeds max length {MAX_GENERATOR_COMMAND_ARG_LEN}"
+                ),
             ));
         }
         total_len += argument.len();
@@ -2712,7 +2711,9 @@ fn validate_generator_command(
     if total_len > MAX_GENERATOR_COMMAND_TOTAL_LEN {
         return Err(VectorRegenerationFailure::new(
             VectorRegenerationFailureClass::InvalidContract,
-            format!("generator_command exceeds max serialized length {MAX_GENERATOR_COMMAND_TOTAL_LEN}"),
+            format!(
+                "generator_command exceeds max serialized length {MAX_GENERATOR_COMMAND_TOTAL_LEN}"
+            ),
         ));
     }
     executable_trust::validate_generator_executable(&command[0], policy)?;
@@ -3003,7 +3004,8 @@ fn run_vector_generator_bounded(
         )
     })?;
     if !status.success() {
-        let stderr = truncate_error_text(&stderr_bytes.unwrap_or_default(), policy.max_stderr_bytes);
+        let stderr =
+            truncate_error_text(&stderr_bytes.unwrap_or_default(), policy.max_stderr_bytes);
         return Err(VectorRegenerationFailure::new(
             VectorRegenerationFailureClass::GeneratorNonzeroExit,
             stderr,
@@ -3875,19 +3877,11 @@ fn execute_operational_filtered_read(
                 let _ = write!(sql, "AND f{index}.field_name = ?{} ", params.len() + 1);
                 params.push(Value::from(filter.field.clone()));
                 if let Some(lower) = lower {
-                    let _ = write!(
-                        sql,
-                        "AND f{index}.integer_value >= ?{} ",
-                        params.len() + 1
-                    );
+                    let _ = write!(sql, "AND f{index}.integer_value >= ?{} ", params.len() + 1);
                     params.push(Value::from(*lower));
                 }
                 if let Some(upper) = upper {
-                    let _ = write!(
-                        sql,
-                        "AND f{index}.integer_value <= ?{} ",
-                        params.len() + 1
-                    );
+                    let _ = write!(sql, "AND f{index}.integer_value <= ?{} ", params.len() + 1);
                     params.push(Value::from(*upper));
                 }
             }
@@ -4131,10 +4125,9 @@ fn retention_action_kind_and_limit(
         OperationalRetentionPolicy::PurgeBeforeSeconds { .. } => {
             (OperationalRetentionActionKind::PurgeBeforeSeconds, None)
         }
-        OperationalRetentionPolicy::KeepLast { max_rows } => (
-            OperationalRetentionActionKind::KeepLast,
-            Some(*max_rows),
-        ),
+        OperationalRetentionPolicy::KeepLast { max_rows } => {
+            (OperationalRetentionActionKind::KeepLast, Some(*max_rows))
+        }
     }
 }
 
@@ -8115,11 +8108,7 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
         let tmp_files: Vec<_> = fs::read_dir(export_dir.path())
             .expect("read export dir")
             .filter_map(Result::ok)
-            .filter(|e| {
-                e.path()
-                    .extension()
-                    .is_some_and(|ext| ext == "tmp")
-            })
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "tmp"))
             .collect();
 
         assert!(
@@ -8294,11 +8283,9 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
 
         let conn = sqlite::open_connection(db.path()).expect("conn");
         let remaining_type: String = conn
-            .query_row(
-                "SELECT event_type FROM provenance_events",
-                [],
-                |row| row.get(0),
-            )
+            .query_row("SELECT event_type FROM provenance_events", [], |row| {
+                row.get(0)
+            })
             .expect("remaining event type");
         assert_eq!(remaining_type, "excise");
     }
@@ -8320,9 +8307,7 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
             dry_run: false,
             preserve_event_types: Vec::new(),
         };
-        let report = service
-            .purge_provenance_events(0, &options)
-            .expect("purge");
+        let report = service.purge_provenance_events(0, &options).expect("purge");
 
         assert_eq!(report.events_deleted, 0);
         assert_eq!(report.events_preserved, 1);
@@ -8385,11 +8370,8 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
             .expect("retire edge");
             // Simulate purge of B: delete node rows but leave the edge intact
             // to reproduce the dangling-edge scenario the validation guards against.
-            conn.execute(
-                "DELETE FROM nodes WHERE logical_id = 'doc-2'",
-                [],
-            )
-            .expect("purge node B rows");
+            conn.execute("DELETE FROM nodes WHERE logical_id = 'doc-2'", [])
+                .expect("purge node B rows");
         }
 
         // Restore A — the edge should be skipped because B has no active node
@@ -8469,7 +8451,10 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
         assert!(!report.was_noop);
         assert_eq!(report.restored_node_rows, 1);
         assert!(report.restored_edge_rows > 0, "edge should be restored");
-        assert!(report.skipped_edges.is_empty(), "no edges should be skipped");
+        assert!(
+            report.skipped_edges.is_empty(),
+            "no edges should be skipped"
+        );
 
         let conn = sqlite::open_connection(db.path()).expect("conn");
         let active_edge_count: i64 = conn
@@ -8552,8 +8537,14 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
         let report_a = service.restore_logical_id("doc-1").expect("restore A");
         assert!(!report_a.was_noop);
         assert_eq!(report_a.restored_node_rows, 1);
-        assert!(report_a.restored_edge_rows > 0, "edge should be restored when both endpoints active");
-        assert!(report_a.skipped_edges.is_empty(), "no edges should be skipped");
+        assert!(
+            report_a.restored_edge_rows > 0,
+            "edge should be restored when both endpoints active"
+        );
+        assert!(
+            report_a.skipped_edges.is_empty(),
+            "no edges should be skipped"
+        );
 
         let conn = sqlite::open_connection(db.path()).expect("conn");
         let active_edge_count: i64 = conn
@@ -8563,6 +8554,9 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
                 |row| row.get(0),
             )
             .expect("active edge count");
-        assert_eq!(active_edge_count, 1, "edge must be active after both endpoints restored");
+        assert_eq!(
+            active_edge_count, 1,
+            "edge must be active after both endpoints restored"
+        );
     }
 }

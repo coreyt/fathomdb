@@ -222,15 +222,28 @@ func sanitizeRecoveredSQL(sql string) string {
 func restoreRecoveredProjections(destPath, bridgePath, sqliteBin string) error {
 	client := bridge.Client{BinaryPath: bridgePath}
 
-	if enabledProfiles, err := queryScalarInt(
-		sqliteBin,
-		destPath,
-		"SELECT count(*) FROM vector_profiles WHERE enabled = 1;",
-	); err != nil {
-		return fmt.Errorf("count enabled vector profiles: %w", err)
-	} else if enabledProfiles > 0 {
-		if err := runBridgeCommand(client, destPath, bridge.CommandRestoreVector); err != nil {
-			return fmt.Errorf("restore vector profiles: %w", err)
+	// Check if vector_profiles table exists before querying it — the recovered
+	// database may not have the table if the source lacked a full fathomdb schema.
+	hasVecProfiles, err := queryScalarInt(
+		sqliteBin, destPath,
+		"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='vector_profiles';",
+	)
+	if err != nil {
+		return fmt.Errorf("check vector_profiles existence: %w", err)
+	}
+	if hasVecProfiles > 0 {
+		enabledProfiles, err := queryScalarInt(
+			sqliteBin,
+			destPath,
+			"SELECT count(*) FROM vector_profiles WHERE enabled = 1;",
+		)
+		if err != nil {
+			return fmt.Errorf("count enabled vector profiles: %w", err)
+		}
+		if enabledProfiles > 0 {
+			if err := runBridgeCommand(client, destPath, bridge.CommandRestoreVector); err != nil {
+				return fmt.Errorf("restore vector profiles: %w", err)
+			}
 		}
 	}
 

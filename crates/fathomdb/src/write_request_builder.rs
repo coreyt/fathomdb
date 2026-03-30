@@ -310,7 +310,11 @@ pub struct WriteRequestBuilder {
     operational_writes: Vec<OperationalWrite>,
 }
 
-#[allow(clippy::too_many_arguments, clippy::missing_errors_doc, clippy::too_many_lines)]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::missing_errors_doc,
+    clippy::too_many_lines
+)]
 impl WriteRequestBuilder {
     /// Create a new builder with the given human-readable label.
     #[must_use]
