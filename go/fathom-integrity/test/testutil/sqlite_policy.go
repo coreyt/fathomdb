@@ -29,7 +29,7 @@ func LoadSQLitePolicy() (SQLitePolicy, error) {
 	policyPath := filepath.Join(repoRoot, "tooling", "sqlite.env")
 	file, err := os.Open(policyPath)
 	if err != nil {
-		return SQLitePolicy{}, err
+		return SQLitePolicy{}, fmt.Errorf("open sqlite policy: %w", err)
 	}
 	defer file.Close()
 

@@ -16,7 +16,7 @@ func makeFakeBridge(t *testing.T, responseJSON string) string {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "fake-bridge.sh")
 	script := "#!/usr/bin/env bash\nprintf '%s\\n' '" + responseJSON + "'\n"
-	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
+	require.NoError(t, os.WriteFile(path, []byte(script), 0o755)) //nolint:gosec // G306: test executable in t.TempDir()
 	return path
 }
 
@@ -25,7 +25,7 @@ func makeCapturingFakeBridge(t *testing.T, requestPath, responseJSON string) str
 	dir := t.TempDir()
 	path := filepath.Join(dir, "fake-bridge.sh")
 	script := "#!/usr/bin/env bash\ncat >" + requestPath + "\nprintf '%s\\n' '" + responseJSON + "'\n"
-	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
+	require.NoError(t, os.WriteFile(path, []byte(script), 0o755)) //nolint:gosec // G306: test executable in t.TempDir()
 	return path
 }
 

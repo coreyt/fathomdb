@@ -101,7 +101,10 @@ func RunRepairWithFeedback(
 			return struct{}{}, nil
 		},
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("repair: %w", err)
+	}
+	return nil
 }
 
 func runRepair(databasePath, sqliteBin, target string, dryRun bool) (RepairReport, error) {

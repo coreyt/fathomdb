@@ -186,7 +186,7 @@ func makeFailingSQLiteWrapper(t *testing.T, realSQLite string) string {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sqlite-wrapper.sh")
 	script := "#!/usr/bin/env bash\nset -euo pipefail\ncase \"$*\" in\n  *operational_current*)\n    echo \"forced count failure for operational_current\" >&2\n    exit 1\n    ;;\nesac\nexec " + shellQuote(realSQLite) + " \"$@\"\n"
-	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
+	require.NoError(t, os.WriteFile(path, []byte(script), 0o755)) //nolint:gosec // G306: test executable in t.TempDir()
 	return path
 }
 

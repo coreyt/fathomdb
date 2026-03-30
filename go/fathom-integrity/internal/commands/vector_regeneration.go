@@ -71,5 +71,8 @@ func RunRegenerateVectorsWithFeedback(
 			return struct{}{}, nil
 		},
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("vector regeneration: %w", err)
+	}
+	return nil
 }
