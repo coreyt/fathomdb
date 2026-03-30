@@ -26,10 +26,10 @@ jobs:
       - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
       - run: cargo clippy --workspace --all-targets --features python -- -D warnings
       # Unit tests with --features python require linking against libpython,
-      # which is not available in a standalone cargo test binary. The clippy
-      # step above catches compile/lint regressions; python-test exercises
+      # which is not available in a standalone cargo test binary. cargo check
+      # validates test code compiles without linking; python-test exercises
       # the full test suite via maturin + pytest.
-      - run: cargo test -p fathomdb --features python --no-run
+      - run: cargo check --tests -p fathomdb --features python
 
   python-test:
     runs-on: ubuntu-latest
