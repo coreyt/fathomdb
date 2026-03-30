@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+description = "Local datastore for persistent AI agents with graph, vector, and full-text search on SQLite"
 
 [lib]
 crate-type = ["rlib", "cdylib"]

@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use fathomdb::{
     ChunkInsert, ChunkPolicy, Engine, EngineOptions, NodeInsert, QueryBuilder, SafeExportOptions,
-    WriteRequest,
+    VecInsert, WriteRequest,
 };
 use tempfile::TempDir;
 
@@ -79,6 +79,7 @@ fn single_vector_request(index: u64) -> WriteRequest {
             chunk_id: format!("vec-chunk-{index}"),
             embedding: vec![0.1, 0.2, 0.3, 0.4],
         }],
+        operational_writes: vec![],
     }
 }
 

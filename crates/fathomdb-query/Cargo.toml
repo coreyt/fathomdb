@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+description = "Query AST, builder, and SQL compiler for the fathomdb agent datastore"
 
 [lints]
 workspace = true
