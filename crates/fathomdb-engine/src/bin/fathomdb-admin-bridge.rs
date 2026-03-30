@@ -98,6 +98,18 @@ struct BridgeResponse {
 
 #[allow(clippy::too_many_lines, clippy::print_stdout, clippy::expect_used)]
 fn main() {
+    #[cfg(feature = "tracing")]
+    {
+        use tracing_subscriber::EnvFilter;
+        let _ = tracing_subscriber::fmt()
+            .json()
+            .with_writer(std::io::stderr)
+            .with_env_filter(
+                EnvFilter::try_from_env("FATHOMDB_LOG").unwrap_or_else(|_| EnvFilter::new("warn")),
+            )
+            .try_init();
+    }
+
     let mut stdin = String::new();
     if let Err(error) = io::stdin()
         .take(MAX_BRIDGE_INPUT_BYTES)
@@ -145,6 +157,9 @@ fn handle_request_body(stdin: &str) -> BridgeResponse {
             ),
         );
     }
+
+    #[cfg(feature = "tracing")]
+    tracing::info!(command = %request.command, "bridge request");
 
     handle_request(request)
 }
@@ -710,6 +725,9 @@ fn classify_engine_error(error: &EngineError, default: BridgeErrorCode) -> Bridg
 /// is printed to stderr for operator debugging.
 fn error_response(error: &EngineError, default_code: BridgeErrorCode) -> BridgeResponse {
     let code = classify_engine_error(error, default_code);
+    #[cfg(feature = "tracing")]
+    tracing::error!(error = %error, code = ?code, "bridge error");
+    #[cfg(not(feature = "tracing"))]
     #[allow(clippy::print_stderr)]
     {
         eprintln!("[bridge] error: {error}");

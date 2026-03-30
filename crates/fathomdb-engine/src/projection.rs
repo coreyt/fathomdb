@@ -47,6 +47,9 @@ impl ProjectionService {
         &self,
         target: ProjectionTarget,
     ) -> Result<ProjectionRepairReport, EngineError> {
+        trace_info!(target = ?target, "projection rebuild started");
+        #[cfg(feature = "tracing")]
+        let start = std::time::Instant::now();
         let mut conn = self.connect()?;
 
         let mut notes = Vec::new();
@@ -60,6 +63,12 @@ impl ProjectionService {
             }
         };
 
+        trace_info!(
+            target = ?target,
+            rebuilt_rows,
+            duration_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
+            "projection rebuild completed"
+        );
         Ok(ProjectionRepairReport {
             targets: expand_targets(target),
             rebuilt_rows,

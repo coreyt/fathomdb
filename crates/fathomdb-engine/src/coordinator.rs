@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use fathomdb_query::{CompiledGroupedQuery, CompiledQuery, DrivingTable, ExpansionSlot, ShapeHash};
@@ -91,9 +92,10 @@ impl ReadPool {
             }
         }
         // Fallback: block on the first connection.
-        self.connections[0]
-            .lock()
-            .map_err(|_| EngineError::Bridge("connection mutex poisoned".to_owned()))
+        self.connections[0].lock().map_err(|_| {
+            trace_error!("read pool: connection mutex poisoned");
+            EngineError::Bridge("connection mutex poisoned".to_owned())
+        })
     }
 
     /// Return the number of connections in the pool.
@@ -236,6 +238,7 @@ pub struct ExecutionCoordinator {
     pool: ReadPool,
     shape_sql_map: Mutex<HashMap<ShapeHash, String>>,
     vector_enabled: bool,
+    vec_degradation_warned: AtomicBool,
 }
 
 impl fmt::Debug for ExecutionCoordinator {
@@ -297,6 +300,7 @@ impl ExecutionCoordinator {
             pool,
             shape_sql_map: Mutex::new(HashMap::new()),
             vector_enabled,
+            vec_degradation_warned: AtomicBool::new(false),
         })
     }
 
@@ -334,6 +338,7 @@ impl ExecutionCoordinator {
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner);
             if cache.len() >= MAX_SHAPE_CACHE_SIZE {
+                trace_debug!(evicted = cache.len(), "shape cache full, clearing");
                 cache.clear();
             }
             cache.insert(compiled.shape_hash, row_sql.clone());
@@ -353,6 +358,9 @@ impl ExecutionCoordinator {
         let mut statement = match conn_guard.prepare_cached(&row_sql) {
             Ok(stmt) => stmt,
             Err(e) if is_vec_table_absent(&e) => {
+                if !self.vec_degradation_warned.swap(true, Ordering::Relaxed) {
+                    trace_warn!("vector table absent, degrading to non-vector query");
+                }
                 return Ok(QueryRows {
                     was_degraded: true,
                     ..Default::default()

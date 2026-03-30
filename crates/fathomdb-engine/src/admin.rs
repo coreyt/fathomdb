@@ -2115,17 +2115,29 @@ impl AdminService {
         let conn = self.connect()?;
 
         if options.force_checkpoint {
+            trace_info!("safe_export: wal checkpoint started");
             let (busy, log, checkpointed): (i64, i64, i64) =
                 conn.query_row("PRAGMA wal_checkpoint(FULL)", [], |row| {
                     Ok((row.get(0)?, row.get(1)?, row.get(2)?))
                 })?;
             if busy != 0 {
+                trace_warn!(
+                    busy,
+                    log_frames = log,
+                    checkpointed_frames = checkpointed,
+                    "safe_export: wal checkpoint blocked by active readers"
+                );
                 return Err(EngineError::Bridge(format!(
                     "WAL checkpoint blocked: {busy} active reader(s) prevented a full checkpoint; \
                      log frames={log}, checkpointed={checkpointed}; \
                      retry export when no readers are active"
                 )));
             }
+            trace_info!(
+                log_frames = log,
+                checkpointed_frames = checkpointed,
+                "safe_export: wal checkpoint completed"
+            );
         }
 
         let schema_version: u32 = conn

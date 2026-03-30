@@ -48,4 +48,7 @@ toml = "0.8"
 sqlite-vec = "0.1"
 tempfile = "3.19.1"
 thiserror = "2.0.12"
+tracing = { version = "0.1", features = ["log", "release_max_level_info"] }
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+pyo3-log = "0.12"
 ulid = "1"

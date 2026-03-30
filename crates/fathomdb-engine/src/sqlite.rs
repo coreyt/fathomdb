@@ -14,12 +14,88 @@ pub struct SharedSqlitePolicy {
     pub repo_local_binary_relpath: PathBuf,
 }
 
+#[cfg(feature = "tracing")]
+static SQLITE_LOG_INIT: std::sync::Once = std::sync::Once::new();
+
+/// Forward `SQLite` internal error/warning events into the tracing facade.
+///
+/// Registered once per process via `SQLITE_CONFIG_LOG` before any connections
+/// are opened.  The primary error code determines the tracing level:
+/// `NOTICE` → `INFO`, `WARNING` → `WARN`, everything else → `ERROR`.
+#[cfg(feature = "tracing")]
+fn sqlite_log_callback(code: std::os::raw::c_int, msg: &str) {
+    let primary = code & 0xFF;
+    if primary == rusqlite::ffi::SQLITE_NOTICE as std::os::raw::c_int {
+        tracing::info!(target: "fathomdb_engine::sqlite", sqlite_error_code = code, "{msg}");
+    } else if primary == rusqlite::ffi::SQLITE_WARNING as std::os::raw::c_int {
+        tracing::warn!(target: "fathomdb_engine::sqlite", sqlite_error_code = code, "{msg}");
+    } else {
+        tracing::error!(target: "fathomdb_engine::sqlite", sqlite_error_code = code, "{msg}");
+    }
+}
+
+/// Install `sqlite3_trace_v2` with `SQLITE_TRACE_PROFILE` on a connection.
+///
+/// Fires a TRACE-level event for each statement completion with the SQL text
+/// and execution duration.  Only registered in debug builds — TRACE events are
+/// compiled out by `release_max_level_info` in release builds, so registering
+/// the callback would waste FFI overhead on every statement for no output.
+#[cfg(all(feature = "tracing", debug_assertions))]
+fn install_trace_v2(conn: &Connection) {
+    use std::os::raw::{c_int, c_uint, c_void};
+
+    unsafe extern "C" fn trace_v2_callback(
+        event_type: c_uint,
+        _ctx: *mut c_void,
+        p: *mut c_void,
+        x: *mut c_void,
+    ) -> c_int {
+        if event_type == rusqlite::ffi::SQLITE_TRACE_PROFILE as c_uint {
+            let stmt = p.cast::<rusqlite::ffi::sqlite3_stmt>();
+            let nanos = unsafe { *(x.cast::<i64>()) };
+            let sql_ptr = unsafe { rusqlite::ffi::sqlite3_sql(stmt) };
+            if !sql_ptr.is_null() {
+                let sql = unsafe { std::ffi::CStr::from_ptr(sql_ptr) }.to_string_lossy();
+                tracing::trace!(
+                    target: "fathomdb_engine::sqlite",
+                    sql = %sql,
+                    duration_us = nanos / 1000,
+                    "sqlite statement profile"
+                );
+            }
+        }
+        0
+    }
+
+    unsafe {
+        rusqlite::ffi::sqlite3_trace_v2(
+            conn.handle(),
+            rusqlite::ffi::SQLITE_TRACE_PROFILE as c_uint,
+            Some(trace_v2_callback),
+            std::ptr::null_mut(),
+        );
+    }
+}
+
 pub fn open_connection(path: &Path) -> Result<Connection, EngineError> {
+    #[cfg(feature = "tracing")]
+    SQLITE_LOG_INIT.call_once(|| {
+        // Safety: Once guard ensures no concurrent SQLite calls during config.
+        // config_log must be called before any connections are opened.
+        unsafe {
+            let _ = rusqlite::trace::config_log(Some(sqlite_log_callback));
+        }
+    });
+
     let conn = Connection::open_with_flags(
         path,
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
     )?;
     conn.busy_timeout(Duration::from_millis(5_000))?;
+
+    #[cfg(all(feature = "tracing", debug_assertions))]
+    install_trace_v2(&conn);
+
     Ok(conn)
 }
 

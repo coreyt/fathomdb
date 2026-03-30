@@ -365,8 +365,13 @@ impl WriterActor {
     }
 }
 
+#[cfg(not(feature = "tracing"))]
+#[allow(clippy::print_stderr)]
+fn stderr_panic_notice() {
+    eprintln!("fathomdb-writer panicked during shutdown (suppressed: already panicking)");
+}
+
 impl Drop for WriterActor {
-    #[allow(clippy::print_stderr)] // Last resort during panic — no logging framework available
     fn drop(&mut self) {
         // Phase 1: close the channel so the writer thread's `for msg in receiver`
         // loop exits after finishing any in-progress message.
@@ -382,9 +387,11 @@ impl Drop for WriterActor {
                 Ok(()) => {}
                 Err(payload) => {
                     if std::thread::panicking() {
-                        eprintln!(
-                            "fathomdb-writer panicked during shutdown (suppressed: already panicking)"
+                        trace_warn!(
+                            "writer thread panicked during shutdown (suppressed: already panicking)"
                         );
+                        #[cfg(not(feature = "tracing"))]
+                        stderr_panic_notice();
                     } else {
                         std::panic::resume_unwind(payload);
                     }
@@ -753,15 +760,19 @@ fn writer_loop(
     schema_manager: &Arc<SchemaManager>,
     receiver: mpsc::Receiver<WriteMessage>,
 ) {
+    trace_info!("writer thread started");
+
     let mut conn = match sqlite::open_connection(database_path) {
         Ok(conn) => conn,
         Err(error) => {
+            trace_error!(error = %error, "writer thread: database connection failed");
             reject_all(receiver, &error.to_string());
             return;
         }
     };
 
     if let Err(error) = schema_manager.bootstrap(&conn) {
+        trace_error!(error = %error, "writer thread: schema bootstrap failed");
         reject_all(receiver, &error.to_string());
         return;
     }
@@ -772,12 +783,32 @@ fn writer_loop(
                 mut prepared,
                 reply,
             } => {
+                #[cfg(feature = "tracing")]
+                let start = std::time::Instant::now();
                 let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
                     resolve_and_apply(&mut conn, &mut prepared)
                 }));
                 if let Ok(inner) = result {
+                    #[allow(unused_variables)]
+                    if let Err(error) = &inner {
+                        trace_error!(
+                            label = %prepared.label,
+                            error = %error,
+                            "write failed"
+                        );
+                    } else {
+                        trace_info!(
+                            label = %prepared.label,
+                            nodes = prepared.nodes.len(),
+                            edges = prepared.edges.len(),
+                            chunks = prepared.chunks.len(),
+                            duration_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
+                            "write committed"
+                        );
+                    }
                     let _ = reply.send(inner);
                 } else {
+                    trace_error!(label = %prepared.label, "writer thread: panic during resolve_and_apply");
                     // Attempt to clean up any open transaction after a panic.
                     let _ = conn.execute_batch("ROLLBACK");
                     let _ = reply.send(Err(EngineError::WriterRejected(
@@ -791,6 +822,8 @@ fn writer_loop(
             }
         }
     }
+
+    trace_info!("writer thread shutting down");
 }
 
 fn reject_all(receiver: mpsc::Receiver<WriteMessage>, error: &str) {
@@ -860,6 +893,11 @@ fn resolve_fts_rows(
             text_content: chunk.text_content.clone(),
         });
     }
+    trace_debug!(
+        fts_rows = prepared.required_fts_rows.len(),
+        chunks_processed = prepared.chunks.len(),
+        "fts row resolution completed"
+    );
     Ok(())
 }
 

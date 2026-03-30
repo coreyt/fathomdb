@@ -42,6 +42,13 @@ impl EngineRuntime {
         vector_dimension: Option<usize>,
         read_pool_size: usize,
     ) -> Result<Self, EngineError> {
+        trace_info!(
+            path = %path.as_ref().display(),
+            provenance_mode = ?provenance_mode,
+            vector_dimension = ?vector_dimension,
+            read_pool_size,
+            "engine opening"
+        );
         let schema_manager = Arc::new(SchemaManager::new());
         let coordinator = ExecutionCoordinator::open(
             path.as_ref(),
@@ -53,6 +60,7 @@ impl EngineRuntime {
             WriterActor::start(path.as_ref(), Arc::clone(&schema_manager), provenance_mode)?;
         let admin = AdminHandle::new(AdminService::new(path.as_ref(), schema_manager));
 
+        trace_info!(path = %path.as_ref().display(), "engine opened");
         Ok(Self {
             coordinator,
             writer,

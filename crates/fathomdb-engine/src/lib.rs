@@ -1,3 +1,6 @@
+#[macro_use]
+mod trace_support;
+
 mod admin;
 mod coordinator;
 mod executable_trust;

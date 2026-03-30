@@ -17,14 +17,16 @@ harness = false
 workspace = true
 
 [features]
-python = ["dep:pyo3"]
+python = ["dep:pyo3", "dep:pyo3-log"]
 sqlite-vec = ["fathomdb-engine/sqlite-vec"]
+tracing = ["fathomdb-engine/tracing"]
 
 [dependencies]
 fathomdb-engine.workspace = true
 fathomdb-query.workspace = true
 fathomdb-schema.workspace = true
 pyo3 = { workspace = true, optional = true }
+pyo3-log = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 

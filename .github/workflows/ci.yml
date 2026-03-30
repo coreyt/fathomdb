@@ -43,6 +43,7 @@ jobs:
       # missing_docs is warn-only until existing public items are documented;
       # remove -A missing-docs once coverage is complete.
       - run: cargo clippy --workspace --all-targets -- -D warnings -A missing-docs
+      - run: cargo clippy --workspace --all-targets --features tracing -- -D warnings -A missing-docs
 
   rust-test:
     runs-on: ubuntu-latest
@@ -56,6 +57,19 @@ jobs:
           tool: cargo-nextest
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - run: cargo nextest run --workspace
+
+  rust-test-tracing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+      - uses: taiki-e/install-action@e9e8e031bcd90cdbe8ac6bb1d376f8596e587fbf # v2.70.2
+        with:
+          tool: cargo-nextest
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - run: cargo nextest run --workspace --features tracing
 
   rust-build:
     runs-on: ubuntu-latest

@@ -594,6 +594,10 @@ fn map_engine_error(error: EngineError) -> PyErr {
 
 #[pymodule(name = "_fathomdb")]
 fn _fathomdb(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Bridge Rust tracing/log events to Python's logging module.
+    // Idempotent — safe to call on repeated import.
+    pyo3_log::init();
+
     module.add_class::<EngineCore>()?;
     module.add("FathomError", module.py().get_type::<FathomError>())?;
     module.add("SqliteError", module.py().get_type::<SqliteError>())?;

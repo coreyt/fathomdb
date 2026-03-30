@@ -1,3 +1,6 @@
+#[macro_use]
+mod trace_support;
+
 mod bootstrap;
 mod migration;
 

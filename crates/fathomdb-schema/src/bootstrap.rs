@@ -398,7 +398,17 @@ impl SchemaManager {
             |row| row.get(0),
         )?;
         let engine_version = self.current_version().0;
+        trace_info!(
+            current_version = max_applied,
+            engine_version,
+            "schema bootstrap: version check"
+        );
         if max_applied > engine_version {
+            trace_error!(
+                database_version = max_applied,
+                engine_version,
+                "schema version mismatch: database is newer than engine"
+            );
             return Err(SchemaError::VersionMismatch {
                 database_version: max_applied,
                 engine_version,
@@ -438,6 +448,11 @@ impl SchemaManager {
                 (i64::from(migration.version.0), migration.description),
             )?;
             tx.commit()?;
+            trace_info!(
+                version = migration.version.0,
+                description = migration.description,
+                "schema migration applied"
+            );
             applied_versions.push(migration.version);
         }
 
