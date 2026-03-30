@@ -172,7 +172,7 @@ mod tests {
         let second = EngineRuntime::open(&db_path, ProvenanceMode::Warn, None, 4);
 
         assert!(second.is_err(), "second open must fail");
-        let err = second.unwrap_err();
+        let err = second.expect_err("second open must fail");
         assert!(
             matches!(err, crate::EngineError::DatabaseLocked(_)),
             "expected DatabaseLocked, got: {err:?}"
@@ -211,7 +211,8 @@ mod tests {
         let db_path = dir.path().join("test.db");
 
         let _first = EngineRuntime::open(&db_path, ProvenanceMode::Warn, None, 4).expect("open");
-        let err = EngineRuntime::open(&db_path, ProvenanceMode::Warn, None, 4).unwrap_err();
+        let err = EngineRuntime::open(&db_path, ProvenanceMode::Warn, None, 4)
+            .expect_err("second open must fail");
 
         let msg = err.to_string();
         let our_pid = std::process::id().to_string();
