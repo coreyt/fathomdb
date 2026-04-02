@@ -2,10 +2,10 @@
 
 ## Scope and Purpose
 
-This document is the authoritative test plan for `fathomdb`. It covers five
-layers, each building on the one below. A failure at a lower layer can mask
-all higher-layer behavior. Test execution should proceed bottom-up: confirm
-each layer is stable before testing the next.
+This document is the authoritative test plan for `fathomdb`. It covers nine
+layers plus cross-cutting concerns, each building on the one below. A failure
+at a lower layer can mask all higher-layer behavior. Test execution should
+proceed bottom-up: confirm each layer is stable before testing the next.
 
 1. **Layer 1 — Physical Storage** — SQLite file integrity, WAL, pragma
    bootstrap, schema migration
@@ -17,6 +17,17 @@ each layer is stable before testing the next.
    HermesClaw, and NemoClaw, ranked by frequency and value
 5. **Layer 5 — Prevent and Recover** — failure injection, detection, and repair
    for each identified failure mode
+6. **Layer 6 — Concurrency Safety** — GIL/thread lifecycle, concurrent
+   reads/writes, multi-process lock contention
+7. **Layer 7 — Input Sanitization** — FTS5 metacharacters, JSON path injection,
+   table name safety, oversized input
+8. **Layer 8 — Crash Recovery and Durability** — WAL recovery on reopen,
+   disk-full behavior, ungraceful shutdown
+9. **Layer 9 — Stress and Scale** — 10k+ node datasets, sustained concurrent
+   load, rebuild performance at scale
+
+**Cross-cutting:** Feature matrix (all flag combinations tested in CI),
+platform matrix (Linux/Windows/macOS coverage), historical defect analysis
 
 ---
 
@@ -32,24 +43,24 @@ that the engine can detect physical corruption before it reaches higher layers.
 | `schema_bootstraps_all_required_tables` | Open engine on fresh temp file; verify `nodes`, `edges`, `chunks`, `fts_nodes`, `runs`, `steps`, `actions` all exist | ✅ covered |
 | `schema_has_partial_unique_index_on_nodes` | Verify `idx_nodes_active_logical_id` exists and is a partial index on `logical_id WHERE superseded_at IS NULL` | ✅ covered |
 | `schema_has_partial_unique_index_on_edges` | Same for `idx_edges_active_logical_id` | ✅ covered |
-| `schema_version_persists_across_reopen` | Open engine, close, reopen; verify schema version matches without re-migrating | — |
-| `migration_ordering_is_deterministic` | Apply all migrations in order; verify each leaves schema in expected state | — |
+| `schema_version_persists_across_reopen` | Open engine, close, reopen; verify schema version matches without re-migrating | ✅ covered |
+| `migration_ordering_is_deterministic` | Apply all migrations in order; verify each leaves schema in expected state | ✅ covered |
 
 ### 1.2 Pragma Initialization
 
 | Test | Description | Status |
 |---|---|---|
-| `startup_pragma_journal_mode_is_wal` | After open, query `PRAGMA journal_mode` → must return `wal` | — |
-| `startup_pragma_foreign_keys_is_on` | Query `PRAGMA foreign_keys` → must return `1` | — |
-| `startup_pragma_busy_timeout_is_set` | Query `PRAGMA busy_timeout` → must return ≥ 5000 | — |
-| `startup_pragma_synchronous_is_applied` | Query `PRAGMA synchronous` → must not be `FULL` (prefer `NORMAL`) | — |
+| `startup_pragma_journal_mode_is_wal` | After open, query `PRAGMA journal_mode` → must return `wal` | ✅ covered |
+| `startup_pragma_foreign_keys_is_on` | Query `PRAGMA foreign_keys` → must return `1` | ✅ covered |
+| `startup_pragma_busy_timeout_is_set` | Query `PRAGMA busy_timeout` → must return ≥ 5000 | ✅ covered |
+| `startup_pragma_synchronous_is_applied` | Query `PRAGMA synchronous` → must not be `FULL` (prefer `NORMAL`) | ✅ covered |
 
 ### 1.3 WAL Mode Behavior
 
 | Test | Description | Status |
 |---|---|---|
-| `wal_mode_allows_concurrent_readers` | Start a long-running read transaction; concurrently submit a write; verify write completes without error | — |
-| `wal_checkpoint_does_not_lose_committed_data` | Submit writes, force `PRAGMA wal_checkpoint(FULL)`, reopen, verify all data present | — |
+| `wal_mode_allows_concurrent_readers` | Start a long-running read transaction; concurrently submit a write; verify write completes without error | ✅ covered |
+| `wal_checkpoint_does_not_lose_committed_data` | Submit writes, force `PRAGMA wal_checkpoint(FULL)`, reopen, verify all data present | ✅ covered |
 | `check_integrity_passes_on_fresh_database` | Open engine, write nothing, `check_integrity()` → `physical_ok = true`, `foreign_keys_ok = true` | ✅ covered |
 | `check_integrity_passes_after_writes` | Write nodes/edges/chunks, `check_integrity()` → `missing_fts_rows = 0` | ✅ covered |
 
@@ -67,8 +78,8 @@ behavior.
 
 | Test | Description | Status |
 |---|---|---|
-| `node_insert_writes_all_fields_to_nodes_table` | Submit `NodeInsert`; open DB directly; verify `row_id`, `logical_id`, `kind`, `properties`, `source_ref`, `created_at`, `superseded_at IS NULL` | — |
-| `chunk_insert_writes_to_chunks_table` | Submit `ChunkInsert`; verify row in `chunks` with correct `node_logical_id`, `text_content` | — |
+| `node_insert_writes_all_fields_to_nodes_table` | Submit `NodeInsert`; open DB directly; verify `row_id`, `logical_id`, `kind`, `properties`, `source_ref`, `created_at`, `superseded_at IS NULL` | ✅ covered |
+| `chunk_insert_writes_to_chunks_table` | Submit `ChunkInsert`; verify row in `chunks` with correct `node_logical_id`, `text_content` | ✅ covered |
 | `edge_insert_writes_to_edges_table` | Submit two nodes + `EdgeInsert`; verify `source_logical_id`, `target_logical_id`, `kind`, `superseded_at IS NULL` in `edges` | ✅ covered |
 | `run_step_action_fk_chain_writes_correctly` | Submit `RunInsert` + `StepInsert` (run_id matches) + `ActionInsert` (step_id matches); verify FK chain in DB | ✅ covered |
 
@@ -95,7 +106,7 @@ behavior.
 | `chunk_policy_replace_deletes_old_chunks_atomically` | Insert node + chunk-1; replace with `ChunkPolicy::Replace` + chunk-2; verify chunk-1 gone, chunk-2 present | ✅ covered |
 | `chunk_policy_replace_deletes_old_fts_rows` | After replace: FTS search for old text → 0 results; FTS search for new text → 1 result | ✅ covered |
 | `chunk_policy_preserve_keeps_old_chunks` | Replace with `ChunkPolicy::Preserve`; verify original chunk still in `chunks` table | ✅ covered |
-| `chunk_policy_replace_is_atomic_on_failure` | Confirm old chunks are deleted before new node is inserted, so partial failure leaves detectable state | — |
+| `chunk_policy_replace_is_atomic_on_failure` | Confirm old chunks are deleted before new node is inserted, so partial failure leaves detectable state | ✅ covered |
 
 #### NodeRetire and EdgeRetire
 
@@ -146,8 +157,8 @@ behavior.
 | Test | Description | Status |
 |---|---|---|
 | `execute_compiled_read_returns_decoded_node_rows` | Write node, execute matching query; verify `NodeRow` fields (`row_id`, `logical_id`, `kind`, `properties`) match insert | ✅ covered |
-| `execute_compiled_read_returns_empty_for_no_match` | Write Meeting nodes; execute query for Task kind; verify `rows.nodes` is empty | — |
-| `execute_compiled_read_only_returns_active_rows` | Write node, supersede it; execute query; verify 0 results | — |
+| `execute_compiled_read_returns_empty_for_no_match` | Write Meeting nodes; execute query for Task kind; verify `rows.nodes` is empty | ✅ covered |
+| `execute_compiled_read_only_returns_active_rows` | Write node, supersede it; execute query; verify 0 results | ✅ covered |
 
 #### Vector capability error
 
@@ -160,8 +171,8 @@ behavior.
 | Test | Description | Status |
 |---|---|---|
 | `traversal_query_returns_connected_node_via_typed_writes` | Write node A, node B, edge A→B; compile traversal from A; verify B in results | ✅ covered |
-| `traversal_does_not_follow_retired_edges` | Write edge, retire it; compile traversal; verify 0 results | — |
-| `traversal_follows_logical_id_through_superseded_node` | Write node A, supersede to A2; write edge to A; compile traversal; verify A2 (not A) returned | — |
+| `traversal_does_not_follow_retired_edges` | Write edge, retire it; compile traversal; verify 0 results | ✅ covered |
+| `traversal_follows_logical_id_through_superseded_node` | Write node A, supersede to A2; write edge to A; compile traversal; verify A2 (not A) returned | ✅ covered |
 
 ### 2.3 ID Generation
 
@@ -169,7 +180,7 @@ behavior.
 |---|---|---|
 | `new_row_id_returns_unique_ids` | Three consecutive calls return distinct values | ✅ covered |
 | `new_row_id_has_expected_format` | All returned IDs contain only hex digits and dashes | ✅ covered |
-| `new_row_id_is_valid_as_node_insert_row_id` | Use return value as `row_id` in `NodeInsert`; verify write succeeds | — |
+| `new_row_id_is_valid_as_node_insert_row_id` | Use return value as `row_id` in `NodeInsert`; verify write succeeds | ✅ covered |
 
 ---
 
@@ -195,7 +206,7 @@ hold their contracts under both normal and degraded conditions.
 | `excise_source_cleans_fts_projections` | Write node + chunk with `source_ref = "bad-run"`; excise; `check_integrity()` → `missing_fts_rows = 0` | ✅ covered |
 | `excise_source_is_idempotent` | Excise same source twice; verify second call succeeds, state unchanged | ✅ covered |
 | `excise_source_does_not_affect_other_sources` | Write two sources; excise one; verify other source's nodes still active | ✅ covered |
-| `excise_source_restores_prior_active_version_when_available` | Write v1 (source A), write v2 (source B, upsert); excise B; verify v1 becomes active again | — |
+| `excise_source_restores_prior_active_version_when_available` | Write v1 (source A), write v2 (source B, upsert); excise B; verify v1 becomes active again | ✅ covered |
 
 ### 3.3 Integrity Checks
 
@@ -203,11 +214,11 @@ hold their contracts under both normal and degraded conditions.
 |---|---|---|
 | `check_integrity_detects_missing_fts_rows` | Write node + chunk; manually delete `fts_nodes` row; `check_integrity()` → `missing_fts_rows > 0` | — |
 | `check_integrity_detects_duplicate_active_logical_ids` | Inject duplicate active row via writable_schema trick; `check_integrity()` → `duplicate_active_logical_ids > 0` | — |
-| `check_semantics_detects_orphaned_chunks` | Write node + chunk; manually delete node without cleanup; `check_semantics()` → `orphaned_chunks > 0` | — |
-| `check_semantics_detects_stale_fts_rows` | Write node + chunk + FTS; delete chunk; `check_semantics()` → `stale_fts_rows > 0` | — |
-| `check_semantics_detects_fts_for_superseded_nodes` | Write node + FTS; supersede node; do not clean FTS; `check_semantics()` → `fts_rows_for_superseded_nodes > 0` | — |
-| `check_semantics_detects_null_source_ref_nodes` | Insert node with `source_ref: None`; `check_semantics()` → `null_source_ref_nodes > 0` | — |
-| `check_semantics_detects_broken_step_fk_chains` | Insert step with non-existent `run_id` via injection; `check_semantics()` → `broken_step_fk_chains > 0` | — |
+| `check_semantics_detects_orphaned_chunks` | Write node + chunk; manually delete node without cleanup; `check_semantics()` → `orphaned_chunks > 0` | ✅ covered |
+| `check_semantics_detects_stale_fts_rows` | Write node + chunk + FTS; delete chunk; `check_semantics()` → `stale_fts_rows > 0` | ✅ covered |
+| `check_semantics_detects_fts_for_superseded_nodes` | Write node + FTS; supersede node; do not clean FTS; `check_semantics()` → `fts_rows_for_superseded_nodes > 0` | ✅ covered |
+| `check_semantics_detects_null_source_ref_nodes` | Insert node with `source_ref: None`; `check_semantics()` → `null_source_ref_nodes > 0` | ✅ covered |
+| `check_semantics_detects_broken_step_fk_chains` | Insert step with non-existent `run_id` via injection; `check_semantics()` → `broken_step_fk_chains > 0` | ✅ covered |
 
 ### 3.4 Projection Rebuild
 
@@ -221,7 +232,7 @@ hold their contracts under both normal and degraded conditions.
 
 | Test | Description | Status |
 |---|---|---|
-| `safe_export_creates_readable_copy` | Write data; `safe_export(path)`; open exported file as new engine; verify nodes/chunks/FTS are present | — |
+| `safe_export_creates_readable_copy` | Write data; `safe_export(path)`; open exported file as new engine; verify nodes/chunks/FTS are present | ✅ covered |
 | `safe_export_checkpoints_wal_before_copy` | Export while WAL has unflushed frames; verify exported file contains all committed data *(Phase 2 — not yet implemented)* | ❌ |
 | `safe_export_produces_manifest_with_sha256` | After export, verify manifest JSON exists with `schema_version`, `page_count`, `export_timestamp`, `sha256` *(Phase 2 — not yet implemented)* | ❌ |
 
@@ -622,17 +633,242 @@ injections use bad `WriteRequest` values or deliberate raw SQL.
 
 ---
 
+## Layer 6: Concurrency Safety
+
+This layer validates that the engine behaves correctly under concurrent access,
+with particular attention to the PyO3/GIL interaction that has been the single
+largest source of production defects (7 commits across the project's history).
+
+### 6.1 GIL and Thread Lifecycle
+
+The pyo3-log bridge creates an implicit GIL dependency: any Rust code path that
+logs while a Python thread holds the GIL can deadlock if it also waits on a
+thread that needs the GIL to log. These tests codify the invariant: **never
+hold the GIL while joining a thread or waiting on a channel connected to a
+thread that uses tracing.**
+
+| Test | Description | Status |
+|---|---|---|
+| `two_engines_with_debug_logging_no_deadlock` | Open two Engine instances concurrently with DEBUG logging enabled; close both; no hang | ✅ covered |
+| `open_close_cycle_with_logging` | Open/close engine 5 times in succession with logging; no hang or GIL deadlock | ✅ covered |
+| `gc_drop_without_close_no_deadlock` | Open engine, drop reference without explicit close; GC triggers Rust Drop; verify no deadlock from GIL reacquisition during thread join | ✅ covered |
+| `context_manager_with_debug_logging` | Use engine as Python context manager with logging; exit triggers Drop; no hang | ✅ covered |
+
+### 6.2 Concurrent Reads and Writes
+
+| Test | Description | Status |
+|---|---|---|
+| `concurrent_writes_with_debug_logging` | Two threads submit writes simultaneously with DEBUG logging; both succeed; data consistent | ✅ covered |
+| `concurrent_reads_and_writes_with_logging` | Reader and writer threads operate simultaneously; no deadlock, no stale reads of committed data | ✅ covered |
+| `close_after_concurrent_reads_complete` | Start concurrent reads, wait for completion, then close; no hang from outstanding statement handles | ✅ covered |
+| `admin_ops_with_debug_logging` | Run admin operations (check_integrity) concurrently with writes; no deadlock | ✅ covered |
+
+### 6.3 Multi-Process and Lock Contention
+
+| Test | Description | Status |
+|---|---|---|
+| `exclusive_file_lock_prevents_second_engine` | Open engine on path A; attempt second open on same path; verify `EngineError::DatabaseLocked` (not hang) | ✅ covered |
+| `file_lock_released_on_close` | Open engine, close, reopen same path; verify second open succeeds | ✅ covered |
+| `wal_contention_under_concurrent_readers` | Start long-running read; submit write; verify WAL mode allows both without `SQLITE_BUSY` error | ✅ covered |
+| `stress_concurrent_read_write_10_threads` | 10 threads (5 readers, 5 writers) operating for 1000 iterations; verify no deadlock, no data corruption, `check_integrity()` clean | — |
+
+---
+
+## Layer 7: Input Sanitization
+
+This layer validates that untrusted input cannot cause SQL injection, syntax
+errors, or other security issues. SQL injection was found in 3 independent
+locations during the project's history (compile.rs, check.go, admin.rs), each
+fixed individually. These tests ensure the attack surface is covered
+systematically.
+
+### 7.1 FTS5 Query Sanitization
+
+| Test | Description | Status |
+|---|---|---|
+| `sanitize_fts5_plain_tokens` | Plain text passes through sanitization unchanged | ✅ covered |
+| `sanitize_fts5_apostrophe` | Apostrophes in user text are handled without syntax error | ✅ covered |
+| `sanitize_fts5_embedded_double_quotes` | Double quotes are stripped/escaped to prevent FTS5 phrase injection | ✅ covered |
+| `sanitize_fts5_operators_neutralized` | FTS5 operators (`AND`, `OR`, `NOT`, `NEAR`) in user text are neutralized | ✅ covered |
+| `sanitize_fts5_special_chars` | Column filters (`:`), parentheses, asterisks, and carets are stripped | ✅ covered |
+| `sanitize_fts5_empty_input` | Empty or whitespace-only input produces empty result (not syntax error) | ✅ covered |
+| `fts5_query_bind_is_sanitized` | Full integration: user text with metacharacters → compiled query → FTS MATCH executes without error | ✅ covered |
+| `fts5_unicode_input_preserved` | Non-ASCII text (CJK, emoji, accented) passes through sanitization intact | — |
+
+### 7.2 JSON Path Injection
+
+| Test | Description | Status |
+|---|---|---|
+| `compile_rejects_invalid_json_path` | JSON path not starting with `$.` is rejected at compile time | ✅ covered |
+| `compile_accepts_valid_json_paths` | Well-formed paths like `$.name`, `$.metadata.tags[0]` compile successfully | ✅ covered |
+| `json_path_compiled_as_bind_parameter` | JSON path is passed as a bind parameter to `json_extract()`, not interpolated into SQL | ✅ covered |
+| `json_path_with_sql_injection_payload` | Path containing `'; DROP TABLE nodes; --` is rejected or safely parameterized | — |
+
+### 7.3 Table and Column Name Safety
+
+| Test | Description | Status |
+|---|---|---|
+| `go_count_table_rejects_unknown_names` | Go `CountTable()` only accepts allowlisted table names; arbitrary input rejected | ✅ covered |
+| `go_count_source_ref_rejects_unknown_tables` | Go `count_source_ref` uses allowlist; injection payload rejected | ✅ covered |
+| `rust_table_names_are_never_interpolated` | Verify all SQL in compile.rs uses compile-time constants or allowlists for table names | — |
+
+### 7.4 Oversized and Malformed Input
+
+| Test | Description | Status |
+|---|---|---|
+| `write_with_very_large_properties_json` | Submit NodeInsert with 1MB+ properties JSON; verify write succeeds or returns clear size error (not OOM crash) | — |
+| `write_with_very_long_text_content` | Submit ChunkInsert with 10MB text; verify FTS derivation handles it | — |
+| `query_with_deeply_nested_json_path` | JSON path with 50+ levels of nesting compiles correctly or returns clear error | — |
+
+---
+
+## Layer 8: Crash Recovery and Durability
+
+This layer validates that the database recovers correctly after ungraceful
+shutdown. For a production database, crash recovery is table stakes — data
+committed before the crash must survive, and the engine must reach a
+consistent state on reopen.
+
+### 8.1 WAL Recovery on Reopen
+
+| Test | Description | Status |
+|---|---|---|
+| `reopen_after_unclean_shutdown_recovers_committed_data` | Write data, force-kill process (simulate crash), reopen; verify all committed writes are present | — |
+| `wal_replay_does_not_duplicate_fts_rows` | Write node + chunk (commits to WAL), crash before checkpoint, reopen; verify FTS row count is correct (no duplicates from replay) | — |
+| `reopen_after_crash_mid_write_discards_uncommitted` | Begin write, crash before commit, reopen; verify partial write is absent, prior committed state intact | — |
+
+### 8.2 Go Recovery Tool Integration
+
+| Test | Description | Status |
+|---|---|---|
+| `recover_clean_db_round_trip` | `fathom-integrity recover` on a clean DB produces identical copy | ✅ covered |
+| `recover_truncated_db_preserves_committed_data` | Truncate last 3 pages; `recover`; verify most data survives | ✅ covered |
+| `recover_header_corrupted_db` | Corrupt SQLite header; `recover`; verify bootstrap schema + surviving data | ✅ covered |
+| `recover_rebuilds_fts_after_sanitized_replay` | Recovery sanitizes SQL and rebuilds FTS projections | ✅ covered |
+| `recover_preserves_vector_data` | Recovery on sqlite-vec enabled DB preserves vector projections | ✅ covered |
+
+### 8.3 Disk-Full and I/O Error Behavior
+
+| Test | Description | Status |
+|---|---|---|
+| `write_on_full_disk_returns_error_not_corruption` | Fill temp filesystem; submit write; verify `EngineError` returned, DB still readable after freeing space | — |
+| `checkpoint_failure_leaves_wal_intact` | Simulate checkpoint failure; verify WAL frames are preserved and data accessible | — |
+
+---
+
+## Layer 9: Stress and Scale
+
+This layer validates behavior at production-relevant data volumes. The client
+workload tests in Layer 4 use small datasets (5-30 nodes). A production
+database may hold 10k-100k+ nodes accumulated over months of agent operation.
+
+### 9.1 Data Volume
+
+| Test | Description | Status |
+|---|---|---|
+| `write_and_query_10k_nodes` | Insert 10,000 nodes with chunks; FTS search returns correct results; `check_integrity()` passes | — |
+| `supersession_chain_depth_100` | Same `logical_id` upserted 100 times; query returns only latest; all 99 historical rows have `superseded_at` | — |
+| `fts_search_accuracy_at_scale` | Insert 10,000 nodes with varied text; FTS search for specific term returns correct subset (precision + recall check) | — |
+| `rebuild_projections_at_scale` | Delete all FTS rows for 10k-node DB; rebuild; verify all restored within acceptable time | — |
+
+### 9.2 Concurrent Load
+
+| Test | Description | Status |
+|---|---|---|
+| `sustained_concurrent_reads_under_write_load` | 5 writer threads + 20 reader threads for 60 seconds; no deadlock, no error accumulation | — |
+| `check_integrity_during_active_writes` | Run `check_integrity()` while writes are in progress; verify it completes without false positives or blocking writers | — |
+
+---
+
+## Cross-Cutting: Feature Matrix
+
+Tests must cover all feature flag combinations that ship in production builds.
+Feature-gated code that is not tested in CI can silently break (this happened
+historically — Python binding compile errors accumulated undetected until a
+dedicated CI job was added).
+
+| Feature combination | CI job | Status |
+|---|---|---|
+| Default (no features) | `rust-test` | ✅ covered |
+| `--features tracing` | `rust-test-tracing` | ✅ covered |
+| `--features python` | `python-rust-lint` (clippy + check) | ✅ covered |
+| `--features python,sqlite-vec,tracing` | `python-test` (via maturin) | ✅ covered |
+| `--features sqlite-vec` | `benchmark-and-robustness` | ✅ covered |
+| Windows (no features) | `rust-test-windows` | ✅ covered |
+| Windows + `--features python` | — | ❌ not tested |
+| Windows + `--features sqlite-vec` | — | ❌ not tested |
+
+---
+
+## Cross-Cutting: Platform Matrix
+
+Windows testing is scoped to a subset of crates. Historical defects include
+file-lock behavior differences and path handling issues that only surfaced
+after CI was extended to Windows.
+
+| Platform | Scope | Status |
+|---|---|---|
+| Linux (ubuntu-latest) | Full workspace: all crates, all features, Go + Python | ✅ covered |
+| Windows (windows-latest) | Rust: `fathomdb-query`, `fathomdb-schema`, `fathomdb-engine` only | ✅ covered |
+| Windows Go | `internal/bridge`, `internal/cli` only | ✅ covered |
+| Windows Python | Not tested | ❌ not tested |
+| macOS | Not tested in CI | ❌ not tested |
+
+---
+
+## Historical Defect Analysis
+
+This section documents the defect patterns that informed Layers 6-9. It is
+maintained as a living record so that future test additions can be traced to
+the defects that motivated them.
+
+### Defect Categories (ranked by frequency)
+
+**1. GIL/Thread Deadlocks (7 commits)** — The PyO3 binding layer creates an
+implicit GIL dependency via pyo3-log. Any Rust code path that (a) holds the
+GIL and (b) waits on a thread that logs will deadlock. This was hit 3+ times
+in independent code paths: engine open, `supports_vector_mode`, and GC-triggered
+Drop. Fixed systematically in the GC-safe Drop implementation, but the invariant
+must be regression-tested (Layer 6).
+
+**2. SQL Injection (5 commits)** — String interpolation of table names and JSON
+paths appeared in 3 independent files (Rust `compile.rs`, Go `check.go`, Rust
+`admin.rs`). Each was found and fixed separately. FTS5 metacharacter injection
+(`e8846cd`) was the most recent instance. These tests are now in Layer 7.
+
+**3. Transaction Atomicity Gaps (4 commits)** — Multi-statement mutations
+(`excise_source`, FTS rebuild, `rebuild_missing_projections`) were found to
+lack `IMMEDIATE` transaction wrapping. Partial failure could leave the database
+in an inconsistent state. Each was fixed with transaction wrapping; Layer 2
+tests now verify atomicity.
+
+**4. CI/Build Breakage (6 commits)** — CI was not green for 50+ consecutive
+runs. The `--features python` code path accumulated 3 compile errors undetected.
+The Feature Matrix cross-cutting section ensures all shipped combinations are
+tested.
+
+**5. Cross-Platform Failures (2 commits)** — Windows file-lock semantics differ
+from Unix (cannot read PID from lock file while held). The Platform Matrix
+section documents what is and isn't tested on each platform.
+
+---
+
 ## Test Execution Reference
 
-### Current test counts (296+ across the workspace)
+### Current test counts (460+ across the workspace)
 
-| Crate / target | Approximate count | Focus areas |
+| Target | Approximate count | Focus areas |
 |---|---|---|
-| fathomdb-engine | ~158 | writer, admin, coordinator, operational, IDs, sqlite |
-| fathomdb-query | ~18 | builder, compile, plan |
-| fathomdb-schema | ~12 | bootstrap, migration |
-| fathomdb (facade) | ~34 integration + ~27 client workload | end-to-end lifecycle, client scenarios |
-| fathomdb `--features python` | additional | PyQueryStep roundtrips, report parity, write request coverage |
+| fathomdb-engine (Rust) | ~158 | writer, admin, coordinator, operational, IDs, sqlite |
+| fathomdb-query (Rust) | ~18 | builder, compile, plan, FTS sanitization |
+| fathomdb-schema (Rust) | ~12 | bootstrap, migration |
+| fathomdb facade (Rust) | ~34 integration + ~27 client workload | end-to-end lifecycle, client scenarios |
+| fathomdb `--features python` (Rust) | ~32 | PyQueryStep roundtrips, report parity, write request, error coverage |
+| Python tests | ~48 | bindings, concurrency/deadlocks, feedback, last-access, harness |
+| Go unit + integration | ~87 | bridge, CLI, config, sqlitecheck, walcheck, commands |
+| Go e2e | ~57 | CLI workflows, recovery, WAL, environment |
+| Go fuzz | 2 | bridge decoding, SQL sanitization |
+| Rust benchmarks | 4 | write, FTS search, vector search, export |
 
 ### Rust test suite
 ```bash
@@ -672,6 +908,21 @@ go test -run TestCheck_Detects_ ./...
 go test -run TestRepair_Fixes_ ./...
 ```
 
+### Python test suite
+```bash
+# Build native extension and run all Python tests
+cd python
+pip install -e . --no-build-isolation
+PYTHONPATH=python pytest python/tests -v --timeout=60
+
+# Concurrency/deadlock tests only
+pytest python/tests/test_concurrency_deadlocks.py -v
+
+# Example harness (baseline and vector modes)
+python -m examples.harness.app --db /tmp/test.db --mode baseline --telemetry off
+python -m examples.harness.app --db /tmp/test.db --mode vector --telemetry off
+```
+
 ### Parity and Bridge Test Coverage
 
 These tests guard the boundary between the Rust engine and external callers
@@ -708,6 +959,8 @@ serialization regressions that base CI misses.
 The following gaps are identified in the current implementation. Each should
 become a tracked task before the affected layer is considered complete.
 
+### Existing Gaps
+
 | Gap | Layer | Severity | Resolution |
 |---|---|---|---|
 | B-tree cell-count-too-low is undetectable via SQLite pragma | Layer 1 | Critical (blind spot) | Document; recommend periodic `.recover` spot checks |
@@ -719,3 +972,23 @@ become a tracked task before the affected layer is considered complete.
 | Degraded execution (FTS fallback when vector missing) | Layer 2 | Warning | Hard fail today; degraded path should be available |
 | sqlite-vec e2e tests are Unix-scoped | Layer 2 | Warning | Windows vector packaging is unproven; vector tests may not run on Windows CI |
 | Go tests require sandbox workaround for build cache path | Layer 5 | Warning | Build cache path must be configured for sandboxed test environments |
+
+### Gaps Identified from Historical Defect Analysis
+
+| Gap | Layer | Severity | Resolution |
+|---|---|---|---|
+| No stress test for concurrent read/write at scale | Layer 9 | High | Add 10-thread stress test with integrity check at end |
+| No crash-recovery test (kill mid-write, reopen) | Layer 8 | High | Add WAL recovery test with process kill simulation |
+| No disk-full behavior test | Layer 8 | Medium | Add tmpfs-based disk-full write test |
+| No test for 10k+ node datasets | Layer 9 | Medium | Add scale test to benchmark-and-robustness CI job |
+| `rebuild_projections_fts_is_deterministic` not tested | Layer 3 | Medium | Rebuild twice, compare row counts and FTS results |
+| `rebuild_projections_excludes_superseded_nodes` not tested | Layer 3 | Medium | Rebuild after supersession, verify no FTS for old nodes |
+| `trace_source_does_not_bleed_across_sources` not tested | Layer 3 | Low | Two sources, trace one, assert other absent |
+| `excise_source_supersedes_all_matching_nodes` not tested | Layer 3 | Low | Write batch, excise, verify all superseded |
+| `excise_then_rebuild_leaves_clean_state` not tested | Layer 3 | Low | Combined operation end-to-end check |
+| `replace_with_chunk_replace_then_check_semantics_clean` not tested | Layer 3 | Low | Combined replace + check end-to-end |
+| Windows + Python bindings not tested in CI | Cross-cutting | Medium | Add Windows Python CI job or document as unsupported |
+| macOS not tested in CI | Cross-cutting | Low | Add macOS runner or document as community-tested |
+| No Rust fuzz tests (cargo-fuzz) | Layer 7 | Medium | Add fuzz targets for FTS sanitization, JSON path validation, write request parsing |
+| Benchmark thresholds not enforced in CI | Cross-cutting | Medium | Gate CI on write <100ms, FTS <150ms, vector <200ms, export <500ms |
+| No code coverage tracking | Cross-cutting | Low | Add tarpaulin or llvm-cov to CI; set minimum threshold |
