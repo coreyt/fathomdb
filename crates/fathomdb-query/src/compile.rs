@@ -70,6 +70,26 @@ pub enum CompileError {
     InvalidJsonPath(String),
 }
 
+/// Sanitize a user-supplied text search query for safe use as an FTS5 MATCH
+/// expression. Splits on whitespace, wraps each token in double quotes (doubling
+/// any embedded `"` per FTS5 escaping rules), and joins with spaces. This
+/// produces an implicit AND of quoted terms that is safe against FTS5 syntax
+/// injection (operators like AND/OR/NOT/NEAR, column filters, parentheses, and
+/// wildcards are all neutralized inside quoted strings).
+///
+/// Empty or whitespace-only input returns an empty string, which the caller
+/// should handle (FTS5 MATCH with an empty string returns no rows).
+fn sanitize_fts5_query(raw: &str) -> String {
+    let tokens: Vec<String> = raw
+        .split_whitespace()
+        .map(|token| {
+            let escaped = token.replace('"', "\"\"");
+            format!("\"{escaped}\"")
+        })
+        .collect();
+    tokens.join(" ")
+}
+
 /// Security fix H-1: Validate JSON path against a strict allowlist pattern to
 /// prevent SQL injection. Retained as defense-in-depth even though the path is
 /// now parameterized (see `FIX(review)` in `compile_query`). Only paths like
@@ -205,7 +225,7 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
             )
         }
         DrivingTable::FtsNodes => {
-            let query = ast
+            let raw_query = ast
                 .steps
                 .iter()
                 .find_map(|step| {
@@ -216,7 +236,10 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
                     }
                 })
                 .unwrap_or_else(|| unreachable!("FtsNodes chosen but no TextSearch step in AST"));
-            binds.push(BindValue::Text(query.to_owned()));
+            // Sanitize FTS5 metacharacters to prevent syntax errors and query
+            // injection. Each user token is quoted so FTS5 operators (AND, OR,
+            // NOT, NEAR, column filters, wildcards) are treated as literals.
+            binds.push(BindValue::Text(sanitize_fts5_query(raw_query)));
             binds.push(BindValue::Text(ast.root_kind.clone()));
             format!(
                 "base_candidates AS (
@@ -692,6 +715,82 @@ mod tests {
                 .binds
                 .iter()
                 .any(|b| matches!(b, BindValue::Text(s) if s == "active"))
+        );
+    }
+
+    // --- FTS5 sanitization tests ---
+
+    #[test]
+    fn sanitize_fts5_plain_tokens() {
+        use super::sanitize_fts5_query;
+        assert_eq!(
+            sanitize_fts5_query("budget meeting"),
+            "\"budget\" \"meeting\""
+        );
+    }
+
+    #[test]
+    fn sanitize_fts5_apostrophe() {
+        use super::sanitize_fts5_query;
+        // The apostrophe that triggered issue #31
+        assert_eq!(sanitize_fts5_query("User's name"), "\"User's\" \"name\"");
+    }
+
+    #[test]
+    fn sanitize_fts5_embedded_double_quotes() {
+        use super::sanitize_fts5_query;
+        assert_eq!(
+            sanitize_fts5_query(r#"say "hello" world"#),
+            "\"say\" \"\"\"hello\"\"\" \"world\""
+        );
+    }
+
+    #[test]
+    fn sanitize_fts5_operators_neutralized() {
+        use super::sanitize_fts5_query;
+        // FTS5 operators should be quoted, not interpreted
+        assert_eq!(
+            sanitize_fts5_query("cats AND dogs OR fish"),
+            "\"cats\" \"AND\" \"dogs\" \"OR\" \"fish\""
+        );
+    }
+
+    #[test]
+    fn sanitize_fts5_special_chars() {
+        use super::sanitize_fts5_query;
+        // Wildcards, column filters, parentheses, NEAR
+        assert_eq!(sanitize_fts5_query("prefix*"), "\"prefix*\"");
+        assert_eq!(sanitize_fts5_query("col:value"), "\"col:value\"");
+        assert_eq!(sanitize_fts5_query("(a OR b)"), "\"(a\" \"OR\" \"b)\"");
+        assert_eq!(sanitize_fts5_query("a NEAR b"), "\"a\" \"NEAR\" \"b\"");
+    }
+
+    #[test]
+    fn sanitize_fts5_empty_input() {
+        use super::sanitize_fts5_query;
+        assert_eq!(sanitize_fts5_query(""), "");
+        assert_eq!(sanitize_fts5_query("   "), "");
+    }
+
+    #[test]
+    fn fts5_query_bind_is_sanitized() {
+        // Verify the compiled query's bind value is sanitized, not the raw input
+        let compiled = compile_query(
+            &QueryBuilder::nodes("Meeting")
+                .text_search("User's name", 5)
+                .limit(5)
+                .into_ast(),
+        )
+        .expect("compiled query");
+
+        use crate::BindValue;
+        assert!(
+            compiled
+                .binds
+                .iter()
+                .any(|b| matches!(b, BindValue::Text(s) if s == "\"User's\" \"name\"")),
+            "FTS5 query bind should be sanitized; got {:?}",
+            compiled.binds
         );
     }
 }
