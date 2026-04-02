@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Installs the project-local SQLite version by sourcing tooling/sqlite.env
-# and the helper functions from developer-setup.sh.
+# and the helper functions from setup_dev.sh.
 #
 # Usage (CI or local):
 #   INSTALL_PREFIX=/path/to/.local bash scripts/install-project-sqlite.sh
@@ -21,7 +21,7 @@ source "$SQLITE_POLICY_FILE"
 
 SQLITE_VERSION="${SQLITE_VERSION:?SQLITE_VERSION must be set in sqlite.env}"
 
-# Derive numeric version and download URL using the same logic as developer-setup.sh.
+# Derive numeric version and download URL using the same logic as setup_dev.sh.
 sqlite_numeric_version() {
   local version="$1"
   local major minor patch

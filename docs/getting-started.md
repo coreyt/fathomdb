@@ -10,12 +10,16 @@ A concise guide for new developers and users of fathomdb.
 | Go | 1.22+ | Used for `fathom-integrity` recovery tooling |
 | Python | 3.11+ | Python bindings (PyO3) |
 
-The `scripts/developer-setup.sh` script automates toolchain installation
-(Rust stable, Go 1.24+, and a pinned SQLite build). Run it once after
-cloning:
+For users who just need to build and use fathomdb, run `scripts/setup.sh`.
+For full developer tooling (testing, linting, Go, project-local SQLite),
+run `scripts/setup_dev.sh` instead. Run once after cloning:
 
 ```bash
-./scripts/developer-setup.sh
+# Users / CI build-only:
+./scripts/setup.sh
+
+# Developers:
+./scripts/setup_dev.sh
 ```
 
 ## Building

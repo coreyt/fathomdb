@@ -3,7 +3,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-source "$REPO_ROOT/scripts/developer-setup.sh"
+source "$REPO_ROOT/scripts/setup_dev.sh"
 
 fail() {
   printf 'test failure: %s\n' "$*" >&2
@@ -63,7 +63,7 @@ main() {
   test_sqlite_supported_predicate
   test_sqlite_project_install_needed
   test_sqlite_download_metadata
-  printf 'developer-setup tests passed\n'
+  printf 'setup_dev tests passed\n'
 }
 
 main "$@"

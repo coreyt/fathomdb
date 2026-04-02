@@ -67,7 +67,7 @@ Three layers:
 **Developer setup:**
 
 ```bash
-bash scripts/developer-setup.sh
+bash scripts/setup_dev.sh
 ```
 
 **Run tests:**
