@@ -1013,3 +1013,108 @@ def test_reopen_after_close_succeeds(tmp_path: Path) -> None:
     rows = db2.nodes("Test").limit(10).execute()
     assert rows.nodes == []
     db2.close()
+
+
+def test_telemetry_snapshot_returns_typed_dataclass(tmp_path: Path) -> None:
+    """telemetry_snapshot() must return a TelemetrySnapshot, not a raw dict."""
+    from fathomdb import Engine, TelemetrySnapshot
+
+    db = Engine.open(tmp_path / "agent.db")
+    snap = db.telemetry_snapshot()
+
+    assert isinstance(snap, TelemetrySnapshot)
+    assert snap.queries_total == 0
+    assert snap.writes_total == 0
+    assert snap.errors_total == 0
+    assert snap.admin_ops_total == 0
+    # Cache counters are non-negative (bootstrap may cause some activity)
+    assert snap.cache_hits >= 0
+    assert snap.cache_misses >= 0
+
+
+def test_telemetry_counters_increment_after_operations(tmp_path: Path) -> None:
+    """Counters must reflect actual engine operations."""
+    from fathomdb import (
+        ChunkInsert,
+        ChunkPolicy,
+        Engine,
+        NodeInsert,
+        WriteRequest,
+        new_row_id,
+    )
+
+    db = Engine.open(tmp_path / "agent.db")
+
+    before = db.telemetry_snapshot()
+    assert before.queries_total == 0
+    assert before.writes_total == 0
+
+    db.write(
+        WriteRequest(
+            label="telemetry-test",
+            nodes=[
+                NodeInsert(
+                    row_id=new_row_id(),
+                    logical_id="t:1",
+                    kind="Test",
+                    properties={"v": 1},
+                    source_ref="test",
+                    upsert=False,
+                    chunk_policy=ChunkPolicy.PRESERVE,
+                )
+            ],
+            chunks=[
+                ChunkInsert(
+                    id="c1",
+                    node_logical_id="t:1",
+                    text_content="telemetry test content",
+                )
+            ],
+        )
+    )
+
+    after_write = db.telemetry_snapshot()
+    assert after_write.writes_total >= 1
+    assert after_write.write_rows_total >= 2  # 1 node + 1 chunk
+
+    db.nodes("Test").limit(10).execute()
+    db.nodes("Test").limit(10).execute()
+
+    after_query = db.telemetry_snapshot()
+    assert after_query.queries_total >= 2
+
+    total = after_query.cache_hits + after_query.cache_misses
+    assert total > 0, "expected cache activity after queries"
+
+
+def test_engine_open_accepts_all_telemetry_levels(tmp_path: Path) -> None:
+    """Engine.open must accept every TelemetryLevel variant without error.
+
+    This catches signature misalignment between the Python wrapper and
+    the native EngineCore — if the compiled .so doesn't accept the
+    telemetry_level parameter, this test fails immediately.
+    """
+    from fathomdb import Engine, TelemetryLevel
+
+    for level in TelemetryLevel:
+        db_path = tmp_path / f"agent-{level.value}.db"
+        db = Engine.open(db_path, telemetry_level=level)
+        snap = db.telemetry_snapshot()
+        assert snap.queries_total == 0
+        db.close()
+
+    # Also test string values (the other accepted form)
+    for level_str in ("counters", "statements", "profiling"):
+        db_path = tmp_path / f"agent-str-{level_str}.db"
+        db = Engine.open(db_path, telemetry_level=level_str)
+        snap = db.telemetry_snapshot()
+        assert snap.queries_total == 0
+        db.close()
+
+
+def test_engine_open_rejects_invalid_telemetry_level(tmp_path: Path) -> None:
+    """Invalid telemetry_level values must raise ValueError."""
+    from fathomdb import Engine
+
+    with pytest.raises(ValueError, match="invalid telemetry_level"):
+        Engine.open(tmp_path / "agent.db", telemetry_level="turbo")
