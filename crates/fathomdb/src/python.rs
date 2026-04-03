@@ -114,11 +114,11 @@ impl EngineCore {
         })
     }
 
-    /// Read all telemetry counters and aggregated SQLite cache statistics.
+    /// Read all telemetry counters and aggregated `SQLite` cache statistics.
     ///
-    /// Returns a dict with keys: queries_total, writes_total, write_rows_total,
-    /// errors_total, admin_ops_total, cache_hits, cache_misses, cache_writes,
-    /// cache_spills.
+    /// Returns a dict with keys: `queries_total`, `writes_total`,
+    /// `write_rows_total`, `errors_total`, `admin_ops_total`, `cache_hits`,
+    /// `cache_misses`, `cache_writes`, `cache_spills`.
     pub fn telemetry_snapshot(&self, py: Python<'_>) -> PyResult<PyObject> {
         self.with_engine(|engine| {
             let snap = engine.telemetry_snapshot();

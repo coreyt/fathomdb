@@ -1,4 +1,4 @@
-//! Resource telemetry: always-on counters and SQLite cache statistics.
+//! Resource telemetry: always-on counters and `SQLite` cache statistics.
 //!
 //! See `dev/design-note-telemetry-and-profiling.md` for the full design.
 
@@ -16,7 +16,7 @@ pub enum TelemetryLevel {
     /// Level 0: cumulative counters only. Always active.
     #[default]
     Counters,
-    /// Level 1: per-statement profiling (trace_v2 + stmt_status).
+    /// Level 1: per-statement profiling (`trace_v2` + `stmt_status`).
     Statements,
     /// Level 2: deep profiling (scan status + process snapshots).
     /// Requires high-telemetry build for full scan-status data.
@@ -28,6 +28,7 @@ pub enum TelemetryLevel {
 /// All increments use [`Ordering::Relaxed`] — these are statistical counters,
 /// not synchronization primitives.
 #[derive(Debug, Default)]
+#[allow(clippy::struct_field_names)]
 pub struct TelemetryCounters {
     queries_total: AtomicU64,
     writes_total: AtomicU64,
@@ -77,7 +78,7 @@ impl TelemetryCounters {
     }
 }
 
-/// Cumulative SQLite page-cache counters for a single connection.
+/// Cumulative `SQLite` page-cache counters for a single connection.
 ///
 /// Uses `i64` to allow safe summing across pool connections without overflow.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -102,7 +103,7 @@ impl SqliteCacheStatus {
     }
 }
 
-/// Read cumulative page-cache counters from a SQLite connection.
+/// Read cumulative page-cache counters from a `SQLite` connection.
 ///
 /// Calls `sqlite3_db_status()` for `CACHE_HIT`, `CACHE_MISS`, `CACHE_WRITE`,
 /// and `CACHE_SPILL` with `resetFlag=0` (non-destructive read).
@@ -125,8 +126,8 @@ pub fn read_db_cache_status(conn: &Connection) -> SqliteCacheStatus {
             rusqlite::ffi::sqlite3_db_status(
                 conn.handle(),
                 op,
-                &mut current,
-                &mut highwater,
+                &raw mut current,
+                &raw mut highwater,
                 0, // resetFlag
             );
         }
@@ -154,7 +155,7 @@ pub struct TelemetrySnapshot {
     pub errors_total: u64,
     /// Total admin operations.
     pub admin_ops_total: u64,
-    /// Aggregated SQLite page-cache counters (summed across pool connections).
+    /// Aggregated `SQLite` page-cache counters (summed across pool connections).
     pub sqlite_cache: SqliteCacheStatus,
 }
 

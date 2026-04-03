@@ -66,6 +66,22 @@ class DrivingTable(str, Enum):
     VEC_NODES = "vec_nodes"
 
 
+class TelemetryLevel(str, Enum):
+    """Resource telemetry collection level.
+
+    Levels are additive — each level includes everything from below it.
+    """
+
+    COUNTERS = "counters"
+    """Always-on cumulative counters (queries, writes, errors, cache stats)."""
+
+    STATEMENTS = "statements"
+    """Per-statement profiling (wall-clock time, VM steps, cache deltas)."""
+
+    PROFILING = "profiling"
+    """Deep profiling (scan status, process CPU/memory/IO snapshots)."""
+
+
 class ResponseCyclePhase(str, Enum):
     """Phase within a feedback response cycle."""
 
@@ -74,6 +90,51 @@ class ResponseCyclePhase(str, Enum):
     HEARTBEAT = "heartbeat"
     FINISHED = "finished"
     FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class TelemetrySnapshot:
+    """Point-in-time snapshot of engine telemetry counters.
+
+    All counters are cumulative since engine open.  SQLite cache counters
+    are aggregated across all reader pool connections.
+
+    Attributes
+    ----------
+    queries_total : int
+        Total read operations executed.
+    writes_total : int
+        Total write operations committed.
+    write_rows_total : int
+        Total rows written (nodes + edges + chunks).
+    errors_total : int
+        Total operation errors.
+    admin_ops_total : int
+        Total admin operations (integrity checks, exports, rebuilds, etc.).
+    cache_hits : int
+        SQLite page cache hits (summed across reader pool).
+    cache_misses : int
+        SQLite page cache misses.
+    cache_writes : int
+        Pages written to cache.
+    cache_spills : int
+        Cache pages spilled to disk.
+    """
+
+    queries_total: int = 0
+    writes_total: int = 0
+    write_rows_total: int = 0
+    errors_total: int = 0
+    admin_ops_total: int = 0
+    cache_hits: int = 0
+    cache_misses: int = 0
+    cache_writes: int = 0
+    cache_spills: int = 0
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "TelemetrySnapshot":
+        """Create from the dict returned by the native ``telemetry_snapshot()``."""
+        return _from_wire_dataclass(cls, payload)
 
 
 @dataclass(frozen=True)

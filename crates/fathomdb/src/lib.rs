@@ -155,7 +155,7 @@ impl Engine {
         self.runtime.coordinator()
     }
 
-    /// Read all telemetry counters and aggregated SQLite cache statistics.
+    /// Read all telemetry counters and aggregated `SQLite` cache statistics.
     #[must_use]
     pub fn telemetry_snapshot(&self) -> TelemetrySnapshot {
         self.runtime.telemetry_snapshot()

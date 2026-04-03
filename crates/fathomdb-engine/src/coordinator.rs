@@ -323,7 +323,7 @@ impl ExecutionCoordinator {
         self.pool.acquire()
     }
 
-    /// Aggregate SQLite page-cache counters across all pool connections.
+    /// Aggregate `SQLite` page-cache counters across all pool connections.
     ///
     /// Uses `try_lock` to avoid blocking reads for telemetry reporting.
     /// Connections that are currently locked by a query are skipped — this

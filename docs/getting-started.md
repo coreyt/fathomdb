@@ -126,8 +126,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-`EngineOptions` also accepts `vector_dimension` (for sqlite-vec support)
-and `read_pool_size` (defaults to 4).
+`EngineOptions` also accepts `vector_dimension` (for sqlite-vec support),
+`read_pool_size` (defaults to 4), and `telemetry_level` (defaults to
+`TelemetryLevel::Counters`).
+
+## Telemetry
+
+fathomdb tracks operation counters and SQLite cache statistics by default:
+
+```python
+snap = db.telemetry_snapshot()
+print(f"queries: {snap.queries_total}, writes: {snap.writes_total}")
+print(f"cache hits: {snap.cache_hits}, misses: {snap.cache_misses}")
+```
+
+See [docs/telemetry.md](./telemetry.md) for configuration, rate
+computation, and integration patterns.
 
 ## Admin operations
 
@@ -148,5 +162,6 @@ In Rust, these are available on the `AdminHandle` returned by
 
 ## Next steps
 
+- [docs/telemetry.md](./telemetry.md) -- resource telemetry and profiling levels.
 - [docs/vector-regeneration.md](./vector-regeneration.md) -- rebuilding vector indexes.
 - [dev/ARCHITECTURE.md](../dev/ARCHITECTURE.md) -- system design and module layout.

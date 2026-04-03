@@ -13,6 +13,8 @@ from ._types import (
     LastAccessTouchReport,
     LastAccessTouchRequest,
     ProvenanceMode,
+    TelemetryLevel,
+    TelemetrySnapshot,
     WriteReceipt,
     WriteRequest,
 )
@@ -37,30 +39,49 @@ class Engine:
         *,
         provenance_mode: ProvenanceMode | str = ProvenanceMode.WARN,
         vector_dimension: int | None = None,
-        telemetry_level: str | None = None,
+        telemetry_level: TelemetryLevel | str | None = None,
         progress_callback=None,
         feedback_config: FeedbackConfig | None = None,
     ) -> "Engine":
         """Open a fathomdb database at the given path.
 
-        Args:
-            database_path: Path to the SQLite database file.
-            provenance_mode: Provenance enforcement level ("warn" or "require").
-            vector_dimension: Embedding dimension for vector search, or None to disable.
-            telemetry_level: Telemetry collection level — "counters" (default),
-                "statements", or "profiling".
-            progress_callback: Optional callback invoked with feedback events.
-            feedback_config: Timing thresholds for progress feedback.
+        Parameters
+        ----------
+        database_path : str or os.PathLike
+            Path to the SQLite database file.
+        provenance_mode : ProvenanceMode or str
+            Provenance enforcement level (``"warn"`` or ``"require"``).
+        vector_dimension : int or None
+            Embedding dimension for vector search, or ``None`` to disable.
+        telemetry_level : TelemetryLevel or str or None
+            Telemetry collection level.  Accepted values:
+
+            - ``"counters"`` (default) — always-on cumulative counters for
+              queries, writes, errors, admin ops, and SQLite cache stats.
+            - ``"statements"`` — per-statement profiling (wall-clock time,
+              VM steps, full-scan detection).
+            - ``"profiling"`` — deep profiling including scan-status counters
+              and periodic process snapshots (CPU, memory, I/O).
+
+            The level is fixed at engine open and cannot be changed.
+        progress_callback : callable or None
+            Optional callback invoked with :class:`ResponseCycleEvent`
+            instances during long operations.
+        feedback_config : FeedbackConfig or None
+            Timing thresholds for progress feedback.
 
         Returns
         -------
+        Engine
             A new Engine instance connected to the database.
 
         Raises
         ------
-            FathomError: If the database cannot be opened or schema bootstrap fails.
+        FathomError
+            If the database cannot be opened or schema bootstrap fails.
         """
         mode = provenance_mode.value if isinstance(provenance_mode, ProvenanceMode) else provenance_mode
+        level = telemetry_level.value if isinstance(telemetry_level, TelemetryLevel) else telemetry_level
         path = os.fspath(Path(database_path))
         core = run_with_feedback(
             surface="python",
@@ -68,7 +89,7 @@ class Engine:
             metadata={"database_path": path},
             progress_callback=progress_callback,
             feedback_config=feedback_config,
-            operation=lambda: EngineCore.open(path, mode, vector_dimension, telemetry_level),
+            operation=lambda: EngineCore.open(path, mode, vector_dimension, level),
         )
         return cls(core)
 
@@ -86,14 +107,31 @@ class Engine:
         self.close()
         return False
 
-    def telemetry_snapshot(self) -> dict:
+    def telemetry_snapshot(self) -> TelemetrySnapshot:
         """Read all telemetry counters and SQLite cache statistics.
 
-        Returns a dict with keys: ``queries_total``, ``writes_total``,
-        ``write_rows_total``, ``errors_total``, ``admin_ops_total``,
-        ``cache_hits``, ``cache_misses``, ``cache_writes``, ``cache_spills``.
+        Returns a point-in-time :class:`TelemetrySnapshot` with cumulative
+        counters since engine open.  All SQLite cache counters are aggregated
+        across the reader connection pool.
+
+        This method is safe to call from any thread at any time.  Counter
+        reads use relaxed atomics — values are eventually consistent, not
+        instantaneously synchronized across threads.
+
+        Returns
+        -------
+        TelemetrySnapshot
+            Cumulative counters and cache statistics.
+
+        Examples
+        --------
+        >>> snap = engine.telemetry_snapshot()
+        >>> print(f"queries: {snap.queries_total}")
+        >>> total = snap.cache_hits + snap.cache_misses
+        >>> if total > 0:
+        ...     print(f"cache hit ratio: {snap.cache_hits / total:.2%}")
         """
-        return self._core.telemetry_snapshot()
+        return TelemetrySnapshot.from_wire(self._core.telemetry_snapshot())
 
     def nodes(self, kind: str) -> Query:
         """Start building a query rooted at nodes of the given kind."""

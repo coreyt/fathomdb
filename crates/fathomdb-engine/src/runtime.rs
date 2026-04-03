@@ -104,7 +104,7 @@ impl EngineRuntime {
         &self.telemetry
     }
 
-    /// Read all telemetry counters and aggregate SQLite cache status across
+    /// Read all telemetry counters and aggregate `SQLite` cache status across
     /// the reader pool.
     #[must_use]
     pub fn telemetry_snapshot(&self) -> TelemetrySnapshot {

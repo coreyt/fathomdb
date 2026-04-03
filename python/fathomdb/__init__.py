@@ -56,6 +56,7 @@ from ._types import (
     OptionalProjectionTask,
     ProjectionRepairReport,
     ProjectionTarget,
+    ProvenanceMode,
     ProvenancePurgeReport,
     QueryPlan,
     QueryRows,
@@ -70,6 +71,8 @@ from ._types import (
     SkippedEdge,
     StepInsert,
     StepRow,
+    TelemetryLevel,
+    TelemetrySnapshot,
     TraceReport,
     TraverseDirection,
     VecInsert,
@@ -99,7 +102,6 @@ from .errors import (
     SqliteError,
     WriterRejectedError,
 )
-from ._types import ProvenanceMode
 
 __all__ = [
     "ActionInsert",
@@ -188,6 +190,8 @@ __all__ = [
     "StepInsert",
     "StepHandle",
     "StepRow",
+    "TelemetryLevel",
+    "TelemetrySnapshot",
     "TraceReport",
     "TraverseDirection",
     "VecInsert",
