@@ -6,7 +6,7 @@ build-backend = "maturin"
 name = "fathomdb"
 version = "0.1.0"
 description = "Python bindings for fathomdb"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 
 [tool.maturin]
 manifest-path = "../crates/fathomdb/Cargo.toml"
