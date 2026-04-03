@@ -87,7 +87,7 @@ func RunWithFeedback[T any](
 	}
 
 	config = config.withDefaults()
-	startedAt := time.Now()
+	startedAt := time.Now().UTC()
 	operationID := fmt.Sprintf("op-%d", operationCounter.Add(1))
 	safe := &safeObserver{inner: observer}
 	stop := make(chan struct{})

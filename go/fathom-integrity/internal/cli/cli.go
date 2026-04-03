@@ -448,7 +448,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		}
 		now := *nowTimestamp
 		if now == 0 {
-			now = time.Now().Unix()
+			now = time.Now().UTC().Unix()
 		}
 		request := bridge.Request{
 			DatabasePath:    *db,
@@ -493,7 +493,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		}
 		now := *nowTimestamp
 		if now == 0 {
-			now = time.Now().Unix()
+			now = time.Now().UTC().Unix()
 		}
 		request := bridge.Request{
 			DatabasePath:    *db,
