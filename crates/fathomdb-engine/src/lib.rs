@@ -10,6 +10,7 @@ mod operational;
 mod projection;
 mod runtime;
 mod sqlite;
+mod telemetry;
 mod writer;
 
 pub use admin::{
@@ -39,6 +40,9 @@ pub use operational::{
 pub use projection::{ProjectionRepairReport, ProjectionService, ProjectionTarget};
 pub use runtime::EngineRuntime;
 pub use sqlite::{SharedSqlitePolicy, shared_sqlite_policy};
+pub use telemetry::{
+    SqliteCacheStatus, TelemetryCounters, TelemetryLevel, TelemetrySnapshot, read_db_cache_status,
+};
 pub use writer::{
     ActionInsert, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire, LastAccessTouchReport,
     LastAccessTouchRequest, NodeInsert, NodeRetire, OperationalWrite, OptionalProjectionTask,

@@ -10,6 +10,7 @@ Operator and user-facing reference material for fathomdb.
 
 - [Admin Operations](./admin-operations.md) — integrity checks, provenance, export, retention, projections
 - [Vector Regeneration](./vector-regeneration.md) — regenerating embeddings after recovery or model updates
+- [Telemetry](./telemetry.md) — resource usage collection and profiling levels
 
 ## Internal Design
 

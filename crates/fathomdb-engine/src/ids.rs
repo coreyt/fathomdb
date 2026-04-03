@@ -67,13 +67,16 @@ mod tests {
         use fathomdb_schema::SchemaManager;
         use tempfile::NamedTempFile;
 
-        use crate::{ChunkPolicy, NodeInsert, ProvenanceMode, WriteRequest, WriterActor};
+        use crate::{
+            ChunkPolicy, NodeInsert, ProvenanceMode, TelemetryCounters, WriteRequest, WriterActor,
+        };
 
         let db = NamedTempFile::new().expect("temporary db");
         let writer = WriterActor::start(
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 

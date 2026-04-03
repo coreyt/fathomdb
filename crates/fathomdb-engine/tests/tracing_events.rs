@@ -53,6 +53,7 @@ fn engine_open_emits_lifecycle_events() {
             fathomdb_engine::ProvenanceMode::Warn,
             None,
             2,
+            fathomdb_engine::TelemetryLevel::Counters,
         )
         .unwrap();
     });
@@ -80,6 +81,7 @@ fn write_committed_emits_info_event() {
         fathomdb_engine::ProvenanceMode::Warn,
         None,
         2,
+        fathomdb_engine::TelemetryLevel::Counters,
     )
     .unwrap();
 

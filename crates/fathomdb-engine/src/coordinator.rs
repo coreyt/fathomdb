@@ -8,6 +8,7 @@ use fathomdb_query::{CompiledGroupedQuery, CompiledQuery, DrivingTable, Expansio
 use fathomdb_schema::SchemaManager;
 use rusqlite::{Connection, OptionalExtension, params_from_iter, types::Value};
 
+use crate::telemetry::{SqliteCacheStatus, TelemetryCounters, read_db_cache_status};
 use crate::{EngineError, sqlite};
 
 /// Maximum number of cached shape-hash to SQL mappings before the cache is
@@ -239,6 +240,7 @@ pub struct ExecutionCoordinator {
     shape_sql_map: Mutex<HashMap<ShapeHash, String>>,
     vector_enabled: bool,
     vec_degradation_warned: AtomicBool,
+    telemetry: Arc<TelemetryCounters>,
 }
 
 impl fmt::Debug for ExecutionCoordinator {
@@ -257,6 +259,7 @@ impl ExecutionCoordinator {
         schema_manager: Arc<SchemaManager>,
         vector_dimension: Option<usize>,
         pool_size: usize,
+        telemetry: Arc<TelemetryCounters>,
     ) -> Result<Self, EngineError> {
         let path = path.as_ref().to_path_buf();
         #[cfg(feature = "sqlite-vec")]
@@ -301,6 +304,7 @@ impl ExecutionCoordinator {
             shape_sql_map: Mutex::new(HashMap::new()),
             vector_enabled,
             vec_degradation_warned: AtomicBool::new(false),
+            telemetry,
         })
     }
 
@@ -317,6 +321,22 @@ impl ExecutionCoordinator {
 
     fn lock_connection(&self) -> Result<MutexGuard<'_, Connection>, EngineError> {
         self.pool.acquire()
+    }
+
+    /// Aggregate SQLite page-cache counters across all pool connections.
+    ///
+    /// Uses `try_lock` to avoid blocking reads for telemetry reporting.
+    /// Connections that are currently locked by a query are skipped — this
+    /// is acceptable for statistical counters.
+    #[must_use]
+    pub fn aggregate_cache_status(&self) -> SqliteCacheStatus {
+        let mut total = SqliteCacheStatus::default();
+        for conn_mutex in &self.pool.connections {
+            if let Ok(conn) = conn_mutex.try_lock() {
+                total.add(&read_db_cache_status(&conn));
+            }
+        }
+        total
     }
 
     /// # Errors
@@ -380,6 +400,7 @@ impl ExecutionCoordinator {
             })?
             .collect::<Result<Vec<_>, _>>()?;
 
+        self.telemetry.increment_queries();
         Ok(QueryRows {
             nodes,
             runs: Vec::new(),
@@ -826,7 +847,7 @@ mod tests {
     use rusqlite::types::Value;
     use tempfile::NamedTempFile;
 
-    use crate::{EngineError, ExecutionCoordinator};
+    use crate::{EngineError, ExecutionCoordinator, TelemetryCounters};
 
     use super::{bind_value_to_sql, is_vec_table_absent, wrap_node_row_projection_sql};
 
@@ -877,9 +898,14 @@ mod tests {
     #[test]
     fn same_shape_queries_share_one_cache_entry() {
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
-                .expect("coordinator");
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("coordinator");
 
         let compiled_a = QueryBuilder::nodes("Meeting")
             .text_search("budget", 5)
@@ -909,9 +935,14 @@ mod tests {
     #[test]
     fn vector_read_degrades_gracefully_when_vec_table_absent() {
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
-                .expect("coordinator");
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("coordinator");
 
         let compiled = QueryBuilder::nodes("Meeting")
             .vector_search("budget embeddings", 5)
@@ -933,9 +964,14 @@ mod tests {
     #[test]
     fn coordinator_caches_by_shape_hash() {
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
-                .expect("coordinator");
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("coordinator");
 
         let compiled = QueryBuilder::nodes("Meeting")
             .text_search("budget", 5)
@@ -953,9 +989,14 @@ mod tests {
     #[test]
     fn explain_returns_correct_sql() {
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
-                .expect("coordinator");
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("coordinator");
 
         let compiled = QueryBuilder::nodes("Meeting")
             .text_search("budget", 5)
@@ -972,9 +1013,14 @@ mod tests {
         use fathomdb_query::DrivingTable;
 
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
-                .expect("coordinator");
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("coordinator");
 
         let compiled = QueryBuilder::nodes("Meeting")
             .text_search("budget", 5)
@@ -989,9 +1035,14 @@ mod tests {
     #[test]
     fn explain_reports_cache_miss_then_hit() {
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
-                .expect("coordinator");
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("coordinator");
 
         let compiled = QueryBuilder::nodes("Meeting")
             .text_search("budget", 5)
@@ -1025,9 +1076,14 @@ mod tests {
         // key assertion is that it returns a QueryPlan (not an error) even
         // without touching the database.
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
-                .expect("coordinator");
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("coordinator");
 
         let compiled = QueryBuilder::nodes("Meeting")
             .text_search("anything", 5)
@@ -1044,9 +1100,14 @@ mod tests {
     #[test]
     fn coordinator_executes_compiled_read() {
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
-                .expect("coordinator");
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("coordinator");
         let conn = rusqlite::Connection::open(db.path()).expect("open db");
 
         conn.execute_batch(
@@ -1082,9 +1143,14 @@ mod tests {
         let db = NamedTempFile::new().expect("temporary db");
         // Open without vector_dimension: regardless of feature flag, vector_enabled must be false
         // when no dimension is requested (the vector profile is never bootstrapped).
-        let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
-                .expect("coordinator");
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("coordinator");
         assert!(
             !coordinator.vector_enabled(),
             "vector_enabled must be false when no dimension is requested"
@@ -1095,9 +1161,14 @@ mod tests {
     #[test]
     fn capability_gate_reports_true_when_feature_enabled() {
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), Some(128), 1)
-                .expect("coordinator");
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            Some(128),
+            1,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("coordinator");
         assert!(
             coordinator.vector_enabled(),
             "vector_enabled must be true when sqlite-vec feature is active and dimension is set"
@@ -1115,6 +1186,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
         writer
@@ -1142,9 +1214,14 @@ mod tests {
             })
             .expect("write run");
 
-        let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
-                .expect("coordinator");
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("coordinator");
         let row = coordinator
             .read_run("run-r1")
             .expect("read_run")
@@ -1163,6 +1240,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
         writer
@@ -1199,9 +1277,14 @@ mod tests {
             })
             .expect("write step");
 
-        let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
-                .expect("coordinator");
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("coordinator");
         let row = coordinator
             .read_step("step-s1")
             .expect("read_step")
@@ -1223,6 +1306,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
         writer
@@ -1268,9 +1352,14 @@ mod tests {
             })
             .expect("write action");
 
-        let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
-                .expect("coordinator");
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("coordinator");
         let row = coordinator
             .read_action("action-a1")
             .expect("read_action")
@@ -1289,6 +1378,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -1344,9 +1434,14 @@ mod tests {
             })
             .expect("v2 write");
 
-        let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
-                .expect("coordinator");
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("coordinator");
         let active = coordinator.read_active_runs().expect("read_active_runs");
 
         assert_eq!(active.len(), 1, "only the non-superseded run should appear");
@@ -1384,9 +1479,14 @@ mod tests {
     #[test]
     fn poisoned_connection_returns_bridge_error_for_read_helpers() {
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
-                .expect("coordinator");
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("coordinator");
 
         poison_connection(&coordinator);
 
@@ -1408,9 +1508,14 @@ mod tests {
         use fathomdb_query::ShapeHash;
 
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
-                .expect("coordinator");
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("coordinator");
 
         // Directly populate the cache with MAX_SHAPE_CACHE_SIZE + 1 entries.
         {
@@ -1446,9 +1551,14 @@ mod tests {
     #[test]
     fn read_pool_size_configurable() {
         let db = NamedTempFile::new().expect("temporary db");
-        let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 2)
-                .expect("coordinator with pool_size=2");
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            None,
+            2,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("coordinator with pool_size=2");
 
         assert_eq!(coordinator.pool.size(), 2);
 
@@ -1472,9 +1582,14 @@ mod tests {
         let db = NamedTempFile::new().expect("temporary db");
 
         // Bootstrap the database via coordinator (creates schema).
-        let coordinator =
-            ExecutionCoordinator::open(db.path(), Arc::new(SchemaManager::new()), None, 1)
-                .expect("coordinator");
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("coordinator");
 
         // Seed data: 10 root nodes (Meeting-0..9) with 2 outbound edges each
         // to expansion nodes (Task-0-a, Task-0-b, etc.).

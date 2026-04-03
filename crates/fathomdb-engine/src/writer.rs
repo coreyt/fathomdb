@@ -17,6 +17,7 @@ use crate::operational::{
     extract_secondary_index_entries_for_mutation, parse_operational_secondary_indexes_json,
     parse_operational_validation_contract, validate_operational_payload_against_contract,
 };
+use crate::telemetry::TelemetryCounters;
 use crate::{EngineError, ids::new_id, projection::ProjectionTarget, sqlite};
 
 /// A deferred projection backfill task submitted alongside a write.
@@ -284,6 +285,8 @@ pub struct WriterActor {
     sender: ManuallyDrop<SyncSender<WriteMessage>>,
     thread_handle: Option<thread::JoinHandle<()>>,
     provenance_mode: ProvenanceMode,
+    // Retained for Phase 2 (statement-level telemetry from WriterActor methods).
+    _telemetry: Arc<TelemetryCounters>,
 }
 
 impl WriterActor {
@@ -293,19 +296,24 @@ impl WriterActor {
         path: impl AsRef<Path>,
         schema_manager: Arc<SchemaManager>,
         provenance_mode: ProvenanceMode,
+        telemetry: Arc<TelemetryCounters>,
     ) -> Result<Self, EngineError> {
         let database_path = path.as_ref().to_path_buf();
         let (sender, receiver) = mpsc::sync_channel::<WriteMessage>(256);
 
+        let writer_telemetry = Arc::clone(&telemetry);
         let handle = thread::Builder::new()
             .name("fathomdb-writer".to_owned())
-            .spawn(move || writer_loop(&database_path, &schema_manager, receiver))
+            .spawn(move || {
+                writer_loop(&database_path, &schema_manager, receiver, &writer_telemetry);
+            })
             .map_err(EngineError::Io)?;
 
         Ok(Self {
             sender: ManuallyDrop::new(sender),
             thread_handle: Some(handle),
             provenance_mode,
+            _telemetry: telemetry,
         })
     }
 
@@ -759,6 +767,7 @@ fn writer_loop(
     database_path: &Path,
     schema_manager: &Arc<SchemaManager>,
     receiver: mpsc::Receiver<WriteMessage>,
+    telemetry: &TelemetryCounters,
 ) {
     trace_info!("writer thread started");
 
@@ -796,7 +805,12 @@ fn writer_loop(
                             error = %error,
                             "write failed"
                         );
+                        telemetry.increment_errors();
                     } else {
+                        let row_count = (prepared.nodes.len()
+                            + prepared.edges.len()
+                            + prepared.chunks.len()) as u64;
+                        telemetry.increment_writes(row_count);
                         trace_info!(
                             label = %prepared.label,
                             nodes = prepared.nodes.len(),
@@ -809,6 +823,7 @@ fn writer_loop(
                     let _ = reply.send(inner);
                 } else {
                     trace_error!(label = %prepared.label, "writer thread: panic during resolve_and_apply");
+                    telemetry.increment_errors();
                     // Attempt to clean up any open transaction after a panic.
                     let _ = conn.execute_batch("ROLLBACK");
                     let _ = reply.send(Err(EngineError::WriterRejected(
@@ -818,6 +833,11 @@ fn writer_loop(
             }
             WriteMessage::TouchLastAccessed { request, reply } => {
                 let result = apply_touch_last_accessed(&mut conn, &request);
+                if result.is_ok() {
+                    telemetry.increment_writes(0);
+                } else {
+                    telemetry.increment_errors();
+                }
                 let _ = reply.send(result);
             }
         }
@@ -1766,7 +1786,8 @@ mod tests {
     use crate::{
         ActionInsert, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire, EngineError, NodeInsert,
         NodeRetire, OperationalWrite, OptionalProjectionTask, ProvenanceMode, RunInsert,
-        StepInsert, VecInsert, WriteRequest, WriterActor, projection::ProjectionTarget,
+        StepInsert, TelemetryCounters, VecInsert, WriteRequest, WriterActor,
+        projection::ProjectionTarget,
     };
 
     #[test]
@@ -1776,6 +1797,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -1841,6 +1863,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -1919,6 +1942,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -1972,6 +1996,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -2030,6 +2055,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -2075,6 +2101,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -2140,6 +2167,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -2202,6 +2230,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -2290,6 +2319,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -2364,6 +2394,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -2452,6 +2483,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -2603,6 +2635,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -2681,6 +2714,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -2717,6 +2751,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -2798,6 +2833,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -2867,6 +2903,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -2989,6 +3026,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -3045,6 +3083,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -3084,6 +3123,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -3122,6 +3162,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -3196,6 +3237,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -3233,6 +3275,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -3277,6 +3320,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -3352,6 +3396,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -3436,6 +3481,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -3523,6 +3569,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -3584,6 +3631,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -3690,6 +3738,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -3771,6 +3820,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -3853,6 +3903,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -3933,6 +3984,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -4023,6 +4075,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -4127,6 +4180,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -4166,6 +4220,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -4206,6 +4261,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -4248,6 +4304,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -4309,6 +4366,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -4352,6 +4410,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -4421,6 +4480,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -4472,6 +4532,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -4511,6 +4572,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -4550,6 +4612,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -4600,6 +4663,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -4647,6 +4711,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -4715,6 +4780,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -4792,6 +4858,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -4863,6 +4930,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::default(),
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -4904,6 +4972,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Require,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -4943,6 +5012,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Require,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -4982,6 +5052,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Require,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -5044,6 +5115,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -5097,6 +5169,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -5150,6 +5223,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -5222,6 +5296,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -5291,6 +5366,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -5388,6 +5464,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -5433,6 +5510,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -5471,6 +5549,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -5522,6 +5601,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -5580,6 +5660,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 
@@ -5679,6 +5760,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
         let result = writer.submit(WriteRequest {
@@ -5711,6 +5793,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
         let result = writer.submit(WriteRequest {
@@ -5745,6 +5828,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
         let result = writer.submit(WriteRequest {
@@ -5787,9 +5871,13 @@ mod tests {
                 .expect("ensure profile");
         }
 
-        let writer =
-            WriterActor::start(db.path(), Arc::clone(&schema_manager), ProvenanceMode::Warn)
-                .expect("writer");
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::clone(&schema_manager),
+            ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("writer");
 
         // Insert node + chunk + vec row
         writer
@@ -5877,9 +5965,13 @@ mod tests {
                 .expect("ensure profile");
         }
 
-        let writer =
-            WriterActor::start(db.path(), Arc::clone(&schema_manager), ProvenanceMode::Warn)
-                .expect("writer");
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::clone(&schema_manager),
+            ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("writer");
 
         // Insert node + chunk-A + vec-A
         writer
@@ -5993,9 +6085,13 @@ mod tests {
                 .expect("ensure profile");
         }
 
-        let writer =
-            WriterActor::start(db.path(), Arc::clone(&schema_manager), ProvenanceMode::Warn)
-                .expect("writer");
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::clone(&schema_manager),
+            ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("writer");
 
         writer
             .submit(WriteRequest {
@@ -6145,6 +6241,7 @@ mod tests {
             db.path(),
             Arc::new(SchemaManager::new()),
             ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
         )
         .expect("writer");
 

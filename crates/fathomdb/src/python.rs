@@ -18,8 +18,8 @@ use crate::python_types::{
 };
 use crate::{
     Engine, EngineError, EngineOptions, OperationalReadRequest, OperationalRegisterRequest,
-    ProjectionTarget, ProvenanceMode, SafeExportOptions, compile_grouped_query, compile_query,
-    new_id, new_row_id,
+    ProjectionTarget, ProvenanceMode, SafeExportOptions, TelemetryLevel, compile_grouped_query,
+    compile_query, new_id, new_row_id,
 };
 use fathomdb_query::CompileError as RustCompileError;
 
@@ -74,18 +74,20 @@ impl EngineCore {
 #[pymethods]
 impl EngineCore {
     #[staticmethod]
-    #[pyo3(signature = (database_path, provenance_mode, vector_dimension=None))]
+    #[pyo3(signature = (database_path, provenance_mode, vector_dimension=None, telemetry_level=None))]
     pub fn open(
         py: Python<'_>,
         database_path: &str,
         provenance_mode: &str,
         vector_dimension: Option<usize>,
+        telemetry_level: Option<&str>,
     ) -> PyResult<Self> {
         let options = EngineOptions {
             database_path: PathBuf::from(database_path),
             provenance_mode: parse_provenance_mode(provenance_mode)?,
             vector_dimension,
             read_pool_size: None,
+            telemetry_level: parse_telemetry_level(telemetry_level)?,
         };
         // Release the GIL during engine open — schema bootstrap emits tracing
         // events that pyo3-log forwards to Python logging.  Holding the GIL
@@ -109,6 +111,28 @@ impl EngineCore {
                 .map_err(|_| BridgeError::new_err("engine lock poisoned"))?;
             let _ = guard.take();
             Ok(())
+        })
+    }
+
+    /// Read all telemetry counters and aggregated SQLite cache statistics.
+    ///
+    /// Returns a dict with keys: queries_total, writes_total, write_rows_total,
+    /// errors_total, admin_ops_total, cache_hits, cache_misses, cache_writes,
+    /// cache_spills.
+    pub fn telemetry_snapshot(&self, py: Python<'_>) -> PyResult<PyObject> {
+        self.with_engine(|engine| {
+            let snap = engine.telemetry_snapshot();
+            let dict = pyo3::types::PyDict::new(py);
+            dict.set_item("queries_total", snap.queries_total)?;
+            dict.set_item("writes_total", snap.writes_total)?;
+            dict.set_item("write_rows_total", snap.write_rows_total)?;
+            dict.set_item("errors_total", snap.errors_total)?;
+            dict.set_item("admin_ops_total", snap.admin_ops_total)?;
+            dict.set_item("cache_hits", snap.sqlite_cache.cache_hits)?;
+            dict.set_item("cache_misses", snap.sqlite_cache.cache_misses)?;
+            dict.set_item("cache_writes", snap.sqlite_cache.cache_writes)?;
+            dict.set_item("cache_spills", snap.sqlite_cache.cache_spills)?;
+            Ok(dict.into())
         })
     }
 
@@ -579,6 +603,17 @@ fn parse_provenance_mode(mode: &str) -> PyResult<ProvenanceMode> {
         "require" => Ok(ProvenanceMode::Require),
         other => Err(PyValueError::new_err(format!(
             "invalid provenance_mode: {other}"
+        ))),
+    }
+}
+
+fn parse_telemetry_level(level: Option<&str>) -> PyResult<TelemetryLevel> {
+    match level {
+        None | Some("counters") => Ok(TelemetryLevel::Counters),
+        Some("statements") => Ok(TelemetryLevel::Statements),
+        Some("profiling") => Ok(TelemetryLevel::Profiling),
+        Some(other) => Err(PyValueError::new_err(format!(
+            "invalid telemetry_level: {other} (expected counters, statements, or profiling)"
         ))),
     }
 }

@@ -56,6 +56,9 @@ Three layers:
   orphaned chunks (with dry-run support)
 - **Crash recovery**: full database recovery from corrupt SQLite files with
   schema bootstrap
+- **Resource telemetry**: always-on operation counters and SQLite cache
+  statistics, configurable profiling levels for statement-level and deep
+  process metrics
 - **Response-cycle feedback**: operation progress reporting across Rust, Python,
   and Go/CLI surfaces
 - **Structured tracing**: feature-gated `tracing` instrumentation across all

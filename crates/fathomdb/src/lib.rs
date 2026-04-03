@@ -28,6 +28,7 @@ pub use fathomdb_engine::{
     RunRow, SafeExportManifest, SafeExportOptions, SkippedEdge, StepInsert, StepRow, VecInsert,
     WriteReceipt, WriteRequest, WriterActor, new_id, new_row_id,
 };
+pub use fathomdb_engine::{SqliteCacheStatus, TelemetryLevel, TelemetrySnapshot};
 pub use fathomdb_query::{
     BindValue, ComparisonOp, CompileError, CompiledGroupedQuery, CompiledQuery, DrivingTable,
     ExecutionHints, ExpansionSlot, Predicate, Query, QueryAst, QueryBuilder, QueryStep,
@@ -58,6 +59,9 @@ pub struct EngineOptions {
     /// Number of read-only `SQLite` connections in the reader pool.
     /// Defaults to 4 when `None`.
     pub read_pool_size: Option<usize>,
+    /// Controls how much telemetry the engine collects.
+    /// Defaults to [`TelemetryLevel::Counters`] (always-on cumulative counters).
+    pub telemetry_level: TelemetryLevel,
 }
 
 impl EngineOptions {
@@ -68,6 +72,7 @@ impl EngineOptions {
             provenance_mode: ProvenanceMode::Warn,
             vector_dimension: None,
             read_pool_size: None,
+            telemetry_level: TelemetryLevel::Counters,
         }
     }
 }
@@ -96,6 +101,7 @@ impl Engine {
                 options.provenance_mode,
                 options.vector_dimension,
                 options.read_pool_size.unwrap_or(4),
+                options.telemetry_level,
             )?,
         })
     }
@@ -147,6 +153,12 @@ impl Engine {
     /// Returns the read-side execution coordinator.
     pub fn coordinator(&self) -> &ExecutionCoordinator {
         self.runtime.coordinator()
+    }
+
+    /// Read all telemetry counters and aggregated SQLite cache statistics.
+    #[must_use]
+    pub fn telemetry_snapshot(&self) -> TelemetrySnapshot {
+        self.runtime.telemetry_snapshot()
     }
 
     /// Update `last_accessed_at` timestamps for a batch of logical IDs.
@@ -391,6 +403,7 @@ impl Engine {
         &self,
         logical_id: &str,
     ) -> Result<LogicalRestoreReport, EngineError> {
+        self.runtime.telemetry().increment_admin_ops();
         self.admin().service().restore_logical_id(logical_id)
     }
 
@@ -400,6 +413,7 @@ impl Engine {
     ///
     /// Returns [`EngineError`] on database failure.
     pub fn purge_logical_id(&self, logical_id: &str) -> Result<LogicalPurgeReport, EngineError> {
+        self.runtime.telemetry().increment_admin_ops();
         self.admin().service().purge_logical_id(logical_id)
     }
 
@@ -413,6 +427,7 @@ impl Engine {
         before_timestamp: i64,
         options: &ProvenancePurgeOptions,
     ) -> Result<ProvenancePurgeReport, EngineError> {
+        self.runtime.telemetry().increment_admin_ops();
         self.admin()
             .service()
             .purge_provenance_events(before_timestamp, options)
@@ -532,6 +547,7 @@ impl Engine {
         observer: &dyn OperationObserver,
         config: FeedbackConfig,
     ) -> Result<fathomdb_engine::IntegrityReport, EngineError> {
+        self.runtime.telemetry().increment_admin_ops();
         run_with_feedback(
             OperationContext {
                 surface: "rust",
@@ -555,6 +571,7 @@ impl Engine {
         observer: &dyn OperationObserver,
         config: FeedbackConfig,
     ) -> Result<fathomdb_engine::SemanticReport, EngineError> {
+        self.runtime.telemetry().increment_admin_ops();
         run_with_feedback(
             OperationContext {
                 surface: "rust",
@@ -579,6 +596,7 @@ impl Engine {
         observer: &dyn OperationObserver,
         config: FeedbackConfig,
     ) -> Result<ProjectionRepairReport, EngineError> {
+        self.runtime.telemetry().increment_admin_ops();
         let mut metadata = BTreeMap::new();
         metadata.insert("target".to_owned(), format!("{target:?}").to_lowercase());
         run_with_feedback(
@@ -604,6 +622,7 @@ impl Engine {
         observer: &dyn OperationObserver,
         config: FeedbackConfig,
     ) -> Result<ProjectionRepairReport, EngineError> {
+        self.runtime.telemetry().increment_admin_ops();
         run_with_feedback(
             OperationContext {
                 surface: "rust",
@@ -628,6 +647,7 @@ impl Engine {
         observer: &dyn OperationObserver,
         config: FeedbackConfig,
     ) -> Result<fathomdb_engine::TraceReport, EngineError> {
+        self.runtime.telemetry().increment_admin_ops();
         let mut metadata = BTreeMap::new();
         metadata.insert("source_ref".to_owned(), source_ref.to_owned());
         run_with_feedback(
@@ -654,6 +674,7 @@ impl Engine {
         observer: &dyn OperationObserver,
         config: FeedbackConfig,
     ) -> Result<fathomdb_engine::TraceReport, EngineError> {
+        self.runtime.telemetry().increment_admin_ops();
         let mut metadata = BTreeMap::new();
         metadata.insert("source_ref".to_owned(), source_ref.to_owned());
         run_with_feedback(
@@ -681,6 +702,7 @@ impl Engine {
         observer: &dyn OperationObserver,
         config: FeedbackConfig,
     ) -> Result<SafeExportManifest, EngineError> {
+        self.runtime.telemetry().increment_admin_ops();
         let mut metadata = BTreeMap::new();
         metadata.insert("destination_path".to_owned(), destination_path.to_owned());
         run_with_feedback(

@@ -37,6 +37,7 @@ class Engine:
         *,
         provenance_mode: ProvenanceMode | str = ProvenanceMode.WARN,
         vector_dimension: int | None = None,
+        telemetry_level: str | None = None,
         progress_callback=None,
         feedback_config: FeedbackConfig | None = None,
     ) -> "Engine":
@@ -46,6 +47,8 @@ class Engine:
             database_path: Path to the SQLite database file.
             provenance_mode: Provenance enforcement level ("warn" or "require").
             vector_dimension: Embedding dimension for vector search, or None to disable.
+            telemetry_level: Telemetry collection level — "counters" (default),
+                "statements", or "profiling".
             progress_callback: Optional callback invoked with feedback events.
             feedback_config: Timing thresholds for progress feedback.
 
@@ -65,7 +68,7 @@ class Engine:
             metadata={"database_path": path},
             progress_callback=progress_callback,
             feedback_config=feedback_config,
-            operation=lambda: EngineCore.open(path, mode, vector_dimension),
+            operation=lambda: EngineCore.open(path, mode, vector_dimension, telemetry_level),
         )
         return cls(core)
 
@@ -82,6 +85,15 @@ class Engine:
     def __exit__(self, *exc) -> bool:
         self.close()
         return False
+
+    def telemetry_snapshot(self) -> dict:
+        """Read all telemetry counters and SQLite cache statistics.
+
+        Returns a dict with keys: ``queries_total``, ``writes_total``,
+        ``write_rows_total``, ``errors_total``, ``admin_ops_total``,
+        ``cache_hits``, ``cache_misses``, ``cache_writes``, ``cache_spills``.
+        """
+        return self._core.telemetry_snapshot()
 
     def nodes(self, kind: str) -> Query:
         """Start building a query rooted at nodes of the given kind."""
