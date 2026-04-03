@@ -95,11 +95,13 @@ pub struct SqliteCacheStatus {
 
 impl SqliteCacheStatus {
     /// Add another status into this one (for aggregating across connections).
+    ///
+    /// Uses saturating arithmetic to avoid panics on overflow in debug builds.
     pub fn add(&mut self, other: &Self) {
-        self.cache_hits += other.cache_hits;
-        self.cache_misses += other.cache_misses;
-        self.cache_writes += other.cache_writes;
-        self.cache_spills += other.cache_spills;
+        self.cache_hits = self.cache_hits.saturating_add(other.cache_hits);
+        self.cache_misses = self.cache_misses.saturating_add(other.cache_misses);
+        self.cache_writes = self.cache_writes.saturating_add(other.cache_writes);
+        self.cache_spills = self.cache_spills.saturating_add(other.cache_spills);
     }
 }
 
@@ -107,6 +109,11 @@ impl SqliteCacheStatus {
 ///
 /// Calls `sqlite3_db_status()` for `CACHE_HIT`, `CACHE_MISS`, `CACHE_WRITE`,
 /// and `CACHE_SPILL` with `resetFlag=0` (non-destructive read).
+///
+/// If any `sqlite3_db_status` call returns an error, that counter is left
+/// at zero rather than propagating garbage. This should not happen with
+/// valid connection handles and known status codes, but a database engine
+/// must not return misleading data.
 ///
 /// # Safety contract
 ///
@@ -117,21 +124,26 @@ pub fn read_db_cache_status(conn: &Connection) -> SqliteCacheStatus {
     let mut status = SqliteCacheStatus::default();
 
     // Helper: read one db_status code, returning the current value.
+    // Returns 0 if sqlite3_db_status reports an error.
     let read_one = |op: i32| -> i64 {
         let mut current: i32 = 0;
         let mut highwater: i32 = 0;
         // Safety: conn.handle() is valid for the connection's lifetime.
         // sqlite3_db_status with resetFlag=0 is a non-destructive read.
-        unsafe {
+        let rc = unsafe {
             rusqlite::ffi::sqlite3_db_status(
                 conn.handle(),
                 op,
                 &raw mut current,
                 &raw mut highwater,
                 0, // resetFlag
-            );
+            )
+        };
+        if rc == rusqlite::ffi::SQLITE_OK {
+            i64::from(current)
+        } else {
+            0
         }
-        i64::from(current)
     };
 
     status.cache_hits = read_one(rusqlite::ffi::SQLITE_DBSTATUS_CACHE_HIT);

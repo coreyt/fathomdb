@@ -374,7 +374,13 @@ impl ExecutionCoordinator {
         // shape_sql_map uses into_inner() (pure cache, safe to recover).
         // conn uses map_err → EngineError (connection state may be corrupt after panic;
         // into_inner() would risk using a connection with partial transaction state).
-        let conn_guard = self.lock_connection()?;
+        let conn_guard = match self.lock_connection() {
+            Ok(g) => g,
+            Err(e) => {
+                self.telemetry.increment_errors();
+                return Err(e);
+            }
+        };
         let mut statement = match conn_guard.prepare_cached(&row_sql) {
             Ok(stmt) => stmt,
             Err(e) if is_vec_table_absent(&e) => {
@@ -386,9 +392,12 @@ impl ExecutionCoordinator {
                     ..Default::default()
                 });
             }
-            Err(e) => return Err(EngineError::Sqlite(e)),
+            Err(e) => {
+                self.telemetry.increment_errors();
+                return Err(EngineError::Sqlite(e));
+            }
         };
-        let nodes = statement
+        let nodes = match statement
             .query_map(params_from_iter(bind_values.iter()), |row| {
                 Ok(NodeRow {
                     row_id: row.get(0)?,
@@ -397,8 +406,15 @@ impl ExecutionCoordinator {
                     properties: row.get(3)?,
                     last_accessed_at: row.get(4)?,
                 })
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
+            })
+            .and_then(Iterator::collect)
+        {
+            Ok(rows) => rows,
+            Err(e) => {
+                self.telemetry.increment_errors();
+                return Err(EngineError::Sqlite(e));
+            }
+        };
 
         self.telemetry.increment_queries();
         Ok(QueryRows {
