@@ -48,7 +48,7 @@ impl EngineRuntime {
         provenance_mode: ProvenanceMode,
         vector_dimension: Option<usize>,
         read_pool_size: usize,
-        _telemetry_level: TelemetryLevel,
+        telemetry_level: TelemetryLevel,
     ) -> Result<Self, EngineError> {
         let lock = DatabaseLock::acquire(path.as_ref())?;
 
@@ -60,6 +60,7 @@ impl EngineRuntime {
             telemetry_level = ?telemetry_level,
             "engine opening"
         );
+        let _ = telemetry_level; // Used by trace_info! when tracing feature is active
         let telemetry = Arc::new(TelemetryCounters::default());
         let schema_manager = Arc::new(SchemaManager::new());
         let coordinator = ExecutionCoordinator::open(
