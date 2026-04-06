@@ -10,15 +10,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// makeFakeBridge writes a shell script that emits a fixed bridge response and
-// returns its path. script must be a valid shell script body (without shebang).
-// Skips the calling test on Windows where shell scripts cannot be executed.
+// makeFakeBridge writes a script that emits a fixed bridge response and returns
+// its absolute path.  On Unix it creates a bash script; on Windows a .bat file.
 func makeFakeBridge(t *testing.T, responseJSON string) string {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("shell-script test doubles cannot run on Windows")
-	}
 	dir := t.TempDir()
+	if runtime.GOOS == "windows" {
+		path := filepath.Join(dir, "fake-bridge.bat")
+		script := "@echo off\r\necho " + responseJSON + "\r\n"
+		require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
+		return path
+	}
 	path := filepath.Join(dir, "fake-bridge.sh")
 	script := "#!/usr/bin/env bash\nprintf '%s\\n' '" + responseJSON + "'\n"
 	require.NoError(t, os.WriteFile(path, []byte(script), 0o755)) //nolint:gosec // G306: test executable in t.TempDir()
@@ -27,10 +29,17 @@ func makeFakeBridge(t *testing.T, responseJSON string) string {
 
 func makeCapturingFakeBridge(t *testing.T, requestPath, responseJSON string) string {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("shell-script test doubles cannot run on Windows")
-	}
 	dir := t.TempDir()
+	if runtime.GOOS == "windows" {
+		// Use PowerShell via cmd to capture stdin and echo the response.
+		path := filepath.Join(dir, "fake-bridge.bat")
+		// Read stdin to requestPath, then echo the response.
+		script := "@echo off\r\n" +
+			"powershell -NoProfile -Command \"[System.Console]::In.ReadToEnd() | Set-Content -NoNewline -Path '" + requestPath + "'\"\r\n" +
+			"echo " + responseJSON + "\r\n"
+		require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
+		return path
+	}
 	path := filepath.Join(dir, "fake-bridge.sh")
 	script := "#!/usr/bin/env bash\ncat >" + requestPath + "\nprintf '%s\\n' '" + responseJSON + "'\n"
 	require.NoError(t, os.WriteFile(path, []byte(script), 0o755)) //nolint:gosec // G306: test executable in t.TempDir()

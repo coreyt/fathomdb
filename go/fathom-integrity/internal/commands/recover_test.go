@@ -181,26 +181,47 @@ func seedRecoverSourceDB(t *testing.T, sqliteBin string) string {
 	return dbPath
 }
 
+// makeFailingSQLiteWrapper creates a script that fails when invoked with
+// arguments containing "operational_current", otherwise delegates to the real
+// sqlite3 binary.  On Unix it creates a bash script; on Windows a .bat file.
 func makeFailingSQLiteWrapper(t *testing.T, realSQLite string) string {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("shell-script test doubles cannot run on Windows")
-	}
 
 	dir := t.TempDir()
+	if runtime.GOOS == "windows" {
+		path := filepath.Join(dir, "sqlite-wrapper.bat")
+		// %* is all arguments; use findstr to check for operational_current.
+		script := "@echo off\r\n" +
+			"echo %* | findstr /C:\"operational_current\" >nul\r\n" +
+			"if %errorlevel%==0 (\r\n" +
+			"  echo forced count failure for operational_current 1>&2\r\n" +
+			"  exit /b 1\r\n" +
+			")\r\n" +
+			"\"" + realSQLite + "\" %*\r\n"
+		require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
+		return path
+	}
 	path := filepath.Join(dir, "sqlite-wrapper.sh")
 	script := "#!/usr/bin/env bash\nset -euo pipefail\ncase \"$*\" in\n  *operational_current*)\n    echo \"forced count failure for operational_current\" >&2\n    exit 1\n    ;;\nesac\nexec " + shellQuote(realSQLite) + " \"$@\"\n"
 	require.NoError(t, os.WriteFile(path, []byte(script), 0o755)) //nolint:gosec // G306: test executable in t.TempDir()
 	return path
 }
 
+// makeSuccessBridgeScript creates a script that consumes stdin and emits a
+// successful bridge response.  On Unix it creates a bash script; on Windows
+// a .bat file.
 func makeSuccessBridgeScript(t *testing.T) string {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("shell-script test doubles cannot run on Windows")
-	}
 
 	dir := t.TempDir()
+	if runtime.GOOS == "windows" {
+		path := filepath.Join(dir, "bridge.bat")
+		script := "@echo off\r\n" +
+			"powershell -NoProfile -Command \"[System.Console]::In.ReadToEnd() | Out-Null\"\r\n" +
+			"echo {\"protocol_version\":1,\"ok\":true,\"message\":\"ok\",\"payload\":{}}\r\n"
+		require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
+		return path
+	}
 	path := filepath.Join(dir, "bridge.sh")
 	script := "#!/usr/bin/env bash\nset -euo pipefail\ncat >/dev/null\nprintf '%s\\n' '{\"protocol_version\":1,\"ok\":true,\"message\":\"ok\",\"payload\":{}}'\n"
 	require.NoError(t, os.WriteFile(path, []byte(script), 0o755))
