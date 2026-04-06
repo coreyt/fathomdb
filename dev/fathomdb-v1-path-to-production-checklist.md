@@ -49,8 +49,6 @@ Status meanings:
 
 - **Enforce benchmark thresholds in CI** so performance regressions are caught
   automatically rather than by manual review. (GitHub issue #14)
-- **Resolve the Windows vector platform parity gap** or explicitly document
-  Linux/macOS-only support for vector workflows. (GitHub issue #13)
 
 ## Current Overall Assessment
 
@@ -72,7 +70,7 @@ becomes production-ready.
 |---|-------|--------|
 | 12 | Exercise the release workflow end to end with a real tag | Blocks production claim |
 | 14 | Enforce benchmark thresholds in CI | Performance regression risk |
-| 13 | Windows vector platform parity gap | Platform support clarity |
+| 13 | ~~Windows vector platform parity gap~~ | Resolved: Windows CI now covers full Rust workspace + Python vector harness |
 | 9 | Harden vector regeneration recovery path | Recovery depth |
 | 6 | Track missing FTS fallback for degraded vector reads | Graceful degradation |
 | 10 | Revisit long-term vector recovery architecture | Architectural clarity |
@@ -111,4 +109,3 @@ Open findings:
 
 1. Configure crates.io token + PyPI trusted publisher; re-run release workflow
 2. Close issue #14 (enforce benchmark thresholds)
-3. Close issue #13 (Windows vector parity) or document the platform boundary

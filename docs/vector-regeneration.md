@@ -229,9 +229,8 @@ In other words:
   executable path must be absolute, must not be world-writable, and inherits no
   environment variables unless explicitly allowlisted with
   `--generator-preserve-env`.
-- Core regeneration validation and executable-trust enforcement are supported on
-  both Unix and Windows builds. `sqlite-vec` packaging and end-to-end recovery
-  coverage remain Linux-scoped until Windows vector packaging is proven.
+- Core regeneration validation, executable-trust enforcement, and `sqlite-vec`
+  vector workflows are supported on Linux, macOS, and Windows.
 - Regeneration replaces the contents of `vec_nodes_active` for the targeted
   profile table only after the generated output has been fully validated and the
   chunk snapshot is revalidated inside the apply transaction.

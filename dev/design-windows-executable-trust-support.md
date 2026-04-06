@@ -18,13 +18,12 @@ an explicit platform design.
 Keep Windows as a supported build/test target for the Rust engine and Go
 integrity tooling.
 
-Support boundary for this phase:
+Support boundary:
 
-- Windows must compile and run the non-`sqlite-vec` Rust and Go test suites
-- vector capability may remain feature-gated or Unix-scoped where
-  `sqlite-vec`/tooling packaging is not yet proven on Windows
-- executable trust policy must remain enforceable on Windows, not silently
-  disabled
+- Windows compiles and runs the full Rust workspace including `sqlite-vec`
+- Windows CI runs the Python test suite and harness in both baseline and
+  vector modes
+- executable trust policy is enforceable on Windows
 
 Rejected alternatives:
 

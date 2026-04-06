@@ -89,7 +89,7 @@ jobs:
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - run: cargo test -p fathomdb-query -p fathomdb-schema -p fathomdb-engine
+      - run: cargo test --workspace
 
   go-lint:
     runs-on: ubuntu-latest
@@ -138,7 +138,7 @@ jobs:
         with:
           go-version-file: go/fathom-integrity/go.mod
           cache-dependency-path: go/fathom-integrity/go.mod
-      - run: go test ./internal/bridge ./internal/cli
+      - run: go test ./internal/... ./cmd/...
 
   go-e2e:
     runs-on: ubuntu-latest

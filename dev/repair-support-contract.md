@@ -122,7 +122,7 @@ The supported regeneration contract is:
 
 Current platform boundary:
 
-- Unix and Windows builds both enforce regeneration contract validation and
-  executable trust policy
-- Linux remains the supported environment for `sqlite-vec` packaging and
-  recovery-sensitive end-to-end vector regeneration coverage
+- Linux, macOS, and Windows builds enforce regeneration contract validation,
+  executable trust policy, and `sqlite-vec` vector workflows
+- CI validates vector-enabled Rust tests and Python harness (baseline + vector
+  modes) on both Linux and Windows

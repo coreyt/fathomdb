@@ -794,9 +794,9 @@ dedicated CI job was added).
 | `--features python` | `python-rust-lint` (clippy + check) | ✅ covered |
 | `--features python,sqlite-vec,tracing` | `python-test` (via maturin) | ✅ covered |
 | `--features sqlite-vec` | `benchmark-and-robustness` | ✅ covered |
-| Windows (no features) | `rust-test-windows` | ✅ covered |
-| Windows + `--features python` | — | ❌ not tested |
-| Windows + `--features sqlite-vec` | — | ❌ not tested |
+| Windows (full workspace) | `rust-test-windows` | ✅ covered |
+| Windows + `--features python` | `python-test-windows` | ✅ covered |
+| Windows + `--features sqlite-vec` | `python-test-windows` | ✅ covered |
 
 ---
 
@@ -809,9 +809,9 @@ after CI was extended to Windows.
 | Platform | Scope | Status |
 |---|---|---|
 | Linux (ubuntu-latest) | Full workspace: all crates, all features, Go + Python | ✅ covered |
-| Windows (windows-latest) | Rust: `fathomdb-query`, `fathomdb-schema`, `fathomdb-engine` only | ✅ covered |
-| Windows Go | `internal/bridge`, `internal/cli` only | ✅ covered |
-| Windows Python | Not tested | ❌ not tested |
+| Windows (windows-latest) | Full workspace: all crates including sqlite-vec | ✅ covered |
+| Windows Go | `internal/...`, `cmd/...` (all except e2e) | ✅ covered |
+| Windows Python | Full test suite + harness (baseline + vector modes) | ✅ covered |
 | macOS | Not tested in CI | ❌ not tested |
 
 ---
@@ -970,7 +970,7 @@ become a tracked task before the affected layer is considered complete.
 | Durable retire event table not implemented | Layer 3 | Warning | Future `retire_events` table; currently only `provenance_warnings` |
 | Read surface only returns node-shaped rows | Layer 2/3 | Feature gap | Extend `QueryRows` to runtime table result families |
 | Degraded execution (FTS fallback when vector missing) | Layer 2 | Warning | Hard fail today; degraded path should be available |
-| sqlite-vec e2e tests are Unix-scoped | Layer 2 | Warning | Windows vector packaging is unproven; vector tests may not run on Windows CI |
+| sqlite-vec e2e tests are Unix-scoped | Layer 2 | Resolved | Windows vector CI added: `rust-test-windows` runs full workspace; `python-test-windows` exercises vector harness |
 | Go tests require sandbox workaround for build cache path | Layer 5 | Warning | Build cache path must be configured for sandboxed test environments |
 
 ### Gaps Identified from Historical Defect Analysis
