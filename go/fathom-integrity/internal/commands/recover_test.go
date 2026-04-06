@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -182,6 +183,9 @@ func seedRecoverSourceDB(t *testing.T, sqliteBin string) string {
 
 func makeFailingSQLiteWrapper(t *testing.T, realSQLite string) string {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-script test doubles cannot run on Windows")
+	}
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sqlite-wrapper.sh")
@@ -192,6 +196,9 @@ func makeFailingSQLiteWrapper(t *testing.T, realSQLite string) string {
 
 func makeSuccessBridgeScript(t *testing.T) string {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-script test doubles cannot run on Windows")
+	}
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bridge.sh")

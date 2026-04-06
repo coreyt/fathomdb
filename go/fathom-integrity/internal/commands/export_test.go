@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -11,8 +12,12 @@ import (
 
 // makeFakeBridge writes a shell script that emits a fixed bridge response and
 // returns its path. script must be a valid shell script body (without shebang).
+// Skips the calling test on Windows where shell scripts cannot be executed.
 func makeFakeBridge(t *testing.T, responseJSON string) string {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-script test doubles cannot run on Windows")
+	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "fake-bridge.sh")
 	script := "#!/usr/bin/env bash\nprintf '%s\\n' '" + responseJSON + "'\n"
@@ -22,6 +27,9 @@ func makeFakeBridge(t *testing.T, responseJSON string) string {
 
 func makeCapturingFakeBridge(t *testing.T, requestPath, responseJSON string) string {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-script test doubles cannot run on Windows")
+	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "fake-bridge.sh")
 	script := "#!/usr/bin/env bash\ncat >" + requestPath + "\nprintf '%s\\n' '" + responseJSON + "'\n"
