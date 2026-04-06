@@ -90,13 +90,11 @@ writer/transaction safety, admin/recovery paths, and scalability edge cases.
 | Severity | Total | Fixed | By Design | Acknowledged | Open |
 |----------|-------|-------|-----------|--------------|------|
 | Critical | 5 | 5 | 0 | 0 | 0 |
-| High | 6 | 5 | 0 | 0 | 1 |
+| High | 6 | 6 | 0 | 0 | 0 |
 | Medium | 7 | 4 | 1 | 0 | 1 |
 | Low | 4 | 2 | 0 | 1 | 0 |
 
 Open findings:
-- **H-6**: Unbounded JSON parsing in Python FFI and bridge (OOM risk from
-  malicious input)
 - **M-6**: safe_export manifest page_count is advisory (checkpoint-to-backup
   race)
 
@@ -113,5 +111,4 @@ Open findings:
 
 1. Configure crates.io token + PyPI trusted publisher; re-run release workflow
 2. Close issue #14 (enforce benchmark thresholds)
-3. Close H-6 (JSON input size limits)
-4. Close issue #13 (Windows vector parity) or document the platform boundary
+3. Close issue #13 (Windows vector parity) or document the platform boundary

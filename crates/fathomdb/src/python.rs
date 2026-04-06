@@ -320,6 +320,11 @@ impl EngineCore {
         py: Python<'_>,
         request_json: &str,
     ) -> PyResult<String> {
+        check_json_size(
+            request_json,
+            MAX_REQUEST_JSON_BYTES,
+            "operational collection",
+        )?;
         let request: OperationalRegisterRequest =
             serde_json::from_str(request_json).map_err(|error| {
                 PyValueError::new_err(format!("invalid operational collection JSON: {error}"))
@@ -347,6 +352,7 @@ impl EngineCore {
         name: &str,
         filter_fields_json: &str,
     ) -> PyResult<String> {
+        check_json_size(filter_fields_json, MAX_REQUEST_JSON_BYTES, "filter fields")?;
         self.with_engine(|engine| {
             let record = py
                 .allow_threads(|| {
@@ -363,6 +369,7 @@ impl EngineCore {
         name: &str,
         validation_json: &str,
     ) -> PyResult<String> {
+        check_json_size(validation_json, MAX_REQUEST_JSON_BYTES, "validation")?;
         self.with_engine(|engine| {
             let record = py
                 .allow_threads(|| {
@@ -379,6 +386,11 @@ impl EngineCore {
         name: &str,
         secondary_indexes_json: &str,
     ) -> PyResult<String> {
+        check_json_size(
+            secondary_indexes_json,
+            MAX_REQUEST_JSON_BYTES,
+            "secondary indexes",
+        )?;
         self.with_engine(|engine| {
             let record = py
                 .allow_threads(|| {
@@ -412,6 +424,7 @@ impl EngineCore {
         py: Python<'_>,
         request_json: &str,
     ) -> PyResult<String> {
+        check_json_size(request_json, MAX_REQUEST_JSON_BYTES, "operational read")?;
         let request: OperationalReadRequest =
             serde_json::from_str(request_json).map_err(|error| {
                 PyValueError::new_err(format!("invalid operational read JSON: {error}"))
@@ -553,6 +566,11 @@ impl EngineCore {
         before_timestamp: i64,
         options_json: &str,
     ) -> PyResult<String> {
+        check_json_size(
+            options_json,
+            MAX_REQUEST_JSON_BYTES,
+            "provenance purge options",
+        )?;
         let options: crate::ProvenancePurgeOptions = serde_json::from_str(options_json)
             .map_err(|e| PyValueError::new_err(format!("invalid options JSON: {e}")))?;
         self.with_engine(|engine| {
@@ -566,30 +584,37 @@ impl EngineCore {
 
 const MAX_AST_JSON_BYTES: usize = 16 * 1024 * 1024; // 16 MB
 const MAX_WRITE_JSON_BYTES: usize = 64 * 1024 * 1024; // 64 MB
+const MAX_REQUEST_JSON_BYTES: usize = 1024 * 1024; // 1 MB — operational requests, config, options
 
 fn parse_ast(ast_json: &str) -> PyResult<crate::QueryAst> {
-    if ast_json.len() > MAX_AST_JSON_BYTES {
-        return Err(PyValueError::new_err(format!(
-            "AST JSON exceeds maximum size of {MAX_AST_JSON_BYTES} bytes"
-        )));
-    }
+    check_json_size(ast_json, MAX_AST_JSON_BYTES, "AST")?;
     let ast: PyQueryAst = serde_json::from_str(ast_json)
         .map_err(|error| PyValueError::new_err(format!("invalid query AST JSON: {error}")))?;
     Ok(ast.into())
 }
 
 fn parse_write_request(request_json: &str) -> PyResult<crate::WriteRequest> {
-    if request_json.len() > MAX_WRITE_JSON_BYTES {
-        return Err(PyValueError::new_err(format!(
-            "write request JSON exceeds maximum size of {MAX_WRITE_JSON_BYTES} bytes"
-        )));
-    }
+    check_json_size(request_json, MAX_WRITE_JSON_BYTES, "write request")?;
     let request: PyWriteRequest = serde_json::from_str(request_json)
         .map_err(|error| PyValueError::new_err(format!("invalid write request JSON: {error}")))?;
     Ok(request.into())
 }
 
+fn check_json_size(json: &str, max_bytes: usize, label: &str) -> PyResult<()> {
+    if json.len() > max_bytes {
+        return Err(PyValueError::new_err(format!(
+            "{label} JSON exceeds maximum size of {max_bytes} bytes"
+        )));
+    }
+    Ok(())
+}
+
 fn parse_last_access_touch_request(request_json: &str) -> PyResult<crate::LastAccessTouchRequest> {
+    check_json_size(
+        request_json,
+        MAX_REQUEST_JSON_BYTES,
+        "last_access touch request",
+    )?;
     let request: PyLastAccessTouchRequest =
         serde_json::from_str(request_json).map_err(|error| {
             PyValueError::new_err(format!("invalid last_access touch request JSON: {error}"))
