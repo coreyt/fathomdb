@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 )
 
 // ProtocolVersion is the JSON protocol version exchanged between the Go CLI and
@@ -261,7 +262,8 @@ func validateBinaryPath(path string) error {
 		return fmt.Errorf("bridge binary not found: %w", err)
 	}
 	// Reject world-writable binaries (unix permission bit 0o002).
-	if info.Mode().Perm()&0o002 != 0 {
+	// Skip on Windows where file permission bits are not meaningful.
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0o002 != 0 {
 		return fmt.Errorf("bridge binary %q is world-writable, refusing to execute", path)
 	}
 	return nil
