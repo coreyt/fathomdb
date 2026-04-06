@@ -737,7 +737,8 @@ mod tests {
     fn open_constructs_engine_options_with_all_fields() {
         let db = NamedTempFile::new().expect("temp db");
         Python::with_gil(|py| {
-            let engine = EngineCore::open(py, db.path().to_str().expect("db path"), "warn", None);
+            let engine =
+                EngineCore::open(py, db.path().to_str().expect("db path"), "warn", None, None);
             assert!(engine.is_ok(), "open must succeed: {:?}", engine.err());
         });
     }
@@ -746,8 +747,9 @@ mod tests {
     fn close_makes_subsequent_calls_fail() {
         let db = NamedTempFile::new().expect("temp db");
         Python::with_gil(|py| {
-            let engine = EngineCore::open(py, db.path().to_str().expect("path"), "warn", None)
-                .expect("open");
+            let engine =
+                EngineCore::open(py, db.path().to_str().expect("path"), "warn", None, None)
+                    .expect("open");
             engine.close(py).expect("close");
             let result = engine.check_integrity(py);
             assert!(result.is_err(), "call after close must fail");
@@ -760,8 +762,9 @@ mod tests {
     fn close_is_idempotent() {
         let db = NamedTempFile::new().expect("temp db");
         Python::with_gil(|py| {
-            let engine = EngineCore::open(py, db.path().to_str().expect("path"), "warn", None)
-                .expect("open");
+            let engine =
+                EngineCore::open(py, db.path().to_str().expect("path"), "warn", None, None)
+                    .expect("open");
             engine.close(py).expect("first close");
             engine.close(py).expect("second close");
         });
@@ -771,9 +774,11 @@ mod tests {
     fn open_locked_database_raises_database_locked_error() {
         let db = NamedTempFile::new().expect("temp db");
         Python::with_gil(|py| {
-            let _first = EngineCore::open(py, db.path().to_str().expect("path"), "warn", None)
-                .expect("open");
-            let result = EngineCore::open(py, db.path().to_str().expect("path"), "warn", None);
+            let _first =
+                EngineCore::open(py, db.path().to_str().expect("path"), "warn", None, None)
+                    .expect("open");
+            let result =
+                EngineCore::open(py, db.path().to_str().expect("path"), "warn", None, None);
             match result {
                 Ok(_) => panic!("second open must fail"),
                 Err(err) => assert!(
@@ -790,8 +795,9 @@ mod tests {
     fn register_operational_collection_accepts_deserialized_request() {
         let db = NamedTempFile::new().expect("temp db");
         Python::with_gil(|py| {
-            let engine = EngineCore::open(py, db.path().to_str().expect("db path"), "warn", None)
-                .expect("open engine");
+            let engine =
+                EngineCore::open(py, db.path().to_str().expect("db path"), "warn", None, None)
+                    .expect("open engine");
             let result = engine.register_operational_collection(
                 py,
                 r#"{
@@ -814,8 +820,9 @@ mod tests {
     fn read_operational_collection_accepts_deserialized_request() {
         let db = NamedTempFile::new().expect("temp db");
         Python::with_gil(|py| {
-            let engine = EngineCore::open(py, db.path().to_str().expect("db path"), "warn", None)
-                .expect("open engine");
+            let engine =
+                EngineCore::open(py, db.path().to_str().expect("db path"), "warn", None, None)
+                    .expect("open engine");
             // Register first so the collection exists
             engine
                 .register_operational_collection(
@@ -848,8 +855,9 @@ mod tests {
     fn engine_core_exposes_operational_admin_methods() {
         let db = NamedTempFile::new().expect("temp db");
         Python::with_gil(|py| {
-            let engine = EngineCore::open(py, db.path().to_str().expect("db path"), "warn", None)
-                .expect("open engine");
+            let engine =
+                EngineCore::open(py, db.path().to_str().expect("db path"), "warn", None, None)
+                    .expect("open engine");
 
             let record: Value = serde_json::from_str(
                 &engine

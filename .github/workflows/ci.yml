@@ -138,6 +138,8 @@ jobs:
         with:
           go-version-file: go/fathom-integrity/go.mod
           cache-dependency-path: go/fathom-integrity/go.mod
+      - name: Install SQLite
+        run: choco install sqlite -y --no-progress
       - run: go test ./internal/... ./cmd/...
 
   go-e2e:
