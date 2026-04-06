@@ -122,6 +122,22 @@ const MAX_TRAVERSAL_DEPTH: usize = 50;
 
 /// Compile a [`QueryAst`] into a [`CompiledQuery`] ready for execution.
 ///
+/// # Compilation strategy
+///
+/// The compiled SQL is structured as a `WITH RECURSIVE` CTE named
+/// `base_candidates` followed by a final `SELECT ... JOIN nodes` projection.
+///
+/// For the **Nodes** driving table (no FTS/vector search), all filter
+/// predicates (`LogicalIdEq`, `JsonPathEq`, `JsonPathCompare`,
+/// `SourceRefEq`) are pushed into the `base_candidates` CTE so that the
+/// CTE's `LIMIT` applies *after* filtering. Without this pushdown the LIMIT
+/// would truncate the candidate set before property filters run, silently
+/// excluding nodes whose properties satisfy the filter but whose insertion
+/// order falls outside the limit window.
+///
+/// For **FTS** and **vector** driving tables, filters remain in the outer
+/// `WHERE` clause because the CTE is already narrowed by the search itself.
+///
 /// # Errors
 ///
 /// Returns [`CompileError::TooManyTraversals`] if more than one traversal step
@@ -261,19 +277,70 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
                     WHERE src.superseded_at IS NULL
                       AND src.kind = ?1"
                 .to_owned();
-            if let Some(logical_id) = ast.steps.iter().find_map(|step| {
-                if let QueryStep::Filter(Predicate::LogicalIdEq(logical_id)) = step {
-                    Some(logical_id.as_str())
-                } else {
-                    None
+            // Push filter predicates into base_candidates so the LIMIT applies
+            // after filtering, not before. Without this, the CTE may truncate
+            // the candidate set before property/source_ref filters run, causing
+            // nodes that satisfy the filter to be excluded from results.
+            for step in &ast.steps {
+                if let QueryStep::Filter(predicate) = step {
+                    match predicate {
+                        Predicate::LogicalIdEq(logical_id) => {
+                            binds.push(BindValue::Text(logical_id.clone()));
+                            let bind_index = binds.len();
+                            let _ = write!(
+                                &mut sql,
+                                "\n                      AND src.logical_id = ?{bind_index}"
+                            );
+                        }
+                        Predicate::JsonPathEq { path, value } => {
+                            validate_json_path(path)?;
+                            binds.push(BindValue::Text(path.clone()));
+                            let path_index = binds.len();
+                            binds.push(match value {
+                                ScalarValue::Text(text) => BindValue::Text(text.clone()),
+                                ScalarValue::Integer(integer) => BindValue::Integer(*integer),
+                                ScalarValue::Bool(boolean) => BindValue::Bool(*boolean),
+                            });
+                            let value_index = binds.len();
+                            let _ = write!(
+                                &mut sql,
+                                "\n                      AND json_extract(src.properties, ?{path_index}) = ?{value_index}"
+                            );
+                        }
+                        Predicate::JsonPathCompare { path, op, value } => {
+                            validate_json_path(path)?;
+                            binds.push(BindValue::Text(path.clone()));
+                            let path_index = binds.len();
+                            binds.push(match value {
+                                ScalarValue::Text(text) => BindValue::Text(text.clone()),
+                                ScalarValue::Integer(integer) => BindValue::Integer(*integer),
+                                ScalarValue::Bool(boolean) => BindValue::Bool(*boolean),
+                            });
+                            let value_index = binds.len();
+                            let operator = match op {
+                                ComparisonOp::Gt => ">",
+                                ComparisonOp::Gte => ">=",
+                                ComparisonOp::Lt => "<",
+                                ComparisonOp::Lte => "<=",
+                            };
+                            let _ = write!(
+                                &mut sql,
+                                "\n                      AND json_extract(src.properties, ?{path_index}) {operator} ?{value_index}"
+                            );
+                        }
+                        Predicate::SourceRefEq(source_ref) => {
+                            binds.push(BindValue::Text(source_ref.clone()));
+                            let bind_index = binds.len();
+                            let _ = write!(
+                                &mut sql,
+                                "\n                      AND src.source_ref = ?{bind_index}"
+                            );
+                        }
+                        Predicate::KindEq(_) => {
+                            // Already filtered by ast.root_kind above.
+                        }
+                    }
                 }
-            }) {
-                binds.push(BindValue::Text(logical_id.to_owned()));
-                let bind_index = binds.len();
-                let _ = write!(
-                    &mut sql,
-                    "\n                      AND src.logical_id = ?{bind_index}"
-                );
             }
             let _ = write!(
                 &mut sql,
@@ -331,16 +398,24 @@ WHERE 1 = 1",
 
     for step in &ast.steps {
         if let QueryStep::Filter(predicate) = step {
+            // For the Nodes driving table, filter predicates were already pushed
+            // into base_candidates so the CTE LIMIT applies after filtering.
+            // Skip them here to avoid duplicate bind values and redundant clauses.
+            if driving_table == DrivingTable::Nodes {
+                // KindEq is the only predicate NOT pushed into base_candidates
+                // (root_kind is handled separately there).
+                if let Predicate::KindEq(kind) = predicate {
+                    binds.push(BindValue::Text(kind.clone()));
+                    let bind_index = binds.len();
+                    let _ = write!(&mut sql, "\n  AND n.kind = ?{bind_index}");
+                }
+                continue;
+            }
             match predicate {
                 Predicate::LogicalIdEq(logical_id) => {
-                    // For the Nodes driving table the logical_id filter was already
-                    // applied inside base_candidates; applying it again would push a
-                    // duplicate bind value and add a redundant WHERE clause.
-                    if driving_table != DrivingTable::Nodes {
-                        binds.push(BindValue::Text(logical_id.clone()));
-                        let bind_index = binds.len();
-                        let _ = write!(&mut sql, "\n  AND n.logical_id = ?{bind_index}");
-                    }
+                    binds.push(BindValue::Text(logical_id.clone()));
+                    let bind_index = binds.len();
+                    let _ = write!(&mut sql, "\n  AND n.logical_id = ?{bind_index}");
                 }
                 Predicate::KindEq(kind) => {
                     binds.push(BindValue::Text(kind.clone()));
@@ -348,14 +423,7 @@ WHERE 1 = 1",
                     let _ = write!(&mut sql, "\n  AND n.kind = ?{bind_index}");
                 }
                 Predicate::JsonPathEq { path, value } => {
-                    // Security fix H-1: Validate JSON path as defense-in-depth.
                     validate_json_path(path)?;
-                    // FIX(review): path was previously string-interpolated with single-quote
-                    // escaping. Options considered: (A) parameterize path as bind variable,
-                    // (B) harden escaping, (C) validate path against strict regex. Chose (A):
-                    // SQLite json_extract supports parameterized paths since 3.9.0 (our minimum
-                    // is 3.41), eliminating the injection surface entirely. validate_json_path
-                    // is retained above as defense-in-depth from Security fix H-1.
                     binds.push(BindValue::Text(path.clone()));
                     let path_index = binds.len();
                     binds.push(match value {
@@ -699,8 +767,8 @@ mod tests {
             "JSON path must not appear as a SQL string literal"
         );
         assert!(
-            compiled.sql.contains("json_extract(n.properties, ?"),
-            "JSON path must be a bind parameter"
+            compiled.sql.contains("json_extract(src.properties, ?"),
+            "JSON path must be a bind parameter (pushed into base_candidates for Nodes driver)"
         );
         // Path and value should both be in the bind list.
         use crate::BindValue;
@@ -770,6 +838,162 @@ mod tests {
         use super::sanitize_fts5_query;
         assert_eq!(sanitize_fts5_query(""), "");
         assert_eq!(sanitize_fts5_query("   "), "");
+    }
+
+    // --- Filter pushdown regression tests ---
+    //
+    // These tests verify that filter predicates are pushed into the
+    // base_candidates CTE for the Nodes driving table, so the CTE LIMIT
+    // applies after filtering rather than before.  Without pushdown, the
+    // LIMIT may truncate the candidate set before the filter runs, causing
+    // matching nodes to be silently excluded.
+
+    #[test]
+    fn nodes_driver_pushes_json_eq_filter_into_base_candidates() {
+        let compiled = compile_query(
+            &QueryBuilder::nodes("Meeting")
+                .filter_json_text_eq("$.status", "active")
+                .limit(5)
+                .into_ast(),
+        )
+        .expect("compiled query");
+
+        assert_eq!(compiled.driving_table, DrivingTable::Nodes);
+        // Filter must appear inside base_candidates (src alias), not the
+        // outer WHERE (n alias).
+        assert!(
+            compiled.sql.contains("json_extract(src.properties, ?"),
+            "json_extract must reference src (base_candidates), got:\n{}",
+            compiled.sql,
+        );
+        assert!(
+            !compiled.sql.contains("json_extract(n.properties, ?"),
+            "json_extract must NOT appear in outer WHERE for Nodes driver, got:\n{}",
+            compiled.sql,
+        );
+    }
+
+    #[test]
+    fn nodes_driver_pushes_json_compare_filter_into_base_candidates() {
+        let compiled = compile_query(
+            &QueryBuilder::nodes("Meeting")
+                .filter_json_integer_gte("$.priority", 5)
+                .limit(10)
+                .into_ast(),
+        )
+        .expect("compiled query");
+
+        assert_eq!(compiled.driving_table, DrivingTable::Nodes);
+        assert!(
+            compiled.sql.contains("json_extract(src.properties, ?"),
+            "comparison filter must be in base_candidates, got:\n{}",
+            compiled.sql,
+        );
+        assert!(
+            !compiled.sql.contains("json_extract(n.properties, ?"),
+            "comparison filter must NOT be in outer WHERE for Nodes driver",
+        );
+        assert!(
+            compiled.sql.contains(">= ?"),
+            "expected >= operator in SQL, got:\n{}",
+            compiled.sql,
+        );
+    }
+
+    #[test]
+    fn nodes_driver_pushes_source_ref_filter_into_base_candidates() {
+        let compiled = compile_query(
+            &QueryBuilder::nodes("Meeting")
+                .filter_source_ref_eq("ref-123")
+                .limit(5)
+                .into_ast(),
+        )
+        .expect("compiled query");
+
+        assert_eq!(compiled.driving_table, DrivingTable::Nodes);
+        assert!(
+            compiled.sql.contains("src.source_ref = ?"),
+            "source_ref filter must be in base_candidates, got:\n{}",
+            compiled.sql,
+        );
+        assert!(
+            !compiled.sql.contains("n.source_ref = ?"),
+            "source_ref filter must NOT be in outer WHERE for Nodes driver",
+        );
+    }
+
+    #[test]
+    fn nodes_driver_pushes_multiple_filters_into_base_candidates() {
+        let compiled = compile_query(
+            &QueryBuilder::nodes("Meeting")
+                .filter_logical_id_eq("meeting-1")
+                .filter_json_text_eq("$.status", "active")
+                .filter_json_integer_gte("$.priority", 5)
+                .filter_source_ref_eq("ref-abc")
+                .limit(1)
+                .into_ast(),
+        )
+        .expect("compiled query");
+
+        assert_eq!(compiled.driving_table, DrivingTable::Nodes);
+        // All filters should be in base_candidates, none in outer WHERE
+        assert!(
+            compiled.sql.contains("src.logical_id = ?"),
+            "logical_id filter must be in base_candidates",
+        );
+        assert!(
+            compiled.sql.contains("json_extract(src.properties, ?"),
+            "JSON filters must be in base_candidates",
+        );
+        assert!(
+            compiled.sql.contains("src.source_ref = ?"),
+            "source_ref filter must be in base_candidates",
+        );
+        // Each bind value should appear exactly once (not duplicated in outer WHERE)
+        use crate::BindValue;
+        assert_eq!(
+            compiled
+                .binds
+                .iter()
+                .filter(|b| matches!(b, BindValue::Text(s) if s == "meeting-1"))
+                .count(),
+            1,
+            "logical_id bind must not be duplicated"
+        );
+        assert_eq!(
+            compiled
+                .binds
+                .iter()
+                .filter(|b| matches!(b, BindValue::Text(s) if s == "ref-abc"))
+                .count(),
+            1,
+            "source_ref bind must not be duplicated"
+        );
+    }
+
+    #[test]
+    fn fts_driver_keeps_json_filter_in_outer_where() {
+        // When the driving table is FTS (not Nodes), JSON filters should
+        // remain in the outer WHERE clause, not pushed into base_candidates.
+        let compiled = compile_query(
+            &QueryBuilder::nodes("Meeting")
+                .text_search("budget", 5)
+                .filter_json_text_eq("$.status", "active")
+                .limit(5)
+                .into_ast(),
+        )
+        .expect("compiled query");
+
+        assert_eq!(compiled.driving_table, DrivingTable::FtsNodes);
+        assert!(
+            compiled.sql.contains("json_extract(n.properties, ?"),
+            "JSON filter must be in outer WHERE for FTS driver, got:\n{}",
+            compiled.sql,
+        );
+        assert!(
+            !compiled.sql.contains("json_extract(src.properties, ?"),
+            "JSON filter must NOT be in base_candidates for FTS driver",
+        );
     }
 
     #[test]

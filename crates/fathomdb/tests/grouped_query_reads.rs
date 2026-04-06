@@ -326,3 +326,169 @@ fn grouped_query_expansions_honor_the_query_hard_limit() {
     assert_eq!(rows.expansions.len(), 1);
     assert_eq!(rows.expansions[0].roots[0].nodes.len(), 2);
 }
+
+// --- Filter-pushdown regression tests ---
+//
+// These tests verify that JSON property filters, comparison filters, and
+// source_ref filters correctly match nodes regardless of insertion order.
+//
+// Background: the base_candidates CTE previously applied a LIMIT before
+// filter predicates ran in the outer WHERE clause, so only the first N
+// nodes (by insertion order) had their properties evaluated. Filters are
+// now pushed into the CTE so the LIMIT applies after filtering.
+
+#[test]
+fn json_text_filter_finds_non_first_node() {
+    let (_db, engine) = open_engine();
+    seed_meeting_graph(&engine);
+
+    // meeting-2 has title="Backlog grooming", meeting-1 has title="Budget review".
+    // With limit(1), the old bug would only evaluate meeting-1.
+    let compiled = engine
+        .query("Meeting")
+        .filter_json_text_eq("$.title", "Backlog grooming")
+        .limit(1)
+        .compile_grouped()
+        .expect("grouped query compiles");
+
+    let rows = engine
+        .coordinator()
+        .execute_compiled_grouped_read(&compiled)
+        .expect("grouped query executes");
+
+    assert_eq!(rows.roots.len(), 1, "must find the non-first node");
+    assert_eq!(rows.roots[0].logical_id, "meeting-2");
+}
+
+#[test]
+fn json_integer_filter_finds_non_first_node() {
+    let (_db, engine) = open_engine();
+    seed_meeting_graph(&engine);
+
+    // meeting-2 has priority=2, meeting-1 has priority=9.
+    // Filter for priority <= 5 should find meeting-2 even with limit(1).
+    let compiled = engine
+        .query("Meeting")
+        .filter_json_integer_lte("$.priority", 5)
+        .limit(1)
+        .compile_grouped()
+        .expect("grouped query compiles");
+
+    let rows = engine
+        .coordinator()
+        .execute_compiled_grouped_read(&compiled)
+        .expect("grouped query executes");
+
+    assert_eq!(
+        rows.roots.len(),
+        1,
+        "must find meeting-2 via integer filter"
+    );
+    assert_eq!(rows.roots[0].logical_id, "meeting-2");
+}
+
+#[test]
+fn source_ref_filter_finds_non_first_node() {
+    let (_db, engine) = open_engine();
+    seed_meeting_graph(&engine);
+
+    let compiled = engine
+        .query("Meeting")
+        .filter_source_ref_eq("source:meeting-2")
+        .limit(1)
+        .compile_grouped()
+        .expect("grouped query compiles");
+
+    let rows = engine
+        .coordinator()
+        .execute_compiled_grouped_read(&compiled)
+        .expect("grouped query executes");
+
+    assert_eq!(
+        rows.roots.len(),
+        1,
+        "must find meeting-2 via source_ref filter"
+    );
+    assert_eq!(rows.roots[0].logical_id, "meeting-2");
+}
+
+#[test]
+fn combined_json_filters_find_correct_node() {
+    let (_db, engine) = open_engine();
+    seed_meeting_graph(&engine);
+
+    // Both filters must match: priority >= 5 AND updated_at < 1711000000.
+    // meeting-1: priority=9, updated_at=1711843200 → fails timestamp
+    // meeting-2: priority=2, updated_at=1700000000 → fails priority
+    // Neither matches, so result should be empty.
+    let compiled = engine
+        .query("Meeting")
+        .filter_json_integer_gte("$.priority", 5)
+        .filter_json_timestamp_lt("$.updated_at", 1711000000)
+        .limit(10)
+        .compile_grouped()
+        .expect("grouped query compiles");
+
+    let rows = engine
+        .coordinator()
+        .execute_compiled_grouped_read(&compiled)
+        .expect("grouped query executes");
+
+    assert_eq!(
+        rows.roots.len(),
+        0,
+        "no node satisfies both filters simultaneously"
+    );
+}
+
+#[test]
+fn json_filter_returns_all_matching_nodes() {
+    let (_db, engine) = open_engine();
+    seed_meeting_graph(&engine);
+
+    // Both meetings have an updated_at field; filter for updated_at >= 0
+    // should return both.
+    let compiled = engine
+        .query("Meeting")
+        .filter_json_timestamp_gte("$.updated_at", 0)
+        .limit(10)
+        .compile_grouped()
+        .expect("grouped query compiles");
+
+    let rows = engine
+        .coordinator()
+        .execute_compiled_grouped_read(&compiled)
+        .expect("grouped query executes");
+
+    assert_eq!(rows.roots.len(), 2, "both meetings satisfy updated_at >= 0");
+}
+
+#[test]
+fn json_filter_with_expansion_finds_non_first_node() {
+    let (_db, engine) = open_engine();
+    seed_meeting_graph(&engine);
+
+    // Filter for meeting-2 by title, then expand tasks.
+    // meeting-2 has no outgoing HAS_TASK edges, so expansion should be empty.
+    let compiled = engine
+        .query("Meeting")
+        .filter_json_text_eq("$.title", "Backlog grooming")
+        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1)
+        .limit(1)
+        .compile_grouped()
+        .expect("grouped query compiles");
+
+    let rows = engine
+        .coordinator()
+        .execute_compiled_grouped_read(&compiled)
+        .expect("grouped query executes");
+
+    assert_eq!(rows.roots.len(), 1);
+    assert_eq!(rows.roots[0].logical_id, "meeting-2");
+    assert_eq!(rows.expansions.len(), 1);
+    assert_eq!(rows.expansions[0].slot, "tasks");
+    assert!(
+        rows.expansions[0].roots[0].nodes.is_empty(),
+        "meeting-2 has no outgoing HAS_TASK edges"
+    );
+}

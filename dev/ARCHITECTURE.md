@@ -319,7 +319,8 @@ In practice this means:
 - chunk rows resolve those candidates back to canonical node identities
 - graph traversals join outward from those resolved identities
 - canonical node and edge reads happen after candidate reduction
-- JSON and relational filters are applied as late as possible over the already reduced set
+- for FTS/vector driving tables, JSON and relational filters are applied in the
+  outer WHERE over the already reduced set
 
 This planning discipline is what keeps multimodal queries inside SQLite's VM
 instead of spilling large intermediate sets into application memory.
@@ -328,6 +329,17 @@ The main exception is a highly selective deterministic filter, such as a direct
 entity ID or foreign-key equality predicate. In those cases, the relational
 constraint should drive the query and FTS/vector search should be evaluated only
 inside that reduced scope.
+
+#### Filter pushdown for the Nodes driving table
+
+When the Nodes driving table is selected (no FTS or vector search), all filter
+predicates — `LogicalIdEq`, `JsonPathEq`, `JsonPathCompare`, `SourceRefEq` —
+are pushed into the `base_candidates` CTE rather than the outer WHERE clause.
+This ensures that the CTE's LIMIT applies *after* filtering, not before.
+Without this pushdown, the LIMIT would truncate the candidate set based on
+insertion order before property filters could evaluate, silently excluding
+nodes that satisfy the filter. FTS and vector driving tables do not need this
+treatment because their CTEs are already narrowed by the search itself.
 
 ### 4.4 Top-K Pushdown
 
