@@ -321,7 +321,8 @@ mod tests {
             FeedbackConfig::new(5, 10),
             |_| None,
             || {
-                std::thread::sleep(Duration::from_millis(35));
+                // Use a longer sleep to account for Windows timer granularity.
+                std::thread::sleep(Duration::from_millis(80));
                 Ok::<_, std::io::Error>(())
             },
         );

@@ -990,11 +990,13 @@ def test_second_open_raises_database_locked(tmp_path: Path) -> None:
     with pytest.raises(DatabaseLockedError, match="already in use"):
         Engine.open(tmp_path / "agent.db")
 
-    # Verify error includes holding PID.
-    try:
-        Engine.open(tmp_path / "agent.db")
-    except DatabaseLockedError as exc:
-        assert str(os.getpid()) in str(exc), f"error must contain pid: {exc}"
+    # Verify error includes holding PID (Unix only; Windows file locks
+    # prevent reading the PID from the lock file).
+    if os.name != "nt":
+        try:
+            Engine.open(tmp_path / "agent.db")
+        except DatabaseLockedError as exc:
+            assert str(os.getpid()) in str(exc), f"error must contain pid: {exc}"
 
     # First engine should still be functional.
     rows = db.nodes("Test").limit(10).execute()
