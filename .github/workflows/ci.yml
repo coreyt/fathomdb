@@ -30,6 +30,24 @@ jobs:
           python-version: "3.11"
       - run: python scripts/check-doc-hygiene.py
 
+  docs-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.11"
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+      - uses: mozilla-actions/sccache-action@d651010b8da762cde178750d8eda7b5febfe147a # v0.0.9
+      # mkdocstrings needs the native extension for runtime introspection
+      - run: python -m pip install --upgrade pip maturin
+      - run: python -m pip install -e python --no-build-isolation
+      - run: python -m pip install -r docs/requirements-docs.txt
+      - run: cd docs && mkdocs build --strict --config-file mkdocs.yml
+
   rust-lint:
     runs-on: ubuntu-latest
     steps:

@@ -105,7 +105,7 @@ resources.
 cd go/fathom-integrity && go build ./cmd/fathom-integrity
 ```
 
-**Documentation:** see the `docs/` directory and design documents in `dev/`.
+**Documentation:** see [docs/](docs/index.md) for concepts, guides, API reference, and operator docs.
 
 ## Repository Structure
 

@@ -1,0 +1,402 @@
+# Types
+
+All public data types used across the fathomdb Python SDK. Most are immutable
+dataclasses returned by queries, writes, or admin operations.
+
+---
+
+## Enums
+
+::: fathomdb.ProvenanceMode
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.ChunkPolicy
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.ProjectionTarget
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.OperationalCollectionKind
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.OperationalFilterMode
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.OperationalFilterFieldType
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.TraverseDirection
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.DrivingTable
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.TelemetryLevel
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.ResponseCyclePhase
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.OperationalRetentionActionKind
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+---
+
+## Query Result Types
+
+::: fathomdb.NodeRow
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.RunRow
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.StepRow
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.ActionRow
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.QueryRows
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.GroupedQueryRows
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.ExpansionRootRows
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.ExpansionSlotRows
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.CompiledQuery
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.CompiledGroupedQuery
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.QueryPlan
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.ExecutionHints
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.BindValue
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+---
+
+## Write Types
+
+::: fathomdb.WriteRequest
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.WriteReceipt
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.NodeInsert
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.EdgeInsert
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.ChunkInsert
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.RunInsert
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.StepInsert
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.ActionInsert
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.NodeRetire
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.EdgeRetire
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.VecInsert
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.OptionalProjectionTask
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.OperationalAppend
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.OperationalPut
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.OperationalDelete
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.OperationalRegisterRequest
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.OperationalReadRequest
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+---
+
+## Report Types
+
+::: fathomdb.IntegrityReport
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.SemanticReport
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.TraceReport
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.ProjectionRepairReport
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.SafeExportManifest
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.LogicalRestoreReport
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.LogicalPurgeReport
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.ProvenancePurgeReport
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.OperationalTraceReport
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.OperationalReadReport
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.OperationalRepairReport
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.OperationalPurgeReport
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.OperationalCompactionReport
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.OperationalHistoryValidationReport
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.OperationalSecondaryIndexRebuildReport
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.OperationalRetentionPlanReport
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.OperationalRetentionRunReport
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+---
+
+## Feedback Types
+
+::: fathomdb.FeedbackConfig
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.ResponseCycleEvent
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.TelemetrySnapshot
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+---
+
+## Utility Types
+
+::: fathomdb.RawJson
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.LastAccessTouchRequest
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+::: fathomdb.LastAccessTouchReport
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+---
+
+## Errors
+
+All errors inherit from `FathomError`. Import from `fathomdb` or
+`fathomdb.errors`.
+
+::: fathomdb.errors.BuilderValidationError
+    options:
+      heading_level: 3
+      show_root_heading: true
+
+### FathomError
+
+Base exception for all fathomdb engine errors.
+
+### BridgeError
+
+Error communicating with the admin bridge binary.
+
+### CapabilityMissingError
+
+A required capability is not enabled (e.g., vector search without
+`vector_dimension` set on `Engine.open`).
+
+### CompileError
+
+Query compilation failed (invalid filter combination, unsupported operation).
+
+### DatabaseLockedError
+
+The database file is locked by another `Engine` instance.
+
+### InvalidWriteError
+
+A write request failed validation (e.g., duplicate logical ID in non-upsert
+mode, invalid JSON properties).
+
+### IoError
+
+An I/O operation failed (file not found, permission denied, disk full).
+
+### SchemaError
+
+Schema validation failed (migration version mismatch, corrupt schema).
+
+### SqliteError
+
+An underlying SQLite error occurred.
+
+### WriterRejectedError
+
+The write was rejected by the engine (e.g., channel full under back-pressure).

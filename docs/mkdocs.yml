@@ -1,0 +1,66 @@
+site_name: fathomdb
+site_description: Local datastore for persistent AI agents
+docs_dir: .
+site_dir: ../_site
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.expand
+    - toc.integrate
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths: [../python]
+          options:
+            docstring_style: numpy
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: false
+            members_order: source
+            merge_init_into_class: true
+            show_signature_annotations: true
+            separate_signature: true
+            # Native extension (_fathomdb.so) requires runtime introspection.
+            # Doc builds must have the fathomdb package installed.
+            allow_inspection: true
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Concepts:
+    - Data Model: concepts/data-model.md
+    - Temporal Model & Supersession: concepts/temporal-model.md
+    - Operational Store: concepts/operational-store.md
+  - Guides:
+    - Querying Data: guides/querying.md
+    - Writing Data: guides/writing-data.md
+  - API Reference:
+    - Engine: reference/engine.md
+    - Query: reference/query.md
+    - WriteRequestBuilder: reference/write-builder.md
+    - AdminClient: reference/admin.md
+    - Types & Errors: reference/types.md
+  - Operations:
+    - Admin Operations: operations/admin-operations.md
+    - Vector Regeneration: operations/vector-regeneration.md
+    - Telemetry: operations/telemetry.md

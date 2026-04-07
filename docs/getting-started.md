@@ -140,7 +140,7 @@ print(f"queries: {snap.queries_total}, writes: {snap.writes_total}")
 print(f"cache hits: {snap.cache_hits}, misses: {snap.cache_misses}")
 ```
 
-See [docs/telemetry.md](./telemetry.md) for configuration, rate
+See [docs/telemetry.md](./operations/telemetry.md) for configuration, rate
 computation, and integration patterns.
 
 ## Admin operations
@@ -162,6 +162,6 @@ In Rust, these are available on the `AdminHandle` returned by
 
 ## Next steps
 
-- [docs/telemetry.md](./telemetry.md) -- resource telemetry and profiling levels.
-- [docs/vector-regeneration.md](./vector-regeneration.md) -- rebuilding vector indexes.
-- [dev/ARCHITECTURE.md](../dev/ARCHITECTURE.md) -- system design and module layout.
+- [docs/telemetry.md](./operations/telemetry.md) -- resource telemetry and profiling levels.
+- [docs/vector-regeneration.md](./operations/vector-regeneration.md) -- rebuilding vector indexes.
+- `dev/ARCHITECTURE.md` -- system design and module layout (internal design doc).

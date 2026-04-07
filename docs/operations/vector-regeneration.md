@@ -248,7 +248,7 @@ In other words:
 
 ## Related Docs
 
-- [../README.md](../README.md)
-- [../dev/repair-support-contract.md](../dev/repair-support-contract.md)
-- [../dev/ARCHITECTURE.md](../dev/ARCHITECTURE.md)
-- [../dev/arch-decision-vector-embedding-recovery.md](../dev/arch-decision-vector-embedding-recovery.md)
+- [Home](../index.md)
+- `dev/repair-support-contract.md` -- repair support contract (internal design doc)
+- `dev/ARCHITECTURE.md` -- system design and module layout (internal design doc)
+- `dev/arch-decision-vector-embedding-recovery.md` -- vector recovery design decision (internal design doc)
