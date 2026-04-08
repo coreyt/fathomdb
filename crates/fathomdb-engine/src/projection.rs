@@ -159,7 +159,7 @@ fn rebuild_vec(
         ) {
             Ok(n) => n,
             Err(rusqlite::Error::SqliteFailure(_, Some(ref msg)))
-                if msg.contains("vec_nodes_active") || msg.contains("vec0") =>
+                if msg.contains("vec_nodes_active") || msg.contains("no such module: vec0") =>
             {
                 notes.push("vec_nodes_active table absent; vec rebuild skipped".to_owned());
                 tx.rollback()?;

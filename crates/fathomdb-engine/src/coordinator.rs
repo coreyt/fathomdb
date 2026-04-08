@@ -766,6 +766,7 @@ impl ExecutionCoordinator {
     /// # Errors
     /// Returns [`EngineError`] if the PRAGMA query fails or if the connection
     /// mutex has been poisoned.
+    #[doc(hidden)]
     pub fn raw_pragma(&self, name: &str) -> Result<String, EngineError> {
         let conn = self.lock_connection()?;
         let result = conn
@@ -838,7 +839,7 @@ fn wrap_node_row_projection_sql(base_sql: &str) -> String {
 pub(crate) fn is_vec_table_absent(err: &rusqlite::Error) -> bool {
     match err {
         rusqlite::Error::SqliteFailure(_, Some(msg)) => {
-            msg.contains("vec_nodes_active") || msg.contains("vec0")
+            msg.contains("vec_nodes_active") || msg.contains("no such module: vec0")
         }
         _ => false,
     }
@@ -882,7 +883,8 @@ mod tests {
         assert!(is_vec_table_absent(&make_err(
             "no such table: vec_nodes_active"
         )));
-        assert!(is_vec_table_absent(&make_err("vec0 error: something")));
+        assert!(is_vec_table_absent(&make_err("no such module: vec0")));
+        assert!(!is_vec_table_absent(&make_err("vec0 constraint violated")));
         assert!(!is_vec_table_absent(&make_err("no such table: nodes")));
         assert!(!is_vec_table_absent(&rusqlite::Error::QueryReturnedNoRows));
     }

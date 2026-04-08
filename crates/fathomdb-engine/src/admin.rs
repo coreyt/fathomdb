@@ -511,7 +511,7 @@ impl AdminService {
         ) {
             Ok(n) => n,
             Err(rusqlite::Error::SqliteFailure(_, Some(ref msg)))
-                if msg.contains("vec_nodes_active") || msg.contains("vec0") =>
+                if msg.contains("vec_nodes_active") || msg.contains("no such module: vec0") =>
             {
                 0
             }
@@ -535,7 +535,7 @@ impl AdminService {
         ) {
             Ok(n) => n,
             Err(rusqlite::Error::SqliteFailure(_, Some(ref msg)))
-                if msg.contains("vec_nodes_active") || msg.contains("vec0") =>
+                if msg.contains("vec_nodes_active") || msg.contains("no such module: vec0") =>
             {
                 0
             }
@@ -3436,7 +3436,7 @@ fn count_vec_rows_for_logical_id(
     ) {
         Ok(count) => Ok(i64_to_usize(count)),
         Err(rusqlite::Error::SqliteFailure(_, Some(ref msg)))
-            if msg.contains("vec_nodes_active") || msg.contains("vec0") =>
+            if msg.contains("vec_nodes_active") || msg.contains("no such module: vec0") =>
         {
             Ok(0)
         }
@@ -3465,7 +3465,7 @@ fn delete_vec_rows_for_logical_id(
     ) {
         Ok(count) => Ok(count),
         Err(rusqlite::Error::SqliteFailure(_, Some(ref msg)))
-            if msg.contains("vec_nodes_active") || msg.contains("vec0") =>
+            if msg.contains("vec_nodes_active") || msg.contains("no such module: vec0") =>
         {
             Ok(0)
         }
