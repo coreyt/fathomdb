@@ -13,7 +13,9 @@ import {
   type RawJson,
 } from "./types.js";
 import { parseNativeJson } from "./errors.js";
+import { runWithFeedback } from "./feedback.js";
 import type { NativeEngineCore } from "./native.js";
+import type { FeedbackConfig, ProgressCallback } from "./types.js";
 
 type TraverseDirection = "in" | "out";
 
@@ -141,24 +143,43 @@ export class Query {
     return this.#withLimit(limit);
   }
 
-  compile(): CompiledQuery {
-    return compiledQueryFromWire(parseNativeJson(this.#core.compileAst(this.#astJson())));
+  compile(progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): CompiledQuery {
+    return this.#run("query.compile", () =>
+      compiledQueryFromWire(parseNativeJson(this.#core.compileAst(this.#astJson()))),
+      progressCallback, feedbackConfig,
+    );
   }
 
-  compileGrouped(): CompiledGroupedQuery {
-    return compiledGroupedQueryFromWire(parseNativeJson(this.#core.compileGroupedAst(this.#astJson())));
+  compileGrouped(progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): CompiledGroupedQuery {
+    return this.#run("query.compile_grouped", () =>
+      compiledGroupedQueryFromWire(parseNativeJson(this.#core.compileGroupedAst(this.#astJson()))),
+      progressCallback, feedbackConfig,
+    );
   }
 
-  explain(): QueryPlan {
-    return queryPlanFromWire(parseNativeJson(this.#core.explainAst(this.#astJson())));
+  explain(progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): QueryPlan {
+    return this.#run("query.explain", () =>
+      queryPlanFromWire(parseNativeJson(this.#core.explainAst(this.#astJson()))),
+      progressCallback, feedbackConfig,
+    );
   }
 
-  execute(): QueryRows {
-    return queryRowsFromWire(parseNativeJson(this.#core.executeAst(this.#astJson())));
+  execute(progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): QueryRows {
+    return this.#run("query.execute", () =>
+      queryRowsFromWire(parseNativeJson(this.#core.executeAst(this.#astJson()))),
+      progressCallback, feedbackConfig,
+    );
   }
 
-  executeGrouped(): GroupedQueryRows {
-    return groupedQueryRowsFromWire(parseNativeJson(this.#core.executeGroupedAst(this.#astJson())));
+  executeGrouped(progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): GroupedQueryRows {
+    return this.#run("query.execute_grouped", () =>
+      groupedQueryRowsFromWire(parseNativeJson(this.#core.executeGroupedAst(this.#astJson()))),
+      progressCallback, feedbackConfig,
+    );
+  }
+
+  #run<T>(operationKind: string, operation: () => T, progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): T {
+    return runWithFeedback({ operationKind, metadata: { root_kind: this.#rootKind }, progressCallback, feedbackConfig, operation });
   }
 
   #astJson(): string {

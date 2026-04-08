@@ -22,11 +22,15 @@ export {
   type DrivingTable,
   type OperationalCollectionKind,
   type OperationalFilterMode,
-  type OperationOptions,
   type ProjectionTarget,
   type ProvenanceMode,
   type TelemetryLevel,
   type TraverseDirection,
+  // Feedback / progress callbacks
+  type FeedbackConfig,
+  type ProgressCallback,
+  type ResponseCycleEvent,
+  type ResponseCyclePhase,
   // Engine options
   type EngineOpenOptions,
   // Row types

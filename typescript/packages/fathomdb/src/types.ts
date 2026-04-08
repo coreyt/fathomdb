@@ -16,10 +16,30 @@ export type EngineOpenOptions = {
   telemetryLevel?: "counters" | "statements" | "profiling";
 };
 
-export type OperationOptions = {
-  progressCallback?: (event: unknown) => void;
-  feedbackConfig?: unknown;
+// ── Feedback / progress callbacks ───────────────────────────────────
+
+export type ResponseCyclePhase = "started" | "slow" | "heartbeat" | "finished" | "failed";
+
+export type FeedbackConfig = {
+  /** Milliseconds before a SLOW event is emitted (default 500). */
+  slowThresholdMs?: number;
+  /** Milliseconds between HEARTBEAT events after SLOW (default 2000). */
+  heartbeatIntervalMs?: number;
 };
+
+export type ResponseCycleEvent = {
+  operationId: string;
+  operationKind: string;
+  surface: string;
+  phase: ResponseCyclePhase;
+  elapsedMs: number;
+  slowThresholdMs: number;
+  metadata: Record<string, string>;
+  errorCode?: string;
+  errorMessage?: string;
+};
+
+export type ProgressCallback = (event: ResponseCycleEvent) => void;
 
 // ── Query AST (internal) ───────────────────────────────────────────────
 

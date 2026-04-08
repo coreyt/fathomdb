@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BuilderValidationError, FathomError, Engine, Query, WriteRequestBuilder, newId, newRowId } from "../src/index.js";
+import { BuilderValidationError, FathomError, Engine, Query, WriteRequestBuilder, newId, newRowId, type ResponseCycleEvent } from "../src/index.js";
+import { runWithFeedback } from "../src/feedback.js";
 
 describe("Engine", () => {
   beforeEach(() => {
@@ -494,5 +495,108 @@ describe("Engine", () => {
     });
     expect(report.touchedLogicalIds).toBe(2);
     expect(report.touchedAt).toBe(1000);
+  });
+
+  // ── Feedback / progress callback tests ────────────────────────────
+
+  it("emits STARTED then FINISHED for successful operation", () => {
+    const events: ResponseCycleEvent[] = [];
+    const result = runWithFeedback({
+      operationKind: "test.op",
+      metadata: { key: "value" },
+      progressCallback: (e) => events.push(e),
+      feedbackConfig: undefined,
+      operation: () => 42,
+    });
+    expect(result).toBe(42);
+    expect(events).toHaveLength(2);
+    expect(events[0].phase).toBe("started");
+    expect(events[0].operationKind).toBe("test.op");
+    expect(events[0].surface).toBe("typescript");
+    expect(events[0].metadata).toEqual({ key: "value" });
+    expect(events[0].elapsedMs).toBeGreaterThanOrEqual(0);
+    expect(events[0].operationId).toMatch(/^[0-9a-f]{32}$/);
+    expect(events[1].phase).toBe("finished");
+    expect(events[1].operationId).toBe(events[0].operationId);
+  });
+
+  it("emits STARTED then FAILED on error with error details", () => {
+    const events: ResponseCycleEvent[] = [];
+    expect(() =>
+      runWithFeedback({
+        operationKind: "test.fail",
+        metadata: {},
+        progressCallback: (e) => events.push(e),
+        feedbackConfig: undefined,
+        operation: () => { throw new TypeError("broken"); },
+      })
+    ).toThrow(TypeError);
+    expect(events).toHaveLength(2);
+    expect(events[0].phase).toBe("started");
+    expect(events[1].phase).toBe("failed");
+    expect(events[1].errorCode).toBe("TypeError");
+    expect(events[1].errorMessage).toBe("broken");
+  });
+
+  it("skips feedback when progressCallback is undefined", () => {
+    const result = runWithFeedback({
+      operationKind: "test.noop",
+      metadata: {},
+      progressCallback: undefined,
+      feedbackConfig: undefined,
+      operation: () => "fast",
+    });
+    expect(result).toBe("fast");
+  });
+
+  it("disables callback on exception from callback itself", () => {
+    let callCount = 0;
+    const result = runWithFeedback({
+      operationKind: "test.bad-callback",
+      metadata: {},
+      progressCallback: () => { callCount++; throw new Error("callback broken"); },
+      feedbackConfig: undefined,
+      operation: () => "ok",
+    });
+    expect(result).toBe("ok");
+    expect(callCount).toBe(1); // STARTED fires, throws, then FINISHED is suppressed
+  });
+
+  it("passes feedbackConfig slowThresholdMs into events", () => {
+    const events: ResponseCycleEvent[] = [];
+    runWithFeedback({
+      operationKind: "test.config",
+      metadata: {},
+      progressCallback: (e) => events.push(e),
+      feedbackConfig: { slowThresholdMs: 1234 },
+      operation: () => null,
+    });
+    expect(events[0].slowThresholdMs).toBe(1234);
+  });
+
+  it("Engine.write emits feedback events when callback provided", () => {
+    const engine = Engine.open("/tmp/test.db");
+    const events: ResponseCycleEvent[] = [];
+    const builder = new WriteRequestBuilder("feedback-test");
+    engine.write(builder.build(), (e) => events.push(e));
+    expect(events.length).toBeGreaterThanOrEqual(2);
+    expect(events[0].phase).toBe("started");
+    expect(events[0].operationKind).toBe("write.submit");
+    expect(events[events.length - 1].phase).toBe("finished");
+  });
+
+  it("Query.execute emits feedback events when callback provided", () => {
+    const engine = Engine.open("/tmp/test.db");
+    const events: ResponseCycleEvent[] = [];
+    engine.nodes("Doc").execute((e) => events.push(e));
+    expect(events.length).toBeGreaterThanOrEqual(2);
+    expect(events[0].operationKind).toBe("query.execute");
+  });
+
+  it("AdminClient.checkIntegrity emits feedback events", () => {
+    const engine = Engine.open("/tmp/test.db");
+    const events: ResponseCycleEvent[] = [];
+    engine.admin.checkIntegrity((e) => events.push(e));
+    expect(events[0].operationKind).toBe("admin.check_integrity");
   });
 });

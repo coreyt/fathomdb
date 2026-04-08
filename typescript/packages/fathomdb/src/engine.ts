@@ -1,5 +1,6 @@
 import { AdminClient } from "./admin.js";
 import { FathomError, mapNativeError, parseNativeJson } from "./errors.js";
+import { runWithFeedback } from "./feedback.js";
 import { loadNativeBinding, type NativeBinding, type NativeEngineCore } from "./native.js";
 import { Query } from "./query.js";
 import {
@@ -7,8 +8,10 @@ import {
   telemetrySnapshotFromWire,
   writeReceiptFromWire,
   type EngineOpenOptions,
+  type FeedbackConfig,
   type LastAccessTouchReport,
   type LastAccessTouchRequest,
+  type ProgressCallback,
   type TelemetrySnapshot,
   type WriteReceipt,
   type WriteRequest,
@@ -17,19 +20,32 @@ import {
 export class Engine {
   static #binding: NativeBinding | null = null;
 
-  static open(databasePath: string, options: EngineOpenOptions = {}): Engine {
+  static open(
+    databasePath: string,
+    options: EngineOpenOptions = {},
+    progressCallback?: ProgressCallback,
+    feedbackConfig?: FeedbackConfig,
+  ): Engine {
     const binding = this.#binding ?? (this.#binding = loadNativeBinding());
-    try {
-      const core = binding.EngineCore.open(
-        databasePath,
-        options.provenanceMode ?? "warn",
-        options.vectorDimension,
-        options.telemetryLevel
-      );
-      return new Engine(core);
-    } catch (error) {
-      throw mapNativeError(error);
-    }
+    return runWithFeedback({
+      operationKind: "engine.open",
+      metadata: { database_path: databasePath },
+      progressCallback,
+      feedbackConfig,
+      operation: () => {
+        try {
+          const core = binding.EngineCore.open(
+            databasePath,
+            options.provenanceMode ?? "warn",
+            options.vectorDimension,
+            options.telemetryLevel
+          );
+          return new Engine(core);
+        } catch (error) {
+          throw mapNativeError(error);
+        }
+      },
+    });
   }
 
   static setBindingForTests(binding: NativeBinding | null): void {
@@ -71,25 +87,45 @@ export class Engine {
     return this.nodes(kind);
   }
 
-  write(request: WriteRequest): WriteReceipt {
+  write(
+    request: WriteRequest,
+    progressCallback?: ProgressCallback,
+    feedbackConfig?: FeedbackConfig,
+  ): WriteReceipt {
     this.#assertOpen();
-    return writeReceiptFromWire(parseNativeJson(this.#core.submitWrite(JSON.stringify(request))));
+    return this.#run("write.submit", () =>
+      writeReceiptFromWire(parseNativeJson(this.#core.submitWrite(JSON.stringify(request)))),
+      progressCallback, feedbackConfig,
+    );
   }
 
-  submit(request: WriteRequest): WriteReceipt {
-    return this.write(request);
+  submit(
+    request: WriteRequest,
+    progressCallback?: ProgressCallback,
+    feedbackConfig?: FeedbackConfig,
+  ): WriteReceipt {
+    return this.write(request, progressCallback, feedbackConfig);
   }
 
-  touchLastAccessed(request: LastAccessTouchRequest): LastAccessTouchReport {
+  touchLastAccessed(
+    request: LastAccessTouchRequest,
+    progressCallback?: ProgressCallback,
+    feedbackConfig?: FeedbackConfig,
+  ): LastAccessTouchReport {
     this.#assertOpen();
     const wire = {
       logical_ids: request.logicalIds,
       touched_at: request.touchedAt,
       source_ref: request.sourceRef ?? null,
     };
-    return lastAccessTouchReportFromWire(
-      parseNativeJson(this.#core.touchLastAccessed(JSON.stringify(wire)))
+    return this.#run("write.touch_last_accessed", () =>
+      lastAccessTouchReportFromWire(parseNativeJson(this.#core.touchLastAccessed(JSON.stringify(wire)))),
+      progressCallback, feedbackConfig,
     );
+  }
+
+  #run<T>(operationKind: string, operation: () => T, progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): T {
+    return runWithFeedback({ operationKind, metadata: {}, progressCallback, feedbackConfig, operation });
   }
 
   #assertOpen(): void {
