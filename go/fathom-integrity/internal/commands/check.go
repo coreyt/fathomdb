@@ -77,6 +77,12 @@ type bridgeSemanticReport struct {
 	NullSourceRefNodes             int      `json:"null_source_ref_nodes"`
 	BrokenStepFK                   int      `json:"broken_step_fk"`
 	BrokenActionFK                 int      `json:"broken_action_fk"`
+	StaleFtsRows                   int      `json:"stale_fts_rows"`
+	FtsRowsForSupersededNodes      int      `json:"fts_rows_for_superseded_nodes"`
+	DanglingEdges                  int      `json:"dangling_edges"`
+	OrphanedSupersessionChains     int      `json:"orphaned_supersession_chains"`
+	StaleVecRows                   int      `json:"stale_vec_rows"`
+	VecRowsForSupersededNodes      int      `json:"vec_rows_for_superseded_nodes"`
 	MissingOperationalCurrentRows  int      `json:"missing_operational_current_rows"`
 	StaleOperationalCurrentRows    int      `json:"stale_operational_current_rows"`
 	DisabledCollectionMutations    int      `json:"disabled_collection_mutations"`
@@ -209,6 +215,42 @@ func buildLayer2Report(
 		layer2.Findings = append(layer2.Findings, sqlitecheck.Finding{
 			Layer: 2, Severity: "warning",
 			Message: fmt.Sprintf("%d orphaned last_access metadata row(s)", sr.OrphanedLastAccessMetadataRows),
+		})
+	}
+	if sr.StaleFtsRows > 0 {
+		layer2.Findings = append(layer2.Findings, sqlitecheck.Finding{
+			Layer: 2, Severity: "warning",
+			Message: fmt.Sprintf("%d stale FTS row(s)", sr.StaleFtsRows),
+		})
+	}
+	if sr.FtsRowsForSupersededNodes > 0 {
+		layer2.Findings = append(layer2.Findings, sqlitecheck.Finding{
+			Layer: 2, Severity: "warning",
+			Message: fmt.Sprintf("%d FTS row(s) for superseded nodes", sr.FtsRowsForSupersededNodes),
+		})
+	}
+	if sr.DanglingEdges > 0 {
+		layer2.Findings = append(layer2.Findings, sqlitecheck.Finding{
+			Layer: 2, Severity: "error",
+			Message: fmt.Sprintf("%d dangling edge(s)", sr.DanglingEdges),
+		})
+	}
+	if sr.OrphanedSupersessionChains > 0 {
+		layer2.Findings = append(layer2.Findings, sqlitecheck.Finding{
+			Layer: 2, Severity: "warning",
+			Message: fmt.Sprintf("%d orphaned supersession chain(s)", sr.OrphanedSupersessionChains),
+		})
+	}
+	if sr.StaleVecRows > 0 {
+		layer2.Findings = append(layer2.Findings, sqlitecheck.Finding{
+			Layer: 2, Severity: "warning",
+			Message: fmt.Sprintf("%d stale vec row(s)", sr.StaleVecRows),
+		})
+	}
+	if sr.VecRowsForSupersededNodes > 0 {
+		layer2.Findings = append(layer2.Findings, sqlitecheck.Finding{
+			Layer: 2, Severity: "warning",
+			Message: fmt.Sprintf("%d vec row(s) for superseded nodes", sr.VecRowsForSupersededNodes),
 		})
 	}
 
