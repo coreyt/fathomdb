@@ -12,7 +12,7 @@ import {
   type QueryRows,
   type RawJson,
 } from "./types.js";
-import { parseNativeJson } from "./errors.js";
+import { callNative, parseNativeJson } from "./errors.js";
 import { runWithFeedback } from "./feedback.js";
 import type { NativeEngineCore } from "./native.js";
 import type { FeedbackConfig, ProgressCallback } from "./types.js";
@@ -145,35 +145,35 @@ export class Query {
 
   compile(progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): CompiledQuery {
     return this.#run("query.compile", () =>
-      compiledQueryFromWire(parseNativeJson(this.#core.compileAst(this.#astJson()))),
+      compiledQueryFromWire(parseNativeJson(callNative(() => this.#core.compileAst(this.#astJson())))),
       progressCallback, feedbackConfig,
     );
   }
 
   compileGrouped(progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): CompiledGroupedQuery {
     return this.#run("query.compile_grouped", () =>
-      compiledGroupedQueryFromWire(parseNativeJson(this.#core.compileGroupedAst(this.#astJson()))),
+      compiledGroupedQueryFromWire(parseNativeJson(callNative(() => this.#core.compileGroupedAst(this.#astJson())))),
       progressCallback, feedbackConfig,
     );
   }
 
   explain(progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): QueryPlan {
     return this.#run("query.explain", () =>
-      queryPlanFromWire(parseNativeJson(this.#core.explainAst(this.#astJson()))),
+      queryPlanFromWire(parseNativeJson(callNative(() => this.#core.explainAst(this.#astJson())))),
       progressCallback, feedbackConfig,
     );
   }
 
   execute(progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): QueryRows {
     return this.#run("query.execute", () =>
-      queryRowsFromWire(parseNativeJson(this.#core.executeAst(this.#astJson()))),
+      queryRowsFromWire(parseNativeJson(callNative(() => this.#core.executeAst(this.#astJson())))),
       progressCallback, feedbackConfig,
     );
   }
 
   executeGrouped(progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): GroupedQueryRows {
     return this.#run("query.execute_grouped", () =>
-      groupedQueryRowsFromWire(parseNativeJson(this.#core.executeGroupedAst(this.#astJson()))),
+      groupedQueryRowsFromWire(parseNativeJson(callNative(() => this.#core.executeGroupedAst(this.#astJson())))),
       progressCallback, feedbackConfig,
     );
   }

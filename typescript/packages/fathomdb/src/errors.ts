@@ -20,6 +20,14 @@ export function parseNativeJson(payload: string): Record<string, unknown> {
   }
 }
 
+export function callNative<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (error) {
+    throw mapNativeError(error);
+  }
+}
+
 export function mapNativeError(error: unknown): Error {
   if (!(error instanceof Error)) {
     return new FathomError(String(error));
