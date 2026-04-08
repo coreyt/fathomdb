@@ -1,0 +1,159 @@
+# fathomdb
+
+Local datastore for persistent AI agents. Graph, vector, and full-text search
+on SQLite.
+
+fathomdb is canonical local storage for AI agent systems that need a durable
+world model. It provides a graph backbone with logical identity and
+supersession, chunk-based full-text search (FTS5), vector search (sqlite-vec),
+an operational state store, and provenance tracking with source attribution.
+
+## Installation
+
+```bash
+npm install fathomdb
+```
+
+## Quick Start
+
+```typescript
+import { Engine, WriteRequestBuilder, newId, newRowId } from "fathomdb";
+
+// Open a database
+const engine = Engine.open("agent.db");
+
+// Write data
+const builder = new WriteRequestBuilder("ingest");
+const node = builder.addNode({
+  rowId: newRowId(),
+  logicalId: newId(),
+  kind: "Document",
+  properties: { title: "Meeting notes", status: "active" },
+  sourceRef: "my-agent",
+});
+builder.addChunk({
+  id: newId(),
+  node,
+  textContent: "Discussed Q1 budget and hiring plan.",
+});
+engine.write(builder.build());
+
+// Query by kind
+const rows = engine.nodes("Document").limit(10).execute();
+console.log(rows.nodes[0].properties); // { title: "Meeting notes", ... }
+
+// Full-text search
+const ftsRows = engine.nodes("Document")
+  .textSearch("budget", 5)
+  .execute();
+
+// Filter by property
+const filtered = engine.nodes("Document")
+  .filterJsonTextEq("$.status", "active")
+  .execute();
+
+// Close when done
+engine.close();
+```
+
+## Key Features
+
+- **Graph backbone**: nodes, edges, logical identity, supersession (upsert
+  without mutation), runs/steps/actions for agent execution tracking
+- **Chunk-based FTS** via SQLite FTS5
+- **Vector search** via sqlite-vec
+- **Immutable query builder**: fluent, chainable API with 14+ filter methods
+- **Typed results**: all query/admin results are fully typed TypeScript interfaces
+- **Progress callbacks**: optional feedback events for monitoring long operations
+- **Admin operations**: integrity checks, projection rebuilds, source tracing,
+  safe export, operational collection management
+- **Provenance tracking**: source attribution on every write, trace/excise lineage
+
+## API Overview
+
+### Engine
+
+```typescript
+const engine = Engine.open("path.db", {
+  provenanceMode: "warn",       // or "require"
+  vectorDimension: 384,         // optional, for vector search
+  telemetryLevel: "counters",   // or "statements", "profiling"
+});
+
+engine.write(request);
+engine.nodes("Kind").execute();
+engine.telemetrySnapshot();
+engine.admin.checkIntegrity();
+engine.close();
+```
+
+### WriteRequestBuilder
+
+```typescript
+const builder = new WriteRequestBuilder("label");
+const node = builder.addNode({ rowId, logicalId, kind, properties });
+const chunk = builder.addChunk({ id, node, textContent });
+const edge = builder.addEdge({ rowId, logicalId, kind, properties, source: node, target: "other-id" });
+builder.addVecInsert({ chunk, embedding: [0.1, 0.2, ...] });
+builder.retireNode(node);
+const request = builder.build();
+```
+
+### Query
+
+```typescript
+engine.nodes("Meeting")
+  .textSearch("budget", 10)
+  .filterJsonTextEq("$.status", "active")
+  .filterJsonIntegerGt("$.year", 2025)
+  .traverse({ direction: "out", label: "OWNS", maxDepth: 2 })
+  .expand({ slot: "related", direction: "out", label: "REFS", maxDepth: 1 })
+  .limit(20)
+  .execute();
+```
+
+### AdminClient
+
+```typescript
+engine.admin.checkIntegrity();
+engine.admin.checkSemantics();
+engine.admin.rebuild("all");
+engine.admin.traceSource("source:my-import");
+engine.admin.exciseSource("source:bad-data");
+engine.admin.safeExport("/path/to/backup.db");
+engine.admin.restoreLogicalId("node:retired-id");
+engine.admin.purgeLogicalId("node:old-id");
+```
+
+### Progress Callbacks
+
+```typescript
+engine.write(request, (event) => {
+  console.log(`${event.phase} ${event.operationKind} ${event.elapsedMs}ms`);
+});
+```
+
+## Errors
+
+All errors extend `FathomError`:
+
+- `DatabaseLockedError` - another process holds the database lock
+- `CompileError` - query compilation failed
+- `InvalidWriteError` - write request validation failed
+- `WriterRejectedError` - writer thread rejected the transaction
+- `SchemaError` - schema operation failed
+- `SqliteError` - underlying SQLite error
+- `IoError` - file system I/O failure
+- `BridgeError` - native bridge internal error
+- `CapabilityMissingError` - required capability not configured
+- `BuilderValidationError` - write builder handle validation failed
+
+## Requirements
+
+- Node.js 20+
+- The native binding (`.node` file) must be built from the Rust source:
+  `cargo build -p fathomdb --features node`
+
+## License
+
+Licensed under either of MIT or Apache-2.0 at your option.
