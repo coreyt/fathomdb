@@ -60,9 +60,15 @@ declare global {
   var __FATHOMDB_NATIVE_MOCK__: NativeBinding | undefined;
 }
 
-function candidatePaths(): string[] {
+export function candidatePaths(): string[] {
+  const dir = new URL(".", import.meta.url).pathname;
   return [
     process.env.FATHOMDB_NATIVE_BINDING ?? "",
+    // Production paths — resolved relative to dist/
+    `${dir}/../fathomdb.node`,
+    `${dir}/../../fathomdb.node`,
+    `${dir}/../fathomdb.${process.platform}-${process.arch}.node`,
+    // Development / repo-local paths
     "../../../crates/fathomdb/index.node",
     "../../../../../target/debug/fathomdb.node"
   ].filter(Boolean);
