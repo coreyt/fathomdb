@@ -70,4 +70,6 @@ pub enum EngineError {
     CapabilityMissing(String),
     #[error("database locked: {0}")]
     DatabaseLocked(String),
+    #[error("invalid configuration: {0}")]
+    InvalidConfig(String),
 }

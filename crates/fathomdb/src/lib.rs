@@ -760,6 +760,7 @@ fn engine_error_code(error: &EngineError) -> Option<String> {
         EngineError::Bridge(_) => "bridge_error",
         EngineError::CapabilityMissing(_) => "capability_missing",
         EngineError::DatabaseLocked(_) => "database_locked",
+        EngineError::InvalidConfig(_) => "invalid_config",
     };
     Some(code.to_owned())
 }
