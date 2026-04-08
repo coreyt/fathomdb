@@ -17,6 +17,7 @@ export {
 } from "./errors.js";
 export { Query } from "./query.js";
 export {
+  PreserializedJson,
   // Enums / constants
   type ChunkPolicy,
   type DrivingTable,

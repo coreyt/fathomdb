@@ -1,14 +1,15 @@
 import { BuilderValidationError } from "./errors.js";
-import type {
-  ActionInsertInput,
-  ChunkInsertInput,
-  EdgeInsertInput,
-  NodeInsertInput,
-  OperationalAppendInput,
-  OperationalDeleteInput,
-  OperationalPutInput,
-  RunInsertInput,
-  StepInsertInput,
+import {
+  PreserializedJson,
+  type ActionInsertInput,
+  type ChunkInsertInput,
+  type EdgeInsertInput,
+  type NodeInsertInput,
+  type OperationalAppendInput,
+  type OperationalDeleteInput,
+  type OperationalPutInput,
+  type RunInsertInput,
+  type StepInsertInput,
 } from "./types.js";
 
 type HandleBase = {
@@ -36,7 +37,7 @@ export type ActionHandle = HandleBase & { id: string };
 export type ChunkHandle = HandleBase & { id: string };
 
 function toJsonString(value: unknown): string {
-  if (typeof value === "string") return value;
+  if (value instanceof PreserializedJson) return value.json;
   return JSON.stringify(value ?? null);
 }
 

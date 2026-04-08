@@ -8,6 +8,17 @@ export type RawJson =
   | RawJson[]
   | { [key: string]: RawJson };
 
+/**
+ * Wrapper for pre-serialized JSON strings that should be passed through
+ * to the native layer without additional encoding.
+ *
+ * Use this when you have already-serialized JSON and want to avoid
+ * double-encoding.
+ */
+export class PreserializedJson {
+  constructor(public readonly json: string) {}
+}
+
 // ── Engine options ─────────────────────────────────────────────────────
 
 export type EngineOpenOptions = {

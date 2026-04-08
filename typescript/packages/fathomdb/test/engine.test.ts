@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BuilderValidationError, FathomError, SqliteError, Engine, Query, WriteRequestBuilder, newId, newRowId, type ResponseCycleEvent } from "../src/index.js";
+import { BuilderValidationError, FathomError, SqliteError, Engine, PreserializedJson, Query, WriteRequestBuilder, newId, newRowId, type ResponseCycleEvent } from "../src/index.js";
 import { runWithFeedback } from "../src/feedback.js";
 
 describe("Engine", () => {
@@ -425,11 +425,23 @@ describe("Engine", () => {
     expect(JSON.parse(nodes[0].properties as string)).toEqual({ nested: { key: "value" } });
   });
 
-  it("accepts pre-serialized JSON string properties", () => {
+  it("JSON-encodes plain string properties (no longer passes through raw)", () => {
     const builder = new WriteRequestBuilder("string-test");
     builder.addNode({
       rowId: "r1", logicalId: "n1", kind: "Doc",
-      properties: '{"already":"serialized"}',
+      properties: "hello",
+    });
+    const built = builder.build();
+    const nodes = built.nodes as Array<Record<string, unknown>>;
+    // Plain strings must be JSON-encoded (wrapped in quotes)
+    expect(nodes[0].properties).toBe('"hello"');
+  });
+
+  it("PreserializedJson bypasses JSON encoding", () => {
+    const builder = new WriteRequestBuilder("preserialized-test");
+    builder.addNode({
+      rowId: "r1", logicalId: "n1", kind: "Doc",
+      properties: new PreserializedJson('{"already":"serialized"}'),
     });
     const built = builder.build();
     const nodes = built.nodes as Array<Record<string, unknown>>;
@@ -476,14 +488,18 @@ describe("Engine", () => {
   it("serializes optional backfill payload to JSON string", () => {
     const builder = new WriteRequestBuilder("backfill-test");
     builder.addOptionalBackfill("fts", { some: "data" });
-    builder.addOptionalBackfill("vec", "already-a-string");
+    builder.addOptionalBackfill("vec", new PreserializedJson("already-a-string"));
+    builder.addOptionalBackfill("all", "plain-string");
     const built = builder.build();
     const backfills = built.optional_backfills as Array<Record<string, unknown>>;
-    expect(backfills).toHaveLength(2);
+    expect(backfills).toHaveLength(3);
     expect(backfills[0].target).toBe("fts");
     expect(typeof backfills[0].payload).toBe("string");
     expect(JSON.parse(backfills[0].payload as string)).toEqual({ some: "data" });
+    // PreserializedJson passes through unchanged
     expect(backfills[1].payload).toBe("already-a-string");
+    // Plain strings are now JSON-encoded
+    expect(backfills[2].payload).toBe('"plain-string"');
   });
 
   it("correctly converts touchLastAccessed to wire format", () => {
