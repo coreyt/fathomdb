@@ -1,5 +1,5 @@
 import { AdminClient } from "./admin.js";
-import { FathomError, mapNativeError, parseNativeJson } from "./errors.js";
+import { callNative, FathomError, mapNativeError, parseNativeJson } from "./errors.js";
 import { runWithFeedback } from "./feedback.js";
 import { loadNativeBinding, type NativeBinding, type NativeEngineCore } from "./native.js";
 import { Query } from "./query.js";
@@ -116,7 +116,7 @@ export class Engine {
    */
   telemetrySnapshot(): TelemetrySnapshot {
     this.#assertOpen();
-    return telemetrySnapshotFromWire(parseNativeJson(this.#core.telemetrySnapshot()));
+    return telemetrySnapshotFromWire(parseNativeJson(callNative(() => this.#core.telemetrySnapshot())));
   }
 
   /**
@@ -156,7 +156,7 @@ export class Engine {
   ): WriteReceipt {
     this.#assertOpen();
     return this.#run("write.submit", () =>
-      writeReceiptFromWire(parseNativeJson(this.#core.submitWrite(JSON.stringify(request)))),
+      writeReceiptFromWire(parseNativeJson(callNative(() => this.#core.submitWrite(JSON.stringify(request))))),
       progressCallback, feedbackConfig,
     );
   }
@@ -197,7 +197,7 @@ export class Engine {
       source_ref: request.sourceRef ?? null,
     };
     return this.#run("write.touch_last_accessed", () =>
-      lastAccessTouchReportFromWire(parseNativeJson(this.#core.touchLastAccessed(JSON.stringify(wire)))),
+      lastAccessTouchReportFromWire(parseNativeJson(callNative(() => this.#core.touchLastAccessed(JSON.stringify(wire))))),
       progressCallback, feedbackConfig,
     );
   }

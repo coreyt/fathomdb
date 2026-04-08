@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BuilderValidationError, FathomError, Engine, Query, WriteRequestBuilder, newId, newRowId, type ResponseCycleEvent } from "../src/index.js";
+import { BuilderValidationError, FathomError, SqliteError, Engine, Query, WriteRequestBuilder, newId, newRowId, type ResponseCycleEvent } from "../src/index.js";
 import { runWithFeedback } from "../src/feedback.js";
 
 describe("Engine", () => {
@@ -560,6 +560,46 @@ describe("Engine", () => {
     });
     expect(result).toBe("ok");
     expect(callCount).toBe(1); // STARTED fires, throws, then FINISHED is suppressed
+  });
+
+  it("maps native FATHOMDB_SQLITE_ERROR to SqliteError via callNative", () => {
+    const engine = Engine.open("/tmp/test.db");
+    // Make the native method throw with a FATHOMDB_ prefixed error
+    const binding = (globalThis as Record<string, unknown>).__FATHOMDB_NATIVE_MOCK__ as Record<string, unknown>;
+    const core = (binding.EngineCore as Record<string, unknown>).open as ReturnType<typeof vi.fn>;
+    const mockCore = core.mock.results[0].value;
+    mockCore.telemetrySnapshot.mockImplementation(() => {
+      throw new Error("FATHOMDB_SQLITE_ERROR::disk I/O error");
+    });
+    expect(() => engine.telemetrySnapshot()).toThrow(SqliteError);
+    try {
+      engine.telemetrySnapshot();
+    } catch (e) {
+      expect(e).toBeInstanceOf(SqliteError);
+      expect((e as SqliteError).message).toBe("disk I/O error");
+    }
+  });
+
+  it("maps native error from describeOperationalCollection via callNative", () => {
+    const engine = Engine.open("/tmp/test.db");
+    const binding = (globalThis as Record<string, unknown>).__FATHOMDB_NATIVE_MOCK__ as Record<string, unknown>;
+    const core = (binding.EngineCore as Record<string, unknown>).open as ReturnType<typeof vi.fn>;
+    const mockCore = core.mock.results[0].value;
+    // Native call itself throws a FATHOMDB_ error
+    mockCore.describeOperationalCollection.mockImplementation(() => {
+      throw new Error("FATHOMDB_SQLITE_ERROR::table not found");
+    });
+    expect(() => engine.admin.describeOperationalCollection("events")).toThrow(SqliteError);
+  });
+
+  it("uses parseNativeJson in describeOperationalCollection for malformed JSON", () => {
+    const engine = Engine.open("/tmp/test.db");
+    const binding = (globalThis as Record<string, unknown>).__FATHOMDB_NATIVE_MOCK__ as Record<string, unknown>;
+    const core = (binding.EngineCore as Record<string, unknown>).open as ReturnType<typeof vi.fn>;
+    const mockCore = core.mock.results[0].value;
+    // Native call returns invalid JSON -- parseNativeJson should handle it
+    mockCore.describeOperationalCollection.mockImplementation(() => "not valid json{{{");
+    expect(() => engine.admin.describeOperationalCollection("events")).toThrow();
   });
 
   it("passes feedbackConfig slowThresholdMs into events", () => {

@@ -48,6 +48,14 @@ export function parseNativeJson(payload: string): Record<string, unknown> {
   }
 }
 
+export function callNative<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (error) {
+    throw mapNativeError(error);
+  }
+}
+
 /**
  * Map a native error into the appropriate typed {@link FathomError} subclass.
  *
