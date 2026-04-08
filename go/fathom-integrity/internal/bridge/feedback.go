@@ -33,6 +33,12 @@ type ResponseCycleEvent struct {
 type FeedbackConfig struct {
 	SlowThreshold     time.Duration
 	HeartbeatInterval time.Duration
+	Timeout           time.Duration
+}
+
+// WithDefaults returns a copy of c with zero-valued fields replaced by sensible defaults.
+func (c FeedbackConfig) WithDefaults() FeedbackConfig {
+	return c.withDefaults()
 }
 
 func (c FeedbackConfig) withDefaults() FeedbackConfig {
@@ -41,6 +47,9 @@ func (c FeedbackConfig) withDefaults() FeedbackConfig {
 	}
 	if c.HeartbeatInterval <= 0 {
 		c.HeartbeatInterval = 2 * time.Second
+	}
+	if c.Timeout <= 0 {
+		c.Timeout = 5 * time.Minute
 	}
 	return c
 }

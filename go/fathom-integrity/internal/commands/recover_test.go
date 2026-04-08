@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/coreyt/fathomdb/go/fathom-integrity/internal/bridge"
 	"github.com/coreyt/fathomdb/go/fathom-integrity/test/testutil"
@@ -83,13 +84,16 @@ func TestSanitizeRecoveredSQL_PreservesMultilineTextContainingSqlErrorPrefix(t *
 	require.Contains(t, output, "INSERT INTO chunks")
 }
 
-func TestRunBridgeCommandDoesNotInstallFixedDeadline(t *testing.T) {
+func TestRunBridgeCommandWithExecuteHasDeadline(t *testing.T) {
 	var sawDeadline bool
+	var deadlineDuration time.Duration
 	err := runBridgeCommandWithExecute(
 		func(ctx context.Context, request bridge.Request) (bridge.Response, error) {
-			var ok bool
-			_, ok = ctx.Deadline()
+			deadline, ok := ctx.Deadline()
 			sawDeadline = ok
+			if ok {
+				deadlineDuration = time.Until(deadline)
+			}
 			return bridge.Response{
 				ProtocolVersion: bridge.ProtocolVersion,
 				OK:              true,
@@ -101,7 +105,9 @@ func TestRunBridgeCommandDoesNotInstallFixedDeadline(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	require.False(t, sawDeadline, "recovery bridge restore path must not impose a fixed deadline")
+	require.True(t, sawDeadline, "recovery bridge calls must have a deadline")
+	require.Greater(t, deadlineDuration, 9*time.Minute, "recovery bridge timeout should be ~10 minutes")
+	require.LessOrEqual(t, deadlineDuration, 10*time.Minute+time.Second, "recovery bridge timeout should be ~10 minutes")
 }
 
 func TestCountRecoveredRowsIncludesOperationalTables(t *testing.T) {

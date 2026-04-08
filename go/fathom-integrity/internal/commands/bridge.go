@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"time"
 
 	"github.com/coreyt/fathomdb/go/fathom-integrity/internal/bridge"
 )
@@ -23,7 +22,8 @@ func RunBridgeCommandWithFeedback(
 	observer bridge.Observer,
 	config bridge.FeedbackConfig,
 ) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	resolved := config.WithDefaults()
+	ctx, cancel := context.WithTimeout(context.Background(), resolved.Timeout)
 	defer cancel()
 
 	response, err := client.ExecuteWithFeedback(ctx, request, observer, config)

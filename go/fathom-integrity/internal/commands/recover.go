@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/coreyt/fathomdb/go/fathom-integrity/internal/bridge"
@@ -65,8 +66,12 @@ func RunRecoverWithFeedback(
 	observer bridge.Observer,
 	config bridge.FeedbackConfig,
 ) error {
+	resolved := config.WithDefaults()
+	ctx, cancel := context.WithTimeout(context.Background(), resolved.Timeout)
+	defer cancel()
+
 	_, err := bridge.RunWithFeedback(
-		context.Background(),
+		ctx,
 		"go",
 		"recover",
 		map[string]string{
@@ -75,7 +80,7 @@ func RunRecoverWithFeedback(
 		},
 		observer,
 		config,
-		func(context.Context) (struct{}, error) {
+		func(ctx context.Context) (struct{}, error) {
 			return struct{}{}, runRecover(sourcePath, destPath, bridgePath, sqliteBin, out)
 		},
 	)
@@ -252,8 +257,11 @@ func runBridgeCommand(client bridge.Client, dbPath string, command bridge.Comman
 }
 
 func runBridgeCommandWithExecute(execute bridgeExecuteFunc, dbPath string, command bridge.Command) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
 	resp, err := execute(
-		context.Background(),
+		ctx,
 		bridge.Request{
 			DatabasePath: dbPath,
 			Command:      command,

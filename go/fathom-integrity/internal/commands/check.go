@@ -24,8 +24,12 @@ func RunCheckWithFeedback(
 	observer bridge.Observer,
 	config bridge.FeedbackConfig,
 ) error {
+	resolved := config.WithDefaults()
+	ctx, cancel := context.WithTimeout(context.Background(), resolved.Timeout)
+	defer cancel()
+
 	_, err := bridge.RunWithFeedback(
-		context.Background(),
+		ctx,
 		"go",
 		"check",
 		map[string]string{"database_path": databasePath},
