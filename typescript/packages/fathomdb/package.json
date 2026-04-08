@@ -8,7 +8,10 @@
     "url": "https://github.com/coreyt/fathomdb.git",
     "directory": "typescript/packages/fathomdb"
   },
-  "license": "MIT OR Apache-2.0",
+  "license": "MIT",
+  "author": "Corey Thompson <coreyt@gmail.com>",
+  "homepage": "https://github.com/coreyt/fathomdb",
+  "bugs": "https://github.com/coreyt/fathomdb/issues",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
