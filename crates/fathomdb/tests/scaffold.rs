@@ -1609,3 +1609,17 @@ fn meeting_write_request(properties: &str) -> WriteRequest {
         operational_writes: vec![],
     }
 }
+
+#[test]
+fn engine_rejects_zero_pool_size() {
+    let db = NamedTempFile::new().expect("temporary db");
+    let mut opts = EngineOptions::new(db.path());
+    opts.read_pool_size = Some(0);
+    let result = Engine::open(opts);
+    assert!(result.is_err(), "pool_size=0 should return Err, not panic");
+    let err = result.unwrap_err();
+    assert!(
+        err.to_string().contains("read_pool_size"),
+        "error should mention read_pool_size, got: {err}"
+    );
+}

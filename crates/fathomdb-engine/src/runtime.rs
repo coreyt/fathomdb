@@ -52,6 +52,12 @@ impl EngineRuntime {
     ) -> Result<Self, EngineError> {
         let lock = DatabaseLock::acquire(path.as_ref())?;
 
+        if read_pool_size == 0 {
+            return Err(EngineError::InvalidConfig(
+                "read_pool_size must be >= 1, got 0".to_owned(),
+            ));
+        }
+
         trace_info!(
             path = %path.as_ref().display(),
             provenance_mode = ?provenance_mode,
