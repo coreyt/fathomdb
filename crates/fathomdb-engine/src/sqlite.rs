@@ -99,6 +99,52 @@ pub fn open_connection(path: &Path) -> Result<Connection, EngineError> {
     Ok(conn)
 }
 
+/// Open a read-only database connection.
+///
+/// Uses `SQLITE_OPEN_READONLY` so that any attempt to write through this
+/// connection fails at the `SQLite` level.  Intended for reader-pool connections
+/// where the writer has already created the database and set WAL mode.
+///
+/// # Errors
+/// Returns [`EngineError`] if the database file cannot be opened.
+pub fn open_readonly_connection(path: &Path) -> Result<Connection, EngineError> {
+    #[cfg(feature = "tracing")]
+    SQLITE_LOG_INIT.call_once(|| {
+        // Safety: Once guard ensures no concurrent SQLite calls during config.
+        // config_log must be called before any connections are opened.
+        unsafe {
+            let _ = rusqlite::trace::config_log(Some(sqlite_log_callback));
+        }
+    });
+
+    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    conn.busy_timeout(Duration::from_millis(5_000))?;
+
+    #[cfg(all(feature = "tracing", debug_assertions))]
+    install_trace_v2(&conn);
+
+    Ok(conn)
+}
+
+/// Open a read-only database connection with the sqlite-vec extension loaded.
+///
+/// Combines [`open_readonly_connection`] with the `sqlite3_vec_init`
+/// auto-extension registration.
+///
+/// # Errors
+/// Returns [`EngineError`] if the underlying database connection cannot be
+/// opened (same failure modes as [`open_readonly_connection`]).
+#[cfg(feature = "sqlite-vec")]
+pub fn open_readonly_connection_with_vec(path: &Path) -> Result<Connection, EngineError> {
+    // Safety: sqlite3_auto_extension is idempotent for the same function pointer.
+    unsafe {
+        rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute(
+            sqlite_vec::sqlite3_vec_init as *const (),
+        )));
+    }
+    open_readonly_connection(path)
+}
+
 /// Open a database connection with the sqlite-vec extension loaded.
 ///
 /// Registers `sqlite3_vec_init` as a global auto-extension so the extension is

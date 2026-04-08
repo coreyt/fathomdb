@@ -582,17 +582,18 @@ fn startup_pragma_busy_timeout_is_set() {
 }
 
 #[test]
-fn startup_pragma_synchronous_is_not_full() {
+fn reader_pragma_synchronous_is_default() {
     let db = NamedTempFile::new().expect("temporary db");
     let engine = Engine::open(EngineOptions::new(db.path())).expect("engine opens");
-    // SQLite reports 0=OFF 1=NORMAL 2=FULL 3=EXTRA; we require not FULL.
-    assert_ne!(
+    // Reader connections intentionally skip PRAGMA synchronous — it is
+    // irrelevant for read-only connections. The default (FULL=2) is expected.
+    assert_eq!(
         engine
             .coordinator()
             .raw_pragma("synchronous")
             .expect("pragma"),
         "2",
-        "synchronous must not be FULL"
+        "reader synchronous should be default FULL (2)"
     );
 }
 
@@ -1608,6 +1609,63 @@ fn meeting_write_request(properties: &str) -> WriteRequest {
         vec_inserts: vec![],
         operational_writes: vec![],
     }
+}
+
+#[test]
+fn reader_connections_are_readonly() {
+    let db = NamedTempFile::new().expect("temporary db");
+    let engine = Engine::open(EngineOptions::new(db.path())).expect("engine opens");
+    // Attempt a write through the coordinator's read pool — this should fail
+    // because reader connections are opened with SQLITE_OPEN_READONLY.
+    let result = engine.coordinator().raw_pragma("user_version = 42");
+    assert!(
+        result.is_err(),
+        "writing through a reader connection should fail, but got: {result:?}"
+    );
+}
+
+#[test]
+fn reader_pragma_foreign_keys_is_on() {
+    let db = NamedTempFile::new().expect("temporary db");
+    let engine = Engine::open(EngineOptions::new(db.path())).expect("engine opens");
+    assert_eq!(
+        engine
+            .coordinator()
+            .raw_pragma("foreign_keys")
+            .expect("pragma"),
+        "1"
+    );
+}
+
+#[test]
+fn reader_pragma_busy_timeout_is_set() {
+    let db = NamedTempFile::new().expect("temporary db");
+    let engine = Engine::open(EngineOptions::new(db.path())).expect("engine opens");
+    let timeout: i64 = engine
+        .coordinator()
+        .raw_pragma("busy_timeout")
+        .expect("pragma")
+        .parse()
+        .expect("integer");
+    assert!(
+        timeout >= 5000,
+        "busy_timeout must be at least 5000 ms, got {timeout}"
+    );
+}
+
+#[test]
+fn reader_pragma_temp_store_is_memory() {
+    let db = NamedTempFile::new().expect("temporary db");
+    let engine = Engine::open(EngineOptions::new(db.path())).expect("engine opens");
+    // SQLite reports temp_store as 0=DEFAULT, 1=FILE, 2=MEMORY
+    assert_eq!(
+        engine
+            .coordinator()
+            .raw_pragma("temp_store")
+            .expect("pragma"),
+        "2",
+        "temp_store should be MEMORY (2)"
+    );
 }
 
 #[test]

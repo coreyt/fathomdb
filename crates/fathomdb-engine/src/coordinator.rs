@@ -60,17 +60,17 @@ impl ReadPool {
             let conn = if vector_enabled {
                 #[cfg(feature = "sqlite-vec")]
                 {
-                    sqlite::open_connection_with_vec(db_path)?
+                    sqlite::open_readonly_connection_with_vec(db_path)?
                 }
                 #[cfg(not(feature = "sqlite-vec"))]
                 {
-                    sqlite::open_connection(db_path)?
+                    sqlite::open_readonly_connection(db_path)?
                 }
             } else {
-                sqlite::open_connection(db_path)?
+                sqlite::open_readonly_connection(db_path)?
             };
             schema_manager
-                .initialize_connection(&conn)
+                .initialize_reader_connection(&conn)
                 .map_err(EngineError::Schema)?;
             connections.push(Mutex::new(conn));
         }

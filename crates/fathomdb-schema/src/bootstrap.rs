@@ -761,6 +761,28 @@ impl SchemaManager {
         Ok(())
     }
 
+    /// Initialize a **read-only** connection with PRAGMAs that are safe for
+    /// readers.
+    ///
+    /// Skips `journal_mode` (requires write; the writer already set WAL),
+    /// `synchronous` (irrelevant for readers), and `journal_size_limit`
+    /// (requires write).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SchemaError`] if any PRAGMA fails to execute.
+    pub fn initialize_reader_connection(&self, conn: &Connection) -> Result<(), SchemaError> {
+        conn.execute_batch(
+            r"
+            PRAGMA foreign_keys = ON;
+            PRAGMA busy_timeout = 5000;
+            PRAGMA temp_store = MEMORY;
+            PRAGMA mmap_size = 3000000000;
+            ",
+        )?;
+        Ok(())
+    }
+
     /// Ensure the sqlite-vec vector extension profile is registered and the
     /// virtual vec table exists.
     ///
