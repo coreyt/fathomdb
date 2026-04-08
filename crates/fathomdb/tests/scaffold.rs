@@ -1675,7 +1675,7 @@ fn engine_rejects_zero_pool_size() {
     opts.read_pool_size = Some(0);
     let result = Engine::open(opts);
     assert!(result.is_err(), "pool_size=0 should return Err, not panic");
-    let err = result.unwrap_err();
+    let err = result.expect_err("pool_size=0 should be InvalidConfig");
     assert!(
         err.to_string().contains("read_pool_size"),
         "error should mention read_pool_size, got: {err}"
