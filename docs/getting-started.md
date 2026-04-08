@@ -9,6 +9,7 @@ A concise guide for new developers and users of fathomdb.
 | Rust | stable (via [rustup](https://rustup.rs)) | Used for the core engine |
 | Go | 1.22+ | Used for `fathom-integrity` recovery tooling |
 | Python | 3.11+ | Python bindings (PyO3) |
+| Node.js | 20+ | TypeScript/JavaScript bindings (napi-rs) |
 
 For users who just need to build and use fathomdb, run `scripts/setup.sh`.
 For full developer tooling (testing, linting, Go, project-local SQLite),
@@ -36,6 +37,13 @@ cargo build --workspace
 cd python && pip install -e . --no-build-isolation
 ```
 
+**TypeScript SDK** (requires the native binding to be built first):
+
+```bash
+cargo build -p fathomdb --features node
+cd typescript && npm install
+```
+
 **Go recovery tool:**
 
 ```bash
@@ -53,6 +61,9 @@ cd go/fathom-integrity && go test ./...
 
 # Python
 PYTHONPATH=python pytest python/tests -q
+
+# TypeScript
+cd typescript && npm test
 ```
 
 ## First database (Python)
@@ -92,6 +103,44 @@ Key points:
   does not already exist.
 - `WriteRequestBuilder.add_node()` requires explicit `row_id` and
   `logical_id` values; use `new_row_id()` and `new_id()` to generate them.
+- `Query` objects are immutable builders -- each filter/limit call returns a
+  new `Query`.
+
+## First database (TypeScript)
+
+```typescript
+import { Engine, WriteRequestBuilder, newId, newRowId } from "fathomdb";
+
+// Open (or create) a database
+const engine = Engine.open("/tmp/my-agent.db");
+
+// Build a write request
+const builder = new WriteRequestBuilder("first-write");
+builder.addNode({
+  rowId: newRowId(),
+  logicalId: newId(),
+  kind: "Document",
+  properties: { title: "Hello" },
+  sourceRef: "setup-guide",
+});
+engine.write(builder.build());
+
+// Query nodes back
+const rows = engine.nodes("Document")
+  .filterJsonTextEq("$.title", "Hello")
+  .limit(10)
+  .execute();
+console.log(rows.nodes);
+
+engine.close();
+```
+
+Key points:
+
+- `Engine.open()` creates the database file and bootstraps the schema if it
+  does not already exist.
+- `WriteRequestBuilder.addNode()` requires explicit `rowId` and `logicalId`
+  values; use `newRowId()` and `newId()` to generate them.
 - `Query` objects are immutable builders -- each filter/limit call returns a
   new `Query`.
 

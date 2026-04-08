@@ -1,7 +1,9 @@
 # Writing Data
 
 This guide covers how to write nodes, edges, chunks, and provenance records to a
-fathomdb database using the Python SDK. For background on the underlying data
+fathomdb database using the Python and TypeScript SDKs. Python examples are
+shown first; see the [TypeScript equivalent](#typescript-equivalent) section at
+the end for the camelCase API. For background on the underlying data
 structures, see [Data Model](../concepts/data-model.md) and
 [Temporal Model](../concepts/temporal-model.md). For full API details, see the
 [WriteRequestBuilder Reference](../reference/write-builder.md).
@@ -279,3 +281,94 @@ receipt = engine.write(builder.build())
 if receipt.provenance_warnings:
     print(f"Missing provenance on {len(receipt.provenance_warnings)} items")
 ```
+
+## TypeScript equivalent
+
+The TypeScript SDK mirrors the Python API with camelCase naming and typed
+input objects.
+
+```typescript
+import { Engine, WriteRequestBuilder, newId, newRowId } from "fathomdb";
+
+const engine = Engine.open("my_agent.db");
+
+// Nodes -- use an input object instead of keyword args
+const builder = new WriteRequestBuilder("ingest-meeting-notes");
+const node = builder.addNode({
+  rowId: newRowId(),
+  logicalId: newId(),
+  kind: "meeting",
+  properties: { title: "Sprint Review", date: "2025-06-01" },
+  sourceRef: "meeting-importer",
+});
+
+// Edges
+builder.addEdge({
+  rowId: newRowId(),
+  logicalId: newId(),
+  source: node,          // NodeHandle or string logical ID
+  target: "person:alice", // existing node's logical ID
+  kind: "ATTENDED",
+  properties: { role: "presenter" },
+});
+
+// Chunks
+const chunk = builder.addChunk({
+  id: newId(),
+  node,
+  textContent: "Revenue grew 15% quarter over quarter...",
+});
+
+// Vector embeddings
+builder.addVecInsert({ chunk, embedding: [0.12, -0.34] });
+
+// Runs / steps / actions
+const run = builder.addRun({
+  id: newId(), kind: "chat-session", status: "active",
+  properties: { model: "claude-sonnet" },
+});
+const step = builder.addStep({
+  id: newId(), run, kind: "llm-turn", status: "active",
+  properties: { promptTokens: 1200 },
+});
+builder.addAction({
+  id: newId(), step, kind: "tool-call", status: "completed",
+  properties: { tool: "web_search" },
+});
+
+// Upsert with chunk replacement
+builder.addNode({
+  rowId: newRowId(), logicalId: "note:123",
+  kind: "note", properties: { title: "Revised" },
+  upsert: true, chunkPolicy: "replace",
+});
+
+// Retire
+builder.retireNode("task-001", "action/cleanup-42");
+
+// Operational writes
+builder.addOperationalPut({
+  collection: "agent_config",
+  recordKey: "model_preference",
+  payloadJson: { model: "claude-sonnet", temperature: 0.7 },
+});
+
+// Submit
+const receipt = engine.write(builder.build());
+console.log(receipt.label, receipt.provenanceWarnings);
+
+engine.close();
+```
+
+**Key differences from Python:**
+
+| Python | TypeScript |
+|--------|-----------|
+| `add_node(row_id=..., logical_id=..., kind=...)` | `addNode({ rowId, logicalId, kind, ... })` |
+| `add_edge(source=handle, target=handle)` | `addEdge({ source: handle, target: handle, ... })` |
+| `add_chunk(id=..., node=handle, text_content=...)` | `addChunk({ id, node: handle, textContent })` |
+| `add_run(id=..., run=handle, ...)` | `addRun({ id, ... })` |
+| `retire_node(logical_id=..., source_ref=...)` | `retireNode(logicalId, sourceRef?)` |
+| `ChunkPolicy.REPLACE` | `"replace"` |
+| `ProvenanceMode.REQUIRE` | `"require"` |
+| `receipt.provenance_warnings` | `receipt.provenanceWarnings` |

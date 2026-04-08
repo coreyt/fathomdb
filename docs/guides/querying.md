@@ -1,7 +1,9 @@
 # Querying Data
 
 This guide covers how to query nodes from a fathomdb database using the
-Python SDK. For the full API surface, see [Query API Reference](../reference/query.md).
+Python and TypeScript SDKs. Python examples are shown first; see the
+[TypeScript equivalent](#typescript-equivalent) section at the end for
+the camelCase API. For the full API surface, see [Query API Reference](../reference/query.md).
 For background on nodes, edges, and properties, see
 [Data Model](../concepts/data-model.md).
 
@@ -248,3 +250,61 @@ for slot in results.expansions:
 | Inspect SQL | `compile()` |
 | Inspect plan | `explain()` |
 | Subgraph expansion | `expand(slot, direction, label, max_depth)` + `execute_grouped()` |
+
+## TypeScript equivalent
+
+The TypeScript SDK mirrors the Python API with camelCase naming. All query
+methods are identical in semantics.
+
+```typescript
+import { Engine } from "fathomdb";
+
+const engine = Engine.open("/tmp/my-agent.db");
+
+// Filters use camelCase method names
+const rows = engine.nodes("Document")
+  .filterJsonTextEq("$.status", "published")
+  .filterJsonIntegerGte("$.priority", 3)
+  .limit(20)
+  .execute();
+
+// Results use camelCase property names
+for (const node of rows.nodes) {
+  console.log(node.logicalId, node.properties);
+}
+
+// Text search
+const ftsRows = engine.nodes("Document")
+  .textSearch("architecture review", 50)
+  .filterJsonTextEq("$.status", "published")
+  .limit(10)
+  .execute();
+
+// Graph traversal -- pass an options object instead of keyword args
+const authors = engine.nodes("Document")
+  .filterJsonTextEq("$.title", "Q4 Report")
+  .traverse({ direction: "out", label: "authored_by", maxDepth: 1 })
+  .execute();
+
+// Grouped queries with expansions
+const grouped = engine.nodes("Project")
+  .filterJsonTextEq("$.active", "true")
+  .limit(5)
+  .expand({ slot: "members", direction: "in", label: "member_of", maxDepth: 1 })
+  .expand({ slot: "tasks", direction: "in", label: "belongs_to", maxDepth: 1 })
+  .executeGrouped();
+
+engine.close();
+```
+
+**Key differences from Python:**
+
+| Python | TypeScript |
+|--------|-----------|
+| `filter_logical_id_eq(id)` | `filterLogicalIdEq(id)` |
+| `filter_json_text_eq(path, val)` | `filterJsonTextEq(path, val)` |
+| `traverse(direction=..., label=..., max_depth=...)` | `traverse({ direction, label, maxDepth })` |
+| `expand(slot=..., direction=..., label=..., max_depth=...)` | `expand({ slot, direction, label, maxDepth })` |
+| `rows.was_degraded` | `rows.wasDegraded` |
+| `node.logical_id` | `node.logicalId` |
+| `node.last_accessed_at` | `node.lastAccessedAt` |

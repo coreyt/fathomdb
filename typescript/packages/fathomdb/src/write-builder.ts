@@ -17,11 +17,22 @@ type HandleBase = {
 
 let nextBuilderId = 1;
 
+/** Opaque reference to a node added via {@link WriteRequestBuilder}. */
 export type NodeHandle = HandleBase & { rowId: string; logicalId: string };
+
+/** Opaque reference to an edge added via {@link WriteRequestBuilder}. */
 export type EdgeHandle = HandleBase & { logicalId: string };
+
+/** Opaque reference to a run added via {@link WriteRequestBuilder}. */
 export type RunHandle = HandleBase & { id: string };
+
+/** Opaque reference to a step added via {@link WriteRequestBuilder}. */
 export type StepHandle = HandleBase & { id: string };
+
+/** Opaque reference to an action added via {@link WriteRequestBuilder}. */
 export type ActionHandle = HandleBase & { id: string };
+
+/** Opaque reference to a chunk added via {@link WriteRequestBuilder}. */
 export type ChunkHandle = HandleBase & { id: string };
 
 function toJsonString(value: unknown): string {
@@ -29,6 +40,13 @@ function toJsonString(value: unknown): string {
   return JSON.stringify(value ?? null);
 }
 
+/**
+ * Mutable builder that assembles a write request from individual mutations.
+ *
+ * Handles are returned when adding nodes, edges, runs, steps, actions, and
+ * chunks so they can be cross-referenced within the same request. Call
+ * {@link build} to produce the finalized wire-format object.
+ */
 export class WriteRequestBuilder {
   readonly #builderId = nextBuilderId++;
   readonly #request: Record<string, unknown>;
@@ -50,6 +68,12 @@ export class WriteRequestBuilder {
     };
   }
 
+  /**
+   * Add a node to the write request.
+   *
+   * @param input - Node properties including rowId, logicalId, kind, and properties.
+   * @returns A handle that can be used to reference this node in edges and chunks.
+   */
   addNode(input: NodeInsertInput): NodeHandle {
     const properties = toJsonString(input.properties);
     (this.#request.nodes as Array<Record<string, unknown>>).push({
@@ -64,6 +88,12 @@ export class WriteRequestBuilder {
     return { _builderId: this.#builderId, rowId: input.rowId, logicalId: input.logicalId };
   }
 
+  /**
+   * Mark a node as retired (soft-delete) by logical ID or handle.
+   *
+   * @param logicalId - The node handle or logical ID string to retire.
+   * @param sourceRef - Optional provenance source reference.
+   */
   retireNode(logicalId: NodeHandle | string, sourceRef?: string): void {
     (this.#request.node_retires as Array<Record<string, unknown>>).push({
       logical_id: this.#resolveNode(logicalId),
@@ -71,6 +101,12 @@ export class WriteRequestBuilder {
     });
   }
 
+  /**
+   * Add an edge connecting two nodes to the write request.
+   *
+   * @param input - Edge properties including source, target, kind, and properties.
+   * @returns A handle that can be used to reference this edge.
+   */
   addEdge(input: EdgeInsertInput & { source: NodeHandle | string; target: NodeHandle | string }): EdgeHandle {
     const properties = toJsonString(input.properties);
     (this.#request.edges as Array<Record<string, unknown>>).push({
@@ -86,6 +122,12 @@ export class WriteRequestBuilder {
     return { _builderId: this.#builderId, logicalId: input.logicalId };
   }
 
+  /**
+   * Mark an edge as retired (soft-delete) by logical ID or handle.
+   *
+   * @param logicalId - The edge handle or logical ID string to retire.
+   * @param sourceRef - Optional provenance source reference.
+   */
   retireEdge(logicalId: EdgeHandle | string, sourceRef?: string): void {
     (this.#request.edge_retires as Array<Record<string, unknown>>).push({
       logical_id: this.#resolveEdge(logicalId),
@@ -93,6 +135,12 @@ export class WriteRequestBuilder {
     });
   }
 
+  /**
+   * Add a text chunk associated with a node.
+   *
+   * @param input - Chunk properties including id, owning node, and text content.
+   * @returns A handle for referencing this chunk in vector inserts.
+   */
   addChunk(input: ChunkInsertInput & { node: NodeHandle | string }): ChunkHandle {
     (this.#request.chunks as Array<Record<string, unknown>>).push({
       id: input.id,
@@ -104,6 +152,12 @@ export class WriteRequestBuilder {
     return { _builderId: this.#builderId, id: input.id };
   }
 
+  /**
+   * Add a run to the write request.
+   *
+   * @param input - Run properties including id, kind, status, and properties.
+   * @returns A handle for referencing this run when adding steps.
+   */
   addRun(input: RunInsertInput): RunHandle {
     const properties = toJsonString(input.properties);
     (this.#request.runs as Array<Record<string, unknown>>).push({
@@ -118,6 +172,12 @@ export class WriteRequestBuilder {
     return { _builderId: this.#builderId, id: input.id };
   }
 
+  /**
+   * Add a step belonging to a run.
+   *
+   * @param input - Step properties including id, owning run, kind, status, and properties.
+   * @returns A handle for referencing this step when adding actions.
+   */
   addStep(input: StepInsertInput & { run: RunHandle | string }): StepHandle {
     const properties = toJsonString(input.properties);
     (this.#request.steps as Array<Record<string, unknown>>).push({
@@ -133,6 +193,12 @@ export class WriteRequestBuilder {
     return { _builderId: this.#builderId, id: input.id };
   }
 
+  /**
+   * Add an action belonging to a step.
+   *
+   * @param input - Action properties including id, owning step, kind, status, and properties.
+   * @returns A handle for referencing this action.
+   */
   addAction(input: ActionInsertInput & { step: StepHandle | string }): ActionHandle {
     const properties = toJsonString(input.properties);
     (this.#request.actions as Array<Record<string, unknown>>).push({
@@ -148,6 +214,12 @@ export class WriteRequestBuilder {
     return { _builderId: this.#builderId, id: input.id };
   }
 
+  /**
+   * Queue an optional projection backfill task (e.g. FTS or vector).
+   *
+   * @param target - Which projection to backfill (`"fts"`, `"vec"`, or `"all"`).
+   * @param payload - Projection-specific payload data.
+   */
   addOptionalBackfill(target: "fts" | "vec" | "all", payload: unknown): void {
     (this.#request.optional_backfills as Array<Record<string, unknown>>).push({
       target,
@@ -155,6 +227,11 @@ export class WriteRequestBuilder {
     });
   }
 
+  /**
+   * Add a vector embedding associated with a chunk.
+   *
+   * @param input - The chunk reference and embedding vector.
+   */
   addVecInsert(input: { chunk: ChunkHandle | string; embedding: number[] }): void {
     (this.#request.vec_inserts as Array<Record<string, unknown>>).push({
       chunk_id: this.#resolveChunk(input.chunk),
@@ -162,6 +239,11 @@ export class WriteRequestBuilder {
     });
   }
 
+  /**
+   * Append a mutation to an operational collection.
+   *
+   * @param input - Append input including collection name, record key, and payload.
+   */
   addOperationalAppend(input: OperationalAppendInput): void {
     const payloadJson = toJsonString(input.payloadJson);
     (this.#request.operational_writes as Array<Record<string, unknown>>).push({
@@ -173,6 +255,11 @@ export class WriteRequestBuilder {
     });
   }
 
+  /**
+   * Put (upsert) a record into an operational collection.
+   *
+   * @param input - Put input including collection name, record key, and payload.
+   */
   addOperationalPut(input: OperationalPutInput): void {
     const payloadJson = toJsonString(input.payloadJson);
     (this.#request.operational_writes as Array<Record<string, unknown>>).push({
@@ -184,6 +271,11 @@ export class WriteRequestBuilder {
     });
   }
 
+  /**
+   * Delete a record from an operational collection.
+   *
+   * @param input - Delete input including collection name and record key.
+   */
   addOperationalDelete(input: OperationalDeleteInput): void {
     (this.#request.operational_writes as Array<Record<string, unknown>>).push({
       type: "delete",
@@ -193,6 +285,12 @@ export class WriteRequestBuilder {
     });
   }
 
+  /**
+   * Resolve all handles and produce the finalized write request object.
+   *
+   * @returns A deep clone of the assembled wire-format request.
+   * @throws {BuilderValidationError} If any handle belongs to a different builder.
+   */
   build(): Record<string, unknown> {
     return structuredClone(this.#request);
   }

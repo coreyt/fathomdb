@@ -1,5 +1,8 @@
 # Plan: Implement the TypeScript SDK and Harness with TDD
 
+> **Status: COMPLETED** (2026-04-08). All phases implemented and verified.
+> See commits `a8b8f30`, `c3fb834`, `e2ecb10` on `main`.
+
 ## Summary
 
 Build a new top-level `typescript/` workspace that contains:

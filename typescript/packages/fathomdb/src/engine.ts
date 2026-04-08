@@ -17,9 +17,26 @@ import {
   type WriteRequest,
 } from "./types.js";
 
+/**
+ * Entry point for interacting with a fathomdb database.
+ *
+ * Use {@link Engine.open} to create an instance, then call {@link Engine.nodes}
+ * to build queries or {@link Engine.write} to submit mutations. Administrative
+ * operations are available via the {@link Engine.admin} property.
+ */
 export class Engine {
   static #binding: NativeBinding | null = null;
 
+  /**
+   * Open a fathomdb database at the given path.
+   *
+   * @param databasePath - Path to the SQLite database file.
+   * @param options - Engine configuration options (provenance mode, vector dimension, telemetry level).
+   * @param progressCallback - Optional callback invoked with {@link ResponseCycleEvent} instances during long operations.
+   * @param feedbackConfig - Timing thresholds for progress feedback.
+   * @returns A new Engine instance connected to the database.
+   * @throws {@link FathomError} If the database cannot be opened or schema bootstrap fails.
+   */
   static open(
     databasePath: string,
     options: EngineOpenOptions = {},
@@ -48,6 +65,11 @@ export class Engine {
     });
   }
 
+  /**
+   * Override the native binding used by the engine. For testing only.
+   *
+   * @param binding - The native binding to use, or `null` to reset to auto-detection.
+   */
   static setBindingForTests(binding: NativeBinding | null): void {
     this.#binding = binding;
   }
@@ -56,11 +78,21 @@ export class Engine {
   #closed = false;
   readonly admin: AdminClient;
 
+  /**
+   * Create an Engine wrapping the given native core. Use {@link Engine.open} instead.
+   *
+   * @param core - The native engine core handle.
+   */
   constructor(core: NativeEngineCore) {
     this.#core = core;
     this.admin = new AdminClient(core);
   }
 
+  /**
+   * Close the engine, flushing pending writes and releasing resources.
+   *
+   * Idempotent -- safe to call multiple times.
+   */
   close(): void {
     if (this.#closed) {
       return;
@@ -73,20 +105,50 @@ export class Engine {
     }
   }
 
+  /**
+   * Read all telemetry counters and SQLite cache statistics.
+   *
+   * Returns a point-in-time snapshot with cumulative counters since engine open.
+   * All SQLite cache counters are aggregated across the reader connection pool.
+   * This method is safe to call from any context at any time.
+   *
+   * @returns Cumulative counters and cache statistics.
+   */
   telemetrySnapshot(): TelemetrySnapshot {
     this.#assertOpen();
     return telemetrySnapshotFromWire(parseNativeJson(this.#core.telemetrySnapshot()));
   }
 
+  /**
+   * Start building a query rooted at nodes of the given kind.
+   *
+   * @param kind - The node kind to query.
+   * @returns A new {@link Query} builder.
+   */
   nodes(kind: string): Query {
     this.#assertOpen();
     return new Query(this.#core, kind);
   }
 
+  /**
+   * Alias for {@link Engine.nodes}.
+   *
+   * @param kind - The node kind to query.
+   * @returns A new {@link Query} builder.
+   */
   query(kind: string): Query {
     return this.nodes(kind);
   }
 
+  /**
+   * Submit a write request (nodes, edges, chunks, etc.) to the database.
+   *
+   * @param request - The write request to submit.
+   * @param progressCallback - Optional callback invoked with feedback events.
+   * @param feedbackConfig - Timing thresholds for progress feedback.
+   * @returns A {@link WriteReceipt} summarizing the committed changes.
+   * @throws {@link FathomError} If the request contains invalid data or the write is rejected.
+   */
   write(
     request: WriteRequest,
     progressCallback?: ProgressCallback,
@@ -99,6 +161,14 @@ export class Engine {
     );
   }
 
+  /**
+   * Alias for {@link Engine.write}.
+   *
+   * @param request - The write request to submit.
+   * @param progressCallback - Optional callback invoked with feedback events.
+   * @param feedbackConfig - Timing thresholds for progress feedback.
+   * @returns A {@link WriteReceipt} summarizing the committed changes.
+   */
   submit(
     request: WriteRequest,
     progressCallback?: ProgressCallback,
@@ -107,6 +177,14 @@ export class Engine {
     return this.write(request, progressCallback, feedbackConfig);
   }
 
+  /**
+   * Update the last-accessed timestamp for a set of nodes.
+   *
+   * @param request - Specifies which logical IDs to touch and the timestamp.
+   * @param progressCallback - Optional callback invoked with feedback events.
+   * @param feedbackConfig - Timing thresholds for progress feedback.
+   * @returns A report indicating how many nodes were touched.
+   */
   touchLastAccessed(
     request: LastAccessTouchRequest,
     progressCallback?: ProgressCallback,

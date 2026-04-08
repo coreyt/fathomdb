@@ -102,6 +102,33 @@ Only one `Engine` may be open per database file (enforced by exclusive file
 lock).  Use the context manager or call `db.close()` explicitly to release
 resources.
 
+**TypeScript SDK:**
+
+```bash
+npm install fathomdb
+```
+
+```typescript
+import { Engine, WriteRequestBuilder, newId, newRowId } from "fathomdb";
+
+const engine = Engine.open("agent.db");
+
+const builder = new WriteRequestBuilder("ingest");
+builder.addNode({
+  rowId: newRowId(), logicalId: newId(), kind: "Document",
+  properties: { title: "Meeting notes" },
+});
+engine.write(builder.build());
+
+const rows = engine.nodes("Document").limit(10).execute();
+console.log(rows.nodes);
+
+engine.close();
+```
+
+Only one `Engine` may be open per database file (enforced by exclusive file
+lock).  Call `engine.close()` explicitly to release resources.
+
 **Go operator CLI:**
 
 ```bash
@@ -121,14 +148,17 @@ docs/             User and operator documentation
 dev/              Design documents and internal notes
 scripts/          Developer setup and CI helpers
 tooling/          Build-time configuration (SQLite env)
-.github/          CI workflows (Rust, Go, Python)
+tests/            Cross-language SDK consistency tests
+.github/          CI workflows (Rust, Go, Python, TypeScript)
 ```
 
 ## Test Coverage
 
-298+ tests across Rust, Go, and Python, organized in a 5-layer test plan
-covering unit tests, integration tests, cross-language round-trips, CLI
-smoke tests, and fuzz testing.
+330+ tests across Rust, Go, Python, and TypeScript, organized in a 5-layer test
+plan covering unit tests, integration tests, cross-language round-trips, CLI
+smoke tests, and fuzz testing.  A cross-language consistency harness
+(`tests/cross-language/`) proves that Python and TypeScript SDKs produce
+identical database state and can read each other's writes.
 
 ## License
 
