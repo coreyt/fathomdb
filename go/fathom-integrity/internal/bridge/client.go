@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sync"
 )
 
 // ProtocolVersion is the JSON protocol version exchanged between the Go CLI and
@@ -424,19 +426,73 @@ func (c Client) ExecuteWithFeedback(
 			return Response{}, fmt.Errorf("marshal request: %w", err)
 		}
 
+		const maxStdoutBytes = 64 * 1024 * 1024 // 64 MB
+		const maxStderrBytes = 1 * 1024 * 1024  // 1 MB
+
 		cmd := exec.CommandContext(ctx, c.BinaryPath) //nolint:gosec // G204: BinaryPath validated by validateBinaryPath at line 412
 		cmd.Stdin = bytes.NewReader(body)
 
+		stdoutPipe, err := cmd.StdoutPipe()
+		if err != nil {
+			return Response{}, fmt.Errorf("create stdout pipe: %w", err)
+		}
+		stderrPipe, err := cmd.StderrPipe()
+		if err != nil {
+			return Response{}, fmt.Errorf("create stderr pipe: %w", err)
+		}
+
+		if err := cmd.Start(); err != nil {
+			return Response{}, fmt.Errorf("start bridge: %w", err)
+		}
+
 		var stdout bytes.Buffer
 		var stderr bytes.Buffer
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
+		var stderrErr error
+		// F12: Bound stdout/stderr buffers to prevent unbounded memory growth.
+		// Read stdout and stderr concurrently to avoid deadlocks when the
+		// subprocess fills one pipe buffer while we are blocked reading the other.
+		// After capturing the limited bytes, discard any remaining output so
+		// the subprocess is not blocked on a full pipe.
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, stderrErr = io.Copy(&stderr, io.LimitReader(stderrPipe, maxStderrBytes))
+			if stderrErr == nil {
+				_, stderrErr = io.Copy(io.Discard, stderrPipe)
+			}
+		}()
+		if _, err := io.Copy(&stdout, io.LimitReader(stdoutPipe, maxStdoutBytes)); err != nil {
+			return Response{}, fmt.Errorf("read bridge stdout: %w", err)
+		}
+		// Drain any remaining stdout so the subprocess can exit.
+		if _, err := io.Copy(io.Discard, stdoutPipe); err != nil {
+			return Response{}, fmt.Errorf("drain bridge stdout: %w", err)
+		}
+		wg.Wait()
+		if stderrErr != nil {
+			return Response{}, fmt.Errorf("read bridge stderr: %w", stderrErr)
+		}
 
-		if err := cmd.Run(); err != nil {
+		if err := cmd.Wait(); err != nil {
 			return Response{}, fmt.Errorf("run bridge: %w: %s", err, stderr.String())
 		}
 
-		return decodeResponse(stdout.Bytes())
+		resp, err := decodeResponse(stdout.Bytes())
+		if err != nil {
+			return Response{}, err
+		}
+		// F6: Include stderr in error when bridge returns ok:false so that
+		// Rust diagnostic context is not lost.
+		if !resp.OK && stderr.Len() > 0 {
+			stderrText := stderr.String()
+			if resp.Message != "" {
+				resp.Message += "\nstderr: " + stderrText
+			} else {
+				resp.Message = "stderr: " + stderrText
+			}
+		}
+		return resp, nil
 	})
 }
 

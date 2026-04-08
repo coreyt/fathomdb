@@ -3,9 +3,11 @@ package bridge
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -435,4 +437,113 @@ func phases(events []ResponseCycleEvent) []ResponseCyclePhase {
 		result = append(result, event.Phase)
 	}
 	return result
+}
+
+func TestStderrIncludedOnOkFalse(t *testing.T) {
+	script := `#!/usr/bin/env bash
+echo "rust: diagnostics from engine" >&2
+printf '%s\n' '{"protocol_version":1,"ok":false,"message":"integrity check failed","error_code":"integrity_failure","payload":{}}'
+`
+	binaryPath := writeShellBridge(t, script)
+
+	client := Client{BinaryPath: binaryPath}
+	resp, err := client.Execute(context.Background(), Request{
+		DatabasePath: "/tmp/fathom.db",
+		Command:      CommandCheckIntegrity,
+	})
+
+	require.NoError(t, err)
+	require.False(t, resp.OK)
+	require.Contains(t, resp.Message, "integrity check failed")
+	require.Contains(t, resp.Message, "stderr:")
+	require.Contains(t, resp.Message, "rust: diagnostics from engine")
+}
+
+func TestStderrNotIncludedOnOkTrue(t *testing.T) {
+	script := `#!/usr/bin/env bash
+echo "some debug info" >&2
+printf '%s\n' '{"protocol_version":1,"ok":true,"message":"all good","payload":{}}'
+`
+	binaryPath := writeShellBridge(t, script)
+
+	client := Client{BinaryPath: binaryPath}
+	resp, err := client.Execute(context.Background(), Request{
+		DatabasePath: "/tmp/fathom.db",
+		Command:      CommandCheckIntegrity,
+	})
+
+	require.NoError(t, err)
+	require.True(t, resp.OK)
+	require.NotContains(t, resp.Message, "stderr:")
+}
+
+func TestStderrOnOkFalseWithEmptyMessage(t *testing.T) {
+	script := `#!/usr/bin/env bash
+echo "engine context" >&2
+printf '%s\n' '{"protocol_version":1,"ok":false,"message":"","error_code":"execution_failure","payload":{}}'
+`
+	binaryPath := writeShellBridge(t, script)
+
+	client := Client{BinaryPath: binaryPath}
+	resp, err := client.Execute(context.Background(), Request{
+		DatabasePath: "/tmp/fathom.db",
+		Command:      CommandCheckIntegrity,
+	})
+
+	require.NoError(t, err)
+	require.False(t, resp.OK)
+	require.Contains(t, resp.Message, "stderr: engine context")
+}
+
+func TestStdoutLimitTruncatesLargeOutput(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping large-output test in short mode")
+	}
+	// Use dd to quickly generate 65 MB of null bytes on stdout.
+	// The output will be truncated to 64 MB and will not be valid JSON.
+	script := `#!/usr/bin/env bash
+dd if=/dev/zero bs=1048576 count=65 2>/dev/null
+`
+	binaryPath := writeShellBridge(t, script)
+
+	client := Client{BinaryPath: binaryPath}
+	_, err := client.Execute(context.Background(), Request{
+		DatabasePath: "/tmp/fathom.db",
+		Command:      CommandCheckIntegrity,
+	})
+
+	// The output is truncated so it will not be valid JSON.
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "decode bridge response")
+}
+
+func TestStderrLimitTruncatesLargeStderr(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping large-output test in short mode")
+	}
+	// Use dd to quickly generate 2 MB of data on stderr.
+	// The stderr should be truncated to 1 MB.
+	script := fmt.Sprintf(`#!/usr/bin/env bash
+# Write 2 MB of zeroes to fd 3, then redirect fd 3 to stderr
+exec 3>&2
+dd if=/dev/zero bs=1048576 count=2 >&3 2>/dev/null
+exec 3>&-
+printf '%%s\n' '{"protocol_version":1,"ok":false,"message":"fail","error_code":"execution_failure","payload":{}}'
+`)
+	binaryPath := writeShellBridge(t, script)
+
+	client := Client{BinaryPath: binaryPath}
+	resp, err := client.Execute(context.Background(), Request{
+		DatabasePath: "/tmp/fathom.db",
+		Command:      CommandCheckIntegrity,
+	})
+
+	require.NoError(t, err)
+	require.False(t, resp.OK)
+	require.Contains(t, resp.Message, "stderr:")
+	// The stderr content should be truncated to at most 1 MB
+	stderrIdx := strings.Index(resp.Message, "stderr: ")
+	require.Greater(t, stderrIdx, -1)
+	stderrContent := resp.Message[stderrIdx+len("stderr: "):]
+	require.LessOrEqual(t, len(stderrContent), 1*1024*1024)
 }
