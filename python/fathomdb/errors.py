@@ -11,6 +11,7 @@ from ._fathomdb import (
     SchemaError,
     SqliteError,
     WriterRejectedError,
+    WriterTimedOutError,
 )
 
 class BuilderValidationError(ValueError):
@@ -28,4 +29,5 @@ __all__ = [
     "SchemaError",
     "SqliteError",
     "WriterRejectedError",
+    "WriterTimedOutError",
 ]

@@ -62,6 +62,8 @@ pub enum EngineError {
     Io(#[from] std::io::Error),
     #[error("writer actor rejected request: {0}")]
     WriterRejected(String),
+    #[error("write timed out (may still commit): {0}")]
+    WriterTimedOut(String),
     #[error("invalid write request: {0}")]
     InvalidWrite(String),
     #[error("bridge error: {0}")]

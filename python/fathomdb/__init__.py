@@ -101,6 +101,7 @@ from .errors import (
     SchemaError,
     SqliteError,
     WriterRejectedError,
+    WriterTimedOutError,
 )
 
 __all__ = [
@@ -199,6 +200,7 @@ __all__ = [
     "WriteRequestBuilder",
     "WriteRequest",
     "WriterRejectedError",
+    "WriterTimedOutError",
     "__version__",
     "new_id",
     "new_row_id",

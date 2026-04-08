@@ -1237,9 +1237,12 @@ mod tests {
             EngineError::Schema(fathomdb_schema::SchemaError::MissingCapability("test")),
             EngineError::Io(std::io::Error::other("x")),
             EngineError::WriterRejected("w".into()),
+            EngineError::WriterTimedOut("t".into()),
             EngineError::InvalidWrite("i".into()),
             EngineError::Bridge("b".into()),
             EngineError::CapabilityMissing("c".into()),
+            EngineError::DatabaseLocked("d".into()),
+            EngineError::InvalidConfig("cfg".into()),
         ];
         for variant in variants {
             // map_engine_error is not pub, so exercise it through the

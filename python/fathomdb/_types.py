@@ -187,6 +187,15 @@ def _decode_json(value: str) -> Any:
 
 def _from_wire_dataclass(cls, payload: dict[str, Any]):
     allowed = {item.name for item in fields(cls)}
+    unknown = set(payload.keys()) - allowed
+    if unknown:
+        import logging
+
+        logging.getLogger("fathomdb").debug(
+            "_from_wire_dataclass: ignoring unknown fields %s for %s",
+            unknown,
+            cls.__name__,
+        )
     filtered = {key: value for key, value in payload.items() if key in allowed}
     return cls(**filtered)
 

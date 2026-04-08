@@ -29,6 +29,7 @@ create_exception!(_fathomdb, SchemaError, FathomError);
 create_exception!(_fathomdb, InvalidWriteError, FathomError);
 create_exception!(_fathomdb, CapabilityMissingError, FathomError);
 create_exception!(_fathomdb, WriterRejectedError, FathomError);
+create_exception!(_fathomdb, WriterTimedOutError, FathomError);
 create_exception!(_fathomdb, BridgeError, FathomError);
 create_exception!(_fathomdb, DatabaseLockedError, FathomError);
 create_exception!(_fathomdb, IoError, FathomError);
@@ -669,10 +670,12 @@ fn map_engine_error(error: EngineError) -> PyErr {
         EngineError::Schema(error) => SchemaError::new_err(error.to_string()),
         EngineError::Io(error) => IoError::new_err(error.to_string()),
         EngineError::WriterRejected(message) => WriterRejectedError::new_err(message),
+        EngineError::WriterTimedOut(message) => WriterTimedOutError::new_err(message),
         EngineError::InvalidWrite(message) => InvalidWriteError::new_err(message),
         EngineError::Bridge(message) => BridgeError::new_err(message),
         EngineError::CapabilityMissing(message) => CapabilityMissingError::new_err(message),
         EngineError::DatabaseLocked(message) => DatabaseLockedError::new_err(message),
+        EngineError::InvalidConfig(message) => FathomError::new_err(message),
     }
 }
 
@@ -697,6 +700,10 @@ fn _fathomdb(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add(
         "WriterRejectedError",
         module.py().get_type::<WriterRejectedError>(),
+    )?;
+    module.add(
+        "WriterTimedOutError",
+        module.py().get_type::<WriterTimedOutError>(),
     )?;
     module.add("BridgeError", module.py().get_type::<BridgeError>())?;
     module.add(

@@ -756,6 +756,7 @@ fn engine_error_code(error: &EngineError) -> Option<String> {
         EngineError::Schema(_) => "schema_error",
         EngineError::Io(_) => "io_error",
         EngineError::WriterRejected(_) => "writer_rejected",
+        EngineError::WriterTimedOut(_) => "writer_timed_out",
         EngineError::InvalidWrite(_) => "invalid_write",
         EngineError::Bridge(_) => "bridge_error",
         EngineError::CapabilityMissing(_) => "capability_missing",

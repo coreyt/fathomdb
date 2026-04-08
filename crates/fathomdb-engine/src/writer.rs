@@ -186,6 +186,11 @@ const MAX_OPERATIONAL: usize = 10_000;
 const MAX_TOTAL_ITEMS: usize = 100_000;
 
 /// How long `submit` / `touch_last_accessed` wait for the writer thread to reply.
+///
+/// After this timeout the caller receives [`EngineError::WriterTimedOut`] — the
+/// writer thread is **not** cancelled, so the write may still commit.  This is
+/// intentionally distinct from [`EngineError::WriterRejected`], which signals
+/// that the writer thread has disconnected and the write will **not** commit.
 const WRITER_REPLY_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// A batch of graph mutations to be applied atomically in a single `SQLite` transaction.
@@ -412,13 +417,12 @@ impl Drop for WriterActor {
 /// Wait for a reply from the writer thread, with a timeout.
 fn recv_with_timeout<T>(rx: &mpsc::Receiver<Result<T, EngineError>>) -> Result<T, EngineError> {
     rx.recv_timeout(WRITER_REPLY_TIMEOUT)
-        .map_err(|error| {
-            EngineError::WriterRejected(match error {
-                mpsc::RecvTimeoutError::Timeout => {
-                    "write timed out waiting for writer thread reply".to_owned()
-                }
-                mpsc::RecvTimeoutError::Disconnected => error.to_string(),
-            })
+        .map_err(|error| match error {
+            mpsc::RecvTimeoutError::Timeout => EngineError::WriterTimedOut(
+                "write timed out waiting for writer thread reply — the write may still commit"
+                    .to_owned(),
+            ),
+            mpsc::RecvTimeoutError::Disconnected => EngineError::WriterRejected(error.to_string()),
         })
         .and_then(|result| result)
 }
