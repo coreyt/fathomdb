@@ -17,6 +17,7 @@ harness = false
 workspace = true
 
 [features]
+node = ["dep:napi", "dep:napi-derive"]
 python = ["dep:pyo3", "dep:pyo3-log"]
 sqlite-vec = ["fathomdb-engine/sqlite-vec"]
 tracing = ["fathomdb-engine/tracing"]
@@ -25,10 +26,15 @@ tracing = ["fathomdb-engine/tracing"]
 fathomdb-engine.workspace = true
 fathomdb-query.workspace = true
 fathomdb-schema.workspace = true
+napi = { workspace = true, optional = true }
+napi-derive = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-log = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
+
+[build-dependencies]
+napi-build.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true

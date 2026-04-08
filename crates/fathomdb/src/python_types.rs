@@ -1,4 +1,4 @@
-#![cfg(feature = "python")]
+#![cfg(any(feature = "python", feature = "node"))]
 
 use serde::{Deserialize, Serialize};
 

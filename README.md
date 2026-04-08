@@ -29,6 +29,9 @@ Three layers:
   API surface. pip-installable with optional sqlite-vec support for
   vector-capable builds.
 
+- **TypeScript SDK** (`typescript/packages/fathomdb`) -- in-repo Node.js SDK
+  surface backed by a `napi-rs` addon and consumer harness application.
+
 - **Go operator CLI** (`fathom-integrity`) -- integrity checks, recovery,
   repair, projection rebuild, safe export, provenance trace/excise,
   operational collection management, and vector regeneration. Communicates with
@@ -112,6 +115,7 @@ cd go/fathom-integrity && go build ./cmd/fathom-integrity
 ```
 crates/           Rust workspace (fathomdb, fathomdb-engine, fathomdb-query, fathomdb-schema)
 python/           Python SDK (PyO3 bindings) and examples
+typescript/       TypeScript SDK workspace and consumer harness
 go/               Go operator tooling (fathom-integrity CLI)
 docs/             User and operator documentation
 dev/              Design documents and internal notes

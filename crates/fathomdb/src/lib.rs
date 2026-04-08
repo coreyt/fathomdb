@@ -1,9 +1,13 @@
 use std::path::{Path, PathBuf};
 
 mod feedback;
+#[cfg(feature = "node")]
+mod node;
+#[cfg(feature = "node")]
+mod node_types;
 #[cfg(feature = "python")]
 mod python;
-#[cfg(feature = "python")]
+#[cfg(any(feature = "python", feature = "node"))]
 mod python_types;
 mod write_request_builder;
 

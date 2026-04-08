@@ -15,6 +15,9 @@ coverage.out
 .DS_Store
 __pycache__/
 _site/
+typescript/node_modules/
+typescript/packages/*/dist/
+typescript/apps/*/dist/
 
 # bream cache directory
 .bream-cache/

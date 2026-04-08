@@ -1,0 +1,32 @@
+name: TypeScript
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  typescript:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+      - run: npm install
+        working-directory: typescript
+      - run: cargo check --tests -p fathomdb --features node
+      - run: npm run typecheck
+        working-directory: typescript
+      - run: npm test
+        working-directory: typescript

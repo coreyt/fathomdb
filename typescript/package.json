@@ -1,0 +1,13 @@
+{
+  "name": "fathomdb-typescript-workspace",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w fathomdb && npm run build -w @fathomdb/sdk-harness",
+    "test": "npm run test -w fathomdb && npm run test -w @fathomdb/sdk-harness",
+    "typecheck": "npm run typecheck -w fathomdb && npm run typecheck -w @fathomdb/sdk-harness"
+  }
+}
