@@ -241,6 +241,39 @@ jobs:
       - run: npm install --ignore-scripts
       - run: npm audit --audit-level=high --omit=dev
 
+  # Smoke test that napi prebuilds can be produced on each target platform.
+  # This catches breakage in the native binding before release time.
+  napi-prebuild:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - run: npm install -g @napi-rs/cli@2
+      - name: Build native binding
+        working-directory: crates/fathomdb
+        run: napi build --release --target ${{ matrix.target }} --features node,sqlite-vec,tracing --platform
+      - name: Verify output
+        shell: bash
+        working-directory: crates/fathomdb
+        run: ls -la fathomdb.*.node
+
   semgrep:
     runs-on: ubuntu-latest
     timeout-minutes: 15

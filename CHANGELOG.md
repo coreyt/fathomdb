@@ -5,6 +5,27 @@ All notable changes to FathomDB are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **macOS CI** — Rust, Go, and Python tests now run on `macos-latest`
+- **Multi-platform Python wheels** — release builds manylinux (x86_64, aarch64),
+  macOS (x86_64, arm64), and Windows (x86_64) via `PyO3/maturin-action` matrix
+- **napi-rs prebuilt binaries** — release builds native bindings for
+  `linux-x64-gnu`, `darwin-x64`, `darwin-arm64`, and `win32-x64`, bundled into
+  a single npm package
+- **napi prebuild smoke test** — CI matrix validates native binding builds on
+  all target platforms for every PR
+- **npm provenance** — `npm publish --provenance` via OIDC trusted publisher
+  (no `NPM_TOKEN` secret required)
+- **Package registry metadata** — `readme`, `keywords`, `categories`,
+  `homepage` added to Cargo.toml; `license`, `authors`, `classifiers`,
+  `urls` added to pyproject.toml; `author`, `homepage`, `bugs` added to
+  package.json
+- **Consolidated MIT license** — single `LICENSE` file, dropped dual-license
+- **CHANGELOG.md** — this file
+
 ## [0.2.0] - 2026-04-08
 
 ### Added
@@ -90,6 +111,7 @@ These are known limitations in the current release:
 - Schema migration system (13 versioned migrations)
 - Supersession model (append-only, no destructive updates)
 
+[Unreleased]: https://github.com/coreyt/fathomdb/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/coreyt/fathomdb/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/coreyt/fathomdb/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/coreyt/fathomdb/releases/tag/v0.1.0
