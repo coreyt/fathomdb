@@ -109,6 +109,16 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - run: cargo test --workspace
 
+  rust-test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - run: cargo test --workspace
+
   go-lint:
     runs-on: ubuntu-latest
     defaults:
@@ -161,6 +171,25 @@ jobs:
           choco install sqlite -y --no-progress
           echo "C:\ProgramData\chocolatey\lib\SQLite\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - run: go test ./internal/... ./cmd/...
+
+  go-test-macos:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: go/fathom-integrity
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go/fathom-integrity/go.mod
+          cache-dependency-path: go/fathom-integrity/go.mod
+      - name: Install project-local SQLite
+        working-directory: .
+        run: |
+          bash scripts/install-project-sqlite.sh
+          . tooling/sqlite.env
+          echo "$GITHUB_WORKSPACE/.local/sqlite-$SQLITE_VERSION/bin" >> "$GITHUB_PATH"
+      - run: go test $(go list ./... | grep -v /test/e2e)
 
   go-e2e:
     runs-on: ubuntu-latest
