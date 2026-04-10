@@ -35,3 +35,74 @@ jobs:
           cache-dependency-path: go/fathom-integrity/go.mod
       - run: go test ./internal/commands -run='^$' -fuzz=FuzzSanitizeRecoveredSQL_Idempotent -fuzztime=10s
       - run: go test ./internal/bridge -run='^$' -fuzz=FuzzDecodeResponse -fuzztime=10s
+
+  rust-scale-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FATHOM_RUST_STRESS_DURATION_SECONDS: "60"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+      - uses: taiki-e/install-action@e9e8e031bcd90cdbe8ac6bb1d376f8596e587fbf # v2.70.2
+        with:
+          tool: cargo-nextest
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - run: cargo nextest run -p fathomdb --test scale --run-ignored=only
+
+  rust-tracing-stress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      FATHOM_RUST_TRACING_STRESS_DURATION_SECONDS: "60"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - run: cargo test -p fathomdb-engine --features tracing --test tracing_events tracing_events_continue_under_concurrent_load
+
+  python-stress-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      FATHOM_PY_STRESS_DURATION_SECONDS: "60"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.11"
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+      - uses: mozilla-actions/sccache-action@d651010b8da762cde178750d8eda7b5febfe147a # v0.0.9
+      - run: python -m pip install --upgrade pip maturin pytest pytest-timeout
+      - run: python -m pip install -e python --no-build-isolation
+      - run: PYTHONPATH=python pytest python/tests/test_stress.py -v --timeout=120
+
+  typescript-observability-harness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      FATHOM_TS_STRESS_DURATION_SECONDS: "60"
+    defaults:
+      run:
+        working-directory: typescript
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: typescript/package-lock.json
+      - run: npm ci
+      - run: cargo build -p fathomdb --features node
+      - run: npm run build -w fathomdb
+      - run: npm test --workspace @fathomdb/sdk-harness
