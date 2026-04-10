@@ -167,12 +167,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
-      # npm trusted publishing (OIDC) requires npm >= 11.5.1. Node 22 LTS
-      # ships with npm 10.x, so we explicitly upgrade. Without this, npm
-      # publish either falls back to token auth (404 from registry) or
-      # errors with ENEEDAUTH because it doesn't know how to use the
-      # GHA OIDC token.
-      - run: npm install -g npm@latest
+          registry-url: "https://registry.npmjs.org"
       # Pull all platform binaries into the package directory as siblings of
       # dist/. The existing loader in src/native.ts looks for
       # fathomdb.<platform>-<arch>.node relative to the compiled JS.
@@ -185,7 +180,11 @@ jobs:
       - run: npm ci
         working-directory: typescript
       - run: npm run build
-      - run: npm publish --provenance --access public
+      # npm OIDC trusted publishing requires npm >= 11.5.1 but Node 22
+      # ships with npm 10.x. Using npx to invoke the latest npm avoids
+      # the MODULE_NOT_FOUND bug from `npm install -g npm@latest` while
+      # still getting a version that supports OIDC.
+      - run: npx npm@latest publish --provenance --access public
 
   github-release:
     runs-on: ubuntu-latest

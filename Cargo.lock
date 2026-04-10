@@ -326,7 +326,7 @@ checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 
 [[package]]
 name = "fathomdb"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "criterion",
  "fathomdb-engine",
@@ -345,7 +345,7 @@ dependencies = [
 
 [[package]]
 name = "fathomdb-engine"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "fathomdb-query",
  "fathomdb-schema",
@@ -365,7 +365,7 @@ dependencies = [
 
 [[package]]
 name = "fathomdb-query"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "insta",
  "rstest",
@@ -375,7 +375,7 @@ dependencies = [
 
 [[package]]
 name = "fathomdb-schema"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "rusqlite",
  "sqlite-vec",

@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-04-10
+
+### Fixed
+
+- **npm OIDC trusted publishing (final fix)**: use `npx npm@latest publish`
+  to run npm >= 11.5.1 for the publish step. Node 22 ships npm 10.x which
+  doesn't support OIDC; `npm install -g npm@latest` breaks with
+  MODULE_NOT_FOUND; and removing `registry-url` from setup-node causes
+  ENEEDAUTH. The `npx` approach avoids all three issues — it downloads
+  npm 11.x on-demand without corrupting the global install, while
+  setup-node's `.npmrc` + `registry-url` provides the registry config.
+
+### Note
+
+Once trusted publishing is enabled on an npm package, the registry rejects
+all non-OIDC publishes (including local `npm publish`). This is by design.
+Versions 0.2.1–0.2.4 failed to publish to npm due to the OIDC setup
+issues above; 0.2.5 is the first version published to all three
+registries via CI.
+
 ## [0.2.4] - 2026-04-09
 
 ### Fixed
@@ -168,7 +188,8 @@ These are known limitations in the current release:
 - Schema migration system (13 versioned migrations)
 - Supersession model (append-only, no destructive updates)
 
-[Unreleased]: https://github.com/coreyt/fathomdb/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/coreyt/fathomdb/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/coreyt/fathomdb/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/coreyt/fathomdb/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/coreyt/fathomdb/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/coreyt/fathomdb/compare/v0.2.1...v0.2.2
