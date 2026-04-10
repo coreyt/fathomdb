@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-04-09
+
+### Fixed
+
+- **npm OIDC trusted publishing**: removed `registry-url` from
+  `actions/setup-node` in the publish-npm job. The action was injecting
+  a placeholder `NODE_AUTH_TOKEN` env var and writing an `.npmrc` that
+  caused `npm publish` to attempt token-based auth and bypass OIDC
+  trusted publishing entirely. Without `registry-url`, npm discovers
+  the GitHub OIDC token automatically and trusted publishing works.
+
+### Note
+
+0.2.2 was the first version published to crates.io and PyPI via the
+automated release pipeline. npm was stuck because of the OIDC bug
+above. 0.2.3 is the first version published successfully to all three
+registries.
+
 ## [0.2.2] - 2026-04-09
 
 ### Fixed
@@ -138,7 +156,8 @@ These are known limitations in the current release:
 - Schema migration system (13 versioned migrations)
 - Supersession model (append-only, no destructive updates)
 
-[Unreleased]: https://github.com/coreyt/fathomdb/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/coreyt/fathomdb/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/coreyt/fathomdb/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/coreyt/fathomdb/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/coreyt/fathomdb/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/coreyt/fathomdb/compare/v0.1.1...v0.2.0
