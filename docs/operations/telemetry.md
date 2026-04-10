@@ -105,8 +105,15 @@ if total > 0:
 | `cache_writes` | `int` | Pages written to cache |
 | `cache_spills` | `int` | Cache pages spilled to disk |
 
-All counters are cumulative since engine open. They never reset or
-decrease (except by closing and reopening the engine).
+The operation counters (`queries_total`, `writes_total`,
+`write_rows_total`, `errors_total`, `admin_ops_total`) are cumulative since
+engine open. They never reset or decrease except by closing and reopening
+the engine.
+
+The SQLite cache fields are also cumulative in intent, but concurrent
+sampling is only guaranteed to be safe and eventually consistent. Under
+live concurrent load, rely on them for non-negative activity and trend
+monitoring rather than strict per-snapshot monotonicity.
 
 ### Periodic Collection Example
 
@@ -162,6 +169,17 @@ threads, not instantaneously synchronized. For monitoring purposes this is
 sufficient; for exact point-in-time snapshots under concurrent load, small
 discrepancies between counters (e.g., `writes_total` incrementing slightly
 before `write_rows_total`) are expected and harmless.
+
+The weekly robustness suite exercises this directly with concurrent
+read/write telemetry stress tests in:
+
+- `python/tests/test_stress.py`
+- `crates/fathomdb/tests/scale.rs`
+- `typescript/apps/sdk-harness/src/scenarios/observability-telemetry.ts`
+
+Those tests emit end-of-test summaries with the observed totals and sample
+counts. If you want to see the Python and Rust summaries live, run the test
+commands with `pytest -s` or `cargo test -- --nocapture`.
 
 ### Integration with Response-Cycle Feedback
 
