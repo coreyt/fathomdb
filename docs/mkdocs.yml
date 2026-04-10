@@ -48,6 +48,7 @@ nav:
   - Home: index.md
   - Getting Started: getting-started.md
   - Concepts:
+    - Architecture: concepts/architecture.md
     - Data Model: concepts/data-model.md
     - Temporal Model & Supersession: concepts/temporal-model.md
     - Operational Store: concepts/operational-store.md
