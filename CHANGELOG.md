@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-04-09
+
+### Fixed
+
+- **npm OIDC trusted publishing (take 2)**: explicitly upgrade npm to
+  the latest version (>= 11.5.1) before publishing. Trusted publishing
+  requires npm 11.5.1+, but Node 20 LTS ships with npm 10.x and Node 22
+  ships with npm 10.x as well. Without the upgrade, `npm publish` either
+  errors with `ENEEDAUTH` or falls back to token-based auth and 404s.
+- **setup-node configuration**: bumped to Node 22 (away from Node 20
+  which is being deprecated by GitHub Actions in 2026).
+
 ## [0.2.3] - 2026-04-09
 
 ### Fixed
@@ -156,7 +168,8 @@ These are known limitations in the current release:
 - Schema migration system (13 versioned migrations)
 - Supersession model (append-only, no destructive updates)
 
-[Unreleased]: https://github.com/coreyt/fathomdb/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/coreyt/fathomdb/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/coreyt/fathomdb/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/coreyt/fathomdb/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/coreyt/fathomdb/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/coreyt/fathomdb/compare/v0.2.0...v0.2.1

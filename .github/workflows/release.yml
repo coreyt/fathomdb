@@ -166,13 +166,13 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: "20"
-          # NOTE: do NOT set registry-url. setup-node injects a placeholder
-          # NODE_AUTH_TOKEN env var and writes an .npmrc using it, which
-          # causes `npm publish` to attempt token-based auth and bypass OIDC
-          # trusted publishing entirely (resulting in a 404 even though the
-          # provenance attestation succeeds). Without registry-url, npm
-          # discovers the GHA OIDC token automatically.
+          node-version: "22"
+      # npm trusted publishing (OIDC) requires npm >= 11.5.1. Node 22 LTS
+      # ships with npm 10.x, so we explicitly upgrade. Without this, npm
+      # publish either falls back to token auth (404 from registry) or
+      # errors with ENEEDAUTH because it doesn't know how to use the
+      # GHA OIDC token.
+      - run: npm install -g npm@latest
       # Pull all platform binaries into the package directory as siblings of
       # dist/. The existing loader in src/native.ts looks for
       # fathomdb.<platform>-<arch>.node relative to the compiled JS.
