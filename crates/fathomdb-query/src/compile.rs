@@ -336,6 +336,20 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
                                 "\n                      AND src.source_ref = ?{bind_index}"
                             );
                         }
+                        Predicate::ContentRefNotNull => {
+                            let _ = write!(
+                                &mut sql,
+                                "\n                      AND src.content_ref IS NOT NULL"
+                            );
+                        }
+                        Predicate::ContentRefEq(uri) => {
+                            binds.push(BindValue::Text(uri.clone()));
+                            let bind_index = binds.len();
+                            let _ = write!(
+                                &mut sql,
+                                "\n                      AND src.content_ref = ?{bind_index}"
+                            );
+                        }
                         Predicate::KindEq(_) => {
                             // Already filtered by ast.root_kind above.
                         }
@@ -384,7 +398,7 @@ traversed(logical_id, depth, visited) AS (
     let _ = write!(
         &mut sql,
         "
-SELECT DISTINCT n.row_id, n.logical_id, n.kind, n.properties
+SELECT DISTINCT n.row_id, n.logical_id, n.kind, n.properties, n.content_ref
 FROM {} {source_alias}
 JOIN nodes n ON n.logical_id = {source_alias}.logical_id
     AND n.superseded_at IS NULL
@@ -462,6 +476,14 @@ WHERE 1 = 1",
                     binds.push(BindValue::Text(source_ref.clone()));
                     let bind_index = binds.len();
                     let _ = write!(&mut sql, "\n  AND n.source_ref = ?{bind_index}");
+                }
+                Predicate::ContentRefNotNull => {
+                    let _ = write!(&mut sql, "\n  AND n.content_ref IS NOT NULL");
+                }
+                Predicate::ContentRefEq(uri) => {
+                    binds.push(BindValue::Text(uri.clone()));
+                    let bind_index = binds.len();
+                    let _ = write!(&mut sql, "\n  AND n.content_ref = ?{bind_index}");
                 }
             }
         }

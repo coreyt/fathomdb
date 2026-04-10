@@ -256,6 +256,7 @@ struct PendingChunkInsert {
     text_content: String,
     byte_start: Option<i64>,
     byte_end: Option<i64>,
+    content_hash: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -346,6 +347,7 @@ impl WriteRequestBuilder {
         source_ref: Option<String>,
         upsert: bool,
         chunk_policy: ChunkPolicy,
+        content_ref: Option<String>,
     ) -> NodeHandle {
         let handle = NodeHandle {
             builder_id: self.builder_id,
@@ -360,6 +362,7 @@ impl WriteRequestBuilder {
             source_ref,
             upsert,
             chunk_policy,
+            content_ref,
         });
         handle
     }
@@ -417,6 +420,7 @@ impl WriteRequestBuilder {
         text_content: impl Into<String>,
         byte_start: Option<i64>,
         byte_end: Option<i64>,
+        content_hash: Option<String>,
     ) -> ChunkHandle {
         let id = id.into();
         let node = node.into();
@@ -430,6 +434,7 @@ impl WriteRequestBuilder {
             text_content: text_content.into(),
             byte_start,
             byte_end,
+            content_hash,
         });
         ChunkHandle {
             builder_id: self.builder_id,
@@ -640,6 +645,7 @@ impl WriteRequestBuilder {
                     text_content: chunk.text_content,
                     byte_start: chunk.byte_start,
                     byte_end: chunk.byte_end,
+                    content_hash: chunk.content_hash,
                 })
             })
             .collect::<Result<Vec<_>, EngineError>>()?;

@@ -33,6 +33,18 @@ db.nodes("Entity").filter_kind_eq("Person")                  # exact kind
 db.nodes("Document").filter_source_ref_eq("ingest-run-42")   # provenance anchor
 ```
 
+### Content reference filters
+
+Filter nodes that reference external content:
+
+```python
+# All nodes with external content attached
+db.nodes("Document").filter_content_ref_not_null()
+
+# Nodes pointing to a specific external resource
+db.nodes("Document").filter_content_ref_eq("s3://docs/q4-report.pdf")
+```
+
 ### JSON property filters
 
 Paths use SQLite JSON path syntax -- `$.field_name` for a top-level key.
@@ -164,7 +176,7 @@ rows.was_degraded  # bool -- True if the engine fell back to a simpler plan
 ```
 
 Each `NodeRow` has: `row_id`, `logical_id`, `kind`, `properties` (decoded
-dict), and `last_accessed_at`.
+dict), `content_ref` (string or `None`), and `last_accessed_at`.
 
 ### compile()
 
@@ -238,6 +250,8 @@ for slot in results.expansions:
 | Match by logical ID | `filter_logical_id_eq(id)` |
 | Match by kind | `filter_kind_eq(kind)` |
 | Match by source ref | `filter_source_ref_eq(ref)` |
+| Has external content | `filter_content_ref_not_null()` |
+| Match by content URI | `filter_content_ref_eq(uri)` |
 | JSON text equality | `filter_json_text_eq(path, value)` |
 | JSON bool equality | `filter_json_bool_eq(path, value)` |
 | JSON integer range | `filter_json_integer_gt/gte/lt/lte(path, value)` |
@@ -273,6 +287,16 @@ for (const node of rows.nodes) {
   console.log(node.logicalId, node.properties);
 }
 
+// Content reference filters
+const extDocs = engine.nodes("Document")
+  .filterContentRefNotNull()
+  .limit(20)
+  .execute();
+
+const specific = engine.nodes("Document")
+  .filterContentRefEq("s3://docs/q4-report.pdf")
+  .execute();
+
 // Text search
 const ftsRows = engine.nodes("Document")
   .textSearch("architecture review", 50)
@@ -302,9 +326,12 @@ engine.close();
 | Python | TypeScript |
 |--------|-----------|
 | `filter_logical_id_eq(id)` | `filterLogicalIdEq(id)` |
+| `filter_content_ref_not_null()` | `filterContentRefNotNull()` |
+| `filter_content_ref_eq(uri)` | `filterContentRefEq(uri)` |
 | `filter_json_text_eq(path, val)` | `filterJsonTextEq(path, val)` |
 | `traverse(direction=..., label=..., max_depth=...)` | `traverse({ direction, label, maxDepth })` |
 | `expand(slot=..., direction=..., label=..., max_depth=...)` | `expand({ slot, direction, label, maxDepth })` |
 | `rows.was_degraded` | `rows.wasDegraded` |
 | `node.logical_id` | `node.logicalId` |
+| `node.content_ref` | `node.contentRef` |
 | `node.last_accessed_at` | `node.lastAccessedAt` |

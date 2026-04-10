@@ -145,6 +145,25 @@ export class Query {
   }
 
   /**
+   * Filter nodes to those where `content_ref` is not NULL (i.e. content proxy nodes).
+   *
+   * @returns A new Query with the filter applied.
+   */
+  filterContentRefNotNull(): Query {
+    return this.#withStep({ type: "filter_content_ref_not_null" });
+  }
+
+  /**
+   * Filter nodes to those with the given `content_ref` URI.
+   *
+   * @param contentRef - The content reference URI to match.
+   * @returns A new Query with the filter applied.
+   */
+  filterContentRefEq(contentRef: string): Query {
+    return this.#withStep({ type: "filter_content_ref_eq", content_ref: contentRef });
+  }
+
+  /**
    * Filter nodes where the JSON property at `path` equals `value`.
    *
    * @param path - JSON path expression.

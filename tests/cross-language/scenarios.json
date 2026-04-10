@@ -290,6 +290,72 @@
         }
       ],
       "admin": ["check_integrity"]
+    },
+    {
+      "name": "external_content_objects",
+      "writes": [
+        {
+          "label": "xlang-ext-content",
+          "nodes": [
+            {
+              "row_id": "01JXLANG-EXT-ROW-0001",
+              "logical_id": "doc:xlang-ext-report",
+              "kind": "Document",
+              "properties": {"title": "External Report"},
+              "source_ref": "source:xlang-ext",
+              "upsert": false,
+              "chunk_policy": "preserve",
+              "content_ref": "s3://docs/xlang-report.pdf"
+            },
+            {
+              "row_id": "01JXLANG-EXT-ROW-0002",
+              "logical_id": "doc:xlang-plain-note",
+              "kind": "Document",
+              "properties": {"title": "Plain Note"},
+              "source_ref": "source:xlang-ext",
+              "upsert": false,
+              "chunk_policy": "preserve"
+            }
+          ],
+          "chunks": [
+            {
+              "id": "chunk:xlang-ext-report:0",
+              "node_logical_id": "doc:xlang-ext-report",
+              "text_content": "externalcontentneedle revenue analysis",
+              "content_hash": "sha256:xlang-ext-hash"
+            },
+            {
+              "id": "chunk:xlang-plain-note:0",
+              "node_logical_id": "doc:xlang-plain-note",
+              "text_content": "externalcontentneedle meeting notes"
+            }
+          ]
+        }
+      ],
+      "queries": [
+        {
+          "type": "filter_logical_id",
+          "kind": "Document",
+          "logical_id": "doc:xlang-ext-report",
+          "expect_count": 1,
+          "expect_properties": {"title": "External Report"}
+        },
+        {
+          "type": "filter_content_ref_not_null",
+          "kind": "Document",
+          "limit": 10,
+          "expect_count": 1,
+          "expect_found_ids": ["doc:xlang-ext-report"]
+        },
+        {
+          "type": "text_search",
+          "kind": "Document",
+          "query": "externalcontentneedle",
+          "limit": 10,
+          "expect_min_count": 2
+        }
+      ],
+      "admin": ["check_integrity"]
     }
   ]
 }

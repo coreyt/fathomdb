@@ -16,6 +16,7 @@ fn write_request_builder_builds_full_bundle_without_manual_cross_reference_threa
         Some("source:meeting".to_owned()),
         true,
         ChunkPolicy::Replace,
+        None,
     );
     let task = builder.add_node(
         "row-task",
@@ -25,6 +26,7 @@ fn write_request_builder_builds_full_bundle_without_manual_cross_reference_threa
         Some("source:task".to_owned()),
         true,
         ChunkPolicy::Preserve,
+        None,
     );
     builder.add_edge(
         "row-edge",
@@ -36,7 +38,7 @@ fn write_request_builder_builds_full_bundle_without_manual_cross_reference_threa
         Some("source:edge".to_owned()),
         true,
     );
-    let chunk = builder.add_chunk("chunk-1", &meeting, "budget discussion", None, None);
+    let chunk = builder.add_chunk("chunk-1", &meeting, "budget discussion", None, None, None);
     let run = builder.add_run(
         "run-1",
         "session",
@@ -119,10 +121,11 @@ fn write_request_builder_rejects_handles_from_other_builders_before_submit() {
         Some("source:a".to_owned()),
         false,
         ChunkPolicy::Preserve,
+        None,
     );
 
     let mut second = WriteRequestBuilder::new("second");
-    second.add_chunk("chunk-b", &foreign_node, "foreign handle", None, None);
+    second.add_chunk("chunk-b", &foreign_node, "foreign handle", None, None, None);
 
     let error = second
         .build()
@@ -144,8 +147,9 @@ fn write_request_builder_outputs_ordinary_write_request_that_can_be_submitted() 
         Some("source:meeting".to_owned()),
         true,
         ChunkPolicy::Replace,
+        None,
     );
-    builder.add_chunk("chunk-1", &meeting, "budget discussion", None, None);
+    builder.add_chunk("chunk-1", &meeting, "budget discussion", None, None, None);
 
     let request = builder.build().expect("build request");
     engine

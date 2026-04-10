@@ -48,6 +48,7 @@ You may also use your own IDs (UUIDs, document hashes, etc.).
 | `source_ref` | Optional provenance reference (see [Provenance](#provenance)). |
 | `upsert` | If `True`, supersede the active row with the same `logical_id`. |
 | `chunk_policy` | How to handle existing chunks on upsert (see [Upsert](#upsert-supersession)). |
+| `content_ref` | Optional URI for external content (see [External content nodes](#external-content-nodes)). |
 
 `add_node()` returns a `NodeHandle` you can use to reference this node
 elsewhere in the same request.
@@ -150,6 +151,56 @@ builder.add_chunk(
 engine.write(builder.build())
 ```
 
+## External content nodes
+
+When a node represents external content (a PDF, web page, dataset, etc.), set
+`content_ref` to a URI pointing to the source. The engine stores this alongside
+the node but does not fetch or interpret the URI -- your application layer
+manages the content lifecycle.
+
+Chunks derived from external content can carry a `content_hash` for staleness
+detection. When the content changes, compare the stored hash against the current
+content and re-ingest if they differ.
+
+```python
+builder = WriteRequestBuilder("ingest-pdf")
+node = builder.add_node(
+    row_id=new_row_id(), logical_id=new_id(),
+    kind="document",
+    properties={"title": "Q4 Report", "mime_type": "application/pdf"},
+    content_ref="s3://docs/q4-report.pdf",
+)
+builder.add_chunk(
+    id=new_id(), node=node,
+    text_content="Revenue grew 15% quarter over quarter...",
+    byte_start=0, byte_end=42,
+    content_hash="sha256:9f86d08...",
+)
+engine.write(builder.build())
+```
+
+To update external content, upsert the node with `chunk_policy=ChunkPolicy.REPLACE`
+and re-add chunks with the new hash:
+
+```python
+builder = WriteRequestBuilder("refresh-pdf")
+node = builder.add_node(
+    row_id=new_row_id(), logical_id=existing_doc_id,
+    kind="document",
+    properties={"title": "Q4 Report (Revised)"},
+    content_ref="s3://docs/q4-report.pdf",
+    upsert=True, chunk_policy=ChunkPolicy.REPLACE,
+)
+builder.add_chunk(
+    id=new_id(), node=node,
+    text_content="Revenue grew 18% quarter over quarter (revised)...",
+    content_hash="sha256:a1b2c3d...",
+)
+engine.write(builder.build())
+```
+
+For background on the data model, see [External Content](../concepts/data-model.md#external-content).
+
 ## Retiring (soft-delete)
 
 `retire_node()` and `retire_edge()` mark an entity as superseded without
@@ -182,6 +233,8 @@ engine.write(builder.build())
 ```
 
 `byte_start` and `byte_end` are optional byte offsets into the source document.
+`content_hash` is an optional hash of the external content this chunk was
+derived from (see [External content nodes](#external-content-nodes)).
 
 ## Vector embeddings
 
@@ -336,6 +389,19 @@ builder.addAction({
   properties: { tool: "web_search" },
 });
 
+// External content node
+const doc = builder.addNode({
+  rowId: newRowId(), logicalId: newId(),
+  kind: "document",
+  properties: { title: "Q4 Report" },
+  contentRef: "s3://docs/q4-report.pdf",
+});
+builder.addChunk({
+  id: newId(), node: doc,
+  textContent: "Revenue grew 15%...",
+  contentHash: "sha256:9f86d08...",
+});
+
 // Upsert with chunk replacement
 builder.addNode({
   rowId: newRowId(), logicalId: "note:123",
@@ -366,7 +432,9 @@ engine.close();
 |--------|-----------|
 | `add_node(row_id=..., logical_id=..., kind=...)` | `addNode({ rowId, logicalId, kind, ... })` |
 | `add_edge(source=handle, target=handle)` | `addEdge({ source: handle, target: handle, ... })` |
+| `add_node(..., content_ref=...)` | `addNode({ ..., contentRef })` |
 | `add_chunk(id=..., node=handle, text_content=...)` | `addChunk({ id, node: handle, textContent })` |
+| `add_chunk(..., content_hash=...)` | `addChunk({ ..., contentHash })` |
 | `add_run(id=..., run=handle, ...)` | `addRun({ id, ... })` |
 | `retire_node(logical_id=..., source_ref=...)` | `retireNode(logicalId, sourceRef?)` |
 | `ChunkPolicy.REPLACE` | `"replace"` |

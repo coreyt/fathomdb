@@ -130,6 +130,14 @@ class Query:
         """Filter nodes to those with the given source reference."""
         return self._with_step({"type": "filter_source_ref_eq", "source_ref": source_ref})
 
+    def filter_content_ref_not_null(self) -> "Query":
+        """Filter nodes to those where ``content_ref`` is not NULL."""
+        return self._with_step({"type": "filter_content_ref_not_null"})
+
+    def filter_content_ref_eq(self, content_ref: str) -> "Query":
+        """Filter nodes to those with the given ``content_ref`` URI."""
+        return self._with_step({"type": "filter_content_ref_eq", "content_ref": content_ref})
+
     def filter_json_text_eq(self, path: str, value: str) -> "Query":
         """Filter nodes where the JSON property at *path* equals *value*."""
         return self._with_step({"type": "filter_json_text_eq", "path": path, "value": value})

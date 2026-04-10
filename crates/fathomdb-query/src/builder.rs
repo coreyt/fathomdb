@@ -90,6 +90,26 @@ impl QueryBuilder {
         self
     }
 
+    /// Filter results to nodes where `content_ref` is not NULL.
+    #[must_use]
+    pub fn filter_content_ref_not_null(mut self) -> Self {
+        self.ast
+            .steps
+            .push(QueryStep::Filter(Predicate::ContentRefNotNull));
+        self
+    }
+
+    /// Filter results to nodes matching the given `content_ref` URI.
+    #[must_use]
+    pub fn filter_content_ref_eq(mut self, content_ref: impl Into<String>) -> Self {
+        self.ast
+            .steps
+            .push(QueryStep::Filter(Predicate::ContentRefEq(
+                content_ref.into(),
+            )));
+        self
+    }
+
     /// Filter results where a JSON property at `path` equals the given text value.
     #[must_use]
     pub fn filter_json_text_eq(

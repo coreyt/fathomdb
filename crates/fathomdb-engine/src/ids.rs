@@ -94,6 +94,7 @@ mod tests {
                     source_ref: Some("test".to_owned()),
                     upsert: false,
                     chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
                 }],
                 node_retires: vec![],
                 edges: vec![],

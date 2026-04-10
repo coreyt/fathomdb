@@ -114,6 +114,10 @@ pub fn shape_signature(ast: &QueryAst) -> String {
                     let _ = write!(&mut signature, "-Filter(json_cmp:{path}:{op})");
                 }
                 Predicate::SourceRefEq(_) => signature.push_str("-Filter(source_ref_eq)"),
+                Predicate::ContentRefNotNull => {
+                    signature.push_str("-Filter(content_ref_not_null)");
+                }
+                Predicate::ContentRefEq(_) => signature.push_str("-Filter(content_ref_eq)"),
             },
         }
     }

@@ -69,6 +69,77 @@ def test_write_and_text_query_round_trip(tmp_path: Path) -> None:
     assert rows.nodes[0].properties["title"] == "Budget review"
 
 
+def test_external_content_roundtrip(tmp_path: Path) -> None:
+    from fathomdb import ChunkInsert, ChunkPolicy, Engine, NodeInsert, WriteRequest, new_row_id
+
+    db = Engine.open(tmp_path / "agent.db")
+
+    db.write(
+        WriteRequest(
+            label="ext-content-test",
+            nodes=[
+                NodeInsert(
+                    row_id=new_row_id(),
+                    logical_id="doc:ext-report",
+                    kind="Document",
+                    properties={"title": "Annual Report"},
+                    upsert=False,
+                    chunk_policy=ChunkPolicy.PRESERVE,
+                    content_ref="s3://docs/annual-report.pdf",
+                ),
+                NodeInsert(
+                    row_id=new_row_id(),
+                    logical_id="doc:plain-note",
+                    kind="Document",
+                    properties={"title": "Meeting Notes"},
+                    upsert=False,
+                    chunk_policy=ChunkPolicy.PRESERVE,
+                ),
+            ],
+            chunks=[
+                ChunkInsert(
+                    id="chunk:ext-report:0",
+                    node_logical_id="doc:ext-report",
+                    text_content="revenue grew 15 percent",
+                    content_hash="sha256:abc123",
+                ),
+                ChunkInsert(
+                    id="chunk:plain-note:0",
+                    node_logical_id="doc:plain-note",
+                    text_content="discussed project timelines",
+                ),
+            ],
+        )
+    )
+
+    # content_ref surfaces on NodeRow
+    rows = db.nodes("Document").filter_logical_id_eq("doc:ext-report").execute()
+    assert len(rows.nodes) == 1
+    assert rows.nodes[0].content_ref == "s3://docs/annual-report.pdf"
+
+    # Nodes without content_ref return None
+    rows = db.nodes("Document").filter_logical_id_eq("doc:plain-note").execute()
+    assert len(rows.nodes) == 1
+    assert rows.nodes[0].content_ref is None
+
+    # filter_content_ref_not_null returns only content nodes
+    rows = db.nodes("Document").filter_content_ref_not_null().limit(10).execute()
+    assert len(rows.nodes) == 1
+    assert rows.nodes[0].logical_id == "doc:ext-report"
+
+    # filter_content_ref_eq matches exact URI
+    rows = (
+        db.nodes("Document")
+        .filter_content_ref_eq("s3://docs/annual-report.pdf")
+        .limit(10)
+        .execute()
+    )
+    assert len(rows.nodes) == 1
+    assert rows.nodes[0].logical_id == "doc:ext-report"
+
+    db.close()
+
+
 def test_trace_and_excise_source(tmp_path: Path) -> None:
     from fathomdb import ChunkInsert, ChunkPolicy, Engine, NodeInsert, WriteRequest, new_row_id
 

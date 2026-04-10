@@ -20,6 +20,14 @@ fn open_engine() -> (NamedTempFile, Engine) {
 }
 
 fn make_write(label: &str) -> WriteRequest {
+    make_write_with_content(label, None, None)
+}
+
+fn make_write_with_content(
+    label: &str,
+    content_ref: Option<String>,
+    content_hash: Option<String>,
+) -> WriteRequest {
     let logical_id = format!("doc:{label}");
     WriteRequest {
         label: label.to_owned(),
@@ -31,6 +39,7 @@ fn make_write(label: &str) -> WriteRequest {
             source_ref: Some(format!("source:{label}")),
             upsert: true,
             chunk_policy: ChunkPolicy::Replace,
+            content_ref,
         }],
         node_retires: vec![],
         edges: vec![],
@@ -41,6 +50,7 @@ fn make_write(label: &str) -> WriteRequest {
             text_content: format!("stress test content for {label}"),
             byte_start: None,
             byte_end: None,
+            content_hash,
         }],
         runs: vec![],
         steps: vec![],
@@ -467,6 +477,230 @@ fn telemetry_snapshot_is_monotonic_under_load() {
             ("cache_misses", last.sqlite_cache.cache_misses.to_string()),
             ("cache_writes", last.sqlite_cache.cache_writes.to_string()),
             ("cache_spills", last.sqlite_cache.cache_spills.to_string()),
+        ],
+    );
+}
+
+/// Stress test for external content objects: mixed writes (some with `content_ref`
+/// and `content_hash`, some without) alongside concurrent reads that filter on
+/// `content_ref`. Exercises the partial index, nullable column handling, and new
+/// query predicates under sustained concurrent load.
+#[test]
+#[ignore = "weekly stress test"]
+fn concurrent_external_content_writes_and_filtered_reads() {
+    let duration = stress_duration();
+    let (_db, engine) = open_engine();
+
+    // Seed a mix of content and non-content nodes.
+    for index in 0..50 {
+        let content_ref = if index % 2 == 0 {
+            Some(format!("s3://docs/seed-{index}.pdf"))
+        } else {
+            None
+        };
+        let content_hash = content_ref.as_ref().map(|_| format!("sha256:seed{index}"));
+        engine
+            .writer()
+            .submit(make_write_with_content(
+                &format!("seed-{index}"),
+                content_ref,
+                content_hash,
+            ))
+            .expect("seed write");
+    }
+
+    let engine = Arc::new(engine);
+    let stop = Arc::new(AtomicBool::new(false));
+    let content_write_count = Arc::new(AtomicUsize::new(0));
+    let plain_write_count = Arc::new(AtomicUsize::new(0));
+    let filtered_read_count = Arc::new(AtomicUsize::new(0));
+    let unfiltered_read_count = Arc::new(AtomicUsize::new(0));
+    let errors = Arc::new(Mutex::new(Vec::<String>::new()));
+    let mut handles = Vec::new();
+
+    // 3 writer threads producing content nodes (with content_ref + content_hash).
+    for thread_id in 0..3 {
+        let engine = Arc::clone(&engine);
+        let stop = Arc::clone(&stop);
+        let count = Arc::clone(&content_write_count);
+        let errors = Arc::clone(&errors);
+        handles.push(thread::spawn(move || {
+            let mut iteration = 0usize;
+            while !stop.load(Ordering::Relaxed) {
+                let label = format!("ext-{thread_id}-{iteration}");
+                let request = make_write_with_content(
+                    &label,
+                    Some(format!("s3://docs/{label}.pdf")),
+                    Some(format!("sha256:{label}")),
+                );
+                if let Err(err) = engine.writer().submit(request) {
+                    errors
+                        .lock()
+                        .expect("lock errors")
+                        .push(format!("content-writer[{thread_id}]: {err}"));
+                    stop.store(true, Ordering::Relaxed);
+                    break;
+                }
+                count.fetch_add(1, Ordering::Relaxed);
+                iteration += 1;
+            }
+        }));
+    }
+
+    // 2 writer threads producing plain nodes (no content_ref).
+    for thread_id in 0..2 {
+        let engine = Arc::clone(&engine);
+        let stop = Arc::clone(&stop);
+        let count = Arc::clone(&plain_write_count);
+        let errors = Arc::clone(&errors);
+        handles.push(thread::spawn(move || {
+            let mut iteration = 0usize;
+            while !stop.load(Ordering::Relaxed) {
+                if let Err(err) = engine
+                    .writer()
+                    .submit(make_write(&format!("plain-{thread_id}-{iteration}")))
+                {
+                    errors
+                        .lock()
+                        .expect("lock errors")
+                        .push(format!("plain-writer[{thread_id}]: {err}"));
+                    stop.store(true, Ordering::Relaxed);
+                    break;
+                }
+                count.fetch_add(1, Ordering::Relaxed);
+                iteration += 1;
+            }
+        }));
+    }
+
+    // 10 reader threads using content_ref_not_null filter.
+    for thread_id in 0..10 {
+        let engine = Arc::clone(&engine);
+        let stop = Arc::clone(&stop);
+        let count = Arc::clone(&filtered_read_count);
+        let errors = Arc::clone(&errors);
+        handles.push(thread::spawn(move || {
+            let compiled = engine
+                .query("Document")
+                .filter_content_ref_not_null()
+                .limit(10)
+                .compile()
+                .expect("filtered query compiles");
+            while !stop.load(Ordering::Relaxed) {
+                match engine.coordinator().execute_compiled_read(&compiled) {
+                    Ok(rows) => {
+                        // Every returned node must have content_ref set.
+                        for node in &rows.nodes {
+                            assert!(
+                                node.content_ref.is_some(),
+                                "filtered read returned node without content_ref: {}",
+                                node.logical_id
+                            );
+                        }
+                        count.fetch_add(1, Ordering::Relaxed);
+                    }
+                    Err(err) => {
+                        errors
+                            .lock()
+                            .expect("lock errors")
+                            .push(format!("filtered-reader[{thread_id}]: {err}"));
+                        stop.store(true, Ordering::Relaxed);
+                        break;
+                    }
+                }
+            }
+        }));
+    }
+
+    // 10 reader threads doing unfiltered reads.
+    for thread_id in 0..10 {
+        let engine = Arc::clone(&engine);
+        let stop = Arc::clone(&stop);
+        let count = Arc::clone(&unfiltered_read_count);
+        let errors = Arc::clone(&errors);
+        handles.push(thread::spawn(move || {
+            let compiled = engine
+                .query("Document")
+                .limit(10)
+                .compile()
+                .expect("unfiltered query compiles");
+            while !stop.load(Ordering::Relaxed) {
+                match engine.coordinator().execute_compiled_read(&compiled) {
+                    Ok(_) => {
+                        count.fetch_add(1, Ordering::Relaxed);
+                    }
+                    Err(err) => {
+                        errors
+                            .lock()
+                            .expect("lock errors")
+                            .push(format!("unfiltered-reader[{thread_id}]: {err}"));
+                        stop.store(true, Ordering::Relaxed);
+                        break;
+                    }
+                }
+            }
+        }));
+    }
+
+    thread::sleep(duration);
+    stop.store(true, Ordering::Relaxed);
+
+    for handle in handles {
+        handle.join().expect("thread joins");
+    }
+
+    let errors = errors.lock().expect("lock errors");
+    assert!(errors.is_empty(), "errors during stress test: {errors:?}");
+    assert!(
+        content_write_count.load(Ordering::Relaxed) > 0,
+        "no content writes completed"
+    );
+    assert!(
+        plain_write_count.load(Ordering::Relaxed) > 0,
+        "no plain writes completed"
+    );
+    assert!(
+        filtered_read_count.load(Ordering::Relaxed) > 0,
+        "no filtered reads completed"
+    );
+    assert!(
+        unfiltered_read_count.load(Ordering::Relaxed) > 0,
+        "no unfiltered reads completed"
+    );
+
+    let integrity = engine
+        .admin()
+        .service()
+        .check_integrity()
+        .expect("check_integrity");
+    assert!(integrity.physical_ok, "physical integrity must pass");
+    assert!(integrity.foreign_keys_ok, "foreign keys must be valid");
+    assert_eq!(integrity.missing_fts_rows, 0, "no missing FTS rows");
+    assert_eq!(
+        integrity.duplicate_active_logical_ids, 0,
+        "no duplicate active logical ids"
+    );
+
+    emit_success_summary(
+        "rust_stress_external_content",
+        &[
+            ("duration_seconds", duration.as_secs().to_string()),
+            (
+                "content_writes",
+                content_write_count.load(Ordering::Relaxed).to_string(),
+            ),
+            (
+                "plain_writes",
+                plain_write_count.load(Ordering::Relaxed).to_string(),
+            ),
+            (
+                "filtered_reads",
+                filtered_read_count.load(Ordering::Relaxed).to_string(),
+            ),
+            (
+                "unfiltered_reads",
+                unfiltered_read_count.load(Ordering::Relaxed).to_string(),
+            ),
         ],
     );
 }

@@ -362,6 +362,19 @@ static MIGRATIONS: &[Migration] = &[
                     ON operational_retention_runs(collection_name, executed_at DESC);
                 ",
     ),
+    Migration::new(
+        SchemaVersion(14),
+        "external content object columns",
+        r"
+                ALTER TABLE nodes ADD COLUMN content_ref TEXT;
+
+                CREATE INDEX IF NOT EXISTS idx_nodes_content_ref
+                    ON nodes(content_ref)
+                    WHERE content_ref IS NOT NULL AND superseded_at IS NULL;
+
+                ALTER TABLE chunks ADD COLUMN content_hash TEXT;
+                ",
+    ),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -441,6 +454,7 @@ impl SchemaManager {
                 SchemaVersion(11) => Self::ensure_operational_validation_contract(&tx)?,
                 SchemaVersion(12) => Self::ensure_operational_secondary_indexes(&tx)?,
                 SchemaVersion(13) => Self::ensure_operational_retention_runs(&tx)?,
+                SchemaVersion(14) => Self::ensure_external_content_columns(&tx)?,
                 _ => tx.execute_batch(migration.sql)?,
             }
             tx.execute(
@@ -727,6 +741,34 @@ impl SchemaManager {
             ",
         )?;
         Ok(())
+    }
+
+    fn ensure_external_content_columns(conn: &Connection) -> Result<(), SchemaError> {
+        let node_columns = Self::column_names(conn, "nodes")?;
+        if !node_columns.iter().any(|c| c == "content_ref") {
+            conn.execute("ALTER TABLE nodes ADD COLUMN content_ref TEXT", [])?;
+        }
+        conn.execute_batch(
+            r"
+            CREATE INDEX IF NOT EXISTS idx_nodes_content_ref
+                ON nodes(content_ref)
+                WHERE content_ref IS NOT NULL AND superseded_at IS NULL;
+            ",
+        )?;
+
+        let chunk_columns = Self::column_names(conn, "chunks")?;
+        if !chunk_columns.iter().any(|c| c == "content_hash") {
+            conn.execute("ALTER TABLE chunks ADD COLUMN content_hash TEXT", [])?;
+        }
+        Ok(())
+    }
+
+    fn column_names(conn: &Connection, table: &str) -> Result<Vec<String>, SchemaError> {
+        let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+        let names = stmt
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(names)
     }
 
     #[must_use]

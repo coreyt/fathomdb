@@ -129,6 +129,8 @@ pub struct NodeRow {
     pub kind: String,
     /// JSON-encoded node properties.
     pub properties: String,
+    /// Optional URI referencing external content.
+    pub content_ref: Option<String>,
     /// Unix timestamp of last access, if tracked.
     pub last_accessed_at: Option<i64>,
 }
@@ -404,7 +406,8 @@ impl ExecutionCoordinator {
                     logical_id: row.get(1)?,
                     kind: row.get(2)?,
                     properties: row.get(3)?,
-                    last_accessed_at: row.get(4)?,
+                    content_ref: row.get(4)?,
+                    last_accessed_at: row.get(5)?,
                 })
             })
             .and_then(Iterator::collect)
@@ -552,7 +555,7 @@ impl ExecutionCoordinator {
             ),
             numbered AS (
                 SELECT t.root_id, n.row_id, n.logical_id, n.kind, n.properties
-                     , am.last_accessed_at
+                     , n.content_ref, am.last_accessed_at
                      , ROW_NUMBER() OVER (PARTITION BY t.root_id ORDER BY n.logical_id) AS rn
                 FROM traversed t
                 JOIN nodes n ON n.logical_id = t.logical_id
@@ -560,7 +563,7 @@ impl ExecutionCoordinator {
                 LEFT JOIN node_access_metadata am ON am.logical_id = n.logical_id
                 WHERE t.depth > 0
             )
-            SELECT root_id, row_id, logical_id, kind, properties, last_accessed_at
+            SELECT root_id, row_id, logical_id, kind, properties, content_ref, last_accessed_at
             FROM numbered
             WHERE rn <= {hard_limit}
             ORDER BY root_id, logical_id",
@@ -589,7 +592,8 @@ impl ExecutionCoordinator {
                         logical_id: row.get(2)?,
                         kind: row.get(3)?,
                         properties: row.get(4)?,
-                        last_accessed_at: row.get(5)?,
+                        content_ref: row.get(5)?,
+                        last_accessed_at: row.get(6)?,
                     },
                 ))
             })
@@ -828,7 +832,7 @@ impl ExecutionCoordinator {
 
 fn wrap_node_row_projection_sql(base_sql: &str) -> String {
     format!(
-        "SELECT q.row_id, q.logical_id, q.kind, q.properties, am.last_accessed_at \
+        "SELECT q.row_id, q.logical_id, q.kind, q.properties, q.content_ref, am.last_accessed_at \
          FROM ({base_sql}) q \
          LEFT JOIN node_access_metadata am ON am.logical_id = q.logical_id"
     )

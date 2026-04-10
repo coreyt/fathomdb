@@ -110,6 +110,7 @@ pub struct NodeFields {
     pub kind: String,
     pub properties: String,
     pub source_ref: Option<String>,
+    pub content_ref: Option<String>,
     pub created_at: i64,
     pub superseded_at: Option<i64>,
 }
@@ -118,7 +119,7 @@ pub struct NodeFields {
 pub fn node_fields(db_path: &Path, logical_id: &str) -> NodeFields {
     let conn = rusqlite::Connection::open(db_path).expect("open db");
     conn.query_row(
-        "SELECT row_id, logical_id, kind, properties, source_ref, created_at, superseded_at \
+        "SELECT row_id, logical_id, kind, properties, source_ref, content_ref, created_at, superseded_at \
          FROM nodes WHERE logical_id = ?1 AND superseded_at IS NULL",
         rusqlite::params![logical_id],
         |row| {
@@ -128,8 +129,9 @@ pub fn node_fields(db_path: &Path, logical_id: &str) -> NodeFields {
                 kind: row.get(2)?,
                 properties: row.get(3)?,
                 source_ref: row.get(4)?,
-                created_at: row.get(5)?,
-                superseded_at: row.get(6)?,
+                content_ref: row.get(5)?,
+                created_at: row.get(6)?,
+                superseded_at: row.get(7)?,
             })
         },
     )
@@ -141,6 +143,7 @@ pub struct ChunkFields {
     pub id: String,
     pub node_logical_id: String,
     pub text_content: String,
+    pub content_hash: Option<String>,
     pub created_at: i64,
 }
 
@@ -148,14 +151,15 @@ pub struct ChunkFields {
 pub fn chunk_fields(db_path: &Path, chunk_id: &str) -> ChunkFields {
     let conn = rusqlite::Connection::open(db_path).expect("open db");
     conn.query_row(
-        "SELECT id, node_logical_id, text_content, created_at FROM chunks WHERE id = ?1",
+        "SELECT id, node_logical_id, text_content, content_hash, created_at FROM chunks WHERE id = ?1",
         rusqlite::params![chunk_id],
         |row| {
             Ok(ChunkFields {
                 id: row.get(0)?,
                 node_logical_id: row.get(1)?,
                 text_content: row.get(2)?,
-                created_at: row.get(3)?,
+                content_hash: row.get(3)?,
+                created_at: row.get(4)?,
             })
         },
     )

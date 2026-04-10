@@ -33,7 +33,7 @@ describe("Engine", () => {
             sql: "SELECT * FROM nodes", bind_count: 0, driving_table: "nodes", shape_hash: 42, cache_hit: false
           })),
           executeAst: vi.fn(() => JSON.stringify({
-            nodes: [{ row_id: "r1", logical_id: "n1", kind: "Doc", properties: "{}", last_accessed_at: null }],
+            nodes: [{ row_id: "r1", logical_id: "n1", kind: "Doc", properties: "{}", content_ref: "s3://docs/test.pdf", last_accessed_at: null }],
             runs: [], steps: [], actions: [], was_degraded: false
           })),
           executeGroupedAst: vi.fn(() => JSON.stringify({
@@ -201,6 +201,7 @@ describe("Engine", () => {
     expect(rows.nodes[0].rowId).toBe("r1");
     expect(rows.nodes[0].logicalId).toBe("n1");
     expect(rows.nodes[0].kind).toBe("Doc");
+    expect(rows.nodes[0].contentRef).toBe("s3://docs/test.pdf");
     expect(rows.wasDegraded).toBe(false);
   });
 
@@ -472,6 +473,24 @@ describe("Engine", () => {
       upsert: true,
       chunk_policy: "replace",
     });
+  });
+
+  it("builds node with contentRef and chunk with contentHash", () => {
+    const builder = new WriteRequestBuilder("ext-content-test");
+    const node = builder.addNode({
+      rowId: "r1", logicalId: "n1", kind: "Document",
+      properties: { title: "Report" },
+      contentRef: "s3://docs/report.pdf",
+    });
+    builder.addChunk({
+      id: "c1", node, textContent: "page one",
+      contentHash: "sha256:abc123",
+    });
+    const built = builder.build();
+    const nodes = built.nodes as Array<Record<string, unknown>>;
+    const chunks = built.chunks as Array<Record<string, unknown>>;
+    expect(nodes[0].content_ref).toBe("s3://docs/report.pdf");
+    expect(chunks[0].content_hash).toBe("sha256:abc123");
   });
 
   it("builds run with supersedes_id in wire format", () => {

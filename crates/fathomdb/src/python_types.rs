@@ -56,6 +56,10 @@ pub enum PyQueryStep {
     FilterSourceRefEq {
         source_ref: String,
     },
+    FilterContentRefNotNull {},
+    FilterContentRefEq {
+        content_ref: String,
+    },
     FilterJsonTextEq {
         path: String,
         value: String,
@@ -139,6 +143,12 @@ impl From<PyQueryAst> for QueryAst {
                 PyQueryStep::FilterKindEq { kind } => QueryStep::Filter(Predicate::KindEq(kind)),
                 PyQueryStep::FilterSourceRefEq { source_ref } => {
                     QueryStep::Filter(Predicate::SourceRefEq(source_ref))
+                }
+                PyQueryStep::FilterContentRefNotNull {} => {
+                    QueryStep::Filter(Predicate::ContentRefNotNull)
+                }
+                PyQueryStep::FilterContentRefEq { content_ref } => {
+                    QueryStep::Filter(Predicate::ContentRefEq(content_ref))
                 }
                 PyQueryStep::FilterJsonTextEq { path, value } => {
                     QueryStep::Filter(Predicate::JsonPathEq {
@@ -250,6 +260,7 @@ pub struct PyNodeInsert {
     #[serde(default)]
     pub upsert: bool,
     pub chunk_policy: Option<PyChunkPolicy>,
+    pub content_ref: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -284,6 +295,7 @@ pub struct PyChunkInsert {
     pub text_content: String,
     pub byte_start: Option<i64>,
     pub byte_end: Option<i64>,
+    pub content_hash: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -418,6 +430,7 @@ impl From<PyWriteRequest> for WriteRequest {
                     source_ref: node.source_ref,
                     upsert: node.upsert,
                     chunk_policy: node.chunk_policy.unwrap_or(PyChunkPolicy::Preserve).into(),
+                    content_ref: node.content_ref,
                 })
                 .collect(),
             node_retires: value
@@ -459,6 +472,7 @@ impl From<PyWriteRequest> for WriteRequest {
                     text_content: chunk.text_content,
                     byte_start: chunk.byte_start,
                     byte_end: chunk.byte_end,
+                    content_hash: chunk.content_hash,
                 })
                 .collect(),
             runs: value
@@ -844,6 +858,28 @@ mod tests {
         match &ast.steps[0] {
             QueryStep::Filter(Predicate::SourceRefEq(src)) => assert_eq!(src, "src-abc"),
             other => panic!("expected SourceRefEq, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn step_filter_content_ref_not_null_roundtrip() {
+        let ast = parse_ast_with_step(r#"{"type":"filter_content_ref_not_null"}"#);
+        match &ast.steps[0] {
+            QueryStep::Filter(Predicate::ContentRefNotNull) => {}
+            other => panic!("expected ContentRefNotNull, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn step_filter_content_ref_eq_roundtrip() {
+        let ast = parse_ast_with_step(
+            r#"{"type":"filter_content_ref_eq","content_ref":"s3://docs/report.pdf"}"#,
+        );
+        match &ast.steps[0] {
+            QueryStep::Filter(Predicate::ContentRefEq(uri)) => {
+                assert_eq!(uri, "s3://docs/report.pdf");
+            }
+            other => panic!("expected ContentRefEq, got {other:?}"),
         }
     }
 
@@ -1480,6 +1516,7 @@ mod tests {
                 logical_id: "nl1".into(),
                 kind: "Doc".into(),
                 properties: r#"{"a":1}"#.into(),
+                content_ref: None,
                 last_accessed_at: Some(1_700_000_000),
             }],
             runs: vec![RunRow {
@@ -1609,6 +1646,7 @@ mod tests {
             logical_id: "log-xyz".into(),
             kind: "Meeting".into(),
             properties: r#"{"title":"standup"}"#.into(),
+            content_ref: Some("s3://bucket/standup.pdf".into()),
             last_accessed_at: Some(1_710_000_000),
         };
         let py = PyNodeRow::from(row);
@@ -1618,6 +1656,7 @@ mod tests {
         assert_eq!(json["logical_id"], "log-xyz");
         assert_eq!(json["kind"], "Meeting");
         assert_eq!(json["properties"], r#"{"title":"standup"}"#);
+        assert_eq!(json["content_ref"], "s3://bucket/standup.pdf");
         assert_eq!(json["last_accessed_at"], 1_710_000_000_i64);
     }
 
@@ -1631,6 +1670,7 @@ mod tests {
             logical_id: "l1".into(),
             kind: "Doc".into(),
             properties: "{}".into(),
+            content_ref: None,
             last_accessed_at: None,
         };
         let py = PyNodeRow::from(row);
@@ -1710,6 +1750,7 @@ pub struct PyNodeRow {
     pub logical_id: String,
     pub kind: String,
     pub properties: String,
+    pub content_ref: Option<String>,
     pub last_accessed_at: Option<i64>,
 }
 
@@ -1720,6 +1761,7 @@ impl From<NodeRow> for PyNodeRow {
             logical_id: value.logical_id,
             kind: value.kind,
             properties: value.properties,
+            content_ref: value.content_ref,
             last_accessed_at: value.last_accessed_at,
         }
     }

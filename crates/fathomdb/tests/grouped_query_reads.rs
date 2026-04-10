@@ -31,6 +31,7 @@ fn seed_meeting_graph(engine: &Engine) {
                     source_ref: Some("source:meeting-1".to_owned()),
                     upsert: false,
                     chunk_policy: ChunkPolicy::Replace,
+                    content_ref: None,
                 },
                 NodeInsert {
                     row_id: new_row_id(),
@@ -42,6 +43,7 @@ fn seed_meeting_graph(engine: &Engine) {
                     source_ref: Some("source:meeting-2".to_owned()),
                     upsert: false,
                     chunk_policy: ChunkPolicy::Replace,
+                    content_ref: None,
                 },
                 NodeInsert {
                     row_id: new_row_id(),
@@ -51,6 +53,7 @@ fn seed_meeting_graph(engine: &Engine) {
                     source_ref: Some("source:task-1".to_owned()),
                     upsert: false,
                     chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
                 },
                 NodeInsert {
                     row_id: new_row_id(),
@@ -60,6 +63,7 @@ fn seed_meeting_graph(engine: &Engine) {
                     source_ref: Some("source:task-2".to_owned()),
                     upsert: false,
                     chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
                 },
                 NodeInsert {
                     row_id: new_row_id(),
@@ -69,6 +73,7 @@ fn seed_meeting_graph(engine: &Engine) {
                     source_ref: Some("source:decision-1".to_owned()),
                     upsert: false,
                     chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
                 },
             ],
             node_retires: vec![],
@@ -112,6 +117,7 @@ fn seed_meeting_graph(engine: &Engine) {
                     text_content: "budget review agenda and action items".to_owned(),
                     byte_start: None,
                     byte_end: None,
+                    content_hash: None,
                 },
                 ChunkInsert {
                     id: "chunk-meeting-2".to_owned(),
@@ -119,6 +125,7 @@ fn seed_meeting_graph(engine: &Engine) {
                     text_content: "backlog grooming notes".to_owned(),
                     byte_start: None,
                     byte_end: None,
+                    content_hash: None,
                 },
             ],
             runs: vec![],
@@ -264,6 +271,7 @@ fn grouped_query_expansions_honor_the_query_hard_limit() {
                     source_ref: Some("source:task-3".to_owned()),
                     upsert: false,
                     chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
                 },
                 NodeInsert {
                     row_id: new_row_id(),
@@ -273,6 +281,7 @@ fn grouped_query_expansions_honor_the_query_hard_limit() {
                     source_ref: Some("source:task-4".to_owned()),
                     upsert: false,
                     chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
                 },
             ],
             node_retires: vec![],

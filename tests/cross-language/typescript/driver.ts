@@ -103,6 +103,7 @@ function buildWriteRequest(writeDef: WriteDef): Record<string, unknown> {
       sourceRef: n.source_ref,
       upsert: n.upsert,
       chunkPolicy: (n.chunk_policy as "preserve" | "replace" | undefined),
+      contentRef: n.content_ref,
     });
   }
 
@@ -129,6 +130,7 @@ function buildWriteRequest(writeDef: WriteDef): Record<string, unknown> {
       textContent: c.text_content,
       byteStart: c.byte_start,
       byteEnd: c.byte_end,
+      contentHash: c.content_hash,
       node: c.node_logical_id,
     });
   }
@@ -196,6 +198,15 @@ function executeQuery(engine: Engine, queryDef: QueryDef): Record<string, unknow
       .textSearch(queryDef.query as string, queryDef.limit as number)
       .execute();
     return { type: qtype, count: rows.nodes.length };
+  }
+
+  if (qtype === "filter_content_ref_not_null") {
+    const rows = engine.nodes(queryDef.kind as string)
+      .filterContentRefNotNull()
+      .limit((queryDef.limit as number) ?? 100)
+      .execute();
+    const foundIds = rows.nodes.map(n => n.logicalId).sort();
+    return { type: qtype, count: rows.nodes.length, found_ids: foundIds };
   }
 
   if (qtype === "traverse") {

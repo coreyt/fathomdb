@@ -29,6 +29,7 @@ A **node** is the primary data record. Every node has:
 | `logical_id` | A stable identifier for the real-world entity this node represents. It persists across updates. |
 | `row_id` | A unique identifier for this specific *version* of the node. Each update creates a new row. |
 | `source_ref` | Provenance link to the execution context that created this version. |
+| `content_ref` | Optional URI referencing external content (see [External Content](#external-content)). |
 
 ### logical_id vs row_id
 
@@ -74,6 +75,41 @@ builder.add_edge(
     source_ref="run/ingest-calendar/step/3",
 )
 ```
+
+## External Content
+
+A node can reference **external content** -- a PDF, web page, media file, or
+dataset that lives outside fathomdb -- via its `content_ref` field. This is an
+optional URI string stored on the node row.
+
+| Field | Purpose |
+|---|---|
+| `content_ref` (node) | URI pointing to the external content (e.g. `s3://bucket/report.pdf`, `https://example.com/dataset.csv`). |
+| `content_hash` (chunk) | Hash of the external content at the time the chunk was derived from it (e.g. `sha256:abc123`). Used for staleness detection. |
+
+External content nodes are ordinary nodes -- the engine does not fetch, cache,
+or interpret the URI. Your application layer manages content lifecycle
+(ingestion, refresh, staleness checks) while the engine stores the metadata,
+text extractions, and search indexes.
+
+```python
+node = builder.add_node(
+    row_id="01J5B...",
+    logical_id="report-q4",
+    kind="document",
+    properties={"title": "Q4 Report", "mime_type": "application/pdf"},
+    content_ref="s3://docs/q4-report.pdf",
+)
+chunk = builder.add_chunk(
+    id="01J5C...", node=node,
+    text_content="Revenue grew 15% quarter over quarter...",
+    content_hash="sha256:9f86d08...",
+)
+```
+
+You can query for content nodes using `filter_content_ref_not_null()` (all nodes
+with external content) or `filter_content_ref_eq(uri)` (exact URI match). See
+[Querying Data](../guides/querying.md) for details.
 
 ## Chunks
 

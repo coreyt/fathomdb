@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **External content objects**: nodes can now reference external content (PDFs,
+  web pages, datasets) via `content_ref`, and chunks can track content
+  provenance via `content_hash`. Both fields are optional and nullable.
+  - Schema migration 14: adds `content_ref TEXT` to `nodes` (with partial
+    index) and `content_hash TEXT` to `chunks`
+  - New query filters: `filter_content_ref_not_null()` and
+    `filter_content_ref_eq(uri)` across Rust, Python, and TypeScript SDKs
+  - `NodeRow` now surfaces `content_ref` in query results
+  - `WriteRequestBuilder.add_node()` accepts `content_ref` parameter
+  - `WriteRequestBuilder.add_chunk()` accepts `content_hash` parameter
+
 ## [0.2.5] - 2026-04-10
 
 ### Fixed

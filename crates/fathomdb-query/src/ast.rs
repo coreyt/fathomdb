@@ -79,6 +79,10 @@ pub enum Predicate {
     },
     /// Match nodes with the exact `source_ref`.
     SourceRefEq(String),
+    /// Match nodes where `content_ref` is not NULL (i.e. content proxy nodes).
+    ContentRefNotNull,
+    /// Match nodes with the exact `content_ref` URI.
+    ContentRefEq(String),
 }
 
 /// Ordered comparison operator for JSON property filters.

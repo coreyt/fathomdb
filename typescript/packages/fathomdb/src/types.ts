@@ -96,6 +96,7 @@ export type NodeRow = {
   logicalId: string;
   kind: string;
   properties: unknown;
+  contentRef: string | null;
   lastAccessedAt: number | null;
 };
 
@@ -105,6 +106,7 @@ function nodeRowFromWire(w: Record<string, unknown>): NodeRow {
     logicalId: String(w.logical_id ?? ""),
     kind: String(w.kind ?? ""),
     properties: parseJsonField(w.properties),
+    contentRef: (w.content_ref as string) ?? null,
     lastAccessedAt: w.last_accessed_at != null ? Number(w.last_accessed_at) : null,
   };
 }
@@ -888,6 +890,7 @@ export type NodeInsertInput = {
   sourceRef?: string;
   upsert?: boolean;
   chunkPolicy?: ChunkPolicy;
+  contentRef?: string;
 };
 
 export type EdgeInsertInput = {
@@ -904,6 +907,7 @@ export type ChunkInsertInput = {
   textContent: string;
   byteStart?: number;
   byteEnd?: number;
+  contentHash?: string;
 };
 
 export type RunInsertInput = {

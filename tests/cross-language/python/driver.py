@@ -53,6 +53,7 @@ def build_write_request(write_def: dict) -> WriteRequest:
             source_ref=n.get("source_ref"),
             upsert=n.get("upsert", False),
             chunk_policy=ChunkPolicy(n["chunk_policy"]) if "chunk_policy" in n else ChunkPolicy.PRESERVE,
+            content_ref=n.get("content_ref"),
         ))
 
     node_retires = []
@@ -83,6 +84,7 @@ def build_write_request(write_def: dict) -> WriteRequest:
             text_content=c["text_content"],
             byte_start=c.get("byte_start"),
             byte_end=c.get("byte_end"),
+            content_hash=c.get("content_hash"),
         ))
 
     runs = []
@@ -158,6 +160,11 @@ def execute_query(engine: Engine, query_def: dict) -> dict:
     if qtype == "text_search":
         rows = engine.nodes(query_def["kind"]).text_search(query_def["query"], limit=query_def["limit"]).execute()
         return {"type": qtype, "count": len(rows.nodes)}
+
+    if qtype == "filter_content_ref_not_null":
+        rows = engine.nodes(query_def["kind"]).filter_content_ref_not_null().limit(query_def.get("limit", 100)).execute()
+        found_ids = sorted([n.logical_id for n in rows.nodes])
+        return {"type": qtype, "count": len(rows.nodes), "found_ids": found_ids}
 
     if qtype == "traverse":
         q = engine.nodes(query_def["kind"]).filter_logical_id_eq(query_def["start_logical_id"])

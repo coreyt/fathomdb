@@ -21,6 +21,14 @@ from fathomdb import (
 
 
 def _make_write(label: str) -> WriteRequest:
+    return _make_write_with_content(label)
+
+
+def _make_write_with_content(
+    label: str,
+    content_ref: str | None = None,
+    content_hash: str | None = None,
+) -> WriteRequest:
     logical_id = f"doc:{label}"
     return WriteRequest(
         label=label,
@@ -33,6 +41,7 @@ def _make_write(label: str) -> WriteRequest:
                 source_ref=f"source:{label}",
                 upsert=True,
                 chunk_policy=ChunkPolicy.REPLACE,
+                content_ref=content_ref,
             )
         ],
         chunks=[
@@ -40,6 +49,7 @@ def _make_write(label: str) -> WriteRequest:
                 id=f"chunk:{logical_id}:0",
                 node_logical_id=logical_id,
                 text_content=f"stress test content for {label}",
+                content_hash=content_hash,
             )
         ],
     )
@@ -406,6 +416,138 @@ def test_observability_feedback_remains_live_under_load(tmp_path: Path) -> None:
         completed_operations=completed_operations,
         suppressed_operations=suppressed_operations,
         phases_seen="|".join(sorted(phase.name.lower() for phase in all_phases)),
+    )
+
+    engine.close()
+
+
+def test_concurrent_external_content_writes_and_filtered_reads(tmp_path: Path) -> None:
+    """Stress test for external content objects: mixed writes (some with
+    ``content_ref`` / ``content_hash``, some without) alongside concurrent
+    reads that filter on ``content_ref``.  Exercises the partial index,
+    nullable column handling, and new query predicates under sustained
+    concurrent load."""
+    duration_seconds = _stress_duration_seconds()
+    engine = Engine.open(tmp_path / "ext-content-stress.db")
+
+    # Seed a mix of content and non-content nodes.
+    for index in range(50):
+        content_ref = f"s3://docs/seed-{index}.pdf" if index % 2 == 0 else None
+        content_hash = f"sha256:seed{index}" if content_ref else None
+        engine.write(_make_write_with_content(f"seed-{index}", content_ref, content_hash))
+
+    errors: list[str] = []
+    stop = threading.Event()
+    counts_lock = threading.Lock()
+    error_lock = threading.Lock()
+    content_write_count = 0
+    plain_write_count = 0
+    filtered_read_count = 0
+    unfiltered_read_count = 0
+
+    def content_writer(thread_id: int) -> None:
+        nonlocal content_write_count
+        iteration = 0
+        while not stop.is_set():
+            label = f"ext-{thread_id}-{iteration}"
+            try:
+                engine.write(
+                    _make_write_with_content(
+                        label,
+                        content_ref=f"s3://docs/{label}.pdf",
+                        content_hash=f"sha256:{label}",
+                    )
+                )
+                with counts_lock:
+                    content_write_count += 1
+                iteration += 1
+            except Exception as exc:
+                with error_lock:
+                    errors.append(f"content-writer[{thread_id}]: {exc!r}")
+                stop.set()
+
+    def plain_writer(thread_id: int) -> None:
+        nonlocal plain_write_count
+        iteration = 0
+        while not stop.is_set():
+            try:
+                engine.write(_make_write(f"plain-{thread_id}-{iteration}"))
+                with counts_lock:
+                    plain_write_count += 1
+                iteration += 1
+            except Exception as exc:
+                with error_lock:
+                    errors.append(f"plain-writer[{thread_id}]: {exc!r}")
+                stop.set()
+
+    def filtered_reader(thread_id: int) -> None:
+        nonlocal filtered_read_count
+        while not stop.is_set():
+            try:
+                rows = (
+                    engine.nodes("Document")
+                    .filter_content_ref_not_null()
+                    .limit(10)
+                    .execute()
+                )
+                for node in rows.nodes:
+                    assert node.content_ref is not None, (
+                        f"filtered read returned node without content_ref: {node.logical_id}"
+                    )
+                with counts_lock:
+                    filtered_read_count += 1
+            except Exception as exc:
+                with error_lock:
+                    errors.append(f"filtered-reader[{thread_id}]: {exc!r}")
+                stop.set()
+
+    def unfiltered_reader(thread_id: int) -> None:
+        nonlocal unfiltered_read_count
+        while not stop.is_set():
+            try:
+                engine.nodes("Document").limit(10).execute()
+                with counts_lock:
+                    unfiltered_read_count += 1
+            except Exception as exc:
+                with error_lock:
+                    errors.append(f"unfiltered-reader[{thread_id}]: {exc!r}")
+                stop.set()
+
+    content_writers = [threading.Thread(target=content_writer, args=(i,)) for i in range(3)]
+    plain_writers = [threading.Thread(target=plain_writer, args=(i,)) for i in range(2)]
+    filtered_readers = [threading.Thread(target=filtered_reader, args=(i,)) for i in range(10)]
+    unfiltered_readers = [threading.Thread(target=unfiltered_reader, args=(i,)) for i in range(10)]
+
+    all_threads = content_writers + plain_writers + filtered_readers + unfiltered_readers
+    for thread in all_threads:
+        thread.start()
+
+    time.sleep(duration_seconds)
+    stop.set()
+
+    for thread in all_threads:
+        thread.join(timeout=15)
+        assert not thread.is_alive(), f"thread {thread.name} hung"
+
+    assert errors == [], f"errors during external content stress test: {errors}"
+    assert content_write_count > 0, "no content writes completed"
+    assert plain_write_count > 0, "no plain writes completed"
+    assert filtered_read_count > 0, "no filtered reads completed"
+    assert unfiltered_read_count > 0, "no unfiltered reads completed"
+
+    report = engine.admin.check_integrity()
+    assert report.physical_ok is True
+    assert report.foreign_keys_ok is True
+    assert report.missing_fts_rows == 0
+    assert report.duplicate_active_logical_ids == 0
+
+    emit_success_summary(
+        "python_stress_external_content",
+        duration_seconds=duration_seconds,
+        content_writes=content_write_count,
+        plain_writes=plain_write_count,
+        filtered_reads=filtered_read_count,
+        unfiltered_reads=unfiltered_read_count,
     )
 
     engine.close()

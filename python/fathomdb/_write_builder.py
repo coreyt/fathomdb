@@ -107,6 +107,7 @@ class _PendingChunk:
     text_content: str
     byte_start: int | None
     byte_end: int | None
+    content_hash: str | None
 
 
 @dataclass(slots=True)
@@ -172,6 +173,7 @@ class WriteRequestBuilder:
         source_ref: str | None = None,
         upsert: bool = False,
         chunk_policy: ChunkPolicy = ChunkPolicy.PRESERVE,
+        content_ref: str | None = None,
     ) -> NodeHandle:
         """Add a node insert to the write request.
 
@@ -183,6 +185,7 @@ class WriteRequestBuilder:
             source_ref: Optional provenance source reference.
             upsert: If True, replace an existing node with the same logical ID.
             chunk_policy: How to handle existing chunks on upsert.
+            content_ref: Optional URI referencing external content.
 
         Returns
         -------
@@ -199,6 +202,7 @@ class WriteRequestBuilder:
                 source_ref=source_ref,
                 upsert=upsert,
                 chunk_policy=chunk_policy,
+                content_ref=content_ref,
             )
         )
         return handle
@@ -263,6 +267,7 @@ class WriteRequestBuilder:
         text_content: str,
         byte_start: int | None = None,
         byte_end: int | None = None,
+        content_hash: str | None = None,
     ) -> ChunkHandle:
         """Add a text chunk associated with a node.
 
@@ -272,6 +277,7 @@ class WriteRequestBuilder:
             text_content: The text content of the chunk.
             byte_start: Optional byte offset where the chunk starts in the source.
             byte_end: Optional byte offset where the chunk ends in the source.
+            content_hash: Optional hash of the external content this chunk was derived from.
 
         Returns
         -------
@@ -285,6 +291,7 @@ class WriteRequestBuilder:
                 text_content=text_content,
                 byte_start=byte_start,
                 byte_end=byte_end,
+                content_hash=content_hash,
             )
         )
         return handle
@@ -491,6 +498,7 @@ class WriteRequestBuilder:
                     text_content=item.text_content,
                     byte_start=item.byte_start,
                     byte_end=item.byte_end,
+                    content_hash=item.content_hash,
                 )
                 for item in self._chunks
             ],

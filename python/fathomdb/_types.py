@@ -323,6 +323,7 @@ class NodeRow:
     logical_id: str
     kind: str
     properties: Any
+    content_ref: str | None = None
     last_accessed_at: int | None = None
 
     @classmethod
@@ -332,6 +333,7 @@ class NodeRow:
             logical_id=payload["logical_id"],
             kind=payload["kind"],
             properties=_decode_json(payload["properties"]),
+            content_ref=payload.get("content_ref"),
             last_accessed_at=payload.get("last_accessed_at"),
         )
 
@@ -939,6 +941,7 @@ class NodeInsert:
     source_ref: str | None = None
     upsert: bool = False
     chunk_policy: ChunkPolicy = ChunkPolicy.PRESERVE
+    content_ref: str | None = None
 
     def to_wire(self) -> dict[str, Any]:
         return {
@@ -949,6 +952,7 @@ class NodeInsert:
             "source_ref": self.source_ref,
             "upsert": self.upsert,
             "chunk_policy": _enum_value(self.chunk_policy),
+            "content_ref": self.content_ref,
         }
 
 
@@ -1009,6 +1013,7 @@ class ChunkInsert:
     text_content: str
     byte_start: int | None = None
     byte_end: int | None = None
+    content_hash: str | None = None
 
     def to_wire(self) -> dict[str, Any]:
         return {
@@ -1017,6 +1022,7 @@ class ChunkInsert:
             "text_content": self.text_content,
             "byte_start": self.byte_start,
             "byte_end": self.byte_end,
+            "content_hash": self.content_hash,
         }
 
 

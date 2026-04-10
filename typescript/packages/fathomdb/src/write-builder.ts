@@ -85,6 +85,7 @@ export class WriteRequestBuilder {
       source_ref: input.sourceRef ?? null,
       upsert: input.upsert ?? false,
       chunk_policy: input.chunkPolicy ?? "preserve",
+      content_ref: input.contentRef ?? null,
     });
     return { _builderId: this.#builderId, rowId: input.rowId, logicalId: input.logicalId };
   }
@@ -149,6 +150,7 @@ export class WriteRequestBuilder {
       text_content: input.textContent,
       byte_start: input.byteStart ?? null,
       byte_end: input.byteEnd ?? null,
+      content_hash: input.contentHash ?? null,
     });
     return { _builderId: this.#builderId, id: input.id };
   }
