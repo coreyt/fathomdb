@@ -66,6 +66,7 @@ fn tracing_stress_duration() -> Duration {
     Duration::from_secs(seconds)
 }
 
+#[allow(clippy::print_stderr)]
 fn emit_success_summary(name: &str, metrics: &[(&str, String)]) {
     let rendered = metrics
         .iter()

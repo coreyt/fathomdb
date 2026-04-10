@@ -68,6 +68,7 @@ fn stress_duration() -> Duration {
     Duration::from_secs(seconds)
 }
 
+#[allow(clippy::print_stderr)]
 fn emit_success_summary(name: &str, metrics: &[(&str, String)]) {
     let rendered = metrics
         .iter()
@@ -332,6 +333,7 @@ fn check_integrity_during_active_writes() {
 
 #[test]
 #[ignore = "weekly stress test"]
+#[allow(clippy::too_many_lines)]
 fn telemetry_snapshot_is_monotonic_under_load() {
     let duration = stress_duration();
     let (_db, engine) = open_engine();
