@@ -4345,6 +4345,9 @@ mod tests {
     #[cfg(feature = "sqlite-vec")]
     use crate::ExecutionCoordinator;
 
+    #[cfg(feature = "sqlite-vec")]
+    use crate::TelemetryCounters;
+
     #[allow(dead_code)]
     #[cfg(unix)]
     fn set_file_mode(path: &std::path::Path, mode: u32) {
