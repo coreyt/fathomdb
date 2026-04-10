@@ -95,17 +95,21 @@ jobs:
           toolchain: stable
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - run: npm install -g @napi-rs/cli@2
       - name: Build native binding
-        working-directory: crates/fathomdb
-        run: napi build --release --target ${{ matrix.target }} --features node,sqlite-vec,tracing --platform
-      - name: Rename for upload
+        run: cargo build --release --target ${{ matrix.target }} --features node,sqlite-vec,tracing -p fathomdb
+      - name: Rename and stage binary
         shell: bash
-        working-directory: crates/fathomdb
         run: |
-          mkdir -p ../../typescript/packages/fathomdb/prebuilds
-          cp fathomdb.*.node ../../typescript/packages/fathomdb/prebuilds/
-          ls ../../typescript/packages/fathomdb/prebuilds/
+          mkdir -p typescript/packages/fathomdb/prebuilds
+          case "${{ matrix.target }}" in
+            *linux*)   SRC="target/${{ matrix.target }}/release/libfathomdb.so" ;;
+            *darwin*)  SRC="target/${{ matrix.target }}/release/libfathomdb.dylib" ;;
+            *windows*) SRC="target/${{ matrix.target }}/release/fathomdb.dll" ;;
+            *) echo "unknown target"; exit 1 ;;
+          esac
+          ls -lh "$SRC"
+          cp "$SRC" "typescript/packages/fathomdb/prebuilds/fathomdb.${{ matrix.label }}.node"
+          ls -lh typescript/packages/fathomdb/prebuilds/
       - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: napi-${{ matrix.label }}

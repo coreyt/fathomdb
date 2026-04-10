@@ -257,22 +257,22 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: "20"
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
         with:
           toolchain: stable
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - run: npm install -g @napi-rs/cli@2
       - name: Build native binding
-        working-directory: crates/fathomdb
-        run: napi build --release --target ${{ matrix.target }} --features node,sqlite-vec,tracing --platform
+        run: cargo build --release --target ${{ matrix.target }} --features node,sqlite-vec,tracing -p fathomdb
       - name: Verify output
         shell: bash
-        working-directory: crates/fathomdb
-        run: ls -la fathomdb.*.node
+        run: |
+          case "${{ matrix.target }}" in
+            *linux*)   SRC="target/${{ matrix.target }}/release/libfathomdb.so" ;;
+            *darwin*)  SRC="target/${{ matrix.target }}/release/libfathomdb.dylib" ;;
+            *windows*) SRC="target/${{ matrix.target }}/release/fathomdb.dll" ;;
+          esac
+          ls -lh "$SRC"
 
   semgrep:
     runs-on: ubuntu-latest
