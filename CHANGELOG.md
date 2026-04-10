@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-04-09
+
 ### Added
 
 - **macOS CI** — Rust, Go, and Python tests now run on `macos-latest`
@@ -25,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   package.json
 - **Consolidated MIT license** — single `LICENSE` file, dropped dual-license
 - **CHANGELOG.md** — this file
+
+### Note
+
+0.2.0 was published to npm only (manual publish during distribution setup);
+0.2.1 is the first version published to all three registries
+(crates.io, PyPI, npm) via the automated release workflow.
 
 ## [0.2.0] - 2026-04-08
 
@@ -111,7 +119,8 @@ These are known limitations in the current release:
 - Schema migration system (13 versioned migrations)
 - Supersession model (append-only, no destructive updates)
 
-[Unreleased]: https://github.com/coreyt/fathomdb/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/coreyt/fathomdb/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/coreyt/fathomdb/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/coreyt/fathomdb/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/coreyt/fathomdb/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/coreyt/fathomdb/releases/tag/v0.1.0

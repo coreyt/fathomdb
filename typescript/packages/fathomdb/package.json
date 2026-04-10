@@ -1,11 +1,20 @@
 {
   "name": "fathomdb",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Local datastore for persistent AI agents — graph, vector, and full-text search on SQLite",
-  "keywords": ["sqlite", "graph", "vector", "fts", "ai", "agent", "database", "napi"],
+  "keywords": [
+    "sqlite",
+    "graph",
+    "vector",
+    "fts",
+    "ai",
+    "agent",
+    "database",
+    "napi"
+  ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/coreyt/fathomdb.git",
+    "url": "git+https://github.com/coreyt/fathomdb.git",
     "directory": "typescript/packages/fathomdb"
   },
   "license": "MIT",
