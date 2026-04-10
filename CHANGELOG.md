@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-04-09
+
+### Fixed
+
+- **fathomdb-engine packaging**: vendor `tooling/sqlite.env` into the crate
+  as `sqlite.env` so `cargo publish` doesn't strip it. The original
+  `include_str!("../../../tooling/sqlite.env")` referenced a file outside
+  the crate boundary, which broke crates.io publishing.
+- **Python wheel build matrix**: replace `--find-interpreter` with explicit
+  `-i python3.10 python3.11 python3.12` so cross-compile Docker containers
+  don't try to build against Python 3.14 (unsupported by pyo3 0.23).
+
+### Note
+
+0.2.1 partially published: `fathomdb-query@0.2.1` and `fathomdb-schema@0.2.1`
+made it to crates.io before `fathomdb-engine@0.2.1` failed verification.
+0.2.2 is the first version with the engine fix; query/schema 0.2.2 are
+republished alongside for workspace version consistency.
+
 ## [0.2.1] - 2026-04-09
 
 ### Added
@@ -119,7 +138,8 @@ These are known limitations in the current release:
 - Schema migration system (13 versioned migrations)
 - Supersession model (append-only, no destructive updates)
 
-[Unreleased]: https://github.com/coreyt/fathomdb/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/coreyt/fathomdb/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/coreyt/fathomdb/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/coreyt/fathomdb/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/coreyt/fathomdb/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/coreyt/fathomdb/compare/v0.1.0...v0.1.1

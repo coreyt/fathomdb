@@ -5,7 +5,10 @@ use rusqlite::{Connection, OpenFlags};
 
 use crate::EngineError;
 
-const SHARED_SQLITE_POLICY: &str = include_str!("../../../tooling/sqlite.env");
+// Vendored copy of tooling/sqlite.env so the crate is self-contained for
+// `cargo publish`. Keep in sync with the workspace copy at
+// /tooling/sqlite.env (also referenced by the Go bridge and dev scripts).
+const SHARED_SQLITE_POLICY: &str = include_str!("../sqlite.env");
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SharedSqlitePolicy {

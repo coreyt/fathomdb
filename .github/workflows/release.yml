@@ -55,11 +55,10 @@ jobs:
       - uses: PyO3/maturin-action@aef21716ff3dcae8a1c301d23ec3e4446972a6e3 # v1.49.3
         with:
           target: ${{ matrix.target }}
-          # --find-interpreter so cross-compile Docker containers discover
-          # all Python versions installed in the manylinux image. Without
-          # this, aarch64 builds fail with "Couldn't find any python
-          # interpreters" because maturin can't probe the runner host.
-          args: --release --out dist --find-interpreter
+          # Explicit -i so cross-compile Docker containers don't pick up
+          # python3.14 (pyo3 0.23 doesn't support 3.14). After the pyo3 0.28
+          # upgrade in dev/notes/pyo3-0.28-upgrade-plan.md, expand this list.
+          args: --release --out dist -i python3.10 python3.11 python3.12
           manylinux: ${{ matrix.manylinux || 'auto' }}
           working-directory: python
       - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0

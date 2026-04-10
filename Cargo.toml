@@ -15,7 +15,7 @@ homepage = "https://github.com/coreyt/fathomdb"
 readme = "README.md"
 keywords = ["sqlite", "graph", "vector", "agent", "database"]
 categories = ["database", "database-implementations"]
-version = "0.2.1"
+version = "0.2.2"
 
 [workspace.lints.rust]
 missing_docs = "warn"
@@ -38,9 +38,9 @@ module_name_repetitions = "allow"
 
 [workspace.dependencies]
 criterion = "0.5.1"
-fathomdb-engine = { path = "crates/fathomdb-engine", version = "0.2.1" }
-fathomdb-query = { path = "crates/fathomdb-query", version = "0.2.1" }
-fathomdb-schema = { path = "crates/fathomdb-schema", version = "0.2.1" }
+fathomdb-engine = { path = "crates/fathomdb-engine", version = "0.2.2" }
+fathomdb-query = { path = "crates/fathomdb-query", version = "0.2.2" }
+fathomdb-schema = { path = "crates/fathomdb-schema", version = "0.2.2" }
 napi = { version = "2.16.13", default-features = false, features = ["napi8"] }
 napi-build = "2.1.5"
 napi-derive = "2.16.13"
