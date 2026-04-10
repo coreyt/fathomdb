@@ -55,7 +55,11 @@ jobs:
       - uses: PyO3/maturin-action@aef21716ff3dcae8a1c301d23ec3e4446972a6e3 # v1.49.3
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist
+          # --find-interpreter so cross-compile Docker containers discover
+          # all Python versions installed in the manylinux image. Without
+          # this, aarch64 builds fail with "Couldn't find any python
+          # interpreters" because maturin can't probe the runner host.
+          args: --release --out dist --find-interpreter
           manylinux: ${{ matrix.manylinux || 'auto' }}
           working-directory: python
       - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
