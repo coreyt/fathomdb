@@ -8,6 +8,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Iterable
@@ -128,12 +129,26 @@ def require_successful_commit_run(
     workflow: str,
     commit: str,
     *,
+    poll_interval: int = 30,
+    poll_timeout: int = 600,
     runner: Callable[..., subprocess.CompletedProcess[str]] = run_command,
 ) -> WorkflowRun:
-    runs = gh_run_list(repo, workflow, commit=commit, status="success", runner=runner)
-    for run in runs:
-        if run.conclusion == "success" and run.status == "completed" and run.head_sha == commit:
-            return run
+    deadline = time.monotonic() + poll_timeout
+    while True:
+        runs = gh_run_list(repo, workflow, commit=commit, status="success", runner=runner)
+        for run in runs:
+            if run.conclusion == "success" and run.status == "completed" and run.head_sha == commit:
+                return run
+        if time.monotonic() >= deadline:
+            break
+        # Check if there are any in-progress runs worth waiting for.
+        all_runs = gh_run_list(repo, workflow, commit=commit, runner=runner)
+        pending = [r for r in all_runs if r.head_sha == commit and r.status in ("in_progress", "queued", "waiting")]
+        if not pending:
+            break
+        remaining = int(deadline - time.monotonic())
+        print(f"waiting for {workflow} on {commit[:12]}... ({remaining}s remaining)")
+        time.sleep(min(poll_interval, max(1, remaining)))
     raise ReleaseGateError(
         f"no successful {workflow} workflow run found for commit {commit}"
     )
