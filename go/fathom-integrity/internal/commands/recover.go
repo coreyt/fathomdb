@@ -535,7 +535,9 @@ func readRecoveredIdentifier(input string) (string, int) {
 
 func isRecoveredProjectionObject(name string) bool {
 	lower := strings.ToLower(strings.TrimSpace(name))
-	return lower == "fts_nodes" || strings.HasPrefix(lower, "fts_nodes_") || lower == "vec_nodes_active"
+	return lower == "fts_nodes" || strings.HasPrefix(lower, "fts_nodes_") ||
+		lower == "fts_node_properties" || strings.HasPrefix(lower, "fts_node_properties_") ||
+		lower == "vec_nodes_active"
 }
 
 func isRecoveredSchemaCatalog(name string) bool {

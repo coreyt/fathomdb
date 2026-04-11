@@ -50,6 +50,24 @@ func TestSanitizeRecoveredSQL_RemovesWritableSchemaAndSqliteMasterWrites(t *test
 	require.Contains(t, output, "COMMIT;")
 }
 
+func TestSanitizeRecoveredSQL_RemovesFtsNodePropertiesShadowTables(t *testing.T) {
+	input := "" +
+		"BEGIN;\n" +
+		"CREATE TABLE 'fts_node_properties_data'(id INTEGER PRIMARY KEY, block BLOB);\n" +
+		"CREATE TABLE 'fts_node_properties_idx'(segid, term, pgno, PRIMARY KEY(segid, term)) WITHOUT ROWID;\n" +
+		"CREATE TABLE 'fts_node_properties_content'(id INTEGER PRIMARY KEY, c0, c1, c2);\n" +
+		"CREATE TABLE 'fts_node_properties_docsize'(id INTEGER PRIMARY KEY, sz BLOB);\n" +
+		"CREATE TABLE 'fts_node_properties_config'(k PRIMARY KEY, v) WITHOUT ROWID;\n" +
+		"INSERT INTO fts_node_properties_content VALUES(1, 'goal-1', 'Goal', 'Ship v2');\n" +
+		"CREATE TABLE x(y);\n" +
+		"COMMIT;\n"
+
+	output := sanitizeRecoveredSQL(input)
+
+	require.NotContains(t, output, "fts_node_properties")
+	require.Contains(t, output, "CREATE TABLE x(y);")
+}
+
 func TestSanitizeRecoveredSQL_PreservesVectorProfilesAndUserDataWithReservedWords(t *testing.T) {
 	input := "" +
 		"BEGIN;\n" +

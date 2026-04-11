@@ -1,4 +1,4 @@
-import { callNative, parseNativeJson } from "./errors.js";
+import { callNative, parseNativeJson, parseNativeJsonArray } from "./errors.js";
 import { runWithFeedback } from "./feedback.js";
 import type { NativeEngineCore } from "./native.js";
 import {
@@ -191,7 +191,7 @@ export class AdminClient {
   listFtsPropertySchemas(progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): FtsPropertySchemaRecord[] {
     return this.#run("admin.list_fts_property_schemas", () => {
       const json = callNative(() => this.#core.listFtsPropertySchemas());
-      const arr = parseNativeJson(json) as Record<string, unknown>[];
+      const arr = parseNativeJsonArray(json);
       return arr.map(ftsPropertySchemaRecordFromWire);
     }, progressCallback, feedbackConfig);
   }

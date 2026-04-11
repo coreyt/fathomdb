@@ -48,6 +48,21 @@ export function parseNativeJson(payload: string): Record<string, unknown> {
   }
 }
 
+/**
+ * Parse a JSON string that is expected to be an array of objects.
+ *
+ * @param payload - Raw JSON string from the native layer.
+ * @returns The parsed array.
+ * @throws {FathomError} If the payload cannot be parsed.
+ */
+export function parseNativeJsonArray(payload: string): Record<string, unknown>[] {
+  try {
+    return JSON.parse(payload) as Record<string, unknown>[];
+  } catch (error) {
+    throw mapNativeError(error);
+  }
+}
+
 export function callNative<T>(fn: () => T): T {
   try {
     return fn();
