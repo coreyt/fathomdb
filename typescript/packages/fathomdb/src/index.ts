@@ -77,6 +77,8 @@ export {
   type SkippedEdge,
   type TelemetrySnapshot,
   type TraceReport,
+  // FTS property schema types
+  type FtsPropertySchemaRecord,
   // Operational collection types
   type OperationalCollectionRecord,
   type OperationalCompactionReport,

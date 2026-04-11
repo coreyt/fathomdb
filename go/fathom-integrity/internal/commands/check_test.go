@@ -16,6 +16,11 @@ func TestSemanticReportUnmarshalAllFields(t *testing.T) {
 		"broken_action_fk": 4,
 		"stale_fts_rows": 5,
 		"fts_rows_for_superseded_nodes": 6,
+		"stale_property_fts_rows": 15,
+		"orphaned_property_fts_rows": 16,
+		"mismatched_kind_property_fts_rows": 17,
+		"duplicate_property_fts_rows": 18,
+		"drifted_property_fts_rows": 19,
 		"dangling_edges": 7,
 		"orphaned_supersession_chains": 8,
 		"stale_vec_rows": 9,
@@ -36,6 +41,11 @@ func TestSemanticReportUnmarshalAllFields(t *testing.T) {
 	require.Equal(t, 4, sr.BrokenActionFK)
 	require.Equal(t, 5, sr.StaleFtsRows)
 	require.Equal(t, 6, sr.FtsRowsForSupersededNodes)
+	require.Equal(t, 15, sr.StalePropertyFtsRows)
+	require.Equal(t, 16, sr.OrphanedPropertyFtsRows)
+	require.Equal(t, 17, sr.MismatchedKindPropertyFtsRows)
+	require.Equal(t, 18, sr.DuplicatePropertyFtsRows)
+	require.Equal(t, 19, sr.DriftedPropertyFtsRows)
 	require.Equal(t, 7, sr.DanglingEdges)
 	require.Equal(t, 8, sr.OrphanedSupersessionChains)
 	require.Equal(t, 9, sr.StaleVecRows)

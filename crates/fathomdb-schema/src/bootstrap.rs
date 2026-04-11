@@ -375,6 +375,25 @@ static MIGRATIONS: &[Migration] = &[
                 ALTER TABLE chunks ADD COLUMN content_hash TEXT;
                 ",
     ),
+    Migration::new(
+        SchemaVersion(15),
+        "FTS property projection schemas",
+        r"
+                CREATE TABLE IF NOT EXISTS fts_property_schemas (
+                    kind TEXT PRIMARY KEY,
+                    property_paths_json TEXT NOT NULL,
+                    separator TEXT NOT NULL DEFAULT ' ',
+                    format_version INTEGER NOT NULL DEFAULT 1,
+                    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+                );
+
+                CREATE VIRTUAL TABLE IF NOT EXISTS fts_node_properties USING fts5(
+                    node_logical_id UNINDEXED,
+                    kind UNINDEXED,
+                    text_content
+                );
+                ",
+    ),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -455,6 +474,7 @@ impl SchemaManager {
                 SchemaVersion(12) => Self::ensure_operational_secondary_indexes(&tx)?,
                 SchemaVersion(13) => Self::ensure_operational_retention_runs(&tx)?,
                 SchemaVersion(14) => Self::ensure_external_content_columns(&tx)?,
+                SchemaVersion(15) => Self::ensure_fts_property_schemas(&tx)?,
                 _ => tx.execute_batch(migration.sql)?,
             }
             tx.execute(
@@ -760,6 +780,27 @@ impl SchemaManager {
         if !chunk_columns.iter().any(|c| c == "content_hash") {
             conn.execute("ALTER TABLE chunks ADD COLUMN content_hash TEXT", [])?;
         }
+        Ok(())
+    }
+
+    fn ensure_fts_property_schemas(conn: &Connection) -> Result<(), SchemaError> {
+        conn.execute_batch(
+            r"
+            CREATE TABLE IF NOT EXISTS fts_property_schemas (
+                kind TEXT PRIMARY KEY,
+                property_paths_json TEXT NOT NULL,
+                separator TEXT NOT NULL DEFAULT ' ',
+                format_version INTEGER NOT NULL DEFAULT 1,
+                created_at INTEGER NOT NULL DEFAULT (unixepoch())
+            );
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS fts_node_properties USING fts5(
+                node_logical_id UNINDEXED,
+                kind UNINDEXED,
+                text_content
+            );
+            ",
+        )?;
         Ok(())
     }
 

@@ -356,6 +356,7 @@ export type IntegrityReport = {
   physicalOk: boolean;
   foreignKeysOk: boolean;
   missingFtsRows: number;
+  missingPropertyFtsRows: number;
   duplicateActiveLogicalIds: number;
   operationalMissingCollections: number;
   operationalMissingLastMutations: number;
@@ -367,6 +368,7 @@ export function integrityReportFromWire(w: Record<string, unknown>): IntegrityRe
     physicalOk: Boolean(w.physical_ok),
     foreignKeysOk: Boolean(w.foreign_keys_ok),
     missingFtsRows: Number(w.missing_fts_rows ?? 0),
+    missingPropertyFtsRows: Number(w.missing_property_fts_rows ?? 0),
     duplicateActiveLogicalIds: Number(w.duplicate_active_logical_ids ?? 0),
     operationalMissingCollections: Number(w.operational_missing_collections ?? 0),
     operationalMissingLastMutations: Number(w.operational_missing_last_mutations ?? 0),
@@ -381,6 +383,11 @@ export type SemanticReport = {
   brokenActionFk: number;
   staleFtsRows: number;
   ftsRowsForSupersededNodes: number;
+  stalePropertyFtsRows: number;
+  orphanedPropertyFtsRows: number;
+  mismatchedKindPropertyFtsRows: number;
+  duplicatePropertyFtsRows: number;
+  driftedPropertyFtsRows: number;
   danglingEdges: number;
   orphanedSupersessionChains: number;
   staleVecRows: number;
@@ -400,6 +407,11 @@ export function semanticReportFromWire(w: Record<string, unknown>): SemanticRepo
     brokenActionFk: Number(w.broken_action_fk ?? 0),
     staleFtsRows: Number(w.stale_fts_rows ?? 0),
     ftsRowsForSupersededNodes: Number(w.fts_rows_for_superseded_nodes ?? 0),
+    stalePropertyFtsRows: Number(w.stale_property_fts_rows ?? 0),
+    orphanedPropertyFtsRows: Number(w.orphaned_property_fts_rows ?? 0),
+    mismatchedKindPropertyFtsRows: Number(w.mismatched_kind_property_fts_rows ?? 0),
+    duplicatePropertyFtsRows: Number(w.duplicate_property_fts_rows ?? 0),
+    driftedPropertyFtsRows: Number(w.drifted_property_fts_rows ?? 0),
     danglingEdges: Number(w.dangling_edges ?? 0),
     orphanedSupersessionChains: Number(w.orphaned_supersession_chains ?? 0),
     staleVecRows: Number(w.stale_vec_rows ?? 0),
@@ -455,6 +467,7 @@ export type LogicalRestoreReport = {
   restoredEdgeRows: number;
   restoredChunkRows: number;
   restoredFtsRows: number;
+  restoredPropertyFtsRows: number;
   restoredVecRows: number;
   skippedEdges: SkippedEdge[];
   notes: string[];
@@ -468,6 +481,7 @@ export function logicalRestoreReportFromWire(w: Record<string, unknown>): Logica
     restoredEdgeRows: Number(w.restored_edge_rows ?? 0),
     restoredChunkRows: Number(w.restored_chunk_rows ?? 0),
     restoredFtsRows: Number(w.restored_fts_rows ?? 0),
+    restoredPropertyFtsRows: Number(w.restored_property_fts_rows ?? 0),
     restoredVecRows: Number(w.restored_vec_rows ?? 0),
     skippedEdges: asArray(w.skipped_edges).map(skippedEdgeFromWire),
     notes: asStringArray(w.notes),
@@ -547,6 +561,28 @@ export function provenancePurgeReportFromWire(w: Record<string, unknown>): Prove
 }
 
 // ── Operational collection types ───────────────────────────────────────
+
+/** A registered FTS property projection schema for a node kind. */
+export type FtsPropertySchemaRecord = {
+  /** The node kind this schema applies to. */
+  kind: string;
+  /** JSON property paths to extract (e.g. `["$.name", "$.title"]`). */
+  propertyPaths: string[];
+  /** Separator used when concatenating extracted values. */
+  separator: string;
+  /** Schema format version. */
+  formatVersion: number;
+};
+
+/** @internal */
+export function ftsPropertySchemaRecordFromWire(w: Record<string, unknown>): FtsPropertySchemaRecord {
+  return {
+    kind: String(w.kind ?? ""),
+    propertyPaths: Array.isArray(w.property_paths) ? w.property_paths.map(String) : [],
+    separator: String(w.separator ?? " "),
+    formatVersion: Number(w.format_version ?? 1),
+  };
+}
 
 export type OperationalCollectionRecord = {
   name: string;

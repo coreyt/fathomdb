@@ -1,5 +1,9 @@
 # Schema-Declared Full-Text Projections Over Structured Node Properties
 
+> **Status: Implemented** (SchemaVersion 15). See the
+> [design document](./design-structured-node-full-text-projections.md) for
+> architectural rationale and divergence notes.
+
 ## Problem Statement
 
 FathomDB currently has a gap for structured nodes that need text retrieval but
@@ -42,93 +46,131 @@ FathomDB then:
 
 This is an indexing projection, not a second client-owned record model.
 
-## User-Facing API Surface
+## Feature Contract
 
-At a high level, the feature should appear in schema or kind configuration, not
-in ad hoc client search code.
+### Schema
 
-Example schema shape:
+Two new tables added in SchemaVersion(15) with an idempotent ensure helper:
 
-```yaml
-kinds:
-  WMGoal:
-    properties: ...
-    text_projection:
-      paths:
-        - $.title
-        - $.description
-        - $.rationale
+**Contract table** — `fts_property_schemas`:
 
-  WMKnowledgeObject:
-    properties: ...
-    text_projection:
-      paths:
-        - $.title
-        - $.canonical_key
-        - $.knowledge_type
-        - $.payload.summary_text
+```sql
+CREATE TABLE IF NOT EXISTS fts_property_schemas (
+    kind TEXT PRIMARY KEY,
+    property_paths_json TEXT NOT NULL,
+    separator TEXT NOT NULL DEFAULT ' ',
+    format_version INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
 ```
 
-High-level query surface:
+**FTS index** — `fts_node_properties` (separate from `fts_nodes`):
 
-- clients continue to write normal nodes only
-- clients query with normal text search against the kind
-- no synthetic chunk creation is required
+```sql
+CREATE VIRTUAL TABLE IF NOT EXISTS fts_node_properties USING fts5(
+    node_logical_id UNINDEXED,
+    kind UNINDEXED,
+    text_content
+);
+```
 
-Example:
+The existing `fts_nodes` table is unchanged and remains chunk-only.
+
+### Admin API
+
+Four operations, exposed across all SDK surfaces:
+
+| Operation | Signature | Behavior |
+|---|---|---|
+| Register | `register_fts_property_schema(kind, property_paths, separator)` | Idempotent upsert. Validates a non-empty ordered list of simple dot-notation paths beginning with `$.`; rejects duplicates and malformed paths. |
+| Describe | `describe_fts_property_schema(kind)` → `Option<FtsPropertySchemaRecord>` | Returns schema for a single kind, or None. |
+| List | `list_fts_property_schemas()` → `Vec<FtsPropertySchemaRecord>` | Returns all registered schemas. |
+| Remove | `remove_fts_property_schema(kind)` | Deletes the schema row. Does NOT delete FTS rows; requires explicit rebuild. |
+
+### Write-Time Behavior
+
+On node insert or upsert for a kind with a registered schema:
+
+- `resolve_property_fts_rows` loads all schemas once per request from the DB
+- Extracts property paths from co-submitted nodes using `extract_json_path`
+  (supports simple dot-notation: `$.name`, `$.address.city`)
+- Concatenates extracted values with the configured separator
+- Property FTS rows are inserted in the same IMMEDIATE transaction as nodes
+
+Normalization rules:
+
+- Include scalar string values directly.
+- Stringify numbers and booleans.
+- Flatten arrays of scalars in order.
+- Skip `null`, missing values, objects, nested arrays, and array elements that
+  are not scalar.
+- Preserve declared path order first, then preserve element order within any
+  flattened scalar array.
+- Preserve empty strings if they are explicitly present; they still count as
+  extracted values even though they contribute no visible characters.
+- Apply the configured separator between every extracted value, regardless of
+  whether the values came from different paths or from the same flattened array.
+- If no values are extracted after normalization, do not insert a property FTS
+  row.
+
+Supported path syntax in v1:
+
+- Only simple dot-notation paths are supported, such as `$.title` and
+  `$.payload.summary_text`.
+- Paths must start with `$.`.
+- Paths must contain one or more non-empty key segments after `$`.
+- Array indexing, wildcards, recursive descent, quoted keys, and filter syntax
+  are out of scope for v1 and must be rejected at registration time.
+
+Transaction behavior:
+
+- **Insert**: insert one `fts_node_properties` row if kind has a schema
+- **Upsert**: ALWAYS delete existing property FTS rows, then re-insert
+  (unconditional, not gated on ChunkPolicy)
+- **Retire**: delete property FTS rows alongside chunk FTS rows
+- **Excise**: full property FTS rebuild within the same transaction
+
+### Query-Time Behavior
+
+The existing `text_search(...)` query operator transparently covers both
+chunk-backed and property-backed FTS. No new query API is introduced for this
+feature.
+
+The query compiler's `FtsNodes` driving table branch emits a UNION of
+`fts_nodes` and `fts_node_properties`, so property-derived text is searchable
+alongside chunk-derived text without any user-facing API change.
+
+Example usage:
 
 ```python
-db.nodes("WMKnowledgeObject").text_search("oauth token rotation", limit=25)
+# Searches both chunk-backed and property-backed FTS transparently
+db.nodes("Document").text_search("oauth token rotation", limit=25)
+db.nodes("WMGoal").text_search("quarterly revenue", limit=25)
 ```
 
-Recommended API position:
+### Projection and Rebuild
 
-- `text_search(...)` remains the primary query operator
-- `property_text_search(...)` becomes unnecessary and should eventually be
-  removed or deprecated
-- the engine decides whether a kind is backed by chunk FTS, structured-node
-  FTS, or both
+- `rebuild_property_fts` in `projection.rs`: DELETE all + re-INSERT from schemas
+  + active nodes
+- `rebuild_missing_property_fts_in_tx`: fills gaps for nodes with zero property
+  FTS rows
+- Integrated into `rebuild_projections(Fts)` and `rebuild_projections(All)`
 
-## Write-Time Behavior
+### Cross-Surface Parity
 
-On node insert or update for a kind with `text_projection` configured,
-FathomDB should:
+All four admin operations are available across:
 
-- extract the configured JSON paths from the node's `properties`
-- normalize the extracted values into projection text
-- update the internal full-text projection atomically with the node write
-- mark the projection as superseded when the node version is superseded
-- support admin rebuild and backfill from canonical node rows
-
-Normalization rules for v1 should be simple and deterministic:
-
-- include scalar string values
-- include scalar non-string values by stringifying them
-- include arrays of scalars by flattening them
-- ignore objects unless a path points to a scalar or array leaf
-- skip missing or null values
-
-The projection is engine-owned derived state, similar in spirit to an index,
-not client-authored content.
-
-## Query-Time Behavior
-
-When a query targets a kind with a structured full-text projection:
-
-- `text_search(...)` should drive from the projection-backed FTS index
-- candidate node IDs should come from the projection index, not from scanning
-  `nodes`
-- filters and traversals should compose the same way they do for existing
-  search-backed plans
-- results should resolve directly to active node versions of that kind
-
-Expected behavior:
-
-- search execution path is FTS-first
-- ranking is based on projection text match score
-- kind restriction is intrinsic to the projection or applied at the indexed
-  candidate stage
-- no client-side serialization or substring matching is needed
+| Surface | Implementation |
+|---|---|
+| Rust Engine facade | 4 methods |
+| NAPI (Node.js) | 4 `#[napi]` methods accepting JSON |
+| PyO3 (Python FFI) | 4 methods with `py.allow_threads()` |
+| Python SDK (`_admin.py`) | 4 high-level methods with `run_with_feedback` |
+| Python types (`_types.py`) | `FtsPropertySchemaRecord` dataclass |
+| TypeScript `native.ts` | 4 method signatures |
+| TypeScript `admin.ts` | 4 high-level methods |
+| TypeScript `types.ts` | `FtsPropertySchemaRecord` type + `fromWire` |
+| Admin bridge | 4 bridge commands |
 
 ## How It Differs From Explicit Chunks and Document Ingestion
 
@@ -146,8 +188,11 @@ So:
 
 - use chunks for document and content ingestion
 - use structured full-text projections for structured entity records
+- use `text_search(...)` to search both chunk-backed and property-backed text
+- use admin schema registration to opt a kind into property-backed search
 
-They solve different problems and should remain separate concepts.
+They solve different problems and remain separate concepts with separate FTS
+tables.
 
 ## Why This Solves the Client-Side Scan Problem
 
@@ -162,7 +207,7 @@ Instead of:
 
 the client does:
 
-- issue a text query against a kind
+- issue a `text_search(...)` query against a kind
 - let FathomDB hit an FTS-backed projection
 - receive only matched nodes
 
@@ -170,15 +215,15 @@ That eliminates broad reads, repeated JSON materialization, and duplicated
 per-client search logic. It also gives FathomDB a real search execution path
 rather than forcing application-side table scans.
 
-## Constraints, Tradeoffs, and Open Questions
+## Constraints and Tradeoffs
 
 Constraints:
 
 - projection text is derived, so write cost increases
-- schema must explicitly identify searchable fields
+- schema must explicitly identify searchable fields via `$.`-prefixed paths
 - only declared fields are searchable through this mechanism
-- backup and recovery must treat projection rows as rebuildable derived state,
-  while preserving projection contracts as canonical metadata
+- backup and recovery must treat `fts_node_properties` rows as rebuildable
+  derived state, while preserving `fts_property_schemas` as canonical metadata
 - write-time projection maintenance increases WAL traffic and should be measured
   under sustained upsert workloads
 
@@ -188,68 +233,74 @@ Tradeoffs:
 - simpler client behavior in exchange for more engine responsibility
 - kind-specific schema configuration instead of arbitrary runtime property
   search
+- separate FTS table avoids migration risk while still preserving transparent
+  `text_search(...)` coverage
 
-Open design questions:
+## Lifecycle, Backup, And Recovery Semantics
 
-- Should per-path weights be supported, or deferred?
-- Should the projection store field boundaries, or only concatenated text?
-- How should arrays and nested objects be normalized beyond simple scalar
-  flattening?
-- Should language or tokenizer configuration be global, per database, or per
-  kind?
+The authoritative durability boundary for this feature is:
+
+- `fts_property_schemas` is canonical metadata and must be preserved by
+  bootstrap, safe export, and recovery workflows
+- `fts_node_properties` is derived active-state projection data and must be
+  rebuildable from active nodes plus `fts_property_schemas`
+
+Lifecycle expectations:
+
+- node insert and upsert must commit canonical node state and property FTS
+  updates atomically
+- node retire must remove property FTS visibility in the same transaction
+- source excision must remove or rebuild property FTS atomically so excised
+  content is not searchable after commit
+- logical restore must reestablish property FTS visibility for the restored
+  active node before the operation is considered complete
+- rebuild and repair operations must be idempotent and sufficient to recover
+  property FTS from canonical state alone
+
+Backup and export expectations:
+
+- safe export should include `fts_property_schemas` because it is canonical
+  metadata
+- safe export may include `fts_node_properties`, but restore correctness must
+  not depend on those rows being present or up to date
+- any recovery path that does not trust derived rows must be able to rebuild
+  `fts_node_properties` from canonical state without data loss
+
+Diagnostics expectations:
+
+- integrity and semantic health tooling should account for drift in
+  `fts_node_properties`, not only `fts_nodes`
+- stress and benchmark coverage should include projection-enabled structured
+  kinds under sustained upsert and search load
+
+## Open Design Questions (Resolved and Remaining)
+
+Resolved:
+
+- **Per-path weights**: Deferred (not in v1)
+- **Field boundaries vs concatenated text**: Concatenated text only, with
+  configurable separator
+- **Language/tokenizer configuration**: Not in v1
+- **Both chunk and property search on same kind**: Supported transparently via
+  `text_search(...)`, which unions chunk-backed and property-backed FTS
+  candidates
+- **Projection schema changes and backfill**: Explicit — register schema, then
+  run rebuild
+- **Projection failures**: Do not block writes; property FTS is derived state
+
+Remaining:
+
+- Should per-path weights be supported in a future version?
 - Should the engine expose which field matched, or only return matched nodes?
-- Can a kind use both chunk-backed and structured-property-backed text search,
-  and if so how are results merged?
-- How should projection schema changes trigger backfill and migration?
-- Should projection failures block writes, or degrade and surface repair state?
-- What stress and benchmark coverage is required to validate WAL growth,
-  checkpoint behavior, rebuild latency, and backup/restore correctness for
-  projection-heavy workloads?
-
-## Recommended Minimal First Version
-
-Ship a narrow, opinionated v1.
-
-Scope:
-
-- one projection config per node kind
-- projection defined as ordered JSON paths
-- engine-maintained node-level FTS projection
-- `text_search(...)` uses that projection automatically for configured kinds
-- admin rebuild and backfill support
-
-Behavior:
-
-- extract strings, numbers, booleans, and arrays of scalars
-- concatenate normalized values into a single internal search document per node
-  version
-- update projection synchronously on node write and update
-- resolve hits to active node rows
-- keep existing chunk FTS behavior unchanged for document kinds
-- preserve transactional consistency so canonical node writes and required text
-  projections commit or roll back together
-- preserve safe export and recovery by making contracts canonical and projection
-  rows rebuildable
-
-Do not include in v1:
-
-- per-field weighting
-- field-scoped query syntax
-- highlighting or snippets
-- stemming or language customization per kind
-- complex object flattening policies
-- merged ranking across chunk and structured projections
-
-Recommended product position:
-
-- treat current `property_text_search` as an interim scan-based capability
-- define Structured Node Full-Text Projections as the durable engine feature
-- steer clients to schema declaration plus ordinary `text_search(...)`
+- Should future versions add richer path syntax beyond simple dot-notation?
+- Should future versions expose field-level match reporting or snippets?
 
 ## Bottom Line
 
-FathomDB should add a first-class capability for schema-declared full-text
-projections over structured node properties. That gives structured node kinds
-the same engine-owned search discipline that chunks already provide for
-documents, without forcing clients to invent synthetic chunk records or run
-search in application code.
+FathomDB has a first-class capability for schema-declared full-text projections
+over structured node properties. Structured node kinds get the same
+engine-owned search discipline that chunks provide for documents, using a
+separate `fts_node_properties` FTS5 table backed by `fts_property_schemas`
+contracts. Clients write ordinary nodes, register a property schema per kind,
+and query with the existing `text_search(...)` operator. The engine derives,
+maintains, and rebuilds the FTS projection automatically.

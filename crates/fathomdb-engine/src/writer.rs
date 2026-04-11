@@ -248,6 +248,13 @@ struct FtsProjectionRow {
     text_content: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct FtsPropertyProjectionRow {
+    node_logical_id: String,
+    kind: String,
+    text_content: String,
+}
+
 struct PreparedWrite {
     label: String,
     nodes: Vec<NodeInsert>,
@@ -271,6 +278,8 @@ struct PreparedWrite {
     node_kinds: HashMap<String, String>,
     /// Filled in by `resolve_fts_rows` in the writer thread before BEGIN IMMEDIATE.
     required_fts_rows: Vec<FtsProjectionRow>,
+    /// Filled in by `resolve_property_fts_rows` in the writer thread before BEGIN IMMEDIATE.
+    required_property_fts_rows: Vec<FtsPropertyProjectionRow>,
     optional_backfills: Vec<OptionalProjectionTask>,
 }
 
@@ -767,6 +776,7 @@ fn prepare_write(
         operational_validation_warnings: Vec::new(),
         node_kinds,
         required_fts_rows: Vec::new(),
+        required_property_fts_rows: Vec::new(),
         optional_backfills: request.optional_backfills,
     })
 }
@@ -929,6 +939,116 @@ fn resolve_fts_rows(
     Ok(())
 }
 
+/// Load FTS property schemas from the database and extract property values from
+/// co-submitted nodes, generating `FtsPropertyProjectionRow` entries.
+fn resolve_property_fts_rows(
+    conn: &rusqlite::Connection,
+    prepared: &mut PreparedWrite,
+) -> Result<(), EngineError> {
+    if prepared.nodes.is_empty() {
+        return Ok(());
+    }
+
+    let schemas: HashMap<String, (Vec<String>, String)> = load_fts_property_schemas(conn)?
+        .into_iter()
+        .map(|(kind, paths, sep)| (kind, (paths, sep)))
+        .collect();
+
+    if schemas.is_empty() {
+        return Ok(());
+    }
+
+    for node in &prepared.nodes {
+        let Some((paths, separator)) = schemas.get(&node.kind) else {
+            continue;
+        };
+        let props: serde_json::Value = serde_json::from_str(&node.properties).unwrap_or_default();
+        if let Some(text_content) = compute_property_fts_text(&props, paths, separator) {
+            prepared
+                .required_property_fts_rows
+                .push(FtsPropertyProjectionRow {
+                    node_logical_id: node.logical_id.clone(),
+                    kind: node.kind.clone(),
+                    text_content,
+                });
+        }
+    }
+    trace_debug!(
+        property_fts_rows = prepared.required_property_fts_rows.len(),
+        nodes_processed = prepared.nodes.len(),
+        "property fts row resolution completed"
+    );
+    Ok(())
+}
+
+/// Extract scalar values from a JSON object at a `$.field` path.
+/// Supports simple dot-notation paths like `$.name`, `$.address.city`.
+/// Returns individual scalars so callers can join them with the configured separator.
+pub(crate) fn extract_json_path(value: &serde_json::Value, path: &str) -> Vec<String> {
+    let Some(path) = path.strip_prefix("$.") else {
+        return Vec::new();
+    };
+    let mut current = value;
+    for segment in path.split('.') {
+        match current.get(segment) {
+            Some(v) => current = v,
+            None => return Vec::new(),
+        }
+    }
+    match current {
+        serde_json::Value::String(s) => vec![s.clone()],
+        serde_json::Value::Number(n) => vec![n.to_string()],
+        serde_json::Value::Bool(b) => vec![b.to_string()],
+        serde_json::Value::Null => Vec::new(),
+        serde_json::Value::Array(arr) => arr
+            .iter()
+            .filter_map(|v| match v {
+                serde_json::Value::String(s) => Some(s.clone()),
+                serde_json::Value::Number(n) => Some(n.to_string()),
+                serde_json::Value::Bool(b) => Some(b.to_string()),
+                _ => None,
+            })
+            .collect(),
+        serde_json::Value::Object(_) => Vec::new(),
+    }
+}
+
+/// Extract property values at `paths` from a JSON value and join with `separator`.
+/// Array elements are individual extracted values — the separator applies between
+/// all scalars regardless of whether they came from the same path or different paths.
+/// Returns `None` if no paths resolve to a value.
+pub(crate) fn compute_property_fts_text(
+    props: &serde_json::Value,
+    paths: &[String],
+    separator: &str,
+) -> Option<String> {
+    let mut parts = Vec::new();
+    for path in paths {
+        parts.extend(extract_json_path(props, path));
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(separator))
+    }
+}
+
+/// Load all registered FTS property schemas from the database.
+pub(crate) fn load_fts_property_schemas(
+    conn: &rusqlite::Connection,
+) -> Result<Vec<(String, Vec<String>, String)>, rusqlite::Error> {
+    let mut stmt =
+        conn.prepare("SELECT kind, property_paths_json, separator FROM fts_property_schemas")?;
+    stmt.query_map([], |row| {
+        let kind: String = row.get(0)?;
+        let paths_json: String = row.get(1)?;
+        let separator: String = row.get(2)?;
+        let paths: Vec<String> = serde_json::from_str(&paths_json).unwrap_or_default();
+        Ok((kind, paths, separator))
+    })?
+    .collect::<Result<Vec<_>, _>>()
+}
+
 fn resolve_operational_writes(
     conn: &rusqlite::Connection,
     prepared: &mut PreparedWrite,
@@ -1086,6 +1206,7 @@ fn resolve_and_apply(
     prepared: &mut PreparedWrite,
 ) -> Result<WriteReceipt, EngineError> {
     resolve_fts_rows(conn, prepared)?;
+    resolve_property_fts_rows(conn, prepared)?;
     resolve_operational_writes(conn, prepared)?;
     apply_write(conn, prepared)
 }
@@ -1282,10 +1403,12 @@ fn apply_write(
 ) -> Result<WriteReceipt, EngineError> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
 
-    // Node retires: clear rebuildable FTS rows, preserve chunks/vec for possible restore,
-    // mark superseded, record audit event.
+    // Node retires: clear rebuildable FTS rows (chunk-based and property-based),
+    // preserve chunks/vec for possible restore, mark superseded, record audit event.
     {
         let mut del_fts = tx.prepare_cached("DELETE FROM fts_nodes WHERE node_logical_id = ?1")?;
+        let mut del_prop_fts =
+            tx.prepare_cached("DELETE FROM fts_node_properties WHERE node_logical_id = ?1")?;
         let mut sup_node = tx.prepare_cached(
             "UPDATE nodes SET superseded_at = unixepoch() \
              WHERE logical_id = ?1 AND superseded_at IS NULL",
@@ -1296,6 +1419,7 @@ fn apply_write(
         )?;
         for retire in &prepared.node_retires {
             del_fts.execute(params![retire.logical_id])?;
+            del_prop_fts.execute(params![retire.logical_id])?;
             sup_node.execute(params![retire.logical_id])?;
             ins_event.execute(params![new_id(), retire.logical_id, retire.source_ref])?;
         }
@@ -1320,6 +1444,8 @@ fn apply_write(
     // Node inserts (with optional upsert + chunk-policy handling).
     {
         let mut del_fts = tx.prepare_cached("DELETE FROM fts_nodes WHERE node_logical_id = ?1")?;
+        let mut del_prop_fts =
+            tx.prepare_cached("DELETE FROM fts_node_properties WHERE node_logical_id = ?1")?;
         let mut del_chunks = tx.prepare_cached("DELETE FROM chunks WHERE node_logical_id = ?1")?;
         let mut sup_node = tx.prepare_cached(
             "UPDATE nodes SET superseded_at = unixepoch() \
@@ -1340,6 +1466,8 @@ fn apply_write(
         };
         for node in &prepared.nodes {
             if node.upsert {
+                // Property FTS rows are always replaced on upsert since properties change.
+                del_prop_fts.execute(params![node.logical_id])?;
                 if node.chunk_policy == ChunkPolicy::Replace {
                     #[cfg(feature = "sqlite-vec")]
                     if let Some(ref mut stmt) = del_vec {
@@ -1645,6 +1773,17 @@ fn apply_write(
                 fts_row.kind,
                 fts_row.text_content,
             ])?;
+        }
+    }
+
+    // Property FTS row inserts.
+    if !prepared.required_property_fts_rows.is_empty() {
+        let mut ins_prop_fts = tx.prepare_cached(
+            "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
+             VALUES (?1, ?2, ?3)",
+        )?;
+        for row in &prepared.required_property_fts_rows {
+            ins_prop_fts.execute(params![row.node_logical_id, row.kind, row.text_content,])?;
         }
     }
 
@@ -6366,5 +6505,375 @@ mod tests {
             result.is_ok(),
             "write request within limits must succeed: got {result:?}"
         );
+    }
+
+    #[test]
+    fn property_fts_rows_created_on_node_insert() {
+        let db = NamedTempFile::new().expect("temporary db");
+        // Bootstrap and register a property schema before starting the writer.
+        let schema = Arc::new(SchemaManager::new());
+        {
+            let conn = rusqlite::Connection::open(db.path()).expect("conn");
+            schema.bootstrap(&conn).expect("bootstrap");
+            conn.execute(
+                "INSERT INTO fts_property_schemas (kind, property_paths_json, separator) \
+                 VALUES ('Goal', '[\"$.name\", \"$.description\"]', ' ')",
+                [],
+            )
+            .expect("register schema");
+        }
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::clone(&schema),
+            ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("writer");
+
+        writer
+            .submit(WriteRequest {
+                label: "goal-insert".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-1".to_owned(),
+                    logical_id: "goal-1".to_owned(),
+                    kind: "Goal".to_owned(),
+                    properties: r#"{"name":"Ship v2","description":"Launch the redesign"}"#
+                        .to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
+                }],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+                operational_writes: vec![],
+            })
+            .expect("write");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let text: String = conn
+            .query_row(
+                "SELECT text_content FROM fts_node_properties WHERE node_logical_id = 'goal-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("property FTS row must exist");
+        assert_eq!(text, "Ship v2 Launch the redesign");
+    }
+
+    #[test]
+    fn property_fts_rows_replaced_on_upsert() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let schema = Arc::new(SchemaManager::new());
+        {
+            let conn = rusqlite::Connection::open(db.path()).expect("conn");
+            schema.bootstrap(&conn).expect("bootstrap");
+            conn.execute(
+                "INSERT INTO fts_property_schemas (kind, property_paths_json, separator) \
+                 VALUES ('Goal', '[\"$.name\"]', ' ')",
+                [],
+            )
+            .expect("register schema");
+        }
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::clone(&schema),
+            ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("writer");
+
+        // Initial insert.
+        writer
+            .submit(WriteRequest {
+                label: "insert".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-1".to_owned(),
+                    logical_id: "goal-1".to_owned(),
+                    kind: "Goal".to_owned(),
+                    properties: r#"{"name":"Alpha"}"#.to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
+                }],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+                operational_writes: vec![],
+            })
+            .expect("insert");
+
+        // Upsert with changed property.
+        writer
+            .submit(WriteRequest {
+                label: "upsert".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-2".to_owned(),
+                    logical_id: "goal-1".to_owned(),
+                    kind: "Goal".to_owned(),
+                    properties: r#"{"name":"Beta"}"#.to_owned(),
+                    source_ref: Some("src-2".to_owned()),
+                    upsert: true,
+                    chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
+                }],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+                operational_writes: vec![],
+            })
+            .expect("upsert");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM fts_node_properties WHERE node_logical_id = 'goal-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count");
+        assert_eq!(
+            count, 1,
+            "must have exactly one property FTS row after upsert"
+        );
+
+        let text: String = conn
+            .query_row(
+                "SELECT text_content FROM fts_node_properties WHERE node_logical_id = 'goal-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("text");
+        assert_eq!(text, "Beta", "property FTS must reflect updated properties");
+    }
+
+    #[test]
+    fn property_fts_rows_deleted_on_retire() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let schema = Arc::new(SchemaManager::new());
+        {
+            let conn = rusqlite::Connection::open(db.path()).expect("conn");
+            schema.bootstrap(&conn).expect("bootstrap");
+            conn.execute(
+                "INSERT INTO fts_property_schemas (kind, property_paths_json, separator) \
+                 VALUES ('Goal', '[\"$.name\"]', ' ')",
+                [],
+            )
+            .expect("register schema");
+        }
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::clone(&schema),
+            ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("writer");
+
+        // Insert a node.
+        writer
+            .submit(WriteRequest {
+                label: "insert".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-1".to_owned(),
+                    logical_id: "goal-1".to_owned(),
+                    kind: "Goal".to_owned(),
+                    properties: r#"{"name":"Alpha"}"#.to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
+                }],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+                operational_writes: vec![],
+            })
+            .expect("insert");
+
+        // Retire the node.
+        writer
+            .submit(WriteRequest {
+                label: "retire".to_owned(),
+                nodes: vec![],
+                node_retires: vec![NodeRetire {
+                    logical_id: "goal-1".to_owned(),
+                    source_ref: Some("forget-1".to_owned()),
+                }],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+                operational_writes: vec![],
+            })
+            .expect("retire");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM fts_node_properties WHERE node_logical_id = 'goal-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count");
+        assert_eq!(count, 0, "property FTS row must be deleted on retire");
+    }
+
+    #[test]
+    fn no_property_fts_row_for_unregistered_kind() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let schema = Arc::new(SchemaManager::new());
+        {
+            let conn = rusqlite::Connection::open(db.path()).expect("conn");
+            schema.bootstrap(&conn).expect("bootstrap");
+            // No schema registered for "Note" kind.
+        }
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::clone(&schema),
+            ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("writer");
+
+        writer
+            .submit(WriteRequest {
+                label: "insert".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-1".to_owned(),
+                    logical_id: "note-1".to_owned(),
+                    kind: "Note".to_owned(),
+                    properties: r#"{"title":"hello"}"#.to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
+                }],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+                operational_writes: vec![],
+            })
+            .expect("insert");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let count: i64 = conn
+            .query_row("SELECT count(*) FROM fts_node_properties", [], |row| {
+                row.get(0)
+            })
+            .expect("count");
+        assert_eq!(count, 0, "no property FTS rows for unregistered kind");
+    }
+
+    mod extract_json_path_tests {
+        use super::super::extract_json_path;
+        use serde_json::json;
+
+        #[test]
+        fn string_value() {
+            let v = json!({"name": "alice"});
+            assert_eq!(extract_json_path(&v, "$.name"), vec!["alice"]);
+        }
+
+        #[test]
+        fn number_value() {
+            let v = json!({"age": 42});
+            assert_eq!(extract_json_path(&v, "$.age"), vec!["42"]);
+        }
+
+        #[test]
+        fn bool_value() {
+            let v = json!({"active": true});
+            assert_eq!(extract_json_path(&v, "$.active"), vec!["true"]);
+        }
+
+        #[test]
+        fn null_value() {
+            let v = json!({"x": null});
+            assert!(extract_json_path(&v, "$.x").is_empty());
+        }
+
+        #[test]
+        fn missing_path() {
+            let v = json!({"name": "a"});
+            assert!(extract_json_path(&v, "$.missing").is_empty());
+        }
+
+        #[test]
+        fn nested_path() {
+            let v = json!({"address": {"city": "NYC"}});
+            assert_eq!(extract_json_path(&v, "$.address.city"), vec!["NYC"]);
+        }
+
+        #[test]
+        fn array_of_strings() {
+            let v = json!({"tags": ["a", "b", "c"]});
+            assert_eq!(extract_json_path(&v, "$.tags"), vec!["a", "b", "c"]);
+        }
+
+        #[test]
+        fn array_mixed_scalars() {
+            let v = json!({"vals": ["x", 1, true]});
+            assert_eq!(extract_json_path(&v, "$.vals"), vec!["x", "1", "true"]);
+        }
+
+        #[test]
+        fn array_only_objects_returns_empty() {
+            let v = json!({"data": [{"k": "v"}]});
+            assert!(extract_json_path(&v, "$.data").is_empty());
+        }
+
+        #[test]
+        fn array_mixed_objects_and_scalars() {
+            let v = json!({"data": ["keep", {"skip": true}, "also"]});
+            assert_eq!(extract_json_path(&v, "$.data"), vec!["keep", "also"]);
+        }
+
+        #[test]
+        fn object_returns_empty() {
+            let v = json!({"meta": {"k": "v"}});
+            assert!(extract_json_path(&v, "$.meta").is_empty());
+        }
+
+        #[test]
+        fn no_prefix_returns_empty() {
+            let v = json!({"name": "a"});
+            assert!(extract_json_path(&v, "name").is_empty());
+        }
     }
 }

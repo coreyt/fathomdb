@@ -1332,6 +1332,7 @@ mod tests {
             physical_ok: true,
             foreign_keys_ok: false,
             missing_fts_rows: 3,
+            missing_property_fts_rows: 5,
             duplicate_active_logical_ids: 1,
             operational_missing_collections: 2,
             operational_missing_last_mutations: 4,
@@ -1343,6 +1344,7 @@ mod tests {
         assert_eq!(json["physical_ok"], true);
         assert_eq!(json["foreign_keys_ok"], false);
         assert_eq!(json["missing_fts_rows"], 3);
+        assert_eq!(json["missing_property_fts_rows"], 5);
         assert_eq!(json["duplicate_active_logical_ids"], 1);
         assert_eq!(json["operational_missing_collections"], 2);
         assert_eq!(json["operational_missing_last_mutations"], 4);
@@ -1364,6 +1366,11 @@ mod tests {
             broken_action_fk: 4,
             stale_fts_rows: 5,
             fts_rows_for_superseded_nodes: 6,
+            stale_property_fts_rows: 15,
+            orphaned_property_fts_rows: 16,
+            mismatched_kind_property_fts_rows: 17,
+            duplicate_property_fts_rows: 18,
+            drifted_property_fts_rows: 19,
             dangling_edges: 7,
             orphaned_supersession_chains: 8,
             stale_vec_rows: 9,
@@ -1383,6 +1390,11 @@ mod tests {
         assert_eq!(json["broken_action_fk"], 4);
         assert_eq!(json["stale_fts_rows"], 5);
         assert_eq!(json["fts_rows_for_superseded_nodes"], 6);
+        assert_eq!(json["stale_property_fts_rows"], 15);
+        assert_eq!(json["orphaned_property_fts_rows"], 16);
+        assert_eq!(json["mismatched_kind_property_fts_rows"], 17);
+        assert_eq!(json["duplicate_property_fts_rows"], 18);
+        assert_eq!(json["drifted_property_fts_rows"], 19);
         assert_eq!(json["dangling_edges"], 7);
         assert_eq!(json["orphaned_supersession_chains"], 8);
         assert_eq!(json["stale_vec_rows"], 9);
@@ -1867,6 +1879,7 @@ pub struct PyIntegrityReport {
     pub physical_ok: bool,
     pub foreign_keys_ok: bool,
     pub missing_fts_rows: usize,
+    pub missing_property_fts_rows: usize,
     pub duplicate_active_logical_ids: usize,
     pub operational_missing_collections: usize,
     pub operational_missing_last_mutations: usize,
@@ -1879,6 +1892,7 @@ impl From<IntegrityReport> for PyIntegrityReport {
             physical_ok: value.physical_ok,
             foreign_keys_ok: value.foreign_keys_ok,
             missing_fts_rows: value.missing_fts_rows,
+            missing_property_fts_rows: value.missing_property_fts_rows,
             duplicate_active_logical_ids: value.duplicate_active_logical_ids,
             operational_missing_collections: value.operational_missing_collections,
             operational_missing_last_mutations: value.operational_missing_last_mutations,
@@ -1895,6 +1909,11 @@ pub struct PySemanticReport {
     pub broken_action_fk: usize,
     pub stale_fts_rows: usize,
     pub fts_rows_for_superseded_nodes: usize,
+    pub stale_property_fts_rows: usize,
+    pub orphaned_property_fts_rows: usize,
+    pub mismatched_kind_property_fts_rows: usize,
+    pub duplicate_property_fts_rows: usize,
+    pub drifted_property_fts_rows: usize,
     pub dangling_edges: usize,
     pub orphaned_supersession_chains: usize,
     pub stale_vec_rows: usize,
@@ -1915,6 +1934,11 @@ impl From<SemanticReport> for PySemanticReport {
             broken_action_fk: value.broken_action_fk,
             stale_fts_rows: value.stale_fts_rows,
             fts_rows_for_superseded_nodes: value.fts_rows_for_superseded_nodes,
+            stale_property_fts_rows: value.stale_property_fts_rows,
+            orphaned_property_fts_rows: value.orphaned_property_fts_rows,
+            mismatched_kind_property_fts_rows: value.mismatched_kind_property_fts_rows,
+            duplicate_property_fts_rows: value.duplicate_property_fts_rows,
+            drifted_property_fts_rows: value.drifted_property_fts_rows,
             dangling_edges: value.dangling_edges,
             orphaned_supersession_chains: value.orphaned_supersession_chains,
             stale_vec_rows: value.stale_vec_rows,

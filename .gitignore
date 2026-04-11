@@ -1,6 +1,7 @@
 .wake/
 !.wake/shared/
 !.wake/shared/**
+.codex
 .claude/
 .local/
 target/

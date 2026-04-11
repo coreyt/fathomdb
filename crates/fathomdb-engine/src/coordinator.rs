@@ -1158,6 +1158,96 @@ mod tests {
         assert_eq!(rows.nodes[0].logical_id, "meeting-1");
     }
 
+    #[test]
+    fn text_search_finds_structured_only_node_via_property_fts() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("coordinator");
+        let conn = rusqlite::Connection::open(db.path()).expect("open db");
+
+        // Insert a structured-only node (no chunks) with a property FTS row.
+        conn.execute_batch(
+            r#"
+            INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref)
+            VALUES ('row-1', 'goal-1', 'Goal', '{"name":"Ship v2"}', 100, 'seed');
+            INSERT INTO fts_node_properties (node_logical_id, kind, text_content)
+            VALUES ('goal-1', 'Goal', 'Ship v2');
+            "#,
+        )
+        .expect("seed data");
+
+        let compiled = QueryBuilder::nodes("Goal")
+            .text_search("Ship", 5)
+            .limit(5)
+            .compile()
+            .expect("compiled query");
+
+        let rows = coordinator
+            .execute_compiled_read(&compiled)
+            .expect("execute read");
+
+        assert_eq!(rows.nodes.len(), 1);
+        assert_eq!(rows.nodes[0].logical_id, "goal-1");
+    }
+
+    #[test]
+    fn text_search_returns_both_chunk_and_property_backed_hits() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("coordinator");
+        let conn = rusqlite::Connection::open(db.path()).expect("open db");
+
+        // Chunk-backed hit: a Meeting with a chunk containing "quarterly".
+        conn.execute_batch(
+            r#"
+            INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref)
+            VALUES ('row-1', 'meeting-1', 'Meeting', '{}', 100, 'seed');
+            INSERT INTO chunks (id, node_logical_id, text_content, created_at)
+            VALUES ('chunk-1', 'meeting-1', 'quarterly budget review', 100);
+            INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content)
+            VALUES ('chunk-1', 'meeting-1', 'Meeting', 'quarterly budget review');
+            "#,
+        )
+        .expect("seed chunk-backed node");
+
+        // Property-backed hit: a Meeting with property FTS containing "quarterly".
+        conn.execute_batch(
+            r#"
+            INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref)
+            VALUES ('row-2', 'meeting-2', 'Meeting', '{"title":"quarterly sync"}', 100, 'seed');
+            INSERT INTO fts_node_properties (node_logical_id, kind, text_content)
+            VALUES ('meeting-2', 'Meeting', 'quarterly sync');
+            "#,
+        )
+        .expect("seed property-backed node");
+
+        let compiled = QueryBuilder::nodes("Meeting")
+            .text_search("quarterly", 10)
+            .limit(10)
+            .compile()
+            .expect("compiled query");
+
+        let rows = coordinator
+            .execute_compiled_read(&compiled)
+            .expect("execute read");
+
+        let mut ids: Vec<&str> = rows.nodes.iter().map(|r| r.logical_id.as_str()).collect();
+        ids.sort();
+        assert_eq!(ids, vec!["meeting-1", "meeting-2"]);
+    }
+
     // --- Item 1: capability gate tests ---
 
     #[test]

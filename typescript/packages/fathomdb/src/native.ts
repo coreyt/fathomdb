@@ -36,6 +36,11 @@ export type NativeEngineCore = {
   restoreLogicalId(logicalId: string): string;
   purgeLogicalId(logicalId: string): string;
   safeExport(destinationPath: string, forceCheckpoint: boolean): string;
+  // FTS property schema methods
+  registerFtsPropertySchema(kind: string, propertyPathsJson: string, separator?: string): string;
+  describeFtsPropertySchema(kind: string): string;
+  listFtsPropertySchemas(): string;
+  removeFtsPropertySchema(kind: string): string;
   // Operational collection methods
   registerOperationalCollection(requestJson: string): string;
   describeOperationalCollection(name: string): string;

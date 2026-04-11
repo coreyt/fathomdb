@@ -255,16 +255,29 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
             // Sanitize FTS5 metacharacters to prevent syntax errors and query
             // injection. Each user token is quoted so FTS5 operators (AND, OR,
             // NOT, NEAR, column filters, wildcards) are treated as literals.
-            binds.push(BindValue::Text(sanitize_fts5_query(raw_query)));
+            let sanitized = sanitize_fts5_query(raw_query);
+            // Each FTS5 virtual table requires its own MATCH bind parameter;
+            // reusing indices across the UNION is not supported by SQLite.
+            binds.push(BindValue::Text(sanitized.clone()));
+            binds.push(BindValue::Text(ast.root_kind.clone()));
+            binds.push(BindValue::Text(sanitized));
             binds.push(BindValue::Text(ast.root_kind.clone()));
             format!(
                 "base_candidates AS (
-                    SELECT DISTINCT src.logical_id
-                    FROM fts_nodes f
-                    JOIN chunks c ON c.id = f.chunk_id
-                    JOIN nodes src ON src.logical_id = c.node_logical_id AND src.superseded_at IS NULL
-                    WHERE fts_nodes MATCH ?1
-                      AND src.kind = ?2
+                    SELECT DISTINCT logical_id FROM (
+                        SELECT src.logical_id
+                        FROM fts_nodes f
+                        JOIN chunks c ON c.id = f.chunk_id
+                        JOIN nodes src ON src.logical_id = c.node_logical_id AND src.superseded_at IS NULL
+                        WHERE fts_nodes MATCH ?1
+                          AND src.kind = ?2
+                        UNION
+                        SELECT fp.node_logical_id AS logical_id
+                        FROM fts_node_properties fp
+                        JOIN nodes src ON src.logical_id = fp.node_logical_id AND src.superseded_at IS NULL
+                        WHERE fts_node_properties MATCH ?3
+                          AND fp.kind = ?4
+                    )
                     LIMIT {base_limit}
                 )"
             )
@@ -620,6 +633,31 @@ mod tests {
 
         assert!(compiled.sql.contains("WITH RECURSIVE"));
         assert!(compiled.sql.contains("WHERE t.depth < 3"));
+    }
+
+    #[test]
+    fn text_search_compiles_to_union_over_chunk_and_property_fts() {
+        let compiled = compile_query(
+            &QueryBuilder::nodes("Meeting")
+                .text_search("budget", 25)
+                .limit(25)
+                .into_ast(),
+        )
+        .expect("compiled text search");
+
+        assert_eq!(compiled.driving_table, DrivingTable::FtsNodes);
+        // Must contain UNION of both FTS tables.
+        assert!(
+            compiled.sql.contains("fts_nodes MATCH"),
+            "must search chunk-backed FTS"
+        );
+        assert!(
+            compiled.sql.contains("fts_node_properties MATCH"),
+            "must search property-backed FTS"
+        );
+        assert!(compiled.sql.contains("UNION"), "must UNION both sources");
+        // Must have 4 bind parameters: sanitized query + kind for each table.
+        assert_eq!(compiled.binds.len(), 4);
     }
 
     #[test]

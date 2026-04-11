@@ -2,6 +2,7 @@ import { callNative, parseNativeJson } from "./errors.js";
 import { runWithFeedback } from "./feedback.js";
 import type { NativeEngineCore } from "./native.js";
 import {
+  ftsPropertySchemaRecordFromWire,
   integrityReportFromWire,
   logicalPurgeReportFromWire,
   logicalRestoreReportFromWire,
@@ -23,6 +24,7 @@ import {
   semanticReportFromWire,
   traceReportFromWire,
   type FeedbackConfig,
+  type FtsPropertySchemaRecord,
   type IntegrityReport,
   type LogicalPurgeReport,
   type LogicalRestoreReport,
@@ -143,6 +145,51 @@ export class AdminClient {
    */
   safeExport(destinationPath: string, options: { forceCheckpoint?: boolean } = {}, progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): SafeExportManifest {
     return this.#run("admin.safe_export", () => safeExportManifestFromWire(parseNativeJson(callNative(() => this.#core.safeExport(destinationPath, options.forceCheckpoint ?? true)))), progressCallback, feedbackConfig);
+  }
+
+  // ── FTS property schema management ───────────────────────────────
+
+  /**
+   * Register (or update) an FTS property projection schema for a node kind.
+   *
+   * @param kind - The node kind to register.
+   * @param propertyPaths - JSON property paths to extract (e.g. `["$.name", "$.title"]`).
+   * @param separator - Separator used when concatenating extracted values (default `" "`).
+   */
+  registerFtsPropertySchema(kind: string, propertyPaths: string[], separator?: string, progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): FtsPropertySchemaRecord {
+    return this.#run("admin.register_fts_property_schema", () => ftsPropertySchemaRecordFromWire(parseNativeJson(callNative(() => this.#core.registerFtsPropertySchema(kind, JSON.stringify(propertyPaths), separator)))), progressCallback, feedbackConfig);
+  }
+
+  /**
+   * Return the FTS property schema for a single node kind, or `null` if not registered.
+   */
+  describeFtsPropertySchema(kind: string, progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): FtsPropertySchemaRecord | null {
+    return this.#run("admin.describe_fts_property_schema", () => {
+      const json = callNative(() => this.#core.describeFtsPropertySchema(kind));
+      const raw = parseNativeJson(json);
+      if (raw === null || raw.kind == null) return null;
+      return ftsPropertySchemaRecordFromWire(raw as Record<string, unknown>);
+    }, progressCallback, feedbackConfig);
+  }
+
+  /**
+   * Return all registered FTS property schemas.
+   */
+  listFtsPropertySchemas(progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): FtsPropertySchemaRecord[] {
+    return this.#run("admin.list_fts_property_schemas", () => {
+      const json = callNative(() => this.#core.listFtsPropertySchemas());
+      const arr = parseNativeJson(json) as Record<string, unknown>[];
+      return arr.map(ftsPropertySchemaRecordFromWire);
+    }, progressCallback, feedbackConfig);
+  }
+
+  /**
+   * Remove the FTS property schema for a node kind.
+   */
+  removeFtsPropertySchema(kind: string, progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): void {
+    this.#run("admin.remove_fts_property_schema", () => {
+      callNative(() => this.#core.removeFtsPropertySchema(kind));
+    }, progressCallback, feedbackConfig);
   }
 
   // ── Operational collection lifecycle ──────────────────────────────

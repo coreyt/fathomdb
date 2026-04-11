@@ -316,6 +316,56 @@ impl EngineCore {
         })
     }
 
+    pub fn register_fts_property_schema(
+        &self,
+        py: Python<'_>,
+        kind: &str,
+        property_paths_json: &str,
+        separator: Option<&str>,
+    ) -> PyResult<String> {
+        let paths: Vec<String> = serde_json::from_str(property_paths_json).map_err(|error| {
+            PyValueError::new_err(format!("invalid property paths JSON: {error}"))
+        })?;
+        let kind = kind.to_owned();
+        let separator = separator.map(|s| s.to_owned());
+        self.with_engine(|engine| {
+            let record = py
+                .allow_threads(|| {
+                    engine.register_fts_property_schema(&kind, &paths, separator.as_deref())
+                })
+                .map_err(map_engine_error)?;
+            encode_json(record)
+        })
+    }
+
+    pub fn describe_fts_property_schema(&self, py: Python<'_>, kind: &str) -> PyResult<String> {
+        let kind = kind.to_owned();
+        self.with_engine(|engine| {
+            let record = py
+                .allow_threads(|| engine.describe_fts_property_schema(&kind))
+                .map_err(map_engine_error)?;
+            encode_json(record)
+        })
+    }
+
+    pub fn list_fts_property_schemas(&self, py: Python<'_>) -> PyResult<String> {
+        self.with_engine(|engine| {
+            let records = py
+                .allow_threads(|| engine.list_fts_property_schemas())
+                .map_err(map_engine_error)?;
+            encode_json(records)
+        })
+    }
+
+    pub fn remove_fts_property_schema(&self, py: Python<'_>, kind: &str) -> PyResult<String> {
+        let kind = kind.to_owned();
+        self.with_engine(|engine| {
+            py.allow_threads(|| engine.remove_fts_property_schema(&kind))
+                .map_err(map_engine_error)?;
+            encode_json(serde_json::json!({"removed": true}))
+        })
+    }
+
     pub fn register_operational_collection(
         &self,
         py: Python<'_>,

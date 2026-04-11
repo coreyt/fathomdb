@@ -1,5 +1,9 @@
 # Design: Structured Node Full-Text Projections
 
+> **Status: Implemented** (SchemaVersion 15). The feature shipped as described
+> below. Where the implementation diverged from the original design proposal,
+> the divergence is marked with **[Divergence]** and explained inline.
+
 ## Purpose
 
 Define how FathomDB should implement
@@ -18,15 +22,17 @@ search path while preserving the current boundaries:
 
 - Add a narrow engine-owned contract table for kind-level text projection
   definitions. Do not introduce a general node-schema engine.
-- Broaden the FTS projection model from "chunk rows only" to "engine-managed FTS
-  documents" that may come from chunks or structured node-property projections.
-- Keep `text_search(...)` as the primary query operator. Query planning should
-  not require clients to choose between chunk-backed and structured-property
-  search.
-- Keep `property_text_search(...)` as a compatibility fallback for now, but do
-  not extend it. The durable path is projection-backed `text_search(...)`.
+- **[Divergence]** Add a *separate* FTS5 virtual table (`fts_node_properties`)
+  for structured-node projections rather than broadening `fts_nodes`. The
+  existing `fts_nodes` table remains chunk-only and unchanged. This is cleaner
+  for rebuild, avoids migrating existing FTS data, and keeps the two origins
+  fully independent.
+- Keep `text_search(...)` as the only user-facing query operator for both
+  chunk-backed and property-backed FTS.
+- **[Divergence]** Instead of adding a second query operator, compile
+  `text_search(...)` to a UNION over `fts_nodes` and `fts_node_properties`.
 - Maintain structured-node FTS rows transactionally on node insert, upsert,
-  retire, and admin rebuild.
+  retire, excise, and admin rebuild.
 - Treat structured-node FTS rows as active-state derived data keyed by
   `node_logical_id`, not as version-history artifacts.
 
@@ -51,21 +57,11 @@ search path while preserving the current boundaries:
 
 ## Current State
 
-Today the repository has two relevant search paths:
+Prior to this feature, `text_search(...)` was the only FTS query path:
 
-1. `text_search(...)`
-   - drives from `fts_nodes`
-   - `fts_nodes` is populated only from `chunks`
-   - the compiled SQL still joins through `chunks`
-
-2. `property_text_search(...)`
-   - is modeled as "tokenized text search over JSON-encoded node properties"
-   - is planned off the `nodes` driving table
-   - it does not have an engine-maintained projection contract
-   - it preserves the broad-scan shape that the new feature is meant to avoid
-
-This means structured kinds without chunks still lack a true engine-managed FTS
-path.
+- drives from `fts_nodes`
+- `fts_nodes` is populated only from `chunks`
+- structured node properties were invisible to full-text search
 
 ## Design Overview
 
@@ -76,41 +72,46 @@ Implement the feature in two layers:
      kind
 
 2. **Derived FTS document maintenance**
-   - populate the FTS index with rows whose source is either:
-     - an explicit chunk
-     - a structured-node text projection
-
-This lets `text_search(...)` remain a single user-facing primitive while the
-engine decides what text exists for a kind.
+   - populate a *separate* FTS index (`fts_node_properties`) whose source is
+     structured-node text projections
+   - the existing `fts_nodes` index remains chunk-only
 
 ## Contract Storage
 
 FathomDB does not currently have a general schema registry for node kinds. The
-implementation should therefore add a narrow contract table rather than trying
-to generalize `schema_json` from the operational store.
+implementation adds a narrow contract table rather than trying to generalize
+`schema_json` from the operational store.
 
-### New table: `node_kind_text_projections`
+### **[Divergence]** Table: `fts_property_schemas` (was `node_kind_text_projections`)
+
+The implemented table name is `fts_property_schemas`, not
+`node_kind_text_projections`. The name aligns with the `fts_` prefix convention
+used by the other FTS tables and makes the purpose immediately clear.
 
 ```sql
-CREATE TABLE IF NOT EXISTS node_kind_text_projections (
+CREATE TABLE IF NOT EXISTS fts_property_schemas (
     kind TEXT PRIMARY KEY,
-    paths_json TEXT NOT NULL,
+    property_paths_json TEXT NOT NULL,
+    separator TEXT NOT NULL DEFAULT ' ',
     format_version INTEGER NOT NULL DEFAULT 1,
-    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    disabled_at INTEGER
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 ```
 
 Contract rules:
 
 - `kind` names a node kind
-- `paths_json` is an ordered JSON array of JSON paths
-- malformed contract payloads and invalid JSON-path syntax are rejected at
-  registration time
+- `property_paths_json` is an ordered JSON array of JSON paths (each must start
+  with `$.`)
+- `separator` controls how extracted values are concatenated (default: space)
+- only simple dot-notation paths are supported in v1, such as `$.title` and
+  `$.payload.summary_text`
+- malformed paths and duplicates are rejected at registration time
 - an empty path list is rejected
-- disabled contracts remain visible for audit and migration but do not generate
-  new structured FTS rows
+- **[Divergence]** No `updated_at` or `disabled_at` columns. Updates are
+  idempotent upserts via `register_fts_property_schema`. Removal is a separate
+  `remove_fts_property_schema` operation that deletes the row (it does NOT
+  delete FTS rows; a rebuild is required).
 
 Example stored payload:
 
@@ -118,362 +119,261 @@ Example stored payload:
 ["$.title", "$.description", "$.rationale"]
 ```
 
-Rationale:
-
-- narrow, explicit, and rebuildable
-- avoids inventing a broad node-kind schema surface
-- fits the existing "contract table plus derived state" pattern used elsewhere
-
 ## FTS Storage Shape
 
-The current `fts_nodes` table is chunk-centric. The feature needs FTS rows whose
-source may be a chunk or a structured node projection. The cleanest path is to
-retain one engine-owned FTS table but broaden its semantics from "chunk rows"
-to "FTS documents."
+### **[Divergence]** Separate `fts_node_properties` table (not a modified `fts_nodes`)
 
-### Revised `fts_nodes` shape
-
-Replace the current virtual table with:
+The original design proposed broadening `fts_nodes` with `origin` and
+`origin_id` columns. The implementation instead creates a completely separate
+FTS5 virtual table:
 
 ```sql
-CREATE VIRTUAL TABLE IF NOT EXISTS fts_nodes USING fts5(
-    origin UNINDEXED,          -- 'chunk' | 'node_projection'
-    origin_id UNINDEXED,       -- chunk.id or node.logical_id
+CREATE VIRTUAL TABLE IF NOT EXISTS fts_node_properties USING fts5(
     node_logical_id UNINDEXED,
     kind UNINDEXED,
     text_content
 );
 ```
 
+**Why a separate table instead of broadening `fts_nodes`:**
+
+- Avoids migrating the existing `fts_nodes` virtual table, which would require
+  dropping and recreating it (FTS5 virtual tables cannot be ALTERed)
+- Keeps chunk-origin and property-origin data fully independent for rebuild
+- Simplifies delete logic: property FTS rows are always deleted by
+  `node_logical_id` without needing an `origin` discriminator
+- No risk of accidentally deleting chunk rows when maintaining property rows or
+  vice versa
+
+The existing `fts_nodes` table remains unchanged and continues to serve
+chunk-backed `text_search(...)`.
+
 Semantics:
 
-- `origin='chunk'`
-  - `origin_id = chunks.id`
-  - `node_logical_id` is the parent node logical ID
-- `origin='node_projection'`
-  - `origin_id = nodes.logical_id`
-  - `node_logical_id = nodes.logical_id`
-  - `text_content` is derived from declared property paths
-
-Important v1 rule:
-
-- at most one active `node_projection` FTS row exists per active logical ID
-- chunk-origin rows remain one-per-chunk
-
-Why keep one FTS table:
-
-- `text_search(...)` stays simple
-- the compiler does not need database metadata to choose between chunk-backed
-  and structured-node-backed FTS
-- kinds that have both chunks and structured-node projections naturally search
-  across both sources, with final node de-duplication already handled by
-  `SELECT DISTINCT`
+- at most one active `fts_node_properties` row exists per active logical ID
+- chunk-origin rows remain in `fts_nodes`, one-per-chunk
 
 ## Query Planning Changes
 
-### Keep `text_search(...)` stable
+### `text_search(...)` — transparently covers both chunk and property FTS
 
-The user-facing API should remain:
-
-```python
-db.nodes("WMKnowledgeObject").text_search("oauth token rotation", limit=25)
-```
-
-### Compiler change
-
-The FTS driving query should no longer join through `chunks`. It should resolve
-nodes directly from the FTS row's `node_logical_id`.
-
-Current shape:
+The user-facing query API is unchanged: `text_search(...)` remains the only FTS
+query operator. The query compiler's `FtsNodes` driving table branch now always
+emits a UNION of `fts_nodes` and `fts_node_properties`, so property-derived
+text is transparently searchable alongside chunk-derived text.
 
 ```sql
-FROM fts_nodes f
-JOIN chunks c ON c.id = f.chunk_id
-JOIN nodes src ON src.logical_id = c.node_logical_id AND src.superseded_at IS NULL
+base_candidates AS (
+    SELECT DISTINCT logical_id FROM (
+        SELECT src.logical_id
+        FROM fts_nodes f
+        JOIN chunks c ON c.id = f.chunk_id
+        JOIN nodes src ON src.logical_id = c.node_logical_id
+            AND src.superseded_at IS NULL
+        WHERE fts_nodes MATCH ?1 AND src.kind = ?2
+        UNION
+        SELECT fp.node_logical_id AS logical_id
+        FROM fts_node_properties fp
+        JOIN nodes src ON src.logical_id = fp.node_logical_id
+            AND src.superseded_at IS NULL
+        WHERE fts_node_properties MATCH ?3 AND fp.kind = ?4
+    )
+    LIMIT {base_limit}
+)
 ```
 
-Target shape:
-
-```sql
-FROM fts_nodes f
-JOIN nodes src ON src.logical_id = f.node_logical_id AND src.superseded_at IS NULL
-WHERE fts_nodes MATCH ?1
-  AND src.kind = ?2
-```
-
-This change is required even for chunk-backed rows because the FTS table now
-already carries the node logical ID.
-
-### `property_text_search(...)`
-
-Decision:
-
-- keep it for backward compatibility in v1
-- do not optimize or extend it
-- document it as a scan-based compatibility feature
-- migrate structured workloads to projection-backed `text_search(...)`
-
-This avoids a risky API removal while making the intended engine path clear.
+No separate `PropertyTextSearch` query step exists. Clients do not need to know
+whether a kind's text comes from chunks or property projections.
 
 ## Write-Time Maintenance
 
-Structured-node projection rows are derived state. The engine should maintain
-them inside the same transaction as the canonical node mutation.
+Structured-node projection rows are derived state. The engine maintains them
+inside the same IMMEDIATE transaction as the canonical node mutation.
 
 ### Preparation stage
 
-Extend `prepare_write()` with a new derivation step:
+`resolve_property_fts_rows` loads all schemas once per request from the DB,
+extracts property paths from co-submitted nodes using `extract_json_path`,
+and concatenates with the configured separator.
 
-- resolve active text-projection contracts for kinds mentioned in
-  `request.nodes`
-- for each inserted or upserted node whose kind has an active contract:
-  - parse `properties`
-  - extract declared paths
-  - normalize values into one text blob
-  - emit a prepared structured FTS row
-
-Suggested internal type:
-
-```rust
-struct StructuredFtsProjectionRow {
-    node_logical_id: String,
-    kind: String,
-    text_content: String,
-}
-```
+`extract_json_path` supports simple dot-notation paths like `$.name`,
+`$.address.city`.
 
 Normalization rules for v1:
 
 - include strings directly
 - stringify numbers and booleans
 - flatten arrays of scalars in order
-- ignore objects unless the declared path resolves to a scalar or scalar array
+- ignore objects, nested arrays, and non-scalar array elements
 - skip missing and null values
-- preserve configured path order in the concatenated output
+- preserve declared path order first, then preserve flattened element order
+- preserve explicit empty strings if present
+- apply the configured separator between every extracted value
 
 Empty-text rule:
 
-- if all declared paths resolve to empty or missing content, do not insert a
-  `node_projection` FTS row
-
-This matches the current "derived state should not contain useless empty rows"
-discipline already applied to chunks.
+- if no values remain after normalization, do not insert a property FTS row
 
 ### Transaction stage
 
-Inside `apply_write(...)`, add structured FTS maintenance rules:
+Inside the write transaction:
 
 1. **Node insert without upsert**
-   - insert one `node_projection` FTS row if the kind has an active contract
+   - insert one `fts_node_properties` row if the kind has a registered schema
 
 2. **Node upsert**
-   - delete existing `node_projection` FTS row for that `logical_id`
-   - insert the newly prepared row if non-empty
+   - **[Divergence]** property FTS rows are ALWAYS deleted on upsert (not just
+     on `ChunkPolicy::Replace`), then re-inserted if non-empty
 
 3. **Node retire**
-   - delete any `node_projection` FTS row for that `logical_id`
+   - delete any `fts_node_properties` row for that `logical_id`
+   - chunk FTS rows in `fts_nodes` are deleted separately as before
 
-4. **Chunk policy replace**
-   - continues to delete only chunk-origin rows for that `logical_id`
-   - must not delete structured-node projection rows
+4. **Node excise**
+   - **[Divergence]** full property FTS rebuild is performed within the same
+     transaction (not just a row-level delete/insert)
 
-This requires the writer to distinguish deletion by `origin`.
+5. **Chunk policy replace**
+   - continues to delete only chunk-origin rows in `fts_nodes`
+   - does not affect `fts_node_properties` rows (naturally isolated by separate
+     table)
 
-Suggested delete statements:
+Because property FTS rows live in a separate table, the delete statements are
+simple and cannot accidentally affect chunk rows:
 
 ```sql
-DELETE FROM fts_nodes
-WHERE origin = 'node_projection' AND node_logical_id = ?1;
-
-DELETE FROM fts_nodes
-WHERE origin = 'chunk' AND node_logical_id = ?1;
+DELETE FROM fts_node_properties WHERE node_logical_id = ?1;
 ```
 
 ## Rebuild And Repair
 
-Structured-node FTS state must be fully rebuildable from:
+Structured-node FTS state is fully rebuildable from:
 
 - active canonical nodes
-- active chunk rows
-- `node_kind_text_projections` contracts
+- `fts_property_schemas` contracts
 
 ### Full FTS rebuild
 
-Update `ProjectionService::rebuild_projections(ProjectionTarget::Fts)` to:
+`rebuild_property_fts` in `projection.rs`:
 
-1. start `IMMEDIATE` transaction
-2. delete all rows from `fts_nodes`
-3. repopulate chunk-origin rows
-4. repopulate structured-node projection rows
-5. commit
+1. DELETE all rows from `fts_node_properties`
+2. Load all property schemas
+3. For each active node matching a schema kind, extract paths and INSERT
 
-Implementation note:
-
-- chunk-origin rows can still be rebuilt with one SQL `INSERT ... SELECT`
-- structured-node projection rows should be rebuilt via Rust helper logic using
-  the same extraction code path as write preparation
-
-Do not try to express arbitrary path extraction solely in SQLite JSON1 for v1.
-The Rust helper is easier to reason about, easier to test, and guarantees the
-same normalization behavior between write-time derivation and rebuild.
+This is integrated into `rebuild_projections(ProjectionTarget::Fts)` and
+`rebuild_projections(ProjectionTarget::All)`.
 
 ### Missing-projection rebuild
 
-Extend `rebuild_missing_projections()` so it can insert missing rows for both
-origins:
-
-- missing chunk-origin row:
-  - active chunk exists
-  - no `fts_nodes` row with `origin='chunk'` and matching `origin_id`
-
-- missing node-projection row:
-  - active node exists for a kind with active contract
-  - derived projection text is non-empty
-  - no `fts_nodes` row with `origin='node_projection'` and matching `origin_id`
+`rebuild_missing_property_fts_in_tx` fills gaps for nodes that have zero
+property FTS rows but should have them based on their kind's schema.
 
 ### Repair notes and diagnostics
 
-The repair report can continue to return `ProjectionTarget::Fts`.
-The report should not split chunk vs structured counts in v1, but admin
-diagnostics should eventually expose:
-
-- number of configured node-kind contracts
-- number of active structured-node FTS rows
-- per-kind counts during inspection/debugging
+The repair report continues to return `ProjectionTarget::Fts`.
 
 ## Admin Surface
 
-Add a narrow admin API for text projection contracts.
+The implemented admin API has four operations:
 
-Suggested operations:
+1. `register_fts_property_schema(kind, property_paths, separator)`
+   — idempotent upsert with validation (paths must start with `$.`, no
+   duplicates, non-empty list)
+2. `describe_fts_property_schema(kind)` → `Option<FtsPropertySchemaRecord>`
+3. `list_fts_property_schemas()` → `Vec<FtsPropertySchemaRecord>`
+4. `remove_fts_property_schema(kind)` — deletes the schema row; does NOT delete
+   existing FTS rows (requires explicit rebuild)
 
-1. `register_node_kind_text_projection(kind, paths_json)`
-2. `update_node_kind_text_projection(kind, paths_json)`
-3. `disable_node_kind_text_projection(kind)`
-4. `describe_node_kind_text_projection(kind)`
-5. `list_node_kind_text_projections()`
+**[Divergence]** from original design:
 
-Behavior rules:
-
-- registration validates JSON-path syntax and rejects duplicates
-- update is explicit; no silent overwrite
-- register/update does not implicitly rewrite existing FTS rows
-- callers must run `rebuild_projections(fts)` or an equivalent targeted rebuild
-  before expecting historic nodes of that kind to be searchable through the new
-  contract
-
-This mirrors the operational-store pattern where contract updates and rebuilds
-are separate, explicit steps.
+- No separate `update` operation; `register` is an idempotent upsert
+- No `disable` operation; `remove` deletes the row entirely
+- `register` does not implicitly rewrite existing FTS rows; callers must run
+  `rebuild_projections(fts)` or equivalent
 
 ## Schema Migration
 
-This feature needs one schema migration.
+This feature ships in **SchemaVersion(15)** with an idempotent `ensure` helper.
 
 ### Migration actions
 
-1. add `node_kind_text_projections`
-2. replace the `fts_nodes` virtual table definition with the broadened schema
-3. repopulate `fts_nodes` from existing chunk rows during migration or rely on
-   the standard rebuild path immediately after bootstrap
+1. Create `fts_property_schemas` table
+2. Create `fts_node_properties` FTS5 virtual table
 
-Recommended migration discipline:
+**[Divergence]** The existing `fts_nodes` table is NOT modified. No migration of
+existing FTS data is required.
 
-- migrate the virtual table shape
-- leave population to the existing rebuild path rather than performing a large
-  data copy inside bootstrap
+## Cross-Surface Parity
 
-That keeps migration logic smaller and preserves the existing projection-repair
-model.
+The four admin operations are exposed across all SDK surfaces:
+
+| Surface | Methods |
+|---|---|
+| Rust Engine facade | 4 methods |
+| NAPI (Node.js) | 4 `#[napi]` methods accepting JSON |
+| PyO3 (Python FFI) | 4 methods with `py.allow_threads()` |
+| Python SDK (`_admin.py`) | 4 high-level methods with `run_with_feedback` |
+| Python types (`_types.py`) | `FtsPropertySchemaRecord` dataclass |
+| TypeScript `native.ts` | 4 method signatures |
+| TypeScript `admin.ts` | 4 high-level methods |
+| TypeScript `types.ts` | `FtsPropertySchemaRecord` type + `fromWire` |
+| Admin bridge | 4 bridge commands |
 
 ## Export, Recovery, And Integrity
 
-The new contract table is canonical metadata and must be included in:
+The `fts_property_schemas` table is canonical metadata and must be included in:
 
 - safe export
 - recovery import
 - bootstrap checks
 
-The structured-node FTS rows remain derived state and should follow the same
-rules as existing FTS projection data:
+The `fts_node_properties` rows remain derived state and follow the same rules as
+existing FTS projection data:
 
 - export may include them, but recovery correctness must not depend on them
 - full rebuild from canonical state and contracts must be sufficient
-
-Integrity/admin checks should eventually be aware of contract drift scenarios:
-
-- contract exists but projected rows are absent
-- projected rows exist for a disabled contract
-- duplicate active `node_projection` rows for one logical ID
-
-These checks can follow after the core write/query/rebuild slice.
+- logical restore must reestablish property FTS visibility for the restored
+  active node before the operation is considered correct
+- admin integrity and semantic checks should eventually cover property FTS drift
+  explicitly, not only chunk-backed FTS drift
 
 ## WAL, Backups, Consistency, And Stress Effects
-
-This feature adds more derived-state work to the canonical write and repair
-paths. The design therefore needs explicit discipline for secondary effects, not
-just query semantics.
 
 ### WAL And Write Amplification
 
 Structured-node projection maintenance adds additional FTS writes for configured
 kinds:
 
-- node insert may add one `node_projection` FTS row
-- node upsert may delete one prior `node_projection` row and insert one new row
-- node retire may delete one `node_projection` row
+- node insert may add one property FTS row
+- node upsert deletes any prior property FTS row and inserts one new row
+- node retire deletes any property FTS row
 
 That increases WAL volume for projection-heavy workloads. This is an accepted
-tradeoff, but it should remain bounded:
+tradeoff, but it remains bounded:
 
-- at most one structured-node FTS row per active logical ID
+- at most one property FTS row per active logical ID
 - no synthetic chunk explosion for structured records
-- all projection mutations stay in the same transaction as canonical node
-  writes, so WAL growth is proportional to a bounded number of extra rows per
-  affected node
-
-This feature should not change the engine's single-writer model or checkpoint
-discipline. It does increase per-write WAL traffic, so benchmark and stress
-coverage should explicitly measure whether large upsert workloads produce
-unacceptable WAL growth or degraded checkpoint behavior.
+- all projection mutations stay in the same transaction as canonical node writes
 
 ### Backup And Safe Export
 
-The backup/export model should stay unchanged:
-
-- `node_kind_text_projections` is canonical metadata and must be exported
-- `fts_nodes` remains derived and rebuildable
-- restore correctness must not depend on `fts_nodes` contents being present or
-  perfectly synchronized
-
-This means backup/restore testing must cover both cases:
-
-- backup includes `fts_nodes` and restore preserves searchable behavior
-- `fts_nodes` is missing or stale after recovery and `rebuild_projections(fts)`
-  restores correct search behavior from canonical state plus contracts
+- `fts_property_schemas` is canonical metadata and must be exported
+- `fts_node_properties` remains derived and rebuildable
+- restore correctness must not depend on `fts_node_properties` contents
+- exported databases may contain `fts_node_properties`, but replay and recovery
+  procedures must remain correct if those rows are discarded and rebuilt
 
 ### Transactional Consistency
 
-The engine must preserve the same atomicity rule it already applies to required
-projections:
-
-- if the canonical node write commits, the required structured-node FTS update
-  must also commit
-- if the transaction rolls back, neither canonical nor derived changes may
-  remain visible
-
-Required consistency properties:
-
-- no active node should become searchable through stale superseded projection
-  text after an upsert
-- `ChunkPolicy::Replace` must not accidentally remove structured-node
-  projection rows
-- node retire must remove structured-node projection rows in the same
-  transaction
-- rebuild and repair must be idempotent and safe to rerun after interruption
+- if the canonical node write commits, the property FTS update also commits
+- if the transaction rolls back, neither canonical nor derived changes remain
+- property FTS rows are ALWAYS deleted on upsert (not conditional on chunk
+  policy)
+- node retire removes property FTS rows in the same transaction
+- excise triggers a full property FTS rebuild within the same transaction
+- rebuild and repair are idempotent and safe to rerun after interruption
 
 ### Stress And Performance Testing
-
-This feature needs explicit workload coverage in addition to unit tests.
 
 Add stress and benchmark cases for:
 
@@ -481,90 +381,36 @@ Add stress and benchmark cases for:
 - mixed workloads with chunk-backed document kinds and structured-projection
   kinds in the same database
 - large batches of writes touching many configured kinds
-- search latency under write load for `text_search(...)` against structured-only
-  kinds
+- search latency under write load for `text_search(...)` against
+  structured-only kinds (property FTS via UNION)
 - FTS rebuild latency and WAL impact on databases with many configured
   structured kinds
-- backup/export plus rebuild roundtrips on databases with both chunk and
-  structured FTS origins
-
-Success criteria should include:
-
-- no client-side scan path needed for structured retrieval
-- no projection drift after stress runs
-- no WAL/checkpoint regressions beyond accepted write amplification
-- rebuild restores searchability deterministically after projection loss
-
-These tests belong alongside the existing performance and client-workload
-coverage, not only in narrow writer unit tests.
-
-## API And SDK Surface
-
-### Query API
-
-No new query method is required for v1.
-
-- keep `text_search(query, limit)` as the main text retrieval primitive
-- keep `property_text_search(query, limit)` as compatibility-only
-
-### Write API
-
-No new write shape is required. Clients continue to write ordinary nodes.
-
-### Admin/metadata API
-
-Expose the contract registration methods through:
-
-- Rust facade
-- Python `engine.admin`
-- TypeScript `engine.admin`
-
-The SDKs should treat `paths_json` as a structured value where convenient, but
-the engine contract should remain simple and JSON-serializable.
-
-## Rollout Plan
-
-### Phase 1: Storage And Rebuild Backbone
-
-- add `node_kind_text_projections`
-- migrate `fts_nodes` to the broadened document shape
-- update FTS rebuild to repopulate chunk-origin rows in the new shape
-- add structured-node rebuild from contracts
-
-### Phase 2: Transactional Write Maintenance
-
-- extend `prepare_write()` with structured-text derivation
-- update writer FTS maintenance to insert/delete by `origin`
-- add retire/upsert coverage
-
-### Phase 3: Query Compiler Alignment
-
-- remove the `chunks` join from the FTS driving SQL
-- verify `text_search(...)` works for:
-  - chunk-only kinds
-  - structured-only kinds
-  - kinds with both sources
-
-### Phase 4: Admin Surface And Deprecation Messaging
-
-- add register/update/describe/list admin APIs
-- document `property_text_search(...)` as compatibility-only
-- add docs showing structured-node search through `text_search(...)`
+- backup/export plus rebuild roundtrips
+- logical restore of projection-enabled kinds after repeated retire/excise
+  cycles
 
 ## Verification
 
 Implementation should add black-box tests for:
 
-- register projection contract rejects malformed path JSON
+- register projection contract rejects malformed path syntax beyond the `$.`
+  prefix check
 - structured-node FTS row is created on node insert for configured kind
 - structured-node FTS row is replaced on node upsert
 - structured-node FTS row is deleted on node retire
-- chunk replace deletes only chunk-origin rows, not node-projection rows
-- `text_search(...)` returns a structured-only node without any chunk
+- structured-node FTS extraction flattens scalar arrays and ignores objects and
+  nested arrays
+- chunk replace does not affect property FTS rows (separate table)
+- `text_search(...)` finds a structured-only node via property FTS (no chunk
+  needed)
 - `text_search(...)` still returns chunk-backed document nodes
-- `text_search(...)` over a kind with both sources de-duplicates node results
-- full FTS rebuild restores both chunk-origin and structured-node rows
-- missing-projection rebuild restores a deleted structured-node row
+- `text_search(...)` returns results from both chunks and properties in one query
+  (UNION)
+- full FTS rebuild restores property FTS rows
+- missing-projection rebuild restores a deleted property FTS row
+- logical restore reestablishes property FTS visibility for a restored node
+- safe export preserves `fts_property_schemas` and does not require trusting
+  `fts_node_properties`
 - export/recovery preserves contracts and rebuildability
 
 ## Risks And Tradeoffs
@@ -573,8 +419,8 @@ Implementation should add black-box tests for:
 
 - write cost increases for configured kinds because projection text must be
   derived and indexed
-- `fts_nodes` semantics become broader than the old chunk-only assumption
-- kinds with both chunk and structured sources may produce denser candidate sets
+- the UNION query adds a second FTS MATCH scan per `text_search(...)` call, even
+  when no property schemas are registered (the second half returns zero rows)
 
 ### Risks Reduced
 
@@ -582,34 +428,29 @@ Implementation should add black-box tests for:
 - structured search logic becomes centralized and testable in the engine
 - rebuild and repair continue to work because structured-node text remains
   derived state
+- separate table avoids any risk of corrupting or migrating existing chunk FTS
+  data
 
-## Open Questions
+## Summary of Divergences from Original Proposal
 
-1. Should contract updates automatically trigger a targeted rebuild, or should
-   rebuild remain explicit?
-2. Should v1 add a tiny helper to validate that declared JSON paths resolve to
-   scalar leaves on sample data, or is syntax validation enough?
-3. Should future ranking favor chunk-origin or node-projection origin when both
-   match the same node?
-4. Should admin diagnostics expose per-origin row counts from day one?
-5. Should `property_text_search(...)` eventually compile to `text_search(...)`
-   for configured kinds, or simply be removed after migration?
-
-## Recommended Minimal First Version
-
-Ship the narrowest useful slice:
-
-- one contract table: `node_kind_text_projections`
-- broadened `fts_nodes` with `origin` and `origin_id`
-- transactional structured-node FTS maintenance on node write and retire
-- FTS rebuild support for both chunk and structured origins
-- `text_search(...)` updated to resolve directly from `fts_nodes.node_logical_id`
-- no per-field weighting, no field match reporting, no new user query API
+| Aspect | Original Proposal | Implemented |
+|---|---|---|
+| Contract table name | `node_kind_text_projections` | `fts_property_schemas` |
+| Contract columns | `paths_json`, `updated_at`, `disabled_at` | `property_paths_json`, `separator`, no `updated_at`/`disabled_at` |
+| FTS storage | Broadened `fts_nodes` with `origin`/`origin_id` | Separate `fts_node_properties` table |
+| Query surface | `text_search` covers both origins via broadened `fts_nodes` | `text_search` covers both via UNION of `fts_nodes` + `fts_node_properties` |
+| Admin API | register/update/disable/describe/list (5 ops) | register/describe/list/remove (4 ops, register is idempotent upsert) |
+| Upsert delete behavior | Delete only on matching origin | Always delete property FTS rows on upsert |
+| Excise behavior | Not specified | Full property FTS rebuild in same transaction |
+| Schema migration | Modify `fts_nodes` | No change to `fts_nodes`; new tables only |
 
 ## Bottom Line
 
-FathomDB should implement structured-node full-text projections as a
-contract-backed extension of the existing projection system, not as client-side
-synthetic chunking. The engine stores the canonical node once, derives a
-rebuildable FTS document from declared properties, and exposes that text
-through the existing `text_search(...)` path.
+FathomDB implements structured-node full-text projections as a contract-backed
+extension of the existing projection system, using a separate
+`fts_node_properties` FTS5 table rather than modifying the existing `fts_nodes`
+table. The engine stores the canonical node once, derives a rebuildable FTS
+document from declared properties in `fts_property_schemas`, and makes that text
+transparently searchable through the existing `text_search(...)` operator. The
+query compiler always produces a UNION across both FTS tables, so clients do not
+need to know whether a kind's searchable text comes from chunks or properties.

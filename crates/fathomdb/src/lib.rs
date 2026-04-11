@@ -14,23 +14,23 @@ mod write_request_builder;
 pub use fathomdb_engine::{
     ActionInsert, ActionRow, AdminHandle, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire,
     EngineError, EngineRuntime, ExecutionCoordinator, ExpansionRootRows, ExpansionSlotRows,
-    GroupedQueryRows, LastAccessTouchReport, LastAccessTouchRequest, LogicalPurgeReport,
-    LogicalRestoreReport, NodeInsert, NodeRetire, NodeRow, OperationalCollectionKind,
-    OperationalCollectionRecord, OperationalCompactionReport, OperationalCurrentRow,
-    OperationalFilterClause, OperationalFilterField, OperationalFilterFieldType,
-    OperationalFilterMode, OperationalFilterValue, OperationalHistoryValidationIssue,
-    OperationalHistoryValidationReport, OperationalMutationRow, OperationalPurgeReport,
-    OperationalReadReport, OperationalReadRequest, OperationalRegisterRequest,
-    OperationalRepairReport, OperationalRetentionActionKind, OperationalRetentionPlanItem,
-    OperationalRetentionPlanReport, OperationalRetentionRunItem, OperationalRetentionRunReport,
-    OperationalSecondaryIndexDefinition, OperationalSecondaryIndexField,
-    OperationalSecondaryIndexRebuildReport, OperationalSecondaryIndexValueType,
-    OperationalTraceReport, OperationalValidationContract, OperationalValidationField,
-    OperationalValidationFieldType, OperationalValidationMode, OperationalWrite,
-    OptionalProjectionTask, ProjectionRepairReport, ProjectionTarget, ProvenanceEvent,
-    ProvenanceMode, ProvenancePurgeOptions, ProvenancePurgeReport, QueryPlan, QueryRows, RunInsert,
-    RunRow, SafeExportManifest, SafeExportOptions, SkippedEdge, StepInsert, StepRow, VecInsert,
-    WriteReceipt, WriteRequest, WriterActor, new_id, new_row_id,
+    FtsPropertySchemaRecord, GroupedQueryRows, LastAccessTouchReport, LastAccessTouchRequest,
+    LogicalPurgeReport, LogicalRestoreReport, NodeInsert, NodeRetire, NodeRow,
+    OperationalCollectionKind, OperationalCollectionRecord, OperationalCompactionReport,
+    OperationalCurrentRow, OperationalFilterClause, OperationalFilterField,
+    OperationalFilterFieldType, OperationalFilterMode, OperationalFilterValue,
+    OperationalHistoryValidationIssue, OperationalHistoryValidationReport, OperationalMutationRow,
+    OperationalPurgeReport, OperationalReadReport, OperationalReadRequest,
+    OperationalRegisterRequest, OperationalRepairReport, OperationalRetentionActionKind,
+    OperationalRetentionPlanItem, OperationalRetentionPlanReport, OperationalRetentionRunItem,
+    OperationalRetentionRunReport, OperationalSecondaryIndexDefinition,
+    OperationalSecondaryIndexField, OperationalSecondaryIndexRebuildReport,
+    OperationalSecondaryIndexValueType, OperationalTraceReport, OperationalValidationContract,
+    OperationalValidationField, OperationalValidationFieldType, OperationalValidationMode,
+    OperationalWrite, OptionalProjectionTask, ProjectionRepairReport, ProjectionTarget,
+    ProvenanceEvent, ProvenanceMode, ProvenancePurgeOptions, ProvenancePurgeReport, QueryPlan,
+    QueryRows, RunInsert, RunRow, SafeExportManifest, SafeExportOptions, SkippedEdge, StepInsert,
+    StepRow, VecInsert, WriteReceipt, WriteRequest, WriterActor, new_id, new_row_id,
 };
 pub use fathomdb_engine::{SqliteCacheStatus, TelemetryLevel, TelemetrySnapshot};
 pub use fathomdb_query::{
@@ -176,6 +176,52 @@ impl Engine {
         request: LastAccessTouchRequest,
     ) -> Result<LastAccessTouchReport, EngineError> {
         self.writer().touch_last_accessed(request)
+    }
+
+    /// Register an FTS property projection schema for a node kind.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] if the schema is invalid or the write fails.
+    pub fn register_fts_property_schema(
+        &self,
+        kind: &str,
+        property_paths: &[String],
+        separator: Option<&str>,
+    ) -> Result<FtsPropertySchemaRecord, EngineError> {
+        self.admin()
+            .service()
+            .register_fts_property_schema(kind, property_paths, separator)
+    }
+
+    /// Return the FTS property schema for a single node kind, if registered.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] on database failure.
+    pub fn describe_fts_property_schema(
+        &self,
+        kind: &str,
+    ) -> Result<Option<FtsPropertySchemaRecord>, EngineError> {
+        self.admin().service().describe_fts_property_schema(kind)
+    }
+
+    /// Return all registered FTS property schemas.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] on database failure.
+    pub fn list_fts_property_schemas(&self) -> Result<Vec<FtsPropertySchemaRecord>, EngineError> {
+        self.admin().service().list_fts_property_schemas()
+    }
+
+    /// Remove the FTS property schema for a node kind.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] if the kind is not registered or the delete fails.
+    pub fn remove_fts_property_schema(&self, kind: &str) -> Result<(), EngineError> {
+        self.admin().service().remove_fts_property_schema(kind)
     }
 
     /// Register a new operational collection.

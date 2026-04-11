@@ -54,12 +54,17 @@ impl ProjectionService {
 
         let mut notes = Vec::new();
         let rebuilt_rows = match target {
-            ProjectionTarget::Fts => rebuild_fts(&mut conn)?,
+            ProjectionTarget::Fts => {
+                let fts = rebuild_fts(&mut conn)?;
+                let prop_fts = rebuild_property_fts(&mut conn)?;
+                fts + prop_fts
+            }
             ProjectionTarget::Vec => rebuild_vec(&mut conn, &mut notes)?,
             ProjectionTarget::All => {
                 let rebuilt_fts = rebuild_fts(&mut conn)?;
+                let rebuilt_prop_fts = rebuild_property_fts(&mut conn)?;
                 let rebuilt_vec = rebuild_vec(&mut conn, &mut notes)?;
-                rebuilt_fts + rebuilt_vec
+                rebuilt_fts + rebuilt_prop_fts + rebuilt_vec
             }
         };
 
@@ -87,7 +92,7 @@ impl ProjectionService {
         let mut conn = self.connect()?;
 
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let inserted = tx.execute(
+        let inserted_chunk_fts = tx.execute(
             r"
             INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content)
             SELECT c.id, n.logical_id, n.kind, c.text_content
@@ -103,11 +108,12 @@ impl ProjectionService {
             ",
             [],
         )?;
+        let inserted_prop_fts = rebuild_missing_property_fts_in_tx(&tx)?;
         tx.commit()?;
 
         Ok(ProjectionRepairReport {
             targets: vec![ProjectionTarget::Fts],
-            rebuilt_rows: inserted,
+            rebuilt_rows: inserted_chunk_fts + inserted_prop_fts,
             notes: vec![],
         })
     }
@@ -133,6 +139,67 @@ fn rebuild_fts(conn: &mut rusqlite::Connection) -> Result<usize, rusqlite::Error
     )?;
     tx.commit()?;
     Ok(inserted)
+}
+
+/// Atomically rebuild the property FTS index from registered schemas and active nodes.
+fn rebuild_property_fts(conn: &mut rusqlite::Connection) -> Result<usize, rusqlite::Error> {
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    tx.execute("DELETE FROM fts_node_properties", [])?;
+
+    let total = insert_property_fts_rows(
+        &tx,
+        "SELECT logical_id, properties FROM nodes WHERE kind = ?1 AND superseded_at IS NULL",
+    )?;
+
+    tx.commit()?;
+    Ok(total)
+}
+
+/// Insert missing property FTS rows within an existing transaction.
+fn rebuild_missing_property_fts_in_tx(
+    conn: &rusqlite::Connection,
+) -> Result<usize, rusqlite::Error> {
+    insert_property_fts_rows(
+        conn,
+        "SELECT n.logical_id, n.properties FROM nodes n \
+         WHERE n.kind = ?1 AND n.superseded_at IS NULL \
+           AND NOT EXISTS (SELECT 1 FROM fts_node_properties fp WHERE fp.node_logical_id = n.logical_id)",
+    )
+}
+
+/// Shared loop: load schemas, query nodes with `node_sql` (parameterized by kind),
+/// extract property FTS text, and insert into `fts_node_properties`.
+/// The caller is responsible for transaction management and for deleting stale rows
+/// before calling this function if a full rebuild is intended.
+pub(crate) fn insert_property_fts_rows(
+    conn: &rusqlite::Connection,
+    node_sql: &str,
+) -> Result<usize, rusqlite::Error> {
+    let schemas = crate::writer::load_fts_property_schemas(conn)?;
+    if schemas.is_empty() {
+        return Ok(0);
+    }
+
+    let mut total = 0usize;
+    let mut ins = conn.prepare(
+        "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) VALUES (?1, ?2, ?3)",
+    )?;
+    for (kind, paths, separator) in &schemas {
+        let mut stmt = conn.prepare(node_sql)?;
+        let rows: Vec<(String, String)> = stmt
+            .query_map([kind.as_str()], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        for (logical_id, properties_str) in &rows {
+            let props: serde_json::Value = serde_json::from_str(properties_str).unwrap_or_default();
+            if let Some(text) = crate::writer::compute_property_fts_text(&props, paths, separator) {
+                ins.execute(rusqlite::params![logical_id, kind, text])?;
+                total += 1;
+            }
+        }
+    }
+    Ok(total)
 }
 
 /// Remove stale vec rows: entries whose chunk no longer exists or whose node has been

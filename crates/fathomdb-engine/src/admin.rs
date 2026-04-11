@@ -40,10 +40,24 @@ pub struct IntegrityReport {
     pub physical_ok: bool,
     pub foreign_keys_ok: bool,
     pub missing_fts_rows: usize,
+    pub missing_property_fts_rows: usize,
     pub duplicate_active_logical_ids: usize,
     pub operational_missing_collections: usize,
     pub operational_missing_last_mutations: usize,
     pub warnings: Vec<String>,
+}
+
+/// A registered FTS property projection schema for a node kind.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct FtsPropertySchemaRecord {
+    /// The node kind this schema applies to.
+    pub kind: String,
+    /// JSON property paths to extract (e.g. `["$.name", "$.title"]`).
+    pub property_paths: Vec<String>,
+    /// Separator used when concatenating extracted values.
+    pub separator: String,
+    /// Schema format version.
+    pub format_version: i64,
 }
 
 /// Options controlling how a safe database export is performed.
@@ -110,6 +124,7 @@ pub struct LogicalRestoreReport {
     pub restored_edge_rows: usize,
     pub restored_chunk_rows: usize,
     pub restored_fts_rows: usize,
+    pub restored_property_fts_rows: usize,
     pub restored_vec_rows: usize,
     pub skipped_edges: Vec<SkippedEdge>,
     pub notes: Vec<String>,
@@ -167,6 +182,16 @@ pub struct SemanticReport {
     pub stale_fts_rows: usize,
     /// FTS rows whose node has been superseded (`superseded_at` IS NOT NULL on all active rows).
     pub fts_rows_for_superseded_nodes: usize,
+    /// Property FTS rows whose node has been superseded or does not exist.
+    pub stale_property_fts_rows: usize,
+    /// Property FTS rows whose kind has no registered FTS property schema.
+    pub orphaned_property_fts_rows: usize,
+    /// Property FTS rows whose `kind` does not match the active node's actual kind.
+    pub mismatched_kind_property_fts_rows: usize,
+    /// Active logical IDs with more than one `fts_node_properties` row.
+    pub duplicate_property_fts_rows: usize,
+    /// Property FTS rows whose `text_content` no longer matches the canonical extraction.
+    pub drifted_property_fts_rows: usize,
     /// Active edges where at least one endpoint has no active node.
     pub dangling_edges: usize,
     /// `logical_ids` where every version has been superseded (no active row).
@@ -381,9 +406,17 @@ impl AdminService {
             |row| row.get(0),
         )?;
 
+        // Count missing property FTS rows using the same extraction logic as
+        // write/rebuild. A pure-SQL check would overcount: nodes whose declared
+        // paths legitimately normalize to no values correctly have no row.
+        let missing_property_fts_rows = count_missing_property_fts_rows(&conn)?;
+
         let mut warnings = Vec::new();
         if missing_fts_rows > 0 {
             warnings.push("missing FTS projections detected".to_owned());
+        }
+        if missing_property_fts_rows > 0 {
+            warnings.push("missing property FTS projections detected".to_owned());
         }
         if duplicate_active > 0 {
             warnings.push("duplicate active logical_ids detected".to_owned());
@@ -403,6 +436,7 @@ impl AdminService {
             physical_ok: physical_result == "ok",
             foreign_keys_ok: foreign_key_count == 0,
             missing_fts_rows: i64_to_usize(missing_fts_rows),
+            missing_property_fts_rows: i64_to_usize(missing_property_fts_rows),
             duplicate_active_logical_ids: i64_to_usize(duplicate_active),
             operational_missing_collections: i64_to_usize(operational_missing_collections),
             operational_missing_last_mutations: i64_to_usize(operational_missing_last_mutations),
@@ -473,6 +507,53 @@ impl AdminService {
             [],
             |row| row.get(0),
         )?;
+
+        let stale_property_fts_rows: i64 = conn.query_row(
+            r"
+            SELECT count(*) FROM fts_node_properties fp
+            WHERE NOT EXISTS (
+                SELECT 1 FROM nodes n
+                WHERE n.logical_id = fp.node_logical_id AND n.superseded_at IS NULL
+            )
+            ",
+            [],
+            |row| row.get(0),
+        )?;
+
+        let orphaned_property_fts_rows: i64 = conn.query_row(
+            r"
+            SELECT count(*) FROM fts_node_properties fp
+            WHERE NOT EXISTS (
+                SELECT 1 FROM fts_property_schemas s WHERE s.kind = fp.kind
+            )
+            ",
+            [],
+            |row| row.get(0),
+        )?;
+
+        let mismatched_kind_property_fts_rows: i64 = conn.query_row(
+            r"
+            SELECT count(*) FROM fts_node_properties fp
+            JOIN nodes n ON n.logical_id = fp.node_logical_id AND n.superseded_at IS NULL
+            WHERE n.kind != fp.kind
+            ",
+            [],
+            |row| row.get(0),
+        )?;
+
+        let duplicate_property_fts_rows: i64 = conn.query_row(
+            r"
+            SELECT count(*) FROM (
+                SELECT node_logical_id FROM fts_node_properties
+                GROUP BY node_logical_id
+                HAVING count(*) > 1
+            )
+            ",
+            [],
+            |row| row.get(0),
+        )?;
+
+        let drifted_property_fts_rows = count_drifted_property_fts_rows(&conn)?;
 
         let dangling_edges: i64 = conn.query_row(
             r"
@@ -645,6 +726,31 @@ impl AdminService {
                 "{fts_rows_for_superseded_nodes} FTS row(s) for superseded node(s)"
             ));
         }
+        if stale_property_fts_rows > 0 {
+            warnings.push(format!(
+                "{stale_property_fts_rows} stale property FTS row(s) for superseded/missing node(s)"
+            ));
+        }
+        if orphaned_property_fts_rows > 0 {
+            warnings.push(format!(
+                "{orphaned_property_fts_rows} orphaned property FTS row(s) for unregistered kind(s)"
+            ));
+        }
+        if mismatched_kind_property_fts_rows > 0 {
+            warnings.push(format!(
+                "{mismatched_kind_property_fts_rows} property FTS row(s) whose kind does not match the active node"
+            ));
+        }
+        if duplicate_property_fts_rows > 0 {
+            warnings.push(format!(
+                "{duplicate_property_fts_rows} active logical ID(s) with duplicate property FTS rows"
+            ));
+        }
+        if drifted_property_fts_rows > 0 {
+            warnings.push(format!(
+                "{drifted_property_fts_rows} property FTS row(s) with stale text_content"
+            ));
+        }
         if dangling_edges > 0 {
             warnings.push(format!(
                 "{dangling_edges} active edge(s) with missing endpoint node"
@@ -693,6 +799,11 @@ impl AdminService {
             broken_action_fk: i64_to_usize(broken_action_fk),
             stale_fts_rows: i64_to_usize(stale_fts_rows),
             fts_rows_for_superseded_nodes: i64_to_usize(fts_rows_for_superseded_nodes),
+            stale_property_fts_rows: i64_to_usize(stale_property_fts_rows),
+            orphaned_property_fts_rows: i64_to_usize(orphaned_property_fts_rows),
+            mismatched_kind_property_fts_rows: i64_to_usize(mismatched_kind_property_fts_rows),
+            duplicate_property_fts_rows: i64_to_usize(duplicate_property_fts_rows),
+            drifted_property_fts_rows: i64_to_usize(drifted_property_fts_rows),
             dangling_edges: i64_to_usize(dangling_edges),
             orphaned_supersession_chains: i64_to_usize(orphaned_supersession_chains),
             stale_vec_rows: i64_to_usize(stale_vec_rows),
@@ -1408,6 +1519,108 @@ impl AdminService {
         self.projections.rebuild_missing_projections()
     }
 
+    /// Register (or update) an FTS property projection schema for the given node kind.
+    ///
+    /// After registration, any node of this kind will have the declared JSON property
+    /// paths extracted, concatenated, and indexed in the `fts_node_properties` FTS5 table.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if `property_paths` is empty, contains duplicates,
+    /// or if the database write fails.
+    pub fn register_fts_property_schema(
+        &self,
+        kind: &str,
+        property_paths: &[String],
+        separator: Option<&str>,
+    ) -> Result<FtsPropertySchemaRecord, EngineError> {
+        validate_fts_property_paths(property_paths)?;
+        let separator = separator.unwrap_or(" ");
+        let paths_json = serde_json::to_string(property_paths).map_err(|e| {
+            EngineError::InvalidWrite(format!("failed to serialize property paths: {e}"))
+        })?;
+
+        let mut conn = self.connect()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute(
+            "INSERT INTO fts_property_schemas (kind, property_paths_json, separator) \
+             VALUES (?1, ?2, ?3) \
+             ON CONFLICT(kind) DO UPDATE SET property_paths_json = ?2, separator = ?3",
+            rusqlite::params![kind, paths_json, separator],
+        )?;
+        persist_simple_provenance_event(
+            &tx,
+            "fts_property_schema_registered",
+            kind,
+            Some(serde_json::json!({
+                "property_paths": property_paths,
+                "separator": separator,
+            })),
+        )?;
+        tx.commit()?;
+
+        self.describe_fts_property_schema(kind)?.ok_or_else(|| {
+            EngineError::Bridge("registered FTS property schema missing after commit".to_owned())
+        })
+    }
+
+    /// Return the FTS property schema for a single node kind, if registered.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the database query fails.
+    pub fn describe_fts_property_schema(
+        &self,
+        kind: &str,
+    ) -> Result<Option<FtsPropertySchemaRecord>, EngineError> {
+        let conn = self.connect()?;
+        load_fts_property_schema_record(&conn, kind)
+    }
+
+    /// Return all registered FTS property schemas.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the database query fails.
+    pub fn list_fts_property_schemas(&self) -> Result<Vec<FtsPropertySchemaRecord>, EngineError> {
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare(
+            "SELECT kind, property_paths_json, separator, format_version \
+             FROM fts_property_schemas ORDER BY kind",
+        )?;
+        let records = stmt
+            .query_map([], |row| {
+                let paths_json: String = row.get(1)?;
+                let paths: Vec<String> = serde_json::from_str(&paths_json).unwrap_or_default();
+                Ok(FtsPropertySchemaRecord {
+                    kind: row.get(0)?,
+                    property_paths: paths,
+                    separator: row.get(2)?,
+                    format_version: row.get(3)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(records)
+    }
+
+    /// Remove the FTS property schema for a node kind.
+    ///
+    /// This does **not** delete existing `fts_node_properties` rows for this kind;
+    /// call `rebuild_projections(Fts)` to clean up stale rows.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the kind is not registered or the delete fails.
+    pub fn remove_fts_property_schema(&self, kind: &str) -> Result<(), EngineError> {
+        let mut conn = self.connect()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let deleted = tx.execute("DELETE FROM fts_property_schemas WHERE kind = ?1", [kind])?;
+        if deleted == 0 {
+            return Err(EngineError::InvalidWrite(format!(
+                "FTS property schema for kind '{kind}' is not registered"
+            )));
+        }
+        persist_simple_provenance_event(&tx, "fts_property_schema_removed", kind, None)?;
+        tx.commit()?;
+        Ok(())
+    }
+
     /// Recreate enabled vector profiles from persisted `vector_profiles` metadata.
     ///
     /// # Errors
@@ -1689,6 +1902,7 @@ impl AdminService {
                 restored_edge_rows: 0,
                 restored_chunk_rows: 0,
                 restored_fts_rows: 0,
+                restored_property_fts_rows: 0,
                 restored_vec_rows: 0,
                 skipped_edges: Vec::new(),
                 notes: vec!["logical_id already active".to_owned()],
@@ -1758,6 +1972,14 @@ impl AdminService {
         )?;
         let restored_vec_rows = count_vec_rows_for_logical_id(&tx, logical_id)?;
 
+        // Rebuild property FTS for the restored node.
+        tx.execute(
+            "DELETE FROM fts_node_properties WHERE node_logical_id = ?1",
+            [logical_id],
+        )?;
+        let restored_property_fts_rows =
+            rebuild_single_node_property_fts(&tx, logical_id, &restored_kind)?;
+
         persist_simple_provenance_event(
             &tx,
             "restore_logical_id",
@@ -1767,6 +1989,7 @@ impl AdminService {
                 "restored_edge_rows": restored_edge_rows,
                 "restored_chunk_rows": restored_chunk_rows,
                 "restored_fts_rows": restored_fts_rows,
+                "restored_property_fts_rows": restored_property_fts_rows,
                 "restored_vec_rows": restored_vec_rows,
             })),
         )?;
@@ -1779,6 +2002,7 @@ impl AdminService {
             restored_edge_rows,
             restored_chunk_rows,
             restored_fts_rows,
+            restored_property_fts_rows,
             restored_vec_rows,
             skipped_edges,
             notes: Vec::new(),
@@ -2084,6 +2308,9 @@ impl AdminService {
             ",
             [],
         )?;
+
+        // Rebuild property FTS in the same transaction.
+        rebuild_property_fts_in_tx(&tx)?;
 
         // Record the audit event inside the same transaction so the excision and its
         // audit record are committed atomically — no window where the excision is
@@ -2532,6 +2759,189 @@ fn persist_simple_provenance_event(
         rusqlite::params![new_id(), event_type, subject, metadata_json],
     )?;
     Ok(())
+}
+
+/// Count active nodes that should have a property FTS row (extraction yields a value)
+/// but don't. Uses the same extraction logic as write/rebuild to avoid false positives
+/// for nodes whose declared paths legitimately normalize to no values.
+fn count_missing_property_fts_rows(conn: &rusqlite::Connection) -> Result<i64, EngineError> {
+    let schemas = crate::writer::load_fts_property_schemas(conn)?;
+    if schemas.is_empty() {
+        return Ok(0);
+    }
+
+    let mut missing = 0i64;
+    for (kind, paths, separator) in &schemas {
+        let mut stmt = conn.prepare(
+            "SELECT n.logical_id, n.properties FROM nodes n \
+             WHERE n.kind = ?1 AND n.superseded_at IS NULL \
+               AND NOT EXISTS (SELECT 1 FROM fts_node_properties fp WHERE fp.node_logical_id = n.logical_id)",
+        )?;
+        let rows = stmt.query_map([kind.as_str()], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        for row in rows {
+            let (_logical_id, properties_str) = row?;
+            let props: serde_json::Value =
+                serde_json::from_str(&properties_str).unwrap_or_default();
+            if crate::writer::compute_property_fts_text(&props, paths, separator).is_some() {
+                missing += 1;
+            }
+        }
+    }
+    Ok(missing)
+}
+
+/// Count property FTS rows whose text_content has drifted from the current canonical
+/// value computed by `compute_property_fts_text(...)`. This catches:
+/// - rows whose text no longer matches the current node properties and schema
+/// - rows that should have been removed (extraction now yields no value)
+fn count_drifted_property_fts_rows(conn: &rusqlite::Connection) -> Result<i64, EngineError> {
+    let schemas = crate::writer::load_fts_property_schemas(conn)?;
+    if schemas.is_empty() {
+        return Ok(0);
+    }
+
+    let mut drifted = 0i64;
+    for (kind, paths, separator) in &schemas {
+        let mut stmt = conn.prepare(
+            "SELECT fp.node_logical_id, fp.text_content, n.properties \
+             FROM fts_node_properties fp \
+             JOIN nodes n ON n.logical_id = fp.node_logical_id AND n.superseded_at IS NULL \
+             WHERE fp.kind = ?1 AND n.kind = ?1",
+        )?;
+        let rows = stmt.query_map([kind.as_str()], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+        for row in rows {
+            let (_logical_id, stored_text, properties_str) = row?;
+            let props: serde_json::Value =
+                serde_json::from_str(&properties_str).unwrap_or_default();
+            let expected = crate::writer::compute_property_fts_text(&props, paths, separator);
+            match expected {
+                Some(text) if text == stored_text => {}
+                _ => drifted += 1,
+            }
+        }
+    }
+    Ok(drifted)
+}
+
+/// Rebuild property FTS rows from canonical state within an existing transaction.
+fn rebuild_property_fts_in_tx(conn: &rusqlite::Connection) -> Result<usize, EngineError> {
+    conn.execute("DELETE FROM fts_node_properties", [])?;
+    let inserted = crate::projection::insert_property_fts_rows(
+        conn,
+        "SELECT logical_id, properties FROM nodes WHERE kind = ?1 AND superseded_at IS NULL",
+    )?;
+    Ok(inserted)
+}
+
+/// Rebuild property FTS for a single node. Returns 1 if a row was inserted, 0 otherwise.
+/// The caller must delete any existing `fts_node_properties` row for this node first.
+fn rebuild_single_node_property_fts(
+    conn: &rusqlite::Connection,
+    logical_id: &str,
+    kind: &str,
+) -> Result<usize, EngineError> {
+    let schema: Option<(Vec<String>, String)> = conn
+        .query_row(
+            "SELECT property_paths_json, separator FROM fts_property_schemas WHERE kind = ?1",
+            [kind],
+            |row| {
+                let paths_json: String = row.get(0)?;
+                let separator: String = row.get(1)?;
+                let paths: Vec<String> = serde_json::from_str(&paths_json).unwrap_or_default();
+                Ok((paths, separator))
+            },
+        )
+        .optional()?;
+    let Some((paths, separator)) = schema else {
+        return Ok(0);
+    };
+    let properties_str: Option<String> = conn
+        .query_row(
+            "SELECT properties FROM nodes WHERE logical_id = ?1 AND superseded_at IS NULL",
+            [logical_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(properties_str) = properties_str else {
+        return Ok(0);
+    };
+    let props: serde_json::Value = serde_json::from_str(&properties_str).unwrap_or_default();
+    let Some(text) = crate::writer::compute_property_fts_text(&props, &paths, &separator) else {
+        return Ok(0);
+    };
+    conn.execute(
+        "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) VALUES (?1, ?2, ?3)",
+        rusqlite::params![logical_id, kind, text],
+    )?;
+    Ok(1)
+}
+
+fn validate_fts_property_paths(paths: &[String]) -> Result<(), EngineError> {
+    if paths.is_empty() {
+        return Err(EngineError::InvalidWrite(
+            "FTS property paths must not be empty".to_owned(),
+        ));
+    }
+    let mut seen = std::collections::HashSet::new();
+    for path in paths {
+        if !path.starts_with("$.") {
+            return Err(EngineError::InvalidWrite(format!(
+                "FTS property path must start with '$.' but got: {path}"
+            )));
+        }
+        let after_prefix = &path[2..]; // safe: already validated "$." prefix
+        let segments: Vec<&str> = after_prefix.split('.').collect();
+        if segments.is_empty() || segments.iter().any(|s| s.is_empty()) {
+            return Err(EngineError::InvalidWrite(format!(
+                "FTS property path has empty segment(s): {path}"
+            )));
+        }
+        for seg in &segments {
+            if !seg.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                return Err(EngineError::InvalidWrite(format!(
+                    "FTS property path segment contains invalid characters: {path}"
+                )));
+            }
+        }
+        if !seen.insert(path) {
+            return Err(EngineError::InvalidWrite(format!(
+                "duplicate FTS property path: {path}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn load_fts_property_schema_record(
+    conn: &rusqlite::Connection,
+    kind: &str,
+) -> Result<Option<FtsPropertySchemaRecord>, EngineError> {
+    let row = conn
+        .query_row(
+            "SELECT kind, property_paths_json, separator, format_version \
+             FROM fts_property_schemas WHERE kind = ?1",
+            [kind],
+            |row| {
+                let paths_json: String = row.get(1)?;
+                let paths: Vec<String> = serde_json::from_str(&paths_json).unwrap_or_default();
+                Ok(FtsPropertySchemaRecord {
+                    kind: row.get(0)?,
+                    property_paths: paths,
+                    separator: row.get(2)?,
+                    format_version: row.get(3)?,
+                })
+            },
+        )
+        .optional()?;
+    Ok(row)
 }
 
 fn build_regeneration_input(
@@ -4333,20 +4743,17 @@ mod tests {
     use tempfile::NamedTempFile;
 
     use super::{AdminService, SafeExportOptions, VectorRegenerationConfig};
+    use crate::projection::ProjectionTarget;
     use crate::sqlite;
-    use crate::{EngineError, OperationalCollectionKind, OperationalRegisterRequest};
+    use crate::{
+        EngineError, ExecutionCoordinator, OperationalCollectionKind, OperationalRegisterRequest,
+        TelemetryCounters,
+    };
 
-    #[cfg(feature = "sqlite-vec")]
     use fathomdb_query::QueryBuilder;
 
     #[cfg(feature = "sqlite-vec")]
     use super::{VectorGeneratorPolicy, load_vector_regeneration_config};
-
-    #[cfg(feature = "sqlite-vec")]
-    use crate::ExecutionCoordinator;
-
-    #[cfg(feature = "sqlite-vec")]
-    use crate::TelemetryCounters;
 
     #[allow(dead_code)]
     #[cfg(unix)]
@@ -5079,6 +5486,9 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
         assert_eq!(report.missing_operational_current_rows, 0);
         assert_eq!(report.stale_operational_current_rows, 0);
         assert_eq!(report.disabled_collection_mutations, 0);
+        assert_eq!(report.mismatched_kind_property_fts_rows, 0);
+        assert_eq!(report.duplicate_property_fts_rows, 0);
+        assert_eq!(report.drifted_property_fts_rows, 0);
         assert!(report.warnings.is_empty());
     }
 
@@ -7836,6 +8246,121 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
     }
 
     #[test]
+    fn check_semantics_detects_mismatched_kind_property_fts_rows() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            // Insert an active node with kind "Goal".
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('r1', 'goal-1', 'Goal', '{\"name\":\"Ship v2\"}', 100, 'src-1')",
+                [],
+            )
+            .expect("insert node");
+            // Insert a property FTS row with a DIFFERENT kind than the node.
+            conn.execute(
+                "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
+                 VALUES ('goal-1', 'WrongKind', 'Ship v2')",
+                [],
+            )
+            .expect("insert mismatched property FTS row");
+        }
+        let report = service.check_semantics().expect("semantics check");
+        assert_eq!(report.mismatched_kind_property_fts_rows, 1);
+    }
+
+    #[test]
+    fn check_semantics_detects_duplicate_property_fts_rows() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('r1', 'goal-1', 'Goal', '{\"name\":\"Ship v2\"}', 100, 'src-1')",
+                [],
+            )
+            .expect("insert node");
+            // Insert two property FTS rows for the same logical ID.
+            conn.execute(
+                "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
+                 VALUES ('goal-1', 'Goal', 'Ship v2')",
+                [],
+            )
+            .expect("insert first property FTS row");
+            conn.execute(
+                "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
+                 VALUES ('goal-1', 'Goal', 'Ship v2 duplicate')",
+                [],
+            )
+            .expect("insert duplicate property FTS row");
+        }
+        let report = service.check_semantics().expect("semantics check");
+        assert_eq!(report.duplicate_property_fts_rows, 1);
+    }
+
+    #[test]
+    fn check_semantics_detects_drifted_property_fts_text() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO fts_property_schemas (kind, property_paths_json, separator) \
+                 VALUES ('Goal', '[\"$.name\"]', ' ')",
+                [],
+            )
+            .expect("register schema");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('r1', 'goal-1', 'Goal', '{\"name\":\"Current name\"}', 100, 'src-1')",
+                [],
+            )
+            .expect("insert node");
+            // Insert a property FTS row with outdated text content.
+            conn.execute(
+                "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
+                 VALUES ('goal-1', 'Goal', 'Old stale name')",
+                [],
+            )
+            .expect("insert stale property FTS row");
+        }
+        let report = service.check_semantics().expect("semantics check");
+        assert_eq!(report.drifted_property_fts_rows, 1);
+    }
+
+    #[test]
+    fn check_semantics_detects_property_fts_row_that_should_not_exist() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO fts_property_schemas (kind, property_paths_json, separator) \
+                 VALUES ('Goal', '[\"$.searchable\"]', ' ')",
+                [],
+            )
+            .expect("register schema");
+            // Node does NOT have $.searchable — extraction yields no value.
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('r1', 'goal-1', 'Goal', '{\"other\":\"field\"}', 100, 'src-1')",
+                [],
+            )
+            .expect("insert node");
+            // But a property FTS row exists anyway.
+            conn.execute(
+                "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
+                 VALUES ('goal-1', 'Goal', 'phantom text')",
+                [],
+            )
+            .expect("insert phantom property FTS row");
+        }
+        let report = service.check_semantics().expect("semantics check");
+        assert_eq!(
+            report.drifted_property_fts_rows, 1,
+            "row that should not exist must be counted as drifted"
+        );
+    }
+
+    #[test]
     fn safe_export_writes_manifest_with_sha256() {
         let (_db, service) = setup();
         let export_dir = tempfile::TempDir::new().expect("temp dir");
@@ -8592,5 +9117,581 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
             active_edge_count, 1,
             "edge must be active after both endpoints restored"
         );
+    }
+
+    // ── FTS property schema end-to-end tests ──────────────────────────
+
+    #[test]
+    fn fts_property_schema_crud_round_trip() {
+        let (_db, service) = setup();
+
+        // Register
+        let record = service
+            .register_fts_property_schema(
+                "Meeting",
+                &["$.title".to_owned(), "$.summary".to_owned()],
+                None,
+            )
+            .expect("register");
+        assert_eq!(record.kind, "Meeting");
+        assert_eq!(record.property_paths, vec!["$.title", "$.summary"]);
+        assert_eq!(record.separator, " ");
+        assert_eq!(record.format_version, 1);
+
+        // Describe
+        let described = service
+            .describe_fts_property_schema("Meeting")
+            .expect("describe")
+            .expect("should exist");
+        assert_eq!(described, record);
+
+        // Describe missing kind
+        let missing = service
+            .describe_fts_property_schema("NoSuchKind")
+            .expect("describe missing");
+        assert!(missing.is_none());
+
+        // List
+        let list = service.list_fts_property_schemas().expect("list");
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].kind, "Meeting");
+
+        // Update (idempotent upsert)
+        let updated = service
+            .register_fts_property_schema(
+                "Meeting",
+                &["$.title".to_owned(), "$.notes".to_owned()],
+                Some("\n"),
+            )
+            .expect("update");
+        assert_eq!(updated.property_paths, vec!["$.title", "$.notes"]);
+        assert_eq!(updated.separator, "\n");
+
+        // Remove
+        service
+            .remove_fts_property_schema("Meeting")
+            .expect("remove");
+        let after_remove = service
+            .describe_fts_property_schema("Meeting")
+            .expect("describe after remove");
+        assert!(after_remove.is_none());
+
+        // Remove non-existent is an error
+        let err = service.remove_fts_property_schema("Meeting");
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn restore_reestablishes_property_fts_visibility() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            // Register a property schema for Document kind.
+            conn.execute(
+                "INSERT INTO fts_property_schemas (kind, property_paths_json, separator) \
+                 VALUES ('Document', '[\"$.title\", \"$.body\"]', ' ')",
+                [],
+            )
+            .expect("register schema");
+            // Insert an active node with extractable properties.
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('row-1', 'doc-1', 'Document', '{\"title\":\"Budget\",\"body\":\"Q3 forecast\"}', 100, 'seed')",
+                [],
+            )
+            .expect("insert node");
+            // Insert a chunk so restore has something to work with for FTS.
+            conn.execute(
+                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
+                 VALUES ('chunk-1', 'doc-1', 'budget text', 100)",
+                [],
+            )
+            .expect("insert chunk");
+            // Insert property FTS row (as write path would).
+            conn.execute(
+                "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
+                 VALUES ('doc-1', 'Document', 'Budget Q3 forecast')",
+                [],
+            )
+            .expect("insert property fts");
+            // Simulate retire: supersede node, clear FTS.
+            conn.execute(
+                "INSERT INTO provenance_events (id, event_type, subject, source_ref, created_at, metadata_json) \
+                 VALUES ('evt-retire', 'node_retire', 'doc-1', 'forget-1', 200, '')",
+                [],
+            )
+            .expect("retire event");
+            conn.execute(
+                "UPDATE nodes SET superseded_at = 200 WHERE logical_id = 'doc-1'",
+                [],
+            )
+            .expect("supersede");
+            conn.execute("DELETE FROM fts_nodes", [])
+                .expect("clear chunk fts");
+            conn.execute("DELETE FROM fts_node_properties", [])
+                .expect("clear property fts");
+        }
+
+        let report = service.restore_logical_id("doc-1").expect("restore");
+        assert_eq!(report.restored_property_fts_rows, 1);
+
+        // Verify the property FTS row was recreated.
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let prop_fts_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM fts_node_properties WHERE node_logical_id = 'doc-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("prop fts count");
+        assert_eq!(prop_fts_count, 1, "property FTS must be restored");
+
+        let text: String = conn
+            .query_row(
+                "SELECT text_content FROM fts_node_properties WHERE node_logical_id = 'doc-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("prop fts text");
+        assert_eq!(text, "Budget Q3 forecast");
+    }
+
+    #[test]
+    fn safe_export_preserves_fts_property_schemas() {
+        let (_db, service) = setup();
+        service
+            .register_fts_property_schema(
+                "Goal",
+                &["$.name".to_owned(), "$.rationale".to_owned()],
+                None,
+            )
+            .expect("register schema");
+
+        let export_dir = tempfile::TempDir::new().expect("temp dir");
+        let export_path = export_dir.path().join("backup.db");
+        service
+            .safe_export(
+                &export_path,
+                SafeExportOptions {
+                    force_checkpoint: false,
+                },
+            )
+            .expect("export");
+
+        // Open the exported DB and verify the schema survived.
+        let exported_conn = rusqlite::Connection::open(&export_path).expect("open exported db");
+        let kind: String = exported_conn
+            .query_row(
+                "SELECT kind FROM fts_property_schemas WHERE kind = 'Goal'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("schema must exist in export");
+        assert_eq!(kind, "Goal");
+        let paths_json: String = exported_conn
+            .query_row(
+                "SELECT property_paths_json FROM fts_property_schemas WHERE kind = 'Goal'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("paths must exist");
+        let paths: Vec<String> = serde_json::from_str(&paths_json).expect("valid json");
+        assert_eq!(paths, vec!["$.name", "$.rationale"]);
+    }
+
+    #[test]
+    fn export_recovery_rebuilds_property_fts_from_canonical_state() {
+        let (db, service) = setup();
+        // Register a schema and insert two nodes with extractable properties.
+        service
+            .register_fts_property_schema("Goal", &["$.name".to_owned()], None)
+            .expect("register");
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('row-1', 'goal-1', 'Goal', '{\"name\":\"Ship v2\"}', 100, 'seed')",
+                [],
+            )
+            .expect("insert node 1");
+            conn.execute(
+                "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
+                 VALUES ('goal-1', 'Goal', 'Ship v2')",
+                [],
+            )
+            .expect("insert property FTS row 1");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('row-2', 'goal-2', 'Goal', '{\"name\":\"Launch redesign\"}', 100, 'seed')",
+                [],
+            )
+            .expect("insert node 2");
+            conn.execute(
+                "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
+                 VALUES ('goal-2', 'Goal', 'Launch redesign')",
+                [],
+            )
+            .expect("insert property FTS row 2");
+        }
+
+        // Export.
+        let export_dir = tempfile::TempDir::new().expect("temp dir");
+        let export_path = export_dir.path().join("backup.db");
+        service
+            .safe_export(
+                &export_path,
+                SafeExportOptions {
+                    force_checkpoint: false,
+                },
+            )
+            .expect("export");
+
+        // Corrupt the derived rows: replace correct text with wrong text for
+        // goal-1, and delete the row for goal-2 entirely. This exercises both
+        // corrupted-but-present rows and missing rows in the same recovery.
+        {
+            let conn = rusqlite::Connection::open(&export_path).expect("open export");
+            conn.execute(
+                "DELETE FROM fts_node_properties WHERE node_logical_id = 'goal-1'",
+                [],
+            )
+            .expect("delete old row");
+            conn.execute(
+                "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
+                 VALUES ('goal-1', 'Goal', 'completely wrong stale text')",
+                [],
+            )
+            .expect("insert corrupted row");
+            conn.execute(
+                "DELETE FROM fts_node_properties WHERE node_logical_id = 'goal-2'",
+                [],
+            )
+            .expect("delete goal-2 row");
+        }
+
+        // Open the exported DB and rebuild projections from canonical state.
+        let schema = Arc::new(SchemaManager::new());
+        let exported_service = AdminService::new(&export_path, Arc::clone(&schema));
+        exported_service
+            .rebuild_projections(ProjectionTarget::Fts)
+            .expect("rebuild");
+
+        // Verify text_search(...) returns the correct result for goal-1's
+        // canonical property ("Ship") — not the corrupted text.
+        let coordinator = ExecutionCoordinator::open(
+            &export_path,
+            Arc::clone(&schema),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("coordinator");
+
+        let compiled = QueryBuilder::nodes("Goal")
+            .text_search("Ship", 10)
+            .limit(10)
+            .compile()
+            .expect("compile");
+        let rows = coordinator
+            .execute_compiled_read(&compiled)
+            .expect("execute read");
+        assert_eq!(rows.nodes.len(), 1);
+        assert_eq!(rows.nodes[0].logical_id, "goal-1");
+
+        // Verify text_search(...) recovers the previously missing goal-2 row.
+        let compiled2 = QueryBuilder::nodes("Goal")
+            .text_search("redesign", 10)
+            .limit(10)
+            .compile()
+            .expect("compile");
+        let rows2 = coordinator
+            .execute_compiled_read(&compiled2)
+            .expect("execute read");
+        assert_eq!(rows2.nodes.len(), 1);
+        assert_eq!(rows2.nodes[0].logical_id, "goal-2");
+
+        // The corrupted text must not be searchable after recovery.
+        let compiled3 = QueryBuilder::nodes("Goal")
+            .text_search("stale", 10)
+            .limit(10)
+            .compile()
+            .expect("compile");
+        let rows3 = coordinator
+            .execute_compiled_read(&compiled3)
+            .expect("execute read");
+        assert_eq!(
+            rows3.nodes.len(),
+            0,
+            "corrupted text must not appear in search after rebuild"
+        );
+
+        // Verify integrity and semantics are clean after recovery.
+        let integrity = exported_service.check_integrity().expect("integrity");
+        assert_eq!(integrity.missing_property_fts_rows, 0);
+        let semantics = exported_service.check_semantics().expect("semantics");
+        assert_eq!(semantics.drifted_property_fts_rows, 0);
+        assert_eq!(semantics.orphaned_property_fts_rows, 0);
+        assert_eq!(semantics.duplicate_property_fts_rows, 0);
+    }
+
+    #[test]
+    fn check_integrity_no_false_positives_for_empty_extraction() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            // Register a schema that looks for $.searchable
+            conn.execute(
+                "INSERT INTO fts_property_schemas (kind, property_paths_json, separator) \
+                 VALUES ('Ticket', '[\"$.searchable\"]', ' ')",
+                [],
+            )
+            .expect("register schema");
+            // Insert a node whose properties do NOT contain $.searchable —
+            // correctly has no property FTS row.
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('row-1', 'ticket-1', 'Ticket', '{\"status\":\"open\"}', 100, 'seed')",
+                [],
+            )
+            .expect("insert node");
+        }
+
+        let report = service.check_integrity().expect("integrity");
+        assert_eq!(
+            report.missing_property_fts_rows, 0,
+            "node with no extractable values must not be counted as missing"
+        );
+    }
+
+    #[test]
+    fn check_integrity_detects_genuinely_missing_property_fts_rows() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO fts_property_schemas (kind, property_paths_json, separator) \
+                 VALUES ('Ticket', '[\"$.title\"]', ' ')",
+                [],
+            )
+            .expect("register schema");
+            // Insert a node WITH an extractable $.title but no property FTS row.
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('row-1', 'ticket-1', 'Ticket', '{\"title\":\"fix login bug\"}', 100, 'seed')",
+                [],
+            )
+            .expect("insert node");
+        }
+
+        let report = service.check_integrity().expect("integrity");
+        assert_eq!(
+            report.missing_property_fts_rows, 1,
+            "node with extractable values but no property FTS row must be detected"
+        );
+    }
+
+    #[test]
+    fn rebuild_projections_fts_restores_missing_property_fts_rows() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO fts_property_schemas (kind, property_paths_json, separator) \
+                 VALUES ('Goal', '[\"$.name\"]', ' ')",
+                [],
+            )
+            .expect("register schema");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('row-1', 'goal-1', 'Goal', '{\"name\":\"Ship v2\"}', 100, 'seed')",
+                [],
+            )
+            .expect("insert node");
+            // Deliberately do NOT insert a property FTS row.
+        }
+
+        let report = service
+            .rebuild_projections(ProjectionTarget::Fts)
+            .expect("rebuild");
+        assert!(
+            report.rebuilt_rows >= 1,
+            "rebuild must insert at least one property FTS row"
+        );
+
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let text: String = conn
+            .query_row(
+                "SELECT text_content FROM fts_node_properties WHERE node_logical_id = 'goal-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("property FTS row must exist after rebuild");
+        assert_eq!(text, "Ship v2");
+    }
+
+    #[test]
+    fn rebuild_missing_projections_fills_gap_for_deleted_property_fts_row() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO fts_property_schemas (kind, property_paths_json, separator) \
+                 VALUES ('Goal', '[\"$.name\"]', ' ')",
+                [],
+            )
+            .expect("register schema");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('row-1', 'goal-1', 'Goal', '{\"name\":\"Ship v2\"}', 100, 'seed')",
+                [],
+            )
+            .expect("insert node");
+            // Insert and then delete the property FTS row to simulate corruption.
+            conn.execute(
+                "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
+                 VALUES ('goal-1', 'Goal', 'Ship v2')",
+                [],
+            )
+            .expect("insert property fts");
+            conn.execute(
+                "DELETE FROM fts_node_properties WHERE node_logical_id = 'goal-1'",
+                [],
+            )
+            .expect("delete property fts");
+        }
+
+        let report = service
+            .rebuild_missing_projections()
+            .expect("rebuild missing");
+        assert!(
+            report.rebuilt_rows >= 1,
+            "missing rebuild must insert the gap-fill row"
+        );
+
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM fts_node_properties WHERE node_logical_id = 'goal-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count");
+        assert_eq!(
+            count, 1,
+            "gap-fill must restore exactly one property FTS row"
+        );
+    }
+
+    #[test]
+    fn remove_schema_then_rebuild_cleans_stale_property_fts_rows() {
+        let (db, service) = setup();
+        service
+            .register_fts_property_schema("Goal", &["$.name".to_owned()], None)
+            .expect("register");
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('row-1', 'goal-1', 'Goal', '{\"name\":\"Ship v2\"}', 100, 'seed')",
+                [],
+            )
+            .expect("insert node");
+            // Manually insert a property FTS row (simulating the write path).
+            conn.execute(
+                "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
+                 VALUES ('goal-1', 'Goal', 'Ship v2')",
+                [],
+            )
+            .expect("insert property fts");
+        }
+
+        // Remove the schema — stale rows now exist.
+        service.remove_fts_property_schema("Goal").expect("remove");
+
+        // Verify stale rows are detected.
+        let semantics = service.check_semantics().expect("semantics");
+        assert_eq!(
+            semantics.orphaned_property_fts_rows, 1,
+            "stale property FTS rows must be detected after schema removal"
+        );
+
+        // Full rebuild should clean them.
+        service
+            .rebuild_projections(ProjectionTarget::Fts)
+            .expect("rebuild");
+
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM fts_node_properties WHERE node_logical_id = 'goal-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count");
+        assert_eq!(
+            count, 0,
+            "rebuild after schema removal must delete stale property FTS rows"
+        );
+    }
+
+    mod validate_fts_property_paths_tests {
+        use super::super::validate_fts_property_paths;
+
+        #[test]
+        fn valid_simple_path() {
+            assert!(validate_fts_property_paths(&["$.name".to_owned()]).is_ok());
+        }
+
+        #[test]
+        fn valid_nested_path() {
+            assert!(validate_fts_property_paths(&["$.address.city".to_owned()]).is_ok());
+        }
+
+        #[test]
+        fn valid_underscore_segment() {
+            assert!(validate_fts_property_paths(&["$.a_b".to_owned()]).is_ok());
+        }
+
+        #[test]
+        fn rejects_bare_prefix() {
+            let result = validate_fts_property_paths(&["$.".to_owned()]);
+            assert!(result.is_err(), "path '$.' must be rejected");
+        }
+
+        #[test]
+        fn rejects_double_dot() {
+            let result = validate_fts_property_paths(&["$..x".to_owned()]);
+            assert!(result.is_err(), "path '$..x' must be rejected");
+        }
+
+        #[test]
+        fn rejects_trailing_dot() {
+            let result = validate_fts_property_paths(&["$.foo.".to_owned()]);
+            assert!(result.is_err(), "path '$.foo.' must be rejected");
+        }
+
+        #[test]
+        fn rejects_space_in_segment() {
+            let result = validate_fts_property_paths(&["$.foo bar".to_owned()]);
+            assert!(result.is_err(), "path '$.foo bar' must be rejected");
+        }
+
+        #[test]
+        fn rejects_bracket_syntax() {
+            let result = validate_fts_property_paths(&["$.foo[0]".to_owned()]);
+            assert!(result.is_err(), "path '$.foo[0]' must be rejected");
+        }
+
+        #[test]
+        fn rejects_duplicates() {
+            let result = validate_fts_property_paths(&["$.name".to_owned(), "$.name".to_owned()]);
+            assert!(result.is_err(), "duplicate paths must be rejected");
+        }
+
+        #[test]
+        fn rejects_empty_list() {
+            let result = validate_fts_property_paths(&[]);
+            assert!(result.is_err(), "empty path list must be rejected");
+        }
     }
 }

@@ -474,6 +474,7 @@ class IntegrityReport:
     physical_ok: bool = False
     foreign_keys_ok: bool = False
     missing_fts_rows: int = 0
+    missing_property_fts_rows: int = 0
     duplicate_active_logical_ids: int = 0
     operational_missing_collections: int = 0
     operational_missing_last_mutations: int = 0
@@ -494,6 +495,11 @@ class SemanticReport:
     broken_action_fk: int = 0
     stale_fts_rows: int = 0
     fts_rows_for_superseded_nodes: int = 0
+    stale_property_fts_rows: int = 0
+    orphaned_property_fts_rows: int = 0
+    mismatched_kind_property_fts_rows: int = 0
+    duplicate_property_fts_rows: int = 0
+    drifted_property_fts_rows: int = 0
     dangling_edges: int = 0
     orphaned_supersession_chains: int = 0
     stale_vec_rows: int = 0
@@ -545,6 +551,7 @@ class LogicalRestoreReport:
     restored_edge_rows: int = 0
     restored_chunk_rows: int = 0
     restored_fts_rows: int = 0
+    restored_property_fts_rows: int = 0
     restored_vec_rows: int = 0
     skipped_edges: list[SkippedEdge] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
@@ -609,6 +616,25 @@ class SafeExportManifest:
     @classmethod
     def from_wire(cls, payload: dict[str, Any]) -> "SafeExportManifest":
         return cls(**payload)
+
+
+@dataclass(slots=True)
+class FtsPropertySchemaRecord:
+    """A registered FTS property projection schema for a node kind."""
+
+    kind: str
+    property_paths: list[str]
+    separator: str
+    format_version: int
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "FtsPropertySchemaRecord":
+        return cls(
+            kind=payload["kind"],
+            property_paths=payload.get("property_paths", []),
+            separator=payload.get("separator", " "),
+            format_version=payload.get("format_version", 1),
+        )
 
 
 @dataclass(frozen=True)

@@ -84,9 +84,6 @@ pub fn shape_signature(ast: &QueryAst) -> String {
             QueryStep::TextSearch { limit, .. } => {
                 let _ = write!(&mut signature, "-Text(limit={limit})");
             }
-            QueryStep::PropertyTextSearch { limit, .. } => {
-                let _ = write!(&mut signature, "-PropertyText(limit={limit})");
-            }
             QueryStep::Traverse {
                 direction,
                 label,
@@ -182,14 +179,5 @@ mod tests {
 
         let hints = execution_hints(&ast);
         assert_eq!(hints.hard_limit, 1000, "hard_limit defaults to 1000");
-    }
-
-    #[test]
-    fn property_text_search_uses_nodes_driver() {
-        let ast = QueryBuilder::nodes("Meeting")
-            .property_text_search("gmail oauth", 25)
-            .into_ast();
-
-        assert_eq!(choose_driving_table(&ast), DrivingTable::Nodes);
     }
 }

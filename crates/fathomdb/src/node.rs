@@ -270,6 +270,55 @@ impl NodeEngineCore {
         })
     }
 
+    // ── FTS property schema methods ───────────────────────────────────
+
+    #[napi]
+    pub fn register_fts_property_schema(
+        &self,
+        kind: String,
+        property_paths_json: String,
+        separator: Option<String>,
+    ) -> Result<String> {
+        let paths: Vec<String> = serde_json::from_str(&property_paths_json)
+            .map_err(|error| invalid_argument(format!("invalid property paths JSON: {error}")))?;
+        self.with_engine(|engine| {
+            let record = engine
+                .register_fts_property_schema(&kind, &paths, separator.as_deref())
+                .map_err(map_engine_error)?;
+            encode_json(record)
+        })
+    }
+
+    #[napi]
+    pub fn describe_fts_property_schema(&self, kind: String) -> Result<String> {
+        self.with_engine(|engine| {
+            let record = engine
+                .describe_fts_property_schema(&kind)
+                .map_err(map_engine_error)?;
+            encode_json(record)
+        })
+    }
+
+    #[napi]
+    pub fn list_fts_property_schemas(&self) -> Result<String> {
+        self.with_engine(|engine| {
+            let records = engine
+                .list_fts_property_schemas()
+                .map_err(map_engine_error)?;
+            encode_json(records)
+        })
+    }
+
+    #[napi]
+    pub fn remove_fts_property_schema(&self, kind: String) -> Result<String> {
+        self.with_engine(|engine| {
+            engine
+                .remove_fts_property_schema(&kind)
+                .map_err(map_engine_error)?;
+            encode_json(serde_json::json!({"removed": true}))
+        })
+    }
+
     // ── Operational collection methods ──────────────────────────────────
 
     #[napi]

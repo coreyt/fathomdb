@@ -69,6 +69,7 @@ type bridgeIntegrityReport struct {
 	PhysicalOK                      bool     `json:"physical_ok"`
 	ForeignKeysOK                   bool     `json:"foreign_keys_ok"`
 	MissingFTSRows                  int      `json:"missing_fts_rows"`
+	MissingPropertyFTSRows          int      `json:"missing_property_fts_rows"`
 	DuplicateActiveLogicalIDs       int      `json:"duplicate_active_logical_ids"`
 	OperationalMissingCollections   int      `json:"operational_missing_collections"`
 	OperationalMissingLastMutations int      `json:"operational_missing_last_mutations"`
@@ -83,6 +84,11 @@ type bridgeSemanticReport struct {
 	BrokenActionFK                 int      `json:"broken_action_fk"`
 	StaleFtsRows                   int      `json:"stale_fts_rows"`
 	FtsRowsForSupersededNodes      int      `json:"fts_rows_for_superseded_nodes"`
+	StalePropertyFtsRows           int      `json:"stale_property_fts_rows"`
+	OrphanedPropertyFtsRows        int      `json:"orphaned_property_fts_rows"`
+	MismatchedKindPropertyFtsRows  int      `json:"mismatched_kind_property_fts_rows"`
+	DuplicatePropertyFtsRows       int      `json:"duplicate_property_fts_rows"`
+	DriftedPropertyFtsRows         int      `json:"drifted_property_fts_rows"`
 	DanglingEdges                  int      `json:"dangling_edges"`
 	OrphanedSupersessionChains     int      `json:"orphaned_supersession_chains"`
 	StaleVecRows                   int      `json:"stale_vec_rows"`
@@ -144,6 +150,7 @@ func buildLayer2Report(
 		PhysicalOK:                     ir.PhysicalOK,
 		ForeignKeysOK:                  ir.ForeignKeysOK,
 		MissingFTSRows:                 ir.MissingFTSRows,
+		MissingPropertyFTSRows:         ir.MissingPropertyFTSRows,
 		DuplicateActiveLogicalIDs:      ir.DuplicateActiveLogicalIDs,
 		BrokenStepFK:                   sr.BrokenStepFK,
 		BrokenActionFK:                 sr.BrokenActionFK,
@@ -171,6 +178,12 @@ func buildLayer2Report(
 		layer2.Findings = append(layer2.Findings, sqlitecheck.Finding{
 			Layer: 2, Severity: "warning",
 			Message: fmt.Sprintf("%d missing FTS projection(s) detected by engine", ir.MissingFTSRows),
+		})
+	}
+	if ir.MissingPropertyFTSRows > 0 {
+		layer2.Findings = append(layer2.Findings, sqlitecheck.Finding{
+			Layer: 2, Severity: "warning",
+			Message: fmt.Sprintf("%d missing property FTS projection(s) detected by engine", ir.MissingPropertyFTSRows),
 		})
 	}
 	if ir.OperationalMissingCollections > 0 {
@@ -255,6 +268,36 @@ func buildLayer2Report(
 		layer2.Findings = append(layer2.Findings, sqlitecheck.Finding{
 			Layer: 2, Severity: "warning",
 			Message: fmt.Sprintf("%d vec row(s) for superseded nodes", sr.VecRowsForSupersededNodes),
+		})
+	}
+	if sr.StalePropertyFtsRows > 0 {
+		layer2.Findings = append(layer2.Findings, sqlitecheck.Finding{
+			Layer: 2, Severity: "warning",
+			Message: fmt.Sprintf("%d stale property FTS row(s) for superseded/missing nodes", sr.StalePropertyFtsRows),
+		})
+	}
+	if sr.OrphanedPropertyFtsRows > 0 {
+		layer2.Findings = append(layer2.Findings, sqlitecheck.Finding{
+			Layer: 2, Severity: "warning",
+			Message: fmt.Sprintf("%d orphaned property FTS row(s) for unregistered kinds", sr.OrphanedPropertyFtsRows),
+		})
+	}
+	if sr.MismatchedKindPropertyFtsRows > 0 {
+		layer2.Findings = append(layer2.Findings, sqlitecheck.Finding{
+			Layer: 2, Severity: "warning",
+			Message: fmt.Sprintf("%d property FTS row(s) with kind mismatch against active node", sr.MismatchedKindPropertyFtsRows),
+		})
+	}
+	if sr.DuplicatePropertyFtsRows > 0 {
+		layer2.Findings = append(layer2.Findings, sqlitecheck.Finding{
+			Layer: 2, Severity: "warning",
+			Message: fmt.Sprintf("%d active logical ID(s) with duplicate property FTS rows", sr.DuplicatePropertyFtsRows),
+		})
+	}
+	if sr.DriftedPropertyFtsRows > 0 {
+		layer2.Findings = append(layer2.Findings, sqlitecheck.Finding{
+			Layer: 2, Severity: "warning",
+			Message: fmt.Sprintf("%d property FTS row(s) with stale text_content", sr.DriftedPropertyFtsRows),
 		})
 	}
 

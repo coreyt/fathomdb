@@ -7,6 +7,7 @@ from ._feedback import run_with_feedback
 from ._fathomdb import EngineCore
 from ._types import (
     FeedbackConfig,
+    FtsPropertySchemaRecord,
     IntegrityReport,
     LogicalPurgeReport,
     LogicalRestoreReport,
@@ -229,6 +230,93 @@ class AdminClient:
                 )
             )
         )
+
+    # ── FTS property schema management ───────────────────────────────
+
+    def register_fts_property_schema(
+        self,
+        kind: str,
+        property_paths: list[str],
+        separator: str | None = None,
+        *,
+        progress_callback=None,
+        feedback_config: FeedbackConfig | None = None,
+    ) -> FtsPropertySchemaRecord:
+        """Register (or update) an FTS property projection schema for a node kind."""
+        return FtsPropertySchemaRecord.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="admin.register_fts_property_schema",
+                    metadata={"kind": kind},
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=lambda: self._core.register_fts_property_schema(
+                        kind, json.dumps(property_paths), separator
+                    ),
+                )
+            )
+        )
+
+    def describe_fts_property_schema(
+        self,
+        kind: str,
+        *,
+        progress_callback=None,
+        feedback_config: FeedbackConfig | None = None,
+    ) -> FtsPropertySchemaRecord | None:
+        """Return the FTS property schema for a node kind, or None if not registered."""
+        payload = json.loads(
+            run_with_feedback(
+                surface="python",
+                operation_kind="admin.describe_fts_property_schema",
+                metadata={"kind": kind},
+                progress_callback=progress_callback,
+                feedback_config=feedback_config,
+                operation=lambda: self._core.describe_fts_property_schema(kind),
+            )
+        )
+        if payload is None or payload.get("kind") is None:
+            return None
+        return FtsPropertySchemaRecord.from_wire(payload)
+
+    def list_fts_property_schemas(
+        self,
+        *,
+        progress_callback=None,
+        feedback_config: FeedbackConfig | None = None,
+    ) -> list[FtsPropertySchemaRecord]:
+        """Return all registered FTS property schemas."""
+        payload = json.loads(
+            run_with_feedback(
+                surface="python",
+                operation_kind="admin.list_fts_property_schemas",
+                metadata={},
+                progress_callback=progress_callback,
+                feedback_config=feedback_config,
+                operation=lambda: self._core.list_fts_property_schemas(),
+            )
+        )
+        return [FtsPropertySchemaRecord.from_wire(item) for item in payload]
+
+    def remove_fts_property_schema(
+        self,
+        kind: str,
+        *,
+        progress_callback=None,
+        feedback_config: FeedbackConfig | None = None,
+    ) -> None:
+        """Remove the FTS property schema for a node kind."""
+        run_with_feedback(
+            surface="python",
+            operation_kind="admin.remove_fts_property_schema",
+            metadata={"kind": kind},
+            progress_callback=progress_callback,
+            feedback_config=feedback_config,
+            operation=lambda: self._core.remove_fts_property_schema(kind),
+        )
+
+    # ── Operational collection lifecycle ──────────────────────────────
 
     def register_operational_collection(
         self,

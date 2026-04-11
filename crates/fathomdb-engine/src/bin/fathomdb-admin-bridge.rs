@@ -52,6 +52,9 @@ struct BridgeRequest {
     vector_generator_policy: Option<VectorGeneratorPolicy>,
     operational_collection: Option<OperationalRegisterRequest>,
     operational_read: Option<OperationalReadRequest>,
+    fts_property_kind: Option<String>,
+    fts_property_paths: Option<Vec<String>>,
+    fts_property_separator: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -84,6 +87,10 @@ enum BridgeCommand {
     PlanOperationalRetention,
     RunOperationalRetention,
     PurgeProvenanceEvents,
+    RegisterFtsPropertySchema,
+    DescribeFtsPropertySchema,
+    ListFtsPropertySchemas,
+    RemoveFtsPropertySchema,
 }
 
 #[derive(Debug, Serialize)]
@@ -650,6 +657,64 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
                 "before_timestamp is required".to_owned(),
             ),
         },
+        BridgeCommand::RegisterFtsPropertySchema => match &request.fts_property_kind {
+            Some(kind) => match &request.fts_property_paths {
+                Some(paths) => {
+                    match service.register_fts_property_schema(
+                        kind,
+                        paths,
+                        request.fts_property_separator.as_deref(),
+                    ) {
+                        Ok(record) => success_response(
+                            "FTS property schema registered".to_owned(),
+                            serde_json::to_value(record).unwrap_or_else(|_| json!({})),
+                        ),
+                        Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
+                    }
+                }
+                None => error_response_with_message(
+                    BridgeErrorCode::BadRequest,
+                    "fts_property_paths is required".to_owned(),
+                ),
+            },
+            None => error_response_with_message(
+                BridgeErrorCode::BadRequest,
+                "fts_property_kind is required".to_owned(),
+            ),
+        },
+        BridgeCommand::DescribeFtsPropertySchema => match &request.fts_property_kind {
+            Some(kind) => match service.describe_fts_property_schema(kind) {
+                Ok(record) => success_response(
+                    "FTS property schema described".to_owned(),
+                    serde_json::to_value(record).unwrap_or_else(|_| json!(null)),
+                ),
+                Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
+            },
+            None => error_response_with_message(
+                BridgeErrorCode::BadRequest,
+                "fts_property_kind is required".to_owned(),
+            ),
+        },
+        BridgeCommand::ListFtsPropertySchemas => match service.list_fts_property_schemas() {
+            Ok(records) => success_response(
+                "FTS property schemas listed".to_owned(),
+                serde_json::to_value(records).unwrap_or_else(|_| json!([])),
+            ),
+            Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
+        },
+        BridgeCommand::RemoveFtsPropertySchema => match &request.fts_property_kind {
+            Some(kind) => match service.remove_fts_property_schema(kind) {
+                Ok(()) => success_response(
+                    "FTS property schema removed".to_owned(),
+                    json!({"removed": true}),
+                ),
+                Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
+            },
+            None => error_response_with_message(
+                BridgeErrorCode::BadRequest,
+                "fts_property_kind is required".to_owned(),
+            ),
+        },
     }
 }
 
@@ -701,6 +766,10 @@ fn parse_command(command: &str) -> Result<BridgeCommand, BridgeErrorCode> {
         "plan_operational_retention" => Ok(BridgeCommand::PlanOperationalRetention),
         "run_operational_retention" => Ok(BridgeCommand::RunOperationalRetention),
         "purge_provenance_events" => Ok(BridgeCommand::PurgeProvenanceEvents),
+        "register_fts_property_schema" => Ok(BridgeCommand::RegisterFtsPropertySchema),
+        "describe_fts_property_schema" => Ok(BridgeCommand::DescribeFtsPropertySchema),
+        "list_fts_property_schemas" => Ok(BridgeCommand::ListFtsPropertySchemas),
+        "remove_fts_property_schema" => Ok(BridgeCommand::RemoveFtsPropertySchema),
         _ => Err(BridgeErrorCode::UnsupportedCommand),
     }
 }
