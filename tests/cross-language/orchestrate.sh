@@ -4,8 +4,11 @@
 # Runs deterministic scenarios through both the Python and TypeScript SDKs,
 # then diffs normalized JSON manifests to prove data consistency.
 #
+# See tests/cross-language/README.md for the full design, scenario format,
+# and instructions for adding new scenarios.
+#
 # Prerequisites:
-#   - Python SDK installed (pip install -e python)
+#   - Python SDK installed (pip install -e python/ --no-build-isolation)
 #   - Rust native binding built (cargo build -p fathomdb --features node)
 #   - TypeScript workspace installed (cd typescript && npm install)
 #   - Cross-language TS driver deps installed (cd tests/cross-language/typescript && npm install)

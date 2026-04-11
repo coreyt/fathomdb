@@ -242,7 +242,26 @@ class AdminClient:
         progress_callback=None,
         feedback_config: FeedbackConfig | None = None,
     ) -> FtsPropertySchemaRecord:
-        """Register (or update) an FTS property projection schema for a node kind."""
+        """Register (or update) an FTS property projection schema for a node kind.
+
+        After registration, nodes of this kind will have the declared JSON
+        property paths extracted, concatenated with the separator, and indexed
+        for full-text search. ``text_search(...)`` transparently covers both
+        chunk-backed and property-backed results.
+
+        This is an idempotent upsert: calling it again with different paths or
+        separator overwrites the previous schema. Registration does **not**
+        rewrite existing FTS rows; call ``rebuild("fts")`` to backfill.
+
+        Paths must use simple ``$.``-prefixed dot-notation (e.g. ``$.title``,
+        ``$.address.city``). Array indexing, wildcards, recursive descent, and
+        duplicate paths are rejected.
+
+        Args:
+            kind: Node kind to register (e.g. ``"Goal"``).
+            property_paths: Ordered list of JSON paths to extract.
+            separator: Concatenation separator (default ``" "``).
+        """
         return FtsPropertySchemaRecord.from_wire(
             json.loads(
                 run_with_feedback(
@@ -306,7 +325,14 @@ class AdminClient:
         progress_callback=None,
         feedback_config: FeedbackConfig | None = None,
     ) -> None:
-        """Remove the FTS property schema for a node kind."""
+        """Remove the FTS property schema for a node kind.
+
+        This deletes the schema row but does **not** delete existing derived
+        ``fts_node_properties`` rows. An explicit ``rebuild("fts")`` is
+        required to clean up stale rows after removal.
+
+        Raises ``EngineError`` if the kind is not registered.
+        """
         run_with_feedback(
             surface="python",
             operation_kind="admin.remove_fts_property_schema",

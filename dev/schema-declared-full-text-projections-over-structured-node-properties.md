@@ -2,7 +2,8 @@
 
 > **Status: Implemented** (SchemaVersion 15). See the
 > [design document](./design-structured-node-full-text-projections.md) for
-> architectural rationale and divergence notes.
+> architectural rationale and divergence notes. For consumer-facing usage
+> guidance, see [docs/guides/property-fts.md](../docs/guides/property-fts.md).
 
 ## Problem Statement
 

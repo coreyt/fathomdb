@@ -55,6 +55,7 @@ nav:
   - Guides:
     - Querying Data: guides/querying.md
     - Writing Data: guides/writing-data.md
+    - Property FTS Projections: guides/property-fts.md
   - API Reference (Python):
     - Engine: reference/engine.md
     - Query: reference/query.md

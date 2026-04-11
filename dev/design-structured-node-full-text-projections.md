@@ -2,7 +2,9 @@
 
 > **Status: Implemented** (SchemaVersion 15). The feature shipped as described
 > below. Where the implementation diverged from the original design proposal,
-> the divergence is marked with **[Divergence]** and explained inline.
+> the divergence is marked with **[Divergence]** and explained inline. For
+> consumer-facing usage guidance, see
+> [docs/guides/property-fts.md](../docs/guides/property-fts.md).
 
 ## Purpose
 

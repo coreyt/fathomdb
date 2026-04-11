@@ -111,7 +111,77 @@ fathom-integrity rebuild-missing --db /data/my.db --bridge ./fathomdb-admin-brid
 
 ---
 
-## 5. Safe Export
+## 5. FTS Property Schemas
+
+FTS property schemas declare which JSON property paths should be extracted and
+indexed for full-text search on structured node kinds. Once registered,
+`text_search(...)` transparently covers both chunk-backed document text and
+property-backed structured text via a UNION query.
+
+### Schema Lifecycle
+
+**register_fts_property_schema** -- Register (or update) an FTS property
+projection for a node kind. This is an idempotent upsert. Paths must use
+simple `$.`-prefixed dot-notation (e.g. `$.title`, `$.address.city`). Array
+indexing, wildcards, and recursive descent are rejected. Registration does
+not rewrite existing FTS rows; run `rebuild(fts)` to backfill.
+
+```python
+record = admin.register_fts_property_schema(
+    "Goal", ["$.name", "$.description"], separator=" ")
+```
+```typescript
+const record = engine.admin.registerFtsPropertySchema(
+    "Goal", ["$.name", "$.description"]);
+```
+
+**describe_fts_property_schema** -- Return the schema for a single kind, or
+`None`/`null` if not registered.
+
+```python
+record = admin.describe_fts_property_schema("Goal")
+```
+
+**list_fts_property_schemas** -- Return all registered schemas.
+
+```python
+schemas = admin.list_fts_property_schemas()
+```
+
+**remove_fts_property_schema** -- Delete the schema row for a kind. This does
+**not** delete existing derived `fts_node_properties` rows; an explicit
+`rebuild(fts)` is required to clean them up. Errors if the kind is not
+registered.
+
+```python
+admin.remove_fts_property_schema("Goal")
+admin.rebuild(ProjectionTarget.FTS)  # clean up stale derived rows
+```
+
+### Diagnostics
+
+`check_integrity` reports `missing_property_fts_rows` (active nodes that
+should have a property FTS row but don't). `check_semantics` reports:
+
+| Field | Meaning |
+|---|---|
+| `stale_property_fts_rows` | Rows for superseded/missing nodes |
+| `orphaned_property_fts_rows` | Rows for unregistered schema kinds |
+| `mismatched_kind_property_fts_rows` | Rows whose kind differs from the active node |
+| `duplicate_property_fts_rows` | Logical IDs with more than one property FTS row |
+| `drifted_property_fts_rows` | Rows whose text no longer matches canonical extraction |
+
+### Export & Recovery
+
+`fts_property_schemas` is canonical metadata and is preserved by `safe_export`.
+`fts_node_properties` rows are derived state and rebuildable. Recovery
+correctness must not depend on `fts_node_properties` contents -- run
+`rebuild(fts)` after importing an export to restore property FTS from
+canonical state.
+
+---
+
+## 6. Safe Export
 
 Consistent backup with optional WAL checkpoint and SHA-256 manifest.
 
@@ -127,7 +197,7 @@ fathom-integrity export --db /data/my.db --bridge ./fathomdb-admin-bridge \
 
 ---
 
-## 6. Operational Collections
+## 7. Operational Collections
 
 Operational collections are append-only, versioned data stores. The lifecycle
 is: register, configure, write, read, maintain, retire.
@@ -215,7 +285,7 @@ fathom-integrity purge-operational --collection audit_log --before 1711670400
 
 ---
 
-## 7. Vector Regeneration
+## 8. Vector Regeneration
 
 The `regenerate-vectors` CLI command and its bridge counterparts
 (`RestoreVectorProfiles`, `RegenerateVectorEmbeddings`) handle bulk

@@ -88,6 +88,12 @@ class Query:
     def text_search(self, query: str, limit: int) -> "Query":
         """Add a full-text search step.
 
+        Searches both chunk-backed document text (``fts_nodes``) and
+        property-backed structured text (``fts_node_properties``)
+        transparently via a UNION. Kinds with a registered FTS property
+        schema will have their declared property paths searchable without
+        requiring explicit chunks.
+
         Args:
             query: The FTS query string.
             limit: Maximum number of results to return.

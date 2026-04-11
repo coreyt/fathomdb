@@ -3,6 +3,9 @@
  *
  * Reads scenarios from scenarios.json, writes data to a database,
  * queries it back, and emits a normalized JSON manifest to stdout.
+ *
+ * Design, scenario format, and instructions for adding new scenarios
+ * are documented in tests/cross-language/README.md.
  */
 
 import { readFileSync } from "node:fs";
@@ -71,8 +74,17 @@ interface ActionDef { id: string; step_id: string; kind: string; status: string;
 type QueryDef = Record<string, unknown>;
 type AdminDef = string | Record<string, unknown>;
 
+interface ScenariosFile {
+  scenarios: ScenarioDef[];
+  setup_admin?: AdminDef[];
+}
+
+function loadScenariosFile(): ScenariosFile {
+  return JSON.parse(readFileSync(SCENARIOS_PATH, "utf-8"));
+}
+
 function loadScenarios(): ScenarioDef[] {
-  return JSON.parse(readFileSync(SCENARIOS_PATH, "utf-8")).scenarios;
+  return loadScenariosFile().scenarios;
 }
 
 function sortedJson(obj: unknown): string {
@@ -263,14 +275,53 @@ function executeAdmin(engine: Engine, adminDef: AdminDef): Record<string, unknow
     };
   }
 
+  if (atype === "register_fts_property_schema") {
+    const record = engine.admin.registerFtsPropertySchema(
+      def.kind as string, def.property_paths as string[], def.separator as string | undefined);
+    return {
+      type: "register_fts_property_schema",
+      kind: record.kind,
+      property_paths: record.propertyPaths,
+      separator: record.separator,
+    };
+  }
+
+  if (atype === "describe_fts_property_schema") {
+    const record = engine.admin.describeFtsPropertySchema(def.kind as string);
+    if (record === null) {
+      return { type: "describe_fts_property_schema", kind: def.kind as string, found: false };
+    }
+    return {
+      type: "describe_fts_property_schema",
+      kind: record.kind,
+      property_paths: record.propertyPaths,
+      separator: record.separator,
+      found: true,
+    };
+  }
+
+  if (atype === "list_fts_property_schemas") {
+    const schemas = engine.admin.listFtsPropertySchemas();
+    return {
+      type: "list_fts_property_schemas",
+      count: schemas.length,
+      kinds: schemas.map(s => s.kind).sort(),
+    };
+  }
+
   throw new Error(`unknown admin type: ${atype}`);
 }
 
 function runDriver(dbPath: string, mode: string): Record<string, unknown> {
-  const scenarios = loadScenarios();
+  const raw = loadScenariosFile();
+  const scenarios = raw.scenarios;
   const engine = Engine.open(dbPath);
 
   if (mode === "write") {
+    // Run global setup_admin before any writes so schemas are in place.
+    for (const adminDef of raw.setup_admin ?? []) {
+      executeAdmin(engine, adminDef);
+    }
     for (const scenario of scenarios) {
       for (const writeDef of scenario.writes) {
         engine.write(buildWriteRequest(writeDef));

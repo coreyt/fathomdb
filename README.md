@@ -7,9 +7,10 @@ on SQLite.
 
 fathomdb is canonical local storage for AI agent systems that need a durable
 world model, not just a pile of documents. It provides a graph backbone with
-logical identity and supersession, chunk-based full-text search (FTS5), vector
-search (sqlite-vec), an operational state store with append-only logs and
-latest-state collections, and provenance tracking with source attribution.
+logical identity and supersession, full-text search (FTS5) over both document
+chunks and structured node property projections, vector search (sqlite-vec),
+an operational state store with append-only logs and latest-state collections,
+and provenance tracking with source attribution.
 SQLite remains the single durable file; fathomdb adds an agent-friendly query
 compiler, derived search projections, and a governed write path. The engine is
 designed for recoverability: canonical state is separated from derived
@@ -41,7 +42,8 @@ Three layers:
 
 - **Graph backbone**: nodes, edges, logical identity, supersession (upsert
   without mutation), runs, steps, actions
-- **Chunk-based FTS** via SQLite FTS5
+- **Full-text search** via SQLite FTS5 -- chunk-based document search plus
+  schema-declared property projections for structured node kinds
 - **Vector search** via sqlite-vec with admin-owned regeneration workflow
 - **Operational state store**: append-only logs, latest-state collections,
   retention policies, secondary indexes, compaction, validation contracts

@@ -99,7 +99,11 @@ for node in results.nodes:
 
 ### Full-text search
 
-`text_search` uses SQLite FTS5 for keyword and phrase matching:
+`text_search` uses SQLite FTS5 for keyword and phrase matching. It
+transparently searches both chunk-backed document text and property-backed
+structured text (for kinds with a registered
+[FTS property schema](./property-fts.md)). Your application does not need to
+know the source of a given hit.
 
 ```python
 results = (

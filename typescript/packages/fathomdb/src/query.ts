@@ -88,6 +88,11 @@ export class Query {
   /**
    * Add a full-text search step.
    *
+   * Searches both chunk-backed document text (`fts_nodes`) and property-backed
+   * structured text (`fts_node_properties`) transparently via a UNION. Kinds
+   * with a registered FTS property schema will have their declared property
+   * paths searchable without requiring explicit chunks.
+   *
    * @param query - The FTS query string.
    * @param limit - Maximum number of results to return.
    * @returns A new Query with the text search step appended.

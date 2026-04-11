@@ -5,8 +5,9 @@ on SQLite.
 
 fathomdb is canonical local storage for AI agent systems that need a durable
 world model. It provides a graph backbone with logical identity and
-supersession, chunk-based full-text search (FTS5), vector search (sqlite-vec),
-an operational state store, and provenance tracking with source attribution.
+supersession, full-text search (FTS5) over both document chunks and structured
+node properties, vector search (sqlite-vec), an operational state store, and
+provenance tracking with source attribution.
 
 ## Installation
 
@@ -60,7 +61,8 @@ engine.close();
 
 - **Graph backbone**: nodes, edges, logical identity, supersession (upsert
   without mutation), runs/steps/actions for agent execution tracking
-- **Chunk-based FTS** via SQLite FTS5
+- **Full-text search** via SQLite FTS5 -- searches both document chunks and
+  structured node property projections transparently via `textSearch(...)`
 - **Vector search** via sqlite-vec
 - **Immutable query builder**: fluent, chainable API with 14+ filter methods
 - **Typed results**: all query/admin results are fully typed TypeScript interfaces
@@ -123,6 +125,12 @@ engine.admin.exciseSource("source:bad-data");
 engine.admin.safeExport("/path/to/backup.db");
 engine.admin.restoreLogicalId("node:retired-id");
 engine.admin.purgeLogicalId("node:old-id");
+
+// FTS property schema management
+engine.admin.registerFtsPropertySchema("Goal", ["$.name", "$.description"]);
+engine.admin.describeFtsPropertySchema("Goal");
+engine.admin.listFtsPropertySchemas();
+engine.admin.removeFtsPropertySchema("Goal");
 ```
 
 ### Progress Callbacks

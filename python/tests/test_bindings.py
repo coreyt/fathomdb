@@ -295,6 +295,53 @@ def test_public_python_admin_client_exposes_operational_collection_lifecycle(tmp
     assert disabled.disabled_at is not None
 
 
+def test_public_python_admin_client_exposes_fts_property_schema_lifecycle(tmp_path: Path) -> None:
+    from fathomdb import Engine, FtsPropertySchemaRecord
+
+    db = Engine.open(tmp_path / "agent.db")
+
+    # Register
+    record = db.admin.register_fts_property_schema(
+        "Goal", ["$.name", "$.description"]
+    )
+    assert isinstance(record, FtsPropertySchemaRecord)
+    assert record.kind == "Goal"
+    assert record.property_paths == ["$.name", "$.description"]
+    assert record.separator == " "
+    assert record.format_version == 1
+
+    # Describe
+    described = db.admin.describe_fts_property_schema("Goal")
+    assert described is not None
+    assert described.kind == "Goal"
+    assert described.property_paths == ["$.name", "$.description"]
+
+    # Describe missing
+    missing = db.admin.describe_fts_property_schema("NoSuchKind")
+    assert missing is None
+
+    # List
+    schemas = db.admin.list_fts_property_schemas()
+    assert len(schemas) == 1
+    assert schemas[0].kind == "Goal"
+
+    # Update (idempotent upsert)
+    updated = db.admin.register_fts_property_schema(
+        "Goal", ["$.name", "$.notes"], separator="\n"
+    )
+    assert updated.property_paths == ["$.name", "$.notes"]
+    assert updated.separator == "\n"
+
+    # Remove
+    db.admin.remove_fts_property_schema("Goal")
+    assert db.admin.describe_fts_property_schema("Goal") is None
+
+    # Remove non-existent raises
+    import pytest
+    with pytest.raises(Exception):
+        db.admin.remove_fts_property_schema("Goal")
+
+
 def test_public_python_admin_client_reads_operational_rows_by_declared_fields(tmp_path: Path) -> None:
     from fathomdb import (
         Engine,

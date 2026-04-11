@@ -152,9 +152,22 @@ export class AdminClient {
   /**
    * Register (or update) an FTS property projection schema for a node kind.
    *
-   * @param kind - The node kind to register.
-   * @param propertyPaths - JSON property paths to extract (e.g. `["$.name", "$.title"]`).
-   * @param separator - Separator used when concatenating extracted values (default `" "`).
+   * After registration, nodes of this kind will have the declared JSON property
+   * paths extracted, concatenated with the separator, and indexed for full-text
+   * search. `textSearch(...)` transparently covers both chunk-backed and
+   * property-backed results.
+   *
+   * This is an idempotent upsert: calling it again with different paths or
+   * separator overwrites the previous schema. Registration does **not** rewrite
+   * existing FTS rows; call `rebuild("fts")` to backfill.
+   *
+   * Paths must use simple `$.`-prefixed dot-notation (e.g. `$.title`,
+   * `$.address.city`). Array indexing, wildcards, recursive descent, and
+   * duplicate paths are rejected.
+   *
+   * @param kind - The node kind to register (e.g. `"Goal"`).
+   * @param propertyPaths - Ordered list of JSON paths to extract.
+   * @param separator - Concatenation separator (default `" "`).
    */
   registerFtsPropertySchema(kind: string, propertyPaths: string[], separator?: string, progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): FtsPropertySchemaRecord {
     return this.#run("admin.register_fts_property_schema", () => ftsPropertySchemaRecordFromWire(parseNativeJson(callNative(() => this.#core.registerFtsPropertySchema(kind, JSON.stringify(propertyPaths), separator)))), progressCallback, feedbackConfig);
@@ -185,6 +198,12 @@ export class AdminClient {
 
   /**
    * Remove the FTS property schema for a node kind.
+   *
+   * This deletes the schema row but does **not** delete existing derived
+   * `fts_node_properties` rows. An explicit `rebuild("fts")` is required to
+   * clean up stale rows after removal.
+   *
+   * Throws if the kind is not registered.
    */
   removeFtsPropertySchema(kind: string, progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): void {
     this.#run("admin.remove_fts_property_schema", () => {

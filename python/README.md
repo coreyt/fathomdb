@@ -32,8 +32,11 @@ engine.close()
 ## Features
 
 - Graph backbone with nodes, edges, and temporal tracking
-- Full-text search via SQLite FTS5
+- Full-text search via SQLite FTS5 -- searches both document chunks and
+  schema-declared structured node property projections transparently
 - Vector similarity search via sqlite-vec
+- FTS property schema management -- register JSON property paths per node kind
+  to make structured data searchable without synthetic chunks
 - Provenance tracking on every write
 - Single-writer / multi-reader with WAL
 

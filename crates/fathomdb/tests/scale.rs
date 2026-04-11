@@ -8,8 +8,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use fathomdb::{
-    ChunkInsert, ChunkPolicy, Engine, EngineOptions, NodeInsert, TelemetrySnapshot, WriteRequest,
-    new_row_id,
+    ChunkInsert, ChunkPolicy, Engine, EngineOptions, NodeInsert, NodeRetire, TelemetrySnapshot,
+    WriteRequest, new_row_id,
 };
 use tempfile::NamedTempFile;
 
@@ -701,6 +701,377 @@ fn concurrent_external_content_writes_and_filtered_reads() {
                 "unfiltered_reads",
                 unfiltered_read_count.load(Ordering::Relaxed).to_string(),
             ),
+        ],
+    );
+}
+
+/// Helper: create a structured-only Goal write request (no chunks).
+fn make_goal_write(label: &str, upsert: bool) -> WriteRequest {
+    WriteRequest {
+        label: label.to_owned(),
+        nodes: vec![NodeInsert {
+            row_id: new_row_id(),
+            logical_id: format!("goal:{label}"),
+            kind: "Goal".to_owned(),
+            properties: format!(
+                r#"{{"name":"Goal {label}","description":"Structured projection stress test for {label}"}}"#
+            ),
+            source_ref: Some(format!("source:{label}")),
+            upsert,
+            chunk_policy: ChunkPolicy::Preserve,
+            content_ref: None,
+        }],
+        node_retires: vec![],
+        edges: vec![],
+        edge_retires: vec![],
+        chunks: vec![],
+        runs: vec![],
+        steps: vec![],
+        actions: vec![],
+        optional_backfills: vec![],
+        vec_inserts: vec![],
+        operational_writes: vec![],
+    }
+}
+
+/// Helper: create a retire request for a Goal.
+fn make_goal_retire(label: &str) -> WriteRequest {
+    WriteRequest {
+        label: format!("retire-{label}"),
+        nodes: vec![],
+        node_retires: vec![NodeRetire {
+            logical_id: format!("goal:{label}"),
+            source_ref: Some(format!("retire-source:{label}")),
+        }],
+        edges: vec![],
+        edge_retires: vec![],
+        chunks: vec![],
+        runs: vec![],
+        steps: vec![],
+        actions: vec![],
+        optional_backfills: vec![],
+        vec_inserts: vec![],
+        operational_writes: vec![],
+    }
+}
+
+/// Stress test for structured node full-text projections: concurrent writes
+/// (insert, upsert, retire) of projection-enabled kinds alongside concurrent
+/// `text_search(...)` reads through the UNION query path. Also mixes in
+/// chunk-backed Document writes to exercise the mixed workload.
+///
+/// Verifies at the end that:
+/// - property FTS rows were actually created (new code exercised)
+/// - `text_search(...)` returns property-backed hits
+/// - integrity reports zero missing property FTS rows
+/// - semantics reports zero drift, duplicates, and orphans
+#[test]
+#[ignore = "weekly stress test"]
+#[allow(clippy::too_many_lines)]
+fn property_fts_projections_under_concurrent_load() {
+    let duration = stress_duration();
+    let (_db, engine) = open_engine();
+
+    // Register property FTS schema BEFORE any writes.
+    engine
+        .register_fts_property_schema(
+            "Goal",
+            &["$.name".to_owned(), "$.description".to_owned()],
+            None,
+        )
+        .expect("register property schema");
+
+    // Seed structured-only Goal nodes (no chunks).
+    for index in 0..50 {
+        engine
+            .writer()
+            .submit(make_goal_write(&format!("seed-{index}"), false))
+            .expect("seed goal write");
+    }
+    // Seed chunk-backed Document nodes for mixed workload.
+    seed_documents(&engine, 50);
+
+    // Verify setup: property FTS rows must already exist from seeding.
+    {
+        let integrity = engine
+            .admin()
+            .service()
+            .check_integrity()
+            .expect("check_integrity after seed");
+        assert_eq!(
+            integrity.missing_property_fts_rows, 0,
+            "seed must create property FTS rows"
+        );
+    }
+
+    let engine = Arc::new(engine);
+    let stop = Arc::new(AtomicBool::new(false));
+    let goal_insert_count = Arc::new(AtomicUsize::new(0));
+    let goal_upsert_count = Arc::new(AtomicUsize::new(0));
+    let goal_retire_count = Arc::new(AtomicUsize::new(0));
+    let doc_write_count = Arc::new(AtomicUsize::new(0));
+    let goal_search_count = Arc::new(AtomicUsize::new(0));
+    let doc_search_count = Arc::new(AtomicUsize::new(0));
+    let errors = Arc::new(Mutex::new(Vec::<String>::new()));
+    let mut handles = Vec::new();
+
+    // 2 threads inserting new Goal nodes.
+    for thread_id in 0..2 {
+        let engine = Arc::clone(&engine);
+        let stop = Arc::clone(&stop);
+        let count = Arc::clone(&goal_insert_count);
+        let errors = Arc::clone(&errors);
+        handles.push(thread::spawn(move || {
+            let mut iteration = 0usize;
+            while !stop.load(Ordering::Relaxed) {
+                let label = format!("insert-{thread_id}-{iteration}");
+                if let Err(err) = engine.writer().submit(make_goal_write(&label, false)) {
+                    errors
+                        .lock()
+                        .expect("lock errors")
+                        .push(format!("goal-inserter[{thread_id}]: {err}"));
+                    stop.store(true, Ordering::Relaxed);
+                    break;
+                }
+                count.fetch_add(1, Ordering::Relaxed);
+                iteration += 1;
+            }
+        }));
+    }
+
+    // 2 threads upserting existing seed Goal nodes (repeated upserts of same IDs).
+    for thread_id in 0..2 {
+        let engine = Arc::clone(&engine);
+        let stop = Arc::clone(&stop);
+        let count = Arc::clone(&goal_upsert_count);
+        let errors = Arc::clone(&errors);
+        handles.push(thread::spawn(move || {
+            let mut iteration = 0usize;
+            while !stop.load(Ordering::Relaxed) {
+                let seed_index = iteration % 50;
+                let label = format!("seed-{seed_index}");
+                if let Err(err) = engine.writer().submit(make_goal_write(&label, true)) {
+                    errors
+                        .lock()
+                        .expect("lock errors")
+                        .push(format!("goal-upsert[{thread_id}]: {err}"));
+                    stop.store(true, Ordering::Relaxed);
+                    break;
+                }
+                count.fetch_add(1, Ordering::Relaxed);
+                iteration += 1;
+            }
+        }));
+    }
+
+    // 1 thread retiring Goal nodes (cycles through newly inserted ones).
+    {
+        let engine = Arc::clone(&engine);
+        let stop = Arc::clone(&stop);
+        let count = Arc::clone(&goal_retire_count);
+        let errors = Arc::clone(&errors);
+        handles.push(thread::spawn(move || {
+            let mut iteration = 0usize;
+            while !stop.load(Ordering::Relaxed) {
+                // Retire insert-0-N nodes; some may not exist yet, which is fine
+                // (retire of non-existent node is a no-op).
+                let label = format!("insert-0-{iteration}");
+                if let Err(err) = engine.writer().submit(make_goal_retire(&label)) {
+                    errors
+                        .lock()
+                        .expect("lock errors")
+                        .push(format!("goal-retire: {err}"));
+                    stop.store(true, Ordering::Relaxed);
+                    break;
+                }
+                count.fetch_add(1, Ordering::Relaxed);
+                iteration += 1;
+                // Slow down retires to keep net node count positive.
+                thread::sleep(Duration::from_millis(5));
+            }
+        }));
+    }
+
+    // 2 threads writing chunk-backed Documents (mixed workload).
+    for thread_id in 0..2 {
+        let engine = Arc::clone(&engine);
+        let stop = Arc::clone(&stop);
+        let count = Arc::clone(&doc_write_count);
+        let errors = Arc::clone(&errors);
+        handles.push(thread::spawn(move || {
+            let mut iteration = 0usize;
+            while !stop.load(Ordering::Relaxed) {
+                if let Err(err) = engine
+                    .writer()
+                    .submit(make_write(&format!("doc-{thread_id}-{iteration}")))
+                {
+                    errors
+                        .lock()
+                        .expect("lock errors")
+                        .push(format!("doc-writer[{thread_id}]: {err}"));
+                    stop.store(true, Ordering::Relaxed);
+                    break;
+                }
+                count.fetch_add(1, Ordering::Relaxed);
+                iteration += 1;
+            }
+        }));
+    }
+
+    // 10 threads searching Goals via text_search (property FTS UNION path).
+    for thread_id in 0..10 {
+        let engine = Arc::clone(&engine);
+        let stop = Arc::clone(&stop);
+        let count = Arc::clone(&goal_search_count);
+        let errors = Arc::clone(&errors);
+        handles.push(thread::spawn(move || {
+            let compiled = engine
+                .query("Goal")
+                .text_search("stress", 10)
+                .limit(10)
+                .compile()
+                .expect("goal text_search compiles");
+            while !stop.load(Ordering::Relaxed) {
+                match engine.coordinator().execute_compiled_read(&compiled) {
+                    Ok(_rows) => {
+                        count.fetch_add(1, Ordering::Relaxed);
+                    }
+                    Err(err) => {
+                        errors
+                            .lock()
+                            .expect("lock errors")
+                            .push(format!("goal-reader[{thread_id}]: {err}"));
+                        stop.store(true, Ordering::Relaxed);
+                        break;
+                    }
+                }
+            }
+        }));
+    }
+
+    // 5 threads searching Documents via text_search (chunk FTS path).
+    for thread_id in 0..5 {
+        let engine = Arc::clone(&engine);
+        let stop = Arc::clone(&stop);
+        let count = Arc::clone(&doc_search_count);
+        let errors = Arc::clone(&errors);
+        handles.push(thread::spawn(move || {
+            let compiled = engine
+                .query("Document")
+                .text_search("stress", 10)
+                .limit(10)
+                .compile()
+                .expect("doc text_search compiles");
+            while !stop.load(Ordering::Relaxed) {
+                match engine.coordinator().execute_compiled_read(&compiled) {
+                    Ok(_rows) => {
+                        count.fetch_add(1, Ordering::Relaxed);
+                    }
+                    Err(err) => {
+                        errors
+                            .lock()
+                            .expect("lock errors")
+                            .push(format!("doc-reader[{thread_id}]: {err}"));
+                        stop.store(true, Ordering::Relaxed);
+                        break;
+                    }
+                }
+            }
+        }));
+    }
+
+    thread::sleep(duration);
+    stop.store(true, Ordering::Relaxed);
+
+    for handle in handles {
+        handle.join().expect("thread joins");
+    }
+
+    let errors = errors.lock().expect("lock errors");
+    assert!(
+        errors.is_empty(),
+        "errors during property FTS stress test: {errors:?}"
+    );
+
+    // Verify throughput: all thread groups must have completed work.
+    let goal_inserts = goal_insert_count.load(Ordering::Relaxed);
+    let goal_upserts = goal_upsert_count.load(Ordering::Relaxed);
+    let goal_retires = goal_retire_count.load(Ordering::Relaxed);
+    let doc_writes = doc_write_count.load(Ordering::Relaxed);
+    let goal_searches = goal_search_count.load(Ordering::Relaxed);
+    let doc_searches = doc_search_count.load(Ordering::Relaxed);
+    assert!(goal_inserts > 0, "no goal inserts completed");
+    assert!(goal_upserts > 0, "no goal upserts completed");
+    assert!(goal_retires > 0, "no goal retires completed");
+    assert!(doc_writes > 0, "no doc writes completed");
+    assert!(goal_searches > 0, "no goal text_search reads completed");
+    assert!(doc_searches > 0, "no doc text_search reads completed");
+
+    // --- Verify new property FTS code was actually exercised ---
+
+    // 1. Property FTS rows must exist in the database.
+    let admin = engine.admin().service();
+    let integrity = admin.check_integrity().expect("check_integrity");
+    assert!(integrity.physical_ok, "physical integrity must pass");
+    assert!(integrity.foreign_keys_ok, "foreign keys must be valid");
+    assert_eq!(integrity.missing_fts_rows, 0, "no missing chunk FTS rows");
+    assert_eq!(
+        integrity.missing_property_fts_rows, 0,
+        "no missing property FTS rows after stress"
+    );
+    assert_eq!(
+        integrity.duplicate_active_logical_ids, 0,
+        "no duplicate active logical ids"
+    );
+
+    // 2. Semantic checks: all new drift counters must be zero.
+    let semantics = admin.check_semantics().expect("check_semantics");
+    assert_eq!(
+        semantics.drifted_property_fts_rows, 0,
+        "no drifted property FTS text after stress"
+    );
+    assert_eq!(
+        semantics.duplicate_property_fts_rows, 0,
+        "no duplicate property FTS rows after stress"
+    );
+    assert_eq!(
+        semantics.mismatched_kind_property_fts_rows, 0,
+        "no kind-mismatched property FTS rows"
+    );
+    assert_eq!(
+        semantics.stale_property_fts_rows, 0,
+        "no stale property FTS rows"
+    );
+
+    // 3. text_search(...) must actually return property-backed Goal results
+    //    (not just zero rows). The seed and insert threads guarantee active Goals
+    //    with "stress" in their description.
+    let compiled = engine
+        .query("Goal")
+        .text_search("stress", 100)
+        .limit(100)
+        .compile()
+        .expect("final goal search compiles");
+    let final_rows = engine
+        .coordinator()
+        .execute_compiled_read(&compiled)
+        .expect("final goal search executes");
+    assert!(
+        !final_rows.nodes.is_empty(),
+        "text_search must return property-backed Goal hits after stress"
+    );
+
+    emit_success_summary(
+        "rust_stress_property_fts_projections",
+        &[
+            ("duration_seconds", duration.as_secs().to_string()),
+            ("goal_inserts", goal_inserts.to_string()),
+            ("goal_upserts", goal_upserts.to_string()),
+            ("goal_retires", goal_retires.to_string()),
+            ("doc_writes", doc_writes.to_string()),
+            ("goal_searches", goal_searches.to_string()),
+            ("doc_searches", doc_searches.to_string()),
+            ("final_goal_hits", final_rows.nodes.len().to_string()),
         ],
     );
 }

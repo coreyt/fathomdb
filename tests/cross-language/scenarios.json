@@ -356,6 +356,54 @@
         }
       ],
       "admin": ["check_integrity"]
+    },
+    {
+      "name": "property_fts_projection",
+      "writes": [
+        {
+          "label": "xlang-property-fts",
+          "nodes": [
+            {
+              "row_id": "01JXLANG-PROPFTS-ROW-00001",
+              "logical_id": "goal:xlang-ship-v2",
+              "kind": "Goal",
+              "properties": {"name": "propertyftsneedle Ship v2", "description": "Launch the redesign"},
+              "source_ref": "source:xlang-property-fts",
+              "upsert": true
+            }
+          ]
+        }
+      ],
+      "queries": [
+        {
+          "type": "text_search",
+          "kind": "Goal",
+          "query": "propertyftsneedle",
+          "limit": 5,
+          "expect_min_count": 1
+        }
+      ],
+      "admin": [
+        "check_integrity",
+        "check_semantics",
+        {
+          "type": "describe_fts_property_schema",
+          "kind": "Goal",
+          "expect_property_paths": ["$.name", "$.description"]
+        },
+        {
+          "type": "list_fts_property_schemas",
+          "expect_min_count": 1
+        }
+      ]
+    }
+  ],
+  "setup_admin": [
+    {
+      "type": "register_fts_property_schema",
+      "kind": "Goal",
+      "property_paths": ["$.name", "$.description"],
+      "separator": " "
     }
   ]
 }

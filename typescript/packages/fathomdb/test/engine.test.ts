@@ -47,12 +47,16 @@ describe("Engine", () => {
           })),
           checkIntegrity: vi.fn(() => JSON.stringify({
             physical_ok: true, foreign_keys_ok: true, missing_fts_rows: 0,
-            duplicate_active_logical_ids: 0, operational_missing_collections: 0,
+            missing_property_fts_rows: 0, duplicate_active_logical_ids: 0,
+            operational_missing_collections: 0,
             operational_missing_last_mutations: 0, warnings: []
           })),
           checkSemantics: vi.fn(() => JSON.stringify({
             orphaned_chunks: 0, null_source_ref_nodes: 0, broken_step_fk: 0,
             broken_action_fk: 0, stale_fts_rows: 0, fts_rows_for_superseded_nodes: 0,
+            stale_property_fts_rows: 0, orphaned_property_fts_rows: 0,
+            mismatched_kind_property_fts_rows: 0, duplicate_property_fts_rows: 0,
+            drifted_property_fts_rows: 0,
             dangling_edges: 0, orphaned_supersession_chains: 0, stale_vec_rows: 0,
             vec_rows_for_superseded_nodes: 0, missing_operational_current_rows: 0,
             stale_operational_current_rows: 0, disabled_collection_mutations: 0,
@@ -70,7 +74,8 @@ describe("Engine", () => {
           })),
           restoreLogicalId: vi.fn(() => JSON.stringify({
             logical_id: "n1", was_noop: false, restored_node_rows: 1, restored_edge_rows: 0,
-            restored_chunk_rows: 0, restored_fts_rows: 0, restored_vec_rows: 0, skipped_edges: [], notes: []
+            restored_chunk_rows: 0, restored_fts_rows: 0, restored_property_fts_rows: 0,
+            restored_vec_rows: 0, skipped_edges: [], notes: []
           })),
           purgeLogicalId: vi.fn(() => JSON.stringify({
             logical_id: "n1", was_noop: false, deleted_node_rows: 1, deleted_edge_rows: 0,
@@ -79,6 +84,20 @@ describe("Engine", () => {
           safeExport: vi.fn(() => JSON.stringify({
             exported_at: 1000, sha256: "abc", schema_version: 1, protocol_version: 1, page_count: 10
           })),
+          // FTS property schema mocks
+          registerFtsPropertySchema: vi.fn(() => JSON.stringify({
+            kind: "Goal", property_paths: ["$.name", "$.description"],
+            separator: " ", format_version: 1, created_at: 1000
+          })),
+          describeFtsPropertySchema: vi.fn(() => JSON.stringify({
+            kind: "Goal", property_paths: ["$.name", "$.description"],
+            separator: " ", format_version: 1, created_at: 1000
+          })),
+          listFtsPropertySchemas: vi.fn(() => JSON.stringify([{
+            kind: "Goal", property_paths: ["$.name", "$.description"],
+            separator: " ", format_version: 1, created_at: 1000
+          }])),
+          removeFtsPropertySchema: vi.fn(),
           // Operational collection mocks
           registerOperationalCollection: vi.fn(() => JSON.stringify({
             name: "events", kind: "append_only_log", schema_json: "{}", retention_json: "{}",
@@ -266,6 +285,27 @@ describe("Engine", () => {
     const manifest = engine.admin.safeExport("/tmp/export.db");
     expect(manifest.sha256).toBe("abc");
     expect(manifest.pageCount).toBe(10);
+  });
+
+  it("returns typed FTS property schema admin results", () => {
+    const engine = Engine.open("/tmp/test.db");
+
+    const record = engine.admin.registerFtsPropertySchema("Goal", ["$.name", "$.description"]);
+    expect(record.kind).toBe("Goal");
+    expect(record.propertyPaths).toEqual(["$.name", "$.description"]);
+    expect(record.separator).toBe(" ");
+    expect(record.formatVersion).toBe(1);
+
+    const described = engine.admin.describeFtsPropertySchema("Goal");
+    expect(described).not.toBeNull();
+    expect(described!.kind).toBe("Goal");
+    expect(described!.propertyPaths).toEqual(["$.name", "$.description"]);
+
+    const schemas = engine.admin.listFtsPropertySchemas();
+    expect(schemas.length).toBe(1);
+    expect(schemas[0].kind).toBe("Goal");
+
+    engine.admin.removeFtsPropertySchema("Goal");
   });
 
   it("returns typed operational collection admin results", () => {

@@ -2,6 +2,9 @@
 
 Reads scenarios from scenarios.json, writes data to a database,
 queries it back, and emits a normalized JSON manifest to stdout.
+
+Design, scenario format, and instructions for adding new scenarios
+are documented in tests/cross-language/README.md.
 """
 from __future__ import annotations
 
@@ -26,9 +29,13 @@ from fathomdb import (
 SCENARIOS_PATH = Path(__file__).resolve().parent.parent / "scenarios.json"
 
 
-def load_scenarios() -> list[dict]:
+def load_scenarios_file() -> dict:
     with open(SCENARIOS_PATH) as f:
-        return json.load(f)["scenarios"]
+        return json.load(f)
+
+
+def load_scenarios() -> list[dict]:
+    return load_scenarios_file()["scenarios"]
 
 
 def sorted_json(obj: object) -> str:
@@ -213,15 +220,49 @@ def execute_admin(engine: Engine, admin_def) -> dict:
             "action_rows": report.action_rows,
         }
 
+    if atype == "register_fts_property_schema":
+        record = engine.admin.register_fts_property_schema(
+            admin_def["kind"], admin_def["property_paths"], admin_def.get("separator"))
+        return {
+            "type": "register_fts_property_schema",
+            "kind": record.kind,
+            "property_paths": record.property_paths,
+            "separator": record.separator,
+        }
+
+    if atype == "describe_fts_property_schema":
+        record = engine.admin.describe_fts_property_schema(admin_def["kind"])
+        if record is None:
+            return {"type": "describe_fts_property_schema", "kind": admin_def["kind"], "found": False}
+        return {
+            "type": "describe_fts_property_schema",
+            "kind": record.kind,
+            "property_paths": record.property_paths,
+            "separator": record.separator,
+            "found": True,
+        }
+
+    if atype == "list_fts_property_schemas":
+        schemas = engine.admin.list_fts_property_schemas()
+        return {
+            "type": "list_fts_property_schemas",
+            "count": len(schemas),
+            "kinds": sorted(s.kind for s in schemas),
+        }
+
     raise ValueError(f"unknown admin type: {atype}")
 
 
 def run_driver(db_path: str, mode: str) -> dict:
     """Run the driver in the specified mode and return the manifest."""
-    scenarios = load_scenarios()
+    raw = load_scenarios_file()
+    scenarios = raw["scenarios"]
     engine = Engine.open(db_path)
 
     if mode == "write":
+        # Run global setup_admin before any writes so schemas are in place.
+        for admin_def in raw.get("setup_admin", []):
+            execute_admin(engine, admin_def)
         for scenario in scenarios:
             for write_def in scenario["writes"]:
                 request = build_write_request(write_def)

@@ -14,6 +14,7 @@ graph LR
     C1 --> VEC[Vector Index]
     C2 --> FTS
     C2 --> VEC
+    N2 -.->|property projection| PFTS[Property FTS Index]
     R[Run] --> S[Step]
     S --> A[Action]
 ```
@@ -123,6 +124,16 @@ automatically projected into:
 Search queries return chunks, which resolve back to their parent nodes. This
 means you can find a node by searching for text it contains, even when that text
 is spread across multiple chunks.
+
+!!! tip "Structured nodes without chunks"
+
+    If your node kind stores searchable text in JSON properties rather than
+    document chunks (e.g. goals, tasks, contacts), you can register an **FTS
+    property projection** instead of creating chunks. The engine extracts
+    declared property paths at write time and indexes them for full-text
+    search. `text_search(...)` transparently covers both chunk-backed and
+    property-backed results. See
+    [Property FTS Projections](../guides/property-fts.md).
 
 ```python
 chunk = builder.add_chunk(
