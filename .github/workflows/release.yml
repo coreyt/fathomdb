@@ -127,16 +127,19 @@ jobs:
         with:
           toolchain: stable
       # Tier 1: leaf crates (no internal dependencies)
-      - run: cargo publish -p fathomdb-query --locked --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
-      - run: cargo publish -p fathomdb-schema --locked --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+      # Note: --locked is omitted because the lock file is generated against
+      # local path dependencies, which don't match the crates.io index state
+      # during tiered publishing.
+      - run: cargo publish -p fathomdb-query --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+      - run: cargo publish -p fathomdb-schema --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
       - name: Wait for crates.io index propagation
         run: sleep 60
       # Tier 2: depends on fathomdb-query and fathomdb-schema
-      - run: cargo publish -p fathomdb-engine --locked --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+      - run: cargo publish -p fathomdb-engine --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
       - name: Wait for crates.io index propagation
         run: sleep 60
       # Tier 3: facade crate depends on all three
-      - run: cargo publish -p fathomdb --locked --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+      - run: cargo publish -p fathomdb --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
 
   publish-pypi:
     runs-on: ubuntu-latest
