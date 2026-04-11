@@ -316,6 +316,7 @@ impl EngineCore {
         })
     }
 
+    #[pyo3(signature = (kind, property_paths_json, separator=None))]
     pub fn register_fts_property_schema(
         &self,
         py: Python<'_>,
@@ -327,7 +328,7 @@ impl EngineCore {
             PyValueError::new_err(format!("invalid property paths JSON: {error}"))
         })?;
         let kind = kind.to_owned();
-        let separator = separator.map(|s| s.to_owned());
+        let separator = separator.map(ToOwned::to_owned);
         self.with_engine(|engine| {
             let record = py
                 .allow_threads(|| {
