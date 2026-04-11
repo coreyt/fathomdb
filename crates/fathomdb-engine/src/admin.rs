@@ -2792,7 +2792,7 @@ fn count_missing_property_fts_rows(conn: &rusqlite::Connection) -> Result<i64, E
     Ok(missing)
 }
 
-/// Count property FTS rows whose text_content has drifted from the current canonical
+/// Count property FTS rows whose `text_content` has drifted from the current canonical
 /// value computed by `compute_property_fts_text(...)`. This catches:
 /// - rows whose text no longer matches the current node properties and schema
 /// - rows that should have been removed (extraction now yields no value)
@@ -9300,6 +9300,7 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn export_recovery_rebuilds_property_fts_from_canonical_state() {
         let (db, service) = setup();
         // Register a schema and insert two nodes with extractable properties.

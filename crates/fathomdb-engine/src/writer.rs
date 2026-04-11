@@ -999,7 +999,7 @@ pub(crate) fn extract_json_path(value: &serde_json::Value, path: &str) -> Vec<St
         serde_json::Value::String(s) => vec![s.clone()],
         serde_json::Value::Number(n) => vec![n.to_string()],
         serde_json::Value::Bool(b) => vec![b.to_string()],
-        serde_json::Value::Null => Vec::new(),
+        serde_json::Value::Null | serde_json::Value::Object(_) => Vec::new(),
         serde_json::Value::Array(arr) => arr
             .iter()
             .filter_map(|v| match v {
@@ -1009,7 +1009,6 @@ pub(crate) fn extract_json_path(value: &serde_json::Value, path: &str) -> Vec<St
                 _ => None,
             })
             .collect(),
-        serde_json::Value::Object(_) => Vec::new(),
     }
 }
 
@@ -3797,6 +3796,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn writer_upsert_with_chunk_policy_replace_clears_old_chunks() {
         let db = NamedTempFile::new().expect("temporary db");
         let writer = WriterActor::start(

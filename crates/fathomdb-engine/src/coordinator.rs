@@ -1211,14 +1211,14 @@ mod tests {
 
         // Chunk-backed hit: a Meeting with a chunk containing "quarterly".
         conn.execute_batch(
-            r#"
+            r"
             INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref)
             VALUES ('row-1', 'meeting-1', 'Meeting', '{}', 100, 'seed');
             INSERT INTO chunks (id, node_logical_id, text_content, created_at)
             VALUES ('chunk-1', 'meeting-1', 'quarterly budget review', 100);
             INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content)
             VALUES ('chunk-1', 'meeting-1', 'Meeting', 'quarterly budget review');
-            "#,
+            ",
         )
         .expect("seed chunk-backed node");
 
@@ -1244,7 +1244,7 @@ mod tests {
             .expect("execute read");
 
         let mut ids: Vec<&str> = rows.nodes.iter().map(|r| r.logical_id.as_str()).collect();
-        ids.sort();
+        ids.sort_unstable();
         assert_eq!(ids, vec!["meeting-1", "meeting-2"]);
     }
 
