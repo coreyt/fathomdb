@@ -686,7 +686,7 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
             Some(kind) => match service.describe_fts_property_schema(kind) {
                 Ok(record) => success_response(
                     "FTS property schema described".to_owned(),
-                    serde_json::to_value(record).unwrap_or_else(|_| json!(null)),
+                    serde_json::to_value(record).unwrap_or(json!(null)),
                 ),
                 Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
             },

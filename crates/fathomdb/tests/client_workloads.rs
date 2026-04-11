@@ -1604,6 +1604,7 @@ fn nc4_safe_export_manifest_completeness() {
 
 /// NC-5: check_integrity returns clean report after full enterprise workload.
 #[test]
+#[allow(clippy::too_many_lines)]
 fn nc5_check_integrity_clean_after_enterprise_workload() {
     let (db, engine) = open_engine();
 

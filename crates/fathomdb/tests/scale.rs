@@ -487,6 +487,7 @@ fn telemetry_snapshot_is_monotonic_under_load() {
 /// query predicates under sustained concurrent load.
 #[test]
 #[ignore = "weekly stress test"]
+#[allow(clippy::too_many_lines)]
 fn concurrent_external_content_writes_and_filtered_reads() {
     let duration = stress_duration();
     let (_db, engine) = open_engine();
