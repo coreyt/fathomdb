@@ -25,6 +25,7 @@ def test_run_harness_baseline_returns_expected_scenarios(tmp_path: Path) -> None
         "trace_and_excise",
         "safe_export",
         "projection_rebuild",
+        "restore_vector_profiles",
         "vector_degradation",
     ]
 
@@ -38,7 +39,7 @@ def test_main_baseline_reports_pass_lines(tmp_path: Path, capsys) -> None:
     assert exit_code == 0
     assert "PASS canonical_node_chunk_fts" in output
     assert "PASS vector_degradation" in output
-    assert "12/12 scenarios passed" in output
+    assert "13/13 scenarios passed" in output
 
 
 def test_run_harness_baseline_collects_telemetry_events(tmp_path: Path) -> None:
@@ -105,4 +106,4 @@ def test_python_module_entrypoint_has_no_runpy_warning(tmp_path: Path) -> None:
     )
 
     assert "RuntimeWarning" not in result.stderr
-    assert "12/12 scenarios passed" in result.stdout
+    assert "13/13 scenarios passed" in result.stdout

@@ -19,6 +19,7 @@ from .scenarios import (
     node_upsert_supersession,
     projection_rebuild,
     provenance_warn_require,
+    restore_vector_profiles,
     runtime_tables,
     safe_export,
     trace_and_excise,
@@ -42,6 +43,7 @@ def _scenario_functions(mode: str) -> list[ScenarioFn]:
         trace_and_excise,
         safe_export,
         projection_rebuild,
+        restore_vector_profiles,
     ]
     if mode == "baseline":
         scenarios.append(vector_degradation)

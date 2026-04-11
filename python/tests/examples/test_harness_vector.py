@@ -23,5 +23,6 @@ def test_run_harness_vector_returns_expected_scenarios(tmp_path: Path) -> None:
         "trace_and_excise",
         "safe_export",
         "projection_rebuild",
+        "restore_vector_profiles",
         "vector_insert_and_search",
     ]

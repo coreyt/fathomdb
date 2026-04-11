@@ -1,8 +1,8 @@
-"""Scenarios for provenance tracing, excision, safe export, and projection rebuild."""
+"""Scenarios for provenance tracing, excision, safe export, projection rebuild, and vector profile restore."""
 
 from __future__ import annotations
 
-from fathomdb import ChunkInsert, ChunkPolicy, NodeInsert, ProjectionTarget, WriteRequest, new_row_id
+from fathomdb import ChunkInsert, ChunkPolicy, NodeInsert, ProjectionRepairReport, ProjectionTarget, WriteRequest, new_row_id
 
 from ..engine_factory import open_engine
 from ..models import (
@@ -129,3 +129,15 @@ def projection_rebuild(context: HarnessContext) -> ScenarioResult:
     assert_integrity_clean(context.engine.admin.check_integrity())
     assert_semantics_clean(context.engine.admin.check_semantics())
     return ScenarioResult(name="projection_rebuild")
+
+
+def restore_vector_profiles(context: HarnessContext) -> ScenarioResult:
+    """Validate restore_vector_profiles returns a well-formed repair report."""
+    report = context.engine.admin.restore_vector_profiles()
+    assert isinstance(report, ProjectionRepairReport), (
+        f"expected ProjectionRepairReport, got {type(report).__name__}"
+    )
+    assert report.rebuilt_rows >= 0
+
+    assert_integrity_clean(context.engine.admin.check_integrity())
+    return ScenarioResult(name="restore_vector_profiles")

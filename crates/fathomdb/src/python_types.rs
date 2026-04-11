@@ -11,7 +11,7 @@ use crate::{
     QueryPlan, QueryRows, QueryStep, RunInsert, RunRow, SafeExportManifest, ScalarValue,
     StepInsert, StepRow, TraverseDirection, VecInsert, WriteReceipt, WriteRequest,
 };
-use fathomdb_engine::{IntegrityReport, SemanticReport, TraceReport};
+use fathomdb_engine::{IntegrityReport, SemanticReport, TraceReport, VectorRegenerationReport};
 
 #[derive(Debug, Deserialize)]
 pub struct PyQueryAst {
@@ -1469,6 +1469,34 @@ mod tests {
     }
 
     #[test]
+    fn vector_regeneration_report_serializes_all_fields() {
+        use super::PyVectorRegenerationReport;
+        use fathomdb_engine::VectorRegenerationReport;
+
+        let report = VectorRegenerationReport {
+            profile: "default".into(),
+            table_name: "vec_chunks".into(),
+            dimension: 384,
+            total_chunks: 100,
+            regenerated_rows: 95,
+            contract_persisted: true,
+            notes: vec!["skipped 5 empty chunks".into()],
+        };
+        let py = PyVectorRegenerationReport::from(report);
+        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+
+        assert_eq!(json["profile"], "default");
+        assert_eq!(json["table_name"], "vec_chunks");
+        assert_eq!(json["dimension"], 384);
+        assert_eq!(json["total_chunks"], 100);
+        assert_eq!(json["regenerated_rows"], 95);
+        assert_eq!(json["contract_persisted"], true);
+        let notes = json["notes"].as_array().expect("notes array");
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0], "skipped 5 empty chunks");
+    }
+
+    #[test]
     fn safe_export_manifest_serializes_all_fields() {
         use super::PySafeExportManifest;
         use crate::SafeExportManifest;
@@ -1991,6 +2019,31 @@ impl From<ProjectionRepairReport> for PyProjectionRepairReport {
         Self {
             targets: value.targets.into_iter().map(Into::into).collect(),
             rebuilt_rows: value.rebuilt_rows,
+            notes: value.notes,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct PyVectorRegenerationReport {
+    pub profile: String,
+    pub table_name: String,
+    pub dimension: usize,
+    pub total_chunks: usize,
+    pub regenerated_rows: usize,
+    pub contract_persisted: bool,
+    pub notes: Vec<String>,
+}
+
+impl From<VectorRegenerationReport> for PyVectorRegenerationReport {
+    fn from(value: VectorRegenerationReport) -> Self {
+        Self {
+            profile: value.profile,
+            table_name: value.table_name,
+            dimension: value.dimension,
+            total_chunks: value.total_chunks,
+            regenerated_rows: value.regenerated_rows,
+            contract_persisted: value.contract_persisted,
             notes: value.notes,
         }
     }

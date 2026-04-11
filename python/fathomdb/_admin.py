@@ -29,6 +29,9 @@ from ._types import (
     SafeExportManifest,
     SemanticReport,
     TraceReport,
+    VectorGeneratorPolicy,
+    VectorRegenerationConfig,
+    VectorRegenerationReport,
 )
 
 
@@ -112,6 +115,90 @@ class AdminClient:
                     progress_callback=progress_callback,
                     feedback_config=feedback_config,
                     operation=self._core.rebuild_missing_projections,
+                )
+            )
+        )
+
+    # ── Vector profile management ──────────────────────────────────
+
+    def restore_vector_profiles(
+        self,
+        *,
+        progress_callback=None,
+        feedback_config: FeedbackConfig | None = None,
+    ) -> ProjectionRepairReport:
+        """Restore vector profile metadata from the database schema."""
+        return ProjectionRepairReport.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="admin.restore_vector_profiles",
+                    metadata=None,
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=self._core.restore_vector_profiles,
+                )
+            )
+        )
+
+    def regenerate_vector_embeddings(
+        self,
+        config: VectorRegenerationConfig,
+        *,
+        progress_callback=None,
+        feedback_config: FeedbackConfig | None = None,
+    ) -> VectorRegenerationReport:
+        """Regenerate vector embeddings using the supplied configuration.
+
+        Args:
+            config: Regeneration configuration specifying the profile, model,
+                and generator command.
+            progress_callback: Optional callback invoked with feedback events.
+            feedback_config: Timing thresholds for progress feedback.
+        """
+        return VectorRegenerationReport.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="admin.regenerate_vector_embeddings",
+                    metadata={"profile": config.profile, "table_name": config.table_name},
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=lambda: self._core.regenerate_vector_embeddings(
+                        json.dumps(config.to_wire())
+                    ),
+                )
+            )
+        )
+
+    def regenerate_vector_embeddings_with_policy(
+        self,
+        config: VectorRegenerationConfig,
+        policy: VectorGeneratorPolicy,
+        *,
+        progress_callback=None,
+        feedback_config: FeedbackConfig | None = None,
+    ) -> VectorRegenerationReport:
+        """Regenerate vector embeddings with explicit generator policy.
+
+        Args:
+            config: Regeneration configuration specifying the profile, model,
+                and generator command.
+            policy: Security and resource limits for the generator subprocess.
+            progress_callback: Optional callback invoked with feedback events.
+            feedback_config: Timing thresholds for progress feedback.
+        """
+        return VectorRegenerationReport.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="admin.regenerate_vector_embeddings_with_policy",
+                    metadata={"profile": config.profile, "table_name": config.table_name},
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=lambda: self._core.regenerate_vector_embeddings_with_policy(
+                        json.dumps(config.to_wire()), json.dumps(policy.to_wire())
+                    ),
                 )
             )
         )

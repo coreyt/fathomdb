@@ -226,6 +226,61 @@ def test_write_request_builder_optional_backfill_preserves_existing_raw_json_str
     ]
 
 
+def test_public_python_admin_client_exposes_restore_vector_profiles(tmp_path: Path) -> None:
+    from fathomdb import Engine
+
+    db = Engine.open(tmp_path / "agent.db")
+
+    report = db.admin.restore_vector_profiles()
+    assert isinstance(report.targets, list)
+    assert report.rebuilt_rows == 0
+    assert isinstance(report.notes, list)
+
+
+def test_public_python_admin_client_exposes_vector_regeneration_types() -> None:
+    from fathomdb import VectorGeneratorPolicy, VectorRegenerationConfig
+
+    config = VectorRegenerationConfig(
+        profile="default",
+        table_name="vec_chunks",
+        model_identity="text-embedding-3-small",
+        model_version="v1",
+        dimension=384,
+        normalization_policy="l2",
+        chunking_policy="sentence",
+        preprocessing_policy="strip_html",
+        generator_command=["/usr/bin/embed", "--model", "small"],
+    )
+
+    wire = config.to_wire()
+    assert wire["profile"] == "default"
+    assert wire["dimension"] == 384
+    assert wire["generator_command"] == ["/usr/bin/embed", "--model", "small"]
+
+    policy = VectorGeneratorPolicy()
+    wire = policy.to_wire()
+    assert wire["timeout_ms"] == 300_000
+    assert wire["max_chunks"] == 1_000_000
+    assert wire["require_absolute_executable"] is True
+    assert wire["reject_world_writable_executable"] is True
+    assert wire["allowed_executable_roots"] == []
+    assert wire["preserve_env_vars"] == []
+
+    custom_policy = VectorGeneratorPolicy(
+        timeout_ms=60_000,
+        max_chunks=500,
+        require_absolute_executable=False,
+        allowed_executable_roots=["/opt/models"],
+        preserve_env_vars=["HF_TOKEN"],
+    )
+    wire = custom_policy.to_wire()
+    assert wire["timeout_ms"] == 60_000
+    assert wire["max_chunks"] == 500
+    assert wire["require_absolute_executable"] is False
+    assert wire["allowed_executable_roots"] == ["/opt/models"]
+    assert wire["preserve_env_vars"] == ["HF_TOKEN"]
+
+
 def test_vector_query_degrades_when_vector_table_absent(tmp_path: Path) -> None:
     from fathomdb import Engine
 

@@ -77,59 +77,18 @@ class TelemetryAdminClient:
         self._progress_callback = progress_callback
         self._feedback_config = feedback_config
 
-    def check_integrity(self) -> Any:
-        """Delegate to the wrapped admin's integrity check with feedback."""
-        return self._admin.check_integrity(
-            progress_callback=self._progress_callback,
-            feedback_config=self._feedback_config,
-        )
+    def __getattr__(self, name: str) -> Any:
+        """Proxy attribute access, injecting feedback config into callable methods."""
+        attr = getattr(self._admin, name)
+        if not callable(attr):
+            return attr
 
-    def check_semantics(self) -> Any:
-        """Delegate to the wrapped admin's semantic check with feedback."""
-        return self._admin.check_semantics(
-            progress_callback=self._progress_callback,
-            feedback_config=self._feedback_config,
-        )
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            kwargs.setdefault("progress_callback", self._progress_callback)
+            kwargs.setdefault("feedback_config", self._feedback_config)
+            return attr(*args, **kwargs)
 
-    def rebuild(self, target: Any = "all") -> Any:
-        """Delegate to the wrapped admin's rebuild with feedback."""
-        return self._admin.rebuild(
-            target=target,
-            progress_callback=self._progress_callback,
-            feedback_config=self._feedback_config,
-        )
-
-    def rebuild_missing(self) -> Any:
-        """Delegate to the wrapped admin's rebuild-missing with feedback."""
-        return self._admin.rebuild_missing(
-            progress_callback=self._progress_callback,
-            feedback_config=self._feedback_config,
-        )
-
-    def trace_source(self, source_ref: str) -> Any:
-        """Delegate to the wrapped admin's source trace with feedback."""
-        return self._admin.trace_source(
-            source_ref,
-            progress_callback=self._progress_callback,
-            feedback_config=self._feedback_config,
-        )
-
-    def excise_source(self, source_ref: str) -> Any:
-        """Delegate to the wrapped admin's source excision with feedback."""
-        return self._admin.excise_source(
-            source_ref,
-            progress_callback=self._progress_callback,
-            feedback_config=self._feedback_config,
-        )
-
-    def safe_export(self, destination_path: str, *, force_checkpoint: bool = True) -> Any:
-        """Delegate to the wrapped admin's safe export with feedback."""
-        return self._admin.safe_export(
-            destination_path,
-            force_checkpoint=force_checkpoint,
-            progress_callback=self._progress_callback,
-            feedback_config=self._feedback_config,
-        )
+        return wrapper
 
 
 class TelemetryEngine:

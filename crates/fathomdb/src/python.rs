@@ -14,13 +14,14 @@ use crate::python_types::{
     PyCompiledGroupedQuery, PyCompiledQuery, PyGroupedQueryRows, PyIntegrityReport,
     PyLastAccessTouchReport, PyLastAccessTouchRequest, PyProjectionRepairReport, PyQueryAst,
     PyQueryPlan, PyQueryRows, PySafeExportManifest, PySemanticReport, PyTraceReport,
-    PyWriteReceipt, PyWriteRequest,
+    PyVectorRegenerationReport, PyWriteReceipt, PyWriteRequest,
 };
 use crate::{
     Engine, EngineError, EngineOptions, OperationalReadRequest, OperationalRegisterRequest,
     ProjectionTarget, ProvenanceMode, SafeExportOptions, TelemetryLevel, compile_grouped_query,
     compile_query, new_id, new_row_id,
 };
+use fathomdb_engine::{VectorGeneratorPolicy, VectorRegenerationConfig};
 use fathomdb_query::CompileError as RustCompileError;
 
 create_exception!(_fathomdb, FathomError, PyException);
@@ -258,6 +259,71 @@ impl EngineCore {
                 .allow_threads(|| admin.rebuild_missing_projections())
                 .map_err(map_engine_error)?;
             encode_json(PyProjectionRepairReport::from(report))
+        })
+    }
+
+    pub fn restore_vector_profiles(&self, py: Python<'_>) -> PyResult<String> {
+        self.with_engine(|engine| {
+            let admin = engine.admin().service();
+            let report = py
+                .allow_threads(|| admin.restore_vector_profiles())
+                .map_err(map_engine_error)?;
+            encode_json(PyProjectionRepairReport::from(report))
+        })
+    }
+
+    pub fn regenerate_vector_embeddings(
+        &self,
+        py: Python<'_>,
+        config_json: &str,
+    ) -> PyResult<String> {
+        check_json_size(
+            config_json,
+            MAX_REQUEST_JSON_BYTES,
+            "vector regeneration config",
+        )?;
+        let config: VectorRegenerationConfig =
+            serde_json::from_str(config_json).map_err(|error| {
+                PyValueError::new_err(format!("invalid vector regeneration config JSON: {error}"))
+            })?;
+        self.with_engine(|engine| {
+            let admin = engine.admin().service();
+            let report = py
+                .allow_threads(|| admin.regenerate_vector_embeddings(&config))
+                .map_err(map_engine_error)?;
+            encode_json(PyVectorRegenerationReport::from(report))
+        })
+    }
+
+    pub fn regenerate_vector_embeddings_with_policy(
+        &self,
+        py: Python<'_>,
+        config_json: &str,
+        policy_json: &str,
+    ) -> PyResult<String> {
+        check_json_size(
+            config_json,
+            MAX_REQUEST_JSON_BYTES,
+            "vector regeneration config",
+        )?;
+        check_json_size(
+            policy_json,
+            MAX_REQUEST_JSON_BYTES,
+            "vector generator policy",
+        )?;
+        let config: VectorRegenerationConfig =
+            serde_json::from_str(config_json).map_err(|error| {
+                PyValueError::new_err(format!("invalid vector regeneration config JSON: {error}"))
+            })?;
+        let policy: VectorGeneratorPolicy = serde_json::from_str(policy_json).map_err(|error| {
+            PyValueError::new_err(format!("invalid vector generator policy JSON: {error}"))
+        })?;
+        self.with_engine(|engine| {
+            let admin = engine.admin().service();
+            let report = py
+                .allow_threads(|| admin.regenerate_vector_embeddings_with_policy(&config, &policy))
+                .map_err(map_engine_error)?;
+            encode_json(PyVectorRegenerationReport::from(report))
         })
     }
 

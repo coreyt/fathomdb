@@ -604,6 +604,79 @@ class ProjectionRepairReport:
 
 
 @dataclass(frozen=True)
+class VectorRegenerationConfig:
+    """Configuration for regenerating vector embeddings."""
+
+    profile: str
+    table_name: str
+    model_identity: str
+    model_version: str
+    dimension: int
+    normalization_policy: str
+    chunking_policy: str
+    preprocessing_policy: str
+    generator_command: list[str]
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "profile": self.profile,
+            "table_name": self.table_name,
+            "model_identity": self.model_identity,
+            "model_version": self.model_version,
+            "dimension": self.dimension,
+            "normalization_policy": self.normalization_policy,
+            "chunking_policy": self.chunking_policy,
+            "preprocessing_policy": self.preprocessing_policy,
+            "generator_command": self.generator_command,
+        }
+
+
+@dataclass(frozen=True)
+class VectorGeneratorPolicy:
+    """Security and resource limits for the vector generator subprocess."""
+
+    timeout_ms: int = 300_000
+    max_stdout_bytes: int = 64 * 1024 * 1024
+    max_stderr_bytes: int = 1024 * 1024
+    max_input_bytes: int = 64 * 1024 * 1024
+    max_chunks: int = 1_000_000
+    require_absolute_executable: bool = True
+    reject_world_writable_executable: bool = True
+    allowed_executable_roots: list[str] = field(default_factory=list)
+    preserve_env_vars: list[str] = field(default_factory=list)
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "timeout_ms": self.timeout_ms,
+            "max_stdout_bytes": self.max_stdout_bytes,
+            "max_stderr_bytes": self.max_stderr_bytes,
+            "max_input_bytes": self.max_input_bytes,
+            "max_chunks": self.max_chunks,
+            "require_absolute_executable": self.require_absolute_executable,
+            "reject_world_writable_executable": self.reject_world_writable_executable,
+            "allowed_executable_roots": self.allowed_executable_roots,
+            "preserve_env_vars": self.preserve_env_vars,
+        }
+
+
+@dataclass(frozen=True)
+class VectorRegenerationReport:
+    """Result of regenerating vector embeddings."""
+
+    profile: str
+    table_name: str
+    dimension: int
+    total_chunks: int
+    regenerated_rows: int
+    contract_persisted: bool
+    notes: list[str]
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "VectorRegenerationReport":
+        return _from_wire_dataclass(cls, payload)
+
+
+@dataclass(frozen=True)
 class SafeExportManifest:
     """Manifest describing a safely exported database snapshot."""
 
