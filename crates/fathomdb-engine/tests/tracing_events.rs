@@ -77,13 +77,13 @@ fn emit_success_summary(name: &str, metrics: &[(&str, String)]) {
 }
 
 fn spawn_tracing_load_workers(
-    engine: Arc<fathomdb_engine::EngineRuntime>,
-    errors: Arc<Mutex<Vec<String>>>,
+    engine: &Arc<fathomdb_engine::EngineRuntime>,
+    errors: &Arc<Mutex<Vec<String>>>,
 ) -> Vec<thread::JoinHandle<()>> {
     let mut handles = Vec::new();
     for thread_id in 0..4 {
-        let engine = Arc::clone(&engine);
-        let errors = Arc::clone(&errors);
+        let engine = Arc::clone(engine);
+        let errors = Arc::clone(errors);
         handles.push(thread::spawn(move || {
             let deadline = std::time::Instant::now() + tracing_stress_duration();
             let mut iteration = 0usize;
@@ -125,7 +125,7 @@ fn spawn_tracing_load_workers(
     handles
 }
 
-fn wait_for_tracing_load(handles: Vec<thread::JoinHandle<()>>, errors: Arc<Mutex<Vec<String>>>) {
+fn wait_for_tracing_load(handles: Vec<thread::JoinHandle<()>>, errors: &Arc<Mutex<Vec<String>>>) {
     for handle in handles {
         if handle.join().is_err() {
             errors
@@ -235,8 +235,8 @@ fn tracing_events_continue_under_concurrent_load() {
     );
 
     let errors = Arc::new(Mutex::new(Vec::<String>::new()));
-    let handles = spawn_tracing_load_workers(Arc::clone(&engine), Arc::clone(&errors));
-    wait_for_tracing_load(handles, Arc::clone(&errors));
+    let handles = spawn_tracing_load_workers(&engine, &errors);
+    wait_for_tracing_load(handles, &errors);
 
     let _ = engine.admin().service().check_integrity().unwrap();
     drop(engine);

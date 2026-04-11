@@ -25,7 +25,7 @@ jobs:
           toolchain: stable
       - run: npm install
         working-directory: typescript
-      - run: cargo check --tests -p fathomdb --features node
+      - run: cargo build -p fathomdb --features node
       - run: npm run typecheck
         working-directory: typescript
       # sdk-harness depends on the built fathomdb package, so build before testing
