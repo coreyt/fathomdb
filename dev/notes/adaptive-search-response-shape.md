@@ -52,7 +52,7 @@ SearchHit(
 
 **Deduped by logical_id.** If the same node matches via chunk FTS *and*
 property FTS *and* vector, the client sees it once. See
-[Search Winning Branch](../concepts/search-winning-branch.md) for precedence
+[Search Winning Branch](adaptive-search-winning-branch.md) for precedence
 rules.
 
 **Ranked, deterministically.** Ordering is: strict block first (by score
