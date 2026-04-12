@@ -442,6 +442,236 @@ fn reopen_roundtrip_keeps_fts_integrity() {
 }
 
 #[test]
+fn strict_hit_does_not_trigger_relaxed_branch() {
+    // Phase 3: when the strict branch returns at least one hit, the relaxed
+    // fallback branch MUST NOT run. "budget meeting" matches a seeded chunk
+    // directly, so strict finds hits and relaxed stays dormant.
+    let (_db, engine) = open_engine();
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "seed-budget".to_owned(),
+            nodes: vec![NodeInsert {
+                row_id: "budget-row".to_owned(),
+                logical_id: "budget".to_owned(),
+                kind: "Goal".to_owned(),
+                properties: r#"{"name":"budget goal"}"#.to_owned(),
+                source_ref: Some("seed".to_owned()),
+                upsert: false,
+                chunk_policy: ChunkPolicy::Preserve,
+                content_ref: None,
+            }],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![ChunkInsert {
+                id: "budget-chunk".to_owned(),
+                node_logical_id: "budget".to_owned(),
+                text_content: "budget meeting quarterly review notes".to_owned(),
+                byte_start: None,
+                byte_end: None,
+                content_hash: None,
+            }],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![],
+        })
+        .expect("seed budget node");
+
+    let rows = engine
+        .query("Goal")
+        .text_search("budget meeting", 10)
+        .execute()
+        .expect("search executes");
+
+    assert!(!rows.hits.is_empty(), "strict should find hits");
+    assert!(
+        !rows.fallback_used,
+        "relaxed branch must not fire on strict hit"
+    );
+    assert_eq!(rows.relaxed_hit_count, 0);
+    assert_eq!(rows.strict_hit_count, rows.hits.len());
+    assert!(!rows.was_degraded);
+    for hit in &rows.hits {
+        assert!(matches!(hit.match_mode, SearchMatchMode::Strict));
+    }
+}
+
+#[test]
+fn strict_miss_triggers_relaxed_branch_and_returns_relaxed_hits() {
+    // Phase 3: when strict returns zero hits, the coordinator runs the
+    // relaxed (per-term OR) branch. "budget nonexistentterm" fails the
+    // implicit AND under strict, but the relaxed branch matches "budget".
+    let (_db, engine) = open_engine();
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "seed-budget".to_owned(),
+            nodes: vec![NodeInsert {
+                row_id: "budget-row".to_owned(),
+                logical_id: "budget".to_owned(),
+                kind: "Goal".to_owned(),
+                properties: r#"{"name":"budget goal"}"#.to_owned(),
+                source_ref: Some("seed".to_owned()),
+                upsert: false,
+                chunk_policy: ChunkPolicy::Preserve,
+                content_ref: None,
+            }],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![ChunkInsert {
+                id: "budget-chunk".to_owned(),
+                node_logical_id: "budget".to_owned(),
+                text_content: "budget meeting quarterly review notes".to_owned(),
+                byte_start: None,
+                byte_end: None,
+                content_hash: None,
+            }],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![],
+        })
+        .expect("seed budget node");
+
+    let rows = engine
+        .query("Goal")
+        .text_search("budget zzznonexistentterm", 10)
+        .execute()
+        .expect("search executes");
+
+    assert!(
+        rows.fallback_used,
+        "relaxed branch must fire on strict miss"
+    );
+    assert!(
+        !rows.hits.is_empty(),
+        "relaxed branch must contribute at least one hit"
+    );
+    assert!(rows.relaxed_hit_count > 0);
+    assert_eq!(rows.strict_hit_count, 0);
+    assert!(!rows.was_degraded, "3-term plan should fit the cap");
+    assert!(
+        rows.hits
+            .iter()
+            .any(|h| matches!(h.match_mode, SearchMatchMode::Relaxed))
+    );
+}
+
+#[test]
+fn relaxed_branch_marks_was_degraded_when_cap_truncated_the_plan() {
+    // Phase 3: a 5-term strict-miss query must fire the relaxed branch AND
+    // mark was_degraded on the resulting SearchRows, because derive_relaxed
+    // truncates at RELAXED_BRANCH_CAP = 4 alternatives.
+    let (_db, engine) = open_engine();
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "seed-budget".to_owned(),
+            nodes: vec![NodeInsert {
+                row_id: "budget-row".to_owned(),
+                logical_id: "budget".to_owned(),
+                kind: "Goal".to_owned(),
+                properties: r#"{"name":"budget goal"}"#.to_owned(),
+                source_ref: Some("seed".to_owned()),
+                upsert: false,
+                chunk_policy: ChunkPolicy::Preserve,
+                content_ref: None,
+            }],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![ChunkInsert {
+                id: "budget-chunk".to_owned(),
+                node_logical_id: "budget".to_owned(),
+                text_content: "budget meeting quarterly review notes".to_owned(),
+                byte_start: None,
+                byte_end: None,
+                content_hash: None,
+            }],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![],
+        })
+        .expect("seed budget node");
+
+    // 5 terms, strict fails (zzznope is nowhere), relaxed fires and
+    // truncates the alternatives list to 4 -> was_degraded = true.
+    let rows = engine
+        .query("Goal")
+        .text_search("budget alpha bravo charlie zzznope", 10)
+        .execute()
+        .expect("search executes");
+
+    assert!(rows.fallback_used);
+    assert!(
+        rows.was_degraded,
+        "5-term relaxed plan must be marked degraded"
+    );
+    assert!(rows.relaxed_hit_count > 0);
+}
+
+#[test]
+fn relaxed_branch_does_not_mark_was_degraded_when_plan_fits_cap() {
+    // Phase 3: a 3-term strict-miss query fires the relaxed branch but the
+    // derived OR fits under the 4-alternative cap, so was_degraded stays
+    // false.
+    let (_db, engine) = open_engine();
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "seed-budget".to_owned(),
+            nodes: vec![NodeInsert {
+                row_id: "budget-row".to_owned(),
+                logical_id: "budget".to_owned(),
+                kind: "Goal".to_owned(),
+                properties: r#"{"name":"budget goal"}"#.to_owned(),
+                source_ref: Some("seed".to_owned()),
+                upsert: false,
+                chunk_policy: ChunkPolicy::Preserve,
+                content_ref: None,
+            }],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![ChunkInsert {
+                id: "budget-chunk".to_owned(),
+                node_logical_id: "budget".to_owned(),
+                text_content: "budget meeting quarterly review notes".to_owned(),
+                byte_start: None,
+                byte_end: None,
+                content_hash: None,
+            }],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![],
+        })
+        .expect("seed budget node");
+
+    let rows = engine
+        .query("Goal")
+        .text_search("budget alpha zzznope", 10)
+        .execute()
+        .expect("search executes");
+
+    assert!(rows.fallback_used);
+    assert!(!rows.was_degraded, "3-term relaxed plan fits the cap");
+    assert!(rows.relaxed_hit_count > 0);
+}
+
+#[test]
 fn text_search_with_filter_kind_eq_chains() {
     let (_db, engine) = open_engine();
     seed_goals(&engine);

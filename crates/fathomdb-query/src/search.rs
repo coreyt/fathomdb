@@ -8,6 +8,56 @@
 
 use crate::{Predicate, TextQuery};
 
+/// Which branch of the adaptive text-search policy produced a given result
+/// set or was used to construct a given [`CompiledSearch`].
+///
+/// Phase 3 runs the strict branch first, then conditionally runs a relaxed
+/// branch derived from the same user query (see
+/// [`crate::derive_relaxed`]). The coordinator tags each in-flight branch
+/// with this enum so that merge, dedup, and counts stay straightforward.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SearchBranch {
+    /// The strict branch: the user's query as written.
+    Strict,
+    /// The relaxed fallback branch derived from the strict query.
+    Relaxed,
+}
+
+/// A two-branch adaptive-search plan: a strict [`TextQuery`] and an optional
+/// relaxed [`TextQuery`] derived from it.
+///
+/// Phase 3 keeps the plan shape intentionally small. The plan does not carry
+/// filters (those live on [`CompiledSearch`] and are shared unchanged across
+/// both branches); it only captures the two text queries and a degradation
+/// flag used to populate `SearchRows::was_degraded` once the relaxed branch
+/// actually runs.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SearchPlan {
+    /// The strict text query — the caller's query exactly as parsed.
+    pub strict: TextQuery,
+    /// The relaxed text query, or `None` when no useful relaxation exists.
+    pub relaxed: Option<TextQuery>,
+    /// `true` when the relaxed derivation truncated past
+    /// [`crate::RELAXED_BRANCH_CAP`]. The coordinator only surfaces this to
+    /// callers as `SearchRows::was_degraded` if the relaxed branch actually
+    /// fires.
+    pub was_degraded_at_plan_time: bool,
+}
+
+impl SearchPlan {
+    /// Build a [`SearchPlan`] for a strict [`TextQuery`] by deriving its
+    /// relaxed counterpart via [`crate::derive_relaxed`].
+    #[must_use]
+    pub fn from_strict(strict: TextQuery) -> Self {
+        let (relaxed, was_degraded_at_plan_time) = crate::derive_relaxed(&strict);
+        Self {
+            strict,
+            relaxed,
+            was_degraded_at_plan_time,
+        }
+    }
+}
+
 /// Source of a [`SearchHit`] within the FTS surface.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SearchHitSource {
