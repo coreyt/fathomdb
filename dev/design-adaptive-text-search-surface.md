@@ -62,6 +62,8 @@ surface that is nominally unified but operationally incomplete.
    tranche.
 4. Do not add a full staged search/traverse/hydrate language in this tranche.
 5. Do not move domain-specific ranking or semantic filtering into the engine.
+6. Seed-based relatedness ("find similar to this node") is a future
+   specialized surface, not part of `text_search()`.
 
 ## Decision Summary
 
@@ -80,6 +82,8 @@ surface that is nominally unified but operationally incomplete.
 
 ## Core Product Principle
 
+**The engine owns fusion; the caller owns reranking.**
+
 The caller should not have to choose among several search methods to get
 reasonable recall.
 
@@ -93,6 +97,20 @@ The default `text_search()` should be the easy, reliable way to find text in
 
 Applications should still own domain-specific reranking, semantic post-filter
 rules, and presentation logic.
+
+"Adaptive" in this document means engine-owned strict-then-relaxed
+retrieval policy — not learned query rewriting, not ML-driven re-ranking.
+The engine picks the policy; the policy is fixed code.
+
+**Scope: lexical-only in v1.** This tranche covers chunk FTS and property
+FTS. When vector retrieval lands, it extends `SearchRows` as an additional
+block under the same ranking model — `SearchHitSource::Vector`, same
+`SearchHit` shape, same block precedence. Callers written against v1 see
+vector hits appear without an API change.
+
+**Concurrency contract.** Background writes (ingest, rebuild, property-FTS
+repopulation) never block foreground `text_search()` reads. A stress-suite
+assertion enforces this invariant.
 
 ## Current State
 
@@ -144,6 +162,11 @@ Recommended core types:
 pub enum SearchHitSource {
     Chunk,
     Property,
+    /// Reserved for future vector retrieval. No v1 code path emits this
+    /// variant. It is exported now so vector hits can land as an additive
+    /// change rather than a wire-format break across Rust, Python, and
+    /// TypeScript.
+    Vector,
 }
 
 pub enum SearchMatchMode {
@@ -156,12 +179,27 @@ pub struct SearchHit {
     pub score: f64,
     pub source: SearchHitSource,
     pub match_mode: SearchMatchMode,
-    pub matched_path: Option<String>,
+    /// Highlighted excerpt. For chunk hits, produced from FTS5
+    /// `snippet()`. For property hits, produced from the matched leaf
+    /// in the property blob, trimmed to a default window (~200 chars).
+    /// `None` for hits that cannot produce a snippet (e.g. future
+    /// vector hits).
+    pub snippet: Option<String>,
+    /// Canonical write time of the underlying node, carried on the hit
+    /// so callers can sort, filter, or display without a second read.
+    pub written_at: Timestamp,
+    /// Identifier of the derived row that produced this hit: the
+    /// `fts_nodes.chunk_id` for chunk hits, the `fts_node_properties`
+    /// row id for property hits. `None` when not applicable.
+    pub projection_row_id: Option<String>,
 }
 
 pub struct SearchRows {
     pub hits: Vec<SearchHit>,
     pub was_degraded: bool,
+    pub fallback_used: bool,
+    pub strict_hit_count: usize,
+    pub relaxed_hit_count: usize,
 }
 ```
 
@@ -171,38 +209,48 @@ Recommended SDK parity:
   `SearchMatchMode`
 - TypeScript: corresponding exported types
 
-Whether plain `execute()` on an FTS-backed query returns `SearchRows` directly
-or whether search gets a distinct terminal verb is an API choice. With no
-backwards-compatibility requirement, the preferred design is:
+**Terminal shape: distinct builder type, single terminal name.**
 
-- `execute()` returns `SearchRows` when the driving table is FTS
-- `execute()` returns `QueryRows` for non-search queries
+`text_search(...)` does not return the same builder type it was called on.
+It returns a dedicated `TextSearchBuilder`, whose `.execute()` is
+statically typed to return `SearchRows`. The general query builder's
+`.execute()` continues to return `QueryRows`. The terminal method name
+(`execute` / `execute()` / `execute()`) is the same across builder types;
+the type system routes the return.
 
-That choice makes the result reflect the operation actually performed.
+This is the type-state pattern. It is the only shape that is clean in all
+three languages, prevents a "wrong terminal" footgun, and scales to
+additional specialized surfaces (vector, graph) without multiplying
+terminal method names.
 
-Alternative:
+Language bindings:
 
-- preserve one terminal method per query type, e.g. `execute_search()`
+- **Rust**: `NodeQueryBuilder::text_search(...) -> TextSearchBuilder`;
+  `TextSearchBuilder::execute() -> SearchRows`.
+- **Python**: `TextSearchBuilder` exposed from `python/fathomdb/_query.py`;
+  `execute()` type-annotated to return `SearchRows`. No `Union` return
+  types on any builder.
+- **TypeScript**: `TextSearchBuilder` exported from
+  `typescript/packages/fathomdb/src/query.ts`; `execute()` return type
+  statically narrows to `SearchRows` the moment `.textSearch(...)` is
+  called in a chain.
 
-The preferred direction is still to keep the public query surface compact and
-natural; the implementation can determine which terminal shape best fits the
-rest of the builder.
+Rejected alternatives:
+
+- **Polymorphic `execute()`** — one terminal name, runtime-varying return
+  type. Forces `Union[QueryRows, SearchRows]` in Python / TS and a wrapper
+  enum in Rust. Loses static guarantees and creates silent refactor
+  hazards.
+- **Second terminal verb (`execute_search()`)** — preserves static typing
+  but multiplies terminal names, opens the door to an `execute_vector()`
+  / `execute_graph()` proliferation, and leaves an undefined answer for
+  "what does `.execute()` do on a text-search builder?"
 
 ### 3. Add narrow explicit helper
 
-```rust
-fallback_search(strict_query, relaxed_query, limit)
-```
-
-This is not a generic query-composition language.
-
-It is a focused helper for a common retrieval pattern:
-
-- try strict search first
-- if strict underperforms or misses, run relaxed search
-- merge under explicit narrow rules
-
-This helper may also be used internally by adaptive `text_search()`.
+A bounded `fallback_search(strict, relaxed)` helper shares retrieval-policy
+machinery with adaptive `text_search()`. It is documented in full in the
+`fallback_search` section below.
 
 ## Adaptive `text_search()` Semantics
 
@@ -248,19 +296,51 @@ Examples of relaxation policy:
 The exact relaxed form is engine-owned and does not become a second public
 query language.
 
+### Relaxed-branch cap
+
+Relaxation is capped at **4 per-term alternatives**. A query with more
+than 4 supported terms is truncated by token order when the relaxed
+branch is derived, and the truncation sets `was_degraded = true` on the
+resulting `SearchRows`. This cap is a named internal constant in the
+search-policy layer, parallel to the fallback trigger `K`, so it can be
+tuned later without a public API change.
+
+The cap exists because relaxation expands an N-term implicit-AND into an
+N-way OR over the chunk/property union surface; uncapped, a long query
+against a conversation-history table could generate a ranker-dominating
+candidate set. Capping keeps the relaxed branch bounded in cost without
+changing its qualitative behavior.
+
 ### Fallback trigger policy
 
-The first implementation should stay simple and explicit.
+The trigger is a single integer threshold `K`: the engine runs the relaxed
+branch if and only if the strict branch returned fewer than `min(limit, K)`
+hits.
 
-Recommended initial rule:
+**Internally**, `K` is a named constant in the search-policy layer so the
+trigger can be raised later without code changes.
 
-- if strict returns zero hits, run relaxed
+**Externally in v1**, `K = 1`. This collapses the rule to "run relaxed only
+when strict returned zero hits" — the simplest public contract to describe,
+document, and test. Callers do not see `K`; they see a deterministic
+zero-hits-only fallback.
 
-Optional later rule:
+Raising `K` later is a policy change, not an API change:
 
-- if strict returns fewer than `min(limit, N)` hits, run relaxed and merge
+- block-based ranking (see Ranking Semantics) means relaxed hits always
+  form a block below strict hits, so raising `K` never risks relaxed hits
+  interleaving or outranking strict hits
+- `fallback_used` and per-block counts on `SearchRows` already let clients
+  tell how many strict and relaxed hits were returned, so UI that wants to
+  distinguish "exact" from "related" keeps working without changes
+- the test surface expands from two cases (strict-hit, strict-miss) to
+  three (strict-fills-above-K, strict-fills-below-K, strict-miss) when the
+  constant is raised, but the v1 test surface stays at two
 
-The trigger policy should be visible in docs and test fixtures.
+The trigger policy must be visible in docs and test fixtures for v1 as
+"relaxed runs only when strict returned zero hits." The internal `K` knob
+should be a documented constant in the engine source, not a caller-facing
+configuration option.
 
 ### Result metadata
 
@@ -275,25 +355,88 @@ This metadata is essential to making adaptive search debuggable and useful.
 
 ## Ranking Semantics
 
-The engine should expose a stable raw search ordering, not application-specific
-relevance policy.
+The engine exposes a stable ordering of hits, not an application-specific
+relevance policy. Ranking is **block-based**: hits from the strict branch
+form one ordered block, hits from the relaxed branch form the next. Within
+a block, hits are ordered by raw engine score descending, with `logical_id`
+lexicographic tiebreak. Future retrieval branches (e.g. vector) extend this
+as additional blocks; the block concept does not change.
 
 ### Initial ranking requirements
 
-1. FTS-backed search must no longer behave like unordered candidate selection.
+1. FTS-backed search must not behave like unordered candidate selection.
 2. Search results must expose score in the public result.
-3. Scores should be comparable within a single search execution.
+3. Scores are **ordering-only within a block**. Scores from different
+   blocks — and, in future, from different retrieval backends such as
+   vectors — are not on a shared scale. The engine does not normalize
+   across blocks, and callers must not compare or arithmetically combine
+   scores across blocks.
 4. Merged strict/relaxed results must have deterministic precedence rules.
+5. The block a hit belongs to must be visible to the client. In v1 the
+   client reads `match_mode` on each `SearchHit` and the per-block counts
+   (`strict_hit_count`, `relaxed_hit_count`) on `SearchRows`. Blocks appear
+   in the `hits` vector contiguously and in precedence order, so a client
+   that wants to render or rerank one block at a time can slice the vector
+   by the counts without re-inspecting each hit.
 
-Recommended initial merge policy:
+### Merge policy
 
-- strict hits rank ahead of relaxed hits by default
+- strict hits rank ahead of relaxed hits, always, regardless of raw score
 - duplicates are deduped by logical ID
-- for duplicate logical IDs, prefer the higher-priority hit according to:
+- for duplicate logical IDs, the winning branch is selected by:
   1. strict over relaxed
-  2. higher score within same mode
+  2. higher score within the same mode
+  3. fixed source priority (chunk > property; future: vector)
+  4. branch declaration order as the final deterministic tiebreak
+- within a block, hits are ordered by score descending, then `logical_id`
+  ascending
 
-This remains intentionally simple.
+This remains intentionally simple and does not require score normalization
+across blocks. If a future caller needs a globally ranked list (strict and
+relaxed interleaved by quality), that is an additive change — e.g.
+reciprocal-rank fusion behind an opt-in flag — and does not break the v1
+contract.
+
+## Tokenization
+
+The default tokenizer for all text search — chunk FTS and property FTS — is
+FTS5 `unicode61` with `remove_diacritics 2`, layered with the FTS5 `porter`
+stemmer.
+
+### Rationale
+
+- **`unicode61`**: word-level tokenization with full Unicode normalization.
+  Robust across languages, handles mixed scripts, and matches the shape of
+  the queries real clients produce.
+- **`remove_diacritics 2`**: strips diacritics including those on
+  non-alphabetic codepoints. "café" and "cafe" are interchangeable at
+  index-time and query-time with no caller involvement.
+- **`porter`**: English-language stemming so "ship", "ships", and
+  "shipping" collapse to a shared stem. This is the main recall lever for
+  vague-cue queries and removes the need for the relaxed branch to handle
+  simple morphology.
+
+### Implications
+
+- Case insensitive by construction. Callers do not need to lowercase
+  inputs.
+- Phrase search still works; quoted phrases match against the stemmed,
+  normalized stream.
+- Recall is strongly English-biased. Non-English stemming is out of scope
+  for v1; index behavior on non-English text remains correct (unicode61 +
+  diacritic folding) but does not benefit from stem collapsing.
+- Index format is fixed by this choice. Changing the tokenizer later is a
+  full FTS rebuild, not a migration.
+
+### Scope
+
+Trigram and other substring-oriented tokenizers were considered and
+rejected as defaults: index bloat (roughly 3–5x), noisier BM25 ranking
+dominated by short common trigrams, ugly snippet boundaries, and
+significant overlap with the relaxed branch already in this design. A
+per-property-schema tokenizer override — e.g. trigram for identifier-shaped
+fields like URLs, usernames, and file paths — is a deliberate non-goal for
+this tranche and may be added later without breaking the default.
 
 ## SearchHit Result Design
 
@@ -321,11 +464,17 @@ This matters for:
 
 ### Path metadata
 
-`matched_path` is optional in the first cut.
+Path-level attribution ("which declared property leaf produced this match")
+is **not** a field on the default `SearchHit`. It is a specialized-surface
+concern exposed via an opt-in builder flag; see the Match Attribution
+section.
 
-It becomes much more valuable once recursive property extraction is present. If
-the first implementation cannot cheaply emit path metadata for all property
-hits, the API should still reserve a place for it.
+Rationale: the field is not correctness-critical (dedup, ranking, snippets,
+and provenance all work without it), it is not free to produce reliably,
+and the callers who need it are specialized (domain rerankers, UI match
+labels, operator debugging). Keeping it off the default surface lets the
+simple path stay lean and lets the attribution mechanism be as careful as
+it needs to be without warping the hot path.
 
 ## Recursive Property Extraction
 
@@ -367,7 +516,49 @@ For recursive paths:
 - stringify numbers and booleans
 - flatten arrays of scalars
 - skip nulls and missing values
-- optionally retain leaf path identity in derived rows or auxiliary metadata
+- emit a **position map** alongside the concatenated blob — a compact list
+  of `(start_offset, end_offset, leaf_path)` entries, one per emitted leaf,
+  produced during the same walk. The position map is derived state on the
+  property-FTS row, rebuilt whenever the blob is rebuilt. It exists to
+  support opt-in match attribution (see below) and is otherwise unused at
+  query time.
+
+### Extraction guardrails
+
+Recursive extraction runs against caller-declared schemas, not arbitrary
+payloads, but nested structures can still be large. Guardrails bound the
+worst-case index size and walk time so property-FTS rebuilds remain
+predictable:
+
+- **`max_depth = 8`.** Walks terminate at this depth; deeper leaves are
+  skipped.
+- **`max_extracted_bytes = 65_536` per node.** When the emitted blob
+  would exceed this, the walk stops and the excess leaves are dropped.
+- **`exclude_paths: Vec<String>`** on the schema registration, optional.
+  Matching subtrees are skipped entirely.
+
+When a guardrail fires, the row is still indexed with whatever was
+emitted; the node is not skipped, and `check_integrity()` does not flag
+it. A per-rebuild stats record tracks how many rows hit each guardrail
+so operators can tune schemas and exclude-path lists. Per-query results
+do not surface this.
+
+These limits are internal constants, tunable in engine source like the
+fallback trigger `K` and the relaxed cap. Schema-level override is a
+future extension if the defaults prove too tight.
+
+### Concatenation separator
+
+Leaves are joined by a separator that the `unicode61` tokenizer treats as
+a **hard phrase break**, so FTS5 phrase queries cannot silently match
+across leaf boundaries. The exact byte sequence is an implementation
+detail, but the contract is fixed: no tokenized content may straddle two
+leaves.
+
+This makes phrase-match attribution unambiguous — a phrase match's
+position range always lies entirely within one leaf — and it prevents the
+concatenation from producing matches that would not exist in any
+individual leaf.
 
 ### Storage-shape choice
 
@@ -383,6 +574,123 @@ The first step should remain compatible with the current derived-state model:
 However, recursive extraction should be implemented in a way that does not
 block future path-aware materialization.
 
+## Match Attribution (opt-in)
+
+Path-level attribution is an **opt-in specialized surface**, not a field
+on the default `SearchHit`. A caller that wants to know which declared
+leaves produced a property match activates attribution at the query site
+via a builder flag:
+
+```rust
+engine.nodes("KnowledgeItem")
+    .text_search("quarterly docs", 10)
+    .with_match_attribution()
+    .execute()?
+```
+
+Python and TypeScript expose the equivalent flag on their
+`TextSearchBuilder`. The default `text_search(...).execute()` path is
+unchanged and pays no attribution cost.
+
+### Result shape
+
+When attribution is requested, each `SearchHit` carries a parallel
+attribution record:
+
+```rust
+pub struct HitAttribution {
+    /// Declared leaf paths that contributed to this hit, ordered by
+    /// first-match offset in the property blob. Empty for chunk-only
+    /// hits.
+    pub matched_paths: Vec<String>,
+}
+```
+
+`Vec<String>` rather than `Option<String>` is deliberate: a multi-term
+query can legitimately match across leaves (e.g. title + body), and the
+opt-in record should express that honestly. Richer attribution (per-path
+matched terms, positions for debugging) is a future additive extension.
+
+### Mechanism: position map + FTS5 match introspection
+
+Attribution is **deterministic**, not post-hoc re-tokenization. The
+mechanism has two halves.
+
+**At index time** (paid unconditionally, during the same walk that
+produces the blob): the recursive-extraction walk emits the position map
+described under Recursive Property Extraction. One entry per leaf,
+recording `(start_offset, end_offset, leaf_path)` in blob coordinates.
+Stored on the property-FTS row as derived state, rebuilt whenever the
+blob is rebuilt.
+
+**At query time** (paid only when attribution is requested): after FTS5
+returns a hit, the engine reads match positions for that hit using
+FTS5's match-introspection functions (`matchinfo()` / `offsets()` /
+equivalent). For each matched token, a binary search in the position map
+resolves the token's offset to exactly one leaf path. Matched paths are
+deduped, ordered by first-match offset, and returned on the
+`HitAttribution` record.
+
+### Correctness under each failure mode
+
+- **Stemming (`porter`).** FTS5 match positions refer to offsets in the
+  original indexed text, not the stemmed token stream. "shipping"
+  matching query stem `ship` returns the original-text offset of
+  "shipping", which the position map resolves to the correct leaf. No
+  approximation.
+- **Phrase queries.** FTS5 reports the phrase match as a contiguous
+  position range. Because the leaf separator is a hard phrase break
+  (see Concatenation separator), the range always lies entirely within
+  one leaf. Lookup is unambiguous.
+- **`NOT` clauses.** Negative clauses contribute no positive match
+  positions; they only filter candidates. Nothing to attribute.
+- **Multi-term AND spanning leaves.** Each term's positions resolve
+  independently, yielding multiple leaves on `matched_paths`. This is
+  the honest answer and is only expressible because the record uses a
+  vector.
+- **Relaxed branch.** Relaxed is a query rewrite against the same index.
+  Position map and FTS5 match semantics are unchanged, so attribution
+  is correct in both strict and relaxed modes. `match_mode` on the hit
+  tells callers which branch fired; attribution is orthogonal.
+- **Chunk hits.** Chunk hits have no leaf structure. `matched_paths` is
+  empty for chunk-only hits; attribution callers that want chunk
+  information use the chunk identifier on the hit directly.
+- **Vector hits (future).** Vector hits carry no term-level positions.
+  `matched_paths` is empty; if a nearest-leaf heuristic is ever wanted,
+  it is an additive future extension.
+
+### Cost profile
+
+- **Index time**: unconditional. One position-map row per property-FTS
+  row, produced during the same extraction walk. Budget: a few hundred
+  bytes per 20-leaf node. Rebuilt with the blob; restore and integrity
+  checks extend naturally.
+- **Query time without attribution**: zero. The position map is not
+  read.
+- **Query time with attribution**: one match-introspection call per hit
+  plus a binary search per matched term. For limit-10 results with a
+  few query terms, trivial.
+
+### Ruled out
+
+These approaches were considered and rejected:
+
+- **Re-running the query per leaf at attribution time.** Correct-ish,
+  N× query cost per attributed hit, and drifts from blob-level
+  tokenization under stemming.
+- **Hand-rolled re-tokenization in attribution code.** Approximates
+  `unicode61 + porter`; will silently drift and produce wrong
+  attribution.
+- **Storing only FTS5 columns for each declared root path, with no
+  position map.** Resolves to the declared root ("matched in
+  `$.payload`") but not to a leaf under recursive extraction.
+  Insufficient alone; the position map supersedes it.
+- **Regenerating the position map on the fly at attribution time** by
+  re-running extraction in memory instead of persisting it. Lower
+  index-size overhead, higher query-time cost, and opens a class of
+  "regenerated map drifted from the stored blob" bugs. Reject for v1;
+  revisit only if persisted-map storage ever becomes a real pressure.
+
 ## `fallback_search(strict, relaxed)` Helper
 
 ### Purpose
@@ -394,9 +702,11 @@ without adding full query branch composition.
 
 The helper should:
 
-- accept two search shapes
+- accept one or two search shapes (`relaxed` may be absent; when absent,
+  the helper is strict-only and shares the same merge, dedup, and result
+  shape)
 - execute strict first
-- execute relaxed only when policy says to do so
+- execute relaxed only when present and policy says to do so
 - dedup and merge with deterministic precedence
 - return `SearchRows`
 
@@ -405,6 +715,11 @@ It should not:
 - allow arbitrary query-tree branching
 - expose generic `union()` semantics
 - become a general multi-stage query DSL
+
+The strict-only mode (`relaxed=None`) exists to serve the dedup-on-write
+pattern: callers that need "has any node already matched this strict
+query?" use the same retrieval, result, and dedup surface as adaptive
+`text_search()` rather than an ad hoc path.
 
 ### Relationship to adaptive `text_search()`
 
@@ -417,7 +732,7 @@ This keeps behavior consistent:
 
 ## Core Architecture Changes
 
-## `fathomdb-query`
+### `fathomdb-query`
 
 Required changes:
 
@@ -435,7 +750,109 @@ Recommended additions:
 
 This should remain narrower than a generic query composition framework.
 
-## `fathomdb-engine`
+#### Filter composition
+
+Filters compose with text search via the existing `filter_*` chain on
+the builder. `TextSearchBuilder` exposes the same filter vocabulary as
+the general query builder — `filter_kind_eq`, `filter_logical_id_eq`,
+`filter_source_ref_eq`, `filter_content_ref_*`, `filter_json_*`. There
+is no search-specific filter vocabulary, no separate `SearchFilters`
+struct, and no positional filter arguments on `text_search(...)`.
+
+This keeps Rust, Python, and TypeScript SDK surfaces symmetric — all
+three already compose `text_search` and `filter_*` as peers in a single
+step pipeline — and lets clients build filters conditionally from UI
+state without dict gymnastics:
+
+```python
+q = engine.nodes("Item").text_search(query, 10)
+if ui.type: q = q.filter_kind_eq(ui.type)
+if ui.after: q = q.filter_json_timestamp_gt("$.captured_at", ui.after)
+rows = q.execute()
+```
+
+#### FTS filter fusion
+
+Filter composition alone is not enough. Today, when the driving table
+is `FtsNodes` or `VecNodes`, `Filter` steps remain in the outer `WHERE`,
+applied only *after* the FTS/vector `LIMIT` has already truncated
+candidates. The test `fts_driver_keeps_json_filter_in_outer_where` in
+`crates/fathomdb-query/src/compile.rs` codifies this behavior. The
+consequence is that
+
+```python
+engine.nodes("Item").text_search("budget", 5).filter_kind_eq("Goal").execute()
+```
+
+fetches 5 raw `budget` matches and *then* filters for `kind = "Goal"`,
+so the returned count can be anything from 0 to 5 even when the index
+contains many more `budget`-and-`Goal` matches. Under an adaptive
+search contract this is wrong; callers cannot trust `limit`.
+
+The compiler gains an **FTS filter-fusion pass** that runs over `Filter`
+steps following a search step and partitions them into:
+
+- **fusable** predicates are injected into the `base_candidates` CTE so
+  the FTS (or vector) candidate set is already narrowed before `LIMIT`
+  applies
+- **residual** predicates remain in the outer `WHERE`, unchanged from
+  today
+
+v1 eligibility:
+
+- **fusable**: `filter_kind_eq`, `filter_logical_id_eq`,
+  `filter_source_ref_eq`, `filter_content_ref_eq`,
+  `filter_content_ref_not_null` — each of these maps to a column
+  already present on the FTS/vector candidate rows
+- **residual**: `filter_json_*` (text, bool, integer comparisons,
+  timestamp comparisons) — these need `json_extract` on the node
+  properties blob, which is not carried on the FTS or vector candidate
+  rows
+
+The partition is a single match statement in `compile.rs`; new fusable
+filters are added by extending match arms.
+
+**Vector-search alignment.** The fusion pass is written generically
+over search-driven driving tables, not FTS-specifically. `VecNodes` has
+exactly the same `LIMIT`-before-filter problem today, and the same v1
+eligibility list applies: kind, logical_id, source_ref, and content_ref
+filters fuse into vector `base_candidates` just as they do into FTS
+`base_candidates`. Vector retrieval inherits filter fusion the moment
+it wires in; no separate vec-path fusion work is required when vectors
+ship. The `SearchHitSource::Vector` reservation and filter fusion
+together mean a future vector wiring is an additive change.
+
+**Tests.** Flip `fts_driver_keeps_json_filter_in_outer_where` to assert
+the partition explicitly: json filters stay residual, kind filters
+fuse. Add `fts_driver_fuses_kind_filter` proving the kind constraint
+appears inside `base_candidates`, not the outer `WHERE`. When vector
+retrieval lands, mirror both tests for `VecNodes`.
+
+Promoting currently-residual filters (tags, captured timestamps,
+pinned) to fusable is a later decision gated on promoting those fields
+to columns on the FTS/vec candidate rows. It is not blocking v1 and
+can be done additively — one new match arm per promoted field.
+
+**Why a compile-layer pass instead of a search-builder filter surface.**
+An earlier framing of this problem asked whether `text_search(...)`
+should accept structured filter arguments (`kind`, `tags`, `after`,
+`pinned`) or a separate `SearchFilters` struct. Research into the
+current codebase and the primary client (Memex) showed that framing was
+wrong. Filters already chain onto `text_search` today via the general
+`filter_*` methods — the builder surface is not the problem. The
+problem is entirely in `compile.rs`: when the driving table is
+`FtsNodes` or `VecNodes`, filter predicates stay in the outer `WHERE`
+and are applied *after* `LIMIT` has already truncated candidates.
+Memex's client-side filter loops (`fathom_facade.py` line 339: "client-
+side filtering for fields fathomdb doesn't filter natively") exist
+because of that truncation, not because the builder API is unergonomic.
+Moving filters into a separate search-specific vocabulary would have
+added a second `Predicate` path, forced cross-SDK mirroring of the new
+filter struct, and still left the `base_candidates` truncation bug
+unfixed. Fixing `base_candidates` is the actual work; the existing
+builder chain is the correct surface.
+
+### `fathomdb-engine`
 
 Required changes:
 
@@ -455,7 +872,7 @@ The read-result diagnostics design should remain conceptually separate from
 payload results, but the search result itself must expose enough metadata to be
 useful.
 
-## Rust Public Facade
+### Rust Public Facade
 
 Required changes:
 
@@ -466,7 +883,7 @@ Required changes:
 No backwards compatibility is required, so existing FTS result contracts may be
 replaced rather than layered.
 
-## Python Binding Layer
+### Python Binding Layer
 
 The Python bindings should remain thin and Rust-owned in semantics.
 
@@ -489,10 +906,12 @@ for hit in rows.hits:
     hit.match_mode
 ```
 
-If Python continues to expose one `execute()` method, its return typing should
-document that text-search queries produce `SearchRows`.
+`text_search()` returns a `TextSearchBuilder` whose `execute()` is
+statically annotated to return `SearchRows`. The general query builder's
+`execute()` continues to return `QueryRows`. No `Union` return types are
+introduced on either builder.
 
-## Python SDK Documentation
+### Python SDK Documentation
 
 Required documentation changes:
 
@@ -506,7 +925,7 @@ Existing docs that describe `text_search()` as a transparent UNION over chunk
 and property FTS remain true but incomplete; they must be updated to describe
 the new result and retrieval behavior.
 
-## TypeScript SDK
+### TypeScript SDK
 
 The TypeScript SDK should mirror Python conceptually and closely in coverage.
 
@@ -578,6 +997,31 @@ state. If recursive extraction is added to property schemas:
 - semantic checks should continue to validate projection presence/drift, not
   search ranking semantics
 
+### Schema migration for recursive flag
+
+Adding or removing a recursive path on an existing property FTS schema is
+a schema registration operation that triggers an **eager, transactional
+rebuild** of that kind's property-FTS rows in the same transaction. The
+rebuild walks the affected nodes, regenerates the blob and position map
+under the new extraction rules, and commits atomically.
+
+Consequences:
+
+- consistency is immediate; no caller ever sees a row mixing old and new
+  extraction rules
+- registration can take minutes on large kinds (bounded by kind size,
+  not total DB size)
+- registration exposes a progress signal so operators can monitor long
+  rebuilds
+
+Lazy mark-stale-and-rebuild-later and versioned co-existence were both
+considered and rejected. Lazy staleness violates the derived-state
+invariant that "derived rows reflect the current schema." Versioned
+co-existence is over-engineered for the first users and multiplies the
+test matrix. If long rebuild windows become a real pressure, incremental
+background rebuild can be added additively without breaking the
+eager-rebuild contract.
+
 ### Integrity semantics
 
 `check_integrity()` and `check_semantics()` should remain focused on
@@ -606,6 +1050,14 @@ Add tests for:
 - strict-versus-relaxed dedup precedence
 - chunk-versus-property source metadata
 - recursive property extraction over nested objects and arrays
+- position-map emission during extraction (one entry per leaf, correct
+  offsets, stable order)
+- the leaf separator is a hard phrase break under `unicode61 + porter`
+  (phrase queries cannot straddle leaf boundaries)
+- match attribution under stemming, phrase queries, `NOT` clauses,
+  multi-term AND spanning leaves, and relaxed-branch rewrites
+- default `text_search()` pays no attribution cost (position map not
+  read when `with_match_attribution()` is not set)
 
 ### Engine integration tests
 
@@ -626,8 +1078,10 @@ Required new assertions:
 - ordered hit logical IDs
 - hit source
 - match mode
-- optional matched path where present
-- whether fallback was used, if surfaced
+- whether fallback was used, and per-block counts on `SearchRows`
+- attribution results (`matched_paths`) when the query was run with
+  `with_match_attribution()`, covering stemming, phrase, multi-term AND
+  across leaves, and relaxed-branch cases
 
 Python and TypeScript driver fixtures must both validate the richer wire
 payload shape.
@@ -667,20 +1121,90 @@ Recommended sequence:
 5. rewrite consumer docs
 6. replace cross-language and stress fixtures with the new search assertions
 
+## Resolved Decisions
+
+- **Tokenizer**: `unicode61` with `remove_diacritics 2` plus the `porter`
+  stemmer. See the Tokenization section.
+- **Score contract**: raw engine score, ordering-only within a block, no
+  cross-block comparability. See the Ranking Semantics section.
+- **Fallback visibility**: `fallback_used` is an explicit field on
+  `SearchRows`, alongside per-block counts, so clients do not have to infer
+  it from per-hit `match_mode`.
+- **Fallback trigger**: threshold-based (`min(limit, K)`) internally, with
+  `K = 1` in v1 so the public contract is zero-hits-only. Raising `K` later
+  is a policy change, not an API change. See the Fallback trigger policy
+  section.
+- **Terminal shape**: `text_search(...)` returns a dedicated
+  `TextSearchBuilder` whose `execute()` is statically typed to return
+  `SearchRows`. The general query builder's `execute()` continues to
+  return `QueryRows`. One terminal name, distinct builder types. See the
+  "Add search-specific execution/result surface" section.
+- **Path attribution**: dropped from the default `SearchHit`. Exposed as
+  an opt-in specialized surface via `with_match_attribution()` on
+  `TextSearchBuilder`, producing a `HitAttribution` record with
+  `matched_paths: Vec<String>`. The mechanism is a position map emitted
+  at index time (during the same recursive-extraction walk as the blob)
+  plus FTS5 match introspection at query time. Deterministic under
+  stemming, phrases, `NOT`, multi-term AND across leaves, and the
+  relaxed branch. See the Match Attribution section.
+- **`SearchHit` payload**: carries `snippet`, `written_at`, and
+  `projection_row_id` in addition to `node`, `score`, `source`, and
+  `match_mode`, so callers can sort, display, or trace without a second
+  read.
+- **`SearchHitSource::Vector` reserved**: the enum exports a `Vector`
+  variant now, even though no v1 code path emits it, so that vector
+  retrieval can land as an additive change rather than a wire-format
+  break across Rust, Python, and TypeScript.
+- **Relaxed-branch cap**: 4 per-term alternatives, internal constant,
+  excess truncated by token order and marked `was_degraded`. See
+  Relaxed-branch cap.
+- **Recursive extraction guardrails**: `max_depth = 8`,
+  `max_extracted_bytes = 64 KiB per node`, optional `exclude_paths` on
+  the schema. Rows that hit a guardrail are still indexed with what was
+  emitted; per-rebuild stats track the counts. See Extraction
+  guardrails.
+- **`fallback_search(relaxed=None)`**: strict-only mode is supported and
+  serves the dedup-on-write pattern, with the same merge, dedup, and
+  result shape as the two-shape case.
+- **Concurrency contract**: background writes never block foreground
+  `text_search()` reads; one stress-suite assertion enforces it. See
+  Core Product Principle.
+- **Recursive-flag schema migration**: registering a schema with a new
+  recursive path triggers an eager, transactional rebuild of that
+  kind's property-FTS rows. Lazy mark-stale and versioned co-existence
+  were rejected. See Schema migration for recursive flag.
+- **Filter composition**: filters compose with text search via the
+  existing `filter_*` chain on `TextSearchBuilder`. No search-specific
+  filter vocabulary, no positional filter arguments on
+  `text_search(...)`, no separate `SearchFilters` struct. Keeps SDK
+  surfaces symmetric and supports conditional filter construction from
+  UI state. See Filter composition.
+- **FTS filter fusion**: the compiler gains a fusion pass that
+  partitions `Filter` predicates following a search step into fusable
+  (`kind_eq`, `logical_id_eq`, `source_ref_eq`, `content_ref_*`) and
+  residual (`json_*`) sets, and injects fusable predicates into the
+  `base_candidates` CTE so `LIMIT` applies after filtering. The pass
+  is generic over search-driven driving tables, so `VecNodes`
+  inherits the same fusion behavior when vector retrieval wires in —
+  no separate vec-path work required. Promoting currently-residual
+  filters (tags, timestamps, pinned) to fusable is an additive future
+  decision gated on column promotion. See FTS filter fusion.
+
 ## Open Questions
 
-1. Should `execute()` dynamically return a search-specific type for FTS-backed
-   queries, or should search queries gain a distinct terminal method?
-2. Should relaxed search trigger only on zero hits in v1, or also on
-   underfilled results?
-3. Should `matched_path` be required in the first recursive-extraction cut, or
-   remain optional until later path-aware materialization work?
-4. Which score function is the stable initial contract for ordering and public
-   `score` exposure?
-5. Should fallback usage be surfaced explicitly on `SearchRows`, or inferred
-   from per-hit `match_mode`?
+_None currently open._ All design decisions for this tranche have been
+resolved above; see the Resolved Decisions section.
 
 ## Done When
+
+### Caller-visible acceptance
+
+A single `text_search(query, limit).execute()` call returns deterministically
+ranked `SearchRows` with `score`, `source`, `match_mode`, `snippet`,
+`written_at`, and `projection_row_id` on every hit, with no caller-side
+branch on backend, in Rust, Python, and TypeScript.
+
+### Implementation done-when
 
 - `text_search()` remains the single primary text-search entry point
 - FTS-backed reads return a search-specific result surface with score and
