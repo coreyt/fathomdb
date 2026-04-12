@@ -24,13 +24,19 @@ Agents shouldn't write SQL. LLMs hallucinate syntax, misunderstand schema evolut
 // Conceptual AST representation
 enum QueryStep {
     VectorSearch { query: Vec<f32>, limit: usize, threshold: f32 },
-    TextSearch { query: String },
+    TextSearch { query: TextQuery, limit: usize },
     Traverse { direction: Direction, edge_kind: String, depth: Range<u32> },
     FilterNode { predicate: JsonPredicate },
     FilterTime { time_range: TimeRange },
     JoinSemantic { table: String, on: String },
 }
 ```
+
+Here `TextQuery` should be understood as the safe constrained text-search AST,
+not raw FTS5 text. The public `text_search()` API accepts familiar search-box
+input and lowers only the supported subset: bare terms, quoted phrases,
+implicit `AND`, uppercase `OR`, and uppercase `NOT`. Unsupported syntax stays
+literal rather than becoming engine control syntax.
 
 **Example Agent Invocation (Python/TS SDK):**
 ```python

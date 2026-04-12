@@ -1,6 +1,7 @@
 use crate::{
     ComparisonOp, CompileError, CompiledGroupedQuery, CompiledQuery, ExpansionSlot, Predicate,
-    QueryAst, QueryStep, ScalarValue, TraverseDirection, compile_grouped_query, compile_query,
+    QueryAst, QueryStep, ScalarValue, TextQuery, TraverseDirection, compile_grouped_query,
+    compile_query,
 };
 
 /// Fluent builder for constructing a [`QueryAst`].
@@ -38,12 +39,15 @@ impl QueryBuilder {
     }
 
     /// Add a full-text search step.
+    ///
+    /// The input is parsed into `FathomDB`'s safe supported subset: literal
+    /// terms, quoted phrases, uppercase `OR`, uppercase `NOT`, and implicit
+    /// `AND` by adjacency. Unsupported syntax remains literal rather than being
+    /// passed through as raw FTS5 control syntax.
     #[must_use]
     pub fn text_search(mut self, query: impl Into<String>, limit: usize) -> Self {
-        self.ast.steps.push(QueryStep::TextSearch {
-            query: query.into(),
-            limit,
-        });
+        let query = TextQuery::parse(&query.into());
+        self.ast.steps.push(QueryStep::TextSearch { query, limit });
         self
     }
 
@@ -275,7 +279,7 @@ impl QueryBuilder {
 #[cfg(test)]
 #[allow(clippy::panic)]
 mod tests {
-    use crate::{Predicate, QueryBuilder, QueryStep, ScalarValue, TraverseDirection};
+    use crate::{Predicate, QueryBuilder, QueryStep, ScalarValue, TextQuery, TraverseDirection};
 
     #[test]
     fn builder_accumulates_expected_steps() {
@@ -300,6 +304,25 @@ mod tests {
                 assert_eq!(*value, ScalarValue::Bool(true));
             }
             other => panic!("expected JsonPathEq/Bool, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn builder_text_search_parses_into_typed_query() {
+        let query = QueryBuilder::nodes("Meeting").text_search("ship NOT blocked", 10);
+
+        match &query.ast().steps[0] {
+            QueryStep::TextSearch { query, limit } => {
+                assert_eq!(*limit, 10);
+                assert_eq!(
+                    *query,
+                    TextQuery::And(vec![
+                        TextQuery::Term("ship".into()),
+                        TextQuery::Not(Box::new(TextQuery::Term("blocked".into()))),
+                    ])
+                );
+            }
+            other => panic!("expected TextSearch, got {other:?}"),
         }
     }
 }

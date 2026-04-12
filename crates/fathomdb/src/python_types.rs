@@ -1,5 +1,6 @@
 #![cfg(any(feature = "python", feature = "node"))]
 
+use fathomdb_query::TextQuery;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -127,7 +128,10 @@ impl From<PyQueryAst> for QueryAst {
                 PyQueryStep::VectorSearch { query, limit } => {
                     QueryStep::VectorSearch { query, limit }
                 }
-                PyQueryStep::TextSearch { query, limit } => QueryStep::TextSearch { query, limit },
+                PyQueryStep::TextSearch { query, limit } => QueryStep::TextSearch {
+                    query: TextQuery::parse(&query),
+                    limit,
+                },
                 PyQueryStep::Traverse {
                     direction,
                     label,
@@ -780,6 +784,7 @@ impl From<GroupedQueryRows> for PyGroupedQueryRows {
 mod tests {
     use super::{PyOperationalWrite, PyQueryAst, PyQueryStep, PyWriteRequest};
     use crate::{ComparisonOp, Predicate, QueryAst, QueryStep, ScalarValue};
+    use fathomdb_query::TextQuery;
 
     // ---------------------------------------------------------------
     // PyQueryStep deserialization: one test per variant to catch
@@ -812,10 +817,32 @@ mod tests {
         let step = parse_step(r#"{"type":"text_search","query":"budget","limit":10}"#);
         assert!(matches!(step, PyQueryStep::TextSearch { limit: 10, .. }));
         let ast = parse_ast_with_step(r#"{"type":"text_search","query":"budget","limit":10}"#);
-        assert!(matches!(
-            &ast.steps[0],
-            QueryStep::TextSearch { limit: 10, .. }
-        ));
+        match &ast.steps[0] {
+            QueryStep::TextSearch { query, limit } => {
+                assert_eq!(*limit, 10);
+                assert_eq!(*query, TextQuery::Term("budget".into()));
+            }
+            other => panic!("expected TextSearch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn step_text_search_parses_supported_boolean_subset() {
+        let ast =
+            parse_ast_with_step(r#"{"type":"text_search","query":"ship OR docs","limit":10}"#);
+        match &ast.steps[0] {
+            QueryStep::TextSearch { query, limit } => {
+                assert_eq!(*limit, 10);
+                assert_eq!(
+                    *query,
+                    TextQuery::Or(vec![
+                        TextQuery::Term("ship".into()),
+                        TextQuery::Term("docs".into()),
+                    ])
+                );
+            }
+            other => panic!("expected TextSearch, got {other:?}"),
+        }
     }
 
     #[test]

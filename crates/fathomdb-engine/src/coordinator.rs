@@ -1248,6 +1248,45 @@ mod tests {
         assert_eq!(ids, vec!["meeting-1", "meeting-2"]);
     }
 
+    #[test]
+    fn text_search_finds_literal_lowercase_not_text_in_chunk_content() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("coordinator");
+        let conn = rusqlite::Connection::open(db.path()).expect("open db");
+
+        conn.execute_batch(
+            r"
+            INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref)
+            VALUES ('row-1', 'meeting-1', 'Meeting', '{}', 100, 'seed');
+            INSERT INTO chunks (id, node_logical_id, text_content, created_at)
+            VALUES ('chunk-1', 'meeting-1', 'the boat is not a ship', 100);
+            INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content)
+            VALUES ('chunk-1', 'meeting-1', 'Meeting', 'the boat is not a ship');
+            ",
+        )
+        .expect("seed chunk-backed node");
+
+        let compiled = QueryBuilder::nodes("Meeting")
+            .text_search("not a ship", 10)
+            .limit(10)
+            .compile()
+            .expect("compiled query");
+
+        let rows = coordinator
+            .execute_compiled_read(&compiled)
+            .expect("execute read");
+
+        assert_eq!(rows.nodes.len(), 1);
+        assert_eq!(rows.nodes[0].logical_id, "meeting-1");
+    }
+
     // --- Item 1: capability gate tests ---
 
     #[test]

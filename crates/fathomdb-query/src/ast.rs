@@ -1,3 +1,5 @@
+use crate::TextQuery;
+
 /// Abstract syntax tree representing a graph query.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct QueryAst {
@@ -34,10 +36,11 @@ pub enum QueryStep {
         /// Maximum number of candidate rows from the vector index.
         limit: usize,
     },
-    /// Full-text search over indexed chunk content.
+    /// Full-text search over indexed chunk content using `FathomDB`'s supported
+    /// safe text-query subset.
     TextSearch {
-        /// The FTS match expression.
-        query: String,
+        /// Parsed text-search intent to be lowered into safe FTS5 syntax.
+        query: TextQuery,
         /// Maximum number of candidate rows from the FTS index.
         limit: usize,
     },
