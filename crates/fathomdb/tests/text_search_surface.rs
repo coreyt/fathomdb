@@ -3,8 +3,8 @@
 //! Phase 1 integration tests for the adaptive text search surface.
 
 use fathomdb::{
-    ChunkInsert, ChunkPolicy, Engine, EngineOptions, FtsPropertyPathSpec, NodeInsert,
-    SearchHitSource, SearchMatchMode, WriteRequest,
+    ChunkInsert, ChunkPolicy, Engine, EngineOptions, FtsPropertyPathSpec, HitAttribution,
+    NodeInsert, SearchHitSource, SearchMatchMode, WriteRequest,
 };
 use tempfile::NamedTempFile;
 
@@ -1010,4 +1010,453 @@ fn rebuild_from_canonical_regenerates_position_map() {
         pos_count, 2,
         "projection rebuild must regenerate position map rows"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5: opt-in match-attribution tests.
+// ---------------------------------------------------------------------------
+
+fn register_recursive_payload_schema(engine: &Engine) {
+    engine
+        .register_fts_property_schema_with_entries(
+            "Note",
+            &[FtsPropertyPathSpec::recursive("$.payload")],
+            None,
+            &[],
+        )
+        .expect("register recursive schema");
+}
+
+#[test]
+fn default_text_search_does_not_read_position_map_and_sets_attribution_none() {
+    // Zero-cost proof: without `.with_match_attribution()`, every hit must
+    // carry `attribution == None`. This is the default path and the Phase 4
+    // position map must not contribute to the result.
+    let (_db, engine) = open_engine();
+    register_recursive_payload_schema(&engine);
+    submit_simple_node(
+        &engine,
+        "note-default-row",
+        "note-default",
+        "Note",
+        r#"{"payload":{"body":"shipping quarterly docs"}}"#,
+    );
+
+    let rows = engine
+        .query("Note")
+        .text_search("quarterly", 10)
+        .execute()
+        .expect("default search");
+
+    assert!(!rows.hits.is_empty(), "expected at least one hit");
+    for hit in &rows.hits {
+        assert!(
+            hit.attribution.is_none(),
+            "default path must leave attribution None, got {:?}",
+            hit.attribution
+        );
+    }
+}
+
+#[test]
+fn attribution_resolves_stemmed_match_to_original_leaf() {
+    // The porter stemmer collapses `ship` and `shipping` to the same stem.
+    // FTS5 still records the original-text byte offset of `shipping`, so
+    // the binary search into the position map lands on the leaf that
+    // contains it.
+    let (_db, engine) = open_engine();
+    register_recursive_payload_schema(&engine);
+    submit_simple_node(
+        &engine,
+        "note-stem-row",
+        "note-stem",
+        "Note",
+        r#"{"payload":{"body":"shipping quarterly docs"}}"#,
+    );
+
+    let rows = engine
+        .query("Note")
+        .text_search("ship", 10)
+        .with_match_attribution()
+        .execute()
+        .expect("attributed search");
+
+    assert!(!rows.hits.is_empty());
+    let hit = &rows.hits[0];
+    let att = hit
+        .attribution
+        .as_ref()
+        .expect("attribution populated when requested");
+    assert_eq!(
+        att.matched_paths,
+        vec!["$.payload.body".to_owned()],
+        "stemmed match must resolve to the originating leaf",
+    );
+}
+
+#[test]
+fn attribution_resolves_phrase_within_single_leaf() {
+    let (_db, engine) = open_engine();
+    register_recursive_payload_schema(&engine);
+    submit_simple_node(
+        &engine,
+        "note-phrase-row",
+        "note-phrase",
+        "Note",
+        r#"{"payload":{"body":"shipping quarterly docs"}}"#,
+    );
+
+    let rows = engine
+        .query("Note")
+        .text_search("\"quarterly docs\"", 10)
+        .with_match_attribution()
+        .execute()
+        .expect("phrase search");
+
+    assert!(!rows.hits.is_empty());
+    let hit = &rows.hits[0];
+    let att = hit.attribution.as_ref().expect("attribution populated");
+    assert_eq!(att.matched_paths, vec!["$.payload.body".to_owned()]);
+}
+
+#[test]
+fn attribution_phrase_does_not_straddle_leaves() {
+    // Re-assert the Phase 4 leaf-separator invariant from the attribution
+    // side: a phrase query "alpha beta" straddling two leaves returns no
+    // hits, but an AND query (unquoted) returns a hit whose attribution
+    // lists both leaves.
+    let (_db, engine) = open_engine();
+    register_recursive_payload_schema(&engine);
+    submit_simple_node(
+        &engine,
+        "note-straddle-row",
+        "note-straddle",
+        "Note",
+        r#"{"payload":{"a":"leading alpha","b":"beta trailing"}}"#,
+    );
+
+    // Phrase query must not match across the leaf separator.
+    let rows = engine
+        .query("Note")
+        .text_search("\"alpha beta\"", 10)
+        .with_match_attribution()
+        .execute()
+        .expect("phrase search");
+    assert!(
+        rows.hits.is_empty(),
+        "phrase must not straddle leaf separator"
+    );
+
+    // The AND form should still return a hit whose attribution lists both
+    // leaves (in first-match-offset order).
+    let rows = engine
+        .query("Note")
+        .text_search("alpha beta", 10)
+        .with_match_attribution()
+        .execute()
+        .expect("AND search");
+    assert!(!rows.hits.is_empty(), "AND form must still match");
+    let hit = &rows.hits[0];
+    let att = hit.attribution.as_ref().expect("attribution populated");
+    assert!(
+        att.matched_paths.contains(&"$.payload.a".to_owned()),
+        "expected $.payload.a in {:?}",
+        att.matched_paths,
+    );
+    assert!(
+        att.matched_paths.contains(&"$.payload.b".to_owned()),
+        "expected $.payload.b in {:?}",
+        att.matched_paths,
+    );
+    // First-match-offset order: $.payload.a (leading alpha) precedes
+    // $.payload.b (beta trailing) in the blob.
+    let idx_a = att
+        .matched_paths
+        .iter()
+        .position(|p| p == "$.payload.a")
+        .expect("a present");
+    let idx_b = att
+        .matched_paths
+        .iter()
+        .position(|p| p == "$.payload.b")
+        .expect("b present");
+    assert!(
+        idx_a < idx_b,
+        "first-match order: a must precede b, got {:?}",
+        att.matched_paths,
+    );
+}
+
+#[test]
+fn attribution_ignores_not_clauses() {
+    // A `NOT` clause contributes no positive match positions, so the
+    // attribution vector only records the positive term's leaf.
+    let (_db, engine) = open_engine();
+    register_recursive_payload_schema(&engine);
+    submit_simple_node(
+        &engine,
+        "note-not-row",
+        "note-not",
+        "Note",
+        r#"{"payload":{"title":"budget plan","notes":"unrelated text"}}"#,
+    );
+
+    let rows = engine
+        .query("Note")
+        .text_search("budget NOT archive", 10)
+        .with_match_attribution()
+        .execute()
+        .expect("NOT search");
+
+    assert!(!rows.hits.is_empty());
+    let hit = &rows.hits[0];
+    let att = hit.attribution.as_ref().expect("attribution populated");
+    assert_eq!(
+        att.matched_paths,
+        vec!["$.payload.title".to_owned()],
+        "NOT clause must not contribute paths",
+    );
+}
+
+#[test]
+fn attribution_multi_term_and_across_leaves_returns_multiple_paths() {
+    let (_db, engine) = open_engine();
+    register_recursive_payload_schema(&engine);
+    submit_simple_node(
+        &engine,
+        "note-multi-row",
+        "note-multi",
+        "Note",
+        // Keys are walked in alphabetical order by the recursive extractor,
+        // so $.payload.aaa precedes $.payload.bbb in the blob. Put "budget"
+        // in the earlier leaf and "archive" in the later one.
+        r#"{"payload":{"aaa":"budget plan","bbb":"archive folder"}}"#,
+    );
+
+    let rows = engine
+        .query("Note")
+        .text_search("budget archive", 10)
+        .with_match_attribution()
+        .execute()
+        .expect("multi-term AND search");
+
+    assert!(!rows.hits.is_empty());
+    let hit = &rows.hits[0];
+    let att = hit.attribution.as_ref().expect("attribution populated");
+    assert!(att.matched_paths.contains(&"$.payload.aaa".to_owned()));
+    assert!(att.matched_paths.contains(&"$.payload.bbb".to_owned()));
+    let idx_a = att
+        .matched_paths
+        .iter()
+        .position(|p| p == "$.payload.aaa")
+        .expect("aaa");
+    let idx_b = att
+        .matched_paths
+        .iter()
+        .position(|p| p == "$.payload.bbb")
+        .expect("bbb");
+    assert!(
+        idx_a < idx_b,
+        "first-match order: aaa must precede bbb, got {:?}",
+        att.matched_paths,
+    );
+}
+
+#[test]
+fn attribution_works_under_relaxed_branch() {
+    // Strict fails (the second term does not appear), but relaxed recovers
+    // via the OR branch. The recovered hit must carry populated attribution
+    // and be tagged Relaxed.
+    let (_db, engine) = open_engine();
+    register_recursive_payload_schema(&engine);
+    submit_simple_node(
+        &engine,
+        "note-relaxed-row",
+        "note-relaxed",
+        "Note",
+        r#"{"payload":{"body":"budget meeting notes"}}"#,
+    );
+
+    let rows = engine
+        .query("Note")
+        .text_search("budget zzznonexistentterm", 10)
+        .with_match_attribution()
+        .execute()
+        .expect("relaxed search");
+
+    assert!(rows.fallback_used, "relaxed must fire on strict miss");
+    assert!(!rows.hits.is_empty());
+    let hit = rows
+        .hits
+        .iter()
+        .find(|h| matches!(h.match_mode, SearchMatchMode::Relaxed))
+        .expect("at least one relaxed hit");
+    let att = hit
+        .attribution
+        .as_ref()
+        .expect("attribution populated on relaxed hit");
+    assert_eq!(att.matched_paths, vec!["$.payload.body".to_owned()]);
+}
+
+#[test]
+fn attribution_empty_for_chunk_only_hit() {
+    // Chunk hits have no leaf structure — with attribution on, they carry
+    // an empty `matched_paths` vector (not `None`), so callers can
+    // distinguish "asked for and this hit doesn't qualify" from "not
+    // asked for."
+    let (_db, engine) = open_engine();
+    // Do NOT register a property FTS schema — the Goal kind has no
+    // recursive/property index, so the only search surface is the chunk
+    // index.
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "seed-chunk".to_owned(),
+            nodes: vec![NodeInsert {
+                row_id: "chunk-hit-row".to_owned(),
+                logical_id: "chunk-hit".to_owned(),
+                kind: "Goal".to_owned(),
+                properties: r#"{"name":"ignored"}"#.to_owned(),
+                source_ref: Some("seed".to_owned()),
+                upsert: false,
+                chunk_policy: ChunkPolicy::Preserve,
+                content_ref: None,
+            }],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![ChunkInsert {
+                id: "chunk-hit-chunk".to_owned(),
+                node_logical_id: "chunk-hit".to_owned(),
+                text_content: "unique-chunk-sentinel phrase in this chunk".to_owned(),
+                byte_start: None,
+                byte_end: None,
+                content_hash: None,
+            }],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![],
+        })
+        .expect("seed chunk-only node");
+
+    let rows = engine
+        .query("Goal")
+        .text_search("unique-chunk-sentinel", 10)
+        .with_match_attribution()
+        .execute()
+        .expect("chunk search");
+
+    assert!(!rows.hits.is_empty());
+    let hit = &rows.hits[0];
+    assert!(matches!(hit.source, SearchHitSource::Chunk));
+    assert_eq!(
+        hit.attribution,
+        Some(HitAttribution {
+            matched_paths: Vec::new(),
+        }),
+        "chunk hit must carry present-but-empty attribution",
+    );
+}
+
+#[test]
+fn attribution_populated_for_every_hit_when_flag_on() {
+    // With attribution on, every hit — chunk or property — carries
+    // `attribution.is_some()`. The dedup step keeps one hit per logical_id
+    // preferring chunk over property, so we seed two distinct nodes: one
+    // whose match lives in a chunk and one whose match lives in a
+    // recursive property leaf. Both nodes survive dedup and both hits
+    // must have populated attribution.
+    let (_db, engine) = open_engine();
+    register_recursive_payload_schema(&engine);
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "seed-mixed".to_owned(),
+            nodes: vec![
+                NodeInsert {
+                    row_id: "prop-only-row".to_owned(),
+                    logical_id: "prop-only".to_owned(),
+                    kind: "Note".to_owned(),
+                    properties: r#"{"payload":{"body":"budget summary only"}}"#.to_owned(),
+                    source_ref: Some("seed".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
+                },
+                NodeInsert {
+                    row_id: "chunk-only-row".to_owned(),
+                    logical_id: "chunk-only".to_owned(),
+                    kind: "Note".to_owned(),
+                    // No `payload`, so the recursive schema extracts
+                    // nothing — the only way this node matches "budget"
+                    // is via its chunk text.
+                    properties: r#"{"title":"ignored-scalar"}"#.to_owned(),
+                    source_ref: Some("seed".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
+                },
+            ],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![ChunkInsert {
+                id: "chunk-only-chunk".to_owned(),
+                node_logical_id: "chunk-only".to_owned(),
+                text_content: "the quarterly budget summary for the team".to_owned(),
+                byte_start: None,
+                byte_end: None,
+                content_hash: None,
+            }],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![],
+        })
+        .expect("seed mixed nodes");
+
+    let rows = engine
+        .query("Note")
+        .text_search("budget", 10)
+        .with_match_attribution()
+        .execute()
+        .expect("search");
+
+    assert!(
+        rows.hits.len() >= 2,
+        "expected both hits, got {:#?}",
+        rows.hits
+    );
+    let mut saw_property_path = false;
+    let mut saw_chunk_empty = false;
+    for hit in &rows.hits {
+        assert!(
+            hit.attribution.is_some(),
+            "every hit must have attribution when the flag is on",
+        );
+        match hit.source {
+            SearchHitSource::Property => {
+                let att = hit.attribution.as_ref().expect("attribution some");
+                assert_eq!(att.matched_paths, vec!["$.payload.body".to_owned()]);
+                saw_property_path = true;
+            }
+            SearchHitSource::Chunk => {
+                let att = hit.attribution.as_ref().expect("attribution some");
+                assert!(
+                    att.matched_paths.is_empty(),
+                    "chunk hit attribution must be empty, got {:?}",
+                    att.matched_paths,
+                );
+                saw_chunk_empty = true;
+            }
+            SearchHitSource::Vector => {}
+        }
+    }
+    assert!(saw_property_path, "must see at least one property hit");
+    assert!(saw_chunk_empty, "must see at least one chunk hit");
 }
