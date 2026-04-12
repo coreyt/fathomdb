@@ -144,6 +144,18 @@ mod tests {
     }
 
     #[test]
+    fn derive_relaxed_all_top_level_nots_returns_none() {
+        // And([Not(a), Not(b)]) -> drop all Nots -> empty -> None.
+        let strict = TextQuery::And(vec![
+            TextQuery::Not(Box::new(term("a"))),
+            TextQuery::Not(Box::new(term("b"))),
+        ]);
+        let (relaxed, was_degraded) = derive_relaxed(&strict);
+        assert_eq!(relaxed, None);
+        assert!(!was_degraded);
+    }
+
+    #[test]
     fn derive_relaxed_returns_none_for_or_at_root() {
         let strict = TextQuery::Or(vec![term("a"), term("b")]);
         let (relaxed, was_degraded) = derive_relaxed(&strict);

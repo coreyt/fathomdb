@@ -329,8 +329,20 @@ impl PropertyPathEntry {
 /// Parsed property-FTS schema definition for a single kind.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct PropertyFtsSchema {
+    /// Property paths to extract. Each entry is matched exactly against
+    /// the JSON tree from the node's root; see [`PropertyPathMode`].
     pub paths: Vec<PropertyPathEntry>,
+    /// Separator inserted between adjacent leaf values in the extracted
+    /// blob. Acts as a hard phrase break under FTS5.
     pub separator: String,
+    /// JSON paths to skip during recursive extraction. Matched as an
+    /// *exact* path equality — the walk visits each object/array before
+    /// descending into it, so listing `$.x.y` suppresses the entire
+    /// subtree rooted at `$.x.y`. Prefix matching is NOT supported: an
+    /// exclude of `$.x` does not implicitly exclude `$.x.y`, and
+    /// `$.payload.priv` does not implicitly exclude `$.payload.priv.inner`
+    /// via prefix — the walker will still descend into any subtree that
+    /// is not itself listed exactly in `exclude_paths`.
     pub exclude_paths: Vec<String>,
 }
 
@@ -349,14 +361,18 @@ pub(crate) struct PositionEntry {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct ExtractStats {
     pub depth_cap_hit: usize,
-    pub byte_cap_hit: usize,
+    /// `true` once the extracted blob has reached `MAX_EXTRACTED_BYTES` and
+    /// the walker has stopped accepting additional leaves. Unlike the
+    /// depth counter this is a boolean: the walker's `stopped` guard
+    /// blocks further `emit_leaf` calls after the first truncation.
+    pub byte_cap_reached: bool,
     pub excluded_subtree: usize,
 }
 
 impl ExtractStats {
     fn merge(&mut self, other: ExtractStats) {
         self.depth_cap_hit += other.depth_cap_hit;
-        self.byte_cap_hit += other.byte_cap_hit;
+        self.byte_cap_reached |= other.byte_cap_reached;
         self.excluded_subtree += other.excluded_subtree;
     }
 }
@@ -1084,7 +1100,7 @@ fn resolve_property_fts_rows(
     if combined_stats != ExtractStats::default() {
         trace_debug!(
             depth_cap_hit = combined_stats.depth_cap_hit,
-            byte_cap_hit = combined_stats.byte_cap_hit,
+            byte_cap_reached = combined_stats.byte_cap_reached,
             excluded_subtree = combined_stats.excluded_subtree,
             "property fts recursive extraction guardrails engaged"
         );
@@ -1291,7 +1307,7 @@ impl RecursiveWalker {
         };
         let projected_len = self.blob.len() + sep_len + value.len();
         if projected_len > MAX_EXTRACTED_BYTES {
-            self.stats.byte_cap_hit += 1;
+            self.stats.byte_cap_reached = true;
             self.stopped = true;
             return;
         }
@@ -7373,7 +7389,7 @@ mod tests {
                 &props,
                 &schema(vec![PropertyPathEntry::recursive("$.root")]),
             );
-            assert!(stats.byte_cap_hit > 0, "byte cap guardrail must engage");
+            assert!(stats.byte_cap_reached, "byte cap guardrail must engage");
             let blob = blob.expect("blob must still be emitted");
             assert!(
                 blob.len() <= MAX_EXTRACTED_BYTES,

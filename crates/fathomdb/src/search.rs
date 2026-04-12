@@ -588,19 +588,14 @@ impl<'e> FallbackSearchBuilder<'e> {
     /// # Errors
     /// Returns [`CompileError`] if filter partitioning fails.
     pub fn compile_plan(&self) -> Result<CompiledSearchPlan, CompileError> {
-        // The kind root used inside the SQL CTE is carried through to the
-        // strict/relaxed branches. When no `.filter_kind_eq(...)` call has
-        // set one, we pass an empty string so the branch runs unkind-filtered
-        // (the `src.kind = ?` clause matches only rows whose kind equals the
-        // empty string, which yields no rows). To run unkind-filtered, we
-        // instead need the SQL to skip that predicate entirely — but since
-        // the current branch SQL hard-codes `src.kind = ?2/?4`, the helper
-        // REQUIRES a kind via `.filter_kind_eq(...)` in this phase. If the
-        // caller omitted it, we fall back to the first KindEq predicate in
-        // the filter builder (which `.filter_kind_eq()` sets). When neither
-        // is present, we return an empty root kind — the caller will get
-        // zero rows, matching "unfiltered across all kinds returns nothing
-        // because the SQL is kind-bound."
+        // When `root_kind` is empty, the coordinator's `run_search_branch`
+        // omits the `src.kind = ?` and `fp.kind = ?` predicates entirely,
+        // so the search runs across all node kinds. Callers that want
+        // kind filtering chain `.filter_kind_eq(kind)`, which sets
+        // `root_kind` AND adds a fusable `KindEq` predicate to the filter
+        // builder — the resulting SQL checks the kind in two places (inner
+        // UNION arms + outer CTE WHERE), which is harmless but slightly
+        // redundant and can be tightened in a future pack.
         let root_kind = self.root_kind.clone().unwrap_or_default();
         let mut ast = self.filter_builder.clone().into_ast();
         ast.root_kind = root_kind;

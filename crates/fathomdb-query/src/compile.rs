@@ -174,8 +174,12 @@ const MAX_TRAVERSAL_DEPTH: usize = 50;
 /// excluding nodes whose properties satisfy the filter but whose insertion
 /// order falls outside the limit window.
 ///
-/// For **FTS** and **vector** driving tables, filters remain in the outer
-/// `WHERE` clause because the CTE is already narrowed by the search itself.
+/// For **FTS** and **vector** driving tables, fusable predicates
+/// (`KindEq`, `LogicalIdEq`, `SourceRefEq`, `ContentRefEq`,
+/// `ContentRefNotNull`) are pushed into the `base_candidates` CTE so that
+/// the CTE's `LIMIT` applies *after* filtering; residual predicates
+/// (`JsonPathEq`, `JsonPathCompare`) remain in the outer `WHERE` because
+/// they require `json_extract` on the outer `nodes.properties` column.
 ///
 /// # Errors
 ///
@@ -271,6 +275,17 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
             // sqlite-vec requires the LIMIT/k constraint to be visible directly on the
             // vec0 KNN scan. Using a sub-select isolates the vec0 LIMIT so the join
             // with chunks/nodes does not prevent the query planner from recognising it.
+            //
+            // ASYMMETRY (known gap, P2-3): the inner `LIMIT {base_limit}` runs
+            // BEFORE the fusable-filter `WHERE` below, so fused predicates on
+            // `src` (e.g. `kind_eq`) filter a candidate pool that has already
+            // been narrowed to `base_limit` KNN neighbours. A
+            // `vector_search("x", 5).filter_kind_eq("Goal")` can therefore
+            // return fewer than 5 Goal hits even when more exist. Fixing this
+            // requires overfetching from vec0 and re-ranking/re-limiting after
+            // the filter — explicitly out of scope for Phase 2 filter fusion.
+            // The FTS branch below does NOT share this asymmetry because its
+            // outer LIMIT wraps the post-filter SELECT.
             let mut sql = format!(
                 "base_candidates AS (
                     SELECT DISTINCT src.logical_id
@@ -672,13 +687,17 @@ pub fn compile_search(ast: &QueryAst) -> Result<CompiledSearch, CompileError> {
 /// is the user's [`TextQuery`] and whose relaxed branch is derived via
 /// [`derive_relaxed`].
 ///
-/// Phase 6 uses this as the one-query entry point into the shared
-/// strict+relaxed coordinator routine. The two-query `fallback_search` path
-/// builds its plan via [`compile_search_plan_from_queries`] instead.
+/// Reserved for Phase 7 SDK bindings that will construct plans from typed
+/// AST fragments. The coordinator currently builds its adaptive plan
+/// directly inside `execute_compiled_search` from an already-compiled
+/// [`CompiledSearch`], so this helper has no in-tree caller; it is kept
+/// as a public entry point for forthcoming surface bindings.
 ///
 /// # Errors
 /// Returns [`CompileError::MissingTextSearchStep`] if the AST contains no
 /// [`QueryStep::TextSearch`] step.
+#[doc(hidden)]
+#[allow(dead_code)]
 pub fn compile_search_plan(ast: &QueryAst) -> Result<CompiledSearchPlan, CompileError> {
     let strict = compile_search(ast)?;
     let (relaxed_query, was_degraded_at_plan_time) = derive_relaxed(&strict.text_query);
