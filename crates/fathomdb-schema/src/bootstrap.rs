@@ -839,6 +839,11 @@ impl SchemaManager {
     /// here and repopulated from canonical state by the engine runtime after
     /// bootstrap (the property FTS rebuild requires the per-kind
     /// `fts_property_schemas` projection that lives in the engine crate).
+    ///
+    /// A malformed row encountered during the inline `INSERT ... SELECT`
+    /// causes the migration to abort: the rusqlite error propagates up
+    /// through `execute_batch` and rolls back the outer migration
+    /// transaction so the schema version is not advanced.
     fn ensure_unicode_porter_fts_tokenizers(conn: &Connection) -> Result<(), SchemaError> {
         conn.execute_batch(
             r"

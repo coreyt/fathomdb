@@ -157,15 +157,87 @@ fn rebuild_property_fts(conn: &mut rusqlite::Connection) -> Result<usize, rusqli
 }
 
 /// Insert missing property FTS rows within an existing transaction.
+///
+/// Two repair passes run inside the caller's transaction:
+///
+/// 1. Nodes of a registered kind that have no `fts_node_properties` row are
+///    re-extracted from canonical state and inserted (blob + positions).
+/// 2. Nodes of a recursive-mode kind that *do* have an `fts_node_properties`
+///    row but no `fts_node_property_positions` rows have their positions
+///    regenerated in place. This repairs orphaned position map rows caused
+///    by partial drift without requiring a full `rebuild_projections(Fts)`.
+///    (P4-P2-2)
 fn rebuild_missing_property_fts_in_tx(
     conn: &rusqlite::Connection,
 ) -> Result<usize, rusqlite::Error> {
-    insert_property_fts_rows(
+    let inserted = insert_property_fts_rows(
         conn,
         "SELECT n.logical_id, n.properties FROM nodes n \
          WHERE n.kind = ?1 AND n.superseded_at IS NULL \
            AND NOT EXISTS (SELECT 1 FROM fts_node_properties fp WHERE fp.node_logical_id = n.logical_id)",
-    )
+    )?;
+    let repaired = repair_orphaned_position_map_in_tx(conn)?;
+    Ok(inserted + repaired)
+}
+
+/// Repair recursive-mode nodes whose `fts_node_properties` row exists but
+/// whose position-map rows have been dropped. For each such node the
+/// property FTS is re-extracted from canonical state and the position rows
+/// are re-inserted. The blob row is left untouched — callers that deleted
+/// positions without touching the blob keep the original blob rowid, which
+/// matters because `projection_row_id` in search hits is the blob rowid.
+fn repair_orphaned_position_map_in_tx(
+    conn: &rusqlite::Connection,
+) -> Result<usize, rusqlite::Error> {
+    let schemas = crate::writer::load_fts_property_schemas(conn)?;
+    if schemas.is_empty() {
+        return Ok(0);
+    }
+    let mut total = 0usize;
+    let mut ins_positions = conn.prepare(
+        "INSERT INTO fts_node_property_positions \
+         (node_logical_id, kind, start_offset, end_offset, leaf_path) \
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+    )?;
+    for (kind, schema) in &schemas {
+        let has_recursive = schema
+            .paths
+            .iter()
+            .any(|p| p.mode == crate::writer::PropertyPathMode::Recursive);
+        if !has_recursive {
+            continue;
+        }
+        let mut stmt = conn.prepare(
+            "SELECT n.logical_id, n.properties FROM nodes n \
+             WHERE n.kind = ?1 AND n.superseded_at IS NULL \
+               AND EXISTS (SELECT 1 FROM fts_node_properties fp \
+                           WHERE fp.node_logical_id = n.logical_id AND fp.kind = ?1) \
+               AND NOT EXISTS (SELECT 1 FROM fts_node_property_positions p \
+                               WHERE p.node_logical_id = n.logical_id AND p.kind = ?1)",
+        )?;
+        let rows: Vec<(String, String)> = stmt
+            .query_map([kind.as_str()], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        for (logical_id, properties_str) in &rows {
+            let props: serde_json::Value = serde_json::from_str(properties_str).unwrap_or_default();
+            let (_text, positions, _stats) = crate::writer::extract_property_fts(&props, schema);
+            for pos in &positions {
+                ins_positions.execute(rusqlite::params![
+                    logical_id,
+                    kind,
+                    i64::try_from(pos.start_offset).unwrap_or(i64::MAX),
+                    i64::try_from(pos.end_offset).unwrap_or(i64::MAX),
+                    pos.leaf_path,
+                ])?;
+            }
+            if !positions.is_empty() {
+                total += 1;
+            }
+        }
+    }
+    Ok(total)
 }
 
 /// Rebuild property FTS rows for exactly one kind from its just-registered

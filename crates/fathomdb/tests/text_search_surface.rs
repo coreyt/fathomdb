@@ -4,7 +4,7 @@
 
 use fathomdb::{
     ChunkInsert, ChunkPolicy, Engine, EngineOptions, FtsPropertyPathSpec, HitAttribution,
-    NodeInsert, SearchHitSource, SearchMatchMode, WriteRequest,
+    NodeInsert, NodeRetire, SearchHitSource, SearchMatchMode, WriteRequest,
 };
 use tempfile::NamedTempFile;
 
@@ -1849,6 +1849,14 @@ fn property_fts_rebuilds_after_crash_recovery_state() {
         !rows.hits.is_empty(),
         "open-time rebuild must have repopulated property FTS",
     );
+    // P2-N4: prove the surviving hit came from the rebuilt *property* FTS,
+    // not a chunk fallback.
+    assert!(
+        rows.hits
+            .iter()
+            .any(|h| h.source == SearchHitSource::Property),
+        "post-recovery hit must come from rebuilt property FTS",
+    );
 }
 
 #[test]
@@ -2094,31 +2102,10 @@ fn fallback_search_strict_only_matches_text_search_strict_only() {
         .execute()
         .expect("fallback strict-only");
 
-    assert_eq!(a.hits.len(), b.hits.len(), "hit counts must match");
-    assert_eq!(a.strict_hit_count, b.strict_hit_count);
-    assert_eq!(a.relaxed_hit_count, b.relaxed_hit_count);
-    assert_eq!(a.fallback_used, b.fallback_used);
-    assert_eq!(a.was_degraded, b.was_degraded);
-
-    // Pair hits by logical_id for field-by-field equality.
-    for a_hit in &a.hits {
-        let b_hit = b
-            .hits
-            .iter()
-            .find(|h| h.node.logical_id == a_hit.node.logical_id)
-            .expect("matching hit in fallback result");
-        assert!(
-            (a_hit.score - b_hit.score).abs() < f64::EPSILON,
-            "scores must match: adaptive={} fallback={}",
-            a_hit.score,
-            b_hit.score,
-        );
-        assert_eq!(a_hit.source, b_hit.source, "sources must match");
-        assert_eq!(a_hit.match_mode, b_hit.match_mode);
-        assert_eq!(a_hit.snippet, b_hit.snippet);
-        assert_eq!(a_hit.written_at, b_hit.written_at);
-        assert_eq!(a_hit.projection_row_id, b_hit.projection_row_id);
-    }
+    // SearchRows/SearchHit derive PartialEq, so a direct equality covers
+    // ordering, attribution, and every scalar field at once — simpler and
+    // strictly stronger than a per-field loop.
+    assert_eq!(a, b);
 }
 
 #[test]
@@ -2174,4 +2161,629 @@ fn text_search_dedups_same_node_across_chunk_and_property() {
         "same logical_id must appear exactly once across chunk+property",
     );
     assert!(matches!(rows.hits[0].source, SearchHitSource::Chunk));
+}
+
+// ---------------------------------------------------------------------------
+// Pack FX2 — second-pass review findings.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn text_search_top_level_not_returns_empty() {
+    // P1-P2-2: a top-level `TextQuery::Not` rendered as FTS5 `NOT x`
+    // matches "every row that does not contain x" — a complement-of-corpus
+    // scan no caller would intentionally want. The coordinator's
+    // run_search_branch short-circuits on top-level `Not`, returning
+    // empty. We construct the CompiledSearch directly because the
+    // user-facing string parser does not produce a bare top-level `Not`.
+    use fathomdb::{CompiledSearch, TextQuery};
+    let (_db, engine) = open_engine();
+    seed_goals(&engine);
+
+    let plan = CompiledSearch {
+        root_kind: "Goal".to_owned(),
+        text_query: TextQuery::Not(Box::new(TextQuery::Term("budget".to_owned()))),
+        limit: 10,
+        fusable_filters: Vec::new(),
+        residual_filters: Vec::new(),
+        attribution_requested: false,
+    };
+    let rows = engine
+        .coordinator()
+        .execute_compiled_search(&plan)
+        .expect("top-level Not must not error");
+    assert!(rows.hits.is_empty());
+    assert!(!rows.fallback_used);
+    assert!(!rows.was_degraded);
+
+    // Nested Not inside an And remains a legitimate exclusion. Verify via
+    // the user-facing string parser: "quarterly -nonexistent" parses to
+    // `And(Term("quarterly"), Not(Term("nonexistent")))`, and must still
+    // match the quarterly goal.
+    let rows_sane = engine
+        .query("Goal")
+        .text_search("quarterly -nonexistent", 10)
+        .execute()
+        .expect("AND-NOT must still work");
+    assert!(
+        !rows_sane.hits.is_empty(),
+        "AND-NOT form must still return matches",
+    );
+}
+
+#[test]
+fn scalar_only_schema_re_registration_rebuilds_existing_rows() {
+    // P4-P2-1: changing a scalar-only schema's path must eagerly rebuild
+    // existing property FTS rows so they reflect the new path, not the old.
+    let (_db, engine) = open_engine();
+    engine
+        .register_fts_property_schema("X", &["$.title".to_owned()], None)
+        .expect("register initial scalar schema");
+    submit_simple_node(
+        &engine,
+        "x-1-row",
+        "x-1",
+        "X",
+        r#"{"title":"alpha","description":"beta"}"#,
+    );
+
+    let rows = engine
+        .query("X")
+        .text_search("alpha", 10)
+        .execute()
+        .expect("alpha search");
+    assert!(!rows.hits.is_empty(), "initial schema must index title");
+    let rows = engine
+        .query("X")
+        .text_search("beta", 10)
+        .execute()
+        .expect("beta search");
+    assert!(
+        rows.hits.is_empty(),
+        "initial schema must NOT index description",
+    );
+
+    // Re-register with a different scalar path. The previous row for `x-1`
+    // must be rebuilt in the same transaction — no node writes occur.
+    engine
+        .register_fts_property_schema("X", &["$.description".to_owned()], None)
+        .expect("re-register scalar schema with different path");
+
+    let rows = engine
+        .query("X")
+        .text_search("beta", 10)
+        .execute()
+        .expect("beta search after re-registration");
+    assert!(
+        !rows.hits.is_empty(),
+        "scalar re-registration must rebuild rows to reflect new path",
+    );
+    let rows = engine
+        .query("X")
+        .text_search("alpha", 10)
+        .execute()
+        .expect("alpha search after re-registration");
+    assert!(
+        rows.hits.is_empty(),
+        "alpha (old path) must no longer be indexed",
+    );
+}
+
+#[test]
+fn v17_migration_backfills_position_map_on_existing_database() {
+    // P4-P2-3: when a recursive-mode schema is registered but
+    // `fts_node_property_positions` is empty (simulating an upgrade from a
+    // schema that didn't populate positions), opening the engine must
+    // rebuild the position map from canonical state.
+    let db = NamedTempFile::new().expect("temp db");
+    {
+        let engine = Engine::open(EngineOptions::new(db.path())).expect("open #1");
+        engine
+            .register_fts_property_schema_with_entries(
+                "Note",
+                &[FtsPropertyPathSpec::recursive("$.payload")],
+                None,
+                &[],
+            )
+            .expect("register recursive schema");
+        submit_simple_node(
+            &engine,
+            "note-mig-row",
+            "note-mig",
+            "Note",
+            r#"{"payload":{"title":"reunion notes"}}"#,
+        );
+        // Drop the positions directly to simulate drift from v16→v17.
+        let conn =
+            rusqlite::Connection::open(engine.coordinator().database_path()).expect("raw open");
+        conn.execute("DELETE FROM fts_node_property_positions", [])
+            .expect("delete positions");
+    }
+    // Re-open and assert the backfill guard fires.
+    let engine = Engine::open(EngineOptions::new(db.path())).expect("open #2");
+    let conn = rusqlite::Connection::open(engine.coordinator().database_path()).expect("open raw");
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM fts_node_property_positions",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count positions");
+    assert!(
+        count > 0,
+        "open-time guard must backfill positions from canonical state",
+    );
+
+    // The recursive-schema backfill also makes attribution resolvable.
+    let rows = engine
+        .query("Note")
+        .text_search("reunion", 10)
+        .with_match_attribution()
+        .execute()
+        .expect("attribution search after backfill");
+    assert!(!rows.hits.is_empty());
+    let att = rows.hits[0]
+        .attribution
+        .as_ref()
+        .expect("attribution populated");
+    assert!(
+        !att.matched_paths.is_empty(),
+        "position-map backfill must enable attribution: {:?}",
+        att.matched_paths,
+    );
+}
+
+#[test]
+fn text_search_projection_row_id_is_unique_across_hits() {
+    // P1-P2-3: each hit must expose a distinct projection_row_id so
+    // downstream consumers can key off it without collisions.
+    let (_db, engine) = open_engine();
+    seed_goals(&engine);
+
+    // "notes" and "notes plural" aren't in all three; use common tokens
+    // that appear across all three seeded nodes. Each seeded Goal has a
+    // chunk; they share tokens "the" (stopword-ish but present), so use
+    // the schema/content tokens: "quarterly", "staff", "storage". Use an
+    // OR across seed-specific tokens to ensure all three hit.
+    let rows = engine
+        .query("Goal")
+        .text_search("quarterly OR staff OR migration", 10)
+        .execute()
+        .expect("search executes");
+    assert!(
+        rows.hits.len() >= 3,
+        "expected ≥3 hits, got {}",
+        rows.hits.len()
+    );
+
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for hit in &rows.hits {
+        let id = hit
+            .projection_row_id
+            .as_ref()
+            .expect("projection_row_id must be populated");
+        assert!(
+            seen.insert(id.clone()),
+            "projection_row_id must be unique across hits, duplicate: {id}",
+        );
+    }
+}
+
+#[test]
+fn text_search_limit_zero_returns_empty() {
+    // P1-P2-5 / P3-P2-1: a zero limit on adaptive text_search must return
+    // an empty SearchRows without firing the relaxed branch.
+    let (_db, engine) = open_engine();
+    seed_goals(&engine);
+
+    let rows = engine
+        .query("Goal")
+        .text_search("quarterly", 0)
+        .execute()
+        .expect("limit=0 adaptive search");
+    assert!(rows.hits.is_empty());
+    assert_eq!(rows.strict_hit_count, 0);
+    assert_eq!(rows.relaxed_hit_count, 0);
+    assert!(!rows.fallback_used);
+    assert!(!rows.was_degraded);
+}
+
+#[test]
+fn fallback_search_limit_zero_returns_empty() {
+    // P1-P2-5 / P3-P2-1: zero limit on both fallback_search shapes returns
+    // empty without errors.
+    let (_db, engine) = open_engine();
+    seed_budget_goal(&engine);
+
+    let rows = engine
+        .fallback_search("budget", None::<&str>, 0)
+        .filter_kind_eq("Goal")
+        .execute()
+        .expect("fallback strict-only limit=0");
+    assert!(rows.hits.is_empty());
+    assert_eq!(rows.strict_hit_count, 0);
+    assert_eq!(rows.relaxed_hit_count, 0);
+    assert!(!rows.fallback_used);
+    assert!(!rows.was_degraded);
+
+    let rows = engine
+        .fallback_search("budget", Some("budget"), 0)
+        .filter_kind_eq("Goal")
+        .execute()
+        .expect("fallback two-shape limit=0");
+    assert!(rows.hits.is_empty());
+    assert_eq!(rows.strict_hit_count, 0);
+    assert_eq!(rows.relaxed_hit_count, 0);
+    assert!(!rows.fallback_used);
+    assert!(!rows.was_degraded);
+}
+
+#[test]
+fn relaxed_branch_fires_but_empty_still_marks_was_degraded() {
+    // P3-P2-2: a 5-term strict-miss query must fire the relaxed branch;
+    // even when the relaxed branch also returns zero hits, `was_degraded`
+    // must remain true because the planner already committed to the
+    // truncated relaxed plan.
+    let (_db, engine) = open_engine();
+    // No nodes seeded — both branches will be empty.
+    let rows = engine
+        .query("Goal")
+        .text_search("aaa bbb ccc ddd eee", 10)
+        .execute()
+        .expect("search executes");
+    assert!(rows.hits.is_empty());
+    assert!(rows.fallback_used);
+    assert!(rows.was_degraded);
+    assert_eq!(rows.relaxed_hit_count, 0);
+}
+
+#[test]
+fn relaxed_branch_at_cap_boundary_does_not_mark_degraded() {
+    // P3-P2-3: a 4-term strict-miss query fires the relaxed branch exactly
+    // at the cap boundary. `was_degraded` must stay false.
+    let (_db, engine) = open_engine();
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "seed".to_owned(),
+            nodes: vec![NodeInsert {
+                row_id: "b-row".to_owned(),
+                logical_id: "b".to_owned(),
+                kind: "Goal".to_owned(),
+                properties: r#"{"name":"alpha goal"}"#.to_owned(),
+                source_ref: Some("seed".to_owned()),
+                upsert: false,
+                chunk_policy: ChunkPolicy::Preserve,
+                content_ref: None,
+            }],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![ChunkInsert {
+                id: "b-chunk".to_owned(),
+                node_logical_id: "b".to_owned(),
+                text_content: "alpha".to_owned(),
+                byte_start: None,
+                byte_end: None,
+                content_hash: None,
+            }],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![],
+        })
+        .expect("seed");
+
+    // 4 terms, strict AND misses (none of the four are present together);
+    // relaxed OR matches on "alpha" only. 4 alternatives fit the cap.
+    let rows = engine
+        .query("Goal")
+        .text_search("alpha zzz1 zzz2 zzz3", 10)
+        .execute()
+        .expect("search executes");
+    assert!(rows.fallback_used);
+    assert!(!rows.was_degraded, "4-term relaxed plan fits the cap");
+    assert!(rows.relaxed_hit_count > 0);
+}
+
+#[test]
+fn retire_node_deletes_position_map_rows() {
+    // P4-P2-5: retiring a node must remove its position-map entries.
+    let (_db, engine) = open_engine();
+    register_recursive_payload_schema(&engine);
+    submit_simple_node(
+        &engine,
+        "note-ret-row",
+        "note-ret",
+        "Note",
+        r#"{"payload":{"body":"alpha bravo"}}"#,
+    );
+
+    let conn = rusqlite::Connection::open(engine.coordinator().database_path())
+        .expect("open for pre-count");
+    let pre: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM fts_node_property_positions WHERE node_logical_id = 'note-ret'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("pre count");
+    assert!(pre > 0, "positions must exist before retire");
+    drop(conn);
+
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "retire".to_owned(),
+            nodes: vec![],
+            node_retires: vec![NodeRetire {
+                logical_id: "note-ret".to_owned(),
+                source_ref: Some("retire".to_owned()),
+            }],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![],
+        })
+        .expect("retire");
+
+    let conn = rusqlite::Connection::open(engine.coordinator().database_path())
+        .expect("open for post-count");
+    let post: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM fts_node_property_positions WHERE node_logical_id = 'note-ret'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("post count");
+    assert_eq!(post, 0, "retire must delete position-map rows");
+}
+
+#[test]
+fn upsert_node_regenerates_position_map() {
+    // P4-P2-6: upserting a node must regenerate its position map from the
+    // new payload; stale leaves must no longer be discoverable, new leaves
+    // must be discoverable and attributed.
+    let (_db, engine) = open_engine();
+    register_recursive_payload_schema(&engine);
+    submit_simple_node(
+        &engine,
+        "note-up-row",
+        "note-up",
+        "Note",
+        r#"{"payload":{"a":"alpha"}}"#,
+    );
+
+    let rows = engine
+        .query("Note")
+        .text_search("alpha", 10)
+        .execute()
+        .expect("alpha search");
+    assert!(!rows.hits.is_empty(), "initial payload must be indexed");
+
+    // Upsert with a new payload shape. The row_id differs because node
+    // inserts are keyed by row_id; upsert=true supersedes the previous
+    // logical_id row.
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "upsert".to_owned(),
+            nodes: vec![NodeInsert {
+                row_id: "note-up-row-v2".to_owned(),
+                logical_id: "note-up".to_owned(),
+                kind: "Note".to_owned(),
+                properties: r#"{"payload":{"b":"bravo"}}"#.to_owned(),
+                source_ref: Some("upsert".to_owned()),
+                upsert: true,
+                chunk_policy: ChunkPolicy::Preserve,
+                content_ref: None,
+            }],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![],
+        })
+        .expect("upsert");
+
+    let rows = engine
+        .query("Note")
+        .text_search("alpha", 10)
+        .execute()
+        .expect("alpha search after upsert");
+    assert!(
+        rows.hits.is_empty(),
+        "alpha (old leaf) must no longer be indexed",
+    );
+
+    let rows = engine
+        .query("Note")
+        .text_search("bravo", 10)
+        .with_match_attribution()
+        .execute()
+        .expect("bravo search after upsert");
+    assert!(!rows.hits.is_empty(), "new leaf must be discoverable");
+    let att = rows.hits[0]
+        .attribution
+        .as_ref()
+        .expect("attribution populated");
+    assert_eq!(att.matched_paths, vec!["$.payload.b".to_owned()]);
+}
+
+#[test]
+fn attribution_resolves_multibyte_utf8_leaf() {
+    // P5-P2-1: attribution byte arithmetic must handle multi-byte UTF-8
+    // content correctly. With `remove_diacritics 2`, "reunion" matches
+    // "réunion".
+    let (_db, engine) = open_engine();
+    register_recursive_payload_schema(&engine);
+    submit_simple_node(
+        &engine,
+        "note-utf8-row",
+        "note-utf8",
+        "Note",
+        r#"{"payload":{"title":"réunion notes"}}"#,
+    );
+
+    let rows = engine
+        .query("Note")
+        .text_search("reunion", 10)
+        .with_match_attribution()
+        .execute()
+        .expect("attribution over multibyte utf8");
+    assert!(!rows.hits.is_empty());
+    let att = rows.hits[0]
+        .attribution
+        .as_ref()
+        .expect("attribution populated");
+    assert_eq!(att.matched_paths, vec!["$.payload.title".to_owned()]);
+}
+
+#[test]
+fn fallback_search_empty_strict_returns_empty() {
+    // P6-P2-3: `fallback_search("", …)` with an empty strict shape returns
+    // an empty SearchRows (rather than erroring on FTS5 syntax).
+    let (_db, engine) = open_engine();
+    seed_budget_goal(&engine);
+
+    let rows = engine
+        .fallback_search("", None::<&str>, 10)
+        .filter_kind_eq("Goal")
+        .execute()
+        .expect("fallback empty strict");
+    assert!(rows.hits.is_empty());
+    assert!(!rows.fallback_used);
+    assert!(!rows.was_degraded);
+}
+
+#[test]
+fn fallback_search_empty_relaxed_is_skipped() {
+    // P6-P2-3: an empty relaxed shape cannot fire; a strict match returns
+    // with `fallback_used = false`.
+    let (_db, engine) = open_engine();
+    seed_budget_goal(&engine);
+
+    let rows = engine
+        .fallback_search("budget", Some(""), 10)
+        .filter_kind_eq("Goal")
+        .execute()
+        .expect("fallback empty relaxed");
+    assert!(!rows.hits.is_empty(), "strict must still match");
+    assert!(!rows.fallback_used);
+    assert!(!rows.was_degraded);
+}
+
+#[test]
+fn tokenizer_behavior_on_property_fts() {
+    // P2-N5: property FTS goes through the same `porter unicode61
+    // remove_diacritics 2` tokenizer as chunk FTS. Diacritic folding,
+    // stemming, and case-insensitivity must all work.
+    let (_db, engine) = open_engine();
+    engine
+        .register_fts_property_schema("Note", &["$.name".to_owned()], None)
+        .expect("register scalar schema");
+    submit_simple_node(
+        &engine,
+        "n-cafe-row",
+        "n-cafe",
+        "Note",
+        r#"{"name":"café"}"#,
+    );
+    submit_simple_node(
+        &engine,
+        "n-ship-row",
+        "n-ship",
+        "Note",
+        r#"{"name":"ship docs"}"#,
+    );
+
+    let rows = engine
+        .query("Note")
+        .text_search("cafe", 10)
+        .execute()
+        .expect("cafe search");
+    assert!(
+        rows.hits
+            .iter()
+            .any(|h| h.node.logical_id == "n-cafe" && h.source == SearchHitSource::Property),
+        "diacritic-folded 'cafe' must hit 'café' via property FTS",
+    );
+
+    let rows = engine
+        .query("Note")
+        .text_search("shipping", 10)
+        .execute()
+        .expect("shipping search");
+    assert!(
+        rows.hits.iter().any(|h| h.node.logical_id == "n-ship"),
+        "porter stemmer must collapse 'shipping' and 'ship'",
+    );
+
+    let rows = engine
+        .query("Note")
+        .text_search("SHIP", 10)
+        .execute()
+        .expect("SHIP search");
+    assert!(
+        rows.hits.iter().any(|h| h.node.logical_id == "n-ship"),
+        "tokenizer must be case-insensitive",
+    );
+}
+
+#[test]
+fn rebuild_missing_repairs_orphaned_position_map() {
+    // P4-P2-2: rebuild_missing_projections must repair orphaned
+    // position-map rows (node has fts_node_properties row but its position
+    // rows were dropped).
+    let (_db, engine) = open_engine();
+    register_recursive_payload_schema(&engine);
+    submit_simple_node(
+        &engine,
+        "note-orph-row",
+        "note-orph",
+        "Note",
+        r#"{"payload":{"body":"alpha bravo"}}"#,
+    );
+
+    // Delete only the position rows; leave fts_node_properties intact.
+    {
+        let conn = rusqlite::Connection::open(engine.coordinator().database_path())
+            .expect("open for drift");
+        conn.execute(
+            "DELETE FROM fts_node_property_positions WHERE node_logical_id = 'note-orph'",
+            [],
+        )
+        .expect("delete positions");
+    }
+
+    engine
+        .admin()
+        .service()
+        .rebuild_missing_projections()
+        .expect("rebuild missing projections");
+
+    let conn = rusqlite::Connection::open(engine.coordinator().database_path())
+        .expect("open for assertion");
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM fts_node_property_positions WHERE node_logical_id = 'note-orph'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("post count");
+    assert!(
+        count > 0,
+        "rebuild_missing_projections must repair orphaned positions",
+    );
 }

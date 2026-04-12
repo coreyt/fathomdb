@@ -1616,7 +1616,7 @@ impl AdminService {
         // this kind. If so, we must eagerly rebuild property FTS rows and
         // position map for every active node of this kind within the same
         // transaction.
-        let previous_recursive_paths: Vec<String> = tx
+        let previous_row: Option<(String, String)> = tx
             .query_row(
                 "SELECT property_paths_json, separator FROM fts_property_schemas WHERE kind = ?1",
                 [kind],
@@ -1626,7 +1626,9 @@ impl AdminService {
                     Ok((json, sep))
                 },
             )
-            .optional()?
+            .optional()?;
+        let had_previous_schema = previous_row.is_some();
+        let previous_recursive_paths: Vec<String> = previous_row
             .map(|(json, sep)| crate::writer::parse_property_schema_json(&json, &sep))
             .map_or(Vec::new(), |schema| {
                 schema
@@ -1652,12 +1654,15 @@ impl AdminService {
             rusqlite::params![kind, paths_json, separator],
         )?;
 
-        // Eager transactional rebuild: when a recursive path was newly
-        // registered we clear + regenerate property FTS for this kind.
-        // Scalar-only updates also benefit from a rebuild so that stale
-        // rows for removed paths are dropped; we keep it to the per-kind
-        // scope to avoid disturbing siblings.
-        if introduces_new_recursive || !previous_recursive_paths.is_empty() {
+        // Eager transactional rebuild: always fire on any update (i.e.
+        // whenever the row already existed). First-time registrations never
+        // have a previous schema, so they cost nothing; updates trigger a
+        // rebuild unconditionally. This covers recursive-path additions
+        // AND scalar-only re-registrations where only the path or
+        // separator changed — without a rebuild the existing rows would
+        // retain stale scalar-derived text. (P4-P2-1)
+        let needs_rebuild = introduces_new_recursive || had_previous_schema;
+        if needs_rebuild {
             tx.execute("DELETE FROM fts_node_properties WHERE kind = ?1", [kind])?;
             tx.execute(
                 "DELETE FROM fts_node_property_positions WHERE kind = ?1",
@@ -1678,7 +1683,7 @@ impl AdminService {
                 "property_paths": paths,
                 "separator": separator,
                 "exclude_paths": exclude_paths,
-                "eager_rebuild": introduces_new_recursive || !previous_recursive_paths.is_empty(),
+                "eager_rebuild": needs_rebuild,
             })),
         )?;
         tx.commit()?;
