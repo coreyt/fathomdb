@@ -1,6 +1,7 @@
 use std::fmt::Write;
 
 use crate::plan::{choose_driving_table, execution_hints, shape_signature};
+use crate::search::CompiledSearch;
 use crate::{
     ComparisonOp, DrivingTable, ExpansionSlot, Predicate, QueryAst, QueryStep, ScalarValue,
     TraverseDirection, render_text_query_fts5,
@@ -68,6 +69,8 @@ pub enum CompileError {
     TraversalTooDeep(usize),
     #[error("invalid JSON path: must match $(.key)+ pattern, got {0:?}")]
     InvalidJsonPath(String),
+    #[error("compile_search requires exactly one TextSearch step in the AST")]
+    MissingTextSearchStep,
 }
 
 /// Security fix H-1: Validate JSON path against a strict allowlist pattern to
@@ -533,6 +536,47 @@ pub fn compile_grouped_query(ast: &QueryAst) -> Result<CompiledGroupedQuery, Com
         expansions: ast.expansions.clone(),
         shape_hash,
         hints,
+    })
+}
+
+/// Compile a [`QueryAst`] into a [`CompiledSearch`] describing an adaptive
+/// text-search execution.
+///
+/// Unlike [`compile_query`], this path does not emit SQL directly: the
+/// coordinator owns the search SELECT so it can project the richer row shape
+/// (score, source, snippet, projection id) that flat queries do not need.
+///
+/// # Errors
+///
+/// Returns [`CompileError::MissingTextSearchStep`] if the AST contains no
+/// [`QueryStep::TextSearch`] step.
+pub fn compile_search(ast: &QueryAst) -> Result<CompiledSearch, CompileError> {
+    let mut text_query = None;
+    let mut limit = None;
+    let mut filters = Vec::new();
+    for step in &ast.steps {
+        match step {
+            QueryStep::TextSearch {
+                query,
+                limit: step_limit,
+            } => {
+                text_query = Some(query.clone());
+                limit = Some(*step_limit);
+            }
+            QueryStep::Filter(predicate) => filters.push(predicate.clone()),
+            QueryStep::VectorSearch { .. } | QueryStep::Traverse { .. } => {
+                // Phase 1 scope: ignore these steps. They are not composable
+                // with text search in the adaptive surface yet.
+            }
+        }
+    }
+    let text_query = text_query.ok_or(CompileError::MissingTextSearchStep)?;
+    let limit = limit.unwrap_or(25);
+    Ok(CompiledSearch {
+        root_kind: ast.root_kind.clone(),
+        text_query,
+        limit,
+        filters,
     })
 }
 

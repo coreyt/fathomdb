@@ -9,6 +9,7 @@ mod node_types;
 mod python;
 #[cfg(any(feature = "python", feature = "node"))]
 mod python_types;
+mod search;
 mod write_request_builder;
 
 pub use fathomdb_engine::{
@@ -34,12 +35,14 @@ pub use fathomdb_engine::{
 };
 pub use fathomdb_engine::{SqliteCacheStatus, TelemetryLevel, TelemetrySnapshot};
 pub use fathomdb_query::{
-    BindValue, ComparisonOp, CompileError, CompiledGroupedQuery, CompiledQuery, DrivingTable,
-    ExecutionHints, ExpansionSlot, Predicate, Query, QueryAst, QueryBuilder, QueryStep,
-    ScalarValue, ShapeHash, TraverseDirection, compile_grouped_query, compile_query,
+    BindValue, ComparisonOp, CompileError, CompiledGroupedQuery, CompiledQuery, CompiledSearch,
+    DrivingTable, ExecutionHints, ExpansionSlot, HitAttribution, NodeRowLite, Predicate, Query,
+    QueryAst, QueryBuilder, QueryStep, ScalarValue, SearchHit, SearchHitSource, SearchMatchMode,
+    SearchRows, ShapeHash, TraverseDirection, compile_grouped_query, compile_query, compile_search,
 };
 pub use fathomdb_schema::{BootstrapReport, Migration, SchemaManager, SchemaVersion};
 pub use feedback::{FeedbackConfig, OperationObserver, ResponseCycleEvent, ResponseCyclePhase};
+pub use search::{NodeQueryBuilder, TextSearchBuilder};
 pub use write_request_builder::{
     ActionHandle, ChunkHandle, ChunkRef, EdgeHandle, EdgeRef, NodeHandle, NodeRef, RunHandle,
     RunRef, StepHandle, StepRef, WriteRequestBuilder,
@@ -140,8 +143,12 @@ impl Engine {
     }
 
     /// Start building a node query for the given kind.
-    pub fn query(&self, kind: impl Into<String>) -> QueryBuilder {
-        QueryBuilder::nodes(kind)
+    ///
+    /// Returns a tethered [`NodeQueryBuilder`] that borrows the engine so
+    /// that `.execute()` can dispatch directly to the coordinator without
+    /// the caller having to compile-and-execute manually.
+    pub fn query(&self, kind: impl Into<String>) -> NodeQueryBuilder<'_> {
+        NodeQueryBuilder::new(self, kind)
     }
 
     /// Returns a handle to the administrative service.
@@ -828,7 +835,7 @@ impl<'a> Session<'a> {
     }
 
     /// Start building a node query for the given kind.
-    pub fn query(&self, kind: impl Into<String>) -> QueryBuilder {
+    pub fn query(&self, kind: impl Into<String>) -> NodeQueryBuilder<'_> {
         self.engine.query(kind)
     }
 }
