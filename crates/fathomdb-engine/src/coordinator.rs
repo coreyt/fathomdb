@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use fathomdb_query::{
     BindValue, ComparisonOp, CompiledGroupedQuery, CompiledQuery, CompiledSearch, DrivingTable,
-    ExpansionSlot, Predicate, ScalarValue, SearchHit, SearchHitSource, SearchMatchMode, SearchRows,
-    ShapeHash, render_text_query_fts5,
+    ExpansionSlot, FALLBACK_TRIGGER_K, Predicate, ScalarValue, SearchBranch, SearchHit,
+    SearchHitSource, SearchMatchMode, SearchPlan, SearchRows, ShapeHash, render_text_query_fts5,
 };
 use fathomdb_schema::SchemaManager;
 use rusqlite::{Connection, OptionalExtension, params_from_iter, types::Value};
@@ -463,11 +463,70 @@ impl ExecutionCoordinator {
     ///
     /// # Errors
     /// Returns [`EngineError`] if the SQL statement cannot be prepared or executed.
-    #[allow(clippy::too_many_lines)]
     pub fn execute_compiled_search(
         &self,
         compiled: &CompiledSearch,
     ) -> Result<SearchRows, EngineError> {
+        // Build the two-branch plan from the strict text query and run strict
+        // first. The relaxed branch only fires when strict returned fewer than
+        // `min(FALLBACK_TRIGGER_K, limit)` hits. With K = 1 this collapses to
+        // "relaxed iff strict is empty," but the coordinator spells the rule
+        // out explicitly so raising K later is a one-line constant bump.
+        let plan = SearchPlan::from_strict(compiled.text_query.clone());
+        let strict_hits = self.run_search_branch(compiled, SearchBranch::Strict)?;
+
+        let limit = compiled.limit;
+        let fallback_threshold = FALLBACK_TRIGGER_K.min(limit);
+        let strict_underfilled = strict_hits.len() < fallback_threshold;
+
+        let mut relaxed_hits: Vec<SearchHit> = Vec::new();
+        let mut fallback_used = false;
+        let mut was_degraded = false;
+        if let Some(relaxed_query) = plan.relaxed.clone()
+            && strict_underfilled
+        {
+            let relaxed_compiled = CompiledSearch {
+                root_kind: compiled.root_kind.clone(),
+                text_query: relaxed_query,
+                limit: compiled.limit,
+                fusable_filters: compiled.fusable_filters.clone(),
+                residual_filters: compiled.residual_filters.clone(),
+            };
+            relaxed_hits = self.run_search_branch(&relaxed_compiled, SearchBranch::Relaxed)?;
+            fallback_used = true;
+            was_degraded = plan.was_degraded_at_plan_time;
+        }
+
+        let merged = merge_search_branches(strict_hits, relaxed_hits, limit);
+        let strict_hit_count = merged
+            .iter()
+            .filter(|h| matches!(h.match_mode, SearchMatchMode::Strict))
+            .count();
+        let relaxed_hit_count = merged.len() - strict_hit_count;
+
+        Ok(SearchRows {
+            hits: merged,
+            strict_hit_count,
+            relaxed_hit_count,
+            fallback_used,
+            was_degraded,
+        })
+    }
+
+    /// Execute a single search branch against the underlying FTS surfaces.
+    ///
+    /// This is the Phase 2 SQL emission path, factored out of
+    /// [`Self::execute_compiled_search`] so Phase 3 can run it twice (once
+    /// strict, once relaxed) with the same filter fusion. The returned hits
+    /// are tagged with `branch`'s corresponding [`SearchMatchMode`] and are
+    /// **not** yet deduped or truncated — the caller is responsible for
+    /// merging multiple branches.
+    #[allow(clippy::too_many_lines)]
+    fn run_search_branch(
+        &self,
+        compiled: &CompiledSearch,
+        branch: SearchBranch,
+    ) -> Result<Vec<SearchHit>, EngineError> {
         use std::fmt::Write as _;
         let rendered = render_text_query_fts5(&compiled.text_query);
         let mut binds: Vec<BindValue> = vec![
@@ -648,6 +707,10 @@ impl ExecutionCoordinator {
                 } else {
                     SearchHitSource::Chunk
                 };
+                let match_mode = match branch {
+                    SearchBranch::Strict => SearchMatchMode::Strict,
+                    SearchBranch::Relaxed => SearchMatchMode::Relaxed,
+                };
                 Ok(SearchHit {
                     node: fathomdb_query::NodeRowLite {
                         row_id: row.get(0)?,
@@ -660,7 +723,7 @@ impl ExecutionCoordinator {
                     written_at: row.get(6)?,
                     score: row.get(7)?,
                     source,
-                    match_mode: SearchMatchMode::Strict,
+                    match_mode,
                     snippet: row.get(9)?,
                     projection_row_id: row.get(10)?,
                     attribution: None,
@@ -676,14 +739,7 @@ impl ExecutionCoordinator {
         };
 
         self.telemetry.increment_queries();
-        let strict_hit_count = hits.len();
-        Ok(SearchRows {
-            hits,
-            strict_hit_count,
-            relaxed_hit_count: 0,
-            fallback_used: false,
-            was_degraded: false,
-        })
+        Ok(hits)
     }
 
     /// # Errors
@@ -1114,6 +1170,76 @@ fn scalar_to_bind(value: &ScalarValue) -> BindValue {
     }
 }
 
+/// Merge strict and relaxed search branches into a single block-ordered,
+/// deduplicated, limit-truncated hit list.
+///
+/// Phase 3 rules, in order:
+///
+/// 1. Each branch is sorted internally by score descending with `logical_id`
+///    ascending as the deterministic tiebreak.
+/// 2. Within a single branch, if the same `logical_id` appears twice (e.g.
+///    once from the chunk surface and once from the property surface) the
+///    higher-score row wins, then chunk > property > vector, then declaration
+///    order (chunk first).
+/// 3. Strict hits form one block and relaxed hits form the next. Strict
+///    always precedes relaxed in the merged output regardless of per-hit
+///    score.
+/// 4. Cross-branch dedup is strict-wins: any relaxed hit whose `logical_id`
+///    already appears in the strict block is dropped.
+/// 5. The merged output is truncated to `limit`.
+fn merge_search_branches(
+    strict: Vec<SearchHit>,
+    relaxed: Vec<SearchHit>,
+    limit: usize,
+) -> Vec<SearchHit> {
+    let strict_block = dedup_branch_hits(strict);
+    let relaxed_block = dedup_branch_hits(relaxed);
+
+    let mut seen: std::collections::HashSet<String> = strict_block
+        .iter()
+        .map(|h| h.node.logical_id.clone())
+        .collect();
+
+    let mut merged = strict_block;
+    for hit in relaxed_block {
+        if seen.insert(hit.node.logical_id.clone()) {
+            merged.push(hit);
+        }
+    }
+
+    if merged.len() > limit {
+        merged.truncate(limit);
+    }
+    merged
+}
+
+/// Sort a branch's hits by score descending + `logical_id` ascending, then
+/// dedup duplicate `logical_id`s within the branch using source priority
+/// (chunk > property > vector) and declaration order.
+fn dedup_branch_hits(mut hits: Vec<SearchHit>) -> Vec<SearchHit> {
+    hits.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.node.logical_id.cmp(&b.node.logical_id))
+            .then_with(|| source_priority(a.source).cmp(&source_priority(b.source)))
+    });
+
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    hits.retain(|hit| seen.insert(hit.node.logical_id.clone()));
+    hits
+}
+
+fn source_priority(source: SearchHitSource) -> u8 {
+    // Lower is better. Chunk is declared before property in the CTE; vector
+    // is reserved for future wiring but comes last among the known variants.
+    match source {
+        SearchHitSource::Chunk => 0,
+        SearchHitSource::Property => 1,
+        SearchHitSource::Vector => 2,
+    }
+}
+
 fn bind_value_to_sql(value: &fathomdb_query::BindValue) -> Value {
     match value {
         fathomdb_query::BindValue::Text(text) => Value::Text(text.clone()),
@@ -1135,7 +1261,145 @@ mod tests {
 
     use crate::{EngineError, ExecutionCoordinator, TelemetryCounters};
 
-    use super::{bind_value_to_sql, is_vec_table_absent, wrap_node_row_projection_sql};
+    use fathomdb_query::{NodeRowLite, SearchHit, SearchHitSource, SearchMatchMode};
+
+    use super::{
+        bind_value_to_sql, is_vec_table_absent, merge_search_branches, wrap_node_row_projection_sql,
+    };
+
+    fn mk_hit(
+        logical_id: &str,
+        score: f64,
+        match_mode: SearchMatchMode,
+        source: SearchHitSource,
+    ) -> SearchHit {
+        SearchHit {
+            node: NodeRowLite {
+                row_id: format!("{logical_id}-row"),
+                logical_id: logical_id.to_owned(),
+                kind: "Goal".to_owned(),
+                properties: "{}".to_owned(),
+                content_ref: None,
+                last_accessed_at: None,
+            },
+            score,
+            source,
+            match_mode,
+            snippet: None,
+            written_at: 0,
+            projection_row_id: None,
+            attribution: None,
+        }
+    }
+
+    #[test]
+    fn merge_places_strict_block_before_relaxed_regardless_of_score() {
+        let strict = vec![mk_hit(
+            "a",
+            1.0,
+            SearchMatchMode::Strict,
+            SearchHitSource::Chunk,
+        )];
+        // Relaxed has a higher score but must still come second.
+        let relaxed = vec![mk_hit(
+            "b",
+            9.9,
+            SearchMatchMode::Relaxed,
+            SearchHitSource::Chunk,
+        )];
+        let merged = merge_search_branches(strict, relaxed, 10);
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].node.logical_id, "a");
+        assert!(matches!(merged[0].match_mode, SearchMatchMode::Strict));
+        assert_eq!(merged[1].node.logical_id, "b");
+        assert!(matches!(merged[1].match_mode, SearchMatchMode::Relaxed));
+    }
+
+    #[test]
+    fn merge_dedup_keeps_strict_over_relaxed_for_same_logical_id() {
+        let strict = vec![mk_hit(
+            "shared",
+            1.0,
+            SearchMatchMode::Strict,
+            SearchHitSource::Chunk,
+        )];
+        let relaxed = vec![
+            mk_hit(
+                "shared",
+                9.9,
+                SearchMatchMode::Relaxed,
+                SearchHitSource::Chunk,
+            ),
+            mk_hit(
+                "other",
+                2.0,
+                SearchMatchMode::Relaxed,
+                SearchHitSource::Chunk,
+            ),
+        ];
+        let merged = merge_search_branches(strict, relaxed, 10);
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].node.logical_id, "shared");
+        assert!(matches!(merged[0].match_mode, SearchMatchMode::Strict));
+        assert_eq!(merged[1].node.logical_id, "other");
+        assert!(matches!(merged[1].match_mode, SearchMatchMode::Relaxed));
+    }
+
+    #[test]
+    fn merge_sorts_within_block_by_score_desc_then_logical_id() {
+        let strict = vec![
+            mk_hit("b", 1.0, SearchMatchMode::Strict, SearchHitSource::Chunk),
+            mk_hit("a", 2.0, SearchMatchMode::Strict, SearchHitSource::Chunk),
+            mk_hit("c", 2.0, SearchMatchMode::Strict, SearchHitSource::Chunk),
+        ];
+        let merged = merge_search_branches(strict, vec![], 10);
+        assert_eq!(
+            merged
+                .iter()
+                .map(|h| &h.node.logical_id)
+                .collect::<Vec<_>>(),
+            vec!["a", "c", "b"]
+        );
+    }
+
+    #[test]
+    fn merge_dedup_within_branch_prefers_chunk_over_property_at_equal_score() {
+        let strict = vec![
+            mk_hit(
+                "shared",
+                1.0,
+                SearchMatchMode::Strict,
+                SearchHitSource::Property,
+            ),
+            mk_hit(
+                "shared",
+                1.0,
+                SearchMatchMode::Strict,
+                SearchHitSource::Chunk,
+            ),
+        ];
+        let merged = merge_search_branches(strict, vec![], 10);
+        assert_eq!(merged.len(), 1);
+        assert!(matches!(merged[0].source, SearchHitSource::Chunk));
+    }
+
+    #[test]
+    fn merge_truncates_to_limit_after_block_merge() {
+        let strict = vec![
+            mk_hit("a", 2.0, SearchMatchMode::Strict, SearchHitSource::Chunk),
+            mk_hit("b", 1.0, SearchMatchMode::Strict, SearchHitSource::Chunk),
+        ];
+        let relaxed = vec![mk_hit(
+            "c",
+            9.0,
+            SearchMatchMode::Relaxed,
+            SearchHitSource::Chunk,
+        )];
+        let merged = merge_search_branches(strict, relaxed, 2);
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].node.logical_id, "a");
+        assert_eq!(merged[1].node.logical_id, "b");
+    }
 
     #[test]
     fn is_vec_table_absent_matches_known_error_messages() {
