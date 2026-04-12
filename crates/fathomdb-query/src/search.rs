@@ -130,9 +130,10 @@ pub struct SearchRows {
 
 /// A compiled adaptive-search plan ready for the coordinator to execute.
 ///
-/// Phase 1 keeps this intentionally thin: it carries the parsed text query,
-/// the caller-specified limit, and any filter predicates the builder
-/// accumulated. The coordinator emits SQL for it directly rather than reusing
+/// Phase 2 splits the filter pipeline into two sets: `fusable_filters`
+/// (pushed into the `search_hits` CTE so the CTE `LIMIT` applies after
+/// filtering) and `residual_filters` (evaluated in the outer `WHERE`). The
+/// coordinator emits SQL for it directly rather than reusing
 /// [`crate::compile_query`], because the search SELECT projects a different
 /// row shape (score, source, snippet, projection id) than the flat query
 /// path.
@@ -144,10 +145,15 @@ pub struct CompiledSearch {
     pub text_query: TextQuery,
     /// Maximum number of candidate hits to retrieve from the FTS indexes.
     pub limit: usize,
-    /// Row-level filter predicates accumulated from the builder pipeline.
-    /// Applied by the coordinator in the outer `WHERE` clause. Filter fusion
-    /// (pushing predicates into the FTS CTE) is deferred to Phase 2.
-    pub filters: Vec<Predicate>,
+    /// Fusable predicates pushed into the `search_hits` CTE by the coordinator.
+    /// These evaluate against columns directly available on the `nodes` table
+    /// joined inside the CTE (`kind`, `logical_id`, `source_ref`,
+    /// `content_ref`).
+    pub fusable_filters: Vec<Predicate>,
+    /// Residual predicates applied in the outer `WHERE` after the CTE
+    /// materializes. Currently limited to JSON-property predicates
+    /// (`json_extract` on `n.properties`).
+    pub residual_filters: Vec<Predicate>,
 }
 
 #[cfg(test)]
@@ -198,6 +204,7 @@ mod tests {
         let compiled = compile_search(&ast).expect("compiles");
         assert_eq!(compiled.root_kind, "Goal");
         assert_eq!(compiled.limit, 7);
-        assert_eq!(compiled.filters.len(), 1);
+        assert_eq!(compiled.fusable_filters.len(), 1);
+        assert!(compiled.residual_filters.is_empty());
     }
 }

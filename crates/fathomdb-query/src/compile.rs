@@ -1,5 +1,6 @@
 use std::fmt::Write;
 
+use crate::fusion::partition_search_filters;
 use crate::plan::{choose_driving_table, execution_hints, shape_signature};
 use crate::search::CompiledSearch;
 use crate::{
@@ -92,6 +93,61 @@ fn validate_json_path(path: &str) -> Result<(), CompileError> {
         return Err(CompileError::InvalidJsonPath(path.to_owned()));
     }
     Ok(())
+}
+
+/// Append a fusable predicate as an `AND` clause referencing `alias`.
+///
+/// Only the fusable variants (those that can be evaluated against columns on
+/// the `nodes` table join inside a search CTE) are supported — callers must
+/// pre-partition predicates via
+/// [`crate::fusion::partition_search_filters`]. Residual predicates panic via
+/// `unreachable!`.
+fn append_fusable_clause(
+    sql: &mut String,
+    binds: &mut Vec<BindValue>,
+    alias: &str,
+    predicate: &Predicate,
+) {
+    match predicate {
+        Predicate::KindEq(kind) => {
+            binds.push(BindValue::Text(kind.clone()));
+            let idx = binds.len();
+            let _ = write!(sql, "\n                          AND {alias}.kind = ?{idx}");
+        }
+        Predicate::LogicalIdEq(logical_id) => {
+            binds.push(BindValue::Text(logical_id.clone()));
+            let idx = binds.len();
+            let _ = write!(
+                sql,
+                "\n                          AND {alias}.logical_id = ?{idx}"
+            );
+        }
+        Predicate::SourceRefEq(source_ref) => {
+            binds.push(BindValue::Text(source_ref.clone()));
+            let idx = binds.len();
+            let _ = write!(
+                sql,
+                "\n                          AND {alias}.source_ref = ?{idx}"
+            );
+        }
+        Predicate::ContentRefEq(uri) => {
+            binds.push(BindValue::Text(uri.clone()));
+            let idx = binds.len();
+            let _ = write!(
+                sql,
+                "\n                          AND {alias}.content_ref = ?{idx}"
+            );
+        }
+        Predicate::ContentRefNotNull => {
+            let _ = write!(
+                sql,
+                "\n                          AND {alias}.content_ref IS NOT NULL"
+            );
+        }
+        Predicate::JsonPathEq { .. } | Predicate::JsonPathCompare { .. } => {
+            unreachable!("append_fusable_clause received a residual predicate");
+        }
+    }
 }
 
 const MAX_BIND_PARAMETERS: usize = 15;
@@ -190,6 +246,12 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
         }
     });
 
+    // Partition Filter predicates for the search-driven paths into fusable
+    // (injected into the search CTE's WHERE) and residual (left in the outer
+    // WHERE) sets. The Nodes path pushes *every* predicate into the CTE
+    // directly and ignores this partition.
+    let (fusable_filters, _residual_filters) = partition_search_filters(&ast.steps);
+
     let mut binds = Vec::new();
     let base_candidates = match driving_table {
         DrivingTable::VecNodes => {
@@ -209,7 +271,7 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
             // sqlite-vec requires the LIMIT/k constraint to be visible directly on the
             // vec0 KNN scan. Using a sub-select isolates the vec0 LIMIT so the join
             // with chunks/nodes does not prevent the query planner from recognising it.
-            format!(
+            let mut sql = format!(
                 "base_candidates AS (
                     SELECT DISTINCT src.logical_id
                     FROM (
@@ -219,9 +281,13 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
                     ) vc
                     JOIN chunks c ON c.id = vc.chunk_id
                     JOIN nodes src ON src.logical_id = c.node_logical_id AND src.superseded_at IS NULL
-                    WHERE src.kind = ?2
-                )"
-            )
+                    WHERE src.kind = ?2",
+            );
+            for predicate in &fusable_filters {
+                append_fusable_clause(&mut sql, &mut binds, "src", predicate);
+            }
+            sql.push_str("\n                )");
+            sql
         }
         DrivingTable::FtsNodes => {
             let text_query = ast
@@ -245,9 +311,14 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
             binds.push(BindValue::Text(ast.root_kind.clone()));
             binds.push(BindValue::Text(rendered));
             binds.push(BindValue::Text(ast.root_kind.clone()));
-            format!(
+            // Wrap the chunk/property UNION in an outer SELECT that joins
+            // `nodes` once so fusable filters (kind/logical_id/source_ref/
+            // content_ref) can reference node columns directly, bringing them
+            // inside the CTE's LIMIT window.
+            let mut sql = String::from(
                 "base_candidates AS (
-                    SELECT DISTINCT logical_id FROM (
+                    SELECT DISTINCT n.logical_id
+                    FROM (
                         SELECT src.logical_id
                         FROM fts_nodes f
                         JOIN chunks c ON c.id = f.chunk_id
@@ -260,10 +331,18 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
                         JOIN nodes src ON src.logical_id = fp.node_logical_id AND src.superseded_at IS NULL
                         WHERE fts_node_properties MATCH ?3
                           AND fp.kind = ?4
-                    )
-                    LIMIT {base_limit}
-                )"
-            )
+                    ) u
+                    JOIN nodes n ON n.logical_id = u.logical_id AND n.superseded_at IS NULL
+                    WHERE 1 = 1",
+            );
+            for predicate in &fusable_filters {
+                append_fusable_clause(&mut sql, &mut binds, "n", predicate);
+            }
+            let _ = write!(
+                &mut sql,
+                "\n                    LIMIT {base_limit}\n                )"
+            );
+            sql
         }
         DrivingTable::Nodes => {
             binds.push(BindValue::Text(ast.root_kind.clone()));
@@ -421,6 +500,13 @@ WHERE 1 = 1",
                 }
                 continue;
             }
+            // For the search-driven paths (FtsNodes, VecNodes), fusable filter
+            // predicates were injected into base_candidates. Skip them here so
+            // bind values are not duplicated and the outer WHERE only contains
+            // residual predicates (JSON path filters).
+            if crate::fusion::is_fusable(predicate) {
+                continue;
+            }
             match predicate {
                 Predicate::LogicalIdEq(logical_id) => {
                     binds.push(BindValue::Text(logical_id.clone()));
@@ -553,7 +639,6 @@ pub fn compile_grouped_query(ast: &QueryAst) -> Result<CompiledGroupedQuery, Com
 pub fn compile_search(ast: &QueryAst) -> Result<CompiledSearch, CompileError> {
     let mut text_query = None;
     let mut limit = None;
-    let mut filters = Vec::new();
     for step in &ast.steps {
         match step {
             QueryStep::TextSearch {
@@ -563,20 +648,22 @@ pub fn compile_search(ast: &QueryAst) -> Result<CompiledSearch, CompileError> {
                 text_query = Some(query.clone());
                 limit = Some(*step_limit);
             }
-            QueryStep::Filter(predicate) => filters.push(predicate.clone()),
-            QueryStep::VectorSearch { .. } | QueryStep::Traverse { .. } => {
-                // Phase 1 scope: ignore these steps. They are not composable
-                // with text search in the adaptive surface yet.
+            QueryStep::Filter(_) | QueryStep::VectorSearch { .. } | QueryStep::Traverse { .. } => {
+                // Filter steps are partitioned below; Vector/Traverse steps
+                // are not composable with text search in the adaptive surface
+                // yet.
             }
         }
     }
     let text_query = text_query.ok_or(CompileError::MissingTextSearchStep)?;
     let limit = limit.unwrap_or(25);
+    let (fusable_filters, residual_filters) = partition_search_filters(&ast.steps);
     Ok(CompiledSearch {
         root_kind: ast.root_kind.clone(),
         text_query,
         limit,
-        filters,
+        fusable_filters,
+        residual_filters,
     })
 }
 
@@ -1002,27 +1089,93 @@ mod tests {
     }
 
     #[test]
-    fn fts_driver_keeps_json_filter_in_outer_where() {
-        // When the driving table is FTS (not Nodes), JSON filters should
-        // remain in the outer WHERE clause, not pushed into base_candidates.
+    fn fts_driver_keeps_json_filter_residual_but_fuses_kind() {
+        // Phase 2: JSON filters are residual (stay in outer WHERE); KindEq is
+        // fusable (pushed into base_candidates so the CTE LIMIT applies after
+        // filtering).
         let compiled = compile_query(
             &QueryBuilder::nodes("Meeting")
                 .text_search("budget", 5)
                 .filter_json_text_eq("$.status", "active")
+                .filter_kind_eq("Meeting")
                 .limit(5)
                 .into_ast(),
         )
         .expect("compiled query");
 
         assert_eq!(compiled.driving_table, DrivingTable::FtsNodes);
+        // Residual: JSON predicate stays in outer WHERE on n.properties.
         assert!(
             compiled.sql.contains("json_extract(n.properties, ?"),
-            "JSON filter must be in outer WHERE for FTS driver, got:\n{}",
+            "JSON filter must stay residual in outer WHERE, got:\n{}",
             compiled.sql,
         );
+        // Fusable: the second n.kind bind should live inside base_candidates.
+        // The CTE block ends before the final SELECT.
+        let (cte, outer) = compiled
+            .sql
+            .split_once("SELECT DISTINCT n.row_id")
+            .expect("query has final SELECT");
         assert!(
-            !compiled.sql.contains("json_extract(src.properties, ?"),
-            "JSON filter must NOT be in base_candidates for FTS driver",
+            cte.contains("AND n.kind = ?"),
+            "KindEq must be fused inside base_candidates CTE, got CTE:\n{cte}"
+        );
+        // Outer WHERE must not contain a duplicate n.kind filter.
+        assert!(
+            !outer.contains("AND n.kind = ?"),
+            "KindEq must NOT appear in outer WHERE for FTS driver, got outer:\n{outer}"
+        );
+    }
+
+    #[test]
+    fn fts_driver_fuses_kind_filter() {
+        let compiled = compile_query(
+            &QueryBuilder::nodes("Goal")
+                .text_search("budget", 5)
+                .filter_kind_eq("Goal")
+                .limit(5)
+                .into_ast(),
+        )
+        .expect("compiled query");
+
+        assert_eq!(compiled.driving_table, DrivingTable::FtsNodes);
+        let (cte, outer) = compiled
+            .sql
+            .split_once("SELECT DISTINCT n.row_id")
+            .expect("query has final SELECT");
+        assert!(
+            cte.contains("AND n.kind = ?"),
+            "KindEq must be fused inside base_candidates, got:\n{cte}"
+        );
+        assert!(
+            !outer.contains("AND n.kind = ?"),
+            "KindEq must NOT be in outer WHERE, got:\n{outer}"
+        );
+    }
+
+    #[test]
+    fn vec_driver_fuses_kind_filter() {
+        let compiled = compile_query(
+            &QueryBuilder::nodes("Goal")
+                .vector_search("budget", 5)
+                .filter_kind_eq("Goal")
+                .limit(5)
+                .into_ast(),
+        )
+        .expect("compiled query");
+
+        assert_eq!(compiled.driving_table, DrivingTable::VecNodes);
+        let (cte, outer) = compiled
+            .sql
+            .split_once("SELECT DISTINCT n.row_id")
+            .expect("query has final SELECT");
+        assert!(
+            cte.contains("AND src.kind = ?"),
+            "KindEq must be fused inside base_candidates, got:\n{cte}"
+        );
+        assert!(
+            !outer.contains("AND n.kind = ?"),
+            "KindEq must NOT be in outer WHERE, got:\n{outer}"
         );
     }
 
