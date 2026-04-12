@@ -687,6 +687,7 @@ fn text_search_with_filter_kind_eq_chains() {
         .expect("filtered search executes");
 
     assert_eq!(rows.strict_hit_count, rows.hits.len());
+    assert!(!rows.hits.is_empty(), "expected at least one Goal hit");
     for hit in &rows.hits {
         assert_eq!(hit.node.kind, "Goal");
     }
@@ -1191,6 +1192,16 @@ fn attribution_phrase_does_not_straddle_leaves() {
 fn attribution_ignores_not_clauses() {
     // A `NOT` clause contributes no positive match positions, so the
     // attribution vector only records the positive term's leaf.
+    //
+    // NOTE (P5-2 review): the stronger invariant would seed the NOT target
+    // in a *second* indexed leaf and assert only the positive leaf is
+    // attributed. Under FTS5's full-document NOT semantics, any row whose
+    // indexed text contains the NOT term is rejected outright — so
+    // seeding `archive` into `$.payload.notes` (also recursively indexed)
+    // would simply drop the row and the test would be vacuous. We keep
+    // this weaker check and rely on the "NOT clauses contribute no
+    // matched_paths" invariant being enforced at the offset-resolution
+    // level rather than via cross-leaf construction.
     let (_db, engine) = open_engine();
     register_recursive_payload_schema(&engine);
     submit_simple_node(
@@ -1785,4 +1796,382 @@ fn fallback_search_does_not_apply_relaxed_branch_cap() {
         !rows.was_degraded,
         "caller-provided relaxed shape must NOT be subject to the 4-alternative cap",
     );
+}
+
+// --- Pack FX review-findings tests -------------------------------------
+
+#[test]
+fn property_fts_rebuilds_after_crash_recovery_state() {
+    // P2-1 regression: verify the property-FTS rebuild guard catches the
+    // crash-recovery state in which `fts_property_schemas` is non-empty
+    // but `fts_node_properties` was left empty (e.g. migration 16 applied
+    // in a prior open but the rebuild did not commit).
+    let db = NamedTempFile::new().expect("temporary db");
+    let db_path = db.path().to_path_buf();
+
+    {
+        let engine = Engine::open(EngineOptions::new(&db_path)).expect("first open");
+        register_recursive_payload_schema(&engine);
+        submit_simple_node(
+            &engine,
+            "note-crash-row",
+            "note-crash",
+            "Note",
+            r#"{"payload":{"body":"quarterly budget notes"}}"#,
+        );
+        let rows = engine
+            .query("Note")
+            .text_search("budget", 10)
+            .execute()
+            .expect("initial search");
+        assert!(!rows.hits.is_empty(), "initial search must see the node");
+        drop(engine);
+    }
+
+    // Simulate crash-recovery: delete all fts_node_properties rows via a
+    // direct rusqlite connection, leaving fts_property_schemas intact.
+    {
+        let conn = rusqlite::Connection::open(&db_path).expect("raw conn");
+        conn.execute("DELETE FROM fts_node_properties", [])
+            .expect("delete fts rows");
+        conn.execute("DELETE FROM fts_node_property_positions", [])
+            .expect("delete positions");
+    }
+
+    // Re-open the engine — the open-time guard must repopulate the index.
+    let engine = Engine::open(EngineOptions::new(&db_path)).expect("second open");
+    let rows = engine
+        .query("Note")
+        .text_search("budget", 10)
+        .execute()
+        .expect("post-recovery search");
+    assert!(
+        !rows.hits.is_empty(),
+        "open-time rebuild must have repopulated property FTS",
+    );
+}
+
+#[test]
+fn eager_rebuild_does_not_duplicate_sibling_kind_rows() {
+    // P4-1 regression: registering a new recursive schema on kind B must
+    // not re-insert FTS rows for kind A (whose schema is untouched).
+    let (_db, engine) = open_engine();
+
+    // Kind A: scalar-only schema.
+    engine
+        .register_fts_property_schema_with_entries(
+            "AlphaKind",
+            &[FtsPropertyPathSpec::scalar("$.title")],
+            None,
+            &[],
+        )
+        .expect("register alpha");
+    // Kind B: initial recursive schema.
+    engine
+        .register_fts_property_schema_with_entries(
+            "BetaKind",
+            &[FtsPropertyPathSpec::recursive("$.body")],
+            None,
+            &[],
+        )
+        .expect("register beta initial");
+
+    for i in 0..3 {
+        submit_simple_node(
+            &engine,
+            &format!("alpha-{i}-row"),
+            &format!("alpha-{i}"),
+            "AlphaKind",
+            &format!(r#"{{"title":"alpha target {i}"}}"#),
+        );
+        submit_simple_node(
+            &engine,
+            &format!("beta-{i}-row"),
+            &format!("beta-{i}"),
+            "BetaKind",
+            &format!(r#"{{"body":{{"text":"beta target {i}"}}}}"#),
+        );
+    }
+
+    let alpha_before = engine
+        .query("AlphaKind")
+        .text_search("target", 10)
+        .execute()
+        .expect("alpha search");
+    assert!(!alpha_before.hits.is_empty(), "alpha must have hits");
+    let alpha_hit_count = alpha_before.hits.len();
+    let beta_before = engine
+        .query("BetaKind")
+        .text_search("target", 10)
+        .execute()
+        .expect("beta search");
+    assert!(!beta_before.hits.is_empty(), "beta must have hits");
+
+    // Count raw fts_node_properties rows for AlphaKind pre-rebuild.
+    let db_path = engine.coordinator().database_path().to_path_buf();
+    let count_alpha_rows = || -> i64 {
+        let conn = rusqlite::Connection::open(&db_path).expect("raw conn");
+        conn.query_row(
+            "SELECT COUNT(*) FROM fts_node_properties WHERE kind = ?1",
+            ["AlphaKind"],
+            |r| r.get(0),
+        )
+        .expect("count query")
+    };
+    let alpha_rows_before = count_alpha_rows();
+
+    // Register a NEW recursive schema on BetaKind — triggers eager rebuild.
+    engine
+        .register_fts_property_schema_with_entries(
+            "BetaKind",
+            &[FtsPropertyPathSpec::recursive("$.body")],
+            Some(" | "),
+            &[],
+        )
+        .expect("re-register beta");
+
+    let alpha_rows_after = count_alpha_rows();
+    assert_eq!(
+        alpha_rows_before, alpha_rows_after,
+        "AlphaKind fts rows must not be duplicated by a BetaKind rebuild",
+    );
+
+    let alpha_after = engine
+        .query("AlphaKind")
+        .text_search("target", 10)
+        .execute()
+        .expect("alpha post-rebuild");
+    assert_eq!(
+        alpha_after.hits.len(),
+        alpha_hit_count,
+        "alpha hit count must survive sibling-kind rebuild unchanged",
+    );
+
+    let beta_after = engine
+        .query("BetaKind")
+        .text_search("target", 10)
+        .execute()
+        .expect("beta post-rebuild");
+    assert!(
+        !beta_after.hits.is_empty(),
+        "beta must still have hits after rebuild with new separator",
+    );
+}
+
+#[test]
+fn text_search_empty_query_returns_empty_search_rows() {
+    // P1-1: an empty or whitespace-only query parses to TextQuery::Empty,
+    // which would otherwise yield a raw FTS5 syntax error. The coordinator
+    // must short-circuit to an empty SearchRows instead.
+    let (_db, engine) = open_engine();
+    seed_goals(&engine);
+
+    let rows = engine
+        .query("Goal")
+        .text_search("", 10)
+        .execute()
+        .expect("empty query must not error");
+    assert!(rows.hits.is_empty());
+    assert_eq!(rows.strict_hit_count, 0);
+    assert_eq!(rows.relaxed_hit_count, 0);
+    assert!(!rows.fallback_used);
+    assert!(!rows.was_degraded);
+
+    let rows_ws = engine
+        .query("Goal")
+        .text_search("   ", 10)
+        .execute()
+        .expect("whitespace-only query must not error");
+    assert!(rows_ws.hits.is_empty());
+    assert_eq!(rows_ws.strict_hit_count, 0);
+    assert_eq!(rows_ws.relaxed_hit_count, 0);
+    assert!(!rows_ws.fallback_used);
+    assert!(!rows_ws.was_degraded);
+}
+
+#[test]
+fn strict_hit_with_many_terms_leaves_was_degraded_false() {
+    // P3-1: a 5+-term implicit-AND strict hit must not set `was_degraded`,
+    // because the relaxed branch never runs when strict is non-empty.
+    let (_db, engine) = open_engine();
+    engine
+        .register_fts_property_schema(
+            "Goal",
+            &["$.name".to_owned(), "$.description".to_owned()],
+            None,
+        )
+        .expect("register schema");
+    submit_simple_node(
+        &engine,
+        "goal-many-row",
+        "goal-many",
+        "Goal",
+        r#"{"name":"alpha beta gamma","description":"delta epsilon review"}"#,
+    );
+
+    let rows = engine
+        .query("Goal")
+        .text_search("alpha beta gamma delta epsilon", 10)
+        .execute()
+        .expect("5-term strict search");
+    assert!(!rows.hits.is_empty(), "expected a strict match");
+    assert!(!rows.fallback_used, "relaxed must not fire on strict hit");
+    assert!(
+        !rows.was_degraded,
+        "was_degraded must be false on strict hit"
+    );
+    assert_eq!(rows.relaxed_hit_count, 0);
+    for hit in &rows.hits {
+        assert!(matches!(hit.match_mode, SearchMatchMode::Strict));
+    }
+}
+
+#[test]
+fn exclude_paths_suppresses_subtree() {
+    // P4-2: exact-path match in `exclude_paths` on an object node
+    // effectively suppresses the subtree rooted there.
+    let (_db, engine) = open_engine();
+    engine
+        .register_fts_property_schema_with_entries(
+            "Note",
+            &[FtsPropertyPathSpec::recursive("$.payload")],
+            None,
+            &["$.payload.priv".to_owned()],
+        )
+        .expect("register recursive with excludes");
+    submit_simple_node(
+        &engine,
+        "note-excl-row",
+        "note-excl",
+        "Note",
+        r#"{"payload":{"pub":{"a":"alpha","b":"bravo"},"priv":{"x":"xray","y":"yankee"}}}"#,
+    );
+
+    let rows_alpha = engine
+        .query("Note")
+        .text_search("alpha", 10)
+        .execute()
+        .expect("alpha search");
+    assert!(!rows_alpha.hits.is_empty(), "alpha must be indexed");
+
+    let rows_xray = engine
+        .query("Note")
+        .text_search("xray", 10)
+        .execute()
+        .expect("xray search");
+    assert!(
+        rows_xray.hits.is_empty(),
+        "xray must be excluded via $.payload.priv",
+    );
+
+    let rows_yankee = engine
+        .query("Note")
+        .text_search("yankee", 10)
+        .execute()
+        .expect("yankee search");
+    assert!(
+        rows_yankee.hits.is_empty(),
+        "yankee must be excluded via $.payload.priv",
+    );
+}
+
+#[test]
+fn fallback_search_strict_only_matches_text_search_strict_only() {
+    // P6-4: the adaptive text_search path and the narrow fallback_search
+    // helper must produce field-by-field identical SearchRows when neither
+    // path fires its relaxed branch.
+    let (_db, engine) = open_engine();
+    seed_budget_goal(&engine);
+
+    let a = engine
+        .query("Goal")
+        .text_search("budget", 10)
+        .execute()
+        .expect("adaptive strict-only");
+    let b = engine
+        .fallback_search("budget", None::<&str>, 10)
+        .filter_kind_eq("Goal")
+        .execute()
+        .expect("fallback strict-only");
+
+    assert_eq!(a.hits.len(), b.hits.len(), "hit counts must match");
+    assert_eq!(a.strict_hit_count, b.strict_hit_count);
+    assert_eq!(a.relaxed_hit_count, b.relaxed_hit_count);
+    assert_eq!(a.fallback_used, b.fallback_used);
+    assert_eq!(a.was_degraded, b.was_degraded);
+
+    // Pair hits by logical_id for field-by-field equality.
+    for a_hit in &a.hits {
+        let b_hit = b
+            .hits
+            .iter()
+            .find(|h| h.node.logical_id == a_hit.node.logical_id)
+            .expect("matching hit in fallback result");
+        assert!(
+            (a_hit.score - b_hit.score).abs() < f64::EPSILON,
+            "scores must match: adaptive={} fallback={}",
+            a_hit.score,
+            b_hit.score,
+        );
+        assert_eq!(a_hit.source, b_hit.source, "sources must match");
+        assert_eq!(a_hit.match_mode, b_hit.match_mode);
+        assert_eq!(a_hit.snippet, b_hit.snippet);
+        assert_eq!(a_hit.written_at, b_hit.written_at);
+        assert_eq!(a_hit.projection_row_id, b_hit.projection_row_id);
+    }
+}
+
+#[test]
+fn text_search_dedups_same_node_across_chunk_and_property() {
+    // P1-2 verification: a node whose content matches BOTH a chunk and a
+    // recursive property leaf must surface as a single hit (dedup by
+    // logical_id). Source priority is chunk > property in the Phase 3
+    // dedup pass, so the surviving hit must be a chunk hit.
+    let (_db, engine) = open_engine();
+    register_recursive_payload_schema(&engine);
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "seed-dual".to_owned(),
+            nodes: vec![NodeInsert {
+                row_id: "note-dual-row".to_owned(),
+                logical_id: "note-dual".to_owned(),
+                kind: "Note".to_owned(),
+                properties: r#"{"payload":{"body":"the dualmatch term appears here"}}"#.to_owned(),
+                source_ref: Some("seed".to_owned()),
+                upsert: false,
+                chunk_policy: ChunkPolicy::Preserve,
+                content_ref: None,
+            }],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![ChunkInsert {
+                id: "note-dual-chunk".to_owned(),
+                node_logical_id: "note-dual".to_owned(),
+                text_content: "the dualmatch term also appears in this chunk".to_owned(),
+                byte_start: None,
+                byte_end: None,
+                content_hash: None,
+            }],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![],
+        })
+        .expect("seed dual-match node");
+
+    let rows = engine
+        .query("Note")
+        .text_search("dualmatch", 10)
+        .execute()
+        .expect("dedup search");
+    assert_eq!(
+        rows.hits.len(),
+        1,
+        "same logical_id must appear exactly once across chunk+property",
+    );
+    assert!(matches!(rows.hits[0].source, SearchHitSource::Chunk));
 }
