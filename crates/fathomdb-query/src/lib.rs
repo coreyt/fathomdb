@@ -3,6 +3,7 @@ mod builder;
 mod compile;
 mod fusion;
 mod plan;
+mod relax;
 mod search;
 mod text_query;
 
@@ -16,9 +17,10 @@ pub use compile::{
 };
 pub use fusion::{is_fusable, partition_predicates, partition_search_filters};
 pub use plan::{DrivingTable, ExecutionHints};
+pub use relax::{FALLBACK_TRIGGER_K, RELAXED_BRANCH_CAP, derive_relaxed};
 pub use search::{
-    CompiledSearch, HitAttribution, NodeRowLite, SearchHit, SearchHitSource, SearchMatchMode,
-    SearchRows,
+    CompiledSearch, HitAttribution, NodeRowLite, SearchBranch, SearchHit, SearchHitSource,
+    SearchMatchMode, SearchPlan, SearchRows,
 };
 pub use text_query::{TextQuery, render_text_query_fts5};
 
