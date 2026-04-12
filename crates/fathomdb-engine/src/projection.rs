@@ -145,6 +145,7 @@ fn rebuild_fts(conn: &mut rusqlite::Connection) -> Result<usize, rusqlite::Error
 fn rebuild_property_fts(conn: &mut rusqlite::Connection) -> Result<usize, rusqlite::Error> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     tx.execute("DELETE FROM fts_node_properties", [])?;
+    tx.execute("DELETE FROM fts_node_property_positions", [])?;
 
     let total = insert_property_fts_rows(
         &tx,
@@ -184,7 +185,12 @@ pub(crate) fn insert_property_fts_rows(
     let mut ins = conn.prepare(
         "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) VALUES (?1, ?2, ?3)",
     )?;
-    for (kind, paths, separator) in &schemas {
+    let mut ins_positions = conn.prepare(
+        "INSERT INTO fts_node_property_positions \
+         (node_logical_id, kind, start_offset, end_offset, leaf_path) \
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+    )?;
+    for (kind, schema) in &schemas {
         let mut stmt = conn.prepare(node_sql)?;
         let rows: Vec<(String, String)> = stmt
             .query_map([kind.as_str()], |row| {
@@ -193,8 +199,18 @@ pub(crate) fn insert_property_fts_rows(
             .collect::<Result<Vec<_>, _>>()?;
         for (logical_id, properties_str) in &rows {
             let props: serde_json::Value = serde_json::from_str(properties_str).unwrap_or_default();
-            if let Some(text) = crate::writer::compute_property_fts_text(&props, paths, separator) {
+            let (text, positions, _stats) = crate::writer::extract_property_fts(&props, schema);
+            if let Some(text) = text {
                 ins.execute(rusqlite::params![logical_id, kind, text])?;
+                for pos in &positions {
+                    ins_positions.execute(rusqlite::params![
+                        logical_id,
+                        kind,
+                        i64::try_from(pos.start_offset).unwrap_or(i64::MAX),
+                        i64::try_from(pos.end_offset).unwrap_or(i64::MAX),
+                        pos.leaf_path,
+                    ])?;
+                }
                 total += 1;
             }
         }

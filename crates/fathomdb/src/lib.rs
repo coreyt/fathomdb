@@ -15,13 +15,13 @@ mod write_request_builder;
 pub use fathomdb_engine::{
     ActionInsert, ActionRow, AdminHandle, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire,
     EngineError, EngineRuntime, ExecutionCoordinator, ExpansionRootRows, ExpansionSlotRows,
-    FtsPropertySchemaRecord, GroupedQueryRows, LastAccessTouchReport, LastAccessTouchRequest,
-    LogicalPurgeReport, LogicalRestoreReport, NodeInsert, NodeRetire, NodeRow,
-    OperationalCollectionKind, OperationalCollectionRecord, OperationalCompactionReport,
-    OperationalCurrentRow, OperationalFilterClause, OperationalFilterField,
-    OperationalFilterFieldType, OperationalFilterMode, OperationalFilterValue,
-    OperationalHistoryValidationIssue, OperationalHistoryValidationReport, OperationalMutationRow,
-    OperationalPurgeReport, OperationalReadReport, OperationalReadRequest,
+    FtsPropertyPathMode, FtsPropertyPathSpec, FtsPropertySchemaRecord, GroupedQueryRows,
+    LastAccessTouchReport, LastAccessTouchRequest, LogicalPurgeReport, LogicalRestoreReport,
+    NodeInsert, NodeRetire, NodeRow, OperationalCollectionKind, OperationalCollectionRecord,
+    OperationalCompactionReport, OperationalCurrentRow, OperationalFilterClause,
+    OperationalFilterField, OperationalFilterFieldType, OperationalFilterMode,
+    OperationalFilterValue, OperationalHistoryValidationIssue, OperationalHistoryValidationReport,
+    OperationalMutationRow, OperationalPurgeReport, OperationalReadReport, OperationalReadRequest,
     OperationalRegisterRequest, OperationalRepairReport, OperationalRetentionActionKind,
     OperationalRetentionPlanItem, OperationalRetentionPlanReport, OperationalRetentionRunItem,
     OperationalRetentionRunReport, OperationalSecondaryIndexDefinition,
@@ -199,6 +199,27 @@ impl Engine {
         self.admin()
             .service()
             .register_fts_property_schema(kind, property_paths, separator)
+    }
+
+    /// Register an FTS property projection schema with per-path modes
+    /// (`scalar` or `recursive`) and optional exclude paths. When the
+    /// schema introduces a new recursive-mode path this triggers an eager
+    /// transactional rebuild of `fts_node_properties` and
+    /// `fts_node_property_positions` for the target kind.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] if validation or rebuild fails.
+    pub fn register_fts_property_schema_with_entries(
+        &self,
+        kind: &str,
+        entries: &[FtsPropertyPathSpec],
+        separator: Option<&str>,
+        exclude_paths: &[String],
+    ) -> Result<FtsPropertySchemaRecord, EngineError> {
+        self.admin()
+            .service()
+            .register_fts_property_schema_with_entries(kind, entries, separator, exclude_paths)
     }
 
     /// Return the FTS property schema for a single node kind, if registered.
