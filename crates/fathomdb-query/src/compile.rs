@@ -664,6 +664,7 @@ pub fn compile_search(ast: &QueryAst) -> Result<CompiledSearch, CompileError> {
         limit,
         fusable_filters,
         residual_filters,
+        attribution_requested: false,
     })
 }
 

@@ -204,6 +204,12 @@ pub struct CompiledSearch {
     /// materializes. Currently limited to JSON-property predicates
     /// (`json_extract` on `n.properties`).
     pub residual_filters: Vec<Predicate>,
+    /// Whether the caller requested per-hit match attribution. Phase 5: when
+    /// `true`, the coordinator populates [`SearchHit::attribution`] on every
+    /// hit by resolving FTS5 match positions against the Phase 4 position
+    /// map. When `false` (the default), the position map is not read at all
+    /// and `attribution` stays `None`.
+    pub attribution_requested: bool,
 }
 
 #[cfg(test)]

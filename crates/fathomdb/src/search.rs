@@ -39,6 +39,7 @@ impl<'e> NodeQueryBuilder<'e> {
         TextSearchBuilder {
             engine: self.engine,
             inner: self.inner.text_search(query, limit),
+            attribution_requested: false,
         }
     }
 
@@ -231,9 +232,23 @@ impl<'e> NodeQueryBuilder<'e> {
 pub struct TextSearchBuilder<'e> {
     engine: &'e Engine,
     inner: QueryBuilder,
+    attribution_requested: bool,
 }
 
 impl TextSearchBuilder<'_> {
+    /// Request per-hit match attribution.
+    ///
+    /// When set, the coordinator populates
+    /// [`SearchHit::attribution`](fathomdb_query::SearchHit::attribution) on
+    /// every hit with the set of property paths (or `"text_content"` for
+    /// chunk hits) that contributed to the match. Without this flag (the
+    /// default), attribution stays `None` and the Phase 4 position map is not
+    /// read at all — it is a pay-as-you-go feature.
+    pub fn with_match_attribution(mut self) -> Self {
+        self.attribution_requested = true;
+        self
+    }
+
     /// Filter results to a single logical ID.
     pub fn filter_logical_id_eq(mut self, logical_id: impl Into<String>) -> Self {
         self.inner = self.inner.filter_logical_id_eq(logical_id);
@@ -401,8 +416,9 @@ impl TextSearchBuilder<'_> {
     /// # Errors
     /// Returns [`EngineError`] if compilation or execution fails.
     pub fn execute(&self) -> Result<SearchRows, EngineError> {
-        let compiled = compile_search(self.inner.ast())
+        let mut compiled = compile_search(self.inner.ast())
             .map_err(|e| EngineError::InvalidConfig(format!("search compilation failed: {e}")))?;
+        compiled.attribution_requested = self.attribution_requested;
         self.engine.coordinator().execute_compiled_search(&compiled)
     }
 }
