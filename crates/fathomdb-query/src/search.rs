@@ -212,6 +212,29 @@ pub struct CompiledSearch {
     pub attribution_requested: bool,
 }
 
+/// A two-branch compiled search plan ready for the coordinator to execute.
+///
+/// Phase 6 factors the strict+relaxed retrieval pair into a small carrier so
+/// that the adaptive [`crate::compile_search`] path and the narrow
+/// `fallback_search(strict, relaxed)` helper share a single coordinator
+/// routine. Both branches carry fully compiled [`CompiledSearch`] values —
+/// including the same fused/residual filter chain and the same
+/// `attribution_requested` flag — so merge/dedup stays branch-agnostic.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CompiledSearchPlan {
+    /// The strict branch — always runs first.
+    pub strict: CompiledSearch,
+    /// The relaxed branch, or `None` when the caller did not request a
+    /// fallback shape. When `None`, the coordinator runs strict only and
+    /// never triggers the fallback policy.
+    pub relaxed: Option<CompiledSearch>,
+    /// Set when the plan originated from [`crate::derive_relaxed`] and its
+    /// alternatives list was truncated past [`crate::RELAXED_BRANCH_CAP`].
+    /// The `fallback_search` path always sets this to `false` because the
+    /// relaxed shape is caller-provided and not subject to the cap.
+    pub was_degraded_at_plan_time: bool,
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {

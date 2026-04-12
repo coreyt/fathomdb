@@ -7,7 +7,8 @@
 
 use fathomdb_engine::{EngineError, QueryRows};
 use fathomdb_query::{
-    CompileError, CompiledGroupedQuery, CompiledQuery, QueryBuilder, SearchRows, compile_search,
+    CompileError, CompiledGroupedQuery, CompiledQuery, CompiledSearchPlan, QueryBuilder,
+    SearchRows, TextQuery, compile_search, compile_search_plan_from_queries,
 };
 
 use crate::Engine;
@@ -420,5 +421,208 @@ impl TextSearchBuilder<'_> {
             .map_err(|e| EngineError::InvalidConfig(format!("search compilation failed: {e}")))?;
         compiled.attribution_requested = self.attribution_requested;
         self.engine.coordinator().execute_compiled_search(&compiled)
+    }
+}
+
+/// Tethered two-shape fallback search builder returned from
+/// [`Engine::fallback_search`].
+///
+/// `fallback_search(strict, Some(relaxed))` is the "advanced caller who
+/// wants explicit control over the relaxed shape" surface. The strict and
+/// relaxed queries are both caller-provided — neither is passed through
+/// [`fathomdb_query::derive_relaxed`] — and the resulting
+/// [`SearchRows`] flows through the same retrieval, merge, and dedup
+/// machinery as the adaptive [`TextSearchBuilder`] path.
+///
+/// `fallback_search(strict, None)` is the strict-only "dedup-on-write"
+/// form: it runs the strict branch through the same plan shape (with no
+/// relaxed sibling) so callers share the same retrieval and result surface
+/// as adaptive `text_search()` rather than an ad hoc path.
+///
+/// Filters mirror [`TextSearchBuilder`]. There is intentionally no `.nodes`
+/// or `.traverse` entry point — this helper is narrow. Its only job is to
+/// run one or two search shapes through the shared policy.
+#[must_use]
+pub struct FallbackSearchBuilder<'e> {
+    engine: &'e Engine,
+    root_kind: Option<String>,
+    strict: TextQuery,
+    relaxed: Option<TextQuery>,
+    limit: usize,
+    attribution_requested: bool,
+    // Reuse a QueryBuilder as a filter accumulator so the fusion helper
+    // partitions exactly the same predicates as TextSearchBuilder.
+    filter_builder: QueryBuilder,
+}
+
+impl<'e> FallbackSearchBuilder<'e> {
+    pub(crate) fn new(
+        engine: &'e Engine,
+        strict: impl Into<String>,
+        relaxed: Option<&str>,
+        limit: usize,
+    ) -> Self {
+        let strict = TextQuery::parse(&strict.into());
+        let relaxed = relaxed.map(TextQuery::parse);
+        // The filter accumulator's root kind is a placeholder — fallback_search
+        // is kind-agnostic until the caller adds `.filter_kind_eq(...)`. We
+        // pick an empty string so `partition_search_filters` ignores it (it
+        // only inspects Filter steps).
+        Self {
+            engine,
+            root_kind: None,
+            strict,
+            relaxed,
+            limit,
+            attribution_requested: false,
+            filter_builder: QueryBuilder::nodes(String::new()),
+        }
+    }
+
+    /// Request per-hit match attribution. Mirrors
+    /// [`TextSearchBuilder::with_match_attribution`].
+    pub fn with_match_attribution(mut self) -> Self {
+        self.attribution_requested = true;
+        self
+    }
+
+    /// Filter results to a single logical ID.
+    pub fn filter_logical_id_eq(mut self, logical_id: impl Into<String>) -> Self {
+        self.filter_builder = self.filter_builder.filter_logical_id_eq(logical_id);
+        self
+    }
+
+    /// Filter results to nodes matching the given kind.
+    pub fn filter_kind_eq(mut self, kind: impl Into<String>) -> Self {
+        let kind = kind.into();
+        self.root_kind = Some(kind.clone());
+        self.filter_builder = self.filter_builder.filter_kind_eq(kind);
+        self
+    }
+
+    /// Filter results to nodes matching the given `source_ref`.
+    pub fn filter_source_ref_eq(mut self, source_ref: impl Into<String>) -> Self {
+        self.filter_builder = self.filter_builder.filter_source_ref_eq(source_ref);
+        self
+    }
+
+    /// Filter results to nodes where `content_ref` is not NULL.
+    pub fn filter_content_ref_not_null(mut self) -> Self {
+        self.filter_builder = self.filter_builder.filter_content_ref_not_null();
+        self
+    }
+
+    /// Filter results to nodes matching the given `content_ref` URI.
+    pub fn filter_content_ref_eq(mut self, content_ref: impl Into<String>) -> Self {
+        self.filter_builder = self.filter_builder.filter_content_ref_eq(content_ref);
+        self
+    }
+
+    /// Filter results where a JSON property at `path` equals the given text value.
+    pub fn filter_json_text_eq(
+        mut self,
+        path: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Self {
+        self.filter_builder = self.filter_builder.filter_json_text_eq(path, value);
+        self
+    }
+
+    /// Filter results where a JSON property at `path` equals the given boolean value.
+    pub fn filter_json_bool_eq(mut self, path: impl Into<String>, value: bool) -> Self {
+        self.filter_builder = self.filter_builder.filter_json_bool_eq(path, value);
+        self
+    }
+
+    /// Filter results where a JSON integer at `path` is greater than `value`.
+    pub fn filter_json_integer_gt(mut self, path: impl Into<String>, value: i64) -> Self {
+        self.filter_builder = self.filter_builder.filter_json_integer_gt(path, value);
+        self
+    }
+
+    /// Filter results where a JSON integer at `path` is greater than or equal to `value`.
+    pub fn filter_json_integer_gte(mut self, path: impl Into<String>, value: i64) -> Self {
+        self.filter_builder = self.filter_builder.filter_json_integer_gte(path, value);
+        self
+    }
+
+    /// Filter results where a JSON integer at `path` is less than `value`.
+    pub fn filter_json_integer_lt(mut self, path: impl Into<String>, value: i64) -> Self {
+        self.filter_builder = self.filter_builder.filter_json_integer_lt(path, value);
+        self
+    }
+
+    /// Filter results where a JSON integer at `path` is less than or equal to `value`.
+    pub fn filter_json_integer_lte(mut self, path: impl Into<String>, value: i64) -> Self {
+        self.filter_builder = self.filter_builder.filter_json_integer_lte(path, value);
+        self
+    }
+
+    /// Filter results where a JSON timestamp at `path` is after `value`.
+    pub fn filter_json_timestamp_gt(mut self, path: impl Into<String>, value: i64) -> Self {
+        self.filter_builder = self.filter_builder.filter_json_timestamp_gt(path, value);
+        self
+    }
+
+    /// Filter results where a JSON timestamp at `path` is at or after `value`.
+    pub fn filter_json_timestamp_gte(mut self, path: impl Into<String>, value: i64) -> Self {
+        self.filter_builder = self.filter_builder.filter_json_timestamp_gte(path, value);
+        self
+    }
+
+    /// Filter results where a JSON timestamp at `path` is before `value`.
+    pub fn filter_json_timestamp_lt(mut self, path: impl Into<String>, value: i64) -> Self {
+        self.filter_builder = self.filter_builder.filter_json_timestamp_lt(path, value);
+        self
+    }
+
+    /// Filter results where a JSON timestamp at `path` is at or before `value`.
+    pub fn filter_json_timestamp_lte(mut self, path: impl Into<String>, value: i64) -> Self {
+        self.filter_builder = self.filter_builder.filter_json_timestamp_lte(path, value);
+        self
+    }
+
+    /// Compile the builder into a [`CompiledSearchPlan`] without executing
+    /// it. Useful for tests and introspection.
+    ///
+    /// # Errors
+    /// Returns [`CompileError`] if filter partitioning fails.
+    pub fn compile_plan(&self) -> Result<CompiledSearchPlan, CompileError> {
+        // The kind root used inside the SQL CTE is carried through to the
+        // strict/relaxed branches. When no `.filter_kind_eq(...)` call has
+        // set one, we pass an empty string so the branch runs unkind-filtered
+        // (the `src.kind = ?` clause matches only rows whose kind equals the
+        // empty string, which yields no rows). To run unkind-filtered, we
+        // instead need the SQL to skip that predicate entirely — but since
+        // the current branch SQL hard-codes `src.kind = ?2/?4`, the helper
+        // REQUIRES a kind via `.filter_kind_eq(...)` in this phase. If the
+        // caller omitted it, we fall back to the first KindEq predicate in
+        // the filter builder (which `.filter_kind_eq()` sets). When neither
+        // is present, we return an empty root kind — the caller will get
+        // zero rows, matching "unfiltered across all kinds returns nothing
+        // because the SQL is kind-bound."
+        let root_kind = self.root_kind.clone().unwrap_or_default();
+        let mut ast = self.filter_builder.clone().into_ast();
+        ast.root_kind = root_kind;
+        compile_search_plan_from_queries(
+            &ast,
+            self.strict.clone(),
+            self.relaxed.clone(),
+            self.limit,
+            self.attribution_requested,
+        )
+    }
+
+    /// Execute the fallback search and return matching hits.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if compilation or execution fails.
+    pub fn execute(&self) -> Result<SearchRows, EngineError> {
+        let plan = self
+            .compile_plan()
+            .map_err(|e| EngineError::InvalidConfig(format!("search compilation failed: {e}")))?;
+        self.engine
+            .coordinator()
+            .execute_compiled_search_plan(&plan)
     }
 }

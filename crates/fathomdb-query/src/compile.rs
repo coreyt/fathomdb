@@ -2,10 +2,10 @@ use std::fmt::Write;
 
 use crate::fusion::partition_search_filters;
 use crate::plan::{choose_driving_table, execution_hints, shape_signature};
-use crate::search::CompiledSearch;
+use crate::search::{CompiledSearch, CompiledSearchPlan};
 use crate::{
     ComparisonOp, DrivingTable, ExpansionSlot, Predicate, QueryAst, QueryStep, ScalarValue,
-    TraverseDirection, render_text_query_fts5,
+    TextQuery, TraverseDirection, derive_relaxed, render_text_query_fts5,
 };
 
 /// A typed bind value for a compiled SQL query parameter.
@@ -665,6 +665,92 @@ pub fn compile_search(ast: &QueryAst) -> Result<CompiledSearch, CompileError> {
         fusable_filters,
         residual_filters,
         attribution_requested: false,
+    })
+}
+
+/// Compile a [`QueryAst`] into a [`CompiledSearchPlan`] whose strict branch
+/// is the user's [`TextQuery`] and whose relaxed branch is derived via
+/// [`derive_relaxed`].
+///
+/// Phase 6 uses this as the one-query entry point into the shared
+/// strict+relaxed coordinator routine. The two-query `fallback_search` path
+/// builds its plan via [`compile_search_plan_from_queries`] instead.
+///
+/// # Errors
+/// Returns [`CompileError::MissingTextSearchStep`] if the AST contains no
+/// [`QueryStep::TextSearch`] step.
+pub fn compile_search_plan(ast: &QueryAst) -> Result<CompiledSearchPlan, CompileError> {
+    let strict = compile_search(ast)?;
+    let (relaxed_query, was_degraded_at_plan_time) = derive_relaxed(&strict.text_query);
+    let relaxed = relaxed_query.map(|q| CompiledSearch {
+        root_kind: strict.root_kind.clone(),
+        text_query: q,
+        limit: strict.limit,
+        fusable_filters: strict.fusable_filters.clone(),
+        residual_filters: strict.residual_filters.clone(),
+        attribution_requested: strict.attribution_requested,
+    });
+    Ok(CompiledSearchPlan {
+        strict,
+        relaxed,
+        was_degraded_at_plan_time,
+    })
+}
+
+/// Compile a caller-provided strict/relaxed [`TextQuery`] pair into a
+/// [`CompiledSearchPlan`] against a [`QueryAst`] that supplies the kind
+/// root, filters, and limit.
+///
+/// This is the two-query entry point used by `Engine::fallback_search`. The
+/// caller's relaxed [`TextQuery`] is used verbatim — it is NOT passed through
+/// [`derive_relaxed`], and the 4-alternative
+/// [`crate::RELAXED_BRANCH_CAP`] is NOT applied. As a result
+/// [`CompiledSearchPlan::was_degraded_at_plan_time`] is always `false` on
+/// this path.
+///
+/// The AST supplies:
+///  - `root_kind` — reused for both branches
+///  - filter steps — partitioned once via [`partition_search_filters`] and
+///    shared unchanged across both branches
+///  - `limit` from the text-search step (or the default used by
+///    [`compile_search`]) when present; if the AST has no `TextSearch` step,
+///    the caller-supplied `limit` is used
+///
+/// Any `TextSearch` step already on the AST is IGNORED — `strict` and
+/// `relaxed` come from the caller. `Vector`/`Traverse` steps are also
+/// ignored for symmetry with [`compile_search`].
+///
+/// # Errors
+/// Returns [`CompileError`] if filter partitioning produces an unsupported
+/// shape (currently none; reserved for forward compatibility).
+pub fn compile_search_plan_from_queries(
+    ast: &QueryAst,
+    strict: TextQuery,
+    relaxed: Option<TextQuery>,
+    limit: usize,
+    attribution_requested: bool,
+) -> Result<CompiledSearchPlan, CompileError> {
+    let (fusable_filters, residual_filters) = partition_search_filters(&ast.steps);
+    let strict_compiled = CompiledSearch {
+        root_kind: ast.root_kind.clone(),
+        text_query: strict,
+        limit,
+        fusable_filters: fusable_filters.clone(),
+        residual_filters: residual_filters.clone(),
+        attribution_requested,
+    };
+    let relaxed_compiled = relaxed.map(|q| CompiledSearch {
+        root_kind: ast.root_kind.clone(),
+        text_query: q,
+        limit,
+        fusable_filters,
+        residual_filters,
+        attribution_requested,
+    });
+    Ok(CompiledSearchPlan {
+        strict: strict_compiled,
+        relaxed: relaxed_compiled,
+        was_degraded_at_plan_time: false,
     })
 }
 
