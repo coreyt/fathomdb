@@ -46,22 +46,6 @@ pub fn partition_search_filters(steps: &[QueryStep]) -> (Vec<Predicate>, Vec<Pre
     (fusable, residual)
 }
 
-/// Partition a slice of owned [`Predicate`] values into fusable and residual
-/// sets, preserving source order.
-#[must_use]
-pub fn partition_predicates(predicates: &[Predicate]) -> (Vec<Predicate>, Vec<Predicate>) {
-    let mut fusable = Vec::new();
-    let mut residual = Vec::new();
-    for predicate in predicates {
-        if is_fusable(predicate) {
-            fusable.push(predicate.clone());
-        } else {
-            residual.push(predicate.clone());
-        }
-    }
-    (fusable, residual)
-}
-
 /// Whether a predicate can be fused into a search CTE's `WHERE` clause.
 #[must_use]
 pub fn is_fusable(predicate: &Predicate) -> bool {
