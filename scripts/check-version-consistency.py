@@ -5,7 +5,11 @@ from __future__ import annotations
 import argparse
 import pathlib
 import sys
-import tomllib
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.10
+    import tomli as tomllib
 
 
 def read_toml(path: pathlib.Path) -> dict:
