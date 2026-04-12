@@ -254,7 +254,7 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
     // (injected into the search CTE's WHERE) and residual (left in the outer
     // WHERE) sets. The Nodes path pushes *every* predicate into the CTE
     // directly and ignores this partition.
-    let (fusable_filters, _residual_filters) = partition_search_filters(&ast.steps);
+    let (fusable_filters, residual_filters) = partition_search_filters(&ast.steps);
 
     let mut binds = Vec::new();
     let base_candidates = match driving_table {
@@ -500,39 +500,26 @@ WHERE 1 = 1",
         }
     );
 
-    for step in &ast.steps {
-        if let QueryStep::Filter(predicate) = step {
-            // For the Nodes driving table, filter predicates were already pushed
-            // into base_candidates so the CTE LIMIT applies after filtering.
-            // Skip them here to avoid duplicate bind values and redundant clauses.
-            if driving_table == DrivingTable::Nodes {
-                // KindEq is the only predicate NOT pushed into base_candidates
-                // (root_kind is handled separately there).
-                if let Predicate::KindEq(kind) = predicate {
-                    binds.push(BindValue::Text(kind.clone()));
-                    let bind_index = binds.len();
-                    let _ = write!(&mut sql, "\n  AND n.kind = ?{bind_index}");
-                }
-                continue;
+    // Outer WHERE emission. The Nodes driving table pushes every filter
+    // into `base_candidates` already, so only `KindEq` (handled separately
+    // via `root_kind`) needs to be re-emitted outside — we iterate
+    // `ast.steps` to catch it. For the search-driven paths (FtsNodes,
+    // VecNodes) we iterate the `residual_filters` partition directly
+    // instead of re-classifying predicates via `is_fusable()`. This makes
+    // `partition_search_filters` the single source of truth for the
+    // fusable/residual split: adding a new fusable variant automatically
+    // drops it from the outer WHERE without a separate audit of this loop.
+    if driving_table == DrivingTable::Nodes {
+        for step in &ast.steps {
+            if let QueryStep::Filter(Predicate::KindEq(kind)) = step {
+                binds.push(BindValue::Text(kind.clone()));
+                let bind_index = binds.len();
+                let _ = write!(&mut sql, "\n  AND n.kind = ?{bind_index}");
             }
-            // For the search-driven paths (FtsNodes, VecNodes), fusable filter
-            // predicates were injected into base_candidates. Skip them here so
-            // bind values are not duplicated and the outer WHERE only contains
-            // residual predicates (JSON path filters).
-            if crate::fusion::is_fusable(predicate) {
-                continue;
-            }
+        }
+    } else {
+        for predicate in &residual_filters {
             match predicate {
-                Predicate::LogicalIdEq(logical_id) => {
-                    binds.push(BindValue::Text(logical_id.clone()));
-                    let bind_index = binds.len();
-                    let _ = write!(&mut sql, "\n  AND n.logical_id = ?{bind_index}");
-                }
-                Predicate::KindEq(kind) => {
-                    binds.push(BindValue::Text(kind.clone()));
-                    let bind_index = binds.len();
-                    let _ = write!(&mut sql, "\n  AND n.kind = ?{bind_index}");
-                }
                 Predicate::JsonPathEq { path, value } => {
                     validate_json_path(path)?;
                     binds.push(BindValue::Text(path.clone()));
@@ -569,18 +556,13 @@ WHERE 1 = 1",
                         "\n  AND json_extract(n.properties, ?{path_index}) {operator} ?{value_index}",
                     );
                 }
-                Predicate::SourceRefEq(source_ref) => {
-                    binds.push(BindValue::Text(source_ref.clone()));
-                    let bind_index = binds.len();
-                    let _ = write!(&mut sql, "\n  AND n.source_ref = ?{bind_index}");
-                }
-                Predicate::ContentRefNotNull => {
-                    let _ = write!(&mut sql, "\n  AND n.content_ref IS NOT NULL");
-                }
-                Predicate::ContentRefEq(uri) => {
-                    binds.push(BindValue::Text(uri.clone()));
-                    let bind_index = binds.len();
-                    let _ = write!(&mut sql, "\n  AND n.content_ref = ?{bind_index}");
+                Predicate::KindEq(_)
+                | Predicate::LogicalIdEq(_)
+                | Predicate::SourceRefEq(_)
+                | Predicate::ContentRefEq(_)
+                | Predicate::ContentRefNotNull => {
+                    // Fusable — already injected into base_candidates by
+                    // `partition_search_filters`.
                 }
             }
         }
@@ -697,7 +679,6 @@ pub fn compile_search(ast: &QueryAst) -> Result<CompiledSearch, CompileError> {
 /// Returns [`CompileError::MissingTextSearchStep`] if the AST contains no
 /// [`QueryStep::TextSearch`] step.
 #[doc(hidden)]
-#[allow(dead_code)]
 pub fn compile_search_plan(ast: &QueryAst) -> Result<CompiledSearchPlan, CompileError> {
     let strict = compile_search(ast)?;
     let (relaxed_query, was_degraded_at_plan_time) = derive_relaxed(&strict.text_query);

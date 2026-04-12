@@ -34,12 +34,14 @@ pub use fathomdb_engine::{
     StepRow, VecInsert, WriteReceipt, WriteRequest, WriterActor, new_id, new_row_id,
 };
 pub use fathomdb_engine::{SqliteCacheStatus, TelemetryLevel, TelemetrySnapshot};
+#[doc(hidden)]
+pub use fathomdb_query::compile_search_plan;
 pub use fathomdb_query::{
     BindValue, ComparisonOp, CompileError, CompiledGroupedQuery, CompiledQuery, CompiledSearch,
     CompiledSearchPlan, DrivingTable, ExecutionHints, ExpansionSlot, HitAttribution, NodeRowLite,
     Predicate, Query, QueryAst, QueryBuilder, QueryStep, ScalarValue, SearchHit, SearchHitSource,
     SearchMatchMode, SearchRows, ShapeHash, TextQuery, TraverseDirection, compile_grouped_query,
-    compile_query, compile_search, compile_search_plan, compile_search_plan_from_queries,
+    compile_query, compile_search, compile_search_plan_from_queries,
 };
 pub use fathomdb_schema::{BootstrapReport, Migration, SchemaManager, SchemaVersion};
 pub use feedback::{FeedbackConfig, OperationObserver, ResponseCycleEvent, ResponseCyclePhase};
