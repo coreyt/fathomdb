@@ -36,13 +36,14 @@ pub use fathomdb_engine::{
 pub use fathomdb_engine::{SqliteCacheStatus, TelemetryLevel, TelemetrySnapshot};
 pub use fathomdb_query::{
     BindValue, ComparisonOp, CompileError, CompiledGroupedQuery, CompiledQuery, CompiledSearch,
-    DrivingTable, ExecutionHints, ExpansionSlot, HitAttribution, NodeRowLite, Predicate, Query,
-    QueryAst, QueryBuilder, QueryStep, ScalarValue, SearchHit, SearchHitSource, SearchMatchMode,
-    SearchRows, ShapeHash, TraverseDirection, compile_grouped_query, compile_query, compile_search,
+    CompiledSearchPlan, DrivingTable, ExecutionHints, ExpansionSlot, HitAttribution, NodeRowLite,
+    Predicate, Query, QueryAst, QueryBuilder, QueryStep, ScalarValue, SearchHit, SearchHitSource,
+    SearchMatchMode, SearchRows, ShapeHash, TextQuery, TraverseDirection, compile_grouped_query,
+    compile_query, compile_search, compile_search_plan, compile_search_plan_from_queries,
 };
 pub use fathomdb_schema::{BootstrapReport, Migration, SchemaManager, SchemaVersion};
 pub use feedback::{FeedbackConfig, OperationObserver, ResponseCycleEvent, ResponseCyclePhase};
-pub use search::{NodeQueryBuilder, TextSearchBuilder};
+pub use search::{FallbackSearchBuilder, NodeQueryBuilder, TextSearchBuilder};
 pub use write_request_builder::{
     ActionHandle, ChunkHandle, ChunkRef, EdgeHandle, EdgeRef, NodeHandle, NodeRef, RunHandle,
     RunRef, StepHandle, StepRef, WriteRequestBuilder,
@@ -149,6 +150,31 @@ impl Engine {
     /// the caller having to compile-and-execute manually.
     pub fn query(&self, kind: impl Into<String>) -> NodeQueryBuilder<'_> {
         NodeQueryBuilder::new(self, kind)
+    }
+
+    /// Start a narrow fallback-text-search chain.
+    ///
+    /// Unlike [`Self::query`] + `.text_search(...)`, this entry point takes
+    /// a caller-provided `strict` shape and an optional caller-provided
+    /// `relaxed` shape. When `relaxed` is `None`, the helper runs strict
+    /// only — useful for "has any node already matched this strict query?"
+    /// dedup-on-write patterns. When `relaxed` is `Some`, the relaxed
+    /// branch fires only when strict returns fewer than
+    /// [`fathomdb_query::FALLBACK_TRIGGER_K`] hits, and merge/dedup follows
+    /// the same deterministic rules as the adaptive `text_search()` path.
+    ///
+    /// The relaxed shape is used verbatim — it is NOT passed through
+    /// [`fathomdb_query::derive_relaxed`] — and the 4-alternative
+    /// [`fathomdb_query::RELAXED_BRANCH_CAP`] is NOT applied, so
+    /// `SearchRows::was_degraded` is always `false` on this path.
+    pub fn fallback_search(
+        &self,
+        strict: impl Into<String>,
+        relaxed: Option<impl Into<String>>,
+        limit: usize,
+    ) -> FallbackSearchBuilder<'_> {
+        let relaxed_string: Option<String> = relaxed.map(Into::into);
+        FallbackSearchBuilder::new(self, strict, relaxed_string.as_deref(), limit)
     }
 
     /// Returns a handle to the administrative service.

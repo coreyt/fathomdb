@@ -1460,3 +1460,329 @@ fn attribution_populated_for_every_hit_when_flag_on() {
     assert!(saw_property_path, "must see at least one property hit");
     assert!(saw_chunk_empty, "must see at least one chunk hit");
 }
+
+// --- Phase 6 integration tests: fallback_search ------------------------
+
+fn seed_budget_goal(engine: &Engine) {
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "seed-budget".to_owned(),
+            nodes: vec![
+                NodeInsert {
+                    row_id: "budget-alpha-row".to_owned(),
+                    logical_id: "budget-alpha".to_owned(),
+                    kind: "Goal".to_owned(),
+                    properties: r#"{"name":"budget alpha goal"}"#.to_owned(),
+                    source_ref: Some("seed".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
+                },
+                NodeInsert {
+                    row_id: "budget-bravo-row".to_owned(),
+                    logical_id: "budget-bravo".to_owned(),
+                    kind: "Goal".to_owned(),
+                    properties: r#"{"name":"budget bravo goal"}"#.to_owned(),
+                    source_ref: Some("seed".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
+                },
+            ],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![
+                ChunkInsert {
+                    id: "budget-alpha-chunk".to_owned(),
+                    node_logical_id: "budget-alpha".to_owned(),
+                    text_content: "alpha budget quarterly review notes".to_owned(),
+                    byte_start: None,
+                    byte_end: None,
+                    content_hash: None,
+                },
+                ChunkInsert {
+                    id: "budget-bravo-chunk".to_owned(),
+                    node_logical_id: "budget-bravo".to_owned(),
+                    text_content: "bravo budget annual summary notes".to_owned(),
+                    byte_start: None,
+                    byte_end: None,
+                    content_hash: None,
+                },
+            ],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![],
+        })
+        .expect("seed budget nodes");
+}
+
+#[test]
+fn fallback_search_strict_only_returns_same_shape_as_two_shape_path() {
+    let (_db, engine) = open_engine();
+    seed_budget_goal(&engine);
+
+    let strict_only = engine
+        .fallback_search("budget", None::<String>, 10)
+        .filter_kind_eq("Goal")
+        .execute()
+        .expect("strict-only fallback");
+
+    assert!(!strict_only.hits.is_empty(), "expected at least one hit");
+    assert!(
+        strict_only
+            .hits
+            .iter()
+            .all(|h| matches!(h.match_mode, SearchMatchMode::Strict)),
+        "strict-only must return only Strict hits",
+    );
+    assert_eq!(strict_only.strict_hit_count, strict_only.hits.len());
+    assert_eq!(strict_only.relaxed_hit_count, 0);
+    assert!(!strict_only.fallback_used);
+    assert!(!strict_only.was_degraded);
+
+    let two_shape = engine
+        .fallback_search("budget", Some("budget OR nonexistent"), 10)
+        .filter_kind_eq("Goal")
+        .execute()
+        .expect("two-shape fallback with non-firing relaxed");
+
+    // With strict finding hits, relaxed must not run — result must match
+    // the strict-only form field-by-field.
+    assert_eq!(strict_only, two_shape);
+}
+
+#[test]
+fn fallback_search_two_shape_reuses_adaptive_merge_rules() {
+    let (_db, engine) = open_engine();
+    seed_budget_goal(&engine);
+
+    // Strict ANDs two nonexistent terms => zero hits; relaxed "budget OR
+    // nothing" matches the seeded nodes via the OR branch.
+    let rows = engine
+        .fallback_search(
+            "zzznonexistent1 zzznonexistent2",
+            Some("budget OR nothing"),
+            10,
+        )
+        .filter_kind_eq("Goal")
+        .execute()
+        .expect("two-shape fallback executes");
+
+    assert!(rows.fallback_used, "relaxed must fire on strict miss");
+    assert!(!rows.hits.is_empty());
+    assert_eq!(rows.strict_hit_count, 0);
+    assert_eq!(rows.relaxed_hit_count, rows.hits.len());
+    assert!(!rows.was_degraded);
+    for hit in &rows.hits {
+        assert!(
+            matches!(hit.match_mode, SearchMatchMode::Relaxed),
+            "every hit must be tagged Relaxed",
+        );
+    }
+}
+
+#[test]
+fn fallback_search_populates_per_block_counts() {
+    // With FALLBACK_TRIGGER_K = 1, relaxed only fires when strict returns
+    // zero. To exercise the merge path with BOTH blocks present, drive the
+    // shared merge helper via the strict-miss case and assert block
+    // ordering + counts on the resulting SearchRows.
+    let (_db, engine) = open_engine();
+    seed_budget_goal(&engine);
+
+    // Strict miss => relaxed fires; relaxed matches both seeded nodes.
+    let rows = engine
+        .fallback_search("zzznope1 zzznope2", Some("budget OR alpha OR bravo"), 10)
+        .filter_kind_eq("Goal")
+        .execute()
+        .expect("merge path executes");
+
+    assert!(rows.fallback_used);
+    assert!(rows.hits.len() >= 2, "expected both seeded nodes");
+    // Strict block is empty so all hits are Relaxed.
+    assert_eq!(rows.strict_hit_count, 0);
+    assert_eq!(rows.relaxed_hit_count, rows.hits.len());
+    // Relaxed hits must be ordered by score descending.
+    for pair in rows.hits.windows(2) {
+        assert!(
+            pair[0].score >= pair[1].score,
+            "relaxed block must be score-desc ordered",
+        );
+    }
+}
+
+#[test]
+fn fallback_search_respects_filter_kind_eq() {
+    let (_db, engine) = open_engine();
+    seed_budget_goal(&engine);
+    // Seed a non-Goal node with a matching chunk to make sure
+    // filter_kind_eq excludes it.
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "seed-other".to_owned(),
+            nodes: vec![NodeInsert {
+                row_id: "note-budget-row".to_owned(),
+                logical_id: "note-budget".to_owned(),
+                kind: "Note".to_owned(),
+                properties: r#"{"title":"budget note"}"#.to_owned(),
+                source_ref: Some("seed".to_owned()),
+                upsert: false,
+                chunk_policy: ChunkPolicy::Preserve,
+                content_ref: None,
+            }],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![ChunkInsert {
+                id: "note-budget-chunk".to_owned(),
+                node_logical_id: "note-budget".to_owned(),
+                text_content: "budget thoughts note".to_owned(),
+                byte_start: None,
+                byte_end: None,
+                content_hash: None,
+            }],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![],
+        })
+        .expect("seed note");
+
+    let rows = engine
+        .fallback_search("budget", Some("budget"), 10)
+        .filter_kind_eq("Goal")
+        .execute()
+        .expect("filtered fallback executes");
+
+    assert!(!rows.hits.is_empty());
+    assert!(rows.hits.len() <= 10);
+    for hit in &rows.hits {
+        assert_eq!(
+            hit.node.kind, "Goal",
+            "filter_kind_eq must exclude non-Goal"
+        );
+    }
+}
+
+#[test]
+fn fallback_search_with_match_attribution_populates_leaves() {
+    let (_db, engine) = open_engine();
+    register_recursive_payload_schema(&engine);
+    submit_simple_node(
+        &engine,
+        "note-att-row",
+        "note-att",
+        "Note",
+        r#"{"payload":{"body":"budget quarterly notes"}}"#,
+    );
+
+    let rows = engine
+        .fallback_search("budget", Some("budget OR nothing"), 10)
+        .filter_kind_eq("Note")
+        .with_match_attribution()
+        .execute()
+        .expect("fallback attribution search");
+
+    assert!(!rows.hits.is_empty());
+    let hit = rows
+        .hits
+        .iter()
+        .find(|h| matches!(h.source, SearchHitSource::Property))
+        .expect("expected a property hit");
+    let att = hit
+        .attribution
+        .as_ref()
+        .expect("attribution must be populated");
+    assert_eq!(att.matched_paths, vec!["$.payload.body".to_owned()]);
+}
+
+#[test]
+fn fallback_search_strict_only_matches_two_shape_when_relaxed_never_fires() {
+    let (_db, engine) = open_engine();
+    seed_budget_goal(&engine);
+
+    let strict_only = engine
+        .fallback_search("budget", None::<String>, 10)
+        .filter_kind_eq("Goal")
+        .execute()
+        .expect("strict-only");
+    let two_shape = engine
+        .fallback_search("budget", Some("budget OR zzznothing"), 10)
+        .filter_kind_eq("Goal")
+        .execute()
+        .expect("two-shape non-firing relaxed");
+
+    // Field-by-field equality.
+    assert_eq!(strict_only.hits, two_shape.hits);
+    assert_eq!(strict_only.strict_hit_count, two_shape.strict_hit_count);
+    assert_eq!(strict_only.relaxed_hit_count, two_shape.relaxed_hit_count);
+    assert_eq!(strict_only.fallback_used, two_shape.fallback_used);
+    assert_eq!(strict_only.was_degraded, two_shape.was_degraded);
+    assert_eq!(strict_only, two_shape);
+}
+
+#[test]
+fn fallback_search_does_not_apply_relaxed_branch_cap() {
+    let (_db, engine) = open_engine();
+    // Seed six distinct terms a..f so the relaxed branch can match them.
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "seed-terms".to_owned(),
+            nodes: vec![NodeInsert {
+                row_id: "terms-row".to_owned(),
+                logical_id: "terms".to_owned(),
+                kind: "Goal".to_owned(),
+                properties: r#"{"name":"terms goal"}"#.to_owned(),
+                source_ref: Some("seed".to_owned()),
+                upsert: false,
+                chunk_policy: ChunkPolicy::Preserve,
+                content_ref: None,
+            }],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![ChunkInsert {
+                id: "terms-chunk".to_owned(),
+                node_logical_id: "terms".to_owned(),
+                text_content: "alpha bravo charlie delta echo foxtrot".to_owned(),
+                byte_start: None,
+                byte_end: None,
+                content_hash: None,
+            }],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![],
+        })
+        .expect("seed terms");
+
+    // 6-term relaxed shape — exceeds RELAXED_BRANCH_CAP = 4. `derive_relaxed`
+    // would truncate and set was_degraded; fallback_search must NOT.
+    let rows = engine
+        .fallback_search(
+            "nonexistent_strict",
+            Some("alpha OR bravo OR charlie OR delta OR echo OR foxtrot"),
+            10,
+        )
+        .filter_kind_eq("Goal")
+        .execute()
+        .expect("6-term relaxed executes");
+
+    assert!(rows.fallback_used);
+    assert!(!rows.hits.is_empty());
+    assert!(
+        !rows.was_degraded,
+        "caller-provided relaxed shape must NOT be subject to the 4-alternative cap",
+    );
+}
