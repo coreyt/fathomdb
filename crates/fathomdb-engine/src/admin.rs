@@ -60,6 +60,45 @@ pub struct FtsPropertySchemaRecord {
     pub format_version: i64,
 }
 
+/// Extraction mode for a single registered FTS property path.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+pub enum FtsPropertyPathMode {
+    /// Resolve the path and append the scalar value(s). Matches legacy
+    /// pre-Phase-4 behaviour.
+    #[default]
+    Scalar,
+    /// Recursively walk every scalar leaf rooted at the path. Each leaf
+    /// contributes one entry to the position map.
+    Recursive,
+}
+
+/// A single registered property-FTS path with its extraction mode.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct FtsPropertyPathSpec {
+    /// JSON path to the property (must start with `$.`).
+    pub path: String,
+    /// Whether to treat this path as a scalar or recursively walk it.
+    pub mode: FtsPropertyPathMode,
+}
+
+impl FtsPropertyPathSpec {
+    #[must_use]
+    pub fn scalar(path: impl Into<String>) -> Self {
+        Self {
+            path: path.into(),
+            mode: FtsPropertyPathMode::Scalar,
+        }
+    }
+
+    #[must_use]
+    pub fn recursive(path: impl Into<String>) -> Self {
+        Self {
+            path: path.into(),
+            mode: FtsPropertyPathMode::Recursive,
+        }
+    }
+}
+
 /// Options controlling how a safe database export is performed.
 #[derive(Clone, Copy, Debug)]
 pub struct SafeExportOptions {
@@ -1533,27 +1572,112 @@ impl AdminService {
         property_paths: &[String],
         separator: Option<&str>,
     ) -> Result<FtsPropertySchemaRecord, EngineError> {
-        validate_fts_property_paths(property_paths)?;
+        let specs: Vec<FtsPropertyPathSpec> = property_paths
+            .iter()
+            .map(|p| FtsPropertyPathSpec::scalar(p.clone()))
+            .collect();
+        self.register_fts_property_schema_with_entries(kind, &specs, separator, &[])
+    }
+
+    /// Register (or update) an FTS property projection schema with
+    /// per-path modes and optional exclude paths. When the registered
+    /// schema introduces a new recursive-mode path for this kind, this
+    /// method eagerly rebuilds `fts_node_properties` and
+    /// `fts_node_property_positions` for every active node of that kind,
+    /// all in the same transaction as the schema row update.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the paths are invalid, the JSON
+    /// serialization fails, or the rebuild transaction fails.
+    pub fn register_fts_property_schema_with_entries(
+        &self,
+        kind: &str,
+        entries: &[FtsPropertyPathSpec],
+        separator: Option<&str>,
+        exclude_paths: &[String],
+    ) -> Result<FtsPropertySchemaRecord, EngineError> {
+        let paths: Vec<String> = entries.iter().map(|e| e.path.clone()).collect();
+        validate_fts_property_paths(&paths)?;
+        for p in exclude_paths {
+            if !p.starts_with("$.") {
+                return Err(EngineError::InvalidWrite(format!(
+                    "exclude_paths entries must start with '$.' but got: {p}"
+                )));
+            }
+        }
         let separator = separator.unwrap_or(" ");
-        let paths_json = serde_json::to_string(property_paths).map_err(|e| {
-            EngineError::InvalidWrite(format!("failed to serialize property paths: {e}"))
-        })?;
+        let paths_json = serialize_property_paths_json(entries, exclude_paths)?;
 
         let mut conn = self.connect()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+
+        // Determine whether the registration introduces a recursive path
+        // that was not present in the previously-registered schema for
+        // this kind. If so, we must eagerly rebuild property FTS rows and
+        // position map for every active node of this kind within the same
+        // transaction.
+        let previous_recursive_paths: Vec<String> = tx
+            .query_row(
+                "SELECT property_paths_json, separator FROM fts_property_schemas WHERE kind = ?1",
+                [kind],
+                |row| {
+                    let json: String = row.get(0)?;
+                    let sep: String = row.get(1)?;
+                    Ok((json, sep))
+                },
+            )
+            .optional()?
+            .map(|(json, sep)| crate::writer::parse_property_schema_json(&json, &sep))
+            .map_or(Vec::new(), |schema| {
+                schema
+                    .paths
+                    .into_iter()
+                    .filter(|p| p.mode == crate::writer::PropertyPathMode::Recursive)
+                    .map(|p| p.path)
+                    .collect()
+            });
+        let new_recursive_paths: Vec<&str> = entries
+            .iter()
+            .filter(|e| e.mode == FtsPropertyPathMode::Recursive)
+            .map(|e| e.path.as_str())
+            .collect();
+        let introduces_new_recursive = new_recursive_paths
+            .iter()
+            .any(|p| !previous_recursive_paths.iter().any(|prev| prev == p));
+
         tx.execute(
             "INSERT INTO fts_property_schemas (kind, property_paths_json, separator) \
              VALUES (?1, ?2, ?3) \
              ON CONFLICT(kind) DO UPDATE SET property_paths_json = ?2, separator = ?3",
             rusqlite::params![kind, paths_json, separator],
         )?;
+
+        // Eager transactional rebuild: when a recursive path was newly
+        // registered we clear + regenerate property FTS for this kind.
+        // Scalar-only updates also benefit from a rebuild so that stale
+        // rows for removed paths are dropped; we keep it to the per-kind
+        // scope to avoid disturbing siblings.
+        if introduces_new_recursive || !previous_recursive_paths.is_empty() {
+            tx.execute("DELETE FROM fts_node_properties WHERE kind = ?1", [kind])?;
+            tx.execute(
+                "DELETE FROM fts_node_property_positions WHERE kind = ?1",
+                [kind],
+            )?;
+            crate::projection::insert_property_fts_rows(
+                &tx,
+                "SELECT logical_id, properties FROM nodes WHERE kind = ?1 AND superseded_at IS NULL",
+            )?;
+        }
+
         persist_simple_provenance_event(
             &tx,
             "fts_property_schema_registered",
             kind,
             Some(serde_json::json!({
-                "property_paths": property_paths,
+                "property_paths": paths,
                 "separator": separator,
+                "exclude_paths": exclude_paths,
+                "eager_rebuild": introduces_new_recursive || !previous_recursive_paths.is_empty(),
             })),
         )?;
         tx.commit()?;
@@ -2771,7 +2895,7 @@ fn count_missing_property_fts_rows(conn: &rusqlite::Connection) -> Result<i64, E
     }
 
     let mut missing = 0i64;
-    for (kind, paths, separator) in &schemas {
+    for (kind, schema) in &schemas {
         let mut stmt = conn.prepare(
             "SELECT n.logical_id, n.properties FROM nodes n \
              WHERE n.kind = ?1 AND n.superseded_at IS NULL \
@@ -2784,7 +2908,10 @@ fn count_missing_property_fts_rows(conn: &rusqlite::Connection) -> Result<i64, E
             let (_logical_id, properties_str) = row?;
             let props: serde_json::Value =
                 serde_json::from_str(&properties_str).unwrap_or_default();
-            if crate::writer::compute_property_fts_text(&props, paths, separator).is_some() {
+            if crate::writer::extract_property_fts(&props, schema)
+                .0
+                .is_some()
+            {
                 missing += 1;
             }
         }
@@ -2803,7 +2930,7 @@ fn count_drifted_property_fts_rows(conn: &rusqlite::Connection) -> Result<i64, E
     }
 
     let mut drifted = 0i64;
-    for (kind, paths, separator) in &schemas {
+    for (kind, schema) in &schemas {
         let mut stmt = conn.prepare(
             "SELECT fp.node_logical_id, fp.text_content, n.properties \
              FROM fts_node_properties fp \
@@ -2821,7 +2948,8 @@ fn count_drifted_property_fts_rows(conn: &rusqlite::Connection) -> Result<i64, E
             let (_logical_id, stored_text, properties_str) = row?;
             let props: serde_json::Value =
                 serde_json::from_str(&properties_str).unwrap_or_default();
-            let expected = crate::writer::compute_property_fts_text(&props, paths, separator);
+            let (expected, _positions, _stats) =
+                crate::writer::extract_property_fts(&props, schema);
             match expected {
                 Some(text) if text == stored_text => {}
                 _ => drifted += 1,
@@ -2834,6 +2962,7 @@ fn count_drifted_property_fts_rows(conn: &rusqlite::Connection) -> Result<i64, E
 /// Rebuild property FTS rows from canonical state within an existing transaction.
 fn rebuild_property_fts_in_tx(conn: &rusqlite::Connection) -> Result<usize, EngineError> {
     conn.execute("DELETE FROM fts_node_properties", [])?;
+    conn.execute("DELETE FROM fts_node_property_positions", [])?;
     let inserted = crate::projection::insert_property_fts_rows(
         conn,
         "SELECT logical_id, properties FROM nodes WHERE kind = ?1 AND superseded_at IS NULL",
@@ -2848,21 +2977,21 @@ fn rebuild_single_node_property_fts(
     logical_id: &str,
     kind: &str,
 ) -> Result<usize, EngineError> {
-    let schema: Option<(Vec<String>, String)> = conn
+    let schema: Option<(String, String)> = conn
         .query_row(
             "SELECT property_paths_json, separator FROM fts_property_schemas WHERE kind = ?1",
             [kind],
             |row| {
                 let paths_json: String = row.get(0)?;
                 let separator: String = row.get(1)?;
-                let paths: Vec<String> = serde_json::from_str(&paths_json).unwrap_or_default();
-                Ok((paths, separator))
+                Ok((paths_json, separator))
             },
         )
         .optional()?;
-    let Some((paths, separator)) = schema else {
+    let Some((paths_json, separator)) = schema else {
         return Ok(0);
     };
+    let parsed = crate::writer::parse_property_schema_json(&paths_json, &separator);
     let properties_str: Option<String> = conn
         .query_row(
             "SELECT properties FROM nodes WHERE logical_id = ?1 AND superseded_at IS NULL",
@@ -2874,14 +3003,69 @@ fn rebuild_single_node_property_fts(
         return Ok(0);
     };
     let props: serde_json::Value = serde_json::from_str(&properties_str).unwrap_or_default();
-    let Some(text) = crate::writer::compute_property_fts_text(&props, &paths, &separator) else {
+    let (text, positions, _stats) = crate::writer::extract_property_fts(&props, &parsed);
+    let Some(text) = text else {
         return Ok(0);
     };
+    conn.execute(
+        "DELETE FROM fts_node_property_positions WHERE node_logical_id = ?1",
+        rusqlite::params![logical_id],
+    )?;
     conn.execute(
         "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) VALUES (?1, ?2, ?3)",
         rusqlite::params![logical_id, kind, text],
     )?;
+    for pos in &positions {
+        conn.execute(
+            "INSERT INTO fts_node_property_positions \
+             (node_logical_id, kind, start_offset, end_offset, leaf_path) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![
+                logical_id,
+                kind,
+                i64::try_from(pos.start_offset).unwrap_or(i64::MAX),
+                i64::try_from(pos.end_offset).unwrap_or(i64::MAX),
+                pos.leaf_path,
+            ],
+        )?;
+    }
     Ok(1)
+}
+
+fn serialize_property_paths_json(
+    entries: &[FtsPropertyPathSpec],
+    exclude_paths: &[String],
+) -> Result<String, EngineError> {
+    // Scalar-only schemas with no exclude_paths are serialised in the
+    // legacy shape (bare array of strings) for full backwards
+    // compatibility with earlier schema versions.
+    let all_scalar = entries
+        .iter()
+        .all(|e| e.mode == FtsPropertyPathMode::Scalar);
+    if all_scalar && exclude_paths.is_empty() {
+        let paths: Vec<&str> = entries.iter().map(|e| e.path.as_str()).collect();
+        return serde_json::to_string(&paths).map_err(|e| {
+            EngineError::InvalidWrite(format!("failed to serialize property paths: {e}"))
+        });
+    }
+
+    let mut obj = serde_json::Map::new();
+    let paths_json: Vec<serde_json::Value> = entries
+        .iter()
+        .map(|e| {
+            let mode_str = match e.mode {
+                FtsPropertyPathMode::Scalar => "scalar",
+                FtsPropertyPathMode::Recursive => "recursive",
+            };
+            serde_json::json!({ "path": e.path, "mode": mode_str })
+        })
+        .collect();
+    obj.insert("paths".to_owned(), serde_json::Value::Array(paths_json));
+    if !exclude_paths.is_empty() {
+        obj.insert("exclude_paths".to_owned(), serde_json::json!(exclude_paths));
+    }
+    serde_json::to_string(&serde_json::Value::Object(obj))
+        .map_err(|e| EngineError::InvalidWrite(format!("failed to serialize property paths: {e}")))
 }
 
 fn validate_fts_property_paths(paths: &[String]) -> Result<(), EngineError> {

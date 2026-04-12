@@ -404,6 +404,39 @@ static MIGRATIONS: &[Migration] = &[
         // `'porter unicode61 remove_diacritics 2'`.
         "",
     ),
+    Migration::new(
+        SchemaVersion(17),
+        "fts property position-map sidecar for recursive extraction",
+        // Sidecar position map for property FTS. The recursive extraction
+        // walk in the engine emits one row per scalar leaf contributing to a
+        // given node's property FTS blob, carrying the half-open byte range
+        // `[start_offset, end_offset)` within the blob and the JSON-path of
+        // the originating leaf. Phase 5 uses this to attribute tokens back
+        // to their source leaves.
+        //
+        // The existing `fts_property_schemas.property_paths_json` column is
+        // reused unchanged at the DDL level; the engine-side JSON decoder
+        // tolerates both the legacy shape (bare strings = scalar) and the
+        // new shape (objects with `mode` = `scalar`|`recursive`, optional
+        // `exclude_paths`). Backwards compatibility is guaranteed because a
+        // bare JSON array of strings still deserialises into scalar-mode
+        // entries.
+        r"
+                CREATE TABLE IF NOT EXISTS fts_node_property_positions (
+                    node_logical_id TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    start_offset INTEGER NOT NULL,
+                    end_offset INTEGER NOT NULL,
+                    leaf_path TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_fts_node_property_positions_node
+                    ON fts_node_property_positions(node_logical_id, kind);
+
+                CREATE INDEX IF NOT EXISTS idx_fts_node_property_positions_kind
+                    ON fts_node_property_positions(kind);
+                ",
+    ),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]

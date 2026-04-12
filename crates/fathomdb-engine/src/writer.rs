@@ -253,6 +253,112 @@ struct FtsPropertyProjectionRow {
     node_logical_id: String,
     kind: String,
     text_content: String,
+    positions: Vec<PositionEntry>,
+}
+
+/// Maximum depth the recursive property-FTS extraction walk descends before
+/// clamping. A walk that reaches this depth will not emit leaves below it.
+pub(crate) const MAX_RECURSIVE_DEPTH: usize = 8;
+
+/// Maximum blob size the recursive property-FTS extraction walk will emit.
+/// When the next complete leaf would push the blob past this cap, the walk
+/// stops on the preceding leaf boundary — the existing blob is indexed, the
+/// truncated leaf is not partially emitted.
+pub(crate) const MAX_EXTRACTED_BYTES: usize = 65_536;
+
+/// Hard phrase-break separator inserted between two adjacent recursive
+/// leaves in the concatenated blob.
+///
+/// FTS5 phrase queries match on consecutive token positions, so simply
+/// inserting non-token whitespace or control characters does NOT prevent a
+/// phrase like `"foo bar"` from matching when `foo` ends one leaf and
+/// `bar` starts the next — the tokenizer would discard the control
+/// character and the two content tokens would still be adjacent.
+///
+/// To create a real position gap we embed a sentinel *token*
+/// `fathomdbphrasebreaksentinel` between leaves. Under `porter
+/// unicode61 remove_diacritics 2` this survives tokenization as its own
+/// position, so the content tokens on either side are separated by at
+/// least one intervening position and phrase queries spanning the gap
+/// cannot match. The sentinel is long, lowercase, and obviously
+/// synthetic to minimize the chance of accidental collisions with real
+/// content. It remains searchable as a word — callers should avoid
+/// passing it to `text_search` directly.
+///
+/// Validated by the integration test
+/// `leaf_separator_is_hard_phrase_break_under_unicode61_porter`.
+pub(crate) const LEAF_SEPARATOR: &str = " fathomdbphrasebreaksentinel ";
+
+/// Whether a registered property-FTS path extracts a single scalar value
+/// or recursively walks the subtree rooted at the path.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum PropertyPathMode {
+    /// Legacy scalar extraction — resolve the path, append the scalar
+    /// (flattening arrays of scalars as before Phase 4).
+    #[default]
+    Scalar,
+    /// Recursively walk scalar leaves rooted at the path, emitting one
+    /// leaf per scalar with position-map tracking.
+    Recursive,
+}
+
+/// A single registered property-FTS path with its extraction mode.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PropertyPathEntry {
+    pub path: String,
+    pub mode: PropertyPathMode,
+}
+
+impl PropertyPathEntry {
+    pub(crate) fn scalar(path: impl Into<String>) -> Self {
+        Self {
+            path: path.into(),
+            mode: PropertyPathMode::Scalar,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn recursive(path: impl Into<String>) -> Self {
+        Self {
+            path: path.into(),
+            mode: PropertyPathMode::Recursive,
+        }
+    }
+}
+
+/// Parsed property-FTS schema definition for a single kind.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PropertyFtsSchema {
+    pub paths: Vec<PropertyPathEntry>,
+    pub separator: String,
+    pub exclude_paths: Vec<String>,
+}
+
+/// One position-map entry: a half-open `[start, end)` byte range within the
+/// extracted blob plus the `JSONPath` of the scalar leaf whose value occupies
+/// that range.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PositionEntry {
+    pub start_offset: usize,
+    pub end_offset: usize,
+    pub leaf_path: String,
+}
+
+/// Per-kind extraction stats accumulated by a recursive walk. Surface-level
+/// Phase 4 logging only; Phase 5 may expose these to callers.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ExtractStats {
+    pub depth_cap_hit: usize,
+    pub byte_cap_hit: usize,
+    pub excluded_subtree: usize,
+}
+
+impl ExtractStats {
+    fn merge(&mut self, other: ExtractStats) {
+        self.depth_cap_hit += other.depth_cap_hit;
+        self.byte_cap_hit += other.byte_cap_hit;
+        self.excluded_subtree += other.excluded_subtree;
+    }
 }
 
 struct PreparedWrite {
@@ -949,29 +1055,39 @@ fn resolve_property_fts_rows(
         return Ok(());
     }
 
-    let schemas: HashMap<String, (Vec<String>, String)> = load_fts_property_schemas(conn)?
-        .into_iter()
-        .map(|(kind, paths, sep)| (kind, (paths, sep)))
-        .collect();
+    let schemas: HashMap<String, PropertyFtsSchema> =
+        load_fts_property_schemas(conn)?.into_iter().collect();
 
     if schemas.is_empty() {
         return Ok(());
     }
 
+    let mut combined_stats = ExtractStats::default();
     for node in &prepared.nodes {
-        let Some((paths, separator)) = schemas.get(&node.kind) else {
+        let Some(schema) = schemas.get(&node.kind) else {
             continue;
         };
         let props: serde_json::Value = serde_json::from_str(&node.properties).unwrap_or_default();
-        if let Some(text_content) = compute_property_fts_text(&props, paths, separator) {
+        let (text_content, positions, stats) = extract_property_fts(&props, schema);
+        combined_stats.merge(stats);
+        if let Some(text_content) = text_content {
             prepared
                 .required_property_fts_rows
                 .push(FtsPropertyProjectionRow {
                     node_logical_id: node.logical_id.clone(),
                     kind: node.kind.clone(),
                     text_content,
+                    positions,
                 });
         }
+    }
+    if combined_stats != ExtractStats::default() {
+        trace_debug!(
+            depth_cap_hit = combined_stats.depth_cap_hit,
+            byte_cap_hit = combined_stats.byte_cap_hit,
+            excluded_subtree = combined_stats.excluded_subtree,
+            "property fts recursive extraction guardrails engaged"
+        );
     }
     trace_debug!(
         property_fts_rows = prepared.required_property_fts_rows.len(),
@@ -1012,40 +1128,266 @@ pub(crate) fn extract_json_path(value: &serde_json::Value, path: &str) -> Vec<St
     }
 }
 
-/// Extract property values at `paths` from a JSON value and join with `separator`.
-/// Array elements are individual extracted values — the separator applies between
-/// all scalars regardless of whether they came from the same path or different paths.
-/// Returns `None` if no paths resolve to a value.
-pub(crate) fn compute_property_fts_text(
+/// Core property-FTS extraction. Produces the concatenated blob, the
+/// position map identifying which byte range in the blob came from which
+/// JSON leaf path, and the guardrail stats for the walk.
+///
+/// Emission rules:
+/// - Path entries are processed in their registered order.
+/// - Scalar-mode entries append the scalar value(s) directly (arrays of
+///   scalars flatten, matching pre-Phase-4 behavior). Scalar emissions do
+///   not produce position-map entries — the position map is only populated
+///   when a recursive path contributes a leaf.
+/// - Recursive-mode entries walk every descendant scalar leaf in stable
+///   lexicographic key order. Each leaf emits a position-map entry whose
+///   `[start, end)` spans the leaf value's bytes in the blob (NOT the
+///   trailing separator).
+/// - Between any two emitted values (whether from the same or different
+///   path entries) the walk inserts [`LEAF_SEPARATOR`], a hard phrase
+///   break under FTS5's `porter unicode61` tokenizer. Scalar-mode emissions
+///   between each other use the schema's configured `separator` for
+///   backwards compatibility with Phase 0.
+pub(crate) fn extract_property_fts(
     props: &serde_json::Value,
-    paths: &[String],
-    separator: &str,
-) -> Option<String> {
-    let mut parts = Vec::new();
-    for path in paths {
-        parts.extend(extract_json_path(props, path));
+    schema: &PropertyFtsSchema,
+) -> (Option<String>, Vec<PositionEntry>, ExtractStats) {
+    let mut walker = RecursiveWalker {
+        blob: String::new(),
+        positions: Vec::new(),
+        stats: ExtractStats::default(),
+        exclude_paths: schema.exclude_paths.clone(),
+        stopped: false,
+    };
+
+    let mut scalar_parts: Vec<String> = Vec::new();
+
+    for entry in &schema.paths {
+        match entry.mode {
+            PropertyPathMode::Scalar => {
+                scalar_parts.extend(extract_json_path(props, &entry.path));
+            }
+            PropertyPathMode::Recursive => {
+                let root = resolve_path_root(props, &entry.path);
+                if let Some(root) = root {
+                    walker.walk(&entry.path, root, 0);
+                }
+            }
+        }
     }
-    if parts.is_empty() {
+
+    // Flush scalar parts into the blob. Scalar emissions go first so that
+    // their byte offsets are predictable relative to any recursive leaves
+    // that follow. Scalars use the configured `separator`; the boundary
+    // between scalars and recursive leaves uses `LEAF_SEPARATOR` (so phrase
+    // queries cannot cross it).
+    let scalar_text = if scalar_parts.is_empty() {
         None
     } else {
-        Some(parts.join(separator))
+        Some(scalar_parts.join(&schema.separator))
+    };
+
+    let combined = match (scalar_text, walker.blob.is_empty()) {
+        (None, true) => None,
+        (None, false) => Some(walker.blob.clone()),
+        (Some(s), true) => Some(s),
+        (Some(mut s), false) => {
+            // Shift recursive positions by the prefix length so they stay
+            // correct relative to the combined blob.
+            let offset = s.len() + LEAF_SEPARATOR.len();
+            for pos in &mut walker.positions {
+                pos.start_offset += offset;
+                pos.end_offset += offset;
+            }
+            s.push_str(LEAF_SEPARATOR);
+            s.push_str(&walker.blob);
+            Some(s)
+        }
+    };
+
+    (combined, walker.positions, walker.stats)
+}
+
+fn resolve_path_root<'a>(
+    value: &'a serde_json::Value,
+    path: &str,
+) -> Option<&'a serde_json::Value> {
+    let stripped = path.strip_prefix("$.")?;
+    let mut current = value;
+    for segment in stripped.split('.') {
+        current = current.get(segment)?;
+    }
+    Some(current)
+}
+
+struct RecursiveWalker {
+    blob: String,
+    positions: Vec<PositionEntry>,
+    stats: ExtractStats,
+    exclude_paths: Vec<String>,
+    /// Once the byte cap is hit, the walker refuses to emit any further
+    /// leaves. Subsequent walks still account for depth/exclude stats but
+    /// do not append.
+    stopped: bool,
+}
+
+impl RecursiveWalker {
+    fn walk(&mut self, current_path: &str, value: &serde_json::Value, depth: usize) {
+        if self.stopped {
+            return;
+        }
+        if self.exclude_paths.iter().any(|p| p == current_path) {
+            self.stats.excluded_subtree += 1;
+            return;
+        }
+        match value {
+            serde_json::Value::String(s) => self.emit_leaf(current_path, s),
+            serde_json::Value::Number(n) => self.emit_leaf(current_path, &n.to_string()),
+            serde_json::Value::Bool(b) => self.emit_leaf(current_path, &b.to_string()),
+            serde_json::Value::Null => {}
+            serde_json::Value::Object(map) => {
+                if depth >= MAX_RECURSIVE_DEPTH {
+                    self.stats.depth_cap_hit += 1;
+                    return;
+                }
+                let mut keys: Vec<&String> = map.keys().collect();
+                keys.sort();
+                for key in keys {
+                    if self.stopped {
+                        return;
+                    }
+                    let child_path = format!("{current_path}.{key}");
+                    if let Some(child) = map.get(key) {
+                        self.walk(&child_path, child, depth + 1);
+                    }
+                }
+            }
+            serde_json::Value::Array(items) => {
+                if depth >= MAX_RECURSIVE_DEPTH {
+                    self.stats.depth_cap_hit += 1;
+                    return;
+                }
+                for (idx, item) in items.iter().enumerate() {
+                    if self.stopped {
+                        return;
+                    }
+                    let child_path = format!("{current_path}[{idx}]");
+                    self.walk(&child_path, item, depth + 1);
+                }
+            }
+        }
+    }
+
+    fn emit_leaf(&mut self, leaf_path: &str, value: &str) {
+        if self.stopped {
+            return;
+        }
+        // Compute the projected blob size if we accept this leaf.
+        // If we already emitted at least one leaf, we must account for
+        // the separator that precedes this one.
+        let sep_len = if self.blob.is_empty() {
+            0
+        } else {
+            LEAF_SEPARATOR.len()
+        };
+        let projected_len = self.blob.len() + sep_len + value.len();
+        if projected_len > MAX_EXTRACTED_BYTES {
+            self.stats.byte_cap_hit += 1;
+            self.stopped = true;
+            return;
+        }
+        if !self.blob.is_empty() {
+            self.blob.push_str(LEAF_SEPARATOR);
+        }
+        let start_offset = self.blob.len();
+        self.blob.push_str(value);
+        let end_offset = self.blob.len();
+        self.positions.push(PositionEntry {
+            start_offset,
+            end_offset,
+            leaf_path: leaf_path.to_owned(),
+        });
     }
 }
 
-/// Load all registered FTS property schemas from the database.
+/// Load all registered FTS property schemas from the database, tolerating
+/// both the legacy JSON shape (array of bare path strings = scalar mode)
+/// and the Phase 4 shape (objects carrying `path`, `mode`, optional
+/// `exclude_paths`, or a top-level object carrying `paths` + global
+/// `exclude_paths`).
 pub(crate) fn load_fts_property_schemas(
     conn: &rusqlite::Connection,
-) -> Result<Vec<(String, Vec<String>, String)>, rusqlite::Error> {
+) -> Result<Vec<(String, PropertyFtsSchema)>, rusqlite::Error> {
     let mut stmt =
         conn.prepare("SELECT kind, property_paths_json, separator FROM fts_property_schemas")?;
     stmt.query_map([], |row| {
         let kind: String = row.get(0)?;
         let paths_json: String = row.get(1)?;
         let separator: String = row.get(2)?;
-        let paths: Vec<String> = serde_json::from_str(&paths_json).unwrap_or_default();
-        Ok((kind, paths, separator))
+        let schema = parse_property_schema_json(&paths_json, &separator);
+        Ok((kind, schema))
     })?
     .collect::<Result<Vec<_>, _>>()
+}
+
+pub(crate) fn parse_property_schema_json(paths_json: &str, separator: &str) -> PropertyFtsSchema {
+    let value: serde_json::Value = serde_json::from_str(paths_json).unwrap_or_default();
+    let mut paths = Vec::new();
+    let mut exclude_paths: Vec<String> = Vec::new();
+
+    let path_values: Vec<serde_json::Value> = match value {
+        serde_json::Value::Array(arr) => arr,
+        serde_json::Value::Object(map) => {
+            if let Some(serde_json::Value::Array(excl)) = map.get("exclude_paths") {
+                exclude_paths = excl
+                    .iter()
+                    .filter_map(|v| v.as_str().map(str::to_owned))
+                    .collect();
+            }
+            match map.get("paths") {
+                Some(serde_json::Value::Array(arr)) => arr.clone(),
+                _ => Vec::new(),
+            }
+        }
+        _ => Vec::new(),
+    };
+
+    for entry in path_values {
+        match entry {
+            serde_json::Value::String(path) => {
+                paths.push(PropertyPathEntry::scalar(path));
+            }
+            serde_json::Value::Object(map) => {
+                let Some(path) = map.get("path").and_then(|v| v.as_str()) else {
+                    continue;
+                };
+                let mode = map.get("mode").and_then(|v| v.as_str()).map_or(
+                    PropertyPathMode::Scalar,
+                    |m| match m {
+                        "recursive" => PropertyPathMode::Recursive,
+                        _ => PropertyPathMode::Scalar,
+                    },
+                );
+                paths.push(PropertyPathEntry {
+                    path: path.to_owned(),
+                    mode,
+                });
+                if let Some(serde_json::Value::Array(excl)) = map.get("exclude_paths") {
+                    for p in excl {
+                        if let Some(s) = p.as_str() {
+                            exclude_paths.push(s.to_owned());
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    PropertyFtsSchema {
+        paths,
+        separator: separator.to_owned(),
+        exclude_paths,
+    }
 }
 
 fn resolve_operational_writes(
@@ -1408,6 +1750,8 @@ fn apply_write(
         let mut del_fts = tx.prepare_cached("DELETE FROM fts_nodes WHERE node_logical_id = ?1")?;
         let mut del_prop_fts =
             tx.prepare_cached("DELETE FROM fts_node_properties WHERE node_logical_id = ?1")?;
+        let mut del_prop_positions = tx
+            .prepare_cached("DELETE FROM fts_node_property_positions WHERE node_logical_id = ?1")?;
         let mut sup_node = tx.prepare_cached(
             "UPDATE nodes SET superseded_at = unixepoch() \
              WHERE logical_id = ?1 AND superseded_at IS NULL",
@@ -1419,6 +1763,7 @@ fn apply_write(
         for retire in &prepared.node_retires {
             del_fts.execute(params![retire.logical_id])?;
             del_prop_fts.execute(params![retire.logical_id])?;
+            del_prop_positions.execute(params![retire.logical_id])?;
             sup_node.execute(params![retire.logical_id])?;
             ins_event.execute(params![new_id(), retire.logical_id, retire.source_ref])?;
         }
@@ -1445,6 +1790,8 @@ fn apply_write(
         let mut del_fts = tx.prepare_cached("DELETE FROM fts_nodes WHERE node_logical_id = ?1")?;
         let mut del_prop_fts =
             tx.prepare_cached("DELETE FROM fts_node_properties WHERE node_logical_id = ?1")?;
+        let mut del_prop_positions = tx
+            .prepare_cached("DELETE FROM fts_node_property_positions WHERE node_logical_id = ?1")?;
         let mut del_chunks = tx.prepare_cached("DELETE FROM chunks WHERE node_logical_id = ?1")?;
         let mut sup_node = tx.prepare_cached(
             "UPDATE nodes SET superseded_at = unixepoch() \
@@ -1467,6 +1814,7 @@ fn apply_write(
             if node.upsert {
                 // Property FTS rows are always replaced on upsert since properties change.
                 del_prop_fts.execute(params![node.logical_id])?;
+                del_prop_positions.execute(params![node.logical_id])?;
                 if node.chunk_policy == ChunkPolicy::Replace {
                     #[cfg(feature = "sqlite-vec")]
                     if let Some(ref mut stmt) = del_vec {
@@ -1781,8 +2129,27 @@ fn apply_write(
             "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
              VALUES (?1, ?2, ?3)",
         )?;
+        let mut ins_positions = tx.prepare_cached(
+            "INSERT INTO fts_node_property_positions \
+             (node_logical_id, kind, start_offset, end_offset, leaf_path) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+        )?;
+        // Delete any stale position rows for these nodes; writer already
+        // deleted the `fts_node_properties` rows above.
+        let mut del_positions = tx
+            .prepare_cached("DELETE FROM fts_node_property_positions WHERE node_logical_id = ?1")?;
         for row in &prepared.required_property_fts_rows {
+            del_positions.execute(params![row.node_logical_id])?;
             ins_prop_fts.execute(params![row.node_logical_id, row.kind, row.text_content,])?;
+            for pos in &row.positions {
+                ins_positions.execute(params![
+                    row.node_logical_id,
+                    row.kind,
+                    i64::try_from(pos.start_offset).unwrap_or(i64::MAX),
+                    i64::try_from(pos.end_offset).unwrap_or(i64::MAX),
+                    pos.leaf_path,
+                ])?;
+            }
         }
     }
 
@@ -6874,6 +7241,223 @@ mod tests {
         fn no_prefix_returns_empty() {
             let v = json!({"name": "a"});
             assert!(extract_json_path(&v, "name").is_empty());
+        }
+    }
+
+    mod recursive_extraction_tests {
+        use super::super::{
+            LEAF_SEPARATOR, MAX_EXTRACTED_BYTES, MAX_RECURSIVE_DEPTH, PositionEntry,
+            PropertyFtsSchema, PropertyPathEntry, extract_property_fts,
+        };
+        use serde_json::json;
+
+        fn schema(paths: Vec<PropertyPathEntry>) -> PropertyFtsSchema {
+            PropertyFtsSchema {
+                paths,
+                separator: " ".to_owned(),
+                exclude_paths: Vec::new(),
+            }
+        }
+
+        fn schema_with_excludes(
+            paths: Vec<PropertyPathEntry>,
+            excludes: Vec<String>,
+        ) -> PropertyFtsSchema {
+            PropertyFtsSchema {
+                paths,
+                separator: " ".to_owned(),
+                exclude_paths: excludes,
+            }
+        }
+
+        #[test]
+        fn recursive_extraction_walks_nested_objects_in_stable_lex_order() {
+            let props = json!({"payload": {"b": "two", "a": "one"}});
+            let (blob, positions, _stats) = extract_property_fts(
+                &props,
+                &schema(vec![PropertyPathEntry::recursive("$.payload")]),
+            );
+            let blob = blob.expect("blob emitted");
+            let idx_one = blob.find("one").expect("contains 'one'");
+            let idx_two = blob.find("two").expect("contains 'two'");
+            assert!(
+                idx_one < idx_two,
+                "lex order: 'one' (key a) before 'two' (key b)"
+            );
+            assert_eq!(positions.len(), 2);
+            assert_eq!(positions[0].leaf_path, "$.payload.a");
+            assert_eq!(positions[1].leaf_path, "$.payload.b");
+        }
+
+        #[test]
+        fn recursive_extraction_walks_arrays_of_scalars() {
+            let props = json!({"tags": ["red", "blue"]});
+            let (_blob, positions, _stats) = extract_property_fts(
+                &props,
+                &schema(vec![PropertyPathEntry::recursive("$.tags")]),
+            );
+            assert_eq!(positions.len(), 2);
+            assert_eq!(positions[0].leaf_path, "$.tags[0]");
+            assert_eq!(positions[1].leaf_path, "$.tags[1]");
+        }
+
+        #[test]
+        fn recursive_extraction_walks_arrays_of_objects() {
+            let props = json!({"items": [{"name": "a"}, {"name": "b"}]});
+            let (_blob, positions, _stats) = extract_property_fts(
+                &props,
+                &schema(vec![PropertyPathEntry::recursive("$.items")]),
+            );
+            assert_eq!(positions.len(), 2);
+            assert_eq!(positions[0].leaf_path, "$.items[0].name");
+            assert_eq!(positions[1].leaf_path, "$.items[1].name");
+        }
+
+        #[test]
+        fn recursive_extraction_stringifies_numbers_and_bools() {
+            let props = json!({"root": {"n": 42, "ok": true}});
+            let (blob, _positions, _stats) = extract_property_fts(
+                &props,
+                &schema(vec![PropertyPathEntry::recursive("$.root")]),
+            );
+            let blob = blob.expect("blob emitted");
+            assert!(blob.contains("42"));
+            assert!(blob.contains("true"));
+        }
+
+        #[test]
+        fn recursive_extraction_skips_nulls_and_missing() {
+            let props = json!({"root": {"x": null, "y": "present"}});
+            let (blob, positions, _stats) = extract_property_fts(
+                &props,
+                &schema(vec![PropertyPathEntry::recursive("$.root")]),
+            );
+            let blob = blob.expect("blob emitted");
+            assert!(!blob.contains("null"));
+            assert_eq!(positions.len(), 1);
+            assert_eq!(positions[0].leaf_path, "$.root.y");
+        }
+
+        #[test]
+        fn recursive_extraction_respects_max_depth_guardrail() {
+            // Build nested object 10 levels deep. MAX_RECURSIVE_DEPTH = 8.
+            let mut inner = json!("leaf-value");
+            for _ in 0..10 {
+                inner = json!({ "k": inner });
+            }
+            let props = json!({ "root": inner });
+            let (blob, positions, stats) = extract_property_fts(
+                &props,
+                &schema(vec![PropertyPathEntry::recursive("$.root")]),
+            );
+            assert!(stats.depth_cap_hit > 0, "depth cap guardrail must engage");
+            // The walk should stop before reaching the leaf (depth 8).
+            assert!(
+                blob.is_none() || !blob.as_deref().unwrap_or("").contains("leaf-value"),
+                "walk must not emit leaves past MAX_RECURSIVE_DEPTH"
+            );
+            // Row is still indexed with whatever was emitted — even if
+            // that's nothing. The contract is only that the walk clamped.
+            let _ = positions;
+            let _ = MAX_RECURSIVE_DEPTH;
+        }
+
+        #[test]
+        fn recursive_extraction_respects_max_bytes_guardrail() {
+            // Build an array of 4KB strings; total blob > 64KB.
+            let leaves: Vec<String> = (0..40)
+                .map(|i| format!("chunk-{i}-{}", "x".repeat(4096)))
+                .collect();
+            let props = json!({ "root": leaves });
+            let (blob, positions, stats) = extract_property_fts(
+                &props,
+                &schema(vec![PropertyPathEntry::recursive("$.root")]),
+            );
+            assert!(stats.byte_cap_hit > 0, "byte cap guardrail must engage");
+            let blob = blob.expect("blob must still be emitted");
+            assert!(
+                blob.len() <= MAX_EXTRACTED_BYTES,
+                "blob must not exceed MAX_EXTRACTED_BYTES"
+            );
+            // No partial leaves: every position end must fall inside blob length.
+            for pos in &positions {
+                assert!(pos.end_offset <= blob.len());
+                let slice = &blob[pos.start_offset..pos.end_offset];
+                // Slice must equal some original leaf value; we only
+                // verify it's not empty and doesn't straddle a separator.
+                assert!(!slice.is_empty());
+                assert!(!slice.contains(LEAF_SEPARATOR));
+            }
+            // Blob cannot end in a dangling separator.
+            assert!(!blob.ends_with(LEAF_SEPARATOR));
+        }
+
+        #[test]
+        fn recursive_extraction_respects_exclude_paths() {
+            let props = json!({"payload": {"pub": "yes", "priv": "no"}});
+            let (blob, positions, stats) = extract_property_fts(
+                &props,
+                &schema_with_excludes(
+                    vec![PropertyPathEntry::recursive("$.payload")],
+                    vec!["$.payload.priv".to_owned()],
+                ),
+            );
+            let blob = blob.expect("blob emitted");
+            assert!(blob.contains("yes"));
+            assert!(!blob.contains("no"));
+            assert_eq!(positions.len(), 1);
+            assert_eq!(positions[0].leaf_path, "$.payload.pub");
+            assert!(stats.excluded_subtree > 0);
+        }
+
+        #[test]
+        fn position_map_entries_match_emitted_leaves_in_order() {
+            let props = json!({"root": {"a": "alpha", "b": "bravo", "c": "charlie"}});
+            let (blob, positions, _stats) = extract_property_fts(
+                &props,
+                &schema(vec![PropertyPathEntry::recursive("$.root")]),
+            );
+            let blob = blob.expect("blob emitted");
+            assert_eq!(positions.len(), 3);
+            // Leaf paths in lexicographic order.
+            assert_eq!(positions[0].leaf_path, "$.root.a");
+            assert_eq!(positions[1].leaf_path, "$.root.b");
+            assert_eq!(positions[2].leaf_path, "$.root.c");
+            // Monotonic, non-overlapping offsets.
+            let mut prev_end: usize = 0;
+            for (i, pos) in positions.iter().enumerate() {
+                assert!(pos.start_offset >= prev_end);
+                assert!(pos.end_offset > pos.start_offset);
+                assert!(pos.end_offset <= blob.len());
+                let slice = &blob[pos.start_offset..pos.end_offset];
+                match i {
+                    0 => assert_eq!(slice, "alpha"),
+                    1 => assert_eq!(slice, "bravo"),
+                    2 => assert_eq!(slice, "charlie"),
+                    _ => unreachable!(),
+                }
+                prev_end = pos.end_offset;
+            }
+        }
+
+        #[test]
+        fn scalar_only_schema_produces_empty_position_map() {
+            let props = json!({"name": "alpha", "title": "beta"});
+            let (blob, positions, _stats) = extract_property_fts(
+                &props,
+                &schema(vec![
+                    PropertyPathEntry::scalar("$.name"),
+                    PropertyPathEntry::scalar("$.title"),
+                ]),
+            );
+            assert_eq!(blob.as_deref(), Some("alpha beta"));
+            assert!(
+                positions.is_empty(),
+                "scalar-only schema must emit no position entries"
+            );
+            // Sanity-check the type so the test fails loudly if the
+            // signature changes.
+            let _: Vec<PositionEntry> = positions;
         }
     }
 }

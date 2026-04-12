@@ -14,10 +14,11 @@ mod telemetry;
 mod writer;
 
 pub use admin::{
-    AdminHandle, AdminService, FtsPropertySchemaRecord, IntegrityReport, LogicalPurgeReport,
-    LogicalRestoreReport, ProvenancePurgeOptions, ProvenancePurgeReport, SafeExportManifest,
-    SafeExportOptions, SemanticReport, SkippedEdge, TraceReport, VectorGeneratorPolicy,
-    VectorRegenerationConfig, VectorRegenerationReport, load_vector_regeneration_config,
+    AdminHandle, AdminService, FtsPropertyPathMode, FtsPropertyPathSpec, FtsPropertySchemaRecord,
+    IntegrityReport, LogicalPurgeReport, LogicalRestoreReport, ProvenancePurgeOptions,
+    ProvenancePurgeReport, SafeExportManifest, SafeExportOptions, SemanticReport, SkippedEdge,
+    TraceReport, VectorGeneratorPolicy, VectorRegenerationConfig, VectorRegenerationReport,
+    load_vector_regeneration_config,
 };
 pub use coordinator::{
     ActionRow, ExecutionCoordinator, ExpansionRootRows, ExpansionSlotRows, GroupedQueryRows,

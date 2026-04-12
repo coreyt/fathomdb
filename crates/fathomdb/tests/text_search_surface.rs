@@ -3,8 +3,8 @@
 //! Phase 1 integration tests for the adaptive text search surface.
 
 use fathomdb::{
-    ChunkInsert, ChunkPolicy, Engine, EngineOptions, NodeInsert, SearchHitSource, SearchMatchMode,
-    WriteRequest,
+    ChunkInsert, ChunkPolicy, Engine, EngineOptions, FtsPropertyPathSpec, NodeInsert,
+    SearchHitSource, SearchMatchMode, WriteRequest,
 };
 use tempfile::NamedTempFile;
 
@@ -690,4 +690,324 @@ fn text_search_with_filter_kind_eq_chains() {
     for hit in &rows.hits {
         assert_eq!(hit.node.kind, "Goal");
     }
+}
+
+// --- Phase 4 integration tests -----------------------------------------
+
+fn submit_simple_node(engine: &Engine, row_id: &str, logical_id: &str, kind: &str, props: &str) {
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "phase4-seed".to_owned(),
+            nodes: vec![NodeInsert {
+                row_id: row_id.to_owned(),
+                logical_id: logical_id.to_owned(),
+                kind: kind.to_owned(),
+                properties: props.to_owned(),
+                source_ref: Some("phase4".to_owned()),
+                upsert: false,
+                chunk_policy: ChunkPolicy::Preserve,
+                content_ref: None,
+            }],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![],
+        })
+        .expect("submit");
+}
+
+#[test]
+fn leaf_separator_is_hard_phrase_break_under_unicode61_porter() {
+    // Phase 4: the recursive extractor concatenates scalar leaves with a
+    // separator that must act as a hard phrase break under FTS5's
+    // `porter unicode61 remove_diacritics 2` tokenizer. Register a
+    // recursive schema and insert a node whose two leaves end in
+    // "alpha" and start with "beta" respectively. A phrase query for
+    // "alpha beta" (straddling the separator) must return zero hits,
+    // while a phrase query for each token individually still hits.
+    let (_db, engine) = open_engine();
+    engine
+        .register_fts_property_schema_with_entries(
+            "Note",
+            &[FtsPropertyPathSpec::recursive("$.body")],
+            None,
+            &[],
+        )
+        .expect("register recursive schema");
+
+    submit_simple_node(
+        &engine,
+        "note-1-row",
+        "note-1",
+        "Note",
+        r#"{"body":{"a":"leading alpha","b":"beta trailing"}}"#,
+    );
+
+    // Individual tokens must still hit.
+    let rows = engine
+        .query("Note")
+        .text_search("alpha", 10)
+        .execute()
+        .expect("search alpha");
+    assert!(!rows.hits.is_empty(), "individual token must hit");
+
+    let rows = engine
+        .query("Note")
+        .text_search("beta", 10)
+        .execute()
+        .expect("search beta");
+    assert!(!rows.hits.is_empty(), "individual token must hit");
+
+    // The phrase "alpha beta" straddles the leaf separator and must NOT
+    // match the concatenated blob.
+    let rows = engine
+        .query("Note")
+        .text_search("\"alpha beta\"", 10)
+        .execute()
+        .expect("phrase search");
+    assert!(
+        rows.hits.is_empty(),
+        "phrase straddling leaf separator must not match (got {} hits)",
+        rows.hits.len()
+    );
+}
+
+#[test]
+fn recursive_schema_registration_triggers_eager_rebuild() {
+    // Phase 4: when a scalar-only schema is later replaced by one that
+    // adds a recursive path, the property FTS rows for that kind must be
+    // rebuilt in the same transaction as the schema update — without any
+    // additional node writes — and the position map for the recursive
+    // leaves must be populated.
+    let (_db, engine) = open_engine();
+
+    // 1. Register scalar-only schema for "Note" and seed a node whose
+    //    scalar-indexed property is discoverable via text search.
+    engine
+        .register_fts_property_schema("Note", &["$.title".to_owned()], None)
+        .expect("register scalar schema");
+    submit_simple_node(
+        &engine,
+        "note-1-row",
+        "note-1",
+        "Note",
+        r#"{"title":"scalar-only-title","payload":{"inner":"recursive-only-word"}}"#,
+    );
+
+    let rows = engine
+        .query("Note")
+        .text_search("scalar-only-title", 10)
+        .execute()
+        .expect("scalar search");
+    assert!(!rows.hits.is_empty(), "scalar-only schema must index title");
+
+    let rows = engine
+        .query("Note")
+        .text_search("recursive-only-word", 10)
+        .execute()
+        .expect("search inner");
+    assert!(
+        rows.hits.is_empty(),
+        "inner payload must NOT be indexed before recursive registration"
+    );
+
+    // Position map must be empty for a scalar-only schema.
+    let conn = rusqlite::Connection::open(engine.coordinator().database_path())
+        .expect("open for assertion");
+    let pos_count: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM fts_node_property_positions WHERE kind = 'Note'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("pos count");
+    assert_eq!(pos_count, 0);
+    drop(conn);
+
+    // 2. Now register a schema with a recursive path for the same kind.
+    //    No further node writes occur — the eager rebuild must make the
+    //    inner payload discoverable.
+    engine
+        .register_fts_property_schema_with_entries(
+            "Note",
+            &[
+                FtsPropertyPathSpec::scalar("$.title"),
+                FtsPropertyPathSpec::recursive("$.payload"),
+            ],
+            None,
+            &[],
+        )
+        .expect("register recursive schema");
+
+    let rows = engine
+        .query("Note")
+        .text_search("recursive-only-word", 10)
+        .execute()
+        .expect("search after rebuild");
+    assert!(
+        !rows.hits.is_empty(),
+        "eager rebuild must index inner payload without a write"
+    );
+
+    // Scalar search must still work.
+    let rows = engine
+        .query("Note")
+        .text_search("scalar-only-title", 10)
+        .execute()
+        .expect("search title after rebuild");
+    assert!(!rows.hits.is_empty());
+
+    // Position map must now have rows for the recursive leaves.
+    let conn = rusqlite::Connection::open(engine.coordinator().database_path())
+        .expect("open for assertion");
+    let pos_count: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM fts_node_property_positions WHERE kind = 'Note'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("pos count");
+    assert!(pos_count > 0, "position map must have rows after rebuild");
+}
+
+#[test]
+fn recursive_schema_registration_is_transactional() {
+    // Positive variant of the transaction test: register a recursive
+    // schema over an already-seeded kind and assert that at a single
+    // consistent read point both `fts_node_properties` and
+    // `fts_node_property_positions` are updated in lockstep. The read
+    // happens after the registration commit, so if the update had NOT
+    // been transactional we could observe either table out of sync.
+    let (_db, engine) = open_engine();
+
+    engine
+        .register_fts_property_schema("Doc", &["$.title".to_owned()], None)
+        .expect("register initial schema");
+    submit_simple_node(
+        &engine,
+        "doc-1-row",
+        "doc-1",
+        "Doc",
+        r#"{"title":"hello","body":{"p1":"alpha","p2":"bravo"}}"#,
+    );
+    submit_simple_node(
+        &engine,
+        "doc-2-row",
+        "doc-2",
+        "Doc",
+        r#"{"title":"world","body":{"p1":"charlie","p2":"delta"}}"#,
+    );
+
+    engine
+        .register_fts_property_schema_with_entries(
+            "Doc",
+            &[
+                FtsPropertyPathSpec::scalar("$.title"),
+                FtsPropertyPathSpec::recursive("$.body"),
+            ],
+            None,
+            &[],
+        )
+        .expect("eager recursive registration");
+
+    let conn = rusqlite::Connection::open(engine.coordinator().database_path())
+        .expect("open for assertion");
+
+    // Every active Doc node must have a property FTS row.
+    let prop_rows: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM fts_node_properties WHERE kind = 'Doc'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("prop count");
+    assert_eq!(prop_rows, 2, "eager rebuild must emit one row per node");
+
+    // Each Doc node must have exactly 2 position-map rows (p1 + p2 leaves).
+    let pos_rows: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM fts_node_property_positions WHERE kind = 'Doc'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("pos count");
+    assert_eq!(
+        pos_rows, 4,
+        "2 nodes × 2 recursive leaves = 4 position rows"
+    );
+
+    // Spot-check that each position-map entry points at a real leaf value.
+    let text_doc1: String = conn
+        .query_row(
+            "SELECT text_content FROM fts_node_properties WHERE node_logical_id = 'doc-1'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("doc-1 text");
+    assert!(text_doc1.contains("alpha"));
+    assert!(text_doc1.contains("bravo"));
+}
+
+#[test]
+fn rebuild_from_canonical_regenerates_position_map() {
+    // Phase 4: integrity repair / projection rebuild must regenerate the
+    // position map from canonical state. Open → seed with recursive
+    // schema → close → reopen → rebuild_projections(Fts) → assert
+    // fts_node_property_positions matches the expected rebuilt state.
+    let db = NamedTempFile::new().expect("temp db");
+    {
+        let engine = Engine::open(EngineOptions::new(db.path())).expect("open #1");
+        engine
+            .register_fts_property_schema_with_entries(
+                "Doc",
+                &[FtsPropertyPathSpec::recursive("$.body")],
+                None,
+                &[],
+            )
+            .expect("register recursive schema");
+        submit_simple_node(
+            &engine,
+            "doc-1-row",
+            "doc-1",
+            "Doc",
+            r#"{"body":{"p1":"alpha","p2":"bravo"}}"#,
+        );
+    }
+
+    let engine = Engine::open(EngineOptions::new(db.path())).expect("open #2");
+    // Drop the position-map rows to simulate drift; the rebuild must
+    // regenerate them.
+    {
+        let conn = rusqlite::Connection::open(engine.coordinator().database_path())
+            .expect("open for drift");
+        conn.execute("DELETE FROM fts_node_property_positions", [])
+            .expect("delete positions");
+    }
+
+    engine
+        .admin()
+        .service()
+        .rebuild_projections(fathomdb::ProjectionTarget::Fts)
+        .expect("rebuild projections");
+
+    let conn = rusqlite::Connection::open(engine.coordinator().database_path())
+        .expect("open for assertion");
+    let pos_count: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM fts_node_property_positions WHERE kind = 'Doc'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("pos count");
+    assert_eq!(
+        pos_count, 2,
+        "projection rebuild must regenerate position map rows"
+    );
 }
