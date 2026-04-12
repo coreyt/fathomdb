@@ -394,6 +394,16 @@ static MIGRATIONS: &[Migration] = &[
                 );
                 ",
     ),
+    Migration::new(
+        SchemaVersion(16),
+        "rebuild fts_nodes and fts_node_properties on porter+unicode61 tokenizer",
+        // DDL applied by `ensure_unicode_porter_fts_tokenizers`; the hook
+        // drops, recreates, and rebuilds both tables from canonical state.
+        // The FTS5 chained tokenizer syntax requires the wrapper (porter)
+        // before the base tokenizer, so the applied `tokenize=` clause is
+        // `'porter unicode61 remove_diacritics 2'`.
+        "",
+    ),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -475,6 +485,7 @@ impl SchemaManager {
                 SchemaVersion(13) => Self::ensure_operational_retention_runs(&tx)?,
                 SchemaVersion(14) => Self::ensure_external_content_columns(&tx)?,
                 SchemaVersion(15) => Self::ensure_fts_property_schemas(&tx)?,
+                SchemaVersion(16) => Self::ensure_unicode_porter_fts_tokenizers(&tx)?,
                 _ => tx.execute_batch(migration.sql)?,
             }
             tx.execute(
@@ -780,6 +791,49 @@ impl SchemaManager {
         if !chunk_columns.iter().any(|c| c == "content_hash") {
             conn.execute("ALTER TABLE chunks ADD COLUMN content_hash TEXT", [])?;
         }
+        Ok(())
+    }
+
+    /// Migration 16: migrate both `fts_nodes` and `fts_node_properties` from
+    /// the default FTS5 simple tokenizer to `unicode61 remove_diacritics 2
+    /// porter` so diacritic-insensitive and stem-aware matches work (e.g.
+    /// `cafe` matching `café`, `shipping` matching `ship`).
+    ///
+    /// FTS5 does not support re-tokenizing an existing index in place, so
+    /// both virtual tables are dropped and recreated with the new
+    /// `tokenize=...` clause. `fts_nodes` is rebuilt inline from the
+    /// canonical `chunks + nodes` join. `fts_node_properties` is left empty
+    /// here and repopulated from canonical state by the engine runtime after
+    /// bootstrap (the property FTS rebuild requires the per-kind
+    /// `fts_property_schemas` projection that lives in the engine crate).
+    fn ensure_unicode_porter_fts_tokenizers(conn: &Connection) -> Result<(), SchemaError> {
+        conn.execute_batch(
+            r"
+            DROP TABLE IF EXISTS fts_nodes;
+            CREATE VIRTUAL TABLE fts_nodes USING fts5(
+                chunk_id UNINDEXED,
+                node_logical_id UNINDEXED,
+                kind UNINDEXED,
+                text_content,
+                tokenize = 'porter unicode61 remove_diacritics 2'
+            );
+
+            DROP TABLE IF EXISTS fts_node_properties;
+            CREATE VIRTUAL TABLE fts_node_properties USING fts5(
+                node_logical_id UNINDEXED,
+                kind UNINDEXED,
+                text_content,
+                tokenize = 'porter unicode61 remove_diacritics 2'
+            );
+
+            INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content)
+            SELECT c.id, n.logical_id, n.kind, c.text_content
+            FROM chunks c
+            JOIN nodes n
+              ON n.logical_id = c.node_logical_id
+             AND n.superseded_at IS NULL;
+            ",
+        )?;
         Ok(())
     }
 
