@@ -280,14 +280,33 @@ impl ExecutionCoordinator {
 
         let report = schema_manager.bootstrap(&conn)?;
 
-        // Phase 2: when migration 16 is freshly applied, the FTS virtual
-        // tables were dropped and recreated with the unicode61+porter
-        // tokenizer. Chunk FTS is rebuilt inline by the migration; property
-        // FTS requires per-kind projection logic that lives in this crate, so
-        // rebuild it here before the pool/readers observe an empty index.
-        if report.applied_versions.iter().any(|v| v.0 == 16) {
+        // Property FTS rebuild on open. This runs unconditionally when
+        // `fts_property_schemas` is non-empty but `fts_node_properties` is
+        // empty — covering both the Phase 2 migration-16 case (FTS table
+        // recreated with a new tokenizer) and the crash-recovery case where
+        // a prior open applied migration 16 but crashed before the
+        // subsequent property-FTS rebuild committed. The rebuild is a no-op
+        // on an already-populated table, so running it on every open is
+        // safe.
+        let needs_property_fts_rebuild = {
+            let schema_count: i64 =
+                conn.query_row("SELECT COUNT(*) FROM fts_property_schemas", [], |row| {
+                    row.get(0)
+                })?;
+            if schema_count == 0 {
+                false
+            } else {
+                let fts_count: i64 =
+                    conn.query_row("SELECT COUNT(*) FROM fts_node_properties", [], |row| {
+                        row.get(0)
+                    })?;
+                fts_count == 0
+            }
+        };
+        if needs_property_fts_rebuild {
             let tx = conn.unchecked_transaction()?;
             tx.execute("DELETE FROM fts_node_properties", [])?;
+            tx.execute("DELETE FROM fts_node_property_positions", [])?;
             crate::projection::insert_property_fts_rows(
                 &tx,
                 "SELECT logical_id, properties FROM nodes \
@@ -546,12 +565,12 @@ impl ExecutionCoordinator {
 
     /// Execute a single search branch against the underlying FTS surfaces.
     ///
-    /// This is the Phase 2 SQL emission path, factored out of
-    /// [`Self::execute_compiled_search`] so Phase 3 can run it twice (once
-    /// strict, once relaxed) with the same filter fusion. The returned hits
-    /// are tagged with `branch`'s corresponding [`SearchMatchMode`] and are
-    /// **not** yet deduped or truncated — the caller is responsible for
-    /// merging multiple branches.
+    /// This is the shared SQL emission path used by
+    /// [`Self::execute_compiled_search_plan`] to run strict and (when
+    /// present) relaxed branches of a [`CompiledSearchPlan`] in sequence.
+    /// The returned hits are tagged with `branch`'s corresponding
+    /// [`SearchMatchMode`] and are **not** yet deduped or truncated — the
+    /// caller is responsible for merging multiple branches.
     #[allow(clippy::too_many_lines)]
     fn run_search_branch(
         &self,
@@ -559,6 +578,15 @@ impl ExecutionCoordinator {
         branch: SearchBranch,
     ) -> Result<Vec<SearchHit>, EngineError> {
         use std::fmt::Write as _;
+        // Short-circuit an empty/whitespace-only query: rendering it would
+        // yield `MATCH ""`, which FTS5 rejects as a syntax error. Callers
+        // (including the adaptive path when strict is Empty and derive_relaxed
+        // returns None) must see an empty result, not an error. Each branch
+        // is short-circuited independently so a strict-Empty + relaxed-Some
+        // plan still exercises the relaxed branch.
+        if matches!(compiled.text_query, fathomdb_query::TextQuery::Empty) {
+            return Ok(Vec::new());
+        }
         let rendered = render_text_query_fts5(&compiled.text_query);
         // An empty `root_kind` means "unkind-filtered" — the fallback_search
         // helper uses this when the caller did not add `.filter_kind_eq(...)`.
@@ -1311,12 +1339,19 @@ fn source_priority(source: SearchHitSource) -> u8 {
 /// output so the coordinator can recover per-term byte offsets in the
 /// original `text_content` column.
 ///
-/// Each sentinel is a single `U+0001` byte ("start of heading") which never
-/// appears in JSON-extracted property text — writers reject control chars
-/// from node properties via the standard JSON decoder — so scanning for
-/// these markers is unambiguous. Using one-byte markers keeps the
-/// original-to-highlighted offset accounting trivial: every sentinel adds
-/// exactly one byte to the highlighted string.
+/// Each sentinel is a single `U+0001` ("start of heading") / `U+0002`
+/// ("start of text") byte. These bytes are safe for all valid JSON text
+/// *except* deliberately escape-injected `\u0001` / `\u0002` sequences: a
+/// payload like `{"x":"\u0001"}` decodes to a literal 0x01 byte in the
+/// extracted blob, making the sentinel ambiguous for that row. Such input
+/// is treated as out of scope for attribution correctness — hits on those
+/// rows may have misattributed `matched_paths`, but no panic or query
+/// failure occurs. A future hardening step could strip bytes < 0x20 at
+/// blob-emission time in `RecursiveWalker::emit_leaf` to close this gap.
+///
+/// Using one-byte markers keeps the original-to-highlighted offset
+/// accounting trivial: every sentinel adds exactly one byte to the
+/// highlighted string.
 const ATTRIBUTION_HIGHLIGHT_OPEN: &str = "\x01";
 const ATTRIBUTION_HIGHLIGHT_CLOSE: &str = "\x02";
 

@@ -1663,10 +1663,11 @@ impl AdminService {
                 "DELETE FROM fts_node_property_positions WHERE kind = ?1",
                 [kind],
             )?;
-            crate::projection::insert_property_fts_rows(
-                &tx,
-                "SELECT logical_id, properties FROM nodes WHERE kind = ?1 AND superseded_at IS NULL",
-            )?;
+            // Scope the rebuild to `kind` only. The multi-kind
+            // `insert_property_fts_rows` iterates over every registered
+            // schema and would re-insert rows for siblings that were not
+            // deleted above, duplicating their FTS entries.
+            crate::projection::insert_property_fts_rows_for_kind(&tx, kind)?;
         }
 
         persist_simple_provenance_event(

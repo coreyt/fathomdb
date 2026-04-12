@@ -168,6 +168,66 @@ fn rebuild_missing_property_fts_in_tx(
     )
 }
 
+/// Rebuild property FTS rows for exactly one kind from its just-registered
+/// schema. Unlike [`insert_property_fts_rows`], this helper does NOT iterate
+/// over every registered schema — so callers that delete rows for a single
+/// kind won't duplicate rows for sibling kinds on the subsequent insert.
+///
+/// The caller is responsible for transaction management and for deleting
+/// stale rows for `kind` before calling this function.
+pub(crate) fn insert_property_fts_rows_for_kind(
+    conn: &rusqlite::Connection,
+    kind: &str,
+) -> Result<usize, rusqlite::Error> {
+    let schemas = crate::writer::load_fts_property_schemas(conn)?;
+    let Some(schema) = schemas
+        .iter()
+        .find(|(k, _)| k == kind)
+        .map(|(_, s)| s.clone())
+    else {
+        return Ok(0);
+    };
+
+    let mut ins = conn.prepare(
+        "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) VALUES (?1, ?2, ?3)",
+    )?;
+    let mut ins_positions = conn.prepare(
+        "INSERT INTO fts_node_property_positions \
+         (node_logical_id, kind, start_offset, end_offset, leaf_path) \
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+    )?;
+
+    let mut stmt = conn.prepare(
+        "SELECT logical_id, properties FROM nodes \
+         WHERE kind = ?1 AND superseded_at IS NULL",
+    )?;
+    let rows: Vec<(String, String)> = stmt
+        .query_map([kind], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut total = 0usize;
+    for (logical_id, properties_str) in &rows {
+        let props: serde_json::Value = serde_json::from_str(properties_str).unwrap_or_default();
+        let (text, positions, _stats) = crate::writer::extract_property_fts(&props, &schema);
+        if let Some(text) = text {
+            ins.execute(rusqlite::params![logical_id, kind, text])?;
+            for pos in &positions {
+                ins_positions.execute(rusqlite::params![
+                    logical_id,
+                    kind,
+                    i64::try_from(pos.start_offset).unwrap_or(i64::MAX),
+                    i64::try_from(pos.end_offset).unwrap_or(i64::MAX),
+                    pos.leaf_path,
+                ])?;
+            }
+            total += 1;
+        }
+    }
+    Ok(total)
+}
+
 /// Shared loop: load schemas, query nodes with `node_sql` (parameterized by kind),
 /// extract property FTS text, and insert into `fts_node_properties`.
 /// The caller is responsible for transaction management and for deleting stale rows
