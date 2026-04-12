@@ -4,7 +4,11 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use fathomdb_query::{CompiledGroupedQuery, CompiledQuery, DrivingTable, ExpansionSlot, ShapeHash};
+use fathomdb_query::{
+    BindValue, ComparisonOp, CompiledGroupedQuery, CompiledQuery, CompiledSearch, DrivingTable,
+    ExpansionSlot, Predicate, ScalarValue, SearchHit, SearchHitSource, SearchMatchMode, SearchRows,
+    ShapeHash, render_text_query_fts5,
+};
 use fathomdb_schema::SchemaManager;
 use rusqlite::{Connection, OptionalExtension, params_from_iter, types::Value};
 
@@ -429,6 +433,201 @@ impl ExecutionCoordinator {
         })
     }
 
+    /// Execute a compiled adaptive search and return matching hits.
+    ///
+    /// Phase 1 runs a straight-through strict-only query: the chunk and
+    /// property FTS indexes are `UNION ALL`-ed, BM25-scored (flipped so
+    /// larger values mean better matches), ordered, and limited. Row-level
+    /// filter predicates are applied in the outer `WHERE` clause — no
+    /// filter fusion, no relaxed branch, no fallback.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the SQL statement cannot be prepared or executed.
+    #[allow(clippy::too_many_lines)]
+    pub fn execute_compiled_search(
+        &self,
+        compiled: &CompiledSearch,
+    ) -> Result<SearchRows, EngineError> {
+        use std::fmt::Write as _;
+        let rendered = render_text_query_fts5(&compiled.text_query);
+        let mut binds: Vec<BindValue> = vec![
+            BindValue::Text(rendered.clone()),
+            BindValue::Text(compiled.root_kind.clone()),
+            BindValue::Text(rendered),
+            BindValue::Text(compiled.root_kind.clone()),
+        ];
+
+        let mut filter_clauses = String::new();
+        for predicate in &compiled.filters {
+            match predicate {
+                Predicate::LogicalIdEq(logical_id) => {
+                    binds.push(BindValue::Text(logical_id.clone()));
+                    let idx = binds.len();
+                    let _ = write!(filter_clauses, "\n  AND n.logical_id = ?{idx}");
+                }
+                Predicate::KindEq(kind) => {
+                    binds.push(BindValue::Text(kind.clone()));
+                    let idx = binds.len();
+                    let _ = write!(filter_clauses, "\n  AND n.kind = ?{idx}");
+                }
+                Predicate::SourceRefEq(source_ref) => {
+                    binds.push(BindValue::Text(source_ref.clone()));
+                    let idx = binds.len();
+                    let _ = write!(filter_clauses, "\n  AND n.source_ref = ?{idx}");
+                }
+                Predicate::ContentRefNotNull => {
+                    filter_clauses.push_str("\n  AND n.content_ref IS NOT NULL");
+                }
+                Predicate::ContentRefEq(uri) => {
+                    binds.push(BindValue::Text(uri.clone()));
+                    let idx = binds.len();
+                    let _ = write!(filter_clauses, "\n  AND n.content_ref = ?{idx}");
+                }
+                Predicate::JsonPathEq { path, value } => {
+                    binds.push(BindValue::Text(path.clone()));
+                    let path_idx = binds.len();
+                    binds.push(scalar_to_bind(value));
+                    let value_idx = binds.len();
+                    let _ = write!(
+                        filter_clauses,
+                        "\n  AND json_extract(n.properties, ?{path_idx}) = ?{value_idx}"
+                    );
+                }
+                Predicate::JsonPathCompare { path, op, value } => {
+                    binds.push(BindValue::Text(path.clone()));
+                    let path_idx = binds.len();
+                    binds.push(scalar_to_bind(value));
+                    let value_idx = binds.len();
+                    let operator = match op {
+                        ComparisonOp::Gt => ">",
+                        ComparisonOp::Gte => ">=",
+                        ComparisonOp::Lt => "<",
+                        ComparisonOp::Lte => "<=",
+                    };
+                    let _ = write!(
+                        filter_clauses,
+                        "\n  AND json_extract(n.properties, ?{path_idx}) {operator} ?{value_idx}"
+                    );
+                }
+            }
+        }
+
+        let limit = compiled.limit;
+        let sql = format!(
+            "WITH search_hits AS (
+                SELECT * FROM (
+                    SELECT
+                        c.node_logical_id AS logical_id,
+                        -bm25(fts_nodes) AS score,
+                        'chunk' AS source,
+                        snippet(fts_nodes, 3, '[', ']', '…', 32) AS snippet,
+                        f.chunk_id AS projection_row_id
+                    FROM fts_nodes f
+                    JOIN chunks c ON c.id = f.chunk_id
+                    JOIN nodes src ON src.logical_id = c.node_logical_id AND src.superseded_at IS NULL
+                    WHERE fts_nodes MATCH ?1
+                      AND src.kind = ?2
+                    UNION ALL
+                    SELECT
+                        fp.node_logical_id AS logical_id,
+                        -bm25(fts_node_properties) AS score,
+                        'property' AS source,
+                        substr(fp.text_content, 1, 200) AS snippet,
+                        CAST(fp.rowid AS TEXT) AS projection_row_id
+                    FROM fts_node_properties fp
+                    JOIN nodes src ON src.logical_id = fp.node_logical_id AND src.superseded_at IS NULL
+                    WHERE fts_node_properties MATCH ?3
+                      AND fp.kind = ?4
+                )
+                ORDER BY score DESC
+                LIMIT {limit}
+            )
+            SELECT
+                n.row_id,
+                n.logical_id,
+                n.kind,
+                n.properties,
+                n.content_ref,
+                am.last_accessed_at,
+                n.created_at,
+                h.score,
+                h.source,
+                h.snippet,
+                h.projection_row_id
+            FROM search_hits h
+            JOIN nodes n ON n.logical_id = h.logical_id AND n.superseded_at IS NULL
+            LEFT JOIN node_access_metadata am ON am.logical_id = n.logical_id
+            WHERE 1 = 1{filter_clauses}
+            ORDER BY h.score DESC"
+        );
+
+        let bind_values = binds.iter().map(bind_value_to_sql).collect::<Vec<_>>();
+
+        let conn_guard = match self.lock_connection() {
+            Ok(g) => g,
+            Err(e) => {
+                self.telemetry.increment_errors();
+                return Err(e);
+            }
+        };
+        let mut statement = match conn_guard.prepare_cached(&sql) {
+            Ok(stmt) => stmt,
+            Err(e) => {
+                self.telemetry.increment_errors();
+                return Err(EngineError::Sqlite(e));
+            }
+        };
+
+        let hits = match statement
+            .query_map(params_from_iter(bind_values.iter()), |row| {
+                let source_str: String = row.get(8)?;
+                // The CTE emits only two literal values here: `'chunk'` and
+                // `'property'`. Default to `Chunk` on anything unexpected so a
+                // schema drift surfaces as a mislabelled hit rather than a
+                // row-level error.
+                let source = if source_str == "property" {
+                    SearchHitSource::Property
+                } else {
+                    SearchHitSource::Chunk
+                };
+                Ok(SearchHit {
+                    node: fathomdb_query::NodeRowLite {
+                        row_id: row.get(0)?,
+                        logical_id: row.get(1)?,
+                        kind: row.get(2)?,
+                        properties: row.get(3)?,
+                        content_ref: row.get(4)?,
+                        last_accessed_at: row.get(5)?,
+                    },
+                    written_at: row.get(6)?,
+                    score: row.get(7)?,
+                    source,
+                    match_mode: SearchMatchMode::Strict,
+                    snippet: row.get(9)?,
+                    projection_row_id: row.get(10)?,
+                    attribution: None,
+                })
+            })
+            .and_then(Iterator::collect::<Result<Vec<_>, _>>)
+        {
+            Ok(rows) => rows,
+            Err(e) => {
+                self.telemetry.increment_errors();
+                return Err(EngineError::Sqlite(e));
+            }
+        };
+
+        self.telemetry.increment_queries();
+        let strict_hit_count = hits.len();
+        Ok(SearchRows {
+            hits,
+            strict_hit_count,
+            relaxed_hit_count: 0,
+            fallback_used: false,
+            was_degraded: false,
+        })
+    }
+
     /// # Errors
     /// Returns [`EngineError`] if the root query or any bounded expansion
     /// query cannot be prepared or executed.
@@ -846,6 +1045,14 @@ pub(crate) fn is_vec_table_absent(err: &rusqlite::Error) -> bool {
             msg.contains("vec_nodes_active") || msg.contains("no such module: vec0")
         }
         _ => false,
+    }
+}
+
+fn scalar_to_bind(value: &ScalarValue) -> BindValue {
+    match value {
+        ScalarValue::Text(text) => BindValue::Text(text.clone()),
+        ScalarValue::Integer(integer) => BindValue::Integer(*integer),
+        ScalarValue::Bool(boolean) => BindValue::Bool(*boolean),
     }
 }
 
