@@ -464,18 +464,22 @@ fn m3_fts_search_returns_meeting_transcript() {
         })
         .expect("m3 write");
 
-    let compiled = fathomdb::QueryBuilder::nodes("Meeting")
+    let rows = engine
+        .query("Meeting")
         .text_search("quarterly", 5)
         .limit(5)
-        .compile()
-        .expect("compile");
-    let rows = engine
-        .coordinator()
-        .execute_compiled_read(&compiled)
-        .expect("read");
+        .execute()
+        .expect("search");
 
-    assert_eq!(rows.nodes.len(), 1);
-    assert_eq!(rows.nodes[0].logical_id, "meeting-m3");
+    assert_eq!(rows.hits.len(), 1);
+    assert_eq!(rows.hits[0].node.logical_id, "meeting-m3");
+    assert_eq!(rows.strict_hit_count, 1);
+    assert_eq!(rows.relaxed_hit_count, 0);
+    assert!(!rows.fallback_used);
+    assert!(matches!(
+        rows.hits[0].match_mode,
+        fathomdb::SearchMatchMode::Strict,
+    ));
 
     // Suppress unused variable warning for db
     let _ = db;
