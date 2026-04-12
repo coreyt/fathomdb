@@ -303,7 +303,32 @@ impl ExecutionCoordinator {
                 fts_count == 0
             }
         };
-        if needs_property_fts_rebuild {
+        // Second open-time guard (P4-P2-3, v16 -> v17 migration): when a
+        // recursive-mode schema is registered but the position-map table is
+        // empty, the database was upgraded from a schema version that did
+        // not populate `fts_node_property_positions`. The rebuild path below
+        // regenerates both the blob and the position map from canonical
+        // state, so it is safe to trigger even when `fts_node_properties`
+        // already has rows.
+        let needs_position_backfill = {
+            let recursive_schema_count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM fts_property_schemas \
+                 WHERE property_paths_json LIKE '%\"mode\":\"recursive\"%'",
+                [],
+                |row| row.get(0),
+            )?;
+            if recursive_schema_count == 0 {
+                false
+            } else {
+                let position_count: i64 = conn.query_row(
+                    "SELECT COUNT(*) FROM fts_node_property_positions",
+                    [],
+                    |row| row.get(0),
+                )?;
+                position_count == 0
+            }
+        };
+        if needs_property_fts_rebuild || needs_position_backfill {
             let tx = conn.unchecked_transaction()?;
             tx.execute("DELETE FROM fts_node_properties", [])?;
             tx.execute("DELETE FROM fts_node_property_positions", [])?;
@@ -522,6 +547,10 @@ impl ExecutionCoordinator {
     /// hits. Merge and dedup semantics are identical to the adaptive path
     /// regardless of how the plan was constructed.
     ///
+    /// Error contract: if the relaxed branch errors, the error propagates;
+    /// strict hits are not returned. This matches the rest of the engine's
+    /// fail-hard posture.
+    ///
     /// # Errors
     /// Returns [`EngineError`] if either branch's SQL cannot be prepared or
     /// executed.
@@ -547,7 +576,18 @@ impl ExecutionCoordinator {
             was_degraded = plan.was_degraded_at_plan_time;
         }
 
-        let merged = merge_search_branches(strict_hits, relaxed_hits, limit);
+        let mut merged = merge_search_branches(strict_hits, relaxed_hits, limit);
+        // Attribution runs AFTER dedup so that duplicate hits dropped by
+        // `merge_search_branches` do not waste a highlight+position-map
+        // lookup.
+        if strict.attribution_requested {
+            let relaxed_text_query = plan.relaxed.as_ref().map(|r| &r.text_query);
+            self.populate_attribution_for_hits(
+                &mut merged,
+                &strict.text_query,
+                relaxed_text_query,
+            )?;
+        }
         let strict_hit_count = merged
             .iter()
             .filter(|h| matches!(h.match_mode, SearchMatchMode::Strict))
@@ -584,7 +624,15 @@ impl ExecutionCoordinator {
         // returns None) must see an empty result, not an error. Each branch
         // is short-circuited independently so a strict-Empty + relaxed-Some
         // plan still exercises the relaxed branch.
-        if matches!(compiled.text_query, fathomdb_query::TextQuery::Empty) {
+        // A top-level `TextQuery::Not` renders to an FTS5 expression that
+        // matches "every row not containing X" — a complement-of-corpus scan
+        // that no caller would intentionally want. Short-circuit to empty at
+        // the root only; a `Not` nested inside an `And` is a legitimate
+        // exclusion and must still run.
+        if matches!(
+            compiled.text_query,
+            fathomdb_query::TextQuery::Empty | fathomdb_query::TextQuery::Not(_)
+        ) {
             return Ok(Vec::new());
         }
         let rendered = render_text_query_fts5(&compiled.text_query);
@@ -690,7 +738,17 @@ impl ExecutionCoordinator {
             }
         }
 
+        // Bind `limit` as an integer parameter rather than formatting it into
+        // the SQL string. Interpolating the limit made the prepared-statement
+        // SQL vary by limit value, so rusqlite's default 16-slot
+        // `prepare_cached` cache thrashed for paginated callers that varied
+        // limits per call. With the bind the SQL is structurally stable for
+        // a given filter shape regardless of `limit` value.
         let limit = compiled.limit;
+        binds.push(BindValue::Integer(i64::try_from(limit).unwrap_or(i64::MAX)));
+        let limit_idx = binds.len();
+        // INNER JOIN on nodes (hn) is intentional: rows referencing retired
+        // nodes are intentionally dropped as a derived-state invariant.
         let (chunk_fts_bind, chunk_kind_clause, prop_fts_bind, prop_kind_clause) = if filter_by_kind
         {
             (
@@ -735,7 +793,7 @@ impl ExecutionCoordinator {
                 JOIN nodes hn ON hn.logical_id = u.logical_id AND hn.superseded_at IS NULL
                 WHERE 1 = 1{fused_clauses}
                 ORDER BY u.score DESC
-                LIMIT {limit}
+                LIMIT ?{limit_idx}
             )
             SELECT
                 n.row_id,
@@ -816,25 +874,48 @@ impl ExecutionCoordinator {
             }
         };
 
-        // Drop the statement so `conn_guard` is free for attribution lookups.
+        // Drop the statement so `conn_guard` is free (attribution is
+        // resolved after dedup in `execute_compiled_search_plan` to avoid
+        // spending highlight lookups on hits that will be discarded).
         drop(statement);
-
-        let mut hits = hits;
-        if compiled.attribution_requested {
-            let match_expr = render_text_query_fts5(&compiled.text_query);
-            for hit in &mut hits {
-                match resolve_hit_attribution(&conn_guard, hit, &match_expr) {
-                    Ok(att) => hit.attribution = Some(att),
-                    Err(e) => {
-                        self.telemetry.increment_errors();
-                        return Err(e);
-                    }
-                }
-            }
-        }
+        drop(conn_guard);
 
         self.telemetry.increment_queries();
         Ok(hits)
+    }
+
+    /// Populate per-hit attribution for the given deduped merged hits.
+    /// Runs after [`merge_search_branches`] so dropped duplicates do not
+    /// incur the highlight+position-map lookup cost.
+    fn populate_attribution_for_hits(
+        &self,
+        hits: &mut [SearchHit],
+        strict_text_query: &fathomdb_query::TextQuery,
+        relaxed_text_query: Option<&fathomdb_query::TextQuery>,
+    ) -> Result<(), EngineError> {
+        let conn_guard = match self.lock_connection() {
+            Ok(g) => g,
+            Err(e) => {
+                self.telemetry.increment_errors();
+                return Err(e);
+            }
+        };
+        let strict_expr = render_text_query_fts5(strict_text_query);
+        let relaxed_expr = relaxed_text_query.map(render_text_query_fts5);
+        for hit in hits.iter_mut() {
+            let match_expr = match hit.match_mode {
+                SearchMatchMode::Strict => strict_expr.as_str(),
+                SearchMatchMode::Relaxed => relaxed_expr.as_deref().unwrap_or(strict_expr.as_str()),
+            };
+            match resolve_hit_attribution(&conn_guard, hit, match_expr) {
+                Ok(att) => hit.attribution = Some(att),
+                Err(e) => {
+                    self.telemetry.increment_errors();
+                    return Err(e);
+                }
+            }
+        }
+        Ok(())
     }
 
     /// # Errors
