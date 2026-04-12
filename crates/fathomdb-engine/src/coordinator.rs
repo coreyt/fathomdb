@@ -6,8 +6,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use fathomdb_query::{
     BindValue, ComparisonOp, CompiledGroupedQuery, CompiledQuery, CompiledSearch, DrivingTable,
-    ExpansionSlot, FALLBACK_TRIGGER_K, Predicate, ScalarValue, SearchBranch, SearchHit,
-    SearchHitSource, SearchMatchMode, SearchPlan, SearchRows, ShapeHash, render_text_query_fts5,
+    ExpansionSlot, FALLBACK_TRIGGER_K, HitAttribution, Predicate, ScalarValue, SearchBranch,
+    SearchHit, SearchHitSource, SearchMatchMode, SearchPlan, SearchRows, ShapeHash,
+    render_text_query_fts5,
 };
 use fathomdb_schema::SchemaManager;
 use rusqlite::{Connection, OptionalExtension, params_from_iter, types::Value};
@@ -491,6 +492,7 @@ impl ExecutionCoordinator {
                 limit: compiled.limit,
                 fusable_filters: compiled.fusable_filters.clone(),
                 residual_filters: compiled.residual_filters.clone(),
+                attribution_requested: compiled.attribution_requested,
             };
             relaxed_hits = self.run_search_branch(&relaxed_compiled, SearchBranch::Relaxed)?;
             fallback_used = true;
@@ -737,6 +739,23 @@ impl ExecutionCoordinator {
                 return Err(EngineError::Sqlite(e));
             }
         };
+
+        // Drop the statement so `conn_guard` is free for attribution lookups.
+        drop(statement);
+
+        let mut hits = hits;
+        if compiled.attribution_requested {
+            let match_expr = render_text_query_fts5(&compiled.text_query);
+            for hit in &mut hits {
+                match resolve_hit_attribution(&conn_guard, hit, &match_expr) {
+                    Ok(att) => hit.attribution = Some(att),
+                    Err(e) => {
+                        self.telemetry.increment_errors();
+                        return Err(e);
+                    }
+                }
+            }
+        }
 
         self.telemetry.increment_queries();
         Ok(hits)
@@ -1238,6 +1257,196 @@ fn source_priority(source: SearchHitSource) -> u8 {
         SearchHitSource::Property => 1,
         SearchHitSource::Vector => 2,
     }
+}
+
+/// Sentinel markers used to wrap FTS5-matched terms in the `highlight()`
+/// output so the coordinator can recover per-term byte offsets in the
+/// original `text_content` column.
+///
+/// Each sentinel is a single `U+0001` byte ("start of heading") which never
+/// appears in JSON-extracted property text — writers reject control chars
+/// from node properties via the standard JSON decoder — so scanning for
+/// these markers is unambiguous. Using one-byte markers keeps the
+/// original-to-highlighted offset accounting trivial: every sentinel adds
+/// exactly one byte to the highlighted string.
+const ATTRIBUTION_HIGHLIGHT_OPEN: &str = "\x01";
+const ATTRIBUTION_HIGHLIGHT_CLOSE: &str = "\x02";
+
+/// Load the `fts_node_property_positions` sidecar rows for a given
+/// `(logical_id, kind)` ordered by `start_offset`. Returns a vector of
+/// `(start_offset, end_offset, leaf_path)` tuples ready for binary search.
+fn load_position_map(
+    conn: &Connection,
+    logical_id: &str,
+    kind: &str,
+) -> Result<Vec<(usize, usize, String)>, EngineError> {
+    let mut stmt = conn
+        .prepare_cached(
+            "SELECT start_offset, end_offset, leaf_path \
+             FROM fts_node_property_positions \
+             WHERE node_logical_id = ?1 AND kind = ?2 \
+             ORDER BY start_offset ASC",
+        )
+        .map_err(EngineError::Sqlite)?;
+    let rows = stmt
+        .query_map(rusqlite::params![logical_id, kind], |row| {
+            let start: i64 = row.get(0)?;
+            let end: i64 = row.get(1)?;
+            let path: String = row.get(2)?;
+            // Offsets are non-negative and within blob byte limits; on the
+            // off chance a corrupt row is encountered, fall back to 0 so
+            // lookups silently skip it rather than panicking.
+            let start = usize::try_from(start).unwrap_or(0);
+            let end = usize::try_from(end).unwrap_or(0);
+            Ok((start, end, path))
+        })
+        .map_err(EngineError::Sqlite)?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row.map_err(EngineError::Sqlite)?);
+    }
+    Ok(out)
+}
+
+/// Parse a `highlight()`-wrapped string, returning the list of original-text
+/// byte offsets at which matched terms begin. `wrapped` is the
+/// highlight-decorated form of a text column; `open` / `close` are the
+/// sentinel markers passed to `highlight()`. The returned offsets refer to
+/// positions in the *original* text (i.e. the column as it would be stored
+/// without highlight decoration).
+fn parse_highlight_offsets(wrapped: &str, open: &str, close: &str) -> Vec<usize> {
+    let mut offsets = Vec::new();
+    let bytes = wrapped.as_bytes();
+    let open_bytes = open.as_bytes();
+    let close_bytes = close.as_bytes();
+    let mut i = 0usize;
+    // Number of sentinel bytes consumed so far — every marker encountered
+    // subtracts from the wrapped-string index to get the original offset.
+    let mut marker_bytes_seen = 0usize;
+    while i < bytes.len() {
+        if bytes[i..].starts_with(open_bytes) {
+            // Record the original-text offset of the term following the open
+            // marker.
+            let original_offset = i - marker_bytes_seen;
+            offsets.push(original_offset);
+            i += open_bytes.len();
+            marker_bytes_seen += open_bytes.len();
+        } else if bytes[i..].starts_with(close_bytes) {
+            i += close_bytes.len();
+            marker_bytes_seen += close_bytes.len();
+        } else {
+            i += 1;
+        }
+    }
+    offsets
+}
+
+/// Binary-search the position map for the leaf whose `[start, end)` range
+/// contains `offset`. Returns `None` if no leaf covers the offset.
+fn find_leaf_for_offset(positions: &[(usize, usize, String)], offset: usize) -> Option<&str> {
+    // Binary search for the greatest start_offset <= offset.
+    let idx = match positions.binary_search_by(|entry| entry.0.cmp(&offset)) {
+        Ok(i) => i,
+        Err(0) => return None,
+        Err(i) => i - 1,
+    };
+    let (start, end, path) = &positions[idx];
+    if offset >= *start && offset < *end {
+        Some(path.as_str())
+    } else {
+        None
+    }
+}
+
+/// Resolve per-hit match attribution by introspecting the FTS5 match state
+/// for the hit's row via `highlight()` and mapping the resulting original-
+/// text offsets back to recursive-leaf paths via the Phase 4 position map.
+///
+/// Chunk-backed hits carry no leaf structure and always return an empty
+/// `matched_paths` vector. Property-backed hits without a `projection_row_id`
+/// (which should not happen — the search CTE always populates it) also
+/// return empty attribution rather than erroring.
+fn resolve_hit_attribution(
+    conn: &Connection,
+    hit: &SearchHit,
+    match_expr: &str,
+) -> Result<HitAttribution, EngineError> {
+    if !matches!(hit.source, SearchHitSource::Property) {
+        return Ok(HitAttribution {
+            matched_paths: Vec::new(),
+        });
+    }
+    let Some(rowid_str) = hit.projection_row_id.as_deref() else {
+        return Ok(HitAttribution {
+            matched_paths: Vec::new(),
+        });
+    };
+    let rowid: i64 = match rowid_str.parse() {
+        Ok(v) => v,
+        Err(_) => {
+            return Ok(HitAttribution {
+                matched_paths: Vec::new(),
+            });
+        }
+    };
+
+    // Fetch the highlight-wrapped text_content for this hit's FTS row. The
+    // FTS5 MATCH in the WHERE clause re-establishes the match state that
+    // `highlight()` needs to decorate the returned text.
+    let mut stmt = conn
+        .prepare_cached(
+            "SELECT highlight(fts_node_properties, 2, ?1, ?2) \
+             FROM fts_node_properties \
+             WHERE rowid = ?3 AND fts_node_properties MATCH ?4",
+        )
+        .map_err(EngineError::Sqlite)?;
+    let wrapped: Option<String> = stmt
+        .query_row(
+            rusqlite::params![
+                ATTRIBUTION_HIGHLIGHT_OPEN,
+                ATTRIBUTION_HIGHLIGHT_CLOSE,
+                rowid,
+                match_expr,
+            ],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(EngineError::Sqlite)?;
+    let Some(wrapped) = wrapped else {
+        return Ok(HitAttribution {
+            matched_paths: Vec::new(),
+        });
+    };
+
+    let offsets = parse_highlight_offsets(
+        &wrapped,
+        ATTRIBUTION_HIGHLIGHT_OPEN,
+        ATTRIBUTION_HIGHLIGHT_CLOSE,
+    );
+    if offsets.is_empty() {
+        return Ok(HitAttribution {
+            matched_paths: Vec::new(),
+        });
+    }
+
+    let positions = load_position_map(conn, &hit.node.logical_id, &hit.node.kind)?;
+    if positions.is_empty() {
+        // Scalar-only schemas have no position-map entries; attribution
+        // degrades to an empty vector rather than erroring.
+        return Ok(HitAttribution {
+            matched_paths: Vec::new(),
+        });
+    }
+
+    let mut matched_paths: Vec<String> = Vec::new();
+    for offset in offsets {
+        if let Some(path) = find_leaf_for_offset(&positions, offset)
+            && !matched_paths.iter().any(|p| p == path)
+        {
+            matched_paths.push(path.to_owned());
+        }
+    }
+    Ok(HitAttribution { matched_paths })
 }
 
 fn bind_value_to_sql(value: &fathomdb_query::BindValue) -> Value {
