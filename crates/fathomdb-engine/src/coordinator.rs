@@ -279,6 +279,22 @@ impl ExecutionCoordinator {
 
         let report = schema_manager.bootstrap(&conn)?;
 
+        // Phase 2: when migration 16 is freshly applied, the FTS virtual
+        // tables were dropped and recreated with the unicode61+porter
+        // tokenizer. Chunk FTS is rebuilt inline by the migration; property
+        // FTS requires per-kind projection logic that lives in this crate, so
+        // rebuild it here before the pool/readers observe an empty index.
+        if report.applied_versions.iter().any(|v| v.0 == 16) {
+            let tx = conn.unchecked_transaction()?;
+            tx.execute("DELETE FROM fts_node_properties", [])?;
+            crate::projection::insert_property_fts_rows(
+                &tx,
+                "SELECT logical_id, properties FROM nodes \
+                 WHERE kind = ?1 AND superseded_at IS NULL",
+            )?;
+            tx.commit()?;
+        }
+
         #[cfg(feature = "sqlite-vec")]
         let mut vector_enabled = report.vector_profile_enabled;
         #[cfg(not(feature = "sqlite-vec"))]
@@ -435,11 +451,15 @@ impl ExecutionCoordinator {
 
     /// Execute a compiled adaptive search and return matching hits.
     ///
-    /// Phase 1 runs a straight-through strict-only query: the chunk and
-    /// property FTS indexes are `UNION ALL`-ed, BM25-scored (flipped so
-    /// larger values mean better matches), ordered, and limited. Row-level
-    /// filter predicates are applied in the outer `WHERE` clause — no
-    /// filter fusion, no relaxed branch, no fallback.
+    /// Phase 2 splits filters: fusable predicates (`KindEq`, `LogicalIdEq`,
+    /// `SourceRefEq`, `ContentRefEq`, `ContentRefNotNull`) are injected into
+    /// the `search_hits` CTE so the CTE `LIMIT` applies after filtering,
+    /// while residual predicates (JSON path filters) stay in the outer
+    /// `WHERE`. The chunk and property FTS
+    /// indexes are `UNION ALL`-ed, BM25-scored (flipped so larger values mean
+    /// better matches), ordered, and limited. All hits return
+    /// `match_mode = Strict` — the relaxed branch and fallback arrive in
+    /// later phases.
     ///
     /// # Errors
     /// Returns [`EngineError`] if the SQL statement cannot be prepared or executed.
@@ -457,32 +477,54 @@ impl ExecutionCoordinator {
             BindValue::Text(compiled.root_kind.clone()),
         ];
 
-        let mut filter_clauses = String::new();
-        for predicate in &compiled.filters {
+        // Fusable predicates are injected into the CTE's outer WHERE against
+        // the `hn` alias (the nodes table joined inside the CTE). Residual
+        // predicates remain in the outer WHERE against `n`.
+        let mut fused_clauses = String::new();
+        for predicate in &compiled.fusable_filters {
             match predicate {
-                Predicate::LogicalIdEq(logical_id) => {
-                    binds.push(BindValue::Text(logical_id.clone()));
-                    let idx = binds.len();
-                    let _ = write!(filter_clauses, "\n  AND n.logical_id = ?{idx}");
-                }
                 Predicate::KindEq(kind) => {
                     binds.push(BindValue::Text(kind.clone()));
                     let idx = binds.len();
-                    let _ = write!(filter_clauses, "\n  AND n.kind = ?{idx}");
+                    let _ = write!(fused_clauses, "\n                  AND hn.kind = ?{idx}");
+                }
+                Predicate::LogicalIdEq(logical_id) => {
+                    binds.push(BindValue::Text(logical_id.clone()));
+                    let idx = binds.len();
+                    let _ = write!(
+                        fused_clauses,
+                        "\n                  AND hn.logical_id = ?{idx}"
+                    );
                 }
                 Predicate::SourceRefEq(source_ref) => {
                     binds.push(BindValue::Text(source_ref.clone()));
                     let idx = binds.len();
-                    let _ = write!(filter_clauses, "\n  AND n.source_ref = ?{idx}");
-                }
-                Predicate::ContentRefNotNull => {
-                    filter_clauses.push_str("\n  AND n.content_ref IS NOT NULL");
+                    let _ = write!(
+                        fused_clauses,
+                        "\n                  AND hn.source_ref = ?{idx}"
+                    );
                 }
                 Predicate::ContentRefEq(uri) => {
                     binds.push(BindValue::Text(uri.clone()));
                     let idx = binds.len();
-                    let _ = write!(filter_clauses, "\n  AND n.content_ref = ?{idx}");
+                    let _ = write!(
+                        fused_clauses,
+                        "\n                  AND hn.content_ref = ?{idx}"
+                    );
                 }
+                Predicate::ContentRefNotNull => {
+                    fused_clauses.push_str("\n                  AND hn.content_ref IS NOT NULL");
+                }
+                Predicate::JsonPathEq { .. } | Predicate::JsonPathCompare { .. } => {
+                    // Should be in residual_filters; compile_search guarantees
+                    // this, but stay defensive.
+                }
+            }
+        }
+
+        let mut filter_clauses = String::new();
+        for predicate in &compiled.residual_filters {
+            match predicate {
                 Predicate::JsonPathEq { path, value } => {
                     binds.push(BindValue::Text(path.clone()));
                     let path_idx = binds.len();
@@ -509,13 +551,27 @@ impl ExecutionCoordinator {
                         "\n  AND json_extract(n.properties, ?{path_idx}) {operator} ?{value_idx}"
                     );
                 }
+                Predicate::KindEq(_)
+                | Predicate::LogicalIdEq(_)
+                | Predicate::SourceRefEq(_)
+                | Predicate::ContentRefEq(_)
+                | Predicate::ContentRefNotNull => {
+                    // Fusable predicates live in fused_clauses; compile_search
+                    // partitions them out of residual_filters.
+                }
             }
         }
 
         let limit = compiled.limit;
         let sql = format!(
             "WITH search_hits AS (
-                SELECT * FROM (
+                SELECT
+                    u.logical_id AS logical_id,
+                    u.score AS score,
+                    u.source AS source,
+                    u.snippet AS snippet,
+                    u.projection_row_id AS projection_row_id
+                FROM (
                     SELECT
                         c.node_logical_id AS logical_id,
                         -bm25(fts_nodes) AS score,
@@ -538,8 +594,10 @@ impl ExecutionCoordinator {
                     JOIN nodes src ON src.logical_id = fp.node_logical_id AND src.superseded_at IS NULL
                     WHERE fts_node_properties MATCH ?3
                       AND fp.kind = ?4
-                )
-                ORDER BY score DESC
+                ) u
+                JOIN nodes hn ON hn.logical_id = u.logical_id AND hn.superseded_at IS NULL
+                WHERE 1 = 1{fused_clauses}
+                ORDER BY u.score DESC
                 LIMIT {limit}
             )
             SELECT
