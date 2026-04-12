@@ -116,7 +116,10 @@ fathom-integrity rebuild-missing --db /data/my.db --bridge ./fathomdb-admin-brid
 FTS property schemas declare which JSON property paths should be extracted and
 indexed for full-text search on structured node kinds. Once registered,
 `text_search(...)` transparently covers both chunk-backed document text and
-property-backed structured text via a UNION query.
+property-backed structured text via a UNION query. The search expression uses
+the same safe subset documented in the querying guide: terms, quoted phrases,
+implicit `AND`, uppercase `OR`, and uppercase `NOT`. Unsupported syntax stays
+literal rather than passing through as raw FTS5 control syntax.
 
 ### Schema Lifecycle
 

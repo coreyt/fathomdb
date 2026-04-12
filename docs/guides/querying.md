@@ -99,11 +99,29 @@ for node in results.nodes:
 
 ### Full-text search
 
-`text_search` uses SQLite FTS5 for keyword and phrase matching. It
+`text_search` is the default safe full-text surface. It accepts a constrained
+subset of familiar search syntax: bare terms, quoted phrases, implicit `AND`
+between adjacent terms, and uppercase `OR` and `NOT`. Unsupported syntax stays
+literal rather than passing through as raw FTS5 control syntax.
+
+The full supported subset, downgrade behavior, and unsupported forms are
+documented in [Text Query Syntax](./text-query-syntax.md).
+
+The engine lowers that supported subset to SQLite FTS5 under the hood. It
 transparently searches both chunk-backed document text and property-backed
 structured text (for kinds with a registered
 [FTS property schema](./property-fts.md)). Your application does not need to
 know the source of a given hit.
+
+Examples:
+
+```python
+db.nodes("Document").text_search("project deadline", limit=20)
+db.nodes("Document").text_search('"release notes"', limit=20)
+db.nodes("Document").text_search("ship OR docs", limit=20)
+db.nodes("Document").text_search("ship NOT blocked", limit=20)
+db.nodes("Document").text_search("not a ship", limit=20)
+```
 
 ```python
 results = (

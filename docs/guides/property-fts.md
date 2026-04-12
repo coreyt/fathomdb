@@ -30,6 +30,10 @@ searchable content lives in their JSON `properties`, not in chunks.
 
 **Both together:** A node kind can have both chunks and property projections.
 `text_search(...)` transparently searches both and returns a unified result.
+It uses the same safe text-query subset documented in
+[Text Query Syntax](./text-query-syntax.md): terms, quoted phrases,
+implicit `AND`, uppercase `OR`, and uppercase `NOT`. Unsupported syntax
+stays literal rather than becoming raw FTS5 control syntax.
 
 ## How It Works
 
@@ -38,8 +42,9 @@ searchable content lives in their JSON `properties`, not in chunks.
 2. **Write nodes normally.** The engine extracts the declared paths at write
    time and maintains a derived FTS index row automatically.
 3. **Search with `text_search(...)`.** The existing query operator transparently
-   covers both chunk-backed and property-backed hits via a UNION. No new query
-   API is needed.
+   covers both chunk-backed and property-backed hits via a UNION. The search
+   expression still follows the same safe subset described in
+   [Text Query Syntax](./text-query-syntax.md). No new query API is needed.
 
 Property FTS rows are **derived state** -- they are rebuilt from canonical
 nodes and schemas. You never write them directly.
@@ -134,7 +139,9 @@ FTS row is rebuilt.
 
 ## Searching
 
-Use the same `text_search(...)` you already use for chunk-based FTS:
+Use the same `text_search(...)` you already use for chunk-based FTS. The
+supported query forms are the same safe subset documented in the querying
+guide:
 
 === "Python"
 

@@ -132,7 +132,10 @@ is spread across multiple chunks.
     property projection** instead of creating chunks. The engine extracts
     declared property paths at write time and indexes them for full-text
     search. `text_search(...)` transparently covers both chunk-backed and
-    property-backed results. See
+    property-backed results, using the same safe subset of terms, quoted
+    phrases, implicit `AND`, uppercase `OR`, and uppercase `NOT` documented in
+    the querying guide. Unsupported syntax stays literal rather than passing
+    through as raw FTS5 control syntax. See
     [Property FTS Projections](../guides/property-fts.md).
 
 ```python

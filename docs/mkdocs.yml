@@ -54,6 +54,7 @@ nav:
     - Operational Store: concepts/operational-store.md
   - Guides:
     - Querying Data: guides/querying.md
+    - Text Query Syntax: guides/text-query-syntax.md
     - Writing Data: guides/writing-data.md
     - Property FTS Projections: guides/property-fts.md
   - API Reference (Python):
