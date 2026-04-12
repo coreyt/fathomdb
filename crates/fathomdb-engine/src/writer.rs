@@ -264,6 +264,11 @@ pub(crate) const MAX_RECURSIVE_DEPTH: usize = 8;
 /// When the next complete leaf would push the blob past this cap, the walk
 /// stops on the preceding leaf boundary — the existing blob is indexed, the
 /// truncated leaf is not partially emitted.
+///
+/// This budget applies only to the recursive-walk portion of the blob.
+/// Scalar-prefix emissions and the scalar↔recursive [`LEAF_SEPARATOR`] token
+/// are not counted against it; the cap governs how much nested-subtree
+/// content is serialized, not the final blob length.
 pub(crate) const MAX_EXTRACTED_BYTES: usize = 65_536;
 
 /// Hard phrase-break separator inserted between two adjacent recursive
@@ -287,6 +292,11 @@ pub(crate) const MAX_EXTRACTED_BYTES: usize = 65_536;
 ///
 /// Validated by the integration test
 /// `leaf_separator_is_hard_phrase_break_under_unicode61_porter`.
+///
+/// Note: because the sentinel is a real token it may appear in FTS5
+/// `snippet()` output when the snippet window spans a leaf boundary.
+/// Phase 5 presentation-layer snippet post-processing is responsible for
+/// stripping it before the snippet is surfaced to callers.
 pub(crate) const LEAF_SEPARATOR: &str = " fathomdbphrasebreaksentinel ";
 
 /// Whether a registered property-FTS path extracts a single scalar value
