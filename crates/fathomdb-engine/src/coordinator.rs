@@ -5,9 +5,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use fathomdb_query::{
-    BindValue, ComparisonOp, CompiledGroupedQuery, CompiledQuery, CompiledSearch, DrivingTable,
-    ExpansionSlot, FALLBACK_TRIGGER_K, HitAttribution, Predicate, ScalarValue, SearchBranch,
-    SearchHit, SearchHitSource, SearchMatchMode, SearchPlan, SearchRows, ShapeHash,
+    BindValue, ComparisonOp, CompiledGroupedQuery, CompiledQuery, CompiledSearch,
+    CompiledSearchPlan, DrivingTable, ExpansionSlot, FALLBACK_TRIGGER_K, HitAttribution, Predicate,
+    ScalarValue, SearchBranch, SearchHit, SearchHitSource, SearchMatchMode, SearchRows, ShapeHash,
     render_text_query_fts5,
 };
 use fathomdb_schema::SchemaManager;
@@ -468,33 +468,62 @@ impl ExecutionCoordinator {
         &self,
         compiled: &CompiledSearch,
     ) -> Result<SearchRows, EngineError> {
-        // Build the two-branch plan from the strict text query and run strict
-        // first. The relaxed branch only fires when strict returned fewer than
+        // Build the two-branch plan from the strict text query and delegate
+        // to the shared plan-execution routine. The relaxed branch is derived
+        // via `derive_relaxed` and only fires when strict returned fewer than
         // `min(FALLBACK_TRIGGER_K, limit)` hits. With K = 1 this collapses to
-        // "relaxed iff strict is empty," but the coordinator spells the rule
-        // out explicitly so raising K later is a one-line constant bump.
-        let plan = SearchPlan::from_strict(compiled.text_query.clone());
-        let strict_hits = self.run_search_branch(compiled, SearchBranch::Strict)?;
+        // "relaxed iff strict is empty," but the routine spells the rule out
+        // explicitly so raising K later is a one-line constant bump.
+        let (relaxed_query, was_degraded_at_plan_time) =
+            fathomdb_query::derive_relaxed(&compiled.text_query);
+        let relaxed = relaxed_query.map(|q| CompiledSearch {
+            root_kind: compiled.root_kind.clone(),
+            text_query: q,
+            limit: compiled.limit,
+            fusable_filters: compiled.fusable_filters.clone(),
+            residual_filters: compiled.residual_filters.clone(),
+            attribution_requested: compiled.attribution_requested,
+        });
+        let plan = CompiledSearchPlan {
+            strict: compiled.clone(),
+            relaxed,
+            was_degraded_at_plan_time,
+        };
+        self.execute_compiled_search_plan(&plan)
+    }
 
-        let limit = compiled.limit;
+    /// Execute a two-branch [`CompiledSearchPlan`] and return the merged,
+    /// deduped result rows.
+    ///
+    /// This is the shared retrieval/merge routine that both
+    /// [`Self::execute_compiled_search`] (adaptive path) and
+    /// `Engine::fallback_search` (narrow two-shape path) call into. Strict
+    /// runs first; the relaxed branch only fires when it is present AND the
+    /// strict branch returned fewer than `min(FALLBACK_TRIGGER_K, limit)`
+    /// hits. Merge and dedup semantics are identical to the adaptive path
+    /// regardless of how the plan was constructed.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if either branch's SQL cannot be prepared or
+    /// executed.
+    pub fn execute_compiled_search_plan(
+        &self,
+        plan: &CompiledSearchPlan,
+    ) -> Result<SearchRows, EngineError> {
+        let strict = &plan.strict;
+        let limit = strict.limit;
+        let strict_hits = self.run_search_branch(strict, SearchBranch::Strict)?;
+
         let fallback_threshold = FALLBACK_TRIGGER_K.min(limit);
         let strict_underfilled = strict_hits.len() < fallback_threshold;
 
         let mut relaxed_hits: Vec<SearchHit> = Vec::new();
         let mut fallback_used = false;
         let mut was_degraded = false;
-        if let Some(relaxed_query) = plan.relaxed.clone()
+        if let Some(relaxed) = plan.relaxed.as_ref()
             && strict_underfilled
         {
-            let relaxed_compiled = CompiledSearch {
-                root_kind: compiled.root_kind.clone(),
-                text_query: relaxed_query,
-                limit: compiled.limit,
-                fusable_filters: compiled.fusable_filters.clone(),
-                residual_filters: compiled.residual_filters.clone(),
-                attribution_requested: compiled.attribution_requested,
-            };
-            relaxed_hits = self.run_search_branch(&relaxed_compiled, SearchBranch::Relaxed)?;
+            relaxed_hits = self.run_search_branch(relaxed, SearchBranch::Relaxed)?;
             fallback_used = true;
             was_degraded = plan.was_degraded_at_plan_time;
         }
@@ -531,12 +560,22 @@ impl ExecutionCoordinator {
     ) -> Result<Vec<SearchHit>, EngineError> {
         use std::fmt::Write as _;
         let rendered = render_text_query_fts5(&compiled.text_query);
-        let mut binds: Vec<BindValue> = vec![
-            BindValue::Text(rendered.clone()),
-            BindValue::Text(compiled.root_kind.clone()),
-            BindValue::Text(rendered),
-            BindValue::Text(compiled.root_kind.clone()),
-        ];
+        // An empty `root_kind` means "unkind-filtered" — the fallback_search
+        // helper uses this when the caller did not add `.filter_kind_eq(...)`.
+        // The adaptive `text_search()` path never produces an empty root_kind
+        // because `QueryBuilder::nodes(kind)` requires a non-empty string at
+        // the entry point.
+        let filter_by_kind = !compiled.root_kind.is_empty();
+        let mut binds: Vec<BindValue> = if filter_by_kind {
+            vec![
+                BindValue::Text(rendered.clone()),
+                BindValue::Text(compiled.root_kind.clone()),
+                BindValue::Text(rendered),
+                BindValue::Text(compiled.root_kind.clone()),
+            ]
+        } else {
+            vec![BindValue::Text(rendered.clone()), BindValue::Text(rendered)]
+        };
 
         // Fusable predicates are injected into the CTE's outer WHERE against
         // the `hn` alias (the nodes table joined inside the CTE). Residual
@@ -624,6 +663,17 @@ impl ExecutionCoordinator {
         }
 
         let limit = compiled.limit;
+        let (chunk_fts_bind, chunk_kind_clause, prop_fts_bind, prop_kind_clause) = if filter_by_kind
+        {
+            (
+                "?1",
+                "\n                      AND src.kind = ?2",
+                "?3",
+                "\n                      AND fp.kind = ?4",
+            )
+        } else {
+            ("?1", "", "?2", "")
+        };
         let sql = format!(
             "WITH search_hits AS (
                 SELECT
@@ -642,8 +692,7 @@ impl ExecutionCoordinator {
                     FROM fts_nodes f
                     JOIN chunks c ON c.id = f.chunk_id
                     JOIN nodes src ON src.logical_id = c.node_logical_id AND src.superseded_at IS NULL
-                    WHERE fts_nodes MATCH ?1
-                      AND src.kind = ?2
+                    WHERE fts_nodes MATCH {chunk_fts_bind}{chunk_kind_clause}
                     UNION ALL
                     SELECT
                         fp.node_logical_id AS logical_id,
@@ -653,8 +702,7 @@ impl ExecutionCoordinator {
                         CAST(fp.rowid AS TEXT) AS projection_row_id
                     FROM fts_node_properties fp
                     JOIN nodes src ON src.logical_id = fp.node_logical_id AND src.superseded_at IS NULL
-                    WHERE fts_node_properties MATCH ?3
-                      AND fp.kind = ?4
+                    WHERE fts_node_properties MATCH {prop_fts_bind}{prop_kind_clause}
                 ) u
                 JOIN nodes hn ON hn.logical_id = u.logical_id AND hn.superseded_at IS NULL
                 WHERE 1 = 1{fused_clauses}
