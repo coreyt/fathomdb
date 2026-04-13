@@ -124,19 +124,95 @@ The TypeScript SDK mirrors this surface with camelCase names
 the [TypeScript equivalent](#typescript-equivalent) section below for the
 full mapping.
 
-#### v1 scope: vector branch is dormant
+#### Read-time embedding
 
-`search()` is architected to fuse text and vector retrieval into one
-block-ordered result, but the **vector branch does not currently run on
-natural-language queries**. Read-time embedding of the caller's query
-text is deferred to a future phase. In v1, `search()` returns text-only
-hits and every result has `vector_hit_count == 0`. Callers who need
-vector retrieval today must use the advanced
-[`vector_search()`](#advanced-vector-search-semantic-similarity) override
-directly with a caller-provided vector literal. The `SearchRows` fusion
-shape, `modality` field, and `vector_distance` slot are stable public
-contracts; they will simply start carrying vector hits when the branch
-is wired through.
+`search()` fuses text and vector retrieval into one block-ordered
+result, and — starting with Phase 12.5 — callers can opt into a
+**read-time query embedder** so the vector branch fires on raw
+natural-language queries without the caller having to produce a vector
+literal themselves. The choice is made once at `Engine.open(...)` time
+and has three shapes:
+
+- **None** (default) — no embedder is attached. `search()`'s vector
+  branch stays dormant and every result has `vector_hit_count == 0`.
+  This preserves the Phase 12 v1 behaviour for callers who do not opt
+  in.
+- **Builtin** — the Candle-based `BAAI/bge-small-en-v1.5` embedder
+  (384-dim, `[CLS]` token pooling with L2 normalization). Feature-gated
+  behind the `default-embedder` Cargo feature; see the caveat below.
+- **InProcess** — a caller-supplied in-process Rust implementation of
+  the `QueryEmbedder` trait. This is the most flexible shape and is
+  only reachable from the Rust API (`EmbedderChoice::InProcess(...)`
+  on `EngineOptions`); the Python and TypeScript SDKs expose only the
+  string-keyed `"none"` / `"builtin"` choices.
+
+```python
+from fathomdb import Engine
+
+db = Engine.open(
+    "/tmp/my-agent.db",
+    embedder="builtin",
+    vector_dimension=384,
+)
+
+rows = (
+    db.nodes("Document")
+    .search("quarterly docs", 10)
+    .execute()
+)
+for hit in rows.hits:
+    print(hit.node.logical_id, hit.score, hit.modality.value, hit.snippet)
+```
+
+TypeScript mirrors the same surface through the camelCase options bag
+on `Engine.open`:
+
+```typescript
+import { Engine } from "fathomdb";
+
+const engine = Engine.open("/tmp/my-agent.db", {
+  embedder: "builtin",
+  vectorDimension: 384,
+});
+
+const rows = engine
+  .nodes("Document")
+  .search("quarterly docs", 10)
+  .execute();
+for (const hit of rows.hits) {
+  console.log(hit.node.logicalId, hit.score, hit.modality, hit.snippet);
+}
+```
+
+**Build-feature caveat.** `"builtin"` only lights up when the underlying
+`fathomdb-engine` crate is compiled with `--features default-embedder`.
+When the feature is off, the engine logs a warning and silently falls
+back to the `None` behaviour, so existing `embedder="builtin"` code
+keeps working — it simply runs text-only with `vector_hit_count == 0`.
+
+**Runtime degradation.** Even when the feature is compiled in, the
+model weights still have to load on first use. If loading fails (or any
+per-query embedding call errors), the coordinator treats it as a
+capability miss: the vector branch is skipped and
+`rows.was_degraded == True` signals that `search()` fell back to a
+simpler plan. The rest of the search pipeline (strict text, relaxed
+text, filters) runs normally.
+
+**Latency notes.** Cold start on the Builtin embedder is roughly
+300–500 ms for the first query, covering model-weight load and
+tokenizer initialization. Warm per-query cost on CPU fp32 is roughly
+20 ms. The embedder is held behind the engine for the lifetime of the
+process, so the cold-start cost is paid once.
+
+**Write-time regeneration.** Phase 12.5 wires the Builtin embedder into
+the read path only. Write-time vector regeneration continues to flow
+through `VectorRegenerationConfig` and is not yet driven by
+`EmbedderChoice::Builtin`.
+
+The advanced
+[`vector_search()`](#advanced-vector-search-semantic-similarity)
+override remains available for callers that want to bypass the unified
+planner and supply a vector literal directly.
 
 #### `filter_json_*` vs property FTS
 
@@ -189,9 +265,11 @@ with `search()` so the calling code shape is identical.
 `vector_search` finds nodes whose embedded content is closest to the query.
 The database must have been opened with `vector_dimension`. It is the
 modality-specific override for callers who want to bypass the unified
-planner and run vector retrieval directly — in v1 it is also the **only
-way** to run a vector search, because `search()` does not yet embed
-natural-language queries at read time.
+planner and run vector retrieval directly. When no read-time embedder
+is configured (`embedder=None`), this remains the only way to run a
+vector query; when the Builtin or an in-process embedder is attached,
+`search()` can embed natural-language queries at read time and most
+callers should prefer it.
 
 ```python
 db = Engine.open("/tmp/my-agent.db", vector_dimension=1536)

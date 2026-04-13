@@ -20,8 +20,15 @@ npm install fathomdb
 ```typescript
 import { Engine, WriteRequestBuilder, newId, newRowId } from "fathomdb";
 
-// Open a database
-const engine = Engine.open("agent.db");
+// Open a database. Opt into the Phase 12.5 read-time embedder so
+// search() fires its vector branch on natural-language queries. The
+// "builtin" shape requires a fathomdb build with the default-embedder
+// Cargo feature; when that feature is off it silently falls back to
+// text-only search.
+const engine = Engine.open("agent.db", {
+  embedder: "builtin",
+  vectorDimension: 384,
+});
 
 // Write data
 const builder = new WriteRequestBuilder("ingest");
@@ -67,11 +74,19 @@ engine.close();
 - **Graph backbone**: nodes, edges, logical identity, supersession (upsert
   without mutation), runs/steps/actions for agent execution tracking
 - **Unified `search(...)` retrieval** via SQLite FTS5 -- one call runs a
-  strict-then-relaxed text pipeline (with a reserved vector stage for
-  future phases) and returns ranked `SearchHit` rows over both document
-  chunks and structured property projections. `textSearch(...)`,
+  strict-then-relaxed text pipeline plus an optional vector branch and
+  returns ranked `SearchHit` rows over both document chunks and
+  structured property projections. `textSearch(...)`,
   `vectorSearch(...)`, and `fallbackSearch(...)` remain available as
   advanced modality-specific overrides.
+- **Read-time query embedder** (Phase 12.5): pass `{ embedder:
+  "builtin", vectorDimension: 384 }` to `Engine.open(...)` to let
+  `search()` fire its vector branch on natural-language queries. See
+  the [querying guide](../../../docs/guides/querying.md#read-time-embedding)
+  for the full configuration surface. The `"builtin"` embedder requires
+  a fathomdb build with the `default-embedder` Cargo feature on
+  `fathomdb-engine`; when the feature is off, the engine logs a warning
+  and silently falls back to text-only search.
 - **Vector search** via sqlite-vec
 - **Immutable query builder**: fluent, chainable API with 14+ filter methods
 - **Typed results**: all query/admin results are fully typed TypeScript interfaces
@@ -89,6 +104,7 @@ const engine = Engine.open("path.db", {
   provenanceMode: "warn",       // or "require"
   vectorDimension: 384,         // optional, for vector search
   telemetryLevel: "counters",   // or "statements", "profiling"
+  embedder: "builtin",          // optional; "none" | "builtin"
 });
 
 engine.write(request);

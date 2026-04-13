@@ -13,7 +13,11 @@ pip install fathomdb
 ```python
 from fathomdb import Engine, WriteRequestBuilder
 
-engine = Engine.open("my_agent.db")
+# Opt into the Phase 12.5 read-time embedder so search() fires its
+# vector branch on natural-language queries. The embedder="builtin"
+# shape requires a fathomdb build with --features default-embedder;
+# when that feature is off it silently falls back to text-only search.
+engine = Engine.open("my_agent.db", embedder="builtin", vector_dimension=384)
 
 # Write data
 builder = WriteRequestBuilder("ingest")
@@ -36,11 +40,19 @@ engine.close()
 
 - Graph backbone with nodes, edges, and temporal tracking
 - Unified `search()` entry point -- one call runs a strict-then-relaxed
-  text pipeline (with a reserved vector stage for future phases) and
-  returns ranked `SearchHit` rows over both document chunks and
-  structured property projections
-- Vector similarity search via sqlite-vec (advanced override today;
-  will fuse into `search()` once read-time query embedding is wired in)
+  text pipeline plus an optional vector branch and returns ranked
+  `SearchHit` rows over both document chunks and structured property
+  projections
+- Read-time query embedder (Phase 12.5): opt in with
+  `Engine.open(path, embedder="builtin", vector_dimension=384)` to let
+  `search()` fire its vector branch on natural-language queries. See
+  the [querying guide](../docs/guides/querying.md#read-time-embedding)
+  for the full configuration surface and degradation semantics. The
+  `"builtin"` embedder requires fathomdb to be built with the
+  `default-embedder` Cargo feature; when the feature is off, the engine
+  logs a warning and silently falls back to text-only search
+- Vector similarity search via sqlite-vec (advanced override for
+  callers that want to supply a vector literal directly)
 - FTS property schema management -- register JSON property paths per node
   kind, including recursive-mode paths that populate a sidecar position
   map and unlock per-hit match attribution
