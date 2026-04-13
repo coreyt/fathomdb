@@ -90,6 +90,7 @@ impl EngineCore {
             vector_dimension,
             read_pool_size: None,
             telemetry_level: parse_telemetry_level(telemetry_level)?,
+            embedder: crate::EmbedderChoice::None,
         };
         // Release the GIL during engine open — schema bootstrap emits tracing
         // events that pyo3-log forwards to Python logging.  Holding the GIL
