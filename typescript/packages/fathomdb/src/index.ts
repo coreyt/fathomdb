@@ -15,7 +15,7 @@ export {
   SqliteError,
   WriterRejectedError
 } from "./errors.js";
-export { FallbackSearchBuilder, Query, TextSearchBuilder } from "./query.js";
+export { FallbackSearchBuilder, Query, SearchBuilder, TextSearchBuilder } from "./query.js";
 export {
   PreserializedJson,
   // Enums / constants
