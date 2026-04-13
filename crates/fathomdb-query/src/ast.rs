@@ -29,6 +29,19 @@ pub struct ExpansionSlot {
 /// A single step in the query pipeline.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum QueryStep {
+    /// Unified adaptive retrieval entry step consumed by the Phase 12
+    /// retrieval planner.
+    ///
+    /// Carries the caller's raw query string (not a parsed [`TextQuery`]):
+    /// the planner decides how to interpret and route it across the text
+    /// strict, text relaxed, and (future) vector branches. See
+    /// `crate::compile_retrieval_plan` for the planner entry point.
+    Search {
+        /// The raw caller-supplied query string.
+        query: String,
+        /// Maximum number of candidate rows requested by the caller.
+        limit: usize,
+    },
     /// Nearest-neighbor search over vector embeddings.
     VectorSearch {
         /// The search query text (to be embedded by the caller).

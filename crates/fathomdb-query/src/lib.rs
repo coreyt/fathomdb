@@ -15,14 +15,16 @@ pub use builder::QueryBuilder;
 pub use compile::compile_search_plan;
 pub use compile::{
     BindValue, CompileError, CompiledGroupedQuery, CompiledQuery, ShapeHash, compile_grouped_query,
-    compile_query, compile_search, compile_search_plan_from_queries, compile_vector_search,
+    compile_query, compile_retrieval_plan, compile_search, compile_search_plan_from_queries,
+    compile_vector_search,
 };
 pub use fusion::{is_fusable, partition_search_filters};
 pub use plan::{DrivingTable, ExecutionHints};
 pub use relax::{FALLBACK_TRIGGER_K, RELAXED_BRANCH_CAP, derive_relaxed};
 pub use search::{
-    CompiledSearch, CompiledSearchPlan, CompiledVectorSearch, HitAttribution, NodeRowLite,
-    RetrievalModality, SearchBranch, SearchHit, SearchHitSource, SearchMatchMode, SearchRows,
+    CompiledRetrievalPlan, CompiledSearch, CompiledSearchPlan, CompiledVectorSearch,
+    HitAttribution, NodeRowLite, RetrievalModality, SearchBranch, SearchHit, SearchHitSource,
+    SearchMatchMode, SearchRows,
 };
 pub use text_query::{TextQuery, render_text_query_fts5};
 
