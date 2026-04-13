@@ -4,6 +4,7 @@ import {
   groupedQueryRowsFromWire,
   queryPlanFromWire,
   queryRowsFromWire,
+  searchRowsFromWire,
   type CompiledGroupedQuery,
   type CompiledQuery,
   type GroupedQueryRows,
@@ -11,6 +12,7 @@ import {
   type QueryPlan,
   type QueryRows,
   type RawJson,
+  type SearchRows,
 } from "./types.js";
 import { callNative, parseNativeJson } from "./errors.js";
 import { runWithFeedback } from "./feedback.js";
@@ -86,19 +88,19 @@ export class Query {
   }
 
   /**
-   * Add a full-text search step.
+   * Start an adaptive full-text search rooted at the current query's kind.
    *
-   * Searches both chunk-backed document text (`fts_nodes`) and property-backed
-   * structured text (`fts_node_properties`) transparently via a UNION. Kinds
-   * with a registered FTS property schema will have their declared property
-   * paths searchable without requiring explicit chunks.
+   * Returns a distinct {@link TextSearchBuilder} whose `.execute()` returns
+   * {@link SearchRows}, not {@link QueryRows}. The adaptive pipeline tries
+   * the strict query first and automatically derives a relaxed branch on
+   * strict-miss.
    *
    * @param query - The FTS query string.
-   * @param limit - Maximum number of results to return.
-   * @returns A new Query with the text search step appended.
+   * @param limit - Maximum number of candidate hits to return.
+   * @returns A new {@link TextSearchBuilder} tethered to the engine core.
    */
-  textSearch(query: string, limit: number): Query {
-    return this.#withStep({ type: "text_search", query, limit });
+  textSearch(query: string, limit: number): TextSearchBuilder {
+    return new TextSearchBuilder(this.#core, this.#rootKind, query, limit);
   }
 
   /**
@@ -385,4 +387,367 @@ export class Query {
     return JSON.stringify(this.toAst());
   }
 
+}
+
+type SearchFilter = Record<string, RawJson>;
+
+type SearchMode = "text_search" | "fallback_search";
+
+function buildSearchRequest(args: {
+  mode: SearchMode;
+  rootKind: string;
+  strictQuery: string;
+  relaxedQuery: string | null;
+  limit: number;
+  filters: SearchFilter[];
+  attributionRequested: boolean;
+}): string {
+  return JSON.stringify({
+    mode: args.mode,
+    root_kind: args.rootKind,
+    strict_query: args.strictQuery,
+    relaxed_query: args.relaxedQuery,
+    limit: args.limit,
+    filters: args.filters,
+    attribution_requested: args.attributionRequested,
+  });
+}
+
+function runSearch(
+  core: NativeEngineCore,
+  operationKind: string,
+  rootKind: string,
+  requestJson: string,
+  progressCallback?: ProgressCallback,
+  feedbackConfig?: FeedbackConfig,
+): SearchRows {
+  return runWithFeedback({
+    operationKind,
+    metadata: { root_kind: rootKind },
+    progressCallback,
+    feedbackConfig,
+    operation: () =>
+      searchRowsFromWire(parseNativeJson(callNative(() => core.executeSearch(requestJson)))),
+  });
+}
+
+/**
+ * Tethered builder for an adaptive text search.
+ *
+ * Created via {@link Query.textSearch}. Each filter method returns a new
+ * builder, leaving the original unchanged. Terminal method
+ * {@link TextSearchBuilder.execute} dispatches the request through the
+ * native FFI and returns {@link SearchRows}.
+ */
+export class TextSearchBuilder {
+  readonly #core: NativeEngineCore;
+  readonly #rootKind: string;
+  readonly #strictQuery: string;
+  readonly #limit: number;
+  readonly #filters: SearchFilter[];
+  readonly #attributionRequested: boolean;
+
+  constructor(
+    core: NativeEngineCore,
+    rootKind: string,
+    strictQuery: string,
+    limit: number,
+    filters: SearchFilter[] = [],
+    attributionRequested = false,
+  ) {
+    this.#core = core;
+    this.#rootKind = rootKind;
+    this.#strictQuery = strictQuery;
+    this.#limit = limit;
+    this.#filters = filters;
+    this.#attributionRequested = attributionRequested;
+  }
+
+  #withFilter(filter: SearchFilter): TextSearchBuilder {
+    return new TextSearchBuilder(
+      this.#core,
+      this.#rootKind,
+      this.#strictQuery,
+      this.#limit,
+      [...this.#filters, filter],
+      this.#attributionRequested,
+    );
+  }
+
+  /** Request per-hit match attribution payloads from the engine. */
+  withMatchAttribution(): TextSearchBuilder {
+    return new TextSearchBuilder(
+      this.#core,
+      this.#rootKind,
+      this.#strictQuery,
+      this.#limit,
+      this.#filters,
+      true,
+    );
+  }
+
+  /** Filter hits to those whose node kind equals `kind`. */
+  filterKindEq(kind: string): TextSearchBuilder {
+    return this.#withFilter({ type: "filter_kind_eq", kind });
+  }
+
+  /** Filter hits to those with the given logical ID. */
+  filterLogicalIdEq(logicalId: string): TextSearchBuilder {
+    return this.#withFilter({ type: "filter_logical_id_eq", logical_id: logicalId });
+  }
+
+  /** Filter hits to those with the given source reference. */
+  filterSourceRefEq(sourceRef: string): TextSearchBuilder {
+    return this.#withFilter({ type: "filter_source_ref_eq", source_ref: sourceRef });
+  }
+
+  /** Filter hits to those with the given content reference URI. */
+  filterContentRefEq(contentRef: string): TextSearchBuilder {
+    return this.#withFilter({ type: "filter_content_ref_eq", content_ref: contentRef });
+  }
+
+  /** Filter hits to those where `content_ref` is not NULL. */
+  filterContentRefNotNull(): TextSearchBuilder {
+    return this.#withFilter({ type: "filter_content_ref_not_null" });
+  }
+
+  /** Filter hits where the JSON property at `path` equals the string `value`. */
+  filterJsonTextEq(path: string, value: string): TextSearchBuilder {
+    return this.#withFilter({ type: "filter_json_text_eq", path, value });
+  }
+
+  /** Filter hits where the JSON boolean at `path` equals `value`. */
+  filterJsonBoolEq(path: string, value: boolean): TextSearchBuilder {
+    return this.#withFilter({ type: "filter_json_bool_eq", path, value });
+  }
+
+  /** Filter hits where the JSON integer at `path` is greater than `value`. */
+  filterJsonIntegerGt(path: string, value: number): TextSearchBuilder {
+    return this.#withFilter({ type: "filter_json_integer_gt", path, value });
+  }
+
+  /** Filter hits where the JSON integer at `path` is greater than or equal to `value`. */
+  filterJsonIntegerGte(path: string, value: number): TextSearchBuilder {
+    return this.#withFilter({ type: "filter_json_integer_gte", path, value });
+  }
+
+  /** Filter hits where the JSON integer at `path` is less than `value`. */
+  filterJsonIntegerLt(path: string, value: number): TextSearchBuilder {
+    return this.#withFilter({ type: "filter_json_integer_lt", path, value });
+  }
+
+  /** Filter hits where the JSON integer at `path` is less than or equal to `value`. */
+  filterJsonIntegerLte(path: string, value: number): TextSearchBuilder {
+    return this.#withFilter({ type: "filter_json_integer_lte", path, value });
+  }
+
+  /** Filter hits where the JSON timestamp at `path` is after `value`. */
+  filterJsonTimestampGt(path: string, value: number): TextSearchBuilder {
+    return this.#withFilter({ type: "filter_json_timestamp_gt", path, value });
+  }
+
+  /** Filter hits where the JSON timestamp at `path` is at or after `value`. */
+  filterJsonTimestampGte(path: string, value: number): TextSearchBuilder {
+    return this.#withFilter({ type: "filter_json_timestamp_gte", path, value });
+  }
+
+  /** Filter hits where the JSON timestamp at `path` is before `value`. */
+  filterJsonTimestampLt(path: string, value: number): TextSearchBuilder {
+    return this.#withFilter({ type: "filter_json_timestamp_lt", path, value });
+  }
+
+  /** Filter hits where the JSON timestamp at `path` is at or before `value`. */
+  filterJsonTimestampLte(path: string, value: number): TextSearchBuilder {
+    return this.#withFilter({ type: "filter_json_timestamp_lte", path, value });
+  }
+
+  /**
+   * Execute the search and return the matched rows.
+   *
+   * @param progressCallback - Optional callback invoked with feedback events.
+   * @param feedbackConfig - Timing thresholds for progress feedback.
+   * @returns The matched {@link SearchRows}.
+   */
+  execute(progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): SearchRows {
+    const requestJson = buildSearchRequest({
+      mode: "text_search",
+      rootKind: this.#rootKind,
+      strictQuery: this.#strictQuery,
+      relaxedQuery: null,
+      limit: this.#limit,
+      filters: this.#filters,
+      attributionRequested: this.#attributionRequested,
+    });
+    return runSearch(
+      this.#core,
+      "query.text_search",
+      this.#rootKind,
+      requestJson,
+      progressCallback,
+      feedbackConfig,
+    );
+  }
+}
+
+/**
+ * Tethered builder for an explicit two-shape fallback search.
+ *
+ * Created via {@link Engine.fallbackSearch}. The caller provides both the
+ * strict and relaxed queries (or `null` for strict-only). Unlike
+ * {@link TextSearchBuilder}, this path is not subject to the adaptive branch
+ * cap.
+ */
+export class FallbackSearchBuilder {
+  readonly #core: NativeEngineCore;
+  readonly #rootKind: string;
+  readonly #strictQuery: string;
+  readonly #relaxedQuery: string | null;
+  readonly #limit: number;
+  readonly #filters: SearchFilter[];
+  readonly #attributionRequested: boolean;
+
+  constructor(
+    core: NativeEngineCore,
+    rootKind: string,
+    strictQuery: string,
+    relaxedQuery: string | null,
+    limit: number,
+    filters: SearchFilter[] = [],
+    attributionRequested = false,
+  ) {
+    this.#core = core;
+    this.#rootKind = rootKind;
+    this.#strictQuery = strictQuery;
+    this.#relaxedQuery = relaxedQuery;
+    this.#limit = limit;
+    this.#filters = filters;
+    this.#attributionRequested = attributionRequested;
+  }
+
+  #withFilter(filter: SearchFilter): FallbackSearchBuilder {
+    return new FallbackSearchBuilder(
+      this.#core,
+      this.#rootKind,
+      this.#strictQuery,
+      this.#relaxedQuery,
+      this.#limit,
+      [...this.#filters, filter],
+      this.#attributionRequested,
+    );
+  }
+
+  /** Request per-hit match attribution payloads from the engine. */
+  withMatchAttribution(): FallbackSearchBuilder {
+    return new FallbackSearchBuilder(
+      this.#core,
+      this.#rootKind,
+      this.#strictQuery,
+      this.#relaxedQuery,
+      this.#limit,
+      this.#filters,
+      true,
+    );
+  }
+
+  /** Filter hits to those whose node kind equals `kind`. */
+  filterKindEq(kind: string): FallbackSearchBuilder {
+    return this.#withFilter({ type: "filter_kind_eq", kind });
+  }
+
+  /** Filter hits to those with the given logical ID. */
+  filterLogicalIdEq(logicalId: string): FallbackSearchBuilder {
+    return this.#withFilter({ type: "filter_logical_id_eq", logical_id: logicalId });
+  }
+
+  /** Filter hits to those with the given source reference. */
+  filterSourceRefEq(sourceRef: string): FallbackSearchBuilder {
+    return this.#withFilter({ type: "filter_source_ref_eq", source_ref: sourceRef });
+  }
+
+  /** Filter hits to those with the given content reference URI. */
+  filterContentRefEq(contentRef: string): FallbackSearchBuilder {
+    return this.#withFilter({ type: "filter_content_ref_eq", content_ref: contentRef });
+  }
+
+  /** Filter hits to those where `content_ref` is not NULL. */
+  filterContentRefNotNull(): FallbackSearchBuilder {
+    return this.#withFilter({ type: "filter_content_ref_not_null" });
+  }
+
+  /** Filter hits where the JSON property at `path` equals the string `value`. */
+  filterJsonTextEq(path: string, value: string): FallbackSearchBuilder {
+    return this.#withFilter({ type: "filter_json_text_eq", path, value });
+  }
+
+  /** Filter hits where the JSON boolean at `path` equals `value`. */
+  filterJsonBoolEq(path: string, value: boolean): FallbackSearchBuilder {
+    return this.#withFilter({ type: "filter_json_bool_eq", path, value });
+  }
+
+  /** Filter hits where the JSON integer at `path` is greater than `value`. */
+  filterJsonIntegerGt(path: string, value: number): FallbackSearchBuilder {
+    return this.#withFilter({ type: "filter_json_integer_gt", path, value });
+  }
+
+  /** Filter hits where the JSON integer at `path` is greater than or equal to `value`. */
+  filterJsonIntegerGte(path: string, value: number): FallbackSearchBuilder {
+    return this.#withFilter({ type: "filter_json_integer_gte", path, value });
+  }
+
+  /** Filter hits where the JSON integer at `path` is less than `value`. */
+  filterJsonIntegerLt(path: string, value: number): FallbackSearchBuilder {
+    return this.#withFilter({ type: "filter_json_integer_lt", path, value });
+  }
+
+  /** Filter hits where the JSON integer at `path` is less than or equal to `value`. */
+  filterJsonIntegerLte(path: string, value: number): FallbackSearchBuilder {
+    return this.#withFilter({ type: "filter_json_integer_lte", path, value });
+  }
+
+  /** Filter hits where the JSON timestamp at `path` is after `value`. */
+  filterJsonTimestampGt(path: string, value: number): FallbackSearchBuilder {
+    return this.#withFilter({ type: "filter_json_timestamp_gt", path, value });
+  }
+
+  /** Filter hits where the JSON timestamp at `path` is at or after `value`. */
+  filterJsonTimestampGte(path: string, value: number): FallbackSearchBuilder {
+    return this.#withFilter({ type: "filter_json_timestamp_gte", path, value });
+  }
+
+  /** Filter hits where the JSON timestamp at `path` is before `value`. */
+  filterJsonTimestampLt(path: string, value: number): FallbackSearchBuilder {
+    return this.#withFilter({ type: "filter_json_timestamp_lt", path, value });
+  }
+
+  /** Filter hits where the JSON timestamp at `path` is at or before `value`. */
+  filterJsonTimestampLte(path: string, value: number): FallbackSearchBuilder {
+    return this.#withFilter({ type: "filter_json_timestamp_lte", path, value });
+  }
+
+  /**
+   * Execute the fallback search and return the matched rows.
+   *
+   * @param progressCallback - Optional callback invoked with feedback events.
+   * @param feedbackConfig - Timing thresholds for progress feedback.
+   * @returns The matched {@link SearchRows}.
+   */
+  execute(progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): SearchRows {
+    const requestJson = buildSearchRequest({
+      mode: "fallback_search",
+      rootKind: this.#rootKind,
+      strictQuery: this.#strictQuery,
+      relaxedQuery: this.#relaxedQuery,
+      limit: this.#limit,
+      filters: this.#filters,
+      attributionRequested: this.#attributionRequested,
+    });
+    return runSearch(
+      this.#core,
+      "query.fallback_search",
+      this.#rootKind,
+      requestJson,
+      progressCallback,
+      feedbackConfig,
+    );
+  }
 }

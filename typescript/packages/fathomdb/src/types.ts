@@ -183,6 +183,69 @@ export function queryRowsFromWire(w: Record<string, unknown>): QueryRows {
   };
 }
 
+// ── Search results ─────────────────────────────────────────────────────
+
+export type SearchHitSource = "chunk" | "property" | "vector";
+
+export type SearchMatchMode = "strict" | "relaxed";
+
+export type HitAttribution = {
+  matchedPaths: string[];
+};
+
+export type SearchHit = {
+  node: NodeRow;
+  score: number;
+  source: SearchHitSource;
+  matchMode: SearchMatchMode;
+  snippet: string | null;
+  writtenAt: number;
+  projectionRowId: string | null;
+  attribution: HitAttribution | null;
+};
+
+export type SearchRows = {
+  hits: SearchHit[];
+  wasDegraded: boolean;
+  fallbackUsed: boolean;
+  strictHitCount: number;
+  relaxedHitCount: number;
+};
+
+function hitAttributionFromWire(w: Record<string, unknown>): HitAttribution {
+  return {
+    matchedPaths: asStringArray(w.matched_paths),
+  };
+}
+
+function searchHitFromWire(w: Record<string, unknown>): SearchHit {
+  const rawAttribution = w.attribution;
+  const attribution =
+    rawAttribution != null && typeof rawAttribution === "object"
+      ? hitAttributionFromWire(rawAttribution as Record<string, unknown>)
+      : null;
+  return {
+    node: nodeRowFromWire(asObj(w.node)),
+    score: Number(w.score ?? 0),
+    source: String(w.source ?? "chunk") as SearchHitSource,
+    matchMode: String(w.match_mode ?? "strict") as SearchMatchMode,
+    snippet: (w.snippet as string) ?? null,
+    writtenAt: Number(w.written_at ?? 0),
+    projectionRowId: (w.projection_row_id as string) ?? null,
+    attribution,
+  };
+}
+
+export function searchRowsFromWire(w: Record<string, unknown>): SearchRows {
+  return {
+    hits: asArray(w.hits).map(searchHitFromWire),
+    wasDegraded: Boolean(w.was_degraded),
+    fallbackUsed: Boolean(w.fallback_used),
+    strictHitCount: Number(w.strict_hit_count ?? 0),
+    relaxedHitCount: Number(w.relaxed_hit_count ?? 0),
+  };
+}
+
 export type ExpansionRootRows = {
   rootLogicalId: string;
   nodes: NodeRow[];

@@ -2,7 +2,7 @@ import { AdminClient } from "./admin.js";
 import { callNative, FathomError, mapNativeError, parseNativeJson } from "./errors.js";
 import { runWithFeedback } from "./feedback.js";
 import { loadNativeBinding, type NativeBinding, type NativeEngineCore } from "./native.js";
-import { Query } from "./query.js";
+import { FallbackSearchBuilder, Query } from "./query.js";
 import {
   lastAccessTouchReportFromWire,
   telemetrySnapshotFromWire,
@@ -138,6 +138,27 @@ export class Engine {
    */
   query(kind: string): Query {
     return this.nodes(kind);
+  }
+
+  /**
+   * Start an explicit two-shape fallback search.
+   *
+   * Unlike the adaptive {@link Query.textSearch} path, the caller supplies
+   * both the strict and relaxed branches directly. Pass `null` for
+   * `relaxedQuery` to run the strict branch only.
+   *
+   * @param strictQuery - Strict branch query text.
+   * @param relaxedQuery - Optional relaxed branch query text.
+   * @param limit - Maximum number of candidate hits to return.
+   * @returns A new {@link FallbackSearchBuilder} tethered to the engine core.
+   */
+  fallbackSearch(
+    strictQuery: string,
+    relaxedQuery: string | null,
+    limit: number,
+  ): FallbackSearchBuilder {
+    this.#assertOpen();
+    return new FallbackSearchBuilder(this.#core, "", strictQuery, relaxedQuery, limit);
   }
 
   /**

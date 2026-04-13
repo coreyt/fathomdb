@@ -25,6 +25,7 @@ export type NativeEngineCore = {
   explainAst(astJson: string): string;
   executeAst(astJson: string): string;
   executeGroupedAst(astJson: string): string;
+  executeSearch(requestJson: string): string;
   submitWrite(requestJson: string): string;
   touchLastAccessed(requestJson: string): string;
   checkIntegrity(): string;

@@ -15,7 +15,7 @@ export {
   SqliteError,
   WriterRejectedError
 } from "./errors.js";
-export { Query } from "./query.js";
+export { FallbackSearchBuilder, Query, TextSearchBuilder } from "./query.js";
 export {
   PreserializedJson,
   // Enums / constants
@@ -48,9 +48,14 @@ export {
   type ExpansionSlot,
   type ExpansionSlotRows,
   type GroupedQueryRows,
+  type HitAttribution,
   type QueryPlan,
   type QueryRows,
   type RawJson,
+  type SearchHit,
+  type SearchHitSource,
+  type SearchMatchMode,
+  type SearchRows,
   // Write types
   type LastAccessTouchReport,
   type LastAccessTouchRequest,
