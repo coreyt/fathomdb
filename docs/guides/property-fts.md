@@ -315,6 +315,18 @@ extra joins. A scalar-only schema can still be queried with
 that came from scalar entries, since scalar extraction doesn't record
 per-leaf positions.
 
+Property FTS composes cleanly with the Phase 12.5 read-time embedder.
+When `Engine.open(...)` is given `embedder="builtin"` (or a caller-
+supplied `EmbedderChoice::InProcess`), `search()` still runs the
+property-FTS branch exactly as described above — property hits keep
+flowing through `SearchHitSource.PROPERTY`, and
+`with_match_attribution()` still reports which registered JSON path
+matched — while the vector branch fires in parallel against the
+engine-embedded query text. See
+[Read-time embedding](./querying.md#read-time-embedding) in the
+querying guide for the embedder configuration surface and its
+degradation semantics.
+
 ## Position Map
 
 Recursive extraction is backed by a sidecar table,

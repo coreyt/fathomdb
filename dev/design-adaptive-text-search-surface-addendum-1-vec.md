@@ -779,3 +779,34 @@ searchable, then chain `filter_json_*` on the resulting
 both features get both, on one builder, via existing primitives. The
 Phase 15 consumer docs document this composition explicitly under
 "`filter_json_*` vs property FTS" in the querying guide.
+
+## v1.5 update: Phase 12.5 wires read-time embedding
+
+Phase 12.5 lands the read-time query embedder the original addendum
+deferred. The invariant "`search()` does not currently run the vector
+branch on natural-language queries" now holds only when **no embedder
+is configured** — i.e. when `EngineOptions.embedder` is left at its
+default `EmbedderChoice::None` (equivalently, the Python
+`embedder=None` / `"none"` and the TypeScript `embedder: undefined` /
+`"none"`). In that shape nothing in the original dormancy contract
+changes: every `SearchBuilder.execute()` result has
+`vector_hit_count == 0`, and `vector_search()` remains the only way to
+run a vector query.
+
+The opt-in shape is additive. `EmbedderChoice::Builtin` (feature-gated
+behind `default-embedder` on `fathomdb-engine`, backed by Candle +
+`BAAI/bge-small-en-v1.5`, `[CLS]`-pooled and L2-normalized to 384
+dimensions) and `EmbedderChoice::InProcess(Arc<dyn QueryEmbedder>)`
+attach an embedder to the execution coordinator; the planner then
+fills the vector branch by embedding the caller's raw query text
+before CTE construction, and the existing block-precedence fusion
+shape carries the resulting hits through `SearchRows` unchanged. When
+the builtin feature is off at build time, or the model fails to load
+at runtime, or the embedder returns `EmbedderError`, the coordinator
+treats it as a graceful capability miss: the vector branch is skipped,
+`SearchRows.was_degraded` is set, and the text branches run normally.
+
+Write-time vector regeneration is explicitly **not** rerouted through
+the Builtin embedder in Phase 12.5 — write-time flow continues via
+`VectorRegenerationConfig` and the existing subprocess path.
+Unifying the two regeneration stories is deferred.
