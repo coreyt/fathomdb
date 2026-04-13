@@ -55,7 +55,8 @@ export class Engine {
             databasePath,
             options.provenanceMode ?? "warn",
             options.vectorDimension,
-            options.telemetryLevel
+            options.telemetryLevel,
+            options.embedder
           );
           return new Engine(core);
         } catch (error) {

@@ -40,6 +40,7 @@ class Engine:
         provenance_mode: ProvenanceMode | str = ProvenanceMode.WARN,
         vector_dimension: int | None = None,
         telemetry_level: TelemetryLevel | str | None = None,
+        embedder: str | None = None,
         progress_callback=None,
         feedback_config: FeedbackConfig | None = None,
     ) -> "Engine":
@@ -64,6 +65,17 @@ class Engine:
               and periodic process snapshots (CPU, memory, I/O).
 
             The level is fixed at engine open and cannot be changed.
+        embedder : str or None
+            Read-time query embedder for Phase 12's ``search()`` vector
+            branch. Accepted values:
+
+            - ``None`` (default): no embedder; ``search()``'s vector
+              branch stays dormant and calls are text-only.
+            - ``"none"``: explicit opt-out; same as ``None``.
+            - ``"builtin"``: Candle-based ``BAAI/bge-small-en-v1.5``
+              embedder (requires fathomdb to be built with the
+              ``default-embedder`` feature). If the feature is not
+              enabled, falls back silently to ``None``.
         progress_callback : callable or None
             Optional callback invoked with :class:`ResponseCycleEvent`
             instances during long operations.
@@ -89,7 +101,7 @@ class Engine:
             metadata={"database_path": path},
             progress_callback=progress_callback,
             feedback_config=feedback_config,
-            operation=lambda: EngineCore.open(path, mode, vector_dimension, level),
+            operation=lambda: EngineCore.open(path, mode, vector_dimension, level, embedder),
         )
         return cls(core)
 

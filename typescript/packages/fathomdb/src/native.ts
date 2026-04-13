@@ -9,7 +9,8 @@ export type NativeBinding = {
       databasePath: string,
       provenanceMode: string,
       vectorDimension?: number,
-      telemetryLevel?: string
+      telemetryLevel?: string,
+      embedder?: string
     ): NativeEngineCore;
   };
   newId(): string;
