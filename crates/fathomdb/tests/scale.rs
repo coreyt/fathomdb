@@ -1159,10 +1159,13 @@ fn format_search_rows_stable(rows: &SearchRows) -> String {
     for (idx, hit) in rows.hits.iter().enumerate() {
         writeln!(
             &mut out,
-            "[{idx}] logical_id={} row_id={} kind={} score={:?} source={:?} match_mode={:?} snippet={:?} written_at={} projection_row_id={:?} attribution={:?}",
+            "[{idx}] logical_id={} row_id={} kind={} properties={:?} content_ref={:?} last_accessed_at={:?} score={:?} source={:?} match_mode={:?} snippet={:?} written_at={} projection_row_id={:?} attribution={:?}",
             hit.node.logical_id,
             hit.node.row_id,
             hit.node.kind,
+            hit.node.properties,
+            hit.node.content_ref,
+            hit.node.last_accessed_at,
             hit.score,
             hit.source,
             hit.match_mode,
@@ -1187,6 +1190,10 @@ fn p99_micros(samples: &[Duration]) -> f64 {
     assert!(!samples.is_empty(), "p99 requires at least one sample");
     let mut sorted: Vec<Duration> = samples.to_vec();
     sorted.sort();
+    // 1-based 99th percentile rank (ceil(n * 0.99)) → 0-based slice index
+    // (subtract 1). For n=1200 this yields index 1187, the 1188th smallest
+    // sample. The `.min(len - 1)` clamp guards against n < 100 edge cases
+    // where ceil(n*0.99) could equal n.
     let idx = ((sorted.len() as f64) * 0.99).ceil() as usize;
     let idx = idx.saturating_sub(1).min(sorted.len() - 1);
     sorted[idx].as_micros() as f64
@@ -1393,6 +1400,7 @@ fn property_fts_rebuild_then_search_remains_correct_after_heavy_writes() {
     let engine = Arc::new(engine);
     let stop = Arc::new(AtomicBool::new(false));
     let write_count = Arc::new(AtomicUsize::new(0));
+    let first_write_started = Arc::new(AtomicBool::new(false));
     let errors = Arc::new(Mutex::new(Vec::<String>::new()));
 
     let mut handles = Vec::new();
@@ -1400,6 +1408,7 @@ fn property_fts_rebuild_then_search_remains_correct_after_heavy_writes() {
         let engine = Arc::clone(&engine);
         let stop = Arc::clone(&stop);
         let write_count = Arc::clone(&write_count);
+        let first_write_started = Arc::clone(&first_write_started);
         let errors = Arc::clone(&errors);
         handles.push(thread::spawn(move || {
             let mut iteration = 0usize;
@@ -1432,6 +1441,11 @@ fn property_fts_rebuild_then_search_remains_correct_after_heavy_writes() {
                     vec_inserts: vec![],
                     operational_writes: vec![],
                 };
+                // Signal write-in-flight BEFORE submit so the main thread's
+                // rebuild race-start barrier observes at least one live
+                // writer. Release-ordered so the main thread's Acquire load
+                // synchronises with the pre-submit state.
+                first_write_started.store(true, Ordering::Release);
                 if let Err(err) = engine.writer().submit(request) {
                     errors
                         .lock()
@@ -1449,9 +1463,17 @@ fn property_fts_rebuild_then_search_remains_correct_after_heavy_writes() {
         }));
     }
 
-    // Let the writers make progress, then re-register with the recursive
-    // shape. The rebuild is transactional; writers continue after it.
-    // We bound total work by capping writer iterations above, not by sleep.
+    // Block until at least one heavy writer has entered its first submit.
+    // Without this barrier the rebuild could land before any writer runs
+    // on a fast machine, silently vacating the "rebuild under concurrent
+    // writes" invariant this test exists to prove.
+    while !first_write_started.load(Ordering::Acquire) {
+        std::hint::spin_loop();
+    }
+
+    // Writers are now racing; re-register with the recursive shape. The
+    // rebuild is transactional; writers continue after it. We bound total
+    // work by capping writer iterations above, not by sleep.
     engine
         .register_fts_property_schema_with_entries(
             "Note",
@@ -1688,6 +1710,7 @@ fn adaptive_search_reads_never_block_on_background_writes() {
                 let elapsed = start.elapsed();
                 // Use `rows` to prevent the compiler from eliding work.
                 let _: &[SearchHit] = &rows.hits;
+                assert!(!rows.hits.is_empty(), "under-load read returned zero hits");
                 local.push(elapsed);
             }
             under_load_samples.lock().expect("lock").extend(local);

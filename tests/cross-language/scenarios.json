@@ -499,7 +499,7 @@
           "query": "xlangmixedneedle",
           "limit": 10,
           "expect_hit_logical_ids": ["mixed:xlang-mixed-doc"],
-          "expect_hit_sources": ["property"],
+          "expect_hit_sources": ["chunk"],
           "expect_match_modes": ["strict"],
           "expect_strict_hit_count_min": 1,
           "expect_fallback_used": false,
