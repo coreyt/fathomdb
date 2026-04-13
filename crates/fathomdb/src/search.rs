@@ -1084,7 +1084,9 @@ impl<'e> SearchBuilder<'e> {
         let plan = self
             .compile_plan()
             .map_err(|e| EngineError::InvalidConfig(format!("search compilation failed: {e}")))?;
-        self.engine.coordinator().execute_retrieval_plan(&plan)
+        self.engine
+            .coordinator()
+            .execute_retrieval_plan(&plan, &self.query)
     }
 }
 

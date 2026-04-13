@@ -541,7 +541,7 @@ pub fn execute_search_json(engine: &Engine, request_json: &str) -> Result<String
         }
         let rows: SearchRows = engine
             .coordinator()
-            .execute_retrieval_plan(&plan)
+            .execute_retrieval_plan(&plan, &request.strict_query)
             .map_err(SearchFfiError::Engine)?;
         let py_rows = PySearchRows::from(rows);
         return serde_json::to_string(&py_rows).map_err(SearchFfiError::Serialize);

@@ -13,6 +13,7 @@ use fathomdb_query::{
 use fathomdb_schema::SchemaManager;
 use rusqlite::{Connection, OptionalExtension, params_from_iter, types::Value};
 
+use crate::embedder::QueryEmbedder;
 use crate::telemetry::{SqliteCacheStatus, TelemetryCounters, read_db_cache_status};
 use crate::{EngineError, sqlite};
 
@@ -248,6 +249,13 @@ pub struct ExecutionCoordinator {
     vector_enabled: bool,
     vec_degradation_warned: AtomicBool,
     telemetry: Arc<TelemetryCounters>,
+    /// Phase 12.5a: optional read-time query embedder. When present,
+    /// [`Self::execute_retrieval_plan`] invokes it via
+    /// [`Self::fill_vector_branch`] after compile to populate
+    /// `plan.vector`. When `None`, the Phase 12 v1 vector-dormancy
+    /// invariant on `search()` is preserved: the vector slot stays empty
+    /// and the coordinator's stage-gating check skips the vector branch.
+    query_embedder: Option<Arc<dyn QueryEmbedder>>,
 }
 
 impl fmt::Debug for ExecutionCoordinator {
@@ -267,6 +275,7 @@ impl ExecutionCoordinator {
         vector_dimension: Option<usize>,
         pool_size: usize,
         telemetry: Arc<TelemetryCounters>,
+        query_embedder: Option<Arc<dyn QueryEmbedder>>,
     ) -> Result<Self, EngineError> {
         let path = path.as_ref().to_path_buf();
         #[cfg(feature = "sqlite-vec")]
@@ -405,6 +414,7 @@ impl ExecutionCoordinator {
             vector_enabled,
             vec_degradation_warned: AtomicBool::new(false),
             telemetry,
+            query_embedder,
         })
     }
 
@@ -986,12 +996,18 @@ impl ExecutionCoordinator {
     pub fn execute_retrieval_plan(
         &self,
         plan: &CompiledRetrievalPlan,
+        raw_query: &str,
     ) -> Result<SearchRows, EngineError> {
-        let strict = &plan.text.strict;
-        let limit = strict.limit;
+        // Phase 12.5a: we work against a local owned copy so
+        // `fill_vector_branch` can mutate `plan.vector` and
+        // `plan.was_degraded_at_plan_time`. Cloning is cheap (the plan is
+        // a bounded set of predicates + text AST nodes) and avoids
+        // forcing callers to hand us `&mut` access.
+        let mut plan = plan.clone();
+        let limit = plan.text.strict.limit;
 
         // Stage 1: text strict.
-        let strict_hits = self.run_search_branch(strict, SearchBranch::Strict)?;
+        let strict_hits = self.run_search_branch(&plan.text.strict, SearchBranch::Strict)?;
 
         // Stage 2: text relaxed. Same K=1 zero-hits-only trigger the Phase 6
         // path uses.
@@ -1008,10 +1024,21 @@ impl ExecutionCoordinator {
             was_degraded = plan.was_degraded_at_plan_time;
         }
 
+        // Phase 12.5a: fill the vector branch from the configured
+        // read-time query embedder, if any. Option (b) from the spec:
+        // only pay the embedding cost when the text branches returned
+        // nothing, because the three-branch stage gate below only runs
+        // the vector stage under exactly that condition. This keeps the
+        // hot path (strict text matched) embedder-free.
+        let text_branches_empty = strict_hits.is_empty() && relaxed_hits.is_empty();
+        if text_branches_empty && self.query_embedder.is_some() {
+            self.fill_vector_branch(&mut plan, raw_query);
+        }
+
         // Stage 3: vector. Runs only when text retrieval is empty AND a
-        // vector branch is present. v1 `compile_retrieval_plan` always
-        // leaves `plan.vector` as `None`, so the branch is dormant under
-        // `search()` until a future phase wires read-time embedding.
+        // vector branch is present. When no embedder is configured (Phase
+        // 12.5a default) `plan.vector` stays `None` and this stage is a
+        // no-op, preserving the Phase 12 v1 dormancy invariant.
         let mut vector_hits: Vec<SearchHit> = Vec::new();
         if let Some(vector) = plan.vector.as_ref()
             && strict_hits.is_empty()
@@ -1027,8 +1054,22 @@ impl ExecutionCoordinator {
                 was_degraded = true;
             }
         }
+        // Phase 12.5a: an embedder-reported capability miss surfaces as
+        // `plan.was_degraded_at_plan_time = true` set inside
+        // `fill_vector_branch`. Lift it onto the response so callers see
+        // the graceful degradation even when the vector stage-gate never
+        // had the chance to fire (the embedder call itself failed and
+        // the vector slot stayed `None`).
+        if text_branches_empty
+            && plan.was_degraded_at_plan_time
+            && plan.vector.is_none()
+            && self.query_embedder.is_some()
+        {
+            was_degraded = true;
+        }
 
         // Stage 4: fusion.
+        let strict = &plan.text.strict;
         let mut merged = merge_search_branches_three(strict_hits, relaxed_hits, vector_hits, limit);
         if strict.attribution_requested {
             let relaxed_text_query = plan.text.relaxed.as_ref().map(|r| &r.text_query);
@@ -1060,6 +1101,63 @@ impl ExecutionCoordinator {
             fallback_used,
             was_degraded,
         })
+    }
+
+    /// Phase 12.5a: populate `plan.vector` from the configured read-time
+    /// query embedder, if any.
+    ///
+    /// Preconditions (enforced by the caller in `execute_retrieval_plan`):
+    /// - `self.query_embedder.is_some()` — no point calling otherwise.
+    /// - Both the strict and relaxed text branches already ran and
+    ///   returned zero hits, so the existing three-branch stage gate
+    ///   will actually fire the vector stage once the slot is populated.
+    ///   This is option (b) from the Phase 12.5a spec: skip the embedding
+    ///   cost entirely when text retrieval already won.
+    ///
+    /// Contract: never panics, never returns an error. On embedder error
+    /// it sets `plan.was_degraded_at_plan_time = true` and leaves
+    /// `plan.vector` as `None`; the coordinator's normal error-free
+    /// degradation path then reports `was_degraded` on the result.
+    fn fill_vector_branch(&self, plan: &mut CompiledRetrievalPlan, raw_query: &str) {
+        let Some(embedder) = self.query_embedder.as_ref() else {
+            return;
+        };
+        match embedder.embed_query(raw_query) {
+            Ok(vec) => {
+                // `CompiledVectorSearch::query_text` is a JSON float-array
+                // literal at the time the coordinator binds it (see the
+                // `CompiledVectorSearch` docs). `serde_json::to_string`
+                // on a `Vec<f32>` produces exactly that shape — no
+                // wire-format change required.
+                let literal = match serde_json::to_string(&vec) {
+                    Ok(s) => s,
+                    Err(_err) => {
+                        trace_warn!(
+                            error = %_err,
+                            "query embedder vector serialization failed; skipping vector branch"
+                        );
+                        plan.was_degraded_at_plan_time = true;
+                        return;
+                    }
+                };
+                let strict = &plan.text.strict;
+                plan.vector = Some(CompiledVectorSearch {
+                    root_kind: strict.root_kind.clone(),
+                    query_text: literal,
+                    limit: strict.limit,
+                    fusable_filters: strict.fusable_filters.clone(),
+                    residual_filters: strict.residual_filters.clone(),
+                    attribution_requested: strict.attribution_requested,
+                });
+            }
+            Err(_err) => {
+                trace_warn!(
+                    error = %_err,
+                    "query embedder unavailable, skipping vector branch"
+                );
+                plan.was_degraded_at_plan_time = true;
+            }
+        }
     }
 
     /// Execute a single search branch against the underlying FTS surfaces.
@@ -2555,6 +2653,7 @@ mod tests {
             None,
             1,
             Arc::new(TelemetryCounters::default()),
+            None,
         )
         .expect("coordinator");
 
@@ -2592,6 +2691,7 @@ mod tests {
             None,
             1,
             Arc::new(TelemetryCounters::default()),
+            None,
         )
         .expect("coordinator");
 
@@ -2621,6 +2721,7 @@ mod tests {
             None,
             1,
             Arc::new(TelemetryCounters::default()),
+            None,
         )
         .expect("coordinator");
 
@@ -2646,6 +2747,7 @@ mod tests {
             None,
             1,
             Arc::new(TelemetryCounters::default()),
+            None,
         )
         .expect("coordinator");
 
@@ -2670,6 +2772,7 @@ mod tests {
             None,
             1,
             Arc::new(TelemetryCounters::default()),
+            None,
         )
         .expect("coordinator");
 
@@ -2692,6 +2795,7 @@ mod tests {
             None,
             1,
             Arc::new(TelemetryCounters::default()),
+            None,
         )
         .expect("coordinator");
 
@@ -2733,6 +2837,7 @@ mod tests {
             None,
             1,
             Arc::new(TelemetryCounters::default()),
+            None,
         )
         .expect("coordinator");
 
@@ -2757,6 +2862,7 @@ mod tests {
             None,
             1,
             Arc::new(TelemetryCounters::default()),
+            None,
         )
         .expect("coordinator");
         let conn = rusqlite::Connection::open(db.path()).expect("open db");
@@ -2796,6 +2902,7 @@ mod tests {
             None,
             1,
             Arc::new(TelemetryCounters::default()),
+            None,
         )
         .expect("coordinator");
         let conn = rusqlite::Connection::open(db.path()).expect("open db");
@@ -2834,6 +2941,7 @@ mod tests {
             None,
             1,
             Arc::new(TelemetryCounters::default()),
+            None,
         )
         .expect("coordinator");
         let conn = rusqlite::Connection::open(db.path()).expect("open db");
@@ -2886,6 +2994,7 @@ mod tests {
             None,
             1,
             Arc::new(TelemetryCounters::default()),
+            None,
         )
         .expect("coordinator");
         let conn = rusqlite::Connection::open(db.path()).expect("open db");
@@ -2929,6 +3038,7 @@ mod tests {
             None,
             1,
             Arc::new(TelemetryCounters::default()),
+            None,
         )
         .expect("coordinator");
         assert!(
@@ -2947,6 +3057,7 @@ mod tests {
             Some(128),
             1,
             Arc::new(TelemetryCounters::default()),
+            None,
         )
         .expect("coordinator");
         assert!(
@@ -3000,6 +3111,7 @@ mod tests {
             None,
             1,
             Arc::new(TelemetryCounters::default()),
+            None,
         )
         .expect("coordinator");
         let row = coordinator
@@ -3063,6 +3175,7 @@ mod tests {
             None,
             1,
             Arc::new(TelemetryCounters::default()),
+            None,
         )
         .expect("coordinator");
         let row = coordinator
@@ -3138,6 +3251,7 @@ mod tests {
             None,
             1,
             Arc::new(TelemetryCounters::default()),
+            None,
         )
         .expect("coordinator");
         let row = coordinator
@@ -3220,6 +3334,7 @@ mod tests {
             None,
             1,
             Arc::new(TelemetryCounters::default()),
+            None,
         )
         .expect("coordinator");
         let active = coordinator.read_active_runs().expect("read_active_runs");
@@ -3265,6 +3380,7 @@ mod tests {
             None,
             1,
             Arc::new(TelemetryCounters::default()),
+            None,
         )
         .expect("coordinator");
 
@@ -3294,6 +3410,7 @@ mod tests {
             None,
             1,
             Arc::new(TelemetryCounters::default()),
+            None,
         )
         .expect("coordinator");
 
@@ -3337,6 +3454,7 @@ mod tests {
             None,
             2,
             Arc::new(TelemetryCounters::default()),
+            None,
         )
         .expect("coordinator with pool_size=2");
 
@@ -3368,6 +3486,7 @@ mod tests {
             None,
             1,
             Arc::new(TelemetryCounters::default()),
+            None,
         )
         .expect("coordinator");
 

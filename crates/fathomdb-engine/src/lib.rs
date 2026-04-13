@@ -4,6 +4,7 @@ mod trace_support;
 mod admin;
 mod coordinator;
 mod database_lock;
+mod embedder;
 mod executable_trust;
 mod ids;
 mod operational;
@@ -24,6 +25,7 @@ pub use coordinator::{
     ActionRow, ExecutionCoordinator, ExpansionRootRows, ExpansionSlotRows, GroupedQueryRows,
     NodeRow, ProvenanceEvent, QueryPlan, QueryRows, RunRow, StepRow,
 };
+pub use embedder::{EmbedderError, QueryEmbedder, QueryEmbedderIdentity};
 pub use ids::{new_id, new_row_id};
 pub use operational::{
     OperationalCollectionKind, OperationalCollectionRecord, OperationalCompactionReport,
