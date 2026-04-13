@@ -416,6 +416,26 @@ impl EngineCore {
         })
     }
 
+    /// Register (or update) an FTS property projection schema with
+    /// per-path modes (scalar vs recursive) and optional exclude paths.
+    /// The `request_json` envelope matches
+    /// [`crate::admin_ffi::PyRegisterFtsPropertySchemaRequest`].
+    pub fn register_fts_property_schema_with_entries(
+        &self,
+        py: Python<'_>,
+        request_json: &str,
+    ) -> PyResult<String> {
+        self.with_engine(|engine| {
+            py.allow_threads(|| {
+                crate::admin_ffi::register_fts_property_schema_with_entries_json(
+                    engine,
+                    request_json,
+                )
+            })
+            .map_err(map_admin_ffi_error)
+        })
+    }
+
     pub fn describe_fts_property_schema(&self, py: Python<'_>, kind: &str) -> PyResult<String> {
         let kind = kind.to_owned();
         self.with_engine(|engine| {
@@ -790,6 +810,17 @@ fn encode_json<T: serde::Serialize>(value: T) -> PyResult<String> {
 
 fn map_compile_error(error: RustCompileError) -> PyErr {
     CompileError::new_err(error.to_string())
+}
+
+fn map_admin_ffi_error(error: crate::admin_ffi::AdminFfiError) -> PyErr {
+    use crate::admin_ffi::AdminFfiError;
+    match error {
+        AdminFfiError::Parse(err) => PyValueError::new_err(format!("admin request parse: {err}")),
+        AdminFfiError::Engine(err) => map_engine_error(err),
+        AdminFfiError::Serialize(err) => {
+            BridgeError::new_err(format!("admin response serialize: {err}"))
+        }
+    }
 }
 
 fn map_search_ffi_error(error: crate::search_ffi::SearchFfiError) -> PyErr {

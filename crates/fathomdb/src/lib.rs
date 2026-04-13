@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+pub mod admin_ffi;
 mod feedback;
 #[cfg(feature = "node")]
 mod node;
