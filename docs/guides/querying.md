@@ -214,6 +214,291 @@ The advanced
 override remains available for callers that want to bypass the unified
 planner and supply a vector literal directly.
 
+## Reranking `SearchRows.hits`
+
+`search()` owns retrieval: it fuses strict text, relaxed text, and vector
+branches into a block-ordered `SearchRows` under an engine-owned policy.
+Ranking — the step that applies caller-specific signals like recency
+decay, pinning, reputation, or domain boosts — belongs to the caller.
+This section shows the recipe we recommend for that step.
+
+The recipe is **docs-only**. There is no `fathomdb.rerank` module in
+0.3.1; if the pattern graduates to a shipped helper, it will be a
+separate post-0.3.1 call. Copy this function into your application, tune
+the exponents, and own it.
+
+### What the recipe does
+
+1. **Splits `rows.hits` by `modality`** into a text pool and a vector
+   pool. The FathomDB documentation is explicit that `SearchHit.score`
+   values from different modality blocks are not on a shared scale and
+   must not be arithmetically combined across blocks (see
+   [`SearchHit`](../reference/types.md#searchhit)). The recipe respects
+   that: raw scores are never compared across pools.
+2. **Applies a pre-normalization `strict_bonus`** to text hits whose
+   `match_mode` is `STRICT`. The engine already orders STRICT hits
+   ahead of RELAXED hits under block precedence; the multiplier
+   preserves that signal when the two branches get pooled for
+   normalization. Vector hits have `match_mode == None` and are not
+   affected.
+3. **Normalizes each pool to `[0, 1]`** by dividing by the pool's max
+   post-bonus score. This is the only step that turns raw engine scores
+   into a common-scale relevance signal.
+4. **Blends the normalized pools** using caller-supplied `text_weight`
+   and `vector_weight` into one `relevance` value keyed on
+   `node.logical_id`.
+5. **Computes a composite score per hit** using the standard
+   `relevance^a · decay^b · reputation^c · pin_boost^pinned` shape,
+   with all four exponents tunable.
+6. **Returns `Sequence[RankedHit]`** — a named tuple of
+   `(score, hit)` — sorted highest-score-first. The score is exposed
+   so applications can log, plot, or threshold against it during
+   tuning. The one-line drop-in form is
+   `hits = [r.hit for r in rerank_search_rows(rows, ...)]`.
+
+### The function
+
+```python
+from datetime import datetime, timezone
+from typing import Callable, NamedTuple, Optional, Sequence
+
+from fathomdb import (
+    NodeRow,
+    RetrievalModality,
+    SearchHit,
+    SearchMatchMode,
+    SearchRows,
+)
+
+
+class RankedHit(NamedTuple):
+    """A `SearchHit` with its caller-computed composite score attached.
+
+    Exposed so applications can inspect and tune the scoring formula.
+    Unpack as `for score, hit in rerank_search_rows(...)` or project
+    with `[r.hit for r in rerank_search_rows(...)]` for the drop-in
+    shape.
+    """
+
+    score: float
+    hit: SearchHit
+
+
+def rerank_search_rows(
+    rows: SearchRows,
+    *,
+    now: datetime,
+    half_life_days: float,
+    # Caller-supplied signal extractors. Defaults are no-ops so the
+    # recipe produces sensible output on a minimal caller.
+    is_pinned: Callable[[NodeRow], bool] = lambda _node: False,
+    reputation_for: Callable[[NodeRow], float] = lambda _node: 1.0,
+    # Scoring exponents. The product form keeps each signal
+    # independent; exponents < 1 soften a signal, exponents > 1
+    # sharpen it. pin_boost is a flat multiplier applied only to
+    # pinned hits.
+    relevance_exp: float = 1.0,
+    decay_exp: float = 0.5,
+    reputation_exp: float = 0.3,
+    pin_boost: float = 2.0,
+    # Block blending. text_weight and vector_weight combine the two
+    # normalized pools; strict_bonus preserves the engine's STRICT-
+    # over-RELAXED ordering before normalization.
+    text_weight: float = 0.5,
+    vector_weight: float = 0.5,
+    strict_bonus: float = 1.2,
+) -> Sequence[RankedHit]:
+    """Rerank `SearchRows.hits` into a single ordering.
+
+    Combines recency decay, pinning, and reputation with the
+    engine-supplied relevance signal under a
+    ``relevance^a * decay^b * reputation^c * pin_boost^pinned`` shape.
+    Returns a sequence of `RankedHit` sorted highest-score-first.
+    """
+
+    # 1. Split by modality and apply strict_bonus inside the text pool.
+    text_raw: list[tuple[SearchHit, float]] = []
+    vector_raw: list[tuple[SearchHit, float]] = []
+    for hit in rows.hits:
+        if hit.modality == RetrievalModality.VECTOR:
+            vector_raw.append((hit, hit.score))
+        else:
+            bonus = strict_bonus if hit.match_mode == SearchMatchMode.STRICT else 1.0
+            text_raw.append((hit, hit.score * bonus))
+
+    # 2. Normalize each pool to [0, 1] independently. Scores across
+    # pools are never arithmetically combined in raw form.
+    def _normalize(pool: list[tuple[SearchHit, float]]) -> dict[str, float]:
+        if not pool:
+            return {}
+        max_score = max(s for _, s in pool)
+        if max_score <= 0:
+            return {h.node.logical_id: 0.0 for h, _ in pool}
+        return {h.node.logical_id: s / max_score for h, s in pool}
+
+    text_norm = _normalize(text_raw)
+    vector_norm = _normalize(vector_raw)
+
+    # 3. Blend the normalized pools, keyed on logical_id. A hit that
+    # appears in only one pool contributes only that pool's weight.
+    relevance_by_id: dict[str, float] = {}
+    for lid, score in text_norm.items():
+        relevance_by_id[lid] = text_weight * score
+    for lid, score in vector_norm.items():
+        relevance_by_id[lid] = relevance_by_id.get(lid, 0.0) + vector_weight * score
+
+    # 4. Compute the composite score per unique hit. Under the engine's
+    # block precedence the first occurrence of a logical_id in
+    # rows.hits is always the highest-preference modality
+    # (STRICT text > RELAXED text > VECTOR), so attaching that
+    # SearchHit to the RankedHit preserves the engine's preferred
+    # provenance view even though the relevance score fuses both pools.
+    seen: set[str] = set()
+    scored: list[RankedHit] = []
+    for hit in rows.hits:
+        lid = hit.node.logical_id
+        if lid in seen:
+            continue
+        seen.add(lid)
+
+        relevance = relevance_by_id.get(lid, 0.0)
+        if relevance <= 0:
+            continue
+
+        # written_at is Unix epoch seconds per
+        # docs/reference/types.md#searchhit.
+        written_dt = datetime.fromtimestamp(hit.written_at, tz=timezone.utc)
+        age_days = max(0.0, (now - written_dt).total_seconds() / 86_400.0)
+        decay = 0.5 ** (age_days / half_life_days) if half_life_days > 0 else 1.0
+
+        pinned = is_pinned(hit.node)
+        reputation = reputation_for(hit.node)
+
+        composite = (
+            (relevance ** relevance_exp)
+            * (decay ** decay_exp)
+            * (max(reputation, 0.0) ** reputation_exp)
+        )
+        if pinned:
+            composite *= pin_boost
+
+        scored.append(RankedHit(score=composite, hit=hit))
+
+    # 5. Sort highest-score-first. Stable on input order so ties
+    # inherit the engine's block ordering.
+    scored.sort(key=lambda r: r.score, reverse=True)
+    return scored
+```
+
+### Worked example
+
+Assume your application stores documents under a `Document` node kind
+with two example properties your ranking cares about: `$.pinned`
+(boolean) and `$.reputation_score` (float in `[0, 1]`).
+
+```python
+from fathomdb import Engine
+
+engine = Engine.open("/tmp/my-app.db", embedder="builtin", vector_dimension=384)
+
+rows = (
+    engine.nodes("Document")
+    .search("quarterly revenue", 50)
+    .execute()
+)
+
+now = datetime.now(tz=timezone.utc)
+
+ranked = rerank_search_rows(
+    rows,
+    now=now,
+    half_life_days=14.0,
+    is_pinned=lambda node: node.properties.get("pinned") is True,
+    reputation_for=lambda node: reputation_store.get(
+        node.properties.get("source"), 1.0
+    ),
+)
+
+# Drop-in: replace rows.hits with the reranked ordering.
+for hit in (r.hit for r in ranked[:10]):
+    print(hit.node.logical_id, hit.modality.value, hit.snippet)
+
+# Observability: inspect the composite scores while tuning.
+for r in ranked[:10]:
+    print(f"{r.score:.3f}  {r.hit.node.logical_id}  "
+          f"{r.hit.modality.value}  {r.hit.match_mode}")
+```
+
+Both callbacks take a `NodeRow`, which keeps the recipe symmetric and
+lets the caller extract whatever field they treat as the relevant
+signal. `is_pinned` is a predicate: the inline lambda above reads a
+JSON property, but any source — an external pin list, a tag, a
+content-store flag — works just as well. `reputation_for` receives
+the full `NodeRow` so the caller can extract whatever field they
+treat as a source identifier — a JSON property like `$.source`,
+`content_ref`, `kind`, or a composition of several — and return a
+multiplier in `[0, ∞)`. The default is `1.0`, meaning "no reputation
+signal, no penalty".
+
+### Tuning the exponents
+
+The composite score shape is:
+
+```
+composite = relevance^a · decay^b · reputation^c · pin_boost^pinned
+```
+
+Each exponent controls how sharply a signal bites. Exponent `< 1`
+softens a signal; `> 1` sharpens it. The defaults
+(`relevance_exp=1.0`, `decay_exp=0.5`, `reputation_exp=0.3`,
+`pin_boost=2.0`) produce a "relevance dominates, decay and reputation
+adjust" behavior that is a reasonable starting point for most
+applications.
+
+Tune with the composite score exposed on `RankedHit.score`:
+
+- **Decay too aggressive?** Lower `decay_exp` toward `0.25`, or raise
+  `half_life_days`. The half-life is the dominant knob; the exponent
+  controls how nonlinearly age bites.
+- **Old-but-trusted sources losing out?** Raise `reputation_exp` toward
+  `0.5`. The product form means a trusted source has to be roughly
+  `1 / decay` worth of reputation to overcome the same decay penalty.
+- **Pins not dominant enough?** `pin_boost` is a flat multiplier; raise
+  it to `3.0` or `4.0` for hard-pin behavior.
+- **Text/vector balance off?** Adjust `text_weight` and `vector_weight`
+  directly. They do not need to sum to `1.0` — the composite is
+  re-normalized by the `max` within each pool, so the weights control
+  relative influence, not absolute magnitude.
+- **STRICT matches not dominating RELAXED inside the text pool?** Raise
+  `strict_bonus` toward `1.5`. Values above `2.0` tend to make RELAXED
+  hits unreachable when a STRICT hit exists at comparable raw score;
+  if that is the behavior you want, prefer `text_search()` with
+  explicit strict-only control instead.
+
+### Adding a domain-specific boost
+
+The recipe intentionally does not expose a `custom_boost` kwarg — the
+four exponents plus `pin_boost` are the tunable surface. Callers that
+need a domain-specific adjustment (type-based priority, route-profile
+boost, per-user salience) should multiply the composite by their own
+term before the final sort, either by wrapping the function or by
+copying its body and inserting the adjustment at the composite-score
+line. The recipe is small enough to copy; that is deliberate.
+
+### Why this is docs-only
+
+`rerank_search_rows` is a recipe, not a shipped API. Every application
+tunes ranking differently, and the recipe's value is in the pattern,
+not the defaults. Shipping it as a library function would force the
+FathomDB team to pick defaults for everyone, stabilize a
+`RankedHit` type across the FFI boundary, and maintain kwargs over
+time. A copy-pasted recipe in your own codebase lets you tune, log,
+and version ranking as a caller-owned concern, which is how ranking
+policy should work.
+
+If the pattern graduates to a shipped helper, it will be a separate
+post-0.3.1 call with its own migration notes.
+
 #### `filter_json_*` vs property FTS
 
 The `filter_json_*` family and
