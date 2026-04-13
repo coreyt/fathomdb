@@ -463,6 +463,21 @@ class SearchHit:
     """A single adaptive or fallback text-search hit."""
 
     node: NodeRow
+    #: Raw engine score used for ordering within a block. Higher is always
+    #: better, across every modality and every source:
+    #:
+    #: - Text hits: the FTS5 bm25 score with its sign flipped
+    #:   (``-bm25(...)``), so higher score corresponds to stronger lexical
+    #:   relevance.
+    #: - Vector hits: a negated distance (``-vector_distance``) for
+    #:   distance metrics, or a direct similarity value for similarity
+    #:   metrics.
+    #:
+    #: Scores are **ordering-only within a block**. Scores from different
+    #: blocks — and in particular text scores vs. vector scores — are not
+    #: on a shared scale. The engine does not normalize across blocks, and
+    #: callers must not compare or arithmetically combine scores across
+    #: blocks.
     score: float
     #: Coarse retrieval-modality classifier. ``TEXT`` for every text hit;
     #: ``VECTOR`` reserved for future vector retrieval branches.
@@ -476,9 +491,19 @@ class SearchHit:
     #: ``nodes.created_at`` which is populated via SQLite ``unixepoch()``.
     written_at: int
     projection_row_id: str | None
-    #: Vector distance/similarity for vector hits. ``None`` for text
-    #: hits. Modality-specific diagnostic; values are not comparable
-    #: across modalities.
+    #: Raw vector distance or similarity for vector hits. ``None`` for
+    #: text hits.
+    #:
+    #: Stable public API: this field ships in v1 and is documented as
+    #: modality-specific diagnostic data. Callers may read it for display
+    #: or internal reranking but must **not** compare it against text-hit
+    #: ``score`` values or use it arithmetically alongside text scores —
+    #: the two are not on a shared scale.
+    #:
+    #: For distance metrics the raw distance is preserved (lower = closer
+    #: match); callers that want a "higher is better" ordering value
+    #: should read ``score`` instead, which is already negated
+    #: appropriately for intra-block ranking.
     vector_distance: float | None
     attribution: HitAttribution | None
 

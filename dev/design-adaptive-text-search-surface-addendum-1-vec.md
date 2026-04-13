@@ -303,8 +303,27 @@ Changes from the main body's `SearchRows`:
   `was_degraded` and `fallback_used` keep their existing meanings;
   `was_degraded` additionally covers vector capability misses (see
   Vector-Specific Behavior below).
+- The `was_degraded: bool` field retains its existing meaning and is kept
+  for backward compatibility. Phase 12 additively introduces a
+  `degradation_reasons: Vec<DegradationReason>` field alongside it, with
+  variants `RelaxedBranchCapped` and `VectorCapabilityMissing`, so callers
+  that want to distinguish degradation root causes can. The boolean is
+  `true` iff the vec is non-empty. Callers that only test
+  `if rows.was_degraded` continue to work unchanged.
 
 Python and TypeScript mirror these types exactly.
+
+### Attribution on vector hits
+
+When a caller invokes `search(query, limit).with_match_attribution().execute()`
+and the resulting `SearchRows` contains vector hits, each vector hit carries
+`attribution = Some(HitAttribution { matched_paths: vec![] })`. This matches
+the Phase 5 contract for chunk hits: `Some(empty)` means "attribution was
+requested and this hit doesn't qualify" (no leaf structure), whereas `None`
+means "attribution was not requested." The same `Some(empty)` shape applies
+uniformly to every hit source that has no leaf structure (chunk, vector).
+Only property hits with recursive-mode schemas produce populated
+`matched_paths`.
 
 ### Why this shape
 
@@ -344,6 +363,11 @@ Clients that want to render or rerank one modality at a time slice `hits` by
 `strict_hit_count`, `relaxed_hit_count`, and `vector_hit_count`. Blocks appear
 in the `hits` vector contiguously and in precedence order.
 
+An empty block has count 0; the corresponding slice of `hits` is zero-length
+and the next block immediately follows. A caller who finds
+`strict_hit_count == 0 && relaxed_hit_count == 0` can read all `hits` as the
+vector block. Blocks appear in precedence order regardless of emptiness.
+
 ### Dedup
 
 Dedup by `logical_id` across the full candidate set before assembling blocks.
@@ -353,8 +377,12 @@ For duplicate logical IDs:
    strict > text relaxed > vector).
 2. If the same branch produced the logical ID more than once, prefer the
    higher score.
-3. Fall back to the main body's existing tiebreak chain (fixed source
-   priority, branch declaration order).
+3. Fall back to the main body's existing tiebreak chain within a single
+   branch (higher score, then fixed source priority chunk > property >
+   vector, then branch declaration order). **This within-branch tiebreak
+   chain applies only to duplicates inside a single branch. Cross-branch
+   dedup is always resolved by branch precedence order (text-strict >
+   text-relaxed > vector) and never falls through to source priority.**
 
 This is intentionally simple and biased toward explainability. A logical ID
 that matched both lexically and semantically is returned exactly once,
@@ -412,16 +440,17 @@ meanings.
 
 ### Score and distance
 
-Vector retrieval natively produces a distance or similarity value rather than
-an FTS-style score. In v1:
-
-- `score` on a vector hit carries the public ordering value used within the
-  vector block.
-- `vector_distance` carries the raw distance or similarity as optional
-  modality-specific diagnostic data.
-
-Callers may read `vector_distance` for display or internal reranking. They
-must not compare it against `score` on text hits.
+For vector hits, `score` is a negated distance or a direct similarity, such
+that higher always means a better match — consistent with the text branch's
+`-bm25(...)` convention. For distance metrics (cosine, L2, dot-product-as-
+distance), `score = -vector_distance`. For similarity metrics,
+`score = similarity` and `vector_distance` carries a canonically-derived
+distance (e.g., `1 - similarity` for cosine similarity). The
+`dedup_branch_hits` sort is `score descending`; the negation is load-bearing
+for intra-block ranking correctness. Callers may read `vector_distance` for
+display or internal reranking but must not compare it against text-hit
+`score` values. `vector_distance` is a stable optional field on `SearchHit`,
+documented as modality-specific and non-cross-comparable.
 
 ## Builder, AST, and Engine Changes
 
@@ -438,6 +467,14 @@ Keep as advanced overrides:
 
 - `text_search(query, limit) -> TextSearchBuilder` (main body, unchanged)
 - `vector_search(query, limit) -> VectorSearchBuilder` (future)
+
+The current `NodeQueryBuilder::vector_search()` in the facade crate returns
+`Self` (legacy self-returning pattern). Phase 11 refactors this to return
+`VectorSearchBuilder<'e>`, mirroring the `TextSearchBuilder<'e>` and
+`FallbackSearchBuilder<'e>` type-state pattern established by Phase 1-6.
+The old untethered `QueryBuilder::vector_search()` in
+`crates/fathomdb-query/src/builder.rs` stays as-is — it is used by
+`compile_query` internally and is not part of the public facade surface.
 
 ### AST
 
@@ -475,6 +512,14 @@ non-retrieval steps.
 - Preserve vector retrieval planning as a supported modality.
 - Produce a bounded retrieval plan rather than a general query composition
   tree.
+
+The unified-search planner lives in `fathomdb-query`, not `fathomdb-engine`.
+It produces a `CompiledSearchPlan`-equivalent carrier that contains the text
+branches (strict, optional relaxed) and the optional vector branch. The
+coordinator executes the plan via a sibling of Phase 6's
+`execute_compiled_search_plan`. Unit tests for the planner run against pure
+`TextQuery` inputs without an engine instance, matching the existing
+`relax::derive_relaxed` test style.
 
 ### `fathomdb-engine`
 
@@ -571,6 +616,15 @@ Implications:
 - Integrity checks still validate projection presence and drift, not
   retrieval quality or fusion ranking semantics.
 
+Note: vector index regeneration requires the generator binary referenced in
+the `generator_command` contract field to be present in the restore
+environment. The backup format preserves contract metadata (profile, model
+identity, generator command) but not the binary itself. Restore runbooks
+must document that vector regeneration is a post-restore step that requires
+model availability. This is an operator-managed dependency in v1;
+strengthening the guarantee (e.g., bundling the generator into the backup)
+is a future product decision.
+
 ## Testing Strategy
 
 Tests become retrieval-oriented rather than purely text-oriented. All
@@ -620,27 +674,35 @@ Cross-language scenarios validate:
   (background writes never block foreground reads, and that invariant now
   covers vector retrieval paths too).
 
-## Open Questions
+## Resolved Decisions (previously Open Questions)
 
-1. Should `search()` fully replace `text_search()` in the default
-   documentation surface, with `text_search()` retained only as an advanced
-   override, or should both be co-documented as equals? (Recommendation:
-   former.)
-2. In a future version that raises the vector trigger beyond zero-hits-only,
-   should the trigger be a single integer `K_vector` (parallel to text `K`)
-   or a query-shape classifier? (Deferred; not needed for v1.)
-3. Should fused hits ever explicitly record that more than one modality
-   matched the same logical ID, e.g. via a `Mixed` source variant or a
-   provenance vector on the hit? (Deferred; v1 attributes each final hit to
-   its highest-priority originating branch only.)
-4. Is `vector_distance` part of the stable public API in v1, or only internal
-   diagnostics exposed through an explain surface? (Recommendation: stable,
-   optional field on `SearchHit`, documented as modality-specific and
-   non-cross-comparable.)
-5. Does `search()` accept the same filter composition chain as `text_search()`
-   from day one, or is filter composition initially text-only with vector
-   filters following in a later increment? (Recommendation: day-one parity;
-   the filter vocabulary is already modality-neutral.)
+1. **Documentation surface**: `search()` is the primary documentation entry
+   point; `text_search()` and `vector_search()` are demoted to an "advanced
+   retrieval controls" section. Phase 15 consumer docs commit to this
+   framing.
+
+2. **Future vector trigger shape**: deferred post-v1. v1 is zero-hits-only
+   per §Retrieval Policy. Raising the vector trigger is a future policy
+   change, not an API change, and is gated on the same block-based ranking
+   safety argument that makes raising text `K` safe.
+
+3. **Multi-modality provenance on fused hits**: deferred post-v1. v1
+   attributes each final hit to its highest-priority originating branch
+   only. Future additive extensions (e.g., a `Mixed` source variant or a
+   provenance vector on the hit) are not blocked by the v1 contract.
+
+4. **`vector_distance` API stability**: stable. `vector_distance: Option<f64>`
+   is a public field on `SearchHit`, shipped in Phase 10, documented as
+   modality-specific diagnostic data that is **not** comparable across
+   modalities. Callers must not arithmetically combine `vector_distance`
+   with text `score` values.
+
+5. **Day-one filter composition parity**: yes. The main body's Resolved
+   Decision on FTS filter fusion explicitly commits to `VecNodes` inheriting
+   fusion behavior generically at wire-in time. `SearchBuilder` in Phase 12
+   uses the same `partition_search_filters` helper that `TextSearchBuilder`
+   and `FallbackSearchBuilder` use; the filter vocabulary is modality-neutral
+   from day one.
 
 ## Done When
 
