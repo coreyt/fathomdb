@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-04-13
+
+### Fixed
+
+- Property-FTS recursive walker no longer crashes on payloads that mix
+  empty and non-empty string leaves. Previously, writing a node whose
+  recursive property-FTS payload contained a zero-length JSON string
+  followed by a non-empty string in the same traversal frame would fail
+  with a `UNIQUE constraint failed` error against
+  `fts_node_property_positions` and roll back the transaction. Affected
+  shapes include arrays such as `{"xs": ["", "x"]}`, sibling object keys
+  such as `{"a": "", "b": "x"}`, and any nested combination of the two
+  (for example `{"inner": {"a": "", "b": "x"}}` or
+  `{"a": "", "b": {"c": "x"}}`). Empty string leaves are now skipped at
+  extraction time. All-empty payloads (such as `{"xs": ["", ""]}`)
+  continue to produce no FTS row, and `null` leaves continue to be
+  ignored as before. No schema or API change; existing databases benefit
+  immediately on upgrade. No rebuild is required because the bug only
+  affected writes that previously failed — there is no corrupt
+  persisted state to repair.
+
 ## [0.3.0] - 2026-04-13
 
 This is a significant minor release bringing a unified retrieval surface
