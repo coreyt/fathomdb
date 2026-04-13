@@ -39,16 +39,19 @@ pub use fathomdb_engine::{SqliteCacheStatus, TelemetryLevel, TelemetrySnapshot};
 #[doc(hidden)]
 pub use fathomdb_query::compile_search_plan;
 pub use fathomdb_query::{
-    BindValue, ComparisonOp, CompileError, CompiledGroupedQuery, CompiledQuery, CompiledSearch,
-    CompiledSearchPlan, CompiledVectorSearch, DrivingTable, ExecutionHints, ExpansionSlot,
-    HitAttribution, NodeRowLite, Predicate, Query, QueryAst, QueryBuilder, QueryStep,
-    RetrievalModality, ScalarValue, SearchHit, SearchHitSource, SearchMatchMode, SearchRows,
-    ShapeHash, TextQuery, TraverseDirection, compile_grouped_query, compile_query, compile_search,
-    compile_search_plan_from_queries, compile_vector_search,
+    BindValue, ComparisonOp, CompileError, CompiledGroupedQuery, CompiledQuery,
+    CompiledRetrievalPlan, CompiledSearch, CompiledSearchPlan, CompiledVectorSearch, DrivingTable,
+    ExecutionHints, ExpansionSlot, HitAttribution, NodeRowLite, Predicate, Query, QueryAst,
+    QueryBuilder, QueryStep, RetrievalModality, ScalarValue, SearchHit, SearchHitSource,
+    SearchMatchMode, SearchRows, ShapeHash, TextQuery, TraverseDirection, compile_grouped_query,
+    compile_query, compile_retrieval_plan, compile_search, compile_search_plan_from_queries,
+    compile_vector_search,
 };
 pub use fathomdb_schema::{BootstrapReport, Migration, SchemaManager, SchemaVersion};
 pub use feedback::{FeedbackConfig, OperationObserver, ResponseCycleEvent, ResponseCyclePhase};
-pub use search::{FallbackSearchBuilder, NodeQueryBuilder, TextSearchBuilder, VectorSearchBuilder};
+pub use search::{
+    FallbackSearchBuilder, NodeQueryBuilder, SearchBuilder, TextSearchBuilder, VectorSearchBuilder,
+};
 pub use write_request_builder::{
     ActionHandle, ChunkHandle, ChunkRef, EdgeHandle, EdgeRef, NodeHandle, NodeRef, RunHandle,
     RunRef, StepHandle, StepRef, WriteRequestBuilder,
