@@ -92,7 +92,7 @@ def adaptive_search_strict_hit_only(context: HarnessContext) -> ScenarioResult:
     try:
         _seed_adaptive_goals(engine)
         rows = (
-            engine.query(_ADAPTIVE_GOAL_KIND)
+            engine.nodes(_ADAPTIVE_GOAL_KIND)
             .text_search("budget meeting", 10)
             .execute()
         )
@@ -126,7 +126,7 @@ def adaptive_search_strict_miss_relaxed_recovery(
     try:
         _seed_adaptive_goals(engine)
         rows = (
-            engine.query(_ADAPTIVE_GOAL_KIND)
+            engine.nodes(_ADAPTIVE_GOAL_KIND)
             .text_search("budget nonexistentxyzzy", 10)
             .execute()
         )
@@ -179,7 +179,7 @@ def adaptive_search_mixed_chunk_and_property(
             )
         )
         rows = (
-            engine.query(_ADAPTIVE_GOAL_KIND)
+            engine.nodes(_ADAPTIVE_GOAL_KIND)
             .text_search("dualmatchneedle", 10)
             .execute()
         )
@@ -242,7 +242,7 @@ def adaptive_search_recursive_nested_payload(
         _seed_recursive_knowledge_item(engine)
 
         rows = (
-            engine.query(_ADAPTIVE_KI_KIND)
+            engine.nodes(_ADAPTIVE_KI_KIND)
             .text_search("quarterly", 10)
             .with_match_attribution()
             .execute()
@@ -264,7 +264,7 @@ def adaptive_search_recursive_nested_payload(
         # Multi-term: both leaves must appear in matched_paths in
         # first-match-offset order.
         rows_multi = (
-            engine.query(_ADAPTIVE_KI_KIND)
+            engine.nodes(_ADAPTIVE_KI_KIND)
             .text_search("quarterly budget", 10)
             .with_match_attribution()
             .execute()
@@ -299,7 +299,7 @@ def adaptive_search_recursive_rebuild_restore(
         _seed_recursive_knowledge_item(engine)
 
         rows_before = (
-            engine.query(_ADAPTIVE_KI_KIND)
+            engine.nodes(_ADAPTIVE_KI_KIND)
             .text_search("quarterly", 10)
             .with_match_attribution()
             .execute()
@@ -316,7 +316,7 @@ def adaptive_search_recursive_rebuild_restore(
     engine = context.open_engine(db_path)
     try:
         rows_after = (
-            engine.query(_ADAPTIVE_KI_KIND)
+            engine.nodes(_ADAPTIVE_KI_KIND)
             .text_search("quarterly", 10)
             .with_match_attribution()
             .execute()
