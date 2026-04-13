@@ -16,7 +16,10 @@ import { parseArgs } from "node:util";
 import {
   Engine,
   WriteRequestBuilder,
-  type QueryRows,
+  type FtsPropertyPathMode,
+  type FtsPropertyPathSpec,
+  type SearchHit,
+  type SearchRows,
 } from "fathomdb";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -48,6 +51,7 @@ interface NodeDef {
   source_ref?: string;
   upsert?: boolean;
   chunk_policy?: string;
+  content_ref?: string;
 }
 
 interface NodeRetireDef {
@@ -66,7 +70,7 @@ interface EdgeDef {
   upsert?: boolean;
 }
 
-interface ChunkDef { id: string; node_logical_id: string; text_content: string; byte_start?: number; byte_end?: number; }
+interface ChunkDef { id: string; node_logical_id: string; text_content: string; byte_start?: number; byte_end?: number; content_hash?: string; }
 interface RunDef { id: string; kind: string; status: string; properties: unknown; source_ref?: string; upsert?: boolean; supersedes_id?: string; }
 interface StepDef { id: string; run_id: string; kind: string; status: string; properties: unknown; source_ref?: string; upsert?: boolean; supersedes_id?: string; }
 interface ActionDef { id: string; step_id: string; kind: string; status: string; properties: unknown; source_ref?: string; upsert?: boolean; supersedes_id?: string; }
@@ -188,6 +192,201 @@ function buildWriteRequest(writeDef: WriteDef): Record<string, unknown> {
   return builder.build();
 }
 
+const WRITTEN_AT_RECENT_WINDOW_SECONDS = 300;
+
+function actualHit(hit: SearchHit, withAttribution: boolean): Record<string, unknown> {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const writtenAtRecent =
+    hit.writtenAt > 0 &&
+    hit.writtenAt <= nowSeconds &&
+    hit.writtenAt >= nowSeconds - WRITTEN_AT_RECENT_WINDOW_SECONDS;
+  const entry: Record<string, unknown> = {
+    logical_id: hit.node.logicalId,
+    kind: hit.node.kind,
+    source: hit.source,
+    match_mode: hit.matchMode,
+    snippet_non_empty: Boolean(hit.snippet && hit.snippet.trim().length > 0),
+    written_at_recent: writtenAtRecent,
+    projection_row_id_present: hit.projectionRowId != null,
+  };
+  if (withAttribution) {
+    entry.attribution_matched_paths = hit.attribution ? [...hit.attribution.matchedPaths] : [];
+  }
+  return entry;
+}
+
+function searchRowsToActual(rows: SearchRows, withAttribution: boolean): Record<string, unknown> {
+  return {
+    hit_count: rows.hits.length,
+    strict_hit_count: rows.strictHitCount,
+    relaxed_hit_count: rows.relaxedHitCount,
+    fallback_used: rows.fallbackUsed,
+    was_degraded: rows.wasDegraded,
+    hits: rows.hits.map(h => actualHit(h, withAttribution)),
+  };
+}
+
+function evaluateSearchExpectations(queryDef: QueryDef, actual: Record<string, unknown>): string[] {
+  const failures: string[] = [];
+  const hits = actual.hits as Array<Record<string, unknown>>;
+
+  const arrayEquals = (a: unknown[], b: unknown[]): boolean =>
+    a.length === b.length && a.every((v, i) => v === b[i]);
+
+  if (Array.isArray(queryDef.expect_hit_logical_ids)) {
+    const want = (queryDef.expect_hit_logical_ids as string[]).slice();
+    const got = hits.map(h => h.logical_id as string);
+    if (!arrayEquals(want, got)) {
+      failures.push(`expect_hit_logical_ids: want ${JSON.stringify(want)}, got ${JSON.stringify(got)}`);
+    }
+  }
+  if (Array.isArray(queryDef.expect_hit_sources)) {
+    const want = (queryDef.expect_hit_sources as string[]).slice();
+    const got = hits.map(h => h.source as string);
+    if (!arrayEquals(want, got)) {
+      failures.push(`expect_hit_sources: want ${JSON.stringify(want)}, got ${JSON.stringify(got)}`);
+    }
+  }
+  if (Array.isArray(queryDef.expect_match_modes)) {
+    const want = (queryDef.expect_match_modes as string[]).slice();
+    const got = hits.map(h => h.match_mode as string);
+    if (!arrayEquals(want, got)) {
+      failures.push(`expect_match_modes: want ${JSON.stringify(want)}, got ${JSON.stringify(got)}`);
+    }
+  }
+  if (queryDef.expect_snippets_non_empty) {
+    if (!hits.every(h => h.snippet_non_empty)) {
+      failures.push("expect_snippets_non_empty: some hit had empty snippet");
+    }
+  }
+  if (queryDef.expect_written_at_seconds_recent) {
+    if (!hits.every(h => h.written_at_recent)) {
+      failures.push("expect_written_at_seconds_recent: some hit written_at out of window");
+    }
+  }
+  if (queryDef.expect_projection_row_ids_unique) {
+    if (!hits.every(h => h.projection_row_id_present)) {
+      failures.push("expect_projection_row_ids_unique: some hit missing projection_row_id");
+    }
+  }
+  if (typeof queryDef.expect_strict_hit_count === "number") {
+    if (actual.strict_hit_count !== queryDef.expect_strict_hit_count) {
+      failures.push(`expect_strict_hit_count: want ${queryDef.expect_strict_hit_count}, got ${actual.strict_hit_count}`);
+    }
+  }
+  if (typeof queryDef.expect_strict_hit_count_min === "number") {
+    if ((actual.strict_hit_count as number) < (queryDef.expect_strict_hit_count_min as number)) {
+      failures.push(`expect_strict_hit_count_min: want >= ${queryDef.expect_strict_hit_count_min}, got ${actual.strict_hit_count}`);
+    }
+  }
+  if (typeof queryDef.expect_relaxed_hit_count === "number") {
+    if (actual.relaxed_hit_count !== queryDef.expect_relaxed_hit_count) {
+      failures.push(`expect_relaxed_hit_count: want ${queryDef.expect_relaxed_hit_count}, got ${actual.relaxed_hit_count}`);
+    }
+  }
+  if (typeof queryDef.expect_relaxed_hit_count_min === "number") {
+    if ((actual.relaxed_hit_count as number) < (queryDef.expect_relaxed_hit_count_min as number)) {
+      failures.push(`expect_relaxed_hit_count_min: want >= ${queryDef.expect_relaxed_hit_count_min}, got ${actual.relaxed_hit_count}`);
+    }
+  }
+  if (typeof queryDef.expect_fallback_used === "boolean") {
+    if (actual.fallback_used !== queryDef.expect_fallback_used) {
+      failures.push(`expect_fallback_used: want ${queryDef.expect_fallback_used}, got ${actual.fallback_used}`);
+    }
+  }
+  if (typeof queryDef.expect_was_degraded === "boolean") {
+    if (actual.was_degraded !== queryDef.expect_was_degraded) {
+      failures.push(`expect_was_degraded: want ${queryDef.expect_was_degraded}, got ${actual.was_degraded}`);
+    }
+  }
+  if (typeof queryDef.expect_min_count === "number") {
+    if ((actual.hit_count as number) < (queryDef.expect_min_count as number)) {
+      failures.push(`expect_min_count: want >= ${queryDef.expect_min_count}, got ${actual.hit_count}`);
+    }
+  }
+  if (Array.isArray(queryDef.expect_matched_paths)) {
+    for (const item of queryDef.expect_matched_paths as Array<Record<string, unknown>>) {
+      const idx = item.hit_index as number;
+      const wantPaths = ((item.paths as string[]) ?? []).slice().sort();
+      if (idx >= hits.length) {
+        failures.push(`expect_matched_paths: hit_index ${idx} out of range`);
+        continue;
+      }
+      const gotPaths = ((hits[idx].attribution_matched_paths as string[]) ?? []).slice().sort();
+      if (!arrayEquals(wantPaths, gotPaths)) {
+        failures.push(
+          `expect_matched_paths[${idx}]: want ${JSON.stringify(wantPaths)}, got ${JSON.stringify(gotPaths)}`,
+        );
+      }
+    }
+  }
+  return failures;
+}
+
+function executeTextSearch(engine: Engine, queryDef: QueryDef): Record<string, unknown> {
+  const withAttribution = Boolean(queryDef.with_match_attribution);
+  let builder = engine
+    .nodes(queryDef.kind as string)
+    .textSearch(queryDef.query as string, queryDef.limit as number);
+  if (withAttribution) {
+    builder = builder.withMatchAttribution();
+  }
+
+  const repeatRuns = Math.max(1, Number(queryDef.repeat_runs ?? 1));
+  const runsActual: Record<string, unknown>[] = [];
+  for (let i = 0; i < repeatRuns; i++) {
+    runsActual.push(searchRowsToActual(builder.execute(), withAttribution));
+  }
+  const actual = runsActual[0];
+
+  const failures: string[] = [];
+  if (queryDef.expect_deterministic_across_runs) {
+    const firstJson = sortedJson(runsActual[0]);
+    for (let i = 1; i < runsActual.length; i++) {
+      if (sortedJson(runsActual[i]) !== firstJson) {
+        failures.push(`expect_deterministic_across_runs: run ${i + 1} differs from run 1`);
+      }
+    }
+  }
+  failures.push(...evaluateSearchExpectations(queryDef, actual));
+
+  const result: Record<string, unknown> = {
+    type: "text_search",
+    name: queryDef.name ?? null,
+    actual,
+    pass: failures.length === 0,
+    failures,
+  };
+  if (repeatRuns > 1) {
+    result.repeat_runs = repeatRuns;
+  }
+  return result;
+}
+
+function executeFallbackSearch(engine: Engine, queryDef: QueryDef): Record<string, unknown> {
+  const withAttribution = Boolean(queryDef.with_match_attribution);
+  let builder = engine.fallbackSearch(
+    queryDef.strict_query as string,
+    (queryDef.relaxed_query as string | null) ?? null,
+    Number(queryDef.limit ?? 10),
+  );
+  if (typeof queryDef.kind_filter === "string") {
+    builder = builder.filterKindEq(queryDef.kind_filter);
+  }
+  if (withAttribution) {
+    builder = builder.withMatchAttribution();
+  }
+  const actual = searchRowsToActual(builder.execute(), withAttribution);
+  const failures = evaluateSearchExpectations(queryDef, actual);
+  return {
+    type: "fallback_search",
+    name: queryDef.name ?? null,
+    actual,
+    pass: failures.length === 0,
+    failures,
+  };
+}
+
 function executeQuery(engine: Engine, queryDef: QueryDef): Record<string, unknown> {
   const qtype = queryDef.type as string;
 
@@ -206,10 +405,11 @@ function executeQuery(engine: Engine, queryDef: QueryDef): Record<string, unknow
   }
 
   if (qtype === "text_search") {
-    const rows = engine.nodes(queryDef.kind as string)
-      .textSearch(queryDef.query as string, queryDef.limit as number)
-      .execute();
-    return { type: qtype, count: rows.nodes.length };
+    return executeTextSearch(engine, queryDef);
+  }
+
+  if (qtype === "fallback_search") {
+    return executeFallbackSearch(engine, queryDef);
   }
 
   if (qtype === "filter_content_ref_not_null") {
@@ -283,6 +483,27 @@ function executeAdmin(engine: Engine, adminDef: AdminDef): Record<string, unknow
       kind: record.kind,
       property_paths: record.propertyPaths,
       separator: record.separator,
+    };
+  }
+
+  if (atype === "register_fts_property_schema_with_entries") {
+    const rawEntries = (def.entries as Array<Record<string, unknown>>) ?? [];
+    const entries: FtsPropertyPathSpec[] = rawEntries.map(e => ({
+      path: String(e.path ?? ""),
+      mode: (String(e.mode ?? "scalar") === "recursive" ? "recursive" : "scalar") as FtsPropertyPathMode,
+    }));
+    const record = engine.admin.registerFtsPropertySchemaWithEntries({
+      kind: def.kind as string,
+      entries,
+      separator: (def.separator as string | undefined) ?? " ",
+      excludePaths: (def.exclude_paths as string[] | undefined) ?? [],
+    });
+    return {
+      type: "register_fts_property_schema_with_entries",
+      kind: record.kind,
+      entries: record.entries.map(e => ({ path: e.path, mode: e.mode })),
+      separator: record.separator,
+      exclude_paths: record.excludePaths,
     };
   }
 

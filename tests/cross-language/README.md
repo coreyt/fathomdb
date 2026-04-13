@@ -104,9 +104,77 @@ Each write object maps to a `WriteRequest`:
 | Type | Required Fields | Description |
 |---|---|---|
 | `filter_logical_id` | `kind`, `logical_id` | Filter by exact logical ID |
-| `text_search` | `kind`, `query`, `limit` | Full-text search (chunk + property FTS) |
+| `text_search` | `kind`, `query`, `limit` | Adaptive text search (strict then derived-relaxed fallback) |
+| `fallback_search` | `strict_query`, `relaxed_query`, `limit` | Explicit two-shape search (no engine rewriting) |
 | `filter_content_ref_not_null` | `kind` | Filter nodes with content_ref set |
 | `traverse` | `kind`, `start_logical_id`, `direction`, `label`, `max_depth` | Graph traversal |
+
+### Adaptive-Search Assertion Shape
+
+`text_search` and `fallback_search` queries emit a rich structured result that
+validates the full `SearchRows`/`SearchHit` wire shape, not just the hit count.
+Both drivers report the same normalized `actual` object per query:
+
+```jsonc
+{
+  "type": "text_search",
+  "name": "strict_hit_property",
+  "actual": {
+    "hit_count": 1,
+    "strict_hit_count": 1,
+    "relaxed_hit_count": 0,
+    "fallback_used": false,
+    "was_degraded": false,
+    "hits": [
+      {
+        "logical_id": "goal:xlang-strict-budget",
+        "kind": "Goal",
+        "source": "property",            // "chunk" | "property" | "vector"
+        "match_mode": "strict",          // "strict" | "relaxed"
+        "snippet_non_empty": true,
+        "written_at_recent": true,       // within last 300 seconds
+        "projection_row_id_present": true,
+        "attribution_matched_paths": ["$.payload.body"]  // only when with_match_attribution=true
+      }
+    ]
+  },
+  "pass": true,
+  "failures": []
+}
+```
+
+Non-deterministic fields (`score`, raw `written_at`, raw `projection_row_id`)
+are replaced with deterministic booleans so the Python and TypeScript drivers
+can diff their manifests byte for byte even though each writes its database
+independently.
+
+Each search query may declare any subset of the following optional expected
+fields. Missing fields are not evaluated; declared fields must match exactly
+for `pass` to be `true`.
+
+| Field | Type | Semantics |
+|---|---|---|
+| `expect_hit_logical_ids` | `string[]` | Ordered list of hit logical IDs |
+| `expect_hit_sources` | `("chunk"\|"property"\|"vector")[]` | Parallel to logical IDs |
+| `expect_match_modes` | `("strict"\|"relaxed")[]` | Parallel to logical IDs |
+| `expect_snippets_non_empty` | `boolean` | Every hit has a non-empty snippet |
+| `expect_written_at_seconds_recent` | `boolean` | Every hit's `written_at` is within 300s of `now` |
+| `expect_projection_row_ids_unique` | `boolean` | Every hit has a populated `projection_row_id` |
+| `expect_strict_hit_count` | `number` | Exact `strict_hit_count` value |
+| `expect_strict_hit_count_min` | `number` | Minimum `strict_hit_count` |
+| `expect_relaxed_hit_count` | `number` | Exact `relaxed_hit_count` value |
+| `expect_relaxed_hit_count_min` | `number` | Minimum `relaxed_hit_count` |
+| `expect_fallback_used` | `boolean` | Matches `rows.fallback_used` |
+| `expect_was_degraded` | `boolean` | Matches `rows.was_degraded` |
+| `expect_matched_paths` | `[{hit_index, paths}]` | Per-hit expected attribution paths (order-insensitive) |
+| `with_match_attribution` | `boolean` | Call `.with_match_attribution()` on the builder |
+| `repeat_runs` | `number` | Run the same query N times (for determinism checks) |
+| `expect_deterministic_across_runs` | `boolean` | All N repeated runs must produce byte-identical `actual` |
+| `expect_min_count` | `number` | Back-compat: minimum `hit_count` |
+
+`fallback_search` queries additionally require `strict_query`, `relaxed_query`
+(may be `null` for strict-only), `limit`, and an optional `kind_filter` string
+that is applied via `.filter_kind_eq(...)` on the builder.
 
 ### Admin Types
 
@@ -118,7 +186,8 @@ object with a `type` field and parameters:
 | `check_integrity` | -- | Physical + FK + FTS consistency |
 | `check_semantics` | -- | Orphaned chunks, dangling edges, stale projections |
 | `trace_source` | `source_ref` | Trace objects written by a source |
-| `register_fts_property_schema` | `kind`, `property_paths`, `separator` | Register/update FTS projection schema |
+| `register_fts_property_schema` | `kind`, `property_paths`, `separator` | Register/update scalar FTS projection schema |
+| `register_fts_property_schema_with_entries` | `kind`, `entries`, `separator`, `exclude_paths` | Register schema with per-path modes (supports `"recursive"` for match attribution) |
 | `describe_fts_property_schema` | `kind` | Describe a single schema |
 | `list_fts_property_schemas` | -- | List all registered schemas |
 
