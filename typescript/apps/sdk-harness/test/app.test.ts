@@ -40,13 +40,13 @@ describe("sdk harness", () => {
   it("runs the baseline scenarios", () => {
     const result = runHarness("baseline");
     console.log(result);
-    expect(result).toMatch(/^4\/4 scenarios passed/);
+    expect(result).toMatch(/^13\/13 scenarios passed/);
   });
 
   it("runs the vector scenarios", () => {
     const result = runHarness("vector");
     console.log(result);
-    expect(result).toMatch(/^5\/5 scenarios passed/);
+    expect(result).toMatch(/^14\/14 scenarios passed/);
   });
 
   it("runs the observability telemetry scenario", () => {

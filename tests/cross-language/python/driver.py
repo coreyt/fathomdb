@@ -338,6 +338,29 @@ def execute_text_search(engine: Engine, query_def: dict) -> dict:
     return result
 
 
+def execute_search(engine: Engine, query_def: dict) -> dict:
+    """Run a unified `search()` scenario query and evaluate expectations."""
+    with_attribution = bool(query_def.get("with_match_attribution"))
+    builder = engine.nodes(query_def["kind"]).search(
+        query_def["query"], limit=query_def["limit"]
+    )
+    if query_def.get("filter_kind_eq"):
+        builder = builder.filter_kind_eq(query_def["filter_kind_eq"])
+    if with_attribution:
+        builder = builder.with_match_attribution()
+
+    rows = builder.execute()
+    actual = _search_rows_to_actual(rows, with_attribution)
+    failures = _evaluate_search_expectations(query_def, actual)
+    return {
+        "type": "search",
+        "name": query_def.get("name"),
+        "actual": actual,
+        "pass": not failures,
+        "failures": failures,
+    }
+
+
 def execute_fallback_search(engine: Engine, query_def: dict) -> dict:
     """Run a fallback_search scenario query and emit the same rich result shape."""
     with_attribution = bool(query_def.get("with_match_attribution"))
@@ -385,6 +408,9 @@ def execute_query(engine: Engine, query_def: dict) -> dict:
 
     if qtype == "text_search":
         return execute_text_search(engine, query_def)
+
+    if qtype == "search":
+        return execute_search(engine, query_def)
 
     if qtype == "fallback_search":
         return execute_fallback_search(engine, query_def)

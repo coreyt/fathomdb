@@ -5,6 +5,7 @@ import { observabilityFeedbackScenario } from "./scenarios/observability-feedbac
 import { observabilityTelemetryScenario } from "./scenarios/observability-telemetry.js";
 import { recoveryScenario } from "./scenarios/recovery.js";
 import { runtimeScenario } from "./scenarios/runtime.js";
+import { unifiedSearchScenarios } from "./scenarios/search.js";
 import { stressExternalContentScenario } from "./scenarios/stress-external-content.js";
 import { stressReadsUnderWriteLoadScenario } from "./scenarios/stress-reads-under-write-load.js";
 import { stressTelemetryMonotonicScenario } from "./scenarios/stress-telemetry-monotonic.js";
@@ -24,6 +25,7 @@ export function runHarness(mode: "baseline" | "vector" | "observability" | "stre
   }
   const results = [canonicalScenario(), graphScenario(), runtimeScenario(), recoveryScenario()];
   results.push(...adaptiveSearchScenarios());
+  results.push(...unifiedSearchScenarios());
   if (mode === "vector") {
     results.push(vectorScenario());
   }

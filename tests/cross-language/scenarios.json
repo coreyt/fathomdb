@@ -774,6 +774,141 @@
           "expect_was_degraded": false
         }
       ]
+    },
+    {
+      "name": "xlang_search_basic",
+      "writes": [
+        {
+          "label": "xlang-search-basic",
+          "nodes": [
+            {
+              "row_id": "01JXLANG-SEARCHBASIC-ROW-01",
+              "logical_id": "goal:xlang-search-basic",
+              "kind": "Goal",
+              "properties": {"name": "xlangsearchbasicneedle budget", "description": "Quarterly planning"},
+              "source_ref": "source:xlang-search-basic",
+              "upsert": true
+            }
+          ]
+        }
+      ],
+      "queries": [
+        {
+          "type": "search",
+          "name": "search_basic",
+          "kind": "Goal",
+          "query": "xlangsearchbasicneedle",
+          "limit": 10,
+          "filter_kind_eq": "Goal",
+          "expect_hit_logical_ids": ["goal:xlang-search-basic"],
+          "expect_hit_sources": ["property"],
+          "expect_match_modes": ["strict"],
+          "expect_strict_hit_count": 1,
+          "expect_relaxed_hit_count": 0,
+"expect_fallback_used": false,
+          "expect_was_degraded": false
+        }
+      ]
+    },
+    {
+      "name": "xlang_search_strict_miss_relaxed",
+      "writes": [
+        {
+          "label": "xlang-search-strict-miss",
+          "nodes": [
+            {
+              "row_id": "01JXLANG-SEARCHMISS-ROW-001",
+              "logical_id": "goal:xlang-search-miss",
+              "kind": "Goal",
+              "properties": {"name": "xlangsearchrelaxedneedle roadmap", "description": "Strategic direction"},
+              "source_ref": "source:xlang-search-miss",
+              "upsert": true
+            }
+          ]
+        }
+      ],
+      "queries": [
+        {
+          "type": "search",
+          "name": "search_strict_miss_relaxed",
+          "kind": "Goal",
+          "query": "xlangsearchrelaxedneedle zzzneverpresentterm",
+          "limit": 10,
+          "filter_kind_eq": "Goal",
+          "expect_hit_logical_ids": ["goal:xlang-search-miss"],
+          "expect_match_modes": ["relaxed"],
+          "expect_strict_hit_count": 0,
+          "expect_relaxed_hit_count_min": 1,
+          "expect_fallback_used": true,
+          "expect_was_degraded": false
+        }
+      ]
+    },
+    {
+      "name": "xlang_search_with_attribution",
+      "writes": [
+        {
+          "label": "xlang-search-attribution",
+          "nodes": [
+            {
+              "row_id": "01JXLANG-SEARCHATTR-ROW-001",
+              "logical_id": "note:xlang-search-attribution",
+              "kind": "XLangNote",
+              "properties": {"payload": {"body": "xlangsearchattrneedle shipping quarterly docs"}},
+              "source_ref": "source:xlang-search-attribution",
+              "upsert": true
+            }
+          ]
+        }
+      ],
+      "queries": [
+        {
+          "type": "search",
+          "name": "search_with_attribution",
+          "kind": "XLangNote",
+          "query": "xlangsearchattrneedle",
+          "limit": 10,
+          "with_match_attribution": true,
+          "expect_hit_logical_ids": ["note:xlang-search-attribution"],
+          "expect_hit_sources": ["property"],
+          "expect_match_modes": ["strict"],
+          "expect_fallback_used": false,
+          "expect_was_degraded": false,
+          "expect_matched_paths": [{"hit_index": 0, "paths": ["$.payload.body"]}]
+        }
+      ]
+    },
+    {
+      "name": "xlang_search_empty_query_returns_empty",
+      "writes": [
+        {
+          "label": "xlang-search-empty-seed",
+          "nodes": [
+            {
+              "row_id": "01JXLANG-SEARCHEMPTY-ROW-01",
+              "logical_id": "goal:xlang-search-empty-seed",
+              "kind": "Goal",
+              "properties": {"name": "xlangsearchemptyneedle anchor", "description": "seed"},
+              "source_ref": "source:xlang-search-empty",
+              "upsert": true
+            }
+          ]
+        }
+      ],
+      "queries": [
+        {
+          "type": "search",
+          "name": "search_empty_query_returns_empty",
+          "kind": "Goal",
+          "query": "",
+          "limit": 10,
+          "expect_hit_logical_ids": [],
+          "expect_strict_hit_count": 0,
+          "expect_relaxed_hit_count": 0,
+"expect_fallback_used": false,
+          "expect_was_degraded": false
+        }
+      ]
     }
   ],
   "setup_admin": [
