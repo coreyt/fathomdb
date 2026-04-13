@@ -455,6 +455,8 @@ class SearchHit:
     source: SearchHitSource
     match_mode: SearchMatchMode
     snippet: str | None
+    #: Seconds since the Unix epoch (1970-01-01 UTC), matching
+    #: ``nodes.created_at`` which is populated via SQLite ``unixepoch()``.
     written_at: int
     projection_row_id: str | None
     attribution: HitAttribution | None
@@ -768,6 +770,29 @@ class SafeExportManifest:
     @classmethod
     def from_wire(cls, payload: dict[str, Any]) -> "SafeExportManifest":
         return cls(**payload)
+
+
+class FtsPropertyPathMode(str, Enum):
+    """Extraction mode for a single registered FTS property path."""
+
+    #: Resolve the path and append the scalar value(s). Matches legacy
+    #: pre-Phase-4 behaviour.
+    SCALAR = "scalar"
+    #: Recursively walk every scalar leaf rooted at the path. Each leaf
+    #: contributes one entry to the position map and is eligible for
+    #: match-attribution.
+    RECURSIVE = "recursive"
+
+
+@dataclass(frozen=True)
+class FtsPropertyPathSpec:
+    """A single registered property-FTS path with its extraction mode."""
+
+    path: str
+    mode: FtsPropertyPathMode = FtsPropertyPathMode.SCALAR
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"path": self.path, "mode": self.mode.value}
 
 
 @dataclass(slots=True)
