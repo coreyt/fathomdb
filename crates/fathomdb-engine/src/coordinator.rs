@@ -1131,11 +1131,12 @@ impl ExecutionCoordinator {
                 // wire-format change required.
                 let literal = match serde_json::to_string(&vec) {
                     Ok(s) => s,
-                    Err(_err) => {
+                    Err(err) => {
                         trace_warn!(
-                            error = %_err,
+                            error = %err,
                             "query embedder vector serialization failed; skipping vector branch"
                         );
+                        let _ = err; // Used by trace_warn! when tracing feature is active
                         plan.was_degraded_at_plan_time = true;
                         return;
                     }
@@ -1150,11 +1151,12 @@ impl ExecutionCoordinator {
                     attribution_requested: strict.attribution_requested,
                 });
             }
-            Err(_err) => {
+            Err(err) => {
                 trace_warn!(
-                    error = %_err,
+                    error = %err,
                     "query embedder unavailable, skipping vector branch"
                 );
+                let _ = err; // Used by trace_warn! when tracing feature is active
                 plan.was_degraded_at_plan_time = true;
             }
         }

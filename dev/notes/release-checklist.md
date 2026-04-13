@@ -28,6 +28,11 @@ repo root.
   stale worktrees, missing venv.
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings -A missing-docs`
 - [ ] `cargo clippy --workspace --all-targets --features python -- -D warnings -A missing-docs`
+- [ ] `cargo clippy --workspace --all-targets --features tracing -- -D warnings -A missing-docs`
+  (CI's `rust-lint` job runs with `--features tracing`; without this gate,
+  tracing-specific lints like `used_underscore_binding` on `error = %err`
+  macros will only surface in CI. This gate was missing from the 0.3.0
+  prep and blocked the first release attempt.)
 - [ ] `cargo clippy --workspace --all-targets --features default-embedder -- -D warnings -A missing-docs`
   (new since Phase 12.5 — if this fails, the `default-embedder` feature
   regressed)
