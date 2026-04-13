@@ -105,10 +105,10 @@ retrieval policy. Two things matter for callers:
 
 1. `text_search(...)` steps out of the regular `Query` builder. It returns a
    distinct `TextSearchBuilder`, whose `.execute()` is statically typed to
-   return [`SearchRows`](../reference/query.md), not `QueryRows`. There is no
-   union return type — a chain ending in `text_search(...).execute()` always
-   gives you hits, and a chain without it always gives you `QueryRows`.
-2. Each result is a [`SearchHit`](../reference/query.md) carrying
+   return [`SearchRows`](../reference/types.md#searchrows), not `QueryRows`.
+   There is no union return type — a chain ending in `text_search(...).execute()`
+   always gives you hits, and a chain without it always gives you `QueryRows`.
+2. Each result is a [`SearchHit`](../reference/types.md#searchhit) carrying
    `node`, `score`, `source`, `match_mode`, `snippet`, `written_at`,
    `projection_row_id`, and (optionally) `attribution`. Callers read
    `rows.hits` and do **not** branch on backend.
