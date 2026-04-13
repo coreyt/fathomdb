@@ -7,8 +7,8 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use fathomdb_query::{
     BindValue, ComparisonOp, CompiledGroupedQuery, CompiledQuery, CompiledSearch,
     CompiledSearchPlan, DrivingTable, ExpansionSlot, FALLBACK_TRIGGER_K, HitAttribution, Predicate,
-    ScalarValue, SearchBranch, SearchHit, SearchHitSource, SearchMatchMode, SearchRows, ShapeHash,
-    render_text_query_fts5,
+    RetrievalModality, ScalarValue, SearchBranch, SearchHit, SearchHitSource, SearchMatchMode,
+    SearchRows, ShapeHash, render_text_query_fts5,
 };
 use fathomdb_schema::SchemaManager;
 use rusqlite::{Connection, OptionalExtension, params_from_iter, types::Value};
@@ -623,14 +623,22 @@ impl ExecutionCoordinator {
         }
         let strict_hit_count = merged
             .iter()
-            .filter(|h| matches!(h.match_mode, SearchMatchMode::Strict))
+            .filter(|h| matches!(h.match_mode, Some(SearchMatchMode::Strict)))
             .count();
-        let relaxed_hit_count = merged.len() - strict_hit_count;
+        let relaxed_hit_count = merged
+            .iter()
+            .filter(|h| matches!(h.match_mode, Some(SearchMatchMode::Relaxed)))
+            .count();
+        // Phase 10: no vector execution path yet, so vector_hit_count is
+        // always zero. Future phases that wire a vector branch will
+        // contribute here.
+        let vector_hit_count = 0;
 
         Ok(SearchRows {
             hits: merged,
             strict_hit_count,
             relaxed_hit_count,
+            vector_hit_count,
             fallback_used,
             was_degraded,
         })
@@ -919,10 +927,13 @@ impl ExecutionCoordinator {
                     },
                     written_at: row.get(6)?,
                     score: row.get(7)?,
+                    // Phase 10: every branch currently emits text hits.
+                    modality: RetrievalModality::Text,
                     source,
-                    match_mode,
+                    match_mode: Some(match_mode),
                     snippet: row.get(9)?,
                     projection_row_id: row.get(10)?,
+                    vector_distance: None,
                     attribution: None,
                 })
             })
@@ -964,9 +975,16 @@ impl ExecutionCoordinator {
         let strict_expr = render_text_query_fts5(strict_text_query);
         let relaxed_expr = relaxed_text_query.map(render_text_query_fts5);
         for hit in hits.iter_mut() {
+            // Phase 10: text hits always carry `Some(match_mode)`. Vector
+            // hits (when a future phase adds them) have `None` here and
+            // are skipped by the attribution resolver because attribution
+            // is meaningless for vector matches.
             let match_expr = match hit.match_mode {
-                SearchMatchMode::Strict => strict_expr.as_str(),
-                SearchMatchMode::Relaxed => relaxed_expr.as_deref().unwrap_or(strict_expr.as_str()),
+                Some(SearchMatchMode::Strict) => strict_expr.as_str(),
+                Some(SearchMatchMode::Relaxed) => {
+                    relaxed_expr.as_deref().unwrap_or(strict_expr.as_str())
+                }
+                None => continue,
             };
             match resolve_hit_attribution(&conn_guard, hit, match_expr) {
                 Ok(att) => hit.attribution = Some(att),
@@ -1695,7 +1713,9 @@ mod tests {
 
     use crate::{EngineError, ExecutionCoordinator, TelemetryCounters};
 
-    use fathomdb_query::{NodeRowLite, SearchHit, SearchHitSource, SearchMatchMode};
+    use fathomdb_query::{
+        NodeRowLite, RetrievalModality, SearchHit, SearchHitSource, SearchMatchMode,
+    };
 
     use super::{
         bind_value_to_sql, is_vec_table_absent, merge_search_branches, wrap_node_row_projection_sql,
@@ -1717,11 +1737,13 @@ mod tests {
                 last_accessed_at: None,
             },
             score,
+            modality: RetrievalModality::Text,
             source,
-            match_mode,
+            match_mode: Some(match_mode),
             snippet: None,
             written_at: 0,
             projection_row_id: None,
+            vector_distance: None,
             attribution: None,
         }
     }
@@ -1744,9 +1766,15 @@ mod tests {
         let merged = merge_search_branches(strict, relaxed, 10);
         assert_eq!(merged.len(), 2);
         assert_eq!(merged[0].node.logical_id, "a");
-        assert!(matches!(merged[0].match_mode, SearchMatchMode::Strict));
+        assert!(matches!(
+            merged[0].match_mode,
+            Some(SearchMatchMode::Strict)
+        ));
         assert_eq!(merged[1].node.logical_id, "b");
-        assert!(matches!(merged[1].match_mode, SearchMatchMode::Relaxed));
+        assert!(matches!(
+            merged[1].match_mode,
+            Some(SearchMatchMode::Relaxed)
+        ));
     }
 
     #[test]
@@ -1774,9 +1802,15 @@ mod tests {
         let merged = merge_search_branches(strict, relaxed, 10);
         assert_eq!(merged.len(), 2);
         assert_eq!(merged[0].node.logical_id, "shared");
-        assert!(matches!(merged[0].match_mode, SearchMatchMode::Strict));
+        assert!(matches!(
+            merged[0].match_mode,
+            Some(SearchMatchMode::Strict)
+        ));
         assert_eq!(merged[1].node.logical_id, "other");
-        assert!(matches!(merged[1].match_mode, SearchMatchMode::Relaxed));
+        assert!(matches!(
+            merged[1].match_mode,
+            Some(SearchMatchMode::Relaxed)
+        ));
     }
 
     #[test]

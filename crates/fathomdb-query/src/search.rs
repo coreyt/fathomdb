@@ -50,6 +50,21 @@ pub enum SearchMatchMode {
     Relaxed,
 }
 
+/// Coarse retrieval-modality classifier for a [`SearchHit`].
+///
+/// Phase 10 adds this field to the result surface so that future phases
+/// which introduce a vector retrieval branch can tag their hits without a
+/// breaking change to consumers. Every hit produced by the current (text-
+/// only) execution paths is tagged [`RetrievalModality::Text`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RetrievalModality {
+    /// The hit came from a text retrieval branch (chunk or property FTS).
+    Text,
+    /// The hit came from a vector retrieval branch. Reserved — no current
+    /// execution path emits this variant.
+    Vector,
+}
+
 /// Per-hit attribution data produced by the (Phase 5) match attributor.
 ///
 /// The struct is exported in Phase 1 to lock in the shape of
@@ -73,11 +88,17 @@ pub struct SearchHit {
     /// `-bm25(...)` so that larger values represent better matches; callers
     /// may sort descending by this field.
     pub score: f64,
+    /// Coarse retrieval-modality classifier. Every hit produced by the
+    /// current text execution paths is tagged
+    /// [`RetrievalModality::Text`]; future phases that wire vector
+    /// retrieval will tag those hits [`RetrievalModality::Vector`].
+    pub modality: RetrievalModality,
     /// Which FTS surface produced the hit.
     pub source: SearchHitSource,
-    /// Whether this hit came from the strict or relaxed branch. Always
-    /// [`SearchMatchMode::Strict`] in Phase 1.
-    pub match_mode: SearchMatchMode,
+    /// Whether this hit came from the strict or relaxed branch. `Some`
+    /// for every text hit; reserved as `None` for future vector hits,
+    /// which have no strict/relaxed notion.
+    pub match_mode: Option<SearchMatchMode>,
     /// Short context snippet for display. `Some` for at least the chunk path
     /// (`SQLite`'s `snippet(...)`) and a trimmed window of `text_content` for
     /// the property path.
@@ -101,6 +122,10 @@ pub struct SearchHit {
     /// for chunk hits, or `fts_node_properties.rowid` for property hits).
     /// Useful for debugging and for future attribution paths.
     pub projection_row_id: Option<String>,
+    /// Vector distance or similarity for vector hits. `None` for every
+    /// text hit. Modality-specific diagnostic; values are not comparable
+    /// across modalities.
+    pub vector_distance: Option<f64>,
     /// Reserved: match-attribution payload. Always `None` in Phase 1.
     pub attribution: Option<HitAttribution>,
 }
@@ -136,6 +161,11 @@ pub struct SearchRows {
     pub strict_hit_count: usize,
     /// Count of relaxed-branch hits (Phase 1: always 0).
     pub relaxed_hit_count: usize,
+    /// Count of vector-branch hits. Always `0` after Phase 10 because no
+    /// vector execution path exists yet; reserved so that when vector
+    /// retrieval lands in a later phase, the wire shape already has the
+    /// counter and consumers do not need a breaking change.
+    pub vector_hit_count: usize,
     /// Whether the relaxed fallback branch fired (Phase 1: always `false`).
     pub fallback_used: bool,
     /// Whether a capability miss caused the query to degrade to an empty
