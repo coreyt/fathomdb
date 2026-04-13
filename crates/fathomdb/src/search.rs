@@ -468,6 +468,16 @@ impl<'e> FallbackSearchBuilder<'e> {
         // is kind-agnostic until the caller adds `.filter_kind_eq(...)`. We
         // pick an empty string so `partition_search_filters` ignores it (it
         // only inspects Filter steps).
+        //
+        // The accumulator is seeded with a no-op `text_search` step so that
+        // `partition_search_filters` treats subsequent `.filter_*` calls as
+        // post-search filters (the partitioner only fuses predicates that
+        // appear after a TextSearch/VectorSearch step). The dummy step's
+        // query text and limit are never executed — `compile_plan` pulls
+        // the real strict/relaxed text queries and limit from the
+        // `FallbackSearchBuilder` fields directly when it assembles the
+        // `CompiledSearchPlan`.
+        let filter_builder = QueryBuilder::nodes(String::new()).text_search("", 0);
         Self {
             engine,
             root_kind: None,
@@ -475,7 +485,7 @@ impl<'e> FallbackSearchBuilder<'e> {
             relaxed,
             limit,
             attribution_requested: false,
-            filter_builder: QueryBuilder::nodes(String::new()),
+            filter_builder,
         }
     }
 
@@ -493,9 +503,15 @@ impl<'e> FallbackSearchBuilder<'e> {
     }
 
     /// Filter results to nodes matching the given kind.
+    ///
+    /// P6-P2-4: unlike the adaptive `TextSearchBuilder` path (which pins
+    /// `root_kind` from `Engine::query(kind)`), the narrow fallback helper
+    /// applies the kind check through the fusable filter list only. The
+    /// fusion pass pushes the resulting `KindEq` predicate into the
+    /// `search_hits` CTE's WHERE clause, which is sufficient to narrow
+    /// the result set and keeps the emitted SQL free of the redundant
+    /// `src.kind = ?` / `fp.kind = ?` checks inside the inner UNION arms.
     pub fn filter_kind_eq(mut self, kind: impl Into<String>) -> Self {
-        let kind = kind.into();
-        self.root_kind = Some(kind.clone());
         self.filter_builder = self.filter_builder.filter_kind_eq(kind);
         self
     }
@@ -588,14 +604,17 @@ impl<'e> FallbackSearchBuilder<'e> {
     /// # Errors
     /// Returns [`CompileError`] if filter partitioning fails.
     pub fn compile_plan(&self) -> Result<CompiledSearchPlan, CompileError> {
-        // When `root_kind` is empty, the coordinator's `run_search_branch`
-        // omits the `src.kind = ?` and `fp.kind = ?` predicates entirely,
-        // so the search runs across all node kinds. Callers that want
-        // kind filtering chain `.filter_kind_eq(kind)`, which sets
-        // `root_kind` AND adds a fusable `KindEq` predicate to the filter
-        // builder — the resulting SQL checks the kind in two places (inner
-        // UNION arms + outer CTE WHERE), which is harmless but slightly
-        // redundant and can be tightened in a future pack.
+        // `FallbackSearchBuilder` is kind-agnostic at the UNION level:
+        // when `root_kind` is empty, the coordinator's `run_search_branch`
+        // omits the `src.kind = ?` / `fp.kind = ?` predicates from the
+        // inner UNION arms entirely, so the search runs across all node
+        // kinds. Callers that want kind filtering chain
+        // `.filter_kind_eq(kind)`, which adds a fusable `KindEq`
+        // predicate (P6-P2-4: the fusion pass then pushes the check into
+        // the outer `search_hits` CTE's WHERE clause — a single kind
+        // check, not three). `root_kind` is therefore always None on
+        // this path; it exists only so the adaptive `TextSearchBuilder`
+        // path can pin the kind from `Engine::query(kind)`.
         let root_kind = self.root_kind.clone().unwrap_or_default();
         let mut ast = self.filter_builder.clone().into_ast();
         ast.root_kind = root_kind;

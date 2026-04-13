@@ -280,14 +280,41 @@ impl ExecutionCoordinator {
 
         let report = schema_manager.bootstrap(&conn)?;
 
-        // Property FTS rebuild on open. This runs unconditionally when
-        // `fts_property_schemas` is non-empty but `fts_node_properties` is
-        // empty — covering both the Phase 2 migration-16 case (FTS table
-        // recreated with a new tokenizer) and the crash-recovery case where
-        // a prior open applied migration 16 but crashed before the
-        // subsequent property-FTS rebuild committed. The rebuild is a no-op
-        // on an already-populated table, so running it on every open is
-        // safe.
+        // ----- Open-time rebuild guards for derived FTS state -----
+        //
+        // `fts_node_properties` and `fts_node_property_positions` are both
+        // derived from the canonical `nodes.properties` blobs and the set
+        // of registered `fts_property_schemas`. They are NOT source of
+        // truth, so whenever a schema migration or crash leaves either
+        // table out of sync with the canonical state we repopulate them
+        // from scratch at open() time.
+        //
+        // The derived-state invariant is: if `fts_property_schemas` is
+        // non-empty, then `fts_node_properties` must also be non-empty,
+        // and if any schema is recursive-mode then
+        // `fts_node_property_positions` must also be non-empty. If either
+        // guard trips, both tables are cleared and rebuilt together — it
+        // is never correct to rebuild only one half.
+        //
+        // Guard 1 (P2-1, FX pack, v15→v16 migration): detects an empty
+        // `fts_node_properties` while schemas exist. This covers the
+        // Phase 2 tokenizer swap (migration 16 drops the FTS5 virtual
+        // table before recreating it under `porter unicode61`) and the
+        // crash-recovery case where a prior open applied migration 16 but
+        // crashed before the subsequent property-FTS rebuild committed.
+        //
+        // Guard 2 (P4-P2-3, FX2 pack, v16→v17 migration, extended to
+        // v17→v18 by P4-P2-4): detects an empty
+        // `fts_node_property_positions` while any recursive-mode schema
+        // exists. This covers migration 17 (which added the sidecar table
+        // but left it empty) and migration 18 (which drops and recreates
+        // the sidecar to add the UNIQUE constraint, also leaving it
+        // empty). Both migrations land on the same guard because both
+        // leave the positions table empty while recursive schemas remain
+        // registered.
+        //
+        // Both guards are no-ops on an already-consistent database, so
+        // running them on every open is safe and cheap.
         let needs_property_fts_rebuild = {
             let schema_count: i64 =
                 conn.query_row("SELECT COUNT(*) FROM fts_property_schemas", [], |row| {
@@ -303,13 +330,11 @@ impl ExecutionCoordinator {
                 fts_count == 0
             }
         };
-        // Second open-time guard (P4-P2-3, v16 -> v17 migration): when a
-        // recursive-mode schema is registered but the position-map table is
-        // empty, the database was upgraded from a schema version that did
-        // not populate `fts_node_property_positions`. The rebuild path below
-        // regenerates both the blob and the position map from canonical
-        // state, so it is safe to trigger even when `fts_node_properties`
-        // already has rows.
+        // Guard 2 (see block comment above): recursive schemas registered
+        // but `fts_node_property_positions` empty. Rebuild regenerates
+        // both the FTS blob and the position map from canonical state, so
+        // it is safe to trigger even when `fts_node_properties` is
+        // already populated.
         let needs_position_backfill = {
             let recursive_schema_count: i64 = conn.query_row(
                 "SELECT COUNT(*) FROM fts_property_schemas \
@@ -653,23 +678,28 @@ impl ExecutionCoordinator {
             vec![BindValue::Text(rendered.clone()), BindValue::Text(rendered)]
         };
 
-        // Fusable predicates are injected into the CTE's outer WHERE against
-        // the `hn` alias (the nodes table joined inside the CTE). Residual
-        // predicates remain in the outer WHERE against `n`.
+        // P2-5: both fusable and residual predicates now match against the
+        // CTE's projected columns (`u.kind`, `u.logical_id`, `u.source_ref`,
+        // `u.content_ref`, `u.properties`) because the inner UNION arms
+        // project the full active-row column set through the
+        // `JOIN nodes src` already present in each arm. The previous
+        // implementation re-joined `nodes hn` at the CTE level and
+        // `nodes n` again at the outer SELECT, which was triple work on
+        // the hot search path.
         let mut fused_clauses = String::new();
         for predicate in &compiled.fusable_filters {
             match predicate {
                 Predicate::KindEq(kind) => {
                     binds.push(BindValue::Text(kind.clone()));
                     let idx = binds.len();
-                    let _ = write!(fused_clauses, "\n                  AND hn.kind = ?{idx}");
+                    let _ = write!(fused_clauses, "\n                  AND u.kind = ?{idx}");
                 }
                 Predicate::LogicalIdEq(logical_id) => {
                     binds.push(BindValue::Text(logical_id.clone()));
                     let idx = binds.len();
                     let _ = write!(
                         fused_clauses,
-                        "\n                  AND hn.logical_id = ?{idx}"
+                        "\n                  AND u.logical_id = ?{idx}"
                     );
                 }
                 Predicate::SourceRefEq(source_ref) => {
@@ -677,7 +707,7 @@ impl ExecutionCoordinator {
                     let idx = binds.len();
                     let _ = write!(
                         fused_clauses,
-                        "\n                  AND hn.source_ref = ?{idx}"
+                        "\n                  AND u.source_ref = ?{idx}"
                     );
                 }
                 Predicate::ContentRefEq(uri) => {
@@ -685,11 +715,11 @@ impl ExecutionCoordinator {
                     let idx = binds.len();
                     let _ = write!(
                         fused_clauses,
-                        "\n                  AND hn.content_ref = ?{idx}"
+                        "\n                  AND u.content_ref = ?{idx}"
                     );
                 }
                 Predicate::ContentRefNotNull => {
-                    fused_clauses.push_str("\n                  AND hn.content_ref IS NOT NULL");
+                    fused_clauses.push_str("\n                  AND u.content_ref IS NOT NULL");
                 }
                 Predicate::JsonPathEq { .. } | Predicate::JsonPathCompare { .. } => {
                     // Should be in residual_filters; compile_search guarantees
@@ -708,7 +738,7 @@ impl ExecutionCoordinator {
                     let value_idx = binds.len();
                     let _ = write!(
                         filter_clauses,
-                        "\n  AND json_extract(n.properties, ?{path_idx}) = ?{value_idx}"
+                        "\n  AND json_extract(h.properties, ?{path_idx}) = ?{value_idx}"
                     );
                 }
                 Predicate::JsonPathCompare { path, op, value } => {
@@ -724,7 +754,7 @@ impl ExecutionCoordinator {
                     };
                     let _ = write!(
                         filter_clauses,
-                        "\n  AND json_extract(n.properties, ?{path_idx}) {operator} ?{value_idx}"
+                        "\n  AND json_extract(h.properties, ?{path_idx}) {operator} ?{value_idx}"
                     );
                 }
                 Predicate::KindEq(_)
@@ -747,8 +777,15 @@ impl ExecutionCoordinator {
         let limit = compiled.limit;
         binds.push(BindValue::Integer(i64::try_from(limit).unwrap_or(i64::MAX)));
         let limit_idx = binds.len();
-        // INNER JOIN on nodes (hn) is intentional: rows referencing retired
-        // nodes are intentionally dropped as a derived-state invariant.
+        // P2-5: the inner UNION arms project the full active-row column
+        // set through `JOIN nodes src` (kind, row_id, source_ref,
+        // content_ref, content_hash, created_at, properties). Both the
+        // CTE's outer WHERE and the final SELECT consume those columns
+        // directly, which eliminates the previous `JOIN nodes hn` at the
+        // CTE level and `JOIN nodes n` at the outer SELECT — saving two
+        // redundant joins on the hot search path. `src.superseded_at IS
+        // NULL` in each arm already filters retired rows, which is what
+        // the dropped outer joins used to do.
         let (chunk_fts_bind, chunk_kind_clause, prop_fts_bind, prop_kind_clause) = if filter_by_kind
         {
             (
@@ -763,14 +800,26 @@ impl ExecutionCoordinator {
         let sql = format!(
             "WITH search_hits AS (
                 SELECT
+                    u.row_id AS row_id,
                     u.logical_id AS logical_id,
+                    u.kind AS kind,
+                    u.properties AS properties,
+                    u.source_ref AS source_ref,
+                    u.content_ref AS content_ref,
+                    u.created_at AS created_at,
                     u.score AS score,
                     u.source AS source,
                     u.snippet AS snippet,
                     u.projection_row_id AS projection_row_id
                 FROM (
                     SELECT
+                        src.row_id AS row_id,
                         c.node_logical_id AS logical_id,
+                        src.kind AS kind,
+                        src.properties AS properties,
+                        src.source_ref AS source_ref,
+                        src.content_ref AS content_ref,
+                        src.created_at AS created_at,
                         -bm25(fts_nodes) AS score,
                         'chunk' AS source,
                         snippet(fts_nodes, 3, '[', ']', '…', 32) AS snippet,
@@ -781,7 +830,13 @@ impl ExecutionCoordinator {
                     WHERE fts_nodes MATCH {chunk_fts_bind}{chunk_kind_clause}
                     UNION ALL
                     SELECT
+                        src.row_id AS row_id,
                         fp.node_logical_id AS logical_id,
+                        src.kind AS kind,
+                        src.properties AS properties,
+                        src.source_ref AS source_ref,
+                        src.content_ref AS content_ref,
+                        src.created_at AS created_at,
                         -bm25(fts_node_properties) AS score,
                         'property' AS source,
                         substr(fp.text_content, 1, 200) AS snippet,
@@ -790,26 +845,24 @@ impl ExecutionCoordinator {
                     JOIN nodes src ON src.logical_id = fp.node_logical_id AND src.superseded_at IS NULL
                     WHERE fts_node_properties MATCH {prop_fts_bind}{prop_kind_clause}
                 ) u
-                JOIN nodes hn ON hn.logical_id = u.logical_id AND hn.superseded_at IS NULL
                 WHERE 1 = 1{fused_clauses}
                 ORDER BY u.score DESC
                 LIMIT ?{limit_idx}
             )
             SELECT
-                n.row_id,
-                n.logical_id,
-                n.kind,
-                n.properties,
-                n.content_ref,
+                h.row_id,
+                h.logical_id,
+                h.kind,
+                h.properties,
+                h.content_ref,
                 am.last_accessed_at,
-                n.created_at,
+                h.created_at,
                 h.score,
                 h.source,
                 h.snippet,
                 h.projection_row_id
             FROM search_hits h
-            JOIN nodes n ON n.logical_id = h.logical_id AND n.superseded_at IS NULL
-            LEFT JOIN node_access_metadata am ON am.logical_id = n.logical_id
+            LEFT JOIN node_access_metadata am ON am.logical_id = h.logical_id
             WHERE 1 = 1{filter_clauses}
             ORDER BY h.score DESC"
         );
