@@ -445,7 +445,6 @@ impl TextSearchBuilder<'_> {
 #[must_use]
 pub struct FallbackSearchBuilder<'e> {
     engine: &'e Engine,
-    root_kind: Option<String>,
     strict: TextQuery,
     relaxed: Option<TextQuery>,
     limit: usize,
@@ -480,7 +479,6 @@ impl<'e> FallbackSearchBuilder<'e> {
         let filter_builder = QueryBuilder::nodes(String::new()).text_search("", 0);
         Self {
             engine,
-            root_kind: None,
             strict,
             relaxed,
             limit,
@@ -612,12 +610,10 @@ impl<'e> FallbackSearchBuilder<'e> {
         // `.filter_kind_eq(kind)`, which adds a fusable `KindEq`
         // predicate (P6-P2-4: the fusion pass then pushes the check into
         // the outer `search_hits` CTE's WHERE clause — a single kind
-        // check, not three). `root_kind` is therefore always None on
-        // this path; it exists only so the adaptive `TextSearchBuilder`
-        // path can pin the kind from `Engine::query(kind)`.
-        let root_kind = self.root_kind.clone().unwrap_or_default();
+        // check, not three). The narrow fallback helper therefore always
+        // uses an empty root kind on this path.
         let mut ast = self.filter_builder.clone().into_ast();
-        ast.root_kind = root_kind;
+        ast.root_kind = String::new();
         compile_search_plan_from_queries(
             &ast,
             self.strict.clone(),
@@ -638,5 +634,63 @@ impl<'e> FallbackSearchBuilder<'e> {
         self.engine
             .coordinator()
             .execute_compiled_search_plan(&plan)
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::FallbackSearchBuilder;
+    use crate::{Engine, EngineOptions};
+    use fathomdb_query::Predicate;
+    use tempfile::NamedTempFile;
+
+    /// P7.5-N1: pin the dummy-step workaround invariant.
+    ///
+    /// `FallbackSearchBuilder` seeds an inert `text_search("", 0)` step
+    /// into its internal filter accumulator so that
+    /// `partition_search_filters` treats subsequent `.filter_*` calls as
+    /// post-search predicates (the partitioner only classifies filters
+    /// that appear AFTER a `TextSearch` or `VectorSearch` step in source
+    /// order). Without that seed, `.filter_kind_eq("Goal")` would land in
+    /// neither the fusable nor the residual bucket and would be silently
+    /// dropped. This test compiles a plan via the public builder API and
+    /// verifies the kind predicate ends up in `fusable_filters`.
+    #[test]
+    fn fallback_builder_filter_kind_eq_fuses_without_explicit_text_search_step() {
+        let db = NamedTempFile::new().expect("temporary db");
+        let engine =
+            Engine::open(EngineOptions::new(db.path())).expect("engine opens for unit test");
+
+        let builder = FallbackSearchBuilder::new(&engine, "budget", Some("budget OR nothing"), 10)
+            .filter_kind_eq("Goal");
+        let plan = builder.compile_plan().expect("compile plan");
+
+        assert!(
+            plan.strict
+                .fusable_filters
+                .iter()
+                .any(|p| matches!(p, Predicate::KindEq(k) if k == "Goal")),
+            "KindEq(\"Goal\") must land in strict.fusable_filters (got {:?})",
+            plan.strict.fusable_filters
+        );
+        assert!(
+            plan.strict.residual_filters.is_empty(),
+            "strict.residual_filters should be empty for a single kind filter (got {:?})",
+            plan.strict.residual_filters
+        );
+
+        let relaxed = plan
+            .relaxed
+            .as_ref()
+            .expect("relaxed branch present when caller supplied a relaxed query");
+        assert!(
+            relaxed
+                .fusable_filters
+                .iter()
+                .any(|p| matches!(p, Predicate::KindEq(k) if k == "Goal")),
+            "KindEq(\"Goal\") must also land in relaxed.fusable_filters (got {:?})",
+            relaxed.fusable_filters
+        );
     }
 }

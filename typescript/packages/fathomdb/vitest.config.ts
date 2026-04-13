@@ -14,10 +14,15 @@ import { defineConfig } from "vitest/config";
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "../../..");
 const candidateSources = [
+  // Linux
   resolve(repoRoot, "target/debug/libfathomdb.so"),
-  resolve(repoRoot, "target/debug/libfathomdb.dylib"),
   resolve(repoRoot, "target/release/libfathomdb.so"),
+  // macOS
+  resolve(repoRoot, "target/debug/libfathomdb.dylib"),
   resolve(repoRoot, "target/release/libfathomdb.dylib"),
+  // Windows
+  resolve(repoRoot, "target/debug/fathomdb.dll"),
+  resolve(repoRoot, "target/release/fathomdb.dll"),
 ];
 const source = candidateSources.find((candidate) => existsSync(candidate));
 if (!source) {

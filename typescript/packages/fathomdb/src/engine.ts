@@ -158,6 +158,9 @@ export class Engine {
     limit: number,
   ): FallbackSearchBuilder {
     this.#assertOpen();
+    // rootKind is intentionally empty: fallback_search is kind-agnostic
+    // by design. Callers scope by kind via `.filterKindEq(k)`, which
+    // fuses through the filter list at plan-compile time.
     return new FallbackSearchBuilder(this.#core, "", strictQuery, relaxedQuery, limit);
   }
 
