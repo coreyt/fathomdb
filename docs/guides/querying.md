@@ -97,54 +97,155 @@ for node in results.nodes:
     print(node.logical_id, node.properties.get("title"))
 ```
 
-### Full-text search
+### Adaptive text search
 
-`text_search` is the default safe full-text surface. It accepts a constrained
-subset of familiar search syntax: bare terms, quoted phrases, implicit `AND`
-between adjacent terms, and uppercase `OR` and `NOT`. Unsupported syntax stays
-literal rather than passing through as raw FTS5 control syntax.
+`text_search(query, limit)` is the default safe full-text surface. It is an
+**adaptive** search: you hand the engine a raw user query and it owns the
+retrieval policy. Two things matter for callers:
 
-The full supported subset, downgrade behavior, and unsupported forms are
-documented in [Text Query Syntax](./text-query-syntax.md).
-
-The engine lowers that supported subset to SQLite FTS5 under the hood. It
-transparently searches both chunk-backed document text and property-backed
-structured text (for kinds with a registered
-[FTS property schema](./property-fts.md)). Your application does not need to
-know the source of a given hit.
-
-Examples:
+1. `text_search(...)` steps out of the regular `Query` builder. It returns a
+   distinct `TextSearchBuilder`, whose `.execute()` is statically typed to
+   return [`SearchRows`](../reference/query.md), not `QueryRows`. There is no
+   union return type — a chain ending in `text_search(...).execute()` always
+   gives you hits, and a chain without it always gives you `QueryRows`.
+2. Each result is a [`SearchHit`](../reference/query.md) carrying
+   `node`, `score`, `source`, `match_mode`, `snippet`, `written_at`,
+   `projection_row_id`, and (optionally) `attribution`. Callers read
+   `rows.hits` and do **not** branch on backend.
 
 ```python
-db.nodes("Document").text_search("project deadline", limit=20)
-db.nodes("Document").text_search('"release notes"', limit=20)
-db.nodes("Document").text_search("ship OR docs", limit=20)
-db.nodes("Document").text_search("ship NOT blocked", limit=20)
-db.nodes("Document").text_search("not a ship", limit=20)
-```
-
-```python
-results = (
-    db.nodes("Document")
-    .text_search("project deadline", limit=20)
+rows = (
+    db.nodes("Goal")
+    .text_search("ship quarterly docs", 10)
     .execute()
 )
+for hit in rows.hits:
+    print(hit.node.logical_id, hit.score, hit.source.value,
+          hit.match_mode.value, hit.snippet)
 ```
 
-### Combining search with filters
+#### Supported query syntax
 
-Search and filters compose. The engine pushes the search deep into the
-query plan, then applies filters over the reduced set:
+The accepted query grammar is the strict safe subset: bare terms, quoted
+phrases, implicit `AND`, uppercase `OR`, and uppercase `NOT`. Unsupported
+syntax stays literal rather than passing through as raw FTS5 control syntax.
+The full grammar, downgrade rules, and unsupported forms are documented in
+[Text Query Syntax](./text-query-syntax.md).
+
+That grammar describes the **strict** half of the adaptive policy. The
+relaxed half is engine-owned — there is no user-facing syntax for it.
+
+#### Strict-then-relaxed policy
+
+Internally, the engine runs the query through two branches:
+
+- **Strict branch.** The caller's query is parsed against the safe subset and
+  lowered to FTS5 literally. Quoted phrases stay phrases, `AND`/`OR`/`NOT`
+  stay boolean, terms match stem-for-stem under the default tokenizer.
+- **Relaxed branch.** The engine derives a relaxed shape from the strict AST
+  (term-level alternatives, softened exclusions, per-term fallbacks) and runs
+  it. The relaxation rules are a fixed engine policy — they are not
+  configurable per call.
+
+The relaxed branch only runs when the strict branch returns **zero** hits
+(the v1 trigger is `K=1`). When it does run, the two branches are merged so
+that strict hits come first, then relaxed hits. Within each block, results
+are ordered by the engine's ranking policy.
+
+The returned `SearchRows` tells you what happened:
+
+| Field | Meaning |
+|---|---|
+| `hits` | All `SearchHit` rows in final order (strict first, then relaxed). |
+| `strict_hit_count` | Number of hits contributed by the strict branch. |
+| `relaxed_hit_count` | Number of hits contributed by the relaxed branch. |
+| `fallback_used` | `True` if the relaxed branch fired. |
+| `was_degraded` | `True` if the engine fell back to a simpler plan shape. |
+
+Each hit also carries `match_mode`: `strict` or `relaxed`. An application
+that wants to visually separate confident matches from fuzzier fallbacks can
+read `hit.match_mode` directly rather than splitting on index.
+
+#### Source transparency
+
+`text_search` covers both chunk-backed document text and property-backed
+structured text for kinds with a registered
+[FTS property schema](./property-fts.md). The originating surface shows up
+as `hit.source`:
+
+- `SearchHitSource.CHUNK` — the hit came from a document chunk.
+- `SearchHitSource.PROPERTY` — the hit came from a property-FTS row.
+- `SearchHitSource.VECTOR` is a reserved third slot for future use.
+
+Applications do not need to know the source of a given hit to use it, but
+the field is there when you want to e.g. show different snippet UI for
+chunks vs structured fields.
+
+#### Combining search with filters
+
+`text_search` builders carry the same filter surface as `Query`:
+`filter_kind_eq`, `filter_logical_id_eq`, `filter_source_ref_eq`,
+`filter_content_ref_eq`, `filter_content_ref_not_null`, and the
+`filter_json_*` family. The "fusable" filters — kind, logical ID, source
+ref, and content ref — are pushed into the search CTE so that the per-branch
+`limit` applies **after** filtering. The `filter_json_*` family runs as a
+post-filter over the candidate set.
 
 ```python
-results = (
+rows = (
     db.nodes("Document")
-    .text_search("architecture review", limit=50)
+    .text_search("architecture review", 50)
     .filter_json_text_eq("$.status", "published")
-    .limit(10)
     .execute()
 )
 ```
+
+#### Match attribution (opt-in)
+
+If the target kinds have recursive-mode property FTS schemas, you can ask
+the engine to tell you *which* registered JSON path matched each hit:
+
+```python
+rows = (
+    db.nodes("KnowledgeItem")
+    .text_search("quarterly docs", 10)
+    .with_match_attribution()
+    .execute()
+)
+for hit in rows.hits:
+    if hit.attribution:
+        print(hit.node.logical_id, hit.attribution.matched_paths)
+```
+
+`with_match_attribution()` is **opt-in**: hits you receive without it have
+`attribution == None`, and the default path pays no extra cost. See
+[Property FTS Projections](./property-fts.md#match-attribution-opt-in) for
+how recursive schemas populate the underlying position map.
+
+#### Explicit two-shape fallback search
+
+`text_search` is the right surface for almost all application queries. For
+the narrow case where the caller wants to supply both a strict and a
+relaxed shape **verbatim** — for example, the dedup-on-write pattern where
+you already have a canonical key and want to accept a looser match only if
+the exact key misses — use `Engine.fallback_search`:
+
+```python
+rows = db.fallback_search(
+    "quarterly docs",
+    "quarterly OR docs",
+    limit=10,
+).execute()
+```
+
+`fallback_search` returns the same `SearchRows` type and the same
+`FallbackSearchBuilder` filter surface as `text_search`. Neither branch is
+adaptively rewritten — the engine runs `strict_query` first, and if it
+returns zero hits, runs `relaxed_query` verbatim. Passing `None` for
+`relaxed_query` degenerates to a strict-only search, which is the shape the
+dedup-on-write pattern uses. It is a **bounded helper**, not a general
+query-composition API: there is no way to stack arbitrary relaxed branches
+or to override the engine's merge policy.
 
 ## Graph traversal
 
@@ -279,7 +380,9 @@ for slot in results.expansions:
 | JSON integer range | `filter_json_integer_gt/gte/lt/lte(path, value)` |
 | JSON timestamp range | `filter_json_timestamp_gt/gte/lt/lte(path, value)` |
 | Semantic similarity | `vector_search(query, limit)` |
-| Keyword search | `text_search(query, limit)` |
+| Adaptive text search | `text_search(query, limit)` → `SearchRows` |
+| Explicit fallback search | `Engine.fallback_search(strict, relaxed, limit)` → `SearchRows` |
+| Match attribution | `.with_match_attribution()` on the text-search builder |
 | Graph hop | `traverse(direction, label, max_depth)` |
 | Cap results | `limit(n)` |
 | Fetch results | `execute()` |
@@ -319,12 +422,24 @@ const specific = engine.nodes("Document")
   .filterContentRefEq("s3://docs/q4-report.pdf")
   .execute();
 
-// Text search
+// Adaptive text search — returns SearchRows, not QueryRows
 const ftsRows = engine.nodes("Document")
   .textSearch("architecture review", 50)
   .filterJsonTextEq("$.status", "published")
-  .limit(10)
   .execute();
+for (const hit of ftsRows.hits) {
+  console.log(hit.node.logicalId, hit.score, hit.source, hit.matchMode, hit.snippet);
+}
+console.log(ftsRows.strictHitCount, ftsRows.relaxedHitCount, ftsRows.fallbackUsed);
+
+// Opt-in match attribution (for recursive property FTS schemas)
+const attributed = engine.nodes("KnowledgeItem")
+  .textSearch("quarterly docs", 10)
+  .withMatchAttribution()
+  .execute();
+
+// Explicit two-shape fallback search
+const fb = engine.fallbackSearch("quarterly docs", "quarterly OR docs", 10).execute();
 
 // Graph traversal -- pass an options object instead of keyword args
 const authors = engine.nodes("Document")
