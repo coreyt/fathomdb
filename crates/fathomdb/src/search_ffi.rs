@@ -487,13 +487,41 @@ pub fn execute_search_json(engine: &Engine, request_json: &str) -> Result<String
         }
         PySearchMode::FallbackSearch => {
             let relaxed = request.relaxed_query.as_deref().map(TextQuery::parse);
-            compile_search_plan_from_queries(&ast, strict, relaxed, limit, attribution)
-                .map_err(SearchFfiError::Compile)?
+            // P7a-1 fix: `partition_search_filters` only classifies filters
+            // that appear AFTER a search step in source order. Without a
+            // sentinel `TextSearch` step at the head of the AST, every
+            // user-supplied filter on the fallback path would be silently
+            // dropped. Mirror the Rust `FallbackSearchBuilder` workaround
+            // by seeding a dummy `TextSearch` step so the filter chain is
+            // picked up as search-following and fused into the plan. The
+            // dummy step's contents are unused — `compile_search_plan_from_queries`
+            // ignores any `TextSearch` step on the AST and pulls the real
+            // strict/relaxed queries from its explicit parameters.
+            let mut ast_with_sentinel = ast;
+            ast_with_sentinel.steps.insert(
+                0,
+                QueryStep::TextSearch {
+                    query: TextQuery::Empty,
+                    limit,
+                },
+            );
+            compile_search_plan_from_queries(
+                &ast_with_sentinel,
+                strict,
+                relaxed,
+                limit,
+                attribution,
+            )
+            .map_err(SearchFfiError::Compile)?
         }
     };
 
     // Ensure attribution_requested is set on both branches regardless of
     // which compile helper produced the plan.
+    // Load-bearing for the TextSearch branch (compile_search hard-codes
+    // attribution_requested=false). No-op for FallbackSearch —
+    // compile_search_plan_from_queries already sets it via the attribution
+    // parameter.
     plan.strict.attribution_requested = attribution;
     if let Some(relaxed) = plan.relaxed.as_mut() {
         relaxed.attribution_requested = attribution;
