@@ -112,9 +112,28 @@ const request = builder.build();
 
 ### Query
 
+The unified `.search(...)` call returns a `SearchBuilder`, which exposes
+filter methods plus `.withMatchAttribution()` and `.execute()`. The
+terminal `execute()` returns `SearchRows` whose `hits` carry
+`logicalId`, `score`, `modality`, `source`, `matchMode`, and `snippet`:
+
+```typescript
+const searchRows = engine.nodes("Goal")
+  .search("budget", 10)
+  .filterJsonTextEq("$.status", "published")
+  .filterJsonIntegerGt("$.year", 2025)
+  .withMatchAttribution()
+  .execute();
+for (const hit of searchRows.hits) {
+  console.log(hit.node.logicalId, hit.score, hit.matchMode);
+}
+```
+
+Graph traversal and expansion live on the classic `Query` builder (the
+non-search path) and return `QueryRows`:
+
 ```typescript
 engine.nodes("Meeting")
-  .search("budget", 10)
   .filterJsonTextEq("$.status", "active")
   .filterJsonIntegerGt("$.year", 2025)
   .traverse({ direction: "out", label: "OWNS", maxDepth: 2 })
