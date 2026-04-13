@@ -1,3 +1,4 @@
+import { adaptiveSearchScenarios } from "./scenarios/adaptive-search.js";
 import { canonicalScenario } from "./scenarios/canonical.js";
 import { graphScenario } from "./scenarios/graph.js";
 import { observabilityFeedbackScenario } from "./scenarios/observability-feedback.js";
@@ -22,6 +23,7 @@ export function runHarness(mode: "baseline" | "vector" | "observability" | "stre
     ]);
   }
   const results = [canonicalScenario(), graphScenario(), runtimeScenario(), recoveryScenario()];
+  results.push(...adaptiveSearchScenarios());
   if (mode === "vector") {
     results.push(vectorScenario());
   }

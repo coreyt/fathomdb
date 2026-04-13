@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "tsup src/app.ts --format esm",
+    "harness": "tsup src/app.ts --format esm --silent && node dist/app.js",
     "test": "vitest run",
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },
