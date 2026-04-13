@@ -280,14 +280,41 @@ impl ExecutionCoordinator {
 
         let report = schema_manager.bootstrap(&conn)?;
 
-        // Property FTS rebuild on open. This runs unconditionally when
-        // `fts_property_schemas` is non-empty but `fts_node_properties` is
-        // empty — covering both the Phase 2 migration-16 case (FTS table
-        // recreated with a new tokenizer) and the crash-recovery case where
-        // a prior open applied migration 16 but crashed before the
-        // subsequent property-FTS rebuild committed. The rebuild is a no-op
-        // on an already-populated table, so running it on every open is
-        // safe.
+        // ----- Open-time rebuild guards for derived FTS state -----
+        //
+        // `fts_node_properties` and `fts_node_property_positions` are both
+        // derived from the canonical `nodes.properties` blobs and the set
+        // of registered `fts_property_schemas`. They are NOT source of
+        // truth, so whenever a schema migration or crash leaves either
+        // table out of sync with the canonical state we repopulate them
+        // from scratch at open() time.
+        //
+        // The derived-state invariant is: if `fts_property_schemas` is
+        // non-empty, then `fts_node_properties` must also be non-empty,
+        // and if any schema is recursive-mode then
+        // `fts_node_property_positions` must also be non-empty. If either
+        // guard trips, both tables are cleared and rebuilt together — it
+        // is never correct to rebuild only one half.
+        //
+        // Guard 1 (P2-1, FX pack, v15→v16 migration): detects an empty
+        // `fts_node_properties` while schemas exist. This covers the
+        // Phase 2 tokenizer swap (migration 16 drops the FTS5 virtual
+        // table before recreating it under `porter unicode61`) and the
+        // crash-recovery case where a prior open applied migration 16 but
+        // crashed before the subsequent property-FTS rebuild committed.
+        //
+        // Guard 2 (P4-P2-3, FX2 pack, v16→v17 migration, extended to
+        // v17→v18 by P4-P2-4): detects an empty
+        // `fts_node_property_positions` while any recursive-mode schema
+        // exists. This covers migration 17 (which added the sidecar table
+        // but left it empty) and migration 18 (which drops and recreates
+        // the sidecar to add the UNIQUE constraint, also leaving it
+        // empty). Both migrations land on the same guard because both
+        // leave the positions table empty while recursive schemas remain
+        // registered.
+        //
+        // Both guards are no-ops on an already-consistent database, so
+        // running them on every open is safe and cheap.
         let needs_property_fts_rebuild = {
             let schema_count: i64 =
                 conn.query_row("SELECT COUNT(*) FROM fts_property_schemas", [], |row| {
@@ -303,13 +330,11 @@ impl ExecutionCoordinator {
                 fts_count == 0
             }
         };
-        // Second open-time guard (P4-P2-3, v16 -> v17 migration): when a
-        // recursive-mode schema is registered but the position-map table is
-        // empty, the database was upgraded from a schema version that did
-        // not populate `fts_node_property_positions`. The rebuild path below
-        // regenerates both the blob and the position map from canonical
-        // state, so it is safe to trigger even when `fts_node_properties`
-        // already has rows.
+        // Guard 2 (see block comment above): recursive schemas registered
+        // but `fts_node_property_positions` empty. Rebuild regenerates
+        // both the FTS blob and the position map from canonical state, so
+        // it is safe to trigger even when `fts_node_properties` is
+        // already populated.
         let needs_position_backfill = {
             let recursive_schema_count: i64 = conn.query_row(
                 "SELECT COUNT(*) FROM fts_property_schemas \
