@@ -21,9 +21,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ComparisonOp, Engine, EngineError, Predicate, QueryAst, QueryStep, ScalarValue, SearchHit,
-    SearchHitSource, SearchMatchMode, SearchRows, TextQuery, compile_search_plan,
-    compile_search_plan_from_queries,
+    ComparisonOp, Engine, EngineError, Predicate, QueryAst, QueryStep, RetrievalModality,
+    ScalarValue, SearchHit, SearchHitSource, SearchMatchMode, SearchRows, TextQuery,
+    compile_search_plan, compile_search_plan_from_queries,
 };
 use fathomdb_query::CompileError;
 
@@ -292,6 +292,26 @@ impl From<SearchMatchMode> for PySearchMatchMode {
     }
 }
 
+/// Coarse retrieval-modality classifier for a [`PySearchHit`]. Mirrors
+/// [`RetrievalModality`].
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum PyRetrievalModality {
+    /// The hit came from a text retrieval branch.
+    Text,
+    /// The hit came from a vector retrieval branch. Reserved.
+    Vector,
+}
+
+impl From<RetrievalModality> for PyRetrievalModality {
+    fn from(value: RetrievalModality) -> Self {
+        match value {
+            RetrievalModality::Text => Self::Text,
+            RetrievalModality::Vector => Self::Vector,
+        }
+    }
+}
+
 /// Node-shaped projection attached to every [`PySearchHit`].
 ///
 /// Fields mirror `fathomdb_query::NodeRowLite` (and the Phase 0
@@ -329,10 +349,14 @@ pub struct PySearchHit {
     pub node: PySearchNodeRow,
     /// Relevance score (positive — the coordinator negates raw bm25).
     pub score: f64,
+    /// Coarse retrieval-modality classifier. `text` for every hit after
+    /// Phase 10; `vector` once vector retrieval is wired.
+    pub modality: PyRetrievalModality,
     /// Which FTS surface produced the hit.
     pub source: PySearchHitSource,
-    /// Strict or relaxed branch tag.
-    pub match_mode: PySearchMatchMode,
+    /// Strict or relaxed branch tag. `Some` for text hits; reserved as
+    /// `None` for future vector hits.
+    pub match_mode: Option<PySearchMatchMode>,
     /// Optional display snippet.
     pub snippet: Option<String>,
     /// Seconds since the Unix epoch (1970-01-01 UTC), matching
@@ -341,6 +365,10 @@ pub struct PySearchHit {
     pub written_at: i64,
     /// Opaque projection row ID (e.g. `chunks.id` for chunk hits).
     pub projection_row_id: Option<String>,
+    /// Vector distance or similarity for vector hits. `None` for text
+    /// hits. Modality-specific diagnostic; values are not comparable
+    /// across modalities.
+    pub vector_distance: Option<f64>,
     /// Optional match-attribution payload; `None` unless
     /// `attribution_requested` was set on the request.
     pub attribution: Option<PyHitAttribution>,
@@ -358,11 +386,13 @@ impl From<SearchHit> for PySearchHit {
                 last_accessed_at: value.node.last_accessed_at,
             },
             score: value.score,
+            modality: value.modality.into(),
             source: value.source.into(),
-            match_mode: value.match_mode.into(),
+            match_mode: value.match_mode.map(Into::into),
             snippet: value.snippet,
             written_at: value.written_at,
             projection_row_id: value.projection_row_id,
+            vector_distance: value.vector_distance,
             attribution: value.attribution.map(|a| PyHitAttribution {
                 matched_paths: a.matched_paths,
             }),
@@ -383,6 +413,9 @@ pub struct PySearchRows {
     pub strict_hit_count: usize,
     /// Number of hits tagged [`PySearchMatchMode::Relaxed`].
     pub relaxed_hit_count: usize,
+    /// Number of hits in the vector block. Always `0` after Phase 10
+    /// because no vector execution path exists yet.
+    pub vector_hit_count: usize,
 }
 
 impl From<SearchRows> for PySearchRows {
@@ -393,6 +426,7 @@ impl From<SearchRows> for PySearchRows {
             fallback_used: value.fallback_used,
             strict_hit_count: value.strict_hit_count,
             relaxed_hit_count: value.relaxed_hit_count,
+            vector_hit_count: value.vector_hit_count,
         }
     }
 }
@@ -539,8 +573,8 @@ pub fn execute_search_json(engine: &Engine, request_json: &str) -> Result<String
 #[allow(clippy::expect_used, clippy::panic)]
 mod tests {
     use super::{
-        PyHitAttribution, PySearchHit, PySearchHitSource, PySearchMatchMode, PySearchNodeRow,
-        PySearchRows,
+        PyHitAttribution, PyRetrievalModality, PySearchHit, PySearchHitSource, PySearchMatchMode,
+        PySearchNodeRow, PySearchRows,
     };
 
     #[test]
@@ -551,6 +585,7 @@ mod tests {
             fallback_used: false,
             strict_hit_count: 0,
             relaxed_hit_count: 0,
+            vector_hit_count: 0,
         };
         let json = serde_json::to_string(&rows).expect("serialize");
         let parsed: PySearchRows = serde_json::from_str(&json).expect("deserialize");
@@ -569,11 +604,13 @@ mod tests {
                 last_accessed_at: Some(1_700_000_000),
             },
             score: 1.25,
+            modality: PyRetrievalModality::Text,
             source: PySearchHitSource::Chunk,
-            match_mode: PySearchMatchMode::Strict,
+            match_mode: Some(PySearchMatchMode::Strict),
             snippet: Some("... <b>test</b> ...".into()),
             written_at: 1_700_000_001,
             projection_row_id: Some("chunk-1".into()),
+            vector_distance: None,
             attribution: Some(PyHitAttribution {
                 matched_paths: vec!["$.name".into()],
             }),
@@ -584,10 +621,19 @@ mod tests {
             fallback_used: true,
             strict_hit_count: 1,
             relaxed_hit_count: 0,
+            vector_hit_count: 0,
         };
         let json = serde_json::to_string(&rows).expect("serialize");
         let parsed: PySearchRows = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(rows, parsed);
+    }
+
+    #[test]
+    fn retrieval_modality_snake_case_wire_form() {
+        let json = serde_json::to_string(&PyRetrievalModality::Text).expect("serialize");
+        assert_eq!(json, "\"text\"");
+        let json = serde_json::to_string(&PyRetrievalModality::Vector).expect("serialize");
+        assert_eq!(json, "\"vector\"");
     }
 
     #[test]

@@ -1148,9 +1148,10 @@ fn format_search_rows_stable(rows: &SearchRows) -> String {
     let mut out = String::new();
     writeln!(
         &mut out,
-        "strict={} relaxed={} fallback_used={} was_degraded={} hits={}",
+        "strict={} relaxed={} vector={} fallback_used={} was_degraded={} hits={}",
         rows.strict_hit_count,
         rows.relaxed_hit_count,
+        rows.vector_hit_count,
         rows.fallback_used,
         rows.was_degraded,
         rows.hits.len()
@@ -1159,7 +1160,7 @@ fn format_search_rows_stable(rows: &SearchRows) -> String {
     for (idx, hit) in rows.hits.iter().enumerate() {
         writeln!(
             &mut out,
-            "[{idx}] logical_id={} row_id={} kind={} properties={:?} content_ref={:?} last_accessed_at={:?} score={:?} source={:?} match_mode={:?} snippet={:?} written_at={} projection_row_id={:?} attribution={:?}",
+            "[{idx}] logical_id={} row_id={} kind={} properties={:?} content_ref={:?} last_accessed_at={:?} score={:?} modality={:?} source={:?} match_mode={:?} snippet={:?} written_at={} projection_row_id={:?} vector_distance={:?} attribution={:?}",
             hit.node.logical_id,
             hit.node.row_id,
             hit.node.kind,
@@ -1167,11 +1168,13 @@ fn format_search_rows_stable(rows: &SearchRows) -> String {
             hit.node.content_ref,
             hit.node.last_accessed_at,
             hit.score,
+            hit.modality,
             hit.source,
             hit.match_mode,
             hit.snippet,
             hit.written_at,
             hit.projection_row_id,
+            hit.vector_distance,
             hit.attribution,
         )
         .expect("format into String never fails");

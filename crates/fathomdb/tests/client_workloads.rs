@@ -478,7 +478,7 @@ fn m3_fts_search_returns_meeting_transcript() {
     assert!(!rows.fallback_used);
     assert!(matches!(
         rows.hits[0].match_mode,
-        fathomdb::SearchMatchMode::Strict,
+        Some(fathomdb::SearchMatchMode::Strict),
     ));
 
     // Suppress unused variable warning for db

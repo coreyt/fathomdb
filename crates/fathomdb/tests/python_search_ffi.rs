@@ -240,7 +240,7 @@ fn text_search_strict_hit_populates_all_fields() {
 
     let hit: &PySearchHit = &rows.hits[0];
     assert!(hit.score > 0.0, "score must be positive");
-    assert!(matches!(hit.match_mode, PySearchMatchMode::Strict));
+    assert!(matches!(hit.match_mode, Some(PySearchMatchMode::Strict)));
     assert!(matches!(
         hit.source,
         PySearchHitSource::Chunk | PySearchHitSource::Property
@@ -280,7 +280,7 @@ fn text_search_strict_miss_fires_relaxed_branch() {
     assert!(
         rows.hits
             .iter()
-            .all(|h| matches!(h.match_mode, PySearchMatchMode::Relaxed))
+            .all(|h| matches!(h.match_mode, Some(PySearchMatchMode::Relaxed)))
     );
 }
 
@@ -357,7 +357,7 @@ fn fallback_search_two_shape_fires_relaxed_branch() {
     assert!(
         rows.hits
             .iter()
-            .all(|h| matches!(h.match_mode, PySearchMatchMode::Relaxed))
+            .all(|h| matches!(h.match_mode, Some(PySearchMatchMode::Relaxed)))
     );
     // P7a-1: every hit must respect the kind filter.
     assert!(
@@ -418,7 +418,7 @@ fn fallback_search_strict_only_matches_strict_only_text_search() {
         rows_fb
             .hits
             .iter()
-            .all(|h| matches!(h.match_mode, PySearchMatchMode::Strict))
+            .all(|h| matches!(h.match_mode, Some(PySearchMatchMode::Strict)))
     );
     // P7a-1: every hit must respect the kind filter.
     assert!(
