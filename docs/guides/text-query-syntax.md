@@ -7,6 +7,26 @@ This page defines the supported query-language subset for
 it accepts a constrained, familiar search-box subset and lowers that subset to
 SQLite FTS5 safely.
 
+## How this fits into adaptive search
+
+`text_search()` is an **adaptive** surface: the engine runs two branches
+under the hood (strict-then-relaxed) and merges them into a single
+`SearchRows` result. The grammar documented on this page defines the
+**strict half** of that policy — the interpretation the engine gives to
+your query when it lowers it literally to FTS5.
+
+The relaxed half of the policy is engine-owned. It is derived from the
+strict AST (term-level alternatives, softened exclusions, per-term
+fallbacks) and is **not** a separate user-facing syntax. You do not write
+relaxed queries by hand through `text_search()`.
+
+For the shape of the adaptive policy, per-branch hit counts, and the
+`fallback_used` / `strict_hit_count` / `relaxed_hit_count` fields on
+`SearchRows`, see [Querying Data](./querying.md#adaptive-text-search). For
+the narrow case where you want to supply both a strict and a relaxed
+shape verbatim — bypassing adaptive derivation — use
+[`Engine.fallback_search`](./querying.md#explicit-two-shape-fallback-search).
+
 ## Supported forms
 
 ### Bare terms
@@ -131,6 +151,6 @@ documentation explicitly expands the supported subset.
 
 See also:
 
-- [Querying Data](querying.md#full-text-search)
+- [Querying Data](querying.md#adaptive-text-search)
 - [Property FTS Projections](property-fts.md)
 - [Query API Reference](../reference/query.md)

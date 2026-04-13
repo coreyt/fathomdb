@@ -91,6 +91,87 @@ dataclasses returned by queries, writes, or admin operations.
       heading_level: 3
       show_root_heading: true
 
+### SearchRows
+
+Result set returned from `TextSearchBuilder.execute()` and
+`FallbackSearchBuilder.execute()`. Unlike `QueryRows`, `SearchRows` is
+organized around ranked search hits rather than decoded node rows, and
+exposes the per-branch counts that describe what the adaptive pipeline
+did:
+
+| Field | Meaning |
+|---|---|
+| `hits` | All [`SearchHit`](#searchhit) rows in final merged order: strict block first, relaxed block second. |
+| `strict_hit_count` | Number of hits contributed by the strict branch. |
+| `relaxed_hit_count` | Number of hits contributed by the relaxed branch. |
+| `fallback_used` | `True` if the relaxed branch fired (i.e. the strict branch returned zero hits and the engine derived a relaxed shape). |
+| `was_degraded` | `True` if the engine fell back to a simpler plan shape while executing. Mirrors `QueryRows.was_degraded`. |
+
+::: fathomdb.SearchRows
+    options:
+      heading_level: 4
+      show_root_heading: true
+
+### SearchHit
+
+A single adaptive or fallback search hit. Every hit carries the full
+`NodeRow` plus search-specific metadata.
+
+| Field | Meaning |
+|---|---|
+| `node` | The matched `NodeRow` (see above). |
+| `score` | Engine-assigned ranking score (higher is better). |
+| `source` | [`SearchHitSource`](#searchhitsource): which projection surface produced the hit. |
+| `match_mode` | [`SearchMatchMode`](#searchmatchmode): whether this hit came from the strict or relaxed branch. |
+| `snippet` | Optional snippet extracted from the matched text, or `None` if the engine did not produce one. |
+| `written_at` | **Seconds since the Unix epoch** (1970-01-01 UTC), matching `nodes.created_at` which is populated via SQLite `unixepoch()`. |
+| `projection_row_id` | Row ID of the underlying projection row (chunk or property-FTS row), or `None` if not applicable. |
+| `attribution` | [`HitAttribution`](#hitattribution) if `with_match_attribution()` was set on the builder, otherwise `None`. |
+
+::: fathomdb.SearchHit
+    options:
+      heading_level: 4
+      show_root_heading: true
+
+### SearchHitSource
+
+Which full-text projection surface produced a `SearchHit`:
+
+- `CHUNK` — the hit came from a document chunk.
+- `PROPERTY` — the hit came from a property-FTS row for a structured node kind.
+- `VECTOR` — reserved; not emitted by `text_search` in v1.
+
+::: fathomdb.SearchHitSource
+    options:
+      heading_level: 4
+      show_root_heading: true
+
+### SearchMatchMode
+
+Whether a hit came from the strict branch or the relaxed fallback:
+
+- `STRICT` — literal interpretation of the caller's query.
+- `RELAXED` — engine-derived relaxed shape. Only present when
+  `fallback_used` is `True`.
+
+::: fathomdb.SearchMatchMode
+    options:
+      heading_level: 4
+      show_root_heading: true
+
+### HitAttribution
+
+Per-hit match attribution. Populated only when `with_match_attribution()`
+is called on a `TextSearchBuilder` or `FallbackSearchBuilder`, and only
+for hits backed by recursive-mode property FTS entries. `matched_paths`
+lists the registered JSON paths that produced the FTS match for this
+hit.
+
+::: fathomdb.HitAttribution
+    options:
+      heading_level: 4
+      show_root_heading: true
+
 ::: fathomdb.GroupedQueryRows
     options:
       heading_level: 3
@@ -218,6 +299,49 @@ dataclasses returned by queries, writes, or admin operations.
 ::: fathomdb.OperationalReadRequest
     options:
       heading_level: 3
+      show_root_heading: true
+
+---
+
+## FTS Property Schema Types
+
+### FtsPropertyPathMode
+
+Extraction mode for a single registered FTS property path. `SCALAR`
+resolves the path and appends the scalar value(s). `RECURSIVE` walks the
+subtree rooted at the path and emits every scalar leaf, populating the
+position map and making the entry eligible for match attribution. See
+[Property FTS Projections](../guides/property-fts.md#scalar-vs-recursive-paths).
+
+::: fathomdb.FtsPropertyPathMode
+    options:
+      heading_level: 4
+      show_root_heading: true
+
+### FtsPropertyPathSpec
+
+A single registered property-FTS path with its extraction mode. Used as
+the `entries` input to
+`AdminClient.register_fts_property_schema_with_entries`.
+
+::: fathomdb.FtsPropertyPathSpec
+    options:
+      heading_level: 4
+      show_root_heading: true
+
+### FtsPropertySchemaRecord
+
+The registered FTS property projection schema for a node kind, as
+returned from `describe_fts_property_schema` and
+`list_fts_property_schemas`. `entries` is the mode-accurate per-path
+view — read this field for new code. `property_paths` is a legacy flat
+display list preserved for backwards compatibility.
+`exclude_paths` is populated for recursive schemas with subtree
+exclusions.
+
+::: fathomdb.FtsPropertySchemaRecord
+    options:
+      heading_level: 4
       show_root_heading: true
 
 ---

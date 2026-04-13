@@ -43,10 +43,13 @@ engine.write(builder.build());
 const rows = engine.nodes("Document").limit(10).execute();
 console.log(rows.nodes[0].properties); // { title: "Meeting notes", ... }
 
-// Full-text search
+// Adaptive text search — returns SearchRows, not QueryRows.
 const ftsRows = engine.nodes("Document")
   .textSearch("budget", 5)
   .execute();
+for (const hit of ftsRows.hits) {
+  console.log(hit.node.logicalId, hit.score, hit.source, hit.matchMode, hit.snippet);
+}
 
 // Filter by property
 const filtered = engine.nodes("Document")
@@ -61,8 +64,9 @@ engine.close();
 
 - **Graph backbone**: nodes, edges, logical identity, supersession (upsert
   without mutation), runs/steps/actions for agent execution tracking
-- **Full-text search** via SQLite FTS5 -- searches both document chunks and
-  structured node property projections transparently via `textSearch(...)`
+- **Adaptive text search** via SQLite FTS5 -- `textSearch(...)` runs a
+  strict-then-relaxed retrieval pipeline and returns ranked `SearchHit`
+  rows over both document chunks and structured property projections
 - **Vector search** via sqlite-vec
 - **Immutable query builder**: fluent, chainable API with 14+ filter methods
 - **Typed results**: all query/admin results are fully typed TypeScript interfaces
@@ -112,6 +116,40 @@ engine.nodes("Meeting")
   .expand({ slot: "related", direction: "out", label: "REFS", maxDepth: 1 })
   .limit(20)
   .execute();
+```
+
+### Adaptive text search
+
+```typescript
+import { Engine } from "fathomdb";
+
+const engine = Engine.open("/tmp/fathom.db");
+
+// Adaptive text search — engine owns strict-then-relaxed retrieval.
+const rows = engine.query("Goal").textSearch("ship quarterly docs", 10).execute();
+for (const hit of rows.hits) {
+  console.log(hit.node.logicalId, hit.score, hit.source, hit.matchMode, hit.snippet);
+}
+console.log(rows.strictHitCount, rows.relaxedHitCount, rows.fallbackUsed);
+
+// Recursive property FTS schema + opt-in match attribution.
+engine.admin.registerFtsPropertySchemaWithEntries({
+  kind: "KnowledgeItem",
+  entries: [{ path: "$.payload", mode: "recursive" }],
+});
+const attributed = engine
+  .query("KnowledgeItem")
+  .textSearch("quarterly docs", 10)
+  .withMatchAttribution()
+  .execute();
+for (const hit of attributed.hits) {
+  if (hit.attribution) {
+    console.log(hit.node.logicalId, hit.attribution.matchedPaths);
+  }
+}
+
+// Explicit two-shape fallback search (narrow helper; see docs/guides/querying.md).
+const fb = engine.fallbackSearch("quarterly docs", "quarterly OR docs", 10).execute();
 ```
 
 ### AdminClient

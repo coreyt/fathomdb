@@ -7,7 +7,7 @@ chunks, this is the feature to use.
 
 For background on chunks and the standard chunk-based FTS path, see
 [Data Model](../concepts/data-model.md) and
-[Querying Data](./querying.md#full-text-search).
+[Querying Data](./querying.md#adaptive-text-search).
 
 ## When to Use Property FTS
 
@@ -29,29 +29,69 @@ searchable content lives in their JSON `properties`, not in chunks.
 - Free-form text that doesn't map to fixed property paths
 
 **Both together:** A node kind can have both chunks and property projections.
-`text_search(...)` transparently searches both and returns a unified result.
-It uses the same safe text-query subset documented in
-[Text Query Syntax](./text-query-syntax.md): terms, quoted phrases,
-implicit `AND`, uppercase `OR`, and uppercase `NOT`. Unsupported syntax
-stays literal rather than becoming raw FTS5 control syntax.
+`text_search(...)` transparently searches both and returns unified
+[`SearchRows`](../reference/query.md) — each `SearchHit` carries a
+`source` field indicating whether it came from a chunk or a property-FTS
+row. The adaptive search policy is described in
+[Querying Data](./querying.md#adaptive-text-search); the strict
+query grammar is documented in
+[Text Query Syntax](./text-query-syntax.md).
 
 ## How It Works
 
 1. **Register a schema** for each node kind that should have property FTS.
-   The schema declares which JSON paths to extract and how to join them.
+   The schema declares which JSON paths to extract and how each one should
+   be walked (scalar vs recursive).
 2. **Write nodes normally.** The engine extracts the declared paths at write
-   time and maintains a derived FTS index row automatically.
-3. **Search with `text_search(...)`.** The existing query operator transparently
-   covers both chunk-backed and property-backed hits via a UNION. The search
-   expression still follows the same safe subset described in
-   [Text Query Syntax](./text-query-syntax.md). No new query API is needed.
+   time and maintains a derived FTS row plus (for recursive paths) a
+   position-map row per leaf, all in the same transaction as the node write.
+3. **Search with `text_search(...)`.** The adaptive text-search pipeline
+   transparently covers both chunk-backed and property-backed hits. No
+   separate query API is needed.
 
-Property FTS rows are **derived state** -- they are rebuilt from canonical
-nodes and schemas. You never write them directly.
+Property FTS rows — both the blob and the position map — are **derived
+state**. They are rebuilt from canonical nodes and schemas. You never
+write them directly.
+
+## Scalar vs Recursive Paths
+
+Every registered path carries a **mode**:
+
+| Mode | Behavior |
+|---|---|
+| `scalar` | Resolve the path once and append the value (or, for an array of scalars, each element). This matches the legacy pre-Phase-4 behavior and is the default. |
+| `recursive` | Walk the subtree rooted at the path and emit every scalar leaf as an extracted value. Each leaf also produces one position-map entry, making it eligible for per-hit match attribution. |
+
+Scalar mode is the right choice when the searchable text lives in a small
+set of fixed top-level fields (`$.title`, `$.description`, `$.rationale`).
+Recursive mode is the right choice when the searchable text is spread
+through an opaque structured blob (`$.payload`, `$.content_tree`) and you
+don't want to enumerate every leaf by hand.
+
+Recursive mode also unlocks two features that scalar mode doesn't:
+
+- **Match attribution** — `with_match_attribution()` on a text-search
+  builder populates `hit.attribution.matched_paths` with the JSON paths
+  that actually produced the FTS match.
+- **Subtree exclusions** — `exclude_paths` lets you prune subtrees from the
+  recursive walk (e.g. secret payloads, redundant ID fields) without
+  rewriting the upstream schema.
 
 ## Registering a Schema
 
-Register a schema before writing nodes of that kind (or rebuild afterward):
+There are two registration APIs. Use whichever matches the shape of your
+schema:
+
+- `register_fts_property_schema(kind, paths, separator)` — the
+  convenience shim. All entries are registered in **scalar** mode. Use
+  this when you just want to point at a few top-level fields.
+- `register_fts_property_schema_with_entries(kind, entries, separator,
+  exclude_paths)` — the full-shape API. Each entry is an
+  `FtsPropertyPathSpec(path, mode)`, so you can mix scalar and recursive
+  paths and supply `exclude_paths`. Use this any time any path needs
+  recursive-mode indexing.
+
+### Scalar-only (convenience API)
 
 === "Python"
 
@@ -80,6 +120,44 @@ Register a schema before writing nodes of that kind (or rebuild afterward):
     );
     ```
 
+### Mixed scalar + recursive (full-shape API)
+
+=== "Python"
+
+    ```python
+    from fathomdb import (
+        Engine,
+        FtsPropertyPathMode,
+        FtsPropertyPathSpec,
+    )
+
+    db = Engine.open("agent.db")
+
+    db.admin.register_fts_property_schema_with_entries(
+        "KnowledgeItem",
+        entries=[
+            FtsPropertyPathSpec(path="$.title", mode=FtsPropertyPathMode.SCALAR),
+            FtsPropertyPathSpec(path="$.payload", mode=FtsPropertyPathMode.RECURSIVE),
+        ],
+        separator=" ",
+        exclude_paths=["$.payload.secret"],
+    )
+    ```
+
+=== "TypeScript"
+
+    ```typescript
+    engine.admin.registerFtsPropertySchemaWithEntries({
+        kind: "KnowledgeItem",
+        entries: [
+            { path: "$.title", mode: "scalar" },
+            { path: "$.payload", mode: "recursive" },
+        ],
+        separator: " ",
+        excludePaths: ["$.payload.secret"],
+    });
+    ```
+
 ### Path Syntax
 
 Paths must use simple `$.`-prefixed dot-notation:
@@ -90,13 +168,22 @@ Paths must use simple `$.`-prefixed dot-notation:
 | `$.payload.summary_text` | Nested field |
 
 Array indexing (`$.tags[0]`), wildcards (`$.*`), and recursive descent
-(`$..name`) are **not supported** and will be rejected at registration.
+(`$..name`) are **not supported as path syntax** and will be rejected at
+registration. "Recursive mode" is a separate, declared behavior on an
+otherwise-simple path — it tells the engine to walk scalar leaves under
+that path, not to reinterpret the path itself.
 
 ### Idempotent Upsert
 
-Calling `register_fts_property_schema` again for the same kind overwrites the
-previous schema (paths and separator). This does **not** rewrite existing FTS
-rows -- call `admin.rebuild("fts")` to backfill.
+Calling either register API again for the same kind overwrites the
+previous schema in place. When a schema with a new recursive path (or a
+new `exclude_paths` list) is registered, the engine performs an **eager
+transactional rebuild**: it drops the kind's `fts_node_properties` and
+`fts_node_property_positions` rows and re-extracts them from canonical
+node state, all inside the same transaction as the schema upsert. Schema
+changes are immediate — there is no lazy mark-stale path, and there is
+no versioned co-existence of old and new schemas. If the upsert commits,
+the derived state is consistent with the new schema.
 
 ## Writing Nodes
 
@@ -139,31 +226,108 @@ FTS row is rebuilt.
 
 ## Searching
 
-Use the same `text_search(...)` you already use for chunk-based FTS. The
-supported query forms are the same safe subset documented in the querying
-guide:
+Use the same `text_search(...)` you already use for chunk-based FTS. It
+returns [`SearchRows`](../reference/query.md) — see
+[Querying Data](./querying.md#adaptive-text-search) for the full
+adaptive-search contract.
 
 === "Python"
 
     ```python
-    results = db.nodes("Goal").text_search("redesign", limit=10).execute()
-    for node in results.nodes:
-        print(node.logical_id, node.properties["name"])
+    rows = db.nodes("Goal").text_search("redesign", 10).execute()
+    for hit in rows.hits:
+        print(hit.node.logical_id, hit.score, hit.source.value, hit.snippet)
     ```
 
 === "TypeScript"
 
     ```typescript
-    const results = engine.nodes("Goal").textSearch("redesign", 10).execute();
-    for (const node of results.nodes) {
-        console.log(node.logicalId, node.properties.name);
+    const rows = engine.nodes("Goal").textSearch("redesign", 10).execute();
+    for (const hit of rows.hits) {
+        console.log(hit.node.logicalId, hit.score, hit.source, hit.snippet);
     }
     ```
 
-The query compiler emits a UNION over the chunk FTS table and the property FTS
-table. Your application does not need to know which source produced a given
-hit. This also means a search on a kind that has both chunks and property
-projections returns results from both.
+The query compiler emits a unified search plan over both the chunk FTS
+table and the property FTS table. Your application does not need to know
+which source produced a given hit — but if it wants to, `hit.source` is
+`"chunk"` or `"property"` accordingly. A search against a kind that has
+both chunks and property projections returns results from both.
+
+## Match Attribution (opt-in)
+
+For kinds with recursive-mode property paths, the engine maintains a
+sidecar position map (see [Position Map](#position-map) below). Callers
+can opt in to **per-hit match attribution**, which tells them which
+registered path(s) actually produced the FTS match for each hit:
+
+=== "Python"
+
+    ```python
+    rows = (
+        db.nodes("KnowledgeItem")
+        .text_search("quarterly docs", 10)
+        .with_match_attribution()
+        .execute()
+    )
+    for hit in rows.hits:
+        if hit.attribution:
+            print(hit.node.logical_id, hit.attribution.matched_paths)
+    ```
+
+=== "TypeScript"
+
+    ```typescript
+    const rows = engine
+        .nodes("KnowledgeItem")
+        .textSearch("quarterly docs", 10)
+        .withMatchAttribution()
+        .execute();
+    for (const hit of rows.hits) {
+        if (hit.attribution) {
+            console.log(hit.node.logicalId, hit.attribution.matchedPaths);
+        }
+    }
+    ```
+
+Attribution is **opt-in**. Hits returned from a call without
+`with_match_attribution()` have `attribution == None` / `undefined`, and
+the default query path pays no extra cost — no position-map lookup, no
+extra joins. A scalar-only schema can still be queried with
+`with_match_attribution()`, but the attribution will be empty for hits
+that came from scalar entries, since scalar extraction doesn't record
+per-leaf positions.
+
+## Position Map
+
+Recursive extraction is backed by a sidecar table,
+`fts_node_property_positions`. One row is inserted per scalar leaf
+emitted by the recursive walk, with a
+`UNIQUE(node_logical_id, kind, start_offset)` constraint: every emitted
+leaf has a distinct offset into the concatenated FTS blob for that node.
+The position map is **derived state** — it is rebuilt from canonical
+nodes + schemas whenever the FTS blob is rebuilt (node upsert, recursive
+schema registration, explicit `admin.rebuild("fts")`).
+
+Scalar-only entries contribute to the FTS blob but do not populate the
+position map. They remain searchable and returnable as `SearchHit`s —
+you just can't attribute their matches to specific paths.
+
+## Recursive Extraction Guardrails
+
+Recursive walks are bounded by two fixed limits plus an optional
+per-schema exclusion list:
+
+| Guardrail | Value | What it does |
+|---|---|---|
+| `MAX_RECURSIVE_DEPTH` | `8` | The recursive walk stops descending below eight levels of nesting. Leaves at depth > 8 are not emitted. |
+| `MAX_EXTRACTED_BYTES` | `65 536` | The walk stops emitting leaves once the concatenated extracted text for a single node exceeds 64 KiB. |
+| `exclude_paths` | per schema | Any leaf whose JSON path matches an entry in `exclude_paths` is skipped. Each entry must start with `$.`. |
+
+When any guardrail fires, the row is **still indexed** — we never skip a
+node outright. We just stop extracting past the guardrail. An agent that
+wants to know the guardrail fired can inspect `check_semantics` /
+`check_integrity` reports, which flag property-FTS drift.
 
 ## Normalization Rules
 
@@ -187,32 +351,48 @@ array elements. If no values remain after extraction, no FTS row is created.
 
 ### Describe
 
+`describe_fts_property_schema(kind)` returns the schema record for a
+single kind (or `None` / `null` if it is not registered).
+`list_fts_property_schemas()` returns every registered schema. Both
+return an `FtsPropertySchemaRecord` with the following fields:
+
+| Field | Meaning |
+|---|---|
+| `kind` | Node kind the schema applies to. |
+| `property_paths` / `propertyPaths` | Flat display list of registered paths. Does not carry mode information. |
+| `entries` | Per-entry `(path, mode)` list. Read this for mode-accurate round-tripping. |
+| `exclude_paths` / `excludePaths` | Subtree exclusions for recursive walks. Empty for scalar-only schemas. |
+| `separator` | String inserted between extracted values. |
+| `format_version` | Schema wire-format version. |
+
+!!! tip "Prefer `entries` for new code"
+
+    `property_paths` is a legacy flat list kept for backwards
+    compatibility. New code should read `entries` (Python) or `entries`
+    (TypeScript — same field name) so that recursive mode and
+    scalar mode round-trip faithfully.
+
 === "Python"
 
     ```python
-    record = db.admin.describe_fts_property_schema("Goal")
+    record = db.admin.describe_fts_property_schema("KnowledgeItem")
     if record:
-        print(record.kind, record.property_paths, record.separator)
+        for entry in record.entries:
+            print(entry.path, entry.mode.value)
+        print("excluded:", record.exclude_paths)
     ```
 
 === "TypeScript"
 
     ```typescript
-    const record = engine.admin.describeFtsPropertySchema("Goal");
+    const record = engine.admin.describeFtsPropertySchema("KnowledgeItem");
     if (record) {
-        console.log(record.kind, record.propertyPaths, record.separator);
+        for (const entry of record.entries) {
+            console.log(entry.path, entry.mode);
+        }
+        console.log("excluded:", record.excludePaths);
     }
     ```
-
-!!! note "Reading recursive schemas"
-
-    `property_paths` / `propertyPaths` is a **flat display list** — it
-    lists every registered path once, but does not tell you which paths
-    were registered as recursive. To read the mode-accurate per-entry
-    view of a registered schema, read `record.entries` (the same field
-    name in both Python and TypeScript). Use `record.exclude_paths`
-    (Python) / `record.excludePaths` (TypeScript) for the list of
-    subtrees excluded from the recursive walk.
 
 ### List All
 
@@ -220,7 +400,7 @@ array elements. If no values remain after extraction, no FTS row is created.
 
     ```python
     for schema in db.admin.list_fts_property_schemas():
-        print(schema.kind, schema.property_paths)
+        print(schema.kind, [(e.path, e.mode.value) for e in schema.entries])
     ```
 
 ### Remove
@@ -279,14 +459,19 @@ All of these should be zero in a healthy database. If any are non-zero, run
 
 ## Limitations (v1)
 
-- **Path syntax**: Simple dot-notation only. No array indexing, wildcards, or
-  recursive descent.
-- **No per-field weighting**: All extracted values contribute equally to the
-  FTS score.
-- **No field-scoped queries**: You cannot search only the `$.name` field. The
-  extracted values are concatenated into a single FTS document.
-- **No highlighting or snippets**: The engine returns matched nodes, not match
-  positions within the extracted text.
-- **Registration does not backfill**: Registering a schema does not rewrite
-  FTS rows for existing nodes. Call `admin.rebuild("fts")` after registration
-  if nodes of that kind already exist.
+- **Path syntax**: Simple dot-notation only. No array indexing, wildcards,
+  or JSONPath recursive-descent syntax — "recursive mode" is a declared
+  behavior on a simple path, not a path-syntax feature.
+- **No per-field weighting**: All extracted values contribute equally to
+  the FTS score.
+- **No field-scoped queries**: You cannot search only the `$.name` field.
+  The extracted values are concatenated into a single FTS document;
+  match attribution tells you *after the fact* which path matched.
+- **Adaptive relaxation is engine-owned**: you cannot tune the relaxed
+  branch per call. Use
+  [`Engine.fallback_search`](./querying.md#explicit-two-shape-fallback-search)
+  if you need to supply a strict and relaxed shape verbatim.
+- **Recursive rebuild is synchronous**: registering a schema with a new
+  recursive path rebuilds derived state for every active node of that
+  kind in the upsert transaction. For very large kinds this is the
+  dominant cost of introducing recursive mode.
