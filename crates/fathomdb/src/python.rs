@@ -17,9 +17,9 @@ use crate::python_types::{
     PyVectorRegenerationReport, PyWriteReceipt, PyWriteRequest,
 };
 use crate::{
-    Engine, EngineError, EngineOptions, OperationalReadRequest, OperationalRegisterRequest,
-    ProjectionTarget, ProvenanceMode, SafeExportOptions, TelemetryLevel, compile_grouped_query,
-    compile_query, new_id, new_row_id,
+    EmbedderChoice, Engine, EngineError, EngineOptions, OperationalReadRequest,
+    OperationalRegisterRequest, ProjectionTarget, ProvenanceMode, SafeExportOptions,
+    TelemetryLevel, compile_grouped_query, compile_query, new_id, new_row_id,
 };
 use fathomdb_engine::{VectorGeneratorPolicy, VectorRegenerationConfig};
 use fathomdb_query::CompileError as RustCompileError;
@@ -76,13 +76,14 @@ impl EngineCore {
 #[pymethods]
 impl EngineCore {
     #[staticmethod]
-    #[pyo3(signature = (database_path, provenance_mode, vector_dimension=None, telemetry_level=None))]
+    #[pyo3(signature = (database_path, provenance_mode, vector_dimension=None, telemetry_level=None, embedder=None))]
     pub fn open(
         py: Python<'_>,
         database_path: &str,
         provenance_mode: &str,
         vector_dimension: Option<usize>,
         telemetry_level: Option<&str>,
+        embedder: Option<&str>,
     ) -> PyResult<Self> {
         let options = EngineOptions {
             database_path: PathBuf::from(database_path),
@@ -90,7 +91,7 @@ impl EngineCore {
             vector_dimension,
             read_pool_size: None,
             telemetry_level: parse_telemetry_level(telemetry_level)?,
-            embedder: crate::EmbedderChoice::None,
+            embedder: parse_embedder_choice(embedder)?,
         };
         // Release the GIL during engine open — schema bootstrap emits tracing
         // events that pyo3-log forwards to Python logging.  Holding the GIL
@@ -794,6 +795,16 @@ fn parse_telemetry_level(level: Option<&str>) -> PyResult<TelemetryLevel> {
     }
 }
 
+fn parse_embedder_choice(value: Option<&str>) -> PyResult<EmbedderChoice> {
+    match value {
+        None | Some("none") => Ok(EmbedderChoice::None),
+        Some("builtin") => Ok(EmbedderChoice::Builtin),
+        Some(other) => Err(PyValueError::new_err(format!(
+            "invalid embedder: {other} (expected none or builtin)"
+        ))),
+    }
+}
+
 fn parse_projection_target(target: &str) -> PyResult<ProjectionTarget> {
     match target {
         "fts" => Ok(ProjectionTarget::Fts),
@@ -917,8 +928,14 @@ mod tests {
     fn open_constructs_engine_options_with_all_fields() {
         let db = NamedTempFile::new().expect("temp db");
         Python::with_gil(|py| {
-            let engine =
-                EngineCore::open(py, db.path().to_str().expect("db path"), "warn", None, None);
+            let engine = EngineCore::open(
+                py,
+                db.path().to_str().expect("db path"),
+                "warn",
+                None,
+                None,
+                None,
+            );
             assert!(engine.is_ok(), "open must succeed: {:?}", engine.err());
         });
     }
@@ -927,9 +944,15 @@ mod tests {
     fn close_makes_subsequent_calls_fail() {
         let db = NamedTempFile::new().expect("temp db");
         Python::with_gil(|py| {
-            let engine =
-                EngineCore::open(py, db.path().to_str().expect("path"), "warn", None, None)
-                    .expect("open");
+            let engine = EngineCore::open(
+                py,
+                db.path().to_str().expect("path"),
+                "warn",
+                None,
+                None,
+                None,
+            )
+            .expect("open");
             engine.close(py).expect("close");
             let result = engine.check_integrity(py);
             assert!(result.is_err(), "call after close must fail");
@@ -942,9 +965,15 @@ mod tests {
     fn close_is_idempotent() {
         let db = NamedTempFile::new().expect("temp db");
         Python::with_gil(|py| {
-            let engine =
-                EngineCore::open(py, db.path().to_str().expect("path"), "warn", None, None)
-                    .expect("open");
+            let engine = EngineCore::open(
+                py,
+                db.path().to_str().expect("path"),
+                "warn",
+                None,
+                None,
+                None,
+            )
+            .expect("open");
             engine.close(py).expect("first close");
             engine.close(py).expect("second close");
         });
@@ -954,11 +983,23 @@ mod tests {
     fn open_locked_database_raises_database_locked_error() {
         let db = NamedTempFile::new().expect("temp db");
         Python::with_gil(|py| {
-            let _first =
-                EngineCore::open(py, db.path().to_str().expect("path"), "warn", None, None)
-                    .expect("open");
-            let result =
-                EngineCore::open(py, db.path().to_str().expect("path"), "warn", None, None);
+            let _first = EngineCore::open(
+                py,
+                db.path().to_str().expect("path"),
+                "warn",
+                None,
+                None,
+                None,
+            )
+            .expect("open");
+            let result = EngineCore::open(
+                py,
+                db.path().to_str().expect("path"),
+                "warn",
+                None,
+                None,
+                None,
+            );
             match result {
                 Ok(_) => panic!("second open must fail"),
                 Err(err) => assert!(
@@ -975,9 +1016,15 @@ mod tests {
     fn register_operational_collection_accepts_deserialized_request() {
         let db = NamedTempFile::new().expect("temp db");
         Python::with_gil(|py| {
-            let engine =
-                EngineCore::open(py, db.path().to_str().expect("db path"), "warn", None, None)
-                    .expect("open engine");
+            let engine = EngineCore::open(
+                py,
+                db.path().to_str().expect("db path"),
+                "warn",
+                None,
+                None,
+                None,
+            )
+            .expect("open engine");
             let result = engine.register_operational_collection(
                 py,
                 r#"{
@@ -1000,9 +1047,15 @@ mod tests {
     fn read_operational_collection_accepts_deserialized_request() {
         let db = NamedTempFile::new().expect("temp db");
         Python::with_gil(|py| {
-            let engine =
-                EngineCore::open(py, db.path().to_str().expect("db path"), "warn", None, None)
-                    .expect("open engine");
+            let engine = EngineCore::open(
+                py,
+                db.path().to_str().expect("db path"),
+                "warn",
+                None,
+                None,
+                None,
+            )
+            .expect("open engine");
             // Register first so the collection exists
             engine
                 .register_operational_collection(
@@ -1035,9 +1088,15 @@ mod tests {
     fn engine_core_exposes_operational_admin_methods() {
         let db = NamedTempFile::new().expect("temp db");
         Python::with_gil(|py| {
-            let engine =
-                EngineCore::open(py, db.path().to_str().expect("db path"), "warn", None, None)
-                    .expect("open engine");
+            let engine = EngineCore::open(
+                py,
+                db.path().to_str().expect("db path"),
+                "warn",
+                None,
+                None,
+                None,
+            )
+            .expect("open engine");
 
             let record: Value = serde_json::from_str(
                 &engine

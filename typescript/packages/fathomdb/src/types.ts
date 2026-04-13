@@ -25,6 +25,18 @@ export type EngineOpenOptions = {
   provenanceMode?: "warn" | "require";
   vectorDimension?: number;
   telemetryLevel?: "counters" | "statements" | "profiling";
+  /**
+   * Read-time query embedder for Phase 12's `search()` vector branch.
+   *
+   * - `undefined` (default): no embedder; `search()`'s vector branch
+   *   stays dormant and calls are text-only.
+   * - `"none"`: explicit opt-out; same as `undefined`.
+   * - `"builtin"`: Candle-based `BAAI/bge-small-en-v1.5` embedder
+   *   (requires fathomdb to be built with the `default-embedder`
+   *   feature). If the feature is not enabled, falls back silently to
+   *   the no-embedder behaviour.
+   */
+  embedder?: "none" | "builtin";
 };
 
 // ── Feedback / progress callbacks ───────────────────────────────────

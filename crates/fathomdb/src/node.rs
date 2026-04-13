@@ -10,7 +10,8 @@ use napi_derive::napi;
 use crate::node_types::{
     MAX_AST_JSON_BYTES, MAX_REQUEST_JSON_BYTES, MAX_WRITE_JSON_BYTES, check_json_size, encode_json,
     invalid_argument, map_admin_ffi_error, map_compile_error, map_engine_error,
-    map_search_ffi_error, parse_projection_target, parse_provenance_mode, parse_telemetry_level,
+    map_search_ffi_error, parse_embedder_choice, parse_projection_target, parse_provenance_mode,
+    parse_telemetry_level,
 };
 use crate::python_types::{
     PyCompiledGroupedQuery, PyCompiledQuery, PyGroupedQueryRows, PyIntegrityReport,
@@ -53,6 +54,7 @@ impl NodeEngineCore {
         provenance_mode: String,
         vector_dimension: Option<u32>,
         telemetry_level: Option<String>,
+        embedder: Option<String>,
     ) -> Result<Self> {
         let options = EngineOptions {
             database_path: PathBuf::from(database_path),
@@ -60,6 +62,7 @@ impl NodeEngineCore {
             vector_dimension: vector_dimension.map(|value| value as usize),
             read_pool_size: None,
             telemetry_level: parse_telemetry_level(telemetry_level.as_deref())?,
+            embedder: parse_embedder_choice(embedder.as_deref())?,
         };
         let engine = Engine::open(options).map_err(map_engine_error)?;
         Ok(Self {
@@ -657,6 +660,7 @@ mod tests {
             "warn".to_owned(),
             None,
             None,
+            None,
         );
         assert!(engine.is_ok(), "open must succeed: {:?}", engine.err());
     }
@@ -667,6 +671,7 @@ mod tests {
         let engine = NodeEngineCore::open(
             db.path().to_str().expect("db path").to_owned(),
             "warn".to_owned(),
+            None,
             None,
             None,
         )
@@ -681,6 +686,7 @@ mod tests {
         let engine = NodeEngineCore::open(
             db.path().to_str().expect("db path").to_owned(),
             "warn".to_owned(),
+            None,
             None,
             None,
         )

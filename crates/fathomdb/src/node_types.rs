@@ -2,7 +2,7 @@
 
 use napi::{Error, Result, Status};
 
-use crate::{EngineError, ProjectionTarget, ProvenanceMode, TelemetryLevel};
+use crate::{EmbedderChoice, EngineError, ProjectionTarget, ProvenanceMode, TelemetryLevel};
 use fathomdb_query::CompileError as RustCompileError;
 
 pub(crate) const MAX_AST_JSON_BYTES: usize = 16 * 1024 * 1024;
@@ -81,6 +81,16 @@ pub(crate) fn parse_telemetry_level(level: Option<&str>) -> Result<TelemetryLeve
         Some("profiling") => Ok(TelemetryLevel::Profiling),
         Some(other) => Err(invalid_argument(format!(
             "invalid telemetryLevel: {other} (expected counters, statements, or profiling)"
+        ))),
+    }
+}
+
+pub(crate) fn parse_embedder_choice(value: Option<&str>) -> Result<EmbedderChoice> {
+    match value {
+        None | Some("none") => Ok(EmbedderChoice::None),
+        Some("builtin") => Ok(EmbedderChoice::Builtin),
+        Some(other) => Err(invalid_argument(format!(
+            "invalid embedder: {other} (expected none or builtin)"
         ))),
     }
 }
