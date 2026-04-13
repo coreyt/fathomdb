@@ -1307,6 +1307,9 @@ impl RecursiveWalker {
         if self.stopped {
             return;
         }
+        if value.is_empty() {
+            return;
+        }
         // Compute the projected blob size if we accept this leaf.
         // If we already emitted at least one leaf, we must account for
         // the separator that precedes this one.
@@ -7489,11 +7492,10 @@ mod tests {
         fn assert_unique_start_offsets(positions: &[PositionEntry]) {
             let mut seen = std::collections::HashSet::new();
             for pos in positions {
+                let start = pos.start_offset;
                 assert!(
-                    seen.insert(pos.start_offset),
-                    "duplicate start_offset {} in positions {:?}",
-                    pos.start_offset,
-                    positions
+                    seen.insert(start),
+                    "duplicate start_offset {start} in positions {positions:?}"
                 );
             }
         }
@@ -7590,15 +7592,11 @@ mod tests {
                 );
                 assert!(
                     combined.is_none(),
-                    "all-empty payload {:?} must produce no combined text, got {:?}",
-                    case,
-                    combined
+                    "all-empty payload {case:?} must produce no combined text, got {combined:?}"
                 );
                 assert!(
                     positions.is_empty(),
-                    "all-empty payload {:?} must produce no positions, got {:?}",
-                    case,
-                    positions
+                    "all-empty payload {case:?} must produce no positions, got {positions:?}"
                 );
             }
         }
