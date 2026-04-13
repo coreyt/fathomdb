@@ -374,6 +374,28 @@ function executeTextSearch(engine: Engine, queryDef: QueryDef): Record<string, u
   return result;
 }
 
+function executeSearch(engine: Engine, queryDef: QueryDef): Record<string, unknown> {
+  const withAttribution = Boolean(queryDef.with_match_attribution);
+  let builder = engine
+    .nodes(queryDef.kind as string)
+    .search(queryDef.query as string, queryDef.limit as number);
+  if (typeof queryDef.filter_kind_eq === "string") {
+    builder = builder.filterKindEq(queryDef.filter_kind_eq);
+  }
+  if (withAttribution) {
+    builder = builder.withMatchAttribution();
+  }
+  const actual = searchRowsToActual(builder.execute(), withAttribution);
+  const failures = evaluateSearchExpectations(queryDef, actual);
+  return {
+    type: "search",
+    name: queryDef.name ?? null,
+    actual,
+    pass: failures.length === 0,
+    failures,
+  };
+}
+
 function executeFallbackSearch(engine: Engine, queryDef: QueryDef): Record<string, unknown> {
   const withAttribution = Boolean(queryDef.with_match_attribution);
   let builder = engine.fallbackSearch(
@@ -417,6 +439,10 @@ function executeQuery(engine: Engine, queryDef: QueryDef): Record<string, unknow
 
   if (qtype === "text_search") {
     return executeTextSearch(engine, queryDef);
+  }
+
+  if (qtype === "search") {
+    return executeSearch(engine, queryDef);
   }
 
   if (qtype === "fallback_search") {

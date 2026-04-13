@@ -28,6 +28,10 @@ from .scenarios import (
     runtime_tables,
     safe_export,
     trace_and_excise,
+    unified_search_filter_kind_eq_fuses,
+    unified_search_strict_hit_populates_rows,
+    unified_search_strict_miss_relaxed_recovery,
+    unified_search_with_match_attribution,
     vector_degradation,
     vector_insert_and_search,
 )
@@ -54,6 +58,10 @@ def _scenario_functions(mode: str) -> list[ScenarioFn]:
         adaptive_search_mixed_chunk_and_property,
         adaptive_search_recursive_nested_payload,
         adaptive_search_recursive_rebuild_restore,
+        unified_search_strict_hit_populates_rows,
+        unified_search_strict_miss_relaxed_recovery,
+        unified_search_filter_kind_eq_fuses,
+        unified_search_with_match_attribution,
     ]
     if mode == "baseline":
         scenarios.append(vector_degradation)

@@ -9,6 +9,12 @@ from .canonical import canonical_node_chunk_fts, node_upsert_supersession
 from .graph import edge_retire, graph_edge_traversal, node_retire_clean, node_retire_dangling
 from .recovery import projection_rebuild, restore_vector_profiles, safe_export, trace_and_excise
 from .runtime import provenance_warn_require, runtime_tables
+from .search import (
+    unified_search_filter_kind_eq_fuses,
+    unified_search_strict_hit_populates_rows,
+    unified_search_strict_miss_relaxed_recovery,
+    unified_search_with_match_attribution,
+)
 from .vector import vector_degradation, vector_insert_and_search
 
 __all__ = [
@@ -29,6 +35,10 @@ __all__ = [
     "safe_export",
     "projection_rebuild",
     "restore_vector_profiles",
+    "unified_search_filter_kind_eq_fuses",
+    "unified_search_strict_hit_populates_rows",
+    "unified_search_strict_miss_relaxed_recovery",
+    "unified_search_with_match_attribution",
     "vector_degradation",
     "vector_insert_and_search",
 ]
