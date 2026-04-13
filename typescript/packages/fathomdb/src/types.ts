@@ -189,6 +189,14 @@ export type SearchHitSource = "chunk" | "property" | "vector";
 
 export type SearchMatchMode = "strict" | "relaxed";
 
+/**
+ * Coarse retrieval-modality classifier for a {@link SearchHit}.
+ * Every hit produced by the current text execution path is tagged
+ * `"text"`; `"vector"` is reserved for a future vector retrieval
+ * branch that has no code path yet.
+ */
+export type RetrievalModality = "text" | "vector";
+
 export type HitAttribution = {
   matchedPaths: string[];
 };
@@ -196,8 +204,14 @@ export type HitAttribution = {
 export type SearchHit = {
   node: NodeRow;
   score: number;
+  /** Coarse retrieval-modality classifier. */
+  modality: RetrievalModality;
   source: SearchHitSource;
-  matchMode: SearchMatchMode;
+  /**
+   * Strict or relaxed branch tag. `null` is reserved for future vector
+   * hits which have no strict/relaxed notion.
+   */
+  matchMode: SearchMatchMode | null;
   snippet: string | null;
   /**
    * Seconds since the Unix epoch (1970-01-01 UTC), matching
@@ -205,6 +219,12 @@ export type SearchHit = {
    */
   writtenAt: number;
   projectionRowId: string | null;
+  /**
+   * Vector distance/similarity for vector hits. `null` for text hits.
+   * Modality-specific diagnostic; values are not comparable across
+   * modalities.
+   */
+  vectorDistance: number | null;
   attribution: HitAttribution | null;
 };
 
@@ -214,6 +234,11 @@ export type SearchRows = {
   fallbackUsed: boolean;
   strictHitCount: number;
   relaxedHitCount: number;
+  /**
+   * Number of hits contributed by the vector branch. Always `0` until
+   * vector retrieval is wired in a later phase.
+   */
+  vectorHitCount: number;
 };
 
 function hitAttributionFromWire(w: Record<string, unknown>): HitAttribution {
@@ -228,14 +253,22 @@ function searchHitFromWire(w: Record<string, unknown>): SearchHit {
     rawAttribution != null && typeof rawAttribution === "object"
       ? hitAttributionFromWire(rawAttribution as Record<string, unknown>)
       : null;
+  const rawMatchMode = w.match_mode;
+  const matchMode =
+    rawMatchMode == null ? null : (String(rawMatchMode) as SearchMatchMode);
+  const rawVectorDistance = w.vector_distance;
+  const vectorDistance =
+    rawVectorDistance == null ? null : Number(rawVectorDistance);
   return {
     node: nodeRowFromWire(asObj(w.node)),
     score: Number(w.score ?? 0),
+    modality: String(w.modality ?? "text") as RetrievalModality,
     source: String(w.source ?? "chunk") as SearchHitSource,
-    matchMode: String(w.match_mode ?? "strict") as SearchMatchMode,
+    matchMode,
     snippet: (w.snippet as string) ?? null,
     writtenAt: Number(w.written_at ?? 0),
     projectionRowId: (w.projection_row_id as string) ?? null,
+    vectorDistance,
     attribution,
   };
 }
@@ -247,6 +280,7 @@ export function searchRowsFromWire(w: Record<string, unknown>): SearchRows {
     fallbackUsed: Boolean(w.fallback_used),
     strictHitCount: Number(w.strict_hit_count ?? 0),
     relaxedHitCount: Number(w.relaxed_hit_count ?? 0),
+    vectorHitCount: Number(w.vector_hit_count ?? 0),
   };
 }
 

@@ -52,6 +52,7 @@ export {
   type QueryPlan,
   type QueryRows,
   type RawJson,
+  type RetrievalModality,
   type SearchHit,
   type SearchHitSource,
   type SearchMatchMode,

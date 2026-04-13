@@ -168,11 +168,13 @@ describe("text_search surface", () => {
     // Required SearchHit fields
     expect(hit).toHaveProperty("node");
     expect(hit).toHaveProperty("score");
+    expect(hit).toHaveProperty("modality");
     expect(hit).toHaveProperty("source");
     expect(hit).toHaveProperty("matchMode");
     expect(hit).toHaveProperty("snippet");
     expect(hit).toHaveProperty("writtenAt");
     expect(hit).toHaveProperty("projectionRowId");
+    expect(hit).toHaveProperty("vectorDistance");
     expect(hit).toHaveProperty("attribution");
     // Required SearchNode fields (snake→camel conversion)
     expect(hit.node).toHaveProperty("rowId");
@@ -191,18 +193,23 @@ describe("text_search surface", () => {
     expect(rows).toHaveProperty("fallbackUsed");
     expect(rows).toHaveProperty("strictHitCount");
     expect(rows).toHaveProperty("relaxedHitCount");
+    expect(rows).toHaveProperty("vectorHitCount");
     expect(Object.keys(rows)).not.toContain("was_degraded");
     expect(Object.keys(rows)).not.toContain("fallback_used");
     expect(Object.keys(rows)).not.toContain("strict_hit_count");
     expect(Object.keys(rows)).not.toContain("relaxed_hit_count");
+    expect(Object.keys(rows)).not.toContain("vector_hit_count");
     // Stringified negative assertions: the legacy snake_case field names
     // must not survive anywhere in the serialized SearchRows payload, not
     // just at the top-level key set.
     const rowsJson = JSON.stringify(rows);
     expect(rowsJson).not.toContain("strict_hit_count");
     expect(rowsJson).not.toContain("relaxed_hit_count");
+    expect(rowsJson).not.toContain("vector_hit_count");
     expect(rowsJson).not.toContain("was_degraded");
     expect(rowsJson).not.toContain("fallback_used");
+    expect(rowsJson).not.toContain("vector_distance");
+    expect(rowsJson).not.toContain("match_mode");
     const nodeJson = JSON.stringify(hit.node);
     expect(nodeJson).not.toContain("content_ref");
     expect(nodeJson).not.toContain("last_accessed_at");
@@ -220,6 +227,17 @@ describe("text_search surface", () => {
       expect(hit.writtenAt).toBeGreaterThan(nowSeconds - 60);
       expect(hit.writtenAt).toBeLessThanOrEqual(nowSeconds + 5);
     }
+  });
+
+  it("Phase 10: every text hit is tagged modality=text with null vectorDistance", () => {
+    const rows = engine.query("Goal").textSearch("quarterly", 10).execute();
+    expect(rows.hits.length).toBeGreaterThan(0);
+    for (const hit of rows.hits) {
+      expect(hit.modality).toBe("text");
+      expect(hit.vectorDistance).toBeNull();
+      expect(hit.matchMode).not.toBeNull();
+    }
+    expect(rows.vectorHitCount).toBe(0);
   });
 
   it("wire format: projectionRowId is stable across identical queries", () => {
