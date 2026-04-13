@@ -396,6 +396,384 @@
           "expect_min_count": 1
         }
       ]
+    },
+    {
+      "name": "xlang_text_search_strict_hit",
+      "writes": [
+        {
+          "label": "xlang-strict-hit",
+          "nodes": [
+            {
+              "row_id": "01JXLANG-STRICTHIT-ROW-0001",
+              "logical_id": "goal:xlang-strict-budget",
+              "kind": "Goal",
+              "properties": {"name": "xlangstricthitneedle budget", "description": "Quarterly planning"},
+              "source_ref": "source:xlang-strict-hit",
+              "upsert": true
+            }
+          ]
+        }
+      ],
+      "queries": [
+        {
+          "type": "text_search",
+          "name": "strict_hit_property",
+          "kind": "Goal",
+          "query": "xlangstricthitneedle",
+          "limit": 10,
+          "expect_hit_logical_ids": ["goal:xlang-strict-budget"],
+          "expect_hit_sources": ["property"],
+          "expect_match_modes": ["strict"],
+          "expect_snippets_non_empty": true,
+          "expect_written_at_seconds_recent": true,
+          "expect_projection_row_ids_unique": true,
+          "expect_strict_hit_count": 1,
+          "expect_relaxed_hit_count": 0,
+          "expect_fallback_used": false,
+          "expect_was_degraded": false
+        }
+      ]
+    },
+    {
+      "name": "xlang_text_search_strict_miss_relaxed",
+      "writes": [
+        {
+          "label": "xlang-strict-miss",
+          "nodes": [
+            {
+              "row_id": "01JXLANG-STRICTMISS-ROW-001",
+              "logical_id": "goal:xlang-miss-recover",
+              "kind": "Goal",
+              "properties": {"name": "xlangrelaxedneedle roadmap", "description": "Strategic direction"},
+              "source_ref": "source:xlang-strict-miss",
+              "upsert": true
+            }
+          ]
+        }
+      ],
+      "queries": [
+        {
+          "type": "text_search",
+          "name": "strict_miss_triggers_relaxed",
+          "kind": "Goal",
+          "query": "xlangrelaxedneedle zzzneverpresent",
+          "limit": 10,
+          "expect_hit_logical_ids": ["goal:xlang-miss-recover"],
+          "expect_match_modes": ["relaxed"],
+          "expect_strict_hit_count": 0,
+          "expect_fallback_used": true,
+          "expect_was_degraded": false,
+          "expect_relaxed_hit_count_min": 1
+        }
+      ]
+    },
+    {
+      "name": "xlang_text_search_mixed_sources",
+      "writes": [
+        {
+          "label": "xlang-mixed-sources",
+          "nodes": [
+            {
+              "row_id": "01JXLANG-MIXEDSRC-ROW-00001",
+              "logical_id": "mixed:xlang-mixed-doc",
+              "kind": "XLangMixed",
+              "properties": {"name": "xlangmixedneedle report", "description": "Summary of findings"},
+              "source_ref": "source:xlang-mixed",
+              "upsert": true
+            }
+          ],
+          "chunks": [
+            {
+              "id": "chunk:xlang-mixed-doc:0",
+              "node_logical_id": "mixed:xlang-mixed-doc",
+              "text_content": "xlangmixedneedle appears in the chunk body too"
+            }
+          ]
+        }
+      ],
+      "queries": [
+        {
+          "type": "text_search",
+          "name": "mixed_chunk_and_property",
+          "kind": "XLangMixed",
+          "query": "xlangmixedneedle",
+          "limit": 10,
+          "expect_hit_logical_ids": ["mixed:xlang-mixed-doc"],
+          "expect_hit_sources": ["property"],
+          "expect_match_modes": ["strict"],
+          "expect_strict_hit_count_min": 1,
+          "expect_fallback_used": false,
+          "expect_was_degraded": false
+        }
+      ]
+    },
+    {
+      "name": "xlang_text_search_recursive_nested_payload",
+      "writes": [
+        {
+          "label": "xlang-recursive-basic",
+          "nodes": [
+            {
+              "row_id": "01JXLANG-RECURSIVE-ROW-0001",
+              "logical_id": "note:xlang-recursive-basic",
+              "kind": "XLangNote",
+              "properties": {"payload": {"body": "xlangrecursiveneedle quarterly docs"}},
+              "source_ref": "source:xlang-recursive",
+              "upsert": true
+            }
+          ]
+        }
+      ],
+      "queries": [
+        {
+          "type": "text_search",
+          "name": "recursive_nested_payload",
+          "kind": "XLangNote",
+          "query": "xlangrecursiveneedle",
+          "limit": 10,
+          "with_match_attribution": true,
+          "expect_hit_logical_ids": ["note:xlang-recursive-basic"],
+          "expect_hit_sources": ["property"],
+          "expect_match_modes": ["strict"],
+          "expect_fallback_used": false,
+          "expect_was_degraded": false,
+          "expect_matched_paths": [{"hit_index": 0, "paths": ["$.payload.body"]}]
+        }
+      ]
+    },
+    {
+      "name": "xlang_text_search_multi_term_and_across_leaves",
+      "writes": [
+        {
+          "label": "xlang-recursive-multi-leaf",
+          "nodes": [
+            {
+              "row_id": "01JXLANG-RECURSIVE-MULTI-001",
+              "logical_id": "note:xlang-recursive-multi",
+              "kind": "XLangNote",
+              "properties": {"payload": {"aaa": "xlangaaaneedle plan", "bbb": "xlangbbbneedle folder"}},
+              "source_ref": "source:xlang-recursive-multi",
+              "upsert": true
+            }
+          ]
+        }
+      ],
+      "queries": [
+        {
+          "type": "text_search",
+          "name": "multi_term_across_leaves",
+          "kind": "XLangNote",
+          "query": "xlangaaaneedle xlangbbbneedle",
+          "limit": 10,
+          "with_match_attribution": true,
+          "expect_hit_logical_ids": ["note:xlang-recursive-multi"],
+          "expect_match_modes": ["strict"],
+          "expect_fallback_used": false,
+          "expect_matched_paths": [
+            {"hit_index": 0, "paths": ["$.payload.aaa", "$.payload.bbb"]}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "xlang_text_search_phrase_within_leaf",
+      "writes": [
+        {
+          "label": "xlang-phrase-leaf",
+          "nodes": [
+            {
+              "row_id": "01JXLANG-PHRASELEAF-ROW-001",
+              "logical_id": "note:xlang-phrase-leaf",
+              "kind": "XLangNote",
+              "properties": {"payload": {"body": "xlangphraseneedle quarterly summary"}},
+              "source_ref": "source:xlang-phrase-leaf",
+              "upsert": true
+            }
+          ]
+        }
+      ],
+      "queries": [
+        {
+          "type": "text_search",
+          "name": "phrase_within_leaf",
+          "kind": "XLangNote",
+          "query": "\"xlangphraseneedle quarterly\"",
+          "limit": 10,
+          "with_match_attribution": true,
+          "expect_hit_logical_ids": ["note:xlang-phrase-leaf"],
+          "expect_match_modes": ["strict"],
+          "expect_fallback_used": false,
+          "expect_matched_paths": [{"hit_index": 0, "paths": ["$.payload.body"]}]
+        }
+      ]
+    },
+    {
+      "name": "xlang_text_search_stemming_resolves_leaf",
+      "writes": [
+        {
+          "label": "xlang-stemming-leaf",
+          "nodes": [
+            {
+              "row_id": "01JXLANG-STEMLEAF-ROW-00001",
+              "logical_id": "note:xlang-stemming-leaf",
+              "kind": "XLangNote",
+              "properties": {"payload": {"body": "xlangstemneedle shipping quarterly docs"}},
+              "source_ref": "source:xlang-stemming-leaf",
+              "upsert": true
+            }
+          ]
+        }
+      ],
+      "queries": [
+        {
+          "type": "text_search",
+          "name": "stemming_resolves_leaf",
+          "kind": "XLangNote",
+          "query": "ship xlangstemneedle",
+          "limit": 10,
+          "with_match_attribution": true,
+          "expect_hit_logical_ids": ["note:xlang-stemming-leaf"],
+          "expect_match_modes": ["strict"],
+          "expect_fallback_used": false,
+          "expect_matched_paths": [{"hit_index": 0, "paths": ["$.payload.body"]}]
+        }
+      ]
+    },
+    {
+      "name": "xlang_fallback_search_strict_only",
+      "writes": [
+        {
+          "label": "xlang-fallback-strict-only",
+          "nodes": [
+            {
+              "row_id": "01JXLANG-FBSTRICT-ROW-00001",
+              "logical_id": "goal:xlang-fallback-strict",
+              "kind": "Goal",
+              "properties": {"name": "xlangfbstrictneedle initiative", "description": "Fallback path"},
+              "source_ref": "source:xlang-fb-strict",
+              "upsert": true
+            }
+          ]
+        }
+      ],
+      "queries": [
+        {
+          "type": "fallback_search",
+          "name": "fallback_strict_only",
+          "strict_query": "xlangfbstrictneedle",
+          "relaxed_query": null,
+          "limit": 10,
+          "kind_filter": "Goal",
+          "expect_hit_logical_ids": ["goal:xlang-fallback-strict"],
+          "expect_match_modes": ["strict"],
+          "expect_fallback_used": false,
+          "expect_strict_hit_count_min": 1
+        }
+      ]
+    },
+    {
+      "name": "xlang_fallback_search_two_shape_relaxed",
+      "writes": [
+        {
+          "label": "xlang-fallback-two-shape",
+          "nodes": [
+            {
+              "row_id": "01JXLANG-FB2SHAPE-ROW-00001",
+              "logical_id": "goal:xlang-fallback-two",
+              "kind": "Goal",
+              "properties": {"name": "xlangfb2shapeneedle roadmap", "description": "Explicit fallback"},
+              "source_ref": "source:xlang-fb-two",
+              "upsert": true
+            }
+          ]
+        }
+      ],
+      "queries": [
+        {
+          "type": "fallback_search",
+          "name": "fallback_two_shape_relaxed",
+          "strict_query": "zzznopeterm1 zzznopeterm2",
+          "relaxed_query": "xlangfb2shapeneedle",
+          "limit": 10,
+          "kind_filter": "Goal",
+          "expect_hit_logical_ids": ["goal:xlang-fallback-two"],
+          "expect_match_modes": ["relaxed"],
+          "expect_fallback_used": true,
+          "expect_strict_hit_count": 0,
+          "expect_relaxed_hit_count_min": 1
+        }
+      ]
+    },
+    {
+      "name": "xlang_text_search_deterministic_ordering",
+      "writes": [
+        {
+          "label": "xlang-determ-ordering",
+          "nodes": [
+            {
+              "row_id": "01JXLANG-DETERM-ROW-A-00001",
+              "logical_id": "goal:xlang-determ-a",
+              "kind": "Goal",
+              "properties": {"name": "xlangdetermneedle alpha", "description": "first"},
+              "source_ref": "source:xlang-determ",
+              "upsert": true
+            },
+            {
+              "row_id": "01JXLANG-DETERM-ROW-B-00001",
+              "logical_id": "goal:xlang-determ-b",
+              "kind": "Goal",
+              "properties": {"name": "xlangdetermneedle beta", "description": "second"},
+              "source_ref": "source:xlang-determ",
+              "upsert": true
+            }
+          ]
+        }
+      ],
+      "queries": [
+        {
+          "type": "text_search",
+          "name": "deterministic_ordering",
+          "kind": "Goal",
+          "query": "xlangdetermneedle",
+          "limit": 10,
+          "repeat_runs": 3,
+          "expect_strict_hit_count_min": 2,
+          "expect_fallback_used": false,
+          "expect_deterministic_across_runs": true
+        }
+      ]
+    },
+    {
+      "name": "xlang_text_search_empty_query",
+      "writes": [
+        {
+          "label": "xlang-empty-query-seed",
+          "nodes": [
+            {
+              "row_id": "01JXLANG-EMPTYQ-ROW-000001",
+              "logical_id": "goal:xlang-empty-seed",
+              "kind": "Goal",
+              "properties": {"name": "xlangemptyneedle anchor", "description": "seed"},
+              "source_ref": "source:xlang-empty",
+              "upsert": true
+            }
+          ]
+        }
+      ],
+      "queries": [
+        {
+          "type": "text_search",
+          "name": "empty_query_returns_empty",
+          "kind": "Goal",
+          "query": "",
+          "limit": 10,
+          "expect_hit_logical_ids": [],
+          "expect_strict_hit_count": 0,
+          "expect_relaxed_hit_count": 0,
+          "expect_fallback_used": false,
+          "expect_was_degraded": false
+        }
+      ]
     }
   ],
   "setup_admin": [
@@ -404,6 +782,25 @@
       "kind": "Goal",
       "property_paths": ["$.name", "$.description"],
       "separator": " "
+    },
+    {
+      "type": "register_fts_property_schema_with_entries",
+      "kind": "XLangMixed",
+      "entries": [
+        {"path": "$.name", "mode": "scalar"},
+        {"path": "$.description", "mode": "scalar"}
+      ],
+      "separator": " ",
+      "exclude_paths": []
+    },
+    {
+      "type": "register_fts_property_schema_with_entries",
+      "kind": "XLangNote",
+      "entries": [
+        {"path": "$.payload", "mode": "recursive"}
+      ],
+      "separator": " ",
+      "exclude_paths": []
     }
   ]
 }
