@@ -188,7 +188,7 @@ describe("Engine", () => {
     const engine = Engine.open("/tmp/test.db");
     const base = engine.nodes("Meeting");
     const query = base
-      .textSearch("budget", 5)
+      .vectorSearch("budget", 5)
       .filterJsonTextEq("$.status", "active")
       .expand({ slot: "neighbors", direction: "out", label: "depends_on", maxDepth: 2 })
       .limit(10);
@@ -203,7 +203,7 @@ describe("Engine", () => {
     expect(query.toAst()).toEqual({
       root_kind: "Meeting",
       steps: [
-        { type: "text_search", query: "budget", limit: 5 },
+        { type: "vector_search", query: "budget", limit: 5 },
         { type: "filter_json_text_eq", path: "$.status", value: "active" }
       ],
       expansions: [
