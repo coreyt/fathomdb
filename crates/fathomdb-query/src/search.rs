@@ -226,6 +226,42 @@ pub struct CompiledSearch {
     pub attribution_requested: bool,
 }
 
+/// A compiled vector-only search plan ready for the coordinator to execute.
+///
+/// Phase 11 delivers a standalone vector retrieval path parallel to
+/// [`CompiledSearch`]. It is intentionally structurally distinct: the vector
+/// path has no [`TextQuery`], no relaxed branch, and no [`SearchMatchMode`] —
+/// vector hits always carry `match_mode: None` per addendum 1. The
+/// coordinator consumes this carrier via
+/// `ExecutionCoordinator::execute_compiled_vector_search`, which emits SQL
+/// against the `vec_nodes_active` virtual table joined to `nodes`, and
+/// returns a [`SearchRows`] with a single vector block (or an empty result
+/// with `was_degraded = true` when the sqlite-vec capability is absent).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CompiledVectorSearch {
+    /// Root kind the caller built the query against. May be empty for
+    /// kind-agnostic callers, mirroring the text path.
+    pub root_kind: String,
+    /// Raw vector query text passed to sqlite-vec via the `embedding MATCH`
+    /// operator. This is a serialized JSON float array (e.g.
+    /// `"[0.1, 0.2, 0.3, 0.4]"`) at the time the coordinator binds it.
+    pub query_text: String,
+    /// Maximum number of candidate hits to retrieve from the vec0 KNN scan.
+    pub limit: usize,
+    /// Fusable predicates pushed into the vector-search CTE by the
+    /// coordinator. Evaluated against columns directly available on the
+    /// `nodes` table joined inside the CTE.
+    pub fusable_filters: Vec<Predicate>,
+    /// Residual predicates applied in the outer `WHERE` after the CTE
+    /// materializes. Currently limited to JSON-property predicates.
+    pub residual_filters: Vec<Predicate>,
+    /// Whether the caller requested per-hit match attribution. Per addendum
+    /// 1 §Attribution on vector hits, vector hits under this flag carry
+    /// `Some(HitAttribution { matched_paths: vec![] })` — an empty
+    /// matched-paths list, not `None`.
+    pub attribution_requested: bool,
+}
+
 /// A two-branch compiled search plan ready for the coordinator to execute.
 ///
 /// Phase 6 factors the strict+relaxed retrieval pair into a small carrier so
@@ -299,5 +335,39 @@ mod tests {
         assert_eq!(compiled.limit, 7);
         assert_eq!(compiled.fusable_filters.len(), 1);
         assert!(compiled.residual_filters.is_empty());
+    }
+
+    #[test]
+    fn compile_vector_search_rejects_ast_without_vector_search_step() {
+        use crate::{CompileError, QueryBuilder, compile_vector_search};
+        let ast = QueryBuilder::nodes("Goal")
+            .filter_kind_eq("Goal")
+            .into_ast();
+        let result = compile_vector_search(&ast);
+        assert!(
+            matches!(result, Err(CompileError::MissingVectorSearchStep)),
+            "expected MissingVectorSearchStep, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn compile_vector_search_accepts_vector_search_step_with_filters() {
+        use crate::{Predicate, QueryBuilder, compile_vector_search};
+        let ast = QueryBuilder::nodes("Goal")
+            .vector_search("[0.1, 0.2, 0.3, 0.4]", 7)
+            .filter_kind_eq("Goal")
+            .filter_json_text_eq("$.status", "active")
+            .into_ast();
+        let compiled = compile_vector_search(&ast).expect("compiles");
+        assert_eq!(compiled.root_kind, "Goal");
+        assert_eq!(compiled.query_text, "[0.1, 0.2, 0.3, 0.4]");
+        assert_eq!(compiled.limit, 7);
+        assert_eq!(compiled.fusable_filters.len(), 1);
+        assert!(matches!(
+            compiled.fusable_filters[0],
+            Predicate::KindEq(ref k) if k == "Goal"
+        ));
+        assert_eq!(compiled.residual_filters.len(), 1);
+        assert!(!compiled.attribution_requested);
     }
 }

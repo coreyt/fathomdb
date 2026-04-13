@@ -6,9 +6,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use fathomdb_query::{
     BindValue, ComparisonOp, CompiledGroupedQuery, CompiledQuery, CompiledSearch,
-    CompiledSearchPlan, DrivingTable, ExpansionSlot, FALLBACK_TRIGGER_K, HitAttribution, Predicate,
-    RetrievalModality, ScalarValue, SearchBranch, SearchHit, SearchHitSource, SearchMatchMode,
-    SearchRows, ShapeHash, render_text_query_fts5,
+    CompiledSearchPlan, CompiledVectorSearch, DrivingTable, ExpansionSlot, FALLBACK_TRIGGER_K,
+    HitAttribution, Predicate, RetrievalModality, ScalarValue, SearchBranch, SearchHit,
+    SearchHitSource, SearchMatchMode, SearchRows, ShapeHash, render_text_query_fts5,
 };
 use fathomdb_schema::SchemaManager;
 use rusqlite::{Connection, OptionalExtension, params_from_iter, types::Value};
@@ -641,6 +641,314 @@ impl ExecutionCoordinator {
             vector_hit_count,
             fallback_used,
             was_degraded,
+        })
+    }
+
+    /// Execute a compiled vector-only search and return matching hits.
+    ///
+    /// Phase 11 delivers the standalone vector retrieval path. The emitted
+    /// SQL performs a vec0 KNN scan over `vec_nodes_active`, joins to
+    /// `chunks` and `nodes` (active rows only), and pushes fusable filters
+    /// into the candidate CTE. The outer `SELECT` applies residual JSON
+    /// predicates and orders by score descending, where `score = -distance`
+    /// (higher is better) per addendum 1 §Vector-Specific Behavior.
+    ///
+    /// ## Capability-miss handling
+    ///
+    /// If the `sqlite-vec` capability is absent (feature disabled or the
+    /// `vec_nodes_active` virtual table has not been created because the
+    /// engine was not opened with a `vector_dimension`), this method returns
+    /// an empty [`SearchRows`] with `was_degraded = true`. This is
+    /// **non-fatal** — the error does not propagate — matching the addendum's
+    /// §Vector-Specific Behavior / Degradation.
+    ///
+    /// ## Attribution
+    ///
+    /// When `compiled.attribution_requested == true`, every returned hit
+    /// carries `attribution: Some(HitAttribution { matched_paths: vec![] })`
+    /// per addendum 1 §Attribution on vector hits (Phase 5 chunk-hit rule
+    /// extended uniformly).
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the SQL statement cannot be prepared or
+    /// executed for reasons other than a vec-table capability miss.
+    #[allow(clippy::too_many_lines)]
+    pub fn execute_compiled_vector_search(
+        &self,
+        compiled: &CompiledVectorSearch,
+    ) -> Result<SearchRows, EngineError> {
+        use std::fmt::Write as _;
+
+        // Short-circuit zero-limit: callers that pass `limit == 0` expect an
+        // empty result rather than a SQL error from `LIMIT 0` semantics in
+        // the inner vec0 scan.
+        if compiled.limit == 0 {
+            return Ok(SearchRows::default());
+        }
+
+        let filter_by_kind = !compiled.root_kind.is_empty();
+        let mut binds: Vec<BindValue> = Vec::new();
+        binds.push(BindValue::Text(compiled.query_text.clone()));
+        if filter_by_kind {
+            binds.push(BindValue::Text(compiled.root_kind.clone()));
+        }
+
+        // Build fusable-filter clauses, aliased against `src` inside the
+        // candidate CTE. Same predicate set the text path fuses.
+        let mut fused_clauses = String::new();
+        for predicate in &compiled.fusable_filters {
+            match predicate {
+                Predicate::KindEq(kind) => {
+                    binds.push(BindValue::Text(kind.clone()));
+                    let idx = binds.len();
+                    let _ = write!(
+                        fused_clauses,
+                        "\n                      AND src.kind = ?{idx}"
+                    );
+                }
+                Predicate::LogicalIdEq(logical_id) => {
+                    binds.push(BindValue::Text(logical_id.clone()));
+                    let idx = binds.len();
+                    let _ = write!(
+                        fused_clauses,
+                        "\n                      AND src.logical_id = ?{idx}"
+                    );
+                }
+                Predicate::SourceRefEq(source_ref) => {
+                    binds.push(BindValue::Text(source_ref.clone()));
+                    let idx = binds.len();
+                    let _ = write!(
+                        fused_clauses,
+                        "\n                      AND src.source_ref = ?{idx}"
+                    );
+                }
+                Predicate::ContentRefEq(uri) => {
+                    binds.push(BindValue::Text(uri.clone()));
+                    let idx = binds.len();
+                    let _ = write!(
+                        fused_clauses,
+                        "\n                      AND src.content_ref = ?{idx}"
+                    );
+                }
+                Predicate::ContentRefNotNull => {
+                    fused_clauses
+                        .push_str("\n                      AND src.content_ref IS NOT NULL");
+                }
+                Predicate::JsonPathEq { .. } | Predicate::JsonPathCompare { .. } => {
+                    // JSON predicates are residual; compile_vector_search
+                    // guarantees they never appear here, but stay defensive.
+                }
+            }
+        }
+
+        // Build residual JSON clauses, aliased against `h` in the outer SELECT.
+        let mut filter_clauses = String::new();
+        for predicate in &compiled.residual_filters {
+            match predicate {
+                Predicate::JsonPathEq { path, value } => {
+                    binds.push(BindValue::Text(path.clone()));
+                    let path_idx = binds.len();
+                    binds.push(scalar_to_bind(value));
+                    let value_idx = binds.len();
+                    let _ = write!(
+                        filter_clauses,
+                        "\n  AND json_extract(h.properties, ?{path_idx}) = ?{value_idx}"
+                    );
+                }
+                Predicate::JsonPathCompare { path, op, value } => {
+                    binds.push(BindValue::Text(path.clone()));
+                    let path_idx = binds.len();
+                    binds.push(scalar_to_bind(value));
+                    let value_idx = binds.len();
+                    let operator = match op {
+                        ComparisonOp::Gt => ">",
+                        ComparisonOp::Gte => ">=",
+                        ComparisonOp::Lt => "<",
+                        ComparisonOp::Lte => "<=",
+                    };
+                    let _ = write!(
+                        filter_clauses,
+                        "\n  AND json_extract(h.properties, ?{path_idx}) {operator} ?{value_idx}"
+                    );
+                }
+                Predicate::KindEq(_)
+                | Predicate::LogicalIdEq(_)
+                | Predicate::SourceRefEq(_)
+                | Predicate::ContentRefEq(_)
+                | Predicate::ContentRefNotNull => {
+                    // Fusable predicates live in fused_clauses above.
+                }
+            }
+        }
+
+        // Bind the outer limit as a named parameter for prepare_cached
+        // stability across calls that vary only by limit value.
+        let limit = compiled.limit;
+        binds.push(BindValue::Integer(i64::try_from(limit).unwrap_or(i64::MAX)));
+        let limit_idx = binds.len();
+
+        // sqlite-vec requires the LIMIT/k constraint to be visible directly
+        // on the vec0 KNN scan, so we isolate it in a sub-select. The vec0
+        // LIMIT overfetches `base_limit` = limit (Phase 11 keeps it simple;
+        // Phase 12's planner may raise this to compensate for fusion
+        // narrowing the candidate pool).
+        let base_limit = limit;
+        let kind_clause = if filter_by_kind {
+            "\n                      AND src.kind = ?2"
+        } else {
+            ""
+        };
+
+        let sql = format!(
+            "WITH vector_hits AS (
+                SELECT
+                    src.row_id AS row_id,
+                    src.logical_id AS logical_id,
+                    src.kind AS kind,
+                    src.properties AS properties,
+                    src.source_ref AS source_ref,
+                    src.content_ref AS content_ref,
+                    src.created_at AS created_at,
+                    vc.distance AS distance,
+                    vc.chunk_id AS chunk_id
+                FROM (
+                    SELECT chunk_id, distance
+                    FROM vec_nodes_active
+                    WHERE embedding MATCH ?1
+                    LIMIT {base_limit}
+                ) vc
+                JOIN chunks c ON c.id = vc.chunk_id
+                JOIN nodes src ON src.logical_id = c.node_logical_id AND src.superseded_at IS NULL
+                WHERE 1 = 1{kind_clause}{fused_clauses}
+            )
+            SELECT
+                h.row_id,
+                h.logical_id,
+                h.kind,
+                h.properties,
+                h.content_ref,
+                am.last_accessed_at,
+                h.created_at,
+                h.distance,
+                h.chunk_id
+            FROM vector_hits h
+            LEFT JOIN node_access_metadata am ON am.logical_id = h.logical_id
+            WHERE 1 = 1{filter_clauses}
+            ORDER BY h.distance ASC
+            LIMIT ?{limit_idx}"
+        );
+
+        let bind_values = binds.iter().map(bind_value_to_sql).collect::<Vec<_>>();
+
+        let conn_guard = match self.lock_connection() {
+            Ok(g) => g,
+            Err(e) => {
+                self.telemetry.increment_errors();
+                return Err(e);
+            }
+        };
+        let mut statement = match conn_guard.prepare_cached(&sql) {
+            Ok(stmt) => stmt,
+            Err(e) if is_vec_table_absent(&e) => {
+                // Capability miss: non-fatal — surface as was_degraded.
+                if !self.vec_degradation_warned.swap(true, Ordering::Relaxed) {
+                    trace_warn!("vector table absent, degrading vector_search to empty result");
+                }
+                return Ok(SearchRows {
+                    hits: Vec::new(),
+                    strict_hit_count: 0,
+                    relaxed_hit_count: 0,
+                    vector_hit_count: 0,
+                    fallback_used: false,
+                    was_degraded: true,
+                });
+            }
+            Err(e) => {
+                self.telemetry.increment_errors();
+                return Err(EngineError::Sqlite(e));
+            }
+        };
+
+        let attribution_requested = compiled.attribution_requested;
+        let hits = match statement
+            .query_map(params_from_iter(bind_values.iter()), |row| {
+                let distance: f64 = row.get(7)?;
+                // Score is the negated distance per addendum 1
+                // §Vector-Specific Behavior / Score and distance. For
+                // distance metrics (sqlite-vec's default) lower distance =
+                // better match, so negating yields the higher-is-better
+                // convention that dedup_branch_hits and the unified result
+                // surface rely on.
+                let score = -distance;
+                Ok(SearchHit {
+                    node: fathomdb_query::NodeRowLite {
+                        row_id: row.get(0)?,
+                        logical_id: row.get(1)?,
+                        kind: row.get(2)?,
+                        properties: row.get(3)?,
+                        content_ref: row.get(4)?,
+                        last_accessed_at: row.get(5)?,
+                    },
+                    written_at: row.get(6)?,
+                    score,
+                    modality: RetrievalModality::Vector,
+                    source: SearchHitSource::Vector,
+                    // Vector hits have no strict/relaxed notion.
+                    match_mode: None,
+                    // Vector hits have no snippet.
+                    snippet: None,
+                    projection_row_id: row.get::<_, Option<String>>(8)?,
+                    vector_distance: Some(distance),
+                    attribution: if attribution_requested {
+                        Some(HitAttribution {
+                            matched_paths: Vec::new(),
+                        })
+                    } else {
+                        None
+                    },
+                })
+            })
+            .and_then(Iterator::collect::<Result<Vec<_>, _>>)
+        {
+            Ok(rows) => rows,
+            Err(e) => {
+                // Some SQLite errors surface during row iteration (e.g. when
+                // the vec0 extension is not loaded but the table exists as a
+                // stub). Classify as capability-miss when the shape matches.
+                if is_vec_table_absent(&e) {
+                    if !self.vec_degradation_warned.swap(true, Ordering::Relaxed) {
+                        trace_warn!(
+                            "vector table absent at query time, degrading vector_search to empty result"
+                        );
+                    }
+                    drop(statement);
+                    drop(conn_guard);
+                    return Ok(SearchRows {
+                        hits: Vec::new(),
+                        strict_hit_count: 0,
+                        relaxed_hit_count: 0,
+                        vector_hit_count: 0,
+                        fallback_used: false,
+                        was_degraded: true,
+                    });
+                }
+                self.telemetry.increment_errors();
+                return Err(EngineError::Sqlite(e));
+            }
+        };
+
+        drop(statement);
+        drop(conn_guard);
+
+        self.telemetry.increment_queries();
+        let vector_hit_count = hits.len();
+        Ok(SearchRows {
+            hits,
+            strict_hit_count: 0,
+            relaxed_hit_count: 0,
+            vector_hit_count,
+            fallback_used: false,
+            was_degraded: false,
         })
     }
 

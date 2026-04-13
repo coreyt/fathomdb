@@ -2,7 +2,7 @@ use std::fmt::Write;
 
 use crate::fusion::partition_search_filters;
 use crate::plan::{choose_driving_table, execution_hints, shape_signature};
-use crate::search::{CompiledSearch, CompiledSearchPlan};
+use crate::search::{CompiledSearch, CompiledSearchPlan, CompiledVectorSearch};
 use crate::{
     ComparisonOp, DrivingTable, ExpansionSlot, Predicate, QueryAst, QueryStep, ScalarValue,
     TextQuery, TraverseDirection, derive_relaxed, render_text_query_fts5,
@@ -72,6 +72,8 @@ pub enum CompileError {
     InvalidJsonPath(String),
     #[error("compile_search requires exactly one TextSearch step in the AST")]
     MissingTextSearchStep,
+    #[error("compile_vector_search requires exactly one VectorSearch step in the AST")]
+    MissingVectorSearchStep,
 }
 
 /// Security fix H-1: Validate JSON path against a strict allowlist pattern to
@@ -751,6 +753,52 @@ pub fn compile_search_plan_from_queries(
         strict: strict_compiled,
         relaxed: relaxed_compiled,
         was_degraded_at_plan_time: false,
+    })
+}
+
+/// Compile a [`QueryAst`] into a [`CompiledVectorSearch`] describing a
+/// vector-only retrieval execution.
+///
+/// Mirrors [`compile_search`] structurally. The AST must contain exactly one
+/// [`QueryStep::VectorSearch`] step; filters following the search step are
+/// partitioned by [`partition_search_filters`] into fusable and residual
+/// sets. Unlike [`compile_search`] this path does not produce a
+/// [`TextQuery`]; the caller's raw query string is preserved verbatim for
+/// the coordinator to bind to `embedding MATCH ?`.
+///
+/// # Errors
+///
+/// Returns [`CompileError::MissingVectorSearchStep`] if the AST contains no
+/// [`QueryStep::VectorSearch`] step.
+pub fn compile_vector_search(ast: &QueryAst) -> Result<CompiledVectorSearch, CompileError> {
+    let mut query_text = None;
+    let mut limit = None;
+    for step in &ast.steps {
+        match step {
+            QueryStep::VectorSearch {
+                query,
+                limit: step_limit,
+            } => {
+                query_text = Some(query.clone());
+                limit = Some(*step_limit);
+            }
+            QueryStep::Filter(_) | QueryStep::TextSearch { .. } | QueryStep::Traverse { .. } => {
+                // Filter steps are partitioned below; TextSearch/Traverse
+                // steps are not composable with vector search in the
+                // standalone vector retrieval path.
+            }
+        }
+    }
+    let query_text = query_text.ok_or(CompileError::MissingVectorSearchStep)?;
+    let limit = limit.unwrap_or(25);
+    let (fusable_filters, residual_filters) = partition_search_filters(&ast.steps);
+    Ok(CompiledVectorSearch {
+        root_kind: ast.root_kind.clone(),
+        query_text,
+        limit,
+        fusable_filters,
+        residual_filters,
+        attribution_requested: false,
     })
 }
 

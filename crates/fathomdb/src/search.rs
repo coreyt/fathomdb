@@ -7,8 +7,9 @@
 
 use fathomdb_engine::{EngineError, QueryRows};
 use fathomdb_query::{
-    CompileError, CompiledGroupedQuery, CompiledQuery, CompiledSearchPlan, QueryBuilder,
-    SearchRows, TextQuery, compile_search, compile_search_plan_from_queries,
+    CompileError, CompiledGroupedQuery, CompiledQuery, CompiledSearchPlan, CompiledVectorSearch,
+    QueryBuilder, SearchRows, TextQuery, compile_search, compile_search_plan_from_queries,
+    compile_vector_search,
 };
 
 use crate::Engine;
@@ -44,10 +45,24 @@ impl<'e> NodeQueryBuilder<'e> {
         }
     }
 
-    /// Add a vector similarity search step.
-    pub fn vector_search(mut self, query: impl Into<String>, limit: usize) -> Self {
-        self.inner = self.inner.vector_search(query, limit);
-        self
+    /// Transition this chain into a vector-search builder. Subsequent
+    /// filters accumulate on the vector-search builder and `.execute()`
+    /// returns [`SearchRows`] populated with the vector retrieval block.
+    ///
+    /// Phase 11 (HITL-Q5 closure): this method switches to a type-state
+    /// terminal returning [`VectorSearchBuilder`], mirroring
+    /// [`NodeQueryBuilder::text_search`]. The old self-returning form is
+    /// no longer available on the facade surface; advanced callers that
+    /// need the flat `vector_search` AST step alongside other pipeline
+    /// steps can still reach it via [`QueryBuilder::vector_search`] on
+    /// the untethered builder.
+    pub fn vector_search(self, query: impl Into<String>, limit: usize) -> VectorSearchBuilder<'e> {
+        VectorSearchBuilder::new(
+            self.engine,
+            self.inner.ast().root_kind.clone(),
+            query,
+            limit,
+        )
     }
 
     /// Add a graph traversal step.
@@ -634,6 +649,202 @@ impl<'e> FallbackSearchBuilder<'e> {
         self.engine
             .coordinator()
             .execute_compiled_search_plan(&plan)
+    }
+}
+
+/// Tethered vector-search builder returned from
+/// [`NodeQueryBuilder::vector_search`].
+///
+/// Accumulates filter predicates alongside a caller-provided vector query
+/// and dispatches `.execute()` through
+/// [`fathomdb_engine::ExecutionCoordinator::execute_compiled_vector_search`],
+/// returning [`SearchRows`] whose hits carry
+/// `modality = RetrievalModality::Vector`, `source = SearchHitSource::Vector`,
+/// `match_mode = None`, and `vector_distance = Some(raw_distance)`. The
+/// higher-is-better `score` field is the negated distance.
+///
+/// See `dev/design-adaptive-text-search-surface-addendum-1-vec.md` §Public
+/// Surface for the full surface contract and degradation semantics.
+#[must_use]
+pub struct VectorSearchBuilder<'e> {
+    engine: &'e Engine,
+    root_kind: String,
+    query: String,
+    limit: usize,
+    attribution_requested: bool,
+    // Reuse a QueryBuilder as a filter accumulator so the fusion helper
+    // partitions exactly the same predicates as TextSearchBuilder.
+    filter_builder: QueryBuilder,
+}
+
+impl<'e> VectorSearchBuilder<'e> {
+    pub(crate) fn new(
+        engine: &'e Engine,
+        root_kind: impl Into<String>,
+        query: impl Into<String>,
+        limit: usize,
+    ) -> Self {
+        let root_kind = root_kind.into();
+        // Mirror FallbackSearchBuilder: the filter accumulator is seeded
+        // with a no-op `vector_search("", 0)` step so that
+        // `partition_search_filters` treats subsequent `.filter_*` calls
+        // as post-search predicates. The P2-N2 fix tightened the
+        // partitioner to only collect filters AFTER a search-step marker;
+        // without this seed, `.filter_kind_eq("Goal")` would land in
+        // neither bucket and would be silently dropped. The dummy step's
+        // query text and limit are never executed — `compile_plan` pulls
+        // the real vector query string and limit from the builder's
+        // fields directly when it assembles the `CompiledVectorSearch`.
+        let filter_builder = QueryBuilder::nodes(root_kind.clone()).vector_search("", 0);
+        Self {
+            engine,
+            root_kind,
+            query: query.into(),
+            limit,
+            attribution_requested: false,
+            filter_builder,
+        }
+    }
+
+    /// Request per-hit match attribution.
+    ///
+    /// When set, every returned hit carries
+    /// `attribution: Some(HitAttribution { matched_paths: vec![] })` per
+    /// addendum 1 §Attribution on vector hits. The empty `matched_paths`
+    /// list is intentional — vector matches have no per-field provenance
+    /// to attribute, but the `Some(...)` sentinel lets downstream code
+    /// distinguish "attribution was requested and produced no paths" from
+    /// "attribution was not requested at all".
+    pub fn with_match_attribution(mut self) -> Self {
+        self.attribution_requested = true;
+        self
+    }
+
+    /// Filter results to a single logical ID.
+    pub fn filter_logical_id_eq(mut self, logical_id: impl Into<String>) -> Self {
+        self.filter_builder = self.filter_builder.filter_logical_id_eq(logical_id);
+        self
+    }
+
+    /// Filter results to nodes matching the given kind.
+    pub fn filter_kind_eq(mut self, kind: impl Into<String>) -> Self {
+        self.filter_builder = self.filter_builder.filter_kind_eq(kind);
+        self
+    }
+
+    /// Filter results to nodes matching the given `source_ref`.
+    pub fn filter_source_ref_eq(mut self, source_ref: impl Into<String>) -> Self {
+        self.filter_builder = self.filter_builder.filter_source_ref_eq(source_ref);
+        self
+    }
+
+    /// Filter results to nodes where `content_ref` is not NULL.
+    pub fn filter_content_ref_not_null(mut self) -> Self {
+        self.filter_builder = self.filter_builder.filter_content_ref_not_null();
+        self
+    }
+
+    /// Filter results to nodes matching the given `content_ref` URI.
+    pub fn filter_content_ref_eq(mut self, content_ref: impl Into<String>) -> Self {
+        self.filter_builder = self.filter_builder.filter_content_ref_eq(content_ref);
+        self
+    }
+
+    /// Filter results where a JSON property at `path` equals the given text value.
+    pub fn filter_json_text_eq(
+        mut self,
+        path: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Self {
+        self.filter_builder = self.filter_builder.filter_json_text_eq(path, value);
+        self
+    }
+
+    /// Filter results where a JSON property at `path` equals the given boolean value.
+    pub fn filter_json_bool_eq(mut self, path: impl Into<String>, value: bool) -> Self {
+        self.filter_builder = self.filter_builder.filter_json_bool_eq(path, value);
+        self
+    }
+
+    /// Filter results where a JSON integer at `path` is greater than `value`.
+    pub fn filter_json_integer_gt(mut self, path: impl Into<String>, value: i64) -> Self {
+        self.filter_builder = self.filter_builder.filter_json_integer_gt(path, value);
+        self
+    }
+
+    /// Filter results where a JSON integer at `path` is greater than or equal to `value`.
+    pub fn filter_json_integer_gte(mut self, path: impl Into<String>, value: i64) -> Self {
+        self.filter_builder = self.filter_builder.filter_json_integer_gte(path, value);
+        self
+    }
+
+    /// Filter results where a JSON integer at `path` is less than `value`.
+    pub fn filter_json_integer_lt(mut self, path: impl Into<String>, value: i64) -> Self {
+        self.filter_builder = self.filter_builder.filter_json_integer_lt(path, value);
+        self
+    }
+
+    /// Filter results where a JSON integer at `path` is less than or equal to `value`.
+    pub fn filter_json_integer_lte(mut self, path: impl Into<String>, value: i64) -> Self {
+        self.filter_builder = self.filter_builder.filter_json_integer_lte(path, value);
+        self
+    }
+
+    /// Filter results where a JSON timestamp at `path` is after `value`.
+    pub fn filter_json_timestamp_gt(mut self, path: impl Into<String>, value: i64) -> Self {
+        self.filter_builder = self.filter_builder.filter_json_timestamp_gt(path, value);
+        self
+    }
+
+    /// Filter results where a JSON timestamp at `path` is at or after `value`.
+    pub fn filter_json_timestamp_gte(mut self, path: impl Into<String>, value: i64) -> Self {
+        self.filter_builder = self.filter_builder.filter_json_timestamp_gte(path, value);
+        self
+    }
+
+    /// Filter results where a JSON timestamp at `path` is before `value`.
+    pub fn filter_json_timestamp_lt(mut self, path: impl Into<String>, value: i64) -> Self {
+        self.filter_builder = self.filter_builder.filter_json_timestamp_lt(path, value);
+        self
+    }
+
+    /// Filter results where a JSON timestamp at `path` is at or before `value`.
+    pub fn filter_json_timestamp_lte(mut self, path: impl Into<String>, value: i64) -> Self {
+        self.filter_builder = self.filter_builder.filter_json_timestamp_lte(path, value);
+        self
+    }
+
+    /// Compile the builder into a [`CompiledVectorSearch`] without executing
+    /// it. Useful for tests and introspection.
+    ///
+    /// # Errors
+    /// Returns [`CompileError`] if filter partitioning fails.
+    pub fn compile_plan(&self) -> Result<CompiledVectorSearch, CompileError> {
+        let mut ast = self.filter_builder.clone().into_ast();
+        ast.root_kind.clone_from(&self.root_kind);
+        let mut compiled = compile_vector_search(&ast)?;
+        // The seed `.vector_search("", 0)` step on the filter accumulator
+        // is an artifact of the partition workaround; `compile_plan` pulls
+        // the caller's real query text and limit from `self` directly.
+        compiled.query_text.clone_from(&self.query);
+        compiled.limit = self.limit;
+        compiled.attribution_requested = self.attribution_requested;
+        Ok(compiled)
+    }
+
+    /// Execute the vector search and return matching hits.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if compilation or execution fails. A
+    /// capability miss (sqlite-vec unavailable) is NOT an error: it
+    /// returns an empty [`SearchRows`] with `was_degraded = true`.
+    pub fn execute(&self) -> Result<SearchRows, EngineError> {
+        let plan = self
+            .compile_plan()
+            .map_err(|e| EngineError::InvalidConfig(format!("search compilation failed: {e}")))?;
+        self.engine
+            .coordinator()
+            .execute_compiled_vector_search(&plan)
     }
 }
 
