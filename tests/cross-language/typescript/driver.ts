@@ -204,7 +204,10 @@ function actualHit(hit: SearchHit, withAttribution: boolean): Record<string, unk
     logical_id: hit.node.logicalId,
     kind: hit.node.kind,
     source: hit.source,
-    match_mode: hit.matchMode,
+    // Phase 10: matchMode is nullable on the wire — future vector hits
+    // will carry `null`. Preserve nulls rather than coercing to a string
+    // so cross-language parity covers both cases.
+    match_mode: hit.matchMode ?? null,
     snippet_non_empty: Boolean(hit.snippet && hit.snippet.trim().length > 0),
     written_at_recent: writtenAtRecent,
     projection_row_id_present: hit.projectionRowId != null,
