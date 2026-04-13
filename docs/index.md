@@ -17,6 +17,7 @@ fathomdb is canonical local storage for persistent AI agents. Graph, vector, and
 - [Querying](./guides/querying.md)
 - [Writing Data](./guides/writing-data.md)
 - [Property FTS Projections](./guides/property-fts.md) -- full-text search for structured node properties
+- [Text Query Syntax](./guides/text-query-syntax.md) -- supported query grammar for `search()` and `text_search()`
 
 ## API Reference
 

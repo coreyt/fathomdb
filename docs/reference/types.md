@@ -93,7 +93,8 @@ dataclasses returned by queries, writes, or admin operations.
 
 ### SearchRows
 
-Result set returned from `TextSearchBuilder.execute()` and
+Result set returned from `SearchBuilder.execute()` (the recommended
+unified entry point), `TextSearchBuilder.execute()`, and
 `FallbackSearchBuilder.execute()`. Unlike `QueryRows`, `SearchRows` is
 organized around ranked search hits rather than decoded node rows, and
 exposes the per-branch counts that describe what the adaptive pipeline
@@ -104,7 +105,7 @@ did:
 | `hits` | All [`SearchHit`](#searchhit) rows in final merged order: strict block first, relaxed block second. |
 | `strict_hit_count` | Number of hits contributed by the strict branch. |
 | `relaxed_hit_count` | Number of hits contributed by the relaxed branch. |
-| `vector_hit_count` | Number of hits in the vector block. Always `0` until vector retrieval is wired in (planned for a later phase). |
+| `vector_hit_count` | Number of hits in the vector block. Populated by `SearchBuilder` when the engine was opened with a read-time query embedder (`EmbedderChoice::Builtin` or `EmbedderChoice::InProcess`); `0` when the default `EmbedderChoice::None` is in effect, and always `0` for `TextSearchBuilder` / `FallbackSearchBuilder`, which pin retrieval to the text modality. |
 | `fallback_used` | `True` if the relaxed branch fired (i.e. the strict branch returned zero hits and the engine derived a relaxed shape). |
 | `was_degraded` | `True` if the engine fell back to a simpler plan shape while executing. Mirrors `QueryRows.was_degraded`. |
 
@@ -124,7 +125,7 @@ A single adaptive or fallback search hit. Every hit carries the full
 | `score` | Raw engine score used for ordering within a block. Higher is always better, across every modality and every source (text hits use `-bm25(...)`; vector hits use a negated distance or a direct similarity). Scores are ordering-only within a block; scores from different blocks — in particular text vs. vector — are not on a shared scale and must not be compared or arithmetically combined across blocks. |
 | `modality` | [`RetrievalModality`](#retrievalmodality): coarse retrieval-modality classifier (`text` or `vector`). Every hit carries this unambiguously. |
 | `source` | [`SearchHitSource`](#searchhitsource): which projection surface produced the hit. |
-| `match_mode` | Optional [`SearchMatchMode`](#searchmatchmode): whether this hit came from the strict or relaxed branch. Populated for text hits; `None`/`null` for future vector hits, which have no strict/relaxed notion. |
+| `match_mode` | Optional [`SearchMatchMode`](#searchmatchmode): whether this hit came from the strict or relaxed branch. Populated for text hits; `None`/`null` for vector hits, which have no strict/relaxed notion. |
 | `snippet` | Optional snippet extracted from the matched text, or `None` if the engine did not produce one. |
 | `written_at` | **Seconds since the Unix epoch** (1970-01-01 UTC), matching `nodes.created_at` which is populated via SQLite `unixepoch()`. |
 | `projection_row_id` | Row ID of the underlying projection row (chunk or property-FTS row), or `None` if not applicable. |
@@ -138,11 +139,15 @@ A single adaptive or fallback search hit. Every hit carries the full
 
 ### SearchHitSource
 
-Which full-text projection surface produced a `SearchHit`:
+Which retrieval projection surface produced a `SearchHit`:
 
-- `CHUNK` — the hit came from a document chunk.
-- `PROPERTY` — the hit came from a property-FTS row for a structured node kind.
-- `VECTOR` — reserved; not emitted by `text_search` in v1.
+- `CHUNK` — the hit came from a document chunk (text branch).
+- `PROPERTY` — the hit came from a property-FTS row for a structured node kind (text branch).
+- `VECTOR` — the hit came from the vector branch. Emitted by
+  `SearchBuilder` when the engine was opened with a read-time embedder
+  (Phase 12.5 `EmbedderChoice::Builtin` or `EmbedderChoice::InProcess`)
+  or via `Query.vector_search` with a caller-supplied vector literal.
+  Never emitted by `TextSearchBuilder` or `FallbackSearchBuilder`.
 
 ::: fathomdb.SearchHitSource
     options:
@@ -165,15 +170,18 @@ Whether a hit came from the strict branch or the relaxed fallback:
 ### RetrievalModality
 
 Coarse retrieval-modality classifier attached to every `SearchHit`.
-Future phases will wire a vector retrieval branch; the field is
-available today so consumers can switch on it without a breaking
-change later.
+Phase 12.5 wires the vector retrieval branch into `SearchBuilder`; the
+field disambiguates text hits from vector hits on the same unified
+result.
 
 - `TEXT` — the hit came from a text retrieval branch (chunk or
-  property FTS). Every hit produced by the current search pipeline is
-  tagged this way.
-- `VECTOR` — reserved for a future vector retrieval branch. No code
-  path emits this variant yet.
+  property FTS).
+- `VECTOR` — the hit came from the vector retrieval branch. Emitted by
+  `SearchBuilder` when a read-time embedder is attached
+  (`EmbedderChoice::Builtin` or `EmbedderChoice::InProcess`) or via
+  `Query.vector_search` with a caller-supplied vector literal. Hits
+  with `modality == VECTOR` have a populated `vector_distance` and a
+  `None`/`null` `match_mode`.
 
 ::: fathomdb.RetrievalModality
     options:
@@ -183,10 +191,10 @@ change later.
 ### HitAttribution
 
 Per-hit match attribution. Populated only when `with_match_attribution()`
-is called on a `TextSearchBuilder` or `FallbackSearchBuilder`, and only
-for hits backed by recursive-mode property FTS entries. `matched_paths`
-lists the registered JSON paths that produced the FTS match for this
-hit.
+is called on a `SearchBuilder`, `TextSearchBuilder`, or
+`FallbackSearchBuilder`, and only for hits backed by recursive-mode
+property FTS entries. `matched_paths` lists the registered JSON paths
+that produced the FTS match for this hit.
 
 ::: fathomdb.HitAttribution
     options:
