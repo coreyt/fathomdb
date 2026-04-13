@@ -398,6 +398,81 @@ prompt (point working directory at the worktree) before relaunching.
 
 After recovery, run `./scripts/preflight.sh` before launching agents.
 
+### Worktree fast-forward trap
+
+When `isolation: "worktree"` is set, the harness creates the agent's
+worktree at a **cached base commit** (in this repo, `dbdc31b`),
+regardless of where main is now. The agent must run
+`git merge <current-main-HEAD> --ff-only` as its first step to
+advance to current main.
+
+A common failure mode: the agent runs `git log --oneline -3`, sees
+its HEAD at `dbdc31b`, sees the target commit name in its briefing,
+and decides "the target is reachable from my HEAD" — but **reachability
+is directional**. `dbdc31b` is the *ancestor*, not the descendant.
+Looking up the target commit and finding it in the log doesn't mean
+it's already applied; it means it's somewhere in the branch's
+history relative to `dbdc31b`.
+
+This trap has fired at least twice in real sessions. Both times the
+agent then reported "the API doesn't exist" or "the file doesn't
+exist" because they were grepping against an ancestor commit that
+genuinely didn't have the post-fast-forward state.
+
+#### Mitigation in implementer prompts
+
+Make the fast-forward step **unmissable** in every implementer prompt:
+
+```markdown
+## CRITICAL FIRST STEP — fast-forward verification
+
+\```bash
+pwd
+git log --oneline -3
+\```
+
+If the first line is older than `{TARGET_COMMIT}`, run:
+\```bash
+git merge {TARGET_COMMIT} --ff-only
+git log --oneline -3
+\```
+
+The first line MUST now read `{TARGET_COMMIT} {TARGET_COMMIT_SUBJECT}`.
+If `git merge --ff-only` fails with "Already up to date", you were
+already there or ahead — fine. If it fails for any other reason,
+STOP and report.
+
+**Do not interpret `{ANCESTOR} → {TARGET}` as "{TARGET} is reachable
+from {ANCESTOR} so no merge needed". That is wrong. `{ANCESTOR}` is
+the distant ancestor; `{TARGET}` is current main and contains N+
+commits beyond `{ANCESTOR}`. Always fast-forward.**
+```
+
+Then verify the new world is visible:
+
+```bash
+grep -l "{KEY_SYMBOL_FROM_RECENT_PHASE}" {EXPECTED_PATH}   # expect: file path, not "no match"
+```
+
+If grep returns empty for a symbol the briefing assumes exists, the
+fast-forward did not land — STOP and report. Do not proceed against
+the wrong base.
+
+#### Cleanup if the trap fires
+
+If an agent has already reported a "missing API" blocker rooted in this
+trap:
+
+1. Confirm the worktree is still at `dbdc31b` via
+   `git -C {WORKTREE} log --oneline -1`.
+2. The worktree has no commits and made no changes — the harness will
+   auto-clean it on the next launch (`isolation: "worktree"` cleans up
+   worktrees with no changes).
+3. Relaunch the agent with the **unmissable** fast-forward preamble
+   above.
+4. Specifically call out the prior agent's mistake by name in the new
+   briefing so the new agent does not repeat it.
+
 ---
 
 ## 7. Infrastructure
@@ -428,3 +503,102 @@ All storage is local. No external mounts needed.
 5. Never run `cargo publish`, `cargo yank`, or `cargo owner` from an
    agent. These are denied in `.claude/settings.json`; release cuts go
    through the orchestrator with explicit user approval.
+
+---
+
+## 8. Resolving behavior questions empirically
+
+When a fix or review surfaces a question about what the code actually does
+(not what the contract says it should do), brief the implementer to run a
+scratch experiment and observe — never to reason from the orchestrator's
+mental model. Cross-reference: [runbook §13.2](agent-harness-runbook.md#132-empirical-vs-argued-resolution-of-behavior-questions).
+
+### Prompt pattern
+
+```markdown
+## Step 1 — INVESTIGATE
+
+Construct a minimal scratch test that:
+- sets up the conditions under dispute
+- exercises the actual code path (not a mock, not a stub)
+- records what happens via `eprintln!` / `print(...)` / `console.log` /
+  whatever the language's standard observation tool is
+
+Run the scratch test:
+\```bash
+{TEST RUN COMMAND, e.g. `cargo test --test scratch dual_match -- --nocapture`}
+\```
+
+Observe the answer empirically. Record the observed value verbatim — do
+not paraphrase.
+
+## Step 2 — DECIDE
+
+Use the observed answer as the canonical answer to encode in the fix.
+**Do NOT use the orchestrator's framing** of what "should" happen. If the
+observed answer contradicts the orchestrator's mental model, the
+observation wins.
+
+## Step 3 — DELETE
+
+Delete the scratch test before commit. It served its purpose at decision
+time. The canonical assertion belongs in whatever production-test file
+the fix is for, not in a scratch file that a future reader would have to
+reverse-engineer.
+
+If the scratch test reveals that the actual behavior is itself a bug
+(not just disputed), STOP and surface it as a blocker — do not silently
+fix the bug as a side effect of the original task.
+```
+
+### When to use this pattern
+
+- A reviewer flags a contradiction between two packs' assertions about the
+  same invariant.
+- A test is flaky and the orchestrator wants to fix it without first
+  understanding what's actually flaking.
+- The orchestrator's briefing to the fix agent contains "the answer is X"
+  but the agent has no way to verify X.
+
+### When NOT to use this pattern
+
+- The question is about contract / API design, not runtime behavior.
+- The behavior is fully specified in a written contract that the code is
+  known to follow (and recently re-validated).
+- The cost of constructing a representative scratch test exceeds the cost
+  of a full-on review of the relevant code path.
+
+### Worked example
+
+Briefing to a fix agent:
+
+```
+P8x-1 critical — cross-pack assertion contradiction on dedup tiebreak.
+
+**Step 1: Investigate.** Construct a minimal Rust experiment in scratch
+form (you can put it in `crates/fathomdb/tests/scale.rs` near the new
+tests, or in a scratch test file you'll delete before commit) that:
+
+1. Opens a fresh tempdir engine
+2. Registers a scalar property FTS schema on `$.title` for kind "DualMatch"
+3. Inserts ONE node with both:
+   - Chunk content containing the query token (e.g., `chunks: [Chunk { id: "c1", text_content: "dualmatchneedle" }]`)
+   - Property content matching the same token (e.g., `properties: {"title": "dualmatchneedle"}`)
+4. Runs `engine.query("DualMatch").text_search("dualmatchneedle", 10).execute()`
+5. `eprintln!`s the resulting `SearchHit { source, score, ... }` for inspection
+
+Run the test with `cargo test --test scale dual_match -- --nocapture`.
+Observe which source wins in the canonical case.
+
+**Step 2: Decide.** Update all three call sites (P8a's scenarios.json,
+P8b Python harness, P8b TypeScript harness) to assert whichever source
+the experiment observed.
+
+**Step 3: Delete the experiment.** Don't commit a `dual_match` exploration
+test — it's only there to drive Step 1's observation.
+```
+
+The agent's actual observation: `source=Chunk score=1e-6 match_mode=Strict`.
+The orchestrator had previously asserted "property wins" from a contract
+reading; the empirical test corrected that. Total experiment cost: ~5
+minutes. Avoided cost: a wrong fix landed and re-reviewed.
