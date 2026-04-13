@@ -2416,6 +2416,91 @@ mod tests {
         ));
     }
 
+    /// P12-N-3: production-realistic vector-only fusion. The v1 planner
+    /// never fires this shape today (read-time embedding is deferred), but
+    /// when it does the merger will see empty strict + empty relaxed + a
+    /// non-empty vector block. The three-branch merger must pass that
+    /// block through unchanged, preserving `RetrievalModality::Vector`,
+    /// `SearchHitSource::Vector`, and `match_mode == None` semantics.
+    ///
+    /// Note: the review spec asked for `vector_hit_count == 1` /
+    /// `strict_hit_count == 0` assertions. Those are fields on
+    /// `SearchRows`, which is assembled one layer up in
+    /// `execute_compiled_retrieval_plan`. The merger returns a bare
+    /// `Vec<SearchHit>`, so this test asserts the corresponding invariants
+    /// directly on the returned vec (block shape + per-hit fields).
+    #[test]
+    fn merge_search_branches_three_vector_only_preserves_vector_block() {
+        let mut vector_hit = mk_hit(
+            "solo",
+            0.75,
+            SearchMatchMode::Strict,
+            SearchHitSource::Vector,
+        );
+        vector_hit.match_mode = None;
+        vector_hit.modality = RetrievalModality::Vector;
+
+        let merged = merge_search_branches_three(vec![], vec![], vec![vector_hit], 10);
+
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].node.logical_id, "solo");
+        assert!(matches!(merged[0].source, SearchHitSource::Vector));
+        assert!(matches!(merged[0].modality, RetrievalModality::Vector));
+        assert!(
+            merged[0].match_mode.is_none(),
+            "vector hits carry match_mode=None per addendum 1"
+        );
+    }
+
+    /// P12-N-3: limit truncation must preserve block precedence — when the
+    /// strict block alone already exceeds the limit, relaxed and vector
+    /// hits must be dropped entirely even if they have higher raw scores.
+    ///
+    /// Note: the review spec asked for `strict_hit_count == 2` /
+    /// `relaxed_hit_count == 0` / `vector_hit_count == 0` assertions, which
+    /// are `SearchRows` fields assembled one layer up. Since
+    /// `merge_search_branches_three` only returns a `Vec<SearchHit>`, this
+    /// test asserts the corresponding invariants directly: the returned
+    /// vec contains exactly the top two strict hits, with no relaxed or
+    /// vector hits leaking past the limit.
+    #[test]
+    fn merge_search_branches_three_limit_truncates_preserving_block_precedence() {
+        let strict = vec![
+            mk_hit("a", 3.0, SearchMatchMode::Strict, SearchHitSource::Chunk),
+            mk_hit("b", 2.0, SearchMatchMode::Strict, SearchHitSource::Chunk),
+            mk_hit("c", 1.0, SearchMatchMode::Strict, SearchHitSource::Chunk),
+        ];
+        let relaxed = vec![mk_hit(
+            "d",
+            9.0,
+            SearchMatchMode::Relaxed,
+            SearchHitSource::Chunk,
+        )];
+        let mut vector_hit = mk_hit("e", 9.5, SearchMatchMode::Strict, SearchHitSource::Vector);
+        vector_hit.match_mode = None;
+        vector_hit.modality = RetrievalModality::Vector;
+        let vector = vec![vector_hit];
+
+        let merged = merge_search_branches_three(strict, relaxed, vector, 2);
+
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].node.logical_id, "a");
+        assert_eq!(merged[1].node.logical_id, "b");
+        // Neither relaxed nor vector hits made it past the limit.
+        assert!(
+            merged
+                .iter()
+                .all(|h| matches!(h.match_mode, Some(SearchMatchMode::Strict))),
+            "strict block must win limit contention against higher-scored relaxed/vector hits"
+        );
+        assert!(
+            merged
+                .iter()
+                .all(|h| matches!(h.source, SearchHitSource::Chunk)),
+            "no vector source hits should leak past the limit"
+        );
+    }
+
     #[test]
     fn is_vec_table_absent_matches_known_error_messages() {
         use rusqlite::ffi;

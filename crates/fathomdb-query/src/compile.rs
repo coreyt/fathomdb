@@ -78,6 +78,8 @@ pub enum CompileError {
     MissingVectorSearchStep,
     #[error("compile_retrieval_plan requires exactly one Search step in the AST")]
     MissingSearchStep,
+    #[error("compile_retrieval_plan requires exactly one Search step in the AST, found multiple")]
+    MultipleSearchSteps,
 }
 
 /// Security fix H-1: Validate JSON path against a strict allowlist pattern to
@@ -832,7 +834,8 @@ pub fn compile_vector_search(ast: &QueryAst) -> Result<CompiledVectorSearch, Com
 /// # Errors
 ///
 /// Returns [`CompileError::MissingSearchStep`] if the AST contains no
-/// [`QueryStep::Search`] step.
+/// [`QueryStep::Search`] step, or
+/// [`CompileError::MultipleSearchSteps`] if the AST contains more than one.
 pub fn compile_retrieval_plan(ast: &QueryAst) -> Result<CompiledRetrievalPlan, CompileError> {
     let mut raw_query: Option<&str> = None;
     let mut limit: Option<usize> = None;
@@ -842,6 +845,9 @@ pub fn compile_retrieval_plan(ast: &QueryAst) -> Result<CompiledRetrievalPlan, C
             limit: step_limit,
         } = step
         {
+            if raw_query.is_some() {
+                return Err(CompileError::MultipleSearchSteps);
+            }
             raw_query = Some(query.as_str());
             limit = Some(*step_limit);
         }
@@ -1565,6 +1571,35 @@ mod tests {
         assert!(
             matches!(result, Err(CompileError::MissingSearchStep)),
             "expected MissingSearchStep, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn compile_retrieval_plan_rejects_ast_with_multiple_search_steps() {
+        // P12-N-1: the compiler must not silently last-wins when the caller
+        // hands it an AST with two `QueryStep::Search` entries. Instead it
+        // must return an explicit `MultipleSearchSteps` error so the
+        // mis-shaped AST is surfaced at plan time.
+        use crate::{CompileError, QueryAst, QueryStep, compile_retrieval_plan};
+        let ast = QueryAst {
+            root_kind: "Goal".to_owned(),
+            steps: vec![
+                QueryStep::Search {
+                    query: "alpha".to_owned(),
+                    limit: 5,
+                },
+                QueryStep::Search {
+                    query: "bravo".to_owned(),
+                    limit: 10,
+                },
+            ],
+            expansions: vec![],
+            final_limit: None,
+        };
+        let result = compile_retrieval_plan(&ast);
+        assert!(
+            matches!(result, Err(CompileError::MultipleSearchSteps)),
+            "expected MultipleSearchSteps, got {result:?}"
         );
     }
 

@@ -1051,7 +1051,11 @@ impl<'e> SearchBuilder<'e> {
         ast.root_kind.clone_from(&self.root_kind);
         let mut replaced = false;
         for step in &mut ast.steps {
-            if matches!(step, QueryStep::TextSearch { .. }) {
+            if let QueryStep::TextSearch {
+                query: TextQuery::Empty,
+                limit: 0,
+            } = step
+            {
                 *step = QueryStep::Search {
                     query: self.query.clone(),
                     limit: self.limit,
