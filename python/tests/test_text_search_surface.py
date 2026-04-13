@@ -297,5 +297,98 @@ def test_search_rows_vector_hit_count_is_zero_in_phase_10(tmp_path: Path) -> Non
     assert rows.vector_hit_count == 0
 
 
+def _open_recursive_payload_engine(tmp_path: Path, db_name: str) -> Engine:
+    db = Engine.open(tmp_path / db_name)
+    db.admin.register_fts_property_schema_with_entries(
+        "Item",
+        [FtsPropertyPathSpec(path="$.payload", mode=FtsPropertyPathMode.RECURSIVE)],
+        separator=" ",
+        exclude_paths=[],
+    )
+    return db
+
+
+def _write_recursive_item(db: Engine, logical_id: str, payload: dict) -> None:
+    db.write(
+        WriteRequest(
+            label=f"seed-{logical_id}",
+            nodes=[
+                NodeInsert(
+                    row_id=new_row_id(),
+                    logical_id=logical_id,
+                    kind="Item",
+                    properties={"payload": payload},
+                    source_ref="seed",
+                    upsert=False,
+                    chunk_policy=ChunkPolicy.PRESERVE,
+                ),
+            ],
+        )
+    )
+
+
+def test_recursive_property_fts_empty_then_nonempty_in_array(tmp_path: Path) -> None:
+    db = _open_recursive_payload_engine(tmp_path, "rfts1.db")
+    _write_recursive_item(db, "item-1", {"xs": ["", "x"]})
+    rows = db.query("Item").text_search("x", 10).execute()
+    assert any(h.node.logical_id == "item-1" for h in rows.hits)
+
+
+def test_recursive_property_fts_two_empties_then_nonempty_in_array(
+    tmp_path: Path,
+) -> None:
+    db = _open_recursive_payload_engine(tmp_path, "rfts2.db")
+    _write_recursive_item(db, "item-2", {"xs": ["", "", "x"]})
+    rows = db.query("Item").text_search("x", 10).execute()
+    assert any(h.node.logical_id == "item-2" for h in rows.hits)
+
+
+def test_recursive_property_fts_empty_then_nonempty_sibling_keys(
+    tmp_path: Path,
+) -> None:
+    db = _open_recursive_payload_engine(tmp_path, "rfts3.db")
+    _write_recursive_item(db, "item-3", {"a": "", "b": "x"})
+    rows = db.query("Item").text_search("x", 10).execute()
+    assert any(h.node.logical_id == "item-3" for h in rows.hits)
+
+
+def test_recursive_property_fts_nested_empty_then_nonempty_sibling_keys(
+    tmp_path: Path,
+) -> None:
+    db = _open_recursive_payload_engine(tmp_path, "rfts4.db")
+    _write_recursive_item(db, "item-4", {"inner": {"a": "", "b": "x"}})
+    rows = db.query("Item").text_search("x", 10).execute()
+    assert any(h.node.logical_id == "item-4" for h in rows.hits)
+
+
+def test_recursive_property_fts_descent_past_empty_sibling_into_nested_subtree(
+    tmp_path: Path,
+) -> None:
+    db = _open_recursive_payload_engine(tmp_path, "rfts5.db")
+    _write_recursive_item(db, "item-5", {"a": "", "b": {"c": "x"}})
+    rows = db.query("Item").text_search("x", 10).execute()
+    assert any(h.node.logical_id == "item-5" for h in rows.hits)
+
+
+def test_recursive_property_fts_all_empty_payload_writes_succeed(
+    tmp_path: Path,
+) -> None:
+    cases = [
+        ("e0", {}),
+        ("e1", {"a": ""}),
+        ("e2", {"xs": []}),
+        ("e3", {"xs": [""]}),
+        ("e4", {"xs": ["", ""]}),
+        ("e5", {"xs": ["", "", ""]}),
+    ]
+    for idx, (logical_id, payload) in enumerate(cases):
+        db = _open_recursive_payload_engine(tmp_path, f"rfts_empty_{idx}.db")
+        _write_recursive_item(db, logical_id, payload)
+        rows = db.query("Item").text_search("x", 10).execute()
+        assert rows.hits == (), (
+            f"all-empty payload {payload!r} unexpectedly matched 'x'"
+        )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
