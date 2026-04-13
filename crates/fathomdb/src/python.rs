@@ -420,6 +420,7 @@ impl EngineCore {
     /// per-path modes (scalar vs recursive) and optional exclude paths.
     /// The `request_json` envelope matches
     /// [`crate::admin_ffi::PyRegisterFtsPropertySchemaRequest`].
+    #[pyo3(signature = (request_json))]
     pub fn register_fts_property_schema_with_entries(
         &self,
         py: Python<'_>,
@@ -826,7 +827,7 @@ fn map_admin_ffi_error(error: crate::admin_ffi::AdminFfiError) -> PyErr {
 fn map_search_ffi_error(error: crate::search_ffi::SearchFfiError) -> PyErr {
     use crate::search_ffi::SearchFfiError;
     match error {
-        SearchFfiError::Parse(err) => BridgeError::new_err(format!("search request parse: {err}")),
+        SearchFfiError::Parse(err) => PyValueError::new_err(format!("search request parse: {err}")),
         SearchFfiError::Compile(err) => CompileError::new_err(format!("{err:?}")),
         SearchFfiError::Engine(err) => map_engine_error(err),
         SearchFfiError::Serialize(err) => {
