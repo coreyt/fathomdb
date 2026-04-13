@@ -651,8 +651,24 @@ export type FtsPropertyPathSpec = {
 export type FtsPropertySchemaRecord = {
   /** The node kind this schema applies to. */
   kind: string;
-  /** JSON property paths to extract (e.g. `["$.name", "$.title"]`). */
+  /**
+   * Flat display list of registered JSON property paths (e.g.
+   * `["$.name", "$.title"]`). For recursive entries this lists only the
+   * root path; mode information is carried by {@link entries}.
+   */
   propertyPaths: string[];
+  /**
+   * Full per-entry schema shape with mode (`"scalar"` | `"recursive"`).
+   * Read this field for mode-accurate round-trip of the registered
+   * schema — this is the only place the wire surfaces recursive mode
+   * for each path.
+   */
+  entries: FtsPropertyPathSpec[];
+  /**
+   * Subtree paths excluded from recursive walks. Empty for scalar-only
+   * schemas or recursive schemas with no exclusions.
+   */
+  excludePaths: string[];
   /** Separator used when concatenating extracted values. */
   separator: string;
   /** Schema format version. */
@@ -661,9 +677,19 @@ export type FtsPropertySchemaRecord = {
 
 /** @internal */
 export function ftsPropertySchemaRecordFromWire(w: Record<string, unknown>): FtsPropertySchemaRecord {
+  const rawEntries = Array.isArray(w.entries) ? w.entries : [];
+  const entries: FtsPropertyPathSpec[] = rawEntries
+    .filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null)
+    .map((entry) => {
+      const modeStr = String(entry.mode ?? "scalar");
+      const mode: FtsPropertyPathMode = modeStr === "recursive" ? "recursive" : "scalar";
+      return { path: String(entry.path ?? ""), mode };
+    });
   return {
     kind: String(w.kind ?? ""),
     propertyPaths: Array.isArray(w.property_paths) ? w.property_paths.map(String) : [],
+    entries,
+    excludePaths: Array.isArray(w.exclude_paths) ? w.exclude_paths.map(String) : [],
     separator: String(w.separator ?? " "),
     formatVersion: Number(w.format_version ?? 1),
   };

@@ -800,15 +800,41 @@ class FtsPropertySchemaRecord:
     """A registered FTS property projection schema for a node kind."""
 
     kind: str
+    #: Flat display list of registered JSON property paths. For recursive
+    #: entries this lists only the root path; mode information is carried
+    #: by :attr:`entries`.
     property_paths: list[str]
+    #: Full per-entry schema shape with mode. Read this field for
+    #: mode-accurate round-trip of the registered schema — this is the
+    #: only place the engine surfaces
+    #: :class:`FtsPropertyPathMode.RECURSIVE` for each path.
+    entries: list[FtsPropertyPathSpec]
+    #: Subtree paths excluded from recursive walks. Empty for scalar-only
+    #: schemas or recursive schemas with no exclusions.
+    exclude_paths: list[str]
     separator: str
     format_version: int
 
     @classmethod
     def from_wire(cls, payload: dict[str, Any]) -> "FtsPropertySchemaRecord":
+        raw_entries = payload.get("entries") or []
+        entries: list[FtsPropertyPathSpec] = []
+        for raw in raw_entries:
+            if not isinstance(raw, dict):
+                continue
+            mode_str = str(raw.get("mode", "scalar"))
+            try:
+                mode = FtsPropertyPathMode(mode_str)
+            except ValueError:
+                mode = FtsPropertyPathMode.SCALAR
+            entries.append(
+                FtsPropertyPathSpec(path=str(raw.get("path", "")), mode=mode)
+            )
         return cls(
             kind=payload["kind"],
-            property_paths=payload.get("property_paths", []),
+            property_paths=list(payload.get("property_paths", [])),
+            entries=entries,
+            exclude_paths=list(payload.get("exclude_paths", [])),
             separator=payload.get("separator", " "),
             format_version=payload.get("format_version", 1),
         )

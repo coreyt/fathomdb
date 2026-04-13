@@ -540,20 +540,80 @@ describe("Engine admin (real engine)", () => {
     expect(record.propertyPaths).toEqual(["$.name", "$.description"]);
     expect(record.separator).toBe(" ");
     expect(record.formatVersion).toBe(1);
+    // Pack P7.7-fix: scalar-only schemas also expose the per-entry view
+    // with every entry marked "scalar", and an empty excludePaths.
+    expect(record.entries).toEqual([
+      { path: "$.name", mode: "scalar" },
+      { path: "$.description", mode: "scalar" },
+    ]);
+    expect(record.excludePaths).toEqual([]);
 
     const described = engine.admin.describeFtsPropertySchema("Goal");
     expect(described).not.toBeNull();
     expect(described!.kind).toBe("Goal");
     expect(described!.propertyPaths).toEqual(["$.name", "$.description"]);
+    expect(described!.entries).toEqual([
+      { path: "$.name", mode: "scalar" },
+      { path: "$.description", mode: "scalar" },
+    ]);
 
     const schemas = engine.admin.listFtsPropertySchemas();
     expect(schemas.length).toBeGreaterThanOrEqual(1);
     const goalSchema = schemas.find((s) => s.kind === "Goal");
     expect(goalSchema).toBeDefined();
+    expect(goalSchema!.entries).toEqual([
+      { path: "$.name", mode: "scalar" },
+      { path: "$.description", mode: "scalar" },
+    ]);
 
     engine.admin.removeFtsPropertySchema("Goal");
     const afterRemove = engine.admin.describeFtsPropertySchema("Goal");
     expect(afterRemove).toBeNull();
+  });
+
+  it("round-trips recursive FTS property schema entries through describe and list", () => {
+    // Pack P7.7-fix regression: before the fix the engine's load path
+    // silently returned an empty propertyPaths for recursive-bearing
+    // schemas because it tried to deserialize the object-shaped stored
+    // JSON as a bare string array. Now describeFtsPropertySchema and
+    // listFtsPropertySchemas both surface the per-entry schema with
+    // mode information, plus exclude_paths.
+    const registered = engine.admin.registerFtsPropertySchemaWithEntries({
+      kind: "KnowledgeItem",
+      entries: [
+        { path: "$.title", mode: "scalar" },
+        { path: "$.payload", mode: "recursive" },
+      ],
+      separator: " ",
+      excludePaths: ["$.payload.secret"],
+    });
+    expect(registered.kind).toBe("KnowledgeItem");
+    expect(registered.propertyPaths).toEqual(["$.title", "$.payload"]);
+    expect(registered.entries).toEqual([
+      { path: "$.title", mode: "scalar" },
+      { path: "$.payload", mode: "recursive" },
+    ]);
+    expect(registered.excludePaths).toEqual(["$.payload.secret"]);
+
+    const described = engine.admin.describeFtsPropertySchema("KnowledgeItem");
+    expect(described).not.toBeNull();
+    expect(described!.propertyPaths).toEqual(["$.title", "$.payload"]);
+    expect(described!.entries).toEqual([
+      { path: "$.title", mode: "scalar" },
+      { path: "$.payload", mode: "recursive" },
+    ]);
+    expect(described!.excludePaths).toEqual(["$.payload.secret"]);
+
+    const listed = engine.admin.listFtsPropertySchemas();
+    const ki = listed.find((s) => s.kind === "KnowledgeItem");
+    expect(ki).toBeDefined();
+    expect(ki!.entries).toEqual([
+      { path: "$.title", mode: "scalar" },
+      { path: "$.payload", mode: "recursive" },
+    ]);
+    expect(ki!.excludePaths).toEqual(["$.payload.secret"]);
+
+    engine.admin.removeFtsPropertySchema("KnowledgeItem");
   });
 
   it("returns typed operational collection admin results", () => {

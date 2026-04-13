@@ -73,10 +73,32 @@ fn register_fts_property_schema_with_entries_json_accepts_recursive_path() {
     let record = parse_record(&response);
     assert_eq!(record["kind"].as_str(), Some("KnowledgeItem"));
     assert_eq!(record["separator"].as_str(), Some(" "));
-    // Recursive-bearing schemas are stored in the object-shaped JSON
-    // envelope, so `property_paths` on the record may be empty here.
-    // The authoritative assertions come from the position-map and search
-    // behaviour below.
+    // Pack P7.7-fix: the load path now calls parse_property_schema_json
+    // on the stored JSON, so recursive-bearing schemas round-trip via
+    // both the `entries` array (mode-accurate) and `property_paths`
+    // (flat display list).
+    let paths: Vec<String> = record["property_paths"]
+        .as_array()
+        .expect("property_paths array")
+        .iter()
+        .map(|v| v.as_str().expect("path string").to_owned())
+        .collect();
+    assert_eq!(paths, vec!["$.title".to_owned(), "$.payload".to_owned()]);
+    let entries = record["entries"]
+        .as_array()
+        .expect("entries array populated");
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0]["path"].as_str(), Some("$.title"));
+    assert_eq!(entries[0]["mode"].as_str(), Some("scalar"));
+    assert_eq!(entries[1]["path"].as_str(), Some("$.payload"));
+    assert_eq!(entries[1]["mode"].as_str(), Some("recursive"));
+    assert!(
+        record["exclude_paths"]
+            .as_array()
+            .expect("exclude_paths array")
+            .is_empty(),
+        "exclude_paths should be empty for this request"
+    );
 
     insert_knowledge_item(
         &engine,
@@ -160,6 +182,15 @@ fn register_fts_property_schema_with_entries_json_round_trips_scalar_only() {
     assert_eq!(paths.len(), 2);
     assert!(paths.contains(&"$.name".to_owned()));
     assert!(paths.contains(&"$.description".to_owned()));
+    // Pack P7.7-fix: scalar-only schemas also round-trip their entries,
+    // each with mode "scalar".
+    let entries = record["entries"]
+        .as_array()
+        .expect("entries array populated");
+    assert_eq!(entries.len(), 2);
+    for entry in entries {
+        assert_eq!(entry["mode"].as_str(), Some("scalar"));
+    }
 }
 
 #[test]

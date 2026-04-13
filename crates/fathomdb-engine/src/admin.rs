@@ -52,8 +52,19 @@ pub struct IntegrityReport {
 pub struct FtsPropertySchemaRecord {
     /// The node kind this schema applies to.
     pub kind: String,
-    /// JSON property paths to extract (e.g. `["$.name", "$.title"]`).
+    /// Flat display list of registered JSON property paths
+    /// (e.g. `["$.name", "$.title"]`). For recursive entries this lists
+    /// only the root path; mode information is carried by
+    /// [`Self::entries`].
     pub property_paths: Vec<String>,
+    /// Full per-entry schema shape with mode
+    /// ([`FtsPropertyPathMode::Scalar`] | [`FtsPropertyPathMode::Recursive`]).
+    /// Read this field for mode-accurate round-trip of the registered
+    /// schema.
+    pub entries: Vec<FtsPropertyPathSpec>,
+    /// Subtree paths excluded from recursive walks. Empty for
+    /// scalar-only schemas or recursive schemas with no exclusions.
+    pub exclude_paths: Vec<String>,
     /// Separator used when concatenating extracted values.
     pub separator: String,
     /// Schema format version.
@@ -62,6 +73,7 @@ pub struct FtsPropertySchemaRecord {
 
 /// Extraction mode for a single registered FTS property path.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum FtsPropertyPathMode {
     /// Resolve the path and append the scalar value(s). Matches legacy
     /// pre-Phase-4 behaviour.
@@ -1717,14 +1729,16 @@ impl AdminService {
         )?;
         let records = stmt
             .query_map([], |row| {
+                let kind: String = row.get(0)?;
                 let paths_json: String = row.get(1)?;
-                let paths: Vec<String> = serde_json::from_str(&paths_json).unwrap_or_default();
-                Ok(FtsPropertySchemaRecord {
-                    kind: row.get(0)?,
-                    property_paths: paths,
-                    separator: row.get(2)?,
-                    format_version: row.get(3)?,
-                })
+                let separator: String = row.get(2)?;
+                let format_version: i64 = row.get(3)?;
+                Ok(build_fts_property_schema_record(
+                    kind,
+                    &paths_json,
+                    separator,
+                    format_version,
+                ))
             })?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(records)
@@ -3120,18 +3134,54 @@ fn load_fts_property_schema_record(
              FROM fts_property_schemas WHERE kind = ?1",
             [kind],
             |row| {
+                let kind: String = row.get(0)?;
                 let paths_json: String = row.get(1)?;
-                let paths: Vec<String> = serde_json::from_str(&paths_json).unwrap_or_default();
-                Ok(FtsPropertySchemaRecord {
-                    kind: row.get(0)?,
-                    property_paths: paths,
-                    separator: row.get(2)?,
-                    format_version: row.get(3)?,
-                })
+                let separator: String = row.get(2)?;
+                let format_version: i64 = row.get(3)?;
+                Ok(build_fts_property_schema_record(
+                    kind,
+                    &paths_json,
+                    separator,
+                    format_version,
+                ))
             },
         )
         .optional()?;
     Ok(row)
+}
+
+/// Build an [`FtsPropertySchemaRecord`] from a raw
+/// `fts_property_schemas` row. Delegates JSON parsing to
+/// [`crate::writer::parse_property_schema_json`] — the same parser the
+/// recursive walker uses at rebuild time — so both the legacy bare-array
+/// shape and the Phase 4 object-shaped envelope round-trip correctly.
+fn build_fts_property_schema_record(
+    kind: String,
+    paths_json: &str,
+    separator: String,
+    format_version: i64,
+) -> FtsPropertySchemaRecord {
+    let schema = crate::writer::parse_property_schema_json(paths_json, &separator);
+    let entries: Vec<FtsPropertyPathSpec> = schema
+        .paths
+        .into_iter()
+        .map(|entry| FtsPropertyPathSpec {
+            path: entry.path,
+            mode: match entry.mode {
+                crate::writer::PropertyPathMode::Scalar => FtsPropertyPathMode::Scalar,
+                crate::writer::PropertyPathMode::Recursive => FtsPropertyPathMode::Recursive,
+            },
+        })
+        .collect();
+    let property_paths: Vec<String> = entries.iter().map(|e| e.path.clone()).collect();
+    FtsPropertySchemaRecord {
+        kind,
+        property_paths,
+        entries,
+        exclude_paths: schema.exclude_paths,
+        separator,
+        format_version,
+    }
 }
 
 fn build_regeneration_input(
@@ -4932,7 +4982,10 @@ mod tests {
     use fathomdb_schema::SchemaManager;
     use tempfile::NamedTempFile;
 
-    use super::{AdminService, SafeExportOptions, VectorRegenerationConfig};
+    use super::{
+        AdminService, FtsPropertyPathMode, FtsPropertyPathSpec, SafeExportOptions,
+        VectorRegenerationConfig,
+    };
     use crate::projection::ProjectionTarget;
     use crate::sqlite;
     use crate::{
@@ -9369,6 +9422,97 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
         // Remove non-existent is an error
         let err = service.remove_fts_property_schema("Meeting");
         assert!(err.is_err());
+    }
+
+    #[test]
+    fn describe_fts_property_schema_round_trips_recursive_entries() {
+        let (_db, service) = setup();
+
+        let entries = vec![
+            FtsPropertyPathSpec::scalar("$.title"),
+            FtsPropertyPathSpec::recursive("$.payload"),
+        ];
+        let exclude = vec!["$.payload.private".to_owned()];
+        let registered = service
+            .register_fts_property_schema_with_entries(
+                "KnowledgeItem",
+                &entries,
+                Some(" "),
+                &exclude,
+            )
+            .expect("register recursive");
+
+        // The register entry point now echoes back the fully-populated
+        // record via the same load helper used by describe/list.
+        assert_eq!(registered.entries, entries);
+        assert_eq!(registered.exclude_paths, exclude);
+        assert_eq!(registered.property_paths, vec!["$.title", "$.payload"]);
+
+        let described = service
+            .describe_fts_property_schema("KnowledgeItem")
+            .expect("describe")
+            .expect("should exist");
+        assert_eq!(described.kind, "KnowledgeItem");
+        assert_eq!(described.entries, entries);
+        assert_eq!(described.exclude_paths, exclude);
+        assert_eq!(described.property_paths, vec!["$.title", "$.payload"]);
+        assert_eq!(described.separator, " ");
+        assert_eq!(described.format_version, 1);
+    }
+
+    #[test]
+    fn list_fts_property_schemas_round_trips_recursive_entries() {
+        let (_db, service) = setup();
+
+        let entries = vec![
+            FtsPropertyPathSpec::scalar("$.title"),
+            FtsPropertyPathSpec::recursive("$.payload"),
+        ];
+        let exclude = vec!["$.payload.secret".to_owned()];
+        service
+            .register_fts_property_schema_with_entries(
+                "KnowledgeItem",
+                &entries,
+                Some(" "),
+                &exclude,
+            )
+            .expect("register recursive");
+
+        let listed = service.list_fts_property_schemas().expect("list");
+        assert_eq!(listed.len(), 1);
+        let record = &listed[0];
+        assert_eq!(record.kind, "KnowledgeItem");
+        assert_eq!(record.entries, entries);
+        assert_eq!(record.exclude_paths, exclude);
+        assert_eq!(record.property_paths, vec!["$.title", "$.payload"]);
+    }
+
+    #[test]
+    fn describe_fts_property_schema_round_trips_scalar_only_entries() {
+        let (_db, service) = setup();
+
+        service
+            .register_fts_property_schema(
+                "Meeting",
+                &["$.title".to_owned(), "$.summary".to_owned()],
+                None,
+            )
+            .expect("register scalar");
+
+        let described = service
+            .describe_fts_property_schema("Meeting")
+            .expect("describe")
+            .expect("should exist");
+        assert_eq!(described.property_paths, vec!["$.title", "$.summary"]);
+        assert_eq!(described.entries.len(), 2);
+        for entry in &described.entries {
+            assert_eq!(
+                entry.mode,
+                FtsPropertyPathMode::Scalar,
+                "scalar-only schema should deserialize every entry as Scalar"
+            );
+        }
+        assert!(described.exclude_paths.is_empty());
     }
 
     #[test]
