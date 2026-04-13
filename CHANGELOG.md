@@ -7,18 +7,159 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-04-13
+
+This is a significant minor release bringing a unified retrieval surface
+(`search()`), a read-time query embedder with an optional built-in
+Candle-based default, and a large set of supporting type, SDK, and
+infrastructure changes. The rollout spans Phases 10 through 15 plus
+Phase 12.5 of the adaptive + unified search design of record at
+`dev/design-adaptive-text-search-surface.md` and its vector addendum at
+`dev/design-adaptive-text-search-surface-addendum-1-vec.md`.
+
 ### Added
 
-- **External content objects**: nodes can now reference external content (PDFs,
-  web pages, datasets) via `content_ref`, and chunks can track content
-  provenance via `content_hash`. Both fields are optional and nullable.
-  - Schema migration 14: adds `content_ref TEXT` to `nodes` (with partial
-    index) and `content_hash TEXT` to `chunks`
-  - New query filters: `filter_content_ref_not_null()` and
-    `filter_content_ref_eq(uri)` across Rust, Python, and TypeScript SDKs
-  - `NodeRow` now surfaces `content_ref` in query results
-  - `WriteRequestBuilder.add_node()` accepts `content_ref` parameter
-  - `WriteRequestBuilder.add_chunk()` accepts `content_hash` parameter
+- **Unified `search()` query surface**: a single entry point that runs a
+  strict text branch, engine-derived relaxed text branch, and (when an
+  embedder is configured) vector branch, fusing results under a
+  block-precedence policy. `NodeQueryBuilder::search(query, limit)`
+  returns a tethered `SearchBuilder` whose `.execute()` is statically
+  typed to return `SearchRows` — no union return types. Chainable with
+  the full filter surface (kind / logical_id / source_ref / content_ref /
+  json_* family) and `.with_match_attribution()`.
+- **`SearchBuilder` in all three SDKs**: Rust (`crates/fathomdb/src/search.rs`),
+  Python (`python/fathomdb/_query.py`), and TypeScript
+  (`typescript/packages/fathomdb/src/query.ts`) each expose a distinct
+  builder class with identical filter surfaces and a typed `SearchRows`
+  terminal. Python exposes the config as `db.query(kind).search(...)`;
+  TypeScript as `engine.nodes(kind).search(...)`.
+- **Tethered `VectorSearchBuilder`**: `NodeQueryBuilder::vector_search()`
+  returns a distinct builder that carries the full filter surface and
+  returns `SearchRows` via `execute_compiled_vector_search`. Filters
+  fuse into the vec_nodes CTE (kind / logical_id / source_ref /
+  content_ref) with JSON predicates running as outer-WHERE residuals.
+  Capability-miss (no sqlite-vec extension) is non-fatal — returns empty
+  `SearchRows` with `was_degraded = true`.
+- **`RetrievalModality` enum** (`Text | Vector`) on `SearchHit` and
+  `SearchRows.vector_hit_count`, `SearchHit.vector_distance: Option<f64>`,
+  `SearchHit.match_mode: Option<SearchMatchMode>` for unifying text and
+  vector retrieval shapes under a single result type. Score-direction
+  contract is higher-is-better across both modalities (text uses
+  `-bm25`, vector uses `-distance`). `SearchHitSource::Vector` is a
+  first-class source classifier.
+- **Read-time query embedder scaffolding**: `QueryEmbedder` trait
+  (`embed_query(&str) -> Result<Vec<f32>, EmbedderError>` + `identity()`),
+  `QueryEmbedderIdentity`, `EmbedderError`, and `EmbedderChoice` enum
+  (`None | Builtin | InProcess(Arc<dyn QueryEmbedder>)`) on
+  `EngineOptions`. When an embedder is configured, the coordinator's
+  `fill_vector_branch` step injects a `CompiledVectorSearch` into the
+  retrieval plan post-compile. When `EmbedderChoice::None` (the default),
+  behavior is identical to pre-12.5 — vector branch stays empty, and
+  `compile_retrieval_plan` still returns `vector: None`.
+- **Built-in Candle-based default embedder** (`BuiltinBgeSmallEmbedder`)
+  behind the new `default-embedder` Cargo feature (off by default).
+  Uses BAAI/bge-small-en-v1.5 (384-dim, BERT-small) via
+  `candle-transformers`, with `[CLS]` token pooling and explicit L2
+  normalization (NOT Candle's stock mean pooling, which would silently
+  degrade BGE retrieval quality). Model weights lazy-load on first
+  `embed_query()` call via `hf-hub` into the standard huggingface cache,
+  honoring `HF_HUB_OFFLINE` and `HF_HOME`. Load failures surface as
+  `EmbedderError::Unavailable` and degrade the `search()` vector branch
+  via `was_degraded = true` — no panic, no engine-open failure.
+- **SDK-level embedder config**: Python `Engine.open(embedder="none"|"builtin")`
+  kwarg and TypeScript `EngineOpenOptions.embedder?: "none" | "builtin"`.
+  `"builtin"` is feature-flag-agnostic on the SDK surface: when fathomdb
+  is built without `default-embedder`, it silently falls back to `None`.
+- **Recursive property FTS** with a position map sidecar, `[CLS]`+L2
+  pooling for BGE small, guardrails (`MAX_RECURSIVE_DEPTH=8`,
+  `MAX_EXTRACTED_BYTES=65_536`), eager rebuild on schema registration,
+  and opt-in match attribution via `with_match_attribution()`. Attribution
+  resolves FTS5 `highlight()` sentinels against the position map to
+  populate `SearchHit.attribution.matched_paths` with the JSON paths
+  that contributed to the match.
+- **Adaptive strict-then-relaxed policy** in `compile_retrieval_plan`
+  and `execute_retrieval_plan`: the engine derives a relaxed branch
+  from the strict query via `derive_relaxed`, runs the relaxed branch
+  only when strict returns fewer than `K=1` hits, and fuses results
+  under a block-precedence rule (strict block → relaxed block → vector
+  block, with cross-branch dedup by branch precedence). `RELAXED_BRANCH_CAP=4`,
+  `FALLBACK_TRIGGER_K=1`.
+- **`fallback_search` narrow helper**: `Engine.fallback_search(strict, relaxed, limit)`
+  for the dedup-on-write pattern where the caller wants to supply both
+  branches verbatim without engine-side relaxation. Shares the same
+  `SearchRows` result shape and filter surface as `search()`.
+- **Tokenizer migration to `unicode61 + remove_diacritics 2 + porter`**
+  for `fts_nodes` and `fts_node_properties` (schema version 16).
+  Existing databases upgrade via full rebuild from canonical state.
+- **FTS filter fusion**: `partition_search_filters` pushes fusable
+  predicates (kind / logical_id / source_ref / content_ref) into the
+  FTS/vec CTE so per-branch `limit` applies after filtering. JSON
+  predicates remain as outer-WHERE residuals.
+- **External content objects**: nodes can reference external content
+  (PDFs, web pages, datasets) via `content_ref`, and chunks can track
+  content provenance via `content_hash`. Schema migration 14; new
+  query filters `filter_content_ref_not_null()` and
+  `filter_content_ref_eq(uri)` across all three SDKs; `NodeRow.content_ref`
+  in query results; `WriteRequestBuilder.add_node()` and `add_chunk()`
+  accept the new fields.
+- **Cross-language parity fixtures and SDK harness scenarios** for
+  `search()` (`xlang_search_basic`, `xlang_search_strict_miss_relaxed`,
+  `xlang_search_with_attribution`, `xlang_search_empty_query_returns_empty`)
+  plus matching harness scenarios in `python/examples/harness/` and
+  `typescript/apps/sdk-harness/`.
+- **Stress tests** covering `search()` under concurrent reads, writer
+  contention, and determinism invariants
+  (`search_reads_never_block_on_background_writes`,
+  `search_deterministic_hit_ordering`,
+  `search_fallback_stable_under_concurrent_reads`).
+- **Consumer docs rewrite**: `docs/guides/querying.md` promotes
+  `search()` as the primary surface with `text_search()` / `vector_search()` /
+  `fallback_search()` retained as advanced overrides. New "Read-time
+  embedding" section covers `EmbedderChoice` variants, Python/TS
+  examples, degradation semantics, cold vs warm latency notes, and
+  `[CLS]`+L2 pooling technical detail. Python and TypeScript READMEs
+  lead Quick Start with `search()` and `embedder="builtin"`.
+- **Release checklist** at `dev/notes/release-checklist.md` covering
+  preconditions, code gates, version sync, changelog, documentation
+  currency, CI workflow health, commit/tag, release workflow monitoring,
+  and rollback plan.
+
+### Changed
+
+- **`SearchHit.match_mode`** is now `Option<SearchMatchMode>` instead of
+  `SearchMatchMode`. Vector hits carry `match_mode: None`; text hits
+  carry `Some(Strict | Relaxed)`. This is a breaking change for callers
+  that previously unwrapped `match_mode` directly.
+- **`SearchRows`** gains `vector_hit_count`, `strict_hit_count` and
+  `relaxed_hit_count` exposure, and a generalized `fallback_used` flag
+  that now covers both text-relaxed fallback and vector-branch firing.
+- **`compile_retrieval_plan`** is the unified compile entry point for
+  `search()`. `compile_search_plan` and `compile_search_plan_from_queries`
+  remain for the explicit text-only and two-shape paths.
+
+### Fixed
+
+- **Filter-chain drops on `fallback_search` FFI**: prior to 13a the FFI
+  layer built a filter-only `QueryAst` without a sentinel `TextSearch`
+  step, causing `partition_search_filters` to silently drop all caller
+  filters. Fixed by seeding the sentinel step before `compile_search_plan_from_queries`.
+- **Crash-recovery hole in property FTS rebuild**: the rebuild was
+  gated on migration-version check; a crash between migration commit
+  and rebuild commit would lose the rebuild. Replaced with always-on
+  empty-table check.
+- **Sibling-kind FTS duplication**: eager rebuild iterated all kinds
+  but only deleted the target kind's rows. Added `insert_property_fts_rows_for_kind`
+  scoped helper.
+- **`cast_possible_wrap` clippy lint** in `crates/fathomdb-schema/src/bootstrap.rs`
+  under `--features sqlite-vec`: replaced `dimension as i64` with
+  `i64::try_from(dimension)` routing through `SchemaError::Sqlite`.
+- **Python harness baseline**: stale expected scenario counts (5→22)
+  and `vec_nodes_active` activation in baseline mode (now gated on
+  `context.mode == "vector"`).
+- **TypeScript SDK harness runtime scenario**: pre-existing broken
+  scenario rewritten to use `engine.admin.traceSource` + `checkSemantics`
+  instead of stale `engine.nodes("Document").execute()` runtime-table
+  assertions.
 
 ## [0.2.5] - 2026-04-10
 
