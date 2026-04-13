@@ -2,7 +2,7 @@
 
 from ._admin import AdminClient
 from ._engine import Engine
-from ._query import FallbackSearchBuilder, Query, TextSearchBuilder
+from ._query import FallbackSearchBuilder, Query, SearchBuilder, TextSearchBuilder
 from ._types import (
     ActionInsert,
     ActionRow,
@@ -203,6 +203,7 @@ __all__ = [
     "RunRow",
     "SafeExportManifest",
     "SchemaError",
+    "SearchBuilder",
     "SearchHit",
     "SearchHitSource",
     "SearchMatchMode",

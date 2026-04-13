@@ -93,6 +93,28 @@ class Query:
         """
         return self._with_step({"type": "vector_search", "query": query, "limit": limit})
 
+    def search(self, query: str, limit: int) -> "SearchBuilder":
+        """Enter the unified :class:`SearchBuilder` surface.
+
+        Returns a :class:`SearchBuilder` whose ``.execute()`` produces a
+        :class:`~fathomdb.SearchRows`. Unlike :meth:`text_search`, the
+        unified ``search`` entry point runs a single strict branch with no
+        adaptive relaxation — it mirrors the Phase 12 Rust ``SearchBuilder``
+        surface verbatim. The filter surface matches
+        :class:`TextSearchBuilder` so the same chain composes on either
+        path.
+
+        Args:
+            query: Raw user text. Parsed engine-side.
+            limit: Maximum number of results.
+        """
+        return SearchBuilder(
+            core=self._core,
+            root_kind=self._root_kind,
+            strict_query=query,
+            limit=limit,
+        )
+
     def text_search(self, query: str, limit: int) -> "TextSearchBuilder":
         """Enter the adaptive text-search surface.
 
@@ -529,6 +551,51 @@ class FallbackSearchBuilder(_SearchBuilderBase):
         """Execute the explicit fallback search and return :class:`SearchRows`."""
         return self._execute(
             operation_kind="query.fallback_search",
+            progress_callback=progress_callback,
+            feedback_config=feedback_config,
+        )
+
+
+class SearchBuilder(_SearchBuilderBase):
+    """Fluent builder for the unified :meth:`Query.search` entry point.
+
+    Returned from :meth:`Query.search`. Mirrors the Phase 12 Rust
+    ``SearchBuilder`` surface verbatim: a single strict branch with no
+    adaptive relaxation or caller-supplied relaxed query. Terminal
+    :meth:`execute` returns :class:`SearchRows`.
+    """
+
+    _mode = "search"
+
+    def __init__(
+        self,
+        *,
+        core: EngineCore,
+        root_kind: str,
+        strict_query: str,
+        limit: int,
+        filters: list[dict] | None = None,
+        attribution_requested: bool = False,
+    ) -> None:
+        # The unified `search` mode, like adaptive `text_search`, never
+        # takes a caller-supplied relaxed query. The wire shape always
+        # sets `relaxed_query` to null.
+        super().__init__(
+            core=core,
+            root_kind=root_kind,
+            strict_query=strict_query,
+            limit=limit,
+            relaxed_query=None,
+            filters=filters,
+            attribution_requested=attribution_requested,
+        )
+
+    def execute(
+        self, *, progress_callback=None, feedback_config: FeedbackConfig | None = None
+    ) -> SearchRows:
+        """Execute the unified search and return :class:`SearchRows`."""
+        return self._execute(
+            operation_kind="query.search",
             progress_callback=progress_callback,
             feedback_config=feedback_config,
         )
