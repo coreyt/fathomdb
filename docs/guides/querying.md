@@ -536,6 +536,57 @@ rows = (
 )
 ```
 
+!!! warning "Post-filter footgun: `filter_json_*` runs *after* the search CTE"
+
+    Because `filter_json_*` is a post-filter, the `limit` you pass to
+    `search()` bounds the **candidate set**, not the final hit count.
+    If the post-filter rejects most of those candidates, the query can
+    return 0 hits even when thousands of matching rows exist in the
+    database.
+
+    **Wrong shape — silently drops to 0 hits:**
+
+    ```python
+    # Pulls the top 10 candidates by relevance, *then* filters by
+    # $.status. If none of those 10 happen to be "active", this
+    # returns 0 hits — even if there are thousands of active rows.
+    rows = (
+        db.nodes("Task")
+        .search("urgent review", 10)
+        .filter_json_text_eq("$.status", "active")
+        .execute()
+    )
+    ```
+
+    **Right shape — over-fetch so the post-filter has room to work:**
+
+    ```python
+    # Pull a candidate set large enough that the post-filter still
+    # leaves enough hits after narrowing. Tune the multiplier to the
+    # observed pass-through rate of your filter.
+    rows = (
+        db.nodes("Task")
+        .search("urgent review", 200)   # 20x the desired final count
+        .filter_json_text_eq("$.status", "active")
+        .execute()
+    )
+    final = rows.hits[:10]
+    ```
+
+    **Better shape — push the filter into the retrieval projection:**
+
+    If `$.status` is something you frequently narrow on, declare it as
+    a [property FTS projection](./property-fts.md) so `search()` matches
+    inside it at retrieval time, rather than applying it as a
+    post-filter. Property FTS participates in the search CTE; `filter_json_*`
+    does not.
+
+    The named-fused variants that would push `filter_json_*` predicates
+    into the search CTE (`filter_json_fused_*`) are deferred to a later
+    release. Until then, prefer property FTS for high-selectivity
+    narrowing and use `filter_json_*` with an over-fetched candidate
+    set for the tail.
+
 ### Advanced: explicit text-only control
 
 Most applications should prefer `search()` above. The mechanism-specific
