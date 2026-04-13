@@ -80,10 +80,118 @@ rows = (
 
 ## Search
 
-### Vector search (semantic similarity)
+### Unified search (recommended)
+
+`search(query, limit)` is the **primary retrieval entry point**. It is the
+one call most applications should use when they want "find me relevant
+nodes for this text". The engine owns the retrieval policy: you hand it a
+raw user query and it runs a unified pipeline — strict text → relaxed
+text → (future) vector — merging the results into a single ranked
+`SearchRows` block under engine-owned block precedence.
+
+```python
+rows = (
+    db.nodes("Goal")
+    .search("ship quarterly docs", 10)
+    .execute()
+)
+for hit in rows.hits:
+    print(hit.node.logical_id, hit.score, hit.modality.value,
+          hit.source.value, hit.snippet)
+print(rows.strict_hit_count, rows.relaxed_hit_count, rows.vector_hit_count)
+```
+
+`search()` steps out of the regular `Query` builder. It returns a distinct
+`SearchBuilder`, whose `.execute()` is statically typed to return
+[`SearchRows`](../reference/types.md#searchrows), not `QueryRows`. Each
+result is a [`SearchHit`](../reference/types.md#searchhit) carrying
+`node`, `score`, `modality`, `source`, `match_mode`, `snippet`,
+`written_at`, `projection_row_id`, `vector_distance`, and (optionally)
+`attribution`. Callers read `rows.hits` and do **not** branch on backend.
+
+`SearchBuilder` carries the same filter surface as `Query`:
+`filter_kind_eq`, `filter_logical_id_eq`, `filter_source_ref_eq`,
+`filter_content_ref_eq`, `filter_content_ref_not_null`, and the
+`filter_json_*` family. As with `text_search()`, fusable filters (kind,
+logical ID, source ref, content ref) are pushed into the search CTE and
+`filter_json_*` runs as a post-filter. Opt in to per-hit match
+attribution with `.with_match_attribution()`; see
+[Property FTS Projections](./property-fts.md#match-attribution-opt-in)
+for how recursive schemas populate the underlying position map.
+
+The TypeScript SDK mirrors this surface with camelCase names
+(`engine.nodes("Goal").search("ship quarterly docs", 10).execute()`); see
+the [TypeScript equivalent](#typescript-equivalent) section below for the
+full mapping.
+
+#### v1 scope: vector branch is dormant
+
+`search()` is architected to fuse text and vector retrieval into one
+block-ordered result, but the **vector branch does not currently run on
+natural-language queries**. Read-time embedding of the caller's query
+text is deferred to a future phase. In v1, `search()` returns text-only
+hits and every result has `vector_hit_count == 0`. Callers who need
+vector retrieval today must use the advanced
+[`vector_search()`](#advanced-vector-search-semantic-similarity) override
+directly with a caller-provided vector literal. The `SearchRows` fusion
+shape, `modality` field, and `vector_distance` slot are stable public
+contracts; they will simply start carrying vector hits when the branch
+is wired through.
+
+#### `filter_json_*` vs property FTS
+
+The `filter_json_*` family and
+[property FTS projections](./property-fts.md) are **orthogonal**
+surfaces on JSON properties, and applications often need both.
+
+- **`filter_json_*`** is an **exact-value post-filter** at query time.
+  It does not build an index and does not tokenize — it applies
+  `json_extract(...)` predicates to the candidate set and narrows it by
+  equality, comparison, or range (e.g.
+  `filter_json_text_eq("$.status", "published")`,
+  `filter_json_integer_gte("$.priority", 3)`). It answers "restrict
+  results to rows whose property equals X".
+- **Property FTS** is a **retrieval projection** maintained on
+  registered schemas. Declared JSON paths are extracted (optionally
+  recursively), tokenized, and written to an FTS5 table at write time.
+  `search()` — and the advanced `text_search()` override — match
+  tokens inside those extracted values, so structured nodes become
+  first-class citizens of the text-search pipeline without requiring
+  synthetic chunks. It answers "find nodes where some token appears
+  somewhere inside this JSON subtree".
+
+The two compose: register property FTS on the kinds whose structured
+text should be searchable, then chain `filter_json_*` on the
+`SearchBuilder` to narrow results by exact-value predicates after the
+search has produced candidates.
+
+```python
+rows = (
+    db.nodes("KnowledgeItem")
+    .search("quarterly docs", 50)
+    .filter_json_text_eq("$.status", "published")
+    .filter_json_integer_gte("$.priority", 3)
+    .execute()
+)
+```
+
+### Advanced: explicit text-only control
+
+Most applications should prefer `search()` above. The mechanism-specific
+builders below — `text_search()`, `vector_search()`, and
+`fallback_search()` — are retained as **advanced overrides** for callers
+with a hard reason to pin the retrieval modality or to supply both query
+shapes verbatim. They share the `SearchRows` / `SearchHit` result family
+with `search()` so the calling code shape is identical.
+
+### Advanced: vector search (semantic similarity)
 
 `vector_search` finds nodes whose embedded content is closest to the query.
-The database must have been opened with `vector_dimension`.
+The database must have been opened with `vector_dimension`. It is the
+modality-specific override for callers who want to bypass the unified
+planner and run vector retrieval directly — in v1 it is also the **only
+way** to run a vector search, because `search()` does not yet embed
+natural-language queries at read time.
 
 ```python
 db = Engine.open("/tmp/my-agent.db", vector_dimension=1536)
@@ -97,11 +205,16 @@ for node in results.nodes:
     print(node.logical_id, node.properties.get("title"))
 ```
 
-### Adaptive text search
+### Advanced: adaptive text search (text-only)
 
-`text_search(query, limit)` is the default safe full-text surface. It is an
-**adaptive** search: you hand the engine a raw user query and it owns the
-retrieval policy. Two things matter for callers:
+`text_search(query, limit)` is the text-only advanced override. It pins
+retrieval to the text modality — strict-then-relaxed over chunks and
+property FTS, with no vector stage even when the engine has vector
+capability. Prefer `search()` above unless you have a specific reason to
+exclude the (future) vector branch.
+
+It is an **adaptive** search: you hand the engine a raw user query and it
+owns the retrieval policy. Two things matter for callers:
 
 1. `text_search(...)` steps out of the regular `Query` builder. It returns a
    distinct `TextSearchBuilder`, whose `.execute()` is statically typed to
@@ -222,11 +335,12 @@ for hit in rows.hits:
 [Property FTS Projections](./property-fts.md#match-attribution-opt-in) for
 how recursive schemas populate the underlying position map.
 
-#### Explicit two-shape fallback search
+#### Advanced: explicit two-shape fallback search
 
-`text_search` is the right surface for almost all application queries. For
-the narrow case where the caller wants to supply both a strict and a
-relaxed shape **verbatim** — for example, the dedup-on-write pattern where
+`search()` is the right surface for almost all application queries; if
+you want to pin the text modality, `text_search()` above is the next
+step. For the narrow case where the caller wants to supply both a strict
+and a relaxed shape **verbatim** — for example, the dedup-on-write pattern where
 you already have a canonical key and want to accept a looser match only if
 the exact key misses — use `Engine.fallback_search`:
 
@@ -274,9 +388,10 @@ You can also pass the direction as a plain string (`"in"` or `"out"`).
 
 ## Limit
 
-`limit(n)` caps the total number of result rows. Note that `vector_search`
-and `text_search` each accept their own `limit` controlling candidate set
-size at the search stage. The top-level `limit()` applies after all steps.
+`limit(n)` caps the total number of result rows. Note that `search`,
+`vector_search`, `text_search`, and `fallback_search` each accept their
+own `limit` controlling candidate set size at the search stage. The
+top-level `limit()` applies after all steps.
 
 ```python
 q = db.nodes("Document").limit(5)
@@ -379,10 +494,11 @@ for slot in results.expansions:
 | JSON bool equality | `filter_json_bool_eq(path, value)` |
 | JSON integer range | `filter_json_integer_gt/gte/lt/lte(path, value)` |
 | JSON timestamp range | `filter_json_timestamp_gt/gte/lt/lte(path, value)` |
-| Semantic similarity | `vector_search(query, limit)` |
-| Adaptive text search | `text_search(query, limit)` → `SearchRows` |
-| Explicit fallback search | `Engine.fallback_search(strict, relaxed, limit)` → `SearchRows` |
-| Match attribution | `.with_match_attribution()` on the text-search builder |
+| Unified search (recommended) | `search(query, limit)` → `SearchRows` |
+| Advanced: text-only search | `text_search(query, limit)` → `SearchRows` |
+| Advanced: vector search | `vector_search(query, limit)` |
+| Advanced: explicit fallback search | `Engine.fallback_search(strict, relaxed, limit)` → `SearchRows` |
+| Match attribution | `.with_match_attribution()` on any search builder |
 | Graph hop | `traverse(direction, label, max_depth)` |
 | Cap results | `limit(n)` |
 | Fetch results | `execute()` |
@@ -422,19 +538,29 @@ const specific = engine.nodes("Document")
   .filterContentRefEq("s3://docs/q4-report.pdf")
   .execute();
 
-// Adaptive text search — returns SearchRows, not QueryRows
+// Unified search — the recommended retrieval entry point. Returns
+// SearchRows, not QueryRows.
+const searchRows = engine.nodes("Document")
+  .search("architecture review", 50)
+  .filterJsonTextEq("$.status", "published")
+  .execute();
+for (const hit of searchRows.hits) {
+  console.log(hit.node.logicalId, hit.score, hit.modality, hit.source,
+              hit.matchMode, hit.snippet);
+}
+console.log(searchRows.strictHitCount, searchRows.relaxedHitCount,
+            searchRows.vectorHitCount);
+
+// Advanced: pin to the text modality (no vector branch).
 const ftsRows = engine.nodes("Document")
   .textSearch("architecture review", 50)
   .filterJsonTextEq("$.status", "published")
   .execute();
-for (const hit of ftsRows.hits) {
-  console.log(hit.node.logicalId, hit.score, hit.source, hit.matchMode, hit.snippet);
-}
-console.log(ftsRows.strictHitCount, ftsRows.relaxedHitCount, ftsRows.fallbackUsed);
 
-// Opt-in match attribution (for recursive property FTS schemas)
+// Opt-in match attribution (for recursive property FTS schemas) — works
+// on search() and on the advanced text_search() override alike.
 const attributed = engine.nodes("KnowledgeItem")
-  .textSearch("quarterly docs", 10)
+  .search("quarterly docs", 10)
   .withMatchAttribution()
   .execute();
 

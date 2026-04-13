@@ -7,7 +7,7 @@ chunks, this is the feature to use.
 
 For background on chunks and the standard chunk-based FTS path, see
 [Data Model](../concepts/data-model.md) and
-[Querying Data](./querying.md#adaptive-text-search).
+[Querying Data](./querying.md#unified-search-recommended).
 
 ## When to Use Property FTS
 
@@ -29,13 +29,22 @@ searchable content lives in their JSON `properties`, not in chunks.
 - Free-form text that doesn't map to fixed property paths
 
 **Both together:** A node kind can have both chunks and property projections.
-`text_search(...)` transparently searches both and returns unified
-[`SearchRows`](../reference/query.md) — each `SearchHit` carries a
+The unified [`search(...)`](./querying.md#unified-search-recommended)
+entry point — and the advanced `text_search(...)` override — transparently
+searches both and returns unified
+[`SearchRows`](../reference/query.md): each `SearchHit` carries a
 `source` field indicating whether it came from a chunk or a property-FTS
-row. The adaptive search policy is described in
-[Querying Data](./querying.md#adaptive-text-search); the strict
-query grammar is documented in
+row. The strict query grammar is documented in
 [Text Query Syntax](./text-query-syntax.md).
+
+This is the mechanism that lets `search()` match tokens inside
+structured JSON properties. Register a property FTS schema on a kind,
+and text inside the declared paths becomes first-class retrievable
+content — without chunks, without reshaping your write path, and
+composable with the `filter_json_*` family on the resulting
+`SearchBuilder`. See
+[Querying Data](./querying.md#unified-search-recommended) for the
+`filter_json_*` vs property FTS contrast.
 
 ## How It Works
 
@@ -45,9 +54,10 @@ query grammar is documented in
 2. **Write nodes normally.** The engine extracts the declared paths at write
    time and maintains a derived FTS row plus (for recursive paths) a
    position-map row per leaf, all in the same transaction as the node write.
-3. **Search with `text_search(...)`.** The adaptive text-search pipeline
+3. **Search with `search(...)`.** The unified retrieval pipeline
    transparently covers both chunk-backed and property-backed hits. No
-   separate query API is needed.
+   separate query API is needed. (The advanced `text_search(...)` and
+   `fallback_search(...)` overrides read the same projections.)
 
 Property FTS rows — both the blob and the position map — are **derived
 state**. They are rebuilt from canonical nodes and schemas. You never
@@ -226,15 +236,17 @@ FTS row is rebuilt.
 
 ## Searching
 
-Use the same `text_search(...)` you already use for chunk-based FTS. It
-returns [`SearchRows`](../reference/query.md) — see
-[Querying Data](./querying.md#adaptive-text-search) for the full
-adaptive-search contract.
+Use the unified [`search(...)`](./querying.md#unified-search-recommended)
+entry point you already use for chunk-based FTS. It returns
+[`SearchRows`](../reference/query.md) — see
+[Querying Data](./querying.md#unified-search-recommended) for the full
+contract. (The advanced `text_search(...)` override works identically if
+you need to pin the modality.)
 
 === "Python"
 
     ```python
-    rows = db.nodes("Goal").text_search("redesign", 10).execute()
+    rows = db.nodes("Goal").search("redesign", 10).execute()
     for hit in rows.hits:
         print(hit.node.logical_id, hit.score, hit.source.value, hit.snippet)
     ```
@@ -242,7 +254,7 @@ adaptive-search contract.
 === "TypeScript"
 
     ```typescript
-    const rows = engine.nodes("Goal").textSearch("redesign", 10).execute();
+    const rows = engine.nodes("Goal").search("redesign", 10).execute();
     for (const hit of rows.hits) {
         console.log(hit.node.logicalId, hit.score, hit.source, hit.snippet);
     }
@@ -259,14 +271,19 @@ both chunks and property projections returns results from both.
 For kinds with recursive-mode property paths, the engine maintains a
 sidecar position map (see [Position Map](#position-map) below). Callers
 can opt in to **per-hit match attribution**, which tells them which
-registered path(s) actually produced the FTS match for each hit:
+registered path(s) actually produced the FTS match for each hit. It is
+available on every search surface — unified `search()`, the advanced
+`text_search()` override, and `fallback_search()` — via the same
+`with_match_attribution()` builder method. See
+[Querying Data](./querying.md#unified-search-recommended) for how
+`search()` carries the attribution through to `SearchHit.attribution`.
 
 === "Python"
 
     ```python
     rows = (
         db.nodes("KnowledgeItem")
-        .text_search("quarterly docs", 10)
+        .search("quarterly docs", 10)
         .with_match_attribution()
         .execute()
     )
@@ -280,7 +297,7 @@ registered path(s) actually produced the FTS match for each hit:
     ```typescript
     const rows = engine
         .nodes("KnowledgeItem")
-        .textSearch("quarterly docs", 10)
+        .search("quarterly docs", 10)
         .withMatchAttribution()
         .execute();
     for (const hit of rows.hits) {
@@ -469,7 +486,7 @@ All of these should be zero in a healthy database. If any are non-zero, run
   match attribution tells you *after the fact* which path matched.
 - **Adaptive relaxation is engine-owned**: you cannot tune the relaxed
   branch per call. Use
-  [`Engine.fallback_search`](./querying.md#explicit-two-shape-fallback-search)
+  [`Engine.fallback_search`](./querying.md#advanced-explicit-two-shape-fallback-search)
   if you need to supply a strict and relaxed shape verbatim.
 - **Recursive rebuild is synchronous**: registering a schema with a new
   recursive path rebuilds derived state for every active node of that

@@ -1,19 +1,23 @@
 # Text Query Syntax
 
-This page defines the supported query-language subset for
-`Query.text_search(...)`.
+This page defines the supported query-language subset for the text
+branch of all `fathomdb` search surfaces — the unified
+[`search()`](./querying.md#unified-search-recommended) entry point and
+the advanced `text_search()` and `fallback_search()` overrides.
 
-`fathomdb` does not expose raw FTS5 syntax through `text_search()`. Instead,
-it accepts a constrained, familiar search-box subset and lowers that subset to
-SQLite FTS5 safely.
+`fathomdb` does not expose raw FTS5 syntax through any of these surfaces.
+Instead, it accepts a constrained, familiar search-box subset and lowers
+that subset to SQLite FTS5 safely.
 
-## How this fits into adaptive search
+## How this fits into the search pipeline
 
-`text_search()` is an **adaptive** surface: the engine runs two branches
-under the hood (strict-then-relaxed) and merges them into a single
-`SearchRows` result. The grammar documented on this page defines the
-**strict half** of that policy — the interpretation the engine gives to
-your query when it lowers it literally to FTS5.
+`search()` and `text_search()` are **adaptive**: the engine runs two
+branches under the hood (strict-then-relaxed) and merges them into a
+single `SearchRows` result. The grammar documented on this page defines
+the **strict half** of that policy — the interpretation the engine gives
+to your query when it lowers it literally to FTS5. It applies uniformly
+to the strict text branch of `search()`, to `text_search()`, and to the
+`strict_query` argument of `fallback_search()`.
 
 The relaxed half of the policy is engine-owned. It is derived from the
 strict AST (term-level alternatives, softened exclusions, per-term
@@ -22,10 +26,10 @@ relaxed queries by hand through `text_search()`.
 
 For the shape of the adaptive policy, per-branch hit counts, and the
 `fallback_used` / `strict_hit_count` / `relaxed_hit_count` fields on
-`SearchRows`, see [Querying Data](./querying.md#adaptive-text-search). For
+`SearchRows`, see [Querying Data](./querying.md#unified-search-recommended). For
 the narrow case where you want to supply both a strict and a relaxed
 shape verbatim — bypassing adaptive derivation — use
-[`Engine.fallback_search`](./querying.md#explicit-two-shape-fallback-search).
+[`Engine.fallback_search`](./querying.md#advanced-explicit-two-shape-fallback-search).
 
 ## Supported forms
 
@@ -151,6 +155,6 @@ documentation explicitly expands the supported subset.
 
 See also:
 
-- [Querying Data](querying.md#adaptive-text-search)
+- [Querying Data](querying.md#unified-search-recommended)
 - [Property FTS Projections](property-fts.md)
 - [Query API Reference](../reference/query.md)
