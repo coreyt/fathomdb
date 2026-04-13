@@ -17,6 +17,12 @@
 
 use thiserror::Error;
 
+#[cfg(feature = "default-embedder")]
+pub mod builtin;
+
+#[cfg(feature = "default-embedder")]
+pub use builtin::BuiltinBgeSmallEmbedder;
+
 /// A read-time query embedder.
 ///
 /// Implementations must be `Send + Sync` so the coordinator can share a

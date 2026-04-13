@@ -1,0 +1,22 @@
+# Workspace cargo configuration.
+#
+# The `default-embedder` cargo feature (Phase 12.5b) pulls in
+# `candle-core` -> `gemm` -> `gemm-f16`, whose aarch64 kernels use inline
+# assembly that requires the `fullfp16` target feature. rustc's default
+# CPU for `aarch64-unknown-linux-gnu` is conservative and does NOT enable
+# it, so the build fails with
+#   "instruction requires: fullfp16"
+# on every aarch64 host, regardless of whether the CPU actually supports
+# fp16 (which has been standard since ARMv8.2-A circa 2017).
+#
+# Enabling `+fp16` here is safe: it only tells LLVM that fp16 instructions
+# are legal in the emitted assembly. Code that does not use f16 intrinsics
+# (i.e. all of fathomdb proper) is byte-identical with or without this
+# flag. The only consumer is gemm-f16, which is only linked under the
+# `default-embedder` feature.
+#
+# If you are building on a pre-ARMv8.2 aarch64 CPU and hit an illegal
+# instruction at runtime, remove this stanza and also avoid the
+# `default-embedder` feature — that combination is unsupported.
+[target.aarch64-unknown-linux-gnu]
+rustflags = ["-C", "target-feature=+fp16"]

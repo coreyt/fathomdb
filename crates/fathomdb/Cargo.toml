@@ -21,6 +21,7 @@ node = ["dep:napi", "dep:napi-derive"]
 python = ["dep:pyo3", "dep:pyo3-log"]
 sqlite-vec = ["fathomdb-engine/sqlite-vec"]
 tracing = ["fathomdb-engine/tracing"]
+default-embedder = ["fathomdb-engine/default-embedder"]
 
 [dependencies]
 fathomdb-engine.workspace = true
