@@ -5,10 +5,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use fathomdb_query::{
-    BindValue, ComparisonOp, CompiledGroupedQuery, CompiledQuery, CompiledSearch,
-    CompiledSearchPlan, CompiledVectorSearch, DrivingTable, ExpansionSlot, FALLBACK_TRIGGER_K,
-    HitAttribution, Predicate, RetrievalModality, ScalarValue, SearchBranch, SearchHit,
-    SearchHitSource, SearchMatchMode, SearchRows, ShapeHash, render_text_query_fts5,
+    BindValue, ComparisonOp, CompiledGroupedQuery, CompiledQuery, CompiledRetrievalPlan,
+    CompiledSearch, CompiledSearchPlan, CompiledVectorSearch, DrivingTable, ExpansionSlot,
+    FALLBACK_TRIGGER_K, HitAttribution, Predicate, RetrievalModality, ScalarValue, SearchBranch,
+    SearchHit, SearchHitSource, SearchMatchMode, SearchRows, ShapeHash, render_text_query_fts5,
 };
 use fathomdb_schema::SchemaManager;
 use rusqlite::{Connection, OptionalExtension, params_from_iter, types::Value};
@@ -952,6 +952,116 @@ impl ExecutionCoordinator {
         })
     }
 
+    /// Execute a unified [`CompiledRetrievalPlan`] (Phase 12 `search()`
+    /// entry point) and return deterministically ranked, block-ordered
+    /// [`SearchRows`].
+    ///
+    /// Stages, per addendum 1 §Retrieval Planner Model:
+    ///
+    /// 1. **Text strict.** Always runs (empty query short-circuits to an
+    ///    empty branch result inside `run_search_branch`).
+    /// 2. **Text relaxed.** Runs iff the plan carries a relaxed branch AND
+    ///    the strict branch returned fewer than `min(FALLBACK_TRIGGER_K,
+    ///    limit)` hits — same v1 (`K = 1`) zero-hits-only trigger as the
+    ///    Phase 6 text-only path.
+    /// 3. **Vector.** Runs iff text retrieval (strict + relaxed combined)
+    ///    returned zero hits AND `plan.vector` is `Some`. **In v1 the
+    ///    planner never wires a vector branch through `search()`, so this
+    ///    code path is structurally present but dormant.** A future phase
+    ///    that wires read-time embedding into `compile_retrieval_plan` will
+    ///    immediately light it up.
+    /// 4. **Fusion.** All collected hits are merged via
+    ///    [`merge_search_branches_three`], which produces strict ->
+    ///    relaxed -> vector block ordering with cross-branch dedup
+    ///    resolved by branch precedence.
+    ///
+    /// `was_degraded` covers only the relaxed-branch cap miss in v1. The
+    /// addendum's "vector capability miss => `was_degraded`" semantics
+    /// applies to `search()` only when the unified planner actually fires
+    /// the vector branch, which v1 never does.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if any stage's SQL cannot be prepared or
+    /// executed for a non-capability-miss reason.
+    pub fn execute_retrieval_plan(
+        &self,
+        plan: &CompiledRetrievalPlan,
+    ) -> Result<SearchRows, EngineError> {
+        let strict = &plan.text.strict;
+        let limit = strict.limit;
+
+        // Stage 1: text strict.
+        let strict_hits = self.run_search_branch(strict, SearchBranch::Strict)?;
+
+        // Stage 2: text relaxed. Same K=1 zero-hits-only trigger the Phase 6
+        // path uses.
+        let fallback_threshold = FALLBACK_TRIGGER_K.min(limit);
+        let strict_underfilled = strict_hits.len() < fallback_threshold;
+        let mut relaxed_hits: Vec<SearchHit> = Vec::new();
+        let mut fallback_used = false;
+        let mut was_degraded = false;
+        if let Some(relaxed) = plan.text.relaxed.as_ref()
+            && strict_underfilled
+        {
+            relaxed_hits = self.run_search_branch(relaxed, SearchBranch::Relaxed)?;
+            fallback_used = true;
+            was_degraded = plan.was_degraded_at_plan_time;
+        }
+
+        // Stage 3: vector. Runs only when text retrieval is empty AND a
+        // vector branch is present. v1 `compile_retrieval_plan` always
+        // leaves `plan.vector` as `None`, so the branch is dormant under
+        // `search()` until a future phase wires read-time embedding.
+        let mut vector_hits: Vec<SearchHit> = Vec::new();
+        if let Some(vector) = plan.vector.as_ref()
+            && strict_hits.is_empty()
+            && relaxed_hits.is_empty()
+        {
+            let vector_rows = self.execute_compiled_vector_search(vector)?;
+            // `execute_compiled_vector_search` returns a fully populated
+            // `SearchRows`. Promote its hits into the merge stage and lift
+            // its capability-miss `was_degraded` flag onto the unified
+            // result, per addendum §Vector-Specific Behavior.
+            vector_hits = vector_rows.hits;
+            if vector_rows.was_degraded {
+                was_degraded = true;
+            }
+        }
+
+        // Stage 4: fusion.
+        let mut merged = merge_search_branches_three(strict_hits, relaxed_hits, vector_hits, limit);
+        if strict.attribution_requested {
+            let relaxed_text_query = plan.text.relaxed.as_ref().map(|r| &r.text_query);
+            self.populate_attribution_for_hits(
+                &mut merged,
+                &strict.text_query,
+                relaxed_text_query,
+            )?;
+        }
+
+        let strict_hit_count = merged
+            .iter()
+            .filter(|h| matches!(h.match_mode, Some(SearchMatchMode::Strict)))
+            .count();
+        let relaxed_hit_count = merged
+            .iter()
+            .filter(|h| matches!(h.match_mode, Some(SearchMatchMode::Relaxed)))
+            .count();
+        let vector_hit_count = merged
+            .iter()
+            .filter(|h| matches!(h.modality, RetrievalModality::Vector))
+            .count();
+
+        Ok(SearchRows {
+            hits: merged,
+            strict_hit_count,
+            relaxed_hit_count,
+            vector_hit_count,
+            fallback_used,
+            was_degraded,
+        })
+    }
+
     /// Execute a single search branch against the underlying FTS surfaces.
     ///
     /// This is the shared SQL emission path used by
@@ -1755,8 +1865,29 @@ fn merge_search_branches(
     relaxed: Vec<SearchHit>,
     limit: usize,
 ) -> Vec<SearchHit> {
+    merge_search_branches_three(strict, relaxed, Vec::new(), limit)
+}
+
+/// Three-branch generalization of [`merge_search_branches`]: orders hits as
+/// (strict block, relaxed block, vector block) per addendum 1 §Fusion
+/// Semantics, with cross-branch dedup resolved by branch precedence
+/// (strict > relaxed > vector). Within each block the existing
+/// [`dedup_branch_hits`] rule applies (score desc, `logical_id` asc, source
+/// priority chunk > property > vector).
+///
+/// Phase 12 (the unified `search()` entry point) calls this directly. The
+/// two-branch [`merge_search_branches`] wrapper is preserved as a
+/// convenience for the text-only `execute_compiled_search_plan` path; both
+/// reduce to the same code.
+fn merge_search_branches_three(
+    strict: Vec<SearchHit>,
+    relaxed: Vec<SearchHit>,
+    vector: Vec<SearchHit>,
+    limit: usize,
+) -> Vec<SearchHit> {
     let strict_block = dedup_branch_hits(strict);
     let relaxed_block = dedup_branch_hits(relaxed);
+    let vector_block = dedup_branch_hits(vector);
 
     let mut seen: std::collections::HashSet<String> = strict_block
         .iter()
@@ -1765,6 +1896,11 @@ fn merge_search_branches(
 
     let mut merged = strict_block;
     for hit in relaxed_block {
+        if seen.insert(hit.node.logical_id.clone()) {
+            merged.push(hit);
+        }
+    }
+    for hit in vector_block {
         if seen.insert(hit.node.logical_id.clone()) {
             merged.push(hit);
         }
@@ -2026,7 +2162,8 @@ mod tests {
     };
 
     use super::{
-        bind_value_to_sql, is_vec_table_absent, merge_search_branches, wrap_node_row_projection_sql,
+        bind_value_to_sql, is_vec_table_absent, merge_search_branches, merge_search_branches_three,
+        wrap_node_row_projection_sql,
     };
 
     fn mk_hit(
@@ -2175,6 +2312,108 @@ mod tests {
         assert_eq!(merged.len(), 2);
         assert_eq!(merged[0].node.logical_id, "a");
         assert_eq!(merged[1].node.logical_id, "b");
+    }
+
+    /// P12 architectural pin: the generalized three-branch merger must
+    /// produce strict -> relaxed -> vector block ordering with cross-branch
+    /// dedup resolved by branch precedence (strict > relaxed > vector).
+    /// v1 `search()` policy never fires the vector branch through the
+    /// unified planner because read-time embedding is deferred, but the
+    /// merge helper itself must be ready for the day the planner does so —
+    /// otherwise wiring the future phase requires touching the core merge
+    /// code as well as the planner.
+    #[test]
+    fn search_architecturally_supports_three_branch_fusion() {
+        let strict = vec![mk_hit(
+            "alpha",
+            1.0,
+            SearchMatchMode::Strict,
+            SearchHitSource::Chunk,
+        )];
+        let relaxed = vec![mk_hit(
+            "bravo",
+            5.0,
+            SearchMatchMode::Relaxed,
+            SearchHitSource::Chunk,
+        )];
+        // Synthetic vector hit with the highest score. Three-block ordering
+        // must still place it last.
+        let mut vector_hit = mk_hit(
+            "charlie",
+            9.9,
+            SearchMatchMode::Strict,
+            SearchHitSource::Vector,
+        );
+        // Vector hits actually carry match_mode=None per the addendum, but
+        // the merge helper's ordering is mode-agnostic; we override here to
+        // pin the modality field for the test.
+        vector_hit.match_mode = None;
+        vector_hit.modality = RetrievalModality::Vector;
+        let vector = vec![vector_hit];
+
+        let merged = merge_search_branches_three(strict, relaxed, vector, 10);
+        assert_eq!(merged.len(), 3);
+        assert_eq!(merged[0].node.logical_id, "alpha");
+        assert_eq!(merged[1].node.logical_id, "bravo");
+        assert_eq!(merged[2].node.logical_id, "charlie");
+        // Vector block comes last regardless of its higher score.
+        assert!(matches!(merged[2].source, SearchHitSource::Vector));
+
+        // Cross-branch dedup: a logical_id that appears in multiple branches
+        // is attributed to its highest-priority originating branch only.
+        let strict2 = vec![mk_hit(
+            "shared",
+            0.5,
+            SearchMatchMode::Strict,
+            SearchHitSource::Chunk,
+        )];
+        let relaxed2 = vec![mk_hit(
+            "shared",
+            5.0,
+            SearchMatchMode::Relaxed,
+            SearchHitSource::Chunk,
+        )];
+        let mut vshared = mk_hit(
+            "shared",
+            9.9,
+            SearchMatchMode::Strict,
+            SearchHitSource::Vector,
+        );
+        vshared.match_mode = None;
+        vshared.modality = RetrievalModality::Vector;
+        let merged2 = merge_search_branches_three(strict2, relaxed2, vec![vshared], 10);
+        assert_eq!(merged2.len(), 1, "shared logical_id must dedup to one row");
+        assert!(matches!(
+            merged2[0].match_mode,
+            Some(SearchMatchMode::Strict)
+        ));
+        assert!(matches!(merged2[0].source, SearchHitSource::Chunk));
+
+        // Relaxed wins over vector when strict is absent.
+        let mut vshared2 = mk_hit(
+            "shared",
+            9.9,
+            SearchMatchMode::Strict,
+            SearchHitSource::Vector,
+        );
+        vshared2.match_mode = None;
+        vshared2.modality = RetrievalModality::Vector;
+        let merged3 = merge_search_branches_three(
+            vec![],
+            vec![mk_hit(
+                "shared",
+                1.0,
+                SearchMatchMode::Relaxed,
+                SearchHitSource::Chunk,
+            )],
+            vec![vshared2],
+            10,
+        );
+        assert_eq!(merged3.len(), 1);
+        assert!(matches!(
+            merged3[0].match_mode,
+            Some(SearchMatchMode::Relaxed)
+        ));
     }
 
     #[test]
