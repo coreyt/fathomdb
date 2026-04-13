@@ -186,6 +186,17 @@ impl EngineCore {
         })
     }
 
+    /// Execute an adaptive or fallback text search and return the serialized
+    /// [`crate::search_ffi::PySearchRows`] as a JSON string. The `request_json`
+    /// envelope is a [`crate::search_ffi::PySearchRequest`] (mode, strict
+    /// query, optional relaxed query, filters, limit, attribution flag).
+    pub fn execute_search(&self, py: Python<'_>, request_json: &str) -> PyResult<String> {
+        self.with_engine(|engine| {
+            py.allow_threads(|| crate::search_ffi::execute_search_json(engine, request_json))
+                .map_err(map_search_ffi_error)
+        })
+    }
+
     pub fn execute_grouped_ast(&self, py: Python<'_>, ast_json: &str) -> PyResult<String> {
         let ast = parse_ast(ast_json)?;
         let compiled = compile_grouped_query(&ast).map_err(map_compile_error)?;
@@ -779,6 +790,18 @@ fn encode_json<T: serde::Serialize>(value: T) -> PyResult<String> {
 
 fn map_compile_error(error: RustCompileError) -> PyErr {
     CompileError::new_err(error.to_string())
+}
+
+fn map_search_ffi_error(error: crate::search_ffi::SearchFfiError) -> PyErr {
+    use crate::search_ffi::SearchFfiError;
+    match error {
+        SearchFfiError::Parse(err) => BridgeError::new_err(format!("search request parse: {err}")),
+        SearchFfiError::Compile(err) => CompileError::new_err(format!("{err:?}")),
+        SearchFfiError::Engine(err) => map_engine_error(err),
+        SearchFfiError::Serialize(err) => {
+            BridgeError::new_err(format!("search response serialize: {err}"))
+        }
+    }
 }
 
 fn map_engine_error(error: EngineError) -> PyErr {

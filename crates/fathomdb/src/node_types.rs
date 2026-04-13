@@ -105,6 +105,21 @@ pub(crate) fn map_compile_error(error: RustCompileError) -> Error {
     napi_error(ErrorCode::Compile, error.to_string())
 }
 
+pub(crate) fn map_search_ffi_error(error: crate::search_ffi::SearchFfiError) -> Error {
+    use crate::search_ffi::SearchFfiError;
+    match error {
+        SearchFfiError::Parse(err) => {
+            napi_error(ErrorCode::Bridge, format!("search request parse: {err}"))
+        }
+        SearchFfiError::Compile(err) => napi_error(ErrorCode::Compile, format!("{err:?}")),
+        SearchFfiError::Engine(err) => map_engine_error(err),
+        SearchFfiError::Serialize(err) => napi_error(
+            ErrorCode::Bridge,
+            format!("search response serialize: {err}"),
+        ),
+    }
+}
+
 pub(crate) fn map_engine_error(error: EngineError) -> Error {
     match error {
         EngineError::Sqlite(error) => napi_error(ErrorCode::Sqlite, error.to_string()),

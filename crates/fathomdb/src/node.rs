@@ -9,8 +9,8 @@ use napi_derive::napi;
 
 use crate::node_types::{
     MAX_AST_JSON_BYTES, MAX_REQUEST_JSON_BYTES, MAX_WRITE_JSON_BYTES, check_json_size, encode_json,
-    invalid_argument, map_compile_error, map_engine_error, parse_projection_target,
-    parse_provenance_mode, parse_telemetry_level,
+    invalid_argument, map_compile_error, map_engine_error, map_search_ffi_error,
+    parse_projection_target, parse_provenance_mode, parse_telemetry_level,
 };
 use crate::python_types::{
     PyCompiledGroupedQuery, PyCompiledQuery, PyGroupedQueryRows, PyIntegrityReport,
@@ -129,6 +129,17 @@ impl NodeEngineCore {
                 .execute_compiled_read(&compiled)
                 .map_err(map_engine_error)?;
             encode_json(PyQueryRows::from(rows))
+        })
+    }
+
+    /// Execute an adaptive or fallback text search and return the serialized
+    /// `PySearchRows` JSON. The `request_json` envelope is a
+    /// [`crate::search_ffi::PySearchRequest`].
+    #[napi]
+    pub fn execute_search(&self, request_json: String) -> Result<String> {
+        self.with_engine(|engine| {
+            crate::search_ffi::execute_search_json(engine, &request_json)
+                .map_err(map_search_ffi_error)
         })
     }
 

@@ -10,6 +10,7 @@ mod python;
 #[cfg(any(feature = "python", feature = "node"))]
 mod python_types;
 mod search;
+pub mod search_ffi;
 mod write_request_builder;
 
 pub use fathomdb_engine::{
