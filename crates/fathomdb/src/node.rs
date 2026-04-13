@@ -9,8 +9,8 @@ use napi_derive::napi;
 
 use crate::node_types::{
     MAX_AST_JSON_BYTES, MAX_REQUEST_JSON_BYTES, MAX_WRITE_JSON_BYTES, check_json_size, encode_json,
-    invalid_argument, map_compile_error, map_engine_error, map_search_ffi_error,
-    parse_projection_target, parse_provenance_mode, parse_telemetry_level,
+    invalid_argument, map_admin_ffi_error, map_compile_error, map_engine_error,
+    map_search_ffi_error, parse_projection_target, parse_provenance_mode, parse_telemetry_level,
 };
 use crate::python_types::{
     PyCompiledGroupedQuery, PyCompiledQuery, PyGroupedQueryRows, PyIntegrityReport,
@@ -297,6 +297,21 @@ impl NodeEngineCore {
                 .register_fts_property_schema(&kind, &paths, separator.as_deref())
                 .map_err(map_engine_error)?;
             encode_json(record)
+        })
+    }
+
+    /// Register (or update) an FTS property projection schema with
+    /// per-path modes (scalar vs recursive) and optional exclude paths.
+    /// The `request_json` envelope matches
+    /// `crate::admin_ffi::PyRegisterFtsPropertySchemaRequest`.
+    #[napi]
+    pub fn register_fts_property_schema_with_entries(
+        &self,
+        request_json: String,
+    ) -> Result<String> {
+        self.with_engine(|engine| {
+            crate::admin_ffi::register_fts_property_schema_with_entries_json(engine, &request_json)
+                .map_err(map_admin_ffi_error)
         })
     }
 

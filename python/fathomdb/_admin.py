@@ -7,6 +7,8 @@ from ._feedback import run_with_feedback
 from ._fathomdb import EngineCore
 from ._types import (
     FeedbackConfig,
+    FtsPropertyPathMode,
+    FtsPropertyPathSpec,
     FtsPropertySchemaRecord,
     IntegrityReport,
     LogicalPurgeReport,
@@ -359,6 +361,58 @@ class AdminClient:
                     feedback_config=feedback_config,
                     operation=lambda: self._core.register_fts_property_schema(
                         kind, json.dumps(property_paths), separator
+                    ),
+                )
+            )
+        )
+
+    def register_fts_property_schema_with_entries(
+        self,
+        kind: str,
+        entries: list[FtsPropertyPathSpec] | tuple[FtsPropertyPathSpec, ...],
+        separator: str = " ",
+        exclude_paths: list[str] | tuple[str, ...] = (),
+        *,
+        progress_callback=None,
+        feedback_config: FeedbackConfig | None = None,
+    ) -> FtsPropertySchemaRecord:
+        """Register an FTS property schema with per-path modes.
+
+        Unlike :meth:`register_fts_property_schema`, this variant accepts
+        :class:`FtsPropertyPathSpec` entries and therefore supports
+        :attr:`FtsPropertyPathMode.RECURSIVE` paths. Recursive paths cause
+        the engine to walk every scalar leaf under the given JSON path and
+        emit one position-map row per leaf — making them eligible for
+        ``with_match_attribution()`` on subsequent text searches.
+
+        When any ``mode == RECURSIVE`` entry is introduced for a kind, the
+        engine eagerly rebuilds ``fts_node_properties`` and
+        ``fts_node_property_positions`` for every active node of that kind
+        in the same transaction as the schema upsert.
+
+        Args:
+            kind: Node kind to register (e.g. ``"KnowledgeItem"``).
+            entries: Ordered list of :class:`FtsPropertyPathSpec` entries.
+            separator: Concatenation separator (default ``" "``).
+            exclude_paths: JSON paths that should be skipped during
+                recursive walks. Each entry must start with ``$.``.
+        """
+        request = {
+            "kind": kind,
+            "entries": [entry.to_wire() for entry in entries],
+            "separator": separator,
+            "exclude_paths": list(exclude_paths),
+        }
+        return FtsPropertySchemaRecord.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="admin.register_fts_property_schema_with_entries",
+                    metadata={"kind": kind},
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=lambda: self._core.register_fts_property_schema_with_entries(
+                        json.dumps(request)
                     ),
                 )
             )

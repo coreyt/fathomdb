@@ -9,6 +9,8 @@ from fathomdb import (
     ChunkPolicy,
     Engine,
     FallbackSearchBuilder,
+    FtsPropertyPathMode,
+    FtsPropertyPathSpec,
     HitAttribution,
     NodeInsert,
     QueryRows,
@@ -120,31 +122,64 @@ def test_text_search_with_filter_kind_eq_chains(tmp_path: Path) -> None:
 
 def test_text_search_with_match_attribution_populates_leaves(tmp_path: Path) -> None:
     db = Engine.open(tmp_path / "t.db")
-    _seed_budget_goals(db)
+
+    # Register a schema where $.payload is recursive so the engine walks
+    # every scalar leaf and produces per-leaf position-map rows. This is
+    # the only code path that populates HitAttribution.matched_paths with
+    # non-empty entries.
+    db.admin.register_fts_property_schema_with_entries(
+        "KnowledgeItem",
+        [
+            FtsPropertyPathSpec(path="$.title", mode=FtsPropertyPathMode.SCALAR),
+            FtsPropertyPathSpec(path="$.payload", mode=FtsPropertyPathMode.RECURSIVE),
+        ],
+        separator=" ",
+        exclude_paths=[],
+    )
+    db.write(
+        WriteRequest(
+            label="seed-knowledge",
+            nodes=[
+                NodeInsert(
+                    row_id=new_row_id(),
+                    logical_id="ki-alpha",
+                    kind="KnowledgeItem",
+                    properties={
+                        "title": "alpha doc",
+                        "payload": {
+                            "body": "quarterly rollup summary",
+                            "notes": ["review pending"],
+                        },
+                    },
+                    source_ref="seed",
+                    upsert=False,
+                    chunk_policy=ChunkPolicy.PRESERVE,
+                ),
+            ],
+        )
+    )
 
     rows = (
-        db.query("Goal")
-        .text_search("rollup", 10)
+        db.query("KnowledgeItem")
+        .text_search("quarterly", 10)
         .with_match_attribution()
         .execute()
     )
     assert len(rows.hits) >= 1
-    # Every hit must carry an attribution payload when attribution_requested
-    # is set on the request — even if the matched_paths vector is empty
-    # (chunk-backed hits and scalar-only property hits degrade to an empty
-    # vector rather than erroring, per the coordinator's documented
-    # contract). Without the public Python SDK exposing a way to register a
-    # recursive property schema, the payload itself is the strongest
-    # invariant we can assert here: the FFI flag was honored and the
-    # HitAttribution dataclass deserialized on the client side.
     attributed = [h for h in rows.hits if h.attribution is not None]
     assert attributed, "at least one hit should have attribution populated"
     att = attributed[0].attribution
     assert isinstance(att, HitAttribution)
     assert isinstance(att.matched_paths, tuple)
+    assert len(att.matched_paths) >= 1, (
+        f"recursive schema must populate matched_paths; got {att.matched_paths!r}"
+    )
+    assert any(p.startswith("$.payload.") for p in att.matched_paths), (
+        f"expected at least one $.payload.* match path; got {att.matched_paths!r}"
+    )
 
     # Baseline: without with_match_attribution(), attribution is always None.
-    plain = db.query("Goal").text_search("rollup", 10).execute()
+    plain = db.query("KnowledgeItem").text_search("quarterly", 10).execute()
     assert plain.hits, "baseline query should still return hits"
     assert all(h.attribution is None for h in plain.hits)
 

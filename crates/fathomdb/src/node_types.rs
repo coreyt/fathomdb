@@ -105,6 +105,20 @@ pub(crate) fn map_compile_error(error: RustCompileError) -> Error {
     napi_error(ErrorCode::Compile, error.to_string())
 }
 
+pub(crate) fn map_admin_ffi_error(error: crate::admin_ffi::AdminFfiError) -> Error {
+    use crate::admin_ffi::AdminFfiError;
+    match error {
+        AdminFfiError::Parse(err) => {
+            napi_error(ErrorCode::Bridge, format!("admin request parse: {err}"))
+        }
+        AdminFfiError::Engine(err) => map_engine_error(err),
+        AdminFfiError::Serialize(err) => napi_error(
+            ErrorCode::Bridge,
+            format!("admin response serialize: {err}"),
+        ),
+    }
+}
+
 pub(crate) fn map_search_ffi_error(error: crate::search_ffi::SearchFfiError) -> Error {
     use crate::search_ffi::SearchFfiError;
     match error {

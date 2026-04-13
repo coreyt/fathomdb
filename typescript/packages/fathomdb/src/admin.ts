@@ -24,6 +24,7 @@ import {
   semanticReportFromWire,
   traceReportFromWire,
   type FeedbackConfig,
+  type FtsPropertyPathSpec,
   type FtsPropertySchemaRecord,
   type IntegrityReport,
   type LogicalPurgeReport,
@@ -171,6 +172,58 @@ export class AdminClient {
    */
   registerFtsPropertySchema(kind: string, propertyPaths: string[], separator?: string, progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): FtsPropertySchemaRecord {
     return this.#run("admin.register_fts_property_schema", () => ftsPropertySchemaRecordFromWire(parseNativeJson(callNative(() => this.#core.registerFtsPropertySchema(kind, JSON.stringify(propertyPaths), separator)))), progressCallback, feedbackConfig);
+  }
+
+  /**
+   * Register (or update) an FTS property projection schema with per-path
+   * modes (scalar vs recursive) and optional exclude paths.
+   *
+   * Unlike {@link registerFtsPropertySchema}, this variant accepts
+   * {@link FtsPropertyPathSpec} entries and therefore supports
+   * `"recursive"`-mode paths. Recursive paths cause the engine to walk
+   * every scalar leaf under the given JSON path and emit one position-map
+   * row per leaf — making them eligible for
+   * `withMatchAttribution()` on subsequent text searches.
+   *
+   * When any recursive entry is introduced for a kind, the engine eagerly
+   * rebuilds `fts_node_properties` and `fts_node_property_positions` for
+   * every active node of that kind in the same transaction as the schema
+   * upsert.
+   *
+   * @param args.kind - Node kind to register (e.g. `"KnowledgeItem"`).
+   * @param args.entries - Ordered list of path specs.
+   * @param args.separator - Concatenation separator (default `" "`).
+   * @param args.excludePaths - JSON paths to skip during recursive walks.
+   */
+  registerFtsPropertySchemaWithEntries(
+    args: {
+      kind: string;
+      entries: FtsPropertyPathSpec[];
+      separator?: string;
+      excludePaths?: string[];
+    },
+    progressCallback?: ProgressCallback,
+    feedbackConfig?: FeedbackConfig,
+  ): FtsPropertySchemaRecord {
+    const request = {
+      kind: args.kind,
+      entries: args.entries,
+      separator: args.separator ?? " ",
+      exclude_paths: args.excludePaths ?? [],
+    };
+    return this.#run(
+      "admin.register_fts_property_schema_with_entries",
+      () =>
+        ftsPropertySchemaRecordFromWire(
+          parseNativeJson(
+            callNative(() =>
+              this.#core.registerFtsPropertySchemaWithEntries(JSON.stringify(request)),
+            ),
+          ),
+        ),
+      progressCallback,
+      feedbackConfig,
+    );
   }
 
   /**

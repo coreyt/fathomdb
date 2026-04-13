@@ -335,8 +335,8 @@ pub struct PySearchHit {
     pub match_mode: PySearchMatchMode,
     /// Optional display snippet.
     pub snippet: Option<String>,
-    /// Wall-clock timestamp of the active version of the node, in the
-    /// same integer unit as the underlying `nodes.created_at` column.
+    /// Seconds since the Unix epoch (1970-01-01 UTC), matching
+    /// `nodes.created_at` which is populated via `SQLite` `unixepoch()`.
     /// Serialized directly as `i64`.
     pub written_at: i64,
     /// Opaque projection row ID (e.g. `chunks.id` for chunk hits).

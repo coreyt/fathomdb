@@ -83,6 +83,8 @@ export {
   type TelemetrySnapshot,
   type TraceReport,
   // FTS property schema types
+  type FtsPropertyPathMode,
+  type FtsPropertyPathSpec,
   type FtsPropertySchemaRecord,
   // Operational collection types
   type OperationalCollectionRecord,
