@@ -363,12 +363,22 @@ def test_public_python_admin_client_exposes_fts_property_schema_lifecycle(tmp_pa
     assert record.property_paths == ["$.name", "$.description"]
     assert record.separator == " "
     assert record.format_version == 1
+    # Pack P7.7-fix: scalar-only schemas now also expose the per-entry
+    # view with every entry marked Scalar, and an empty exclude_paths.
+    from fathomdb import FtsPropertyPathMode
+
+    assert len(record.entries) == 2
+    assert all(entry.mode == FtsPropertyPathMode.SCALAR for entry in record.entries)
+    assert [entry.path for entry in record.entries] == ["$.name", "$.description"]
+    assert record.exclude_paths == []
 
     # Describe
     described = db.admin.describe_fts_property_schema("Goal")
     assert described is not None
     assert described.kind == "Goal"
     assert described.property_paths == ["$.name", "$.description"]
+    assert len(described.entries) == 2
+    assert all(entry.mode == FtsPropertyPathMode.SCALAR for entry in described.entries)
 
     # Describe missing
     missing = db.admin.describe_fts_property_schema("NoSuchKind")
@@ -394,6 +404,51 @@ def test_public_python_admin_client_exposes_fts_property_schema_lifecycle(tmp_pa
     import pytest
     with pytest.raises(Exception):
         db.admin.remove_fts_property_schema("Goal")
+
+
+def test_public_python_admin_client_round_trips_recursive_schema_entries(tmp_path: Path) -> None:
+    """Pack P7.7-fix regression: describe/list must round-trip the
+    per-entry schema (including recursive mode) for recursive schemas.
+
+    Before the fix, the engine's load path unconditionally tried to
+    deserialize the stored JSON as ``Vec<String>``, which silently fails
+    for recursive-bearing schemas (stored as object-shaped JSON) and
+    returned an empty ``property_paths`` — and no mode information at
+    all.
+    """
+    from fathomdb import (
+        Engine,
+        FtsPropertyPathMode,
+        FtsPropertyPathSpec,
+    )
+
+    db = Engine.open(tmp_path / "recursive.db")
+
+    entries = [
+        FtsPropertyPathSpec(path="$.title", mode=FtsPropertyPathMode.SCALAR),
+        FtsPropertyPathSpec(path="$.payload", mode=FtsPropertyPathMode.RECURSIVE),
+    ]
+    registered = db.admin.register_fts_property_schema_with_entries(
+        "KnowledgeItem",
+        entries,
+        exclude_paths=["$.payload.secret"],
+    )
+    assert registered.kind == "KnowledgeItem"
+    assert registered.property_paths == ["$.title", "$.payload"]
+    assert registered.entries == entries
+    assert registered.exclude_paths == ["$.payload.secret"]
+
+    described = db.admin.describe_fts_property_schema("KnowledgeItem")
+    assert described is not None
+    assert described.entries == entries
+    assert described.property_paths == ["$.title", "$.payload"]
+    assert described.exclude_paths == ["$.payload.secret"]
+    assert described.entries[1].mode == FtsPropertyPathMode.RECURSIVE
+
+    listed = db.admin.list_fts_property_schemas()
+    assert len(listed) == 1
+    assert listed[0].entries == entries
+    assert listed[0].exclude_paths == ["$.payload.secret"]
 
 
 def test_public_python_admin_client_reads_operational_rows_by_declared_fields(tmp_path: Path) -> None:
