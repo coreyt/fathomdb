@@ -2972,3 +2972,270 @@ fn search_rows_vector_hit_count_is_zero_in_phase_10() {
         "vector_hit_count must be zero until vector retrieval is wired",
     );
 }
+
+// ----- Phase 12: unified search() entry point -----
+//
+// The tests below cover the Phase 12 unified `search()` surface introduced
+// by `dev/design-adaptive-text-search-surface-addendum-1-vec.md`. The text
+// strict and text relaxed branches are wired identically to `text_search()`
+// underneath the planner; the vector branch is architecturally supported on
+// `CompiledRetrievalPlan` but never fires through `search()` in v1 because
+// read-time embedding is deferred. See `search_v1_does_not_run_vector_stage_*`
+// for the explicit pin of that constraint.
+
+#[test]
+fn search_returns_search_rows_with_text_hits() {
+    let (_db, engine) = open_engine();
+    seed_goals(&engine);
+
+    let rows = engine
+        .query("Goal")
+        .search("quarterly docs", 10)
+        .execute()
+        .expect("search executes");
+
+    assert!(!rows.hits.is_empty(), "expected at least one hit");
+    assert!(rows.strict_hit_count >= 1);
+    assert!(!rows.fallback_used);
+    assert_eq!(rows.vector_hit_count, 0);
+    assert!(!rows.was_degraded);
+    assert!(
+        rows.hits
+            .iter()
+            .all(|h| matches!(h.modality, RetrievalModality::Text))
+    );
+    assert!(
+        rows.hits
+            .iter()
+            .all(|h| matches!(h.match_mode, Some(SearchMatchMode::Strict)))
+    );
+}
+
+#[test]
+fn search_strict_miss_triggers_relaxed_branch() {
+    let (_db, engine) = open_engine();
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "seed-budget".to_owned(),
+            nodes: vec![NodeInsert {
+                row_id: "budget-row".to_owned(),
+                logical_id: "budget".to_owned(),
+                kind: "Goal".to_owned(),
+                properties: r#"{"name":"budget goal"}"#.to_owned(),
+                source_ref: Some("seed".to_owned()),
+                upsert: false,
+                chunk_policy: ChunkPolicy::Preserve,
+                content_ref: None,
+            }],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![ChunkInsert {
+                id: "budget-chunk".to_owned(),
+                node_logical_id: "budget".to_owned(),
+                text_content: "budget meeting quarterly review notes".to_owned(),
+                byte_start: None,
+                byte_end: None,
+                content_hash: None,
+            }],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![],
+        })
+        .expect("seed budget node");
+
+    let rows = engine
+        .query("Goal")
+        .search("budget zzznonexistentterm", 10)
+        .execute()
+        .expect("search executes");
+
+    assert!(
+        rows.fallback_used,
+        "relaxed branch must fire on strict miss"
+    );
+    assert_eq!(rows.strict_hit_count, 0);
+    assert!(rows.relaxed_hit_count > 0);
+    assert!(
+        rows.hits
+            .iter()
+            .any(|h| matches!(h.match_mode, Some(SearchMatchMode::Relaxed)))
+    );
+    assert_eq!(rows.vector_hit_count, 0);
+}
+
+#[test]
+fn search_with_filter_kind_eq_fuses() {
+    let (_db, engine) = open_engine();
+    seed_goals(&engine);
+
+    // Seed a non-Goal node that would match the query if kind filtering
+    // didn't fuse correctly.
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "seed-meeting".to_owned(),
+            nodes: vec![NodeInsert {
+                row_id: "meeting-quarterly-row".to_owned(),
+                logical_id: "meeting-quarterly".to_owned(),
+                kind: "Meeting".to_owned(),
+                properties: r#"{"name":"Quarterly review"}"#.to_owned(),
+                source_ref: Some("seed-meeting".to_owned()),
+                upsert: false,
+                chunk_policy: ChunkPolicy::Preserve,
+                content_ref: None,
+            }],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![ChunkInsert {
+                id: "meeting-quarterly-chunk".to_owned(),
+                node_logical_id: "meeting-quarterly".to_owned(),
+                text_content: "Quarterly planning meeting recap".to_owned(),
+                byte_start: None,
+                byte_end: None,
+                content_hash: None,
+            }],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![],
+        })
+        .expect("seed meeting node");
+
+    let rows = engine
+        .query("Goal")
+        .search("quarterly", 10)
+        .filter_kind_eq("Goal")
+        .execute()
+        .expect("search executes");
+
+    assert!(!rows.hits.is_empty());
+    assert!(
+        rows.hits.iter().all(|h| h.node.kind == "Goal"),
+        "kind filter must narrow the result set"
+    );
+}
+
+#[test]
+fn search_with_match_attribution_populates_leaves() {
+    let (_db, engine) = open_engine();
+
+    // Register a recursive property schema on Goal so attribution actually
+    // produces non-empty matched_paths for property hits.
+    engine
+        .register_fts_property_schema_with_entries(
+            "Goal",
+            &[FtsPropertyPathSpec::recursive("$.description")],
+            None,
+            &[],
+        )
+        .expect("register schema");
+
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "seed-attr".to_owned(),
+            nodes: vec![NodeInsert {
+                row_id: "g1-row".to_owned(),
+                logical_id: "g1".to_owned(),
+                kind: "Goal".to_owned(),
+                properties: r#"{"title":"Untitled","description":"Plan a uniquequarterlyword review.","tags":["alpha","beta"]}"#.to_owned(),
+                source_ref: Some("seed".to_owned()),
+                upsert: false,
+                chunk_policy: ChunkPolicy::Preserve,
+                content_ref: None,
+            }],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![],
+        })
+        .expect("seed");
+
+    let rows = engine
+        .query("Goal")
+        .search("uniquequarterlyword", 10)
+        .with_match_attribution()
+        .execute()
+        .expect("search executes");
+
+    assert!(!rows.hits.is_empty());
+    let attributed: Vec<&HitAttribution> = rows
+        .hits
+        .iter()
+        .filter_map(|h| h.attribution.as_ref())
+        .collect();
+    assert!(
+        !attributed.is_empty(),
+        "attribution must be populated when requested"
+    );
+}
+
+#[test]
+fn search_empty_query_returns_empty_search_rows() {
+    let (_db, engine) = open_engine();
+    seed_goals(&engine);
+
+    for query in ["", "   "] {
+        let rows = engine
+            .query("Goal")
+            .search(query, 10)
+            .execute()
+            .expect("search executes");
+        assert!(
+            rows.hits.is_empty(),
+            "empty/whitespace query {query:?} must return no hits"
+        );
+        assert_eq!(rows.strict_hit_count, 0);
+        assert_eq!(rows.relaxed_hit_count, 0);
+        assert_eq!(rows.vector_hit_count, 0);
+        assert!(!rows.fallback_used);
+    }
+}
+
+#[test]
+fn search_v1_does_not_run_vector_stage_for_natural_language() {
+    // Phase 12 v1 scope constraint: the unified `search()` entry point
+    // never fires the vector retrieval branch because read-time embedding
+    // of natural-language queries is deferred to a future phase. Even on
+    // an engine that HAS vector capability, a `search(...)` call against
+    // a totally novel natural-language query returns text-only results
+    // (possibly empty) with `vector_hit_count == 0` and
+    // `was_degraded == false` (this is a v1 product limitation, not a
+    // capability miss). When read-time embedding lands, this test will
+    // need to be updated to reflect the new behaviour.
+    let (_db, engine) = open_engine();
+    seed_goals(&engine);
+
+    // Use a 4-term natural-language query so the relaxed-branch cap
+    // (RELAXED_BRANCH_CAP = 4) does not fire and `was_degraded` stays
+    // false. The point of this test is to pin "v1 search() never wires
+    // the vector branch" — not to exercise the relaxed cap.
+    let rows = engine
+        .query("Goal")
+        .search("ineffable nebulous esoteric ramifications", 10)
+        .execute()
+        .expect("search executes");
+
+    assert_eq!(
+        rows.vector_hit_count, 0,
+        "v1 search() must never wire the vector branch through the planner"
+    );
+    assert!(
+        !rows.was_degraded,
+        "skipping the vector stage in v1 is a product scope limitation, not a capability miss"
+    );
+}

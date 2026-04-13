@@ -285,6 +285,46 @@ pub struct CompiledSearchPlan {
     pub was_degraded_at_plan_time: bool,
 }
 
+/// A compiled unified retrieval plan for the Phase 12 `search()` entry point.
+///
+/// `CompiledRetrievalPlan` carries the bounded set of branches the engine-owned
+/// retrieval planner may run on behalf of a single `search(query, limit)` call:
+/// the text strict + optional text relaxed pair (carried structurally as the
+/// existing Phase 6 [`CompiledSearchPlan`]) and an optional vector branch.
+///
+/// **v1 scope (Phase 12)**: the planner's `vector` branch slot is structurally
+/// supported so that the coordinator's three-block fusion path is fully wired,
+/// but [`crate::compile_retrieval_plan`] always sets `vector` to `None`. Read-
+/// time embedding of natural-language queries is not wired into the engine in
+/// v1; callers that want vector retrieval through the unified `search()`
+/// entry point will get text-only results until a future phase wires the
+/// embedding generator into the read path. Callers who want explicit vector
+/// retrieval today use the advanced `vector_search()` override (Phase 11),
+/// which takes a caller-provided vector literal.
+///
+/// `CompiledRetrievalPlan` is intentionally distinct from
+/// [`CompiledSearchPlan`]: `CompiledSearchPlan` is the text-only carrier
+/// consumed by `text_search()` and `fallback_search()`, and the two paths
+/// remain separate so the text-only call sites do not pay any vector-branch
+/// cost. The Phase 12 unified planner is a sibling, not a replacement.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CompiledRetrievalPlan {
+    /// The text branches (strict + optional relaxed) of the unified plan.
+    /// Always present — every `search()` call produces at least a strict
+    /// text branch (which may itself short-circuit to empty when the query
+    /// is `Empty` or a top-level `Not`).
+    pub text: CompiledSearchPlan,
+    /// The vector branch slot. Always `None` in v1 per the Phase 12 scope
+    /// constraint above.
+    pub vector: Option<CompiledVectorSearch>,
+    /// Mirrors [`CompiledSearchPlan::was_degraded_at_plan_time`] for the
+    /// text branches: set when the relaxed branch's alternatives list was
+    /// truncated past [`crate::RELAXED_BRANCH_CAP`] at plan-construction
+    /// time. Propagated to the result's `was_degraded` flag if and only if
+    /// the relaxed branch actually fires at execution time.
+    pub was_degraded_at_plan_time: bool,
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {

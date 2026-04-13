@@ -78,6 +78,9 @@ pub fn shape_signature(ast: &QueryAst) -> String {
 
     for step in &ast.steps {
         match step {
+            QueryStep::Search { limit, .. } => {
+                let _ = write!(&mut signature, "-Search(limit={limit})");
+            }
             QueryStep::VectorSearch { limit, .. } => {
                 let _ = write!(&mut signature, "-Vector(limit={limit})");
             }

@@ -2,7 +2,9 @@ use std::fmt::Write;
 
 use crate::fusion::partition_search_filters;
 use crate::plan::{choose_driving_table, execution_hints, shape_signature};
-use crate::search::{CompiledSearch, CompiledSearchPlan, CompiledVectorSearch};
+use crate::search::{
+    CompiledRetrievalPlan, CompiledSearch, CompiledSearchPlan, CompiledVectorSearch,
+};
 use crate::{
     ComparisonOp, DrivingTable, ExpansionSlot, Predicate, QueryAst, QueryStep, ScalarValue,
     TextQuery, TraverseDirection, derive_relaxed, render_text_query_fts5,
@@ -74,6 +76,8 @@ pub enum CompileError {
     MissingTextSearchStep,
     #[error("compile_vector_search requires exactly one VectorSearch step in the AST")]
     MissingVectorSearchStep,
+    #[error("compile_retrieval_plan requires exactly one Search step in the AST")]
+    MissingSearchStep,
 }
 
 /// Security fix H-1: Validate JSON path against a strict allowlist pattern to
@@ -647,10 +651,13 @@ pub fn compile_search(ast: &QueryAst) -> Result<CompiledSearch, CompileError> {
                 text_query = Some(query.clone());
                 limit = Some(*step_limit);
             }
-            QueryStep::Filter(_) | QueryStep::VectorSearch { .. } | QueryStep::Traverse { .. } => {
-                // Filter steps are partitioned below; Vector/Traverse steps
-                // are not composable with text search in the adaptive surface
-                // yet.
+            QueryStep::Filter(_)
+            | QueryStep::Search { .. }
+            | QueryStep::VectorSearch { .. }
+            | QueryStep::Traverse { .. } => {
+                // Filter steps are partitioned below; Search/Vector/Traverse
+                // steps are not composable with text search in the adaptive
+                // surface yet.
             }
         }
     }
@@ -782,10 +789,13 @@ pub fn compile_vector_search(ast: &QueryAst) -> Result<CompiledVectorSearch, Com
                 query_text = Some(query.clone());
                 limit = Some(*step_limit);
             }
-            QueryStep::Filter(_) | QueryStep::TextSearch { .. } | QueryStep::Traverse { .. } => {
-                // Filter steps are partitioned below; TextSearch/Traverse
-                // steps are not composable with vector search in the
-                // standalone vector retrieval path.
+            QueryStep::Filter(_)
+            | QueryStep::Search { .. }
+            | QueryStep::TextSearch { .. }
+            | QueryStep::Traverse { .. } => {
+                // Filter steps are partitioned below; Search/TextSearch/
+                // Traverse steps are not composable with vector search in
+                // the standalone vector retrieval path.
             }
         }
     }
@@ -799,6 +809,84 @@ pub fn compile_vector_search(ast: &QueryAst) -> Result<CompiledVectorSearch, Com
         fusable_filters,
         residual_filters,
         attribution_requested: false,
+    })
+}
+
+/// Compile a [`QueryAst`] containing a [`QueryStep::Search`] into a
+/// [`CompiledRetrievalPlan`] describing the bounded set of retrieval branches
+/// the Phase 12 planner may run.
+///
+/// The raw query string carried by the `Search` step is parsed into a
+/// strict [`TextQuery`] (via [`TextQuery::parse`]) and a relaxed sibling is
+/// derived via [`derive_relaxed`]. Both branches share the post-search
+/// fusable/residual filter partition. The resulting
+/// [`CompiledRetrievalPlan::text`] field carries them in the same Phase 6
+/// [`CompiledSearchPlan`] shape as `text_search()` / `fallback_search()`.
+///
+/// **v1 scope**: `vector` is unconditionally `None`. Read-time embedding of
+/// natural-language queries is not wired in v1; see
+/// [`CompiledRetrievalPlan`] for the rationale and the future-phase plan.
+/// Callers who need vector retrieval today must use the `vector_search()`
+/// override directly with a caller-provided vector literal.
+///
+/// # Errors
+///
+/// Returns [`CompileError::MissingSearchStep`] if the AST contains no
+/// [`QueryStep::Search`] step.
+pub fn compile_retrieval_plan(ast: &QueryAst) -> Result<CompiledRetrievalPlan, CompileError> {
+    let mut raw_query: Option<&str> = None;
+    let mut limit: Option<usize> = None;
+    for step in &ast.steps {
+        if let QueryStep::Search {
+            query,
+            limit: step_limit,
+        } = step
+        {
+            raw_query = Some(query.as_str());
+            limit = Some(*step_limit);
+        }
+    }
+    let raw_query = raw_query.ok_or(CompileError::MissingSearchStep)?;
+    let limit = limit.unwrap_or(25);
+
+    let strict_text_query = TextQuery::parse(raw_query);
+    let (relaxed_text_query, was_degraded_at_plan_time) = derive_relaxed(&strict_text_query);
+
+    let (fusable_filters, residual_filters) = partition_search_filters(&ast.steps);
+
+    let strict = CompiledSearch {
+        root_kind: ast.root_kind.clone(),
+        text_query: strict_text_query,
+        limit,
+        fusable_filters: fusable_filters.clone(),
+        residual_filters: residual_filters.clone(),
+        attribution_requested: false,
+    };
+    let relaxed = relaxed_text_query.map(|q| CompiledSearch {
+        root_kind: ast.root_kind.clone(),
+        text_query: q,
+        limit,
+        fusable_filters,
+        residual_filters,
+        attribution_requested: false,
+    });
+    let text = CompiledSearchPlan {
+        strict,
+        relaxed,
+        was_degraded_at_plan_time,
+    };
+
+    // v1 scope (Phase 12): the planner's vector branch slot is structurally
+    // present on `CompiledRetrievalPlan` so the coordinator's three-block
+    // fusion path is fully wired, but read-time embedding of natural-language
+    // queries is deliberately deferred to a future phase. `compile_retrieval_plan`
+    // therefore always leaves `vector = None`; callers who want vector
+    // retrieval today must use `vector_search()` directly with a caller-
+    // provided vector literal.
+    Ok(CompiledRetrievalPlan {
+        text,
+        vector: None,
+        was_degraded_at_plan_time,
     })
 }
 
@@ -1416,6 +1504,94 @@ mod tests {
             "`OR NOT` should degrade to literals rather than emit invalid FTS5; got {:?}",
             compiled.binds
         );
+    }
+
+    #[test]
+    fn compile_retrieval_plan_accepts_search_step() {
+        use crate::{
+            CompileError, Predicate, QueryAst, QueryStep, TextQuery, compile_retrieval_plan,
+        };
+        let ast = QueryAst {
+            root_kind: "Goal".to_owned(),
+            steps: vec![
+                QueryStep::Search {
+                    query: "ship quarterly docs".to_owned(),
+                    limit: 7,
+                },
+                QueryStep::Filter(Predicate::KindEq("Goal".to_owned())),
+            ],
+            expansions: vec![],
+            final_limit: None,
+        };
+        let plan = compile_retrieval_plan(&ast).expect("compiles");
+        assert_eq!(plan.text.strict.root_kind, "Goal");
+        assert_eq!(plan.text.strict.limit, 7);
+        // Filter following the Search step must land in the fusable bucket.
+        assert_eq!(plan.text.strict.fusable_filters.len(), 1);
+        assert!(plan.text.strict.residual_filters.is_empty());
+        // Strict text query is the parsed form of the raw string; "ship
+        // quarterly docs" parses to an implicit AND of three terms.
+        assert_eq!(
+            plan.text.strict.text_query,
+            TextQuery::And(vec![
+                TextQuery::Term("ship".into()),
+                TextQuery::Term("quarterly".into()),
+                TextQuery::Term("docs".into()),
+            ])
+        );
+        // Three-term implicit-AND has a useful relaxation: per-term OR.
+        let relaxed = plan.text.relaxed.as_ref().expect("relaxed branch present");
+        assert_eq!(
+            relaxed.text_query,
+            TextQuery::Or(vec![
+                TextQuery::Term("ship".into()),
+                TextQuery::Term("quarterly".into()),
+                TextQuery::Term("docs".into()),
+            ])
+        );
+        assert_eq!(relaxed.fusable_filters.len(), 1);
+        assert!(!plan.was_degraded_at_plan_time);
+        // CompileError unused in the success path.
+        let _ = std::any::TypeId::of::<CompileError>();
+    }
+
+    #[test]
+    fn compile_retrieval_plan_rejects_ast_without_search_step() {
+        use crate::{CompileError, QueryBuilder, compile_retrieval_plan};
+        let ast = QueryBuilder::nodes("Goal")
+            .filter_kind_eq("Goal")
+            .into_ast();
+        let result = compile_retrieval_plan(&ast);
+        assert!(
+            matches!(result, Err(CompileError::MissingSearchStep)),
+            "expected MissingSearchStep, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn compile_retrieval_plan_v1_always_leaves_vector_empty() {
+        // Phase 12 v1 scope: regardless of the query shape, the unified
+        // planner never wires a vector branch into the compiled plan
+        // because read-time embedding of natural-language queries is not
+        // implemented in v1. Pin the constraint so a future phase that
+        // wires the embedding generator must explicitly relax this test.
+        use crate::{QueryAst, QueryStep, compile_retrieval_plan};
+        for query in ["ship quarterly docs", "single", "", "   "] {
+            let ast = QueryAst {
+                root_kind: "Goal".to_owned(),
+                steps: vec![QueryStep::Search {
+                    query: query.to_owned(),
+                    limit: 10,
+                }],
+                expansions: vec![],
+                final_limit: None,
+            };
+            let plan = compile_retrieval_plan(&ast).expect("compiles");
+            assert!(
+                plan.vector.is_none(),
+                "Phase 12 v1 must always leave the vector branch empty (query = {query:?})"
+            );
+        }
     }
 
     #[test]
