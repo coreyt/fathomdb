@@ -469,3 +469,166 @@ fn fallback_search_strict_only_matches_strict_only_text_search() {
     assert_eq!(rows_fb.fallback_used, rows_ts.fallback_used);
     assert_eq!(rows_fb.was_degraded, rows_ts.was_degraded);
 }
+
+// ---------------------------------------------------------------------------
+// Phase 13a: unified `search` FFI mode. Covers the Phase 12 SearchBuilder
+// surface exposed through `execute_search_json`. Each case mirrors a Rust
+// integration test in `text_search_surface.rs` but crosses the JSON
+// boundary so the Python / TypeScript SDKs (Packs 13b / 13c) can rely on
+// the wire shape.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn search_basic_populates_search_rows() {
+    let (_db, engine) = open_engine();
+    seed_budget_goals(&engine);
+
+    let request = r#"{
+        "mode": "search",
+        "root_kind": "Goal",
+        "strict_query": "budget",
+        "relaxed_query": null,
+        "limit": 10,
+        "filters": [],
+        "attribution_requested": false
+    }"#;
+
+    let rows = run(&engine, request);
+    assert!(!rows.hits.is_empty());
+    assert_eq!(rows.strict_hit_count, rows.hits.len());
+    assert_eq!(rows.relaxed_hit_count, 0);
+    assert_eq!(rows.vector_hit_count, 0, "v1 vector branch must stay empty");
+    assert!(!rows.fallback_used);
+    assert!(!rows.was_degraded);
+
+    let hit: &PySearchHit = &rows.hits[0];
+    assert!(hit.score > 0.0);
+    assert!(matches!(hit.match_mode, Some(PySearchMatchMode::Strict)));
+    assert_eq!(hit.node.kind, "Goal");
+    assert!(hit.attribution.is_none());
+}
+
+#[test]
+fn search_with_filter_kind_eq_is_fused() {
+    // Mirrors `search_with_filter_kind_eq_fuses` in text_search_surface.rs.
+    // Seeds a budget-themed Task alongside Goals so the kind filter has
+    // real work to do; without filter fusion both kinds would come back.
+    let (_db, engine) = open_engine();
+    seed_budget_goals(&engine);
+    seed_budget_task(&engine);
+
+    let control_request = r#"{
+        "mode": "search",
+        "root_kind": "",
+        "strict_query": "budget",
+        "relaxed_query": null,
+        "limit": 10,
+        "filters": [],
+        "attribution_requested": false
+    }"#;
+    let control = run(&engine, control_request);
+    assert!(
+        control.hits.iter().any(|h| h.node.kind == "Task"),
+        "control (no kind filter) must include Task hits"
+    );
+
+    let filtered_request = r#"{
+        "mode": "search",
+        "root_kind": "",
+        "strict_query": "budget",
+        "relaxed_query": null,
+        "limit": 10,
+        "filters": [{"type":"filter_kind_eq","kind":"Goal"}],
+        "attribution_requested": false
+    }"#;
+    let filtered = run(&engine, filtered_request);
+    assert!(!filtered.hits.is_empty());
+    assert!(
+        filtered.hits.iter().all(|h| h.node.kind == "Goal"),
+        "filter_kind_eq('Goal') must exclude Task rows"
+    );
+    assert!(filtered.hits.len() < control.hits.len());
+}
+
+#[test]
+fn search_with_filter_json_text_eq_post_filter() {
+    // JSON predicates run as residual post-filters. Assert the chain
+    // crosses the FFI boundary without being dropped.
+    let (_db, engine) = open_engine();
+    seed_budget_goals(&engine);
+
+    let request = r#"{
+        "mode": "search",
+        "root_kind": "Goal",
+        "strict_query": "budget",
+        "relaxed_query": null,
+        "limit": 10,
+        "filters": [{"type":"filter_json_text_eq","path":"$.name","value":"budget alpha goal"}],
+        "attribution_requested": false
+    }"#;
+
+    let rows = run(&engine, request);
+    assert!(!rows.hits.is_empty());
+    assert!(
+        rows.hits
+            .iter()
+            .all(|h| h.node.logical_id == "budget-alpha"),
+        "json filter must restrict to budget-alpha, got {:?}",
+        rows.hits
+            .iter()
+            .map(|h| &h.node.logical_id)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn search_with_attribution_on_recursive_schema() {
+    let (_db, engine) = open_engine();
+    seed_recursive_note(
+        &engine,
+        "note-search-attrib",
+        r#"{"payload":{"body":"shipping quarterly docs"}}"#,
+    );
+
+    let request = r#"{
+        "mode": "search",
+        "root_kind": "Note",
+        "strict_query": "shipping",
+        "relaxed_query": null,
+        "limit": 10,
+        "filters": [],
+        "attribution_requested": true
+    }"#;
+
+    let rows = run(&engine, request);
+    assert!(!rows.hits.is_empty());
+    let hit = &rows.hits[0];
+    let att: &PyHitAttribution = hit
+        .attribution
+        .as_ref()
+        .expect("attribution populated when requested");
+    assert_eq!(att.matched_paths, vec!["$.payload.body".to_owned()]);
+}
+
+#[test]
+fn search_empty_query_returns_empty_search_rows() {
+    let (_db, engine) = open_engine();
+    seed_budget_goals(&engine);
+
+    let request = r#"{
+        "mode": "search",
+        "root_kind": "Goal",
+        "strict_query": "",
+        "relaxed_query": null,
+        "limit": 10,
+        "filters": [],
+        "attribution_requested": false
+    }"#;
+
+    let rows = run(&engine, request);
+    assert!(rows.hits.is_empty());
+    assert_eq!(rows.strict_hit_count, 0);
+    assert_eq!(rows.relaxed_hit_count, 0);
+    assert_eq!(rows.vector_hit_count, 0);
+    assert!(!rows.fallback_used);
+}
