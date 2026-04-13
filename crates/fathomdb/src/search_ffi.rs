@@ -23,20 +23,32 @@ use serde::{Deserialize, Serialize};
 use crate::{
     ComparisonOp, Engine, EngineError, Predicate, QueryAst, QueryStep, RetrievalModality,
     ScalarValue, SearchHit, SearchHitSource, SearchMatchMode, SearchRows, TextQuery,
-    compile_search_plan, compile_search_plan_from_queries,
+    compile_retrieval_plan, compile_search_plan, compile_search_plan_from_queries,
 };
 use fathomdb_query::CompileError;
 
-/// Mode tag selecting between adaptive and explicit fallback search.
+/// Mode tag selecting between unified retrieval, adaptive text search, and
+/// explicit fallback search.
 ///
-/// `TextSearch` runs the adaptive pipeline — `relaxed_query` on the
-/// request is ignored and the relaxed branch (if any) is derived from the
-/// strict query via `derive_relaxed`. `FallbackSearch` uses the
-/// caller-supplied `strict_query` and `relaxed_query` verbatim and is NOT
-/// subject to the adaptive branch cap.
+/// `Search` runs the Phase 12 unified retrieval planner —
+/// [`compile_retrieval_plan`] + [`execute_retrieval_plan`] — so the caller
+/// gets the same strict → relaxed → (future) vector fusion pipeline that
+/// Rust's `SearchBuilder::execute()` produces. `TextSearch` runs the Phase 6
+/// adaptive text pipeline directly; `relaxed_query` on the request is
+/// ignored and the relaxed branch (if any) is derived from the strict query
+/// via `derive_relaxed`. `FallbackSearch` uses the caller-supplied
+/// `strict_query` and `relaxed_query` verbatim and is NOT subject to the
+/// adaptive branch cap.
+///
+/// [`execute_retrieval_plan`]: fathomdb_engine::ExecutionCoordinator::execute_retrieval_plan
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum PySearchMode {
+    /// Unified retrieval: compile through `compile_retrieval_plan` and
+    /// execute through `execute_retrieval_plan`. `relaxed_query` is
+    /// ignored. The v1 vector branch is always empty (no read-time
+    /// embedding wired yet), matching the in-process `SearchBuilder` scope.
+    Search,
     /// Adaptive search: derive the relaxed branch from the strict query.
     TextSearch,
     /// Explicit fallback: take strict and relaxed verbatim from the request.
@@ -498,12 +510,48 @@ fn build_filter_ast(request: &PySearchRequest) -> QueryAst {
 pub fn execute_search_json(engine: &Engine, request_json: &str) -> Result<String, SearchFfiError> {
     let request: PySearchRequest =
         serde_json::from_str(request_json).map_err(SearchFfiError::Parse)?;
-    let strict = TextQuery::parse(&request.strict_query);
     let limit = request.limit;
     let attribution = request.attribution_requested;
+
+    // Phase 13a: the unified `Search` mode takes a distinct compile/execute
+    // path — `compile_retrieval_plan` + `execute_retrieval_plan` — mirroring
+    // the in-process `SearchBuilder` tethered to `NodeQueryBuilder::search()`.
+    // `relaxed_query` is ignored (the planner derives the relaxed branch
+    // from the strict query) and the v1 vector branch is always empty.
+    if matches!(request.mode, PySearchMode::Search) {
+        let mut ast = build_filter_ast(&request);
+        // Seed a `QueryStep::Search { query, limit }` step at the head of the
+        // AST so the filter partitioner classifies the user-supplied filter
+        // chain as search-following. `compile_retrieval_plan` requires
+        // exactly one `Search` step and pulls the raw query out of it.
+        ast.steps.insert(
+            0,
+            QueryStep::Search {
+                query: request.strict_query.clone(),
+                limit,
+            },
+        );
+        let mut plan = compile_retrieval_plan(&ast).map_err(SearchFfiError::Compile)?;
+        // Thread `attribution_requested` onto both text branches — the
+        // planner hard-codes `false` at compile time to match
+        // `compile_search_plan`.
+        plan.text.strict.attribution_requested = attribution;
+        if let Some(relaxed) = plan.text.relaxed.as_mut() {
+            relaxed.attribution_requested = attribution;
+        }
+        let rows: SearchRows = engine
+            .coordinator()
+            .execute_retrieval_plan(&plan)
+            .map_err(SearchFfiError::Engine)?;
+        let py_rows = PySearchRows::from(rows);
+        return serde_json::to_string(&py_rows).map_err(SearchFfiError::Serialize);
+    }
+
+    let strict = TextQuery::parse(&request.strict_query);
     let ast = build_filter_ast(&request);
 
     let mut plan = match request.mode {
+        PySearchMode::Search => unreachable!("Search handled above"),
         PySearchMode::TextSearch => {
             // Adaptive: compile_search_plan requires a TextSearch step on
             // the AST because it runs through `compile_search` internally.
