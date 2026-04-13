@@ -26,6 +26,15 @@ def test_run_harness_baseline_returns_expected_scenarios(tmp_path: Path) -> None
         "safe_export",
         "projection_rebuild",
         "restore_vector_profiles",
+        "adaptive_search_strict_hit_only",
+        "adaptive_search_strict_miss_relaxed_recovery",
+        "adaptive_search_mixed_chunk_and_property",
+        "adaptive_search_recursive_nested_payload",
+        "adaptive_search_recursive_rebuild_restore",
+        "unified_search_strict_hit_populates_rows",
+        "unified_search_strict_miss_relaxed_recovery",
+        "unified_search_filter_kind_eq_fuses",
+        "unified_search_with_match_attribution",
         "vector_degradation",
     ]
 
@@ -39,7 +48,7 @@ def test_main_baseline_reports_pass_lines(tmp_path: Path, capsys) -> None:
     assert exit_code == 0
     assert "PASS canonical_node_chunk_fts" in output
     assert "PASS vector_degradation" in output
-    assert "13/13 scenarios passed" in output
+    assert "22/22 scenarios passed" in output
 
 
 def test_run_harness_baseline_collects_telemetry_events(tmp_path: Path) -> None:
@@ -106,4 +115,4 @@ def test_python_module_entrypoint_has_no_runpy_warning(tmp_path: Path) -> None:
     )
 
     assert "RuntimeWarning" not in result.stderr
-    assert "13/13 scenarios passed" in result.stdout
+    assert "22/22 scenarios passed" in result.stdout

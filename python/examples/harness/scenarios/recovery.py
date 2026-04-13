@@ -124,10 +124,14 @@ def projection_rebuild(context: HarnessContext) -> ScenarioResult:
     fts = context.engine.admin.rebuild(target=ProjectionTarget.FTS)
     assert fts.targets == [ProjectionTarget.FTS], f"unexpected targets={fts.targets}"
 
-    all_targets = context.engine.admin.rebuild(target=ProjectionTarget.ALL)
-    assert all_targets.targets == [ProjectionTarget.FTS, ProjectionTarget.VEC], (
-        f"unexpected targets={all_targets.targets}"
-    )
+    # rebuild(ALL) touches the vec_nodes_active virtual table, which only
+    # exists when the engine was opened with a vector_dimension. Baseline
+    # mode has no such profile, so only vector mode exercises the full path.
+    if context.mode == "vector":
+        all_targets = context.engine.admin.rebuild(target=ProjectionTarget.ALL)
+        assert all_targets.targets == [ProjectionTarget.FTS, ProjectionTarget.VEC], (
+            f"unexpected targets={all_targets.targets}"
+        )
 
     assert_integrity_clean(context.engine.admin.check_integrity())
     assert_semantics_clean(context.engine.admin.check_semantics())
