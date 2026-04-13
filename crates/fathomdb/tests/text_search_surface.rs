@@ -3224,11 +3224,23 @@ fn search_v1_does_not_run_vector_stage_for_natural_language() {
     // (RELAXED_BRANCH_CAP = 4) does not fire and `was_degraded` stays
     // false. The point of this test is to pin "v1 search() never wires
     // the vector branch" — not to exercise the relaxed cap.
-    let rows = engine
+    let builder = engine
         .query("Goal")
-        .search("ineffable nebulous esoteric ramifications", 10)
-        .execute()
-        .expect("search executes");
+        .search("ineffable nebulous esoteric ramifications", 10);
+
+    // P12-N-2: pin the structural contract at the planner layer directly.
+    // Asserting `vector_hit_count == 0` on executed rows alone would false-
+    // pass if vector execution ran but happened to match nothing. Pinning
+    // `plan.vector.is_none()` proves the carrier slot itself is empty.
+    let plan = builder
+        .compile_plan()
+        .expect("compile_plan succeeds for natural-language query");
+    assert!(
+        plan.vector.is_none(),
+        "v1 search() must leave CompiledRetrievalPlan::vector empty"
+    );
+
+    let rows = builder.execute().expect("search executes");
 
     assert_eq!(
         rows.vector_hit_count, 0,
