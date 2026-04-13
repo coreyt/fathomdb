@@ -360,7 +360,7 @@ def test_public_python_admin_client_exposes_fts_property_schema_lifecycle(tmp_pa
     )
     assert isinstance(record, FtsPropertySchemaRecord)
     assert record.kind == "Goal"
-    assert record.property_paths == ["$.name", "$.description"]
+    assert record.property_paths == ("$.name", "$.description")
     assert record.separator == " "
     assert record.format_version == 1
     # Pack P7.7-fix: scalar-only schemas now also expose the per-entry
@@ -370,13 +370,13 @@ def test_public_python_admin_client_exposes_fts_property_schema_lifecycle(tmp_pa
     assert len(record.entries) == 2
     assert all(entry.mode == FtsPropertyPathMode.SCALAR for entry in record.entries)
     assert [entry.path for entry in record.entries] == ["$.name", "$.description"]
-    assert record.exclude_paths == []
+    assert record.exclude_paths == ()
 
     # Describe
     described = db.admin.describe_fts_property_schema("Goal")
     assert described is not None
     assert described.kind == "Goal"
-    assert described.property_paths == ["$.name", "$.description"]
+    assert described.property_paths == ("$.name", "$.description")
     assert len(described.entries) == 2
     assert all(entry.mode == FtsPropertyPathMode.SCALAR for entry in described.entries)
 
@@ -393,7 +393,7 @@ def test_public_python_admin_client_exposes_fts_property_schema_lifecycle(tmp_pa
     updated = db.admin.register_fts_property_schema(
         "Goal", ["$.name", "$.notes"], separator="\n"
     )
-    assert updated.property_paths == ["$.name", "$.notes"]
+    assert updated.property_paths == ("$.name", "$.notes")
     assert updated.separator == "\n"
 
     # Remove
@@ -434,21 +434,21 @@ def test_public_python_admin_client_round_trips_recursive_schema_entries(tmp_pat
         exclude_paths=["$.payload.secret"],
     )
     assert registered.kind == "KnowledgeItem"
-    assert registered.property_paths == ["$.title", "$.payload"]
-    assert registered.entries == entries
-    assert registered.exclude_paths == ["$.payload.secret"]
+    assert registered.property_paths == ("$.title", "$.payload")
+    assert registered.entries == tuple(entries)
+    assert registered.exclude_paths == ("$.payload.secret",)
 
     described = db.admin.describe_fts_property_schema("KnowledgeItem")
     assert described is not None
-    assert described.entries == entries
-    assert described.property_paths == ["$.title", "$.payload"]
-    assert described.exclude_paths == ["$.payload.secret"]
+    assert described.entries == tuple(entries)
+    assert described.property_paths == ("$.title", "$.payload")
+    assert described.exclude_paths == ("$.payload.secret",)
     assert described.entries[1].mode == FtsPropertyPathMode.RECURSIVE
 
     listed = db.admin.list_fts_property_schemas()
     assert len(listed) == 1
-    assert listed[0].entries == entries
-    assert listed[0].exclude_paths == ["$.payload.secret"]
+    assert listed[0].entries == tuple(entries)
+    assert listed[0].exclude_paths == ("$.payload.secret",)
 
 
 def test_public_python_admin_client_reads_operational_rows_by_declared_fields(tmp_path: Path) -> None:

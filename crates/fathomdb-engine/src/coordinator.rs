@@ -336,6 +336,14 @@ impl ExecutionCoordinator {
         // it is safe to trigger even when `fts_node_properties` is
         // already populated.
         let needs_position_backfill = {
+            // NOTE: This LIKE pattern assumes `property_paths_json` is
+            // serialized with compact formatting (no whitespace around
+            // `:`). All current writers go through `serde_json`'s compact
+            // output so this holds. If a future writer emits pretty-
+            // printed JSON (`"mode": "recursive"` with a space), this
+            // guard would silently fail. A more robust check would use
+            // `json_extract(property_paths_json, '$[*].mode')` or a
+            // parsed scan, at the cost of a per-row JSON walk.
             let recursive_schema_count: i64 = conn.query_row(
                 "SELECT COUNT(*) FROM fts_property_schemas \
                  WHERE property_paths_json LIKE '%\"mode\":\"recursive\"%'",
