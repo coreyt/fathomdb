@@ -678,23 +678,28 @@ impl ExecutionCoordinator {
             vec![BindValue::Text(rendered.clone()), BindValue::Text(rendered)]
         };
 
-        // Fusable predicates are injected into the CTE's outer WHERE against
-        // the `hn` alias (the nodes table joined inside the CTE). Residual
-        // predicates remain in the outer WHERE against `n`.
+        // P2-5: both fusable and residual predicates now match against the
+        // CTE's projected columns (`u.kind`, `u.logical_id`, `u.source_ref`,
+        // `u.content_ref`, `u.properties`) because the inner UNION arms
+        // project the full active-row column set through the
+        // `JOIN nodes src` already present in each arm. The previous
+        // implementation re-joined `nodes hn` at the CTE level and
+        // `nodes n` again at the outer SELECT, which was triple work on
+        // the hot search path.
         let mut fused_clauses = String::new();
         for predicate in &compiled.fusable_filters {
             match predicate {
                 Predicate::KindEq(kind) => {
                     binds.push(BindValue::Text(kind.clone()));
                     let idx = binds.len();
-                    let _ = write!(fused_clauses, "\n                  AND hn.kind = ?{idx}");
+                    let _ = write!(fused_clauses, "\n                  AND u.kind = ?{idx}");
                 }
                 Predicate::LogicalIdEq(logical_id) => {
                     binds.push(BindValue::Text(logical_id.clone()));
                     let idx = binds.len();
                     let _ = write!(
                         fused_clauses,
-                        "\n                  AND hn.logical_id = ?{idx}"
+                        "\n                  AND u.logical_id = ?{idx}"
                     );
                 }
                 Predicate::SourceRefEq(source_ref) => {
@@ -702,7 +707,7 @@ impl ExecutionCoordinator {
                     let idx = binds.len();
                     let _ = write!(
                         fused_clauses,
-                        "\n                  AND hn.source_ref = ?{idx}"
+                        "\n                  AND u.source_ref = ?{idx}"
                     );
                 }
                 Predicate::ContentRefEq(uri) => {
@@ -710,11 +715,11 @@ impl ExecutionCoordinator {
                     let idx = binds.len();
                     let _ = write!(
                         fused_clauses,
-                        "\n                  AND hn.content_ref = ?{idx}"
+                        "\n                  AND u.content_ref = ?{idx}"
                     );
                 }
                 Predicate::ContentRefNotNull => {
-                    fused_clauses.push_str("\n                  AND hn.content_ref IS NOT NULL");
+                    fused_clauses.push_str("\n                  AND u.content_ref IS NOT NULL");
                 }
                 Predicate::JsonPathEq { .. } | Predicate::JsonPathCompare { .. } => {
                     // Should be in residual_filters; compile_search guarantees
@@ -733,7 +738,7 @@ impl ExecutionCoordinator {
                     let value_idx = binds.len();
                     let _ = write!(
                         filter_clauses,
-                        "\n  AND json_extract(n.properties, ?{path_idx}) = ?{value_idx}"
+                        "\n  AND json_extract(h.properties, ?{path_idx}) = ?{value_idx}"
                     );
                 }
                 Predicate::JsonPathCompare { path, op, value } => {
@@ -749,7 +754,7 @@ impl ExecutionCoordinator {
                     };
                     let _ = write!(
                         filter_clauses,
-                        "\n  AND json_extract(n.properties, ?{path_idx}) {operator} ?{value_idx}"
+                        "\n  AND json_extract(h.properties, ?{path_idx}) {operator} ?{value_idx}"
                     );
                 }
                 Predicate::KindEq(_)
@@ -772,8 +777,15 @@ impl ExecutionCoordinator {
         let limit = compiled.limit;
         binds.push(BindValue::Integer(i64::try_from(limit).unwrap_or(i64::MAX)));
         let limit_idx = binds.len();
-        // INNER JOIN on nodes (hn) is intentional: rows referencing retired
-        // nodes are intentionally dropped as a derived-state invariant.
+        // P2-5: the inner UNION arms project the full active-row column
+        // set through `JOIN nodes src` (kind, row_id, source_ref,
+        // content_ref, content_hash, created_at, properties). Both the
+        // CTE's outer WHERE and the final SELECT consume those columns
+        // directly, which eliminates the previous `JOIN nodes hn` at the
+        // CTE level and `JOIN nodes n` at the outer SELECT — saving two
+        // redundant joins on the hot search path. `src.superseded_at IS
+        // NULL` in each arm already filters retired rows, which is what
+        // the dropped outer joins used to do.
         let (chunk_fts_bind, chunk_kind_clause, prop_fts_bind, prop_kind_clause) = if filter_by_kind
         {
             (
@@ -788,14 +800,26 @@ impl ExecutionCoordinator {
         let sql = format!(
             "WITH search_hits AS (
                 SELECT
+                    u.row_id AS row_id,
                     u.logical_id AS logical_id,
+                    u.kind AS kind,
+                    u.properties AS properties,
+                    u.source_ref AS source_ref,
+                    u.content_ref AS content_ref,
+                    u.created_at AS created_at,
                     u.score AS score,
                     u.source AS source,
                     u.snippet AS snippet,
                     u.projection_row_id AS projection_row_id
                 FROM (
                     SELECT
+                        src.row_id AS row_id,
                         c.node_logical_id AS logical_id,
+                        src.kind AS kind,
+                        src.properties AS properties,
+                        src.source_ref AS source_ref,
+                        src.content_ref AS content_ref,
+                        src.created_at AS created_at,
                         -bm25(fts_nodes) AS score,
                         'chunk' AS source,
                         snippet(fts_nodes, 3, '[', ']', '…', 32) AS snippet,
@@ -806,7 +830,13 @@ impl ExecutionCoordinator {
                     WHERE fts_nodes MATCH {chunk_fts_bind}{chunk_kind_clause}
                     UNION ALL
                     SELECT
+                        src.row_id AS row_id,
                         fp.node_logical_id AS logical_id,
+                        src.kind AS kind,
+                        src.properties AS properties,
+                        src.source_ref AS source_ref,
+                        src.content_ref AS content_ref,
+                        src.created_at AS created_at,
                         -bm25(fts_node_properties) AS score,
                         'property' AS source,
                         substr(fp.text_content, 1, 200) AS snippet,
@@ -815,26 +845,24 @@ impl ExecutionCoordinator {
                     JOIN nodes src ON src.logical_id = fp.node_logical_id AND src.superseded_at IS NULL
                     WHERE fts_node_properties MATCH {prop_fts_bind}{prop_kind_clause}
                 ) u
-                JOIN nodes hn ON hn.logical_id = u.logical_id AND hn.superseded_at IS NULL
                 WHERE 1 = 1{fused_clauses}
                 ORDER BY u.score DESC
                 LIMIT ?{limit_idx}
             )
             SELECT
-                n.row_id,
-                n.logical_id,
-                n.kind,
-                n.properties,
-                n.content_ref,
+                h.row_id,
+                h.logical_id,
+                h.kind,
+                h.properties,
+                h.content_ref,
                 am.last_accessed_at,
-                n.created_at,
+                h.created_at,
                 h.score,
                 h.source,
                 h.snippet,
                 h.projection_row_id
             FROM search_hits h
-            JOIN nodes n ON n.logical_id = h.logical_id AND n.superseded_at IS NULL
-            LEFT JOIN node_access_metadata am ON am.logical_id = n.logical_id
+            LEFT JOIN node_access_metadata am ON am.logical_id = h.logical_id
             WHERE 1 = 1{filter_clauses}
             ORDER BY h.score DESC"
         );
