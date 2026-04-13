@@ -654,12 +654,19 @@ describe("Engine admin (real engine)", () => {
     expect(readOp.wasLimited).toBe(false);
 
     // rebuildOperationalCurrent with no collection arg only iterates
-    // latest_state collections; our test collection is append_only_log
-    // so the count is 0. Assert the shape is correct instead.
+    // `latest_state` collections. Our test fixture registers only an
+    // `append_only_log` collection, which is not iterated by this API,
+    // so `collectionsRebuilt` is always 0 on this path — the strongest
+    // assertion we can make here is a shape check. Extending this test
+    // to also register a `latest_state` collection would require
+    // additional validation / secondary-index scaffolding; the focused
+    // integration coverage for non-trivial rebuild counts lives in the
+    // Rust engine tests.
     const repairOp = engine.admin.rebuildOperationalCurrent();
     expect(typeof repairOp.collectionsRebuilt).toBe("number");
-    expect(repairOp.collectionsRebuilt).toBeGreaterThanOrEqual(0);
+    expect(repairOp.collectionsRebuilt).toBe(0);
     expect(typeof repairOp.currentRowsRebuilt).toBe("number");
+    expect(repairOp.currentRowsRebuilt).toBe(0);
 
     const validation = engine.admin.validateOperationalCollectionHistory("events");
     expect(validation.invalidRowCount).toBe(0);

@@ -481,7 +481,7 @@ export class TextSearchBuilder {
       this.#rootKind,
       this.#strictQuery,
       this.#limit,
-      this.#filters,
+      [...this.#filters],
       true,
     );
   }
@@ -644,7 +644,7 @@ export class FallbackSearchBuilder {
       this.#strictQuery,
       this.#relaxedQuery,
       this.#limit,
-      this.#filters,
+      [...this.#filters],
       true,
     );
   }

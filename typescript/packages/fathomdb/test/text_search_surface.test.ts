@@ -193,6 +193,21 @@ describe("text_search surface", () => {
     expect(rows).toHaveProperty("relaxedHitCount");
     expect(Object.keys(rows)).not.toContain("was_degraded");
     expect(Object.keys(rows)).not.toContain("fallback_used");
+    expect(Object.keys(rows)).not.toContain("strict_hit_count");
+    expect(Object.keys(rows)).not.toContain("relaxed_hit_count");
+    // Stringified negative assertions: the legacy snake_case field names
+    // must not survive anywhere in the serialized SearchRows payload, not
+    // just at the top-level key set.
+    const rowsJson = JSON.stringify(rows);
+    expect(rowsJson).not.toContain("strict_hit_count");
+    expect(rowsJson).not.toContain("relaxed_hit_count");
+    expect(rowsJson).not.toContain("was_degraded");
+    expect(rowsJson).not.toContain("fallback_used");
+    const nodeJson = JSON.stringify(hit.node);
+    expect(nodeJson).not.toContain("content_ref");
+    expect(nodeJson).not.toContain("last_accessed_at");
+    expect(nodeJson).not.toContain("row_id");
+    expect(nodeJson).not.toContain("logical_id");
   });
 
   it("wire format: writtenAt is Unix seconds near the write time", () => {

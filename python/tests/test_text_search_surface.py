@@ -244,5 +244,31 @@ def test_text_search_empty_query_returns_empty_search_rows(tmp_path: Path) -> No
     assert rows.hits == ()
 
 
+def test_text_search_whitespace_query_returns_empty_search_rows(tmp_path: Path) -> None:
+    db = Engine.open(tmp_path / "t.db")
+    _seed_budget_goals(db)
+
+    rows = db.query("Goal").text_search("   ", 10).execute()
+    assert isinstance(rows, SearchRows)
+    assert rows.hits == ()
+
+
+def test_text_search_builder_rejects_relaxed_query_kwarg(tmp_path: Path) -> None:
+    """P7b-1: ``TextSearchBuilder.__init__`` must not silently discard a
+    ``relaxed_query`` kwarg. It is a fallback-only parameter; passing it to
+    the adaptive builder is a programming error."""
+    db = Engine.open(tmp_path / "t.db")
+    _seed_budget_goals(db)
+
+    with pytest.raises(TypeError):
+        TextSearchBuilder(
+            core=db._core,  # type: ignore[attr-defined]
+            root_kind="Goal",
+            strict_query="budget",
+            limit=10,
+            relaxed_query="budget OR meeting",  # type: ignore[call-arg]
+        )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
 
 from ._feedback import run_with_feedback
 from ._fathomdb import EngineCore
@@ -14,6 +15,12 @@ from ._types import (
     SearchRows,
     TraverseDirection,
 )
+
+if TYPE_CHECKING:
+    # `typing.Self` is 3.11+. The project targets >=3.10, so pull it from
+    # `typing_extensions` under a TYPE_CHECKING guard — no runtime cost and
+    # no new runtime dependency.
+    from typing_extensions import Self
 
 
 class Query:
@@ -325,12 +332,15 @@ class _SearchBuilderBase:
         self._filters: list[dict] = list(filters or [])
         self._attribution_requested = attribution_requested
 
-    def _clone(self, **overrides):
+    def _clone(self, **overrides) -> "Self":
+        # `relaxed_query` is intentionally excluded: it is a
+        # fallback-only parameter and `TextSearchBuilder.__init__` does
+        # not accept it. `FallbackSearchBuilder._clone` overrides this
+        # method to re-introduce the parameter.
         params = {
             "core": self._core,
             "root_kind": self._root_kind,
             "strict_query": self._strict_query,
-            "relaxed_query": self._relaxed_query,
             "limit": self._limit,
             "filters": list(self._filters),
             "attribution_requested": self._attribution_requested,
@@ -338,7 +348,7 @@ class _SearchBuilderBase:
         params.update(overrides)
         return type(self)(**params)
 
-    def _with_filter(self, filter_step: dict):
+    def _with_filter(self, filter_step: dict) -> "Self":
         return self._clone(filters=[*self._filters, filter_step])
 
     def _request_payload(self) -> str:
@@ -354,67 +364,67 @@ class _SearchBuilderBase:
             }
         )
 
-    def with_match_attribution(self):
+    def with_match_attribution(self) -> "Self":
         """Request per-hit match attribution on the returned rows."""
         return self._clone(attribution_requested=True)
 
-    def filter_kind_eq(self, kind: str):
+    def filter_kind_eq(self, kind: str) -> "Self":
         """Filter hits to those with the given kind."""
         return self._with_filter({"type": "filter_kind_eq", "kind": kind})
 
-    def filter_logical_id_eq(self, logical_id: str):
+    def filter_logical_id_eq(self, logical_id: str) -> "Self":
         """Filter hits to those with the given logical ID."""
         return self._with_filter({"type": "filter_logical_id_eq", "logical_id": logical_id})
 
-    def filter_source_ref_eq(self, source_ref: str):
+    def filter_source_ref_eq(self, source_ref: str) -> "Self":
         """Filter hits to those with the given source reference."""
         return self._with_filter({"type": "filter_source_ref_eq", "source_ref": source_ref})
 
-    def filter_content_ref_eq(self, content_ref: str):
+    def filter_content_ref_eq(self, content_ref: str) -> "Self":
         """Filter hits to those with the given ``content_ref`` URI."""
         return self._with_filter({"type": "filter_content_ref_eq", "content_ref": content_ref})
 
-    def filter_content_ref_not_null(self):
+    def filter_content_ref_not_null(self) -> "Self":
         """Filter hits to those whose ``content_ref`` is not NULL."""
         return self._with_filter({"type": "filter_content_ref_not_null"})
 
-    def filter_json_text_eq(self, path: str, value: str):
+    def filter_json_text_eq(self, path: str, value: str) -> "Self":
         """Filter hits where the JSON property at *path* equals *value*."""
         return self._with_filter({"type": "filter_json_text_eq", "path": path, "value": value})
 
-    def filter_json_bool_eq(self, path: str, value: bool):
+    def filter_json_bool_eq(self, path: str, value: bool) -> "Self":
         """Filter hits where the JSON boolean at *path* equals *value*."""
         return self._with_filter({"type": "filter_json_bool_eq", "path": path, "value": value})
 
-    def filter_json_integer_gt(self, path: str, value: int):
+    def filter_json_integer_gt(self, path: str, value: int) -> "Self":
         """Filter hits where the JSON integer at *path* is greater than *value*."""
         return self._with_filter({"type": "filter_json_integer_gt", "path": path, "value": value})
 
-    def filter_json_integer_gte(self, path: str, value: int):
+    def filter_json_integer_gte(self, path: str, value: int) -> "Self":
         """Filter hits where the JSON integer at *path* is greater than or equal to *value*."""
         return self._with_filter({"type": "filter_json_integer_gte", "path": path, "value": value})
 
-    def filter_json_integer_lt(self, path: str, value: int):
+    def filter_json_integer_lt(self, path: str, value: int) -> "Self":
         """Filter hits where the JSON integer at *path* is less than *value*."""
         return self._with_filter({"type": "filter_json_integer_lt", "path": path, "value": value})
 
-    def filter_json_integer_lte(self, path: str, value: int):
+    def filter_json_integer_lte(self, path: str, value: int) -> "Self":
         """Filter hits where the JSON integer at *path* is less than or equal to *value*."""
         return self._with_filter({"type": "filter_json_integer_lte", "path": path, "value": value})
 
-    def filter_json_timestamp_gt(self, path: str, value: int):
+    def filter_json_timestamp_gt(self, path: str, value: int) -> "Self":
         """Filter hits where the JSON timestamp at *path* is after *value*."""
         return self._with_filter({"type": "filter_json_timestamp_gt", "path": path, "value": value})
 
-    def filter_json_timestamp_gte(self, path: str, value: int):
+    def filter_json_timestamp_gte(self, path: str, value: int) -> "Self":
         """Filter hits where the JSON timestamp at *path* is at or after *value*."""
         return self._with_filter({"type": "filter_json_timestamp_gte", "path": path, "value": value})
 
-    def filter_json_timestamp_lt(self, path: str, value: int):
+    def filter_json_timestamp_lt(self, path: str, value: int) -> "Self":
         """Filter hits where the JSON timestamp at *path* is before *value*."""
         return self._with_filter({"type": "filter_json_timestamp_lt", "path": path, "value": value})
 
-    def filter_json_timestamp_lte(self, path: str, value: int):
+    def filter_json_timestamp_lte(self, path: str, value: int) -> "Self":
         """Filter hits where the JSON timestamp at *path* is at or before *value*."""
         return self._with_filter({"type": "filter_json_timestamp_lte", "path": path, "value": value})
 
@@ -459,8 +469,12 @@ class TextSearchBuilder(_SearchBuilderBase):
         limit: int,
         filters: list[dict] | None = None,
         attribution_requested: bool = False,
-        relaxed_query: str | None = None,
     ) -> None:
+        # Adaptive text_search never takes a caller-supplied relaxed
+        # query — the relaxed branch is derived engine-side via
+        # `derive_relaxed`. Passing `relaxed_query=...` here is a
+        # programming error (see `FallbackSearchBuilder` for the
+        # explicit two-shape path); reject it at the boundary.
         super().__init__(
             core=core,
             root_kind=root_kind,
@@ -492,6 +506,22 @@ class FallbackSearchBuilder(_SearchBuilderBase):
     """
 
     _mode = "fallback_search"
+
+    def _clone(self, **overrides) -> "Self":
+        # Override the base clone to thread `relaxed_query` through, which
+        # is excluded from `_SearchBuilderBase._clone` because
+        # `TextSearchBuilder.__init__` does not accept it.
+        params = {
+            "core": self._core,
+            "root_kind": self._root_kind,
+            "strict_query": self._strict_query,
+            "relaxed_query": self._relaxed_query,
+            "limit": self._limit,
+            "filters": list(self._filters),
+            "attribution_requested": self._attribution_requested,
+        }
+        params.update(overrides)
+        return type(self)(**params)
 
     def execute(
         self, *, progress_callback=None, feedback_config: FeedbackConfig | None = None

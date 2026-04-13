@@ -166,7 +166,7 @@ class Engine:
         limit : int
             Per-branch candidate cap.
         root_kind : str
-            Kind root the search is scoped to (default ``"Goal"``).
+            Kind root the search is scoped to (default ``""`` — no kind filter).
         """
         return FallbackSearchBuilder(
             core=self._core,

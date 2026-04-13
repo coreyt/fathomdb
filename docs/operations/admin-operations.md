@@ -138,8 +138,33 @@ const record = engine.admin.registerFtsPropertySchema(
     "Goal", ["$.name", "$.description"]);
 ```
 
+**register_fts_property_schema_with_entries** -- Register (or update) an FTS
+property projection schema with per-entry mode control. Each entry is an
+`FtsPropertyPathSpec` carrying a path plus a mode (`scalar` for single-path
+extraction or `recursive` for walking a subtree). An optional `exclude_paths`
+list trims subtrees from recursive walks. This is the surface to use when
+any path needs recursive-mode indexing; the scalar-only
+`register_fts_property_schema` is a convenience shim over it.
+
+```python
+record = admin.register_fts_property_schema_with_entries(
+    "KnowledgeItem",
+    [
+        FtsPropertyPathSpec(path="$.title", mode=FtsPropertyPathMode.SCALAR),
+        FtsPropertyPathSpec(path="$.payload", mode=FtsPropertyPathMode.RECURSIVE),
+    ],
+    exclude_paths=["$.payload.secret"],
+)
+```
+
+See `docs/guides/property-fts.md` for a deeper walk through recursive-mode
+usage and the per-entry view returned by `describe` / `list`.
+
 **describe_fts_property_schema** -- Return the schema for a single kind, or
-`None`/`null` if not registered.
+`None`/`null` if not registered. The returned record exposes both
+`property_paths` (flat display list) and `entries` (per-path `mode` view);
+recursive-registered schemas also populate `exclude_paths` /
+`excludePaths` with any excluded subtrees.
 
 ```python
 record = admin.describe_fts_property_schema("Goal")
