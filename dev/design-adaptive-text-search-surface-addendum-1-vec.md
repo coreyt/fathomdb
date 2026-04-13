@@ -734,3 +734,48 @@ and `vector_hit_count` populated truthfully on the result.
   retrieval semantics explicitly.
 - All resolved decisions in the main body are preserved verbatim for the text
   modality.
+
+## Design decisions
+
+### Decision: `indexed_json()` declined
+
+During Phase 12/15 planning, a client sketch proposed a four-surface
+retrieval API: `search()`, `text_search()`, `indexed_json()`, and
+`vector_search()`. We accepted `search()` as the unified primary entry
+point (Phase 12) and kept `text_search()` / `vector_search()` as advanced
+mechanism-specific overrides, as specified in the Decision Summary
+above. We **declined** `indexed_json()`.
+
+The rejection is a category-error argument, not a capability one.
+`indexed_json()` would have elevated a filter primitive — the
+`filter_json_*` family — to a retrieval mechanism parallel to text and
+vector. That framing conflates two orthogonal surfaces:
+
+- `filter_json_*` is an **exact-value post-filter** applied to a
+  candidate set at query time (e.g.
+  `filter_json_text_eq("$.status", "published")`). It builds no index
+  and does not tokenize; it narrows results by equality and
+  comparison.
+- Property FTS projections are a **retrieval projection** maintained
+  on registered schemas. Declared JSON paths — optionally walked
+  recursively — are tokenized and written to an FTS5 table at write
+  time, and `search()` transparently matches tokens inside those
+  extracted values. Property FTS is already the answer to "match text
+  inside JSON".
+
+An `indexed_json()` surface would duplicate the existing `filter_json_*`
+surface without adding expressive power: it could not match tokens
+inside a JSON subtree (that is recursive-mode property FTS, reached via
+`search()` plus a schema registration), and it could not narrow by
+exact value any better than the existing `filter_*` builder methods
+already do. Accepting it would have split one coherent JSON story into
+two overlapping surfaces — one retrieval-shaped, one filter-shaped —
+that callers would have to pick between without a principled rule.
+
+The current surface handles both use cases cleanly by composition:
+register property FTS on the kinds whose structured text should be
+searchable, then chain `filter_json_*` on the resulting
+`SearchBuilder` to narrow by exact predicates. Applications that need
+both features get both, on one builder, via existing primitives. The
+Phase 15 consumer docs document this composition explicitly under
+"`filter_json_*` vs property FTS" in the querying guide.

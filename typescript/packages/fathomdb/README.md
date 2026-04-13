@@ -43,12 +43,14 @@ engine.write(builder.build());
 const rows = engine.nodes("Document").limit(10).execute();
 console.log(rows.nodes[0].properties); // { title: "Meeting notes", ... }
 
-// Adaptive text search — returns SearchRows, not QueryRows.
-const ftsRows = engine.nodes("Document")
-  .textSearch("budget", 5)
+// Unified search — returns SearchRows, not QueryRows. This is the
+// recommended retrieval entry point.
+const searchRows = engine.nodes("Document")
+  .search("budget", 5)
   .execute();
-for (const hit of ftsRows.hits) {
-  console.log(hit.node.logicalId, hit.score, hit.source, hit.matchMode, hit.snippet);
+for (const hit of searchRows.hits) {
+  console.log(hit.node.logicalId, hit.score, hit.modality,
+              hit.source, hit.matchMode, hit.snippet);
 }
 
 // Filter by property
@@ -64,9 +66,12 @@ engine.close();
 
 - **Graph backbone**: nodes, edges, logical identity, supersession (upsert
   without mutation), runs/steps/actions for agent execution tracking
-- **Adaptive text search** via SQLite FTS5 -- `textSearch(...)` runs a
-  strict-then-relaxed retrieval pipeline and returns ranked `SearchHit`
-  rows over both document chunks and structured property projections
+- **Unified `search(...)` retrieval** via SQLite FTS5 -- one call runs a
+  strict-then-relaxed text pipeline (with a reserved vector stage for
+  future phases) and returns ranked `SearchHit` rows over both document
+  chunks and structured property projections. `textSearch(...)`,
+  `vectorSearch(...)`, and `fallbackSearch(...)` remain available as
+  advanced modality-specific overrides.
 - **Vector search** via sqlite-vec
 - **Immutable query builder**: fluent, chainable API with 14+ filter methods
 - **Typed results**: all query/admin results are fully typed TypeScript interfaces
@@ -109,7 +114,7 @@ const request = builder.build();
 
 ```typescript
 engine.nodes("Meeting")
-  .textSearch("budget", 10)
+  .search("budget", 10)
   .filterJsonTextEq("$.status", "active")
   .filterJsonIntegerGt("$.year", 2025)
   .traverse({ direction: "out", label: "OWNS", maxDepth: 2 })
@@ -118,19 +123,21 @@ engine.nodes("Meeting")
   .execute();
 ```
 
-### Adaptive text search
+### Unified search
 
 ```typescript
 import { Engine } from "fathomdb";
 
 const engine = Engine.open("/tmp/fathom.db");
 
-// Adaptive text search — engine owns strict-then-relaxed retrieval.
-const rows = engine.query("Goal").textSearch("ship quarterly docs", 10).execute();
+// search() is the primary retrieval entry point — engine owns the
+// strict-then-relaxed policy and returns SearchRows, not QueryRows.
+const rows = engine.nodes("Goal").search("ship quarterly docs", 10).execute();
 for (const hit of rows.hits) {
-  console.log(hit.node.logicalId, hit.score, hit.source, hit.matchMode, hit.snippet);
+  console.log(hit.node.logicalId, hit.score, hit.modality, hit.source,
+              hit.matchMode, hit.snippet);
 }
-console.log(rows.strictHitCount, rows.relaxedHitCount, rows.fallbackUsed);
+console.log(rows.strictHitCount, rows.relaxedHitCount, rows.vectorHitCount);
 
 // Recursive property FTS schema + opt-in match attribution.
 engine.admin.registerFtsPropertySchemaWithEntries({
@@ -138,8 +145,8 @@ engine.admin.registerFtsPropertySchemaWithEntries({
   entries: [{ path: "$.payload", mode: "recursive" }],
 });
 const attributed = engine
-  .query("KnowledgeItem")
-  .textSearch("quarterly docs", 10)
+  .nodes("KnowledgeItem")
+  .search("quarterly docs", 10)
   .withMatchAttribution()
   .execute();
 for (const hit of attributed.hits) {
@@ -148,8 +155,10 @@ for (const hit of attributed.hits) {
   }
 }
 
-// Explicit two-shape fallback search (narrow helper; see docs/guides/querying.md).
-const fb = engine.fallbackSearch("quarterly docs", "quarterly OR docs", 10).execute();
+// Advanced overrides (pin the modality or supply both shapes verbatim):
+//   engine.nodes("Goal").textSearch("ship quarterly docs", 10).execute()
+//   engine.fallbackSearch("quarterly docs", "quarterly OR docs", 10).execute()
+// See docs/guides/querying.md for when each is the right tool.
 ```
 
 ### AdminClient
