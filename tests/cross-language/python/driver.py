@@ -162,11 +162,17 @@ def _actual_hit(hit, with_attribution: bool) -> dict:
     ``attribution_matched_paths`` only when attribution was requested.
     """
     now = int(time.time())
+    if hit.match_mode is None:
+        match_mode_wire: str | None = None
+    elif hasattr(hit.match_mode, "value"):
+        match_mode_wire = hit.match_mode.value
+    else:
+        match_mode_wire = str(hit.match_mode)
     entry = {
         "logical_id": hit.node.logical_id,
         "kind": hit.node.kind,
         "source": hit.source.value if hasattr(hit.source, "value") else str(hit.source),
-        "match_mode": hit.match_mode.value if hasattr(hit.match_mode, "value") else str(hit.match_mode),
+        "match_mode": match_mode_wire,
         "snippet_non_empty": bool(hit.snippet and hit.snippet.strip()),
         "written_at_recent": (
             hit.written_at > 0

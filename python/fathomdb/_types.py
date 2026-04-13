@@ -435,6 +435,18 @@ class SearchMatchMode(str, Enum):
     RELAXED = "relaxed"
 
 
+class RetrievalModality(str, Enum):
+    """Coarse retrieval-modality classifier for a :class:`SearchHit`.
+
+    Every hit produced by the current text execution path is tagged
+    :attr:`TEXT`. Future phases that wire a vector retrieval branch will
+    tag those hits :attr:`VECTOR`.
+    """
+
+    TEXT = "text"
+    VECTOR = "vector"
+
+
 @dataclass(frozen=True)
 class HitAttribution:
     """Per-hit attribution payload when ``with_match_attribution`` is set."""
@@ -452,26 +464,43 @@ class SearchHit:
 
     node: NodeRow
     score: float
+    #: Coarse retrieval-modality classifier. ``TEXT`` for every text hit;
+    #: ``VECTOR`` reserved for future vector retrieval branches.
+    modality: RetrievalModality
     source: SearchHitSource
-    match_mode: SearchMatchMode
+    #: Strict or relaxed branch tag. ``None`` is reserved for future
+    #: vector hits which have no strict/relaxed notion.
+    match_mode: SearchMatchMode | None
     snippet: str | None
     #: Seconds since the Unix epoch (1970-01-01 UTC), matching
     #: ``nodes.created_at`` which is populated via SQLite ``unixepoch()``.
     written_at: int
     projection_row_id: str | None
+    #: Vector distance/similarity for vector hits. ``None`` for text
+    #: hits. Modality-specific diagnostic; values are not comparable
+    #: across modalities.
+    vector_distance: float | None
     attribution: HitAttribution | None
 
     @classmethod
     def from_wire(cls, payload: dict[str, Any]) -> "SearchHit":
         attribution_payload = payload.get("attribution")
+        raw_match_mode = payload.get("match_mode")
+        raw_vector_distance = payload.get("vector_distance")
         return cls(
             node=NodeRow.from_wire(payload["node"]),
             score=float(payload["score"]),
+            modality=RetrievalModality(payload.get("modality", "text")),
             source=SearchHitSource(payload["source"]),
-            match_mode=SearchMatchMode(payload["match_mode"]),
+            match_mode=(
+                SearchMatchMode(raw_match_mode) if raw_match_mode is not None else None
+            ),
             snippet=payload.get("snippet"),
             written_at=int(payload["written_at"]),
             projection_row_id=payload.get("projection_row_id"),
+            vector_distance=(
+                float(raw_vector_distance) if raw_vector_distance is not None else None
+            ),
             attribution=(
                 HitAttribution.from_wire(attribution_payload)
                 if attribution_payload is not None
@@ -489,6 +518,9 @@ class SearchRows:
     fallback_used: bool
     strict_hit_count: int
     relaxed_hit_count: int
+    #: Number of hits contributed by the vector branch. Always ``0``
+    #: until vector retrieval is wired in a later phase.
+    vector_hit_count: int
 
     @classmethod
     def from_wire(cls, payload: dict[str, Any]) -> "SearchRows":
@@ -498,6 +530,7 @@ class SearchRows:
             fallback_used=bool(payload["fallback_used"]),
             strict_hit_count=int(payload["strict_hit_count"]),
             relaxed_hit_count=int(payload["relaxed_hit_count"]),
+            vector_hit_count=int(payload.get("vector_hit_count", 0)),
         )
 
 

@@ -104,6 +104,7 @@ did:
 | `hits` | All [`SearchHit`](#searchhit) rows in final merged order: strict block first, relaxed block second. |
 | `strict_hit_count` | Number of hits contributed by the strict branch. |
 | `relaxed_hit_count` | Number of hits contributed by the relaxed branch. |
+| `vector_hit_count` | Number of hits in the vector block. Always `0` until vector retrieval is wired in (planned for a later phase). |
 | `fallback_used` | `True` if the relaxed branch fired (i.e. the strict branch returned zero hits and the engine derived a relaxed shape). |
 | `was_degraded` | `True` if the engine fell back to a simpler plan shape while executing. Mirrors `QueryRows.was_degraded`. |
 
@@ -121,11 +122,13 @@ A single adaptive or fallback search hit. Every hit carries the full
 |---|---|
 | `node` | The matched `NodeRow` (see above). |
 | `score` | Engine-assigned ranking score (higher is better). |
+| `modality` | [`RetrievalModality`](#retrievalmodality): coarse retrieval-modality classifier (`text` or `vector`). Every hit carries this unambiguously. |
 | `source` | [`SearchHitSource`](#searchhitsource): which projection surface produced the hit. |
-| `match_mode` | [`SearchMatchMode`](#searchmatchmode): whether this hit came from the strict or relaxed branch. |
+| `match_mode` | Optional [`SearchMatchMode`](#searchmatchmode): whether this hit came from the strict or relaxed branch. Populated for text hits; `None`/`null` for future vector hits, which have no strict/relaxed notion. |
 | `snippet` | Optional snippet extracted from the matched text, or `None` if the engine did not produce one. |
 | `written_at` | **Seconds since the Unix epoch** (1970-01-01 UTC), matching `nodes.created_at` which is populated via SQLite `unixepoch()`. |
 | `projection_row_id` | Row ID of the underlying projection row (chunk or property-FTS row), or `None` if not applicable. |
+| `vector_distance` | Vector distance/similarity for vector hits. `None`/`null` for text hits. Modality-specific diagnostic; not comparable across modalities. |
 | `attribution` | [`HitAttribution`](#hitattribution) if `with_match_attribution()` was set on the builder, otherwise `None`. |
 
 ::: fathomdb.SearchHit
@@ -155,6 +158,24 @@ Whether a hit came from the strict branch or the relaxed fallback:
   `fallback_used` is `True`.
 
 ::: fathomdb.SearchMatchMode
+    options:
+      heading_level: 4
+      show_root_heading: true
+
+### RetrievalModality
+
+Coarse retrieval-modality classifier attached to every `SearchHit`.
+Future phases will wire a vector retrieval branch; the field is
+available today so consumers can switch on it without a breaking
+change later.
+
+- `TEXT` — the hit came from a text retrieval branch (chunk or
+  property FTS). Every hit produced by the current search pipeline is
+  tagged this way.
+- `VECTOR` — reserved for a future vector retrieval branch. No code
+  path emits this variant yet.
+
+::: fathomdb.RetrievalModality
     options:
       heading_level: 4
       show_root_heading: true

@@ -4,7 +4,7 @@
 
 use fathomdb::{
     ChunkInsert, ChunkPolicy, Engine, EngineOptions, FtsPropertyPathSpec, HitAttribution,
-    NodeInsert, NodeRetire, SearchHitSource, SearchMatchMode, WriteRequest,
+    NodeInsert, NodeRetire, RetrievalModality, SearchHitSource, SearchMatchMode, WriteRequest,
 };
 use tempfile::NamedTempFile;
 
@@ -124,7 +124,7 @@ fn text_search_execute_returns_search_rows_with_populated_fields() {
         .expect("goal-quarterly hit");
 
     assert!(hit.score > 0.0, "score must be flipped bm25 (positive)");
-    assert!(matches!(hit.match_mode, SearchMatchMode::Strict));
+    assert!(matches!(hit.match_mode, Some(SearchMatchMode::Strict)));
     assert!(matches!(
         hit.source,
         SearchHitSource::Chunk | SearchHitSource::Property,
@@ -496,7 +496,7 @@ fn strict_hit_does_not_trigger_relaxed_branch() {
     assert_eq!(rows.strict_hit_count, rows.hits.len());
     assert!(!rows.was_degraded);
     for hit in &rows.hits {
-        assert!(matches!(hit.match_mode, SearchMatchMode::Strict));
+        assert!(matches!(hit.match_mode, Some(SearchMatchMode::Strict)));
     }
 }
 
@@ -560,7 +560,7 @@ fn strict_miss_triggers_relaxed_branch_and_returns_relaxed_hits() {
     assert!(
         rows.hits
             .iter()
-            .any(|h| matches!(h.match_mode, SearchMatchMode::Relaxed))
+            .any(|h| matches!(h.match_mode, Some(SearchMatchMode::Relaxed)))
     );
 }
 
@@ -1300,7 +1300,7 @@ fn attribution_works_under_relaxed_branch() {
     let hit = rows
         .hits
         .iter()
-        .find(|h| matches!(h.match_mode, SearchMatchMode::Relaxed))
+        .find(|h| matches!(h.match_mode, Some(SearchMatchMode::Relaxed)))
         .expect("at least one relaxed hit");
     let att = hit
         .attribution
@@ -1548,7 +1548,7 @@ fn fallback_search_strict_only_returns_same_shape_as_two_shape_path() {
         strict_only
             .hits
             .iter()
-            .all(|h| matches!(h.match_mode, SearchMatchMode::Strict)),
+            .all(|h| matches!(h.match_mode, Some(SearchMatchMode::Strict))),
         "strict-only must return only Strict hits",
     );
     assert_eq!(strict_only.strict_hit_count, strict_only.hits.len());
@@ -1591,7 +1591,7 @@ fn fallback_search_two_shape_reuses_adaptive_merge_rules() {
     assert!(!rows.was_degraded);
     for hit in &rows.hits {
         assert!(
-            matches!(hit.match_mode, SearchMatchMode::Relaxed),
+            matches!(hit.match_mode, Some(SearchMatchMode::Relaxed)),
             "every hit must be tagged Relaxed",
         );
     }
@@ -2030,7 +2030,7 @@ fn strict_hit_with_many_terms_leaves_was_degraded_false() {
     );
     assert_eq!(rows.relaxed_hit_count, 0);
     for hit in &rows.hits {
-        assert!(matches!(hit.match_mode, SearchMatchMode::Strict));
+        assert!(matches!(hit.match_mode, Some(SearchMatchMode::Strict)));
     }
 }
 
@@ -2889,5 +2889,86 @@ fn v18_migration_rebuilds_position_map_on_upgrade() {
         !att.matched_paths.is_empty(),
         "matched_paths must be non-empty after v18 rebuild: {:?}",
         att.matched_paths,
+    );
+}
+
+// ── Phase 10: retrieval-modality field shape sanity tests ─────────────
+
+#[test]
+fn text_search_hits_carry_modality_text() {
+    let (_db, engine) = open_engine();
+    seed_goals(&engine);
+
+    let rows = engine
+        .query("Goal")
+        .text_search("quarterly", 10)
+        .execute()
+        .expect("search executes");
+
+    assert!(!rows.hits.is_empty());
+    for hit in &rows.hits {
+        assert!(
+            matches!(hit.modality, RetrievalModality::Text),
+            "every text-path hit must be tagged RetrievalModality::Text, got {:?}",
+            hit.modality,
+        );
+    }
+}
+
+#[test]
+fn text_search_hits_have_no_vector_distance() {
+    let (_db, engine) = open_engine();
+    seed_goals(&engine);
+
+    let rows = engine
+        .query("Goal")
+        .text_search("quarterly", 10)
+        .execute()
+        .expect("search executes");
+
+    assert!(!rows.hits.is_empty());
+    for hit in &rows.hits {
+        assert!(
+            hit.vector_distance.is_none(),
+            "text hits must have vector_distance == None, got {:?}",
+            hit.vector_distance,
+        );
+    }
+}
+
+#[test]
+fn text_search_hits_have_some_match_mode() {
+    let (_db, engine) = open_engine();
+    seed_goals(&engine);
+
+    let rows = engine
+        .query("Goal")
+        .text_search("quarterly", 10)
+        .execute()
+        .expect("search executes");
+
+    assert!(!rows.hits.is_empty());
+    for hit in &rows.hits {
+        assert!(
+            hit.match_mode.is_some(),
+            "text hits must carry Some(match_mode)",
+        );
+    }
+}
+
+#[test]
+fn search_rows_vector_hit_count_is_zero_in_phase_10() {
+    let (_db, engine) = open_engine();
+    seed_goals(&engine);
+
+    let rows = engine
+        .query("Goal")
+        .text_search("quarterly", 10)
+        .execute()
+        .expect("search executes");
+
+    assert_eq!(
+        rows.vector_hit_count, 0,
+        "vector_hit_count must be zero until vector retrieval is wired",
     );
 }

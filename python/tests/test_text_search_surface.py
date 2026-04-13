@@ -14,6 +14,7 @@ from fathomdb import (
     HitAttribution,
     NodeInsert,
     QueryRows,
+    RetrievalModality,
     SearchHit,
     SearchHitSource,
     SearchMatchMode,
@@ -268,6 +269,32 @@ def test_text_search_builder_rejects_relaxed_query_kwarg(tmp_path: Path) -> None
             limit=10,
             relaxed_query="budget OR meeting",  # type: ignore[call-arg]
         )
+
+
+def test_text_search_hits_carry_text_modality_and_no_vector_distance(
+    tmp_path: Path,
+) -> None:
+    """Phase 10 sanity: every text-path hit is tagged TEXT and has no
+    vector_distance populated."""
+    db = Engine.open(tmp_path / "t.db")
+    _seed_budget_goals(db)
+
+    rows = db.query("Goal").text_search("budget", 10).execute()
+    assert len(rows.hits) >= 1
+    for hit in rows.hits:
+        assert hit.modality == RetrievalModality.TEXT
+        assert hit.vector_distance is None
+        assert hit.match_mode is not None
+
+
+def test_search_rows_vector_hit_count_is_zero_in_phase_10(tmp_path: Path) -> None:
+    """Phase 10 introduces no vector execution path, so vector_hit_count
+    is always zero."""
+    db = Engine.open(tmp_path / "t.db")
+    _seed_budget_goals(db)
+
+    rows = db.query("Goal").text_search("budget", 10).execute()
+    assert rows.vector_hit_count == 0
 
 
 if __name__ == "__main__":
