@@ -107,15 +107,21 @@ builder carries the same filter surface as `SearchBuilder`, plus
 ### Query.vector_search
 
 Pins retrieval to the vector modality. Requires the engine to have been
-opened with `vector_dimension`. In v1 this is also the **only** way to
-run a vector search, because `search()` does not yet embed
-natural-language queries at read time. The method extends the current
-`Query` chain with a `vector_search` step; the resulting query still
-terminates in `execute() -> QueryRows`, and the Python SDK does not
-currently ship a dedicated `VectorSearchBuilder` type. When a future
-phase wires read-time query embedding into `search()`, vector hits will
-be surfaced through the shared `SearchRows` / `SearchHit` family with
-`modality == Vector` and a populated `vector_distance` field.
+opened with `vector_dimension`. It is the caller-supplied-literal
+override: when the engine is opened with
+[`EmbedderChoice::None`](#read-time-embedder), this is the only way to
+run a vector search because `search()` has no embedder to turn raw text
+into a query vector. When a read-time embedder is attached (Phase 12.5
+`Builtin` or `InProcess`), `search()` fires its own vector branch on
+natural-language queries and most callers should prefer it; the
+`vector_search` override remains available for callers that want to
+bypass the unified planner and supply a vector literal directly. The
+method extends the current `Query` chain with a `vector_search` step;
+the resulting query still terminates in `execute() -> QueryRows`, and
+the Python SDK does not currently ship a dedicated `VectorSearchBuilder`
+type. Vector hits emitted by `search()` are surfaced through the shared
+`SearchRows` / `SearchHit` family with `modality == Vector` and a
+populated `vector_distance` field.
 
 ### FallbackSearchBuilder
 

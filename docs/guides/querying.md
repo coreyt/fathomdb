@@ -288,8 +288,8 @@ for node in results.nodes:
 `text_search(query, limit)` is the text-only advanced override. It pins
 retrieval to the text modality — strict-then-relaxed over chunks and
 property FTS, with no vector stage even when the engine has vector
-capability. Prefer `search()` above unless you have a specific reason to
-exclude the (future) vector branch.
+capability or a read-time embedder attached. Prefer `search()` above
+unless you have a specific reason to exclude the vector branch.
 
 It is an **adaptive** search: you hand the engine a raw user query and it
 owns the retrieval policy. Two things matter for callers:
