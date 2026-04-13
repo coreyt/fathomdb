@@ -2,15 +2,22 @@
 # Pre-flight checks for agent harness launches on fathomdb.
 #
 # Usage:
-#   ./scripts/preflight.sh            # standard checks
-#   ./scripts/preflight.sh --baseline # include cargo check baseline (slow)
+#   ./scripts/preflight.sh                # standard agent-harness checks
+#   ./scripts/preflight.sh --baseline     # include cargo check baseline (slow)
+#   ./scripts/preflight.sh --release      # include feature-gated clippy checks
+#                                         # that CI runs but agent preflight
+#                                         # normally skips. Use this before
+#                                         # release prep if you don't want to
+#                                         # run the full preflight-CI.sh.
 #
 # Exit codes:
 #   0 = all gates pass
 #   1 = one or more gates failed (fix before launching agents)
 #
-# Note: this is distinct from preflight-CI.sh which validates CI build
-# prerequisites. This script is for the agent harness.
+# For release preparation, prefer ./scripts/preflight-CI.sh — it runs every
+# gate CI runs (including Python/TypeScript/Go). This script is optimized
+# for agent-harness speed and skips feature-gated clippy / test invocations
+# unless --release is passed.
 
 set -euo pipefail
 
@@ -19,9 +26,11 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 INCLUDE_BASELINE=false
+INCLUDE_RELEASE=false
 for arg in "$@"; do
     case "$arg" in
         --baseline) INCLUDE_BASELINE=true ;;
+        --release)  INCLUDE_RELEASE=true ;;
     esac
 done
 
@@ -112,7 +121,33 @@ if [ "$INCLUDE_BASELINE" = true ]; then
     cargo check --workspace --quiet 2>&1 | tail -5
 fi
 
-# 9. Summary
+# 9. Release gates (optional, catches CI-only failures)
+if [ "$INCLUDE_RELEASE" = true ]; then
+    echo ""
+    echo "── Release gates (feature-gated clippy) ──"
+    # --features tracing catches used_underscore_binding on `error = %err`
+    # spans in trace_* macros, which the default clippy run misses because
+    # trace_* expand to no-ops without the feature.
+    if cargo clippy --workspace --all-targets --features tracing \
+        -- -D warnings -A missing-docs >/dev/null 2>&1; then
+        pass "clippy --features tracing"
+    else
+        fail "clippy --features tracing (run manually for details)"
+    fi
+    # --features python mirrors the pyo3 binding build CI runs.
+    if cargo clippy --workspace --all-targets --features python \
+        -- -D warnings -A missing-docs >/dev/null 2>&1; then
+        pass "clippy --features python"
+    else
+        fail "clippy --features python (run manually for details)"
+    fi
+    echo ""
+    echo "  Note: preflight.sh --release does NOT run feature-gated tests,"
+    echo "  Python / TypeScript / Go gates, or docs build. Use"
+    echo "  ./scripts/preflight-CI.sh for the full CI-equivalent set."
+fi
+
+# 10. Summary
 echo ""
 echo "── Result ──"
 if [ "$FAILED" -gt 0 ]; then

@@ -19,38 +19,74 @@ Before starting the checklist, confirm:
   minor for features, major for breaking changes). fathomdb is pre-1.0, so
   breaking changes land as minor bumps (0.x.y → 0.(x+1).0).
 
+## 0.5. Registry state check
+
+**This precedes version selection.** A past release cycle may have
+partial-published a version to some registries but not others. Check
+that the version you're about to cut is strictly greater than the
+maximum published version across **all three** registries, not just
+the local `Cargo.toml`:
+
+```bash
+curl -s https://crates.io/api/v1/crates/fathomdb \
+  | python3 -c "import json,sys; print('crates.io:', json.load(sys.stdin)['crate']['max_version'])"
+curl -s https://pypi.org/pypi/fathomdb/json \
+  | python3 -c "import json,sys; print('pypi:', json.load(sys.stdin)['info']['version'])"
+curl -s https://registry.npmjs.org/fathomdb \
+  | python3 -c "import json,sys; print('npm:', json.load(sys.stdin)['dist-tags']['latest'])"
+```
+
+- [ ] All three registries report a maximum version you recognize.
+- [ ] Your new version is strictly greater than the max across all three.
+- [ ] If any registry is ahead of `Cargo.toml` (i.e. a past release
+  published there but the local bump was never committed), skip the
+  ahead version and choose the next one. Never reuse a published version
+  number.
+- [ ] If any registry has gaps (e.g. crates.io has 0.2.6 and 0.2.8 but
+  not 0.2.7), that's historical evidence of a partial-publish incident.
+  Review the checklist §10 rollback section before proceeding.
+
 ## 1. Code-quality gates
 
-All gates must be green on the commit you're about to tag. Run from the
-repo root.
+All gates must be green on the commit you're about to tag.
 
-- [ ] `./scripts/preflight.sh` — catches dirty tree, wrong branch,
-  stale worktrees, missing venv.
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings -A missing-docs`
-- [ ] `cargo clippy --workspace --all-targets --features python -- -D warnings -A missing-docs`
-- [ ] `cargo clippy --workspace --all-targets --features tracing -- -D warnings -A missing-docs`
-  (CI's `rust-lint` job runs with `--features tracing`; without this gate,
-  tracing-specific lints like `used_underscore_binding` on `error = %err`
-  macros will only surface in CI. This gate was missing from the 0.3.0
-  prep and blocked the first release attempt.)
+**Primary gate**: run `./scripts/preflight-CI.sh` from the repo root.
+This is the full CI-equivalent gate script and runs every clippy / test
+/ lint invocation that CI runs, including the feature-gated variants
+that catch release-blocking bugs (`--features tracing`,
+`--features python`, `cargo nextest run --workspace --features tracing`,
+Python tests, TypeScript typecheck + tests, Go vet).
+
+**Do not substitute `./scripts/preflight.sh`** — that script is
+intentionally lightweight for agent-harness launches and skips
+feature-gated clippy / test runs. Running `preflight.sh` for release
+prep will miss `used_underscore_binding` on tracing-span bindings,
+conditional-feature test failures, and other CI-visible defects.
+
+- [ ] `./scripts/preflight-CI.sh` — green end to end
+
+Additional gates not in `preflight-CI.sh` that must also pass:
+
 - [ ] `cargo clippy --workspace --all-targets --features default-embedder -- -D warnings -A missing-docs`
-  (new since Phase 12.5 — if this fails, the `default-embedder` feature
-  regressed)
-- [ ] `cargo nextest run --workspace` — full Rust test suite
+  (Candle dep is heavy; preflight-CI.sh skips this. If this fails the
+  `default-embedder` feature regressed.)
 - [ ] `cargo nextest run -p fathomdb --features default-embedder --test builtin_embedder`
-  — feature-gated Candle embedder tests
-- [ ] `cargo nextest run -p fathomdb --test scale` — concurrency + determinism
-  stress suite (long-running; ~30s)
+  (feature-gated Candle embedder tests)
+- [ ] `cargo nextest run -p fathomdb --test scale`
+  (concurrency + determinism stress suite, ~30s)
 - [ ] `bash docs/build.sh` — mkdocs build --strict must be clean
-- [ ] `python -m pytest python/tests/ --ignore=python/tests/examples` — Python
-  SDK suite (excludes the known-broken `test_harness_baseline.py` / `test_harness_vector.py`
-  which pass when run separately with the right setup)
-- [ ] `cd typescript && npm test --workspace=packages/fathomdb` — TypeScript
-  SDK suite
-- [ ] `cd typescript && npm run build --workspace=packages/fathomdb` — TS
-  compiles cleanly (not just tests)
-- [ ] `tests/cross-language/run.sh` — cross-language parity fixtures (if the
-  runner exists at the path — check `ls tests/cross-language/`)
+- [ ] TypeScript native binding is up-to-date. The TS test suite loads
+  `typescript/packages/fathomdb/test/.native/fathomdb.node` — this file
+  is a debug-build artifact copied from `target/debug/libfathomdb.so`
+  and is easy to forget to regenerate after Rust-side changes. Rebuild
+  and copy before the TS test run:
+  ```bash
+  cargo build -p fathomdb --features node
+  cp target/debug/libfathomdb.so typescript/packages/fathomdb/test/.native/fathomdb.node
+  cd typescript && npm test --workspace=packages/fathomdb
+  ```
+- [ ] `tests/cross-language/run.sh` — cross-language parity fixtures
+  (if the runner exists at the path — check `ls tests/cross-language/`)
 
 ## 2. Version sync and bump
 
@@ -172,21 +208,72 @@ After pushing the tag, watch the release workflow:
 
 ## 10. Rollback plan
 
-If a post-release smoke test fails:
+**Partial-publish failures are possible.** The three publish jobs
+(`publish-rust`, `publish-pypi`, `publish-npm`) in
+`.github/workflows/release.yml` run in parallel and are not atomic.
+If one succeeds and another fails, the successful side is burned —
+crates.io / PyPI / npm will not let you re-publish the same version
+number. The three registries must then reconverge at a new version.
+
+The historical registry gaps (crates.io missing 0.2.7; npm missing
+0.2.1-0.2.4 and 0.2.6) are evidence of past partial-publish incidents.
+This is the documented tradeoff of parallel publish: speed in the
+happy path, skipped version numbers in the unhappy path.
+
+**If a publish job fails after a tag push**:
 
 - **Do NOT delete the git tag.** Tags are immutable-by-convention for
   downstream tooling.
 - **Do NOT yank the crate/wheel/package** unless it's actively unsafe.
   Yanking breaks anyone who installed it between release and rollback.
-- **Do** cut a patch release immediately: `$NEW_VERSION + 0.0.1` with the
-  fix. Restart the checklist from §2.
-- **Do** open a GitHub issue describing what broke so the fix can be
+- **Do NOT re-tag the same version.** The successful side will reject
+  it; the failed side will be confused by the tag re-push.
+- **Do** check which registries successfully published via §0.5's
+  registry state check. The successful side is now at the new version;
+  the failed side is still at the old.
+- **Do** cut a fresh version `$NEW_VERSION + 0.0.1` with whatever fix
+  addresses the underlying failure. Restart the checklist from §0.5
+  to confirm all three registries accept the new number.
+- **Do** open a GitHub issue describing what broke so the fix is
   reviewed, not just hot-patched.
 
-## Appendix: known pre-existing issues
+If a post-release smoke test fails **after** all three publishes
+succeeded (e.g. the crate installs cleanly but a user-reported bug
+surfaces), the same patch-forward strategy applies — ship a fix in
+`$NEW_VERSION + 0.0.1`.
 
-These are not blockers — they existed before the release prep and should
-not hold up a cut. Reference for "is this new?" triage:
+## Appendix: conditional-tracing binding pattern
+
+When a binding is consumed only by a `trace_warn!` / `trace_info!` /
+`trace_debug!` macro that expands to a no-op without the `tracing`
+feature, naming the binding `_err` to suppress the no-feature
+`unused_variables` lint trips `clippy::used_underscore_binding` under
+`--features tracing` (because the binding IS used by the expanded
+`tracing::warn!` span). The two lints are mutually exclusive on the
+same binding.
+
+The repo-wide pattern (see `crates/fathomdb-engine/src/runtime.rs:71`
+and the `fill_vector_branch` arms in `coordinator.rs`) is to name the
+binding without the underscore AND add an explicit discard:
+
+```rust
+Err(err) => {
+    trace_warn!(error = %err, "operation failed");
+    let _ = err; // Used by trace_warn! when tracing feature is active
+    // ...
+}
+```
+
+The `let _ = err;` satisfies `unused_variables` without the feature;
+the `error = %err` inside the macro satisfies `used_underscore_binding`
+with it. Both halves are required.
+
+`./scripts/preflight-CI.sh` catches the `--features tracing` half via
+line 96 of that script. `./scripts/preflight.sh` does NOT, because it's
+an intentionally lightweight agent-harness preflight. Use
+`preflight-CI.sh` for release prep.
+
+## Appendix: known pre-existing issues
 
 - `python/tests/examples/test_harness_baseline.py` and
   `test_harness_vector.py` pass when run independently but fail in
@@ -197,6 +284,10 @@ not hold up a cut. Reference for "is this new?" triage:
   in `crates/fathomdb/src/node.rs` and `node_types.rs` (unused self,
   pass-by-value, never-constructed struct). Not in the default gate
   set but visible when reviewing node-feature builds.
+- Python-macos `test_python_feedback_emits_slow_and_heartbeat_for_slow_operation`
+  is a timing-sensitive test that intermittently misses the HEARTBEAT
+  phase on macOS CI runners. Not a regression from the 0.3.0 rollout.
+  If this is the only failure blocking a release, retry the workflow.
 - GitHub issue #39: write-time vector regeneration via the Builtin
   embedder. Tracked but not in scope for this release.
 
