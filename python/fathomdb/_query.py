@@ -557,12 +557,19 @@ class FallbackSearchBuilder(_SearchBuilderBase):
 
 
 class SearchBuilder(_SearchBuilderBase):
-    """Fluent builder for the unified :meth:`Query.search` entry point.
+    """Tethered builder returned by :meth:`Query.search`.
 
-    Returned from :meth:`Query.search`. Mirrors the Phase 12 Rust
-    ``SearchBuilder`` surface verbatim: a single strict branch with no
-    adaptive relaxation or caller-supplied relaxed query. Terminal
-    :meth:`execute` returns :class:`SearchRows`.
+    Runs the Phase 12 unified retrieval planner: a strict text branch, a
+    relaxed text branch derived engine-side from the strict query via
+    ``derive_relaxed`` (fires when the strict branch underflows), and a
+    reserved vector stage that stays dormant in v1 because read-time
+    embedding of natural-language queries is not yet wired in.
+
+    Callers chain filter methods and :meth:`with_match_attribution` on
+    top of :meth:`Query.search` the same way they do on
+    :meth:`Query.text_search`. Terminal :meth:`execute` always returns
+    :class:`SearchRows`. For an explicit caller-supplied relaxed query
+    without engine-side derivation, use :meth:`Engine.fallback_search`.
     """
 
     _mode = "search"
