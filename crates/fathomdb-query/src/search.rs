@@ -84,9 +84,18 @@ pub struct SearchHit {
     /// The matched node, projected in the same shape the flat query surface
     /// uses.
     pub node: NodeRowLite,
-    /// Monotonically increasing relevance score. Phase 1 derives this from
-    /// `-bm25(...)` so that larger values represent better matches; callers
-    /// may sort descending by this field.
+    /// Raw engine score used for ordering within a block. Higher is always
+    /// better, across every modality and every source:
+    /// - Text hits: the FTS5 bm25 score with its sign flipped (`-bm25(...)`),
+    ///   so higher score corresponds to stronger lexical relevance.
+    /// - Vector hits: a negated distance (`-vector_distance`) for distance
+    ///   metrics, or a direct similarity value for similarity metrics.
+    ///
+    /// Scores are **ordering-only within a block**. Scores from different
+    /// blocks — and in particular text scores vs. vector scores — are not
+    /// on a shared scale. The engine does not normalize across blocks, and
+    /// callers must not compare or arithmetically combine scores across
+    /// blocks.
     pub score: f64,
     /// Coarse retrieval-modality classifier. Every hit produced by the
     /// current text execution paths is tagged
@@ -122,9 +131,19 @@ pub struct SearchHit {
     /// for chunk hits, or `fts_node_properties.rowid` for property hits).
     /// Useful for debugging and for future attribution paths.
     pub projection_row_id: Option<String>,
-    /// Vector distance or similarity for vector hits. `None` for every
-    /// text hit. Modality-specific diagnostic; values are not comparable
-    /// across modalities.
+    /// Raw vector distance or similarity for vector hits. `None` for text
+    /// hits.
+    ///
+    /// Stable public API: this field ships in v1 and is documented as
+    /// modality-specific diagnostic data. Callers may read it for display
+    /// or internal reranking but must **not** compare it against text-hit
+    /// `score` values or use it arithmetically alongside text scores — the
+    /// two are not on a shared scale.
+    ///
+    /// For distance metrics the raw distance is preserved (lower = closer
+    /// match); callers that want a "higher is better" ordering value should
+    /// read `score` instead, which is already negated appropriately for
+    /// intra-block ranking.
     pub vector_distance: Option<f64>,
     /// Reserved: match-attribution payload. Always `None` in Phase 1.
     pub attribution: Option<HitAttribution>,

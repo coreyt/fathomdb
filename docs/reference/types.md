@@ -121,14 +121,14 @@ A single adaptive or fallback search hit. Every hit carries the full
 | Field | Meaning |
 |---|---|
 | `node` | The matched `NodeRow` (see above). |
-| `score` | Engine-assigned ranking score (higher is better). |
+| `score` | Raw engine score used for ordering within a block. Higher is always better, across every modality and every source (text hits use `-bm25(...)`; vector hits use a negated distance or a direct similarity). Scores are ordering-only within a block; scores from different blocks — in particular text vs. vector — are not on a shared scale and must not be compared or arithmetically combined across blocks. |
 | `modality` | [`RetrievalModality`](#retrievalmodality): coarse retrieval-modality classifier (`text` or `vector`). Every hit carries this unambiguously. |
 | `source` | [`SearchHitSource`](#searchhitsource): which projection surface produced the hit. |
 | `match_mode` | Optional [`SearchMatchMode`](#searchmatchmode): whether this hit came from the strict or relaxed branch. Populated for text hits; `None`/`null` for future vector hits, which have no strict/relaxed notion. |
 | `snippet` | Optional snippet extracted from the matched text, or `None` if the engine did not produce one. |
 | `written_at` | **Seconds since the Unix epoch** (1970-01-01 UTC), matching `nodes.created_at` which is populated via SQLite `unixepoch()`. |
 | `projection_row_id` | Row ID of the underlying projection row (chunk or property-FTS row), or `None` if not applicable. |
-| `vector_distance` | Vector distance/similarity for vector hits. `None`/`null` for text hits. Modality-specific diagnostic; not comparable across modalities. |
+| `vector_distance` | Raw vector distance or similarity for vector hits; `None`/`null` for text hits. Stable public API, documented as modality-specific diagnostic data that is **not** cross-comparable: callers must not compare it against text-hit `score` values or combine it arithmetically with text scores. For distance metrics the raw distance is preserved (lower = closer); callers that want a "higher is better" ordering value should read `score` instead. |
 | `attribution` | [`HitAttribution`](#hitattribution) if `with_match_attribution()` was set on the builder, otherwise `None`. |
 
 ::: fathomdb.SearchHit
