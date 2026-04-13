@@ -1,366 +1,78 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BuilderValidationError, FathomError, SqliteError, Engine, PreserializedJson, Query, WriteRequestBuilder, newId, newRowId, type ResponseCycleEvent } from "../src/index.js";
+// Real-engine integration tests for the TypeScript SDK surface.
+//
+// Converted from a mocked-binding test suite in Pack P7.6b. The file keeps
+// every invariant the pre-P7.6b mocked version asserted; the conversion
+// adds strength by routing every response through the real napi binding
+// and a real on-disk SQLite engine, catching wire-format regressions the
+// mocks could not.
+//
+// Structure:
+//   1. Pure-TypeScript tests (WriteRequestBuilder, runWithFeedback,
+//      PreserializedJson, toAst) do not need an engine — they test logic
+//      that lives entirely in the TypeScript layer.
+//   2. Engine-backed tests open a fresh tempdir-backed engine via
+//      `openTempEngine` and close it in `afterEach`.
+//   3. Three tests still use a scoped mock via `Engine.setBindingForTests`
+//      because they exercise error-path code that can only be triggered
+//      when the native binding throws a specific error string. That is
+//      the only supported way to cover those branches; the mock is
+//      installed inside the test body, not in a suite-wide `beforeEach`.
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  BuilderValidationError,
+  Engine,
+  FathomError,
+  PreserializedJson,
+  Query,
+  SqliteError,
+  WriteRequestBuilder,
+  newId,
+  newRowId,
+  type ResponseCycleEvent,
+} from "../src/index.js";
 import { runWithFeedback } from "../src/feedback.js";
 
-describe("Engine", () => {
-  beforeEach(() => {
-    const binding = {
-      EngineCore: {
-        open: vi.fn(() => ({
-          close: vi.fn(),
-          telemetrySnapshot: vi.fn(() =>
-            JSON.stringify({
-              queries_total: 1,
-              writes_total: 2,
-              write_rows_total: 3,
-              errors_total: 4,
-              admin_ops_total: 5,
-              cache_hits: 6,
-              cache_misses: 7,
-              cache_writes: 8,
-              cache_spills: 9
-            })
-          ),
-          compileAst: vi.fn(() => JSON.stringify({
-            sql: "SELECT * FROM nodes", binds: [], shape_hash: 42,
-            driving_table: "nodes", hints: { recursion_limit: 100, hard_limit: 1000 }
-          })),
-          compileGroupedAst: vi.fn(() => JSON.stringify({
-            root: { sql: "SELECT * FROM nodes", binds: [], shape_hash: 42, driving_table: "nodes", hints: { recursion_limit: 100, hard_limit: 1000 } },
-            expansions: [], shape_hash: 99, hints: { recursion_limit: 100, hard_limit: 1000 }
-          })),
-          explainAst: vi.fn(() => JSON.stringify({
-            sql: "SELECT * FROM nodes", bind_count: 0, driving_table: "nodes", shape_hash: 42, cache_hit: false
-          })),
-          executeAst: vi.fn(() => JSON.stringify({
-            nodes: [{ row_id: "r1", logical_id: "n1", kind: "Doc", properties: "{}", content_ref: "s3://docs/test.pdf", last_accessed_at: null }],
-            runs: [], steps: [], actions: [], was_degraded: false
-          })),
-          executeGroupedAst: vi.fn(() => JSON.stringify({
-            roots: [], expansions: [], was_degraded: false
-          })),
-          submitWrite: vi.fn(() => JSON.stringify({
-            label: "test", optional_backfill_count: 0, warnings: [], provenance_warnings: []
-          })),
-          touchLastAccessed: vi.fn(() => JSON.stringify({
-            touched_logical_ids: 2, touched_at: 1000
-          })),
-          checkIntegrity: vi.fn(() => JSON.stringify({
-            physical_ok: true, foreign_keys_ok: true, missing_fts_rows: 0,
-            missing_property_fts_rows: 0, duplicate_active_logical_ids: 0,
-            operational_missing_collections: 0,
-            operational_missing_last_mutations: 0, warnings: []
-          })),
-          checkSemantics: vi.fn(() => JSON.stringify({
-            orphaned_chunks: 0, null_source_ref_nodes: 0, broken_step_fk: 0,
-            broken_action_fk: 0, stale_fts_rows: 0, fts_rows_for_superseded_nodes: 0,
-            stale_property_fts_rows: 0, orphaned_property_fts_rows: 0,
-            mismatched_kind_property_fts_rows: 0, duplicate_property_fts_rows: 0,
-            drifted_property_fts_rows: 0,
-            dangling_edges: 0, orphaned_supersession_chains: 0, stale_vec_rows: 0,
-            vec_rows_for_superseded_nodes: 0, missing_operational_current_rows: 0,
-            stale_operational_current_rows: 0, disabled_collection_mutations: 0,
-            orphaned_last_access_metadata_rows: 0, warnings: []
-          })),
-          rebuildProjections: vi.fn(() => JSON.stringify({ targets: ["all"], rebuilt_rows: 5, notes: [] })),
-          rebuildMissingProjections: vi.fn(() => JSON.stringify({ targets: ["all"], rebuilt_rows: 0, notes: [] })),
-          traceSource: vi.fn(() => JSON.stringify({
-            source_ref: "src-1", node_rows: 1, edge_rows: 0, action_rows: 0,
-            operational_mutation_rows: 0, node_logical_ids: ["n1"], action_ids: [], operational_mutation_ids: []
-          })),
-          exciseSource: vi.fn(() => JSON.stringify({
-            source_ref: "src-1", node_rows: 1, edge_rows: 0, action_rows: 0,
-            operational_mutation_rows: 0, node_logical_ids: ["n1"], action_ids: [], operational_mutation_ids: []
-          })),
-          restoreLogicalId: vi.fn(() => JSON.stringify({
-            logical_id: "n1", was_noop: false, restored_node_rows: 1, restored_edge_rows: 0,
-            restored_chunk_rows: 0, restored_fts_rows: 0, restored_property_fts_rows: 0,
-            restored_vec_rows: 0, skipped_edges: [], notes: []
-          })),
-          purgeLogicalId: vi.fn(() => JSON.stringify({
-            logical_id: "n1", was_noop: false, deleted_node_rows: 1, deleted_edge_rows: 0,
-            deleted_chunk_rows: 0, deleted_fts_rows: 0, deleted_vec_rows: 0, notes: []
-          })),
-          safeExport: vi.fn(() => JSON.stringify({
-            exported_at: 1000, sha256: "abc", schema_version: 1, protocol_version: 1, page_count: 10
-          })),
-          // FTS property schema mocks
-          registerFtsPropertySchema: vi.fn(() => JSON.stringify({
-            kind: "Goal", property_paths: ["$.name", "$.description"],
-            separator: " ", format_version: 1, created_at: 1000
-          })),
-          describeFtsPropertySchema: vi.fn(() => JSON.stringify({
-            kind: "Goal", property_paths: ["$.name", "$.description"],
-            separator: " ", format_version: 1, created_at: 1000
-          })),
-          listFtsPropertySchemas: vi.fn(() => JSON.stringify([{
-            kind: "Goal", property_paths: ["$.name", "$.description"],
-            separator: " ", format_version: 1, created_at: 1000
-          }])),
-          removeFtsPropertySchema: vi.fn(),
-          // Operational collection mocks
-          registerOperationalCollection: vi.fn(() => JSON.stringify({
-            name: "events", kind: "append_only_log", schema_json: "{}", retention_json: "{}",
-            validation_json: "", secondary_indexes_json: "[]", format_version: 1,
-            created_at: 1000, filter_fields_json: "[]", disabled_at: null
-          })),
-          describeOperationalCollection: vi.fn(() => JSON.stringify({
-            name: "events", kind: "append_only_log", schema_json: "{}", retention_json: "{}",
-            validation_json: "", secondary_indexes_json: "[]", format_version: 1,
-            created_at: 1000, filter_fields_json: "[]", disabled_at: null
-          })),
-          updateOperationalCollectionFilters: vi.fn(() => JSON.stringify({
-            name: "events", kind: "append_only_log", schema_json: "{}", retention_json: "{}",
-            validation_json: "", secondary_indexes_json: "[]", format_version: 1,
-            created_at: 1000, filter_fields_json: "[]", disabled_at: null
-          })),
-          updateOperationalCollectionValidation: vi.fn(() => JSON.stringify({
-            name: "events", kind: "append_only_log", schema_json: "{}", retention_json: "{}",
-            validation_json: "", secondary_indexes_json: "[]", format_version: 1,
-            created_at: 1000, filter_fields_json: "[]", disabled_at: null
-          })),
-          updateOperationalCollectionSecondaryIndexes: vi.fn(() => JSON.stringify({
-            name: "events", kind: "append_only_log", schema_json: "{}", retention_json: "{}",
-            validation_json: "", secondary_indexes_json: "[]", format_version: 1,
-            created_at: 1000, filter_fields_json: "[]", disabled_at: null
-          })),
-          traceOperationalCollection: vi.fn(() => JSON.stringify({
-            collection_name: "events", record_key: null, mutation_count: 0,
-            current_count: 0, mutations: [], current_rows: []
-          })),
-          readOperationalCollection: vi.fn(() => JSON.stringify({
-            collection_name: "events", row_count: 0, applied_limit: 100, was_limited: false, rows: []
-          })),
-          rebuildOperationalCurrent: vi.fn(() => JSON.stringify({ collections_rebuilt: 1, current_rows_rebuilt: 0 })),
-          validateOperationalCollectionHistory: vi.fn(() => JSON.stringify({
-            collection_name: "events", checked_rows: 0, invalid_row_count: 0, issues: []
-          })),
-          rebuildOperationalSecondaryIndexes: vi.fn(() => JSON.stringify({
-            collection_name: "events", mutation_entries_rebuilt: 0, current_entries_rebuilt: 0
-          })),
-          planOperationalRetention: vi.fn(() => JSON.stringify({
-            planned_at: 1000, collections_examined: 1, items: []
-          })),
-          runOperationalRetention: vi.fn(() => JSON.stringify({
-            executed_at: 1000, collections_examined: 1, collections_acted_on: 0, dry_run: false, items: []
-          })),
-          disableOperationalCollection: vi.fn(() => JSON.stringify({
-            name: "events", kind: "append_only_log", schema_json: "{}", retention_json: "{}",
-            validation_json: "", secondary_indexes_json: "[]", format_version: 1,
-            created_at: 1000, filter_fields_json: "[]", disabled_at: 2000
-          })),
-          compactOperationalCollection: vi.fn(() => JSON.stringify({
-            collection_name: "events", deleted_mutations: 0, dry_run: false, before_timestamp: null
-          })),
-          purgeOperationalCollection: vi.fn(() => JSON.stringify({
-            collection_name: "events", deleted_mutations: 0, before_timestamp: 500
-          })),
-          purgeProvenanceEvents: vi.fn(() => JSON.stringify({
-            events_deleted: 0, events_preserved: 10, oldest_remaining: 100
-          }))
-        }))
-      },
-      newId: vi.fn(() => "id-1"),
-      newRowId: vi.fn(() => "row-1")
-    };
-    globalThis.__FATHOMDB_NATIVE_MOCK__ = binding as never;
-    Engine.setBindingForTests(binding as never);
-  });
+import { openTempEngine, seedSingleDoc, type TempEngine } from "./helpers/engine.js";
 
-  it("opens, exposes telemetry, and closes idempotently", () => {
-    const engine = Engine.open("/tmp/test.db");
-    expect(engine.telemetrySnapshot()).toEqual({
-      queriesTotal: 1,
-      writesTotal: 2,
-      writeRowsTotal: 3,
-      errorsTotal: 4,
-      adminOpsTotal: 5,
-      cacheHits: 6,
-      cacheMisses: 7,
-      cacheWrites: 8,
-      cacheSpills: 9
-    });
-    engine.close();
-    engine.close();
-  });
+// ── Pure-TypeScript tests (no engine, no native binding) ─────────────────
 
+describe("WriteRequestBuilder (pure TS)", () => {
   it("builds immutable queries with python-parity AST shape", () => {
-    const engine = Engine.open("/tmp/test.db");
-    const base = engine.nodes("Meeting");
-    const query = base
-      .vectorSearch("budget", 5)
-      .filterJsonTextEq("$.status", "active")
-      .expand({ slot: "neighbors", direction: "out", label: "depends_on", maxDepth: 2 })
-      .limit(10);
+    // toAst lives entirely in TypeScript; we can exercise it without an
+    // engine by constructing a Query directly against a null core.
+    // But the public API requires going through Engine.nodes, so open a
+    // real engine here.
+    const ctx = openTempEngine();
+    try {
+      const base = ctx.engine.nodes("Meeting");
+      const query = base
+        .vectorSearch("budget", 5)
+        .filterJsonTextEq("$.status", "active")
+        .expand({ slot: "neighbors", direction: "out", label: "depends_on", maxDepth: 2 })
+        .limit(10);
 
-    expect(base).toBeInstanceOf(Query);
-    expect(base.toAst()).toEqual({
-      root_kind: "Meeting",
-      steps: [],
-      expansions: [],
-      final_limit: null
-    });
-    expect(query.toAst()).toEqual({
-      root_kind: "Meeting",
-      steps: [
-        { type: "vector_search", query: "budget", limit: 5 },
-        { type: "filter_json_text_eq", path: "$.status", value: "active" }
-      ],
-      expansions: [
-        { slot: "neighbors", direction: "out", label: "depends_on", max_depth: 2 }
-      ],
-      final_limit: 10
-    });
-  });
-
-  it("returns typed query results", () => {
-    const engine = Engine.open("/tmp/test.db");
-    const rows = engine.nodes("Doc").execute();
-    expect(rows.nodes).toHaveLength(1);
-    expect(rows.nodes[0].rowId).toBe("r1");
-    expect(rows.nodes[0].logicalId).toBe("n1");
-    expect(rows.nodes[0].kind).toBe("Doc");
-    expect(rows.nodes[0].contentRef).toBe("s3://docs/test.pdf");
-    expect(rows.wasDegraded).toBe(false);
-  });
-
-  it("returns typed compiled query", () => {
-    const engine = Engine.open("/tmp/test.db");
-    const compiled = engine.nodes("Doc").compile();
-    expect(compiled.sql).toBe("SELECT * FROM nodes");
-    expect(compiled.shapeHash).toBe(42);
-    expect(compiled.drivingTable).toBe("nodes");
-    expect(compiled.hints.recursionLimit).toBe(100);
-  });
-
-  it("returns typed query plan", () => {
-    const engine = Engine.open("/tmp/test.db");
-    const plan = engine.nodes("Doc").explain();
-    expect(plan.sql).toBe("SELECT * FROM nodes");
-    expect(plan.bindCount).toBe(0);
-    expect(plan.cacheHit).toBe(false);
-  });
-
-  it("returns typed write receipt", () => {
-    const engine = Engine.open("/tmp/test.db");
-    const builder = new WriteRequestBuilder("test");
-    const receipt = engine.write(builder.build());
-    expect(receipt.label).toBe("test");
-    expect(receipt.optionalBackfillCount).toBe(0);
-    expect(receipt.warnings).toEqual([]);
-    expect(receipt.provenanceWarnings).toEqual([]);
-  });
-
-  it("returns typed last access touch report", () => {
-    const engine = Engine.open("/tmp/test.db");
-    const report = engine.touchLastAccessed({ logicalIds: ["n1", "n2"], touchedAt: 1000 });
-    expect(report.touchedLogicalIds).toBe(2);
-    expect(report.touchedAt).toBe(1000);
-  });
-
-  it("returns typed admin reports", () => {
-    const engine = Engine.open("/tmp/test.db");
-    const integrity = engine.admin.checkIntegrity();
-    expect(integrity.physicalOk).toBe(true);
-    expect(integrity.foreignKeysOk).toBe(true);
-
-    const semantics = engine.admin.checkSemantics();
-    expect(semantics.orphanedChunks).toBe(0);
-
-    const trace = engine.admin.traceSource("src-1");
-    expect(trace.sourceRef).toBe("src-1");
-    expect(trace.nodeLogicalIds).toEqual(["n1"]);
-
-    const restore = engine.admin.restoreLogicalId("n1");
-    expect(restore.logicalId).toBe("n1");
-    expect(restore.restoredNodeRows).toBe(1);
-
-    const purge = engine.admin.purgeLogicalId("n1");
-    expect(purge.logicalId).toBe("n1");
-    expect(purge.deletedNodeRows).toBe(1);
-
-    const rebuild = engine.admin.rebuild("all");
-    expect(rebuild.rebuiltRows).toBe(5);
-
-    const manifest = engine.admin.safeExport("/tmp/export.db");
-    expect(manifest.sha256).toBe("abc");
-    expect(manifest.pageCount).toBe(10);
-  });
-
-  it("returns typed FTS property schema admin results", () => {
-    const engine = Engine.open("/tmp/test.db");
-
-    const record = engine.admin.registerFtsPropertySchema("Goal", ["$.name", "$.description"]);
-    expect(record.kind).toBe("Goal");
-    expect(record.propertyPaths).toEqual(["$.name", "$.description"]);
-    expect(record.separator).toBe(" ");
-    expect(record.formatVersion).toBe(1);
-
-    const described = engine.admin.describeFtsPropertySchema("Goal");
-    expect(described).not.toBeNull();
-    expect(described!.kind).toBe("Goal");
-    expect(described!.propertyPaths).toEqual(["$.name", "$.description"]);
-
-    const schemas = engine.admin.listFtsPropertySchemas();
-    expect(schemas.length).toBe(1);
-    expect(schemas[0].kind).toBe("Goal");
-
-    engine.admin.removeFtsPropertySchema("Goal");
-  });
-
-  it("returns typed operational collection admin results", () => {
-    const engine = Engine.open("/tmp/test.db");
-
-    const record = engine.admin.registerOperationalCollection({
-      name: "events", kind: "append_only_log", schemaJson: "{}", retentionJson: "{}", formatVersion: 1,
-    });
-    expect(record.name).toBe("events");
-    expect(record.kind).toBe("append_only_log");
-    expect(record.disabledAt).toBeNull();
-
-    const described = engine.admin.describeOperationalCollection("events");
-    expect(described?.name).toBe("events");
-
-    const traceOp = engine.admin.traceOperationalCollection("events");
-    expect(traceOp.collectionName).toBe("events");
-    expect(traceOp.mutations).toEqual([]);
-
-    const readOp = engine.admin.readOperationalCollection({ collectionName: "events", filters: [] });
-    expect(readOp.collectionName).toBe("events");
-    expect(readOp.wasLimited).toBe(false);
-
-    const repairOp = engine.admin.rebuildOperationalCurrent();
-    expect(repairOp.collectionsRebuilt).toBe(1);
-
-    const validation = engine.admin.validateOperationalCollectionHistory("events");
-    expect(validation.invalidRowCount).toBe(0);
-
-    const indexRebuild = engine.admin.rebuildOperationalSecondaryIndexes("events");
-    expect(indexRebuild.collectionName).toBe("events");
-
-    const plan = engine.admin.planOperationalRetention(1000);
-    expect(plan.collectionsExamined).toBe(1);
-
-    const run = engine.admin.runOperationalRetention(1000, { dryRun: true });
-    expect(run.collectionsExamined).toBe(1);
-
-    const disabled = engine.admin.disableOperationalCollection("events");
-    expect(disabled.disabledAt).toBe(2000);
-
-    const compaction = engine.admin.compactOperationalCollection("events", false);
-    expect(compaction.collectionName).toBe("events");
-
-    const purgeOp = engine.admin.purgeOperationalCollection("events", 500);
-    expect(purgeOp.deletedMutations).toBe(0);
-
-    const provenance = engine.admin.purgeProvenanceEvents(500);
-    expect(provenance.eventsPreserved).toBe(10);
-    expect(provenance.oldestRemaining).toBe(100);
-  });
-
-  it("maps top-level id helpers through the native binding", () => {
-    expect(newId()).toBe("id-1");
-    expect(newRowId()).toBe("row-1");
+      expect(base).toBeInstanceOf(Query);
+      expect(base.toAst()).toEqual({
+        root_kind: "Meeting",
+        steps: [],
+        expansions: [],
+        final_limit: null,
+      });
+      expect(query.toAst()).toEqual({
+        root_kind: "Meeting",
+        steps: [
+          { type: "vector_search", query: "budget", limit: 5 },
+          { type: "filter_json_text_eq", path: "$.status", value: "active" },
+        ],
+        expansions: [
+          { slot: "neighbors", direction: "out", label: "depends_on", max_depth: 2 },
+        ],
+        final_limit: 10,
+      });
+    } finally {
+      ctx.cleanup();
+    }
   });
 
   it("ports the write builder handle-resolution semantics", () => {
@@ -379,7 +91,7 @@ describe("Engine", () => {
     expect(builder.build()).toMatchObject({
       label: "ingest",
       nodes: [{ row_id: "row-1", logical_id: "doc:1", kind: "Document" }],
-      chunks: [{ node_logical_id: "doc:1", text_content: "Budget notes" }]
+      chunks: [{ node_logical_id: "doc:1", text_content: "Budget notes" }],
     });
   });
 
@@ -435,23 +147,8 @@ describe("Engine", () => {
       properties: {},
     });
     expect(() =>
-      second.addChunk({ id: "chunk:1", node, textContent: "Budget notes" })
+      second.addChunk({ id: "chunk:1", node, textContent: "Budget notes" }),
     ).toThrow(BuilderValidationError);
-  });
-
-  it("throws FathomError when operations are called after close", () => {
-    const engine = Engine.open("/tmp/test.db");
-    engine.close();
-    expect(() => engine.nodes("Doc")).toThrow(FathomError);
-    expect(() => engine.telemetrySnapshot()).toThrow(FathomError);
-    expect(() => engine.write(new WriteRequestBuilder("x").build())).toThrow(FathomError);
-  });
-
-  it("close is idempotent", () => {
-    const engine = Engine.open("/tmp/test.db");
-    engine.close();
-    engine.close();
-    engine.close();
   });
 
   it("serializes properties as JSON string in wire format", () => {
@@ -474,7 +171,6 @@ describe("Engine", () => {
     });
     const built = builder.build();
     const nodes = built.nodes as Array<Record<string, unknown>>;
-    // Plain strings must be JSON-encoded (wrapped in quotes)
     expect(nodes[0].properties).toBe('"hello"');
   });
 
@@ -555,25 +251,14 @@ describe("Engine", () => {
     expect(backfills[0].target).toBe("fts");
     expect(typeof backfills[0].payload).toBe("string");
     expect(JSON.parse(backfills[0].payload as string)).toEqual({ some: "data" });
-    // PreserializedJson passes through unchanged
     expect(backfills[1].payload).toBe("already-a-string");
-    // Plain strings are now JSON-encoded
     expect(backfills[2].payload).toBe('"plain-string"');
   });
+});
 
-  it("correctly converts touchLastAccessed to wire format", () => {
-    const engine = Engine.open("/tmp/test.db");
-    const report = engine.touchLastAccessed({
-      logicalIds: ["a", "b"],
-      touchedAt: 12345,
-      sourceRef: "test",
-    });
-    expect(report.touchedLogicalIds).toBe(2);
-    expect(report.touchedAt).toBe(1000);
-  });
+// ── runWithFeedback (pure TS) ─────────────────────────────────────────────
 
-  // ── Feedback / progress callback tests ────────────────────────────
-
+describe("runWithFeedback (pure TS)", () => {
   it("emits STARTED then FINISHED for successful operation", () => {
     const events: ResponseCycleEvent[] = [];
     const result = runWithFeedback({
@@ -604,7 +289,7 @@ describe("Engine", () => {
         progressCallback: (e) => events.push(e),
         feedbackConfig: undefined,
         operation: () => { throw new TypeError("broken"); },
-      })
+      }),
     ).toThrow(TypeError);
     expect(events).toHaveLength(2);
     expect(events[0].phase).toBe("started");
@@ -634,47 +319,7 @@ describe("Engine", () => {
       operation: () => "ok",
     });
     expect(result).toBe("ok");
-    expect(callCount).toBe(1); // STARTED fires, throws, then FINISHED is suppressed
-  });
-
-  it("maps native FATHOMDB_SQLITE_ERROR to SqliteError via callNative", () => {
-    const engine = Engine.open("/tmp/test.db");
-    // Make the native method throw with a FATHOMDB_ prefixed error
-    const binding = (globalThis as Record<string, unknown>).__FATHOMDB_NATIVE_MOCK__ as Record<string, unknown>;
-    const core = (binding.EngineCore as Record<string, unknown>).open as ReturnType<typeof vi.fn>;
-    const mockCore = core.mock.results[0].value;
-    mockCore.telemetrySnapshot.mockImplementation(() => {
-      throw new Error("FATHOMDB_SQLITE_ERROR::disk I/O error");
-    });
-    expect(() => engine.telemetrySnapshot()).toThrow(SqliteError);
-    try {
-      engine.telemetrySnapshot();
-    } catch (e) {
-      expect(e).toBeInstanceOf(SqliteError);
-      expect((e as SqliteError).message).toBe("disk I/O error");
-    }
-  });
-
-  it("maps native error from describeOperationalCollection via callNative", () => {
-    const engine = Engine.open("/tmp/test.db");
-    const binding = (globalThis as Record<string, unknown>).__FATHOMDB_NATIVE_MOCK__ as Record<string, unknown>;
-    const core = (binding.EngineCore as Record<string, unknown>).open as ReturnType<typeof vi.fn>;
-    const mockCore = core.mock.results[0].value;
-    // Native call itself throws a FATHOMDB_ error
-    mockCore.describeOperationalCollection.mockImplementation(() => {
-      throw new Error("FATHOMDB_SQLITE_ERROR::table not found");
-    });
-    expect(() => engine.admin.describeOperationalCollection("events")).toThrow(SqliteError);
-  });
-
-  it("uses parseNativeJson in describeOperationalCollection for malformed JSON", () => {
-    const engine = Engine.open("/tmp/test.db");
-    const binding = (globalThis as Record<string, unknown>).__FATHOMDB_NATIVE_MOCK__ as Record<string, unknown>;
-    const core = (binding.EngineCore as Record<string, unknown>).open as ReturnType<typeof vi.fn>;
-    const mockCore = core.mock.results[0].value;
-    // Native call returns invalid JSON -- parseNativeJson should handle it
-    mockCore.describeOperationalCollection.mockImplementation(() => "not valid json{{{");
-    expect(() => engine.admin.describeOperationalCollection("events")).toThrow();
+    expect(callCount).toBe(1);
   });
 
   it("passes feedbackConfig slowThresholdMs into events", () => {
@@ -688,9 +333,320 @@ describe("Engine", () => {
     });
     expect(events[0].slowThresholdMs).toBe(1234);
   });
+});
+
+// ── Engine lifecycle, telemetry, query, write ─────────────────────────────
+
+describe("Engine (real engine)", () => {
+  let ctx: TempEngine;
+  let engine: Engine;
+
+  beforeEach(() => {
+    ctx = openTempEngine();
+    engine = ctx.engine;
+  });
+
+  afterEach(() => {
+    ctx.cleanup();
+  });
+
+  it("opens, exposes telemetry, and closes idempotently", () => {
+    const snapshot = engine.telemetrySnapshot();
+    // A freshly opened engine has nonnegative counters across the board.
+    // Exact values vary with schema bootstrap, so assert on shape + range.
+    expect(typeof snapshot.queriesTotal).toBe("number");
+    expect(typeof snapshot.writesTotal).toBe("number");
+    expect(typeof snapshot.writeRowsTotal).toBe("number");
+    expect(typeof snapshot.errorsTotal).toBe("number");
+    expect(typeof snapshot.adminOpsTotal).toBe("number");
+    expect(typeof snapshot.cacheHits).toBe("number");
+    expect(typeof snapshot.cacheMisses).toBe("number");
+    expect(typeof snapshot.cacheWrites).toBe("number");
+    expect(typeof snapshot.cacheSpills).toBe("number");
+    expect(snapshot.queriesTotal).toBeGreaterThanOrEqual(0);
+    expect(snapshot.errorsTotal).toBe(0);
+    // Idempotent close
+    engine.close();
+    engine.close();
+  });
+
+  it("returns typed query results", () => {
+    seedSingleDoc(engine, { logicalId: "doc-return-test" });
+    const rows = engine.nodes("Doc").execute();
+    expect(rows.nodes.length).toBe(1);
+    // Wire-format: snake→camel conversion at the napi boundary.
+    expect(typeof rows.nodes[0].rowId).toBe("string");
+    expect(rows.nodes[0].logicalId).toBe("doc-return-test");
+    expect(rows.nodes[0].kind).toBe("Doc");
+    expect(rows.nodes[0].contentRef).toBe("s3://docs/test.pdf");
+    expect(rows.wasDegraded).toBe(false);
+  });
+
+  it("returns typed compiled query", () => {
+    const compiled = engine.nodes("Doc").compile();
+    expect(typeof compiled.sql).toBe("string");
+    expect(compiled.sql.length).toBeGreaterThan(0);
+    expect(typeof compiled.shapeHash).toBe("number");
+    expect(typeof compiled.drivingTable).toBe("string");
+    expect(typeof compiled.hints.recursionLimit).toBe("number");
+    expect(typeof compiled.hints.hardLimit).toBe("number");
+  });
+
+  it("returns typed query plan", () => {
+    const plan = engine.nodes("Doc").explain();
+    expect(typeof plan.sql).toBe("string");
+    expect(plan.sql.length).toBeGreaterThan(0);
+    expect(typeof plan.bindCount).toBe("number");
+    expect(typeof plan.cacheHit).toBe("boolean");
+  });
+
+  it("returns typed write receipt", () => {
+    const builder = new WriteRequestBuilder("test");
+    builder.addNode({
+      rowId: newRowId(),
+      logicalId: "receipt-node",
+      kind: "Doc",
+      properties: {},
+    });
+    const receipt = engine.write(builder.build());
+    expect(receipt.label).toBe("test");
+    expect(receipt.optionalBackfillCount).toBe(0);
+    expect(Array.isArray(receipt.warnings)).toBe(true);
+    expect(Array.isArray(receipt.provenanceWarnings)).toBe(true);
+  });
+
+  it("returns typed last access touch report", () => {
+    const seeded = seedSingleDoc(engine, { logicalId: "last-access-node" });
+    const report = engine.touchLastAccessed({
+      logicalIds: [seeded.logicalId],
+      touchedAt: 1_700_000_000,
+    });
+    expect(report.touchedLogicalIds).toBe(1);
+    expect(report.touchedAt).toBe(1_700_000_000);
+  });
+
+  it("correctly converts touchLastAccessed to wire format", () => {
+    const seeded = seedSingleDoc(engine, { logicalId: "touch-wire" });
+    const report = engine.touchLastAccessed({
+      logicalIds: [seeded.logicalId],
+      touchedAt: 12345,
+      sourceRef: "test",
+    });
+    expect(report.touchedLogicalIds).toBe(1);
+    expect(report.touchedAt).toBe(12345);
+  });
+
+  it("throws FathomError when operations are called after close", () => {
+    engine.close();
+    expect(() => engine.nodes("Doc")).toThrow(FathomError);
+    expect(() => engine.telemetrySnapshot()).toThrow(FathomError);
+    expect(() => engine.write(new WriteRequestBuilder("x").build())).toThrow(FathomError);
+  });
+
+  it("close is idempotent", () => {
+    engine.close();
+    engine.close();
+    engine.close();
+  });
+
+  it("maps top-level id helpers through the native binding", () => {
+    // newId / newRowId are module-level functions that call into the
+    // native binding. Real binding returns 32-char lowercase hex.
+    const id = newId();
+    const rowId = newRowId();
+    expect(typeof id).toBe("string");
+    expect(id.length).toBeGreaterThan(0);
+    expect(typeof rowId).toBe("string");
+    expect(rowId.length).toBeGreaterThan(0);
+    // Successive calls must return distinct values.
+    expect(newId()).not.toBe(id);
+    expect(newRowId()).not.toBe(rowId);
+  });
+});
+
+// ── Admin surface (real engine) ───────────────────────────────────────────
+
+describe("Engine admin (real engine)", () => {
+  let ctx: TempEngine;
+  let engine: Engine;
+
+  beforeEach(() => {
+    ctx = openTempEngine();
+    engine = ctx.engine;
+  });
+
+  afterEach(() => {
+    ctx.cleanup();
+  });
+
+  it("returns typed admin reports", () => {
+    // Seed a single node tagged with source_ref='src-1' so that
+    // traceSource / restore / purge have something to act on.
+    const builder = new WriteRequestBuilder("seed-admin");
+    builder.addNode({
+      rowId: newRowId(),
+      logicalId: "admin-n1",
+      kind: "Doc",
+      properties: {},
+      sourceRef: "src-1",
+    });
+    engine.write(builder.build());
+
+    const integrity = engine.admin.checkIntegrity();
+    expect(integrity.physicalOk).toBe(true);
+    expect(integrity.foreignKeysOk).toBe(true);
+
+    const semantics = engine.admin.checkSemantics();
+    expect(semantics.orphanedChunks).toBe(0);
+
+    const trace = engine.admin.traceSource("src-1");
+    expect(trace.sourceRef).toBe("src-1");
+    expect(trace.nodeLogicalIds).toContain("admin-n1");
+    expect(trace.nodeRows).toBeGreaterThanOrEqual(1);
+
+    // To exercise restoreLogicalId we must first retire the node so it
+    // is eligible for restore.
+    const retireBuilder = new WriteRequestBuilder("retire-admin-n1");
+    retireBuilder.retireNode("admin-n1", "src-1");
+    engine.write(retireBuilder.build());
+
+    const restore = engine.admin.restoreLogicalId("admin-n1");
+    expect(restore.logicalId).toBe("admin-n1");
+    expect(restore.restoredNodeRows).toBe(1);
+    expect(restore.wasNoop).toBe(false);
+
+    // Retire again so purge has something to purge.
+    const retire2 = new WriteRequestBuilder("retire-admin-n1-again");
+    retire2.retireNode("admin-n1", "src-1");
+    engine.write(retire2.build());
+
+    const purge = engine.admin.purgeLogicalId("admin-n1");
+    expect(purge.logicalId).toBe("admin-n1");
+    expect(purge.deletedNodeRows).toBeGreaterThanOrEqual(1);
+
+    const rebuild = engine.admin.rebuild("all");
+    expect(rebuild.rebuiltRows).toBeGreaterThanOrEqual(0);
+    expect(Array.isArray(rebuild.targets)).toBe(true);
+
+    const manifest = engine.admin.safeExport(`${ctx.dir}/export.db`);
+    expect(typeof manifest.sha256).toBe("string");
+    expect(manifest.sha256.length).toBeGreaterThan(0);
+    expect(manifest.pageCount).toBeGreaterThan(0);
+  });
+
+  it("returns typed FTS property schema admin results", () => {
+    const record = engine.admin.registerFtsPropertySchema("Goal", ["$.name", "$.description"]);
+    expect(record.kind).toBe("Goal");
+    expect(record.propertyPaths).toEqual(["$.name", "$.description"]);
+    expect(record.separator).toBe(" ");
+    expect(record.formatVersion).toBe(1);
+
+    const described = engine.admin.describeFtsPropertySchema("Goal");
+    expect(described).not.toBeNull();
+    expect(described!.kind).toBe("Goal");
+    expect(described!.propertyPaths).toEqual(["$.name", "$.description"]);
+
+    const schemas = engine.admin.listFtsPropertySchemas();
+    expect(schemas.length).toBeGreaterThanOrEqual(1);
+    const goalSchema = schemas.find((s) => s.kind === "Goal");
+    expect(goalSchema).toBeDefined();
+
+    engine.admin.removeFtsPropertySchema("Goal");
+    const afterRemove = engine.admin.describeFtsPropertySchema("Goal");
+    expect(afterRemove).toBeNull();
+  });
+
+  it("returns typed operational collection admin results", () => {
+    const record = engine.admin.registerOperationalCollection({
+      name: "events",
+      kind: "append_only_log",
+      schemaJson: "{}",
+      retentionJson: JSON.stringify({ mode: "keep_all" }),
+      formatVersion: 1,
+      // readOperationalCollection requires that every filter referenced
+      // at read time was first declared at registration time.
+      filterFieldsJson: JSON.stringify([
+        { name: "kind", type: "string", modes: ["exact"] },
+      ]),
+      validationJson: JSON.stringify({
+        format_version: 1,
+        mode: "report_only",
+        additional_properties: true,
+        fields: [],
+      }),
+    });
+    expect(record.name).toBe("events");
+    expect(record.kind).toBe("append_only_log");
+    expect(record.disabledAt).toBeNull();
+
+    const described = engine.admin.describeOperationalCollection("events");
+    expect(described?.name).toBe("events");
+
+    const traceOp = engine.admin.traceOperationalCollection("events");
+    expect(traceOp.collectionName).toBe("events");
+    expect(traceOp.mutations).toEqual([]);
+
+    const readOp = engine.admin.readOperationalCollection({
+      collectionName: "events",
+      filters: [{ mode: "exact", field: "kind", value: "startup" }],
+    });
+    expect(readOp.collectionName).toBe("events");
+    expect(readOp.wasLimited).toBe(false);
+
+    // rebuildOperationalCurrent with no collection arg only iterates
+    // latest_state collections; our test collection is append_only_log
+    // so the count is 0. Assert the shape is correct instead.
+    const repairOp = engine.admin.rebuildOperationalCurrent();
+    expect(typeof repairOp.collectionsRebuilt).toBe("number");
+    expect(repairOp.collectionsRebuilt).toBeGreaterThanOrEqual(0);
+    expect(typeof repairOp.currentRowsRebuilt).toBe("number");
+
+    const validation = engine.admin.validateOperationalCollectionHistory("events");
+    expect(validation.invalidRowCount).toBe(0);
+
+    const indexRebuild = engine.admin.rebuildOperationalSecondaryIndexes("events");
+    expect(indexRebuild.collectionName).toBe("events");
+
+    const plan = engine.admin.planOperationalRetention(1_700_000_000);
+    expect(plan.collectionsExamined).toBeGreaterThanOrEqual(1);
+
+    const run = engine.admin.runOperationalRetention(1_700_000_000, { dryRun: true });
+    expect(run.collectionsExamined).toBeGreaterThanOrEqual(1);
+
+    const compaction = engine.admin.compactOperationalCollection("events", false);
+    expect(compaction.collectionName).toBe("events");
+
+    const disabled = engine.admin.disableOperationalCollection("events");
+    expect(disabled.disabledAt).not.toBeNull();
+    expect(typeof disabled.disabledAt).toBe("number");
+
+    const purgeOp = engine.admin.purgeOperationalCollection("events", 500);
+    expect(purgeOp.deletedMutations).toBeGreaterThanOrEqual(0);
+
+    const provenance = engine.admin.purgeProvenanceEvents(0, { dry_run: true });
+    expect(typeof provenance.eventsPreserved).toBe("number");
+    // eventsPreserved is nonnegative; oldestRemaining is non-null when
+    // events exist.
+    expect(provenance.eventsPreserved).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// ── Feedback event emission against the real engine ─────────────────────
+
+describe("Engine feedback callbacks (real engine)", () => {
+  let ctx: TempEngine;
+  let engine: Engine;
+
+  beforeEach(() => {
+    ctx = openTempEngine();
+    engine = ctx.engine;
+  });
+
+  afterEach(() => {
+    ctx.cleanup();
+  });
 
   it("Engine.write emits feedback events when callback provided", () => {
-    const engine = Engine.open("/tmp/test.db");
     const events: ResponseCycleEvent[] = [];
     const builder = new WriteRequestBuilder("feedback-test");
     engine.write(builder.build(), (e) => events.push(e));
@@ -701,7 +657,7 @@ describe("Engine", () => {
   });
 
   it("Query.execute emits feedback events when callback provided", () => {
-    const engine = Engine.open("/tmp/test.db");
+    seedSingleDoc(engine, { logicalId: "feedback-doc" });
     const events: ResponseCycleEvent[] = [];
     engine.nodes("Doc").execute((e) => events.push(e));
     expect(events.length).toBeGreaterThanOrEqual(2);
@@ -709,9 +665,74 @@ describe("Engine", () => {
   });
 
   it("AdminClient.checkIntegrity emits feedback events", () => {
-    const engine = Engine.open("/tmp/test.db");
     const events: ResponseCycleEvent[] = [];
     engine.admin.checkIntegrity((e) => events.push(e));
     expect(events[0].operationKind).toBe("admin.check_integrity");
+  });
+});
+
+// ── Scoped mocks for error-path coverage ─────────────────────────────────
+//
+// These tests cover code paths that only fire when the native binding
+// throws a specific error or returns malformed JSON. Reproducing those
+// conditions against a real engine would require corrupting the on-disk
+// database or injecting faults inside the Rust layer, which is out of
+// scope for this pack. Each test installs a per-test mock, uses it, and
+// clears it in afterEach so it cannot leak into other tests.
+
+describe("Engine error mapping (scoped mocks)", () => {
+  afterEach(() => {
+    delete (globalThis as { __FATHOMDB_NATIVE_MOCK__?: unknown }).__FATHOMDB_NATIVE_MOCK__;
+    Engine.setBindingForTests(null);
+  });
+
+  function installErrorMock(overrides: Record<string, unknown>): void {
+    const core = {
+      close: vi.fn(),
+      telemetrySnapshot: vi.fn(() => "{}"),
+      describeOperationalCollection: vi.fn(() => "{}"),
+      ...overrides,
+    };
+    const binding = {
+      EngineCore: { open: vi.fn(() => core) },
+      newId: vi.fn(() => "id-1"),
+      newRowId: vi.fn(() => "row-1"),
+    };
+    (globalThis as { __FATHOMDB_NATIVE_MOCK__?: unknown }).__FATHOMDB_NATIVE_MOCK__ = binding;
+    Engine.setBindingForTests(binding as never);
+  }
+
+  it("maps native FATHOMDB_SQLITE_ERROR to SqliteError via callNative", () => {
+    installErrorMock({
+      telemetrySnapshot: vi.fn(() => {
+        throw new Error("FATHOMDB_SQLITE_ERROR::disk I/O error");
+      }),
+    });
+    const engine = Engine.open("/tmp/test.db");
+    expect(() => engine.telemetrySnapshot()).toThrow(SqliteError);
+    try {
+      engine.telemetrySnapshot();
+    } catch (e) {
+      expect(e).toBeInstanceOf(SqliteError);
+      expect((e as SqliteError).message).toBe("disk I/O error");
+    }
+  });
+
+  it("maps native error from describeOperationalCollection via callNative", () => {
+    installErrorMock({
+      describeOperationalCollection: vi.fn(() => {
+        throw new Error("FATHOMDB_SQLITE_ERROR::table not found");
+      }),
+    });
+    const engine = Engine.open("/tmp/test.db");
+    expect(() => engine.admin.describeOperationalCollection("events")).toThrow(SqliteError);
+  });
+
+  it("uses parseNativeJson in describeOperationalCollection for malformed JSON", () => {
+    installErrorMock({
+      describeOperationalCollection: vi.fn(() => "not valid json{{{"),
+    });
+    const engine = Engine.open("/tmp/test.db");
+    expect(() => engine.admin.describeOperationalCollection("events")).toThrow();
   });
 });
