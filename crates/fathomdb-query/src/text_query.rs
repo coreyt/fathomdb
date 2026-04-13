@@ -216,13 +216,48 @@ fn normalize_and(mut nodes: Vec<TextQuery>) -> TextQuery {
 }
 
 #[cfg(test)]
+// CONTRACT: "Unsupported syntax stays literal"
+//
+// The tests tagged `CONTRACT:` below protect a load-bearing safety
+// property of `TextQuery::parse` and `render_text_query_fts5`: any
+// token, operator-like keyword, or punctuation that the supported
+// grammar does not recognize as control syntax is passed through as
+// a literal search term and rendered as a double-quoted FTS5 literal.
+//
+// This is what lets any agent or application pipe raw user messages
+// (chat input, email bodies, form fields) straight into `search()`
+// without a sanitization layer. There is no parse failure mode that
+// returns an error to the caller, and no failure mode that injects
+// unintended boolean structure into the FTS5 query. The three specific
+// guarantees are:
+//
+//   1. Lowercase `or` / `not` are literal terms (operators require
+//      uppercase; the parser does not match case-insensitively).
+//   2. Clause-leading `NOT` is a literal term (`NOT` is only a real
+//      operator when it binds to a right-hand clause inside an
+//      existing conjunction; at the start of a clause, after an
+//      `OR`, or with nothing to its left it degrades to a literal).
+//   3. Unsupported syntax (`col:value`, `prefix*`, `NEAR`, explicit
+//      `AND`) is parsed as literal terms.
+//
+// A future refactor of the parser or renderer that touches any of the
+// `CONTRACT:`-tagged tests MUST read this block, understand that the
+// test is protecting a public safety property, and preserve the
+// behavior. Do not "fix" a CONTRACT test by updating the expected
+// output to match a new parser behavior; update the parser instead.
+// Any new grammar surface must expand this block with a matching
+// contract clause and its own CONTRACT-tagged tests.
 mod tests {
     use super::{TextQuery, render_text_query_fts5};
 
+    // CONTRACT: empty / whitespace-only input must never parse-fail.
+    // The chat-to-search path depends on being able to hand any string
+    // to `parse` and get back a well-formed `TextQuery`.
     #[test]
     fn parse_empty_query() {
         assert_eq!(TextQuery::parse(""), TextQuery::Empty);
         assert_eq!(TextQuery::parse("   "), TextQuery::Empty);
+        assert_eq!(TextQuery::parse("\t\n  \t"), TextQuery::Empty);
     }
 
     #[test]
@@ -266,6 +301,9 @@ mod tests {
         );
     }
 
+    // CONTRACT: clause-leading `NOT` degrades to a literal term.
+    // `NOT` is only an operator when it binds to a right-hand clause
+    // inside an existing conjunction.
     #[test]
     fn parse_leading_not_as_literal() {
         assert_eq!(
@@ -277,6 +315,10 @@ mod tests {
         );
     }
 
+    // CONTRACT: `NOT` immediately after `OR` degrades to a literal,
+    // as does the surrounding `OR` (it has no right-hand clause to
+    // disjoin). Both fall through to literal terms under an implicit
+    // AND, preserving the "raw-chat-is-safe" property.
     #[test]
     fn parse_not_after_or_as_literal() {
         assert_eq!(
@@ -290,6 +332,8 @@ mod tests {
         );
     }
 
+    // CONTRACT: lowercase `or` is a literal term. Operators require
+    // uppercase; the parser does not match case-insensitively.
     #[test]
     fn parse_lowercase_or_as_literal() {
         assert_eq!(
@@ -302,6 +346,8 @@ mod tests {
         );
     }
 
+    // CONTRACT: lowercase `not` is a literal term. Operators require
+    // uppercase; the parser does not match case-insensitively.
     #[test]
     fn parse_lowercase_not_as_literal() {
         assert_eq!(
@@ -336,6 +382,8 @@ mod tests {
         );
     }
 
+    // CONTRACT: unsupported `col:value` syntax stays literal.
+    // FathomDB does not expose FTS5 column filters via this surface.
     #[test]
     fn parse_unsupported_column_filter_as_literal() {
         assert_eq!(
@@ -344,6 +392,8 @@ mod tests {
         );
     }
 
+    // CONTRACT: unsupported prefix-match syntax (`term*`) stays
+    // literal. Prefix queries are not part of the public grammar.
     #[test]
     fn parse_unsupported_prefix_as_literal() {
         assert_eq!(
@@ -352,6 +402,8 @@ mod tests {
         );
     }
 
+    // CONTRACT: unsupported `NEAR` operator stays literal.
+    // Proximity queries are not part of the public grammar.
     #[test]
     fn parse_near_as_literal() {
         assert_eq!(
@@ -364,6 +416,9 @@ mod tests {
         );
     }
 
+    // CONTRACT: explicit `AND` stays literal. The grammar only
+    // supports implicit AND by adjacency, so `cats AND dogs` parses
+    // as three literal terms joined by implicit conjunction.
     #[test]
     fn parse_explicit_and_as_literal() {
         assert_eq!(
@@ -376,6 +431,48 @@ mod tests {
                 ]),
                 TextQuery::Term("fish".into()),
             ])
+        );
+    }
+
+    // CONTRACT: phrase + OR operator composes correctly. A quoted
+    // phrase on either side of `OR` must become a `Phrase` node in a
+    // disjunction, not a literal term with the quote characters
+    // embedded. Combinations of phrase and operator are a likely
+    // shape for agent-generated queries and must stay well-defined.
+    #[test]
+    fn parse_phrase_with_or_operator() {
+        assert_eq!(
+            TextQuery::parse("\"release notes\" OR changelog"),
+            TextQuery::Or(vec![
+                TextQuery::Phrase("release notes".into()),
+                TextQuery::Term("changelog".into()),
+            ])
+        );
+        assert_eq!(
+            TextQuery::parse("ship OR \"release notes\""),
+            TextQuery::Or(vec![
+                TextQuery::Term("ship".into()),
+                TextQuery::Phrase("release notes".into()),
+            ])
+        );
+    }
+
+    // CONTRACT: phrase + NOT operator composes correctly. A `NOT`
+    // that binds to a right-hand quoted phrase must produce a
+    // `Not(Phrase)` node under the enclosing conjunction, and render
+    // round-trip with the phrase preserved as a quoted FTS5 literal.
+    #[test]
+    fn parse_phrase_with_not_operator() {
+        assert_eq!(
+            TextQuery::parse("ship NOT \"release notes\""),
+            TextQuery::And(vec![
+                TextQuery::Term("ship".into()),
+                TextQuery::Not(Box::new(TextQuery::Phrase("release notes".into()))),
+            ])
+        );
+        assert_eq!(
+            render_text_query_fts5(&TextQuery::parse("ship NOT \"release notes\"")),
+            "\"ship\" NOT \"release notes\""
         );
     }
 
@@ -425,6 +522,9 @@ mod tests {
         );
     }
 
+    // CONTRACT: the render side of "leading NOT stays literal" —
+    // renders as two quoted FTS5 literals, never as a bare `NOT`
+    // operator that would corrupt the FTS5 query.
     #[test]
     fn render_leading_not_literalized_parse_safely() {
         assert_eq!(
@@ -433,6 +533,8 @@ mod tests {
         );
     }
 
+    // CONTRACT: the render side of "lowercase not stays literal" —
+    // all three tokens emit as quoted FTS5 literals.
     #[test]
     fn render_lowercase_not_as_literal_terms() {
         assert_eq!(
