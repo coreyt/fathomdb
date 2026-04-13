@@ -343,6 +343,10 @@ These have all caused real failures. Do not repeat them.
 | Launch N agents before validating 1 | Canary first (Section 3) |
 | Debug code in orchestrator context | Delegate to Explore agent |
 | Relaunch on permission failure | Escalate to user immediately |
+| Argue with reviewers from your mental model when a quick experiment would settle it | Tell the fix agent to run an empirical test and observe — see §13.2 |
+| Assign one reviewer per pack when two packs share an invariant | Use a joint reviewer with explicit cross-pack consistency checks — see §13.1 |
+| Run a third "for safety" review pass after passes 1-2 are clean | Trust the diminishing-returns curve and ship — see §13.3 |
+| Assume the harness's worktree base is the same as current main HEAD | Always run `git merge <main-HEAD> --ff-only` as the first step in every implementer prompt; see [reference.md §6 Worktree fast-forward](agent-harness-reference.md#worktree-fast-forward-trap) |
 | Chatty mid-run subagent updates | Subagent reports at completion or on blockers only |
 
 ---
@@ -363,6 +367,136 @@ prompt for re-investigation.
 
 ---
 
+## 13. Review practices
+
+### 13.1 Reviewer topology — joint vs siloed
+
+Default to one reviewer per pack. Switch to a joint reviewer when two or more
+packs share a domain or contract.
+
+Siloed reviewers (one per pack) catch defects local to each pack but **cannot
+catch cross-pack contradictions**. A joint reviewer can. The cost is one prompt
+that's slightly longer; the benefit is catching invariants that fall between
+packs.
+
+**Joint when:**
+- Two packs assert the same invariant against the same code path (e.g., a
+  cross-language parity fixture vs an in-language harness scenario covering
+  the same behavior).
+- Two packs touch a shared contract that one of them defines and the other
+  consumes.
+- Two packs are mirror implementations of the same surface (e.g., Python SDK
+  + TypeScript SDK).
+
+**Siloed when:**
+- The packs touch disjoint code with no shared contract.
+- One pack is purely a refactor and the other is purely new behavior.
+- The packs were authored against different design references and would
+  benefit from independent perspectives.
+
+**Reviewer prompts for joint reviews must include explicit cross-pack
+consistency checks** — list the specific invariants both packs are expected
+to share, with named identifiers, and ask the reviewer to verify they agree.
+Without that explicit instruction, joint reviewers tend to review each pack
+in isolation and the cross-pack value is lost.
+
+**Example trap.** During a recent rollout, two parallel packs each authored
+a "node matches both chunk and property FTS surfaces — assert which source
+wins after dedup" test. Both packs passed locally because each used its own
+seed data and the bm25 score tiebreak rolled different ways. A siloed review
+of either pack would have approved it. The joint reviewer caught the
+contradiction immediately and forced an empirical answer.
+
+### 13.2 Empirical vs argued resolution of behavior questions
+
+When a fix turns on what the code actually does — not what the contract
+says it should do — instruct the agent to construct a minimal experiment
+and observe. Do not reason from the contract.
+
+Reasoning from the contract is fast but wrong-prone. The orchestrator may
+have an incorrect mental model of how a component behaves, and propagating
+that mental model into the fix prompt produces a fix that's wrong in a
+confident-sounding way. The agent will follow the orchestrator's framing
+unless the prompt explicitly empowers them to override it.
+
+**Apply when:**
+- A review surfaces a question of the form "the code does X, the design
+  says Y, which is right?"
+- Two callers disagree on the observed behavior of a shared dependency.
+- A flake reproduces under specific data shapes but not others.
+
+**Prompt pattern** (full template in
+[reference.md Section 8](agent-harness-reference.md#8-resolving-behavior-questions-empirically)):
+
+```
+Step 1 — INVESTIGATE. Construct a minimal scratch test that:
+  - sets up the conditions under dispute
+  - exercises the actual code path
+  - records what happens
+Run the scratch test. Observe the answer empirically.
+Step 2 — DECIDE. Use the observed answer, not the orchestrator's framing
+of what "should" happen, as the canonical answer to encode in the fix.
+Step 3 — DELETE the scratch test before commit.
+```
+
+**Do NOT apply when:**
+- The question is about API design or contract intent, not runtime behavior.
+- The behavior is fully specified in a written contract that the code is
+  known to follow.
+- Empirical observation is impractical (e.g., requires production-scale
+  data, a specific OS, or a specific build configuration).
+
+**Example trap.** During a recent rollout, a reviewer surfaced a cross-pack
+contradiction on a dedup tiebreak. The orchestrator analyzed the contract
+from memory and confidently told the fix agent "property wins, the design
+supports it." The fix agent ran a 30-line scratch test, observed
+`source=Chunk score=1e-6` for the canonical seed, and corrected the
+orchestrator. The orchestrator's mental model was wrong; the empirical
+test was right. Cost of the scratch test: ~5 minutes. Cost of landing the
+wrong fix and re-reviewing: an hour minimum, plus the credibility hit.
+
+### 13.3 Review cadence
+
+For a multi-phase rollout, the right cadence is **one review pass per
+major phase plus one cross-phase pass at the end**. Three or more passes
+hit diminishing returns.
+
+Empirical pattern from a recent ~24-merge rollout reviewing six core
+phases:
+
+| Pass | Criticals | Warnings | Notes/Lows |
+|---|---|---|---|
+| Pass 1 (per-phase, after merge) | 2 | 4 | 17 |
+| Pass 2 (cross-phase, after pass 1 fixes) | 0 | 4 | 27 |
+| Pass 3 (hypothetical) | ≈0 | ≈1-2 | long tail |
+
+The marginal correctness yield drops sharply. The marginal cleanup yield
+doesn't, but cleanup is cheap to land later or never.
+
+**Apply this cadence when:**
+- The rollout has more than ~6 sequential phases.
+- Each phase's contract is well-defined enough that a per-phase reviewer
+  can audit against it.
+- Phases interact via shared invariants (so the cross-phase pass has
+  something to find).
+
+**Skip the cross-phase pass when:**
+- All phases are mutually independent additions to disjoint subsystems.
+- The total LoC across all phases is small (<2000) and the per-phase
+  reviewers have full context.
+
+**Skip per-phase reviews when:**
+- The phase is purely mechanical (rename, format, lint).
+- The phase is a dependency bump with no behavior change.
+- The phase is a doc-only update that `mkdocs --strict` already validates.
+
+**Anti-pattern.** Running a third "for safety" review pass after passes
+1-2 are clean. The signal-to-noise ratio is too low — you mostly find
+style nits, and the agent cycles you spend on the third pass crowd out
+work that has higher impact (e.g., dispatching the next planned phase).
+
+---
+
 ## Quick Reference
 
 | Topic | Location |
@@ -372,4 +506,5 @@ prompt for re-investigation.
 | Failure handling (full table) | [reference.md Section 4](agent-harness-reference.md#4-failure-handling) |
 | Recovery procedures | [reference.md Section 5](agent-harness-reference.md#5-recovery-procedures) |
 | Dirty state recovery | [reference.md Section 6](agent-harness-reference.md#6-dirty-state-recovery) |
+| Empirical resolution prompt pattern | [reference.md Section 8](agent-harness-reference.md#8-resolving-behavior-questions-empirically) |
 | Infrastructure / filesystem | [reference.md Section 7](agent-harness-reference.md#7-infrastructure) |
