@@ -437,6 +437,40 @@ static MIGRATIONS: &[Migration] = &[
                     ON fts_node_property_positions(kind);
                 ",
     ),
+    Migration::new(
+        SchemaVersion(18),
+        "add UNIQUE constraint on fts_node_property_positions (node_logical_id, kind, start_offset)",
+        // P4-P2-4: the v17 sidecar DDL did not enforce uniqueness of the
+        // `(node_logical_id, kind, start_offset)` tuple, so a buggy rebuild
+        // path could silently double-insert a leaf and break attribution
+        // lookups. Drop and recreate the table with the UNIQUE constraint,
+        // preserving the existing indexes. The DDL leaves the table empty,
+        // which the open-time rebuild guard in `ExecutionCoordinator::open`
+        // detects (empty positions + recursive schemas present) and
+        // repopulates from canonical state on the next open. The rebuild
+        // path is idempotent and safe to run unconditionally.
+        //
+        // `fts_node_property_positions` is a regular SQLite table, not an
+        // FTS5 virtual table, so UNIQUE constraints are supported.
+        r"
+                DROP TABLE IF EXISTS fts_node_property_positions;
+
+                CREATE TABLE fts_node_property_positions (
+                    node_logical_id TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    start_offset INTEGER NOT NULL,
+                    end_offset INTEGER NOT NULL,
+                    leaf_path TEXT NOT NULL,
+                    UNIQUE(node_logical_id, kind, start_offset)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_fts_node_property_positions_node
+                    ON fts_node_property_positions(node_logical_id, kind);
+
+                CREATE INDEX IF NOT EXISTS idx_fts_node_property_positions_kind
+                    ON fts_node_property_positions(kind);
+                ",
+    ),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]

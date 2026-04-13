@@ -2787,3 +2787,107 @@ fn rebuild_missing_repairs_orphaned_position_map() {
         "rebuild_missing_projections must repair orphaned positions",
     );
 }
+
+// ---------------------------------------------------------------------------
+// P4-P2-4: UNIQUE constraint on fts_node_property_positions (SchemaVersion 18)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fts_node_property_positions_has_unique_constraint() {
+    // P4-P2-4: the v18 migration adds UNIQUE(node_logical_id, kind,
+    // start_offset) to the sidecar position map so that a buggy rebuild path
+    // cannot silently produce duplicate position rows for the same leaf
+    // offset. Inserting two rows with the same (logical_id, kind,
+    // start_offset) tuple must fail with a UNIQUE-constraint error.
+    let (_db, engine) = open_engine();
+    let conn = rusqlite::Connection::open(engine.coordinator().database_path())
+        .expect("raw open for unique-constraint probe");
+    conn.execute(
+        "INSERT INTO fts_node_property_positions \
+         (node_logical_id, kind, start_offset, end_offset, leaf_path) \
+         VALUES ('uniq-probe', 'Note', 0, 5, '$.body')",
+        [],
+    )
+    .expect("first insert succeeds");
+    let err = conn
+        .execute(
+            "INSERT INTO fts_node_property_positions \
+             (node_logical_id, kind, start_offset, end_offset, leaf_path) \
+             VALUES ('uniq-probe', 'Note', 0, 7, '$.other')",
+            [],
+        )
+        .expect_err("duplicate (logical_id, kind, start_offset) must fail");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("UNIQUE constraint failed"),
+        "expected UNIQUE constraint failure, got {msg}",
+    );
+}
+
+#[test]
+fn v18_migration_rebuilds_position_map_on_upgrade() {
+    // P4-P2-4: the v18 migration drops and recreates
+    // fts_node_property_positions with the new UNIQUE constraint, which
+    // leaves the table empty. The open-time rebuild guard (FX2) must fire
+    // and repopulate positions from canonical state so attribution stays
+    // resolvable across the upgrade.
+    let db = NamedTempFile::new().expect("temporary db");
+    {
+        let engine = Engine::open(EngineOptions::new(db.path())).expect("open #1");
+        engine
+            .register_fts_property_schema_with_entries(
+                "Note",
+                &[FtsPropertyPathSpec::recursive("$.payload")],
+                None,
+                &[],
+            )
+            .expect("register recursive schema");
+        submit_simple_node(
+            &engine,
+            "note-v18-row",
+            "note-v18",
+            "Note",
+            r#"{"payload":{"title":"quarterly retreat notes"}}"#,
+        );
+        // Simulate the v18 upgrade: drop the positions table entirely.
+        // The next Engine::open must re-run the rebuild guard and
+        // repopulate it from canonical state.
+        let conn =
+            rusqlite::Connection::open(engine.coordinator().database_path()).expect("raw open");
+        conn.execute("DELETE FROM fts_node_property_positions", [])
+            .expect("delete positions");
+    }
+
+    let engine = Engine::open(EngineOptions::new(db.path())).expect("open #2");
+    let conn = rusqlite::Connection::open(engine.coordinator().database_path())
+        .expect("raw open post-upgrade");
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM fts_node_property_positions",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count positions");
+    assert!(
+        count > 0,
+        "v18 upgrade must leave the rebuild guard to repopulate positions",
+    );
+
+    // Attribution must resolve against the freshly rebuilt position map.
+    let rows = engine
+        .query("Note")
+        .text_search("retreat", 10)
+        .with_match_attribution()
+        .execute()
+        .expect("attribution search after v18 upgrade");
+    assert!(!rows.hits.is_empty(), "hits expected after rebuild");
+    let att = rows.hits[0]
+        .attribution
+        .as_ref()
+        .expect("attribution populated");
+    assert!(
+        !att.matched_paths.is_empty(),
+        "matched_paths must be non-empty after v18 rebuild: {:?}",
+        att.matched_paths,
+    );
+}
