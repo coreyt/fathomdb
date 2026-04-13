@@ -184,12 +184,19 @@ def _actual_hit(hit, with_attribution: bool) -> dict:
 
 
 def _search_rows_to_actual(rows, with_attribution: bool) -> dict:
+    raw_projection_ids = [h.projection_row_id for h in rows.hits]
+    present_ids = [pid for pid in raw_projection_ids if pid is not None]
+    all_projection_ids_present = len(present_ids) == len(raw_projection_ids)
+    projection_ids_unique = (
+        all_projection_ids_present and len(set(present_ids)) == len(present_ids)
+    )
     return {
         "hit_count": len(rows.hits),
         "strict_hit_count": rows.strict_hit_count,
         "relaxed_hit_count": rows.relaxed_hit_count,
         "fallback_used": rows.fallback_used,
         "was_degraded": rows.was_degraded,
+        "projection_row_ids_unique": projection_ids_unique,
         "hits": [_actual_hit(h, with_attribution) for h in rows.hits],
     }
 
@@ -229,6 +236,10 @@ def _evaluate_search_expectations(query_def: dict, actual: dict) -> list[str]:
         ids_present = [h["projection_row_id_present"] for h in hits]
         if not all(ids_present):
             failures.append("expect_projection_row_ids_unique: some hit missing projection_row_id")
+        elif not actual.get("projection_row_ids_unique", False):
+            failures.append(
+                "expect_projection_row_ids_unique: duplicate projection_row_ids across hits"
+            )
 
     if "expect_strict_hit_count" in query_def:
         if actual["strict_hit_count"] != query_def["expect_strict_hit_count"]:
@@ -392,7 +403,7 @@ def execute_admin(engine: Engine, admin_def) -> dict:
     if isinstance(admin_def, str):
         admin_def = {"type": admin_def}
 
-    atype = admin_def.get("type", admin_def) if isinstance(admin_def, dict) else admin_def
+    atype = admin_def["type"]
 
     if atype == "check_integrity":
         report = engine.admin.check_integrity()

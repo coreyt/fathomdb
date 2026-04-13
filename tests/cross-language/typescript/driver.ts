@@ -216,12 +216,18 @@ function actualHit(hit: SearchHit, withAttribution: boolean): Record<string, unk
 }
 
 function searchRowsToActual(rows: SearchRows, withAttribution: boolean): Record<string, unknown> {
+  const rawProjectionIds = rows.hits.map(h => h.projectionRowId);
+  const allPresent = rawProjectionIds.every(pid => pid != null);
+  const presentIds = rawProjectionIds.filter((pid): pid is string => pid != null);
+  const projectionRowIdsUnique =
+    allPresent && new Set(presentIds).size === presentIds.length;
   return {
     hit_count: rows.hits.length,
     strict_hit_count: rows.strictHitCount,
     relaxed_hit_count: rows.relaxedHitCount,
     fallback_used: rows.fallbackUsed,
     was_degraded: rows.wasDegraded,
+    projection_row_ids_unique: projectionRowIdsUnique,
     hits: rows.hits.map(h => actualHit(h, withAttribution)),
   };
 }
@@ -267,6 +273,8 @@ function evaluateSearchExpectations(queryDef: QueryDef, actual: Record<string, u
   if (queryDef.expect_projection_row_ids_unique) {
     if (!hits.every(h => h.projection_row_id_present)) {
       failures.push("expect_projection_row_ids_unique: some hit missing projection_row_id");
+    } else if (actual.projection_row_ids_unique !== true) {
+      failures.push("expect_projection_row_ids_unique: duplicate projection_row_ids across hits");
     }
   }
   if (typeof queryDef.expect_strict_hit_count === "number") {
