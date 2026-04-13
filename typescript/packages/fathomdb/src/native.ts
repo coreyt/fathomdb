@@ -39,6 +39,7 @@ export type NativeEngineCore = {
   safeExport(destinationPath: string, forceCheckpoint: boolean): string;
   // FTS property schema methods
   registerFtsPropertySchema(kind: string, propertyPathsJson: string, separator?: string): string;
+  registerFtsPropertySchemaWithEntries(requestJson: string): string;
   describeFtsPropertySchema(kind: string): string;
   listFtsPropertySchemas(): string;
   removeFtsPropertySchema(kind: string): string;

@@ -199,6 +199,10 @@ export type SearchHit = {
   source: SearchHitSource;
   matchMode: SearchMatchMode;
   snippet: string | null;
+  /**
+   * Seconds since the Unix epoch (1970-01-01 UTC), matching
+   * `nodes.created_at` which is populated via SQLite `unixepoch()`.
+   */
   writtenAt: number;
   projectionRowId: string | null;
   attribution: HitAttribution | null;
@@ -624,6 +628,24 @@ export function provenancePurgeReportFromWire(w: Record<string, unknown>): Prove
 }
 
 // ── Operational collection types ───────────────────────────────────────
+
+/**
+ * Extraction mode for a single registered FTS property path.
+ *
+ * `"scalar"` resolves the path and appends the scalar value(s) — matches
+ * legacy pre-Phase-4 behaviour. `"recursive"` walks every scalar leaf
+ * rooted at the path; each leaf emits one position-map row and is
+ * eligible for match-attribution via `withMatchAttribution()`.
+ */
+export type FtsPropertyPathMode = "scalar" | "recursive";
+
+/** A single registered property-FTS path with its extraction mode. */
+export type FtsPropertyPathSpec = {
+  /** JSON path to the property (must start with `$.`). */
+  path: string;
+  /** Whether to treat this path as a scalar or recursively walk it. */
+  mode: FtsPropertyPathMode;
+};
 
 /** A registered FTS property projection schema for a node kind. */
 export type FtsPropertySchemaRecord = {
