@@ -204,6 +204,17 @@ array elements. If no values remain after extraction, no FTS row is created.
     }
     ```
 
+!!! note "Reading recursive schemas"
+
+    `property_paths` / `propertyPaths` is a **flat display list** —
+    it lists every registered path once, but does not tell you which
+    paths were registered as recursive. When a schema was created via
+    `register_fts_property_schema_with_entries(...)` and contains
+    `RECURSIVE`-mode paths, read `record.entries` (Python) or
+    `record.entries` (TypeScript) for the mode-accurate per-path
+    view, plus `record.exclude_paths` / `record.excludePaths` for
+    any subtrees that were excluded from the recursive walk.
+
 ### List All
 
 === "Python"
