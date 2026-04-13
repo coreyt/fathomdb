@@ -11,6 +11,11 @@ from fathomdb import FeedbackConfig, ResponseCycleEvent, ResponseCyclePhase
 from .engine_factory import DEFAULT_VECTOR_DIMENSION, open_engine, supports_vector_mode
 from .models import HarnessContext, ScenarioResult
 from .scenarios import (
+    adaptive_search_mixed_chunk_and_property,
+    adaptive_search_recursive_nested_payload,
+    adaptive_search_recursive_rebuild_restore,
+    adaptive_search_strict_hit_only,
+    adaptive_search_strict_miss_relaxed_recovery,
     canonical_node_chunk_fts,
     edge_retire,
     graph_edge_traversal,
@@ -44,6 +49,11 @@ def _scenario_functions(mode: str) -> list[ScenarioFn]:
         safe_export,
         projection_rebuild,
         restore_vector_profiles,
+        adaptive_search_strict_hit_only,
+        adaptive_search_strict_miss_relaxed_recovery,
+        adaptive_search_mixed_chunk_and_property,
+        adaptive_search_recursive_nested_payload,
+        adaptive_search_recursive_rebuild_restore,
     ]
     if mode == "baseline":
         scenarios.append(vector_degradation)
