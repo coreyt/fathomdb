@@ -7,7 +7,7 @@ from pathlib import Path
 from ._admin import AdminClient
 from ._feedback import run_with_feedback
 from ._fathomdb import EngineCore
-from ._query import Query
+from ._query import FallbackSearchBuilder, Query
 from ._types import (
     FeedbackConfig,
     LastAccessTouchReport,
@@ -140,6 +140,41 @@ class Engine:
     def query(self, kind: str) -> Query:
         """Alias for :meth:`nodes`."""
         return self.nodes(kind)
+
+    def fallback_search(
+        self,
+        strict_query: str,
+        relaxed_query: str | None = None,
+        limit: int = 10,
+        *,
+        root_kind: str = "",
+    ) -> FallbackSearchBuilder:
+        """Enter the explicit two-shape fallback search surface.
+
+        Unlike :meth:`Query.text_search`, neither branch is adaptively
+        rewritten: the engine runs ``strict_query`` first, and if it yields
+        nothing, runs ``relaxed_query`` verbatim. ``relaxed_query`` may be
+        ``None``, in which case the call degenerates to a strict-only
+        search.
+
+        Parameters
+        ----------
+        strict_query : str
+            Raw strict query text.
+        relaxed_query : str or None
+            Raw relaxed query text, or ``None`` for strict-only.
+        limit : int
+            Per-branch candidate cap.
+        root_kind : str
+            Kind root the search is scoped to (default ``"Goal"``).
+        """
+        return FallbackSearchBuilder(
+            core=self._core,
+            root_kind=root_kind,
+            strict_query=strict_query,
+            relaxed_query=relaxed_query,
+            limit=limit,
+        )
 
     def write(
         self,

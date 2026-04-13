@@ -2,7 +2,7 @@
 
 from ._admin import AdminClient
 from ._engine import Engine
-from ._query import Query
+from ._query import FallbackSearchBuilder, Query, TextSearchBuilder
 from ._types import (
     ActionInsert,
     ActionRow,
@@ -19,6 +19,7 @@ from ._types import (
     ExecutionHints,
     FeedbackConfig,
     GroupedQueryRows,
+    HitAttribution,
     IntegrityReport,
     LastAccessTouchReport,
     LastAccessTouchRequest,
@@ -68,6 +69,10 @@ from ._types import (
     RunInsert,
     RunRow,
     SafeExportManifest,
+    SearchHit,
+    SearchHitSource,
+    SearchMatchMode,
+    SearchRows,
     SemanticReport,
     SkippedEdge,
     StepInsert,
@@ -133,8 +138,10 @@ __all__ = [
     "ExpansionSlot",
     "ExpansionSlotRows",
     "ExecutionHints",
+    "FallbackSearchBuilder",
     "FeedbackConfig",
     "FathomError",
+    "HitAttribution",
     "IntegrityReport",
     "LastAccessTouchReport",
     "LastAccessTouchRequest",
@@ -190,6 +197,10 @@ __all__ = [
     "RunRow",
     "SafeExportManifest",
     "SchemaError",
+    "SearchHit",
+    "SearchHitSource",
+    "SearchMatchMode",
+    "SearchRows",
     "SemanticReport",
     "SkippedEdge",
     "SqliteError",
@@ -198,6 +209,7 @@ __all__ = [
     "StepRow",
     "TelemetryLevel",
     "TelemetrySnapshot",
+    "TextSearchBuilder",
     "TraceReport",
     "TraverseDirection",
     "VecInsert",
