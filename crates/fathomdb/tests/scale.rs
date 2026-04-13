@@ -1778,3 +1778,392 @@ fn adaptive_search_reads_never_block_on_background_writes() {
         ],
     );
 }
+
+// =============================================================================
+// Phase 14b: stress coverage for the unified `search()` surface. These tests
+// mirror the Phase 8c adaptive `text_search()` stress tests above one-for-one,
+// but exercise the Phase 12 `engine.query(...).search(...).execute()` entry
+// point which goes through `compile_retrieval_plan` +
+// `execute_retrieval_plan` instead of the compiled-text-plan path. The
+// semantic concurrency invariants are identical.
+// =============================================================================
+
+#[test]
+fn search_deterministic_hit_ordering() {
+    // Mirrors `adaptive_search_deterministic_hit_ordering_under_repeated_runs`
+    // but uses the unified `search()` surface. On a quiesced DB, repeated
+    // `search(q, limit)` calls must produce byte-identical `SearchRows`.
+    const READERS: usize = 16;
+    const ITERATIONS: usize = 32;
+    let (_db, engine) = open_engine();
+    register_note_recursive_schema(&engine);
+    seed_notes(&engine, 120);
+
+    let engine = Arc::new(engine);
+    let baseline = engine
+        .query("Note")
+        .search("budget", 25)
+        .with_match_attribution()
+        .execute()
+        .expect("baseline search");
+    assert!(
+        !baseline.hits.is_empty(),
+        "seed must produce at least one budget hit via search()"
+    );
+    let baseline_formatted = format_search_rows_stable(&baseline);
+
+    // Single-threaded repetition first, to catch any same-thread
+    // non-determinism before spinning up concurrent readers.
+    for run in 0..50 {
+        let rows = engine
+            .query("Note")
+            .search("budget", 25)
+            .with_match_attribution()
+            .execute()
+            .expect("repeated search");
+        let formatted = format_search_rows_stable(&rows);
+        assert_eq!(
+            formatted, baseline_formatted,
+            "single-thread run {run} diverged from baseline determinism snapshot"
+        );
+    }
+
+    // Concurrent readers: every reader must observe the same ordered hit
+    // list (same logical_ids in the same order, same scores, same modes).
+    let barrier = Arc::new(Barrier::new(READERS));
+    let divergence = Arc::new(Mutex::new(Vec::<String>::new()));
+    let mut handles = Vec::with_capacity(READERS);
+    for reader_id in 0..READERS {
+        let engine = Arc::clone(&engine);
+        let barrier = Arc::clone(&barrier);
+        let divergence = Arc::clone(&divergence);
+        let expected = baseline_formatted.clone();
+        handles.push(thread::spawn(move || {
+            barrier.wait();
+            for iter in 0..ITERATIONS {
+                let rows = engine
+                    .query("Note")
+                    .search("budget", 25)
+                    .with_match_attribution()
+                    .execute()
+                    .expect("concurrent search");
+                let formatted = format_search_rows_stable(&rows);
+                if formatted != expected {
+                    divergence.lock().expect("lock").push(format!(
+                        "reader {reader_id} iter {iter} diverged:\nexpected:\n{expected}\nactual:\n{formatted}"
+                    ));
+                    return;
+                }
+            }
+        }));
+    }
+    for handle in handles {
+        handle.join().expect("reader joins");
+    }
+    let divergence = divergence.lock().expect("lock");
+    assert!(
+        divergence.is_empty(),
+        "search() divergence under concurrent reads:\n{}",
+        divergence.join("\n---\n")
+    );
+
+    emit_success_summary(
+        "rust_stress_search_determinism",
+        &[
+            ("readers", READERS.to_string()),
+            ("iterations_per_reader", ITERATIONS.to_string()),
+            ("hits", baseline.hits.len().to_string()),
+        ],
+    );
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn search_fallback_stable_under_concurrent_reads() {
+    // Mirrors `fallback_search_stable_under_repeated_concurrent_reads` but
+    // uses the unified `search()` surface. A query that combines a strictly
+    // unmatched token with a token the seed corpus knows ("budget") forces
+    // the relaxed branch to fire through the retrieval planner. All
+    // concurrent readers must observe the same `SearchRows` (same hits,
+    // same ordering, `fallback_used=true`, same match_modes).
+    const READERS: usize = 16;
+    const ITERATIONS: usize = 64;
+    let (_db, engine) = open_engine();
+    register_note_recursive_schema(&engine);
+    seed_notes(&engine, 100);
+
+    let engine = Arc::new(engine);
+    let baseline_rows = engine
+        .query("Note")
+        .search("zzznonexistentterm budget", 20)
+        .with_match_attribution()
+        .execute()
+        .expect("baseline fallback search via search()");
+    assert!(
+        baseline_rows.fallback_used,
+        "search() seed must exercise the relaxed branch, got strict={} relaxed={} fallback_used={}",
+        baseline_rows.strict_hit_count,
+        baseline_rows.relaxed_hit_count,
+        baseline_rows.fallback_used,
+    );
+    assert_eq!(
+        baseline_rows.strict_hit_count, 0,
+        "strict branch must miss so relaxed can dominate the result set"
+    );
+    assert!(
+        !baseline_rows.hits.is_empty(),
+        "relaxed branch must return at least one hit"
+    );
+    let baseline_formatted = format_search_rows_stable(&baseline_rows);
+
+    let barrier = Arc::new(Barrier::new(READERS));
+    let divergence = Arc::new(Mutex::new(Vec::<String>::new()));
+    let mut handles = Vec::with_capacity(READERS);
+
+    for reader_id in 0..READERS {
+        let engine = Arc::clone(&engine);
+        let barrier = Arc::clone(&barrier);
+        let divergence = Arc::clone(&divergence);
+        let expected = baseline_formatted.clone();
+        handles.push(thread::spawn(move || {
+            barrier.wait();
+            for iter in 0..ITERATIONS {
+                let rows = engine
+                    .query("Note")
+                    .search("zzznonexistentterm budget", 20)
+                    .with_match_attribution()
+                    .execute()
+                    .expect("concurrent fallback search via search()");
+                let formatted = format_search_rows_stable(&rows);
+                if formatted != expected {
+                    divergence.lock().expect("lock").push(format!(
+                        "reader {reader_id} iter {iter} diverged:\nexpected:\n{expected}\nactual:\n{formatted}"
+                    ));
+                    return;
+                }
+            }
+        }));
+    }
+
+    for handle in handles {
+        handle.join().expect("reader joins");
+    }
+
+    let divergence = divergence.lock().expect("lock");
+    assert!(
+        divergence.is_empty(),
+        "search() fallback divergence under concurrent reads:\n{}",
+        divergence.join("\n---\n")
+    );
+
+    emit_success_summary(
+        "rust_stress_search_fallback_concurrent_stable",
+        &[
+            ("readers", READERS.to_string()),
+            ("iterations_per_reader", ITERATIONS.to_string()),
+            ("hits", baseline_rows.hits.len().to_string()),
+        ],
+    );
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn search_reads_never_block_on_background_writes() {
+    // Mirrors `adaptive_search_reads_never_block_on_background_writes` but
+    // uses the unified `search()` surface. Measure reader p99 latency with
+    // NO writers (baseline), then with background writers actively ingesting
+    // Notes, and assert:
+    //
+    //     under_load_p99 <= max(10.0 * baseline_p99, 100ms absolute)
+    //
+    // The 100ms absolute ceiling is applied when baseline_p99 is very small
+    // (sub-ms), because a 10x multiplier on a noisy 100us baseline is itself
+    // noisy. Ratios and absolute values are logged.
+    const READERS: usize = 8;
+    const READ_ITERATIONS: usize = 150;
+
+    let (_db, engine) = open_engine();
+    register_note_recursive_schema(&engine);
+    seed_notes(&engine, 150);
+    let engine = Arc::new(engine);
+
+    // --- Baseline: readers only, no writers. ---
+    let baseline_samples = Arc::new(Mutex::new(Vec::<Duration>::new()));
+    let barrier = Arc::new(Barrier::new(READERS));
+    let mut handles = Vec::with_capacity(READERS);
+    for _reader_id in 0..READERS {
+        let engine = Arc::clone(&engine);
+        let barrier = Arc::clone(&barrier);
+        let baseline_samples = Arc::clone(&baseline_samples);
+        handles.push(thread::spawn(move || {
+            let mut local = Vec::with_capacity(READ_ITERATIONS);
+            barrier.wait();
+            for _ in 0..READ_ITERATIONS {
+                let start = Instant::now();
+                let rows = engine
+                    .query("Note")
+                    .search("budget", 20)
+                    .execute()
+                    .expect("baseline search read");
+                let elapsed = start.elapsed();
+                assert!(
+                    !rows.hits.is_empty(),
+                    "baseline search read returned zero hits"
+                );
+                local.push(elapsed);
+            }
+            baseline_samples.lock().expect("lock").extend(local);
+        }));
+    }
+    for handle in handles {
+        handle.join().expect("baseline reader joins");
+    }
+    let baseline_samples = Arc::try_unwrap(baseline_samples)
+        .expect("unique baseline arc")
+        .into_inner()
+        .expect("poison-free");
+    let baseline_p99_us = p99_micros(&baseline_samples);
+
+    // --- Under load: 3 writer threads churn new Notes while readers run. ---
+    let stop = Arc::new(AtomicBool::new(false));
+    let write_count = Arc::new(AtomicUsize::new(0));
+    let errors = Arc::new(Mutex::new(Vec::<String>::new()));
+    let mut writer_handles = Vec::new();
+    for thread_id in 0..3 {
+        let engine = Arc::clone(&engine);
+        let stop = Arc::clone(&stop);
+        let write_count = Arc::clone(&write_count);
+        let errors = Arc::clone(&errors);
+        writer_handles.push(thread::spawn(move || {
+            let mut iteration = 0usize;
+            while !stop.load(Ordering::Relaxed) {
+                let label = format!("search-p99-writer-{thread_id}-{iteration:05}");
+                let logical_id = format!("note:{label}");
+                let props = format!(
+                    r#"{{"title":"budget Note {label}","payload":{{"body":"budget quarterly plan for {label}","tags":["search-p99"]}}}}"#
+                );
+                let request = WriteRequest {
+                    label: label.clone(),
+                    nodes: vec![NodeInsert {
+                        row_id: new_row_id(),
+                        logical_id,
+                        kind: "Note".to_owned(),
+                        properties: props,
+                        source_ref: Some(format!("source:{label}")),
+                        upsert: false,
+                        chunk_policy: ChunkPolicy::Preserve,
+                        content_ref: None,
+                    }],
+                    node_retires: vec![],
+                    edges: vec![],
+                    edge_retires: vec![],
+                    chunks: vec![],
+                    runs: vec![],
+                    steps: vec![],
+                    actions: vec![],
+                    optional_backfills: vec![],
+                    vec_inserts: vec![],
+                    operational_writes: vec![],
+                };
+                if let Err(err) = engine.writer().submit(request) {
+                    errors
+                        .lock()
+                        .expect("lock")
+                        .push(format!("writer[{thread_id}]: {err}"));
+                    stop.store(true, Ordering::Relaxed);
+                    break;
+                }
+                write_count.fetch_add(1, Ordering::Relaxed);
+                iteration += 1;
+            }
+        }));
+    }
+
+    let under_load_samples = Arc::new(Mutex::new(Vec::<Duration>::new()));
+    let barrier = Arc::new(Barrier::new(READERS));
+    let mut reader_handles = Vec::with_capacity(READERS);
+    for _reader_id in 0..READERS {
+        let engine = Arc::clone(&engine);
+        let barrier = Arc::clone(&barrier);
+        let under_load_samples = Arc::clone(&under_load_samples);
+        reader_handles.push(thread::spawn(move || {
+            let mut local = Vec::with_capacity(READ_ITERATIONS);
+            barrier.wait();
+            for _ in 0..READ_ITERATIONS {
+                let start = Instant::now();
+                let rows = engine
+                    .query("Note")
+                    .search("budget", 20)
+                    .execute()
+                    .expect("under-load search read");
+                let elapsed = start.elapsed();
+                // Use `rows` to prevent the compiler from eliding work.
+                let _: &[SearchHit] = &rows.hits;
+                assert!(
+                    !rows.hits.is_empty(),
+                    "under-load search read returned zero hits"
+                );
+                local.push(elapsed);
+            }
+            under_load_samples.lock().expect("lock").extend(local);
+        }));
+    }
+    for handle in reader_handles {
+        handle.join().expect("under-load reader joins");
+    }
+    stop.store(true, Ordering::Relaxed);
+    for handle in writer_handles {
+        handle.join().expect("writer joins");
+    }
+
+    let writer_errors = errors.lock().expect("lock");
+    assert!(
+        writer_errors.is_empty(),
+        "writer errors during search p99 test: {writer_errors:?}"
+    );
+    drop(writer_errors);
+    let writes_done = write_count.load(Ordering::Relaxed);
+    assert!(writes_done > 0, "no writes completed under load");
+
+    let under_load_samples = Arc::try_unwrap(under_load_samples)
+        .expect("unique under-load arc")
+        .into_inner()
+        .expect("poison-free");
+    let under_load_p99_us = p99_micros(&under_load_samples);
+
+    // Threshold: max(10x baseline, 100ms absolute ceiling).
+    let ten_x_baseline_us = baseline_p99_us * 10.0;
+    let absolute_ceiling_us = 100_000.0_f64; // 100ms
+    let threshold_us = ten_x_baseline_us.max(absolute_ceiling_us);
+
+    #[allow(clippy::print_stderr)]
+    {
+        eprintln!(
+            "search_reads_never_block_on_background_writes: baseline_p99={:.0}us under_load_p99={:.0}us ratio={:.2}x threshold={:.0}us writes_under_load={} baseline_samples={} under_load_samples={}",
+            baseline_p99_us,
+            under_load_p99_us,
+            under_load_p99_us / baseline_p99_us.max(1.0),
+            threshold_us,
+            writes_done,
+            baseline_samples.len(),
+            under_load_samples.len(),
+        );
+    }
+
+    assert!(
+        under_load_p99_us <= threshold_us,
+        "under_load p99 {under_load_p99_us:.0}us exceeded threshold {threshold_us:.0}us (baseline p99 {baseline_p99_us:.0}us)"
+    );
+
+    emit_success_summary(
+        "rust_stress_search_reads_p99",
+        &[
+            ("readers", READERS.to_string()),
+            ("iterations_per_reader", READ_ITERATIONS.to_string()),
+            ("baseline_p99_us", format!("{baseline_p99_us:.0}")),
+            ("under_load_p99_us", format!("{under_load_p99_us:.0}")),
+            ("threshold_us", format!("{threshold_us:.0}")),
+            ("writes_under_load", writes_done.to_string()),
+        ],
+    );
+}
