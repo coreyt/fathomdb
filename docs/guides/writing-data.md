@@ -200,6 +200,10 @@ engine.write(builder.build())
 ```
 
 For background on the data model, see [External Content](../concepts/data-model.md#external-content).
+For a read-side walkthrough — when to externalize payload, how
+`NodeRow.content_ref` surfaces on query results, and the
+"indexable metadata on the node, bulky payload behind the ref" pattern
+— see [Externalizing Payloads with `content_ref`](./content-refs.md).
 
 ## Retiring (soft-delete)
 
