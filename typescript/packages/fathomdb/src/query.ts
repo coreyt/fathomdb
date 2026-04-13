@@ -104,6 +104,24 @@ export class Query {
   }
 
   /**
+   * Start a unified search rooted at the current query's kind.
+   *
+   * Returns a distinct {@link SearchBuilder} whose `.execute()` returns
+   * {@link SearchRows}, not {@link QueryRows}. This is the Phase 12/13a
+   * unified entry point: the request is compiled through the retrieval
+   * planner (`compile_retrieval_plan`) and executed through
+   * `execute_retrieval_plan`. The v1 vector branch is always empty
+   * (no read-time embedding wired yet). `relaxed_query` is ignored.
+   *
+   * @param query - The search query string.
+   * @param limit - Maximum number of candidate hits to return.
+   * @returns A new {@link SearchBuilder} tethered to the engine core.
+   */
+  search(query: string, limit: number): SearchBuilder {
+    return new SearchBuilder(this.#core, this.#rootKind, query, limit);
+  }
+
+  /**
    * Traverse edges from matched nodes.
    *
    * @param args - Traversal configuration.
@@ -391,7 +409,7 @@ export class Query {
 
 type SearchFilter = Record<string, RawJson>;
 
-type SearchMode = "text_search" | "fallback_search";
+type SearchMode = "search" | "text_search" | "fallback_search";
 
 function buildSearchRequest(args: {
   mode: SearchMode;
@@ -429,6 +447,167 @@ function runSearch(
     operation: () =>
       searchRowsFromWire(parseNativeJson(callNative(() => core.executeSearch(requestJson)))),
   });
+}
+
+/**
+ * Tethered builder for the unified Phase 12/13a search entry point.
+ *
+ * Created via {@link Query.search}. Each filter method returns a new
+ * builder, leaving the original unchanged. Terminal method
+ * {@link SearchBuilder.execute} dispatches the request through the native
+ * FFI and returns {@link SearchRows}. Mirrors the TextSearchBuilder /
+ * FallbackSearchBuilder filter surface; the only wire-level difference is
+ * that this request is tagged `"mode": "search"`, so the Rust side routes
+ * through `compile_retrieval_plan` / `execute_retrieval_plan`.
+ */
+export class SearchBuilder {
+  readonly #core: NativeEngineCore;
+  readonly #rootKind: string;
+  readonly #strictQuery: string;
+  readonly #limit: number;
+  readonly #filters: SearchFilter[];
+  readonly #attributionRequested: boolean;
+
+  constructor(
+    core: NativeEngineCore,
+    rootKind: string,
+    strictQuery: string,
+    limit: number,
+    filters: SearchFilter[] = [],
+    attributionRequested = false,
+  ) {
+    this.#core = core;
+    this.#rootKind = rootKind;
+    this.#strictQuery = strictQuery;
+    this.#limit = limit;
+    this.#filters = filters;
+    this.#attributionRequested = attributionRequested;
+  }
+
+  #withFilter(filter: SearchFilter): SearchBuilder {
+    return new SearchBuilder(
+      this.#core,
+      this.#rootKind,
+      this.#strictQuery,
+      this.#limit,
+      [...this.#filters, filter],
+      this.#attributionRequested,
+    );
+  }
+
+  /** Request per-hit match attribution payloads from the engine. */
+  withMatchAttribution(): SearchBuilder {
+    return new SearchBuilder(
+      this.#core,
+      this.#rootKind,
+      this.#strictQuery,
+      this.#limit,
+      [...this.#filters],
+      true,
+    );
+  }
+
+  /** Filter hits to those whose node kind equals `kind`. */
+  filterKindEq(kind: string): SearchBuilder {
+    return this.#withFilter({ type: "filter_kind_eq", kind });
+  }
+
+  /** Filter hits to those with the given logical ID. */
+  filterLogicalIdEq(logicalId: string): SearchBuilder {
+    return this.#withFilter({ type: "filter_logical_id_eq", logical_id: logicalId });
+  }
+
+  /** Filter hits to those with the given source reference. */
+  filterSourceRefEq(sourceRef: string): SearchBuilder {
+    return this.#withFilter({ type: "filter_source_ref_eq", source_ref: sourceRef });
+  }
+
+  /** Filter hits to those with the given content reference URI. */
+  filterContentRefEq(contentRef: string): SearchBuilder {
+    return this.#withFilter({ type: "filter_content_ref_eq", content_ref: contentRef });
+  }
+
+  /** Filter hits to those where `content_ref` is not NULL. */
+  filterContentRefNotNull(): SearchBuilder {
+    return this.#withFilter({ type: "filter_content_ref_not_null" });
+  }
+
+  /** Filter hits where the JSON property at `path` equals the string `value`. */
+  filterJsonTextEq(path: string, value: string): SearchBuilder {
+    return this.#withFilter({ type: "filter_json_text_eq", path, value });
+  }
+
+  /** Filter hits where the JSON boolean at `path` equals `value`. */
+  filterJsonBoolEq(path: string, value: boolean): SearchBuilder {
+    return this.#withFilter({ type: "filter_json_bool_eq", path, value });
+  }
+
+  /** Filter hits where the JSON integer at `path` is greater than `value`. */
+  filterJsonIntegerGt(path: string, value: number): SearchBuilder {
+    return this.#withFilter({ type: "filter_json_integer_gt", path, value });
+  }
+
+  /** Filter hits where the JSON integer at `path` is greater than or equal to `value`. */
+  filterJsonIntegerGte(path: string, value: number): SearchBuilder {
+    return this.#withFilter({ type: "filter_json_integer_gte", path, value });
+  }
+
+  /** Filter hits where the JSON integer at `path` is less than `value`. */
+  filterJsonIntegerLt(path: string, value: number): SearchBuilder {
+    return this.#withFilter({ type: "filter_json_integer_lt", path, value });
+  }
+
+  /** Filter hits where the JSON integer at `path` is less than or equal to `value`. */
+  filterJsonIntegerLte(path: string, value: number): SearchBuilder {
+    return this.#withFilter({ type: "filter_json_integer_lte", path, value });
+  }
+
+  /** Filter hits where the JSON timestamp at `path` is after `value`. */
+  filterJsonTimestampGt(path: string, value: number): SearchBuilder {
+    return this.#withFilter({ type: "filter_json_timestamp_gt", path, value });
+  }
+
+  /** Filter hits where the JSON timestamp at `path` is at or after `value`. */
+  filterJsonTimestampGte(path: string, value: number): SearchBuilder {
+    return this.#withFilter({ type: "filter_json_timestamp_gte", path, value });
+  }
+
+  /** Filter hits where the JSON timestamp at `path` is before `value`. */
+  filterJsonTimestampLt(path: string, value: number): SearchBuilder {
+    return this.#withFilter({ type: "filter_json_timestamp_lt", path, value });
+  }
+
+  /** Filter hits where the JSON timestamp at `path` is at or before `value`. */
+  filterJsonTimestampLte(path: string, value: number): SearchBuilder {
+    return this.#withFilter({ type: "filter_json_timestamp_lte", path, value });
+  }
+
+  /**
+   * Execute the search and return the matched rows.
+   *
+   * @param progressCallback - Optional callback invoked with feedback events.
+   * @param feedbackConfig - Timing thresholds for progress feedback.
+   * @returns The matched {@link SearchRows}.
+   */
+  execute(progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): SearchRows {
+    const requestJson = buildSearchRequest({
+      mode: "search",
+      rootKind: this.#rootKind,
+      strictQuery: this.#strictQuery,
+      relaxedQuery: null,
+      limit: this.#limit,
+      filters: this.#filters,
+      attributionRequested: this.#attributionRequested,
+    });
+    return runSearch(
+      this.#core,
+      "query.search",
+      this.#rootKind,
+      requestJson,
+      progressCallback,
+      feedbackConfig,
+    );
+  }
 }
 
 /**
