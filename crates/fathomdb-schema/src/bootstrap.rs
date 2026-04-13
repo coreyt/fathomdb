@@ -1017,10 +1017,17 @@ impl SchemaManager {
                 embedding float[{dimension}]\
             )"
         ))?;
+        // Vector dimensions are small positive integers (typically <= a few
+        // thousand); convert explicitly so clippy's cast_possible_wrap is happy.
+        let dimension_i64 = i64::try_from(dimension).map_err(|_| {
+            SchemaError::Sqlite(rusqlite::Error::ToSqlConversionFailure(
+                format!("vector dimension {dimension} does not fit in i64").into(),
+            ))
+        })?;
         conn.execute(
             "INSERT OR REPLACE INTO vector_profiles \
              (profile, table_name, dimension, enabled) VALUES (?1, ?2, ?3, 1)",
-            rusqlite::params![profile, table_name, dimension as i64],
+            rusqlite::params![profile, table_name, dimension_i64],
         )?;
         Ok(())
     }
