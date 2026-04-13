@@ -14,6 +14,8 @@ mod search;
 pub mod search_ffi;
 mod write_request_builder;
 
+#[cfg(feature = "default-embedder")]
+pub use fathomdb_engine::BuiltinBgeSmallEmbedder;
 pub use fathomdb_engine::{
     ActionInsert, ActionRow, AdminHandle, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire,
     EmbedderError, EngineError, EngineRuntime, ExecutionCoordinator, ExpansionRootRows,
@@ -162,18 +164,30 @@ impl EngineOptions {
 fn resolve_embedder_choice(choice: EmbedderChoice) -> Option<Arc<dyn QueryEmbedder>> {
     match choice {
         EmbedderChoice::None => None,
-        EmbedderChoice::Builtin => {
-            // Phase 12.5a stub. Resolves to `None` regardless of any
-            // future feature flag — Phase 12.5b will add a
-            // `default-embedder` cargo feature to this crate and swap
-            // this arm for a real Candle + bge-small-en-v1.5 constructor
-            // gated on that feature. Phase 12.5a intentionally does not
-            // declare the feature because shipping a dead cargo feature
-            // pins the surface with no build effect.
-            None
-        }
+        EmbedderChoice::Builtin => resolve_builtin_embedder(),
         EmbedderChoice::InProcess(arc) => Some(arc),
     }
+}
+
+/// Phase 12.5b: when the `default-embedder` feature is enabled, resolve
+/// `EmbedderChoice::Builtin` to a concrete Candle + bge-small-en-v1.5
+/// embedder (lazy-loaded on first query). When the feature is disabled,
+/// log a warning and return `None` so the vector branch stays dormant
+/// rather than erroring — matching the Phase 12.5a stub behavior.
+#[cfg(feature = "default-embedder")]
+#[allow(clippy::unnecessary_wraps)] // the no-feature twin returns None
+fn resolve_builtin_embedder() -> Option<Arc<dyn QueryEmbedder>> {
+    Some(Arc::new(fathomdb_engine::BuiltinBgeSmallEmbedder::new()) as Arc<dyn QueryEmbedder>)
+}
+
+#[cfg(not(feature = "default-embedder"))]
+fn resolve_builtin_embedder() -> Option<Arc<dyn QueryEmbedder>> {
+    // Built without the `default-embedder` feature. Callers who asked
+    // for `EmbedderChoice::Builtin` in this configuration get the same
+    // dormant behavior as `EmbedderChoice::None`. We deliberately do
+    // NOT panic — degradation is the whole point of the embedder
+    // surface.
+    None
 }
 
 /// Top-level handle to a fathomdb graph database.

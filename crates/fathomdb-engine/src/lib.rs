@@ -25,6 +25,8 @@ pub use coordinator::{
     ActionRow, ExecutionCoordinator, ExpansionRootRows, ExpansionSlotRows, GroupedQueryRows,
     NodeRow, ProvenanceEvent, QueryPlan, QueryRows, RunRow, StepRow,
 };
+#[cfg(feature = "default-embedder")]
+pub use embedder::BuiltinBgeSmallEmbedder;
 pub use embedder::{EmbedderError, QueryEmbedder, QueryEmbedderIdentity};
 pub use ids::{new_id, new_row_id};
 pub use operational::{
