@@ -56,10 +56,11 @@ def canonical_node_chunk_fts(context: HarnessContext) -> ScenarioResult:
     text_rows = (
         context.engine.nodes("Meeting")
         .text_search("quarterlybudgetneedle", limit=5)
-        .limit(5)
         .execute()
     )
-    assert_single_node(text_rows, CANONICAL_MEETING_ID)
+    assert text_rows.was_degraded is False
+    assert len(text_rows.hits) == 1
+    assert text_rows.hits[0].node.logical_id == CANONICAL_MEETING_ID
 
     assert_integrity_clean(context.engine.admin.check_integrity())
     return ScenarioResult(name="canonical_node_chunk_fts")
