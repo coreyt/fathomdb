@@ -54,7 +54,9 @@ def trace_and_excise(context: HarnessContext) -> ScenarioResult:
     assert_trace(before_trace, node_rows=1, node_logical_ids=[TRACE_MEETING_ID])
 
     before_rows = engine.nodes("Meeting").text_search("traceableneedle", limit=5).execute()
-    assert_single_node(before_rows, TRACE_MEETING_ID)
+    assert before_rows.was_degraded is False
+    assert len(before_rows.hits) == 1
+    assert before_rows.hits[0].node.logical_id == TRACE_MEETING_ID
 
     after_excise = engine.admin.excise_source(TRACE_SOURCE)
     assert_trace(after_excise, node_rows=1, node_logical_ids=[TRACE_MEETING_ID])
@@ -63,7 +65,8 @@ def trace_and_excise(context: HarnessContext) -> ScenarioResult:
     assert_no_nodes(direct_rows)
 
     after_rows = engine.nodes("Meeting").text_search("traceableneedle", limit=5).execute()
-    assert_no_nodes(after_rows)
+    assert after_rows.was_degraded is False
+    assert after_rows.hits == ()
 
     assert_integrity_clean(engine.admin.check_integrity())
     report = engine.admin.check_semantics()

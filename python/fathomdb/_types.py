@@ -420,6 +420,85 @@ class QueryRows:
         )
 
 
+class SearchHitSource(str, Enum):
+    """Which full-text projection surface produced a :class:`SearchHit`."""
+
+    CHUNK = "chunk"
+    PROPERTY = "property"
+    VECTOR = "vector"
+
+
+class SearchMatchMode(str, Enum):
+    """Whether a hit came from the strict branch or the relaxed fallback."""
+
+    STRICT = "strict"
+    RELAXED = "relaxed"
+
+
+@dataclass(frozen=True)
+class HitAttribution:
+    """Per-hit attribution payload when ``with_match_attribution`` is set."""
+
+    matched_paths: tuple[str, ...]
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "HitAttribution":
+        return cls(matched_paths=tuple(payload.get("matched_paths", [])))
+
+
+@dataclass(frozen=True)
+class SearchHit:
+    """A single adaptive or fallback text-search hit."""
+
+    node: NodeRow
+    score: float
+    source: SearchHitSource
+    match_mode: SearchMatchMode
+    snippet: str | None
+    written_at: int
+    projection_row_id: str | None
+    attribution: HitAttribution | None
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "SearchHit":
+        attribution_payload = payload.get("attribution")
+        return cls(
+            node=NodeRow.from_wire(payload["node"]),
+            score=float(payload["score"]),
+            source=SearchHitSource(payload["source"]),
+            match_mode=SearchMatchMode(payload["match_mode"]),
+            snippet=payload.get("snippet"),
+            written_at=int(payload["written_at"]),
+            projection_row_id=payload.get("projection_row_id"),
+            attribution=(
+                HitAttribution.from_wire(attribution_payload)
+                if attribution_payload is not None
+                else None
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class SearchRows:
+    """Result set returned by :meth:`TextSearchBuilder.execute` and :meth:`FallbackSearchBuilder.execute`."""
+
+    hits: tuple[SearchHit, ...]
+    was_degraded: bool
+    fallback_used: bool
+    strict_hit_count: int
+    relaxed_hit_count: int
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "SearchRows":
+        return cls(
+            hits=tuple(SearchHit.from_wire(item) for item in payload.get("hits", [])),
+            was_degraded=bool(payload["was_degraded"]),
+            fallback_used=bool(payload["fallback_used"]),
+            strict_hit_count=int(payload["strict_hit_count"]),
+            relaxed_hit_count=int(payload["relaxed_hit_count"]),
+        )
+
+
 @dataclass(frozen=True)
 class ExpansionRootRows:
     """Expanded nodes reached from a single root in a grouped query."""

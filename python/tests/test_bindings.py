@@ -59,14 +59,13 @@ def test_write_and_text_query_round_trip(tmp_path: Path) -> None:
         db.nodes("Meeting")
         .text_search("budget", limit=5)
         .filter_json_text_eq("$.status", "active")
-        .limit(10)
         .execute()
     )
 
     assert rows.was_degraded is False
-    assert len(rows.nodes) == 1
-    assert rows.nodes[0].logical_id == "meeting:budget-2026-03-25"
-    assert rows.nodes[0].properties["title"] == "Budget review"
+    assert len(rows.hits) == 1
+    assert rows.hits[0].node.logical_id == "meeting:budget-2026-03-25"
+    assert rows.hits[0].node.properties["title"] == "Budget review"
 
 
 def test_external_content_roundtrip(tmp_path: Path) -> None:
@@ -181,7 +180,7 @@ def test_trace_and_excise_source(tmp_path: Path) -> None:
     assert excised.operational_mutation_rows == 0
 
     rows = db.nodes("Meeting").text_search("traceable", limit=5).execute()
-    assert rows.nodes == []
+    assert rows.hits == ()
 
 
 def test_invalid_json_path_raises_compile_error(tmp_path: Path) -> None:
@@ -798,7 +797,7 @@ def test_grouped_query_returns_root_plus_named_expansion_slots(tmp_path: Path) -
 
     grouped = (
         db.nodes("Meeting")
-        .text_search("budget", limit=5)
+        .filter_logical_id_eq("meeting-1")
         .expand(slot="tasks", direction=TraverseDirection.OUT, label="HAS_TASK", max_depth=1)
         .expand(slot="decisions", direction=TraverseDirection.OUT, label="HAS_DECISION", max_depth=1)
         .execute_grouped()
