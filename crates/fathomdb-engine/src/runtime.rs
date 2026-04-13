@@ -4,7 +4,8 @@ use std::sync::Arc;
 use fathomdb_schema::SchemaManager;
 
 use crate::{
-    AdminHandle, AdminService, EngineError, ExecutionCoordinator, ProvenanceMode, WriterActor,
+    AdminHandle, AdminService, EngineError, ExecutionCoordinator, ProvenanceMode, QueryEmbedder,
+    WriterActor,
     database_lock::DatabaseLock,
     telemetry::{TelemetryCounters, TelemetryLevel, TelemetrySnapshot},
 };
@@ -49,6 +50,7 @@ impl EngineRuntime {
         vector_dimension: Option<usize>,
         read_pool_size: usize,
         telemetry_level: TelemetryLevel,
+        query_embedder: Option<Arc<dyn QueryEmbedder>>,
     ) -> Result<Self, EngineError> {
         let lock = DatabaseLock::acquire(path.as_ref())?;
 
@@ -75,6 +77,7 @@ impl EngineRuntime {
             vector_dimension,
             read_pool_size,
             Arc::clone(&telemetry),
+            query_embedder,
         )?;
         let writer = WriterActor::start(
             path.as_ref(),
@@ -145,6 +148,7 @@ mod tests {
                 None,
                 4,
                 TelemetryLevel::Counters,
+                None,
             )
             .expect("open"),
         );
@@ -218,6 +222,7 @@ mod tests {
             None,
             4,
             TelemetryLevel::Counters,
+            None,
         )
         .expect("open");
         let second = EngineRuntime::open(
@@ -226,6 +231,7 @@ mod tests {
             None,
             4,
             TelemetryLevel::Counters,
+            None,
         );
 
         assert!(second.is_err(), "second open must fail");
@@ -252,6 +258,7 @@ mod tests {
                 None,
                 4,
                 TelemetryLevel::Counters,
+                None,
             )
             .expect("first open");
         }
@@ -262,6 +269,7 @@ mod tests {
             None,
             4,
             TelemetryLevel::Counters,
+            None,
         )
         .expect("reopen");
         let compiled = QueryBuilder::nodes("Test")
@@ -286,6 +294,7 @@ mod tests {
             None,
             4,
             TelemetryLevel::Counters,
+            None,
         )
         .expect("open");
         let err = EngineRuntime::open(
@@ -294,6 +303,7 @@ mod tests {
             None,
             4,
             TelemetryLevel::Counters,
+            None,
         )
         .expect_err("second open must fail");
 
@@ -328,6 +338,7 @@ mod tests {
                 None,
                 4,
                 TelemetryLevel::Counters,
+                None,
             )
             .expect("open");
 
@@ -371,6 +382,7 @@ mod tests {
             None,
             4,
             TelemetryLevel::Counters,
+            None,
         )
         .expect("reopen");
         let compiled = QueryBuilder::nodes("Test")
@@ -393,6 +405,7 @@ mod tests {
             None,
             4,
             TelemetryLevel::Counters,
+            None,
         )
         .expect("open");
 

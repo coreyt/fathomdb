@@ -149,6 +149,7 @@ fn engine_open_emits_lifecycle_events() {
             None,
             2,
             fathomdb_engine::TelemetryLevel::Counters,
+            None,
         )
         .unwrap();
     });
@@ -177,6 +178,7 @@ fn write_committed_emits_info_event() {
         None,
         2,
         fathomdb_engine::TelemetryLevel::Counters,
+        None,
     )
     .unwrap();
 
@@ -230,6 +232,7 @@ fn tracing_events_continue_under_concurrent_load() {
             None,
             4,
             fathomdb_engine::TelemetryLevel::Counters,
+            None,
         )
         .unwrap(),
     );

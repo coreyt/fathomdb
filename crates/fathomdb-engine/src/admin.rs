@@ -5565,6 +5565,7 @@ mod tests {
             Some(4),
             1,
             Arc::new(TelemetryCounters::default()),
+            None,
         )
         .expect("coordinator");
         let compiled = QueryBuilder::nodes("Document")
@@ -5697,6 +5698,7 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
             Some(4),
             1,
             Arc::new(TelemetryCounters::default()),
+            None,
         )
         .expect("coordinator");
         let compiled = QueryBuilder::nodes("Document")
@@ -9719,6 +9721,7 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
             None,
             1,
             Arc::new(TelemetryCounters::default()),
+            None,
         )
         .expect("coordinator");
 

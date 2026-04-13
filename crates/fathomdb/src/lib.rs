@@ -16,24 +16,26 @@ mod write_request_builder;
 
 pub use fathomdb_engine::{
     ActionInsert, ActionRow, AdminHandle, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire,
-    EngineError, EngineRuntime, ExecutionCoordinator, ExpansionRootRows, ExpansionSlotRows,
-    FtsPropertyPathMode, FtsPropertyPathSpec, FtsPropertySchemaRecord, GroupedQueryRows,
-    LastAccessTouchReport, LastAccessTouchRequest, LogicalPurgeReport, LogicalRestoreReport,
-    NodeInsert, NodeRetire, NodeRow, OperationalCollectionKind, OperationalCollectionRecord,
-    OperationalCompactionReport, OperationalCurrentRow, OperationalFilterClause,
-    OperationalFilterField, OperationalFilterFieldType, OperationalFilterMode,
-    OperationalFilterValue, OperationalHistoryValidationIssue, OperationalHistoryValidationReport,
-    OperationalMutationRow, OperationalPurgeReport, OperationalReadReport, OperationalReadRequest,
-    OperationalRegisterRequest, OperationalRepairReport, OperationalRetentionActionKind,
-    OperationalRetentionPlanItem, OperationalRetentionPlanReport, OperationalRetentionRunItem,
-    OperationalRetentionRunReport, OperationalSecondaryIndexDefinition,
-    OperationalSecondaryIndexField, OperationalSecondaryIndexRebuildReport,
-    OperationalSecondaryIndexValueType, OperationalTraceReport, OperationalValidationContract,
-    OperationalValidationField, OperationalValidationFieldType, OperationalValidationMode,
-    OperationalWrite, OptionalProjectionTask, ProjectionRepairReport, ProjectionTarget,
-    ProvenanceEvent, ProvenanceMode, ProvenancePurgeOptions, ProvenancePurgeReport, QueryPlan,
-    QueryRows, RunInsert, RunRow, SafeExportManifest, SafeExportOptions, SkippedEdge, StepInsert,
-    StepRow, VecInsert, WriteReceipt, WriteRequest, WriterActor, new_id, new_row_id,
+    EmbedderError, EngineError, EngineRuntime, ExecutionCoordinator, ExpansionRootRows,
+    ExpansionSlotRows, FtsPropertyPathMode, FtsPropertyPathSpec, FtsPropertySchemaRecord,
+    GroupedQueryRows, LastAccessTouchReport, LastAccessTouchRequest, LogicalPurgeReport,
+    LogicalRestoreReport, NodeInsert, NodeRetire, NodeRow, OperationalCollectionKind,
+    OperationalCollectionRecord, OperationalCompactionReport, OperationalCurrentRow,
+    OperationalFilterClause, OperationalFilterField, OperationalFilterFieldType,
+    OperationalFilterMode, OperationalFilterValue, OperationalHistoryValidationIssue,
+    OperationalHistoryValidationReport, OperationalMutationRow, OperationalPurgeReport,
+    OperationalReadReport, OperationalReadRequest, OperationalRegisterRequest,
+    OperationalRepairReport, OperationalRetentionActionKind, OperationalRetentionPlanItem,
+    OperationalRetentionPlanReport, OperationalRetentionRunItem, OperationalRetentionRunReport,
+    OperationalSecondaryIndexDefinition, OperationalSecondaryIndexField,
+    OperationalSecondaryIndexRebuildReport, OperationalSecondaryIndexValueType,
+    OperationalTraceReport, OperationalValidationContract, OperationalValidationField,
+    OperationalValidationFieldType, OperationalValidationMode, OperationalWrite,
+    OptionalProjectionTask, ProjectionRepairReport, ProjectionTarget, ProvenanceEvent,
+    ProvenanceMode, ProvenancePurgeOptions, ProvenancePurgeReport, QueryEmbedder,
+    QueryEmbedderIdentity, QueryPlan, QueryRows, RunInsert, RunRow, SafeExportManifest,
+    SafeExportOptions, SkippedEdge, StepInsert, StepRow, VecInsert, WriteReceipt, WriteRequest,
+    WriterActor, new_id, new_row_id,
 };
 pub use fathomdb_engine::{SqliteCacheStatus, TelemetryLevel, TelemetrySnapshot};
 #[doc(hidden)]
@@ -58,8 +60,54 @@ pub use write_request_builder::{
 };
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use feedback::{OperationContext, run_with_feedback};
+
+/// Caller-facing selection of the read-time query embedder.
+///
+/// Phase 12.5a ships this enum with [`Self::None`] (the default, Phase 12
+/// v1 dormancy preserved), [`Self::Builtin`] (a stub until Phase 12.5b
+/// lands the Candle + bge-small-en-v1.5 default implementation behind the
+/// `default-embedder` feature flag), and [`Self::InProcess`] (a
+/// caller-supplied in-process embedder, the most flexible shape).
+///
+/// A subprocess / external-service variant is intentionally deferred: the
+/// existing write-time `VectorRegenerationConfig` covers the analogous
+/// batch path and nothing in v1.5a requires a query-time subprocess
+/// plumbing story.
+#[derive(Clone, Debug, Default)]
+pub enum EmbedderChoice {
+    /// No read-time embedder. `search()`'s vector branch stays dormant.
+    /// This is the default and preserves the Phase 12 v1 behaviour for
+    /// callers who do not opt in.
+    #[default]
+    None,
+    /// The built-in default embedder (Candle + bge-small-en-v1.5). Phase
+    /// 12.5a ships this variant as a stub that resolves to `None` at
+    /// runtime; Phase 12.5b will light it up behind the
+    /// `default-embedder` feature flag.
+    Builtin,
+    /// A caller-supplied in-process embedder.
+    InProcess(Arc<dyn QueryEmbedder>),
+}
+
+impl PartialEq for EmbedderChoice {
+    fn eq(&self, other: &Self) -> bool {
+        // `Arc<dyn QueryEmbedder>` is not `PartialEq`; we compare by
+        // variant identity only. `InProcess` values compare equal iff
+        // both sides point at the same allocation — good enough for the
+        // Phase 12.5a surface tests and consistent with how typical
+        // `Arc<dyn Trait>` configs are compared.
+        match (self, other) {
+            (Self::None, Self::None) | (Self::Builtin, Self::Builtin) => true,
+            (Self::InProcess(a), Self::InProcess(b)) => Arc::ptr_eq(a, b),
+            _ => false,
+        }
+    }
+}
+
+impl Eq for EmbedderChoice {}
 
 /// Configuration for opening an [`Engine`] instance.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -78,6 +126,10 @@ pub struct EngineOptions {
     /// Controls how much telemetry the engine collects.
     /// Defaults to [`TelemetryLevel::Counters`] (always-on cumulative counters).
     pub telemetry_level: TelemetryLevel,
+    /// Phase 12.5a: selects the read-time query embedder, if any.
+    /// Defaults to [`EmbedderChoice::None`] — the Phase 12 v1 dormancy
+    /// invariant on `search()` is preserved unchanged.
+    pub embedder: EmbedderChoice,
 }
 
 impl EngineOptions {
@@ -89,7 +141,38 @@ impl EngineOptions {
             vector_dimension: None,
             read_pool_size: None,
             telemetry_level: TelemetryLevel::Counters,
+            embedder: EmbedderChoice::None,
         }
+    }
+
+    /// Builder-style setter for the read-time query embedder.
+    #[must_use]
+    pub fn with_embedder(mut self, choice: EmbedderChoice) -> Self {
+        self.embedder = choice;
+        self
+    }
+}
+
+/// Resolve an [`EmbedderChoice`] into the concrete
+/// `Option<Arc<dyn QueryEmbedder>>` that [`EngineRuntime::open`] takes.
+///
+/// Phase 12.5a keeps this translation deliberately tight: Phase 12.5b
+/// will modify only the `Builtin` arm to construct the Candle + bge-
+/// small-en-v1.5 default implementation.
+fn resolve_embedder_choice(choice: EmbedderChoice) -> Option<Arc<dyn QueryEmbedder>> {
+    match choice {
+        EmbedderChoice::None => None,
+        EmbedderChoice::Builtin => {
+            // Phase 12.5a stub. Resolves to `None` regardless of any
+            // future feature flag — Phase 12.5b will add a
+            // `default-embedder` cargo feature to this crate and swap
+            // this arm for a real Candle + bge-small-en-v1.5 constructor
+            // gated on that feature. Phase 12.5a intentionally does not
+            // declare the feature because shipping a dead cargo feature
+            // pins the surface with no build effect.
+            None
+        }
+        EmbedderChoice::InProcess(arc) => Some(arc),
     }
 }
 
@@ -111,6 +194,7 @@ impl Engine {
     /// Returns [`EngineError`] if the database cannot be opened or the schema
     /// bootstrap fails.
     pub fn open(options: EngineOptions) -> Result<Self, EngineError> {
+        let embedder = resolve_embedder_choice(options.embedder);
         Ok(Self {
             runtime: EngineRuntime::open(
                 options.database_path,
@@ -118,6 +202,7 @@ impl Engine {
                 options.vector_dimension,
                 options.read_pool_size.unwrap_or(4),
                 options.telemetry_level,
+                embedder,
             )?,
         })
     }
