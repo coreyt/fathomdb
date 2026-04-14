@@ -127,7 +127,11 @@ def gh_run_list(
 
     runs = load_runs(completed.stdout)
     if commit:
-        runs = [r for r in runs if r.head_sha == commit]
+        if len(commit) < 7:
+            raise ValueError(
+                f"commit SHA must be at least 7 characters: got {len(commit)}"
+            )
+        runs = [r for r in runs if r.head_sha.startswith(commit)]
     if branch:
         runs = [r for r in runs if r.head_branch == branch]
     if status:
@@ -151,13 +155,13 @@ def require_successful_commit_run(
     while True:
         runs = gh_run_list(repo, workflow, commit=commit, status="success", runner=runner)
         for run in runs:
-            if run.conclusion == "success" and run.status == "completed" and run.head_sha == commit:
+            if run.conclusion == "success" and run.status == "completed" and run.head_sha.startswith(commit):
                 return run
         if time.monotonic() >= deadline:
             break
         # Check if there are any in-progress runs worth waiting for.
         all_runs = gh_run_list(repo, workflow, commit=commit, runner=runner)
-        pending = [r for r in all_runs if r.head_sha == commit and r.status in ("in_progress", "queued", "waiting")]
+        pending = [r for r in all_runs if r.head_sha.startswith(commit) and r.status in ("in_progress", "queued", "waiting")]
         if not pending:
             break
         remaining = int(deadline - time.monotonic())

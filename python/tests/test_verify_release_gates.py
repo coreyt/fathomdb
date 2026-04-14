@@ -44,7 +44,7 @@ def make_run(
 
 def test_verify_release_gates_accepts_recent_successes() -> None:
     module = load_script_module()
-    commit = "abc123"
+    commit = "abc1234"
     tag = "v0.1.0"
     seen_tags: list[str] = []
     now = datetime.now(timezone.utc)
@@ -87,7 +87,7 @@ def test_verify_release_gates_accepts_recent_successes() -> None:
 
 def test_verify_release_gates_rejects_stale_benchmark_run() -> None:
     module = load_script_module()
-    commit = "abc123"
+    commit = "abc1234"
     tag = "v0.1.0"
     stale_run = make_run(
         head_sha="main-sha",
@@ -111,4 +111,41 @@ def test_verify_release_gates_rejects_stale_benchmark_run() -> None:
             freshness_days=10,
             runner=runner,
             version_checker=lambda _: None,
+        )
+
+
+def test_gh_run_list_accepts_short_sha_prefix() -> None:
+    module = load_script_module()
+    full_sha = "abc1234def5678900000000000000000000aaaa"
+    short_sha = full_sha[:7]
+    now = datetime.now(timezone.utc)
+    payload = [make_run(head_sha=full_sha, updated_at=now)]
+
+    def runner(args, cwd=None):
+        return subprocess.CompletedProcess(args, 0, stdout=json.dumps(payload), stderr="")
+
+    runs = module.gh_run_list(
+        "coreyt/fathomdb",
+        "CI",
+        commit=short_sha,
+        runner=runner,
+    )
+    assert len(runs) == 1
+    assert runs[0].head_sha == full_sha
+
+
+def test_gh_run_list_rejects_too_short_sha() -> None:
+    module = load_script_module()
+    now = datetime.now(timezone.utc)
+    payload = [make_run(head_sha="abc1234def5678900000000000000000000aaaa", updated_at=now)]
+
+    def runner(args, cwd=None):
+        return subprocess.CompletedProcess(args, 0, stdout=json.dumps(payload), stderr="")
+
+    with pytest.raises(ValueError, match="at least 7"):
+        module.gh_run_list(
+            "coreyt/fathomdb",
+            "CI",
+            commit="abc123",
+            runner=runner,
         )
