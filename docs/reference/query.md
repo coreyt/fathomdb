@@ -65,6 +65,21 @@ the search CTE; the `filter_json_*` family runs as a post-filter.
 `vector_distance`, `modality`, and optional `match_mode` fields that
 generalize the payload across text and vector hits.
 
+!!! warning "`filter_json_*` post-filter footgun"
+
+    Because `filter_json_*` runs *after* the search CTE, the `limit`
+    passed to `search()` / `text_search()` bounds the **candidate set**,
+    not the final hit count. A call like
+    `.search("x", 10).filter_json_text_eq("$.status", "active")` can
+    return 0 hits even when thousands of matching rows exist — the 10
+    candidates were chosen before the status filter ran. Either
+    over-fetch (raise the search `limit` well above the desired final
+    count and slice after filtering), or promote the narrowed field to
+    a [property FTS projection](../guides/property-fts.md) so it
+    participates in retrieval. See
+    [`filter_json_*` vs property FTS](../guides/querying.md#filter_json_-vs-property-fts)
+    in the querying guide for worked examples.
+
 **Read-time embedding (Phase 12.5)**: the vector branch fires on
 natural-language queries when the engine was opened with a read-time
 query embedder — see [Read-time embedder](#read-time-embedder) below,
