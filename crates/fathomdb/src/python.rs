@@ -45,13 +45,13 @@ pub struct EngineCore {
 /// Python GC runs Rust's `Drop` with the GIL held.  `WriterActor::Drop` calls
 /// `thread.join()`, and the writer thread may need the GIL for pyo3-log calls
 /// → deadlock.  This `Drop` impl takes the engine out and drops it inside
-/// `allow_threads()` so the GIL is released during shutdown.
+/// `py.detach()` so the GIL is released during shutdown.
 impl Drop for EngineCore {
     fn drop(&mut self) {
         let engine = self.engine.get_mut().ok().and_then(Option::take);
         if let Some(engine) = engine {
-            Python::with_gil(|py| {
-                py.allow_threads(move || drop(engine));
+            Python::attach(|py| {
+                py.detach(move || drop(engine));
             });
         }
     }
@@ -97,7 +97,7 @@ impl EngineCore {
         // events that pyo3-log forwards to Python logging.  Holding the GIL
         // here while another engine's writer thread also logs causes a deadlock.
         let engine = py
-            .allow_threads(|| Engine::open(options))
+            .detach(|| Engine::open(options))
             .map_err(map_engine_error)?;
         Ok(Self {
             engine: RwLock::new(Some(engine)),
@@ -108,7 +108,7 @@ impl EngineCore {
     ///
     /// Idempotent — calling on an already-closed engine is a no-op.
     pub fn close(&self, py: Python<'_>) -> PyResult<()> {
-        py.allow_threads(|| {
+        py.detach(|| {
             let mut guard = self
                 .engine
                 .write()
@@ -123,7 +123,7 @@ impl EngineCore {
     /// Returns a dict with keys: `queries_total`, `writes_total`,
     /// `write_rows_total`, `errors_total`, `admin_ops_total`, `cache_hits`,
     /// `cache_misses`, `cache_writes`, `cache_spills`.
-    pub fn telemetry_snapshot(&self, py: Python<'_>) -> PyResult<PyObject> {
+    pub fn telemetry_snapshot(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         self.with_engine(|engine| {
             let snap = engine.telemetry_snapshot();
             let dict = pyo3::types::PyDict::new(py);
@@ -182,7 +182,7 @@ impl EngineCore {
         let compiled = compile_query(&ast).map_err(map_compile_error)?;
         self.with_engine(|engine| {
             let rows = py
-                .allow_threads(|| engine.coordinator().execute_compiled_read(&compiled))
+                .detach(|| engine.coordinator().execute_compiled_read(&compiled))
                 .map_err(map_engine_error)?;
             encode_json(PyQueryRows::from(rows))
         })
@@ -194,7 +194,7 @@ impl EngineCore {
     /// query, optional relaxed query, filters, limit, attribution flag).
     pub fn execute_search(&self, py: Python<'_>, request_json: &str) -> PyResult<String> {
         self.with_engine(|engine| {
-            py.allow_threads(|| crate::search_ffi::execute_search_json(engine, request_json))
+            py.detach(|| crate::search_ffi::execute_search_json(engine, request_json))
                 .map_err(map_search_ffi_error)
         })
     }
@@ -204,7 +204,7 @@ impl EngineCore {
         let compiled = compile_grouped_query(&ast).map_err(map_compile_error)?;
         self.with_engine(|engine| {
             let rows = py
-                .allow_threads(|| {
+                .detach(|| {
                     engine
                         .coordinator()
                         .execute_compiled_grouped_read(&compiled)
@@ -218,7 +218,7 @@ impl EngineCore {
         let request = parse_write_request(request_json)?;
         self.with_engine(|engine| {
             let receipt = py
-                .allow_threads(|| engine.writer().submit(request))
+                .detach(|| engine.writer().submit(request))
                 .map_err(map_engine_error)?;
             encode_json(PyWriteReceipt::from(receipt))
         })
@@ -228,7 +228,7 @@ impl EngineCore {
         let request = parse_last_access_touch_request(request_json)?;
         self.with_engine(|engine| {
             let report = py
-                .allow_threads(|| engine.touch_last_accessed(request))
+                .detach(|| engine.touch_last_accessed(request))
                 .map_err(map_engine_error)?;
             encode_json(PyLastAccessTouchReport::from(report))
         })
@@ -238,7 +238,7 @@ impl EngineCore {
         self.with_engine(|engine| {
             let admin = engine.admin().service();
             let report = py
-                .allow_threads(|| admin.check_integrity())
+                .detach(|| admin.check_integrity())
                 .map_err(map_engine_error)?;
             encode_json(PyIntegrityReport::from(report))
         })
@@ -248,7 +248,7 @@ impl EngineCore {
         self.with_engine(|engine| {
             let admin = engine.admin().service();
             let report = py
-                .allow_threads(|| admin.check_semantics())
+                .detach(|| admin.check_semantics())
                 .map_err(map_engine_error)?;
             encode_json(PySemanticReport::from(report))
         })
@@ -259,7 +259,7 @@ impl EngineCore {
         self.with_engine(|engine| {
             let admin = engine.admin().service();
             let report = py
-                .allow_threads(|| admin.rebuild_projections(target))
+                .detach(|| admin.rebuild_projections(target))
                 .map_err(map_engine_error)?;
             encode_json(PyProjectionRepairReport::from(report))
         })
@@ -269,7 +269,7 @@ impl EngineCore {
         self.with_engine(|engine| {
             let admin = engine.admin().service();
             let report = py
-                .allow_threads(|| admin.rebuild_missing_projections())
+                .detach(|| admin.rebuild_missing_projections())
                 .map_err(map_engine_error)?;
             encode_json(PyProjectionRepairReport::from(report))
         })
@@ -279,7 +279,7 @@ impl EngineCore {
         self.with_engine(|engine| {
             let admin = engine.admin().service();
             let report = py
-                .allow_threads(|| admin.restore_vector_profiles())
+                .detach(|| admin.restore_vector_profiles())
                 .map_err(map_engine_error)?;
             encode_json(PyProjectionRepairReport::from(report))
         })
@@ -302,7 +302,7 @@ impl EngineCore {
         self.with_engine(|engine| {
             let admin = engine.admin().service();
             let report = py
-                .allow_threads(|| admin.regenerate_vector_embeddings(&config))
+                .detach(|| admin.regenerate_vector_embeddings(&config))
                 .map_err(map_engine_error)?;
             encode_json(PyVectorRegenerationReport::from(report))
         })
@@ -334,7 +334,7 @@ impl EngineCore {
         self.with_engine(|engine| {
             let admin = engine.admin().service();
             let report = py
-                .allow_threads(|| admin.regenerate_vector_embeddings_with_policy(&config, &policy))
+                .detach(|| admin.regenerate_vector_embeddings_with_policy(&config, &policy))
                 .map_err(map_engine_error)?;
             encode_json(PyVectorRegenerationReport::from(report))
         })
@@ -344,7 +344,7 @@ impl EngineCore {
         self.with_engine(|engine| {
             let admin = engine.admin().service();
             let report = py
-                .allow_threads(|| admin.trace_source(source_ref))
+                .detach(|| admin.trace_source(source_ref))
                 .map_err(map_engine_error)?;
             encode_json(PyTraceReport::from(report))
         })
@@ -354,7 +354,7 @@ impl EngineCore {
         self.with_engine(|engine| {
             let admin = engine.admin().service();
             let report = py
-                .allow_threads(|| admin.excise_source(source_ref))
+                .detach(|| admin.excise_source(source_ref))
                 .map_err(map_engine_error)?;
             encode_json(PyTraceReport::from(report))
         })
@@ -363,7 +363,7 @@ impl EngineCore {
     pub fn restore_logical_id(&self, py: Python<'_>, logical_id: &str) -> PyResult<String> {
         self.with_engine(|engine| {
             let report = py
-                .allow_threads(|| engine.restore_logical_id(logical_id))
+                .detach(|| engine.restore_logical_id(logical_id))
                 .map_err(map_engine_error)?;
             encode_json(report)
         })
@@ -372,7 +372,7 @@ impl EngineCore {
     pub fn purge_logical_id(&self, py: Python<'_>, logical_id: &str) -> PyResult<String> {
         self.with_engine(|engine| {
             let report = py
-                .allow_threads(|| engine.purge_logical_id(logical_id))
+                .detach(|| engine.purge_logical_id(logical_id))
                 .map_err(map_engine_error)?;
             encode_json(report)
         })
@@ -387,7 +387,7 @@ impl EngineCore {
         self.with_engine(|engine| {
             let admin = engine.admin().service();
             let manifest = py
-                .allow_threads(|| {
+                .detach(|| {
                     admin.safe_export(destination_path, SafeExportOptions { force_checkpoint })
                 })
                 .map_err(map_engine_error)?;
@@ -410,9 +410,7 @@ impl EngineCore {
         let separator = separator.map(ToOwned::to_owned);
         self.with_engine(|engine| {
             let record = py
-                .allow_threads(|| {
-                    engine.register_fts_property_schema(&kind, &paths, separator.as_deref())
-                })
+                .detach(|| engine.register_fts_property_schema(&kind, &paths, separator.as_deref()))
                 .map_err(map_engine_error)?;
             encode_json(record)
         })
@@ -429,7 +427,7 @@ impl EngineCore {
         request_json: &str,
     ) -> PyResult<String> {
         self.with_engine(|engine| {
-            py.allow_threads(|| {
+            py.detach(|| {
                 crate::admin_ffi::register_fts_property_schema_with_entries_json(
                     engine,
                     request_json,
@@ -443,7 +441,7 @@ impl EngineCore {
         let kind = kind.to_owned();
         self.with_engine(|engine| {
             let record = py
-                .allow_threads(|| engine.describe_fts_property_schema(&kind))
+                .detach(|| engine.describe_fts_property_schema(&kind))
                 .map_err(map_engine_error)?;
             encode_json(record)
         })
@@ -452,7 +450,7 @@ impl EngineCore {
     pub fn list_fts_property_schemas(&self, py: Python<'_>) -> PyResult<String> {
         self.with_engine(|engine| {
             let records = py
-                .allow_threads(|| engine.list_fts_property_schemas())
+                .detach(|| engine.list_fts_property_schemas())
                 .map_err(map_engine_error)?;
             encode_json(records)
         })
@@ -461,7 +459,7 @@ impl EngineCore {
     pub fn remove_fts_property_schema(&self, py: Python<'_>, kind: &str) -> PyResult<String> {
         let kind = kind.to_owned();
         self.with_engine(|engine| {
-            py.allow_threads(|| engine.remove_fts_property_schema(&kind))
+            py.detach(|| engine.remove_fts_property_schema(&kind))
                 .map_err(map_engine_error)?;
             encode_json(serde_json::json!({"removed": true}))
         })
@@ -483,7 +481,7 @@ impl EngineCore {
             })?;
         self.with_engine(|engine| {
             let record = py
-                .allow_threads(|| engine.register_operational_collection(&request))
+                .detach(|| engine.register_operational_collection(&request))
                 .map_err(map_engine_error)?;
             encode_json(record)
         })
@@ -492,7 +490,7 @@ impl EngineCore {
     pub fn describe_operational_collection(&self, py: Python<'_>, name: &str) -> PyResult<String> {
         self.with_engine(|engine| {
             let record = py
-                .allow_threads(|| engine.describe_operational_collection(name))
+                .detach(|| engine.describe_operational_collection(name))
                 .map_err(map_engine_error)?;
             encode_json(record)
         })
@@ -507,9 +505,7 @@ impl EngineCore {
         check_json_size(filter_fields_json, MAX_REQUEST_JSON_BYTES, "filter fields")?;
         self.with_engine(|engine| {
             let record = py
-                .allow_threads(|| {
-                    engine.update_operational_collection_filters(name, filter_fields_json)
-                })
+                .detach(|| engine.update_operational_collection_filters(name, filter_fields_json))
                 .map_err(map_engine_error)?;
             encode_json(record)
         })
@@ -524,9 +520,7 @@ impl EngineCore {
         check_json_size(validation_json, MAX_REQUEST_JSON_BYTES, "validation")?;
         self.with_engine(|engine| {
             let record = py
-                .allow_threads(|| {
-                    engine.update_operational_collection_validation(name, validation_json)
-                })
+                .detach(|| engine.update_operational_collection_validation(name, validation_json))
                 .map_err(map_engine_error)?;
             encode_json(record)
         })
@@ -545,7 +539,7 @@ impl EngineCore {
         )?;
         self.with_engine(|engine| {
             let record = py
-                .allow_threads(|| {
+                .detach(|| {
                     engine.update_operational_collection_secondary_indexes(
                         name,
                         secondary_indexes_json,
@@ -565,7 +559,7 @@ impl EngineCore {
     ) -> PyResult<String> {
         self.with_engine(|engine| {
             let report = py
-                .allow_threads(|| engine.trace_operational_collection(collection_name, record_key))
+                .detach(|| engine.trace_operational_collection(collection_name, record_key))
                 .map_err(map_engine_error)?;
             encode_json(report)
         })
@@ -583,7 +577,7 @@ impl EngineCore {
             })?;
         self.with_engine(|engine| {
             let report = py
-                .allow_threads(|| engine.read_operational_collection(&request))
+                .detach(|| engine.read_operational_collection(&request))
                 .map_err(map_engine_error)?;
             encode_json(report)
         })
@@ -597,7 +591,7 @@ impl EngineCore {
     ) -> PyResult<String> {
         self.with_engine(|engine| {
             let report = py
-                .allow_threads(|| engine.rebuild_operational_current(collection_name))
+                .detach(|| engine.rebuild_operational_current(collection_name))
                 .map_err(map_engine_error)?;
             encode_json(report)
         })
@@ -610,7 +604,7 @@ impl EngineCore {
     ) -> PyResult<String> {
         self.with_engine(|engine| {
             let report = py
-                .allow_threads(|| engine.validate_operational_collection_history(collection_name))
+                .detach(|| engine.validate_operational_collection_history(collection_name))
                 .map_err(map_engine_error)?;
             encode_json(report)
         })
@@ -623,7 +617,7 @@ impl EngineCore {
     ) -> PyResult<String> {
         self.with_engine(|engine| {
             let report = py
-                .allow_threads(|| engine.rebuild_operational_secondary_indexes(collection_name))
+                .detach(|| engine.rebuild_operational_secondary_indexes(collection_name))
                 .map_err(map_engine_error)?;
             encode_json(report)
         })
@@ -639,7 +633,7 @@ impl EngineCore {
     ) -> PyResult<String> {
         self.with_engine(|engine| {
             let report = py
-                .allow_threads(|| {
+                .detach(|| {
                     engine.plan_operational_retention(
                         now_timestamp,
                         collection_names.as_deref(),
@@ -662,7 +656,7 @@ impl EngineCore {
     ) -> PyResult<String> {
         self.with_engine(|engine| {
             let report = py
-                .allow_threads(|| {
+                .detach(|| {
                     engine.run_operational_retention(
                         now_timestamp,
                         collection_names.as_deref(),
@@ -678,7 +672,7 @@ impl EngineCore {
     pub fn disable_operational_collection(&self, py: Python<'_>, name: &str) -> PyResult<String> {
         self.with_engine(|engine| {
             let record = py
-                .allow_threads(|| engine.disable_operational_collection(name))
+                .detach(|| engine.disable_operational_collection(name))
                 .map_err(map_engine_error)?;
             encode_json(record)
         })
@@ -692,7 +686,7 @@ impl EngineCore {
     ) -> PyResult<String> {
         self.with_engine(|engine| {
             let report = py
-                .allow_threads(|| engine.compact_operational_collection(name, dry_run))
+                .detach(|| engine.compact_operational_collection(name, dry_run))
                 .map_err(map_engine_error)?;
             encode_json(report)
         })
@@ -706,7 +700,7 @@ impl EngineCore {
     ) -> PyResult<String> {
         self.with_engine(|engine| {
             let report = py
-                .allow_threads(|| engine.purge_operational_collection(name, before_timestamp))
+                .detach(|| engine.purge_operational_collection(name, before_timestamp))
                 .map_err(map_engine_error)?;
             encode_json(report)
         })
@@ -727,7 +721,7 @@ impl EngineCore {
             .map_err(|e| PyValueError::new_err(format!("invalid options JSON: {e}")))?;
         self.with_engine(|engine| {
             let report = py
-                .allow_threads(|| engine.purge_provenance_events(before_timestamp, &options))
+                .detach(|| engine.purge_provenance_events(before_timestamp, &options))
                 .map_err(map_engine_error)?;
             encode_json(report)
         })
@@ -863,7 +857,12 @@ fn map_engine_error(error: EngineError) -> PyErr {
     }
 }
 
-#[pymodule(name = "_fathomdb")]
+// TODO: free-threaded (gil_used = false) support deferred to a follow-up
+// release per dev/notes/pyo3-0.28-upgrade-plan.md. EngineCore::Drop has a
+// documented GIL deadlock invariant around pyo3-log and the writer thread
+// (commit history references D-096) that needs manual review before the
+// free-threaded default in pyo3 0.28 can be accepted.
+#[pymodule(name = "_fathomdb", gil_used = true)]
 fn _fathomdb(module: &Bound<'_, PyModule>) -> PyResult<()> {
     // Bridge Rust tracing/log events to Python's logging module.
     // Idempotent — safe to call on repeated import.
@@ -927,7 +926,7 @@ mod tests {
     #[test]
     fn open_constructs_engine_options_with_all_fields() {
         let db = NamedTempFile::new().expect("temp db");
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let engine = EngineCore::open(
                 py,
                 db.path().to_str().expect("db path"),
@@ -943,7 +942,7 @@ mod tests {
     #[test]
     fn close_makes_subsequent_calls_fail() {
         let db = NamedTempFile::new().expect("temp db");
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let engine = EngineCore::open(
                 py,
                 db.path().to_str().expect("path"),
@@ -964,7 +963,7 @@ mod tests {
     #[test]
     fn close_is_idempotent() {
         let db = NamedTempFile::new().expect("temp db");
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let engine = EngineCore::open(
                 py,
                 db.path().to_str().expect("path"),
@@ -982,7 +981,7 @@ mod tests {
     #[test]
     fn open_locked_database_raises_database_locked_error() {
         let db = NamedTempFile::new().expect("temp db");
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let _first = EngineCore::open(
                 py,
                 db.path().to_str().expect("path"),
@@ -1015,7 +1014,7 @@ mod tests {
     #[test]
     fn register_operational_collection_accepts_deserialized_request() {
         let db = NamedTempFile::new().expect("temp db");
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let engine = EngineCore::open(
                 py,
                 db.path().to_str().expect("db path"),
@@ -1046,7 +1045,7 @@ mod tests {
     #[test]
     fn read_operational_collection_accepts_deserialized_request() {
         let db = NamedTempFile::new().expect("temp db");
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let engine = EngineCore::open(
                 py,
                 db.path().to_str().expect("db path"),
@@ -1087,7 +1086,7 @@ mod tests {
     #[test]
     fn engine_core_exposes_operational_admin_methods() {
         let db = NamedTempFile::new().expect("temp db");
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let engine = EngineCore::open(
                 py,
                 db.path().to_str().expect("db path"),
