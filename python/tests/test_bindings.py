@@ -23,7 +23,14 @@ def test_id_helpers_and_open_integrity_report(tmp_path: Path) -> None:
 
 
 def test_write_and_text_query_round_trip(tmp_path: Path) -> None:
-    from fathomdb import ChunkInsert, ChunkPolicy, Engine, NodeInsert, WriteRequest, new_row_id
+    from fathomdb import (
+        ChunkInsert,
+        ChunkPolicy,
+        Engine,
+        NodeInsert,
+        WriteRequest,
+        new_row_id,
+    )
 
     db = Engine.open(tmp_path / "agent.db")
 
@@ -69,7 +76,14 @@ def test_write_and_text_query_round_trip(tmp_path: Path) -> None:
 
 
 def test_external_content_roundtrip(tmp_path: Path) -> None:
-    from fathomdb import ChunkInsert, ChunkPolicy, Engine, NodeInsert, WriteRequest, new_row_id
+    from fathomdb import (
+        ChunkInsert,
+        ChunkPolicy,
+        Engine,
+        NodeInsert,
+        WriteRequest,
+        new_row_id,
+    )
 
     db = Engine.open(tmp_path / "agent.db")
 
@@ -140,7 +154,14 @@ def test_external_content_roundtrip(tmp_path: Path) -> None:
 
 
 def test_trace_and_excise_source(tmp_path: Path) -> None:
-    from fathomdb import ChunkInsert, ChunkPolicy, Engine, NodeInsert, WriteRequest, new_row_id
+    from fathomdb import (
+        ChunkInsert,
+        ChunkPolicy,
+        Engine,
+        NodeInsert,
+        WriteRequest,
+        new_row_id,
+    )
 
     db = Engine.open(tmp_path / "agent.db")
 
@@ -206,7 +227,9 @@ def test_optional_projection_task_preserves_existing_raw_json_string_payload() -
     }
 
 
-def test_write_request_builder_optional_backfill_preserves_existing_raw_json_string_payload() -> None:
+def test_write_request_builder_optional_backfill_preserves_existing_raw_json_string_payload() -> (
+    None
+):
     from fathomdb import ProjectionTarget, WriteRequestBuilder
 
     builder = WriteRequestBuilder("backfill-json")
@@ -225,7 +248,9 @@ def test_write_request_builder_optional_backfill_preserves_existing_raw_json_str
     ]
 
 
-def test_public_python_admin_client_exposes_restore_vector_profiles(tmp_path: Path) -> None:
+def test_public_python_admin_client_exposes_restore_vector_profiles(
+    tmp_path: Path,
+) -> None:
     from fathomdb import Engine
 
     db = Engine.open(tmp_path / "agent.db")
@@ -237,47 +262,61 @@ def test_public_python_admin_client_exposes_restore_vector_profiles(tmp_path: Pa
 
 
 def test_public_python_admin_client_exposes_vector_regeneration_types() -> None:
-    from fathomdb import VectorGeneratorPolicy, VectorRegenerationConfig
+    from fathomdb import VectorRegenerationConfig
 
     config = VectorRegenerationConfig(
         profile="default",
         table_name="vec_chunks",
-        model_identity="text-embedding-3-small",
-        model_version="v1",
-        dimension=384,
-        normalization_policy="l2",
         chunking_policy="sentence",
         preprocessing_policy="strip_html",
-        generator_command=["/usr/bin/embed", "--model", "small"],
     )
 
     wire = config.to_wire()
     assert wire["profile"] == "default"
-    assert wire["dimension"] == 384
-    assert wire["generator_command"] == ["/usr/bin/embed", "--model", "small"]
+    assert wire["table_name"] == "vec_chunks"
+    assert wire["chunking_policy"] == "sentence"
+    assert wire["preprocessing_policy"] == "strip_html"
+    # 0.4.0: the identity fields are gone from the Python wrapper.
+    assert "model_identity" not in wire
+    assert "model_version" not in wire
+    assert "dimension" not in wire
+    assert "normalization_policy" not in wire
+    assert "generator_command" not in wire
 
-    policy = VectorGeneratorPolicy()
-    wire = policy.to_wire()
-    assert wire["timeout_ms"] == 300_000
-    assert wire["max_chunks"] == 1_000_000
-    assert wire["require_absolute_executable"] is True
-    assert wire["reject_world_writable_executable"] is True
-    assert wire["allowed_executable_roots"] == []
-    assert wire["preserve_env_vars"] == []
 
-    custom_policy = VectorGeneratorPolicy(
-        timeout_ms=60_000,
-        max_chunks=500,
-        require_absolute_executable=False,
-        allowed_executable_roots=["/opt/models"],
-        preserve_env_vars=["HF_TOKEN"],
+def test_vector_regeneration_config_rejects_legacy_fields_at_construction() -> None:
+    from fathomdb import VectorRegenerationConfig
+
+    import pytest
+
+    with pytest.raises(TypeError):
+        VectorRegenerationConfig(  # type: ignore[call-arg]
+            profile="default",
+            table_name="vec_chunks",
+            model_identity="text-embedding-3-small",
+            chunking_policy="sentence",
+            preprocessing_policy="strip_html",
+        )
+
+
+def test_regenerate_vector_embeddings_errors_when_engine_has_no_embedder(
+    tmp_path: Path,
+) -> None:
+    """``Engine.open`` with no embedder must reject regen with a clear error."""
+
+    import pytest
+
+    from fathomdb import Engine, FathomError, VectorRegenerationConfig
+
+    db = Engine.open(tmp_path / "agent.db")
+    config = VectorRegenerationConfig(
+        profile="default",
+        table_name="vec_nodes_active",
+        chunking_policy="per_chunk",
+        preprocessing_policy="trim",
     )
-    wire = custom_policy.to_wire()
-    assert wire["timeout_ms"] == 60_000
-    assert wire["max_chunks"] == 500
-    assert wire["require_absolute_executable"] is False
-    assert wire["allowed_executable_roots"] == ["/opt/models"]
-    assert wire["preserve_env_vars"] == ["HF_TOKEN"]
+    with pytest.raises(FathomError, match="embedder not configured"):
+        db.admin.regenerate_vector_embeddings(config)
 
 
 def test_vector_query_degrades_when_vector_table_absent(tmp_path: Path) -> None:
@@ -288,7 +327,9 @@ def test_vector_query_degrades_when_vector_table_absent(tmp_path: Path) -> None:
     assert rows.was_degraded is True
 
 
-def test_public_python_admin_client_exposes_operational_collection_lifecycle(tmp_path: Path) -> None:
+def test_public_python_admin_client_exposes_operational_collection_lifecycle(
+    tmp_path: Path,
+) -> None:
     from fathomdb import Engine, OperationalCollectionKind, OperationalRegisterRequest
 
     db = Engine.open(tmp_path / "agent.db")
@@ -349,15 +390,15 @@ def test_public_python_admin_client_exposes_operational_collection_lifecycle(tmp
     assert disabled.disabled_at is not None
 
 
-def test_public_python_admin_client_exposes_fts_property_schema_lifecycle(tmp_path: Path) -> None:
+def test_public_python_admin_client_exposes_fts_property_schema_lifecycle(
+    tmp_path: Path,
+) -> None:
     from fathomdb import Engine, FtsPropertySchemaRecord
 
     db = Engine.open(tmp_path / "agent.db")
 
     # Register
-    record = db.admin.register_fts_property_schema(
-        "Goal", ["$.name", "$.description"]
-    )
+    record = db.admin.register_fts_property_schema("Goal", ["$.name", "$.description"])
     assert isinstance(record, FtsPropertySchemaRecord)
     assert record.kind == "Goal"
     assert record.property_paths == ("$.name", "$.description")
@@ -402,11 +443,14 @@ def test_public_python_admin_client_exposes_fts_property_schema_lifecycle(tmp_pa
 
     # Remove non-existent raises
     import pytest
+
     with pytest.raises(Exception):
         db.admin.remove_fts_property_schema("Goal")
 
 
-def test_public_python_admin_client_round_trips_recursive_schema_entries(tmp_path: Path) -> None:
+def test_public_python_admin_client_round_trips_recursive_schema_entries(
+    tmp_path: Path,
+) -> None:
     """Pack P7.7-fix regression: describe/list must round-trip the
     per-entry schema (including recursive mode) for recursive schemas.
 
@@ -451,7 +495,9 @@ def test_public_python_admin_client_round_trips_recursive_schema_entries(tmp_pat
     assert listed[0].exclude_paths == ("$.payload.secret",)
 
 
-def test_public_python_admin_client_reads_operational_rows_by_declared_fields(tmp_path: Path) -> None:
+def test_public_python_admin_client_reads_operational_rows_by_declared_fields(
+    tmp_path: Path,
+) -> None:
     from fathomdb import (
         Engine,
         OperationalAppend,
@@ -528,7 +574,9 @@ def test_public_python_admin_client_reads_operational_rows_by_declared_fields(tm
     assert exact.rows[0].record_key == "evt-1"
 
 
-def test_public_python_admin_client_can_update_operational_filter_contract(tmp_path: Path) -> None:
+def test_public_python_admin_client_can_update_operational_filter_contract(
+    tmp_path: Path,
+) -> None:
     from fathomdb import Engine, OperationalCollectionKind, OperationalRegisterRequest
 
     db = Engine.open(tmp_path / "agent.db")
@@ -655,7 +703,9 @@ def test_report_only_operational_validation_emits_write_warning(tmp_path: Path) 
     assert "connector_health" in receipt.warnings[0]
 
 
-def test_public_python_admin_client_manages_secondary_indexes_and_retention(tmp_path: Path) -> None:
+def test_public_python_admin_client_manages_secondary_indexes_and_retention(
+    tmp_path: Path,
+) -> None:
     from fathomdb import (
         Engine,
         OperationalAppend,
@@ -718,17 +768,32 @@ def test_public_python_admin_client_manages_secondary_indexes_and_retention(tmp_
 
     plan = db.admin.plan_operational_retention(1_000, max_collections=10)
     assert plan.collections_examined >= 1
-    audit_item = next(item for item in plan.items if item.collection_name == "audit_log")
+    audit_item = next(
+        item for item in plan.items if item.collection_name == "audit_log"
+    )
     assert audit_item.action_kind.value == "keep_last"
     assert audit_item.candidate_deletions == 1
 
-    dry_run = db.admin.run_operational_retention(1_000, max_collections=10, dry_run=True)
-    audit_run = next(item for item in dry_run.items if item.collection_name == "audit_log")
+    dry_run = db.admin.run_operational_retention(
+        1_000, max_collections=10, dry_run=True
+    )
+    audit_run = next(
+        item for item in dry_run.items if item.collection_name == "audit_log"
+    )
     assert audit_run.deleted_mutations == 1
 
 
 def test_vector_write_and_search_round_trip(tmp_path: Path) -> None:
-    from fathomdb import ChunkInsert, ChunkPolicy, Engine, NodeInsert, ProjectionTarget, VecInsert, WriteRequest, new_row_id
+    from fathomdb import (
+        ChunkInsert,
+        ChunkPolicy,
+        Engine,
+        NodeInsert,
+        ProjectionTarget,
+        VecInsert,
+        WriteRequest,
+        new_row_id,
+    )
 
     db = Engine.open(tmp_path / "agent.db", vector_dimension=4)
 
@@ -782,7 +847,16 @@ def test_vector_write_and_search_round_trip(tmp_path: Path) -> None:
 
 
 def test_grouped_query_returns_root_plus_named_expansion_slots(tmp_path: Path) -> None:
-    from fathomdb import ChunkInsert, ChunkPolicy, EdgeInsert, Engine, NodeInsert, TraverseDirection, WriteRequest, new_row_id
+    from fathomdb import (
+        ChunkInsert,
+        ChunkPolicy,
+        EdgeInsert,
+        Engine,
+        NodeInsert,
+        TraverseDirection,
+        WriteRequest,
+        new_row_id,
+    )
 
     db = Engine.open(tmp_path / "agent.db")
 
@@ -794,7 +868,11 @@ def test_grouped_query_returns_root_plus_named_expansion_slots(tmp_path: Path) -
                     row_id=new_row_id(),
                     logical_id="meeting-1",
                     kind="Meeting",
-                    properties={"title": "Budget review", "priority": 9, "updated_at": 1711843200},
+                    properties={
+                        "title": "Budget review",
+                        "priority": 9,
+                        "updated_at": 1711843200,
+                    },
                     source_ref="source:meeting-1",
                     upsert=False,
                     chunk_policy=ChunkPolicy.REPLACE,
@@ -853,8 +931,15 @@ def test_grouped_query_returns_root_plus_named_expansion_slots(tmp_path: Path) -
     grouped = (
         db.nodes("Meeting")
         .filter_logical_id_eq("meeting-1")
-        .expand(slot="tasks", direction=TraverseDirection.OUT, label="HAS_TASK", max_depth=1)
-        .expand(slot="decisions", direction=TraverseDirection.OUT, label="HAS_DECISION", max_depth=1)
+        .expand(
+            slot="tasks", direction=TraverseDirection.OUT, label="HAS_TASK", max_depth=1
+        )
+        .expand(
+            slot="decisions",
+            direction=TraverseDirection.OUT,
+            label="HAS_DECISION",
+            max_depth=1,
+        )
         .execute_grouped()
     )
 
@@ -868,7 +953,16 @@ def test_grouped_query_returns_root_plus_named_expansion_slots(tmp_path: Path) -
 
 
 def test_grouped_query_supports_numeric_and_timestamp_filters(tmp_path: Path) -> None:
-    from fathomdb import ChunkInsert, ChunkPolicy, EdgeInsert, Engine, NodeInsert, TraverseDirection, WriteRequest, new_row_id
+    from fathomdb import (
+        ChunkInsert,
+        ChunkPolicy,
+        EdgeInsert,
+        Engine,
+        NodeInsert,
+        TraverseDirection,
+        WriteRequest,
+        new_row_id,
+    )
 
     db = Engine.open(tmp_path / "agent.db")
 
@@ -880,7 +974,11 @@ def test_grouped_query_supports_numeric_and_timestamp_filters(tmp_path: Path) ->
                     row_id=new_row_id(),
                     logical_id="meeting-1",
                     kind="Meeting",
-                    properties={"title": "Budget review", "priority": 9, "updated_at": 1711843200},
+                    properties={
+                        "title": "Budget review",
+                        "priority": 9,
+                        "updated_at": 1711843200,
+                    },
                     source_ref="source:meeting-1",
                     upsert=False,
                     chunk_policy=ChunkPolicy.REPLACE,
@@ -889,7 +987,11 @@ def test_grouped_query_supports_numeric_and_timestamp_filters(tmp_path: Path) ->
                     row_id=new_row_id(),
                     logical_id="meeting-2",
                     kind="Meeting",
-                    properties={"title": "Backlog grooming", "priority": 2, "updated_at": 1700000000},
+                    properties={
+                        "title": "Backlog grooming",
+                        "priority": 2,
+                        "updated_at": 1700000000,
+                    },
                     source_ref="source:meeting-2",
                     upsert=False,
                     chunk_policy=ChunkPolicy.REPLACE,
@@ -935,7 +1037,9 @@ def test_grouped_query_supports_numeric_and_timestamp_filters(tmp_path: Path) ->
         db.nodes("Meeting")
         .filter_json_integer_gte("$.priority", 5)
         .filter_json_timestamp_gte("$.updated_at", 1710000000)
-        .expand(slot="tasks", direction=TraverseDirection.OUT, label="HAS_TASK", max_depth=1)
+        .expand(
+            slot="tasks", direction=TraverseDirection.OUT, label="HAS_TASK", max_depth=1
+        )
         .execute_grouped()
     )
 
@@ -944,7 +1048,9 @@ def test_grouped_query_supports_numeric_and_timestamp_filters(tmp_path: Path) ->
     assert grouped.expansions[0].roots[0].nodes[0].logical_id == "task-1"
 
 
-def test_write_request_builder_builds_full_bundle_without_manual_cross_reference_threading() -> None:
+def test_write_request_builder_builds_full_bundle_without_manual_cross_reference_threading() -> (
+    None
+):
     from fathomdb import ChunkPolicy, ProjectionTarget, WriteRequestBuilder
 
     builder = WriteRequestBuilder("memex-bundle")
@@ -1056,7 +1162,9 @@ def test_write_request_builder_rejects_foreign_handles_before_submit() -> None:
         second.build()
 
 
-def test_python_write_request_exposes_operational_writes_round_trip(tmp_path: Path) -> None:
+def test_python_write_request_exposes_operational_writes_round_trip(
+    tmp_path: Path,
+) -> None:
     from fathomdb import OperationalPut, WriteRequest
 
     request = WriteRequest(

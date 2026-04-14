@@ -31,7 +31,6 @@ from ._types import (
     SafeExportManifest,
     SemanticReport,
     TraceReport,
-    VectorGeneratorPolicy,
     VectorRegenerationConfig,
     VectorRegenerationReport,
 )
@@ -48,7 +47,9 @@ class AdminClient:
     def __init__(self, core: EngineCore) -> None:
         self._core = core
 
-    def check_integrity(self, *, progress_callback=None, feedback_config: FeedbackConfig | None = None) -> IntegrityReport:
+    def check_integrity(
+        self, *, progress_callback=None, feedback_config: FeedbackConfig | None = None
+    ) -> IntegrityReport:
         """Run physical and logical integrity checks on the database."""
         return IntegrityReport.from_wire(
             json.loads(
@@ -63,7 +64,9 @@ class AdminClient:
             )
         )
 
-    def check_semantics(self, *, progress_callback=None, feedback_config: FeedbackConfig | None = None) -> SemanticReport:
+    def check_semantics(
+        self, *, progress_callback=None, feedback_config: FeedbackConfig | None = None
+    ) -> SemanticReport:
         """Run semantic validation (orphan chunks, dangling edges, etc.)."""
         return SemanticReport.from_wire(
             json.loads(
@@ -106,7 +109,9 @@ class AdminClient:
             )
         )
 
-    def rebuild_missing(self, *, progress_callback=None, feedback_config: FeedbackConfig | None = None) -> ProjectionRepairReport:
+    def rebuild_missing(
+        self, *, progress_callback=None, feedback_config: FeedbackConfig | None = None
+    ) -> ProjectionRepairReport:
         """Rebuild only missing projection rows without touching existing ones."""
         return ProjectionRepairReport.from_wire(
             json.loads(
@@ -150,11 +155,20 @@ class AdminClient:
         progress_callback=None,
         feedback_config: FeedbackConfig | None = None,
     ) -> VectorRegenerationReport:
-        """Regenerate vector embeddings using the supplied configuration.
+        """Regenerate vector embeddings using the engine's configured embedder.
+
+        The 0.4.0 architectural invariant is that vector identity is the
+        embedder's responsibility. The engine must have been opened with
+        a non-None ``EmbedderChoice``; the regen path stamps the
+        resulting profile directly from ``embedder.identity()`` so
+        identity cannot drift between the read-path and the regen-path.
 
         Args:
-            config: Regeneration configuration specifying the profile, model,
-                and generator command.
+            config: Destination / chunking configuration. Identity
+                fields (``model_identity``, ``model_version``,
+                ``dimension``, ``normalization_policy``,
+                ``generator_command``) are no longer accepted — they
+                were removed in 0.4.0.
             progress_callback: Optional callback invoked with feedback events.
             feedback_config: Timing thresholds for progress feedback.
         """
@@ -163,43 +177,14 @@ class AdminClient:
                 run_with_feedback(
                     surface="python",
                     operation_kind="admin.regenerate_vector_embeddings",
-                    metadata={"profile": config.profile, "table_name": config.table_name},
+                    metadata={
+                        "profile": config.profile,
+                        "table_name": config.table_name,
+                    },
                     progress_callback=progress_callback,
                     feedback_config=feedback_config,
                     operation=lambda: self._core.regenerate_vector_embeddings(
                         json.dumps(config.to_wire())
-                    ),
-                )
-            )
-        )
-
-    def regenerate_vector_embeddings_with_policy(
-        self,
-        config: VectorRegenerationConfig,
-        policy: VectorGeneratorPolicy,
-        *,
-        progress_callback=None,
-        feedback_config: FeedbackConfig | None = None,
-    ) -> VectorRegenerationReport:
-        """Regenerate vector embeddings with explicit generator policy.
-
-        Args:
-            config: Regeneration configuration specifying the profile, model,
-                and generator command.
-            policy: Security and resource limits for the generator subprocess.
-            progress_callback: Optional callback invoked with feedback events.
-            feedback_config: Timing thresholds for progress feedback.
-        """
-        return VectorRegenerationReport.from_wire(
-            json.loads(
-                run_with_feedback(
-                    surface="python",
-                    operation_kind="admin.regenerate_vector_embeddings_with_policy",
-                    metadata={"profile": config.profile, "table_name": config.table_name},
-                    progress_callback=progress_callback,
-                    feedback_config=feedback_config,
-                    operation=lambda: self._core.regenerate_vector_embeddings_with_policy(
-                        json.dumps(config.to_wire()), json.dumps(policy.to_wire())
                     ),
                 )
             )
@@ -411,8 +396,10 @@ class AdminClient:
                     metadata={"kind": kind},
                     progress_callback=progress_callback,
                     feedback_config=feedback_config,
-                    operation=lambda: self._core.register_fts_property_schema_with_entries(
-                        json.dumps(request)
+                    operation=lambda: (
+                        self._core.register_fts_property_schema_with_entries(
+                            json.dumps(request)
+                        )
                     ),
                 )
             )
@@ -571,8 +558,10 @@ class AdminClient:
                     metadata={"name": name},
                     progress_callback=progress_callback,
                     feedback_config=feedback_config,
-                    operation=lambda: self._core.update_operational_collection_validation(
-                        name, validation_json
+                    operation=lambda: (
+                        self._core.update_operational_collection_validation(
+                            name, validation_json
+                        )
                     ),
                 )
             )
@@ -595,8 +584,10 @@ class AdminClient:
                     metadata={"name": name},
                     progress_callback=progress_callback,
                     feedback_config=feedback_config,
-                    operation=lambda: self._core.update_operational_collection_secondary_indexes(
-                        name, secondary_indexes_json
+                    operation=lambda: (
+                        self._core.update_operational_collection_secondary_indexes(
+                            name, secondary_indexes_json
+                        )
                     ),
                 )
             )
@@ -667,7 +658,9 @@ class AdminClient:
         feedback_config: FeedbackConfig | None = None,
     ) -> OperationalRepairReport:
         """Rebuild the current-state view for one or all operational collections."""
-        metadata = None if collection_name is None else {"collection_name": collection_name}
+        metadata = (
+            None if collection_name is None else {"collection_name": collection_name}
+        )
         return OperationalRepairReport.from_wire(
             json.loads(
                 run_with_feedback(
@@ -676,7 +669,9 @@ class AdminClient:
                     metadata=metadata,
                     progress_callback=progress_callback,
                     feedback_config=feedback_config,
-                    operation=lambda: self._core.rebuild_operational_current(collection_name),
+                    operation=lambda: self._core.rebuild_operational_current(
+                        collection_name
+                    ),
                 )
             )
         )
@@ -697,8 +692,10 @@ class AdminClient:
                     metadata={"collection_name": collection_name},
                     progress_callback=progress_callback,
                     feedback_config=feedback_config,
-                    operation=lambda: self._core.validate_operational_collection_history(
-                        collection_name
+                    operation=lambda: (
+                        self._core.validate_operational_collection_history(
+                            collection_name
+                        )
                     ),
                 )
             )
@@ -785,7 +782,10 @@ class AdminClient:
                 run_with_feedback(
                     surface="python",
                     operation_kind="admin.run_operational_retention",
-                    metadata={"now_timestamp": str(now_timestamp), "dry_run": str(dry_run).lower()},
+                    metadata={
+                        "now_timestamp": str(now_timestamp),
+                        "dry_run": str(dry_run).lower(),
+                    },
                     progress_callback=progress_callback,
                     feedback_config=feedback_config,
                     operation=lambda: self._core.run_operational_retention(
@@ -840,7 +840,9 @@ class AdminClient:
                     metadata={"name": name, "dry_run": str(dry_run).lower()},
                     progress_callback=progress_callback,
                     feedback_config=feedback_config,
-                    operation=lambda: self._core.compact_operational_collection(name, dry_run),
+                    operation=lambda: self._core.compact_operational_collection(
+                        name, dry_run
+                    ),
                 )
             )
         )

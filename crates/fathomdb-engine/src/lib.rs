@@ -5,7 +5,6 @@ mod admin;
 mod coordinator;
 mod database_lock;
 mod embedder;
-mod executable_trust;
 mod ids;
 mod operational;
 mod projection;
@@ -18,7 +17,7 @@ pub use admin::{
     AdminHandle, AdminService, FtsPropertyPathMode, FtsPropertyPathSpec, FtsPropertySchemaRecord,
     IntegrityReport, LogicalPurgeReport, LogicalRestoreReport, ProvenancePurgeOptions,
     ProvenancePurgeReport, SafeExportManifest, SafeExportOptions, SemanticReport, SkippedEdge,
-    TraceReport, VectorGeneratorPolicy, VectorRegenerationConfig, VectorRegenerationReport,
+    TraceReport, VectorRegenerationConfig, VectorRegenerationReport,
     load_vector_regeneration_config,
 };
 pub use coordinator::{
@@ -79,4 +78,8 @@ pub enum EngineError {
     DatabaseLocked(String),
     #[error("invalid configuration: {0}")]
     InvalidConfig(String),
+    #[error(
+        "embedder not configured: call Engine::open with a non-None EmbedderChoice to regenerate vector embeddings"
+    )]
+    EmbedderNotConfigured,
 }

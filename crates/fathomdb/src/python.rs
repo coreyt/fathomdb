@@ -21,7 +21,7 @@ use crate::{
     OperationalRegisterRequest, ProjectionTarget, ProvenanceMode, SafeExportOptions,
     TelemetryLevel, compile_grouped_query, compile_query, new_id, new_row_id,
 };
-use fathomdb_engine::{VectorGeneratorPolicy, VectorRegenerationConfig};
+use fathomdb_engine::VectorRegenerationConfig;
 use fathomdb_query::CompileError as RustCompileError;
 
 create_exception!(_fathomdb, FathomError, PyException);
@@ -300,41 +300,8 @@ impl EngineCore {
                 PyValueError::new_err(format!("invalid vector regeneration config JSON: {error}"))
             })?;
         self.with_engine(|engine| {
-            let admin = engine.admin().service();
             let report = py
-                .detach(|| admin.regenerate_vector_embeddings(&config))
-                .map_err(map_engine_error)?;
-            encode_json(PyVectorRegenerationReport::from(report))
-        })
-    }
-
-    pub fn regenerate_vector_embeddings_with_policy(
-        &self,
-        py: Python<'_>,
-        config_json: &str,
-        policy_json: &str,
-    ) -> PyResult<String> {
-        check_json_size(
-            config_json,
-            MAX_REQUEST_JSON_BYTES,
-            "vector regeneration config",
-        )?;
-        check_json_size(
-            policy_json,
-            MAX_REQUEST_JSON_BYTES,
-            "vector generator policy",
-        )?;
-        let config: VectorRegenerationConfig =
-            serde_json::from_str(config_json).map_err(|error| {
-                PyValueError::new_err(format!("invalid vector regeneration config JSON: {error}"))
-            })?;
-        let policy: VectorGeneratorPolicy = serde_json::from_str(policy_json).map_err(|error| {
-            PyValueError::new_err(format!("invalid vector generator policy JSON: {error}"))
-        })?;
-        self.with_engine(|engine| {
-            let admin = engine.admin().service();
-            let report = py
-                .detach(|| admin.regenerate_vector_embeddings_with_policy(&config, &policy))
+                .detach(|| engine.regenerate_vector_embeddings(&config))
                 .map_err(map_engine_error)?;
             encode_json(PyVectorRegenerationReport::from(report))
         })
@@ -854,6 +821,9 @@ fn map_engine_error(error: EngineError) -> PyErr {
         EngineError::CapabilityMissing(message) => CapabilityMissingError::new_err(message),
         EngineError::DatabaseLocked(message) => DatabaseLockedError::new_err(message),
         EngineError::InvalidConfig(message) => FathomError::new_err(message),
+        EngineError::EmbedderNotConfigured => FathomError::new_err(
+            "embedder not configured: open the Engine with a non-None EmbedderChoice to regenerate vector embeddings",
+        ),
     }
 }
 

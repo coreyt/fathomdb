@@ -9,8 +9,8 @@
 //! Candle or the `default-embedder` feature — Phase 12.5b owns that.
 
 use fathomdb::{
-    ChunkInsert, ChunkPolicy, EmbedderChoice, EmbedderError, Engine, EngineOptions, NodeInsert,
-    QueryEmbedder, QueryEmbedderIdentity, WriteRequest,
+    ChunkInsert, ChunkPolicy, EmbedderChoice, EmbedderError, Engine, EngineError, EngineOptions,
+    NodeInsert, QueryEmbedder, QueryEmbedderIdentity, VectorRegenerationConfig, WriteRequest,
 };
 use std::sync::Arc;
 use tempfile::NamedTempFile;
@@ -222,6 +222,125 @@ fn search_with_unavailable_embedder_degrades_gracefully() {
         rows.was_degraded,
         "EmbedderError::Unavailable must surface as was_degraded == true"
     );
+}
+
+/// 0.4.0 (issue #39): calling `Engine::regenerate_vector_embeddings` on
+/// an engine that was opened with `EmbedderChoice::None` must return
+/// `EngineError::EmbedderNotConfigured` — never silently succeed,
+/// never stamp a nonsense identity into the vector profile.
+#[test]
+fn regenerate_vector_embeddings_errors_when_embedder_is_none() {
+    let (_db, engine) = open_engine(EmbedderChoice::None);
+
+    let config = VectorRegenerationConfig {
+        profile: "default".to_owned(),
+        table_name: "vec_nodes_active".to_owned(),
+        chunking_policy: "per_chunk".to_owned(),
+        preprocessing_policy: "trim".to_owned(),
+    };
+    let error = engine
+        .regenerate_vector_embeddings(&config)
+        .expect_err("regen must fail without an embedder");
+    assert!(
+        matches!(error, EngineError::EmbedderNotConfigured),
+        "expected EmbedderNotConfigured, got: {error:?}"
+    );
+    let message = error.to_string();
+    assert!(
+        message.contains("embedder not configured"),
+        "error message must mention missing embedder, got: {message}"
+    );
+}
+
+/// 0.4.0 (issue #39): the regen path must stamp the resulting vector
+/// profile from `embedder.identity()`, not from any caller-provided
+/// string. This test pairs `Engine::regenerate_vector_embeddings` with
+/// an in-process fake embedder and asserts the persisted contract row
+/// matches the embedder identity — making drift between the read path
+/// and the regen path structurally impossible.
+#[cfg(feature = "sqlite-vec")]
+#[test]
+fn engine_regenerate_vector_embeddings_uses_open_time_embedder_identity() {
+    use fathomdb::{ChunkInsert, ChunkPolicy, NodeInsert, WriteRequest};
+
+    const DIM: usize = 4;
+    let fake = Arc::new(FakeEmbedder {
+        vector: vec![0.5; DIM],
+    });
+    let (db, engine) = open_engine(EmbedderChoice::InProcess(fake));
+
+    // Seed a node + chunk so the regen path has something to embed.
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "seed".to_owned(),
+            nodes: vec![NodeInsert {
+                row_id: "doc-row".to_owned(),
+                logical_id: "doc-1".to_owned(),
+                kind: "Document".to_owned(),
+                properties: r#"{"title":"Budget"}"#.to_owned(),
+                source_ref: Some("seed".to_owned()),
+                upsert: false,
+                chunk_policy: ChunkPolicy::Preserve,
+                content_ref: None,
+            }],
+            node_retires: vec![],
+            edges: vec![],
+            edge_retires: vec![],
+            chunks: vec![ChunkInsert {
+                id: "chunk-1".to_owned(),
+                node_logical_id: "doc-1".to_owned(),
+                text_content: "budget narrative".to_owned(),
+                byte_start: None,
+                byte_end: None,
+                content_hash: None,
+            }],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![],
+        })
+        .expect("seed");
+
+    let config = VectorRegenerationConfig {
+        profile: "default".to_owned(),
+        table_name: "vec_nodes_active".to_owned(),
+        chunking_policy: "per_chunk".to_owned(),
+        preprocessing_policy: "trim".to_owned(),
+    };
+    let report = engine
+        .regenerate_vector_embeddings(&config)
+        .expect("regenerate via open-time embedder");
+    assert_eq!(report.dimension, DIM);
+    assert_eq!(report.total_chunks, 1);
+    assert_eq!(report.regenerated_rows, 1);
+
+    // Drop the engine to release the database-wide file lock before we
+    // open a second connection to inspect the persisted contract row.
+    drop(engine);
+
+    // The persisted vector profile's identity must match the embedder
+    // the engine was opened with — not any string the caller passed.
+    let conn = rusqlite::Connection::open(db.path()).expect("open db");
+    let (model_identity, model_version, dimension, normalization_policy): (
+        String,
+        String,
+        i64,
+        String,
+    ) = conn
+        .query_row(
+            "SELECT model_identity, model_version, dimension, normalization_policy \
+             FROM vector_embedding_contracts WHERE profile = 'default'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .expect("contract row");
+    assert_eq!(model_identity, "fake-test-embedder");
+    assert_eq!(model_version, "1");
+    assert_eq!(dimension, DIM as i64);
+    assert_eq!(normalization_policy, "none");
 }
 
 /// Phase 12.5a bonus: the `Builtin` variant resolves to no embedder until

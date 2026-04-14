@@ -4,8 +4,7 @@ use std::sync::Arc;
 
 use fathomdb_engine::{
     AdminService, EngineError, OperationalReadRequest, OperationalRegisterRequest,
-    ProjectionTarget, ProvenancePurgeOptions, SafeExportOptions, VectorGeneratorPolicy,
-    load_vector_regeneration_config,
+    ProjectionTarget, ProvenancePurgeOptions, SafeExportOptions,
 };
 use fathomdb_schema::{SchemaError, SchemaManager};
 use serde::{Deserialize, Serialize};
@@ -49,7 +48,8 @@ struct BridgeRequest {
     dry_run: bool,
     #[serde(default)]
     preserve_event_types: Vec<String>,
-    vector_generator_policy: Option<VectorGeneratorPolicy>,
+    #[serde(default)]
+    vector_generator_policy: serde_json::Value,
     operational_collection: Option<OperationalRegisterRequest>,
     operational_read: Option<OperationalReadRequest>,
     fts_property_kind: Option<String>,
@@ -252,25 +252,27 @@ fn handle_request(request: BridgeRequest) -> BridgeResponse {
             ),
             Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
         },
-        BridgeCommand::RegenerateVectorEmbeddings => match request.config_path {
-            Some(config_path) => match load_vector_regeneration_config(&config_path) {
-                Ok(config) => match service.regenerate_vector_embeddings_with_policy(
-                    &config,
-                    &request.vector_generator_policy.unwrap_or_default(),
-                ) {
-                    Ok(report) => success_response(
-                        "vector embeddings regenerated".to_owned(),
-                        serde_json::to_value(report).unwrap_or_else(|_| json!({})),
-                    ),
-                    Err(error) => error_response(&error, BridgeErrorCode::ExecutionFailure),
-                },
-                Err(error) => error_response(&error, BridgeErrorCode::BadRequest),
-            },
-            None => error_response_with_message(
+        BridgeCommand::RegenerateVectorEmbeddings => {
+            // The subprocess generator pattern was removed in 0.4.0. The
+            // admin bridge is a pure-data subprocess surface and has no
+            // attached Engine with a configured read-time embedder, so
+            // regen can no longer flow through it. Clients that still
+            // need subprocess-driven regen must implement their own
+            // SubprocessEmbedder adapter against the QueryEmbedder trait
+            // in their own code and call
+            // `Engine::regenerate_vector_embeddings` directly against a
+            // live engine. See
+            // `.claude/memory/project_vector_identity_invariant.md`.
+            let _ = request.config_path.as_ref();
+            let _ = &request.vector_generator_policy;
+            error_response_with_message(
                 BridgeErrorCode::BadRequest,
-                "config_path is required".to_owned(),
-            ),
-        },
+                "regenerate_vector_embeddings is no longer supported via the admin bridge in 0.4.0; \
+                 open an Engine with a configured EmbedderChoice and call \
+                 Engine::regenerate_vector_embeddings directly"
+                    .to_owned(),
+            )
+        }
         BridgeCommand::RestoreLogicalId => match request.logical_id.as_deref() {
             Some(logical_id) if !logical_id.is_empty() => {
                 match service.restore_logical_id(logical_id) {
