@@ -18,6 +18,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TMP=$(mktemp -d)
+# Route all child processes through the same per-session temp root so
+# cleanup is a single rm -rf (GH #40). Rust tempfile, Python pytest,
+# and TypeScript os.tmpdir() all honor $TMPDIR.
+export TMPDIR="$TMP"
 trap 'rm -rf "$TMP"' EXIT
 
 # Resolve native binding path for TypeScript.
