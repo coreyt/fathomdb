@@ -15,9 +15,9 @@ from typing import Callable, Iterable
 
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
-DEFAULT_BENCHMARK_WORKFLOW = "Benchmark And Robustness"
-DEFAULT_CI_WORKFLOW = "CI"
-DEFAULT_PYTHON_WORKFLOW = "Python"
+DEFAULT_BENCHMARK_WORKFLOW = "benchmark-and-robustness.yml"
+DEFAULT_CI_WORKFLOW = "ci.yml"
+DEFAULT_PYTHON_WORKFLOW = "python.yml"
 DEFAULT_FRESHNESS_DAYS = 10
 GH_RUN_FIELDS = "conclusion,headBranch,headSha,status,updatedAt,url"
 
