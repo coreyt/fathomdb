@@ -7,6 +7,171 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-04-14
+
+This is a substantial minor release. The headline items are a PyO3 0.23 →
+0.28 upgrade that clears RUSTSEC-2025-0020, a breaking redesign of vector
+regeneration that establishes the embedder as the sole source of vector
+identity, and a new named fused-JSON-filter surface on `SearchBuilder` that
+pushes `json_extract` predicates into the inner search CTE. 0.4.0 also
+delivers per-session `TMPDIR` routing for all CI jobs (GH #40), a GitHub
+Actions runtime refresh ahead of the September 2026 Node 20 sunset, and a
+round of clippy and flake cleanup. Consumers of the Go `fathom-integrity`
+vector-regeneration wrapper and of `regenerate_vector_embeddings_with_policy`
+on the Python `AdminClient` need to migrate — see **Breaking changes**.
+
+### Security
+
+- **PyO3 0.23 → 0.28** (resolves GH #39 / RUSTSEC-2025-0020). Mechanical
+  rename pass across the Python bindings: `Python::with_gil` →
+  `Python::attach`, `py.allow_threads` → `py.detach`,
+  `PyResult<PyObject>` → `PyResult<Py<PyAny>>`. The `pymodule` is
+  explicitly marked `#[pymodule(gil_used = true)]`, preserving the
+  single-GIL invariants the bindings rely on; PyO3 0.28's free-threaded
+  Python support is deferred to a later release. `pyo3-log` bumped
+  0.12 → 0.13 and `maturin` requirement relaxed from `>=1.8` to `>=1.9`
+  to match PyO3 0.28. The `cargo-audit` ignore for RUSTSEC-2025-0020
+  is removed from the repo — `cargo audit` now runs clean against the
+  PyO3 advisory surface.
+
+### Breaking changes
+
+- **Vector regeneration takes an embedder, not an identity-bearing
+  config.** `VectorRegenerationConfig` no longer accepts
+  `model_identity`, `model_version`, `dimension`, `normalization_policy`,
+  or `generator_command`. Existing configs that carry any of these fields
+  fail at deserialization with a clear serde error. `Engine::regenerate_vector_embeddings(config)`
+  reads the open-time embedder from the coordinator and returns
+  `EngineError::EmbedderNotConfigured` when `Engine::open` was called with
+  `embedder=None`. `AdminService::regenerate_vector_embeddings(embedder, config)`
+  now takes `&dyn QueryEmbedder` explicitly. The subprocess-generator
+  pattern is removed from fathomdb proper; clients that need subprocess
+  regeneration should implement a `SubprocessEmbedder` adapter behind
+  the `QueryEmbedder` trait.
+- **`AdminClient.regenerate_vector_embeddings_with_policy` is removed**
+  from the Python SDK. Callers regenerate by opening the engine with
+  an embedder configured (`Engine.open(..., embedder="builtin")`) and
+  invoking the new embedder-tethered surface.
+- **Go `fathom-integrity` vector-regeneration wrapper is removed.** The
+  bridge protocol cannot pass an embedder reference across the Go ↔
+  Rust boundary, so the wrapper has no working shape under the new
+  invariant. Future Go integrations either shell out to a Rust harness
+  or implement Go-side embedder integration.
+
+### Architectural changes
+
+- **New invariant: vector identity is the embedder's responsibility, not
+  the regeneration config's.** Documented at
+  `dev/notes/project-vector-identity-invariant.md`. Future PRs that
+  reintroduce identity strings onto vector configs will be rejected on
+  review. The motivation is to eliminate the class of bugs where a
+  regeneration config and the live embedder disagree on model identity
+  and silently write mismatched vectors.
+- **New `BuilderValidationError`** type in `fathomdb-query::builder` with
+  three variants: `MissingPropertyFtsSchema`, `PathNotIndexed`, and
+  `KindRequiredForFusion`. This is the canonical fail-loud error for
+  fused-filter misuse — callers that try to fuse a filter on an
+  unindexed path or an unkinded builder get a typed error at
+  filter-add time instead of a silently degraded query.
+
+### New features
+
+- **Named fused JSON filters on `SearchBuilder`.** New methods on the
+  five tethered builders (`NodeQueryBuilder`, `TextSearchBuilder`,
+  `FallbackSearchBuilder`, `VectorSearchBuilder`, and `SearchBuilder`
+  itself):
+    - `filter_json_fused_text_eq(path, value)`
+    - `filter_json_fused_timestamp_gt(path, value)`
+    - `filter_json_fused_timestamp_gte(path, value)`
+    - `filter_json_fused_timestamp_lt(path, value)`
+    - `filter_json_fused_timestamp_lte(path, value)`
+  These push `json_extract` into the inner search CTE's WHERE clause so
+  the `limit` applies **after** the predicate, eliminating the
+  small-limit-returns-zero trap documented for the post-filter
+  `filter_json_*` family. Each method raises `BuilderValidationError`
+  at filter-add time if the node kind has no registered property-FTS
+  schema or if the requested path is not in the schema's include list
+  — there is no silent degrade. The post-filter `filter_json_*` family
+  is unchanged and remains available for ad-hoc predicates on
+  non-indexed paths. Mirrored into the Python and TypeScript bindings
+  with the same validation semantics.
+
+### Improvements
+
+- **Per-session `TMPDIR` routing for all CI jobs (GH #40).** The Rust,
+  Python, Go, and TypeScript test jobs across `ci.yml`, `typescript.yml`,
+  and `benchmark-and-robustness.yml` now route temporary files through
+  `${{ runner.temp }}/fathomdb-{run_id}-{attempt}`. Linux and macOS use
+  `TMPDIR`; Windows uses `TMP` + `TEMP`. Cleanup is a single `rm -rf` at
+  job end. The TS sdk-harness `tempDbPath()` helper no longer hardcodes
+  `/tmp` — it uses `os.tmpdir()` and inherits the session dir. The
+  cross-language `orchestrate.sh` script exports `TMPDIR=$TMP` after
+  creating its session-scoped temp directory so spawned subprocesses
+  inherit the routing.
+- **GitHub Actions runtime refresh** ahead of GitHub's September 2026
+  sunset of Node 20 on hosted runners. Bumped `actions/setup-node`,
+  `PyO3/maturin-action`, and `pypa/gh-action-pypi-publish` to releases
+  declaring `runs.using: node24`. (The `pypa/gh-action-pypi-publish`
+  bump is hygiene only — it's a composite action with no Node runtime
+  and is not actually subject to the deprecation.)
+- **Clippy cleanup under `--features node`** in `node.rs` and
+  `node_types.rs`: narrow `#[allow]` attributes with napi-contract
+  comments, plus cfg-gating `PyVectorRegenerationReport` on
+  `feature = "python"` to eliminate the dead-code warning when building
+  with `--features node`. Also added the
+  `EngineError::EmbedderNotConfigured` arm to the napi error mapper
+  that Pack #7 missed on the node feature path.
+- **Clippy cleanup under `--features sqlite-vec`** in `projection.rs`,
+  `sqlite.rs`, and `writer.rs`: resolved five lints
+  (`needless_raw_string_hashes`, two `missing_transmute_annotations`,
+  `doc_markdown`, `too_many_lines`).
+- **`verify-release-gates.py`** now accepts short SHAs (≥7 chars) as
+  well as full 40-char SHAs, matching typical human-copied hashes from
+  `git log --oneline`. Includes regression tests for both the green
+  path and the too-short-SHA `ValueError`.
+- **`scripts/preflight.sh` and `preflight-CI.sh`** check for
+  `cargo-audit` availability and surface the canonical
+  `cargo install cargo-audit --locked` install hint — `preflight.sh`
+  warns, `preflight-CI.sh` hard-fails. `preflight-CI.sh` also resolves
+  its git-hooks path via `git rev-parse --git-common-dir` so it works
+  from worktrees as well as the main checkout.
+
+### Bug fixes
+
+- **Python feedback slow-heartbeat test flake on macOS.** Widened the
+  timing margin in `test_python_feedback_emits_slow_and_heartbeat_for_slow_operation`
+  from 50 ms to 200 ms to give 4× headroom on slow CI runners. Eliminates
+  the intermittent HEARTBEAT-phase miss observed on macOS.
+
+### Tests / CI
+
+- `dev/notes/release-checklist.md` updated to mark Flake A (bulk-run
+  `vec_nodes_active`, fixed in 0.3.1 via commit `5ae82d7`) and the
+  macOS heartbeat flake as resolved.
+
+### Removed
+
+- `crates/fathomdb-engine/src/executable_trust.rs` and
+  `go/fathom-integrity/internal/commands/vector_regeneration.go` — the
+  task #7 and #7b implementers emptied these as part of the vector
+  regeneration redesign; the 0.4.0 cleanup pass `git rm`s them
+  properly.
+
+### Notes (pre-existing tech debt, disclosed for transparency)
+
+- `cargo audit` reports two pre-existing allowed-warnings advisories
+  for unmaintained transitive crates: `paste` (RUSTSEC-2024-0436) and
+  `rand` (RUSTSEC-2026-0097). Both are `unmaintained` advisories, not
+  vulnerabilities, and do not block the audit gate — they are visible
+  in audit output.
+- The Go `fathom-integrity` test suite has seven pre-existing
+  environmental failures (four in `test/e2e/recover_test.go`, three in
+  `internal/commands/repair_test.go`) caused by older `sqlite3` CLI
+  binaries missing the `unixepoch()` function. Environmental, not a
+  code bug; newer SQLite versions resolve these.
+- The TypeScript workspace has no lint tooling (ESLint or Biome)
+  configured. Future consideration; out of scope for 0.4.0.
+
 ## [0.3.1] - 2026-04-13
 
 This release is a docs-and-hardening fast-follow on top of 0.3.0, plus one
@@ -403,7 +568,8 @@ These are known limitations in the current release:
 - Schema migration system (13 versioned migrations)
 - Supersession model (append-only, no destructive updates)
 
-[Unreleased]: https://github.com/coreyt/fathomdb/compare/v0.2.5...HEAD
+[Unreleased]: https://github.com/coreyt/fathomdb/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/coreyt/fathomdb/compare/v0.3.1...v0.4.0
 [0.2.5]: https://github.com/coreyt/fathomdb/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/coreyt/fathomdb/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/coreyt/fathomdb/compare/v0.2.2...v0.2.3
