@@ -1307,6 +1307,9 @@ impl RecursiveWalker {
         if self.stopped {
             return;
         }
+        if value.is_empty() {
+            return;
+        }
         // Compute the projected blob size if we accept this leaf.
         // If we already emitted at least one leaf, we must account for
         // the separator that precedes this one.
@@ -7484,6 +7487,158 @@ mod tests {
             // Sanity-check the type so the test fails loudly if the
             // signature changes.
             let _: Vec<PositionEntry> = positions;
+        }
+
+        fn assert_unique_start_offsets(positions: &[PositionEntry]) {
+            let mut seen = std::collections::HashSet::new();
+            for pos in positions {
+                let start = pos.start_offset;
+                assert!(
+                    seen.insert(start),
+                    "duplicate start_offset {start} in positions {positions:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn recursive_extraction_empty_then_nonempty_in_array() {
+            let props = json!({"payload": {"xs": ["", "x"]}});
+            let (combined, positions, _stats) = extract_property_fts(
+                &props,
+                &schema(vec![PropertyPathEntry::recursive("$.payload")]),
+            );
+            assert_eq!(combined.as_deref(), Some("x"));
+            assert_eq!(positions.len(), 1);
+            assert_eq!(positions[0].leaf_path, "$.payload.xs[1]");
+            assert_eq!(positions[0].start_offset, 0);
+            assert_eq!(positions[0].end_offset, 1);
+            assert_unique_start_offsets(&positions);
+        }
+
+        #[test]
+        fn recursive_extraction_two_empties_then_nonempty_in_array() {
+            let props = json!({"payload": {"xs": ["", "", "x"]}});
+            let (combined, positions, _stats) = extract_property_fts(
+                &props,
+                &schema(vec![PropertyPathEntry::recursive("$.payload")]),
+            );
+            assert_eq!(combined.as_deref(), Some("x"));
+            assert_eq!(positions.len(), 1);
+            assert_eq!(positions[0].leaf_path, "$.payload.xs[2]");
+            assert_eq!(positions[0].start_offset, 0);
+            assert_eq!(positions[0].end_offset, 1);
+            assert_unique_start_offsets(&positions);
+        }
+
+        #[test]
+        fn recursive_extraction_empty_then_nonempty_sibling_keys() {
+            let props = json!({"payload": {"a": "", "b": "x"}});
+            let (combined, positions, _stats) = extract_property_fts(
+                &props,
+                &schema(vec![PropertyPathEntry::recursive("$.payload")]),
+            );
+            assert_eq!(combined.as_deref(), Some("x"));
+            assert_eq!(positions.len(), 1);
+            assert_eq!(positions[0].leaf_path, "$.payload.b");
+            assert_eq!(positions[0].start_offset, 0);
+            assert_eq!(positions[0].end_offset, 1);
+            assert_unique_start_offsets(&positions);
+        }
+
+        #[test]
+        fn recursive_extraction_nested_empty_then_nonempty_sibling_keys() {
+            let props = json!({"payload": {"inner": {"a": "", "b": "x"}}});
+            let (combined, positions, _stats) = extract_property_fts(
+                &props,
+                &schema(vec![PropertyPathEntry::recursive("$.payload")]),
+            );
+            assert_eq!(combined.as_deref(), Some("x"));
+            assert_eq!(positions.len(), 1);
+            assert_eq!(positions[0].leaf_path, "$.payload.inner.b");
+            assert_eq!(positions[0].start_offset, 0);
+            assert_eq!(positions[0].end_offset, 1);
+            assert_unique_start_offsets(&positions);
+        }
+
+        #[test]
+        fn recursive_extraction_descent_past_empty_sibling_into_nested_subtree() {
+            let props = json!({"payload": {"a": "", "b": {"c": "x"}}});
+            let (combined, positions, _stats) = extract_property_fts(
+                &props,
+                &schema(vec![PropertyPathEntry::recursive("$.payload")]),
+            );
+            assert_eq!(combined.as_deref(), Some("x"));
+            assert_eq!(positions.len(), 1);
+            assert_eq!(positions[0].leaf_path, "$.payload.b.c");
+            assert_eq!(positions[0].start_offset, 0);
+            assert_eq!(positions[0].end_offset, 1);
+            assert_unique_start_offsets(&positions);
+        }
+
+        #[test]
+        fn recursive_extraction_all_empty_shapes_emit_no_positions() {
+            let cases = vec![
+                json!({"payload": {}}),
+                json!({"payload": {"a": ""}}),
+                json!({"payload": {"xs": []}}),
+                json!({"payload": {"xs": [""]}}),
+                json!({"payload": {"xs": ["", ""]}}),
+                json!({"payload": {"xs": ["", "", ""]}}),
+            ];
+            for case in cases {
+                let (combined, positions, _stats) = extract_property_fts(
+                    &case,
+                    &schema(vec![PropertyPathEntry::recursive("$.payload")]),
+                );
+                assert!(
+                    combined.is_none(),
+                    "all-empty payload {case:?} must produce no combined text, got {combined:?}"
+                );
+                assert!(
+                    positions.is_empty(),
+                    "all-empty payload {case:?} must produce no positions, got {positions:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn recursive_extraction_nonempty_then_empty_then_nonempty() {
+            let props = json!({"payload": {"xs": ["x", "", "y"]}});
+            let (combined, positions, _stats) = extract_property_fts(
+                &props,
+                &schema(vec![PropertyPathEntry::recursive("$.payload")]),
+            );
+            let blob = combined.expect("blob emitted");
+            assert_eq!(positions.len(), 2);
+            assert_eq!(positions[0].leaf_path, "$.payload.xs[0]");
+            assert_eq!(positions[1].leaf_path, "$.payload.xs[2]");
+            assert_eq!(positions[0].start_offset, 0);
+            assert_eq!(positions[0].end_offset, 1);
+            // The two non-empty leaves are separated by exactly one
+            // LEAF_SEPARATOR; the empty middle leaf contributes neither
+            // bytes nor a position.
+            assert_eq!(positions[1].start_offset, 1 + LEAF_SEPARATOR.len());
+            assert_eq!(positions[1].end_offset, 2 + LEAF_SEPARATOR.len());
+            assert_eq!(
+                &blob[positions[0].start_offset..positions[0].end_offset],
+                "x"
+            );
+            assert_eq!(
+                &blob[positions[1].start_offset..positions[1].end_offset],
+                "y"
+            );
+            assert_unique_start_offsets(&positions);
+        }
+
+        #[test]
+        fn recursive_extraction_null_leaves_unchanged() {
+            let props = json!({"payload": {"xs": [null, null]}});
+            let (combined, positions, _stats) = extract_property_fts(
+                &props,
+                &schema(vec![PropertyPathEntry::recursive("$.payload")]),
+            );
+            assert!(combined.is_none());
+            assert!(positions.is_empty());
         }
     }
 }
