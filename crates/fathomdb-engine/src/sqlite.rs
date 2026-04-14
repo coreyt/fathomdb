@@ -148,7 +148,7 @@ pub fn open_readonly_connection_with_vec(path: &Path) -> Result<Connection, Engi
             *const (),
             unsafe extern "C" fn(
                 *mut rusqlite::ffi::sqlite3,
-                *mut *mut u8,
+                *mut *mut std::os::raw::c_char,
                 *const rusqlite::ffi::sqlite3_api_routines,
             ) -> i32,
         >(
@@ -178,7 +178,7 @@ pub fn open_connection_with_vec(path: &Path) -> Result<Connection, EngineError> 
             *const (),
             unsafe extern "C" fn(
                 *mut rusqlite::ffi::sqlite3,
-                *mut *mut u8,
+                *mut *mut std::os::raw::c_char,
                 *const rusqlite::ffi::sqlite3_api_routines,
             ) -> i32,
         >(

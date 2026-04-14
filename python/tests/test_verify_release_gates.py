@@ -50,8 +50,12 @@ def test_verify_release_gates_accepts_recent_successes() -> None:
     now = datetime.now(timezone.utc)
 
     responses = {
-        "CI": [make_run(head_sha=commit, updated_at=now - timedelta(hours=1))],
-        "Python": [make_run(head_sha=commit, updated_at=now - timedelta(hours=2))],
+        module.DEFAULT_CI_WORKFLOW: [
+            make_run(head_sha=commit, updated_at=now - timedelta(hours=1))
+        ],
+        module.DEFAULT_PYTHON_WORKFLOW: [
+            make_run(head_sha=commit, updated_at=now - timedelta(hours=2))
+        ],
         module.DEFAULT_BENCHMARK_WORKFLOW: [
             make_run(head_sha="main-sha", head_branch="main", updated_at=now - timedelta(days=2))
         ],
@@ -97,7 +101,7 @@ def test_verify_release_gates_rejects_stale_benchmark_run() -> None:
 
     def runner(args, cwd=None):
         workflow = args[args.index("--workflow") + 1]
-        if workflow in {"CI", "Python"}:
+        if workflow in {module.DEFAULT_CI_WORKFLOW, module.DEFAULT_PYTHON_WORKFLOW}:
             payload = [make_run(head_sha=commit, updated_at=datetime.now(timezone.utc))]
         else:
             payload = [stale_run]

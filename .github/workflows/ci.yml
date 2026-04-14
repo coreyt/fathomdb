@@ -65,16 +65,18 @@ jobs:
 
   rust-test:
     runs-on: ubuntu-latest
-    # Route all temp files through a per-session root so cleanup is a
-    # single rm -rf at job end (GH #40). ${{ runner.temp }} is the
-    # auto-cleaned per-runner temp dir.
-    env:
-      TMPDIR: ${{ runner.temp }}/fathomdb-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Create per-session TMPDIR
+      - name: Configure per-session TMPDIR
         shell: bash
-        run: mkdir -p "$TMPDIR"
+        run: |
+          # Route all temp files through a per-session root so cleanup is a
+          # single rm -rf at job end (GH #40). Set via $GITHUB_ENV so it's
+          # available to subsequent steps without using the unavailable
+          # runner context at job-env level.
+          TMPDIR="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMPDIR"
+          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
         with:
           toolchain: stable
@@ -86,13 +88,14 @@ jobs:
 
   rust-test-tracing:
     runs-on: ubuntu-latest
-    env:
-      TMPDIR: ${{ runner.temp }}/fathomdb-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Create per-session TMPDIR
+      - name: Configure per-session TMPDIR
         shell: bash
-        run: mkdir -p "$TMPDIR"
+        run: |
+          TMPDIR="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMPDIR"
+          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
         with:
           toolchain: stable
@@ -114,15 +117,16 @@ jobs:
 
   rust-test-windows:
     runs-on: windows-latest
-    # Windows uses TMP/TEMP (not TMPDIR) to resolve the temp dir.
-    env:
-      TMP: ${{ runner.temp }}\fathomdb-${{ github.run_id }}-${{ github.run_attempt }}
-      TEMP: ${{ runner.temp }}\fathomdb-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Create per-session TMPDIR
+      - name: Configure per-session TMPDIR
         shell: bash
-        run: mkdir -p "$TMP"
+        run: |
+          # Windows uses TMP/TEMP (not TMPDIR) to resolve the temp dir.
+          TMP="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMP"
+          echo "TMP=$TMP" >> "$GITHUB_ENV"
+          echo "TEMP=$TMP" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
         with:
           toolchain: stable
@@ -131,13 +135,14 @@ jobs:
 
   rust-test-macos:
     runs-on: macos-latest
-    env:
-      TMPDIR: ${{ runner.temp }}/fathomdb-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Create per-session TMPDIR
+      - name: Configure per-session TMPDIR
         shell: bash
-        run: mkdir -p "$TMPDIR"
+        run: |
+          TMPDIR="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMPDIR"
+          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
         with:
           toolchain: stable
@@ -163,17 +168,18 @@ jobs:
 
   go-test:
     runs-on: ubuntu-latest
-    env:
-      TMPDIR: ${{ runner.temp }}/fathomdb-${{ github.run_id }}-${{ github.run_attempt }}
     defaults:
       run:
         working-directory: go/fathom-integrity
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Create per-session TMPDIR
+      - name: Configure per-session TMPDIR
         shell: bash
         working-directory: .
-        run: mkdir -p "$TMPDIR"
+        run: |
+          TMPDIR="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMPDIR"
+          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: go/fathom-integrity/go.mod
@@ -188,18 +194,19 @@ jobs:
 
   go-test-windows:
     runs-on: windows-latest
-    env:
-      TMP: ${{ runner.temp }}\fathomdb-${{ github.run_id }}-${{ github.run_attempt }}
-      TEMP: ${{ runner.temp }}\fathomdb-${{ github.run_id }}-${{ github.run_attempt }}
     defaults:
       run:
         working-directory: go/fathom-integrity
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Create per-session TMPDIR
+      - name: Configure per-session TMPDIR
         shell: bash
         working-directory: .
-        run: mkdir -p "$TMP"
+        run: |
+          TMP="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMP"
+          echo "TMP=$TMP" >> "$GITHUB_ENV"
+          echo "TEMP=$TMP" >> "$GITHUB_ENV"
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: go/fathom-integrity/go.mod
@@ -212,17 +219,18 @@ jobs:
 
   go-test-macos:
     runs-on: macos-latest
-    env:
-      TMPDIR: ${{ runner.temp }}/fathomdb-${{ github.run_id }}-${{ github.run_attempt }}
     defaults:
       run:
         working-directory: go/fathom-integrity
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Create per-session TMPDIR
+      - name: Configure per-session TMPDIR
         shell: bash
         working-directory: .
-        run: mkdir -p "$TMPDIR"
+        run: |
+          TMPDIR="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMPDIR"
+          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: go/fathom-integrity/go.mod
@@ -237,17 +245,18 @@ jobs:
 
   go-e2e:
     runs-on: ubuntu-latest
-    env:
-      TMPDIR: ${{ runner.temp }}/fathomdb-${{ github.run_id }}-${{ github.run_attempt }}
     defaults:
       run:
         working-directory: go/fathom-integrity
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Create per-session TMPDIR
+      - name: Configure per-session TMPDIR
         shell: bash
         working-directory: .
-        run: mkdir -p "$TMPDIR"
+        run: |
+          TMPDIR="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMPDIR"
+          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: go/fathom-integrity/go.mod
