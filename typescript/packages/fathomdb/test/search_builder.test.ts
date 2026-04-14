@@ -7,6 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  BuilderValidationError,
   Engine,
   SearchBuilder,
   WriteRequestBuilder,
@@ -151,5 +152,47 @@ describe("SearchBuilder (unified search surface)", () => {
     expect(rows.relaxedHitCount).toBe(0);
     expect(rows.vectorHitCount).toBe(0);
     expect(rows.fallbackUsed).toBe(false);
+  });
+
+  it("filterJsonFusedTextEq throws BuilderValidationError without registered schema", () => {
+    expect(() =>
+      engine.query("Note").search("x", 5).filterJsonFusedTextEq("$.title", "hello"),
+    ).toThrow(BuilderValidationError);
+  });
+
+  it("filterJsonFusedTextEq rejects path not in registered schema", () => {
+    engine.admin.registerFtsPropertySchema("Note", ["$.title"]);
+    expect(() =>
+      engine
+        .query("Note")
+        .search("x", 5)
+        .filterJsonFusedTextEq("$.not_indexed", "hello"),
+    ).toThrow(BuilderValidationError);
+  });
+
+  it("filterJsonFusedTextEq succeeds with a matching registered schema", () => {
+    engine.admin.registerFtsPropertySchema("Note", ["$.title"]);
+    const builder = engine
+      .query("Note")
+      .search("x", 5)
+      .filterJsonFusedTextEq("$.title", "hello");
+    expect(builder).toBeInstanceOf(SearchBuilder);
+  });
+
+  it("filterJsonFusedTimestampGt validates on text_search path", () => {
+    engine.admin.registerFtsPropertySchema("Note", ["$.written_at"]);
+    const builder = engine
+      .query("Note")
+      .textSearch("x", 5)
+      .filterJsonFusedTimestampGt("$.written_at", 1_700_000_000);
+    expect(builder).toBeDefined();
+  });
+
+  it("post-filter filterJsonTextEq still works without schema (regression)", () => {
+    const builder = engine
+      .query("Note")
+      .search("x", 5)
+      .filterJsonTextEq("$.status", "active");
+    expect(builder).toBeInstanceOf(SearchBuilder);
   });
 });

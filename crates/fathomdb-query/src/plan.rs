@@ -121,6 +121,18 @@ pub fn shape_signature(ast: &QueryAst) -> String {
                     signature.push_str("-Filter(content_ref_not_null)");
                 }
                 Predicate::ContentRefEq(_) => signature.push_str("-Filter(content_ref_eq)"),
+                Predicate::JsonPathFusedEq { path, .. } => {
+                    let _ = write!(&mut signature, "-Filter(json_fused_eq:{path})");
+                }
+                Predicate::JsonPathFusedTimestampCmp { path, op, .. } => {
+                    let op = match op {
+                        crate::ComparisonOp::Gt => "gt",
+                        crate::ComparisonOp::Gte => "gte",
+                        crate::ComparisonOp::Lt => "lt",
+                        crate::ComparisonOp::Lte => "lte",
+                    };
+                    let _ = write!(&mut signature, "-Filter(json_fused_ts_cmp:{path}:{op})");
+                }
             },
         }
     }

@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from fathomdb import (
+    BuilderValidationError,
     ChunkInsert,
     ChunkPolicy,
     Engine,
@@ -169,9 +170,7 @@ def test_search_with_filter_kind_eq_is_fused(tmp_path: Path) -> None:
         "control (no kind filter) must include Task hits"
     )
 
-    filtered = (
-        db.query("").search("budget", 10).filter_kind_eq("Goal").execute()
-    )
+    filtered = db.query("").search("budget", 10).filter_kind_eq("Goal").execute()
     assert len(filtered.hits) >= 1
     assert all(h.node.kind == "Goal" for h in filtered.hits)
     assert len(filtered.hits) < len(control.hits)
@@ -204,12 +203,7 @@ def test_search_with_attribution_on_recursive_schema(tmp_path: Path) -> None:
     db = Engine.open(tmp_path / "t.db")
     _seed_recursive_note(db, "note-search-attrib", "shipping quarterly docs")
 
-    rows = (
-        db.query("Note")
-        .search("shipping", 10)
-        .with_match_attribution()
-        .execute()
-    )
+    rows = db.query("Note").search("shipping", 10).with_match_attribution().execute()
     assert len(rows.hits) >= 1
     hit = rows.hits[0]
     assert hit.attribution is not None, "attribution populated when requested"
@@ -232,6 +226,70 @@ def test_search_empty_query_returns_empty_search_rows(tmp_path: Path) -> None:
     assert rows.relaxed_hit_count == 0
     assert rows.vector_hit_count == 0
     assert rows.fallback_used is False
+
+
+# ---------------------------------------------------------------------------
+# Item 7: filter_json_fused_* surface. These mirror the Rust search.rs
+# in-module tests for the BuilderValidationError contract.
+# ---------------------------------------------------------------------------
+def test_filter_json_fused_text_eq_requires_registered_schema(tmp_path: Path) -> None:
+    db = Engine.open(tmp_path / "t.db")
+    with pytest.raises(BuilderValidationError):
+        (
+            db.query("Note")
+            .search("anything", 5)
+            .filter_json_fused_text_eq("$.title", "hello")
+        )
+
+
+def test_filter_json_fused_text_eq_rejects_path_not_in_schema(tmp_path: Path) -> None:
+    db = Engine.open(tmp_path / "t.db")
+    db.admin.register_fts_property_schema("Note", ["$.title"])
+    with pytest.raises(BuilderValidationError):
+        (
+            db.query("Note")
+            .search("anything", 5)
+            .filter_json_fused_text_eq("$.not_indexed", "hello")
+        )
+
+
+def test_filter_json_fused_text_eq_succeeds_with_registered_schema(
+    tmp_path: Path,
+) -> None:
+    db = Engine.open(tmp_path / "t.db")
+    db.admin.register_fts_property_schema("Note", ["$.title"])
+    # Should not raise — we exercise the builder chain only (no execute
+    # since no seed data).
+    builder = (
+        db.query("Note")
+        .search("anything", 5)
+        .filter_json_fused_text_eq("$.title", "hello")
+    )
+    assert isinstance(builder, SearchBuilder)
+
+
+def test_filter_json_fused_timestamp_gt_validates(tmp_path: Path) -> None:
+    db = Engine.open(tmp_path / "t.db")
+    db.admin.register_fts_property_schema("Note", ["$.written_at"])
+    builder = (
+        db.query("Note")
+        .text_search("x", 5)
+        .filter_json_fused_timestamp_gt("$.written_at", 1_700_000_000)
+    )
+    # The builder returns a TextSearchBuilder — just assert it composes.
+    assert builder is not None
+
+
+def test_filter_json_fused_text_eq_regression_post_filter_unchanged(
+    tmp_path: Path,
+) -> None:
+    # Regression guard: the existing non-fused filter_json_text_eq
+    # still composes without requiring a registered schema.
+    db = Engine.open(tmp_path / "t.db")
+    builder = (
+        db.query("Note").search("anything", 5).filter_json_text_eq("$.status", "active")
+    )
+    assert builder is not None
 
 
 if __name__ == "__main__":

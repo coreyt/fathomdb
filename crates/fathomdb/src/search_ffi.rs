@@ -193,6 +193,43 @@ pub enum PySearchFilter {
         /// Target value.
         value: i64,
     },
+    /// Fused JSON-path text equality predicate. Landing SQL is pushed
+    /// into the inner search CTE WHERE. See the `filter_json_fused_*`
+    /// contract in `crates/fathomdb/src/search.rs`.
+    FilterJsonFusedTextEq {
+        /// Property JSON path.
+        path: String,
+        /// Target value.
+        value: String,
+    },
+    /// Fused JSON-path timestamp strict-greater predicate.
+    FilterJsonFusedTimestampGt {
+        /// Property JSON path.
+        path: String,
+        /// Target value.
+        value: i64,
+    },
+    /// Fused JSON-path timestamp greater-or-equal predicate.
+    FilterJsonFusedTimestampGte {
+        /// Property JSON path.
+        path: String,
+        /// Target value.
+        value: i64,
+    },
+    /// Fused JSON-path timestamp strict-less predicate.
+    FilterJsonFusedTimestampLt {
+        /// Property JSON path.
+        path: String,
+        /// Target value.
+        value: i64,
+    },
+    /// Fused JSON-path timestamp less-or-equal predicate.
+    FilterJsonFusedTimestampLte {
+        /// Property JSON path.
+        path: String,
+        /// Target value.
+        value: i64,
+    },
 }
 
 impl From<PySearchFilter> for QueryStep {
@@ -253,6 +290,37 @@ impl From<PySearchFilter> for QueryStep {
                     path,
                     op: ComparisonOp::Lte,
                     value: ScalarValue::Integer(value),
+                })
+            }
+            PySearchFilter::FilterJsonFusedTextEq { path, value } => {
+                QueryStep::Filter(Predicate::JsonPathFusedEq { path, value })
+            }
+            PySearchFilter::FilterJsonFusedTimestampGt { path, value } => {
+                QueryStep::Filter(Predicate::JsonPathFusedTimestampCmp {
+                    path,
+                    op: ComparisonOp::Gt,
+                    value,
+                })
+            }
+            PySearchFilter::FilterJsonFusedTimestampGte { path, value } => {
+                QueryStep::Filter(Predicate::JsonPathFusedTimestampCmp {
+                    path,
+                    op: ComparisonOp::Gte,
+                    value,
+                })
+            }
+            PySearchFilter::FilterJsonFusedTimestampLt { path, value } => {
+                QueryStep::Filter(Predicate::JsonPathFusedTimestampCmp {
+                    path,
+                    op: ComparisonOp::Lt,
+                    value,
+                })
+            }
+            PySearchFilter::FilterJsonFusedTimestampLte { path, value } => {
+                QueryStep::Filter(Predicate::JsonPathFusedTimestampCmp {
+                    path,
+                    op: ComparisonOp::Lte,
+                    value,
                 })
             }
         }

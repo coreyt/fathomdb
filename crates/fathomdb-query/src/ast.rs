@@ -99,6 +99,32 @@ pub enum Predicate {
     ContentRefNotNull,
     /// Match nodes with the exact `content_ref` URI.
     ContentRefEq(String),
+    /// Fused equality check on a JSON text property at the given path.
+    ///
+    /// Unlike [`Predicate::JsonPathEq`], this variant is classified as
+    /// **fusable** by [`crate::fusion::is_fusable`] and is pushed into
+    /// the search CTE's inner `WHERE` clause so the CTE `LIMIT` applies
+    /// after the predicate runs. The caller opts into fusion by
+    /// registering an FTS property schema that covers the path; the
+    /// tethered builder enforces that gate at filter-add time.
+    JsonPathFusedEq {
+        /// JSON path expression (e.g. `$.status`).
+        path: String,
+        /// Text value to compare against.
+        value: String,
+    },
+    /// Fused ordered comparison on a JSON integer/timestamp property at
+    /// the given path. See [`Predicate::JsonPathFusedEq`] for the fusion
+    /// contract.
+    JsonPathFusedTimestampCmp {
+        /// JSON path expression.
+        path: String,
+        /// Comparison operator.
+        op: ComparisonOp,
+        /// Integer value to compare against (epoch seconds for
+        /// timestamp semantics).
+        value: i64,
+    },
 }
 
 /// Ordered comparison operator for JSON property filters.

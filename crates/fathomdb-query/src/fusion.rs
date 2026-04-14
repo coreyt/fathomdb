@@ -71,6 +71,8 @@ pub fn is_fusable(predicate: &Predicate) -> bool {
             | Predicate::SourceRefEq(_)
             | Predicate::ContentRefEq(_)
             | Predicate::ContentRefNotNull
+            | Predicate::JsonPathFusedEq { .. }
+            | Predicate::JsonPathFusedTimestampCmp { .. }
     )
 }
 
@@ -148,6 +150,32 @@ mod tests {
         assert_eq!(fusable.len(), 1);
         assert_eq!(fusable[0], Predicate::KindEq("B".to_owned()));
         assert!(residual.is_empty());
+    }
+
+    #[test]
+    fn fused_json_variants_are_fusable() {
+        assert!(is_fusable(&Predicate::JsonPathFusedEq {
+            path: "$.status".to_owned(),
+            value: "active".to_owned(),
+        }));
+        assert!(is_fusable(&Predicate::JsonPathFusedTimestampCmp {
+            path: "$.written_at".to_owned(),
+            op: ComparisonOp::Gt,
+            value: 1234,
+        }));
+    }
+
+    #[test]
+    fn non_fused_json_variants_stay_residual() {
+        assert!(!is_fusable(&Predicate::JsonPathEq {
+            path: "$.status".to_owned(),
+            value: ScalarValue::Text("active".to_owned()),
+        }));
+        assert!(!is_fusable(&Predicate::JsonPathCompare {
+            path: "$.priority".to_owned(),
+            op: ComparisonOp::Gte,
+            value: ScalarValue::Integer(5),
+        }));
     }
 
     #[test]

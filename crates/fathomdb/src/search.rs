@@ -7,12 +7,68 @@
 
 use fathomdb_engine::{EngineError, QueryRows};
 use fathomdb_query::{
-    CompileError, CompiledGroupedQuery, CompiledQuery, CompiledRetrievalPlan, CompiledSearchPlan,
-    CompiledVectorSearch, QueryAst, QueryBuilder, QueryStep, SearchRows, TextQuery, compile_search,
-    compile_search_plan_from_queries, compile_vector_search,
+    BuilderValidationError, CompileError, CompiledGroupedQuery, CompiledQuery,
+    CompiledRetrievalPlan, CompiledSearchPlan, CompiledVectorSearch, QueryAst, QueryBuilder,
+    QueryStep, SearchRows, TextQuery, compile_search, compile_search_plan_from_queries,
+    compile_vector_search,
 };
 
 use crate::Engine;
+
+/// Shared fusion gate implementation used by every tethered builder.
+///
+/// Resolves the FTS property schema for `kind` via the engine's admin
+/// handle and verifies that `path` is in the registered include list.
+/// On success the caller may safely append a fused predicate variant to
+/// the underlying AST builder.
+///
+/// # Errors
+/// - [`BuilderValidationError::KindRequiredForFusion`] if `kind` is empty.
+/// - [`BuilderValidationError::MissingPropertyFtsSchema`] if no schema
+///   is registered for the kind.
+/// - [`BuilderValidationError::PathNotIndexed`] if a schema exists but
+///   does not include `path`.
+fn validate_fusable_property_path(
+    engine: &Engine,
+    kind: &str,
+    path: &str,
+    method: &str,
+) -> Result<(), BuilderValidationError> {
+    if kind.is_empty() {
+        return Err(BuilderValidationError::KindRequiredForFusion {
+            method: method.to_owned(),
+        });
+    }
+    let schema = engine.describe_fts_property_schema(kind).map_err(|_| {
+        BuilderValidationError::MissingPropertyFtsSchema {
+            kind: kind.to_owned(),
+        }
+    })?;
+    let schema = schema.ok_or_else(|| BuilderValidationError::MissingPropertyFtsSchema {
+        kind: kind.to_owned(),
+    })?;
+    if !schema.property_paths.iter().any(|p| p == path) {
+        return Err(BuilderValidationError::PathNotIndexed {
+            kind: kind.to_owned(),
+            path: path.to_owned(),
+        });
+    }
+    Ok(())
+}
+
+/// Resolve the kind currently bound on a filter accumulator's `KindEq`
+/// predicate, if any. The adaptive `FallbackSearchBuilder` path has no
+/// explicit `root_kind` field — its kind comes from a chained
+/// `filter_kind_eq`. This helper walks the accumulator's AST steps and
+/// returns the most recent `KindEq` value.
+fn filter_builder_kind(builder: &QueryBuilder) -> Option<&str> {
+    for step in &builder.ast().steps {
+        if let QueryStep::Filter(fathomdb_query::Predicate::KindEq(kind)) = step {
+            return Some(kind.as_str());
+        }
+    }
+    None
+}
 
 /// Tethered node query builder.
 ///
@@ -192,6 +248,122 @@ impl<'e> NodeQueryBuilder<'e> {
     pub fn filter_json_timestamp_lte(mut self, path: impl Into<String>, value: i64) -> Self {
         self.inner = self.inner.filter_json_timestamp_lte(path, value);
         self
+    }
+
+    /// Filter results where a JSON text property at `path` equals
+    /// `value`, pushing the predicate into the inner search CTE so the
+    /// CTE `LIMIT` applies *after* the filter runs.
+    ///
+    /// # Errors
+    /// Returns [`BuilderValidationError`] if the root kind has no
+    /// registered property-FTS schema or the schema does not cover
+    /// `path`.
+    pub fn filter_json_fused_text_eq(
+        mut self,
+        path: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        let kind = self.inner.ast().root_kind.clone();
+        validate_fusable_property_path(self.engine, &kind, &path, "filter_json_fused_text_eq")?;
+        self.inner = self.inner.filter_json_fused_text_eq_unchecked(path, value);
+        Ok(self)
+    }
+
+    /// Filter results where a JSON timestamp at `path` is strictly
+    /// greater than `value`, with fusion semantics.
+    ///
+    /// # Errors
+    /// See [`Self::filter_json_fused_text_eq`].
+    pub fn filter_json_fused_timestamp_gt(
+        mut self,
+        path: impl Into<String>,
+        value: i64,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        let kind = self.inner.ast().root_kind.clone();
+        validate_fusable_property_path(
+            self.engine,
+            &kind,
+            &path,
+            "filter_json_fused_timestamp_gt",
+        )?;
+        self.inner = self
+            .inner
+            .filter_json_fused_timestamp_gt_unchecked(path, value);
+        Ok(self)
+    }
+
+    /// Filter results where a JSON timestamp at `path` is at or after
+    /// `value`, with fusion semantics.
+    ///
+    /// # Errors
+    /// See [`Self::filter_json_fused_text_eq`].
+    pub fn filter_json_fused_timestamp_gte(
+        mut self,
+        path: impl Into<String>,
+        value: i64,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        let kind = self.inner.ast().root_kind.clone();
+        validate_fusable_property_path(
+            self.engine,
+            &kind,
+            &path,
+            "filter_json_fused_timestamp_gte",
+        )?;
+        self.inner = self
+            .inner
+            .filter_json_fused_timestamp_gte_unchecked(path, value);
+        Ok(self)
+    }
+
+    /// Filter results where a JSON timestamp at `path` is strictly
+    /// before `value`, with fusion semantics.
+    ///
+    /// # Errors
+    /// See [`Self::filter_json_fused_text_eq`].
+    pub fn filter_json_fused_timestamp_lt(
+        mut self,
+        path: impl Into<String>,
+        value: i64,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        let kind = self.inner.ast().root_kind.clone();
+        validate_fusable_property_path(
+            self.engine,
+            &kind,
+            &path,
+            "filter_json_fused_timestamp_lt",
+        )?;
+        self.inner = self
+            .inner
+            .filter_json_fused_timestamp_lt_unchecked(path, value);
+        Ok(self)
+    }
+
+    /// Filter results where a JSON timestamp at `path` is at or before
+    /// `value`, with fusion semantics.
+    ///
+    /// # Errors
+    /// See [`Self::filter_json_fused_text_eq`].
+    pub fn filter_json_fused_timestamp_lte(
+        mut self,
+        path: impl Into<String>,
+        value: i64,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        let kind = self.inner.ast().root_kind.clone();
+        validate_fusable_property_path(
+            self.engine,
+            &kind,
+            &path,
+            "filter_json_fused_timestamp_lte",
+        )?;
+        self.inner = self
+            .inner
+            .filter_json_fused_timestamp_lte_unchecked(path, value);
+        Ok(self)
     }
 
     /// Add an expansion slot that traverses edges per root result.
@@ -381,6 +553,122 @@ impl TextSearchBuilder<'_> {
     pub fn filter_json_timestamp_lte(mut self, path: impl Into<String>, value: i64) -> Self {
         self.inner = self.inner.filter_json_timestamp_lte(path, value);
         self
+    }
+
+    /// Filter results where a JSON text property at `path` equals
+    /// `value`, with fusion semantics. See
+    /// [`NodeQueryBuilder::filter_json_fused_text_eq`] for the contract.
+    ///
+    /// # Errors
+    /// Returns [`BuilderValidationError`] if the root kind has no
+    /// registered property-FTS schema or the schema does not cover
+    /// `path`.
+    pub fn filter_json_fused_text_eq(
+        mut self,
+        path: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        let kind = self.inner.ast().root_kind.clone();
+        validate_fusable_property_path(self.engine, &kind, &path, "filter_json_fused_text_eq")?;
+        self.inner = self.inner.filter_json_fused_text_eq_unchecked(path, value);
+        Ok(self)
+    }
+
+    /// Filter results where a JSON timestamp at `path` is strictly
+    /// greater than `value`, with fusion semantics.
+    ///
+    /// # Errors
+    /// See [`Self::filter_json_fused_text_eq`].
+    pub fn filter_json_fused_timestamp_gt(
+        mut self,
+        path: impl Into<String>,
+        value: i64,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        let kind = self.inner.ast().root_kind.clone();
+        validate_fusable_property_path(
+            self.engine,
+            &kind,
+            &path,
+            "filter_json_fused_timestamp_gt",
+        )?;
+        self.inner = self
+            .inner
+            .filter_json_fused_timestamp_gt_unchecked(path, value);
+        Ok(self)
+    }
+
+    /// Filter results where a JSON timestamp at `path` is at or after
+    /// `value`, with fusion semantics.
+    ///
+    /// # Errors
+    /// See [`Self::filter_json_fused_text_eq`].
+    pub fn filter_json_fused_timestamp_gte(
+        mut self,
+        path: impl Into<String>,
+        value: i64,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        let kind = self.inner.ast().root_kind.clone();
+        validate_fusable_property_path(
+            self.engine,
+            &kind,
+            &path,
+            "filter_json_fused_timestamp_gte",
+        )?;
+        self.inner = self
+            .inner
+            .filter_json_fused_timestamp_gte_unchecked(path, value);
+        Ok(self)
+    }
+
+    /// Filter results where a JSON timestamp at `path` is strictly
+    /// before `value`, with fusion semantics.
+    ///
+    /// # Errors
+    /// See [`Self::filter_json_fused_text_eq`].
+    pub fn filter_json_fused_timestamp_lt(
+        mut self,
+        path: impl Into<String>,
+        value: i64,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        let kind = self.inner.ast().root_kind.clone();
+        validate_fusable_property_path(
+            self.engine,
+            &kind,
+            &path,
+            "filter_json_fused_timestamp_lt",
+        )?;
+        self.inner = self
+            .inner
+            .filter_json_fused_timestamp_lt_unchecked(path, value);
+        Ok(self)
+    }
+
+    /// Filter results where a JSON timestamp at `path` is at or before
+    /// `value`, with fusion semantics.
+    ///
+    /// # Errors
+    /// See [`Self::filter_json_fused_text_eq`].
+    pub fn filter_json_fused_timestamp_lte(
+        mut self,
+        path: impl Into<String>,
+        value: i64,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        let kind = self.inner.ast().root_kind.clone();
+        validate_fusable_property_path(
+            self.engine,
+            &kind,
+            &path,
+            "filter_json_fused_timestamp_lte",
+        )?;
+        self.inner = self
+            .inner
+            .filter_json_fused_timestamp_lte_unchecked(path, value);
+        Ok(self)
     }
 
     /// Set the final row limit on the underlying AST.
@@ -635,6 +923,144 @@ impl<'e> FallbackSearchBuilder<'e> {
         self
     }
 
+    /// Filter results where a JSON text property at `path` equals
+    /// `value`, with fusion semantics.
+    ///
+    /// # Errors
+    /// Returns [`BuilderValidationError::KindRequiredForFusion`] if no
+    /// `filter_kind_eq` has been chained on this builder. The fallback
+    /// builder is kind-agnostic by default and cannot resolve a
+    /// property-FTS schema without an explicit kind binding.
+    pub fn filter_json_fused_text_eq(
+        mut self,
+        path: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        let kind = filter_builder_kind(&self.filter_builder)
+            .ok_or_else(|| BuilderValidationError::KindRequiredForFusion {
+                method: "filter_json_fused_text_eq".to_owned(),
+            })?
+            .to_owned();
+        validate_fusable_property_path(self.engine, &kind, &path, "filter_json_fused_text_eq")?;
+        self.filter_builder = self
+            .filter_builder
+            .filter_json_fused_text_eq_unchecked(path, value);
+        Ok(self)
+    }
+
+    /// Filter results where a JSON timestamp at `path` is strictly
+    /// greater than `value`, with fusion semantics.
+    ///
+    /// # Errors
+    /// See [`Self::filter_json_fused_text_eq`].
+    pub fn filter_json_fused_timestamp_gt(
+        mut self,
+        path: impl Into<String>,
+        value: i64,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        let kind = filter_builder_kind(&self.filter_builder)
+            .ok_or_else(|| BuilderValidationError::KindRequiredForFusion {
+                method: "filter_json_fused_timestamp_gt".to_owned(),
+            })?
+            .to_owned();
+        validate_fusable_property_path(
+            self.engine,
+            &kind,
+            &path,
+            "filter_json_fused_timestamp_gt",
+        )?;
+        self.filter_builder = self
+            .filter_builder
+            .filter_json_fused_timestamp_gt_unchecked(path, value);
+        Ok(self)
+    }
+
+    /// Filter results where a JSON timestamp at `path` is at or after
+    /// `value`, with fusion semantics.
+    ///
+    /// # Errors
+    /// See [`Self::filter_json_fused_text_eq`].
+    pub fn filter_json_fused_timestamp_gte(
+        mut self,
+        path: impl Into<String>,
+        value: i64,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        let kind = filter_builder_kind(&self.filter_builder)
+            .ok_or_else(|| BuilderValidationError::KindRequiredForFusion {
+                method: "filter_json_fused_timestamp_gte".to_owned(),
+            })?
+            .to_owned();
+        validate_fusable_property_path(
+            self.engine,
+            &kind,
+            &path,
+            "filter_json_fused_timestamp_gte",
+        )?;
+        self.filter_builder = self
+            .filter_builder
+            .filter_json_fused_timestamp_gte_unchecked(path, value);
+        Ok(self)
+    }
+
+    /// Filter results where a JSON timestamp at `path` is strictly
+    /// before `value`, with fusion semantics.
+    ///
+    /// # Errors
+    /// See [`Self::filter_json_fused_text_eq`].
+    pub fn filter_json_fused_timestamp_lt(
+        mut self,
+        path: impl Into<String>,
+        value: i64,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        let kind = filter_builder_kind(&self.filter_builder)
+            .ok_or_else(|| BuilderValidationError::KindRequiredForFusion {
+                method: "filter_json_fused_timestamp_lt".to_owned(),
+            })?
+            .to_owned();
+        validate_fusable_property_path(
+            self.engine,
+            &kind,
+            &path,
+            "filter_json_fused_timestamp_lt",
+        )?;
+        self.filter_builder = self
+            .filter_builder
+            .filter_json_fused_timestamp_lt_unchecked(path, value);
+        Ok(self)
+    }
+
+    /// Filter results where a JSON timestamp at `path` is at or before
+    /// `value`, with fusion semantics.
+    ///
+    /// # Errors
+    /// See [`Self::filter_json_fused_text_eq`].
+    pub fn filter_json_fused_timestamp_lte(
+        mut self,
+        path: impl Into<String>,
+        value: i64,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        let kind = filter_builder_kind(&self.filter_builder)
+            .ok_or_else(|| BuilderValidationError::KindRequiredForFusion {
+                method: "filter_json_fused_timestamp_lte".to_owned(),
+            })?
+            .to_owned();
+        validate_fusable_property_path(
+            self.engine,
+            &kind,
+            &path,
+            "filter_json_fused_timestamp_lte",
+        )?;
+        self.filter_builder = self
+            .filter_builder
+            .filter_json_fused_timestamp_lte_unchecked(path, value);
+        Ok(self)
+    }
+
     /// Compile the builder into a [`CompiledSearchPlan`] without executing
     /// it. Useful for tests and introspection.
     ///
@@ -838,6 +1264,123 @@ impl<'e> VectorSearchBuilder<'e> {
         self
     }
 
+    /// Filter results where a JSON text property at `path` equals
+    /// `value`, with fusion semantics.
+    ///
+    /// # Errors
+    /// Returns [`BuilderValidationError`] if the root kind has no
+    /// registered property-FTS schema or the schema does not cover
+    /// `path`.
+    pub fn filter_json_fused_text_eq(
+        mut self,
+        path: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        validate_fusable_property_path(
+            self.engine,
+            &self.root_kind,
+            &path,
+            "filter_json_fused_text_eq",
+        )?;
+        self.filter_builder = self
+            .filter_builder
+            .filter_json_fused_text_eq_unchecked(path, value);
+        Ok(self)
+    }
+
+    /// Filter results where a JSON timestamp at `path` is strictly
+    /// greater than `value`, with fusion semantics.
+    ///
+    /// # Errors
+    /// See [`Self::filter_json_fused_text_eq`].
+    pub fn filter_json_fused_timestamp_gt(
+        mut self,
+        path: impl Into<String>,
+        value: i64,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        validate_fusable_property_path(
+            self.engine,
+            &self.root_kind,
+            &path,
+            "filter_json_fused_timestamp_gt",
+        )?;
+        self.filter_builder = self
+            .filter_builder
+            .filter_json_fused_timestamp_gt_unchecked(path, value);
+        Ok(self)
+    }
+
+    /// Filter results where a JSON timestamp at `path` is at or after
+    /// `value`, with fusion semantics.
+    ///
+    /// # Errors
+    /// See [`Self::filter_json_fused_text_eq`].
+    pub fn filter_json_fused_timestamp_gte(
+        mut self,
+        path: impl Into<String>,
+        value: i64,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        validate_fusable_property_path(
+            self.engine,
+            &self.root_kind,
+            &path,
+            "filter_json_fused_timestamp_gte",
+        )?;
+        self.filter_builder = self
+            .filter_builder
+            .filter_json_fused_timestamp_gte_unchecked(path, value);
+        Ok(self)
+    }
+
+    /// Filter results where a JSON timestamp at `path` is strictly
+    /// before `value`, with fusion semantics.
+    ///
+    /// # Errors
+    /// See [`Self::filter_json_fused_text_eq`].
+    pub fn filter_json_fused_timestamp_lt(
+        mut self,
+        path: impl Into<String>,
+        value: i64,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        validate_fusable_property_path(
+            self.engine,
+            &self.root_kind,
+            &path,
+            "filter_json_fused_timestamp_lt",
+        )?;
+        self.filter_builder = self
+            .filter_builder
+            .filter_json_fused_timestamp_lt_unchecked(path, value);
+        Ok(self)
+    }
+
+    /// Filter results where a JSON timestamp at `path` is at or before
+    /// `value`, with fusion semantics.
+    ///
+    /// # Errors
+    /// See [`Self::filter_json_fused_text_eq`].
+    pub fn filter_json_fused_timestamp_lte(
+        mut self,
+        path: impl Into<String>,
+        value: i64,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        validate_fusable_property_path(
+            self.engine,
+            &self.root_kind,
+            &path,
+            "filter_json_fused_timestamp_lte",
+        )?;
+        self.filter_builder = self
+            .filter_builder
+            .filter_json_fused_timestamp_lte_unchecked(path, value);
+        Ok(self)
+    }
+
     /// Compile the builder into a [`CompiledVectorSearch`] without executing
     /// it. Useful for tests and introspection.
     ///
@@ -1034,6 +1577,123 @@ impl<'e> SearchBuilder<'e> {
         self
     }
 
+    /// Filter results where a JSON text property at `path` equals
+    /// `value`, with fusion semantics.
+    ///
+    /// # Errors
+    /// Returns [`BuilderValidationError`] if the root kind has no
+    /// registered property-FTS schema or the schema does not cover
+    /// `path`.
+    pub fn filter_json_fused_text_eq(
+        mut self,
+        path: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        validate_fusable_property_path(
+            self.engine,
+            &self.root_kind,
+            &path,
+            "filter_json_fused_text_eq",
+        )?;
+        self.filter_builder = self
+            .filter_builder
+            .filter_json_fused_text_eq_unchecked(path, value);
+        Ok(self)
+    }
+
+    /// Filter results where a JSON timestamp at `path` is strictly
+    /// greater than `value`, with fusion semantics.
+    ///
+    /// # Errors
+    /// See [`Self::filter_json_fused_text_eq`].
+    pub fn filter_json_fused_timestamp_gt(
+        mut self,
+        path: impl Into<String>,
+        value: i64,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        validate_fusable_property_path(
+            self.engine,
+            &self.root_kind,
+            &path,
+            "filter_json_fused_timestamp_gt",
+        )?;
+        self.filter_builder = self
+            .filter_builder
+            .filter_json_fused_timestamp_gt_unchecked(path, value);
+        Ok(self)
+    }
+
+    /// Filter results where a JSON timestamp at `path` is at or after
+    /// `value`, with fusion semantics.
+    ///
+    /// # Errors
+    /// See [`Self::filter_json_fused_text_eq`].
+    pub fn filter_json_fused_timestamp_gte(
+        mut self,
+        path: impl Into<String>,
+        value: i64,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        validate_fusable_property_path(
+            self.engine,
+            &self.root_kind,
+            &path,
+            "filter_json_fused_timestamp_gte",
+        )?;
+        self.filter_builder = self
+            .filter_builder
+            .filter_json_fused_timestamp_gte_unchecked(path, value);
+        Ok(self)
+    }
+
+    /// Filter results where a JSON timestamp at `path` is strictly
+    /// before `value`, with fusion semantics.
+    ///
+    /// # Errors
+    /// See [`Self::filter_json_fused_text_eq`].
+    pub fn filter_json_fused_timestamp_lt(
+        mut self,
+        path: impl Into<String>,
+        value: i64,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        validate_fusable_property_path(
+            self.engine,
+            &self.root_kind,
+            &path,
+            "filter_json_fused_timestamp_lt",
+        )?;
+        self.filter_builder = self
+            .filter_builder
+            .filter_json_fused_timestamp_lt_unchecked(path, value);
+        Ok(self)
+    }
+
+    /// Filter results where a JSON timestamp at `path` is at or before
+    /// `value`, with fusion semantics.
+    ///
+    /// # Errors
+    /// See [`Self::filter_json_fused_text_eq`].
+    pub fn filter_json_fused_timestamp_lte(
+        mut self,
+        path: impl Into<String>,
+        value: i64,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        validate_fusable_property_path(
+            self.engine,
+            &self.root_kind,
+            &path,
+            "filter_json_fused_timestamp_lte",
+        )?;
+        self.filter_builder = self
+            .filter_builder
+            .filter_json_fused_timestamp_lte_unchecked(path, value);
+        Ok(self)
+    }
+
     /// Compile the builder into a [`CompiledRetrievalPlan`] without executing
     /// it. Useful for tests and introspection.
     ///
@@ -1093,10 +1753,168 @@ impl<'e> SearchBuilder<'e> {
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::panic)]
 mod tests {
-    use super::FallbackSearchBuilder;
-    use crate::{Engine, EngineOptions};
+    use super::{FallbackSearchBuilder, VectorSearchBuilder};
+    use crate::{BuilderValidationError, Engine, EngineOptions};
     use fathomdb_query::Predicate;
     use tempfile::NamedTempFile;
+
+    fn open_engine_with_schema(register: bool) -> (NamedTempFile, Engine) {
+        let db = NamedTempFile::new().expect("temporary db");
+        let engine = Engine::open(EngineOptions::new(db.path())).expect("engine opens");
+        if register {
+            engine
+                .register_fts_property_schema(
+                    "Note",
+                    &["$.title".to_owned(), "$.body".to_owned()],
+                    None,
+                )
+                .expect("register fts property schema");
+        }
+        (db, engine)
+    }
+
+    #[test]
+    fn node_query_fused_text_eq_requires_registered_schema() {
+        let (_db, engine) = open_engine_with_schema(false);
+        let result = engine
+            .query("Note")
+            .filter_json_fused_text_eq("$.title", "hello");
+        let Err(err) = result else {
+            panic!("must reject fused filter without schema");
+        };
+        assert!(
+            matches!(err, BuilderValidationError::MissingPropertyFtsSchema { ref kind } if kind == "Note"),
+            "expected MissingPropertyFtsSchema, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn node_query_fused_text_eq_rejects_path_not_in_schema() {
+        let (_db, engine) = open_engine_with_schema(true);
+        let result = engine
+            .query("Note")
+            .filter_json_fused_text_eq("$.not_covered", "hello");
+        let Err(err) = result else {
+            panic!("path not in schema must be rejected");
+        };
+        assert!(
+            matches!(err, BuilderValidationError::PathNotIndexed { ref kind, ref path } if kind == "Note" && path == "$.not_covered"),
+            "expected PathNotIndexed, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn node_query_fused_text_eq_succeeds_with_registered_schema() {
+        let (_db, engine) = open_engine_with_schema(true);
+        let builder = engine
+            .query("Note")
+            .filter_json_fused_text_eq("$.title", "hello")
+            .expect("fused filter with registered schema must succeed");
+        let compiled = builder.compile().expect("compile");
+        // The fused predicate must land inside base_candidates, with a
+        // src.properties json_extract clause.
+        assert!(
+            compiled.sql.contains("json_extract(src.properties, ?"),
+            "fused filter must emit against src.properties, got {}",
+            compiled.sql
+        );
+    }
+
+    #[test]
+    fn text_search_fused_timestamp_gt_validates_and_compiles() {
+        let (_db, engine) = open_engine_with_schema(true);
+        // Path must be present in schema.
+        engine
+            .register_fts_property_schema("Note2", &["$.written_at".to_owned()], None)
+            .expect("register Note2 schema");
+        let builder = engine
+            .query("Note2")
+            .text_search("budget", 5)
+            .filter_json_fused_timestamp_gt("$.written_at", 1_700_000_000)
+            .expect("fused timestamp gt must succeed with schema");
+        let _ = builder.compile().expect("compile succeeds");
+    }
+
+    #[test]
+    fn vector_search_fused_text_eq_validates() {
+        let (_db, engine) = open_engine_with_schema(true);
+        let result = VectorSearchBuilder::new(&engine, "NoSchema", "q", 5)
+            .filter_json_fused_text_eq("$.title", "hello");
+        let Err(err) = result else {
+            panic!("missing schema must error");
+        };
+        assert!(
+            matches!(err, BuilderValidationError::MissingPropertyFtsSchema { .. }),
+            "expected MissingPropertyFtsSchema, got {err:?}"
+        );
+        let ok = VectorSearchBuilder::new(&engine, "Note", "q", 5)
+            .filter_json_fused_text_eq("$.title", "hello");
+        assert!(ok.is_ok(), "registered kind must succeed");
+    }
+
+    #[test]
+    fn fallback_search_fused_text_eq_requires_kind_binding() {
+        let (_db, engine) = open_engine_with_schema(true);
+        let result = FallbackSearchBuilder::new(&engine, "budget", None, 10)
+            .filter_json_fused_text_eq("$.title", "hello");
+        let Err(err) = result else {
+            panic!("no kind binding must error");
+        };
+        assert!(
+            matches!(err, BuilderValidationError::KindRequiredForFusion { .. }),
+            "expected KindRequiredForFusion, got {err:?}"
+        );
+        let ok = FallbackSearchBuilder::new(&engine, "budget", None, 10)
+            .filter_kind_eq("Note")
+            .filter_json_fused_text_eq("$.title", "hello");
+        assert!(ok.is_ok(), "kind-bound fallback fused filter must succeed");
+    }
+
+    #[test]
+    fn unified_search_fused_text_eq_validates() {
+        let (_db, engine) = open_engine_with_schema(true);
+        let ok = engine
+            .query("Note")
+            .search("hello", 5)
+            .filter_json_fused_text_eq("$.title", "hello");
+        assert!(
+            ok.is_ok(),
+            "unified search builder must accept fused filter"
+        );
+        let result = engine
+            .query("Unknown")
+            .search("hello", 5)
+            .filter_json_fused_text_eq("$.title", "hello");
+        let Err(err) = result else {
+            panic!("missing schema must error");
+        };
+        assert!(matches!(
+            err,
+            BuilderValidationError::MissingPropertyFtsSchema { .. }
+        ));
+    }
+
+    #[test]
+    fn existing_filter_json_text_eq_still_compiles_unchanged_regression() {
+        // Regression guard for D3: the post-filter filter_json_* family
+        // must retain its original non-fused semantics. On the text
+        // search path this means the predicate lands in the outer WHERE
+        // against `n.properties`, not inside the CTE.
+        let (_db, engine) = open_engine_with_schema(false);
+        let compiled = engine
+            .query("Note")
+            .text_search("budget", 5)
+            .filter_json_text_eq("$.status", "active")
+            .compile()
+            .expect("compile");
+        assert!(
+            compiled
+                .sql
+                .contains("\n  AND json_extract(n.properties, ?"),
+            "filter_json_text_eq must emit into outer WHERE, got {}",
+            compiled.sql
+        );
+    }
 
     /// P7.5-N1: pin the dummy-step workaround invariant.
     ///
