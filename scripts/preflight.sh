@@ -107,6 +107,18 @@ else
     fail "Rustc not on PATH"
 fi
 
+# Install: cargo install cargo-audit --locked
+if command -v cargo-audit >/dev/null 2>&1; then
+    CARGO_AUDIT_VER=$(cargo-audit --version 2>/dev/null || echo "FAILED")
+    pass "Cargo-audit: $CARGO_AUDIT_VER"
+else
+    if [ "$INCLUDE_RELEASE" = true ]; then
+        fail "Cargo-audit not on PATH — install with: cargo install cargo-audit --locked"
+    else
+        warn "Cargo-audit not on PATH — install with: cargo install cargo-audit --locked"
+    fi
+fi
+
 # 7. Python venv (optional — only if fathomdb-python work is planned)
 if [ -d "python/.venv" ] && [ -f "python/.venv/bin/python" ]; then
     pass "Python venv exists at python/.venv"

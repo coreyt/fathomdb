@@ -82,6 +82,11 @@ main() {
   need_cmd ruff
   need_cmd mkdocs
   need_cmd cargo-nextest
+  # Install: cargo install cargo-audit --locked
+  command -v cargo-audit >/dev/null 2>&1 || {
+    printf 'error: required command not found: cargo-audit (install with: cargo install cargo-audit --locked)\n' >&2
+    exit 1
+  }
 
   # Clean /tmp of stale fathomdb test artifacts that accumulate across runs.
   # Sources of accumulation that do NOT clean up after themselves:
