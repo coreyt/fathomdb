@@ -279,7 +279,10 @@ an intentionally lightweight agent-harness preflight. Use
   `test_harness_vector.py` pass when run independently but fail in
   bulk runs due to a sqlite-vec `vec_nodes_active` table that some
   baseline scenarios touch. The cleanup pack at `2c1ef1c` refreshed
-  expected counts but the bulk-run interaction remains.
+  expected counts but the bulk-run interaction remains. Resolved in
+  the 0.4.0 cycle by commit `5ae82d7` (preflight `/tmp` accumulation
+  cleanup); empirically verified by running the full `python/tests/`
+  suite five times in a row, 93/93 green each run.
 - `./scripts/preflight-CI.sh` used to run `cargo publish --dry-run` for
   all four workspace crates. The non-leaf crates (`fathomdb-engine` and
   `fathomdb`) carry inter-workspace dependencies at the
@@ -330,6 +333,9 @@ an intentionally lightweight agent-harness preflight. Use
   is a timing-sensitive test that intermittently misses the HEARTBEAT
   phase on macOS CI runners. Not a regression from the 0.3.0 rollout.
   If this is the only failure blocking a release, retry the workflow.
+  Fixed in the 0.4.0 cycle by commit `f789d93` (pack #6), which widened
+  `delay_s` from 0.05 to 0.2 in `python/tests/test_response_cycle_feedback.py`
+  to give the heartbeat phase enough headroom on slow CI runners.
 - GitHub issue #39: write-time vector regeneration via the Builtin
   embedder. Tracked but not in scope for this release.
 
