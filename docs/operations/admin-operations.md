@@ -316,9 +316,20 @@ fathom-integrity purge-operational --collection audit_log --before 1711670400
 
 ## 8. Vector Regeneration
 
-The `regenerate-vectors` CLI command and its bridge counterparts
-(`RestoreVectorProfiles`, `RegenerateVectorEmbeddings`) handle bulk
-re-embedding when a vector model changes or embeddings become stale.
+Vector regeneration recomputes the embedding rows in `vec_nodes_active`
+from the current canonical chunk set. As of 0.4.0 it runs through the
+native Rust API (`Engine::regenerate_vector_embeddings`) or the Python
+admin client (`db.admin.regenerate_vector_embeddings`) using the
+embedder attached to the engine at open time. The Go
+`fathom-integrity regenerate-vectors` subcommand and its bridge
+counterpart (`RegenerateVectorEmbeddings`) have been removed — the
+admin-bridge protocol cannot carry embedder references across process
+boundaries, which is the drift hazard the new design eliminates.
 
-For the full contract, configuration format, and generator policy flags, see
-[docs/vector-regeneration.md](vector-regeneration.md).
+The sibling `RestoreVectorProfiles` bridge method (which restores
+vector profile metadata and table capability after a physical
+recovery) is unaffected and still available.
+
+For the full contract, `VectorRegenerationConfig` shape, error cases,
+and 0.3.x migration notes, see
+[Vector Regeneration](vector-regeneration.md).

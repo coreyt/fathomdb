@@ -56,9 +56,22 @@ The builder carries the full filter surface:
   `filter_json_integer_lt` / `filter_json_integer_lte`
 - `filter_json_timestamp_gt` / `filter_json_timestamp_gte` /
   `filter_json_timestamp_lt` / `filter_json_timestamp_lte`
+- `filter_json_fused_text_eq` —
+  fused JSON-text equality predicate pushed into the search CTE
+- `filter_json_fused_timestamp_gt` / `filter_json_fused_timestamp_gte` /
+  `filter_json_fused_timestamp_lt` / `filter_json_fused_timestamp_lte` —
+  fused JSON-timestamp comparisons, also pushed into the search CTE
 
 Fusable filters (kind, logical ID, source ref, content ref) push into
-the search CTE; the `filter_json_*` family runs as a post-filter.
+the search CTE; the `filter_json_*` family runs as a post-filter. The
+`filter_json_fused_*` family (shipped in 0.4.0) pushes the predicate
+into the search CTE so that `search()`'s `limit` applies *after*
+narrowing, but it requires a registered property FTS schema covering
+the referenced JSON path — calling a fused method without one raises
+[`BuilderValidationError`](./types.md#errors) immediately and never
+silently degrades to a post-filter. The auto-generated entries under
+[SearchBuilder](#searchbuilder) below carry the full method
+signatures and docstrings for each fused variant.
 `with_match_attribution()` opts in to per-hit attribution, and
 `execute()` returns the `SearchRows` described under
 [SearchRows](./types.md#searchrows) — including the `vector_hit_count`,

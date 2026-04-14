@@ -1,254 +1,194 @@
 # Vector Regeneration
 
-## Purpose
+## Overview
 
-`fathomdb` supports Choice C vector recovery: embeddings are treated as derived
-data that can be regenerated after recovery.
+Vector regeneration recomputes the embedding rows in `vec_nodes_active`
+from the current canonical chunk set. Use it to backfill embeddings
+after a physical recovery, to rebuild vectors when you upgrade to a new
+embedding model, or to refresh vectors after chunking or preprocessing
+policy changes. Regeneration replaces the contents of the target profile
+table atomically — a run either fully applies or leaves both the
+previous contract row and the existing vector contents unchanged.
 
-The admin tool owns regeneration. The application supplies a TOML or JSON
-contract that tells `fathomdb`:
+## Architectural Invariant: The Embedder Owns Identity
 
-- which vector profile to target
-- what model/config metadata applies
-- which external generator command to run
+As of 0.4.0, **vector identity is the embedder's responsibility, not
+the regeneration config's**. The `VectorRegenerationConfig` carries
+*where* vectors live and *how* to chunk and preprocess them. The
+embedder that was attached to the engine at `Engine::open` time carries
+*what* model produces them: dimension, model identity, model version,
+and normalization policy all come from the embedder's `identity()`.
 
-The contract is persisted in the database so recovery-time vector regeneration
-has durable metadata in `vector_embedding_contracts`.
+This means the read-path (`search()` with a natural-language query) and
+the regen-path share a single embedder instance, so the resulting
+profile's identity is stamped directly from `QueryEmbedder::identity`
+and cannot drift from what `search()` will match against at read time.
+The full rationale lives in
+`dev/notes/project-vector-identity-invariant.md`.
 
-## When To Use It
+## Quick Start (Rust)
 
-Use vector regeneration when:
+Open the engine with a concrete embedder choice, build a
+`VectorRegenerationConfig`, and call
+`Engine::regenerate_vector_embeddings`.
 
-- a database was physically recovered and `vec_nodes_active` is empty or stale
-- embeddings need to be rebuilt for the current chunk set
-- the application wants `fathomdb` admin tooling to orchestrate embedding
-  rebuilds while the application continues to own the actual embedding model
+```rust
+use std::sync::Arc;
+use fathomdb::{EmbedderChoice, Engine, EngineOptions};
+use fathomdb_engine::VectorRegenerationConfig;
 
-## Command
+let engine = Engine::open(
+    EngineOptions::new("/path/to/fathom.db")
+        .with_embedder(EmbedderChoice::Builtin),
+)?;
 
-Run regeneration through `fathom-integrity`:
+let config = VectorRegenerationConfig {
+    profile: "default".to_string(),
+    table_name: "vec_nodes_active".to_string(),
+    chunking_policy: "per_chunk".to_string(),
+    preprocessing_policy: "trim+lowercase".to_string(),
+};
 
-```bash
-fathom-integrity regenerate-vectors \
-  --db /path/to/fathom.db \
-  --bridge /path/to/fathomdb-admin-bridge \
-  --config /path/to/vector-regeneration.toml \
-  --generator-timeout-ms 300000 \
-  --generator-max-stdout-bytes 67108864 \
-  --generator-max-stderr-bytes 1048576 \
-  --generator-max-input-bytes 67108864 \
-  --generator-max-chunks 1000000
+let report = engine.regenerate_vector_embeddings(&config)?;
+println!("regenerated {} rows", report.regenerated_rows);
 ```
 
-Required flags:
+For a caller-supplied embedder (cloud API, fine-tuned model, etc.),
+use `EmbedderChoice::InProcess(Arc::new(my_embedder))` instead of
+`EmbedderChoice::Builtin`.
 
-- `--db`: database to regenerate
-- `--bridge`: admin bridge binary
-- `--config`: TOML or JSON vector regeneration contract
+## Quick Start (Python)
 
-Optional operator policy flags:
+The Python wrapper mirrors the Rust surface. The engine is opened with
+an `embedder` argument, and regeneration runs through the admin client.
 
-- `--generator-timeout-ms`: wall-clock timeout for the external generator
-- `--generator-max-stdout-bytes`: stdout cap for the external generator
-- `--generator-max-stderr-bytes`: stderr cap for the external generator
-- `--generator-max-input-bytes`: stdin JSON payload cap
-- `--generator-max-chunks`: chunk-count cap for a single run
-- `--generator-allowed-root`: allowlisted root for the generator executable
-  path; repeatable
-- `--generator-preserve-env`: environment variable to preserve for the child
-  process; repeatable
+```python
+from fathomdb import Engine, VectorRegenerationConfig
 
-These limits are operator policy, not application contract. They are not
-persisted in `vector_embedding_contracts`.
+db = Engine.open("/path/to/fathom.db", embedder="builtin")
 
-## Configuration Contract
+config = VectorRegenerationConfig(
+    profile="default",
+    table_name="vec_nodes_active",
+    chunking_policy="per_chunk",
+    preprocessing_policy="trim+lowercase",
+)
 
-The config must include:
-
-- `profile`
-- `table_name`
-- `model_identity`
-- `model_version`
-- `dimension`
-- `normalization_policy`
-- `chunking_policy`
-- `preprocessing_policy`
-- `generator_command`
-
-### TOML Example
-
-```toml
-profile = "default"
-table_name = "vec_nodes_active"
-model_identity = "text-embedding-local"
-model_version = "2026-03-01"
-dimension = 1536
-normalization_policy = "l2"
-chunking_policy = "per_chunk"
-preprocessing_policy = "trim+lowercase"
-generator_command = [
-  "/usr/local/bin/generate-embeddings",
-  "--model",
-  "text-embedding-local",
-  "--format",
-  "json"
-]
+report = db.admin.regenerate_vector_embeddings(config)
+print(f"regenerated {report.regenerated_rows} rows")
 ```
 
-### JSON Example
+## `VectorRegenerationConfig` Fields
 
-```json
-{
-  "profile": "default",
-  "table_name": "vec_nodes_active",
-  "model_identity": "text-embedding-local",
-  "model_version": "2026-03-01",
-  "dimension": 1536,
-  "normalization_policy": "l2",
-  "chunking_policy": "per_chunk",
-  "preprocessing_policy": "trim+lowercase",
-  "generator_command": [
-    "/usr/local/bin/generate-embeddings",
-    "--model",
-    "text-embedding-local",
-    "--format",
-    "json"
-  ]
+The config carries only destination and preprocessing metadata. Every
+field is required.
+
+| Field | Description |
+|---|---|
+| `profile` | Logical profile name — the same string the engine uses to scope the vector table and contract row. |
+| `table_name` | The target vector table. Currently must be `"vec_nodes_active"`. |
+| `chunking_policy` | Describes how text was split into chunks (e.g. `"per_chunk"`). Persisted into the contract for audit. |
+| `preprocessing_policy` | Describes the text normalization applied before embedding (e.g. `"trim+lowercase"`). Persisted into the contract for audit. |
+
+The legacy 0.3.x fields — `model_identity`, `model_version`,
+`dimension`, `normalization_policy`, and `generator_command` — have
+been removed. Configs serialized from 0.3.x that still carry any of
+these fields will fail to deserialize with a `deny_unknown_fields`
+error; update the config and rebuild it against the engine's open-time
+embedder instead.
+
+## Error Handling
+
+`Engine::regenerate_vector_embeddings` returns
+`EngineError::EmbedderNotConfigured` when the engine was opened with
+`EmbedderChoice::None` (the default). The fix is to reopen the engine
+with `EmbedderChoice::Builtin` or
+`EmbedderChoice::InProcess(Arc::new(...))`.
+
+In Python the equivalent surfaces as `FathomError` with the message
+`"embedder not configured: open the Engine with a non-None
+EmbedderChoice to regenerate vector embeddings"`.
+
+Other failures — unsupported `sqlite-vec` capability, invalid profile
+names, an embedder that errors mid-run, or a chunk snapshot that
+changes during regeneration — propagate as the corresponding
+`EngineError` variant and leave both the previously applied contract
+row and the current vector contents unchanged.
+
+## Custom Embedders
+
+To regenerate with a non-`Builtin` embedder, implement the
+`fathomdb_engine::QueryEmbedder` trait (see the trait's rustdoc for the
+required methods and identity contract) and pass the resulting object
+via `EmbedderChoice::InProcess(Arc::new(my_embedder))` at
+`Engine::open` time. The same embedder is then used by both the
+read-path vector branch and the regen-path, so identity stays
+consistent.
+
+## Migration from 0.3.x
+
+The 0.4.0 redesign is a breaking change on the regeneration surface.
+Concrete before/after for the most common call sites:
+
+**Rust config shape.** The 0.3.x config carried model identity inline:
+
+```rust
+// 0.3.x (removed)
+VectorRegenerationConfig {
+    profile: "default".into(),
+    table_name: "vec_nodes_active".into(),
+    model_identity: "text-embedding-local".into(),
+    model_version: "2026-03-01".into(),
+    dimension: 1536,
+    normalization_policy: "l2".into(),
+    chunking_policy: "per_chunk".into(),
+    preprocessing_policy: "trim+lowercase".into(),
+    generator_command: vec!["/usr/local/bin/generate".into(), "--json".into()],
 }
 ```
 
-## Generator Protocol
+In 0.4.0 the identity fields are gone. Identity is supplied by the
+open-time embedder; the config keeps only the four remaining fields
+shown in the Quick Start above.
 
-`fathomdb` executes the configured generator command and sends JSON on stdin.
+**Python method name.** The 0.3.x surface exposed a policy variant
+(`admin_client.regenerate_vector_embeddings_with_policy(config,
+policy)`) alongside the basic call. The policy variant has been
+removed in 0.4.0. Use `admin_client.regenerate_vector_embeddings(config)`.
 
-The input contains:
+**Subprocess generators.** The 0.3.x subprocess generator protocol
+(stdin/stdout JSON, operator-controlled executable trust, timeout and
+byte caps) has been removed. Users who previously shelled out to a
+Python or Node subprocess should implement a small
+`SubprocessEmbedder` adapter against the `QueryEmbedder` trait and
+pass it in via `EmbedderChoice::InProcess`. The trust policy then
+lives in your embedder's spawn code rather than in the engine surface.
 
-- profile/table metadata
-- model/config metadata
-- the current active chunk set
+**Go `fathom-integrity` CLI.** The `fathom-integrity regenerate-vectors`
+subcommand and its bridge counterpart (`RegenerateVectorEmbeddings`)
+have been removed. There is no direct replacement — the admin bridge
+protocol cannot carry an embedder reference across process boundaries,
+which is exactly the drift hazard the new design eliminates. Call
+`Engine::regenerate_vector_embeddings` from the native Rust API or from
+the Python wrapper instead.
 
-Input shape:
+## Why the Redesign?
 
-```json
-{
-  "profile": "default",
-  "table_name": "vec_nodes_active",
-  "model_identity": "text-embedding-local",
-  "model_version": "2026-03-01",
-  "dimension": 1536,
-  "normalization_policy": "l2",
-  "chunking_policy": "per_chunk",
-  "preprocessing_policy": "trim+lowercase",
-  "chunks": [
-    {
-      "chunk_id": "chunk-1",
-      "node_logical_id": "doc-1",
-      "kind": "Document",
-      "text_content": "budget discussion",
-      "byte_start": null,
-      "byte_end": null,
-      "source_ref": "source-1",
-      "created_at": 1743100000
-    }
-  ]
-}
-```
-
-The generator must return JSON on stdout in this shape:
-
-```json
-{
-  "embeddings": [
-    {
-      "chunk_id": "chunk-1",
-      "embedding": [0.1, 0.2, 0.3]
-    }
-  ]
-}
-```
-
-Rules:
-
-- string fields must be non-empty after trimming and stay within engine bounds
-- `table_name` must be `vec_nodes_active`
-- every active chunk must have exactly one returned embedding
-- embedding length must match `dimension`
-- embeddings must contain only finite numeric values
-- duplicate `chunk_id` outputs are invalid
-- malformed JSON or generator failure causes the command to fail
-
-## What Gets Persisted
-
-The contract metadata is stored in `vector_embedding_contracts`.
-
-That persisted record includes:
-
-- profile
-- table name
-- model identity
-- model version
-- dimension
-- normalization policy
-- chunking policy
-- preprocessing policy
-- generator command JSON
-- contract format version
-- applied timestamp
-- snapshot hash for the chunk set that was actually applied
-
-This lets recovered databases retain the metadata required to perform
-regeneration later, even though embedding rows themselves are still treated as
-derived data.
-
-## Recovery Semantics
-
-Current behavior:
-
-- physical recovery restores canonical tables first
-- vector profile metadata and table capability are restored
-- embeddings written through `VecInsert` are not treated as canonical recovery
-  material
-- embeddings are regained through `regenerate-vectors`
-- regeneration snapshots the active chunk set, runs the external generator
-  outside the write transaction, then rechecks the same snapshot before apply
-- if the chunk set changed during generation, the command fails and asks the
-  operator to retry instead of mixing new metadata with stale embeddings
-
-In other words:
-
-- `recover` restores vector capability
-- `regenerate-vectors` restores vector contents
-- a failed regeneration leaves both the previously applied contract row and the
-  current vec contents unchanged
-
-## Operational Notes
-
-- The generator command is application-controlled. `fathomdb` does not ship an
-  embedding model.
-- The executable trust boundary is operator-controlled. By default the
-  executable path must be absolute, must not be world-writable, and inherits no
-  environment variables unless explicitly allowlisted with
-  `--generator-preserve-env`.
-- Core regeneration validation, executable-trust enforcement, and `sqlite-vec`
-  vector workflows are supported on Linux, macOS, and Windows.
-- Regeneration replaces the contents of `vec_nodes_active` for the targeted
-  profile table only after the generated output has been fully validated and the
-  chunk snapshot is revalidated inside the apply transaction.
-- If the generator is unavailable or returns invalid output, regeneration fails
-  instead of silently degrading.
-- The external generator is bounded by timeout, stdout/stderr caps, input-size
-  caps, and max-chunk limits.
-- Regeneration writes bounded provenance events for request, failure, and apply
-  so operators can review the attempted profile, model metadata, snapshot hash,
-  and coarse failure class after an incident. Once the request event exists,
-  unsupported `sqlite-vec` capability failures are included in that failed
-  audit lifecycle.
-- The surrounding Rust, Go, and end-to-end coverage exists for this path, but
-  it should still be treated as a recovery-sensitive surface.
+The old subprocess-generator contract conflated identity strings
+(`model_identity`, `model_version`, `dimension`) with a separately
+configured executable, which made model drift structurally possible:
+the config could claim any identity the operator typed, regardless of
+what the generator actually computed, and the read path had no way to
+verify that the vectors it was comparing against had been produced by
+the same model it was embedding queries with. The new shape makes
+drift impossible: the embedder owns identity end-to-end, and the same
+instance services both the read-path and the regen-path. See
+`dev/notes/project-vector-identity-invariant.md` for the full design
+discussion.
 
 ## Related Docs
 
+- [Admin Operations](./admin-operations.md) — other admin surfaces
 - [Home](../index.md)
-- `dev/repair-support-contract.md` -- repair support contract (internal design doc)
-- `dev/ARCHITECTURE.md` -- system design and module layout (internal design doc)
-- `dev/arch-decision-vector-embedding-recovery.md` -- vector recovery design decision (internal design doc)
+- `dev/notes/project-vector-identity-invariant.md` — invariant rationale (internal design doc)
+- `dev/ARCHITECTURE.md` — system design and module layout (internal design doc)
