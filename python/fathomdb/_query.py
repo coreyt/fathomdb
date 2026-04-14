@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from ._feedback import run_with_feedback
 from ._fathomdb import EngineCore
+from .errors import BuilderValidationError
 from ._types import (
     CompiledGroupedQuery,
     CompiledQuery,
@@ -91,7 +92,9 @@ class Query:
             query: The text query to embed and search against.
             limit: Maximum number of nearest neighbours to return.
         """
-        return self._with_step({"type": "vector_search", "query": query, "limit": limit})
+        return self._with_step(
+            {"type": "vector_search", "query": query, "limit": limit}
+        )
 
     def search(self, query: str, limit: int) -> "SearchBuilder":
         """Enter the unified :class:`SearchBuilder` surface.
@@ -150,7 +153,9 @@ class Query:
             label: Edge kind to follow.
             max_depth: Maximum traversal depth.
         """
-        value = direction.value if isinstance(direction, TraverseDirection) else direction
+        value = (
+            direction.value if isinstance(direction, TraverseDirection) else direction
+        )
         return self._with_step(
             {
                 "type": "traverse",
@@ -162,7 +167,9 @@ class Query:
 
     def filter_logical_id_eq(self, logical_id: str) -> "Query":
         """Filter nodes to those with the given logical ID."""
-        return self._with_step({"type": "filter_logical_id_eq", "logical_id": logical_id})
+        return self._with_step(
+            {"type": "filter_logical_id_eq", "logical_id": logical_id}
+        )
 
     def filter_kind_eq(self, kind: str) -> "Query":
         """Filter nodes to those with the given kind."""
@@ -170,7 +177,9 @@ class Query:
 
     def filter_source_ref_eq(self, source_ref: str) -> "Query":
         """Filter nodes to those with the given source reference."""
-        return self._with_step({"type": "filter_source_ref_eq", "source_ref": source_ref})
+        return self._with_step(
+            {"type": "filter_source_ref_eq", "source_ref": source_ref}
+        )
 
     def filter_content_ref_not_null(self) -> "Query":
         """Filter nodes to those where ``content_ref`` is not NULL."""
@@ -178,47 +187,69 @@ class Query:
 
     def filter_content_ref_eq(self, content_ref: str) -> "Query":
         """Filter nodes to those with the given ``content_ref`` URI."""
-        return self._with_step({"type": "filter_content_ref_eq", "content_ref": content_ref})
+        return self._with_step(
+            {"type": "filter_content_ref_eq", "content_ref": content_ref}
+        )
 
     def filter_json_text_eq(self, path: str, value: str) -> "Query":
         """Filter nodes where the JSON property at *path* equals *value*."""
-        return self._with_step({"type": "filter_json_text_eq", "path": path, "value": value})
+        return self._with_step(
+            {"type": "filter_json_text_eq", "path": path, "value": value}
+        )
 
     def filter_json_bool_eq(self, path: str, value: bool) -> "Query":
         """Filter nodes where the JSON boolean at *path* equals *value*."""
-        return self._with_step({"type": "filter_json_bool_eq", "path": path, "value": value})
+        return self._with_step(
+            {"type": "filter_json_bool_eq", "path": path, "value": value}
+        )
 
     def filter_json_integer_gt(self, path: str, value: int) -> "Query":
         """Filter nodes where the JSON integer at *path* is greater than *value*."""
-        return self._with_step({"type": "filter_json_integer_gt", "path": path, "value": value})
+        return self._with_step(
+            {"type": "filter_json_integer_gt", "path": path, "value": value}
+        )
 
     def filter_json_integer_gte(self, path: str, value: int) -> "Query":
         """Filter nodes where the JSON integer at *path* is greater than or equal to *value*."""
-        return self._with_step({"type": "filter_json_integer_gte", "path": path, "value": value})
+        return self._with_step(
+            {"type": "filter_json_integer_gte", "path": path, "value": value}
+        )
 
     def filter_json_integer_lt(self, path: str, value: int) -> "Query":
         """Filter nodes where the JSON integer at *path* is less than *value*."""
-        return self._with_step({"type": "filter_json_integer_lt", "path": path, "value": value})
+        return self._with_step(
+            {"type": "filter_json_integer_lt", "path": path, "value": value}
+        )
 
     def filter_json_integer_lte(self, path: str, value: int) -> "Query":
         """Filter nodes where the JSON integer at *path* is less than or equal to *value*."""
-        return self._with_step({"type": "filter_json_integer_lte", "path": path, "value": value})
+        return self._with_step(
+            {"type": "filter_json_integer_lte", "path": path, "value": value}
+        )
 
     def filter_json_timestamp_gt(self, path: str, value: int) -> "Query":
         """Filter nodes where the JSON timestamp at *path* is after *value*."""
-        return self._with_step({"type": "filter_json_timestamp_gt", "path": path, "value": value})
+        return self._with_step(
+            {"type": "filter_json_timestamp_gt", "path": path, "value": value}
+        )
 
     def filter_json_timestamp_gte(self, path: str, value: int) -> "Query":
         """Filter nodes where the JSON timestamp at *path* is at or after *value*."""
-        return self._with_step({"type": "filter_json_timestamp_gte", "path": path, "value": value})
+        return self._with_step(
+            {"type": "filter_json_timestamp_gte", "path": path, "value": value}
+        )
 
     def filter_json_timestamp_lt(self, path: str, value: int) -> "Query":
         """Filter nodes where the JSON timestamp at *path* is before *value*."""
-        return self._with_step({"type": "filter_json_timestamp_lt", "path": path, "value": value})
+        return self._with_step(
+            {"type": "filter_json_timestamp_lt", "path": path, "value": value}
+        )
 
     def filter_json_timestamp_lte(self, path: str, value: int) -> "Query":
         """Filter nodes where the JSON timestamp at *path* is at or before *value*."""
-        return self._with_step({"type": "filter_json_timestamp_lte", "path": path, "value": value})
+        return self._with_step(
+            {"type": "filter_json_timestamp_lte", "path": path, "value": value}
+        )
 
     def expand(
         self,
@@ -236,7 +267,9 @@ class Query:
             label: Edge kind to follow.
             max_depth: Maximum traversal depth.
         """
-        value = direction.value if isinstance(direction, TraverseDirection) else direction
+        value = (
+            direction.value if isinstance(direction, TraverseDirection) else direction
+        )
         return self._with_expansion(
             {
                 "slot": slot,
@@ -250,7 +283,9 @@ class Query:
         """Cap the number of result rows returned by the query."""
         return self._with_limit(limit)
 
-    def compile(self, *, progress_callback=None, feedback_config: FeedbackConfig | None = None) -> CompiledQuery:
+    def compile(
+        self, *, progress_callback=None, feedback_config: FeedbackConfig | None = None
+    ) -> CompiledQuery:
         """Compile the query into SQL without executing it."""
         return CompiledQuery.from_wire(
             json.loads(
@@ -277,12 +312,16 @@ class Query:
                     metadata={"root_kind": self._root_kind},
                     progress_callback=progress_callback,
                     feedback_config=feedback_config,
-                    operation=lambda: self._core.compile_grouped_ast(self._ast_payload()),
+                    operation=lambda: self._core.compile_grouped_ast(
+                        self._ast_payload()
+                    ),
                 )
             )
         )
 
-    def explain(self, *, progress_callback=None, feedback_config: FeedbackConfig | None = None) -> QueryPlan:
+    def explain(
+        self, *, progress_callback=None, feedback_config: FeedbackConfig | None = None
+    ) -> QueryPlan:
         """Return the query execution plan without running the query."""
         return QueryPlan.from_wire(
             json.loads(
@@ -297,7 +336,9 @@ class Query:
             )
         )
 
-    def execute(self, *, progress_callback=None, feedback_config: FeedbackConfig | None = None) -> QueryRows:
+    def execute(
+        self, *, progress_callback=None, feedback_config: FeedbackConfig | None = None
+    ) -> QueryRows:
         """Execute the query and return matching rows."""
         return QueryRows.from_wire(
             json.loads(
@@ -324,7 +365,9 @@ class Query:
                     metadata={"root_kind": self._root_kind},
                     progress_callback=progress_callback,
                     feedback_config=feedback_config,
-                    operation=lambda: self._core.execute_grouped_ast(self._ast_payload()),
+                    operation=lambda: self._core.execute_grouped_ast(
+                        self._ast_payload()
+                    ),
                 )
             )
         )
@@ -396,15 +439,21 @@ class _SearchBuilderBase:
 
     def filter_logical_id_eq(self, logical_id: str) -> "Self":
         """Filter hits to those with the given logical ID."""
-        return self._with_filter({"type": "filter_logical_id_eq", "logical_id": logical_id})
+        return self._with_filter(
+            {"type": "filter_logical_id_eq", "logical_id": logical_id}
+        )
 
     def filter_source_ref_eq(self, source_ref: str) -> "Self":
         """Filter hits to those with the given source reference."""
-        return self._with_filter({"type": "filter_source_ref_eq", "source_ref": source_ref})
+        return self._with_filter(
+            {"type": "filter_source_ref_eq", "source_ref": source_ref}
+        )
 
     def filter_content_ref_eq(self, content_ref: str) -> "Self":
         """Filter hits to those with the given ``content_ref`` URI."""
-        return self._with_filter({"type": "filter_content_ref_eq", "content_ref": content_ref})
+        return self._with_filter(
+            {"type": "filter_content_ref_eq", "content_ref": content_ref}
+        )
 
     def filter_content_ref_not_null(self) -> "Self":
         """Filter hits to those whose ``content_ref`` is not NULL."""
@@ -412,43 +461,167 @@ class _SearchBuilderBase:
 
     def filter_json_text_eq(self, path: str, value: str) -> "Self":
         """Filter hits where the JSON property at *path* equals *value*."""
-        return self._with_filter({"type": "filter_json_text_eq", "path": path, "value": value})
+        return self._with_filter(
+            {"type": "filter_json_text_eq", "path": path, "value": value}
+        )
 
     def filter_json_bool_eq(self, path: str, value: bool) -> "Self":
         """Filter hits where the JSON boolean at *path* equals *value*."""
-        return self._with_filter({"type": "filter_json_bool_eq", "path": path, "value": value})
+        return self._with_filter(
+            {"type": "filter_json_bool_eq", "path": path, "value": value}
+        )
 
     def filter_json_integer_gt(self, path: str, value: int) -> "Self":
         """Filter hits where the JSON integer at *path* is greater than *value*."""
-        return self._with_filter({"type": "filter_json_integer_gt", "path": path, "value": value})
+        return self._with_filter(
+            {"type": "filter_json_integer_gt", "path": path, "value": value}
+        )
 
     def filter_json_integer_gte(self, path: str, value: int) -> "Self":
         """Filter hits where the JSON integer at *path* is greater than or equal to *value*."""
-        return self._with_filter({"type": "filter_json_integer_gte", "path": path, "value": value})
+        return self._with_filter(
+            {"type": "filter_json_integer_gte", "path": path, "value": value}
+        )
 
     def filter_json_integer_lt(self, path: str, value: int) -> "Self":
         """Filter hits where the JSON integer at *path* is less than *value*."""
-        return self._with_filter({"type": "filter_json_integer_lt", "path": path, "value": value})
+        return self._with_filter(
+            {"type": "filter_json_integer_lt", "path": path, "value": value}
+        )
 
     def filter_json_integer_lte(self, path: str, value: int) -> "Self":
         """Filter hits where the JSON integer at *path* is less than or equal to *value*."""
-        return self._with_filter({"type": "filter_json_integer_lte", "path": path, "value": value})
+        return self._with_filter(
+            {"type": "filter_json_integer_lte", "path": path, "value": value}
+        )
 
     def filter_json_timestamp_gt(self, path: str, value: int) -> "Self":
         """Filter hits where the JSON timestamp at *path* is after *value*."""
-        return self._with_filter({"type": "filter_json_timestamp_gt", "path": path, "value": value})
+        return self._with_filter(
+            {"type": "filter_json_timestamp_gt", "path": path, "value": value}
+        )
 
     def filter_json_timestamp_gte(self, path: str, value: int) -> "Self":
         """Filter hits where the JSON timestamp at *path* is at or after *value*."""
-        return self._with_filter({"type": "filter_json_timestamp_gte", "path": path, "value": value})
+        return self._with_filter(
+            {"type": "filter_json_timestamp_gte", "path": path, "value": value}
+        )
 
     def filter_json_timestamp_lt(self, path: str, value: int) -> "Self":
         """Filter hits where the JSON timestamp at *path* is before *value*."""
-        return self._with_filter({"type": "filter_json_timestamp_lt", "path": path, "value": value})
+        return self._with_filter(
+            {"type": "filter_json_timestamp_lt", "path": path, "value": value}
+        )
 
     def filter_json_timestamp_lte(self, path: str, value: int) -> "Self":
         """Filter hits where the JSON timestamp at *path* is at or before *value*."""
-        return self._with_filter({"type": "filter_json_timestamp_lte", "path": path, "value": value})
+        return self._with_filter(
+            {"type": "filter_json_timestamp_lte", "path": path, "value": value}
+        )
+
+    def _fused_validation_kind(self, method: str) -> str:
+        """Resolve the kind currently bound to this builder for fusion validation.
+
+        Mirrors the Rust ``validate_fusable_property_path`` helper. For
+        ``TextSearchBuilder`` the kind is always ``self._root_kind``.
+        ``FallbackSearchBuilder`` overrides this to walk the filter chain
+        for the most recent ``filter_kind_eq``.
+        """
+        if not self._root_kind:
+            raise BuilderValidationError(
+                f"filter_json_fused_* methods require a specific kind; "
+                f"provide a root kind via Engine.nodes(...) or call "
+                f"filter_kind_eq(..) before {method!r}, or switch to the "
+                f"post-filter filter_json_* family"
+            )
+        return self._root_kind
+
+    def _validate_fused_property_path(self, kind: str, path: str, method: str) -> None:
+        """Client-side fusion gate mirroring the Rust builder contract.
+
+        Raises :class:`BuilderValidationError` if no FTS property schema is
+        registered for *kind* or if *path* is not included in the schema.
+        """
+        try:
+            schema_json = self._core.describe_fts_property_schema(kind)
+        except Exception as exc:  # pragma: no cover - defensive
+            raise BuilderValidationError(
+                f"kind {kind!r} has no registered property-FTS schema; "
+                f"register one with admin.register_fts_property_schema(..) "
+                f"before using filter_json_fused_* methods, or use the "
+                f"post-filter filter_json_* family for non-fused semantics"
+            ) from exc
+        try:
+            schema = json.loads(schema_json)
+        except json.JSONDecodeError as exc:  # pragma: no cover - defensive
+            raise BuilderValidationError(
+                f"could not decode property-FTS schema payload for kind {kind!r}"
+            ) from exc
+        if not schema:
+            raise BuilderValidationError(
+                f"kind {kind!r} has no registered property-FTS schema; "
+                f"register one with admin.register_fts_property_schema(..) "
+                f"before using filter_json_fused_* methods, or use the "
+                f"post-filter filter_json_* family for non-fused semantics"
+            )
+        paths = schema.get("property_paths") or []
+        if path not in paths:
+            raise BuilderValidationError(
+                f"kind {kind!r} has a registered property-FTS schema but "
+                f"path {path!r} is not in its include list; add the path "
+                f"to the schema or use the post-filter filter_json_* family"
+            )
+
+    def filter_json_fused_text_eq(self, path: str, value: str) -> "Self":
+        """Filter hits where the JSON text property at *path* equals *value*.
+
+        Pushes the predicate into the inner search CTE so the CTE LIMIT
+        applies *after* the filter.
+
+        Raises :class:`BuilderValidationError` if the bound kind has no
+        registered property-FTS schema or the schema does not cover *path*.
+        """
+        kind = self._fused_validation_kind("filter_json_fused_text_eq")
+        self._validate_fused_property_path(kind, path, "filter_json_fused_text_eq")
+        return self._with_filter(
+            {"type": "filter_json_fused_text_eq", "path": path, "value": value}
+        )
+
+    def filter_json_fused_timestamp_gt(self, path: str, value: int) -> "Self":
+        """Fused JSON-timestamp strict-greater filter. See :meth:`filter_json_fused_text_eq`."""
+        kind = self._fused_validation_kind("filter_json_fused_timestamp_gt")
+        self._validate_fused_property_path(kind, path, "filter_json_fused_timestamp_gt")
+        return self._with_filter(
+            {"type": "filter_json_fused_timestamp_gt", "path": path, "value": value}
+        )
+
+    def filter_json_fused_timestamp_gte(self, path: str, value: int) -> "Self":
+        """Fused JSON-timestamp greater-or-equal filter. See :meth:`filter_json_fused_text_eq`."""
+        kind = self._fused_validation_kind("filter_json_fused_timestamp_gte")
+        self._validate_fused_property_path(
+            kind, path, "filter_json_fused_timestamp_gte"
+        )
+        return self._with_filter(
+            {"type": "filter_json_fused_timestamp_gte", "path": path, "value": value}
+        )
+
+    def filter_json_fused_timestamp_lt(self, path: str, value: int) -> "Self":
+        """Fused JSON-timestamp strict-less filter. See :meth:`filter_json_fused_text_eq`."""
+        kind = self._fused_validation_kind("filter_json_fused_timestamp_lt")
+        self._validate_fused_property_path(kind, path, "filter_json_fused_timestamp_lt")
+        return self._with_filter(
+            {"type": "filter_json_fused_timestamp_lt", "path": path, "value": value}
+        )
+
+    def filter_json_fused_timestamp_lte(self, path: str, value: int) -> "Self":
+        """Fused JSON-timestamp less-or-equal filter. See :meth:`filter_json_fused_text_eq`."""
+        kind = self._fused_validation_kind("filter_json_fused_timestamp_lte")
+        self._validate_fused_property_path(
+            kind, path, "filter_json_fused_timestamp_lte"
+        )
+        return self._with_filter(
+            {"type": "filter_json_fused_timestamp_lte", "path": path, "value": value}
+        )
 
     def _execute(
         self,
@@ -528,6 +701,29 @@ class FallbackSearchBuilder(_SearchBuilderBase):
     """
 
     _mode = "fallback_search"
+
+    def _fused_validation_kind(self, method: str) -> str:
+        """Override for FallbackSearchBuilder: resolve kind from filter chain.
+
+        The fallback builder is kind-agnostic by default (``root_kind=""``).
+        Fusion requires a concrete kind to look up an FTS property schema,
+        so walk the accumulated filter chain for the most recent
+        ``filter_kind_eq`` step. If neither a root kind nor a chained
+        ``filter_kind_eq`` is present, raise
+        :class:`BuilderValidationError`.
+        """
+        if self._root_kind:
+            return self._root_kind
+        for step in reversed(self._filters):
+            if step.get("type") == "filter_kind_eq":
+                kind = step.get("kind")
+                if kind:
+                    return kind
+        raise BuilderValidationError(
+            f"filter_json_fused_* methods require a specific kind; call "
+            f"filter_kind_eq(..) before {method!r} or switch to the "
+            f"post-filter filter_json_* family"
+        )
 
     def _clone(self, **overrides) -> "Self":
         # Override the base clone to thread `relaxed_query` through, which

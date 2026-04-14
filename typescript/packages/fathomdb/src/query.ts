@@ -14,7 +14,7 @@ import {
   type RawJson,
   type SearchRows,
 } from "./types.js";
-import { callNative, parseNativeJson } from "./errors.js";
+import { BuilderValidationError, callNative, parseNativeJson } from "./errors.js";
 import { runWithFeedback } from "./feedback.js";
 import type { NativeEngineCore } from "./native.js";
 import type { FeedbackConfig, ProgressCallback } from "./types.js";
@@ -409,6 +409,70 @@ export class Query {
 
 type SearchFilter = Record<string, RawJson>;
 
+/**
+ * Shared client-side fusion gate for ``filter_json_fused_*`` methods.
+ *
+ * Mirrors the Rust ``validate_fusable_property_path`` helper. Resolves
+ * the FTS property schema for ``kind`` via
+ * ``core.describeFtsPropertySchema`` and raises
+ * :class:`BuilderValidationError` if the schema is missing or if
+ * ``path`` is not included in the registered paths.
+ */
+function validateFusablePropertyPath(
+  core: NativeEngineCore,
+  kind: string,
+  path: string,
+  method: string,
+): void {
+  if (!kind) {
+    throw new BuilderValidationError(
+      `filter_json_fused_* methods require a specific kind; provide a root kind via Engine.nodes(...) or call filterKindEq(..) before ${method}, or switch to the post-filter filterJson* family`,
+    );
+  }
+  let schemaJson: string;
+  try {
+    schemaJson = callNative(() => core.describeFtsPropertySchema(kind));
+  } catch {
+    throw new BuilderValidationError(
+      `kind "${kind}" has no registered property-FTS schema; register one with admin.registerFtsPropertySchema(..) before using filter_json_fused_* methods, or use the post-filter filterJson* family for non-fused semantics`,
+    );
+  }
+  let schema: { property_paths?: string[] } | null;
+  try {
+    schema = JSON.parse(schemaJson) as { property_paths?: string[] } | null;
+  } catch {
+    throw new BuilderValidationError(
+      `could not decode property-FTS schema payload for kind "${kind}"`,
+    );
+  }
+  if (!schema) {
+    throw new BuilderValidationError(
+      `kind "${kind}" has no registered property-FTS schema; register one with admin.registerFtsPropertySchema(..) before using filter_json_fused_* methods, or use the post-filter filterJson* family for non-fused semantics`,
+    );
+  }
+  const paths = schema.property_paths ?? [];
+  if (!paths.includes(path)) {
+    throw new BuilderValidationError(
+      `kind "${kind}" has a registered property-FTS schema but path "${path}" is not in its include list; add the path to the schema or use the post-filter filterJson* family`,
+    );
+  }
+}
+
+/**
+ * Resolve the kind for fusion validation on a kind-agnostic builder
+ * (``FallbackSearchBuilder``) by walking the accumulated filter chain
+ * for the most recent ``filter_kind_eq`` entry.
+ */
+function resolveKindFromFilters(filters: SearchFilter[]): string | null {
+  for (let i = filters.length - 1; i >= 0; i -= 1) {
+    const step = filters[i];
+    if (step?.type === "filter_kind_eq" && typeof step.kind === "string") {
+      return step.kind;
+    }
+  }
+  return null;
+}
+
 type SearchMode = "search" | "text_search" | "fallback_search";
 
 function buildSearchRequest(args: {
@@ -583,6 +647,43 @@ export class SearchBuilder {
   }
 
   /**
+   * Filter hits where the JSON text property at `path` equals `value`,
+   * pushing the predicate into the inner search CTE so the CTE LIMIT
+   * applies after the filter runs.
+   *
+   * @throws {BuilderValidationError} If the root kind has no
+   *   registered property-FTS schema or the schema does not cover `path`.
+   */
+  filterJsonFusedTextEq(path: string, value: string): SearchBuilder {
+    validateFusablePropertyPath(this.#core, this.#rootKind, path, "filterJsonFusedTextEq");
+    return this.#withFilter({ type: "filter_json_fused_text_eq", path, value });
+  }
+
+  /** Filter hits where the JSON timestamp at `path` is strictly greater than `value`, with fusion semantics. */
+  filterJsonFusedTimestampGt(path: string, value: number): SearchBuilder {
+    validateFusablePropertyPath(this.#core, this.#rootKind, path, "filterJsonFusedTimestampGt");
+    return this.#withFilter({ type: "filter_json_fused_timestamp_gt", path, value });
+  }
+
+  /** Filter hits where the JSON timestamp at `path` is at or after `value`, with fusion semantics. */
+  filterJsonFusedTimestampGte(path: string, value: number): SearchBuilder {
+    validateFusablePropertyPath(this.#core, this.#rootKind, path, "filterJsonFusedTimestampGte");
+    return this.#withFilter({ type: "filter_json_fused_timestamp_gte", path, value });
+  }
+
+  /** Filter hits where the JSON timestamp at `path` is strictly less than `value`, with fusion semantics. */
+  filterJsonFusedTimestampLt(path: string, value: number): SearchBuilder {
+    validateFusablePropertyPath(this.#core, this.#rootKind, path, "filterJsonFusedTimestampLt");
+    return this.#withFilter({ type: "filter_json_fused_timestamp_lt", path, value });
+  }
+
+  /** Filter hits where the JSON timestamp at `path` is at or before `value`, with fusion semantics. */
+  filterJsonFusedTimestampLte(path: string, value: number): SearchBuilder {
+    validateFusablePropertyPath(this.#core, this.#rootKind, path, "filterJsonFusedTimestampLte");
+    return this.#withFilter({ type: "filter_json_fused_timestamp_lte", path, value });
+  }
+
+  /**
    * Execute the search and return the matched rows.
    *
    * @param progressCallback - Optional callback invoked with feedback events.
@@ -738,6 +839,42 @@ export class TextSearchBuilder {
   /** Filter hits where the JSON timestamp at `path` is at or before `value`. */
   filterJsonTimestampLte(path: string, value: number): TextSearchBuilder {
     return this.#withFilter({ type: "filter_json_timestamp_lte", path, value });
+  }
+
+  /**
+   * Filter hits where the JSON text property at `path` equals `value`,
+   * with fusion semantics.
+   *
+   * @throws {BuilderValidationError} If the root kind has no registered
+   *   property-FTS schema or the schema does not cover `path`.
+   */
+  filterJsonFusedTextEq(path: string, value: string): TextSearchBuilder {
+    validateFusablePropertyPath(this.#core, this.#rootKind, path, "filterJsonFusedTextEq");
+    return this.#withFilter({ type: "filter_json_fused_text_eq", path, value });
+  }
+
+  /** Filter hits where the JSON timestamp at `path` is strictly greater than `value`, with fusion semantics. */
+  filterJsonFusedTimestampGt(path: string, value: number): TextSearchBuilder {
+    validateFusablePropertyPath(this.#core, this.#rootKind, path, "filterJsonFusedTimestampGt");
+    return this.#withFilter({ type: "filter_json_fused_timestamp_gt", path, value });
+  }
+
+  /** Filter hits where the JSON timestamp at `path` is at or after `value`, with fusion semantics. */
+  filterJsonFusedTimestampGte(path: string, value: number): TextSearchBuilder {
+    validateFusablePropertyPath(this.#core, this.#rootKind, path, "filterJsonFusedTimestampGte");
+    return this.#withFilter({ type: "filter_json_fused_timestamp_gte", path, value });
+  }
+
+  /** Filter hits where the JSON timestamp at `path` is strictly less than `value`, with fusion semantics. */
+  filterJsonFusedTimestampLt(path: string, value: number): TextSearchBuilder {
+    validateFusablePropertyPath(this.#core, this.#rootKind, path, "filterJsonFusedTimestampLt");
+    return this.#withFilter({ type: "filter_json_fused_timestamp_lt", path, value });
+  }
+
+  /** Filter hits where the JSON timestamp at `path` is at or before `value`, with fusion semantics. */
+  filterJsonFusedTimestampLte(path: string, value: number): TextSearchBuilder {
+    validateFusablePropertyPath(this.#core, this.#rootKind, path, "filterJsonFusedTimestampLte");
+    return this.#withFilter({ type: "filter_json_fused_timestamp_lte", path, value });
   }
 
   /**
@@ -901,6 +1038,66 @@ export class FallbackSearchBuilder {
   /** Filter hits where the JSON timestamp at `path` is at or before `value`. */
   filterJsonTimestampLte(path: string, value: number): FallbackSearchBuilder {
     return this.#withFilter({ type: "filter_json_timestamp_lte", path, value });
+  }
+
+  /**
+   * Resolve the fusion kind for this kind-agnostic builder. Uses
+   * ``rootKind`` if present, otherwise walks the accumulated filter
+   * chain for the most recent ``filterKindEq``.
+   */
+  #fusedKind(method: string): string {
+    if (this.#rootKind) {
+      return this.#rootKind;
+    }
+    const fromFilters = resolveKindFromFilters(this.#filters);
+    if (fromFilters) {
+      return fromFilters;
+    }
+    throw new BuilderValidationError(
+      `filter_json_fused_* methods require a specific kind; call filterKindEq(..) before ${method} or switch to the post-filter filterJson* family`,
+    );
+  }
+
+  /**
+   * Filter hits where the JSON text property at `path` equals `value`,
+   * with fusion semantics.
+   *
+   * @throws {BuilderValidationError} If no kind has been bound on this
+   *   builder, or the bound kind has no registered property-FTS schema,
+   *   or the schema does not cover `path`.
+   */
+  filterJsonFusedTextEq(path: string, value: string): FallbackSearchBuilder {
+    const kind = this.#fusedKind("filterJsonFusedTextEq");
+    validateFusablePropertyPath(this.#core, kind, path, "filterJsonFusedTextEq");
+    return this.#withFilter({ type: "filter_json_fused_text_eq", path, value });
+  }
+
+  /** Filter hits where the JSON timestamp at `path` is strictly greater than `value`, with fusion semantics. */
+  filterJsonFusedTimestampGt(path: string, value: number): FallbackSearchBuilder {
+    const kind = this.#fusedKind("filterJsonFusedTimestampGt");
+    validateFusablePropertyPath(this.#core, kind, path, "filterJsonFusedTimestampGt");
+    return this.#withFilter({ type: "filter_json_fused_timestamp_gt", path, value });
+  }
+
+  /** Filter hits where the JSON timestamp at `path` is at or after `value`, with fusion semantics. */
+  filterJsonFusedTimestampGte(path: string, value: number): FallbackSearchBuilder {
+    const kind = this.#fusedKind("filterJsonFusedTimestampGte");
+    validateFusablePropertyPath(this.#core, kind, path, "filterJsonFusedTimestampGte");
+    return this.#withFilter({ type: "filter_json_fused_timestamp_gte", path, value });
+  }
+
+  /** Filter hits where the JSON timestamp at `path` is strictly less than `value`, with fusion semantics. */
+  filterJsonFusedTimestampLt(path: string, value: number): FallbackSearchBuilder {
+    const kind = this.#fusedKind("filterJsonFusedTimestampLt");
+    validateFusablePropertyPath(this.#core, kind, path, "filterJsonFusedTimestampLt");
+    return this.#withFilter({ type: "filter_json_fused_timestamp_lt", path, value });
+  }
+
+  /** Filter hits where the JSON timestamp at `path` is at or before `value`, with fusion semantics. */
+  filterJsonFusedTimestampLte(path: string, value: number): FallbackSearchBuilder {
+    const kind = this.#fusedKind("filterJsonFusedTimestampLte");
+    validateFusablePropertyPath(this.#core, kind, path, "filterJsonFusedTimestampLte");
+    return this.#withFilter({ type: "filter_json_fused_timestamp_lte", path, value });
   }
 
   /**

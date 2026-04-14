@@ -4,6 +4,53 @@ use crate::{
     compile_query,
 };
 
+/// Errors raised by tethered search builders when a caller opts into a
+/// fused filter variant whose preconditions are not satisfied.
+///
+/// These errors are surfaced at filter-add time (before any SQL runs)
+/// so developers who register a property-FTS schema for the kind see the
+/// fused method succeed, while callers who forgot to register a schema
+/// get a precise, actionable error instead of silent post-filter
+/// degradation. See the Memex near-term roadmap item 7 and
+/// `.claude/memory/project_fused_json_filters_contract.md` for the full
+/// contract.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum BuilderValidationError {
+    /// The caller invoked a `filter_json_fused_*` method on a tethered
+    /// builder that has no registered property-FTS schema for the kind
+    /// it targets.
+    #[error(
+        "kind {kind:?} has no registered property-FTS schema; register one with admin.register_fts_property_schema(..) before using filter_json_fused_* methods, or use the post-filter filter_json_* family for non-fused semantics"
+    )]
+    MissingPropertyFtsSchema {
+        /// Node kind the builder was targeting.
+        kind: String,
+    },
+    /// The caller invoked a `filter_json_fused_*` method with a path
+    /// that is not covered by the registered property-FTS schema for the
+    /// kind.
+    #[error(
+        "kind {kind:?} has a registered property-FTS schema but path {path:?} is not in its include list; add the path to the schema or use the post-filter filter_json_* family"
+    )]
+    PathNotIndexed {
+        /// Node kind the builder was targeting.
+        kind: String,
+        /// Path the caller attempted to filter on.
+        path: String,
+    },
+    /// The caller invoked a `filter_json_fused_*` method on a tethered
+    /// builder that has not been bound to a specific kind (for example,
+    /// `FallbackSearchBuilder` without a preceding `filter_kind_eq`).
+    /// The fusion gate cannot resolve a schema without a kind.
+    #[error(
+        "filter_json_fused_* methods require a specific kind; call filter_kind_eq(..) before {method:?} or switch to the post-filter filter_json_* family"
+    )]
+    KindRequiredForFusion {
+        /// Name of the fused filter method that was called.
+        method: String,
+    },
+}
+
 /// Fluent builder for constructing a [`QueryAst`].
 ///
 /// Start with [`QueryBuilder::nodes`] and chain filtering, traversal, and
@@ -216,6 +263,106 @@ impl QueryBuilder {
     #[must_use]
     pub fn filter_json_timestamp_lte(self, path: impl Into<String>, value: i64) -> Self {
         self.filter_json_integer_lte(path, value)
+    }
+
+    /// Append a fused JSON text-equality predicate without validating
+    /// whether the caller has a property-FTS schema for the kind.
+    ///
+    /// Callers must have already validated the fusion gate; the
+    /// tethered [`crate::QueryBuilder`] has no engine handle to consult
+    /// a schema. Mis-use — calling this without prior schema
+    /// validation — produces SQL that pushes a `json_extract` predicate
+    /// into the search CTE's inner WHERE clause. That is valid SQL but
+    /// defeats the "developer opt-in" contract.
+    #[must_use]
+    pub fn filter_json_fused_text_eq_unchecked(
+        mut self,
+        path: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Self {
+        self.ast
+            .steps
+            .push(QueryStep::Filter(Predicate::JsonPathFusedEq {
+                path: path.into(),
+                value: value.into(),
+            }));
+        self
+    }
+
+    /// Append a fused JSON timestamp-greater-than predicate without
+    /// validating the fusion gate. See
+    /// [`Self::filter_json_fused_text_eq_unchecked`] for the contract.
+    #[must_use]
+    pub fn filter_json_fused_timestamp_gt_unchecked(
+        mut self,
+        path: impl Into<String>,
+        value: i64,
+    ) -> Self {
+        self.ast
+            .steps
+            .push(QueryStep::Filter(Predicate::JsonPathFusedTimestampCmp {
+                path: path.into(),
+                op: ComparisonOp::Gt,
+                value,
+            }));
+        self
+    }
+
+    /// Append a fused JSON timestamp-greater-or-equal predicate without
+    /// validating the fusion gate. See
+    /// [`Self::filter_json_fused_text_eq_unchecked`] for the contract.
+    #[must_use]
+    pub fn filter_json_fused_timestamp_gte_unchecked(
+        mut self,
+        path: impl Into<String>,
+        value: i64,
+    ) -> Self {
+        self.ast
+            .steps
+            .push(QueryStep::Filter(Predicate::JsonPathFusedTimestampCmp {
+                path: path.into(),
+                op: ComparisonOp::Gte,
+                value,
+            }));
+        self
+    }
+
+    /// Append a fused JSON timestamp-less-than predicate without
+    /// validating the fusion gate. See
+    /// [`Self::filter_json_fused_text_eq_unchecked`] for the contract.
+    #[must_use]
+    pub fn filter_json_fused_timestamp_lt_unchecked(
+        mut self,
+        path: impl Into<String>,
+        value: i64,
+    ) -> Self {
+        self.ast
+            .steps
+            .push(QueryStep::Filter(Predicate::JsonPathFusedTimestampCmp {
+                path: path.into(),
+                op: ComparisonOp::Lt,
+                value,
+            }));
+        self
+    }
+
+    /// Append a fused JSON timestamp-less-or-equal predicate without
+    /// validating the fusion gate. See
+    /// [`Self::filter_json_fused_text_eq_unchecked`] for the contract.
+    #[must_use]
+    pub fn filter_json_fused_timestamp_lte_unchecked(
+        mut self,
+        path: impl Into<String>,
+        value: i64,
+    ) -> Self {
+        self.ast
+            .steps
+            .push(QueryStep::Filter(Predicate::JsonPathFusedTimestampCmp {
+                path: path.into(),
+                op: ComparisonOp::Lte,
+                value,
+            }));
+        self
     }
 
     /// Add an expansion slot that traverses edges of the given label for each root result.

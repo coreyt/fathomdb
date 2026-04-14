@@ -744,6 +744,32 @@ impl ExecutionCoordinator {
                     fused_clauses
                         .push_str("\n                      AND src.content_ref IS NOT NULL");
                 }
+                Predicate::JsonPathFusedEq { path, value } => {
+                    binds.push(BindValue::Text(path.clone()));
+                    let path_idx = binds.len();
+                    binds.push(BindValue::Text(value.clone()));
+                    let value_idx = binds.len();
+                    let _ = write!(
+                        fused_clauses,
+                        "\n                      AND json_extract(src.properties, ?{path_idx}) = ?{value_idx}"
+                    );
+                }
+                Predicate::JsonPathFusedTimestampCmp { path, op, value } => {
+                    binds.push(BindValue::Text(path.clone()));
+                    let path_idx = binds.len();
+                    binds.push(BindValue::Integer(*value));
+                    let value_idx = binds.len();
+                    let operator = match op {
+                        ComparisonOp::Gt => ">",
+                        ComparisonOp::Gte => ">=",
+                        ComparisonOp::Lt => "<",
+                        ComparisonOp::Lte => "<=",
+                    };
+                    let _ = write!(
+                        fused_clauses,
+                        "\n                      AND json_extract(src.properties, ?{path_idx}) {operator} ?{value_idx}"
+                    );
+                }
                 Predicate::JsonPathEq { .. } | Predicate::JsonPathCompare { .. } => {
                     // JSON predicates are residual; compile_vector_search
                     // guarantees they never appear here, but stay defensive.
@@ -785,7 +811,9 @@ impl ExecutionCoordinator {
                 | Predicate::LogicalIdEq(_)
                 | Predicate::SourceRefEq(_)
                 | Predicate::ContentRefEq(_)
-                | Predicate::ContentRefNotNull => {
+                | Predicate::ContentRefNotNull
+                | Predicate::JsonPathFusedEq { .. }
+                | Predicate::JsonPathFusedTimestampCmp { .. } => {
                     // Fusable predicates live in fused_clauses above.
                 }
             }
@@ -1255,6 +1283,32 @@ impl ExecutionCoordinator {
                 Predicate::ContentRefNotNull => {
                     fused_clauses.push_str("\n                  AND u.content_ref IS NOT NULL");
                 }
+                Predicate::JsonPathFusedEq { path, value } => {
+                    binds.push(BindValue::Text(path.clone()));
+                    let path_idx = binds.len();
+                    binds.push(BindValue::Text(value.clone()));
+                    let value_idx = binds.len();
+                    let _ = write!(
+                        fused_clauses,
+                        "\n                  AND json_extract(u.properties, ?{path_idx}) = ?{value_idx}"
+                    );
+                }
+                Predicate::JsonPathFusedTimestampCmp { path, op, value } => {
+                    binds.push(BindValue::Text(path.clone()));
+                    let path_idx = binds.len();
+                    binds.push(BindValue::Integer(*value));
+                    let value_idx = binds.len();
+                    let operator = match op {
+                        ComparisonOp::Gt => ">",
+                        ComparisonOp::Gte => ">=",
+                        ComparisonOp::Lt => "<",
+                        ComparisonOp::Lte => "<=",
+                    };
+                    let _ = write!(
+                        fused_clauses,
+                        "\n                  AND json_extract(u.properties, ?{path_idx}) {operator} ?{value_idx}"
+                    );
+                }
                 Predicate::JsonPathEq { .. } | Predicate::JsonPathCompare { .. } => {
                     // Should be in residual_filters; compile_search guarantees
                     // this, but stay defensive.
@@ -1295,7 +1349,9 @@ impl ExecutionCoordinator {
                 | Predicate::LogicalIdEq(_)
                 | Predicate::SourceRefEq(_)
                 | Predicate::ContentRefEq(_)
-                | Predicate::ContentRefNotNull => {
+                | Predicate::ContentRefNotNull
+                | Predicate::JsonPathFusedEq { .. }
+                | Predicate::JsonPathFusedTimestampCmp { .. } => {
                     // Fusable predicates live in fused_clauses; compile_search
                     // partitions them out of residual_filters.
                 }

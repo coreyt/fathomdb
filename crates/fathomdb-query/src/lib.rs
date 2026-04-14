@@ -10,7 +10,7 @@ mod text_query;
 pub use ast::{
     ComparisonOp, ExpansionSlot, Predicate, QueryAst, QueryStep, ScalarValue, TraverseDirection,
 };
-pub use builder::QueryBuilder;
+pub use builder::{BuilderValidationError, QueryBuilder};
 #[doc(hidden)]
 pub use compile::compile_search_plan;
 pub use compile::{

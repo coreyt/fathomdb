@@ -115,7 +115,7 @@ fn append_fusable_clause(
     binds: &mut Vec<BindValue>,
     alias: &str,
     predicate: &Predicate,
-) {
+) -> Result<(), CompileError> {
     match predicate {
         Predicate::KindEq(kind) => {
             binds.push(BindValue::Text(kind.clone()));
@@ -152,10 +152,39 @@ fn append_fusable_clause(
                 "\n                          AND {alias}.content_ref IS NOT NULL"
             );
         }
+        Predicate::JsonPathFusedEq { path, value } => {
+            validate_json_path(path)?;
+            binds.push(BindValue::Text(path.clone()));
+            let path_index = binds.len();
+            binds.push(BindValue::Text(value.clone()));
+            let value_index = binds.len();
+            let _ = write!(
+                sql,
+                "\n                          AND json_extract({alias}.properties, ?{path_index}) = ?{value_index}"
+            );
+        }
+        Predicate::JsonPathFusedTimestampCmp { path, op, value } => {
+            validate_json_path(path)?;
+            binds.push(BindValue::Text(path.clone()));
+            let path_index = binds.len();
+            binds.push(BindValue::Integer(*value));
+            let value_index = binds.len();
+            let operator = match op {
+                ComparisonOp::Gt => ">",
+                ComparisonOp::Gte => ">=",
+                ComparisonOp::Lt => "<",
+                ComparisonOp::Lte => "<=",
+            };
+            let _ = write!(
+                sql,
+                "\n                          AND json_extract({alias}.properties, ?{path_index}) {operator} ?{value_index}"
+            );
+        }
         Predicate::JsonPathEq { .. } | Predicate::JsonPathCompare { .. } => {
             unreachable!("append_fusable_clause received a residual predicate");
         }
     }
+    Ok(())
 }
 
 const MAX_BIND_PARAMETERS: usize = 15;
@@ -307,7 +336,7 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
                     WHERE src.kind = ?2",
             );
             for predicate in &fusable_filters {
-                append_fusable_clause(&mut sql, &mut binds, "src", predicate);
+                append_fusable_clause(&mut sql, &mut binds, "src", predicate)?;
             }
             sql.push_str("\n                )");
             sql
@@ -359,7 +388,7 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
                     WHERE 1 = 1",
             );
             for predicate in &fusable_filters {
-                append_fusable_clause(&mut sql, &mut binds, "n", predicate);
+                append_fusable_clause(&mut sql, &mut binds, "n", predicate)?;
             }
             let _ = write!(
                 &mut sql,
@@ -450,6 +479,34 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
                         }
                         Predicate::KindEq(_) => {
                             // Already filtered by ast.root_kind above.
+                        }
+                        Predicate::JsonPathFusedEq { path, value } => {
+                            validate_json_path(path)?;
+                            binds.push(BindValue::Text(path.clone()));
+                            let path_index = binds.len();
+                            binds.push(BindValue::Text(value.clone()));
+                            let value_index = binds.len();
+                            let _ = write!(
+                                &mut sql,
+                                "\n                      AND json_extract(src.properties, ?{path_index}) = ?{value_index}"
+                            );
+                        }
+                        Predicate::JsonPathFusedTimestampCmp { path, op, value } => {
+                            validate_json_path(path)?;
+                            binds.push(BindValue::Text(path.clone()));
+                            let path_index = binds.len();
+                            binds.push(BindValue::Integer(*value));
+                            let value_index = binds.len();
+                            let operator = match op {
+                                ComparisonOp::Gt => ">",
+                                ComparisonOp::Gte => ">=",
+                                ComparisonOp::Lt => "<",
+                                ComparisonOp::Lte => "<=",
+                            };
+                            let _ = write!(
+                                &mut sql,
+                                "\n                      AND json_extract(src.properties, ?{path_index}) {operator} ?{value_index}"
+                            );
                         }
                     }
                 }
@@ -568,7 +625,9 @@ WHERE 1 = 1",
                 | Predicate::LogicalIdEq(_)
                 | Predicate::SourceRefEq(_)
                 | Predicate::ContentRefEq(_)
-                | Predicate::ContentRefNotNull => {
+                | Predicate::ContentRefNotNull
+                | Predicate::JsonPathFusedEq { .. }
+                | Predicate::JsonPathFusedTimestampCmp { .. } => {
                     // Fusable — already injected into base_candidates by
                     // `partition_search_filters`.
                 }
@@ -1627,6 +1686,118 @@ mod tests {
                 "Phase 12 v1 must always leave the vector branch empty (query = {query:?})"
             );
         }
+    }
+
+    #[test]
+    fn fused_json_text_eq_pushes_into_search_cte_inner_where() {
+        // Item 7 contract: a fused JSON text-eq predicate on a text search
+        // is pushed into the `base_candidates` CTE inner WHERE clause so the
+        // CTE LIMIT applies *after* the filter runs. Compare to
+        // `filter_json_text_eq` which lands in the outer WHERE as residual.
+        let mut ast = QueryBuilder::nodes("Goal")
+            .text_search("budget", 5)
+            .into_ast();
+        ast.steps.push(crate::QueryStep::Filter(
+            crate::Predicate::JsonPathFusedEq {
+                path: "$.status".to_owned(),
+                value: "active".to_owned(),
+            },
+        ));
+        let compiled = compile_query(&ast).expect("compile");
+
+        // Inner CTE WHERE (under the `n` alias on the chunk/property UNION).
+        assert!(
+            compiled.sql.contains("AND json_extract(n.properties, ?"),
+            "fused json text-eq must land on n.properties inside the CTE; got {}",
+            compiled.sql
+        );
+        // It must NOT also appear in the outer `h.properties` / flat
+        // projection WHERE — the fusable partition removes it.
+        assert!(
+            !compiled.sql.contains("h.properties"),
+            "sql should not mention h.properties (only compiled_search uses that alias)"
+        );
+    }
+
+    #[test]
+    fn fused_json_timestamp_cmp_emits_each_operator() {
+        for (op, op_str) in [
+            (crate::ComparisonOp::Gt, ">"),
+            (crate::ComparisonOp::Gte, ">="),
+            (crate::ComparisonOp::Lt, "<"),
+            (crate::ComparisonOp::Lte, "<="),
+        ] {
+            let mut ast = QueryBuilder::nodes("Goal")
+                .text_search("budget", 5)
+                .into_ast();
+            ast.steps.push(crate::QueryStep::Filter(
+                crate::Predicate::JsonPathFusedTimestampCmp {
+                    path: "$.written_at".to_owned(),
+                    op,
+                    value: 1_700_000_000,
+                },
+            ));
+            let compiled = compile_query(&ast).expect("compile");
+            let needle = "json_extract(n.properties, ?";
+            assert!(
+                compiled.sql.contains(needle) && compiled.sql.contains(op_str),
+                "operator {op_str} must appear in emitted SQL for fused timestamp cmp"
+            );
+        }
+    }
+
+    #[test]
+    fn non_fused_json_filters_still_emit_outer_where() {
+        // Regression guard: the existing non-fused filter_json_* family
+        // is unchanged — its predicates continue to be classified as
+        // residual on search-driven paths and emitted against the outer
+        // `n.properties` WHERE clause (which is textually identical to
+        // the inner CTE emission; the difference is *where* in the SQL
+        // it lives).
+        let compiled = compile_query(
+            &QueryBuilder::nodes("Goal")
+                .text_search("budget", 5)
+                .filter_json_text_eq("$.status", "active")
+                .into_ast(),
+        )
+        .expect("compile");
+
+        // The residual emission lives in the outer SELECT's WHERE and
+        // targets `n.properties`. Fusion would instead prefix the line
+        // with `                          AND` (26 spaces) inside the
+        // CTE. We assert the residual form here by checking the
+        // leading whitespace on the emitted clause matches the outer
+        // WHERE indentation ("\n  AND ") rather than the CTE one.
+        assert!(
+            compiled
+                .sql
+                .contains("\n  AND json_extract(n.properties, ?"),
+            "non-fused filter_json_text_eq must emit into outer WHERE, got {}",
+            compiled.sql
+        );
+    }
+
+    #[test]
+    fn fused_json_text_eq_pushes_into_vector_cte_inner_where() {
+        // Mirror of the text-search case for the vector driving path:
+        // the fused JSON text-eq predicate must land inside the
+        // `base_candidates` CTE aliased to `src`.
+        let mut ast = QueryBuilder::nodes("Goal")
+            .vector_search("budget", 5)
+            .into_ast();
+        ast.steps.push(crate::QueryStep::Filter(
+            crate::Predicate::JsonPathFusedEq {
+                path: "$.status".to_owned(),
+                value: "active".to_owned(),
+            },
+        ));
+        let compiled = compile_query(&ast).expect("compile");
+        assert_eq!(compiled.driving_table, DrivingTable::VecNodes);
+        assert!(
+            compiled.sql.contains("AND json_extract(src.properties, ?"),
+            "fused json text-eq on vector path must land on src.properties, got {}",
+            compiled.sql
+        );
     }
 
     #[test]
