@@ -27,7 +27,6 @@ const (
 	CommandRebuildProjections            Command = "rebuild_projections"
 	CommandRebuildMissing                Command = "rebuild_missing_projections"
 	CommandRestoreVector                 Command = "restore_vector_profiles"
-	CommandRegenerateVectors             Command = "regenerate_vector_embeddings"
 	CommandRestoreLogicalID              Command = "restore_logical_id"
 	CommandPurgeLogicalID                Command = "purge_logical_id"
 	CommandTraceSource                   Command = "trace_source"
@@ -73,7 +72,6 @@ type Request struct {
 	DestinationPath       string                  `json:"destination_path,omitempty"`
 	ForceCheckpoint       *bool                   `json:"force_checkpoint,omitempty"`
 	ConfigPath            string                  `json:"config_path,omitempty"`
-	VectorGeneratorPolicy *VectorGeneratorPolicy  `json:"vector_generator_policy,omitempty"`
 	OperationalCollection *OperationalCollection  `json:"operational_collection,omitempty"`
 	OperationalRead       *OperationalReadRequest `json:"operational_read,omitempty"`
 }
@@ -107,36 +105,6 @@ type OperationalReadRequest struct {
 	CollectionName string                    `json:"collection_name"`
 	Filters        []OperationalFilterClause `json:"filters"`
 	Limit          int                       `json:"limit,omitempty"`
-}
-
-// VectorGeneratorPolicy constrains how the Rust engine spawns external vector
-// generator executables during embedding regeneration.
-type VectorGeneratorPolicy struct {
-	TimeoutMS                     uint64   `json:"timeout_ms"`
-	MaxStdoutBytes                int      `json:"max_stdout_bytes"`
-	MaxStderrBytes                int      `json:"max_stderr_bytes"`
-	MaxInputBytes                 int      `json:"max_input_bytes"`
-	MaxChunks                     int      `json:"max_chunks"`
-	RequireAbsoluteExecutable     bool     `json:"require_absolute_executable"`
-	RejectWorldWritableExecutable bool     `json:"reject_world_writable_executable"`
-	AllowedExecutableRoots        []string `json:"allowed_executable_roots,omitempty"`
-	PreserveEnvVars               []string `json:"preserve_env_vars,omitempty"`
-}
-
-// DefaultVectorGeneratorPolicy returns a VectorGeneratorPolicy with conservative
-// defaults suitable for production use.
-func DefaultVectorGeneratorPolicy() VectorGeneratorPolicy {
-	return VectorGeneratorPolicy{
-		TimeoutMS:                     300000,
-		MaxStdoutBytes:                64 * 1024 * 1024,
-		MaxStderrBytes:                1024 * 1024,
-		MaxInputBytes:                 64 * 1024 * 1024,
-		MaxChunks:                     1000000,
-		RequireAbsoluteExecutable:     true,
-		RejectWorldWritableExecutable: true,
-		AllowedExecutableRoots:        nil,
-		PreserveEnvVars:               nil,
-	}
 }
 
 // Response is the JSON envelope returned on stdout by the fathomdb-admin-bridge binary.
@@ -321,65 +289,6 @@ func (c Client) PurgeProvenanceEvents(ctx context.Context, databasePath string, 
 	return &report, nil
 }
 
-// RegenerateVectors regenerates vector embeddings for the database using the
-// default vector generator policy.
-func (c Client) RegenerateVectors(
-	ctx context.Context,
-	databasePath, configPath string,
-) (Response, error) {
-	return c.RegenerateVectorsWithPolicy(ctx, databasePath, configPath, nil)
-}
-
-// RegenerateVectorsWithPolicy is like RegenerateVectors but accepts an explicit
-// VectorGeneratorPolicy to constrain generator subprocess execution.
-func (c Client) RegenerateVectorsWithPolicy(
-	ctx context.Context,
-	databasePath, configPath string,
-	policy *VectorGeneratorPolicy,
-) (Response, error) {
-	return c.Execute(ctx, Request{
-		DatabasePath:          databasePath,
-		Command:               CommandRegenerateVectors,
-		ConfigPath:            configPath,
-		VectorGeneratorPolicy: policy,
-	})
-}
-
-// RegenerateVectorsWithFeedback is like RegenerateVectors but emits lifecycle
-// feedback events via the observer.
-func (c Client) RegenerateVectorsWithFeedback(
-	ctx context.Context,
-	databasePath, configPath string,
-	observer Observer,
-	config FeedbackConfig,
-) (Response, error) {
-	return c.RegenerateVectorsWithFeedbackAndPolicy(
-		ctx,
-		databasePath,
-		configPath,
-		nil,
-		observer,
-		config,
-	)
-}
-
-// RegenerateVectorsWithFeedbackAndPolicy is like RegenerateVectorsWithPolicy but
-// also emits lifecycle feedback events via the observer.
-func (c Client) RegenerateVectorsWithFeedbackAndPolicy(
-	ctx context.Context,
-	databasePath, configPath string,
-	policy *VectorGeneratorPolicy,
-	observer Observer,
-	config FeedbackConfig,
-) (Response, error) {
-	return c.ExecuteWithFeedback(ctx, Request{
-		DatabasePath:          databasePath,
-		Command:               CommandRegenerateVectors,
-		ConfigPath:            configPath,
-		VectorGeneratorPolicy: policy,
-	}, observer, config)
-}
-
 // Execute sends a bridge request and returns the parsed response.
 //
 // The bridge binary is spawned as a subprocess with JSON on stdin/stdout.
@@ -411,9 +320,6 @@ func (c Client) ExecuteWithFeedback(
 	}
 	if request.ConfigPath != "" {
 		metadata["config_path"] = request.ConfigPath
-	}
-	if request.VectorGeneratorPolicy != nil {
-		metadata["vector_generator_policy"] = "configured"
 	}
 	return RunWithFeedback(ctx, "go", string(request.Command), metadata, observer, config, func(context.Context) (Response, error) {
 		// Security fix H-3: Validate the bridge binary path before execution.

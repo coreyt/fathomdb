@@ -696,56 +696,6 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			return commandExitCode(err)
 		}
 		return 0
-	case "regenerate-vectors":
-		fs := flag.NewFlagSet("regenerate-vectors", flag.ContinueOnError)
-		fs.SetOutput(stderr)
-		db := fs.String("db", cfg.DatabasePath, "path to sqlite database")
-		bridgeBinary := fs.String("bridge", cfg.BridgeBinary, "path to admin bridge binary")
-		configPath := fs.String("config", "", "path to TOML or JSON vector regeneration contract")
-		defaultPolicy := bridge.DefaultVectorGeneratorPolicy()
-		generatorTimeoutMS := fs.Uint64("generator-timeout-ms", defaultPolicy.TimeoutMS, "wall-clock timeout for the external vector generator")
-		generatorMaxStdoutBytes := fs.Int("generator-max-stdout-bytes", defaultPolicy.MaxStdoutBytes, "maximum stdout bytes allowed from the external vector generator")
-		generatorMaxStderrBytes := fs.Int("generator-max-stderr-bytes", defaultPolicy.MaxStderrBytes, "maximum stderr bytes allowed from the external vector generator")
-		generatorMaxInputBytes := fs.Int("generator-max-input-bytes", defaultPolicy.MaxInputBytes, "maximum JSON stdin bytes sent to the external vector generator")
-		generatorMaxChunks := fs.Int("generator-max-chunks", defaultPolicy.MaxChunks, "maximum chunk count allowed in one vector regeneration run")
-		var generatorAllowedRoots stringSliceFlag
-		var generatorPreserveEnv stringSliceFlag
-		fs.Var(&generatorAllowedRoots, "generator-allowed-root", "allowlisted root for the external vector generator executable (repeatable)")
-		fs.Var(&generatorPreserveEnv, "generator-preserve-env", "environment variable to preserve for the external vector generator (repeatable)")
-		if err := fs.Parse(args[1:]); err != nil {
-			return 2
-		}
-		if *db == "" || *configPath == "" {
-			fmt.Fprintln(stderr, "--db and --config are required")
-			return 2
-		}
-		if *generatorMaxStdoutBytes <= 0 || *generatorMaxStderrBytes <= 0 || *generatorMaxInputBytes <= 0 || *generatorMaxChunks <= 0 {
-			fmt.Fprintln(stderr, "generator limits must be greater than zero")
-			return 2
-		}
-		if err := commands.RunRegenerateVectorsWithFeedback(
-			*db,
-			*bridgeBinary,
-			*configPath,
-			&bridge.VectorGeneratorPolicy{
-				TimeoutMS:                     *generatorTimeoutMS,
-				MaxStdoutBytes:                *generatorMaxStdoutBytes,
-				MaxStderrBytes:                *generatorMaxStderrBytes,
-				MaxInputBytes:                 *generatorMaxInputBytes,
-				MaxChunks:                     *generatorMaxChunks,
-				RequireAbsoluteExecutable:     defaultPolicy.RequireAbsoluteExecutable,
-				RejectWorldWritableExecutable: defaultPolicy.RejectWorldWritableExecutable,
-				AllowedExecutableRoots:        append([]string(nil), generatorAllowedRoots...),
-				PreserveEnvVars:               append([]string(nil), generatorPreserveEnv...),
-			},
-			stdout,
-			newFeedbackObserver(stderr),
-			bridge.FeedbackConfig{},
-		); err != nil {
-			fmt.Fprintln(stderr, err)
-			return commandExitCode(err)
-		}
-		return 0
 	case "excise":
 		fs := flag.NewFlagSet("excise", flag.ContinueOnError)
 		fs.SetOutput(stderr)
@@ -841,17 +791,6 @@ func Main(args []string, stdout, stderr io.Writer) int {
 	}
 }
 
-type stringSliceFlag []string
-
-func (s *stringSliceFlag) String() string {
-	return strings.Join(*s, ",")
-}
-
-func (s *stringSliceFlag) Set(value string) error {
-	*s = append(*s, value)
-	return nil
-}
-
 func commandExitCode(err error) int {
 	var coded interface{ ExitCode() int }
 	if errors.As(err, &coded) {
@@ -861,5 +800,5 @@ func commandExitCode(err error) int {
 }
 
 func usage() string {
-	return "usage: fathom-integrity <check|export|trace|restore-logical-id|purge-logical-id|trace-operational|read-operational|update-operational-filters|update-operational-validation|validate-operational-history|disable-operational|compact-operational|purge-operational|purge-provenance-events|rebuild|rebuild-operational-current|rebuild-missing|regenerate-vectors|excise|recover|repair|version> [flags]"
+	return "usage: fathom-integrity <check|export|trace|restore-logical-id|purge-logical-id|trace-operational|read-operational|update-operational-filters|update-operational-validation|validate-operational-history|disable-operational|compact-operational|purge-operational|purge-provenance-events|rebuild|rebuild-operational-current|rebuild-missing|excise|recover|repair|version> [flags]"
 }

@@ -95,43 +95,6 @@ line 3');
 	runSQLite(t, dbPath, sql)
 }
 
-// SeedVectorRegenerationScenario inserts one canonical node/chunk pair plus
-// the vector metadata needed to recover and later regenerate embeddings.
-func SeedVectorRegenerationScenario(t *testing.T, dbPath string) {
-	t.Helper()
-
-	sql := `
-INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref)
-VALUES ('row-1', 'doc-1', 'Document', '{}', unixepoch(), 'source-1');
-INSERT INTO chunks (id, node_logical_id, text_content, created_at)
-VALUES ('chunk-1', 'doc-1', 'budget discussion', unixepoch());
-INSERT INTO vector_profiles (profile, table_name, dimension, enabled)
-VALUES ('default', 'vec_nodes_active', 4, 1);
-INSERT INTO vector_embedding_contracts (
-    profile,
-    table_name,
-    model_identity,
-    model_version,
-    dimension,
-    normalization_policy,
-    chunking_policy,
-    preprocessing_policy,
-    generator_command_json
-) VALUES (
-    'default',
-    'vec_nodes_active',
-    'test-model',
-    '1.0.0',
-    4,
-    'l2',
-    'per_chunk',
-    'trim',
-    '["/bin/echo"]'
-);
-`
-	runSQLite(t, dbPath, sql)
-}
-
 func runSQLite(t *testing.T, dbPath, sql string) {
 	t.Helper()
 

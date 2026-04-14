@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/coreyt/fathomdb/go/fathom-integrity/test/testutil"
@@ -480,89 +479,4 @@ func queryDB(t *testing.T, dbPath, query string) string {
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, string(output))
 	return strings.TrimSpace(string(output))
-}
-
-type pythonVectorSearchResult struct {
-	WasDegraded bool     `json:"was_degraded"`
-	LogicalIDs  []string `json:"logical_ids"`
-}
-
-var pythonFathomdbInstallOnce sync.Once
-var pythonFathomdbInstallErr error
-
-func ensurePythonFathomdb(t *testing.T, repoRoot string) {
-	t.Helper()
-
-	absRepoRoot, err := filepath.Abs(repoRoot)
-	require.NoError(t, err)
-	projectRoot := filepath.Clean(filepath.Join(absRepoRoot, "..", ".."))
-
-	pythonFathomdbInstallOnce.Do(func() {
-		probe := exec.Command("python3", "-c", "import fathomdb")
-		probe.Env = append(commandEnv(t), "PYTHONPATH="+filepath.Join(projectRoot, "python"))
-		if err := probe.Run(); err == nil {
-			return
-		}
-
-		install := exec.Command( //nolint:gosec // G204: projectRoot is derived from test repo root, not user input
-			"python3",
-			"-m",
-			"pip",
-			"install",
-			"-e",
-			filepath.Join(projectRoot, "python"),
-			"--no-build-isolation",
-		)
-		install.Env = append(commandEnv(t), "PYTHONPATH="+filepath.Join(projectRoot, "python"))
-		output, err := install.CombinedOutput()
-		if err != nil {
-			pythonFathomdbInstallErr = fmt.Errorf("install python fathomdb: %w: %s", err, output)
-			return
-		}
-
-		probe = exec.Command("python3", "-c", "import fathomdb")
-		probe.Env = append(commandEnv(t), "PYTHONPATH="+filepath.Join(projectRoot, "python"))
-		output, err = probe.CombinedOutput()
-		if err != nil {
-			pythonFathomdbInstallErr = fmt.Errorf("import fathomdb after install: %w: %s", err, output)
-		}
-	})
-
-	require.NoError(t, pythonFathomdbInstallErr)
-}
-
-func pythonVectorSearch(t *testing.T, repoRoot, dbPath string) pythonVectorSearchResult {
-	t.Helper()
-	ensurePythonFathomdb(t, repoRoot)
-	absRepoRoot, err := filepath.Abs(repoRoot)
-	require.NoError(t, err)
-	projectRoot := filepath.Clean(filepath.Join(absRepoRoot, "..", ".."))
-
-	script := `
-import json
-import pathlib
-import sys
-
-project_root = pathlib.Path(sys.argv[1])
-db_path = sys.argv[2]
-sys.path.insert(0, str(project_root / "python"))
-
-from fathomdb import Engine
-
-engine = Engine.open(db_path, vector_dimension=4)
-rows = engine.nodes("Document").vector_search("[1.0, 0.0, 0.0, 0.0]", limit=1).execute()
-print(json.dumps({
-    "was_degraded": rows.was_degraded,
-    "logical_ids": [node.logical_id for node in rows.nodes],
-}))
-`
-
-	cmd := exec.Command("python3", "-c", script, projectRoot, dbPath)
-	cmd.Env = append(commandEnv(t), "PYTHONPATH="+filepath.Join(projectRoot, "python"))
-	output, err := cmd.CombinedOutput()
-	require.NoError(t, err, string(output))
-
-	var result pythonVectorSearchResult
-	require.NoError(t, json.Unmarshal(output, &result))
-	return result
 }
