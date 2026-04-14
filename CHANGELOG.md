@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.1] - 2026-04-13
 
+This release is a docs-and-hardening fast-follow on top of 0.3.0, plus one
+load-bearing bug fix in the recursive property-FTS walker. No API surface,
+schema, or wire-format changes.
+
 ### Fixed
 
 - Property-FTS recursive walker no longer crashes on payloads that mix
@@ -27,6 +31,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   immediately on upgrade. No rebuild is required because the bug only
   affected writes that previously failed — there is no corrupt
   persisted state to repair.
+
+### Documentation
+
+- Added a `Reranking SearchRows.hits` recipe to `docs/guides/querying.md`
+  showing how callers apply recency decay, pinning, and reputation
+  weights on top of the block-ordered output of `search()`. The recipe
+  is intentionally docs-only (no shipped `fathomdb.rerank` module) —
+  ranking policy remains a caller concern.
+- Added `docs/guides/content-refs.md`, a standalone guide to
+  externalizing large node payloads via `content_ref` so indexable
+  metadata stays on the node and bulky audit payloads live behind the
+  ref. Cross-links to the existing `writing-data.md` "External content
+  nodes" section for the write-side mechanics.
+- Added `docs/guides/operational-queries.md` covering
+  `engine.admin.read_operational_collection()` end-to-end, including
+  the `OperationalFilterMode` variants (EXACT, PREFIX, RANGE) and
+  worked examples for each. Completes query-surface coverage across
+  all node/edge/chunk and operational substrates.
+- Added a prominent warning in `docs/guides/querying.md` and
+  `docs/reference/query.md` explaining that the `filter_json_*`
+  methods on `SearchBuilder` run as post-filters over the candidate
+  set selected by the search CTE. A small `limit` can silently return
+  zero hits when post-filters eliminate every candidate. The callout
+  documents the over-fetch idiom for composing `filter_json_*` with
+  small-limit searches safely.
+
+### Internal
+
+- Pinned the "unsupported text-query syntax stays literal" grammar
+  contract with explicit regression tests in
+  `crates/fathomdb-query/src/text_query.rs`. The contract — lowercase
+  `or`/`not` → literal, clause-leading `NOT` → literal, and unsupported
+  FTS5 syntax → literal — is load-bearing for agent callers that pipe
+  raw user chat messages directly into `search()` without a
+  sanitization layer. The tests are now tagged so future refactors
+  cannot silently erode the property.
 
 ## [0.3.0] - 2026-04-13
 
