@@ -98,6 +98,10 @@ impl NodeEngineCore {
         })
     }
 
+    // Exposed to JS as `engine.compileAst(...)`; napi-derive requires
+    // `&self` to bind the method on the class instance even though
+    // compilation is pure and does not touch engine state.
+    #[allow(clippy::unused_self)]
     #[napi]
     pub fn compile_ast(&self, ast_json: String) -> Result<String> {
         let ast = parse_ast(&ast_json)?;
@@ -105,6 +109,9 @@ impl NodeEngineCore {
         encode_json(PyCompiledQuery::from(compiled))
     }
 
+    // Exposed to JS as `engine.compileGroupedAst(...)`; see note on
+    // `compile_ast` above for why `&self` is required.
+    #[allow(clippy::unused_self)]
     #[napi]
     pub fn compile_grouped_ast(&self, ast_json: String) -> Result<String> {
         let ast = parse_ast(&ast_json)?;

@@ -111,6 +111,9 @@ pub(crate) fn encode_json<T: serde::Serialize>(value: T) -> Result<String> {
         .map_err(|error| invalid_argument(format!("failed to serialize payload: {error}")))
 }
 
+// Used as `.map_err(map_compile_error)` at napi call sites, so it must
+// take the error by value even though `to_string` only needs `&self`.
+#[allow(clippy::needless_pass_by_value)]
 pub(crate) fn map_compile_error(error: RustCompileError) -> Error {
     napi_error(ErrorCode::Compile, error.to_string())
 }

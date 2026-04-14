@@ -12,7 +12,9 @@ use crate::{
     QueryPlan, QueryRows, QueryStep, RunInsert, RunRow, SafeExportManifest, ScalarValue,
     StepInsert, StepRow, TraverseDirection, VecInsert, WriteReceipt, WriteRequest,
 };
-use fathomdb_engine::{IntegrityReport, SemanticReport, TraceReport, VectorRegenerationReport};
+#[cfg(feature = "python")]
+use fathomdb_engine::VectorRegenerationReport;
+use fathomdb_engine::{IntegrityReport, SemanticReport, TraceReport};
 
 #[derive(Debug, Deserialize)]
 pub struct PyQueryAst {
@@ -1495,6 +1497,7 @@ mod tests {
         assert_eq!(notes[0], "rebuilt fts");
     }
 
+    #[cfg(feature = "python")]
     #[test]
     fn vector_regeneration_report_serializes_all_fields() {
         use super::PyVectorRegenerationReport;
@@ -2051,6 +2054,7 @@ impl From<ProjectionRepairReport> for PyProjectionRepairReport {
     }
 }
 
+#[cfg(feature = "python")]
 #[derive(Debug, Serialize)]
 pub struct PyVectorRegenerationReport {
     pub profile: String,
@@ -2062,6 +2066,7 @@ pub struct PyVectorRegenerationReport {
     pub notes: Vec<String>,
 }
 
+#[cfg(feature = "python")]
 impl From<VectorRegenerationReport> for PyVectorRegenerationReport {
     fn from(value: VectorRegenerationReport) -> Self {
         Self {
