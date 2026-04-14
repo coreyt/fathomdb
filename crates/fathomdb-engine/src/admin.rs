@@ -1,12 +1,9 @@
 use std::fmt::Write as _;
 use std::fs;
-use std::io::{self, Read, Write};
+use std::io;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::sync::Arc;
-use std::sync::mpsc;
-use std::thread;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::SystemTime;
 
 use fathomdb_schema::{SchemaError, SchemaManager};
 use rusqlite::{DatabaseName, OptionalExtension, TransactionBehavior};
@@ -14,7 +11,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    EngineError, ProjectionRepairReport, ProjectionService, executable_trust,
+    EngineError, ProjectionRepairReport, ProjectionService,
+    embedder::{QueryEmbedder, QueryEmbedderIdentity},
     ids::new_id,
     operational::{
         OperationalCollectionKind, OperationalCollectionRecord, OperationalCompactionReport,
@@ -262,19 +260,22 @@ pub struct SemanticReport {
     pub warnings: Vec<String>,
 }
 
-/// Configuration for regenerating vector embeddings via an external generator command.
+/// Configuration for regenerating vector embeddings.
+///
+/// 0.4.0 architectural invariant: vector identity is the embedder's
+/// responsibility, not the regeneration config's. This struct carries only
+/// WHERE the vectors live and HOW to chunk/preprocess them — never WHAT
+/// model produced them. The embedder supplied at regen-call time is the
+/// single source of truth for `model_identity`, `model_version`,
+/// `dimension`, and `normalization_policy`; the resulting vector profile
+/// is stamped directly from [`QueryEmbedder::identity`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct VectorRegenerationConfig {
     pub profile: String,
     pub table_name: String,
-    pub model_identity: String,
-    pub model_version: String,
-    pub dimension: usize,
-    pub normalization_policy: String,
     pub chunking_policy: String,
     pub preprocessing_policy: String,
-    pub generator_command: Vec<String>,
 }
 
 /// Report from a vector embedding regeneration run.
@@ -289,56 +290,9 @@ pub struct VectorRegenerationReport {
     pub notes: Vec<String>,
 }
 
-/// Security and resource policy for the external vector generator subprocess.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub struct VectorGeneratorPolicy {
-    pub timeout_ms: u64,
-    pub max_stdout_bytes: usize,
-    pub max_stderr_bytes: usize,
-    pub max_input_bytes: usize,
-    pub max_chunks: usize,
-    #[serde(default = "default_require_absolute_executable")]
-    pub require_absolute_executable: bool,
-    #[serde(default = "default_reject_world_writable_executable")]
-    pub reject_world_writable_executable: bool,
-    #[serde(default)]
-    pub allowed_executable_roots: Vec<String>,
-    #[serde(default)]
-    pub preserve_env_vars: Vec<String>,
-}
-
-impl Default for VectorGeneratorPolicy {
-    fn default() -> Self {
-        Self {
-            timeout_ms: 300_000,
-            max_stdout_bytes: 64 * 1024 * 1024,
-            max_stderr_bytes: 1024 * 1024,
-            max_input_bytes: 64 * 1024 * 1024,
-            max_chunks: 1_000_000,
-            require_absolute_executable: true,
-            reject_world_writable_executable: true,
-            allowed_executable_roots: vec![],
-            preserve_env_vars: vec![],
-        }
-    }
-}
-
-const fn default_require_absolute_executable() -> bool {
-    true
-}
-
-const fn default_reject_world_writable_executable() -> bool {
-    true
-}
-
 const CURRENT_VECTOR_CONTRACT_FORMAT_VERSION: i64 = 1;
 const MAX_PROFILE_LEN: usize = 128;
-const MAX_MODEL_IDENTITY_LEN: usize = 256;
-const MAX_MODEL_VERSION_LEN: usize = 128;
 const MAX_POLICY_LEN: usize = 128;
-const MAX_GENERATOR_COMMAND_ARG_LEN: usize = 4096;
-const MAX_GENERATOR_COMMAND_TOTAL_LEN: usize = 16 * 1024;
 const MAX_CONTRACT_JSON_BYTES: usize = 32 * 1024;
 const MAX_AUDIT_METADATA_BYTES: usize = 2048;
 const DEFAULT_OPERATIONAL_READ_LIMIT: usize = 100;
@@ -1808,38 +1762,32 @@ impl AdminService {
     /// The config is persisted in `vector_embedding_contracts` so the metadata
     /// required for recovery survives future repair runs.
     ///
+    /// Vector identity is stamped from [`QueryEmbedder::identity`] — the
+    /// caller supplies the embedder and cannot override its identity. This
+    /// makes drift between the read-path and write-path identity stories
+    /// structurally impossible.
+    ///
     /// # Errors
     /// Returns [`EngineError`] if the database connection fails, the config is
-    /// invalid, the generator command fails, or the regenerated embeddings are
+    /// invalid, the embedder fails, or the regenerated embeddings are
     /// malformed.
     #[allow(clippy::too_many_lines)]
     pub fn regenerate_vector_embeddings(
         &self,
+        embedder: &dyn QueryEmbedder,
         config: &VectorRegenerationConfig,
-    ) -> Result<VectorRegenerationReport, EngineError> {
-        self.regenerate_vector_embeddings_with_policy(config, &VectorGeneratorPolicy::default())
-    }
-
-    /// # Errors
-    /// Returns [`EngineError`] if the database connection fails, the config is
-    /// invalid, the generator command fails, or the regenerated embeddings are
-    /// malformed.
-    #[allow(clippy::too_many_lines)]
-    pub fn regenerate_vector_embeddings_with_policy(
-        &self,
-        config: &VectorRegenerationConfig,
-        policy: &VectorGeneratorPolicy,
     ) -> Result<VectorRegenerationReport, EngineError> {
         let conn = self.connect()?;
-        let config = validate_vector_regeneration_config(&conn, config, policy)
+        let identity = embedder.identity();
+        let config = validate_vector_regeneration_config(&conn, config, &identity)
             .map_err(|failure| failure.to_engine_error())?;
         let chunks = collect_regeneration_chunks(&conn)?;
-        let payload = build_regeneration_input(&config, chunks.clone());
+        let payload = build_regeneration_input(&config, &identity, chunks.clone());
         let snapshot_hash = compute_snapshot_hash(&payload)?;
         let audit_metadata = VectorRegenerationAuditMetadata {
             profile: config.profile.clone(),
-            model_identity: config.model_identity.clone(),
-            model_version: config.model_version.clone(),
+            model_identity: identity.model_identity.clone(),
+            model_version: identity.model_version.clone(),
             chunk_count: chunks.len(),
             snapshot_hash: snapshot_hash.clone(),
             failure_class: None,
@@ -1850,10 +1798,36 @@ impl AdminService {
             &config.profile,
             &audit_metadata,
         )?;
-        let notes = generator_policy_notes(policy);
-        let generated = match run_vector_generator_bounded(&config, &payload, policy) {
-            Ok(generated) => generated,
-            Err(failure) => {
+        let notes = vec!["vector embeddings regenerated via configured embedder".to_owned()];
+
+        let mut embedding_map: std::collections::HashMap<String, Vec<u8>> =
+            std::collections::HashMap::with_capacity(chunks.len());
+        for chunk in &chunks {
+            let vector = match embedder.embed_query(&chunk.text_content) {
+                Ok(vector) => vector,
+                Err(error) => {
+                    let failure = VectorRegenerationFailure::new(
+                        VectorRegenerationFailureClass::EmbedderFailure,
+                        format!("embedder failed for chunk '{}': {error}", chunk.chunk_id),
+                    );
+                    self.persist_vector_regeneration_failure_best_effort(
+                        &config.profile,
+                        &audit_metadata,
+                        &failure,
+                    );
+                    return Err(failure.to_engine_error());
+                }
+            };
+            if vector.len() != identity.dimension {
+                let failure = VectorRegenerationFailure::new(
+                    VectorRegenerationFailureClass::InvalidEmbedderOutput,
+                    format!(
+                        "embedder produced {} values for chunk '{}', expected {}",
+                        vector.len(),
+                        chunk.chunk_id,
+                        identity.dimension
+                    ),
+                );
                 self.persist_vector_regeneration_failure_best_effort(
                     &config.profile,
                     &audit_metadata,
@@ -1861,10 +1835,14 @@ impl AdminService {
                 );
                 return Err(failure.to_engine_error());
             }
-        };
-        let mut embedding_map = match validate_generated_embeddings(&config, &chunks, generated) {
-            Ok(embedding_map) => embedding_map,
-            Err(failure) => {
+            if vector.iter().any(|value| !value.is_finite()) {
+                let failure = VectorRegenerationFailure::new(
+                    VectorRegenerationFailureClass::InvalidEmbedderOutput,
+                    format!(
+                        "embedder returned non-finite values for chunk '{}'",
+                        chunk.chunk_id
+                    ),
+                );
                 self.persist_vector_regeneration_failure_best_effort(
                     &config.profile,
                     &audit_metadata,
@@ -1872,7 +1850,12 @@ impl AdminService {
                 );
                 return Err(failure.to_engine_error());
             }
-        };
+            let bytes: Vec<u8> = vector
+                .iter()
+                .flat_map(|value| value.to_le_bytes())
+                .collect();
+            embedding_map.insert(chunk.chunk_id.clone(), bytes);
+        }
 
         let mut conn = conn;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -1880,7 +1863,7 @@ impl AdminService {
             &tx,
             &config.profile,
             &config.table_name,
-            config.dimension,
+            identity.dimension,
         ) {
             Ok(()) => {}
             Err(SchemaError::MissingCapability(message)) => {
@@ -1899,7 +1882,7 @@ impl AdminService {
             Err(error) => return Err(EngineError::Schema(error)),
         }
         let apply_chunks = collect_regeneration_chunks(&tx)?;
-        let apply_payload = build_regeneration_input(&config, apply_chunks.clone());
+        let apply_payload = build_regeneration_input(&config, &identity, apply_chunks.clone());
         let apply_hash = compute_snapshot_hash(&apply_payload)?;
         if apply_hash != snapshot_hash {
             let failure = VectorRegenerationFailure::new(
@@ -1914,7 +1897,7 @@ impl AdminService {
             );
             return Err(failure.to_engine_error());
         }
-        persist_vector_contract(&tx, &config, &snapshot_hash)?;
+        persist_vector_contract(&tx, &config, &identity, &snapshot_hash)?;
         tx.execute("DELETE FROM vec_nodes_active", [])?;
         let mut stmt = tx
             .prepare_cached("INSERT INTO vec_nodes_active (chunk_id, embedding) VALUES (?1, ?2)")?;
@@ -1924,9 +1907,9 @@ impl AdminService {
                 drop(stmt);
                 drop(tx);
                 let failure = VectorRegenerationFailure::new(
-                    VectorRegenerationFailureClass::MalformedGeneratorJson,
+                    VectorRegenerationFailureClass::InvalidEmbedderOutput,
                     format!(
-                        "generator did not return embedding for chunk '{}'",
+                        "embedder did not produce a vector for chunk '{}'",
                         chunk.chunk_id
                     ),
                 );
@@ -1952,7 +1935,7 @@ impl AdminService {
         Ok(VectorRegenerationReport {
             profile: config.profile.clone(),
             table_name: config.table_name.clone(),
-            dimension: config.dimension,
+            dimension: identity.dimension,
             total_chunks: chunks.len(),
             regenerated_rows,
             contract_persisted: true,
@@ -2634,26 +2617,11 @@ struct VectorRegenerationInput {
     chunks: Vec<VectorRegenerationInputChunk>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-struct GeneratedEmbedding {
-    chunk_id: String,
-    embedding: Vec<f32>,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-struct GeneratedEmbeddings {
-    embeddings: Vec<GeneratedEmbedding>,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum VectorRegenerationFailureClass {
     InvalidContract,
-    PayloadTooLarge,
-    GeneratorTimeout,
-    GeneratorStdoutOverflow,
-    GeneratorStderrOverflow,
-    GeneratorNonzeroExit,
-    MalformedGeneratorJson,
+    EmbedderFailure,
+    InvalidEmbedderOutput,
     SnapshotDrift,
     UnsupportedVecCapability,
 }
@@ -2662,12 +2630,8 @@ impl VectorRegenerationFailureClass {
     fn label(self) -> &'static str {
         match self {
             Self::InvalidContract => "invalid contract",
-            Self::PayloadTooLarge => "payload too large",
-            Self::GeneratorTimeout => "generator timeout",
-            Self::GeneratorStdoutOverflow => "generator stdout overflow",
-            Self::GeneratorStderrOverflow => "generator stderr overflow",
-            Self::GeneratorNonzeroExit => "generator nonzero exit",
-            Self::MalformedGeneratorJson => "malformed generator json",
+            Self::EmbedderFailure => "embedder failure",
+            Self::InvalidEmbedderOutput => "invalid embedder output",
             Self::SnapshotDrift => "snapshot drift",
             Self::UnsupportedVecCapability => "unsupported vec capability",
         }
@@ -2753,7 +2717,7 @@ pub fn load_vector_regeneration_config(
 fn validate_vector_regeneration_config(
     conn: &rusqlite::Connection,
     config: &VectorRegenerationConfig,
-    policy: &VectorGeneratorPolicy,
+    identity: &QueryEmbedderIdentity,
 ) -> Result<VectorRegenerationConfig, VectorRegenerationFailure> {
     let profile = validate_bounded_text("profile", &config.profile, MAX_PROFILE_LEN)?;
     let table_name = validate_bounded_text("table_name", &config.table_name, MAX_PROFILE_LEN)?;
@@ -2763,27 +2727,12 @@ fn validate_vector_regeneration_config(
             format!("table_name must be vec_nodes_active, got '{table_name}'"),
         ));
     }
-    let model_identity = validate_bounded_text(
-        "model_identity",
-        &config.model_identity,
-        MAX_MODEL_IDENTITY_LEN,
-    )?;
-    let model_version = validate_bounded_text(
-        "model_version",
-        &config.model_version,
-        MAX_MODEL_VERSION_LEN,
-    )?;
-    if config.dimension == 0 {
+    if identity.dimension == 0 {
         return Err(VectorRegenerationFailure::new(
             VectorRegenerationFailureClass::InvalidContract,
-            "dimension must be greater than zero".to_owned(),
+            "embedder reports dimension 0".to_owned(),
         ));
     }
-    let normalization_policy = validate_bounded_text(
-        "normalization_policy",
-        &config.normalization_policy,
-        MAX_POLICY_LEN,
-    )?;
     let chunking_policy =
         validate_bounded_text("chunking_policy", &config.chunking_policy, MAX_POLICY_LEN)?;
     let preprocessing_policy = validate_bounded_text(
@@ -2791,16 +2740,15 @@ fn validate_vector_regeneration_config(
         &config.preprocessing_policy,
         MAX_POLICY_LEN,
     )?;
-    let generator_command = validate_generator_command(&config.generator_command, policy)?;
 
     if let Some(existing_dimension) = current_vector_profile_dimension(conn, &profile)?
-        && existing_dimension != config.dimension
+        && existing_dimension != identity.dimension
     {
         return Err(VectorRegenerationFailure::new(
             VectorRegenerationFailureClass::InvalidContract,
             format!(
-                "dimension {} does not match existing vector profile dimension {}",
-                config.dimension, existing_dimension
+                "embedder dimension {} does not match existing vector profile dimension {}",
+                identity.dimension, existing_dimension
             ),
         ));
     }
@@ -2810,13 +2758,8 @@ fn validate_vector_regeneration_config(
     let normalized = VectorRegenerationConfig {
         profile,
         table_name,
-        model_identity,
-        model_version,
-        dimension: config.dimension,
-        normalization_policy,
         chunking_policy,
         preprocessing_policy,
-        generator_command,
     };
     let serialized = serde_json::to_vec(&normalized).map_err(|error| {
         VectorRegenerationFailure::new(
@@ -2838,10 +2781,9 @@ fn validate_vector_regeneration_config(
 fn persist_vector_contract(
     conn: &rusqlite::Connection,
     config: &VectorRegenerationConfig,
+    identity: &QueryEmbedderIdentity,
     snapshot_hash: &str,
 ) -> Result<(), EngineError> {
-    let generator_command_json = serde_json::to_string(&config.generator_command)
-        .map_err(|error| EngineError::Bridge(error.to_string()))?;
     conn.execute(
         r"
         INSERT OR REPLACE INTO vector_embedding_contracts (
@@ -2863,13 +2805,13 @@ fn persist_vector_contract(
         rusqlite::params![
             config.profile.as_str(),
             config.table_name.as_str(),
-            config.model_identity.as_str(),
-            config.model_version.as_str(),
-            config.dimension as i64,
-            config.normalization_policy.as_str(),
+            identity.model_identity.as_str(),
+            identity.model_version.as_str(),
+            identity.dimension as i64,
+            identity.normalization_policy.as_str(),
             config.chunking_policy.as_str(),
             config.preprocessing_policy.as_str(),
-            generator_command_json,
+            "[]",
             snapshot_hash,
             CURRENT_VECTOR_CONTRACT_FORMAT_VERSION,
         ],
@@ -3186,15 +3128,16 @@ fn build_fts_property_schema_record(
 
 fn build_regeneration_input(
     config: &VectorRegenerationConfig,
+    identity: &QueryEmbedderIdentity,
     chunks: Vec<VectorRegenerationInputChunk>,
 ) -> VectorRegenerationInput {
     VectorRegenerationInput {
         profile: config.profile.clone(),
         table_name: config.table_name.clone(),
-        model_identity: config.model_identity.clone(),
-        model_version: config.model_version.clone(),
-        dimension: config.dimension,
-        normalization_policy: config.normalization_policy.clone(),
+        model_identity: identity.model_identity.clone(),
+        model_version: identity.model_version.clone(),
+        dimension: identity.dimension,
+        normalization_policy: identity.normalization_policy.clone(),
         chunking_policy: config.chunking_policy.clone(),
         preprocessing_policy: config.preprocessing_policy.clone(),
         chunks,
@@ -3239,88 +3182,6 @@ fn collect_regeneration_chunks(
     Ok(chunks)
 }
 
-fn validate_generated_embeddings(
-    config: &VectorRegenerationConfig,
-    chunks: &[VectorRegenerationInputChunk],
-    generated: GeneratedEmbeddings,
-) -> Result<std::collections::HashMap<String, Vec<u8>>, VectorRegenerationFailure> {
-    if generated.embeddings.len() != chunks.len() {
-        return Err(VectorRegenerationFailure::new(
-            VectorRegenerationFailureClass::MalformedGeneratorJson,
-            format!(
-                "generator returned {} embedding(s) for {} chunk(s)",
-                generated.embeddings.len(),
-                chunks.len()
-            ),
-        ));
-    }
-
-    let mut embedding_map = std::collections::HashMap::new();
-    for embedding in generated.embeddings {
-        if embedding.embedding.len() != config.dimension {
-            return Err(VectorRegenerationFailure::new(
-                VectorRegenerationFailureClass::MalformedGeneratorJson,
-                format!(
-                    "embedding for chunk '{}' has dimension {}, expected {}",
-                    embedding.chunk_id,
-                    embedding.embedding.len(),
-                    config.dimension
-                ),
-            ));
-        }
-        if embedding.embedding.iter().any(|value| !value.is_finite()) {
-            return Err(VectorRegenerationFailure::new(
-                VectorRegenerationFailureClass::MalformedGeneratorJson,
-                format!(
-                    "embedding for chunk '{}' contains non-finite values",
-                    embedding.chunk_id
-                ),
-            ));
-        }
-        let bytes: Vec<u8> = embedding
-            .embedding
-            .iter()
-            .flat_map(|value| value.to_le_bytes())
-            .collect();
-        if embedding_map
-            .insert(embedding.chunk_id.clone(), bytes)
-            .is_some()
-        {
-            return Err(VectorRegenerationFailure::new(
-                VectorRegenerationFailureClass::MalformedGeneratorJson,
-                format!(
-                    "duplicate embedding returned for chunk '{}'",
-                    embedding.chunk_id
-                ),
-            ));
-        }
-    }
-
-    Ok(embedding_map)
-}
-
-fn generator_policy_notes(policy: &VectorGeneratorPolicy) -> Vec<String> {
-    let mut notes = vec!["vector embeddings regenerated from application contract".to_owned()];
-    if !policy.allowed_executable_roots.is_empty() {
-        notes.push("generator executable roots enforced by operator policy".to_owned());
-    }
-    if !policy.preserve_env_vars.is_empty() {
-        notes.push("generator environment reduced to preserved variables".to_owned());
-    }
-    notes
-}
-
-enum GeneratorStream {
-    Stdout,
-    Stderr,
-}
-
-enum StreamReadResult {
-    Complete(Vec<u8>),
-    Overflow,
-    Io(io::Error),
-}
-
 fn validate_bounded_text(
     field: &str,
     value: &str,
@@ -3340,46 +3201,6 @@ fn validate_bounded_text(
         ));
     }
     Ok(trimmed.to_owned())
-}
-
-fn validate_generator_command(
-    command: &[String],
-    policy: &VectorGeneratorPolicy,
-) -> Result<Vec<String>, VectorRegenerationFailure> {
-    if command.is_empty() {
-        return Err(VectorRegenerationFailure::new(
-            VectorRegenerationFailureClass::InvalidContract,
-            "generator_command must contain at least one element".to_owned(),
-        ));
-    }
-    let mut total_len = 0usize;
-    for argument in command {
-        if argument.is_empty() {
-            return Err(VectorRegenerationFailure::new(
-                VectorRegenerationFailureClass::InvalidContract,
-                "generator_command entries must not be empty".to_owned(),
-            ));
-        }
-        if argument.len() > MAX_GENERATOR_COMMAND_ARG_LEN {
-            return Err(VectorRegenerationFailure::new(
-                VectorRegenerationFailureClass::InvalidContract,
-                format!(
-                    "generator_command argument exceeds max length {MAX_GENERATOR_COMMAND_ARG_LEN}"
-                ),
-            ));
-        }
-        total_len += argument.len();
-    }
-    if total_len > MAX_GENERATOR_COMMAND_TOTAL_LEN {
-        return Err(VectorRegenerationFailure::new(
-            VectorRegenerationFailureClass::InvalidContract,
-            format!(
-                "generator_command exceeds max serialized length {MAX_GENERATOR_COMMAND_TOTAL_LEN}"
-            ),
-        ));
-    }
-    executable_trust::validate_generator_executable(&command[0], policy)?;
-    Ok(command.to_vec())
 }
 
 fn current_vector_profile_dimension(
@@ -3454,272 +3275,6 @@ fn serialize_audit_metadata(
         .to_engine_error());
     }
     Ok(json)
-}
-
-#[allow(clippy::too_many_lines)]
-fn run_vector_generator_bounded(
-    config: &VectorRegenerationConfig,
-    payload: &VectorRegenerationInput,
-    policy: &VectorGeneratorPolicy,
-) -> Result<GeneratedEmbeddings, VectorRegenerationFailure> {
-    if payload.chunks.len() > policy.max_chunks {
-        return Err(VectorRegenerationFailure::new(
-            VectorRegenerationFailureClass::PayloadTooLarge,
-            format!(
-                "chunk count {} exceeds max_chunks {}",
-                payload.chunks.len(),
-                policy.max_chunks
-            ),
-        ));
-    }
-
-    let input = serde_json::to_vec(payload).map_err(|error| {
-        VectorRegenerationFailure::new(
-            VectorRegenerationFailureClass::MalformedGeneratorJson,
-            error.to_string(),
-        )
-    })?;
-    if input.len() > policy.max_input_bytes {
-        return Err(VectorRegenerationFailure::new(
-            VectorRegenerationFailureClass::PayloadTooLarge,
-            format!(
-                "serialized input {} bytes exceeds max_input_bytes {}",
-                input.len(),
-                policy.max_input_bytes
-            ),
-        ));
-    }
-
-    let mut command = Command::new(config.generator_command.first().ok_or_else(|| {
-        VectorRegenerationFailure::new(
-            VectorRegenerationFailureClass::InvalidContract,
-            "missing generator executable",
-        )
-    })?);
-    command.args(config.generator_command.iter().skip(1));
-    command.stdin(Stdio::piped());
-    command.stdout(Stdio::piped());
-    command.stderr(Stdio::piped());
-    command.env_clear();
-    for env_var in &policy.preserve_env_vars {
-        if let Some(value) = std::env::var_os(env_var) {
-            command.env(env_var, value);
-        }
-    }
-
-    let mut child = command.spawn().map_err(|error| {
-        VectorRegenerationFailure::new(
-            VectorRegenerationFailureClass::GeneratorNonzeroExit,
-            format!("failed to spawn generator: {error}"),
-        )
-    })?;
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(&input).map_err(|error| {
-            VectorRegenerationFailure::new(
-                VectorRegenerationFailureClass::GeneratorNonzeroExit,
-                format!("failed to write generator stdin: {error}"),
-            )
-        })?;
-    } else {
-        return Err(VectorRegenerationFailure::new(
-            VectorRegenerationFailureClass::GeneratorNonzeroExit,
-            "failed to open generator stdin",
-        ));
-    }
-
-    let stdout = child.stdout.take().ok_or_else(|| {
-        VectorRegenerationFailure::new(
-            VectorRegenerationFailureClass::GeneratorNonzeroExit,
-            "failed to open generator stdout",
-        )
-    })?;
-    let stderr = child.stderr.take().ok_or_else(|| {
-        VectorRegenerationFailure::new(
-            VectorRegenerationFailureClass::GeneratorNonzeroExit,
-            "failed to open generator stderr",
-        )
-    })?;
-
-    let (tx, rx) = mpsc::channel();
-    let stdout_handle = spawn_capped_reader(
-        stdout,
-        policy.max_stdout_bytes,
-        GeneratorStream::Stdout,
-        tx.clone(),
-    );
-    let stderr_handle =
-        spawn_capped_reader(stderr, policy.max_stderr_bytes, GeneratorStream::Stderr, tx);
-
-    let start = Instant::now();
-    let timeout = Duration::from_millis(policy.timeout_ms);
-    let mut stdout_bytes: Option<Vec<u8>> = None;
-    let mut stderr_bytes: Option<Vec<u8>> = None;
-    let mut status = None;
-    let mut stream_error: Option<VectorRegenerationFailure> = None;
-
-    while status.is_none() && stream_error.is_none() {
-        while let Ok((stream, result)) = rx.try_recv() {
-            match (stream, result) {
-                (GeneratorStream::Stdout, StreamReadResult::Complete(bytes)) => {
-                    stdout_bytes = Some(bytes);
-                }
-                (GeneratorStream::Stderr, StreamReadResult::Complete(bytes)) => {
-                    stderr_bytes = Some(bytes);
-                }
-                (GeneratorStream::Stdout, StreamReadResult::Overflow) => {
-                    stream_error = Some(VectorRegenerationFailure::new(
-                        VectorRegenerationFailureClass::GeneratorStdoutOverflow,
-                        format!(
-                            "stdout exceeded max_stdout_bytes {}",
-                            policy.max_stdout_bytes
-                        ),
-                    ));
-                }
-                (GeneratorStream::Stderr, StreamReadResult::Overflow) => {
-                    stream_error = Some(VectorRegenerationFailure::new(
-                        VectorRegenerationFailureClass::GeneratorStderrOverflow,
-                        format!(
-                            "stderr exceeded max_stderr_bytes {}",
-                            policy.max_stderr_bytes
-                        ),
-                    ));
-                }
-                (_, StreamReadResult::Io(error)) => {
-                    stream_error = Some(VectorRegenerationFailure::new(
-                        VectorRegenerationFailureClass::GeneratorNonzeroExit,
-                        format!("failed to read generator stream: {error}"),
-                    ));
-                }
-            }
-        }
-
-        if stream_error.is_some() {
-            let _ = child.kill();
-            break;
-        }
-        if start.elapsed() > timeout {
-            let _ = child.kill();
-            stream_error = Some(VectorRegenerationFailure::new(
-                VectorRegenerationFailureClass::GeneratorTimeout,
-                format!("generator exceeded timeout after {}ms", policy.timeout_ms),
-            ));
-            break;
-        }
-        status = child.try_wait().map_err(|error| {
-            VectorRegenerationFailure::new(
-                VectorRegenerationFailureClass::GeneratorNonzeroExit,
-                format!("failed to poll generator status: {error}"),
-            )
-        })?;
-        if status.is_none() {
-            thread::sleep(Duration::from_millis(10));
-        }
-    }
-
-    let _ = child.wait();
-    let _ = stdout_handle.join();
-    let _ = stderr_handle.join();
-
-    while let Ok((stream, result)) = rx.try_recv() {
-        match (stream, result) {
-            (GeneratorStream::Stdout, StreamReadResult::Complete(bytes)) => {
-                stdout_bytes = Some(bytes);
-            }
-            (GeneratorStream::Stderr, StreamReadResult::Complete(bytes)) => {
-                stderr_bytes = Some(bytes);
-            }
-            (GeneratorStream::Stdout, StreamReadResult::Overflow) => {
-                stream_error = Some(VectorRegenerationFailure::new(
-                    VectorRegenerationFailureClass::GeneratorStdoutOverflow,
-                    format!(
-                        "stdout exceeded max_stdout_bytes {}",
-                        policy.max_stdout_bytes
-                    ),
-                ));
-            }
-            (GeneratorStream::Stderr, StreamReadResult::Overflow) => {
-                stream_error = Some(VectorRegenerationFailure::new(
-                    VectorRegenerationFailureClass::GeneratorStderrOverflow,
-                    format!(
-                        "stderr exceeded max_stderr_bytes {}",
-                        policy.max_stderr_bytes
-                    ),
-                ));
-            }
-            (_, StreamReadResult::Io(error)) => {
-                stream_error = Some(VectorRegenerationFailure::new(
-                    VectorRegenerationFailureClass::GeneratorNonzeroExit,
-                    format!("failed to read generator stream: {error}"),
-                ));
-            }
-        }
-    }
-
-    if let Some(error) = stream_error {
-        return Err(error);
-    }
-
-    let status = status.ok_or_else(|| {
-        VectorRegenerationFailure::new(
-            VectorRegenerationFailureClass::GeneratorNonzeroExit,
-            "vector generator exited without a status",
-        )
-    })?;
-    if !status.success() {
-        let stderr =
-            truncate_error_text(&stderr_bytes.unwrap_or_default(), policy.max_stderr_bytes);
-        return Err(VectorRegenerationFailure::new(
-            VectorRegenerationFailureClass::GeneratorNonzeroExit,
-            stderr,
-        ));
-    }
-
-    let stdout = stdout_bytes.unwrap_or_default();
-    serde_json::from_slice(&stdout).map_err(|error| {
-        VectorRegenerationFailure::new(
-            VectorRegenerationFailureClass::MalformedGeneratorJson,
-            format!("decode generator output: {error}"),
-        )
-    })
-}
-
-fn spawn_capped_reader<R: Read + Send + 'static>(
-    mut reader: R,
-    max_bytes: usize,
-    stream: GeneratorStream,
-    tx: mpsc::Sender<(GeneratorStream, StreamReadResult)>,
-) -> thread::JoinHandle<()> {
-    thread::spawn(move || {
-        let mut buffer = Vec::new();
-        let mut chunk = [0u8; 8192];
-        loop {
-            match reader.read(&mut chunk) {
-                Ok(0) => {
-                    let _ = tx.send((stream, StreamReadResult::Complete(buffer)));
-                    break;
-                }
-                Ok(read_bytes) => {
-                    if buffer.len() + read_bytes > max_bytes {
-                        let _ = tx.send((stream, StreamReadResult::Overflow));
-                        break;
-                    }
-                    buffer.extend_from_slice(&chunk[..read_bytes]);
-                }
-                Err(error) => {
-                    let _ = tx.send((stream, StreamReadResult::Io(error)));
-                    break;
-                }
-            }
-        }
-    })
-}
-
-fn truncate_error_text(bytes: &[u8], max_bytes: usize) -> String {
-    let mut text = String::from_utf8_lossy(bytes).into_owned();
-    if bytes.len() > max_bytes {
-        text.push_str(" [truncated]");
-    }
-    text
 }
 
 fn count_source_ref(
@@ -4986,6 +4541,7 @@ mod tests {
         AdminService, FtsPropertyPathMode, FtsPropertyPathSpec, SafeExportOptions,
         VectorRegenerationConfig,
     };
+    use crate::embedder::{EmbedderError, QueryEmbedder, QueryEmbedderIdentity};
     use crate::projection::ProjectionTarget;
     use crate::sqlite;
     use crate::{
@@ -4996,7 +4552,58 @@ mod tests {
     use fathomdb_query::QueryBuilder;
 
     #[cfg(feature = "sqlite-vec")]
-    use super::{VectorGeneratorPolicy, load_vector_regeneration_config};
+    use super::load_vector_regeneration_config;
+
+    /// In-process embedder used by the regeneration test suite. The
+    /// vector is parameterized so individual tests can distinguish which
+    /// embedder produced which profile row.
+    #[derive(Debug)]
+    #[allow(dead_code)]
+    struct TestEmbedder {
+        identity: QueryEmbedderIdentity,
+        vector: Vec<f32>,
+    }
+
+    #[allow(dead_code)]
+    impl TestEmbedder {
+        fn new(model: &str, dimension: usize) -> Self {
+            Self {
+                identity: QueryEmbedderIdentity {
+                    model_identity: model.to_owned(),
+                    model_version: "1.0.0".to_owned(),
+                    dimension,
+                    normalization_policy: "l2".to_owned(),
+                },
+                vector: vec![1.0; dimension],
+            }
+        }
+    }
+
+    impl QueryEmbedder for TestEmbedder {
+        fn embed_query(&self, _text: &str) -> Result<Vec<f32>, EmbedderError> {
+            Ok(self.vector.clone())
+        }
+        fn identity(&self) -> QueryEmbedderIdentity {
+            self.identity.clone()
+        }
+    }
+
+    /// Embedder that always fails — used to exercise the post-request
+    /// failure audit path without the complexity of subprocess machinery.
+    #[derive(Debug)]
+    #[allow(dead_code)]
+    struct FailingEmbedder {
+        identity: QueryEmbedderIdentity,
+    }
+
+    impl QueryEmbedder for FailingEmbedder {
+        fn embed_query(&self, _text: &str) -> Result<Vec<f32>, EmbedderError> {
+            Err(EmbedderError::Failed("test failure".to_owned()))
+        }
+        fn identity(&self) -> QueryEmbedderIdentity {
+            self.identity.clone()
+        }
+    }
 
     #[allow(dead_code)]
     #[cfg(unix)]
@@ -5626,19 +5233,6 @@ mod tests {
     #[test]
     fn restore_logical_id_restores_visibility_of_regenerated_vectors() {
         let (db, service) = setup();
-        let temp_dir = tempfile::tempdir().expect("temp dir");
-        let script_path = temp_dir.path().join("vector-generator-restore.sh");
-        fs::write(
-            &script_path,
-            r#"#!/usr/bin/env bash
-set -euo pipefail
-python3 -c 'import json, sys
-payload = json.load(sys.stdin)
-json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedding": [0.0, 0.0, 0.0, 0.0]}]}, sys.stdout)'
-"#,
-        )
-        .expect("write script");
-        set_file_mode(&script_path, 0o755);
 
         {
             let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
@@ -5660,18 +5254,17 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
             .expect("insert chunk");
         }
 
+        let embedder = TestEmbedder::new("test-model", 4);
         service
-            .regenerate_vector_embeddings(&VectorRegenerationConfig {
-                profile: "default".to_owned(),
-                table_name: "vec_nodes_active".to_owned(),
-                model_identity: "model".to_owned(),
-                model_version: "1.0.0".to_owned(),
-                dimension: 4,
-                normalization_policy: "l2".to_owned(),
-                chunking_policy: "per_chunk".to_owned(),
-                preprocessing_policy: "trim".to_owned(),
-                generator_command: vec![script_path.to_string_lossy().to_string()],
-            })
+            .regenerate_vector_embeddings(
+                &embedder,
+                &VectorRegenerationConfig {
+                    profile: "default".to_owned(),
+                    table_name: "vec_nodes_active".to_owned(),
+                    chunking_policy: "per_chunk".to_owned(),
+                    preprocessing_policy: "trim".to_owned(),
+                },
+            )
             .expect("regenerate");
 
         {
@@ -7200,13 +6793,8 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
         let config = VectorRegenerationConfig {
             profile: "default".to_owned(),
             table_name: "vec_nodes_active".to_owned(),
-            model_identity: "model-a".to_owned(),
-            model_version: "1.0".to_owned(),
-            dimension: 4,
-            normalization_policy: "l2".to_owned(),
             chunking_policy: "per_chunk".to_owned(),
             preprocessing_policy: "trim".to_owned(),
-            generator_command: vec!["/bin/echo".to_owned()],
         };
 
         fs::write(&json_path, serde_json::to_string(&config).expect("json")).expect("write json");
@@ -7219,26 +6807,35 @@ json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedd
         assert_eq!(parsed_toml, config);
     }
 
+    /// The 0.4.0 rewrite removed the identity fields from the config.
+    /// Any client that still serializes the pre-0.4 fields must be
+    /// rejected AT THE SERDE BOUNDARY with a clear error — never
+    /// silently accepted.
+    #[test]
+    fn regenerate_vector_embeddings_config_rejects_old_identity_fields() {
+        let legacy_json = r#"{
+            "profile": "default",
+            "table_name": "vec_nodes_active",
+            "model_identity": "old-model",
+            "model_version": "1.0",
+            "dimension": 4,
+            "normalization_policy": "l2",
+            "chunking_policy": "per_chunk",
+            "preprocessing_policy": "trim",
+            "generator_command": ["/bin/echo"]
+        }"#;
+        let result: Result<VectorRegenerationConfig, _> = serde_json::from_str(legacy_json);
+        assert!(
+            result.is_err(),
+            "legacy identity fields must be rejected at deserialization"
+        );
+    }
+
     #[cfg(all(not(feature = "sqlite-vec"), unix))]
     #[test]
     fn regenerate_vector_embeddings_unsupported_vec_capability_writes_request_and_failed_audit() {
         let db = NamedTempFile::new().expect("temp file");
         let schema = Arc::new(SchemaManager::new());
-        let temp_dir = tempfile::tempdir().expect("temp dir");
-        let script_path = temp_dir.path().join("vector-generator-no-vec.sh");
-
-        fs::write(
-            &script_path,
-            r#"#!/usr/bin/env bash
-set -euo pipefail
-python3 -c 'import json, sys
-payload = json.load(sys.stdin)
-embeddings = [{"chunk_id": chunk["chunk_id"], "embedding": [1.0, 0.0, 0.0, 0.0]} for chunk in payload["chunks"]]
-json.dump({"embeddings": embeddings}, sys.stdout)'
-"#,
-        )
-        .expect("write generator script");
-        set_file_mode(&script_path, 0o755);
 
         {
             let conn = sqlite::open_connection(db.path()).expect("connection");
@@ -7258,18 +6855,17 @@ json.dump({"embeddings": embeddings}, sys.stdout)'
         }
 
         let service = AdminService::new(db.path(), Arc::clone(&schema));
+        let embedder = TestEmbedder::new("test-model", 4);
         let error = service
-            .regenerate_vector_embeddings(&VectorRegenerationConfig {
-                profile: "default".to_owned(),
-                table_name: "vec_nodes_active".to_owned(),
-                model_identity: "test-model".to_owned(),
-                model_version: "1.0.0".to_owned(),
-                dimension: 4,
-                normalization_policy: "l2".to_owned(),
-                chunking_policy: "per_chunk".to_owned(),
-                preprocessing_policy: "trim".to_owned(),
-                generator_command: vec![script_path.to_string_lossy().to_string()],
-            })
+            .regenerate_vector_embeddings(
+                &embedder,
+                &VectorRegenerationConfig {
+                    profile: "default".to_owned(),
+                    table_name: "vec_nodes_active".to_owned(),
+                    chunking_policy: "per_chunk".to_owned(),
+                    preprocessing_policy: "trim".to_owned(),
+                },
+            )
             .expect_err("sqlite-vec capability should be required");
 
         assert!(error.to_string().contains("unsupported vec capability"));
@@ -7303,31 +6899,10 @@ json.dump({"embeddings": embeddings}, sys.stdout)'
 
     #[cfg(feature = "sqlite-vec")]
     #[test]
-    fn regenerate_vector_embeddings_rebuilds_embeddings_from_generator() {
+    #[allow(clippy::too_many_lines)]
+    fn regenerate_vector_embeddings_rebuilds_embeddings_via_embedder() {
         let db = NamedTempFile::new().expect("temp file");
         let schema = Arc::new(SchemaManager::new());
-        let temp_dir = tempfile::tempdir().expect("temp dir");
-        let script_path = temp_dir.path().join("vector-generator.sh");
-
-        fs::write(
-            &script_path,
-            r#"#!/usr/bin/env bash
-set -euo pipefail
-python3 -c 'import json, sys
-payload = json.load(sys.stdin)
-embeddings = []
-for chunk in payload["chunks"]:
-    text = chunk["text_content"].lower()
-    if "budget" in text:
-        embedding = [1.0, 0.0, 0.0, 0.0]
-    else:
-        embedding = [0.0, 1.0, 0.0, 0.0]
-    embeddings.append({"chunk_id": chunk["chunk_id"], "embedding": embedding})
-json.dump({"embeddings": embeddings}, sys.stdout)'
-"#,
-        )
-        .expect("write generator script");
-        set_file_mode(&script_path, 0o755);
 
         {
             let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
@@ -7353,18 +6928,17 @@ json.dump({"embeddings": embeddings}, sys.stdout)'
         }
 
         let service = AdminService::new(db.path(), Arc::clone(&schema));
+        let embedder = TestEmbedder::new("test-model", 4);
         let report = service
-            .regenerate_vector_embeddings(&VectorRegenerationConfig {
-                profile: "default".to_owned(),
-                table_name: "vec_nodes_active".to_owned(),
-                model_identity: "test-model".to_owned(),
-                model_version: "1.0.0".to_owned(),
-                dimension: 4,
-                normalization_policy: "l2".to_owned(),
-                chunking_policy: "per_chunk".to_owned(),
-                preprocessing_policy: "trim".to_owned(),
-                generator_command: vec![script_path.to_string_lossy().to_string()],
-            })
+            .regenerate_vector_embeddings(
+                &embedder,
+                &VectorRegenerationConfig {
+                    profile: "default".to_owned(),
+                    table_name: "vec_nodes_active".to_owned(),
+                    chunking_policy: "per_chunk".to_owned(),
+                    preprocessing_policy: "trim".to_owned(),
+                },
+            )
             .expect("regenerate vectors");
 
         assert_eq!(report.profile, "default");
@@ -7382,30 +6956,27 @@ json.dump({"embeddings": embeddings}, sys.stdout)'
             .expect("vec count");
         assert_eq!(vec_count, 2);
 
-        let contract_count: i64 = conn
+        // The persisted vector contract must reflect the embedder
+        // identity — not any string the caller passed in, because the
+        // caller never passes one.
+        let (model_identity, model_version, dimension, normalization_policy): (
+            String,
+            String,
+            i64,
+            String,
+        ) = conn
             .query_row(
-                "SELECT count(*) FROM vector_embedding_contracts WHERE profile = 'default'",
+                "SELECT model_identity, model_version, dimension, normalization_policy \
+                 FROM vector_embedding_contracts WHERE profile = 'default'",
                 [],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
-            .expect("contract count");
-        assert_eq!(contract_count, 1);
-        let applied_at: i64 = conn
-            .query_row(
-                "SELECT applied_at FROM vector_embedding_contracts WHERE profile = 'default'",
-                [],
-                |row| row.get(0),
-            )
-            .expect("applied_at");
-        assert!(applied_at > 0);
-        let snapshot_hash: String = conn
-            .query_row(
-                "SELECT snapshot_hash FROM vector_embedding_contracts WHERE profile = 'default'",
-                [],
-                |row| row.get(0),
-            )
-            .expect("snapshot_hash");
-        assert!(!snapshot_hash.is_empty());
+            .expect("contract row");
+        assert_eq!(model_identity, "test-model");
+        assert_eq!(model_version, "1.0.0");
+        assert_eq!(dimension, 4);
+        assert_eq!(normalization_policy, "l2");
+
         let contract_format_version: i64 = conn
             .query_row(
                 "SELECT contract_format_version FROM vector_embedding_contracts WHERE profile = 'default'",
@@ -7439,22 +7010,15 @@ json.dump({"embeddings": embeddings}, sys.stdout)'
             .expect("apply metadata");
         assert!(apply_metadata.contains("\"profile\":\"default\""));
         assert!(apply_metadata.contains("\"snapshot_hash\":"));
+        assert!(apply_metadata.contains("\"model_identity\":\"test-model\""));
     }
 
     #[cfg(feature = "sqlite-vec")]
     #[test]
-    fn regenerate_vector_embeddings_failure_leaves_contract_and_vec_rows_unchanged() {
+    #[allow(clippy::too_many_lines)]
+    fn regenerate_vector_embeddings_embedder_failure_leaves_contract_and_vec_rows_unchanged() {
         let db = NamedTempFile::new().expect("temp file");
         let schema = Arc::new(SchemaManager::new());
-        let temp_dir = tempfile::tempdir().expect("temp dir");
-        let script_path = temp_dir.path().join("vector-generator-fail.sh");
-
-        fs::write(
-            &script_path,
-            "#!/usr/bin/env bash\nset -euo pipefail\necho 'generator boom' >&2\nexit 17\n",
-        )
-        .expect("write failing script");
-        set_file_mode(&script_path, 0o755);
 
         {
             let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
@@ -7499,7 +7063,7 @@ json.dump({"embeddings": embeddings}, sys.stdout)'
                     "l2",
                     "per_chunk",
                     "trim",
-                    "[\"/bin/echo\"]",
+                    "[]",
                     111,
                     "old-snapshot"
                 ],
@@ -7513,24 +7077,27 @@ json.dump({"embeddings": embeddings}, sys.stdout)'
         }
 
         let service = AdminService::new(db.path(), Arc::clone(&schema));
+        let failing = FailingEmbedder {
+            identity: QueryEmbedderIdentity {
+                model_identity: "new-model".to_owned(),
+                model_version: "1.0.0".to_owned(),
+                dimension: 4,
+                normalization_policy: "l2".to_owned(),
+            },
+        };
         let error = service
-            .regenerate_vector_embeddings_with_policy(
+            .regenerate_vector_embeddings(
+                &failing,
                 &VectorRegenerationConfig {
                     profile: "default".to_owned(),
                     table_name: "vec_nodes_active".to_owned(),
-                    model_identity: "new-model".to_owned(),
-                    model_version: "1.0.0".to_owned(),
-                    dimension: 4,
-                    normalization_policy: "l2".to_owned(),
                     chunking_policy: "per_chunk".to_owned(),
                     preprocessing_policy: "trim".to_owned(),
-                    generator_command: vec![script_path.to_string_lossy().to_string()],
                 },
-                &VectorGeneratorPolicy::default(),
             )
-            .expect_err("generator should fail");
+            .expect_err("embedder should fail");
 
-        assert!(error.to_string().contains("generator nonzero exit"));
+        assert!(error.to_string().contains("embedder failure"));
 
         let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
         let model_identity: String = conn
@@ -7570,459 +7137,18 @@ json.dump({"embeddings": embeddings}, sys.stdout)'
                 |row| row.get(0),
             )
             .expect("failure metadata");
-        assert!(failure_metadata.contains("\"failure_class\":\"generator nonzero exit\""));
+        assert!(failure_metadata.contains("\"failure_class\":\"embedder failure\""));
     }
 
-    #[cfg(feature = "sqlite-vec")]
-    #[test]
-    fn regenerate_vector_embeddings_snapshot_drift_is_retryable_and_non_mutating() {
-        let db = NamedTempFile::new().expect("temp file");
-        let schema = Arc::new(SchemaManager::new());
-        let temp_dir = tempfile::tempdir().expect("temp dir");
-        let script_path = temp_dir.path().join("vector-generator-drift.sh");
-        let db_path = db.path().to_string_lossy().to_string();
-
-        fs::write(
-            &script_path,
-            format!(
-                r#"#!/usr/bin/env bash
-set -euo pipefail
-python3 -c 'import json, sqlite3, sys
-payload = json.load(sys.stdin)
-conn = sqlite3.connect({db_path:?})
-conn.execute("INSERT INTO chunks (id, node_logical_id, text_content, created_at) VALUES (?, ?, ?, ?)", ("chunk-2", "doc-1", "late arriving text", 101))
-conn.commit()
-conn.close()
-embeddings = [{{"chunk_id": chunk["chunk_id"], "embedding": [1.0, 0.0, 0.0, 0.0]}} for chunk in payload["chunks"]]
-json.dump({{"embeddings": embeddings}}, sys.stdout)'
-"#,
-            ),
-        )
-        .expect("write drift script");
-        set_file_mode(&script_path, 0o755);
-
-        {
-            let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
-            schema.bootstrap(&conn).expect("bootstrap");
-            conn.execute(
-                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
-                 VALUES ('row-1', 'doc-1', 'Document', '{}', 100, 'source-1')",
-                [],
-            )
-            .expect("insert node");
-            conn.execute(
-                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
-                 VALUES ('chunk-1', 'doc-1', 'budget discussion', 100)",
-                [],
-            )
-            .expect("insert chunk");
-            schema
-                .ensure_vector_profile(&conn, "default", "vec_nodes_active", 4)
-                .expect("ensure vec profile");
-        }
-
-        let service = AdminService::new(db.path(), Arc::clone(&schema));
-        let error = service
-            .regenerate_vector_embeddings_with_policy(
-                &VectorRegenerationConfig {
-                    profile: "default".to_owned(),
-                    table_name: "vec_nodes_active".to_owned(),
-                    model_identity: "test-model".to_owned(),
-                    model_version: "1.0.0".to_owned(),
-                    dimension: 4,
-                    normalization_policy: "l2".to_owned(),
-                    chunking_policy: "per_chunk".to_owned(),
-                    preprocessing_policy: "trim".to_owned(),
-                    generator_command: vec![script_path.to_string_lossy().to_string()],
-                },
-                &VectorGeneratorPolicy::default(),
-            )
-            .expect_err("snapshot drift should fail");
-
-        assert!(
-            error
-                .to_string()
-                .contains("vector regeneration snapshot drift:")
-        );
-        assert!(error.to_string().contains("[retryable]"));
-
-        let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
-        let contract_count: i64 = conn
-            .query_row(
-                "SELECT count(*) FROM vector_embedding_contracts",
-                [],
-                |row| row.get(0),
-            )
-            .expect("contract count");
-        assert_eq!(contract_count, 0);
-        let vec_count: i64 = conn
-            .query_row("SELECT count(*) FROM vec_nodes_active", [], |row| {
-                row.get(0)
-            })
-            .expect("vec count");
-        assert_eq!(vec_count, 0);
-        let failure_count: i64 = conn
-            .query_row(
-                "SELECT count(*) FROM provenance_events WHERE event_type = 'vector_regeneration_failed' AND subject = 'default'",
-                [],
-                |row| row.get(0),
-            )
-            .expect("failure count");
-        assert_eq!(failure_count, 1);
-    }
-
-    #[cfg(feature = "sqlite-vec")]
-    #[test]
-    fn regenerate_vector_embeddings_times_out_and_kills_generator() {
-        let (_db, service) = setup();
-        let temp_dir = tempfile::tempdir().expect("temp dir");
-        let script_path = temp_dir.path().join("vector-generator-timeout.sh");
-
-        fs::write(
-            &script_path,
-            "#!/usr/bin/env bash\nset -euo pipefail\nsleep 1\nprintf '{\"embeddings\":[]}'\n",
-        )
-        .expect("write timeout script");
-        set_file_mode(&script_path, 0o755);
-
-        let error = service
-            .regenerate_vector_embeddings_with_policy(
-                &VectorRegenerationConfig {
-                    profile: "default".to_owned(),
-                    table_name: "vec_nodes_active".to_owned(),
-                    model_identity: "model".to_owned(),
-                    model_version: "1.0.0".to_owned(),
-                    dimension: 4,
-                    normalization_policy: "l2".to_owned(),
-                    chunking_policy: "per_chunk".to_owned(),
-                    preprocessing_policy: "trim".to_owned(),
-                    generator_command: vec![script_path.to_string_lossy().to_string()],
-                },
-                &VectorGeneratorPolicy {
-                    timeout_ms: 50,
-                    max_stdout_bytes: 1024,
-                    max_stderr_bytes: 1024,
-                    max_input_bytes: 1024,
-                    max_chunks: 10,
-                    require_absolute_executable: true,
-                    reject_world_writable_executable: true,
-                    allowed_executable_roots: vec![],
-                    preserve_env_vars: vec![],
-                },
-            )
-            .expect_err("generator should time out");
-        assert!(error.to_string().contains("generator timeout"));
-    }
-
-    #[cfg(feature = "sqlite-vec")]
-    #[test]
-    fn regenerate_vector_embeddings_rejects_oversized_stdout() {
-        let (_db, service) = setup();
-        let temp_dir = tempfile::tempdir().expect("temp dir");
-        let script_path = temp_dir.path().join("vector-generator-stdout.sh");
-
-        fs::write(
-            &script_path,
-            "#!/usr/bin/env bash\nset -euo pipefail\npython3 -c 'import sys; sys.stdout.write(\"x\" * 5000)'\n",
-        )
-        .expect("write stdout script");
-        set_file_mode(&script_path, 0o755);
-
-        let error = service
-            .regenerate_vector_embeddings_with_policy(
-                &VectorRegenerationConfig {
-                    profile: "default".to_owned(),
-                    table_name: "vec_nodes_active".to_owned(),
-                    model_identity: "model".to_owned(),
-                    model_version: "1.0.0".to_owned(),
-                    dimension: 4,
-                    normalization_policy: "l2".to_owned(),
-                    chunking_policy: "per_chunk".to_owned(),
-                    preprocessing_policy: "trim".to_owned(),
-                    generator_command: vec![script_path.to_string_lossy().to_string()],
-                },
-                &VectorGeneratorPolicy {
-                    timeout_ms: 1000,
-                    max_stdout_bytes: 128,
-                    max_stderr_bytes: 1024,
-                    max_input_bytes: 1024,
-                    max_chunks: 10,
-                    require_absolute_executable: true,
-                    reject_world_writable_executable: true,
-                    allowed_executable_roots: vec![],
-                    preserve_env_vars: vec![],
-                },
-            )
-            .expect_err("generator stdout should overflow");
-        assert!(error.to_string().contains("stdout overflow"));
-    }
-
-    #[cfg(feature = "sqlite-vec")]
-    #[test]
-    fn regenerate_vector_embeddings_rejects_oversized_stderr() {
-        let (_db, service) = setup();
-        let temp_dir = tempfile::tempdir().expect("temp dir");
-        let script_path = temp_dir.path().join("vector-generator-stderr.sh");
-
-        fs::write(
-            &script_path,
-            "#!/usr/bin/env bash\nset -euo pipefail\npython3 -c 'import sys; sys.stderr.write(\"e\" * 5000); sys.exit(7)'\n",
-        )
-        .expect("write stderr script");
-        set_file_mode(&script_path, 0o755);
-
-        let error = service
-            .regenerate_vector_embeddings_with_policy(
-                &VectorRegenerationConfig {
-                    profile: "default".to_owned(),
-                    table_name: "vec_nodes_active".to_owned(),
-                    model_identity: "model".to_owned(),
-                    model_version: "1.0.0".to_owned(),
-                    dimension: 4,
-                    normalization_policy: "l2".to_owned(),
-                    chunking_policy: "per_chunk".to_owned(),
-                    preprocessing_policy: "trim".to_owned(),
-                    generator_command: vec![script_path.to_string_lossy().to_string()],
-                },
-                &VectorGeneratorPolicy {
-                    timeout_ms: 1000,
-                    max_stdout_bytes: 1024,
-                    max_stderr_bytes: 128,
-                    max_input_bytes: 1024,
-                    max_chunks: 10,
-                    require_absolute_executable: true,
-                    reject_world_writable_executable: true,
-                    allowed_executable_roots: vec![],
-                    preserve_env_vars: vec![],
-                },
-            )
-            .expect_err("generator stderr should overflow");
-        assert!(error.to_string().contains("stderr overflow"));
-    }
-
-    #[cfg(feature = "sqlite-vec")]
-    #[test]
-    fn regenerate_vector_embeddings_rejects_oversized_input_before_spawn() {
-        let db = NamedTempFile::new().expect("temp file");
-        let schema = Arc::new(SchemaManager::new());
-        {
-            let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
-            schema.bootstrap(&conn).expect("bootstrap");
-            conn.execute(
-                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
-                 VALUES ('row-1', 'doc-1', 'Document', '{}', 100, 'source-1')",
-                [],
-            )
-            .expect("insert node");
-            conn.execute(
-                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
-                 VALUES ('chunk-1', 'doc-1', 'this chunk is intentionally long to exceed the configured input limit', 100)",
-                [],
-            )
-            .expect("insert chunk");
-        }
-
-        let service = AdminService::new(db.path(), Arc::clone(&schema));
-        let error = service
-            .regenerate_vector_embeddings_with_policy(
-                &VectorRegenerationConfig {
-                    profile: "default".to_owned(),
-                    table_name: "vec_nodes_active".to_owned(),
-                    model_identity: "model".to_owned(),
-                    model_version: "1.0.0".to_owned(),
-                    dimension: 4,
-                    normalization_policy: "l2".to_owned(),
-                    chunking_policy: "per_chunk".to_owned(),
-                    preprocessing_policy: "trim".to_owned(),
-                    generator_command: vec!["/bin/echo".to_owned()],
-                },
-                &VectorGeneratorPolicy {
-                    timeout_ms: 1000,
-                    max_stdout_bytes: 1024,
-                    max_stderr_bytes: 1024,
-                    max_input_bytes: 32,
-                    max_chunks: 10,
-                    require_absolute_executable: true,
-                    reject_world_writable_executable: true,
-                    allowed_executable_roots: vec![],
-                    preserve_env_vars: vec![],
-                },
-            )
-            .expect_err("input size should be rejected before spawn");
-        assert!(error.to_string().contains("payload too large"));
-    }
-
-    #[cfg(feature = "sqlite-vec")]
-    #[test]
-    fn regenerate_vector_embeddings_rejects_excessive_chunk_count_before_spawn() {
-        let db = NamedTempFile::new().expect("temp file");
-        let schema = Arc::new(SchemaManager::new());
-        {
-            let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
-            schema.bootstrap(&conn).expect("bootstrap");
-            conn.execute(
-                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
-                 VALUES ('row-1', 'doc-1', 'Document', '{}', 100, 'source-1')",
-                [],
-            )
-            .expect("insert node");
-            conn.execute(
-                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) VALUES ('chunk-1', 'doc-1', 'a', 100)",
-                [],
-            )
-            .expect("insert chunk 1");
-            conn.execute(
-                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) VALUES ('chunk-2', 'doc-1', 'b', 101)",
-                [],
-            )
-            .expect("insert chunk 2");
-        }
-
-        let service = AdminService::new(db.path(), Arc::clone(&schema));
-        let error = service
-            .regenerate_vector_embeddings_with_policy(
-                &VectorRegenerationConfig {
-                    profile: "default".to_owned(),
-                    table_name: "vec_nodes_active".to_owned(),
-                    model_identity: "model".to_owned(),
-                    model_version: "1.0.0".to_owned(),
-                    dimension: 4,
-                    normalization_policy: "l2".to_owned(),
-                    chunking_policy: "per_chunk".to_owned(),
-                    preprocessing_policy: "trim".to_owned(),
-                    generator_command: vec!["/bin/echo".to_owned()],
-                },
-                &VectorGeneratorPolicy {
-                    timeout_ms: 1000,
-                    max_stdout_bytes: 1024,
-                    max_stderr_bytes: 1024,
-                    max_input_bytes: 2048,
-                    max_chunks: 1,
-                    require_absolute_executable: true,
-                    reject_world_writable_executable: true,
-                    allowed_executable_roots: vec![],
-                    preserve_env_vars: vec![],
-                },
-            )
-            .expect_err("chunk count should be rejected before spawn");
-        assert!(error.to_string().contains("payload too large"));
-    }
-
-    #[cfg(feature = "sqlite-vec")]
-    #[test]
-    fn regenerate_vector_embeddings_malformed_json_leaves_contract_and_vec_rows_unchanged() {
-        let db = NamedTempFile::new().expect("temp file");
-        let schema = Arc::new(SchemaManager::new());
-        let temp_dir = tempfile::tempdir().expect("temp dir");
-        let script_path = temp_dir.path().join("vector-generator-bad-json.sh");
-
-        fs::write(
-            &script_path,
-            "#!/usr/bin/env bash\nset -euo pipefail\nprintf 'not-json'\n",
-        )
-        .expect("write bad json script");
-        set_file_mode(&script_path, 0o755);
-
-        {
-            let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
-            schema.bootstrap(&conn).expect("bootstrap");
-            conn.execute(
-                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
-                 VALUES ('row-1', 'doc-1', 'Document', '{}', 100, 'source-1')",
-                [],
-            )
-            .expect("insert node");
-            conn.execute(
-                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
-                 VALUES ('chunk-1', 'doc-1', 'budget discussion', 100)",
-                [],
-            )
-            .expect("insert chunk");
-            schema
-                .ensure_vector_profile(&conn, "default", "vec_nodes_active", 4)
-                .expect("ensure vec profile");
-            conn.execute(
-                r"
-                INSERT INTO vector_embedding_contracts (
-                    profile,
-                    table_name,
-                    model_identity,
-                    model_version,
-                    dimension,
-                    normalization_policy,
-                    chunking_policy,
-                    preprocessing_policy,
-                    generator_command_json,
-                    applied_at,
-                    snapshot_hash
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
-                ",
-                rusqlite::params![
-                    "default",
-                    "vec_nodes_active",
-                    "old-model",
-                    "0.9.0",
-                    4,
-                    "l2",
-                    "per_chunk",
-                    "trim",
-                    "[\"/bin/echo\"]",
-                    111,
-                    "old-snapshot"
-                ],
-            )
-            .expect("seed contract");
-            conn.execute(
-                "INSERT INTO vec_nodes_active (chunk_id, embedding) VALUES ('chunk-1', zeroblob(16))",
-                [],
-            )
-            .expect("seed vec row");
-        }
-
-        let service = AdminService::new(db.path(), Arc::clone(&schema));
-        let error = service
-            .regenerate_vector_embeddings_with_policy(
-                &VectorRegenerationConfig {
-                    profile: "default".to_owned(),
-                    table_name: "vec_nodes_active".to_owned(),
-                    model_identity: "new-model".to_owned(),
-                    model_version: "1.0.0".to_owned(),
-                    dimension: 4,
-                    normalization_policy: "l2".to_owned(),
-                    chunking_policy: "per_chunk".to_owned(),
-                    preprocessing_policy: "trim".to_owned(),
-                    generator_command: vec![script_path.to_string_lossy().to_string()],
-                },
-                &VectorGeneratorPolicy::default(),
-            )
-            .expect_err("bad json should fail");
-
-        assert!(error.to_string().contains("decode generator output"));
-
-        let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
-        let model_identity: String = conn
-            .query_row(
-                "SELECT model_identity FROM vector_embedding_contracts WHERE profile = 'default'",
-                [],
-                |row| row.get(0),
-            )
-            .expect("model identity");
-        assert_eq!(model_identity, "old-model");
-        let vec_count: i64 = conn
-            .query_row("SELECT count(*) FROM vec_nodes_active", [], |row| {
-                row.get(0)
-            })
-            .expect("vec count");
-        assert_eq!(vec_count, 1);
-        let failure_count: i64 = conn
-            .query_row(
-                "SELECT count(*) FROM provenance_events WHERE event_type = 'vector_regeneration_failed' AND subject = 'default'",
-                [],
-                |row| row.get(0),
-            )
-            .expect("failure count");
-        assert_eq!(failure_count, 1);
-    }
+    // Subprocess generator tests (snapshot-drift-via-concurrent-writer,
+    // timeout, stdout/stderr overflow, oversized input, excessive chunk
+    // count, malformed JSON, world-writable executable, disallowed
+    // executable root, environment preservation) were removed in 0.4.0
+    // along with the subprocess generator pattern itself. The failure
+    // modes they exercised belong to the deleted
+    // `run_vector_generator_bounded` pipeline and have no equivalent in
+    // the direct-embedder path. See
+    // `.claude/memory/project_vector_identity_invariant.md`.
 
     #[cfg(feature = "sqlite-vec")]
     #[test]
@@ -8047,18 +7173,17 @@ json.dump({{"embeddings": embeddings}}, sys.stdout)'
         }
 
         let service = AdminService::new(db.path(), Arc::clone(&schema));
+        let embedder = TestEmbedder::new("test-model", 4);
         let error = service
-            .regenerate_vector_embeddings(&VectorRegenerationConfig {
-                profile: "   ".to_owned(),
-                table_name: "vec_nodes_active".to_owned(),
-                model_identity: "test-model".to_owned(),
-                model_version: "1.0.0".to_owned(),
-                dimension: 4,
-                normalization_policy: "l2".to_owned(),
-                chunking_policy: "per_chunk".to_owned(),
-                preprocessing_policy: "trim".to_owned(),
-                generator_command: vec!["/bin/echo".to_owned()],
-            })
+            .regenerate_vector_embeddings(
+                &embedder,
+                &VectorRegenerationConfig {
+                    profile: "   ".to_owned(),
+                    table_name: "vec_nodes_active".to_owned(),
+                    chunking_policy: "per_chunk".to_owned(),
+                    preprocessing_policy: "trim".to_owned(),
+                },
+            )
             .expect_err("whitespace profile should be rejected");
 
         assert!(error.to_string().contains("invalid contract"));
@@ -8077,91 +7202,6 @@ json.dump({{"embeddings": embeddings}}, sys.stdout)'
             })
             .expect("provenance count");
         assert_eq!(provenance_count, 0);
-    }
-
-    #[cfg(feature = "sqlite-vec")]
-    #[test]
-    fn regenerate_vector_embeddings_rejects_world_writable_executable_when_policy_requires_it() {
-        let (_db, service) = setup();
-        let temp_dir = tempfile::tempdir().expect("temp dir");
-        let script_path = temp_dir.path().join("vector-generator-world-writable.sh");
-
-        fs::write(
-            &script_path,
-            "#!/usr/bin/env bash\nset -euo pipefail\nprintf '{\"embeddings\":[]}'\n",
-        )
-        .expect("write script");
-        set_file_mode(&script_path, 0o777);
-
-        let error = service
-            .regenerate_vector_embeddings_with_policy(
-                &VectorRegenerationConfig {
-                    profile: "default".to_owned(),
-                    table_name: "vec_nodes_active".to_owned(),
-                    model_identity: "model".to_owned(),
-                    model_version: "1.0.0".to_owned(),
-                    dimension: 4,
-                    normalization_policy: "l2".to_owned(),
-                    chunking_policy: "per_chunk".to_owned(),
-                    preprocessing_policy: "trim".to_owned(),
-                    generator_command: vec![script_path.to_string_lossy().to_string()],
-                },
-                &VectorGeneratorPolicy::default(),
-            )
-            .expect_err("world-writable executable should be rejected");
-
-        assert!(error.to_string().contains("world-writable executable"));
-    }
-
-    #[cfg(feature = "sqlite-vec")]
-    #[test]
-    fn regenerate_vector_embeddings_rejects_executable_outside_allowlisted_roots() {
-        let (_db, service) = setup();
-        let temp_dir = tempfile::tempdir().expect("temp dir");
-        let allowed_dir = tempfile::tempdir().expect("allowed dir");
-        let script_path = temp_dir.path().join("vector-generator-outside-root.sh");
-
-        fs::write(
-            &script_path,
-            "#!/usr/bin/env bash\nset -euo pipefail\nprintf '{\"embeddings\":[]}'\n",
-        )
-        .expect("write script");
-        set_file_mode(&script_path, 0o755);
-
-        let error = service
-            .regenerate_vector_embeddings_with_policy(
-                &VectorRegenerationConfig {
-                    profile: "default".to_owned(),
-                    table_name: "vec_nodes_active".to_owned(),
-                    model_identity: "model".to_owned(),
-                    model_version: "1.0.0".to_owned(),
-                    dimension: 4,
-                    normalization_policy: "l2".to_owned(),
-                    chunking_policy: "per_chunk".to_owned(),
-                    preprocessing_policy: "trim".to_owned(),
-                    generator_command: vec![script_path.to_string_lossy().to_string()],
-                },
-                &VectorGeneratorPolicy {
-                    timeout_ms: 1000,
-                    max_stdout_bytes: 1024,
-                    max_stderr_bytes: 1024,
-                    max_input_bytes: 1024,
-                    max_chunks: 10,
-                    require_absolute_executable: true,
-                    reject_world_writable_executable: true,
-                    allowed_executable_roots: vec![
-                        allowed_dir.path().to_string_lossy().to_string(),
-                    ],
-                    preserve_env_vars: vec![],
-                },
-            )
-            .expect_err("disallowed root should be rejected");
-
-        assert!(
-            error
-                .to_string()
-                .contains("outside allowed executable roots")
-        );
     }
 
     #[cfg(feature = "sqlite-vec")]
@@ -8211,7 +7251,7 @@ json.dump({{"embeddings": embeddings}}, sys.stdout)'
                     "l2",
                     "per_chunk",
                     "trim",
-                    "[\"/bin/echo\"]",
+                    "[]",
                     111,
                     "old-snapshot",
                     99,
@@ -8222,116 +7262,21 @@ json.dump({{"embeddings": embeddings}}, sys.stdout)'
         }
 
         let service = AdminService::new(db.path(), Arc::clone(&schema));
+        let embedder = TestEmbedder::new("test-model", 4);
         let error = service
-            .regenerate_vector_embeddings(&VectorRegenerationConfig {
-                profile: "default".to_owned(),
-                table_name: "vec_nodes_active".to_owned(),
-                model_identity: "test-model".to_owned(),
-                model_version: "1.0.0".to_owned(),
-                dimension: 4,
-                normalization_policy: "l2".to_owned(),
-                chunking_policy: "per_chunk".to_owned(),
-                preprocessing_policy: "trim".to_owned(),
-                generator_command: vec!["/bin/echo".to_owned()],
-            })
+            .regenerate_vector_embeddings(
+                &embedder,
+                &VectorRegenerationConfig {
+                    profile: "default".to_owned(),
+                    table_name: "vec_nodes_active".to_owned(),
+                    chunking_policy: "per_chunk".to_owned(),
+                    preprocessing_policy: "trim".to_owned(),
+                },
+            )
             .expect_err("future contract version should be rejected");
 
         assert!(error.to_string().contains("unsupported"));
         assert!(error.to_string().contains("format version"));
-    }
-
-    #[cfg(feature = "sqlite-vec")]
-    #[test]
-    fn regenerate_vector_embeddings_clears_environment_except_preserved_vars() {
-        let db = NamedTempFile::new().expect("temp file");
-        let schema = Arc::new(SchemaManager::new());
-        let temp_dir = tempfile::tempdir().expect("temp dir");
-        let script_path = temp_dir.path().join("vector-generator-env.sh");
-        {
-            let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
-            schema.bootstrap(&conn).expect("bootstrap");
-            conn.execute(
-                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
-                 VALUES ('row-1', 'doc-1', 'Document', '{}', 100, 'source-1')",
-                [],
-            )
-            .expect("insert node");
-            conn.execute(
-                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
-                 VALUES ('chunk-1', 'doc-1', 'budget discussion', 100)",
-                [],
-            )
-            .expect("insert chunk");
-        }
-
-        fs::write(
-            &script_path,
-            r#"#!/usr/bin/env bash
-set -euo pipefail
-if [[ "${VECTOR_TEST_SECRET:-}" != "expected" ]]; then
-  echo "missing secret" >&2
-  exit 9
-fi
-python3 -c 'import json, sys
-payload = json.load(sys.stdin)
-json.dump({"embeddings": [{"chunk_id": payload["chunks"][0]["chunk_id"], "embedding": [1.0, 0.0, 0.0, 0.0]}]}, sys.stdout)'
-"#,
-        )
-        .expect("write script");
-        set_file_mode(&script_path, 0o755);
-
-        let service = AdminService::new(db.path(), Arc::clone(&schema));
-        unsafe {
-            std::env::set_var("VECTOR_TEST_SECRET", "expected");
-        }
-        let missing_env = service
-            .regenerate_vector_embeddings_with_policy(
-                &VectorRegenerationConfig {
-                    profile: "default".to_owned(),
-                    table_name: "vec_nodes_active".to_owned(),
-                    model_identity: "model".to_owned(),
-                    model_version: "1.0.0".to_owned(),
-                    dimension: 4,
-                    normalization_policy: "l2".to_owned(),
-                    chunking_policy: "per_chunk".to_owned(),
-                    preprocessing_policy: "trim".to_owned(),
-                    generator_command: vec![script_path.to_string_lossy().to_string()],
-                },
-                &VectorGeneratorPolicy::default(),
-            )
-            .expect_err("non-preserved env var should be dropped");
-        assert!(missing_env.to_string().contains("nonzero exit"));
-
-        let report = service
-            .regenerate_vector_embeddings_with_policy(
-                &VectorRegenerationConfig {
-                    profile: "default".to_owned(),
-                    table_name: "vec_nodes_active".to_owned(),
-                    model_identity: "model".to_owned(),
-                    model_version: "1.0.0".to_owned(),
-                    dimension: 4,
-                    normalization_policy: "l2".to_owned(),
-                    chunking_policy: "per_chunk".to_owned(),
-                    preprocessing_policy: "trim".to_owned(),
-                    generator_command: vec![script_path.to_string_lossy().to_string()],
-                },
-                &VectorGeneratorPolicy {
-                    timeout_ms: 1000,
-                    max_stdout_bytes: 1024,
-                    max_stderr_bytes: 1024,
-                    max_input_bytes: 4096,
-                    max_chunks: 10,
-                    require_absolute_executable: true,
-                    reject_world_writable_executable: true,
-                    allowed_executable_roots: vec![],
-                    preserve_env_vars: vec!["VECTOR_TEST_SECRET".to_owned()],
-                },
-            )
-            .expect("preserved env var should allow success");
-        assert_eq!(report.regenerated_rows, 1);
-        unsafe {
-            std::env::remove_var("VECTOR_TEST_SECRET");
-        }
     }
 
     #[test]

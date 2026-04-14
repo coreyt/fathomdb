@@ -36,8 +36,8 @@ pub use fathomdb_engine::{
     OptionalProjectionTask, ProjectionRepairReport, ProjectionTarget, ProvenanceEvent,
     ProvenanceMode, ProvenancePurgeOptions, ProvenancePurgeReport, QueryEmbedder,
     QueryEmbedderIdentity, QueryPlan, QueryRows, RunInsert, RunRow, SafeExportManifest,
-    SafeExportOptions, SkippedEdge, StepInsert, StepRow, VecInsert, WriteReceipt, WriteRequest,
-    WriterActor, new_id, new_row_id,
+    SafeExportOptions, SkippedEdge, StepInsert, StepRow, VecInsert, VectorRegenerationConfig,
+    VectorRegenerationReport, WriteReceipt, WriteRequest, WriterActor, new_id, new_row_id,
 };
 pub use fathomdb_engine::{SqliteCacheStatus, TelemetryLevel, TelemetrySnapshot};
 #[doc(hidden)]
@@ -287,6 +287,36 @@ impl Engine {
     /// Returns a handle to the administrative service.
     pub fn admin(&self) -> &AdminHandle {
         self.runtime.admin()
+    }
+
+    /// Regenerate vector embeddings using the embedder configured at
+    /// [`Engine::open`] time via [`EmbedderChoice`].
+    ///
+    /// 0.4.0 architectural invariant: the regen path and the read path
+    /// share a single embedder instance, so vector identity on the
+    /// resulting profile is stamped directly from
+    /// [`QueryEmbedder::identity`] and cannot drift from what
+    /// `search()` will use at read time.
+    ///
+    /// # Errors
+    /// Returns [`EngineError::EmbedderNotConfigured`] if
+    /// [`Engine::open`] was called with [`EmbedderChoice::None`] (or
+    /// with `EmbedderChoice::Builtin` in a build without the
+    /// `default-embedder` feature, which resolves to `None`).
+    /// Propagates any underlying [`EngineError`] raised by the admin
+    /// service.
+    pub fn regenerate_vector_embeddings(
+        &self,
+        config: &VectorRegenerationConfig,
+    ) -> Result<VectorRegenerationReport, EngineError> {
+        let coordinator = self.runtime.coordinator();
+        let embedder = coordinator
+            .query_embedder()
+            .ok_or(EngineError::EmbedderNotConfigured)?;
+        self.runtime
+            .admin()
+            .service()
+            .regenerate_vector_embeddings(embedder.as_ref(), config)
     }
 
     /// Returns a handle to the single-threaded writer actor.
@@ -969,6 +999,7 @@ fn engine_error_code(error: &EngineError) -> Option<String> {
         EngineError::CapabilityMissing(_) => "capability_missing",
         EngineError::DatabaseLocked(_) => "database_locked",
         EngineError::InvalidConfig(_) => "invalid_config",
+        EngineError::EmbedderNotConfigured => "embedder_not_configured",
     };
     Some(code.to_owned())
 }

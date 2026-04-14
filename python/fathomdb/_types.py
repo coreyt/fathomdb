@@ -288,7 +288,9 @@ class CompiledGroupedQuery:
     def from_wire(cls, payload: dict[str, Any]) -> "CompiledGroupedQuery":
         return cls(
             root=CompiledQuery.from_wire(payload["root"]),
-            expansions=[ExpansionSlot.from_wire(item) for item in payload["expansions"]],
+            expansions=[
+                ExpansionSlot.from_wire(item) for item in payload["expansions"]
+            ],
             shape_hash=payload["shape_hash"],
             hints=ExecutionHints.from_wire(payload["hints"]),
         )
@@ -601,7 +603,9 @@ class GroupedQueryRows:
     def from_wire(cls, payload: dict[str, Any]) -> "GroupedQueryRows":
         return cls(
             roots=[NodeRow.from_wire(item) for item in payload["roots"]],
-            expansions=[ExpansionSlotRows.from_wire(item) for item in payload["expansions"]],
+            expansions=[
+                ExpansionSlotRows.from_wire(item) for item in payload["expansions"]
+            ],
             was_degraded=payload["was_degraded"],
         )
 
@@ -744,57 +748,26 @@ class ProjectionRepairReport:
 
 @dataclass(frozen=True)
 class VectorRegenerationConfig:
-    """Configuration for regenerating vector embeddings."""
+    """Configuration for regenerating vector embeddings.
+
+    0.4.0 architectural invariant: vector identity is the embedder's
+    responsibility. The engine is opened with an ``EmbedderChoice`` and
+    the regen path uses that same embedder. Configs carry only *where*
+    the vectors live and *how* to chunk/preprocess them — never *what*
+    model produced them.
+    """
 
     profile: str
     table_name: str
-    model_identity: str
-    model_version: str
-    dimension: int
-    normalization_policy: str
     chunking_policy: str
     preprocessing_policy: str
-    generator_command: list[str]
 
     def to_wire(self) -> dict[str, Any]:
         return {
             "profile": self.profile,
             "table_name": self.table_name,
-            "model_identity": self.model_identity,
-            "model_version": self.model_version,
-            "dimension": self.dimension,
-            "normalization_policy": self.normalization_policy,
             "chunking_policy": self.chunking_policy,
             "preprocessing_policy": self.preprocessing_policy,
-            "generator_command": self.generator_command,
-        }
-
-
-@dataclass(frozen=True)
-class VectorGeneratorPolicy:
-    """Security and resource limits for the vector generator subprocess."""
-
-    timeout_ms: int = 300_000
-    max_stdout_bytes: int = 64 * 1024 * 1024
-    max_stderr_bytes: int = 1024 * 1024
-    max_input_bytes: int = 64 * 1024 * 1024
-    max_chunks: int = 1_000_000
-    require_absolute_executable: bool = True
-    reject_world_writable_executable: bool = True
-    allowed_executable_roots: list[str] = field(default_factory=list)
-    preserve_env_vars: list[str] = field(default_factory=list)
-
-    def to_wire(self) -> dict[str, Any]:
-        return {
-            "timeout_ms": self.timeout_ms,
-            "max_stdout_bytes": self.max_stdout_bytes,
-            "max_stderr_bytes": self.max_stderr_bytes,
-            "max_input_bytes": self.max_input_bytes,
-            "max_chunks": self.max_chunks,
-            "require_absolute_executable": self.require_absolute_executable,
-            "reject_world_writable_executable": self.reject_world_writable_executable,
-            "allowed_executable_roots": self.allowed_executable_roots,
-            "preserve_env_vars": self.preserve_env_vars,
         }
 
 
@@ -984,7 +957,9 @@ class OperationalFilterClause:
     upper: int | None = None
 
     @classmethod
-    def exact(cls, field: str, value: OperationalFilterValue) -> "OperationalFilterClause":
+    def exact(
+        cls, field: str, value: OperationalFilterValue
+    ) -> "OperationalFilterClause":
         return cls(mode=OperationalFilterMode.EXACT, field=field, value=value)
 
     @classmethod
@@ -1086,8 +1061,13 @@ class OperationalTraceReport:
             record_key=payload.get("record_key"),
             mutation_count=payload["mutation_count"],
             current_count=payload["current_count"],
-            mutations=[OperationalMutationRow.from_wire(item) for item in payload["mutations"]],
-            current_rows=[OperationalCurrentRow.from_wire(item) for item in payload["current_rows"]],
+            mutations=[
+                OperationalMutationRow.from_wire(item) for item in payload["mutations"]
+            ],
+            current_rows=[
+                OperationalCurrentRow.from_wire(item)
+                for item in payload["current_rows"]
+            ],
         )
 
 
@@ -1470,8 +1450,8 @@ class WriteRequest:
     actions: list[ActionInsert] = field(default_factory=list)
     optional_backfills: list[OptionalProjectionTask] = field(default_factory=list)
     vec_inserts: list[VecInsert] = field(default_factory=list)
-    operational_writes: list[OperationalAppend | OperationalPut | OperationalDelete] = field(
-        default_factory=list
+    operational_writes: list[OperationalAppend | OperationalPut | OperationalDelete] = (
+        field(default_factory=list)
     )
 
     def to_wire(self) -> dict[str, Any]:
@@ -1514,7 +1494,9 @@ class OperationalSecondaryIndexRebuildReport:
     current_entries_rebuilt: int
 
     @classmethod
-    def from_wire(cls, payload: dict[str, Any]) -> "OperationalSecondaryIndexRebuildReport":
+    def from_wire(
+        cls, payload: dict[str, Any]
+    ) -> "OperationalSecondaryIndexRebuildReport":
         return cls(**payload)
 
 
@@ -1562,7 +1544,10 @@ class OperationalRetentionPlanReport:
         return cls(
             planned_at=payload["planned_at"],
             collections_examined=payload["collections_examined"],
-            items=[OperationalRetentionPlanItem.from_wire(item) for item in payload["items"]],
+            items=[
+                OperationalRetentionPlanItem.from_wire(item)
+                for item in payload["items"]
+            ],
         )
 
 
@@ -1606,7 +1591,9 @@ class OperationalRetentionRunReport:
             collections_examined=payload["collections_examined"],
             collections_acted_on=payload["collections_acted_on"],
             dry_run=payload["dry_run"],
-            items=[OperationalRetentionRunItem.from_wire(item) for item in payload["items"]],
+            items=[
+                OperationalRetentionRunItem.from_wire(item) for item in payload["items"]
+            ],
         )
 
 

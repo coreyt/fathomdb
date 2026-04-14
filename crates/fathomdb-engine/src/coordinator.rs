@@ -429,6 +429,17 @@ impl ExecutionCoordinator {
         self.vector_enabled
     }
 
+    /// Returns the configured read-time query embedder, if any.
+    ///
+    /// The 0.4.0 write-time parity work reuses this same embedder for
+    /// vector regeneration via [`Engine::regenerate_vector_embeddings`],
+    /// so there is always exactly one source of truth for vector
+    /// identity per [`Engine`] instance.
+    #[must_use]
+    pub fn query_embedder(&self) -> Option<&Arc<dyn QueryEmbedder>> {
+        self.query_embedder.as_ref()
+    }
+
     fn lock_connection(&self) -> Result<MutexGuard<'_, Connection>, EngineError> {
         self.pool.acquire()
     }
