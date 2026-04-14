@@ -140,9 +140,19 @@ pub fn open_readonly_connection(path: &Path) -> Result<Connection, EngineError> 
 #[cfg(feature = "sqlite-vec")]
 pub fn open_readonly_connection_with_vec(path: &Path) -> Result<Connection, EngineError> {
     // Safety: sqlite3_auto_extension is idempotent for the same function pointer.
+    // The transmute converts the sqlite-vec init signature
+    // (db, pz_err_msg, p_api) -> c_int to the erased () -> c_int expected by
+    // sqlite3_auto_extension; SQLite passes the real args at load time.
     unsafe {
-        rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute(
-            sqlite_vec::sqlite3_vec_init as *const (),
+        rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute::<
+            *const (),
+            unsafe extern "C" fn(
+                *mut rusqlite::ffi::sqlite3,
+                *mut *mut u8,
+                *const rusqlite::ffi::sqlite3_api_routines,
+            ) -> i32,
+        >(
+            sqlite_vec::sqlite3_vec_init as *const ()
         )));
     }
     open_readonly_connection(path)
@@ -152,7 +162,7 @@ pub fn open_readonly_connection_with_vec(path: &Path) -> Result<Connection, Engi
 ///
 /// Registers `sqlite3_vec_init` as a global auto-extension so the extension is
 /// available in every connection opened after this call.  The registration is
-/// idempotent — SQLite deduplicates identical function-pointer registrations.
+/// idempotent — `SQLite` deduplicates identical function-pointer registrations.
 ///
 /// # Errors
 /// Returns [`EngineError`] if the underlying database connection cannot be
@@ -164,8 +174,15 @@ pub fn open_connection_with_vec(path: &Path) -> Result<Connection, EngineError> 
     // (db, pz_err_msg, p_api) -> c_int to the erased () -> c_int expected by
     // sqlite3_auto_extension; SQLite passes the real args at load time.
     unsafe {
-        rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute(
-            sqlite_vec::sqlite3_vec_init as *const (),
+        rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute::<
+            *const (),
+            unsafe extern "C" fn(
+                *mut rusqlite::ffi::sqlite3,
+                *mut *mut u8,
+                *const rusqlite::ffi::sqlite3_api_routines,
+            ) -> i32,
+        >(
+            sqlite_vec::sqlite3_vec_init as *const ()
         )));
     }
     open_connection(path)

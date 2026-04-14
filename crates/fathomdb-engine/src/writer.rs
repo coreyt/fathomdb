@@ -6572,6 +6572,7 @@ mod tests {
 
     #[cfg(feature = "sqlite-vec")]
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn vec_cleanup_on_chunk_replace_removes_old_vec_rows() {
         use crate::sqlite::open_connection_with_vec;
 

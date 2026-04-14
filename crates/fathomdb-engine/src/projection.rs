@@ -426,12 +426,12 @@ mod tests {
 
             // Insert a superseded node + chunk + vec row (stale state).
             conn.execute_batch(
-                r#"
+                r"
                 INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, superseded_at)
                 VALUES ('row-old', 'lg-stale', 'Doc', '{}', 100, 200);
                 INSERT INTO chunks (id, node_logical_id, text_content, created_at)
                 VALUES ('chunk-stale', 'lg-stale', 'old text', 100);
-                "#,
+                ",
             )
             .expect("seed stale data");
 
