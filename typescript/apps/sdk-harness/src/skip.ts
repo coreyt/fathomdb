@@ -1,3 +1,6 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import type { HarnessResult } from "./models.js";
 
 const NATIVE_UNAVAILABLE_PATTERNS = [
@@ -24,8 +27,11 @@ export function assert(condition: boolean, message: string): void {
   if (!condition) throw new Error(`assertion failed: ${message}`);
 }
 
+// Route through os.tmpdir() (which reads $TMPDIR) so tests honor the
+// per-session temp root the test orchestrator/CI sets up. Cleanup is
+// handled at session scope by rm -rf'ing the TMPDIR root — see GH #40.
 export function tempDbPath(scenario: string): string {
   const ts = Date.now();
   const rand = Math.random().toString(36).slice(2, 8);
-  return `/tmp/fathomdb-harness-${scenario}-${ts}-${rand}.db`;
+  return join(tmpdir(), `fathomdb-harness-${scenario}-${ts}-${rand}.db`);
 }
