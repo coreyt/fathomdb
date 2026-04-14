@@ -132,7 +132,11 @@ def test_engine_open_write_query_and_admin_callbacks_are_publicly_available(tmp_
 def test_python_feedback_emits_slow_and_heartbeat_for_slow_operation() -> None:
     from fathomdb import AdminClient, FeedbackConfig, ResponseCyclePhase
 
-    core = _FakeCore(delay_s=0.05)
+    # Operation duration must be comfortably larger than
+    # slow_threshold_ms + heartbeat_interval_ms + thread-wake jitter so a
+    # heartbeat reliably fires before FINISHED, even on slow CI runners
+    # (observed flake: macOS CI missing HEARTBEAT when delay_s was 0.05).
+    core = _FakeCore(delay_s=0.2)
     admin = AdminClient(core)
     events = []
 
