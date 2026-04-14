@@ -161,5 +161,9 @@ pub(crate) fn map_engine_error(error: EngineError) -> Error {
             napi_error(ErrorCode::CapabilityMissing, message)
         }
         EngineError::DatabaseLocked(message) => napi_error(ErrorCode::DatabaseLocked, message),
+        EngineError::EmbedderNotConfigured => napi_error(
+            ErrorCode::InvalidConfig,
+            "embedder not configured: open the Engine with a non-None EmbedderChoice to regenerate vector embeddings",
+        ),
     }
 }

@@ -105,8 +105,9 @@ main() {
   # Wipe the family at preflight start so every run begins from a clean slate.
   run bash -c 'rm -rf /tmp/fathomdb-harness-* /tmp/fathomdb-e2e-toolchain-*'
 
-  run bash .git/hooks/pre-commit
-  run bash .git/hooks/pre-push
+  HOOKS_DIR="$(git rev-parse --git-common-dir)/hooks"
+  run bash "$HOOKS_DIR/pre-commit"
+  run bash "$HOOKS_DIR/pre-push"
 
   run bash scripts/test-setup-dev.sh
   run python scripts/check-doc-hygiene.py
