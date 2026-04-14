@@ -24,11 +24,20 @@ jobs:
 
   go-fuzz-smoke:
     runs-on: ubuntu-latest
+    # Route all temp files through a per-session root so cleanup is a
+    # single rm -rf at job end (GH #40). ${{ runner.temp }} is the
+    # auto-cleaned per-runner temp dir.
+    env:
+      TMPDIR: ${{ runner.temp }}/fathomdb-${{ github.run_id }}-${{ github.run_attempt }}
     defaults:
       run:
         working-directory: go/fathom-integrity
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Create per-session TMPDIR
+        shell: bash
+        run: mkdir -p "$TMPDIR"
+        working-directory: .
       - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: go/fathom-integrity/go.mod
@@ -41,8 +50,12 @@ jobs:
     timeout-minutes: 15
     env:
       FATHOM_RUST_STRESS_DURATION_SECONDS: "60"
+      TMPDIR: ${{ runner.temp }}/fathomdb-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Create per-session TMPDIR
+        shell: bash
+        run: mkdir -p "$TMPDIR"
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
         with:
           toolchain: stable
@@ -57,8 +70,12 @@ jobs:
     timeout-minutes: 10
     env:
       FATHOM_RUST_TRACING_STRESS_DURATION_SECONDS: "60"
+      TMPDIR: ${{ runner.temp }}/fathomdb-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Create per-session TMPDIR
+        shell: bash
+        run: mkdir -p "$TMPDIR"
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
         with:
           toolchain: stable
@@ -70,8 +87,12 @@ jobs:
     timeout-minutes: 5
     env:
       FATHOM_PY_STRESS_DURATION_SECONDS: "60"
+      TMPDIR: ${{ runner.temp }}/fathomdb-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Create per-session TMPDIR
+        shell: bash
+        run: mkdir -p "$TMPDIR"
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.11"
@@ -88,11 +109,16 @@ jobs:
     timeout-minutes: 10
     env:
       FATHOM_TS_STRESS_DURATION_SECONDS: "60"
+      TMPDIR: ${{ runner.temp }}/fathomdb-${{ github.run_id }}-${{ github.run_attempt }}
     defaults:
       run:
         working-directory: typescript
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Create per-session TMPDIR
+        shell: bash
+        run: mkdir -p "$TMPDIR"
+        working-directory: .
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
         with:
           toolchain: stable
