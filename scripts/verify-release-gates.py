@@ -93,6 +93,15 @@ def gh_run_list(
     status: str | None = None,
     runner: Callable[..., subprocess.CompletedProcess[str]] = run_command,
 ) -> list[WorkflowRun]:
+    # Older gh versions (pre-2.29) do not support `--commit`, `--branch`,
+    # or `--status` as filter flags on `gh run list`. To stay portable
+    # across gh versions — this script is invoked both from CI runners
+    # (newer gh) and local dev machines (sometimes older gh like
+    # 2.4.0 on stock Debian / Ubuntu) — fetch the most recent 20 runs
+    # for the given workflow and do all filtering client-side on the
+    # returned JSON payload. The `--repo`, `--workflow`, `--limit`,
+    # and `--json` flags are supported back to the earliest gh releases
+    # we care about.
     args = [
         "gh",
         "run",
@@ -106,12 +115,6 @@ def gh_run_list(
         "--json",
         GH_RUN_FIELDS,
     ]
-    if commit:
-        args.extend(["--commit", commit])
-    if branch:
-        args.extend(["--branch", branch])
-    if status:
-        args.extend(["--status", status])
 
     try:
         completed = runner(args, cwd=REPO_ROOT)
@@ -121,7 +124,18 @@ def gh_run_list(
         raise ReleaseGateError(
             f"gh run list failed for workflow {workflow!r}: {completed.stderr.strip()}"
         )
-    return load_runs(completed.stdout)
+
+    runs = load_runs(completed.stdout)
+    if commit:
+        runs = [r for r in runs if r.head_sha == commit]
+    if branch:
+        runs = [r for r in runs if r.head_branch == branch]
+    if status:
+        # gh's --status accepts completion conclusions like "success"
+        # and run statuses like "in_progress". Match on either field
+        # so the client-side filter preserves the original semantics.
+        runs = [r for r in runs if status in (r.conclusion, r.status)]
+    return runs
 
 
 def require_successful_commit_run(

@@ -280,6 +280,48 @@ an intentionally lightweight agent-harness preflight. Use
   bulk runs due to a sqlite-vec `vec_nodes_active` table that some
   baseline scenarios touch. The cleanup pack at `2c1ef1c` refreshed
   expected counts but the bulk-run interaction remains.
+- `./scripts/preflight-CI.sh` used to run `cargo publish --dry-run` for
+  all four workspace crates. The non-leaf crates (`fathomdb-engine` and
+  `fathomdb`) carry inter-workspace dependencies at the
+  about-to-be-released version (e.g. `fathomdb-engine` has
+  `fathomdb-query = "^0.3.1"`), and `cargo publish --dry-run` resolves
+  dependency versions from the crates.io index rather than local
+  path dependencies. On a pre-release commit those dry-runs always
+  fail with `failed to select a version for the requirement` because
+  the registry has not yet been updated. The real release workflow
+  at `.github/workflows/release.yml` works around this by publishing
+  in dependency tiers with 60-second propagation waits between
+  tiers; there is no way to simulate that in a dry-run. Fixed in the
+  0.3.1 cycle by dropping the non-leaf dry-runs from preflight. The
+  two leaf dry-runs (`fathomdb-query`, `fathomdb-schema`) remain and
+  are genuine pre-publish checks. The original four-crate loop
+  appeared to work historically only because preflight was always
+  run on unbumped main.
+- `./scripts/preflight-CI.sh` used to leave `/tmp/fathomdb-harness-*.db*`
+  files behind after each run, including the per-scenario sibling
+  databases that `HarnessContext.sibling_db(...)` creates at derived
+  paths like `/tmp/fathomdb-harness-baseline-trace-and-excise.db`. A
+  re-invocation would replay the harness scenarios against
+  already-populated databases, either tripping UNIQUE constraints in
+  `node_upsert_supersession` or skewing row counts in
+  `trace_and_excise` (the scenario that opens the
+  `-trace-and-excise.db` sibling). Separately, the TypeScript
+  `sdk-harness` app at `typescript/apps/sdk-harness/src/skip.ts:27`
+  mints per-run `/tmp/fathomdb-harness-<scenario>-<ts>-<rand>.db`
+  paths and never removes them, so every `npm run test -w
+  @fathomdb/sdk-harness` leaked one `.db` plus sidecars per scenario.
+  Hundreds of these accumulate into disk pressure that eventually
+  flakes unrelated vitest `afterEach` hook timeouts (observed as a
+  30-second cleanup on a test that normally runs in under 100 ms).
+  Fixed in the 0.3.1 cycle by a preflight-level wipe at the top of
+  `preflight-CI.sh` (`rm -rf /tmp/fathomdb-harness-* /tmp/fathomdb-e2e-toolchain-*`)
+  and a per-harness-invocation glob that catches every sibling database
+  before each `examples.harness.app` run. The underlying design choice —
+  that the harness app opens the given `--db` path as-is and does not
+  recreate it — is preserved, matching how the pytest wrappers use
+  per-test tmp dirs. The sdk-harness `tempDbPath` cleanup gap is a
+  known issue to address in a follow-up; preflight-side scrubbing is
+  the right pressure-valve for now.
 - `cargo clippy --features node` surfaces pre-existing clippy lints
   in `crates/fathomdb/src/node.rs` and `node_types.rs` (unused self,
   pass-by-value, never-constructed struct). Not in the default gate

@@ -60,12 +60,14 @@ def test_verify_release_gates_accepts_recent_successes() -> None:
     def runner(args, cwd=None):
         workflow = args[args.index("--workflow") + 1]
         expected = responses[workflow]
-        if workflow in {"CI", "Python"}:
-            assert "--commit" in args
-            assert args[args.index("--commit") + 1] == commit
-        if workflow == module.DEFAULT_BENCHMARK_WORKFLOW:
-            assert "--branch" in args
-            assert args[args.index("--branch") + 1] == "main"
+        # gh_run_list() filters commit / branch client-side (to stay
+        # portable across older gh versions that lack --commit /
+        # --branch flags on `gh run list`). The script therefore
+        # never passes those flags to gh; assert absence instead
+        # of presence so a regression that resurrects server-side
+        # filtering gets caught here rather than at preflight time.
+        assert "--commit" not in args
+        assert "--branch" not in args
         return subprocess.CompletedProcess(args, 0, stdout=json.dumps(expected), stderr="")
 
     def version_checker(received_tag: str) -> None:
