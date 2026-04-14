@@ -58,6 +58,7 @@ nav:
     - Writing Data: guides/writing-data.md
     - Property FTS Projections: guides/property-fts.md
     - Externalizing Payloads (content_ref): guides/content-refs.md
+    - Operational Queries: guides/operational-queries.md
   - API Reference (Python):
     - Engine: reference/engine.md
     - Query: reference/query.md

@@ -113,7 +113,10 @@ For more write patterns, see [Writing Data](../guides/writing-data.md).
 
 Use `read_operational_collection` to query mutations with filters.
 Filter fields must be declared on the collection first -- see
-[Admin Operations](../operations/admin-operations.md).
+[Admin Operations](../operations/admin-operations.md). For a worked
+end-to-end walkthrough of the three filter modes (EXACT, PREFIX,
+RANGE) and how to compose clauses, see the
+[Operational Queries guide](../guides/operational-queries.md).
 
 ```python
 from fathomdb import (
