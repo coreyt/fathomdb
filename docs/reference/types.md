@@ -525,6 +525,18 @@ Error communicating with the admin bridge binary.
 A required capability is not enabled (e.g., vector search without
 `vector_dimension` set on `Engine.open`).
 
+### Embedder not configured
+
+Raised as a `FathomError` (message prefix
+`"embedder not configured: ..."`) when
+`AdminClient.regenerate_vector_embeddings` is called on an engine
+opened without a read-time embedder. The corresponding Rust variant
+is `EngineError::EmbedderNotConfigured`. Reopen the engine with
+`embedder="builtin"` (Python) or
+`EmbedderChoice::Builtin` / `EmbedderChoice::InProcess(...)` (Rust)
+to resolve it. See
+[Vector Regeneration](../operations/vector-regeneration.md#error-handling).
+
 ### CompileError
 
 Query compilation failed (invalid filter combination, unsupported operation).

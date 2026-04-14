@@ -581,11 +581,21 @@ rows = (
     post-filter. Property FTS participates in the search CTE; `filter_json_*`
     does not.
 
-    The named-fused variants that would push `filter_json_*` predicates
-    into the search CTE (`filter_json_fused_*`) are deferred to a later
-    release. Until then, prefer property FTS for high-selectivity
-    narrowing and use `filter_json_*` with an over-fetched candidate
-    set for the tail.
+    **Fused named variants (shipped in 0.4.0):** when a property FTS
+    schema is registered for the target kind, you can use the
+    `filter_json_fused_*` family to push the predicate into the search
+    CTE itself, so the `limit` passed to `search()` applies *after*
+    the narrowing runs. The full family is `filter_json_fused_text_eq`,
+    `filter_json_fused_timestamp_gt`, `filter_json_fused_timestamp_gte`,
+    `filter_json_fused_timestamp_lt`, and `filter_json_fused_timestamp_lte`.
+    Each method requires a property FTS schema covering the JSON path
+    you reference; calling one without a registered schema raises
+    `BuilderValidationError` immediately — there is no silent degrade
+    to a post-filter. See the feature summary in
+    [Query reference](../reference/query.md#searchbuilder) for the
+    full method list, and
+    [`BuilderValidationError`](../reference/types.md#errors) for the
+    error contract.
 
 ### Advanced: explicit text-only control
 
