@@ -428,6 +428,12 @@ impl ExecutionCoordinator {
             }
         }
 
+        // Vec identity guard: warn (never error) if the stored profile's
+        // model_identity or dimensions differ from the configured embedder.
+        if let Some(ref emb) = query_embedder {
+            check_vec_identity_at_open(&conn, emb.as_ref())?;
+        }
+
         // Drop the bootstrap connection — pool connections are used for reads.
         drop(conn);
 
@@ -2436,6 +2442,62 @@ fn adapt_fts_nodes_sql_for_per_kind_tables(
         .collect();
 
     Ok((new_sql, new_binds))
+}
+
+/// Check that the active vector profile's model identity and dimensions match
+/// the supplied embedder. If either differs, emit a warning via `trace_warn!`
+/// but always return `Ok(())`. This function NEVER returns `Err`.
+///
+/// Queries `projection_profiles` directly — no `AdminService` indirection.
+#[allow(clippy::unnecessary_wraps)]
+fn check_vec_identity_at_open(
+    conn: &rusqlite::Connection,
+    embedder: &dyn QueryEmbedder,
+) -> Result<(), EngineError> {
+    let row: Option<String> = conn
+        .query_row(
+            "SELECT config_json FROM projection_profiles WHERE kind='*' AND facet='vec'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap_or(None);
+
+    let Some(config_json) = row else {
+        return Ok(());
+    };
+
+    // Parse leniently — any error means we just skip the check.
+    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&config_json) else {
+        return Ok(());
+    };
+
+    let identity = embedder.identity();
+
+    if let Some(stored_model) = parsed
+        .get("model_identity")
+        .and_then(serde_json::Value::as_str)
+        && stored_model != identity.model_identity
+    {
+        trace_warn!(
+            stored_model_identity = stored_model,
+            embedder_model_identity = %identity.model_identity,
+            "vec identity mismatch at open: model_identity differs"
+        );
+    }
+
+    if let Some(stored_dim) = parsed.get("dimensions").and_then(serde_json::Value::as_u64) {
+        let stored_dim = usize::try_from(stored_dim).unwrap_or(usize::MAX);
+        if stored_dim != identity.dimension {
+            trace_warn!(
+                stored_dimensions = stored_dim,
+                embedder_dimensions = identity.dimension,
+                "vec identity mismatch at open: dimensions differ"
+            );
+        }
+    }
+
+    Ok(())
 }
 
 /// Open-time FTS rebuild guards (Guard 1 + Guard 2).
@@ -4875,5 +4937,110 @@ mod tests {
                 }
             }
         }
+    }
+
+    // ---- Pack E: vec identity guard tests ----
+
+    #[derive(Debug)]
+    struct StubEmbedder {
+        model_identity: String,
+        dimension: usize,
+    }
+
+    impl StubEmbedder {
+        fn new(model_identity: &str, dimension: usize) -> Self {
+            Self {
+                model_identity: model_identity.to_owned(),
+                dimension,
+            }
+        }
+    }
+
+    impl crate::embedder::QueryEmbedder for StubEmbedder {
+        fn embed_query(&self, _text: &str) -> Result<Vec<f32>, crate::embedder::EmbedderError> {
+            Ok(vec![0.0; self.dimension])
+        }
+        fn identity(&self) -> crate::embedder::QueryEmbedderIdentity {
+            crate::embedder::QueryEmbedderIdentity {
+                model_identity: self.model_identity.clone(),
+                model_version: "1.0".to_owned(),
+                dimension: self.dimension,
+                normalization_policy: "l2".to_owned(),
+            }
+        }
+    }
+
+    fn make_in_memory_db_with_projection_profiles() -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS projection_profiles (
+                kind TEXT NOT NULL,
+                facet TEXT NOT NULL,
+                config_json TEXT NOT NULL,
+                active_at INTEGER,
+                created_at INTEGER,
+                PRIMARY KEY (kind, facet)
+            );",
+        )
+        .expect("create projection_profiles");
+        conn
+    }
+
+    #[test]
+    fn check_vec_identity_no_profile_no_panic() {
+        let conn = make_in_memory_db_with_projection_profiles();
+        let embedder = StubEmbedder::new("bge-small", 384);
+        let result = super::check_vec_identity_at_open(&conn, &embedder);
+        assert!(result.is_ok(), "no profile row must return Ok(())");
+    }
+
+    #[test]
+    fn check_vec_identity_matching_identity_ok() {
+        let conn = make_in_memory_db_with_projection_profiles();
+        conn.execute(
+            "INSERT INTO projection_profiles (kind, facet, config_json, active_at, created_at)
+             VALUES ('*', 'vec', '{\"model_identity\":\"bge-small\",\"dimensions\":384}', 0, 0)",
+            [],
+        )
+        .expect("insert profile");
+        let embedder = StubEmbedder::new("bge-small", 384);
+        let result = super::check_vec_identity_at_open(&conn, &embedder);
+        assert!(result.is_ok(), "matching profile must return Ok(())");
+    }
+
+    #[test]
+    fn check_vec_identity_mismatched_dimensions_ok() {
+        let conn = make_in_memory_db_with_projection_profiles();
+        conn.execute(
+            "INSERT INTO projection_profiles (kind, facet, config_json, active_at, created_at)
+             VALUES ('*', 'vec', '{\"model_identity\":\"bge-small\",\"dimensions\":384}', 0, 0)",
+            [],
+        )
+        .expect("insert profile");
+        // embedder reports 768, profile says 384 — should warn but return Ok(())
+        let embedder = StubEmbedder::new("bge-small", 768);
+        let result = super::check_vec_identity_at_open(&conn, &embedder);
+        assert!(
+            result.is_ok(),
+            "dimension mismatch must warn and return Ok(())"
+        );
+    }
+
+    #[test]
+    fn check_vec_identity_mismatched_model_ok() {
+        let conn = make_in_memory_db_with_projection_profiles();
+        conn.execute(
+            "INSERT INTO projection_profiles (kind, facet, config_json, active_at, created_at)
+             VALUES ('*', 'vec', '{\"model_identity\":\"bge-small\",\"dimensions\":384}', 0, 0)",
+            [],
+        )
+        .expect("insert profile");
+        // embedder reports bge-large, profile says bge-small — should warn but return Ok(())
+        let embedder = StubEmbedder::new("bge-large", 384);
+        let result = super::check_vec_identity_at_open(&conn, &embedder);
+        assert!(
+            result.is_ok(),
+            "model_identity mismatch must warn and return Ok(())"
+        );
     }
 }
