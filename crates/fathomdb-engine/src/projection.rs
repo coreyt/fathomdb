@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use fathomdb_schema::SchemaManager;
+use fathomdb_schema::{DEFAULT_FTS_TOKENIZER, SchemaManager};
 use rusqlite::TransactionBehavior;
 use serde::Serialize;
 
@@ -144,7 +144,20 @@ fn rebuild_fts(conn: &mut rusqlite::Connection) -> Result<usize, rusqlite::Error
 /// Atomically rebuild the property FTS index from registered schemas and active nodes.
 fn rebuild_property_fts(conn: &mut rusqlite::Connection) -> Result<usize, rusqlite::Error> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    tx.execute("DELETE FROM fts_node_properties", [])?;
+
+    // Delete from ALL per-kind FTS virtual tables (including orphaned ones without schemas).
+    // Filter by sql LIKE 'CREATE VIRTUAL TABLE%' to exclude FTS5 shadow tables.
+    let all_per_kind_tables: Vec<String> = {
+        let mut stmt = tx.prepare(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'fts_props_%' \
+             AND sql LIKE 'CREATE VIRTUAL TABLE%'",
+        )?;
+        stmt.query_map([], |r| r.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    for table in &all_per_kind_tables {
+        tx.execute_batch(&format!("DELETE FROM {table}"))?;
+    }
     tx.execute("DELETE FROM fts_node_property_positions", [])?;
 
     let total = insert_property_fts_rows(
@@ -160,27 +173,24 @@ fn rebuild_property_fts(conn: &mut rusqlite::Connection) -> Result<usize, rusqli
 ///
 /// Two repair passes run inside the caller's transaction:
 ///
-/// 1. Nodes of a registered kind that have no `fts_node_properties` row are
+/// 1. Nodes of a registered kind that have no row in the per-kind FTS tables are
 ///    re-extracted from canonical state and inserted (blob + positions).
-/// 2. Nodes of a recursive-mode kind that *do* have an `fts_node_properties`
-///    row but no `fts_node_property_positions` rows have their positions
+/// 2. Nodes of a recursive-mode kind that *do* have a row in the per-kind FTS tables
+///    but no `fts_node_property_positions` rows have their positions
 ///    regenerated in place. This repairs orphaned position map rows caused
 ///    by partial drift without requiring a full `rebuild_projections(Fts)`.
 ///    (P4-P2-2)
 fn rebuild_missing_property_fts_in_tx(
     conn: &rusqlite::Connection,
 ) -> Result<usize, rusqlite::Error> {
-    let inserted = insert_property_fts_rows(
-        conn,
-        "SELECT n.logical_id, n.properties FROM nodes n \
-         WHERE n.kind = ?1 AND n.superseded_at IS NULL \
-           AND NOT EXISTS (SELECT 1 FROM fts_node_properties fp WHERE fp.node_logical_id = n.logical_id)",
-    )?;
+    // The per-kind table is parameterized: the SQL is built per-kind in
+    // insert_property_fts_rows_missing (below), which passes the table name inline.
+    let inserted = insert_property_fts_rows_missing(conn)?;
     let repaired = repair_orphaned_position_map_in_tx(conn)?;
     Ok(inserted + repaired)
 }
 
-/// Repair recursive-mode nodes whose `fts_node_properties` row exists but
+/// Repair recursive-mode nodes whose per-kind FTS row exists but
 /// whose position-map rows have been dropped. For each such node the
 /// property FTS is re-extracted from canonical state and the position rows
 /// are re-inserted. The blob row is left untouched — callers that deleted
@@ -207,14 +217,16 @@ fn repair_orphaned_position_map_in_tx(
         if !has_recursive {
             continue;
         }
-        let mut stmt = conn.prepare(
+        let table = fathomdb_schema::fts_kind_table_name(kind);
+        // Nodes that have an FTS row in the per-kind table but no position-map rows.
+        let mut stmt = conn.prepare(&format!(
             "SELECT n.logical_id, n.properties FROM nodes n \
              WHERE n.kind = ?1 AND n.superseded_at IS NULL \
-               AND EXISTS (SELECT 1 FROM fts_node_properties fp \
-                           WHERE fp.node_logical_id = n.logical_id AND fp.kind = ?1) \
+               AND EXISTS (SELECT 1 FROM {table} fp \
+                           WHERE fp.node_logical_id = n.logical_id) \
                AND NOT EXISTS (SELECT 1 FROM fts_node_property_positions p \
-                               WHERE p.node_logical_id = n.logical_id AND p.kind = ?1)",
-        )?;
+                               WHERE p.node_logical_id = n.logical_id AND p.kind = ?1)"
+        ))?;
         let rows: Vec<(String, String)> = stmt
             .query_map([kind.as_str()], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -260,9 +272,17 @@ pub(crate) fn insert_property_fts_rows_for_kind(
         return Ok(0);
     };
 
-    let mut ins = conn.prepare(
-        "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) VALUES (?1, ?2, ?3)",
-    )?;
+    let table = fathomdb_schema::fts_kind_table_name(kind);
+    // Ensure the per-kind table exists.
+    conn.execute_batch(&format!(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING fts5(\
+            node_logical_id UNINDEXED, text_content, \
+            tokenize = '{DEFAULT_FTS_TOKENIZER}'\
+        )"
+    ))?;
+    let mut ins = conn.prepare(&format!(
+        "INSERT INTO {table} (node_logical_id, text_content) VALUES (?1, ?2)"
+    ))?;
     let mut ins_positions = conn.prepare(
         "INSERT INTO fts_node_property_positions \
          (node_logical_id, kind, start_offset, end_offset, leaf_path) \
@@ -284,7 +304,7 @@ pub(crate) fn insert_property_fts_rows_for_kind(
         let props: serde_json::Value = serde_json::from_str(properties_str).unwrap_or_default();
         let (text, positions, _stats) = crate::writer::extract_property_fts(&props, &schema);
         if let Some(text) = text {
-            ins.execute(rusqlite::params![logical_id, kind, text])?;
+            ins.execute(rusqlite::params![logical_id, text])?;
             for pos in &positions {
                 ins_positions.execute(rusqlite::params![
                     logical_id,
@@ -301,7 +321,7 @@ pub(crate) fn insert_property_fts_rows_for_kind(
 }
 
 /// Shared loop: load schemas, query nodes with `node_sql` (parameterized by kind),
-/// extract property FTS text, and insert into `fts_node_properties`.
+/// extract property FTS text, and insert into the per-kind FTS table.
 /// The caller is responsible for transaction management and for deleting stale rows
 /// before calling this function if a full rebuild is intended.
 pub(crate) fn insert_property_fts_rows(
@@ -314,15 +334,23 @@ pub(crate) fn insert_property_fts_rows(
     }
 
     let mut total = 0usize;
-    let mut ins = conn.prepare(
-        "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) VALUES (?1, ?2, ?3)",
-    )?;
     let mut ins_positions = conn.prepare(
         "INSERT INTO fts_node_property_positions \
          (node_logical_id, kind, start_offset, end_offset, leaf_path) \
          VALUES (?1, ?2, ?3, ?4, ?5)",
     )?;
     for (kind, schema) in &schemas {
+        let table = fathomdb_schema::fts_kind_table_name(kind);
+        // Ensure per-kind table exists.
+        conn.execute_batch(&format!(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING fts5(\
+                node_logical_id UNINDEXED, text_content, \
+                tokenize = '{DEFAULT_FTS_TOKENIZER}'\
+            )"
+        ))?;
+        let mut ins = conn.prepare(&format!(
+            "INSERT INTO {table} (node_logical_id, text_content) VALUES (?1, ?2)"
+        ))?;
         let mut stmt = conn.prepare(node_sql)?;
         let rows: Vec<(String, String)> = stmt
             .query_map([kind.as_str()], |row| {
@@ -333,7 +361,66 @@ pub(crate) fn insert_property_fts_rows(
             let props: serde_json::Value = serde_json::from_str(properties_str).unwrap_or_default();
             let (text, positions, _stats) = crate::writer::extract_property_fts(&props, schema);
             if let Some(text) = text {
-                ins.execute(rusqlite::params![logical_id, kind, text])?;
+                ins.execute(rusqlite::params![logical_id, text])?;
+                for pos in &positions {
+                    ins_positions.execute(rusqlite::params![
+                        logical_id,
+                        kind,
+                        i64::try_from(pos.start_offset).unwrap_or(i64::MAX),
+                        i64::try_from(pos.end_offset).unwrap_or(i64::MAX),
+                        pos.leaf_path,
+                    ])?;
+                }
+                total += 1;
+            }
+        }
+    }
+    Ok(total)
+}
+
+/// Insert missing property FTS rows: for each registered kind, find nodes that
+/// have no row in the per-kind FTS table and insert them.
+/// The caller is responsible for transaction management.
+fn insert_property_fts_rows_missing(conn: &rusqlite::Connection) -> Result<usize, rusqlite::Error> {
+    let schemas = crate::writer::load_fts_property_schemas(conn)?;
+    if schemas.is_empty() {
+        return Ok(0);
+    }
+
+    let mut total = 0usize;
+    let mut ins_positions = conn.prepare(
+        "INSERT INTO fts_node_property_positions \
+         (node_logical_id, kind, start_offset, end_offset, leaf_path) \
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+    )?;
+    for (kind, schema) in &schemas {
+        let table = fathomdb_schema::fts_kind_table_name(kind);
+        // Ensure per-kind table exists.
+        conn.execute_batch(&format!(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING fts5(\
+                node_logical_id UNINDEXED, text_content, \
+                tokenize = '{DEFAULT_FTS_TOKENIZER}'\
+            )"
+        ))?;
+        let mut ins = conn.prepare(&format!(
+            "INSERT INTO {table} (node_logical_id, text_content) VALUES (?1, ?2)"
+        ))?;
+        // Find nodes of this kind with no row in the per-kind table.
+        let mut stmt = conn.prepare(&format!(
+            "SELECT n.logical_id, n.properties FROM nodes n \
+             WHERE n.kind = ?1 AND n.superseded_at IS NULL \
+               AND NOT EXISTS (SELECT 1 FROM {table} fp WHERE fp.node_logical_id = n.logical_id)"
+        ))?;
+        let rows: Vec<(String, String)> = stmt
+            .query_map([kind.as_str()], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        for (logical_id, properties_str) in &rows {
+            let props: serde_json::Value = serde_json::from_str(properties_str).unwrap_or_default();
+            let (text, positions, _stats) = crate::writer::extract_property_fts(&props, schema);
+            if let Some(text) = text {
+                ins.execute(rusqlite::params![logical_id, text])?;
                 for pos in &positions {
                     ins_positions.execute(rusqlite::params![
                         logical_id,

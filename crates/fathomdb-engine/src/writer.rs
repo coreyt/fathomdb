@@ -7,7 +7,7 @@ use std::sync::mpsc::{self, Sender, SyncSender};
 use std::thread;
 use std::time::Duration;
 
-use fathomdb_schema::SchemaManager;
+use fathomdb_schema::{DEFAULT_FTS_TOKENIZER, SchemaManager};
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
 
 use crate::operational::{
@@ -1777,8 +1777,6 @@ fn apply_write(
     // preserve chunks/vec for possible restore, mark superseded, record audit event.
     {
         let mut del_fts = tx.prepare_cached("DELETE FROM fts_nodes WHERE node_logical_id = ?1")?;
-        let mut del_prop_fts =
-            tx.prepare_cached("DELETE FROM fts_node_properties WHERE node_logical_id = ?1")?;
         let mut del_prop_positions = tx
             .prepare_cached("DELETE FROM fts_node_property_positions WHERE node_logical_id = ?1")?;
         // Double-write cleanup: also remove staging rows for this node so that a
@@ -1796,7 +1794,33 @@ fn apply_write(
         )?;
         for retire in &prepared.node_retires {
             del_fts.execute(params![retire.logical_id])?;
-            del_prop_fts.execute(params![retire.logical_id])?;
+            // Delete from the per-kind FTS table: look up the node's kind first.
+            let kind_opt: Option<String> = tx
+                .query_row(
+                    "SELECT kind FROM nodes WHERE logical_id = ?1 AND superseded_at IS NULL",
+                    params![retire.logical_id],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if let Some(kind) = kind_opt {
+                let table = fathomdb_schema::fts_kind_table_name(&kind);
+                // Only delete if the per-kind table exists (may not exist if no schema registered).
+                let table_exists: bool = tx
+                    .query_row(
+                        "SELECT count(*) FROM sqlite_master WHERE type='table' AND name = ?1 \
+                         AND sql LIKE 'CREATE VIRTUAL TABLE%'",
+                        rusqlite::params![table],
+                        |r| r.get::<_, i64>(0),
+                    )
+                    .unwrap_or(0)
+                    > 0;
+                if table_exists {
+                    tx.execute(
+                        &format!("DELETE FROM {table} WHERE node_logical_id = ?1"),
+                        params![retire.logical_id],
+                    )?;
+                }
+            }
             del_prop_positions.execute(params![retire.logical_id])?;
             del_staging.execute(params![retire.logical_id])?;
             sup_node.execute(params![retire.logical_id])?;
@@ -1823,8 +1847,6 @@ fn apply_write(
     // Node inserts (with optional upsert + chunk-policy handling).
     {
         let mut del_fts = tx.prepare_cached("DELETE FROM fts_nodes WHERE node_logical_id = ?1")?;
-        let mut del_prop_fts =
-            tx.prepare_cached("DELETE FROM fts_node_properties WHERE node_logical_id = ?1")?;
         let mut del_prop_positions = tx
             .prepare_cached("DELETE FROM fts_node_property_positions WHERE node_logical_id = ?1")?;
         let mut del_chunks = tx.prepare_cached("DELETE FROM chunks WHERE node_logical_id = ?1")?;
@@ -1848,7 +1870,24 @@ fn apply_write(
         for node in &prepared.nodes {
             if node.upsert {
                 // Property FTS rows are always replaced on upsert since properties change.
-                del_prop_fts.execute(params![node.logical_id])?;
+                // Delete from the per-kind table (table name is dynamic).
+                let table = fathomdb_schema::fts_kind_table_name(&node.kind);
+                // Only delete if the per-kind table exists (may not exist if no schema registered).
+                let table_exists: bool = tx
+                    .query_row(
+                        "SELECT count(*) FROM sqlite_master WHERE type='table' AND name = ?1 \
+                         AND sql LIKE 'CREATE VIRTUAL TABLE%'",
+                        rusqlite::params![table],
+                        |r| r.get::<_, i64>(0),
+                    )
+                    .unwrap_or(0)
+                    > 0;
+                if table_exists {
+                    tx.execute(
+                        &format!("DELETE FROM {table} WHERE node_logical_id = ?1"),
+                        params![node.logical_id],
+                    )?;
+                }
                 del_prop_positions.execute(params![node.logical_id])?;
                 if node.chunk_policy == ChunkPolicy::Replace {
                     #[cfg(feature = "sqlite-vec")]
@@ -2160,22 +2199,30 @@ fn apply_write(
 
     // Property FTS row inserts.
     if !prepared.required_property_fts_rows.is_empty() {
-        let mut ins_prop_fts = tx.prepare_cached(
-            "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
-             VALUES (?1, ?2, ?3)",
-        )?;
         let mut ins_positions = tx.prepare_cached(
             "INSERT INTO fts_node_property_positions \
              (node_logical_id, kind, start_offset, end_offset, leaf_path) \
              VALUES (?1, ?2, ?3, ?4, ?5)",
         )?;
         // Delete any stale position rows for these nodes; writer already
-        // deleted the `fts_node_properties` rows above.
+        // deleted the per-kind FTS rows in the upsert block above.
         let mut del_positions = tx
             .prepare_cached("DELETE FROM fts_node_property_positions WHERE node_logical_id = ?1")?;
         for row in &prepared.required_property_fts_rows {
             del_positions.execute(params![row.node_logical_id])?;
-            ins_prop_fts.execute(params![row.node_logical_id, row.kind, row.text_content,])?;
+            // Insert into per-kind FTS table (table name is dynamic).
+            let table = fathomdb_schema::fts_kind_table_name(&row.kind);
+            // Ensure the per-kind table exists (handles new-kind first write).
+            tx.execute_batch(&format!(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING fts5(\
+                    node_logical_id UNINDEXED, text_content, \
+                    tokenize = '{DEFAULT_FTS_TOKENIZER}'\
+                )"
+            ))?;
+            tx.prepare(&format!(
+                "INSERT INTO {table} (node_logical_id, text_content) VALUES (?1, ?2)"
+            ))?
+            .execute(params![row.node_logical_id, row.text_content])?;
             for pos in &row.positions {
                 ins_positions.execute(params![
                     row.node_logical_id,
@@ -2191,7 +2238,7 @@ fn apply_write(
     // Double-write to staging: for nodes whose kind has an active rebuild
     // (state IN ('PENDING','BUILDING','SWAPPING')), upsert the precomputed
     // text_content into fts_property_rebuild_staging.  Both this upsert and
-    // the fts_node_properties insert above happen inside the same transaction.
+    // the per-kind FTS insert above happen inside the same transaction.
     if !prepared.required_property_fts_rows.is_empty() {
         let mut ins_staging = tx.prepare_cached(
             "INSERT INTO fts_property_rebuild_staging \
@@ -6988,9 +7035,10 @@ mod tests {
             .expect("write");
 
         let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let goal_table = fathomdb_schema::fts_kind_table_name("Goal");
         let text: String = conn
             .query_row(
-                "SELECT text_content FROM fts_node_properties WHERE node_logical_id = 'goal-1'",
+                &format!("SELECT text_content FROM {goal_table} WHERE node_logical_id = 'goal-1'"),
                 [],
                 |row| row.get(0),
             )
@@ -7075,9 +7123,10 @@ mod tests {
             .expect("upsert");
 
         let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let goal_table = fathomdb_schema::fts_kind_table_name("Goal");
         let count: i64 = conn
             .query_row(
-                "SELECT count(*) FROM fts_node_properties WHERE node_logical_id = 'goal-1'",
+                &format!("SELECT count(*) FROM {goal_table} WHERE node_logical_id = 'goal-1'"),
                 [],
                 |row| row.get(0),
             )
@@ -7089,7 +7138,7 @@ mod tests {
 
         let text: String = conn
             .query_row(
-                "SELECT text_content FROM fts_node_properties WHERE node_logical_id = 'goal-1'",
+                &format!("SELECT text_content FROM {goal_table} WHERE node_logical_id = 'goal-1'"),
                 [],
                 |row| row.get(0),
             )
@@ -7168,9 +7217,10 @@ mod tests {
             .expect("retire");
 
         let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let table = fathomdb_schema::fts_kind_table_name("Goal");
         let count: i64 = conn
             .query_row(
-                "SELECT count(*) FROM fts_node_properties WHERE node_logical_id = 'goal-1'",
+                &format!("SELECT count(*) FROM {table} WHERE node_logical_id = 'goal-1'"),
                 [],
                 |row| row.get(0),
             )
@@ -7222,12 +7272,185 @@ mod tests {
             .expect("insert");
 
         let conn = rusqlite::Connection::open(db.path()).expect("conn");
-        let count: i64 = conn
-            .query_row("SELECT count(*) FROM fts_node_properties", [], |row| {
-                row.get(0)
+        let table = fathomdb_schema::fts_kind_table_name("Note");
+        let exists: bool = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                rusqlite::params![table],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|c| c > 0)
+            .expect("exists check");
+        assert!(
+            !exists,
+            "no per-kind FTS table should be created for unregistered kind"
+        );
+    }
+
+    // --- A-6 per-kind FTS table tests ---
+
+    #[test]
+    fn property_fts_write_goes_to_per_kind_table() {
+        // After A-6: writes go to fts_props_goal, NOT fts_node_properties.
+        let db = NamedTempFile::new().expect("temporary db");
+        let schema = Arc::new(SchemaManager::new());
+        {
+            let conn = rusqlite::Connection::open(db.path()).expect("conn");
+            schema.bootstrap(&conn).expect("bootstrap");
+            conn.execute(
+                "INSERT INTO fts_property_schemas (kind, property_paths_json, separator) \
+                 VALUES ('Goal', '[\"$.name\"]', ' ')",
+                [],
+            )
+            .expect("register schema");
+            // Create per-kind table (migration 21 would do this for existing schemas).
+            conn.execute_batch(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS fts_props_goal USING fts5(\
+                    node_logical_id UNINDEXED, text_content, \
+                    tokenize = 'porter unicode61 remove_diacritics 2'\
+                )",
+            )
+            .expect("create per-kind table");
+        }
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::clone(&schema),
+            ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("writer");
+
+        writer
+            .submit(WriteRequest {
+                label: "insert".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-1".to_owned(),
+                    logical_id: "goal-1".to_owned(),
+                    kind: "Goal".to_owned(),
+                    properties: r#"{"name":"Ship v2"}"#.to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
+                }],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+                operational_writes: vec![],
             })
-            .expect("count");
-        assert_eq!(count, 0, "no property FTS rows for unregistered kind");
+            .expect("write");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        // Per-kind table must have the row.
+        let per_kind_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM fts_props_goal WHERE node_logical_id = 'goal-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("per-kind count");
+        assert_eq!(
+            per_kind_count, 1,
+            "per-kind table fts_props_goal must have the row"
+        );
+    }
+
+    #[test]
+    fn property_fts_retire_removes_from_per_kind_table() {
+        // After A-6: retire removes from fts_props_goal, NOT fts_node_properties.
+        let db = NamedTempFile::new().expect("temporary db");
+        let schema = Arc::new(SchemaManager::new());
+        {
+            let conn = rusqlite::Connection::open(db.path()).expect("conn");
+            schema.bootstrap(&conn).expect("bootstrap");
+            conn.execute(
+                "INSERT INTO fts_property_schemas (kind, property_paths_json, separator) \
+                 VALUES ('Goal', '[\"$.name\"]', ' ')",
+                [],
+            )
+            .expect("register schema");
+            conn.execute_batch(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS fts_props_goal USING fts5(\
+                    node_logical_id UNINDEXED, text_content, \
+                    tokenize = 'porter unicode61 remove_diacritics 2'\
+                )",
+            )
+            .expect("create per-kind table");
+        }
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::clone(&schema),
+            ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("writer");
+
+        // Insert.
+        writer
+            .submit(WriteRequest {
+                label: "insert".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-1".to_owned(),
+                    logical_id: "goal-1".to_owned(),
+                    kind: "Goal".to_owned(),
+                    properties: r#"{"name":"Alpha"}"#.to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
+                }],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+                operational_writes: vec![],
+            })
+            .expect("insert");
+
+        // Retire.
+        writer
+            .submit(WriteRequest {
+                label: "retire".to_owned(),
+                nodes: vec![],
+                node_retires: vec![NodeRetire {
+                    logical_id: "goal-1".to_owned(),
+                    source_ref: Some("forget-1".to_owned()),
+                }],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+                operational_writes: vec![],
+            })
+            .expect("retire");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let per_kind_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM fts_props_goal WHERE node_logical_id = 'goal-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("per-kind count");
+        assert_eq!(
+            per_kind_count, 0,
+            "per-kind table row must be removed on retire"
+        );
     }
 
     mod extract_json_path_tests {
