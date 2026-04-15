@@ -128,6 +128,87 @@ fn compile_expansion_filter(
     }
 }
 
+/// FTS tokenizer strategy for a given node kind.
+///
+/// Loaded at coordinator open time from `projection_profiles` and used
+/// during query dispatch to apply per-kind query adaptations.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TokenizerStrategy {
+    /// Porter stemming + unicode61, optimized for English recall.
+    RecallOptimizedEnglish,
+    /// Unicode61 without stemming, optimized for precision.
+    PrecisionOptimized,
+    /// Trigram tokenizer — queries shorter than 3 chars are skipped.
+    SubstringTrigram,
+    /// ICU tokenizer for global / CJK text.
+    GlobalCjk,
+    /// Unicode61 with custom token chars — query special chars are escaped.
+    SourceCode,
+    /// Any other tokenizer string.
+    Custom(String),
+}
+
+impl TokenizerStrategy {
+    /// Map a raw tokenizer config string (as stored in `projection_profiles`)
+    /// to the corresponding strategy variant.
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "porter unicode61 remove_diacritics 2" => Self::RecallOptimizedEnglish,
+            "unicode61 remove_diacritics 2" => Self::PrecisionOptimized,
+            "trigram" => Self::SubstringTrigram,
+            "icu" => Self::GlobalCjk,
+            s if s.starts_with("unicode61 tokenchars") => Self::SourceCode,
+            other => Self::Custom(other.to_string()),
+        }
+    }
+}
+
+/// Escape special characters in a query string for FTS5 dispatch when the
+/// `SourceCode` tokenizer strategy is active.
+///
+/// The characters `.`, `-`, `_`, `$`, `@` act as token separators in the
+/// source-code tokenizer. This function splits the query on those chars,
+/// double-quotes each non-empty token, and reassembles with the original
+/// separators preserved between quoted tokens.
+///
+/// Example: `"std.io"` → `"\"std\".\"io\""`
+pub(crate) fn escape_source_code_query(query: &str) -> String {
+    let special: &[char] = &['.', '-', '_', '$', '@'];
+    let mut result = String::new();
+    let mut current = String::new();
+    let mut last_sep: Option<char> = None;
+    for ch in query.chars() {
+        let is_sep = special.contains(&ch);
+        if is_sep && !current.is_empty() {
+            // Flush the current token, preserving the preceding separator.
+            if let Some(sep) = last_sep {
+                result.push(sep);
+            }
+            result.push('"');
+            result.push_str(&current);
+            result.push('"');
+            current.clear();
+            last_sep = Some(ch);
+        } else {
+            // Non-separator char, or separator at start/after another separator:
+            // accumulate into current token.
+            current.push(ch);
+        }
+    }
+    if !current.is_empty() {
+        if let Some(sep) = last_sep {
+            result.push(sep);
+        }
+        result.push('"');
+        result.push_str(&current);
+        result.push('"');
+    } else if result.is_empty() {
+        // Empty or all-separators input: return as-is.
+        return query.to_owned();
+    }
+    result
+}
+
 /// A pool of read-only `SQLite` connections for concurrent read access.
 ///
 /// Each connection is wrapped in its own [`Mutex`] so multiple readers can
@@ -356,6 +437,10 @@ pub struct ExecutionCoordinator {
     /// invariant on `search()` is preserved: the vector slot stays empty
     /// and the coordinator's stage-gating check skips the vector branch.
     query_embedder: Option<Arc<dyn QueryEmbedder>>,
+    /// Per-kind FTS tokenizer strategies loaded from `projection_profiles`
+    /// at open time. Used during query dispatch for query-side adaptations
+    /// (e.g. short-query skip for trigram, token escaping for source-code).
+    fts_strategies: HashMap<String, TokenizerStrategy>,
 }
 
 impl fmt::Debug for ExecutionCoordinator {
@@ -428,6 +513,27 @@ impl ExecutionCoordinator {
             }
         }
 
+        // Load FTS tokenizer strategies from projection_profiles
+        let fts_strategies: HashMap<String, TokenizerStrategy> = {
+            let mut map = HashMap::new();
+            let mut stmt = conn
+                .prepare("SELECT kind, config_json FROM projection_profiles WHERE facet='fts'")?;
+            let rows = stmt.query_map([], |row| {
+                let kind: String = row.get(0)?;
+                let config_json: String = row.get(1)?;
+                Ok((kind, config_json))
+            })?;
+            for row in rows.flatten() {
+                let (kind, config_json) = row;
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&config_json)
+                    && let Some(tok) = v["tokenizer"].as_str()
+                {
+                    map.insert(kind, TokenizerStrategy::from_str(tok));
+                }
+            }
+            map
+        };
+
         // Drop the bootstrap connection — pool connections are used for reads.
         drop(conn);
 
@@ -442,6 +548,7 @@ impl ExecutionCoordinator {
             vec_degradation_warned: AtomicBool::new(false),
             telemetry,
             query_embedder,
+            fts_strategies,
         })
     }
 
@@ -1297,7 +1404,28 @@ impl ExecutionCoordinator {
         ) {
             return Ok(Vec::new());
         }
-        let rendered = render_text_query_fts5(&compiled.text_query);
+        let rendered_base = render_text_query_fts5(&compiled.text_query);
+        // Apply per-kind query-side tokenizer adaptations.
+        // SubstringTrigram: queries shorter than 3 chars produce no results
+        // (trigram index cannot match them). Return empty instead of an FTS5
+        // error or a full-table scan.
+        // SourceCode: escape special chars so FTS5 does not treat them as
+        // operators.
+        let strategy = self.fts_strategies.get(compiled.root_kind.as_str());
+        if matches!(strategy, Some(TokenizerStrategy::SubstringTrigram))
+            && rendered_base
+                .chars()
+                .filter(|c| c.is_alphanumeric())
+                .count()
+                < 3
+        {
+            return Ok(Vec::new());
+        }
+        let rendered = if matches!(strategy, Some(TokenizerStrategy::SourceCode)) {
+            escape_source_code_query(&rendered_base)
+        } else {
+            rendered_base
+        };
         // An empty `root_kind` means "unkind-filtered" — the fallback_search
         // helper uses this when the caller did not add `.filter_kind_eq(...)`.
         // The adaptive `text_search()` path never produces an empty root_kind
@@ -4875,5 +5003,112 @@ mod tests {
                 }
             }
         }
+    }
+
+    // --- Pack H: TokenizerStrategy tests ---
+
+    #[test]
+    fn tokenizer_strategy_from_str() {
+        use super::TokenizerStrategy;
+        assert_eq!(
+            TokenizerStrategy::from_str("porter unicode61 remove_diacritics 2"),
+            TokenizerStrategy::RecallOptimizedEnglish,
+        );
+        assert_eq!(
+            TokenizerStrategy::from_str("unicode61 remove_diacritics 2"),
+            TokenizerStrategy::PrecisionOptimized,
+        );
+        assert_eq!(
+            TokenizerStrategy::from_str("trigram"),
+            TokenizerStrategy::SubstringTrigram,
+        );
+        assert_eq!(
+            TokenizerStrategy::from_str("icu"),
+            TokenizerStrategy::GlobalCjk,
+        );
+        assert_eq!(
+            TokenizerStrategy::from_str("unicode61 tokenchars '.+-'"),
+            TokenizerStrategy::SourceCode,
+        );
+        assert_eq!(
+            TokenizerStrategy::from_str("my_custom_tokenizer"),
+            TokenizerStrategy::Custom("my_custom_tokenizer".to_owned()),
+        );
+    }
+
+    #[test]
+    fn trigram_short_query_returns_empty() {
+        use fathomdb_query::compile_search;
+
+        let db = NamedTempFile::new().expect("temporary db");
+        let schema_manager = Arc::new(SchemaManager::new());
+
+        // First open: bootstrap the schema so projection_profiles table exists.
+        {
+            let bootstrap = ExecutionCoordinator::open(
+                db.path(),
+                Arc::clone(&schema_manager),
+                None,
+                1,
+                Arc::new(TelemetryCounters::default()),
+                None,
+            )
+            .expect("bootstrap coordinator");
+            drop(bootstrap);
+        }
+
+        // Insert a SubstringTrigram strategy for kind "Snippet" directly in the DB.
+        {
+            let conn = rusqlite::Connection::open(db.path()).expect("open db");
+            conn.execute_batch(
+                "INSERT OR REPLACE INTO projection_profiles (kind, facet, config_json) \
+                 VALUES ('Snippet', 'fts', '{\"tokenizer\":\"trigram\"}');",
+            )
+            .expect("insert profile");
+        }
+
+        // Reopen coordinator to load strategies.
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::clone(&schema_manager),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+            None,
+        )
+        .expect("coordinator reopen");
+
+        // 2-char query for a SubstringTrigram kind must return empty without error.
+        let ast = QueryBuilder::nodes("Snippet").text_search("ab", 10);
+        let compiled = compile_search(ast.ast()).expect("compile search");
+        let rows = coordinator
+            .execute_compiled_search(&compiled)
+            .expect("short trigram query must not error");
+        assert!(
+            rows.hits.is_empty(),
+            "2-char trigram query must return empty"
+        );
+    }
+
+    #[test]
+    fn source_code_dot_escaping() {
+        use super::escape_source_code_query;
+        // Dots and other special chars must be escaped.
+        assert_eq!(escape_source_code_query("std.io"), "\"std\".\"io\"");
+        assert_eq!(escape_source_code_query("foo-bar"), "\"foo\"-\"bar\"");
+        assert_eq!(escape_source_code_query("$HOME"), "\"$HOME\"");
+        // Plain word without special chars passes through.
+        assert_eq!(escape_source_code_query("hello"), "\"hello\"");
+    }
+
+    #[test]
+    fn custom_tokenizer_passthrough() {
+        use super::TokenizerStrategy;
+        let strategy = TokenizerStrategy::Custom("my_tok".to_owned());
+        // Custom strategy is just stored — it doesn't modify queries.
+        assert_eq!(strategy, TokenizerStrategy::Custom("my_tok".to_owned()));
+        // Verify it does not match any known variant.
+        assert_ne!(strategy, TokenizerStrategy::SubstringTrigram);
+        assert_ne!(strategy, TokenizerStrategy::SourceCode);
     }
 }
