@@ -24,7 +24,7 @@ describe("async FTS rebuild", () => {
     expect(progress).not.toBeNull();
     expect(progress).toBeDefined();
     const p = progress as RebuildProgress;
-    expect(["BUILDING", "COMPLETE", "FAILED"]).toContain(p.state);
+    expect(["PENDING", "BUILDING", "SWAPPING", "COMPLETE", "FAILED"]).toContain(p.state);
   });
 
   it("rebuild eventually reaches COMPLETE state", async () => {

@@ -416,10 +416,12 @@ impl EngineCore {
             PyValueError::new_err(format!("invalid property paths JSON: {error}"))
         })?;
         let kind = kind.to_owned();
-        let _separator = separator.map(ToOwned::to_owned);
+        let separator = separator.map(ToOwned::to_owned);
         self.with_engine(|engine| {
             let record = py
-                .detach(|| engine.register_fts_property_schema_async(&kind, &paths))
+                .detach(|| {
+                    engine.register_fts_property_schema_async(&kind, &paths, separator.as_deref())
+                })
                 .map_err(map_engine_error)?;
             encode_json(record)
         })

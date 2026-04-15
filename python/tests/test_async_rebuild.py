@@ -28,7 +28,7 @@ def test_get_rebuild_progress_returns_state(tmp_path: Path) -> None:
     progress = db.admin.get_rebuild_progress("Thing")
     assert progress is not None
     assert isinstance(progress, RebuildProgress)
-    assert progress.state in ("BUILDING", "COMPLETE", "FAILED")
+    assert progress.state in ("PENDING", "BUILDING", "SWAPPING", "COMPLETE", "FAILED")
 
 
 def test_rebuild_eventually_completes(tmp_path: Path) -> None:

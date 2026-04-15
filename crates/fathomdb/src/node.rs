@@ -334,10 +334,9 @@ impl NodeEngineCore {
     ) -> Result<String> {
         let paths: Vec<String> = serde_json::from_str(&property_paths_json)
             .map_err(|error| invalid_argument(format!("invalid property paths JSON: {error}")))?;
-        let _ = separator;
         self.with_engine(|engine| {
             let record = engine
-                .register_fts_property_schema_async(&kind, &paths)
+                .register_fts_property_schema_async(&kind, &paths, separator.as_deref())
                 .map_err(map_engine_error)?;
             encode_json(record)
         })

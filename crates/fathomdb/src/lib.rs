@@ -435,6 +435,7 @@ impl Engine {
         &self,
         kind: &str,
         property_paths: &[String],
+        separator: Option<&str>,
     ) -> Result<FtsPropertySchemaRecord, EngineError> {
         let specs: Vec<FtsPropertyPathSpec> = property_paths
             .iter()
@@ -445,7 +446,7 @@ impl Engine {
             .register_fts_property_schema_with_entries(
                 kind,
                 &specs,
-                None,
+                separator,
                 &[],
                 fathomdb_engine::RebuildMode::Async,
             )
