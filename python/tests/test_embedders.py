@@ -208,7 +208,22 @@ def test_subprocess_echo():
 
 
 # ---------------------------------------------------------------------------
-# 9. Importing fathomdb.embedders does NOT require httpx or sentence_transformers
+# 9. SubprocessEmbedder raises RuntimeError on early EOF
+# ---------------------------------------------------------------------------
+
+
+def test_subprocess_raises_on_early_eof():
+    from fathomdb.embedders._subprocess import SubprocessEmbedder
+
+    # Subprocess that writes nothing and exits
+    early_exit_cmd = ["python3", "-c", "import sys; sys.exit(0)"]
+    embedder = SubprocessEmbedder(early_exit_cmd, dimensions=4)
+    with pytest.raises(RuntimeError, match="closed stdout"):
+        embedder.embed("test")
+
+
+# ---------------------------------------------------------------------------
+# 11. Importing fathomdb.embedders does NOT require httpx or sentence_transformers
 # ---------------------------------------------------------------------------
 
 
@@ -245,7 +260,7 @@ def test_import_without_optional_deps():
 
 
 # ---------------------------------------------------------------------------
-# 10. QueryEmbedder is abstract — cannot be instantiated directly
+# 12. QueryEmbedder is abstract — cannot be instantiated directly
 # ---------------------------------------------------------------------------
 
 

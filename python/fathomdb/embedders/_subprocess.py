@@ -26,11 +26,24 @@ class SubprocessEmbedder(QueryEmbedder):
             )
         return self._proc
 
+    def _read_exact(self, n: int) -> bytes:
+        buf = bytearray()
+        proc = self._proc
+        while len(buf) < n:
+            chunk = proc.stdout.read(n - len(buf))
+            if not chunk:
+                raise RuntimeError(
+                    f"SubprocessEmbedder: subprocess closed stdout after "
+                    f"{len(buf)} bytes (expected {n})"
+                )
+            buf.extend(chunk)
+        return bytes(buf)
+
     def embed(self, text: str) -> list[float]:
         proc = self._ensure_proc()
         assert proc.stdin is not None
         assert proc.stdout is not None
         proc.stdin.write((text + "\n").encode("utf-8"))
         proc.stdin.flush()
-        data = proc.stdout.read(self._dimensions * 4)
+        data = self._read_exact(self._dimensions * 4)
         return list(struct.unpack(f"{self._dimensions}f", data))
