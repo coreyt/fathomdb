@@ -440,7 +440,7 @@ pub(crate) fn recover_interrupted_rebuilds(
     let kinds: Vec<String> = {
         let mut stmt = conn.prepare(
             "SELECT kind FROM fts_property_rebuild_state \
-             WHERE state IN ('PENDING', 'BUILDING', 'SWAPPING')",
+             WHERE state IN ('BUILDING', 'SWAPPING')",
         )?;
         stmt.query_map([], |r| r.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?
@@ -460,4 +460,88 @@ pub(crate) fn recover_interrupted_rebuilds(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use rusqlite::Connection;
+
+    use fathomdb_schema::SchemaManager;
+
+    use super::recover_interrupted_rebuilds;
+
+    fn bootstrapped_conn() -> Connection {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        let manager = SchemaManager::new();
+        manager.bootstrap(&conn).expect("bootstrap");
+        conn
+    }
+
+    fn insert_rebuild_state(conn: &Connection, kind: &str, state: &str) {
+        conn.execute(
+            "INSERT INTO fts_property_rebuild_state \
+             (kind, schema_id, state, rows_done, started_at, is_first_registration) \
+             VALUES (?1, 1, ?2, 0, 0, 0)",
+            rusqlite::params![kind, state],
+        )
+        .expect("insert rebuild state");
+    }
+
+    #[test]
+    fn pending_row_survives_restart() {
+        let conn = bootstrapped_conn();
+        insert_rebuild_state(&conn, "MyKind", "PENDING");
+
+        recover_interrupted_rebuilds(&conn).expect("recover");
+
+        let state: String = conn
+            .query_row(
+                "SELECT state FROM fts_property_rebuild_state WHERE kind = 'MyKind'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("state row");
+        assert_eq!(state, "PENDING", "PENDING rows must survive engine restart");
+    }
+
+    #[test]
+    fn building_row_marked_failed_on_restart() {
+        let conn = bootstrapped_conn();
+        insert_rebuild_state(&conn, "MyKind", "BUILDING");
+
+        recover_interrupted_rebuilds(&conn).expect("recover");
+
+        let state: String = conn
+            .query_row(
+                "SELECT state FROM fts_property_rebuild_state WHERE kind = 'MyKind'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("state row");
+        assert_eq!(
+            state, "FAILED",
+            "BUILDING rows must be marked FAILED on restart"
+        );
+    }
+
+    #[test]
+    fn swapping_row_marked_failed_on_restart() {
+        let conn = bootstrapped_conn();
+        insert_rebuild_state(&conn, "MyKind", "SWAPPING");
+
+        recover_interrupted_rebuilds(&conn).expect("recover");
+
+        let state: String = conn
+            .query_row(
+                "SELECT state FROM fts_property_rebuild_state WHERE kind = 'MyKind'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("state row");
+        assert_eq!(
+            state, "FAILED",
+            "SWAPPING rows must be marked FAILED on restart"
+        );
+    }
 }
