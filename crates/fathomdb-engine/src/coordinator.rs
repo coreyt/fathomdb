@@ -163,52 +163,6 @@ impl TokenizerStrategy {
     }
 }
 
-/// Escape special characters in a query string for FTS5 dispatch when the
-/// `SourceCode` tokenizer strategy is active.
-///
-/// The characters `.`, `-`, `_`, `$`, `@` act as token separators in the
-/// source-code tokenizer. This function splits the query on those chars,
-/// double-quotes each non-empty token, and reassembles with the original
-/// separators preserved between quoted tokens.
-///
-/// Example: `"std.io"` → `"\"std\".\"io\""`
-pub(crate) fn escape_source_code_query(query: &str) -> String {
-    let special: &[char] = &['.', '-', '_', '$', '@'];
-    let mut result = String::new();
-    let mut current = String::new();
-    let mut last_sep: Option<char> = None;
-    for ch in query.chars() {
-        let is_sep = special.contains(&ch);
-        if is_sep && !current.is_empty() {
-            // Flush the current token, preserving the preceding separator.
-            if let Some(sep) = last_sep {
-                result.push(sep);
-            }
-            result.push('"');
-            result.push_str(&current);
-            result.push('"');
-            current.clear();
-            last_sep = Some(ch);
-        } else {
-            // Non-separator char, or separator at start/after another separator:
-            // accumulate into current token.
-            current.push(ch);
-        }
-    }
-    if !current.is_empty() {
-        if let Some(sep) = last_sep {
-            result.push(sep);
-        }
-        result.push('"');
-        result.push_str(&current);
-        result.push('"');
-    } else if result.is_empty() {
-        // Empty or all-separators input: return as-is.
-        return query.to_owned();
-    }
-    result
-}
-
 /// A pool of read-only `SQLite` connections for concurrent read access.
 ///
 /// Each connection is wrapped in its own [`Mutex`] so multiple readers can
@@ -1409,8 +1363,14 @@ impl ExecutionCoordinator {
         // SubstringTrigram: queries shorter than 3 chars produce no results
         // (trigram index cannot match them). Return empty instead of an FTS5
         // error or a full-table scan.
-        // SourceCode: escape special chars so FTS5 does not treat them as
-        // operators.
+        // SourceCode: render_text_query_fts5 already wraps every term in FTS5
+        // double-quote delimiters (e.g. "std.io"). Applying escape_source_code_query
+        // on that already-rendered output corrupts the expression — the escape
+        // function sees the surrounding '"' characters and '.' separator and
+        // produces malformed syntax like '"std"."io""'. The phrase quoting from
+        // render_text_query_fts5 is sufficient: FTS5 applies the tokenizer
+        // (including custom tokenchars) inside double-quoted phrase expressions,
+        // so "std.io" correctly matches the single token 'std.io'.
         let strategy = self.fts_strategies.get(compiled.root_kind.as_str());
         if matches!(strategy, Some(TokenizerStrategy::SubstringTrigram))
             && rendered_base
@@ -1421,11 +1381,7 @@ impl ExecutionCoordinator {
         {
             return Ok(Vec::new());
         }
-        let rendered = if matches!(strategy, Some(TokenizerStrategy::SourceCode)) {
-            escape_source_code_query(&rendered_base)
-        } else {
-            rendered_base
-        };
+        let rendered = rendered_base;
         // An empty `root_kind` means "unkind-filtered" — the fallback_search
         // helper uses this when the caller did not add `.filter_kind_eq(...)`.
         // The adaptive `text_search()` path never produces an empty root_kind
@@ -5091,14 +5047,77 @@ mod tests {
     }
 
     #[test]
-    fn source_code_dot_escaping() {
-        use super::escape_source_code_query;
-        // Dots and other special chars must be escaped.
-        assert_eq!(escape_source_code_query("std.io"), "\"std\".\"io\"");
-        assert_eq!(escape_source_code_query("foo-bar"), "\"foo\"-\"bar\"");
-        assert_eq!(escape_source_code_query("$HOME"), "\"$HOME\"");
-        // Plain word without special chars passes through.
-        assert_eq!(escape_source_code_query("hello"), "\"hello\"");
+    fn source_code_strategy_does_not_corrupt_fts5_syntax() {
+        // Regression: escape_source_code_query must NOT be applied to the
+        // already-rendered FTS5 expression. render_text_query_fts5 wraps every
+        // term in double-quote delimiters (e.g. std.io -> "std.io"). Calling the
+        // escape function on that output corrupts the expression: the escaper
+        // sees the surrounding '"' as ordinary chars and produces '"std"."io""'
+        // — malformed FTS5 syntax — causing searches to silently return empty.
+        //
+        // This test verifies a round-trip search for 'std.io' succeeds when the
+        // SourceCode tokenizer strategy is active.
+        use fathomdb_query::compile_search;
+
+        let db = NamedTempFile::new().expect("temporary db");
+        let schema_manager = Arc::new(SchemaManager::new());
+
+        // Bootstrap the DB schema.
+        {
+            let bootstrap = ExecutionCoordinator::open(
+                db.path(),
+                Arc::clone(&schema_manager),
+                None,
+                1,
+                Arc::new(TelemetryCounters::default()),
+                None,
+            )
+            .expect("bootstrap coordinator");
+            drop(bootstrap);
+        }
+
+        // Insert the SourceCode tokenizer profile for kind "Symbol" and seed a document.
+        {
+            let conn = rusqlite::Connection::open(db.path()).expect("open db");
+            conn.execute(
+                "INSERT OR REPLACE INTO projection_profiles (kind, facet, config_json) \
+                 VALUES ('Symbol', 'fts', json_object('tokenizer', 'unicode61 tokenchars ''._-$@'''))",
+                [],
+            )
+            .expect("insert profile");
+            conn.execute_batch(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at) \
+                 VALUES ('row-sym-1', 'logical-sym-1', 'Symbol', '{}', 1); \
+                 INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
+                 VALUES ('chunk-sym-1', 'logical-sym-1', 'std.io is a rust crate', 1); \
+                 INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content) \
+                 VALUES ('chunk-sym-1', 'logical-sym-1', 'Symbol', 'std.io is a rust crate');",
+            )
+            .expect("insert node and fts row");
+        }
+
+        // Reopen coordinator to pick up the SourceCode strategy.
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::clone(&schema_manager),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+            None,
+        )
+        .expect("coordinator reopen");
+
+        // Search for "std.io": must find the document (not error, not return empty).
+        let ast = QueryBuilder::nodes("Symbol").text_search("std.io", 10);
+        let compiled = compile_search(ast.ast()).expect("compile search");
+        let rows = coordinator
+            .execute_compiled_search(&compiled)
+            .expect("source code search must not error");
+        assert!(
+            !rows.hits.is_empty(),
+            "SourceCode strategy search for 'std.io' must return the document; \
+             got empty — FTS5 expression was likely corrupted by post-render escaping"
+        );
     }
 
     #[test]
