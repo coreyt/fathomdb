@@ -531,6 +531,7 @@ export class SearchBuilder {
   readonly #limit: number;
   readonly #filters: SearchFilter[];
   readonly #attributionRequested: boolean;
+  readonly #expansions: Array<Record<string, RawJson>>;
 
   constructor(
     core: NativeEngineCore,
@@ -539,6 +540,7 @@ export class SearchBuilder {
     limit: number,
     filters: SearchFilter[] = [],
     attributionRequested = false,
+    expansions: Array<Record<string, RawJson>> = [],
   ) {
     this.#core = core;
     this.#rootKind = rootKind;
@@ -546,6 +548,7 @@ export class SearchBuilder {
     this.#limit = limit;
     this.#filters = filters;
     this.#attributionRequested = attributionRequested;
+    this.#expansions = expansions;
   }
 
   #withFilter(filter: SearchFilter): SearchBuilder {
@@ -556,6 +559,19 @@ export class SearchBuilder {
       this.#limit,
       [...this.#filters, filter],
       this.#attributionRequested,
+      [...this.#expansions],
+    );
+  }
+
+  #withExpansion(expansion: Record<string, RawJson>): SearchBuilder {
+    return new SearchBuilder(
+      this.#core,
+      this.#rootKind,
+      this.#strictQuery,
+      this.#limit,
+      [...this.#filters],
+      this.#attributionRequested,
+      [...this.#expansions, expansion],
     );
   }
 
@@ -568,6 +584,7 @@ export class SearchBuilder {
       this.#limit,
       [...this.#filters],
       true,
+      [...this.#expansions],
     );
   }
 
@@ -708,6 +725,74 @@ export class SearchBuilder {
       progressCallback,
       feedbackConfig,
     );
+  }
+
+  /**
+   * Register a named expansion slot for grouped query execution.
+   *
+   * @param args - Expansion configuration.
+   * @param args.slot - Name for this expansion in the grouped result.
+   * @param args.direction - `"in"` or `"out"` relative to root nodes.
+   * @param args.label - Edge kind to follow.
+   * @param args.maxDepth - Maximum traversal depth.
+   * @returns A new SearchBuilder with the expansion registered.
+   */
+  expand(args: { slot: string; direction: TraverseDirection; label: string; maxDepth: number }): SearchBuilder {
+    return this.#withExpansion({
+      slot: args.slot,
+      direction: args.direction,
+      label: args.label,
+      max_depth: args.maxDepth,
+    });
+  }
+
+  /**
+   * Compile the search with expansions into SQL without executing it.
+   *
+   * @param progressCallback - Optional callback invoked with feedback events.
+   * @param feedbackConfig - Timing thresholds for progress feedback.
+   * @returns The compiled grouped SQL query.
+   */
+  compileGrouped(progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): CompiledGroupedQuery {
+    return runWithFeedback({
+      operationKind: "query.compile_grouped",
+      metadata: { root_kind: this.#rootKind },
+      progressCallback,
+      feedbackConfig,
+      operation: () =>
+        compiledGroupedQueryFromWire(parseNativeJson(callNative(() => this.#core.compileGroupedAst(this.#searchAstJson())))),
+    });
+  }
+
+  /**
+   * Execute the search with expansions and return grouped rows.
+   *
+   * @param progressCallback - Optional callback invoked with feedback events.
+   * @param feedbackConfig - Timing thresholds for progress feedback.
+   * @returns The grouped result rows.
+   */
+  executeGrouped(progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): GroupedQueryRows {
+    return runWithFeedback({
+      operationKind: "query.execute_grouped",
+      metadata: { root_kind: this.#rootKind },
+      progressCallback,
+      feedbackConfig,
+      operation: () =>
+        groupedQueryRowsFromWire(parseNativeJson(callNative(() => this.#core.executeGroupedAst(this.#searchAstJson())))),
+    });
+  }
+
+  #searchAstJson(): string {
+    const steps: Array<Record<string, RawJson>> = [
+      { type: "text_search", query: this.#strictQuery, limit: this.#limit },
+      ...this.#filters,
+    ];
+    return JSON.stringify({
+      root_kind: this.#rootKind,
+      steps,
+      expansions: this.#expansions,
+      final_limit: null,
+    });
   }
 }
 
