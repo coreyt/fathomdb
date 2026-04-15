@@ -50,7 +50,9 @@ composable with the `filter_json_*` family on the resulting
 
 1. **Register a schema** for each node kind that should have property FTS.
    The schema declares which JSON paths to extract and how each one should
-   be walked (scalar vs recursive).
+   be walked (scalar vs recursive). Registration creates a dedicated
+   `fts_props_<kind>` FTS5 table for that kind (see
+   [Per-Kind Table Architecture](#per-kind-table-architecture) below).
 2. **Write nodes normally.** The engine extracts the declared paths at write
    time and maintains a derived FTS row plus (for recursive paths) a
    position-map row per leaf, all in the same transaction as the node write.
@@ -62,6 +64,60 @@ composable with the `filter_json_*` family on the resulting
 Property FTS rows — both the blob and the position map — are **derived
 state**. They are rebuilt from canonical nodes and schemas. You never
 write them directly.
+
+## Per-Kind Table Architecture
+
+Starting in 0.4.2, each registered kind gets its **own** FTS5 table:
+`fts_props_<kind>`. The previous global `fts_node_properties` table is
+removed (migration 23).
+
+The per-kind table is created when a schema is first registered for that
+kind (migration 21 for existing kinds; at `register_fts_property_schema`
+call-time for new kinds). An async rebuild is enqueued automatically so
+existing nodes are indexed without blocking the caller.
+
+**What this means for callers:**
+
+- All existing `search()`, `text_search()`, and `fallback_search()` calls
+  continue to work without code changes.
+- A `KindEq` predicate is now required for property FTS to fire. Use
+  `db.nodes("MyKind").search(...)` (which implicitly adds the kind filter)
+  rather than a kind-less top-level search when you want property hits.
+  Kind-less searches still return chunk and vector hits.
+- Direct SQL queries to `fts_node_properties` will fail — migrate any raw
+  SQL to query the per-kind table `fts_props_<kind>` instead.
+- Per-kind tables enable per-kind tokenizer configuration (planned for 0.4.5)
+  and per-column BM25 weight tuning (available now via `with_weight()`).
+
+## Per-Column BM25 Weights
+
+`FtsPropertyPathSpec::with_weight(f32)` assigns a BM25 column weight to a
+registered path. Paths with higher weights contribute more to the match score,
+so title matches outrank body matches even when both contain the query term.
+
+```rust
+AdminService::register_fts_property_schema_with_entries(
+    kind,
+    &[
+        FtsPropertyPathSpec::scalar("$.title").with_weight(10.0),
+        FtsPropertyPathSpec::scalar("$.body").with_weight(1.0),
+    ],
+    separator,
+    RebuildMode::Async,
+)?;
+```
+
+**Weight rules:**
+
+- Range: `0.0 < weight <= 1000.0`. Values outside this range are rejected at
+  registration time.
+- Default: `1.0` when `with_weight()` is not called.
+- Effect: the FTS5 `bm25(col_weight_0, col_weight_1, ...)` function applies
+  the weights at query time. A path with weight `10.0` is worth ten times as
+  much as a path with weight `1.0` for ranking purposes.
+- All paths on a schema must use consistent weighting — if any path has a
+  non-default weight, all paths should have explicit weights for
+  predictable ranking.
 
 ## Scalar vs Recursive Paths
 
@@ -234,9 +290,12 @@ can afford to block the caller for the duration of the rebuild.
 
 #### Crash recovery
 
-If the engine restarts during an async rebuild, the in-progress state is
-marked `FAILED` on the next engine open. Call `register_fts_property_schema_async`
-again to retry the rebuild.
+If the engine restarts during an async rebuild:
+
+- **BUILDING / SWAPPING** rows are marked `FAILED` on the next engine open.
+  Call `register_fts_property_schema_async` again to retry.
+- **PENDING** rows survive the restart and are picked up by `RebuildActor`
+  automatically — no manual retry needed.
 
 ## Writing Nodes
 
@@ -357,6 +416,12 @@ extra joins. A scalar-only schema can still be queried with
 `with_match_attribution()`, but the attribution will be empty for hits
 that came from scalar entries, since scalar extraction doesn't record
 per-leaf positions.
+
+Starting in 0.4.2, `SearchHit.attribution.matched_paths` is populated for
+all property FTS hits when `with_match_attribution()` is set — both scalar
+and recursive paths contribute to the list. Scalar paths report the path
+name without a position offset; recursive paths report the exact leaf path
+that matched.
 
 Property FTS composes cleanly with the Phase 12.5 read-time embedder.
 When `Engine.open(...)` is given `embedder="builtin"` (or a caller-
@@ -534,8 +599,6 @@ All of these should be zero in a healthy database. If any are non-zero, run
 - **Path syntax**: Simple dot-notation only. No array indexing, wildcards,
   or JSONPath recursive-descent syntax — "recursive mode" is a declared
   behavior on a simple path, not a path-syntax feature.
-- **No per-field weighting**: All extracted values contribute equally to
-  the FTS score.
 - **No field-scoped queries**: You cannot search only the `$.name` field.
   The extracted values are concatenated into a single FTS document;
   match attribution tells you *after the fact* which path matched.
