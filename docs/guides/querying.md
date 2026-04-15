@@ -119,6 +119,14 @@ attribution with `.with_match_attribution()`; see
 [Property FTS Projections](./property-fts.md#match-attribution-opt-in)
 for how recursive schemas populate the underlying position map.
 
+!!! warning "snippet format is unstable"
+
+    The `SearchHit.snippet` field format is **unstable**. Its content and
+    structure may change between releases without notice. Do not parse, split,
+    or regex-match snippet substrings in application code. If you need stable,
+    structured access to matched text fragments, open a GitHub issue to request
+    a `snippet_fields` API.
+
 The TypeScript SDK mirrors this surface with camelCase names
 (`engine.nodes("Goal").search("ship quarterly docs", 10).execute()`); see
 the [TypeScript equivalent](#typescript-equivalent) section below for the

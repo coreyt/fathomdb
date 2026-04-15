@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-04-15
+
+### Breaking changes
+
+- **`fts_node_properties` removed**: The global FTS5 table is replaced by per-kind tables `fts_props_<kind>` (migration 23). Direct SQL queries to `fts_node_properties` will fail. No public API change — all existing search calls continue to work.
+- **Property FTS requires kind filter**: Kind-less text searches no longer return property FTS hits (only chunk/vector hits). A `KindEq` predicate is required to search property FTS. Add `.filter_kind_eq("MyKind")` or use `db.nodes("MyKind").search(...)` to restore property hits.
+- **`FtsPropertyPathSpec` is `#[non_exhaustive]`**: External code constructing `FtsPropertyPathSpec` via struct literal will fail to compile. Use `FtsPropertyPathSpec::scalar(path)` or `FtsPropertyPathSpec::recursive(path)` constructors instead.
+- **`SearchHit.snippet` is unstable**: The content and format of the `snippet` field may change between releases without notice. Do not parse, split, or regex-match snippet substrings in application code.
+
+### Added
+
+- Per-kind FTS5 tables (`fts_props_<kind>`) replacing the global `fts_node_properties` table; created at kind-registration time (migration 21) with async rebuilds enqueued automatically.
+- `projection_profiles` table for future per-kind tokenizer and embedding configuration (migration 20); empty in 0.4.2.
+- `FtsPropertyPathSpec::with_weight(f32)` for per-column BM25 weight configuration; title matches (high weight) outrank body matches (low weight) in search results.
+- `matched_paths` attribution populated for property FTS hits in `SearchHit.attribution.matched_paths`.
+
+### Fixed
+
+- `recover_interrupted_rebuilds` no longer marks PENDING rebuild rows as FAILED on engine restart; PENDING rows now survive restarts and are processed by `RebuildActor`.
+
 ## [0.4.1] - 2026-04-15
 
 ### New
