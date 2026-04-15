@@ -5,12 +5,12 @@
 //! route to the right coordinator entry point by type. Non-search chains
 //! return [`QueryRows`]; `.text_search(...).execute()` returns [`SearchRows`].
 
-use fathomdb_engine::{EngineError, QueryRows};
+use fathomdb_engine::{EngineError, GroupedQueryRows, QueryRows};
 use fathomdb_query::{
     BuilderValidationError, CompileError, CompiledGroupedQuery, CompiledQuery,
     CompiledRetrievalPlan, CompiledSearchPlan, CompiledVectorSearch, QueryAst, QueryBuilder,
-    QueryStep, SearchRows, TextQuery, compile_search, compile_search_plan_from_queries,
-    compile_vector_search,
+    QueryStep, SearchRows, TextQuery, compile_grouped_query, compile_search,
+    compile_search_plan_from_queries, compile_vector_search,
 };
 
 use crate::Engine;
@@ -430,6 +430,19 @@ impl<'e> NodeQueryBuilder<'e> {
             .compile()
             .map_err(|e| EngineError::InvalidConfig(format!("query compilation failed: {e}")))?;
         self.engine.coordinator().execute_compiled_read(&compiled)
+    }
+
+    /// Execute the grouped query and return root rows plus named expansion slots.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if compilation or execution fails.
+    pub fn execute_grouped(self) -> Result<GroupedQueryRows, EngineError> {
+        let compiled = self.inner.compile_grouped().map_err(|e| {
+            EngineError::InvalidConfig(format!("grouped query compilation failed: {e}"))
+        })?;
+        self.engine
+            .coordinator()
+            .execute_compiled_grouped_read(&compiled)
     }
 }
 
@@ -1747,6 +1760,65 @@ impl<'e> SearchBuilder<'e> {
         self.engine
             .coordinator()
             .execute_retrieval_plan(&plan, &self.query)
+    }
+
+    /// Add an expansion slot that traverses edges per root result.
+    pub fn expand(
+        mut self,
+        slot: impl Into<String>,
+        direction: fathomdb_query::TraverseDirection,
+        label: impl Into<String>,
+        max_depth: usize,
+    ) -> Self {
+        self.filter_builder = self
+            .filter_builder
+            .expand(slot, direction, label, max_depth);
+        self
+    }
+
+    /// Compile this builder's AST into an executable grouped query.
+    ///
+    /// Rewrites the seed `TextSearch` step into a real text-search step before
+    /// delegating to [`compile_grouped_query`].
+    ///
+    /// # Errors
+    /// Returns [`CompileError`] if grouped compilation fails.
+    pub fn compile_grouped(&self) -> Result<CompiledGroupedQuery, CompileError> {
+        let mut ast: QueryAst = self.filter_builder.clone().into_ast();
+        ast.root_kind.clone_from(&self.root_kind);
+        let mut replaced = false;
+        for step in &mut ast.steps {
+            if let QueryStep::TextSearch {
+                query: TextQuery::Empty,
+                limit: 0,
+            } = step
+            {
+                *step = QueryStep::TextSearch {
+                    query: TextQuery::parse(&self.query),
+                    limit: self.limit,
+                };
+                replaced = true;
+                break;
+            }
+        }
+        debug_assert!(
+            replaced,
+            "SearchBuilder filter accumulator must contain the seed TextSearch step"
+        );
+        compile_grouped_query(&ast)
+    }
+
+    /// Execute the grouped query and return root rows plus named expansion slots.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if compilation or execution fails.
+    pub fn execute_grouped(self) -> Result<GroupedQueryRows, EngineError> {
+        let compiled = self.compile_grouped().map_err(|e| {
+            EngineError::InvalidConfig(format!("grouped query compilation failed: {e}"))
+        })?;
+        self.engine
+            .coordinator()
+            .execute_compiled_grouped_read(&compiled)
     }
 }
 

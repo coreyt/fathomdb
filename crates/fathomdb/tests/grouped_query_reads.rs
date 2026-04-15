@@ -5,8 +5,8 @@
 )]
 
 use fathomdb::{
-    ChunkInsert, ChunkPolicy, CompileError, EdgeInsert, Engine, EngineOptions, NodeInsert,
-    TraverseDirection, WriteRequest, new_row_id,
+    ChunkInsert, ChunkPolicy, CompileError, EdgeInsert, Engine, EngineOptions, GroupedQueryRows,
+    NodeInsert, TraverseDirection, WriteRequest, new_row_id,
 };
 use tempfile::NamedTempFile;
 
@@ -500,4 +500,51 @@ fn json_filter_with_expansion_finds_non_first_node() {
         rows.expansions[0].roots[0].nodes.is_empty(),
         "meeting-2 has no outgoing HAS_TASK edges"
     );
+}
+
+#[test]
+fn search_builder_expand_execute_grouped_returns_root_plus_expansion() {
+    let (_db, engine) = open_engine();
+    seed_meeting_graph(&engine);
+
+    let rows: GroupedQueryRows = engine
+        .query("Meeting")
+        .search("budget", 5)
+        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1)
+        .expand("decisions", TraverseDirection::Out, "HAS_DECISION", 1)
+        .execute_grouped()
+        .expect("search grouped executes");
+
+    assert_eq!(rows.roots.len(), 1);
+    assert_eq!(rows.roots[0].logical_id, "meeting-1");
+    assert_eq!(rows.expansions.len(), 2);
+    assert_eq!(rows.expansions[0].slot, "tasks");
+    assert_eq!(rows.expansions[0].roots[0].nodes.len(), 1);
+    assert_eq!(rows.expansions[0].roots[0].nodes[0].logical_id, "task-1");
+    assert_eq!(rows.expansions[1].slot, "decisions");
+    assert_eq!(rows.expansions[1].roots[0].nodes.len(), 1);
+    assert_eq!(
+        rows.expansions[1].roots[0].nodes[0].logical_id,
+        "decision-1"
+    );
+}
+
+#[test]
+fn node_query_builder_execute_grouped_convenience_terminal() {
+    let (_db, engine) = open_engine();
+    seed_meeting_graph(&engine);
+
+    let rows: GroupedQueryRows = engine
+        .query("Meeting")
+        .filter_logical_id_eq("meeting-1")
+        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1)
+        .execute_grouped()
+        .expect("execute_grouped executes");
+
+    assert_eq!(rows.roots.len(), 1);
+    assert_eq!(rows.roots[0].logical_id, "meeting-1");
+    assert_eq!(rows.expansions.len(), 1);
+    assert_eq!(rows.expansions[0].slot, "tasks");
+    assert_eq!(rows.expansions[0].roots[0].nodes.len(), 1);
+    assert_eq!(rows.expansions[0].roots[0].nodes[0].logical_id, "task-1");
 }
