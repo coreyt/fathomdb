@@ -63,6 +63,12 @@ surface is an implementation choice.
 
 ### AST change
 
+**Serde concern resolved:** `QueryStep` at
+`crates/fathomdb-query/src/ast.rs:30` derives only
+`Clone, Debug, PartialEq, Eq` — no `Serialize`/`Deserialize`.
+Adding `filter: Option<Predicate>` is NOT a wire-format break;
+it is a pure source-level additive change. Proceed without concern.
+
 Add a `filter: Option<Predicate>` field to `QueryStep::Traverse`:
 
 ```rust

@@ -112,9 +112,18 @@ it would pass shape 1 but fail shape 3 by mixing child sets).
 
 v1 ships `related_knowledge` at `max_depth=1` only. At
 `max_depth=1`, cycles in the edge graph are irrelevant — one hop
-cannot loop. **For `max_depth > 1`, v1 walks blindly with no
-cycle detection and no dedup.** This is a sharp edge to document,
-not to fix.
+cannot loop.
+
+**VERIFIED (post-Pack 4):** The claim "v1 walks blindly with no
+cycle detection" is INCORRECT. The recursive CTE uses a
+visited-string accumulator (`printf(',%s,', logical_id)`) and a
+WHERE clause `instr(t.visited, printf(',%s,', next_id)) = 0` that
+blocks revisiting any node already on the current path. The root node
+is always pre-seeded as visited. On a cycle A→B→C→A with originator
+A, depth=2 returns exactly {B, C}, and depth=3 also returns exactly
+{B, C} — the walk back to A is blocked at every depth. No hang, no
+OOM. Self-expand is safe at any `max_depth`. This is NOT a sharp edge.
+The doc callout in Pack 12 must describe this actual behavior.
 
 ### Test shape
 
@@ -190,9 +199,9 @@ missing). TypeScript file:
   (~1M WMExecutionRecord rows). Unit-scale fixtures are enough for
   semantic correctness; real-volume testing happens in Memex's
   adoption PR.
-- Cycle detection implementation for depth>1 self-expand. v1
-  walks blindly per the sharp-edge documentation. Cycle detection
-  is a post-0.4.1 scope item, if and when a real caller needs it.
+- Cycle detection implementation — the CTE already has per-path
+  visited-node deduplication (confirmed by Pack 4 tests). No further
+  cycle-detection work is needed for 0.4.1.
 
 ## Risks
 

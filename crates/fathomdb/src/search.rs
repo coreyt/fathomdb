@@ -1777,10 +1777,11 @@ impl<'e> SearchBuilder<'e> {
         direction: fathomdb_query::TraverseDirection,
         label: impl Into<String>,
         max_depth: usize,
+        filter: Option<fathomdb_query::Predicate>,
     ) -> Self {
         self.filter_builder = self
             .filter_builder
-            .expand(slot, direction, label, max_depth);
+            .expand(slot, direction, label, max_depth, filter);
         self
     }
 

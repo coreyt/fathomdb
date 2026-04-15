@@ -86,24 +86,24 @@ Also add the same convenience terminal to `NodeQueryBuilder` so the
 existing tests can be tightened from the current
 two-step pattern.
 
-### Python / TypeScript verification (not an implementation task yet)
+### Python / TypeScript verification (RESOLVED — binding work required)
 
-Before locking 0.4.1 scope, verify that Memex's Python call chain
-actually works today:
+Verified against the current tree (post-commit `75f40a4`):
 
-```python
-engine.nodes("WMGoal").search(query, limit).expand(...).execute_grouped()
-```
+**Python (`python/fathomdb/_query.py:99-119`):** `Query.search()`
+returns a `SearchBuilder` instance (distinct class), not `self`.
+Python `SearchBuilder` has `.filter_*()` methods and `.execute()` but
+**no** `.expand()` or `.execute_grouped()`. Memex's target chain
+does not work in Python today.
 
-If `Query.search()` returns the same `Query` instance, this already
-works and no binding change is needed. If it returns a distinct
-type (e.g. `SearchResult` wrapper) that lacks `.expand()`, the
-bindings need a parallel fix to the Rust change above.
+**TypeScript (`typescript/packages/fathomdb/src/query.ts:120-122`):**
+Same shape — `search()` returns `new SearchBuilder(...)`, and that
+class also lacks `.expand()` / `.execute_grouped()`.
 
-**Action:** read `python/fathomdb/_query.py` around the `search`
-method and confirm the return type. Same for TypeScript. Fold any
-required binding changes into this design before implementation
-starts.
+**Implication:** both bindings need `.expand(slot, direction, label,
+max_depth, filter=None)`, `.compile_grouped()`, and
+`.execute_grouped()` added to their `SearchBuilder` classes.
+This is Pack 5 (Python) and Pack 6 (TypeScript) in the release plan.
 
 ## Acceptance
 
@@ -112,10 +112,13 @@ starts.
 2. A new Rust test in `crates/fathomdb/tests/grouped_query_reads.rs`
    exercises the full `.nodes(kind).search(query, limit).expand(...)
    .execute_grouped()` chain end-to-end.
-3. Python call chain from Memex's note compiles and returns
-   `GroupedQueryRows`-equivalent shape. Add a Python integration
-   test mirroring the Rust one.
-4. TypeScript parity test.
+3. Python `SearchBuilder` (returned from `Query.search()`) gains
+   `.expand(slot, direction, label, max_depth, filter=None)`,
+   `.compile_grouped()`, and `.execute_grouped()`. Python integration
+   test mirroring the Rust one. Build via `pip install -e python/`.
+4. TypeScript `SearchBuilder` (returned from `search()`) gains
+   `.expand(...)`, `.compileGrouped()`, and `.executeGrouped()`.
+   TypeScript integration test. Prebuilds build clean.
 5. No regression in `grouped_query_reads.rs`.
 
 ## Out of scope
@@ -132,9 +135,9 @@ starts.
 
 ## Open questions
 
-1. Does Python `Query.search()` return the same `Query` (making
-   Memex's chain already work), or a distinct wrapper? Verify
-   before locking binding scope.
+1. ~~Does Python `Query.search()` return the same `Query` (making
+   Memex's chain already work), or a distinct wrapper?~~ **RESOLVED:**
+   returns distinct `SearchBuilder`; binding work is required (Packs 5–6).
 2. Should `SearchBuilder::execute_grouped` take `&Engine` (mirroring
    `execute`) or be a consuming method? Match existing `execute`
    for consistency.

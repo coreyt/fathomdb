@@ -395,12 +395,15 @@ scope item. Serialized is correct, just not maximally fast.
    toward Option A (separate method) if Option B's source-break
    hits too many internal call sites during implementation —
    revisit before locking.
-4. **Background task execution model.** Tokio task on a shared
-   runtime? Dedicated thread? The engine doesn't currently run
-   long-lived background work outside the request path — this is
-   the first case that needs it. Implementation detail that
-   affects the runtime / lifecycle story; resolve early in
-   implementation.
+4. ~~**Background task execution model.**~~ **RESOLVED:** Use
+   `std::thread` + `std::sync::mpsc`, modeled on `WriterActor`
+   (`crates/fathomdb-engine/src/writer.rs:445-468`). `fathomdb-engine`
+   has no tokio runtime; the existing deferred-work pattern is a
+   dedicated OS thread communicating via `mpsc` channels, shut down
+   via `JoinHandle`. The new `RebuildActor` follows this pattern
+   exactly — spawned at engine-open time, receives `RebuildRequest`
+   messages over an `mpsc::Sender`, drains on engine shutdown. No
+   tokio dependency introduced.
 5. **Rebuild progress row cleanup.** When does a `COMPLETE` row
    get deleted from `fts_property_rebuild_state`? On next register
    call, on engine open, on timer, or never? Affects whether
@@ -411,10 +414,11 @@ scope item. Serialized is correct, just not maximally fast.
 
 - **Background task model is a new concept for the engine.** The
   runtime (`EngineRuntime`) currently doesn't own long-lived
-  tasks. Adding one opens questions about shutdown order, task
-  panics, backpressure. Scope to "simplest thing that works" —
-  likely a tokio task spawned by the coordinator, cancelled on
-  engine close with a best-effort drain.
+  tasks beyond `WriterActor`. Adding a second actor (`RebuildActor`)
+  opens questions about shutdown order and task panics. Scope to
+  "simplest thing that works" — mirror `WriterActor`'s
+  `thread::Builder::spawn` + `JoinHandle` + `mpsc` drain pattern.
+  No tokio dependency (resolved per finding V2).
 - **FTS5 rollback semantics under crash during SWAPPING.** If
   this isn't clean, crash recovery complexity balloons. Mitigate
   by running injected-crash tests early in implementation to
