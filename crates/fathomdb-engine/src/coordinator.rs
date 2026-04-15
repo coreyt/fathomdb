@@ -467,6 +467,24 @@ impl ExecutionCoordinator {
         &self,
         compiled: &CompiledQuery,
     ) -> Result<QueryRows, EngineError> {
+        // Scan fallback for first-registration async rebuild: if the query uses the
+        // FtsNodes driving table and the root kind has is_first_registration=1 with
+        // state IN ('PENDING','BUILDING'), the fts_node_properties table has no rows
+        // yet. Route to a full-kind node scan so callers get results instead of empty.
+        if compiled.driving_table == DrivingTable::FtsNodes
+            && let Some(BindValue::Text(root_kind)) = compiled.binds.get(1)
+            && let Some(nodes) = self.scan_fallback_if_first_registration(root_kind)?
+        {
+            self.telemetry.increment_queries();
+            return Ok(QueryRows {
+                nodes,
+                runs: Vec::new(),
+                steps: Vec::new(),
+                actions: Vec::new(),
+                was_degraded: false,
+            });
+        }
+
         let row_sql = wrap_node_row_projection_sql(&compiled.sql);
         // FIX(review): was .expect() — panics on mutex poisoning, cascading failure.
         // Options: (A) into_inner() for all, (B) EngineError for all, (C) mixed.
@@ -1980,6 +1998,65 @@ impl ExecutionCoordinator {
             .collect::<Result<Vec<_>, _>>()
             .map_err(EngineError::Sqlite)?;
         Ok(events)
+    }
+
+    /// Check if `kind` has a first-registration async rebuild in progress
+    /// (`is_first_registration=1` with state PENDING/BUILDING/SWAPPING and no
+    /// rows yet in `fts_node_properties`). If so, execute a full-kind scan and
+    /// return the nodes. Returns `None` when the normal FTS5 path should run.
+    fn scan_fallback_if_first_registration(
+        &self,
+        kind: &str,
+    ) -> Result<Option<Vec<NodeRow>>, EngineError> {
+        let conn = self.lock_connection()?;
+
+        // Quick point-lookup: kind has a first-registration rebuild in a
+        // pre-complete state AND fts_node_properties has no rows for it yet.
+        let needs_scan: bool = conn
+            .query_row(
+                "SELECT 1 FROM fts_property_rebuild_state \
+                 WHERE kind = ?1 AND is_first_registration = 1 \
+                 AND state IN ('PENDING','BUILDING','SWAPPING') \
+                 AND NOT EXISTS (SELECT 1 FROM fts_node_properties WHERE kind = ?1) \
+                 LIMIT 1",
+                rusqlite::params![kind],
+                |_| Ok(true),
+            )
+            .optional()?
+            .unwrap_or(false);
+
+        if !needs_scan {
+            return Ok(None);
+        }
+
+        // Scan fallback: return all active nodes of this kind.
+        // Intentionally unindexed — acceptable for first-registration window.
+        let mut stmt = conn
+            .prepare_cached(
+                "SELECT n.row_id, n.logical_id, n.kind, n.properties, n.content_ref, \
+                 am.last_accessed_at \
+                 FROM nodes n \
+                 LEFT JOIN node_access_metadata am ON am.logical_id = n.logical_id \
+                 WHERE n.kind = ?1 AND n.superseded_at IS NULL",
+            )
+            .map_err(EngineError::Sqlite)?;
+
+        let nodes = stmt
+            .query_map(rusqlite::params![kind], |row| {
+                Ok(NodeRow {
+                    row_id: row.get(0)?,
+                    logical_id: row.get(1)?,
+                    kind: row.get(2)?,
+                    properties: row.get(3)?,
+                    content_ref: row.get(4)?,
+                    last_accessed_at: row.get(5)?,
+                })
+            })
+            .map_err(EngineError::Sqlite)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(EngineError::Sqlite)?;
+
+        Ok(Some(nodes))
     }
 }
 
