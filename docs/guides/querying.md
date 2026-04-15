@@ -995,9 +995,9 @@ target kind has no registered property-FTS schema.
 
 !!! note "Per-originator, not global"
 
-    The `limit` on each `.expand()` call is applied **per originator**, not
-    globally. A search returning 50 hits, each with a
-    `.expand(..., limit=20)` slot, returns up to 20 expanded nodes **per
+    The `.limit(N)` call chained after `.expand()` is applied **per
+    originator**, not globally. A search returning 50 hits with a
+    `.expand(...).limit(20)` chain returns up to 20 expanded nodes **per
     hit**, for up to 1000 total — not 20 total. This holds even when the
     distribution is heavily skewed: a single originator with 500 candidates
     will not starve other originators' budgets.
