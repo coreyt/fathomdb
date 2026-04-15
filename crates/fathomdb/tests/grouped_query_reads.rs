@@ -3,6 +3,7 @@
     clippy::cast_sign_loss,
     clippy::expect_used,
     clippy::items_after_statements,
+    clippy::panic,
     clippy::too_many_lines,
     clippy::uninlined_format_args,
     clippy::unreadable_literal
