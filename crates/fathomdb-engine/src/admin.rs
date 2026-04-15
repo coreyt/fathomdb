@@ -1790,11 +1790,23 @@ impl AdminService {
         tx.commit()?;
 
         // Enqueue the rebuild request if the actor is available.
+        // try_send is non-blocking: if the channel is full (capacity 64), the
+        // request is dropped. The state row stays PENDING and the caller can
+        // observe this via get_property_fts_rebuild_state. No automatic retry
+        // in 0.4.1 — caller must re-invoke register to re-enqueue.
         if let Some(sender) = &self.rebuild_sender {
-            let _ = sender.try_send(RebuildRequest {
-                kind: kind.to_owned(),
-                schema_id,
-            });
+            if sender
+                .try_send(RebuildRequest {
+                    kind: kind.to_owned(),
+                    schema_id,
+                })
+                .is_err()
+            {
+                trace_warn!(
+                    kind = %kind,
+                    "rebuild channel full; rebuild request dropped — state remains PENDING"
+                );
+            }
         }
 
         self.describe_fts_property_schema(kind)?.ok_or_else(|| {

@@ -257,6 +257,8 @@ fn run_rebuild(conn: &mut rusqlite::Connection, req: &RebuildRequest) -> Result<
         }
 
         let elapsed_ms = batch_start.elapsed().as_millis();
+        // Save the limit used for THIS batch before adjusting for the next one.
+        let limit_used = batch_size;
         // Dynamically adjust batch size to target ~1s per batch.
         if elapsed_ms > 0 {
             let new_size = (batch_size as u128 * BATCH_TARGET_MS / elapsed_ms).clamp(100, 50_000);
@@ -265,8 +267,8 @@ fn run_rebuild(conn: &mut rusqlite::Connection, req: &RebuildRequest) -> Result<
 
         offset += i64::try_from(batch_len).unwrap_or(i64::MAX);
 
-        // If the batch was smaller than the limit, we've reached the end.
-        if batch_len < batch_size {
+        // If the batch was smaller than the limit used for THIS query, we've reached the end.
+        if batch_len < limit_used {
             break;
         }
     }
