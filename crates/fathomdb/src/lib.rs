@@ -35,9 +35,10 @@ pub use fathomdb_engine::{
     OperationalValidationFieldType, OperationalValidationMode, OperationalWrite,
     OptionalProjectionTask, ProjectionRepairReport, ProjectionTarget, ProvenanceEvent,
     ProvenanceMode, ProvenancePurgeOptions, ProvenancePurgeReport, QueryEmbedder,
-    QueryEmbedderIdentity, QueryPlan, QueryRows, RunInsert, RunRow, SafeExportManifest,
-    SafeExportOptions, SkippedEdge, StepInsert, StepRow, VecInsert, VectorRegenerationConfig,
-    VectorRegenerationReport, WriteReceipt, WriteRequest, WriterActor, new_id, new_row_id,
+    QueryEmbedderIdentity, QueryPlan, QueryRows, RebuildProgress, RunInsert, RunRow,
+    SafeExportManifest, SafeExportOptions, SkippedEdge, StepInsert, StepRow, VecInsert,
+    VectorRegenerationConfig, VectorRegenerationReport, WriteReceipt, WriteRequest, WriterActor,
+    new_id, new_row_id,
 };
 pub use fathomdb_engine::{SqliteCacheStatus, TelemetryLevel, TelemetrySnapshot};
 #[doc(hidden)]

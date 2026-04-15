@@ -2232,6 +2232,36 @@ impl ExecutionCoordinator {
 
         Ok(Some(nodes))
     }
+
+    /// Return the current rebuild progress for a kind, or `None` if no rebuild
+    /// has been registered for that kind.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the database query fails.
+    pub fn get_property_fts_rebuild_progress(
+        &self,
+        kind: &str,
+    ) -> Result<Option<crate::rebuild_actor::RebuildProgress>, EngineError> {
+        let conn = self.lock_connection()?;
+        let row = conn
+            .query_row(
+                "SELECT state, rows_total, rows_done, started_at, last_progress_at, error_message \
+                 FROM fts_property_rebuild_state WHERE kind = ?1",
+                rusqlite::params![kind],
+                |r| {
+                    Ok(crate::rebuild_actor::RebuildProgress {
+                        state: r.get(0)?,
+                        rows_total: r.get(1)?,
+                        rows_done: r.get(2)?,
+                        started_at: r.get(3)?,
+                        last_progress_at: r.get(4)?,
+                        error_message: r.get(5)?,
+                    })
+                },
+            )
+            .optional()?;
+        Ok(row)
+    }
 }
 
 fn wrap_node_row_projection_sql(base_sql: &str) -> String {

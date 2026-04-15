@@ -279,7 +279,7 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
             direction,
             label,
             max_depth,
-            filter,
+            filter: _,
         } = step
         {
             Some((*direction, label.as_str(), *max_depth))

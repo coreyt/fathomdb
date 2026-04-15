@@ -8,7 +8,7 @@ use crate::{
     AdminHandle, AdminService, EngineError, ExecutionCoordinator, ProvenanceMode, QueryEmbedder,
     WriterActor,
     database_lock::DatabaseLock,
-    rebuild_actor::{RebuildActor, RebuildRequest},
+    rebuild_actor::{RebuildActor, RebuildRequest, recover_interrupted_rebuilds},
     telemetry::{TelemetryCounters, TelemetryLevel, TelemetrySnapshot},
 };
 
@@ -93,6 +93,14 @@ impl EngineRuntime {
             provenance_mode,
             Arc::clone(&telemetry),
         )?;
+
+        // Crash recovery: mark any interrupted rebuilds (PENDING/BUILDING/SWAPPING)
+        // as FAILED and clean up their staging rows.  Must run before the
+        // RebuildActor starts so the actor never sees stale non-terminal state.
+        {
+            let recovery_conn = crate::sqlite::open_connection(path.as_ref())?;
+            recover_interrupted_rebuilds(&recovery_conn)?;
+        }
 
         // Rebuild actor: create channel, start thread, pass sender to AdminService.
         let (rebuild_sender, rebuild_receiver) = mpsc::sync_channel::<RebuildRequest>(64);

@@ -1,4 +1,4 @@
-//! Pack 7 + Pack 8: async property-FTS rebuild infrastructure tests.
+//! Pack 7 + Pack 8 + Pack 9: async property-FTS rebuild infrastructure tests.
 #![allow(clippy::expect_used, clippy::panic)]
 use std::time::Instant;
 
@@ -171,9 +171,36 @@ fn async_rebuild_populates_staging_table() {
         );
     }
 
-    // Verify staging table has the 5 rows.
-    let count = svc.count_staging_rows("Note").expect("count staging rows");
-    assert_eq!(count, 5, "expected 5 staging rows for 'Note', got {count}");
+    // Verify that staging OR the live FTS table has the 5 rows.
+    // If the rebuild reached COMPLETE, the swap already moved rows from staging
+    // to fts_node_properties and cleared staging — both are valid outcomes.
+    let state = svc
+        .get_property_fts_rebuild_state("Note")
+        .expect("get state")
+        .expect("state row must exist");
+    if state.state == "SWAPPING" {
+        // Swap is in progress; staging should still have the rows.
+        let count = svc.count_staging_rows("Note").expect("count staging rows");
+        assert_eq!(
+            count, 5,
+            "expected 5 staging rows for 'Note' during SWAPPING, got {count}"
+        );
+    } else {
+        // COMPLETE: staging was cleared; verify via FTS table (raw connection).
+        let conn =
+            rusqlite::Connection::open(dir.path().join("test.db")).expect("open raw connection");
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM fts_node_properties WHERE kind = 'Note'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("count fts rows");
+        assert_eq!(
+            count, 5,
+            "expected 5 fts_node_properties rows for 'Note' after swap, got {count}"
+        );
+    }
 }
 
 /// Engine shutdown drains and joins the rebuild actor cleanly (no panics, no hangs).
@@ -292,20 +319,39 @@ fn write_during_rebuild_populates_staging() {
         .submit(make_write_request("w1", vec![new_node]))
         .expect("write node");
 
-    // The staging table should contain a row for this node.
-    let count = svc
-        .count_staging_rows("Ticket")
-        .expect("count staging rows");
-    assert!(
-        count >= 1,
-        "expected at least 1 staging row for 'Ticket', got {count}"
-    );
+    // Check the current rebuild state: if BUILDING/SWAPPING, the node should be
+    // in staging. If COMPLETE, the swap already moved rows to fts_node_properties.
+    let current_state = svc
+        .get_property_fts_rebuild_state("Ticket")
+        .expect("get state")
+        .expect("state row must exist");
 
-    // Verify the specific node is in staging.
-    let in_staging = svc
-        .staging_row_exists("Ticket", "ticket:1")
-        .expect("staging_row_exists");
-    assert!(in_staging, "expected ticket:1 to be in staging table");
+    if current_state.state == "BUILDING" || current_state.state == "SWAPPING" {
+        // Actor is still running: double-write should have placed the node in staging.
+        let in_staging = svc
+            .staging_row_exists("Ticket", "ticket:1")
+            .expect("staging_row_exists");
+        assert!(
+            in_staging,
+            "expected ticket:1 to be in staging table during rebuild"
+        );
+    } else {
+        // COMPLETE: the swap moved all rows to FTS and cleared staging.
+        // Verify the node is findable via FTS query.
+        let compiled = QueryBuilder::nodes("Ticket")
+            .text_search("urgent", 10)
+            .limit(10)
+            .compile()
+            .expect("compile");
+        let rows = engine
+            .coordinator()
+            .execute_compiled_read(&compiled)
+            .expect("query after rebuild");
+        assert!(
+            !rows.nodes.is_empty(),
+            "ticket:1 should be findable via FTS after rebuild COMPLETE"
+        );
+    }
 }
 
 /// Test B: deleting a node during rebuild removes it from both the live FTS
@@ -333,7 +379,8 @@ fn delete_during_rebuild_removes_from_both_tables() {
     )
     .expect("register async");
 
-    // Wait until staging has the node (actor has processed it).
+    // Wait until the actor has processed the node into staging OR the rebuild
+    // has already completed (in which case staging is empty and FTS has the row).
     let deadline = Instant::now() + std::time::Duration::from_secs(5);
     loop {
         std::thread::sleep(std::time::Duration::from_millis(20));
@@ -343,9 +390,17 @@ fn delete_during_rebuild_removes_from_both_tables() {
         if in_staging {
             break;
         }
+        // Also accept the case where the rebuild has already completed
+        // (swap moved node to FTS and cleared staging).
+        let state = svc
+            .get_property_fts_rebuild_state("TicketDel")
+            .expect("get state");
+        if state.as_ref().is_some_and(|s| s.state == "COMPLETE") {
+            break;
+        }
         assert!(
             Instant::now() <= deadline,
-            "ticket:del never appeared in staging within 5s"
+            "ticket:del never appeared in staging and rebuild never completed within 5s"
         );
     }
 
@@ -355,13 +410,14 @@ fn delete_during_rebuild_removes_from_both_tables() {
         .submit(make_retire_request("retire-del", "ticket:del"))
         .expect("retire node");
 
-    // Both live FTS and staging should be gone.
+    // After retire, staging should not contain the node (it was never written
+    // there after the swap, or it was already absent).
     let in_staging = svc
         .staging_row_exists("TicketDel", "ticket:del")
         .expect("staging_row_exists after retire");
     assert!(
         !in_staging,
-        "ticket:del should be removed from staging after retire"
+        "ticket:del should not be in staging after retire"
     );
 
     // Also check fts_node_properties directly via a raw connection.
@@ -517,4 +573,227 @@ fn read_during_re_registration_uses_live_fts_table() {
         3,
         "re-registration should use live FTS table and return all 3 nodes"
     );
+}
+
+// ── Pack 9 tests ─────────────────────────────────────────────────────────────
+
+/// Test A: async rebuild completes and the FTS index is queryable with the new schema.
+#[test]
+fn async_rebuild_completes_and_queries_new_schema() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let engine = open_engine(&dir);
+
+    // Insert nodes before registering the schema (first registration).
+    for i in 0..3u32 {
+        engine
+            .writer()
+            .submit(make_write_request(
+                &format!("seed-{i}"),
+                vec![make_node(
+                    &format!("article:{i}"),
+                    "Article",
+                    &format!(r#"{{"headline":"searchable headline {i}"}}"#),
+                )],
+            ))
+            .expect("write node");
+    }
+
+    let svc = engine.admin().service();
+    svc.register_fts_property_schema_with_entries(
+        "Article",
+        &[FtsPropertyPathSpec::scalar("$.headline")],
+        None,
+        &[],
+        RebuildMode::Async,
+    )
+    .expect("register async");
+
+    // Wait for COMPLETE state (up to 10s).
+    wait_for_state(&svc, "Article", &["COMPLETE"], 10);
+
+    // FTS query should return results from the rebuilt index.
+    let compiled = QueryBuilder::nodes("Article")
+        .text_search("searchable", 10)
+        .limit(10)
+        .compile()
+        .expect("compile");
+
+    let rows = engine
+        .coordinator()
+        .execute_compiled_read(&compiled)
+        .expect("execute read after rebuild COMPLETE");
+
+    assert_eq!(
+        rows.nodes.len(),
+        3,
+        "FTS query after rebuild COMPLETE should return all 3 nodes, got {}",
+        rows.nodes.len()
+    );
+}
+
+/// Test B: crash recovery — reopening engine marks interrupted rebuilds as FAILED
+/// and cleans up staging.
+#[test]
+fn crash_recovery_mid_building_marks_failed() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let db_path = dir.path().join("test.db");
+
+    {
+        let engine = EngineRuntime::open(
+            &db_path,
+            ProvenanceMode::Warn,
+            None,
+            2,
+            TelemetryLevel::Counters,
+            None,
+        )
+        .expect("open engine");
+
+        // Insert nodes before registering.
+        for i in 0..5u32 {
+            engine
+                .writer()
+                .submit(make_write_request(
+                    &format!("seed-{i}"),
+                    vec![make_node(
+                        &format!("crash:{i}"),
+                        "CrashKind",
+                        &format!(r#"{{"note":"note {i}"}}"#),
+                    )],
+                ))
+                .expect("write node");
+        }
+
+        let svc = engine.admin().service();
+        svc.register_fts_property_schema_with_entries(
+            "CrashKind",
+            &[FtsPropertyPathSpec::scalar("$.note")],
+            None,
+            &[],
+            RebuildMode::Async,
+        )
+        .expect("register async");
+
+        // Wait until at least BUILDING (confirm actor started).
+        wait_for_state(&svc, "CrashKind", &["BUILDING", "SWAPPING", "COMPLETE"], 5);
+
+        // Simulate crash: drop engine without waiting for completion.
+        // The rebuild actor is joined during drop but the state in DB may still
+        // show BUILDING/SWAPPING for the crash-recovery test to work.
+        // To simulate a real crash we need to write BUILDING state and leave it,
+        // but since we can't kill the process, we use the raw connection to
+        // directly set the state back to BUILDING after the engine drops.
+    }
+
+    // After the first engine drops, the actor has completed normally.
+    // To simulate a true mid-build crash, use a raw connection to force BUILDING state.
+    {
+        let raw_conn = rusqlite::Connection::open(&db_path).expect("open raw");
+        raw_conn
+            .execute(
+                "UPDATE fts_property_rebuild_state SET state = 'BUILDING' WHERE kind = 'CrashKind'",
+                [],
+            )
+            .expect("force BUILDING state");
+        // Also insert a fake staging row to verify cleanup.
+        raw_conn
+            .execute(
+                "INSERT OR IGNORE INTO fts_property_rebuild_staging \
+                 (kind, node_logical_id, text_content) VALUES ('CrashKind', 'fake:1', 'fake')",
+                [],
+            )
+            .expect("insert fake staging row");
+    }
+
+    // Reopen engine — crash recovery should run.
+    let engine2 = EngineRuntime::open(
+        &db_path,
+        ProvenanceMode::Warn,
+        None,
+        2,
+        TelemetryLevel::Counters,
+        None,
+    )
+    .expect("reopen engine");
+
+    let svc2 = engine2.admin().service();
+    let state = svc2
+        .get_property_fts_rebuild_state("CrashKind")
+        .expect("get state after reopen")
+        .expect("state row must exist");
+
+    assert_eq!(
+        state.state, "FAILED",
+        "crash recovery should mark interrupted rebuild as FAILED, got '{}'",
+        state.state
+    );
+
+    // Staging table should be empty for this kind.
+    let staging_count = svc2
+        .count_staging_rows("CrashKind")
+        .expect("count staging rows");
+    assert_eq!(
+        staging_count, 0,
+        "crash recovery should clean up staging table, got {staging_count} rows"
+    );
+}
+
+/// Test C: `get_property_fts_rebuild_progress` returns progress and reaches COMPLETE.
+#[test]
+fn get_property_fts_rebuild_progress_returns_progress() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let engine = open_engine(&dir);
+
+    // Insert a few nodes.
+    for i in 0..3u32 {
+        engine
+            .writer()
+            .submit(make_write_request(
+                &format!("seed-{i}"),
+                vec![make_node(
+                    &format!("prog:{i}"),
+                    "ProgKind",
+                    &format!(r#"{{"text":"progress text {i}"}}"#),
+                )],
+            ))
+            .expect("write node");
+    }
+
+    let svc = engine.admin().service();
+    svc.register_fts_property_schema_with_entries(
+        "ProgKind",
+        &[FtsPropertyPathSpec::scalar("$.text")],
+        None,
+        &[],
+        RebuildMode::Async,
+    )
+    .expect("register async");
+
+    // Poll get_property_fts_rebuild_progress until COMPLETE.
+    let deadline = Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let progress = engine
+            .coordinator()
+            .get_property_fts_rebuild_progress("ProgKind")
+            .expect("get_property_fts_rebuild_progress");
+        if let Some(p) = progress
+            && p.state == "COMPLETE"
+        {
+            assert!(
+                p.rows_done > 0,
+                "rows_done should be > 0, got {}",
+                p.rows_done
+            );
+            assert!(
+                p.started_at > 0,
+                "started_at should be a unix millis timestamp > 0"
+            );
+            break;
+        }
+        assert!(
+            Instant::now() <= deadline,
+            "rebuild did not reach COMPLETE within 10s"
+        );
+    }
 }

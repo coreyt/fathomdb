@@ -273,7 +273,7 @@ fn run_rebuild(conn: &mut rusqlite::Connection, req: &RebuildRequest) -> Result<
         }
     }
 
-    // Step 4: mark SWAPPING (this pack ends here — no actual swap yet).
+    // Step 4: mark SWAPPING.
     {
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let now_ms = now_unix_ms();
@@ -283,6 +283,83 @@ fn run_rebuild(conn: &mut rusqlite::Connection, req: &RebuildRequest) -> Result<
              WHERE kind = ?2",
             rusqlite::params![now_ms, req.kind],
         )?;
+        tx.commit()?;
+    }
+
+    // Step 5: Final swap — atomic IMMEDIATE transaction replacing live FTS rows.
+    {
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+
+        // 5a. Delete old live FTS rows for this kind.
+        tx.execute(
+            "DELETE FROM fts_node_properties WHERE kind = ?1",
+            rusqlite::params![req.kind],
+        )?;
+
+        // 5b. Insert new rows from staging into the live FTS table.
+        tx.execute(
+            "INSERT INTO fts_node_properties(node_logical_id, kind, text_content) \
+             SELECT node_logical_id, kind, text_content \
+             FROM fts_property_rebuild_staging WHERE kind = ?1",
+            rusqlite::params![req.kind],
+        )?;
+
+        // 5c. Delete old position rows for this kind.
+        tx.execute(
+            "DELETE FROM fts_node_property_positions WHERE kind = ?1",
+            rusqlite::params![req.kind],
+        )?;
+
+        // 5d. Re-populate fts_node_property_positions from positions_blob in staging.
+        {
+            let mut stmt = tx.prepare(
+                "SELECT node_logical_id, positions_blob \
+                 FROM fts_property_rebuild_staging \
+                 WHERE kind = ?1 AND positions_blob IS NOT NULL",
+            )?;
+            let mut ins_pos = tx.prepare(
+                "INSERT INTO fts_node_property_positions \
+                 (node_logical_id, kind, start_offset, end_offset, leaf_path) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+            )?;
+
+            let rows: Vec<(String, Vec<u8>)> = stmt
+                .query_map(rusqlite::params![req.kind], |r| {
+                    Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+
+            for (node_logical_id, blob) in &rows {
+                // positions_blob is JSON: Vec<(start, end, leaf_path)>
+                let positions: Vec<(usize, usize, String)> =
+                    serde_json::from_slice(blob).unwrap_or_default();
+                for (start, end, leaf_path) in positions {
+                    ins_pos.execute(rusqlite::params![
+                        node_logical_id,
+                        req.kind,
+                        i64::try_from(start).unwrap_or(i64::MAX),
+                        i64::try_from(end).unwrap_or(i64::MAX),
+                        leaf_path,
+                    ])?;
+                }
+            }
+        }
+
+        // 5e. Delete staging rows for this kind.
+        tx.execute(
+            "DELETE FROM fts_property_rebuild_staging WHERE kind = ?1",
+            rusqlite::params![req.kind],
+        )?;
+
+        // 5f. Mark state COMPLETE.
+        let now_ms = now_unix_ms();
+        tx.execute(
+            "UPDATE fts_property_rebuild_state \
+             SET state = 'COMPLETE', last_progress_at = ?1 \
+             WHERE kind = ?2",
+            rusqlite::params![now_ms, req.kind],
+        )?;
+
         tx.commit()?;
     }
 
@@ -329,4 +406,56 @@ pub struct RebuildStateRow {
     pub started_at: i64,
     pub is_first_registration: bool,
     pub error_message: Option<String>,
+}
+
+/// Public progress snapshot returned from
+/// [`crate::coordinator::ExecutionCoordinator::get_property_fts_rebuild_progress`].
+#[derive(Debug, Clone)]
+pub struct RebuildProgress {
+    /// Current state: `"PENDING"`, `"BUILDING"`, `"SWAPPING"`, `"COMPLETE"`, or `"FAILED"`.
+    pub state: String,
+    /// Total rows to process. `None` until the actor has counted the nodes.
+    pub rows_total: Option<i64>,
+    /// Rows processed so far.
+    pub rows_done: i64,
+    /// Unix milliseconds when the rebuild was registered.
+    pub started_at: i64,
+    /// Unix milliseconds of the last progress update, if any.
+    pub last_progress_at: Option<i64>,
+    /// Error message if `state == "FAILED"`.
+    pub error_message: Option<String>,
+}
+
+/// Run crash recovery: mark any in-progress rebuilds as FAILED and clear their
+/// staging rows.  Called by `EngineRuntime::open` before spawning the actor.
+///
+/// # Errors
+/// Returns [`crate::EngineError`] if database access fails.
+pub(crate) fn recover_interrupted_rebuilds(
+    conn: &rusqlite::Connection,
+) -> Result<(), crate::EngineError> {
+    // Collect kinds that are in a non-terminal state.
+    let kinds: Vec<String> = {
+        let mut stmt = conn.prepare(
+            "SELECT kind FROM fts_property_rebuild_state \
+             WHERE state IN ('PENDING', 'BUILDING', 'SWAPPING')",
+        )?;
+        stmt.query_map([], |r| r.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+
+    for kind in &kinds {
+        conn.execute(
+            "DELETE FROM fts_property_rebuild_staging WHERE kind = ?1",
+            rusqlite::params![kind],
+        )?;
+        conn.execute(
+            "UPDATE fts_property_rebuild_state \
+             SET state = 'FAILED', error_message = 'interrupted by engine restart' \
+             WHERE kind = ?1",
+            rusqlite::params![kind],
+        )?;
+    }
+
+    Ok(())
 }
