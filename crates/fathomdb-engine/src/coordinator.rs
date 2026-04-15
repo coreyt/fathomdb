@@ -4876,4 +4876,109 @@ mod tests {
             }
         }
     }
+
+    // ---- Pack E: vec identity guard tests ----
+
+    #[derive(Debug)]
+    struct StubEmbedder {
+        model_identity: String,
+        dimension: usize,
+    }
+
+    impl StubEmbedder {
+        fn new(model_identity: &str, dimension: usize) -> Self {
+            Self {
+                model_identity: model_identity.to_owned(),
+                dimension,
+            }
+        }
+    }
+
+    impl crate::embedder::QueryEmbedder for StubEmbedder {
+        fn embed_query(&self, _text: &str) -> Result<Vec<f32>, crate::embedder::EmbedderError> {
+            Ok(vec![0.0; self.dimension])
+        }
+        fn identity(&self) -> crate::embedder::QueryEmbedderIdentity {
+            crate::embedder::QueryEmbedderIdentity {
+                model_identity: self.model_identity.clone(),
+                model_version: "1.0".to_owned(),
+                dimension: self.dimension,
+                normalization_policy: "l2".to_owned(),
+            }
+        }
+    }
+
+    fn make_in_memory_db_with_projection_profiles() -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS projection_profiles (
+                kind TEXT NOT NULL,
+                facet TEXT NOT NULL,
+                config_json TEXT NOT NULL,
+                active_at INTEGER,
+                created_at INTEGER,
+                PRIMARY KEY (kind, facet)
+            );",
+        )
+        .expect("create projection_profiles");
+        conn
+    }
+
+    #[test]
+    fn check_vec_identity_no_profile_no_panic() {
+        let conn = make_in_memory_db_with_projection_profiles();
+        let embedder = StubEmbedder::new("bge-small", 384);
+        let result = super::check_vec_identity_at_open(&conn, &embedder);
+        assert!(result.is_ok(), "no profile row must return Ok(())");
+    }
+
+    #[test]
+    fn check_vec_identity_matching_identity_ok() {
+        let conn = make_in_memory_db_with_projection_profiles();
+        conn.execute(
+            "INSERT INTO projection_profiles (kind, facet, config_json, active_at, created_at)
+             VALUES ('*', 'vec', '{\"model_identity\":\"bge-small\",\"dimensions\":384}', 0, 0)",
+            [],
+        )
+        .expect("insert profile");
+        let embedder = StubEmbedder::new("bge-small", 384);
+        let result = super::check_vec_identity_at_open(&conn, &embedder);
+        assert!(result.is_ok(), "matching profile must return Ok(())");
+    }
+
+    #[test]
+    fn check_vec_identity_mismatched_dimensions_ok() {
+        let conn = make_in_memory_db_with_projection_profiles();
+        conn.execute(
+            "INSERT INTO projection_profiles (kind, facet, config_json, active_at, created_at)
+             VALUES ('*', 'vec', '{\"model_identity\":\"bge-small\",\"dimensions\":384}', 0, 0)",
+            [],
+        )
+        .expect("insert profile");
+        // embedder reports 768, profile says 384 — should warn but return Ok(())
+        let embedder = StubEmbedder::new("bge-small", 768);
+        let result = super::check_vec_identity_at_open(&conn, &embedder);
+        assert!(
+            result.is_ok(),
+            "dimension mismatch must warn and return Ok(())"
+        );
+    }
+
+    #[test]
+    fn check_vec_identity_mismatched_model_ok() {
+        let conn = make_in_memory_db_with_projection_profiles();
+        conn.execute(
+            "INSERT INTO projection_profiles (kind, facet, config_json, active_at, created_at)
+             VALUES ('*', 'vec', '{\"model_identity\":\"bge-small\",\"dimensions\":384}', 0, 0)",
+            [],
+        )
+        .expect("insert profile");
+        // embedder reports bge-large, profile says bge-small — should warn but return Ok(())
+        let embedder = StubEmbedder::new("bge-large", 384);
+        let result = super::check_vec_identity_at_open(&conn, &embedder);
+        assert!(
+            result.is_ok(),
+            "model_identity mismatch must warn and return Ok(())"
+        );
+    }
 }
