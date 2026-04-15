@@ -282,13 +282,6 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
             filter,
         } = step
         {
-            // Pack 3 will inject the filter predicate into the CTE WHERE clause.
-            // Until then, guard against accidental non-None use in tests/callers.
-            debug_assert!(
-                filter.is_none(),
-                "traverse filter compilation is not yet implemented (Pack 3); \
-                 filter: Some(_) must not be passed until Pack 3 lands"
-            );
             Some((*direction, label.as_str(), *max_depth))
         } else {
             None
@@ -681,17 +674,6 @@ pub fn compile_grouped_query(ast: &QueryAst) -> Result<CompiledGroupedQuery, Com
         if !seen.insert(expansion.slot.clone()) {
             return Err(CompileError::DuplicateExpansionSlot(expansion.slot.clone()));
         }
-    }
-
-    // Pack 3 will compile expansion-slot filter predicates into SQL.
-    // Until then, guard against accidental non-None use.
-    for expansion in &ast.expansions {
-        debug_assert!(
-            expansion.filter.is_none(),
-            "expansion slot '{}' has a filter predicate, but traverse filter \
-             compilation is not yet implemented (Pack 3)",
-            expansion.slot
-        );
     }
 
     let mut root_ast = ast.clone();
