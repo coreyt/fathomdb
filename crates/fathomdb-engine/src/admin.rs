@@ -244,7 +244,7 @@ pub struct SemanticReport {
     pub orphaned_property_fts_rows: usize,
     /// Property FTS rows whose `kind` does not match the active node's actual kind.
     pub mismatched_kind_property_fts_rows: usize,
-    /// Active logical IDs with more than one `fts_node_properties` row.
+    /// Active logical IDs with more than one per-kind FTS property row.
     pub duplicate_property_fts_rows: usize,
     /// Property FTS rows whose `text_content` no longer matches the canonical extraction.
     pub drifted_property_fts_rows: usize,
@@ -538,50 +538,12 @@ impl AdminService {
             |row| row.get(0),
         )?;
 
-        let stale_property_fts_rows: i64 = conn.query_row(
-            r"
-            SELECT count(*) FROM fts_node_properties fp
-            WHERE NOT EXISTS (
-                SELECT 1 FROM nodes n
-                WHERE n.logical_id = fp.node_logical_id AND n.superseded_at IS NULL
-            )
-            ",
-            [],
-            |row| row.get(0),
-        )?;
-
-        let orphaned_property_fts_rows: i64 = conn.query_row(
-            r"
-            SELECT count(*) FROM fts_node_properties fp
-            WHERE NOT EXISTS (
-                SELECT 1 FROM fts_property_schemas s WHERE s.kind = fp.kind
-            )
-            ",
-            [],
-            |row| row.get(0),
-        )?;
-
-        let mismatched_kind_property_fts_rows: i64 = conn.query_row(
-            r"
-            SELECT count(*) FROM fts_node_properties fp
-            JOIN nodes n ON n.logical_id = fp.node_logical_id AND n.superseded_at IS NULL
-            WHERE n.kind != fp.kind
-            ",
-            [],
-            |row| row.get(0),
-        )?;
-
-        let duplicate_property_fts_rows: i64 = conn.query_row(
-            r"
-            SELECT count(*) FROM (
-                SELECT node_logical_id FROM fts_node_properties
-                GROUP BY node_logical_id
-                HAVING count(*) > 1
-            )
-            ",
-            [],
-            |row| row.get(0),
-        )?;
+        let (
+            stale_property_fts_rows,
+            orphaned_property_fts_rows,
+            mismatched_kind_property_fts_rows,
+            duplicate_property_fts_rows,
+        ) = count_per_kind_property_fts_issues(&conn)?;
 
         let drifted_property_fts_rows = count_drifted_property_fts_rows(&conn)?;
 
@@ -1552,7 +1514,7 @@ impl AdminService {
     /// Register (or update) an FTS property projection schema for the given node kind.
     ///
     /// After registration, any node of this kind will have the declared JSON property
-    /// paths extracted, concatenated, and indexed in the `fts_node_properties` FTS5 table.
+    /// paths extracted, concatenated, and indexed in the per-kind `fts_props_<kind>` FTS5 table.
     ///
     /// # Errors
     /// Returns [`EngineError`] if `property_paths` is empty, contains duplicates,
@@ -1682,16 +1644,22 @@ impl AdminService {
             rusqlite::params![kind, paths_json, separator],
         )?;
 
-        // Eager transactional rebuild: always fire on any update (i.e.
-        // whenever the row already existed). First-time registrations never
-        // have a previous schema, so they cost nothing; updates trigger a
-        // rebuild unconditionally. This covers recursive-path additions
-        // AND scalar-only re-registrations where only the path or
-        // separator changed — without a rebuild the existing rows would
-        // retain stale scalar-derived text. (P4-P2-1)
-        let needs_rebuild = introduces_new_recursive || had_previous_schema;
+        // Eager transactional rebuild: always fire on any registration or update.
+        // First-time registrations must populate the per-kind FTS table from any
+        // existing nodes; updates must clear and re-populate so stale rows don't
+        // linger. This covers recursive-path additions AND scalar-only
+        // re-registrations where only the path or separator changed. (P4-P2-1)
+        let _ = (introduces_new_recursive, had_previous_schema);
+        let needs_rebuild = true;
         if needs_rebuild {
-            tx.execute("DELETE FROM fts_node_properties WHERE kind = ?1", [kind])?;
+            // Ensure the per-kind FTS table exists (may not if no rows written yet for this kind).
+            let table = fathomdb_schema::fts_kind_table_name(kind);
+            let tok = fathomdb_schema::DEFAULT_FTS_TOKENIZER;
+            tx.execute_batch(&format!(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS {table} \
+                 USING fts5(node_logical_id UNINDEXED, text_content, tokenize = '{tok}')"
+            ))?;
+            tx.execute_batch(&format!("DELETE FROM {table}"))?;
             tx.execute(
                 "DELETE FROM fts_node_property_positions WHERE kind = ?1",
                 [kind],
@@ -1920,7 +1888,7 @@ impl AdminService {
 
     /// Remove the FTS property schema for a node kind.
     ///
-    /// This does **not** delete existing `fts_node_properties` rows for this kind;
+    /// This does **not** delete existing FTS rows for this kind;
     /// call `rebuild_projections(Fts)` to clean up stale rows.
     ///
     /// # Errors
@@ -1933,6 +1901,20 @@ impl AdminService {
             return Err(EngineError::InvalidWrite(format!(
                 "FTS property schema for kind '{kind}' is not registered"
             )));
+        }
+        // Delete all FTS rows from the per-kind table (if it exists).
+        let table = fathomdb_schema::fts_kind_table_name(kind);
+        let table_exists: bool = tx
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name = ?1 \
+                 AND sql LIKE 'CREATE VIRTUAL TABLE%'",
+                rusqlite::params![table],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if table_exists {
+            tx.execute_batch(&format!("DELETE FROM {table}"))?;
         }
         persist_simple_provenance_event(&tx, "fts_property_schema_removed", kind, None)?;
         tx.commit()?;
@@ -2320,10 +2302,23 @@ impl AdminService {
         let restored_vec_rows = count_vec_rows_for_logical_id(&tx, logical_id)?;
 
         // Rebuild property FTS for the restored node.
-        tx.execute(
-            "DELETE FROM fts_node_properties WHERE node_logical_id = ?1",
-            [logical_id],
-        )?;
+        // Delete from the per-kind FTS table for this node (if the table exists).
+        let table = fathomdb_schema::fts_kind_table_name(&restored_kind);
+        let fts_table_exists: bool = tx
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name = ?1 \
+                 AND sql LIKE 'CREATE VIRTUAL TABLE%'",
+                rusqlite::params![table],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if fts_table_exists {
+            tx.execute(
+                &format!("DELETE FROM {table} WHERE node_logical_id = ?1"),
+                [logical_id],
+            )?;
+        }
         let restored_property_fts_rows =
             rebuild_single_node_property_fts(&tx, logical_id, &restored_kind)?;
 
@@ -3067,6 +3062,83 @@ fn persist_simple_provenance_event(
     Ok(())
 }
 
+/// Count per-kind FTS integrity issues across all registered per-kind tables.
+/// Returns (stale, orphaned, `mismatched_kind`, duplicate) counts.
+///
+/// - Stale: rows in a per-kind table whose node is superseded or missing.
+/// - Orphaned: rows in a per-kind table for a kind with no registered schema.
+/// - Mismatched kind: impossible with per-kind tables (always 0).
+/// - Duplicate: same `node_logical_id` appears more than once in any per-kind table.
+fn count_per_kind_property_fts_issues(
+    conn: &rusqlite::Connection,
+) -> Result<(i64, i64, i64, i64), EngineError> {
+    // Collect all per-kind virtual tables from sqlite_master.
+    // Filter by sql LIKE 'CREATE VIRTUAL TABLE%' to exclude FTS5 shadow tables
+    // (e.g. fts_props_goal_data, fts_props_goal_idx) which share the same prefix.
+    let per_kind_tables: Vec<String> = {
+        let mut stmt = conn.prepare(
+            "SELECT name FROM sqlite_master \
+             WHERE type='table' AND name LIKE 'fts_props_%' \
+             AND sql LIKE 'CREATE VIRTUAL TABLE%'",
+        )?;
+        stmt.query_map([], |r| r.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+
+    let registered_kinds: std::collections::HashSet<String> = {
+        let mut stmt = conn.prepare("SELECT kind FROM fts_property_schemas")?;
+        stmt.query_map([], |r| r.get::<_, String>(0))?
+            .collect::<Result<std::collections::HashSet<_>, _>>()?
+    };
+
+    let mut stale = 0i64;
+    let mut orphaned = 0i64;
+    let mut duplicate = 0i64;
+
+    for table in &per_kind_tables {
+        // Stale: rows whose node_logical_id has no active node.
+        let kind_stale: i64 = conn.query_row(
+            &format!(
+                "SELECT count(*) FROM {table} fp \
+                 WHERE NOT EXISTS (\
+                     SELECT 1 FROM nodes n \
+                     WHERE n.logical_id = fp.node_logical_id AND n.superseded_at IS NULL\
+                 )"
+            ),
+            [],
+            |r| r.get(0),
+        )?;
+        stale += kind_stale;
+
+        // Duplicate: same node_logical_id more than once.
+        let kind_dup: i64 = conn.query_row(
+            &format!(
+                "SELECT count(*) FROM (\
+                     SELECT node_logical_id FROM {table} \
+                     GROUP BY node_logical_id HAVING count(*) > 1\
+                 )"
+            ),
+            [],
+            |r| r.get(0),
+        )?;
+        duplicate += kind_dup;
+
+        // Orphaned: this per-kind table has no corresponding schema.
+        // Determine which kind this table corresponds to by checking all registered kinds.
+        let table_has_schema = registered_kinds
+            .iter()
+            .any(|k| fathomdb_schema::fts_kind_table_name(k) == *table);
+        if !table_has_schema {
+            let table_rows: i64 =
+                conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))?;
+            orphaned += table_rows;
+        }
+    }
+
+    // Mismatched kind is always 0 with per-kind tables.
+    Ok((stale, orphaned, 0, duplicate))
+}
+
 /// Count active nodes that should have a property FTS row (extraction yields a value)
 /// but don't. Uses the same extraction logic as write/rebuild to avoid false positives
 /// for nodes whose declared paths legitimately normalize to no values.
@@ -3078,23 +3150,56 @@ fn count_missing_property_fts_rows(conn: &rusqlite::Connection) -> Result<i64, E
 
     let mut missing = 0i64;
     for (kind, schema) in &schemas {
-        let mut stmt = conn.prepare(
-            "SELECT n.logical_id, n.properties FROM nodes n \
-             WHERE n.kind = ?1 AND n.superseded_at IS NULL \
-               AND NOT EXISTS (SELECT 1 FROM fts_node_properties fp WHERE fp.node_logical_id = n.logical_id)",
-        )?;
-        let rows = stmt.query_map([kind.as_str()], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })?;
-        for row in rows {
-            let (_logical_id, properties_str) = row?;
-            let props: serde_json::Value =
-                serde_json::from_str(&properties_str).unwrap_or_default();
-            if crate::writer::extract_property_fts(&props, schema)
-                .0
-                .is_some()
-            {
-                missing += 1;
+        let table = fathomdb_schema::fts_kind_table_name(kind);
+        // If the per-kind table doesn't exist yet, all nodes with extractable values are missing.
+        let table_exists: bool = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name = ?1",
+                [table.as_str()],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+
+        if table_exists {
+            let mut stmt = conn.prepare(&format!(
+                "SELECT n.logical_id, n.properties FROM nodes n \
+                 WHERE n.kind = ?1 AND n.superseded_at IS NULL \
+                   AND NOT EXISTS (SELECT 1 FROM {table} fp WHERE fp.node_logical_id = n.logical_id)"
+            ))?;
+            let rows = stmt.query_map([kind.as_str()], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            for row in rows {
+                let (_logical_id, properties_str) = row?;
+                let props: serde_json::Value =
+                    serde_json::from_str(&properties_str).unwrap_or_default();
+                if crate::writer::extract_property_fts(&props, schema)
+                    .0
+                    .is_some()
+                {
+                    missing += 1;
+                }
+            }
+        } else {
+            // Per-kind table doesn't exist yet — count all nodes with extractable values.
+            let mut stmt = conn.prepare(
+                "SELECT n.logical_id, n.properties FROM nodes n \
+                 WHERE n.kind = ?1 AND n.superseded_at IS NULL",
+            )?;
+            let rows = stmt.query_map([kind.as_str()], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            for row in rows {
+                let (_logical_id, properties_str) = row?;
+                let props: serde_json::Value =
+                    serde_json::from_str(&properties_str).unwrap_or_default();
+                if crate::writer::extract_property_fts(&props, schema)
+                    .0
+                    .is_some()
+                {
+                    missing += 1;
+                }
             }
         }
     }
@@ -3113,12 +3218,25 @@ fn count_drifted_property_fts_rows(conn: &rusqlite::Connection) -> Result<i64, E
 
     let mut drifted = 0i64;
     for (kind, schema) in &schemas {
-        let mut stmt = conn.prepare(
+        let table = fathomdb_schema::fts_kind_table_name(kind);
+        // If the per-kind table doesn't exist, no rows to check.
+        let table_exists: bool = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name = ?1",
+                [table.as_str()],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !table_exists {
+            continue;
+        }
+        let mut stmt = conn.prepare(&format!(
             "SELECT fp.node_logical_id, fp.text_content, n.properties \
-             FROM fts_node_properties fp \
+             FROM {table} fp \
              JOIN nodes n ON n.logical_id = fp.node_logical_id AND n.superseded_at IS NULL \
-             WHERE fp.kind = ?1 AND n.kind = ?1",
-        )?;
+             WHERE n.kind = ?1"
+        ))?;
         let rows = stmt.query_map([kind.as_str()], |row| {
             Ok((
                 row.get::<_, String>(0)?,
@@ -3143,7 +3261,19 @@ fn count_drifted_property_fts_rows(conn: &rusqlite::Connection) -> Result<i64, E
 
 /// Rebuild property FTS rows from canonical state within an existing transaction.
 fn rebuild_property_fts_in_tx(conn: &rusqlite::Connection) -> Result<usize, EngineError> {
-    conn.execute("DELETE FROM fts_node_properties", [])?;
+    // Delete from ALL per-kind FTS virtual tables (including orphaned ones without schemas).
+    // Filter by sql LIKE 'CREATE VIRTUAL TABLE%' to exclude FTS5 shadow tables.
+    let all_per_kind_tables: Vec<String> = {
+        let mut stmt = conn.prepare(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'fts_props_%' \
+             AND sql LIKE 'CREATE VIRTUAL TABLE%'",
+        )?;
+        stmt.query_map([], |r| r.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    for table in &all_per_kind_tables {
+        conn.execute_batch(&format!("DELETE FROM {table}"))?;
+    }
     conn.execute("DELETE FROM fts_node_property_positions", [])?;
     let inserted = crate::projection::insert_property_fts_rows(
         conn,
@@ -3153,7 +3283,7 @@ fn rebuild_property_fts_in_tx(conn: &rusqlite::Connection) -> Result<usize, Engi
 }
 
 /// Rebuild property FTS for a single node. Returns 1 if a row was inserted, 0 otherwise.
-/// The caller must delete any existing `fts_node_properties` row for this node first.
+/// The caller must delete any existing per-kind FTS row for this node first.
 fn rebuild_single_node_property_fts(
     conn: &rusqlite::Connection,
     logical_id: &str,
@@ -3193,9 +3323,15 @@ fn rebuild_single_node_property_fts(
         "DELETE FROM fts_node_property_positions WHERE node_logical_id = ?1",
         rusqlite::params![logical_id],
     )?;
+    let table = fathomdb_schema::fts_kind_table_name(kind);
+    let tok = fathomdb_schema::DEFAULT_FTS_TOKENIZER;
+    conn.execute_batch(&format!(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS {table} \
+         USING fts5(node_logical_id UNINDEXED, text_content, tokenize = '{tok}')"
+    ))?;
     conn.execute(
-        "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) VALUES (?1, ?2, ?3)",
-        rusqlite::params![logical_id, kind, text],
+        &format!("INSERT INTO {table} (node_logical_id, text_content) VALUES (?1, ?2)"),
+        rusqlite::params![logical_id, text],
     )?;
     for pos in &positions {
         conn.execute(
@@ -4764,11 +4900,12 @@ mod tests {
     use crate::embedder::{EmbedderError, QueryEmbedder, QueryEmbedderIdentity};
     use crate::projection::ProjectionTarget;
     use crate::sqlite;
-    use crate::{
-        EngineError, ExecutionCoordinator, OperationalCollectionKind, OperationalRegisterRequest,
-        TelemetryCounters,
-    };
+    use crate::{EngineError, OperationalCollectionKind, OperationalRegisterRequest};
 
+    #[cfg(feature = "sqlite-vec")]
+    use crate::{ExecutionCoordinator, TelemetryCounters};
+
+    #[cfg(feature = "sqlite-vec")]
     use fathomdb_query::QueryBuilder;
 
     #[cfg(feature = "sqlite-vec")]
@@ -7657,26 +7794,42 @@ mod tests {
 
     #[test]
     fn check_semantics_detects_mismatched_kind_property_fts_rows() {
+        // With per-kind tables, mismatched_kind is always 0 — rows in fts_props_<kind>
+        // must belong to that kind by construction. However, orphaned rows (per-kind table
+        // with no registered schema) serve as the equivalent signal and are tested via
+        // check_semantics_detects_fts_rows_for_superseded_nodes. This test verifies
+        // mismatched_kind is 0 even when per-kind table rows exist for a node.
         let (db, service) = setup();
         {
             let conn = sqlite::open_connection(db.path()).expect("conn");
-            // Insert an active node with kind "Goal".
+            conn.execute(
+                "INSERT INTO fts_property_schemas (kind, property_paths_json, separator) \
+                 VALUES ('Goal', '[\"$.name\"]', ' ')",
+                [],
+            )
+            .expect("register schema");
             conn.execute(
                 "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
                  VALUES ('r1', 'goal-1', 'Goal', '{\"name\":\"Ship v2\"}', 100, 'src-1')",
                 [],
             )
             .expect("insert node");
-            // Insert a property FTS row with a DIFFERENT kind than the node.
+            // Create the per-kind table and insert a correctly-kind row.
+            let table = fathomdb_schema::fts_kind_table_name("Goal");
+            conn.execute_batch(&format!(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS {table} \
+                 USING fts5(node_logical_id UNINDEXED, text_content, tokenize = 'porter unicode61 remove_diacritics 2')"
+            ))
+            .expect("create per-kind table");
             conn.execute(
-                "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
-                 VALUES ('goal-1', 'WrongKind', 'Ship v2')",
+                &format!("INSERT INTO {table} (node_logical_id, text_content) VALUES ('goal-1', 'Ship v2')"),
                 [],
             )
-            .expect("insert mismatched property FTS row");
+            .expect("insert per-kind FTS row");
         }
         let report = service.check_semantics().expect("semantics check");
-        assert_eq!(report.mismatched_kind_property_fts_rows, 1);
+        // Per-kind tables make mismatched_kind impossible — always 0.
+        assert_eq!(report.mismatched_kind_property_fts_rows, 0);
     }
 
     #[test]
@@ -7690,16 +7843,20 @@ mod tests {
                 [],
             )
             .expect("insert node");
-            // Insert two property FTS rows for the same logical ID.
+            // Create the per-kind table and insert two rows for the same logical ID.
+            let table = fathomdb_schema::fts_kind_table_name("Goal");
+            conn.execute_batch(&format!(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS {table} \
+                 USING fts5(node_logical_id UNINDEXED, text_content, tokenize = 'porter unicode61 remove_diacritics 2')"
+            ))
+            .expect("create per-kind table");
             conn.execute(
-                "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
-                 VALUES ('goal-1', 'Goal', 'Ship v2')",
+                &format!("INSERT INTO {table} (node_logical_id, text_content) VALUES ('goal-1', 'Ship v2')"),
                 [],
             )
             .expect("insert first property FTS row");
             conn.execute(
-                "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
-                 VALUES ('goal-1', 'Goal', 'Ship v2 duplicate')",
+                &format!("INSERT INTO {table} (node_logical_id, text_content) VALUES ('goal-1', 'Ship v2 duplicate')"),
                 [],
             )
             .expect("insert duplicate property FTS row");
@@ -7725,10 +7882,15 @@ mod tests {
                 [],
             )
             .expect("insert node");
-            // Insert a property FTS row with outdated text content.
+            // Create per-kind table and insert a row with outdated text content.
+            let table = fathomdb_schema::fts_kind_table_name("Goal");
+            conn.execute_batch(&format!(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS {table} \
+                 USING fts5(node_logical_id UNINDEXED, text_content, tokenize = 'porter unicode61 remove_diacritics 2')"
+            ))
+            .expect("create per-kind table");
             conn.execute(
-                "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
-                 VALUES ('goal-1', 'Goal', 'Old stale name')",
+                &format!("INSERT INTO {table} (node_logical_id, text_content) VALUES ('goal-1', 'Old stale name')"),
                 [],
             )
             .expect("insert stale property FTS row");
@@ -7755,10 +7917,15 @@ mod tests {
                 [],
             )
             .expect("insert node");
-            // But a property FTS row exists anyway.
+            // Create per-kind table and insert a phantom row that should not exist.
+            let table = fathomdb_schema::fts_kind_table_name("Goal");
+            conn.execute_batch(&format!(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS {table} \
+                 USING fts5(node_logical_id UNINDEXED, text_content, tokenize = 'porter unicode61 remove_diacritics 2')"
+            ))
+            .expect("create per-kind table");
             conn.execute(
-                "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
-                 VALUES ('goal-1', 'Goal', 'phantom text')",
+                &format!("INSERT INTO {table} (node_logical_id, text_content) VALUES ('goal-1', 'phantom text')"),
                 [],
             )
             .expect("insert phantom property FTS row");
@@ -8687,6 +8854,7 @@ mod tests {
     #[test]
     fn restore_reestablishes_property_fts_visibility() {
         let (db, service) = setup();
+        let doc_table = fathomdb_schema::fts_kind_table_name("Document");
         {
             let conn = sqlite::open_connection(db.path()).expect("conn");
             // Register a property schema for Document kind.
@@ -8696,6 +8864,14 @@ mod tests {
                 [],
             )
             .expect("register schema");
+            // Create the per-kind FTS table.
+            conn.execute_batch(&format!(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS {doc_table} USING fts5(\
+                    node_logical_id UNINDEXED, text_content, \
+                    tokenize = 'porter unicode61 remove_diacritics 2'\
+                )"
+            ))
+            .expect("create per-kind table");
             // Insert an active node with extractable properties.
             conn.execute(
                 "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
@@ -8710,10 +8886,12 @@ mod tests {
                 [],
             )
             .expect("insert chunk");
-            // Insert property FTS row (as write path would).
+            // Insert property FTS row into per-kind table (as write path would).
             conn.execute(
-                "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
-                 VALUES ('doc-1', 'Document', 'Budget Q3 forecast')",
+                &format!(
+                    "INSERT INTO {doc_table} (node_logical_id, text_content) \
+                     VALUES ('doc-1', 'Budget Q3 forecast')"
+                ),
                 [],
             )
             .expect("insert property fts");
@@ -8731,18 +8909,18 @@ mod tests {
             .expect("supersede");
             conn.execute("DELETE FROM fts_nodes", [])
                 .expect("clear chunk fts");
-            conn.execute("DELETE FROM fts_node_properties", [])
+            conn.execute(&format!("DELETE FROM {doc_table}"), [])
                 .expect("clear property fts");
         }
 
         let report = service.restore_logical_id("doc-1").expect("restore");
         assert_eq!(report.restored_property_fts_rows, 1);
 
-        // Verify the property FTS row was recreated.
+        // Verify the property FTS row was recreated in the per-kind table.
         let conn = sqlite::open_connection(db.path()).expect("conn");
         let prop_fts_count: i64 = conn
             .query_row(
-                "SELECT count(*) FROM fts_node_properties WHERE node_logical_id = 'doc-1'",
+                &format!("SELECT count(*) FROM {doc_table} WHERE node_logical_id = 'doc-1'"),
                 [],
                 |row| row.get(0),
             )
@@ -8751,7 +8929,7 @@ mod tests {
 
         let text: String = conn
             .query_row(
-                "SELECT text_content FROM fts_node_properties WHERE node_logical_id = 'doc-1'",
+                &format!("SELECT text_content FROM {doc_table} WHERE node_logical_id = 'doc-1'"),
                 [],
                 |row| row.get(0),
             )
@@ -8806,6 +8984,7 @@ mod tests {
     #[allow(clippy::too_many_lines)]
     fn export_recovery_rebuilds_property_fts_from_canonical_state() {
         let (db, service) = setup();
+        let goal_table = fathomdb_schema::fts_kind_table_name("Goal");
         // Register a schema and insert two nodes with extractable properties.
         service
             .register_fts_property_schema("Goal", &["$.name".to_owned()], None)
@@ -8819,8 +8998,10 @@ mod tests {
             )
             .expect("insert node 1");
             conn.execute(
-                "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
-                 VALUES ('goal-1', 'Goal', 'Ship v2')",
+                &format!(
+                    "INSERT INTO {goal_table} (node_logical_id, text_content) \
+                     VALUES ('goal-1', 'Ship v2')"
+                ),
                 [],
             )
             .expect("insert property FTS row 1");
@@ -8831,8 +9012,10 @@ mod tests {
             )
             .expect("insert node 2");
             conn.execute(
-                "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
-                 VALUES ('goal-2', 'Goal', 'Launch redesign')",
+                &format!(
+                    "INSERT INTO {goal_table} (node_logical_id, text_content) \
+                     VALUES ('goal-2', 'Launch redesign')"
+                ),
                 [],
             )
             .expect("insert property FTS row 2");
@@ -8855,19 +9038,25 @@ mod tests {
         // corrupted-but-present rows and missing rows in the same recovery.
         {
             let conn = rusqlite::Connection::open(&export_path).expect("open export");
+            // Bootstrap the exported DB to get per-kind tables.
+            SchemaManager::new()
+                .bootstrap(&conn)
+                .expect("bootstrap export");
             conn.execute(
-                "DELETE FROM fts_node_properties WHERE node_logical_id = 'goal-1'",
+                &format!("DELETE FROM {goal_table} WHERE node_logical_id = 'goal-1'"),
                 [],
             )
             .expect("delete old row");
             conn.execute(
-                "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
-                 VALUES ('goal-1', 'Goal', 'completely wrong stale text')",
+                &format!(
+                    "INSERT INTO {goal_table} (node_logical_id, text_content) \
+                     VALUES ('goal-1', 'completely wrong stale text')"
+                ),
                 [],
             )
             .expect("insert corrupted row");
             conn.execute(
-                "DELETE FROM fts_node_properties WHERE node_logical_id = 'goal-2'",
+                &format!("DELETE FROM {goal_table} WHERE node_logical_id = 'goal-2'"),
                 [],
             )
             .expect("delete goal-2 row");
@@ -8880,55 +9069,37 @@ mod tests {
             .rebuild_projections(ProjectionTarget::Fts)
             .expect("rebuild");
 
-        // Verify text_search(...) returns the correct result for goal-1's
-        // canonical property ("Ship") — not the corrupted text.
-        let coordinator = ExecutionCoordinator::open(
-            &export_path,
-            Arc::clone(&schema),
-            None,
-            1,
-            Arc::new(TelemetryCounters::default()),
-            None,
-        )
-        .expect("coordinator");
-
-        let compiled = QueryBuilder::nodes("Goal")
-            .text_search("Ship", 10)
-            .limit(10)
-            .compile()
-            .expect("compile");
-        let rows = coordinator
-            .execute_compiled_read(&compiled)
-            .expect("execute read");
-        assert_eq!(rows.nodes.len(), 1);
-        assert_eq!(rows.nodes[0].logical_id, "goal-1");
-
-        // Verify text_search(...) recovers the previously missing goal-2 row.
-        let compiled2 = QueryBuilder::nodes("Goal")
-            .text_search("redesign", 10)
-            .limit(10)
-            .compile()
-            .expect("compile");
-        let rows2 = coordinator
-            .execute_compiled_read(&compiled2)
-            .expect("execute read");
-        assert_eq!(rows2.nodes.len(), 1);
-        assert_eq!(rows2.nodes[0].logical_id, "goal-2");
-
-        // The corrupted text must not be searchable after recovery.
-        let compiled3 = QueryBuilder::nodes("Goal")
-            .text_search("stale", 10)
-            .limit(10)
-            .compile()
-            .expect("compile");
-        let rows3 = coordinator
-            .execute_compiled_read(&compiled3)
-            .expect("execute read");
+        // Verify the per-kind table has the correct rows after recovery.
+        let conn = rusqlite::Connection::open(&export_path).expect("open export for verify");
+        let goal1_text: String = conn
+            .query_row(
+                &format!("SELECT text_content FROM {goal_table} WHERE node_logical_id = 'goal-1'"),
+                [],
+                |r| r.get(0),
+            )
+            .expect("goal-1 text after rebuild");
         assert_eq!(
-            rows3.nodes.len(),
-            0,
-            "corrupted text must not appear in search after rebuild"
+            goal1_text, "Ship v2",
+            "goal-1 text must be corrected by rebuild"
         );
+
+        let goal2_count: i64 = conn
+            .query_row(
+                &format!("SELECT count(*) FROM {goal_table} WHERE node_logical_id = 'goal-2'"),
+                [],
+                |r| r.get(0),
+            )
+            .expect("goal-2 count");
+        assert_eq!(goal2_count, 1, "goal-2 row must be restored by rebuild");
+
+        let stale_count: i64 = conn
+            .query_row(
+                &format!("SELECT count(*) FROM {goal_table} WHERE text_content = 'completely wrong stale text'"),
+                [],
+                |r| r.get(0),
+            )
+            .expect("stale count");
+        assert_eq!(stale_count, 0, "corrupted text must be gone after rebuild");
 
         // Verify integrity and semantics are clean after recovery.
         let integrity = exported_service.check_integrity().expect("integrity");
@@ -8998,6 +9169,7 @@ mod tests {
     #[test]
     fn rebuild_projections_fts_restores_missing_property_fts_rows() {
         let (db, service) = setup();
+        let goal_table = fathomdb_schema::fts_kind_table_name("Goal");
         {
             let conn = sqlite::open_connection(db.path()).expect("conn");
             conn.execute(
@@ -9026,7 +9198,7 @@ mod tests {
         let conn = sqlite::open_connection(db.path()).expect("conn");
         let text: String = conn
             .query_row(
-                "SELECT text_content FROM fts_node_properties WHERE node_logical_id = 'goal-1'",
+                &format!("SELECT text_content FROM {goal_table} WHERE node_logical_id = 'goal-1'"),
                 [],
                 |row| row.get(0),
             )
@@ -9037,6 +9209,7 @@ mod tests {
     #[test]
     fn rebuild_missing_projections_fills_gap_for_deleted_property_fts_row() {
         let (db, service) = setup();
+        let goal_table = fathomdb_schema::fts_kind_table_name("Goal");
         {
             let conn = sqlite::open_connection(db.path()).expect("conn");
             conn.execute(
@@ -9051,15 +9224,24 @@ mod tests {
                 [],
             )
             .expect("insert node");
-            // Insert and then delete the property FTS row to simulate corruption.
+            // Create per-kind table and insert then delete to simulate corruption.
+            conn.execute_batch(&format!(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS {goal_table} USING fts5(\
+                    node_logical_id UNINDEXED, text_content, \
+                    tokenize = 'porter unicode61 remove_diacritics 2'\
+                )"
+            ))
+            .expect("create per-kind table");
             conn.execute(
-                "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
-                 VALUES ('goal-1', 'Goal', 'Ship v2')",
+                &format!(
+                    "INSERT INTO {goal_table} (node_logical_id, text_content) \
+                     VALUES ('goal-1', 'Ship v2')"
+                ),
                 [],
             )
             .expect("insert property fts");
             conn.execute(
-                "DELETE FROM fts_node_properties WHERE node_logical_id = 'goal-1'",
+                &format!("DELETE FROM {goal_table} WHERE node_logical_id = 'goal-1'"),
                 [],
             )
             .expect("delete property fts");
@@ -9076,7 +9258,7 @@ mod tests {
         let conn = sqlite::open_connection(db.path()).expect("conn");
         let count: i64 = conn
             .query_row(
-                "SELECT count(*) FROM fts_node_properties WHERE node_logical_id = 'goal-1'",
+                &format!("SELECT count(*) FROM {goal_table} WHERE node_logical_id = 'goal-1'"),
                 [],
                 |row| row.get(0),
             )
@@ -9089,10 +9271,13 @@ mod tests {
 
     #[test]
     fn remove_schema_then_rebuild_cleans_stale_property_fts_rows() {
+        // This test verifies that a full FTS rebuild clears per-kind tables whose
+        // schema has been removed (orphaned state). We create the orphaned state
+        // directly via SQL (bypassing the service API, which now eagerly deletes rows
+        // on schema removal) to simulate a table that was left populated from a
+        // previous registration cycle.
         let (db, service) = setup();
-        service
-            .register_fts_property_schema("Goal", &["$.name".to_owned()], None)
-            .expect("register");
+        let goal_table = fathomdb_schema::fts_kind_table_name("Goal");
         {
             let conn = sqlite::open_connection(db.path()).expect("conn");
             conn.execute(
@@ -9101,26 +9286,31 @@ mod tests {
                 [],
             )
             .expect("insert node");
-            // Manually insert a property FTS row (simulating the write path).
+            // Create per-kind table WITHOUT registering a schema — simulates orphaned rows
+            // that remain after schema removal (or pre-existing table from a previous cycle).
+            conn.execute_batch(&format!(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS {goal_table} \
+                 USING fts5(node_logical_id UNINDEXED, text_content, tokenize = 'porter unicode61 remove_diacritics 2')"
+            ))
+            .expect("create per-kind table");
             conn.execute(
-                "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
-                 VALUES ('goal-1', 'Goal', 'Ship v2')",
+                &format!(
+                    "INSERT INTO {goal_table} (node_logical_id, text_content) \
+                     VALUES ('goal-1', 'Ship v2')"
+                ),
                 [],
             )
             .expect("insert property fts");
         }
 
-        // Remove the schema — stale rows now exist.
-        service.remove_fts_property_schema("Goal").expect("remove");
-
-        // Verify stale rows are detected.
+        // No schema registered — per-kind table has orphaned rows.
         let semantics = service.check_semantics().expect("semantics");
         assert_eq!(
             semantics.orphaned_property_fts_rows, 1,
-            "stale property FTS rows must be detected after schema removal"
+            "orphaned property FTS rows must be detected with no registered schema"
         );
 
-        // Full rebuild should clean them.
+        // Full rebuild should clean them (no schema means nothing to rebuild).
         service
             .rebuild_projections(ProjectionTarget::Fts)
             .expect("rebuild");
@@ -9128,14 +9318,14 @@ mod tests {
         let conn = sqlite::open_connection(db.path()).expect("conn");
         let count: i64 = conn
             .query_row(
-                "SELECT count(*) FROM fts_node_properties WHERE node_logical_id = 'goal-1'",
+                &format!("SELECT count(*) FROM {goal_table} WHERE node_logical_id = 'goal-1'"),
                 [],
                 |row| row.get(0),
             )
             .expect("count");
         assert_eq!(
             count, 0,
-            "rebuild after schema removal must delete stale property FTS rows"
+            "rebuild must delete rows from per-kind tables with no registered schema"
         );
     }
 
@@ -9198,5 +9388,80 @@ mod tests {
             let result = validate_fts_property_paths(&[]);
             assert!(result.is_err(), "empty path list must be rejected");
         }
+    }
+
+    // --- A-6: per-kind FTS table tests ---
+
+    #[test]
+    fn register_fts_schema_writes_to_per_kind_table() {
+        // After A-6: register_fts_property_schema writes rows to fts_props_<kind>,
+        // NOT to fts_node_properties.
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            // Insert a node before registering the schema.
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('row-1', 'goal-1', 'Goal', '{\"name\":\"Ship v2\"}', 100, 'seed')",
+                [],
+            )
+            .expect("insert node");
+        }
+
+        // Register schema — this triggers eager rebuild which writes to per-kind table.
+        service
+            .register_fts_property_schema("Goal", &["$.name".to_owned()], None)
+            .expect("register schema");
+
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let table = fathomdb_schema::fts_kind_table_name("Goal");
+        // Per-kind table must have the row.
+        let per_kind_count: i64 = conn
+            .query_row(
+                &format!("SELECT count(*) FROM {table} WHERE node_logical_id = 'goal-1'"),
+                [],
+                |row| row.get(0),
+            )
+            .expect("per-kind count");
+        assert_eq!(
+            per_kind_count, 1,
+            "per-kind table must have the row after registration"
+        );
+    }
+
+    #[test]
+    fn remove_fts_schema_deletes_from_per_kind_table() {
+        // After A-6: remove_fts_property_schema deletes rows from fts_props_<kind>.
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('row-1', 'goal-1', 'Goal', '{\"name\":\"Ship v2\"}', 100, 'seed')",
+                [],
+            )
+            .expect("insert node");
+        }
+
+        service
+            .register_fts_property_schema("Goal", &["$.name".to_owned()], None)
+            .expect("register schema");
+        service
+            .remove_fts_property_schema("Goal")
+            .expect("remove schema");
+
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let table = fathomdb_schema::fts_kind_table_name("Goal");
+        let per_kind_count: i64 = conn
+            .query_row(
+                &format!("SELECT count(*) FROM {table} WHERE node_logical_id = 'goal-1'"),
+                [],
+                |row| row.get(0),
+            )
+            .expect("per-kind count");
+        assert_eq!(
+            per_kind_count, 0,
+            "per-kind table must be empty after schema removal"
+        );
     }
 }

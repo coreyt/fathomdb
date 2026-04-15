@@ -519,6 +519,11 @@ static MIGRATIONS: &[Migration] = &[
         "add columns_json to fts_property_rebuild_staging for multi-column rebuild support",
         "ALTER TABLE fts_property_rebuild_staging ADD COLUMN columns_json TEXT;",
     ),
+    Migration::new(
+        SchemaVersion(23),
+        "drop global fts_node_properties table (replaced by per-kind fts_props_<kind> tables)",
+        "DROP TABLE IF EXISTS fts_node_properties;",
+    ),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -2062,6 +2067,28 @@ mod tests {
         assert_eq!(
             col_count, 1,
             "columns_json column must exist after migration 22"
+        );
+    }
+
+    // --- A-6: migration 23 drops fts_node_properties ---
+    #[test]
+    fn migration_23_drops_global_fts_node_properties_table() {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        let manager = SchemaManager::new();
+        manager.bootstrap(&conn).expect("bootstrap");
+
+        // After migration 23, fts_node_properties must NOT exist in sqlite_master.
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master \
+                 WHERE type='table' AND name='fts_node_properties'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("check sqlite_master");
+        assert_eq!(
+            count, 0,
+            "fts_node_properties must be dropped by migration 23"
         );
     }
 }

@@ -292,17 +292,29 @@ fn run_rebuild(conn: &mut rusqlite::Connection, req: &RebuildRequest) -> Result<
     {
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
 
-        // 5a. Delete old live FTS rows for this kind.
-        tx.execute(
-            "DELETE FROM fts_node_properties WHERE kind = ?1",
-            rusqlite::params![req.kind],
-        )?;
+        let table = fathomdb_schema::fts_kind_table_name(&req.kind);
 
-        // 5b. Insert new rows from staging into the live FTS table.
+        // Ensure the per-kind table exists before the swap (defensive: created at write
+        // time normally, but may be absent on async first-time registration with no writes).
+        let tokenizer = fathomdb_schema::DEFAULT_FTS_TOKENIZER;
+        let create_ddl = format!(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING fts5(\
+                node_logical_id UNINDEXED, text_content, \
+                tokenize = '{tokenizer}'\
+            )"
+        );
+        tx.execute_batch(&create_ddl)?;
+
+        // 5a. Delete old live FTS rows for this kind (entire per-kind table).
+        tx.execute(&format!("DELETE FROM {table}"), [])?;
+
+        // 5b. Insert new rows from staging into the per-kind FTS table.
         tx.execute(
-            "INSERT INTO fts_node_properties(node_logical_id, kind, text_content) \
-             SELECT node_logical_id, kind, text_content \
-             FROM fts_property_rebuild_staging WHERE kind = ?1",
+            &format!(
+                "INSERT INTO {table}(node_logical_id, text_content) \
+                 SELECT node_logical_id, text_content \
+                 FROM fts_property_rebuild_staging WHERE kind = ?1"
+            ),
             rusqlite::params![req.kind],
         )?;
 
@@ -542,6 +554,73 @@ mod tests {
         assert_eq!(
             state, "FAILED",
             "SWAPPING rows must be marked FAILED on restart"
+        );
+    }
+
+    // --- A-6: rebuild swap targets per-kind table ---
+    #[test]
+    fn rebuild_swap_populates_per_kind_table() {
+        // This test calls run_rebuild() end-to-end and asserts the final rows
+        // land in the per-kind FTS table (fts_props_testkind), NOT in
+        // fts_node_properties.
+        let mut conn = bootstrapped_conn();
+        let kind = "TestKind";
+        let table = fathomdb_schema::fts_kind_table_name(kind);
+
+        // NOTE: The per-kind FTS table is intentionally NOT created here.
+        // The guard in run_rebuild (Step 5) must create it if absent.
+
+        // Insert a node with extractable property.
+        conn.execute(
+            "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+             VALUES ('row-1', 'node-1', ?1, '{\"name\":\"hello world\"}', 100, 'seed')",
+            rusqlite::params![kind],
+        )
+        .expect("insert node");
+
+        // Insert schema row.
+        let schema_id: i64 = {
+            conn.execute(
+                "INSERT INTO fts_property_schemas (kind, property_paths_json, separator) \
+                 VALUES (?1, '[\"$.name\"]', ' ')",
+                rusqlite::params![kind],
+            )
+            .expect("insert schema");
+            conn.query_row(
+                "SELECT rowid FROM fts_property_schemas WHERE kind = ?1",
+                rusqlite::params![kind],
+                |r| r.get(0),
+            )
+            .expect("schema_id")
+        };
+
+        // Insert rebuild state (PENDING).
+        conn.execute(
+            "INSERT INTO fts_property_rebuild_state \
+             (kind, schema_id, state, rows_done, started_at, is_first_registration) \
+             VALUES (?1, ?2, 'PENDING', 0, 0, 1)",
+            rusqlite::params![kind, schema_id],
+        )
+        .expect("insert rebuild state");
+
+        // Run the rebuild end-to-end.
+        let req = super::RebuildRequest {
+            kind: kind.to_owned(),
+            schema_id,
+        };
+        super::run_rebuild(&mut conn, &req).expect("run_rebuild");
+
+        // After A-6: the per-kind table must have the rebuilt row.
+        let per_kind_count: i64 = conn
+            .query_row(
+                &format!("SELECT count(*) FROM {table} WHERE node_logical_id = 'node-1'"),
+                [],
+                |r| r.get(0),
+            )
+            .expect("per-kind count");
+        assert_eq!(
+            per_kind_count, 1,
+            "per-kind table must have the rebuilt row after run_rebuild"
         );
     }
 }
