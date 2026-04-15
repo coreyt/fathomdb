@@ -907,12 +907,20 @@ fn concurrent_writes_during_rebuild_are_indexed_in_final_fts() {
     )
     .expect("register async");
 
-    // Wait until the actor has at least started (PENDING → BUILDING).
-    // Write 3 more nodes while the rebuild is active (double-write path).
-    wait_for_state(&svc, "ConcKind", &["BUILDING", "SWAPPING", "COMPLETE"], 5);
+    // Wait until rebuild is actively building — writes must happen while BUILDING
+    // to exercise the staging double-write code path.
+    for _ in 0..200 {
+        let p = engine
+            .coordinator()
+            .get_property_fts_rebuild_progress("ConcKind")
+            .expect("get_property_fts_rebuild_progress")
+            .expect("rebuild state row should exist");
+        if p.state == "BUILDING" {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
 
-    // Check state before writing: if already COMPLETE, the double-write test
-    // is a no-op for the staging path, but the final assertion still holds.
     for i in 5..8u32 {
         engine
             .writer()
