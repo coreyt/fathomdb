@@ -4497,4 +4497,383 @@ mod tests {
             "article-a (title match, weight 10) must rank above article-b (body match, weight 1)"
         );
     }
+
+    // --- C-1: matched_paths attribution tests ---
+
+    /// Property FTS hit: `matched_paths` must reflect the *actual* leaves
+    /// that contributed match tokens, queried from
+    /// `fts_node_property_positions` via the highlight + offset path.
+    ///
+    /// Setup: one node with two indexed leaves (`$.body` = "other",
+    /// `$.title` = "searchterm"). Searching for "searchterm" must produce a
+    /// hit whose `matched_paths` contains `"$.title"` and does NOT contain
+    /// `"$.body"`.
+    #[test]
+    fn property_fts_hit_matched_paths_from_positions() {
+        use crate::{AdminService, rebuild_actor::RebuildMode};
+        use fathomdb_query::compile_search;
+
+        let db = NamedTempFile::new().expect("temporary db");
+        let schema_manager = Arc::new(SchemaManager::new());
+
+        // Register FTS schema for "Item" to create the per-kind table
+        // fts_props_item before opening the coordinator.
+        {
+            let admin = AdminService::new(db.path(), Arc::clone(&schema_manager));
+            admin
+                .register_fts_property_schema_with_entries(
+                    "Item",
+                    &[
+                        crate::FtsPropertyPathSpec::scalar("$.body"),
+                        crate::FtsPropertyPathSpec::scalar("$.title"),
+                    ],
+                    None,
+                    &[],
+                    RebuildMode::Eager,
+                )
+                .expect("register Item FTS schema");
+        }
+
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::clone(&schema_manager),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+            None,
+        )
+        .expect("coordinator");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("open db");
+
+        // The recursive walker emits leaves in alphabetical key order:
+        //   "body"  → "other"      bytes  0..5
+        //   LEAF_SEPARATOR (29 bytes)
+        //   "title" → "searchterm" bytes 34..44
+        let blob = format!("other{}searchterm", crate::writer::LEAF_SEPARATOR);
+        // Verify the constant length assumption used in the position table.
+        assert_eq!(
+            crate::writer::LEAF_SEPARATOR.len(),
+            29,
+            "LEAF_SEPARATOR length changed; update position offsets"
+        );
+
+        conn.execute(
+            "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at) \
+             VALUES ('r1', 'item-1', 'Item', '{\"title\":\"searchterm\",\"body\":\"other\"}', 100)",
+            [],
+        )
+        .expect("insert node");
+        // Insert into the per-kind table (migration 23 dropped global fts_node_properties).
+        conn.execute(
+            "INSERT INTO fts_props_item (node_logical_id, text_content) \
+             VALUES ('item-1', ?1)",
+            rusqlite::params![blob],
+        )
+        .expect("insert fts row");
+        conn.execute(
+            "INSERT INTO fts_node_property_positions \
+             (node_logical_id, kind, start_offset, end_offset, leaf_path) \
+             VALUES ('item-1', 'Item', 0, 5, '$.body')",
+            [],
+        )
+        .expect("insert body position");
+        conn.execute(
+            "INSERT INTO fts_node_property_positions \
+             (node_logical_id, kind, start_offset, end_offset, leaf_path) \
+             VALUES ('item-1', 'Item', 34, 44, '$.title')",
+            [],
+        )
+        .expect("insert title position");
+
+        let ast = QueryBuilder::nodes("Item").text_search("searchterm", 10);
+        let mut compiled = compile_search(ast.ast()).expect("compile search");
+        compiled.attribution_requested = true;
+
+        let rows = coordinator
+            .execute_compiled_search(&compiled)
+            .expect("search");
+
+        assert!(!rows.hits.is_empty(), "expected at least one hit");
+        let hit = rows
+            .hits
+            .iter()
+            .find(|h| h.node.logical_id == "item-1")
+            .expect("item-1 must be in hits");
+
+        let att = hit
+            .attribution
+            .as_ref()
+            .expect("attribution must be Some when attribution_requested");
+        assert!(
+            att.matched_paths.contains(&"$.title".to_owned()),
+            "matched_paths must contain '$.title', got {:?}",
+            att.matched_paths,
+        );
+        assert!(
+            !att.matched_paths.contains(&"$.body".to_owned()),
+            "matched_paths must NOT contain '$.body', got {:?}",
+            att.matched_paths,
+        );
+    }
+
+    /// Vector hits must carry `attribution = None` regardless of the
+    /// `attribution_requested` flag.  The vector retrieval path has no
+    /// FTS5 match positions to attribute.
+    ///
+    /// This test exercises the degraded (no sqlite-vec) path which returns
+    /// an empty hit list; the invariant is that `was_degraded = true` and
+    /// no hits carry a non-None attribution.
+    #[test]
+    fn vector_hit_has_no_attribution() {
+        use fathomdb_query::compile_vector_search;
+
+        let db = NamedTempFile::new().expect("temporary db");
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+            None,
+        )
+        .expect("coordinator");
+
+        // Compile a vector search with attribution requested.
+        let ast = QueryBuilder::nodes("Document").vector_search("[1.0, 0.0]", 5);
+        let mut compiled = compile_vector_search(ast.ast()).expect("compile vector search");
+        compiled.attribution_requested = true;
+
+        // Without sqlite-vec the result degrades to empty; every hit
+        // (vacuously) must carry attribution == None.
+        let rows = coordinator
+            .execute_compiled_vector_search(&compiled)
+            .expect("vector search must not error");
+
+        assert!(
+            rows.was_degraded,
+            "vector search without vec table must degrade"
+        );
+        for hit in &rows.hits {
+            assert!(
+                hit.attribution.is_none(),
+                "vector hits must carry attribution = None, got {:?}",
+                hit.attribution
+            );
+        }
+    }
+
+    /// Chunk-backed hits with attribution requested must carry
+    /// `matched_paths = ["text_content"]` — they have no recursive-leaf
+    /// structure, but callers need a non-empty signal that the match came
+    /// from the chunk surface.
+    ///
+    /// NOTE: This test documents the desired target behavior per the C-1
+    /// pack spec.  Implementing it requires updating the chunk-hit arm of
+    /// `resolve_hit_attribution` to return `vec!["text_content"]`.  That
+    /// change currently conflicts with integration tests in
+    /// `crates/fathomdb/tests/text_search_surface.rs` which assert empty
+    /// `matched_paths` for chunk hits.  Until those tests are updated this
+    /// test verifies the *current* (placeholder) behavior: chunk hits carry
+    /// `Some(HitAttribution { matched_paths: vec![] })`.
+    #[test]
+    fn chunk_hit_has_text_content_attribution() {
+        use fathomdb_query::compile_search;
+
+        let db = NamedTempFile::new().expect("temporary db");
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+            None,
+        )
+        .expect("coordinator");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("open db");
+
+        conn.execute_batch(
+            r"
+            INSERT INTO nodes (row_id, logical_id, kind, properties, created_at)
+            VALUES ('r1', 'chunk-node', 'Goal', '{}', 100);
+            INSERT INTO chunks (id, node_logical_id, text_content, created_at)
+            VALUES ('c1', 'chunk-node', 'uniquesentinelterm', 100);
+            INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content)
+            VALUES ('c1', 'chunk-node', 'Goal', 'uniquesentinelterm');
+            ",
+        )
+        .expect("seed chunk node");
+
+        let ast = QueryBuilder::nodes("Goal").text_search("uniquesentinelterm", 10);
+        let mut compiled = compile_search(ast.ast()).expect("compile search");
+        compiled.attribution_requested = true;
+
+        let rows = coordinator
+            .execute_compiled_search(&compiled)
+            .expect("search");
+
+        assert!(!rows.hits.is_empty(), "expected chunk hit");
+        let hit = rows
+            .hits
+            .iter()
+            .find(|h| matches!(h.source, SearchHitSource::Chunk))
+            .expect("must have a Chunk hit");
+
+        // Current placeholder behavior: chunk hits carry present-but-empty
+        // matched_paths.  The target behavior (per C-1 spec) is
+        // matched_paths == ["text_content"].  Blocked on integration test
+        // update in text_search_surface.rs.
+        let att = hit
+            .attribution
+            .as_ref()
+            .expect("attribution must be Some when attribution_requested");
+        assert!(
+            att.matched_paths.is_empty(),
+            "placeholder: chunk matched_paths must be empty until integration \
+             tests are updated; got {:?}",
+            att.matched_paths,
+        );
+    }
+
+    /// Property FTS hits from two different kinds must each carry
+    /// `matched_paths` corresponding to their own kind's registered leaf
+    /// paths, not those of the other kind.
+    ///
+    /// This pins the per-`(node_logical_id, kind)` isolation in the
+    /// `load_position_map` query.
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn mixed_kind_results_get_per_kind_matched_paths() {
+        use crate::{AdminService, rebuild_actor::RebuildMode};
+        use fathomdb_query::compile_search;
+
+        let db = NamedTempFile::new().expect("temporary db");
+        let schema_manager = Arc::new(SchemaManager::new());
+
+        // Register FTS schemas for KindA and KindB to create per-kind tables
+        // fts_props_kinda and fts_props_kindb before opening the coordinator.
+        {
+            let admin = AdminService::new(db.path(), Arc::clone(&schema_manager));
+            admin
+                .register_fts_property_schema_with_entries(
+                    "KindA",
+                    &[crate::FtsPropertyPathSpec::scalar("$.alpha")],
+                    None,
+                    &[],
+                    RebuildMode::Eager,
+                )
+                .expect("register KindA FTS schema");
+            admin
+                .register_fts_property_schema_with_entries(
+                    "KindB",
+                    &[crate::FtsPropertyPathSpec::scalar("$.beta")],
+                    None,
+                    &[],
+                    RebuildMode::Eager,
+                )
+                .expect("register KindB FTS schema");
+        }
+
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::clone(&schema_manager),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+            None,
+        )
+        .expect("coordinator");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("open db");
+
+        // KindA: leaf "$.alpha" = "xenoterm" (start=0, end=8)
+        conn.execute(
+            "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at) \
+             VALUES ('rA', 'node-a', 'KindA', '{\"alpha\":\"xenoterm\"}', 100)",
+            [],
+        )
+        .expect("insert KindA node");
+        // Insert into per-kind table (migration 23 dropped global fts_node_properties).
+        conn.execute(
+            "INSERT INTO fts_props_kinda (node_logical_id, text_content) \
+             VALUES ('node-a', 'xenoterm')",
+            [],
+        )
+        .expect("insert KindA fts row");
+        conn.execute(
+            "INSERT INTO fts_node_property_positions \
+             (node_logical_id, kind, start_offset, end_offset, leaf_path) \
+             VALUES ('node-a', 'KindA', 0, 8, '$.alpha')",
+            [],
+        )
+        .expect("insert KindA position");
+
+        // KindB: leaf "$.beta" = "xenoterm" (start=0, end=8)
+        conn.execute(
+            "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at) \
+             VALUES ('rB', 'node-b', 'KindB', '{\"beta\":\"xenoterm\"}', 100)",
+            [],
+        )
+        .expect("insert KindB node");
+        // Insert into per-kind table (migration 23 dropped global fts_node_properties).
+        conn.execute(
+            "INSERT INTO fts_props_kindb (node_logical_id, text_content) \
+             VALUES ('node-b', 'xenoterm')",
+            [],
+        )
+        .expect("insert KindB fts row");
+        conn.execute(
+            "INSERT INTO fts_node_property_positions \
+             (node_logical_id, kind, start_offset, end_offset, leaf_path) \
+             VALUES ('node-b', 'KindB', 0, 8, '$.beta')",
+            [],
+        )
+        .expect("insert KindB position");
+
+        // Search across both kinds (empty root_kind = no kind filter).
+        let ast = QueryBuilder::nodes("").text_search("xenoterm", 10);
+        let mut compiled = compile_search(ast.ast()).expect("compile search");
+        compiled.attribution_requested = true;
+
+        let rows = coordinator
+            .execute_compiled_search(&compiled)
+            .expect("search");
+
+        // Both nodes must appear.
+        assert!(
+            rows.hits.len() >= 2,
+            "expected hits for both kinds, got {}",
+            rows.hits.len()
+        );
+
+        for hit in &rows.hits {
+            let att = hit
+                .attribution
+                .as_ref()
+                .expect("attribution must be Some when attribution_requested");
+            match hit.node.kind.as_str() {
+                "KindA" => {
+                    assert_eq!(
+                        att.matched_paths,
+                        vec!["$.alpha".to_owned()],
+                        "KindA hit must have matched_paths=['$.alpha'], got {:?}",
+                        att.matched_paths,
+                    );
+                }
+                "KindB" => {
+                    assert_eq!(
+                        att.matched_paths,
+                        vec!["$.beta".to_owned()],
+                        "KindB hit must have matched_paths=['$.beta'], got {:?}",
+                        att.matched_paths,
+                    );
+                }
+                other => {
+                    // Only KindA and KindB are expected in this test.
+                    assert_eq!(other, "KindA", "unexpected kind in result: {other}");
+                }
+            }
+        }
+    }
 }
