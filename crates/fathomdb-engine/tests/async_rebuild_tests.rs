@@ -797,3 +797,428 @@ fn get_property_fts_rebuild_progress_returns_progress() {
         );
     }
 }
+
+// ── Pack 10 tests ─────────────────────────────────────────────────────────────
+
+/// Test Pack10-1: after a rebuild reaches COMPLETE, the live `fts_node_properties`
+/// table has all expected rows and a text search returns the re-indexed nodes.
+#[test]
+fn rebuild_completes_and_fts_table_is_queryable() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let engine = open_engine(&dir);
+
+    // Seed 4 nodes before registering the schema (first registration).
+    for i in 0..4u32 {
+        engine
+            .writer()
+            .submit(make_write_request(
+                &format!("seed-{i}"),
+                vec![make_node(
+                    &format!("doc:{i}"),
+                    "DocKind",
+                    &format!(r#"{{"content":"important document {i}"}}"#),
+                )],
+            ))
+            .expect("write node");
+    }
+
+    let svc = engine.admin().service();
+    svc.register_fts_property_schema_with_entries(
+        "DocKind",
+        &[FtsPropertyPathSpec::scalar("$.content")],
+        None,
+        &[],
+        RebuildMode::Async,
+    )
+    .expect("register async");
+
+    // Wait for COMPLETE (up to 10s).
+    wait_for_state(&svc, "DocKind", &["COMPLETE"], 10);
+
+    // Verify all 4 rows exist in fts_node_properties via a raw connection.
+    let conn = rusqlite::Connection::open(dir.path().join("test.db")).expect("open raw connection");
+    let fts_count: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM fts_node_properties WHERE kind = 'DocKind'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("count fts rows");
+    assert_eq!(
+        fts_count, 4,
+        "expected 4 fts_node_properties rows after rebuild, got {fts_count}"
+    );
+
+    // Staging table should be empty (swap moved all rows).
+    let staging_count = svc.count_staging_rows("DocKind").expect("count staging");
+    assert_eq!(
+        staging_count, 0,
+        "staging should be empty after COMPLETE swap, got {staging_count}"
+    );
+
+    // Text search via coordinator should return all 4 nodes.
+    let compiled = QueryBuilder::nodes("DocKind")
+        .text_search("important", 10)
+        .limit(10)
+        .compile()
+        .expect("compile query");
+    let rows = engine
+        .coordinator()
+        .execute_compiled_read(&compiled)
+        .expect("execute text search");
+    assert_eq!(
+        rows.nodes.len(),
+        4,
+        "text search after rebuild should return all 4 nodes, got {}",
+        rows.nodes.len()
+    );
+}
+
+/// Test Pack10-2: nodes written *during* the rebuild are included in the final
+/// FTS index after COMPLETE.  Seed 5 nodes, trigger async rebuild, write 3
+/// more during the rebuild window, wait for COMPLETE, assert all 8 are findable.
+#[test]
+fn concurrent_writes_during_rebuild_are_indexed_in_final_fts() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let engine = open_engine(&dir);
+
+    // Seed 5 nodes before registering.
+    for i in 0..5u32 {
+        engine
+            .writer()
+            .submit(make_write_request(
+                &format!("seed-{i}"),
+                vec![make_node(
+                    &format!("concurrent:{i}"),
+                    "ConcKind",
+                    &format!(r#"{{"msg":"concurrent message {i}"}}"#),
+                )],
+            ))
+            .expect("write seed node");
+    }
+
+    let svc = engine.admin().service();
+    svc.register_fts_property_schema_with_entries(
+        "ConcKind",
+        &[FtsPropertyPathSpec::scalar("$.msg")],
+        None,
+        &[],
+        RebuildMode::Async,
+    )
+    .expect("register async");
+
+    // Wait until the actor has at least started (PENDING → BUILDING).
+    // Write 3 more nodes while the rebuild is active (double-write path).
+    wait_for_state(&svc, "ConcKind", &["BUILDING", "SWAPPING", "COMPLETE"], 5);
+
+    // Check state before writing: if already COMPLETE, the double-write test
+    // is a no-op for the staging path, but the final assertion still holds.
+    for i in 5..8u32 {
+        engine
+            .writer()
+            .submit(make_write_request(
+                &format!("during-{i}"),
+                vec![make_node(
+                    &format!("concurrent:{i}"),
+                    "ConcKind",
+                    &format!(r#"{{"msg":"concurrent message {i}"}}"#),
+                )],
+            ))
+            .expect("write node during rebuild");
+    }
+
+    // Wait for COMPLETE.
+    wait_for_state(&svc, "ConcKind", &["COMPLETE"], 10);
+
+    // All 8 nodes must appear in the FTS index.
+    let compiled = QueryBuilder::nodes("ConcKind")
+        .text_search("concurrent", 10)
+        .limit(20)
+        .compile()
+        .expect("compile query");
+    let rows = engine
+        .coordinator()
+        .execute_compiled_read(&compiled)
+        .expect("execute text search");
+    assert_eq!(
+        rows.nodes.len(),
+        8,
+        "all 8 nodes (5 seeded + 3 written during rebuild) should be in FTS after COMPLETE, got {}",
+        rows.nodes.len()
+    );
+}
+
+/// Test Pack10-3: poll `get_property_fts_rebuild_progress` in a loop and assert
+/// that the PENDING → BUILDING → COMPLETE sequence is observed in order.
+#[test]
+fn rebuild_progress_transitions_through_states() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let engine = open_engine(&dir);
+
+    // Insert nodes so there is real work for the actor.
+    for i in 0..5u32 {
+        engine
+            .writer()
+            .submit(make_write_request(
+                &format!("seed-{i}"),
+                vec![make_node(
+                    &format!("trans:{i}"),
+                    "TransKind",
+                    &format!(r#"{{"label":"transition label {i}"}}"#),
+                )],
+            ))
+            .expect("write node");
+    }
+
+    let svc = engine.admin().service();
+    svc.register_fts_property_schema_with_entries(
+        "TransKind",
+        &[FtsPropertyPathSpec::scalar("$.label")],
+        None,
+        &[],
+        RebuildMode::Async,
+    )
+    .expect("register async");
+
+    // Poll the coordinator's progress API collecting observed states.
+    let mut observed: Vec<String> = Vec::new();
+    let deadline = Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        let progress = engine
+            .coordinator()
+            .get_property_fts_rebuild_progress("TransKind")
+            .expect("get progress");
+        if let Some(p) = progress {
+            // Record state transitions (deduplicate consecutive identical states).
+            if observed.last().map(|s: &String| s.as_str()) != Some(p.state.as_str()) {
+                observed.push(p.state.clone());
+            }
+            if p.state == "COMPLETE" || p.state == "FAILED" {
+                break;
+            }
+        }
+        assert!(
+            Instant::now() <= deadline,
+            "rebuild did not reach a terminal state within 10s; observed states: {observed:?}"
+        );
+    }
+
+    // The last observed state must be COMPLETE.
+    assert_eq!(
+        observed.last().map(String::as_str),
+        Some("COMPLETE"),
+        "final state must be COMPLETE, observed: {observed:?}"
+    );
+
+    // All states in `observed` must appear in the expected ordering.
+    let expected_order = ["PENDING", "BUILDING", "SWAPPING", "COMPLETE"];
+    let mut last_pos: Option<usize> = None;
+    for state in &observed {
+        let pos = expected_order
+            .iter()
+            .position(|&s| s == state.as_str())
+            .unwrap_or_else(|| panic!("unexpected state observed: {state}"));
+        if let Some(prev) = last_pos {
+            assert!(
+                pos >= prev,
+                "state ordering violated: saw {state} (pos {pos}) after pos {prev}; full sequence: {observed:?}"
+            );
+        }
+        last_pos = Some(pos);
+    }
+}
+
+/// Test Pack10-4: after a rebuild reaches COMPLETE, calling
+/// `register_fts_property_schema_with_entries` again with a new path starts a
+/// fresh rebuild cycle.  A new PENDING state is observed after the second
+/// registration, and the rebuild reaches COMPLETE again with the updated schema.
+#[test]
+fn re_registration_triggers_new_rebuild() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let engine = open_engine(&dir);
+
+    // Insert nodes with two properties.
+    for i in 0..3u32 {
+        engine
+            .writer()
+            .submit(make_write_request(
+                &format!("seed-{i}"),
+                vec![make_node(
+                    &format!("rereg2:{i}"),
+                    "Rereg2Kind",
+                    &format!(r#"{{"name":"rereg name {i}","tag":"uniquetag {i}"}}"#),
+                )],
+            ))
+            .expect("write node");
+    }
+
+    let svc = engine.admin().service();
+
+    // First async registration — index only $.name.
+    svc.register_fts_property_schema_with_entries(
+        "Rereg2Kind",
+        &[FtsPropertyPathSpec::scalar("$.name")],
+        None,
+        &[],
+        RebuildMode::Async,
+    )
+    .expect("first register async");
+
+    // Wait for first rebuild to COMPLETE.
+    wait_for_state(&svc, "Rereg2Kind", &["COMPLETE"], 10);
+
+    // Verify first schema only indexes $.name — $.tag content is NOT findable.
+    let tag_query = QueryBuilder::nodes("Rereg2Kind")
+        .text_search("uniquetag", 10)
+        .limit(10)
+        .compile()
+        .expect("compile query for tag");
+    let tag_rows_before = engine
+        .coordinator()
+        .execute_compiled_read(&tag_query)
+        .expect("search before second register");
+    assert_eq!(
+        tag_rows_before.nodes.len(),
+        0,
+        "$.tag should not be indexed after first registration (only $.name indexed)"
+    );
+
+    // Second async registration — add $.tag to the indexed paths.
+    svc.register_fts_property_schema_with_entries(
+        "Rereg2Kind",
+        &[
+            FtsPropertyPathSpec::scalar("$.name"),
+            FtsPropertyPathSpec::scalar("$.tag"),
+        ],
+        None,
+        &[],
+        RebuildMode::Async,
+    )
+    .expect("second register async");
+
+    // A new rebuild cycle must start: state transitions back to PENDING/BUILDING.
+    wait_for_state(
+        &svc,
+        "Rereg2Kind",
+        &["PENDING", "BUILDING", "SWAPPING", "COMPLETE"],
+        5,
+    );
+
+    // Wait for second rebuild to COMPLETE.
+    wait_for_state(&svc, "Rereg2Kind", &["COMPLETE"], 10);
+
+    // After second rebuild, $.tag content ("uniquetag") must now be findable.
+    let tag_rows_after = engine
+        .coordinator()
+        .execute_compiled_read(&tag_query)
+        .expect("search after second rebuild");
+    assert_eq!(
+        tag_rows_after.nodes.len(),
+        3,
+        "$.tag ('uniquetag') should be indexed after second rebuild, got {}",
+        tag_rows_after.nodes.len()
+    );
+}
+
+/// Test Pack10-5: after a simulated mid-build crash (engine dropped with BUILDING
+/// state forced via raw SQL), reopening the engine runs crash recovery and the
+/// `fts_property_rebuild_staging` table has 0 rows for the kind.
+#[test]
+fn crash_recovery_clears_staging_rows() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let db_path = dir.path().join("test.db");
+
+    {
+        let engine = EngineRuntime::open(
+            &db_path,
+            ProvenanceMode::Warn,
+            None,
+            2,
+            TelemetryLevel::Counters,
+            None,
+        )
+        .expect("open engine");
+
+        // Insert nodes so the rebuild produces staging rows.
+        for i in 0..4u32 {
+            engine
+                .writer()
+                .submit(make_write_request(
+                    &format!("seed-{i}"),
+                    vec![make_node(
+                        &format!("clr:{i}"),
+                        "ClrKind",
+                        &format!(r#"{{"data":"clr data {i}"}}"#),
+                    )],
+                ))
+                .expect("write node");
+        }
+
+        let svc = engine.admin().service();
+        svc.register_fts_property_schema_with_entries(
+            "ClrKind",
+            &[FtsPropertyPathSpec::scalar("$.data")],
+            None,
+            &[],
+            RebuildMode::Async,
+        )
+        .expect("register async");
+
+        // Wait until the actor has at least started building.
+        wait_for_state(&svc, "ClrKind", &["BUILDING", "SWAPPING", "COMPLETE"], 5);
+        // Engine drops here, actor is joined.
+    }
+
+    // Force BUILDING state and insert a fake staging row to simulate a crash
+    // that left behind in-progress state.
+    {
+        let raw_conn = rusqlite::Connection::open(&db_path).expect("open raw connection");
+        raw_conn
+            .execute(
+                "UPDATE fts_property_rebuild_state SET state = 'BUILDING' WHERE kind = 'ClrKind'",
+                [],
+            )
+            .expect("force BUILDING state");
+        raw_conn
+            .execute(
+                "INSERT OR IGNORE INTO fts_property_rebuild_staging \
+                 (kind, node_logical_id, text_content) VALUES ('ClrKind', 'fake:crash', 'leftover')",
+                [],
+            )
+            .expect("insert fake staging row");
+    }
+
+    // Reopen engine — crash recovery should clear staging for 'ClrKind'.
+    let engine2 = EngineRuntime::open(
+        &db_path,
+        ProvenanceMode::Warn,
+        None,
+        2,
+        TelemetryLevel::Counters,
+        None,
+    )
+    .expect("reopen engine");
+
+    let svc2 = engine2.admin().service();
+
+    // Staging table must have 0 rows for 'ClrKind' after recovery.
+    let staging_count = svc2
+        .count_staging_rows("ClrKind")
+        .expect("count staging rows after recovery");
+    assert_eq!(
+        staging_count, 0,
+        "crash recovery must clear all staging rows for 'ClrKind', got {staging_count}"
+    );
+
+    // The state should also be FAILED (crash recovery marks interrupted builds FAILED).
+    let state = svc2
+        .get_property_fts_rebuild_state("ClrKind")
+        .expect("get state after recovery")
+        .expect("state row must exist");
+    assert_eq!(
+        state.state, "FAILED",
+        "crash recovery must mark 'ClrKind' as FAILED, got '{}'",
+        state.state
+    );
+}
