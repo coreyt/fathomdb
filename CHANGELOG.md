@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-04-15
+
+### New
+
+- **Grouped expand on `SearchBuilder`**: `.search(...).expand(slot, direction, label, max_depth).execute_grouped()` chain now works end-to-end in Rust, Python, and TypeScript. Each call to `.expand()` declares a named slot; `execute_grouped()` returns `GroupedQueryRows` with `roots` (base search hits) and per-slot `expansions` (per-root traversal results).
+
+- **Target-side filter on `.expand()`**: `.expand(..., filter=...)` accepts the same predicate grammar as main-path filters, including named fused-JSON filters registered via property-FTS schemas. Filtering runs before the per-originator limit, so the limit counts matching nodes only. Fused filters raise `BuilderValidationError::MissingPropertyFtsSchema` at builder time if the target kind has no registered schema.
+
+- **Async property-FTS rebuild**: `register_fts_property_schema_async` (Python: `admin.register_fts_property_schema_async`, TypeScript: `admin.registerFtsPropertySchemaAsync`) registers the schema and returns immediately; the FTS rebuild runs in a background thread via `RebuildActor`. Poll `get_rebuild_progress` / `getRebuildProgress` to observe state (`PENDING → BUILDING → SWAPPING → COMPLETE`). The existing `register_fts_property_schema` continues to run the rebuild synchronously (eager mode).
+
+### Behavior change
+
+- **Async-default FTS rebuild**: after `register_fts_property_schema_async`, the new schema is **not immediately visible to search**. Search reads from the live FTS table until the rebuild reaches `COMPLETE`. Callers that need synchronous visibility should use `register_fts_property_schema` (eager mode).
+
+- **Interrupted rebuild recovery**: if the engine restarts during a rebuild, the in-progress state is marked `FAILED` on next open. Call `register_fts_property_schema_async` again to retry.
+
+### Sharp edge
+
+- **Same-kind self-expand at `max_depth > 1`**: fathomdb uses per-path visited-node deduplication. Cycles in the edge graph are safe (the root node is pre-seeded as visited, so no walk loops back to the originator). `max_depth = 1` is unaffected and does not involve cycle detection.
+
+### Per-slot result order
+
+- The order of nodes within an expansion slot is **explicitly undefined**. Callers that need ordering must sort client-side. This contract was always true; 0.4.1 documents it explicitly.
+
 ## [0.4.0] - 2026-04-14
 
 This is a substantial minor release. The headline items are a PyO3 0.23 →

@@ -905,6 +905,107 @@ for slot in results.expansions:
         print(f"  {root_rows.root_logical_id}: {names}")
 ```
 
+### Worked example: Memex use case — goal with commitments, actions, and plan steps
+
+Fetch a `WMGoal` node and expand three edge kinds in one query:
+
+```python
+from fathomdb import Engine, TraverseDirection
+
+db = Engine.open("memex.db")
+
+results = (
+    db.nodes("WMGoal")
+    .filter_logical_id_eq(goal_id)
+    .expand(
+        slot="commitments",
+        direction=TraverseDirection.OUT,
+        label="HAS_COMMITMENT",
+        max_depth=1,
+    )
+    .expand(
+        slot="provenance_actions",
+        direction=TraverseDirection.OUT,
+        label="HAS_PROVENANCE_ACTION",
+        max_depth=1,
+    )
+    .expand(
+        slot="plan_steps",
+        direction=TraverseDirection.OUT,
+        label="HAS_PLAN_STEP",
+        max_depth=1,
+    )
+    .execute_grouped()
+)
+
+goal = results.roots[0]
+commitments = next(
+    (s.roots for s in results.expansions if s.slot == "commitments"), []
+)
+plan_steps = next(
+    (s.roots for s in results.expansions if s.slot == "plan_steps"), []
+)
+```
+
+### Worked example: target-side filter — expand by action kind
+
+Use the `filter` argument on `.expand()` to narrow which expanded nodes are
+returned. The filter accepts the same predicate grammar as main-path filters:
+
+```python
+from fathomdb import Engine, TraverseDirection, JsonTextEq
+
+db = Engine.open("memex.db")
+
+# Only return HAS_ACTION edges where action_kind == "discussed_in"
+discussed = (
+    db.nodes("WMGoal")
+    .search("quarterly planning", limit=20)
+    .expand(
+        slot="discussed_actions",
+        direction=TraverseDirection.OUT,
+        label="HAS_ACTION",
+        max_depth=1,
+        filter=JsonTextEq("$.action_kind", "discussed_in"),
+    )
+    .execute_grouped()
+)
+
+# Only tasks
+tasks = (
+    db.nodes("WMGoal")
+    .search("quarterly planning", limit=20)
+    .expand(
+        slot="task_actions",
+        direction=TraverseDirection.OUT,
+        label="HAS_ACTION",
+        max_depth=1,
+        filter=JsonTextEq("$.action_kind", "task"),
+    )
+    .execute_grouped()
+)
+```
+
+Filter validation is **builder-time**: the error is raised when the filter is
+added, before any SQL runs. Fused filters on the expansion side raise
+`BuilderValidationError::MissingPropertyFtsSchema` at builder time if the
+target kind has no registered property-FTS schema.
+
+### Per-originator limit
+
+!!! note "Per-originator, not global"
+
+    The `limit` on each `.expand()` call is applied **per originator**, not
+    globally. A search returning 50 hits, each with a
+    `.expand(..., limit=20)` slot, returns up to 20 expanded nodes **per
+    hit**, for up to 1000 total — not 20 total. This holds even when the
+    distribution is heavily skewed: a single originator with 500 candidates
+    will not starve other originators' budgets.
+
+For full semantics, sharp edges, and the complete method signature reference,
+see [Grouped expand](../reference/query.md#grouped-expand-expand--execute_grouped)
+in the query reference.
+
 ## Quick reference
 
 | Goal | Method |

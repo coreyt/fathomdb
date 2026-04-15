@@ -111,6 +111,200 @@ vector literal.
       members_order: source
       heading_level: 4
 
+## Grouped expand: `.expand()` / `.execute_grouped()`
+
+Use `.expand()` to declare named traversal slots and `.execute_grouped()` (or
+`.compile_grouped()`) to execute a search that returns both the matched root
+nodes and their per-slot expansions in a single round trip.
+
+### Method signatures
+
+=== "Rust"
+
+    ```rust
+    // On QueryBuilder
+    pub fn expand(
+        mut self,
+        slot: impl Into<String>,
+        direction: TraverseDirection,
+        label: impl Into<String>,
+        max_depth: usize,
+        filter: Option<Predicate>,
+    ) -> Self
+
+    pub fn compile_grouped(&self) -> Result<CompiledGroupedQuery, CompileError>
+
+    pub fn limit(mut self, limit: usize) -> Self
+    ```
+
+=== "Python"
+
+    ```python
+    # On SearchBuilder
+    def expand(
+        self,
+        *,
+        slot: str,
+        direction: TraverseDirection | str,
+        label: str,
+        max_depth: int,
+    ) -> "SearchBuilder"
+
+    def limit(self, limit: int) -> "SearchBuilder"
+
+    def execute_grouped(
+        self,
+        *,
+        progress_callback=None,
+        feedback_config=None,
+    ) -> GroupedQueryRows
+
+    def compile_grouped(
+        self,
+        *,
+        progress_callback=None,
+        feedback_config=None,
+    ) -> CompiledGroupedQuery
+    ```
+
+=== "TypeScript"
+
+    ```typescript
+    // On SearchBuilder
+    expand(args: {
+        slot: string;
+        direction: TraverseDirection;
+        label: string;
+        maxDepth: number;
+    }): SearchBuilder
+
+    executeGrouped(
+        progressCallback?: ProgressCallback,
+        feedbackConfig?: FeedbackConfig,
+    ): GroupedQueryRows
+
+    compileGrouped(
+        progressCallback?: ProgressCallback,
+        feedbackConfig?: FeedbackConfig,
+    ): CompiledGroupedQuery
+    ```
+
+### Return shape
+
+`execute_grouped()` returns a `GroupedQueryRows`:
+
+| Field | Type | Description |
+|---|---|---|
+| `roots` | `Vec<NodeRow>` / `list[NodeRow]` | The matched root nodes from the base search. |
+| `expansions` | `Vec<ExpansionSlotRows>` | One entry per `.expand()` call, in declaration order. |
+| `was_degraded` | `bool` | `true` if any branch (vector, text, or expansion) was degraded. |
+
+Each `ExpansionSlotRows` entry describes a single named slot:
+
+| Field | Type | Description |
+|---|---|---|
+| `slot` | `String` | The slot name passed to `.expand()`. |
+| `roots` | `Vec<ExpansionRootRows>` | One entry per root node that had at least one expansion result. |
+
+Each `ExpansionRootRows` entry pairs a root with its expanded nodes:
+
+| Field | Type | Description |
+|---|---|---|
+| `root_logical_id` | `String` | The logical ID of the originator root node. |
+| `nodes` | `Vec<NodeRow>` | Nodes reached by traversing the declared edge from that root. |
+
+### Per-originator limit guarantee
+
+The `limit` on each `.expand()` call is applied **per originator**, not
+globally across all roots. A search returning 50 hits, each with a
+`.expand(..., limit=20)` slot, returns up to 20 expanded nodes **per hit**,
+for up to 1000 total — not 20 total. This holds even when the distribution
+is heavily skewed: a single originator with 500 candidates will not starve
+other originators' budgets.
+
+### Per-slot order is undefined
+
+The order of nodes within an expansion slot is **explicitly undefined**.
+Callers that need a specific order must sort client-side:
+
+```python
+steps = sorted(group.slots["plan_steps"],
+               key=lambda n: n.properties["sequence_index"])
+```
+
+### `max_depth` semantics
+
+When `max_depth > 1`, the engine uses a single repeated edge label to walk
+multiple hops. The result is flat — no path structure is preserved in the
+output; every reached node appears directly in `nodes` regardless of which
+hop it was reached on.
+
+!!! warning "Sharp edge: same-kind self-expand at `max_depth > 1`"
+
+    When the originator kind can reach nodes of the same kind through the
+    declared edge label, the traversal forms a cycle. fathomdb's recursive CTE
+    has per-path visited-node deduplication via string accumulation. Cycles in
+    the edge graph are safe at any `max_depth` value: the root node is always
+    pre-seeded as visited, so no walk can loop back to the originator.
+
+    Specifically: the recursive CTE uses a visited-string accumulator
+    (`printf(',%s,', logical_id)` concatenated per hop) and a WHERE clause
+    that blocks revisiting any node already seen on the current path. The
+    root node is seeded into the visited string at depth=0, so a cycle
+    back to the originator is blocked even when `max_depth` would otherwise
+    allow it. The engine terminates immediately and does not hang or OOM.
+    `max_depth = 1` is unaffected and does not involve cycle detection.
+
+### Target-side filter
+
+`.expand()` accepts an optional `filter` argument that accepts the same
+predicate grammar as main-path filters, including named fused-JSON filters
+registered via property-FTS schemas:
+
+=== "Rust"
+
+    ```rust
+    .expand(
+        "actions",
+        TraverseDirection::OUT,
+        "HAS_ACTION",
+        1,
+        Some(Predicate::JsonTextEq {
+            path: "$.action_kind".to_string(),
+            value: "task".to_string(),
+        }),
+    )
+    ```
+
+=== "Python"
+
+    ```python
+    .expand(
+        slot="actions",
+        direction=TraverseDirection.OUT,
+        label="HAS_ACTION",
+        max_depth=1,
+        filter=JsonTextEq("$.action_kind", "task"),
+    )
+    ```
+
+Filter validation is **builder-time**: the error is raised when the filter
+is added, before any SQL runs. Fused filters on the expansion side raise
+`BuilderValidationError::MissingPropertyFtsSchema` at builder time if the
+target kind has no registered property-FTS schema. See
+[`BuilderValidationError`](./types.md#errors).
+
+### What `.expand()` does not do
+
+- **No cross-edge-label multi-hop aliases.** Each `.expand()` call traverses
+  exactly one edge label. Declare separate slots for separate edge labels.
+- **No engine-side ranking of expanded nodes.** Expanded results are not
+  scored or ranked by the engine. Sort client-side if order matters.
+- **No path-structure preservation.** At `max_depth > 1`, the result is flat;
+  the hop depth at which each node was reached is not included.
+- **No global (cross-originator) limit.** The limit is per originator. There
+  is no cap on the total number of expanded nodes across all roots.
+
 ## Advanced: mechanism-specific overrides
 
 The following builders are **advanced overrides** for callers with a

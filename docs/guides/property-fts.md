@@ -185,15 +185,58 @@ that path, not to reinterpret the path itself.
 
 ### Idempotent Upsert
 
-Calling either register API again for the same kind overwrites the
-previous schema in place. When a schema with a new recursive path (or a
-new `exclude_paths` list) is registered, the engine performs an **eager
-transactional rebuild**: it drops the kind's `fts_node_properties` and
-`fts_node_property_positions` rows and re-extracts them from canonical
-node state, all inside the same transaction as the schema upsert. Schema
-changes are immediate — there is no lazy mark-stale path, and there is
-no versioned co-existence of old and new schemas. If the upsert commits,
-the derived state is consistent with the new schema.
+Calling any register API again for the same kind overwrites the previous
+schema in place.
+
+#### Async shadow-build path (default in 0.4.1+)
+
+`register_fts_property_schema_async` registers the schema and returns
+immediately (typically under 500 ms). The FTS rebuild runs in the background
+via `RebuildActor`. During the rebuild:
+
+- Search **reads from the previous schema** until the rebuild completes.
+  There is no period where search returns empty results or degraded results
+  due to a schema transition.
+- Once the rebuild reaches `COMPLETE`, the new schema is live and all
+  subsequent searches use it.
+
+Poll `get_rebuild_progress(kind)` to observe the rebuild state machine:
+`PENDING → BUILDING → SWAPPING → COMPLETE` (or `FAILED` on error).
+
+```python
+import time
+
+db.admin.register_fts_property_schema_async(
+    "KnowledgeItem",
+    ["$.title", "$.summary"],
+    separator=" ",
+)
+
+# Poll until complete
+while True:
+    progress = db.admin.get_rebuild_progress("KnowledgeItem")
+    if progress is None or progress.state == "COMPLETE":
+        break
+    if progress.state == "FAILED":
+        raise RuntimeError(f"Rebuild failed: {progress.error_message}")
+    time.sleep(0.5)
+```
+
+#### Eager mode (synchronous, maintenance-window use)
+
+`register_fts_property_schema` and `register_fts_property_schema_with_entries`
+use `RebuildMode::Eager`: the rebuild runs synchronously inside the same
+transaction as the schema upsert. Schema changes are immediate on return —
+there is no lazy mark-stale path, and there is no versioned co-existence of
+old and new schemas. If the upsert commits, the derived state is consistent
+with the new schema. Use this mode when you need synchronous visibility and
+can afford to block the caller for the duration of the rebuild.
+
+#### Crash recovery
+
+If the engine restarts during an async rebuild, the in-progress state is
+marked `FAILED` on the next engine open. Call `register_fts_property_schema_async`
+again to retry the rebuild.
 
 ## Writing Nodes
 
