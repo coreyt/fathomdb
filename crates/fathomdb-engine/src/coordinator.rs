@@ -4510,12 +4510,40 @@ mod tests {
     /// `"$.body"`.
     #[test]
     fn property_fts_hit_matched_paths_from_positions() {
+        use crate::{AdminService, rebuild_actor::RebuildMode};
         use fathomdb_query::compile_search;
 
         let db = NamedTempFile::new().expect("temporary db");
+        let schema_manager = Arc::new(SchemaManager::new());
+
+        // Register FTS schema for "Item" to create the per-kind table
+        // fts_props_item before opening the coordinator.
+        {
+            let admin = AdminService::new(db.path(), Arc::clone(&schema_manager));
+            admin
+                .register_fts_property_schema_with_entries(
+                    "Item",
+                    &[
+                        crate::FtsPropertyPathSpec::scalar("$.body"),
+                        crate::FtsPropertyPathSpec::scalar("$.title"),
+                    ],
+                    None,
+                    &[],
+                    RebuildMode::Eager,
+                )
+                .expect("register Item FTS schema");
+        }
+
         let coordinator = ExecutionCoordinator::open(
             db.path(),
-            Arc::new(SchemaManager::new()),
+            Arc::clone(&schema_manager),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+            None,
+        )
+        .expect("coordinator");
+
         let conn = rusqlite::Connection::open(db.path()).expect("open db");
 
         // The recursive walker emits leaves in alphabetical key order:
@@ -4536,9 +4564,10 @@ mod tests {
             [],
         )
         .expect("insert node");
+        // Insert into the per-kind table (migration 23 dropped global fts_node_properties).
         conn.execute(
-            "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
-             VALUES ('item-1', 'Item', ?1)",
+            "INSERT INTO fts_props_item (node_logical_id, text_content) \
+             VALUES ('item-1', ?1)",
             rusqlite::params![blob],
         )
         .expect("insert fts row");
@@ -4714,13 +4743,41 @@ mod tests {
     /// This pins the per-`(node_logical_id, kind)` isolation in the
     /// `load_position_map` query.
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn mixed_kind_results_get_per_kind_matched_paths() {
+        use crate::{AdminService, rebuild_actor::RebuildMode};
         use fathomdb_query::compile_search;
 
         let db = NamedTempFile::new().expect("temporary db");
+        let schema_manager = Arc::new(SchemaManager::new());
+
+        // Register FTS schemas for KindA and KindB to create per-kind tables
+        // fts_props_kinda and fts_props_kindb before opening the coordinator.
+        {
+            let admin = AdminService::new(db.path(), Arc::clone(&schema_manager));
+            admin
+                .register_fts_property_schema_with_entries(
+                    "KindA",
+                    &[crate::FtsPropertyPathSpec::scalar("$.alpha")],
+                    None,
+                    &[],
+                    RebuildMode::Eager,
+                )
+                .expect("register KindA FTS schema");
+            admin
+                .register_fts_property_schema_with_entries(
+                    "KindB",
+                    &[crate::FtsPropertyPathSpec::scalar("$.beta")],
+                    None,
+                    &[],
+                    RebuildMode::Eager,
+                )
+                .expect("register KindB FTS schema");
+        }
+
         let coordinator = ExecutionCoordinator::open(
             db.path(),
-            Arc::new(SchemaManager::new()),
+            Arc::clone(&schema_manager),
             None,
             1,
             Arc::new(TelemetryCounters::default()),
@@ -4737,9 +4794,10 @@ mod tests {
             [],
         )
         .expect("insert KindA node");
+        // Insert into per-kind table (migration 23 dropped global fts_node_properties).
         conn.execute(
-            "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
-             VALUES ('node-a', 'KindA', 'xenoterm')",
+            "INSERT INTO fts_props_kinda (node_logical_id, text_content) \
+             VALUES ('node-a', 'xenoterm')",
             [],
         )
         .expect("insert KindA fts row");
@@ -4758,9 +4816,10 @@ mod tests {
             [],
         )
         .expect("insert KindB node");
+        // Insert into per-kind table (migration 23 dropped global fts_node_properties).
         conn.execute(
-            "INSERT INTO fts_node_properties (node_logical_id, kind, text_content) \
-             VALUES ('node-b', 'KindB', 'xenoterm')",
+            "INSERT INTO fts_props_kindb (node_logical_id, text_content) \
+             VALUES ('node-b', 'xenoterm')",
             [],
         )
         .expect("insert KindB fts row");
