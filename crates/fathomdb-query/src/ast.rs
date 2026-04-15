@@ -24,6 +24,10 @@ pub struct ExpansionSlot {
     pub label: String,
     /// Maximum traversal depth.
     pub max_depth: usize,
+    /// Optional target-side filter predicate applied before the per-originator
+    /// `ROW_NUMBER()` window. When `None`, no filter is applied and SQL output
+    /// is identical to pre-Pack-3 behavior.
+    pub filter: Option<Predicate>,
 }
 
 /// A single step in the query pipeline.

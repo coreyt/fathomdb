@@ -366,6 +366,11 @@ impl QueryBuilder {
     }
 
     /// Add an expansion slot that traverses edges of the given label for each root result.
+    ///
+    /// When `filter` is `Some(predicate)`, the predicate is applied to target
+    /// nodes **before** the per-originator `ROW_NUMBER()` window so that the
+    /// per-root `limit` counts only matching nodes. When `None`, behavior is
+    /// identical to pre-filter behavior (no WHERE clause on the target side).
     #[must_use]
     pub fn expand(
         mut self,
@@ -373,12 +378,14 @@ impl QueryBuilder {
         direction: TraverseDirection,
         label: impl Into<String>,
         max_depth: usize,
+        filter: Option<Predicate>,
     ) -> Self {
         self.ast.expansions.push(ExpansionSlot {
             slot: slot.into(),
             direction,
             label: label.into(),
             max_depth,
+            filter,
         });
         self
     }

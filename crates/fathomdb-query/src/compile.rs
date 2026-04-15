@@ -1161,7 +1161,7 @@ mod tests {
         let left = compile_grouped_query(
             &QueryBuilder::nodes("Meeting")
                 .text_search("budget", 5)
-                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1)
+                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
                 .limit(10)
                 .into_ast(),
         )
@@ -1169,7 +1169,7 @@ mod tests {
         let right = compile_grouped_query(
             &QueryBuilder::nodes("Meeting")
                 .text_search("planning", 5)
-                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1)
+                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
                 .limit(10)
                 .into_ast(),
         )
@@ -1182,8 +1182,8 @@ mod tests {
     fn compile_grouped_rejects_duplicate_expansion_slot_names() {
         let result = compile_grouped_query(
             &QueryBuilder::nodes("Meeting")
-                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1)
-                .expand("tasks", TraverseDirection::Out, "HAS_DECISION", 1)
+                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
+                .expand("tasks", TraverseDirection::Out, "HAS_DECISION", 1, None)
                 .into_ast(),
         );
 
@@ -1197,7 +1197,7 @@ mod tests {
     fn flat_compile_rejects_queries_with_expansions() {
         let result = compile_query(
             &QueryBuilder::nodes("Meeting")
-                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1)
+                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
                 .into_ast(),
         );
 

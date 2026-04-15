@@ -28,6 +28,106 @@ const MAX_SHAPE_CACHE_SIZE: usize = 4096;
 /// batches of this size rather than falling back to per-root queries.
 const BATCH_CHUNK_SIZE: usize = 200;
 
+/// Compile an optional expansion-slot target-side filter predicate into a SQL
+/// fragment and bind values for injection into the `numbered` CTE's WHERE clause.
+///
+/// Returns `("", vec![])` when `filter` is `None` — preserving byte-for-byte
+/// identical SQL to pre-Pack-3 behavior. When `Some(predicate)`, returns an
+/// `AND …` fragment and the corresponding bind values starting at `first_param`.
+///
+/// Only `JsonPathEq`, `JsonPathCompare`, `JsonPathFusedEq`, and
+/// `JsonPathFusedTimestampCmp` are supported here; each variant targets the
+/// `n.properties` column already present in the `numbered` CTE join.
+/// Column-direct predicates (`KindEq`, `LogicalIdEq`, etc.) reference `n.kind`
+/// and similar columns that are also available in the `numbered` CTE.
+fn compile_expansion_filter(
+    filter: Option<&Predicate>,
+    first_param: usize,
+) -> (String, Vec<Value>) {
+    let Some(predicate) = filter else {
+        return (String::new(), vec![]);
+    };
+    let p = first_param;
+    match predicate {
+        Predicate::JsonPathEq { path, value } => {
+            let val = match value {
+                ScalarValue::Text(t) => Value::Text(t.clone()),
+                ScalarValue::Integer(i) => Value::Integer(*i),
+                ScalarValue::Bool(b) => Value::Integer(i64::from(*b)),
+            };
+            (
+                format!(
+                    "\n                  AND json_extract(n.properties, ?{p}) = ?{}",
+                    p + 1
+                ),
+                vec![Value::Text(path.clone()), val],
+            )
+        }
+        Predicate::JsonPathCompare { path, op, value } => {
+            let val = match value {
+                ScalarValue::Text(t) => Value::Text(t.clone()),
+                ScalarValue::Integer(i) => Value::Integer(*i),
+                ScalarValue::Bool(b) => Value::Integer(i64::from(*b)),
+            };
+            let operator = match op {
+                ComparisonOp::Gt => ">",
+                ComparisonOp::Gte => ">=",
+                ComparisonOp::Lt => "<",
+                ComparisonOp::Lte => "<=",
+            };
+            (
+                format!(
+                    "\n                  AND json_extract(n.properties, ?{p}) {operator} ?{}",
+                    p + 1
+                ),
+                vec![Value::Text(path.clone()), val],
+            )
+        }
+        Predicate::JsonPathFusedEq { path, value } => (
+            format!(
+                "\n                  AND json_extract(n.properties, ?{p}) = ?{}",
+                p + 1
+            ),
+            vec![Value::Text(path.clone()), Value::Text(value.clone())],
+        ),
+        Predicate::JsonPathFusedTimestampCmp { path, op, value } => {
+            let operator = match op {
+                ComparisonOp::Gt => ">",
+                ComparisonOp::Gte => ">=",
+                ComparisonOp::Lt => "<",
+                ComparisonOp::Lte => "<=",
+            };
+            (
+                format!(
+                    "\n                  AND json_extract(n.properties, ?{p}) {operator} ?{}",
+                    p + 1
+                ),
+                vec![Value::Text(path.clone()), Value::Integer(*value)],
+            )
+        }
+        Predicate::KindEq(kind) => (
+            format!("\n                  AND n.kind = ?{p}"),
+            vec![Value::Text(kind.clone())],
+        ),
+        Predicate::LogicalIdEq(logical_id) => (
+            format!("\n                  AND n.logical_id = ?{p}"),
+            vec![Value::Text(logical_id.clone())],
+        ),
+        Predicate::SourceRefEq(source_ref) => (
+            format!("\n                  AND n.source_ref = ?{p}"),
+            vec![Value::Text(source_ref.clone())],
+        ),
+        Predicate::ContentRefEq(uri) => (
+            format!("\n                  AND n.content_ref = ?{p}"),
+            vec![Value::Text(uri.clone())],
+        ),
+        Predicate::ContentRefNotNull => (
+            "\n                  AND n.content_ref IS NOT NULL".to_owned(),
+            vec![],
+        ),
+    }
+}
+
 /// A pool of read-only `SQLite` connections for concurrent read access.
 ///
 /// Each connection is wrapped in its own [`Mutex`] so multiple readers can
@@ -1675,6 +1775,19 @@ impl ExecutionCoordinator {
             }
         };
 
+        // EXECUTE-TIME VALIDATION: fused filter against kinds without an FTS schema.
+        // This check runs at execute time (not builder time) because the target kind
+        // set for an expand slot is edge-label-scoped, not kind-scoped, and multiple
+        // target kinds may be reachable via one edge label. See Pack 12 docs.
+        if expansion.filter.as_ref().is_some_and(|f| {
+            matches!(
+                f,
+                Predicate::JsonPathFusedEq { .. } | Predicate::JsonPathFusedTimestampCmp { .. }
+            )
+        }) {
+            self.validate_fused_filter_for_edge_label(&expansion.label)?;
+        }
+
         // Build a UNION ALL of SELECT literals for the root seed rows.
         // SQLite does not support `VALUES ... AS alias(col)` in older versions,
         // so we use `SELECT ?1 UNION ALL SELECT ?2 ...` instead.
@@ -1682,6 +1795,17 @@ impl ExecutionCoordinator {
             .map(|i| format!("SELECT ?{i}"))
             .collect::<Vec<_>>()
             .join(" UNION ALL ");
+
+        // Bind params: root IDs occupy ?1..=?N, edge kind is ?(N+1).
+        // Filter params (if any) follow starting at ?(N+2).
+        let edge_kind_param = root_ids.len() + 1;
+        let filter_param_start = root_ids.len() + 2;
+
+        // Compile the optional target-side filter to a SQL fragment + bind values.
+        // The fragment is injected into the `numbered` CTE's WHERE clause BEFORE
+        // the ROW_NUMBER() window so the per-originator limit counts only matching rows.
+        let (filter_sql, filter_binds) =
+            compile_expansion_filter(expansion.filter.as_ref(), filter_param_start);
 
         // The `root_id` column tracks which root each traversal path
         // originated from. The `ROW_NUMBER()` window in the outer query
@@ -1714,13 +1838,12 @@ impl ExecutionCoordinator {
                 JOIN nodes n ON n.logical_id = t.logical_id
                     AND n.superseded_at IS NULL
                 LEFT JOIN node_access_metadata am ON am.logical_id = n.logical_id
-                WHERE t.depth > 0
+                WHERE t.depth > 0{filter_sql}
             )
             SELECT root_id, row_id, logical_id, kind, properties, content_ref, last_accessed_at
             FROM numbered
             WHERE rn <= {hard_limit}
             ORDER BY root_id, logical_id",
-            edge_kind_param = root_ids.len() + 1,
             max_depth = expansion.max_depth,
         );
 
@@ -1729,12 +1852,13 @@ impl ExecutionCoordinator {
             .prepare_cached(&sql)
             .map_err(EngineError::Sqlite)?;
 
-        // Bind root IDs (1..=N) and edge kind (N+1).
+        // Bind root IDs (1..=N) and edge kind (N+1), then filter params (N+2...).
         let mut bind_values: Vec<Value> = root_ids
             .iter()
             .map(|id| Value::Text((*id).to_owned()))
             .collect();
         bind_values.push(Value::Text(expansion.label.clone()));
+        bind_values.extend(filter_binds);
 
         let rows = statement
             .query_map(params_from_iter(bind_values.iter()), |row| {
@@ -1769,6 +1893,56 @@ impl ExecutionCoordinator {
             .collect();
 
         Ok(root_groups)
+    }
+
+    /// Validate that all target node kinds reachable via `edge_label` have a
+    /// registered property-FTS schema. Called at execute time when an expansion
+    /// slot carries a fused filter predicate.
+    ///
+    /// EXECUTE-TIME VALIDATION: this check runs at execute time (not builder
+    /// time) for expand slots because the target kind set is edge-label-scoped
+    /// rather than kind-scoped, and is not statically knowable at builder time
+    /// when multiple target kinds may be reachable via the same label.
+    /// See Pack 12 docs.
+    ///
+    /// # Errors
+    /// Returns `EngineError::InvalidConfig` if any reachable target kind lacks
+    /// a registered property-FTS schema.
+    fn validate_fused_filter_for_edge_label(&self, edge_label: &str) -> Result<(), EngineError> {
+        let conn = self.lock_connection()?;
+        // Collect the distinct node kinds reachable as targets of this edge label.
+        let mut stmt = conn
+            .prepare_cached(
+                "SELECT DISTINCT n.kind \
+                 FROM edges e \
+                 JOIN nodes n ON n.logical_id = e.target_logical_id \
+                 WHERE e.kind = ?1 AND e.superseded_at IS NULL",
+            )
+            .map_err(EngineError::Sqlite)?;
+        let target_kinds: Vec<String> = stmt
+            .query_map(rusqlite::params![edge_label], |row| row.get(0))
+            .map_err(EngineError::Sqlite)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(EngineError::Sqlite)?;
+
+        for kind in &target_kinds {
+            let has_schema: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM fts_property_schemas WHERE kind = ?1",
+                    rusqlite::params![kind],
+                    |row| row.get(0),
+                )
+                .map_err(EngineError::Sqlite)?;
+            if !has_schema {
+                return Err(EngineError::InvalidConfig(format!(
+                    "kind {kind:?} has no registered property-FTS schema; register one with \
+                     admin.register_fts_property_schema(..) before using fused filters on \
+                     expansion slots, or use JsonPathEq for non-fused semantics \
+                     (expand slot uses edge label {edge_label:?})"
+                )));
+            }
+        }
+        Ok(())
     }
 
     /// Read a single run by id.
@@ -3589,7 +3763,7 @@ mod tests {
 
         let compiled = QueryBuilder::nodes("Meeting")
             .text_search("meeting", 10)
-            .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1)
+            .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
             .limit(10)
             .compile_grouped()
             .expect("compiled grouped query");
