@@ -276,6 +276,8 @@ def test_search_builder_expand_with_json_path_eq_filter(tmp_path: Path) -> None:
         )
     )
 
+    # filter format uses the same dict shape as PyQueryStep filter variants:
+    # {"type": "filter_json_text_eq", "path": "$.kind", "value": "decision"}
     result = (
         db.query("Root")
         .search("root node", 10)
@@ -284,18 +286,19 @@ def test_search_builder_expand_with_json_path_eq_filter(tmp_path: Path) -> None:
             direction="out",
             label="HAS_ITEM",
             max_depth=1,
-            filter={
-                "type": "JsonPathEq",
-                "path": "$.kind",
-                "value": {"type": "Text", "value": "decision"},
-            },
+            filter={"type": "filter_json_text_eq", "path": "$.kind", "value": "decision"},
         )
         .execute_grouped()
     )
 
     assert len(result.expansions) == 1
     assert result.expansions[0].slot == "decisions"
-    assert len(result.expansions[0].roots) >= 1
+    assert len(result.expansions[0].roots) == 1, "one root group (root-1)"
+    decision_nodes = result.expansions[0].roots[0].nodes
+    assert len(decision_nodes) == 5, "filter must return exactly 5 decision nodes, not all 10"
+    for node in decision_nodes:
+        props = node.properties  # already a decoded dict
+        assert props.get("kind") == "decision", f"filter leaked non-decision node: {props}"
 
 
 if __name__ == "__main__":
