@@ -24,6 +24,10 @@ pub struct ExpansionSlot {
     pub label: String,
     /// Maximum traversal depth.
     pub max_depth: usize,
+    /// Optional predicate to filter target nodes in this expansion slot.
+    /// `None` is exactly equivalent to pre-Pack-2 behavior.
+    /// `Some(_)` is not yet implemented; see Pack 3.
+    pub filter: Option<Predicate>,
 }
 
 /// A single step in the query pipeline.
@@ -65,6 +69,10 @@ pub enum QueryStep {
         label: String,
         /// Maximum hops from each candidate.
         max_depth: usize,
+        /// Optional predicate to filter traversal results.
+        /// `None` is exactly equivalent to the pre-Pack-2 behavior.
+        /// `Some(_)` is not yet implemented; see Pack 3.
+        filter: Option<Predicate>,
     },
     /// Row-level filter predicate.
     Filter(Predicate),

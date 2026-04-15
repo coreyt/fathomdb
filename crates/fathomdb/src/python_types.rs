@@ -142,6 +142,7 @@ impl From<PyQueryAst> for QueryAst {
                     direction: direction.into(),
                     label,
                     max_depth,
+                    filter: None,
                 },
                 PyQueryStep::FilterLogicalIdEq { logical_id } => {
                     QueryStep::Filter(Predicate::LogicalIdEq(logical_id))
@@ -210,6 +211,7 @@ impl From<PyQueryAst> for QueryAst {
                 direction: slot.direction.into(),
                 label: slot.label,
                 max_depth: slot.max_depth,
+                filter: None,
             })
             .collect();
 

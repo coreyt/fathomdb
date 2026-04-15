@@ -367,14 +367,18 @@ impl<'e> NodeQueryBuilder<'e> {
     }
 
     /// Add an expansion slot that traverses edges per root result.
+    ///
+    /// Pass `filter: None` to preserve the existing behavior. `filter: Some(_)` is
+    /// accepted by the AST but the compilation is not yet implemented (Pack 3).
     pub fn expand(
         mut self,
         slot: impl Into<String>,
         direction: fathomdb_query::TraverseDirection,
         label: impl Into<String>,
         max_depth: usize,
+        filter: Option<fathomdb_query::Predicate>,
     ) -> Self {
-        self.inner = self.inner.expand(slot, direction, label, max_depth);
+        self.inner = self.inner.expand(slot, direction, label, max_depth, filter);
         self
     }
 
@@ -711,14 +715,18 @@ impl TextSearchBuilder<'_> {
     /// Add an expansion slot. Applied when compiling via
     /// [`TextSearchBuilder::compile_grouped_query`]; ignored by
     /// [`TextSearchBuilder::execute`] in Phase 1.
+    ///
+    /// Pass `filter: None` to preserve the existing behavior. `filter: Some(_)` is
+    /// accepted by the AST but the compilation is not yet implemented (Pack 3).
     pub fn expand(
         mut self,
         slot: impl Into<String>,
         direction: fathomdb_query::TraverseDirection,
         label: impl Into<String>,
         max_depth: usize,
+        filter: Option<fathomdb_query::Predicate>,
     ) -> Self {
-        self.inner = self.inner.expand(slot, direction, label, max_depth);
+        self.inner = self.inner.expand(slot, direction, label, max_depth, filter);
         self
     }
 

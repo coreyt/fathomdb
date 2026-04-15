@@ -91,6 +91,7 @@ pub fn shape_signature(ast: &QueryAst) -> String {
                 direction,
                 label,
                 max_depth,
+                filter: _,
             } => {
                 let dir = match direction {
                     TraverseDirection::In => "in",

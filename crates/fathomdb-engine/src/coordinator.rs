@@ -3589,7 +3589,7 @@ mod tests {
 
         let compiled = QueryBuilder::nodes("Meeting")
             .text_search("meeting", 10)
-            .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1)
+            .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
             .limit(10)
             .compile_grouped()
             .expect("compiled grouped query");

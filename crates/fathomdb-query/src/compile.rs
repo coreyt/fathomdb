@@ -279,8 +279,16 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
             direction,
             label,
             max_depth,
+            filter,
         } = step
         {
+            // Pack 3 will inject the filter predicate into the CTE WHERE clause.
+            // Until then, guard against accidental non-None use in tests/callers.
+            debug_assert!(
+                filter.is_none(),
+                "traverse filter compilation is not yet implemented (Pack 3); \
+                 filter: Some(_) must not be passed until Pack 3 lands"
+            );
             Some((*direction, label.as_str(), *max_depth))
         } else {
             None
@@ -673,6 +681,17 @@ pub fn compile_grouped_query(ast: &QueryAst) -> Result<CompiledGroupedQuery, Com
         if !seen.insert(expansion.slot.clone()) {
             return Err(CompileError::DuplicateExpansionSlot(expansion.slot.clone()));
         }
+    }
+
+    // Pack 3 will compile expansion-slot filter predicates into SQL.
+    // Until then, guard against accidental non-None use.
+    for expansion in &ast.expansions {
+        debug_assert!(
+            expansion.filter.is_none(),
+            "expansion slot '{}' has a filter predicate, but traverse filter \
+             compilation is not yet implemented (Pack 3)",
+            expansion.slot
+        );
     }
 
     let mut root_ast = ast.clone();
@@ -1161,7 +1180,7 @@ mod tests {
         let left = compile_grouped_query(
             &QueryBuilder::nodes("Meeting")
                 .text_search("budget", 5)
-                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1)
+                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
                 .limit(10)
                 .into_ast(),
         )
@@ -1169,7 +1188,7 @@ mod tests {
         let right = compile_grouped_query(
             &QueryBuilder::nodes("Meeting")
                 .text_search("planning", 5)
-                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1)
+                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
                 .limit(10)
                 .into_ast(),
         )
@@ -1182,8 +1201,8 @@ mod tests {
     fn compile_grouped_rejects_duplicate_expansion_slot_names() {
         let result = compile_grouped_query(
             &QueryBuilder::nodes("Meeting")
-                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1)
-                .expand("tasks", TraverseDirection::Out, "HAS_DECISION", 1)
+                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
+                .expand("tasks", TraverseDirection::Out, "HAS_DECISION", 1, None)
                 .into_ast(),
         );
 
@@ -1197,7 +1216,7 @@ mod tests {
     fn flat_compile_rejects_queries_with_expansions() {
         let result = compile_query(
             &QueryBuilder::nodes("Meeting")
-                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1)
+                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
                 .into_ast(),
         );
 
@@ -1819,5 +1838,34 @@ mod tests {
             "Lowercase not should remain a literal term sequence; got {:?}",
             compiled.binds
         );
+    }
+
+    #[test]
+    fn traverse_filter_field_accepted_in_ast() {
+        // Regression test: QueryStep::Traverse must carry an optional filter
+        // predicate. filter: None must be exactly equivalent to the old
+        // three-field form. This test fails to compile before Pack 2 lands.
+        use crate::{Predicate, QueryStep};
+        let step = QueryStep::Traverse {
+            direction: TraverseDirection::Out,
+            label: "HAS_TASK".to_owned(),
+            max_depth: 1,
+            filter: None,
+        };
+        assert!(matches!(step, QueryStep::Traverse { filter: None, .. }));
+
+        let step_with_filter = QueryStep::Traverse {
+            direction: TraverseDirection::Out,
+            label: "HAS_TASK".to_owned(),
+            max_depth: 1,
+            filter: Some(Predicate::KindEq("Task".to_owned())),
+        };
+        assert!(matches!(
+            step_with_filter,
+            QueryStep::Traverse {
+                filter: Some(_),
+                ..
+            }
+        ));
     }
 }
