@@ -1663,3 +1663,83 @@ class LastAccessTouchReport:
     @classmethod
     def from_wire(cls, payload: dict[str, Any]) -> "LastAccessTouchReport":
         return cls(**payload)
+
+
+@dataclass(frozen=True)
+class FtsProfile:
+    """A registered FTS tokenizer profile for a node kind."""
+
+    kind: str
+    tokenizer: str
+    active_at: int | None
+    created_at: int
+
+    @classmethod
+    def from_wire(cls, d: dict) -> "FtsProfile":
+        return cls(
+            kind=d["kind"],
+            tokenizer=d["tokenizer"],
+            active_at=d.get("active_at"),
+            created_at=d["created_at"],
+        )
+
+
+@dataclass(frozen=True)
+class VecProfile:
+    """A registered vector embedding profile."""
+
+    model_identity: str
+    model_version: str | None
+    dimensions: int
+    active_at: int | None
+    created_at: int
+
+    @classmethod
+    def from_wire(cls, d: dict) -> "VecProfile":
+        return cls(
+            model_identity=d["model_identity"],
+            model_version=d.get("model_version"),
+            dimensions=d["dimensions"],
+            active_at=d.get("active_at"),
+            created_at=d["created_at"],
+        )
+
+
+@dataclass(frozen=True)
+class ImpactReport:
+    """Impact estimate for a projection rebuild operation."""
+
+    rows_to_rebuild: int
+    estimated_seconds: int
+    temp_db_size_bytes: int
+    current_tokenizer: str | None
+    target_tokenizer: str | None
+
+    @classmethod
+    def from_wire(cls, d: dict) -> "ImpactReport":
+        return cls(
+            rows_to_rebuild=d["rows_to_rebuild"],
+            estimated_seconds=d["estimated_seconds"],
+            temp_db_size_bytes=d["temp_db_size_bytes"],
+            current_tokenizer=d.get("current_tokenizer"),
+            target_tokenizer=d.get("target_tokenizer"),
+        )
+
+
+class RebuildMode(str, Enum):
+    """Execution mode for projection rebuild operations."""
+
+    SYNC = "sync"
+    ASYNC = "async"
+
+
+class RebuildImpactError(Exception):
+    """Raised when a rebuild is required and agree_to_rebuild_impact is not set."""
+
+    def __init__(self, report: ImpactReport):
+        self.report = report
+        super().__init__(
+            f"Rebuild required: {report.rows_to_rebuild} rows "
+            f"(~{report.estimated_seconds}s, ~{report.temp_db_size_bytes} bytes). "
+            f"Pass agree_to_rebuild_impact=True to proceed."
+        )

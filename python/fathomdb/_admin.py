@@ -7,9 +7,11 @@ from ._feedback import run_with_feedback
 from ._fathomdb import EngineCore
 from ._types import (
     FeedbackConfig,
+    FtsProfile,
     FtsPropertyPathMode,
     FtsPropertyPathSpec,
     FtsPropertySchemaRecord,
+    ImpactReport,
     IntegrityReport,
     LogicalPurgeReport,
     LogicalRestoreReport,
@@ -28,13 +30,24 @@ from ._types import (
     ProjectionRepairReport,
     ProjectionTarget,
     ProvenancePurgeReport,
+    RebuildImpactError,
+    RebuildMode,
     RebuildProgress,
     SafeExportManifest,
     SemanticReport,
     TraceReport,
+    VecProfile,
     VectorRegenerationConfig,
     VectorRegenerationReport,
 )
+
+TOKENIZER_PRESETS = {
+    "recall-optimized-english": "porter unicode61 remove_diacritics 2",
+    "precision-optimized": "unicode61 remove_diacritics 2",
+    "global-cjk": "icu",
+    "substring-trigram": "trigram",
+    "source-code": "unicode61 tokenchars '._-$@'",
+}
 
 
 class AdminClient:
@@ -521,6 +534,94 @@ class AdminClient:
         if payload is None:
             return None
         return RebuildProgress.from_wire(payload)
+
+    # ── FTS / Vec profile management ─────────────────────────────────
+
+    def configure_fts(
+        self,
+        kind: str,
+        tokenizer: str,
+        mode: RebuildMode = RebuildMode.ASYNC,
+        *,
+        agree_to_rebuild_impact: bool = False,
+    ) -> FtsProfile:
+        """Set the FTS tokenizer profile for a node kind.
+
+        Args:
+            kind: Node kind (e.g. ``"Book"``).
+            tokenizer: Tokenizer string or preset name.
+            mode: Rebuild mode (``SYNC`` or ``ASYNC``).
+            agree_to_rebuild_impact: If True, proceed even when rows must be
+                rebuilt. If False (default), raises :class:`RebuildImpactError`
+                when rows_to_rebuild > 0.
+        """
+        resolved = TOKENIZER_PRESETS.get(tokenizer, tokenizer)
+        impact_json = self._core.preview_projection_impact(kind, "fts")
+        impact = ImpactReport.from_wire(json.loads(impact_json))
+        if impact.rows_to_rebuild > 0 and not agree_to_rebuild_impact:
+            raise RebuildImpactError(impact)
+        request = json.dumps({"kind": kind, "tokenizer": resolved})
+        result_json = self._core.set_fts_profile(request)
+        return FtsProfile.from_wire(json.loads(result_json))
+
+    def configure_vec(
+        self,
+        embedder,
+        mode: RebuildMode = RebuildMode.ASYNC,
+        *,
+        agree_to_rebuild_impact: bool = False,
+    ) -> VecProfile:
+        """Set the vector embedding profile from an embedder.
+
+        Args:
+            embedder: A QueryEmbedder whose ``identity()`` provides the profile.
+            mode: Rebuild mode (``SYNC`` or ``ASYNC``).
+            agree_to_rebuild_impact: If True, proceed even when rows must be
+                rebuilt. If False (default), raises :class:`RebuildImpactError`
+                when rows_to_rebuild > 0.
+        """
+        identity = embedder.identity()
+        impact_json = self._core.preview_projection_impact("*", "vec")
+        impact = ImpactReport.from_wire(json.loads(impact_json))
+        if impact.rows_to_rebuild > 0 and not agree_to_rebuild_impact:
+            raise RebuildImpactError(impact)
+        config = json.dumps(
+            {
+                "model_identity": identity.model_identity,
+                "model_version": identity.model_version,
+                "dimensions": identity.dimensions,
+                "normalization_policy": identity.normalization_policy,
+            }
+        )
+        self._core.set_vec_profile(config)
+        result_json = self._core.get_vec_profile()
+        return VecProfile.from_wire(json.loads(result_json))
+
+    def preview_projection_impact(self, kind: str, target: str) -> ImpactReport:
+        """Return an impact estimate for changing the projection for *kind*.
+
+        Args:
+            kind: Node kind (or ``"*"`` for all kinds for vec).
+            target: ``"fts"`` or ``"vec"``.
+        """
+        result_json = self._core.preview_projection_impact(kind, target)
+        return ImpactReport.from_wire(json.loads(result_json))
+
+    def get_fts_profile(self, kind: str) -> FtsProfile | None:
+        """Return the FTS profile for *kind*, or ``None`` if not set."""
+        result_json = self._core.get_fts_profile(kind)
+        d = json.loads(result_json)
+        if d is None:
+            return None
+        return FtsProfile.from_wire(d)
+
+    def get_vec_profile(self) -> VecProfile | None:
+        """Return the current vector embedding profile, or ``None`` if not set."""
+        result_json = self._core.get_vec_profile()
+        d = json.loads(result_json)
+        if d is None:
+            return None
+        return VecProfile.from_wire(d)
 
     # ── Operational collection lifecycle ──────────────────────────────
 
