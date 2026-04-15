@@ -110,14 +110,16 @@ fn rebuild_loop(
 
     let mut conn = match sqlite::open_connection(database_path) {
         Ok(conn) => conn,
-        Err(error) => {
-            trace_error!(error = %error, "rebuild thread: database connection failed");
+        #[allow(clippy::used_underscore_binding)]
+        Err(_error) => {
+            trace_error!(error = %_error, "rebuild thread: database connection failed");
             return;
         }
     };
 
-    if let Err(error) = schema_manager.bootstrap(&conn) {
-        trace_error!(error = %error, "rebuild thread: schema bootstrap failed");
+    #[allow(clippy::used_underscore_binding)]
+    if let Err(_error) = schema_manager.bootstrap(&conn) {
+        trace_error!(error = %_error, "rebuild thread: schema bootstrap failed");
         return;
     }
 
