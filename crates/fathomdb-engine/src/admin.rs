@@ -1794,19 +1794,18 @@ impl AdminService {
         // request is dropped. The state row stays PENDING and the caller can
         // observe this via get_property_fts_rebuild_state. No automatic retry
         // in 0.4.1 — caller must re-invoke register to re-enqueue.
-        if let Some(sender) = &self.rebuild_sender {
-            if sender
+        if let Some(sender) = &self.rebuild_sender
+            && sender
                 .try_send(RebuildRequest {
                     kind: kind.to_owned(),
                     schema_id,
                 })
                 .is_err()
-            {
-                trace_warn!(
-                    kind = %kind,
-                    "rebuild channel full; rebuild request dropped — state remains PENDING"
-                );
-            }
+        {
+            trace_warn!(
+                kind = %kind,
+                "rebuild channel full; rebuild request dropped — state remains PENDING"
+            );
         }
 
         self.describe_fts_property_schema(kind)?.ok_or_else(|| {
@@ -1859,6 +1858,25 @@ impl AdminService {
             |r| r.get(0),
         )?;
         Ok(count)
+    }
+
+    /// Return whether a specific node is present in `fts_property_rebuild_staging`.
+    /// Used by tests to verify the double-write path.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the database query fails.
+    pub fn staging_row_exists(
+        &self,
+        kind: &str,
+        node_logical_id: &str,
+    ) -> Result<bool, EngineError> {
+        let conn = self.connect()?;
+        let count: i64 = conn.query_row(
+            "SELECT count(*) FROM fts_property_rebuild_staging WHERE kind = ?1 AND node_logical_id = ?2",
+            rusqlite::params![kind, node_logical_id],
+            |r| r.get(0),
+        )?;
+        Ok(count > 0)
     }
 
     /// Return the FTS property schema for a single node kind, if registered.

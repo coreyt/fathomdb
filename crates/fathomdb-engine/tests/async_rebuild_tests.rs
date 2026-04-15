@@ -6,6 +6,7 @@ use fathomdb_engine::{
     ChunkPolicy, EngineRuntime, FtsPropertyPathSpec, NodeInsert, NodeRetire, ProvenanceMode,
     RebuildMode, TelemetryLevel, WriteRequest,
 };
+use fathomdb_query::QueryBuilder;
 
 fn open_engine(dir: &tempfile::TempDir) -> EngineRuntime {
     EngineRuntime::open(
@@ -251,15 +252,14 @@ fn wait_for_state(
         let state = svc
             .get_property_fts_rebuild_state(kind)
             .expect("get_property_fts_rebuild_state");
-        if let Some(row) = state {
-            if targets.iter().any(|t| row.state == *t) {
-                return row.state.clone();
-            }
+        if let Some(row) = state
+            && targets.iter().any(|t| row.state == *t)
+        {
+            return row.state.clone();
         }
         assert!(
             Instant::now() <= deadline,
-            "timed out waiting for kind={kind} to reach state in {:?}",
-            targets
+            "timed out waiting for kind={kind} to reach state in {targets:?}"
         );
     }
 }
@@ -379,8 +379,9 @@ fn delete_during_rebuild_removes_from_both_tables() {
     );
 }
 
-/// Test C: first registration under Async — queries during PENDING/BUILDING
-/// return results via JSON scan fallback (not empty, not an error).
+/// Test C: first registration under Async — the coordinator's property-FTS
+/// query uses JSON scan fallback when `is_first_registration=1` and state is
+/// PENDING/BUILDING (no FTS5 rows exist yet).
 #[test]
 fn read_during_first_registration_uses_scan_fallback() {
     let dir = tempfile::tempdir().expect("temp dir");
@@ -419,24 +420,29 @@ fn read_during_first_registration_uses_scan_fallback() {
         "expected is_first_registration=true for first async registration"
     );
 
-    // While state is still PENDING/BUILDING, execute a query. The scan
-    // fallback should return results.
-    // (Don't wait for SWAPPING — we want to test the fallback window.)
-    let conn = engine.coordinator().lock_connection_for_test();
-    let rows: Vec<String> = {
-        let mut stmt = conn
-            .prepare(
-                "SELECT logical_id FROM nodes \
-                 WHERE kind = 'ScanNote' AND superseded_at IS NULL \
-                 AND json_extract(properties, '$.body') LIKE '%findme%'",
-            )
-            .expect("prepare scan");
-        stmt.query_map([], |r| r.get::<_, String>(0))
-            .expect("query map")
-            .map(|r| r.expect("row"))
-            .collect()
-    };
-    assert_eq!(rows.len(), 3, "scan fallback should return 3 nodes");
+    // While state is still PENDING/BUILDING, execute a property-FTS query via
+    // the coordinator. The scan fallback should return results even though the
+    // FTS5 table has no rows for this kind yet.
+    let compiled = QueryBuilder::nodes("ScanNote")
+        .text_search("findme", 10)
+        .limit(10)
+        .compile()
+        .expect("compiled query");
+
+    let rows = engine
+        .coordinator()
+        .execute_compiled_read(&compiled)
+        .expect("execute read during first-registration rebuild");
+
+    assert!(
+        !rows.nodes.is_empty(),
+        "scan fallback should return nodes during first-registration rebuild, got 0 results"
+    );
+    assert_eq!(
+        rows.nodes.len(),
+        3,
+        "scan fallback should return all 3 matching nodes"
+    );
 }
 
 /// Test D: re-registration under Async — queries during PENDING/BUILDING use
@@ -446,7 +452,21 @@ fn read_during_re_registration_uses_live_fts_table() {
     let dir = tempfile::tempdir().expect("temp dir");
     let engine = open_engine(&dir);
 
-    // Insert nodes.
+    let svc = engine.admin().service();
+
+    // First registration under Eager (schema must be registered BEFORE inserting
+    // nodes so the writer populates fts_node_properties during the inserts).
+    svc.register_fts_property_schema_with_entries(
+        "ReregKind",
+        &[FtsPropertyPathSpec::scalar("$.title")],
+        None,
+        &[],
+        RebuildMode::Eager,
+    )
+    .expect("register eager");
+
+    // Insert nodes AFTER schema is registered so the writer populates
+    // fts_node_properties for each node at write time.
     for i in 0..3u32 {
         let node = make_node(
             &format!("rereg:{i}"),
@@ -458,18 +478,6 @@ fn read_during_re_registration_uses_live_fts_table() {
             .submit(make_write_request(&format!("seed-{i}"), vec![node]))
             .expect("write node");
     }
-
-    let svc = engine.admin().service();
-
-    // First registration under Eager — populates live FTS table synchronously.
-    svc.register_fts_property_schema_with_entries(
-        "ReregKind",
-        &[FtsPropertyPathSpec::scalar("$.title")],
-        None,
-        &[],
-        RebuildMode::Eager,
-    )
-    .expect("register eager");
 
     // Now re-register under Async — this is a re-registration (is_first_registration=0).
     svc.register_fts_property_schema_with_entries(
@@ -491,18 +499,22 @@ fn read_during_re_registration_uses_live_fts_table() {
         "expected is_first_registration=false for re-registration"
     );
 
-    // While in PENDING/BUILDING, query via the FTS5 table. Rows should exist
-    // in `fts_node_properties` from the eager registration.
-    let conn = rusqlite::Connection::open(dir.path().join("test.db")).expect("open raw connection");
-    let count: i64 = conn
-        .query_row(
-            "SELECT count(*) FROM fts_node_properties WHERE kind = 'ReregKind'",
-            [],
-            |r| r.get(0),
-        )
-        .expect("count live fts");
+    // Query via the coordinator during PENDING/BUILDING. The existing live FTS
+    // rows (from the eager registration) should be used — no scan fallback.
+    let compiled = QueryBuilder::nodes("ReregKind")
+        .text_search("rereg", 10)
+        .limit(10)
+        .compile()
+        .expect("compiled query");
+
+    let rows = engine
+        .coordinator()
+        .execute_compiled_read(&compiled)
+        .expect("execute read during re-registration rebuild");
+
     assert_eq!(
-        count, 3,
-        "re-registration should leave existing FTS rows intact for reads during rebuild"
+        rows.nodes.len(),
+        3,
+        "re-registration should use live FTS table and return all 3 nodes"
     );
 }

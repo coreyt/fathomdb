@@ -1781,6 +1781,11 @@ fn apply_write(
             tx.prepare_cached("DELETE FROM fts_node_properties WHERE node_logical_id = ?1")?;
         let mut del_prop_positions = tx
             .prepare_cached("DELETE FROM fts_node_property_positions WHERE node_logical_id = ?1")?;
+        // Double-write cleanup: also remove staging rows for this node so that a
+        // rebuild-in-progress does not re-insert a retired node at swap time.
+        let mut del_staging = tx.prepare_cached(
+            "DELETE FROM fts_property_rebuild_staging WHERE node_logical_id = ?1",
+        )?;
         let mut sup_node = tx.prepare_cached(
             "UPDATE nodes SET superseded_at = unixepoch() \
              WHERE logical_id = ?1 AND superseded_at IS NULL",
@@ -1793,6 +1798,7 @@ fn apply_write(
             del_fts.execute(params![retire.logical_id])?;
             del_prop_fts.execute(params![retire.logical_id])?;
             del_prop_positions.execute(params![retire.logical_id])?;
+            del_staging.execute(params![retire.logical_id])?;
             sup_node.execute(params![retire.logical_id])?;
             ins_event.execute(params![new_id(), retire.logical_id, retire.source_ref])?;
         }
@@ -2178,6 +2184,33 @@ fn apply_write(
                     i64::try_from(pos.end_offset).unwrap_or(i64::MAX),
                     pos.leaf_path,
                 ])?;
+            }
+        }
+    }
+
+    // Double-write to staging: for nodes whose kind has an active rebuild
+    // (state IN ('PENDING','BUILDING','SWAPPING')), upsert the precomputed
+    // text_content into fts_property_rebuild_staging.  Both this upsert and
+    // the fts_node_properties insert above happen inside the same transaction.
+    if !prepared.required_property_fts_rows.is_empty() {
+        let mut ins_staging = tx.prepare_cached(
+            "INSERT INTO fts_property_rebuild_staging \
+             (kind, node_logical_id, text_content) \
+             VALUES (?1, ?2, ?3) \
+             ON CONFLICT(kind, node_logical_id) DO UPDATE \
+             SET text_content = excluded.text_content",
+        )?;
+        let mut check_rebuild = tx.prepare_cached(
+            "SELECT 1 FROM fts_property_rebuild_state \
+             WHERE kind = ?1 AND state IN ('PENDING','BUILDING','SWAPPING') LIMIT 1",
+        )?;
+        for row in &prepared.required_property_fts_rows {
+            let in_rebuild: bool = check_rebuild
+                .query_row(params![row.kind], |_| Ok(true))
+                .optional()?
+                .unwrap_or(false);
+            if in_rebuild {
+                ins_staging.execute(params![row.kind, row.node_logical_id, row.text_content])?;
             }
         }
     }
