@@ -1,39 +1,94 @@
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
-// Locate the freshly-built fathomdb native binding for the real-engine
-// integration tests. The test suite expects `cargo build -p fathomdb
-// --features node` to have already been run from the repo root, producing
-// `target/debug/libfathomdb.so` (or the platform equivalent).
+// Locate the fathomdb native binding for the real-engine integration tests.
 //
-// We copy the raw cdylib into a stable location under this package and
-// expose it to the test workers via the FATHOMDB_NATIVE_BINDING env var.
-// `src/native.ts` consults that env var first when resolving the binding.
+// Resolution order:
+//   1. FATHOMDB_NATIVE_BINDING env var (absolute path to a .node file)
+//   2. Prebuilt .node files in the prebuilds/ directory (platform-specific)
+//   3. Freshly-built cdylib from `cargo build -p fathomdb --features node`
+//
+// When a cdylib is found it is copied to test/.native/fathomdb.node and
+// FATHOMDB_NATIVE_BINDING is set so `src/native.ts` uses it directly.
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "../../..");
-const candidateSources = [
-  // Linux
-  resolve(repoRoot, "target/debug/libfathomdb.so"),
-  resolve(repoRoot, "target/release/libfathomdb.so"),
-  // macOS
-  resolve(repoRoot, "target/debug/libfathomdb.dylib"),
-  resolve(repoRoot, "target/release/libfathomdb.dylib"),
-  // Windows
-  resolve(repoRoot, "target/debug/fathomdb.dll"),
-  resolve(repoRoot, "target/release/fathomdb.dll"),
-];
-const source = candidateSources.find((candidate) => existsSync(candidate));
-if (!source) {
-  throw new Error(
-    "Missing native binding build output. Run `cargo build -p fathomdb --features node` from the repo root before running the TypeScript test suite.",
-  );
+
+// If an explicit env var is set, use it directly (no copy needed).
+const envBinding = process.env.FATHOMDB_NATIVE_BINDING;
+let targetPath: string;
+
+if (envBinding && existsSync(envBinding)) {
+  targetPath = envBinding;
+} else {
+  // Check for prebuilt .node files first (platform-specific then generic).
+  // Also look in the main git worktree when running from a linked worktree,
+  // since binary prebuilds are not committed and may only exist in the main tree.
+  const platform = process.platform === "win32" ? "win32" : process.platform === "darwin" ? "darwin" : "linux";
+  const arch = process.arch;
+  const prebuildsDir = resolve(here, "prebuilds");
+
+  // Detect if we are inside a git linked worktree. When we are, repoRoot/.git
+  // is a plain file (not a directory) containing "gitdir: <path>".
+  const repoGitPath = resolve(repoRoot, ".git");
+  let mainWorktreePrebuildsDir: string | null = null;
+  try {
+    const stat = statSync(repoGitPath);
+    if (stat.isFile()) {
+      // Parse "gitdir: /abs/path/to/.git/worktrees/<name>" from the file.
+      const gitdirLine = readFileSync(repoGitPath, "utf8").trim();
+      const match = gitdirLine.match(/^gitdir:\s*(.+)$/);
+      if (match) {
+        // The main worktree's .git dir is two levels above the worktrees/<name> dir.
+        const worktreesGitDir = resolve(match[1], "../..");
+        const mainWorkTree = resolve(worktreesGitDir, "..");
+        mainWorktreePrebuildsDir = resolve(mainWorkTree, "typescript/packages/fathomdb/prebuilds");
+      }
+    }
+  } catch {
+    // Not a git repo or stat failed; ignore.
+  }
+
+  const prebuildCandidates = [
+    resolve(prebuildsDir, `fathomdb.${platform}-${arch}.node`),
+    resolve(prebuildsDir, "fathomdb.node"),
+    ...(mainWorktreePrebuildsDir
+      ? [
+          resolve(mainWorktreePrebuildsDir, `fathomdb.${platform}-${arch}.node`),
+          resolve(mainWorktreePrebuildsDir, "fathomdb.node"),
+        ]
+      : []),
+  ];
+  const prebuild = prebuildCandidates.find((p) => existsSync(p));
+
+  if (prebuild) {
+    targetPath = prebuild;
+  } else {
+    // Fall back to a freshly-built cdylib.
+    const cdylibCandidates = [
+      // Linux
+      resolve(repoRoot, "target/debug/libfathomdb.so"),
+      resolve(repoRoot, "target/release/libfathomdb.so"),
+      // macOS
+      resolve(repoRoot, "target/debug/libfathomdb.dylib"),
+      resolve(repoRoot, "target/release/libfathomdb.dylib"),
+      // Windows
+      resolve(repoRoot, "target/debug/fathomdb.dll"),
+      resolve(repoRoot, "target/release/fathomdb.dll"),
+    ];
+    const source = cdylibCandidates.find((candidate) => existsSync(candidate));
+    if (!source) {
+      throw new Error(
+        "Missing native binding. Either place a prebuilt .node in prebuilds/ or run `cargo build -p fathomdb --features node` from the repo root.",
+      );
+    }
+    const targetDir = resolve(here, "test/.native");
+    mkdirSync(targetDir, { recursive: true });
+    targetPath = resolve(targetDir, "fathomdb.node");
+    copyFileSync(source, targetPath);
+  }
 }
-const targetDir = resolve(here, "test/.native");
-mkdirSync(targetDir, { recursive: true });
-const targetPath = resolve(targetDir, "fathomdb.node");
-copyFileSync(source, targetPath);
 
 export default defineConfig({
   test: {
