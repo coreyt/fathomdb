@@ -313,17 +313,23 @@ pub(crate) enum PropertyPathMode {
 }
 
 /// A single registered property-FTS path with its extraction mode.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct PropertyPathEntry {
     pub path: String,
     pub mode: PropertyPathMode,
+    /// Optional BM25 weight multiplier parsed from the rich JSON format.
+    pub weight: Option<f32>,
 }
+
+// f32 does not implement Eq (due to NaN), but weights are always finite in practice.
+impl Eq for PropertyPathEntry {}
 
 impl PropertyPathEntry {
     pub(crate) fn scalar(path: impl Into<String>) -> Self {
         Self {
             path: path.into(),
             mode: PropertyPathMode::Scalar,
+            weight: None,
         }
     }
 
@@ -332,6 +338,7 @@ impl PropertyPathEntry {
         Self {
             path: path.into(),
             mode: PropertyPathMode::Recursive,
+            weight: None,
         }
     }
 }
@@ -1396,9 +1403,15 @@ pub(crate) fn parse_property_schema_json(paths_json: &str, separator: &str) -> P
                         _ => PropertyPathMode::Scalar,
                     },
                 );
+                #[allow(clippy::cast_possible_truncation)]
+                let weight = map
+                    .get("weight")
+                    .and_then(serde_json::Value::as_f64)
+                    .map(|w| w as f32);
                 paths.push(PropertyPathEntry {
                     path: path.to_owned(),
                     mode,
+                    weight,
                 });
                 if let Some(serde_json::Value::Array(excl)) = map.get("exclude_paths") {
                     for p in excl {
@@ -7896,6 +7909,23 @@ mod tests {
             );
             assert!(combined.is_none());
             assert!(positions.is_empty());
+        }
+    }
+
+    mod parse_property_schema_json_tests {
+        use super::super::parse_property_schema_json;
+
+        #[test]
+        fn parse_property_schema_json_preserves_weight() {
+            let json = r#"[{"path":"$.title","mode":"scalar","weight":2.0},{"path":"$.body","mode":"scalar"}]"#;
+            let schema = parse_property_schema_json(json, " ");
+            assert_eq!(schema.paths.len(), 2);
+            let title = &schema.paths[0];
+            assert_eq!(title.path, "$.title");
+            assert_eq!(title.weight, Some(2.0_f32));
+            let body = &schema.paths[1];
+            assert_eq!(body.path, "$.body");
+            assert_eq!(body.weight, None);
         }
     }
 }

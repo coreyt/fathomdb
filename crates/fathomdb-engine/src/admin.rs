@@ -86,13 +86,21 @@ pub enum FtsPropertyPathMode {
 }
 
 /// A single registered property-FTS path with its extraction mode.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct FtsPropertyPathSpec {
     /// JSON path to the property (must start with `$.`).
     pub path: String,
     /// Whether to treat this path as a scalar or recursively walk it.
     pub mode: FtsPropertyPathMode,
+    /// Optional BM25 weight multiplier for this path (1.0 = default).
+    /// Must satisfy `0.0 < weight <= 1000.0` when set.
+    pub weight: Option<f32>,
 }
+
+// f32 does not implement Eq (due to NaN), but weights in practice are
+// always finite values set by callers, so reflexivity holds.
+impl Eq for FtsPropertyPathSpec {}
 
 impl FtsPropertyPathSpec {
     #[must_use]
@@ -100,6 +108,7 @@ impl FtsPropertyPathSpec {
         Self {
             path: path.into(),
             mode: FtsPropertyPathMode::Scalar,
+            weight: None,
         }
     }
 
@@ -108,7 +117,19 @@ impl FtsPropertyPathSpec {
         Self {
             path: path.into(),
             mode: FtsPropertyPathMode::Recursive,
+            weight: None,
         }
+    }
+
+    /// Set the BM25 weight multiplier for this path.
+    ///
+    /// The weight must satisfy `0.0 < weight <= 1000.0` at registration
+    /// time; this builder method does not validate — validation happens in
+    /// `register_fts_property_schema_with_entries`.
+    #[must_use]
+    pub fn with_weight(mut self, weight: f32) -> Self {
+        self.weight = Some(weight);
+        self
     }
 }
 
@@ -1570,6 +1591,15 @@ impl AdminService {
                 )));
             }
         }
+        for e in entries {
+            if let Some(w) = e.weight
+                && !(w > 0.0 && w <= 1000.0)
+            {
+                return Err(EngineError::Bridge(format!(
+                    "weight out of range: {w} (must satisfy 0.0 < weight <= 1000.0)"
+                )));
+            }
+        }
         let separator = separator.unwrap_or(" ");
         let paths_json = serialize_property_paths_json(entries, exclude_paths)?;
 
@@ -1582,9 +1612,13 @@ impl AdminService {
                 &paths,
                 &paths_json,
             ),
-            RebuildMode::Async => {
-                self.register_fts_property_schema_async(kind, separator, &paths, &paths_json)
-            }
+            RebuildMode::Async => self.register_fts_property_schema_async(
+                kind,
+                entries,
+                separator,
+                &paths,
+                &paths_json,
+            ),
         }
     }
 
@@ -1652,23 +1686,35 @@ impl AdminService {
         let _ = (introduces_new_recursive, had_previous_schema);
         let needs_rebuild = true;
         if needs_rebuild {
-            // Ensure the per-kind FTS table exists (may not if no rows written yet for this kind).
-            let table = fathomdb_schema::fts_kind_table_name(kind);
-            let tok = fathomdb_schema::DEFAULT_FTS_TOKENIZER;
-            tx.execute_batch(&format!(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS {table} \
-                 USING fts5(node_logical_id UNINDEXED, text_content, tokenize = '{tok}')"
-            ))?;
-            tx.execute_batch(&format!("DELETE FROM {table}"))?;
-            tx.execute(
-                "DELETE FROM fts_node_property_positions WHERE kind = ?1",
-                [kind],
-            )?;
-            // Scope the rebuild to `kind` only. The multi-kind
-            // `insert_property_fts_rows` iterates over every registered
-            // schema and would re-insert rows for siblings that were not
-            // deleted above, duplicating their FTS entries.
-            crate::projection::insert_property_fts_rows_for_kind(&tx, kind)?;
+            let any_weight = entries.iter().any(|e| e.weight.is_some());
+            let tok = fathomdb_schema::resolve_fts_tokenizer(&tx, kind)
+                .map_err(|e| EngineError::Bridge(e.to_string()))?;
+            if any_weight {
+                // Per-spec column mode: drop and recreate the table with one column
+                // per spec. Data population into per-spec columns is future work;
+                // the table is left empty after recreation.
+                create_or_replace_fts_kind_table(&tx, kind, entries, &tok)?;
+                tx.execute(
+                    "DELETE FROM fts_node_property_positions WHERE kind = ?1",
+                    [kind],
+                )?;
+                // Skip insert_property_fts_rows_for_kind — it uses text_content
+                // which is not present in the per-spec column layout.
+            } else {
+                // Legacy text_content mode: drop and recreate the table to ensure
+                // the correct single-column layout (handles weighted-to-unweighted
+                // downgrade where a stale per-spec table might otherwise remain).
+                create_or_replace_fts_kind_table(&tx, kind, &[], &tok)?;
+                tx.execute(
+                    "DELETE FROM fts_node_property_positions WHERE kind = ?1",
+                    [kind],
+                )?;
+                // Scope the rebuild to `kind` only. The multi-kind
+                // `insert_property_fts_rows` iterates over every registered
+                // schema and would re-insert rows for siblings that were not
+                // deleted above, duplicating their FTS entries.
+                crate::projection::insert_property_fts_rows_for_kind(&tx, kind)?;
+            }
         }
 
         persist_simple_provenance_event(
@@ -1693,6 +1739,7 @@ impl AdminService {
     fn register_fts_property_schema_async(
         &self,
         kind: &str,
+        entries: &[FtsPropertyPathSpec],
         separator: &str,
         paths: &[String],
         paths_json: &str,
@@ -1717,6 +1764,20 @@ impl AdminService {
              ON CONFLICT(kind) DO UPDATE SET property_paths_json = ?2, separator = ?3",
             rusqlite::params![kind, paths_json, separator],
         )?;
+
+        // Always drop and recreate the per-kind FTS table to ensure the schema
+        // matches the registered spec layout. This handles weighted-to-unweighted
+        // downgrade where a stale per-spec table would otherwise remain.
+        let any_weight = entries.iter().any(|e| e.weight.is_some());
+        let tok = fathomdb_schema::resolve_fts_tokenizer(&tx, kind)
+            .map_err(|e| EngineError::Bridge(e.to_string()))?;
+        if any_weight {
+            create_or_replace_fts_kind_table(&tx, kind, entries, &tok)?;
+        } else {
+            // Legacy text_content layout — pass empty specs so
+            // create_or_replace_fts_kind_table uses the single text_content column.
+            create_or_replace_fts_kind_table(&tx, kind, &[], &tok)?;
+        }
 
         // Retrieve the rowid of the schema row as schema_id.
         let schema_id: i64 = tx.query_row(
@@ -3354,13 +3415,14 @@ fn serialize_property_paths_json(
     entries: &[FtsPropertyPathSpec],
     exclude_paths: &[String],
 ) -> Result<String, EngineError> {
-    // Scalar-only schemas with no exclude_paths are serialised in the
-    // legacy shape (bare array of strings) for full backwards
-    // compatibility with earlier schema versions.
+    // Scalar-only schemas with no exclude_paths and no weights are
+    // serialised in the legacy shape (bare array of strings) for full
+    // backwards compatibility with earlier schema versions.
     let all_scalar = entries
         .iter()
         .all(|e| e.mode == FtsPropertyPathMode::Scalar);
-    if all_scalar && exclude_paths.is_empty() {
+    let any_weight = entries.iter().any(|e| e.weight.is_some());
+    if all_scalar && exclude_paths.is_empty() && !any_weight {
         let paths: Vec<&str> = entries.iter().map(|e| e.path.as_str()).collect();
         return serde_json::to_string(&paths).map_err(|e| {
             EngineError::InvalidWrite(format!("failed to serialize property paths: {e}"))
@@ -3375,7 +3437,11 @@ fn serialize_property_paths_json(
                 FtsPropertyPathMode::Scalar => "scalar",
                 FtsPropertyPathMode::Recursive => "recursive",
             };
-            serde_json::json!({ "path": e.path, "mode": mode_str })
+            let mut entry = serde_json::json!({ "path": e.path, "mode": mode_str });
+            if let Some(w) = e.weight {
+                entry["weight"] = serde_json::json!(w);
+            }
+            entry
         })
         .collect();
     obj.insert("paths".to_owned(), serde_json::Value::Array(paths_json));
@@ -3384,6 +3450,52 @@ fn serialize_property_paths_json(
     }
     serde_json::to_string(&serde_json::Value::Object(obj))
         .map_err(|e| EngineError::InvalidWrite(format!("failed to serialize property paths: {e}")))
+}
+
+/// Drop and recreate the per-kind FTS5 virtual table with one column per spec.
+///
+/// The tokenizer string is validated before interpolation into DDL to
+/// prevent SQL injection.  If `specs` is empty a single `text_content`
+/// column is used (matching the migration-21 baseline shape).
+fn create_or_replace_fts_kind_table(
+    conn: &rusqlite::Connection,
+    kind: &str,
+    specs: &[FtsPropertyPathSpec],
+    tokenizer: &str,
+) -> Result<(), EngineError> {
+    let table = fathomdb_schema::fts_kind_table_name(kind);
+
+    // Validate tokenizer string: only alphanumeric, spaces, apostrophes, underscores.
+    if !tokenizer
+        .chars()
+        .all(|c| c.is_alphanumeric() || " '_".contains(c))
+    {
+        return Err(EngineError::Bridge(format!(
+            "invalid tokenizer string: {tokenizer:?}"
+        )));
+    }
+
+    let cols: Vec<String> = if specs.is_empty() {
+        vec![
+            "node_logical_id UNINDEXED".to_owned(),
+            "text_content".to_owned(),
+        ]
+    } else {
+        std::iter::once("node_logical_id UNINDEXED".to_owned())
+            .chain(specs.iter().map(|s| {
+                let is_recursive = matches!(s.mode, FtsPropertyPathMode::Recursive);
+                fathomdb_schema::fts_column_name(&s.path, is_recursive)
+            }))
+            .collect()
+    };
+
+    conn.execute_batch(&format!(
+        "DROP TABLE IF EXISTS {table}; \
+         CREATE VIRTUAL TABLE {table} USING fts5({cols}, tokenize='{tokenizer}');",
+        cols = cols.join(", "),
+    ))?;
+
+    Ok(())
 }
 
 fn validate_fts_property_paths(paths: &[String]) -> Result<(), EngineError> {
@@ -3469,6 +3581,7 @@ fn build_fts_property_schema_record(
                 crate::writer::PropertyPathMode::Scalar => FtsPropertyPathMode::Scalar,
                 crate::writer::PropertyPathMode::Recursive => FtsPropertyPathMode::Recursive,
             },
+            weight: entry.weight,
         })
         .collect();
     let property_paths: Vec<String> = entries.iter().map(|e| e.path.clone()).collect();
@@ -9462,6 +9575,292 @@ mod tests {
         assert_eq!(
             per_kind_count, 0,
             "per-kind table must be empty after schema removal"
+        );
+    }
+
+    // --- B-1: weight field tests ---
+
+    #[test]
+    fn fts_path_spec_with_weight_builder() {
+        let spec = FtsPropertyPathSpec::scalar("$.title").with_weight(5.0);
+        assert_eq!(spec.weight, Some(5.0));
+        assert_eq!(spec.path, "$.title");
+        assert_eq!(spec.mode, FtsPropertyPathMode::Scalar);
+    }
+
+    #[test]
+    fn fts_path_spec_serialize_with_weight() {
+        use super::serialize_property_paths_json;
+        let entries = vec![
+            FtsPropertyPathSpec::scalar("$.title").with_weight(2.0),
+            FtsPropertyPathSpec::scalar("$.body"),
+        ];
+        let json = serialize_property_paths_json(&entries, &[]).expect("serialize");
+        // Must use rich object format because a weight is present
+        let v: serde_json::Value = serde_json::from_str(&json).expect("parse");
+        let paths = v
+            .get("paths")
+            .expect("paths key")
+            .as_array()
+            .expect("array");
+        assert_eq!(paths.len(), 2);
+        // First entry has weight
+        assert_eq!(
+            paths[0].get("path").and_then(serde_json::Value::as_str),
+            Some("$.title")
+        );
+        assert_eq!(
+            paths[0].get("weight").and_then(serde_json::Value::as_f64),
+            Some(2.0)
+        );
+        // Second entry has no weight field
+        assert!(
+            paths[1].get("weight").is_none(),
+            "unweighted spec must omit weight field"
+        );
+    }
+
+    #[test]
+    fn fts_path_spec_serialize_no_weights() {
+        use super::serialize_property_paths_json;
+        let entries = vec![
+            FtsPropertyPathSpec::scalar("$.title"),
+            FtsPropertyPathSpec::scalar("$.payload"),
+        ];
+        let json = serialize_property_paths_json(&entries, &[]).expect("serialize");
+        // Must use bare string array (backward compat)
+        let v: serde_json::Value = serde_json::from_str(&json).expect("parse");
+        assert!(
+            v.is_array(),
+            "all-scalar no-weight schema must serialize as bare string array"
+        );
+        let arr = v.as_array().expect("array");
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0].as_str(), Some("$.title"));
+        assert_eq!(arr[1].as_str(), Some("$.payload"));
+    }
+
+    #[test]
+    fn fts_weight_validation_out_of_range() {
+        let (_db, service) = setup();
+        // weight = 0.0 must be rejected
+        let entries_zero = vec![FtsPropertyPathSpec::scalar("$.title").with_weight(0.0)];
+        let result = service.register_fts_property_schema_with_entries(
+            "Article",
+            &entries_zero,
+            None,
+            &[],
+            crate::rebuild_actor::RebuildMode::Eager,
+        );
+        assert!(result.is_err(), "weight 0.0 must be rejected");
+        let err_msg = result.expect_err("weight 0.0 must be rejected").to_string();
+        assert!(
+            err_msg.contains("weight"),
+            "error must mention weight: {err_msg}"
+        );
+
+        // weight = 1001.0 must be rejected
+        let entries_big = vec![FtsPropertyPathSpec::scalar("$.title").with_weight(1001.0)];
+        let result = service.register_fts_property_schema_with_entries(
+            "Article",
+            &entries_big,
+            None,
+            &[],
+            crate::rebuild_actor::RebuildMode::Eager,
+        );
+        assert!(result.is_err(), "weight 1001.0 must be rejected");
+    }
+
+    #[test]
+    fn fts_weight_validation_valid() {
+        let (_db, service) = setup();
+        let entries = vec![FtsPropertyPathSpec::scalar("$.title").with_weight(10.0)];
+        let result = service.register_fts_property_schema_with_entries(
+            "Article",
+            &entries,
+            None,
+            &[],
+            crate::rebuild_actor::RebuildMode::Eager,
+        );
+        assert!(
+            result.is_ok(),
+            "weight 10.0 must be accepted: {:?}",
+            result.err()
+        );
+    }
+
+    // --- B-2: create_or_replace_fts_kind_table tests ---
+
+    #[test]
+    fn create_or_replace_creates_multi_column_table() {
+        use super::create_or_replace_fts_kind_table;
+        let (db, _service) = setup();
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let specs = vec![
+            FtsPropertyPathSpec::scalar("$.title"),
+            FtsPropertyPathSpec::recursive("$.payload"),
+        ];
+        create_or_replace_fts_kind_table(
+            &conn,
+            "Article",
+            &specs,
+            fathomdb_schema::DEFAULT_FTS_TOKENIZER,
+        )
+        .expect("create table");
+
+        // Verify table exists and has the expected columns.
+        let table = fathomdb_schema::fts_kind_table_name("Article");
+        // node_logical_id column
+        let count: i64 = conn
+            .query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
+            .expect("count");
+        assert_eq!(count, 0, "new table must be empty");
+
+        // Verify columns exist by inserting a row with named columns
+        let title_col = fathomdb_schema::fts_column_name("$.title", false);
+        let payload_col = fathomdb_schema::fts_column_name("$.payload", true);
+        conn.execute(
+            &format!(
+                "INSERT INTO {table} (node_logical_id, {title_col}, {payload_col}) VALUES ('id1', 'hello', 'world')"
+            ),
+            [],
+        )
+        .expect("insert with per-spec columns must succeed");
+    }
+
+    #[test]
+    fn create_or_replace_drops_and_recreates() {
+        use super::create_or_replace_fts_kind_table;
+        let (db, _service) = setup();
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+
+        // First call: 1 spec
+        let specs_v1 = vec![FtsPropertyPathSpec::scalar("$.title")];
+        create_or_replace_fts_kind_table(
+            &conn,
+            "Post",
+            &specs_v1,
+            fathomdb_schema::DEFAULT_FTS_TOKENIZER,
+        )
+        .expect("create v1");
+
+        // Second call: 2 specs (different layout)
+        let specs_v2 = vec![
+            FtsPropertyPathSpec::scalar("$.title"),
+            FtsPropertyPathSpec::scalar("$.summary"),
+        ];
+        create_or_replace_fts_kind_table(
+            &conn,
+            "Post",
+            &specs_v2,
+            fathomdb_schema::DEFAULT_FTS_TOKENIZER,
+        )
+        .expect("create v2");
+
+        // Verify new layout: summary column must exist
+        let table = fathomdb_schema::fts_kind_table_name("Post");
+        let summary_col = fathomdb_schema::fts_column_name("$.summary", false);
+        conn.execute(
+            &format!("INSERT INTO {table} (node_logical_id, {summary_col}) VALUES ('id1', 'text')"),
+            [],
+        )
+        .expect("second layout must allow summary column");
+    }
+
+    #[test]
+    fn create_or_replace_invalid_tokenizer() {
+        use super::create_or_replace_fts_kind_table;
+        let (db, _service) = setup();
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let specs = vec![FtsPropertyPathSpec::scalar("$.title")];
+        let result = create_or_replace_fts_kind_table(&conn, "Post", &specs, "'; DROP TABLE --");
+        assert!(result.is_err(), "invalid tokenizer must be rejected");
+        let err_msg = result
+            .expect_err("invalid tokenizer must be rejected")
+            .to_string();
+        assert!(
+            err_msg.contains("tokenizer"),
+            "error must mention tokenizer: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn register_with_weights_creates_per_column_table() {
+        let (db, service) = setup();
+        let entries = vec![
+            FtsPropertyPathSpec::scalar("$.title").with_weight(2.0),
+            FtsPropertyPathSpec::scalar("$.body"),
+        ];
+        service
+            .register_fts_property_schema_with_entries(
+                "Article",
+                &entries,
+                None,
+                &[],
+                crate::rebuild_actor::RebuildMode::Eager,
+            )
+            .expect("register");
+
+        // Per-kind table must have per-spec columns, not just text_content
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let table = fathomdb_schema::fts_kind_table_name("Article");
+        let title_col = fathomdb_schema::fts_column_name("$.title", false);
+        let body_col = fathomdb_schema::fts_column_name("$.body", false);
+        // If the columns exist, insert must succeed
+        conn.execute(
+            &format!(
+                "INSERT INTO {table} (node_logical_id, {title_col}, {body_col}) VALUES ('art-1', 'hello', 'world')"
+            ),
+            [],
+        )
+        .expect("per-spec columns must exist after registration with weights");
+    }
+
+    #[test]
+    fn weighted_to_unweighted_downgrade_recreates_table() {
+        let (db, service) = setup();
+
+        // First register with weights (creates per-spec column layout).
+        let weighted_entries = vec![
+            FtsPropertyPathSpec::scalar("$.title").with_weight(2.0),
+            FtsPropertyPathSpec::scalar("$.body"),
+        ];
+        service
+            .register_fts_property_schema_with_entries(
+                "Article",
+                &weighted_entries,
+                None,
+                &[],
+                crate::rebuild_actor::RebuildMode::Eager,
+            )
+            .expect("register weighted");
+
+        // Re-register the same kind WITHOUT weights.
+        let unweighted_entries = vec![
+            FtsPropertyPathSpec::scalar("$.title"),
+            FtsPropertyPathSpec::scalar("$.body"),
+        ];
+        service
+            .register_fts_property_schema_with_entries(
+                "Article",
+                &unweighted_entries,
+                None,
+                &[],
+                crate::rebuild_actor::RebuildMode::Eager,
+            )
+            .expect("re-register unweighted");
+
+        // After downgrade, the table must have the text_content column
+        // (legacy single-column layout), not the per-spec columns.
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let table = fathomdb_schema::fts_kind_table_name("Article");
+        let result = conn.execute(
+            &format!("INSERT INTO {table} (node_logical_id, text_content) VALUES ('art-1', 'hello world')"),
+            [],
+        );
+        assert!(
+            result.is_ok(),
+            "text_content column must exist after weighted-to-unweighted downgrade"
         );
     }
 }
