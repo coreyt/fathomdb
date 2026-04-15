@@ -217,6 +217,8 @@ fn run_rebuild(conn: &mut rusqlite::Connection, req: &RebuildRequest) -> Result<
         {
             let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
 
+            let has_weights = schema.paths.iter().any(|p| p.weight.is_some());
+
             for (logical_id, properties_str) in &batch {
                 let props: serde_json::Value =
                     serde_json::from_str(properties_str).unwrap_or_default();
@@ -236,15 +238,41 @@ fn run_rebuild(conn: &mut rusqlite::Connection, req: &RebuildRequest) -> Result<
 
                 let text_content = text.unwrap_or_default();
 
-                tx.execute(
-                    "INSERT INTO fts_property_rebuild_staging \
-                     (kind, node_logical_id, text_content, positions_blob) \
-                     VALUES (?1, ?2, ?3, ?4) \
-                     ON CONFLICT(kind, node_logical_id) DO UPDATE \
-                     SET text_content = excluded.text_content, \
-                         positions_blob = excluded.positions_blob",
-                    rusqlite::params![req.kind, logical_id, text_content, positions_blob],
-                )?;
+                if has_weights {
+                    let cols = crate::writer::extract_property_fts_columns(&props, &schema);
+                    let json_map: serde_json::Map<String, serde_json::Value> = cols
+                        .into_iter()
+                        .map(|(k, v)| (k, serde_json::Value::String(v)))
+                        .collect();
+                    let columns_json =
+                        serde_json::to_string(&serde_json::Value::Object(json_map)).ok();
+                    tx.execute(
+                        "INSERT INTO fts_property_rebuild_staging \
+                         (kind, node_logical_id, text_content, positions_blob, columns_json) \
+                         VALUES (?1, ?2, ?3, ?4, ?5) \
+                         ON CONFLICT(kind, node_logical_id) DO UPDATE \
+                         SET text_content = excluded.text_content, \
+                             positions_blob = excluded.positions_blob, \
+                             columns_json = excluded.columns_json",
+                        rusqlite::params![
+                            req.kind,
+                            logical_id,
+                            text_content,
+                            positions_blob,
+                            columns_json
+                        ],
+                    )?;
+                } else {
+                    tx.execute(
+                        "INSERT INTO fts_property_rebuild_staging \
+                         (kind, node_logical_id, text_content, positions_blob) \
+                         VALUES (?1, ?2, ?3, ?4) \
+                         ON CONFLICT(kind, node_logical_id) DO UPDATE \
+                         SET text_content = excluded.text_content, \
+                             positions_blob = excluded.positions_blob",
+                        rusqlite::params![req.kind, logical_id, text_content, positions_blob],
+                    )?;
+                }
             }
 
             rows_done += i64::try_from(batch_len).unwrap_or(i64::MAX);
@@ -309,14 +337,77 @@ fn run_rebuild(conn: &mut rusqlite::Connection, req: &RebuildRequest) -> Result<
         tx.execute(&format!("DELETE FROM {table}"), [])?;
 
         // 5b. Insert new rows from staging into the per-kind FTS table.
-        tx.execute(
-            &format!(
-                "INSERT INTO {table}(node_logical_id, text_content) \
-                 SELECT node_logical_id, text_content \
-                 FROM fts_property_rebuild_staging WHERE kind = ?1"
-            ),
-            rusqlite::params![req.kind],
-        )?;
+        // For weighted schemas (columns_json IS NOT NULL), use per-column INSERT.
+        // For non-weighted schemas, use bulk INSERT of text_content.
+        {
+            // Check if any staging rows have columns_json set (weighted schema).
+            let has_columns: bool = tx
+                .query_row(
+                    "SELECT count(*) FROM fts_property_rebuild_staging \
+                     WHERE kind = ?1 AND columns_json IS NOT NULL",
+                    rusqlite::params![req.kind],
+                    |r| r.get::<_, i64>(0),
+                )
+                .unwrap_or(0)
+                > 0;
+
+            if has_columns {
+                // Weighted schema: per-column INSERT row by row.
+                let rows_with_columns: Vec<(String, String)> = {
+                    let mut stmt = tx.prepare(
+                        "SELECT node_logical_id, columns_json \
+                         FROM fts_property_rebuild_staging \
+                         WHERE kind = ?1 AND columns_json IS NOT NULL",
+                    )?;
+                    stmt.query_map(rusqlite::params![req.kind], |r| {
+                        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+                    })?
+                    .collect::<Result<Vec<_>, _>>()?
+                };
+
+                for (node_id, columns_json_str) in &rows_with_columns {
+                    let col_map: serde_json::Map<String, serde_json::Value> =
+                        serde_json::from_str(columns_json_str).unwrap_or_default();
+                    let col_names: Vec<String> = col_map.keys().cloned().collect();
+                    let col_values: Vec<String> = col_names
+                        .iter()
+                        .map(|k| {
+                            col_map
+                                .get(k)
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_owned()
+                        })
+                        .collect();
+                    let placeholders: Vec<String> =
+                        (2..=col_names.len() + 1).map(|i| format!("?{i}")).collect();
+                    let sql = format!(
+                        "INSERT INTO {table}(node_logical_id, {cols}) VALUES (?1, {placeholders})",
+                        cols = col_names.join(", "),
+                        placeholders = placeholders.join(", "),
+                    );
+                    let mut stmt = tx.prepare(&sql)?;
+                    stmt.execute(rusqlite::params_from_iter(
+                        std::iter::once(node_id.as_str())
+                            .chain(col_values.iter().map(String::as_str)),
+                    ))?;
+                }
+
+                // For weighted schemas, all staging rows should have columns_json set.
+                // Any rows without columns_json are skipped (they have no per-column data
+                // and the weighted table has no text_content column).
+            } else {
+                // Non-weighted schema: bulk INSERT of text_content.
+                tx.execute(
+                    &format!(
+                        "INSERT INTO {table}(node_logical_id, text_content) \
+                         SELECT node_logical_id, text_content \
+                         FROM fts_property_rebuild_staging WHERE kind = ?1"
+                    ),
+                    rusqlite::params![req.kind],
+                )?;
+            }
+        }
 
         // 5c. Delete old position rows for this kind.
         tx.execute(
@@ -621,6 +712,98 @@ mod tests {
         assert_eq!(
             per_kind_count, 1,
             "per-kind table must have the rebuilt row after run_rebuild"
+        );
+    }
+
+    // --- B-3: rebuild_actor uses per-column INSERT for weighted schemas ---
+
+    #[test]
+    fn rebuild_actor_uses_per_column_for_weighted_schema() {
+        let mut conn = bootstrapped_conn();
+        let kind = "Article";
+        let table = fathomdb_schema::fts_kind_table_name(kind);
+
+        let title_col = fathomdb_schema::fts_column_name("$.title", false);
+        let body_col = fathomdb_schema::fts_column_name("$.body", false);
+
+        // Insert a node with two extractable properties.
+        conn.execute(
+            "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+             VALUES ('row-1', 'article-1', ?1, '{\"title\":\"Hello\",\"body\":\"World\"}', 100, 'seed')",
+            rusqlite::params![kind],
+        )
+        .expect("insert node");
+
+        // Register schema with weights.
+        let paths_json = r#"[{"path":"$.title","mode":"scalar","weight":2.0},{"path":"$.body","mode":"scalar","weight":1.0}]"#;
+        let schema_id: i64 = {
+            conn.execute(
+                "INSERT INTO fts_property_schemas (kind, property_paths_json, separator) \
+                 VALUES (?1, ?2, ' ')",
+                rusqlite::params![kind, paths_json],
+            )
+            .expect("insert schema");
+            conn.query_row(
+                "SELECT rowid FROM fts_property_schemas WHERE kind = ?1",
+                rusqlite::params![kind],
+                |r| r.get(0),
+            )
+            .expect("schema_id")
+        };
+
+        // Create the weighted per-kind FTS table.
+        conn.execute_batch(&format!(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING fts5(\
+                node_logical_id UNINDEXED, {title_col}, {body_col}, \
+                tokenize = 'porter unicode61 remove_diacritics 2'\
+            )"
+        ))
+        .expect("create weighted per-kind table");
+
+        // Insert rebuild state (PENDING).
+        conn.execute(
+            "INSERT INTO fts_property_rebuild_state \
+             (kind, schema_id, state, rows_done, started_at, is_first_registration) \
+             VALUES (?1, ?2, 'PENDING', 0, 0, 1)",
+            rusqlite::params![kind, schema_id],
+        )
+        .expect("insert rebuild state");
+
+        // Run the rebuild end-to-end.
+        let req = super::RebuildRequest {
+            kind: kind.to_owned(),
+            schema_id,
+        };
+        super::run_rebuild(&mut conn, &req).expect("run_rebuild");
+
+        // The per-kind table must have the rebuilt row.
+        let count: i64 = conn
+            .query_row(
+                &format!("SELECT count(*) FROM {table} WHERE node_logical_id = 'article-1'"),
+                [],
+                |r| r.get(0),
+            )
+            .expect("count");
+        assert_eq!(count, 1, "per-kind table must have the rebuilt row");
+
+        // Verify per-column values.
+        let (title_val, body_val): (String, String) = conn
+            .query_row(
+                &format!(
+                    "SELECT {title_col}, {body_col} FROM {table} \
+                     WHERE node_logical_id = 'article-1'"
+                ),
+                [],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+            )
+            .expect("select per-column");
+        assert_eq!(
+            title_val, "Hello",
+            "title column must have correct value after rebuild"
+        );
+        assert_eq!(
+            body_val, "World",
+            "body column must have correct value after rebuild"
         );
     }
 }
