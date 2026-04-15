@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used, clippy::missing_panics_doc)]
+#![allow(clippy::expect_used, clippy::missing_panics_doc, clippy::doc_markdown)]
 
 //! Pack B integration tests for profile FFI functions.
 //!

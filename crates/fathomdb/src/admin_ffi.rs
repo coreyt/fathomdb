@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     Engine, EngineError, FtsPropertyPathMode, FtsPropertyPathSpec, FtsPropertySchemaRecord,
 };
+use fathomdb_engine::{FtsProfile, ProjectionImpact, VecProfile};
 
 /// Extraction mode for a single registered FTS property path, serialized
 /// as `"scalar"` or `"recursive"` on the wire.
@@ -134,6 +135,106 @@ pub fn register_fts_property_schema_with_entries_json(
         )
         .map_err(AdminFfiError::Engine)?;
     serde_json::to_string(&record).map_err(AdminFfiError::Serialize)
+}
+
+/// Request envelope for [`set_fts_profile_json`].
+#[derive(Debug, Deserialize)]
+struct SetFtsProfileRequest {
+    kind: String,
+    tokenizer: String,
+}
+
+/// Set the FTS tokenizer profile for a node kind.
+///
+/// `request_json` must be `{"kind":"K","tokenizer":"T"}`.
+///
+/// Returns the serialized [`FtsProfile`] on success.
+///
+/// # Errors
+/// Returns [`AdminFfiError`] on JSON parse, engine execution, or
+/// response serialization failure.
+pub fn set_fts_profile_json(engine: &Engine, request_json: &str) -> Result<String, AdminFfiError> {
+    let request: SetFtsProfileRequest =
+        serde_json::from_str(request_json).map_err(AdminFfiError::Parse)?;
+    let profile: FtsProfile = engine
+        .admin()
+        .service()
+        .set_fts_profile(&request.kind, &request.tokenizer)
+        .map_err(AdminFfiError::Engine)?;
+    serde_json::to_string(&profile).map_err(AdminFfiError::Serialize)
+}
+
+/// Retrieve the FTS tokenizer profile for a node kind.
+///
+/// Returns `"null"` if no profile has been set for `kind`.
+///
+/// # Errors
+/// Returns [`AdminFfiError`] on engine execution or response serialization failure.
+pub fn get_fts_profile_json(engine: &Engine, kind: &str) -> Result<String, AdminFfiError> {
+    let profile: Option<FtsProfile> = engine
+        .admin()
+        .service()
+        .get_fts_profile(kind)
+        .map_err(AdminFfiError::Engine)?;
+    serde_json::to_string(&profile).map_err(AdminFfiError::Serialize)
+}
+
+/// Set (or update) the global vector embedding profile.
+///
+/// `request_json` must be valid JSON with at least `model_identity` and
+/// `dimensions` fields, e.g.
+/// `{"model_identity":"...","model_version":"...","dimensions":384,"normalization_policy":"l2"}`.
+///
+/// Returns the serialized [`VecProfile`] on success.
+///
+/// # Errors
+/// Returns [`AdminFfiError`] on JSON parse, engine execution, or
+/// response serialization failure.
+pub fn set_vec_profile_json(engine: &Engine, request_json: &str) -> Result<String, AdminFfiError> {
+    // Validate that request_json is well-formed JSON before passing to engine.
+    let _: serde_json::Value = serde_json::from_str(request_json).map_err(AdminFfiError::Parse)?;
+    let profile: VecProfile = engine
+        .admin()
+        .service()
+        .set_vec_profile(request_json)
+        .map_err(AdminFfiError::Engine)?;
+    serde_json::to_string(&profile).map_err(AdminFfiError::Serialize)
+}
+
+/// Retrieve the global vector embedding profile.
+///
+/// Returns `"null"` if no profile has been persisted yet.
+///
+/// # Errors
+/// Returns [`AdminFfiError`] on engine execution or response serialization failure.
+pub fn get_vec_profile_json(engine: &Engine) -> Result<String, AdminFfiError> {
+    let profile: Option<VecProfile> = engine
+        .admin()
+        .service()
+        .get_vec_profile()
+        .map_err(AdminFfiError::Engine)?;
+    serde_json::to_string(&profile).map_err(AdminFfiError::Serialize)
+}
+
+/// Estimate the cost of rebuilding a projection for a given node kind and facet.
+///
+/// `facet` must be `"fts"` or `"vec"`.
+///
+/// Returns the serialized [`ProjectionImpact`] on success.
+///
+/// # Errors
+/// Returns [`AdminFfiError`] on engine execution or response serialization failure.
+pub fn preview_projection_impact_json(
+    engine: &Engine,
+    kind: &str,
+    facet: &str,
+) -> Result<String, AdminFfiError> {
+    let impact: ProjectionImpact = engine
+        .admin()
+        .service()
+        .preview_projection_impact(kind, facet)
+        .map_err(AdminFfiError::Engine)?;
+    serde_json::to_string(&impact).map_err(AdminFfiError::Serialize)
 }
 
 #[cfg(test)]

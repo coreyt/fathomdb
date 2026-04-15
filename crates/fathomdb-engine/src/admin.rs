@@ -593,6 +593,19 @@ impl AdminService {
         )
     }
 
+    /// Persist or update the global vector profile from a JSON config string.
+    ///
+    /// `config_json` must be valid JSON with at least a `model_identity`
+    /// field and `dimensions`.  The JSON is stored verbatim in the
+    /// `projection_profiles` table under `kind='*'`, `facet='vec'`.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the database write fails.
+    pub fn set_vec_profile(&self, config_json: &str) -> Result<VecProfile, EngineError> {
+        let conn = self.connect()?;
+        Self::set_vec_profile_inner(&conn, config_json).map_err(EngineError::Sqlite)
+    }
+
     /// Estimate the cost of rebuilding a projection.
     ///
     /// For facet `"fts"`: counts active nodes of `kind`.
