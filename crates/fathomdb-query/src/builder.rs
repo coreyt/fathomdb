@@ -110,6 +110,7 @@ impl QueryBuilder {
             direction,
             label: label.into(),
             max_depth,
+            filter: None,
         });
         self
     }
@@ -366,6 +367,9 @@ impl QueryBuilder {
     }
 
     /// Add an expansion slot that traverses edges of the given label for each root result.
+    ///
+    /// Pass `filter: None` to preserve the existing behavior. `filter: Some(_)` is
+    /// accepted by the AST but the compilation is not yet implemented (Pack 3).
     #[must_use]
     pub fn expand(
         mut self,
@@ -373,12 +377,14 @@ impl QueryBuilder {
         direction: TraverseDirection,
         label: impl Into<String>,
         max_depth: usize,
+        filter: Option<Predicate>,
     ) -> Self {
         self.ast.expansions.push(ExpansionSlot {
             slot: slot.into(),
             direction,
             label: label.into(),
             max_depth,
+            filter,
         });
         self
     }

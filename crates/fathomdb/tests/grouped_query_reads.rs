@@ -146,9 +146,15 @@ fn grouped_query_returns_root_plus_named_expansion_slots_for_bounded_context() {
     let compiled = engine
         .query("Meeting")
         .filter_logical_id_eq("meeting-1")
-        .expand("direct_tasks", TraverseDirection::Out, "HAS_TASK", 1)
-        .expand("task_descendants", TraverseDirection::Out, "HAS_TASK", 2)
-        .expand("decisions", TraverseDirection::Out, "HAS_DECISION", 1)
+        .expand("direct_tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
+        .expand(
+            "task_descendants",
+            TraverseDirection::Out,
+            "HAS_TASK",
+            2,
+            None,
+        )
+        .expand("decisions", TraverseDirection::Out, "HAS_DECISION", 1, None)
         .compile_grouped()
         .expect("grouped query compiles");
 
@@ -195,7 +201,7 @@ fn grouped_query_supports_numeric_and_timestamp_filters_before_enrichment() {
         .query("Meeting")
         .filter_json_integer_gte("$.priority", 5)
         .filter_json_timestamp_gte("$.updated_at", 1710000000)
-        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1)
+        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
         .compile_grouped()
         .expect("grouped query compiles");
 
@@ -219,8 +225,8 @@ fn grouped_text_search_enrichment_returns_requested_context_in_one_result() {
     let compiled = engine
         .query("Meeting")
         .text_search("budget", 5)
-        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1)
-        .expand("decisions", TraverseDirection::Out, "HAS_DECISION", 1)
+        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
+        .expand("decisions", TraverseDirection::Out, "HAS_DECISION", 1, None)
         .compile_grouped()
         .expect("grouped query compiles");
 
@@ -245,8 +251,8 @@ fn grouped_query_rejects_duplicate_expansion_slot_names() {
 
     let error = engine
         .query("Meeting")
-        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1)
-        .expand("tasks", TraverseDirection::Out, "HAS_DECISION", 1)
+        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
+        .expand("tasks", TraverseDirection::Out, "HAS_DECISION", 1, None)
         .compile_grouped()
         .expect_err("duplicate slots must fail");
 
@@ -321,7 +327,7 @@ fn grouped_query_expansions_honor_the_query_hard_limit() {
     let compiled = engine
         .query("Meeting")
         .filter_logical_id_eq("meeting-1")
-        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 4)
+        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 4, None)
         .limit(2)
         .compile_grouped()
         .expect("grouped query compiles");
@@ -482,7 +488,7 @@ fn json_filter_with_expansion_finds_non_first_node() {
     let compiled = engine
         .query("Meeting")
         .filter_json_text_eq("$.title", "Backlog grooming")
-        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1)
+        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
         .limit(1)
         .compile_grouped()
         .expect("grouped query compiles");
