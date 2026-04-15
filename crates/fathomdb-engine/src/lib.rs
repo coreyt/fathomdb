@@ -8,6 +8,7 @@ mod embedder;
 mod ids;
 mod operational;
 mod projection;
+pub mod rebuild_actor;
 mod runtime;
 mod sqlite;
 mod telemetry;
@@ -42,6 +43,7 @@ pub use operational::{
     OperationalValidationField, OperationalValidationFieldType, OperationalValidationMode,
 };
 pub use projection::{ProjectionRepairReport, ProjectionService, ProjectionTarget};
+pub use rebuild_actor::{RebuildMode, RebuildStateRow};
 pub use runtime::EngineRuntime;
 pub use sqlite::{SharedSqlitePolicy, shared_sqlite_policy};
 pub use telemetry::{

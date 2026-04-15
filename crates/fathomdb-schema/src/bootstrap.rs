@@ -471,6 +471,31 @@ static MIGRATIONS: &[Migration] = &[
                     ON fts_node_property_positions(kind);
                 ",
     ),
+    Migration::new(
+        SchemaVersion(19),
+        "async property-FTS rebuild staging and state tables",
+        r"
+                CREATE TABLE IF NOT EXISTS fts_property_rebuild_staging (
+                    kind TEXT NOT NULL,
+                    node_logical_id TEXT NOT NULL,
+                    text_content TEXT NOT NULL,
+                    positions_blob BLOB,
+                    PRIMARY KEY (kind, node_logical_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS fts_property_rebuild_state (
+                    kind TEXT PRIMARY KEY,
+                    schema_id INTEGER NOT NULL,
+                    state TEXT NOT NULL,
+                    rows_total INTEGER,
+                    rows_done INTEGER NOT NULL DEFAULT 0,
+                    started_at INTEGER NOT NULL,
+                    last_progress_at INTEGER,
+                    error_message TEXT,
+                    is_first_registration INTEGER NOT NULL DEFAULT 0
+                );
+                ",
+    ),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]

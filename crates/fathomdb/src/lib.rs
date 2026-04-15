@@ -382,7 +382,13 @@ impl Engine {
     ) -> Result<FtsPropertySchemaRecord, EngineError> {
         self.admin()
             .service()
-            .register_fts_property_schema_with_entries(kind, entries, separator, exclude_paths)
+            .register_fts_property_schema_with_entries(
+                kind,
+                entries,
+                separator,
+                exclude_paths,
+                fathomdb_engine::RebuildMode::Eager,
+            )
     }
 
     /// Return the FTS property schema for a single node kind, if registered.
