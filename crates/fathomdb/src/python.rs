@@ -404,6 +404,41 @@ impl EngineCore {
         })
     }
 
+    #[pyo3(signature = (kind, property_paths_json, separator=None))]
+    pub fn register_fts_property_schema_async(
+        &self,
+        py: Python<'_>,
+        kind: &str,
+        property_paths_json: &str,
+        separator: Option<&str>,
+    ) -> PyResult<String> {
+        let paths: Vec<String> = serde_json::from_str(property_paths_json).map_err(|error| {
+            PyValueError::new_err(format!("invalid property paths JSON: {error}"))
+        })?;
+        let kind = kind.to_owned();
+        let _separator = separator.map(ToOwned::to_owned);
+        self.with_engine(|engine| {
+            let record = py
+                .detach(|| engine.register_fts_property_schema_async(&kind, &paths))
+                .map_err(map_engine_error)?;
+            encode_json(record)
+        })
+    }
+
+    pub fn get_property_fts_rebuild_progress(
+        &self,
+        py: Python<'_>,
+        kind: &str,
+    ) -> PyResult<String> {
+        let kind = kind.to_owned();
+        self.with_engine(|engine| {
+            let progress = py
+                .detach(|| engine.get_property_fts_rebuild_progress(&kind))
+                .map_err(map_engine_error)?;
+            encode_json(progress)
+        })
+    }
+
     pub fn describe_fts_property_schema(&self, py: Python<'_>, kind: &str) -> PyResult<String> {
         let kind = kind.to_owned();
         self.with_engine(|engine| {

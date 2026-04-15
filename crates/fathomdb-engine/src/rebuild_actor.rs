@@ -410,7 +410,7 @@ pub struct RebuildStateRow {
 
 /// Public progress snapshot returned from
 /// [`crate::coordinator::ExecutionCoordinator::get_property_fts_rebuild_progress`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct RebuildProgress {
     /// Current state: `"PENDING"`, `"BUILDING"`, `"SWAPPING"`, `"COMPLETE"`, or `"FAILED"`.
     pub state: String,

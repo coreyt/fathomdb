@@ -326,6 +326,34 @@ impl NodeEngineCore {
     }
 
     #[napi]
+    pub fn register_fts_property_schema_async(
+        &self,
+        kind: String,
+        property_paths_json: String,
+        separator: Option<String>,
+    ) -> Result<String> {
+        let paths: Vec<String> = serde_json::from_str(&property_paths_json)
+            .map_err(|error| invalid_argument(format!("invalid property paths JSON: {error}")))?;
+        let _ = separator;
+        self.with_engine(|engine| {
+            let record = engine
+                .register_fts_property_schema_async(&kind, &paths)
+                .map_err(map_engine_error)?;
+            encode_json(record)
+        })
+    }
+
+    #[napi]
+    pub fn get_property_fts_rebuild_progress(&self, kind: String) -> Result<String> {
+        self.with_engine(|engine| {
+            let progress = engine
+                .get_property_fts_rebuild_progress(&kind)
+                .map_err(map_engine_error)?;
+            encode_json(progress)
+        })
+    }
+
+    #[napi]
     pub fn describe_fts_property_schema(&self, kind: String) -> Result<String> {
         self.with_engine(|engine| {
             let record = engine

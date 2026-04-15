@@ -87,6 +87,7 @@ export {
   type FtsPropertyPathMode,
   type FtsPropertyPathSpec,
   type FtsPropertySchemaRecord,
+  type RebuildProgress,
   // Operational collection types
   type OperationalCollectionRecord,
   type OperationalCompactionReport,

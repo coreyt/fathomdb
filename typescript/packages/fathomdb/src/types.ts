@@ -1205,3 +1205,25 @@ function parseJsonField(value: unknown): unknown {
   }
   return value;
 }
+
+/** Progress snapshot for an async property-FTS rebuild operation. */
+export type RebuildProgress = {
+  state: string;
+  rowsTotal: number | null;
+  rowsDone: number;
+  startedAt: number;
+  lastProgressAt: number | null;
+  errorMessage: string | null;
+};
+
+/** @internal */
+export function rebuildProgressFromWire(w: Record<string, unknown>): RebuildProgress {
+  return {
+    state: String(w.state ?? ""),
+    rowsTotal: w.rows_total != null ? Number(w.rows_total) : null,
+    rowsDone: Number(w.rows_done ?? 0),
+    startedAt: Number(w.started_at ?? 0),
+    lastProgressAt: w.last_progress_at != null ? Number(w.last_progress_at) : null,
+    errorMessage: w.error_message != null ? String(w.error_message) : null,
+  };
+}

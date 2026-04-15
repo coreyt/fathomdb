@@ -3,6 +3,7 @@ import { runWithFeedback } from "./feedback.js";
 import type { NativeEngineCore } from "./native.js";
 import {
   ftsPropertySchemaRecordFromWire,
+  rebuildProgressFromWire,
   integrityReportFromWire,
   logicalPurgeReportFromWire,
   logicalRestoreReportFromWire,
@@ -26,6 +27,7 @@ import {
   type FeedbackConfig,
   type FtsPropertyPathSpec,
   type FtsPropertySchemaRecord,
+  type RebuildProgress,
   type IntegrityReport,
   type LogicalPurgeReport,
   type LogicalRestoreReport,
@@ -261,6 +263,22 @@ export class AdminClient {
   removeFtsPropertySchema(kind: string, progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): void {
     this.#run("admin.remove_fts_property_schema", () => {
       callNative(() => this.#core.removeFtsPropertySchema(kind));
+    }, progressCallback, feedbackConfig);
+  }
+
+  registerFtsPropertySchemaAsync(kind: string, propertyPaths: string[], separator?: string, progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): FtsPropertySchemaRecord {
+    return this.#run("admin.register_fts_property_schema_async", () =>
+      ftsPropertySchemaRecordFromWire(parseNativeJson(callNative(() => this.#core.registerFtsPropertySchemaAsync(kind, JSON.stringify(propertyPaths), separator)))),
+      progressCallback,
+      feedbackConfig,
+    );
+  }
+
+  getRebuildProgress(kind: string, progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): RebuildProgress | null {
+    return this.#run("admin.get_rebuild_progress", () => {
+      const raw = parseNativeJson(callNative(() => this.#core.getPropertyFtsRebuildProgress(kind)));
+      if (raw === null || typeof raw !== "object") return null;
+      return rebuildProgressFromWire(raw as Record<string, unknown>);
     }, progressCallback, feedbackConfig);
   }
 

@@ -28,6 +28,7 @@ from ._types import (
     ProjectionRepairReport,
     ProjectionTarget,
     ProvenancePurgeReport,
+    RebuildProgress,
     SafeExportManifest,
     SemanticReport,
     TraceReport,
@@ -469,6 +470,57 @@ class AdminClient:
             feedback_config=feedback_config,
             operation=lambda: self._core.remove_fts_property_schema(kind),
         )
+
+    def register_fts_property_schema_async(
+        self,
+        kind: str,
+        property_paths: list[str],
+        separator: str | None = None,
+        *,
+        progress_callback=None,
+        feedback_config: FeedbackConfig | None = None,
+    ) -> FtsPropertySchemaRecord:
+        """Register a property-FTS schema using the async shadow-build path.
+
+        Returns immediately; rebuild runs in the background. Poll
+        :meth:`get_rebuild_progress` to observe completion.
+        """
+        return FtsPropertySchemaRecord.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="admin.register_fts_property_schema_async",
+                    metadata={"kind": kind},
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=lambda: self._core.register_fts_property_schema_async(
+                        kind, json.dumps(property_paths), separator
+                    ),
+                )
+            )
+        )
+
+    def get_rebuild_progress(
+        self,
+        kind: str,
+        *,
+        progress_callback=None,
+        feedback_config: FeedbackConfig | None = None,
+    ) -> "RebuildProgress | None":
+        """Return the current async rebuild progress for a kind, or None."""
+        payload = json.loads(
+            run_with_feedback(
+                surface="python",
+                operation_kind="admin.get_rebuild_progress",
+                metadata={"kind": kind},
+                progress_callback=progress_callback,
+                feedback_config=feedback_config,
+                operation=lambda: self._core.get_property_fts_rebuild_progress(kind),
+            )
+        )
+        if payload is None:
+            return None
+        return RebuildProgress.from_wire(payload)
 
     # ── Operational collection lifecycle ──────────────────────────────
 

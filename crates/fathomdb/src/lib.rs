@@ -422,6 +422,50 @@ impl Engine {
         self.admin().service().remove_fts_property_schema(kind)
     }
 
+    /// Register an FTS property schema using the async shadow-build path.
+    ///
+    /// Returns immediately with the schema record; the rebuild runs in the
+    /// background via [`crate::rebuild_actor::RebuildActor`]. Poll
+    /// [`Self::get_property_fts_rebuild_progress`] to observe completion.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] if the schema is invalid or the write fails.
+    pub fn register_fts_property_schema_async(
+        &self,
+        kind: &str,
+        property_paths: &[String],
+    ) -> Result<FtsPropertySchemaRecord, EngineError> {
+        let specs: Vec<FtsPropertyPathSpec> = property_paths
+            .iter()
+            .map(|p| FtsPropertyPathSpec::scalar(p.clone()))
+            .collect();
+        self.admin()
+            .service()
+            .register_fts_property_schema_with_entries(
+                kind,
+                &specs,
+                None,
+                &[],
+                fathomdb_engine::RebuildMode::Async,
+            )
+    }
+
+    /// Return the current async rebuild progress for a kind, or `None` if no
+    /// rebuild has been registered.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EngineError`] on database failure.
+    pub fn get_property_fts_rebuild_progress(
+        &self,
+        kind: &str,
+    ) -> Result<Option<RebuildProgress>, EngineError> {
+        self.runtime
+            .coordinator()
+            .get_property_fts_rebuild_progress(kind)
+    }
+
     /// Register a new operational collection.
     ///
     /// # Errors

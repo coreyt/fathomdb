@@ -871,6 +871,29 @@ class FtsPropertySchemaRecord:
         )
 
 
+@dataclass
+class RebuildProgress:
+    """Progress snapshot for an async property-FTS rebuild operation."""
+
+    state: str
+    rows_total: int | None
+    rows_done: int
+    started_at: int
+    last_progress_at: int | None
+    error_message: str | None
+
+    @classmethod
+    def from_wire(cls, d: dict) -> "RebuildProgress":
+        return cls(
+            state=d["state"],
+            rows_total=d.get("rows_total"),
+            rows_done=d.get("rows_done", 0),
+            started_at=d.get("started_at", 0),
+            last_progress_at=d.get("last_progress_at"),
+            error_message=d.get("error_message"),
+        )
+
+
 @dataclass(frozen=True)
 class OperationalCollectionRecord:
     """Metadata record describing a registered operational collection."""
