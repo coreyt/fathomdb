@@ -730,6 +730,48 @@ impl EngineCore {
             encode_json(report)
         })
     }
+
+    pub fn set_fts_profile(&self, py: Python<'_>, request_json: &str) -> PyResult<String> {
+        self.with_engine(|engine| {
+            py.allow_threads(|| crate::admin_ffi::set_fts_profile_json(engine, request_json))
+                .map_err(map_admin_ffi_error)
+        })
+    }
+
+    pub fn get_fts_profile(&self, py: Python<'_>, kind: &str) -> PyResult<String> {
+        self.with_engine(|engine| {
+            py.allow_threads(|| crate::admin_ffi::get_fts_profile_json(engine, kind))
+                .map_err(map_admin_ffi_error)
+        })
+    }
+
+    pub fn set_vec_profile(&self, py: Python<'_>, request_json: &str) -> PyResult<String> {
+        self.with_engine(|engine| {
+            py.allow_threads(|| crate::admin_ffi::set_vec_profile_json(engine, request_json))
+                .map_err(map_admin_ffi_error)
+        })
+    }
+
+    pub fn get_vec_profile(&self, py: Python<'_>) -> PyResult<String> {
+        self.with_engine(|engine| {
+            py.allow_threads(|| crate::admin_ffi::get_vec_profile_json(engine))
+                .map_err(map_admin_ffi_error)
+        })
+    }
+
+    pub fn preview_projection_impact(
+        &self,
+        py: Python<'_>,
+        kind: &str,
+        facet: &str,
+    ) -> PyResult<String> {
+        self.with_engine(|engine| {
+            py.allow_threads(|| {
+                crate::admin_ffi::preview_projection_impact_json(engine, kind, facet)
+            })
+            .map_err(map_admin_ffi_error)
+        })
+    }
 }
 
 const MAX_AST_JSON_BYTES: usize = 16 * 1024 * 1024; // 16 MB
