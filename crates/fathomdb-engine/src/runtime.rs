@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::mpsc;
 
 use fathomdb_schema::SchemaManager;
 
@@ -7,6 +8,7 @@ use crate::{
     AdminHandle, AdminService, EngineError, ExecutionCoordinator, ProvenanceMode, QueryEmbedder,
     WriterActor,
     database_lock::DatabaseLock,
+    rebuild_actor::{RebuildActor, RebuildRequest},
     telemetry::{TelemetryCounters, TelemetryLevel, TelemetrySnapshot},
 };
 
@@ -18,6 +20,8 @@ use crate::{
 /// `writer` (writer thread + connection).  This ensures the writer's
 /// `sqlite3_close()` is the last connection to the database, which triggers
 /// `SQLite`'s automatic passive WAL checkpoint and WAL/shm file cleanup.
+/// `_rebuild` drops before `_lock` so the rebuild thread's connection closes
+/// before the exclusive file lock is released.
 /// `_lock` drops last so the exclusive file lock is released only after all
 /// connections are closed.  Do not reorder these fields.
 ///
@@ -28,6 +32,10 @@ pub struct EngineRuntime {
     coordinator: ExecutionCoordinator,
     writer: WriterActor,
     admin: AdminHandle,
+    /// Sender side of the rebuild channel.  Dropped before `_rebuild` so the
+    /// rebuild thread's loop exits before we join it.
+    _rebuild_sender: mpsc::SyncSender<RebuildRequest>,
+    _rebuild: RebuildActor,
     _lock: DatabaseLock,
 }
 
@@ -85,7 +93,16 @@ impl EngineRuntime {
             provenance_mode,
             Arc::clone(&telemetry),
         )?;
-        let admin = AdminHandle::new(AdminService::new(path.as_ref(), schema_manager));
+
+        // Rebuild actor: create channel, start thread, pass sender to AdminService.
+        let (rebuild_sender, rebuild_receiver) = mpsc::sync_channel::<RebuildRequest>(64);
+        let rebuild_actor =
+            RebuildActor::start(path.as_ref(), Arc::clone(&schema_manager), rebuild_receiver)?;
+        let admin = AdminHandle::new(AdminService::new_with_rebuild(
+            path.as_ref(),
+            schema_manager,
+            rebuild_sender.clone(),
+        ));
 
         trace_info!(path = %path.as_ref().display(), "engine opened");
         Ok(Self {
@@ -93,6 +110,8 @@ impl EngineRuntime {
             coordinator,
             writer,
             admin,
+            _rebuild_sender: rebuild_sender,
+            _rebuild: rebuild_actor,
             _lock: lock,
         })
     }

@@ -1,13 +1,10 @@
-/// Pack 7: async property-FTS rebuild infrastructure tests.
-///
-/// RED phase: these tests are written first and will fail until the
-/// implementation is complete.
+//! Pack 7: async property-FTS rebuild infrastructure tests.
+#![allow(clippy::expect_used, clippy::panic)]
 use std::time::Instant;
 
 use fathomdb_engine::{
-    ActionInsert, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire, EngineRuntime,
-    FtsPropertyPathSpec, NodeInsert, NodeRetire, OperationalWrite, OptionalProjectionTask,
-    ProvenanceMode, RebuildMode, RunInsert, StepInsert, TelemetryLevel, VecInsert, WriteRequest,
+    ChunkPolicy, EngineRuntime, FtsPropertyPathSpec, NodeInsert, ProvenanceMode, RebuildMode,
+    TelemetryLevel, WriteRequest,
 };
 
 fn open_engine(dir: &tempfile::TempDir) -> EngineRuntime {
@@ -39,7 +36,7 @@ fn make_write_request(label: &str, nodes: Vec<NodeInsert>) -> WriteRequest {
     }
 }
 
-/// Existing eager-mode behavior is preserved: calling with RebuildMode::Eager
+/// Existing eager-mode behavior is preserved: calling with `RebuildMode::Eager`
 /// returns the schema record synchronously (same as the old parameter-less behavior).
 #[test]
 fn eager_register_returns_schema_record() {
@@ -61,7 +58,7 @@ fn eager_register_returns_schema_record() {
     assert_eq!(record.property_paths, vec!["$.title"]);
 }
 
-/// RebuildMode::Async register call returns in <500ms (design goal is <100ms; CI budget).
+/// `RebuildMode::Async` register call returns in <500ms (design goal is <100ms; CI budget).
 #[test]
 fn async_register_is_fast() {
     let dir = tempfile::tempdir().expect("temp dir");
@@ -160,17 +157,17 @@ fn async_rebuild_populates_staging_table() {
         let state = svc
             .get_property_fts_rebuild_state("Note")
             .expect("get state");
-        if let Some(s) = &state {
-            if s.state == "SWAPPING" || s.state == "COMPLETE" {
-                break;
-            }
+        let done = state
+            .as_ref()
+            .is_some_and(|s| s.state == "SWAPPING" || s.state == "COMPLETE");
+        if done {
+            break;
         }
-        if Instant::now() > deadline {
-            panic!(
-                "rebuild did not reach SWAPPING within 5s, state={:?}",
-                svc.get_property_fts_rebuild_state("Note")
-            );
-        }
+        assert!(
+            Instant::now() <= deadline,
+            "rebuild did not reach SWAPPING within 5s, state={:?}",
+            svc.get_property_fts_rebuild_state("Note")
+        );
     }
 
     // Verify staging table has the 5 rows.
@@ -183,19 +180,24 @@ fn async_rebuild_populates_staging_table() {
 fn engine_shutdown_is_clean() {
     let dir = tempfile::tempdir().expect("temp dir");
     let engine = open_engine(&dir);
-    let svc = engine.admin().service();
 
     // Kick off an async rebuild so the actor has work to do.
-    svc.register_fts_property_schema_with_entries(
-        "Foo",
-        &[FtsPropertyPathSpec::scalar("$.x")],
-        None,
-        &[],
-        RebuildMode::Async,
-    )
-    .expect("register async");
+    // Use a block so svc (Arc<AdminService>) is dropped before engine drops.
+    {
+        let svc = engine.admin().service();
+        svc.register_fts_property_schema_with_entries(
+            "Foo",
+            &[FtsPropertyPathSpec::scalar("$.x")],
+            None,
+            &[],
+            RebuildMode::Async,
+        )
+        .expect("register async");
+    } // svc dropped here
 
     // Drop the engine — this should join the rebuild actor cleanly.
+    // At this point all SyncSender clones are dropped (svc.rebuild_sender dropped above,
+    // engine's _rebuild_sender drops with engine), so the actor thread can exit.
     drop(engine);
     // If we reach here without panic or timeout, the test passes.
 }

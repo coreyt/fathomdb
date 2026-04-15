@@ -3,12 +3,15 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::mpsc::SyncSender;
 use std::time::SystemTime;
 
 use fathomdb_schema::{SchemaError, SchemaManager};
 use rusqlite::{DatabaseName, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+
+use crate::rebuild_actor::{RebuildMode, RebuildRequest, RebuildStateRow};
 
 use crate::{
     EngineError, ProjectionRepairReport, ProjectionService,
@@ -214,6 +217,10 @@ pub struct AdminService {
     database_path: PathBuf,
     schema_manager: Arc<SchemaManager>,
     projections: ProjectionService,
+    /// Sender side of the rebuild actor's channel.  `None` when the engine
+    /// was opened without a rebuild actor (e.g. in tests that use
+    /// [`AdminService::new`] directly).
+    rebuild_sender: Option<SyncSender<RebuildRequest>>,
 }
 
 /// Results of a semantic consistency check on the graph data.
@@ -330,6 +337,24 @@ impl AdminService {
             database_path,
             schema_manager,
             projections,
+            rebuild_sender: None,
+        }
+    }
+
+    /// Create a new admin service wired to the background rebuild actor.
+    #[must_use]
+    pub fn new_with_rebuild(
+        path: impl AsRef<Path>,
+        schema_manager: Arc<SchemaManager>,
+        rebuild_sender: SyncSender<RebuildRequest>,
+    ) -> Self {
+        let database_path = path.as_ref().to_path_buf();
+        let projections = ProjectionService::new(&database_path, Arc::clone(&schema_manager));
+        Self {
+            database_path,
+            schema_manager,
+            projections,
+            rebuild_sender: Some(rebuild_sender),
         }
     }
 
@@ -1542,25 +1567,37 @@ impl AdminService {
             .iter()
             .map(|p| FtsPropertyPathSpec::scalar(p.clone()))
             .collect();
-        self.register_fts_property_schema_with_entries(kind, &specs, separator, &[])
+        self.register_fts_property_schema_with_entries(
+            kind,
+            &specs,
+            separator,
+            &[],
+            RebuildMode::Eager,
+        )
     }
 
     /// Register (or update) an FTS property projection schema with
-    /// per-path modes and optional exclude paths. When the registered
-    /// schema introduces a new recursive-mode path for this kind, this
-    /// method eagerly rebuilds `fts_node_properties` and
-    /// `fts_node_property_positions` for every active node of that kind,
-    /// all in the same transaction as the schema row update.
+    /// per-path modes and optional exclude paths.
+    ///
+    /// Under `RebuildMode::Eager` (the legacy mode), the full rebuild runs
+    /// inside the registration transaction — same behavior as before Pack 7.
+    ///
+    /// Under `RebuildMode::Async` (the 0.4.1 default), the schema row is
+    /// persisted in a short IMMEDIATE transaction, a rebuild-state row is
+    /// upserted, and the actual rebuild is handed off to the background
+    /// `RebuildActor`.  The register call returns in <100ms even for large
+    /// kinds.
     ///
     /// # Errors
     /// Returns [`EngineError`] if the paths are invalid, the JSON
-    /// serialization fails, or the rebuild transaction fails.
+    /// serialization fails, or the (schema-persist / rebuild) transaction fails.
     pub fn register_fts_property_schema_with_entries(
         &self,
         kind: &str,
         entries: &[FtsPropertyPathSpec],
         separator: Option<&str>,
         exclude_paths: &[String],
+        mode: RebuildMode,
     ) -> Result<FtsPropertySchemaRecord, EngineError> {
         let paths: Vec<String> = entries.iter().map(|e| e.path.clone()).collect();
         validate_fts_property_paths(&paths)?;
@@ -1574,6 +1611,31 @@ impl AdminService {
         let separator = separator.unwrap_or(" ");
         let paths_json = serialize_property_paths_json(entries, exclude_paths)?;
 
+        match mode {
+            RebuildMode::Eager => self.register_fts_property_schema_eager(
+                kind,
+                entries,
+                separator,
+                exclude_paths,
+                &paths,
+                &paths_json,
+            ),
+            RebuildMode::Async => {
+                self.register_fts_property_schema_async(kind, separator, &paths, &paths_json)
+            }
+        }
+    }
+
+    /// Eager path: existing transactional behavior unchanged.
+    fn register_fts_property_schema_eager(
+        &self,
+        kind: &str,
+        entries: &[FtsPropertyPathSpec],
+        separator: &str,
+        exclude_paths: &[String],
+        paths: &[String],
+        paths_json: &str,
+    ) -> Result<FtsPropertySchemaRecord, EngineError> {
         let mut conn = self.connect()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
 
@@ -1657,6 +1719,134 @@ impl AdminService {
         self.describe_fts_property_schema(kind)?.ok_or_else(|| {
             EngineError::Bridge("registered FTS property schema missing after commit".to_owned())
         })
+    }
+
+    /// Async path: schema persisted in a short tx; rebuild handed to actor.
+    fn register_fts_property_schema_async(
+        &self,
+        kind: &str,
+        separator: &str,
+        paths: &[String],
+        paths_json: &str,
+    ) -> Result<FtsPropertySchemaRecord, EngineError> {
+        let mut conn = self.connect()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+
+        // Detect first-registration vs re-registration.
+        let had_previous_schema: bool = tx
+            .query_row(
+                "SELECT count(*) FROM fts_property_schemas WHERE kind = ?1",
+                rusqlite::params![kind],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+
+        // Upsert schema row (fast — just a metadata write).
+        tx.execute(
+            "INSERT INTO fts_property_schemas (kind, property_paths_json, separator) \
+             VALUES (?1, ?2, ?3) \
+             ON CONFLICT(kind) DO UPDATE SET property_paths_json = ?2, separator = ?3",
+            rusqlite::params![kind, paths_json, separator],
+        )?;
+
+        // Retrieve the rowid of the schema row as schema_id.
+        let schema_id: i64 = tx.query_row(
+            "SELECT rowid FROM fts_property_schemas WHERE kind = ?1",
+            rusqlite::params![kind],
+            |r| r.get(0),
+        )?;
+
+        let now_ms = crate::rebuild_actor::now_unix_ms_pub();
+        let is_first = i64::from(!had_previous_schema);
+
+        // Upsert rebuild state row.
+        tx.execute(
+            "INSERT INTO fts_property_rebuild_state \
+             (kind, schema_id, state, rows_done, started_at, is_first_registration) \
+             VALUES (?1, ?2, 'PENDING', 0, ?3, ?4) \
+             ON CONFLICT(kind) DO UPDATE SET \
+                 schema_id = excluded.schema_id, \
+                 state = 'PENDING', \
+                 rows_total = NULL, \
+                 rows_done = 0, \
+                 started_at = excluded.started_at, \
+                 last_progress_at = NULL, \
+                 error_message = NULL, \
+                 is_first_registration = excluded.is_first_registration",
+            rusqlite::params![kind, schema_id, now_ms, is_first],
+        )?;
+
+        persist_simple_provenance_event(
+            &tx,
+            "fts_property_schema_registered",
+            kind,
+            Some(serde_json::json!({
+                "property_paths": paths,
+                "separator": separator,
+                "mode": "async",
+            })),
+        )?;
+        tx.commit()?;
+
+        // Enqueue the rebuild request if the actor is available.
+        if let Some(sender) = &self.rebuild_sender {
+            let _ = sender.try_send(RebuildRequest {
+                kind: kind.to_owned(),
+                schema_id,
+            });
+        }
+
+        self.describe_fts_property_schema(kind)?.ok_or_else(|| {
+            EngineError::Bridge("registered FTS property schema missing after commit".to_owned())
+        })
+    }
+
+    /// Return the rebuild state row for a kind, if one exists.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the database query fails.
+    pub fn get_property_fts_rebuild_state(
+        &self,
+        kind: &str,
+    ) -> Result<Option<RebuildStateRow>, EngineError> {
+        let conn = self.connect()?;
+        let row = conn
+            .query_row(
+                "SELECT kind, schema_id, state, rows_total, rows_done, \
+                 started_at, is_first_registration, error_message \
+                 FROM fts_property_rebuild_state WHERE kind = ?1",
+                rusqlite::params![kind],
+                |r| {
+                    Ok(RebuildStateRow {
+                        kind: r.get(0)?,
+                        schema_id: r.get(1)?,
+                        state: r.get(2)?,
+                        rows_total: r.get(3)?,
+                        rows_done: r.get(4)?,
+                        started_at: r.get(5)?,
+                        is_first_registration: r.get::<_, i64>(6)? != 0,
+                        error_message: r.get(7)?,
+                    })
+                },
+            )
+            .optional()?;
+        Ok(row)
+    }
+
+    /// Return the count of rows in `fts_property_rebuild_staging` for a kind.
+    /// Used by tests to verify the staging table was populated.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the database query fails.
+    pub fn count_staging_rows(&self, kind: &str) -> Result<i64, EngineError> {
+        let conn = self.connect()?;
+        let count: i64 = conn.query_row(
+            "SELECT count(*) FROM fts_property_rebuild_staging WHERE kind = ?1",
+            rusqlite::params![kind],
+            |r| r.get(0),
+        )?;
+        Ok(count)
     }
 
     /// Return the FTS property schema for a single node kind, if registered.
@@ -8386,6 +8576,7 @@ mod tests {
                 &entries,
                 Some(" "),
                 &exclude,
+                crate::rebuild_actor::RebuildMode::Eager,
             )
             .expect("register recursive");
 
@@ -8422,6 +8613,7 @@ mod tests {
                 &entries,
                 Some(" "),
                 &exclude,
+                crate::rebuild_actor::RebuildMode::Eager,
             )
             .expect("register recursive");
 
