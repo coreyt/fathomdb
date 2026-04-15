@@ -379,108 +379,35 @@ impl ExecutionCoordinator {
     ) -> Result<Self, EngineError> {
         let path = path.as_ref().to_path_buf();
         #[cfg(feature = "sqlite-vec")]
-        let conn = if vector_dimension.is_some() {
+        let mut conn = if vector_dimension.is_some() {
             sqlite::open_connection_with_vec(&path)?
         } else {
             sqlite::open_connection(&path)?
         };
         #[cfg(not(feature = "sqlite-vec"))]
-        let conn = sqlite::open_connection(&path)?;
+        let mut conn = sqlite::open_connection(&path)?;
 
         let report = schema_manager.bootstrap(&conn)?;
 
         // ----- Open-time rebuild guards for derived FTS state -----
         //
-        // `fts_node_properties` and `fts_node_property_positions` are both
-        // derived from the canonical `nodes.properties` blobs and the set
-        // of registered `fts_property_schemas`. They are NOT source of
-        // truth, so whenever a schema migration or crash leaves either
-        // table out of sync with the canonical state we repopulate them
-        // from scratch at open() time.
+        // Property FTS data is derived state. Per-kind `fts_props_<kind>`
+        // virtual tables are NOT source of truth — they must be rebuildable
+        // from canonical `nodes.properties` + `fts_property_schemas` at any
+        // time. After migration 23 the global `fts_node_properties` table no
+        // longer exists; each registered kind has its own `fts_props_<kind>`
+        // table created at first write or first rebuild.
         //
-        // The derived-state invariant is: if `fts_property_schemas` is
-        // non-empty, then `fts_node_properties` must also be non-empty,
-        // and if any schema is recursive-mode then
-        // `fts_node_property_positions` must also be non-empty. If either
-        // guard trips, both tables are cleared and rebuilt together — it
-        // is never correct to rebuild only one half.
+        // Guard 1: if any registered kind's per-kind table is missing or empty
+        // while live nodes of that kind exist, do a synchronous full rebuild of
+        // all per-kind FTS tables and position map rows.
         //
-        // Guard 1 (P2-1, FX pack, v15→v16 migration): detects an empty
-        // `fts_node_properties` while schemas exist. This covers the
-        // Phase 2 tokenizer swap (migration 16 drops the FTS5 virtual
-        // table before recreating it under `porter unicode61`) and the
-        // crash-recovery case where a prior open applied migration 16 but
-        // crashed before the subsequent property-FTS rebuild committed.
+        // Guard 2: if any recursive schema has a populated per-kind table but
+        // `fts_node_property_positions` is empty, do a synchronous full rebuild
+        // to regenerate the position map from canonical state.
         //
-        // Guard 2 (P4-P2-3, FX2 pack, v16→v17 migration, extended to
-        // v17→v18 by P4-P2-4): detects an empty
-        // `fts_node_property_positions` while any recursive-mode schema
-        // exists. This covers migration 17 (which added the sidecar table
-        // but left it empty) and migration 18 (which drops and recreates
-        // the sidecar to add the UNIQUE constraint, also leaving it
-        // empty). Both migrations land on the same guard because both
-        // leave the positions table empty while recursive schemas remain
-        // registered.
-        //
-        // Both guards are no-ops on an already-consistent database, so
-        // running them on every open is safe and cheap.
-        let needs_property_fts_rebuild = {
-            let schema_count: i64 =
-                conn.query_row("SELECT COUNT(*) FROM fts_property_schemas", [], |row| {
-                    row.get(0)
-                })?;
-            if schema_count == 0 {
-                false
-            } else {
-                let fts_count: i64 =
-                    conn.query_row("SELECT COUNT(*) FROM fts_node_properties", [], |row| {
-                        row.get(0)
-                    })?;
-                fts_count == 0
-            }
-        };
-        // Guard 2 (see block comment above): recursive schemas registered
-        // but `fts_node_property_positions` empty. Rebuild regenerates
-        // both the FTS blob and the position map from canonical state, so
-        // it is safe to trigger even when `fts_node_properties` is
-        // already populated.
-        let needs_position_backfill = {
-            // NOTE: This LIKE pattern assumes `property_paths_json` is
-            // serialized with compact formatting (no whitespace around
-            // `:`). All current writers go through `serde_json`'s compact
-            // output so this holds. If a future writer emits pretty-
-            // printed JSON (`"mode": "recursive"` with a space), this
-            // guard would silently fail. A more robust check would use
-            // `json_extract(property_paths_json, '$[*].mode')` or a
-            // parsed scan, at the cost of a per-row JSON walk.
-            let recursive_schema_count: i64 = conn.query_row(
-                "SELECT COUNT(*) FROM fts_property_schemas \
-                 WHERE property_paths_json LIKE '%\"mode\":\"recursive\"%'",
-                [],
-                |row| row.get(0),
-            )?;
-            if recursive_schema_count == 0 {
-                false
-            } else {
-                let position_count: i64 = conn.query_row(
-                    "SELECT COUNT(*) FROM fts_node_property_positions",
-                    [],
-                    |row| row.get(0),
-                )?;
-                position_count == 0
-            }
-        };
-        if needs_property_fts_rebuild || needs_position_backfill {
-            let tx = conn.unchecked_transaction()?;
-            tx.execute("DELETE FROM fts_node_properties", [])?;
-            tx.execute("DELETE FROM fts_node_property_positions", [])?;
-            crate::projection::insert_property_fts_rows(
-                &tx,
-                "SELECT logical_id, properties FROM nodes \
-                 WHERE kind = ?1 AND superseded_at IS NULL",
-            )?;
-            tx.commit()?;
-        }
+        // Both guards are no-ops on a consistent database.
+        run_open_time_fts_guards(&mut conn)?;
 
         #[cfg(feature = "sqlite-vec")]
         let mut vector_enabled = report.vector_profile_enabled;
@@ -569,8 +496,8 @@ impl ExecutionCoordinator {
     ) -> Result<QueryRows, EngineError> {
         // Scan fallback for first-registration async rebuild: if the query uses the
         // FtsNodes driving table and the root kind has is_first_registration=1 with
-        // state IN ('PENDING','BUILDING'), the fts_node_properties table has no rows
-        // yet. Route to a full-kind node scan so callers get results instead of empty.
+        // state IN ('PENDING','BUILDING'), the per-kind table has no rows yet.
+        // Route to a full-kind node scan so callers get results instead of empty.
         if compiled.driving_table == DrivingTable::FtsNodes
             && let Some(BindValue::Text(root_kind)) = compiled.binds.get(1)
             && let Some(nodes) = self.scan_fallback_if_first_registration(root_kind)?
@@ -585,7 +512,27 @@ impl ExecutionCoordinator {
             });
         }
 
-        let row_sql = wrap_node_row_projection_sql(&compiled.sql);
+        // For FtsNodes queries the fathomdb-query compile path generates SQL that
+        // references the old global `fts_node_properties` table.  Since migration 23
+        // dropped that table, we rewrite the SQL and binds here to use the per-kind
+        // `fts_props_<kind>` table (or omit the property UNION arm entirely when the
+        // per-kind table does not yet exist).
+        let (adapted_sql, adapted_binds) = if compiled.driving_table == DrivingTable::FtsNodes {
+            let conn_check = match self.lock_connection() {
+                Ok(g) => g,
+                Err(e) => {
+                    self.telemetry.increment_errors();
+                    return Err(e);
+                }
+            };
+            let result = adapt_fts_nodes_sql_for_per_kind_tables(compiled, &conn_check);
+            drop(conn_check);
+            result?
+        } else {
+            (compiled.sql.clone(), compiled.binds.clone())
+        };
+
+        let row_sql = wrap_node_row_projection_sql(&adapted_sql);
         // FIX(review): was .expect() — panics on mutex poisoning, cascading failure.
         // Options: (A) into_inner() for all, (B) EngineError for all, (C) mixed.
         // Chose (C): shape_sql_map is a pure cache — into_inner() is safe to recover.
@@ -603,8 +550,7 @@ impl ExecutionCoordinator {
             cache.insert(compiled.shape_hash, row_sql.clone());
         }
 
-        let bind_values = compiled
-            .binds
+        let bind_values = adapted_binds
             .iter()
             .map(bind_value_to_sql)
             .collect::<Vec<_>>();
@@ -1358,15 +1304,111 @@ impl ExecutionCoordinator {
         // because `QueryBuilder::nodes(kind)` requires a non-empty string at
         // the entry point.
         let filter_by_kind = !compiled.root_kind.is_empty();
-        let mut binds: Vec<BindValue> = if filter_by_kind {
-            vec![
-                BindValue::Text(rendered.clone()),
-                BindValue::Text(compiled.root_kind.clone()),
-                BindValue::Text(rendered),
-                BindValue::Text(compiled.root_kind.clone()),
-            ]
+
+        // Acquire the connection early so we can check per-kind table existence
+        // before building the bind array and SQL. The bind numbering depends on
+        // whether the property FTS UNION arm is included.
+        let conn_guard = match self.lock_connection() {
+            Ok(g) => g,
+            Err(e) => {
+                self.telemetry.increment_errors();
+                return Err(e);
+            }
+        };
+
+        // Determine which per-kind property FTS tables to include in the UNION arm.
+        //
+        // filter_by_kind = true (root_kind set): include the single per-kind table
+        //   for root_kind if it exists. Bind order: ?1=chunk_text, ?2=kind, ?3=prop_text.
+        //
+        // filter_by_kind = false (fallback search, root_kind empty): include per-kind tables
+        //   based on fusable KindEq predicates or all registered tables from sqlite_master.
+        //   A single KindEq in fusable_filters lets us use one specific table. With no KindEq
+        //   we UNION all per-kind tables so kind-less fallback searches still find property
+        //   hits (matching the behaviour of the former global fts_node_properties table).
+        //   Bind order: ?1=chunk_text, ?2=prop_text (shared across all prop UNION arms).
+        //
+        // In both cases, per-kind tables are already kind-specific so no `fp.kind = ?` filter
+        // is needed inside the inner arm; the outer `search_hits` CTE WHERE clause handles
+        // any further kind narrowing via fused KindEq predicates.
+        let prop_fts_tables: Vec<String> = if filter_by_kind {
+            let prop_table = fathomdb_schema::fts_kind_table_name(&compiled.root_kind);
+            let exists: bool = conn_guard
+                .query_row(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1",
+                    rusqlite::params![prop_table],
+                    |_| Ok(true),
+                )
+                .optional()
+                .map_err(EngineError::Sqlite)?
+                .unwrap_or(false);
+            if exists { vec![prop_table] } else { vec![] }
         } else {
+            // Fallback / kind-less search: find the right per-kind tables.
+            // If there is exactly one KindEq in fusable_filters, use that kind's table.
+            // Otherwise, include all registered per-kind tables from sqlite_master so
+            // that kind-less fallback searches can still return property FTS hits.
+            let kind_eq_values: Vec<String> = compiled
+                .fusable_filters
+                .iter()
+                .filter_map(|p| match p {
+                    Predicate::KindEq(k) => Some(k.clone()),
+                    _ => None,
+                })
+                .collect();
+            if kind_eq_values.len() == 1 {
+                let prop_table = fathomdb_schema::fts_kind_table_name(&kind_eq_values[0]);
+                let exists: bool = conn_guard
+                    .query_row(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1",
+                        rusqlite::params![prop_table],
+                        |_| Ok(true),
+                    )
+                    .optional()
+                    .map_err(EngineError::Sqlite)?
+                    .unwrap_or(false);
+                if exists { vec![prop_table] } else { vec![] }
+            } else {
+                // No single KindEq: UNION all per-kind tables so kind-less fallback
+                // searches behave like the former global fts_node_properties table.
+                let mut stmt = conn_guard
+                    .prepare(
+                        "SELECT name FROM sqlite_master \
+                         WHERE type='table' AND name LIKE 'fts_props_%' \
+                         AND sql LIKE 'CREATE VIRTUAL TABLE%'",
+                    )
+                    .map_err(EngineError::Sqlite)?;
+                stmt.query_map([], |r| r.get::<_, String>(0))
+                    .map_err(EngineError::Sqlite)?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(EngineError::Sqlite)?
+            }
+        };
+        let use_prop_fts = !prop_fts_tables.is_empty();
+
+        // Bind layout (before fused/residual predicates and limit):
+        //   filter_by_kind = true,  use_prop_fts = true:  ?1=chunk_text, ?2=kind, ?3=prop_text
+        //   filter_by_kind = true,  use_prop_fts = false: ?1=chunk_text, ?2=kind
+        //   filter_by_kind = false, use_prop_fts = true:  ?1=chunk_text, ?2=prop_text
+        //   filter_by_kind = false, use_prop_fts = false: ?1=chunk_text
+        let mut binds: Vec<BindValue> = if filter_by_kind {
+            if use_prop_fts {
+                vec![
+                    BindValue::Text(rendered.clone()),
+                    BindValue::Text(compiled.root_kind.clone()),
+                    BindValue::Text(rendered),
+                ]
+            } else {
+                vec![
+                    BindValue::Text(rendered.clone()),
+                    BindValue::Text(compiled.root_kind.clone()),
+                ]
+            }
+        } else if use_prop_fts {
+            // fallback search with property FTS: ?1=chunk, ?2=prop (same query value)
             vec![BindValue::Text(rendered.clone()), BindValue::Text(rendered)]
+        } else {
+            vec![BindValue::Text(rendered)]
         };
 
         // P2-5: both fusable and residual predicates now match against the
@@ -1505,16 +1547,44 @@ impl ExecutionCoordinator {
         // redundant joins on the hot search path. `src.superseded_at IS
         // NULL` in each arm already filters retired rows, which is what
         // the dropped outer joins used to do.
-        let (chunk_fts_bind, chunk_kind_clause, prop_fts_bind, prop_kind_clause) = if filter_by_kind
-        {
-            (
-                "?1",
-                "\n                      AND src.kind = ?2",
-                "?3",
-                "\n                      AND fp.kind = ?4",
-            )
+        //
+        // Property FTS uses per-kind tables (fts_props_<kind>). One UNION arm
+        // is generated per table in prop_fts_tables. The prop text bind index
+        // is ?3 when filter_by_kind=true (after chunk_text and kind binds) or
+        // ?2 when filter_by_kind=false (after chunk_text only). The same bind
+        // position is reused by every prop arm, which is valid in SQLite.
+        let prop_bind_idx: usize = if filter_by_kind { 3 } else { 2 };
+        let prop_arm_sql: String = if use_prop_fts {
+            prop_fts_tables.iter().fold(String::new(), |mut acc, prop_table| {
+                let _ = write!(
+                    acc,
+                    "
+                    UNION ALL
+                    SELECT
+                        src.row_id AS row_id,
+                        fp.node_logical_id AS logical_id,
+                        src.kind AS kind,
+                        src.properties AS properties,
+                        src.source_ref AS source_ref,
+                        src.content_ref AS content_ref,
+                        src.created_at AS created_at,
+                        -bm25({prop_table}) AS score,
+                        'property' AS source,
+                        substr(fp.text_content, 1, 200) AS snippet,
+                        CAST(fp.rowid AS TEXT) AS projection_row_id
+                    FROM {prop_table} fp
+                    JOIN nodes src ON src.logical_id = fp.node_logical_id AND src.superseded_at IS NULL
+                    WHERE {prop_table} MATCH ?{prop_bind_idx}"
+                );
+                acc
+            })
         } else {
-            ("?1", "", "?2", "")
+            String::new()
+        };
+        let (chunk_fts_bind, chunk_kind_clause) = if filter_by_kind {
+            ("?1", "\n                      AND src.kind = ?2")
+        } else {
+            ("?1", "")
         };
         let sql = format!(
             "WITH search_hits AS (
@@ -1546,23 +1616,7 @@ impl ExecutionCoordinator {
                     FROM fts_nodes f
                     JOIN chunks c ON c.id = f.chunk_id
                     JOIN nodes src ON src.logical_id = c.node_logical_id AND src.superseded_at IS NULL
-                    WHERE fts_nodes MATCH {chunk_fts_bind}{chunk_kind_clause}
-                    UNION ALL
-                    SELECT
-                        src.row_id AS row_id,
-                        fp.node_logical_id AS logical_id,
-                        src.kind AS kind,
-                        src.properties AS properties,
-                        src.source_ref AS source_ref,
-                        src.content_ref AS content_ref,
-                        src.created_at AS created_at,
-                        -bm25(fts_node_properties) AS score,
-                        'property' AS source,
-                        substr(fp.text_content, 1, 200) AS snippet,
-                        CAST(fp.rowid AS TEXT) AS projection_row_id
-                    FROM fts_node_properties fp
-                    JOIN nodes src ON src.logical_id = fp.node_logical_id AND src.superseded_at IS NULL
-                    WHERE fts_node_properties MATCH {prop_fts_bind}{prop_kind_clause}
+                    WHERE fts_nodes MATCH {chunk_fts_bind}{chunk_kind_clause}{prop_arm_sql}
                 ) u
                 WHERE 1 = 1{fused_clauses}
                 ORDER BY u.score DESC
@@ -1588,13 +1642,6 @@ impl ExecutionCoordinator {
 
         let bind_values = binds.iter().map(bind_value_to_sql).collect::<Vec<_>>();
 
-        let conn_guard = match self.lock_connection() {
-            Ok(g) => g,
-            Err(e) => {
-                self.telemetry.increment_errors();
-                return Err(e);
-            }
-        };
         let mut statement = match conn_guard.prepare_cached(&sql) {
             Ok(stmt) => stmt,
             Err(e) => {
@@ -2176,8 +2223,9 @@ impl ExecutionCoordinator {
 
     /// Check if `kind` has a first-registration async rebuild in progress
     /// (`is_first_registration=1` with state PENDING/BUILDING/SWAPPING and no
-    /// rows yet in `fts_node_properties`). If so, execute a full-kind scan and
-    /// return the nodes. Returns `None` when the normal FTS5 path should run.
+    /// rows yet in the per-kind `fts_props_<kind>` table). If so, execute a
+    /// full-kind scan and return the nodes. Returns `None` when the normal
+    /// FTS5 path should run.
     fn scan_fallback_if_first_registration(
         &self,
         kind: &str,
@@ -2185,19 +2233,40 @@ impl ExecutionCoordinator {
         let conn = self.lock_connection()?;
 
         // Quick point-lookup: kind has a first-registration rebuild in a
-        // pre-complete state AND fts_node_properties has no rows for it yet.
-        let needs_scan: bool = conn
+        // pre-complete state AND the per-kind table has no rows yet.
+        let prop_table = fathomdb_schema::fts_kind_table_name(kind);
+        // Check whether the per-kind table exists before querying its row count.
+        let table_exists: bool = conn
             .query_row(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1",
+                rusqlite::params![prop_table],
+                |_| Ok(true),
+            )
+            .optional()?
+            .unwrap_or(false);
+        let prop_empty = if table_exists {
+            let cnt: i64 =
+                conn.query_row(&format!("SELECT COUNT(*) FROM {prop_table}"), [], |r| {
+                    r.get(0)
+                })?;
+            cnt == 0
+        } else {
+            true
+        };
+        let needs_scan: bool = if prop_empty {
+            conn.query_row(
                 "SELECT 1 FROM fts_property_rebuild_state \
                  WHERE kind = ?1 AND is_first_registration = 1 \
                  AND state IN ('PENDING','BUILDING','SWAPPING') \
-                 AND NOT EXISTS (SELECT 1 FROM fts_node_properties WHERE kind = ?1) \
                  LIMIT 1",
                 rusqlite::params![kind],
                 |_| Ok(true),
             )
             .optional()?
-            .unwrap_or(false);
+            .unwrap_or(false)
+        } else {
+            false
+        };
 
         if !needs_scan {
             return Ok(None);
@@ -2264,12 +2333,281 @@ impl ExecutionCoordinator {
     }
 }
 
+/// Rewrite a `CompiledQuery` whose SQL references the legacy `fts_node_properties`
+/// table to use the per-kind `fts_props_<kind>` table, or strip the property FTS
+/// arm entirely when the per-kind table does not exist in `sqlite_master`.
+///
+/// Returns `(adapted_sql, adapted_binds)`.
+fn adapt_fts_nodes_sql_for_per_kind_tables(
+    compiled: &CompiledQuery,
+    conn: &rusqlite::Connection,
+) -> Result<(String, Vec<BindValue>), EngineError> {
+    let root_kind = compiled
+        .binds
+        .get(1)
+        .and_then(|b| {
+            if let BindValue::Text(k) = b {
+                Some(k.as_str())
+            } else {
+                None
+            }
+        })
+        .unwrap_or("");
+    let prop_table = fathomdb_schema::fts_kind_table_name(root_kind);
+    let prop_table_exists: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1",
+            rusqlite::params![prop_table],
+            |_| Ok(true),
+        )
+        .optional()
+        .map_err(EngineError::Sqlite)?
+        .unwrap_or(false);
+
+    // The compile_query path assigns fixed positional parameters:
+    //   ?1 = text (chunk FTS), ?2 = kind (chunk filter),
+    //   ?3 = text (prop FTS),  ?4 = kind (prop filter),
+    //   ?5+ = fusable/residual predicates
+    let (new_sql, removed_bind_positions) = if prop_table_exists {
+        let s = compiled
+            .sql
+            .replace("fts_node_properties", &prop_table)
+            .replace("\n                          AND fp.kind = ?4", "");
+        (renumber_sql_params(&s, &[4]), vec![3usize])
+    } else {
+        let s = strip_prop_fts_union_arm(&compiled.sql);
+        (renumber_sql_params(&s, &[3, 4]), vec![2usize, 3])
+    };
+
+    let new_binds: Vec<BindValue> = compiled
+        .binds
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !removed_bind_positions.contains(i))
+        .map(|(_, b)| b.clone())
+        .collect();
+
+    Ok((new_sql, new_binds))
+}
+
+/// Open-time FTS rebuild guards (Guard 1 + Guard 2).
+///
+/// Guard 1: if any registered kind's per-kind `fts_props_<kind>` table is
+/// missing or empty while live nodes of that kind exist, do a synchronous
+/// full rebuild.
+///
+/// Guard 2: if any recursive schema is registered but
+/// `fts_node_property_positions` is empty, do a synchronous full rebuild to
+/// regenerate the position map.
+///
+/// Both guards are no-ops on a consistent database.
+fn run_open_time_fts_guards(conn: &mut rusqlite::Connection) -> Result<(), EngineError> {
+    let schema_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM fts_property_schemas", [], |row| {
+            row.get(0)
+        })
+        .map_err(EngineError::Sqlite)?;
+    if schema_count == 0 {
+        return Ok(());
+    }
+
+    let needs_fts_rebuild = open_guard_check_fts_empty(conn)?;
+    let needs_position_backfill = if needs_fts_rebuild {
+        false
+    } else {
+        open_guard_check_positions_empty(conn)?
+    };
+
+    if needs_fts_rebuild || needs_position_backfill {
+        let per_kind_tables: Vec<String> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT name FROM sqlite_master \
+                     WHERE type='table' AND name LIKE 'fts_props_%' \
+                     AND sql LIKE 'CREATE VIRTUAL TABLE%'",
+                )
+                .map_err(EngineError::Sqlite)?;
+            stmt.query_map([], |r| r.get::<_, String>(0))
+                .map_err(EngineError::Sqlite)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(EngineError::Sqlite)?
+        };
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(EngineError::Sqlite)?;
+        for table in &per_kind_tables {
+            tx.execute_batch(&format!("DELETE FROM {table}"))
+                .map_err(EngineError::Sqlite)?;
+        }
+        tx.execute("DELETE FROM fts_node_property_positions", [])
+            .map_err(EngineError::Sqlite)?;
+        crate::projection::insert_property_fts_rows(
+            &tx,
+            "SELECT logical_id, properties FROM nodes \
+             WHERE kind = ?1 AND superseded_at IS NULL",
+        )
+        .map_err(EngineError::Sqlite)?;
+        tx.commit().map_err(EngineError::Sqlite)?;
+    }
+    Ok(())
+}
+
+fn open_guard_check_fts_empty(conn: &rusqlite::Connection) -> Result<bool, EngineError> {
+    let kinds: Vec<String> = {
+        let mut stmt = conn
+            .prepare("SELECT kind FROM fts_property_schemas")
+            .map_err(EngineError::Sqlite)?;
+        stmt.query_map([], |row| row.get::<_, String>(0))
+            .map_err(EngineError::Sqlite)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(EngineError::Sqlite)?
+    };
+    for kind in &kinds {
+        let table = fathomdb_schema::fts_kind_table_name(kind);
+        let table_exists: bool = conn
+            .query_row(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1",
+                rusqlite::params![table],
+                |_| Ok(true),
+            )
+            .optional()
+            .map_err(EngineError::Sqlite)?
+            .unwrap_or(false);
+        let fts_count: i64 = if table_exists {
+            conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .map_err(EngineError::Sqlite)?
+        } else {
+            0
+        };
+        if fts_count == 0 {
+            let node_count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM nodes WHERE kind = ?1 AND superseded_at IS NULL",
+                    rusqlite::params![kind],
+                    |row| row.get(0),
+                )
+                .map_err(EngineError::Sqlite)?;
+            if node_count > 0 {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+fn open_guard_check_positions_empty(conn: &rusqlite::Connection) -> Result<bool, EngineError> {
+    let recursive_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM fts_property_schemas \
+             WHERE property_paths_json LIKE '%\"mode\":\"recursive\"%'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(EngineError::Sqlite)?;
+    if recursive_count == 0 {
+        return Ok(false);
+    }
+    let pos_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM fts_node_property_positions",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(EngineError::Sqlite)?;
+    Ok(pos_count == 0)
+}
+
+/// Renumber `SQLite` positional parameters in `sql` after removing the given
+/// 1-based parameter numbers from `removed` (sorted ascending).
+///
+/// Each `?N` in the SQL where `N` is in `removed` is left in place (the caller
+/// must have already deleted those references from the SQL). Every `?N` where
+/// `N` is greater than any removed parameter is decremented by the count of
+/// removed parameters that are less than `N`.
+///
+/// Example: if `removed = [4]` then `?5` → `?4`, `?6` → `?5`, etc.
+/// Example: if `removed = [3, 4]` then `?5` → `?3`, `?6` → `?4`, etc.
+fn renumber_sql_params(sql: &str, removed: &[usize]) -> String {
+    // We walk the string looking for `?` followed by decimal digits and
+    // replace the number according to the removal offset.
+    let mut result = String::with_capacity(sql.len());
+    let bytes = sql.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'?' {
+            // Check if next chars are digits.
+            let num_start = i + 1;
+            let mut j = num_start;
+            while j < bytes.len() && bytes[j].is_ascii_digit() {
+                j += 1;
+            }
+            if j > num_start {
+                // Parse the parameter number (1-based).
+                let num_str = &sql[num_start..j];
+                if let Ok(n) = num_str.parse::<usize>() {
+                    // Count how many removed params are < n.
+                    let offset = removed.iter().filter(|&&r| r < n).count();
+                    result.push('?');
+                    result.push_str(&(n - offset).to_string());
+                    i = j;
+                    continue;
+                }
+            }
+        }
+        result.push(bytes[i] as char);
+        i += 1;
+    }
+    result
+}
+
 fn wrap_node_row_projection_sql(base_sql: &str) -> String {
     format!(
         "SELECT q.row_id, q.logical_id, q.kind, q.properties, q.content_ref, am.last_accessed_at \
          FROM ({base_sql}) q \
          LEFT JOIN node_access_metadata am ON am.logical_id = q.logical_id"
     )
+}
+
+/// Strip the property FTS UNION arm from a `compile_query`-generated
+/// `DrivingTable::FtsNodes` SQL string.
+///
+/// When the per-kind `fts_props_<kind>` table does not yet exist the
+/// `UNION SELECT ... FROM fts_node_properties ...` arm must be removed so the
+/// query degrades to chunk-only results instead of failing with "no such table".
+///
+/// The SQL structure from `compile_query` (fathomdb-query) is stable:
+/// ```
+///                     UNION
+///                     SELECT fp.node_logical_id AS logical_id
+///                     FROM fts_node_properties fp
+///                     ...
+///                     WHERE fts_node_properties MATCH ?3
+///                       AND fp.kind = ?4
+///                 ) u
+/// ```
+/// We locate the `UNION` that precedes `fts_node_properties` and cut
+/// everything from it to the closing `) u`.
+fn strip_prop_fts_union_arm(sql: &str) -> String {
+    // The UNION arm in compile_query-generated FtsNodes SQL has:
+    //   - UNION with 24 spaces of indentation
+    //   - SELECT fp.node_logical_id with 24 spaces of indentation
+    //   - ending at "\n                    ) u" (20 spaces before ") u")
+    // Match the UNION that is immediately followed by the property arm.
+    let union_marker =
+        "                        UNION\n                        SELECT fp.node_logical_id";
+    if let Some(start) = sql.find(union_marker) {
+        // Find the closing ") u" after the property arm.
+        let end_marker = "\n                    ) u";
+        if let Some(rel_end) = sql[start..].find(end_marker) {
+            let end = start + rel_end;
+            // Remove from UNION start to (but not including) the "\n                    ) u" closing.
+            return format!("{}{}", &sql[..start], &sql[end..]);
+        }
+    }
+    // Fallback: return unchanged if pattern not found (shouldn't happen).
+    sql.to_owned()
 }
 
 /// Returns `true` when `err` indicates the vec virtual table is absent
@@ -2528,13 +2866,15 @@ fn resolve_hit_attribution(
     // Fetch the highlight-wrapped text_content for this hit's FTS row. The
     // FTS5 MATCH in the WHERE clause re-establishes the match state that
     // `highlight()` needs to decorate the returned text.
-    let mut stmt = conn
-        .prepare_cached(
-            "SELECT highlight(fts_node_properties, 2, ?1, ?2) \
-             FROM fts_node_properties \
-             WHERE rowid = ?3 AND fts_node_properties MATCH ?4",
-        )
-        .map_err(EngineError::Sqlite)?;
+    // Per-kind tables have schema (node_logical_id UNINDEXED, text_content),
+    // so text_content is column index 1 (0-based).
+    let prop_table = fathomdb_schema::fts_kind_table_name(&hit.node.kind);
+    let highlight_sql = format!(
+        "SELECT highlight({prop_table}, 1, ?1, ?2) \
+         FROM {prop_table} \
+         WHERE rowid = ?3 AND {prop_table} MATCH ?4"
+    );
+    let mut stmt = conn.prepare(&highlight_sql).map_err(EngineError::Sqlite)?;
     let wrapped: Option<String> = stmt
         .query_row(
             rusqlite::params![
@@ -3258,12 +3598,20 @@ mod tests {
         let conn = rusqlite::Connection::open(db.path()).expect("open db");
 
         // Insert a structured-only node (no chunks) with a property FTS row.
+        // Per-kind table fts_props_goal must be created before inserting.
+        conn.execute_batch(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS fts_props_goal USING fts5(\
+                node_logical_id UNINDEXED, text_content, \
+                tokenize = 'porter unicode61 remove_diacritics 2'\
+            )",
+        )
+        .expect("create per-kind fts table");
         conn.execute_batch(
             r#"
             INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref)
             VALUES ('row-1', 'goal-1', 'Goal', '{"name":"Ship v2"}', 100, 'seed');
-            INSERT INTO fts_node_properties (node_logical_id, kind, text_content)
-            VALUES ('goal-1', 'Goal', 'Ship v2');
+            INSERT INTO fts_props_goal (node_logical_id, text_content)
+            VALUES ('goal-1', 'Ship v2');
             "#,
         )
         .expect("seed data");
@@ -3310,12 +3658,20 @@ mod tests {
         .expect("seed chunk-backed node");
 
         // Property-backed hit: a Meeting with property FTS containing "quarterly".
+        // Per-kind table fts_props_meeting must be created before inserting.
+        conn.execute_batch(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS fts_props_meeting USING fts5(\
+                node_logical_id UNINDEXED, text_content, \
+                tokenize = 'porter unicode61 remove_diacritics 2'\
+            )",
+        )
+        .expect("create per-kind fts table");
         conn.execute_batch(
             r#"
             INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref)
             VALUES ('row-2', 'meeting-2', 'Meeting', '{"title":"quarterly sync"}', 100, 'seed');
-            INSERT INTO fts_node_properties (node_logical_id, kind, text_content)
-            VALUES ('meeting-2', 'Meeting', 'quarterly sync');
+            INSERT INTO fts_props_meeting (node_logical_id, text_content)
+            VALUES ('meeting-2', 'quarterly sync');
             "#,
         )
         .expect("seed property-backed node");

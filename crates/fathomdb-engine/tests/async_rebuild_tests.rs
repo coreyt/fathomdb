@@ -7,6 +7,7 @@ use fathomdb_engine::{
     RebuildMode, TelemetryLevel, WriteRequest,
 };
 use fathomdb_query::QueryBuilder;
+use rusqlite::OptionalExtension as _;
 
 fn open_engine(dir: &tempfile::TempDir) -> EngineRuntime {
     EngineRuntime::open(
@@ -189,16 +190,15 @@ fn async_rebuild_populates_staging_table() {
         // COMPLETE: staging was cleared; verify via FTS table (raw connection).
         let conn =
             rusqlite::Connection::open(dir.path().join("test.db")).expect("open raw connection");
+        let note_table = fathomdb_schema::fts_kind_table_name("Note");
         let count: i64 = conn
-            .query_row(
-                "SELECT count(*) FROM fts_node_properties WHERE kind = 'Note'",
-                [],
-                |r| r.get(0),
-            )
+            .query_row(&format!("SELECT count(*) FROM {note_table}"), [], |r| {
+                r.get(0)
+            })
             .expect("count fts rows");
         assert_eq!(
             count, 5,
-            "expected 5 fts_node_properties rows for 'Note' after swap, got {count}"
+            "expected 5 {note_table} rows for 'Note' after swap, got {count}"
         );
     }
 }
@@ -420,18 +420,33 @@ fn delete_during_rebuild_removes_from_both_tables() {
         "ticket:del should not be in staging after retire"
     );
 
-    // Also check fts_node_properties directly via a raw connection.
+    // Also check the per-kind FTS table directly via a raw connection.
     let conn = rusqlite::Connection::open(dir.path().join("test.db")).expect("open raw connection");
-    let live_count: i64 = conn
+    let ticketdel_table = fathomdb_schema::fts_kind_table_name("TicketDel");
+    // The per-kind table may not exist yet if the rebuild hasn't started/completed;
+    // in that case there are trivially 0 rows for ticket:del.
+    let table_exists: bool = conn
         .query_row(
-            "SELECT count(*) FROM fts_node_properties WHERE node_logical_id = 'ticket:del'",
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1",
+            rusqlite::params![ticketdel_table],
+            |_| Ok(true),
+        )
+        .optional()
+        .expect("sqlite_master query")
+        .unwrap_or(false);
+    let live_count: i64 = if table_exists {
+        conn.query_row(
+            &format!("SELECT count(*) FROM {ticketdel_table} WHERE node_logical_id = 'ticket:del'"),
             [],
             |r| r.get(0),
         )
-        .expect("count live fts");
+        .expect("count live fts")
+    } else {
+        0
+    };
     assert_eq!(
         live_count, 0,
-        "ticket:del should be removed from fts_node_properties after retire"
+        "ticket:del should be removed from {ticketdel_table} after retire"
     );
 }
 
@@ -835,18 +850,17 @@ fn rebuild_completes_and_fts_table_is_queryable() {
     // Wait for COMPLETE (up to 10s).
     wait_for_state(&svc, "DocKind", &["COMPLETE"], 10);
 
-    // Verify all 4 rows exist in fts_node_properties via a raw connection.
+    // Verify all 4 rows exist in the per-kind FTS table via a raw connection.
     let conn = rusqlite::Connection::open(dir.path().join("test.db")).expect("open raw connection");
+    let dockind_table = fathomdb_schema::fts_kind_table_name("DocKind");
     let fts_count: i64 = conn
-        .query_row(
-            "SELECT count(*) FROM fts_node_properties WHERE kind = 'DocKind'",
-            [],
-            |r| r.get(0),
-        )
+        .query_row(&format!("SELECT count(*) FROM {dockind_table}"), [], |r| {
+            r.get(0)
+        })
         .expect("count fts rows");
     assert_eq!(
         fts_count, 4,
-        "expected 4 fts_node_properties rows after rebuild, got {fts_count}"
+        "expected 4 {dockind_table} rows after rebuild, got {fts_count}"
     );
 
     // Staging table should be empty (swap moved all rows).

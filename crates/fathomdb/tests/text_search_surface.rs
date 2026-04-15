@@ -922,9 +922,10 @@ fn recursive_schema_registration_is_transactional() {
         .expect("open for assertion");
 
     // Every active Doc node must have a property FTS row.
+    let doc_fts_table = fathomdb_schema::fts_kind_table_name("Doc");
     let prop_rows: i64 = conn
         .query_row(
-            "SELECT count(*) FROM fts_node_properties WHERE kind = 'Doc'",
+            &format!("SELECT count(*) FROM {doc_fts_table}"),
             [],
             |row| row.get(0),
         )
@@ -947,7 +948,7 @@ fn recursive_schema_registration_is_transactional() {
     // Spot-check that each position-map entry points at a real leaf value.
     let text_doc1: String = conn
         .query_row(
-            "SELECT text_content FROM fts_node_properties WHERE node_logical_id = 'doc-1'",
+            &format!("SELECT text_content FROM {doc_fts_table} WHERE node_logical_id = 'doc-1'"),
             [],
             |row| row.get(0),
         )
@@ -1828,11 +1829,12 @@ fn property_fts_rebuilds_after_crash_recovery_state() {
         drop(engine);
     }
 
-    // Simulate crash-recovery: delete all fts_node_properties rows via a
-    // direct rusqlite connection, leaving fts_property_schemas intact.
+    // Simulate crash-recovery: delete all per-kind FTS rows via a direct
+    // rusqlite connection, leaving fts_property_schemas intact.
     {
         let conn = rusqlite::Connection::open(&db_path).expect("raw conn");
-        conn.execute("DELETE FROM fts_node_properties", [])
+        let note_table = fathomdb_schema::fts_kind_table_name("Note");
+        conn.execute_batch(&format!("DELETE FROM {note_table}"))
             .expect("delete fts rows");
         conn.execute("DELETE FROM fts_node_property_positions", [])
             .expect("delete positions");
@@ -1915,16 +1917,19 @@ fn eager_rebuild_does_not_duplicate_sibling_kind_rows() {
         .expect("beta search");
     assert!(!beta_before.hits.is_empty(), "beta must have hits");
 
-    // Count raw fts_node_properties rows for AlphaKind pre-rebuild.
+    // Count raw per-kind FTS rows for AlphaKind pre-rebuild.
     let db_path = engine.coordinator().database_path().to_path_buf();
-    let count_alpha_rows = || -> i64 {
-        let conn = rusqlite::Connection::open(&db_path).expect("raw conn");
-        conn.query_row(
-            "SELECT COUNT(*) FROM fts_node_properties WHERE kind = ?1",
-            ["AlphaKind"],
-            |r| r.get(0),
-        )
-        .expect("count query")
+    let alpha_table = fathomdb_schema::fts_kind_table_name("AlphaKind");
+    let count_alpha_rows = {
+        let db_path = db_path.clone();
+        let alpha_table = alpha_table.clone();
+        move || -> i64 {
+            let conn = rusqlite::Connection::open(&db_path).expect("raw conn");
+            conn.query_row(&format!("SELECT COUNT(*) FROM {alpha_table}"), [], |r| {
+                r.get(0)
+            })
+            .expect("count query")
+        }
     };
     let alpha_rows_before = count_alpha_rows();
 
