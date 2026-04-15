@@ -30,6 +30,12 @@ Homepage = "https://github.com/coreyt/fathomdb"
 Repository = "https://github.com/coreyt/fathomdb"
 Issues = "https://github.com/coreyt/fathomdb/issues"
 
+[project.optional-dependencies]
+openai = ["httpx>=0.25"]
+jina   = ["httpx>=0.25"]
+stella = ["sentence-transformers>=2.7"]
+embedders = ["httpx>=0.25", "sentence-transformers>=2.7"]
+
 [tool.maturin]
 manifest-path = "../crates/fathomdb/Cargo.toml"
 module-name = "fathomdb._fathomdb"
