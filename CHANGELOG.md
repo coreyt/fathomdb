@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.5] — 2026-04-15
+
+### Added
+
+- **Projection profiles** (`FtsProfile`, `VecProfile`, `ImpactReport`): CRUD methods on `AdminService` (`set_fts_profile`, `get_fts_profile`, `get_vec_profile`, `preview_projection_impact`) backed by the `projection_profiles` table. Five built-in tokenizer presets: `recall-optimized-english`, `precision-optimized`, `global-cjk`, `substring-trigram`, `source-code`.
+- **Rust FFI + PyO3 bindings** (`set_fts_profile`, `get_fts_profile`, `set_vec_profile`, `get_vec_profile`, `preview_projection_impact`) on `EngineCore`, releasing the GIL via `py.detach()`.
+- **Python profile management** (`fathomdb.FtsProfile`, `VecProfile`, `ImpactReport`, `RebuildMode`, `RebuildImpactError`): `AdminClient.configure_fts`, `configure_vec`, `preview_projection_impact`, `get_fts_profile`, `get_vec_profile`. `RebuildImpactError` raised when rows > 0 and `agree_to_rebuild_impact=False`.
+- **Python embedding adapters** (`fathomdb.embedders`): `OpenAIEmbedder` (httpx, 300 s TTL cache), `JinaEmbedder`, `StellaEmbedder` (lazy `sentence-transformers`, L2-norm after Matryoshka truncation), `SubprocessEmbedder` (persistent process, binary f32 LE protocol). Optional deps: `fathomdb[openai]`, `fathomdb[jina]`, `fathomdb[stella]`, `fathomdb[embedders]`.
+- **Admin CLI** (`fathomdb admin …`): `configure-fts`, `configure-vec`, `preview-impact`, `get-fts-profile`, `get-vec-profile`. Interactive rebuild-impact prompt; CI-safe abort when `--agree-to-rebuild-impact` is omitted. Optional dep: `fathomdb[cli]`.
+- **Vec identity lifecycle guard**: `check_vec_identity_at_open` emits `tracing::warn!` when the configured embedder's `model_identity` or `dimensions` differ from the stored `VecProfile`; never blocks startup.
+- **Query-side tokenizer adaptations**: `TokenizerStrategy` loaded from `projection_profiles` at open. `SubstringTrigram` queries shorter than 3 chars return empty (not an error). `SourceCode` strategy uses FTS5 phrase-quoting; post-render escaping removed (phrase-quoting is sufficient and post-render transform corrupted the expression).
+
+### Fixed
+
+- `py.allow_threads` → `py.detach` rename for PyO3 0.28 compatibility in profile FFI methods.
+
 ## [0.4.2] — 2026-04-15
 
 ### Breaking changes
