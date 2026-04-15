@@ -46,9 +46,9 @@ pub struct PyPropertyPathSpec {
 
 impl From<PyPropertyPathSpec> for FtsPropertyPathSpec {
     fn from(value: PyPropertyPathSpec) -> Self {
-        Self {
-            path: value.path,
-            mode: value.mode.into(),
+        match value.mode {
+            PyPropertyPathMode::Recursive => FtsPropertyPathSpec::recursive(value.path),
+            PyPropertyPathMode::Scalar => FtsPropertyPathSpec::scalar(value.path),
         }
     }
 }
