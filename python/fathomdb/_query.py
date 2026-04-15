@@ -779,6 +779,8 @@ class SearchBuilder(_SearchBuilderBase):
         limit: int,
         filters: list[dict] | None = None,
         attribution_requested: bool = False,
+        expansions: list[dict] | None = None,
+        expand_limit: int | None = None,
     ) -> None:
         # The unified `search` mode, like adaptive `text_search`, never
         # takes a caller-supplied relaxed query. The wire shape always
@@ -791,6 +793,102 @@ class SearchBuilder(_SearchBuilderBase):
             relaxed_query=None,
             filters=filters,
             attribution_requested=attribution_requested,
+        )
+        self._expansions: list[dict] = list(expansions or [])
+        self._expand_limit: int | None = expand_limit
+
+    def _clone(self, **overrides) -> "SearchBuilder":
+        params = {
+            "core": self._core,
+            "root_kind": self._root_kind,
+            "strict_query": self._strict_query,
+            "limit": self._limit,
+            "filters": list(self._filters),
+            "attribution_requested": self._attribution_requested,
+            "expansions": list(self._expansions),
+            "expand_limit": self._expand_limit,
+        }
+        params.update(overrides)
+        return type(self)(**params)
+
+    def expand(
+        self,
+        *,
+        slot: str,
+        direction: "TraverseDirection | str",
+        label: str,
+        max_depth: int,
+        filter: dict | None = None,
+    ) -> "SearchBuilder":
+        """Register a named expansion slot for grouped query execution."""
+        value = (
+            direction.value if isinstance(direction, TraverseDirection) else direction
+        )
+        expansion = {
+            "slot": slot,
+            "direction": value,
+            "label": label,
+            "max_depth": max_depth,
+            "filter": filter,
+        }
+        return self._clone(expansions=[*self._expansions, expansion])
+
+    def limit(self, limit: int) -> "SearchBuilder":
+        """Cap the per-originator expansion result count."""
+        return self._clone(expand_limit=limit)
+
+    def _grouped_ast_payload(self) -> str:
+        return json.dumps(
+            {
+                "root_kind": self._root_kind,
+                "steps": [
+                    {
+                        "type": "text_search",
+                        "query": self._strict_query,
+                        "limit": self._limit,
+                    }
+                ],
+                "expansions": self._expansions,
+                "final_limit": self._expand_limit,
+            }
+        )
+
+    def compile_grouped(
+        self, *, progress_callback=None, feedback_config: FeedbackConfig | None = None
+    ) -> CompiledGroupedQuery:
+        """Compile the search + expansion into grouped SQL without executing."""
+        return CompiledGroupedQuery.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="query.compile_grouped",
+                    metadata={"root_kind": self._root_kind},
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=lambda: self._core.compile_grouped_ast(
+                        self._grouped_ast_payload()
+                    ),
+                )
+            )
+        )
+
+    def execute_grouped(
+        self, *, progress_callback=None, feedback_config: FeedbackConfig | None = None
+    ) -> GroupedQueryRows:
+        """Execute the search + expansion and return grouped rows."""
+        return GroupedQueryRows.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="query.execute_grouped",
+                    metadata={"root_kind": self._root_kind},
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=lambda: self._core.execute_grouped_ast(
+                        self._grouped_ast_payload()
+                    ),
+                )
+            )
         )
 
     def execute(
