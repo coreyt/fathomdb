@@ -509,6 +509,16 @@ static MIGRATIONS: &[Migration] = &[
             PRIMARY KEY (kind, facet)
         );",
     ),
+    Migration::new(
+        SchemaVersion(21),
+        "per-kind FTS5 tables replacing fts_node_properties",
+        "",
+    ),
+    Migration::new(
+        SchemaVersion(22),
+        "add columns_json to fts_property_rebuild_staging for multi-column rebuild support",
+        "ALTER TABLE fts_property_rebuild_staging ADD COLUMN columns_json TEXT;",
+    ),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -591,6 +601,8 @@ impl SchemaManager {
                 SchemaVersion(14) => Self::ensure_external_content_columns(&tx)?,
                 SchemaVersion(15) => Self::ensure_fts_property_schemas(&tx)?,
                 SchemaVersion(16) => Self::ensure_unicode_porter_fts_tokenizers(&tx)?,
+                SchemaVersion(21) => Self::ensure_per_kind_fts_tables(&tx)?,
+                SchemaVersion(22) => Self::ensure_staging_columns_json(&tx)?,
                 _ => tx.execute_batch(migration.sql)?,
             }
             tx.execute(
@@ -965,6 +977,59 @@ impl SchemaManager {
             );
             ",
         )?;
+        Ok(())
+    }
+
+    fn ensure_per_kind_fts_tables(conn: &Connection) -> Result<(), SchemaError> {
+        // Collect all registered kinds
+        let kinds: Vec<String> = {
+            let mut stmt = conn.prepare("SELECT kind FROM fts_property_schemas")?;
+            stmt.query_map([], |r| r.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+
+        for kind in &kinds {
+            let table_name = fts_kind_table_name(kind);
+            let ddl = format!(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS {table_name} USING fts5(\
+                    node_logical_id UNINDEXED, \
+                    text_content, \
+                    tokenize = '{DEFAULT_FTS_TOKENIZER}'\
+                )"
+            );
+            conn.execute_batch(&ddl)?;
+
+            // Enqueue a PENDING rebuild for this kind (idempotent)
+            conn.execute(
+                "INSERT OR IGNORE INTO fts_property_rebuild_state \
+                 (kind, schema_id, state, rows_done, started_at, is_first_registration) \
+                 SELECT ?1, rowid, 'PENDING', 0, unixepoch('now') * 1000, 0 \
+                 FROM fts_property_schemas WHERE kind = ?1",
+                rusqlite::params![kind],
+            )?;
+        }
+
+        // Drop the old global table (deferred: write sites must be updated in A-6 first)
+        // Note: actual DROP happens in migration 23, after A-6 redirects write sites
+        Ok(())
+    }
+
+    fn ensure_staging_columns_json(conn: &Connection) -> Result<(), SchemaError> {
+        // Idempotent: check if the column already exists before altering
+        let column_exists: bool = {
+            let mut stmt = conn.prepare("PRAGMA table_info(fts_property_rebuild_staging)")?;
+            let names: Vec<String> = stmt
+                .query_map([], |r| r.get::<_, String>(1))?
+                .collect::<Result<Vec<_>, _>>()?;
+            names.iter().any(|n| n == "columns_json")
+        };
+
+        if !column_exists {
+            conn.execute_batch(
+                "ALTER TABLE fts_property_rebuild_staging ADD COLUMN columns_json TEXT;",
+            )?;
+        }
+
         Ok(())
     }
 
@@ -1931,5 +1996,72 @@ mod tests {
         let default_result =
             super::resolve_fts_tokenizer(&conn, "UnknownKind").expect("should not error");
         assert_eq!(default_result, super::DEFAULT_FTS_TOKENIZER);
+    }
+
+    #[test]
+    fn migration_21_creates_per_kind_fts_table_and_pending_row() {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        let manager = SchemaManager::new();
+
+        // Bootstrap up through migration 20 by using a fresh DB, then manually insert
+        // a kind into fts_property_schemas so migration 21 picks it up.
+        // We do a full bootstrap (which applies all migrations including 21).
+        // Insert the kind before bootstrapping so it is present when migration 21 runs.
+        // Since bootstrap applies migrations in order and migration 15 creates
+        // fts_property_schemas, we must insert after that table exists.
+        // Strategy: bootstrap first, insert kind, then run bootstrap again (idempotent).
+        manager.bootstrap(&conn).expect("first bootstrap");
+
+        conn.execute_batch(
+            "INSERT INTO fts_property_schemas (kind, property_paths_json, separator, format_version) \
+             VALUES ('TestKind', '[]', ',', 1)",
+        )
+        .expect("insert kind");
+
+        // Now run ensure_per_kind_fts_tables directly by calling bootstrap again — migration 21
+        // is already applied, so we test the function directly.
+        SchemaManager::ensure_per_kind_fts_tables(&conn).expect("ensure_per_kind_fts_tables");
+
+        // fts_props_testkind should exist
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='fts_props_testkind'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("count fts table");
+        assert_eq!(
+            count, 1,
+            "fts_props_testkind virtual table should be created"
+        );
+
+        // PENDING row should exist
+        let state: String = conn
+            .query_row(
+                "SELECT state FROM fts_property_rebuild_state WHERE kind='TestKind'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("rebuild state row");
+        assert_eq!(state, "PENDING");
+    }
+
+    #[test]
+    fn migration_22_adds_columns_json_to_staging_table() {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        let manager = SchemaManager::new();
+        manager.bootstrap(&conn).expect("bootstrap");
+
+        let col_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('fts_property_rebuild_staging') WHERE name='columns_json'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("pragma_table_info");
+        assert_eq!(
+            col_count, 1,
+            "columns_json column must exist after migration 22"
+        );
     }
 }
