@@ -1331,8 +1331,11 @@ impl ExecutionCoordinator {
         // In both cases, per-kind tables are already kind-specific so no `fp.kind = ?` filter
         // is needed inside the inner arm; the outer `search_hits` CTE WHERE clause handles
         // any further kind narrowing via fused KindEq predicates.
-        let prop_fts_tables: Vec<String> = if filter_by_kind {
-            let prop_table = fathomdb_schema::fts_kind_table_name(&compiled.root_kind);
+        // prop_fts_tables is Vec<(kind, table_name)> so we can later look up per-kind
+        // BM25 weights from fts_property_schemas when building the scoring expression.
+        let prop_fts_tables: Vec<(String, String)> = if filter_by_kind {
+            let kind = compiled.root_kind.clone();
+            let prop_table = fathomdb_schema::fts_kind_table_name(&kind);
             let exists: bool = conn_guard
                 .query_row(
                     "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1",
@@ -1342,7 +1345,11 @@ impl ExecutionCoordinator {
                 .optional()
                 .map_err(EngineError::Sqlite)?
                 .unwrap_or(false);
-            if exists { vec![prop_table] } else { vec![] }
+            if exists {
+                vec![(kind, prop_table)]
+            } else {
+                vec![]
+            }
         } else {
             // Fallback / kind-less search: find the right per-kind tables.
             // If there is exactly one KindEq in fusable_filters, use that kind's table.
@@ -1357,7 +1364,8 @@ impl ExecutionCoordinator {
                 })
                 .collect();
             if kind_eq_values.len() == 1 {
-                let prop_table = fathomdb_schema::fts_kind_table_name(&kind_eq_values[0]);
+                let kind = kind_eq_values[0].clone();
+                let prop_table = fathomdb_schema::fts_kind_table_name(&kind);
                 let exists: bool = conn_guard
                     .query_row(
                         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1",
@@ -1367,21 +1375,41 @@ impl ExecutionCoordinator {
                     .optional()
                     .map_err(EngineError::Sqlite)?
                     .unwrap_or(false);
-                if exists { vec![prop_table] } else { vec![] }
+                if exists {
+                    vec![(kind, prop_table)]
+                } else {
+                    vec![]
+                }
             } else {
                 // No single KindEq: UNION all per-kind tables so kind-less fallback
                 // searches behave like the former global fts_node_properties table.
+                // Fetch registered kinds and compute/verify their per-kind table names.
                 let mut stmt = conn_guard
-                    .prepare(
-                        "SELECT name FROM sqlite_master \
-                         WHERE type='table' AND name LIKE 'fts_props_%' \
-                         AND sql LIKE 'CREATE VIRTUAL TABLE%'",
-                    )
+                    .prepare("SELECT kind FROM fts_property_schemas")
                     .map_err(EngineError::Sqlite)?;
-                stmt.query_map([], |r| r.get::<_, String>(0))
+                let all_kinds: Vec<String> = stmt
+                    .query_map([], |r| r.get::<_, String>(0))
                     .map_err(EngineError::Sqlite)?
                     .collect::<Result<Vec<_>, _>>()
-                    .map_err(EngineError::Sqlite)?
+                    .map_err(EngineError::Sqlite)?;
+                drop(stmt);
+                let mut result = Vec::new();
+                for kind in all_kinds {
+                    let prop_table = fathomdb_schema::fts_kind_table_name(&kind);
+                    let exists: bool = conn_guard
+                        .query_row(
+                            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1",
+                            rusqlite::params![prop_table],
+                            |_| Ok(true),
+                        )
+                        .optional()
+                        .map_err(EngineError::Sqlite)?
+                        .unwrap_or(false);
+                    if exists {
+                        result.push((kind, prop_table));
+                    }
+                }
+                result
             }
         };
         let use_prop_fts = !prop_fts_tables.is_empty();
@@ -1555,7 +1583,27 @@ impl ExecutionCoordinator {
         // position is reused by every prop arm, which is valid in SQLite.
         let prop_bind_idx: usize = if filter_by_kind { 3 } else { 2 };
         let prop_arm_sql: String = if use_prop_fts {
-            prop_fts_tables.iter().fold(String::new(), |mut acc, prop_table| {
+            prop_fts_tables.iter().fold(String::new(), |mut acc, (kind, prop_table)| {
+                // Load schema for this kind to compute BM25 weights.
+                let bm25_expr = conn_guard
+                    .query_row(
+                        "SELECT property_paths_json, separator FROM fts_property_schemas WHERE kind = ?1",
+                        rusqlite::params![kind],
+                        |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+                    )
+                    .ok()
+                    .map_or_else(
+                        || format!("bm25({prop_table})"),
+                        |(json, sep)| build_bm25_expr(prop_table, &json, &sep),
+                    );
+                // For weighted (per-column) schemas text_content does not exist;
+                // use an empty snippet rather than a column reference that would fail.
+                let is_weighted = bm25_expr != format!("bm25({prop_table})");
+                let snippet_expr = if is_weighted {
+                    "'' AS snippet".to_owned()
+                } else {
+                    "substr(fp.text_content, 1, 200) AS snippet".to_owned()
+                };
                 let _ = write!(
                     acc,
                     "
@@ -1568,9 +1616,9 @@ impl ExecutionCoordinator {
                         src.source_ref AS source_ref,
                         src.content_ref AS content_ref,
                         src.created_at AS created_at,
-                        -bm25({prop_table}) AS score,
+                        -{bm25_expr} AS score,
                         'property' AS source,
-                        substr(fp.text_content, 1, 200) AS snippet,
+                        {snippet_expr},
                         CAST(fp.rowid AS TEXT) AS projection_row_id
                     FROM {prop_table} fp
                     JOIN nodes src ON src.logical_id = fp.node_logical_id AND src.superseded_at IS NULL
@@ -2924,6 +2972,30 @@ fn resolve_hit_attribution(
     Ok(HitAttribution { matched_paths })
 }
 
+/// Build a BM25 scoring expression for a per-kind FTS5 table.
+///
+/// If the schema has no weighted specs (all weights None), returns `bm25({table})`.
+/// Otherwise returns `bm25({table}, 0.0, w1, w2, ...)` where the first weight
+/// (0.0) is for the `node_logical_id UNINDEXED` column (which BM25 should ignore),
+/// then one weight per spec in schema order.
+fn build_bm25_expr(table: &str, schema_json: &str, sep: &str) -> String {
+    let schema = crate::writer::parse_property_schema_json(schema_json, sep);
+    let any_weighted = schema.paths.iter().any(|p| p.weight.is_some());
+    if !any_weighted {
+        return format!("bm25({table})");
+    }
+    // node_logical_id is UNINDEXED — weight 0.0 tells BM25 to ignore it.
+    let weights: Vec<String> = std::iter::once("0.0".to_owned())
+        .chain(
+            schema
+                .paths
+                .iter()
+                .map(|p| format!("{:.1}", p.weight.unwrap_or(1.0))),
+        )
+        .collect();
+    format!("bm25({table}, {})", weights.join(", "))
+}
+
 fn bind_value_to_sql(value: &fathomdb_query::BindValue) -> Value {
     match value {
         fathomdb_query::BindValue::Text(text) => Value::Text(text.clone()),
@@ -4255,5 +4327,174 @@ mod tests {
                 root_expansion.nodes.len()
             );
         }
+    }
+
+    // --- B-4: build_bm25_expr unit tests ---
+
+    #[test]
+    fn build_bm25_expr_no_weights() {
+        let schema_json = r#"["$.title","$.body"]"#;
+        let result = super::build_bm25_expr("fts_props_testkind", schema_json, " ");
+        assert_eq!(result, "bm25(fts_props_testkind)");
+    }
+
+    #[test]
+    fn build_bm25_expr_with_weights() {
+        let schema_json = r#"[{"path":"$.title","mode":"scalar","weight":10.0},{"path":"$.body","mode":"scalar","weight":1.0}]"#;
+        let result = super::build_bm25_expr("fts_props_testkind", schema_json, " ");
+        assert_eq!(result, "bm25(fts_props_testkind, 0.0, 10.0, 1.0)");
+    }
+
+    // --- B-4: weighted schema integration test ---
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn weighted_schema_bm25_orders_title_match_above_body_match() {
+        use crate::{
+            AdminService, FtsPropertyPathSpec, NodeInsert, ProvenanceMode, WriteRequest,
+            WriterActor, writer::ChunkPolicy,
+        };
+        use fathomdb_schema::fts_column_name;
+
+        let db = NamedTempFile::new().expect("temporary db");
+        let schema_manager = Arc::new(SchemaManager::new());
+
+        // Step 1: bootstrap, register schema with weights, create per-column table.
+        {
+            let admin = AdminService::new(db.path(), Arc::clone(&schema_manager));
+            admin
+                .register_fts_property_schema_with_entries(
+                    "Article",
+                    &[
+                        FtsPropertyPathSpec::scalar("$.title").with_weight(10.0),
+                        FtsPropertyPathSpec::scalar("$.body").with_weight(1.0),
+                    ],
+                    None,
+                    &[],
+                    crate::rebuild_actor::RebuildMode::Eager,
+                )
+                .expect("register schema with weights");
+        }
+
+        // Step 2: write two nodes.
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::clone(&schema_manager),
+            ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("writer");
+
+        // Node A: "rust" in title (high-weight column).
+        writer
+            .submit(WriteRequest {
+                label: "insert-a".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-a".to_owned(),
+                    logical_id: "article-a".to_owned(),
+                    kind: "Article".to_owned(),
+                    properties: r#"{"title":"rust","body":"other"}"#.to_owned(),
+                    source_ref: Some("src-a".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
+                }],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+                operational_writes: vec![],
+            })
+            .expect("write node A");
+
+        // Node B: "rust" in body (low-weight column).
+        writer
+            .submit(WriteRequest {
+                label: "insert-b".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-b".to_owned(),
+                    logical_id: "article-b".to_owned(),
+                    kind: "Article".to_owned(),
+                    properties: r#"{"title":"other","body":"rust"}"#.to_owned(),
+                    source_ref: Some("src-b".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
+                }],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+                operational_writes: vec![],
+            })
+            .expect("write node B");
+
+        drop(writer);
+
+        // Verify per-column values were written.
+        {
+            let title_col = fts_column_name("$.title", false);
+            let body_col = fts_column_name("$.body", false);
+            let conn = rusqlite::Connection::open(db.path()).expect("open db");
+            let count: i64 = conn
+                .query_row("SELECT count(*) FROM fts_props_article", [], |r| r.get(0))
+                .expect("count fts rows");
+            assert_eq!(count, 2, "both nodes must have FTS rows in per-kind table");
+            let (title_a, body_a): (String, String) = conn
+                .query_row(
+                    &format!(
+                        "SELECT {title_col}, {body_col} FROM fts_props_article \
+                         WHERE node_logical_id = 'article-a'"
+                    ),
+                    [],
+                    |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+                )
+                .expect("select article-a");
+            assert_eq!(
+                title_a, "rust",
+                "article-a must have 'rust' in title column"
+            );
+            assert_eq!(
+                body_a, "other",
+                "article-a must have 'other' in body column"
+            );
+        }
+
+        // Step 3: search for "rust" and assert node A ranks first.
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::clone(&schema_manager),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+            None,
+        )
+        .expect("coordinator");
+
+        let compiled = fathomdb_query::QueryBuilder::nodes("Article")
+            .text_search("rust", 5)
+            .limit(10)
+            .compile()
+            .expect("compiled query");
+
+        let rows = coordinator
+            .execute_compiled_read(&compiled)
+            .expect("execute read");
+
+        assert_eq!(rows.nodes.len(), 2, "both nodes must be returned");
+        assert_eq!(
+            rows.nodes[0].logical_id, "article-a",
+            "article-a (title match, weight 10) must rank above article-b (body match, weight 1)"
+        );
     }
 }
