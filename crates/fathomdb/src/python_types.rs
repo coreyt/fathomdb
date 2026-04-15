@@ -32,6 +32,11 @@ pub struct PyExpansionSlot {
     pub direction: PyTraverseDirection,
     pub label: String,
     pub max_depth: usize,
+    /// Optional filter predicate applied to target nodes in this slot.
+    /// Serialized as a filter-step dict (same format as `PyQueryStep` filter
+    /// variants), e.g. `{"type": "filter_json_text_eq", "path": "$.kind", "value": "decision"}`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -118,6 +123,57 @@ impl From<PyTraverseDirection> for TraverseDirection {
             PyTraverseDirection::In => Self::In,
             PyTraverseDirection::Out => Self::Out,
         }
+    }
+}
+
+/// Convert a raw filter-step JSON value (same format as `PyQueryStep` filter variants)
+/// to a `Predicate`. Returns `None` for unknown or non-filter step types.
+fn py_filter_value_to_predicate(v: serde_json::Value) -> Option<Predicate> {
+    let step: PyQueryStep = serde_json::from_value(v).ok()?;
+    match step {
+        PyQueryStep::FilterLogicalIdEq { logical_id } => Some(Predicate::LogicalIdEq(logical_id)),
+        PyQueryStep::FilterKindEq { kind } => Some(Predicate::KindEq(kind)),
+        PyQueryStep::FilterSourceRefEq { source_ref } => Some(Predicate::SourceRefEq(source_ref)),
+        PyQueryStep::FilterContentRefNotNull {} => Some(Predicate::ContentRefNotNull),
+        PyQueryStep::FilterContentRefEq { content_ref } => {
+            Some(Predicate::ContentRefEq(content_ref))
+        }
+        PyQueryStep::FilterJsonTextEq { path, value } => Some(Predicate::JsonPathEq {
+            path,
+            value: ScalarValue::Text(value),
+        }),
+        PyQueryStep::FilterJsonBoolEq { path, value } => Some(Predicate::JsonPathEq {
+            path,
+            value: ScalarValue::Bool(value),
+        }),
+        PyQueryStep::FilterJsonIntegerGt { path, value }
+        | PyQueryStep::FilterJsonTimestampGt { path, value } => Some(Predicate::JsonPathCompare {
+            path,
+            op: ComparisonOp::Gt,
+            value: ScalarValue::Integer(value),
+        }),
+        PyQueryStep::FilterJsonIntegerGte { path, value }
+        | PyQueryStep::FilterJsonTimestampGte { path, value } => Some(Predicate::JsonPathCompare {
+            path,
+            op: ComparisonOp::Gte,
+            value: ScalarValue::Integer(value),
+        }),
+        PyQueryStep::FilterJsonIntegerLt { path, value }
+        | PyQueryStep::FilterJsonTimestampLt { path, value } => Some(Predicate::JsonPathCompare {
+            path,
+            op: ComparisonOp::Lt,
+            value: ScalarValue::Integer(value),
+        }),
+        PyQueryStep::FilterJsonIntegerLte { path, value }
+        | PyQueryStep::FilterJsonTimestampLte { path, value } => Some(Predicate::JsonPathCompare {
+            path,
+            op: ComparisonOp::Lte,
+            value: ScalarValue::Integer(value),
+        }),
+        // Non-filter step types are not valid expansion filters.
+        PyQueryStep::VectorSearch { .. }
+        | PyQueryStep::TextSearch { .. }
+        | PyQueryStep::Traverse { .. } => None,
     }
 }
 
@@ -211,7 +267,7 @@ impl From<PyQueryAst> for QueryAst {
                 direction: slot.direction.into(),
                 label: slot.label,
                 max_depth: slot.max_depth,
-                filter: None,
+                filter: slot.filter.and_then(py_filter_value_to_predicate),
             })
             .collect();
 
@@ -635,6 +691,7 @@ impl From<CompiledGroupedQuery> for PyCompiledGroupedQuery {
                     },
                     label: slot.label,
                     max_depth: slot.max_depth,
+                    filter: None,
                 })
                 .collect(),
             shape_hash: value.shape_hash.0,

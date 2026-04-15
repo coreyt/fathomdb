@@ -125,7 +125,7 @@ fn rebuild_loop(
         trace_info!(kind = %req.kind, schema_id = req.schema_id, "rebuild task started");
         match run_rebuild(&mut conn, &req) {
             Ok(()) => {
-                trace_info!(kind = %req.kind, "rebuild task reached SWAPPING");
+                trace_info!(kind = %req.kind, "rebuild task COMPLETE");
             }
             Err(error) => {
                 trace_error!(kind = %req.kind, error = %error, "rebuild task failed");
