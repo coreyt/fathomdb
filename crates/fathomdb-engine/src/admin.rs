@@ -318,6 +318,60 @@ pub struct VectorRegenerationReport {
     pub notes: Vec<String>,
 }
 
+/// FTS tokenizer profile for a specific node kind.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FtsProfile {
+    pub kind: String,
+    pub tokenizer: String,
+    pub active_at: Option<i64>,
+    pub created_at: i64,
+}
+
+/// Vector embedding profile (global, keyed by kind='*', facet='vec').
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VecProfile {
+    pub model_identity: String,
+    pub model_version: Option<String>,
+    pub dimensions: u32,
+    pub active_at: Option<i64>,
+    pub created_at: i64,
+}
+
+/// Estimated cost of rebuilding a projection.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectionImpact {
+    pub rows_to_rebuild: u64,
+    pub estimated_seconds: u64,
+    pub temp_db_size_bytes: u64,
+    pub current_tokenizer: Option<String>,
+    pub target_tokenizer: Option<String>,
+}
+
+/// Well-known tokenizer preset names mapped to their FTS5 tokenizer strings.
+pub const TOKENIZER_PRESETS: &[(&str, &str)] = &[
+    (
+        "recall-optimized-english",
+        "porter unicode61 remove_diacritics 2",
+    ),
+    ("precision-optimized", "unicode61 remove_diacritics 2"),
+    ("global-cjk", "icu"),
+    ("substring-trigram", "trigram"),
+    ("source-code", "unicode61 tokenchars '._-$@'"),
+];
+
+/// Resolve a tokenizer preset name to its FTS5 tokenizer string.
+///
+/// If `input` matches a known preset name the preset value is returned.
+/// Otherwise `input` is returned unchanged (treated as a raw tokenizer string).
+pub fn resolve_tokenizer_preset(input: &str) -> &str {
+    for (name, value) in TOKENIZER_PRESETS {
+        if *name == input {
+            return value;
+        }
+    }
+    input
+}
+
 const CURRENT_VECTOR_CONTRACT_FORMAT_VERSION: i64 = 1;
 const MAX_PROFILE_LEN: usize = 128;
 const MAX_POLICY_LEN: usize = 128;
@@ -386,6 +440,208 @@ impl AdminService {
         let conn = sqlite::open_connection(&self.database_path)?;
         self.schema_manager.bootstrap(&conn)?;
         Ok(conn)
+    }
+
+    /// Persist or update the FTS tokenizer profile for a node kind.
+    ///
+    /// `tokenizer_str` may be a preset name (see [`TOKENIZER_PRESETS`]) or a
+    /// raw FTS5 tokenizer string.  The resolved string is validated before
+    /// being written to `projection_profiles`.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the tokenizer string contains disallowed
+    /// characters, or if the database write fails.
+    pub fn set_fts_profile(
+        &self,
+        kind: &str,
+        tokenizer_str: &str,
+    ) -> Result<FtsProfile, EngineError> {
+        let resolved = resolve_tokenizer_preset(tokenizer_str);
+        // Allowed chars: alphanumeric, space, apostrophe, dot, underscore, hyphen, dollar, at
+        if !resolved
+            .chars()
+            .all(|c| c.is_alphanumeric() || "'._-$@ ".contains(c))
+        {
+            return Err(EngineError::Bridge(format!(
+                "invalid tokenizer string: {resolved:?}"
+            )));
+        }
+        let conn = self.connect()?;
+        conn.execute(
+            r"INSERT INTO projection_profiles (kind, facet, config_json, active_at, created_at)
+              VALUES (?1, 'fts', json_object('tokenizer', ?2), unixepoch(), unixepoch())
+              ON CONFLICT(kind, facet) DO UPDATE SET
+                  config_json = json_object('tokenizer', ?2),
+                  active_at   = unixepoch()",
+            rusqlite::params![kind, resolved],
+        )?;
+        let row = conn.query_row(
+            "SELECT kind, json_extract(config_json, '$.tokenizer'), active_at, created_at \
+             FROM projection_profiles WHERE kind = ?1 AND facet = 'fts'",
+            rusqlite::params![kind],
+            |row| {
+                Ok(FtsProfile {
+                    kind: row.get(0)?,
+                    tokenizer: row.get(1)?,
+                    active_at: row.get(2)?,
+                    created_at: row.get(3)?,
+                })
+            },
+        )?;
+        Ok(row)
+    }
+
+    /// Retrieve the FTS tokenizer profile for a node kind.
+    ///
+    /// Returns `None` if no profile has been set for `kind`.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the database query fails.
+    pub fn get_fts_profile(&self, kind: &str) -> Result<Option<FtsProfile>, EngineError> {
+        let conn = self.connect()?;
+        let result = conn
+            .query_row(
+                "SELECT kind, json_extract(config_json, '$.tokenizer'), active_at, created_at \
+                 FROM projection_profiles WHERE kind = ?1 AND facet = 'fts'",
+                rusqlite::params![kind],
+                |row| {
+                    Ok(FtsProfile {
+                        kind: row.get(0)?,
+                        tokenizer: row.get(1)?,
+                        active_at: row.get(2)?,
+                        created_at: row.get(3)?,
+                    })
+                },
+            )
+            .optional()?;
+        Ok(result)
+    }
+
+    /// Retrieve the global vector embedding profile.
+    ///
+    /// Returns `None` if no vector profile has been persisted yet.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the database query fails.
+    pub fn get_vec_profile(&self) -> Result<Option<VecProfile>, EngineError> {
+        let conn = self.connect()?;
+        let result = conn
+            .query_row(
+                "SELECT \
+                   json_extract(config_json, '$.model_identity'), \
+                   json_extract(config_json, '$.model_version'), \
+                   CAST(json_extract(config_json, '$.dimensions') AS INTEGER), \
+                   active_at, \
+                   created_at \
+                 FROM projection_profiles WHERE kind = '*' AND facet = 'vec'",
+                [],
+                |row| {
+                    Ok(VecProfile {
+                        model_identity: row.get(0)?,
+                        model_version: row.get(1)?,
+                        dimensions: {
+                            let d: i64 = row.get(2)?;
+                            u32::try_from(d).unwrap_or(0)
+                        },
+                        active_at: row.get(3)?,
+                        created_at: row.get(4)?,
+                    })
+                },
+            )
+            .optional()?;
+        Ok(result)
+    }
+
+    /// Write or update the global vector profile from a JSON identity string.
+    ///
+    /// This is a private helper called after a successful vector regeneration.
+    /// Errors are logged as warnings and not propagated to the caller.
+    #[allow(dead_code)]
+    fn set_vec_profile_inner(
+        conn: &rusqlite::Connection,
+        identity_json: &str,
+    ) -> Result<VecProfile, rusqlite::Error> {
+        conn.execute(
+            r"INSERT INTO projection_profiles (kind, facet, config_json, active_at, created_at)
+              VALUES ('*', 'vec', ?1, unixepoch(), unixepoch())
+              ON CONFLICT(kind, facet) DO UPDATE SET
+                  config_json = ?1,
+                  active_at   = unixepoch()",
+            rusqlite::params![identity_json],
+        )?;
+        conn.query_row(
+            "SELECT \
+               json_extract(config_json, '$.model_identity'), \
+               json_extract(config_json, '$.model_version'), \
+               CAST(json_extract(config_json, '$.dimensions') AS INTEGER), \
+               active_at, \
+               created_at \
+             FROM projection_profiles WHERE kind = '*' AND facet = 'vec'",
+            [],
+            |row| {
+                Ok(VecProfile {
+                    model_identity: row.get(0)?,
+                    model_version: row.get(1)?,
+                    dimensions: {
+                        let d: i64 = row.get(2)?;
+                        u32::try_from(d).unwrap_or(0)
+                    },
+                    active_at: row.get(3)?,
+                    created_at: row.get(4)?,
+                })
+            },
+        )
+    }
+
+    /// Estimate the cost of rebuilding a projection.
+    ///
+    /// For facet `"fts"`: counts active nodes of `kind`.
+    /// For facet `"vec"`: counts all chunks.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] for unknown facets or database errors.
+    pub fn preview_projection_impact(
+        &self,
+        kind: &str,
+        facet: &str,
+    ) -> Result<ProjectionImpact, EngineError> {
+        let conn = self.connect()?;
+        match facet {
+            "fts" => {
+                let rows: u64 = conn
+                    .query_row(
+                        "SELECT count(*) FROM nodes WHERE kind = ?1 AND superseded_at IS NULL",
+                        rusqlite::params![kind],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .map(i64::cast_unsigned)?;
+                let current_tokenizer = self.get_fts_profile(kind)?.map(|p| p.tokenizer);
+                Ok(ProjectionImpact {
+                    rows_to_rebuild: rows,
+                    estimated_seconds: rows / 5000,
+                    temp_db_size_bytes: rows * 200,
+                    current_tokenizer,
+                    target_tokenizer: None,
+                })
+            }
+            "vec" => {
+                let rows: u64 = conn
+                    .query_row("SELECT count(*) FROM chunks", [], |row| {
+                        row.get::<_, i64>(0)
+                    })
+                    .map(i64::cast_unsigned)?;
+                Ok(ProjectionImpact {
+                    rows_to_rebuild: rows,
+                    estimated_seconds: rows / 100,
+                    temp_db_size_bytes: rows * 1536,
+                    current_tokenizer: None,
+                    target_tokenizer: None,
+                })
+            }
+            other => Err(EngineError::Bridge(format!(
+                "unknown projection facet: {other:?}"
+            ))),
+        }
     }
 
     /// # Errors
@@ -9862,5 +10118,129 @@ mod tests {
             result.is_ok(),
             "text_content column must exist after weighted-to-unweighted downgrade"
         );
+    }
+
+    // --- Pack A+G: profile CRUD + tokenizer presets ---
+
+    #[test]
+    fn set_get_fts_profile_roundtrip() {
+        let (_db, service) = setup();
+        let profile = service
+            .set_fts_profile("book", "unicode61")
+            .expect("set_fts_profile");
+        assert_eq!(profile.kind, "book");
+        assert_eq!(profile.tokenizer, "unicode61");
+
+        let got = service
+            .get_fts_profile("book")
+            .expect("get_fts_profile")
+            .expect("should be Some");
+        assert_eq!(got.kind, "book");
+        assert_eq!(got.tokenizer, "unicode61");
+    }
+
+    #[test]
+    fn fts_profile_upsert() {
+        let (_db, service) = setup();
+        service
+            .set_fts_profile("article", "unicode61")
+            .expect("first set");
+        service
+            .set_fts_profile("article", "porter unicode61 remove_diacritics 2")
+            .expect("second set");
+        let got = service
+            .get_fts_profile("article")
+            .expect("get")
+            .expect("Some");
+        assert_eq!(got.tokenizer, "porter unicode61 remove_diacritics 2");
+    }
+
+    #[test]
+    fn invalid_tokenizer_rejected() {
+        let (_db, service) = setup();
+        let result = service.set_fts_profile("book", "'; DROP TABLE nodes --");
+        assert!(result.is_err(), "invalid tokenizer must be rejected");
+        let msg = result.expect_err("must be Err").to_string();
+        assert!(
+            msg.contains("tokenizer") || msg.contains("invalid"),
+            "error must mention tokenizer or invalid: {msg}"
+        );
+    }
+
+    #[test]
+    fn preset_recall_optimized_english() {
+        assert_eq!(
+            super::resolve_tokenizer_preset("recall-optimized-english"),
+            "porter unicode61 remove_diacritics 2"
+        );
+    }
+
+    #[test]
+    fn preset_precision_optimized() {
+        assert_eq!(
+            super::resolve_tokenizer_preset("precision-optimized"),
+            "unicode61 remove_diacritics 2"
+        );
+    }
+
+    #[test]
+    fn preset_global_cjk() {
+        assert_eq!(super::resolve_tokenizer_preset("global-cjk"), "icu");
+    }
+
+    #[test]
+    fn preset_substring_trigram() {
+        assert_eq!(
+            super::resolve_tokenizer_preset("substring-trigram"),
+            "trigram"
+        );
+    }
+
+    #[test]
+    fn preset_source_code() {
+        assert_eq!(
+            super::resolve_tokenizer_preset("source-code"),
+            "unicode61 tokenchars '._-$@'"
+        );
+    }
+
+    #[test]
+    fn preview_fts_row_count() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            for i in 0..5u32 {
+                conn.execute(
+                    "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                     VALUES (?1, ?2, 'book', '{}', 100, 'src')",
+                    rusqlite::params![format!("r{i}"), format!("lg{i}")],
+                )
+                .expect("insert node");
+            }
+            // Insert one superseded node that must NOT count
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref, superseded_at) \
+                 VALUES ('r99', 'lg99', 'book', '{}', 100, 'src', 200)",
+                [],
+            )
+            .expect("insert superseded");
+        }
+        let impact = service
+            .preview_projection_impact("book", "fts")
+            .expect("preview");
+        assert_eq!(impact.rows_to_rebuild, 5);
+    }
+
+    #[test]
+    fn preview_populates_current_tokenizer() {
+        let (_db, service) = setup();
+        service
+            .set_fts_profile("doc", "trigram")
+            .expect("set profile");
+        let impact = service
+            .preview_projection_impact("doc", "fts")
+            .expect("preview");
+        assert_eq!(impact.current_tokenizer, Some("trigram".to_owned()));
+        assert_eq!(impact.target_tokenizer, None);
     }
 }
