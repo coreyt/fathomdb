@@ -428,6 +428,12 @@ impl ExecutionCoordinator {
             }
         }
 
+        // Vec identity guard: warn (never error) if the stored profile's
+        // model_identity or dimensions differ from the configured embedder.
+        if let Some(ref emb) = query_embedder {
+            check_vec_identity_at_open(&conn, emb.as_ref())?;
+        }
+
         // Drop the bootstrap connection — pool connections are used for reads.
         drop(conn);
 
@@ -2436,6 +2442,62 @@ fn adapt_fts_nodes_sql_for_per_kind_tables(
         .collect();
 
     Ok((new_sql, new_binds))
+}
+
+/// Check that the active vector profile's model identity and dimensions match
+/// the supplied embedder. If either differs, emit a warning via `trace_warn!`
+/// but always return `Ok(())`. This function NEVER returns `Err`.
+///
+/// Queries `projection_profiles` directly — no `AdminService` indirection.
+#[allow(clippy::unnecessary_wraps)]
+fn check_vec_identity_at_open(
+    conn: &rusqlite::Connection,
+    embedder: &dyn QueryEmbedder,
+) -> Result<(), EngineError> {
+    let row: Option<String> = conn
+        .query_row(
+            "SELECT config_json FROM projection_profiles WHERE kind='*' AND facet='vec'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap_or(None);
+
+    let Some(config_json) = row else {
+        return Ok(());
+    };
+
+    // Parse leniently — any error means we just skip the check.
+    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&config_json) else {
+        return Ok(());
+    };
+
+    let identity = embedder.identity();
+
+    if let Some(stored_model) = parsed
+        .get("model_identity")
+        .and_then(serde_json::Value::as_str)
+        && stored_model != identity.model_identity
+    {
+        trace_warn!(
+            stored_model_identity = stored_model,
+            embedder_model_identity = %identity.model_identity,
+            "vec identity mismatch at open: model_identity differs"
+        );
+    }
+
+    if let Some(stored_dim) = parsed.get("dimensions").and_then(serde_json::Value::as_u64) {
+        let stored_dim = usize::try_from(stored_dim).unwrap_or(usize::MAX);
+        if stored_dim != identity.dimension {
+            trace_warn!(
+                stored_dimensions = stored_dim,
+                embedder_dimensions = identity.dimension,
+                "vec identity mismatch at open: dimensions differ"
+            );
+        }
+    }
+
+    Ok(())
 }
 
 /// Open-time FTS rebuild guards (Guard 1 + Guard 2).
