@@ -772,6 +772,7 @@ name = "fathomdb-schema"
 version = "0.4.1"
 dependencies = [
  "rusqlite",
+ "sha2",
  "sqlite-vec",
  "thiserror 2.0.18",
  "tracing",

@@ -1,4 +1,5 @@
 use rusqlite::{Connection, OptionalExtension};
+use sha2::{Digest, Sha256};
 
 use crate::{Migration, SchemaError, SchemaVersion};
 
@@ -495,6 +496,18 @@ static MIGRATIONS: &[Migration] = &[
                     is_first_registration INTEGER NOT NULL DEFAULT 0
                 );
                 ",
+    ),
+    Migration::new(
+        SchemaVersion(20),
+        "projection_profiles table for per-kind FTS tokenizer configuration",
+        r"CREATE TABLE IF NOT EXISTS projection_profiles (
+            kind        TEXT    NOT NULL,
+            facet       TEXT    NOT NULL,
+            config_json TEXT    NOT NULL,
+            active_at   INTEGER,
+            created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+            PRIMARY KEY (kind, facet)
+        );",
     ),
 ];
 
@@ -1091,6 +1104,133 @@ impl SchemaManager {
     }
 }
 
+/// Default FTS5 tokenizer used when no per-kind profile is configured.
+pub const DEFAULT_FTS_TOKENIZER: &str = "porter unicode61 remove_diacritics 2";
+
+/// Derive the canonical FTS5 virtual-table name for a given node `kind`.
+///
+/// Rules:
+/// 1. Lowercase the kind string.
+/// 2. Replace every character that is NOT `[a-z0-9]` with `_`.
+/// 3. Collapse consecutive underscores to a single `_`.
+/// 4. Prefix with `fts_props_`.
+/// 5. If the result exceeds 63 characters: truncate the slug to 55 characters
+///    and append `_` + the first 7 hex chars of the SHA-256 of the original kind.
+#[must_use]
+pub fn fts_kind_table_name(kind: &str) -> String {
+    // Step 1-3: normalise the slug
+    let lowered = kind.to_lowercase();
+    let mut slug = String::with_capacity(lowered.len());
+    let mut prev_was_underscore = false;
+    for ch in lowered.chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch);
+            prev_was_underscore = false;
+        } else {
+            if !prev_was_underscore {
+                slug.push('_');
+            }
+            prev_was_underscore = true;
+        }
+    }
+
+    // Step 4: prefix
+    let prefixed = format!("fts_props_{slug}");
+
+    // Step 5: truncate if needed
+    if prefixed.len() <= 63 {
+        prefixed
+    } else {
+        // Hash the original kind string
+        let hash = Sha256::digest(kind.as_bytes());
+        let mut hex = String::with_capacity(hash.len() * 2);
+        for b in &hash {
+            use std::fmt::Write as _;
+            let _ = write!(hex, "{b:02x}");
+        }
+        let hex_suffix = &hex[..7];
+        // Slug must be 55 chars so that "fts_props_" (10) + slug (55) + "_" (1) + hex7 (7) = 73 — too long.
+        // Wait: total = 10 + slug_len + 1 + 7 = 63  => slug_len = 45
+        let slug_truncated = if slug.len() > 45 { &slug[..45] } else { &slug };
+        format!("fts_props_{slug_truncated}_{hex_suffix}")
+    }
+}
+
+/// Derive the canonical FTS5 column name for a JSON path.
+///
+/// Rules:
+/// 1. Strip leading `$.` or `$` prefix.
+/// 2. Replace every character that is NOT `[a-z0-9_]` (after lowercasing) with `_`.
+/// 3. Collapse consecutive underscores.
+/// 4. If `is_recursive` is `true`, append `_all`.
+#[must_use]
+pub fn fts_column_name(path: &str, is_recursive: bool) -> String {
+    // Step 1: strip prefix
+    let stripped = if let Some(rest) = path.strip_prefix("$.") {
+        rest
+    } else if let Some(rest) = path.strip_prefix('$') {
+        rest
+    } else {
+        path
+    };
+
+    // Step 2-3: normalise
+    let lowered = stripped.to_lowercase();
+    let mut col = String::with_capacity(lowered.len());
+    let mut prev_was_underscore = false;
+    for ch in lowered.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            col.push(ch);
+            prev_was_underscore = ch == '_';
+        } else {
+            if !prev_was_underscore {
+                col.push('_');
+            }
+            prev_was_underscore = true;
+        }
+    }
+
+    // Strip trailing underscores
+    let col = col.trim_end_matches('_').to_owned();
+
+    // Step 4: recursive suffix
+    if is_recursive {
+        format!("{col}_all")
+    } else {
+        col
+    }
+}
+
+/// Look up the FTS tokenizer configured for a given `kind` in `projection_profiles`.
+///
+/// Returns [`DEFAULT_FTS_TOKENIZER`] when:
+/// - the `projection_profiles` table does not exist yet, or
+/// - no row exists for `(kind, 'fts')`, or
+/// - the `tokenizer` field in `config_json` is absent or empty.
+///
+/// # Errors
+///
+/// Returns [`SchemaError::Sqlite`] on any `SQLite` error other than a missing table.
+pub fn resolve_fts_tokenizer(conn: &Connection, kind: &str) -> Result<String, SchemaError> {
+    let result = conn
+        .query_row(
+            "SELECT json_extract(config_json, '$.tokenizer') FROM projection_profiles WHERE kind = ?1 AND facet = 'fts'",
+            [kind],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional();
+
+    match result {
+        Ok(Some(Some(tok))) if !tok.is_empty() => Ok(tok),
+        Ok(_) => Ok(DEFAULT_FTS_TOKENIZER.to_owned()),
+        Err(rusqlite::Error::SqliteFailure(_, _)) => {
+            // Table doesn't exist or other sqlite-level error — return default
+            Ok(DEFAULT_FTS_TOKENIZER.to_owned())
+        }
+        Err(e) => Err(SchemaError::Sqlite(e)),
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {
@@ -1591,5 +1731,205 @@ mod tests {
                 row.get(0)
             })
             .expect("vec_nodes_active table must exist after ensure_vector_profile");
+    }
+
+    // --- A-1: fts_kind_table_name tests ---
+
+    #[test]
+    fn fts_kind_table_name_simple_kind() {
+        assert_eq!(
+            super::fts_kind_table_name("WMKnowledgeObject"),
+            "fts_props_wmknowledgeobject"
+        );
+    }
+
+    #[test]
+    fn fts_kind_table_name_another_simple_kind() {
+        assert_eq!(
+            super::fts_kind_table_name("WMExecutionRecord"),
+            "fts_props_wmexecutionrecord"
+        );
+    }
+
+    #[test]
+    fn fts_kind_table_name_with_separator_chars() {
+        assert_eq!(
+            super::fts_kind_table_name("MyKind-With.Dots"),
+            "fts_props_mykind_with_dots"
+        );
+    }
+
+    #[test]
+    fn fts_kind_table_name_collapses_consecutive_underscores() {
+        assert_eq!(
+            super::fts_kind_table_name("Kind__Double__Underscores"),
+            "fts_props_kind_double_underscores"
+        );
+    }
+
+    #[test]
+    fn fts_kind_table_name_long_kind_truncates_with_hash() {
+        // 61 A's — slug after prefix would be 61 chars, exceeding 63-char limit
+        let long_kind = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        let result = super::fts_kind_table_name(long_kind);
+        assert_eq!(result.len(), 63, "result must be exactly 63 chars");
+        assert!(
+            result.starts_with("fts_props_"),
+            "result must start with fts_props_"
+        );
+        // Must contain underscore before 7-char hex suffix
+        let last_underscore = result.rfind('_').expect("must contain underscore");
+        let hex_suffix = &result[last_underscore + 1..];
+        assert_eq!(hex_suffix.len(), 7, "hex suffix must be 7 chars");
+        assert!(
+            hex_suffix.chars().all(|c| c.is_ascii_hexdigit()),
+            "hex suffix must be hex digits"
+        );
+    }
+
+    #[test]
+    fn fts_kind_table_name_testkind() {
+        assert_eq!(super::fts_kind_table_name("TestKind"), "fts_props_testkind");
+    }
+
+    // --- A-1: fts_column_name tests ---
+
+    #[test]
+    fn fts_column_name_simple_field() {
+        assert_eq!(super::fts_column_name("$.title", false), "title");
+    }
+
+    #[test]
+    fn fts_column_name_nested_path() {
+        assert_eq!(
+            super::fts_column_name("$.payload.content", false),
+            "payload_content"
+        );
+    }
+
+    #[test]
+    fn fts_column_name_recursive() {
+        assert_eq!(super::fts_column_name("$.payload", true), "payload_all");
+    }
+
+    #[test]
+    fn fts_column_name_special_chars() {
+        assert_eq!(
+            super::fts_column_name("$.some-field[0]", false),
+            "some_field_0"
+        );
+    }
+
+    // --- A-1: resolve_fts_tokenizer tests ---
+
+    #[test]
+    fn resolve_fts_tokenizer_returns_default_when_no_table() {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        // No projection_profiles table — should return default
+        let result = super::resolve_fts_tokenizer(&conn, "MyKind").expect("should not error");
+        assert_eq!(result, super::DEFAULT_FTS_TOKENIZER);
+    }
+
+    #[test]
+    fn resolve_fts_tokenizer_returns_configured_value() {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        conn.execute_batch(
+            "CREATE TABLE projection_profiles (
+                kind TEXT NOT NULL,
+                facet TEXT NOT NULL,
+                config_json TEXT NOT NULL,
+                active_at INTEGER,
+                created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                PRIMARY KEY (kind, facet)
+            );
+            INSERT INTO projection_profiles (kind, facet, config_json)
+            VALUES ('MyKind', 'fts', '{\"tokenizer\":\"trigram\"}');",
+        )
+        .expect("setup table");
+
+        let result = super::resolve_fts_tokenizer(&conn, "MyKind").expect("should not error");
+        assert_eq!(result, "trigram");
+
+        let default_result =
+            super::resolve_fts_tokenizer(&conn, "OtherKind").expect("should not error");
+        assert_eq!(default_result, super::DEFAULT_FTS_TOKENIZER);
+    }
+
+    // --- A-2: migration 20 tests ---
+
+    #[test]
+    fn migration_20_creates_projection_profiles_table() {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        let manager = SchemaManager::new();
+        manager.bootstrap(&conn).expect("bootstrap");
+
+        let table_exists: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='projection_profiles'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query sqlite_master");
+        assert_eq!(table_exists, 1, "projection_profiles table must exist");
+
+        // Check columns exist by querying them
+        conn.execute_batch(
+            "INSERT INTO projection_profiles (kind, facet, config_json)
+             VALUES ('TestKind', 'fts', '{}')",
+        )
+        .expect("insert row to verify columns");
+        let (kind, facet, config_json): (String, String, String) = conn
+            .query_row(
+                "SELECT kind, facet, config_json FROM projection_profiles WHERE kind='TestKind'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("select columns");
+        assert_eq!(kind, "TestKind");
+        assert_eq!(facet, "fts");
+        assert_eq!(config_json, "{}");
+    }
+
+    #[test]
+    fn migration_20_primary_key_is_kind_facet() {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        let manager = SchemaManager::new();
+        manager.bootstrap(&conn).expect("bootstrap");
+
+        conn.execute_batch(
+            "INSERT INTO projection_profiles (kind, facet, config_json)
+             VALUES ('MyKind', 'fts', '{\"tokenizer\":\"porter\"}');",
+        )
+        .expect("first insert");
+
+        // Second insert with same (kind, facet) must fail
+        let result = conn.execute_batch(
+            "INSERT INTO projection_profiles (kind, facet, config_json)
+             VALUES ('MyKind', 'fts', '{\"tokenizer\":\"trigram\"}');",
+        );
+        assert!(
+            result.is_err(),
+            "duplicate (kind, facet) must violate PRIMARY KEY"
+        );
+    }
+
+    #[test]
+    fn migration_20_resolve_fts_tokenizer_end_to_end() {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        let manager = SchemaManager::new();
+        manager.bootstrap(&conn).expect("bootstrap");
+
+        conn.execute_batch(
+            "INSERT INTO projection_profiles (kind, facet, config_json)
+             VALUES ('MyKind', 'fts', '{\"tokenizer\":\"trigram\"}');",
+        )
+        .expect("insert profile");
+
+        let result = super::resolve_fts_tokenizer(&conn, "MyKind").expect("should not error");
+        assert_eq!(result, "trigram");
+
+        let default_result =
+            super::resolve_fts_tokenizer(&conn, "UnknownKind").expect("should not error");
+        assert_eq!(default_result, super::DEFAULT_FTS_TOKENIZER);
     }
 }

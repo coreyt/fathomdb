@@ -4,7 +4,10 @@ mod trace_support;
 mod bootstrap;
 mod migration;
 
-pub use bootstrap::{BootstrapReport, SchemaManager};
+pub use bootstrap::{
+    BootstrapReport, DEFAULT_FTS_TOKENIZER, SchemaManager, fts_column_name, fts_kind_table_name,
+    resolve_fts_tokenizer,
+};
 pub use migration::{Migration, SchemaVersion};
 
 use thiserror::Error;

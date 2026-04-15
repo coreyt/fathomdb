@@ -15,6 +15,7 @@ tracing = ["dep:tracing"]
 
 [dependencies]
 rusqlite.workspace = true
+sha2.workspace = true
 sqlite-vec = { workspace = true, optional = true }
 thiserror.workspace = true
 tracing = { workspace = true, optional = true }
