@@ -9863,4 +9863,128 @@ mod tests {
             "text_content column must exist after weighted-to-unweighted downgrade"
         );
     }
+
+    // --- Pack A+G: profile CRUD + tokenizer presets ---
+
+    #[test]
+    fn set_get_fts_profile_roundtrip() {
+        let (_db, service) = setup();
+        let profile = service
+            .set_fts_profile("book", "unicode61")
+            .expect("set_fts_profile");
+        assert_eq!(profile.kind, "book");
+        assert_eq!(profile.tokenizer, "unicode61");
+
+        let got = service
+            .get_fts_profile("book")
+            .expect("get_fts_profile")
+            .expect("should be Some");
+        assert_eq!(got.kind, "book");
+        assert_eq!(got.tokenizer, "unicode61");
+    }
+
+    #[test]
+    fn fts_profile_upsert() {
+        let (_db, service) = setup();
+        service
+            .set_fts_profile("article", "unicode61")
+            .expect("first set");
+        service
+            .set_fts_profile("article", "porter unicode61 remove_diacritics 2")
+            .expect("second set");
+        let got = service
+            .get_fts_profile("article")
+            .expect("get")
+            .expect("Some");
+        assert_eq!(got.tokenizer, "porter unicode61 remove_diacritics 2");
+    }
+
+    #[test]
+    fn invalid_tokenizer_rejected() {
+        let (_db, service) = setup();
+        let result = service.set_fts_profile("book", "'; DROP TABLE nodes --");
+        assert!(result.is_err(), "invalid tokenizer must be rejected");
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("tokenizer") || msg.contains("invalid"),
+            "error must mention tokenizer or invalid: {msg}"
+        );
+    }
+
+    #[test]
+    fn preset_recall_optimized_english() {
+        assert_eq!(
+            super::resolve_tokenizer_preset("recall-optimized-english"),
+            "porter unicode61 remove_diacritics 2"
+        );
+    }
+
+    #[test]
+    fn preset_precision_optimized() {
+        assert_eq!(
+            super::resolve_tokenizer_preset("precision-optimized"),
+            "unicode61 remove_diacritics 2"
+        );
+    }
+
+    #[test]
+    fn preset_global_cjk() {
+        assert_eq!(super::resolve_tokenizer_preset("global-cjk"), "icu");
+    }
+
+    #[test]
+    fn preset_substring_trigram() {
+        assert_eq!(
+            super::resolve_tokenizer_preset("substring-trigram"),
+            "trigram"
+        );
+    }
+
+    #[test]
+    fn preset_source_code() {
+        assert_eq!(
+            super::resolve_tokenizer_preset("source-code"),
+            "unicode61 tokenchars '._-$@'"
+        );
+    }
+
+    #[test]
+    fn preview_fts_row_count() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            for i in 0..5u32 {
+                conn.execute(
+                    "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                     VALUES (?1, ?2, 'book', '{}', 100, 'src')",
+                    rusqlite::params![format!("r{i}"), format!("lg{i}")],
+                )
+                .expect("insert node");
+            }
+            // Insert one superseded node that must NOT count
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref, superseded_at) \
+                 VALUES ('r99', 'lg99', 'book', '{}', 100, 'src', 200)",
+                [],
+            )
+            .expect("insert superseded");
+        }
+        let impact = service
+            .preview_projection_impact("book", "fts")
+            .expect("preview");
+        assert_eq!(impact.rows_to_rebuild, 5);
+    }
+
+    #[test]
+    fn preview_populates_current_tokenizer() {
+        let (_db, service) = setup();
+        service
+            .set_fts_profile("doc", "trigram")
+            .expect("set profile");
+        let impact = service
+            .preview_projection_impact("doc", "fts")
+            .expect("preview");
+        assert_eq!(impact.current_tokenizer, Some("trigram".to_owned()));
+        assert_eq!(impact.target_tokenizer, None);
+    }
 }
