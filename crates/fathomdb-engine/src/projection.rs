@@ -280,9 +280,7 @@ pub(crate) fn insert_property_fts_rows_for_kind(
             tokenize = '{DEFAULT_FTS_TOKENIZER}'\
         )"
     ))?;
-    let mut ins = conn.prepare(&format!(
-        "INSERT INTO {table} (node_logical_id, text_content) VALUES (?1, ?2)"
-    ))?;
+    let has_weights = schema.paths.iter().any(|p| p.weight.is_some());
     let mut ins_positions = conn.prepare(
         "INSERT INTO fts_node_property_positions \
          (node_logical_id, kind, start_offset, end_offset, leaf_path) \
@@ -304,7 +302,26 @@ pub(crate) fn insert_property_fts_rows_for_kind(
         let props: serde_json::Value = serde_json::from_str(properties_str).unwrap_or_default();
         let (text, positions, _stats) = crate::writer::extract_property_fts(&props, &schema);
         if let Some(text) = text {
-            ins.execute(rusqlite::params![logical_id, text])?;
+            if has_weights {
+                let cols = crate::writer::extract_property_fts_columns(&props, &schema);
+                let col_names: Vec<&str> = cols.iter().map(|(n, _)| n.as_str()).collect();
+                let placeholders: Vec<String> =
+                    (2..=cols.len() + 1).map(|i| format!("?{i}")).collect();
+                let sql = format!(
+                    "INSERT INTO {table}(node_logical_id, {c}) VALUES (?1, {p})",
+                    c = col_names.join(", "),
+                    p = placeholders.join(", "),
+                );
+                conn.prepare(&sql)?.execute(rusqlite::params_from_iter(
+                    std::iter::once(logical_id.as_str())
+                        .chain(cols.iter().map(|(_, v)| v.as_str())),
+                ))?;
+            } else {
+                conn.prepare(&format!(
+                    "INSERT INTO {table} (node_logical_id, text_content) VALUES (?1, ?2)"
+                ))?
+                .execute(rusqlite::params![logical_id, text])?;
+            }
             for pos in &positions {
                 ins_positions.execute(rusqlite::params![
                     logical_id,
@@ -348,9 +365,7 @@ pub(crate) fn insert_property_fts_rows(
                 tokenize = '{DEFAULT_FTS_TOKENIZER}'\
             )"
         ))?;
-        let mut ins = conn.prepare(&format!(
-            "INSERT INTO {table} (node_logical_id, text_content) VALUES (?1, ?2)"
-        ))?;
+        let has_weights = schema.paths.iter().any(|p| p.weight.is_some());
         let mut stmt = conn.prepare(node_sql)?;
         let rows: Vec<(String, String)> = stmt
             .query_map([kind.as_str()], |row| {
@@ -361,7 +376,26 @@ pub(crate) fn insert_property_fts_rows(
             let props: serde_json::Value = serde_json::from_str(properties_str).unwrap_or_default();
             let (text, positions, _stats) = crate::writer::extract_property_fts(&props, schema);
             if let Some(text) = text {
-                ins.execute(rusqlite::params![logical_id, text])?;
+                if has_weights {
+                    let cols = crate::writer::extract_property_fts_columns(&props, schema);
+                    let col_names: Vec<&str> = cols.iter().map(|(n, _)| n.as_str()).collect();
+                    let placeholders: Vec<String> =
+                        (2..=cols.len() + 1).map(|i| format!("?{i}")).collect();
+                    let sql = format!(
+                        "INSERT INTO {table}(node_logical_id, {c}) VALUES (?1, {p})",
+                        c = col_names.join(", "),
+                        p = placeholders.join(", "),
+                    );
+                    conn.prepare(&sql)?.execute(rusqlite::params_from_iter(
+                        std::iter::once(logical_id.as_str())
+                            .chain(cols.iter().map(|(_, v)| v.as_str())),
+                    ))?;
+                } else {
+                    conn.prepare(&format!(
+                        "INSERT INTO {table} (node_logical_id, text_content) VALUES (?1, ?2)"
+                    ))?
+                    .execute(rusqlite::params![logical_id, text])?;
+                }
                 for pos in &positions {
                     ins_positions.execute(rusqlite::params![
                         logical_id,
@@ -402,9 +436,7 @@ fn insert_property_fts_rows_missing(conn: &rusqlite::Connection) -> Result<usize
                 tokenize = '{DEFAULT_FTS_TOKENIZER}'\
             )"
         ))?;
-        let mut ins = conn.prepare(&format!(
-            "INSERT INTO {table} (node_logical_id, text_content) VALUES (?1, ?2)"
-        ))?;
+        let has_weights = schema.paths.iter().any(|p| p.weight.is_some());
         // Find nodes of this kind with no row in the per-kind table.
         let mut stmt = conn.prepare(&format!(
             "SELECT n.logical_id, n.properties FROM nodes n \
@@ -420,7 +452,26 @@ fn insert_property_fts_rows_missing(conn: &rusqlite::Connection) -> Result<usize
             let props: serde_json::Value = serde_json::from_str(properties_str).unwrap_or_default();
             let (text, positions, _stats) = crate::writer::extract_property_fts(&props, schema);
             if let Some(text) = text {
-                ins.execute(rusqlite::params![logical_id, text])?;
+                if has_weights {
+                    let cols = crate::writer::extract_property_fts_columns(&props, schema);
+                    let col_names: Vec<&str> = cols.iter().map(|(n, _)| n.as_str()).collect();
+                    let placeholders: Vec<String> =
+                        (2..=cols.len() + 1).map(|i| format!("?{i}")).collect();
+                    let sql = format!(
+                        "INSERT INTO {table}(node_logical_id, {c}) VALUES (?1, {p})",
+                        c = col_names.join(", "),
+                        p = placeholders.join(", "),
+                    );
+                    conn.prepare(&sql)?.execute(rusqlite::params_from_iter(
+                        std::iter::once(logical_id.as_str())
+                            .chain(cols.iter().map(|(_, v)| v.as_str())),
+                    ))?;
+                } else {
+                    conn.prepare(&format!(
+                        "INSERT INTO {table} (node_logical_id, text_content) VALUES (?1, ?2)"
+                    ))?
+                    .execute(rusqlite::params![logical_id, text])?;
+                }
                 for pos in &positions {
                     ins_positions.execute(rusqlite::params![
                         logical_id,
@@ -550,5 +601,85 @@ mod tests {
             )
             .expect("count");
         assert_eq!(count, 0, "stale vec row must be gone after rebuild");
+    }
+}
+
+// --- B-3: projection per-column INSERT for weighted schemas ---
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod weighted_schema_tests {
+    use fathomdb_schema::SchemaManager;
+    use rusqlite::Connection;
+
+    use super::insert_property_fts_rows_for_kind;
+
+    fn bootstrapped_conn() -> Connection {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        let manager = SchemaManager::new();
+        manager.bootstrap(&conn).expect("bootstrap");
+        conn
+    }
+
+    #[test]
+    fn projection_inserts_per_column_for_weighted_schema() {
+        let conn = bootstrapped_conn();
+        let kind = "Article";
+        let table = fathomdb_schema::fts_kind_table_name(kind);
+        let title_col = fathomdb_schema::fts_column_name("$.title", false);
+        let body_col = fathomdb_schema::fts_column_name("$.body", false);
+
+        // Insert a node with two extractable properties.
+        conn.execute(
+            "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+             VALUES ('row-1', 'article-1', ?1, '{\"title\":\"Hello\",\"body\":\"World\"}', 100, 'seed')",
+            rusqlite::params![kind],
+        )
+        .expect("insert node");
+
+        // Register schema with weights.
+        let paths_json = r#"[{"path":"$.title","mode":"scalar","weight":2.0},{"path":"$.body","mode":"scalar","weight":1.0}]"#;
+        conn.execute(
+            "INSERT INTO fts_property_schemas (kind, property_paths_json, separator) \
+             VALUES (?1, ?2, ' ')",
+            rusqlite::params![kind, paths_json],
+        )
+        .expect("insert schema");
+
+        // Create the weighted per-kind FTS table.
+        conn.execute_batch(&format!(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING fts5(\
+                node_logical_id UNINDEXED, {title_col}, {body_col}, \
+                tokenize = 'porter unicode61 remove_diacritics 2'\
+            )"
+        ))
+        .expect("create weighted per-kind table");
+
+        // Run the projection insert.
+        insert_property_fts_rows_for_kind(&conn, kind).expect("insert_property_fts_rows_for_kind");
+
+        // Verify one row was inserted.
+        let count: i64 = conn
+            .query_row(
+                &format!("SELECT count(*) FROM {table} WHERE node_logical_id = 'article-1'"),
+                [],
+                |r| r.get(0),
+            )
+            .expect("count");
+        assert_eq!(count, 1, "per-kind table must have the inserted row");
+
+        // Verify per-column values.
+        let (title_val, body_val): (String, String) = conn
+            .query_row(
+                &format!(
+                    "SELECT {title_col}, {body_col} FROM {table} \
+                     WHERE node_logical_id = 'article-1'"
+                ),
+                [],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+            )
+            .expect("select per-column");
+        assert_eq!(title_val, "Hello", "title column must have correct value");
+        assert_eq!(body_val, "World", "body column must have correct value");
     }
 }

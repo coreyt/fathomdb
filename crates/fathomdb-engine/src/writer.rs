@@ -254,6 +254,9 @@ struct FtsPropertyProjectionRow {
     kind: String,
     text_content: String,
     positions: Vec<PositionEntry>,
+    /// Per-column text extracted for weighted schemas. Empty for non-weighted schemas.
+    /// When non-empty, the writer uses per-column INSERT instead of single `text_content`.
+    columns: Vec<(String, String)>,
 }
 
 /// Maximum depth the recursive property-FTS extraction walk descends before
@@ -1101,9 +1104,15 @@ fn resolve_property_fts_rows(
             continue;
         };
         let props: serde_json::Value = serde_json::from_str(&node.properties).unwrap_or_default();
+        let has_weights = schema.paths.iter().any(|p| p.weight.is_some());
         let (text_content, positions, stats) = extract_property_fts(&props, schema);
         combined_stats.merge(stats);
         if let Some(text_content) = text_content {
+            let columns = if has_weights {
+                extract_property_fts_columns(&props, schema)
+            } else {
+                Vec::new()
+            };
             prepared
                 .required_property_fts_rows
                 .push(FtsPropertyProjectionRow {
@@ -1111,6 +1120,7 @@ fn resolve_property_fts_rows(
                     kind: node.kind.clone(),
                     text_content,
                     positions,
+                    columns,
                 });
         }
     }
@@ -1238,6 +1248,41 @@ pub(crate) fn extract_property_fts(
     };
 
     (combined, walker.positions, walker.stats)
+}
+
+/// Extract per-column FTS text for a node's properties, one entry per spec.
+///
+/// Returns `Vec<(column_name, text)>` in spec order.
+pub(crate) fn extract_property_fts_columns(
+    props: &serde_json::Value,
+    schema: &PropertyFtsSchema,
+) -> Vec<(String, String)> {
+    let mut result = Vec::new();
+    for entry in &schema.paths {
+        let is_recursive = matches!(entry.mode, PropertyPathMode::Recursive);
+        let column_name = fathomdb_schema::fts_column_name(&entry.path, is_recursive);
+        let text = match entry.mode {
+            PropertyPathMode::Scalar => {
+                let parts = extract_json_path(props, &entry.path);
+                parts.join(&schema.separator)
+            }
+            PropertyPathMode::Recursive => {
+                let mut walker = RecursiveWalker {
+                    blob: String::new(),
+                    positions: Vec::new(),
+                    stats: ExtractStats::default(),
+                    exclude_paths: schema.exclude_paths.clone(),
+                    stopped: false,
+                };
+                if let Some(root) = resolve_path_root(props, &entry.path) {
+                    walker.walk(&entry.path, root, 0);
+                }
+                walker.blob
+            }
+        };
+        result.push((column_name, text));
+    }
+    result
 }
 
 fn resolve_path_root<'a>(
@@ -2225,17 +2270,36 @@ fn apply_write(
             del_positions.execute(params![row.node_logical_id])?;
             // Insert into per-kind FTS table (table name is dynamic).
             let table = fathomdb_schema::fts_kind_table_name(&row.kind);
-            // Ensure the per-kind table exists (handles new-kind first write).
-            tx.execute_batch(&format!(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING fts5(\
-                    node_logical_id UNINDEXED, text_content, \
-                    tokenize = '{DEFAULT_FTS_TOKENIZER}'\
-                )"
-            ))?;
-            tx.prepare(&format!(
-                "INSERT INTO {table} (node_logical_id, text_content) VALUES (?1, ?2)"
-            ))?
-            .execute(params![row.node_logical_id, row.text_content])?;
+            if row.columns.is_empty() {
+                // Non-weighted schema: single text_content column.
+                // Ensure the per-kind table exists (handles new-kind first write).
+                tx.execute_batch(&format!(
+                    "CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING fts5(\
+                        node_logical_id UNINDEXED, text_content, \
+                        tokenize = '{DEFAULT_FTS_TOKENIZER}'\
+                    )"
+                ))?;
+                tx.prepare(&format!(
+                    "INSERT INTO {table} (node_logical_id, text_content) VALUES (?1, ?2)"
+                ))?
+                .execute(params![row.node_logical_id, row.text_content])?;
+            } else {
+                // Weighted schema: per-column INSERT.
+                let col_names: Vec<&str> = row.columns.iter().map(|(n, _)| n.as_str()).collect();
+                let placeholders: Vec<String> = (2..=row.columns.len() + 1)
+                    .map(|i| format!("?{i}"))
+                    .collect();
+                let sql = format!(
+                    "INSERT INTO {table}(node_logical_id, {cols}) VALUES (?1, {placeholders})",
+                    cols = col_names.join(", "),
+                    placeholders = placeholders.join(", "),
+                );
+                let mut stmt = tx.prepare(&sql)?;
+                stmt.execute(rusqlite::params_from_iter(
+                    std::iter::once(row.node_logical_id.as_str())
+                        .chain(row.columns.iter().map(|(_, v)| v.as_str())),
+                ))?;
+            }
             for pos in &row.positions {
                 ins_positions.execute(params![
                     row.node_logical_id,
@@ -2253,12 +2317,20 @@ fn apply_write(
     // text_content into fts_property_rebuild_staging.  Both this upsert and
     // the per-kind FTS insert above happen inside the same transaction.
     if !prepared.required_property_fts_rows.is_empty() {
-        let mut ins_staging = tx.prepare_cached(
+        let mut ins_staging_simple = tx.prepare_cached(
             "INSERT INTO fts_property_rebuild_staging \
              (kind, node_logical_id, text_content) \
              VALUES (?1, ?2, ?3) \
              ON CONFLICT(kind, node_logical_id) DO UPDATE \
              SET text_content = excluded.text_content",
+        )?;
+        let mut ins_staging_columns = tx.prepare_cached(
+            "INSERT INTO fts_property_rebuild_staging \
+             (kind, node_logical_id, text_content, columns_json) \
+             VALUES (?1, ?2, ?3, ?4) \
+             ON CONFLICT(kind, node_logical_id) DO UPDATE \
+             SET text_content = excluded.text_content, \
+                 columns_json = excluded.columns_json",
         )?;
         let mut check_rebuild = tx.prepare_cached(
             "SELECT 1 FROM fts_property_rebuild_state \
@@ -2270,7 +2342,27 @@ fn apply_write(
                 .optional()?
                 .unwrap_or(false);
             if in_rebuild {
-                ins_staging.execute(params![row.kind, row.node_logical_id, row.text_content])?;
+                if row.columns.is_empty() {
+                    ins_staging_simple.execute(params![
+                        row.kind,
+                        row.node_logical_id,
+                        row.text_content
+                    ])?;
+                } else {
+                    let json_map: serde_json::Map<String, serde_json::Value> = row
+                        .columns
+                        .iter()
+                        .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+                        .collect();
+                    let columns_json =
+                        serde_json::to_string(&serde_json::Value::Object(json_map)).ok();
+                    ins_staging_columns.execute(params![
+                        row.kind,
+                        row.node_logical_id,
+                        row.text_content,
+                        columns_json
+                    ])?;
+                }
             }
         }
     }
@@ -7927,5 +8019,153 @@ mod tests {
             assert_eq!(body.path, "$.body");
             assert_eq!(body.weight, None);
         }
+    }
+
+    // --- B-3: extract_property_fts_columns tests ---
+
+    mod extract_property_fts_columns_tests {
+        use serde_json::json;
+
+        use super::super::{PropertyFtsSchema, PropertyPathEntry, extract_property_fts_columns};
+
+        fn weighted_schema(paths: Vec<PropertyPathEntry>) -> PropertyFtsSchema {
+            PropertyFtsSchema {
+                paths,
+                separator: " ".to_owned(),
+                exclude_paths: Vec::new(),
+            }
+        }
+
+        #[test]
+        fn extract_property_fts_columns_returns_per_spec_text() {
+            let props = json!({"title": "Hello", "body": "World"});
+            let mut title_entry = PropertyPathEntry::scalar("$.title");
+            title_entry.weight = Some(2.0);
+            let mut body_entry = PropertyPathEntry::scalar("$.body");
+            body_entry.weight = Some(1.0);
+            let schema = weighted_schema(vec![title_entry, body_entry]);
+            let cols = extract_property_fts_columns(&props, &schema);
+            assert_eq!(cols.len(), 2);
+            assert_eq!(cols[0].0, "title");
+            assert_eq!(cols[0].1, "Hello");
+            assert_eq!(cols[1].0, "body");
+            assert_eq!(cols[1].1, "World");
+        }
+
+        #[test]
+        fn extract_property_fts_columns_missing_field_returns_empty_string() {
+            let props = json!({"title": "Hello"});
+            let mut title_entry = PropertyPathEntry::scalar("$.title");
+            title_entry.weight = Some(2.0);
+            let mut body_entry = PropertyPathEntry::scalar("$.body");
+            body_entry.weight = Some(1.0);
+            let schema = weighted_schema(vec![title_entry, body_entry]);
+            let cols = extract_property_fts_columns(&props, &schema);
+            assert_eq!(cols.len(), 2);
+            assert_eq!(cols[0].1, "Hello");
+            assert_eq!(cols[1].1, "", "missing field yields empty string");
+        }
+    }
+
+    // --- B-3: writer per-column INSERT for weighted schemas ---
+
+    #[test]
+    fn writer_inserts_per_column_for_weighted_schema() {
+        use fathomdb_schema::fts_column_name;
+
+        let db = NamedTempFile::new().expect("temporary db");
+        let schema_manager = Arc::new(SchemaManager::new());
+
+        // Bootstrap and create the weighted per-kind table.
+        {
+            let conn = rusqlite::Connection::open(db.path()).expect("conn");
+            schema_manager.bootstrap(&conn).expect("bootstrap");
+
+            let title_col = fts_column_name("$.title", false);
+            let body_col = fts_column_name("$.body", false);
+
+            // Register schema with weights.
+            let paths_json = r#"[{"path":"$.title","mode":"scalar","weight":2.0},{"path":"$.body","mode":"scalar","weight":1.0}]"#.to_string();
+            conn.execute(
+                "INSERT INTO fts_property_schemas (kind, property_paths_json, separator) \
+                 VALUES (?1, ?2, ' ')",
+                rusqlite::params!["Article", paths_json],
+            )
+            .expect("register schema");
+
+            // Create the per-kind FTS table with per-column layout.
+            conn.execute_batch(&format!(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS fts_props_article USING fts5(\
+                    node_logical_id UNINDEXED, {title_col}, {body_col}, \
+                    tokenize = 'porter unicode61 remove_diacritics 2'\
+                )"
+            ))
+            .expect("create weighted per-kind table");
+        }
+
+        let writer = WriterActor::start(
+            db.path(),
+            Arc::clone(&schema_manager),
+            ProvenanceMode::Warn,
+            Arc::new(TelemetryCounters::default()),
+        )
+        .expect("writer");
+
+        writer
+            .submit(WriteRequest {
+                label: "insert".to_owned(),
+                nodes: vec![NodeInsert {
+                    row_id: "row-1".to_owned(),
+                    logical_id: "article-1".to_owned(),
+                    kind: "Article".to_owned(),
+                    properties: r#"{"title":"Hello World","body":"Foo Bar"}"#.to_owned(),
+                    source_ref: Some("src-1".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
+                }],
+                node_retires: vec![],
+                edges: vec![],
+                edge_retires: vec![],
+                chunks: vec![],
+                runs: vec![],
+                steps: vec![],
+                actions: vec![],
+                optional_backfills: vec![],
+                vec_inserts: vec![],
+                operational_writes: vec![],
+            })
+            .expect("write");
+
+        let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let title_col = fts_column_name("$.title", false);
+        let body_col = fts_column_name("$.body", false);
+
+        // The per-kind table must have one row for article-1.
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM fts_props_article WHERE node_logical_id = 'article-1'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("count");
+        assert_eq!(count, 1, "per-kind FTS table must have the row");
+
+        // Verify per-column values via direct SELECT (not MATCH).
+        let (title_val, body_val): (String, String) = conn
+            .query_row(
+                &format!(
+                    "SELECT {title_col}, {body_col} FROM fts_props_article \
+                     WHERE node_logical_id = 'article-1'"
+                ),
+                [],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+            )
+            .expect("select per-column");
+        assert_eq!(
+            title_val, "Hello World",
+            "title column must have correct value"
+        );
+        assert_eq!(body_val, "Foo Bar", "body column must have correct value");
     }
 }
