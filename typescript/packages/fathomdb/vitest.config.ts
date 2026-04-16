@@ -50,11 +50,17 @@ if (envBinding && existsSync(envBinding)) {
     // Not a git repo or stat failed; ignore.
   }
 
+  // napi-rs CLI appends the ABI suffix (e.g. linux-arm64-gnu, linux-x64-gnu)
+  // when building locally. Prefer that over the plain arch-only name so a
+  // freshly-built binary from `napi build` takes precedence over a stale prebuild.
+  const abiSuffix = platform === "linux" ? "-gnu" : "";
   const prebuildCandidates = [
+    resolve(prebuildsDir, `fathomdb.${platform}-${arch}${abiSuffix}.node`),
     resolve(prebuildsDir, `fathomdb.${platform}-${arch}.node`),
     resolve(prebuildsDir, "fathomdb.node"),
     ...(mainWorktreePrebuildsDir
       ? [
+          resolve(mainWorktreePrebuildsDir, `fathomdb.${platform}-${arch}${abiSuffix}.node`),
           resolve(mainWorktreePrebuildsDir, `fathomdb.${platform}-${arch}.node`),
           resolve(mainWorktreePrebuildsDir, "fathomdb.node"),
         ]

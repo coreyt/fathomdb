@@ -870,7 +870,7 @@ class FtsPropertySchemaRecord:
                 FtsPropertyPathSpec(
                     path=str(raw.get("path", "")),
                     mode=mode,
-                    weight=float(raw["weight"]) if "weight" in raw else None,
+                    weight=float(raw["weight"]) if raw.get("weight") is not None else None,
                 )
             )
         return cls(

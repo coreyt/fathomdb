@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - All new profile FFI PyO3 methods use `py.detach()` (PyO3 0.28 API) for GIL release; `py.allow_threads` was removed in 0.4.0 and is not used anywhere.
+- `FtsPropertyPathSpec.from_wire` in Python no longer raises `TypeError` when a wire payload contains a `weight` key with a `null` value; `null` is now treated as absent (same as missing key).
+- TypeScript package version bumped to `0.4.5` (was behind at `0.4.1`).
+- `vitest.config.ts` prebuild resolution now prefers `linux-arm64-gnu.node` (napi CLI output) over the legacy `linux-arm64.node` name so local `napi build` outputs are picked up without manual renaming.
 
 ## [0.4.2] — 2026-04-15
 
