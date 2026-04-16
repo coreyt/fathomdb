@@ -67,6 +67,8 @@ fathomdb admin get-fts-profile --db store.db --kind Book
 
 ### Python API
 
+**With a Python-side embedder (OpenAI, Jina, Stella, Subprocess):**
+
 ```python
 from fathomdb import FathomDB
 from fathomdb.embedders import OpenAIEmbedder
@@ -87,6 +89,25 @@ db.admin.regenerate_vector_embeddings(embedder)
 # Read back
 profile = db.admin.get_vec_profile()  # VecProfile | None
 print(profile.model_identity, profile.dimensions)
+```
+
+**With the built-in Candle/BGE-small embedder:**
+
+When the engine is opened with `embedder="builtin"`, use `BuiltinEmbedder` to
+record the correct `VecProfile`. Do **not** use another embedder class as a proxy
+— the stored profile must match what the Rust engine actually used.
+
+```python
+from fathomdb import FathomDB, BuiltinEmbedder
+from fathomdb import VectorRegenerationConfig
+
+db = FathomDB.open("store.db", embedder="builtin")
+
+# Record the correct identity for the built-in embedder
+profile = db.admin.configure_vec(BuiltinEmbedder(), agree_to_rebuild_impact=True)
+
+# Rebuild is performed by the Rust Candle runtime — no Python embedder needed
+db.admin.regenerate_vector_embeddings(VectorRegenerationConfig())
 ```
 
 > **Note**: `configure_vec` records the profile row but does not trigger a rebuild automatically. Call `regenerate_vector_embeddings` explicitly.
