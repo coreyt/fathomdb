@@ -127,3 +127,70 @@ fathomdb admin get-vec-profile --db store.db
 When a FathomDB engine is opened with a `QueryEmbedder` attached, `check_vec_identity_at_open` compares the embedder's `model_identity` and `dimensions` against the stored `VecProfile`. If they differ, a `warn!` log is emitted. **Startup is never blocked** — the guard is informational only.
 
 To silence the warning after switching models, call `configure_vec` with the new embedder before reopening the engine, then rebuild.
+
+---
+
+## Per-column BM25 weights
+
+`FtsPropertyPathSpec` accepts an optional `weight` multiplier (range `0.0 < weight ≤ 1000.0`). Title columns typically use a higher weight than body columns:
+
+```python
+# Python
+from fathomdb import FtsPropertyPathSpec
+db.admin.register_fts_property_schema_with_entries("Book", [
+    FtsPropertyPathSpec(path="$.title", weight=10.0),
+    FtsPropertyPathSpec(path="$.body", weight=1.0),
+])
+```
+
+```typescript
+// TypeScript
+admin.registerFtsPropertySchemaWithEntries({
+  kind: "Book",
+  entries: [
+    { path: "$.title", mode: "scalar", weight: 10.0 },
+    { path: "$.body", mode: "scalar", weight: 1.0 },
+  ],
+});
+```
+
+---
+
+## TypeScript SDK
+
+### FTS Profiles
+
+```typescript
+import { Engine } from 'fathomdb';
+
+const engine = await Engine.open("store.db");
+const admin = engine.admin;
+
+// Preview impact
+const impact = admin.previewProjectionImpact("Book", "fts");
+console.log(`${impact.rowsToRebuild} rows to rebuild`);
+
+// Configure tokenizer (raises RebuildImpactError if rows > 0 and not agreed)
+const profile = admin.configureFts("Book", "source-code", { agreeToRebuildImpact: true });
+
+// Read back
+const stored = admin.getFtsProfile("Book"); // FtsProfile | null
+```
+
+### Vec Profiles
+
+```typescript
+// Configure (records profile only — call regenerateVectorEmbeddings separately)
+const profile = admin.configureVec(
+  { modelIdentity: "BAAI/bge-small-en-v1.5", dimensions: 384, normalizationPolicy: "l2" },
+  { agreeToRebuildImpact: true }
+);
+
+// Regenerate (only when engine opened with embedder: "builtin")
+const report = admin.regenerateVectorEmbeddings({
+  profile: "default",
+  tableName: "vec_nodes_active",
+  chunkingPolicy: "default",
+  preprocessingPolicy: "default",
+});
+```

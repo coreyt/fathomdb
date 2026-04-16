@@ -464,7 +464,11 @@ export class AdminClient {
 
   // ── Projection profile management ─────────────────────────────────
 
-  /** Return the FTS tokenizer profile for a node kind, or `null` if not set. */
+  /**
+   * Return the FTS tokenizer profile for a node kind, or `null` if not set.
+   *
+   * @param kind - The node kind to look up (e.g. `"Book"`).
+   */
   getFtsProfile(kind: string, progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): FtsProfile | null {
     return this.#run("admin.get_fts_profile", () => {
       const raw = parseNativeJson(callNative(() => this.#core.getFtsProfile(kind)));
@@ -473,7 +477,9 @@ export class AdminClient {
     }, progressCallback, feedbackConfig);
   }
 
-  /** Return the global vector embedding profile, or `null` if not set. */
+  /**
+   * Return the global vector embedding profile, or `null` if not set.
+   */
   getVecProfile(progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): VecProfile | null {
     return this.#run("admin.get_vec_profile", () => {
       const raw = parseNativeJson(callNative(() => this.#core.getVecProfile()));
@@ -482,7 +488,15 @@ export class AdminClient {
     }, progressCallback, feedbackConfig);
   }
 
-  /** Estimate the cost of rebuilding a projection for a given node kind and facet. */
+  /**
+   * Estimate the cost of rebuilding a projection for a given node kind and facet.
+   *
+   * Returns a {@link ProjectionImpactReport} with `rowsToRebuild`, `estimatedSeconds`,
+   * and `tempDbSizeBytes`. If `rowsToRebuild` is `0`, the rebuild is a no-op.
+   *
+   * @param kind - Node kind to estimate (e.g. `"Book"`); use `"*"` for vector profiles.
+   * @param target - Which projection to estimate: `"fts"` or `"vec"`.
+   */
   previewProjectionImpact(kind: string, target: "fts" | "vec", progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): ProjectionImpactReport {
     return this.#run("admin.preview_projection_impact", () =>
       projectionImpactReportFromWire(
@@ -491,10 +505,20 @@ export class AdminClient {
   }
 
   /**
-   * Configure the FTS tokenizer for a node kind.
+   * Configure the FTS tokenizer for a node kind and trigger a schema re-registration.
+   *
+   * Records the tokenizer profile, then re-registers the existing FTS property schema
+   * for `kind` (if any) to trigger an index rebuild with the new tokenizer. The `mode`
+   * parameter is accepted for API compatibility but not yet forwarded to a rebuild
+   * strategy; call `rebuild("fts")` explicitly for a full backfill.
    *
    * If there are existing rows to rebuild and `agreeToRebuildImpact` is not set,
    * throws {@link RebuildImpactError} with the cost estimate.
+   *
+   * @param kind - The node kind to configure (e.g. `"Book"`).
+   * @param tokenizer - Preset name (`"source-code"`, `"recall-optimized-english"`, etc.)
+   *   or a raw FTS5 tokenizer string.
+   * @param options.agreeToRebuildImpact - Must be `true` when `rowsToRebuild > 0`.
    */
   configureFts(kind: string, tokenizer: string, options: { agreeToRebuildImpact?: boolean } = {}, progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): FtsProfile {
     return this.#run("admin.configure_fts", () => {
@@ -525,8 +549,16 @@ export class AdminClient {
   /**
    * Configure the global vector embedding profile.
    *
+   * Records the model identity, dimensions, and normalization policy in
+   * `projection_profiles`. Does **not** regenerate existing embeddings — call
+   * {@link regenerateVectorEmbeddings} explicitly after this method to rebuild the
+   * vector index.
+   *
    * If there are existing rows to rebuild and `agreeToRebuildImpact` is not set,
    * throws {@link RebuildImpactError} with the cost estimate.
+   *
+   * @param identity - Model identity, dimensions, and optional normalization policy.
+   * @param options.agreeToRebuildImpact - Must be `true` when `rowsToRebuild > 0`.
    */
   configureVec(identity: VecIdentity, options: { agreeToRebuildImpact?: boolean } = {}, progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): VecProfile {
     return this.#run("admin.configure_vec", () => {
@@ -548,7 +580,13 @@ export class AdminClient {
     }, progressCallback, feedbackConfig);
   }
 
-  /** Restore vector projection tables from stored profile metadata. */
+  /**
+   * Restore vector projection tables from stored profile metadata.
+   *
+   * Recreates any missing `vec_nodes_*` virtual tables using the dimensions and
+   * normalization policy recorded in `projection_profiles`. Useful after a database
+   * migration or schema reset where the virtual table was dropped.
+   */
   restoreVectorProfiles(progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): ProjectionRepairReport {
     return this.#run("admin.restore_vector_profiles", () =>
       projectionRepairReportFromWire(
@@ -557,10 +595,16 @@ export class AdminClient {
   }
 
   /**
-   * Regenerate vector embeddings using the configured embedder.
+   * Regenerate vector embeddings using the engine's built-in Candle embedder.
    *
-   * Only works when the engine was opened with `embedder: "builtin"`.
-   * Throws {@link CapabilityMissingError} if no embedder is configured.
+   * Iterates over all chunk rows referenced by `config.tableName`, re-embeds them,
+   * and writes the results back into the vector projection table. Returns a
+   * {@link VectorRegenerationReport} summarising counts and a persisted contract flag.
+   *
+   * **Requirement:** the engine must have been opened with `embedder: "builtin"`.
+   * Throws a `CapabilityMissingError` if no embedder is attached.
+   *
+   * @param config - Profile name, target table, chunking policy, and preprocessing policy.
    */
   regenerateVectorEmbeddings(config: VectorRegenerationConfig, progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): VectorRegenerationReport {
     return this.#run("admin.regenerate_vector_embeddings", () =>

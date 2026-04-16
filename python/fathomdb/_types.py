@@ -821,6 +821,10 @@ class FtsPropertyPathSpec:
 
     path: str
     mode: FtsPropertyPathMode = FtsPropertyPathMode.SCALAR
+    #: BM25 ranking weight multiplier for this path.  Valid range:
+    #: ``0.0 < weight ≤ 1000.0``.  When ``None`` the engine uses a weight
+    #: of ``1.0``.  Title or heading columns typically use a higher weight
+    #: (e.g. ``10.0``) while body columns use ``1.0``.
     weight: float | None = None
 
     def to_wire(self) -> dict[str, Any]:
