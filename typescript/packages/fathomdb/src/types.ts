@@ -717,7 +717,11 @@ export type FtsPropertyPathSpec = {
   path: string;
   /** Whether to treat this path as a scalar or recursively walk it. */
   mode: FtsPropertyPathMode;
-  /** Optional BM25 weight multiplier for this path (1.0 = default). */
+  /**
+   * BM25 ranking weight multiplier for this path. Valid range: `0.0 < weight ≤ 1000.0`.
+   * When omitted the engine uses a weight of `1.0`. Title or heading columns
+   * typically use a higher weight (e.g. `10.0`) while body columns use `1.0`.
+   */
   weight?: number;
 };
 
@@ -1233,7 +1237,15 @@ export function rebuildProgressFromWire(w: Record<string, unknown>): RebuildProg
 
 // ── Projection profile types ───────────────────────────────────────────
 
-/** Stored FTS tokenizer profile for a node kind. */
+/**
+ * Stored FTS tokenizer profile for a node kind.
+ *
+ * Created or updated by {@link AdminClient.configureFts}. `tokenizer` is
+ * either a preset name (e.g. `"source-code"`) or a raw FTS5 tokenizer
+ * string. `activeAt` is the epoch-second timestamp when the profile was
+ * made active; `null` means it was recorded but never activated via a
+ * rebuild.
+ */
 export type FtsProfile = {
   kind: string;
   tokenizer: string;
@@ -1251,7 +1263,14 @@ export function ftsProfileFromWire(w: Record<string, unknown>): FtsProfile {
   };
 }
 
-/** Stored vector embedding profile (global, kind-agnostic). */
+/**
+ * Stored vector embedding profile (global, kind-agnostic).
+ *
+ * Created or updated by {@link AdminClient.configureVec}. `modelIdentity`
+ * is the canonical model string (e.g. `"BAAI/bge-small-en-v1.5"`).
+ * `activeAt` is `null` until at least one {@link AdminClient.regenerateVectorEmbeddings}
+ * run completes successfully.
+ */
 export type VecProfile = {
   modelIdentity: string;
   modelVersion: string | null;
@@ -1271,7 +1290,14 @@ export function vecProfileFromWire(w: Record<string, unknown>): VecProfile {
   };
 }
 
-/** Estimated cost of rebuilding a projection. */
+/**
+ * Estimated cost of rebuilding a projection.
+ *
+ * Returned by {@link AdminClient.previewProjectionImpact}. When
+ * `rowsToRebuild` is `0` the rebuild is effectively a no-op. `currentTokenizer`
+ * and `targetTokenizer` are populated for FTS estimates; both are `null` for
+ * vector estimates.
+ */
 export type ProjectionImpactReport = {
   rowsToRebuild: number;
   estimatedSeconds: number;
@@ -1291,7 +1317,14 @@ export function projectionImpactReportFromWire(w: Record<string, unknown>): Proj
   };
 }
 
-/** Identity config for a vector embedding model. */
+/**
+ * Identity config for a vector embedding model.
+ *
+ * Passed to {@link AdminClient.configureVec} to record which model and
+ * configuration the stored vectors were produced with. `modelIdentity` is
+ * the canonical model string (e.g. `"BAAI/bge-small-en-v1.5"`).
+ * `normalizationPolicy` should be `"l2"` for BGE-family models.
+ */
 export type VecIdentity = {
   modelIdentity: string;
   modelVersion?: string;
@@ -1299,7 +1332,15 @@ export type VecIdentity = {
   normalizationPolicy?: string;
 };
 
-/** Input config for a vector embedding regeneration run. */
+/**
+ * Input config for a vector embedding regeneration run.
+ *
+ * Passed to {@link AdminClient.regenerateVectorEmbeddings}. `profile` is
+ * the stored profile name (typically `"default"`). `tableName` is the
+ * sqlite-vec virtual table to write into (e.g. `"vec_nodes_active"`).
+ * `chunkingPolicy` and `preprocessingPolicy` control how text is split
+ * and cleaned before embedding; use `"default"` for standard behaviour.
+ */
 export type VectorRegenerationConfig = {
   profile: string;
   tableName: string;
@@ -1316,7 +1357,14 @@ export function vectorRegenerationConfigToWire(c: VectorRegenerationConfig): Rec
   };
 }
 
-/** Report from a vector embedding regeneration run. */
+/**
+ * Report from a vector embedding regeneration run.
+ *
+ * Returned by {@link AdminClient.regenerateVectorEmbeddings}. `regeneratedRows`
+ * is the number of vector rows written. `contractPersisted` is `true` when the
+ * engine successfully wrote the post-regen contract record; `false` indicates the
+ * embeddings were written but the audit row was not persisted (non-fatal).
+ */
 export type VectorRegenerationReport = {
   profile: string;
   tableName: string;
