@@ -86,7 +86,9 @@ existing nodes are indexed without blocking the caller.
   Kind-less searches still return chunk and vector hits.
 - Direct SQL queries to `fts_node_properties` will fail — migrate any raw
   SQL to query the per-kind table `fts_props_<kind>` instead.
-- Per-kind tables enable per-kind tokenizer configuration (planned for 0.4.5)
+- Per-kind tables enable per-kind tokenizer configuration via
+  `AdminClient.configure_fts` (shipped in 0.4.5 — see
+  [Projection Profiles](../operations/projection-profiles.md))
   and per-column BM25 weight tuning (available now via `with_weight()`).
 
 ## Per-Column BM25 Weights
