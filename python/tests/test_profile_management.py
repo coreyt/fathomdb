@@ -277,3 +277,70 @@ def test_async_mode_returns_fast(tmp_path: Path) -> None:
     assert isinstance(profile, FtsProfile)
     # Should complete in well under 5 seconds for an empty DB
     assert elapsed < 5.0
+
+
+# ---------------------------------------------------------------------------
+# 11. test_fts_path_spec_weight_to_wire
+# ---------------------------------------------------------------------------
+
+
+def test_fts_path_spec_weight_to_wire() -> None:
+    """FtsPropertyPathSpec.to_wire() includes weight when set."""
+    from fathomdb import FtsPropertyPathSpec
+
+    spec = FtsPropertyPathSpec(path="$.title", weight=10.0)
+    wire = spec.to_wire()
+    assert wire["weight"] == 10.0
+
+
+# ---------------------------------------------------------------------------
+# 12. test_fts_path_spec_no_weight_omits_key
+# ---------------------------------------------------------------------------
+
+
+def test_fts_path_spec_no_weight_omits_key() -> None:
+    """FtsPropertyPathSpec.to_wire() omits weight key when weight is None."""
+    from fathomdb import FtsPropertyPathSpec
+
+    spec = FtsPropertyPathSpec(path="$.body")
+    wire = spec.to_wire()
+    assert "weight" not in wire
+
+
+# ---------------------------------------------------------------------------
+# 13. test_fts_property_schema_record_from_wire_preserves_weight
+# ---------------------------------------------------------------------------
+
+
+def test_fts_property_schema_record_from_wire_preserves_weight() -> None:
+    """FtsPropertySchemaRecord.from_wire() round-trips weight from the wire dict."""
+    from fathomdb import FtsPropertySchemaRecord
+
+    wire = {
+        "kind": "Article",
+        "property_paths": ["$.title"],
+        "entries": [{"path": "$.title", "mode": "scalar", "weight": 5.0}],
+        "exclude_paths": [],
+        "separator": " ",
+        "format_version": 1,
+    }
+    record = FtsPropertySchemaRecord.from_wire(wire)
+    assert len(record.entries) == 1
+    assert record.entries[0].weight == 5.0
+
+
+def test_fts_property_schema_record_from_wire_no_weight() -> None:
+    """FtsPropertySchemaRecord.from_wire() sets weight=None when absent."""
+    from fathomdb import FtsPropertySchemaRecord
+
+    wire = {
+        "kind": "Article",
+        "property_paths": ["$.title"],
+        "entries": [{"path": "$.title", "mode": "scalar"}],
+        "exclude_paths": [],
+        "separator": " ",
+        "format_version": 1,
+    }
+    record = FtsPropertySchemaRecord.from_wire(wire)
+    assert len(record.entries) == 1
+    assert record.entries[0].weight is None

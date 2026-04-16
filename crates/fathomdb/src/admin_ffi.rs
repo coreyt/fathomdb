@@ -37,19 +37,26 @@ impl From<PyPropertyPathMode> for FtsPropertyPathMode {
 }
 
 /// A single registered property-FTS path with its extraction mode.
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct PyPropertyPathSpec {
     /// JSON path to the property (must start with `$.`).
     pub path: String,
     /// Whether to treat this path as a scalar or recursively walk it.
     pub mode: PyPropertyPathMode,
+    /// Optional BM25 weight multiplier for this path.
+    #[serde(default)]
+    pub weight: Option<f32>,
 }
 
 impl From<PyPropertyPathSpec> for FtsPropertyPathSpec {
     fn from(value: PyPropertyPathSpec) -> Self {
-        match value.mode {
+        let base = match value.mode {
             PyPropertyPathMode::Recursive => FtsPropertyPathSpec::recursive(value.path),
             PyPropertyPathMode::Scalar => FtsPropertyPathSpec::scalar(value.path),
+        };
+        match value.weight {
+            Some(w) => base.with_weight(w),
+            None => base,
         }
     }
 }
@@ -68,7 +75,7 @@ impl From<PyPropertyPathSpec> for FtsPropertyPathSpec {
 ///   "exclude_paths": []
 /// }
 /// ```
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct PyRegisterFtsPropertySchemaRequest {
     /// Node kind to register.
     pub kind: String,
@@ -259,6 +266,7 @@ pub fn preview_projection_impact_json(
 #[allow(clippy::expect_used)]
 mod tests {
     use super::{PyPropertyPathMode, PyPropertyPathSpec, PyRegisterFtsPropertySchemaRequest};
+    use crate::FtsPropertyPathSpec;
 
     #[test]
     fn property_path_mode_snake_case_wire_form() {
@@ -273,6 +281,7 @@ mod tests {
         let spec = PyPropertyPathSpec {
             path: "$.payload".to_owned(),
             mode: PyPropertyPathMode::Recursive,
+            weight: None,
         };
         let json = serde_json::to_string(&spec).expect("serialize");
         let parsed: PyPropertyPathSpec = serde_json::from_str(&json).expect("deserialize");
@@ -291,6 +300,22 @@ mod tests {
     }
 
     #[test]
+    fn weight_round_trips_through_py_property_path_spec() {
+        let json = r#"{"path": "$.title", "mode": "scalar", "weight": 10.0}"#;
+        let spec: PyPropertyPathSpec = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(spec.weight, Some(10.0_f32));
+        let fts_spec: FtsPropertyPathSpec = spec.into();
+        let _ = fts_spec; // conversion must not panic
+    }
+
+    #[test]
+    fn weight_absent_defaults_to_none() {
+        let json = r#"{"path": "$.body", "mode": "scalar"}"#;
+        let spec: PyPropertyPathSpec = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(spec.weight, None);
+    }
+
+    #[test]
     fn register_request_roundtrip_recursive_entry() {
         let request = PyRegisterFtsPropertySchemaRequest {
             kind: "KnowledgeItem".to_owned(),
@@ -298,10 +323,12 @@ mod tests {
                 PyPropertyPathSpec {
                     path: "$.title".to_owned(),
                     mode: PyPropertyPathMode::Scalar,
+                    weight: None,
                 },
                 PyPropertyPathSpec {
                     path: "$.payload".to_owned(),
                     mode: PyPropertyPathMode::Recursive,
+                    weight: None,
                 },
             ],
             separator: " ".to_owned(),

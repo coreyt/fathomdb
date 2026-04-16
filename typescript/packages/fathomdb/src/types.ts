@@ -717,6 +717,8 @@ export type FtsPropertyPathSpec = {
   path: string;
   /** Whether to treat this path as a scalar or recursively walk it. */
   mode: FtsPropertyPathMode;
+  /** Optional BM25 weight multiplier for this path (1.0 = default). */
+  weight?: number;
 };
 
 /** A registered FTS property projection schema for a node kind. */
@@ -755,7 +757,8 @@ export function ftsPropertySchemaRecordFromWire(w: Record<string, unknown>): Fts
     .map((entry) => {
       const modeStr = String(entry.mode ?? "scalar");
       const mode: FtsPropertyPathMode = modeStr === "recursive" ? "recursive" : "scalar";
-      return { path: String(entry.path ?? ""), mode };
+      const weight = entry.weight != null ? Number(entry.weight) : undefined;
+      return { path: String(entry.path ?? ""), mode, weight };
     });
   return {
     kind: String(w.kind ?? ""),
