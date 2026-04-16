@@ -45,7 +45,7 @@ def test_openai_identity():
     assert eid.model_identity == "text-embedding-3-small"
     assert eid.dimensions == 1536
     assert eid.model_version is None
-    assert eid.normalization_policy == "none"
+    assert eid.normalization_policy == "l2"
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +125,7 @@ def test_jina_identity():
     assert eid.model_identity == "jina-embeddings-v2-base-en"
     assert eid.dimensions == 768
     assert eid.model_version is None
-    assert eid.normalization_policy == "none"
+    assert eid.normalization_policy == "l2"
 
 
 # ---------------------------------------------------------------------------

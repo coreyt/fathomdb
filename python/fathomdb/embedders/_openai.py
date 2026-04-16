@@ -6,6 +6,28 @@ _CACHE_MAX = 512
 
 
 class OpenAIEmbedder(QueryEmbedder):
+    """Query-time embedder backed by the OpenAI Embeddings API.
+
+    Requires ``httpx`` (install via ``pip install fathomdb[openai]``).
+
+    Embeddings are cached in a process-local dict for up to ``300`` seconds
+    (TTL) with a maximum of ``512`` entries (LRU-by-insertion eviction).
+    The cache is **not thread-safe**; use one instance per thread in
+    concurrent contexts.
+
+    Note: OpenAI ``text-embedding-3-*`` models return L2-normalized vectors.
+    ``normalization_policy`` is reported as ``"l2"`` in the identity.
+
+    Parameters
+    ----------
+    model : str
+        OpenAI model name, e.g. ``"text-embedding-3-small"``.
+    api_key : str
+        OpenAI API key.
+    dimensions : int
+        Desired output dimensionality (Matryoshka truncation).
+    """
+
     def __init__(self, model: str, api_key: str, dimensions: int) -> None:
         self._model = model
         self._api_key = api_key
@@ -18,7 +40,7 @@ class OpenAIEmbedder(QueryEmbedder):
             model_identity=self._model,
             model_version=None,
             dimensions=self._dimensions,
-            normalization_policy="none",
+            normalization_policy="l2",
         )
 
     def embed(self, text: str) -> list[float]:

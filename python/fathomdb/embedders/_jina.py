@@ -5,6 +5,19 @@ _DIMENSIONS = 768
 
 
 class JinaEmbedder(QueryEmbedder):
+    """Query-time embedder backed by the Jina AI Embeddings API.
+
+    Requires ``httpx`` (install via ``pip install fathomdb[jina]``).
+
+    Produces 768-dimensional L2-normalized embeddings using
+    ``jina-embeddings-v2-base-en``.
+
+    Parameters
+    ----------
+    api_key : str
+        Jina AI API key.
+    """
+
     def __init__(self, api_key: str) -> None:
         self._api_key = api_key
 
@@ -13,7 +26,7 @@ class JinaEmbedder(QueryEmbedder):
             model_identity=_MODEL,
             model_version=None,
             dimensions=_DIMENSIONS,
-            normalization_policy="none",
+            normalization_policy="l2",
         )
 
     def embed(self, text: str) -> list[float]:

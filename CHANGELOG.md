@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Projection profiles** (`FtsProfile`, `VecProfile`, `ImpactReport`): CRUD methods on `AdminService` (`set_fts_profile`, `get_fts_profile`, `get_vec_profile`, `preview_projection_impact`) backed by the `projection_profiles` table. Five built-in tokenizer presets: `recall-optimized-english`, `precision-optimized`, `global-cjk`, `substring-trigram`, `source-code`.
+- **Projection profiles** (`FtsProfile`, `VecProfile`, `ImpactReport`): CRUD methods on `AdminService` (`set_fts_profile`, `get_fts_profile`, `set_vec_profile`, `get_vec_profile`, `preview_projection_impact`) backed by the `projection_profiles` table. Five built-in tokenizer presets: `recall-optimized-english`, `precision-optimized`, `global-cjk`, `substring-trigram`, `source-code`.
 - **Rust FFI + PyO3 bindings** (`set_fts_profile`, `get_fts_profile`, `set_vec_profile`, `get_vec_profile`, `preview_projection_impact`) on `EngineCore`, releasing the GIL via `py.detach()`.
 - **Python profile management** (`fathomdb.FtsProfile`, `VecProfile`, `ImpactReport`, `RebuildMode`, `RebuildImpactError`): `AdminClient.configure_fts`, `configure_vec`, `preview_projection_impact`, `get_fts_profile`, `get_vec_profile`. `RebuildImpactError` raised when rows > 0 and `agree_to_rebuild_impact=False`.
 - **Python embedding adapters** (`fathomdb.embedders`): `OpenAIEmbedder` (httpx, 300 s TTL cache), `JinaEmbedder`, `StellaEmbedder` (lazy `sentence-transformers`, L2-norm after Matryoshka truncation), `SubprocessEmbedder` (persistent process, binary f32 LE protocol). Optional deps: `fathomdb[openai]`, `fathomdb[jina]`, `fathomdb[stella]`, `fathomdb[embedders]`.
@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `py.allow_threads` → `py.detach` rename for PyO3 0.28 compatibility in profile FFI methods.
+- All new profile FFI PyO3 methods use `py.detach()` (PyO3 0.28 API) for GIL release; `py.allow_threads` was removed in 0.4.0 and is not used anywhere.
 
 ## [0.4.2] — 2026-04-15
 
@@ -628,7 +628,10 @@ These are known limitations in the current release:
 - Schema migration system (13 versioned migrations)
 - Supersession model (append-only, no destructive updates)
 
-[Unreleased]: https://github.com/coreyt/fathomdb/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/coreyt/fathomdb/compare/v0.4.5...HEAD
+[0.4.5]: https://github.com/coreyt/fathomdb/compare/v0.4.2...v0.4.5
+[0.4.2]: https://github.com/coreyt/fathomdb/compare/v0.4.1...v0.4.2
+[0.4.1]: https://github.com/coreyt/fathomdb/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/coreyt/fathomdb/compare/v0.3.1...v0.4.0
 [0.2.5]: https://github.com/coreyt/fathomdb/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/coreyt/fathomdb/compare/v0.2.3...v0.2.4

@@ -44,7 +44,6 @@ def _build_vec_profile():
             "model_identity": "bge-small-en-v1.5",
             "model_version": "1.5",
             "dimensions": 384,
-            "normalization_policy": "l2",
             "active_at": None,
             "created_at": 0,
         }

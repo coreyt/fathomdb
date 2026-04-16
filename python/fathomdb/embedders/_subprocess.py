@@ -4,6 +4,33 @@ from ._base import EmbedderIdentity, QueryEmbedder
 
 
 class SubprocessEmbedder(QueryEmbedder):
+    r"""Query-time embedder that delegates to a persistent subprocess.
+
+    **Wire protocol**: write a UTF-8 line (text + ``\n``) to the
+    subprocess stdin; read exactly ``dimensions * 4`` bytes from stdout
+    as little-endian ``float32`` values (``struct.unpack(f"{dimensions}f", ...)``).
+
+    The subprocess is started lazily on the first :meth:`embed` call and
+    kept alive across calls.  If the subprocess exits unexpectedly,
+    :meth:`_ensure_proc` restarts it on the next call.
+
+    **Known limitations**:
+
+    - :meth:`_read_exact` blocks indefinitely if the subprocess stalls
+      mid-write.  Callers that require bounded latency should wrap
+      :meth:`embed` with their own timeout (e.g. ``concurrent.futures``).
+    - Concurrent calls from multiple threads are not safe: two threads
+      calling :meth:`embed` simultaneously may interleave stdin writes
+      or share stdout reads.
+
+    Parameters
+    ----------
+    command : list[str]
+        The subprocess command and arguments.
+    dimensions : int
+        Expected output vector dimensionality.
+    """
+
     def __init__(self, command: list[str], dimensions: int) -> None:
         self._command = command
         self._dimensions = dimensions

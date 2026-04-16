@@ -385,9 +385,8 @@ class AdminClient:
         ``with_match_attribution()`` on subsequent text searches.
 
         When any ``mode == RECURSIVE`` entry is introduced for a kind, the
-        engine eagerly rebuilds ``fts_node_properties`` and
-        ``fts_node_property_positions`` for every active node of that kind
-        in the same transaction as the schema upsert.
+        engine eagerly rebuilds ``fts_props_<kind>`` for every active node
+        of that kind in the same transaction as the schema upsert.
 
         Args:
             kind: Node kind to register (e.g. ``"KnowledgeItem"``).
@@ -470,7 +469,7 @@ class AdminClient:
         """Remove the FTS property schema for a node kind.
 
         This deletes the schema row but does **not** delete existing derived
-        ``fts_node_properties`` rows. An explicit ``rebuild("fts")`` is
+        ``fts_props_<kind>`` rows. An explicit ``rebuild("fts")`` is
         required to clean up stale rows after removal.
 
         Raises ``EngineError`` if the kind is not registered.
@@ -550,7 +549,10 @@ class AdminClient:
         Args:
             kind: Node kind (e.g. ``"Book"``).
             tokenizer: Tokenizer string or preset name.
-            mode: Rebuild mode (``SYNC`` or ``ASYNC``).
+            mode: Accepted for API compatibility; **not yet forwarded to a
+                rebuild**. After calling this method, call
+                ``admin.register_fts_property_schema(kind, ...)`` to trigger
+                an index rebuild with the new tokenizer.
             agree_to_rebuild_impact: If True, proceed even when rows must be
                 rebuilt. If False (default), raises :class:`RebuildImpactError`
                 when rows_to_rebuild > 0.
@@ -575,7 +577,10 @@ class AdminClient:
 
         Args:
             embedder: A QueryEmbedder whose ``identity()`` provides the profile.
-            mode: Rebuild mode (``SYNC`` or ``ASYNC``).
+            mode: Accepted for API compatibility; **not yet forwarded to a
+                rebuild**. After calling this method, call
+                ``admin.regenerate_vector_embeddings(embedder)`` explicitly
+                to rebuild the vector index.
             agree_to_rebuild_impact: If True, proceed even when rows must be
                 rebuilt. If False (default), raises :class:`RebuildImpactError`
                 when rows_to_rebuild > 0.
@@ -593,8 +598,7 @@ class AdminClient:
                 "normalization_policy": identity.normalization_policy,
             }
         )
-        self._core.set_vec_profile(config)
-        result_json = self._core.get_vec_profile()
+        result_json = self._core.set_vec_profile(config)
         return VecProfile.from_wire(json.loads(result_json))
 
     def preview_projection_impact(self, kind: str, target: str) -> ImpactReport:
