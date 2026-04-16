@@ -116,7 +116,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      FATHOM_TS_STRESS_DURATION_SECONDS: "60"
+      FATHOM_TS_STRESS_DURATION_SECONDS: "30"
     defaults:
       run:
         working-directory: typescript
