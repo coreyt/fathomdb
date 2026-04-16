@@ -821,9 +821,13 @@ class FtsPropertyPathSpec:
 
     path: str
     mode: FtsPropertyPathMode = FtsPropertyPathMode.SCALAR
+    weight: float | None = None
 
     def to_wire(self) -> dict[str, Any]:
-        return {"path": self.path, "mode": self.mode.value}
+        d: dict[str, Any] = {"path": self.path, "mode": self.mode.value}
+        if self.weight is not None:
+            d["weight"] = self.weight
+        return d
 
 
 @dataclass(frozen=True)
@@ -859,7 +863,11 @@ class FtsPropertySchemaRecord:
             except ValueError:
                 mode = FtsPropertyPathMode.SCALAR
             entries.append(
-                FtsPropertyPathSpec(path=str(raw.get("path", "")), mode=mode)
+                FtsPropertyPathSpec(
+                    path=str(raw.get("path", "")),
+                    mode=mode,
+                    weight=float(raw["weight"]) if "weight" in raw else None,
+                )
             )
         return cls(
             kind=payload["kind"],
