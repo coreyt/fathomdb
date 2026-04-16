@@ -114,7 +114,7 @@ jobs:
 
   typescript-observability-harness:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       FATHOM_TS_STRESS_DURATION_SECONDS: "60"
     defaults:

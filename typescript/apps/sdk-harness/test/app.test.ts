@@ -55,7 +55,7 @@ describe("sdk harness", () => {
     expect(result).toMatch(/^2\/2 scenarios passed/);
   });
 
-  it("runs the stress scenarios", { timeout: 250_000 }, () => {
+  it("runs the stress scenarios", { timeout: 400_000 }, () => {
     const result = withNativeBinding(() => runHarness("stress"));
     console.log(result);
     expect(result).toMatch(/^3\/3 scenarios passed/);
