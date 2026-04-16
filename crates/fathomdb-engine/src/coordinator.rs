@@ -5048,6 +5048,11 @@ mod tests {
             TokenizerStrategy::from_str("unicode61 tokenchars '.+-'"),
             TokenizerStrategy::SourceCode,
         );
+        // Canonical source-code preset value
+        assert_eq!(
+            TokenizerStrategy::from_str("unicode61 tokenchars '._-$@'"),
+            TokenizerStrategy::SourceCode,
+        );
         assert_eq!(
             TokenizerStrategy::from_str("my_custom_tokenizer"),
             TokenizerStrategy::Custom("my_custom_tokenizer".to_owned()),
