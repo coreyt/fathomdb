@@ -1230,3 +1230,112 @@ export function rebuildProgressFromWire(w: Record<string, unknown>): RebuildProg
     errorMessage: w.error_message != null ? String(w.error_message) : null,
   };
 }
+
+// ── Projection profile types ───────────────────────────────────────────
+
+/** Stored FTS tokenizer profile for a node kind. */
+export type FtsProfile = {
+  kind: string;
+  tokenizer: string;
+  activeAt: number | null;
+  createdAt: number;
+};
+
+/** @internal */
+export function ftsProfileFromWire(w: Record<string, unknown>): FtsProfile {
+  return {
+    kind: String(w.kind ?? ""),
+    tokenizer: String(w.tokenizer ?? ""),
+    activeAt: w.active_at != null ? Number(w.active_at) : null,
+    createdAt: Number(w.created_at ?? 0),
+  };
+}
+
+/** Stored vector embedding profile (global, kind-agnostic). */
+export type VecProfile = {
+  modelIdentity: string;
+  modelVersion: string | null;
+  dimensions: number;
+  activeAt: number | null;
+  createdAt: number;
+};
+
+/** @internal */
+export function vecProfileFromWire(w: Record<string, unknown>): VecProfile {
+  return {
+    modelIdentity: String(w.model_identity ?? ""),
+    modelVersion: w.model_version != null ? String(w.model_version) : null,
+    dimensions: Number(w.dimensions ?? 0),
+    activeAt: w.active_at != null ? Number(w.active_at) : null,
+    createdAt: Number(w.created_at ?? 0),
+  };
+}
+
+/** Estimated cost of rebuilding a projection. */
+export type ProjectionImpactReport = {
+  rowsToRebuild: number;
+  estimatedSeconds: number;
+  tempDbSizeBytes: number;
+  currentTokenizer: string | null;
+  targetTokenizer: string | null;
+};
+
+/** @internal */
+export function projectionImpactReportFromWire(w: Record<string, unknown>): ProjectionImpactReport {
+  return {
+    rowsToRebuild: Number(w.rows_to_rebuild ?? 0),
+    estimatedSeconds: Number(w.estimated_seconds ?? 0),
+    tempDbSizeBytes: Number(w.temp_db_size_bytes ?? 0),
+    currentTokenizer: w.current_tokenizer != null ? String(w.current_tokenizer) : null,
+    targetTokenizer: w.target_tokenizer != null ? String(w.target_tokenizer) : null,
+  };
+}
+
+/** Identity config for a vector embedding model. */
+export type VecIdentity = {
+  modelIdentity: string;
+  modelVersion?: string;
+  dimensions: number;
+  normalizationPolicy?: string;
+};
+
+/** Input config for a vector embedding regeneration run. */
+export type VectorRegenerationConfig = {
+  profile: string;
+  tableName: string;
+  chunkingPolicy: string;
+  preprocessingPolicy: string;
+};
+
+export function vectorRegenerationConfigToWire(c: VectorRegenerationConfig): Record<string, unknown> {
+  return {
+    profile: c.profile,
+    table_name: c.tableName,
+    chunking_policy: c.chunkingPolicy,
+    preprocessing_policy: c.preprocessingPolicy,
+  };
+}
+
+/** Report from a vector embedding regeneration run. */
+export type VectorRegenerationReport = {
+  profile: string;
+  tableName: string;
+  dimension: number;
+  totalChunks: number;
+  regeneratedRows: number;
+  contractPersisted: boolean;
+  notes: string[];
+};
+
+/** @internal */
+export function vectorRegenerationReportFromWire(w: Record<string, unknown>): VectorRegenerationReport {
+  return {
+    profile: String(w.profile ?? ""),
+    tableName: String(w.table_name ?? ""),
+    dimension: Number(w.dimension ?? 0),
+    totalChunks: Number(w.total_chunks ?? 0),
+    regeneratedRows: Number(w.regenerated_rows ?? 0),
+    contractPersisted: Boolean(w.contract_persisted ?? false),
+    notes: Array.isArray(w.notes) ? w.notes.map(String) : [],
+  };
+}

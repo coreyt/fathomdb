@@ -24,6 +24,7 @@ use crate::{
     ProvenancePurgeOptions, SafeExportOptions, compile_grouped_query, compile_query, new_id,
     new_row_id,
 };
+use fathomdb_engine::VectorRegenerationConfig;
 
 #[napi(js_name = "EngineCore")]
 pub struct NodeEngineCore {
@@ -632,6 +633,75 @@ impl NodeEngineCore {
             encode_json(report)
         })
     }
+
+    // ── Projection profile methods ──────────────────────────────────────
+
+    #[napi]
+    pub fn set_fts_profile(&self, request_json: String) -> Result<String> {
+        self.with_engine(|engine| {
+            crate::admin_ffi::set_fts_profile_json(engine, &request_json)
+                .map_err(map_admin_ffi_error)
+        })
+    }
+
+    #[napi]
+    pub fn get_fts_profile(&self, kind: String) -> Result<String> {
+        self.with_engine(|engine| {
+            crate::admin_ffi::get_fts_profile_json(engine, &kind).map_err(map_admin_ffi_error)
+        })
+    }
+
+    #[napi]
+    pub fn set_vec_profile(&self, request_json: String) -> Result<String> {
+        self.with_engine(|engine| {
+            crate::admin_ffi::set_vec_profile_json(engine, &request_json)
+                .map_err(map_admin_ffi_error)
+        })
+    }
+
+    #[napi]
+    pub fn get_vec_profile(&self) -> Result<String> {
+        self.with_engine(|engine| {
+            crate::admin_ffi::get_vec_profile_json(engine).map_err(map_admin_ffi_error)
+        })
+    }
+
+    #[napi]
+    pub fn preview_projection_impact(&self, kind: String, facet: String) -> Result<String> {
+        self.with_engine(|engine| {
+            crate::admin_ffi::preview_projection_impact_json(engine, &kind, &facet)
+                .map_err(map_admin_ffi_error)
+        })
+    }
+
+    #[napi]
+    pub fn restore_vector_profiles(&self) -> Result<String> {
+        self.with_engine(|engine| {
+            let report = engine
+                .admin()
+                .service()
+                .restore_vector_profiles()
+                .map_err(map_engine_error)?;
+            encode_json(PyProjectionRepairReport::from(report))
+        })
+    }
+
+    #[napi]
+    pub fn regenerate_vector_embeddings(&self, config_json: String) -> Result<String> {
+        check_json_size(
+            &config_json,
+            MAX_REQUEST_JSON_BYTES,
+            "vector regeneration config",
+        )?;
+        let config: VectorRegenerationConfig = serde_json::from_str(&config_json)
+            .map_err(|error| invalid_argument(format!("invalid regen config: {error}")))?;
+        self.with_engine(|engine| {
+            let report = engine
+                .regenerate_vector_embeddings(&config)
+                .map_err(map_engine_error)?;
+            encode_json(report)
+        })
+    }
 }
 
 fn parse_ast(ast_json: &str) -> Result<crate::QueryAst> {
@@ -728,5 +798,109 @@ mod tests {
         engine.close().expect("close");
         let result = engine.check_integrity();
         assert!(result.is_err(), "call after close must fail");
+    }
+
+    #[test]
+    fn get_fts_profile_returns_null_when_unset() {
+        let db = NamedTempFile::new().expect("temp db");
+        let engine = NodeEngineCore::open(
+            db.path().to_str().expect("db path").to_owned(),
+            "warn".to_owned(),
+            None,
+            None,
+            None,
+        )
+        .expect("open");
+        let result = engine
+            .get_fts_profile("Article".to_owned())
+            .expect("get_fts_profile");
+        assert_eq!(result, "null", "unset FTS profile must serialize as null");
+    }
+
+    #[test]
+    fn set_and_get_fts_profile_round_trip() {
+        let db = NamedTempFile::new().expect("temp db");
+        let engine = NodeEngineCore::open(
+            db.path().to_str().expect("db path").to_owned(),
+            "warn".to_owned(),
+            None,
+            None,
+            None,
+        )
+        .expect("open");
+        let set_result = engine
+            .set_fts_profile(r#"{"kind":"Article","tokenizer":"unicode61"}"#.to_owned())
+            .expect("set_fts_profile");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&set_result).expect("set result is valid JSON");
+        assert_eq!(parsed["kind"], "Article");
+        assert_eq!(parsed["tokenizer"], "unicode61");
+
+        let get_result = engine
+            .get_fts_profile("Article".to_owned())
+            .expect("get_fts_profile");
+        let parsed_get: serde_json::Value =
+            serde_json::from_str(&get_result).expect("get result is valid JSON");
+        assert_eq!(parsed_get["kind"], "Article");
+        assert_eq!(parsed_get["tokenizer"], "unicode61");
+    }
+
+    #[test]
+    fn get_vec_profile_returns_null_when_unset() {
+        let db = NamedTempFile::new().expect("temp db");
+        let engine = NodeEngineCore::open(
+            db.path().to_str().expect("db path").to_owned(),
+            "warn".to_owned(),
+            None,
+            None,
+            None,
+        )
+        .expect("open");
+        let result = engine.get_vec_profile().expect("get_vec_profile");
+        assert_eq!(result, "null", "unset vec profile must serialize as null");
+    }
+
+    #[test]
+    fn preview_projection_impact_returns_valid_json() {
+        let db = NamedTempFile::new().expect("temp db");
+        let engine = NodeEngineCore::open(
+            db.path().to_str().expect("db path").to_owned(),
+            "warn".to_owned(),
+            None,
+            None,
+            None,
+        )
+        .expect("open");
+        let result = engine
+            .preview_projection_impact("Article".to_owned(), "fts".to_owned())
+            .expect("preview_projection_impact");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&result).expect("impact result is valid JSON");
+        assert!(
+            parsed.get("rows_to_rebuild").is_some(),
+            "must have rows_to_rebuild field"
+        );
+    }
+
+    #[test]
+    fn restore_vector_profiles_returns_repair_report_json() {
+        let db = NamedTempFile::new().expect("temp db");
+        let engine = NodeEngineCore::open(
+            db.path().to_str().expect("db path").to_owned(),
+            "warn".to_owned(),
+            None,
+            None,
+            None,
+        )
+        .expect("open");
+        let result = engine
+            .restore_vector_profiles()
+            .expect("restore_vector_profiles");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&result).expect("repair report is valid JSON");
+        assert!(
+            parsed.get("rebuilt_rows").is_some(),
+            "must have rebuilt_rows field"
+        );
     }
 }

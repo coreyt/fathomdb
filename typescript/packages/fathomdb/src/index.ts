@@ -11,6 +11,7 @@ export {
   FathomError,
   InvalidWriteError,
   IoError,
+  RebuildImpactError,
   SchemaError,
   SqliteError,
   WriterRejectedError
@@ -88,6 +89,13 @@ export {
   type FtsPropertyPathSpec,
   type FtsPropertySchemaRecord,
   type RebuildProgress,
+  // Projection profile types
+  type FtsProfile,
+  type VecProfile,
+  type ProjectionImpactReport,
+  type VecIdentity,
+  type VectorRegenerationConfig,
+  type VectorRegenerationReport,
   // Operational collection types
   type OperationalCollectionRecord,
   type OperationalCompactionReport,

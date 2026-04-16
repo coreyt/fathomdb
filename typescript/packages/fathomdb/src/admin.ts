@@ -1,8 +1,11 @@
 import { callNative, parseNativeJson, parseNativeJsonArray } from "./errors.js";
+import { RebuildImpactError } from "./errors.js";
 import { runWithFeedback } from "./feedback.js";
 import type { NativeEngineCore } from "./native.js";
 import {
+  ftsProfileFromWire,
   ftsPropertySchemaRecordFromWire,
+  projectionImpactReportFromWire,
   rebuildProgressFromWire,
   integrityReportFromWire,
   logicalPurgeReportFromWire,
@@ -24,7 +27,11 @@ import {
   safeExportManifestFromWire,
   semanticReportFromWire,
   traceReportFromWire,
+  vecProfileFromWire,
+  vectorRegenerationConfigToWire,
+  vectorRegenerationReportFromWire,
   type FeedbackConfig,
+  type FtsProfile,
   type FtsPropertyPathSpec,
   type FtsPropertySchemaRecord,
   type RebuildProgress,
@@ -44,12 +51,17 @@ import {
   type OperationalReadRequest,
   type OperationalRegisterRequest,
   type ProgressCallback,
+  type ProjectionImpactReport,
   type ProjectionRepairReport,
   type ProjectionTarget,
   type ProvenancePurgeReport,
   type SafeExportManifest,
   type SemanticReport,
   type TraceReport,
+  type VecIdentity,
+  type VecProfile,
+  type VectorRegenerationConfig,
+  type VectorRegenerationReport,
 } from "./types.js";
 
 /**
@@ -448,5 +460,112 @@ export class AdminClient {
    */
   purgeProvenanceEvents(beforeTimestamp: number, options: Record<string, unknown> = {}, progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): ProvenancePurgeReport {
     return this.#run("admin.purge_provenance_events", () => provenancePurgeReportFromWire(parseNativeJson(callNative(() => this.#core.purgeProvenanceEvents(beforeTimestamp, JSON.stringify(options))))), progressCallback, feedbackConfig);
+  }
+
+  // ── Projection profile management ─────────────────────────────────
+
+  /** Return the FTS tokenizer profile for a node kind, or `null` if not set. */
+  getFtsProfile(kind: string, progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): FtsProfile | null {
+    return this.#run("admin.get_fts_profile", () => {
+      const raw = parseNativeJson(callNative(() => this.#core.getFtsProfile(kind)));
+      if (raw === null) return null;
+      return ftsProfileFromWire(raw as Record<string, unknown>);
+    }, progressCallback, feedbackConfig);
+  }
+
+  /** Return the global vector embedding profile, or `null` if not set. */
+  getVecProfile(progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): VecProfile | null {
+    return this.#run("admin.get_vec_profile", () => {
+      const raw = parseNativeJson(callNative(() => this.#core.getVecProfile()));
+      if (raw === null) return null;
+      return vecProfileFromWire(raw as Record<string, unknown>);
+    }, progressCallback, feedbackConfig);
+  }
+
+  /** Estimate the cost of rebuilding a projection for a given node kind and facet. */
+  previewProjectionImpact(kind: string, target: "fts" | "vec", progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): ProjectionImpactReport {
+    return this.#run("admin.preview_projection_impact", () =>
+      projectionImpactReportFromWire(
+        parseNativeJson(callNative(() => this.#core.previewProjectionImpact(kind, target))) as Record<string, unknown>
+      ), progressCallback, feedbackConfig);
+  }
+
+  /**
+   * Configure the FTS tokenizer for a node kind.
+   *
+   * If there are existing rows to rebuild and `agreeToRebuildImpact` is not set,
+   * throws {@link RebuildImpactError} with the cost estimate.
+   */
+  configureFts(kind: string, tokenizer: string, options: { agreeToRebuildImpact?: boolean } = {}, progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): FtsProfile {
+    return this.#run("admin.configure_fts", () => {
+      const impact = projectionImpactReportFromWire(
+        parseNativeJson(callNative(() => this.#core.previewProjectionImpact(kind, "fts"))) as Record<string, unknown>
+      );
+      if (impact.rowsToRebuild > 0 && !options.agreeToRebuildImpact) {
+        throw new RebuildImpactError(impact);
+      }
+      const profileRaw = parseNativeJson(callNative(() =>
+        this.#core.setFtsProfile(JSON.stringify({ kind, tokenizer }))
+      ));
+      const schemaRaw = parseNativeJson(callNative(() => this.#core.describeFtsPropertySchema(kind)));
+      if (schemaRaw !== null && schemaRaw.kind != null) {
+        callNative(() => this.#core.registerFtsPropertySchemaWithEntries(
+          JSON.stringify({
+            kind,
+            entries: (schemaRaw as Record<string, unknown>).entries,
+            separator: (schemaRaw as Record<string, unknown>).separator,
+            exclude_paths: (schemaRaw as Record<string, unknown>).exclude_paths,
+          })
+        ));
+      }
+      return ftsProfileFromWire(profileRaw as Record<string, unknown>);
+    }, progressCallback, feedbackConfig);
+  }
+
+  /**
+   * Configure the global vector embedding profile.
+   *
+   * If there are existing rows to rebuild and `agreeToRebuildImpact` is not set,
+   * throws {@link RebuildImpactError} with the cost estimate.
+   */
+  configureVec(identity: VecIdentity, options: { agreeToRebuildImpact?: boolean } = {}, progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): VecProfile {
+    return this.#run("admin.configure_vec", () => {
+      const impact = projectionImpactReportFromWire(
+        parseNativeJson(callNative(() => this.#core.previewProjectionImpact("*", "vec"))) as Record<string, unknown>
+      );
+      if (impact.rowsToRebuild > 0 && !options.agreeToRebuildImpact) {
+        throw new RebuildImpactError(impact);
+      }
+      const profileRaw = parseNativeJson(callNative(() =>
+        this.#core.setVecProfile(JSON.stringify({
+          model_identity: identity.modelIdentity,
+          model_version: identity.modelVersion ?? null,
+          dimensions: identity.dimensions,
+          normalization_policy: identity.normalizationPolicy ?? null,
+        }))
+      ));
+      return vecProfileFromWire(profileRaw as Record<string, unknown>);
+    }, progressCallback, feedbackConfig);
+  }
+
+  /** Restore vector projection tables from stored profile metadata. */
+  restoreVectorProfiles(progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): ProjectionRepairReport {
+    return this.#run("admin.restore_vector_profiles", () =>
+      projectionRepairReportFromWire(
+        parseNativeJson(callNative(() => this.#core.restoreVectorProfiles())) as Record<string, unknown>
+      ), progressCallback, feedbackConfig);
+  }
+
+  /**
+   * Regenerate vector embeddings using the configured embedder.
+   *
+   * Only works when the engine was opened with `embedder: "builtin"`.
+   * Throws {@link CapabilityMissingError} if no embedder is configured.
+   */
+  regenerateVectorEmbeddings(config: VectorRegenerationConfig, progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): VectorRegenerationReport {
+    return this.#run("admin.regenerate_vector_embeddings", () =>
+      vectorRegenerationReportFromWire(
+        parseNativeJson(callNative(() => this.#core.regenerateVectorEmbeddings(JSON.stringify(vectorRegenerationConfigToWire(config))))) as Record<string, unknown>
+      ), progressCallback, feedbackConfig);
   }
 }
