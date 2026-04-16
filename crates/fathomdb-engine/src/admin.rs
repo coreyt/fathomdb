@@ -318,32 +318,52 @@ pub struct VectorRegenerationReport {
     pub notes: Vec<String>,
 }
 
-/// FTS tokenizer profile for a specific node kind.
+/// Stored FTS tokenizer profile for a node kind.
+///
+/// Created and updated by [`AdminService::set_fts_profile`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FtsProfile {
+    /// Node kind this profile applies to (e.g. `"Article"`).
     pub kind: String,
+    /// FTS5 tokenizer string (e.g. `"porter unicode61 remove_diacritics 2"`).
     pub tokenizer: String,
+    /// Unix timestamp when the profile was last activated, or `None` if never.
     pub active_at: Option<i64>,
+    /// Unix timestamp when the profile row was first created.
     pub created_at: i64,
 }
 
-/// Vector embedding profile (global, keyed by kind='*', facet='vec').
+/// Stored vector embedding profile (global, kind-agnostic).
+///
+/// Created and updated by [`AdminService::set_vec_profile`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VecProfile {
+    /// Identifier for the embedding model (e.g. `"openai/text-embedding-3-small"`).
     pub model_identity: String,
+    /// Optional version string for the model.
     pub model_version: Option<String>,
+    /// Number of dimensions produced by the model.
     pub dimensions: u32,
+    /// Unix timestamp when the profile was last activated, or `None` if never.
     pub active_at: Option<i64>,
+    /// Unix timestamp when the profile row was first created.
     pub created_at: i64,
 }
 
-/// Estimated cost of rebuilding a projection.
+/// Estimated cost of rebuilding a projection (FTS table or vector embeddings).
+///
+/// Returned by [`AdminService::preview_projection_impact`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProjectionImpact {
+    /// Number of rows that would be processed during a full rebuild.
     pub rows_to_rebuild: u64,
+    /// Rough estimated rebuild time in seconds.
     pub estimated_seconds: u64,
+    /// Estimated temporary disk space required during rebuild, in bytes.
     pub temp_db_size_bytes: u64,
+    /// The tokenizer currently stored in `projection_profiles`, if any.
     pub current_tokenizer: Option<String>,
+    /// Reserved for future use; always `None` currently.
     pub target_tokenizer: Option<String>,
 }
 
@@ -3734,10 +3754,13 @@ fn create_or_replace_fts_kind_table(
 ) -> Result<(), EngineError> {
     let table = fathomdb_schema::fts_kind_table_name(kind);
 
-    // Validate tokenizer string: only alphanumeric, spaces, apostrophes, underscores.
+    // Validate tokenizer string: alphanumeric plus the set used by all known presets.
+    // Must match the allowlist in `set_fts_profile` so that profiles written by one
+    // function are accepted by the other.  The source-code preset
+    // (`"unicode61 tokenchars '._-$@'"`) requires `.`, `-`, `$`, `@`.
     if !tokenizer
         .chars()
-        .all(|c| c.is_alphanumeric() || " '_".contains(c))
+        .all(|c| c.is_alphanumeric() || "'._-$@ ".contains(c))
     {
         return Err(EngineError::Bridge(format!(
             "invalid tokenizer string: {tokenizer:?}"
@@ -3758,9 +3781,12 @@ fn create_or_replace_fts_kind_table(
             .collect()
     };
 
+    // Escape inner apostrophes so the SQL single-quoted tokenize= clause is valid.
+    // "unicode61 tokenchars '._-$@'" → "unicode61 tokenchars ''._-$@''"
+    let tokenizer_sql = tokenizer.replace('\'', "''");
     conn.execute_batch(&format!(
         "DROP TABLE IF EXISTS {table}; \
-         CREATE VIRTUAL TABLE {table} USING fts5({cols}, tokenize='{tokenizer}');",
+         CREATE VIRTUAL TABLE {table} USING fts5({cols}, tokenize='{tokenizer_sql}');",
         cols = cols.join(", "),
     ))?;
 
@@ -10255,5 +10281,65 @@ mod tests {
             .expect("preview");
         assert_eq!(impact.current_tokenizer, Some("trigram".to_owned()));
         assert_eq!(impact.target_tokenizer, None);
+    }
+
+    // --- Review fix: tokenizer allowlist alignment ---
+
+    #[test]
+    fn create_or_replace_source_code_tokenizer_is_accepted() {
+        // The source-code preset expands to "unicode61 tokenchars '._-$@'" which
+        // contains `.`, `-`, `$`, `@`. The allowlist in create_or_replace_fts_kind_table
+        // must accept these characters (matching set_fts_profile's allowlist).
+        use super::create_or_replace_fts_kind_table;
+        let (db, _service) = setup();
+        let conn = sqlite::open_connection(db.path()).expect("conn");
+        let specs = vec![FtsPropertyPathSpec::scalar("$.symbol")];
+        let source_code_tokenizer = "unicode61 tokenchars '._-$@'";
+        let result =
+            create_or_replace_fts_kind_table(&conn, "Symbol", &specs, source_code_tokenizer);
+        assert!(
+            result.is_ok(),
+            "source-code tokenizer string must be accepted by create_or_replace_fts_kind_table: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn source_code_profile_round_trip_through_register_fts_schema() {
+        // Verify that set_fts_profile("source-code") followed by
+        // register_fts_property_schema succeeds end-to-end.
+        // Previously failed because set_fts_profile accepted "unicode61 tokenchars '._-$@'"
+        // but create_or_replace_fts_kind_table rejected it (only allowed " '_").
+        let db = tempfile::NamedTempFile::new().expect("temp file");
+        let schema = Arc::new(fathomdb_schema::SchemaManager::new());
+
+        // Bootstrap the schema (creates projection_profiles table via migration 20).
+        {
+            let _coord = crate::ExecutionCoordinator::open(
+                db.path(),
+                Arc::clone(&schema),
+                None,
+                1,
+                Arc::new(crate::TelemetryCounters::default()),
+                None,
+            )
+            .expect("coordinator opens for bootstrap");
+        }
+
+        let service = AdminService::new(db.path(), Arc::clone(&schema));
+
+        // Set source-code profile (uses preset resolver, stores "unicode61 tokenchars '._-$@'").
+        service
+            .set_fts_profile("Symbol", "source-code")
+            .expect("set_fts_profile with source-code preset must succeed");
+
+        // Register an FTS schema for this kind — this calls create_or_replace_fts_kind_table
+        // with the tokenizer from the profile row.
+        let result = service.register_fts_property_schema("Symbol", &["$.name".to_owned()], None);
+        assert!(
+            result.is_ok(),
+            "register_fts_property_schema must succeed when source-code profile is active: {:?}",
+            result.err()
+        );
     }
 }

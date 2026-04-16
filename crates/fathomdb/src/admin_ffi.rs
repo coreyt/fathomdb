@@ -179,6 +179,21 @@ pub fn get_fts_profile_json(engine: &Engine, kind: &str) -> Result<String, Admin
     serde_json::to_string(&profile).map_err(AdminFfiError::Serialize)
 }
 
+/// Request envelope for [`set_vec_profile_json`].
+///
+/// Used purely for typed validation of incoming JSON; fields are read by
+/// `serde_json` deserialization but not accessed in code after that.
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct SetVecProfileRequest {
+    model_identity: String,
+    #[serde(default)]
+    model_version: Option<String>,
+    dimensions: u32,
+    #[serde(default)]
+    normalization_policy: Option<String>,
+}
+
 /// Set (or update) the global vector embedding profile.
 ///
 /// `request_json` must be valid JSON with at least `model_identity` and
@@ -191,8 +206,11 @@ pub fn get_fts_profile_json(engine: &Engine, kind: &str) -> Result<String, Admin
 /// Returns [`AdminFfiError`] on JSON parse, engine execution, or
 /// response serialization failure.
 pub fn set_vec_profile_json(engine: &Engine, request_json: &str) -> Result<String, AdminFfiError> {
-    // Validate that request_json is well-formed JSON before passing to engine.
-    let _: serde_json::Value = serde_json::from_str(request_json).map_err(AdminFfiError::Parse)?;
+    // Typed validation: ensures model_identity and dimensions are present.
+    // Gives a clear parse error if required fields are missing, rather than
+    // storing a profile with NULL fields and failing cryptically on get_vec_profile.
+    let _validated: SetVecProfileRequest =
+        serde_json::from_str(request_json).map_err(AdminFfiError::Parse)?;
     let profile: VecProfile = engine
         .admin()
         .service()
