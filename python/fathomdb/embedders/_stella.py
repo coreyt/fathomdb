@@ -3,6 +3,24 @@ from ._base import EmbedderIdentity, QueryEmbedder
 
 
 class StellaEmbedder(QueryEmbedder):
+    """Query-time embedder backed by Stella via ``sentence-transformers``.
+
+    Requires ``sentence-transformers`` (install via ``pip install fathomdb[stella]``).
+    The model is loaded lazily on the first :meth:`embed` call.
+
+    Supports Matryoshka truncation: if ``dimensions`` is less than the model's
+    native output size, the embedding is truncated to ``dimensions`` before
+    L2-normalization.
+
+    Parameters
+    ----------
+    model_name : str
+        HuggingFace model name, e.g. ``"dunzhang/stella_en_400M_v5"``.
+    dimensions : int
+        Output dimensionality (default 1024). Use a smaller value for
+        Matryoshka truncation.
+    """
+
     def __init__(self, model_name: str, dimensions: int = 1024) -> None:
         self._model_name = model_name
         self._dimensions = dimensions
