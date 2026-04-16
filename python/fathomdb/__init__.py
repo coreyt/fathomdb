@@ -1,6 +1,7 @@
 """Python SDK for fathomdb, a graph-aware document store backed by SQLite."""
 
 from ._admin import AdminClient
+from .embedders import BuiltinEmbedder
 from ._engine import Engine
 from ._query import FallbackSearchBuilder, Query, SearchBuilder, TextSearchBuilder
 from ._types import (
@@ -127,6 +128,7 @@ __all__ = [
     "ActionRow",
     "AdminClient",
     "BindValue",
+    "BuiltinEmbedder",
     "BuilderValidationError",
     "BridgeError",
     "CapabilityMissingError",

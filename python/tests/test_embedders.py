@@ -269,3 +269,31 @@ def test_query_embedder_abc():
 
     with pytest.raises(TypeError):
         QueryEmbedder()  # type: ignore[abstract]
+
+
+# ---------------------------------------------------------------------------
+# 13. BuiltinEmbedder — identity matches Rust constants, embed() raises
+# ---------------------------------------------------------------------------
+
+
+def test_builtin_embedder_identity():
+    from fathomdb.embedders import BuiltinEmbedder
+
+    emb = BuiltinEmbedder()
+    eid = emb.identity()
+    assert eid.model_identity == "BAAI/bge-small-en-v1.5"
+    assert eid.model_version == "main"
+    assert eid.dimensions == 384
+    assert eid.normalization_policy == "l2"
+
+
+def test_builtin_embedder_embed_raises():
+    from fathomdb.embedders import BuiltinEmbedder
+
+    emb = BuiltinEmbedder()
+    with pytest.raises(NotImplementedError):
+        emb.embed("test text")
+
+
+def test_builtin_embedder_exported_from_top_level():
+    from fathomdb import BuiltinEmbedder  # noqa: F401
