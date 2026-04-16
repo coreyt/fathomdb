@@ -1,22 +1,24 @@
 import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { runHarness } from "../src/app.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "../../../..");
+
+const nativeSourceCandidates = [
+  resolve(repoRoot, "target/debug/libfathomdb.so"),
+  resolve(repoRoot, "target/debug/libfathomdb.dylib"),
+  resolve(repoRoot, "target/release/libfathomdb.so"),
+  resolve(repoRoot, "target/release/libfathomdb.dylib"),
+];
+
 function withNativeBinding<T>(run: () => T): T {
   const tempDir = mkdtempSync(join(tmpdir(), "fathomdb-sdk-harness-"));
   const nativeBindingPath = join(tempDir, "fathomdb.node");
-  const nativeSourceCandidates = [
-    resolve(repoRoot, "target/debug/libfathomdb.so"),
-    resolve(repoRoot, "target/debug/libfathomdb.dylib"),
-    resolve(repoRoot, "target/release/libfathomdb.so"),
-    resolve(repoRoot, "target/release/libfathomdb.dylib")
-  ];
   const nativeSource = nativeSourceCandidates.find((candidate) => existsSync(candidate));
   if (!nativeSource) {
     throw new Error(
@@ -57,26 +59,46 @@ describe("sdk harness", () => {
     expect(result).toMatch(/^2\/2 scenarios passed/);
   });
 
-  // Run stress scenarios as a subprocess so the vitest worker's event loop
-  // stays unblocked during the long synchronous stress run. Calling
-  // runHarness("stress") directly in-process blocks the worker for ~2-5
-  // minutes, causing vitest's IPC onTaskUpdate call to time out even though
-  // the test actually passed. The subprocess inherits FATHOMDB_NATIVE_BINDING
-  // set by withNativeBinding.
+  // Run stress as a truly async subprocess so the vitest worker event loop
+  // stays unblocked. spawnSync / direct runHarness() both block for ~2 min,
+  // causing vitest's IPC onTaskUpdate call to time out even though tests pass.
   it("runs the stress scenarios", { timeout: 400_000 }, () => {
     const distApp = resolve(here, "../dist/app.js");
-    withNativeBinding(() => {
-      const r = spawnSync(process.execPath, [distApp, "stress"], {
-        env: { ...process.env },
-        encoding: "utf8",
-        timeout: 380_000,
+    const nativeSource = nativeSourceCandidates.find((c) => existsSync(c));
+    if (!nativeSource) {
+      throw new Error(
+        "Missing native binding. Run `cargo build -p fathomdb --features node` first."
+      );
+    }
+    const tempDir = mkdtempSync(join(tmpdir(), "fathomdb-sdk-harness-stress-"));
+    const nativeBindingPath = join(tempDir, "fathomdb.node");
+    copyFileSync(nativeSource, nativeBindingPath);
+
+    return new Promise<void>((resolve, reject) => {
+      const proc = spawn(process.execPath, [distApp, "stress"], {
+        env: { ...process.env, FATHOMDB_NATIVE_BINDING: nativeBindingPath },
       });
-      const output = r.stdout ?? "";
-      console.log(output);
-      if (r.status !== 0) {
-        throw new Error(`stress harness exited ${r.status}: ${r.stderr ?? output}`);
-      }
-      expect(output).toMatch(/^3\/3 scenarios passed/);
+      let output = "";
+      proc.stdout?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+      proc.stderr?.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+      proc.on("close", (code: number | null) => {
+        rmSync(tempDir, { recursive: true, force: true });
+        if (code !== 0) {
+          reject(new Error(`stress harness exited ${String(code)}: ${output}`));
+        } else {
+          console.log(output);
+          try {
+            expect(output).toMatch(/^3\/3 scenarios passed/);
+            resolve();
+          } catch (e) {
+            reject(e as Error);
+          }
+        }
+      });
+      proc.on("error", (err: Error) => {
+        rmSync(tempDir, { recursive: true, force: true });
+        reject(err);
+      });
     });
   });
 });
