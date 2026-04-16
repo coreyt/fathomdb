@@ -394,6 +394,13 @@ pub struct ExecutionCoordinator {
     /// Per-kind FTS tokenizer strategies loaded from `projection_profiles`
     /// at open time. Used during query dispatch for query-side adaptations
     /// (e.g. short-query skip for trigram, token escaping for source-code).
+    ///
+    /// **Stale-state note**: This map is populated once at `open()` and is
+    /// never refreshed during the lifetime of the coordinator.  If
+    /// `AdminService::set_fts_profile` is called on a running engine, the
+    /// in-memory strategy map will not reflect the change until the engine is
+    /// reopened.  The DB-side profile row is always up-to-date; only the
+    /// query-side adaptation (e.g. the trigram short-query guard) will be stale.
     fts_strategies: HashMap<String, TokenizerStrategy>,
 }
 
