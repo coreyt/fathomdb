@@ -1,5 +1,4 @@
-import { callNative, parseNativeJson, parseNativeJsonArray } from "./errors.js";
-import { RebuildImpactError } from "./errors.js";
+import { callNative, parseNativeJson, parseNativeJsonArray, RebuildImpactError } from "./errors.js";
 import { runWithFeedback } from "./feedback.js";
 import type { NativeEngineCore } from "./native.js";
 import {
@@ -518,6 +517,7 @@ export class AdminClient {
           })
         ));
       }
+      if (profileRaw === null) throw new Error("setFtsProfile returned null unexpectedly");
       return ftsProfileFromWire(profileRaw as Record<string, unknown>);
     }, progressCallback, feedbackConfig);
   }
