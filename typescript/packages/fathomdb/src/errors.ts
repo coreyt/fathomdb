@@ -1,3 +1,5 @@
+import type { ProjectionImpactReport } from "./types.js";
+
 const PREFIX = "FATHOMDB_";
 
 /** Base error class for all fathomdb errors. */
@@ -32,6 +34,16 @@ export class CapabilityMissingError extends FathomError {}
 
 /** Raised when a {@link WriteRequestBuilder} detects an invalid handle or reference. */
 export class BuilderValidationError extends FathomError {}
+
+/** Raised when a profile change requires a projection rebuild but the caller has not acknowledged it. */
+export class RebuildImpactError extends FathomError {
+  readonly report: ProjectionImpactReport;
+  constructor(report: ProjectionImpactReport) {
+    super(`Rebuild required: ${report.rowsToRebuild} rows (~${report.estimatedSeconds}s)`);
+    this.name = "RebuildImpactError";
+    this.report = report;
+  }
+}
 
 /**
  * Parse a JSON string returned by the native engine, mapping parse failures to typed errors.
