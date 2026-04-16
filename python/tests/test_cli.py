@@ -296,3 +296,65 @@ def test_get_vec_profile_no_profile_message():
 
     assert result.exit_code == 0, result.output
     assert "No vec profile" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Gap 4: _resolve_embedder correctness tests
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_embedder_bge_short_alias_returns_builtin():
+    """_resolve_embedder("bge-small-en-v1.5") returns a BuiltinEmbedder instance."""
+    from fathomdb._cli import _resolve_embedder
+    from fathomdb.embedders import BuiltinEmbedder
+
+    result = _resolve_embedder("bge-small-en-v1.5")
+    assert isinstance(result, BuiltinEmbedder)
+
+
+def test_resolve_embedder_bge_full_alias_returns_builtin():
+    """_resolve_embedder("BAAI/bge-small-en-v1.5") returns a BuiltinEmbedder instance."""
+    from fathomdb._cli import _resolve_embedder
+    from fathomdb.embedders import BuiltinEmbedder
+
+    result = _resolve_embedder("BAAI/bge-small-en-v1.5")
+    assert isinstance(result, BuiltinEmbedder)
+
+
+def test_resolve_embedder_known_model_normalization_policy_is_l2():
+    """_resolve_embedder for a known preset uses normalization_policy='l2'."""
+    from fathomdb._cli import _resolve_embedder
+
+    embedder = _resolve_embedder("text-embedding-3-small")
+    assert embedder.identity().normalization_policy == "l2"
+
+
+def test_resolve_embedder_unknown_model_normalization_policy_is_l2():
+    """_resolve_embedder for an unknown model uses normalization_policy='l2'."""
+    from fathomdb._cli import _resolve_embedder
+
+    embedder = _resolve_embedder("unknown-model-xyz")
+    assert embedder.identity().normalization_policy == "l2"
+
+
+def test_resolve_embedder_bge_builtin_identity_matches_rust_constants():
+    """BuiltinEmbedder identity matches Rust builtin constants."""
+    from fathomdb._cli import _resolve_embedder
+
+    embedder = _resolve_embedder("bge-small-en-v1.5")
+    identity = embedder.identity()
+    assert identity.model_identity == "BAAI/bge-small-en-v1.5"
+    assert identity.model_version == "main"
+    assert identity.dimensions == 384
+    assert identity.normalization_policy == "l2"
+
+
+def test_resolve_embedder_known_preset_dimensions():
+    """_resolve_embedder returns correct dimensions for known presets."""
+    from fathomdb._cli import _resolve_embedder
+
+    assert _resolve_embedder("bge-base-en-v1.5").identity().dimensions == 768
+    assert _resolve_embedder("bge-large-en-v1.5").identity().dimensions == 1024
+    assert _resolve_embedder("text-embedding-3-small").identity().dimensions == 1536
+    assert _resolve_embedder("text-embedding-3-large").identity().dimensions == 3072
+    assert _resolve_embedder("jina-embeddings-v2-base-en").identity().dimensions == 768

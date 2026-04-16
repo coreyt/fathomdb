@@ -181,20 +181,23 @@ def get_vec_profile(db):
 
 
 def _resolve_embedder(name: str):
-    """Resolve an embedder name to a stub QueryEmbedder for CLI use."""
-    from fathomdb.embedders import EmbedderIdentity, QueryEmbedder
+    """Resolve CLI embedder name to a QueryEmbedder for configure-vec."""
+    from fathomdb.embedders import BuiltinEmbedder, EmbedderIdentity, QueryEmbedder
 
-    # Simple passthrough stub: the name is used as the model identity.
-    # Real CLI users would configure a proper embedder; this is sufficient
-    # for the CLI surface to call configure_vec with an identity.
-    dimensions_by_preset = {
-        "bge-small-en-v1.5": 384,
+    # Builtin Candle/BGE-small — use BuiltinEmbedder for exact identity match
+    _BUILTIN_ALIASES = {"bge-small-en-v1.5", "BAAI/bge-small-en-v1.5"}
+    if name in _BUILTIN_ALIASES:
+        return BuiltinEmbedder()
+
+    # Known preset dimensions (models that produce L2-normalized vectors)
+    _L2_PRESETS: dict[str, int] = {
         "bge-base-en-v1.5": 768,
         "bge-large-en-v1.5": 1024,
         "text-embedding-3-small": 1536,
         "text-embedding-3-large": 3072,
+        "jina-embeddings-v2-base-en": 768,
     }
-    dimensions = dimensions_by_preset.get(name, 384)
+    dimensions = _L2_PRESETS.get(name, 384)
 
     class _StubEmbedder(QueryEmbedder):
         def identity(self) -> EmbedderIdentity:
@@ -202,7 +205,7 @@ def _resolve_embedder(name: str):
                 model_identity=name,
                 model_version=None,
                 dimensions=dimensions,
-                normalization_policy="none",
+                normalization_policy="l2",
             )
 
         def embed(self, text: str) -> list[float]:
