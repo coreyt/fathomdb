@@ -2779,7 +2779,7 @@ fn wrap_node_row_projection_sql(base_sql: &str) -> String {
 /// query degrades to chunk-only results instead of failing with "no such table".
 ///
 /// The SQL structure from `compile_query` (fathomdb-query) is stable:
-/// ```
+/// ```text
 ///                     UNION
 ///                     SELECT fp.node_logical_id AS logical_id
 ///                     FROM fts_node_properties fp
