@@ -1,5 +1,13 @@
 import { loadNativeBinding } from "./native.js";
 
+export {
+  type QueryEmbedder,
+  OpenAIEmbedder,
+  JinaEmbedder,
+  StellaEmbedder,
+  SubprocessEmbedder,
+} from "./embedders/index.js";
+
 export { AdminClient } from "./admin.js";
 export { Engine } from "./engine.js";
 export {
