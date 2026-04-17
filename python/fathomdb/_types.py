@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 from dataclasses import dataclass, field, fields
 from enum import Enum
@@ -1761,3 +1762,19 @@ class RebuildImpactError(Exception):
             f"(~{report.estimated_seconds}s, ~{report.temp_db_size_bytes} bytes). "
             f"Pass agree_to_rebuild_impact=True to proceed."
         )
+
+
+def _asdict_json_safe(obj: object) -> object:
+    """Recursively convert a dataclass to a JSON-serializable dict, converting enums to .value."""
+    if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
+        return {
+            f.name: _asdict_json_safe(getattr(obj, f.name))
+            for f in dataclasses.fields(obj)
+        }
+    if isinstance(obj, Enum):
+        return obj.value
+    if isinstance(obj, list):
+        return [_asdict_json_safe(item) for item in obj]
+    if isinstance(obj, tuple):
+        return [_asdict_json_safe(item) for item in obj]
+    return obj

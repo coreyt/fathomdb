@@ -1361,3 +1361,50 @@ def test_disable_operational_collection():
     data = json.loads(result.output)
     assert data["name"] == "dis_col"
     assert "kind" in data
+
+
+# ---------------------------------------------------------------------------
+# Error-path: _handle_fathom_errors wraps all commands
+# ---------------------------------------------------------------------------
+
+
+def test_fathom_error_exits_nonzero_on_check_integrity():
+    """FathomError from check-integrity exits 1 and writes JSON to stderr."""
+    from fathomdb._cli import cli
+    from fathomdb.errors import FathomError
+
+    runner = CliRunner(mix_stderr=False)
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.check_integrity.side_effect = FathomError("db corrupt")
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            ["admin", "check-integrity", "--db", "/tmp/test.db"],
+        )
+
+    assert result.exit_code == 1
+    err = json.loads(result.stderr)
+    assert err["error"] == "db corrupt"
+
+
+def test_fathom_error_exits_nonzero_on_rebuild():
+    """FathomError from rebuild exits 1 and writes JSON error to stderr."""
+    from fathomdb._cli import cli
+    from fathomdb.errors import FathomError
+
+    runner = CliRunner(mix_stderr=False)
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.rebuild.side_effect = FathomError("rebuild failed")
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            ["admin", "rebuild", "--db", "/tmp/test.db"],
+        )
+
+    assert result.exit_code == 1
+    err = json.loads(result.stderr)
+    assert err["error"] == "rebuild failed"
