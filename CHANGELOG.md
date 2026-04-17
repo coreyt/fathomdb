@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-04-17
+
+### Breaking changes
+
+- **Per-kind vec tables**: The global `vec_nodes_active` sqlite-vec virtual table is removed. Each kind with a registered vec profile now gets its own table named `vec_<sanitized_kind>` (e.g. `vec_document`, `vec_note`). No migration is provided — existing databases must re-run `regenerate_vector_embeddings` after upgrading. Direct SQL queries to `vec_nodes_active` will fail.
+- **`VectorRegenerationConfig.table_name` removed**: The `table_name` field is replaced by `kind: String`. The engine derives the table name from the kind automatically.
+
+### Added
+
+- **`QueryEmbedder::max_tokens() -> usize`**: New required method on the Rust `QueryEmbedder` trait. Returns the maximum token count the embedder handles per input. All built-in and custom implementations must implement this method.
+- **`BatchEmbedder` trait**: New write-time embedding trait (`batch_embed`, `identity`, `max_tokens`) for use with `regenerate_vector_embeddings_in_process`. Allows in-process embedding without a subprocess.
+- **`regenerate_vector_embeddings_in_process`**: New `AdminService` method that takes `&dyn BatchEmbedder` directly, replacing the subprocess-based regeneration path for callers that have an in-process embedder.
+- **TypeScript embedding adapters** (`fathomdb` npm package): `QueryEmbedder` interface plus four concrete adapters — `OpenAIEmbedder` (with TTL cache), `JinaEmbedder`, `StellaEmbedder`, `SubprocessEmbedder` (binary f32 LE wire protocol, serialized concurrent calls).
+
+### Fixed
+
+- `rebuild_projections(Vec)` was silently no-oping on 0.5.0 databases because it queried the removed `vec_nodes_active` table. Now iterates all kinds registered in `projection_profiles`.
+- `check_semantics` fields `stale_vec_rows` and `vec_rows_for_superseded_nodes` always returned 0 on 0.5.0 databases for the same reason. Both are now computed correctly across all per-kind vec tables.
+
 ## [0.4.5] — 2026-04-15
 
 ### Added
