@@ -10658,6 +10658,7 @@ mod tests {
     }
 
     /// Stub embedder with a configurable `max_tokens` for long-context tests.
+    #[cfg(feature = "sqlite-vec")]
     #[derive(Debug)]
     struct LargeContextTestEmbedder {
         identity: QueryEmbedderIdentity,
@@ -10665,6 +10666,7 @@ mod tests {
         max_tokens: usize,
     }
 
+    #[cfg(feature = "sqlite-vec")]
     impl LargeContextTestEmbedder {
         fn new(model: &str, dimension: usize, max_tokens: usize) -> Self {
             Self {
@@ -10680,6 +10682,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "sqlite-vec")]
     impl QueryEmbedder for LargeContextTestEmbedder {
         fn embed_query(&self, _text: &str) -> Result<Vec<f32>, EmbedderError> {
             Ok(self.vector.clone())
