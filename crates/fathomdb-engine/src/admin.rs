@@ -886,48 +886,61 @@ impl AdminService {
             |row| row.get(0),
         )?;
 
-        // Vec stale row detection — degrades to 0 when the vec profile is absent.
+        // Vec stale row detection — iterates per-kind vec tables from projection_profiles.
         #[cfg(feature = "sqlite-vec")]
-        let stale_vec_rows: i64 = match conn.query_row(
-            r"
-            SELECT count(*) FROM vec_nodes_active v
-            WHERE NOT EXISTS (SELECT 1 FROM chunks c WHERE c.id = v.chunk_id)
-            ",
-            [],
-            |row| row.get(0),
-        ) {
-            Ok(n) => n,
-            Err(rusqlite::Error::SqliteFailure(_, Some(ref msg)))
-                if msg.contains("vec_nodes_active") || msg.contains("no such module: vec0") =>
-            {
-                0
+        let (stale_vec_rows, vec_rows_for_superseded_nodes): (i64, i64) = {
+            let kinds: Vec<String> =
+                match conn.prepare("SELECT kind FROM projection_profiles WHERE facet = 'vec'") {
+                    Ok(mut stmt) => stmt
+                        .query_map([], |row| row.get(0))
+                        .map_err(EngineError::Sqlite)?
+                        .collect::<Result<Vec<_>, _>>()
+                        .map_err(EngineError::Sqlite)?,
+                    Err(rusqlite::Error::SqliteFailure(_, Some(ref msg)))
+                        if msg.contains("no such table: projection_profiles") =>
+                    {
+                        vec![]
+                    }
+                    Err(e) => return Err(EngineError::Sqlite(e)),
+                };
+            let mut stale = 0i64;
+            let mut superseded = 0i64;
+            for kind in &kinds {
+                let table = fathomdb_schema::vec_kind_table_name(kind);
+                let stale_sql = format!(
+                    "SELECT count(*) FROM {table} v \
+                     WHERE NOT EXISTS (SELECT 1 FROM chunks c WHERE c.id = v.chunk_id)"
+                );
+                let superseded_sql = format!(
+                    "SELECT count(*) FROM {table} v \
+                     JOIN chunks c ON c.id = v.chunk_id \
+                     WHERE NOT EXISTS (SELECT 1 FROM nodes n WHERE n.logical_id = c.node_logical_id)"
+                );
+                stale += match conn.query_row(&stale_sql, [], |row| row.get(0)) {
+                    Ok(n) => n,
+                    Err(rusqlite::Error::SqliteFailure(_, Some(ref msg)))
+                        if msg.contains("no such table:")
+                            || msg.contains("no such module: vec0") =>
+                    {
+                        0
+                    }
+                    Err(e) => return Err(EngineError::Sqlite(e)),
+                };
+                superseded += match conn.query_row(&superseded_sql, [], |row| row.get(0)) {
+                    Ok(n) => n,
+                    Err(rusqlite::Error::SqliteFailure(_, Some(ref msg)))
+                        if msg.contains("no such table:")
+                            || msg.contains("no such module: vec0") =>
+                    {
+                        0
+                    }
+                    Err(e) => return Err(EngineError::Sqlite(e)),
+                };
             }
-            Err(e) => return Err(EngineError::Sqlite(e)),
+            (stale, superseded)
         };
         #[cfg(not(feature = "sqlite-vec"))]
         let stale_vec_rows: i64 = 0;
-
-        #[cfg(feature = "sqlite-vec")]
-        let vec_rows_for_superseded_nodes: i64 = match conn.query_row(
-            r"
-            SELECT count(*) FROM vec_nodes_active v
-            JOIN chunks c ON c.id = v.chunk_id
-            WHERE NOT EXISTS (
-                SELECT 1 FROM nodes n
-                WHERE n.logical_id = c.node_logical_id
-            )
-            ",
-            [],
-            |row| row.get(0),
-        ) {
-            Ok(n) => n,
-            Err(rusqlite::Error::SqliteFailure(_, Some(ref msg)))
-                if msg.contains("vec_nodes_active") || msg.contains("no such module: vec0") =>
-            {
-                0
-            }
-            Err(e) => return Err(EngineError::Sqlite(e)),
-        };
         #[cfg(not(feature = "sqlite-vec"))]
         let vec_rows_for_superseded_nodes: i64 = 0;
         let missing_operational_current_rows: i64 = conn.query_row(
@@ -6121,8 +6134,8 @@ mod tests {
             let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
             service
                 .schema_manager
-                .ensure_vector_profile(&conn, "default", "vec_nodes_active", 4)
-                .expect("ensure vec profile");
+                .ensure_vec_kind_profile(&conn, "Doc", 4)
+                .expect("ensure vec kind profile");
             conn.execute(
                 "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
                  VALUES ('chunk-1', 'ghost-doc', 'budget narrative', 100)",
@@ -6130,7 +6143,7 @@ mod tests {
             )
             .expect("insert orphaned chunk");
             conn.execute(
-                "INSERT INTO vec_nodes_active (chunk_id, embedding) VALUES ('chunk-1', zeroblob(16))",
+                "INSERT INTO vec_doc (chunk_id, embedding) VALUES ('chunk-1', zeroblob(16))",
                 [],
             )
             .expect("insert vec row");
@@ -7731,15 +7744,15 @@ mod tests {
             let conn = open_connection_with_vec(db.path()).expect("vec conn");
             schema.bootstrap(&conn).expect("bootstrap");
             schema
-                .ensure_vector_profile(&conn, "default", "vec_nodes_active", 3)
-                .expect("vec profile");
+                .ensure_vec_kind_profile(&conn, "Doc", 3)
+                .expect("vec kind profile");
             // Insert a vec row whose chunk does not exist.
             let bytes: Vec<u8> = [0.1f32, 0.2f32, 0.3f32]
                 .iter()
                 .flat_map(|f| f.to_le_bytes())
                 .collect();
             conn.execute(
-                "INSERT INTO vec_nodes_active (chunk_id, embedding) VALUES ('ghost-chunk', ?1)",
+                "INSERT INTO vec_doc (chunk_id, embedding) VALUES ('ghost-chunk', ?1)",
                 rusqlite::params![bytes],
             )
             .expect("insert stale vec row");

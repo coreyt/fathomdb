@@ -489,8 +489,9 @@ fn insert_property_fts_rows_missing(conn: &rusqlite::Connection) -> Result<usize
 }
 
 /// Remove stale vec rows: entries whose chunk no longer exists or whose node has been
-/// superseded/retired.  When the `sqlite-vec` feature is disabled or the
-/// `vec_nodes_active` table is absent, degrades gracefully to a no-op and appends a note.
+/// superseded/retired.  Iterates all per-kind vec tables registered in
+/// `projection_profiles`.  Degrades gracefully when the feature is disabled or tables
+/// are absent.
 #[allow(clippy::unnecessary_wraps, unused_variables)]
 fn rebuild_vec(
     conn: &mut rusqlite::Connection,
@@ -498,30 +499,56 @@ fn rebuild_vec(
 ) -> Result<usize, rusqlite::Error> {
     #[cfg(feature = "sqlite-vec")]
     {
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let deleted = match tx.execute(
-            r"
-            DELETE FROM vec_nodes_active WHERE chunk_id IN (
-                SELECT v.chunk_id FROM vec_nodes_active v
-                LEFT JOIN chunks c ON c.id = v.chunk_id
-                LEFT JOIN nodes  n ON n.logical_id = c.node_logical_id
-                WHERE c.id IS NULL OR n.superseded_at IS NOT NULL
-            )
-            ",
-            [],
-        ) {
-            Ok(n) => n,
-            Err(rusqlite::Error::SqliteFailure(_, Some(ref msg)))
-                if msg.contains("vec_nodes_active") || msg.contains("no such module: vec0") =>
-            {
-                notes.push("vec_nodes_active table absent; vec rebuild skipped".to_owned());
-                tx.rollback()?;
-                return Ok(0);
-            }
-            Err(e) => return Err(e),
+        let kinds: Vec<String> = {
+            let mut stmt =
+                match conn.prepare("SELECT kind FROM projection_profiles WHERE facet = 'vec'") {
+                    Ok(s) => s,
+                    Err(rusqlite::Error::SqliteFailure(_, Some(ref msg)))
+                        if msg.contains("no such table: projection_profiles") =>
+                    {
+                        notes.push("projection_profiles absent; vec rebuild skipped".to_owned());
+                        return Ok(0);
+                    }
+                    Err(e) => return Err(e),
+                };
+            stmt.query_map([], |row| row.get(0))?
+                .collect::<Result<Vec<_>, _>>()?
         };
-        tx.commit()?;
-        Ok(deleted)
+
+        if kinds.is_empty() {
+            notes.push("no vec profiles registered; vec rebuild skipped".to_owned());
+            return Ok(0);
+        }
+
+        let mut total = 0;
+        for kind in &kinds {
+            let table = fathomdb_schema::vec_kind_table_name(kind);
+            let sql = format!(
+                "DELETE FROM {table} WHERE chunk_id IN (
+                    SELECT v.chunk_id FROM {table} v
+                    LEFT JOIN chunks c ON c.id = v.chunk_id
+                    LEFT JOIN nodes  n ON n.logical_id = c.node_logical_id
+                    WHERE c.id IS NULL OR n.superseded_at IS NOT NULL
+                )"
+            );
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let deleted = match tx.execute(&sql, []) {
+                Ok(n) => n,
+                Err(rusqlite::Error::SqliteFailure(_, Some(ref msg)))
+                    if msg.contains("no such table:") || msg.contains("no such module: vec0") =>
+                {
+                    notes.push(format!(
+                        "{table} absent; vec rebuild for kind '{kind}' skipped"
+                    ));
+                    tx.rollback()?;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            };
+            tx.commit()?;
+            total += deleted;
+        }
+        Ok(total)
     }
     #[cfg(not(feature = "sqlite-vec"))]
     {
@@ -559,8 +586,8 @@ mod tests {
             let conn = open_connection_with_vec(db.path()).expect("vec conn");
             schema.bootstrap(&conn).expect("bootstrap");
             schema
-                .ensure_vector_profile(&conn, "default", "vec_nodes_active", 3)
-                .expect("vec profile");
+                .ensure_vec_kind_profile(&conn, "Doc", 3)
+                .expect("vec kind profile");
 
             // Insert a superseded node + chunk + vec row (stale state).
             conn.execute_batch(
@@ -578,7 +605,7 @@ mod tests {
                 .flat_map(|f| f.to_le_bytes())
                 .collect();
             conn.execute(
-                "INSERT INTO vec_nodes_active (chunk_id, embedding) VALUES ('chunk-stale', ?1)",
+                "INSERT INTO vec_doc (chunk_id, embedding) VALUES ('chunk-stale', ?1)",
                 rusqlite::params![bytes],
             )
             .expect("insert stale vec row");
@@ -595,7 +622,7 @@ mod tests {
         let conn = rusqlite::Connection::open(db.path()).expect("conn");
         let count: i64 = conn
             .query_row(
-                "SELECT count(*) FROM vec_nodes_active WHERE chunk_id = 'chunk-stale'",
+                "SELECT count(*) FROM vec_doc WHERE chunk_id = 'chunk-stale'",
                 [],
                 |row| row.get(0),
             )
