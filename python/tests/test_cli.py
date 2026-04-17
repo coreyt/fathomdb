@@ -700,3 +700,252 @@ def test_remove_fts_property_schema_exits_zero_and_prints_success():
 
     assert result.exit_code == 0, result.output
     assert "Article" in result.output or "removed" in result.output.lower()
+
+
+# ---------------------------------------------------------------------------
+# H-B commands: restore-vector-profiles, regen-vectors, trace-source,
+# excise-source, restore-logical-id, purge-logical-id, safe-export
+# ---------------------------------------------------------------------------
+
+
+def _build_projection_repair_report():
+    from fathomdb._types import ProjectionRepairReport, ProjectionTarget
+
+    return ProjectionRepairReport(
+        targets=[ProjectionTarget.VEC],
+        rebuilt_rows=42,
+        notes=["ok"],
+    )
+
+
+def _build_trace_report():
+    from fathomdb._types import TraceReport
+
+    return TraceReport(
+        source_ref="src://test",
+        node_rows=3,
+        edge_rows=1,
+        action_rows=0,
+        operational_mutation_rows=0,
+        node_logical_ids=["lid1"],
+        action_ids=[],
+        operational_mutation_ids=[],
+    )
+
+
+def _build_logical_restore_report():
+    from fathomdb._types import LogicalRestoreReport
+
+    return LogicalRestoreReport(
+        logical_id="lid-abc",
+        was_noop=False,
+        restored_node_rows=2,
+        restored_edge_rows=0,
+        restored_chunk_rows=0,
+        restored_fts_rows=0,
+        restored_property_fts_rows=0,
+        restored_vec_rows=0,
+        skipped_edges=[],
+    )
+
+
+def _build_logical_purge_report():
+    from fathomdb._types import LogicalPurgeReport
+
+    return LogicalPurgeReport(
+        logical_id="lid-abc",
+        was_noop=False,
+        deleted_node_rows=5,
+        deleted_edge_rows=1,
+        deleted_chunk_rows=0,
+        deleted_fts_rows=0,
+        deleted_vec_rows=0,
+    )
+
+
+def _build_safe_export_manifest():
+    from fathomdb._types import SafeExportManifest
+
+    return SafeExportManifest(
+        exported_at=1700000000,
+        sha256="abcdef1234567890",
+        schema_version=3,
+        protocol_version=1,
+        page_count=100,
+    )
+
+
+def _build_vector_regen_report():
+    from fathomdb._types import VectorRegenerationReport
+
+    return VectorRegenerationReport(
+        profile="main",
+        table_name="vec_Document",
+        dimension=384,
+        total_chunks=10,
+        regenerated_rows=10,
+        contract_persisted=True,
+        notes=[],
+    )
+
+
+def test_restore_vector_profiles_prints_report():
+    """restore-vector-profiles calls admin.restore_vector_profiles and prints JSON."""
+    from fathomdb._cli import cli
+
+    runner = CliRunner()
+
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.restore_vector_profiles.return_value = (
+            _build_projection_repair_report()
+        )
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            ["admin", "restore-vector-profiles", "--db", "/tmp/test.db"],
+        )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["rebuilt_rows"] == 42
+    assert "vec" in data["targets"]
+
+
+def test_regen_vectors_calls_admin_regen():
+    """regen-vectors opens engine with embedder string and calls admin.regenerate_vector_embeddings."""
+    from fathomdb._cli import cli
+
+    runner = CliRunner()
+
+    with patch("fathomdb.Engine.open") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.regenerate_vector_embeddings.return_value = (
+            _build_vector_regen_report()
+        )
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            [
+                "admin", "regen-vectors",
+                "--db", "/tmp/test.db",
+                "--embedder", "bge-small-en-v1.5",
+                "--kind", "Document",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["regenerated_rows"] == 10
+
+
+def test_trace_source_prints_report():
+    """trace-source calls admin.trace_source and prints JSON."""
+    from fathomdb._cli import cli
+
+    runner = CliRunner()
+
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.trace_source.return_value = _build_trace_report()
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            ["admin", "trace-source", "--db", "/tmp/test.db", "--source-ref", "src://test"],
+        )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["source_ref"] == "src://test"
+    assert data["node_rows"] == 3
+
+
+def test_excise_source_prints_report():
+    """excise-source calls admin.excise_source and prints JSON."""
+    from fathomdb._cli import cli
+
+    runner = CliRunner()
+
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.excise_source.return_value = _build_trace_report()
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            ["admin", "excise-source", "--db", "/tmp/test.db", "--source-ref", "src://test"],
+        )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["source_ref"] == "src://test"
+    assert data["node_rows"] == 3
+
+
+def test_restore_logical_id_prints_report():
+    """restore-logical-id calls admin.restore_logical_id and prints JSON."""
+    from fathomdb._cli import cli
+
+    runner = CliRunner()
+
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.restore_logical_id.return_value = _build_logical_restore_report()
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            ["admin", "restore-logical-id", "--db", "/tmp/test.db", "--logical-id", "lid-abc"],
+        )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["logical_id"] == "lid-abc"
+    assert data["restored_node_rows"] == 2
+
+
+def test_purge_logical_id_prints_report():
+    """purge-logical-id calls admin.purge_logical_id and prints JSON."""
+    from fathomdb._cli import cli
+
+    runner = CliRunner()
+
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.purge_logical_id.return_value = _build_logical_purge_report()
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            ["admin", "purge-logical-id", "--db", "/tmp/test.db", "--logical-id", "lid-abc"],
+        )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["logical_id"] == "lid-abc"
+    assert data["deleted_node_rows"] == 5
+
+
+def test_safe_export_prints_manifest():
+    """safe-export calls admin.safe_export and prints JSON."""
+    from fathomdb._cli import cli
+
+    runner = CliRunner()
+
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.safe_export.return_value = _build_safe_export_manifest()
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            ["admin", "safe-export", "--db", "/tmp/test.db", "--destination", "/tmp/export.db"],
+        )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["sha256"] == "abcdef1234567890"
+    assert data["page_count"] == 100
