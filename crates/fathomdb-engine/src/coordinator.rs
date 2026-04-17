@@ -5223,6 +5223,9 @@ mod tests {
                 normalization_policy: "l2".to_owned(),
             }
         }
+        fn max_tokens(&self) -> usize {
+            512
+        }
     }
 
     fn make_in_memory_db_with_projection_profiles() -> rusqlite::Connection {

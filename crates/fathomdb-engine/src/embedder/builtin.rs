@@ -242,4 +242,19 @@ impl QueryEmbedder for BuiltinBgeSmallEmbedder {
             normalization_policy: "l2".to_owned(),
         }
     }
+
+    fn max_tokens(&self) -> usize {
+        512
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builtin_bge_small_max_tokens_returns_512() {
+        let embedder = BuiltinBgeSmallEmbedder::new();
+        assert_eq!(embedder.max_tokens(), 512);
+    }
 }

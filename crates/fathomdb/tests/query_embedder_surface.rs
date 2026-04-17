@@ -32,6 +32,9 @@ impl QueryEmbedder for FakeEmbedder {
             normalization_policy: "none".to_owned(),
         }
     }
+    fn max_tokens(&self) -> usize {
+        512
+    }
 }
 
 #[derive(Debug)]
@@ -48,6 +51,9 @@ impl QueryEmbedder for FakeUnavailableEmbedder {
             dimension: 4,
             normalization_policy: "none".to_owned(),
         }
+    }
+    fn max_tokens(&self) -> usize {
+        512
     }
 }
 

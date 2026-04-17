@@ -47,6 +47,15 @@ pub trait QueryEmbedder: Send + Sync + std::fmt::Debug {
     /// will gate the vector branch on `identity()` equality with the
     /// active vector profile.
     fn identity(&self) -> QueryEmbedderIdentity;
+
+    /// Maximum number of tokens this embedder can process in one call.
+    ///
+    /// The write-time chunker uses this to size text chunks: content
+    /// that fits within `max_tokens()` is stored as one chunk; content
+    /// exceeding it is split at token boundaries. BGE-small-en-v1.5
+    /// has a 512-token context window; long-context embedders (Nomic,
+    /// Jina) return 8192.
+    fn max_tokens(&self) -> usize;
 }
 
 /// Identity metadata for a [`QueryEmbedder`].

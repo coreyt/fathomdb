@@ -5351,6 +5351,9 @@ mod tests {
         fn identity(&self) -> QueryEmbedderIdentity {
             self.identity.clone()
         }
+        fn max_tokens(&self) -> usize {
+            512
+        }
     }
 
     /// Embedder that always fails — used to exercise the post-request
@@ -5367,6 +5370,9 @@ mod tests {
         }
         fn identity(&self) -> QueryEmbedderIdentity {
             self.identity.clone()
+        }
+        fn max_tokens(&self) -> usize {
+            512
         }
     }
 
@@ -10341,5 +10347,100 @@ mod tests {
             "register_fts_property_schema must succeed when source-code profile is active: {:?}",
             result.err()
         );
+    }
+
+    /// Item 5 integration test: a stub embedder with `max_tokens=8192` can
+    /// process a single chunk whose text exceeds 512 words. The pre-written
+    /// chunk is stored as one unit; `regenerate_vector_embeddings` embeds it
+    /// as one row, not two.
+    #[cfg(feature = "sqlite-vec")]
+    #[test]
+    fn max_tokens_8192_embedder_processes_long_chunk_as_single_unit() {
+        // Build a text with ~600 words — exceeds 512 but fits within 8192.
+        let long_text = (0..600u32)
+            .map(|i| format!("word{i}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        let db = NamedTempFile::new().expect("temp file");
+        let schema = Arc::new(SchemaManager::new());
+
+        {
+            let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
+            schema.bootstrap(&conn).expect("bootstrap");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('row-1', 'doc-1', 'Document', '{}', 100, 'src-1')",
+                [],
+            )
+            .expect("insert node");
+            conn.execute(
+                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
+                 VALUES (?1, 'doc-1', ?2, 100)",
+                rusqlite::params!["chunk-long", long_text],
+            )
+            .expect("insert long chunk");
+        }
+
+        // Embedder with max_tokens=8192 — should handle the 600-word chunk.
+        let embedder = LargeContextTestEmbedder::new("long-context-model", 4, 8192);
+        let service = AdminService::new(db.path(), Arc::clone(&schema));
+        let report = service
+            .regenerate_vector_embeddings(
+                &embedder,
+                &VectorRegenerationConfig {
+                    profile: "default".to_owned(),
+                    table_name: "vec_nodes_active".to_owned(),
+                    chunking_policy: "per_chunk".to_owned(),
+                    preprocessing_policy: "trim".to_owned(),
+                },
+            )
+            .expect("regenerate with long-context embedder");
+
+        assert_eq!(
+            report.total_chunks, 1,
+            "600-word text pre-written as one chunk must result in exactly one embedded row"
+        );
+        assert_eq!(report.regenerated_rows, 1);
+        assert_eq!(
+            embedder.max_tokens(),
+            8192,
+            "embedder must advertise 8192 token capacity"
+        );
+    }
+
+    /// Stub embedder with a configurable `max_tokens` for long-context tests.
+    #[derive(Debug)]
+    struct LargeContextTestEmbedder {
+        identity: QueryEmbedderIdentity,
+        vector: Vec<f32>,
+        max_tokens: usize,
+    }
+
+    impl LargeContextTestEmbedder {
+        fn new(model: &str, dimension: usize, max_tokens: usize) -> Self {
+            Self {
+                identity: QueryEmbedderIdentity {
+                    model_identity: model.to_owned(),
+                    model_version: "1.0.0".to_owned(),
+                    dimension,
+                    normalization_policy: "l2".to_owned(),
+                },
+                vector: vec![1.0; dimension],
+                max_tokens,
+            }
+        }
+    }
+
+    impl QueryEmbedder for LargeContextTestEmbedder {
+        fn embed_query(&self, _text: &str) -> Result<Vec<f32>, EmbedderError> {
+            Ok(self.vector.clone())
+        }
+        fn identity(&self) -> QueryEmbedderIdentity {
+            self.identity.clone()
+        }
+        fn max_tokens(&self) -> usize {
+            self.max_tokens
+        }
     }
 }
