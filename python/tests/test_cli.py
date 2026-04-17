@@ -358,3 +358,345 @@ def test_resolve_embedder_known_preset_dimensions():
     assert _resolve_embedder("text-embedding-3-small").identity().dimensions == 1536
     assert _resolve_embedder("text-embedding-3-large").identity().dimensions == 3072
     assert _resolve_embedder("jina-embeddings-v2-base-en").identity().dimensions == 768
+
+
+# ---------------------------------------------------------------------------
+# H-3: check-integrity and check-semantics
+# ---------------------------------------------------------------------------
+
+
+def _build_integrity_report():
+    from fathomdb._types import IntegrityReport
+
+    return IntegrityReport.from_wire(
+        {
+            "physical_ok": True,
+            "foreign_keys_ok": True,
+            "missing_fts_rows": 0,
+            "missing_property_fts_rows": 0,
+            "duplicate_active_logical_ids": 0,
+            "operational_missing_collections": 0,
+            "operational_missing_last_mutations": 0,
+            "warnings": [],
+        }
+    )
+
+
+def _build_semantic_report():
+    from fathomdb._types import SemanticReport
+
+    return SemanticReport.from_wire(
+        {
+            "orphaned_chunks": 0,
+            "null_source_ref_nodes": 0,
+            "broken_step_fk": 0,
+            "broken_action_fk": 0,
+            "stale_fts_rows": 0,
+            "fts_rows_for_superseded_nodes": 0,
+            "stale_property_fts_rows": 0,
+            "orphaned_property_fts_rows": 0,
+            "mismatched_kind_property_fts_rows": 0,
+            "duplicate_property_fts_rows": 0,
+            "drifted_property_fts_rows": 0,
+            "dangling_edges": 0,
+            "orphaned_supersession_chains": 0,
+            "stale_vec_rows": 0,
+            "vec_rows_for_superseded_nodes": 0,
+            "missing_operational_current_rows": 0,
+            "stale_operational_current_rows": 0,
+            "disabled_collection_mutations": 0,
+            "orphaned_last_access_metadata_rows": 0,
+            "warnings": [],
+        }
+    )
+
+
+def test_check_integrity_exits_zero_and_prints_json():
+    """check-integrity exits 0 and prints JSON with physical_ok field."""
+    from fathomdb._cli import cli
+
+    runner = CliRunner()
+
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.check_integrity.return_value = _build_integrity_report()
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            ["admin", "check-integrity", "--db", "/tmp/test.db"],
+        )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert "physical_ok" in data
+    assert data["physical_ok"] is True
+
+
+def test_check_semantics_exits_zero_and_prints_json():
+    """check-semantics exits 0 and prints JSON with orphaned_chunks field."""
+    from fathomdb._cli import cli
+
+    runner = CliRunner()
+
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.check_semantics.return_value = _build_semantic_report()
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            ["admin", "check-semantics", "--db", "/tmp/test.db"],
+        )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert "orphaned_chunks" in data
+    assert data["orphaned_chunks"] == 0
+
+
+# ---------------------------------------------------------------------------
+# H-1: rebuild
+# ---------------------------------------------------------------------------
+
+
+def _build_projection_repair_report():
+    from fathomdb._types import ProjectionRepairReport
+
+    return ProjectionRepairReport.from_wire(
+        {
+            "targets": ["fts", "vec"],
+            "rebuilt_rows": 42,
+            "notes": [],
+        }
+    )
+
+
+def test_rebuild_all_exits_zero_and_prints_json():
+    """rebuild --target all exits 0 and prints JSON with rebuilt_rows field."""
+    from fathomdb._cli import cli
+
+    runner = CliRunner()
+
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.rebuild.return_value = _build_projection_repair_report()
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            ["admin", "rebuild", "--db", "/tmp/test.db", "--target", "all"],
+        )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert "rebuilt_rows" in data
+    assert data["rebuilt_rows"] == 42
+
+
+def test_rebuild_default_target_is_all():
+    """rebuild without --target defaults to 'all' and succeeds."""
+    from fathomdb._cli import cli
+
+    runner = CliRunner()
+
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.rebuild.return_value = _build_projection_repair_report()
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            ["admin", "rebuild", "--db", "/tmp/test.db"],
+        )
+
+    assert result.exit_code == 0, result.output
+    mock_engine.admin.rebuild.assert_called_once_with("all")
+
+
+def test_rebuild_fts_target():
+    """rebuild --target fts passes 'fts' to admin.rebuild."""
+    from fathomdb._cli import cli
+
+    runner = CliRunner()
+
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.rebuild.return_value = _build_projection_repair_report()
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            ["admin", "rebuild", "--db", "/tmp/test.db", "--target", "fts"],
+        )
+
+    assert result.exit_code == 0, result.output
+    mock_engine.admin.rebuild.assert_called_once_with("fts")
+
+
+# ---------------------------------------------------------------------------
+# H-2: FTS property schema CRUD
+# ---------------------------------------------------------------------------
+
+
+def _build_fts_property_schema_record():
+    from fathomdb._types import FtsPropertySchemaRecord
+
+    return FtsPropertySchemaRecord.from_wire(
+        {
+            "kind": "Article",
+            "property_paths": ["$.title", "$.body"],
+            "entries": [
+                {"path": "$.title", "mode": "scalar"},
+                {"path": "$.body", "mode": "scalar"},
+            ],
+            "exclude_paths": [],
+            "separator": " ",
+            "format_version": 1,
+        }
+    )
+
+
+def test_register_fts_property_schema_exits_zero_and_prints_json():
+    """register-fts-property-schema exits 0 and prints JSON with kind field."""
+    from fathomdb._cli import cli
+
+    runner = CliRunner()
+
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.register_fts_property_schema.return_value = (
+            _build_fts_property_schema_record()
+        )
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            [
+                "admin",
+                "register-fts-property-schema",
+                "--db",
+                "/tmp/test.db",
+                "--kind",
+                "Article",
+                "--paths",
+                "$.title",
+                "--paths",
+                "$.body",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["kind"] == "Article"
+    assert "$.title" in data["property_paths"]
+
+
+def test_describe_fts_property_schema_returns_json():
+    """describe-fts-property-schema prints JSON when schema exists."""
+    from fathomdb._cli import cli
+
+    runner = CliRunner()
+
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.describe_fts_property_schema.return_value = (
+            _build_fts_property_schema_record()
+        )
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            [
+                "admin",
+                "describe-fts-property-schema",
+                "--db",
+                "/tmp/test.db",
+                "--kind",
+                "Article",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["kind"] == "Article"
+
+
+def test_describe_fts_property_schema_none_prints_message():
+    """describe-fts-property-schema prints a message when schema does not exist."""
+    from fathomdb._cli import cli
+
+    runner = CliRunner()
+
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.describe_fts_property_schema.return_value = None
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            [
+                "admin",
+                "describe-fts-property-schema",
+                "--db",
+                "/tmp/test.db",
+                "--kind",
+                "Missing",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "Missing" in result.output
+    assert "No FTS property schema" in result.output
+
+
+def test_list_fts_property_schemas_exits_zero_and_prints_json():
+    """list-fts-property-schemas exits 0 and prints a JSON list."""
+    from fathomdb._cli import cli
+
+    runner = CliRunner()
+
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.list_fts_property_schemas.return_value = [
+            _build_fts_property_schema_record()
+        ]
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            ["admin", "list-fts-property-schemas", "--db", "/tmp/test.db"],
+        )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert isinstance(data, list)
+    assert len(data) == 1
+    assert data[0]["kind"] == "Article"
+
+
+def test_remove_fts_property_schema_exits_zero_and_prints_success():
+    """remove-fts-property-schema exits 0 and prints a success message."""
+    from fathomdb._cli import cli
+
+    runner = CliRunner()
+
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.remove_fts_property_schema.return_value = None
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            [
+                "admin",
+                "remove-fts-property-schema",
+                "--db",
+                "/tmp/test.db",
+                "--kind",
+                "Article",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "Article" in result.output or "removed" in result.output.lower()
