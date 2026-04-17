@@ -623,6 +623,14 @@ class _SearchBuilderBase:
             {"type": "filter_json_fused_timestamp_lte", "path": path, "value": value}
         )
 
+    def filter_json_fused_bool_eq(self, path: str, value: bool) -> "Self":
+        """Fused JSON-boolean equality filter. See :meth:`filter_json_fused_text_eq`."""
+        kind = self._fused_validation_kind("filter_json_fused_bool_eq")
+        self._validate_fused_property_path(kind, path, "filter_json_fused_bool_eq")
+        return self._with_filter(
+            {"type": "filter_json_fused_bool_eq", "path": path, "value": value}
+        )
+
     def _execute(
         self,
         *,

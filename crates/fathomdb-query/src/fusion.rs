@@ -73,6 +73,7 @@ pub fn is_fusable(predicate: &Predicate) -> bool {
             | Predicate::ContentRefNotNull
             | Predicate::JsonPathFusedEq { .. }
             | Predicate::JsonPathFusedTimestampCmp { .. }
+            | Predicate::JsonPathFusedBoolEq { .. }
     )
 }
 

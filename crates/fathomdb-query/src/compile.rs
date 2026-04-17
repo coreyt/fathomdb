@@ -180,6 +180,17 @@ fn append_fusable_clause(
                 "\n                          AND json_extract({alias}.properties, ?{path_index}) {operator} ?{value_index}"
             );
         }
+        Predicate::JsonPathFusedBoolEq { path, value } => {
+            validate_json_path(path)?;
+            binds.push(BindValue::Text(path.clone()));
+            let path_index = binds.len();
+            binds.push(BindValue::Integer(i64::from(*value)));
+            let value_index = binds.len();
+            let _ = write!(
+                sql,
+                "\n                          AND json_extract({alias}.properties, ?{path_index}) = ?{value_index}"
+            );
+        }
         Predicate::JsonPathEq { .. } | Predicate::JsonPathCompare { .. } => {
             unreachable!("append_fusable_clause received a residual predicate");
         }
@@ -509,6 +520,17 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
                                 "\n                      AND json_extract(src.properties, ?{path_index}) {operator} ?{value_index}"
                             );
                         }
+                        Predicate::JsonPathFusedBoolEq { path, value } => {
+                            validate_json_path(path)?;
+                            binds.push(BindValue::Text(path.clone()));
+                            let path_index = binds.len();
+                            binds.push(BindValue::Integer(i64::from(*value)));
+                            let value_index = binds.len();
+                            let _ = write!(
+                                &mut sql,
+                                "\n                      AND json_extract(src.properties, ?{path_index}) = ?{value_index}"
+                            );
+                        }
                     }
                 }
             }
@@ -628,7 +650,8 @@ WHERE 1 = 1",
                 | Predicate::ContentRefEq(_)
                 | Predicate::ContentRefNotNull
                 | Predicate::JsonPathFusedEq { .. }
-                | Predicate::JsonPathFusedTimestampCmp { .. } => {
+                | Predicate::JsonPathFusedTimestampCmp { .. }
+                | Predicate::JsonPathFusedBoolEq { .. } => {
                     // Fusable — already injected into base_candidates by
                     // `partition_search_filters`.
                 }

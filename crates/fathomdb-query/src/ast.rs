@@ -133,6 +133,15 @@ pub enum Predicate {
         /// timestamp semantics).
         value: i64,
     },
+    /// Fused equality check on a JSON boolean property at the given path.
+    /// See [`Predicate::JsonPathFusedEq`] for the fusion contract.
+    /// The boolean is stored as `SQLite` integer 1/0.
+    JsonPathFusedBoolEq {
+        /// JSON path expression (e.g. `$.resolved`).
+        path: String,
+        /// Boolean value to compare against (stored as 1 or 0).
+        value: bool,
+    },
 }
 
 /// Ordered comparison operator for JSON property filters.

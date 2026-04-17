@@ -366,6 +366,24 @@ impl QueryBuilder {
         self
     }
 
+    /// Append a fused JSON boolean-equality predicate without validating
+    /// the fusion gate. See
+    /// [`Self::filter_json_fused_text_eq_unchecked`] for the contract.
+    #[must_use]
+    pub fn filter_json_fused_bool_eq_unchecked(
+        mut self,
+        path: impl Into<String>,
+        value: bool,
+    ) -> Self {
+        self.ast
+            .steps
+            .push(QueryStep::Filter(Predicate::JsonPathFusedBoolEq {
+                path: path.into(),
+                value,
+            }));
+        self
+    }
+
     /// Add an expansion slot that traverses edges of the given label for each root result.
     ///
     /// Pass `filter: None` to preserve the existing behavior. `filter: Some(_)` is

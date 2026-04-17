@@ -366,6 +366,24 @@ impl<'e> NodeQueryBuilder<'e> {
         Ok(self)
     }
 
+    /// Filter results where a JSON boolean property at `path` equals
+    /// `value`, with fusion semantics. See
+    /// [`Self::filter_json_fused_text_eq`] for the contract.
+    ///
+    /// # Errors
+    /// See [`Self::filter_json_fused_text_eq`].
+    pub fn filter_json_fused_bool_eq(
+        mut self,
+        path: impl Into<String>,
+        value: bool,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        let kind = self.inner.ast().root_kind.clone();
+        validate_fusable_property_path(self.engine, &kind, &path, "filter_json_fused_bool_eq")?;
+        self.inner = self.inner.filter_json_fused_bool_eq_unchecked(path, value);
+        Ok(self)
+    }
+
     /// Add an expansion slot that traverses edges per root result.
     ///
     /// Pass `filter: None` to preserve the existing behavior. `filter: Some(_)` is
@@ -685,6 +703,24 @@ impl TextSearchBuilder<'_> {
         self.inner = self
             .inner
             .filter_json_fused_timestamp_lte_unchecked(path, value);
+        Ok(self)
+    }
+
+    /// Filter results where a JSON boolean property at `path` equals
+    /// `value`, with fusion semantics. See
+    /// [`Self::filter_json_fused_text_eq`] for the contract.
+    ///
+    /// # Errors
+    /// See [`Self::filter_json_fused_text_eq`].
+    pub fn filter_json_fused_bool_eq(
+        mut self,
+        path: impl Into<String>,
+        value: bool,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        let kind = self.inner.ast().root_kind.clone();
+        validate_fusable_property_path(self.engine, &kind, &path, "filter_json_fused_bool_eq")?;
+        self.inner = self.inner.filter_json_fused_bool_eq_unchecked(path, value);
         Ok(self)
     }
 
@@ -1082,6 +1118,30 @@ impl<'e> FallbackSearchBuilder<'e> {
         Ok(self)
     }
 
+    /// Filter results where a JSON boolean property at `path` equals
+    /// `value`, with fusion semantics. See
+    /// [`Self::filter_json_fused_text_eq`] for the contract.
+    ///
+    /// # Errors
+    /// See [`Self::filter_json_fused_text_eq`].
+    pub fn filter_json_fused_bool_eq(
+        mut self,
+        path: impl Into<String>,
+        value: bool,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        let kind = filter_builder_kind(&self.filter_builder)
+            .ok_or_else(|| BuilderValidationError::KindRequiredForFusion {
+                method: "filter_json_fused_bool_eq".to_owned(),
+            })?
+            .to_owned();
+        validate_fusable_property_path(self.engine, &kind, &path, "filter_json_fused_bool_eq")?;
+        self.filter_builder = self
+            .filter_builder
+            .filter_json_fused_bool_eq_unchecked(path, value);
+        Ok(self)
+    }
+
     /// Compile the builder into a [`CompiledSearchPlan`] without executing
     /// it. Useful for tests and introspection.
     ///
@@ -1402,6 +1462,30 @@ impl<'e> VectorSearchBuilder<'e> {
         Ok(self)
     }
 
+    /// Filter results where a JSON boolean property at `path` equals
+    /// `value`, with fusion semantics. See
+    /// [`Self::filter_json_fused_text_eq`] for the contract.
+    ///
+    /// # Errors
+    /// See [`Self::filter_json_fused_text_eq`].
+    pub fn filter_json_fused_bool_eq(
+        mut self,
+        path: impl Into<String>,
+        value: bool,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        validate_fusable_property_path(
+            self.engine,
+            &self.root_kind,
+            &path,
+            "filter_json_fused_bool_eq",
+        )?;
+        self.filter_builder = self
+            .filter_builder
+            .filter_json_fused_bool_eq_unchecked(path, value);
+        Ok(self)
+    }
+
     /// Compile the builder into a [`CompiledVectorSearch`] without executing
     /// it. Useful for tests and introspection.
     ///
@@ -1712,6 +1796,30 @@ impl<'e> SearchBuilder<'e> {
         self.filter_builder = self
             .filter_builder
             .filter_json_fused_timestamp_lte_unchecked(path, value);
+        Ok(self)
+    }
+
+    /// Filter results where a JSON boolean property at `path` equals
+    /// `value`, with fusion semantics. See
+    /// [`Self::filter_json_fused_text_eq`] for the contract.
+    ///
+    /// # Errors
+    /// See [`Self::filter_json_fused_text_eq`].
+    pub fn filter_json_fused_bool_eq(
+        mut self,
+        path: impl Into<String>,
+        value: bool,
+    ) -> Result<Self, BuilderValidationError> {
+        let path = path.into();
+        validate_fusable_property_path(
+            self.engine,
+            &self.root_kind,
+            &path,
+            "filter_json_fused_bool_eq",
+        )?;
+        self.filter_builder = self
+            .filter_builder
+            .filter_json_fused_bool_eq_unchecked(path, value);
         Ok(self)
     }
 

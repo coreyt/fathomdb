@@ -105,6 +105,13 @@ fn compile_expansion_filter(
                 vec![Value::Text(path.clone()), Value::Integer(*value)],
             )
         }
+        Predicate::JsonPathFusedBoolEq { path, value } => (
+            format!(
+                "\n                  AND json_extract(n.properties, ?{p}) = ?{}",
+                p + 1
+            ),
+            vec![Value::Text(path.clone()), Value::Integer(i64::from(*value))],
+        ),
         Predicate::KindEq(kind) => (
             format!("\n                  AND n.kind = ?{p}"),
             vec![Value::Text(kind.clone())],
@@ -942,6 +949,16 @@ impl ExecutionCoordinator {
                         "\n                      AND json_extract(src.properties, ?{path_idx}) {operator} ?{value_idx}"
                     );
                 }
+                Predicate::JsonPathFusedBoolEq { path, value } => {
+                    binds.push(BindValue::Text(path.clone()));
+                    let path_idx = binds.len();
+                    binds.push(BindValue::Integer(i64::from(*value)));
+                    let value_idx = binds.len();
+                    let _ = write!(
+                        fused_clauses,
+                        "\n                      AND json_extract(src.properties, ?{path_idx}) = ?{value_idx}"
+                    );
+                }
                 Predicate::JsonPathEq { .. } | Predicate::JsonPathCompare { .. } => {
                     // JSON predicates are residual; compile_vector_search
                     // guarantees they never appear here, but stay defensive.
@@ -985,7 +1002,8 @@ impl ExecutionCoordinator {
                 | Predicate::ContentRefEq(_)
                 | Predicate::ContentRefNotNull
                 | Predicate::JsonPathFusedEq { .. }
-                | Predicate::JsonPathFusedTimestampCmp { .. } => {
+                | Predicate::JsonPathFusedTimestampCmp { .. }
+                | Predicate::JsonPathFusedBoolEq { .. } => {
                     // Fusable predicates live in fused_clauses above.
                 }
             }
@@ -1637,6 +1655,16 @@ impl ExecutionCoordinator {
                         "\n                  AND json_extract(u.properties, ?{path_idx}) {operator} ?{value_idx}"
                     );
                 }
+                Predicate::JsonPathFusedBoolEq { path, value } => {
+                    binds.push(BindValue::Text(path.clone()));
+                    let path_idx = binds.len();
+                    binds.push(BindValue::Integer(i64::from(*value)));
+                    let value_idx = binds.len();
+                    let _ = write!(
+                        fused_clauses,
+                        "\n                  AND json_extract(u.properties, ?{path_idx}) = ?{value_idx}"
+                    );
+                }
                 Predicate::JsonPathEq { .. } | Predicate::JsonPathCompare { .. } => {
                     // Should be in residual_filters; compile_search guarantees
                     // this, but stay defensive.
@@ -1679,7 +1707,8 @@ impl ExecutionCoordinator {
                 | Predicate::ContentRefEq(_)
                 | Predicate::ContentRefNotNull
                 | Predicate::JsonPathFusedEq { .. }
-                | Predicate::JsonPathFusedTimestampCmp { .. } => {
+                | Predicate::JsonPathFusedTimestampCmp { .. }
+                | Predicate::JsonPathFusedBoolEq { .. } => {
                     // Fusable predicates live in fused_clauses; compile_search
                     // partitions them out of residual_filters.
                 }
