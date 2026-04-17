@@ -40,7 +40,7 @@ use candle_transformers::models::bert::{BertModel, Config, DTYPE};
 use hf_hub::{Repo, RepoType, api::sync::Api};
 use tokenizers::Tokenizer;
 
-use super::{EmbedderError, QueryEmbedder, QueryEmbedderIdentity};
+use super::{BatchEmbedder, EmbedderError, QueryEmbedder, QueryEmbedderIdentity};
 
 /// Model identity. Kept pinned to the commit we validated against so the
 /// `identity().model_version` string is stable across builds. Updating
@@ -240,6 +240,79 @@ impl QueryEmbedder for BuiltinBgeSmallEmbedder {
             model_version: MODEL_REVISION.to_owned(),
             dimension: MODEL_DIMENSION,
             normalization_policy: "l2".to_owned(),
+        }
+    }
+
+    fn max_tokens(&self) -> usize {
+        512
+    }
+}
+
+impl BatchEmbedder for BuiltinBgeSmallEmbedder {
+    fn batch_embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, EmbedderError> {
+        // Load the model once under the lock, then embed each text while
+        // holding the lock (BertModel is not Sync in all candle versions).
+        let mut guard = self
+            .state
+            .lock()
+            .map_err(|_| EmbedderError::Failed("embedder state mutex poisoned".to_owned()))?;
+        if guard.is_none() {
+            *guard = Some(Self::load_model_state()?);
+        }
+        let state = guard
+            .as_ref()
+            .ok_or_else(|| EmbedderError::Failed("model state unexpectedly None".to_owned()))?;
+        texts
+            .iter()
+            .map(|text| Self::embed_with_state(state, text))
+            .collect()
+    }
+
+    fn identity(&self) -> QueryEmbedderIdentity {
+        QueryEmbedderIdentity {
+            model_identity: MODEL_ID.to_owned(),
+            model_version: MODEL_REVISION.to_owned(),
+            dimension: MODEL_DIMENSION,
+            normalization_policy: "l2".to_owned(),
+        }
+    }
+
+    fn max_tokens(&self) -> usize {
+        512
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use super::*;
+    use crate::embedder::{BatchEmbedder, QueryEmbedder};
+
+    #[test]
+    fn builtin_bge_small_max_tokens_returns_512() {
+        let embedder = BuiltinBgeSmallEmbedder::new();
+        assert_eq!(QueryEmbedder::max_tokens(&embedder), 512);
+        assert_eq!(BatchEmbedder::max_tokens(&embedder), 512);
+    }
+
+    #[test]
+    fn builtin_bge_small_batch_embed_returns_one_vector_per_input() {
+        let embedder = BuiltinBgeSmallEmbedder::new();
+        let texts = vec![
+            "hello world".to_owned(),
+            "machine learning".to_owned(),
+            "rust programming".to_owned(),
+        ];
+        let result = embedder
+            .batch_embed(&texts)
+            .expect("batch_embed must succeed");
+        assert_eq!(result.len(), 3, "one vector per input text");
+        for (i, vec) in result.iter().enumerate() {
+            assert_eq!(
+                vec.len(),
+                384,
+                "vector {i} must have BGE-small dimension 384"
+            );
         }
     }
 }
