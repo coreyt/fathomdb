@@ -429,3 +429,168 @@ def safe_export(db, destination, no_checkpoint):
 
 def main():
     cli()
+
+
+def _asdict_json_safe(obj):
+    """Recursively convert a dataclass to a JSON-serializable dict, converting enums to .value."""
+    import dataclasses
+    from enum import Enum
+
+    if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
+        return {
+            f.name: _asdict_json_safe(getattr(obj, f.name))
+            for f in dataclasses.fields(obj)
+        }
+    if isinstance(obj, Enum):
+        return obj.value
+    if isinstance(obj, list):
+        return [_asdict_json_safe(item) for item in obj]
+    if isinstance(obj, tuple):
+        return [_asdict_json_safe(item) for item in obj]
+    return obj
+
+
+@admin.command("describe-operational-collection")
+@click.option("--db", required=True)
+@click.option("--name", required=True, help="Collection name")
+def describe_operational_collection(db, name):
+    """Show the record for a named operational collection."""
+    engine = _open_engine(db)
+    record = engine.admin.describe_operational_collection(name)
+    if record is None:
+        click.echo(f"No collection '{name}'")
+    else:
+        click.echo(json.dumps(_asdict_json_safe(record)))
+
+
+@admin.command("register-operational-collection")
+@click.option("--db", required=True)
+@click.option("--name", required=True)
+@click.option(
+    "--kind",
+    required=True,
+    type=click.Choice(["append_only_log", "latest_state"]),
+)
+@click.option("--schema-json", required=True, help="JSON schema definition")
+@click.option("--retention-json", required=True, help="JSON retention policy")
+@click.option("--format-version", default=1, type=int)
+def register_operational_collection(
+    db, name, kind, schema_json, retention_json, format_version
+):
+    """Register a new operational collection."""
+    from fathomdb._types import OperationalCollectionKind, OperationalRegisterRequest
+
+    request = OperationalRegisterRequest(
+        name=name,
+        kind=OperationalCollectionKind(kind),
+        schema_json=schema_json,
+        retention_json=retention_json,
+        format_version=format_version,
+    )
+    engine = _open_engine(db)
+    result = engine.admin.register_operational_collection(request)
+    click.echo(json.dumps(_asdict_json_safe(result)))
+
+
+@admin.command("trace-operational-collection")
+@click.option("--db", required=True)
+@click.option("--name", required=True, help="Collection name")
+@click.option("--record-key", default=None, help="Narrow to specific record key")
+def trace_operational_collection(db, name, record_key):
+    """Trace mutation and current-state rows for an operational collection."""
+    engine = _open_engine(db)
+    result = engine.admin.trace_operational_collection(name, record_key)
+    click.echo(json.dumps(_asdict_json_safe(result)))
+
+
+@admin.command("rebuild-operational-current")
+@click.option("--db", required=True)
+@click.option("--name", default=None, help="Collection name (omit for all)")
+def rebuild_operational_current(db, name):
+    """Rebuild current-state views for operational collections."""
+    engine = _open_engine(db)
+    result = engine.admin.rebuild_operational_current(name)
+    click.echo(json.dumps(_asdict_json_safe(result)))
+
+
+@admin.command("validate-operational-history")
+@click.option("--db", required=True)
+@click.option("--name", required=True)
+def validate_operational_history(db, name):
+    """Validate mutation history of an operational collection."""
+    engine = _open_engine(db)
+    result = engine.admin.validate_operational_collection_history(name)
+    click.echo(json.dumps(_asdict_json_safe(result)))
+
+
+@admin.command("rebuild-operational-secondary-indexes")
+@click.option("--db", required=True)
+@click.option("--name", required=True)
+def rebuild_operational_secondary_indexes(db, name):
+    """Rebuild secondary indexes for an operational collection."""
+    engine = _open_engine(db)
+    result = engine.admin.rebuild_operational_secondary_indexes(name)
+    click.echo(json.dumps(_asdict_json_safe(result)))
+
+
+@admin.command("plan-operational-retention")
+@click.option("--db", required=True)
+@click.option("--now", required=True, type=int, help="Reference epoch timestamp")
+@click.option("--names", multiple=True, default=None, help="Limit to these collections")
+def plan_operational_retention(db, now, names):
+    """Preview which mutations would be purged by the retention policy."""
+    engine = _open_engine(db)
+    result = engine.admin.plan_operational_retention(
+        now, collection_names=list(names) if names else None
+    )
+    click.echo(json.dumps(_asdict_json_safe(result)))
+
+
+@admin.command("run-operational-retention")
+@click.option("--db", required=True)
+@click.option("--now", required=True, type=int)
+@click.option("--dry-run", is_flag=True, default=False)
+@click.option("--names", multiple=True, default=None)
+def run_operational_retention(db, now, dry_run, names):
+    """Execute the retention policy, deleting expired mutations."""
+    engine = _open_engine(db)
+    result = engine.admin.run_operational_retention(
+        now, collection_names=list(names) if names else None, dry_run=dry_run
+    )
+    click.echo(json.dumps(_asdict_json_safe(result)))
+
+
+@admin.command("compact-operational-collection")
+@click.option("--db", required=True)
+@click.option("--name", required=True)
+@click.option("--dry-run", is_flag=True, default=False)
+def compact_operational_collection(db, name, dry_run):
+    """Compact an operational collection by removing superseded mutations."""
+    engine = _open_engine(db)
+    result = engine.admin.compact_operational_collection(name, dry_run=dry_run)
+    click.echo(json.dumps(_asdict_json_safe(result)))
+
+
+@admin.command("purge-operational-collection")
+@click.option("--db", required=True)
+@click.option("--name", required=True)
+@click.option(
+    "--before-timestamp", required=True, type=int, help="Epoch seconds cutoff"
+)
+def purge_operational_collection(db, name, before_timestamp):
+    """Delete all mutations older than before-timestamp from a collection."""
+    engine = _open_engine(db)
+    result = engine.admin.purge_operational_collection(
+        name, before_timestamp=before_timestamp
+    )
+    click.echo(json.dumps(_asdict_json_safe(result)))
+
+
+@admin.command("disable-operational-collection")
+@click.option("--db", required=True)
+@click.option("--name", required=True)
+def disable_operational_collection(db, name):
+    """Disable an operational collection, preventing new writes."""
+    engine = _open_engine(db)
+    result = engine.admin.disable_operational_collection(name)
+    click.echo(json.dumps(_asdict_json_safe(result)))
