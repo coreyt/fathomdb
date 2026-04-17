@@ -700,6 +700,12 @@ export class SearchBuilder {
     return this.#withFilter({ type: "filter_json_fused_timestamp_lte", path, value });
   }
 
+  /** Filter hits where the JSON boolean property at `path` equals `value`, with fusion semantics. */
+  filterJsonFusedBoolEq(path: string, value: boolean): SearchBuilder {
+    validateFusablePropertyPath(this.#core, this.#rootKind, path, "filterJsonFusedBoolEq");
+    return this.#withFilter({ type: "filter_json_fused_bool_eq", path, value });
+  }
+
   /**
    * Execute the search and return the matched rows.
    *
@@ -962,6 +968,12 @@ export class TextSearchBuilder {
     return this.#withFilter({ type: "filter_json_fused_timestamp_lte", path, value });
   }
 
+  /** Filter hits where the JSON boolean property at `path` equals `value`, with fusion semantics. */
+  filterJsonFusedBoolEq(path: string, value: boolean): TextSearchBuilder {
+    validateFusablePropertyPath(this.#core, this.#rootKind, path, "filterJsonFusedBoolEq");
+    return this.#withFilter({ type: "filter_json_fused_bool_eq", path, value });
+  }
+
   /**
    * Execute the search and return the matched rows.
    *
@@ -1183,6 +1195,13 @@ export class FallbackSearchBuilder {
     const kind = this.#fusedKind("filterJsonFusedTimestampLte");
     validateFusablePropertyPath(this.#core, kind, path, "filterJsonFusedTimestampLte");
     return this.#withFilter({ type: "filter_json_fused_timestamp_lte", path, value });
+  }
+
+  /** Filter hits where the JSON boolean property at `path` equals `value`, with fusion semantics. */
+  filterJsonFusedBoolEq(path: string, value: boolean): FallbackSearchBuilder {
+    const kind = this.#fusedKind("filterJsonFusedBoolEq");
+    validateFusablePropertyPath(this.#core, kind, path, "filterJsonFusedBoolEq");
+    return this.#withFilter({ type: "filter_json_fused_bool_eq", path, value });
   }
 
   /**

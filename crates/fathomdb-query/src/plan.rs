@@ -134,6 +134,9 @@ pub fn shape_signature(ast: &QueryAst) -> String {
                     };
                     let _ = write!(&mut signature, "-Filter(json_fused_ts_cmp:{path}:{op})");
                 }
+                Predicate::JsonPathFusedBoolEq { path, .. } => {
+                    let _ = write!(&mut signature, "-Filter(json_fused_bool_eq:{path})");
+                }
             },
         }
     }

@@ -230,6 +230,15 @@ pub enum PySearchFilter {
         /// Target value.
         value: i64,
     },
+    /// Fused JSON-path boolean equality predicate. Landing SQL is pushed
+    /// into the inner search CTE WHERE. See the `filter_json_fused_*`
+    /// contract in `crates/fathomdb/src/search.rs`.
+    FilterJsonFusedBoolEq {
+        /// Property JSON path.
+        path: String,
+        /// Target value.
+        value: bool,
+    },
 }
 
 impl From<PySearchFilter> for QueryStep {
@@ -322,6 +331,9 @@ impl From<PySearchFilter> for QueryStep {
                     op: ComparisonOp::Lte,
                     value,
                 })
+            }
+            PySearchFilter::FilterJsonFusedBoolEq { path, value } => {
+                QueryStep::Filter(Predicate::JsonPathFusedBoolEq { path, value })
             }
         }
     }
