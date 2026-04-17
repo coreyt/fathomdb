@@ -1,3 +1,4 @@
+import dataclasses
 import json
 import sys
 
@@ -179,6 +180,122 @@ def get_vec_profile(db, kind):
                 }
             )
         )
+
+
+@admin.command("check-integrity")
+@click.option("--db", required=True, help="Path to database file")
+def check_integrity(db):
+    """Run physical and logical integrity checks."""
+    engine = _open_engine(db)
+    report = engine.admin.check_integrity()
+    click.echo(json.dumps(dataclasses.asdict(report)))
+
+
+@admin.command("check-semantics")
+@click.option("--db", required=True, help="Path to database file")
+def check_semantics(db):
+    """Run semantic consistency checks."""
+    engine = _open_engine(db)
+    report = engine.admin.check_semantics()
+    click.echo(json.dumps(dataclasses.asdict(report)))
+
+
+@admin.command("rebuild")
+@click.option("--db", required=True, help="Path to database file")
+@click.option(
+    "--target",
+    default="all",
+    type=click.Choice(["all", "fts", "vec"]),
+    help="Which projections to rebuild",
+)
+def rebuild(db, target):
+    """Rebuild projection indexes (FTS, vector, or all)."""
+    engine = _open_engine(db)
+    report = engine.admin.rebuild(target)
+    click.echo(
+        json.dumps(
+            {
+                "targets": [t.value for t in report.targets],
+                "rebuilt_rows": report.rebuilt_rows,
+                "notes": report.notes,
+            }
+        )
+    )
+
+
+@admin.command("register-fts-property-schema")
+@click.option("--db", required=True, help="Path to database file")
+@click.option("--kind", required=True, help="Node kind")
+@click.option(
+    "--paths", multiple=True, required=True, help="JSON path strings to index"
+)
+def register_fts_property_schema(db, kind, paths):
+    """Register (or update) the FTS property schema for a node kind."""
+    engine = _open_engine(db)
+    record = engine.admin.register_fts_property_schema(kind, list(paths))
+    click.echo(
+        json.dumps(
+            {
+                "kind": record.kind,
+                "property_paths": list(record.property_paths),
+                "separator": record.separator,
+                "format_version": record.format_version,
+            }
+        )
+    )
+
+
+@admin.command("describe-fts-property-schema")
+@click.option("--db", required=True, help="Path to database file")
+@click.option("--kind", required=True, help="Node kind")
+def describe_fts_property_schema(db, kind):
+    """Show the registered FTS property schema for a node kind."""
+    engine = _open_engine(db)
+    record = engine.admin.describe_fts_property_schema(kind)
+    if record is None:
+        click.echo(f"No FTS property schema for kind '{kind}'")
+    else:
+        click.echo(
+            json.dumps(
+                {
+                    "kind": record.kind,
+                    "property_paths": list(record.property_paths),
+                    "separator": record.separator,
+                    "format_version": record.format_version,
+                }
+            )
+        )
+
+
+@admin.command("list-fts-property-schemas")
+@click.option("--db", required=True, help="Path to database file")
+def list_fts_property_schemas(db):
+    """List all registered FTS property schemas."""
+    engine = _open_engine(db)
+    records = engine.admin.list_fts_property_schemas()
+    click.echo(
+        json.dumps(
+            [
+                {
+                    "kind": record.kind,
+                    "property_paths": list(record.property_paths),
+                    "separator": record.separator,
+                    "format_version": record.format_version,
+                }
+                for record in records
+            ]
+        )
+    )
+
+
+@admin.command("remove-fts-property-schema")
+@click.option("--db", required=True, help="Path to database file")
+@click.option("--kind", required=True, help="Node kind")
+def remove_fts_property_schema(db, kind):
+    """Remove the FTS property schema for a node kind."""
+    engine = _open_engine(db)
+    engine.admin.remove_fts_property_schema(kind)
+    click.echo(f"Removed FTS property schema for kind '{kind}'")
 
 
 def _resolve_embedder(name: str):
