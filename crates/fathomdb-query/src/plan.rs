@@ -169,10 +169,26 @@ pub fn shape_signature(ast: &QueryAst) -> String {
             TraverseDirection::In => "in",
             TraverseDirection::Out => "out",
         };
+        let edge_filter_str = match &expansion.edge_filter {
+            None => String::new(),
+            Some(Predicate::EdgePropertyEq { path, .. }) => {
+                format!(",edge_eq:{path}")
+            }
+            Some(Predicate::EdgePropertyCompare { path, op, .. }) => {
+                let op_str = match op {
+                    crate::ComparisonOp::Gt => "gt",
+                    crate::ComparisonOp::Gte => "gte",
+                    crate::ComparisonOp::Lt => "lt",
+                    crate::ComparisonOp::Lte => "lte",
+                };
+                format!(",edge_cmp:{path}:{op_str}")
+            }
+            Some(_) => ",edge_filter:other".to_owned(),
+        };
         let _ = write!(
             &mut signature,
-            "-Expand(slot={},direction={dir},label={},depth={})",
-            expansion.slot, expansion.label, expansion.max_depth
+            "-Expand(slot={},direction={dir},label={},depth={}{})",
+            expansion.slot, expansion.label, expansion.max_depth, edge_filter_str
         );
     }
 
@@ -221,5 +237,70 @@ mod tests {
 
         let hints = execution_hints(&ast);
         assert_eq!(hints.hard_limit, 1000, "hard_limit defaults to 1000");
+    }
+
+    #[test]
+    fn shape_signature_differs_for_different_edge_filters() {
+        use crate::{ComparisonOp, ExpansionSlot, Predicate, QueryAst, ScalarValue};
+
+        let base_expansion = ExpansionSlot {
+            slot: "tasks".to_owned(),
+            direction: TraverseDirection::Out,
+            label: "HAS_TASK".to_owned(),
+            max_depth: 1,
+            filter: None,
+            edge_filter: None,
+        };
+
+        let ast_no_filter = QueryAst {
+            root_kind: "Meeting".to_owned(),
+            steps: vec![],
+            expansions: vec![base_expansion.clone()],
+            final_limit: None,
+        };
+
+        let ast_with_eq_filter = QueryAst {
+            root_kind: "Meeting".to_owned(),
+            steps: vec![],
+            expansions: vec![ExpansionSlot {
+                edge_filter: Some(Predicate::EdgePropertyEq {
+                    path: "$.rel".to_owned(),
+                    value: ScalarValue::Text("cites".to_owned()),
+                }),
+                ..base_expansion.clone()
+            }],
+            final_limit: None,
+        };
+
+        let ast_with_cmp_filter = QueryAst {
+            root_kind: "Meeting".to_owned(),
+            steps: vec![],
+            expansions: vec![ExpansionSlot {
+                edge_filter: Some(Predicate::EdgePropertyCompare {
+                    path: "$.weight".to_owned(),
+                    op: ComparisonOp::Gt,
+                    value: ScalarValue::Integer(5),
+                }),
+                ..base_expansion
+            }],
+            final_limit: None,
+        };
+
+        let sig_no_filter = super::shape_signature(&ast_no_filter);
+        let sig_eq_filter = super::shape_signature(&ast_with_eq_filter);
+        let sig_cmp_filter = super::shape_signature(&ast_with_cmp_filter);
+
+        assert_ne!(
+            sig_no_filter, sig_eq_filter,
+            "no edge_filter and EdgePropertyEq must produce different signatures"
+        );
+        assert_ne!(
+            sig_no_filter, sig_cmp_filter,
+            "no edge_filter and EdgePropertyCompare must produce different signatures"
+        );
+        assert_ne!(
+            sig_eq_filter, sig_cmp_filter,
+            "EdgePropertyEq and EdgePropertyCompare must produce different signatures"
+        );
     }
 }

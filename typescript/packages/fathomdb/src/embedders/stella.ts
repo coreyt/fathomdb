@@ -2,12 +2,11 @@ import type { QueryEmbedder } from "./index.js";
 
 const MODEL = "stella_en_400M_v5";
 const DEFAULT_DIMENSIONS = 1024;
-const DEFAULT_BASE_URL = "https://api.stella.ai/v1";
 
 export interface StellaEmbedderOptions {
   apiKey: string;
   dimensions?: number;
-  baseUrl?: string;
+  baseUrl: string;
 }
 
 export class StellaEmbedder implements QueryEmbedder {

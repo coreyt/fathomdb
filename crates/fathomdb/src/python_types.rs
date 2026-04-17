@@ -1713,6 +1713,7 @@ mod tests {
                 properties: r#"{"a":1}"#.into(),
                 content_ref: None,
                 last_accessed_at: Some(1_700_000_000),
+                edge_properties: None,
             }],
             runs: vec![RunRow {
                 id: "run1".into(),
@@ -1843,6 +1844,7 @@ mod tests {
             properties: r#"{"title":"standup"}"#.into(),
             content_ref: Some("s3://bucket/standup.pdf".into()),
             last_accessed_at: Some(1_710_000_000),
+            edge_properties: None,
         };
         let py = PyNodeRow::from(row);
         let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
@@ -1853,6 +1855,7 @@ mod tests {
         assert_eq!(json["properties"], r#"{"title":"standup"}"#);
         assert_eq!(json["content_ref"], "s3://bucket/standup.pdf");
         assert_eq!(json["last_accessed_at"], 1_710_000_000_i64);
+        assert!(json["edge_properties"].is_null());
     }
 
     #[test]
@@ -1867,11 +1870,32 @@ mod tests {
             properties: "{}".into(),
             content_ref: None,
             last_accessed_at: None,
+            edge_properties: None,
         };
         let py = PyNodeRow::from(row);
         let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
 
         assert!(json["last_accessed_at"].is_null());
+    }
+
+    #[test]
+    fn node_row_serializes_edge_properties_when_present() {
+        use super::PyNodeRow;
+        use crate::NodeRow;
+
+        let row = NodeRow {
+            row_id: "r2".into(),
+            logical_id: "l2".into(),
+            kind: "Doc".into(),
+            properties: "{}".into(),
+            content_ref: None,
+            last_accessed_at: None,
+            edge_properties: Some(r#"{"rel":"cites"}"#.into()),
+        };
+        let py = PyNodeRow::from(row);
+        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+
+        assert_eq!(json["edge_properties"], r#"{"rel":"cites"}"#);
     }
 
     #[test]
@@ -1947,6 +1971,7 @@ pub struct PyNodeRow {
     pub properties: String,
     pub content_ref: Option<String>,
     pub last_accessed_at: Option<i64>,
+    pub edge_properties: Option<String>,
 }
 
 impl From<NodeRow> for PyNodeRow {
@@ -1958,6 +1983,7 @@ impl From<NodeRow> for PyNodeRow {
             properties: value.properties,
             content_ref: value.content_ref,
             last_accessed_at: value.last_accessed_at,
+            edge_properties: value.edge_properties,
         }
     }
 }

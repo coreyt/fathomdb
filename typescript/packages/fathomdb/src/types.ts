@@ -110,6 +110,7 @@ export type NodeRow = {
   properties: unknown;
   contentRef: string | null;
   lastAccessedAt: number | null;
+  edgeProperties: unknown | null;
 };
 
 function nodeRowFromWire(w: Record<string, unknown>): NodeRow {
@@ -120,6 +121,7 @@ function nodeRowFromWire(w: Record<string, unknown>): NodeRow {
     properties: parseJsonField(w.properties),
     contentRef: (w.content_ref as string) ?? null,
     lastAccessedAt: w.last_accessed_at != null ? Number(w.last_accessed_at) : null,
+    edgeProperties: w.edge_properties != null ? parseJsonField(w.edge_properties as string) : null,
   };
 }
 

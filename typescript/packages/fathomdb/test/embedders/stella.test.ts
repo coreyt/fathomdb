@@ -11,7 +11,8 @@ function makeFetchMock(embedding: number[]) {
 }
 
 describe("StellaEmbedder construction guard", () => {
-  it("throws when no baseUrl is provided", () => {
+  it("throws when no baseUrl is provided (JS caller without type check)", () => {
+    // @ts-expect-error — intentionally bypassing required baseUrl to test runtime guard
     expect(() => new StellaEmbedder({ apiKey: "test-key" })).toThrow(
       "no hosted API exists",
     );

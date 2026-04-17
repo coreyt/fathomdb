@@ -57,11 +57,13 @@ fn compile_expansion_in_filter(
 /// identical SQL to pre-Pack-3 behavior. When `Some(predicate)`, returns an
 /// `AND …` fragment and the corresponding bind values starting at `first_param`.
 ///
-/// Only `JsonPathEq`, `JsonPathCompare`, `JsonPathFusedEq`, and
-/// `JsonPathFusedTimestampCmp` are supported here; each variant targets the
-/// `n.properties` column already present in the `numbered` CTE join.
-/// Column-direct predicates (`KindEq`, `LogicalIdEq`, etc.) reference `n.kind`
-/// and similar columns that are also available in the `numbered` CTE.
+/// Supported predicates and their targets in the `numbered` CTE:
+/// - `JsonPathEq`, `JsonPathCompare`, `JsonPathFusedEq`, `JsonPathFusedTimestampCmp`,
+///   `JsonPathFusedBoolEq`, `JsonPathFusedIn`, `JsonPathIn`: target `n.properties`.
+/// - `KindEq`, `LogicalIdEq`, `SourceRefEq`, `ContentRefEq`, `ContentRefNotNull`:
+///   column-direct predicates on `n.kind`, `n.logical_id`, `n.source_ref`, `n.content_ref`.
+/// - `EdgePropertyEq`, `EdgePropertyCompare`: rejected with `unreachable!` — these
+///   target edge properties and must be compiled via `compile_edge_filter` instead.
 #[allow(clippy::too_many_lines)]
 fn compile_expansion_filter(
     filter: Option<&Predicate>,
