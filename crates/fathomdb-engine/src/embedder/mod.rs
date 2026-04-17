@@ -87,3 +87,25 @@ pub enum EmbedderError {
     #[error("embedding failed: {0}")]
     Failed(String),
 }
+
+/// A write-time batch embedder used by `regenerate_vector_embeddings_in_process`.
+///
+/// Unlike [`QueryEmbedder`] (which operates one query at a time for read-time
+/// vector search), `BatchEmbedder` accepts a slice of texts and returns a
+/// vector per input. This is more efficient for write-time regeneration
+/// where all chunk texts can be processed together.
+pub trait BatchEmbedder: Send + Sync {
+    /// Embed a batch of texts. Returns one `Vec<f32>` per input text, in
+    /// the same order.
+    ///
+    /// # Errors
+    /// Returns [`EmbedderError`] if the embedder cannot process the batch.
+    fn batch_embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, EmbedderError>;
+
+    /// Model identity metadata. Must match the write-time contract for the
+    /// vec table being written.
+    fn identity(&self) -> QueryEmbedderIdentity;
+
+    /// Maximum number of tokens this embedder can process per text chunk.
+    fn max_tokens(&self) -> usize;
+}

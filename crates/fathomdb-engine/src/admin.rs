@@ -15,7 +15,7 @@ use crate::rebuild_actor::{RebuildMode, RebuildRequest, RebuildStateRow};
 
 use crate::{
     EngineError, ProjectionRepairReport, ProjectionService,
-    embedder::{QueryEmbedder, QueryEmbedderIdentity},
+    embedder::{BatchEmbedder, QueryEmbedder, QueryEmbedderIdentity},
     ids::new_id,
     operational::{
         OperationalCollectionKind, OperationalCollectionRecord, OperationalCompactionReport,
@@ -2370,6 +2370,210 @@ impl AdminService {
                     return Err(failure.to_engine_error());
                 }
             };
+            if vector.len() != identity.dimension {
+                let failure = VectorRegenerationFailure::new(
+                    VectorRegenerationFailureClass::InvalidEmbedderOutput,
+                    format!(
+                        "embedder produced {} values for chunk '{}', expected {}",
+                        vector.len(),
+                        chunk.chunk_id,
+                        identity.dimension
+                    ),
+                );
+                self.persist_vector_regeneration_failure_best_effort(
+                    &config.profile,
+                    &audit_metadata,
+                    &failure,
+                );
+                return Err(failure.to_engine_error());
+            }
+            if vector.iter().any(|value| !value.is_finite()) {
+                let failure = VectorRegenerationFailure::new(
+                    VectorRegenerationFailureClass::InvalidEmbedderOutput,
+                    format!(
+                        "embedder returned non-finite values for chunk '{}'",
+                        chunk.chunk_id
+                    ),
+                );
+                self.persist_vector_regeneration_failure_best_effort(
+                    &config.profile,
+                    &audit_metadata,
+                    &failure,
+                );
+                return Err(failure.to_engine_error());
+            }
+            let bytes: Vec<u8> = vector
+                .iter()
+                .flat_map(|value| value.to_le_bytes())
+                .collect();
+            embedding_map.insert(chunk.chunk_id.clone(), bytes);
+        }
+
+        let mut conn = conn;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        match self.schema_manager.ensure_vector_profile(
+            &tx,
+            &config.profile,
+            &config.table_name,
+            identity.dimension,
+        ) {
+            Ok(()) => {}
+            Err(SchemaError::MissingCapability(message)) => {
+                let failure = VectorRegenerationFailure::new(
+                    VectorRegenerationFailureClass::UnsupportedVecCapability,
+                    message,
+                );
+                drop(tx);
+                self.persist_vector_regeneration_failure_best_effort(
+                    &config.profile,
+                    &audit_metadata,
+                    &failure,
+                );
+                return Err(failure.to_engine_error());
+            }
+            Err(error) => return Err(EngineError::Schema(error)),
+        }
+        let apply_chunks = collect_regeneration_chunks(&tx)?;
+        let apply_payload = build_regeneration_input(&config, &identity, apply_chunks.clone());
+        let apply_hash = compute_snapshot_hash(&apply_payload)?;
+        if apply_hash != snapshot_hash {
+            let failure = VectorRegenerationFailure::new(
+                VectorRegenerationFailureClass::SnapshotDrift,
+                "chunk snapshot changed during generation; retry".to_owned(),
+            );
+            drop(tx);
+            self.persist_vector_regeneration_failure_best_effort(
+                &config.profile,
+                &audit_metadata,
+                &failure,
+            );
+            return Err(failure.to_engine_error());
+        }
+        persist_vector_contract(&tx, &config, &identity, &snapshot_hash)?;
+        tx.execute("DELETE FROM vec_nodes_active", [])?;
+        let mut stmt = tx
+            .prepare_cached("INSERT INTO vec_nodes_active (chunk_id, embedding) VALUES (?1, ?2)")?;
+        let mut regenerated_rows = 0usize;
+        for chunk in &apply_chunks {
+            let Some(embedding) = embedding_map.remove(&chunk.chunk_id) else {
+                drop(stmt);
+                drop(tx);
+                let failure = VectorRegenerationFailure::new(
+                    VectorRegenerationFailureClass::InvalidEmbedderOutput,
+                    format!(
+                        "embedder did not produce a vector for chunk '{}'",
+                        chunk.chunk_id
+                    ),
+                );
+                self.persist_vector_regeneration_failure_best_effort(
+                    &config.profile,
+                    &audit_metadata,
+                    &failure,
+                );
+                return Err(failure.to_engine_error());
+            };
+            stmt.execute(rusqlite::params![chunk.chunk_id.as_str(), embedding])?;
+            regenerated_rows += 1;
+        }
+        drop(stmt);
+        persist_vector_regeneration_event(
+            &tx,
+            "vector_regeneration_apply",
+            &config.profile,
+            &audit_metadata,
+        )?;
+        tx.commit()?;
+
+        Ok(VectorRegenerationReport {
+            profile: config.profile.clone(),
+            table_name: config.table_name.clone(),
+            dimension: identity.dimension,
+            total_chunks: chunks.len(),
+            regenerated_rows,
+            contract_persisted: true,
+            notes,
+        })
+    }
+
+    /// Regenerate vector embeddings in-process using a [`BatchEmbedder`].
+    ///
+    /// Functionally equivalent to [`regenerate_vector_embeddings`] but uses
+    /// `BatchEmbedder::batch_embed` to process all chunks in one call. This
+    /// is the intended path for [`BuiltinBgeSmallEmbedder`] — it keeps the
+    /// forward pass in-process without requiring an external subprocess.
+    ///
+    /// The subprocess-based path ([`regenerate_vector_embeddings`]) remains
+    /// intact for callers who supply their own generator binary.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the database connection fails, the config is
+    /// invalid, the embedder fails, or the regenerated embeddings are malformed.
+    #[allow(clippy::too_many_lines)]
+    pub fn regenerate_vector_embeddings_in_process(
+        &self,
+        embedder: &dyn BatchEmbedder,
+        config: &VectorRegenerationConfig,
+    ) -> Result<VectorRegenerationReport, EngineError> {
+        let conn = self.connect()?;
+        let identity = embedder.identity();
+        let config = validate_vector_regeneration_config(&conn, config, &identity)
+            .map_err(|failure| failure.to_engine_error())?;
+        let chunks = collect_regeneration_chunks(&conn)?;
+        let payload = build_regeneration_input(&config, &identity, chunks.clone());
+        let snapshot_hash = compute_snapshot_hash(&payload)?;
+        let audit_metadata = VectorRegenerationAuditMetadata {
+            profile: config.profile.clone(),
+            model_identity: identity.model_identity.clone(),
+            model_version: identity.model_version.clone(),
+            chunk_count: chunks.len(),
+            snapshot_hash: snapshot_hash.clone(),
+            failure_class: None,
+        };
+        persist_vector_regeneration_event(
+            &conn,
+            "vector_regeneration_requested",
+            &config.profile,
+            &audit_metadata,
+        )?;
+        let notes = vec!["vector embeddings regenerated via in-process batch embedder".to_owned()];
+
+        // Collect texts and call batch_embed once for all chunks.
+        let chunk_texts: Vec<String> = chunks.iter().map(|c| c.text_content.clone()).collect();
+        let batch_vectors = match embedder.batch_embed(&chunk_texts) {
+            Ok(vecs) => vecs,
+            Err(error) => {
+                let failure = VectorRegenerationFailure::new(
+                    VectorRegenerationFailureClass::EmbedderFailure,
+                    format!("batch embedder failed: {error}"),
+                );
+                self.persist_vector_regeneration_failure_best_effort(
+                    &config.profile,
+                    &audit_metadata,
+                    &failure,
+                );
+                return Err(failure.to_engine_error());
+            }
+        };
+        if batch_vectors.len() != chunks.len() {
+            let failure = VectorRegenerationFailure::new(
+                VectorRegenerationFailureClass::InvalidEmbedderOutput,
+                format!(
+                    "batch embedder returned {} vectors for {} chunks",
+                    batch_vectors.len(),
+                    chunks.len()
+                ),
+            );
+            self.persist_vector_regeneration_failure_best_effort(
+                &config.profile,
+                &audit_metadata,
+                &failure,
+            );
+            return Err(failure.to_engine_error());
+        }
+
+        let mut embedding_map: std::collections::HashMap<String, Vec<u8>> =
+            std::collections::HashMap::with_capacity(chunks.len());
+        for (chunk, vector) in chunks.iter().zip(batch_vectors.into_iter()) {
             if vector.len() != identity.dimension {
                 let failure = VectorRegenerationFailure::new(
                     VectorRegenerationFailureClass::InvalidEmbedderOutput,
@@ -5305,7 +5509,7 @@ mod tests {
         AdminService, FtsPropertyPathMode, FtsPropertyPathSpec, SafeExportOptions,
         VectorRegenerationConfig,
     };
-    use crate::embedder::{EmbedderError, QueryEmbedder, QueryEmbedderIdentity};
+    use crate::embedder::{BatchEmbedder, EmbedderError, QueryEmbedder, QueryEmbedderIdentity};
     use crate::projection::ProjectionTarget;
     use crate::sqlite;
     use crate::{EngineError, OperationalCollectionKind, OperationalRegisterRequest};
@@ -5347,6 +5551,18 @@ mod tests {
     impl QueryEmbedder for TestEmbedder {
         fn embed_query(&self, _text: &str) -> Result<Vec<f32>, EmbedderError> {
             Ok(self.vector.clone())
+        }
+        fn identity(&self) -> QueryEmbedderIdentity {
+            self.identity.clone()
+        }
+        fn max_tokens(&self) -> usize {
+            512
+        }
+    }
+
+    impl BatchEmbedder for TestEmbedder {
+        fn batch_embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, EmbedderError> {
+            Ok(texts.iter().map(|_| self.vector.clone()).collect())
         }
         fn identity(&self) -> QueryEmbedderIdentity {
             self.identity.clone()
@@ -10442,5 +10658,90 @@ mod tests {
         fn max_tokens(&self) -> usize {
             self.max_tokens
         }
+    }
+
+    /// Item 7 integration test: register schema, write nodes, call
+    /// `regenerate_vector_embeddings_in_process`, verify contract row and
+    /// that vec rows exist for every chunk.
+    #[cfg(feature = "sqlite-vec")]
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn regenerate_vector_embeddings_in_process_writes_contract_and_vec_rows() {
+        let db = NamedTempFile::new().expect("temp file");
+        let schema = Arc::new(SchemaManager::new());
+
+        {
+            let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
+            schema.bootstrap(&conn).expect("bootstrap");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('r1', 'node-1', 'Doc', '{}', 100, 'src1')",
+                [],
+            )
+            .expect("insert node 1");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('r2', 'node-2', 'Doc', '{}', 101, 'src2')",
+                [],
+            )
+            .expect("insert node 2");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('r3', 'node-3', 'Doc', '{}', 102, 'src3')",
+                [],
+            )
+            .expect("insert node 3");
+            conn.execute(
+                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
+                 VALUES ('c1', 'node-1', 'first document text', 100)",
+                [],
+            )
+            .expect("insert chunk 1");
+            conn.execute(
+                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
+                 VALUES ('c2', 'node-2', 'second document text', 101)",
+                [],
+            )
+            .expect("insert chunk 2");
+            conn.execute(
+                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
+                 VALUES ('c3', 'node-3', 'third document text', 102)",
+                [],
+            )
+            .expect("insert chunk 3");
+        }
+
+        let service = AdminService::new(db.path(), Arc::clone(&schema));
+        let embedder = TestEmbedder::new("batch-test-model", 4);
+        let config = VectorRegenerationConfig {
+            profile: "default".to_owned(),
+            table_name: "vec_nodes_active".to_owned(),
+            chunking_policy: "per_chunk".to_owned(),
+            preprocessing_policy: "trim".to_owned(),
+        };
+        let report = service
+            .regenerate_vector_embeddings_in_process(&embedder, &config)
+            .expect("in-process regen must succeed");
+
+        assert_eq!(report.total_chunks, 3);
+        assert_eq!(report.regenerated_rows, 3);
+        assert!(report.contract_persisted);
+
+        let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
+        let vec_count: i64 = conn
+            .query_row("SELECT count(*) FROM vec_nodes_active", [], |row| {
+                row.get(0)
+            })
+            .expect("vec count");
+        assert_eq!(vec_count, 3, "one vec row per chunk");
+
+        let model_identity: String = conn
+            .query_row(
+                "SELECT model_identity FROM vector_embedding_contracts WHERE profile = 'default'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("contract row");
+        assert_eq!(model_identity, "batch-test-model");
     }
 }
