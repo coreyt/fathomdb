@@ -1313,7 +1313,7 @@ fn attribution_works_under_relaxed_branch() {
 #[test]
 fn attribution_empty_for_chunk_only_hit() {
     // Chunk hits have no leaf structure — with attribution on, they carry
-    // an empty `matched_paths` vector (not `None`), so callers can
+    // `matched_paths = ["text_content"]` (not `None`), so callers can
     // distinguish "asked for and this hit doesn't qualify" from "not
     // asked for."
     let (_db, engine) = open_engine();
@@ -1367,9 +1367,9 @@ fn attribution_empty_for_chunk_only_hit() {
     assert_eq!(
         hit.attribution,
         Some(HitAttribution {
-            matched_paths: Vec::new(),
+            matched_paths: vec!["text_content".to_owned()],
         }),
-        "chunk hit must carry present-but-empty attribution",
+        "chunk hit must carry matched_paths=[\"text_content\"]",
     );
 }
 
@@ -1459,9 +1459,10 @@ fn attribution_populated_for_every_hit_when_flag_on() {
             }
             SearchHitSource::Chunk => {
                 let att = hit.attribution.as_ref().expect("attribution some");
-                assert!(
-                    att.matched_paths.is_empty(),
-                    "chunk hit attribution must be empty, got {:?}",
+                assert_eq!(
+                    att.matched_paths,
+                    vec!["text_content".to_owned()],
+                    "chunk hit attribution must be [\"text_content\"], got {:?}",
                     att.matched_paths,
                 );
                 saw_chunk_empty = true;

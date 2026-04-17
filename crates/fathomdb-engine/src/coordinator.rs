@@ -3075,8 +3075,8 @@ fn find_leaf_for_offset(positions: &[(usize, usize, String)], offset: usize) -> 
 /// for the hit's row via `highlight()` and mapping the resulting original-
 /// text offsets back to recursive-leaf paths via the Phase 4 position map.
 ///
-/// Chunk-backed hits carry no leaf structure and always return an empty
-/// `matched_paths` vector. Property-backed hits without a `projection_row_id`
+/// Chunk-backed hits carry no leaf structure and always return
+/// `matched_paths = ["text_content"]`. Property-backed hits without a `projection_row_id`
 /// (which should not happen — the search CTE always populates it) also
 /// return empty attribution rather than erroring.
 fn resolve_hit_attribution(
@@ -3084,6 +3084,11 @@ fn resolve_hit_attribution(
     hit: &SearchHit,
     match_expr: &str,
 ) -> Result<HitAttribution, EngineError> {
+    if matches!(hit.source, SearchHitSource::Chunk) {
+        return Ok(HitAttribution {
+            matched_paths: vec!["text_content".to_owned()],
+        });
+    }
     if !matches!(hit.source, SearchHitSource::Property) {
         return Ok(HitAttribution {
             matched_paths: Vec::new(),
@@ -4947,18 +4952,14 @@ mod tests {
             .find(|h| matches!(h.source, SearchHitSource::Chunk))
             .expect("must have a Chunk hit");
 
-        // Current placeholder behavior: chunk hits carry present-but-empty
-        // matched_paths.  The target behavior (per C-1 spec) is
-        // matched_paths == ["text_content"].  Blocked on integration test
-        // update in text_search_surface.rs.
         let att = hit
             .attribution
             .as_ref()
             .expect("attribution must be Some when attribution_requested");
-        assert!(
-            att.matched_paths.is_empty(),
-            "placeholder: chunk matched_paths must be empty until integration \
-             tests are updated; got {:?}",
+        assert_eq!(
+            att.matched_paths,
+            vec!["text_content".to_owned()],
+            "chunk matched_paths must be [\"text_content\"], got {:?}",
             att.matched_paths,
         );
     }
