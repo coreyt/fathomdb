@@ -62,6 +62,7 @@ fn compile_expansion_in_filter(
 /// `n.properties` column already present in the `numbered` CTE join.
 /// Column-direct predicates (`KindEq`, `LogicalIdEq`, etc.) reference `n.kind`
 /// and similar columns that are also available in the `numbered` CTE.
+#[allow(clippy::too_many_lines)]
 fn compile_expansion_filter(
     filter: Option<&Predicate>,
     first_param: usize,

@@ -257,6 +257,7 @@ pub enum PySearchFilter {
 }
 
 impl From<PySearchFilter> for QueryStep {
+    #[allow(clippy::too_many_lines)]
     fn from(value: PySearchFilter) -> Self {
         match value {
             PySearchFilter::FilterKindEq { kind } => QueryStep::Filter(Predicate::KindEq(kind)),

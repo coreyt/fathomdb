@@ -10,9 +10,9 @@
 )]
 
 use fathomdb::{
-    ChunkInsert, ChunkPolicy, CompileError, EdgeInsert, Engine, EngineError, EngineOptions,
-    GroupedQueryRows, NodeInsert, Predicate, ScalarValue, TraverseDirection, WriteRequest,
-    new_row_id,
+    ChunkInsert, ChunkPolicy, ComparisonOp, CompileError, EdgeInsert, Engine, EngineError,
+    EngineOptions, GroupedQueryRows, NodeInsert, Predicate, ScalarValue, TraverseDirection,
+    WriteRequest, new_row_id,
 };
 use tempfile::NamedTempFile;
 
@@ -2087,5 +2087,316 @@ fn edge_property_filter_multihop_two_hops() {
     assert!(
         !ids.contains(&"mh-c"),
         "C must NOT be in results (only reachable via references edge)"
+    );
+}
+
+fn seed_weighted_citation_graph(engine: &Engine) {
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "seed-weighted-citation-graph".to_owned(),
+            nodes: vec![
+                NodeInsert {
+                    row_id: new_row_id(),
+                    logical_id: "paper-x".to_owned(),
+                    kind: "Paper".to_owned(),
+                    properties: r#"{"title":"Paper X"}"#.to_owned(),
+                    source_ref: None,
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
+                },
+                NodeInsert {
+                    row_id: new_row_id(),
+                    logical_id: "paper-y".to_owned(),
+                    kind: "Paper".to_owned(),
+                    properties: r#"{"title":"Paper Y"}"#.to_owned(),
+                    source_ref: None,
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
+                },
+                NodeInsert {
+                    row_id: new_row_id(),
+                    logical_id: "paper-z".to_owned(),
+                    kind: "Paper".to_owned(),
+                    properties: r#"{"title":"Paper Z"}"#.to_owned(),
+                    source_ref: None,
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
+                },
+                NodeInsert {
+                    row_id: new_row_id(),
+                    logical_id: "paper-w".to_owned(),
+                    kind: "Paper".to_owned(),
+                    properties: r#"{"title":"Paper W"}"#.to_owned(),
+                    source_ref: None,
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
+                },
+            ],
+            node_retires: vec![],
+            edges: vec![
+                // x→y: weight=10
+                EdgeInsert {
+                    row_id: new_row_id(),
+                    logical_id: "edge-x-y-cites".to_owned(),
+                    source_logical_id: "paper-x".to_owned(),
+                    target_logical_id: "paper-y".to_owned(),
+                    kind: "CITES".to_owned(),
+                    properties: r#"{"weight":10}"#.to_owned(),
+                    source_ref: None,
+                    upsert: false,
+                },
+                // x→z: weight=5
+                EdgeInsert {
+                    row_id: new_row_id(),
+                    logical_id: "edge-x-z-cites".to_owned(),
+                    source_logical_id: "paper-x".to_owned(),
+                    target_logical_id: "paper-z".to_owned(),
+                    kind: "CITES".to_owned(),
+                    properties: r#"{"weight":5}"#.to_owned(),
+                    source_ref: None,
+                    upsert: false,
+                },
+                // x→w: weight=1
+                EdgeInsert {
+                    row_id: new_row_id(),
+                    logical_id: "edge-x-w-cites".to_owned(),
+                    source_logical_id: "paper-x".to_owned(),
+                    target_logical_id: "paper-w".to_owned(),
+                    kind: "CITES".to_owned(),
+                    properties: r#"{"weight":1}"#.to_owned(),
+                    source_ref: None,
+                    upsert: false,
+                },
+            ],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![],
+        })
+        .expect("seed weighted citation graph");
+}
+
+#[test]
+fn edge_property_compare_gt_returns_only_matching_edges() {
+    // EdgePropertyCompare Gt: only edges with weight > 5 (i.e. weight=10) should pass.
+    let (_db, engine) = open_engine();
+    seed_weighted_citation_graph(&engine);
+
+    let edge_filter = Predicate::EdgePropertyCompare {
+        path: "$.weight".to_owned(),
+        op: ComparisonOp::Gt,
+        value: ScalarValue::Integer(5),
+    };
+
+    let compiled = engine
+        .query("Paper")
+        .filter_logical_id_eq("paper-x")
+        .expand(
+            "cited",
+            TraverseDirection::Out,
+            "CITES",
+            1,
+            None,
+            Some(edge_filter),
+        )
+        .compile_grouped()
+        .expect("grouped query compiles");
+
+    let rows = engine
+        .coordinator()
+        .execute_compiled_grouped_read(&compiled)
+        .expect("grouped query executes");
+
+    assert_eq!(rows.roots.len(), 1);
+    let nodes = &rows.expansions[0].roots[0].nodes;
+    let ids: Vec<&str> = nodes.iter().map(|n| n.logical_id.as_str()).collect();
+
+    assert_eq!(
+        nodes.len(),
+        1,
+        "only paper-y (weight=10) passes Gt(5); got {ids:?}"
+    );
+    assert!(
+        ids.contains(&"paper-y"),
+        "paper-y must be in results; got {ids:?}"
+    );
+    assert!(
+        !ids.contains(&"paper-z"),
+        "paper-z must NOT be in results (weight=5, not >5)"
+    );
+    assert!(
+        !ids.contains(&"paper-w"),
+        "paper-w must NOT be in results (weight=1, not >5)"
+    );
+}
+
+#[test]
+fn edge_property_compare_gte_returns_only_matching_edges() {
+    // EdgePropertyCompare Gte: weight >= 5 → paper-y (10) and paper-z (5).
+    let (_db, engine) = open_engine();
+    seed_weighted_citation_graph(&engine);
+
+    let edge_filter = Predicate::EdgePropertyCompare {
+        path: "$.weight".to_owned(),
+        op: ComparisonOp::Gte,
+        value: ScalarValue::Integer(5),
+    };
+
+    let compiled = engine
+        .query("Paper")
+        .filter_logical_id_eq("paper-x")
+        .expand(
+            "cited",
+            TraverseDirection::Out,
+            "CITES",
+            1,
+            None,
+            Some(edge_filter),
+        )
+        .compile_grouped()
+        .expect("grouped query compiles");
+
+    let rows = engine
+        .coordinator()
+        .execute_compiled_grouped_read(&compiled)
+        .expect("grouped query executes");
+
+    assert_eq!(rows.roots.len(), 1);
+    let nodes = &rows.expansions[0].roots[0].nodes;
+    let ids: Vec<&str> = nodes.iter().map(|n| n.logical_id.as_str()).collect();
+
+    assert_eq!(
+        nodes.len(),
+        2,
+        "paper-y (10) and paper-z (5) pass Gte(5); got {ids:?}"
+    );
+    assert!(
+        ids.contains(&"paper-y"),
+        "paper-y must be in results; got {ids:?}"
+    );
+    assert!(
+        ids.contains(&"paper-z"),
+        "paper-z must be in results; got {ids:?}"
+    );
+    assert!(
+        !ids.contains(&"paper-w"),
+        "paper-w must NOT be in results (weight=1, not >=5)"
+    );
+}
+
+#[test]
+fn edge_property_compare_lt_returns_only_matching_edges() {
+    // EdgePropertyCompare Lt: weight < 5 → paper-w (1) only.
+    let (_db, engine) = open_engine();
+    seed_weighted_citation_graph(&engine);
+
+    let edge_filter = Predicate::EdgePropertyCompare {
+        path: "$.weight".to_owned(),
+        op: ComparisonOp::Lt,
+        value: ScalarValue::Integer(5),
+    };
+
+    let compiled = engine
+        .query("Paper")
+        .filter_logical_id_eq("paper-x")
+        .expand(
+            "cited",
+            TraverseDirection::Out,
+            "CITES",
+            1,
+            None,
+            Some(edge_filter),
+        )
+        .compile_grouped()
+        .expect("grouped query compiles");
+
+    let rows = engine
+        .coordinator()
+        .execute_compiled_grouped_read(&compiled)
+        .expect("grouped query executes");
+
+    assert_eq!(rows.roots.len(), 1);
+    let nodes = &rows.expansions[0].roots[0].nodes;
+    let ids: Vec<&str> = nodes.iter().map(|n| n.logical_id.as_str()).collect();
+
+    assert_eq!(
+        nodes.len(),
+        1,
+        "only paper-w (weight=1) passes Lt(5); got {ids:?}"
+    );
+    assert!(
+        ids.contains(&"paper-w"),
+        "paper-w must be in results; got {ids:?}"
+    );
+    assert!(
+        !ids.contains(&"paper-y"),
+        "paper-y must NOT be in results (weight=10, not <5)"
+    );
+    assert!(
+        !ids.contains(&"paper-z"),
+        "paper-z must NOT be in results (weight=5, not <5)"
+    );
+}
+
+#[test]
+fn edge_property_compare_lte_returns_only_matching_edges() {
+    // EdgePropertyCompare Lte: weight <= 5 → paper-z (5) and paper-w (1).
+    let (_db, engine) = open_engine();
+    seed_weighted_citation_graph(&engine);
+
+    let edge_filter = Predicate::EdgePropertyCompare {
+        path: "$.weight".to_owned(),
+        op: ComparisonOp::Lte,
+        value: ScalarValue::Integer(5),
+    };
+
+    let compiled = engine
+        .query("Paper")
+        .filter_logical_id_eq("paper-x")
+        .expand(
+            "cited",
+            TraverseDirection::Out,
+            "CITES",
+            1,
+            None,
+            Some(edge_filter),
+        )
+        .compile_grouped()
+        .expect("grouped query compiles");
+
+    let rows = engine
+        .coordinator()
+        .execute_compiled_grouped_read(&compiled)
+        .expect("grouped query executes");
+
+    assert_eq!(rows.roots.len(), 1);
+    let nodes = &rows.expansions[0].roots[0].nodes;
+    let ids: Vec<&str> = nodes.iter().map(|n| n.logical_id.as_str()).collect();
+
+    assert_eq!(
+        nodes.len(),
+        2,
+        "paper-z (5) and paper-w (1) pass Lte(5); got {ids:?}"
+    );
+    assert!(
+        ids.contains(&"paper-z"),
+        "paper-z must be in results; got {ids:?}"
+    );
+    assert!(
+        ids.contains(&"paper-w"),
+        "paper-w must be in results; got {ids:?}"
+    );
+    assert!(
+        !ids.contains(&"paper-y"),
+        "paper-y must NOT be in results (weight=10, not <=5)"
     );
 }

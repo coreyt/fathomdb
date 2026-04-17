@@ -72,6 +72,7 @@ pub fn execution_hints(ast: &QueryAst) -> ExecutionHints {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn shape_signature(ast: &QueryAst) -> String {
     let mut signature = String::new();
     let _ = write!(&mut signature, "Root({})", ast.root_kind);
