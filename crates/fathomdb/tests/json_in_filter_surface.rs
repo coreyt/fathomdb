@@ -478,6 +478,7 @@ fn filter_json_text_in_on_grouped_query_filters_roots() {
         .expect("executes");
 
     let root_ids: Vec<&str> = rows.roots.iter().map(|r| r.logical_id.as_str()).collect();
+    assert_eq!(rows.roots.len(), 2, "exactly alpha and beta; got {root_ids:?}");
     assert!(
         root_ids.contains(&"parent-alpha"),
         "alpha must be in roots; got {root_ids:?}"

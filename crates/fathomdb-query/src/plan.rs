@@ -139,7 +139,7 @@ pub fn shape_signature(ast: &QueryAst) -> String {
                     let _ = write!(&mut signature, "-Filter(json_fused_bool_eq:{path})");
                 }
                 Predicate::EdgePropertyEq { path, .. } => {
-                    let _ = write!(&mut signature, "-Filter(edge_prop_eq:{path})");
+                    let _ = write!(&mut signature, "-Filter(edge_eq:{path})");
                 }
                 Predicate::EdgePropertyCompare { path, op, .. } => {
                     let op = match op {
@@ -148,7 +148,7 @@ pub fn shape_signature(ast: &QueryAst) -> String {
                         crate::ComparisonOp::Lt => "lt",
                         crate::ComparisonOp::Lte => "lte",
                     };
-                    let _ = write!(&mut signature, "-Filter(edge_prop_cmp:{path}:{op})");
+                    let _ = write!(&mut signature, "-Filter(edge_cmp:{path}:{op})");
                 }
                 Predicate::JsonPathFusedIn { path, values } => {
                     let _ = write!(

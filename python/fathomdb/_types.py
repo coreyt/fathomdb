@@ -327,10 +327,11 @@ class NodeRow:
     properties: Any
     content_ref: str | None = None
     last_accessed_at: int | None = None
-    edge_properties: str | None = None
+    edge_properties: Any | None = None
 
     @classmethod
     def from_wire(cls, payload: dict[str, Any]) -> "NodeRow":
+        raw_ep = payload.get("edge_properties")
         return cls(
             row_id=payload["row_id"],
             logical_id=payload["logical_id"],
@@ -338,7 +339,7 @@ class NodeRow:
             properties=_decode_json(payload["properties"]),
             content_ref=payload.get("content_ref"),
             last_accessed_at=payload.get("last_accessed_at"),
-            edge_properties=payload.get("edge_properties"),
+            edge_properties=_decode_json(raw_ep) if raw_ep is not None else None,
         )
 
 

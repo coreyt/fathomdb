@@ -758,6 +758,7 @@ impl From<CompiledGroupedQuery> for PyCompiledGroupedQuery {
                     label: slot.label,
                     max_depth: slot.max_depth,
                     filter: None,
+                    edge_filter: None,
                 })
                 .collect(),
             shape_hash: value.shape_hash.0,
