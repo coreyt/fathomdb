@@ -110,6 +110,7 @@ fn validate_json_path(path: &str) -> Result<(), CompileError> {
 /// pre-partition predicates via
 /// [`crate::fusion::partition_search_filters`]. Residual predicates panic via
 /// `unreachable!`.
+#[allow(clippy::too_many_lines)]
 fn append_fusable_clause(
     sql: &mut String,
     binds: &mut Vec<BindValue>,
