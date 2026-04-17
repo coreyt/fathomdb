@@ -1797,10 +1797,10 @@ fn v1_vector_search_round_trip() {
     let conn = rusqlite::Connection::open(db.path()).expect("conn");
     let count: i64 = conn
         .query_row(
-            "SELECT count(*) FROM vec_nodes_active WHERE chunk_id = ?1",
+            "SELECT count(*) FROM vec_document WHERE chunk_id = ?1",
             rusqlite::params![chunk_id],
             |row| row.get(0),
         )
         .expect("vec count");
-    assert_eq!(count, 1, "embedding must be persisted in vec_nodes_active");
+    assert_eq!(count, 1, "embedding must be persisted in vec_document");
 }

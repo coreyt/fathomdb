@@ -1916,15 +1916,6 @@ fn apply_write(
             "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref, content_ref) \
              VALUES (?1, ?2, ?3, ?4, unixepoch(), ?5, ?6)",
         )?;
-        #[cfg(feature = "sqlite-vec")]
-        let vec_del_sql2 = "DELETE FROM vec_nodes_active WHERE chunk_id IN \
-                            (SELECT id FROM chunks WHERE node_logical_id = ?1)";
-        #[cfg(feature = "sqlite-vec")]
-        let mut del_vec = match tx.prepare_cached(vec_del_sql2) {
-            Ok(stmt) => Some(stmt),
-            Err(ref e) if crate::coordinator::is_vec_table_absent(e) => None,
-            Err(e) => return Err(e.into()),
-        };
         for node in &prepared.nodes {
             if node.upsert {
                 // Property FTS rows are always replaced on upsert since properties change.
@@ -1948,9 +1939,19 @@ fn apply_write(
                 }
                 del_prop_positions.execute(params![node.logical_id])?;
                 if node.chunk_policy == ChunkPolicy::Replace {
+                    // 0.5.0: delete from the per-kind vec table instead of the global sentinel.
                     #[cfg(feature = "sqlite-vec")]
-                    if let Some(ref mut stmt) = del_vec {
-                        stmt.execute(params![node.logical_id])?;
+                    {
+                        let vec_table = fathomdb_schema::vec_kind_table_name(&node.kind);
+                        let del_sql = format!(
+                            "DELETE FROM {vec_table} WHERE chunk_id IN \
+                             (SELECT id FROM chunks WHERE node_logical_id = ?1)"
+                        );
+                        match tx.execute(&del_sql, params![node.logical_id]) {
+                            Ok(_) => {}
+                            Err(ref e) if crate::coordinator::is_vec_table_absent(e) => {}
+                            Err(e) => return Err(e.into()),
+                        }
                     }
                     del_fts.execute(params![node.logical_id])?;
                     del_chunks.execute(params![node.logical_id])?;
@@ -2368,22 +2369,55 @@ fn apply_write(
     }
 
     // Vec inserts (feature-gated; silently skipped when sqlite-vec is absent or table missing).
+    // 0.5.0: inserts target per-kind tables (vec_<sanitized_kind>) instead of vec_nodes_active.
     #[cfg(feature = "sqlite-vec")]
     {
-        match tx
-            .prepare_cached("INSERT INTO vec_nodes_active (chunk_id, embedding) VALUES (?1, ?2)")
-        {
-            Ok(mut ins_vec) => {
-                for vi in &prepared.vec_inserts {
-                    let bytes: Vec<u8> =
-                        vi.embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
-                    ins_vec.execute(params![vi.chunk_id, bytes])?;
-                }
-            }
-            Err(ref e) if crate::coordinator::is_vec_table_absent(e) => {
-                // vec profile absent: vec inserts are silently skipped.
-            }
-            Err(e) => return Err(e.into()),
+        // Build chunk_id → node_logical_id from the current request's chunks.
+        let chunk_to_node: std::collections::HashMap<&str, &str> = prepared
+            .chunks
+            .iter()
+            .map(|c| (c.id.as_str(), c.node_logical_id.as_str()))
+            .collect();
+
+        for vi in &prepared.vec_inserts {
+            // Resolve kind: prefer in-memory lookup; fall back to DB for pre-existing chunks.
+            let kind: Option<String> = chunk_to_node
+                .get(vi.chunk_id.as_str())
+                .and_then(|lid| prepared.node_kinds.get(*lid))
+                .cloned()
+                .or_else(|| {
+                    tx.query_row(
+                        "SELECT n.kind FROM chunks c \
+                         JOIN nodes n ON n.logical_id = c.node_logical_id \
+                         WHERE c.id = ?1 LIMIT 1",
+                        rusqlite::params![vi.chunk_id],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .optional()
+                    .unwrap_or(None)
+                });
+
+            let Some(kind) = kind else {
+                // No kind found — chunk not yet inserted; skip silently.
+                continue;
+            };
+
+            let table_name = fathomdb_schema::vec_kind_table_name(&kind);
+            let dimension = vi.embedding.len();
+            let bytes: Vec<u8> = vi.embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
+            // Auto-create the per-kind vec table if it does not exist yet.
+            tx.execute_batch(&format!(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS {table_name} USING vec0(\
+                    chunk_id TEXT PRIMARY KEY,\
+                    embedding float[{dimension}]\
+                )"
+            ))?;
+            tx.execute(
+                &format!(
+                    "INSERT OR REPLACE INTO {table_name} (chunk_id, embedding) VALUES (?1, ?2)"
+                ),
+                rusqlite::params![vi.chunk_id, bytes],
+            )?;
         }
     }
 
@@ -6670,9 +6704,6 @@ mod tests {
         {
             let conn = open_connection_with_vec(db.path()).expect("vec connection");
             schema_manager.bootstrap(&conn).expect("bootstrap");
-            schema_manager
-                .ensure_vector_profile(&conn, "default", "vec_nodes_active", 3)
-                .expect("ensure profile");
         }
 
         let writer = WriterActor::start(
@@ -6744,7 +6775,7 @@ mod tests {
         let conn = rusqlite::Connection::open(db.path()).expect("conn");
         let count: i64 = conn
             .query_row(
-                "SELECT count(*) FROM vec_nodes_active WHERE chunk_id = 'chunk-retire-vec'",
+                "SELECT count(*) FROM vec_doc WHERE chunk_id = 'chunk-retire-vec'",
                 [],
                 |row| row.get(0),
             )
@@ -6767,9 +6798,6 @@ mod tests {
         {
             let conn = open_connection_with_vec(db.path()).expect("vec connection");
             schema_manager.bootstrap(&conn).expect("bootstrap");
-            schema_manager
-                .ensure_vector_profile(&conn, "default", "vec_nodes_active", 3)
-                .expect("ensure profile");
         }
 
         let writer = WriterActor::start(
@@ -6857,14 +6885,14 @@ mod tests {
         let conn = rusqlite::Connection::open(db.path()).expect("conn");
         let count_a: i64 = conn
             .query_row(
-                "SELECT count(*) FROM vec_nodes_active WHERE chunk_id = 'chunk-replace-A'",
+                "SELECT count(*) FROM vec_doc WHERE chunk_id = 'chunk-replace-A'",
                 [],
                 |row| row.get(0),
             )
             .expect("count A");
         let count_b: i64 = conn
             .query_row(
-                "SELECT count(*) FROM vec_nodes_active WHERE chunk_id = 'chunk-replace-B'",
+                "SELECT count(*) FROM vec_doc WHERE chunk_id = 'chunk-replace-B'",
                 [],
                 |row| row.get(0),
             )
@@ -6887,13 +6915,10 @@ mod tests {
         let db = NamedTempFile::new().expect("temporary db");
         let schema_manager = Arc::new(SchemaManager::new());
 
-        // Open a vec-capable connection and bootstrap + ensure profile
+        // Bootstrap the schema (vec table is auto-created on first VecInsert).
         {
             let conn = open_connection_with_vec(db.path()).expect("vec connection");
             schema_manager.bootstrap(&conn).expect("bootstrap");
-            schema_manager
-                .ensure_vector_profile(&conn, "default", "vec_nodes_active", 3)
-                .expect("ensure profile");
         }
 
         let writer = WriterActor::start(
@@ -6904,14 +6929,31 @@ mod tests {
         )
         .expect("writer");
 
+        // Submit a node + chunk + vec insert so kind can be resolved from the request.
         writer
             .submit(WriteRequest {
                 label: "vec-insert".to_owned(),
-                nodes: vec![],
+                nodes: vec![NodeInsert {
+                    row_id: "row-vec".to_owned(),
+                    logical_id: "node-vec".to_owned(),
+                    kind: "Document".to_owned(),
+                    properties: "{}".to_owned(),
+                    source_ref: Some("test".to_owned()),
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
+                }],
                 node_retires: vec![],
                 edges: vec![],
                 edge_retires: vec![],
-                chunks: vec![],
+                chunks: vec![ChunkInsert {
+                    id: "chunk-vec".to_owned(),
+                    node_logical_id: "node-vec".to_owned(),
+                    text_content: "test text".to_owned(),
+                    byte_start: None,
+                    byte_end: None,
+                    content_hash: None,
+                }],
                 runs: vec![],
                 steps: vec![],
                 actions: vec![],
@@ -6927,12 +6969,12 @@ mod tests {
         let conn = rusqlite::Connection::open(db.path()).expect("conn");
         let count: i64 = conn
             .query_row(
-                "SELECT count(*) FROM vec_nodes_active WHERE chunk_id = 'chunk-vec'",
+                "SELECT count(*) FROM vec_document WHERE chunk_id = 'chunk-vec'",
                 [],
                 |row| row.get(0),
             )
             .expect("count");
-        assert_eq!(count, 1, "VecInsert must persist a row in vec_nodes_active");
+        assert_eq!(count, 1, "VecInsert must persist a row in vec_document");
     }
 
     // --- WriteRequest size validation tests ---

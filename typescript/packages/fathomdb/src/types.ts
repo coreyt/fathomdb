@@ -1336,22 +1336,25 @@ export type VecIdentity = {
  * Input config for a vector embedding regeneration run.
  *
  * Passed to {@link AdminClient.regenerateVectorEmbeddings}. `profile` is
- * the stored profile name (typically `"default"`). `tableName` is the
- * sqlite-vec virtual table to write into (e.g. `"vec_nodes_active"`).
+ * the stored profile name (typically `"default"`). `kind` is the node kind
+ * whose embeddings to regenerate (e.g. `"Document"`); vectors are written
+ * to the per-kind table `vec_<sanitized_kind>`.
  * `chunkingPolicy` and `preprocessingPolicy` control how text is split
  * and cleaned before embedding; use `"default"` for standard behaviour.
+ *
+ * 0.5.0 breaking change: `tableName` is replaced by `kind`.
  */
 export type VectorRegenerationConfig = {
+  kind: string;
   profile: string;
-  tableName: string;
   chunkingPolicy: string;
   preprocessingPolicy: string;
 };
 
 export function vectorRegenerationConfigToWire(c: VectorRegenerationConfig): Record<string, unknown> {
   return {
+    kind: c.kind,
     profile: c.profile,
-    table_name: c.tableName,
     chunking_policy: c.chunkingPolicy,
     preprocessing_policy: c.preprocessingPolicy,
   };

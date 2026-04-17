@@ -297,11 +297,14 @@ pub struct SemanticReport {
 /// single source of truth for `model_identity`, `model_version`,
 /// `dimension`, and `normalization_policy`; the resulting vector profile
 /// is stamped directly from [`QueryEmbedder::identity`].
+///
+/// 0.5.0 breaking change: `table_name` is removed. The vec table name is now
+/// derived from `kind` via [`fathomdb_schema::vec_kind_table_name`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct VectorRegenerationConfig {
+    pub kind: String,
     pub profile: String,
-    pub table_name: String,
     pub chunking_policy: String,
     pub preprocessing_policy: String,
 }
@@ -537,13 +540,14 @@ impl AdminService {
         Ok(result)
     }
 
-    /// Retrieve the global vector embedding profile.
+    /// Retrieve the vector embedding profile for a specific node `kind`.
     ///
-    /// Returns `None` if no vector profile has been persisted yet.
+    /// Reads from `projection_profiles` under `(kind=<kind>, facet='vec')`.
+    /// Returns `None` if no vector profile has been persisted for this kind yet.
     ///
     /// # Errors
     /// Returns [`EngineError`] if the database query fails.
-    pub fn get_vec_profile(&self) -> Result<Option<VecProfile>, EngineError> {
+    pub fn get_vec_profile(&self, kind: &str) -> Result<Option<VecProfile>, EngineError> {
         let conn = self.connect()?;
         let result = conn
             .query_row(
@@ -553,14 +557,14 @@ impl AdminService {
                    CAST(json_extract(config_json, '$.dimensions') AS INTEGER), \
                    active_at, \
                    created_at \
-                 FROM projection_profiles WHERE kind = '*' AND facet = 'vec'",
-                [],
+                 FROM projection_profiles WHERE kind = ?1 AND facet = 'vec'",
+                rusqlite::params![kind],
                 |row| {
                     Ok(VecProfile {
-                        model_identity: row.get(0)?,
+                        model_identity: row.get::<_, Option<String>>(0)?.unwrap_or_default(),
                         model_version: row.get(1)?,
                         dimensions: {
-                            let d: i64 = row.get(2)?;
+                            let d: i64 = row.get::<_, Option<i64>>(2)?.unwrap_or(0);
                             u32::try_from(d).unwrap_or(0)
                         },
                         active_at: row.get(3)?,
@@ -2409,14 +2413,13 @@ impl AdminService {
             embedding_map.insert(chunk.chunk_id.clone(), bytes);
         }
 
+        let table_name = fathomdb_schema::vec_kind_table_name(&config.kind);
         let mut conn = conn;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        match self.schema_manager.ensure_vector_profile(
-            &tx,
-            &config.profile,
-            &config.table_name,
-            identity.dimension,
-        ) {
+        match self
+            .schema_manager
+            .ensure_vec_kind_profile(&tx, &config.kind, identity.dimension)
+        {
             Ok(()) => {}
             Err(SchemaError::MissingCapability(message)) => {
                 let failure = VectorRegenerationFailure::new(
@@ -2449,10 +2452,11 @@ impl AdminService {
             );
             return Err(failure.to_engine_error());
         }
-        persist_vector_contract(&tx, &config, &identity, &snapshot_hash)?;
-        tx.execute("DELETE FROM vec_nodes_active", [])?;
-        let mut stmt = tx
-            .prepare_cached("INSERT INTO vec_nodes_active (chunk_id, embedding) VALUES (?1, ?2)")?;
+        persist_vector_contract(&tx, &config, &table_name, &identity, &snapshot_hash)?;
+        tx.execute(&format!("DELETE FROM {table_name}"), [])?;
+        let mut stmt = tx.prepare_cached(&format!(
+            "INSERT INTO {table_name} (chunk_id, embedding) VALUES (?1, ?2)"
+        ))?;
         let mut regenerated_rows = 0usize;
         for chunk in &apply_chunks {
             let Some(embedding) = embedding_map.remove(&chunk.chunk_id) else {
@@ -2486,7 +2490,7 @@ impl AdminService {
 
         Ok(VectorRegenerationReport {
             profile: config.profile.clone(),
-            table_name: config.table_name.clone(),
+            table_name,
             dimension: identity.dimension,
             total_chunks: chunks.len(),
             regenerated_rows,
@@ -2615,12 +2619,11 @@ impl AdminService {
 
         let mut conn = conn;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        match self.schema_manager.ensure_vector_profile(
-            &tx,
-            &config.profile,
-            &config.table_name,
-            identity.dimension,
-        ) {
+        let table_name = fathomdb_schema::vec_kind_table_name(&config.kind);
+        match self
+            .schema_manager
+            .ensure_vec_kind_profile(&tx, &config.kind, identity.dimension)
+        {
             Ok(()) => {}
             Err(SchemaError::MissingCapability(message)) => {
                 let failure = VectorRegenerationFailure::new(
@@ -2653,10 +2656,11 @@ impl AdminService {
             );
             return Err(failure.to_engine_error());
         }
-        persist_vector_contract(&tx, &config, &identity, &snapshot_hash)?;
-        tx.execute("DELETE FROM vec_nodes_active", [])?;
-        let mut stmt = tx
-            .prepare_cached("INSERT INTO vec_nodes_active (chunk_id, embedding) VALUES (?1, ?2)")?;
+        persist_vector_contract(&tx, &config, &table_name, &identity, &snapshot_hash)?;
+        tx.execute(&format!("DELETE FROM {table_name}"), [])?;
+        let mut stmt = tx.prepare_cached(&format!(
+            "INSERT INTO {table_name} (chunk_id, embedding) VALUES (?1, ?2)"
+        ))?;
         let mut regenerated_rows = 0usize;
         for chunk in &apply_chunks {
             let Some(embedding) = embedding_map.remove(&chunk.chunk_id) else {
@@ -2690,7 +2694,7 @@ impl AdminService {
 
         Ok(VectorRegenerationReport {
             profile: config.profile.clone(),
-            table_name: config.table_name.clone(),
+            table_name,
             dimension: identity.dimension,
             total_chunks: chunks.len(),
             regenerated_rows,
@@ -3488,14 +3492,8 @@ fn validate_vector_regeneration_config(
     config: &VectorRegenerationConfig,
     identity: &QueryEmbedderIdentity,
 ) -> Result<VectorRegenerationConfig, VectorRegenerationFailure> {
+    let kind = validate_bounded_text("kind", &config.kind, MAX_PROFILE_LEN)?;
     let profile = validate_bounded_text("profile", &config.profile, MAX_PROFILE_LEN)?;
-    let table_name = validate_bounded_text("table_name", &config.table_name, MAX_PROFILE_LEN)?;
-    if table_name != "vec_nodes_active" {
-        return Err(VectorRegenerationFailure::new(
-            VectorRegenerationFailureClass::InvalidContract,
-            format!("table_name must be vec_nodes_active, got '{table_name}'"),
-        ));
-    }
     if identity.dimension == 0 {
         return Err(VectorRegenerationFailure::new(
             VectorRegenerationFailureClass::InvalidContract,
@@ -3525,8 +3523,8 @@ fn validate_vector_regeneration_config(
     validate_existing_contract_version(conn, &profile)?;
 
     let normalized = VectorRegenerationConfig {
+        kind,
         profile,
-        table_name,
         chunking_policy,
         preprocessing_policy,
     };
@@ -3550,6 +3548,7 @@ fn validate_vector_regeneration_config(
 fn persist_vector_contract(
     conn: &rusqlite::Connection,
     config: &VectorRegenerationConfig,
+    table_name: &str,
     identity: &QueryEmbedderIdentity,
     snapshot_hash: &str,
 ) -> Result<(), EngineError> {
@@ -3573,7 +3572,7 @@ fn persist_vector_contract(
         ",
         rusqlite::params![
             config.profile.as_str(),
-            config.table_name.as_str(),
+            table_name,
             identity.model_identity.as_str(),
             identity.model_version.as_str(),
             identity.dimension as i64,
@@ -4101,7 +4100,7 @@ fn build_regeneration_input(
 ) -> VectorRegenerationInput {
     VectorRegenerationInput {
         profile: config.profile.clone(),
-        table_name: config.table_name.clone(),
+        table_name: fathomdb_schema::vec_kind_table_name(&config.kind),
         model_identity: identity.model_identity.clone(),
         model_version: identity.model_version.clone(),
         dimension: identity.dimension,
@@ -4600,16 +4599,30 @@ fn count_vec_rows_for_logical_id(
     tx: &rusqlite::Transaction<'_>,
     logical_id: &str,
 ) -> Result<usize, EngineError> {
+    // Look up the kind for this logical_id to derive the per-kind vec table name.
+    let kind: Option<String> = tx
+        .query_row(
+            "SELECT kind FROM nodes WHERE logical_id = ?1 LIMIT 1",
+            [logical_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(kind) = kind else {
+        return Ok(0);
+    };
+    let table_name = fathomdb_schema::vec_kind_table_name(&kind);
     match tx.query_row(
-        "SELECT count(*) FROM vec_nodes_active v \
-         JOIN chunks c ON c.id = v.chunk_id \
-         WHERE c.node_logical_id = ?1",
+        &format!(
+            "SELECT count(*) FROM {table_name} v \
+             JOIN chunks c ON c.id = v.chunk_id \
+             WHERE c.node_logical_id = ?1"
+        ),
         [logical_id],
         |row| row.get::<_, i64>(0),
     ) {
         Ok(count) => Ok(i64_to_usize(count)),
         Err(rusqlite::Error::SqliteFailure(_, Some(ref msg)))
-            if msg.contains("vec_nodes_active") || msg.contains("no such module: vec0") =>
+            if msg.contains(&table_name) || msg.contains("no such module: vec0") =>
         {
             Ok(0)
         }
@@ -4631,14 +4644,27 @@ fn delete_vec_rows_for_logical_id(
     tx: &rusqlite::Transaction<'_>,
     logical_id: &str,
 ) -> Result<usize, EngineError> {
+    // Look up the kind for this logical_id to derive the per-kind vec table name.
+    let kind: Option<String> = tx
+        .query_row(
+            "SELECT kind FROM nodes WHERE logical_id = ?1 LIMIT 1",
+            [logical_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(kind) = kind else {
+        return Ok(0);
+    };
+    let table_name = fathomdb_schema::vec_kind_table_name(&kind);
     match tx.execute(
-        "DELETE FROM vec_nodes_active \
-         WHERE chunk_id IN (SELECT id FROM chunks WHERE node_logical_id = ?1)",
+        &format!(
+            "DELETE FROM {table_name} WHERE chunk_id IN (SELECT id FROM chunks WHERE node_logical_id = ?1)"
+        ),
         [logical_id],
     ) {
         Ok(count) => Ok(count),
         Err(rusqlite::Error::SqliteFailure(_, Some(ref msg)))
-            if msg.contains("vec_nodes_active") || msg.contains("no such module: vec0") =>
+            if msg.contains(&table_name) || msg.contains("no such module: vec0") =>
         {
             Ok(0)
         }
@@ -6123,8 +6149,8 @@ mod tests {
             let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
             service
                 .schema_manager
-                .ensure_vector_profile(&conn, "default", "vec_nodes_active", 4)
-                .expect("ensure vec profile");
+                .ensure_vec_kind_profile(&conn, "Document", 4)
+                .expect("ensure vec kind profile");
             conn.execute(
                 "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, superseded_at, source_ref) \
                  VALUES ('node-row-1', 'doc-1', 'Document', '{\"title\":\"Budget\"}', 100, 200, 'seed')",
@@ -6138,7 +6164,7 @@ mod tests {
             )
             .expect("insert chunk");
             conn.execute(
-                "INSERT INTO vec_nodes_active (chunk_id, embedding) VALUES ('chunk-1', zeroblob(16))",
+                "INSERT INTO vec_document (chunk_id, embedding) VALUES ('chunk-1', zeroblob(16))",
                 [],
             )
             .expect("insert vec row");
@@ -6183,8 +6209,8 @@ mod tests {
             let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
             service
                 .schema_manager
-                .ensure_vector_profile(&conn, "default", "vec_nodes_active", 4)
-                .expect("ensure vec profile");
+                .ensure_vec_kind_profile(&conn, "Document", 4)
+                .expect("ensure vec kind profile");
             conn.execute(
                 "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, superseded_at, source_ref) \
                  VALUES ('node-row-1', 'doc-1', 'Document', '{\"title\":\"Budget\"}', 100, 200, 'seed')",
@@ -6198,7 +6224,7 @@ mod tests {
             )
             .expect("insert chunk");
             conn.execute(
-                "INSERT INTO vec_nodes_active (chunk_id, embedding) VALUES ('chunk-1', zeroblob(16))",
+                "INSERT INTO vec_document (chunk_id, embedding) VALUES ('chunk-1', zeroblob(16))",
                 [],
             )
             .expect("insert vec row");
@@ -6209,9 +6235,7 @@ mod tests {
 
         let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
         let vec_count: i64 = conn
-            .query_row("SELECT count(*) FROM vec_nodes_active", [], |row| {
-                row.get(0)
-            })
+            .query_row("SELECT count(*) FROM vec_document", [], |row| row.get(0))
             .expect("vec count");
         assert_eq!(vec_count, 0);
     }
@@ -6223,10 +6247,6 @@ mod tests {
 
         {
             let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
-            service
-                .schema_manager
-                .ensure_vector_profile(&conn, "default", "vec_nodes_active", 4)
-                .expect("ensure vec profile");
             conn.execute(
                 "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
                  VALUES ('node-row-1', 'doc-1', 'Document', '{\"title\":\"Budget\"}', 100, 'seed')",
@@ -6246,8 +6266,8 @@ mod tests {
             .regenerate_vector_embeddings(
                 &embedder,
                 &VectorRegenerationConfig {
+                    kind: "Document".to_owned(),
                     profile: "default".to_owned(),
-                    table_name: "vec_nodes_active".to_owned(),
                     chunking_policy: "per_chunk".to_owned(),
                     preprocessing_policy: "trim".to_owned(),
                 },
@@ -7778,8 +7798,8 @@ mod tests {
         let toml_path = dir.path().join("regen.toml");
 
         let config = VectorRegenerationConfig {
+            kind: "Document".to_owned(),
             profile: "default".to_owned(),
-            table_name: "vec_nodes_active".to_owned(),
             chunking_policy: "per_chunk".to_owned(),
             preprocessing_policy: "trim".to_owned(),
         };
@@ -7800,7 +7820,10 @@ mod tests {
     /// silently accepted.
     #[test]
     fn regenerate_vector_embeddings_config_rejects_old_identity_fields() {
+        // Pre-0.5.0 configs that include old fields (table_name, model_identity, etc.)
+        // must be rejected at the serde boundary due to deny_unknown_fields.
         let legacy_json = r#"{
+            "kind": "Document",
             "profile": "default",
             "table_name": "vec_nodes_active",
             "model_identity": "old-model",
@@ -7847,8 +7870,8 @@ mod tests {
             .regenerate_vector_embeddings(
                 &embedder,
                 &VectorRegenerationConfig {
+                    kind: "Document".to_owned(),
                     profile: "default".to_owned(),
-                    table_name: "vec_nodes_active".to_owned(),
                     chunking_policy: "per_chunk".to_owned(),
                     preprocessing_policy: "trim".to_owned(),
                 },
@@ -7920,8 +7943,8 @@ mod tests {
             .regenerate_vector_embeddings(
                 &embedder,
                 &VectorRegenerationConfig {
+                    kind: "Document".to_owned(),
                     profile: "default".to_owned(),
-                    table_name: "vec_nodes_active".to_owned(),
                     chunking_policy: "per_chunk".to_owned(),
                     preprocessing_policy: "trim".to_owned(),
                 },
@@ -7929,7 +7952,7 @@ mod tests {
             .expect("regenerate vectors");
 
         assert_eq!(report.profile, "default");
-        assert_eq!(report.table_name, "vec_nodes_active");
+        assert_eq!(report.table_name, "vec_document");
         assert_eq!(report.dimension, 4);
         assert_eq!(report.total_chunks, 2);
         assert_eq!(report.regenerated_rows, 2);
@@ -7937,9 +7960,7 @@ mod tests {
 
         let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
         let vec_count: i64 = conn
-            .query_row("SELECT count(*) FROM vec_nodes_active", [], |row| {
-                row.get(0)
-            })
+            .query_row("SELECT count(*) FROM vec_document", [], |row| row.get(0))
             .expect("vec count");
         assert_eq!(vec_count, 2);
 
@@ -8023,8 +8044,8 @@ mod tests {
             )
             .expect("insert chunk");
             schema
-                .ensure_vector_profile(&conn, "default", "vec_nodes_active", 4)
-                .expect("ensure vec profile");
+                .ensure_vec_kind_profile(&conn, "Document", 4)
+                .expect("ensure vec kind profile");
             conn.execute(
                 r"
                 INSERT INTO vector_embedding_contracts (
@@ -8043,7 +8064,7 @@ mod tests {
                 ",
                 rusqlite::params![
                     "default",
-                    "vec_nodes_active",
+                    "vec_document",
                     "old-model",
                     "0.9.0",
                     4,
@@ -8057,7 +8078,7 @@ mod tests {
             )
             .expect("seed contract");
             conn.execute(
-                "INSERT INTO vec_nodes_active (chunk_id, embedding) VALUES ('chunk-1', zeroblob(16))",
+                "INSERT INTO vec_document (chunk_id, embedding) VALUES ('chunk-1', zeroblob(16))",
                 [],
             )
             .expect("seed vec row");
@@ -8076,8 +8097,8 @@ mod tests {
             .regenerate_vector_embeddings(
                 &failing,
                 &VectorRegenerationConfig {
+                    kind: "Document".to_owned(),
                     profile: "default".to_owned(),
-                    table_name: "vec_nodes_active".to_owned(),
                     chunking_policy: "per_chunk".to_owned(),
                     preprocessing_policy: "trim".to_owned(),
                 },
@@ -8104,9 +8125,7 @@ mod tests {
             .expect("snapshot hash");
         assert_eq!(snapshot_hash, "old-snapshot");
         let vec_count: i64 = conn
-            .query_row("SELECT count(*) FROM vec_nodes_active", [], |row| {
-                row.get(0)
-            })
+            .query_row("SELECT count(*) FROM vec_document", [], |row| row.get(0))
             .expect("vec count");
         assert_eq!(vec_count, 1);
         let failure_count: i64 = conn
@@ -8165,8 +8184,8 @@ mod tests {
             .regenerate_vector_embeddings(
                 &embedder,
                 &VectorRegenerationConfig {
+                    kind: "Document".to_owned(),
                     profile: "   ".to_owned(),
-                    table_name: "vec_nodes_active".to_owned(),
                     chunking_policy: "per_chunk".to_owned(),
                     preprocessing_policy: "trim".to_owned(),
                 },
@@ -8254,8 +8273,8 @@ mod tests {
             .regenerate_vector_embeddings(
                 &embedder,
                 &VectorRegenerationConfig {
+                    kind: "Document".to_owned(),
                     profile: "default".to_owned(),
-                    table_name: "vec_nodes_active".to_owned(),
                     chunking_policy: "per_chunk".to_owned(),
                     preprocessing_policy: "trim".to_owned(),
                 },
@@ -8762,8 +8781,8 @@ mod tests {
             let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
             service
                 .schema_manager
-                .ensure_vector_profile(&conn, "default", "vec_nodes_active", 4)
-                .expect("ensure vec profile");
+                .ensure_vec_kind_profile(&conn, "Meeting", 4)
+                .expect("ensure vec kind profile");
             conn.execute(
                 "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, superseded_at, source_ref) \
                  VALUES ('r1', 'lg1', 'Meeting', '{}', 100, 200, 'source-1')",
@@ -8783,7 +8802,7 @@ mod tests {
             )
             .expect("insert chunk");
             conn.execute(
-                "INSERT INTO vec_nodes_active (chunk_id, embedding) VALUES ('ck1', zeroblob(16))",
+                "INSERT INTO vec_meeting (chunk_id, embedding) VALUES ('ck1', zeroblob(16))",
                 [],
             )
             .expect("insert vec row");
@@ -8812,9 +8831,7 @@ mod tests {
             "excised source content must not survive as chunks"
         );
         let vec_count: i64 = conn
-            .query_row("SELECT count(*) FROM vec_nodes_active", [], |row| {
-                row.get(0)
-            })
+            .query_row("SELECT count(*) FROM vec_meeting", [], |row| row.get(0))
             .expect("vec count");
         assert_eq!(vec_count, 0, "excised source vec rows must be removed");
         let fts_count: i64 = conn
@@ -10565,14 +10582,17 @@ mod tests {
         );
     }
 
-    /// Item 5 integration test: a stub embedder with `max_tokens=8192` can
-    /// process a single chunk whose text exceeds 512 words. The pre-written
-    /// chunk is stored as one unit; `regenerate_vector_embeddings` embeds it
-    /// as one row, not two.
+    // --- 0.5.0 item 5: max_tokens() capacity ---
+
+    /// A stub embedder with `max_tokens=8192` can embed a pre-written chunk
+    /// whose text exceeds 512 words without error. Verifies that `max_tokens()`
+    /// advertises the correct capacity and that `regenerate_vector_embeddings`
+    /// produces one vector row for one stored chunk, regardless of chunk length.
+    /// (The engine does not re-chunk at regen time; splitting is the caller's
+    /// responsibility at write time.)
     #[cfg(feature = "sqlite-vec")]
     #[test]
-    fn max_tokens_8192_embedder_processes_long_chunk_as_single_unit() {
-        // Build a text with ~600 words — exceeds 512 but fits within 8192.
+    fn embedder_max_tokens_8192_handles_chunk_exceeding_512_words() {
         let long_text = (0..600u32)
             .map(|i| format!("word{i}"))
             .collect::<Vec<_>>()
@@ -10598,15 +10618,14 @@ mod tests {
             .expect("insert long chunk");
         }
 
-        // Embedder with max_tokens=8192 — should handle the 600-word chunk.
         let embedder = LargeContextTestEmbedder::new("long-context-model", 4, 8192);
         let service = AdminService::new(db.path(), Arc::clone(&schema));
         let report = service
             .regenerate_vector_embeddings(
                 &embedder,
                 &VectorRegenerationConfig {
+                    kind: "Document".to_owned(),
                     profile: "default".to_owned(),
-                    table_name: "vec_nodes_active".to_owned(),
                     chunking_policy: "per_chunk".to_owned(),
                     preprocessing_policy: "trim".to_owned(),
                 },
@@ -10673,49 +10692,37 @@ mod tests {
         {
             let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
             schema.bootstrap(&conn).expect("bootstrap");
-            conn.execute(
-                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
-                 VALUES ('r1', 'node-1', 'Doc', '{}', 100, 'src1')",
-                [],
-            )
-            .expect("insert node 1");
-            conn.execute(
-                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
-                 VALUES ('r2', 'node-2', 'Doc', '{}', 101, 'src2')",
-                [],
-            )
-            .expect("insert node 2");
-            conn.execute(
-                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
-                 VALUES ('r3', 'node-3', 'Doc', '{}', 102, 'src3')",
-                [],
-            )
-            .expect("insert node 3");
-            conn.execute(
-                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
-                 VALUES ('c1', 'node-1', 'first document text', 100)",
-                [],
-            )
-            .expect("insert chunk 1");
-            conn.execute(
-                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
-                 VALUES ('c2', 'node-2', 'second document text', 101)",
-                [],
-            )
-            .expect("insert chunk 2");
-            conn.execute(
-                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
-                 VALUES ('c3', 'node-3', 'third document text', 102)",
-                [],
-            )
-            .expect("insert chunk 3");
+            for (row_id, logical_id, created_at, src) in [
+                ("r1", "node-1", 100, "src1"),
+                ("r2", "node-2", 101, "src2"),
+                ("r3", "node-3", 102, "src3"),
+            ] {
+                conn.execute(
+                    "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                     VALUES (?1, ?2, 'Doc', '{}', ?3, ?4)",
+                    rusqlite::params![row_id, logical_id, created_at, src],
+                )
+                .expect("insert node");
+            }
+            for (chunk_id, node_id, text, created_at) in [
+                ("c1", "node-1", "first document text", 100),
+                ("c2", "node-2", "second document text", 101),
+                ("c3", "node-3", "third document text", 102),
+            ] {
+                conn.execute(
+                    "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
+                     VALUES (?1, ?2, ?3, ?4)",
+                    rusqlite::params![chunk_id, node_id, text, created_at],
+                )
+                .expect("insert chunk");
+            }
         }
 
         let service = AdminService::new(db.path(), Arc::clone(&schema));
         let embedder = TestEmbedder::new("batch-test-model", 4);
         let config = VectorRegenerationConfig {
+            kind: "Doc".to_owned(),
             profile: "default".to_owned(),
-            table_name: "vec_nodes_active".to_owned(),
             chunking_policy: "per_chunk".to_owned(),
             preprocessing_policy: "trim".to_owned(),
         };
@@ -10729,10 +10736,8 @@ mod tests {
 
         let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
         let vec_count: i64 = conn
-            .query_row("SELECT count(*) FROM vec_nodes_active", [], |row| {
-                row.get(0)
-            })
-            .expect("vec count");
+            .query_row("SELECT count(*) FROM vec_doc", [], |row| row.get(0))
+            .expect("vec_doc count");
         assert_eq!(vec_count, 3, "one vec row per chunk");
 
         let model_identity: String = conn
@@ -10743,5 +10748,120 @@ mod tests {
             )
             .expect("contract row");
         assert_eq!(model_identity, "batch-test-model");
+    }
+
+    // --- 0.5.0 item 6: per-kind vec regeneration ---
+
+    #[cfg(feature = "sqlite-vec")]
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn regenerate_vector_embeddings_targets_per_kind_table() {
+        let db = NamedTempFile::new().expect("temp file");
+        let schema = Arc::new(SchemaManager::new());
+
+        {
+            let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
+            schema.bootstrap(&conn).expect("bootstrap");
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('row-1', 'doc-1', 'Document', '{}', 100, 'source-1')",
+                [],
+            )
+            .expect("insert node");
+            conn.execute(
+                "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
+                 VALUES ('chunk-1', 'doc-1', 'budget discussion', 100)",
+                [],
+            )
+            .expect("insert chunk");
+        }
+
+        let service = AdminService::new(db.path(), Arc::clone(&schema));
+        let embedder = TestEmbedder::new("test-model", 4);
+        let report = service
+            .regenerate_vector_embeddings(
+                &embedder,
+                &VectorRegenerationConfig {
+                    kind: "Document".to_owned(),
+                    profile: "default".to_owned(),
+                    chunking_policy: "per_chunk".to_owned(),
+                    preprocessing_policy: "trim".to_owned(),
+                },
+            )
+            .expect("regenerate vectors");
+
+        assert_eq!(report.table_name, "vec_document");
+        assert_eq!(report.regenerated_rows, 1);
+
+        let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
+        let vec_count: i64 = conn
+            .query_row("SELECT count(*) FROM vec_document", [], |row| row.get(0))
+            .expect("vec_document count");
+        assert_eq!(vec_count, 1, "rows must be in vec_document");
+
+        let old_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='vec_nodes_active'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("sqlite_master check");
+        assert_eq!(
+            old_count, 0,
+            "vec_nodes_active must NOT be created for per-kind regen"
+        );
+    }
+
+    // --- 0.5.0 item 6 step 5: get_vec_profile reads per-kind key ---
+
+    #[test]
+    fn get_vec_profile_returns_none_when_no_profile_exists() {
+        let (db, service) = setup();
+        let _ = db;
+        let result = service.get_vec_profile("MyKind").expect("should not error");
+        assert!(
+            result.is_none(),
+            "must return None when no profile registered"
+        );
+    }
+
+    #[cfg(feature = "sqlite-vec")]
+    #[test]
+    fn get_vec_profile_returns_profile_for_registered_kind() {
+        let db = NamedTempFile::new().expect("temp file");
+        let schema = Arc::new(SchemaManager::new());
+        {
+            let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
+            schema.bootstrap(&conn).expect("bootstrap");
+            schema
+                .ensure_vec_kind_profile(&conn, "MyKind", 128)
+                .expect("ensure_vec_kind_profile");
+        }
+
+        let service = AdminService::new(db.path(), Arc::clone(&schema));
+        let profile = service.get_vec_profile("MyKind").expect("should not error");
+        assert!(profile.is_some(), "must return profile after registration");
+        assert_eq!(profile.unwrap().dimensions, 128);
+    }
+
+    #[test]
+    fn get_vec_profile_does_not_return_global_sentinel_row() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO projection_profiles (kind, facet, config_json, active_at, created_at) \
+                 VALUES ('*', 'vec', '{\"model_identity\":\"old-model\",\"dimensions\":384}', 0, 0)",
+                [],
+            )
+            .expect("insert global sentinel");
+        }
+        let result = service
+            .get_vec_profile("SomeKind")
+            .expect("should not error");
+        assert!(
+            result.is_none(),
+            "per-kind query must not return global ('*', 'vec') row"
+        );
     }
 }

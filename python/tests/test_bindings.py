@@ -265,15 +265,15 @@ def test_public_python_admin_client_exposes_vector_regeneration_types() -> None:
     from fathomdb import VectorRegenerationConfig
 
     config = VectorRegenerationConfig(
+        kind="Document",
         profile="default",
-        table_name="vec_chunks",
         chunking_policy="sentence",
         preprocessing_policy="strip_html",
     )
 
     wire = config.to_wire()
+    assert wire["kind"] == "Document"
     assert wire["profile"] == "default"
-    assert wire["table_name"] == "vec_chunks"
     assert wire["chunking_policy"] == "sentence"
     assert wire["preprocessing_policy"] == "strip_html"
     # 0.4.0: the identity fields are gone from the Python wrapper.
@@ -282,6 +282,8 @@ def test_public_python_admin_client_exposes_vector_regeneration_types() -> None:
     assert "dimension" not in wire
     assert "normalization_policy" not in wire
     assert "generator_command" not in wire
+    # 0.5.0: table_name is replaced by kind.
+    assert "table_name" not in wire
 
 
 def test_vector_regeneration_config_rejects_legacy_fields_at_construction() -> None:
@@ -291,9 +293,9 @@ def test_vector_regeneration_config_rejects_legacy_fields_at_construction() -> N
 
     with pytest.raises(TypeError):
         VectorRegenerationConfig(  # type: ignore[call-arg]
+            kind="Document",
             profile="default",
             table_name="vec_chunks",
-            model_identity="text-embedding-3-small",
             chunking_policy="sentence",
             preprocessing_policy="strip_html",
         )
@@ -310,8 +312,8 @@ def test_regenerate_vector_embeddings_errors_when_engine_has_no_embedder(
 
     db = Engine.open(tmp_path / "agent.db")
     config = VectorRegenerationConfig(
+        kind="Document",
         profile="default",
-        table_name="vec_nodes_active",
         chunking_policy="per_chunk",
         preprocessing_policy="trim",
     )

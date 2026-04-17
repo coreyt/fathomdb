@@ -1155,6 +1155,71 @@ impl SchemaManager {
         Err(SchemaError::MissingCapability("sqlite-vec"))
     }
 
+    /// Ensure a per-kind sqlite-vec virtual table exists and the
+    /// `projection_profiles` row is recorded under `(kind, 'vec')`.
+    ///
+    /// The virtual table is named `vec_<sanitized_kind>` (via
+    /// [`vec_kind_table_name`]).  A row is also written to the legacy
+    /// `vector_profiles` table so that [`BootstrapReport::vector_profile_enabled`]
+    /// continues to work.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SchemaError`] if the DDL fails or the feature is absent.
+    #[cfg(feature = "sqlite-vec")]
+    pub fn ensure_vec_kind_profile(
+        &self,
+        conn: &Connection,
+        kind: &str,
+        dimension: usize,
+    ) -> Result<(), SchemaError> {
+        let table_name = vec_kind_table_name(kind);
+        conn.execute_batch(&format!(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS {table_name} USING vec0(\
+                chunk_id TEXT PRIMARY KEY,\
+                embedding float[{dimension}]\
+            )"
+        ))?;
+        let dimension_i64 = i64::try_from(dimension).map_err(|_| {
+            SchemaError::Sqlite(rusqlite::Error::ToSqlConversionFailure(
+                format!("vector dimension {dimension} does not fit in i64").into(),
+            ))
+        })?;
+        // Record in the legacy vector_profiles table so vector_profile_enabled works.
+        conn.execute(
+            "INSERT OR REPLACE INTO vector_profiles \
+             (profile, table_name, dimension, enabled) VALUES (?1, ?2, ?3, 1)",
+            rusqlite::params![kind, table_name, dimension_i64],
+        )?;
+        // Record in projection_profiles under (kind, 'vec').
+        // Use "dimensions" (plural) to match what get_vec_profile extracts via json_extract.
+        let config_json =
+            format!(r#"{{"table_name":"{table_name}","dimensions":{dimension_i64}}}"#);
+        conn.execute(
+            "INSERT INTO projection_profiles (kind, facet, config_json, active_at, created_at) \
+             VALUES (?1, 'vec', ?2, unixepoch(), unixepoch()) \
+             ON CONFLICT(kind, facet) DO UPDATE SET \
+                 config_json = ?2, \
+                 active_at   = unixepoch()",
+            rusqlite::params![kind, config_json],
+        )?;
+        Ok(())
+    }
+
+    /// # Errors
+    ///
+    /// Always returns [`SchemaError::MissingCapability`] when the `sqlite-vec`
+    /// feature is not compiled in.
+    #[cfg(not(feature = "sqlite-vec"))]
+    pub fn ensure_vec_kind_profile(
+        &self,
+        _conn: &Connection,
+        _kind: &str,
+        _dimension: usize,
+    ) -> Result<(), SchemaError> {
+        Err(SchemaError::MissingCapability("sqlite-vec"))
+    }
+
     /// Create the internal migration-tracking table if it does not exist.
     ///
     /// # Errors
@@ -1224,6 +1289,32 @@ pub fn fts_kind_table_name(kind: &str) -> String {
         let slug_truncated = if slug.len() > 45 { &slug[..45] } else { &slug };
         format!("fts_props_{slug_truncated}_{hex_suffix}")
     }
+}
+
+/// Derive the canonical sqlite-vec virtual-table name for a given node `kind`.
+///
+/// Rules:
+/// 1. Lowercase the kind string.
+/// 2. Replace every character that is NOT `[a-z0-9]` with `_`.
+/// 3. Collapse consecutive underscores to a single `_`.
+/// 4. Prefix with `vec_`.
+#[must_use]
+pub fn vec_kind_table_name(kind: &str) -> String {
+    let lowered = kind.to_lowercase();
+    let mut slug = String::with_capacity(lowered.len());
+    let mut prev_was_underscore = false;
+    for ch in lowered.chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch);
+            prev_was_underscore = false;
+        } else {
+            if !prev_was_underscore {
+                slug.push('_');
+            }
+            prev_was_underscore = true;
+        }
+    }
+    format!("vec_{slug}")
 }
 
 /// Derive the canonical FTS5 column name for a JSON path.
@@ -2067,6 +2158,95 @@ mod tests {
         assert_eq!(
             col_count, 1,
             "columns_json column must exist after migration 22"
+        );
+    }
+
+    // --- 0.5.0 item 6: vec_kind_table_name tests ---
+
+    #[test]
+    fn vec_kind_table_name_simple_kind() {
+        assert_eq!(
+            super::vec_kind_table_name("WMKnowledgeObject"),
+            "vec_wmknowledgeobject"
+        );
+    }
+
+    #[test]
+    fn vec_kind_table_name_another_kind() {
+        assert_eq!(super::vec_kind_table_name("MyKind"), "vec_mykind");
+    }
+
+    #[test]
+    fn vec_kind_table_name_with_separator_chars() {
+        assert_eq!(
+            super::vec_kind_table_name("MyKind-With.Dots"),
+            "vec_mykind_with_dots"
+        );
+    }
+
+    #[test]
+    fn vec_kind_table_name_collapses_consecutive_underscores() {
+        assert_eq!(
+            super::vec_kind_table_name("Kind__Double__Underscores"),
+            "vec_kind_double_underscores"
+        );
+    }
+
+    // --- 0.5.0 item 6: per-kind vec tables ---
+
+    #[cfg(feature = "sqlite-vec")]
+    #[test]
+    fn per_kind_vec_table_created_when_vec_profile_registered() {
+        // Register the sqlite-vec extension globally so the in-memory
+        // connection can use the vec0 module.
+        unsafe {
+            rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute(
+                sqlite_vec::sqlite3_vec_init as *const (),
+            )));
+        }
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        let manager = SchemaManager::new();
+        manager.bootstrap(&conn).expect("bootstrap");
+
+        // Register a vec profile for MyKind — should create vec_mykind, NOT vec_nodes_active
+        manager
+            .ensure_vec_kind_profile(&conn, "MyKind", 128)
+            .expect("ensure_vec_kind_profile");
+
+        // vec_mykind virtual table must exist
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='vec_mykind'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("query sqlite_master");
+        assert_eq!(count, 1, "vec_mykind virtual table must be created");
+
+        // projection_profiles row must exist with (kind='MyKind', facet='vec')
+        let pp_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM projection_profiles WHERE kind='MyKind' AND facet='vec'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("query projection_profiles");
+        assert_eq!(
+            pp_count, 1,
+            "projection_profiles row must exist for (MyKind, vec)"
+        );
+
+        // The old global vec_nodes_active must NOT have been created
+        let old_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='vec_nodes_active'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("query sqlite_master");
+        assert_eq!(
+            old_count, 0,
+            "vec_nodes_active must NOT be created for per-kind registration"
         );
     }
 

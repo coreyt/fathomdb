@@ -192,8 +192,8 @@ class AdminClient:
                     surface="python",
                     operation_kind="admin.regenerate_vector_embeddings",
                     metadata={
+                        "kind": config.kind,
                         "profile": config.profile,
-                        "table_name": config.table_name,
                     },
                     progress_callback=progress_callback,
                     feedback_config=feedback_config,
@@ -619,9 +619,9 @@ class AdminClient:
             return None
         return FtsProfile.from_wire(d)
 
-    def get_vec_profile(self) -> VecProfile | None:
-        """Return the current vector embedding profile, or ``None`` if not set."""
-        result_json = self._core.get_vec_profile()
+    def get_vec_profile(self, kind: str) -> VecProfile | None:
+        """Return the vector embedding profile for *kind*, or ``None`` if not set."""
+        result_json = self._core.get_vec_profile(kind)
         d = json.loads(result_json)
         if d is None:
             return None

@@ -755,17 +755,20 @@ class VectorRegenerationConfig:
     the regen path uses that same embedder. Configs carry only *where*
     the vectors live and *how* to chunk/preprocess them — never *what*
     model produced them.
+
+    0.5.0 breaking change: ``kind`` replaces the old ``table_name`` field.
+    Vector rows are now stored in per-kind tables (``vec_<sanitized_kind>``).
     """
 
+    kind: str
     profile: str
-    table_name: str
     chunking_policy: str
     preprocessing_policy: str
 
     def to_wire(self) -> dict[str, Any]:
         return {
+            "kind": self.kind,
             "profile": self.profile,
-            "table_name": self.table_name,
             "chunking_policy": self.chunking_policy,
             "preprocessing_policy": self.preprocessing_policy,
         }

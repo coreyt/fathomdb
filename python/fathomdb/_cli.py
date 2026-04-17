@@ -163,10 +163,11 @@ def get_fts_profile(db, kind):
 
 @admin.command("get-vec-profile")
 @click.option("--db", required=True)
-def get_vec_profile(db):
-    """Print the current vector embedding profile."""
+@click.option("--kind", required=True, help="Node kind to look up the vec profile for")
+def get_vec_profile(db, kind):
+    """Print the vector embedding profile for a given node kind."""
     engine = _open_engine(db)
-    profile = engine.admin.get_vec_profile()
+    profile = engine.admin.get_vec_profile(kind)
     if profile is None:
         click.echo("No vec profile configured")
     else:

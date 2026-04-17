@@ -752,9 +752,9 @@ impl EngineCore {
         })
     }
 
-    pub fn get_vec_profile(&self, py: Python<'_>) -> PyResult<String> {
+    pub fn get_vec_profile(&self, py: Python<'_>, kind: &str) -> PyResult<String> {
         self.with_engine(|engine| {
-            py.detach(|| crate::admin_ffi::get_vec_profile_json(engine))
+            py.detach(|| crate::admin_ffi::get_vec_profile_json(engine, kind))
                 .map_err(map_admin_ffi_error)
         })
     }

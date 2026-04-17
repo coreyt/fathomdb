@@ -226,17 +226,17 @@ pub fn set_vec_profile_json(engine: &Engine, request_json: &str) -> Result<Strin
     serde_json::to_string(&profile).map_err(AdminFfiError::Serialize)
 }
 
-/// Retrieve the global vector embedding profile.
+/// Retrieve the vector embedding profile for a specific node kind.
 ///
-/// Returns `"null"` if no profile has been persisted yet.
+/// Returns `"null"` if no profile has been persisted for this kind yet.
 ///
 /// # Errors
 /// Returns [`AdminFfiError`] on engine execution or response serialization failure.
-pub fn get_vec_profile_json(engine: &Engine) -> Result<String, AdminFfiError> {
+pub fn get_vec_profile_json(engine: &Engine, kind: &str) -> Result<String, AdminFfiError> {
     let profile: Option<VecProfile> = engine
         .admin()
         .service()
-        .get_vec_profile()
+        .get_vec_profile(kind)
         .map_err(AdminFfiError::Engine)?;
     serde_json::to_string(&profile).map_err(AdminFfiError::Serialize)
 }

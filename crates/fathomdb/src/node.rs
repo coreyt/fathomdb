@@ -660,9 +660,9 @@ impl NodeEngineCore {
     }
 
     #[napi]
-    pub fn get_vec_profile(&self) -> Result<String> {
+    pub fn get_vec_profile(&self, kind: String) -> Result<String> {
         self.with_engine(|engine| {
-            crate::admin_ffi::get_vec_profile_json(engine).map_err(map_admin_ffi_error)
+            crate::admin_ffi::get_vec_profile_json(engine, &kind).map_err(map_admin_ffi_error)
         })
     }
 
@@ -856,7 +856,9 @@ mod tests {
             None,
         )
         .expect("open");
-        let result = engine.get_vec_profile().expect("get_vec_profile");
+        let result = engine
+            .get_vec_profile("Document".to_owned())
+            .expect("get_vec_profile");
         assert_eq!(result, "null", "unset vec profile must serialize as null");
     }
 
