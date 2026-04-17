@@ -28,6 +28,28 @@ const MAX_SHAPE_CACHE_SIZE: usize = 4096;
 /// batches of this size rather than falling back to per-root queries.
 const BATCH_CHUNK_SIZE: usize = 200;
 
+/// Build an `IN (...)` SQL fragment and bind list for an expansion-slot filter.
+///
+/// Returns the SQL fragment `AND json_extract(n.properties, ?{p}) IN (?{p+1}, ...)`
+/// and the corresponding bind values `[path, val1, val2, ...]`.
+fn compile_expansion_in_filter(
+    p: usize,
+    path: &str,
+    value_binds: Vec<Value>,
+) -> (String, Vec<Value>) {
+    let first_val = p + 1;
+    let placeholders = (0..value_binds.len())
+        .map(|i| format!("?{}", first_val + i))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut binds = vec![Value::Text(path.to_owned())];
+    binds.extend(value_binds);
+    (
+        format!("\n                  AND json_extract(n.properties, ?{p}) IN ({placeholders})"),
+        binds,
+    )
+}
+
 /// Compile an optional expansion-slot target-side filter predicate into a SQL
 /// fragment and bind values for injection into the `numbered` CTE's WHERE clause.
 ///
@@ -137,6 +159,23 @@ fn compile_expansion_filter(
                 "compile_expansion_filter: EdgeProperty* variants must use compile_edge_filter"
             );
         }
+        Predicate::JsonPathFusedIn { path, values } => compile_expansion_in_filter(
+            p,
+            path,
+            values.iter().map(|v| Value::Text(v.clone())).collect(),
+        ),
+        Predicate::JsonPathIn { path, values } => compile_expansion_in_filter(
+            p,
+            path,
+            values
+                .iter()
+                .map(|v| match v {
+                    ScalarValue::Text(t) => Value::Text(t.clone()),
+                    ScalarValue::Integer(i) => Value::Integer(*i),
+                    ScalarValue::Bool(b) => Value::Integer(i64::from(*b)),
+                })
+                .collect(),
+        ),
     }
 }
 
@@ -1023,8 +1062,24 @@ impl ExecutionCoordinator {
                         "\n                      AND json_extract(src.properties, ?{path_idx}) = ?{value_idx}"
                     );
                 }
+                Predicate::JsonPathFusedIn { path, values } => {
+                    binds.push(BindValue::Text(path.clone()));
+                    let first_param = binds.len();
+                    for v in values {
+                        binds.push(BindValue::Text(v.clone()));
+                    }
+                    let placeholders = (1..=values.len())
+                        .map(|i| format!("?{}", first_param + i))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let _ = write!(
+                        fused_clauses,
+                        "\n                      AND json_extract(src.properties, ?{first_param}) IN ({placeholders})"
+                    );
+                }
                 Predicate::JsonPathEq { .. }
                 | Predicate::JsonPathCompare { .. }
+                | Predicate::JsonPathIn { .. }
                 | Predicate::EdgePropertyEq { .. }
                 | Predicate::EdgePropertyCompare { .. } => {
                     // JSON predicates are residual; compile_vector_search
@@ -1064,6 +1119,21 @@ impl ExecutionCoordinator {
                         "\n  AND json_extract(h.properties, ?{path_idx}) {operator} ?{value_idx}"
                     );
                 }
+                Predicate::JsonPathIn { path, values } => {
+                    binds.push(BindValue::Text(path.clone()));
+                    let first_param = binds.len();
+                    for v in values {
+                        binds.push(scalar_to_bind(v));
+                    }
+                    let placeholders = (1..=values.len())
+                        .map(|i| format!("?{}", first_param + i))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let _ = write!(
+                        filter_clauses,
+                        "\n  AND json_extract(h.properties, ?{first_param}) IN ({placeholders})"
+                    );
+                }
                 Predicate::KindEq(_)
                 | Predicate::LogicalIdEq(_)
                 | Predicate::SourceRefEq(_)
@@ -1072,6 +1142,7 @@ impl ExecutionCoordinator {
                 | Predicate::JsonPathFusedEq { .. }
                 | Predicate::JsonPathFusedTimestampCmp { .. }
                 | Predicate::JsonPathFusedBoolEq { .. }
+                | Predicate::JsonPathFusedIn { .. }
                 | Predicate::EdgePropertyEq { .. }
                 | Predicate::EdgePropertyCompare { .. } => {
                     // Fusable predicates live in fused_clauses above.
@@ -1736,8 +1807,24 @@ impl ExecutionCoordinator {
                         "\n                  AND json_extract(u.properties, ?{path_idx}) = ?{value_idx}"
                     );
                 }
+                Predicate::JsonPathFusedIn { path, values } => {
+                    binds.push(BindValue::Text(path.clone()));
+                    let first_param = binds.len();
+                    for v in values {
+                        binds.push(BindValue::Text(v.clone()));
+                    }
+                    let placeholders = (1..=values.len())
+                        .map(|i| format!("?{}", first_param + i))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let _ = write!(
+                        fused_clauses,
+                        "\n                  AND json_extract(u.properties, ?{first_param}) IN ({placeholders})"
+                    );
+                }
                 Predicate::JsonPathEq { .. }
                 | Predicate::JsonPathCompare { .. }
+                | Predicate::JsonPathIn { .. }
                 | Predicate::EdgePropertyEq { .. }
                 | Predicate::EdgePropertyCompare { .. } => {
                     // Should be in residual_filters; compile_search guarantees
@@ -1776,6 +1863,21 @@ impl ExecutionCoordinator {
                         "\n  AND json_extract(h.properties, ?{path_idx}) {operator} ?{value_idx}"
                     );
                 }
+                Predicate::JsonPathIn { path, values } => {
+                    binds.push(BindValue::Text(path.clone()));
+                    let first_param = binds.len();
+                    for v in values {
+                        binds.push(scalar_to_bind(v));
+                    }
+                    let placeholders = (1..=values.len())
+                        .map(|i| format!("?{}", first_param + i))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let _ = write!(
+                        filter_clauses,
+                        "\n  AND json_extract(h.properties, ?{first_param}) IN ({placeholders})"
+                    );
+                }
                 Predicate::KindEq(_)
                 | Predicate::LogicalIdEq(_)
                 | Predicate::SourceRefEq(_)
@@ -1784,6 +1886,7 @@ impl ExecutionCoordinator {
                 | Predicate::JsonPathFusedEq { .. }
                 | Predicate::JsonPathFusedTimestampCmp { .. }
                 | Predicate::JsonPathFusedBoolEq { .. }
+                | Predicate::JsonPathFusedIn { .. }
                 | Predicate::EdgePropertyEq { .. }
                 | Predicate::EdgePropertyCompare { .. } => {
                     // Fusable predicates live in fused_clauses; compile_search
@@ -2132,7 +2235,9 @@ impl ExecutionCoordinator {
         if expansion.filter.as_ref().is_some_and(|f| {
             matches!(
                 f,
-                Predicate::JsonPathFusedEq { .. } | Predicate::JsonPathFusedTimestampCmp { .. }
+                Predicate::JsonPathFusedEq { .. }
+                    | Predicate::JsonPathFusedTimestampCmp { .. }
+                    | Predicate::JsonPathFusedIn { .. }
             )
         }) {
             self.validate_fused_filter_for_edge_label(&expansion.label)?;

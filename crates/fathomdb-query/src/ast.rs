@@ -170,6 +170,27 @@ pub enum Predicate {
         /// Value to compare against.
         value: ScalarValue,
     },
+    /// Fused IN-set check on a JSON text property at the given path.
+    ///
+    /// Like [`Predicate::JsonPathFusedEq`], this variant is classified as
+    /// **fusable** and is pushed into the search CTE's inner `WHERE` clause.
+    /// The caller must have a registered FTS property schema for the path.
+    JsonPathFusedIn {
+        /// JSON path expression (e.g. `$.status`).
+        path: String,
+        /// Non-empty set of text values; the node must match at least one.
+        values: Vec<String>,
+    },
+    /// IN-set check on a JSON property at the given path.
+    ///
+    /// Unlike [`Predicate::JsonPathFusedIn`], this variant is **not** fusable
+    /// and is applied as a residual WHERE clause on the Nodes driver scan.
+    JsonPathIn {
+        /// JSON path expression (e.g. `$.category`).
+        path: String,
+        /// Non-empty set of values; the node must match at least one.
+        values: Vec<ScalarValue>,
+    },
 }
 
 /// Ordered comparison operator for JSON property filters.

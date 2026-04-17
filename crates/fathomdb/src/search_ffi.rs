@@ -202,6 +202,21 @@ pub enum PySearchFilter {
         /// Target value.
         value: String,
     },
+    /// Fused JSON-path text IN-set predicate. Landing SQL is pushed
+    /// into the inner search CTE WHERE.
+    FilterJsonFusedTextIn {
+        /// Property JSON path.
+        path: String,
+        /// Non-empty set of text values.
+        values: Vec<String>,
+    },
+    /// Non-fused JSON-path text IN-set predicate. Applied as residual WHERE.
+    FilterJsonTextIn {
+        /// Property JSON path.
+        path: String,
+        /// Non-empty set of text values.
+        values: Vec<String>,
+    },
     /// Fused JSON-path timestamp strict-greater predicate.
     FilterJsonFusedTimestampGt {
         /// Property JSON path.
@@ -303,6 +318,15 @@ impl From<PySearchFilter> for QueryStep {
             }
             PySearchFilter::FilterJsonFusedTextEq { path, value } => {
                 QueryStep::Filter(Predicate::JsonPathFusedEq { path, value })
+            }
+            PySearchFilter::FilterJsonFusedTextIn { path, values } => {
+                QueryStep::Filter(Predicate::JsonPathFusedIn { path, values })
+            }
+            PySearchFilter::FilterJsonTextIn { path, values } => {
+                QueryStep::Filter(Predicate::JsonPathIn {
+                    path,
+                    values: values.into_iter().map(ScalarValue::Text).collect(),
+                })
             }
             PySearchFilter::FilterJsonFusedTimestampGt { path, value } => {
                 QueryStep::Filter(Predicate::JsonPathFusedTimestampCmp {

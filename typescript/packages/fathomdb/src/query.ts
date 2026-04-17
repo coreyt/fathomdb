@@ -714,6 +714,19 @@ export class SearchBuilder {
     return this.#withFilter({ type: "filter_json_fused_bool_eq", path, value });
   }
 
+  /** Filter hits where the JSON text property at `path` is one of `values`, with fusion semantics. */
+  filterJsonFusedTextIn(path: string, values: string[]): SearchBuilder {
+    if (values.length === 0) throw new Error("filterJsonFusedTextIn: values must not be empty");
+    validateFusablePropertyPath(this.#core, this.#rootKind, path, "filterJsonFusedTextIn");
+    return this.#withFilter({ type: "filter_json_fused_text_in", path, values });
+  }
+
+  /** Filter hits where the JSON text property at `path` is one of `values` (non-fused residual). */
+  filterJsonTextIn(path: string, values: string[]): SearchBuilder {
+    if (values.length === 0) throw new Error("filterJsonTextIn: values must not be empty");
+    return this.#withFilter({ type: "filter_json_text_in", path, values });
+  }
+
   /**
    * Execute the search and return the matched rows.
    *
@@ -988,6 +1001,19 @@ export class TextSearchBuilder {
     return this.#withFilter({ type: "filter_json_fused_bool_eq", path, value });
   }
 
+  /** Filter hits where the JSON text property at `path` is one of `values`, with fusion semantics. */
+  filterJsonFusedTextIn(path: string, values: string[]): TextSearchBuilder {
+    if (values.length === 0) throw new Error("filterJsonFusedTextIn: values must not be empty");
+    validateFusablePropertyPath(this.#core, this.#rootKind, path, "filterJsonFusedTextIn");
+    return this.#withFilter({ type: "filter_json_fused_text_in", path, values });
+  }
+
+  /** Filter hits where the JSON text property at `path` is one of `values` (non-fused residual). */
+  filterJsonTextIn(path: string, values: string[]): TextSearchBuilder {
+    if (values.length === 0) throw new Error("filterJsonTextIn: values must not be empty");
+    return this.#withFilter({ type: "filter_json_text_in", path, values });
+  }
+
   /**
    * Execute the search and return the matched rows.
    *
@@ -1216,6 +1242,20 @@ export class FallbackSearchBuilder {
     const kind = this.#fusedKind("filterJsonFusedBoolEq");
     validateFusablePropertyPath(this.#core, kind, path, "filterJsonFusedBoolEq");
     return this.#withFilter({ type: "filter_json_fused_bool_eq", path, value });
+  }
+
+  /** Filter hits where the JSON text property at `path` is one of `values`, with fusion semantics. */
+  filterJsonFusedTextIn(path: string, values: string[]): FallbackSearchBuilder {
+    if (values.length === 0) throw new Error("filterJsonFusedTextIn: values must not be empty");
+    const kind = this.#fusedKind("filterJsonFusedTextIn");
+    validateFusablePropertyPath(this.#core, kind, path, "filterJsonFusedTextIn");
+    return this.#withFilter({ type: "filter_json_fused_text_in", path, values });
+  }
+
+  /** Filter hits where the JSON text property at `path` is one of `values` (non-fused residual). */
+  filterJsonTextIn(path: string, values: string[]): FallbackSearchBuilder {
+    if (values.length === 0) throw new Error("filterJsonTextIn: values must not be empty");
+    return this.#withFilter({ type: "filter_json_text_in", path, values });
   }
 
   /**

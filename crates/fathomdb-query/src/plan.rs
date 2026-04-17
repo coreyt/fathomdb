@@ -149,6 +149,16 @@ pub fn shape_signature(ast: &QueryAst) -> String {
                     };
                     let _ = write!(&mut signature, "-Filter(edge_prop_cmp:{path}:{op})");
                 }
+                Predicate::JsonPathFusedIn { path, values } => {
+                    let _ = write!(
+                        &mut signature,
+                        "-Filter(json_fused_in:{path}:n={})",
+                        values.len()
+                    );
+                }
+                Predicate::JsonPathIn { path, values } => {
+                    let _ = write!(&mut signature, "-Filter(json_in:{path}:n={})", values.len());
+                }
             },
         }
     }
