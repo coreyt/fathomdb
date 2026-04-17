@@ -16,9 +16,15 @@ export class StellaEmbedder implements QueryEmbedder {
   private readonly _baseUrl: string;
 
   constructor(options: StellaEmbedderOptions) {
+    if (!options.baseUrl) {
+      throw new Error(
+        "StellaEmbedder: no hosted API exists for stella_en_400M_v5; " +
+          "provide baseUrl pointing to your local inference server",
+      );
+    }
     this._apiKey = options.apiKey;
     this._dimensions = options.dimensions ?? DEFAULT_DIMENSIONS;
-    this._baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
+    this._baseUrl = options.baseUrl;
   }
 
   identity(): string {
