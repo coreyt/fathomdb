@@ -45,6 +45,11 @@ export class JinaEmbedder implements QueryEmbedder {
     }
 
     const json = (await response.json()) as { data: Array<{ embedding: number[] }> };
+    if (!Array.isArray(json.data) || json.data.length !== texts.length) {
+      throw new Error(
+        `Jina API returned ${json.data?.length ?? 0} embeddings for ${texts.length} inputs`,
+      );
+    }
     return json.data.map((item) => item.embedding);
   }
 }

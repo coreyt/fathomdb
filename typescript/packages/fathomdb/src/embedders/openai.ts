@@ -86,6 +86,11 @@ export class OpenAIEmbedder implements QueryEmbedder {
     }
 
     const json = (await response.json()) as { data: Array<{ embedding: number[] }> };
+    if (!Array.isArray(json.data) || json.data.length !== uncachedTexts.length) {
+      throw new Error(
+        `OpenAI API returned ${json.data?.length ?? 0} embeddings for ${uncachedTexts.length} inputs`,
+      );
+    }
 
     for (let i = 0; i < uncachedIndices.length; i++) {
       const originalIdx = uncachedIndices[i];

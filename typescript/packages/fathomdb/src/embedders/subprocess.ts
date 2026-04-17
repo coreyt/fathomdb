@@ -22,6 +22,7 @@ export class SubprocessEmbedder implements QueryEmbedder {
   private readonly _dimensions: number;
   private readonly _identity: string;
   private _proc: SpawnedProc | null = null;
+  private _queue: Promise<number[][]> = Promise.resolve([]);
 
   constructor(options: SubprocessEmbedderOptions) {
     this._command = options.command;
@@ -99,6 +100,15 @@ export class SubprocessEmbedder implements QueryEmbedder {
   }
 
   async embed(texts: string[]): Promise<number[][]> {
+    const next = this._queue.then(() => this._embedSerial(texts));
+    this._queue = next.then(
+      () => [],
+      () => [],
+    );
+    return next;
+  }
+
+  private async _embedSerial(texts: string[]): Promise<number[][]> {
     const results: number[][] = [];
 
     for (const text of texts) {
