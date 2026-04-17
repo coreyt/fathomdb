@@ -1,6 +1,14 @@
 # Pathway To Basic Cypher Support
 
-Date: 2026-03-28
+Date: 2026-03-28  
+**Superseded by:** `dev/pathway-to-basic-cypher-2026-04-17.md`
+
+This document's strategic framing remains valid. The 2026-04-17 document extends it with a
+concrete implementation plan, full conformance matrix, explicit AST types, translator rules, and
+sequencing relative to 0.5.1 and 0.6.0. Read this document for the "why"; read the 2026-04-17
+document for the "how".
+
+---
 
 ## Recommendation
 
