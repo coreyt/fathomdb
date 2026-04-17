@@ -291,7 +291,7 @@ def test_get_vec_profile_no_profile_message():
 
         result = runner.invoke(
             cli,
-            ["admin", "get-vec-profile", "--db", "/tmp/test.db"],
+            ["admin", "get-vec-profile", "--db", "/tmp/test.db", "--kind", "Document"],
         )
 
     assert result.exit_code == 0, result.output

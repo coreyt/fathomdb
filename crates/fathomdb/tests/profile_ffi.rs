@@ -133,7 +133,7 @@ fn set_get_vec_profile_roundtrip() {
         "dimensions should be 384"
     );
 
-    let get_response = get_vec_profile_json(&engine).expect("get_vec_profile_json");
+    let get_response = get_vec_profile_json(&engine, "*").expect("get_vec_profile_json");
     let get_record = parse_json(&get_response);
     assert_eq!(
         get_record["model_identity"].as_str(),

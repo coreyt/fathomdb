@@ -67,7 +67,7 @@ export type NativeEngineCore = {
   setFtsProfile(requestJson: string): string;
   getFtsProfile(kind: string): string;
   setVecProfile(requestJson: string): string;
-  getVecProfile(): string;
+  getVecProfile(kind: string): string;
   previewProjectionImpact(kind: string, facet: string): string;
   restoreVectorProfiles(): string;
   regenerateVectorEmbeddings(configJson: string): string;

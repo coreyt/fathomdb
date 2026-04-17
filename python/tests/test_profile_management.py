@@ -33,7 +33,7 @@ def test_get_vec_profile_none_pre_configure(tmp_path: Path) -> None:
     from fathomdb import Engine
 
     db = Engine.open(tmp_path / "agent.db")
-    result = db.admin.get_vec_profile()
+    result = db.admin.get_vec_profile("Document")
     assert result is None
 
 
@@ -217,7 +217,7 @@ def test_configure_vec_roundtrip(tmp_path: Path) -> None:
     assert result.model_identity == "test-model"
     assert result.dimensions == 128
 
-    fetched = admin.get_vec_profile()
+    fetched = admin.get_vec_profile("Document")
     assert fetched is not None
     assert fetched.model_identity == "test-model"
 

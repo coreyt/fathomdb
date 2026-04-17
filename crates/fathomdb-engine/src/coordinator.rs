@@ -463,11 +463,11 @@ impl ExecutionCoordinator {
             false
         };
 
-        if let Some(dim) = vector_dimension {
-            schema_manager
-                .ensure_vector_profile(&conn, "default", "vec_nodes_active", dim)
-                .map_err(EngineError::Schema)?;
-            // Profile was just created or updated — mark as enabled.
+        // 0.5.0: per-kind vec tables replace the global vec_nodes_active.
+        // The vector_dimension parameter now only sets the vector_enabled flag —
+        // no global table is created. Per-kind vec tables are created by
+        // `regenerate_vector_embeddings` at regen time.
+        if vector_dimension.is_some() {
             #[cfg(feature = "sqlite-vec")]
             {
                 vector_enabled = true;
@@ -563,7 +563,7 @@ impl ExecutionCoordinator {
 
     /// # Errors
     /// Returns [`EngineError`] if the SQL statement cannot be prepared or executed.
-    #[allow(clippy::expect_used)]
+    #[allow(clippy::expect_used, clippy::too_many_lines)]
     pub fn execute_compiled_read(
         &self,
         compiled: &CompiledQuery,
@@ -591,6 +591,10 @@ impl ExecutionCoordinator {
         // dropped that table, we rewrite the SQL and binds here to use the per-kind
         // `fts_props_<kind>` table (or omit the property UNION arm entirely when the
         // per-kind table does not yet exist).
+        //
+        // For VecNodes queries the fathomdb-query compile path generates SQL that
+        // hardcodes `vec_nodes_active`.  Since 0.5.0 uses per-kind tables, we rewrite
+        // `vec_nodes_active` to `vec_<root_kind>` here.
         let (adapted_sql, adapted_binds) = if compiled.driving_table == DrivingTable::FtsNodes {
             let conn_check = match self.lock_connection() {
                 Ok(g) => g,
@@ -602,6 +606,25 @@ impl ExecutionCoordinator {
             let result = adapt_fts_nodes_sql_for_per_kind_tables(compiled, &conn_check);
             drop(conn_check);
             result?
+        } else if compiled.driving_table == DrivingTable::VecNodes {
+            let root_kind = compiled
+                .binds
+                .get(1)
+                .and_then(|b| {
+                    if let BindValue::Text(k) = b {
+                        Some(k.as_str())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or("");
+            let vec_table = if root_kind.is_empty() {
+                "vec__unknown".to_owned()
+            } else {
+                fathomdb_schema::vec_kind_table_name(root_kind)
+            };
+            let new_sql = compiled.sql.replace("vec_nodes_active", &vec_table);
+            (new_sql, compiled.binds.clone())
         } else {
             (compiled.sql.clone(), compiled.binds.clone())
         };
@@ -986,6 +1009,15 @@ impl ExecutionCoordinator {
             ""
         };
 
+        // Derive the per-kind vec table name from the query's root kind.
+        // An empty root_kind defaults to a sentinel that will not exist, causing
+        // graceful degradation (was_degraded=true).
+        let vec_table = if compiled.root_kind.is_empty() {
+            "vec__unknown".to_owned()
+        } else {
+            fathomdb_schema::vec_kind_table_name(&compiled.root_kind)
+        };
+
         let sql = format!(
             "WITH vector_hits AS (
                 SELECT
@@ -1000,7 +1032,7 @@ impl ExecutionCoordinator {
                     vc.chunk_id AS chunk_id
                 FROM (
                     SELECT chunk_id, distance
-                    FROM vec_nodes_active
+                    FROM {vec_table}
                     WHERE embedding MATCH ?1
                     LIMIT {base_limit}
                 ) vc
@@ -2811,12 +2843,19 @@ fn strip_prop_fts_union_arm(sql: &str) -> String {
     sql.to_owned()
 }
 
-/// Returns `true` when `err` indicates the vec virtual table is absent
-/// (sqlite-vec feature enabled but `vec_nodes_active` not yet created).
+/// Returns `true` when `err` indicates the vec virtual table is absent.
+///
+/// Matches:
+/// - "no such table: vec_<kind>" (per-kind table not yet created by regeneration)
+/// - "no such module: vec0" (sqlite-vec extension not available)
+/// - Legacy `"no such table: vec_nodes_active"` (for backward compatibility with
+///   any remaining tests or DB files referencing the old global table)
 pub(crate) fn is_vec_table_absent(err: &rusqlite::Error) -> bool {
     match err {
         rusqlite::Error::SqliteFailure(_, Some(msg)) => {
-            msg.contains("vec_nodes_active") || msg.contains("no such module: vec0")
+            // Per-kind tables start with "vec_"
+            (msg.contains("no such table: vec_") && !msg.contains("vec_embedding"))
+                || msg.contains("no such module: vec0")
         }
         _ => false,
     }
@@ -3533,6 +3572,41 @@ mod tests {
         assert!(!is_vec_table_absent(&make_err("vec0 constraint violated")));
         assert!(!is_vec_table_absent(&make_err("no such table: nodes")));
         assert!(!is_vec_table_absent(&rusqlite::Error::QueryReturnedNoRows));
+    }
+
+    // --- 0.5.0 item 6: per-kind vec table in coordinator ---
+
+    #[test]
+    fn vector_search_uses_per_kind_table_and_degrades_when_table_absent() {
+        // Without sqlite-vec feature or without creating vec_mykind, querying
+        // for kind "MyKind" should degrade gracefully (was_degraded=true).
+        let db = NamedTempFile::new().expect("temporary db");
+        let coordinator = ExecutionCoordinator::open(
+            db.path(),
+            Arc::new(SchemaManager::new()),
+            None,
+            1,
+            Arc::new(TelemetryCounters::default()),
+            None,
+        )
+        .expect("coordinator");
+
+        let compiled = QueryBuilder::nodes("MyKind")
+            .vector_search("some query", 5)
+            .compile()
+            .expect("vector query compiles");
+
+        let rows = coordinator
+            .execute_compiled_read(&compiled)
+            .expect("degraded read must succeed");
+        assert!(
+            rows.was_degraded,
+            "must degrade when vec_mykind table does not exist"
+        );
+        assert!(
+            rows.nodes.is_empty(),
+            "degraded result must return empty nodes"
+        );
     }
 
     #[test]

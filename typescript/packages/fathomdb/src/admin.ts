@@ -477,11 +477,11 @@ export class AdminClient {
   }
 
   /**
-   * Return the global vector embedding profile, or `null` if not set.
+   * Return the vector embedding profile for a given node kind, or `null` if not set.
    */
-  getVecProfile(progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): VecProfile | null {
+  getVecProfile(kind: string, progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): VecProfile | null {
     return this.#run("admin.get_vec_profile", () => {
-      const raw = parseNativeJson(callNative(() => this.#core.getVecProfile()));
+      const raw = parseNativeJson(callNative(() => this.#core.getVecProfile(kind)));
       if (raw === null) return null;
       return vecProfileFromWire(raw as Record<string, unknown>);
     }, progressCallback, feedbackConfig);

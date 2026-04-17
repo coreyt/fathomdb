@@ -233,8 +233,8 @@ fn regenerate_vector_embeddings_errors_when_embedder_is_none() {
     let (_db, engine) = open_engine(EmbedderChoice::None);
 
     let config = VectorRegenerationConfig {
+        kind: "Document".to_owned(),
         profile: "default".to_owned(),
-        table_name: "vec_nodes_active".to_owned(),
         chunking_policy: "per_chunk".to_owned(),
         preprocessing_policy: "trim".to_owned(),
     };
@@ -305,8 +305,8 @@ fn engine_regenerate_vector_embeddings_uses_open_time_embedder_identity() {
         .expect("seed");
 
     let config = VectorRegenerationConfig {
+        kind: "Document".to_owned(),
         profile: "default".to_owned(),
-        table_name: "vec_nodes_active".to_owned(),
         chunking_policy: "per_chunk".to_owned(),
         preprocessing_policy: "trim".to_owned(),
     };
