@@ -73,6 +73,7 @@ pub fn is_fusable(predicate: &Predicate) -> bool {
             | Predicate::ContentRefNotNull
             | Predicate::JsonPathFusedEq { .. }
             | Predicate::JsonPathFusedTimestampCmp { .. }
+            | Predicate::JsonPathFusedIn { .. }
     )
 }
 
@@ -163,6 +164,10 @@ mod tests {
             op: ComparisonOp::Gt,
             value: 1234,
         }));
+        assert!(is_fusable(&Predicate::JsonPathFusedIn {
+            path: "$.status".to_owned(),
+            values: vec!["open".to_owned(), "pending".to_owned()],
+        }));
     }
 
     #[test]
@@ -175,6 +180,10 @@ mod tests {
             path: "$.priority".to_owned(),
             op: ComparisonOp::Gte,
             value: ScalarValue::Integer(5),
+        }));
+        assert!(!is_fusable(&Predicate::JsonPathIn {
+            path: "$.category".to_owned(),
+            values: vec![ScalarValue::Text("alpha".to_owned())],
         }));
     }
 

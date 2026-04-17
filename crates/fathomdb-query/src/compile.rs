@@ -180,7 +180,25 @@ fn append_fusable_clause(
                 "\n                          AND json_extract({alias}.properties, ?{path_index}) {operator} ?{value_index}"
             );
         }
-        Predicate::JsonPathEq { .. } | Predicate::JsonPathCompare { .. } => {
+        Predicate::JsonPathFusedIn { path, values } => {
+            validate_json_path(path)?;
+            binds.push(BindValue::Text(path.clone()));
+            let first_param = binds.len();
+            for v in values {
+                binds.push(BindValue::Text(v.clone()));
+            }
+            let placeholders = (1..=values.len())
+                .map(|i| format!("?{}", first_param + i))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let _ = write!(
+                sql,
+                "\n                          AND json_extract({alias}.properties, ?{first_param}) IN ({placeholders})"
+            );
+        }
+        Predicate::JsonPathEq { .. }
+        | Predicate::JsonPathCompare { .. }
+        | Predicate::JsonPathIn { .. } => {
             unreachable!("append_fusable_clause received a residual predicate");
         }
     }
@@ -509,6 +527,44 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
                                 "\n                      AND json_extract(src.properties, ?{path_index}) {operator} ?{value_index}"
                             );
                         }
+                        Predicate::JsonPathIn { path, values } => {
+                            validate_json_path(path)?;
+                            binds.push(BindValue::Text(path.clone()));
+                            let first_param = binds.len();
+                            for v in values {
+                                binds.push(match v {
+                                    ScalarValue::Text(text) => BindValue::Text(text.clone()),
+                                    ScalarValue::Integer(integer) => BindValue::Integer(*integer),
+                                    ScalarValue::Bool(boolean) => BindValue::Bool(*boolean),
+                                });
+                            }
+                            let placeholders = (1..=values.len())
+                                .map(|i| format!("?{}", first_param + i))
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            let _ = write!(
+                                &mut sql,
+                                "\n                      AND json_extract(src.properties, ?{first_param}) IN ({placeholders})"
+                            );
+                        }
+                        Predicate::JsonPathFusedIn { path, values } => {
+                            // On the Nodes driver all predicates are pushed inline;
+                            // treat like JsonPathIn but values are always text.
+                            validate_json_path(path)?;
+                            binds.push(BindValue::Text(path.clone()));
+                            let first_param = binds.len();
+                            for v in values {
+                                binds.push(BindValue::Text(v.clone()));
+                            }
+                            let placeholders = (1..=values.len())
+                                .map(|i| format!("?{}", first_param + i))
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            let _ = write!(
+                                &mut sql,
+                                "\n                      AND json_extract(src.properties, ?{first_param}) IN ({placeholders})"
+                            );
+                        }
                     }
                 }
             }
@@ -622,13 +678,34 @@ WHERE 1 = 1",
                         "\n  AND json_extract(n.properties, ?{path_index}) {operator} ?{value_index}",
                     );
                 }
+                Predicate::JsonPathIn { path, values } => {
+                    validate_json_path(path)?;
+                    binds.push(BindValue::Text(path.clone()));
+                    let first_param = binds.len();
+                    for v in values {
+                        binds.push(match v {
+                            ScalarValue::Text(text) => BindValue::Text(text.clone()),
+                            ScalarValue::Integer(integer) => BindValue::Integer(*integer),
+                            ScalarValue::Bool(boolean) => BindValue::Bool(*boolean),
+                        });
+                    }
+                    let placeholders = (1..=values.len())
+                        .map(|i| format!("?{}", first_param + i))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let _ = write!(
+                        &mut sql,
+                        "\n  AND json_extract(n.properties, ?{first_param}) IN ({placeholders})",
+                    );
+                }
                 Predicate::KindEq(_)
                 | Predicate::LogicalIdEq(_)
                 | Predicate::SourceRefEq(_)
                 | Predicate::ContentRefEq(_)
                 | Predicate::ContentRefNotNull
                 | Predicate::JsonPathFusedEq { .. }
-                | Predicate::JsonPathFusedTimestampCmp { .. } => {
+                | Predicate::JsonPathFusedTimestampCmp { .. }
+                | Predicate::JsonPathFusedIn { .. } => {
                     // Fusable — already injected into base_candidates by
                     // `partition_search_filters`.
                 }

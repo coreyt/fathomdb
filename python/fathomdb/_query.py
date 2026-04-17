@@ -623,6 +623,36 @@ class _SearchBuilderBase:
             {"type": "filter_json_fused_timestamp_lte", "path": path, "value": value}
         )
 
+    def filter_json_fused_text_in(self, path: str, values: list[str]) -> "Self":
+        """Fused IN-set filter for a JSON text property.
+
+        Pushes the predicate into the search CTE's inner WHERE so the LIMIT
+        applies after filtering. Requires an FTS property schema for the bound
+        kind that includes ``path``.
+
+        Raises :class:`BuilderValidationError` if the bound kind has no
+        registered property-FTS schema, or if ``path`` is not indexed.
+        """
+        if not values:
+            raise ValueError("filter_json_fused_text_in: values must not be empty")
+        kind = self._fused_validation_kind("filter_json_fused_text_in")
+        self._validate_fused_property_path(kind, path, "filter_json_fused_text_in")
+        return self._with_filter(
+            {"type": "filter_json_fused_text_in", "path": path, "values": values}
+        )
+
+    def filter_json_text_in(self, path: str, values: list[str]) -> "Self":
+        """Non-fused IN-set filter for a JSON text property.
+
+        Applied as a residual WHERE clause on the nodes driver scan.
+        No FTS property schema is required.
+        """
+        if not values:
+            raise ValueError("filter_json_text_in: values must not be empty")
+        return self._with_filter(
+            {"type": "filter_json_text_in", "path": path, "values": values}
+        )
+
     def _execute(
         self,
         *,

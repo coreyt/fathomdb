@@ -366,6 +366,55 @@ impl QueryBuilder {
         self
     }
 
+    /// Append a fused JSON text IN-set predicate without validating the
+    /// fusion gate. See [`Self::filter_json_fused_text_eq_unchecked`] for
+    /// the contract.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `values` is empty — `SQLite` `IN` with an empty list is a syntax error.
+    #[must_use]
+    pub fn filter_json_fused_text_in_unchecked(
+        mut self,
+        path: impl Into<String>,
+        values: Vec<String>,
+    ) -> Self {
+        assert!(
+            !values.is_empty(),
+            "filter_json_fused_text_in: values must not be empty"
+        );
+        self.ast
+            .steps
+            .push(QueryStep::Filter(Predicate::JsonPathFusedIn {
+                path: path.into(),
+                values,
+            }));
+        self
+    }
+
+    /// Filter results where a JSON text property at `path` is one of `values`.
+    ///
+    /// This is the non-fused variant; the predicate is applied as a residual
+    /// WHERE clause. No FTS schema is required.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `values` is empty — `SQLite` `IN` with an empty list is a syntax error.
+    #[must_use]
+    pub fn filter_json_text_in(mut self, path: impl Into<String>, values: Vec<String>) -> Self {
+        assert!(
+            !values.is_empty(),
+            "filter_json_text_in: values must not be empty"
+        );
+        self.ast
+            .steps
+            .push(QueryStep::Filter(Predicate::JsonPathIn {
+                path: path.into(),
+                values: values.into_iter().map(ScalarValue::Text).collect(),
+            }));
+        self
+    }
+
     /// Add an expansion slot that traverses edges of the given label for each root result.
     ///
     /// Pass `filter: None` to preserve the existing behavior. `filter: Some(_)` is
