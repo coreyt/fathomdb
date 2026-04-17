@@ -215,5 +215,112 @@ def _resolve_embedder(name: str):
     return _StubEmbedder()
 
 
+@admin.command("restore-vector-profiles")
+@click.option("--db", required=True)
+def restore_vector_profiles(db):
+    """Restore vector profile metadata from the database schema."""
+    engine = _open_engine(db)
+    report = engine.admin.restore_vector_profiles()
+    click.echo(
+        json.dumps(
+            {
+                "targets": [t.value for t in report.targets],
+                "rebuilt_rows": report.rebuilt_rows,
+                "notes": report.notes,
+            }
+        )
+    )
+
+
+@admin.command("regen-vectors")
+@click.option("--db", required=True)
+@click.option("--embedder", required=True, help="Embedder preset or model identity")
+@click.option("--kind", required=True, help="Node kind")
+@click.option("--profile", default="main")
+@click.option("--chunking-policy", default="full")
+@click.option("--preprocessing-policy", default="none")
+def regen_vectors(db, embedder, kind, profile, chunking_policy, preprocessing_policy):
+    """Regenerate vector embeddings for a node kind."""
+    import dataclasses
+
+    from fathomdb import Engine
+    from fathomdb._types import VectorRegenerationConfig
+
+    engine = Engine.open(db, embedder=embedder)
+    config = VectorRegenerationConfig(
+        kind=kind,
+        profile=profile,
+        chunking_policy=chunking_policy,
+        preprocessing_policy=preprocessing_policy,
+    )
+    report = engine.admin.regenerate_vector_embeddings(config)
+    click.echo(json.dumps(dataclasses.asdict(report)))
+
+
+@admin.command("trace-source")
+@click.option("--db", required=True)
+@click.option("--source-ref", required=True, help="Source reference URI")
+def trace_source(db, source_ref):
+    """Trace all nodes, edges, and actions originating from a source reference."""
+    import dataclasses
+
+    engine = _open_engine(db)
+    report = engine.admin.trace_source(source_ref)
+    click.echo(json.dumps(dataclasses.asdict(report)))
+
+
+@admin.command("excise-source")
+@click.option("--db", required=True)
+@click.option("--source-ref", required=True, help="Source reference URI to excise")
+def excise_source(db, source_ref):
+    """Remove all data originating from a source reference."""
+    import dataclasses
+
+    engine = _open_engine(db)
+    report = engine.admin.excise_source(source_ref)
+    click.echo(json.dumps(dataclasses.asdict(report)))
+
+
+@admin.command("restore-logical-id")
+@click.option("--db", required=True)
+@click.option("--logical-id", required=True)
+def restore_logical_id(db, logical_id):
+    """Restore a previously retired node by its logical ID."""
+    import dataclasses
+
+    engine = _open_engine(db)
+    report = engine.admin.restore_logical_id(logical_id)
+    click.echo(json.dumps(dataclasses.asdict(report)))
+
+
+@admin.command("purge-logical-id")
+@click.option("--db", required=True)
+@click.option("--logical-id", required=True)
+def purge_logical_id(db, logical_id):
+    """Permanently delete all rows associated with a logical ID."""
+    import dataclasses
+
+    engine = _open_engine(db)
+    report = engine.admin.purge_logical_id(logical_id)
+    click.echo(json.dumps(dataclasses.asdict(report)))
+
+
+@admin.command("safe-export")
+@click.option("--db", required=True)
+@click.option(
+    "--destination", required=True, help="Destination path for the exported database"
+)
+@click.option(
+    "--no-checkpoint", is_flag=True, default=False, help="Skip WAL checkpoint"
+)
+def safe_export(db, destination, no_checkpoint):
+    """Export a consistent snapshot of the database."""
+    import dataclasses
+
+    engine = _open_engine(db)
+    report = engine.admin.safe_export(destination, force_checkpoint=not no_checkpoint)
+    click.echo(json.dumps(dataclasses.asdict(report)))
+
+
 def main():
     cli()
