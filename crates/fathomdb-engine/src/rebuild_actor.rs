@@ -290,8 +290,8 @@ fn run_rebuild(conn: &mut rusqlite::Connection, req: &RebuildRequest) -> Result<
         // Save the limit used for THIS batch before adjusting for the next one.
         let limit_used = batch_size;
         // Dynamically adjust batch size to target ~1s per batch.
-        if elapsed_ms > 0 {
-            let new_size = (batch_size as u128 * BATCH_TARGET_MS / elapsed_ms).clamp(100, 50_000);
+        if let Some(new_size) = (batch_size as u128 * BATCH_TARGET_MS).checked_div(elapsed_ms) {
+            let new_size = new_size.clamp(100, 50_000);
             batch_size = usize::try_from(new_size).unwrap_or(50_000);
         }
 

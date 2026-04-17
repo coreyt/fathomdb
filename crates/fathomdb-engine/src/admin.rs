@@ -2590,7 +2590,7 @@ impl AdminService {
 
         let mut embedding_map: std::collections::HashMap<String, Vec<u8>> =
             std::collections::HashMap::with_capacity(chunks.len());
-        for (chunk, vector) in chunks.iter().zip(batch_vectors.into_iter()) {
+        for (chunk, vector) in chunks.iter().zip(batch_vectors) {
             if vector.len() != identity.dimension {
                 let failure = VectorRegenerationFailure::new(
                     VectorRegenerationFailureClass::InvalidEmbedderOutput,
