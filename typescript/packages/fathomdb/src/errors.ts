@@ -17,6 +17,9 @@ export class InvalidWriteError extends FathomError {}
 /** Raised when the write-ahead log writer rejects a transaction. */
 export class WriterRejectedError extends FathomError {}
 
+/** Raised when the WAL writer times out waiting for a transaction slot. */
+export class WriterTimedOutError extends FathomError {}
+
 /** Raised when a schema operation fails (e.g. missing table or column). */
 export class SchemaError extends FathomError {}
 
@@ -110,6 +113,8 @@ export function mapNativeError(error: unknown): Error {
       return new InvalidWriteError(message);
     case "WRITER_REJECTED":
       return new WriterRejectedError(message);
+    case "WRITER_TIMED_OUT":
+      return new WriterTimedOutError(message);
     case "SCHEMA_ERROR":
       return new SchemaError(message);
     case "SQLITE_ERROR":
