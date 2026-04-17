@@ -22,7 +22,8 @@ export {
   RebuildImpactError,
   SchemaError,
   SqliteError,
-  WriterRejectedError
+  WriterRejectedError,
+  WriterTimedOutError
 } from "./errors.js";
 export { FallbackSearchBuilder, Query, SearchBuilder, TextSearchBuilder } from "./query.js";
 export {

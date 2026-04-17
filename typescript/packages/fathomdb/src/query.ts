@@ -532,6 +532,7 @@ export class SearchBuilder {
   readonly #filters: SearchFilter[];
   readonly #attributionRequested: boolean;
   readonly #expansions: Array<Record<string, RawJson>>;
+  readonly #expandLimit: number | null;
 
   constructor(
     core: NativeEngineCore,
@@ -541,6 +542,7 @@ export class SearchBuilder {
     filters: SearchFilter[] = [],
     attributionRequested = false,
     expansions: Array<Record<string, RawJson>> = [],
+    expandLimit: number | null = null,
   ) {
     this.#core = core;
     this.#rootKind = rootKind;
@@ -549,6 +551,7 @@ export class SearchBuilder {
     this.#filters = filters;
     this.#attributionRequested = attributionRequested;
     this.#expansions = expansions;
+    this.#expandLimit = expandLimit;
   }
 
   #withFilter(filter: SearchFilter): SearchBuilder {
@@ -560,6 +563,7 @@ export class SearchBuilder {
       [...this.#filters, filter],
       this.#attributionRequested,
       [...this.#expansions],
+      this.#expandLimit,
     );
   }
 
@@ -572,6 +576,7 @@ export class SearchBuilder {
       [...this.#filters],
       this.#attributionRequested,
       [...this.#expansions, expansion],
+      this.#expandLimit,
     );
   }
 
@@ -585,6 +590,7 @@ export class SearchBuilder {
       [...this.#filters],
       true,
       [...this.#expansions],
+      this.#expandLimit,
     );
   }
 
@@ -746,6 +752,14 @@ export class SearchBuilder {
     });
   }
 
+  /** Cap the number of expansion rows returned by grouped execution. */
+  limit(n: number): SearchBuilder {
+    return new SearchBuilder(
+      this.#core, this.#rootKind, this.#strictQuery, this.#limit,
+      [...this.#filters], this.#attributionRequested, [...this.#expansions], n,
+    );
+  }
+
   /**
    * Compile the search with expansions into SQL without executing it.
    *
@@ -791,7 +805,7 @@ export class SearchBuilder {
       root_kind: this.#rootKind,
       steps,
       expansions: this.#expansions,
-      final_limit: null,
+      final_limit: this.#expandLimit,
     });
   }
 }

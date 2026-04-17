@@ -63,6 +63,14 @@ import {
   type VectorRegenerationReport,
 } from "./types.js";
 
+export const TOKENIZER_PRESETS: Record<string, string> = {
+  "recall-optimized-english": "porter unicode61 remove_diacritics 2",
+  "precision-optimized": "unicode61 remove_diacritics 2",
+  "global-cjk": "icu",
+  "substring-trigram": "trigram",
+  "source-code": "unicode61 tokenchars '._-$@'",
+};
+
 /**
  * Administrative operations for a fathomdb database.
  *
@@ -527,8 +535,9 @@ export class AdminClient {
       if (impact.rowsToRebuild > 0 && !options.agreeToRebuildImpact) {
         throw new RebuildImpactError(impact);
       }
+      const resolvedTokenizer = TOKENIZER_PRESETS[tokenizer] ?? tokenizer;
       const profileRaw = parseNativeJson(callNative(() =>
-        this.#core.setFtsProfile(JSON.stringify({ kind, tokenizer }))
+        this.#core.setFtsProfile(JSON.stringify({ kind, tokenizer: resolvedTokenizer }))
       ));
       const schemaRaw = parseNativeJson(callNative(() => this.#core.describeFtsPropertySchema(kind)));
       if (schemaRaw !== null && schemaRaw.kind != null) {
