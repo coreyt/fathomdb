@@ -1,10 +1,22 @@
 import dataclasses
 import json
 import sys
+from contextlib import contextmanager
 
 import click
 
 from fathomdb import RebuildImpactError
+
+
+@contextmanager
+def _handle_fathom_errors():
+    from fathomdb.errors import FathomError
+
+    try:
+        yield
+    except FathomError as e:
+        click.echo(json.dumps({"error": str(e)}), err=True)
+        sys.exit(1)
 
 
 def _open_engine(db: str):
@@ -154,12 +166,13 @@ def preview_impact(db, kind, target):
 @click.option("--kind", required=True)
 def get_fts_profile(db, kind):
     """Print the FTS profile for a node kind."""
-    engine = _open_engine(db)
-    profile = engine.admin.get_fts_profile(kind)
-    if profile is None:
-        click.echo(f"No FTS profile configured for kind '{kind}'")
-    else:
-        click.echo(json.dumps({"kind": profile.kind, "tokenizer": profile.tokenizer}))
+    with _handle_fathom_errors():
+        engine = _open_engine(db)
+        profile = engine.admin.get_fts_profile(kind)
+        if profile is None:
+            click.echo(json.dumps(None))
+        else:
+            click.echo(json.dumps({"kind": profile.kind, "tokenizer": profile.tokenizer}))
 
 
 @admin.command("get-vec-profile")
@@ -167,19 +180,20 @@ def get_fts_profile(db, kind):
 @click.option("--kind", required=True, help="Node kind to look up the vec profile for")
 def get_vec_profile(db, kind):
     """Print the vector embedding profile for a given node kind."""
-    engine = _open_engine(db)
-    profile = engine.admin.get_vec_profile(kind)
-    if profile is None:
-        click.echo("No vec profile configured")
-    else:
-        click.echo(
-            json.dumps(
-                {
-                    "model_identity": profile.model_identity,
-                    "dimensions": profile.dimensions,
-                }
+    with _handle_fathom_errors():
+        engine = _open_engine(db)
+        profile = engine.admin.get_vec_profile(kind)
+        if profile is None:
+            click.echo(json.dumps(None))
+        else:
+            click.echo(
+                json.dumps(
+                    {
+                        "model_identity": profile.model_identity,
+                        "dimensions": profile.dimensions,
+                    }
+                )
             )
-        )
 
 
 @admin.command("check-integrity")
@@ -253,7 +267,7 @@ def describe_fts_property_schema(db, kind):
     engine = _open_engine(db)
     record = engine.admin.describe_fts_property_schema(kind)
     if record is None:
-        click.echo(f"No FTS property schema for kind '{kind}'")
+        click.echo(json.dumps(None))
     else:
         click.echo(
             json.dumps(
@@ -458,7 +472,7 @@ def describe_operational_collection(db, name):
     engine = _open_engine(db)
     record = engine.admin.describe_operational_collection(name)
     if record is None:
-        click.echo(f"No collection '{name}'")
+        click.echo(json.dumps(None))
     else:
         click.echo(json.dumps(_asdict_json_safe(record)))
 

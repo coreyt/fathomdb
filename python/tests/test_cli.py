@@ -234,7 +234,7 @@ def test_get_fts_profile_no_profile_message():
         )
 
     assert result.exit_code == 0, result.output
-    assert "No FTS profile" in result.output
+    assert json.loads(result.output) is None
 
 
 # ---------------------------------------------------------------------------
@@ -295,7 +295,7 @@ def test_get_vec_profile_no_profile_message():
         )
 
     assert result.exit_code == 0, result.output
-    assert "No vec profile" in result.output
+    assert json.loads(result.output) is None
 
 
 # ---------------------------------------------------------------------------
@@ -646,8 +646,7 @@ def test_describe_fts_property_schema_none_prints_message():
         )
 
     assert result.exit_code == 0, result.output
-    assert "Missing" in result.output
-    assert "No FTS property schema" in result.output
+    assert json.loads(result.output) is None
 
 
 def test_list_fts_property_schemas_exits_zero_and_prints_json():
@@ -1025,7 +1024,7 @@ def test_describe_operational_collection_not_found():
         )
 
     assert result.exit_code == 0, result.output
-    assert "missing_col" in result.output
+    assert json.loads(result.output) is None
 
 
 def test_register_operational_collection():
