@@ -258,6 +258,7 @@ class Query:
         direction: TraverseDirection | str,
         label: str,
         max_depth: int,
+        edge_filter: dict | None = None,
     ) -> "Query":
         """Register a named expansion slot for grouped query execution.
 
@@ -266,18 +267,23 @@ class Query:
             direction: "in" or "out" relative to root nodes.
             label: Edge kind to follow.
             max_depth: Maximum traversal depth.
+            edge_filter: Optional edge property filter predicate dict. Only
+                edges whose properties satisfy this predicate will be traversed.
+                Use the same dict format as node filter steps, e.g.
+                ``{"type": "edge_property_eq", "path": "$.rel", "value": "cites"}``.
         """
         value = (
             direction.value if isinstance(direction, TraverseDirection) else direction
         )
-        return self._with_expansion(
-            {
-                "slot": slot,
-                "direction": value,
-                "label": label,
-                "max_depth": max_depth,
-            }
-        )
+        expansion: dict = {
+            "slot": slot,
+            "direction": value,
+            "label": label,
+            "max_depth": max_depth,
+        }
+        if edge_filter is not None:
+            expansion["edge_filter"] = edge_filter
+        return self._with_expansion(expansion)
 
     def limit(self, limit: int) -> "Query":
         """Cap the number of result rows returned by the query."""
@@ -827,18 +833,32 @@ class SearchBuilder(_SearchBuilderBase):
         label: str,
         max_depth: int,
         filter: dict | None = None,
+        edge_filter: dict | None = None,
     ) -> "SearchBuilder":
-        """Register a named expansion slot for grouped query execution."""
+        """Register a named expansion slot for grouped query execution.
+
+        Args:
+            slot: Name for this expansion in the grouped result.
+            direction: "in" or "out" relative to root nodes.
+            label: Edge kind to follow.
+            max_depth: Maximum traversal depth.
+            filter: Optional node property filter predicate dict.
+            edge_filter: Optional edge property filter predicate dict. Only
+                edges whose properties satisfy this predicate will be traversed.
+        """
         value = (
             direction.value if isinstance(direction, TraverseDirection) else direction
         )
-        expansion = {
+        expansion: dict = {
             "slot": slot,
             "direction": value,
             "label": label,
             "max_depth": max_depth,
-            "filter": filter,
         }
+        if filter is not None:
+            expansion["filter"] = filter
+        if edge_filter is not None:
+            expansion["edge_filter"] = edge_filter
         return self._clone(expansions=[*self._expansions, expansion])
 
     def limit(self, limit: int) -> "SearchBuilder":

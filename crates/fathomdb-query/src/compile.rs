@@ -194,6 +194,11 @@ fn append_fusable_clause(
         Predicate::JsonPathEq { .. } | Predicate::JsonPathCompare { .. } => {
             unreachable!("append_fusable_clause received a residual predicate");
         }
+        Predicate::EdgePropertyEq { .. } | Predicate::EdgePropertyCompare { .. } => {
+            unreachable!(
+                "append_fusable_clause received an edge-property predicate; edge filters are handled in compile_edge_filter"
+            );
+        }
     }
     Ok(())
 }
@@ -489,8 +494,11 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
                                 "\n                      AND src.content_ref = ?{bind_index}"
                             );
                         }
-                        Predicate::KindEq(_) => {
-                            // Already filtered by ast.root_kind above.
+                        Predicate::KindEq(_)
+                        | Predicate::EdgePropertyEq { .. }
+                        | Predicate::EdgePropertyCompare { .. } => {
+                            // KindEq: already filtered by ast.root_kind above.
+                            // EdgeProperty*: not valid in the main query filter path.
                         }
                         Predicate::JsonPathFusedEq { path, value } => {
                             validate_json_path(path)?;
@@ -651,9 +659,12 @@ WHERE 1 = 1",
                 | Predicate::ContentRefNotNull
                 | Predicate::JsonPathFusedEq { .. }
                 | Predicate::JsonPathFusedTimestampCmp { .. }
-                | Predicate::JsonPathFusedBoolEq { .. } => {
+                | Predicate::JsonPathFusedBoolEq { .. }
+                | Predicate::EdgePropertyEq { .. }
+                | Predicate::EdgePropertyCompare { .. } => {
                     // Fusable — already injected into base_candidates by
-                    // `partition_search_filters`.
+                    // `partition_search_filters`. Edge property predicates
+                    // are not valid in the main query path.
                 }
             }
         }
@@ -1185,7 +1196,7 @@ mod tests {
         let left = compile_grouped_query(
             &QueryBuilder::nodes("Meeting")
                 .text_search("budget", 5)
-                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
+                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None, None)
                 .limit(10)
                 .into_ast(),
         )
@@ -1193,7 +1204,7 @@ mod tests {
         let right = compile_grouped_query(
             &QueryBuilder::nodes("Meeting")
                 .text_search("planning", 5)
-                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
+                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None, None)
                 .limit(10)
                 .into_ast(),
         )
@@ -1206,8 +1217,15 @@ mod tests {
     fn compile_grouped_rejects_duplicate_expansion_slot_names() {
         let result = compile_grouped_query(
             &QueryBuilder::nodes("Meeting")
-                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
-                .expand("tasks", TraverseDirection::Out, "HAS_DECISION", 1, None)
+                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None, None)
+                .expand(
+                    "tasks",
+                    TraverseDirection::Out,
+                    "HAS_DECISION",
+                    1,
+                    None,
+                    None,
+                )
                 .into_ast(),
         );
 
@@ -1221,7 +1239,7 @@ mod tests {
     fn flat_compile_rejects_queries_with_expansions() {
         let result = compile_query(
             &QueryBuilder::nodes("Meeting")
-                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
+                .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None, None)
                 .into_ast(),
         );
 

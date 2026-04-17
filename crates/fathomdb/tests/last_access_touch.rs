@@ -198,7 +198,7 @@ fn touch_last_accessed_is_visible_on_grouped_query_results() {
     let compiled = engine
         .query("Meeting")
         .filter_logical_id_eq("meeting-1")
-        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
+        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None, None)
         .compile_grouped()
         .expect("grouped query compiles");
     let rows = engine

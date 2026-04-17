@@ -28,6 +28,10 @@ pub struct ExpansionSlot {
     /// `None` is exactly equivalent to pre-Pack-2 behavior.
     /// `Some(_)` is not yet implemented; see Pack 3.
     pub filter: Option<Predicate>,
+    /// Optional predicate to filter the traversed edges in this expansion slot.
+    /// Only `EdgePropertyEq` and `EdgePropertyCompare` are valid here.
+    /// `None` preserves pre-Pack-D behavior (no edge filtering).
+    pub edge_filter: Option<Predicate>,
 }
 
 /// A single step in the query pipeline.
@@ -141,6 +145,30 @@ pub enum Predicate {
         path: String,
         /// Boolean value to compare against (stored as 1 or 0).
         value: bool,
+    },
+    /// Equality check on a JSON property of the traversed edge at the given path.
+    ///
+    /// Structurally identical to [`Predicate::JsonPathEq`] but targets
+    /// `e.properties` on the edge row rather than `n.properties` on the
+    /// target node. Only valid inside an expansion slot's `edge_filter`.
+    EdgePropertyEq {
+        /// JSON path expression (e.g. `$.rel`).
+        path: String,
+        /// Value to compare against.
+        value: ScalarValue,
+    },
+    /// Ordered comparison on a JSON property of the traversed edge at the given path.
+    ///
+    /// Structurally identical to [`Predicate::JsonPathCompare`] but targets
+    /// `e.properties` on the edge row rather than `n.properties` on the
+    /// target node. Only valid inside an expansion slot's `edge_filter`.
+    EdgePropertyCompare {
+        /// JSON path expression.
+        path: String,
+        /// Comparison operator.
+        op: ComparisonOp,
+        /// Value to compare against.
+        value: ScalarValue,
     },
 }
 
