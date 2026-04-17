@@ -183,7 +183,7 @@ pub fn shape_signature(ast: &QueryAst) -> String {
                 };
                 format!(",edge_cmp:{path}:{op_str}")
             }
-            Some(_) => ",edge_filter:other".to_owned(),
+            Some(p) => unreachable!("edge_filter predicate {p:?} not handled in shape_signature"),
         };
         let _ = write!(
             &mut signature,
