@@ -94,7 +94,7 @@ pub fn open_connection(path: &Path) -> Result<Connection, EngineError> {
         path,
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
     )?;
-    conn.busy_timeout(Duration::from_millis(5_000))?;
+    conn.busy_timeout(Duration::from_secs(5))?;
 
     #[cfg(all(feature = "tracing", debug_assertions))]
     install_trace_v2(&conn);
@@ -121,7 +121,7 @@ pub fn open_readonly_connection(path: &Path) -> Result<Connection, EngineError> 
     });
 
     let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-    conn.busy_timeout(Duration::from_millis(5_000))?;
+    conn.busy_timeout(Duration::from_secs(5))?;
 
     #[cfg(all(feature = "tracing", debug_assertions))]
     install_trace_v2(&conn);
