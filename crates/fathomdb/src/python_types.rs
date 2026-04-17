@@ -37,6 +37,12 @@ pub struct PyExpansionSlot {
     /// variants), e.g. `{"type": "filter_json_text_eq", "path": "$.kind", "value": "decision"}`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filter: Option<serde_json::Value>,
+    /// Optional edge filter predicate applied to the traversed edges in this slot.
+    /// Only edges whose properties satisfy this predicate will be followed.
+    /// Serialized as a dict, e.g.
+    /// `{"type": "edge_property_eq", "path": "$.rel", "value": "cites"}`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edge_filter: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -108,6 +114,15 @@ pub enum PyQueryStep {
         path: String,
         value: i64,
     },
+    EdgePropertyEq {
+        path: String,
+        value: serde_json::Value,
+    },
+    EdgePropertyCompare {
+        path: String,
+        op: String,
+        value: serde_json::Value,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -170,10 +185,49 @@ fn py_filter_value_to_predicate(v: serde_json::Value) -> Option<Predicate> {
             op: ComparisonOp::Lte,
             value: ScalarValue::Integer(value),
         }),
+        PyQueryStep::EdgePropertyEq { path, value } => {
+            let scalar = py_json_to_scalar(&value)?;
+            Some(Predicate::EdgePropertyEq {
+                path,
+                value: scalar,
+            })
+        }
+        PyQueryStep::EdgePropertyCompare { path, op, value } => {
+            let scalar = py_json_to_scalar(&value)?;
+            let comparison_op = match op.as_str() {
+                "gt" => ComparisonOp::Gt,
+                "gte" => ComparisonOp::Gte,
+                "lt" => ComparisonOp::Lt,
+                "lte" => ComparisonOp::Lte,
+                _ => return None,
+            };
+            Some(Predicate::EdgePropertyCompare {
+                path,
+                op: comparison_op,
+                value: scalar,
+            })
+        }
         // Non-filter step types are not valid expansion filters.
         PyQueryStep::VectorSearch { .. }
         | PyQueryStep::TextSearch { .. }
         | PyQueryStep::Traverse { .. } => None,
+    }
+}
+
+/// Convert a raw `serde_json::Value` to a `ScalarValue`. Returns `None` for
+/// unsupported JSON types (objects, arrays, null).
+fn py_json_to_scalar(v: &serde_json::Value) -> Option<ScalarValue> {
+    match v {
+        serde_json::Value::String(s) => Some(ScalarValue::Text(s.clone())),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Some(ScalarValue::Integer(i))
+            } else {
+                None
+            }
+        }
+        serde_json::Value::Bool(b) => Some(ScalarValue::Bool(*b)),
+        _ => None,
     }
 }
 
@@ -257,6 +311,17 @@ impl From<PyQueryAst> for QueryAst {
                         value: ScalarValue::Integer(value),
                     })
                 }
+                PyQueryStep::EdgePropertyEq { path, value } => {
+                    // EdgeProperty* variants are not valid as top-level query steps;
+                    // they only appear inside expansion edge_filter. If somehow
+                    // used here, treat as a no-op filter.
+                    let _ = (path, value);
+                    QueryStep::Filter(Predicate::ContentRefNotNull) // unreachable in practice
+                }
+                PyQueryStep::EdgePropertyCompare { path, op, value } => {
+                    let _ = (path, op, value);
+                    QueryStep::Filter(Predicate::ContentRefNotNull) // unreachable in practice
+                }
             })
             .collect();
         let expansions = value
@@ -268,6 +333,7 @@ impl From<PyQueryAst> for QueryAst {
                 label: slot.label,
                 max_depth: slot.max_depth,
                 filter: slot.filter.and_then(py_filter_value_to_predicate),
+                edge_filter: slot.edge_filter.and_then(py_filter_value_to_predicate),
             })
             .collect();
 

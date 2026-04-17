@@ -370,6 +370,9 @@ impl QueryBuilder {
     ///
     /// Pass `filter: None` to preserve the existing behavior. `filter: Some(_)` is
     /// accepted by the AST but the compilation is not yet implemented (Pack 3).
+    /// Pass `edge_filter: None` to preserve pre-Pack-D behavior (no edge filtering).
+    /// `edge_filter: Some(EdgePropertyEq { .. })` filters traversed edges by their
+    /// JSON properties; only edges matching the predicate are followed.
     #[must_use]
     pub fn expand(
         mut self,
@@ -378,6 +381,7 @@ impl QueryBuilder {
         label: impl Into<String>,
         max_depth: usize,
         filter: Option<Predicate>,
+        edge_filter: Option<Predicate>,
     ) -> Self {
         self.ast.expansions.push(ExpansionSlot {
             slot: slot.into(),
@@ -385,6 +389,7 @@ impl QueryBuilder {
             label: label.into(),
             max_depth,
             filter,
+            edge_filter,
         });
         self
     }

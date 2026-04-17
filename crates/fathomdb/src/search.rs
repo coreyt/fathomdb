@@ -370,6 +370,7 @@ impl<'e> NodeQueryBuilder<'e> {
     ///
     /// Pass `filter: None` to preserve the existing behavior. `filter: Some(_)` is
     /// accepted by the AST but the compilation is not yet implemented (Pack 3).
+    /// Pass `edge_filter: None` to preserve pre-Pack-D behavior.
     pub fn expand(
         mut self,
         slot: impl Into<String>,
@@ -377,8 +378,11 @@ impl<'e> NodeQueryBuilder<'e> {
         label: impl Into<String>,
         max_depth: usize,
         filter: Option<fathomdb_query::Predicate>,
+        edge_filter: Option<fathomdb_query::Predicate>,
     ) -> Self {
-        self.inner = self.inner.expand(slot, direction, label, max_depth, filter);
+        self.inner = self
+            .inner
+            .expand(slot, direction, label, max_depth, filter, edge_filter);
         self
     }
 
@@ -718,6 +722,7 @@ impl TextSearchBuilder<'_> {
     ///
     /// Pass `filter: None` to preserve the existing behavior. `filter: Some(_)` is
     /// accepted by the AST but the compilation is not yet implemented (Pack 3).
+    /// Pass `edge_filter: None` to preserve pre-Pack-D behavior.
     pub fn expand(
         mut self,
         slot: impl Into<String>,
@@ -725,8 +730,11 @@ impl TextSearchBuilder<'_> {
         label: impl Into<String>,
         max_depth: usize,
         filter: Option<fathomdb_query::Predicate>,
+        edge_filter: Option<fathomdb_query::Predicate>,
     ) -> Self {
-        self.inner = self.inner.expand(slot, direction, label, max_depth, filter);
+        self.inner = self
+            .inner
+            .expand(slot, direction, label, max_depth, filter, edge_filter);
         self
     }
 
@@ -1771,6 +1779,7 @@ impl<'e> SearchBuilder<'e> {
     }
 
     /// Add an expansion slot that traverses edges per root result.
+    /// Pass `edge_filter: None` to preserve pre-Pack-D behavior.
     pub fn expand(
         mut self,
         slot: impl Into<String>,
@@ -1778,10 +1787,11 @@ impl<'e> SearchBuilder<'e> {
         label: impl Into<String>,
         max_depth: usize,
         filter: Option<fathomdb_query::Predicate>,
+        edge_filter: Option<fathomdb_query::Predicate>,
     ) -> Self {
-        self.filter_builder = self
-            .filter_builder
-            .expand(slot, direction, label, max_depth, filter);
+        self.filter_builder =
+            self.filter_builder
+                .expand(slot, direction, label, max_depth, filter, edge_filter);
         self
     }
 

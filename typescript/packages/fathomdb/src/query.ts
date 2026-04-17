@@ -306,15 +306,23 @@ export class Query {
    * @param args.direction - `"in"` or `"out"` relative to root nodes.
    * @param args.label - Edge kind to follow.
    * @param args.maxDepth - Maximum traversal depth.
+   * @param args.edgeFilter - Optional edge property filter predicate. Only
+   *   edges whose properties satisfy this predicate will be traversed.
+   *   Use the same dict format as node filter steps, e.g.
+   *   `{ type: "edge_property_eq", path: "$.rel", value: "cites" }`.
    * @returns A new Query with the expansion registered.
    */
-  expand(args: { slot: string; direction: TraverseDirection; label: string; maxDepth: number }): Query {
-    return this.#withExpansion({
+  expand(args: { slot: string; direction: TraverseDirection; label: string; maxDepth: number; edgeFilter?: Record<string, RawJson> }): Query {
+    const expansion: Record<string, RawJson> = {
       slot: args.slot,
       direction: args.direction,
       label: args.label,
       max_depth: args.maxDepth
-    });
+    };
+    if (args.edgeFilter !== undefined) {
+      expansion.edge_filter = args.edgeFilter;
+    }
+    return this.#withExpansion(expansion);
   }
 
   /**
@@ -735,15 +743,21 @@ export class SearchBuilder {
    * @param args.direction - `"in"` or `"out"` relative to root nodes.
    * @param args.label - Edge kind to follow.
    * @param args.maxDepth - Maximum traversal depth.
+   * @param args.edgeFilter - Optional edge property filter predicate. Only
+   *   edges whose properties satisfy this predicate will be traversed.
    * @returns A new SearchBuilder with the expansion registered.
    */
-  expand(args: { slot: string; direction: TraverseDirection; label: string; maxDepth: number }): SearchBuilder {
-    return this.#withExpansion({
+  expand(args: { slot: string; direction: TraverseDirection; label: string; maxDepth: number; edgeFilter?: Record<string, RawJson> }): SearchBuilder {
+    const expansion: Record<string, RawJson> = {
       slot: args.slot,
       direction: args.direction,
       label: args.label,
       max_depth: args.maxDepth,
-    });
+    };
+    if (args.edgeFilter !== undefined) {
+      expansion.edge_filter = args.edgeFilter;
+    }
+    return this.#withExpansion(expansion);
   }
 
   /**

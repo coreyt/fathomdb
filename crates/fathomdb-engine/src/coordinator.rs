@@ -125,6 +125,66 @@ fn compile_expansion_filter(
             "\n                  AND n.content_ref IS NOT NULL".to_owned(),
             vec![],
         ),
+        Predicate::EdgePropertyEq { .. } | Predicate::EdgePropertyCompare { .. } => {
+            unreachable!(
+                "compile_expansion_filter: EdgeProperty* variants must use compile_edge_filter"
+            );
+        }
+    }
+}
+
+/// Compile an optional edge filter predicate into a SQL fragment and bind values
+/// for injection into the `JOIN edges e ON ...` condition.
+///
+/// Returns `("", vec![])` when `filter` is `None`. When `Some(predicate)`,
+/// returns an `AND …` fragment targeting `e.properties` and the corresponding
+/// bind values starting at `first_param`.
+///
+/// Only `EdgePropertyEq` and `EdgePropertyCompare` are valid here.
+/// Non-edge predicates: `panic!("compile_edge_filter: non-edge predicate")`.
+fn compile_edge_filter(filter: Option<&Predicate>, first_param: usize) -> (String, Vec<Value>) {
+    let Some(predicate) = filter else {
+        return (String::new(), vec![]);
+    };
+    let p = first_param;
+    match predicate {
+        Predicate::EdgePropertyEq { path, value } => {
+            let val = match value {
+                ScalarValue::Text(t) => Value::Text(t.clone()),
+                ScalarValue::Integer(i) => Value::Integer(*i),
+                ScalarValue::Bool(b) => Value::Integer(i64::from(*b)),
+            };
+            (
+                format!(
+                    "\n                    AND json_extract(e.properties, ?{p}) = ?{}",
+                    p + 1
+                ),
+                vec![Value::Text(path.clone()), val],
+            )
+        }
+        Predicate::EdgePropertyCompare { path, op, value } => {
+            let val = match value {
+                ScalarValue::Text(t) => Value::Text(t.clone()),
+                ScalarValue::Integer(i) => Value::Integer(*i),
+                ScalarValue::Bool(b) => Value::Integer(i64::from(*b)),
+            };
+            let operator = match op {
+                ComparisonOp::Gt => ">",
+                ComparisonOp::Gte => ">=",
+                ComparisonOp::Lt => "<",
+                ComparisonOp::Lte => "<=",
+            };
+            (
+                format!(
+                    "\n                    AND json_extract(e.properties, ?{p}) {operator} ?{}",
+                    p + 1
+                ),
+                vec![Value::Text(path.clone()), val],
+            )
+        }
+        _ => {
+            unreachable!("compile_edge_filter: non-edge predicate {predicate:?}");
+        }
     }
 }
 
@@ -274,6 +334,9 @@ pub struct NodeRow {
     pub content_ref: Option<String>,
     /// Unix timestamp of last access, if tracked.
     pub last_accessed_at: Option<i64>,
+    /// JSON-encoded properties of the edge that connected this node in a
+    /// traversal expansion. `None` for root nodes and non-expansion results.
+    pub edge_properties: Option<String>,
 }
 
 /// A single run row returned from a query.
@@ -688,6 +751,7 @@ impl ExecutionCoordinator {
                     properties: row.get(3)?,
                     content_ref: row.get(4)?,
                     last_accessed_at: row.get(5)?,
+                    edge_properties: None,
                 })
             })
             .and_then(Iterator::collect)
@@ -942,9 +1006,13 @@ impl ExecutionCoordinator {
                         "\n                      AND json_extract(src.properties, ?{path_idx}) {operator} ?{value_idx}"
                     );
                 }
-                Predicate::JsonPathEq { .. } | Predicate::JsonPathCompare { .. } => {
+                Predicate::JsonPathEq { .. }
+                | Predicate::JsonPathCompare { .. }
+                | Predicate::EdgePropertyEq { .. }
+                | Predicate::EdgePropertyCompare { .. } => {
                     // JSON predicates are residual; compile_vector_search
                     // guarantees they never appear here, but stay defensive.
+                    // Edge property predicates are not valid in the search path.
                 }
             }
         }
@@ -985,8 +1053,11 @@ impl ExecutionCoordinator {
                 | Predicate::ContentRefEq(_)
                 | Predicate::ContentRefNotNull
                 | Predicate::JsonPathFusedEq { .. }
-                | Predicate::JsonPathFusedTimestampCmp { .. } => {
+                | Predicate::JsonPathFusedTimestampCmp { .. }
+                | Predicate::EdgePropertyEq { .. }
+                | Predicate::EdgePropertyCompare { .. } => {
                     // Fusable predicates live in fused_clauses above.
+                    // Edge property predicates are not valid in the search path.
                 }
             }
         }
@@ -1637,9 +1708,13 @@ impl ExecutionCoordinator {
                         "\n                  AND json_extract(u.properties, ?{path_idx}) {operator} ?{value_idx}"
                     );
                 }
-                Predicate::JsonPathEq { .. } | Predicate::JsonPathCompare { .. } => {
+                Predicate::JsonPathEq { .. }
+                | Predicate::JsonPathCompare { .. }
+                | Predicate::EdgePropertyEq { .. }
+                | Predicate::EdgePropertyCompare { .. } => {
                     // Should be in residual_filters; compile_search guarantees
                     // this, but stay defensive.
+                    // Edge property predicates are not valid in the search path.
                 }
             }
         }
@@ -1679,9 +1754,12 @@ impl ExecutionCoordinator {
                 | Predicate::ContentRefEq(_)
                 | Predicate::ContentRefNotNull
                 | Predicate::JsonPathFusedEq { .. }
-                | Predicate::JsonPathFusedTimestampCmp { .. } => {
+                | Predicate::JsonPathFusedTimestampCmp { .. }
+                | Predicate::EdgePropertyEq { .. }
+                | Predicate::EdgePropertyCompare { .. } => {
                     // Fusable predicates live in fused_clauses; compile_search
                     // partitions them out of residual_filters.
+                    // Edge property predicates are not valid in the search path.
                 }
             }
         }
@@ -2001,6 +2079,7 @@ impl ExecutionCoordinator {
     /// processes all root IDs at once. Uses `ROW_NUMBER() OVER (PARTITION BY
     /// source_logical_id ...)` to enforce the per-root hard limit inside the
     /// database rather than in Rust.
+    #[allow(clippy::too_many_lines)]
     fn read_expansion_nodes_batched(
         &self,
         roots: &[NodeRow],
@@ -2039,9 +2118,17 @@ impl ExecutionCoordinator {
             .join(" UNION ALL ");
 
         // Bind params: root IDs occupy ?1..=?N, edge kind is ?(N+1).
-        // Filter params (if any) follow starting at ?(N+2).
+        // Edge filter params (if any) follow at ?(N+2)..=?M.
+        // Node filter params (if any) follow at ?(M+1)....
         let edge_kind_param = root_ids.len() + 1;
-        let filter_param_start = root_ids.len() + 2;
+        let edge_filter_param_start = root_ids.len() + 2;
+
+        // Compile the optional edge filter to a SQL fragment + bind values.
+        // Injected into the JOIN condition so only matching edges are traversed.
+        let (edge_filter_sql, edge_filter_binds) =
+            compile_edge_filter(expansion.edge_filter.as_ref(), edge_filter_param_start);
+
+        let filter_param_start = edge_filter_param_start + edge_filter_binds.len();
 
         // Compile the optional target-side filter to a SQL fragment + bind values.
         // The fragment is injected into the `numbered` CTE's WHERE clause BEFORE
@@ -2052,10 +2139,12 @@ impl ExecutionCoordinator {
         // The `root_id` column tracks which root each traversal path
         // originated from. The `ROW_NUMBER()` window in the outer query
         // enforces the per-root hard limit.
+        // The `edge_properties` column carries the JSON properties of the
+        // edge that was traversed to reach each node (NULL for the base case).
         let sql = format!(
             "WITH RECURSIVE root_ids(rid) AS ({root_seed_union}),
-            traversed(root_id, logical_id, depth, visited, emitted) AS (
-                SELECT rid, rid, 0, printf(',%s,', rid), 0
+            traversed(root_id, logical_id, depth, visited, emitted, edge_properties) AS (
+                SELECT rid, rid, 0, printf(',%s,', rid), 0, NULL AS edge_properties
                 FROM root_ids
                 UNION ALL
                 SELECT
@@ -2063,11 +2152,12 @@ impl ExecutionCoordinator {
                     {next_logical_id},
                     t.depth + 1,
                     t.visited || {next_logical_id} || ',',
-                    t.emitted + 1
+                    t.emitted + 1,
+                    e.properties AS edge_properties
                 FROM traversed t
                 JOIN edges e ON {join_condition}
                     AND e.kind = ?{edge_kind_param}
-                    AND e.superseded_at IS NULL
+                    AND e.superseded_at IS NULL{edge_filter_sql}
                 WHERE t.depth < {max_depth}
                   AND t.emitted < {hard_limit}
                   AND instr(t.visited, printf(',%s,', {next_logical_id})) = 0
@@ -2076,6 +2166,7 @@ impl ExecutionCoordinator {
                 SELECT t.root_id, n.row_id, n.logical_id, n.kind, n.properties
                      , n.content_ref, am.last_accessed_at
                      , ROW_NUMBER() OVER (PARTITION BY t.root_id ORDER BY n.logical_id) AS rn
+                     , t.edge_properties
                 FROM traversed t
                 JOIN nodes n ON n.logical_id = t.logical_id
                     AND n.superseded_at IS NULL
@@ -2083,6 +2174,7 @@ impl ExecutionCoordinator {
                 WHERE t.depth > 0{filter_sql}
             )
             SELECT root_id, row_id, logical_id, kind, properties, content_ref, last_accessed_at
+                 , edge_properties
             FROM numbered
             WHERE rn <= {hard_limit}
             ORDER BY root_id, logical_id",
@@ -2094,12 +2186,14 @@ impl ExecutionCoordinator {
             .prepare_cached(&sql)
             .map_err(EngineError::Sqlite)?;
 
-        // Bind root IDs (1..=N) and edge kind (N+1), then filter params (N+2...).
+        // Bind root IDs (1..=N), edge kind (N+1), edge filter params (N+2..M),
+        // then node filter params (M+1...).
         let mut bind_values: Vec<Value> = root_ids
             .iter()
             .map(|id| Value::Text((*id).to_owned()))
             .collect();
         bind_values.push(Value::Text(expansion.label.clone()));
+        bind_values.extend(edge_filter_binds);
         bind_values.extend(filter_binds);
 
         let rows = statement
@@ -2113,6 +2207,7 @@ impl ExecutionCoordinator {
                         properties: row.get(4)?,
                         content_ref: row.get(5)?,
                         last_accessed_at: row.get(6)?,
+                        edge_properties: row.get(7)?,
                     },
                 ))
             })
@@ -2470,6 +2565,7 @@ impl ExecutionCoordinator {
                     properties: row.get(3)?,
                     content_ref: row.get(4)?,
                     last_accessed_at: row.get(5)?,
+                    edge_properties: None,
                 })
             })
             .map_err(EngineError::Sqlite)?
@@ -4525,7 +4621,7 @@ mod tests {
 
         let compiled = QueryBuilder::nodes("Meeting")
             .text_search("meeting", 10)
-            .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
+            .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None, None)
             .limit(10)
             .compile_grouped()
             .expect("compiled grouped query");

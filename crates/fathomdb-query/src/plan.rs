@@ -134,6 +134,18 @@ pub fn shape_signature(ast: &QueryAst) -> String {
                     };
                     let _ = write!(&mut signature, "-Filter(json_fused_ts_cmp:{path}:{op})");
                 }
+                Predicate::EdgePropertyEq { path, .. } => {
+                    let _ = write!(&mut signature, "-Filter(edge_prop_eq:{path})");
+                }
+                Predicate::EdgePropertyCompare { path, op, .. } => {
+                    let op = match op {
+                        crate::ComparisonOp::Gt => "gt",
+                        crate::ComparisonOp::Gte => "gte",
+                        crate::ComparisonOp::Lt => "lt",
+                        crate::ComparisonOp::Lte => "lte",
+                    };
+                    let _ = write!(&mut signature, "-Filter(edge_prop_cmp:{path}:{op})");
+                }
             },
         }
     }

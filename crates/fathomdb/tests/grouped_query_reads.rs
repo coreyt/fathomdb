@@ -152,15 +152,30 @@ fn grouped_query_returns_root_plus_named_expansion_slots_for_bounded_context() {
     let compiled = engine
         .query("Meeting")
         .filter_logical_id_eq("meeting-1")
-        .expand("direct_tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
+        .expand(
+            "direct_tasks",
+            TraverseDirection::Out,
+            "HAS_TASK",
+            1,
+            None,
+            None,
+        )
         .expand(
             "task_descendants",
             TraverseDirection::Out,
             "HAS_TASK",
             2,
             None,
+            None,
         )
-        .expand("decisions", TraverseDirection::Out, "HAS_DECISION", 1, None)
+        .expand(
+            "decisions",
+            TraverseDirection::Out,
+            "HAS_DECISION",
+            1,
+            None,
+            None,
+        )
         .compile_grouped()
         .expect("grouped query compiles");
 
@@ -207,7 +222,7 @@ fn grouped_query_supports_numeric_and_timestamp_filters_before_enrichment() {
         .query("Meeting")
         .filter_json_integer_gte("$.priority", 5)
         .filter_json_timestamp_gte("$.updated_at", 1710000000)
-        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
+        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None, None)
         .compile_grouped()
         .expect("grouped query compiles");
 
@@ -231,8 +246,15 @@ fn grouped_text_search_enrichment_returns_requested_context_in_one_result() {
     let compiled = engine
         .query("Meeting")
         .text_search("budget", 5)
-        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
-        .expand("decisions", TraverseDirection::Out, "HAS_DECISION", 1, None)
+        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None, None)
+        .expand(
+            "decisions",
+            TraverseDirection::Out,
+            "HAS_DECISION",
+            1,
+            None,
+            None,
+        )
         .compile_grouped()
         .expect("grouped query compiles");
 
@@ -257,8 +279,15 @@ fn grouped_query_rejects_duplicate_expansion_slot_names() {
 
     let error = engine
         .query("Meeting")
-        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
-        .expand("tasks", TraverseDirection::Out, "HAS_DECISION", 1, None)
+        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None, None)
+        .expand(
+            "tasks",
+            TraverseDirection::Out,
+            "HAS_DECISION",
+            1,
+            None,
+            None,
+        )
         .compile_grouped()
         .expect_err("duplicate slots must fail");
 
@@ -333,7 +362,7 @@ fn grouped_query_expansions_honor_the_query_hard_limit() {
     let compiled = engine
         .query("Meeting")
         .filter_logical_id_eq("meeting-1")
-        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 4, None)
+        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 4, None, None)
         .limit(2)
         .compile_grouped()
         .expect("grouped query compiles");
@@ -494,7 +523,7 @@ fn json_filter_with_expansion_finds_non_first_node() {
     let compiled = engine
         .query("Meeting")
         .filter_json_text_eq("$.title", "Backlog grooming")
-        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
+        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None, None)
         .limit(1)
         .compile_grouped()
         .expect("grouped query compiles");
@@ -522,8 +551,15 @@ fn search_builder_expand_execute_grouped_returns_root_plus_expansion() {
     let rows: GroupedQueryRows = engine
         .query("Meeting")
         .search("budget", 5)
-        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
-        .expand("decisions", TraverseDirection::Out, "HAS_DECISION", 1, None)
+        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None, None)
+        .expand(
+            "decisions",
+            TraverseDirection::Out,
+            "HAS_DECISION",
+            1,
+            None,
+            None,
+        )
         .execute_grouped()
         .expect("search grouped executes");
 
@@ -549,7 +585,7 @@ fn node_query_builder_execute_grouped_convenience_terminal() {
     let rows: GroupedQueryRows = engine
         .query("Meeting")
         .filter_logical_id_eq("meeting-1")
-        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None)
+        .expand("tasks", TraverseDirection::Out, "HAS_TASK", 1, None, None)
         .execute_grouped()
         .expect("execute_grouped executes");
 
@@ -669,7 +705,7 @@ fn expand_self_expand_at_depth_1() {
     let compiled = engine
         .query("CycleNode")
         .filter_logical_id_eq(&id_a)
-        .expand("loop", TraverseDirection::Out, "HAS_NEXT", 1, None)
+        .expand("loop", TraverseDirection::Out, "HAS_NEXT", 1, None, None)
         .compile_grouped()
         .expect("grouped query compiles");
 
@@ -726,7 +762,7 @@ fn expand_self_expand_depth_2_termination() {
     let compiled_d2 = engine
         .query("CycleNode")
         .filter_logical_id_eq(&id_a)
-        .expand("loop", TraverseDirection::Out, "HAS_NEXT", 2, None)
+        .expand("loop", TraverseDirection::Out, "HAS_NEXT", 2, None, None)
         .compile_grouped()
         .expect("depth=2 compiles");
 
@@ -759,7 +795,7 @@ fn expand_self_expand_depth_2_termination() {
     let compiled_d3 = engine
         .query("CycleNode")
         .filter_logical_id_eq(&id_a)
-        .expand("loop", TraverseDirection::Out, "HAS_NEXT", 3, None)
+        .expand("loop", TraverseDirection::Out, "HAS_NEXT", 3, None, None)
         .limit(10)
         .compile_grouped()
         .expect("depth=3 compiles");
@@ -905,7 +941,14 @@ fn expand_per_originator_limit_under_skewed_fanout() {
 
     let compiled = engine
         .query("SkewOrig")
-        .expand("children", TraverseDirection::Out, "HAS_CHILD", 1, None)
+        .expand(
+            "children",
+            TraverseDirection::Out,
+            "HAS_CHILD",
+            1,
+            None,
+            None,
+        )
         .limit(LIMIT)
         .compile_grouped()
         .expect("grouped query compiles");
@@ -1067,7 +1110,14 @@ fn expand_per_slot_order_is_unordered() {
     let compiled = engine
         .query("OrderOrig")
         .filter_logical_id_eq("order-orig")
-        .expand("children", TraverseDirection::Out, "HAS_CHILD", 1, None)
+        .expand(
+            "children",
+            TraverseDirection::Out,
+            "HAS_CHILD",
+            1,
+            None,
+            None,
+        )
         .compile_grouped()
         .expect("grouped query compiles");
 
@@ -1166,7 +1216,14 @@ fn expand_sort_by_property_client_side() {
     let compiled = engine
         .query("SortPropOrig")
         .filter_logical_id_eq("sortprop-orig")
-        .expand("children", TraverseDirection::Out, "HAS_CHILD", 1, None)
+        .expand(
+            "children",
+            TraverseDirection::Out,
+            "HAS_CHILD",
+            1,
+            None,
+            None,
+        )
         .compile_grouped()
         .expect("grouped query compiles");
 
@@ -1274,7 +1331,14 @@ fn expand_small_originator_set_large_expansion() {
 
     let compiled = engine
         .query("SmallOrig")
-        .expand("children", TraverseDirection::Out, "HAS_CHILD", 1, None)
+        .expand(
+            "children",
+            TraverseDirection::Out,
+            "HAS_CHILD",
+            1,
+            None,
+            None,
+        )
         .limit(LIMIT)
         .compile_grouped()
         .expect("grouped query compiles");
@@ -1414,6 +1478,7 @@ fn expand_with_json_path_eq_filter_returns_only_matching_nodes() {
             "HAS_ITEM",
             1,
             Some(filter),
+            None,
         )
         .compile_grouped()
         .expect("grouped query compiles");
@@ -1549,6 +1614,7 @@ fn expand_filter_applies_before_per_originator_limit() {
             "HAS_CHILD",
             1,
             Some(filter),
+            None,
         )
         .limit(5)
         .compile_grouped()
@@ -1646,6 +1712,7 @@ fn expand_with_fused_filter_against_kind_without_schema_raises_error() {
             "HAS_UNSCHEMAED",
             1,
             Some(fused_filter),
+            None,
         )
         .compile_grouped()
         .expect("grouped query compiles");
@@ -1662,5 +1729,363 @@ fn expand_with_fused_filter_against_kind_without_schema_raises_error() {
     assert!(
         matches!(err, EngineError::InvalidConfig(_)),
         "expected InvalidConfig error for missing FTS schema, got {err:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Pack D: EdgePropertyEq / EdgePropertyCompare — edge property filter in
+// traversal + edge_properties in results.
+// ---------------------------------------------------------------------------
+
+/// Seed a simple citation graph: node A --[CITES {rel:"cites"}]--> node B
+/// and a second edge A --[CITES {rel:"references"}]--> node C.
+fn seed_citation_graph(engine: &Engine) {
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "seed-citation-graph".to_owned(),
+            nodes: vec![
+                NodeInsert {
+                    row_id: new_row_id(),
+                    logical_id: "paper-a".to_owned(),
+                    kind: "Paper".to_owned(),
+                    properties: r#"{"title":"Paper A"}"#.to_owned(),
+                    source_ref: None,
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
+                },
+                NodeInsert {
+                    row_id: new_row_id(),
+                    logical_id: "paper-b".to_owned(),
+                    kind: "Paper".to_owned(),
+                    properties: r#"{"title":"Paper B"}"#.to_owned(),
+                    source_ref: None,
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
+                },
+                NodeInsert {
+                    row_id: new_row_id(),
+                    logical_id: "paper-c".to_owned(),
+                    kind: "Paper".to_owned(),
+                    properties: r#"{"title":"Paper C"}"#.to_owned(),
+                    source_ref: None,
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
+                },
+            ],
+            node_retires: vec![],
+            edges: vec![
+                EdgeInsert {
+                    row_id: new_row_id(),
+                    logical_id: "edge-a-b-cites".to_owned(),
+                    source_logical_id: "paper-a".to_owned(),
+                    target_logical_id: "paper-b".to_owned(),
+                    kind: "CITES".to_owned(),
+                    properties: r#"{"rel":"cites"}"#.to_owned(),
+                    source_ref: None,
+                    upsert: false,
+                },
+                EdgeInsert {
+                    row_id: new_row_id(),
+                    logical_id: "edge-a-c-references".to_owned(),
+                    source_logical_id: "paper-a".to_owned(),
+                    target_logical_id: "paper-c".to_owned(),
+                    kind: "CITES".to_owned(),
+                    properties: r#"{"rel":"references"}"#.to_owned(),
+                    source_ref: None,
+                    upsert: false,
+                },
+            ],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![],
+        })
+        .expect("seed citation graph");
+}
+
+#[test]
+fn edge_properties_survive_write_read_roundtrip() {
+    // Write-side round-trip test: edge property JSON must survive write/read
+    // intact and appear in expansion results as edge_properties.
+    let (_db, engine) = open_engine();
+    seed_citation_graph(&engine);
+
+    let compiled = engine
+        .query("Paper")
+        .filter_logical_id_eq("paper-a")
+        .expand("cited", TraverseDirection::Out, "CITES", 1, None, None)
+        .compile_grouped()
+        .expect("grouped query compiles");
+
+    let rows = engine
+        .coordinator()
+        .execute_compiled_grouped_read(&compiled)
+        .expect("grouped query executes");
+
+    assert_eq!(rows.roots.len(), 1);
+    assert_eq!(rows.expansions[0].slot, "cited");
+    let nodes = &rows.expansions[0].roots[0].nodes;
+    assert_eq!(nodes.len(), 2, "both B and C are reachable");
+
+    // All expansion hits must carry non-None edge_properties.
+    for node in nodes {
+        assert!(
+            node.edge_properties.is_some(),
+            "expansion hit {} must have edge_properties",
+            node.logical_id
+        );
+        // Verify the JSON is valid and has the expected structure.
+        let props: serde_json::Value = serde_json::from_str(
+            node.edge_properties
+                .as_ref()
+                .expect("edge_properties must be Some"),
+        )
+        .expect("edge_properties must be valid JSON");
+        assert!(
+            props["rel"].is_string(),
+            "edge_properties.rel must be a string for node {}",
+            node.logical_id
+        );
+    }
+}
+
+#[test]
+fn edge_property_eq_filter_returns_only_matching_edges() {
+    // EdgePropertyEq filter: only edges with rel="cites" should be traversed.
+    let (_db, engine) = open_engine();
+    seed_citation_graph(&engine);
+
+    let edge_filter = Predicate::EdgePropertyEq {
+        path: "$.rel".to_owned(),
+        value: ScalarValue::Text("cites".to_owned()),
+    };
+
+    let compiled = engine
+        .query("Paper")
+        .filter_logical_id_eq("paper-a")
+        .expand(
+            "cited",
+            TraverseDirection::Out,
+            "CITES",
+            1,
+            None,
+            Some(edge_filter),
+        )
+        .compile_grouped()
+        .expect("grouped query compiles");
+
+    let rows = engine
+        .coordinator()
+        .execute_compiled_grouped_read(&compiled)
+        .expect("grouped query executes");
+
+    assert_eq!(rows.roots.len(), 1);
+    let nodes = &rows.expansions[0].roots[0].nodes;
+    assert_eq!(
+        nodes.len(),
+        1,
+        "only paper-b is reachable via rel=cites edge"
+    );
+    assert_eq!(nodes[0].logical_id, "paper-b");
+
+    // The edge_properties for the matched hit must carry the cites rel.
+    let edge_props: serde_json::Value = serde_json::from_str(
+        nodes[0]
+            .edge_properties
+            .as_ref()
+            .expect("edge_properties must be Some"),
+    )
+    .expect("edge_properties is valid JSON");
+    assert_eq!(edge_props["rel"].as_str(), Some("cites"));
+}
+
+#[test]
+fn edge_property_eq_filter_non_matching_returns_empty() {
+    // Non-matching edge filter: no edges with rel="unknown" should be traversed.
+    let (_db, engine) = open_engine();
+    seed_citation_graph(&engine);
+
+    let edge_filter = Predicate::EdgePropertyEq {
+        path: "$.rel".to_owned(),
+        value: ScalarValue::Text("unknown".to_owned()),
+    };
+
+    let compiled = engine
+        .query("Paper")
+        .filter_logical_id_eq("paper-a")
+        .expand(
+            "cited",
+            TraverseDirection::Out,
+            "CITES",
+            1,
+            None,
+            Some(edge_filter),
+        )
+        .compile_grouped()
+        .expect("grouped query compiles");
+
+    let rows = engine
+        .coordinator()
+        .execute_compiled_grouped_read(&compiled)
+        .expect("grouped query executes");
+
+    assert_eq!(rows.roots.len(), 1);
+    let nodes = &rows.expansions[0].roots[0].nodes;
+    assert_eq!(nodes.len(), 0, "no edges with rel=unknown exist");
+}
+
+#[test]
+fn edge_property_filter_multihop_two_hops() {
+    // Multi-hop test: A -[CITES{rel:cites}]-> B -[CITES{rel:cites}]-> D
+    // With edge_filter rel=cites at max_depth=2, should reach both B and D.
+    let (_db, engine) = open_engine();
+
+    engine
+        .writer()
+        .submit(WriteRequest {
+            label: "seed-multihop-graph".to_owned(),
+            nodes: vec![
+                NodeInsert {
+                    row_id: new_row_id(),
+                    logical_id: "mh-a".to_owned(),
+                    kind: "MhPaper".to_owned(),
+                    properties: r#"{"label":"A"}"#.to_owned(),
+                    source_ref: None,
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
+                },
+                NodeInsert {
+                    row_id: new_row_id(),
+                    logical_id: "mh-b".to_owned(),
+                    kind: "MhPaper".to_owned(),
+                    properties: r#"{"label":"B"}"#.to_owned(),
+                    source_ref: None,
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
+                },
+                NodeInsert {
+                    row_id: new_row_id(),
+                    logical_id: "mh-c".to_owned(),
+                    kind: "MhPaper".to_owned(),
+                    properties: r#"{"label":"C"}"#.to_owned(),
+                    source_ref: None,
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
+                },
+                NodeInsert {
+                    row_id: new_row_id(),
+                    logical_id: "mh-d".to_owned(),
+                    kind: "MhPaper".to_owned(),
+                    properties: r#"{"label":"D"}"#.to_owned(),
+                    source_ref: None,
+                    upsert: false,
+                    chunk_policy: ChunkPolicy::Preserve,
+                    content_ref: None,
+                },
+            ],
+            node_retires: vec![],
+            edges: vec![
+                // A -[cites]-> B (matches filter)
+                EdgeInsert {
+                    row_id: new_row_id(),
+                    logical_id: "mh-edge-a-b".to_owned(),
+                    source_logical_id: "mh-a".to_owned(),
+                    target_logical_id: "mh-b".to_owned(),
+                    kind: "MH_CITES".to_owned(),
+                    properties: r#"{"rel":"cites"}"#.to_owned(),
+                    source_ref: None,
+                    upsert: false,
+                },
+                // A -[references]-> C (does NOT match filter)
+                EdgeInsert {
+                    row_id: new_row_id(),
+                    logical_id: "mh-edge-a-c".to_owned(),
+                    source_logical_id: "mh-a".to_owned(),
+                    target_logical_id: "mh-c".to_owned(),
+                    kind: "MH_CITES".to_owned(),
+                    properties: r#"{"rel":"references"}"#.to_owned(),
+                    source_ref: None,
+                    upsert: false,
+                },
+                // B -[cites]-> D (matches filter, depth=2)
+                EdgeInsert {
+                    row_id: new_row_id(),
+                    logical_id: "mh-edge-b-d".to_owned(),
+                    source_logical_id: "mh-b".to_owned(),
+                    target_logical_id: "mh-d".to_owned(),
+                    kind: "MH_CITES".to_owned(),
+                    properties: r#"{"rel":"cites"}"#.to_owned(),
+                    source_ref: None,
+                    upsert: false,
+                },
+            ],
+            edge_retires: vec![],
+            chunks: vec![],
+            runs: vec![],
+            steps: vec![],
+            actions: vec![],
+            optional_backfills: vec![],
+            vec_inserts: vec![],
+            operational_writes: vec![],
+        })
+        .expect("seed multihop graph");
+
+    let edge_filter = Predicate::EdgePropertyEq {
+        path: "$.rel".to_owned(),
+        value: ScalarValue::Text("cites".to_owned()),
+    };
+
+    let compiled = engine
+        .query("MhPaper")
+        .filter_logical_id_eq("mh-a")
+        .expand(
+            "cited",
+            TraverseDirection::Out,
+            "MH_CITES",
+            2, // max_depth=2 to reach D via B
+            None,
+            Some(edge_filter),
+        )
+        .compile_grouped()
+        .expect("grouped query compiles");
+
+    let rows = engine
+        .coordinator()
+        .execute_compiled_grouped_read(&compiled)
+        .expect("grouped query executes");
+
+    assert_eq!(rows.roots.len(), 1);
+    let nodes = &rows.expansions[0].roots[0].nodes;
+    let ids: Vec<&str> = nodes.iter().map(|n| n.logical_id.as_str()).collect();
+
+    // C is unreachable (references edge filtered out); B and D are reachable.
+    assert_eq!(
+        nodes.len(),
+        2,
+        "depth=2 with cites filter must return B and D; got: {:?}",
+        ids
+    );
+    assert!(
+        ids.contains(&"mh-b"),
+        "B must be in results (depth=1 via cites edge)"
+    );
+    assert!(
+        ids.contains(&"mh-d"),
+        "D must be in results (depth=2 via cites->cites)"
+    );
+    assert!(
+        !ids.contains(&"mh-c"),
+        "C must NOT be in results (only reachable via references edge)"
     );
 }
