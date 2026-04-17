@@ -358,3 +358,416 @@ def test_resolve_embedder_known_preset_dimensions():
     assert _resolve_embedder("text-embedding-3-small").identity().dimensions == 1536
     assert _resolve_embedder("text-embedding-3-large").identity().dimensions == 3072
     assert _resolve_embedder("jina-embeddings-v2-base-en").identity().dimensions == 768
+
+
+# ---------------------------------------------------------------------------
+# H-C: Operational collection lifecycle CLI (11 commands)
+# ---------------------------------------------------------------------------
+
+
+def _make_collection_record(name="test_col"):
+    from fathomdb._types import OperationalCollectionKind, OperationalCollectionRecord
+
+    return OperationalCollectionRecord(
+        name=name,
+        kind=OperationalCollectionKind.APPEND_ONLY_LOG,
+        schema_json="{}",
+        retention_json="{}",
+        validation_json="",
+        secondary_indexes_json="[]",
+        format_version=1,
+        created_at=1000,
+        disabled_at=None,
+    )
+
+
+def test_describe_operational_collection_found():
+    """admin describe-operational-collection returns JSON with name and kind."""
+    from fathomdb._cli import cli
+
+    runner = CliRunner()
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.describe_operational_collection.return_value = (
+            _make_collection_record("my_col")
+        )
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            [
+                "admin",
+                "describe-operational-collection",
+                "--db",
+                "/tmp/test.db",
+                "--name",
+                "my_col",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["name"] == "my_col"
+    assert "kind" in data
+
+
+def test_describe_operational_collection_not_found():
+    """admin describe-operational-collection prints message when collection missing."""
+    from fathomdb._cli import cli
+
+    runner = CliRunner()
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.describe_operational_collection.return_value = None
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            [
+                "admin",
+                "describe-operational-collection",
+                "--db",
+                "/tmp/test.db",
+                "--name",
+                "missing_col",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "missing_col" in result.output
+
+
+def test_register_operational_collection():
+    """admin register-operational-collection returns JSON with name and kind."""
+    from fathomdb._cli import cli
+
+    runner = CliRunner()
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.register_operational_collection.return_value = (
+            _make_collection_record("new_col")
+        )
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            [
+                "admin",
+                "register-operational-collection",
+                "--db",
+                "/tmp/test.db",
+                "--name",
+                "new_col",
+                "--kind",
+                "append_only_log",
+                "--schema-json",
+                "{}",
+                "--retention-json",
+                "{}",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["name"] == "new_col"
+    assert "kind" in data
+
+
+def test_trace_operational_collection():
+    """admin trace-operational-collection returns JSON with collection_name."""
+    from fathomdb._cli import cli
+    from fathomdb._types import OperationalTraceReport
+
+    runner = CliRunner()
+    trace = OperationalTraceReport(
+        collection_name="trace_col",
+        record_key=None,
+        mutation_count=0,
+        current_count=0,
+        mutations=[],
+        current_rows=[],
+    )
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.trace_operational_collection.return_value = trace
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            [
+                "admin",
+                "trace-operational-collection",
+                "--db",
+                "/tmp/test.db",
+                "--name",
+                "trace_col",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["collection_name"] == "trace_col"
+
+
+def test_rebuild_operational_current():
+    """admin rebuild-operational-current returns JSON with collections_rebuilt."""
+    from fathomdb._cli import cli
+    from fathomdb._types import OperationalRepairReport
+
+    runner = CliRunner()
+    report = OperationalRepairReport(collections_rebuilt=2, current_rows_rebuilt=5)
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.rebuild_operational_current.return_value = report
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            [
+                "admin",
+                "rebuild-operational-current",
+                "--db",
+                "/tmp/test.db",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["collections_rebuilt"] == 2
+    assert data["current_rows_rebuilt"] == 5
+
+
+def test_validate_operational_history():
+    """admin validate-operational-history returns JSON with collection_name."""
+    from fathomdb._cli import cli
+    from fathomdb._types import OperationalHistoryValidationReport
+
+    runner = CliRunner()
+    report = OperationalHistoryValidationReport(
+        collection_name="hist_col",
+        checked_rows=10,
+        invalid_row_count=0,
+        issues=[],
+    )
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.validate_operational_collection_history.return_value = report
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            [
+                "admin",
+                "validate-operational-history",
+                "--db",
+                "/tmp/test.db",
+                "--name",
+                "hist_col",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["collection_name"] == "hist_col"
+
+
+def test_rebuild_operational_secondary_indexes():
+    """admin rebuild-operational-secondary-indexes returns JSON with collection_name."""
+    from fathomdb._cli import cli
+    from fathomdb._types import OperationalSecondaryIndexRebuildReport
+
+    runner = CliRunner()
+    report = OperationalSecondaryIndexRebuildReport(
+        collection_name="idx_col",
+        mutation_entries_rebuilt=3,
+        current_entries_rebuilt=1,
+    )
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.rebuild_operational_secondary_indexes.return_value = report
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            [
+                "admin",
+                "rebuild-operational-secondary-indexes",
+                "--db",
+                "/tmp/test.db",
+                "--name",
+                "idx_col",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["collection_name"] == "idx_col"
+
+
+def test_plan_operational_retention():
+    """admin plan-operational-retention returns JSON with planned_at."""
+    from fathomdb._cli import cli
+    from fathomdb._types import OperationalRetentionPlanReport
+
+    runner = CliRunner()
+    report = OperationalRetentionPlanReport(
+        planned_at=9999,
+        collections_examined=1,
+        items=[],
+    )
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.plan_operational_retention.return_value = report
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            [
+                "admin",
+                "plan-operational-retention",
+                "--db",
+                "/tmp/test.db",
+                "--now",
+                "9999",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["planned_at"] == 9999
+
+
+def test_run_operational_retention():
+    """admin run-operational-retention returns JSON with executed_at."""
+    from fathomdb._cli import cli
+    from fathomdb._types import OperationalRetentionRunReport
+
+    runner = CliRunner()
+    report = OperationalRetentionRunReport(
+        executed_at=8888,
+        collections_examined=2,
+        collections_acted_on=1,
+        dry_run=False,
+        items=[],
+    )
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.run_operational_retention.return_value = report
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            [
+                "admin",
+                "run-operational-retention",
+                "--db",
+                "/tmp/test.db",
+                "--now",
+                "8888",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["executed_at"] == 8888
+
+
+def test_compact_operational_collection():
+    """admin compact-operational-collection returns JSON with collection_name."""
+    from fathomdb._cli import cli
+    from fathomdb._types import OperationalCompactionReport
+
+    runner = CliRunner()
+    report = OperationalCompactionReport(
+        collection_name="compact_col",
+        deleted_mutations=0,
+        dry_run=True,
+        before_timestamp=None,
+    )
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.compact_operational_collection.return_value = report
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            [
+                "admin",
+                "compact-operational-collection",
+                "--db",
+                "/tmp/test.db",
+                "--name",
+                "compact_col",
+                "--dry-run",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["collection_name"] == "compact_col"
+
+
+def test_purge_operational_collection():
+    """admin purge-operational-collection returns JSON with collection_name."""
+    from fathomdb._cli import cli
+    from fathomdb._types import OperationalPurgeReport
+
+    runner = CliRunner()
+    report = OperationalPurgeReport(
+        collection_name="purge_col",
+        deleted_mutations=7,
+        before_timestamp=5000,
+    )
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.purge_operational_collection.return_value = report
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            [
+                "admin",
+                "purge-operational-collection",
+                "--db",
+                "/tmp/test.db",
+                "--name",
+                "purge_col",
+                "--before-timestamp",
+                "5000",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["collection_name"] == "purge_col"
+    assert data["deleted_mutations"] == 7
+
+
+def test_disable_operational_collection():
+    """admin disable-operational-collection returns JSON with name and kind."""
+    from fathomdb._cli import cli
+
+    runner = CliRunner()
+    with patch("fathomdb._cli._open_engine") as mock_open:
+        mock_engine = MagicMock()
+        mock_engine.admin.disable_operational_collection.return_value = (
+            _make_collection_record("dis_col")
+        )
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            [
+                "admin",
+                "disable-operational-collection",
+                "--db",
+                "/tmp/test.db",
+                "--name",
+                "dis_col",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["name"] == "dis_col"
+    assert "kind" in data
