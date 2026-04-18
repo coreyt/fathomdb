@@ -5,6 +5,7 @@ mod fusion;
 mod plan;
 mod relax;
 mod search;
+pub mod sql_adapt;
 mod text_query;
 
 pub use ast::{

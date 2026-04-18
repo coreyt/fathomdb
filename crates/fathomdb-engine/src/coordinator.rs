@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use fathomdb_query::sql_adapt::{renumber_sql_params, strip_prop_fts_union_arm};
 use fathomdb_query::{
     BindValue, ComparisonOp, CompiledGroupedQuery, CompiledQuery, CompiledRetrievalPlan,
     CompiledSearch, CompiledSearchPlan, CompiledVectorSearch, DrivingTable, ExpansionSlot,
@@ -2985,95 +2986,12 @@ fn open_guard_check_positions_empty(conn: &rusqlite::Connection) -> Result<bool,
     Ok(pos_count == 0)
 }
 
-/// Renumber `SQLite` positional parameters in `sql` after removing the given
-/// 1-based parameter numbers from `removed` (sorted ascending).
-///
-/// Each `?N` in the SQL where `N` is in `removed` is left in place (the caller
-/// must have already deleted those references from the SQL). Every `?N` where
-/// `N` is greater than any removed parameter is decremented by the count of
-/// removed parameters that are less than `N`.
-///
-/// Example: if `removed = [4]` then `?5` → `?4`, `?6` → `?5`, etc.
-/// Example: if `removed = [3, 4]` then `?5` → `?3`, `?6` → `?4`, etc.
-fn renumber_sql_params(sql: &str, removed: &[usize]) -> String {
-    // We walk the string looking for `?` followed by decimal digits and
-    // replace the number according to the removal offset.
-    let mut result = String::with_capacity(sql.len());
-    let bytes = sql.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'?' {
-            // Check if next chars are digits.
-            let num_start = i + 1;
-            let mut j = num_start;
-            while j < bytes.len() && bytes[j].is_ascii_digit() {
-                j += 1;
-            }
-            if j > num_start {
-                // Parse the parameter number (1-based).
-                let num_str = &sql[num_start..j];
-                if let Ok(n) = num_str.parse::<usize>() {
-                    // Count how many removed params are < n.
-                    let offset = removed.iter().filter(|&&r| r < n).count();
-                    result.push('?');
-                    result.push_str(&(n - offset).to_string());
-                    i = j;
-                    continue;
-                }
-            }
-        }
-        result.push(bytes[i] as char);
-        i += 1;
-    }
-    result
-}
-
 fn wrap_node_row_projection_sql(base_sql: &str) -> String {
     format!(
         "SELECT q.row_id, q.logical_id, q.kind, q.properties, q.content_ref, am.last_accessed_at \
          FROM ({base_sql}) q \
          LEFT JOIN node_access_metadata am ON am.logical_id = q.logical_id"
     )
-}
-
-/// Strip the property FTS UNION arm from a `compile_query`-generated
-/// `DrivingTable::FtsNodes` SQL string.
-///
-/// When the per-kind `fts_props_<kind>` table does not yet exist the
-/// `UNION SELECT ... FROM fts_node_properties ...` arm must be removed so the
-/// query degrades to chunk-only results instead of failing with "no such table".
-///
-/// The SQL structure from `compile_query` (fathomdb-query) is stable:
-/// ```text
-///                     UNION
-///                     SELECT fp.node_logical_id AS logical_id
-///                     FROM fts_node_properties fp
-///                     ...
-///                     WHERE fts_node_properties MATCH ?3
-///                       AND fp.kind = ?4
-///                 ) u
-/// ```
-/// We locate the `UNION` that precedes `fts_node_properties` and cut
-/// everything from it to the closing `) u`.
-fn strip_prop_fts_union_arm(sql: &str) -> String {
-    // The UNION arm in compile_query-generated FtsNodes SQL has:
-    //   - UNION with 24 spaces of indentation
-    //   - SELECT fp.node_logical_id with 24 spaces of indentation
-    //   - ending at "\n                    ) u" (20 spaces before ") u")
-    // Match the UNION that is immediately followed by the property arm.
-    let union_marker =
-        "                        UNION\n                        SELECT fp.node_logical_id";
-    if let Some(start) = sql.find(union_marker) {
-        // Find the closing ") u" after the property arm.
-        let end_marker = "\n                    ) u";
-        if let Some(rel_end) = sql[start..].find(end_marker) {
-            let end = start + rel_end;
-            // Remove from UNION start to (but not including) the "\n                    ) u" closing.
-            return format!("{}{}", &sql[..start], &sql[end..]);
-        }
-    }
-    // Fallback: return unchanged if pattern not found (shouldn't happen).
-    sql.to_owned()
 }
 
 /// Returns `true` when `err` indicates the vec virtual table is absent.
