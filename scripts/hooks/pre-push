@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# pre-push: comprehensive lint checks before pushing
+set -euo pipefail
+
+# Version sync check
+echo "[pre-push] version sync check"
+bash scripts/set-version.sh --check-files
+
+# Rust: clippy matching CI invocations exactly.
+# Previously the local hook ran a thinner form (no --all-targets, no node
+# feature) and let lints in test code and napi-gated code slip through to
+# CI (see dev/notes/ workflow audit). Aligning to CI catches those pre-push.
+echo "[pre-push] cargo clippy --workspace --all-targets"
+cargo clippy --workspace --all-targets -- -D warnings -A missing-docs
+
+echo "[pre-push] cargo clippy --features python (all-targets)"
+cargo clippy --workspace --all-targets --features python -- -D warnings -A missing-docs
+
+echo "[pre-push] cargo clippy --features node (all-targets)"
+cargo clippy --workspace --all-targets --features node -- -D warnings -A missing-docs
+
+# TypeScript: typecheck (matches CI `npm run typecheck`).
+# Skipped automatically if typescript/node_modules is missing — avoids
+# blocking pushes before `npm install` has run.
+if [ -d typescript/node_modules ]; then
+  echo "[pre-push] npm run typecheck"
+  (cd typescript && npm run typecheck)
+else
+  echo "[pre-push] skipping TypeScript typecheck (typescript/node_modules missing; run 'npm install' in typescript/ to enable)"
+fi
+
+# Go: vet
+echo "[pre-push] go vet ./..."
+(cd go/fathom-integrity && go vet ./...)

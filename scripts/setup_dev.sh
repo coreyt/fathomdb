@@ -329,6 +329,35 @@ install_python_dev_tools() {
     python3 -m pip install --upgrade pytest pytest-timeout ruff
 }
 
+# --- Git hooks ---
+
+# Install versioned git hooks from scripts/hooks/ into the repo's hook
+# directory. Previously the pre-push hook lived only in a developer's local
+# .git/hooks/ and drifted from CI — e.g. local clippy ran a thinner form
+# than CI's --all-targets invocation, letting lints slip through. Sharing
+# the hook source keeps every contributor aligned with the CI gates.
+install_git_hooks() {
+    local hook_src_dir="$REPO_ROOT/scripts/hooks"
+    local hook_dst_dir
+    hook_dst_dir="$(cd "$REPO_ROOT" && git rev-parse --git-path hooks 2>/dev/null || true)"
+
+    if [[ -z "$hook_dst_dir" || ! -d "$hook_dst_dir" ]]; then
+        warn "could not resolve git hooks directory; skipping hook install"
+        return 0
+    fi
+    if [[ ! -d "$hook_src_dir" ]]; then
+        warn "$hook_src_dir not found; skipping hook install"
+        return 0
+    fi
+
+    log "installing git hooks from $hook_src_dir to $hook_dst_dir"
+    local hook
+    for hook in "$hook_src_dir"/*; do
+        [[ -f "$hook" ]] || continue
+        install -m 755 "$hook" "$hook_dst_dir/$(basename "$hook")"
+    done
+}
+
 # --- Verification ---
 
 verify_dev_setup() {
@@ -437,6 +466,7 @@ dev_main() {
     install_cargo_tools
     install_golangci_lint
     install_python_dev_tools
+    install_git_hooks
 
     verify_dev_setup
     print_dev_summary
