@@ -4,36 +4,34 @@ use fathomdb_query::TextQuery;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ActionInsert, ActionRow, BindValue, ChunkInsert, ChunkPolicy, ComparisonOp,
-    CompiledGroupedQuery, CompiledQuery, DrivingTable, EdgeInsert, EdgeRetire, ExecutionHints,
+    BindValue, ComparisonOp, CompiledGroupedQuery, CompiledQuery, DrivingTable, ExecutionHints,
     ExpansionRootRows, ExpansionSlot, ExpansionSlotRows, GroupedQueryRows, LastAccessTouchReport,
-    LastAccessTouchRequest, NodeInsert, NodeRetire, NodeRow, OperationalWrite,
-    OptionalProjectionTask, Predicate, ProjectionRepairReport, ProjectionTarget, QueryAst,
-    QueryPlan, QueryRows, QueryStep, RunInsert, RunRow, SafeExportManifest, ScalarValue,
-    StepInsert, StepRow, TraverseDirection, VecInsert, WriteReceipt, WriteRequest,
+    LastAccessTouchRequest, OperationalWrite, OptionalProjectionTask, Predicate,
+    ProjectionRepairReport, ProjectionTarget, QueryPlan, QueryRows, QueryStep, RunRow,
+    SafeExportManifest, ScalarValue, StepRow, TraverseDirection, WriteReceipt, WriteRequest,
 };
 #[cfg(feature = "python")]
 use fathomdb_engine::VectorRegenerationReport;
 use fathomdb_engine::{IntegrityReport, SemanticReport, TraceReport};
 
 #[derive(Debug, Deserialize)]
-pub struct PyQueryAst {
+pub struct FfiQueryAst {
     pub root_kind: String,
     #[serde(default)]
-    pub steps: Vec<PyQueryStep>,
+    pub steps: Vec<FfiQueryStep>,
     #[serde(default)]
-    pub expansions: Vec<PyExpansionSlot>,
+    pub expansions: Vec<FfiExpansionSlot>,
     pub final_limit: Option<usize>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct PyExpansionSlot {
+pub struct FfiExpansionSlot {
     pub slot: String,
-    pub direction: PyTraverseDirection,
+    pub direction: FfiTraverseDirection,
     pub label: String,
     pub max_depth: usize,
     /// Optional filter predicate applied to target nodes in this slot.
-    /// Serialized as a filter-step dict (same format as `PyQueryStep` filter
+    /// Serialized as a filter-step dict (same format as `FfiQueryStep` filter
     /// variants), e.g. `{"type": "filter_json_text_eq", "path": "$.kind", "value": "decision"}`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filter: Option<serde_json::Value>,
@@ -47,7 +45,7 @@ pub struct PyExpansionSlot {
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum PyQueryStep {
+pub enum FfiQueryStep {
     VectorSearch {
         query: String,
         limit: usize,
@@ -57,7 +55,7 @@ pub enum PyQueryStep {
         limit: usize,
     },
     Traverse {
-        direction: PyTraverseDirection,
+        direction: FfiTraverseDirection,
         label: String,
         max_depth: usize,
     },
@@ -127,73 +125,77 @@ pub enum PyQueryStep {
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum PyTraverseDirection {
+pub enum FfiTraverseDirection {
     In,
     Out,
 }
 
-impl From<PyTraverseDirection> for TraverseDirection {
-    fn from(value: PyTraverseDirection) -> Self {
+impl From<FfiTraverseDirection> for TraverseDirection {
+    fn from(value: FfiTraverseDirection) -> Self {
         match value {
-            PyTraverseDirection::In => Self::In,
-            PyTraverseDirection::Out => Self::Out,
+            FfiTraverseDirection::In => Self::In,
+            FfiTraverseDirection::Out => Self::Out,
         }
     }
 }
 
-/// Convert a raw filter-step JSON value (same format as `PyQueryStep` filter variants)
+/// Convert a raw filter-step JSON value (same format as `FfiQueryStep` filter variants)
 /// to a `Predicate`. Returns `None` for unknown or non-filter step types.
-fn py_filter_value_to_predicate(v: serde_json::Value) -> Option<Predicate> {
-    let step: PyQueryStep = serde_json::from_value(v).ok()?;
+fn ffi_filter_value_to_predicate(v: serde_json::Value) -> Option<Predicate> {
+    let step: FfiQueryStep = serde_json::from_value(v).ok()?;
     match step {
-        PyQueryStep::FilterLogicalIdEq { logical_id } => Some(Predicate::LogicalIdEq(logical_id)),
-        PyQueryStep::FilterKindEq { kind } => Some(Predicate::KindEq(kind)),
-        PyQueryStep::FilterSourceRefEq { source_ref } => Some(Predicate::SourceRefEq(source_ref)),
-        PyQueryStep::FilterContentRefNotNull {} => Some(Predicate::ContentRefNotNull),
-        PyQueryStep::FilterContentRefEq { content_ref } => {
+        FfiQueryStep::FilterLogicalIdEq { logical_id } => Some(Predicate::LogicalIdEq(logical_id)),
+        FfiQueryStep::FilterKindEq { kind } => Some(Predicate::KindEq(kind)),
+        FfiQueryStep::FilterSourceRefEq { source_ref } => Some(Predicate::SourceRefEq(source_ref)),
+        FfiQueryStep::FilterContentRefNotNull {} => Some(Predicate::ContentRefNotNull),
+        FfiQueryStep::FilterContentRefEq { content_ref } => {
             Some(Predicate::ContentRefEq(content_ref))
         }
-        PyQueryStep::FilterJsonTextEq { path, value } => Some(Predicate::JsonPathEq {
+        FfiQueryStep::FilterJsonTextEq { path, value } => Some(Predicate::JsonPathEq {
             path,
             value: ScalarValue::Text(value),
         }),
-        PyQueryStep::FilterJsonBoolEq { path, value } => Some(Predicate::JsonPathEq {
+        FfiQueryStep::FilterJsonBoolEq { path, value } => Some(Predicate::JsonPathEq {
             path,
             value: ScalarValue::Bool(value),
         }),
-        PyQueryStep::FilterJsonIntegerGt { path, value }
-        | PyQueryStep::FilterJsonTimestampGt { path, value } => Some(Predicate::JsonPathCompare {
+        FfiQueryStep::FilterJsonIntegerGt { path, value }
+        | FfiQueryStep::FilterJsonTimestampGt { path, value } => Some(Predicate::JsonPathCompare {
             path,
             op: ComparisonOp::Gt,
             value: ScalarValue::Integer(value),
         }),
-        PyQueryStep::FilterJsonIntegerGte { path, value }
-        | PyQueryStep::FilterJsonTimestampGte { path, value } => Some(Predicate::JsonPathCompare {
-            path,
-            op: ComparisonOp::Gte,
-            value: ScalarValue::Integer(value),
-        }),
-        PyQueryStep::FilterJsonIntegerLt { path, value }
-        | PyQueryStep::FilterJsonTimestampLt { path, value } => Some(Predicate::JsonPathCompare {
+        FfiQueryStep::FilterJsonIntegerGte { path, value }
+        | FfiQueryStep::FilterJsonTimestampGte { path, value } => {
+            Some(Predicate::JsonPathCompare {
+                path,
+                op: ComparisonOp::Gte,
+                value: ScalarValue::Integer(value),
+            })
+        }
+        FfiQueryStep::FilterJsonIntegerLt { path, value }
+        | FfiQueryStep::FilterJsonTimestampLt { path, value } => Some(Predicate::JsonPathCompare {
             path,
             op: ComparisonOp::Lt,
             value: ScalarValue::Integer(value),
         }),
-        PyQueryStep::FilterJsonIntegerLte { path, value }
-        | PyQueryStep::FilterJsonTimestampLte { path, value } => Some(Predicate::JsonPathCompare {
-            path,
-            op: ComparisonOp::Lte,
-            value: ScalarValue::Integer(value),
-        }),
-        PyQueryStep::EdgePropertyEq { path, value } => {
-            let scalar = py_json_to_scalar(&value)?;
+        FfiQueryStep::FilterJsonIntegerLte { path, value }
+        | FfiQueryStep::FilterJsonTimestampLte { path, value } => {
+            Some(Predicate::JsonPathCompare {
+                path,
+                op: ComparisonOp::Lte,
+                value: ScalarValue::Integer(value),
+            })
+        }
+        FfiQueryStep::EdgePropertyEq { path, value } => {
+            let scalar = ffi_json_to_scalar(&value)?;
             Some(Predicate::EdgePropertyEq {
                 path,
                 value: scalar,
             })
         }
-        PyQueryStep::EdgePropertyCompare { path, op, value } => {
-            let scalar = py_json_to_scalar(&value)?;
+        FfiQueryStep::EdgePropertyCompare { path, op, value } => {
+            let scalar = ffi_json_to_scalar(&value)?;
             let comparison_op = match op.as_str() {
                 "gt" => ComparisonOp::Gt,
                 "gte" => ComparisonOp::Gte,
@@ -208,15 +210,15 @@ fn py_filter_value_to_predicate(v: serde_json::Value) -> Option<Predicate> {
             })
         }
         // Non-filter step types are not valid expansion filters.
-        PyQueryStep::VectorSearch { .. }
-        | PyQueryStep::TextSearch { .. }
-        | PyQueryStep::Traverse { .. } => None,
+        FfiQueryStep::VectorSearch { .. }
+        | FfiQueryStep::TextSearch { .. }
+        | FfiQueryStep::Traverse { .. } => None,
     }
 }
 
 /// Convert a raw `serde_json::Value` to a `ScalarValue`. Returns `None` for
 /// unsupported JSON types (objects, arrays, null).
-fn py_json_to_scalar(v: &serde_json::Value) -> Option<ScalarValue> {
+fn ffi_json_to_scalar(v: &serde_json::Value) -> Option<ScalarValue> {
     match v {
         serde_json::Value::String(s) => Some(ScalarValue::Text(s.clone())),
         serde_json::Value::Number(n) => {
@@ -231,20 +233,20 @@ fn py_json_to_scalar(v: &serde_json::Value) -> Option<ScalarValue> {
     }
 }
 
-impl From<PyQueryAst> for QueryAst {
-    fn from(value: PyQueryAst) -> Self {
+impl From<FfiQueryAst> for crate::QueryAst {
+    fn from(value: FfiQueryAst) -> Self {
         let steps = value
             .steps
             .into_iter()
             .map(|step| match step {
-                PyQueryStep::VectorSearch { query, limit } => {
+                FfiQueryStep::VectorSearch { query, limit } => {
                     QueryStep::VectorSearch { query, limit }
                 }
-                PyQueryStep::TextSearch { query, limit } => QueryStep::TextSearch {
+                FfiQueryStep::TextSearch { query, limit } => QueryStep::TextSearch {
                     query: TextQuery::parse(&query),
                     limit,
                 },
-                PyQueryStep::Traverse {
+                FfiQueryStep::Traverse {
                     direction,
                     label,
                     max_depth,
@@ -254,57 +256,57 @@ impl From<PyQueryAst> for QueryAst {
                     max_depth,
                     filter: None,
                 },
-                PyQueryStep::FilterLogicalIdEq { logical_id } => {
+                FfiQueryStep::FilterLogicalIdEq { logical_id } => {
                     QueryStep::Filter(Predicate::LogicalIdEq(logical_id))
                 }
-                PyQueryStep::FilterKindEq { kind } => QueryStep::Filter(Predicate::KindEq(kind)),
-                PyQueryStep::FilterSourceRefEq { source_ref } => {
+                FfiQueryStep::FilterKindEq { kind } => QueryStep::Filter(Predicate::KindEq(kind)),
+                FfiQueryStep::FilterSourceRefEq { source_ref } => {
                     QueryStep::Filter(Predicate::SourceRefEq(source_ref))
                 }
-                PyQueryStep::FilterContentRefNotNull {} => {
+                FfiQueryStep::FilterContentRefNotNull {} => {
                     QueryStep::Filter(Predicate::ContentRefNotNull)
                 }
-                PyQueryStep::FilterContentRefEq { content_ref } => {
+                FfiQueryStep::FilterContentRefEq { content_ref } => {
                     QueryStep::Filter(Predicate::ContentRefEq(content_ref))
                 }
-                PyQueryStep::FilterJsonTextEq { path, value } => {
+                FfiQueryStep::FilterJsonTextEq { path, value } => {
                     QueryStep::Filter(Predicate::JsonPathEq {
                         path,
                         value: ScalarValue::Text(value),
                     })
                 }
-                PyQueryStep::FilterJsonBoolEq { path, value } => {
+                FfiQueryStep::FilterJsonBoolEq { path, value } => {
                     QueryStep::Filter(Predicate::JsonPathEq {
                         path,
                         value: ScalarValue::Bool(value),
                     })
                 }
-                PyQueryStep::FilterJsonIntegerGt { path, value }
-                | PyQueryStep::FilterJsonTimestampGt { path, value } => {
+                FfiQueryStep::FilterJsonIntegerGt { path, value }
+                | FfiQueryStep::FilterJsonTimestampGt { path, value } => {
                     QueryStep::Filter(Predicate::JsonPathCompare {
                         path,
                         op: ComparisonOp::Gt,
                         value: ScalarValue::Integer(value),
                     })
                 }
-                PyQueryStep::FilterJsonIntegerGte { path, value }
-                | PyQueryStep::FilterJsonTimestampGte { path, value } => {
+                FfiQueryStep::FilterJsonIntegerGte { path, value }
+                | FfiQueryStep::FilterJsonTimestampGte { path, value } => {
                     QueryStep::Filter(Predicate::JsonPathCompare {
                         path,
                         op: ComparisonOp::Gte,
                         value: ScalarValue::Integer(value),
                     })
                 }
-                PyQueryStep::FilterJsonIntegerLt { path, value }
-                | PyQueryStep::FilterJsonTimestampLt { path, value } => {
+                FfiQueryStep::FilterJsonIntegerLt { path, value }
+                | FfiQueryStep::FilterJsonTimestampLt { path, value } => {
                     QueryStep::Filter(Predicate::JsonPathCompare {
                         path,
                         op: ComparisonOp::Lt,
                         value: ScalarValue::Integer(value),
                     })
                 }
-                PyQueryStep::FilterJsonIntegerLte { path, value }
-                | PyQueryStep::FilterJsonTimestampLte { path, value } => {
+                FfiQueryStep::FilterJsonIntegerLte { path, value }
+                | FfiQueryStep::FilterJsonTimestampLte { path, value } => {
                     QueryStep::Filter(Predicate::JsonPathCompare {
                         path,
                         op: ComparisonOp::Lte,
@@ -332,8 +334,8 @@ impl From<PyQueryAst> for QueryAst {
                 direction: slot.direction.into(),
                 label: slot.label,
                 max_depth: slot.max_depth,
-                filter: slot.filter.and_then(py_filter_value_to_predicate),
-                edge_filter: slot.edge_filter.and_then(py_filter_value_to_predicate),
+                filter: slot.filter.and_then(ffi_filter_value_to_predicate),
+                edge_filter: slot.edge_filter.and_then(ffi_filter_value_to_predicate),
             })
             .collect();
 
@@ -347,41 +349,41 @@ impl From<PyQueryAst> for QueryAst {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct PyWriteRequest {
+pub struct FfiWriteRequest {
     pub label: String,
     #[serde(default)]
-    pub nodes: Vec<PyNodeInsert>,
+    pub nodes: Vec<FfiNodeInsert>,
     #[serde(default)]
-    pub node_retires: Vec<PyNodeRetire>,
+    pub node_retires: Vec<FfiNodeRetire>,
     #[serde(default)]
-    pub edges: Vec<PyEdgeInsert>,
+    pub edges: Vec<FfiEdgeInsert>,
     #[serde(default)]
-    pub edge_retires: Vec<PyEdgeRetire>,
+    pub edge_retires: Vec<FfiEdgeRetire>,
     #[serde(default)]
-    pub chunks: Vec<PyChunkInsert>,
+    pub chunks: Vec<FfiChunkInsert>,
     #[serde(default)]
-    pub runs: Vec<PyRunInsert>,
+    pub runs: Vec<FfiRunInsert>,
     #[serde(default)]
-    pub steps: Vec<PyStepInsert>,
+    pub steps: Vec<FfiStepInsert>,
     #[serde(default)]
-    pub actions: Vec<PyActionInsert>,
+    pub actions: Vec<FfiActionInsert>,
     #[serde(default)]
-    pub optional_backfills: Vec<PyOptionalProjectionTask>,
+    pub optional_backfills: Vec<FfiOptionalProjectionTask>,
     #[serde(default)]
-    pub vec_inserts: Vec<PyVecInsert>,
+    pub vec_inserts: Vec<FfiVecInsert>,
     #[serde(default)]
-    pub operational_writes: Vec<PyOperationalWrite>,
+    pub operational_writes: Vec<FfiOperationalWrite>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct PyLastAccessTouchRequest {
+pub struct FfiLastAccessTouchRequest {
     pub logical_ids: Vec<String>,
     pub touched_at: i64,
     pub source_ref: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct PyNodeInsert {
+pub struct FfiNodeInsert {
     pub row_id: String,
     pub logical_id: String,
     pub kind: String,
@@ -389,12 +391,12 @@ pub struct PyNodeInsert {
     pub source_ref: Option<String>,
     #[serde(default)]
     pub upsert: bool,
-    pub chunk_policy: Option<PyChunkPolicy>,
+    pub chunk_policy: Option<FfiChunkPolicy>,
     pub content_ref: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct PyEdgeInsert {
+pub struct FfiEdgeInsert {
     pub row_id: String,
     pub logical_id: String,
     pub source_logical_id: String,
@@ -407,19 +409,19 @@ pub struct PyEdgeInsert {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct PyNodeRetire {
+pub struct FfiNodeRetire {
     pub logical_id: String,
     pub source_ref: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct PyEdgeRetire {
+pub struct FfiEdgeRetire {
     pub logical_id: String,
     pub source_ref: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct PyChunkInsert {
+pub struct FfiChunkInsert {
     pub id: String,
     pub node_logical_id: String,
     pub text_content: String,
@@ -429,14 +431,14 @@ pub struct PyChunkInsert {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct PyVecInsert {
+pub struct FfiVecInsert {
     pub chunk_id: String,
     pub embedding: Vec<f32>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum PyOperationalWrite {
+pub enum FfiOperationalWrite {
     Append {
         collection: String,
         record_key: String,
@@ -457,7 +459,7 @@ pub enum PyOperationalWrite {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct PyRunInsert {
+pub struct FfiRunInsert {
     pub id: String,
     pub kind: String,
     pub status: String,
@@ -469,7 +471,7 @@ pub struct PyRunInsert {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct PyStepInsert {
+pub struct FfiStepInsert {
     pub id: String,
     pub run_id: String,
     pub kind: String,
@@ -482,7 +484,7 @@ pub struct PyStepInsert {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct PyActionInsert {
+pub struct FfiActionInsert {
     pub id: String,
     pub step_id: String,
     pub kind: String,
@@ -495,46 +497,46 @@ pub struct PyActionInsert {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct PyOptionalProjectionTask {
-    pub target: PyProjectionTarget,
+pub struct FfiOptionalProjectionTask {
+    pub target: FfiProjectionTarget,
     pub payload: String,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum PyChunkPolicy {
+pub enum FfiChunkPolicy {
     Preserve,
     Replace,
 }
 
-impl From<PyChunkPolicy> for ChunkPolicy {
-    fn from(value: PyChunkPolicy) -> Self {
+impl From<FfiChunkPolicy> for crate::ChunkPolicy {
+    fn from(value: FfiChunkPolicy) -> Self {
         match value {
-            PyChunkPolicy::Preserve => Self::Preserve,
-            PyChunkPolicy::Replace => Self::Replace,
+            FfiChunkPolicy::Preserve => Self::Preserve,
+            FfiChunkPolicy::Replace => Self::Replace,
         }
     }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum PyProjectionTarget {
+pub enum FfiProjectionTarget {
     Fts,
     Vec,
     All,
 }
 
-impl From<PyProjectionTarget> for ProjectionTarget {
-    fn from(value: PyProjectionTarget) -> Self {
+impl From<FfiProjectionTarget> for ProjectionTarget {
+    fn from(value: FfiProjectionTarget) -> Self {
         match value {
-            PyProjectionTarget::Fts => Self::Fts,
-            PyProjectionTarget::Vec => Self::Vec,
-            PyProjectionTarget::All => Self::All,
+            FfiProjectionTarget::Fts => Self::Fts,
+            FfiProjectionTarget::Vec => Self::Vec,
+            FfiProjectionTarget::All => Self::All,
         }
     }
 }
 
-impl From<ProjectionTarget> for PyProjectionTarget {
+impl From<ProjectionTarget> for FfiProjectionTarget {
     fn from(value: ProjectionTarget) -> Self {
         match value {
             ProjectionTarget::Fts => Self::Fts,
@@ -544,29 +546,29 @@ impl From<ProjectionTarget> for PyProjectionTarget {
     }
 }
 
-impl From<PyWriteRequest> for WriteRequest {
+impl From<FfiWriteRequest> for WriteRequest {
     #[allow(clippy::too_many_lines)]
-    fn from(value: PyWriteRequest) -> Self {
+    fn from(value: FfiWriteRequest) -> Self {
         Self {
             label: value.label,
             nodes: value
                 .nodes
                 .into_iter()
-                .map(|node| NodeInsert {
+                .map(|node| crate::NodeInsert {
                     row_id: node.row_id,
                     logical_id: node.logical_id,
                     kind: node.kind,
                     properties: node.properties,
                     source_ref: node.source_ref,
                     upsert: node.upsert,
-                    chunk_policy: node.chunk_policy.unwrap_or(PyChunkPolicy::Preserve).into(),
+                    chunk_policy: node.chunk_policy.unwrap_or(FfiChunkPolicy::Preserve).into(),
                     content_ref: node.content_ref,
                 })
                 .collect(),
             node_retires: value
                 .node_retires
                 .into_iter()
-                .map(|retire| NodeRetire {
+                .map(|retire| crate::NodeRetire {
                     logical_id: retire.logical_id,
                     source_ref: retire.source_ref,
                 })
@@ -574,7 +576,7 @@ impl From<PyWriteRequest> for WriteRequest {
             edges: value
                 .edges
                 .into_iter()
-                .map(|edge| EdgeInsert {
+                .map(|edge| crate::EdgeInsert {
                     row_id: edge.row_id,
                     logical_id: edge.logical_id,
                     source_logical_id: edge.source_logical_id,
@@ -588,7 +590,7 @@ impl From<PyWriteRequest> for WriteRequest {
             edge_retires: value
                 .edge_retires
                 .into_iter()
-                .map(|retire| EdgeRetire {
+                .map(|retire| crate::EdgeRetire {
                     logical_id: retire.logical_id,
                     source_ref: retire.source_ref,
                 })
@@ -596,7 +598,7 @@ impl From<PyWriteRequest> for WriteRequest {
             chunks: value
                 .chunks
                 .into_iter()
-                .map(|chunk| ChunkInsert {
+                .map(|chunk| crate::ChunkInsert {
                     id: chunk.id,
                     node_logical_id: chunk.node_logical_id,
                     text_content: chunk.text_content,
@@ -608,7 +610,7 @@ impl From<PyWriteRequest> for WriteRequest {
             runs: value
                 .runs
                 .into_iter()
-                .map(|run| RunInsert {
+                .map(|run| crate::RunInsert {
                     id: run.id,
                     kind: run.kind,
                     status: run.status,
@@ -621,7 +623,7 @@ impl From<PyWriteRequest> for WriteRequest {
             steps: value
                 .steps
                 .into_iter()
-                .map(|step| StepInsert {
+                .map(|step| crate::StepInsert {
                     id: step.id,
                     run_id: step.run_id,
                     kind: step.kind,
@@ -635,7 +637,7 @@ impl From<PyWriteRequest> for WriteRequest {
             actions: value
                 .actions
                 .into_iter()
-                .map(|action| ActionInsert {
+                .map(|action| crate::ActionInsert {
                     id: action.id,
                     step_id: action.step_id,
                     kind: action.kind,
@@ -657,7 +659,7 @@ impl From<PyWriteRequest> for WriteRequest {
             vec_inserts: value
                 .vec_inserts
                 .into_iter()
-                .map(|vec_insert| VecInsert {
+                .map(|vec_insert| crate::VecInsert {
                     chunk_id: vec_insert.chunk_id,
                     embedding: vec_insert.embedding,
                 })
@@ -666,7 +668,7 @@ impl From<PyWriteRequest> for WriteRequest {
                 .operational_writes
                 .into_iter()
                 .map(|write| match write {
-                    PyOperationalWrite::Append {
+                    FfiOperationalWrite::Append {
                         collection,
                         record_key,
                         payload_json,
@@ -677,7 +679,7 @@ impl From<PyWriteRequest> for WriteRequest {
                         payload_json,
                         source_ref,
                     },
-                    PyOperationalWrite::Put {
+                    FfiOperationalWrite::Put {
                         collection,
                         record_key,
                         payload_json,
@@ -688,7 +690,7 @@ impl From<PyWriteRequest> for WriteRequest {
                         payload_json,
                         source_ref,
                     },
-                    PyOperationalWrite::Delete {
+                    FfiOperationalWrite::Delete {
                         collection,
                         record_key,
                         source_ref,
@@ -703,8 +705,8 @@ impl From<PyWriteRequest> for WriteRequest {
     }
 }
 
-impl From<PyLastAccessTouchRequest> for LastAccessTouchRequest {
-    fn from(value: PyLastAccessTouchRequest) -> Self {
+impl From<FfiLastAccessTouchRequest> for LastAccessTouchRequest {
+    fn from(value: FfiLastAccessTouchRequest) -> Self {
         Self {
             logical_ids: value.logical_ids,
             touched_at: value.touched_at,
@@ -714,15 +716,15 @@ impl From<PyLastAccessTouchRequest> for LastAccessTouchRequest {
 }
 
 #[derive(Debug, Serialize)]
-pub struct PyCompiledQuery {
+pub struct FfiCompiledQuery {
     pub sql: String,
-    pub binds: Vec<PyBindValue>,
+    pub binds: Vec<FfiBindValue>,
     pub shape_hash: u64,
-    pub driving_table: PyDrivingTable,
-    pub hints: PyExecutionHints,
+    pub driving_table: FfiDrivingTable,
+    pub hints: FfiExecutionHints,
 }
 
-impl From<CompiledQuery> for PyCompiledQuery {
+impl From<CompiledQuery> for FfiCompiledQuery {
     fn from(value: CompiledQuery) -> Self {
         Self {
             sql: value.sql,
@@ -735,25 +737,25 @@ impl From<CompiledQuery> for PyCompiledQuery {
 }
 
 #[derive(Debug, Serialize)]
-pub struct PyCompiledGroupedQuery {
-    pub root: PyCompiledQuery,
-    pub expansions: Vec<PyExpansionSlot>,
+pub struct FfiCompiledGroupedQuery {
+    pub root: FfiCompiledQuery,
+    pub expansions: Vec<FfiExpansionSlot>,
     pub shape_hash: u64,
-    pub hints: PyExecutionHints,
+    pub hints: FfiExecutionHints,
 }
 
-impl From<CompiledGroupedQuery> for PyCompiledGroupedQuery {
+impl From<CompiledGroupedQuery> for FfiCompiledGroupedQuery {
     fn from(value: CompiledGroupedQuery) -> Self {
         Self {
             root: value.root.into(),
             expansions: value
                 .expansions
                 .into_iter()
-                .map(|slot| PyExpansionSlot {
+                .map(|slot| FfiExpansionSlot {
                     slot: slot.slot,
                     direction: match slot.direction {
-                        TraverseDirection::In => PyTraverseDirection::In,
-                        TraverseDirection::Out => PyTraverseDirection::Out,
+                        TraverseDirection::In => FfiTraverseDirection::In,
+                        TraverseDirection::Out => FfiTraverseDirection::Out,
                     },
                     label: slot.label,
                     max_depth: slot.max_depth,
@@ -769,13 +771,13 @@ impl From<CompiledGroupedQuery> for PyCompiledGroupedQuery {
 
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum PyBindValue {
+pub enum FfiBindValue {
     Text { value: String },
     Integer { value: i64 },
     Bool { value: bool },
 }
 
-impl From<BindValue> for PyBindValue {
+impl From<BindValue> for FfiBindValue {
     fn from(value: BindValue) -> Self {
         match value {
             BindValue::Text(value) => Self::Text { value },
@@ -786,12 +788,12 @@ impl From<BindValue> for PyBindValue {
 }
 
 #[derive(Debug, Serialize)]
-pub struct PyExecutionHints {
+pub struct FfiExecutionHints {
     pub recursion_limit: usize,
     pub hard_limit: usize,
 }
 
-impl From<ExecutionHints> for PyExecutionHints {
+impl From<ExecutionHints> for FfiExecutionHints {
     fn from(value: ExecutionHints) -> Self {
         Self {
             recursion_limit: value.recursion_limit,
@@ -802,13 +804,13 @@ impl From<ExecutionHints> for PyExecutionHints {
 
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum PyDrivingTable {
+pub enum FfiDrivingTable {
     Nodes,
     FtsNodes,
     VecNodes,
 }
 
-impl From<DrivingTable> for PyDrivingTable {
+impl From<DrivingTable> for FfiDrivingTable {
     fn from(value: DrivingTable) -> Self {
         match value {
             DrivingTable::Nodes => Self::Nodes,
@@ -819,15 +821,15 @@ impl From<DrivingTable> for PyDrivingTable {
 }
 
 #[derive(Debug, Serialize)]
-pub struct PyQueryPlan {
+pub struct FfiQueryPlan {
     pub sql: String,
     pub bind_count: usize,
-    pub driving_table: PyDrivingTable,
+    pub driving_table: FfiDrivingTable,
     pub shape_hash: u64,
     pub cache_hit: bool,
 }
 
-impl From<QueryPlan> for PyQueryPlan {
+impl From<QueryPlan> for FfiQueryPlan {
     fn from(value: QueryPlan) -> Self {
         Self {
             sql: value.sql,
@@ -840,15 +842,15 @@ impl From<QueryPlan> for PyQueryPlan {
 }
 
 #[derive(Debug, Serialize)]
-pub struct PyQueryRows {
-    pub nodes: Vec<PyNodeRow>,
-    pub runs: Vec<PyRunRow>,
-    pub steps: Vec<PyStepRow>,
-    pub actions: Vec<PyActionRow>,
+pub struct FfiQueryRows {
+    pub nodes: Vec<FfiNodeRow>,
+    pub runs: Vec<FfiRunRow>,
+    pub steps: Vec<FfiStepRow>,
+    pub actions: Vec<FfiActionRow>,
     pub was_degraded: bool,
 }
 
-impl From<QueryRows> for PyQueryRows {
+impl From<QueryRows> for FfiQueryRows {
     fn from(value: QueryRows) -> Self {
         Self {
             nodes: value.nodes.into_iter().map(Into::into).collect(),
@@ -861,12 +863,12 @@ impl From<QueryRows> for PyQueryRows {
 }
 
 #[derive(Debug, Serialize)]
-pub struct PyExpansionRootRows {
+pub struct FfiExpansionRootRows {
     pub root_logical_id: String,
-    pub nodes: Vec<PyNodeRow>,
+    pub nodes: Vec<FfiNodeRow>,
 }
 
-impl From<ExpansionRootRows> for PyExpansionRootRows {
+impl From<ExpansionRootRows> for FfiExpansionRootRows {
     fn from(value: ExpansionRootRows) -> Self {
         Self {
             root_logical_id: value.root_logical_id,
@@ -876,12 +878,12 @@ impl From<ExpansionRootRows> for PyExpansionRootRows {
 }
 
 #[derive(Debug, Serialize)]
-pub struct PyExpansionSlotRows {
+pub struct FfiExpansionSlotRows {
     pub slot: String,
-    pub roots: Vec<PyExpansionRootRows>,
+    pub roots: Vec<FfiExpansionRootRows>,
 }
 
-impl From<ExpansionSlotRows> for PyExpansionSlotRows {
+impl From<ExpansionSlotRows> for FfiExpansionSlotRows {
     fn from(value: ExpansionSlotRows) -> Self {
         Self {
             slot: value.slot,
@@ -891,13 +893,13 @@ impl From<ExpansionSlotRows> for PyExpansionSlotRows {
 }
 
 #[derive(Debug, Serialize)]
-pub struct PyGroupedQueryRows {
-    pub roots: Vec<PyNodeRow>,
-    pub expansions: Vec<PyExpansionSlotRows>,
+pub struct FfiGroupedQueryRows {
+    pub roots: Vec<FfiNodeRow>,
+    pub expansions: Vec<FfiExpansionSlotRows>,
     pub was_degraded: bool,
 }
 
-impl From<GroupedQueryRows> for PyGroupedQueryRows {
+impl From<GroupedQueryRows> for FfiGroupedQueryRows {
     fn from(value: GroupedQueryRows) -> Self {
         Self {
             roots: value.roots.into_iter().map(Into::into).collect(),
@@ -910,29 +912,29 @@ impl From<GroupedQueryRows> for PyGroupedQueryRows {
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::panic)]
 mod tests {
-    use super::{PyOperationalWrite, PyQueryAst, PyQueryStep, PyWriteRequest};
+    use super::{FfiOperationalWrite, FfiQueryAst, FfiQueryStep, FfiWriteRequest};
     use crate::{ComparisonOp, Predicate, QueryAst, QueryStep, ScalarValue};
     use fathomdb_query::TextQuery;
 
     // ---------------------------------------------------------------
-    // PyQueryStep deserialization: one test per variant to catch
+    // FfiQueryStep deserialization: one test per variant to catch
     // Python-to-Rust AST bridge gaps.
     // ---------------------------------------------------------------
 
-    fn parse_step(json: &str) -> PyQueryStep {
-        serde_json::from_str(json).expect("parse PyQueryStep")
+    fn parse_step(json: &str) -> FfiQueryStep {
+        serde_json::from_str(json).expect("parse FfiQueryStep")
     }
 
     fn parse_ast_with_step(step_json: &str) -> QueryAst {
         let ast_json = format!(r#"{{"root_kind":"Node","steps":[{step_json}]}}"#);
-        let py_ast: PyQueryAst = serde_json::from_str(&ast_json).expect("parse PyQueryAst");
-        QueryAst::from(py_ast)
+        let ffi_ast: FfiQueryAst = serde_json::from_str(&ast_json).expect("parse FfiQueryAst");
+        QueryAst::from(ffi_ast)
     }
 
     #[test]
     fn step_vector_search_roundtrip() {
         let step = parse_step(r#"{"type":"vector_search","query":"hello","limit":5}"#);
-        assert!(matches!(step, PyQueryStep::VectorSearch { limit: 5, .. }));
+        assert!(matches!(step, FfiQueryStep::VectorSearch { limit: 5, .. }));
         let ast = parse_ast_with_step(r#"{"type":"vector_search","query":"hello","limit":5}"#);
         assert!(matches!(
             &ast.steps[0],
@@ -943,7 +945,7 @@ mod tests {
     #[test]
     fn step_text_search_roundtrip() {
         let step = parse_step(r#"{"type":"text_search","query":"budget","limit":10}"#);
-        assert!(matches!(step, PyQueryStep::TextSearch { limit: 10, .. }));
+        assert!(matches!(step, FfiQueryStep::TextSearch { limit: 10, .. }));
         let ast = parse_ast_with_step(r#"{"type":"text_search","query":"budget","limit":10}"#);
         match &ast.steps[0] {
             QueryStep::TextSearch { query, limit } => {
@@ -1053,11 +1055,11 @@ mod tests {
     }
 
     /// Regression: `ScalarValue::Bool` is supported by the AST and compiler but
-    /// `PyQueryStep` was missing the `FilterJsonBoolEq` variant, so Python could
+    /// `FfiQueryStep` was missing the `FilterJsonBoolEq` variant, so Python could
     /// not emit boolean equality filters.
     #[test]
     fn step_filter_json_bool_eq_roundtrip() {
-        // This tests that the PyQueryStep enum can deserialize the
+        // This tests that the FfiQueryStep enum can deserialize the
         // filter_json_bool_eq tag and converts to the correct Predicate.
         let ast =
             parse_ast_with_step(r#"{"type":"filter_json_bool_eq","path":"$.active","value":true}"#);
@@ -1195,7 +1197,7 @@ mod tests {
     /// of silent data loss.
     #[test]
     fn step_unknown_type_tag_is_rejected() {
-        let result = serde_json::from_str::<PyQueryStep>(
+        let result = serde_json::from_str::<FfiQueryStep>(
             r#"{"type":"filter_json_float_eq","path":"$.x","value":1.5}"#,
         );
         assert!(
@@ -1205,13 +1207,13 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // PyWriteRequest field coverage: catches struct-level divergence
+    // FfiWriteRequest field coverage: catches struct-level divergence
     // between the Python JSON schema and the Rust engine types.
     // ---------------------------------------------------------------
 
     #[test]
     fn write_request_deserializes_all_entity_arrays() {
-        let request: PyWriteRequest = serde_json::from_str(
+        let request: FfiWriteRequest = serde_json::from_str(
             r#"{
                 "label": "full_write",
                 "nodes": [{
@@ -1269,12 +1271,12 @@ mod tests {
         assert_eq!(request.operational_writes.len(), 1);
     }
 
-    /// Verifies that the `From<PyWriteRequest>` conversion preserves all fields
+    /// Verifies that the `From<FfiWriteRequest>` conversion preserves all fields
     /// through to the engine `WriteRequest`. If the engine adds a field and the
     /// bridge omits it, this test must be updated — which is the point.
     #[test]
     fn write_request_conversion_preserves_all_entity_fields() {
-        let request: PyWriteRequest = serde_json::from_str(
+        let request: FfiWriteRequest = serde_json::from_str(
             r#"{
                 "label": "conv_test",
                 "nodes": [{
@@ -1341,7 +1343,7 @@ mod tests {
 
     #[test]
     fn py_write_request_deserializes_operational_writes() {
-        let request: PyWriteRequest = serde_json::from_str(
+        let request: FfiWriteRequest = serde_json::from_str(
             r#"{
                 "label": "operational",
                 "operational_writes": [
@@ -1359,7 +1361,7 @@ mod tests {
 
         assert_eq!(request.operational_writes.len(), 1);
         match &request.operational_writes[0] {
-            PyOperationalWrite::Put {
+            FfiOperationalWrite::Put {
                 collection,
                 record_key,
                 payload_json,
@@ -1376,7 +1378,7 @@ mod tests {
 
     #[test]
     fn operational_write_append_variant() {
-        let request: PyWriteRequest = serde_json::from_str(
+        let request: FfiWriteRequest = serde_json::from_str(
             r#"{
                 "label": "op",
                 "operational_writes": [{
@@ -1388,13 +1390,13 @@ mod tests {
         .expect("parse");
         assert!(matches!(
             &request.operational_writes[0],
-            PyOperationalWrite::Append { .. }
+            FfiOperationalWrite::Append { .. }
         ));
     }
 
     #[test]
     fn operational_write_delete_variant() {
-        let request: PyWriteRequest = serde_json::from_str(
+        let request: FfiWriteRequest = serde_json::from_str(
             r#"{
                 "label": "op",
                 "operational_writes": [{
@@ -1406,7 +1408,7 @@ mod tests {
         .expect("parse");
         assert!(matches!(
             &request.operational_writes[0],
-            PyOperationalWrite::Delete { .. }
+            FfiOperationalWrite::Delete { .. }
         ));
     }
 
@@ -1445,42 +1447,42 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // PyBindValue output coverage: ensures the Rust→Python serialized
+    // FfiBindValue output coverage: ensures the Rust→Python serialized
     // bind values cover all ScalarValue/BindValue variants.
     // ---------------------------------------------------------------
 
     #[test]
     fn bind_value_serializes_all_variants() {
-        use super::PyBindValue;
+        use super::FfiBindValue;
 
-        let text = serde_json::to_string(&PyBindValue::Text {
+        let text = serde_json::to_string(&FfiBindValue::Text {
             value: "hello".into(),
         })
         .expect("serialize text");
         assert!(text.contains("\"type\":\"text\""));
 
         let integer =
-            serde_json::to_string(&PyBindValue::Integer { value: 42 }).expect("serialize integer");
+            serde_json::to_string(&FfiBindValue::Integer { value: 42 }).expect("serialize integer");
         assert!(integer.contains("\"type\":\"integer\""));
 
         let boolean =
-            serde_json::to_string(&PyBindValue::Bool { value: true }).expect("serialize bool");
+            serde_json::to_string(&FfiBindValue::Bool { value: true }).expect("serialize bool");
         assert!(boolean.contains("\"type\":\"bool\""));
     }
 
     // ---------------------------------------------------------------
-    // Cross-layer parity: engine report → Py* report serialization.
+    // Cross-layer parity: engine report → Ffi* report serialization.
     // Each test constructs an engine struct with non-default values,
     // converts via From, serializes to JSON, and asserts every field
     // is present with the expected value.  If a field is added to the
-    // engine type but not the Py* type, these tests will fail to
+    // engine type but not the Ffi* type, these tests will fail to
     // compile (missing field in the engine constructor) or will fail
     // at runtime (missing key in the serialized JSON).
     // ---------------------------------------------------------------
 
     #[test]
     fn integrity_report_serializes_all_fields() {
-        use super::PyIntegrityReport;
+        use super::FfiIntegrityReport;
         use fathomdb_engine::IntegrityReport;
 
         let report = IntegrityReport {
@@ -1493,8 +1495,8 @@ mod tests {
             operational_missing_last_mutations: 4,
             warnings: vec!["warn-1".into(), "warn-2".into()],
         };
-        let py = PyIntegrityReport::from(report);
-        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+        let ffi = FfiIntegrityReport::from(report);
+        let json: serde_json::Value = serde_json::to_value(&ffi).expect("serialize");
 
         assert_eq!(json["physical_ok"], true);
         assert_eq!(json["foreign_keys_ok"], false);
@@ -1511,7 +1513,7 @@ mod tests {
 
     #[test]
     fn semantic_report_serializes_all_fields() {
-        use super::PySemanticReport;
+        use super::FfiSemanticReport;
         use fathomdb_engine::SemanticReport;
 
         let report = SemanticReport {
@@ -1536,8 +1538,8 @@ mod tests {
             orphaned_last_access_metadata_rows: 14,
             warnings: vec!["sem-warn".into()],
         };
-        let py = PySemanticReport::from(report);
-        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+        let ffi = FfiSemanticReport::from(report);
+        let json: serde_json::Value = serde_json::to_value(&ffi).expect("serialize");
 
         assert_eq!(json["orphaned_chunks"], 1);
         assert_eq!(json["null_source_ref_nodes"], 2);
@@ -1565,7 +1567,7 @@ mod tests {
 
     #[test]
     fn trace_report_serializes_all_fields() {
-        use super::PyTraceReport;
+        use super::FfiTraceReport;
         use fathomdb_engine::TraceReport;
 
         let report = TraceReport {
@@ -1578,8 +1580,8 @@ mod tests {
             action_ids: vec!["a1".into()],
             operational_mutation_ids: vec!["om1".into(), "om2".into()],
         };
-        let py = PyTraceReport::from(report);
-        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+        let ffi = FfiTraceReport::from(report);
+        let json: serde_json::Value = serde_json::to_value(&ffi).expect("serialize");
 
         assert_eq!(json["source_ref"], "src-42");
         assert_eq!(json["node_rows"], 10);
@@ -1602,7 +1604,7 @@ mod tests {
 
     #[test]
     fn projection_repair_report_serializes_all_fields() {
-        use super::PyProjectionRepairReport;
+        use super::FfiProjectionRepairReport;
         use crate::{ProjectionRepairReport, ProjectionTarget};
 
         let report = ProjectionRepairReport {
@@ -1610,8 +1612,8 @@ mod tests {
             rebuilt_rows: 42,
             notes: vec!["rebuilt fts".into()],
         };
-        let py = PyProjectionRepairReport::from(report);
-        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+        let ffi = FfiProjectionRepairReport::from(report);
+        let json: serde_json::Value = serde_json::to_value(&ffi).expect("serialize");
 
         let targets = json["targets"].as_array().expect("targets");
         assert_eq!(targets.len(), 2);
@@ -1626,7 +1628,7 @@ mod tests {
     #[cfg(feature = "python")]
     #[test]
     fn vector_regeneration_report_serializes_all_fields() {
-        use super::PyVectorRegenerationReport;
+        use super::FfiVectorRegenerationReport;
         use fathomdb_engine::VectorRegenerationReport;
 
         let report = VectorRegenerationReport {
@@ -1638,8 +1640,8 @@ mod tests {
             contract_persisted: true,
             notes: vec!["skipped 5 empty chunks".into()],
         };
-        let py = PyVectorRegenerationReport::from(report);
-        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+        let ffi = FfiVectorRegenerationReport::from(report);
+        let json: serde_json::Value = serde_json::to_value(&ffi).expect("serialize");
 
         assert_eq!(json["profile"], "default");
         assert_eq!(json["table_name"], "vec_chunks");
@@ -1654,7 +1656,7 @@ mod tests {
 
     #[test]
     fn safe_export_manifest_serializes_all_fields() {
-        use super::PySafeExportManifest;
+        use super::FfiSafeExportManifest;
         use crate::SafeExportManifest;
 
         let manifest = SafeExportManifest {
@@ -1664,8 +1666,8 @@ mod tests {
             protocol_version: 1,
             page_count: 256,
         };
-        let py = PySafeExportManifest::from(manifest);
-        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+        let ffi = FfiSafeExportManifest::from(manifest);
+        let json: serde_json::Value = serde_json::to_value(&ffi).expect("serialize");
 
         assert_eq!(json["exported_at"], 1_700_000_000_u64);
         assert_eq!(json["sha256"], "abcdef1234567890");
@@ -1676,7 +1678,7 @@ mod tests {
 
     #[test]
     fn write_receipt_serializes_all_fields() {
-        use super::PyWriteReceipt;
+        use super::FfiWriteReceipt;
         use crate::WriteReceipt;
 
         let receipt = WriteReceipt {
@@ -1685,8 +1687,8 @@ mod tests {
             warnings: vec!["w1".into()],
             provenance_warnings: vec!["pw1".into(), "pw2".into()],
         };
-        let py = PyWriteReceipt::from(receipt);
-        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+        let ffi = FfiWriteReceipt::from(receipt);
+        let json: serde_json::Value = serde_json::to_value(&ffi).expect("serialize");
 
         assert_eq!(json["label"], "batch-1");
         assert_eq!(json["optional_backfill_count"], 7);
@@ -1703,7 +1705,7 @@ mod tests {
 
     #[test]
     fn query_rows_serializes_all_fields_with_populated_arrays() {
-        use super::PyQueryRows;
+        use super::FfiQueryRows;
         use crate::{ActionRow, NodeRow, QueryRows, RunRow, StepRow};
 
         let rows = QueryRows {
@@ -1738,8 +1740,8 @@ mod tests {
             }],
             was_degraded: true,
         };
-        let py = PyQueryRows::from(rows);
-        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+        let ffi = FfiQueryRows::from(rows);
+        let json: serde_json::Value = serde_json::to_value(&ffi).expect("serialize");
 
         // Top-level fields
         assert_eq!(json["was_degraded"], true);
@@ -1780,15 +1782,15 @@ mod tests {
 
     #[test]
     fn last_access_touch_report_serializes_all_fields() {
-        use super::PyLastAccessTouchReport;
+        use super::FfiLastAccessTouchReport;
         use crate::LastAccessTouchReport;
 
         let report = LastAccessTouchReport {
             touched_logical_ids: 5,
             touched_at: 1_700_000_000,
         };
-        let py = PyLastAccessTouchReport::from(report);
-        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+        let ffi = FfiLastAccessTouchReport::from(report);
+        let json: serde_json::Value = serde_json::to_value(&ffi).expect("serialize");
 
         assert_eq!(json["touched_logical_ids"], 5);
         assert_eq!(json["touched_at"], 1_700_000_000_i64);
@@ -1796,7 +1798,7 @@ mod tests {
 
     // ---------------------------------------------------------------
     // Operational report parity: OperationalCompactionReport is
-    // serialized directly (no Py* wrapper), so we test its serde
+    // serialized directly (no Ffi* wrapper), so we test its serde
     // output to catch field drift (e.g. the dry_run gap).
     // ---------------------------------------------------------------
 
@@ -1835,7 +1837,7 @@ mod tests {
 
     #[test]
     fn node_row_serializes_all_fields_including_last_accessed_at() {
-        use super::PyNodeRow;
+        use super::FfiNodeRow;
         use crate::NodeRow;
 
         let row = NodeRow {
@@ -1847,8 +1849,8 @@ mod tests {
             last_accessed_at: Some(1_710_000_000),
             edge_properties: None,
         };
-        let py = PyNodeRow::from(row);
-        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+        let ffi = FfiNodeRow::from(row);
+        let json: serde_json::Value = serde_json::to_value(&ffi).expect("serialize");
 
         assert_eq!(json["row_id"], "row-abc");
         assert_eq!(json["logical_id"], "log-xyz");
@@ -1861,7 +1863,7 @@ mod tests {
 
     #[test]
     fn node_row_serializes_null_last_accessed_at() {
-        use super::PyNodeRow;
+        use super::FfiNodeRow;
         use crate::NodeRow;
 
         let row = NodeRow {
@@ -1873,8 +1875,8 @@ mod tests {
             last_accessed_at: None,
             edge_properties: None,
         };
-        let py = PyNodeRow::from(row);
-        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+        let ffi = FfiNodeRow::from(row);
+        let json: serde_json::Value = serde_json::to_value(&ffi).expect("serialize");
 
         assert!(json["last_accessed_at"].is_null());
     }
@@ -1901,7 +1903,7 @@ mod tests {
 
     #[test]
     fn run_row_serializes_all_fields() {
-        use super::PyRunRow;
+        use super::FfiRunRow;
         use crate::RunRow;
 
         let row = RunRow {
@@ -1910,8 +1912,8 @@ mod tests {
             status: "completed".into(),
             properties: r#"{"source":"api"}"#.into(),
         };
-        let py = PyRunRow::from(row);
-        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+        let ffi = FfiRunRow::from(row);
+        let json: serde_json::Value = serde_json::to_value(&ffi).expect("serialize");
 
         assert_eq!(json["id"], "run-99");
         assert_eq!(json["kind"], "ingest");
@@ -1921,7 +1923,7 @@ mod tests {
 
     #[test]
     fn step_row_serializes_all_fields() {
-        use super::PyStepRow;
+        use super::FfiStepRow;
         use crate::StepRow;
 
         let row = StepRow {
@@ -1931,8 +1933,8 @@ mod tests {
             status: "running".into(),
             properties: r#"{"page":1}"#.into(),
         };
-        let py = PyStepRow::from(row);
-        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+        let ffi = FfiStepRow::from(row);
+        let json: serde_json::Value = serde_json::to_value(&ffi).expect("serialize");
 
         assert_eq!(json["id"], "step-55");
         assert_eq!(json["run_id"], "run-99");
@@ -1943,7 +1945,7 @@ mod tests {
 
     #[test]
     fn action_row_serializes_all_fields() {
-        use super::PyActionRow;
+        use super::FfiActionRow;
         use crate::ActionRow;
 
         let row = ActionRow {
@@ -1953,8 +1955,8 @@ mod tests {
             status: "failed".into(),
             properties: r#"{"url":"https://example.com"}"#.into(),
         };
-        let py = PyActionRow::from(row);
-        let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
+        let ffi = FfiActionRow::from(row);
+        let json: serde_json::Value = serde_json::to_value(&ffi).expect("serialize");
 
         assert_eq!(json["id"], "act-77");
         assert_eq!(json["step_id"], "step-55");
@@ -1965,7 +1967,7 @@ mod tests {
 }
 
 #[derive(Debug, Serialize)]
-pub struct PyNodeRow {
+pub struct FfiNodeRow {
     pub row_id: String,
     pub logical_id: String,
     pub kind: String,
@@ -1975,8 +1977,8 @@ pub struct PyNodeRow {
     pub edge_properties: Option<String>,
 }
 
-impl From<NodeRow> for PyNodeRow {
-    fn from(value: NodeRow) -> Self {
+impl From<crate::NodeRow> for FfiNodeRow {
+    fn from(value: crate::NodeRow) -> Self {
         Self {
             row_id: value.row_id,
             logical_id: value.logical_id,
@@ -1990,14 +1992,14 @@ impl From<NodeRow> for PyNodeRow {
 }
 
 #[derive(Debug, Serialize)]
-pub struct PyRunRow {
+pub struct FfiRunRow {
     pub id: String,
     pub kind: String,
     pub status: String,
     pub properties: String,
 }
 
-impl From<RunRow> for PyRunRow {
+impl From<RunRow> for FfiRunRow {
     fn from(value: RunRow) -> Self {
         Self {
             id: value.id,
@@ -2009,7 +2011,7 @@ impl From<RunRow> for PyRunRow {
 }
 
 #[derive(Debug, Serialize)]
-pub struct PyStepRow {
+pub struct FfiStepRow {
     pub id: String,
     pub run_id: String,
     pub kind: String,
@@ -2017,7 +2019,7 @@ pub struct PyStepRow {
     pub properties: String,
 }
 
-impl From<StepRow> for PyStepRow {
+impl From<StepRow> for FfiStepRow {
     fn from(value: StepRow) -> Self {
         Self {
             id: value.id,
@@ -2030,7 +2032,7 @@ impl From<StepRow> for PyStepRow {
 }
 
 #[derive(Debug, Serialize)]
-pub struct PyActionRow {
+pub struct FfiActionRow {
     pub id: String,
     pub step_id: String,
     pub kind: String,
@@ -2038,8 +2040,8 @@ pub struct PyActionRow {
     pub properties: String,
 }
 
-impl From<ActionRow> for PyActionRow {
-    fn from(value: ActionRow) -> Self {
+impl From<crate::ActionRow> for FfiActionRow {
+    fn from(value: crate::ActionRow) -> Self {
         Self {
             id: value.id,
             step_id: value.step_id,
@@ -2051,14 +2053,14 @@ impl From<ActionRow> for PyActionRow {
 }
 
 #[derive(Debug, Serialize)]
-pub struct PyWriteReceipt {
+pub struct FfiWriteReceipt {
     pub label: String,
     pub optional_backfill_count: usize,
     pub warnings: Vec<String>,
     pub provenance_warnings: Vec<String>,
 }
 
-impl From<WriteReceipt> for PyWriteReceipt {
+impl From<WriteReceipt> for FfiWriteReceipt {
     fn from(value: WriteReceipt) -> Self {
         Self {
             label: value.label,
@@ -2070,12 +2072,12 @@ impl From<WriteReceipt> for PyWriteReceipt {
 }
 
 #[derive(Debug, Serialize)]
-pub struct PyLastAccessTouchReport {
+pub struct FfiLastAccessTouchReport {
     pub touched_logical_ids: usize,
     pub touched_at: i64,
 }
 
-impl From<LastAccessTouchReport> for PyLastAccessTouchReport {
+impl From<LastAccessTouchReport> for FfiLastAccessTouchReport {
     fn from(value: LastAccessTouchReport) -> Self {
         Self {
             touched_logical_ids: value.touched_logical_ids,
@@ -2085,7 +2087,7 @@ impl From<LastAccessTouchReport> for PyLastAccessTouchReport {
 }
 
 #[derive(Debug, Serialize)]
-pub struct PyIntegrityReport {
+pub struct FfiIntegrityReport {
     pub physical_ok: bool,
     pub foreign_keys_ok: bool,
     pub missing_fts_rows: usize,
@@ -2096,7 +2098,7 @@ pub struct PyIntegrityReport {
     pub warnings: Vec<String>,
 }
 
-impl From<IntegrityReport> for PyIntegrityReport {
+impl From<IntegrityReport> for FfiIntegrityReport {
     fn from(value: IntegrityReport) -> Self {
         Self {
             physical_ok: value.physical_ok,
@@ -2112,7 +2114,7 @@ impl From<IntegrityReport> for PyIntegrityReport {
 }
 
 #[derive(Debug, Serialize)]
-pub struct PySemanticReport {
+pub struct FfiSemanticReport {
     pub orphaned_chunks: usize,
     pub null_source_ref_nodes: usize,
     pub broken_step_fk: usize,
@@ -2135,7 +2137,7 @@ pub struct PySemanticReport {
     pub warnings: Vec<String>,
 }
 
-impl From<SemanticReport> for PySemanticReport {
+impl From<SemanticReport> for FfiSemanticReport {
     fn from(value: SemanticReport) -> Self {
         Self {
             orphaned_chunks: value.orphaned_chunks,
@@ -2163,7 +2165,7 @@ impl From<SemanticReport> for PySemanticReport {
 }
 
 #[derive(Debug, Serialize)]
-pub struct PyTraceReport {
+pub struct FfiTraceReport {
     pub source_ref: String,
     pub node_rows: usize,
     pub edge_rows: usize,
@@ -2174,7 +2176,7 @@ pub struct PyTraceReport {
     pub operational_mutation_ids: Vec<String>,
 }
 
-impl From<TraceReport> for PyTraceReport {
+impl From<TraceReport> for FfiTraceReport {
     fn from(value: TraceReport) -> Self {
         Self {
             source_ref: value.source_ref,
@@ -2190,13 +2192,13 @@ impl From<TraceReport> for PyTraceReport {
 }
 
 #[derive(Debug, Serialize)]
-pub struct PyProjectionRepairReport {
-    pub targets: Vec<PyProjectionTarget>,
+pub struct FfiProjectionRepairReport {
+    pub targets: Vec<FfiProjectionTarget>,
     pub rebuilt_rows: usize,
     pub notes: Vec<String>,
 }
 
-impl From<ProjectionRepairReport> for PyProjectionRepairReport {
+impl From<ProjectionRepairReport> for FfiProjectionRepairReport {
     fn from(value: ProjectionRepairReport) -> Self {
         Self {
             targets: value.targets.into_iter().map(Into::into).collect(),
@@ -2208,7 +2210,7 @@ impl From<ProjectionRepairReport> for PyProjectionRepairReport {
 
 #[cfg(feature = "python")]
 #[derive(Debug, Serialize)]
-pub struct PyVectorRegenerationReport {
+pub struct FfiVectorRegenerationReport {
     pub profile: String,
     pub table_name: String,
     pub dimension: usize,
@@ -2219,7 +2221,7 @@ pub struct PyVectorRegenerationReport {
 }
 
 #[cfg(feature = "python")]
-impl From<VectorRegenerationReport> for PyVectorRegenerationReport {
+impl From<VectorRegenerationReport> for FfiVectorRegenerationReport {
     fn from(value: VectorRegenerationReport) -> Self {
         Self {
             profile: value.profile,
@@ -2234,7 +2236,7 @@ impl From<VectorRegenerationReport> for PyVectorRegenerationReport {
 }
 
 #[derive(Debug, Serialize)]
-pub struct PySafeExportManifest {
+pub struct FfiSafeExportManifest {
     pub exported_at: u64,
     pub sha256: String,
     pub schema_version: u32,
@@ -2242,7 +2244,7 @@ pub struct PySafeExportManifest {
     pub page_count: u64,
 }
 
-impl From<SafeExportManifest> for PySafeExportManifest {
+impl From<SafeExportManifest> for FfiSafeExportManifest {
     fn from(value: SafeExportManifest) -> Self {
         Self {
             exported_at: value.exported_at,
@@ -2253,3 +2255,49 @@ impl From<SafeExportManifest> for PySafeExportManifest {
         }
     }
 }
+
+// Type aliases to maintain backward compatibility for callers using the Py* names.
+// These allow python.rs and node.rs to continue using the old names while we
+// transition the internal module name.
+pub type PyQueryAst = FfiQueryAst;
+pub type PyQueryStep = FfiQueryStep;
+pub type PyExpansionSlot = FfiExpansionSlot;
+pub type PyTraverseDirection = FfiTraverseDirection;
+pub type PyWriteRequest = FfiWriteRequest;
+pub type PyLastAccessTouchRequest = FfiLastAccessTouchRequest;
+pub type PyNodeInsert = FfiNodeInsert;
+pub type PyEdgeInsert = FfiEdgeInsert;
+pub type PyNodeRetire = FfiNodeRetire;
+pub type PyEdgeRetire = FfiEdgeRetire;
+pub type PyChunkInsert = FfiChunkInsert;
+pub type PyVecInsert = FfiVecInsert;
+pub type PyOperationalWrite = FfiOperationalWrite;
+pub type PyRunInsert = FfiRunInsert;
+pub type PyStepInsert = FfiStepInsert;
+pub type PyActionInsert = FfiActionInsert;
+pub type PyOptionalProjectionTask = FfiOptionalProjectionTask;
+pub type PyChunkPolicy = FfiChunkPolicy;
+pub type PyProjectionTarget = FfiProjectionTarget;
+pub type PyCompiledQuery = FfiCompiledQuery;
+pub type PyCompiledGroupedQuery = FfiCompiledGroupedQuery;
+pub type PyBindValue = FfiBindValue;
+pub type PyExecutionHints = FfiExecutionHints;
+pub type PyDrivingTable = FfiDrivingTable;
+pub type PyQueryPlan = FfiQueryPlan;
+pub type PyQueryRows = FfiQueryRows;
+pub type PyExpansionRootRows = FfiExpansionRootRows;
+pub type PyExpansionSlotRows = FfiExpansionSlotRows;
+pub type PyGroupedQueryRows = FfiGroupedQueryRows;
+pub type PyNodeRow = FfiNodeRow;
+pub type PyRunRow = FfiRunRow;
+pub type PyStepRow = FfiStepRow;
+pub type PyActionRow = FfiActionRow;
+pub type PyWriteReceipt = FfiWriteReceipt;
+pub type PyLastAccessTouchReport = FfiLastAccessTouchReport;
+pub type PyIntegrityReport = FfiIntegrityReport;
+pub type PySemanticReport = FfiSemanticReport;
+pub type PyTraceReport = FfiTraceReport;
+pub type PyProjectionRepairReport = FfiProjectionRepairReport;
+pub type PySafeExportManifest = FfiSafeExportManifest;
+#[cfg(feature = "python")]
+pub type PyVectorRegenerationReport = FfiVectorRegenerationReport;
