@@ -8,7 +8,7 @@ export {
   SubprocessEmbedder,
 } from "./embedders/index.js";
 
-export { AdminClient } from "./admin.js";
+export { AdminClient, TOKENIZER_PRESETS } from "./admin.js";
 export { Engine } from "./engine.js";
 export {
   BridgeError,

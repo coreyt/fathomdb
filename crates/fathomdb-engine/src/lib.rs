@@ -18,7 +18,7 @@ pub use admin::{
     AdminHandle, AdminService, FtsProfile, FtsPropertyPathMode, FtsPropertyPathSpec,
     FtsPropertySchemaRecord, IntegrityReport, LogicalPurgeReport, LogicalRestoreReport,
     ProjectionImpact, ProvenancePurgeOptions, ProvenancePurgeReport, SafeExportManifest,
-    SafeExportOptions, SemanticReport, SkippedEdge, TraceReport, VecProfile,
+    SafeExportOptions, SemanticReport, SkippedEdge, TOKENIZER_PRESETS, TraceReport, VecProfile,
     VectorRegenerationConfig, VectorRegenerationReport, load_vector_regeneration_config,
 };
 pub use coordinator::{

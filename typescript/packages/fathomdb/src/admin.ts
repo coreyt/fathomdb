@@ -1,6 +1,6 @@
 import { callNative, parseNativeJson, parseNativeJsonArray, RebuildImpactError } from "./errors.js";
 import { runWithFeedback } from "./feedback.js";
-import type { NativeEngineCore } from "./native.js";
+import { loadNativeBinding, type NativeEngineCore } from "./native.js";
 import {
   ftsProfileFromWire,
   ftsPropertySchemaRecordFromWire,
@@ -70,6 +70,13 @@ export const TOKENIZER_PRESETS: Record<string, string> = {
   "substring-trigram": "trigram",
   "source-code": "unicode61 tokenchars '._-$@'",
 };
+
+/**
+ * ARCH-006: Rust (`fathomdb_engine::TOKENIZER_PRESETS`) is the single source of
+ * truth. The mapping is populated from the native binding at module load time
+ * so TypeScript never hand-syncs a duplicate of the Rust constant.
+ */
+export const TOKENIZER_PRESETS: Record<string, string> = loadNativeBinding().listTokenizerPresets();
 
 /**
  * Administrative operations for a fathomdb database.

@@ -1,6 +1,7 @@
 #![cfg(feature = "node")]
 #![allow(clippy::needless_pass_by_value)]
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::RwLock;
 
@@ -749,12 +750,43 @@ pub fn js_version() -> String {
     env!("CARGO_PKG_VERSION").to_owned()
 }
 
+/// Return the well-known tokenizer presets mapped to their FTS5 tokenizer
+/// strings. This is the single source of truth for the TypeScript SDK —
+/// `admin.TOKENIZER_PRESETS` is computed from this function at module load
+/// time.
+#[allow(dead_code)]
+#[napi(js_name = "listTokenizerPresets")]
+pub fn js_list_tokenizer_presets() -> HashMap<String, String> {
+    fathomdb_engine::TOKENIZER_PRESETS
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect()
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::panic)]
 mod tests {
     use tempfile::NamedTempFile;
 
-    use super::NodeEngineCore;
+    use super::{NodeEngineCore, js_list_tokenizer_presets};
+
+    /// ARCH-006: Rust is the single source of truth for tokenizer presets.
+    /// The FFI helper must surface exactly what `TOKENIZER_PRESETS` holds.
+    #[test]
+    fn list_tokenizer_presets_matches_engine_constant() {
+        let presets = js_list_tokenizer_presets();
+        let expected: std::collections::HashMap<String, String> =
+            fathomdb_engine::TOKENIZER_PRESETS
+                .iter()
+                .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+                .collect();
+        assert_eq!(presets, expected);
+        assert_eq!(presets.len(), 5);
+        assert_eq!(
+            presets.get("recall-optimized-english").map(String::as_str),
+            Some("porter unicode61 remove_diacritics 2")
+        );
+    }
 
     #[test]
     fn open_constructs_engine_options_with_all_fields() {

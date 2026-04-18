@@ -4,7 +4,7 @@ import json
 import os
 
 from ._feedback import run_with_feedback
-from ._fathomdb import EngineCore
+from ._fathomdb import EngineCore, list_tokenizer_presets as _list_tokenizer_presets
 from ._types import (
     FeedbackConfig,
     FtsProfile,
@@ -41,13 +41,10 @@ from ._types import (
     VectorRegenerationReport,
 )
 
-TOKENIZER_PRESETS = {
-    "recall-optimized-english": "porter unicode61 remove_diacritics 2",
-    "precision-optimized": "unicode61 remove_diacritics 2",
-    "global-cjk": "icu",
-    "substring-trigram": "trigram",
-    "source-code": "unicode61 tokenchars '._-$@'",
-}
+# ARCH-006: Rust (`fathomdb_engine::TOKENIZER_PRESETS`) is the single source of
+# truth. This dict is populated from the native extension at import time so we
+# never have to hand-sync a duplicate across Rust/Python/TypeScript.
+TOKENIZER_PRESETS: dict[str, str] = _list_tokenizer_presets()
 
 
 class AdminClient:

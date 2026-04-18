@@ -3,6 +3,7 @@
 // Option<Vec<String>> parameters are required by the PyO3 signature contract.
 #![allow(clippy::unused_self, clippy::needless_pass_by_value)]
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::RwLock;
 
@@ -944,6 +945,7 @@ fn _fathomdb(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("CompileError", module.py().get_type::<CompileError>())?;
     module.add_function(wrap_pyfunction!(py_new_id, module)?)?;
     module.add_function(wrap_pyfunction!(py_new_row_id, module)?)?;
+    module.add_function(wrap_pyfunction!(py_list_tokenizer_presets, module)?)?;
     module.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }
@@ -958,6 +960,18 @@ fn py_new_row_id() -> String {
     new_row_id()
 }
 
+/// Return the well-known tokenizer presets mapped to their FTS5 tokenizer
+/// strings. This is the single source of truth for the Python SDK —
+/// `fathomdb._admin.TOKENIZER_PRESETS` is computed from this function at
+/// module load time.
+#[pyfunction(name = "list_tokenizer_presets")]
+fn py_list_tokenizer_presets() -> HashMap<String, String> {
+    fathomdb_engine::TOKENIZER_PRESETS
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect()
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
@@ -965,7 +979,25 @@ mod tests {
     use serde_json::Value;
     use tempfile::NamedTempFile;
 
-    use super::{DatabaseLockedError, EngineCore, FathomError};
+    use super::{DatabaseLockedError, EngineCore, FathomError, py_list_tokenizer_presets};
+
+    /// ARCH-006: Rust is the single source of truth for tokenizer presets.
+    /// The FFI helper must surface exactly what `TOKENIZER_PRESETS` holds.
+    #[test]
+    fn list_tokenizer_presets_matches_engine_constant() {
+        let presets = py_list_tokenizer_presets();
+        let expected: std::collections::HashMap<String, String> =
+            fathomdb_engine::TOKENIZER_PRESETS
+                .iter()
+                .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+                .collect();
+        assert_eq!(presets, expected);
+        assert_eq!(presets.len(), 5);
+        assert_eq!(
+            presets.get("recall-optimized-english").map(String::as_str),
+            Some("porter unicode61 remove_diacritics 2")
+        );
+    }
 
     /// Regression: `EngineOptions` gained `read_pool_size` but the Python binding
     /// constructor was not updated, causing a compile error only visible with

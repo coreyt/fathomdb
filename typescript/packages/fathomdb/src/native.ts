@@ -16,6 +16,7 @@ export type NativeBinding = {
   newId(): string;
   newRowId(): string;
   version?(): string;
+  listTokenizerPresets(): Record<string, string>;
 };
 
 export type NativeEngineCore = {
