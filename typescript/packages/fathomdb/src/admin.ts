@@ -65,10 +65,26 @@ import {
 
 /**
  * ARCH-006: Rust (`fathomdb_engine::TOKENIZER_PRESETS`) is the single source of
- * truth. The mapping is populated from the native binding at module load time
- * so TypeScript never hand-syncs a duplicate of the Rust constant.
+ * truth. The mapping is populated lazily on first access via the native
+ * binding, so TypeScript never hand-syncs a duplicate of the Rust constant
+ * and module import does not require the native binding to already be
+ * resolvable (important for consumers that set `FATHOMDB_NATIVE_BINDING`
+ * after import but before use).
  */
-export const TOKENIZER_PRESETS: Record<string, string> = loadNativeBinding().listTokenizerPresets();
+let _tokenizerPresetsCache: Record<string, string> | null = null;
+function resolveTokenizerPresets(): Record<string, string> {
+  if (_tokenizerPresetsCache === null) {
+    _tokenizerPresetsCache = loadNativeBinding().listTokenizerPresets();
+  }
+  return _tokenizerPresetsCache;
+}
+export const TOKENIZER_PRESETS: Record<string, string> = new Proxy({} as Record<string, string>, {
+  get: (_target, key) => resolveTokenizerPresets()[key as string],
+  has: (_target, key) => key in resolveTokenizerPresets(),
+  ownKeys: () => Reflect.ownKeys(resolveTokenizerPresets()),
+  getOwnPropertyDescriptor: (_target, key) =>
+    Object.getOwnPropertyDescriptor(resolveTokenizerPresets(), key),
+});
 
 /**
  * Administrative operations for a fathomdb database.

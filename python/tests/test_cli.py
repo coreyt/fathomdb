@@ -1373,7 +1373,7 @@ def test_fathom_error_exits_nonzero_on_check_integrity():
     from fathomdb._cli import cli
     from fathomdb.errors import FathomError
 
-    runner = CliRunner(mix_stderr=False)
+    runner = CliRunner()
     with patch("fathomdb._cli._open_engine") as mock_open:
         mock_engine = MagicMock()
         mock_engine.admin.check_integrity.side_effect = FathomError("db corrupt")
@@ -1394,7 +1394,7 @@ def test_fathom_error_exits_nonzero_on_rebuild():
     from fathomdb._cli import cli
     from fathomdb.errors import FathomError
 
-    runner = CliRunner(mix_stderr=False)
+    runner = CliRunner()
     with patch("fathomdb._cli._open_engine") as mock_open:
         mock_engine = MagicMock()
         mock_engine.admin.rebuild.side_effect = FathomError("rebuild failed")
