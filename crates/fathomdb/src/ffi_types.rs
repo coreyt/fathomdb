@@ -221,19 +221,14 @@ fn ffi_filter_value_to_predicate(v: serde_json::Value) -> Option<Predicate> {
 fn ffi_json_to_scalar(v: &serde_json::Value) -> Option<ScalarValue> {
     match v {
         serde_json::Value::String(s) => Some(ScalarValue::Text(s.clone())),
-        serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Some(ScalarValue::Integer(i))
-            } else {
-                None
-            }
-        }
+        serde_json::Value::Number(n) => n.as_i64().map(ScalarValue::Integer),
         serde_json::Value::Bool(b) => Some(ScalarValue::Bool(*b)),
         _ => None,
     }
 }
 
 impl From<FfiQueryAst> for crate::QueryAst {
+    #[allow(clippy::too_many_lines)]
     fn from(value: FfiQueryAst) -> Self {
         let steps = value
             .steps
