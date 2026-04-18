@@ -129,7 +129,7 @@ pub(crate) struct ExtractStats {
 }
 
 impl ExtractStats {
-    pub(crate) fn merge(&mut self, other: ExtractStats) {
+    pub(super) fn merge(&mut self, other: ExtractStats) {
         self.depth_cap_hit += other.depth_cap_hit;
         self.byte_cap_reached |= other.byte_cap_reached;
         self.excluded_subtree += other.excluded_subtree;
@@ -374,7 +374,7 @@ pub(crate) fn extract_property_fts_columns(
     result
 }
 
-pub(crate) fn resolve_path_root<'a>(
+pub(super) fn resolve_path_root<'a>(
     value: &'a serde_json::Value,
     path: &str,
 ) -> Option<&'a serde_json::Value> {

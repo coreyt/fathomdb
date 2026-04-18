@@ -18,7 +18,6 @@ pub(crate) use fts_extract::{
 #[allow(unused_imports)]
 pub(crate) use fts_extract::{
     MAX_EXTRACTED_BYTES, MAX_RECURSIVE_DEPTH, PropertyPathEntry, extract_json_path,
-    resolve_path_root,
 };
 
 use std::collections::HashMap;
