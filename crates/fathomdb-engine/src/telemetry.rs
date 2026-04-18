@@ -5,6 +5,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use rusqlite::Connection;
+use serde::Serialize;
 
 /// Controls how much telemetry the engine collects.
 ///
@@ -81,7 +82,7 @@ impl TelemetryCounters {
 /// Cumulative `SQLite` page-cache counters for a single connection.
 ///
 /// Uses `i64` to allow safe summing across pool connections without overflow.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct SqliteCacheStatus {
     /// Page cache hits.
     pub cache_hits: i64,
@@ -155,7 +156,7 @@ pub fn read_db_cache_status(conn: &Connection) -> SqliteCacheStatus {
 }
 
 /// Point-in-time snapshot of all telemetry counters.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct TelemetrySnapshot {
     /// Total read operations executed.
     pub queries_total: u64,
@@ -168,6 +169,7 @@ pub struct TelemetrySnapshot {
     /// Total admin operations.
     pub admin_ops_total: u64,
     /// Aggregated `SQLite` page-cache counters (summed across pool connections).
+    #[serde(flatten)]
     pub sqlite_cache: SqliteCacheStatus,
 }
 
@@ -176,7 +178,26 @@ pub struct TelemetrySnapshot {
 mod tests {
     use rusqlite::Connection;
 
-    use super::{SqliteCacheStatus, TelemetryCounters, TelemetryLevel, read_db_cache_status};
+    use super::{
+        SqliteCacheStatus, TelemetryCounters, TelemetryLevel, TelemetrySnapshot,
+        read_db_cache_status,
+    };
+
+    #[test]
+    fn telemetry_snapshot_serializes_to_json() {
+        let snap = TelemetrySnapshot {
+            queries_total: 5,
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&snap).expect("serializes");
+        assert_eq!(json["queries_total"], 5);
+        // sqlite_cache fields are flattened into the top-level object
+        assert_eq!(json["cache_hits"], 0);
+        assert!(
+            json.get("sqlite_cache").is_none(),
+            "sqlite_cache must be flattened"
+        );
+    }
 
     #[test]
     fn telemetry_level_default_is_counters() {
