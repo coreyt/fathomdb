@@ -540,19 +540,24 @@ class AdminClient:
         self,
         kind: str,
         tokenizer: str,
-        mode: RebuildMode = RebuildMode.ASYNC,
         *,
         agree_to_rebuild_impact: bool = False,
     ) -> FtsProfile:
-        """Set the FTS tokenizer profile for a node kind.
+        """Configure the FTS tokenizer for *kind* and re-register its property schema.
+
+        Records the tokenizer profile, then re-registers the existing FTS property
+        schema for *kind* to trigger an index rebuild with the new tokenizer. This
+        mirrors the TypeScript ``configureFts`` surface (ARCH-005).
+
+        Raises :class:`RebuildImpactError` when ``rows_to_rebuild > 0`` and
+        ``agree_to_rebuild_impact`` is False. Raises :class:`ValueError` when no
+        FTS property schema is registered for *kind* — register one via
+        :meth:`register_fts_property_schema` (or
+        :meth:`register_fts_property_schema_with_entries`) first.
 
         Args:
             kind: Node kind (e.g. ``"Book"``).
             tokenizer: Tokenizer string or preset name.
-            mode: Accepted for API compatibility; **not yet forwarded to a
-                rebuild**. After calling this method, call
-                ``admin.register_fts_property_schema(kind, ...)`` to trigger
-                an index rebuild with the new tokenizer.
             agree_to_rebuild_impact: If True, proceed even when rows must be
                 rebuilt. If False (default), raises :class:`RebuildImpactError`
                 when rows_to_rebuild > 0.
@@ -564,6 +569,25 @@ class AdminClient:
             raise RebuildImpactError(impact)
         request = json.dumps({"kind": kind, "tokenizer": resolved})
         result_json = self._core.set_fts_profile(request)
+
+        # Re-register the existing property schema so the rebuild picks up the
+        # new tokenizer. Mirrors TypeScript `configureFts`.
+        schema_payload = json.loads(self._core.describe_fts_property_schema(kind))
+        if schema_payload is None or schema_payload.get("kind") is None:
+            raise ValueError(
+                f"configure_fts: no FTS property schema registered for kind "
+                f"{kind!r}; register one with register_fts_property_schema "
+                f"before configuring the tokenizer."
+            )
+        reregister_request = {
+            "kind": kind,
+            "entries": schema_payload.get("entries", []),
+            "separator": schema_payload.get("separator", " "),
+            "exclude_paths": schema_payload.get("exclude_paths", []),
+        }
+        self._core.register_fts_property_schema_with_entries(
+            json.dumps(reregister_request)
+        )
         return FtsProfile.from_wire(json.loads(result_json))
 
     def configure_vec(

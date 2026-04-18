@@ -514,10 +514,13 @@ export class AdminClient {
   /**
    * Configure the FTS tokenizer for a node kind and trigger a schema re-registration.
    *
-   * Records the tokenizer profile, then re-registers the existing FTS property schema
-   * for `kind` (if any) to trigger an index rebuild with the new tokenizer. The `mode`
-   * parameter is accepted for API compatibility but not yet forwarded to a rebuild
-   * strategy; call `rebuild("fts")` explicitly for a full backfill.
+   * Records the tokenizer profile, then — when an FTS property schema is already
+   * registered for `kind` — re-registers it so the index rebuild picks up the new
+   * tokenizer. Re-registration is automatic: callers do not need to invoke
+   * `registerFtsPropertySchema...` again after changing the tokenizer. When no
+   * schema is registered for `kind`, the tokenizer profile is recorded and the
+   * re-registration step is skipped; call `rebuild("fts")` later for a full
+   * backfill once a schema exists.
    *
    * If there are existing rows to rebuild and `agreeToRebuildImpact` is not set,
    * throws {@link RebuildImpactError} with the cost estimate.

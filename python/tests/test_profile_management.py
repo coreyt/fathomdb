@@ -94,10 +94,22 @@ def test_configure_fts_proceeds_with_agree_flag(tmp_path: Path) -> None:
             "created_at": 1000000,
         }
     )
+    schema_json = json.dumps(
+        {
+            "kind": "Book",
+            "property_paths": ["$.title"],
+            "entries": [{"path": "$.title", "mode": "scalar"}],
+            "exclude_paths": [],
+            "separator": " ",
+            "format_version": 1,
+        }
+    )
 
     mock_core = MagicMock()
     mock_core.preview_projection_impact.return_value = impact_json
     mock_core.set_fts_profile.return_value = profile_json
+    mock_core.describe_fts_property_schema.return_value = schema_json
+    mock_core.register_fts_property_schema_with_entries.return_value = schema_json
     admin = AdminClient(mock_core)
 
     result = admin.configure_fts("Book", "unicode61", agree_to_rebuild_impact=True)
@@ -117,6 +129,8 @@ def test_fts_profile_roundtrip(tmp_path: Path) -> None:
     from fathomdb import Engine, FtsProfile
 
     db = Engine.open(tmp_path / "agent.db")
+    # configure_fts requires a registered property schema (ARCH-005).
+    db.admin.register_fts_property_schema("Article", ["$.title"])
 
     # Fresh DB has no rows, so impact.rows_to_rebuild == 0; no agree needed
     profile = db.admin.configure_fts("Article", "unicode61")
@@ -141,6 +155,8 @@ def test_preset_name_resolution(tmp_path: Path) -> None:
     from fathomdb import Engine, FtsProfile
 
     db = Engine.open(tmp_path / "agent.db")
+    # configure_fts requires a registered property schema (ARCH-005).
+    db.admin.register_fts_property_schema("Book", ["$.title"])
 
     profile = db.admin.configure_fts("Book", "recall-optimized-english")
 
@@ -263,15 +279,17 @@ def test_rebuild_impact_error_has_report(tmp_path: Path) -> None:
 
 
 def test_async_mode_returns_fast(tmp_path: Path) -> None:
-    """configure_fts with mode=RebuildMode.ASYNC returns without blocking."""
+    """configure_fts returns quickly on an empty DB (mode kwarg removed in 0.5.1)."""
     import time
 
-    from fathomdb import Engine, FtsProfile, RebuildMode
+    from fathomdb import Engine, FtsProfile
 
     db = Engine.open(tmp_path / "agent.db")
+    # Pre-register a schema so configure_fts has something to re-register.
+    db.admin.register_fts_property_schema("FastKind", ["$.name"])
 
     start = time.monotonic()
-    profile = db.admin.configure_fts("FastKind", "unicode61", mode=RebuildMode.ASYNC)
+    profile = db.admin.configure_fts("FastKind", "unicode61")
     elapsed = time.monotonic() - start
 
     assert isinstance(profile, FtsProfile)
@@ -344,3 +362,129 @@ def test_fts_property_schema_record_from_wire_no_weight() -> None:
     record = FtsPropertySchemaRecord.from_wire(wire)
     assert len(record.entries) == 1
     assert record.entries[0].weight is None
+
+
+# ---------------------------------------------------------------------------
+# ARCH-005: configure_fts auto-re-registers the FTS property schema
+# ---------------------------------------------------------------------------
+
+
+def test_configure_fts_reregisters_existing_schema_on_tokenizer_change(
+    tmp_path: Path,
+) -> None:
+    """After configure_fts(kind, new_tokenizer), the existing property schema is
+    re-registered so the new tokenizer is applied to the index.
+
+    This mirrors the TypeScript `configureFts` behavior (ARCH-005). We assert
+    that `register_fts_property_schema_with_entries` is invoked after
+    `set_fts_profile`, passing through the existing schema's entries.
+    """
+    from fathomdb._admin import AdminClient
+
+    impact_json = json.dumps(
+        {
+            "rows_to_rebuild": 0,
+            "estimated_seconds": 0,
+            "temp_db_size_bytes": 0,
+            "current_tokenizer": "unicode61",
+            "target_tokenizer": "porter unicode61 remove_diacritics 2",
+        }
+    )
+    profile_json = json.dumps(
+        {
+            "kind": "Note",
+            "tokenizer": "porter unicode61 remove_diacritics 2",
+            "active_at": None,
+            "created_at": 1000000,
+        }
+    )
+    schema_json = json.dumps(
+        {
+            "kind": "Note",
+            "property_paths": ["$.title", "$.body"],
+            "entries": [
+                {"path": "$.title", "mode": "scalar"},
+                {"path": "$.body", "mode": "scalar"},
+            ],
+            "exclude_paths": [],
+            "separator": " ",
+            "format_version": 1,
+        }
+    )
+
+    mock_core = MagicMock()
+    mock_core.preview_projection_impact.return_value = impact_json
+    mock_core.set_fts_profile.return_value = profile_json
+    mock_core.describe_fts_property_schema.return_value = schema_json
+    mock_core.register_fts_property_schema_with_entries.return_value = schema_json
+    admin = AdminClient(mock_core)
+
+    admin.configure_fts("Note", "recall-optimized-english")
+
+    # set_fts_profile was called with the resolved tokenizer.
+    mock_core.set_fts_profile.assert_called_once()
+    profile_request = json.loads(mock_core.set_fts_profile.call_args.args[0])
+    assert profile_request["kind"] == "Note"
+    assert profile_request["tokenizer"] == "porter unicode61 remove_diacritics 2"
+
+    # re-registration uses the existing schema entries.
+    mock_core.register_fts_property_schema_with_entries.assert_called_once()
+    reg_request = json.loads(
+        mock_core.register_fts_property_schema_with_entries.call_args.args[0]
+    )
+    assert reg_request["kind"] == "Note"
+    assert [entry["path"] for entry in reg_request["entries"]] == [
+        "$.title",
+        "$.body",
+    ]
+    assert reg_request["separator"] == " "
+    assert reg_request["exclude_paths"] == []
+
+
+def test_configure_fts_raises_when_no_schema_registered(tmp_path: Path) -> None:
+    """configure_fts requires a registered FTS property schema for the kind.
+
+    Without one, it raises ValueError rather than silently skipping — callers
+    must either register a schema first or use a different surface.
+    """
+    from fathomdb._admin import AdminClient
+
+    impact_json = json.dumps(
+        {
+            "rows_to_rebuild": 0,
+            "estimated_seconds": 0,
+            "temp_db_size_bytes": 0,
+            "current_tokenizer": None,
+            "target_tokenizer": "unicode61",
+        }
+    )
+    profile_json = json.dumps(
+        {
+            "kind": "Unknown",
+            "tokenizer": "unicode61",
+            "active_at": None,
+            "created_at": 1000000,
+        }
+    )
+    # describe returns a null-kind payload for an unregistered schema.
+    empty_schema_json = json.dumps({"kind": None})
+
+    mock_core = MagicMock()
+    mock_core.preview_projection_impact.return_value = impact_json
+    mock_core.set_fts_profile.return_value = profile_json
+    mock_core.describe_fts_property_schema.return_value = empty_schema_json
+    admin = AdminClient(mock_core)
+
+    with pytest.raises(ValueError, match="no FTS property schema"):
+        admin.configure_fts("Unknown", "unicode61")
+
+
+def test_configure_fts_rejects_mode_kwarg(tmp_path: Path) -> None:
+    """The `mode` parameter was removed in 0.5.1; passing it raises TypeError."""
+    from fathomdb._admin import AdminClient
+
+    mock_core = MagicMock()
+    admin = AdminClient(mock_core)
+
+    with pytest.raises(TypeError, match="mode"):
+        admin.configure_fts("Note", "unicode61", mode="async")
