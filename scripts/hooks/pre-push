@@ -29,6 +29,20 @@ else
   echo "[pre-push] skipping TypeScript typecheck (typescript/node_modules missing; run 'npm install' in typescript/ to enable)"
 fi
 
+# Python: CLI test subset. Catches dep-API breakage early — e.g. click 8.2
+# removed CliRunner(mix_stderr=...) and local pytest was green while CI
+# failed because CI's `pip install --upgrade` picked up the new click
+# while the local venv still had the old version. Scope limited to
+# test_cli.py (~2s) to keep the hook under the per-push budget.
+# Skipped automatically if the fathomdb package isn't importable — avoids
+# blocking pushes before `pip install -e python/` has run.
+if python3 -c "import fathomdb" >/dev/null 2>&1; then
+  echo "[pre-push] pytest python/tests/test_cli.py"
+  pytest --rootdir python python/tests/test_cli.py -q -x --timeout=30
+else
+  echo "[pre-push] skipping pytest (fathomdb not importable; run 'pip install -e python/' to enable)"
+fi
+
 # Go: vet
 echo "[pre-push] go vet ./..."
 (cd go/fathom-integrity && go vet ./...)

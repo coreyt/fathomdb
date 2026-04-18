@@ -153,10 +153,20 @@ if [ "$INCLUDE_RELEASE" = true ]; then
     else
         fail "clippy --features python (run manually for details)"
     fi
+    # --features tracing test run: previous ci failure 24561325830 was a
+    # panic in rust-test-tracing only reproducible with the tracing feature
+    # enabled. clippy above catches compile regressions; this catches test
+    # regressions that the default `cargo test` misses.
+    if cargo nextest run --workspace --features tracing \
+        --status-level none --failure-output final >/dev/null 2>&1; then
+        pass "nextest --features tracing"
+    else
+        fail "nextest --features tracing (run manually for details)"
+    fi
     echo ""
-    echo "  Note: preflight.sh --release does NOT run feature-gated tests,"
-    echo "  Python / TypeScript / Go gates, or docs build. Use"
-    echo "  ./scripts/preflight-CI.sh for the full CI-equivalent set."
+    echo "  Note: preflight.sh --release does NOT run Python / TypeScript /"
+    echo "  Go gates, or the docs build. Use ./scripts/preflight-CI.sh for"
+    echo "  the full CI-equivalent set."
 fi
 
 # 10. Summary

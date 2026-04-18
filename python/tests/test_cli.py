@@ -9,6 +9,21 @@ import pytest
 from click.testing import CliRunner
 
 
+def _cli_runner_stderr_aware() -> CliRunner:
+    """Return a CliRunner whose `result.stderr` is separately captured.
+
+    Click 8.1 and earlier required ``CliRunner(mix_stderr=False)`` to access
+    ``result.stderr``; click 8.2 removed the kwarg and always keeps stderr
+    separate. Detect the signature at import time so the tests work across
+    both versions without hard-pinning click.
+    """
+    import inspect as _inspect
+
+    if "mix_stderr" in _inspect.signature(CliRunner).parameters:
+        return CliRunner(mix_stderr=False)
+    return CliRunner()
+
+
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
@@ -1373,7 +1388,7 @@ def test_fathom_error_exits_nonzero_on_check_integrity():
     from fathomdb._cli import cli
     from fathomdb.errors import FathomError
 
-    runner = CliRunner()
+    runner = _cli_runner_stderr_aware()
     with patch("fathomdb._cli._open_engine") as mock_open:
         mock_engine = MagicMock()
         mock_engine.admin.check_integrity.side_effect = FathomError("db corrupt")
@@ -1394,7 +1409,7 @@ def test_fathom_error_exits_nonzero_on_rebuild():
     from fathomdb._cli import cli
     from fathomdb.errors import FathomError
 
-    runner = CliRunner()
+    runner = _cli_runner_stderr_aware()
     with patch("fathomdb._cli._open_engine") as mock_open:
         mock_engine = MagicMock()
         mock_engine.admin.rebuild.side_effect = FathomError("rebuild failed")
