@@ -110,36 +110,37 @@ def configure_vec(db, embedder, agree_to_rebuild_impact):
             )
         except RebuildImpactError as e:
             report = e.report
-            if sys.stdin.isatty():
-                click.echo(
-                    f"Rebuild required: {report.rows_to_rebuild} rows "
-                    f"(~{report.estimated_seconds}s). Proceed? [y/N] ",
-                    nl=False,
-                )
-                answer = click.getchar()
-                click.echo()
-                if answer.lower() != "y":
-                    click.echo("Aborted.")
-                    raise SystemExit(1)
-                profile = engine.admin.configure_vec(
-                    embedder_obj,
-                    agree_to_rebuild_impact=True,
-                )
-                click.echo(
-                    json.dumps(
-                        {
-                            "model_identity": profile.model_identity,
-                            "dimensions": profile.dimensions,
-                        }
+            if not agree_to_rebuild_impact:
+                if sys.stdin.isatty():
+                    click.echo(
+                        f"Rebuild required: {report.rows_to_rebuild} rows "
+                        f"(~{report.estimated_seconds}s). Proceed? [y/N] ",
+                        nl=False,
                     )
-                )
-            else:
-                click.echo(
-                    f"Aborted: rebuild required for {report.rows_to_rebuild} rows. "
-                    "Pass --agree-to-rebuild-impact to proceed.",
-                    err=True,
-                )
-                raise SystemExit(1)
+                    answer = click.getchar()
+                    click.echo()
+                    if answer.lower() != "y":
+                        click.echo("Aborted.")
+                        raise SystemExit(1)
+                    profile = engine.admin.configure_vec(
+                        embedder_obj,
+                        agree_to_rebuild_impact=True,
+                    )
+                    click.echo(
+                        json.dumps(
+                            {
+                                "model_identity": profile.model_identity,
+                                "dimensions": profile.dimensions,
+                            }
+                        )
+                    )
+                else:
+                    click.echo(
+                        f"Aborted: rebuild required for {report.rows_to_rebuild} rows. "
+                        "Pass --agree-to-rebuild-impact to proceed.",
+                        err=True,
+                    )
+                    raise SystemExit(1)
 
 
 @admin.command("preview-impact")
@@ -232,15 +233,7 @@ def rebuild(db, target):
     with _handle_fathom_errors():
         engine = _open_engine(db)
         report = engine.admin.rebuild(target)
-        click.echo(
-            json.dumps(
-                {
-                    "targets": [t.value for t in report.targets],
-                    "rebuilt_rows": report.rebuilt_rows,
-                    "notes": report.notes,
-                }
-            )
-        )
+        click.echo(json.dumps(_asdict_json_safe(report)))
 
 
 @admin.command("register-fts-property-schema")
@@ -363,15 +356,7 @@ def restore_vector_profiles(db):
     with _handle_fathom_errors():
         engine = _open_engine(db)
         report = engine.admin.restore_vector_profiles()
-        click.echo(
-            json.dumps(
-                {
-                    "targets": [t.value for t in report.targets],
-                    "rebuilt_rows": report.rebuilt_rows,
-                    "notes": report.notes,
-                }
-            )
-        )
+        click.echo(json.dumps(_asdict_json_safe(report)))
 
 
 @admin.command("regen-vectors")

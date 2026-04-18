@@ -707,7 +707,7 @@ def test_remove_fts_property_schema_exits_zero_and_prints_success():
 # ---------------------------------------------------------------------------
 
 
-def _build_projection_repair_report():
+def _build_vec_repair_report():
     from fathomdb._types import ProjectionRepairReport, ProjectionTarget
 
     return ProjectionRepairReport(
@@ -797,7 +797,7 @@ def test_restore_vector_profiles_prints_report():
     with patch("fathomdb._cli._open_engine") as mock_open:
         mock_engine = MagicMock()
         mock_engine.admin.restore_vector_profiles.return_value = (
-            _build_projection_repair_report()
+            _build_vec_repair_report()
         )
         mock_open.return_value = mock_engine
 
