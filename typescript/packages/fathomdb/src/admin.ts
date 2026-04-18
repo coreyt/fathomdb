@@ -63,14 +63,6 @@ import {
   type VectorRegenerationReport,
 } from "./types.js";
 
-export const TOKENIZER_PRESETS: Record<string, string> = {
-  "recall-optimized-english": "porter unicode61 remove_diacritics 2",
-  "precision-optimized": "unicode61 remove_diacritics 2",
-  "global-cjk": "icu",
-  "substring-trigram": "trigram",
-  "source-code": "unicode61 tokenchars '._-$@'",
-};
-
 /**
  * ARCH-006: Rust (`fathomdb_engine::TOKENIZER_PRESETS`) is the single source of
  * truth. The mapping is populated from the native binding at module load time
