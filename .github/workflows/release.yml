@@ -118,13 +118,21 @@ jobs:
           name: napi-${{ matrix.label }}
           path: typescript/packages/fathomdb/prebuilds/*.node
 
-  # Pre-publish packaging verification for every Rust crate in publish order.
-  # Runs `cargo package --no-verify` per crate so manifest/readme/license
-  # metadata is checked before we cross any publish boundary. We skip
-  # --verify (which rebuilds from the packaged tarball) because verify
-  # resolves dependencies from crates.io, and for a new release the
-  # dependent crates are not yet published. The actual publish-time
-  # --verify happens inside `cargo publish`.
+  # Pre-publish packaging verification for Rust crates. Runs:
+  #   1. cargo build --release --workspace — compile check of everything
+  #      we're about to publish.
+  #   2. cargo package --no-verify for the two leaf crates (fathomdb-query,
+  #      fathomdb-schema) — validates their manifest/readme/license
+  #      metadata without invoking the registry.
+  #
+  # The dependent crates (fathomdb-engine, fathomdb facade) are NOT packaged
+  # here: cargo package rewrites path deps to versioned deps and then does
+  # a registry resolve on the rewritten manifest. For a fresh release the
+  # leaf crates aren't published yet, so the resolve can't find e.g.
+  # fathomdb-query@0.5.1 and fails. The leaves have no internal deps and
+  # package cleanly. Manifest correctness of the dependent crates is
+  # enforced at actual publish time inside `cargo publish`, which is a
+  # gate we don't want to duplicate at CI cost.
   build-rust:
     runs-on: ubuntu-latest
     needs: verify-release
@@ -136,14 +144,10 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Verify workspace builds in release mode
         run: cargo build --release --workspace
-      - name: Package fathomdb-query
+      - name: Package fathomdb-query (leaf, no internal deps)
         run: cargo package --no-verify -p fathomdb-query
-      - name: Package fathomdb-schema
+      - name: Package fathomdb-schema (leaf, no internal deps)
         run: cargo package --no-verify -p fathomdb-schema
-      - name: Package fathomdb-engine
-        run: cargo package --no-verify -p fathomdb-engine
-      - name: Package fathomdb
-        run: cargo package --no-verify -p fathomdb
 
   # Cross-ecosystem gate: every build must succeed before ANY publish runs.
   # Without this, a partial release (e.g. crates.io 0.5.1 published but
