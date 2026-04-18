@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-04-18
+
+### Breaking changes
+
+- **Python `configure_fts` `mode` parameter removed**: The `mode` keyword argument on `AdminClient.configure_fts` was accepted but silently ignored. Callers passing `mode=...` now raise `TypeError`. There was never a functional asynchronous rebuild behind this parameter; callers requiring async rebuild should register the FTS property schema via `register_fts_property_schema_async`.
+- **Python `configure_fts` raises `ValueError` when no FTS schema is registered**: Previously, calling `configure_fts` on a kind with no registered property FTS schema silently set the tokenizer profile with no matching schema to index against, causing silent indexing errors. It now raises `ValueError` with the kind name. Callers must `register_fts_property_schema` for the kind before changing its tokenizer.
+
+### Added
+
+- **Edge property filter in traversal** (`EdgePropertyEq`, `EdgePropertyCompare` AST variants): `SearchBuilder::expand(...).edge_filter(...)` accepts predicates on edge `properties` JSON. Filters are injected into the traversal `JOIN edges` condition (pre-limit). Equality and comparison (`<`, `<=`, `>`, `>=`) supported. Python `edge_filter` kwarg on `expand()`; TypeScript `edgeFilter` on `.expand()`. Parity across Rust/Python/TypeScript.
+- **Edge properties in expansion results** (`NodeRow.edge_properties: Option<String>`, Python `edge_properties`, TypeScript `edgeProperties`): expansion hits now carry the traversed edge's `properties` JSON for consumers that need edge data on traversal results.
+- **`filter_json_fused_text_in` / `filter_json_text_in`**: fused set-membership filter (`JsonPathFusedIn` AST) bound against a registered property FTS schema, and the unfused `JsonPathIn` AST for Nodes-driver scans. Empty `values` raises `BuilderValidationError` at filter-add time. Parity across Rust/Python/TypeScript.
+- **`filter_json_fused_bool_eq`** (`JsonPathFusedBoolEq` AST): fused boolean equality filter mirroring `filter_json_fused_text_eq`. Values are bound as SQLite integer `0`/`1`. Parity across Rust/Python/TypeScript.
+- **`matched_paths=["text_content"]` for chunk hits**: chunk hits in `SearchHit.attribution.matched_paths` now report `["text_content"]` instead of an empty vec. Property FTS and vec attribution unchanged.
+- **`TOKENIZER_PRESETS` single source of truth**: Rust (`fathomdb_engine::TOKENIZER_PRESETS`) is authoritative. Python (`fathomdb._admin.TOKENIZER_PRESETS`) and TypeScript (`admin.TOKENIZER_PRESETS`, re-exported from `fathomdb`) are populated from a new `list_tokenizer_presets()` FFI at module load time, eliminating the three-way hand-sync risk.
+- **Python `configure_fts` auto-re-registers FTS property schema on tokenizer change**: matches TypeScript `configureFts` behavior. After `set_fts_profile` succeeds, the existing schema paths are re-registered under the newly resolved tokenizer, keeping the active tokenizer and the indexed paths in sync.
+- **Admin CLI operational collection lifecycle** (`fathomdb admin`): 11 new commands covering operational collection create/describe/delete, secondary index management, operational writes, and operational reads.
+- **Admin CLI vector regeneration and safe-export** (`fathomdb admin`): `regenerate-vector-embeddings`, `restore-vector-profiles`, `safe-export`, `trace`, `purge-provenance`, `restore-edges`, `check-semantics` commands.
+- `TelemetrySnapshot` now derives `Serialize` with `#[serde(flatten)]` on the `sqlite_cache` field; the FFI `telemetry_snapshot_as_dict` helper is a thin serde round-trip.
+
+### Fixed
+
+- **`StellaEmbedder` TypeScript no longer hardcodes an unverified default `baseUrl`**: constructor now requires an explicit `baseUrl` (or throws at construction with a clear message). There is no public hosted API for `stella_en_400M_v5`; the old default caused silent network failures.
+- `filter_json_fused_*` methods continue to raise `BuilderValidationError::MissingPropertyFtsSchema` on missing FTS schema (unchanged contract, documented here for completeness after the 0.5.0 fused-filter invariant was established).
+- `EdgeInsert.properties` round-trip verified: values stored in the `properties BLOB` column are bound as SQLite `TEXT`, and `json_extract()` works correctly against them during traversal predicate evaluation.
+
+### Refactored (internal only, no API change)
+
+- **`admin.rs` god module (10,883 LOC) split into `admin/` module** with `fts.rs`, `vector.rs`, `operational.rs`, and `provenance.rs` submodules (ARCH-002). `AdminService` surface unchanged.
+- **`writer.rs` split** into `writer/` module with `fts_extract.rs` submodule holding FTS extraction helpers (ARCH-003). Writer surface unchanged.
+- **`python_types.rs` renamed to `ffi_types.rs`** and the `Py*` type prefix dropped in favor of `Ffi*` (ARCH-007). Py* backward-compat aliases are removed; callers in `python.rs` and `node.rs` use `Ffi*` names directly.
+- **`CompiledQuery::adapt_fts_for_kind` helper** encapsulates both the table-exists and table-missing paths of the per-kind FTS rewrite (ARCH-001 completion). Coordinator retains the `sqlite_master` existence check and delegates SQL/bind rewriting. `fathomdb-query` gains no `rusqlite` dependency.
+- `renumber_sql_params` and `strip_prop_fts_union_arm` moved from `coordinator.rs` into `fathomdb-query/src/sql_adapt.rs` (ARCH-001).
+- `_asdict_json_safe` moved to `python/fathomdb/_types.py`.
+- `_handle_fathom_errors` context manager now wraps every `fathomdb admin` CLI command body, producing consistent `FathomDBError` → JSON `{"error": ...}` output with non-zero exit code.
+
+### Known issues
+
+- `property_fts_rebuild_then_search_remains_correct_after_heavy_writes` in `crates/fathomdb/tests/scale.rs` can flake under sustained parallel test load; passes reliably in isolation and under `--test-threads=4` or smaller. Hypothesis is that heavy writer threads can panic under WAL lock contention, and the current `handle.join().expect(...)` surface propagates a thread panic to the test harness instead of producing an actionable assertion. Fix deferred to 0.5.2.
+
 ## [0.5.0] — 2026-04-17
 
 ### Breaking changes
