@@ -479,6 +479,32 @@ def test_configure_fts_raises_when_no_schema_registered(tmp_path: Path) -> None:
         admin.configure_fts("Unknown", "unicode61")
 
 
+def test_configure_fts_does_not_persist_profile_when_schema_missing(
+    tmp_path: Path,
+) -> None:
+    """Real-DB integration: when no FTS property schema is registered, the
+    ValueError path must not leave behind a mutated FTS profile.
+
+    Regression test for ARCH-005 reviewer Note 1: previously `set_fts_profile`
+    ran before the schema existence check, so callers saw an exception while
+    the tokenizer profile had already been written. After the fix, the schema
+    check runs first and nothing is persisted on the error path.
+    """
+    from fathomdb import Engine
+
+    db = Engine.open(tmp_path / "agent.db")
+
+    # Sanity: no profile exists yet for this kind.
+    assert db.admin.get_fts_profile("NoSchemaKind") is None
+
+    with pytest.raises(ValueError, match="no FTS property schema"):
+        db.admin.configure_fts("NoSchemaKind", "porter")
+
+    # The profile must NOT have been written: the operation failed, so state
+    # should be unchanged.
+    assert db.admin.get_fts_profile("NoSchemaKind") is None
+
+
 def test_configure_fts_rejects_mode_kwarg(tmp_path: Path) -> None:
     """The `mode` parameter was removed in 0.5.1; passing it raises TypeError."""
     from fathomdb._admin import AdminClient

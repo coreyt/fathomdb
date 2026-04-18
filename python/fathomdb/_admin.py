@@ -564,11 +564,10 @@ class AdminClient:
         impact = ImpactReport.from_wire(json.loads(impact_json))
         if impact.rows_to_rebuild > 0 and not agree_to_rebuild_impact:
             raise RebuildImpactError(impact)
-        request = json.dumps({"kind": kind, "tokenizer": resolved})
-        result_json = self._core.set_fts_profile(request)
 
-        # Re-register the existing property schema so the rebuild picks up the
-        # new tokenizer. Mirrors TypeScript `configureFts`.
+        # Check for an existing property schema BEFORE mutating any state, so
+        # the ValueError path leaves the FTS profile untouched. The tokenizer
+        # change is only persisted once we know we have a schema to re-register.
         schema_payload = json.loads(self._core.describe_fts_property_schema(kind))
         if schema_payload is None or schema_payload.get("kind") is None:
             raise ValueError(
@@ -576,6 +575,12 @@ class AdminClient:
                 f"{kind!r}; register one with register_fts_property_schema "
                 f"before configuring the tokenizer."
             )
+
+        request = json.dumps({"kind": kind, "tokenizer": resolved})
+        result_json = self._core.set_fts_profile(request)
+
+        # Re-register the existing property schema so the rebuild picks up the
+        # new tokenizer. Mirrors TypeScript `configureFts`.
         reregister_request = {
             "kind": kind,
             "entries": schema_payload.get("entries", []),
