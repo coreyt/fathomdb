@@ -313,14 +313,14 @@ impl From<FfiQueryAst> for crate::QueryAst {
                         value: ScalarValue::Integer(value),
                     })
                 }
-                PyQueryStep::EdgePropertyEq { path, value } => {
+                FfiQueryStep::EdgePropertyEq { path, value } => {
                     // EdgeProperty* variants are not valid as top-level query steps;
                     // they only appear inside expansion edge_filter. If somehow
                     // used here, treat as a no-op filter.
                     let _ = (path, value);
                     QueryStep::Filter(Predicate::ContentRefNotNull) // unreachable in practice
                 }
-                PyQueryStep::EdgePropertyCompare { path, op, value } => {
+                FfiQueryStep::EdgePropertyCompare { path, op, value } => {
                     let _ = (path, op, value);
                     QueryStep::Filter(Predicate::ContentRefNotNull) // unreachable in practice
                 }
@@ -1883,7 +1883,7 @@ mod tests {
 
     #[test]
     fn node_row_serializes_edge_properties_when_present() {
-        use super::PyNodeRow;
+        use super::FfiNodeRow;
         use crate::NodeRow;
 
         let row = NodeRow {
@@ -1895,7 +1895,7 @@ mod tests {
             last_accessed_at: None,
             edge_properties: Some(r#"{"rel":"cites"}"#.into()),
         };
-        let py = PyNodeRow::from(row);
+        let py = FfiNodeRow::from(row);
         let json: serde_json::Value = serde_json::to_value(&py).expect("serialize");
 
         assert_eq!(json["edge_properties"], r#"{"rel":"cites"}"#);
@@ -2255,49 +2255,3 @@ impl From<SafeExportManifest> for FfiSafeExportManifest {
         }
     }
 }
-
-// Type aliases to maintain backward compatibility for callers using the Py* names.
-// These allow python.rs and node.rs to continue using the old names while we
-// transition the internal module name.
-pub type PyQueryAst = FfiQueryAst;
-pub type PyQueryStep = FfiQueryStep;
-pub type PyExpansionSlot = FfiExpansionSlot;
-pub type PyTraverseDirection = FfiTraverseDirection;
-pub type PyWriteRequest = FfiWriteRequest;
-pub type PyLastAccessTouchRequest = FfiLastAccessTouchRequest;
-pub type PyNodeInsert = FfiNodeInsert;
-pub type PyEdgeInsert = FfiEdgeInsert;
-pub type PyNodeRetire = FfiNodeRetire;
-pub type PyEdgeRetire = FfiEdgeRetire;
-pub type PyChunkInsert = FfiChunkInsert;
-pub type PyVecInsert = FfiVecInsert;
-pub type PyOperationalWrite = FfiOperationalWrite;
-pub type PyRunInsert = FfiRunInsert;
-pub type PyStepInsert = FfiStepInsert;
-pub type PyActionInsert = FfiActionInsert;
-pub type PyOptionalProjectionTask = FfiOptionalProjectionTask;
-pub type PyChunkPolicy = FfiChunkPolicy;
-pub type PyProjectionTarget = FfiProjectionTarget;
-pub type PyCompiledQuery = FfiCompiledQuery;
-pub type PyCompiledGroupedQuery = FfiCompiledGroupedQuery;
-pub type PyBindValue = FfiBindValue;
-pub type PyExecutionHints = FfiExecutionHints;
-pub type PyDrivingTable = FfiDrivingTable;
-pub type PyQueryPlan = FfiQueryPlan;
-pub type PyQueryRows = FfiQueryRows;
-pub type PyExpansionRootRows = FfiExpansionRootRows;
-pub type PyExpansionSlotRows = FfiExpansionSlotRows;
-pub type PyGroupedQueryRows = FfiGroupedQueryRows;
-pub type PyNodeRow = FfiNodeRow;
-pub type PyRunRow = FfiRunRow;
-pub type PyStepRow = FfiStepRow;
-pub type PyActionRow = FfiActionRow;
-pub type PyWriteReceipt = FfiWriteReceipt;
-pub type PyLastAccessTouchReport = FfiLastAccessTouchReport;
-pub type PyIntegrityReport = FfiIntegrityReport;
-pub type PySemanticReport = FfiSemanticReport;
-pub type PyTraceReport = FfiTraceReport;
-pub type PyProjectionRepairReport = FfiProjectionRepairReport;
-pub type PySafeExportManifest = FfiSafeExportManifest;
-#[cfg(feature = "python")]
-pub type PyVectorRegenerationReport = FfiVectorRegenerationReport;

@@ -8,17 +8,17 @@ use std::sync::RwLock;
 use napi::Result;
 use napi_derive::napi;
 
+use crate::ffi_types::{
+    FfiCompiledGroupedQuery, FfiCompiledQuery, FfiGroupedQueryRows, FfiIntegrityReport,
+    FfiLastAccessTouchReport, FfiLastAccessTouchRequest, FfiProjectionRepairReport, FfiQueryAst,
+    FfiQueryPlan, FfiQueryRows, FfiSafeExportManifest, FfiSemanticReport, FfiTraceReport,
+    FfiWriteReceipt, FfiWriteRequest,
+};
 use crate::node_types::{
     MAX_AST_JSON_BYTES, MAX_REQUEST_JSON_BYTES, MAX_WRITE_JSON_BYTES, check_json_size, encode_json,
     invalid_argument, map_admin_ffi_error, map_compile_error, map_engine_error,
     map_search_ffi_error, parse_embedder_choice, parse_projection_target, parse_provenance_mode,
     parse_telemetry_level,
-};
-use crate::python_types::{
-    PyCompiledGroupedQuery, PyCompiledQuery, PyGroupedQueryRows, PyIntegrityReport,
-    PyLastAccessTouchReport, PyLastAccessTouchRequest, PyProjectionRepairReport, PyQueryAst,
-    PyQueryPlan, PyQueryRows, PySafeExportManifest, PySemanticReport, PyTraceReport,
-    PyWriteReceipt, PyWriteRequest,
 };
 use crate::{
     Engine, EngineOptions, OperationalReadRequest, OperationalRegisterRequest, ProjectionTarget,
@@ -108,7 +108,7 @@ impl NodeEngineCore {
     pub fn compile_ast(&self, ast_json: String) -> Result<String> {
         let ast = parse_ast(&ast_json)?;
         let compiled = compile_query(&ast).map_err(map_compile_error)?;
-        encode_json(PyCompiledQuery::from(compiled))
+        encode_json(FfiCompiledQuery::from(compiled))
     }
 
     // Exposed to JS as `engine.compileGroupedAst(...)`; see note on
@@ -118,7 +118,7 @@ impl NodeEngineCore {
     pub fn compile_grouped_ast(&self, ast_json: String) -> Result<String> {
         let ast = parse_ast(&ast_json)?;
         let compiled = compile_grouped_query(&ast).map_err(map_compile_error)?;
-        encode_json(PyCompiledGroupedQuery::from(compiled))
+        encode_json(FfiCompiledGroupedQuery::from(compiled))
     }
 
     #[napi]
@@ -127,7 +127,7 @@ impl NodeEngineCore {
         let compiled = compile_query(&ast).map_err(map_compile_error)?;
         self.with_engine(|engine| {
             let plan = engine.coordinator().explain_compiled_read(&compiled);
-            encode_json(PyQueryPlan::from(plan))
+            encode_json(FfiQueryPlan::from(plan))
         })
     }
 
@@ -140,7 +140,7 @@ impl NodeEngineCore {
                 .coordinator()
                 .execute_compiled_read(&compiled)
                 .map_err(map_engine_error)?;
-            encode_json(PyQueryRows::from(rows))
+            encode_json(FfiQueryRows::from(rows))
         })
     }
 
@@ -164,7 +164,7 @@ impl NodeEngineCore {
                 .coordinator()
                 .execute_compiled_grouped_read(&compiled)
                 .map_err(map_engine_error)?;
-            encode_json(PyGroupedQueryRows::from(rows))
+            encode_json(FfiGroupedQueryRows::from(rows))
         })
     }
 
@@ -173,7 +173,7 @@ impl NodeEngineCore {
         let request = parse_write_request(&request_json)?;
         self.with_engine(|engine| {
             let receipt = engine.writer().submit(request).map_err(map_engine_error)?;
-            encode_json(PyWriteReceipt::from(receipt))
+            encode_json(FfiWriteReceipt::from(receipt))
         })
     }
 
@@ -184,7 +184,7 @@ impl NodeEngineCore {
             let report = engine
                 .touch_last_accessed(request)
                 .map_err(map_engine_error)?;
-            encode_json(PyLastAccessTouchReport::from(report))
+            encode_json(FfiLastAccessTouchReport::from(report))
         })
     }
 
@@ -196,7 +196,7 @@ impl NodeEngineCore {
                 .service()
                 .check_integrity()
                 .map_err(map_engine_error)?;
-            encode_json(PyIntegrityReport::from(report))
+            encode_json(FfiIntegrityReport::from(report))
         })
     }
 
@@ -208,7 +208,7 @@ impl NodeEngineCore {
                 .service()
                 .check_semantics()
                 .map_err(map_engine_error)?;
-            encode_json(PySemanticReport::from(report))
+            encode_json(FfiSemanticReport::from(report))
         })
     }
 
@@ -221,7 +221,7 @@ impl NodeEngineCore {
                 .service()
                 .rebuild_projections(target)
                 .map_err(map_engine_error)?;
-            encode_json(PyProjectionRepairReport::from(report))
+            encode_json(FfiProjectionRepairReport::from(report))
         })
     }
 
@@ -233,7 +233,7 @@ impl NodeEngineCore {
                 .service()
                 .rebuild_missing_projections()
                 .map_err(map_engine_error)?;
-            encode_json(PyProjectionRepairReport::from(report))
+            encode_json(FfiProjectionRepairReport::from(report))
         })
     }
 
@@ -245,7 +245,7 @@ impl NodeEngineCore {
                 .service()
                 .trace_source(&source_ref)
                 .map_err(map_engine_error)?;
-            encode_json(PyTraceReport::from(report))
+            encode_json(FfiTraceReport::from(report))
         })
     }
 
@@ -257,7 +257,7 @@ impl NodeEngineCore {
                 .service()
                 .excise_source(&source_ref)
                 .map_err(map_engine_error)?;
-            encode_json(PyTraceReport::from(report))
+            encode_json(FfiTraceReport::from(report))
         })
     }
 
@@ -289,7 +289,7 @@ impl NodeEngineCore {
                 .service()
                 .safe_export(&destination_path, SafeExportOptions { force_checkpoint })
                 .map_err(map_engine_error)?;
-            encode_json(PySafeExportManifest::from(manifest))
+            encode_json(FfiSafeExportManifest::from(manifest))
         })
     }
 
@@ -683,7 +683,7 @@ impl NodeEngineCore {
                 .service()
                 .restore_vector_profiles()
                 .map_err(map_engine_error)?;
-            encode_json(PyProjectionRepairReport::from(report))
+            encode_json(FfiProjectionRepairReport::from(report))
         })
     }
 
@@ -707,14 +707,14 @@ impl NodeEngineCore {
 
 fn parse_ast(ast_json: &str) -> Result<crate::QueryAst> {
     check_json_size(ast_json, MAX_AST_JSON_BYTES, "AST")?;
-    let ast: PyQueryAst = serde_json::from_str(ast_json)
+    let ast: FfiQueryAst = serde_json::from_str(ast_json)
         .map_err(|error| invalid_argument(format!("invalid query AST JSON: {error}")))?;
     Ok(ast.into())
 }
 
 fn parse_write_request(request_json: &str) -> Result<crate::WriteRequest> {
     check_json_size(request_json, MAX_WRITE_JSON_BYTES, "write request")?;
-    let request: PyWriteRequest = serde_json::from_str(request_json)
+    let request: FfiWriteRequest = serde_json::from_str(request_json)
         .map_err(|error| invalid_argument(format!("invalid write request JSON: {error}")))?;
     Ok(request.into())
 }
@@ -725,7 +725,7 @@ fn parse_last_access_touch_request(request_json: &str) -> Result<crate::LastAcce
         MAX_REQUEST_JSON_BYTES,
         "lastAccess touch request",
     )?;
-    let request: PyLastAccessTouchRequest =
+    let request: FfiLastAccessTouchRequest =
         serde_json::from_str(request_json).map_err(|error| {
             invalid_argument(format!("invalid lastAccess touch request JSON: {error}"))
         })?;

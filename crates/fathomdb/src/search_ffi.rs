@@ -432,7 +432,7 @@ impl From<RetrievalModality> for PyRetrievalModality {
 /// Node-shaped projection attached to every [`PySearchHit`].
 ///
 /// Fields mirror `fathomdb_query::NodeRowLite` (and the Phase 0
-/// `PyNodeRow` wire shape) so the Python / TypeScript SDKs can reuse
+/// `FfiNodeRow` wire shape) so the Python / TypeScript SDKs can reuse
 /// their existing node model when decoding search hits.
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 pub struct PySearchNodeRow {

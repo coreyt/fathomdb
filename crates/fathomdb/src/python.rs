@@ -11,11 +11,11 @@ use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
 
-use crate::python_types::{
-    PyCompiledGroupedQuery, PyCompiledQuery, PyGroupedQueryRows, PyIntegrityReport,
-    PyLastAccessTouchReport, PyLastAccessTouchRequest, PyProjectionRepairReport, PyQueryAst,
-    PyQueryPlan, PyQueryRows, PySafeExportManifest, PySemanticReport, PyTraceReport,
-    PyVectorRegenerationReport, PyWriteReceipt, PyWriteRequest,
+use crate::ffi_types::{
+    FfiCompiledGroupedQuery, FfiCompiledQuery, FfiGroupedQueryRows, FfiIntegrityReport,
+    FfiLastAccessTouchReport, FfiLastAccessTouchRequest, FfiProjectionRepairReport, FfiQueryAst,
+    FfiQueryPlan, FfiQueryRows, FfiSafeExportManifest, FfiSemanticReport, FfiTraceReport,
+    FfiVectorRegenerationReport, FfiWriteReceipt, FfiWriteRequest,
 };
 use crate::{
     EmbedderChoice, Engine, EngineError, EngineOptions, OperationalReadRequest,
@@ -160,13 +160,13 @@ impl EngineCore {
     pub fn compile_ast(&self, ast_json: &str) -> PyResult<String> {
         let ast = parse_ast(ast_json)?;
         let compiled = compile_query(&ast).map_err(map_compile_error)?;
-        encode_json(PyCompiledQuery::from(compiled))
+        encode_json(FfiCompiledQuery::from(compiled))
     }
 
     pub fn compile_grouped_ast(&self, ast_json: &str) -> PyResult<String> {
         let ast = parse_ast(ast_json)?;
         let compiled = compile_grouped_query(&ast).map_err(map_compile_error)?;
-        encode_json(PyCompiledGroupedQuery::from(compiled))
+        encode_json(FfiCompiledGroupedQuery::from(compiled))
     }
 
     pub fn explain_ast(&self, ast_json: &str) -> PyResult<String> {
@@ -174,7 +174,7 @@ impl EngineCore {
         let compiled = compile_query(&ast).map_err(map_compile_error)?;
         self.with_engine(|engine| {
             let plan = engine.coordinator().explain_compiled_read(&compiled);
-            encode_json(PyQueryPlan::from(plan))
+            encode_json(FfiQueryPlan::from(plan))
         })
     }
 
@@ -185,7 +185,7 @@ impl EngineCore {
             let rows = py
                 .detach(|| engine.coordinator().execute_compiled_read(&compiled))
                 .map_err(map_engine_error)?;
-            encode_json(PyQueryRows::from(rows))
+            encode_json(FfiQueryRows::from(rows))
         })
     }
 
@@ -211,7 +211,7 @@ impl EngineCore {
                         .execute_compiled_grouped_read(&compiled)
                 })
                 .map_err(map_engine_error)?;
-            encode_json(PyGroupedQueryRows::from(rows))
+            encode_json(FfiGroupedQueryRows::from(rows))
         })
     }
 
@@ -221,7 +221,7 @@ impl EngineCore {
             let receipt = py
                 .detach(|| engine.writer().submit(request))
                 .map_err(map_engine_error)?;
-            encode_json(PyWriteReceipt::from(receipt))
+            encode_json(FfiWriteReceipt::from(receipt))
         })
     }
 
@@ -231,7 +231,7 @@ impl EngineCore {
             let report = py
                 .detach(|| engine.touch_last_accessed(request))
                 .map_err(map_engine_error)?;
-            encode_json(PyLastAccessTouchReport::from(report))
+            encode_json(FfiLastAccessTouchReport::from(report))
         })
     }
 
@@ -241,7 +241,7 @@ impl EngineCore {
             let report = py
                 .detach(|| admin.check_integrity())
                 .map_err(map_engine_error)?;
-            encode_json(PyIntegrityReport::from(report))
+            encode_json(FfiIntegrityReport::from(report))
         })
     }
 
@@ -251,7 +251,7 @@ impl EngineCore {
             let report = py
                 .detach(|| admin.check_semantics())
                 .map_err(map_engine_error)?;
-            encode_json(PySemanticReport::from(report))
+            encode_json(FfiSemanticReport::from(report))
         })
     }
 
@@ -262,7 +262,7 @@ impl EngineCore {
             let report = py
                 .detach(|| admin.rebuild_projections(target))
                 .map_err(map_engine_error)?;
-            encode_json(PyProjectionRepairReport::from(report))
+            encode_json(FfiProjectionRepairReport::from(report))
         })
     }
 
@@ -272,7 +272,7 @@ impl EngineCore {
             let report = py
                 .detach(|| admin.rebuild_missing_projections())
                 .map_err(map_engine_error)?;
-            encode_json(PyProjectionRepairReport::from(report))
+            encode_json(FfiProjectionRepairReport::from(report))
         })
     }
 
@@ -282,7 +282,7 @@ impl EngineCore {
             let report = py
                 .detach(|| admin.restore_vector_profiles())
                 .map_err(map_engine_error)?;
-            encode_json(PyProjectionRepairReport::from(report))
+            encode_json(FfiProjectionRepairReport::from(report))
         })
     }
 
@@ -304,7 +304,7 @@ impl EngineCore {
             let report = py
                 .detach(|| engine.regenerate_vector_embeddings(&config))
                 .map_err(map_engine_error)?;
-            encode_json(PyVectorRegenerationReport::from(report))
+            encode_json(FfiVectorRegenerationReport::from(report))
         })
     }
 
@@ -314,7 +314,7 @@ impl EngineCore {
             let report = py
                 .detach(|| admin.trace_source(source_ref))
                 .map_err(map_engine_error)?;
-            encode_json(PyTraceReport::from(report))
+            encode_json(FfiTraceReport::from(report))
         })
     }
 
@@ -324,7 +324,7 @@ impl EngineCore {
             let report = py
                 .detach(|| admin.excise_source(source_ref))
                 .map_err(map_engine_error)?;
-            encode_json(PyTraceReport::from(report))
+            encode_json(FfiTraceReport::from(report))
         })
     }
 
@@ -359,7 +359,7 @@ impl EngineCore {
                     admin.safe_export(destination_path, SafeExportOptions { force_checkpoint })
                 })
                 .map_err(map_engine_error)?;
-            encode_json(PySafeExportManifest::from(manifest))
+            encode_json(FfiSafeExportManifest::from(manifest))
         })
     }
 
@@ -779,14 +779,14 @@ const MAX_REQUEST_JSON_BYTES: usize = 1024 * 1024; // 1 MB — operational reque
 
 fn parse_ast(ast_json: &str) -> PyResult<crate::QueryAst> {
     check_json_size(ast_json, MAX_AST_JSON_BYTES, "AST")?;
-    let ast: PyQueryAst = serde_json::from_str(ast_json)
+    let ast: FfiQueryAst = serde_json::from_str(ast_json)
         .map_err(|error| PyValueError::new_err(format!("invalid query AST JSON: {error}")))?;
     Ok(ast.into())
 }
 
 fn parse_write_request(request_json: &str) -> PyResult<crate::WriteRequest> {
     check_json_size(request_json, MAX_WRITE_JSON_BYTES, "write request")?;
-    let request: PyWriteRequest = serde_json::from_str(request_json)
+    let request: FfiWriteRequest = serde_json::from_str(request_json)
         .map_err(|error| PyValueError::new_err(format!("invalid write request JSON: {error}")))?;
     Ok(request.into())
 }
@@ -806,7 +806,7 @@ fn parse_last_access_touch_request(request_json: &str) -> PyResult<crate::LastAc
         MAX_REQUEST_JSON_BYTES,
         "last_access touch request",
     )?;
-    let request: PyLastAccessTouchRequest =
+    let request: FfiLastAccessTouchRequest =
         serde_json::from_str(request_json).map_err(|error| {
             PyValueError::new_err(format!("invalid last_access touch request JSON: {error}"))
         })?;

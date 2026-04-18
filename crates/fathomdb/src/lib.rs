@@ -10,8 +10,6 @@ mod node;
 mod node_types;
 #[cfg(feature = "python")]
 mod python;
-#[cfg(any(feature = "python", feature = "node"))]
-use ffi_types as python_types;
 mod search;
 pub mod search_ffi;
 mod write_request_builder;
