@@ -18,6 +18,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEFAULT_BENCHMARK_WORKFLOW = "benchmark-and-robustness.yml"
 DEFAULT_CI_WORKFLOW = "ci.yml"
 DEFAULT_PYTHON_WORKFLOW = "python.yml"
+DEFAULT_TYPESCRIPT_WORKFLOW = "typescript.yml"
 DEFAULT_FRESHNESS_DAYS = 10
 GH_RUN_FIELDS = "conclusion,headBranch,headSha,status,updatedAt,url"
 
@@ -211,12 +212,14 @@ def verify_release_gates(
     benchmark_workflow: str = DEFAULT_BENCHMARK_WORKFLOW,
     ci_workflow: str = DEFAULT_CI_WORKFLOW,
     python_workflow: str = DEFAULT_PYTHON_WORKFLOW,
+    typescript_workflow: str = DEFAULT_TYPESCRIPT_WORKFLOW,
     runner: Callable[..., subprocess.CompletedProcess[str]] = run_command,
     version_checker: Callable[[str], None] = run_version_check,
 ) -> None:
     version_checker(tag)
     require_successful_commit_run(repo, ci_workflow, commit, runner=runner)
     require_successful_commit_run(repo, python_workflow, commit, runner=runner)
+    require_successful_commit_run(repo, typescript_workflow, commit, runner=runner)
     require_recent_successful_run_on_main(
         repo,
         benchmark_workflow,
@@ -251,6 +254,11 @@ def main(argv: Iterable[str] | None = None) -> int:
         default=DEFAULT_PYTHON_WORKFLOW,
         help="Python workflow name to validate",
     )
+    parser.add_argument(
+        "--typescript-workflow",
+        default=DEFAULT_TYPESCRIPT_WORKFLOW,
+        help="TypeScript workflow name to validate",
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     missing = [name for name, value in (("repo", args.repo), ("commit", args.commit), ("tag", args.tag)) if not value]
@@ -267,6 +275,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             benchmark_workflow=args.benchmark_workflow,
             ci_workflow=args.ci_workflow,
             python_workflow=args.python_workflow,
+            typescript_workflow=args.typescript_workflow,
         )
     except ReleaseGateError as exc:
         print(f"release gate verification failed: {exc}", file=sys.stderr)
