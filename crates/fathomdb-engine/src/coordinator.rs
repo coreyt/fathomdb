@@ -2749,6 +2749,10 @@ impl ExecutionCoordinator {
 /// arm entirely when the per-kind table does not exist in `sqlite_master`.
 ///
 /// Returns `(adapted_sql, adapted_binds)`.
+///
+/// This wrapper owns the `sqlite_master` existence check (rusqlite stays out of
+/// `fathomdb-query`) and delegates the SQL/bind rewriting to
+/// [`CompiledQuery::adapt_fts_for_kind`].
 fn adapt_fts_nodes_sql_for_per_kind_tables(
     compiled: &CompiledQuery,
     conn: &rusqlite::Connection,
@@ -2775,30 +2779,7 @@ fn adapt_fts_nodes_sql_for_per_kind_tables(
         .map_err(EngineError::Sqlite)?
         .unwrap_or(false);
 
-    // The compile_query path assigns fixed positional parameters:
-    //   ?1 = text (chunk FTS), ?2 = kind (chunk filter),
-    //   ?3 = text (prop FTS),  ?4 = kind (prop filter),
-    //   ?5+ = fusable/residual predicates
-    let (new_sql, removed_bind_positions) = if prop_table_exists {
-        let s = compiled
-            .sql
-            .replace("fts_node_properties", &prop_table)
-            .replace("\n                          AND fp.kind = ?4", "");
-        (renumber_sql_params(&s, &[4]), vec![3usize])
-    } else {
-        let s = strip_prop_fts_union_arm(&compiled.sql);
-        (renumber_sql_params(&s, &[3, 4]), vec![2usize, 3])
-    };
-
-    let new_binds: Vec<BindValue> = compiled
-        .binds
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| !removed_bind_positions.contains(i))
-        .map(|(_, b)| b.clone())
-        .collect();
-
-    Ok((new_sql, new_binds))
+    Ok(compiled.adapt_fts_for_kind(prop_table_exists, &prop_table))
 }
 
 /// Check that the active vector profile's model identity and dimensions match
