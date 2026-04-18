@@ -4,13 +4,22 @@ Local datastore for persistent AI agents. Graph, vector, and full-text search
 on SQLite — exposed through a single query surface in Rust, Python, and
 TypeScript.
 
-## What FathomDB Is
+## What Is FathomDB
 
 FathomDB is not a new storage engine. It is a **datastore layer** built on
 SQLite that gives AI agents a durable world model: nodes and edges with
 logical identity and supersession, FTS5 search over chunks and structured
 node properties, sqlite-vec similarity search, an operational state store
 with append-only mutation logs, and end-to-end provenance.
+
+This means that your agent gets a single local file it can read and write
+through one library. You can save things as connected objects, search them
+by keyword or by meaning, walk from one thing to another along relationships,
+and always know where each piece of data came from. Updates never overwrite
+history — older versions of a record are kept and marked superseded, so you
+can trace what the agent knew at any point. Nothing is a server, nothing is
+a cloud service, and the on-disk format is a plain SQLite database you can
+back up with `cp`.
 
 The canonical database is a single SQLite file. FathomDB adds the query
 compiler, the write coordinator, the schema manager, the derived search
