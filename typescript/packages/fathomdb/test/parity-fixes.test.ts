@@ -96,7 +96,7 @@ describe("G-1: SearchBuilder.limit()", () => {
     // Trigger AST capture by calling compileGrouped
     limited.compileGrouped();
     expect(capturedAst).not.toBeNull();
-    expect((capturedAst as Record<string, unknown>).final_limit).toBe(5);
+    expect((capturedAst as unknown as Record<string, unknown>).final_limit).toBe(5);
   });
 
   it("SearchBuilder without limit() has final_limit null", () => {
@@ -124,6 +124,6 @@ describe("G-1: SearchBuilder.limit()", () => {
 
     builder.compileGrouped();
     expect(capturedAst).not.toBeNull();
-    expect((capturedAst as Record<string, unknown>).final_limit).toBeNull();
+    expect((capturedAst as unknown as Record<string, unknown>).final_limit).toBeNull();
   });
 });
