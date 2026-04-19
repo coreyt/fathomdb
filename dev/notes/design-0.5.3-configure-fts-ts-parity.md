@@ -1,7 +1,7 @@
-# Design: TypeScript `configureFts` parity with Python (0.5.2 Item 2)
+# Design: TypeScript `configureFts` parity with Python (0.5.3 Item 2)
 
-**Release:** 0.5.2
-**Scope item:** Item 2 from `dev/notes/0.5.2-scope.md`
+**Release:** 0.5.3
+**Scope item:** Item 2 from `dev/notes/0.5.3-scope.md`
 **Breaking:** Yes (TypeScript callers of `configureFts` for a kind
 without a registered FTS property schema now receive a thrown error
 instead of a silent no-op).
@@ -20,7 +20,7 @@ schema* path accepted a deliberate divergence:
 - TypeScript silently skips re-registration, writes the profile, and
   returns.
 
-The review called this out as an acceptable-for-0.5.1 gap. 0.5.2 closes
+The review called this out as an acceptable-for-0.5.1 gap. 0.5.3 closes
 it by making TypeScript raise to match Python. Rationale:
 
 - Cross-SDK behavior divergence confuses users porting between Python
@@ -180,7 +180,7 @@ conventions).
 ### Documentation
 
 - JSDoc on `configureFts` documents the thrown error type.
-- 0.5.2 CHANGELOG Breaking section calls out the change with
+- 0.5.3 CHANGELOG Breaking section calls out the change with
   before/after pseudocode.
 
 ---

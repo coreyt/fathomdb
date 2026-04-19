@@ -1,7 +1,7 @@
-# Design: FTS5 metacharacter escape hardening (0.5.2 Item 3)
+# Design: FTS5 metacharacter escape hardening (0.5.3 Item 3)
 
-**Release:** 0.5.2
-**Scope item:** Item 3 from `dev/notes/0.5.2-scope.md` (GH #31)
+**Release:** 0.5.3
+**Scope item:** Item 3 from `dev/notes/0.5.3-scope.md` (GH #31)
 **Breaking:** No (bug fix; previously-rejected queries now succeed)
 
 ---

@@ -1,7 +1,7 @@
-# Design: scale.rs heavy-writer panic surface (0.5.2 Item 1)
+# Design: scale.rs heavy-writer panic surface (0.5.3 Item 1)
 
-**Release:** 0.5.2
-**Scope item:** Item 1 from `dev/notes/0.5.2-scope.md`
+**Release:** 0.5.3
+**Scope item:** Item 1 from `dev/notes/0.5.3-scope.md`
 **Breaking:** No (test-only change; no runtime API change)
 
 ---

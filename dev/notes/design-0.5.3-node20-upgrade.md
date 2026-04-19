@@ -1,7 +1,7 @@
-# Design: Node.js 20 action deprecation upgrade (0.5.2 Item 7)
+# Design: Node.js 20 action deprecation upgrade (0.5.3 Item 5)
 
-**Release:** 0.5.2
-**Scope item:** Item 7 from `dev/notes/0.5.2-scope.md`
+**Release:** 0.5.3
+**Scope item:** Item 5 from `dev/notes/0.5.3-scope.md`
 **Breaking:** No (CI-only; no runtime API change)
 
 ---
@@ -26,7 +26,7 @@ Timeline:
   still on Node.js 20 stop working.
 
 The v0.5.1 release workflow (`24615114603`) succeeded but surfaced the
-advisory on the `github-release` job. Fixing in 0.5.2 buys headroom
+advisory on the `github-release` job. Fixing in 0.5.3 buys headroom
 before the 0.6.0 release window and prevents a broken release workflow
 from surprising us mid-tag.
 
@@ -159,7 +159,7 @@ Capture the before/after annotation state in the commit message.
 - A clean workflow run on main shows no Node.js 20 deprecation
   annotation.
 - Release workflow still functions end-to-end (verify by re-triggering
-  the Release workflow on a throwaway tag, or wait for 0.5.2's real
+  the Release workflow on a throwaway tag, or wait for 0.5.3's real
   tag run).
 
 ---

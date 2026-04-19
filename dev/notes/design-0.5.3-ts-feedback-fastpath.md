@@ -1,7 +1,7 @@
-# Design: TypeScript feedback fast-path allocation (0.5.2 Item 6)
+# Design: TypeScript feedback fast-path allocation (0.5.3 Item 4)
 
-**Release:** 0.5.2
-**Scope item:** Item 6 from `dev/notes/0.5.2-scope.md` (GH #33)
+**Release:** 0.5.3
+**Scope item:** Item 4 from `dev/notes/0.5.3-scope.md` (GH #33)
 **Breaking:** No (internal refactor; public API unchanged)
 
 ---
