@@ -1053,8 +1053,17 @@ fn count_missing_property_fts_rows(conn: &rusqlite::Connection) -> Result<i64, E
     Ok(missing)
 }
 
-/// Count property FTS rows whose `text_content` has drifted from the current canonical
-/// value computed by `compute_property_fts_text(...)`. This catches:
+/// Count property FTS rows whose persisted text has drifted from the current
+/// canonical value computed by the FTS extractors. Handles both per-kind
+/// table shapes:
+///
+/// - Non-weighted (legacy / default): single `text_content` column per row.
+///   Compared against `extract_property_fts(...)`.
+/// - Weighted: one column per registered path (named by `fts_column_name`).
+///   Compared against `extract_property_fts_columns(...)`; any per-column
+///   mismatch counts the row as drifted exactly once.
+///
+/// This catches:
 /// - rows whose text no longer matches the current node properties and schema
 /// - rows that should have been removed (extraction now yields no value)
 fn count_drifted_property_fts_rows(conn: &rusqlite::Connection) -> Result<i64, EngineError> {
@@ -1078,29 +1087,138 @@ fn count_drifted_property_fts_rows(conn: &rusqlite::Connection) -> Result<i64, E
         if !table_exists {
             continue;
         }
-        let mut stmt = conn.prepare(&format!(
-            "SELECT fp.node_logical_id, fp.text_content, n.properties \
-             FROM {table} fp \
-             JOIN nodes n ON n.logical_id = fp.node_logical_id AND n.superseded_at IS NULL \
-             WHERE n.kind = ?1"
-        ))?;
-        let rows = stmt.query_map([kind.as_str()], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-            ))
-        })?;
-        for row in rows {
-            let (_logical_id, stored_text, properties_str) = row?;
-            let props: serde_json::Value =
-                serde_json::from_str(&properties_str).unwrap_or_default();
-            let (expected, _positions, _stats) =
-                crate::writer::extract_property_fts(&props, schema);
-            match expected {
-                Some(text) if text == stored_text => {}
-                _ => drifted += 1,
-            }
+
+        // Probe the per-kind FTS table shape. Non-weighted tables carry a
+        // `text_content` column; weighted tables have one column per
+        // registered path instead. See `create_or_replace_fts_kind_table`.
+        let has_text_content = fts_kind_table_has_text_content(conn, &table)?;
+        drifted += if has_text_content {
+            count_drifted_non_weighted(conn, kind, &table, schema)?
+        } else {
+            count_drifted_weighted(conn, kind, &table, schema)?
+        };
+    }
+    Ok(drifted)
+}
+
+/// True iff the per-kind FTS table carries the single `text_content` column
+/// (non-weighted layout). Weighted tables have one column per registered path.
+fn fts_kind_table_has_text_content(
+    conn: &rusqlite::Connection,
+    table: &str,
+) -> Result<bool, EngineError> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let names: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(names.iter().any(|n| n == "text_content"))
+}
+
+/// Drift count for the non-weighted (single `text_content` column) per-kind
+/// FTS table. Preserves the historic query shape.
+fn count_drifted_non_weighted(
+    conn: &rusqlite::Connection,
+    kind: &str,
+    table: &str,
+    schema: &crate::writer::PropertyFtsSchema,
+) -> Result<i64, EngineError> {
+    let mut drifted = 0i64;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT fp.node_logical_id, fp.text_content, n.properties \
+         FROM {table} fp \
+         JOIN nodes n ON n.logical_id = fp.node_logical_id AND n.superseded_at IS NULL \
+         WHERE n.kind = ?1"
+    ))?;
+    let rows = stmt.query_map([kind], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+        ))
+    })?;
+    for row in rows {
+        let (_logical_id, stored_text, properties_str) = row?;
+        let props: serde_json::Value = serde_json::from_str(&properties_str).unwrap_or_default();
+        let (expected, _positions, _stats) = crate::writer::extract_property_fts(&props, schema);
+        match expected {
+            Some(text) if text == stored_text => {}
+            _ => drifted += 1,
+        }
+    }
+    Ok(drifted)
+}
+
+/// Drift count for a weighted (per-column) per-kind FTS table. One column per
+/// registered path, named via `fts_column_name`. A row counts as drifted if
+/// any per-column value differs from the canonical extraction.
+fn count_drifted_weighted(
+    conn: &rusqlite::Connection,
+    kind: &str,
+    table: &str,
+    schema: &crate::writer::PropertyFtsSchema,
+) -> Result<i64, EngineError> {
+    // Column names come from `fts_column_name` and are restricted to
+    // `[a-zA-Z0-9_]`, so direct interpolation + quoted identifiers are safe.
+    let columns: Vec<String> = schema
+        .paths
+        .iter()
+        .map(|entry| {
+            let is_recursive = matches!(entry.mode, crate::writer::PropertyPathMode::Recursive);
+            fathomdb_schema::fts_column_name(&entry.path, is_recursive)
+        })
+        .collect();
+    if columns.is_empty() {
+        // Weighted table with no registered columns is impossible in
+        // practice (register always writes specs), but guard defensively:
+        // nothing to compare against, so nothing drifts.
+        return Ok(0);
+    }
+
+    let select_cols: String = columns
+        .iter()
+        .map(|c| format!("fp.\"{c}\""))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "SELECT fp.node_logical_id, {select_cols}, n.properties \
+         FROM {table} fp \
+         JOIN nodes n ON n.logical_id = fp.node_logical_id AND n.superseded_at IS NULL \
+         WHERE n.kind = ?1"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    // Column layout in the result set:
+    //   [0] node_logical_id
+    //   [1..1+columns.len()] per-spec stored text, in `columns` order
+    //   [last] properties JSON
+    let props_col_idx = columns.len() + 1;
+    let rows = stmt.query_map([kind], |row| {
+        let logical_id: String = row.get(0)?;
+        let mut stored: Vec<String> = Vec::with_capacity(columns.len());
+        for i in 0..columns.len() {
+            stored.push(row.get::<_, String>(i + 1)?);
+        }
+        let properties: String = row.get(props_col_idx)?;
+        Ok((logical_id, stored, properties))
+    })?;
+
+    let mut drifted = 0i64;
+    for row in rows {
+        let (_logical_id, stored, properties_str) = row?;
+        let props: serde_json::Value = serde_json::from_str(&properties_str).unwrap_or_default();
+        let expected = crate::writer::extract_property_fts_columns(&props, schema);
+        // `extract_property_fts_columns` returns entries in schema-path order,
+        // which matches `columns`. Compare per-column; any mismatch counts
+        // the row as drifted exactly once.
+        let row_drifted = if expected.len() == stored.len() {
+            expected
+                .iter()
+                .zip(stored.iter())
+                .any(|((_name, exp_text), stored_text)| exp_text != stored_text)
+        } else {
+            true
+        };
+        if row_drifted {
+            drifted += 1;
         }
     }
     Ok(drifted)
@@ -4262,6 +4380,247 @@ mod tests {
         assert_eq!(
             report.drifted_property_fts_rows, 1,
             "row that should not exist must be counted as drifted"
+        );
+    }
+
+    /// Regression (0.5.2 Pack A): weighted (per-column) FTS property schemas
+    /// used to crash `check_semantics` with
+    /// `SqliteError: no such column: fp.text_content` because the drift
+    /// counter hardcoded the non-weighted column shape. A clean DB with a
+    /// weighted schema must now report 0 drift without panicking.
+    #[test]
+    fn check_semantics_clean_on_weighted_fts_schema_does_not_panic() {
+        let (db, service) = setup();
+        // Register a weighted schema (two specs: one scalar, one recursive).
+        // Eager mode writes the schema row and creates the per-kind weighted
+        // FTS table with per-path columns.
+        // Weighted schemas (at least one entry with a weight) trigger the
+        // per-column FTS table layout in `create_or_replace_fts_kind_table`.
+        let entries = vec![
+            FtsPropertyPathSpec::scalar("$.title").with_weight(2.0),
+            FtsPropertyPathSpec::recursive("$.body").with_weight(1.0),
+        ];
+        service
+            .register_fts_property_schema_with_entries(
+                "Article",
+                &entries,
+                Some(" "),
+                &[],
+                crate::rebuild_actor::RebuildMode::Eager,
+            )
+            .expect("register weighted schema");
+
+        // Insert a node and a matching FTS row whose per-column values match
+        // the canonical extraction (expected: 0 drift).
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            let properties = r#"{"title":"Hello","body":{"text":"world"}}"#;
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('r1', 'article-1', 'Article', ?1, 100, 'src-1')",
+                [properties],
+            )
+            .expect("insert node");
+
+            let schemas = crate::writer::load_fts_property_schemas(&conn).expect("load schemas");
+            let (_kind, schema) = schemas
+                .iter()
+                .find(|(k, _)| k == "Article")
+                .expect("weighted schema present");
+            let props: serde_json::Value = serde_json::from_str(properties).expect("parse props");
+            let cols = crate::writer::extract_property_fts_columns(&props, schema);
+
+            let table = fathomdb_schema::fts_kind_table_name("Article");
+            let col_names: Vec<String> = cols.iter().map(|(n, _)| n.clone()).collect();
+            let placeholders: Vec<String> =
+                (2..=col_names.len() + 1).map(|i| format!("?{i}")).collect();
+            let sql = format!(
+                "INSERT INTO {table} (node_logical_id, {cols}) VALUES (?1, {placeholders})",
+                cols = col_names.join(", "),
+                placeholders = placeholders.join(", "),
+            );
+            let values: Vec<String> = cols.iter().map(|(_, v)| v.clone()).collect();
+            let params: Vec<&dyn rusqlite::ToSql> =
+                std::iter::once(&"article-1" as &dyn rusqlite::ToSql)
+                    .chain(values.iter().map(|v| v as &dyn rusqlite::ToSql))
+                    .collect();
+            conn.execute(&sql, params.as_slice())
+                .expect("insert weighted FTS row");
+        }
+
+        let report = service
+            .check_semantics()
+            .expect("semantics check must not crash on weighted schema");
+        assert_eq!(report.drifted_property_fts_rows, 0);
+    }
+
+    /// Regression (0.5.2 Pack A): drift detection in weighted FTS tables.
+    /// After tampering a per-column value, `check_semantics` must count the
+    /// row as drifted (once per row, regardless of how many columns mismatch).
+    #[test]
+    fn check_semantics_detects_drifted_property_fts_text_weighted() {
+        let (db, service) = setup();
+        // Weighted schemas (at least one entry with a weight) trigger the
+        // per-column FTS table layout in `create_or_replace_fts_kind_table`.
+        let entries = vec![
+            FtsPropertyPathSpec::scalar("$.title").with_weight(2.0),
+            FtsPropertyPathSpec::recursive("$.body").with_weight(1.0),
+        ];
+        service
+            .register_fts_property_schema_with_entries(
+                "Article",
+                &entries,
+                Some(" "),
+                &[],
+                crate::rebuild_actor::RebuildMode::Eager,
+            )
+            .expect("register weighted schema");
+
+        let title_col = fathomdb_schema::fts_column_name("$.title", false);
+
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            let properties = r#"{"title":"Current","body":{"text":"body"}}"#;
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('r1', 'article-1', 'Article', ?1, 100, 'src-1')",
+                [properties],
+            )
+            .expect("insert node");
+
+            let schemas = crate::writer::load_fts_property_schemas(&conn).expect("load schemas");
+            let (_kind, schema) = schemas
+                .iter()
+                .find(|(k, _)| k == "Article")
+                .expect("weighted schema present");
+            let props: serde_json::Value = serde_json::from_str(properties).expect("parse props");
+            let cols = crate::writer::extract_property_fts_columns(&props, schema);
+
+            let table = fathomdb_schema::fts_kind_table_name("Article");
+            let col_names: Vec<String> = cols.iter().map(|(n, _)| n.clone()).collect();
+            let placeholders: Vec<String> =
+                (2..=col_names.len() + 1).map(|i| format!("?{i}")).collect();
+            let sql = format!(
+                "INSERT INTO {table} (node_logical_id, {cols}) VALUES (?1, {placeholders})",
+                cols = col_names.join(", "),
+                placeholders = placeholders.join(", "),
+            );
+            let values: Vec<String> = cols.iter().map(|(_, v)| v.clone()).collect();
+            let params: Vec<&dyn rusqlite::ToSql> =
+                std::iter::once(&"article-1" as &dyn rusqlite::ToSql)
+                    .chain(values.iter().map(|v| v as &dyn rusqlite::ToSql))
+                    .collect();
+            conn.execute(&sql, params.as_slice())
+                .expect("insert weighted FTS row");
+
+            // Tamper the title column so it no longer matches canonical extraction.
+            conn.execute(
+                &format!("UPDATE {table} SET {title_col} = 'tampered' WHERE node_logical_id = 'article-1'"),
+                [],
+            )
+            .expect("tamper weighted FTS row");
+        }
+
+        let report = service.check_semantics().expect("semantics check");
+        assert_eq!(report.drifted_property_fts_rows, 1);
+    }
+
+    /// Regression (0.5.2 Pack A): a DB with both a weighted and a non-weighted
+    /// per-kind FTS table must report 0 drift when both are in sync. This
+    /// exercises the dispatcher: weighted path for one kind, non-weighted
+    /// path for the other, in a single `check_semantics` call.
+    #[test]
+    fn check_semantics_mixed_weighted_and_non_weighted_schemas() {
+        let (db, service) = setup();
+
+        // Weighted schema for Article (per-column layout — requires weights).
+        let weighted_entries = vec![
+            FtsPropertyPathSpec::scalar("$.title").with_weight(2.0),
+            FtsPropertyPathSpec::recursive("$.body").with_weight(1.0),
+        ];
+        service
+            .register_fts_property_schema_with_entries(
+                "Article",
+                &weighted_entries,
+                Some(" "),
+                &[],
+                crate::rebuild_actor::RebuildMode::Eager,
+            )
+            .expect("register weighted schema");
+
+        // Non-weighted (single path) schema for Goal. The legacy JSON shape
+        // (bare array of scalar paths) yields a non-weighted per-kind table.
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO fts_property_schemas (kind, property_paths_json, separator) \
+                 VALUES ('Goal', '[\"$.name\"]', ' ')",
+                [],
+            )
+            .expect("register non-weighted schema");
+            let goal_table = fathomdb_schema::fts_kind_table_name("Goal");
+            conn.execute_batch(&format!(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS {goal_table} \
+                 USING fts5(node_logical_id UNINDEXED, text_content, tokenize = 'porter unicode61 remove_diacritics 2')"
+            ))
+            .expect("create non-weighted per-kind table");
+
+            // Insert Article node + matching weighted FTS row.
+            let article_props = r#"{"title":"Hello","body":{"text":"world"}}"#;
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('r1', 'article-1', 'Article', ?1, 100, 'src-1')",
+                [article_props],
+            )
+            .expect("insert article");
+
+            let schemas = crate::writer::load_fts_property_schemas(&conn).expect("load schemas");
+            let (_k, article_schema) = schemas
+                .iter()
+                .find(|(k, _)| k == "Article")
+                .expect("Article schema present");
+            let props: serde_json::Value =
+                serde_json::from_str(article_props).expect("parse article props");
+            let cols = crate::writer::extract_property_fts_columns(&props, article_schema);
+            let article_table = fathomdb_schema::fts_kind_table_name("Article");
+            let col_names: Vec<String> = cols.iter().map(|(n, _)| n.clone()).collect();
+            let placeholders: Vec<String> =
+                (2..=col_names.len() + 1).map(|i| format!("?{i}")).collect();
+            let sql = format!(
+                "INSERT INTO {article_table} (node_logical_id, {cols}) VALUES (?1, {placeholders})",
+                cols = col_names.join(", "),
+                placeholders = placeholders.join(", "),
+            );
+            let values: Vec<String> = cols.iter().map(|(_, v)| v.clone()).collect();
+            let params: Vec<&dyn rusqlite::ToSql> =
+                std::iter::once(&"article-1" as &dyn rusqlite::ToSql)
+                    .chain(values.iter().map(|v| v as &dyn rusqlite::ToSql))
+                    .collect();
+            conn.execute(&sql, params.as_slice())
+                .expect("insert weighted FTS row");
+
+            // Insert Goal node + matching non-weighted FTS row. Canonical
+            // extraction for legacy schema on $.name yields the string
+            // "Goal One".
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('r2', 'goal-1', 'Goal', '{\"name\":\"Goal One\"}', 100, 'src-2')",
+                [],
+            )
+            .expect("insert goal node");
+            conn.execute(
+                &format!("INSERT INTO {goal_table} (node_logical_id, text_content) VALUES ('goal-1', 'Goal One')"),
+                [],
+            )
+            .expect("insert non-weighted FTS row");
+        }
+
+        let report = service
+            .check_semantics()
+            .expect("semantics check must handle both shapes");
+        assert_eq!(
+            report.drifted_property_fts_rows, 0,
+            "clean mixed weighted + non-weighted DB must report 0 drift"
         );
     }
 
