@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] — 2026-04-18
+
+### Fixed
+
+- **`Admin::check_semantics()` no longer raises `SqliteError: no such column: fp.text_content`** when any registered FTS property schema uses the per-column (weighted) shape. Drift detection now dispatches on the schema record (a schema is weighted iff any entry has `weight.is_some()`, matching the registration-side invariant) and compares per-column text using the same extractor the rebuild actor writes. Previously, calling `check_semantics()` on any database where a kind had been registered via `register_fts_property_schema_with_entries` with at least one weighted entry would panic. Downstream wrappers (`admin.check_semantics` in Python, `admin.checkSemantics` in TypeScript, `fathom-integrity check` in Go) inherit the fix with no API change.
+
 ## [0.5.1] — 2026-04-18
 
 ### Breaking changes
