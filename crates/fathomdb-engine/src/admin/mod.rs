@@ -1088,30 +1088,22 @@ fn count_drifted_property_fts_rows(conn: &rusqlite::Connection) -> Result<i64, E
             continue;
         }
 
-        // Probe the per-kind FTS table shape. Non-weighted tables carry a
-        // `text_content` column; weighted tables have one column per
-        // registered path instead. See `create_or_replace_fts_kind_table`.
-        let has_text_content = fts_kind_table_has_text_content(conn, &table)?;
-        drifted += if has_text_content {
-            count_drifted_non_weighted(conn, kind, &table, schema)?
-        } else {
+        // Dispatch on the persisted schema, not on the live table columns.
+        // Registration (`register_fts_property_schema_with_entries` in
+        // `admin/fts.rs`) chooses the per-kind table layout by checking
+        // whether any entry carries a weight; mirroring that invariant here
+        // keeps the two code paths in lockstep. A live-column probe would
+        // misclassify a weighted schema whose registered paths happened to
+        // include literal `$.text_content` (collapsing to a `text_content`
+        // column), silently running the non-weighted comparator against
+        // per-column storage.
+        drifted += if schema.is_weighted() {
             count_drifted_weighted(conn, kind, &table, schema)?
+        } else {
+            count_drifted_non_weighted(conn, kind, &table, schema)?
         };
     }
     Ok(drifted)
-}
-
-/// True iff the per-kind FTS table carries the single `text_content` column
-/// (non-weighted layout). Weighted tables have one column per registered path.
-fn fts_kind_table_has_text_content(
-    conn: &rusqlite::Connection,
-    table: &str,
-) -> Result<bool, EngineError> {
-    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
-    let names: Vec<String> = stmt
-        .query_map([], |row| row.get::<_, String>(1))?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(names.iter().any(|n| n == "text_content"))
 }
 
 /// Drift count for the non-weighted (single `text_content` column) per-kind
@@ -1192,18 +1184,17 @@ fn count_drifted_weighted(
     //   [last] properties JSON
     let props_col_idx = columns.len() + 1;
     let rows = stmt.query_map([kind], |row| {
-        let logical_id: String = row.get(0)?;
         let mut stored: Vec<String> = Vec::with_capacity(columns.len());
         for i in 0..columns.len() {
             stored.push(row.get::<_, String>(i + 1)?);
         }
         let properties: String = row.get(props_col_idx)?;
-        Ok((logical_id, stored, properties))
+        Ok((stored, properties))
     })?;
 
     let mut drifted = 0i64;
     for row in rows {
-        let (_logical_id, stored, properties_str) = row?;
+        let (stored, properties_str) = row?;
         let props: serde_json::Value = serde_json::from_str(&properties_str).unwrap_or_default();
         let expected = crate::writer::extract_property_fts_columns(&props, schema);
         // `extract_property_fts_columns` returns entries in schema-path order,
@@ -4621,6 +4612,89 @@ mod tests {
         assert_eq!(
             report.drifted_property_fts_rows, 0,
             "clean mixed weighted + non-weighted DB must report 0 drift"
+        );
+    }
+
+    /// Regression (0.5.2 follow-up, review note): a weighted schema whose
+    /// path set includes literal `$.text_content` collapses via
+    /// `fts_column_name` to a `text_content` column. A live-column probe
+    /// would then misclassify this weighted table as non-weighted and run
+    /// the single-blob comparator against per-column storage — no crash,
+    /// but silently incorrect drift counts (a clean DB would report drift).
+    /// Dispatching on the persisted schema shape (any entry with
+    /// `weight.is_some()` ⇒ weighted) avoids the collision.
+    ///
+    /// This test writes a CLEAN weighted row (per-column values matching
+    /// canonical extraction) and asserts zero drift. Under the old
+    /// live-column dispatcher the non-weighted comparator would read the
+    /// single-path column value, compare it against the multi-path blob
+    /// concatenation produced by `extract_property_fts`, and spuriously
+    /// report drift.
+    #[test]
+    fn check_semantics_weighted_schema_with_text_content_path() {
+        let (db, service) = setup();
+        let entries = vec![
+            FtsPropertyPathSpec::scalar("$.text_content").with_weight(2.0),
+            FtsPropertyPathSpec::scalar("$.title").with_weight(1.0),
+        ];
+        service
+            .register_fts_property_schema_with_entries(
+                "Article",
+                &entries,
+                Some(" "),
+                &[],
+                crate::rebuild_actor::RebuildMode::Eager,
+            )
+            .expect("register weighted schema with $.text_content path");
+
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            // Two distinct, non-empty scalar values. The non-weighted
+            // comparator would expect their joined blob ("canonical body
+            // Hello") as the single `text_content` column value; the
+            // weighted (per-column) layout stores them separately, so on a
+            // live-column probe the dispatcher would misclassify and
+            // spuriously report drift.
+            let properties = r#"{"text_content":"canonical body","title":"Hello"}"#;
+            conn.execute(
+                "INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref) \
+                 VALUES ('r1', 'article-1', 'Article', ?1, 100, 'src-1')",
+                [properties],
+            )
+            .expect("insert node");
+
+            let schemas = crate::writer::load_fts_property_schemas(&conn).expect("load schemas");
+            let (_kind, schema) = schemas
+                .iter()
+                .find(|(k, _)| k == "Article")
+                .expect("weighted schema present");
+            let props: serde_json::Value = serde_json::from_str(properties).expect("parse props");
+            let cols = crate::writer::extract_property_fts_columns(&props, schema);
+
+            let table = fathomdb_schema::fts_kind_table_name("Article");
+            let col_names: Vec<String> = cols.iter().map(|(n, _)| n.clone()).collect();
+            let placeholders: Vec<String> =
+                (2..=col_names.len() + 1).map(|i| format!("?{i}")).collect();
+            let sql = format!(
+                "INSERT INTO {table} (node_logical_id, {cols}) VALUES (?1, {placeholders})",
+                cols = col_names.join(", "),
+                placeholders = placeholders.join(", "),
+            );
+            let values: Vec<String> = cols.iter().map(|(_, v)| v.clone()).collect();
+            let params: Vec<&dyn rusqlite::ToSql> =
+                std::iter::once(&"article-1" as &dyn rusqlite::ToSql)
+                    .chain(values.iter().map(|v| v as &dyn rusqlite::ToSql))
+                    .collect();
+            conn.execute(&sql, params.as_slice())
+                .expect("insert weighted FTS row");
+        }
+
+        let report = service.check_semantics().expect("semantics check");
+        assert_eq!(
+            report.drifted_property_fts_rows, 0,
+            "weighted schema whose path collapses to `text_content` must be \
+             dispatched as weighted (per-column comparator); a clean DB \
+             must report 0 drift"
         );
     }
 

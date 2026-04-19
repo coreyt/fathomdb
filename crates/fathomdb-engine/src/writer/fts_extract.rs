@@ -105,6 +105,18 @@ pub(crate) struct PropertyFtsSchema {
     pub exclude_paths: Vec<String>,
 }
 
+impl PropertyFtsSchema {
+    /// True iff this schema was registered with at least one weighted path.
+    ///
+    /// Mirrors the invariant used by `register_fts_property_schema_with_entries`
+    /// to decide whether the per-kind FTS table is created with one column per
+    /// path (weighted) or a single `text_content` column (non-weighted). See
+    /// `create_or_replace_fts_kind_table`.
+    pub(crate) fn is_weighted(&self) -> bool {
+        self.paths.iter().any(|p| p.weight.is_some())
+    }
+}
+
 /// One position-map entry: a half-open `[start, end)` byte range within the
 /// extracted blob plus the `JSONPath` of the scalar leaf whose value occupies
 /// that range.
