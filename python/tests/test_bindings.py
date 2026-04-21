@@ -1457,3 +1457,275 @@ def test_engine_open_rejects_invalid_telemetry_level(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="invalid telemetry_level"):
         Engine.open(tmp_path / "agent.db", telemetry_level="turbo")
+
+
+def test_edge_row_from_wire_roundtrip() -> None:
+    """EdgeRow.from_wire hydrates all 8 fields including optional source_ref + confidence."""
+    from fathomdb import EdgeRow
+
+    # Full payload with all optional fields populated.
+    full = {
+        "row_id": "er-123",
+        "logical_id": "el-abc",
+        "source_logical_id": "meeting-1",
+        "target_logical_id": "task-1",
+        "kind": "HAS_TASK",
+        "properties": '{"rel":"owns"}',
+        "source_ref": "source:edge-1",
+        "confidence": 0.87,
+    }
+    row = EdgeRow.from_wire(full)
+    assert row.row_id == "er-123"
+    assert row.logical_id == "el-abc"
+    assert row.source_logical_id == "meeting-1"
+    assert row.target_logical_id == "task-1"
+    assert row.kind == "HAS_TASK"
+    assert row.properties == '{"rel":"owns"}'
+    assert row.source_ref == "source:edge-1"
+    assert row.confidence == 0.87
+
+    # None arms of the two optional fields.
+    sparse = {
+        "row_id": "er-2",
+        "logical_id": "el-2",
+        "source_logical_id": "a",
+        "target_logical_id": "b",
+        "kind": "LINKS_TO",
+        "properties": "{}",
+        "source_ref": None,
+        "confidence": None,
+    }
+    sparse_row = EdgeRow.from_wire(sparse)
+    assert sparse_row.source_ref is None
+    assert sparse_row.confidence is None
+
+
+def test_noderow_no_edge_properties() -> None:
+    """NodeRow.edge_properties must be gone after Pack D's Rust-side removal."""
+    import dataclasses
+
+    from fathomdb import NodeRow
+
+    field_names = {f.name for f in dataclasses.fields(NodeRow)}
+    assert "edge_properties" not in field_names, (
+        "NodeRow.edge_properties must be removed in 0.5.3 (Pack D)"
+    )
+
+    # Instantiating with edge_properties kwarg must fail.
+    with pytest.raises(TypeError):
+        NodeRow(  # type: ignore[call-arg]
+            row_id="r",
+            logical_id="l",
+            kind="K",
+            properties="{}",
+            edge_properties="{}",
+        )
+
+
+def test_cold_import_edgerow() -> None:
+    """Fresh-subprocess import of EdgeRow must succeed (cold-import smoke test)."""
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from fathomdb import EdgeRow, EdgeExpansionRootRows, EdgeExpansionSlotRows",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f"cold import failed: {result.stderr}"
+
+
+def test_edge_expansion_pair_is_tuple() -> None:
+    """GroupedQueryRows wire decodes {edge, endpoint} into (EdgeRow, NodeRow) tuple.
+
+    Exercises the Python-side wire decoder against a synthesized payload
+    without requiring a live Rust round-trip.
+    """
+    from fathomdb import EdgeRow, GroupedQueryRows, NodeRow
+
+    payload = {
+        "roots": [
+            {
+                "row_id": "nr-1",
+                "logical_id": "meeting-1",
+                "kind": "Meeting",
+                "properties": '{"title":"A"}',
+                "content_ref": None,
+                "last_accessed_at": None,
+            }
+        ],
+        "expansions": [],
+        "edge_expansions": [
+            {
+                "slot": "tasks",
+                "roots": [
+                    {
+                        "root_logical_id": "meeting-1",
+                        "pairs": [
+                            {
+                                "edge": {
+                                    "row_id": "er-1",
+                                    "logical_id": "edge-1",
+                                    "source_logical_id": "meeting-1",
+                                    "target_logical_id": "task-1",
+                                    "kind": "HAS_TASK",
+                                    "properties": '{"rel":"owns"}',
+                                    "source_ref": "source:edge-1",
+                                    "confidence": 0.5,
+                                },
+                                "endpoint": {
+                                    "row_id": "nr-2",
+                                    "logical_id": "task-1",
+                                    "kind": "Task",
+                                    "properties": '{"title":"B"}',
+                                    "content_ref": None,
+                                    "last_accessed_at": None,
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+        "was_degraded": False,
+    }
+
+    rows = GroupedQueryRows.from_wire(payload)
+
+    assert len(rows.edge_expansions) == 1
+    slot = rows.edge_expansions[0]
+    assert slot.slot == "tasks"
+    assert len(slot.roots) == 1
+    root = slot.roots[0]
+    assert root.root_logical_id == "meeting-1"
+    assert len(root.pairs) == 1
+
+    # Pair must unpack as a tuple for idiomatic `for edge, endpoint in pairs`.
+    for edge, endpoint in root.pairs:
+        assert isinstance(edge, EdgeRow)
+        assert isinstance(endpoint, NodeRow)
+        assert edge.logical_id == "edge-1"
+        assert edge.source_ref == "source:edge-1"
+        assert edge.confidence == 0.5
+        assert endpoint.logical_id == "task-1"
+
+    # Absent edge_expansions key must decode to empty list (additive-wire tolerance).
+    legacy_payload = {
+        "roots": [],
+        "expansions": [],
+        "was_degraded": False,
+    }
+    legacy = GroupedQueryRows.from_wire(legacy_payload)
+    assert legacy.edge_expansions == []
+
+
+@pytest.mark.xfail(
+    reason=(
+        "Blocked on Rust FFI ingestion gap: FfiQueryAst in "
+        "crates/fathomdb/src/ffi_types.rs does not decode "
+        "`edge_expansions` from the incoming AST JSON — it hard-codes "
+        "`edge_expansions: Vec::new()`. Packs A-D added EdgeRow + "
+        "traverse_edges on the Rust builder/coordinator surface but did "
+        "not extend the JSON-AST entry point used by Python. Python-side "
+        ".traverse_edges() serializes correctly; the engine just drops "
+        "the slot. Fix requires adding FfiEdgeExpansionSlot + "
+        "FfiQueryAst.edge_expansions + From impl on the Rust side. "
+        "Pack E is Python-only per briefing — escalated as a blocker."
+    ),
+    strict=True,
+)
+def test_traverse_edges_emits_edge_row_pairs(tmp_path: Path) -> None:
+    """End-to-end: .traverse_edges() returns (EdgeRow, NodeRow) tuples.
+
+    Covers all 8 EdgeRow fields including source_ref and confidence.
+    """
+    from fathomdb import (
+        ChunkPolicy,
+        EdgeInsert,
+        Engine,
+        EdgeRow,
+        NodeInsert,
+        NodeRow,
+        TraverseDirection,
+        WriteRequest,
+        new_row_id,
+    )
+
+    db = Engine.open(tmp_path / "agent.db")
+
+    db.write(
+        WriteRequest(
+            label="seed-traverse-edges",
+            nodes=[
+                NodeInsert(
+                    row_id=new_row_id(),
+                    logical_id="meeting-1",
+                    kind="Meeting",
+                    properties={"title": "Budget review"},
+                    source_ref="source:meeting-1",
+                    upsert=False,
+                    chunk_policy=ChunkPolicy.PRESERVE,
+                ),
+                NodeInsert(
+                    row_id=new_row_id(),
+                    logical_id="task-1",
+                    kind="Task",
+                    properties={"title": "Draft memo"},
+                    source_ref="source:task-1",
+                    upsert=False,
+                    chunk_policy=ChunkPolicy.PRESERVE,
+                ),
+            ],
+            edges=[
+                EdgeInsert(
+                    row_id=new_row_id(),
+                    logical_id="edge-1",
+                    source_logical_id="meeting-1",
+                    target_logical_id="task-1",
+                    kind="HAS_TASK",
+                    properties={"rel": "owns"},
+                    source_ref="source:edge-1",
+                    upsert=False,
+                ),
+            ],
+        )
+    )
+
+    grouped = (
+        db.nodes("Meeting")
+        .filter_logical_id_eq("meeting-1")
+        .traverse_edges(
+            slot="tasks",
+            direction=TraverseDirection.OUT,
+            label="HAS_TASK",
+            max_depth=1,
+        )
+        .execute_grouped()
+    )
+
+    assert len(grouped.edge_expansions) == 1
+    slot = grouped.edge_expansions[0]
+    assert slot.slot == "tasks"
+    assert len(slot.roots) == 1
+    root = slot.roots[0]
+    assert root.root_logical_id == "meeting-1"
+    assert len(root.pairs) == 1
+
+    edge, endpoint = root.pairs[0]
+    assert isinstance(edge, EdgeRow)
+    assert isinstance(endpoint, NodeRow)
+    assert edge.logical_id == "edge-1"
+    assert edge.source_logical_id == "meeting-1"
+    assert edge.target_logical_id == "task-1"
+    assert edge.kind == "HAS_TASK"
+    assert edge.source_ref == "source:edge-1"
+    assert edge.row_id  # non-empty
+    # properties is JSON-encoded str
+    import json as _json
+
+    assert _json.loads(edge.properties) == {"rel": "owns"}
+    assert endpoint.logical_id == "task-1"

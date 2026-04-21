@@ -40,12 +40,14 @@ class Query:
         *,
         steps: list[dict] | None = None,
         expansions: list[dict] | None = None,
+        edge_expansions: list[dict] | None = None,
         final_limit: int | None = None,
     ) -> None:
         self._core = core
         self._root_kind = root_kind
         self._steps = list(steps or [])
         self._expansions = list(expansions or [])
+        self._edge_expansions = list(edge_expansions or [])
         self._final_limit = final_limit
 
     def _with_step(self, step: dict) -> "Query":
@@ -54,6 +56,7 @@ class Query:
             self._root_kind,
             steps=[*self._steps, step],
             expansions=self._expansions,
+            edge_expansions=self._edge_expansions,
             final_limit=self._final_limit,
         )
 
@@ -63,6 +66,17 @@ class Query:
             self._root_kind,
             steps=self._steps,
             expansions=[*self._expansions, expansion],
+            edge_expansions=self._edge_expansions,
+            final_limit=self._final_limit,
+        )
+
+    def _with_edge_expansion(self, expansion: dict) -> "Query":
+        return Query(
+            self._core,
+            self._root_kind,
+            steps=self._steps,
+            expansions=self._expansions,
+            edge_expansions=[*self._edge_expansions, expansion],
             final_limit=self._final_limit,
         )
 
@@ -72,6 +86,7 @@ class Query:
             self._root_kind,
             steps=self._steps,
             expansions=self._expansions,
+            edge_expansions=self._edge_expansions,
             final_limit=limit,
         )
 
@@ -81,6 +96,7 @@ class Query:
                 "root_kind": self._root_kind,
                 "steps": self._steps,
                 "expansions": self._expansions,
+                "edge_expansions": self._edge_expansions,
                 "final_limit": self._final_limit,
             }
         )
@@ -284,6 +300,47 @@ class Query:
         if edge_filter is not None:
             expansion["edge_filter"] = edge_filter
         return self._with_expansion(expansion)
+
+    def traverse_edges(
+        self,
+        *,
+        slot: str,
+        direction: TraverseDirection | str,
+        label: str,
+        max_depth: int,
+        edge_filter: dict | None = None,
+        endpoint_filter: dict | None = None,
+    ) -> "Query":
+        """Register an edge-projecting expansion slot for grouped query execution.
+
+        Emits ``(EdgeRow, NodeRow)`` tuples per root on execution. The
+        endpoint node is the target on ``"out"`` traversal, source on
+        ``"in"``. Slot name must be unique across both node-expansions
+        (``.expand()``) and edge-expansions within the same query.
+
+        Args:
+            slot: Name for this expansion in the grouped result.
+            direction: "in" or "out" relative to root nodes.
+            label: Edge kind to follow.
+            max_depth: Maximum traversal depth.
+            edge_filter: Optional edge property filter predicate dict.
+            endpoint_filter: Optional predicate applied to the endpoint
+                node (target on OUT, source on IN).
+        """
+        value = (
+            direction.value if isinstance(direction, TraverseDirection) else direction
+        )
+        expansion: dict = {
+            "slot": slot,
+            "direction": value,
+            "label": label,
+            "max_depth": max_depth,
+        }
+        if edge_filter is not None:
+            expansion["edge_filter"] = edge_filter
+        if endpoint_filter is not None:
+            expansion["endpoint_filter"] = endpoint_filter
+        return self._with_edge_expansion(expansion)
 
     def limit(self, limit: int) -> "Query":
         """Cap the number of result rows returned by the query."""
@@ -824,6 +881,7 @@ class SearchBuilder(_SearchBuilderBase):
         filters: list[dict] | None = None,
         attribution_requested: bool = False,
         expansions: list[dict] | None = None,
+        edge_expansions: list[dict] | None = None,
         expand_limit: int | None = None,
     ) -> None:
         # The unified `search` mode, like adaptive `text_search`, never
@@ -839,6 +897,7 @@ class SearchBuilder(_SearchBuilderBase):
             attribution_requested=attribution_requested,
         )
         self._expansions: list[dict] = list(expansions or [])
+        self._edge_expansions: list[dict] = list(edge_expansions or [])
         self._expand_limit: int | None = expand_limit
 
     def _clone(self, **overrides) -> "SearchBuilder":
@@ -850,6 +909,7 @@ class SearchBuilder(_SearchBuilderBase):
             "filters": list(self._filters),
             "attribution_requested": self._attribution_requested,
             "expansions": list(self._expansions),
+            "edge_expansions": list(self._edge_expansions),
             "expand_limit": self._expand_limit,
         }
         params.update(overrides)
@@ -891,6 +951,38 @@ class SearchBuilder(_SearchBuilderBase):
             expansion["edge_filter"] = edge_filter
         return self._clone(expansions=[*self._expansions, expansion])
 
+    def traverse_edges(
+        self,
+        *,
+        slot: str,
+        direction: "TraverseDirection | str",
+        label: str,
+        max_depth: int,
+        edge_filter: dict | None = None,
+        endpoint_filter: dict | None = None,
+    ) -> "SearchBuilder":
+        """Register an edge-projecting expansion slot for grouped query execution.
+
+        Emits ``(EdgeRow, NodeRow)`` tuples per root on execution. The
+        endpoint node is the target on ``"out"`` traversal, source on
+        ``"in"``. Slot name must be unique across both node-expansions
+        (``.expand()``) and edge-expansions within the same query.
+        """
+        value = (
+            direction.value if isinstance(direction, TraverseDirection) else direction
+        )
+        expansion: dict = {
+            "slot": slot,
+            "direction": value,
+            "label": label,
+            "max_depth": max_depth,
+        }
+        if edge_filter is not None:
+            expansion["edge_filter"] = edge_filter
+        if endpoint_filter is not None:
+            expansion["endpoint_filter"] = endpoint_filter
+        return self._clone(edge_expansions=[*self._edge_expansions, expansion])
+
     def limit(self, limit: int) -> "SearchBuilder":
         """Cap the per-originator expansion result count."""
         return self._clone(expand_limit=limit)
@@ -907,6 +999,7 @@ class SearchBuilder(_SearchBuilderBase):
                     }
                 ],
                 "expansions": self._expansions,
+                "edge_expansions": self._edge_expansions,
                 "final_limit": self._expand_limit,
             }
         )
