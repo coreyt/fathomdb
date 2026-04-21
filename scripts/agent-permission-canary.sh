@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # agent-permission-canary.sh
 #
-# Exercises the Bash allowlist a fathomdb TDD implementer subagent needs.
-# Run this inside a fresh worktree as the first task of a canary implementer
-# before launching real work. Exit 0 means the allowlist is complete;
-# exit 1 lists the failing buckets.
+# Exercises the Bash allowlist. Deny verification is NOT done by this script —
+# subprocess calls bypass Claude Bash-tool permission enforcement. Deny
+# verification is the orchestrator's responsibility: the canary agent must
+# attempt each denied command as a separate Bash tool call (see docs).
 #
 # Paired with .claude/settings.json. See scripts/preflight.sh.
 
@@ -23,18 +23,6 @@ check() {
         echo "  FAIL: $label  (cmd: $*)"
         fail=$((fail + 1))
         failed+=("$label")
-    fi
-}
-
-deny_check() {
-    local label="$1"; shift
-    if "$@" >/dev/null 2>&1; then
-        echo "  DENY-LEAK: $label should be denied but ran  (cmd: $*)"
-        fail=$((fail + 1))
-        failed+=("deny-leak:$label")
-    else
-        echo "  PASS: $label correctly denied"
-        pass=$((pass + 1))
     fi
 }
 
@@ -59,13 +47,6 @@ check "rustc-version"   rustc --version
 check "cargo-metadata"  cargo metadata --format-version 1 --no-deps
 
 echo ""
-echo "── Deny checks (MUST be blocked) ──"
-deny_check "rm"             rm --help
-deny_check "curl"           curl --help
-deny_check "git-push"       git push --dry-run origin HEAD
-deny_check "cargo-publish"  cargo publish --dry-run --help
-
-echo ""
 echo "── Result ──"
 echo "$pass pass, $fail fail"
 if [ "$fail" -ne 0 ]; then
@@ -76,4 +57,12 @@ if [ "$fail" -ne 0 ]; then
     exit 1
 fi
 echo "READY. Allowlist is complete."
+
+echo ""
+echo "── Next step ──"
+echo "Deny verification: orchestrator must run each of these commands as a SEPARATE Bash tool call via the canary agent and verify each is blocked:"
+echo "  - rm --help"
+echo "  - curl --help"
+echo "  - git push --dry-run origin HEAD"
+echo "  - cargo publish --dry-run --help"
 exit 0
