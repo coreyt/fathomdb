@@ -43,10 +43,23 @@ The FTS rebuild runs in the background via `RebuildActor`.
     ```
 
 **Behavior change vs eager registration:** after `register_fts_property_schema_async`,
-the new schema is **not immediately visible to search**. Search reads from the
-live FTS table (the previous schema) until the rebuild reaches `COMPLETE`.
-Callers that need synchronous visibility should use `register_fts_property_schema`
-or `register_fts_property_schema_with_entries` (eager mode).
+the new schema is **not immediately visible to search**. Behavior during the
+rebuild window depends on whether the new schema is *shape-compatible* with the
+existing live FTS table (same column set, same tokenizer):
+
+- **Shape-compatible re-registration** — the live FTS table is preserved. Search
+  continues to return pre-registration results (no scan fallback) until the async
+  rebuild reaches `COMPLETE`, at which point the actor's atomic swap replaces
+  the data in place. Readers never see an empty window.
+- **Shape-incompatible re-registration** (column set change, tokenizer change,
+  weighted ↔ unweighted flip) — the live table cannot service the new schema,
+  so it is dropped and recreated inside the registration transaction. Readers
+  during `PENDING` / `BUILDING` observe an empty per-kind FTS table and the
+  search returns zero rows until the rebuild reaches `COMPLETE`.
+
+Callers that need synchronous visibility (no degraded window under either case)
+should use `register_fts_property_schema` or
+`register_fts_property_schema_with_entries` (eager mode).
 
 ### `get_rebuild_progress`
 
