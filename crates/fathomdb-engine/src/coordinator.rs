@@ -6,9 +6,10 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use fathomdb_query::{
     BindValue, ComparisonOp, CompiledGroupedQuery, CompiledQuery, CompiledRetrievalPlan,
-    CompiledSearch, CompiledSearchPlan, CompiledVectorSearch, DrivingTable, ExpansionSlot,
-    FALLBACK_TRIGGER_K, HitAttribution, Predicate, RetrievalModality, ScalarValue, SearchBranch,
-    SearchHit, SearchHitSource, SearchMatchMode, SearchRows, ShapeHash, render_text_query_fts5,
+    CompiledSearch, CompiledSearchPlan, CompiledVectorSearch, DrivingTable, EdgeExpansionSlot,
+    ExpansionSlot, FALLBACK_TRIGGER_K, HitAttribution, Predicate, RetrievalModality, ScalarValue,
+    SearchBranch, SearchHit, SearchHitSource, SearchMatchMode, SearchRows, ShapeHash,
+    render_text_query_fts5,
 };
 use fathomdb_schema::SchemaManager;
 use rusqlite::{Connection, OptionalExtension, params_from_iter, types::Value};
@@ -505,13 +506,45 @@ pub struct ExpansionSlotRows {
     pub roots: Vec<ExpansionRootRows>,
 }
 
+/// Edge-expansion results for a single root node within a grouped query.
+///
+/// Derives `PartialEq` only — transitive through [`EdgeRow`] which carries
+/// an `Option<f64>` confidence score.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EdgeExpansionRootRows {
+    /// Logical ID of the root node that seeded this expansion.
+    pub root_logical_id: String,
+    /// `(EdgeRow, NodeRow)` tuples reached by traversing from the root. For
+    /// `max_depth > 1`, the edge is the final-hop edge leading to the
+    /// emitted endpoint node.
+    pub pairs: Vec<(EdgeRow, NodeRow)>,
+}
+
+/// All edge-expansion results for a single named slot across all roots.
+///
+/// Derives `PartialEq` only — transitive through [`EdgeRow`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct EdgeExpansionSlotRows {
+    /// Name of the edge-expansion slot.
+    pub slot: String,
+    /// Per-root edge-expansion results.
+    pub roots: Vec<EdgeExpansionRootRows>,
+}
+
 /// Result set from executing a grouped compiled query.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+///
+/// Derives `PartialEq` only when `edge_expansions` is non-empty (transitive
+/// through `EdgeRow`). Default remains `Eq`-able in practice because an
+/// empty `edge_expansions` vec holds no floats; we derive `PartialEq` only
+/// to keep the contract consistent.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct GroupedQueryRows {
     /// Root node rows matched by the base query.
     pub roots: Vec<NodeRow>,
     /// Per-slot expansion results.
     pub expansions: Vec<ExpansionSlotRows>,
+    /// Per-slot edge-expansion results.
+    pub edge_expansions: Vec<EdgeExpansionSlotRows>,
     /// `true` when a capability miss caused the query to degrade to an empty result.
     pub was_degraded: bool,
 }
@@ -2178,6 +2211,7 @@ impl ExecutionCoordinator {
             return Ok(GroupedQueryRows {
                 roots: Vec::new(),
                 expansions: Vec::new(),
+                edge_expansions: Vec::new(),
                 was_degraded: true,
             });
         }
@@ -2196,9 +2230,23 @@ impl ExecutionCoordinator {
             });
         }
 
+        let mut edge_expansions = Vec::with_capacity(compiled.edge_expansions.len());
+        for edge_expansion in &compiled.edge_expansions {
+            let slot_rows = if roots.is_empty() {
+                Vec::new()
+            } else {
+                self.read_edge_expansion_chunked(&roots, edge_expansion, compiled.hints.hard_limit)?
+            };
+            edge_expansions.push(EdgeExpansionSlotRows {
+                slot: edge_expansion.slot.clone(),
+                roots: slot_rows,
+            });
+        }
+
         Ok(GroupedQueryRows {
             roots,
             expansions,
+            edge_expansions,
             was_degraded: false,
         })
     }
@@ -2392,6 +2440,212 @@ impl ExecutionCoordinator {
             .map(|root| ExpansionRootRows {
                 root_logical_id: root.logical_id.clone(),
                 nodes: per_root.remove(&root.logical_id).unwrap_or_default(),
+            })
+            .collect();
+
+        Ok(root_groups)
+    }
+
+    /// Chunked batched edge-expansion: splits roots into chunks of
+    /// `BATCH_CHUNK_SIZE` and runs one batched query per chunk, then merges
+    /// results while preserving root ordering. Parallel to
+    /// [`Self::read_expansion_nodes_chunked`] but emits `(EdgeRow, NodeRow)`
+    /// pairs instead of plain nodes.
+    fn read_edge_expansion_chunked(
+        &self,
+        roots: &[NodeRow],
+        expansion: &EdgeExpansionSlot,
+        hard_limit: usize,
+    ) -> Result<Vec<EdgeExpansionRootRows>, EngineError> {
+        if roots.len() <= BATCH_CHUNK_SIZE {
+            return self.read_edge_expansion_batched(roots, expansion, hard_limit);
+        }
+
+        let mut per_root: HashMap<String, Vec<(EdgeRow, NodeRow)>> = HashMap::new();
+        for chunk in roots.chunks(BATCH_CHUNK_SIZE) {
+            for group in self.read_edge_expansion_batched(chunk, expansion, hard_limit)? {
+                per_root
+                    .entry(group.root_logical_id)
+                    .or_default()
+                    .extend(group.pairs);
+            }
+        }
+
+        Ok(roots
+            .iter()
+            .map(|root| EdgeExpansionRootRows {
+                root_logical_id: root.logical_id.clone(),
+                pairs: per_root.remove(&root.logical_id).unwrap_or_default(),
+            })
+            .collect())
+    }
+
+    /// Batched edge-expansion: one recursive CTE per slot that joins the
+    /// final-hop edge row back onto the endpoint node, producing
+    /// `(EdgeRow, NodeRow)` pairs per root.
+    ///
+    /// Security: `edge_filter` and `endpoint_filter` are compiled to
+    /// parameterized SQL fragments via [`compile_edge_filter`] and
+    /// [`compile_expansion_filter`]; user-authored values always arrive as
+    /// bind parameters, never as interpolated SQL text.
+    #[allow(clippy::too_many_lines)]
+    fn read_edge_expansion_batched(
+        &self,
+        roots: &[NodeRow],
+        expansion: &EdgeExpansionSlot,
+        hard_limit: usize,
+    ) -> Result<Vec<EdgeExpansionRootRows>, EngineError> {
+        let root_ids: Vec<&str> = roots.iter().map(|r| r.logical_id.as_str()).collect();
+        let (join_condition, next_logical_id) = match expansion.direction {
+            fathomdb_query::TraverseDirection::Out => {
+                ("e.source_logical_id = t.logical_id", "e.target_logical_id")
+            }
+            fathomdb_query::TraverseDirection::In => {
+                ("e.target_logical_id = t.logical_id", "e.source_logical_id")
+            }
+        };
+
+        // Execute-time validation: fused endpoint filter requires a registered
+        // property-FTS schema covering every reachable target kind.
+        if expansion.endpoint_filter.as_ref().is_some_and(|f| {
+            matches!(
+                f,
+                Predicate::JsonPathFusedEq { .. }
+                    | Predicate::JsonPathFusedTimestampCmp { .. }
+                    | Predicate::JsonPathFusedIn { .. }
+            )
+        }) {
+            self.validate_fused_filter_for_edge_label(&expansion.label)?;
+        }
+
+        let root_seed_union: String = (1..=root_ids.len())
+            .map(|i| format!("SELECT ?{i}"))
+            .collect::<Vec<_>>()
+            .join(" UNION ALL ");
+
+        let edge_kind_param = root_ids.len() + 1;
+        let edge_filter_param_start = root_ids.len() + 2;
+
+        let (edge_filter_sql, edge_filter_binds) =
+            compile_edge_filter(expansion.edge_filter.as_ref(), edge_filter_param_start);
+
+        let endpoint_filter_param_start = edge_filter_param_start + edge_filter_binds.len();
+        let (endpoint_filter_sql, endpoint_filter_binds) = compile_expansion_filter(
+            expansion.endpoint_filter.as_ref(),
+            endpoint_filter_param_start,
+        );
+
+        // The `traversed` CTE carries the final-hop edge's row_id so we can
+        // rejoin onto `edges` to project the full edge shape. Seeds use
+        // `NULL` for edge_row_id; `WHERE t.depth > 0` in the `numbered` CTE
+        // excludes the seeds so we never emit a NULL-edge row.
+        let sql = format!(
+            "WITH RECURSIVE root_ids(rid) AS ({root_seed_union}),
+            traversed(root_id, logical_id, depth, visited, emitted, edge_row_id) AS (
+                SELECT rid, rid, 0, printf(',%s,', rid), 0, NULL AS edge_row_id
+                FROM root_ids
+                UNION ALL
+                SELECT
+                    t.root_id,
+                    {next_logical_id},
+                    t.depth + 1,
+                    t.visited || {next_logical_id} || ',',
+                    t.emitted + 1,
+                    e.row_id AS edge_row_id
+                FROM traversed t
+                JOIN edges e ON {join_condition}
+                    AND e.kind = ?{edge_kind_param}
+                    AND e.superseded_at IS NULL{edge_filter_sql}
+                WHERE t.depth < {max_depth}
+                  AND t.emitted < {hard_limit}
+                  AND instr(t.visited, printf(',%s,', {next_logical_id})) = 0
+            ),
+            numbered AS (
+                SELECT t.root_id,
+                       e.row_id AS e_row_id,
+                       e.logical_id AS e_logical_id,
+                       e.source_logical_id AS e_source,
+                       e.target_logical_id AS e_target,
+                       e.kind AS e_kind,
+                       e.properties AS e_properties,
+                       e.source_ref AS e_source_ref,
+                       e.confidence AS e_confidence,
+                       n.row_id AS n_row_id,
+                       n.logical_id AS n_logical_id,
+                       n.kind AS n_kind,
+                       n.properties AS n_properties,
+                       n.content_ref AS n_content_ref,
+                       am.last_accessed_at AS n_last_accessed_at,
+                       ROW_NUMBER() OVER (PARTITION BY t.root_id ORDER BY n.logical_id, e.row_id) AS rn
+                FROM traversed t
+                JOIN edges e ON e.row_id = t.edge_row_id
+                JOIN nodes n ON n.logical_id = t.logical_id
+                    AND n.superseded_at IS NULL
+                LEFT JOIN node_access_metadata am ON am.logical_id = n.logical_id
+                WHERE t.depth > 0{endpoint_filter_sql}
+            )
+            SELECT root_id,
+                   e_row_id, e_logical_id, e_source, e_target, e_kind, e_properties,
+                   e_source_ref, e_confidence,
+                   n_row_id, n_logical_id, n_kind, n_properties, n_content_ref,
+                   n_last_accessed_at
+            FROM numbered
+            WHERE rn <= {hard_limit}
+            ORDER BY root_id, n_logical_id, e_row_id",
+            max_depth = expansion.max_depth,
+        );
+
+        let conn_guard = self.lock_connection()?;
+        let mut statement = conn_guard
+            .prepare_cached(&sql)
+            .map_err(EngineError::Sqlite)?;
+
+        let mut bind_values: Vec<Value> = root_ids
+            .iter()
+            .map(|id| Value::Text((*id).to_owned()))
+            .collect();
+        bind_values.push(Value::Text(expansion.label.clone()));
+        bind_values.extend(edge_filter_binds);
+        bind_values.extend(endpoint_filter_binds);
+
+        let rows = statement
+            .query_map(params_from_iter(bind_values.iter()), |row| {
+                let root_id: String = row.get(0)?;
+                let edge_row = EdgeRow {
+                    row_id: row.get(1)?,
+                    logical_id: row.get(2)?,
+                    source_logical_id: row.get(3)?,
+                    target_logical_id: row.get(4)?,
+                    kind: row.get(5)?,
+                    properties: row.get(6)?,
+                    source_ref: row.get(7)?,
+                    confidence: row.get(8)?,
+                };
+                let node_row = NodeRow {
+                    row_id: row.get(9)?,
+                    logical_id: row.get(10)?,
+                    kind: row.get(11)?,
+                    properties: row.get(12)?,
+                    content_ref: row.get(13)?,
+                    last_accessed_at: row.get(14)?,
+                    edge_properties: None,
+                };
+                Ok((root_id, edge_row, node_row))
+            })
+            .map_err(EngineError::Sqlite)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(EngineError::Sqlite)?;
+
+        let mut per_root: HashMap<String, Vec<(EdgeRow, NodeRow)>> = HashMap::new();
+        for (root_id, edge, node) in rows {
+            per_root.entry(root_id).or_default().push((edge, node));
+        }
+
+        let root_groups = roots
+            .iter()
+            .map(|root| EdgeExpansionRootRows {
+                root_logical_id: root.logical_id.clone(),
+                pairs: per_root.remove(&root.logical_id).unwrap_or_default(),
             })
             .collect();
 

@@ -6,8 +6,8 @@ use crate::search::{
     CompiledRetrievalPlan, CompiledSearch, CompiledSearchPlan, CompiledVectorSearch,
 };
 use crate::{
-    ComparisonOp, DrivingTable, ExpansionSlot, Predicate, QueryAst, QueryStep, ScalarValue,
-    TextQuery, TraverseDirection, derive_relaxed, render_text_query_fts5,
+    ComparisonOp, DrivingTable, EdgeExpansionSlot, ExpansionSlot, Predicate, QueryAst, QueryStep,
+    ScalarValue, TextQuery, TraverseDirection, derive_relaxed, render_text_query_fts5,
 };
 
 /// A typed bind value for a compiled SQL query parameter.
@@ -47,6 +47,8 @@ pub struct CompiledGroupedQuery {
     pub root: CompiledQuery,
     /// Expansion slots to evaluate per root result.
     pub expansions: Vec<ExpansionSlot>,
+    /// Edge-projecting expansion slots to evaluate per root result.
+    pub edge_expansions: Vec<EdgeExpansionSlot>,
     /// Structural shape hash covering the root query and all expansion slots.
     pub shape_hash: ShapeHash,
     /// Execution hints derived from the grouped query shape.
@@ -810,6 +812,7 @@ pub fn compile_grouped_query(ast: &QueryAst) -> Result<CompiledGroupedQuery, Com
     Ok(CompiledGroupedQuery {
         root,
         expansions: ast.expansions.clone(),
+        edge_expansions: ast.edge_expansions.clone(),
         shape_hash,
         hints,
     })
