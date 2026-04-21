@@ -388,6 +388,35 @@ pub struct NodeRow {
     pub edge_properties: Option<String>,
 }
 
+/// A single edge row surfaced during edge-projecting traversal.
+///
+/// Columns are sourced directly from the `edges` table; identity
+/// fields (`source_logical_id`, `target_logical_id`) are absolute
+/// (tail/head as stored), not re-oriented to traversal direction.
+///
+/// Multi-hop semantics: for `max_depth > 1`, each emitted tuple
+/// reflects the final-hop edge leading to the emitted endpoint node.
+/// Full path enumeration is out of scope for 0.5.3.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EdgeRow {
+    /// Physical row ID from the `edges` table.
+    pub row_id: String,
+    /// Logical ID of the edge.
+    pub logical_id: String,
+    /// Logical ID of the edge source (tail).
+    pub source_logical_id: String,
+    /// Logical ID of the edge target (head).
+    pub target_logical_id: String,
+    /// Edge kind (label).
+    pub kind: String,
+    /// JSON-encoded edge properties.
+    pub properties: String,
+    /// Optional source reference for provenance tracking.
+    pub source_ref: Option<String>,
+    /// Optional confidence score attached to the edge.
+    pub confidence: Option<f64>,
+}
+
 /// A single run row returned from a query.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RunRow {

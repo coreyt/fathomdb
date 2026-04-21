@@ -18,7 +18,7 @@ mod write_request_builder;
 pub use fathomdb_engine::BuiltinBgeSmallEmbedder;
 pub use fathomdb_engine::{
     ActionInsert, ActionRow, AdminHandle, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire,
-    EmbedderError, EngineError, EngineRuntime, ExecutionCoordinator, ExpansionRootRows,
+    EdgeRow, EmbedderError, EngineError, EngineRuntime, ExecutionCoordinator, ExpansionRootRows,
     ExpansionSlotRows, FtsPropertyPathMode, FtsPropertyPathSpec, FtsPropertySchemaRecord,
     GroupedQueryRows, LastAccessTouchReport, LastAccessTouchRequest, LogicalPurgeReport,
     LogicalRestoreReport, NodeInsert, NodeRetire, NodeRow, OperationalCollectionKind,
