@@ -4,9 +4,10 @@ use fathomdb_query::TextQuery;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    BindValue, ComparisonOp, CompiledGroupedQuery, CompiledQuery, DrivingTable, ExecutionHints,
-    ExpansionRootRows, ExpansionSlot, ExpansionSlotRows, GroupedQueryRows, LastAccessTouchReport,
-    LastAccessTouchRequest, OperationalWrite, OptionalProjectionTask, Predicate,
+    BindValue, ComparisonOp, CompiledGroupedQuery, CompiledQuery, DrivingTable,
+    EdgeExpansionRootRows, EdgeExpansionSlotRows, EdgeRow, ExecutionHints, ExpansionRootRows,
+    ExpansionSlot, ExpansionSlotRows, GroupedQueryRows, LastAccessTouchReport,
+    LastAccessTouchRequest, NodeRow, OperationalWrite, OptionalProjectionTask, Predicate,
     ProjectionRepairReport, ProjectionTarget, QueryPlan, QueryRows, QueryStep, RunRow,
     SafeExportManifest, ScalarValue, StepRow, TraverseDirection, WriteReceipt, WriteRequest,
 };
@@ -888,10 +889,59 @@ impl From<ExpansionSlotRows> for FfiExpansionSlotRows {
     }
 }
 
+/// A single `(edge, endpoint)` pair emitted by an edge-projecting expansion
+/// slot. Named-struct wire shape (NOT a serde tuple) for cross-SDK
+/// unambiguous JSON object decoding.
+#[derive(Debug, Serialize)]
+pub struct FfiEdgeExpansionPair {
+    pub edge: FfiEdgeRow,
+    pub endpoint: FfiNodeRow,
+}
+
+impl From<(EdgeRow, NodeRow)> for FfiEdgeExpansionPair {
+    fn from(value: (EdgeRow, NodeRow)) -> Self {
+        Self {
+            edge: value.0.into(),
+            endpoint: value.1.into(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct FfiEdgeExpansionRootRows {
+    pub root_logical_id: String,
+    pub pairs: Vec<FfiEdgeExpansionPair>,
+}
+
+impl From<EdgeExpansionRootRows> for FfiEdgeExpansionRootRows {
+    fn from(value: EdgeExpansionRootRows) -> Self {
+        Self {
+            root_logical_id: value.root_logical_id,
+            pairs: value.pairs.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct FfiEdgeExpansionSlotRows {
+    pub slot: String,
+    pub roots: Vec<FfiEdgeExpansionRootRows>,
+}
+
+impl From<EdgeExpansionSlotRows> for FfiEdgeExpansionSlotRows {
+    fn from(value: EdgeExpansionSlotRows) -> Self {
+        Self {
+            slot: value.slot,
+            roots: value.roots.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct FfiGroupedQueryRows {
     pub roots: Vec<FfiNodeRow>,
     pub expansions: Vec<FfiExpansionSlotRows>,
+    pub edge_expansions: Vec<FfiEdgeExpansionSlotRows>,
     pub was_degraded: bool,
 }
 
@@ -900,6 +950,7 @@ impl From<GroupedQueryRows> for FfiGroupedQueryRows {
         Self {
             roots: value.roots.into_iter().map(Into::into).collect(),
             expansions: value.expansions.into_iter().map(Into::into).collect(),
+            edge_expansions: value.edge_expansions.into_iter().map(Into::into).collect(),
             was_degraded: value.was_degraded,
         }
     }
@@ -2020,7 +2071,6 @@ impl From<crate::NodeRow> for FfiNodeRow {
     }
 }
 
-#[allow(dead_code)] // consumed by Pack C edge-expansion wire types
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct FfiEdgeRow {
     pub row_id: String,
