@@ -57,6 +57,7 @@ describe("WriteRequestBuilder (pure TS)", () => {
         root_kind: "Meeting",
         steps: [],
         expansions: [],
+        edge_expansions: [],
         final_limit: null,
       });
       expect(query.toAst()).toEqual({
@@ -68,6 +69,7 @@ describe("WriteRequestBuilder (pure TS)", () => {
         expansions: [
           { slot: "neighbors", direction: "out", label: "depends_on", max_depth: 2 },
         ],
+        edge_expansions: [],
         final_limit: 10,
       });
     } finally {
