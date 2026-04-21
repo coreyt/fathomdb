@@ -338,6 +338,7 @@ impl From<FfiQueryAst> for crate::QueryAst {
             root_kind: value.root_kind,
             steps,
             expansions,
+            edge_expansions: Vec::new(),
             final_limit: value.final_limit,
         }
     }

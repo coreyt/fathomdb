@@ -9,9 +9,10 @@ mod sql_adapt;
 mod text_query;
 
 pub use ast::{
-    ComparisonOp, ExpansionSlot, Predicate, QueryAst, QueryStep, ScalarValue, TraverseDirection,
+    ComparisonOp, EdgeExpansionSlot, ExpansionSlot, Predicate, QueryAst, QueryStep, ScalarValue,
+    TraverseDirection,
 };
-pub use builder::{BuilderValidationError, QueryBuilder};
+pub use builder::{BuilderValidationError, EdgeExpansionBuilder, QueryBuilder};
 #[doc(hidden)]
 pub use compile::compile_search_plan;
 pub use compile::{

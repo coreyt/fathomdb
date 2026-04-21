@@ -1,7 +1,7 @@
 use crate::{
-    ComparisonOp, CompileError, CompiledGroupedQuery, CompiledQuery, ExpansionSlot, Predicate,
-    QueryAst, QueryStep, ScalarValue, TextQuery, TraverseDirection, compile_grouped_query,
-    compile_query,
+    ComparisonOp, CompileError, CompiledGroupedQuery, CompiledQuery, EdgeExpansionSlot,
+    ExpansionSlot, Predicate, QueryAst, QueryStep, ScalarValue, TextQuery, TraverseDirection,
+    compile_grouped_query, compile_query,
 };
 
 /// Errors raised by tethered search builders when a caller opts into a
@@ -70,6 +70,7 @@ impl QueryBuilder {
                 root_kind: kind.into(),
                 steps: Vec::new(),
                 expansions: Vec::new(),
+                edge_expansions: Vec::new(),
                 final_limit: None,
             },
         }
@@ -461,6 +462,37 @@ impl QueryBuilder {
         self
     }
 
+    /// Begin registering an edge-projecting expansion slot. Chain
+    /// [`EdgeExpansionBuilder::edge_filter`] /
+    /// [`EdgeExpansionBuilder::endpoint_filter`] to attach predicates,
+    /// then call [`EdgeExpansionBuilder::done`] to return this builder.
+    ///
+    /// Emits `(EdgeRow, NodeRow)` tuples per root on execution. The
+    /// endpoint node is the target on `Out` traversal, source on `In`.
+    /// Slot name must be unique across both node- and edge-expansions
+    /// within the same query; collisions are reported by
+    /// [`Self::compile_grouped`].
+    #[must_use]
+    pub fn traverse_edges(
+        self,
+        slot: impl Into<String>,
+        direction: TraverseDirection,
+        label: impl Into<String>,
+        max_depth: usize,
+    ) -> EdgeExpansionBuilder {
+        EdgeExpansionBuilder {
+            parent: self,
+            slot: EdgeExpansionSlot {
+                slot: slot.into(),
+                direction,
+                label: label.into(),
+                max_depth,
+                endpoint_filter: None,
+                edge_filter: None,
+            },
+        }
+    }
+
     /// Set the maximum number of result rows.
     #[must_use]
     pub fn limit(mut self, limit: usize) -> Self {
@@ -498,6 +530,43 @@ impl QueryBuilder {
     /// constraints such as duplicate slot names or excessive depth.
     pub fn compile_grouped(&self) -> Result<CompiledGroupedQuery, CompileError> {
         compile_grouped_query(&self.ast)
+    }
+}
+
+/// Chained builder for an edge-projecting expansion slot. Returned by
+/// [`QueryBuilder::traverse_edges`]; call [`Self::done`] to append the
+/// slot to the parent `QueryBuilder` and resume chaining.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EdgeExpansionBuilder {
+    parent: QueryBuilder,
+    slot: EdgeExpansionSlot,
+}
+
+impl EdgeExpansionBuilder {
+    /// Attach an edge-property predicate. Only `EdgePropertyEq` and
+    /// `EdgePropertyCompare` are valid here; other variants are accepted
+    /// by the AST but will be rejected downstream during edge-expansion
+    /// compilation.
+    #[must_use]
+    pub fn edge_filter(mut self, predicate: Predicate) -> Self {
+        self.slot.edge_filter = Some(predicate);
+        self
+    }
+
+    /// Attach an endpoint-node predicate (applied to the target node on
+    /// `Out` traversal, source node on `In`).
+    #[must_use]
+    pub fn endpoint_filter(mut self, predicate: Predicate) -> Self {
+        self.slot.endpoint_filter = Some(predicate);
+        self
+    }
+
+    /// Finalize the edge-expansion slot and return the parent
+    /// `QueryBuilder` for further chaining.
+    #[must_use]
+    pub fn done(mut self) -> QueryBuilder {
+        self.parent.ast.edge_expansions.push(self.slot);
+        self.parent
     }
 }
 

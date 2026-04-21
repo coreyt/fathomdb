@@ -9,8 +9,38 @@ pub struct QueryAst {
     pub steps: Vec<QueryStep>,
     /// Named expansion slots evaluated per root result in grouped queries.
     pub expansions: Vec<ExpansionSlot>,
+    /// Named edge-projecting expansion slots evaluated per root result in
+    /// grouped queries. Sibling to `expansions`; vec membership is the
+    /// discriminator between node- and edge-expansion slots. Slot names
+    /// must be unique across both vecs.
+    pub edge_expansions: Vec<EdgeExpansionSlot>,
     /// Optional hard cap on the number of result rows.
     pub final_limit: Option<usize>,
+}
+
+/// An edge-projecting expansion slot.
+///
+/// Emits `(EdgeRow, NodeRow)` tuples per root on execution. The endpoint
+/// node is the target on `Out` traversal, source on `In`. For
+/// `max_depth > 1`, each emitted tuple reflects the final-hop edge
+/// leading to the emitted endpoint node.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EdgeExpansionSlot {
+    /// Slot name used to key the expansion results. Must be unique across
+    /// both node-expansion and edge-expansion slots in the same query.
+    pub slot: String,
+    /// Direction to traverse edges.
+    pub direction: TraverseDirection,
+    /// Edge kind (label) to follow.
+    pub label: String,
+    /// Maximum traversal depth.
+    pub max_depth: usize,
+    /// Optional predicate filtering the endpoint node (the target side on
+    /// `Out`, the source side on `In`). Reuses the `Predicate` enum.
+    pub endpoint_filter: Option<Predicate>,
+    /// Optional predicate filtering the traversed edges. Only
+    /// `EdgePropertyEq` and `EdgePropertyCompare` are valid here.
+    pub edge_filter: Option<Predicate>,
 }
 
 /// A named expansion slot that traverses edges per root result.
