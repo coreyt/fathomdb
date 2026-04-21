@@ -588,6 +588,7 @@ fn build_filter_ast(request: &PySearchRequest) -> QueryAst {
         root_kind: request.root_kind.clone(),
         steps,
         expansions: Vec::new(),
+        edge_expansions: Vec::new(),
         final_limit: None,
     }
 }

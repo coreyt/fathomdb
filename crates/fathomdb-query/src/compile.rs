@@ -787,6 +787,19 @@ pub fn compile_grouped_query(ast: &QueryAst) -> Result<CompiledGroupedQuery, Com
             return Err(CompileError::DuplicateExpansionSlot(expansion.slot.clone()));
         }
     }
+    for edge_expansion in &ast.edge_expansions {
+        if edge_expansion.slot.trim().is_empty() {
+            return Err(CompileError::EmptyExpansionSlotName);
+        }
+        if edge_expansion.max_depth > MAX_TRAVERSAL_DEPTH {
+            return Err(CompileError::TraversalTooDeep(edge_expansion.max_depth));
+        }
+        if !seen.insert(edge_expansion.slot.clone()) {
+            return Err(CompileError::DuplicateExpansionSlot(
+                edge_expansion.slot.clone(),
+            ));
+        }
+    }
 
     let mut root_ast = ast.clone();
     root_ast.expansions.clear();
@@ -1706,6 +1719,7 @@ mod tests {
                 QueryStep::Filter(Predicate::KindEq("Goal".to_owned())),
             ],
             expansions: vec![],
+            edge_expansions: vec![],
             final_limit: None,
         };
         let plan = compile_retrieval_plan(&ast).expect("compiles");
@@ -1773,6 +1787,7 @@ mod tests {
                 },
             ],
             expansions: vec![],
+            edge_expansions: vec![],
             final_limit: None,
         };
         let result = compile_retrieval_plan(&ast);
@@ -1798,6 +1813,7 @@ mod tests {
                     limit: 10,
                 }],
                 expansions: vec![],
+                edge_expansions: vec![],
                 final_limit: None,
             };
             let plan = compile_retrieval_plan(&ast).expect("compiles");

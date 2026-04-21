@@ -256,6 +256,7 @@ mod tests {
             root_kind: "Meeting".to_owned(),
             steps: vec![],
             expansions: vec![base_expansion.clone()],
+            edge_expansions: vec![],
             final_limit: None,
         };
 
@@ -269,6 +270,7 @@ mod tests {
                 }),
                 ..base_expansion.clone()
             }],
+            edge_expansions: vec![],
             final_limit: None,
         };
 
@@ -283,6 +285,7 @@ mod tests {
                 }),
                 ..base_expansion
             }],
+            edge_expansions: vec![],
             final_limit: None,
         };
 
