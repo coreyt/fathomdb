@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] — 2026-04-20
+
 ### Added
 
 - **Edge-projecting traversal via `.traverse_edges(...)`** in the query builder across Rust, Python, and TypeScript. Sibling of `.expand(...)`. Surfaces **both the traversed edge and its endpoint node** per row as a pair, giving callers first-class access to edge identity, `kind`, `properties`, `source_ref`, and `confidence` without a second round trip. Chainable with `edge_filter(...)` / `endpoint_filter(...)` (Rust via `EdgeExpansionBuilder::{edge_filter, endpoint_filter, done}`; Python / TypeScript as kwargs / options). Composes with `.expand(...)` — a single grouped query may mix node-projecting and edge-projecting slots; slot-name collisions raise `BuilderValidationError::DuplicateSlot` at builder time.
