@@ -1,6 +1,6 @@
 #![cfg(any(feature = "python", feature = "node"))]
 
-use fathomdb_query::TextQuery;
+use fathomdb_query::{EdgeExpansionSlot, TextQuery};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -22,7 +22,33 @@ pub struct FfiQueryAst {
     pub steps: Vec<FfiQueryStep>,
     #[serde(default)]
     pub expansions: Vec<FfiExpansionSlot>,
+    /// Edge-projecting expansion slots. Optional on the wire for
+    /// pre-0.5.3 clients that don't emit the key; authoritative when
+    /// present.
+    #[serde(default)]
+    pub edge_expansions: Vec<FfiEdgeExpansionSlot>,
     pub final_limit: Option<usize>,
+}
+
+/// Deserialize shape for an edge-projecting expansion slot. Mirrors
+/// `EdgeExpansionSlot` in the AST. Both `edge_filter` and
+/// `endpoint_filter` use the same filter-step dict format as
+/// `FfiExpansionSlot.filter` / `FfiExpansionSlot.edge_filter`.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct FfiEdgeExpansionSlot {
+    pub slot: String,
+    pub direction: FfiTraverseDirection,
+    pub label: String,
+    pub max_depth: usize,
+    /// Optional edge filter predicate applied to the traversed edges.
+    /// Serialized as a filter-step dict, e.g.
+    /// `{"type": "edge_property_eq", "path": "$.rel", "value": "cites"}`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edge_filter: Option<serde_json::Value>,
+    /// Optional endpoint-node filter predicate (target on OUT, source
+    /// on IN). Serialized as a filter-step dict.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint_filter: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -335,11 +361,24 @@ impl From<FfiQueryAst> for crate::QueryAst {
             })
             .collect();
 
+        let edge_expansions = value
+            .edge_expansions
+            .into_iter()
+            .map(|slot| EdgeExpansionSlot {
+                slot: slot.slot,
+                direction: slot.direction.into(),
+                label: slot.label,
+                max_depth: slot.max_depth,
+                endpoint_filter: slot.endpoint_filter.and_then(ffi_filter_value_to_predicate),
+                edge_filter: slot.edge_filter.and_then(ffi_filter_value_to_predicate),
+            })
+            .collect();
+
         Self {
             root_kind: value.root_kind,
             steps,
             expansions,
-            edge_expansions: Vec::new(),
+            edge_expansions,
             final_limit: value.final_limit,
         }
     }
@@ -1242,6 +1281,65 @@ mod tests {
 
     /// Rejects an unrecognized step type so Python gets a clear error instead
     /// of silent data loss.
+    #[test]
+    fn ffi_query_ast_edge_expansions_roundtrip() {
+        // JSON mirrors the wire format emitted by Python/TypeScript
+        // `.traverse_edges(...)` / `.traverseEdges(...)`. The deserialize
+        // path must decode every field into a first-class
+        // `EdgeExpansionSlot` on the resulting `QueryAst`.
+        let ast_json = r#"{
+            "root_kind": "Meeting",
+            "steps": [],
+            "expansions": [],
+            "edge_expansions": [
+                {
+                    "slot": "tasks",
+                    "direction": "out",
+                    "label": "HAS_TASK",
+                    "max_depth": 2,
+                    "edge_filter": {
+                        "type": "edge_property_eq",
+                        "path": "$.rel",
+                        "value": "owns"
+                    },
+                    "endpoint_filter": {
+                        "type": "filter_kind_eq",
+                        "kind": "Task"
+                    }
+                }
+            ]
+        }"#;
+        let ffi_ast: FfiQueryAst = serde_json::from_str(ast_json).expect("parse FfiQueryAst");
+        let ast = QueryAst::from(ffi_ast);
+        assert_eq!(ast.edge_expansions.len(), 1);
+        let slot = &ast.edge_expansions[0];
+        assert_eq!(slot.slot, "tasks");
+        assert_eq!(slot.direction, crate::TraverseDirection::Out);
+        assert_eq!(slot.label, "HAS_TASK");
+        assert_eq!(slot.max_depth, 2);
+        match &slot.edge_filter {
+            Some(Predicate::EdgePropertyEq { path, value }) => {
+                assert_eq!(path, "$.rel");
+                assert_eq!(*value, ScalarValue::Text("owns".into()));
+            }
+            other => panic!("expected EdgePropertyEq edge_filter, got {other:?}"),
+        }
+        match &slot.endpoint_filter {
+            Some(Predicate::KindEq(kind)) => assert_eq!(kind, "Task"),
+            other => panic!("expected KindEq endpoint_filter, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ffi_query_ast_edge_expansions_default_empty_when_absent() {
+        // Pre-0.5.3 clients (no traverse_edges) don't emit the key.
+        // Deserialize must still succeed and yield an empty vec.
+        let ast_json = r#"{"root_kind":"Meeting","steps":[]}"#;
+        let ffi_ast: FfiQueryAst = serde_json::from_str(ast_json).expect("parse FfiQueryAst");
+        let ast = QueryAst::from(ffi_ast);
+        assert!(ast.edge_expansions.is_empty());
+    }
+
     #[test]
     fn step_unknown_type_tag_is_rejected() {
         let result = serde_json::from_str::<FfiQueryStep>(
