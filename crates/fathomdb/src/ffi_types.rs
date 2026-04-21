@@ -1897,6 +1897,39 @@ mod tests {
     }
 
     #[test]
+    fn edge_row_ffi_roundtrip() {
+        use super::FfiEdgeRow;
+        use crate::EdgeRow;
+
+        let row = EdgeRow {
+            row_id: "er-abc".into(),
+            logical_id: "el-xyz".into(),
+            source_logical_id: "src-1".into(),
+            target_logical_id: "tgt-2".into(),
+            kind: "assigned_to".into(),
+            properties: r#"{"risk_class":"high"}"#.into(),
+            source_ref: None,
+            confidence: Some(0.93),
+        };
+
+        let ffi: FfiEdgeRow = row.into();
+        let json = serde_json::to_string(&ffi).expect("serialize");
+        let back: FfiEdgeRow = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(ffi, back);
+
+        // Spot-check wire shape against design §7.
+        let value: serde_json::Value = serde_json::from_str(&json).expect("parse");
+        assert_eq!(value["row_id"], "er-abc");
+        assert_eq!(value["logical_id"], "el-xyz");
+        assert_eq!(value["source_logical_id"], "src-1");
+        assert_eq!(value["target_logical_id"], "tgt-2");
+        assert_eq!(value["kind"], "assigned_to");
+        assert_eq!(value["properties"], r#"{"risk_class":"high"}"#);
+        assert!(value["source_ref"].is_null());
+        assert_eq!(value["confidence"], 0.93);
+    }
+
+    #[test]
     fn run_row_serializes_all_fields() {
         use super::FfiRunRow;
         use crate::RunRow;
@@ -1982,6 +2015,34 @@ impl From<crate::NodeRow> for FfiNodeRow {
             content_ref: value.content_ref,
             last_accessed_at: value.last_accessed_at,
             edge_properties: value.edge_properties,
+        }
+    }
+}
+
+#[allow(dead_code)] // consumed by Pack C edge-expansion wire types
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct FfiEdgeRow {
+    pub row_id: String,
+    pub logical_id: String,
+    pub source_logical_id: String,
+    pub target_logical_id: String,
+    pub kind: String,
+    pub properties: String,
+    pub source_ref: Option<String>,
+    pub confidence: Option<f64>,
+}
+
+impl From<crate::EdgeRow> for FfiEdgeRow {
+    fn from(value: crate::EdgeRow) -> Self {
+        Self {
+            row_id: value.row_id,
+            logical_id: value.logical_id,
+            source_logical_id: value.source_logical_id,
+            target_logical_id: value.target_logical_id,
+            kind: value.kind,
+            properties: value.properties,
+            source_ref: value.source_ref,
+            confidence: value.confidence,
         }
     }
 }

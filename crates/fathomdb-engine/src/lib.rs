@@ -22,8 +22,8 @@ pub use admin::{
     VectorRegenerationConfig, VectorRegenerationReport, load_vector_regeneration_config,
 };
 pub use coordinator::{
-    ActionRow, ExecutionCoordinator, ExpansionRootRows, ExpansionSlotRows, GroupedQueryRows,
-    NodeRow, ProvenanceEvent, QueryPlan, QueryRows, RunRow, StepRow,
+    ActionRow, EdgeRow, ExecutionCoordinator, ExpansionRootRows, ExpansionSlotRows,
+    GroupedQueryRows, NodeRow, ProvenanceEvent, QueryPlan, QueryRows, RunRow, StepRow,
 };
 #[cfg(feature = "default-embedder")]
 pub use embedder::BuiltinBgeSmallEmbedder;
