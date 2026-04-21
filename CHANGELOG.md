@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- **Removed `NodeRow.edge_properties`** (and the corresponding `FfiNodeRow.edge_properties` wire field). Callers that previously read edge metadata from the node row must read it from the companion `EdgeRow` in each `(EdgeRow, NodeRow)` pair returned by `.traverse_edges(...)`. The node-expand CTE SQL loses the `edge_properties` column as part of this change (single byte-changing edit to node-expand SQL for 0.5.3; plan-cache churn bounded to one shape).
+
+  Migration — replace `node.edge_properties` with the JSON-encoded `EdgeRow.properties` on the companion pair:
+
+  ```rust
+  // Before (0.5.2 and earlier):
+  let compiled = engine
+      .query("Paper")
+      .filter_logical_id_eq("paper-a")
+      .expand("cited", TraverseDirection::Out, "CITES", 1, None, None)
+      .compile_grouped()?;
+  let rows = engine.coordinator().execute_compiled_grouped_read(&compiled)?;
+  for node in &rows.expansions[0].roots[0].nodes {
+      let edge_props_json: Option<&str> = node.edge_properties.as_deref();
+      // ...
+  }
+
+  // After (0.5.3):
+  let compiled = engine
+      .query("Paper")
+      .filter_logical_id_eq("paper-a")
+      .traverse_edges("cited", TraverseDirection::Out, "CITES", 1)
+      .done()
+      .compile_grouped()?;
+  let rows = engine.coordinator().execute_compiled_grouped_read(&compiled)?;
+  for (edge_row, node_row) in &rows.edge_expansions[0].roots[0].pairs {
+      let edge_props_json: &str = &edge_row.properties;
+      // ...
+  }
+  ```
+
 ## [0.5.2] — 2026-04-18
 
 ### Fixed

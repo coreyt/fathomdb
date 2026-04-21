@@ -1734,7 +1734,9 @@ fn expand_with_fused_filter_against_kind_without_schema_raises_error() {
 
 // ---------------------------------------------------------------------------
 // Pack D: EdgePropertyEq / EdgePropertyCompare — edge property filter in
-// traversal + edge_properties in results.
+// traversal. Edge-properties-in-results coverage lives in
+// `tests/expansion_edges.rs` (the EdgeRow path) after 0.5.3's removal of
+// `NodeRow.edge_properties`.
 // ---------------------------------------------------------------------------
 
 /// Seed a simple citation graph: node A --[CITES {rel:"cites"}]--> node B
@@ -1811,101 +1813,13 @@ fn seed_citation_graph(engine: &Engine) {
         .expect("seed citation graph");
 }
 
-#[test]
-fn edge_properties_survive_write_read_roundtrip() {
-    // Write-side round-trip test: edge property JSON must survive write/read
-    // intact and appear in expansion results as edge_properties.
-    let (_db, engine) = open_engine();
-    seed_citation_graph(&engine);
-
-    let compiled = engine
-        .query("Paper")
-        .filter_logical_id_eq("paper-a")
-        .expand("cited", TraverseDirection::Out, "CITES", 1, None, None)
-        .compile_grouped()
-        .expect("grouped query compiles");
-
-    let rows = engine
-        .coordinator()
-        .execute_compiled_grouped_read(&compiled)
-        .expect("grouped query executes");
-
-    assert_eq!(rows.roots.len(), 1);
-    assert_eq!(rows.expansions[0].slot, "cited");
-    let nodes = &rows.expansions[0].roots[0].nodes;
-    assert_eq!(nodes.len(), 2, "both B and C are reachable");
-
-    // All expansion hits must carry non-None edge_properties.
-    for node in nodes {
-        assert!(
-            node.edge_properties.is_some(),
-            "expansion hit {} must have edge_properties",
-            node.logical_id
-        );
-        // Verify the JSON is valid and has the expected structure.
-        let props: serde_json::Value = serde_json::from_str(
-            node.edge_properties
-                .as_ref()
-                .expect("edge_properties must be Some"),
-        )
-        .expect("edge_properties must be valid JSON");
-        assert!(
-            props["rel"].is_string(),
-            "edge_properties.rel must be a string for node {}",
-            node.logical_id
-        );
-    }
-}
-
-#[test]
-fn edge_property_eq_filter_returns_only_matching_edges() {
-    // EdgePropertyEq filter: only edges with rel="cites" should be traversed.
-    let (_db, engine) = open_engine();
-    seed_citation_graph(&engine);
-
-    let edge_filter = Predicate::EdgePropertyEq {
-        path: "$.rel".to_owned(),
-        value: ScalarValue::Text("cites".to_owned()),
-    };
-
-    let compiled = engine
-        .query("Paper")
-        .filter_logical_id_eq("paper-a")
-        .expand(
-            "cited",
-            TraverseDirection::Out,
-            "CITES",
-            1,
-            None,
-            Some(edge_filter),
-        )
-        .compile_grouped()
-        .expect("grouped query compiles");
-
-    let rows = engine
-        .coordinator()
-        .execute_compiled_grouped_read(&compiled)
-        .expect("grouped query executes");
-
-    assert_eq!(rows.roots.len(), 1);
-    let nodes = &rows.expansions[0].roots[0].nodes;
-    assert_eq!(
-        nodes.len(),
-        1,
-        "only paper-b is reachable via rel=cites edge"
-    );
-    assert_eq!(nodes[0].logical_id, "paper-b");
-
-    // The edge_properties for the matched hit must carry the cites rel.
-    let edge_props: serde_json::Value = serde_json::from_str(
-        nodes[0]
-            .edge_properties
-            .as_ref()
-            .expect("edge_properties must be Some"),
-    )
-    .expect("edge_properties is valid JSON");
-    assert_eq!(edge_props["rel"].as_str(), Some("cites"));
-}
+// Edge-property round-trip (was: edge_properties_survive_write_read_roundtrip)
+// and edge_filter carrying edge properties (was:
+// edge_property_eq_filter_returns_only_matching_edges) are now covered by
+// `tests/expansion_edges.rs::single_hop_out_emits_edge_row_fields` and
+// `edge_filter_narrows_pairs` respectively. Those tests read edge properties
+// from `EdgeRow.properties` on the `(EdgeRow, NodeRow)` pair, the migration
+// target for 0.5.3.
 
 #[test]
 fn edge_property_eq_filter_non_matching_returns_empty() {
