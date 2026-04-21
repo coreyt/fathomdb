@@ -70,6 +70,7 @@ export type QueryAst = {
   root_kind: string;
   steps: Array<Record<string, RawJson>>;
   expansions: Array<Record<string, RawJson>>;
+  edge_expansions: Array<Record<string, RawJson>>;
   final_limit: number | null;
 };
 
@@ -110,7 +111,6 @@ export type NodeRow = {
   properties: unknown;
   contentRef: string | null;
   lastAccessedAt: number | null;
-  edgeProperties: unknown | null;
 };
 
 function nodeRowFromWire(w: Record<string, unknown>): NodeRow {
@@ -121,7 +121,42 @@ function nodeRowFromWire(w: Record<string, unknown>): NodeRow {
     properties: parseJsonField(w.properties),
     contentRef: (w.content_ref as string) ?? null,
     lastAccessedAt: w.last_accessed_at != null ? Number(w.last_accessed_at) : null,
-    edgeProperties: w.edge_properties != null ? parseJsonField(w.edge_properties as string) : null,
+  };
+}
+
+/**
+ * A single edge row surfaced by an edge-projecting expansion slot.
+ *
+ * `properties` is JSON-encoded text; callers parse with `JSON.parse`,
+ * mirroring {@link NodeRow.properties} conventions. `sourceRef` and
+ * `confidence` are optional provenance fields that may be `null` when
+ * the edge was inserted without them.
+ *
+ * Multi-hop semantics: when the expansion slot's `maxDepth > 1`, the
+ * `EdgeRow` paired with each endpoint reflects the final-hop edge, not
+ * the full traversal path.
+ */
+export type EdgeRow = {
+  rowId: string;
+  logicalId: string;
+  sourceLogicalId: string;
+  targetLogicalId: string;
+  kind: string;
+  properties: string;
+  sourceRef: string | null;
+  confidence: number | null;
+};
+
+function edgeRowFromWire(w: Record<string, unknown>): EdgeRow {
+  return {
+    rowId: String(w.row_id ?? ""),
+    logicalId: String(w.logical_id ?? ""),
+    sourceLogicalId: String(w.source_logical_id ?? ""),
+    targetLogicalId: String(w.target_logical_id ?? ""),
+    kind: String(w.kind ?? ""),
+    properties: String(w.properties ?? ""),
+    sourceRef: w.source_ref != null ? String(w.source_ref) : null,
+    confidence: w.confidence != null ? Number(w.confidence) : null,
   };
 }
 
@@ -348,9 +383,60 @@ function expansionSlotRowsFromWire(w: Record<string, unknown>): ExpansionSlotRow
   };
 }
 
+/**
+ * A single `(edge, endpoint)` pair emitted by an edge-projecting
+ * expansion slot. TypeScript idiomatic shape uses named keys
+ * (`pair.edge` / `pair.endpoint`); Python decodes the same wire
+ * payload to a `tuple[EdgeRow, NodeRow]` for `for edge, endpoint in
+ * pairs:` unpack. The cross-SDK asymmetry is intentional (design §10).
+ */
+export type EdgeExpansionPair = {
+  edge: EdgeRow;
+  endpoint: NodeRow;
+};
+
+function edgeExpansionPairFromWire(w: Record<string, unknown>): EdgeExpansionPair {
+  return {
+    edge: edgeRowFromWire(asObj(w.edge)),
+    endpoint: nodeRowFromWire(asObj(w.endpoint)),
+  };
+}
+
+/** Edge-expansion results for a single root node within a slot. */
+export type EdgeExpansionRootRows = {
+  rootLogicalId: string;
+  pairs: EdgeExpansionPair[];
+};
+
+function edgeExpansionRootRowsFromWire(w: Record<string, unknown>): EdgeExpansionRootRows {
+  return {
+    rootLogicalId: String(w.root_logical_id ?? ""),
+    pairs: asArray(w.pairs).map(edgeExpansionPairFromWire),
+  };
+}
+
+/** A single edge-projecting expansion slot's grouped results. */
+export type EdgeExpansionSlotRows = {
+  slot: string;
+  roots: EdgeExpansionRootRows[];
+};
+
+function edgeExpansionSlotRowsFromWire(w: Record<string, unknown>): EdgeExpansionSlotRows {
+  return {
+    slot: String(w.slot ?? ""),
+    roots: asArray(w.roots).map(edgeExpansionRootRowsFromWire),
+  };
+}
+
 export type GroupedQueryRows = {
   roots: NodeRow[];
   expansions: ExpansionSlotRows[];
+  /**
+   * Edge-projecting expansion slots. Empty for queries that registered
+   * only node expansions via `.expand(...)`. Missing on the wire from
+   * pre-0.5.3 engines — decoder tolerates absence and yields `[]`.
+   */
+  edgeExpansions: EdgeExpansionSlotRows[];
   wasDegraded: boolean;
 };
 
@@ -358,6 +444,7 @@ export function groupedQueryRowsFromWire(w: Record<string, unknown>): GroupedQue
   return {
     roots: asArray(w.roots).map(nodeRowFromWire),
     expansions: asArray(w.expansions).map(expansionSlotRowsFromWire),
+    edgeExpansions: asArray(w.edge_expansions).map(edgeExpansionSlotRowsFromWire),
     wasDegraded: Boolean(w.was_degraded),
   };
 }

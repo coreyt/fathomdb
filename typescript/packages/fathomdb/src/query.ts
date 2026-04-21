@@ -34,6 +34,7 @@ export class Query {
   readonly #rootKind: string;
   readonly #steps: Array<Record<string, RawJson>>;
   readonly #expansions: Array<Record<string, RawJson>>;
+  readonly #edgeExpansions: Array<Record<string, RawJson>>;
   readonly #finalLimit: number | null;
 
   constructor(
@@ -41,25 +42,31 @@ export class Query {
     rootKind: string,
     steps: Array<Record<string, RawJson>> = [],
     expansions: Array<Record<string, RawJson>> = [],
-    finalLimit: number | null = null
+    finalLimit: number | null = null,
+    edgeExpansions: Array<Record<string, RawJson>> = [],
   ) {
     this.#core = core;
     this.#rootKind = rootKind;
     this.#steps = steps;
     this.#expansions = expansions;
+    this.#edgeExpansions = edgeExpansions;
     this.#finalLimit = finalLimit;
   }
 
   #withStep(step: Record<string, RawJson>): Query {
-    return new Query(this.#core, this.#rootKind, [...this.#steps, step], this.#expansions, this.#finalLimit);
+    return new Query(this.#core, this.#rootKind, [...this.#steps, step], this.#expansions, this.#finalLimit, this.#edgeExpansions);
   }
 
   #withExpansion(expansion: Record<string, RawJson>): Query {
-    return new Query(this.#core, this.#rootKind, this.#steps, [...this.#expansions, expansion], this.#finalLimit);
+    return new Query(this.#core, this.#rootKind, this.#steps, [...this.#expansions, expansion], this.#finalLimit, this.#edgeExpansions);
+  }
+
+  #withEdgeExpansion(expansion: Record<string, RawJson>): Query {
+    return new Query(this.#core, this.#rootKind, this.#steps, this.#expansions, this.#finalLimit, [...this.#edgeExpansions, expansion]);
   }
 
   #withLimit(limit: number | null): Query {
-    return new Query(this.#core, this.#rootKind, this.#steps, this.#expansions, limit);
+    return new Query(this.#core, this.#rootKind, this.#steps, this.#expansions, limit, this.#edgeExpansions);
   }
 
   /**
@@ -72,6 +79,7 @@ export class Query {
       root_kind: this.#rootKind,
       steps: this.#steps,
       expansions: this.#expansions,
+      edge_expansions: this.#edgeExpansions,
       final_limit: this.#finalLimit
     };
   }
@@ -323,6 +331,52 @@ export class Query {
       expansion.edge_filter = args.edgeFilter;
     }
     return this.#withExpansion(expansion);
+  }
+
+  /**
+   * Register an edge-projecting expansion slot for grouped query execution.
+   *
+   * Unlike {@link Query.expand} (which projects only visited nodes), this
+   * registers an edge-projecting slot whose results are surfaced under
+   * {@link GroupedQueryRows.edgeExpansions}. Each result pair is a
+   * `{ edge, endpoint }` object pairing the traversed edge with its
+   * endpoint node (target on `"out"`, source on `"in"`).
+   *
+   * Multi-hop semantics: when `maxDepth > 1`, the paired `EdgeRow`
+   * reflects the final-hop edge leading to the emitted endpoint.
+   *
+   * @param args - Traversal configuration.
+   * @param args.slot - Name for this slot in the grouped result.
+   * @param args.direction - `"in"` or `"out"` relative to root nodes.
+   * @param args.label - Edge kind to follow.
+   * @param args.maxDepth - Maximum traversal depth.
+   * @param args.edgeFilter - Optional edge-property predicate
+   *   restricting which edges are traversed.
+   * @param args.endpointFilter - Optional endpoint-node predicate
+   *   restricting which endpoints are emitted.
+   * @returns A new Query with the edge-projecting expansion registered.
+   */
+  traverseEdges(args: {
+    slot: string;
+    direction: TraverseDirection;
+    label: string;
+    maxDepth: number;
+    edgeFilter?: Record<string, RawJson>;
+    endpointFilter?: Record<string, RawJson>;
+  }): Query {
+    const expansion: Record<string, RawJson> = {
+      slot: args.slot,
+      direction: args.direction,
+      label: args.label,
+      max_depth: args.maxDepth,
+    };
+    if (args.edgeFilter !== undefined) {
+      expansion.edge_filter = args.edgeFilter;
+    }
+    if (args.endpointFilter !== undefined) {
+      expansion.endpoint_filter = args.endpointFilter;
+    }
+    return this.#withEdgeExpansion(expansion);
   }
 
   /**
