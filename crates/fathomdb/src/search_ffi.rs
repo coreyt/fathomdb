@@ -588,6 +588,10 @@ fn build_filter_ast(request: &PySearchRequest) -> QueryAst {
         root_kind: request.root_kind.clone(),
         steps,
         expansions: Vec::new(),
+        // Search/retrieval path: no grouped-query expansions are valid
+        // here. Grouped edge-projecting traversals flow through the
+        // `FfiQueryAst` compile/execute entry points in `ffi_types.rs`,
+        // not through the fused search builder.
         edge_expansions: Vec::new(),
         final_limit: None,
     }

@@ -1623,21 +1623,6 @@ def test_edge_expansion_pair_is_tuple() -> None:
     assert legacy.edge_expansions == []
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Blocked on Rust FFI ingestion gap: FfiQueryAst in "
-        "crates/fathomdb/src/ffi_types.rs does not decode "
-        "`edge_expansions` from the incoming AST JSON — it hard-codes "
-        "`edge_expansions: Vec::new()`. Packs A-D added EdgeRow + "
-        "traverse_edges on the Rust builder/coordinator surface but did "
-        "not extend the JSON-AST entry point used by Python. Python-side "
-        ".traverse_edges() serializes correctly; the engine just drops "
-        "the slot. Fix requires adding FfiEdgeExpansionSlot + "
-        "FfiQueryAst.edge_expansions + From impl on the Rust side. "
-        "Pack E is Python-only per briefing — escalated as a blocker."
-    ),
-    strict=True,
-)
 def test_traverse_edges_emits_edge_row_pairs(tmp_path: Path) -> None:
     """End-to-end: .traverse_edges() returns (EdgeRow, NodeRow) tuples.
 
