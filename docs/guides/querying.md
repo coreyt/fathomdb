@@ -1011,7 +1011,7 @@ target kind has no registered property-FTS schema.
     will not starve other originators' budgets.
 
 For full semantics, sharp edges, and the complete method signature reference,
-see [Grouped expand](../reference/query.md#grouped-expand-expand--execute_grouped)
+see [Grouped expand](../reference/query.md#grouped-expand-expand-execute_grouped)
 in the query reference.
 
 ### Worked example: edge-projecting traversal — read edge metadata and endpoint together
