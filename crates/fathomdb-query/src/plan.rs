@@ -192,6 +192,22 @@ pub fn shape_signature(ast: &QueryAst) -> String {
         );
     }
 
+    for edge_expansion in &ast.edge_expansions {
+        let dir = match edge_expansion.direction {
+            TraverseDirection::In => "in",
+            TraverseDirection::Out => "out",
+        };
+        let _ = write!(
+            &mut signature,
+            "-EdgeExpand(slot={},direction={dir},label={},depth={},edge_filter={},endpoint_filter={})",
+            edge_expansion.slot,
+            edge_expansion.label,
+            edge_expansion.max_depth,
+            edge_expansion.edge_filter.is_some(),
+            edge_expansion.endpoint_filter.is_some(),
+        );
+    }
+
     if let Some(limit) = ast.final_limit {
         let _ = write!(&mut signature, "-Limit({limit})");
     }
@@ -304,6 +320,95 @@ mod tests {
         assert_ne!(
             sig_eq_filter, sig_cmp_filter,
             "EdgePropertyEq and EdgePropertyCompare must produce different signatures"
+        );
+    }
+
+    #[test]
+    fn shape_signature_differs_for_different_edge_expansions() {
+        use crate::{EdgeExpansionSlot, Predicate, QueryAst, ScalarValue};
+
+        let base = EdgeExpansionSlot {
+            slot: "cites".to_owned(),
+            direction: TraverseDirection::Out,
+            label: "CITES".to_owned(),
+            max_depth: 1,
+            endpoint_filter: None,
+            edge_filter: None,
+        };
+
+        let ast_no_edge_expansions = QueryAst {
+            root_kind: "Paper".to_owned(),
+            steps: vec![],
+            expansions: vec![],
+            edge_expansions: vec![],
+            final_limit: None,
+        };
+
+        let ast_with_edge_expansion = QueryAst {
+            root_kind: "Paper".to_owned(),
+            steps: vec![],
+            expansions: vec![],
+            edge_expansions: vec![base.clone()],
+            final_limit: None,
+        };
+
+        let ast_with_different_slot_name = QueryAst {
+            root_kind: "Paper".to_owned(),
+            steps: vec![],
+            expansions: vec![],
+            edge_expansions: vec![EdgeExpansionSlot {
+                slot: "references".to_owned(),
+                ..base.clone()
+            }],
+            final_limit: None,
+        };
+
+        let ast_with_edge_filter = QueryAst {
+            root_kind: "Paper".to_owned(),
+            steps: vec![],
+            expansions: vec![],
+            edge_expansions: vec![EdgeExpansionSlot {
+                edge_filter: Some(Predicate::EdgePropertyEq {
+                    path: "$.rel".to_owned(),
+                    value: ScalarValue::Text("primary".to_owned()),
+                }),
+                ..base.clone()
+            }],
+            final_limit: None,
+        };
+
+        let ast_with_endpoint_filter = QueryAst {
+            root_kind: "Paper".to_owned(),
+            steps: vec![],
+            expansions: vec![],
+            edge_expansions: vec![EdgeExpansionSlot {
+                endpoint_filter: Some(Predicate::KindEq("Paper".to_owned())),
+                ..base
+            }],
+            final_limit: None,
+        };
+
+        let sig_none = super::shape_signature(&ast_no_edge_expansions);
+        let sig_basic = super::shape_signature(&ast_with_edge_expansion);
+        let sig_diff_slot = super::shape_signature(&ast_with_different_slot_name);
+        let sig_edge = super::shape_signature(&ast_with_edge_filter);
+        let sig_endpoint = super::shape_signature(&ast_with_endpoint_filter);
+
+        assert_ne!(
+            sig_none, sig_basic,
+            "presence of edge_expansions must change signature"
+        );
+        assert_ne!(
+            sig_basic, sig_diff_slot,
+            "different edge_expansion slot names must change signature"
+        );
+        assert_ne!(
+            sig_basic, sig_edge,
+            "edge_filter presence must change signature"
+        );
+        assert_ne!(
+            sig_basic, sig_endpoint,
+            "endpoint_filter presence must change signature"
         );
     }
 }
