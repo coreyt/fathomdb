@@ -590,6 +590,106 @@ fn read_during_re_registration_uses_live_fts_table() {
     );
 }
 
+/// Test D2 (companion to D): shape-incompatible async re-registration.
+///
+/// When the new schema's column set or tokenizer differs from the existing
+/// live FTS table, the registration transaction must drop and recreate the
+/// table (there is no way to reuse the old columns to service the new
+/// schema). Readers during PENDING/BUILDING therefore see an empty table.
+/// This codifies the documented degraded-window behavior and complements
+/// `read_during_re_registration_uses_live_fts_table`, which asserts the
+/// shape-compatible case.
+#[test]
+fn read_during_shape_incompatible_re_registration_sees_empty_table() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let engine = open_engine(&dir);
+
+    let svc = engine.admin().service();
+
+    // First registration under Eager with an UNWEIGHTED spec — this produces
+    // the legacy `text_content` column layout on the per-kind FTS table.
+    svc.register_fts_property_schema_with_entries(
+        "IncompatKind",
+        &[FtsPropertyPathSpec::scalar("$.title")],
+        None,
+        &[],
+        RebuildMode::Eager,
+    )
+    .expect("register eager");
+
+    // Seed enough nodes that the async rebuild cannot plausibly finish step 5
+    // before the immediate post-registration read below. 200 rows over a
+    // single writer is well beyond the few-microsecond window the test needs.
+    let mut nodes = Vec::with_capacity(200);
+    for i in 0..200u32 {
+        nodes.push(make_node(
+            &format!("incompat:{i}"),
+            "IncompatKind",
+            &format!(r#"{{"title":"incompat node {i}"}}"#),
+        ));
+    }
+    engine
+        .writer()
+        .submit(make_write_request("seed-incompat", nodes))
+        .expect("write nodes");
+
+    // Re-register under Async with a WEIGHTED spec — this flips the table
+    // from the single `text_content` column to a per-spec column
+    // (`title`). Column sets differ => shape-incompatible => drop in reg tx.
+    svc.register_fts_property_schema_with_entries(
+        "IncompatKind",
+        &[FtsPropertyPathSpec::scalar("$.title").with_weight(1.0)],
+        None,
+        &[],
+        RebuildMode::Async,
+    )
+    .expect("re-register async (shape-incompatible)");
+
+    // Verify this is indeed a re-registration (is_first_registration=false).
+    let state = svc
+        .get_property_fts_rebuild_state("IncompatKind")
+        .expect("get state")
+        .expect("state must exist");
+    assert!(
+        !state.is_first_registration,
+        "expected is_first_registration=false for re-registration"
+    );
+
+    // While the rebuild is still PENDING/BUILDING, the coordinator's FTS
+    // query path consults the live per-kind FTS table (no scan fallback —
+    // this is a re-registration). Since the table was just dropped and
+    // recreated empty in the reg tx, search returns zero rows until the
+    // actor's step 5 swap commits.
+    let compiled = QueryBuilder::nodes("IncompatKind")
+        .text_search("incompat", 10)
+        .limit(10)
+        .compile()
+        .expect("compiled query");
+
+    let rows = engine
+        .coordinator()
+        .execute_compiled_read(&compiled)
+        .expect("execute read during shape-incompatible re-registration rebuild");
+
+    // Guard: if the rebuild has already completed (very unlikely at 200 rows
+    // but possible on a hot machine), we cannot assert the degraded window.
+    let state_now = svc
+        .get_property_fts_rebuild_state("IncompatKind")
+        .expect("get state")
+        .expect("state exists")
+        .state;
+    if state_now != "COMPLETE" {
+        assert_eq!(
+            rows.nodes.len(),
+            0,
+            "shape-incompatible re-registration should present an empty FTS table during rebuild; \
+             got {} rows (state={})",
+            rows.nodes.len(),
+            state_now
+        );
+    }
+}
+
 // ── Pack 9 tests ─────────────────────────────────────────────────────────────
 
 /// Test A: async rebuild completes and the FTS index is queryable with the new schema.

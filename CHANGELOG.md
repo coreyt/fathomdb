@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.3] — 2026-04-20
 
+### Fixed
+
+- **`register_fts_property_schema_async` preserves the live per-kind FTS table on shape-compatible re-registration.** The async registration path previously dropped and recreated the per-kind FTS5 virtual table unconditionally inside the registration transaction, wiping the live rows synchronously before the async rebuild actor ran. Readers arriving during `PENDING` / `BUILDING` observed an empty table and received zero results, contradicting the documented "no scan fallback" invariant for re-registration (tracked as a flake on `read_during_re_registration_uses_live_fts_table` at high `--test-threads`). The fix introduces a shape-compatibility check (column set + tokenizer): shape-compatible re-registration now preserves the live table and the actor's atomic step-5 swap replaces the data in place. Shape-incompatible re-registration (column set change, tokenizer change, weighted ↔ unweighted flip) still drops at registration time — the degraded window is unavoidable because the live table's columns cannot service the new schema — and is now explicitly documented in `docs/reference/admin.md`. First registrations are unchanged; the actor's defensive `CREATE VIRTUAL TABLE IF NOT EXISTS` continues to materialise the table on the first write / step-5 path.
+
 ### Added
 
 - **Edge-projecting traversal via `.traverse_edges(...)`** in the query builder across Rust, Python, and TypeScript. Sibling of `.expand(...)`. Surfaces **both the traversed edge and its endpoint node** per row as a pair, giving callers first-class access to edge identity, `kind`, `properties`, `source_ref`, and `confidence` without a second round trip. Chainable with `edge_filter(...)` / `endpoint_filter(...)` (Rust via `EdgeExpansionBuilder::{edge_filter, endpoint_filter, done}`; Python / TypeScript as kwargs / options). Composes with `.expand(...)` — a single grouped query may mix node-projecting and edge-projecting slots; slot-name collisions raise `BuilderValidationError::DuplicateSlot` at builder time.
@@ -165,7 +169,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Behavior change
 
-- **Async-default FTS rebuild**: after `register_fts_property_schema_async`, the new schema is **not immediately visible to search**. Search reads from the live FTS table until the rebuild reaches `COMPLETE`. Callers that need synchronous visibility should use `register_fts_property_schema` (eager mode).
+- **Async-default FTS rebuild**: after `register_fts_property_schema_async`, the new schema is **not immediately visible to search**. For shape-compatible re-registration (same column set and tokenizer), search reads from the live FTS table until the rebuild reaches `COMPLETE`; readers see the pre-registration rows throughout the window. For shape-incompatible re-registration (column set change, tokenizer change, weighted ↔ unweighted flip), the live table is dropped at registration time and search returns zero rows until `COMPLETE`. (The original 0.4.1 wording implied uniform "live table" behavior; the 0.5.3 hotfix made the two cases match that invariant in practice and documented them explicitly — see `docs/reference/admin.md`.) Callers that need synchronous visibility should use `register_fts_property_schema` (eager mode).
 
 - **Interrupted rebuild recovery**: if the engine restarts during a rebuild, the in-progress state is marked `FAILED` on next open. Call `register_fts_property_schema_async` again to retry.
 

@@ -314,18 +314,32 @@ impl AdminService {
             rusqlite::params![kind, paths_json, separator],
         )?;
 
-        // Always drop and recreate the per-kind FTS table to ensure the schema
-        // matches the registered spec layout. This handles weighted-to-unweighted
-        // downgrade where a stale per-spec table would otherwise remain.
+        // Preserve the live per-kind FTS table when the new schema is
+        // shape-compatible with the existing one. Readers arriving during
+        // PENDING/BUILDING then continue to see the pre-registration rows
+        // until the rebuild actor's step 5 atomic swap commits. Only drop
+        // when the new schema is shape-incompatible (column set or
+        // tokenizer change) — the live table's columns cannot service the
+        // new schema in that case. First registration (existing = None)
+        // leaves the table alone; the actor's defensive CREATE IF NOT
+        // EXISTS in step 5 creates it.
         let any_weight = entries.iter().any(|e| e.weight.is_some());
         let tok = fathomdb_schema::resolve_fts_tokenizer(&tx, kind)
             .map_err(|e| EngineError::Bridge(e.to_string()))?;
-        if any_weight {
-            create_or_replace_fts_kind_table(&tx, kind, entries, &tok)?;
-        } else {
-            // Legacy text_content layout — pass empty specs so
-            // create_or_replace_fts_kind_table uses the single text_content column.
-            create_or_replace_fts_kind_table(&tx, kind, &[], &tok)?;
+        let desired = desired_fts_shape(entries, &tok);
+        let existing = fts_kind_table_shape(&tx, kind)?;
+        let must_drop = match &existing {
+            None => false,
+            Some(existing) => !shape_compatible(existing, &desired),
+        };
+        if must_drop {
+            if any_weight {
+                create_or_replace_fts_kind_table(&tx, kind, entries, &tok)?;
+            } else {
+                // Legacy text_content layout — pass empty specs so
+                // create_or_replace_fts_kind_table uses the single text_content column.
+                create_or_replace_fts_kind_table(&tx, kind, &[], &tok)?;
+            }
         }
 
         // Retrieve the rowid of the schema row as schema_id.
@@ -571,6 +585,121 @@ pub(super) fn serialize_property_paths_json(
     }
     serde_json::to_string(&serde_json::Value::Object(obj))
         .map_err(|e| EngineError::InvalidWrite(format!("failed to serialize property paths: {e}")))
+}
+
+/// Shape of the per-kind FTS5 virtual table — tokenizer string and the
+/// sorted set of non-metadata indexed column names.
+///
+/// Used by `register_fts_property_schema_async` to decide whether a
+/// re-registration can preserve the existing live table (shape-compatible)
+/// or must drop and recreate (shape-incompatible).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct FtsTableShape {
+    pub tokenizer: String,
+    /// Sorted list of indexed (non-`UNINDEXED`, non-`node_logical_id`) columns.
+    pub columns: Vec<String>,
+}
+
+/// Read the current shape of the per-kind FTS5 virtual table, if it exists.
+///
+/// Returns `None` when the table is absent. Parses columns via
+/// `PRAGMA table_info` and the tokenizer clause from the
+/// `CREATE VIRTUAL TABLE` SQL stored in `sqlite_master`.
+pub(super) fn fts_kind_table_shape(
+    conn: &rusqlite::Connection,
+    kind: &str,
+) -> Result<Option<FtsTableShape>, EngineError> {
+    let table = fathomdb_schema::fts_kind_table_name(kind);
+    let create_sql: Option<String> = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?1 \
+             AND sql LIKE 'CREATE VIRTUAL TABLE%'",
+            rusqlite::params![table],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()?;
+    let Some(create_sql) = create_sql else {
+        return Ok(None);
+    };
+
+    // Extract the tokenizer= clause: tokenize='...'
+    let tokenizer = extract_tokenizer_clause(&create_sql).unwrap_or_default();
+
+    // Read columns via PRAGMA table_info.
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let rows = stmt.query_map([], |r| r.get::<_, String>(1))?;
+    let mut columns: Vec<String> = rows
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .filter(|c| c != "node_logical_id")
+        .collect();
+    columns.sort();
+
+    Ok(Some(FtsTableShape { tokenizer, columns }))
+}
+
+/// Compute the shape that `create_or_replace_fts_kind_table` would
+/// produce for the given specs and tokenizer.
+pub(super) fn desired_fts_shape(specs: &[FtsPropertyPathSpec], tokenizer: &str) -> FtsTableShape {
+    // Mirror the branch in `register_fts_property_schema_async`:
+    // if any spec carries a weight the table uses per-spec columns; otherwise
+    // it uses the single legacy `text_content` column.
+    let any_weight = specs.iter().any(|s| s.weight.is_some());
+    let mut columns: Vec<String> = if any_weight {
+        specs
+            .iter()
+            .map(|s| {
+                let is_recursive = matches!(s.mode, FtsPropertyPathMode::Recursive);
+                fathomdb_schema::fts_column_name(&s.path, is_recursive)
+            })
+            .collect()
+    } else {
+        vec!["text_content".to_owned()]
+    };
+    columns.sort();
+    FtsTableShape {
+        tokenizer: tokenizer.to_owned(),
+        columns,
+    }
+}
+
+/// Return true iff two FTS table shapes have identical tokenizer and
+/// identical (sorted) column sets. The `tokenizer` comparison is a
+/// plain string equality after extracting the value from the
+/// `tokenize='...'` clause.
+pub(super) fn shape_compatible(existing: &FtsTableShape, desired: &FtsTableShape) -> bool {
+    existing.tokenizer == desired.tokenizer && existing.columns == desired.columns
+}
+
+/// Parse the value of a `tokenize='...'` clause from a CREATE VIRTUAL
+/// TABLE SQL statement. Returns `None` if no such clause is present.
+fn extract_tokenizer_clause(sql: &str) -> Option<String> {
+    let lower = sql.to_lowercase();
+    let key_idx = lower.find("tokenize")?;
+    let after_key = &sql[key_idx..];
+    // Advance past "tokenize", optional spaces, '=', optional spaces.
+    let eq_rel = after_key.find('=')?;
+    let rest = &after_key[eq_rel + 1..];
+    let rest = rest.trim_start();
+    let rest = rest.strip_prefix('\'')?;
+    // Find the closing single quote, respecting doubled-single-quote escape.
+    let bytes = rest.as_bytes();
+    let mut i = 0;
+    let mut out = String::new();
+    while i < bytes.len() {
+        let c = bytes[i] as char;
+        if c == '\'' {
+            if i + 1 < bytes.len() && bytes[i + 1] as char == '\'' {
+                out.push('\'');
+                i += 2;
+                continue;
+            }
+            return Some(out);
+        }
+        out.push(c);
+        i += 1;
+    }
+    None
 }
 
 /// Drop and recreate the per-kind FTS5 virtual table with one column per spec.
