@@ -305,6 +305,208 @@ target kind has no registered property-FTS schema. See
 - **No global (cross-originator) limit.** The limit is per originator. There
   is no cap on the total number of expanded nodes across all roots.
 
+## Grouped edge expand: `.traverse_edges()`
+
+`.traverse_edges()` is the edge-projecting sibling of `.expand()`. Where
+`.expand()` surfaces the **endpoint nodes only** of a traversal,
+`.traverse_edges()` surfaces **both the traversed edge and its endpoint
+node** as a pair, giving callers first-class access to edge identity,
+edge `kind`, edge `properties`, and provenance fields (`source_ref`,
+`confidence`) on the same row as the endpoint.
+
+Introduced in 0.5.3. This replaces the 0.5.1 `NodeRow.edge_properties`
+shortcut, which carried only the traversed edge's `properties` JSON on
+the endpoint `NodeRow`. **`NodeRow.edge_properties` has been removed in
+0.5.3**; callers must read edge metadata from the companion `EdgeRow`
+in each pair. See the migration note below.
+
+### Method signatures
+
+=== "Rust"
+
+    ```rust
+    // On QueryBuilder / SearchBuilder
+    pub fn traverse_edges(
+        self,
+        slot: impl Into<String>,
+        direction: TraverseDirection,
+        label: impl Into<String>,
+        max_depth: usize,
+    ) -> EdgeExpansionBuilder
+
+    // On EdgeExpansionBuilder
+    pub fn edge_filter(self, predicate: Predicate) -> Self
+    pub fn endpoint_filter(self, predicate: Predicate) -> Self
+    pub fn done(self) -> QueryBuilder
+    ```
+
+    `edge_filter` applies to the `edges.properties` JSON (reuses
+    `EdgePropertyEq` / `EdgePropertyCompare` from 0.5.1). `endpoint_filter`
+    applies to the endpoint node (target on OUT, source on IN) using the
+    same `Predicate` vocabulary as `.expand()`'s target-side filter.
+    `done()` returns the underlying builder so further `.expand()` /
+    `.traverse_edges()` / `.limit()` chaining is possible.
+
+=== "Python"
+
+    ```python
+    # On SearchBuilder / QueryBuilder
+    def traverse_edges(
+        self,
+        *,
+        slot: str,
+        direction: TraverseDirection | str,
+        label: str,
+        max_depth: int,
+        edge_filter: Predicate | None = None,
+        endpoint_filter: Predicate | None = None,
+    ) -> "SearchBuilder"
+    ```
+
+=== "TypeScript"
+
+    ```typescript
+    // On SearchBuilder / Query
+    traverseEdges(opts: {
+        slot: string;
+        direction: "in" | "out";
+        label: string;
+        maxDepth: number;
+        edgeFilter?: Predicate;
+        endpointFilter?: Predicate;
+    }): SearchBuilder
+    ```
+
+### Return shape
+
+`execute_grouped()` returns a `GroupedQueryRows` with an additive
+`edge_expansions` field alongside the existing `expansions` field:
+
+| Field | Type | Description |
+|---|---|---|
+| `roots` | `Vec<NodeRow>` / `list[NodeRow]` | The matched root nodes from the base search. |
+| `expansions` | `Vec<ExpansionSlotRows>` | One entry per `.expand()` call, in declaration order. |
+| `edge_expansions` | `Vec<EdgeExpansionSlotRows>` | One entry per `.traverse_edges()` call, in declaration order. **New in 0.5.3.** |
+| `was_degraded` | `bool` | `true` if any branch (vector, text, or expansion) was degraded. |
+
+Each `EdgeExpansionSlotRows` entry describes a single named edge-projecting slot:
+
+| Field | Type | Description |
+|---|---|---|
+| `slot` | `String` | The slot name passed to `.traverse_edges()`. |
+| `roots` | `Vec<EdgeExpansionRootRows>` | One entry per root node that had at least one traversed edge. |
+
+Each `EdgeExpansionRootRows` entry pairs a root with its `(edge, endpoint)` tuples:
+
+| Field | Type | Description |
+|---|---|---|
+| `root_logical_id` | `String` | The logical ID of the originator root node. |
+| `pairs` | `Vec<(EdgeRow, NodeRow)>` (Rust, Python) / `Array<{ edge, endpoint }>` (TS) | One entry per traversed edge. The endpoint is the target on `OUT` traversal, source on `IN`. |
+
+#### `EdgeRow`
+
+A single edge row surfaced during edge-projecting traversal. All eight
+fields are sourced directly from the `edges` table; `source_logical_id`
+and `target_logical_id` are absolute (tail/head as stored), not
+re-oriented to traversal direction.
+
+| Field | Type | Description |
+|---|---|---|
+| `row_id` | `String` | Physical row ID from the `edges` table. |
+| `logical_id` | `String` | Logical ID of the edge. |
+| `source_logical_id` | `String` | Logical ID of the edge source (tail). |
+| `target_logical_id` | `String` | Logical ID of the edge target (head). |
+| `kind` | `String` | Edge kind (label). |
+| `properties` | `String` | JSON-encoded edge properties. Callers parse with `json.loads` / `JSON.parse`. |
+| `source_ref` | `Option<String>` / `str \| None` | Optional provenance reference. |
+| `confidence` | `Option<f64>` / `float \| None` | Optional confidence score attached to the edge. |
+
+`created_at` and `superseded_at` are intentionally not surfaced in 0.5.3.
+Temporal API is a separate release surface; nodes and edges will get it
+together later.
+
+#### Pair wire shape
+
+On the FFI wire each pair is a `{edge, endpoint}` JSON object — not a
+JSON array — so both SDKs decode unambiguously:
+
+```json
+{
+  "edge":     {...FfiEdgeRow...},
+  "endpoint": {...FfiNodeRow...}
+}
+```
+
+Python decodes each pair to a `tuple[EdgeRow, NodeRow]` for ergonomic
+unpacking (`for edge, endpoint in pairs:`). TypeScript keeps the object
+shape (`pair.edge`, `pair.endpoint`) — idiomatic for TS consumers and
+avoids index-key ambiguity through the JSON round-trip.
+
+When an older 0.5.2 wire payload omits the `edge_expansions` key
+entirely, the Python and TypeScript decoders tolerate the missing field
+and produce an empty list. This tolerance covers the 0.5.2 → 0.5.3
+SDK/engine skew window and will be removed at 0.6.0.
+
+### `max_depth` semantics — final-hop edge
+
+When `max_depth > 1`, each emitted pair reflects the **final-hop edge**
+leading to the emitted endpoint node. Full path enumeration (every
+intermediate hop's edge) is out of scope for 0.5.3. Callers that need
+full paths should keep `max_depth = 1` and compose traversals
+client-side.
+
+All other `max_depth` semantics carried over from `.expand()` apply:
+the single-label constraint, per-path visited-node deduplication, and
+root pre-seeding to block self-loops. See
+[`max_depth` semantics](#max_depth-semantics) under Grouped expand.
+
+### Target-side and edge-side filters
+
+Both filters validate at builder time (before any SQL runs):
+
+- `endpoint_filter` narrows the endpoint node in the emitted pair. It
+  reuses the same `Predicate` vocabulary as `.expand()`'s target-side
+  filter, including named fused-JSON filters registered via property-FTS
+  schemas. Fused filters raise
+  `BuilderValidationError::MissingPropertyFtsSchema` when the target
+  kind has no registered property-FTS schema.
+- `edge_filter` narrows which traversed edges emit pairs at all. It
+  reuses `EdgePropertyEq` / `EdgePropertyCompare` from 0.5.1 and runs
+  inside the traversal `JOIN edges` condition (pre-limit).
+
+### Migration from `NodeRow.edge_properties` (removed in 0.5.3)
+
+`NodeRow.edge_properties` — the 0.5.1 shortcut that carried the
+traversed edge's `properties` JSON on the endpoint node — has been
+removed. Replace any read of `node.edge_properties` with a read of the
+companion `EdgeRow.properties` on the pair:
+
+```python
+# Before (0.5.2 and earlier):
+for slot in rows.expansions:
+    for root_rows in slot.roots:
+        for node in root_rows.nodes:
+            edge_props = json.loads(node.edge_properties or "{}")
+
+# After (0.5.3):
+for slot in rows.edge_expansions:
+    for root_rows in slot.roots:
+        for edge, endpoint in root_rows.pairs:
+            edge_props = json.loads(edge.properties)
+```
+
+The node-expand SQL CTE loses the `edge_properties` column as part of
+this change. Plan-cache churn is bounded to one `shape_hash` family;
+0.5.2 call sites to `.expand()` that did not read `edge_properties`
+recompile transparently.
+
+### Advanced: mixed node- and edge-expansions in one query
+
+A single grouped query can mix `.expand()` (node-projecting) and
+`.traverse_edges()` (edge-projecting) slots. Slot names must be unique
+across both vecs — a collision raises
+`BuilderValidationError::DuplicateSlot` at builder time.
+
 ## Advanced: mechanism-specific overrides
 
 The following builders are **advanced overrides** for callers with a
