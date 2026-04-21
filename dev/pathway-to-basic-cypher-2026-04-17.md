@@ -23,10 +23,12 @@ SDKs share the implementation.
 
 1. **`fathomdb-query` is now the established IR crate.** `ast.rs` and `compile.rs` are mature.
    The Cypher translator's target is `QueryAst` — no new IR design needed for the v1 subset.
-2. **Edge property support is scoped in 0.5.1.** Items 1–4 in `dev/notes/0.5.1-scope.md`
-   unblock `WHERE r.prop = $v`, `WHERE n.prop IN [...]`, and `RETURN r`. These are not available
-   until 0.5.1 ships; the Cypher translator stubs them out with `UnsupportedCypherFeature` until
-   then.
+2. **Edge property support shipped in 0.5.1; `EdgeRow` shipped in 0.5.3.** Items 1–4 in
+   `dev/notes/0.5.1-scope.md` shipped `WHERE r.prop = $v` / `WHERE n.prop IN [...]` support,
+   and 0.5.3 shipped the first-class `EdgeRow` + `.traverse_edges()` surface that backs
+   `RETURN r` / `RETURN r.prop`. No Cypher surface needs to stub with
+   `UnsupportedCypherFeature` on these constructs anymore; the translator wires them
+   directly against the 0.5.1 and 0.5.3 engine surfaces.
 3. **The conformance matrix is now concrete.** The 2026-03-28 doc described a single-hop example.
    This document defines the exact v1 subset with per-construct mapping to `QueryAst`.
 
@@ -61,22 +63,22 @@ MATCH (n:Kind) RETURN n LIMIT 25
 MATCH (n:Kind) WHERE n.logical_id = $id RETURN n
 ```
 
-### Supported after 0.5.1 ships
+### Supported (unblocked on prior 0.5.x releases)
 
 ```cypher
--- Edge property filter (requires 0.5.1 item 1)
+-- Edge property filter (shipped in 0.5.1)
 MATCH (a)-[r:TYPE]->(b) WHERE r.weight > $threshold RETURN b
 MATCH (a)-[r:TYPE]->(b) WHERE r.active = true RETURN b
 MATCH (a)-[r:TYPE]->(b) WHERE r.status = $s RETURN b, r
 
--- Return edge (requires 0.5.1 item 1 EdgeRow)
+-- Return edge (unblocked in 0.5.3 — backed by first-class EdgeRow + .traverse_edges())
 MATCH (a)-[r:TYPE]->(b) RETURN b, r
 MATCH (a)-[r:TYPE]->(b) RETURN r.weight
 
--- Set membership (requires 0.5.1 items 3 + unfused JsonPathIn)
+-- Set membership (shipped in 0.5.1 — JsonPathIn + unfused variant)
 MATCH (n:K) WHERE n.status IN ['active', 'pending'] RETURN n
 
--- Boolean property filter (requires 0.5.1 item 4)
+-- Boolean property filter (shipped in 0.5.1 — JsonPathFusedBoolEq)
 MATCH (n:K) WHERE n.resolved = false RETURN n
 ```
 
@@ -181,8 +183,8 @@ pub struct ReturnClause {
 pub enum ReturnItem {
     Variable(String),                                    // RETURN n
     Property { var: String, prop: String, alias: Option<String> },  // RETURN n.name AS x
-    EdgeVariable(String),                                // RETURN r (post-0.5.1)
-    EdgeProperty { var: String, prop: String, alias: Option<String> }, // RETURN r.weight
+    EdgeVariable(String),                                // RETURN r (backed by 0.5.3 EdgeRow)
+    EdgeProperty { var: String, prop: String, alias: Option<String> }, // RETURN r.weight (backed by 0.5.3 EdgeRow.properties)
 }
 ```
 
@@ -253,9 +255,9 @@ If neither, `TranslateError::UnboundRootKind`.
 | `-[:TYPE*1..N]->` | `Traverse { direction: Out, label: "TYPE", max_depth: N, filter: None }` |
 | terminal kind (e.g. `(b:K2)`) | `Traverse { filter: Some(KindEq("K2")) }` |
 
-**Edge property predicates (post-0.5.1):**
+**Edge property predicates (shipped in 0.5.1):**
 `WHERE r.prop = $v` where `r` is the edge variable → `Traverse { filter: Some(EdgePropertyEq { ... }) }`.
-Until 0.5.1 ships, translator raises `TranslateError::UnsupportedFeature("edge property filters require 0.5.1")`.
+Shipped in 0.5.1; no `UnsupportedFeature` stub needed.
 
 **Multi-hop different types:**
 `(a)-[:T1]->(b)-[:T2]->(c)` has two hops with different labels. The current `QueryAst` supports
@@ -264,7 +266,10 @@ only one traversal. Translator raises `TranslateError::UnsupportedFeature("multi
 **RETURN handling:**
 `RETURN b` where `b` is the terminal variable → result is the `QueryRows` from the traversal;
 no special mapping needed.
-`RETURN r` / `RETURN r.prop` → `TranslateError::UnsupportedFeature` until 0.5.1 ships `EdgeRow`.
+`RETURN r` / `RETURN r.prop` → unblocked in 0.5.3: translator emits a `QueryAst` carrying one
+`EdgeExpansionSlot` (the 0.5.3 surface behind `.traverse_edges()`). `RETURN r` projects the
+`EdgeRow` side of each `(EdgeRow, NodeRow)` pair; `RETURN r.prop` extracts
+`json_extract(edge.properties, '$.prop')` at projection.
 `RETURN n.prop AS alias` → `TranslateError::UnsupportedFeature("property projection")` for v1;
 callers extract from `node.properties` JSON.
 
@@ -313,24 +318,23 @@ Raises `CypherError` for parse/translate failures.
 
 ## Build order and sequencing
 
-### Can start now (parallel with 0.5.1 development)
+### Can start now (all underlying engine surfaces shipped in 0.5.1 / 0.5.3)
 
 1. `cypher/ast.rs` — Cypher AST types, no engine dependency
 2. `cypher/parser.rs` + `cypher/error.rs` — parser tests against plain Cypher strings
 3. `cypher/translate.rs` — translator for node patterns, single-hop traversal, AND-only WHERE
-   (stub edge property and IN predicates with `UnsupportedFeature`)
-4. `Engine::execute_cypher` wired to the stub translator
+4. `Engine::execute_cypher` wired to the translator
 5. Python `db.cypher()` binding
 6. Conformance matrix tests: one test per supported construct, one per explicitly-deferred construct
    asserting `UnsupportedCypherFeature`
 
-### After 0.5.1 ships
+### Wire the 0.5.x surfaces into the translator (no prior-release blocker)
 
-7. Wire `EdgePropertyEq` / `EdgePropertyCompare` predicates in translator
-8. Wire `JsonPathIn` (unfused) in translator
-9. Wire `JsonPathFusedBoolEq` for `WHERE n.active = false` patterns
-10. Wire `EdgeRow` result type in RETURN handling
-11. Wire `RETURN r.prop` extraction from `EdgeRow`
+7. Wire `EdgePropertyEq` / `EdgePropertyCompare` predicates in translator (0.5.1 surface)
+8. Wire `JsonPathIn` (unfused) in translator (0.5.1 surface)
+9. Wire `JsonPathFusedBoolEq` for `WHERE n.active = false` patterns (0.5.1 surface)
+10. Wire `EdgeRow` result type in RETURN handling via 0.5.3 `EdgeExpansionSlot`
+11. Wire `RETURN r.prop` extraction from `EdgeRow.properties` (0.5.3 surface)
 12. TypeScript `db.cypher()` binding
 
 ### Deferred (not in 0.6.0)

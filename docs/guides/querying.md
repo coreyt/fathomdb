@@ -1014,6 +1014,107 @@ For full semantics, sharp edges, and the complete method signature reference,
 see [Grouped expand](../reference/query.md#grouped-expand-expand--execute_grouped)
 in the query reference.
 
+### Worked example: edge-projecting traversal — read edge metadata and endpoint together
+
+When you need the traversed edge's metadata (kind, `properties`,
+`source_ref`, `confidence`) on the **same row** as the endpoint node,
+use `.traverse_edges()` instead of `.expand()`. This is the 0.5.3
+replacement for the 0.5.1 `NodeRow.edge_properties` shortcut, which has
+been removed.
+
+Memex hot path: load a meeting, walk `assigned_to` edges out to each
+attendee, and read both the edge's role metadata and the attendee
+`NodeRow` without a second round trip.
+
+```python
+import json
+from fathomdb import Engine, TraverseDirection
+
+db = Engine.open("memex.db")
+
+grouped = (
+    db.nodes("Meeting")
+    .filter_logical_id_eq(meeting_id)
+    .traverse_edges(
+        slot="attendees",
+        direction=TraverseDirection.OUT,
+        label="assigned_to",
+        max_depth=1,
+    )
+    .execute_grouped()
+)
+
+meeting = grouped.roots[0]
+for slot in grouped.edge_expansions:
+    if slot.slot != "attendees":
+        continue
+    for root_rows in slot.roots:
+        for edge, attendee in root_rows.pairs:
+            # Edge metadata: role is stored in the edge's properties JSON.
+            edge_props = json.loads(edge.properties)
+            role = edge_props.get("role", "participant")
+            # Endpoint node: the attendee as a first-class NodeRow.
+            attendee_props = attendee.properties  # NodeRow.properties is dict
+            print(
+                f"{attendee.logical_id} ({role}): "
+                f"{attendee_props.get('display_name')} "
+                f"[edge confidence={edge.confidence}]"
+            )
+```
+
+Each `pair` is a `tuple[EdgeRow, NodeRow]` in Python, unpacked directly
+with `for edge, attendee in ...`. The `EdgeRow` carries all eight edge
+fields (`row_id`, `logical_id`, `source_logical_id`,
+`target_logical_id`, `kind`, `properties`, `source_ref`, `confidence`)
+— see
+[`EdgeRow`](../reference/query.md#edgerow)
+in the query reference.
+
+The TypeScript surface uses `traverseEdges({ ... })` and decodes each
+pair as an object with `pair.edge` and `pair.endpoint` instead of a
+tuple:
+
+```typescript
+import { Engine, type EdgeRow, type NodeRow } from "fathomdb";
+
+const db = Engine.open("memex.db");
+
+const grouped = db.nodes("Meeting")
+  .filterLogicalIdEq(meetingId)
+  .traverseEdges({
+    slot: "attendees",
+    direction: "out",
+    label: "assigned_to",
+    maxDepth: 1,
+  })
+  .executeGrouped();
+
+for (const slot of grouped.edgeExpansions) {
+  if (slot.slot !== "attendees") continue;
+  for (const rootRows of slot.roots) {
+    for (const pair of rootRows.pairs) {
+      const edge: EdgeRow = pair.edge;
+      const attendee: NodeRow = pair.endpoint;
+      const role = (JSON.parse(edge.properties) as { role?: string }).role
+        ?? "participant";
+      console.log(
+        `${attendee.logicalId} (${role}): ` +
+        `${(attendee.properties as { display_name?: string }).display_name} ` +
+        `[edge confidence=${edge.confidence}]`
+      );
+    }
+  }
+}
+```
+
+!!! info "Migrating from `NodeRow.edge_properties`"
+
+    Callers on 0.5.1 / 0.5.2 that read `node.edge_properties` from
+    `.expand()` results must switch to `.traverse_edges()` and read
+    `edge.properties` on the companion `EdgeRow`. See
+    [Migration from `NodeRow.edge_properties`](../reference/query.md#migration-from-noderowedge_properties-removed-in-053)
+    in the query reference.
+
 ## Quick reference
 
 | Goal | Method |
@@ -1038,6 +1139,7 @@ in the query reference.
 | Inspect SQL | `compile()` |
 | Inspect plan | `explain()` |
 | Subgraph expansion | `expand(slot, direction, label, max_depth)` + `execute_grouped()` |
+| Edge-projecting expansion | `traverse_edges(slot, direction, label, max_depth)` + `execute_grouped()` |
 
 ## TypeScript equivalent
 
@@ -1127,6 +1229,7 @@ engine.close();
 | `filter_json_text_eq(path, val)` | `filterJsonTextEq(path, val)` |
 | `traverse(direction=..., label=..., max_depth=...)` | `traverse({ direction, label, maxDepth })` |
 | `expand(slot=..., direction=..., label=..., max_depth=...)` | `expand({ slot, direction, label, maxDepth })` |
+| `traverse_edges(slot=..., direction=..., label=..., max_depth=...)` | `traverseEdges({ slot, direction, label, maxDepth })` |
 | `rows.was_degraded` | `rows.wasDegraded` |
 | `node.logical_id` | `node.logicalId` |
 | `node.content_ref` | `node.contentRef` |
