@@ -328,11 +328,9 @@ class NodeRow:
     properties: Any
     content_ref: str | None = None
     last_accessed_at: int | None = None
-    edge_properties: Any | None = None
 
     @classmethod
     def from_wire(cls, payload: dict[str, Any]) -> "NodeRow":
-        raw_ep = payload.get("edge_properties")
         return cls(
             row_id=payload["row_id"],
             logical_id=payload["logical_id"],
@@ -340,7 +338,43 @@ class NodeRow:
             properties=_decode_json(payload["properties"]),
             content_ref=payload.get("content_ref"),
             last_accessed_at=payload.get("last_accessed_at"),
-            edge_properties=_decode_json(raw_ep) if raw_ep is not None else None,
+        )
+
+
+@dataclass(frozen=True)
+class EdgeRow:
+    """A single edge row surfaced during edge-projecting traversal.
+
+    Columns are sourced directly from the ``edges`` table; identity
+    fields (``source_logical_id``, ``target_logical_id``) are absolute
+    (tail/head as stored), not re-oriented to traversal direction.
+
+    Multi-hop semantics: for ``max_depth > 1``, each emitted tuple
+    reflects the final-hop edge leading to the emitted endpoint node.
+    """
+
+    row_id: str
+    logical_id: str
+    source_logical_id: str
+    target_logical_id: str
+    kind: str
+    #: JSON-encoded edge properties. Callers parse with ``json.loads``.
+    properties: str
+    source_ref: str | None = None
+    confidence: float | None = None
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "EdgeRow":
+        raw_confidence = payload.get("confidence")
+        return cls(
+            row_id=payload["row_id"],
+            logical_id=payload["logical_id"],
+            source_logical_id=payload["source_logical_id"],
+            target_logical_id=payload["target_logical_id"],
+            kind=payload["kind"],
+            properties=payload["properties"],
+            source_ref=payload.get("source_ref"),
+            confidence=(float(raw_confidence) if raw_confidence is not None else None),
         )
 
 
@@ -596,11 +630,50 @@ class ExpansionSlotRows:
 
 
 @dataclass(frozen=True)
+class EdgeExpansionRootRows:
+    """Expanded (edge, endpoint) pairs reached from a single root in an edge-projecting slot."""
+
+    root_logical_id: str
+    pairs: list[tuple[EdgeRow, NodeRow]]
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "EdgeExpansionRootRows":
+        pairs: list[tuple[EdgeRow, NodeRow]] = []
+        for raw in payload.get("pairs", []):
+            edge = EdgeRow.from_wire(raw["edge"])
+            endpoint = NodeRow.from_wire(raw["endpoint"])
+            pairs.append((edge, endpoint))
+        return cls(
+            root_logical_id=payload["root_logical_id"],
+            pairs=pairs,
+        )
+
+
+@dataclass(frozen=True)
+class EdgeExpansionSlotRows:
+    """All edge-projecting expansion results for a named slot across all root nodes."""
+
+    slot: str
+    roots: list[EdgeExpansionRootRows]
+
+    @classmethod
+    def from_wire(cls, payload: dict[str, Any]) -> "EdgeExpansionSlotRows":
+        return cls(
+            slot=payload["slot"],
+            roots=[
+                EdgeExpansionRootRows.from_wire(item)
+                for item in payload.get("roots", [])
+            ],
+        )
+
+
+@dataclass(frozen=True)
 class GroupedQueryRows:
     """Result set from a grouped query execution with expansions."""
 
     roots: list[NodeRow]
     expansions: list[ExpansionSlotRows]
+    edge_expansions: list[EdgeExpansionSlotRows]
     was_degraded: bool
 
     @classmethod
@@ -609,6 +682,10 @@ class GroupedQueryRows:
             roots=[NodeRow.from_wire(item) for item in payload["roots"]],
             expansions=[
                 ExpansionSlotRows.from_wire(item) for item in payload["expansions"]
+            ],
+            edge_expansions=[
+                EdgeExpansionSlotRows.from_wire(item)
+                for item in payload.get("edge_expansions", [])
             ],
             was_degraded=payload["was_degraded"],
         )
