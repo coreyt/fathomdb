@@ -384,9 +384,6 @@ pub struct NodeRow {
     pub content_ref: Option<String>,
     /// Unix timestamp of last access, if tracked.
     pub last_accessed_at: Option<i64>,
-    /// JSON-encoded properties of the edge that connected this node in a
-    /// traversal expansion. `None` for root nodes and non-expansion results.
-    pub edge_properties: Option<String>,
 }
 
 /// A single edge row surfaced during edge-projecting traversal.
@@ -862,7 +859,6 @@ impl ExecutionCoordinator {
                     properties: row.get(3)?,
                     content_ref: row.get(4)?,
                     last_accessed_at: row.get(5)?,
-                    edge_properties: None,
                 })
             })
             .and_then(Iterator::collect)
@@ -2353,12 +2349,10 @@ impl ExecutionCoordinator {
         // The `root_id` column tracks which root each traversal path
         // originated from. The `ROW_NUMBER()` window in the outer query
         // enforces the per-root hard limit.
-        // The `edge_properties` column carries the JSON properties of the
-        // edge that was traversed to reach each node (NULL for the base case).
         let sql = format!(
             "WITH RECURSIVE root_ids(rid) AS ({root_seed_union}),
-            traversed(root_id, logical_id, depth, visited, emitted, edge_properties) AS (
-                SELECT rid, rid, 0, printf(',%s,', rid), 0, NULL AS edge_properties
+            traversed(root_id, logical_id, depth, visited, emitted) AS (
+                SELECT rid, rid, 0, printf(',%s,', rid), 0
                 FROM root_ids
                 UNION ALL
                 SELECT
@@ -2366,8 +2360,7 @@ impl ExecutionCoordinator {
                     {next_logical_id},
                     t.depth + 1,
                     t.visited || {next_logical_id} || ',',
-                    t.emitted + 1,
-                    e.properties AS edge_properties
+                    t.emitted + 1
                 FROM traversed t
                 JOIN edges e ON {join_condition}
                     AND e.kind = ?{edge_kind_param}
@@ -2380,7 +2373,6 @@ impl ExecutionCoordinator {
                 SELECT t.root_id, n.row_id, n.logical_id, n.kind, n.properties
                      , n.content_ref, am.last_accessed_at
                      , ROW_NUMBER() OVER (PARTITION BY t.root_id ORDER BY n.logical_id) AS rn
-                     , t.edge_properties
                 FROM traversed t
                 JOIN nodes n ON n.logical_id = t.logical_id
                     AND n.superseded_at IS NULL
@@ -2388,7 +2380,6 @@ impl ExecutionCoordinator {
                 WHERE t.depth > 0{filter_sql}
             )
             SELECT root_id, row_id, logical_id, kind, properties, content_ref, last_accessed_at
-                 , edge_properties
             FROM numbered
             WHERE rn <= {hard_limit}
             ORDER BY root_id, logical_id",
@@ -2421,7 +2412,6 @@ impl ExecutionCoordinator {
                         properties: row.get(4)?,
                         content_ref: row.get(5)?,
                         last_accessed_at: row.get(6)?,
-                        edge_properties: row.get(7)?,
                     },
                 ))
             })
@@ -2628,7 +2618,6 @@ impl ExecutionCoordinator {
                     properties: row.get(12)?,
                     content_ref: row.get(13)?,
                     last_accessed_at: row.get(14)?,
-                    edge_properties: None,
                 };
                 Ok((root_id, edge_row, node_row))
             })
@@ -2985,7 +2974,6 @@ impl ExecutionCoordinator {
                     properties: row.get(3)?,
                     content_ref: row.get(4)?,
                     last_accessed_at: row.get(5)?,
-                    edge_properties: None,
                 })
             })
             .map_err(EngineError::Sqlite)?
