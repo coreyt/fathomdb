@@ -24,6 +24,28 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
 
+def _coerce_vector(vec) -> list[float]:
+    """Coerce a Python vector-like into ``list[float]``.
+
+    Accepts list, tuple, or any object exposing a ``.tolist()`` method
+    (numpy's 1-D ``ndarray``). Empty vectors are rejected eagerly —
+    submitting a zero-length vector to the engine would otherwise surface
+    as a `DimensionMismatch` against the active profile's dimensions,
+    which is harder to diagnose than a client-side `ValueError`.
+    """
+    tolist = getattr(vec, "tolist", None)
+    if callable(tolist):
+        vec = tolist()
+    coerced = list(map(float, vec))
+    if not coerced:
+        raise ValueError(
+            "raw_vector_search: vector must not be empty; "
+            "provide a dense vector whose length matches the active "
+            "embedding profile's dimensions"
+        )
+    return coerced
+
+
 class Query:
     """Fluent, immutable query builder for fetching nodes from fathomdb.
 
@@ -101,16 +123,65 @@ class Query:
             }
         )
 
-    def vector_search(self, query: str, limit: int) -> "Query":
-        """Add a vector similarity search step.
+    def semantic_search(self, text: str, limit: int) -> "Query":
+        """Add a Pack F1 semantic-search step.
+
+        The engine embeds ``text`` at query time using the db-wide active
+        embedding profile and runs KNN against the per-kind ``vec_<kind>``
+        table.
 
         Args:
-            query: The text query to embed and search against.
+            text: Natural-language query string. Unlike
+                :meth:`vector_search`, this is never a JSON float-array
+                literal — the engine owns embedding.
             limit: Maximum number of nearest neighbours to return.
         """
         return self._with_step(
-            {"type": "vector_search", "query": query, "limit": limit}
+            {"type": "semantic_search", "text": text, "limit": limit}
         )
+
+    def raw_vector_search(self, vec, limit: int) -> "Query":
+        """Add a Pack F1 raw-vector-search step.
+
+        Caller supplies a dense vector directly; the engine skips the
+        read-time embedder and binds the vector to the per-kind
+        ``vec_<kind>`` KNN scan. The vector's dimension must match the
+        active embedding profile's ``dimensions`` or the coordinator
+        raises ``DimensionMismatch``.
+
+        Args:
+            vec: Dense vector as a list, tuple, or object exposing
+                ``.tolist()`` (e.g. a 1-D numpy array).
+            limit: Maximum number of nearest neighbours to return.
+        """
+        coerced = _coerce_vector(vec)
+        return self._with_step(
+            {"type": "raw_vector_search", "vector": coerced, "limit": limit}
+        )
+
+    def vector_search(self, text_or_vec, limit: int) -> "Query":
+        """Route to :meth:`semantic_search` or :meth:`raw_vector_search` (deprecated).
+
+        Routes strings to :meth:`semantic_search` and lists / tuples /
+        numpy-like vectors to :meth:`raw_vector_search`, emitting a
+        :class:`DeprecationWarning` in both cases. Will be removed in a
+        future release.
+        """
+        import warnings
+
+        if isinstance(text_or_vec, str):
+            warnings.warn(
+                "vector_search(text) is deprecated; use semantic_search(text)",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            return self.semantic_search(text_or_vec, limit)
+        warnings.warn(
+            "vector_search(vec) is deprecated; use raw_vector_search(vec)",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.raw_vector_search(text_or_vec, limit)
 
     def search(self, query: str, limit: int) -> "SearchBuilder":
         """Enter the unified :class:`SearchBuilder` surface.

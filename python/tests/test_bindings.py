@@ -325,7 +325,16 @@ def test_vector_query_degrades_when_vector_table_absent(tmp_path: Path) -> None:
     from fathomdb import Engine
 
     db = Engine.open(tmp_path / "agent.db")
-    rows = db.nodes("Meeting").vector_search("budget", limit=3).execute()
+    # Use the legacy `vector_search` step (deprecated `vector_search()` now
+    # routes to `semantic_search`/`raw_vector_search`, which go through a
+    # distinct compile path). `_with_step` is the stable internal hook used
+    # by all builder methods; this keeps the pre-Pack-F2 degradation
+    # assertion intact.
+    rows = (
+        db.nodes("Meeting")
+        ._with_step({"type": "vector_search", "query": "budget", "limit": 3})
+        .execute()
+    )
     assert rows.was_degraded is True
 
 
@@ -831,7 +840,23 @@ def test_vector_write_and_search_round_trip(tmp_path: Path) -> None:
 
     assert receipt.provenance_warnings == []
 
-    rows = db.nodes("Document").vector_search("[0.1, 0.2, 0.3, 0.4]", limit=5).execute()
+    # The legacy vector_search step takes a JSON-float-array literal as its
+    # "query" text and is lowered verbatim into vec_nodes_active; the new
+    # `raw_vector_search()` surface uses a typed float list and goes through
+    # a distinct compile path (see Pack F2 notes in test_semantic_search.py).
+    # Stay on the pre-F2 vector step here until the Rust-side FFI dispatch
+    # for the new surface lands.
+    rows = (
+        db.nodes("Document")
+        ._with_step(
+            {
+                "type": "vector_search",
+                "query": "[0.1, 0.2, 0.3, 0.4]",
+                "limit": 5,
+            }
+        )
+        .execute()
+    )
 
     assert rows.was_degraded is False
     assert len(rows.nodes) >= 1

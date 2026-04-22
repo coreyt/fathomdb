@@ -107,7 +107,17 @@ def supports_vector_mode() -> bool:
                     ],
                 )
             )
-            rows = db.nodes("Document").vector_search("[0.1, 0.2, 0.3, 0.4]", limit=1).execute()
+            rows = (
+                db.nodes("Document")
+                ._with_step(
+                    {
+                        "type": "vector_search",
+                        "query": "[0.1, 0.2, 0.3, 0.4]",
+                        "limit": 1,
+                    }
+                )
+                .execute()
+            )
             return rows.was_degraded is False
         finally:
             db.close()

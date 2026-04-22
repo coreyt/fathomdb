@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
-from fathomdb import ChunkInsert, ChunkPolicy, NodeInsert, ProjectionTarget, VecInsert, WriteRequest, new_row_id
+from fathomdb import (
+    ChunkInsert,
+    ChunkPolicy,
+    NodeInsert,
+    ProjectionTarget,
+    VecInsert,
+    WriteRequest,
+    new_row_id,
+)
 
 from ..models import (
     HarnessContext,
@@ -16,9 +24,19 @@ from ..models import (
 
 def vector_degradation(context: HarnessContext) -> ScenarioResult:
     """Validate that vector search gracefully degrades in baseline mode."""
-    rows = context.engine.nodes("Document").vector_search(VECTOR_QUERY, limit=3).execute()
+    # Stay on the legacy `vector_search` step (the new `vector_search()`
+    # Python shim is a deprecation route into semantic_search, which goes
+    # through a compile path that does not yet return was_degraded on a
+    # missing vec table — see Pack F2 notes).
+    rows = (
+        context.engine.nodes("Document")
+        ._with_step({"type": "vector_search", "query": VECTOR_QUERY, "limit": 3})
+        .execute()
+    )
     assert rows.was_degraded is True, "baseline vector query should degrade"
-    assert rows.nodes == [], f"expected no vector rows, got {[node.logical_id for node in rows.nodes]}"
+    assert rows.nodes == [], (
+        f"expected no vector rows, got {[node.logical_id for node in rows.nodes]}"
+    )
     return ScenarioResult(name="vector_degradation")
 
 
@@ -54,14 +72,20 @@ def vector_insert_and_search(context: HarnessContext) -> ScenarioResult:
         )
     )
 
-    rows = context.engine.nodes("Document").vector_search(VECTOR_QUERY, limit=5).execute()
+    rows = (
+        context.engine.nodes("Document")
+        ._with_step({"type": "vector_search", "query": VECTOR_QUERY, "limit": 5})
+        .execute()
+    )
     assert rows.was_degraded is False, "vector query should not degrade in vector mode"
     assert any(node.logical_id == VECTOR_DOCUMENT_ID for node in rows.nodes), (
         f"expected {VECTOR_DOCUMENT_ID} in vector results, got {[node.logical_id for node in rows.nodes]}"
     )
 
     repair = context.engine.admin.rebuild(target=ProjectionTarget.VEC)
-    assert repair.targets == [ProjectionTarget.VEC], f"unexpected targets={repair.targets}"
+    assert repair.targets == [ProjectionTarget.VEC], (
+        f"unexpected targets={repair.targets}"
+    )
     semantics = context.engine.admin.check_semantics()
     assert semantics.stale_vec_rows == 0, f"stale_vec_rows={semantics.stale_vec_rows}"
     assert semantics.vec_rows_for_superseded_nodes == 0, (
