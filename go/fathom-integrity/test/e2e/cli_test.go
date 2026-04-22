@@ -26,10 +26,10 @@ func TestVersionCommand(t *testing.T) {
 	require.Contains(t, string(output), "admin protocol 1")
 }
 
-func TestE2ESQLiteBinarySupportsUnixepoch(t *testing.T) {
+func TestE2ESQLiteBinarySupportsPortableCurrentTimestamp(t *testing.T) {
 	sqlitePath := testutil.SQLiteBinary()
 
-	cmd := exec.Command(sqlitePath, ":memory:", "select unixepoch();")
+	cmd := exec.Command(sqlitePath, ":memory:", "select CAST(strftime('%s','now') AS INTEGER);")
 	cmd.Dir = filepath.Join("..", "..")
 	cmd.Env = os.Environ()
 
@@ -262,7 +262,7 @@ func TestRepairCommandRepairsKnownCorruptionClasses(t *testing.T) {
 	testutil.SeedTraceScenario(t, dbPath)
 	queryDB(t, dbPath, `
 INSERT INTO chunks (id, node_logical_id, text_content, created_at)
-VALUES ('chunk-1', 'meeting-1', 'budget discussion', unixepoch());
+VALUES ('chunk-1', 'meeting-1', 'budget discussion', CAST(strftime('%s','now') AS INTEGER));
 INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content)
 VALUES ('chunk-1', 'meeting-1', 'Meeting', 'budget discussion');
 `)

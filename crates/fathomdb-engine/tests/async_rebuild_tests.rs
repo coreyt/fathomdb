@@ -223,9 +223,8 @@ fn engine_shutdown_is_clean() {
         .expect("register async");
     } // svc dropped here
 
-    // Drop the engine — this should join the rebuild actor cleanly.
-    // At this point all SyncSender clones are dropped (svc.rebuild_sender dropped above,
-    // engine's _rebuild_sender drops with engine), so the actor thread can exit.
+    // Drop the engine. The explicit shutdown token lets the actor exit even if
+    // admin-service clones had held rebuild clients longer than this scope.
     drop(engine);
     // If we reach here without panic or timeout, the test passes.
 }

@@ -16,13 +16,13 @@ func SeedTraceScenario(t *testing.T, dbPath string) {
 
 	sql := `
 INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref)
-VALUES ('row-1', 'meeting-1', 'Meeting', '{}', unixepoch(), 'source-1');
+VALUES ('row-1', 'meeting-1', 'Meeting', '{}', CAST(strftime('%s','now') AS INTEGER), 'source-1');
 INSERT INTO runs (id, kind, status, properties, created_at, source_ref)
-VALUES ('run-1', 'session', 'completed', '{}', unixepoch(), 'source-1');
+VALUES ('run-1', 'session', 'completed', '{}', CAST(strftime('%s','now') AS INTEGER), 'source-1');
 INSERT INTO steps (id, run_id, kind, status, properties, created_at, source_ref)
-VALUES ('step-1', 'run-1', 'llm', 'completed', '{}', unixepoch(), 'source-1');
+VALUES ('step-1', 'run-1', 'llm', 'completed', '{}', CAST(strftime('%s','now') AS INTEGER), 'source-1');
 INSERT INTO actions (id, step_id, kind, status, properties, created_at, source_ref)
-VALUES ('action-1', 'step-1', 'emit', 'completed', '{}', unixepoch(), 'source-1');
+VALUES ('action-1', 'step-1', 'emit', 'completed', '{}', CAST(strftime('%s','now') AS INTEGER), 'source-1');
 `
 	runSQLite(t, dbPath, sql)
 }
@@ -49,9 +49,9 @@ func SeedFTSRepairScenario(t *testing.T, dbPath string) {
 
 	sql := `
 INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref)
-VALUES ('row-1', 'meeting-1', 'Meeting', '{}', unixepoch(), 'source-1');
+VALUES ('row-1', 'meeting-1', 'Meeting', '{}', CAST(strftime('%s','now') AS INTEGER), 'source-1');
 INSERT INTO chunks (id, node_logical_id, text_content, created_at)
-VALUES ('chunk-1', 'meeting-1', 'budget discussion', unixepoch());
+VALUES ('chunk-1', 'meeting-1', 'budget discussion', CAST(strftime('%s','now') AS INTEGER));
 INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content)
 VALUES ('chunk-1', 'meeting-1', 'Meeting', 'budget discussion');
 DELETE FROM fts_nodes;
@@ -65,9 +65,9 @@ func SeedFTSScenario(t *testing.T, dbPath string) {
 
 	sql := `
 INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref)
-VALUES ('row-1', 'meeting-1', 'Meeting', '{}', unixepoch(), 'source-1');
+VALUES ('row-1', 'meeting-1', 'Meeting', '{}', CAST(strftime('%s','now') AS INTEGER), 'source-1');
 INSERT INTO chunks (id, node_logical_id, text_content, created_at)
-VALUES ('chunk-1', 'meeting-1', 'budget discussion', unixepoch());
+VALUES ('chunk-1', 'meeting-1', 'budget discussion', CAST(strftime('%s','now') AS INTEGER));
 INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content)
 VALUES ('chunk-1', 'meeting-1', 'Meeting', 'budget discussion');
 `
@@ -82,11 +82,11 @@ func SeedMultilineChunkScenario(t *testing.T, dbPath string) {
 
 	sql := `
 INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref)
-VALUES ('row-1', 'meeting-1', 'Meeting', '{}', unixepoch(), 'source-1');
+VALUES ('row-1', 'meeting-1', 'Meeting', '{}', CAST(strftime('%s','now') AS INTEGER), 'source-1');
 INSERT INTO chunks (id, node_logical_id, text_content, created_at)
 VALUES ('chunk-1', 'meeting-1', 'line 1
 sql error: preserved text inside chunk
-line 3', unixepoch());
+line 3', CAST(strftime('%s','now') AS INTEGER));
 INSERT INTO fts_nodes (chunk_id, node_logical_id, kind, text_content)
 VALUES ('chunk-1', 'meeting-1', 'Meeting', 'line 1
 sql error: preserved text inside chunk

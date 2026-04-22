@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
 
 use fathomdb_schema::SchemaManager;
@@ -8,7 +9,7 @@ use crate::{
     AdminHandle, AdminService, EngineError, ExecutionCoordinator, ProvenanceMode, QueryEmbedder,
     WriterActor,
     database_lock::DatabaseLock,
-    rebuild_actor::{RebuildActor, RebuildRequest, recover_interrupted_rebuilds},
+    rebuild_actor::{RebuildActor, RebuildClient, RebuildRequest, recover_interrupted_rebuilds},
     telemetry::{TelemetryCounters, TelemetryLevel, TelemetrySnapshot},
 };
 
@@ -32,9 +33,6 @@ pub struct EngineRuntime {
     coordinator: ExecutionCoordinator,
     writer: WriterActor,
     admin: AdminHandle,
-    /// Sender side of the rebuild channel.  Dropped before `_rebuild` so the
-    /// rebuild thread's loop exits before we join it.
-    _rebuild_sender: mpsc::SyncSender<RebuildRequest>,
     _rebuild: RebuildActor,
     _lock: DatabaseLock,
 }
@@ -94,9 +92,8 @@ impl EngineRuntime {
             Arc::clone(&telemetry),
         )?;
 
-        // Crash recovery: mark any interrupted rebuilds (PENDING/BUILDING/SWAPPING)
-        // as FAILED and clean up their staging rows.  Must run before the
-        // RebuildActor starts so the actor never sees stale non-terminal state.
+        // Crash recovery: PENDING is durable queued work and survives restart.
+        // BUILDING/SWAPPING were in-flight during a crash and are marked FAILED.
         {
             let recovery_conn = crate::sqlite::open_connection(path.as_ref())?;
             recover_interrupted_rebuilds(&recovery_conn)?;
@@ -104,12 +101,18 @@ impl EngineRuntime {
 
         // Rebuild actor: create channel, start thread, pass sender to AdminService.
         let (rebuild_sender, rebuild_receiver) = mpsc::sync_channel::<RebuildRequest>(64);
-        let rebuild_actor =
-            RebuildActor::start(path.as_ref(), Arc::clone(&schema_manager), rebuild_receiver)?;
+        let rebuild_shutdown = Arc::new(AtomicBool::new(false));
+        let rebuild_actor = RebuildActor::start(
+            path.as_ref(),
+            Arc::clone(&schema_manager),
+            rebuild_receiver,
+            Arc::clone(&rebuild_shutdown),
+        )?;
+        let rebuild_client = RebuildClient::new(rebuild_sender, rebuild_shutdown);
         let admin = AdminHandle::new(AdminService::new_with_rebuild(
             path.as_ref(),
             schema_manager,
-            rebuild_sender.clone(),
+            rebuild_client,
         ));
 
         trace_info!(path = %path.as_ref().display(), "engine opened");
@@ -118,7 +121,6 @@ impl EngineRuntime {
             coordinator,
             writer,
             admin,
-            _rebuild_sender: rebuild_sender,
             _rebuild: rebuild_actor,
             _lock: lock,
         })

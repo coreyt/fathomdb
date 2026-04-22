@@ -6,7 +6,8 @@ mod migration;
 
 pub use bootstrap::{
     BootstrapReport, DEFAULT_FTS_TOKENIZER, SchemaManager, fts_column_name, fts_kind_table_name,
-    resolve_fts_tokenizer, vec_kind_table_name,
+    legacy_fts_kind_table_name, legacy_vec_kind_table_name, resolve_fts_tokenizer,
+    vec_kind_table_name,
 };
 pub use migration::{Migration, SchemaVersion};
 

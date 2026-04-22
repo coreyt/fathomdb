@@ -130,7 +130,7 @@ static MIGRATIONS: &[Migration] = &[
                     event_type TEXT NOT NULL,
                     subject    TEXT NOT NULL,
                     source_ref TEXT,
-                    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+                    created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER))
                 );
                 CREATE INDEX IF NOT EXISTS idx_provenance_events_subject
                     ON provenance_events (subject, event_type);
@@ -150,7 +150,7 @@ static MIGRATIONS: &[Migration] = &[
                     chunking_policy TEXT NOT NULL,
                     preprocessing_policy TEXT NOT NULL,
                     generator_command_json TEXT NOT NULL,
-                    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+                    updated_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER))
                 );
                 ",
     ),
@@ -203,7 +203,7 @@ static MIGRATIONS: &[Migration] = &[
                     schema_json TEXT NOT NULL,
                     retention_json TEXT NOT NULL,
                     format_version INTEGER NOT NULL DEFAULT 1,
-                    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                    created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)),
                     disabled_at INTEGER
                 );
 
@@ -217,7 +217,7 @@ static MIGRATIONS: &[Migration] = &[
                     op_kind TEXT NOT NULL,
                     payload_json TEXT NOT NULL,
                     source_ref TEXT,
-                    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                    created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)),
                     FOREIGN KEY(collection_name) REFERENCES operational_collections(name)
                 );
 
@@ -385,7 +385,7 @@ static MIGRATIONS: &[Migration] = &[
                     property_paths_json TEXT NOT NULL,
                     separator TEXT NOT NULL DEFAULT ' ',
                     format_version INTEGER NOT NULL DEFAULT 1,
-                    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+                    created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER))
                 );
 
                 CREATE VIRTUAL TABLE IF NOT EXISTS fts_node_properties USING fts5(
@@ -505,7 +505,7 @@ static MIGRATIONS: &[Migration] = &[
             facet       TEXT    NOT NULL,
             config_json TEXT    NOT NULL,
             active_at   INTEGER,
-            created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+            created_at  INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)),
             PRIMARY KEY (kind, facet)
         );",
     ),
@@ -523,6 +523,11 @@ static MIGRATIONS: &[Migration] = &[
         SchemaVersion(23),
         "drop global fts_node_properties table (replaced by per-kind fts_props_<kind> tables)",
         "DROP TABLE IF EXISTS fts_node_properties;",
+    ),
+    Migration::new(
+        SchemaVersion(24),
+        "projection table registry and collision-proof per-kind table names",
+        "",
     ),
 ];
 
@@ -608,6 +613,7 @@ impl SchemaManager {
                 SchemaVersion(16) => Self::ensure_unicode_porter_fts_tokenizers(&tx)?,
                 SchemaVersion(21) => Self::ensure_per_kind_fts_tables(&tx)?,
                 SchemaVersion(22) => Self::ensure_staging_columns_json(&tx)?,
+                SchemaVersion(24) => Self::ensure_projection_table_registry(&tx)?,
                 _ => tx.execute_batch(migration.sql)?,
             }
             tx.execute(
@@ -972,7 +978,7 @@ impl SchemaManager {
                 property_paths_json TEXT NOT NULL,
                 separator TEXT NOT NULL DEFAULT ' ',
                 format_version INTEGER NOT NULL DEFAULT 1,
-                created_at INTEGER NOT NULL DEFAULT (unixepoch())
+                created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER))
             );
 
             CREATE VIRTUAL TABLE IF NOT EXISTS fts_node_properties USING fts5(
@@ -1008,7 +1014,7 @@ impl SchemaManager {
             conn.execute(
                 "INSERT OR IGNORE INTO fts_property_rebuild_state \
                  (kind, schema_id, state, rows_done, started_at, is_first_registration) \
-                 SELECT ?1, rowid, 'PENDING', 0, unixepoch('now') * 1000, 0 \
+                 SELECT ?1, rowid, 'PENDING', 0, CAST(strftime('%s','now') AS INTEGER) * 1000, 0 \
                  FROM fts_property_schemas WHERE kind = ?1",
                 rusqlite::params![kind],
             )?;
@@ -1032,6 +1038,93 @@ impl SchemaManager {
         if !column_exists {
             conn.execute_batch(
                 "ALTER TABLE fts_property_rebuild_staging ADD COLUMN columns_json TEXT;",
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn ensure_projection_table_registry(conn: &Connection) -> Result<(), SchemaError> {
+        conn.execute_batch(
+            r"
+            CREATE TABLE IF NOT EXISTS projection_table_registry (
+                kind TEXT NOT NULL,
+                facet TEXT NOT NULL CHECK (facet IN ('fts', 'vec')),
+                table_name TEXT NOT NULL UNIQUE,
+                naming_version INTEGER NOT NULL,
+                created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)),
+                migrated_from TEXT,
+                PRIMARY KEY (kind, facet)
+            );
+            ",
+        )?;
+
+        let fts_kinds: Vec<String> = conn
+            .prepare("SELECT kind FROM fts_property_schemas")
+            .optional()?
+            .map(|mut stmt| {
+                stmt.query_map([], |r| r.get::<_, String>(0))?
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+
+        for kind in &fts_kinds {
+            let table_name = fts_kind_table_name(kind);
+            let legacy = legacy_fts_kind_table_name(kind);
+            conn.execute(
+                "INSERT INTO projection_table_registry \
+                 (kind, facet, table_name, naming_version, migrated_from) \
+                 VALUES (?1, 'fts', ?2, 2, ?3) \
+                 ON CONFLICT(kind, facet) DO UPDATE SET \
+                     table_name = excluded.table_name, \
+                     naming_version = excluded.naming_version, \
+                     migrated_from = excluded.migrated_from",
+                rusqlite::params![kind, table_name, legacy],
+            )?;
+            conn.execute(
+                "INSERT INTO fts_property_rebuild_state \
+                 (kind, schema_id, state, rows_done, started_at, is_first_registration) \
+                 SELECT ?1, rowid, 'PENDING', 0, CAST(strftime('%s','now') AS INTEGER) * 1000, 0 \
+                 FROM fts_property_schemas WHERE kind = ?1 \
+                 ON CONFLICT(kind) DO UPDATE SET \
+                     schema_id = excluded.schema_id, \
+                     state = CASE \
+                         WHEN fts_property_rebuild_state.state IN ('BUILDING', 'SWAPPING') \
+                         THEN fts_property_rebuild_state.state \
+                         ELSE 'PENDING' \
+                     END, \
+                     rows_total = NULL, \
+                     rows_done = 0, \
+                     started_at = excluded.started_at, \
+                     last_progress_at = NULL, \
+                     error_message = NULL",
+                rusqlite::params![kind],
+            )?;
+        }
+
+        let vec_kinds: Vec<String> = conn
+            .prepare("SELECT kind FROM projection_profiles WHERE facet = 'vec'")
+            .optional()?
+            .map(|mut stmt| {
+                stmt.query_map([], |r| r.get::<_, String>(0))?
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?
+            .unwrap_or_default();
+
+        for kind in &vec_kinds {
+            let table_name = vec_kind_table_name(kind);
+            let legacy = legacy_vec_kind_table_name(kind);
+            conn.execute(
+                "INSERT INTO projection_table_registry \
+                 (kind, facet, table_name, naming_version, migrated_from) \
+                 VALUES (?1, 'vec', ?2, 2, ?3) \
+                 ON CONFLICT(kind, facet) DO UPDATE SET \
+                     table_name = excluded.table_name, \
+                     naming_version = excluded.naming_version, \
+                     migrated_from = excluded.migrated_from",
+                rusqlite::params![kind, table_name, legacy],
             )?;
         }
 
@@ -1197,10 +1290,10 @@ impl SchemaManager {
             format!(r#"{{"table_name":"{table_name}","dimensions":{dimension_i64}}}"#);
         conn.execute(
             "INSERT INTO projection_profiles (kind, facet, config_json, active_at, created_at) \
-             VALUES (?1, 'vec', ?2, unixepoch(), unixepoch()) \
+             VALUES (?1, 'vec', ?2, CAST(strftime('%s','now') AS INTEGER), CAST(strftime('%s','now') AS INTEGER)) \
              ON CONFLICT(kind, facet) DO UPDATE SET \
                  config_json = ?2, \
-                 active_at   = unixepoch()",
+                 active_at   = CAST(strftime('%s','now') AS INTEGER)",
             rusqlite::params![kind, config_json],
         )?;
         Ok(())
@@ -1231,7 +1324,7 @@ impl SchemaManager {
             CREATE TABLE IF NOT EXISTS fathom_schema_migrations (
                 version INTEGER PRIMARY KEY,
                 description TEXT NOT NULL,
-                applied_at INTEGER NOT NULL DEFAULT (unixepoch())
+                applied_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER))
             );
             ",
         )?;
@@ -1244,48 +1337,23 @@ pub const DEFAULT_FTS_TOKENIZER: &str = "porter unicode61 remove_diacritics 2";
 
 /// Derive the canonical FTS5 virtual-table name for a given node `kind`.
 ///
-/// Rules:
-/// 1. Lowercase the kind string.
-/// 2. Replace every character that is NOT `[a-z0-9]` with `_`.
-/// 3. Collapse consecutive underscores to a single `_`.
-/// 4. Prefix with `fts_props_`.
-/// 5. If the result exceeds 63 characters: truncate the slug to 55 characters
-///    and append `_` + the first 7 hex chars of the SHA-256 of the original kind.
+/// The name keeps a readable sanitized slug and always appends a stable hash
+/// suffix so distinct kinds never collide after sanitization.
 #[must_use]
 pub fn fts_kind_table_name(kind: &str) -> String {
-    // Step 1-3: normalise the slug
-    let lowered = kind.to_lowercase();
-    let mut slug = String::with_capacity(lowered.len());
-    let mut prev_was_underscore = false;
-    for ch in lowered.chars() {
-        if ch.is_ascii_alphanumeric() {
-            slug.push(ch);
-            prev_was_underscore = false;
-        } else {
-            if !prev_was_underscore {
-                slug.push('_');
-            }
-            prev_was_underscore = true;
-        }
-    }
+    projection_table_name("fts_props", kind)
+}
 
-    // Step 4: prefix
+/// Legacy pre-0.5.4 FTS table-name derivation, retained for migrations and diagnostics.
+#[must_use]
+pub fn legacy_fts_kind_table_name(kind: &str) -> String {
+    let slug = sanitize_kind_slug(kind);
     let prefixed = format!("fts_props_{slug}");
-
-    // Step 5: truncate if needed
     if prefixed.len() <= 63 {
         prefixed
     } else {
-        // Hash the original kind string
-        let hash = Sha256::digest(kind.as_bytes());
-        let mut hex = String::with_capacity(hash.len() * 2);
-        for b in &hash {
-            use std::fmt::Write as _;
-            let _ = write!(hex, "{b:02x}");
-        }
+        let hex = sha256_hex(kind);
         let hex_suffix = &hex[..7];
-        // Slug must be 55 chars so that "fts_props_" (10) + slug (55) + "_" (1) + hex7 (7) = 73 — too long.
-        // Wait: total = 10 + slug_len + 1 + 7 = 63  => slug_len = 45
         let slug_truncated = if slug.len() > 45 { &slug[..45] } else { &slug };
         format!("fts_props_{slug_truncated}_{hex_suffix}")
     }
@@ -1293,13 +1361,40 @@ pub fn fts_kind_table_name(kind: &str) -> String {
 
 /// Derive the canonical sqlite-vec virtual-table name for a given node `kind`.
 ///
-/// Rules:
-/// 1. Lowercase the kind string.
-/// 2. Replace every character that is NOT `[a-z0-9]` with `_`.
-/// 3. Collapse consecutive underscores to a single `_`.
-/// 4. Prefix with `vec_`.
+/// The name keeps a readable sanitized slug and always appends a stable hash
+/// suffix so distinct kinds never collide after sanitization.
 #[must_use]
 pub fn vec_kind_table_name(kind: &str) -> String {
+    projection_table_name("vec", kind)
+}
+
+/// Legacy pre-0.5.4 sqlite-vec table-name derivation, retained for migrations and diagnostics.
+#[must_use]
+pub fn legacy_vec_kind_table_name(kind: &str) -> String {
+    let slug = sanitize_kind_slug(kind);
+    format!("vec_{slug}")
+}
+
+fn projection_table_name(prefix: &str, kind: &str) -> String {
+    const MAX_IDENTIFIER_LEN: usize = 63;
+    const HASH_LEN: usize = 10;
+    let slug = sanitize_kind_slug(kind);
+    let hex = sha256_hex(kind);
+    let suffix = &hex[..HASH_LEN];
+    let budget = MAX_IDENTIFIER_LEN
+        .saturating_sub(prefix.len())
+        .saturating_sub(2)
+        .saturating_sub(HASH_LEN)
+        .max(1);
+    let slug = if slug.len() > budget {
+        &slug[..budget]
+    } else {
+        &slug
+    };
+    format!("{prefix}_{slug}_{suffix}")
+}
+
+fn sanitize_kind_slug(kind: &str) -> String {
     let lowered = kind.to_lowercase();
     let mut slug = String::with_capacity(lowered.len());
     let mut prev_was_underscore = false;
@@ -1314,7 +1409,22 @@ pub fn vec_kind_table_name(kind: &str) -> String {
             prev_was_underscore = true;
         }
     }
-    format!("vec_{slug}")
+    let slug = slug.trim_matches('_');
+    if slug.is_empty() {
+        "kind".to_owned()
+    } else {
+        slug.to_owned()
+    }
+}
+
+fn sha256_hex(kind: &str) -> String {
+    let hash = Sha256::digest(kind.as_bytes());
+    let mut hex = String::with_capacity(hash.len() * 2);
+    for b in &hash {
+        use std::fmt::Write as _;
+        let _ = write!(hex, "{b:02x}");
+    }
+    hex
 }
 
 /// Derive the canonical FTS5 column name for a JSON path.
@@ -1485,7 +1595,7 @@ mod tests {
                 event_type TEXT NOT NULL,
                 subject    TEXT NOT NULL,
                 source_ref TEXT,
-                created_at INTEGER NOT NULL DEFAULT (unixepoch())
+                created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER))
             );
             CREATE TABLE vector_embedding_contracts (
                 profile TEXT PRIMARY KEY,
@@ -1497,7 +1607,7 @@ mod tests {
                 chunking_policy TEXT NOT NULL,
                 preprocessing_policy TEXT NOT NULL,
                 generator_command_json TEXT NOT NULL,
-                updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                updated_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)),
                 applied_at INTEGER NOT NULL DEFAULT 0,
                 snapshot_hash TEXT NOT NULL DEFAULT ''
             );
@@ -1621,7 +1731,7 @@ mod tests {
                 schema_json TEXT NOT NULL,
                 retention_json TEXT NOT NULL,
                 format_version INTEGER NOT NULL DEFAULT 1,
-                created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)),
                 disabled_at INTEGER
             );
 
@@ -1632,7 +1742,7 @@ mod tests {
                 op_kind TEXT NOT NULL,
                 payload_json TEXT NOT NULL,
                 source_ref TEXT,
-                created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)),
                 mutation_order INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY(collection_name) REFERENCES operational_collections(name)
             );
@@ -1700,7 +1810,7 @@ mod tests {
                 schema_json TEXT NOT NULL,
                 retention_json TEXT NOT NULL,
                 format_version INTEGER NOT NULL DEFAULT 1,
-                created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)),
                 disabled_at INTEGER
             );
 
@@ -1711,7 +1821,7 @@ mod tests {
                 op_kind TEXT NOT NULL,
                 payload_json TEXT NOT NULL,
                 source_ref TEXT,
-                created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)),
                 mutation_order INTEGER NOT NULL DEFAULT 1,
                 FOREIGN KEY(collection_name) REFERENCES operational_collections(name)
             );
@@ -1898,34 +2008,30 @@ mod tests {
 
     #[test]
     fn fts_kind_table_name_simple_kind() {
-        assert_eq!(
-            super::fts_kind_table_name("WMKnowledgeObject"),
-            "fts_props_wmknowledgeobject"
-        );
+        let result = super::fts_kind_table_name("WMKnowledgeObject");
+        assert!(result.starts_with("fts_props_wmknowledgeobject_"));
+        assert!(result.len() <= 63);
     }
 
     #[test]
     fn fts_kind_table_name_another_simple_kind() {
-        assert_eq!(
-            super::fts_kind_table_name("WMExecutionRecord"),
-            "fts_props_wmexecutionrecord"
-        );
+        let result = super::fts_kind_table_name("WMExecutionRecord");
+        assert!(result.starts_with("fts_props_wmexecutionrecord_"));
+        assert!(result.len() <= 63);
     }
 
     #[test]
     fn fts_kind_table_name_with_separator_chars() {
-        assert_eq!(
-            super::fts_kind_table_name("MyKind-With.Dots"),
-            "fts_props_mykind_with_dots"
-        );
+        let result = super::fts_kind_table_name("MyKind-With.Dots");
+        assert!(result.starts_with("fts_props_mykind_with_dots_"));
+        assert!(result.len() <= 63);
     }
 
     #[test]
     fn fts_kind_table_name_collapses_consecutive_underscores() {
-        assert_eq!(
-            super::fts_kind_table_name("Kind__Double__Underscores"),
-            "fts_props_kind_double_underscores"
-        );
+        let result = super::fts_kind_table_name("Kind__Double__Underscores");
+        assert!(result.starts_with("fts_props_kind_double_underscores_"));
+        assert!(result.len() <= 63);
     }
 
     #[test]
@@ -1933,15 +2039,18 @@ mod tests {
         // 61 A's — slug after prefix would be 61 chars, exceeding 63-char limit
         let long_kind = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
         let result = super::fts_kind_table_name(long_kind);
-        assert_eq!(result.len(), 63, "result must be exactly 63 chars");
+        assert!(
+            result.len() <= 63,
+            "result must fit sqlite identifier budget"
+        );
         assert!(
             result.starts_with("fts_props_"),
             "result must start with fts_props_"
         );
-        // Must contain underscore before 7-char hex suffix
+        // Must contain underscore before 10-char hex suffix
         let last_underscore = result.rfind('_').expect("must contain underscore");
         let hex_suffix = &result[last_underscore + 1..];
-        assert_eq!(hex_suffix.len(), 7, "hex suffix must be 7 chars");
+        assert_eq!(hex_suffix.len(), 10, "hex suffix must be 10 chars");
         assert!(
             hex_suffix.chars().all(|c| c.is_ascii_hexdigit()),
             "hex suffix must be hex digits"
@@ -1950,7 +2059,24 @@ mod tests {
 
     #[test]
     fn fts_kind_table_name_testkind() {
-        assert_eq!(super::fts_kind_table_name("TestKind"), "fts_props_testkind");
+        let result = super::fts_kind_table_name("TestKind");
+        assert!(result.starts_with("fts_props_testkind_"));
+    }
+
+    #[test]
+    fn projection_table_names_do_not_collide_after_sanitization() {
+        assert_ne!(
+            super::fts_kind_table_name("Foo-Bar"),
+            super::fts_kind_table_name("Foo_Bar")
+        );
+        assert_ne!(
+            super::vec_kind_table_name("Foo-Bar"),
+            super::vec_kind_table_name("Foo_Bar")
+        );
+        assert_eq!(
+            super::legacy_fts_kind_table_name("Foo-Bar"),
+            super::legacy_fts_kind_table_name("Foo_Bar")
+        );
     }
 
     // --- A-1: fts_column_name tests ---
@@ -2000,7 +2126,7 @@ mod tests {
                 facet TEXT NOT NULL,
                 config_json TEXT NOT NULL,
                 active_at INTEGER,
-                created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)),
                 PRIMARY KEY (kind, facet)
             );
             INSERT INTO projection_profiles (kind, facet, config_json)
@@ -2118,18 +2244,15 @@ mod tests {
         // is already applied, so we test the function directly.
         SchemaManager::ensure_per_kind_fts_tables(&conn).expect("ensure_per_kind_fts_tables");
 
-        // fts_props_testkind should exist
+        let table = super::fts_kind_table_name("TestKind");
         let count: i64 = conn
             .query_row(
-                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='fts_props_testkind'",
-                [],
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name = ?1",
+                [table.as_str()],
                 |r| r.get(0),
             )
             .expect("count fts table");
-        assert_eq!(
-            count, 1,
-            "fts_props_testkind virtual table should be created"
-        );
+        assert_eq!(count, 1, "{table} virtual table should be created");
 
         // PENDING row should exist
         let state: String = conn
@@ -2165,31 +2288,30 @@ mod tests {
 
     #[test]
     fn vec_kind_table_name_simple_kind() {
-        assert_eq!(
-            super::vec_kind_table_name("WMKnowledgeObject"),
-            "vec_wmknowledgeobject"
-        );
+        let result = super::vec_kind_table_name("WMKnowledgeObject");
+        assert!(result.starts_with("vec_wmknowledgeobject_"));
+        assert!(result.len() <= 63);
     }
 
     #[test]
     fn vec_kind_table_name_another_kind() {
-        assert_eq!(super::vec_kind_table_name("MyKind"), "vec_mykind");
+        let result = super::vec_kind_table_name("MyKind");
+        assert!(result.starts_with("vec_mykind_"));
+        assert!(result.len() <= 63);
     }
 
     #[test]
     fn vec_kind_table_name_with_separator_chars() {
-        assert_eq!(
-            super::vec_kind_table_name("MyKind-With.Dots"),
-            "vec_mykind_with_dots"
-        );
+        let result = super::vec_kind_table_name("MyKind-With.Dots");
+        assert!(result.starts_with("vec_mykind_with_dots_"));
+        assert!(result.len() <= 63);
     }
 
     #[test]
     fn vec_kind_table_name_collapses_consecutive_underscores() {
-        assert_eq!(
-            super::vec_kind_table_name("Kind__Double__Underscores"),
-            "vec_kind_double_underscores"
-        );
+        let result = super::vec_kind_table_name("Kind__Double__Underscores");
+        assert!(result.starts_with("vec_kind_double_underscores_"));
+        assert!(result.len() <= 63);
     }
 
     // --- 0.5.0 item 6: per-kind vec tables ---
