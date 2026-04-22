@@ -231,6 +231,45 @@ fn test_configure_embedding_identity_change_without_ack_rejects() {
 }
 
 #[test]
+fn test_configure_embedding_normalization_policy_change_triggers_replace() {
+    let h = new_admin();
+    let svc = &h.service;
+    let first = FakeEmbedder::new("bge-small-en-v1.5", "1.5", 384, "l2");
+    let first_outcome = svc.configure_embedding(&first, false).expect("first");
+    let first_id = match first_outcome {
+        ConfigureEmbeddingOutcome::Activated { profile_id } => profile_id,
+        other => panic!("expected Activated, got {other:?}"),
+    };
+
+    // Same model_identity/version/dimensions, different normalization policy.
+    let second = FakeEmbedder::new("bge-small-en-v1.5", "1.5", 384, "none");
+    let outcome = svc
+        .configure_embedding(&second, false)
+        .expect("configure with normalization change");
+    match outcome {
+        ConfigureEmbeddingOutcome::Replaced {
+            old_profile_id,
+            stale_kinds,
+            ..
+        } => {
+            assert_eq!(old_profile_id, first_id);
+            assert_eq!(stale_kinds, 0);
+        }
+        other => panic!("expected Replaced, got {other:?}"),
+    }
+    let conn = connect(&h);
+    assert_eq!(count_active_profiles(&conn), 1);
+    let norm: Option<String> = conn
+        .query_row(
+            "SELECT normalization_policy FROM vector_embedding_profiles WHERE active = 1",
+            [],
+            |r| r.get::<_, Option<String>>(0),
+        )
+        .expect("active row");
+    assert_eq!(norm.as_deref().unwrap_or(""), "none");
+}
+
+#[test]
 fn test_configure_embedding_identity_change_no_enabled_kinds_no_ack_needed() {
     let h = new_admin();
     let svc = &h.service;
