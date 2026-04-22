@@ -753,6 +753,13 @@ impl EngineCore {
         })
     }
 
+    pub fn configure_embedding(&self, py: Python<'_>, request_json: &str) -> PyResult<String> {
+        self.with_engine(|engine| {
+            py.detach(|| crate::admin_ffi::configure_embedding_json(engine, request_json))
+                .map_err(map_admin_ffi_error)
+        })
+    }
+
     pub fn get_vec_profile(&self, py: Python<'_>, kind: &str) -> PyResult<String> {
         self.with_engine(|engine| {
             py.detach(|| crate::admin_ffi::get_vec_profile_json(engine, kind))
@@ -902,6 +909,11 @@ fn map_engine_error(error: EngineError) -> PyErr {
         EngineError::EmbedderNotConfigured => FathomError::new_err(
             "embedder not configured: open the Engine with a non-None EmbedderChoice to regenerate vector embeddings",
         ),
+        EngineError::EmbeddingChangeRequiresAck { affected_kinds } => {
+            FathomError::new_err(format!(
+                "changing the database-wide embedding identity would invalidate {affected_kinds} enabled vector index kinds; re-invoke with acknowledge_rebuild_impact=True"
+            ))
+        }
     }
 }
 

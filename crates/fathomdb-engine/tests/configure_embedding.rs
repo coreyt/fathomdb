@@ -1,7 +1,7 @@
 //! Pack B: `AdminService::configure_embedding` database-wide embedding
 //! identity admin API.
 //!
-//! These tests cover the four behavioural variants of the configure_embedding
+//! These tests cover the four behavioural variants of the `configure_embedding`
 //! contract:
 //!
 //!   1. Fresh engine → new active profile row persisted.

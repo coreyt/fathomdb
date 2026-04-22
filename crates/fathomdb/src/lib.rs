@@ -1052,6 +1052,7 @@ fn engine_error_code(error: &EngineError) -> Option<String> {
         EngineError::DatabaseLocked(_) => "database_locked",
         EngineError::InvalidConfig(_) => "invalid_config",
         EngineError::EmbedderNotConfigured => "embedder_not_configured",
+        EngineError::EmbeddingChangeRequiresAck { .. } => "embedding_change_requires_ack",
     };
     Some(code.to_owned())
 }

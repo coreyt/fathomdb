@@ -15,11 +15,12 @@ mod telemetry;
 mod writer;
 
 pub use admin::{
-    AdminHandle, AdminService, FtsProfile, FtsPropertyPathMode, FtsPropertyPathSpec,
-    FtsPropertySchemaRecord, IntegrityReport, LogicalPurgeReport, LogicalRestoreReport,
-    ProjectionImpact, ProvenancePurgeOptions, ProvenancePurgeReport, SafeExportManifest,
-    SafeExportOptions, SemanticReport, SkippedEdge, TOKENIZER_PRESETS, TraceReport, VecProfile,
-    VectorRegenerationConfig, VectorRegenerationReport, load_vector_regeneration_config,
+    AdminHandle, AdminService, ConfigureEmbeddingOutcome, FtsProfile, FtsPropertyPathMode,
+    FtsPropertyPathSpec, FtsPropertySchemaRecord, IntegrityReport, LogicalPurgeReport,
+    LogicalRestoreReport, ProjectionImpact, ProvenancePurgeOptions, ProvenancePurgeReport,
+    SafeExportManifest, SafeExportOptions, SemanticReport, SkippedEdge, TOKENIZER_PRESETS,
+    TraceReport, VecProfile, VectorRegenerationConfig, VectorRegenerationReport,
+    load_vector_regeneration_config,
 };
 pub use coordinator::{
     ActionRow, EdgeExpansionRootRows, EdgeExpansionSlotRows, EdgeRow, ExecutionCoordinator,
@@ -85,4 +86,17 @@ pub enum EngineError {
         "embedder not configured: call Engine::open with a non-None EmbedderChoice to regenerate vector embeddings"
     )]
     EmbedderNotConfigured,
+    /// Attempted to change the database-wide embedding identity while
+    /// enabled per-kind vector index schemas exist, but the caller did not
+    /// acknowledge the rebuild impact. Re-invoke with
+    /// `acknowledge_rebuild_impact = true` to proceed (which will mark the
+    /// affected kinds `stale` without triggering a rebuild).
+    #[error(
+        "changing the database-wide embedding identity would invalidate {affected_kinds} enabled vector index kinds; re-invoke with acknowledge_rebuild_impact=true"
+    )]
+    EmbeddingChangeRequiresAck {
+        /// Number of enabled per-kind vector index schemas that would be
+        /// marked stale by the identity change.
+        affected_kinds: usize,
+    },
 }

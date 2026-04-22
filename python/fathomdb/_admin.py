@@ -47,6 +47,24 @@ from ._types import (
 TOKENIZER_PRESETS: dict[str, str] = _list_tokenizer_presets()
 
 
+def _resolve_max_tokens(embedder) -> int:
+    """Extract ``max_tokens`` from an embedder, defaulting to 512.
+
+    Works for real ``QueryEmbedder`` implementations (which expose a
+    ``max_tokens()`` callable) and for test mocks where the attribute may
+    be missing or non-numeric.
+    """
+    fn = getattr(embedder, "max_tokens", None)
+    if callable(fn):
+        try:
+            value = fn()
+        except Exception:  # noqa: BLE001
+            return 512
+        if isinstance(value, int) and value > 0:
+            return value
+    return 512
+
+
 class AdminClient:
     """Administrative operations for a fathomdb database.
 
@@ -626,6 +644,41 @@ class AdminClient:
         )
         result_json = self._core.set_vec_profile(config)
         return VecProfile.from_wire(json.loads(result_json))
+
+    def configure_embedding(
+        self,
+        embedder,
+        *,
+        acknowledge_rebuild_impact: bool = False,
+    ) -> dict:
+        """Activate or replace the database-wide embedding identity.
+
+        Identity fields are read from ``embedder.identity()`` (the embedder
+        is the source of truth — callers cannot pass an identity string).
+
+        Args:
+            embedder: A ``QueryEmbedder`` exposing ``identity()``.
+            acknowledge_rebuild_impact: Required when the identity change
+                would invalidate enabled vector index kinds. When False and
+                such kinds exist, the engine refuses the change.
+
+        Returns
+        -------
+            A dict with an ``outcome`` key (``"activated"``, ``"unchanged"``,
+            or ``"replaced"``) plus the associated profile ids / stale-kind
+            count. See the Rust ``ConfigureEmbeddingOutcome`` enum.
+        """
+        identity = embedder.identity()
+        request = {
+            "model_identity": identity.model_identity,
+            "model_version": identity.model_version,
+            "dimensions": identity.dimensions,
+            "normalization_policy": identity.normalization_policy,
+            "max_tokens": _resolve_max_tokens(embedder),
+            "acknowledge_rebuild_impact": acknowledge_rebuild_impact,
+        }
+        result_json = self._core.configure_embedding(json.dumps(request))
+        return json.loads(result_json)
 
     def preview_projection_impact(self, kind: str, target: str) -> ImpactReport:
         """Return an impact estimate for changing the projection for *kind*.
