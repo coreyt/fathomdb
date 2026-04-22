@@ -72,6 +72,7 @@ export type NativeEngineCore = {
   previewProjectionImpact(kind: string, facet: string): string;
   restoreVectorProfiles(): string;
   regenerateVectorEmbeddings(configJson: string): string;
+  drainVectorProjection(requestJson: string): string;
 };
 
 declare global {

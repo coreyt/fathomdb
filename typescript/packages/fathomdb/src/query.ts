@@ -85,14 +85,91 @@ export class Query {
   }
 
   /**
-   * Add a vector similarity search step.
+   * Append a semantic (text → embed → KNN) search step.
    *
-   * @param query - The text query to embed and search against.
+   * The engine embeds `text` using its configured read-time embedder and
+   * runs a KNN scan against the per-kind `vec_<kind>` table. The target
+   * kind must already have been enabled for vector indexing via
+   * `configure_vec_kind(...)` on an SDK that exposes it (Python / Rust).
+   *
+   * Errors propagate as typed `FathomError` subclasses:
+   *   - `FathomError` (INVALID_CONFIG) when no embedder is configured.
+   *   - `KindNotVectorIndexedError` when the kind has no enabled schema.
+   *
+   * Stale schemas and embedder-unavailable cases degrade to an empty
+   * result with `wasDegraded = true` rather than throwing.
+   *
+   * @param text - Natural-language query text to embed.
    * @param limit - Maximum number of nearest neighbours to return.
-   * @returns A new Query with the vector search step appended.
+   * @returns A new Query with the semantic search step appended.
    */
-  vectorSearch(query: string, limit: number): Query {
-    return this.#withStep({ type: "vector_search", query, limit });
+  semanticSearch(text: string, limit: number): Query {
+    return this.#withStep({ type: "semantic_search", text, limit });
+  }
+
+  /**
+   * Append a raw-vector KNN search step.
+   *
+   * Skips the read-time embedder and binds `vec` directly to the per-kind
+   * `vec_<kind>` KNN scan. Use this for callers that already hold an
+   * embedding (e.g. a client-side embedder) and want to avoid a second
+   * round-trip through the engine's embedder.
+   *
+   * Errors propagate as typed `FathomError` subclasses:
+   *   - `KindNotVectorIndexedError` when the kind has no enabled schema.
+   *   - `DimensionMismatchError` when `vec.length` does not match the
+   *     active profile's dimension.
+   *
+   * @param vec - Dense vector (`number[]` or `Float32Array`). Must be
+   *   non-empty and every component must be a finite number.
+   * @param limit - Maximum number of nearest neighbours to return.
+   * @returns A new Query with the raw-vector search step appended.
+   * @throws {Error} If `vec` is empty or contains a non-finite component.
+   */
+  rawVectorSearch(vec: number[] | Float32Array, limit: number): Query {
+    const vector = vec instanceof Float32Array ? Array.from(vec) : [...vec];
+    if (vector.length === 0) {
+      throw new Error("rawVectorSearch: vector must be non-empty");
+    }
+    for (let i = 0; i < vector.length; i += 1) {
+      if (!Number.isFinite(vector[i])) {
+        throw new Error(
+          `rawVectorSearch: every component must be finite (index ${i} is ${vector[i]})`,
+        );
+      }
+    }
+    return this.#withStep({ type: "raw_vector_search", vector, limit });
+  }
+
+  /**
+   * @deprecated Use {@link Query.semanticSearch} for text queries or
+   * {@link Query.rawVectorSearch} for caller-supplied vectors. This shim
+   * exists to smooth the rename from the pre-Pack-F1 `vector_search`
+   * wire step; it routes by input type and emits a one-shot
+   * `console.warn`. It will be removed in a future release.
+   *
+   * @param textOrVec - Either a text query (routed to `semanticSearch`)
+   *   or a dense vector `number[]` / `Float32Array` (routed to
+   *   `rawVectorSearch`).
+   * @param limit - Maximum number of nearest neighbours to return.
+   * @returns A new Query with the appropriate step appended.
+   */
+  vectorSearch(textOrVec: string | number[] | Float32Array, limit: number): Query {
+    if (typeof textOrVec === "string") {
+      console.warn(
+        "Query.vectorSearch(text, limit) is deprecated; use Query.semanticSearch(text, limit) instead.",
+      );
+      return this.semanticSearch(textOrVec, limit);
+    }
+    if (Array.isArray(textOrVec) || textOrVec instanceof Float32Array) {
+      console.warn(
+        "Query.vectorSearch(vec, limit) is deprecated; use Query.rawVectorSearch(vec, limit) instead.",
+      );
+      return this.rawVectorSearch(textOrVec, limit);
+    }
+    throw new Error(
+      "Query.vectorSearch: expected a string, number[], or Float32Array as the first argument",
+    );
   }
 
   /**

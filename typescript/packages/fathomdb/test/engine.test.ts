@@ -44,6 +44,7 @@ describe("WriteRequestBuilder (pure TS)", () => {
     // But the public API requires going through Engine.nodes, so open a
     // real engine here.
     const ctx = openTempEngine();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     try {
       const base = ctx.engine.nodes("Meeting");
       const query = base
@@ -63,7 +64,7 @@ describe("WriteRequestBuilder (pure TS)", () => {
       expect(query.toAst()).toEqual({
         root_kind: "Meeting",
         steps: [
-          { type: "vector_search", query: "budget", limit: 5 },
+          { type: "semantic_search", text: "budget", limit: 5 },
           { type: "filter_json_text_eq", path: "$.status", value: "active" },
         ],
         expansions: [
@@ -73,6 +74,7 @@ describe("WriteRequestBuilder (pure TS)", () => {
         final_limit: 10,
       });
     } finally {
+      warn.mockRestore();
       ctx.cleanup();
     }
   });
