@@ -318,6 +318,86 @@ enum WriteMessage {
         request: LastAccessTouchRequest,
         reply: Sender<Result<LastAccessTouchReport, EngineError>>,
     },
+    ClaimVectorProjection {
+        request: VectorProjectionClaimRequest,
+        reply: Sender<Result<Vec<VectorWorkClaim>, EngineError>>,
+    },
+    ApplyVectorProjection {
+        request: VectorProjectionApplyRequest,
+        reply: Sender<Result<(), EngineError>>,
+    },
+}
+
+/// A request to claim (transition pending → inflight) a batch of pending
+/// `vector_projection_work` rows inside a single writer transaction.
+#[derive(Clone, Debug)]
+pub struct VectorProjectionClaimRequest {
+    /// Minimum priority (inclusive). Use 1000 for incremental-only,
+    /// `i64::MIN` for any row.
+    pub min_priority: i64,
+    /// Maximum batch size.
+    pub limit: usize,
+}
+
+/// A claimed pending row, with the chunk text content needed to feed an
+/// embedder and recompute the canonical hash.
+#[derive(Clone, Debug)]
+pub struct VectorWorkClaim {
+    /// `vector_projection_work.work_id`.
+    pub work_id: i64,
+    /// Node kind.
+    pub kind: String,
+    /// Chunk id.
+    pub chunk_id: String,
+    /// The canonical hash stored in the work row at enqueue time.
+    pub canonical_hash: String,
+    /// The `embedding_profile_id` stored in the work row.
+    pub embedding_profile_id: i64,
+    /// Priority on the work row.
+    pub priority: i64,
+    /// Current chunk text fetched from `chunks.text_content`. Empty if the
+    /// chunk has been deleted since enqueue.
+    pub text_content: String,
+    /// True if the chunk row no longer exists.
+    pub chunk_missing: bool,
+}
+
+/// A request to finalize a claimed batch of projection work rows.
+#[derive(Debug, Default)]
+pub struct VectorProjectionApplyRequest {
+    /// Work rows whose embedding succeeded; apply into `vec_<kind>` and delete
+    /// the work row.
+    pub successes: Vec<VectorProjectionSuccess>,
+    /// Work rows to mark `state = 'discarded'` (hash mismatch, profile
+    /// change, etc.).  Each entry carries an optional error note.
+    pub discards: Vec<VectorProjectionDiscard>,
+    /// Work rows to revert to `state = 'pending'` with `attempt_count + 1`
+    /// and `last_error` set.
+    pub reverts: Vec<i64>,
+    /// Error message stamped on reverted rows.
+    pub revert_error: Option<String>,
+}
+
+/// Successful embedding to persist.
+#[derive(Clone, Debug)]
+pub struct VectorProjectionSuccess {
+    /// Work row id to delete after applying.
+    pub work_id: i64,
+    /// Node kind (used to derive the per-kind table name).
+    pub kind: String,
+    /// Chunk id (primary key in `vec_<kind>`).
+    pub chunk_id: String,
+    /// Embedding values.
+    pub embedding: Vec<f32>,
+}
+
+/// Work row to mark `discarded`.
+#[derive(Clone, Debug)]
+pub struct VectorProjectionDiscard {
+    /// Work row id.
+    pub work_id: i64,
+    /// Optional reason stored in `last_error`.
+    pub reason: Option<String>,
 }
 
 /// Single-threaded writer that serializes all mutations through one `SQLite` connection.
@@ -413,6 +493,51 @@ impl WriterActor {
             })
             .map_err(|error| EngineError::WriterRejected(error.to_string()))?;
 
+        recv_with_timeout(&reply_rx)
+    }
+
+    /// Claim up to `request.limit` pending `vector_projection_work` rows with
+    /// `priority >= request.min_priority`, transitioning them to
+    /// `state = 'inflight'` inside a single writer transaction. Returns the
+    /// claimed rows with their current chunk text.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the writer actor has shut down or the
+    /// underlying SQL fails.
+    pub fn claim_vector_projection(
+        &self,
+        request: VectorProjectionClaimRequest,
+    ) -> Result<Vec<VectorWorkClaim>, EngineError> {
+        self.check_thread_alive()?;
+        let (reply_tx, reply_rx) = mpsc::channel();
+        self.sender
+            .send(WriteMessage::ClaimVectorProjection {
+                request,
+                reply: reply_tx,
+            })
+            .map_err(|error| EngineError::WriterRejected(error.to_string()))?;
+        recv_with_timeout(&reply_rx)
+    }
+
+    /// Apply the result of an embed call: insert successful embeddings into
+    /// per-kind vec tables and delete the work rows; mark others discarded;
+    /// revert others to pending with an incremented `attempt_count`.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the writer actor has shut down or the
+    /// underlying SQL fails.
+    pub fn apply_vector_projection(
+        &self,
+        request: VectorProjectionApplyRequest,
+    ) -> Result<(), EngineError> {
+        self.check_thread_alive()?;
+        let (reply_tx, reply_rx) = mpsc::channel();
+        self.sender
+            .send(WriteMessage::ApplyVectorProjection {
+                request,
+                reply: reply_tx,
+            })
+            .map_err(|error| EngineError::WriterRejected(error.to_string()))?;
         recv_with_timeout(&reply_rx)
     }
 }
@@ -884,6 +1009,14 @@ fn writer_loop(
                 }
                 let _ = reply.send(result);
             }
+            WriteMessage::ClaimVectorProjection { request, reply } => {
+                let result = apply_claim_vector_projection(&mut conn, &request);
+                let _ = reply.send(result);
+            }
+            WriteMessage::ApplyVectorProjection { request, reply } => {
+                let result = apply_apply_vector_projection(&mut conn, schema_manager, &request);
+                let _ = reply.send(result);
+            }
         }
     }
 
@@ -899,8 +1032,160 @@ fn reject_all(receiver: mpsc::Receiver<WriteMessage>, error: &str) {
             WriteMessage::TouchLastAccessed { reply, .. } => {
                 let _ = reply.send(Err(EngineError::WriterRejected(error.to_string())));
             }
+            WriteMessage::ClaimVectorProjection { reply, .. } => {
+                let _ = reply.send(Err(EngineError::WriterRejected(error.to_string())));
+            }
+            WriteMessage::ApplyVectorProjection { reply, .. } => {
+                let _ = reply.send(Err(EngineError::WriterRejected(error.to_string())));
+            }
         }
     }
+}
+
+fn apply_claim_vector_projection(
+    conn: &mut rusqlite::Connection,
+    request: &VectorProjectionClaimRequest,
+) -> Result<Vec<VectorWorkClaim>, EngineError> {
+    let limit = i64::try_from(request.limit).unwrap_or(i64::MAX);
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+
+    // Select candidate work_ids under the given min_priority filter.
+    let ids: Vec<i64> = {
+        let mut stmt = tx.prepare(
+            "SELECT work_id FROM vector_projection_work \
+             WHERE state = 'pending' AND priority >= ?1 \
+             ORDER BY priority DESC, created_at ASC, work_id ASC \
+             LIMIT ?2",
+        )?;
+        stmt.query_map(rusqlite::params![request.min_priority, limit], |r| {
+            r.get::<_, i64>(0)
+        })?
+        .collect::<Result<Vec<_>, _>>()?
+    };
+
+    if ids.is_empty() {
+        tx.commit()?;
+        return Ok(Vec::new());
+    }
+
+    // Mark inflight.
+    {
+        let mut upd = tx.prepare(
+            "UPDATE vector_projection_work \
+             SET state = 'inflight', updated_at = unixepoch() \
+             WHERE work_id = ?1",
+        )?;
+        for id in &ids {
+            upd.execute(rusqlite::params![id])?;
+        }
+    }
+
+    // Fetch details + chunk text.
+    let mut claims: Vec<VectorWorkClaim> = Vec::with_capacity(ids.len());
+    {
+        let mut sel = tx.prepare(
+            "SELECT w.work_id, w.kind, w.chunk_id, w.canonical_hash, w.embedding_profile_id, \
+                    w.priority, c.text_content \
+             FROM vector_projection_work w \
+             LEFT JOIN chunks c ON c.id = w.chunk_id \
+             WHERE w.work_id = ?1",
+        )?;
+        for id in &ids {
+            let row = sel.query_row(rusqlite::params![id], |r| {
+                let text_opt: Option<String> = r.get(6)?;
+                Ok(VectorWorkClaim {
+                    work_id: r.get(0)?,
+                    kind: r.get(1)?,
+                    chunk_id: r.get(2)?,
+                    canonical_hash: r.get(3)?,
+                    embedding_profile_id: r.get(4)?,
+                    priority: r.get(5)?,
+                    chunk_missing: text_opt.is_none(),
+                    text_content: text_opt.unwrap_or_default(),
+                })
+            })?;
+            claims.push(row);
+        }
+    }
+
+    tx.commit()?;
+    Ok(claims)
+}
+
+fn apply_apply_vector_projection(
+    conn: &mut rusqlite::Connection,
+    #[allow(unused_variables)] schema_manager: &Arc<SchemaManager>,
+    request: &VectorProjectionApplyRequest,
+) -> Result<(), EngineError> {
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+
+    // Apply successful embeddings to vec_<kind> tables and delete work rows.
+    #[cfg(feature = "sqlite-vec")]
+    {
+        for success in &request.successes {
+            let table_name = fathomdb_schema::vec_kind_table_name(&success.kind);
+            let dimension = success.embedding.len();
+            let bytes: Vec<u8> = success
+                .embedding
+                .iter()
+                .flat_map(|f| f.to_le_bytes())
+                .collect();
+            tx.execute_batch(&format!(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS {table_name} USING vec0(\
+                    chunk_id TEXT PRIMARY KEY,\
+                    embedding float[{dimension}]\
+                )"
+            ))?;
+            tx.execute(
+                &format!(
+                    "INSERT OR REPLACE INTO {table_name} (chunk_id, embedding) VALUES (?1, ?2)"
+                ),
+                rusqlite::params![success.chunk_id, bytes],
+            )?;
+            tx.execute(
+                "DELETE FROM vector_projection_work WHERE work_id = ?1",
+                rusqlite::params![success.work_id],
+            )?;
+        }
+    }
+    #[cfg(not(feature = "sqlite-vec"))]
+    {
+        // Without sqlite-vec the vec_<kind> table cannot exist; still delete
+        // the work rows so the queue drains.
+        for success in &request.successes {
+            tx.execute(
+                "DELETE FROM vector_projection_work WHERE work_id = ?1",
+                rusqlite::params![success.work_id],
+            )?;
+        }
+    }
+
+    for discard in &request.discards {
+        tx.execute(
+            "UPDATE vector_projection_work \
+             SET state = 'discarded', last_error = ?1, updated_at = unixepoch() \
+             WHERE work_id = ?2",
+            rusqlite::params![discard.reason, discard.work_id],
+        )?;
+    }
+
+    if !request.reverts.is_empty() {
+        let err = request.revert_error.as_deref();
+        for work_id in &request.reverts {
+            tx.execute(
+                "UPDATE vector_projection_work \
+                 SET state = 'pending', \
+                     attempt_count = attempt_count + 1, \
+                     last_error = ?1, \
+                     updated_at = unixepoch() \
+                 WHERE work_id = ?2",
+                rusqlite::params![err, work_id],
+            )?;
+        }
+    }
+
+    tx.commit()?;
+    Ok(())
 }
 
 /// Resolve FTS projection rows before the write transaction begins.

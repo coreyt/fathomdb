@@ -12,6 +12,7 @@ pub mod rebuild_actor;
 mod runtime;
 mod sqlite;
 mod telemetry;
+mod vector_projection_actor;
 mod writer;
 
 pub use admin::{
@@ -51,6 +52,7 @@ pub use sqlite::{SharedSqlitePolicy, shared_sqlite_policy};
 pub use telemetry::{
     SqliteCacheStatus, TelemetryCounters, TelemetryLevel, TelemetrySnapshot, read_db_cache_status,
 };
+pub use vector_projection_actor::{DrainReport, VectorProjectionActor};
 pub use writer::{
     ActionInsert, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire, LastAccessTouchReport,
     LastAccessTouchRequest, NodeInsert, NodeRetire, OperationalWrite, OptionalProjectionTask,

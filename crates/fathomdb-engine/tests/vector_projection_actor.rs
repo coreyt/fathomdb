@@ -29,7 +29,10 @@ impl BatchEmbedder for FakeEmbedder {
             .iter()
             .map(|t| {
                 let mut v = vec![0.0_f32; self.dimension];
-                v[0] = t.len() as f32;
+                #[allow(clippy::cast_precision_loss)]
+                {
+                    v[0] = t.len() as f32;
+                }
                 v
             })
             .collect())
