@@ -18,7 +18,8 @@ mod provenance;
 mod vector;
 
 pub use vector::{
-    ConfigureVecOutcome, VecIndexStatus, VectorSource, load_vector_regeneration_config,
+    ConfigureEmbeddingOutcome, ConfigureVecOutcome, VecIndexStatus, VectorSource,
+    load_vector_regeneration_config,
 };
 
 #[cfg(test)]

@@ -956,6 +956,259 @@ impl AdminService {
     pub fn rebuild_missing_projections(&self) -> Result<ProjectionRepairReport, EngineError> {
         self.projections.rebuild_missing_projections()
     }
+
+    /// Activate, replace, or confirm the database-wide embedding identity.
+    ///
+    /// Vector identity belongs to the embedder: the `model_identity`,
+    /// `model_version`, `dimensions`, and `normalization_policy` persisted in
+    /// `vector_embedding_profiles` are read directly from
+    /// `embedder.identity()`. Callers cannot supply an identity string.
+    ///
+    /// Semantics:
+    /// - If no active profile exists: insert a new active row.
+    ///   Returns [`ConfigureEmbeddingOutcome::Activated`].
+    /// - If an active profile exists and the identity matches exactly: no-op.
+    ///   Returns [`ConfigureEmbeddingOutcome::Unchanged`].
+    /// - If an active profile exists and the identity differs:
+    ///   * If any `vector_index_schemas.enabled = 1` rows exist and
+    ///     `acknowledge_rebuild_impact = false`: return
+    ///     [`EngineError::EmbeddingChangeRequiresAck`] without mutating state.
+    ///   * Otherwise, within a single transaction: demote the current active
+    ///     profile, insert the new active profile, and mark every enabled
+    ///     vector index schema `state = 'stale'`. Returns
+    ///     [`ConfigureEmbeddingOutcome::Replaced`].
+    ///
+    /// This method never triggers a rebuild itself. Affected kinds are marked
+    /// `stale` so later rebuild flows can pick them up.
+    ///
+    /// # Errors
+    /// - [`EngineError::EmbeddingChangeRequiresAck`] if the identity change
+    ///   would invalidate enabled vector index kinds and the caller did not
+    ///   acknowledge the rebuild impact.
+    /// - [`EngineError::Sqlite`] if any underlying SQL fails.
+    #[allow(clippy::too_many_lines)]
+    pub fn configure_embedding(
+        &self,
+        embedder: &dyn QueryEmbedder,
+        acknowledge_rebuild_impact: bool,
+    ) -> Result<ConfigureEmbeddingOutcome, EngineError> {
+        let identity = embedder.identity();
+        let max_tokens = embedder.max_tokens();
+        let dimensions = i64::try_from(identity.dimension).map_err(|_| {
+            EngineError::InvalidConfig(format!(
+                "embedder dimension {} exceeds i64 range",
+                identity.dimension
+            ))
+        })?;
+        let max_tokens_i64 = i64::try_from(max_tokens).ok();
+
+        let mut conn = self.connect()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+
+        // Look up the current active profile, if any.
+        let current: Option<(i64, String, String, i64, String)> = tx
+            .query_row(
+                "SELECT profile_id, model_identity, COALESCE(model_version, ''), dimensions, \
+                        COALESCE(normalization_policy, '') \
+                 FROM vector_embedding_profiles WHERE active = 1",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, String>(4)?,
+                    ))
+                },
+            )
+            .optional()?;
+
+        let incoming_version = identity.model_version.clone();
+        if let Some((profile_id, current_identity, current_version, current_dim, current_norm)) =
+            current.clone()
+        {
+            if current_identity == identity.model_identity
+                && current_version == incoming_version
+                && current_dim == dimensions
+                && current_norm == identity.normalization_policy
+            {
+                // Identical — no-op.
+                tx.commit()?;
+                return Ok(ConfigureEmbeddingOutcome::Unchanged { profile_id });
+            }
+
+            // Identity differs: count enabled kinds.
+            let affected_kinds: i64 = tx.query_row(
+                "SELECT COUNT(*) FROM vector_index_schemas WHERE enabled = 1",
+                [],
+                |row| row.get::<_, i64>(0),
+            )?;
+            let affected = usize::try_from(affected_kinds).unwrap_or(0);
+            if affected > 0 && !acknowledge_rebuild_impact {
+                // No mutation — drop the transaction.
+                drop(tx);
+                return Err(EngineError::EmbeddingChangeRequiresAck {
+                    affected_kinds: affected,
+                });
+            }
+
+            let identity_triple_changed = current_identity != identity.model_identity
+                || current_version != incoming_version
+                || current_dim != dimensions;
+
+            let new_profile_id = if identity_triple_changed {
+                // Demote current active row.
+                tx.execute(
+                    "UPDATE vector_embedding_profiles SET active = 0 WHERE active = 1",
+                    [],
+                )?;
+
+                // Insert new active row.
+                insert_new_active_profile(
+                    &tx,
+                    &identity.model_identity,
+                    &incoming_version,
+                    dimensions,
+                    &identity.normalization_policy,
+                    max_tokens_i64,
+                )?
+            } else {
+                // Normalization-only change: the unique index on
+                // (model_identity, model_version, dimensions) prevents inserting
+                // a second row with the same triple, so update in place. The
+                // profile row still reflects the new policy and enabled kinds
+                // still get staled so rebuilds pick up the change.
+                let normalization_opt: Option<&str> = if identity.normalization_policy.is_empty() {
+                    None
+                } else {
+                    Some(identity.normalization_policy.as_str())
+                };
+                tx.execute(
+                    "UPDATE vector_embedding_profiles \
+                     SET normalization_policy = ?1, max_tokens = ?2 \
+                     WHERE profile_id = ?3",
+                    rusqlite::params![normalization_opt, max_tokens_i64, profile_id],
+                )?;
+                profile_id
+            };
+
+            // Mark enabled kinds stale.
+            let stale_kinds = if affected > 0 {
+                tx.execute(
+                    "UPDATE vector_index_schemas \
+                     SET state = 'stale', updated_at = unixepoch() \
+                     WHERE enabled = 1",
+                    [],
+                )?
+            } else {
+                0
+            };
+
+            tx.commit()?;
+            return Ok(ConfigureEmbeddingOutcome::Replaced {
+                old_profile_id: profile_id,
+                new_profile_id,
+                stale_kinds,
+            });
+        }
+
+        // No active profile: activate a new one.
+        let new_profile_id = insert_new_active_profile(
+            &tx,
+            &identity.model_identity,
+            &incoming_version,
+            dimensions,
+            &identity.normalization_policy,
+            max_tokens_i64,
+        )?;
+        tx.commit()?;
+        Ok(ConfigureEmbeddingOutcome::Activated {
+            profile_id: new_profile_id,
+        })
+    }
+
+    /// Probe the supplied embedder by attempting a fixed short embed call.
+    ///
+    /// Used as an availability check for the active embedder. Does not touch
+    /// persistent state.
+    ///
+    /// # Errors
+    /// Returns [`EngineError::CapabilityMissing`] wrapping the embedder
+    /// diagnostic if the embedder is unavailable or its call fails.
+    pub fn check_embedding(&self, embedder: &dyn QueryEmbedder) -> Result<(), EngineError> {
+        match embedder.embed_query("fathomdb embedder health probe") {
+            Ok(_) => Ok(()),
+            Err(err) => Err(EngineError::CapabilityMissing(format!(
+                "embedder probe failed: {err}"
+            ))),
+        }
+    }
+}
+
+/// Outcome of [`AdminService::configure_embedding`].
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+pub enum ConfigureEmbeddingOutcome {
+    /// No active embedding profile existed; a new one was inserted.
+    Activated {
+        /// Newly inserted `vector_embedding_profiles.profile_id`.
+        profile_id: i64,
+    },
+    /// The requested identity matched the active profile exactly; nothing
+    /// was changed.
+    Unchanged {
+        /// The existing active `vector_embedding_profiles.profile_id`.
+        profile_id: i64,
+    },
+    /// The active profile was replaced and any enabled vector index
+    /// schemas were marked `stale`.
+    Replaced {
+        /// The previously-active `profile_id` (now demoted).
+        old_profile_id: i64,
+        /// The newly-inserted active `profile_id`.
+        new_profile_id: i64,
+        /// Number of `vector_index_schemas` rows newly marked `stale`.
+        stale_kinds: usize,
+    },
+}
+
+fn insert_new_active_profile(
+    tx: &rusqlite::Transaction<'_>,
+    model_identity: &str,
+    model_version: &str,
+    dimensions: i64,
+    normalization_policy: &str,
+    max_tokens: Option<i64>,
+) -> Result<i64, rusqlite::Error> {
+    // `profile_name` is NOT NULL in the schema; derive it from identity so the
+    // row is self-describing without inventing a user-facing name surface.
+    let profile_name = format!("{model_identity}@{model_version}");
+    let model_version_opt: Option<&str> = if model_version.is_empty() {
+        None
+    } else {
+        Some(model_version)
+    };
+    let normalization_opt: Option<&str> = if normalization_policy.is_empty() {
+        None
+    } else {
+        Some(normalization_policy)
+    };
+    tx.execute(
+        "INSERT INTO vector_embedding_profiles \
+            (profile_name, model_identity, model_version, dimensions, normalization_policy, \
+             max_tokens, active, activated_at, created_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, unixepoch(), unixepoch())",
+        rusqlite::params![
+            profile_name,
+            model_identity,
+            model_version_opt,
+            dimensions,
+            normalization_opt,
+            max_tokens,
+        ],
+    )?;
+    Ok(tx.last_insert_rowid())
 }
 
 /// # Errors

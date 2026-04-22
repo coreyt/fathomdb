@@ -15,7 +15,8 @@ use crate::{
     Engine, EngineError, FtsPropertyPathMode, FtsPropertyPathSpec, FtsPropertySchemaRecord,
 };
 use fathomdb_engine::{
-    ConfigureVecOutcome, FtsProfile, ProjectionImpact, VecIndexStatus, VecProfile, VectorSource,
+    ConfigureEmbeddingOutcome, ConfigureVecOutcome, EmbedderError, FtsProfile, ProjectionImpact,
+    QueryEmbedder, QueryEmbedderIdentity, VecIndexStatus, VecProfile, VectorSource,
 };
 
 /// Extraction mode for a single registered FTS property path, serialized
@@ -276,6 +277,53 @@ fn default_vec_source() -> String {
     "chunks".to_owned()
 }
 
+/// Wire envelope for [`configure_embedding_json`].
+///
+/// `acknowledge_rebuild_impact` defaults to `false`. The `identity`
+/// fields carry what the caller-supplied (Python / TypeScript) embedder
+/// reports from its own `identity()` call — on the Rust side these are
+/// wrapped in a tiny identity-only shim so `AdminService::configure_embedding`
+/// still reads identity off a `QueryEmbedder`, preserving the
+/// "identity belongs to the embedder" invariant.
+#[derive(Debug, Deserialize)]
+struct ConfigureEmbeddingRequest {
+    model_identity: String,
+    #[serde(default)]
+    model_version: Option<String>,
+    dimensions: u32,
+    #[serde(default)]
+    normalization_policy: Option<String>,
+    #[serde(default = "default_max_tokens")]
+    max_tokens: usize,
+    #[serde(default)]
+    acknowledge_rebuild_impact: bool,
+}
+
+fn default_max_tokens() -> usize {
+    512
+}
+
+#[derive(Debug)]
+struct IdentityOnlyEmbedder {
+    identity: QueryEmbedderIdentity,
+    max_tokens: usize,
+}
+
+impl QueryEmbedder for IdentityOnlyEmbedder {
+    fn embed_query(&self, _text: &str) -> Result<Vec<f32>, EmbedderError> {
+        Err(EmbedderError::Unavailable(
+            "identity-only FFI shim cannot embed; configure_embedding only reads identity()"
+                .to_owned(),
+        ))
+    }
+    fn identity(&self) -> QueryEmbedderIdentity {
+        self.identity.clone()
+    }
+    fn max_tokens(&self) -> usize {
+        self.max_tokens
+    }
+}
+
 /// Configure managed vector indexing for a given node `kind`.
 ///
 /// `request_json` must be `{"kind":"K","source":"chunks"}`. Only
@@ -304,6 +352,41 @@ pub fn configure_vec_kind_json(
         .admin()
         .service()
         .configure_vec_kind(&request.kind, source)
+        .map_err(AdminFfiError::Engine)?;
+    serde_json::to_string(&outcome).map_err(AdminFfiError::Serialize)
+}
+
+/// Admin FFI for `AdminService::configure_embedding`.
+///
+/// `request_json` must match [`ConfigureEmbeddingRequest`]: identity
+/// fields (echoed verbatim from the caller's embedder), plus optional
+/// `acknowledge_rebuild_impact`.
+///
+/// Returns the JSON-serialized [`ConfigureEmbeddingOutcome`].
+///
+/// # Errors
+/// Returns [`AdminFfiError`] on JSON parse, engine execution, or response
+/// serialization failure.
+pub fn configure_embedding_json(
+    engine: &Engine,
+    request_json: &str,
+) -> Result<String, AdminFfiError> {
+    let request: ConfigureEmbeddingRequest =
+        serde_json::from_str(request_json).map_err(AdminFfiError::Parse)?;
+    let identity = QueryEmbedderIdentity {
+        model_identity: request.model_identity,
+        model_version: request.model_version.unwrap_or_default(),
+        dimension: request.dimensions as usize,
+        normalization_policy: request.normalization_policy.unwrap_or_default(),
+    };
+    let shim = IdentityOnlyEmbedder {
+        identity,
+        max_tokens: request.max_tokens,
+    };
+    let outcome: ConfigureEmbeddingOutcome = engine
+        .admin()
+        .service()
+        .configure_embedding(&shim, request.acknowledge_rebuild_impact)
         .map_err(AdminFfiError::Engine)?;
     serde_json::to_string(&outcome).map_err(AdminFfiError::Serialize)
 }
