@@ -17,7 +17,9 @@ mod operational;
 mod provenance;
 mod vector;
 
-pub use vector::load_vector_regeneration_config;
+pub use vector::{
+    ConfigureVecOutcome, VecIndexStatus, VectorSource, load_vector_regeneration_config,
+};
 
 #[cfg(test)]
 use fts::{

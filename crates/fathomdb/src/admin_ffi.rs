@@ -14,7 +14,9 @@ use serde::{Deserialize, Serialize};
 use crate::{
     Engine, EngineError, FtsPropertyPathMode, FtsPropertyPathSpec, FtsPropertySchemaRecord,
 };
-use fathomdb_engine::{FtsProfile, ProjectionImpact, VecProfile};
+use fathomdb_engine::{
+    ConfigureVecOutcome, FtsProfile, ProjectionImpact, VecIndexStatus, VecProfile, VectorSource,
+};
 
 /// Extraction mode for a single registered FTS property path, serialized
 /// as `"scalar"` or `"recursive"` on the wire.
@@ -260,6 +262,68 @@ pub fn preview_projection_impact_json(
         .preview_projection_impact(kind, facet)
         .map_err(AdminFfiError::Engine)?;
     serde_json::to_string(&impact).map_err(AdminFfiError::Serialize)
+}
+
+/// Request envelope for [`configure_vec_kind_json`].
+#[derive(Debug, Deserialize)]
+struct ConfigureVecKindRequest {
+    kind: String,
+    #[serde(default = "default_vec_source")]
+    source: String,
+}
+
+fn default_vec_source() -> String {
+    "chunks".to_owned()
+}
+
+/// Configure managed vector indexing for a given node `kind`.
+///
+/// `request_json` must be `{"kind":"K","source":"chunks"}`. Only
+/// `"chunks"` is accepted today; future source modes will extend the set.
+///
+/// Returns the serialized [`ConfigureVecOutcome`].
+///
+/// # Errors
+/// Returns [`AdminFfiError`] on JSON parse, engine execution, or response
+/// serialization failure.
+pub fn configure_vec_kind_json(
+    engine: &Engine,
+    request_json: &str,
+) -> Result<String, AdminFfiError> {
+    let request: ConfigureVecKindRequest =
+        serde_json::from_str(request_json).map_err(AdminFfiError::Parse)?;
+    let source = match request.source.as_str() {
+        "chunks" => VectorSource::Chunks,
+        other => {
+            return Err(AdminFfiError::Engine(EngineError::InvalidConfig(format!(
+                "unsupported vector source mode: {other:?}"
+            ))));
+        }
+    };
+    let outcome: ConfigureVecOutcome = engine
+        .admin()
+        .service()
+        .configure_vec_kind(&request.kind, source)
+        .map_err(AdminFfiError::Engine)?;
+    serde_json::to_string(&outcome).map_err(AdminFfiError::Serialize)
+}
+
+/// Retrieve the managed vector indexing status for a given node `kind`.
+///
+/// Returns the serialized [`VecIndexStatus`]. If the kind has no
+/// `vector_index_schemas` row the status reports `enabled=false` and
+/// `state="unconfigured"`.
+///
+/// # Errors
+/// Returns [`AdminFfiError`] on engine execution or response
+/// serialization failure.
+pub fn get_vec_index_status_json(engine: &Engine, kind: &str) -> Result<String, AdminFfiError> {
+    let status: VecIndexStatus = engine
+        .admin()
+        .service()
+        .get_vec_index_status(kind)
+        .map_err(AdminFfiError::Engine)?;
+    serde_json::to_string(&status).map_err(AdminFfiError::Serialize)
 }
 
 #[cfg(test)]

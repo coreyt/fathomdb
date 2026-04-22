@@ -124,6 +124,50 @@ pub(super) struct VectorRegenerationAuditMetadata {
     pub(super) failure_class: Option<String>,
 }
 
+/// Source of content for a managed per-kind vector index.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VectorSource {
+    /// Use existing `chunks` rows belonging to nodes of the configured kind.
+    Chunks,
+}
+
+/// Outcome of [`AdminService::configure_vec_kind`].
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ConfigureVecOutcome {
+    /// Node kind that was configured.
+    pub kind: String,
+    /// Number of backfill rows newly enqueued in `vector_projection_work`.
+    pub enqueued_backfill_rows: usize,
+    /// True if this kind already had an enabled vector index schema row
+    /// before the call.
+    pub was_already_enabled: bool,
+}
+
+/// Managed-projection status snapshot for a given node `kind`.
+///
+/// Returned by [`AdminService::get_vec_index_status`].
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct VecIndexStatus {
+    /// Node kind queried.
+    pub kind: String,
+    /// True if `vector_index_schemas.enabled = 1` for this kind.
+    pub enabled: bool,
+    /// Lifecycle state stored in `vector_index_schemas.state`, or
+    /// `"unconfigured"` when there is no schema row for this kind.
+    pub state: String,
+    /// Pending work rows with `priority >= 1000` (incremental writes).
+    pub pending_incremental: u64,
+    /// Pending work rows with `priority < 1000` (backfill).
+    pub pending_backfill: u64,
+    /// Last recorded error, if any.
+    pub last_error: Option<String>,
+    /// Unix timestamp when the kind last completed rebuild, if any.
+    pub last_completed_at: Option<i64>,
+    /// `model_identity` of the currently-active embedding profile, if any.
+    pub embedding_identity: Option<String>,
+}
+
 impl AdminService {
     /// Retrieve the vector embedding profile for a specific node `kind`.
     ///
@@ -719,6 +763,185 @@ impl AdminService {
         );
     }
 
+    /// Configure per-kind vector indexing for `kind`, sourced from `source`.
+    ///
+    /// Requires at least one active row in `vector_embedding_profiles`. On
+    /// first call, creates the `vec_<kind>` sqlite-vec table, inserts a
+    /// `vector_index_schemas` row, and enqueues backfill rows in
+    /// `vector_projection_work` (one per existing chunk of that kind).
+    /// Subsequent calls are idempotent: no duplicate pending work rows are
+    /// created for the (`chunk_id`, `embedding_profile_id`) pair.
+    ///
+    /// # Errors
+    /// Returns [`EngineError::InvalidConfig`] if no active embedding profile
+    /// exists; [`EngineError::Sqlite`]/[`EngineError::Schema`] on storage
+    /// failures.
+    pub fn configure_vec_kind(
+        &self,
+        kind: &str,
+        source: VectorSource,
+    ) -> Result<ConfigureVecOutcome, EngineError> {
+        match source {
+            VectorSource::Chunks => {}
+        }
+        let mut conn = self.connect()?;
+
+        let profile: Option<(i64, i64)> = conn
+            .query_row(
+                "SELECT profile_id, dimensions FROM vector_embedding_profiles WHERE active = 1",
+                [],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .optional()?;
+        let (profile_id, dimensions) = profile.ok_or_else(|| {
+            EngineError::InvalidConfig(
+                "no active embedding profile configured; call configure_embedding first".to_owned(),
+            )
+        })?;
+        let dimensions = usize::try_from(dimensions).map_err(|_| {
+            EngineError::Bridge(format!(
+                "invalid embedding profile dimensions: {dimensions}"
+            ))
+        })?;
+
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+
+        let was_already_enabled: bool = tx
+            .query_row(
+                "SELECT enabled FROM vector_index_schemas WHERE kind = ?1",
+                rusqlite::params![kind],
+                |row| row.get::<_, i64>(0).map(|v| v == 1),
+            )
+            .optional()?
+            .unwrap_or(false);
+
+        tx.execute(
+            "INSERT INTO vector_index_schemas \
+             (kind, enabled, source_mode, source_config_json, state, created_at, updated_at) \
+             VALUES (?1, 1, 'chunks', NULL, 'fresh', unixepoch(), unixepoch()) \
+             ON CONFLICT(kind) DO UPDATE SET \
+                 enabled = 1, \
+                 source_mode = 'chunks', \
+                 source_config_json = NULL, \
+                 updated_at = unixepoch()",
+            rusqlite::params![kind],
+        )?;
+
+        self.schema_manager
+            .ensure_vec_kind_profile(&tx, kind, dimensions)?;
+
+        let chunks = collect_kind_chunks(&tx, kind)?;
+        let mut enqueued: usize = 0;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO vector_projection_work \
+                 (kind, node_logical_id, chunk_id, canonical_hash, priority, \
+                  embedding_profile_id, state, created_at, updated_at) \
+                 SELECT ?1, ?2, ?3, ?4, 0, ?5, 'pending', unixepoch(), unixepoch() \
+                 WHERE NOT EXISTS ( \
+                     SELECT 1 FROM vector_projection_work \
+                     WHERE chunk_id = ?3 AND embedding_profile_id = ?5 AND state = 'pending' \
+                 )",
+            )?;
+            for chunk in &chunks {
+                let canonical_hash = canonical_chunk_hash(&chunk.chunk_id, &chunk.text_content);
+                let inserted = stmt.execute(rusqlite::params![
+                    kind,
+                    chunk.node_logical_id.as_str(),
+                    chunk.chunk_id.as_str(),
+                    canonical_hash,
+                    profile_id,
+                ])?;
+                enqueued += inserted;
+            }
+        }
+
+        tx.commit()?;
+
+        Ok(ConfigureVecOutcome {
+            kind: kind.to_owned(),
+            enqueued_backfill_rows: enqueued,
+            was_already_enabled,
+        })
+    }
+
+    /// Return the managed vector indexing status for `kind`.
+    ///
+    /// If no `vector_index_schemas` row exists for `kind`, returns
+    /// `enabled = false` and `state = "unconfigured"` with zero counts.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] on database failures.
+    pub fn get_vec_index_status(&self, kind: &str) -> Result<VecIndexStatus, EngineError> {
+        let conn = self.connect()?;
+
+        let schema_row: Option<(bool, String, Option<String>, Option<i64>)> = conn
+            .query_row(
+                "SELECT enabled, state, last_error, last_completed_at \
+                 FROM vector_index_schemas WHERE kind = ?1",
+                rusqlite::params![kind],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)? == 1,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                        row.get::<_, Option<i64>>(3)?,
+                    ))
+                },
+            )
+            .optional()?;
+
+        let Some((enabled, state, last_error, last_completed_at)) = schema_row else {
+            return Ok(VecIndexStatus {
+                kind: kind.to_owned(),
+                enabled: false,
+                state: "unconfigured".to_owned(),
+                pending_incremental: 0,
+                pending_backfill: 0,
+                last_error: None,
+                last_completed_at: None,
+                embedding_identity: None,
+            });
+        };
+
+        let pending_backfill: u64 = conn
+            .query_row(
+                "SELECT count(*) FROM vector_projection_work \
+                 WHERE kind = ?1 AND state = 'pending' AND priority < 1000",
+                rusqlite::params![kind],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(i64::cast_unsigned)?;
+
+        let pending_incremental: u64 = conn
+            .query_row(
+                "SELECT count(*) FROM vector_projection_work \
+                 WHERE kind = ?1 AND state = 'pending' AND priority >= 1000",
+                rusqlite::params![kind],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(i64::cast_unsigned)?;
+
+        let embedding_identity: Option<String> = conn
+            .query_row(
+                "SELECT model_identity FROM vector_embedding_profiles WHERE active = 1",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+
+        Ok(VecIndexStatus {
+            kind: kind.to_owned(),
+            enabled,
+            state,
+            pending_incremental,
+            pending_backfill,
+            last_error,
+            last_completed_at,
+            embedding_identity,
+        })
+    }
+
     /// # Errors
     /// Returns [`EngineError`] if the database connection fails or the projection rebuild fails.
     pub fn rebuild_projections(
@@ -990,6 +1213,51 @@ pub(super) fn compute_snapshot_hash(
     let mut hasher = sha2::Sha256::new();
     hasher.update(bytes);
     Ok(format!("{:x}", hasher.finalize()))
+}
+
+/// Per-kind chunk enumeration used by [`AdminService::configure_vec_kind`].
+///
+/// Mirrors [`collect_regeneration_chunks`] but filters by `nodes.kind`.
+pub(super) fn collect_kind_chunks(
+    conn: &rusqlite::Connection,
+    kind: &str,
+) -> Result<Vec<VectorRegenerationInputChunk>, EngineError> {
+    let mut stmt = conn.prepare(
+        r"
+        SELECT c.id, c.node_logical_id, n.kind, c.text_content, c.byte_start, c.byte_end, n.source_ref, c.created_at
+        FROM chunks c
+        JOIN nodes n
+          ON n.logical_id = c.node_logical_id
+         AND n.superseded_at IS NULL
+        WHERE n.kind = ?1
+        ORDER BY c.created_at, c.id
+        ",
+    )?;
+    let chunks = stmt
+        .query_map(rusqlite::params![kind], |row| {
+            Ok(VectorRegenerationInputChunk {
+                chunk_id: row.get(0)?,
+                node_logical_id: row.get(1)?,
+                kind: row.get(2)?,
+                text_content: row.get(3)?,
+                byte_start: row.get(4)?,
+                byte_end: row.get(5)?,
+                source_ref: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(chunks)
+}
+
+/// Canonical hash of a chunk's text content, scoped to the chunk id.
+#[must_use]
+pub(super) fn canonical_chunk_hash(chunk_id: &str, text: &str) -> String {
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(chunk_id.as_bytes());
+    hasher.update([0u8]);
+    hasher.update(text.as_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
 pub(super) fn collect_regeneration_chunks(
