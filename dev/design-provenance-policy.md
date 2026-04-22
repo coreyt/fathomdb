@@ -193,7 +193,7 @@ Tests:
 5. `writer_receipt_no_warnings_when_all_types_have_source_ref` — submit one of
    each type with `source_ref`, assert zero warnings
 
-Files: `crates/fathomdb-engine/src/writer.rs`
+Files: `crates/fathomdb-engine/src/writer/mod.rs`
 
 ### Task 2: Add ProvenanceMode to EngineOptions
 
@@ -210,7 +210,7 @@ Tests:
 4. `require_mode_rejects_edge_without_source_ref`
 
 Files: `crates/fathomdb-engine/src/coordinator.rs`,
-`crates/fathomdb-engine/src/writer.rs`,
+`crates/fathomdb-engine/src/writer/mod.rs`,
 `crates/fathomdb-engine/src/lib.rs`,
 `crates/fathomdb/src/lib.rs`
 

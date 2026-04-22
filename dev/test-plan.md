@@ -1,5 +1,8 @@
 # fathomdb Test Plan
 
+**Status:** Current
+**Last updated:** 2026-04-22
+
 ## Scope and Purpose
 
 This document is the authoritative test plan for `fathomdb`. It covers nine
@@ -932,7 +935,7 @@ than in production.
 
 | Category | Count | What it covers |
 |---|---|---|
-| Report-type field-parity tests (`python_types.rs`) | 15 | Catches struct divergence between Rust report types and their Python representations at compile time |
+| Report-type field-parity tests (`ffi_types.rs`) | 15 | Catches struct divergence between Rust report types and their Python representations at compile time |
 | PyQueryStep deserialization roundtrips | 16 | Every variant including `FilterJsonBoolEq`; verifies JSON round-trip fidelity |
 | WriteRequest field preservation tests | — | Confirms all `WriteRequest` fields survive serialization across the Python bridge |
 | EngineError variant coverage test | 1 | Ensures every `EngineError` variant is representable in the Python binding layer |

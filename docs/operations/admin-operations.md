@@ -178,9 +178,9 @@ schemas = admin.list_fts_property_schemas()
 ```
 
 **remove_fts_property_schema** -- Delete the schema row for a kind. This does
-**not** delete existing derived `fts_node_properties` rows; an explicit
-`rebuild(fts)` is required to clean them up. Errors if the kind is not
-registered.
+**not** delete existing derived rows from that kind's `fts_props_<kind>` table;
+an explicit `rebuild(fts)` is required to clean them up. Errors if the kind is
+not registered.
 
 ```python
 admin.remove_fts_property_schema("Goal")
@@ -203,10 +203,9 @@ should have a property FTS row but don't). `check_semantics` reports:
 ### Export & Recovery
 
 `fts_property_schemas` is canonical metadata and is preserved by `safe_export`.
-`fts_node_properties` rows are derived state and rebuildable. Recovery
-correctness must not depend on `fts_node_properties` contents -- run
-`rebuild(fts)` after importing an export to restore property FTS from
-canonical state.
+Per-kind `fts_props_<kind>` rows are derived state and rebuildable. Recovery
+correctness must not depend on property FTS table contents -- run `rebuild(fts)`
+after importing an export to restore property FTS from canonical state.
 
 ---
 

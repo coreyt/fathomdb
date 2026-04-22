@@ -11,7 +11,7 @@ Address two verified findings in `safe_export`: non-atomic manifest write
 
 ### Current State
 
-`crates/fathomdb-engine/src/admin.rs:2051-2065`
+`crates/fathomdb-engine/src/admin/mod.rs`
 
 The manifest JSON is written via `fs::write(&manifest_path, manifest_json)?`.
 If the process crashes mid-write, a partial manifest file exists on disk
@@ -49,7 +49,7 @@ if let Err(e) = fs::write(&manifest_tmp, &manifest_json)
 
 ### Current State
 
-`crates/fathomdb-engine/src/admin.rs:2015-2024`
+`crates/fathomdb-engine/src/admin/mod.rs`
 
 `page_count` is captured via `PRAGMA page_count` before `conn.backup()`
 runs. New writes can land in the WAL between the PRAGMA and the backup

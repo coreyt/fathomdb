@@ -1,5 +1,7 @@
 # Dev Document Status Audit - 2026-04-22
 
+**Status:** Historical baseline for the 2026-04-22 cleanup pass
+
 ## Scope
 
 This audit covers active developer documentation only:

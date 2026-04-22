@@ -116,7 +116,7 @@ Use this layout:
       src/
         lib.rs
         python.rs
-        python_types.rs
+        ffi_types.rs
   python/
     pyproject.toml
     fathomdb/
@@ -342,6 +342,11 @@ Expose dataclasses for:
 - `OptionalProjectionTask`
 - `WriteRequest`
 - `WriteReceipt`
+
+`VecInsert` is retained as a low-level/admin/import binding. Normal
+application code should prefer canonical chunks plus configured vector
+projection; the managed-vector target design makes FathomDB responsible for
+async/incremental vector rows.
 
 ### Admin Surface
 

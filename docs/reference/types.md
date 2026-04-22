@@ -295,6 +295,10 @@ that produced the FTS match for this hit.
       heading_level: 3
       show_root_heading: true
 
+!!! note
+    `VecInsert` is a low-level/admin/import path. Normal application writes
+    should store canonical chunks and rely on configured vector projection.
+
 ::: fathomdb.VecInsert
     options:
       heading_level: 3

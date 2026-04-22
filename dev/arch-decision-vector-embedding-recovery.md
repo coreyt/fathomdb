@@ -1,5 +1,8 @@
 # Architecture Decision Whitepaper: Vector Embedding Recovery
 
+**Status:** Implemented; retained as design rationale
+**Last updated:** 2026-04-22
+
 ## Purpose
 
 This paper defines the three credible architectural choices for vector
@@ -13,8 +16,8 @@ It is written for both:
 
 ## Scope
 
-This paper is specifically about what happens to embeddings written through
-`VecInsert` when a database must be physically recovered or logically rebuilt.
+This paper is specifically about what happens to vector projection rows when a
+database must be physically recovered or logically rebuilt.
 
 It is not about whether `sqlite-vec` is useful, whether vector search should
 exist, or whether embeddings are valuable to agent applications. Those are
@@ -22,18 +25,22 @@ already assumed.
 
 ## Current Repo Position
 
-The current documented v0.1 contract is:
+The current release-line contract is closest to Choice C: derived/regenerable
+embeddings.
 
 - canonical tables are recovered first
-- vector profile metadata is preserved
-- vector table capability is restored when supported
-- embedding rows written through `VecInsert` are not yet guaranteed to survive
-  physical recovery
+- database-wide vector profile metadata is preserved
+- per-kind vector table capability is restored when supported
+- vector rows are projection material, not canonical recovery material
+- explicit regeneration can rebuild rows for a target kind from canonical chunks
+- the target design is FathomDB-managed async/incremental vector projection,
+  not caller-managed raw vector insertion
 
 See:
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md)
 - [repair-support-contract.md](./repair-support-contract.md)
+- [design-db-wide-embedding-per-kind-vector-indexing-2026-04-22.md](./notes/design-db-wide-embedding-per-kind-vector-indexing-2026-04-22.md)
 
 ## The Three Choices
 
@@ -292,11 +299,11 @@ choices:
       - weakest self-contained recovery story
       - higher operational dependency
       - deterministic recovery is harder
-current_v0_1_position:
+current_release_line_position:
   closest_to: C
-  note: current docs preserve vector profile capability, but not VecInsert rows
+  note: canonical state and vector profile capability are preserved; vector rows are rebuildable per-kind projection material
 recommended_next_step:
-  decide whether recovery fidelity or architectural purity is the governing priority
+  implement FathomDB-managed async/incremental vector projection for configured kinds
 ```
 
 ## Bottom Line

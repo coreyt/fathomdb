@@ -10,7 +10,7 @@ target nodes still exist or are active.
 
 ## Current State
 
-`crates/fathomdb-engine/src/admin.rs:1691-1719`
+`crates/fathomdb-engine/src/admin/mod.rs`
 
 `restore_logical_id()` restores a node by unsetting `superseded_at`, then
 collects associated edge logical IDs via `collect_edge_logical_ids_for_restore()`

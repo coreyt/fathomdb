@@ -12,7 +12,7 @@ request size validation (H-5).
 
 ### Current State
 
-`crates/fathomdb-engine/src/writer.rs:616-623`
+`crates/fathomdb-engine/src/writer/mod.rs`
 
 The writer thread's main loop calls `resolve_and_apply()` without
 `catch_unwind`. If that function panics, the thread terminates silently.
@@ -85,7 +85,7 @@ sending a message that will never be read. This requires storing the
 
 ### Current State
 
-`crates/fathomdb-engine/src/writer.rs:260`
+`crates/fathomdb-engine/src/writer/mod.rs`
 
 `mpsc::channel()` creates an unbounded channel. Under sustained write load,
 the in-memory queue grows without limit. There is no backpressure signal
@@ -128,7 +128,7 @@ senders will get a `SendError` and return `WriterRejected`.
 
 ### Current State
 
-`crates/fathomdb-engine/src/writer.rs:163-176`
+`crates/fathomdb-engine/src/writer/mod.rs`
 
 `WriteRequest` contains 11 `Vec` fields with no length limits. A single
 request with 100K nodes allocates hundreds of megabytes in

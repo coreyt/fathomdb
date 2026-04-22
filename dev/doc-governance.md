@@ -1,5 +1,8 @@
 # Document Governance
 
+**Status:** Current
+**Last updated:** 2026-04-22
+
 ## Purpose
 
 Define which docs in `dev/` are normative, which are active trackers, and which
@@ -20,6 +23,8 @@ These must match the shipped behavior and current support contract:
 - `dev/repair-support-contract.md`
 - `dev/security-review.md`
 - `dev/test-plan.md`
+- `dev/dbim-playbook.md`
+- `dev/engine-vs-application-boundary.md`
 
 ### Active trackers
 
@@ -33,6 +38,11 @@ complete, they must be checked off or explicitly retired:
 These may describe older plans or implementation slices. They are valuable
 reference material, but they do not override normative docs once implementation
 has moved on. Historical or superseded material belongs under `dev/archive/`.
+
+Completed implementation plans, superseded designs, stale investigations,
+baseline audits, old release notes, and historical evidence should be archived
+rather than patched in place unless they are still part of the current support
+contract.
 
 ## Completion Rule
 

@@ -1,5 +1,7 @@
 # Dev Documentation Cleanup Plan - 2026-04-22
 
+**Status:** Completed in branch `doc-cleanup-2026-04-22`
+
 ## Inputs
 
 Use these documents as the cleanup source material:

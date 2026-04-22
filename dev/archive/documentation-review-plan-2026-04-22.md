@@ -1,5 +1,7 @@
 # Documentation Review Plan - 2026-04-22
 
+**Status:** Historical baseline; superseded by the 2026-04-22 cleanup pass
+
 ## Goal
 
 Bring repository documentation back to a clear support contract:

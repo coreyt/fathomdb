@@ -10,7 +10,7 @@ and `run_operational_retention` primitives but no automatic trigger.
 
 ## Current State
 
-`crates/fathomdb-engine/src/admin.rs:1120-1151`
+`crates/fathomdb-engine/src/admin/operational.rs`
 `crates/fathomdb/src/lib.rs:227-250`
 
 Both methods are public API but require explicit invocation. Without

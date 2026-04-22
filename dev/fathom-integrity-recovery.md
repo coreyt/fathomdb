@@ -462,6 +462,6 @@ Go changes implemented:
 
 - [design-repair-provenance-primitives.md](./design-repair-provenance-primitives.md)
 - [setup-round-trip-fixtures.md](./setup-round-trip-fixtures.md)
-- [db-integrity-management.md](./db-integrity-management.md)
 - [dbim-playbook.md](./dbim-playbook.md)
-- [0.1_IMPLEMENTATION_PLAN.md](./0.1_IMPLEMENTATION_PLAN.md)
+- [db-integrity-management.md](./archive/db-integrity-management.md) historical source note
+- [0.1_IMPLEMENTATION_PLAN.md](./archive/0.1_IMPLEMENTATION_PLAN.md) historical implementation plan

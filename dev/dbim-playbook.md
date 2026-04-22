@@ -1,18 +1,22 @@
 # DBIM Playbook
 
+**Status:** Current
+**Last updated:** 2026-04-22
+
 ## Purpose
 
 This file is the operational playbook for database integrity management in
 `fathomdb`.
 
-It is derived from the expert notes in
-[db-integrity-management.md](./db-integrity-management.md), but updated to
-match the current architecture:
+It is derived from historical expert notes now archived at
+[dev/archive/db-integrity-management.md](./archive/db-integrity-management.md),
+but updated to match the current architecture:
 
 - `logical_id` vs `row_id`
 - explicit `chunks` projection
 - Rust engine with Go admin tooling
-- in-memory optional semantic backfills for v1
+- explicit vector regeneration today and FathomDB-managed vector projection as
+  the target design
 
 Use [ARCHITECTURE.md](./ARCHITECTURE.md) for architectural invariants.
 Use this file for repair workflows and admin operations.
@@ -46,17 +50,17 @@ possible without restoring a coarse backup.
 ## 3. Admin Surface
 
 The Rust engine should expose repair primitives. A separate Go admin tool,
-`fathom-cli`, should wrap them operationally.
+`fathom-integrity`, wraps them operationally.
 
 Core admin commands should include:
 
-- `fathom-cli check`
-- `fathom-cli repair --projections`
-- `fathom-cli repair --missing-projections`
-- `fathom-cli export`
-- `fathom-cli trace`
-- `fathom-cli excise`
-- `fathom-cli apply`
+- `fathom-integrity check`
+- `fathom-integrity repair`
+- `fathom-integrity rebuild`
+- `fathom-integrity recover`
+- `fathom-integrity export`
+- `fathom-integrity trace`
+- `fathom-integrity excise`
 
 ## 4. Logical Corruption Repair
 
@@ -84,20 +88,23 @@ Active-state rebuild should resolve through the current schema:
 - canonical records come from `nodes`, `edges`, `chunks`, `runs`, `steps`,
   `actions`
 - active nodes are resolved by `logical_id` and `superseded_at IS NULL`
-- vector rows rebuild from `vec_nodes <- chunks <- nodes`
+- property FTS rows rebuild into per-kind `fts_props_<kind>` tables
+- vector rows rebuild into per-kind `vec_<kind>` tables from `chunks <- nodes`
 
 ### 4.2 Missing Optional Semantic Backfills
 
-For v1, optional semantic backfills should use an in-memory queue, not a
-persistent SQLite queue table.
+Current releases use explicit admin/API regeneration for vector rows. The
+target managed-vector design should use durable queue/state for vector
+projection work so new writes are not starved behind large backfills.
 
 If the process crashes before backfills complete:
 
-1. startup runs `rebuild_missing_projections()`
+1. pending durable projection work survives restart
 2. missing chunk/vector rows are identified from canonical `chunks`
-3. optional projections are regenerated
+3. vector-enabled kinds are regenerated or drained by the projection worker
 
-This is intentionally simpler than a durable queue-state machine.
+This is intentionally different from low-cost FTS projection, which can be
+maintained synchronously for normal writes.
 
 ## 5. Semantic Corruption Repair
 
@@ -148,13 +155,13 @@ When debugging semantic corruption, the operator needs to answer:
 Because canonical rows keep direct `source_ref`, the admin tool should support:
 
 ```bash
-fathom-cli trace --db local.sqlite --source-ref act_xyz
+fathom-integrity trace --db local.sqlite --source-ref act_xyz
 ```
 
 Or time-scoped review:
 
 ```bash
-fathom-cli trace --db local.sqlite --last 2h
+fathom-integrity trace --db local.sqlite --last 2h
 ```
 
 The output should be a causal chain from run -> step -> action -> canonical
@@ -217,7 +224,7 @@ Single-file portability should be treated as part of the recovery story.
 ### 9.1 Safe Export
 
 ```bash
-fathom-cli export --db local.sqlite --out agent_debug.sqlite
+fathom-integrity export --db local.sqlite --out agent_debug.sqlite
 ```
 
 The export command should:
@@ -239,8 +246,8 @@ generate a small SQL patch that:
 ### 9.3 Patch Application
 
 ```bash
-fathom-cli apply --db local.sqlite patch.sql
-fathom-cli repair --projections
+fathom-integrity repair --db local.sqlite --target all
+fathom-integrity rebuild --db local.sqlite --target fts
 ```
 
 This is much better than shipping a full replacement database file back to the
@@ -248,7 +255,7 @@ user.
 
 ## 10. Integrity Checks
 
-`fathom-cli check` should aggregate:
+`fathom-integrity check` should aggregate:
 
 - `PRAGMA integrity_check`
 - `PRAGMA foreign_key_check`
@@ -278,8 +285,8 @@ Defer for later if needed:
 
 ## 12. Relation To The Expert Source Note
 
-[db-integrity-management.md](./db-integrity-management.md) remains the preserved
-expert design note.
+[db-integrity-management.md](./archive/db-integrity-management.md) remains the
+preserved expert design note in `dev/archive/`.
 
 This playbook is the implementation-facing adaptation of that note for the
 current `fathomdb` architecture and v1 scope.

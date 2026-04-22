@@ -40,4 +40,5 @@ fathomdb is canonical local storage for persistent AI agents. Graph, vector, and
 
 ## Internal Design
 
-Detailed design documents, architecture notes, and implementation plans are in `dev/`.
+Current architecture, support contracts, and active design notes are in `dev/`.
+Superseded plans and historical investigations are preserved in `dev/archive/`.

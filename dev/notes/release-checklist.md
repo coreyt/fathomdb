@@ -277,12 +277,12 @@ an intentionally lightweight agent-harness preflight. Use
 
 - `python/tests/examples/test_harness_baseline.py` and
   `test_harness_vector.py` pass when run independently but fail in
-  bulk runs due to a sqlite-vec `vec_nodes_active` table that some
-  baseline scenarios touch. The cleanup pack at `2c1ef1c` refreshed
-  expected counts but the bulk-run interaction remains. Resolved in
-  the 0.4.0 cycle by commit `5ae82d7` (preflight `/tmp` accumulation
-  cleanup); empirically verified by running the full `python/tests/`
-  suite five times in a row, 93/93 green each run.
+  bulk runs due to old sqlite-vec global-table assumptions that some
+  baseline scenarios touched before per-kind vector tables. The cleanup pack
+  at `2c1ef1c` refreshed expected counts but the bulk-run interaction remains.
+  Resolved in the 0.4.0 cycle by commit `5ae82d7` (preflight `/tmp`
+  accumulation cleanup); empirically verified by running the full
+  `python/tests/` suite five times in a row, 93/93 green each run.
 - `./scripts/preflight-CI.sh` used to run `cargo publish --dry-run` for
   all four workspace crates. The non-leaf crates (`fathomdb-engine` and
   `fathomdb`) carry inter-workspace dependencies at the
