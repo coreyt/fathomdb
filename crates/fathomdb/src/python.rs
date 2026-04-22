@@ -771,6 +771,20 @@ impl EngineCore {
                 .map_err(map_admin_ffi_error)
         })
     }
+
+    pub fn configure_vec_kind(&self, py: Python<'_>, request_json: &str) -> PyResult<String> {
+        self.with_engine(|engine| {
+            py.detach(|| crate::admin_ffi::configure_vec_kind_json(engine, request_json))
+                .map_err(map_admin_ffi_error)
+        })
+    }
+
+    pub fn get_vec_index_status(&self, py: Python<'_>, kind: &str) -> PyResult<String> {
+        self.with_engine(|engine| {
+            py.detach(|| crate::admin_ffi::get_vec_index_status_json(engine, kind))
+                .map_err(map_admin_ffi_error)
+        })
+    }
 }
 
 const MAX_AST_JSON_BYTES: usize = 16 * 1024 * 1024; // 16 MB

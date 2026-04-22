@@ -15,11 +15,12 @@ mod telemetry;
 mod writer;
 
 pub use admin::{
-    AdminHandle, AdminService, FtsProfile, FtsPropertyPathMode, FtsPropertyPathSpec,
-    FtsPropertySchemaRecord, IntegrityReport, LogicalPurgeReport, LogicalRestoreReport,
-    ProjectionImpact, ProvenancePurgeOptions, ProvenancePurgeReport, SafeExportManifest,
-    SafeExportOptions, SemanticReport, SkippedEdge, TOKENIZER_PRESETS, TraceReport, VecProfile,
-    VectorRegenerationConfig, VectorRegenerationReport, load_vector_regeneration_config,
+    AdminHandle, AdminService, ConfigureVecOutcome, FtsProfile, FtsPropertyPathMode,
+    FtsPropertyPathSpec, FtsPropertySchemaRecord, IntegrityReport, LogicalPurgeReport,
+    LogicalRestoreReport, ProjectionImpact, ProvenancePurgeOptions, ProvenancePurgeReport,
+    SafeExportManifest, SafeExportOptions, SemanticReport, SkippedEdge, TOKENIZER_PRESETS,
+    TraceReport, VecIndexStatus, VecProfile, VectorRegenerationConfig, VectorRegenerationReport,
+    VectorSource, load_vector_regeneration_config,
 };
 pub use coordinator::{
     ActionRow, EdgeExpansionRootRows, EdgeExpansionSlotRows, EdgeRow, ExecutionCoordinator,

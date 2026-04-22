@@ -594,23 +594,38 @@ class AdminClient:
 
     def configure_vec(
         self,
-        embedder,
+        kind_or_embedder,
         mode: RebuildMode = RebuildMode.ASYNC,
         *,
+        source: str = "chunks",
         agree_to_rebuild_impact: bool = False,
-    ) -> VecProfile:
-        """Set the vector embedding profile from an embedder.
+    ):
+        """Configure managed vector indexing for a node *kind*.
 
-        Args:
-            embedder: A QueryEmbedder whose ``identity()`` provides the profile.
-            mode: Accepted for API compatibility; **not yet forwarded to a
-                rebuild**. After calling this method, call
-                ``admin.regenerate_vector_embeddings(embedder)`` explicitly
-                to rebuild the vector index.
-            agree_to_rebuild_impact: If True, proceed even when rows must be
-                rebuilt. If False (default), raises :class:`RebuildImpactError`
-                when rows_to_rebuild > 0.
+        Two calling shapes are supported:
+
+        - New (0.5.x): ``admin.configure_vec("KnowledgeItem", source="chunks")``.
+          Enqueues backfill in ``vector_projection_work`` using the currently
+          active ``vector_embedding_profiles`` row. Returns a dict mirroring
+          ``ConfigureVecOutcome``.
+        - Deprecated (pre-0.5): ``admin.configure_vec(embedder)``. Routes to
+          :meth:`set_vec_profile` for backwards compatibility and emits a
+          :class:`DeprecationWarning`. Returns a :class:`VecProfile`.
         """
+        if isinstance(kind_or_embedder, str):
+            return self._configure_vec_kind_new(kind_or_embedder, source=source)
+
+        import warnings
+
+        warnings.warn(
+            "AdminClient.configure_vec(embedder) is deprecated; the new "
+            "signature is configure_vec(kind, source=...). The embedder form "
+            "routes to set_vec_profile for backwards compatibility and will "
+            "be removed in a future release.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        embedder = kind_or_embedder
         identity = embedder.identity()
         impact_json = self._core.preview_projection_impact("*", "vec")
         impact = ImpactReport.from_wire(json.loads(impact_json))
@@ -626,6 +641,23 @@ class AdminClient:
         )
         result_json = self._core.set_vec_profile(config)
         return VecProfile.from_wire(json.loads(result_json))
+
+    def _configure_vec_kind_new(self, kind: str, *, source: str) -> dict:
+        """Per-kind configure_vec new path (0.5.x)."""
+        request = json.dumps({"kind": kind, "source": source})
+        result_json = self._core.configure_vec_kind(request)
+        return json.loads(result_json)
+
+    def get_vec_index_status(self, kind: str) -> dict:
+        """Return managed vector indexing status for *kind*.
+
+        Returns a dict mirroring the Rust ``VecIndexStatus`` struct: keys
+        ``kind``, ``enabled``, ``state``, ``pending_incremental``,
+        ``pending_backfill``, ``last_error``, ``last_completed_at``,
+        ``embedding_identity``.
+        """
+        result_json = self._core.get_vec_index_status(kind)
+        return json.loads(result_json)
 
     def preview_projection_impact(self, kind: str, target: str) -> ImpactReport:
         """Return an impact estimate for changing the projection for *kind*.
