@@ -763,6 +763,7 @@ impl AdminService {
     ///   would invalidate enabled vector index kinds and the caller did not
     ///   acknowledge the rebuild impact.
     /// - [`EngineError::Sqlite`] if any underlying SQL fails.
+    #[allow(clippy::too_many_lines)]
     pub fn configure_embedding(
         &self,
         embedder: &dyn QueryEmbedder,
@@ -782,9 +783,10 @@ impl AdminService {
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
 
         // Look up the current active profile, if any.
-        let current: Option<(i64, String, String, i64)> = tx
+        let current: Option<(i64, String, String, i64, String)> = tx
             .query_row(
-                "SELECT profile_id, model_identity, COALESCE(model_version, ''), dimensions \
+                "SELECT profile_id, model_identity, COALESCE(model_version, ''), dimensions, \
+                        COALESCE(normalization_policy, '') \
                  FROM vector_embedding_profiles WHERE active = 1",
                 [],
                 |row| {
@@ -793,17 +795,20 @@ impl AdminService {
                         row.get::<_, String>(1)?,
                         row.get::<_, String>(2)?,
                         row.get::<_, i64>(3)?,
+                        row.get::<_, String>(4)?,
                     ))
                 },
             )
             .optional()?;
 
         let incoming_version = identity.model_version.clone();
-        if let Some((profile_id, current_identity, current_version, current_dim)) = current.clone()
+        if let Some((profile_id, current_identity, current_version, current_dim, current_norm)) =
+            current.clone()
         {
             if current_identity == identity.model_identity
                 && current_version == incoming_version
                 && current_dim == dimensions
+                && current_norm == identity.normalization_policy
             {
                 // Identical — no-op.
                 tx.commit()?;
@@ -825,21 +830,45 @@ impl AdminService {
                 });
             }
 
-            // Demote current active row.
-            tx.execute(
-                "UPDATE vector_embedding_profiles SET active = 0 WHERE active = 1",
-                [],
-            )?;
+            let identity_triple_changed = current_identity != identity.model_identity
+                || current_version != incoming_version
+                || current_dim != dimensions;
 
-            // Insert new active row.
-            let new_profile_id = insert_new_active_profile(
-                &tx,
-                &identity.model_identity,
-                &incoming_version,
-                dimensions,
-                &identity.normalization_policy,
-                max_tokens_i64,
-            )?;
+            let new_profile_id = if identity_triple_changed {
+                // Demote current active row.
+                tx.execute(
+                    "UPDATE vector_embedding_profiles SET active = 0 WHERE active = 1",
+                    [],
+                )?;
+
+                // Insert new active row.
+                insert_new_active_profile(
+                    &tx,
+                    &identity.model_identity,
+                    &incoming_version,
+                    dimensions,
+                    &identity.normalization_policy,
+                    max_tokens_i64,
+                )?
+            } else {
+                // Normalization-only change: the unique index on
+                // (model_identity, model_version, dimensions) prevents inserting
+                // a second row with the same triple, so update in place. The
+                // profile row still reflects the new policy and enabled kinds
+                // still get staled so rebuilds pick up the change.
+                let normalization_opt: Option<&str> = if identity.normalization_policy.is_empty() {
+                    None
+                } else {
+                    Some(identity.normalization_policy.as_str())
+                };
+                tx.execute(
+                    "UPDATE vector_embedding_profiles \
+                     SET normalization_policy = ?1, max_tokens = ?2 \
+                     WHERE profile_id = ?3",
+                    rusqlite::params![normalization_opt, max_tokens_i64, profile_id],
+                )?;
+                profile_id
+            };
 
             // Mark enabled kinds stale.
             let stale_kinds = if affected > 0 {
