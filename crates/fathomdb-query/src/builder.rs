@@ -56,7 +56,7 @@ pub enum BuilderValidationError {
 /// Start with [`QueryBuilder::nodes`] and chain filtering, traversal, and
 /// expansion steps before calling [`compile`](QueryBuilder::compile) or
 /// [`compile_grouped`](QueryBuilder::compile_grouped).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct QueryBuilder {
     ast: QueryAst,
 }
@@ -77,12 +77,51 @@ impl QueryBuilder {
     }
 
     /// Add a vector similarity search step.
+    ///
+    /// Deprecated: prefer [`Self::semantic_search`] for natural-language
+    /// queries (the engine embeds via the db-wide active profile) or
+    /// [`Self::raw_vector_search`] for a caller-supplied `Vec<f32>`.
     #[must_use]
+    #[deprecated(
+        note = "use semantic_search(text) for natural-language queries or raw_vector_search(vec) for explicit float vectors"
+    )]
     pub fn vector_search(mut self, query: impl Into<String>, limit: usize) -> Self {
+        #[cfg(feature = "tracing")]
+        tracing::warn!(
+            "vector_search is deprecated - use semantic_search(text) or raw_vector_search(vec)"
+        );
         self.ast.steps.push(QueryStep::VectorSearch {
             query: query.into(),
             limit,
         });
+        self
+    }
+
+    /// Add a semantic-search step (Pack F1).
+    ///
+    /// The engine embeds `text` at query time using the database-wide
+    /// active profile embedder and runs KNN against `vec_<kind>`. See
+    /// [`QueryStep::SemanticSearch`] for the error/degradation contract.
+    #[must_use]
+    pub fn semantic_search(mut self, text: impl Into<String>, limit: usize) -> Self {
+        self.ast.steps.push(QueryStep::SemanticSearch {
+            text: text.into(),
+            limit,
+        });
+        self
+    }
+
+    /// Add a raw-vector-search step (Pack F1).
+    ///
+    /// The caller supplies a dense vector directly; the engine skips the
+    /// read-time embedder and binds `vec` to the per-kind `vec_<kind>`
+    /// KNN scan. The vector's length must match the active embedding
+    /// profile's dimension.
+    #[must_use]
+    pub fn raw_vector_search(mut self, vec: Vec<f32>, limit: usize) -> Self {
+        self.ast
+            .steps
+            .push(QueryStep::RawVectorSearch { vec, limit });
         self
     }
 
@@ -536,7 +575,7 @@ impl QueryBuilder {
 /// Chained builder for an edge-projecting expansion slot. Returned by
 /// [`QueryBuilder::traverse_edges`]; call [`Self::done`] to append the
 /// slot to the parent `QueryBuilder` and resume chaining.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct EdgeExpansionBuilder {
     parent: QueryBuilder,
     slot: EdgeExpansionSlot,

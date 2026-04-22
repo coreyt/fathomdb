@@ -5,11 +5,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use fathomdb_query::{
-    BindValue, ComparisonOp, CompiledGroupedQuery, CompiledQuery, CompiledRetrievalPlan,
-    CompiledSearch, CompiledSearchPlan, CompiledVectorSearch, DrivingTable, EdgeExpansionSlot,
-    ExpansionSlot, FALLBACK_TRIGGER_K, HitAttribution, Predicate, RetrievalModality, ScalarValue,
-    SearchBranch, SearchHit, SearchHitSource, SearchMatchMode, SearchRows, ShapeHash,
-    render_text_query_fts5,
+    BindValue, ComparisonOp, CompiledGroupedQuery, CompiledQuery, CompiledRawVectorSearch,
+    CompiledRetrievalPlan, CompiledSearch, CompiledSearchPlan, CompiledSemanticSearch,
+    CompiledVectorSearch, DrivingTable, EdgeExpansionSlot, ExpansionSlot, FALLBACK_TRIGGER_K,
+    HitAttribution, Predicate, RetrievalModality, ScalarValue, SearchBranch, SearchHit,
+    SearchHitSource, SearchMatchMode, SearchRows, ShapeHash, render_text_query_fts5,
 };
 use fathomdb_schema::SchemaManager;
 use rusqlite::{Connection, OptionalExtension, params_from_iter, types::Value};
@@ -1390,6 +1390,175 @@ impl ExecutionCoordinator {
             fallback_used: false,
             was_degraded: false,
         })
+    }
+
+    /// Execute a Pack F1 [`CompiledSemanticSearch`].
+    ///
+    /// Pre-KNN checks follow the design doc §Failure And Degradation
+    /// Semantics:
+    ///   - No active `vector_embedding_profiles` row → hard error
+    ///     [`EngineError::EmbedderNotConfigured`].
+    ///   - No enabled `vector_index_schemas` row for `compiled.root_kind` →
+    ///     hard error [`EngineError::KindNotVectorIndexed`].
+    ///   - `vector_index_schemas.state = 'stale'` → empty result with
+    ///     `was_degraded = true`.
+    ///   - Embedder missing or returns [`crate::EmbedderError::Unavailable`]
+    ///     / `Failed` → empty result with `was_degraded = true`.
+    ///   - Embedder output length ≠ profile `dimensions` → hard error
+    ///     [`EngineError::DimensionMismatch`].
+    ///
+    /// On success the call reuses [`Self::execute_compiled_vector_search`]
+    /// for the actual KNN / SQL execution by constructing an internal
+    /// [`CompiledVectorSearch`].
+    ///
+    /// # Errors
+    /// See the variants above. SQL errors propagate as [`EngineError::Sqlite`].
+    pub fn execute_compiled_semantic_search(
+        &self,
+        compiled: &CompiledSemanticSearch,
+    ) -> Result<SearchRows, EngineError> {
+        // 1. Active profile must exist.
+        let profile_dim = self
+            .active_profile_dimensions()?
+            .ok_or(EngineError::EmbedderNotConfigured)?;
+
+        // 2. Per-kind vector schema must exist and be enabled.
+        let schema_state = self.enabled_vec_kind_state(&compiled.root_kind)?;
+        let Some(state) = schema_state else {
+            return Err(EngineError::KindNotVectorIndexed {
+                kind: compiled.root_kind.clone(),
+            });
+        };
+
+        // 3. Stale schema → degrade.
+        if state == "stale" {
+            return Ok(SearchRows {
+                was_degraded: true,
+                ..SearchRows::default()
+            });
+        }
+
+        // 4. Embedder must be available.
+        let Some(embedder) = self.query_embedder.as_ref() else {
+            return Ok(SearchRows {
+                was_degraded: true,
+                ..SearchRows::default()
+            });
+        };
+        let Ok(embedding) = embedder.embed_query(&compiled.text) else {
+            return Ok(SearchRows {
+                was_degraded: true,
+                ..SearchRows::default()
+            });
+        };
+
+        // 5. Validate embedding dimensions.
+        if embedding.len() != profile_dim {
+            return Err(EngineError::DimensionMismatch {
+                expected: profile_dim,
+                actual: embedding.len(),
+            });
+        }
+
+        // 6. Delegate to the existing KNN executor via a CompiledVectorSearch.
+        let literal = serde_json::to_string(&embedding)
+            .map_err(|e| EngineError::Bridge(format!("serialize query embedding: {e}")))?;
+        let inner = CompiledVectorSearch {
+            root_kind: compiled.root_kind.clone(),
+            query_text: literal,
+            limit: compiled.limit,
+            fusable_filters: Vec::new(),
+            residual_filters: Vec::new(),
+            attribution_requested: false,
+        };
+        self.execute_compiled_vector_search(&inner)
+    }
+
+    /// Execute a Pack F1 [`CompiledRawVectorSearch`].
+    ///
+    /// Pre-KNN checks:
+    ///   - No active `vector_embedding_profiles` row → hard error
+    ///     [`EngineError::EmbedderNotConfigured`] (the profile's
+    ///     `dimensions` is the source of truth for the expected vector
+    ///     length, so a missing profile is a configuration error even
+    ///     though the raw path bypasses the embedder itself).
+    ///   - No enabled `vector_index_schemas` row for `compiled.root_kind` →
+    ///     hard error [`EngineError::KindNotVectorIndexed`].
+    ///   - `compiled.vec.len() != profile.dimensions` → hard error
+    ///     [`EngineError::DimensionMismatch`].
+    ///   - `vector_index_schemas.state = 'stale'` → empty result with
+    ///     `was_degraded = true`.
+    ///
+    /// # Errors
+    /// See the variants above. SQL errors propagate as [`EngineError::Sqlite`].
+    pub fn execute_compiled_raw_vector_search(
+        &self,
+        compiled: &CompiledRawVectorSearch,
+    ) -> Result<SearchRows, EngineError> {
+        let profile_dim = self
+            .active_profile_dimensions()?
+            .ok_or(EngineError::EmbedderNotConfigured)?;
+
+        let schema_state = self.enabled_vec_kind_state(&compiled.root_kind)?;
+        let Some(state) = schema_state else {
+            return Err(EngineError::KindNotVectorIndexed {
+                kind: compiled.root_kind.clone(),
+            });
+        };
+
+        if compiled.vec.len() != profile_dim {
+            return Err(EngineError::DimensionMismatch {
+                expected: profile_dim,
+                actual: compiled.vec.len(),
+            });
+        }
+
+        if state == "stale" {
+            return Ok(SearchRows {
+                was_degraded: true,
+                ..SearchRows::default()
+            });
+        }
+
+        let literal = serde_json::to_string(&compiled.vec)
+            .map_err(|e| EngineError::Bridge(format!("serialize raw vector: {e}")))?;
+        let inner = CompiledVectorSearch {
+            root_kind: compiled.root_kind.clone(),
+            query_text: literal,
+            limit: compiled.limit,
+            fusable_filters: Vec::new(),
+            residual_filters: Vec::new(),
+            attribution_requested: false,
+        };
+        self.execute_compiled_vector_search(&inner)
+    }
+
+    /// Return the active embedding profile's `dimensions` column, or `None`
+    /// if no active profile is configured.
+    fn active_profile_dimensions(&self) -> Result<Option<usize>, EngineError> {
+        let conn = self.lock_connection()?;
+        let dim: Option<i64> = conn
+            .query_row(
+                "SELECT dimensions FROM vector_embedding_profiles WHERE active = 1",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?;
+        Ok(dim.and_then(|d| usize::try_from(d).ok()))
+    }
+
+    /// Return the `state` of the `vector_index_schemas` row for `kind` if
+    /// one exists and is enabled, else `None`.
+    fn enabled_vec_kind_state(&self, kind: &str) -> Result<Option<String>, EngineError> {
+        let conn = self.lock_connection()?;
+        let row: Option<(i64, String)> = conn
+            .query_row(
+                "SELECT enabled, state FROM vector_index_schemas WHERE kind = ?1",
+                rusqlite::params![kind],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional()?;
+        Ok(row.and_then(|(enabled, state)| if enabled == 1 { Some(state) } else { None }))
     }
 
     /// Execute a unified [`CompiledRetrievalPlan`] (Phase 12 `search()`
@@ -3604,7 +3773,7 @@ fn bind_value_to_sql(value: &fathomdb_query::BindValue) -> Value {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
+#[allow(clippy::expect_used, deprecated)]
 mod tests {
     use std::panic::{AssertUnwindSafe, catch_unwind};
     use std::sync::Arc;

@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used)]
+#![allow(clippy::expect_used, deprecated)]
 
 use std::sync::atomic::{AtomicU64, Ordering};
 

@@ -262,6 +262,38 @@ pub struct CompiledVectorSearch {
     pub attribution_requested: bool,
 }
 
+/// Pack F1 compiled semantic-search carrier.
+///
+/// Structurally parallel to [`CompiledVectorSearch`], but the caller's
+/// payload is natural-language text — the coordinator embeds it at query
+/// time using the db-wide active profile embedder. Unlike
+/// [`CompiledVectorSearch::query_text`] (which is a JSON float-array
+/// literal), `text` here is the raw user string.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CompiledSemanticSearch {
+    /// Root kind the caller bound the query to (must be non-empty).
+    pub root_kind: String,
+    /// Raw natural-language query to embed at execution time.
+    pub text: String,
+    /// Maximum number of candidate hits to retrieve from the vec KNN scan.
+    pub limit: usize,
+}
+
+/// Pack F1 compiled raw-vector-search carrier.
+///
+/// The caller supplies a dense vector directly; the coordinator binds it
+/// to `vec_<kind>` without calling the embedder. The vector's dimension
+/// must equal the active embedding profile's dimension.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CompiledRawVectorSearch {
+    /// Root kind the caller bound the query to (must be non-empty).
+    pub root_kind: String,
+    /// Caller-supplied dense vector.
+    pub vec: Vec<f32>,
+    /// Maximum number of candidate hits to retrieve from the vec KNN scan.
+    pub limit: usize,
+}
+
 /// A two-branch compiled search plan ready for the coordinator to execute.
 ///
 /// Phase 6 factors the strict+relaxed retrieval pair into a small carrier so
@@ -326,7 +358,7 @@ pub struct CompiledRetrievalPlan {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
+#[allow(clippy::expect_used, deprecated)]
 mod tests {
     use super::*;
 

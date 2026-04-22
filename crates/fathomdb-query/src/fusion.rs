@@ -45,7 +45,9 @@ pub fn partition_search_filters(steps: &[QueryStep]) -> (Vec<Predicate>, Vec<Pre
         match step {
             QueryStep::Search { .. }
             | QueryStep::TextSearch { .. }
-            | QueryStep::VectorSearch { .. } => {
+            | QueryStep::VectorSearch { .. }
+            | QueryStep::SemanticSearch { .. }
+            | QueryStep::RawVectorSearch { .. } => {
                 seen_search = true;
             }
             QueryStep::Filter(predicate) if seen_search => {

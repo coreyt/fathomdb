@@ -1,7 +1,12 @@
 use crate::TextQuery;
 
 /// Abstract syntax tree representing a graph query.
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// `Eq` is intentionally NOT derived because [`QueryStep::RawVectorSearch`]
+/// carries a `Vec<f32>` payload; `Vec<f32>` implements `PartialEq` but not
+/// `Eq` (IEEE-754 NaN breaks reflexivity). Existing `PartialEq`-only
+/// callers are unaffected.
+#[derive(Clone, Debug, PartialEq)]
 pub struct QueryAst {
     /// Node kind used as the root of the query.
     pub root_kind: String,
@@ -65,7 +70,9 @@ pub struct ExpansionSlot {
 }
 
 /// A single step in the query pipeline.
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// `Eq` is intentionally NOT derived — see [`QueryAst`] for the rationale.
+#[derive(Clone, Debug, PartialEq)]
 pub enum QueryStep {
     /// Unified adaptive retrieval entry step consumed by the Phase 12
     /// retrieval planner.
@@ -85,6 +92,31 @@ pub enum QueryStep {
         /// The search query text (to be embedded by the caller).
         query: String,
         /// Maximum number of candidate rows from the vector index.
+        limit: usize,
+    },
+    /// Pack F1 semantic-search step: a natural-language query that the
+    /// engine embeds at query time using the db-wide active profile
+    /// embedder, then runs KNN against the per-kind `vec_<kind>` table.
+    ///
+    /// Unlike [`QueryStep::VectorSearch`], the `text` is NEVER a JSON
+    /// float-array literal — the caller supplies natural language and
+    /// the engine handles embedding internally.
+    SemanticSearch {
+        /// Natural-language query string to embed at query time.
+        text: String,
+        /// Maximum number of candidate rows from the vector KNN scan.
+        limit: usize,
+    },
+    /// Pack F1 raw-vector-search step: a caller-supplied dense vector
+    /// that the engine binds directly to the per-kind `vec_<kind>` KNN
+    /// scan with no embedder call. The vector's dimension must match the
+    /// active embedding profile's dimension or the coordinator returns
+    /// [`super::CompileError`]-free with a hard `DimensionMismatch`
+    /// error at plan-time.
+    RawVectorSearch {
+        /// Caller-supplied dense vector.
+        vec: Vec<f32>,
+        /// Maximum number of candidate rows from the vector KNN scan.
         limit: usize,
     },
     /// Full-text search over indexed chunk content using `FathomDB`'s supported

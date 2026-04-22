@@ -1344,7 +1344,7 @@ pub(super) fn clear_operational_current_rows(
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
+#[allow(clippy::expect_used, deprecated)]
 mod tests {
     use std::fs;
     use std::sync::Arc;

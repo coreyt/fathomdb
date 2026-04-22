@@ -302,9 +302,10 @@ pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
         .steps
         .iter()
         .find_map(|step| match step {
-            QueryStep::VectorSearch { limit, .. } | QueryStep::TextSearch { limit, .. } => {
-                Some(*limit)
-            }
+            QueryStep::VectorSearch { limit, .. }
+            | QueryStep::TextSearch { limit, .. }
+            | QueryStep::SemanticSearch { limit, .. }
+            | QueryStep::RawVectorSearch { limit, .. } => Some(*limit),
             _ => None,
         })
         .or(ast.final_limit)
@@ -844,6 +845,8 @@ pub fn compile_search(ast: &QueryAst) -> Result<CompiledSearch, CompileError> {
             QueryStep::Filter(_)
             | QueryStep::Search { .. }
             | QueryStep::VectorSearch { .. }
+            | QueryStep::SemanticSearch { .. }
+            | QueryStep::RawVectorSearch { .. }
             | QueryStep::Traverse { .. } => {
                 // Filter steps are partitioned below; Search/Vector/Traverse
                 // steps are not composable with text search in the adaptive
@@ -982,6 +985,8 @@ pub fn compile_vector_search(ast: &QueryAst) -> Result<CompiledVectorSearch, Com
             QueryStep::Filter(_)
             | QueryStep::Search { .. }
             | QueryStep::TextSearch { .. }
+            | QueryStep::SemanticSearch { .. }
+            | QueryStep::RawVectorSearch { .. }
             | QueryStep::Traverse { .. } => {
                 // Filter steps are partitioned below; Search/TextSearch/
                 // Traverse steps are not composable with vector search in
@@ -1098,7 +1103,7 @@ fn hash_signature(signature: &str) -> u64 {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::items_after_statements)]
+#[allow(clippy::expect_used, clippy::items_after_statements, deprecated)]
 mod tests {
     use rstest::rstest;
 

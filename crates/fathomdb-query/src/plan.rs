@@ -85,6 +85,12 @@ pub fn shape_signature(ast: &QueryAst) -> String {
             QueryStep::VectorSearch { limit, .. } => {
                 let _ = write!(&mut signature, "-Vector(limit={limit})");
             }
+            QueryStep::SemanticSearch { limit, .. } => {
+                let _ = write!(&mut signature, "-Semantic(limit={limit})");
+            }
+            QueryStep::RawVectorSearch { vec, limit } => {
+                let _ = write!(&mut signature, "-RawVec(dim={},limit={limit})", vec.len());
+            }
             QueryStep::TextSearch { limit, .. } => {
                 let _ = write!(&mut signature, "-Text(limit={limit})");
             }
@@ -216,6 +222,7 @@ pub fn shape_signature(ast: &QueryAst) -> String {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use crate::{DrivingTable, QueryBuilder, TraverseDirection};
 

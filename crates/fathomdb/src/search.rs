@@ -8,9 +8,9 @@
 use fathomdb_engine::{EngineError, GroupedQueryRows, QueryRows};
 use fathomdb_query::{
     BuilderValidationError, CompileError, CompiledGroupedQuery, CompiledQuery,
-    CompiledRetrievalPlan, CompiledSearchPlan, CompiledVectorSearch, QueryAst, QueryBuilder,
-    QueryStep, SearchRows, TextQuery, compile_grouped_query, compile_search,
-    compile_search_plan_from_queries, compile_vector_search,
+    CompiledRawVectorSearch, CompiledRetrievalPlan, CompiledSearchPlan, CompiledSemanticSearch,
+    CompiledVectorSearch, QueryAst, QueryBuilder, QueryStep, SearchRows, TextQuery,
+    compile_grouped_query, compile_search, compile_search_plan_from_queries, compile_vector_search,
 };
 
 use crate::Engine;
@@ -143,6 +143,36 @@ impl<'e> NodeQueryBuilder<'e> {
             query,
             limit,
         )
+    }
+
+    /// Pack F1: start a semantic-search chain. The engine embeds `text` at
+    /// query time using the database-wide active profile embedder and runs
+    /// KNN against `vec_<kind>`. See the design doc §Query API and
+    /// §Failure And Degradation Semantics for the full contract.
+    pub fn semantic_search(
+        self,
+        text: impl Into<String>,
+        limit: usize,
+    ) -> SemanticSearchBuilder<'e> {
+        SemanticSearchBuilder {
+            engine: self.engine,
+            root_kind: self.inner.ast().root_kind.clone(),
+            text: text.into(),
+            limit,
+        }
+    }
+
+    /// Pack F1: start a raw-vector-search chain. The caller supplies a
+    /// dense vector; the engine skips the read-time embedder and binds
+    /// `vec` directly to the per-kind `vec_<kind>` KNN scan. The vector's
+    /// length must match the active embedding profile's dimension.
+    pub fn raw_vector_search(self, vec: Vec<f32>, limit: usize) -> RawVectorSearchBuilder<'e> {
+        RawVectorSearchBuilder {
+            engine: self.engine,
+            root_kind: self.inner.ast().root_kind.clone(),
+            vec,
+            limit,
+        }
     }
 
     /// Add a graph traversal step.
@@ -1315,6 +1345,7 @@ impl<'e> VectorSearchBuilder<'e> {
         // query text and limit are never executed — `compile_plan` pulls
         // the real vector query string and limit from the builder's
         // fields directly when it assembles the `CompiledVectorSearch`.
+        #[allow(deprecated)]
         let filter_builder = QueryBuilder::nodes(root_kind.clone()).vector_search("", 0);
         Self {
             engine,
@@ -2087,6 +2118,102 @@ impl<'e> SearchBuilder<'e> {
         self.engine
             .coordinator()
             .execute_compiled_grouped_read(&compiled)
+    }
+}
+
+/// Pack F1 tethered semantic-search builder.
+///
+/// Returned by [`NodeQueryBuilder::semantic_search`]. Compiles a
+/// [`CompiledSemanticSearch`] and dispatches via
+/// [`fathomdb_engine::ExecutionCoordinator::execute_compiled_semantic_search`].
+/// Unlike [`VectorSearchBuilder`], the caller supplies a natural-language
+/// string — the engine embeds it at query time using the db-wide active
+/// profile embedder.
+#[must_use]
+pub struct SemanticSearchBuilder<'e> {
+    engine: &'e Engine,
+    root_kind: String,
+    text: String,
+    limit: usize,
+}
+
+impl SemanticSearchBuilder<'_> {
+    /// Compile the builder into a [`CompiledSemanticSearch`] without
+    /// executing it. Useful for tests and introspection.
+    ///
+    /// # Errors
+    /// Returns [`CompileError`] on future compile-time validation (none in v1).
+    pub fn compile_plan(&self) -> Result<CompiledSemanticSearch, CompileError> {
+        Ok(CompiledSemanticSearch {
+            root_kind: self.root_kind.clone(),
+            text: self.text.clone(),
+            limit: self.limit,
+        })
+    }
+
+    /// Execute the semantic search and return matching hits.
+    ///
+    /// # Errors
+    /// Returns [`EngineError::EmbedderNotConfigured`] if no active
+    /// embedding profile exists, [`EngineError::KindNotVectorIndexed`] if
+    /// the kind has no enabled vector-index schema, or
+    /// [`EngineError::DimensionMismatch`] if the embedder's output length
+    /// disagrees with the profile's declared dimension. Stale schemas and
+    /// embedder-unavailable degrade gracefully to an empty result with
+    /// `was_degraded = true`.
+    pub fn execute(&self) -> Result<SearchRows, EngineError> {
+        let plan = self
+            .compile_plan()
+            .map_err(|e| EngineError::InvalidConfig(format!("semantic_search compile: {e}")))?;
+        self.engine
+            .coordinator()
+            .execute_compiled_semantic_search(&plan)
+    }
+}
+
+/// Pack F1 tethered raw-vector-search builder.
+///
+/// Returned by [`NodeQueryBuilder::raw_vector_search`]. The caller supplies
+/// a dense vector; the engine skips the read-time embedder and binds the
+/// vector directly to the per-kind `vec_<kind>` KNN scan.
+#[must_use]
+pub struct RawVectorSearchBuilder<'e> {
+    engine: &'e Engine,
+    root_kind: String,
+    vec: Vec<f32>,
+    limit: usize,
+}
+
+impl RawVectorSearchBuilder<'_> {
+    /// Compile the builder into a [`CompiledRawVectorSearch`] without
+    /// executing it.
+    ///
+    /// # Errors
+    /// Returns [`CompileError`] on future compile-time validation (none in v1).
+    pub fn compile_plan(&self) -> Result<CompiledRawVectorSearch, CompileError> {
+        Ok(CompiledRawVectorSearch {
+            root_kind: self.root_kind.clone(),
+            vec: self.vec.clone(),
+            limit: self.limit,
+        })
+    }
+
+    /// Execute the raw-vector search and return matching hits.
+    ///
+    /// # Errors
+    /// Returns [`EngineError::EmbedderNotConfigured`] if no active
+    /// embedding profile exists, [`EngineError::KindNotVectorIndexed`] if
+    /// the kind has no enabled vector-index schema, or
+    /// [`EngineError::DimensionMismatch`] if `vec.len()` ≠ profile dim.
+    /// Stale schemas degrade gracefully to an empty result with
+    /// `was_degraded = true`.
+    pub fn execute(&self) -> Result<SearchRows, EngineError> {
+        let plan = self
+            .compile_plan()
+            .map_err(|e| EngineError::InvalidConfig(format!("raw_vector_search compile: {e}")))?;
+        self.engine
+            .coordinator()
+            .execute_compiled_raw_vector_search(&plan)
     }
 }
 
