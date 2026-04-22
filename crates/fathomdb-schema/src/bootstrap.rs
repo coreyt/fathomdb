@@ -524,6 +524,73 @@ static MIGRATIONS: &[Migration] = &[
         "drop global fts_node_properties table (replaced by per-kind fts_props_<kind> tables)",
         "DROP TABLE IF EXISTS fts_node_properties;",
     ),
+    // NOTE: Vector identity belongs to the embedder.
+    // `vector_embedding_profiles.model_identity` (and `model_version`) is a
+    // record of what the embedder reports on activation — it is never a
+    // user-authored or user-editable configuration field. The singleton
+    // partial unique index below enforces at most one active profile per
+    // database. See
+    // dev/notes/design-db-wide-embedding-per-kind-vector-indexing-2026-04-22.md.
+    Migration::new(
+        SchemaVersion(24),
+        "managed vector projection tables: embedding profiles, per-kind index schemas, async work queue",
+        r"
+                CREATE TABLE IF NOT EXISTS vector_embedding_profiles (
+                    profile_id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    profile_name         TEXT    NOT NULL,
+                    model_identity       TEXT    NOT NULL,
+                    model_version        TEXT,
+                    dimensions           INTEGER NOT NULL,
+                    normalization_policy TEXT,
+                    max_tokens           INTEGER,
+                    active               INTEGER NOT NULL DEFAULT 0,
+                    activated_at         INTEGER,
+                    created_at           INTEGER NOT NULL
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_vep_singleton_active
+                    ON vector_embedding_profiles(active)
+                    WHERE active = 1;
+
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_vep_identity
+                    ON vector_embedding_profiles(model_identity, model_version, dimensions);
+
+                CREATE TABLE IF NOT EXISTS vector_index_schemas (
+                    kind                  TEXT PRIMARY KEY,
+                    enabled               INTEGER NOT NULL DEFAULT 1,
+                    source_mode           TEXT    NOT NULL,
+                    source_config_json    TEXT,
+                    chunking_policy       TEXT,
+                    preprocessing_policy  TEXT,
+                    state                 TEXT    NOT NULL DEFAULT 'fresh',
+                    last_error            TEXT,
+                    last_completed_at     INTEGER,
+                    created_at            INTEGER NOT NULL,
+                    updated_at            INTEGER NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS vector_projection_work (
+                    work_id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    kind                 TEXT    NOT NULL,
+                    node_logical_id      TEXT,
+                    chunk_id             TEXT    NOT NULL,
+                    canonical_hash       TEXT    NOT NULL,
+                    priority             INTEGER NOT NULL DEFAULT 0,
+                    embedding_profile_id INTEGER NOT NULL REFERENCES vector_embedding_profiles(profile_id),
+                    attempt_count        INTEGER NOT NULL DEFAULT 0,
+                    last_error           TEXT,
+                    state                TEXT    NOT NULL DEFAULT 'pending',
+                    created_at           INTEGER NOT NULL,
+                    updated_at           INTEGER NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_vpw_schedule
+                    ON vector_projection_work(state, priority DESC, created_at ASC);
+
+                CREATE INDEX IF NOT EXISTS idx_vpw_chunk
+                    ON vector_projection_work(chunk_id);
+                ",
+    ),
 ];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
