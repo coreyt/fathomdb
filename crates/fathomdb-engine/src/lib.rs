@@ -29,7 +29,7 @@ pub use coordinator::{
 };
 #[cfg(feature = "default-embedder")]
 pub use embedder::BuiltinBgeSmallEmbedder;
-pub use embedder::{EmbedderError, QueryEmbedder, QueryEmbedderIdentity};
+pub use embedder::{BatchEmbedder, EmbedderError, QueryEmbedder, QueryEmbedderIdentity};
 pub use ids::{new_id, new_row_id};
 pub use operational::{
     OperationalCollectionKind, OperationalCollectionRecord, OperationalCompactionReport,
