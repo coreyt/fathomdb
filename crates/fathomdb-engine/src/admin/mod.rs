@@ -17,6 +17,7 @@ mod operational;
 mod provenance;
 mod vector;
 
+pub(crate) use vector::canonical_chunk_hash;
 pub use vector::{
     ConfigureEmbeddingOutcome, ConfigureVecOutcome, VecIndexStatus, VectorSource,
     load_vector_regeneration_config,
@@ -234,6 +235,10 @@ pub struct AdminService {
     /// was opened without a rebuild actor (e.g. in tests that use
     /// [`AdminService::new`] directly).
     pub(super) rebuild_sender: Option<SyncSender<RebuildRequest>>,
+    /// Shared handle to the writer actor.  `None` when the admin service is
+    /// constructed outside a full engine (unit tests).  Required by the
+    /// vector projection drain surface.
+    pub(super) writer: Option<Arc<crate::WriterActor>>,
 }
 
 /// Results of a semantic consistency check on the graph data.
@@ -428,6 +433,7 @@ impl AdminService {
             schema_manager,
             projections,
             rebuild_sender: None,
+            writer: None,
         }
     }
 
@@ -445,6 +451,29 @@ impl AdminService {
             schema_manager,
             projections,
             rebuild_sender: Some(rebuild_sender),
+            writer: None,
+        }
+    }
+
+    /// Create a new admin service wired to the rebuild actor AND a shared
+    /// writer-actor handle.  Used by [`crate::runtime::EngineRuntime::open`]
+    /// so admin surfaces that require writer-thread serialization (e.g.
+    /// vector projection drain) can submit batches safely.
+    #[must_use]
+    pub fn new_with_engine(
+        path: impl AsRef<Path>,
+        schema_manager: Arc<SchemaManager>,
+        rebuild_sender: SyncSender<RebuildRequest>,
+        writer: Arc<crate::WriterActor>,
+    ) -> Self {
+        let database_path = path.as_ref().to_path_buf();
+        let projections = ProjectionService::new(&database_path, Arc::clone(&schema_manager));
+        Self {
+            database_path,
+            schema_manager,
+            projections,
+            rebuild_sender: Some(rebuild_sender),
+            writer: Some(writer),
         }
     }
 
@@ -6959,7 +6988,7 @@ mod tests {
         let service = AdminService::new(db.path(), Arc::clone(&schema));
         let profile = service.get_vec_profile("MyKind").expect("should not error");
         assert!(profile.is_some(), "must return profile after registration");
-        assert_eq!(profile.unwrap().dimensions, 128);
+        assert_eq!(profile.expect("profile present").dimensions, 128);
     }
 
     #[test]

@@ -12,6 +12,7 @@ pub mod rebuild_actor;
 mod runtime;
 mod sqlite;
 mod telemetry;
+mod vector_projection_actor;
 mod writer;
 
 pub use admin::{
@@ -29,7 +30,7 @@ pub use coordinator::{
 };
 #[cfg(feature = "default-embedder")]
 pub use embedder::BuiltinBgeSmallEmbedder;
-pub use embedder::{EmbedderError, QueryEmbedder, QueryEmbedderIdentity};
+pub use embedder::{BatchEmbedder, EmbedderError, QueryEmbedder, QueryEmbedderIdentity};
 pub use ids::{new_id, new_row_id};
 pub use operational::{
     OperationalCollectionKind, OperationalCollectionRecord, OperationalCompactionReport,
@@ -51,6 +52,7 @@ pub use sqlite::{SharedSqlitePolicy, shared_sqlite_policy};
 pub use telemetry::{
     SqliteCacheStatus, TelemetryCounters, TelemetryLevel, TelemetrySnapshot, read_db_cache_status,
 };
+pub use vector_projection_actor::{DrainReport, VectorProjectionActor};
 pub use writer::{
     ActionInsert, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire, LastAccessTouchReport,
     LastAccessTouchRequest, NodeInsert, NodeRetire, OperationalWrite, OptionalProjectionTask,

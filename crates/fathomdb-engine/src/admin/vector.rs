@@ -1128,6 +1128,89 @@ impl AdminService {
         })
     }
 
+    /// Return the active `vector_embedding_profiles.profile_id`, or `None`
+    /// if no active profile is configured.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the database read fails.
+    pub fn active_embedding_profile_id(&self) -> Result<Option<i64>, EngineError> {
+        let conn = self.connect()?;
+        let id = conn
+            .query_row(
+                "SELECT profile_id FROM vector_embedding_profiles WHERE active = 1",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?;
+        Ok(id)
+    }
+
+    /// Run projection-worker scheduling ticks until no more work remains or
+    /// `timeout` elapses.  Intended for tests and for admin-driven catch-up
+    /// flows.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] on writer or database failures, or
+    /// [`EngineError::InvalidConfig`] if the admin service was constructed
+    /// without a writer handle.
+    pub fn drain_vector_projection(
+        &self,
+        embedder: &dyn BatchEmbedder,
+        timeout: std::time::Duration,
+    ) -> Result<crate::vector_projection_actor::DrainReport, EngineError> {
+        let deadline = std::time::Instant::now() + timeout;
+        let mut report = crate::vector_projection_actor::DrainReport::default();
+        let writer = self.require_writer()?;
+        loop {
+            if std::time::Instant::now() >= deadline {
+                break;
+            }
+            let tick = crate::vector_projection_actor::run_tick(self, &writer, embedder)?;
+            if tick.embedder_unavailable {
+                report.embedder_unavailable_ticks += 1;
+                break;
+            }
+            report.incremental_processed += tick.processed_incremental;
+            report.backfill_processed += tick.processed_backfill;
+            report.failed += tick.failed;
+            report.discarded_stale += tick.discarded_stale;
+            if tick.idle {
+                break;
+            }
+        }
+        Ok(report)
+    }
+
+    /// Run exactly one projection scheduling tick; used by tests that need
+    /// to assert priority ordering.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] on writer or database failures.
+    pub fn drain_vector_projection_single_tick(
+        &self,
+        embedder: &dyn BatchEmbedder,
+    ) -> Result<crate::vector_projection_actor::DrainReport, EngineError> {
+        let writer = self.require_writer()?;
+        let tick = crate::vector_projection_actor::run_tick(self, &writer, embedder)?;
+        let mut report = crate::vector_projection_actor::DrainReport::default();
+        if tick.embedder_unavailable {
+            report.embedder_unavailable_ticks = 1;
+        }
+        report.incremental_processed = tick.processed_incremental;
+        report.backfill_processed = tick.processed_backfill;
+        report.failed = tick.failed;
+        report.discarded_stale = tick.discarded_stale;
+        Ok(report)
+    }
+
+    fn require_writer(&self) -> Result<std::sync::Arc<crate::WriterActor>, EngineError> {
+        self.writer.clone().ok_or_else(|| {
+            EngineError::InvalidConfig(
+                "drain_vector_projection requires an engine-wired AdminService".to_owned(),
+            )
+        })
+    }
+
     /// Probe the supplied embedder by attempting a fixed short embed call.
     ///
     /// Used as an availability check for the active embedder. Does not touch
@@ -1505,7 +1588,7 @@ pub(super) fn collect_kind_chunks(
 
 /// Canonical hash of a chunk's text content, scoped to the chunk id.
 #[must_use]
-pub(super) fn canonical_chunk_hash(chunk_id: &str, text: &str) -> String {
+pub(crate) fn canonical_chunk_hash(chunk_id: &str, text: &str) -> String {
     let mut hasher = sha2::Sha256::new();
     hasher.update(chunk_id.as_bytes());
     hasher.update([0u8]);
