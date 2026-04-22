@@ -1,4 +1,4 @@
-#![cfg(all(feature = "sqlite-vec", any(feature = "python", feature = "node")))]
+#![cfg(feature = "sqlite-vec")]
 #![allow(
     clippy::expect_used,
     clippy::missing_panics_doc,
@@ -6,17 +6,20 @@
     clippy::doc_markdown
 )]
 
-//! Pack F1.5 tests for the FFI wire of Pack F1's semantic_search /
-//! raw_vector_search steps, the extended error mapping for the three
-//! new `EngineError` variants, and the admin-FFI drain binding.
+//! Pack F1.5 integration tests for the admin FFI drain binding and the
+//! EngineError render paths for the three Pack F1-added variants.
+//!
+//! `FfiQueryStep::SemanticSearch` / `RawVectorSearch` parse + lowering
+//! tests live inline in `ffi_types.rs`'s test module (because the
+//! `ffi_types` module is gated on `python` / `node` feature and test
+//! binaries linking against napi or pyo3 require the host runtime).
 
 use std::sync::Arc;
 
 use fathomdb::admin_ffi::drain_vector_projection_json;
-use fathomdb::ffi_types::{FfiQueryAst, FfiQueryStep};
 use fathomdb::{
-    EmbedderChoice, EmbedderError, Engine, EngineError, EngineOptions, QueryAst, QueryEmbedder,
-    QueryEmbedderIdentity, QueryStep,
+    EmbedderChoice, EmbedderError, Engine, EngineError, EngineOptions, QueryEmbedder,
+    QueryEmbedderIdentity,
 };
 use tempfile::TempDir;
 
@@ -64,74 +67,11 @@ fn open_engine_with_embedder() -> (TempDir, Engine) {
 }
 
 #[test]
-fn test_ffi_encodes_semantic_search_step() {
-    let json = r#"{"type":"semantic_search","text":"hello world","limit":5}"#;
-    let step: FfiQueryStep = serde_json::from_str(json).expect("parse semantic_search");
-    match step {
-        FfiQueryStep::SemanticSearch { text, limit } => {
-            assert_eq!(text, "hello world");
-            assert_eq!(limit, 5);
-        }
-        other => panic!("expected SemanticSearch, got {other:?}"),
-    }
-}
-
-#[test]
-fn test_ffi_encodes_raw_vector_search_step() {
-    let json = r#"{"type":"raw_vector_search","vector":[0.1,0.2,0.3,0.4],"limit":7}"#;
-    let step: FfiQueryStep = serde_json::from_str(json).expect("parse raw_vector_search");
-    match step {
-        FfiQueryStep::RawVectorSearch { vector, limit } => {
-            assert_eq!(vector, vec![0.1_f32, 0.2, 0.3, 0.4]);
-            assert_eq!(limit, 7);
-        }
-        other => panic!("expected RawVectorSearch, got {other:?}"),
-    }
-}
-
-#[test]
-fn test_ffi_lowers_semantic_search_to_engine_builder() {
-    let ast_json = r#"{
-        "root_kind": "KnowledgeItem",
-        "steps": [{"type":"semantic_search","text":"hello","limit":5}]
-    }"#;
-    let ffi_ast: FfiQueryAst = serde_json::from_str(ast_json).expect("parse ast");
-    let ast: QueryAst = ffi_ast.into();
-    assert_eq!(ast.steps.len(), 1);
-    match &ast.steps[0] {
-        QueryStep::SemanticSearch { text, limit } => {
-            assert_eq!(text, "hello");
-            assert_eq!(*limit, 5);
-        }
-        other => panic!("expected SemanticSearch lowering, got {other:?}"),
-    }
-}
-
-#[test]
-fn test_ffi_lowers_raw_vector_search_to_engine_builder() {
-    let ast_json = r#"{
-        "root_kind": "KnowledgeItem",
-        "steps": [{"type":"raw_vector_search","vector":[1.0,0.0,0.0,0.0],"limit":3}]
-    }"#;
-    let ffi_ast: FfiQueryAst = serde_json::from_str(ast_json).expect("parse ast");
-    let ast: QueryAst = ffi_ast.into();
-    assert_eq!(ast.steps.len(), 1);
-    match &ast.steps[0] {
-        QueryStep::RawVectorSearch { vec, limit } => {
-            assert_eq!(vec, &vec![1.0_f32, 0.0, 0.0, 0.0]);
-            assert_eq!(*limit, 3);
-        }
-        other => panic!("expected RawVectorSearch lowering, got {other:?}"),
-    }
-}
-
-#[test]
 fn test_map_engine_error_covers_kind_not_vector_indexed() {
-    // Exercise via the AdminFfiError -> map path is overkill; we just
-    // need to confirm the match is exhaustive at compile time (which
-    // means `cargo build --features node` must succeed) and that the
-    // python variant constructs a valid pyerr message. We don't link
-    // pyo3 here; the compile-time assertion is sufficient.
+    // Display-render assertion: the matching arms in `node_types.rs` and
+    // `python.rs` are validated at compile time (exhaustive match) plus
+    // by `cargo build -p fathomdb --features node`, which today fails
+    // without the F1.5 additions. This test documents the wire message.
     let err = EngineError::KindNotVectorIndexed {
         kind: "Meeting".to_owned(),
     };
@@ -140,6 +80,7 @@ fn test_map_engine_error_covers_kind_not_vector_indexed() {
         rendered.contains("not vector-indexed"),
         "unexpected render: {rendered}"
     );
+    assert!(rendered.contains("Meeting"));
 }
 
 #[test]
@@ -154,21 +95,17 @@ fn test_map_engine_error_covers_dimension_mismatch() {
         "unexpected render: {rendered}"
     );
     assert!(rendered.contains("384"));
-    assert!(rendered.contains("4"));
+    assert!(rendered.contains('4'));
 }
 
 #[test]
 fn test_admin_drain_vector_projection_json_empty_queue() {
     let (_dir, engine) = open_engine_with_embedder();
-    // Configure embedding so the engine has an active profile that matches
-    // the in-process embedder's identity.
     engine
         .admin()
         .service()
         .configure_embedding(&TestEmbedder::new(), true)
         .expect("configure_embedding");
-    // Configure managed vector indexing for the kind; queue is empty until
-    // we write something, so drain should report zero processed.
     engine
         .admin()
         .service()
@@ -184,4 +121,24 @@ fn test_admin_drain_vector_projection_json_empty_queue() {
     assert_eq!(parsed["backfill_processed"].as_u64(), Some(0));
     assert_eq!(parsed["failed"].as_u64(), Some(0));
     assert_eq!(parsed["discarded_stale"].as_u64(), Some(0));
+}
+
+#[test]
+fn test_admin_drain_vector_projection_json_requires_embedder() {
+    // Engine opened with EmbedderChoice::None — drain should report
+    // EmbedderNotConfigured so Python/TS SDKs never end up dispatching
+    // on an identity-less engine.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db_path = dir.path().join("test.db");
+    let mut opts = EngineOptions::new(&db_path);
+    opts.vector_dimension = Some(DIM);
+    let engine = Engine::open(opts).expect("engine opens");
+
+    let err = drain_vector_projection_json(&engine, r#"{"timeout_ms": 100}"#)
+        .expect_err("expected error when engine has no embedder");
+    let rendered = err.to_string();
+    assert!(
+        rendered.contains("embedder not configured"),
+        "unexpected render: {rendered}"
+    );
 }

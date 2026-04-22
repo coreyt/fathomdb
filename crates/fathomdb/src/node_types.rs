@@ -25,6 +25,9 @@ pub(crate) enum ErrorCode {
     Io,
     Compile,
     InvalidArgument,
+    KindNotVectorIndexed,
+    DimensionMismatch,
+    EmbeddingChangeRequiresAck,
 }
 
 impl ErrorCode {
@@ -42,6 +45,9 @@ impl ErrorCode {
             Self::Io => "IO_ERROR",
             Self::Compile => "COMPILE_ERROR",
             Self::InvalidArgument => "INVALID_ARGUMENT",
+            Self::KindNotVectorIndexed => "KIND_NOT_VECTOR_INDEXED",
+            Self::DimensionMismatch => "DIMENSION_MISMATCH",
+            Self::EmbeddingChangeRequiresAck => "EMBEDDING_CHANGE_REQUIRES_ACK",
         }
     }
 }
@@ -164,6 +170,22 @@ pub(crate) fn map_engine_error(error: EngineError) -> Error {
         EngineError::EmbedderNotConfigured => napi_error(
             ErrorCode::InvalidConfig,
             "embedder not configured: open the Engine with a non-None EmbedderChoice to regenerate vector embeddings",
+        ),
+        EngineError::EmbeddingChangeRequiresAck { affected_kinds } => napi_error(
+            ErrorCode::EmbeddingChangeRequiresAck,
+            format!(
+                "changing the database-wide embedding identity would invalidate {affected_kinds} enabled vector index kinds; re-invoke with acknowledge_rebuild_impact=true"
+            ),
+        ),
+        EngineError::KindNotVectorIndexed { kind } => napi_error(
+            ErrorCode::KindNotVectorIndexed,
+            format!(
+                "kind {kind:?} is not vector-indexed; call configure_vec_kind({kind:?}, VectorSource::Chunks) before running semantic_search/raw_vector_search"
+            ),
+        ),
+        EngineError::DimensionMismatch { expected, actual } => napi_error(
+            ErrorCode::DimensionMismatch,
+            format!("vector dimension mismatch: expected {expected}, got {actual}"),
         ),
     }
 }
