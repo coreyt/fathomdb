@@ -17,16 +17,16 @@ mod write_request_builder;
 #[cfg(feature = "default-embedder")]
 pub use fathomdb_engine::BuiltinBgeSmallEmbedder;
 pub use fathomdb_engine::{
-    ActionInsert, ActionRow, AdminHandle, ChunkInsert, ChunkPolicy, EdgeExpansionRootRows,
-    EdgeExpansionSlotRows, EdgeInsert, EdgeRetire, EdgeRow, EmbedderError, EngineError,
-    EngineRuntime, ExecutionCoordinator, ExpansionRootRows, ExpansionSlotRows, FtsPropertyPathMode,
-    FtsPropertyPathSpec, FtsPropertySchemaRecord, GroupedQueryRows, LastAccessTouchReport,
-    LastAccessTouchRequest, LogicalPurgeReport, LogicalRestoreReport, NodeInsert, NodeRetire,
-    NodeRow, OperationalCollectionKind, OperationalCollectionRecord, OperationalCompactionReport,
-    OperationalCurrentRow, OperationalFilterClause, OperationalFilterField,
-    OperationalFilterFieldType, OperationalFilterMode, OperationalFilterValue,
-    OperationalHistoryValidationIssue, OperationalHistoryValidationReport, OperationalMutationRow,
-    OperationalPurgeReport, OperationalReadReport, OperationalReadRequest,
+    ActionInsert, ActionRow, AdminHandle, BatchEmbedder, ChunkInsert, ChunkPolicy,
+    EdgeExpansionRootRows, EdgeExpansionSlotRows, EdgeInsert, EdgeRetire, EdgeRow, EmbedderError,
+    EngineError, EngineRuntime, ExecutionCoordinator, ExpansionRootRows, ExpansionSlotRows,
+    FtsPropertyPathMode, FtsPropertyPathSpec, FtsPropertySchemaRecord, GroupedQueryRows,
+    LastAccessTouchReport, LastAccessTouchRequest, LogicalPurgeReport, LogicalRestoreReport,
+    NodeInsert, NodeRetire, NodeRow, OperationalCollectionKind, OperationalCollectionRecord,
+    OperationalCompactionReport, OperationalCurrentRow, OperationalFilterClause,
+    OperationalFilterField, OperationalFilterFieldType, OperationalFilterMode,
+    OperationalFilterValue, OperationalHistoryValidationIssue, OperationalHistoryValidationReport,
+    OperationalMutationRow, OperationalPurgeReport, OperationalReadReport, OperationalReadRequest,
     OperationalRegisterRequest, OperationalRepairReport, OperationalRetentionActionKind,
     OperationalRetentionPlanItem, OperationalRetentionPlanReport, OperationalRetentionRunItem,
     OperationalRetentionRunReport, OperationalSecondaryIndexDefinition,
@@ -37,25 +37,27 @@ pub use fathomdb_engine::{
     ProvenanceEvent, ProvenanceMode, ProvenancePurgeOptions, ProvenancePurgeReport, QueryEmbedder,
     QueryEmbedderIdentity, QueryPlan, QueryRows, RebuildProgress, RunInsert, RunRow,
     SafeExportManifest, SafeExportOptions, SkippedEdge, StepInsert, StepRow, VecInsert,
-    VectorRegenerationConfig, VectorRegenerationReport, WriteReceipt, WriteRequest, WriterActor,
-    new_id, new_row_id,
+    VectorRegenerationConfig, VectorRegenerationReport, VectorSource, WriteReceipt, WriteRequest,
+    WriterActor, new_id, new_row_id,
 };
 pub use fathomdb_engine::{SqliteCacheStatus, TelemetryLevel, TelemetrySnapshot};
 #[doc(hidden)]
 pub use fathomdb_query::compile_search_plan;
 pub use fathomdb_query::{
     BindValue, BuilderValidationError, ComparisonOp, CompileError, CompiledGroupedQuery,
-    CompiledQuery, CompiledRetrievalPlan, CompiledSearch, CompiledSearchPlan, CompiledVectorSearch,
-    DrivingTable, ExecutionHints, ExpansionSlot, HitAttribution, NodeRowLite, Predicate, Query,
-    QueryAst, QueryBuilder, QueryStep, RetrievalModality, ScalarValue, SearchHit, SearchHitSource,
-    SearchMatchMode, SearchRows, ShapeHash, TextQuery, TraverseDirection, compile_grouped_query,
-    compile_query, compile_retrieval_plan, compile_search, compile_search_plan_from_queries,
+    CompiledQuery, CompiledRawVectorSearch, CompiledRetrievalPlan, CompiledSearch,
+    CompiledSearchPlan, CompiledSemanticSearch, CompiledVectorSearch, DrivingTable, ExecutionHints,
+    ExpansionSlot, HitAttribution, NodeRowLite, Predicate, Query, QueryAst, QueryBuilder,
+    QueryStep, RetrievalModality, ScalarValue, SearchHit, SearchHitSource, SearchMatchMode,
+    SearchRows, ShapeHash, TextQuery, TraverseDirection, compile_grouped_query, compile_query,
+    compile_retrieval_plan, compile_search, compile_search_plan_from_queries,
     compile_vector_search,
 };
 pub use fathomdb_schema::{BootstrapReport, Migration, SchemaManager, SchemaVersion};
 pub use feedback::{FeedbackConfig, OperationObserver, ResponseCycleEvent, ResponseCyclePhase};
 pub use search::{
-    FallbackSearchBuilder, NodeQueryBuilder, SearchBuilder, TextSearchBuilder, VectorSearchBuilder,
+    FallbackSearchBuilder, NodeQueryBuilder, RawVectorSearchBuilder, SearchBuilder,
+    SemanticSearchBuilder, TextSearchBuilder, VectorSearchBuilder,
 };
 pub use write_request_builder::{
     ActionHandle, ChunkHandle, ChunkRef, EdgeHandle, EdgeRef, NodeHandle, NodeRef, RunHandle,
@@ -1053,6 +1055,8 @@ fn engine_error_code(error: &EngineError) -> Option<String> {
         EngineError::InvalidConfig(_) => "invalid_config",
         EngineError::EmbedderNotConfigured => "embedder_not_configured",
         EngineError::EmbeddingChangeRequiresAck { .. } => "embedding_change_requires_ack",
+        EngineError::KindNotVectorIndexed { .. } => "kind_not_vector_indexed",
+        EngineError::DimensionMismatch { .. } => "dimension_mismatch",
     };
     Some(code.to_owned())
 }

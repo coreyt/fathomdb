@@ -1,4 +1,9 @@
-#![allow(clippy::expect_used, clippy::missing_panics_doc, clippy::doc_markdown)]
+#![allow(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::doc_markdown,
+    deprecated
+)]
 
 mod helpers;
 mod injection;

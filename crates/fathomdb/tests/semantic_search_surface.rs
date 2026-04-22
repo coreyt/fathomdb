@@ -1,5 +1,10 @@
 #![cfg(feature = "sqlite-vec")]
-#![allow(clippy::expect_used, clippy::missing_panics_doc, clippy::panic)]
+#![allow(
+    clippy::expect_used,
+    clippy::missing_panics_doc,
+    clippy::panic,
+    clippy::doc_markdown
+)]
 
 //! Pack F1 tests for the Rust-only `semantic_search` and
 //! `raw_vector_search` builder entry points.
@@ -9,9 +14,9 @@
 //! `vec_<kind>`. `raw_vector_search(vec, limit)` skips the embedder and
 //! runs KNN against `vec_<kind>` directly with a caller-supplied vector.
 //!
-//! Error semantics (design doc §Query API):
-//!   - Hard error: NoEmbeddingConfigured, KindNotVectorIndexed, DimensionMismatch.
-//!   - Degrade to empty + was_degraded=true: stale schema, embedder unavailable.
+//! Error semantics (design doc Query API):
+//!   - Hard error: `NoEmbeddingConfigured`, `KindNotVectorIndexed`, `DimensionMismatch`.
+//!   - Degrade to empty + `was_degraded=true`: stale schema, embedder unavailable.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -176,7 +181,7 @@ fn write_node_with_chunk(engine: &Engine, logical_id: &str, kind: &str, text: &s
                 row_id: format!("row-{logical_id}"),
                 logical_id: logical_id.to_owned(),
                 kind: kind.to_owned(),
-                properties: r#"{}"#.to_owned(),
+                properties: "{}".to_owned(),
                 source_ref: Some("seed".to_owned()),
                 upsert: false,
                 chunk_policy: ChunkPolicy::Preserve,

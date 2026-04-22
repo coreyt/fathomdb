@@ -101,4 +101,23 @@ pub enum EngineError {
         /// marked stale by the identity change.
         affected_kinds: usize,
     },
+    /// The caller ran `semantic_search` / `raw_vector_search` against a
+    /// kind that has no enabled `vector_index_schemas` row. Configure per-kind
+    /// vector indexing via `AdminService::configure_vec_kind` first.
+    #[error(
+        "kind {kind:?} is not vector-indexed; call configure_vec_kind({kind:?}, VectorSource::Chunks) before running semantic_search/raw_vector_search"
+    )]
+    KindNotVectorIndexed {
+        /// Node kind the caller tried to search.
+        kind: String,
+    },
+    /// The caller's vector (or the embedder's output) does not match the
+    /// active embedding profile's dimension.
+    #[error("vector dimension mismatch: expected {expected}, got {actual}")]
+    DimensionMismatch {
+        /// Dimension declared by the active embedding profile.
+        expected: usize,
+        /// Dimension of the vector the caller / embedder produced.
+        actual: usize,
+    },
 }
