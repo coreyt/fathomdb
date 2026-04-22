@@ -21,26 +21,25 @@ Pass a preset name **or** a raw FTS5 tokenizer string to any of the profile meth
 ### Python API
 
 ```python
-from fathomdb import FathomDB
+from fathomdb import Engine
 
-db = FathomDB.open("store.db")
+db = Engine.open("store.db")
+
+# Register the property schema before changing its tokenizer.
+db.admin.register_fts_property_schema("Book", ["$.title", "$.body"])
 
 # Preview impact before changing (how many nodes must be reindexed)
 impact = db.admin.preview_projection_impact("Book", "fts")
 print(f"{impact.rows_to_rebuild} rows, ~{impact.estimated_seconds}s")
 
-# Set tokenizer for a kind (raises RebuildImpactError if rows > 0)
+# Set tokenizer for a kind. This records the profile and re-registers the
+# existing schema so the rebuilt table uses the new tokenizer.
 profile = db.admin.configure_fts("Book", "source-code", agree_to_rebuild_impact=True)
-
-# Re-register the schema to trigger a rebuild with the new tokenizer
-db.admin.register_fts_property_schema("Book", ["$.title", "$.body"])
 
 # Read back the stored profile
 profile = db.admin.get_fts_profile("Book")  # FtsProfile | None
 print(profile.tokenizer)
 ```
-
-> **Note**: The `mode` parameter (SYNC / ASYNC) is accepted for API compatibility but not yet forwarded to a rebuild. Call `register_fts_property_schema` or `rebuild("fts")` explicitly after `configure_fts` to apply the new tokenizer.
 
 > **Note**: `fts_strategies` (query-side tokenizer adaptations such as the trigram short-query guard) are loaded at engine open time. After calling `configure_fts`, reopen the engine for adaptations to take effect.
 
@@ -70,10 +69,10 @@ fathomdb admin get-fts-profile --db store.db --kind Book
 **With a Python-side embedder (OpenAI, Jina, Stella, Subprocess):**
 
 ```python
-from fathomdb import FathomDB
+from fathomdb import Engine
 from fathomdb.embedders import OpenAIEmbedder
 
-db = FathomDB.open("store.db")
+db = Engine.open("store.db")
 embedder = OpenAIEmbedder("text-embedding-3-small", api_key="sk-…", dimensions=1536)
 
 # Preview impact
@@ -83,13 +82,14 @@ print(f"{impact.rows_to_rebuild} chunks to rebuild")
 # Record the active model
 profile = db.admin.configure_vec(embedder, agree_to_rebuild_impact=True)
 
-# Rebuild vector index with the new embedder
-db.admin.regenerate_vector_embeddings(embedder)
-
 # Read back
-profile = db.admin.get_vec_profile()  # VecProfile | None
+profile = db.admin.get_vec_profile("*")  # VecProfile | None
 print(profile.model_identity, profile.dimensions)
 ```
+
+Python-side embedder objects are used here to record model identity. Vector
+regeneration itself runs through an engine-side embedder; use the built-in path
+below or a Rust `EmbedderChoice::InProcess(...)` embedder.
 
 **With the built-in Candle/BGE-small embedder:**
 
@@ -98,16 +98,21 @@ record the correct `VecProfile`. Do **not** use another embedder class as a prox
 — the stored profile must match what the Rust engine actually used.
 
 ```python
-from fathomdb import FathomDB, BuiltinEmbedder
+from fathomdb import Engine, BuiltinEmbedder
 from fathomdb import VectorRegenerationConfig
 
-db = FathomDB.open("store.db", embedder="builtin")
+db = Engine.open("store.db", embedder="builtin")
 
 # Record the correct identity for the built-in embedder
 profile = db.admin.configure_vec(BuiltinEmbedder(), agree_to_rebuild_impact=True)
 
 # Rebuild is performed by the Rust Candle runtime — no Python embedder needed
-db.admin.regenerate_vector_embeddings(VectorRegenerationConfig())
+db.admin.regenerate_vector_embeddings(VectorRegenerationConfig(
+    kind="Document",
+    profile="default",
+    chunking_policy="default",
+    preprocessing_policy="default",
+))
 ```
 
 > **Note**: `configure_vec` records the profile row but does not trigger a rebuild automatically. Call `regenerate_vector_embeddings` explicitly.
@@ -117,7 +122,7 @@ db.admin.regenerate_vector_embeddings(VectorRegenerationConfig())
 ```bash
 fathomdb admin preview-impact --db store.db --kind "*" --target vec
 fathomdb admin configure-vec --db store.db --embedder bge-small-en-v1.5
-fathomdb admin get-vec-profile --db store.db
+fathomdb admin get-vec-profile --db store.db --kind "*"
 ```
 
 ---
@@ -189,7 +194,7 @@ const profile = admin.configureVec(
 // Regenerate (only when engine opened with embedder: "builtin")
 const report = admin.regenerateVectorEmbeddings({
   profile: "default",
-  tableName: "vec_nodes_active",
+  kind: "Document",
   chunkingPolicy: "default",
   preprocessingPolicy: "default",
 });

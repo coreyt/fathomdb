@@ -1,7 +1,7 @@
 # Pathway to Basic Cypher Support
 
 Date: 2026-04-17  
-Supersedes: `dev/pathway-to-basic-cypher-2026-03-28.md` (still valid for strategic framing; this
+Supersedes: `dev/archive/pathway-to-basic-cypher-2026-03-28.md` (still valid for strategic framing; this
 document extends it with a concrete implementation plan, full conformance matrix, and sequencing
 relative to 0.5.1 and 0.6.0).
 

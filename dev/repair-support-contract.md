@@ -72,7 +72,8 @@ Policy:
 - treat a chunk as orphaned when its `node_logical_id` has no active node
 - delete the orphaned chunk
 - delete matching `fts_nodes` rows
-- delete matching `vec_nodes_active` rows when the vec table exists
+- delete matching rows from any per-kind vec table that exists for the
+  affected node kind
 - emit provenance audit rows with event type `repair_delete_orphaned_chunk`
 
 ## Operator Workflow

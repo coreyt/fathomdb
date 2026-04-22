@@ -56,7 +56,7 @@ Current assessment: **not yet production-ready**.
 
 The codebase quality, test coverage (572 tests across Rust/Go/Python), safety
 practices, and recovery tooling are all solid. All critical and high findings
-from the 2026-03-29 deep audit (`dev/path-to-production-2026-03-29.md`) are
+from the 2026-03-29 deep audit (`dev/archive/path-to-production-2026-03-29.md`) are
 resolved. CI is green across all 13 jobs.
 
 The gap is operational: the release pipeline has never successfully published an
@@ -82,7 +82,7 @@ becomes production-ready.
 
 ## Deep Audit Status
 
-The 2026-03-29 deep audit (`dev/path-to-production-2026-03-29.md`) examined
+The 2026-03-29 deep audit (`dev/archive/path-to-production-2026-03-29.md`) examined
 writer/transaction safety, admin/recovery paths, and scalability edge cases.
 
 | Severity | Total | Fixed | By Design | Acknowledged | Open |

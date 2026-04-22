@@ -67,5 +67,9 @@ nav:
     - Types & Errors: reference/types.md
   - Operations:
     - Admin Operations: operations/admin-operations.md
+    - Projection Profiles: operations/projection-profiles.md
     - Vector Regeneration: operations/vector-regeneration.md
     - Telemetry: operations/telemetry.md
+    - Tokenization & Embedding Choices: tokenization-and-embedding-choices.md
+    - Supported Tokenizer Configs: supported-tokenizer-configs.md
+    - Supported Vector Configs: supported-vector-configs.md

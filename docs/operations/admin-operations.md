@@ -316,10 +316,11 @@ fathom-integrity purge-operational --collection audit_log --before 1711670400
 
 ## 8. Vector Regeneration
 
-Vector regeneration recomputes the embedding rows in `vec_nodes_active`
-from the current canonical chunk set. As of 0.4.0 it runs through the
-native Rust API (`Engine::regenerate_vector_embeddings`) or the Python
-admin client (`db.admin.regenerate_vector_embeddings`) using the
+Vector regeneration recomputes embedding rows for one node kind from the
+current canonical chunk set. Since 0.5.0, vector rows live in per-kind
+sqlite-vec tables derived from the regeneration config's `kind` field. It runs
+through the native Rust API (`Engine::regenerate_vector_embeddings`) or the
+Python admin client (`db.admin.regenerate_vector_embeddings`) using the
 embedder attached to the engine at open time. The Go
 `fathom-integrity regenerate-vectors` subcommand and its bridge
 counterpart (`RegenerateVectorEmbeddings`) have been removed — the
