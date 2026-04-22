@@ -792,6 +792,13 @@ impl EngineCore {
                 .map_err(map_admin_ffi_error)
         })
     }
+
+    pub fn drain_vector_projection(&self, py: Python<'_>, request_json: &str) -> PyResult<String> {
+        self.with_engine(|engine| {
+            py.detach(|| crate::admin_ffi::drain_vector_projection_json(engine, request_json))
+                .map_err(map_admin_ffi_error)
+        })
+    }
 }
 
 const MAX_AST_JSON_BYTES: usize = 16 * 1024 * 1024; // 16 MB
@@ -928,6 +935,12 @@ fn map_engine_error(error: EngineError) -> PyErr {
                 "changing the database-wide embedding identity would invalidate {affected_kinds} enabled vector index kinds; re-invoke with acknowledge_rebuild_impact=True"
             ))
         }
+        EngineError::KindNotVectorIndexed { kind } => FathomError::new_err(format!(
+            "kind {kind:?} is not vector-indexed; call configure_vec_kind({kind:?}, VectorSource::Chunks) before running semantic_search/raw_vector_search"
+        )),
+        EngineError::DimensionMismatch { expected, actual } => FathomError::new_err(format!(
+            "vector dimension mismatch: expected {expected}, got {actual}"
+        )),
     }
 }
 

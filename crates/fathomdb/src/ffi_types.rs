@@ -77,6 +77,19 @@ pub enum FfiQueryStep {
         query: String,
         limit: usize,
     },
+    /// Pack F1.5 wire form of [`fathomdb_query::QueryStep::SemanticSearch`].
+    /// The engine embeds `text` at query time using the active profile
+    /// embedder before running KNN against the per-kind `vec_<kind>`.
+    SemanticSearch {
+        text: String,
+        limit: usize,
+    },
+    /// Pack F1.5 wire form of [`fathomdb_query::QueryStep::RawVectorSearch`].
+    /// Caller supplies a dense vector directly; the engine does NOT embed.
+    RawVectorSearch {
+        vector: Vec<f32>,
+        limit: usize,
+    },
     TextSearch {
         query: String,
         limit: usize,
@@ -238,6 +251,8 @@ fn ffi_filter_value_to_predicate(v: serde_json::Value) -> Option<Predicate> {
         }
         // Non-filter step types are not valid expansion filters.
         FfiQueryStep::VectorSearch { .. }
+        | FfiQueryStep::SemanticSearch { .. }
+        | FfiQueryStep::RawVectorSearch { .. }
         | FfiQueryStep::TextSearch { .. }
         | FfiQueryStep::Traverse { .. } => None,
     }
@@ -263,6 +278,12 @@ impl From<FfiQueryAst> for crate::QueryAst {
             .map(|step| match step {
                 FfiQueryStep::VectorSearch { query, limit } => {
                     QueryStep::VectorSearch { query, limit }
+                }
+                FfiQueryStep::SemanticSearch { text, limit } => {
+                    QueryStep::SemanticSearch { text, limit }
+                }
+                FfiQueryStep::RawVectorSearch { vector, limit } => {
+                    QueryStep::RawVectorSearch { vec: vector, limit }
                 }
                 FfiQueryStep::TextSearch { query, limit } => QueryStep::TextSearch {
                     query: TextQuery::parse(&query),
@@ -1026,6 +1047,50 @@ mod tests {
             &ast.steps[0],
             QueryStep::VectorSearch { limit: 5, .. }
         ));
+    }
+
+    #[test]
+    fn step_semantic_search_roundtrip() {
+        let step = parse_step(r#"{"type":"semantic_search","text":"hello world","limit":5}"#);
+        match step {
+            FfiQueryStep::SemanticSearch { ref text, limit } => {
+                assert_eq!(text, "hello world");
+                assert_eq!(limit, 5);
+            }
+            ref other => panic!("expected SemanticSearch, got {other:?}"),
+        }
+        let ast =
+            parse_ast_with_step(r#"{"type":"semantic_search","text":"hello world","limit":5}"#);
+        match &ast.steps[0] {
+            QueryStep::SemanticSearch { text, limit } => {
+                assert_eq!(text, "hello world");
+                assert_eq!(*limit, 5);
+            }
+            other => panic!("expected SemanticSearch lowering, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn step_raw_vector_search_roundtrip() {
+        let step =
+            parse_step(r#"{"type":"raw_vector_search","vector":[0.1,0.2,0.3,0.4],"limit":7}"#);
+        match step {
+            FfiQueryStep::RawVectorSearch { ref vector, limit } => {
+                assert_eq!(vector, &vec![0.1_f32, 0.2, 0.3, 0.4]);
+                assert_eq!(limit, 7);
+            }
+            ref other => panic!("expected RawVectorSearch, got {other:?}"),
+        }
+        let ast = parse_ast_with_step(
+            r#"{"type":"raw_vector_search","vector":[1.0,0.0,0.0,0.0],"limit":3}"#,
+        );
+        match &ast.steps[0] {
+            QueryStep::RawVectorSearch { vec, limit } => {
+                assert_eq!(vec, &vec![1.0_f32, 0.0, 0.0, 0.0]);
+                assert_eq!(*limit, 3);
+            }
+            other => panic!("expected RawVectorSearch lowering, got {other:?}"),
+        }
     }
 
     #[test]

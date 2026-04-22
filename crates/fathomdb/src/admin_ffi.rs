@@ -15,8 +15,9 @@ use crate::{
     Engine, EngineError, FtsPropertyPathMode, FtsPropertyPathSpec, FtsPropertySchemaRecord,
 };
 use fathomdb_engine::{
-    ConfigureEmbeddingOutcome, ConfigureVecOutcome, EmbedderError, FtsProfile, ProjectionImpact,
-    QueryEmbedder, QueryEmbedderIdentity, VecIndexStatus, VecProfile, VectorSource,
+    BatchEmbedder, ConfigureEmbeddingOutcome, ConfigureVecOutcome, EmbedderError, FtsProfile,
+    ProjectionImpact, QueryEmbedder, QueryEmbedderIdentity, VecIndexStatus, VecProfile,
+    VectorSource,
 };
 
 /// Extraction mode for a single registered FTS property path, serialized
@@ -407,6 +408,85 @@ pub fn get_vec_index_status_json(engine: &Engine, kind: &str) -> Result<String, 
         .get_vec_index_status(kind)
         .map_err(AdminFfiError::Engine)?;
     serde_json::to_string(&status).map_err(AdminFfiError::Serialize)
+}
+
+/// Request envelope for [`drain_vector_projection_json`].
+#[derive(Debug, Deserialize)]
+struct DrainVectorProjectionRequest {
+    timeout_ms: u64,
+}
+
+/// Adapter that exposes a `&dyn QueryEmbedder` (the engine's read-time
+/// embedder held on `ExecutionCoordinator`) as a [`BatchEmbedder`].
+///
+/// Pack F1.5 routes admin-side vector-projection drains through the same
+/// embedder that serves read-time `semantic_search`, preserving the
+/// "identity belongs to the embedder" invariant: callers of the FFI
+/// cannot override identity or supply an alternative embedder — the
+/// engine's coordinator is the sole source of truth.
+struct QueryEmbedderBatchAdapter<'a> {
+    inner: &'a dyn QueryEmbedder,
+}
+
+impl BatchEmbedder for QueryEmbedderBatchAdapter<'_> {
+    fn batch_embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, EmbedderError> {
+        let mut out = Vec::with_capacity(texts.len());
+        for text in texts {
+            out.push(self.inner.embed_query(text)?);
+        }
+        Ok(out)
+    }
+    fn identity(&self) -> QueryEmbedderIdentity {
+        self.inner.identity()
+    }
+    fn max_tokens(&self) -> usize {
+        self.inner.max_tokens()
+    }
+}
+
+/// Drain the vector-projection queue using the engine's configured
+/// read-time embedder.
+///
+/// Wire shape:
+/// ```json
+/// { "timeout_ms": 5000 }
+/// ```
+///
+/// Returns the serialized
+/// [`fathomdb_engine::vector_projection_actor::DrainReport`].
+///
+/// If the engine was opened without a query embedder (or the built-in
+/// feature flag is disabled), returns an [`AdminFfiError::Engine`]
+/// wrapping [`EngineError::EmbedderNotConfigured`]. The caller never
+/// supplies an embedder — identity belongs to the embedder wired into
+/// the engine, not the FFI request.
+///
+/// # Errors
+/// Returns [`AdminFfiError`] on JSON parse, missing embedder, engine
+/// execution, or response serialization failure.
+pub fn drain_vector_projection_json(
+    engine: &Engine,
+    request_json: &str,
+) -> Result<String, AdminFfiError> {
+    let request: DrainVectorProjectionRequest =
+        serde_json::from_str(request_json).map_err(AdminFfiError::Parse)?;
+    let embedder_arc = engine
+        .coordinator()
+        .query_embedder()
+        .cloned()
+        .ok_or_else(|| AdminFfiError::Engine(EngineError::EmbedderNotConfigured))?;
+    let adapter = QueryEmbedderBatchAdapter {
+        inner: embedder_arc.as_ref(),
+    };
+    let report = engine
+        .admin()
+        .service()
+        .drain_vector_projection(
+            &adapter,
+            std::time::Duration::from_millis(request.timeout_ms),
+        )
+        .map_err(AdminFfiError::Engine)?;
+    serde_json::to_string(&report).map_err(AdminFfiError::Serialize)
 }
 
 #[cfg(test)]
