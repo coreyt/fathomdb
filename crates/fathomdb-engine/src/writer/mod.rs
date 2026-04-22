@@ -1713,6 +1713,14 @@ fn apply_write(
             }
             del_prop_positions.execute(params![retire.logical_id])?;
             del_staging.execute(params![retire.logical_id])?;
+            // Pack E: remove any pending vector-projection work for chunks
+            // owned by the retired node so retired chunks are not processed.
+            tx.execute(
+                "DELETE FROM vector_projection_work \
+                 WHERE state = 'pending' AND chunk_id IN \
+                     (SELECT id FROM chunks WHERE node_logical_id = ?1)",
+                params![retire.logical_id],
+            )?;
             sup_node.execute(params![retire.logical_id])?;
             ins_event.execute(params![new_id(), retire.logical_id, retire.source_ref])?;
         }
@@ -1786,6 +1794,14 @@ fn apply_write(
                         }
                     }
                     del_fts.execute(params![node.logical_id])?;
+                    // Pack E: drop pending vector-projection work for the
+                    // chunks we're about to delete — they no longer exist.
+                    tx.execute(
+                        "DELETE FROM vector_projection_work \
+                         WHERE state = 'pending' AND chunk_id IN \
+                             (SELECT id FROM chunks WHERE node_logical_id = ?1)",
+                        params![node.logical_id],
+                    )?;
                     del_chunks.execute(params![node.logical_id])?;
                 }
                 sup_node.execute(params![node.logical_id])?;
@@ -1845,6 +1861,11 @@ fn apply_write(
             ])?;
         }
     }
+
+    // Pack E: enqueue incremental vector projection work for inserted chunks
+    // whose kind is vector-enabled and where an active embedding profile exists.
+    // This runs in the same transaction as the canonical commit.
+    maybe_enqueue_vector_projection_work(&tx, prepared)?;
 
     // Run inserts (with optional upsert).
     {
@@ -2327,6 +2348,109 @@ fn apply_write(
         warnings,
         provenance_warnings,
     })
+}
+
+/// Pack E: enqueue `vector_projection_work` rows for chunks inserted in this
+/// write.  A row is enqueued with `priority = 1000` (incremental) when:
+///
+/// * an active embedding profile exists in `vector_embedding_profiles`, AND
+/// * the chunk's node kind has an enabled row in `vector_index_schemas`.
+///
+/// If a pending row already exists for `(chunk_id, embedding_profile_id)` its
+/// priority is promoted to `max(existing, 1000)`; otherwise a fresh row is
+/// inserted.  When no active profile exists or the kind is not enabled, this
+/// is a no-op.  Runs inside the same transaction as the canonical commit.
+fn maybe_enqueue_vector_projection_work(
+    tx: &rusqlite::Transaction<'_>,
+    prepared: &PreparedWrite,
+) -> Result<(), EngineError> {
+    if prepared.chunks.is_empty() {
+        return Ok(());
+    }
+
+    // Resolve the active embedding profile once.
+    let active_profile: Option<i64> = tx
+        .query_row(
+            "SELECT profile_id FROM vector_embedding_profiles WHERE active = 1",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?;
+    let Some(profile_id) = active_profile else {
+        return Ok(());
+    };
+
+    // Cache enabled-kind lookups to avoid repeated probes.
+    let mut enabled_cache: HashMap<String, bool> = HashMap::new();
+
+    let mut is_kind_enabled = |kind: &str| -> Result<bool, EngineError> {
+        if let Some(v) = enabled_cache.get(kind) {
+            return Ok(*v);
+        }
+        let enabled: bool = tx
+            .query_row(
+                "SELECT 1 FROM vector_index_schemas WHERE kind = ?1 AND enabled = 1",
+                params![kind],
+                |_| Ok(true),
+            )
+            .optional()?
+            .unwrap_or(false);
+        enabled_cache.insert(kind.to_owned(), enabled);
+        Ok(enabled)
+    };
+
+    let mut ins_stmt = tx.prepare(
+        "INSERT INTO vector_projection_work \
+         (kind, node_logical_id, chunk_id, canonical_hash, priority, \
+          embedding_profile_id, state, created_at, updated_at) \
+         SELECT ?1, ?2, ?3, ?4, 1000, ?5, 'pending', unixepoch(), unixepoch() \
+         WHERE NOT EXISTS ( \
+             SELECT 1 FROM vector_projection_work \
+             WHERE chunk_id = ?3 AND embedding_profile_id = ?5 AND state = 'pending' \
+         )",
+    )?;
+    let mut promote_stmt = tx.prepare(
+        "UPDATE vector_projection_work \
+         SET priority = 1000, updated_at = unixepoch() \
+         WHERE chunk_id = ?1 AND embedding_profile_id = ?2 AND state = 'pending' \
+           AND priority < 1000",
+    )?;
+
+    for chunk in &prepared.chunks {
+        // Resolve kind: prefer the in-memory cache from co-submitted nodes;
+        // fall back to the DB for pre-existing nodes.
+        let kind_owned: Option<String> =
+            if let Some(k) = prepared.node_kinds.get(&chunk.node_logical_id) {
+                Some(k.clone())
+            } else {
+                tx.query_row(
+                    "SELECT kind FROM nodes WHERE logical_id = ?1 AND superseded_at IS NULL",
+                    params![chunk.node_logical_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?
+            };
+        let Some(kind) = kind_owned else {
+            continue;
+        };
+        if !is_kind_enabled(&kind)? {
+            continue;
+        }
+        let canonical_hash = crate::admin::canonical_chunk_hash(&chunk.id, &chunk.text_content);
+        let inserted = ins_stmt.execute(params![
+            kind,
+            chunk.node_logical_id,
+            chunk.id,
+            canonical_hash,
+            profile_id,
+        ])?;
+        if inserted == 0 {
+            // Existing pending row: promote priority to 1000 if lower.
+            promote_stmt.execute(params![chunk.id, profile_id])?;
+        }
+    }
+
+    Ok(())
 }
 
 fn operational_write_collection(write: &OperationalWrite) -> &str {
