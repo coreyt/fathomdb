@@ -56,8 +56,14 @@ pub use vector_projection_actor::{DrainReport, VectorProjectionActor};
 pub use writer::{
     ActionInsert, ChunkInsert, ChunkPolicy, EdgeInsert, EdgeRetire, LastAccessTouchReport,
     LastAccessTouchRequest, NodeInsert, NodeRetire, OperationalWrite, OptionalProjectionTask,
-    ProvenanceMode, RunInsert, StepInsert, VecInsert, WriteReceipt, WriteRequest, WriterActor,
+    ProvenanceMode, RunInsert, StepInsert, WriteReceipt, WriteRequest, WriterActor,
 };
+// Pack G: `VecInsert` is `#[deprecated]` but still re-exported so external
+// callers see the warning rather than a hard compile break during the
+// transition window. The inner `#[allow]` silences the deprecation on the
+// re-export itself.
+#[allow(deprecated)]
+pub use writer::VecInsert;
 
 use thiserror::Error;
 

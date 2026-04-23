@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used, clippy::missing_panics_doc)]
+#![allow(clippy::expect_used, clippy::missing_panics_doc, deprecated)]
 
 //! Phase 11 integration tests for the tethered `VectorSearchBuilder`
 //! surface. These exercise the standalone vector retrieval path through

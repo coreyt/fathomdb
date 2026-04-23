@@ -1,3 +1,9 @@
+// Pack G: the builder internally constructs `VecInsert` values to feed the
+// writer. The `#[deprecated]` attribute on `VecInsert` is aimed at external
+// callers; the builder is one of the supported migration paths and
+// suppresses the warning crate-internally.
+#![allow(deprecated)]
+
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::{

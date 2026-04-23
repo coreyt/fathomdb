@@ -954,7 +954,9 @@ class FtsPropertySchemaRecord:
                 FtsPropertyPathSpec(
                     path=str(raw.get("path", "")),
                     mode=mode,
-                    weight=float(raw["weight"]) if raw.get("weight") is not None else None,
+                    weight=float(raw["weight"])
+                    if raw.get("weight") is not None
+                    else None,
                 )
             )
         return cls(
@@ -1414,10 +1416,31 @@ class ChunkInsert:
 
 @dataclass(slots=True)
 class VecInsert:
-    """Wire representation of a vector embedding to be inserted."""
+    """Wire representation of a vector embedding to be inserted.
+
+    .. deprecated:: 0.6.0
+        Callers should configure the db-wide embedding profile via
+        ``Admin.configure_embedding`` and enable vector indexing per kind
+        via ``Admin.configure_vec`` instead. The managed vector
+        projection will populate ``vec_<kind>`` tables automatically
+        when nodes and chunks are written through the normal write path.
+        This class remains importable during the transition window.
+    """
 
     chunk_id: str
     embedding: list[float]
+
+    def __post_init__(self) -> None:
+        import warnings as _warnings
+
+        _warnings.warn(
+            "VecInsert is deprecated: use Admin.configure_embedding + "
+            "Admin.configure_vec(kind) and write nodes/chunks normally; "
+            "the managed vector projection will populate vec_<kind> "
+            "automatically.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
     def to_wire(self) -> dict[str, Any]:
         return {"chunk_id": self.chunk_id, "embedding": self.embedding}

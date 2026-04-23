@@ -36,10 +36,15 @@ pub use fathomdb_engine::{
     OperationalWrite, OptionalProjectionTask, ProjectionRepairReport, ProjectionTarget,
     ProvenanceEvent, ProvenanceMode, ProvenancePurgeOptions, ProvenancePurgeReport, QueryEmbedder,
     QueryEmbedderIdentity, QueryPlan, QueryRows, RebuildProgress, RunInsert, RunRow,
-    SafeExportManifest, SafeExportOptions, SkippedEdge, StepInsert, StepRow, VecInsert,
+    SafeExportManifest, SafeExportOptions, SkippedEdge, StepInsert, StepRow,
     VectorRegenerationConfig, VectorRegenerationReport, VectorSource, WriteReceipt, WriteRequest,
     WriterActor, new_id, new_row_id,
 };
+// Pack G: `VecInsert` is deprecated (see engine crate). Re-export it under
+// an `#[allow(deprecated)]` so the warning surfaces at caller sites rather
+// than here.
+#[allow(deprecated)]
+pub use fathomdb_engine::VecInsert;
 pub use fathomdb_engine::{SqliteCacheStatus, TelemetryLevel, TelemetrySnapshot};
 #[doc(hidden)]
 pub use fathomdb_query::compile_search_plan;

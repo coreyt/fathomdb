@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used)]
+#![allow(clippy::expect_used, deprecated)]
 
 use fathomdb::{
     ChunkPolicy, Engine, EngineOptions, OperationalWrite, ProjectionTarget, WriteRequestBuilder,
