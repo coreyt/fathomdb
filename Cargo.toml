@@ -15,7 +15,7 @@ homepage = "https://github.com/coreyt/fathomdb"
 readme = "README.md"
 keywords = ["sqlite", "graph", "vector", "agent", "database"]
 categories = ["database", "database-implementations"]
-version = "0.5.4"
+version = "0.5.5"
 
 [workspace.lints.rust]
 missing_docs = "warn"
