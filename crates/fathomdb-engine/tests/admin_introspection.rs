@@ -5,12 +5,14 @@
 //! needing to know about their kind list.
 #![allow(clippy::expect_used, clippy::panic)]
 
+#[cfg(feature = "sqlite-vec")]
 use std::time::Duration;
 
+#[cfg(feature = "sqlite-vec")]
+use fathomdb_engine::VectorSource;
 use fathomdb_engine::{
     BatchEmbedder, ChunkInsert, ChunkPolicy, EmbedderError, EngineRuntime, NodeInsert,
-    ProvenanceMode, QueryEmbedder, QueryEmbedderIdentity, TelemetryLevel, VectorSource,
-    WriteRequest,
+    ProvenanceMode, QueryEmbedder, QueryEmbedderIdentity, TelemetryLevel, WriteRequest,
 };
 
 // ── Fake embedder ───────────────────────────────────────────────────────────
@@ -20,6 +22,7 @@ struct FakeEmbedder {
     dimension: usize,
 }
 
+#[cfg_attr(not(feature = "sqlite-vec"), allow(dead_code))]
 impl FakeEmbedder {
     fn new() -> Self {
         Self { dimension: 4 }
@@ -93,6 +96,7 @@ fn open_engine(dir: &tempfile::TempDir) -> EngineRuntime {
     .expect("open engine")
 }
 
+#[cfg_attr(not(feature = "sqlite-vec"), allow(dead_code))]
 fn empty_write(label: &str) -> WriteRequest {
     WriteRequest {
         label: label.to_owned(),
@@ -110,6 +114,7 @@ fn empty_write(label: &str) -> WriteRequest {
     }
 }
 
+#[cfg_attr(not(feature = "sqlite-vec"), allow(dead_code))]
 fn seed_kind_with_chunks(engine: &EngineRuntime, kind: &str, count: u32) {
     for i in 0..count {
         let logical_id = format!("{kind}:{i}");
