@@ -712,6 +712,26 @@ class AdminClient:
         result_json = self._core.configure_embedding(json.dumps(request))
         return json.loads(result_json)
 
+    def drain_vector_projection(self, timeout_ms: int = 5000) -> dict:
+        """Drain the vector-projection queue using the engine's configured embedder.
+
+        Pack F1.5 routes this through the same embedder that serves
+        read-time ``semantic_search``. The engine must have been opened
+        with a non-None ``EmbedderChoice`` — callers never supply an
+        embedder here; identity belongs to the embedder wired into the
+        engine.
+
+        Args:
+            timeout_ms: Maximum time to spend draining, in milliseconds.
+
+        Returns
+        -------
+            Parsed ``DrainReport`` dict. Raises the mapped engine error
+            when no embedder is configured.
+        """
+        request = json.dumps({"timeout_ms": timeout_ms})
+        return json.loads(self._core.drain_vector_projection(request))
+
     def preview_projection_impact(self, kind: str, target: str) -> ImpactReport:
         """Return an impact estimate for changing the projection for *kind*.
 
