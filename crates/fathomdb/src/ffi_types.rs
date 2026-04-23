@@ -716,9 +716,12 @@ impl From<FfiWriteRequest> for WriteRequest {
             vec_inserts: value
                 .vec_inserts
                 .into_iter()
-                .map(|vec_insert| crate::VecInsert {
-                    chunk_id: vec_insert.chunk_id,
-                    embedding: vec_insert.embedding,
+                .map(|vec_insert| {
+                    #[allow(deprecated)]
+                    crate::VecInsert {
+                        chunk_id: vec_insert.chunk_id,
+                        embedding: vec_insert.embedding,
+                    }
                 })
                 .collect(),
             operational_writes: value

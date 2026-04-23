@@ -199,6 +199,7 @@ fn test_current_config_empty_on_fresh_engine() {
     assert_eq!(cfg.work_queue.discarded, 0);
 }
 
+#[cfg(feature = "sqlite-vec")]
 #[test]
 fn test_current_config_reflects_configure_embedding_and_configure_vec_kind() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -227,6 +228,7 @@ fn test_current_config_reflects_configure_embedding_and_configure_vec_kind() {
     assert_eq!(vec_kind.kind, "KnowledgeItem");
 }
 
+#[cfg(feature = "sqlite-vec")]
 #[test]
 fn test_current_config_aggregates_work_queue_counts() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -262,6 +264,7 @@ fn test_describe_kind_unconfigured() {
     assert!(desc.vec_rows.is_none());
 }
 
+#[cfg(feature = "sqlite-vec")]
 #[test]
 fn test_describe_kind_configured_with_chunks() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -290,6 +293,7 @@ fn test_describe_kind_configured_with_chunks() {
 
 // ── configure_vec_kinds batch ───────────────────────────────────────────────
 
+#[cfg(feature = "sqlite-vec")]
 #[test]
 fn test_configure_vec_kinds_batch() {
     let dir = tempfile::tempdir().expect("tempdir");
