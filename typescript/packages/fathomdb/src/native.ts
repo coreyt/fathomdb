@@ -79,6 +79,8 @@ export type NativeEngineCore = {
   currentConfig(): string;
   describeKind(kind: string): string;
   configureVecKinds(requestJson: string): string;
+  configureEmbedding(requestJson: string): string;
+  configureVecKind(requestJson: string): string;
 };
 
 declare global {

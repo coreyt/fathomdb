@@ -405,10 +405,20 @@ impl Engine {
         let adapter = AutoDrainBatchAdapter {
             inner: embedder_arc.as_ref(),
         };
-        let _ = self
+        let outcome = self
             .admin()
             .service()
             .drain_vector_projection(&adapter, std::time::Duration::from_secs(30));
+        #[cfg(feature = "tracing")]
+        if let Err(err) = &outcome {
+            tracing::warn!(
+                target: "fathomdb::auto_drain",
+                timeout_ms = 30_000u64,
+                error = %err,
+                "auto_drain_vector_work: drain_vector_projection failed (test-mode)",
+            );
+        }
+        let _ = outcome;
     }
 
     /// Returns the read-side execution coordinator.
