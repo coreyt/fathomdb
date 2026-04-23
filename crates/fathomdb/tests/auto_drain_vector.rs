@@ -204,6 +204,77 @@ fn test_auto_drain_true_write_makes_chunks_searchable_sync() {
     assert_eq!(rows.hits[0].node.logical_id, "ki-acme");
 }
 
+#[derive(Debug)]
+struct FailingEmbedder {
+    identity: QueryEmbedderIdentity,
+}
+
+impl FailingEmbedder {
+    fn new() -> Self {
+        Self {
+            identity: QueryEmbedderIdentity {
+                model_identity: "test-deterministic".to_owned(),
+                model_version: "1".to_owned(),
+                dimension: DIM,
+                normalization_policy: "none".to_owned(),
+            },
+        }
+    }
+}
+
+impl QueryEmbedder for FailingEmbedder {
+    fn embed_query(&self, _text: &str) -> Result<Vec<f32>, EmbedderError> {
+        Err(EmbedderError::Failed("forced failure".to_owned()))
+    }
+    fn identity(&self) -> QueryEmbedderIdentity {
+        self.identity.clone()
+    }
+    fn max_tokens(&self) -> usize {
+        512
+    }
+}
+
+impl BatchEmbedder for FailingEmbedder {
+    fn batch_embed(&self, _texts: &[String]) -> Result<Vec<Vec<f32>>, EmbedderError> {
+        Err(EmbedderError::Failed("forced failure".to_owned()))
+    }
+    fn identity(&self) -> QueryEmbedderIdentity {
+        self.identity.clone()
+    }
+    fn max_tokens(&self) -> usize {
+        512
+    }
+}
+
+#[test]
+fn test_auto_drain_embedder_error_does_not_fail_write() {
+    // Part A of Pack H.1 follow-up: a failing embedder (EmbedderError::Failed)
+    // under auto_drain_vector=true must NOT propagate as a write error. The
+    // tracing warn! is fired best-effort for debuggability; this test
+    // intentionally does not assert on the tracing event (avoids adding a
+    // tracing-test dep). Manual repro: RUST_LOG=warn.
+    let embedder = Arc::new(FailingEmbedder::new());
+    let (_dir, engine) = open_with_auto_drain(embedder.clone(), true);
+    engine
+        .admin()
+        .service()
+        .configure_embedding(embedder.as_ref(), true)
+        .expect("configure_embedding");
+    engine
+        .admin()
+        .service()
+        .configure_vec_kind(KIND, VectorSource::Chunks)
+        .expect("configure_vec_kind");
+
+    // Write must succeed even though the embedder errors during the drain —
+    // drain failure must never bubble up through `submit_write`.
+    let receipt = engine.submit_write(make_write("ki-fail", "Acme Corp"));
+    assert!(
+        receipt.is_ok(),
+        "submit_write must return Ok even when embedder fails during auto-drain: {receipt:?}"
+    );
+}
+
 #[test]
 fn test_auto_drain_true_still_non_blocking_when_embedder_unavailable() {
     let embedder = Arc::new(UnavailableEmbedder::new());
