@@ -739,6 +739,18 @@ impl ExecutionCoordinator {
         &self,
         compiled: &CompiledQuery,
     ) -> Result<QueryRows, EngineError> {
+        // Pack F1.75: dispatch semantic / raw-vector sidecar carriers to the
+        // dedicated executors. These paths own their own pre-KNN validation
+        // (active profile, per-kind schema, dimension match) and their own
+        // degrade semantics; v1 does not compose them with filter fusion.
+        if let Some(semantic) = compiled.semantic_search.as_ref() {
+            let search_rows = self.execute_compiled_semantic_search(semantic)?;
+            return Ok(search_rows_to_query_rows(search_rows));
+        }
+        if let Some(raw) = compiled.raw_vector_search.as_ref() {
+            let search_rows = self.execute_compiled_raw_vector_search(raw)?;
+            return Ok(search_rows_to_query_rows(search_rows));
+        }
         // Scan fallback for first-registration async rebuild: if the query uses the
         // FtsNodes driving table and the root kind has is_first_registration=1 with
         // state IN ('PENDING','BUILDING'), the per-kind table has no rows yet.
@@ -3429,6 +3441,33 @@ pub(crate) fn is_vec_table_absent(err: &rusqlite::Error) -> bool {
                 || msg.contains("no such module: vec0")
         }
         _ => false,
+    }
+}
+
+/// Pack F1.75: project a [`SearchRows`] (emitted by
+/// `execute_compiled_semantic_search` / `execute_compiled_raw_vector_search`)
+/// into a [`QueryRows`] so `execute_compiled_read` can return the flat-query
+/// shape that FFI callers expect. The vector-search path emits hits with no
+/// runs/steps/actions, so those collections stay empty.
+fn search_rows_to_query_rows(rows: SearchRows) -> QueryRows {
+    let nodes = rows
+        .hits
+        .into_iter()
+        .map(|hit| NodeRow {
+            row_id: hit.node.row_id,
+            logical_id: hit.node.logical_id,
+            kind: hit.node.kind,
+            properties: hit.node.properties,
+            content_ref: hit.node.content_ref,
+            last_accessed_at: hit.node.last_accessed_at,
+        })
+        .collect();
+    QueryRows {
+        nodes,
+        runs: Vec::new(),
+        steps: Vec::new(),
+        actions: Vec::new(),
+        was_degraded: rows.was_degraded,
     }
 }
 

@@ -3,7 +3,8 @@ use std::fmt::Write;
 use crate::fusion::partition_search_filters;
 use crate::plan::{choose_driving_table, execution_hints, shape_signature};
 use crate::search::{
-    CompiledRetrievalPlan, CompiledSearch, CompiledSearchPlan, CompiledVectorSearch,
+    CompiledRawVectorSearch, CompiledRetrievalPlan, CompiledSearch, CompiledSearchPlan,
+    CompiledSemanticSearch, CompiledVectorSearch,
 };
 use crate::{
     ComparisonOp, DrivingTable, EdgeExpansionSlot, ExpansionSlot, Predicate, QueryAst, QueryStep,
@@ -26,7 +27,15 @@ pub enum BindValue {
 pub struct ShapeHash(pub u64);
 
 /// A fully compiled query ready for execution against `SQLite`.
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// Pack F1.75: carries optional [`CompiledSemanticSearch`] /
+/// [`CompiledRawVectorSearch`] sidecars. When either is `Some`, the
+/// coordinator dispatches the query through the dedicated
+/// `execute_compiled_semantic_search` / `execute_compiled_raw_vector_search`
+/// executor instead of running `sql` as a plain node scan. The `sql` /
+/// `binds` fields remain populated with a no-op node-scan plan so that
+/// explain paths keep working without the sidecar.
+#[derive(Clone, Debug, PartialEq)]
 pub struct CompiledQuery {
     /// The generated SQL text.
     pub sql: String,
@@ -38,10 +47,16 @@ pub struct CompiledQuery {
     pub driving_table: DrivingTable,
     /// Execution hints derived from the query shape.
     pub hints: crate::ExecutionHints,
+    /// Pack F1.75 sidecar: when populated, the coordinator dispatches
+    /// through `execute_compiled_semantic_search`.
+    pub semantic_search: Option<CompiledSemanticSearch>,
+    /// Pack F1.75 sidecar: when populated, the coordinator dispatches
+    /// through `execute_compiled_raw_vector_search`.
+    pub raw_vector_search: Option<CompiledRawVectorSearch>,
 }
 
 /// A compiled grouped query containing a root query and expansion slots.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CompiledGroupedQuery {
     /// The root flat query.
     pub root: CompiledQuery,
@@ -757,12 +772,41 @@ WHERE 1 = 1",
         return Err(CompileError::TooManyBindParameters(binds.len()));
     }
 
+    // Pack F1.75: extract the optional semantic-search / raw-vector-search
+    // sidecars so the coordinator's `execute_compiled_read` dispatcher can
+    // route to the dedicated executors instead of running the plain-node
+    // scan above. Per Pack F1's v1 decision, these surfaces do not compose
+    // with filter fusion — any filters on the AST are ignored here.
+    let mut semantic_search: Option<CompiledSemanticSearch> = None;
+    let mut raw_vector_search: Option<CompiledRawVectorSearch> = None;
+    for step in &ast.steps {
+        match step {
+            QueryStep::SemanticSearch { text, limit } => {
+                semantic_search = Some(CompiledSemanticSearch {
+                    root_kind: ast.root_kind.clone(),
+                    text: text.clone(),
+                    limit: *limit,
+                });
+            }
+            QueryStep::RawVectorSearch { vec, limit } => {
+                raw_vector_search = Some(CompiledRawVectorSearch {
+                    root_kind: ast.root_kind.clone(),
+                    vec: vec.clone(),
+                    limit: *limit,
+                });
+            }
+            _ => {}
+        }
+    }
+
     Ok(CompiledQuery {
         sql,
         binds,
         shape_hash,
         driving_table,
         hints,
+        semantic_search,
+        raw_vector_search,
     })
 }
 

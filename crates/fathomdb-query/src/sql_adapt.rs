@@ -162,6 +162,8 @@ mod tests {
                 recursion_limit: 0,
                 hard_limit: 0,
             },
+            semantic_search: None,
+            raw_vector_search: None,
         }
     }
 

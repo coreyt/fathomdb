@@ -108,7 +108,7 @@ fn test_compile_semantic_search_produces_carrier() {
         "compile_query must emit a CompiledSemanticSearch carrier for \
          QueryStep::SemanticSearch; got None — compile is still a no-op"
     );
-    let carrier = compiled.semantic_search.as_ref().unwrap();
+    let carrier = compiled.semantic_search.as_ref().expect("carrier present");
     assert_eq!(carrier.root_kind, KIND);
     assert_eq!(carrier.text, "anything");
     assert_eq!(carrier.limit, 5);
@@ -123,7 +123,10 @@ fn test_compile_raw_vector_search_produces_carrier() {
         "compile_query must emit a CompiledRawVectorSearch carrier for \
          QueryStep::RawVectorSearch; got None — compile is still a no-op"
     );
-    let carrier = compiled.raw_vector_search.as_ref().unwrap();
+    let carrier = compiled
+        .raw_vector_search
+        .as_ref()
+        .expect("carrier present");
     assert_eq!(carrier.root_kind, KIND);
     assert_eq!(carrier.limit, 5);
     assert_eq!(carrier.vec, vec![0.1, 0.2, 0.3, 0.4]);
