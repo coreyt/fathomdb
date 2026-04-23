@@ -638,27 +638,39 @@ class AdminClient:
         warnings.warn(
             "AdminClient.configure_vec(embedder) is deprecated; the new "
             "signature is configure_vec(kind, source=...). The embedder form "
-            "routes to set_vec_profile for backwards compatibility and will "
-            "be removed in a future release.",
+            "now routes to configure_embedding for backwards compatibility "
+            "and will be removed in a future release.",
             DeprecationWarning,
             stacklevel=2,
         )
+        # The legacy ``set_vec_profile`` / ``preview_projection_impact('*','vec')``
+        # path stopped being viable on schema v25 — Memex reported it hanging on
+        # the shipped 0.5.5 wheel. Route the deprecated embedder form through the
+        # new ``configure_embedding`` API which is the modern equivalent
+        # (database-wide embedding identity). Return a ``VecProfile`` built from
+        # the embedder's own identity so existing callers keep getting a
+        # VecProfile-shaped object.
         embedder = kind_or_embedder
         identity = embedder.identity()
-        impact_json = self._core.preview_projection_impact("*", "vec")
-        impact = ImpactReport.from_wire(json.loads(impact_json))
-        if impact.rows_to_rebuild > 0 and not agree_to_rebuild_impact:
-            raise RebuildImpactError(impact)
-        config = json.dumps(
-            {
-                "model_identity": identity.model_identity,
-                "model_version": identity.model_version,
-                "dimensions": identity.dimensions,
-                "normalization_policy": identity.normalization_policy,
-            }
+        request = {
+            "model_identity": identity.model_identity,
+            "model_version": identity.model_version,
+            "dimensions": identity.dimensions,
+            "normalization_policy": identity.normalization_policy,
+            "max_tokens": _resolve_max_tokens(embedder),
+            "acknowledge_rebuild_impact": agree_to_rebuild_impact,
+        }
+        self._core.configure_embedding(json.dumps(request))
+        # Return a VecProfile mirroring the pre-0.5 shape. ``active_at`` /
+        # ``created_at`` are not meaningful under the new API (the embedding
+        # profile is per-row in ``vector_embedding_profiles``), so we report 0.
+        return VecProfile(
+            model_identity=identity.model_identity,
+            model_version=identity.model_version,
+            dimensions=identity.dimensions,
+            active_at=0,
+            created_at=0,
         )
-        result_json = self._core.set_vec_profile(config)
-        return VecProfile.from_wire(json.loads(result_json))
 
     def _configure_vec_kind_new(self, kind: str, *, source: str) -> dict:
         """Per-kind configure_vec new path (0.5.x)."""

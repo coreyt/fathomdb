@@ -85,23 +85,11 @@ def test_configure_vec_deprecated_embedder_shim_emits_warning(tmp_path: Path) ->
     # preview_projection_impact -> rows_to_rebuild=0 so RebuildImpactError does not fire.
     import json as _json
 
-    mock_core.preview_projection_impact.return_value = _json.dumps(
-        {
-            "rows_to_rebuild": 0,
-            "estimated_seconds": 0,
-            "temp_db_size_bytes": 0,
-            "current_tokenizer": None,
-            "target_tokenizer": None,
-        }
-    )
-    mock_core.set_vec_profile.return_value = _json.dumps(
-        {
-            "model_identity": "foo/bar",
-            "model_version": "v1",
-            "dimensions": 384,
-            "active_at": 1,
-            "created_at": 1,
-        }
+    # The 0.5.6 fix reroutes the deprecated embedder form through the new
+    # ``configure_embedding`` API (the legacy ``set_vec_profile`` /
+    # ``preview_projection_impact('*','vec')`` path hung on v25 schemas).
+    mock_core.configure_embedding.return_value = _json.dumps(
+        {"outcome": "activated", "profile_id": 1, "stale_kind_count": 0}
     )
 
     admin = AdminClient(mock_core)
@@ -122,4 +110,4 @@ def test_configure_vec_deprecated_embedder_shim_emits_warning(tmp_path: Path) ->
         assert any(issubclass(w.category, DeprecationWarning) for w in caught), (
             f"expected DeprecationWarning, got {[w.category for w in caught]}"
         )
-    mock_core.set_vec_profile.assert_called_once()
+    mock_core.configure_embedding.assert_called_once()
