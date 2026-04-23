@@ -627,8 +627,11 @@ class AdminClient:
           active ``vector_embedding_profiles`` row. Returns a dict mirroring
           ``ConfigureVecOutcome``.
         - Deprecated (pre-0.5): ``admin.configure_vec(embedder)``. Routes to
-          :meth:`set_vec_profile` for backwards compatibility and emits a
-          :class:`DeprecationWarning`. Returns a :class:`VecProfile`.
+          :meth:`configure_embedding` (the modern database-wide embedding
+          identity API) for backwards compatibility and emits a
+          :class:`DeprecationWarning`. Returns a :class:`VecProfile` built
+          from the embedder's identity; prefer :meth:`configure_embedding`
+          directly.
         """
         if isinstance(kind_or_embedder, str):
             return self._configure_vec_kind_new(kind_or_embedder, source=source)
@@ -661,14 +664,17 @@ class AdminClient:
             "acknowledge_rebuild_impact": agree_to_rebuild_impact,
         }
         self._core.configure_embedding(json.dumps(request))
-        # Return a VecProfile mirroring the pre-0.5 shape. ``active_at`` /
-        # ``created_at`` are not meaningful under the new API (the embedding
-        # profile is per-row in ``vector_embedding_profiles``), so we report 0.
+        # Return a VecProfile mirroring the pre-0.5 shape. ``active_at`` is
+        # the pre-0.5 "not set" sentinel (``None``) because activation is now
+        # tracked per-row in ``vector_embedding_profiles`` and is not
+        # meaningful for this synthesized envelope. ``created_at`` is typed
+        # ``int`` (non-optional) on :class:`VecProfile`; 0 is the least-bad
+        # placeholder there.
         return VecProfile(
             model_identity=identity.model_identity,
             model_version=identity.model_version,
             dimensions=identity.dimensions,
-            active_at=0,
+            active_at=None,
             created_at=0,
         )
 
