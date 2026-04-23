@@ -44,7 +44,7 @@ fathomdb-schema = { path = "crates/fathomdb-schema", version = "0.5.3" }
 napi = { version = "2.16.13", default-features = false, features = ["napi8"] }
 napi-build = "2.1.5"
 napi-derive = "2.16.13"
-insta = { version = "1.42.2", features = ["yaml"] }
+insta = { version = "1.47.2", features = ["yaml"] }
 pyo3 = { version = "0.28", features = ["extension-module"] }
 rstest = "0.24.0"
 rusqlite = { version = "0.32.1", features = ["bundled", "load_extension", "backup"] }
