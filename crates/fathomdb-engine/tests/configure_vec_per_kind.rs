@@ -1,4 +1,5 @@
 //! Pack C: per-kind `configure_vec_kind` + `get_vec_index_status` admin API.
+#![cfg(feature = "sqlite-vec")]
 #![allow(clippy::expect_used, clippy::panic)]
 
 use fathomdb_engine::{
