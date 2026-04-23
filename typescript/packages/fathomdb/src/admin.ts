@@ -61,6 +61,8 @@ import {
   type VecProfile,
   type VectorRegenerationConfig,
   type VectorRegenerationReport,
+  type DrainReport,
+  drainReportFromWire,
 } from "./types.js";
 
 /**
@@ -658,12 +660,14 @@ export class AdminClient {
    * @throws {FathomError} If the engine has no embedder configured
    *   (maps to `FATHOMDB_INVALID_CONFIG`).
    */
-  drainVectorProjection(timeoutMs: number = 5000, progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): Record<string, unknown> {
+  drainVectorProjection(timeoutMs: number = 5000, progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): DrainReport {
     return this.#run("admin.drain_vector_projection", () =>
-      parseNativeJson(
-        callNative(() =>
-          this.#core.drainVectorProjection(JSON.stringify({ timeout_ms: timeoutMs })),
-        ),
+      drainReportFromWire(
+        parseNativeJson(
+          callNative(() =>
+            this.#core.drainVectorProjection(JSON.stringify({ timeout_ms: timeoutMs })),
+          ),
+        ) as Record<string, unknown>,
       ),
       progressCallback,
       feedbackConfig,

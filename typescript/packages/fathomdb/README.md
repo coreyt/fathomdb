@@ -244,6 +244,23 @@ All errors extend `FathomError`:
 - The native binding (`.node` file) must be built from the Rust source:
   `cargo build -p fathomdb --features node`
 
+## Development — refreshing the native binding
+
+Prebuilt `.node` files under `prebuilds/` are not committed. For local
+development the vitest runner will (in order):
+
+1. Use `FATHOMDB_NATIVE_BINDING` when set (absolute path to a `.node`).
+2. Use a prebuilt binary from the local `prebuilds/` directory.
+3. Use the freshly built cdylib at
+   `<repo-root>/target/{debug,release}/libfathomdb.{so,dylib}` or
+   `fathomdb.dll`, copying it into `test/.native/fathomdb.node`.
+4. As a last-resort fallback, use a prebuilt binary from the main
+   worktree's `prebuilds/` directory (useful for linked worktrees).
+
+Run `cargo build -p fathomdb --features node` from the repo root before
+invoking `npm test` when iterating on Rust changes that affect the
+JavaScript surface.
+
 ## License
 
 Licensed under either of MIT or Apache-2.0 at your option.
