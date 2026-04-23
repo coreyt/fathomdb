@@ -37,6 +37,17 @@ export type EngineOpenOptions = {
    *   the no-embedder behaviour.
    */
   embedder?: "none" | "builtin";
+  /**
+   * Pack H test-only flag: when `true`, every write committed through
+   * the engine synchronously drains the vector projection work queue
+   * before returning, using the engine's configured embedder.
+   *
+   * **Production code must not set this flag.** It defeats the async
+   * worker's availability contract. Intended strictly for integration
+   * tests that want `write → semantic_search` with no explicit drain
+   * step. Defaults to `false`.
+   */
+  autoDrainVector?: boolean;
 };
 
 // ── Feedback / progress callbacks ───────────────────────────────────
@@ -1510,3 +1521,103 @@ export function drainReportFromWire(w: Record<string, unknown>): DrainReport {
     embedder_unavailable_ticks: Number(w.embedder_unavailable_ticks ?? 0),
   };
 }
+
+// ── Pack H: introspection ──────────────────────────────────────────────
+
+/**
+ * Per-embedder capability entry. See {@link Capabilities}.
+ */
+export type EmbedderCapability = {
+  available: boolean;
+  model_identity: string | null;
+  dimensions: number | null;
+  max_tokens: number | null;
+};
+
+/**
+ * Static install/build surface returned by {@link AdminClient.capabilities}.
+ *
+ * Pure function on the Rust side — does NOT open the database.
+ */
+export type Capabilities = {
+  sqlite_vec: boolean;
+  fts_tokenizers: string[];
+  embedders: Record<string, EmbedderCapability>;
+  schema_version: number;
+  fathomdb_version: string;
+};
+
+/** Slim projection of `vector_embedding_profiles` WHERE active=1. */
+export type EmbeddingProfileSummary = {
+  profile_id: number;
+  model_identity: string;
+  model_version: string | null;
+  dimensions: number;
+  normalization_policy: string | null;
+  max_tokens: number | null;
+  activated_at: number | null;
+};
+
+/** Per-kind vector index configuration (one row of `vector_index_schemas`). */
+export type VecKindConfig = {
+  kind: string;
+  enabled: boolean;
+  source_mode: string;
+  state: string;
+  last_error: string | null;
+  last_completed_at: number | null;
+  updated_at: number;
+};
+
+/** Slim per-kind FTS view — enough for a drift check. */
+export type FtsKindConfig = {
+  kind: string;
+  tokenizer: string;
+  property_schema_present: boolean;
+};
+
+/** Aggregated counts across `vector_projection_work`. */
+export type WorkQueueSummary = {
+  pending_incremental: number;
+  pending_backfill: number;
+  inflight: number;
+  failed: number;
+  discarded: number;
+};
+
+/**
+ * Runtime configuration snapshot returned by
+ * {@link AdminClient.currentConfig}.
+ */
+export type CurrentConfig = {
+  active_embedding_profile: EmbeddingProfileSummary | null;
+  vec_kinds: Record<string, VecKindConfig>;
+  fts_kinds: Record<string, FtsKindConfig>;
+  work_queue: WorkQueueSummary;
+};
+
+/**
+ * Per-kind view returned by {@link AdminClient.describeKind}.
+ */
+export type KindDescription = {
+  kind: string;
+  vec: VecKindConfig | null;
+  fts: FtsKindConfig | null;
+  chunk_count: number;
+  vec_rows: number | null;
+  embedding_identity: string | null;
+};
+
+/** Outcome of a single entry in {@link AdminClient.configureVecKinds}. */
+export type ConfigureVecOutcome = {
+  kind: string;
+  enqueued_backfill_rows: number;
+  was_already_enabled: boolean;
+};
+
+/** Input item for {@link AdminClient.configureVecKinds}. */
+export type ConfigureVecKindsItem = {
+  kind: string;
+  /** Only `"chunks"` is supported today. */
+  source: "chunks";
+};

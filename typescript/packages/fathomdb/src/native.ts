@@ -10,7 +10,8 @@ export type NativeBinding = {
       provenanceMode: string,
       vectorDimension?: number,
       telemetryLevel?: string,
-      embedder?: string
+      embedder?: string,
+      autoDrainVector?: boolean
     ): NativeEngineCore;
   };
   newId(): string;
@@ -73,6 +74,11 @@ export type NativeEngineCore = {
   restoreVectorProfiles(): string;
   regenerateVectorEmbeddings(configJson: string): string;
   drainVectorProjection(requestJson: string): string;
+  // Pack H: introspection + batch configure
+  capabilities(): string;
+  currentConfig(): string;
+  describeKind(kind: string): string;
+  configureVecKinds(requestJson: string): string;
 };
 
 declare global {

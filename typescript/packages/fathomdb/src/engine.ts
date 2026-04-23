@@ -56,7 +56,8 @@ export class Engine {
             options.provenanceMode ?? "warn",
             options.vectorDimension,
             options.telemetryLevel,
-            options.embedder
+            options.embedder,
+            options.autoDrainVector ?? false
           );
           return new Engine(core);
         } catch (error) {

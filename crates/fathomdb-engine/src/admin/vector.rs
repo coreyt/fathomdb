@@ -865,6 +865,27 @@ impl AdminService {
         })
     }
 
+    /// Batch form of [`Self::configure_vec_kind`]. Loops over each
+    /// `(kind, source)` in input order and returns one outcome per entry.
+    ///
+    /// Per-kind atomicity matches [`Self::configure_vec_kind`]: each call
+    /// runs its own transaction. The batch as a whole is **not**
+    /// atomic — if the third call fails, the first two remain committed.
+    ///
+    /// # Errors
+    /// Returns the first [`EngineError`] encountered; already-committed
+    /// entries remain committed.
+    pub fn configure_vec_kinds(
+        &self,
+        items: &[(String, VectorSource)],
+    ) -> Result<Vec<ConfigureVecOutcome>, EngineError> {
+        let mut outcomes = Vec::with_capacity(items.len());
+        for (kind, source) in items {
+            outcomes.push(self.configure_vec_kind(kind, *source)?);
+        }
+        Ok(outcomes)
+    }
+
     /// Return the managed vector indexing status for `kind`.
     ///
     /// If no `vector_index_schemas` row exists for `kind`, returns

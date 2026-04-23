@@ -712,6 +712,56 @@ class AdminClient:
         result_json = self._core.configure_embedding(json.dumps(request))
         return json.loads(result_json)
 
+    def capabilities(self) -> dict:
+        """Return the static install/build capabilities surface.
+
+        Pack H introspection. Does not open the database. Result keys:
+        ``sqlite_vec`` (bool), ``fts_tokenizers`` (list of preset names),
+        ``embedders`` (map of name -> {available, model_identity,
+        dimensions, max_tokens}), ``schema_version`` (int),
+        ``fathomdb_version`` (str).
+        """
+        return json.loads(self._core.capabilities())
+
+    def current_config(self) -> dict:
+        """Return a snapshot of active runtime configuration.
+
+        Pack H introspection: aggregates active embedding profile, every
+        row of ``vector_index_schemas``, every FTS profile, and
+        work-queue counts. Intended for drift detection — callers can
+        cross-reference the ``vec_kinds`` map against their own expected
+        kind list without fathomdb needing to know that list.
+        """
+        return json.loads(self._core.current_config())
+
+    def describe_kind(self, kind: str) -> dict:
+        """Return the per-kind introspection view.
+
+        Pack H introspection. Keys: ``kind``, ``vec`` (optional
+        VecKindConfig), ``fts`` (optional FtsKindConfig),
+        ``chunk_count``, ``vec_rows`` (optional), ``embedding_identity``
+        (optional).
+        """
+        return json.loads(self._core.describe_kind(kind))
+
+    def configure_vec_kinds(self, items: list[tuple[str, str] | dict]) -> list[dict]:
+        """Batch form of :meth:`configure_vec_kind`.
+
+        Each item may be a ``(kind, source)`` tuple or a dict with keys
+        ``kind`` and ``source``. Per-kind atomic; not whole-batch atomic
+        — if item N fails, items 0..N-1 remain committed.
+        """
+        normalized = []
+        for it in items:
+            if isinstance(it, dict):
+                normalized.append({"kind": it["kind"], "source": it["source"]})
+            else:
+                kind, source = it
+                normalized.append({"kind": kind, "source": source})
+        request = json.dumps({"items": normalized})
+        result_json = self._core.configure_vec_kinds(request)
+        return json.loads(result_json)
+
     def drain_vector_projection(self, timeout_ms: int = 5000) -> dict:
         """Drain the vector-projection queue using the engine's configured embedder.
 

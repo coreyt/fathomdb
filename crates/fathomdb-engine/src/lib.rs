@@ -16,12 +16,14 @@ mod vector_projection_actor;
 mod writer;
 
 pub use admin::{
-    AdminHandle, AdminService, ConfigureEmbeddingOutcome, ConfigureVecOutcome, FtsProfile,
+    AdminHandle, AdminService, Capabilities, ConfigureEmbeddingOutcome, ConfigureVecOutcome,
+    CurrentConfig, EmbedderCapability, EmbeddingProfileSummary, FtsKindConfig, FtsProfile,
     FtsPropertyPathMode, FtsPropertyPathSpec, FtsPropertySchemaRecord, IntegrityReport,
-    LogicalPurgeReport, LogicalRestoreReport, ProjectionImpact, ProvenancePurgeOptions,
-    ProvenancePurgeReport, SafeExportManifest, SafeExportOptions, SemanticReport, SkippedEdge,
-    TOKENIZER_PRESETS, TraceReport, VecIndexStatus, VecProfile, VectorRegenerationConfig,
-    VectorRegenerationReport, VectorSource, load_vector_regeneration_config,
+    KindDescription, LogicalPurgeReport, LogicalRestoreReport, ProjectionImpact,
+    ProvenancePurgeOptions, ProvenancePurgeReport, SafeExportManifest, SafeExportOptions,
+    SemanticReport, SkippedEdge, TOKENIZER_PRESETS, TraceReport, VecIndexStatus, VecKindConfig,
+    VecProfile, VectorRegenerationConfig, VectorRegenerationReport, VectorSource, WorkQueueSummary,
+    load_vector_regeneration_config,
 };
 pub use coordinator::{
     ActionRow, EdgeExpansionRootRows, EdgeExpansionSlotRows, EdgeRow, ExecutionCoordinator,

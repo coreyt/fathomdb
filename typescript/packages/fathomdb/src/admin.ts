@@ -63,6 +63,11 @@ import {
   type VectorRegenerationReport,
   type DrainReport,
   drainReportFromWire,
+  type Capabilities,
+  type ConfigureVecKindsItem,
+  type ConfigureVecOutcome,
+  type CurrentConfig,
+  type KindDescription,
 } from "./types.js";
 
 /**
@@ -672,5 +677,56 @@ export class AdminClient {
       progressCallback,
       feedbackConfig,
     );
+  }
+
+  /**
+   * Pack H: return the static install/build capabilities surface.
+   *
+   * Pure — does NOT open or read from the database. Callers can use
+   * this to assert feature compilation (sqlite-vec, default-embedder)
+   * and enumerate available tokenizer presets before opening the
+   * database.
+   */
+  capabilities(): Capabilities {
+    return parseNativeJson(callNative(() => this.#core.capabilities())) as Capabilities;
+  }
+
+  /**
+   * Pack H: runtime configuration snapshot.
+   *
+   * Aggregates the active embedding profile, all `vector_index_schemas`
+   * rows, all FTS profiles, and per-state `vector_projection_work`
+   * counts. Intended for drift detection: callers compare `vec_kinds`
+   * against their own expected kind list — fathomdb deliberately has
+   * no client-side registry.
+   */
+  currentConfig(): CurrentConfig {
+    return parseNativeJson(callNative(() => this.#core.currentConfig())) as CurrentConfig;
+  }
+
+  /**
+   * Pack H: per-kind introspection view.
+   *
+   * @param kind - Node kind to describe.
+   */
+  describeKind(kind: string): KindDescription {
+    return parseNativeJson(callNative(() => this.#core.describeKind(kind))) as KindDescription;
+  }
+
+  /**
+   * Pack H: batch form of `configure_vec_kind`.
+   *
+   * Each item is configured in input order with per-kind atomicity
+   * (same transaction semantics as the single-call version). The batch
+   * as a whole is NOT atomic — if item N fails, items 0..N-1 remain
+   * committed.
+   *
+   * @param items - List of `{kind, source}` entries to configure.
+   * @returns Outcomes in input order.
+   */
+  configureVecKinds(items: ConfigureVecKindsItem[]): ConfigureVecOutcome[] {
+    const request = JSON.stringify({ items });
+    const parsed = parseNativeJsonArray(callNative(() => this.#core.configureVecKinds(request)));
+    return parsed as unknown as ConfigureVecOutcome[];
   }
 }

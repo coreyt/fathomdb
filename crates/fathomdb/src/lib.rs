@@ -140,6 +140,16 @@ pub struct EngineOptions {
     /// Defaults to [`EmbedderChoice::None`] — the Phase 12 v1 dormancy
     /// invariant on `search()` is preserved unchanged.
     pub embedder: EmbedderChoice,
+    /// Test-only: when `true`, [`Engine::submit_write`] synchronously
+    /// drains the vector projection work queue after every commit that
+    /// enqueued work, using the engine's configured embedder. This
+    /// trades the async worker's availability contract for strict
+    /// `write → semantic_search` visibility — **production code must not
+    /// set this flag.** Intended for integration tests that want a
+    /// single-step write-then-assert flow.
+    ///
+    /// Defaults to `false`.
+    pub auto_drain_vector: bool,
 }
 
 impl EngineOptions {
@@ -152,6 +162,7 @@ impl EngineOptions {
             read_pool_size: None,
             telemetry_level: TelemetryLevel::Counters,
             embedder: EmbedderChoice::None,
+            auto_drain_vector: false,
         }
     }
 
@@ -198,6 +209,31 @@ fn resolve_builtin_embedder() -> Option<Arc<dyn QueryEmbedder>> {
     None
 }
 
+/// Adapter exposing a `&dyn QueryEmbedder` as a [`BatchEmbedder`] so the
+/// engine-layer sync-drain path (`Engine::submit_write` when
+/// `auto_drain_vector=true`) can reuse the engine's configured read-time
+/// embedder without duplicating it. Preserves the "identity belongs to
+/// the embedder" invariant.
+struct AutoDrainBatchAdapter<'a> {
+    inner: &'a dyn QueryEmbedder,
+}
+
+impl BatchEmbedder for AutoDrainBatchAdapter<'_> {
+    fn batch_embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, EmbedderError> {
+        let mut out = Vec::with_capacity(texts.len());
+        for text in texts {
+            out.push(self.inner.embed_query(text)?);
+        }
+        Ok(out)
+    }
+    fn identity(&self) -> fathomdb_engine::QueryEmbedderIdentity {
+        self.inner.identity()
+    }
+    fn max_tokens(&self) -> usize {
+        self.inner.max_tokens()
+    }
+}
+
 /// Top-level handle to a fathomdb graph database.
 ///
 /// An [`Engine`] owns the underlying `SQLite` connections, writer thread, and
@@ -205,6 +241,7 @@ fn resolve_builtin_embedder() -> Option<Arc<dyn QueryEmbedder>> {
 #[derive(Debug)]
 pub struct Engine {
     runtime: EngineRuntime,
+    auto_drain_vector: bool,
 }
 
 #[allow(clippy::missing_errors_doc)]
@@ -216,6 +253,7 @@ impl Engine {
     /// Returns [`EngineError`] if the database cannot be opened or the schema
     /// bootstrap fails.
     pub fn open(options: EngineOptions) -> Result<Self, EngineError> {
+        let auto_drain_vector = options.auto_drain_vector;
         let embedder = resolve_embedder_choice(options.embedder);
         Ok(Self {
             runtime: EngineRuntime::open(
@@ -226,6 +264,7 @@ impl Engine {
                 options.telemetry_level,
                 embedder,
             )?,
+            auto_drain_vector,
         })
     }
 
@@ -330,6 +369,46 @@ impl Engine {
     /// Returns a handle to the single-threaded writer actor.
     pub fn writer(&self) -> &WriterActor {
         self.runtime.writer()
+    }
+
+    /// Submit a write request through the writer actor.
+    ///
+    /// Identical to `engine.writer().submit(request)` when
+    /// `EngineOptions::auto_drain_vector` is `false` (the default).
+    ///
+    /// When `auto_drain_vector` is `true` (test-only), this method
+    /// additionally drains the vector projection work queue
+    /// synchronously after the commit returns, using the engine's
+    /// configured embedder. Embedder-unavailable or drain errors are
+    /// swallowed — the write succeeds regardless — so tests that expect
+    /// "write then immediately `semantic_search`" work without a separate
+    /// drain step.
+    ///
+    /// # Errors
+    /// Returns [`EngineError`] if the writer actor rejects the request
+    /// or the underlying transaction fails.
+    pub fn submit_write(&self, request: WriteRequest) -> Result<WriteReceipt, EngineError> {
+        let receipt = self.writer().submit(request)?;
+        if self.auto_drain_vector {
+            self.auto_drain_vector_work();
+        }
+        Ok(receipt)
+    }
+
+    /// Best-effort synchronous drain of the vector projection queue
+    /// using the engine's configured embedder. Used only by
+    /// [`Self::submit_write`] when `auto_drain_vector` is set.
+    fn auto_drain_vector_work(&self) {
+        let Some(embedder_arc) = self.runtime.coordinator().query_embedder().cloned() else {
+            return;
+        };
+        let adapter = AutoDrainBatchAdapter {
+            inner: embedder_arc.as_ref(),
+        };
+        let _ = self
+            .admin()
+            .service()
+            .drain_vector_projection(&adapter, std::time::Duration::from_secs(30));
     }
 
     /// Returns the read-side execution coordinator.

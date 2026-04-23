@@ -77,7 +77,7 @@ impl EngineCore {
 #[pymethods]
 impl EngineCore {
     #[staticmethod]
-    #[pyo3(signature = (database_path, provenance_mode, vector_dimension=None, telemetry_level=None, embedder=None))]
+    #[pyo3(signature = (database_path, provenance_mode, vector_dimension=None, telemetry_level=None, embedder=None, auto_drain_vector=false))]
     pub fn open(
         py: Python<'_>,
         database_path: &str,
@@ -85,6 +85,7 @@ impl EngineCore {
         vector_dimension: Option<usize>,
         telemetry_level: Option<&str>,
         embedder: Option<&str>,
+        auto_drain_vector: bool,
     ) -> PyResult<Self> {
         let options = EngineOptions {
             database_path: PathBuf::from(database_path),
@@ -93,6 +94,7 @@ impl EngineCore {
             read_pool_size: None,
             telemetry_level: parse_telemetry_level(telemetry_level)?,
             embedder: parse_embedder_choice(embedder)?,
+            auto_drain_vector,
         };
         // Release the GIL during engine open — schema bootstrap emits tracing
         // events that pyo3-log forwards to Python logging.  Holding the GIL
@@ -799,6 +801,32 @@ impl EngineCore {
                 .map_err(map_admin_ffi_error)
         })
     }
+
+    pub fn capabilities(&self, py: Python<'_>) -> PyResult<String> {
+        py.detach(crate::admin_ffi::capabilities_json)
+            .map_err(map_admin_ffi_error)
+    }
+
+    pub fn current_config(&self, py: Python<'_>) -> PyResult<String> {
+        self.with_engine(|engine| {
+            py.detach(|| crate::admin_ffi::current_config_json(engine))
+                .map_err(map_admin_ffi_error)
+        })
+    }
+
+    pub fn describe_kind(&self, py: Python<'_>, kind: &str) -> PyResult<String> {
+        self.with_engine(|engine| {
+            py.detach(|| crate::admin_ffi::describe_kind_json(engine, kind))
+                .map_err(map_admin_ffi_error)
+        })
+    }
+
+    pub fn configure_vec_kinds(&self, py: Python<'_>, request_json: &str) -> PyResult<String> {
+        self.with_engine(|engine| {
+            py.detach(|| crate::admin_ffi::configure_vec_kinds_json(engine, request_json))
+                .map_err(map_admin_ffi_error)
+        })
+    }
 }
 
 const MAX_AST_JSON_BYTES: usize = 16 * 1024 * 1024; // 16 MB
@@ -1052,6 +1080,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             );
             assert!(engine.is_ok(), "open must succeed: {:?}", engine.err());
         });
@@ -1068,6 +1097,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )
             .expect("open");
             engine.close(py).expect("close");
@@ -1089,6 +1119,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )
             .expect("open");
             engine.close(py).expect("first close");
@@ -1107,6 +1138,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )
             .expect("open");
             let result = EngineCore::open(
@@ -1116,6 +1148,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             );
             match result {
                 Ok(_) => panic!("second open must fail"),
@@ -1140,6 +1173,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )
             .expect("open engine");
             let result = engine.register_operational_collection(
@@ -1171,6 +1205,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )
             .expect("open engine");
             // Register first so the collection exists
@@ -1212,6 +1247,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )
             .expect("open engine");
 

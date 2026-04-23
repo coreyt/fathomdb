@@ -112,6 +112,17 @@ export {
   type VectorRegenerationConfig,
   type VectorRegenerationReport,
   type DrainReport,
+  // Pack H: introspection types
+  type Capabilities,
+  type ConfigureVecKindsItem,
+  type ConfigureVecOutcome,
+  type CurrentConfig,
+  type EmbedderCapability,
+  type EmbeddingProfileSummary,
+  type FtsKindConfig,
+  type KindDescription,
+  type VecKindConfig,
+  type WorkQueueSummary,
   // Operational collection types
   type OperationalCollectionRecord,
   type OperationalCompactionReport,

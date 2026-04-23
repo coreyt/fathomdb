@@ -13,10 +13,15 @@ use crate::{
 };
 
 mod fts;
+mod introspection;
 mod operational;
 mod provenance;
 mod vector;
 
+pub use introspection::{
+    Capabilities, CurrentConfig, EmbedderCapability, EmbeddingProfileSummary, FtsKindConfig,
+    KindDescription, VecKindConfig, WorkQueueSummary,
+};
 pub(crate) use vector::canonical_chunk_hash;
 pub use vector::{
     ConfigureEmbeddingOutcome, ConfigureVecOutcome, VecIndexStatus, VectorSource,
