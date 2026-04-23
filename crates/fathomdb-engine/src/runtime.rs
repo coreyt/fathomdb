@@ -425,9 +425,18 @@ mod tests {
                 })
                 .expect("seed write");
         }
-        // After drop: WAL should be checkpointed and removed.
+        // After drop: WAL should be checkpointed and removed. SQLite removes
+        // the -wal file lazily on some platforms (macos in particular); poll
+        // briefly to absorb the delay.
+        let wal_cleaned = (0..20).any(|_| {
+            if !wal_path.exists() {
+                return true;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            false
+        });
         assert!(
-            !wal_path.exists(),
+            wal_cleaned,
             "WAL file should be cleaned up after graceful drop"
         );
 
