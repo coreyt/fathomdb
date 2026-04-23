@@ -6769,9 +6769,10 @@ mod tests {
             .expect("retire write");
 
         let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let vec_table = fathomdb_schema::vec_kind_table_name("Doc");
         let count: i64 = conn
             .query_row(
-                "SELECT count(*) FROM vec_doc WHERE chunk_id = 'chunk-retire-vec'",
+                &format!("SELECT count(*) FROM {vec_table} WHERE chunk_id = 'chunk-retire-vec'"),
                 [],
                 |row| row.get(0),
             )
@@ -6879,16 +6880,17 @@ mod tests {
             .expect("v2 write");
 
         let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let vec_table = fathomdb_schema::vec_kind_table_name("Doc");
         let count_a: i64 = conn
             .query_row(
-                "SELECT count(*) FROM vec_doc WHERE chunk_id = 'chunk-replace-A'",
+                &format!("SELECT count(*) FROM {vec_table} WHERE chunk_id = 'chunk-replace-A'"),
                 [],
                 |row| row.get(0),
             )
             .expect("count A");
         let count_b: i64 = conn
             .query_row(
-                "SELECT count(*) FROM vec_doc WHERE chunk_id = 'chunk-replace-B'",
+                &format!("SELECT count(*) FROM {vec_table} WHERE chunk_id = 'chunk-replace-B'"),
                 [],
                 |row| row.get(0),
             )
@@ -6963,9 +6965,10 @@ mod tests {
             .expect("vec insert write");
 
         let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let vec_table = fathomdb_schema::vec_kind_table_name("Document");
         let count: i64 = conn
             .query_row(
-                "SELECT count(*) FROM vec_document WHERE chunk_id = 'chunk-vec'",
+                &format!("SELECT count(*) FROM {vec_table} WHERE chunk_id = 'chunk-vec'"),
                 [],
                 |row| row.get(0),
             )
@@ -7434,9 +7437,10 @@ mod tests {
 
     #[test]
     fn property_fts_write_goes_to_per_kind_table() {
-        // After A-6: writes go to fts_props_goal, NOT fts_node_properties.
+        // After A-6: writes go to the per-kind FTS table, NOT fts_node_properties.
         let db = NamedTempFile::new().expect("temporary db");
         let schema = Arc::new(SchemaManager::new());
+        let goal_table = fathomdb_schema::fts_kind_table_name("Goal");
         {
             let conn = rusqlite::Connection::open(db.path()).expect("conn");
             schema.bootstrap(&conn).expect("bootstrap");
@@ -7447,12 +7451,12 @@ mod tests {
             )
             .expect("register schema");
             // Create per-kind table (migration 21 would do this for existing schemas).
-            conn.execute_batch(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS fts_props_goal USING fts5(\
+            conn.execute_batch(&format!(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS {goal_table} USING fts5(\
                     node_logical_id UNINDEXED, text_content, \
                     tokenize = 'porter unicode61 remove_diacritics 2'\
-                )",
-            )
+                )"
+            ))
             .expect("create per-kind table");
         }
         let writer = WriterActor::start(
@@ -7493,15 +7497,12 @@ mod tests {
         // Per-kind table must have the row.
         let per_kind_count: i64 = conn
             .query_row(
-                "SELECT count(*) FROM fts_props_goal WHERE node_logical_id = 'goal-1'",
+                &format!("SELECT count(*) FROM {goal_table} WHERE node_logical_id = 'goal-1'"),
                 [],
                 |row| row.get(0),
             )
             .expect("per-kind count");
-        assert_eq!(
-            per_kind_count, 1,
-            "per-kind table fts_props_goal must have the row"
-        );
+        assert_eq!(per_kind_count, 1, "per-kind table must have the row");
     }
 
     #[test]
@@ -8114,6 +8115,7 @@ mod tests {
         let db = NamedTempFile::new().expect("temporary db");
         let schema_manager = Arc::new(SchemaManager::new());
 
+        let article_table = fathomdb_schema::fts_kind_table_name("Article");
         // Bootstrap and create the weighted per-kind table.
         {
             let conn = rusqlite::Connection::open(db.path()).expect("conn");
@@ -8133,7 +8135,7 @@ mod tests {
 
             // Create the per-kind FTS table with per-column layout.
             conn.execute_batch(&format!(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS fts_props_article USING fts5(\
+                "CREATE VIRTUAL TABLE IF NOT EXISTS {article_table} USING fts5(\
                     node_logical_id UNINDEXED, {title_col}, {body_col}, \
                     tokenize = 'porter unicode61 remove_diacritics 2'\
                 )"
@@ -8182,7 +8184,9 @@ mod tests {
         // The per-kind table must have one row for article-1.
         let count: i64 = conn
             .query_row(
-                "SELECT count(*) FROM fts_props_article WHERE node_logical_id = 'article-1'",
+                &format!(
+                    "SELECT count(*) FROM {article_table} WHERE node_logical_id = 'article-1'"
+                ),
                 [],
                 |r| r.get(0),
             )
@@ -8193,7 +8197,7 @@ mod tests {
         let (title_val, body_val): (String, String) = conn
             .query_row(
                 &format!(
-                    "SELECT {title_col}, {body_col} FROM fts_props_article \
+                    "SELECT {title_col}, {body_col} FROM {article_table} \
                      WHERE node_logical_id = 'article-1'"
                 ),
                 [],

@@ -4512,22 +4512,23 @@ mod tests {
         let conn = rusqlite::Connection::open(db.path()).expect("open db");
 
         // Insert a structured-only node (no chunks) with a property FTS row.
-        // Per-kind table fts_props_goal must be created before inserting.
-        conn.execute_batch(
-            "CREATE VIRTUAL TABLE IF NOT EXISTS fts_props_goal USING fts5(\
+        // Per-kind table must be created before inserting.
+        let goal_table = fathomdb_schema::fts_kind_table_name("Goal");
+        conn.execute_batch(&format!(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS {goal_table} USING fts5(\
                 node_logical_id UNINDEXED, text_content, \
                 tokenize = 'porter unicode61 remove_diacritics 2'\
-            )",
-        )
+            )"
+        ))
         .expect("create per-kind fts table");
-        conn.execute_batch(
+        conn.execute_batch(&format!(
             r#"
             INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref)
-            VALUES ('row-1', 'goal-1', 'Goal', '{"name":"Ship v2"}', 100, 'seed');
-            INSERT INTO fts_props_goal (node_logical_id, text_content)
+            VALUES ('row-1', 'goal-1', 'Goal', '{{"name":"Ship v2"}}', 100, 'seed');
+            INSERT INTO {goal_table} (node_logical_id, text_content)
             VALUES ('goal-1', 'Ship v2');
-            "#,
-        )
+            "#
+        ))
         .expect("seed data");
 
         let compiled = QueryBuilder::nodes("Goal")
@@ -4572,22 +4573,23 @@ mod tests {
         .expect("seed chunk-backed node");
 
         // Property-backed hit: a Meeting with property FTS containing "quarterly".
-        // Per-kind table fts_props_meeting must be created before inserting.
-        conn.execute_batch(
-            "CREATE VIRTUAL TABLE IF NOT EXISTS fts_props_meeting USING fts5(\
+        // Per-kind table must be created before inserting.
+        let meeting_table = fathomdb_schema::fts_kind_table_name("Meeting");
+        conn.execute_batch(&format!(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS {meeting_table} USING fts5(\
                 node_logical_id UNINDEXED, text_content, \
                 tokenize = 'porter unicode61 remove_diacritics 2'\
-            )",
-        )
+            )"
+        ))
         .expect("create per-kind fts table");
-        conn.execute_batch(
+        conn.execute_batch(&format!(
             r#"
             INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref)
-            VALUES ('row-2', 'meeting-2', 'Meeting', '{"title":"quarterly sync"}', 100, 'seed');
-            INSERT INTO fts_props_meeting (node_logical_id, text_content)
+            VALUES ('row-2', 'meeting-2', 'Meeting', '{{"title":"quarterly sync"}}', 100, 'seed');
+            INSERT INTO {meeting_table} (node_logical_id, text_content)
             VALUES ('meeting-2', 'quarterly sync');
-            "#,
-        )
+            "#
+        ))
         .expect("seed property-backed node");
 
         let compiled = QueryBuilder::nodes("Meeting")
@@ -5287,15 +5289,18 @@ mod tests {
         {
             let title_col = fts_column_name("$.title", false);
             let body_col = fts_column_name("$.body", false);
+            let article_table = fathomdb_schema::fts_kind_table_name("Article");
             let conn = rusqlite::Connection::open(db.path()).expect("open db");
             let count: i64 = conn
-                .query_row("SELECT count(*) FROM fts_props_article", [], |r| r.get(0))
+                .query_row(&format!("SELECT count(*) FROM {article_table}"), [], |r| {
+                    r.get(0)
+                })
                 .expect("count fts rows");
             assert_eq!(count, 2, "both nodes must have FTS rows in per-kind table");
             let (title_a, body_a): (String, String) = conn
                 .query_row(
                     &format!(
-                        "SELECT {title_col}, {body_col} FROM fts_props_article \
+                        "SELECT {title_col}, {body_col} FROM {article_table} \
                          WHERE node_logical_id = 'article-a'"
                     ),
                     [],
@@ -5407,9 +5412,12 @@ mod tests {
         )
         .expect("insert node");
         // Insert into the per-kind table (migration 23 dropped global fts_node_properties).
+        let item_table = fathomdb_schema::fts_kind_table_name("Item");
         conn.execute(
-            "INSERT INTO fts_props_item (node_logical_id, text_content) \
-             VALUES ('item-1', ?1)",
+            &format!(
+                "INSERT INTO {item_table} (node_logical_id, text_content) \
+                 VALUES ('item-1', ?1)"
+            ),
             rusqlite::params![blob],
         )
         .expect("insert fts row");
@@ -5633,9 +5641,12 @@ mod tests {
         )
         .expect("insert KindA node");
         // Insert into per-kind table (migration 23 dropped global fts_node_properties).
+        let table_for_a = fathomdb_schema::fts_kind_table_name("KindA");
         conn.execute(
-            "INSERT INTO fts_props_kinda (node_logical_id, text_content) \
-             VALUES ('node-a', 'xenoterm')",
+            &format!(
+                "INSERT INTO {table_for_a} (node_logical_id, text_content) \
+                 VALUES ('node-a', 'xenoterm')"
+            ),
             [],
         )
         .expect("insert KindA fts row");
@@ -5655,9 +5666,12 @@ mod tests {
         )
         .expect("insert KindB node");
         // Insert into per-kind table (migration 23 dropped global fts_node_properties).
+        let table_for_b = fathomdb_schema::fts_kind_table_name("KindB");
         conn.execute(
-            "INSERT INTO fts_props_kindb (node_logical_id, text_content) \
-             VALUES ('node-b', 'xenoterm')",
+            &format!(
+                "INSERT INTO {table_for_b} (node_logical_id, text_content) \
+                 VALUES ('node-b', 'xenoterm')"
+            ),
             [],
         )
         .expect("insert KindB fts row");

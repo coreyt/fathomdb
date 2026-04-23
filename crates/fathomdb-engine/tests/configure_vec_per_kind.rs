@@ -119,7 +119,10 @@ fn test_configure_vec_creates_per_kind_table_and_backfill_rows() {
     // Per-kind vec table exists.
     let conn = rusqlite::Connection::open(&db_path).expect("reopen");
     let table = fathomdb_schema::vec_kind_table_name("KnowledgeItem");
-    assert_eq!(table, "vec_knowledgeitem");
+    assert!(
+        table.starts_with("vec_knowledgeitem_"),
+        "expected per-kind vec table to be prefixed with sanitized kind slug, got {table}"
+    );
     let exists: i64 = conn
         .query_row(
             "SELECT count(*) FROM sqlite_master WHERE name = ?1",

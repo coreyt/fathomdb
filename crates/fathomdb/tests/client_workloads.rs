@@ -1800,12 +1800,16 @@ fn v1_vector_search_round_trip() {
     let _ = rows;
 
     let conn = rusqlite::Connection::open(db.path()).expect("conn");
+    let vec_table = fathomdb_schema::vec_kind_table_name("Document");
     let count: i64 = conn
         .query_row(
-            "SELECT count(*) FROM vec_document WHERE chunk_id = ?1",
+            &format!("SELECT count(*) FROM {vec_table} WHERE chunk_id = ?1"),
             rusqlite::params![chunk_id],
             |row| row.get(0),
         )
         .expect("vec count");
-    assert_eq!(count, 1, "embedding must be persisted in vec_document");
+    assert_eq!(
+        count, 1,
+        "embedding must be persisted in the per-kind vec table"
+    );
 }

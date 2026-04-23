@@ -629,8 +629,11 @@ mod tests {
                 .iter()
                 .flat_map(|f| f.to_le_bytes())
                 .collect();
+            let vec_table = fathomdb_schema::vec_kind_table_name("Doc");
             conn.execute(
-                "INSERT INTO vec_doc (chunk_id, embedding) VALUES ('chunk-stale', ?1)",
+                &format!(
+                    "INSERT INTO {vec_table} (chunk_id, embedding) VALUES ('chunk-stale', ?1)"
+                ),
                 rusqlite::params![bytes],
             )
             .expect("insert stale vec row");
@@ -645,9 +648,10 @@ mod tests {
         assert!(report.notes.is_empty(), "no notes expected on success");
 
         let conn = rusqlite::Connection::open(db.path()).expect("conn");
+        let vec_table = fathomdb_schema::vec_kind_table_name("Doc");
         let count: i64 = conn
             .query_row(
-                "SELECT count(*) FROM vec_doc WHERE chunk_id = 'chunk-stale'",
+                &format!("SELECT count(*) FROM {vec_table} WHERE chunk_id = 'chunk-stale'"),
                 [],
                 |row| row.get(0),
             )

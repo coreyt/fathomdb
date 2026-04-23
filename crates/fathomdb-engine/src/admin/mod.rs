@@ -2039,6 +2039,7 @@ mod tests {
                 .schema_manager
                 .ensure_vec_kind_profile(&conn, "Doc", 4)
                 .expect("ensure vec kind profile");
+            let vec_table = fathomdb_schema::vec_kind_table_name("Doc");
             conn.execute(
                 "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
                  VALUES ('chunk-1', 'ghost-doc', 'budget narrative', 100)",
@@ -2046,7 +2047,9 @@ mod tests {
             )
             .expect("insert orphaned chunk");
             conn.execute(
-                "INSERT INTO vec_doc (chunk_id, embedding) VALUES ('chunk-1', zeroblob(16))",
+                &format!(
+                    "INSERT INTO {vec_table} (chunk_id, embedding) VALUES ('chunk-1', zeroblob(16))"
+                ),
                 [],
             )
             .expect("insert vec row");
@@ -2073,6 +2076,7 @@ mod tests {
                 [],
             )
             .expect("insert retired node");
+            let vec_table = fathomdb_schema::vec_kind_table_name("Document");
             conn.execute(
                 "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
                  VALUES ('chunk-1', 'doc-1', 'budget narrative', 100)",
@@ -2080,7 +2084,9 @@ mod tests {
             )
             .expect("insert chunk");
             conn.execute(
-                "INSERT INTO vec_document (chunk_id, embedding) VALUES ('chunk-1', zeroblob(16))",
+                &format!(
+                    "INSERT INTO {vec_table} (chunk_id, embedding) VALUES ('chunk-1', zeroblob(16))"
+                ),
                 [],
             )
             .expect("insert vec row");
@@ -2133,6 +2139,7 @@ mod tests {
                 [],
             )
             .expect("insert retired node");
+            let vec_table = fathomdb_schema::vec_kind_table_name("Document");
             conn.execute(
                 "INSERT INTO chunks (id, node_logical_id, text_content, created_at) \
                  VALUES ('chunk-1', 'doc-1', 'budget narrative', 100)",
@@ -2140,7 +2147,9 @@ mod tests {
             )
             .expect("insert chunk");
             conn.execute(
-                "INSERT INTO vec_document (chunk_id, embedding) VALUES ('chunk-1', zeroblob(16))",
+                &format!(
+                    "INSERT INTO {vec_table} (chunk_id, embedding) VALUES ('chunk-1', zeroblob(16))"
+                ),
                 [],
             )
             .expect("insert vec row");
@@ -2150,8 +2159,11 @@ mod tests {
         assert_eq!(report.deleted_vec_rows, 1);
 
         let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
+        let vec_table = fathomdb_schema::vec_kind_table_name("Document");
         let vec_count: i64 = conn
-            .query_row("SELECT count(*) FROM vec_document", [], |row| row.get(0))
+            .query_row(&format!("SELECT count(*) FROM {vec_table}"), [], |row| {
+                row.get(0)
+            })
             .expect("vec count");
         assert_eq!(vec_count, 0);
     }
@@ -3654,8 +3666,11 @@ mod tests {
                 .iter()
                 .flat_map(|f| f.to_le_bytes())
                 .collect();
+            let vec_table = fathomdb_schema::vec_kind_table_name("Doc");
             conn.execute(
-                "INSERT INTO vec_doc (chunk_id, embedding) VALUES ('ghost-chunk', ?1)",
+                &format!(
+                    "INSERT INTO {vec_table} (chunk_id, embedding) VALUES ('ghost-chunk', ?1)"
+                ),
                 rusqlite::params![bytes],
             )
             .expect("insert stale vec row");
@@ -3867,8 +3882,9 @@ mod tests {
             )
             .expect("regenerate vectors");
 
+        let expected_vec_table = fathomdb_schema::vec_kind_table_name("Document");
         assert_eq!(report.profile, "default");
-        assert_eq!(report.table_name, "vec_document");
+        assert_eq!(report.table_name, expected_vec_table);
         assert_eq!(report.dimension, 4);
         assert_eq!(report.total_chunks, 2);
         assert_eq!(report.regenerated_rows, 2);
@@ -3876,7 +3892,11 @@ mod tests {
 
         let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
         let vec_count: i64 = conn
-            .query_row("SELECT count(*) FROM vec_document", [], |row| row.get(0))
+            .query_row(
+                &format!("SELECT count(*) FROM {expected_vec_table}"),
+                [],
+                |row| row.get(0),
+            )
             .expect("vec count");
         assert_eq!(vec_count, 2);
 
@@ -3980,7 +4000,7 @@ mod tests {
                 ",
                 rusqlite::params![
                     "default",
-                    "vec_document",
+                    fathomdb_schema::vec_kind_table_name("Document"),
                     "old-model",
                     "0.9.0",
                     4,
@@ -3993,8 +4013,11 @@ mod tests {
                 ],
             )
             .expect("seed contract");
+            let vec_table = fathomdb_schema::vec_kind_table_name("Document");
             conn.execute(
-                "INSERT INTO vec_document (chunk_id, embedding) VALUES ('chunk-1', zeroblob(16))",
+                &format!(
+                    "INSERT INTO {vec_table} (chunk_id, embedding) VALUES ('chunk-1', zeroblob(16))"
+                ),
                 [],
             )
             .expect("seed vec row");
@@ -4040,8 +4063,11 @@ mod tests {
             )
             .expect("snapshot hash");
         assert_eq!(snapshot_hash, "old-snapshot");
+        let vec_table = fathomdb_schema::vec_kind_table_name("Document");
         let vec_count: i64 = conn
-            .query_row("SELECT count(*) FROM vec_document", [], |row| row.get(0))
+            .query_row(&format!("SELECT count(*) FROM {vec_table}"), [], |row| {
+                row.get(0)
+            })
             .expect("vec count");
         assert_eq!(vec_count, 1);
         let failure_count: i64 = conn
@@ -5041,8 +5067,11 @@ mod tests {
                 [],
             )
             .expect("insert chunk");
+            let vec_table = fathomdb_schema::vec_kind_table_name("Meeting");
             conn.execute(
-                "INSERT INTO vec_meeting (chunk_id, embedding) VALUES ('ck1', zeroblob(16))",
+                &format!(
+                    "INSERT INTO {vec_table} (chunk_id, embedding) VALUES ('ck1', zeroblob(16))"
+                ),
                 [],
             )
             .expect("insert vec row");
@@ -5070,8 +5099,11 @@ mod tests {
             chunk_count, 0,
             "excised source content must not survive as chunks"
         );
+        let vec_table = fathomdb_schema::vec_kind_table_name("Meeting");
         let vec_count: i64 = conn
-            .query_row("SELECT count(*) FROM vec_meeting", [], |row| row.get(0))
+            .query_row(&format!("SELECT count(*) FROM {vec_table}"), [], |row| {
+                row.get(0)
+            })
             .expect("vec count");
         assert_eq!(vec_count, 0, "excised source vec rows must be removed");
         let fts_count: i64 = conn
@@ -6978,8 +7010,11 @@ mod tests {
         assert!(report.contract_persisted);
 
         let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
+        let vec_table = fathomdb_schema::vec_kind_table_name("Doc");
         let vec_count: i64 = conn
-            .query_row("SELECT count(*) FROM vec_doc", [], |row| row.get(0))
+            .query_row(&format!("SELECT count(*) FROM {vec_table}"), [], |row| {
+                row.get(0)
+            })
             .expect("vec_doc count");
         assert_eq!(vec_count, 3, "one vec row per chunk");
 
@@ -7033,12 +7068,17 @@ mod tests {
             )
             .expect("regenerate vectors");
 
-        assert_eq!(report.table_name, "vec_document");
+        let expected_vec_table = fathomdb_schema::vec_kind_table_name("Document");
+        assert_eq!(report.table_name, expected_vec_table);
         assert_eq!(report.regenerated_rows, 1);
 
         let conn = crate::sqlite::open_connection_with_vec(db.path()).expect("vec conn");
         let vec_count: i64 = conn
-            .query_row("SELECT count(*) FROM vec_document", [], |row| row.get(0))
+            .query_row(
+                &format!("SELECT count(*) FROM {expected_vec_table}"),
+                [],
+                |row| row.get(0),
+            )
             .expect("vec_document count");
         assert_eq!(vec_count, 1, "rows must be in vec_document");
 

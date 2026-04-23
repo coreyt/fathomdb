@@ -2399,20 +2399,22 @@ mod tests {
         let manager = SchemaManager::new();
         manager.bootstrap(&conn).expect("bootstrap");
 
-        // Register a vec profile for MyKind — should create vec_mykind, NOT vec_nodes_active
+        // Register a vec profile for MyKind — should create the per-kind
+        // vec table, NOT vec_nodes_active.
         manager
             .ensure_vec_kind_profile(&conn, "MyKind", 128)
             .expect("ensure_vec_kind_profile");
 
-        // vec_mykind virtual table must exist
+        // Per-kind vec virtual table must exist.
+        let expected_table = super::vec_kind_table_name("MyKind");
         let count: i64 = conn
             .query_row(
-                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='vec_mykind'",
-                [],
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                rusqlite::params![&expected_table],
                 |r| r.get(0),
             )
             .expect("query sqlite_master");
-        assert_eq!(count, 1, "vec_mykind virtual table must be created");
+        assert_eq!(count, 1, "{expected_table} virtual table must be created");
 
         // projection_profiles row must exist with (kind='MyKind', facet='vec')
         let pp_count: i64 = conn
