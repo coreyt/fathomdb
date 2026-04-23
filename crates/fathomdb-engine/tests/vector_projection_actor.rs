@@ -354,6 +354,121 @@ fn test_embedder_unavailable_keeps_rows_pending() {
     assert_eq!(vec_row_count(&db_path, "KnowledgeItem"), 0);
 }
 
+#[derive(Debug)]
+struct AltIdentityEmbedder {
+    dimension: usize,
+}
+
+impl BatchEmbedder for AltIdentityEmbedder {
+    fn batch_embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, EmbedderError> {
+        Ok(texts
+            .iter()
+            .map(|_| {
+                let mut v = vec![0.0_f32; self.dimension];
+                v[0] = 42.0;
+                v
+            })
+            .collect())
+    }
+
+    fn identity(&self) -> QueryEmbedderIdentity {
+        QueryEmbedderIdentity {
+            model_identity: "alt/model".to_owned(),
+            model_version: "v9".to_owned(),
+            dimension: self.dimension,
+            normalization_policy: "l2".to_owned(),
+        }
+    }
+
+    fn max_tokens(&self) -> usize {
+        512
+    }
+}
+
+impl fathomdb_engine::QueryEmbedder for AltIdentityEmbedder {
+    fn embed_query(&self, _text: &str) -> Result<Vec<f32>, EmbedderError> {
+        Ok(vec![42.0; self.dimension])
+    }
+    fn identity(&self) -> QueryEmbedderIdentity {
+        <Self as BatchEmbedder>::identity(self)
+    }
+    fn max_tokens(&self) -> usize {
+        512
+    }
+}
+
+/// Pack G followup: a work row seeded under profile A must be *discarded*
+/// (not applied) once profile B is activated. The actor already checks
+/// `claim.embedding_profile_id != active_profile_id` at
+/// `vector_projection_actor.rs:~208`; this test pins that invariant.
+#[test]
+fn test_profile_change_discards_pending_work_under_old_profile() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let engine = open_engine(&dir);
+    let db_path = dir.path().join("test.db");
+
+    // Profile A is seeded first.
+    let profile_a_id = seed_active_profile(&db_path, 4);
+    seed_kind_with_chunks(&engine, "KnowledgeItem", 3);
+
+    let svc = engine.admin().service();
+    svc.configure_vec_kind("KnowledgeItem", VectorSource::Chunks)
+        .expect("configure");
+
+    // Confirm all pending work rows are tagged with profile A.
+    let raw = rusqlite::Connection::open(&db_path).expect("reopen");
+    let tagged_a: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM vector_projection_work \
+             WHERE kind = 'KnowledgeItem' AND embedding_profile_id = ?1",
+            rusqlite::params![profile_a_id],
+            |r| r.get(0),
+        )
+        .expect("count");
+    assert_eq!(tagged_a, 3, "sanity: work rows must be tagged profile A");
+    drop(raw);
+
+    // Activate profile B via configure_embedding. Because kinds are enabled,
+    // this requires acknowledge_rebuild_impact=true (per EmbeddingChangeRequiresAck).
+    let alt = AltIdentityEmbedder { dimension: 4 };
+    svc.configure_embedding(&alt, true)
+        .expect("switch to profile B");
+
+    // Drive drain with the new embedder. Each claimed old-profile row must
+    // be discarded (profile mismatch) rather than applied under B.
+    let _ = svc
+        .drain_vector_projection(&alt, Duration::from_secs(5))
+        .expect("drain");
+
+    let raw = rusqlite::Connection::open(&db_path).expect("reopen");
+    let (discarded_a, applied_a): (i64, i64) = raw
+        .query_row(
+            "SELECT \
+               SUM(CASE WHEN state = 'discarded' THEN 1 ELSE 0 END), \
+               SUM(CASE WHEN state = 'applied' THEN 1 ELSE 0 END) \
+             FROM vector_projection_work \
+             WHERE kind = 'KnowledgeItem' AND embedding_profile_id = ?1",
+            rusqlite::params![profile_a_id],
+            |r| {
+                Ok((
+                    r.get::<_, Option<i64>>(0)?.unwrap_or(0),
+                    r.get::<_, Option<i64>>(1)?.unwrap_or(0),
+                ))
+            },
+        )
+        .expect("count states");
+    assert_eq!(
+        applied_a, 0,
+        "work rows under old profile A must NEVER be applied under profile B"
+    );
+    assert!(
+        discarded_a >= 3,
+        "all 3 work rows under profile A must be discarded, got discarded={discarded_a}"
+    );
+    // And no stray vec rows written from the old-profile embedder claims.
+    assert_eq!(vec_row_count(&db_path, "KnowledgeItem"), 0);
+}
+
 #[test]
 fn test_drop_order_no_panic() {
     let dir = tempfile::tempdir().expect("tempdir");
