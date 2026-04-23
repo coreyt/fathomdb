@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -274,6 +275,12 @@ func publishNoReplace(tmpPath, destPath string) error {
 }
 
 func syncParentDir(path string) error {
+	// Windows does not support syncing directory handles and returns
+	// ERROR_ACCESS_DENIED. The atomic-publish rename is still durable on
+	// NTFS without an explicit directory fsync.
+	if runtime.GOOS == "windows" {
+		return nil
+	}
 	dir, err := os.Open(filepath.Dir(path))
 	if err != nil {
 		return fmt.Errorf("open destination directory: %w", err)
