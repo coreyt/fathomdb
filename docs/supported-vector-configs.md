@@ -53,32 +53,37 @@ These models address the limitations of earlier research by offering longer cont
 *   **Dimensions:** Variable
 *   **Implementation:** SDK-side adapter (Subprocess)
 *   **Use Case:** Migration from early FathomDB versions or specialized local model research where the implementation is owned by application code.
-*   **Note:** This pattern requires implementing the `QueryEmbedder` trait in user or SDK code; the FathomDB engine does not include a built-in subprocess runner as of 0.4.0.
+*   **Note:** This pattern requires implementing the `QueryEmbedder` trait in user or SDK code; the FathomDB engine does not include a built-in subprocess runner.
 
 ---
 
-## 4. Managing the Active Vec Profile (0.4.5+)
+## 4. Managing the Active Vec Profile
 
 The `AdminClient` exposes profile CRUD so operators can record which model is active and preview the cost of switching:
 
 ```python
-from fathomdb import FathomDB
-from fathomdb.embedders import OpenAIEmbedder
+from fathomdb import Engine, VectorRegenerationConfig
+from fathomdb import BuiltinEmbedder
 
-db = FathomDB.open("store.db")
-embedder = OpenAIEmbedder("text-embedding-3-small", api_key="sk-…", dimensions=1536)
+db = Engine.open("store.db", embedder="builtin")
 
 # Preview impact before switching
 impact = db.admin.preview_projection_impact("*", "vec")
 print(f"Switching will rebuild {impact.rows_to_rebuild} chunks")
 
 # Record the active model (triggers impact gate)
-profile = db.admin.configure_vec(embedder, agree_to_rebuild_impact=True)
-# Then rebuild explicitly:
-db.admin.regenerate_vector_embeddings(embedder)
+profile = db.admin.configure_vec(BuiltinEmbedder(), agree_to_rebuild_impact=True)
+
+# Rebuild explicitly for each node kind that needs vectors.
+db.admin.regenerate_vector_embeddings(VectorRegenerationConfig(
+    kind="Document",
+    profile="default",
+    chunking_policy="default",
+    preprocessing_policy="default",
+))
 
 # Read back the stored profile
-profile = db.admin.get_vec_profile()   # returns VecProfile | None
+profile = db.admin.get_vec_profile("*")   # returns VecProfile | None
 ```
 
 `VecProfile` fields: `model_identity`, `model_version`, `dimensions`, `active_at`, `created_at`.

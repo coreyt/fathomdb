@@ -57,8 +57,8 @@ The scheduled robustness workflow must run fuzz smoke coverage for:
 Before a release:
 
 - `README.md` must describe the current shipped surface
-- `dev/0.1_IMPLEMENTATION_PLAN.md` must not describe already-shipped features as
-  future work
+- `docs/` must describe the current shipped user, operator, and public API
+  surface
 - `dev/fathomdb-v1-path-to-production-checklist.md` must reflect actual status
 - `dev/release-policy.md` must match the active automation
 - `dev/repair-support-contract.md` must match the current supported repair and

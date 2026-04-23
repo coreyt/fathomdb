@@ -189,7 +189,7 @@ pub struct SearchHit {
     /// so callers can sort, filter, or display without a second read.
     pub written_at: Timestamp,
     /// Identifier of the derived row that produced this hit: the
-    /// `fts_nodes.chunk_id` for chunk hits, the `fts_node_properties`
+    /// `fts_nodes.chunk_id` for chunk hits, the per-kind `fts_props_<kind>`
     /// row id for property hits. `None` when not applicable.
     pub projection_row_id: Option<String>,
 }
@@ -889,7 +889,7 @@ The Python bindings should remain thin and Rust-owned in semantics.
 
 Required changes:
 
-- update Rust `python_types.rs` to serialize/deserialize `SearchRows`
+- update Rust `ffi_types.rs` to serialize/deserialize `SearchRows`
 - add Python dataclasses/enums in `python/fathomdb/_types.py`
 - update `python/fathomdb/_query.py` so `text_search()` produces the new
   result contract

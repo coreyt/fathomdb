@@ -1,5 +1,8 @@
 # fathomdb Test Plan
 
+**Status:** Current
+**Last updated:** 2026-04-22
+
 ## Scope and Purpose
 
 This document is the authoritative test plan for `fathomdb`. It covers nine
@@ -164,7 +167,7 @@ behavior.
 
 | Test | Description | Status |
 |---|---|---|
-| `vector_read_returns_capability_missing_when_table_absent` | Compile a vector query; execute without `vec_nodes_active` table; verify `EngineError::CapabilityMissing`, not a generic SQLite error | ✅ covered |
+| `vector_read_returns_capability_missing_when_table_absent` | Compile a vector query; execute without the required per-kind vec table; verify `EngineError::CapabilityMissing`, not a generic SQLite error | ✅ covered |
 
 #### Graph traversal
 
@@ -440,7 +443,7 @@ Ranked by how many clients use the capability and what breaks if it fails.
 - Verify session-1 and session-3 nodes still active (verified by FTS search)
 
 **NC-5: Capability degradation on device without sqlite-vec (Rank 15)**
-- Compile vector query on engine without `vec_nodes_active` table
+- Compile vector query on engine without the required per-kind vec table
 - Execute → verify `EngineError::CapabilityMissing` returned
 - Verify FTS-only query on the same engine succeeds normally
 - Verify engine continues to accept writes and non-vector reads
@@ -575,7 +578,7 @@ injections use bad `WriteRequest` values or deliberate raw SQL.
 
 **sqlite-vec capability missing at query time**
 - Prevention: `EngineError::CapabilityMissing` is explicit and actionable
-- Detection: Execute vector query without `vec_nodes_active` table → verify `CapabilityMissing`, not opaque SQLite error
+- Detection: Execute vector query without the required per-kind vec table → verify `CapabilityMissing`, not opaque SQLite error
 - Recovery: Enable sqlite-vec extension and bootstrap vector table, or rewrite query to use FTS-only path
 
 **Duplicate row_id submission**
@@ -932,7 +935,7 @@ than in production.
 
 | Category | Count | What it covers |
 |---|---|---|
-| Report-type field-parity tests (`python_types.rs`) | 15 | Catches struct divergence between Rust report types and their Python representations at compile time |
+| Report-type field-parity tests (`ffi_types.rs`) | 15 | Catches struct divergence between Rust report types and their Python representations at compile time |
 | PyQueryStep deserialization roundtrips | 16 | Every variant including `FilterJsonBoolEq`; verifies JSON round-trip fidelity |
 | WriteRequest field preservation tests | — | Confirms all `WriteRequest` fields survive serialization across the Python bridge |
 | EngineError variant coverage test | 1 | Ensures every `EngineError` variant is representable in the Python binding layer |

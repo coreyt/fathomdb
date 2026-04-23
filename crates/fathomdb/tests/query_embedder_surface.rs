@@ -345,7 +345,7 @@ fn engine_regenerate_vector_embeddings_uses_open_time_embedder_identity() {
         .expect("contract row");
     assert_eq!(model_identity, "fake-test-embedder");
     assert_eq!(model_version, "1");
-    assert_eq!(dimension, DIM as i64);
+    assert_eq!(dimension, i64::try_from(DIM).expect("dimension fits i64"));
     assert_eq!(normalization_policy, "none");
 }
 

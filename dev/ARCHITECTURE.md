@@ -1,5 +1,8 @@
 # ARCHITECTURE.md
 
+**Status:** Current
+**Last updated:** 2026-04-22
+
 ## 1. System Overview
 
 `fathomdb` is intentionally designed as a **graph/vector/FTS shim in front of SQLite**.
@@ -232,16 +235,16 @@ CREATE VIRTUAL TABLE fts_nodes USING fts5(
     text_content
 );
 
-CREATE VIRTUAL TABLE vec_nodes USING vec0(
+CREATE VIRTUAL TABLE vec_<kind> USING vec0(
     chunk_id TEXT PRIMARY KEY,
-    embedding float[1536]
+    embedding float[N]
 );
 ```
 
-The vector projection shown above represents the active embedding profile. In
-practice, vector storage should be versioned by embedding model and dimension,
-for example `vec_nodes_v1`, `vec_nodes_v2`, rather than altered in place across
-model migrations.
+The vector projection shown above is conceptual. Current storage uses per-kind
+sqlite-vec tables derived from the node kind. All vector-enabled kinds share
+one database-wide embedding identity; per-kind tables are a physical projection
+detail, not separate embedding profiles.
 
 ### 3.1 Projection Rules
 
@@ -249,7 +252,8 @@ model migrations.
 - Embeddable content is chunked and projected into the vector index.
 - Graph traversals run over canonical relationships in `edges`.
 - Projection rows always retain linkage back to canonical records.
-- Vector and FTS candidate sets resolve through `vec_nodes -> chunks -> nodes`.
+- Vector and FTS candidate sets resolve through projection rows, then
+  `chunks`, then active `nodes`.
 
 Projection classes should be treated differently:
 
@@ -582,8 +586,8 @@ The corresponding recovery primitives are:
 - `rebuild_projections(target=[...])` for deterministic reconstruction of FTS
   projections from canonical state and restoration of vector profile capability
   metadata
-- `regenerate-vectors` for admin-owned regeneration of vector embeddings from a
-  persisted TOML or JSON contract
+- explicit vector regeneration for rebuilding per-kind vector rows from
+  canonical chunks with the database-wide embedding identity
 - `rebuild_missing_projections()` at startup or admin time when optional
   semantic projection work was interrupted
 - rollback-by-time-window for broad semantic reversal
@@ -619,14 +623,12 @@ canonical tables only and then rebuild projections. Physical repair should:
 FTS5 shadow data should never be treated as canonical recovery material.
 
 Vector profile metadata is recoverable and should be restored so vector-capable
-databases reopen with the correct table shape. Embedding rows written through
-optional semantic projection work are not canonical recovery material in v0.1
-and may need to be regenerated after physical recovery through the
-`regenerate-vectors` admin workflow. The contract that drives regeneration is
-persisted in `vector_embedding_contracts` so the application can supply the
-model identity, version, normalization policy, chunking policy, preprocessing
-policy, and generator command needed to rebuild embeddings deterministically
-enough for recovery.
+databases reopen with the correct database-wide embedding identity and per-kind
+table shape. Vector rows are projection material, not canonical recovery
+material. Current releases rebuild them through explicit per-kind regeneration
+from canonical chunks. The target design is FathomDB-managed async/incremental
+vector projection so configured kinds catch up without normal application code
+creating vector tables or submitting raw vector rows.
 
 ### 6.7 Admin And Repair Surface
 
@@ -708,18 +710,24 @@ metrics, not require manual `PRAGMA` inspection.
 
 Embedding work should not block the interactive loop unnecessarily.
 
-- chunking and embedding can run asynchronously
-- expensive enrichment should finish before the write transaction begins
-- required projections should commit atomically with canonical rows
-- backfills and rebuilds should still be visible and repairable if projection state must be regenerated later
+- chunking and cheap deterministic projections can happen in the write path
+- embedding should not run inside the canonical write transaction by default
+- future managed vector projection should enqueue incremental vector work after
+  canonical writes commit for vector-enabled kinds
+- backfills and rebuilds should be visible, durable, and repairable if
+  projection state must be regenerated later
 
 ### 7.5 Dynamic Model Compatibility
 
 Vector dimensions and embedding providers cannot be hardcoded permanently.
 
-- vector projection tables should be configurable to the active embedding profile
-- metadata should record the embedding model and projection version used
-- model upgrades should create new versioned vector tables rather than mutating existing ones in place
+- the database has one active embedding identity
+- per-kind vector indexing controls which kinds are projected and from what
+  canonical text source
+- metadata records the embedding model, dimensions, normalization policy, and
+  projection status
+- embedding identity changes must mark vector-enabled kinds stale or schedule
+  regeneration; old vectors must not be silently mixed with a new identity
 
 ## 8. Key Trade-Offs
 
@@ -769,9 +777,9 @@ fathomdb events appear under `fathomdb_engine.*` logger names.
 ### 9.3 Type Parity
 
 Report-type field parity between Rust structs and their Python representations
-is enforced by compile-time tests (`python_types.rs`). These tests catch struct
-divergence early rather than allowing silent field drops at the serialization
-boundary.
+is enforced by compile-time tests in `crates/fathomdb/src/ffi_types.rs`. These
+tests catch struct divergence early rather than allowing silent field drops at
+the serialization boundary.
 
 ## 10. Observability
 

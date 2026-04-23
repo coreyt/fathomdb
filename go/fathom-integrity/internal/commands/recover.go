@@ -21,6 +21,8 @@ import (
 
 type bridgeExecuteFunc func(context.Context, bridge.Request) (bridge.Response, error)
 
+var beforeRecoverPublish = func() error { return nil }
+
 // RecoverRowCounts holds the count of recovered rows for each key table.
 type RecoverRowCounts struct {
 	Nodes                  int `json:"nodes"`
@@ -103,22 +105,19 @@ func runRecover(sourcePath, destPath, bridgePath, sqliteBin string, out io.Write
 		return fmt.Errorf("source database does not exist: %s", sourcePath)
 	}
 
-	// Security fix M-2: Use O_CREATE|O_EXCL for atomic creation to eliminate
-	// the TOCTOU race between Stat() and file creation. If the file already
-	// exists, OpenFile returns an error atomically.
-	// Security fix M-1: Use 0o700 for directories, 0o600 for files.
 	if err := os.MkdirAll(filepath.Dir(destPath), 0o700); err != nil {
 		return fmt.Errorf("create dest directory: %w", err)
 	}
-	destGuard, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return fmt.Errorf("destination already exists or cannot be created: %w", err)
+	if err := ensureDestinationAbsent(destPath); err != nil {
+		return err
 	}
-	destGuard.Close()
-	// Remove the guard file so sqlite3 can create its own database file at
-	// this path. The O_EXCL open above guarantees no other process created
-	// the file between our check and this point.
-	os.Remove(destPath)
+
+	tempDir, err := os.MkdirTemp(filepath.Dir(destPath), ".recover-*")
+	if err != nil {
+		return fmt.Errorf("create temporary recovery directory: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+	tmpDB := filepath.Join(tempDir, "recovered.db")
 
 	// Run sqlite3 .recover against the (possibly corrupt) source.
 	// Non-zero exit is normal when the source is corrupt; we proceed as long as
@@ -132,20 +131,19 @@ func runRecover(sourcePath, destPath, bridgePath, sqliteBin string, out io.Write
 	// Replay the recovered SQL into the destination database.
 	sanitizedSQL := sanitizeRecoveredSQL(recoveredSQL.String())
 	if strings.TrimSpace(sanitizedSQL) != "" {
-		replayCmd := exec.Command(sqliteBin, destPath)
+		replayCmd := exec.Command(sqliteBin, tmpDB)
 		replayCmd.Stdin = bytes.NewBufferString(sanitizedSQL)
 		var replayStderr bytes.Buffer
 		replayCmd.Stderr = &replayStderr
 		if err := replayCmd.Run(); err != nil {
-			_ = os.Remove(destPath)
 			return fmt.Errorf("replay .recover SQL: %w: %s", err, replayStderr.String())
 		}
 	}
 
 	// If dest still doesn't exist (nothing was recovered and bridge will create it
 	// via OPEN_CREATE), create an empty SQLite file so Diagnose always has a target.
-	if _, err := os.Stat(destPath); os.IsNotExist(err) {
-		if err := exec.Command(sqliteBin, destPath, "SELECT 1;").Run(); err != nil {
+	if _, err := os.Stat(tmpDB); os.IsNotExist(err) {
+		if err := exec.Command(sqliteBin, tmpDB, "SELECT 1;").Run(); err != nil {
 			return fmt.Errorf("create empty recovery target: %w", err)
 		}
 	}
@@ -161,23 +159,23 @@ func runRecover(sourcePath, destPath, bridgePath, sqliteBin string, out io.Write
 		// the current fathomdb schema idempotently before Layer 2 checks run.
 		resetMigrationsCmd := exec.Command(
 			sqliteBin,
-			destPath,
+			tmpDB,
 			"DROP TABLE IF EXISTS fathom_schema_migrations;",
 		)
 		if output, err := resetMigrationsCmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("reset recovered migration history: %w: %s", err, output)
 		}
 
-		l2, err := fetchLayer2(destPath, bridgePath)
+		l2, err := fetchLayer2(tmpDB, bridgePath)
 		if err != nil {
 			return fmt.Errorf("bootstrap and layer2 check: %w", err)
 		}
 
-		if err := restoreRecoveredProjections(destPath, bridgePath, sqliteBin); err != nil {
+		if err := restoreRecoveredProjections(tmpDB, bridgePath, sqliteBin); err != nil {
 			return fmt.Errorf("restore recovered projections: %w", err)
 		}
 
-		l2, err = fetchLayer2(destPath, bridgePath)
+		l2, err = fetchLayer2(tmpDB, bridgePath)
 		if err != nil {
 			return fmt.Errorf("layer2 check after projection restore: %w", err)
 		}
@@ -185,15 +183,22 @@ func runRecover(sourcePath, destPath, bridgePath, sqliteBin string, out io.Write
 	}
 
 	// Count rows in the key fathomdb tables.
-	rowCounts, err := countRecoveredRows(sqliteBin, destPath, bridgePath != "")
+	rowCounts, err := countRecoveredRows(sqliteBin, tmpDB, bridgePath != "")
 	if err != nil {
 		return err
 	}
 
 	// Run a full three-layer diagnostic on the recovered database.
-	checkResult, err := sqlitecheck.Diagnose(destPath, sqliteBin, layer2)
+	checkResult, err := sqlitecheck.Diagnose(tmpDB, sqliteBin, layer2)
 	if err != nil {
 		return fmt.Errorf("post-recovery check: %w", err)
+	}
+
+	if err := beforeRecoverPublish(); err != nil {
+		return fmt.Errorf("before recover publish: %w", err)
+	}
+	if err := publishNoReplace(tmpDB, destPath); err != nil {
+		return fmt.Errorf("publish recovered database: %w", err)
 	}
 
 	report := RecoverReport{
@@ -209,6 +214,74 @@ func runRecover(sourcePath, destPath, bridgePath, sqliteBin string, out io.Write
 	}
 	fmt.Fprintln(out, string(b))
 	fmt.Fprintln(out, "recover completed")
+	return nil
+}
+
+func ensureDestinationAbsent(destPath string) error {
+	if _, err := os.Lstat(destPath); err == nil {
+		return fmt.Errorf("destination already exists: %s", destPath)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("check destination: %w", err)
+	}
+	return nil
+}
+
+func publishNoReplace(tmpPath, destPath string) error {
+	if err := os.Link(tmpPath, destPath); err == nil {
+		if removeErr := os.Remove(tmpPath); removeErr != nil {
+			return fmt.Errorf("remove temporary database after publish: %w", removeErr)
+		}
+		return syncParentDir(destPath)
+	} else if os.IsExist(err) {
+		return fmt.Errorf("destination already exists: %s", destPath)
+	}
+
+	src, err := os.Open(tmpPath)
+	if err != nil {
+		return fmt.Errorf("open temporary database: %w", err)
+	}
+	defer src.Close()
+
+	dest, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		if os.IsExist(err) {
+			return fmt.Errorf("destination already exists: %s", destPath)
+		}
+		return fmt.Errorf("create destination database: %w", err)
+	}
+	copyOK := false
+	defer func() {
+		if !copyOK {
+			_ = os.Remove(destPath)
+		}
+	}()
+	if _, err := io.Copy(dest, src); err != nil {
+		_ = dest.Close()
+		return fmt.Errorf("copy recovered database: %w", err)
+	}
+	if err := dest.Sync(); err != nil {
+		_ = dest.Close()
+		return fmt.Errorf("sync recovered database: %w", err)
+	}
+	if err := dest.Close(); err != nil {
+		return fmt.Errorf("close recovered database: %w", err)
+	}
+	copyOK = true
+	if err := os.Remove(tmpPath); err != nil {
+		return fmt.Errorf("remove temporary database after publish: %w", err)
+	}
+	return syncParentDir(destPath)
+}
+
+func syncParentDir(path string) error {
+	dir, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return fmt.Errorf("open destination directory: %w", err)
+	}
+	defer dir.Close()
+	if err := dir.Sync(); err != nil {
+		return fmt.Errorf("sync destination directory: %w", err)
+	}
 	return nil
 }
 

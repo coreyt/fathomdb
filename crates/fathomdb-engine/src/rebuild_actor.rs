@@ -4,6 +4,7 @@
 /// `std::sync::mpsc`, `JoinHandle` for shutdown.  No tokio.
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -30,18 +31,46 @@ pub struct RebuildRequest {
     pub schema_id: i64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RebuildSubmit {
+    Submitted,
+    PersistedPending,
+}
+
+#[derive(Clone, Debug)]
+pub struct RebuildClient {
+    sender: mpsc::SyncSender<RebuildRequest>,
+    shutdown: Arc<AtomicBool>,
+}
+
+impl RebuildClient {
+    #[must_use]
+    pub fn new(sender: mpsc::SyncSender<RebuildRequest>, shutdown: Arc<AtomicBool>) -> Self {
+        Self { sender, shutdown }
+    }
+
+    /// # Errors
+    /// Returns [`EngineError::Bridge`] when the engine is shutting down.
+    pub fn try_submit(&self, req: RebuildRequest) -> Result<RebuildSubmit, EngineError> {
+        if self.shutdown.load(Ordering::Acquire) {
+            return Err(EngineError::Bridge("engine is shutting down".to_owned()));
+        }
+        match self.sender.try_send(req) {
+            Ok(()) => Ok(RebuildSubmit::Submitted),
+            Err(mpsc::TrySendError::Full(_) | mpsc::TrySendError::Disconnected(_)) => {
+                Ok(RebuildSubmit::PersistedPending)
+            }
+        }
+    }
+}
+
 /// Single-threaded actor that processes property-FTS rebuild requests one at
-/// a time.  Shutdown is cooperative: drop the sender side to close the channel,
-/// then join the thread.
-///
-/// The `RebuildActor` owns the `JoinHandle` only. The `SyncSender` lives in
-/// [`crate::admin::AdminService`] so the service can enqueue rebuild requests
-/// directly without going through the runtime.  The channel is created by
-/// [`RebuildActor::create_channel`] and the two halves are distributed by
-/// [`crate::runtime::EngineRuntime::open`].
+/// a time. Shutdown is cooperative and controlled by an explicit token so
+/// public admin-service clones cannot keep the actor alive accidentally.
 #[derive(Debug)]
 pub struct RebuildActor {
     thread_handle: Option<thread::JoinHandle<()>>,
+    shutdown: Arc<AtomicBool>,
 }
 
 impl RebuildActor {
@@ -57,26 +86,28 @@ impl RebuildActor {
         path: impl AsRef<Path>,
         schema_manager: Arc<SchemaManager>,
         receiver: mpsc::Receiver<RebuildRequest>,
+        shutdown: Arc<AtomicBool>,
     ) -> Result<Self, EngineError> {
         let database_path = path.as_ref().to_path_buf();
+        let thread_shutdown = Arc::clone(&shutdown);
 
         let handle = thread::Builder::new()
             .name("fathomdb-rebuild".to_owned())
             .spawn(move || {
-                rebuild_loop(&database_path, &schema_manager, receiver);
+                rebuild_loop(&database_path, &schema_manager, receiver, &thread_shutdown);
             })
             .map_err(EngineError::Io)?;
 
         Ok(Self {
             thread_handle: Some(handle),
+            shutdown,
         })
     }
 }
 
 impl Drop for RebuildActor {
     fn drop(&mut self) {
-        // The sender was already closed by AdminService (or dropped when the
-        // engine closes).  Just join the thread.
+        self.shutdown.store(true, Ordering::Release);
         if let Some(handle) = self.thread_handle.take() {
             match handle.join() {
                 Ok(()) => {}
@@ -101,10 +132,12 @@ const BATCH_TARGET_MS: u128 = 1000;
 /// Initial batch size.
 const INITIAL_BATCH_SIZE: usize = 5000;
 
+#[allow(clippy::needless_pass_by_value)]
 fn rebuild_loop(
     database_path: &Path,
     schema_manager: &Arc<SchemaManager>,
     receiver: mpsc::Receiver<RebuildRequest>,
+    shutdown: &AtomicBool,
 ) {
     trace_info!("rebuild thread started");
 
@@ -123,15 +156,20 @@ fn rebuild_loop(
         return;
     }
 
-    for req in receiver {
-        trace_info!(kind = %req.kind, schema_id = req.schema_id, "rebuild task started");
-        match run_rebuild(&mut conn, &req) {
-            Ok(()) => {
-                trace_info!(kind = %req.kind, "rebuild task COMPLETE");
+    let _ = process_pending_rebuilds(&mut conn, shutdown);
+
+    loop {
+        if shutdown.load(Ordering::Acquire) {
+            break;
+        }
+        match receiver.recv_timeout(Duration::from_millis(250)) {
+            Ok(req) => handle_rebuild_request(&mut conn, &req, shutdown),
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                let _ = process_pending_rebuilds(&mut conn, shutdown);
             }
-            Err(error) => {
-                trace_error!(kind = %req.kind, error = %error, "rebuild task failed");
-                let _ = mark_failed(&conn, &req.kind, &error.to_string());
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                let _ = process_pending_rebuilds(&mut conn, shutdown);
+                break;
             }
         }
     }
@@ -139,17 +177,72 @@ fn rebuild_loop(
     trace_info!("rebuild thread exiting");
 }
 
+fn handle_rebuild_request(
+    conn: &mut rusqlite::Connection,
+    req: &RebuildRequest,
+    shutdown: &AtomicBool,
+) {
+    trace_info!(kind = %req.kind, schema_id = req.schema_id, "rebuild task started");
+    match run_rebuild(conn, req, shutdown) {
+        Ok(()) => {
+            trace_info!(kind = %req.kind, "rebuild task COMPLETE");
+        }
+        Err(error) => {
+            trace_error!(kind = %req.kind, error = %error, "rebuild task failed");
+            let _ = mark_failed(conn, &req.kind, &error.to_string());
+        }
+    }
+}
+
+fn process_pending_rebuilds(
+    conn: &mut rusqlite::Connection,
+    shutdown: &AtomicBool,
+) -> Result<(), EngineError> {
+    let pending: Vec<RebuildRequest> = {
+        let mut stmt = conn.prepare(
+            "SELECT kind, schema_id FROM fts_property_rebuild_state \
+             WHERE state = 'PENDING' ORDER BY started_at, kind LIMIT 16",
+        )?;
+        stmt.query_map([], |r| {
+            Ok(RebuildRequest {
+                kind: r.get(0)?,
+                schema_id: r.get(1)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?
+    };
+    for req in &pending {
+        if shutdown.load(Ordering::Acquire) {
+            break;
+        }
+        handle_rebuild_request(conn, req, shutdown);
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_lines)]
-fn run_rebuild(conn: &mut rusqlite::Connection, req: &RebuildRequest) -> Result<(), EngineError> {
+fn run_rebuild(
+    conn: &mut rusqlite::Connection,
+    req: &RebuildRequest,
+    shutdown: &AtomicBool,
+) -> Result<(), EngineError> {
     // Step 1: mark BUILDING.
     {
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        tx.execute(
+        let claimed = tx.execute(
             "UPDATE fts_property_rebuild_state SET state = 'BUILDING' \
-             WHERE kind = ?1 AND schema_id = ?2",
+             WHERE kind = ?1 AND schema_id = ?2 AND state = 'PENDING'",
             rusqlite::params![req.kind, req.schema_id],
         )?;
         tx.commit()?;
+        if claimed == 0 {
+            trace_warn!(
+                kind = %req.kind,
+                schema_id = req.schema_id,
+                "rebuild request skipped because it is no longer pending"
+            );
+            return Ok(());
+        }
     }
 
     // Step 2: count nodes for this kind (plain SELECT, no tx needed).
@@ -182,24 +275,25 @@ fn run_rebuild(conn: &mut rusqlite::Connection, req: &RebuildRequest) -> Result<
     let schema = crate::writer::parse_property_schema_json(&paths_json, &separator);
 
     // Step 3: batch-iterate nodes, insert into staging.
-    let mut offset: i64 = 0;
     let mut batch_size = INITIAL_BATCH_SIZE;
     let mut rows_done: i64 = 0;
+    let mut last_logical_id = String::new();
 
     loop {
-        // Fetch a batch of node logical_ids + properties (plain SELECT — no tx needed for reads).
+        abort_if_shutdown(conn, &req.kind, shutdown)?;
+        // Fetch a batch of node logical_ids + properties using keyset pagination.
         let batch: Vec<(String, String)> = {
             let mut stmt = conn.prepare(
                 "SELECT logical_id, properties FROM nodes \
-                 WHERE kind = ?1 AND superseded_at IS NULL \
+                 WHERE kind = ?1 AND superseded_at IS NULL AND logical_id > ?2 \
                  ORDER BY logical_id \
-                 LIMIT ?2 OFFSET ?3",
+                 LIMIT ?3",
             )?;
             stmt.query_map(
                 rusqlite::params![
                     req.kind,
+                    last_logical_id,
                     i64::try_from(batch_size).unwrap_or(i64::MAX),
-                    offset
                 ],
                 |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
             )?
@@ -212,6 +306,9 @@ fn run_rebuild(conn: &mut rusqlite::Connection, req: &RebuildRequest) -> Result<
 
         let batch_len = batch.len();
         let batch_start = Instant::now();
+        if let Some((logical_id, _)) = batch.last() {
+            last_logical_id.clone_from(logical_id);
+        }
 
         // Insert staging rows in a single short transaction.
         {
@@ -295,8 +392,6 @@ fn run_rebuild(conn: &mut rusqlite::Connection, req: &RebuildRequest) -> Result<
             batch_size = usize::try_from(new_size).unwrap_or(50_000);
         }
 
-        offset += i64::try_from(batch_len).unwrap_or(i64::MAX);
-
         // If the batch was smaller than the limit used for THIS query, we've reached the end.
         if batch_len < limit_used {
             break;
@@ -305,6 +400,7 @@ fn run_rebuild(conn: &mut rusqlite::Connection, req: &RebuildRequest) -> Result<
 
     // Step 4: mark SWAPPING.
     {
+        abort_if_shutdown(conn, &req.kind, shutdown)?;
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let now_ms = now_unix_ms();
         tx.execute(
@@ -318,20 +414,28 @@ fn run_rebuild(conn: &mut rusqlite::Connection, req: &RebuildRequest) -> Result<
 
     // Step 5: Final swap — atomic IMMEDIATE transaction replacing live FTS rows.
     {
+        abort_if_shutdown(conn, &req.kind, shutdown)?;
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let current: Option<(String, i64)> = tx
+            .query_row(
+                "SELECT state, schema_id FROM fts_property_rebuild_state WHERE kind = ?1",
+                rusqlite::params![req.kind],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)),
+            )
+            .optional()?;
+        if current.as_ref() != Some(&("SWAPPING".to_owned(), req.schema_id)) {
+            trace_warn!(
+                kind = %req.kind,
+                schema_id = req.schema_id,
+                "rebuild swap skipped because state/schema changed"
+            );
+            tx.commit()?;
+            return Ok(());
+        }
 
         let table = fathomdb_schema::fts_kind_table_name(&req.kind);
 
-        // Ensure the per-kind table exists before the swap (defensive: created at write
-        // time normally, but may be absent on async first-time registration with no writes).
-        let tokenizer = fathomdb_schema::DEFAULT_FTS_TOKENIZER;
-        let create_ddl = format!(
-            "CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING fts5(\
-                node_logical_id UNINDEXED, text_content, \
-                tokenize = '{tokenizer}'\
-            )"
-        );
-        tx.execute_batch(&create_ddl)?;
+        ensure_fts_kind_table_for_schema(&tx, &req.kind, &schema)?;
 
         // 5a. Delete old live FTS rows for this kind (entire per-kind table).
         tx.execute(&format!("DELETE FROM {table}"), [])?;
@@ -483,6 +587,74 @@ fn mark_failed(
          WHERE kind = ?3",
         rusqlite::params![error_message, now_ms, kind],
     )?;
+    Ok(())
+}
+
+fn mark_failed_and_clear(
+    conn: &rusqlite::Connection,
+    kind: &str,
+    error_message: &str,
+) -> Result<(), EngineError> {
+    conn.execute(
+        "DELETE FROM fts_property_rebuild_staging WHERE kind = ?1",
+        rusqlite::params![kind],
+    )?;
+    mark_failed(conn, kind, error_message)
+}
+
+fn abort_if_shutdown(
+    conn: &rusqlite::Connection,
+    kind: &str,
+    shutdown: &AtomicBool,
+) -> Result<(), EngineError> {
+    if shutdown.load(Ordering::Acquire) {
+        mark_failed_and_clear(conn, kind, "engine shutdown interrupted rebuild")?;
+        return Err(EngineError::Bridge(
+            "engine shutdown interrupted rebuild".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn ensure_fts_kind_table_for_schema(
+    conn: &rusqlite::Connection,
+    kind: &str,
+    schema: &crate::writer::PropertyFtsSchema,
+) -> Result<(), EngineError> {
+    let table = fathomdb_schema::fts_kind_table_name(kind);
+    let exists: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 \
+             AND sql LIKE 'CREATE VIRTUAL TABLE%'",
+            rusqlite::params![table],
+            |_| Ok(true),
+        )
+        .optional()?
+        .unwrap_or(false);
+    if exists {
+        return Ok(());
+    }
+
+    let tokenizer = fathomdb_schema::resolve_fts_tokenizer(conn, kind)?;
+    let tokenizer_sql = tokenizer.replace('\'', "''");
+    let has_weights = schema.paths.iter().any(|p| p.weight.is_some());
+    let cols: Vec<String> = if has_weights {
+        std::iter::once("node_logical_id UNINDEXED".to_owned())
+            .chain(schema.paths.iter().map(|p| {
+                let is_recursive = matches!(p.mode, crate::writer::PropertyPathMode::Recursive);
+                fathomdb_schema::fts_column_name(&p.path, is_recursive)
+            }))
+            .collect()
+    } else {
+        vec![
+            "node_logical_id UNINDEXED".to_owned(),
+            "text_content".to_owned(),
+        ]
+    };
+    conn.execute_batch(&format!(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING fts5({cols}, tokenize='{tokenizer_sql}')",
+        cols = cols.join(", "),
+    ))?;
     Ok(())
 }
 
@@ -699,7 +871,8 @@ mod tests {
             kind: kind.to_owned(),
             schema_id,
         };
-        super::run_rebuild(&mut conn, &req).expect("run_rebuild");
+        let shutdown = std::sync::atomic::AtomicBool::new(false);
+        super::run_rebuild(&mut conn, &req, &shutdown).expect("run_rebuild");
 
         // After A-6: the per-kind table must have the rebuilt row.
         let per_kind_count: i64 = conn
@@ -774,7 +947,8 @@ mod tests {
             kind: kind.to_owned(),
             schema_id,
         };
-        super::run_rebuild(&mut conn, &req).expect("run_rebuild");
+        let shutdown = std::sync::atomic::AtomicBool::new(false);
+        super::run_rebuild(&mut conn, &req, &shutdown).expect("run_rebuild");
 
         // The per-kind table must have the rebuilt row.
         let count: i64 = conn

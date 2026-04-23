@@ -8,6 +8,7 @@ fathomdb is canonical local storage for persistent AI agents. Graph, vector, and
 
 ## Concepts
 
+- [Architecture](./concepts/architecture.md)
 - [Data Model](./concepts/data-model.md)
 - [Temporal Model](./concepts/temporal-model.md)
 - [Operational Store](./concepts/operational-store.md)
@@ -30,9 +31,14 @@ fathomdb is canonical local storage for persistent AI agents. Graph, vector, and
 ## Operations
 
 - [Admin Operations](./operations/admin-operations.md) -- integrity checks, provenance, export, retention, projections
+- [Projection Profiles](./operations/projection-profiles.md) -- FTS tokenizer and vector model profile management
 - [Vector Regeneration](./operations/vector-regeneration.md) -- regenerating embeddings after recovery or model updates
 - [Telemetry](./operations/telemetry.md) -- resource usage collection and profiling levels
+- [Tokenization and Embedding Choices](./tokenization-and-embedding-choices.md) -- supported projection configuration trade-offs
+- [Supported Tokenizer Configurations](./supported-tokenizer-configs.md)
+- [Supported Vector Embedding Configurations](./supported-vector-configs.md)
 
 ## Internal Design
 
-Detailed design documents, architecture notes, and implementation plans are in `dev/`.
+Current architecture, support contracts, and active design notes are in `dev/`.
+Superseded plans and historical investigations are preserved in `dev/archive/`.

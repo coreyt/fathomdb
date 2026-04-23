@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use fathomdb_schema::{DEFAULT_FTS_TOKENIZER, SchemaManager};
-use rusqlite::TransactionBehavior;
+use fathomdb_schema::SchemaManager;
+use rusqlite::{OptionalExtension, TransactionBehavior};
 use serde::Serialize;
 
 use crate::{EngineError, sqlite};
@@ -273,13 +273,7 @@ pub(crate) fn insert_property_fts_rows_for_kind(
     };
 
     let table = fathomdb_schema::fts_kind_table_name(kind);
-    // Ensure the per-kind table exists.
-    conn.execute_batch(&format!(
-        "CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING fts5(\
-            node_logical_id UNINDEXED, text_content, \
-            tokenize = '{DEFAULT_FTS_TOKENIZER}'\
-        )"
-    ))?;
+    ensure_property_fts_table(conn, kind, &schema)?;
     let has_weights = schema.paths.iter().any(|p| p.weight.is_some());
     let mut ins_positions = conn.prepare(
         "INSERT INTO fts_node_property_positions \
@@ -358,13 +352,7 @@ pub(crate) fn insert_property_fts_rows(
     )?;
     for (kind, schema) in &schemas {
         let table = fathomdb_schema::fts_kind_table_name(kind);
-        // Ensure per-kind table exists.
-        conn.execute_batch(&format!(
-            "CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING fts5(\
-                node_logical_id UNINDEXED, text_content, \
-                tokenize = '{DEFAULT_FTS_TOKENIZER}'\
-            )"
-        ))?;
+        ensure_property_fts_table(conn, kind, schema)?;
         let has_weights = schema.paths.iter().any(|p| p.weight.is_some());
         let mut stmt = conn.prepare(node_sql)?;
         let rows: Vec<(String, String)> = stmt
@@ -429,13 +417,7 @@ fn insert_property_fts_rows_missing(conn: &rusqlite::Connection) -> Result<usize
     )?;
     for (kind, schema) in &schemas {
         let table = fathomdb_schema::fts_kind_table_name(kind);
-        // Ensure per-kind table exists.
-        conn.execute_batch(&format!(
-            "CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING fts5(\
-                node_logical_id UNINDEXED, text_content, \
-                tokenize = '{DEFAULT_FTS_TOKENIZER}'\
-            )"
-        ))?;
+        ensure_property_fts_table(conn, kind, schema)?;
         let has_weights = schema.paths.iter().any(|p| p.weight.is_some());
         // Find nodes of this kind with no row in the per-kind table.
         let mut stmt = conn.prepare(&format!(
@@ -486,6 +468,49 @@ fn insert_property_fts_rows_missing(conn: &rusqlite::Connection) -> Result<usize
         }
     }
     Ok(total)
+}
+
+fn ensure_property_fts_table(
+    conn: &rusqlite::Connection,
+    kind: &str,
+    schema: &crate::writer::PropertyFtsSchema,
+) -> Result<(), rusqlite::Error> {
+    let table = fathomdb_schema::fts_kind_table_name(kind);
+    let exists: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 \
+             AND sql LIKE 'CREATE VIRTUAL TABLE%'",
+            rusqlite::params![table],
+            |_| Ok(true),
+        )
+        .optional()?
+        .unwrap_or(false);
+    if exists {
+        return Ok(());
+    }
+
+    let tokenizer = fathomdb_schema::resolve_fts_tokenizer(conn, kind)
+        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    let tokenizer_sql = tokenizer.replace('\'', "''");
+    let has_weights = schema.paths.iter().any(|p| p.weight.is_some());
+    let cols: Vec<String> = if has_weights {
+        std::iter::once("node_logical_id UNINDEXED".to_owned())
+            .chain(schema.paths.iter().map(|p| {
+                let is_recursive = matches!(p.mode, crate::writer::PropertyPathMode::Recursive);
+                fathomdb_schema::fts_column_name(&p.path, is_recursive)
+            }))
+            .collect()
+    } else {
+        vec![
+            "node_logical_id UNINDEXED".to_owned(),
+            "text_content".to_owned(),
+        ]
+    };
+    conn.execute_batch(&format!(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING fts5({cols}, tokenize='{tokenizer_sql}')",
+        cols = cols.join(", "),
+    ))?;
+    Ok(())
 }
 
 /// Remove stale vec rows: entries whose chunk no longer exists or whose node has been

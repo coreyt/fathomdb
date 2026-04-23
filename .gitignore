@@ -20,6 +20,12 @@ node_modules/
 typescript/node_modules/
 typescript/packages/*/dist/
 typescript/apps/*/dist/
+.venv/
+**/.venv/
+dist/
+**/dist/
+prebuilds/
+**/prebuilds/
 
 # bream cache directory
 .bream-cache/

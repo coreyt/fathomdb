@@ -184,7 +184,7 @@ CREATE TABLE IF NOT EXISTS provenance_events (
     event_type TEXT NOT NULL,
     subject TEXT NOT NULL,
     source_ref TEXT,
-    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+    created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER))
 );
 `)
 }

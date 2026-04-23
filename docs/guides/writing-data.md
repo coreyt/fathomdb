@@ -376,7 +376,8 @@ const chunk = builder.addChunk({
   textContent: "Revenue grew 15% quarter over quarter...",
 });
 
-// Vector embeddings
+// Vector embeddings: low-level/admin/import path, not the normal application
+// path for managed semantic search.
 builder.addVecInsert({ chunk, embedding: [0.12, -0.34] });
 
 // Runs / steps / actions

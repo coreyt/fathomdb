@@ -35,7 +35,7 @@ use std::sync::mpsc::{self, Sender, SyncSender};
 use std::thread;
 use std::time::Duration;
 
-use fathomdb_schema::{DEFAULT_FTS_TOKENIZER, SchemaManager};
+use fathomdb_schema::SchemaManager;
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
 
 use crate::operational::{
@@ -2134,15 +2134,8 @@ fn apply_write(
             del_positions.execute(params![row.node_logical_id])?;
             // Insert into per-kind FTS table (table name is dynamic).
             let table = fathomdb_schema::fts_kind_table_name(&row.kind);
+            ensure_property_fts_table_for_row(&tx, &row.kind, &row.columns)?;
             if row.columns.is_empty() {
-                // Non-weighted schema: single text_content column.
-                // Ensure the per-kind table exists (handles new-kind first write).
-                tx.execute_batch(&format!(
-                    "CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING fts5(\
-                        node_logical_id UNINDEXED, text_content, \
-                        tokenize = '{DEFAULT_FTS_TOKENIZER}'\
-                    )"
-                ))?;
                 tx.prepare(&format!(
                     "INSERT INTO {table} (node_logical_id, text_content) VALUES (?1, ?2)"
                 ))?
@@ -2459,7 +2452,45 @@ fn maybe_enqueue_vector_projection_work(
             promote_stmt.execute(params![chunk.id, profile_id])?;
         }
     }
+    Ok(())
+}
 
+fn ensure_property_fts_table_for_row(
+    conn: &rusqlite::Connection,
+    kind: &str,
+    columns: &[(String, String)],
+) -> Result<(), rusqlite::Error> {
+    let table = fathomdb_schema::fts_kind_table_name(kind);
+    let exists: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 \
+             AND sql LIKE 'CREATE VIRTUAL TABLE%'",
+            rusqlite::params![table],
+            |_| Ok(true),
+        )
+        .optional()?
+        .unwrap_or(false);
+    if exists {
+        return Ok(());
+    }
+
+    let tokenizer = fathomdb_schema::resolve_fts_tokenizer(conn, kind)
+        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    let tokenizer_sql = tokenizer.replace('\'', "''");
+    let cols: Vec<String> = if columns.is_empty() {
+        vec![
+            "node_logical_id UNINDEXED".to_owned(),
+            "text_content".to_owned(),
+        ]
+    } else {
+        std::iter::once("node_logical_id UNINDEXED".to_owned())
+            .chain(columns.iter().map(|(name, _)| name.clone()))
+            .collect()
+    };
+    conn.execute_batch(&format!(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING fts5({cols}, tokenize='{tokenizer_sql}')",
+        cols = cols.join(", "),
+    ))?;
     Ok(())
 }
 

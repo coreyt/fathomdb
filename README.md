@@ -172,7 +172,7 @@ python/           Python SDK (PyO3 bindings) and tests
 typescript/       TypeScript SDK workspace and consumer harness
 go/               Go operator tooling (fathom-integrity CLI)
 docs/             User and operator documentation
-dev/              Design documents and internal notes
+dev/              Current developer docs; historical notes live in dev/archive/
 scripts/          Developer setup and CI helpers
 tests/            Cross-language SDK consistency tests
 .github/          CI workflows
@@ -189,7 +189,8 @@ identical database state and can read each other's writes.
 ## Documentation
 
 See [`docs/`](docs/index.md) for concepts, guides, API reference, and operator
-docs. Design notes and proposals live in [`dev/`](dev/).
+docs. Current architecture, support contracts, and active design notes live in
+[`dev/`](dev/); superseded material is kept under `dev/archive/`.
 
 ## License
 

@@ -197,7 +197,7 @@ You run in background. Talk to the orchestrator only when necessary:
 - Do NOT touch Cargo.toml/Cargo.lock at the workspace root unless the
   pack explicitly requires a dependency bump.
 - {PACK-SPECIFIC CONSTRAINTS, e.g.: "Do NOT modify the WAL format" or
-  "Do NOT touch python_types.rs".}
+  "Do NOT touch ffi_types.rs".}
 - If you discover a related issue, report it — do not fix it.
 - 3-iteration cap. If you cannot get tests green, stop and report.
 ```
@@ -253,7 +253,7 @@ For each changed file:
    - Off-by-one in byte offsets, slices, or range queries
    - Resource cleanup (file handles, locks, `Arc` cycles, channel drops)
    - Thread-safety around shared engine/coordinator state
-   - Python GIL / Send+Sync boundaries if python_types.rs is touched
+   - Python GIL / Send+Sync boundaries if ffi_types.rs is touched
 
 ## Verdict
 Return this exact structure to the orchestrator:

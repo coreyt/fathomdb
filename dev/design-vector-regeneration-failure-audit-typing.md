@@ -1,5 +1,8 @@
 # Design: Typed Vector Regeneration Failures and Audit Completeness
 
+**Status:** Implemented; retained as design rationale
+**Last updated:** 2026-04-22
+
 ## Purpose
 
 Resolve review finding 1: ensure vector regeneration failures in the
@@ -69,7 +72,8 @@ That recovery is incomplete and brittle.
 
 ### 1. Introduce a typed internal failure object
 
-Add an internal regeneration-only error type in `admin.rs`:
+Add an internal regeneration-only error type in the admin implementation
+(`crates/fathomdb-engine/src/admin/mod.rs`):
 
 ```rust
 struct VectorRegenerationFailure {
@@ -147,8 +151,9 @@ typed class for a failed event, never inferred from message text.
 
 Primary files:
 
-- `crates/fathomdb-engine/src/admin.rs`
-- `docs/vector-regeneration.md`
+- `crates/fathomdb-engine/src/admin/mod.rs`
+- `crates/fathomdb-engine/src/admin/vector.rs`
+- `docs/operations/vector-regeneration.md`
 - `dev/repair-support-contract.md`
 
 Concrete edits:
@@ -164,7 +169,8 @@ Concrete edits:
 
 ## Test Plan
 
-Rust tests in `admin.rs`:
+Rust tests in `crates/fathomdb-engine/src/admin/mod.rs` and
+`crates/fathomdb-engine/src/admin/vector.rs`:
 
 - unsupported vec capability after request audit:
   - simulate `SchemaError::MissingCapability(...)`

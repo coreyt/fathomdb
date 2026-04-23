@@ -159,7 +159,7 @@ Tests:
    assert all rows exist. This validates that prepare_cached works correctly
    across a loop.
 
-Files: `crates/fathomdb-engine/src/writer.rs`
+Files: `crates/fathomdb-engine/src/writer/mod.rs`
 
 ### Task 2: Document the Decision
 

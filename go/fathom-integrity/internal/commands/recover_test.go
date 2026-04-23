@@ -143,6 +143,62 @@ func TestCountRecoveredRowsIncludesOperationalTables(t *testing.T) {
 	require.Equal(t, 1, report.RowCounts.OperationalCurrent)
 }
 
+func TestRunRecover_DestinationExistsFailsWithoutOverwrite(t *testing.T) {
+	sqliteBin := testutil.SQLiteBinary()
+	sourcePath := seedRecoverSourceDB(t, sqliteBin)
+	destPath := filepath.Join(t.TempDir(), "recovered.db")
+	require.NoError(t, os.WriteFile(destPath, []byte("existing"), 0o600))
+	var out bytes.Buffer
+
+	err := runRecover(sourcePath, destPath, "", sqliteBin, &out)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "destination already exists")
+	contents, readErr := os.ReadFile(destPath)
+	require.NoError(t, readErr)
+	require.Equal(t, "existing", string(contents))
+}
+
+func TestRunRecover_DestinationSymlinkFailsWithoutOverwrite(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation may require privileges on Windows")
+	}
+	sqliteBin := testutil.SQLiteBinary()
+	sourcePath := seedRecoverSourceDB(t, sqliteBin)
+	dir := t.TempDir()
+	destPath := filepath.Join(dir, "recovered.db")
+	require.NoError(t, os.Symlink(filepath.Join(dir, "target.db"), destPath))
+	var out bytes.Buffer
+
+	err := runRecover(sourcePath, destPath, "", sqliteBin, &out)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "destination already exists")
+}
+
+func TestRunRecover_DestinationCreatedBeforePublishIsNotOverwritten(t *testing.T) {
+	sqliteBin := testutil.SQLiteBinary()
+	sourcePath := seedRecoverSourceDB(t, sqliteBin)
+	destPath := filepath.Join(t.TempDir(), "recovered.db")
+	oldHook := beforeRecoverPublish
+	beforeRecoverPublish = func() error {
+		return os.WriteFile(destPath, []byte("race"), 0o600)
+	}
+	t.Cleanup(func() {
+		beforeRecoverPublish = oldHook
+	})
+	var out bytes.Buffer
+
+	err := runRecover(sourcePath, destPath, "", sqliteBin, &out)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "publish recovered database")
+	require.Contains(t, err.Error(), "destination already exists")
+	contents, readErr := os.ReadFile(destPath)
+	require.NoError(t, readErr)
+	require.Equal(t, "race", string(contents))
+}
+
 func TestRunRecover_BestEffortWithoutBridgeIgnoresCountFailures(t *testing.T) {
 	sqliteBin := testutil.SQLiteBinary()
 	sourcePath := seedRecoverSourceDB(t, sqliteBin)
@@ -171,6 +227,8 @@ func TestRunRecover_BridgeBackedCountFailuresAreFatal(t *testing.T) {
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "count recovered operational_current rows")
+	_, statErr := os.Lstat(destPath)
+	require.True(t, os.IsNotExist(statErr), "failed bridge-backed recovery must not publish dest")
 }
 
 func seedRecoverSourceDB(t *testing.T, sqliteBin string) string {

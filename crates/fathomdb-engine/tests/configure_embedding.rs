@@ -67,7 +67,7 @@ fn new_admin() -> Harness {
     let db_path = dir.path().join("test.db");
     let schema = Arc::new(SchemaManager::new());
     let service = AdminService::new(&db_path, schema);
-    // Touch a connection to force schema bootstrap (v24 creates the tables).
+    // Touch a connection to force schema bootstrap (v25 creates the tables).
     let _ = service
         .check_integrity()
         .expect("bootstrap via check_integrity");

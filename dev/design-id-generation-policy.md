@@ -133,7 +133,7 @@ Tests:
 3. `prepare_write_rejects_duplicate_row_ids_in_request`
 4. `prepare_write_rejects_empty_chunk_id`
 
-Files: `crates/fathomdb-engine/src/writer.rs`
+Files: `crates/fathomdb-engine/src/writer/mod.rs`
 
 ### Task 2: Add `new_id()` Utility
 

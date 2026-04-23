@@ -806,7 +806,9 @@ at runtime, or the embedder returns `EmbedderError`, the coordinator
 treats it as a graceful capability miss: the vector branch is skipped,
 `SearchRows.was_degraded` is set, and the text branches run normally.
 
-Write-time vector regeneration is explicitly **not** rerouted through
-the Builtin embedder in Phase 12.5 — write-time flow continues via
-`VectorRegenerationConfig` and the existing subprocess path.
-Unifying the two regeneration stories is deferred.
+Write-time vector regeneration has since moved to the database-wide
+`QueryEmbedder` identity: `VectorRegenerationConfig` carries kind and
+preprocessing metadata, while the open-time embedder supplies model identity,
+dimensions, and normalization policy. The old subprocess generator path is
+historical. The remaining deferred work is managed async/incremental vector
+projection for per-kind vector-indexed data.

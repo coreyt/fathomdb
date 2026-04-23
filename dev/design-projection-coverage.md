@@ -148,7 +148,7 @@ Tests:
 3. `fts_row_has_correct_kind_from_pre_existing_node` — write node in request 1,
    write chunk in request 2, assert FTS row kind matches the node's kind.
 
-Files: `crates/fathomdb-engine/src/writer.rs` (tests module)
+Files: `crates/fathomdb-engine/src/writer/mod.rs` (tests module)
 
 ### Task 2: Multiple Chunks Per Node
 
@@ -161,7 +161,7 @@ Tests:
    node with a chunk AND a chunk for a pre-existing node. Assert both FTS rows
    exist with correct kinds.
 
-Files: `crates/fathomdb-engine/src/writer.rs` (tests module)
+Files: `crates/fathomdb-engine/src/writer/mod.rs` (tests module)
 
 ### Task 3: Empty Chunk Text Rejection
 
@@ -171,7 +171,7 @@ Tests:
 1. `prepare_write_rejects_empty_chunk_text` — submit chunk with
    `text_content: ""`, assert `InvalidWrite`.
 
-Files: `crates/fathomdb-engine/src/writer.rs`
+Files: `crates/fathomdb-engine/src/writer/mod.rs`
 
 ### Task 4: Optional Backfill Accounting
 
@@ -186,7 +186,7 @@ Tests:
    targeting FTS, verify that no extra FTS rows were created beyond the
    required derivation.
 
-Files: `crates/fathomdb-engine/src/writer.rs` (tests module)
+Files: `crates/fathomdb-engine/src/writer/mod.rs` (tests module)
 
 ### Task 5: FTS Derivation After Node Kind Change
 
@@ -202,7 +202,7 @@ This test depends on the `ChunkPolicy` implementation from
 be added in the same PR as the supersession work or deferred until that work
 lands.
 
-Files: `crates/fathomdb-engine/src/writer.rs` (tests module)
+Files: `crates/fathomdb-engine/src/writer/mod.rs` (tests module)
 
 ## Test Summary
 

@@ -702,7 +702,9 @@ pub(super) fn rebuild_single_node_property_fts(
         rusqlite::params![logical_id],
     )?;
     let table = fathomdb_schema::fts_kind_table_name(kind);
-    let tok = fathomdb_schema::DEFAULT_FTS_TOKENIZER;
+    let tok = fathomdb_schema::resolve_fts_tokenizer(conn, kind)
+        .map_err(|e| EngineError::Bridge(e.to_string()))?;
+    let tok = tok.replace('\'', "''");
     conn.execute_batch(&format!(
         "CREATE VIRTUAL TABLE IF NOT EXISTS {table} \
          USING fts5(node_logical_id UNINDEXED, text_content, tokenize = '{tok}')"

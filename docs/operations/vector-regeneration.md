@@ -2,13 +2,17 @@
 
 ## Overview
 
-Vector regeneration recomputes the embedding rows in `vec_nodes_active`
-from the current canonical chunk set. Use it to backfill embeddings
-after a physical recovery, to rebuild vectors when you upgrade to a new
-embedding model, or to refresh vectors after chunking or preprocessing
-policy changes. Regeneration replaces the contents of the target profile
-table atomically — a run either fully applies or leaves both the
-previous contract row and the existing vector contents unchanged.
+Vector regeneration recomputes embedding rows for one node kind from the
+current canonical chunk set. Since 0.5.0, vector rows live in per-kind
+sqlite-vec tables derived from `kind` (for example, `Document` maps to a
+sanitized `vec_<kind>` table), not in the old global `vec_nodes_active`
+table. Use regeneration to backfill embeddings after physical recovery,
+to rebuild vectors after changing models, or to refresh vectors after
+chunking or preprocessing policy changes.
+
+Regeneration replaces the target kind's vector rows atomically: a run
+either fully applies or leaves both the previous contract row and the
+existing vector contents unchanged.
 
 ## Architectural Invariant: The Embedder Owns Identity
 
@@ -43,8 +47,8 @@ let engine = Engine::open(
 )?;
 
 let config = VectorRegenerationConfig {
+    kind: "Document".to_string(),
     profile: "default".to_string(),
-    table_name: "vec_nodes_active".to_string(),
     chunking_policy: "per_chunk".to_string(),
     preprocessing_policy: "trim+lowercase".to_string(),
 };
@@ -68,8 +72,8 @@ from fathomdb import Engine, VectorRegenerationConfig
 db = Engine.open("/path/to/fathom.db", embedder="builtin")
 
 config = VectorRegenerationConfig(
+    kind="Document",
     profile="default",
-    table_name="vec_nodes_active",
     chunking_policy="per_chunk",
     preprocessing_policy="trim+lowercase",
 )
@@ -80,22 +84,21 @@ print(f"regenerated {report.regenerated_rows} rows")
 
 ## `VectorRegenerationConfig` Fields
 
-The config carries only destination and preprocessing metadata. Every
-field is required.
+The config carries only destination and preprocessing metadata. Every field is
+required.
 
 | Field | Description |
 |---|---|
-| `profile` | Logical profile name — the same string the engine uses to scope the vector table and contract row. |
-| `table_name` | The target vector table. Currently must be `"vec_nodes_active"`. |
+| `kind` | Node kind to regenerate. The engine derives the target sqlite-vec table name from this kind. |
+| `profile` | Logical profile name recorded with the vector contract. |
 | `chunking_policy` | Describes how text was split into chunks (e.g. `"per_chunk"`). Persisted into the contract for audit. |
 | `preprocessing_policy` | Describes the text normalization applied before embedding (e.g. `"trim+lowercase"`). Persisted into the contract for audit. |
 
-The legacy 0.3.x fields — `model_identity`, `model_version`,
-`dimension`, `normalization_policy`, and `generator_command` — have
-been removed. Configs serialized from 0.3.x that still carry any of
-these fields will fail to deserialize with a `deny_unknown_fields`
-error; update the config and rebuild it against the engine's open-time
-embedder instead.
+The legacy fields `table_name`, `model_identity`, `model_version`,
+`dimension`, `normalization_policy`, and `generator_command` have been removed.
+Configs serialized from older releases that still carry any of these fields
+will fail to deserialize with a `deny_unknown_fields` error; update the config
+and rebuild it against the engine's open-time embedder instead.
 
 ## Error Handling
 
@@ -125,15 +128,15 @@ via `EmbedderChoice::InProcess(Arc::new(my_embedder))` at
 read-path vector branch and the regen-path, so identity stays
 consistent.
 
-## Migration from 0.3.x
+## Migration Notes
 
-The 0.4.0 redesign is a breaking change on the regeneration surface.
-Concrete before/after for the most common call sites:
+The 0.4.0 and 0.5.0 releases both changed the regeneration surface. Concrete
+before/after for the most common call sites:
 
 **Rust config shape.** The 0.3.x config carried model identity inline:
 
 ```rust
-// 0.3.x (removed)
+// Removed older shape
 VectorRegenerationConfig {
     profile: "default".into(),
     table_name: "vec_nodes_active".into(),
@@ -147,9 +150,9 @@ VectorRegenerationConfig {
 }
 ```
 
-In 0.4.0 the identity fields are gone. Identity is supplied by the
-open-time embedder; the config keeps only the four remaining fields
-shown in the Quick Start above.
+In the current shape, identity is supplied by the open-time embedder and the
+table name is derived from `kind`; use the four fields shown in the Quick Start
+above.
 
 **Python method name.** The 0.3.x surface exposed a policy variant
 (`admin_client.regenerate_vector_embeddings_with_policy(config,

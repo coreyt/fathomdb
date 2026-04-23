@@ -46,7 +46,7 @@ func InjectNullSourceRef(t *testing.T, dbPath string) {
 func InjectOrphanedChunk(t *testing.T, dbPath string) {
 	t.Helper()
 	runSQLite(t, dbPath, `INSERT INTO chunks (id, node_logical_id, text_content, created_at)
-VALUES ('orphan-chunk-1', 'does-not-exist', 'orphaned content', unixepoch());`)
+VALUES ('orphan-chunk-1', 'does-not-exist', 'orphaned content', CAST(strftime('%s','now') AS INTEGER));`)
 }
 
 // InjectBrokenStepFK inserts a step that references a non-existent run_id,
@@ -55,7 +55,7 @@ VALUES ('orphan-chunk-1', 'does-not-exist', 'orphaned content', unixepoch());`)
 func InjectBrokenStepFK(t *testing.T, dbPath string) {
 	t.Helper()
 	runSQLite(t, dbPath, `INSERT INTO steps (id, run_id, kind, status, properties, created_at)
-VALUES ('ghost-step-1', 'ghost-run', 'llm', 'completed', '{}', unixepoch());`)
+VALUES ('ghost-step-1', 'ghost-run', 'llm', 'completed', '{}', CAST(strftime('%s','now') AS INTEGER));`)
 }
 
 // InjectBrokenActionFK inserts an action that references a non-existent step_id,
@@ -63,7 +63,7 @@ VALUES ('ghost-step-1', 'ghost-run', 'llm', 'completed', '{}', unixepoch());`)
 func InjectBrokenActionFK(t *testing.T, dbPath string) {
 	t.Helper()
 	runSQLite(t, dbPath, `INSERT INTO actions (id, step_id, kind, status, properties, created_at)
-VALUES ('ghost-action-1', 'ghost-step', 'emit', 'completed', '{}', unixepoch());`)
+VALUES ('ghost-action-1', 'ghost-step', 'emit', 'completed', '{}', CAST(strftime('%s','now') AS INTEGER));`)
 }
 
 // InjectLargeTruncation truncates the database to 50% of its current size,
@@ -83,7 +83,7 @@ func InjectBrokenSupersession(t *testing.T, dbPath string) {
 	t.Helper()
 	runSQLite(t, dbPath, `DROP INDEX IF EXISTS idx_nodes_active_logical_id;
 INSERT INTO nodes (row_id, logical_id, kind, properties, created_at, source_ref)
-VALUES ('row-dup', 'meeting-1', 'Meeting', '{}', unixepoch(), 'source-duplicate');`)
+VALUES ('row-dup', 'meeting-1', 'Meeting', '{}', CAST(strftime('%s','now') AS INTEGER), 'source-duplicate');`)
 }
 
 // InjectStaleFTSRow inserts an FTS row that references a non-existent chunk_id.

@@ -1,5 +1,8 @@
 # Project invariant: vector identity is the embedder's responsibility
 
+**Status:** Current
+**Last updated:** 2026-04-22
+
 Established in 0.4.0 (GH #39) by the second Memex 0.4.0 headline pack.
 
 ## The rule
@@ -17,6 +20,11 @@ The fathomdb `Engine` holds exactly one embedder per instance (via
 persisted vector profile is stamped directly from
 `embedder.identity()`, so the strings cannot disagree with the
 computation — they are the same source.
+
+The 2026-04-22 managed-vector design keeps this invariant and broadens the
+product contract: there is one database-wide embedding identity, while vector
+indexing is enabled and configured per kind. Per-kind sqlite-vec tables are
+storage details; they do not imply per-kind embedding engines.
 
 ## What this disallows
 
@@ -37,6 +45,14 @@ Any future PR that:
   for regen.
 
 will be rejected on review citing this invariant.
+
+Future `configure_embedding(...)` / `get_vec_index_status(kind)` APIs should
+make the split explicit:
+
+- database-wide embedding identity is configured once;
+- per-kind vector indexing controls whether and how canonical text is embedded;
+- raw vector insertion remains internal/admin/unsafe, not the normal
+  application write path.
 
 ## Why
 

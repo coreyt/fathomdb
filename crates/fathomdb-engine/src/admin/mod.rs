@@ -1,11 +1,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::mpsc::SyncSender;
 
 use fathomdb_schema::SchemaManager;
 use serde::{Deserialize, Serialize};
 
-use crate::rebuild_actor::{RebuildMode, RebuildRequest};
+use crate::rebuild_actor::{RebuildClient, RebuildMode, RebuildRequest, RebuildSubmit};
 
 use crate::{
     EngineError, ProjectionRepairReport, ProjectionService, ids::new_id,
@@ -236,10 +235,10 @@ pub struct AdminService {
     pub(super) database_path: PathBuf,
     pub(super) schema_manager: Arc<SchemaManager>,
     pub(super) projections: ProjectionService,
-    /// Sender side of the rebuild actor's channel.  `None` when the engine
+    /// Client side of the rebuild actor's channel.  `None` when the engine
     /// was opened without a rebuild actor (e.g. in tests that use
     /// [`AdminService::new`] directly).
-    pub(super) rebuild_sender: Option<SyncSender<RebuildRequest>>,
+    pub(super) rebuild_client: Option<RebuildClient>,
     /// Shared handle to the writer actor.  `None` when the admin service is
     /// constructed outside a full engine (unit tests).  Required by the
     /// vector projection drain surface.
@@ -437,7 +436,7 @@ impl AdminService {
             database_path,
             schema_manager,
             projections,
-            rebuild_sender: None,
+            rebuild_client: None,
             writer: None,
         }
     }
@@ -447,7 +446,7 @@ impl AdminService {
     pub fn new_with_rebuild(
         path: impl AsRef<Path>,
         schema_manager: Arc<SchemaManager>,
-        rebuild_sender: SyncSender<RebuildRequest>,
+        rebuild_client: RebuildClient,
     ) -> Self {
         let database_path = path.as_ref().to_path_buf();
         let projections = ProjectionService::new(&database_path, Arc::clone(&schema_manager));
@@ -455,7 +454,7 @@ impl AdminService {
             database_path,
             schema_manager,
             projections,
-            rebuild_sender: Some(rebuild_sender),
+            rebuild_client: Some(rebuild_client),
             writer: None,
         }
     }
@@ -468,7 +467,7 @@ impl AdminService {
     pub fn new_with_engine(
         path: impl AsRef<Path>,
         schema_manager: Arc<SchemaManager>,
-        rebuild_sender: SyncSender<RebuildRequest>,
+        rebuild_client: RebuildClient,
         writer: Arc<crate::WriterActor>,
     ) -> Self {
         let database_path = path.as_ref().to_path_buf();
@@ -477,7 +476,7 @@ impl AdminService {
             database_path,
             schema_manager,
             projections,
-            rebuild_sender: Some(rebuild_sender),
+            rebuild_client: Some(rebuild_client),
             writer: Some(writer),
         }
     }
@@ -581,6 +580,7 @@ impl AdminService {
         if operational_missing_last_mutations > 0 {
             warnings.push("operational current rows reference missing last mutations".to_owned());
         }
+        warnings.extend(projection_table_collision_warnings(&conn)?);
 
         // FIX(review): was `as usize` — unsound on 32-bit targets, wraps negatives silently.
         // Options: (A) try_from().unwrap_or(0) — masks corruption, (B) try_from().expect() —
@@ -944,6 +944,71 @@ impl AdminService {
             warnings,
         })
     }
+}
+
+fn projection_table_collision_warnings(
+    conn: &rusqlite::Connection,
+) -> Result<Vec<String>, EngineError> {
+    let fts_kinds = projection_kinds(conn, "SELECT kind FROM fts_property_schemas")?;
+    let mut warnings = legacy_projection_collision_warnings(
+        "FTS property",
+        &fts_kinds,
+        fathomdb_schema::legacy_fts_kind_table_name,
+        fathomdb_schema::fts_kind_table_name,
+    );
+
+    let vec_kinds = projection_kinds(
+        conn,
+        "SELECT kind FROM projection_profiles WHERE facet = 'vec'",
+    )?;
+    warnings.extend(legacy_projection_collision_warnings(
+        "vector",
+        &vec_kinds,
+        fathomdb_schema::legacy_vec_kind_table_name,
+        fathomdb_schema::vec_kind_table_name,
+    ));
+    Ok(warnings)
+}
+
+fn projection_kinds(conn: &rusqlite::Connection, sql: &str) -> Result<Vec<String>, EngineError> {
+    let mut stmt = conn.prepare(sql)?;
+    stmt.query_map([], |r| r.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(EngineError::Sqlite)
+}
+
+fn legacy_projection_collision_warnings(
+    label: &str,
+    kinds: &[String],
+    legacy_name: fn(&str) -> String,
+    current_name: fn(&str) -> String,
+) -> Vec<String> {
+    let mut by_legacy: std::collections::BTreeMap<String, Vec<&str>> =
+        std::collections::BTreeMap::new();
+    for kind in kinds {
+        by_legacy
+            .entry(legacy_name(kind))
+            .or_default()
+            .push(kind.as_str());
+    }
+
+    let mut warnings = Vec::new();
+    for (legacy_table, mut colliding_kinds) in by_legacy {
+        if colliding_kinds.len() <= 1 {
+            continue;
+        }
+        colliding_kinds.sort_unstable();
+        let current_tables: Vec<String> = colliding_kinds
+            .iter()
+            .map(|kind| current_name(kind))
+            .collect();
+        warnings.push(format!(
+            "legacy {label} projection table name collision for {legacy_table}: kinds [{}] now map to [{}]",
+            colliding_kinds.join(", "),
+            current_tables.join(", ")
+        ));
+    }
+    warnings
 }
 
 /// Count per-kind FTS integrity issues across all registered per-kind tables.
@@ -1475,6 +1540,32 @@ mod tests {
         assert_eq!(report.duplicate_active_logical_ids, 0);
         assert_eq!(report.operational_missing_collections, 0);
         assert_eq!(report.operational_missing_last_mutations, 0);
+    }
+
+    #[test]
+    fn check_integrity_warns_for_legacy_projection_name_collisions() {
+        let (db, service) = setup();
+        {
+            let conn = sqlite::open_connection(db.path()).expect("conn");
+            conn.execute(
+                "INSERT INTO fts_property_schemas (kind, property_paths_json, separator) \
+                 VALUES ('Foo-Bar', '[\"$.name\"]', ' ')",
+                [],
+            )
+            .expect("insert first schema");
+            conn.execute(
+                "INSERT INTO fts_property_schemas (kind, property_paths_json, separator) \
+                 VALUES ('Foo_Bar', '[\"$.name\"]', ' ')",
+                [],
+            )
+            .expect("insert second schema");
+        }
+
+        let report = service.check_integrity().expect("integrity check");
+
+        assert!(report.warnings.iter().any(|warning| {
+            warning.contains("legacy FTS property projection table name collision")
+        }));
     }
 
     #[test]

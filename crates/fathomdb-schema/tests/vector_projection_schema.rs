@@ -1,6 +1,6 @@
 //! Schema tests for the managed vector projection tables (pack A).
 //!
-//! These tables are introduced in `SchemaVersion(24)` to support
+//! These tables are introduced in `SchemaVersion(25)` to support
 //! database-wide embedding profiles, per-kind vector indexing config,
 //! and a durable async work queue. `model_identity` is recorded by the
 //! embedder; it is never user-configurable. See
