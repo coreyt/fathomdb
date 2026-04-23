@@ -1,4 +1,4 @@
-//! Pack H: admin introspection APIs + batch configure_vec.
+//! Pack H: admin introspection APIs + batch `configure_vec`.
 //!
 //! These tests exercise the new read-side surfaces that let clients
 //! detect per-kind vector/FTS configuration drift without fathomdb
@@ -9,7 +9,8 @@ use std::time::Duration;
 
 use fathomdb_engine::{
     BatchEmbedder, ChunkInsert, ChunkPolicy, EmbedderError, EngineRuntime, NodeInsert,
-    ProvenanceMode, QueryEmbedderIdentity, TelemetryLevel, VectorSource, WriteRequest,
+    ProvenanceMode, QueryEmbedder, QueryEmbedderIdentity, TelemetryLevel, VectorSource,
+    WriteRequest,
 };
 
 // ── Fake embedder ───────────────────────────────────────────────────────────
@@ -22,6 +23,30 @@ struct FakeEmbedder {
 impl FakeEmbedder {
     fn new() -> Self {
         Self { dimension: 4 }
+    }
+}
+
+impl QueryEmbedder for FakeEmbedder {
+    fn embed_query(&self, text: &str) -> Result<Vec<f32>, EmbedderError> {
+        let mut v = vec![0.0_f32; self.dimension];
+        #[allow(clippy::cast_precision_loss)]
+        {
+            v[0] = text.len() as f32;
+        }
+        Ok(v)
+    }
+
+    fn identity(&self) -> QueryEmbedderIdentity {
+        QueryEmbedderIdentity {
+            model_identity: "test/model".to_owned(),
+            model_version: "v1".to_owned(),
+            dimension: self.dimension,
+            normalization_policy: "l2".to_owned(),
+        }
+    }
+
+    fn max_tokens(&self) -> usize {
+        512
     }
 }
 
