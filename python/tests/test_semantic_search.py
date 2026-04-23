@@ -238,20 +238,6 @@ def test_drain_vector_projection_without_embedder_raises(tmp_path: Path) -> None
 #
 # The tests below remain as tripwires: once the FFI route is wired they
 # will auto-unskip and fail loudly if the error semantics drift.
-import pytest
-
-_FFI_DISPATCH_MISSING = pytest.mark.skip(
-    reason=(
-        "Pack F2 capability gap: execute_ast does not route "
-        "semantic_search/raw_vector_search steps to the coordinator's "
-        "execute_compiled_semantic_search / execute_compiled_raw_vector_search "
-        "paths, so engine-level error semantics cannot be exercised from "
-        "Python. Requires a Rust-side FFI dispatch (tracked for a follow-up)."
-    )
-)
-
-
-@_FFI_DISPATCH_MISSING
 def test_raw_vector_search_without_active_profile_raises(tmp_path: Path) -> None:
     """No active embedding profile → EmbedderNotConfigured (surfaced as FathomError)."""
     import pytest
@@ -265,7 +251,6 @@ def test_raw_vector_search_without_active_profile_raises(tmp_path: Path) -> None
     assert "embedder" in str(exc.value).lower()
 
 
-@_FFI_DISPATCH_MISSING
 def test_raw_vector_search_without_configured_kind_raises(tmp_path: Path) -> None:
     """Active profile but no vector index for kind → KindNotVectorIndexed."""
     import pytest
@@ -282,7 +267,6 @@ def test_raw_vector_search_without_configured_kind_raises(tmp_path: Path) -> Non
     assert "vector" in str(exc.value).lower() or "kind" in str(exc.value).lower()
 
 
-@_FFI_DISPATCH_MISSING
 def test_raw_vector_search_dimension_mismatch_raises(tmp_path: Path) -> None:
     """vec.len() ≠ profile.dimensions → DimensionMismatch."""
     import pytest
@@ -301,7 +285,6 @@ def test_raw_vector_search_dimension_mismatch_raises(tmp_path: Path) -> None:
     assert "dimension" in msg or "expected" in msg
 
 
-@_FFI_DISPATCH_MISSING
 def test_semantic_search_without_active_profile_raises(tmp_path: Path) -> None:
     """Fresh engine + semantic_search → EmbedderNotConfigured (FathomError)."""
     import pytest
@@ -314,7 +297,6 @@ def test_semantic_search_without_active_profile_raises(tmp_path: Path) -> None:
     assert "embedder" in str(exc.value).lower()
 
 
-@_FFI_DISPATCH_MISSING
 def test_semantic_search_without_configured_kind_raises(tmp_path: Path) -> None:
     """Profile configured but no vector index for kind → KindNotVectorIndexed."""
     import pytest

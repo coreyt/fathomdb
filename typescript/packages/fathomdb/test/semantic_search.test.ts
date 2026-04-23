@@ -45,17 +45,16 @@ describe("Query.semanticSearch (AST + error propagation)", () => {
     });
   });
 
-  it("executes without throwing a wire-encoding error", () => {
-    // End-to-end semantic retrieval is not yet wired through the
-    // generic `executeAst` path (the compile layer treats
-    // SemanticSearch as a no-op for QueryRows, Pack G will expose a
-    // dedicated FFI entry). For now we assert that the TS → napi →
-    // Rust parse path succeeds: the call must not throw an
-    // INVALID_ARGUMENT / wire-shape error, regardless of whether any
-    // rows come back.
+  it("propagates EmbedderNotConfigured when no active profile exists", () => {
+    // Pack F1.75: `compile_query` + `execute_compiled_read` now dispatch
+    // SemanticSearch steps through `execute_compiled_semantic_search`,
+    // which hard-errors `EmbedderNotConfigured` on engines without an
+    // active embedding profile. The TS helper opens engines without an
+    // embedder, so this path must now surface a FathomError through the
+    // napi boundary.
     expect(() =>
       ctx.engine.nodes("KnowledgeItem").semanticSearch("Acme", 5).execute(),
-    ).not.toThrow();
+    ).toThrow(FathomError);
   });
 });
 
@@ -108,17 +107,19 @@ describe("Query.rawVectorSearch (AST + validation + error propagation)", () => {
     ).toThrow(/finite/i);
   });
 
-  it("executes without a wire-shape error", () => {
-    // Same caveat as semanticSearch: generic executeAst path does not
-    // yet dispatch to `execute_compiled_raw_vector_search` (Pack G),
-    // so we only assert the TS → napi → Rust parse path accepts the
-    // step without throwing a wire-shape error.
+  it("propagates EmbedderNotConfigured when no active profile exists", () => {
+    // Pack F1.75: `execute_compiled_read` now dispatches
+    // RawVectorSearch steps to `execute_compiled_raw_vector_search`,
+    // which requires an active embedding profile (it reads the
+    // profile's `dimensions` to validate vector length). The TS helper
+    // opens engines without an embedder, so this path must now surface
+    // a FathomError through the napi boundary.
     expect(() =>
       ctx.engine
         .nodes("KnowledgeItem")
         .rawVectorSearch([1.0, 0.0, 0.0, 0.0], 5)
         .execute(),
-    ).not.toThrow();
+    ).toThrow(FathomError);
   });
 });
 
