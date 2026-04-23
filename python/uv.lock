@@ -146,7 +146,7 @@ wheels = [
 
 [[package]]
 name = "fathomdb"
-version = "0.5.3"
+version = "0.5.5"
 source = { editable = "." }
 
 [package.optional-dependencies]

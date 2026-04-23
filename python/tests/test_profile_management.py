@@ -202,13 +202,15 @@ def test_configure_vec_roundtrip(tmp_path: Path) -> None:
     mock_embedder = MagicMock()
     mock_embedder.identity.return_value = mock_identity
 
-    impact_json = json.dumps(
+    # The legacy ``configure_vec(embedder)`` shim now routes through
+    # ``configure_embedding`` (see ``_admin.py``). Mock that FFI call and
+    # return the outcome envelope shape the Rust ``ConfigureEmbeddingOutcome``
+    # produces so the shim can ``json.loads`` it without raising.
+    configure_embedding_json = json.dumps(
         {
-            "rows_to_rebuild": 0,
-            "estimated_seconds": 0,
-            "temp_db_size_bytes": 0,
-            "current_tokenizer": None,
-            "target_tokenizer": None,
+            "outcome": "activated",
+            "profile_id": 1,
+            "stale_kinds": 0,
         }
     )
     profile_json = json.dumps(
@@ -222,16 +224,19 @@ def test_configure_vec_roundtrip(tmp_path: Path) -> None:
     )
 
     mock_core = MagicMock()
-    mock_core.preview_projection_impact.return_value = impact_json
-    mock_core.set_vec_profile.return_value = profile_json
+    mock_core.configure_embedding.return_value = configure_embedding_json
     mock_core.get_vec_profile.return_value = profile_json
     admin = AdminClient(mock_core)
 
     result = admin.configure_vec(mock_embedder)
 
+    mock_core.configure_embedding.assert_called_once()
     assert isinstance(result, VecProfile)
     assert result.model_identity == "test-model"
     assert result.dimensions == 128
+    # The synthesized VecProfile reports ``active_at=None`` (pre-0.5 "not set"
+    # sentinel) rather than a real epoch timestamp.
+    assert result.active_at is None
 
     fetched = admin.get_vec_profile("Document")
     assert fetched is not None

@@ -51,7 +51,9 @@ def configure_fts(db, kind, tokenizer, agree_to_rebuild_impact):
                 tokenizer,
                 agree_to_rebuild_impact=agree_to_rebuild_impact,
             )
-            click.echo(json.dumps({"kind": profile.kind, "tokenizer": profile.tokenizer}))
+            click.echo(
+                json.dumps({"kind": profile.kind, "tokenizer": profile.tokenizer})
+            )
         except RebuildImpactError as e:
             report = e.report
             if not agree_to_rebuild_impact:
@@ -73,7 +75,9 @@ def configure_fts(db, kind, tokenizer, agree_to_rebuild_impact):
                         agree_to_rebuild_impact=True,
                     )
                     click.echo(
-                        json.dumps({"kind": profile.kind, "tokenizer": profile.tokenizer})
+                        json.dumps(
+                            {"kind": profile.kind, "tokenizer": profile.tokenizer}
+                        )
                     )
                 else:
                     click.echo(
@@ -92,6 +96,8 @@ def configure_fts(db, kind, tokenizer, agree_to_rebuild_impact):
 @click.option("--agree-to-rebuild-impact", is_flag=True, default=False)
 def configure_vec(db, embedder, agree_to_rebuild_impact):
     """Set the vector embedding profile from an embedder preset."""
+    from fathomdb.errors import FathomError
+
     with _handle_fathom_errors():
         engine = _open_engine(db)
         embedder_obj = _resolve_embedder(embedder)
@@ -108,39 +114,49 @@ def configure_vec(db, embedder, agree_to_rebuild_impact):
                     }
                 )
             )
-        except RebuildImpactError as e:
-            report = e.report
-            if not agree_to_rebuild_impact:
-                if sys.stdin.isatty():
-                    click.echo(
-                        f"Rebuild required: {report.rows_to_rebuild} rows "
-                        f"(~{report.estimated_seconds}s). Proceed? [y/N] ",
-                        nl=False,
-                    )
-                    answer = click.getchar()
-                    click.echo()
-                    if answer.lower() != "y":
-                        click.echo("Aborted.")
-                        raise SystemExit(1)
-                    profile = engine.admin.configure_vec(
-                        embedder_obj,
-                        agree_to_rebuild_impact=True,
-                    )
-                    click.echo(
-                        json.dumps(
-                            {
-                                "model_identity": profile.model_identity,
-                                "dimensions": profile.dimensions,
-                            }
-                        )
-                    )
-                else:
-                    click.echo(
-                        f"Aborted: rebuild required for {report.rows_to_rebuild} rows. "
-                        "Pass --agree-to-rebuild-impact to proceed.",
-                        err=True,
-                    )
+        except FathomError as e:
+            # The legacy ``configure_vec(embedder)`` shim routes through
+            # ``configure_embedding``, which raises a plain ``FathomError``
+            # (not ``RebuildImpactError``) whose message contains
+            # ``acknowledge_rebuild_impact`` when enabled per-kind vector
+            # indexes would be invalidated by the identity change. See
+            # ``EngineError::EmbeddingChangeRequiresAck`` in
+            # ``crates/fathomdb-engine/src/lib.rs``.
+            message = str(e)
+            if "acknowledge_rebuild_impact" not in message.lower():
+                raise
+            if agree_to_rebuild_impact:
+                raise
+            if sys.stdin.isatty():
+                click.echo(
+                    f"Rebuild required: changing the embedding identity "
+                    f"will invalidate enabled vector indexes. Proceed? [y/N] ",
+                    nl=False,
+                )
+                answer = click.getchar()
+                click.echo()
+                if answer.lower() != "y":
+                    click.echo("Aborted.")
                     raise SystemExit(1)
+                profile = engine.admin.configure_vec(
+                    embedder_obj,
+                    agree_to_rebuild_impact=True,
+                )
+                click.echo(
+                    json.dumps(
+                        {
+                            "model_identity": profile.model_identity,
+                            "dimensions": profile.dimensions,
+                        }
+                    )
+                )
+            else:
+                click.echo(
+                    "Aborted: rebuild required. "
+                    "Pass --agree-to-rebuild-impact to proceed.",
+                    err=True,
+                )
+                raise SystemExit(1)
 
 
 @admin.command("preview-impact")
@@ -176,7 +192,9 @@ def get_fts_profile(db, kind):
         if profile is None:
             click.echo(json.dumps(None))
         else:
-            click.echo(json.dumps({"kind": profile.kind, "tokenizer": profile.tokenizer}))
+            click.echo(
+                json.dumps({"kind": profile.kind, "tokenizer": profile.tokenizer})
+            )
 
 
 @admin.command("get-vec-profile")
@@ -439,7 +457,9 @@ def safe_export(db, destination, no_checkpoint):
     """Export a consistent snapshot of the database."""
     with _handle_fathom_errors():
         engine = _open_engine(db)
-        report = engine.admin.safe_export(destination, force_checkpoint=not no_checkpoint)
+        report = engine.admin.safe_export(
+            destination, force_checkpoint=not no_checkpoint
+        )
         click.echo(json.dumps(_asdict_json_safe(report)))
 
 
@@ -473,7 +493,10 @@ def register_operational_collection(
 ):
     """Register a new operational collection."""
     with _handle_fathom_errors():
-        from fathomdb._types import OperationalCollectionKind, OperationalRegisterRequest
+        from fathomdb._types import (
+            OperationalCollectionKind,
+            OperationalRegisterRequest,
+        )
 
         request = OperationalRegisterRequest(
             name=name,

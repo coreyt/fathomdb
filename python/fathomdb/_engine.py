@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import atexit
 import json
 import os
+import weakref
 from pathlib import Path
 
 from ._admin import AdminClient
@@ -20,6 +22,26 @@ from ._types import (
 )
 
 
+# Module-level registry of live engines. CPython does not reliably run
+# __del__ on module-level refs at interpreter shutdown; without an atexit
+# hook the writer / vector-projection worker threads can keep the process
+# alive indefinitely. See Memex regression report on 0.5.5.
+_LIVE_ENGINES: "weakref.WeakSet[Engine]" = weakref.WeakSet()
+
+
+def _close_all_engines() -> None:
+    # Iterate over a snapshot — close() mutates the WeakSet.
+    for engine in list(_LIVE_ENGINES):
+        try:
+            engine.close()
+        except Exception:
+            # Swallow so one misbehaving engine does not block the others.
+            pass
+
+
+atexit.register(_close_all_engines)
+
+
 class Engine:
     """Entry point for interacting with a fathomdb database.
 
@@ -30,7 +52,9 @@ class Engine:
 
     def __init__(self, core: EngineCore) -> None:
         self._core = core
+        self._closed = False
         self.admin = AdminClient(core)
+        _LIVE_ENGINES.add(self)
 
     @classmethod
     def open(
@@ -126,7 +150,13 @@ class Engine:
 
         Idempotent — safe to call multiple times.
         """
-        self._core.close()
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._core.close()
+        finally:
+            _LIVE_ENGINES.discard(self)
 
     def __enter__(self) -> "Engine":
         return self

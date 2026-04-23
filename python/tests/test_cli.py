@@ -314,6 +314,76 @@ def test_get_vec_profile_no_profile_message():
 
 
 # ---------------------------------------------------------------------------
+# configure-vec: interactive rebuild-ack prompt re-runs with agree=True
+# ---------------------------------------------------------------------------
+
+
+def test_configure_vec_rebuild_ack_prompt_retries_on_yes():
+    """configure-vec catches EmbeddingChangeRequiresAck and re-runs on 'y'."""
+    from fathomdb._cli import cli
+    from fathomdb.errors import FathomError
+
+    runner = CliRunner()
+
+    # First call raises a FathomError whose message contains the substring
+    # the CLI matches on (mirrors ``EngineError::EmbeddingChangeRequiresAck``
+    # formatting). Second call (after ack) returns a valid VecProfile.
+    ack_error = FathomError(
+        "changing the database-wide embedding identity would invalidate 2 "
+        "enabled vector index kinds; re-invoke with "
+        "acknowledge_rebuild_impact=True"
+    )
+    call_results = [ack_error, _build_vec_profile()]
+
+    def _side_effect(*_args, **kwargs):
+        outcome = call_results.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    # CliRunner swaps ``sys.stdin`` with a non-tty stream during ``invoke``,
+    # which would push us down the non-interactive "Aborted" branch. Swap
+    # ``_cli.sys`` for a fake namespace whose ``stdin.isatty()`` returns
+    # True so the interactive prompt fires.
+    fake_sys = MagicMock()
+    fake_sys.stdin.isatty.return_value = True
+    # ``sys.exit`` is used by ``_handle_fathom_errors``; preserve the real
+    # one so exit codes still propagate. ``SystemExit`` is raised via
+    # ``raise SystemExit(...)`` (builtin), which is unaffected.
+    import sys as _real_sys
+
+    fake_sys.exit = _real_sys.exit
+
+    with (
+        patch("fathomdb._cli._open_engine") as mock_open,
+        patch("fathomdb._cli.click.getchar", return_value="y"),
+        patch("fathomdb._cli.sys", fake_sys),
+    ):
+        mock_engine = MagicMock()
+        mock_engine.admin.configure_vec.side_effect = _side_effect
+        mock_open.return_value = mock_engine
+
+        result = runner.invoke(
+            cli,
+            [
+                "admin",
+                "configure-vec",
+                "--db",
+                "/tmp/test.db",
+                "--embedder",
+                "bge-small-en-v1.5",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    # The shim was called twice: once raising, once succeeding with
+    # agree_to_rebuild_impact=True.
+    assert mock_engine.admin.configure_vec.call_count == 2
+    second_call_kwargs = mock_engine.admin.configure_vec.call_args_list[1].kwargs
+    assert second_call_kwargs.get("agree_to_rebuild_impact") is True
+
+
+# ---------------------------------------------------------------------------
 # Gap 4: _resolve_embedder correctness tests
 # ---------------------------------------------------------------------------
 
@@ -843,10 +913,14 @@ def test_regen_vectors_calls_admin_regen():
         result = runner.invoke(
             cli,
             [
-                "admin", "regen-vectors",
-                "--db", "/tmp/test.db",
-                "--embedder", "bge-small-en-v1.5",
-                "--kind", "Document",
+                "admin",
+                "regen-vectors",
+                "--db",
+                "/tmp/test.db",
+                "--embedder",
+                "bge-small-en-v1.5",
+                "--kind",
+                "Document",
             ],
         )
 
@@ -868,7 +942,14 @@ def test_trace_source_prints_report():
 
         result = runner.invoke(
             cli,
-            ["admin", "trace-source", "--db", "/tmp/test.db", "--source-ref", "src://test"],
+            [
+                "admin",
+                "trace-source",
+                "--db",
+                "/tmp/test.db",
+                "--source-ref",
+                "src://test",
+            ],
         )
 
     assert result.exit_code == 0, result.output
@@ -890,7 +971,14 @@ def test_excise_source_prints_report():
 
         result = runner.invoke(
             cli,
-            ["admin", "excise-source", "--db", "/tmp/test.db", "--source-ref", "src://test"],
+            [
+                "admin",
+                "excise-source",
+                "--db",
+                "/tmp/test.db",
+                "--source-ref",
+                "src://test",
+            ],
         )
 
     assert result.exit_code == 0, result.output
@@ -907,12 +995,21 @@ def test_restore_logical_id_prints_report():
 
     with patch("fathomdb._cli._open_engine") as mock_open:
         mock_engine = MagicMock()
-        mock_engine.admin.restore_logical_id.return_value = _build_logical_restore_report()
+        mock_engine.admin.restore_logical_id.return_value = (
+            _build_logical_restore_report()
+        )
         mock_open.return_value = mock_engine
 
         result = runner.invoke(
             cli,
-            ["admin", "restore-logical-id", "--db", "/tmp/test.db", "--logical-id", "lid-abc"],
+            [
+                "admin",
+                "restore-logical-id",
+                "--db",
+                "/tmp/test.db",
+                "--logical-id",
+                "lid-abc",
+            ],
         )
 
     assert result.exit_code == 0, result.output
@@ -934,7 +1031,14 @@ def test_purge_logical_id_prints_report():
 
         result = runner.invoke(
             cli,
-            ["admin", "purge-logical-id", "--db", "/tmp/test.db", "--logical-id", "lid-abc"],
+            [
+                "admin",
+                "purge-logical-id",
+                "--db",
+                "/tmp/test.db",
+                "--logical-id",
+                "lid-abc",
+            ],
         )
 
     assert result.exit_code == 0, result.output
@@ -956,7 +1060,14 @@ def test_safe_export_prints_manifest():
 
         result = runner.invoke(
             cli,
-            ["admin", "safe-export", "--db", "/tmp/test.db", "--destination", "/tmp/export.db"],
+            [
+                "admin",
+                "safe-export",
+                "--db",
+                "/tmp/test.db",
+                "--destination",
+                "/tmp/export.db",
+            ],
         )
 
     assert result.exit_code == 0, result.output
