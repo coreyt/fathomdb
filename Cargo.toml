@@ -51,7 +51,7 @@ rusqlite = { version = "0.32.1", features = ["bundled", "load_extension", "backu
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 sha2 = "0.10"
-toml = "0.8"
+toml = "1.0"
 sqlite-vec = "0.1"
 tempfile = "3.19.1"
 thiserror = "2.0.12"
