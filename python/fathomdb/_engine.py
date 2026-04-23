@@ -41,6 +41,7 @@ class Engine:
         vector_dimension: int | None = None,
         telemetry_level: TelemetryLevel | str | None = None,
         embedder: str | None = None,
+        auto_drain_vector: bool = False,
         progress_callback=None,
         feedback_config: FeedbackConfig | None = None,
     ) -> "Engine":
@@ -92,8 +93,16 @@ class Engine:
         FathomError
             If the database cannot be opened or schema bootstrap fails.
         """
-        mode = provenance_mode.value if isinstance(provenance_mode, ProvenanceMode) else provenance_mode
-        level = telemetry_level.value if isinstance(telemetry_level, TelemetryLevel) else telemetry_level
+        mode = (
+            provenance_mode.value
+            if isinstance(provenance_mode, ProvenanceMode)
+            else provenance_mode
+        )
+        level = (
+            telemetry_level.value
+            if isinstance(telemetry_level, TelemetryLevel)
+            else telemetry_level
+        )
         path = os.fspath(Path(database_path))
         core = run_with_feedback(
             surface="python",
@@ -101,7 +110,14 @@ class Engine:
             metadata={"database_path": path},
             progress_callback=progress_callback,
             feedback_config=feedback_config,
-            operation=lambda: EngineCore.open(path, mode, vector_dimension, level, embedder),
+            operation=lambda: EngineCore.open(
+                path,
+                mode,
+                vector_dimension,
+                level,
+                embedder,
+                auto_drain_vector,
+            ),
         )
         return cls(core)
 
@@ -262,6 +278,8 @@ class Engine:
             },
             progress_callback=progress_callback,
             feedback_config=feedback_config,
-            operation=lambda: self._core.touch_last_accessed(json.dumps(request.to_wire())),
+            operation=lambda: self._core.touch_last_accessed(
+                json.dumps(request.to_wire())
+            ),
         )
         return LastAccessTouchReport.from_wire(json.loads(payload))

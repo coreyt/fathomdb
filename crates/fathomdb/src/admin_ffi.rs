@@ -15,9 +15,9 @@ use crate::{
     Engine, EngineError, FtsPropertyPathMode, FtsPropertyPathSpec, FtsPropertySchemaRecord,
 };
 use fathomdb_engine::{
-    BatchEmbedder, ConfigureEmbeddingOutcome, ConfigureVecOutcome, EmbedderError, FtsProfile,
-    ProjectionImpact, QueryEmbedder, QueryEmbedderIdentity, VecIndexStatus, VecProfile,
-    VectorSource,
+    BatchEmbedder, Capabilities, ConfigureEmbeddingOutcome, ConfigureVecOutcome, CurrentConfig,
+    EmbedderError, FtsProfile, KindDescription, ProjectionImpact, QueryEmbedder,
+    QueryEmbedderIdentity, VecIndexStatus, VecProfile, VectorSource,
 };
 
 /// Extraction mode for a single registered FTS property path, serialized
@@ -408,6 +408,98 @@ pub fn get_vec_index_status_json(engine: &Engine, kind: &str) -> Result<String, 
         .get_vec_index_status(kind)
         .map_err(AdminFfiError::Engine)?;
     serde_json::to_string(&status).map_err(AdminFfiError::Serialize)
+}
+
+/// Pack H: return the static install/build capabilities surface.
+///
+/// Wire shape: no request body (empty JSON object). Returns a serialized
+/// [`Capabilities`] struct.
+///
+/// # Errors
+/// Returns [`AdminFfiError::Serialize`] on response serialization failure.
+pub fn capabilities_json() -> Result<String, AdminFfiError> {
+    let caps: Capabilities = fathomdb_engine::AdminService::capabilities();
+    serde_json::to_string(&caps).map_err(AdminFfiError::Serialize)
+}
+
+/// Pack H: return the runtime configuration snapshot.
+///
+/// Wire shape: no request body. Returns a serialized [`CurrentConfig`].
+///
+/// # Errors
+/// Returns [`AdminFfiError`] on engine execution or response
+/// serialization failure.
+pub fn current_config_json(engine: &Engine) -> Result<String, AdminFfiError> {
+    let cfg: CurrentConfig = engine
+        .admin()
+        .service()
+        .current_config()
+        .map_err(AdminFfiError::Engine)?;
+    serde_json::to_string(&cfg).map_err(AdminFfiError::Serialize)
+}
+
+/// Pack H: return the per-kind view.
+///
+/// Wire shape: raw kind string. Returns a serialized [`KindDescription`].
+///
+/// # Errors
+/// Returns [`AdminFfiError`] on engine execution or response
+/// serialization failure.
+pub fn describe_kind_json(engine: &Engine, kind: &str) -> Result<String, AdminFfiError> {
+    let desc: KindDescription = engine
+        .admin()
+        .service()
+        .describe_kind(kind)
+        .map_err(AdminFfiError::Engine)?;
+    serde_json::to_string(&desc).map_err(AdminFfiError::Serialize)
+}
+
+/// Pack H: wire-level envelope for [`configure_vec_kinds_json`].
+#[derive(Debug, Deserialize)]
+struct ConfigureVecKindsRequest {
+    items: Vec<ConfigureVecKindsItem>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfigureVecKindsItem {
+    kind: String,
+    source: String,
+}
+
+/// Pack H: batch form of `configure_vec_kind_json`.
+///
+/// Wire shape: `{"items":[{"kind":"K","source":"chunks"}, ...]}`. Returns a
+/// JSON array of [`ConfigureVecOutcome`] in input order.
+///
+/// # Errors
+/// Returns [`AdminFfiError`] on JSON parse, engine execution, or response
+/// serialization failure. Per-kind atomicity matches
+/// [`fathomdb_engine::AdminService::configure_vec_kind`]; a failure on
+/// item N leaves items 0..N committed.
+pub fn configure_vec_kinds_json(
+    engine: &Engine,
+    request_json: &str,
+) -> Result<String, AdminFfiError> {
+    let request: ConfigureVecKindsRequest =
+        serde_json::from_str(request_json).map_err(AdminFfiError::Parse)?;
+    let mut items: Vec<(String, VectorSource)> = Vec::with_capacity(request.items.len());
+    for it in request.items {
+        let source = match it.source.as_str() {
+            "chunks" => VectorSource::Chunks,
+            other => {
+                return Err(AdminFfiError::Engine(EngineError::InvalidConfig(format!(
+                    "unsupported vector source mode: {other:?}"
+                ))));
+            }
+        };
+        items.push((it.kind, source));
+    }
+    let outcomes: Vec<ConfigureVecOutcome> = engine
+        .admin()
+        .service()
+        .configure_vec_kinds(&items)
+        .map_err(AdminFfiError::Engine)?;
+    serde_json::to_string(&outcomes).map_err(AdminFfiError::Serialize)
 }
 
 /// Request envelope for [`drain_vector_projection_json`].

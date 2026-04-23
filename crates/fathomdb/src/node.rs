@@ -57,6 +57,7 @@ impl NodeEngineCore {
         vector_dimension: Option<u32>,
         telemetry_level: Option<String>,
         embedder: Option<String>,
+        auto_drain_vector: Option<bool>,
     ) -> Result<Self> {
         let options = EngineOptions {
             database_path: PathBuf::from(database_path),
@@ -65,6 +66,7 @@ impl NodeEngineCore {
             read_pool_size: None,
             telemetry_level: parse_telemetry_level(telemetry_level.as_deref())?,
             embedder: parse_embedder_choice(embedder.as_deref())?,
+            auto_drain_vector: auto_drain_vector.unwrap_or(false),
         };
         let engine = Engine::open(options).map_err(map_engine_error)?;
         Ok(Self {
@@ -684,6 +686,34 @@ impl NodeEngineCore {
     }
 
     #[napi]
+    #[allow(clippy::unused_self)]
+    pub fn capabilities(&self) -> Result<String> {
+        crate::admin_ffi::capabilities_json().map_err(map_admin_ffi_error)
+    }
+
+    #[napi]
+    pub fn current_config(&self) -> Result<String> {
+        self.with_engine(|engine| {
+            crate::admin_ffi::current_config_json(engine).map_err(map_admin_ffi_error)
+        })
+    }
+
+    #[napi]
+    pub fn describe_kind(&self, kind: String) -> Result<String> {
+        self.with_engine(|engine| {
+            crate::admin_ffi::describe_kind_json(engine, &kind).map_err(map_admin_ffi_error)
+        })
+    }
+
+    #[napi]
+    pub fn configure_vec_kinds(&self, request_json: String) -> Result<String> {
+        self.with_engine(|engine| {
+            crate::admin_ffi::configure_vec_kinds_json(engine, &request_json)
+                .map_err(map_admin_ffi_error)
+        })
+    }
+
+    #[napi]
     pub fn restore_vector_profiles(&self) -> Result<String> {
         self.with_engine(|engine| {
             let report = engine
@@ -805,6 +835,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         assert!(engine.is_ok(), "open must succeed: {:?}", engine.err());
     }
@@ -815,6 +846,7 @@ mod tests {
         let engine = NodeEngineCore::open(
             db.path().to_str().expect("db path").to_owned(),
             "warn".to_owned(),
+            None,
             None,
             None,
             None,
@@ -830,6 +862,7 @@ mod tests {
         let engine = NodeEngineCore::open(
             db.path().to_str().expect("db path").to_owned(),
             "warn".to_owned(),
+            None,
             None,
             None,
             None,
@@ -849,6 +882,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .expect("open");
         let result = engine
@@ -863,6 +897,7 @@ mod tests {
         let engine = NodeEngineCore::open(
             db.path().to_str().expect("db path").to_owned(),
             "warn".to_owned(),
+            None,
             None,
             None,
             None,
@@ -894,6 +929,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .expect("open");
         let result = engine
@@ -908,6 +944,7 @@ mod tests {
         let engine = NodeEngineCore::open(
             db.path().to_str().expect("db path").to_owned(),
             "warn".to_owned(),
+            None,
             None,
             None,
             None,
@@ -930,6 +967,7 @@ mod tests {
         let engine = NodeEngineCore::open(
             db.path().to_str().expect("db path").to_owned(),
             "warn".to_owned(),
+            None,
             None,
             None,
             None,
