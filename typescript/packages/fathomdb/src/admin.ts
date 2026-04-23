@@ -639,4 +639,34 @@ export class AdminClient {
         parseNativeJson(callNative(() => this.#core.regenerateVectorEmbeddings(JSON.stringify(vectorRegenerationConfigToWire(config))))) as Record<string, unknown>
       ), progressCallback, feedbackConfig);
   }
+
+  /**
+   * Drain the vector-projection queue using the engine's configured
+   * read-time embedder.
+   *
+   * Pack F1.5 routes admin-side vector-projection drains through the
+   * same embedder that serves `semanticSearch`, preserving the
+   * "identity belongs to the embedder" invariant: callers never supply
+   * an embedder — the engine's coordinator is the sole source of truth.
+   *
+   * @param timeoutMs - Soft deadline for the drain loop in milliseconds
+   *   (default 5000). The drain returns early if no more pending rows
+   *   are available, regardless of the timeout.
+   * @returns A parsed `DrainReport` object with counts for
+   *   `incremental_processed`, `backfill_processed`, `failed`, and
+   *   `discarded_stale`.
+   * @throws {FathomError} If the engine has no embedder configured
+   *   (maps to `FATHOMDB_INVALID_CONFIG`).
+   */
+  drainVectorProjection(timeoutMs: number = 5000, progressCallback?: ProgressCallback, feedbackConfig?: FeedbackConfig): Record<string, unknown> {
+    return this.#run("admin.drain_vector_projection", () =>
+      parseNativeJson(
+        callNative(() =>
+          this.#core.drainVectorProjection(JSON.stringify({ timeout_ms: timeoutMs })),
+        ),
+      ),
+      progressCallback,
+      feedbackConfig,
+    );
+  }
 }

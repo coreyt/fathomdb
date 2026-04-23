@@ -38,6 +38,22 @@ export class CapabilityMissingError extends FathomError {}
 /** Raised when a {@link WriteRequestBuilder} detects an invalid handle or reference. */
 export class BuilderValidationError extends FathomError {}
 
+/**
+ * Raised when `semanticSearch` / `rawVectorSearch` target a node kind that
+ * has not been enabled for vector indexing on the engine side (the kind is
+ * missing a `vector_index_schemas` row with `state = 'enabled'`).
+ *
+ * Callers must invoke `configure_vec_kind` on an engine that exposes it
+ * before running vector retrieval against this kind.
+ */
+export class KindNotVectorIndexedError extends FathomError {}
+
+/**
+ * Raised by `rawVectorSearch` when the caller-supplied vector's length
+ * does not match the active vector profile's dimension.
+ */
+export class DimensionMismatchError extends FathomError {}
+
 /** Raised when a profile change requires a projection rebuild but the caller has not acknowledged it. */
 export class RebuildImpactError extends FathomError {
   readonly report: ProjectionImpactReport;
@@ -125,6 +141,10 @@ export function mapNativeError(error: unknown): Error {
       return new BridgeError(message);
     case "CAPABILITY_MISSING":
       return new CapabilityMissingError(message);
+    case "KIND_NOT_VECTOR_INDEXED":
+      return new KindNotVectorIndexedError(message);
+    case "DIMENSION_MISMATCH":
+      return new DimensionMismatchError(message);
     default:
       return new FathomError(message ?? error.message);
   }
