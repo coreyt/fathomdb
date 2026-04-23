@@ -1,3 +1,9 @@
+// Pack G: the `VecInsert` struct carries a `#[deprecated]` attribute aimed
+// at external callers; the writer module itself is the supported
+// implementation surface for the managed vector projection and uses the
+// type internally.
+#![allow(deprecated)]
+
 mod fts_extract;
 
 // Re-export fts_extract items at the writer module level so that external
@@ -136,6 +142,10 @@ pub struct ChunkInsert {
 /// co-submitted in the same [`WriteRequest`].  The embedding is stored in the
 /// `vec_nodes_active` virtual table when the `sqlite-vec` feature is enabled;
 /// without the feature the insert is silently skipped.
+#[deprecated(
+    since = "0.6.0",
+    note = "raw VecInsert is the managed vector projection's internal wire format. Callers should configure embedding + configure_vec_kind and write nodes/chunks normally; the projection actor will produce vec rows automatically. This type will remain public for a transition window but may become crate-private in a future release."
+)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct VecInsert {
     pub chunk_id: String,

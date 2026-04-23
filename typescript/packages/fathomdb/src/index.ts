@@ -111,6 +111,7 @@ export {
   type VecIdentity,
   type VectorRegenerationConfig,
   type VectorRegenerationReport,
+  type DrainReport,
   // Operational collection types
   type OperationalCollectionRecord,
   type OperationalCompactionReport,

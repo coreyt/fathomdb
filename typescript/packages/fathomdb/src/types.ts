@@ -1479,3 +1479,34 @@ export function vectorRegenerationReportFromWire(w: Record<string, unknown>): Ve
     notes: Array.isArray(w.notes) ? w.notes.map(String) : [],
   };
 }
+
+/**
+ * Report returned from ``admin.drainVectorProjection``.
+ *
+ * Mirrors the Rust struct
+ * ``fathomdb_engine::vector_projection_actor::DrainReport`` field-for-field.
+ * All counts are `u64` on the Rust side and deserialise as finite `number`s.
+ */
+export type DrainReport = {
+  /** Number of incremental (priority >= 1000) work rows that produced a vec row in this drain. */
+  incremental_processed: number;
+  /** Number of backfill (priority < 1000) work rows that produced a vec row in this drain. */
+  backfill_processed: number;
+  /** Number of rows that produced a hard failure (e.g. embedder output wrong dimension). */
+  failed: number;
+  /** Number of rows whose canonical hash mismatched the current chunk and were marked discarded. */
+  discarded_stale: number;
+  /** Number of ticks aborted because the embedder was unavailable. */
+  embedder_unavailable_ticks: number;
+};
+
+/** @internal */
+export function drainReportFromWire(w: Record<string, unknown>): DrainReport {
+  return {
+    incremental_processed: Number(w.incremental_processed ?? 0),
+    backfill_processed: Number(w.backfill_processed ?? 0),
+    failed: Number(w.failed ?? 0),
+    discarded_stale: Number(w.discarded_stale ?? 0),
+    embedder_unavailable_ticks: Number(w.embedder_unavailable_ticks ?? 0),
+  };
+}

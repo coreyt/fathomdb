@@ -97,6 +97,10 @@ pub enum CompileError {
     MissingSearchStep,
     #[error("compile_retrieval_plan requires exactly one Search step in the AST, found multiple")]
     MultipleSearchSteps,
+    #[error(
+        "query AST contains both SemanticSearch and RawVectorSearch steps; these surfaces are mutually exclusive"
+    )]
+    SemanticAndRawVectorSearchBothPresent,
 }
 
 /// Security fix H-1: Validate JSON path against a strict allowlist pattern to
@@ -286,6 +290,24 @@ const MAX_TRAVERSAL_DEPTH: usize = 50;
 pub fn compile_query(ast: &QueryAst) -> Result<CompiledQuery, CompileError> {
     if !ast.expansions.is_empty() {
         return Err(CompileError::FlatCompileDoesNotSupportExpansions);
+    }
+
+    // Pack G: mutual-exclusion guard. `semantic_search` and
+    // `raw_vector_search` are two alternative entry points into the vector
+    // sidecar executor — they target the same `vec_<kind>` table but differ
+    // only in whether the engine embeds at query time. Carrying both in one
+    // AST previously discarded the earlier sidecar silently (the loop below
+    // overwrites on each match). Reject at compile time instead.
+    let has_semantic = ast
+        .steps
+        .iter()
+        .any(|s| matches!(s, QueryStep::SemanticSearch { .. }));
+    let has_raw_vector = ast
+        .steps
+        .iter()
+        .any(|s| matches!(s, QueryStep::RawVectorSearch { .. }));
+    if has_semantic && has_raw_vector {
+        return Err(CompileError::SemanticAndRawVectorSearchBothPresent);
     }
 
     let traversals = ast
@@ -2036,5 +2058,21 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn semantic_search_and_raw_vector_search_together_rejected() {
+        // Pack G: mutual-exclusion compile guard. An AST that carries both a
+        // SemanticSearch and a RawVectorSearch step must be rejected at
+        // compile time rather than silently discarding one sidecar.
+        let ast = QueryBuilder::nodes("KnowledgeItem")
+            .semantic_search("Acme", 5)
+            .raw_vector_search(vec![0.1_f32, 0.0, 0.0, 0.0], 5)
+            .into_ast();
+        let err = compile_query(&ast).expect_err("must reject conflicting vector steps");
+        assert!(
+            matches!(err, CompileError::SemanticAndRawVectorSearchBothPresent),
+            "expected SemanticAndRawVectorSearchBothPresent, got {err:?}"
+        );
     }
 }

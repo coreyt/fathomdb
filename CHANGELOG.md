@@ -7,6 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Managed vector projection (db-wide embedding profile + per-kind vector indexing)
+
+- **Db-wide active embedding profile.** New admin surface
+  `admin.configure_embedding(embedder, acknowledge_rebuild_impact)`
+  records an active-singleton profile in the new
+  `vector_embedding_profiles` table (schema v24). Identity
+  (`model_identity`, `model_version`, `dimensions`,
+  `normalization_policy`) comes from the embedder itself — per the
+  "vector identity belongs to the embedder" invariant, callers never
+  supply identity strings. Switching identity while enabled kinds exist
+  requires `acknowledge_rebuild_impact=true` and returns
+  `EmbeddingChangeRequiresAck` otherwise. Available in Rust, Python
+  (`Admin.configure_embedding(...)`), and TypeScript
+  (`admin.configureEmbedding(...)`).
+- **Per-kind vector indexing.** New admin surface
+  `admin.configure_vec(kind, source="chunks")` writes a
+  `vector_index_schemas` row (schema v24), creates/materialises
+  `vec_<kind>` with the active profile's dimension, and enqueues
+  backfill work for every existing chunk of the kind. Available in
+  Rust (`AdminService::configure_vec_kind(...)`), Python
+  (`Admin.configure_vec(...)`), and TypeScript
+  (`admin.configureVec(...)`).
+- **Async durable vector projection worker** (`VectorProjectionActor`).
+  Claims work rows from `vector_projection_work` under a single-tick
+  lock, validates canonical hash + active profile id, calls the
+  embedder via `BatchEmbedder`, and atomically writes `vec_<kind>`
+  rows plus work-row state. Backfill vs incremental scheduling is
+  `priority DESC`: incremental writes (priority ≥ 1000) drain ahead of
+  backfill (priority < 1000). Writer auto-enqueues incremental work on
+  canonical chunk writes for vector-enabled kinds whenever an active
+  profile exists.
+- **`admin.drain_vector_projection(timeout)`** admin surface to flush
+  the queue synchronously (Rust, Python, TypeScript). TypeScript now
+  returns a typed `DrainReport` interface exposing
+  `incremental_processed`, `backfill_processed`, `failed`,
+  `discarded_stale`, and `embedder_unavailable_ticks`.
+- **`admin.get_vec_index_status(kind)`** admin surface reporting the
+  current per-kind vector index state (Rust, Python, TypeScript).
+- **`QueryBuilder::semantic_search(text, limit)`** (Rust) /
+  `.semantic_search(text, limit)` (Python) / `.semanticSearch(text,
+  limit)` (TypeScript). Embeds the query via the active profile and
+  runs KNN against `vec_<kind>`. Hard-errors
+  `NoEmbeddingConfigured`, `KindNotVectorIndexed`, and
+  `DimensionMismatch`; degrades with `was_degraded=true` on stale
+  per-kind schema or temporary embedder unavailability.
+- **`QueryBuilder::raw_vector_search(vec, limit)`** sibling surface
+  that skips the embedder and runs KNN against `vec_<kind>` with a
+  caller-supplied `Vec<f32>` / `list[float]` / `number[]`.
+- **`was_degraded` flag** on `SearchRows` / `QueryRows` results
+  surfaced in all three language SDKs.
+
+### Deprecated
+
+- **`QueryBuilder::vector_search(text)`** — prefer
+  `semantic_search(text)` for natural-language queries or
+  `raw_vector_search(vec)` for caller-supplied float vectors. The
+  deprecation shim is in place across Rust, Python, and TypeScript
+  and still routes to the new surfaces.
+- **Raw `VecInsert`** — the managed vector projection is the supported
+  path for populating `vec_<kind>`. `VecInsert` remains importable
+  during the transition window (Rust `#[deprecated]`, Python
+  `DeprecationWarning` on construction, TypeScript JSDoc
+  `@deprecated` on `WriteRequestBuilder.addVecInsert`).
+
+### Fixed
+
+- **`compile_query` now rejects ASTs that carry both a
+  `SemanticSearch` and a `RawVectorSearch` step** with
+  `CompileError::SemanticAndRawVectorSearchBothPresent`. Previously
+  the compiler would silently discard one sidecar.
+
 ## [0.5.3] — 2026-04-20
 
 ### Fixed

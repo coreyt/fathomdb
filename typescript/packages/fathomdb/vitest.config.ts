@@ -54,45 +54,53 @@ if (envBinding && existsSync(envBinding)) {
   // when building locally. Prefer that over the plain arch-only name so a
   // freshly-built binary from `napi build` takes precedence over a stale prebuild.
   const abiSuffix = platform === "linux" ? "-gnu" : "";
-  const prebuildCandidates = [
+  // Local prebuilds take absolute priority — they are committed per-worktree
+  // when a team member has chosen to pin a specific binary for CI determinism.
+  const localPrebuildCandidates = [
     resolve(prebuildsDir, `fathomdb.${platform}-${arch}${abiSuffix}.node`),
     resolve(prebuildsDir, `fathomdb.${platform}-${arch}.node`),
     resolve(prebuildsDir, "fathomdb.node"),
-    ...(mainWorktreePrebuildsDir
-      ? [
-          resolve(mainWorktreePrebuildsDir, `fathomdb.${platform}-${arch}${abiSuffix}.node`),
-          resolve(mainWorktreePrebuildsDir, `fathomdb.${platform}-${arch}.node`),
-          resolve(mainWorktreePrebuildsDir, "fathomdb.node"),
-        ]
-      : []),
   ];
-  const prebuild = prebuildCandidates.find((p) => existsSync(p));
+  // Main-worktree prebuilds are a best-effort fallback for linked worktrees.
+  // Pack G fix: a local freshly-built cdylib takes priority over a main-
+  // worktree prebuild, because the main-worktree binary is commonly stale
+  // (pre-feature) when a worktree is under active development.
+  const mainWorktreePrebuildCandidates = mainWorktreePrebuildsDir
+    ? [
+        resolve(mainWorktreePrebuildsDir, `fathomdb.${platform}-${arch}${abiSuffix}.node`),
+        resolve(mainWorktreePrebuildsDir, `fathomdb.${platform}-${arch}.node`),
+        resolve(mainWorktreePrebuildsDir, "fathomdb.node"),
+      ]
+    : [];
+  const cdylibCandidates = [
+    // Linux
+    resolve(repoRoot, "target/debug/libfathomdb.so"),
+    resolve(repoRoot, "target/release/libfathomdb.so"),
+    // macOS
+    resolve(repoRoot, "target/debug/libfathomdb.dylib"),
+    resolve(repoRoot, "target/release/libfathomdb.dylib"),
+    // Windows
+    resolve(repoRoot, "target/debug/fathomdb.dll"),
+    resolve(repoRoot, "target/release/fathomdb.dll"),
+  ];
 
-  if (prebuild) {
-    targetPath = prebuild;
-  } else {
-    // Fall back to a freshly-built cdylib.
-    const cdylibCandidates = [
-      // Linux
-      resolve(repoRoot, "target/debug/libfathomdb.so"),
-      resolve(repoRoot, "target/release/libfathomdb.so"),
-      // macOS
-      resolve(repoRoot, "target/debug/libfathomdb.dylib"),
-      resolve(repoRoot, "target/release/libfathomdb.dylib"),
-      // Windows
-      resolve(repoRoot, "target/debug/fathomdb.dll"),
-      resolve(repoRoot, "target/release/fathomdb.dll"),
-    ];
-    const source = cdylibCandidates.find((candidate) => existsSync(candidate));
-    if (!source) {
-      throw new Error(
-        "Missing native binding. Either place a prebuilt .node in prebuilds/ or run `cargo build -p fathomdb --features node` from the repo root.",
-      );
-    }
+  const localPrebuild = localPrebuildCandidates.find((p) => existsSync(p));
+  const cdylib = cdylibCandidates.find((p) => existsSync(p));
+  const mainPrebuild = mainWorktreePrebuildCandidates.find((p) => existsSync(p));
+
+  if (localPrebuild) {
+    targetPath = localPrebuild;
+  } else if (cdylib) {
     const targetDir = resolve(here, "test/.native");
     mkdirSync(targetDir, { recursive: true });
     targetPath = resolve(targetDir, "fathomdb.node");
-    copyFileSync(source, targetPath);
+    copyFileSync(cdylib, targetPath);
+  } else if (mainPrebuild) {
+    targetPath = mainPrebuild;
+  } else {
+    throw new Error(
+      "Missing native binding. Either place a prebuilt .node in prebuilds/ or run `cargo build -p fathomdb --features node` from the repo root.",
+    );
   }
 }
 

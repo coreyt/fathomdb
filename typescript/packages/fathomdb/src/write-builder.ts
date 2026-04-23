@@ -233,6 +233,12 @@ export class WriteRequestBuilder {
   /**
    * Add a vector embedding associated with a chunk.
    *
+   * @deprecated Since 0.6.0. Prefer the managed vector projection:
+   *   call ``admin.configureEmbedding(...)`` once, enable vector indexing
+   *   per kind via ``admin.configureVec(kind)``, then write nodes and
+   *   chunks through the normal write path. The projection actor will
+   *   populate ``vec_<kind>`` automatically. This method remains
+   *   available during the transition window.
    * @param input - The chunk reference and embedding vector.
    */
   addVecInsert(input: { chunk: ChunkHandle | string; embedding: number[] }): void {
