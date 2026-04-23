@@ -64,10 +64,13 @@ import {
   type DrainReport,
   drainReportFromWire,
   type Capabilities,
+  type ConfigureEmbeddingOutcome,
+  type ConfigureEmbeddingRequest,
   type ConfigureVecKindsItem,
   type ConfigureVecOutcome,
   type CurrentConfig,
   type KindDescription,
+  configureEmbeddingRequestToWire,
 } from "./types.js";
 
 /**
@@ -728,5 +731,34 @@ export class AdminClient {
     const request = JSON.stringify({ items });
     const parsed = parseNativeJsonArray(callNative(() => this.#core.configureVecKinds(request)));
     return parsed as unknown as ConfigureVecOutcome[];
+  }
+
+  /**
+   * Pack H.1: activate or replace the database-wide embedding profile.
+   *
+   * Identity fields on the request are forwarded verbatim to the Rust side,
+   * which wraps them in an identity-only `QueryEmbedder` shim so the core
+   * invariant "vector identity belongs to the embedder" is preserved.
+   *
+   * If the new identity differs from the active profile and any vector
+   * index kinds are enabled, this throws unless
+   * `acknowledgeRebuildImpact` is set.
+   */
+  configureEmbedding(request: ConfigureEmbeddingRequest): ConfigureEmbeddingOutcome {
+    const wire = configureEmbeddingRequestToWire(request);
+    return parseNativeJson(
+      callNative(() => this.#core.configureEmbedding(JSON.stringify(wire))),
+    ) as unknown as ConfigureEmbeddingOutcome;
+  }
+
+  /**
+   * Pack H.1: single-kind form of {@link configureVecKinds}. Enables managed
+   * vector indexing for the given node kind against the active embedding
+   * profile.
+   */
+  configureVecKind(request: { kind: string; source: "chunks" }): ConfigureVecOutcome {
+    return parseNativeJson(
+      callNative(() => this.#core.configureVecKind(JSON.stringify(request))),
+    ) as unknown as ConfigureVecOutcome;
   }
 }

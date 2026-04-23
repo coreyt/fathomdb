@@ -1621,3 +1621,50 @@ export type ConfigureVecKindsItem = {
   /** Only `"chunks"` is supported today. */
   source: "chunks";
 };
+
+/**
+ * Input for {@link AdminClient.configureEmbedding}. Identity fields are
+ * echoed verbatim into the wire envelope — the Rust side wraps these in
+ * a tiny identity-only shim so `configure_embedding` can still read the
+ * identity through a `QueryEmbedder`, preserving the "identity belongs
+ * to the embedder" invariant.
+ */
+export type ConfigureEmbeddingRequest = {
+  modelIdentity: string;
+  modelVersion?: string;
+  dimensions: number;
+  normalizationPolicy?: string;
+  /** Defaults to 512 on the Rust side when omitted. */
+  maxTokens?: number;
+  /** Required when changing identity and any vector index kinds are enabled. */
+  acknowledgeRebuildImpact?: boolean;
+};
+
+/**
+ * Outcome of {@link AdminClient.configureEmbedding}. The `outcome` tag
+ * discriminates the three possible results — fields beyond `outcome`
+ * depend on the tag and are passed through from the Rust side.
+ */
+export type ConfigureEmbeddingOutcome =
+  | { outcome: "activated"; profile_id: number }
+  | { outcome: "unchanged"; profile_id: number }
+  | {
+      outcome: "replaced";
+      old_profile_id: number;
+      new_profile_id: number;
+      stale_kinds: number;
+    };
+
+export function configureEmbeddingRequestToWire(
+  input: ConfigureEmbeddingRequest,
+): Record<string, unknown> {
+  const wire: Record<string, unknown> = {
+    model_identity: input.modelIdentity,
+    dimensions: input.dimensions,
+    acknowledge_rebuild_impact: input.acknowledgeRebuildImpact ?? false,
+  };
+  if (input.modelVersion !== undefined) wire.model_version = input.modelVersion;
+  if (input.normalizationPolicy !== undefined) wire.normalization_policy = input.normalizationPolicy;
+  if (input.maxTokens !== undefined) wire.max_tokens = input.maxTokens;
+  return wire;
+}

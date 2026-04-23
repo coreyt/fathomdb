@@ -114,6 +114,8 @@ export {
   type DrainReport,
   // Pack H: introspection types
   type Capabilities,
+  type ConfigureEmbeddingOutcome,
+  type ConfigureEmbeddingRequest,
   type ConfigureVecKindsItem,
   type ConfigureVecOutcome,
   type CurrentConfig,

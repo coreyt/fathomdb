@@ -20,7 +20,7 @@ workspace = true
 node = ["dep:napi", "dep:napi-derive"]
 python = ["dep:pyo3", "dep:pyo3-log"]
 sqlite-vec = ["fathomdb-engine/sqlite-vec"]
-tracing = ["fathomdb-engine/tracing"]
+tracing = ["fathomdb-engine/tracing", "dep:tracing"]
 default-embedder = ["fathomdb-engine/default-embedder"]
 
 [dependencies]
@@ -31,6 +31,7 @@ napi = { workspace = true, optional = true }
 napi-derive = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-log = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 

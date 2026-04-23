@@ -714,6 +714,22 @@ impl NodeEngineCore {
     }
 
     #[napi]
+    pub fn configure_embedding(&self, request_json: String) -> Result<String> {
+        self.with_engine(|engine| {
+            crate::admin_ffi::configure_embedding_json(engine, &request_json)
+                .map_err(map_admin_ffi_error)
+        })
+    }
+
+    #[napi]
+    pub fn configure_vec_kind(&self, request_json: String) -> Result<String> {
+        self.with_engine(|engine| {
+            crate::admin_ffi::configure_vec_kind_json(engine, &request_json)
+                .map_err(map_admin_ffi_error)
+        })
+    }
+
+    #[napi]
     pub fn restore_vector_profiles(&self) -> Result<String> {
         self.with_engine(|engine| {
             let report = engine
