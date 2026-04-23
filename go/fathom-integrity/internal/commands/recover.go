@@ -615,5 +615,5 @@ func isRecoveredProjectionObject(name string) bool {
 
 func isRecoveredSchemaCatalog(name string) bool {
 	lower := strings.ToLower(strings.TrimSpace(name))
-	return lower == "sqlite_master" || lower == "sqlite_schema"
+	return lower == "sqlite_master" || lower == "sqlite_schema" || lower == "sqlite_sequence"
 }

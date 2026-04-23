@@ -309,8 +309,7 @@ impl AdminService {
                 rusqlite::params![kind],
                 |row| row.get::<_, i64>(0),
             )
-            .map(i64::cast_unsigned)
-            .unwrap_or(0);
+            .map_or(0, i64::cast_unsigned);
 
         let table_name = fathomdb_schema::vec_kind_table_name(kind);
         let vec_rows: Option<u64> = table_exists(&conn, &table_name)?

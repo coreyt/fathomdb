@@ -6,6 +6,17 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { openTempEngine, type TempEngine } from "./helpers/engine.js";
 
+function hasSqliteVec(): boolean {
+  const ctx = openTempEngine();
+  try {
+    return ctx.engine.admin.capabilities().sqlite_vec;
+  } finally {
+    ctx.cleanup();
+  }
+}
+
+const sqliteVec = hasSqliteVec();
+
 describe("admin.configureEmbedding", () => {
   let ctx: TempEngine;
   beforeEach(() => {
@@ -25,7 +36,7 @@ describe("admin.configureEmbedding", () => {
     expect(["activated", "unchanged", "replaced"]).toContain(outcome.outcome);
   });
 
-  it("rejects an identity change without acknowledgeRebuildImpact when enabled kinds exist", () => {
+  it.skipIf(!sqliteVec)("rejects an identity change without acknowledgeRebuildImpact when enabled kinds exist", () => {
     // First: activate a profile and enable a kind.
     ctx.engine.admin.configureEmbedding({
       modelIdentity: "test-model",
@@ -58,7 +69,7 @@ describe("admin.configureVecKind", () => {
   });
   afterEach(() => ctx.cleanup());
 
-  it("returns a ConfigureVecOutcome for a chunks source after profile activation", () => {
+  it.skipIf(!sqliteVec)("returns a ConfigureVecOutcome for a chunks source after profile activation", () => {
     ctx.engine.admin.configureEmbedding({
       modelIdentity: "test-model",
       modelVersion: "1",
