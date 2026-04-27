@@ -94,8 +94,14 @@ Seeded:
 **Target release:** TBD (0.6.x or 0.7).
 **Notes:** TS `Promise<...>` returns are not cancellable in 0.6.0 initial. Design: optional `AbortSignal` parameter on each TS verb; signal cancellation surfaces as a typed `EngineError::Cancelled`. Open question: whether cancellation aborts the writer-thread submission or only the napi waiter. Defer until first user request.
 
-## FU-M5: JSON Schema validation policy ADR
+## FU-WIRE15: Subprocess bridge wire format
 
-**Origin:** critic-3 M-5 (2026-04-27); cross-cuts ADR-0.6.0-operator-config-json-only and ADR-0.6.0-op-store-same-file (op-store payload validation).
-**Target release:** 0.6.0 (Phase 3 design).
-**Notes:** Schema location settled by HITL 2026-04-27: **in-repo `schemas/`**. Engine-side schemas ship in the fathomdb crate under `crates/fathomdb-engine/schemas/` (or workspace-level `schemas/`); each schema has a stable id (e.g. `operational_collection_v1.json`); op-store collections reference them via `schema_id`. Operator-supplied schemas are **not accepted** in 0.6.0 — that would re-open the JSON-only-config posture and expose the engine to arbitrary schema parsing. Open sub-questions for the ADR: (a) when validation runs (engine-open vs save-time vs both — likely save-time per write); (b) failure mode (reject-write is the default; warn-and-write would be the speculative-knob anti-pattern); (c) schema versioning (drop old `schema_id`s only across major release per ADR-0.6.0-no-shims-policy). Draft ADR before Phase 3 design lock.
+**Origin:** Phase 2 #15 deferral (HITL 2026-04-27).
+**Target release:** 0.8.0.
+**Notes:** Per ADR-0.6.0-subprocess-bridge-deferral, no subprocess bridge in 0.6.0; revisit in 0.8.0 (skip 0.7.0). If a forcing function emerges before 0.8.0 (non-PyO3 Python flavor, process-isolation requirement for embedders), the ADR is re-opened. Default-on-revisit format: JSON over stdio with versioned envelope `{ "v": 1, ... }` unless the consumer's needs argue otherwise.
+
+## FU-RET17: Composable middleware retrieval pipeline
+
+**Origin:** Phase 2 #17 deferral (HITL 2026-04-27).
+**Target release:** 0.8.0.
+**Notes:** Per ADR-0.6.0-retrieval-pipeline-shape, 0.6.0 ships fixed stages with per-stage config. Revisit composable middleware pipeline (trait-object stages, user-spliced stages) in 0.8.0 with concrete user needs. Forcing function: a real retrieval requirement that fixed-stage config cannot express. Until then, fixed stages remain.
