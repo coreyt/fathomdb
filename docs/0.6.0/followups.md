@@ -165,4 +165,29 @@ Seeded:
 
 **Origin:** Phase 3a critic [REQ-010] (2026-04-27).
 **Target release:** 0.6.0 (Phase 3b acceptance.md or its own ADR).
+**Status:** RESOLVED 2026-04-27 — promoted to ADR-0.6.0-text-query-latency-gates (decision-index #26).
 **Notes:** Text-query latency target has no accepted ADR; harvest carried `p95 ≤ 150 ms` from `production-acceptance-bar.md` but without workload definition or ADR backing. Decide before acceptance.md lock: either promote to `ADR-0.6.0-text-query-latency-gates` (paralleling retrieval-latency-gates) or commit to text-on-FTS being implicitly bounded by the canonical-read freshness REQ-013 + a generous fallback gate in acceptance.md. Don't lock requirements with a vague REQ.
+
+## FU-TXT-LAT-TIGHTEN: Tighten text-query p99 from 150 ms → 100 ms
+
+**Origin:** ADR-0.6.0-text-query-latency-gates critic [high-1] (2026-04-27).
+**Target release:** 0.6.0 (post-baseline) or 0.6.x.
+**Notes:** ADR set p99 ≤ 150 ms with explicit headroom for shared-runner scheduler jitter. Tighten to 100 ms once a measured baseline on the pinned tier-1 runner exists and shows steady-state p99 well below 100 ms. Forcing function: real measurement, not user complaint. Update ADR via amendment.
+
+## FU-PERF-ADR-ALIGN: Align retrieval + text-query perf ADR sample-count + tiered-gate language
+
+**Origin:** ADR-0.6.0-text-query-latency-gates critic lows (2026-04-27).
+**Target release:** 0.6.0 (Phase 3) or 0.6.x amendment.
+**Notes:** Text-query ADR specifies sample-count `≥ 1000`, warmup protocol, query-frequency band, in-process boundary. ADR-0.6.0-retrieval-latency-gates has the same omissions unaddressed. Amendment pass: backfill sample-count + warmup-protocol + boundary-clarification language into retrieval-latency-gates so both perf ADRs share a measurement protocol. Also: consider tiered-gate / budget-allocation framing (parse ≤ Xms, MATCH ≤ Yms, fetch ≤ Zms) for faster regression triage on either ADR — currently both gate only the end-to-end number.
+
+## FU-FTS5-TOKENIZER: FTS5 default tokenizer decision
+
+**Origin:** ADR-0.6.0-text-query-latency-gates scope-creep removal (2026-04-27).
+**Target release:** 0.6.0 (Phase 3d design/retrieval.md).
+**Notes:** Text-query ADR does not pin the FTS5 tokenizer (was scope creep). `design/retrieval.md` owes the tokenizer decision: unicode61 (default), porter (stemming), trigram (substring/CJK), icu (locale-aware), or custom. Promote to its own ADR if non-trivial; otherwise document inline. Latency gate re-validated on tokenizer change.
+
+## FU-FTS5-SNIPPET-HIGHLIGHT: Snippet/highlight latency posture
+
+**Origin:** ADR-0.6.0-text-query-latency-gates boundary clarification (2026-04-27).
+**Target release:** TBD (0.6.x or 0.7).
+**Notes:** ADR explicitly excludes FTS5 `snippet()` / `highlight()` from the gated boundary. If snippet/highlight becomes a user-facing default in `search` results, a separate "snippet/highlight latency" ADR or amendment is required.

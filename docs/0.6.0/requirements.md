@@ -101,13 +101,11 @@ the ADR is authoritative.
   workload; payload size as stated).
   *Source:* same as REQ-009a.
 
-- **REQ-010 — Text query latency on the seeded benchmark dataset.** Bound
-  defined in `acceptance.md` (no ADR yet — open numerical decision; see
-  followups). Workload (dataset scale, concurrency, warm/cold cache)
-  defined in `test-plan.md`.
-  *Source:* `dev/production-acceptance-bar.md` (preserves the user-need
-  shape; the harvested 150 ms p95 number does not have an accepted ADR
-  and is not load-bearing here).
+- **REQ-010 — Text query latency p50 ≤ 20 ms; p99 ≤ 150 ms** on the
+  text-only FTS5 path at 1 M chunk rows, QPS = 1 sequential, no
+  concurrent writes, warm cache. Hybrid / auto-routed `search`
+  inherits ADR-0.6.0-retrieval-latency-gates instead.
+  *Source:* ADR-0.6.0-text-query-latency-gates.
 
 - **REQ-011 — Vector retrieval latency p50 ≤ 50 ms; p99 ≤ 200 ms** at
   1 M vectors @ 768-dim, `k=10`, single-process, no concurrent writes,

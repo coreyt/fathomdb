@@ -61,6 +61,7 @@ Decisions that are not yet settled. Drafts pending after Phase 1 ADRs land.
 | 23 | interface | Deprecation policy for 0.5.x names | accepted (HITL 2026-04-27, lite batch) | ADR-0.6.0-deprecation-policy-0-5-names.md |
 | 24 | acceptance | Write-throughput SLI | accepted (HITL 2026-04-27) | ADR-0.6.0-write-throughput-sli.md |
 | 25 | design | JSON Schema validation policy (FU-M5 promoted) | accepted (HITL 2026-04-27) | ADR-0.6.0-json-schema-policy.md |
+| 26 | acceptance | Text-query latency gates (FU-REQ-010 promoted) | accepted (HITL 2026-04-27) | ADR-0.6.0-text-query-latency-gates.md |
 
 ## Categories
 
