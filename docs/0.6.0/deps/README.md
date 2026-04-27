@@ -26,10 +26,10 @@ load-bearing per memory `feedback_cross_platform_rust` (c_char i8/u8 split).
 | Tool | Status |
 |------|--------|
 | `cargo tree -e normal --workspace --depth 1` | available, run |
-| `cargo audit` | available, run — see transitive findings below |
-| `cargo deny check` | **installed + run; clean** (config: `deny.toml`). Advisories ok / bans ok / licenses ok / sources ok. No flips. |
-| `cargo udeps --workspace` | install failed (libssl-dev missing on aarch64); HITL pending — sudo apt install libssl-dev pkg-config OR rustls-feature variant |
-| `cargo outdated -R` | install failed (same as udeps) |
+| `cargo audit` | run — 2 known transitive findings (rand 0.9.2, paste 1.0.15); both not exploitable in our paths; ignored in `deny.toml` |
+| `cargo deny check` | clean (config: `deny.toml`). Advisories ok / bans ok / licenses ok / sources ok. No flips. |
+| `cargo +nightly udeps --workspace` | clean. "All deps seem to have been used." HITL F2 "no drops verified" claim now substantiated. No flips. |
+| `cargo outdated -R` | one signal: `windows-sys 0.59 → 0.61.2` (already HITL-approved bump; deps file refreshed to target 0.61). No other drift. |
 
 ### `cargo audit` — transitive findings
 - RUSTSEC-2026-0097 — `rand 0.9.2` unsound with custom logger. Reaches us via `ulid`, `tokenizers`, `candle-*`, `hf-hub`/`reqwest`/`quinn`, `rand_distr`, `criterion`. Not exploitable in our paths (we never install a custom rand logger). Track upstream rand bumps.
@@ -45,7 +45,7 @@ Critic-B ran against this audit and surfaced 12 findings. HITL resolutions:
 - **F6** `candle-core` keep — settled per HITL: candle is the chosen embedder stack for 0.6.0. Architecture per NOTE 1 (candle + tokenizers + sqlite-vec, manual mean-pool + L2-normalize, zerocopy BLOB to vec0). ADR records the decision.
 - **F7** `safetensors` direct dep — flipped to **drop**; use candle re-export.
 - **F8** `sentence-transformers` (python) — flipped to **drop**; redundant with candle Rust path.
-- **F9** `windows-sys` 0.59 → 0.60 bump approved (debloat Windows build dup-versions).
+- **F9** `windows-sys` 0.59 → 0.61 bump approved (debloat Windows build dup-versions; `cargo-outdated` 2026-04-27 refreshed target version from 0.60 to 0.61).
 - **F10** `hf-hub` cache-compat fixture — declined; use what is there + works.
 - **F11** `toml` — flipped to **drop**; **JSON-only operator config in 0.6.0+**. Removes extension-branch in `load_vector_regeneration_config`.
 

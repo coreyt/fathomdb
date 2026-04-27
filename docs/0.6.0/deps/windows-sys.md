@@ -9,16 +9,19 @@ status: draft
 
 # windows-sys
 
-**Verdict:** keep (bump 0.59 → 0.60 approved)
+**Verdict:** keep (bump 0.59 → 0.61 approved)
 
-## HITL decision (2026-04-25)
+## HITL decision (2026-04-25, refreshed 2026-04-27)
 
 Critic-B F9: pin `0.59` causes dup-version bloat on Windows builds because
 multiple transitives (rustls, hyper) pull `windows-sys` at 0.52 / 0.59 / 0.60
-simultaneously. HITL: **bump to 0.60 approved** to debloat. Lands as a
-separate implementer change to `Cargo.toml` (out of audit scope per dep-auditor
-contract). After bump, verify `cargo tree -d` no longer shows `windows-sys`
-duplicates triggered by our direct dep.
+simultaneously. HITL: **bump approved** to debloat. `cargo-outdated`
+(2026-04-27 run) reports latest as 0.61.2; bump target updated from 0.60 to
+0.61 to ride the most-recently-released line.
+
+Lands as separate implementer change to `Cargo.toml` (out of audit scope per
+dep-auditor contract). After bump, verify `cargo tree -d` no longer shows
+`windows-sys` duplicates triggered by our direct dep.
 
 ## Current usage
 - Crates using it: fathomdb-engine (target.cfg(windows))
