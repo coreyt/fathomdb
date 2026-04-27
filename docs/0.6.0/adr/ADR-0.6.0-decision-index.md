@@ -62,6 +62,8 @@ Decisions that are not yet settled. Drafts pending after Phase 1 ADRs land.
 | 24 | acceptance | Write-throughput SLI | accepted (HITL 2026-04-27) | ADR-0.6.0-write-throughput-sli.md |
 | 25 | design | JSON Schema validation policy (FU-M5 promoted) | accepted (HITL 2026-04-27) | ADR-0.6.0-json-schema-policy.md |
 | 26 | acceptance | Text-query latency gates (FU-REQ-010 promoted) | accepted (HITL 2026-04-27) | ADR-0.6.0-text-query-latency-gates.md |
+| 27 | acceptance | Recovery rank-correlation threshold (FU-AC-PROTOCOL-BACKFILL → AC-027d) | accepted (HITL 2026-04-27) | ADR-0.6.0-recovery-rank-correlation.md |
+| 28 | design | Provenance retention shape (FU-AC-PROTOCOL-BACKFILL → AC-033) | accepted (HITL 2026-04-27) | ADR-0.6.0-provenance-retention.md |
 
 ## Categories
 

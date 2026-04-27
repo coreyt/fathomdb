@@ -230,4 +230,10 @@ Seeded:
 
 **Origin:** Phase 3b critic [§Performance, AC-011a/b sample window, AC-012/13 sample count, AC-019 stress workload, AC-029 tolerance, AC-032b tolerance, AC-033 retention bound + tolerance, AC-035 worst-of-N] (2026-04-27).
 **Target release:** 0.6.0 (test-plan.md or ADR amendments).
+**Status:** RESOLVED 2026-04-27 (HITL). Resolution:
+- acceptance.md OWNS every numerical threshold via the new `## Parameter table` (markdown, P-NNN ids).
+- test-plan.md is the *measurer*, not the *threshold owner* — owns fixture corpora + harness scripts only.
+- Two parameters promoted to ADR (concise): AC-027d → ADR-0.6.0-recovery-rank-correlation (#27); AC-033 → ADR-0.6.0-provenance-retention (#28).
+- All other 12+ parameters self-owned by acceptance.md; changing them follows the same critic + HITL cycle as any acceptance amendment.
+- Traceability matrix appended to acceptance.md mapping AC → REQ → P-IDs → authoritative source.
 **Notes:** Acceptance.md draft deferred all measurement-protocol parameters to test-plan.md to avoid inventing numbers absent from ADRs. Decide before lock per parameter: (a) lift to ADR amendment (binding numerical commitment), or (b) leave in test-plan.md (binding test-protocol commitment, ADR silent on protocol). Default: leave in test-plan.md unless a reviewer wants the number ADR-grade.

@@ -40,6 +40,79 @@ Rules:
 
 T-NNN ids are placeholders until `test-plan.md` issues real ones.
 
+## Parameter table
+
+acceptance.md OWNS every numerical measurement parameter cited by an
+AC. test-plan.md is the *measurer* — it executes the protocol but does
+not own the threshold. Parameters with an ADR source restate the ADR.
+Parameters without an ADR source are owned by this doc and bound at
+acceptance lock; changing them post-lock follows the same critic + HITL
+cycle as any other acceptance amendment.
+
+Discoverability: this is the canonical home for human + machine lookup
+of a parameter value. CI/test scripts consume parameters by `P-ID` from
+this table.
+
+| P-ID | Used by AC | Description | Value | Source |
+|---|---|---|---|---|
+| P-WTP-WARMUP | AC-011a, AC-011b | Write-throughput pre-measurement warmup window | 5 s | acceptance.md (this doc) |
+| P-WTP-RUN | AC-011a, AC-011b | Write-throughput steady-state measurement window | 60 s | acceptance.md |
+| P-PERF-SAMPLES | AC-012, AC-013, AC-017, AC-019 | Minimum measured samples per percentile calculation | 1,000 | ADR-0.6.0-text-query-latency-gates (sets ≥ 1,000 for text); applied uniformly to all latency ACs |
+| P-STRESS-MULT | AC-019 | Mixed-retrieval stress tail-latency multiplier vs baseline_p99 | 10× | acceptance.md |
+| P-STRESS-FLOOR | AC-019 | Mixed-retrieval stress tail-latency floor (max(mult × baseline, floor)) | 150 ms | acceptance.md |
+| P-PARALLEL-TOL | AC-020 | Concurrent-read wall-clock tolerance vs `T_seq / N` | 1.5× | acceptance.md |
+| P-FD-TOL | AC-022b | Post-close FD-count tolerance vs pre-open count | +0 (engine FDs) plus runtime-tolerance counted as `≤ +5` for runtime/GC FDs | acceptance.md |
+| P-LOCK-BOUND | AC-024a | Second-open `DatabaseLocked` rejection wall-clock bound | 1 s | acceptance.md |
+| P-TAU | AC-027d | Per-query Kendall tau threshold for post-recovery vector top-k vs pre-corruption baseline | ≥ 0.9 | ADR-0.6.0-recovery-rank-correlation |
+| P-TAU-PASS | AC-027d | Aggregate gate across the AC-027d query suite | 100% of queries meet P-TAU | ADR-0.6.0-recovery-rank-correlation |
+| P-STALL-TOL | AC-029 | Projection-stall vs unstalled write throughput tolerance | 1.5× wall-clock (i.e. stalled ≤ 1.5 × unstalled) | acceptance.md |
+| P-DRAIN-TOL | AC-032b | Drain-timeout overshoot tolerance — typed timeout returned within `tolerance × T` | 1.5× | acceptance.md |
+| P-RETENTION-CAP | AC-033 | Default provenance row-count cap | 1,000,000 rows | ADR-0.6.0-provenance-retention |
+| P-RETENTION-SLACK | AC-033 | Slack between cap and enforced upper bound (eviction batching headroom) | 5% (i.e. row count enforced as `≤ cap × 1.05`) | ADR-0.6.0-provenance-retention |
+| P-RETENTION-EVICT | AC-033 | Eviction policy | Oldest-first by primary key | ADR-0.6.0-provenance-retention |
+| P-AC033-WORKLOAD | AC-033 | Compressed-runtime workload write rate × duration (compressed for CI) | 10,000 writes/sec × 14 minutes (≈ 8.4 M writes; well past P-RETENTION-CAP × eviction cycles) | acceptance.md |
+| P-AC033-SAMPLE | AC-033 | Row-count sampling cadence during AC-033 | every 30 s | acceptance.md |
+| P-PWR-TRIALS | AC-034a, AC-034b | Power-cut harness trial count | 100 | acceptance.md |
+| P-OS-TRIALS | AC-034c | OS-crash harness trial count | 50 | acceptance.md |
+| P-RECOV-N | AC-035 | Recovery-time worst-of-N N value for 1 GB DB | 10 | acceptance.md |
+| P-AC036-CYCLE | AC-036 | Open + write + search + close cycle iterations under no-listen syscall capture | 1 (single full cycle sufficient — assertion is binary) | acceptance.md |
+| P-AC044-SENTINEL-LEN | AC-044 | Random-per-test sentinel byte length for shadow-table corruption detection | 16 bytes | acceptance.md |
+| P-AC046-K | AC-046a, AC-046b, AC-046c | Migration step count (k) for n-to-n+k migration fixture | 3 | acceptance.md |
+
+Parameters used inline by their assertion (e.g. AC-007a's `100 ms`
+slow-statement default threshold; AC-022c's `5 s` close-to-exit) are
+already in the AC text and not duplicated here — they restate
+`requirements.md` REQ-006a / REQ-020b which are themselves anchored.
+
+## Traceability matrix
+
+REQ → AC → P-ID coverage. Every numeric AC parameter resolves through
+this table to either an ADR or to an acceptance.md self-owned bullet.
+
+| AC | Owning REQ | Parameters consumed | Authoritative source(s) |
+|---|---|---|---|
+| AC-011a/b | REQ-009a/b | P-WTP-WARMUP, P-WTP-RUN | ADR-0.6.0-write-throughput-sli (gate); acceptance.md (protocol) |
+| AC-012 | REQ-010 | P-PERF-SAMPLES | ADR-0.6.0-text-query-latency-gates |
+| AC-013 | REQ-011 | P-PERF-SAMPLES | ADR-0.6.0-retrieval-latency-gates |
+| AC-017 | REQ-015 | P-PERF-SAMPLES | ADR-0.6.0-projection-freshness-sli |
+| AC-019 | REQ-017 | P-PERF-SAMPLES, P-STRESS-MULT, P-STRESS-FLOOR | acceptance.md |
+| AC-020 | REQ-018 | P-PARALLEL-TOL | acceptance.md |
+| AC-022b | REQ-020a | P-FD-TOL | acceptance.md |
+| AC-024a | REQ-022a | P-LOCK-BOUND | acceptance.md |
+| AC-027d | REQ-025c | P-TAU, P-TAU-PASS | ADR-0.6.0-recovery-rank-correlation |
+| AC-029 | REQ-027 | P-STALL-TOL | acceptance.md |
+| AC-032b | REQ-030 | P-DRAIN-TOL | acceptance.md |
+| AC-033 | REQ-031 | P-RETENTION-CAP, P-RETENTION-SLACK, P-RETENTION-EVICT, P-AC033-WORKLOAD, P-AC033-SAMPLE | ADR-0.6.0-provenance-retention (cap/slack/policy); acceptance.md (workload/sample) |
+| AC-034a/b | REQ-031b | P-PWR-TRIALS | acceptance.md |
+| AC-034c | REQ-031b | P-OS-TRIALS | acceptance.md |
+| AC-035 | REQ-031c | P-RECOV-N | acceptance.md |
+| AC-036 | REQ-032 | P-AC036-CYCLE | acceptance.md |
+| AC-044 | REQ-040 | P-AC044-SENTINEL-LEN | acceptance.md |
+| AC-046a/b/c | REQ-042 | P-AC046-K | acceptance.md |
+
+ACs not listed here have no quantitative parameter (purely structural
+or boolean assertions).
+
 ---
 
 ## Observability
@@ -165,17 +238,18 @@ T-NNN ids are placeholders until `test-plan.md` issues real ones.
 
 ## Performance
 
-(Per requirements.md § Performance preamble: this section is
-**lock-blocked on `test-plan.md` fixture + measurement-protocol spec
-landing first**. ACs below cite ADR numerical gates only; warmup,
-sample count, runner pinning, dataset definition, and stress-workload
-shape are owned by `test-plan.md`.)
+(Numerical gates restate ADR thresholds; measurement parameters
+— warmup, sample count, runner pinning, tolerances — are owned by the
+**Parameter table** above (cited by P-ID). `test-plan.md` is the
+*measurer* that executes the protocol; it does not own thresholds.
+Fixture data corpora at scale (1M-row, 1GB-DB, harness binaries) are
+the only test-plan.md responsibility for this section.)
 
 ## AC-011a: Write throughput @ 1 KB ≥ 1,000 commits/sec
 **Requirement ref:** REQ-009a
 **Test id:** T-011a
-**Assertion:** Sequential `WriteTx` commits with 1 KB payload sustain ≥ 1,000 commits/sec, measured per the test-plan.md write-throughput protocol.
-**Measurement:** Per `test-plan.md` write-throughput-sli protocol; CI gate fails if measured value < 1,000.
+**Assertion:** Sequential `WriteTx` commits with 1 KB payload sustain ≥ 1,000 commits/sec.
+**Measurement:** P-WTP-WARMUP warmup → P-WTP-RUN steady-state measurement window; commits/sec computed over the run window; CI gate fails if value < 1,000.
 **Fixture:** write-throughput-1kb (test-plan.md fixture spec — pending).
 
 ## AC-011b: Write throughput @ 100 KB ≥ 100 commits/sec
@@ -188,22 +262,22 @@ shape are owned by `test-plan.md`.)
 ## AC-012: Text query latency on FTS5 path
 **Requirement ref:** REQ-010
 **Test id:** T-012
-**Assertion:** Text-only query latency on the documented FTS5 fixture meets p50 ≤ 20 ms AND p99 ≤ 150 ms (compound on a single distribution; both percentiles reported from the same sample set).
-**Measurement:** Per `test-plan.md` text-query-latency protocol (cites ADR-0.6.0-text-query-latency-gates workload); CI gate fails if either percentile exceeds.
+**Assertion:** Text-only query latency on the documented FTS5 fixture meets p50 ≤ 20 ms AND p99 ≤ 150 ms over ≥ P-PERF-SAMPLES samples on a single distribution.
+**Measurement:** Per ADR-0.6.0-text-query-latency-gates workload (warmup discard + second-pass measurement, QPS=1, 50–90th percentile token-frequency band); CI gate fails if either percentile exceeds.
 **Fixture:** text-query-1m-chunk (test-plan.md fixture spec — pending).
 
 ## AC-013: Vector retrieval latency
 **Requirement ref:** REQ-011
 **Test id:** T-013
-**Assertion:** Vector retrieval on the documented vector fixture meets p50 ≤ 50 ms AND p99 ≤ 200 ms (single sample-set, both percentiles).
-**Measurement:** Per `test-plan.md` vector-retrieval-latency protocol (cites ADR-0.6.0-retrieval-latency-gates workload); CI gate fails if either percentile exceeds.
+**Assertion:** Vector retrieval on the documented vector fixture meets p50 ≤ 50 ms AND p99 ≤ 200 ms over ≥ P-PERF-SAMPLES samples.
+**Measurement:** Per ADR-0.6.0-retrieval-latency-gates workload (warmup discard + second-pass, QPS=1); CI gate fails if either percentile exceeds.
 **Fixture:** vector-1m-768d (test-plan.md fixture spec — pending).
 
 ## AC-014: `safe_export` ≤ 500 ms on seeded dataset
 **Requirement ref:** REQ-012
 **Test id:** T-014
 **Assertion:** `safe_export` completes within 500 ms wall-clock on the seeded benchmark dataset.
-**Measurement:** Per `test-plan.md` safe-export-latency protocol; CI gate fails if measured wall-clock > 500 ms.
+**Measurement:** Single execution against the seeded fixture; CI gate fails if wall-clock > 500 ms. (Single-sample assertion sufficient — gate is a hard ceiling, not a percentile.)
 **Fixture:** seeded-benchmark-dataset (test-plan.md fixture spec — pending).
 
 ## AC-015: Canonical-read freshness within write tx
@@ -223,8 +297,8 @@ shape are owned by `test-plan.md`.)
 ## AC-017: Vector-projection freshness p99 ≤ 5 s
 **Requirement ref:** REQ-015
 **Test id:** T-017
-**Assertion:** Latency from write commit to projection-cursor reaching the commit's cursor value has p99 ≤ 5,000 ms over the documented sample set.
-**Measurement:** Per write: capture commit-cursor `c_w` (from REQ-055 surface); poll read-tx cursor until `c_r >= c_w`; record polling-completion time minus commit time; report p99; CI gate fails if > 5,000 ms.
+**Assertion:** Latency from write commit to projection-cursor reaching the commit's cursor value has p99 ≤ 5,000 ms over ≥ P-PERF-SAMPLES samples.
+**Measurement:** Per write: capture commit-cursor `c_w` (REQ-055 surface); poll read-tx cursor until `c_r >= c_w`; record polling-completion time minus commit time; report p99; CI gate fails if > 5,000 ms.
 **Fixture:** projection-freshness fixture (test-plan.md fixture spec — pending sample-count).
 
 ## AC-018: Drain of 100 vectors ≤ 2 s
@@ -237,14 +311,14 @@ shape are owned by `test-plan.md`.)
 ## AC-019: Mixed-retrieval stress workload tail
 **Requirement ref:** REQ-017
 **Test id:** T-019
-**Assertion:** Under the documented mixed-retrieval stress workload, read p99 ≤ `max(10 × baseline_p99, 150 ms)`, where `baseline_p99` is captured by re-running AC-013's protocol immediately preceding this AC in the same CI job.
-**Measurement:** Per `test-plan.md` mixed-retrieval-stress protocol; capture baseline_p99 then stress p99; assert bound.
+**Assertion:** Under the documented mixed-retrieval stress workload, read p99 ≤ `max(P-STRESS-MULT × baseline_p99, P-STRESS-FLOOR)` over ≥ P-PERF-SAMPLES samples, where `baseline_p99` is captured by re-running AC-013's protocol immediately preceding this AC in the same CI job.
+**Measurement:** Run baseline first; freeze workload; run stress; assert bound.
 **Fixture:** mixed-retrieval-stress (test-plan.md fixture spec — pending).
 
 ## AC-020: Reads do not serialize on a single reader connection
 **Requirement ref:** REQ-018
 **Test id:** T-020
-**Assertion:** N=8 concurrent reader threads each running the documented read-mix complete in wall-clock ≤ tolerance × `(T_seq / N)`, where `T_seq` is the sequential N-iteration wall-clock and `tolerance` is owned by `test-plan.md`.
+**Assertion:** N=8 concurrent reader threads each running the documented read-mix complete in wall-clock ≤ P-PARALLEL-TOL × `(T_seq / N)`, where `T_seq` is the sequential N-iteration wall-clock.
 **Measurement:** Run sequential and concurrent variants; assert the bound; fail CI if exceeded.
 **Fixture:** interactive-read-mix (test-plan.md fixture spec — pending — must specify per-query-type ratios + tolerance).
 
@@ -267,7 +341,7 @@ shape are owned by `test-plan.md`.)
 ## AC-022b: Engine close does not leak FDs
 **Requirement ref:** REQ-020a
 **Test id:** T-022b
-**Assertion:** Post-close FD count for the host process is ≤ pre-open FD count + runtime tolerance (owned by `test-plan.md`).
+**Assertion:** Post-close FD count for the host process is ≤ pre-open FD count + P-FD-TOL.
 **Measurement:** Capture pre-open + post-close FD count; assert bound.
 **Fixture:** open-close fixture.
 
@@ -295,8 +369,8 @@ shape are owned by `test-plan.md`.)
 ## AC-024a: `DatabaseLocked` rejection on second open
 **Requirement ref:** REQ-022a
 **Test id:** T-024a
-**Assertion:** Opening a second engine on a database file held by a first engine raises a typed `DatabaseLocked` error within the rejection-bound (owned by `test-plan.md`), including while the first engine has pending vector work.
-**Measurement:** Open A; enqueue 100 vector writes; attempt second open from sibling process; assert typed exception within bound; repeat 10× for smoke.
+**Assertion:** Opening a second engine on a database file held by a first engine raises a typed `DatabaseLocked` error within P-LOCK-BOUND, including while the first engine has pending vector work.
+**Measurement:** Open A; enqueue 100 vector writes; attempt second open from sibling process; assert typed exception within P-LOCK-BOUND; repeat 10× for smoke.
 **Fixture:** second-open-with-pending-vector fixture.
 
 ## AC-024b: Rejected second open never modifies file
@@ -344,9 +418,9 @@ shape are owned by `test-plan.md`.)
 ## AC-027d: Recovery preserves vector top-k rank-correlation
 **Requirement ref:** REQ-025c
 **Test id:** T-027d
-**Assertion:** Post-recovery top-k vector query results have rank-correlation (Kendall tau ≥ tolerance owned by `test-plan.md`) with pre-corruption results, for the documented 100-query suite.
-**Measurement:** Snapshot pre-corruption top-k; perform corruption + recovery; re-snapshot; compute Kendall tau per query; assert per-query tau ≥ tolerance.
-**Fixture:** vector-100-query suite (test-plan.md fixture spec — pending; tolerance pending).
+**Assertion:** Post-recovery top-k vector query results have per-query Kendall tau ≥ P-TAU vs pre-corruption results, with P-TAU-PASS aggregate gate, for the documented 100-query suite.
+**Measurement:** Snapshot pre-corruption top-10; perform corruption + recovery; re-snapshot; compute Kendall tau per query; assert per-query tau ≥ P-TAU; assert P-TAU-PASS satisfied.
+**Fixture:** vector-100-query suite (test-plan.md fixture spec — pending).
 
 ## AC-028a: `excise_source` writes audit row
 **Requirement ref:** REQ-026
@@ -372,9 +446,9 @@ shape are owned by `test-plan.md`.)
 ## AC-029: Canonical writes complete under projection stall
 **Requirement ref:** REQ-027
 **Test id:** T-029
-**Assertion:** With FTS5 and vector projection schedulers frozen, 1,000 sequential canonical writes complete with no monotonic blocking — write throughput equals unstalled throughput within the test-plan.md tolerance.
-**Measurement:** Capture baseline 1,000-write throughput; freeze projection schedulers; capture stalled-projection 1,000-write throughput; assert ratio ∈ tolerance.
-**Fixture:** projection-stall fixture (test-plan.md fixture spec — pending tolerance).
+**Assertion:** With FTS5 and vector projection schedulers frozen, 1,000 sequential canonical writes complete with stalled-projection wall-clock ≤ P-STALL-TOL × unstalled-projection wall-clock.
+**Measurement:** Capture baseline 1,000-write wall-clock; freeze projection schedulers; capture stalled wall-clock; assert ratio ≤ P-STALL-TOL.
+**Fixture:** projection-stall fixture.
 
 ## AC-030a: Misconfig — no embedder wired
 **Requirement ref:** REQ-028a
@@ -414,43 +488,43 @@ shape are owned by `test-plan.md`.)
 ## AC-032b: Bounded background-work — typed timeout error
 **Requirement ref:** REQ-030
 **Test id:** T-032b
-**Assertion:** Calling the bounded-completion verb with timeout T smaller than completion time returns a typed timeout error within `tolerance × T` (tolerance owned by `test-plan.md`).
-**Measurement:** Enqueue 10,000 jobs; call drain(timeout=1s); assert typed timeout returned within `tolerance × 1s`.
+**Assertion:** Calling the bounded-completion verb with timeout T smaller than completion time returns a typed timeout error within P-DRAIN-TOL × T.
+**Measurement:** Enqueue 10,000 jobs; call drain(timeout=1s); assert typed timeout returned within P-DRAIN-TOL × 1s.
 **Fixture:** large-batch-drain fixture.
 
 ## AC-033: Bounded provenance growth (compressed runtime)
 **Requirement ref:** REQ-031
 **Test id:** T-033
-**Assertion:** Under the compressed-runtime workload (10,000 writes/sec for 14 minutes per the test-plan.md harness), provenance table row count stops growing once the configured retention bound is reached and remains within `bound × (1 + tolerance)`.
-**Measurement:** Configure retention bound = 1M rows; run compressed-runtime workload; sample row count every 30 s; assert row count ≤ `1M × (1 + tolerance)` after the bound is first crossed.
-**Fixture:** compressed-runtime-write fixture (test-plan.md fixture spec — pending; tolerance pending).
+**Assertion:** Under the P-AC033-WORKLOAD compressed-runtime workload, provenance table row count stops growing once P-RETENTION-CAP is reached and remains ≤ `P-RETENTION-CAP × (1 + P-RETENTION-SLACK)`. Eviction obeys P-RETENTION-EVICT.
+**Measurement:** Configure retention cap = P-RETENTION-CAP; run P-AC033-WORKLOAD; sample row count every P-AC033-SAMPLE; assert row-count bound after first crossing; assert evicted rows are oldest by primary key.
+**Fixture:** compressed-runtime-write fixture.
 
 ## AC-034a: Zero corruption on power-cut
 **Requirement ref:** REQ-031b
 **Test id:** T-034a
-**Assertion:** Power-cut simulation per the documented power-cut harness, repeated for the test-plan.md trial count, leaves `PRAGMA integrity_check = ok` on every reopen.
+**Assertion:** Power-cut simulation per the documented power-cut harness, repeated P-PWR-TRIALS times, leaves `PRAGMA integrity_check = ok` on every reopen.
 **Measurement:** Per harness invocation: `kill -9` mid-commit at randomized times; reopen; run integrity_check; assert `ok` on every trial.
-**Fixture:** power-cut harness (test-plan.md fixture spec — pending; harness path + trial count pending).
+**Fixture:** power-cut harness (test-plan.md owns harness path + tooling; trial count = P-PWR-TRIALS).
 
 ## AC-034b: Power-cut final-commit-loss bound
 **Requirement ref:** REQ-031b
 **Test id:** T-034b
-**Assertion:** Across the AC-034a trial set, lost-commit duration p99 ≤ 100 ms.
-**Measurement:** Per trial: record last-surviving-commit timestamp + kill timestamp; report p99 across trials.
+**Assertion:** Across the AC-034a P-PWR-TRIALS trial set, lost-commit duration p99 ≤ 100 ms.
+**Measurement:** Per trial: record last-surviving-commit timestamp + kill timestamp; report p99 across P-PWR-TRIALS trials.
 **Fixture:** as AC-034a.
 
 ## AC-034c: Zero commit loss on OS-crash
 **Requirement ref:** REQ-031b
 **Test id:** T-034c
-**Assertion:** OS-crash simulation per the documented OS-crash harness (block-device sync barrier preserved) loses zero committed transactions per trial.
-**Measurement:** Per trial: write workload in VM; trigger crash via documented mechanism (test-plan.md harness names the trigger, e.g. `echo c > /proc/sysrq-trigger` inside KVM); reopen; assert zero committed-tx loss.
-**Fixture:** OS-crash harness (test-plan.md fixture spec — pending; VM image + trigger mechanism pending).
+**Assertion:** OS-crash simulation per the documented OS-crash harness (block-device sync barrier preserved), repeated P-OS-TRIALS times, loses zero committed transactions per trial.
+**Measurement:** Per trial: write workload in VM; trigger crash via documented mechanism; reopen; assert zero committed-tx loss; sum across P-OS-TRIALS trials = 0.
+**Fixture:** OS-crash harness (test-plan.md owns VM image + trigger mechanism, e.g. `echo c > /proc/sysrq-trigger` inside KVM with sync barrier preserved).
 
 ## AC-035: Recovery time ≤ 2 s for 1 GB DB (worst-of-10)
 **Requirement ref:** REQ-031c
 **Test id:** T-035
-**Assertion:** Worst-of-10 measured `Engine.open` time (process-start → first-write-accept) on a 1 GB seeded DB after unclean shutdown is ≤ 2 s.
-**Measurement:** Seed 1 GB DB; `kill -9` mid-write; time open + first-write-accept; repeat 10×; report worst-of-10; assert ≤ 2 s.
+**Assertion:** Worst-of-P-RECOV-N measured `Engine.open` time (process-start → first-write-accept) on a 1 GB seeded DB after unclean shutdown is ≤ 2 s.
+**Measurement:** Seed 1 GB DB; `kill -9` mid-write; time open + first-write-accept; repeat P-RECOV-N times; report worst; assert ≤ 2 s.
 **Fixture:** 1gb-unclean-shutdown fixture (test-plan.md fixture spec — pending).
 
 ## Security
@@ -537,7 +611,7 @@ shape are owned by `test-plan.md`.)
 ## AC-044: Physical recovery rebuilds projections from canonical state
 **Requirement ref:** REQ-040
 **Test id:** T-044
-**Assertion:** Physical recovery from a DB whose FTS5 + vec0 shadow tables have been corrupted with a 16-byte random per-test sentinel produces correct FTS5 + vector results AND post-recovery shadow-table page bytes contain zero occurrences of the sentinel.
+**Assertion:** Physical recovery from a DB whose FTS5 + vec0 shadow tables have been corrupted with a P-AC044-SENTINEL-LEN random per-test sentinel produces correct FTS5 + vector results AND post-recovery shadow-table page bytes contain zero occurrences of the sentinel.
 **Measurement:** Seed DB; corrupt shadow tables with 16-byte random sentinel; run physical recovery; assert correct query results; grep raw shadow-table pages for sentinel; assert zero matches.
 **Fixture:** sentinel-corruption fixture.
 
@@ -553,15 +627,15 @@ shape are owned by `test-plan.md`.)
 ## AC-046a: Auto schema migration applied at open
 **Requirement ref:** REQ-042
 **Test id:** T-046a
-**Assertion:** Opening a DB at schema version N when the engine supports N+k applies all k migrations transparently and post-open `PRAGMA user_version` reads N+k.
-**Measurement:** Use the `n-to-nplusk` migration fixture (k value owned by `test-plan.md`); open with current engine; assert `PRAGMA user_version` == expected.
-**Fixture:** n-to-nplusk migration fixture (test-plan.md fixture spec — pending; k value pending).
+**Assertion:** Opening a DB at schema version N when the engine supports N+P-AC046-K applies all P-AC046-K migrations transparently and post-open `PRAGMA user_version` reads N+P-AC046-K.
+**Measurement:** Use the `n-to-nplusk` migration fixture; open with current engine; assert `PRAGMA user_version` == N + P-AC046-K.
+**Fixture:** n-to-nplusk migration fixture.
 
 ## AC-046b: Migration emits per-step duration event on success
 **Requirement ref:** REQ-042
 **Test id:** T-046b
 **Assertion:** A successful migration emits one structured event per applied step containing `step_id` and `duration_ms` fields.
-**Measurement:** Open DB requiring k migrations; capture migration events; assert exactly k events each with both fields populated.
+**Measurement:** Open DB requiring P-AC046-K migrations; capture migration events; assert exactly P-AC046-K events each with both fields populated.
 **Fixture:** as AC-046a.
 
 ## AC-046c: Migration emits per-step duration event on failure
@@ -786,9 +860,35 @@ Every REQ in `requirements.md` has ≥1 AC:
 
 ## Lock-blocking dependencies
 
-ACs whose fixture / measurement parameter is owned by `test-plan.md`
-(Phase 3f) cannot lock until that doc lands. Marked inline with
-`(test-plan.md fixture spec — pending)`. Estimate: ~30 ACs depend on
-test-plan.md spec — primarily Performance, Reliability stress/durability,
-and any AC needing fixture corpora at scale (1M-row, 1GB-DB,
-power-cut harness, OS-crash harness).
+acceptance.md OWNS every numerical threshold and tolerance via the
+**Parameter table** above. Acceptance.md does not block on test-plan.md
+for thresholds.
+
+acceptance.md does block on test-plan.md for **fixture corpora and
+harnesses** that an AC's measurement protocol invokes — these are
+build-once test artifacts, not threshold decisions:
+
+| Test-plan.md owes | Used by AC |
+|---|---|
+| 1 M chunk-row corpus + FTS5 + `vec0` indexes | AC-012, AC-013, AC-019 |
+| 1 GB seeded DB | AC-035 |
+| Power-cut harness (kill -9 mid-commit timing strategy + reopen loop) | AC-034a, AC-034b |
+| OS-crash harness (VM image + sysrq trigger with sync barrier preserved) | AC-034c |
+| Shadow-table corruption injection tool | AC-006, AC-027a/b/c/d, AC-044 |
+| Page-corruption tool (for SQLite-internal events) | AC-006 |
+| Deterministic-slow CTE fixture (≥ 200 ms guaranteed) + fast / slow pair | AC-007a, AC-007b |
+| Poison-fixture (deterministic op failure) | AC-003d, AC-009 |
+| Mixed-retrieval stress workload generator | AC-019 |
+| Interactive read-mix definition (per-query-type ratios) | AC-020 |
+| Compressed-runtime write fixture (10k writes/sec × 14 min harness) | AC-033 |
+| Vector-100-query suite + FTS-100-query suite | AC-027b/d |
+| AST scanner script (Rust + Python + TS code-only scope) | AC-050a |
+| Removal-detect linter | AC-050c |
+| Cargo-skew + pip-skew constraint fixtures | AC-051a/b |
+| Synthetic-changelog fixtures | AC-050b |
+| netns-deny-egress + bpftrace harnesses | AC-036, AC-037 |
+
+Test-plan.md does NOT decide thresholds. If a fixture / harness
+generates a number (e.g. baseline_p99 in AC-019), that number is a
+*measured* value, not a *threshold* — thresholds are compared against
+measurements per the parameter table.
