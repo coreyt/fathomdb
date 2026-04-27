@@ -19,6 +19,48 @@ Critic mapping:
 Cadence: docs written/updated in batches within a turn. Critic + HITL review **after**
 the turn. Any doc changed after lock but before implementation → re-review.
 
+## Progress (as of 2026-04-25)
+
+**Phase 0 — Scaffold: done.** Doc-types + done-definitions encoded in this plan;
+`docs/0.6.0/` skeleton present with front-matter on every file.
+
+**Phase 1a — Harvest prior work: HITL-resolved.** Disposition table in
+`learnings.md` covers 165 files (4 keep, ~37 fold, 8 archive, ~116 drop after
+HITL flips). Critic-A (`architecture-inspector`) ran 14 findings; HITL
+resolved each (recorded inline in `learnings.md` § Ambiguous). Mechanical move
+step pending in this commit batch.
+
+**Phase 1a sub-step 1a.i — Dependency audit: HITL-resolved.** 35 direct deps
+audited; critic-B ran 12 findings; HITL flipped `toml`, `safetensors`,
+`sentence-transformers` to drop; promoted `rusqlite` async-surface ADR to
+Phase 1; settled candle as default-embedder per NOTE 1; accepted `sqlite-vec`
+sole-maintainer risk with no fallback. `cargo deny` + `cargo udeps` install
+pending (HITL-blocked behind tooling permission); any flips trigger HITL.
+
+**Phase 1b — Learnings: HITL-resolved.** Keep doing (15 items, F10 marked
+carry-forward-verify), Stop doing (16 items collapsed under "Defect deferral"
+per F7 + F13 atomic-pack rephrase), Raw requirement candidates (7 categories:
+observability / performance / reliability / security / operability / upgrade
++ compatibility / supply chain / other; ~60 items total).
+
+**Phase 2 — Decision index + ADRs: not started.** Phase 1 ADR queue identified:
+- `rusqlite` async-surface (sync vs spawn-blocking adapters vs sqlx) — HITL F4 promotion
+- Default-embedder architecture per NOTE 1 (decision-recording)
+- `sqlite-vec` accept-no-fallback (decision-recording)
+- Operator config = JSON-only (decision-recording)
+- Typed-write boundary = no raw SQL ever (decision-recording)
+- Op-store lives in same sqlite file (decision-recording)
+
+**Phase 3 — Frozen docs: not started.** `requirements.md`, `acceptance.md`,
+`architecture.md`, `design/*.md`, `interfaces/*.md`, `test-plan.md`,
+`security-review.md` all `status: not-started`.
+
+**Phase 4 — Freeze: not started.**
+
+**Next step:** mechanical move (`git mv` archive verdicts → `docs/archive/0.5.x/`;
+`git rm` drop verdicts), commit per verdict-group; install `cargo-deny` +
+`cargo-udeps` and re-run audit; then Phase 2 ADR queue.
+
 ## Non-goals (explicit, do not plan or execute)
 
 - **No data migration.** 0.6.0 is fresh-db-only. No INSERT…SELECT, no migrators, no
@@ -206,6 +248,74 @@ Sub-step **1a.i — Dependency audit**: produce one file per dep under
 alternatives considered. Index page `docs/0.6.0/deps/README.md` summarizes verdicts.
 Feeds `architecture.md`. Critic: `architecture-inspector`.
 
+#### Phase 1a/1b subagent assignments
+
+Three specialized harvesters run in parallel. Full system-like prompts live
+under `docs/0.6.0/agents/`. Main thread spawns these via `Agent` tool, captures
+outputs, runs critic pass, then HITL.
+
+| Agent | Subagent type | System prompt | Target areas | Outputs |
+|-------|---------------|---------------|--------------|---------|
+| Prose harvester | `general-purpose` | [agents/prose-harvester.md](agents/prose-harvester.md) | `dev/`, `dev/notes/`, `dev/archive/`, `docs/concepts/`, `docs/reference/` | `learnings.md` § Prior Work Disposition table |
+| Learnings harvester | `general-purpose` | [agents/learnings-harvester.md](agents/learnings-harvester.md) | Files marked keep/fold/archive by prose harvester; user memory; git log | `learnings.md` § Keep doing, § Stop doing, § Raw requirement candidates |
+| Dep auditor | `architecture-inspector` | [agents/dep-auditor.md](agents/dep-auditor.md) | `Cargo.toml` workspace + crates; `python/pyproject.toml`; `ts/package.json`; crates.io / docs.rs | `deps/<dep>.md` × N; `deps/README.md` verdict index |
+
+**Why three (not more, not fewer):** prose triage and dep audit are
+orthogonal axes (one reads English, one runs cargo tooling); learnings
+harvester is split off prose to avoid dual-output confusion in a single
+agent. Domain expertise (vector index, projections, SQLite, PyO3) is shared
+input to all three, not its own agent — same files would be read with a
+different hat for no parallelism gain.
+
+#### Phase 1a/1b sequencing
+
+```
+[Prose harvester]  ──┐
+                     │
+                     ▼ disposition table
+[Learnings harvester] ◄── reads only keep/fold/archive files
+                     │
+                     ▼
+[Critic pass: architecture-inspector on disposition + Stop list]
+                     │
+                     ▼
+[HITL triage]
+                     │
+                     ▼
+[1a move step: archive dev/ → docs/archive/0.5.x/ per verdicts]
+
+
+[Dep auditor] ──── runs in parallel with prose+learnings (independent inputs)
+                     │
+                     ▼
+[Critic pass: architecture-inspector on deps/]
+                     │
+                     ▼
+[HITL approval]
+```
+
+Hard deps:
+- Learnings harvester reads disposition table → must wait for prose harvester.
+- Move step must wait for HITL.
+- Dep auditor independent → launch concurrently with prose harvester.
+
+Soft deps:
+- Critic passes on (prose+learnings) and (deps) are independent — run parallel.
+
+#### Phase 1a/1b task list
+
+Main-thread tasks (orchestration only, no content writing):
+
+1. **Spawn prose harvester** with prompt from `agents/prose-harvester.md`. Wait.
+2. **Spawn dep auditor** in parallel with step 1. Wait.
+3. After step 1 completes: **spawn learnings harvester** with prompt from `agents/learnings-harvester.md`. Wait.
+4. **Critic pass A:** spawn `architecture-inspector` against disposition table + Stop-doing list. Frame: attack hidden assumptions, missed supersessions, sentimental keeps.
+5. **Critic pass B:** spawn `architecture-inspector` against `deps/`. Frame: attack soft-keep verdicts, unconsidered alternatives, license blind spots. Run parallel with 4.
+6. **HITL checkpoint:** present disposition table + critic findings; user marks final verdicts.
+7. **Move step (mechanical):** apply final verdicts — `git mv` archive/keep targets, delete drops. Commit per verdict-group.
+8. **HITL checkpoint:** present `deps/` + critic findings; user marks final verdicts.
+9. Mark Phase 1a + 1b done in this plan's Progress section. Proceed to Phase 2.
+
 ### 1b. Extract learnings
 
 Write `learnings.md` with two sections, each a bulleted list + 1-line rationale per item:
@@ -320,9 +430,9 @@ handed to implementer phase downstream.)
 
 ## Deliverables checklist
 
-- [ ] Doc-type + doc list proposal → HITL approved
-- [ ] Done-definitions per doc-type approved
-- [ ] `docs/0.6.0/` skeleton
+- [x] Doc-type + doc list proposal → HITL approved
+- [x] Done-definitions per doc-type approved
+- [x] `docs/0.6.0/` skeleton
 - [ ] `learnings.md` — keep + stop lists w/ citations
 - [ ] Prior-work disposition table
 - [ ] `deps/*.md` populated (one per dep) + `deps/README.md` index
