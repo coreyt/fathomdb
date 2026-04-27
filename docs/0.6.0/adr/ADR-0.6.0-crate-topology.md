@@ -34,10 +34,45 @@ Phase 2 #11 architecture ADR. Decides whether 0.6.0 ships as a monolithic `fatho
 
 ## Consequences
 
-- Workspace stays at the current shape: `fathomdb-engine`, `fathomdb-schema`, plus binding crates.
+- Workspace stays at the current shape: `fathomdb-engine`, `fathomdb-schema`, `fathomdb-query`, top-level facade `fathomdb`, plus binding crates (current state of `crates/` as of 2026-04-27).
+- `fathomdb-query` disposition (fold into `fathomdb-engine` `retrieval` module vs keep as separate crate) deferred to `design/retrieval.md`. Either outcome consistent with this ADR.
 - `design/*.md` subsystem boundaries are module-level inside `fathomdb-engine`, not crate-level.
-- Net-negative LoC posture: no new crate skeletons.
+- Net-negative LoC posture: no new internal-engine crate skeletons.
 - If a forcing function emerges (parallel team, public-internal-API consumer), this ADR is re-opened — splits are easier to do later than to undo.
+
+## Amendment 2026-04-27 — Sibling embedder crates + 0.6.0-target bindings
+
+Phase 3c architecture critic flagged that `fathomdb-embedder` +
+`fathomdb-embedder-api` are not "binding crates" and were not
+authorized by the original Decision text. Likewise the TS binding
+crate (`ts/` cdylib) and `fathomdb-cli` do not yet exist as named
+crates in `crates/`.
+
+**Authorized additions, sibling crates (NOT bindings, NOT engine
+internals):**
+
+- **`fathomdb-embedder-api`** — leaf crate; semver-stable trait surface
+  pinning `Embedder` + `EmbedderIdentity` per ADR-0.6.0-embedder-protocol.
+  Tagged + published on every release per REQ-048 so consumers can
+  resolve version-skew at resolution time per REQ-047.
+- **`fathomdb-embedder`** — operator-installable embedder package;
+  bundles default candle + tokenizers per ADR-0.6.0-default-embedder;
+  depends on `fathomdb-embedder-api`.
+
+These are NOT internal engine splits — they are externally-consumed
+packages required by the version-skew-detection contract. The split is
+the forcing function.
+
+**Authorized 0.6.0-target additions (bindings per original Decision):**
+
+- **`crates/fathomdb-cli`** — single-binary CLI per ADR-0.6.0-cli-scope.
+- **`ts/` cdylib package** — napi-rs binding per
+  ADR-0.6.0-typescript-api-shape (analogous to existing `python/`
+  PyO3 cdylib package). Whether the cdylib lives under `crates/` or
+  `ts/` is an implementation-time decision (mirrors existing `python/`
+  layout); does not affect this ADR.
+
+These will be created in the 0.6.0 implementation phase.
 
 ## Citations
 

@@ -237,3 +237,26 @@ Seeded:
 - All other 12+ parameters self-owned by acceptance.md; changing them follows the same critic + HITL cycle as any acceptance amendment.
 - Traceability matrix appended to acceptance.md mapping AC → REQ → P-IDs → authoritative source.
 **Notes:** Acceptance.md draft deferred all measurement-protocol parameters to test-plan.md to avoid inventing numbers absent from ADRs. Decide before lock per parameter: (a) lift to ADR amendment (binding numerical commitment), or (b) leave in test-plan.md (binding test-protocol commitment, ADR silent on protocol). Default: leave in test-plan.md unless a reviewer wants the number ADR-grade.
+
+## FU-ARCH-LOWS-2026-04-27: Phase 3c critic low-severity findings
+
+**Origin:** Critic on architecture.md draft (2026-04-27). Logged-not-applied per low-severity policy.
+**Target release:** N/A (cleanup at next architecture amendment).
+**Notes:**
+- [§9 reader-pool ADR candidate] Reader-pool sizing decisions made in design/engine.md without an ADR. Promote to its own ADR if a forcing function (concurrent-read regression on a real workload) lands.
+- [§10 deltas — 5-verb size] Could note "(down from ~25+ verbs in 0.5.x)" if accurate; currently understated.
+- [crate-topology vs python build] Memory `feedback_python_native_build` says `pip install -e python/` is canonical. Architecture.md notes the directory layout (`python/`, `ts/`) is unchanged from 0.5.x; only the cdylib crate name changes. Consistent.
+- [errors module home] design/errors.md split out per critic; revisit if it grows trivial — could fold back into design/bindings.md error-mapping section.
+- [§7 meta-ADR framing] Subsection added per critic; future ADRs that decide policy-without-runtime-footprint should land here too.
+
+## FU-FATHOMDB-QUERY-DISPOSITION: fathomdb-query crate fold-or-keep
+
+**Origin:** Phase 3c architecture critic (2026-04-27); ADR-0.6.0-crate-topology amendment.
+**Target release:** 0.6.0 (Phase 3d design/retrieval.md).
+**Notes:** `crates/fathomdb-query` exists today but is unmentioned in the original ADR-crate-topology Decision. Architecture.md § 1 marks disposition TBD pending design/retrieval.md. Decide: fold into `fathomdb-engine` `retrieval` module (most likely; matches monolith posture) vs keep as separate crate (only if external consumers exist). If folded, workspace shrinks by one crate in 0.6.0 implementation.
+
+## FU-RECOVERY-CORRUPTION-DETECTION: corruption detection + Engine.open behavior
+
+**Origin:** Phase 3c architecture § 9 (cross-reference to FU-VEC13-CORRUPTION).
+**Target release:** 0.6.x or 0.7.
+**Notes:** No existing ADR specifies what `Engine.open` does on detected corruption (PRAGMA integrity_check fail). Current design.md punt: refuse-open vs open-read-only vs auto-attempt-recover. Decide via ADR-0.6.x-corruption-recovery if the failure mode lands. Cross-references existing FU-VEC13-CORRUPTION; consolidate at decision time.
