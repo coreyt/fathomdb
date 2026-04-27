@@ -192,3 +192,42 @@ Seeded:
 **Origin:** ADR-0.6.0-text-query-latency-gates boundary clarification (2026-04-27).
 **Target release:** TBD (0.6.x or 0.7).
 **Notes:** ADR explicitly excludes FTS5 `snippet()` / `highlight()` from the gated boundary. If snippet/highlight becomes a user-facing default in `search` results, a separate "snippet/highlight latency" ADR or amendment is required.
+
+## FU-AC-LOWS-2026-04-27: Phase 3b critic low-severity findings
+
+**Origin:** Critic on acceptance.md draft (2026-04-27). Logged-not-applied per low-severity policy.
+**Target release:** N/A (cleanup at next acceptance amendment).
+**Notes:**
+- [AC-001 cross-coupling] Slow-phase moved to AC-008; AC-001 now scopes to non-slow phases — minor coupling remains acceptable.
+- [AC-002 allow-list completeness] Allow-list mentions WAL/SHM/.journal — confirm SQLite-owned set is exhaustive when design/engine.md PRAGMA section lands.
+- [AC-024a "1 s" rejection bound] Magic number; cite source or move to test-plan.md as a tolerance parameter.
+- [AC-027c/d threshold] Kendall tau tolerance owned by test-plan.md; expect tightening once a measured baseline exists.
+- [AC-030c vs AC-048] Boundary distinction (call-boundary vs reopen-boundary) made explicit in both ACs; revisit if a binding reviewer finds the pair confusing.
+- [AC-037 no-embedder edge] AC scoped to "with embedder configured"; the no-embedder-open path (if exists per default-embedder ADR) needs a separate AC if it's a supported configuration.
+- [AC-052 release count] "All releases or last 5, whichever is fewer" — minor.
+- [AC-056 artifact format] release-checklist artifact format pinned to "script source"; if YAML is later chosen, update.
+- [AC-059a interleaved-writes case] Already added; closes critic finding.
+- [§Performance preamble] All performance ACs explicitly defer protocol parameters (warmup, sample count, runner pinning) to test-plan.md to avoid inventing numbers absent from ADRs. Documented inline.
+
+## FU-AC-DDL-ENUMERATION: Enumerate DDL operations under SQLITE_SCHEMA test
+
+**Origin:** Phase 3b critic [AC-021] (2026-04-27).
+**Target release:** 0.6.0 (test-plan.md fixture).
+**Notes:** AC-021 cites a documented DDL set under test (`admin.configure_kind` add + remove cycle, schema-projection rebuild). Final enumeration owed by test-plan.md fixture spec; if the DDL surface expands, AC-021 fixture must be regenerated.
+
+## FU-AC-CORRUPTION-HARNESS: Corruption / power-cut / OS-crash harness specs
+
+**Origin:** Phase 3b critic [AC-006, AC-027a, AC-034a, AC-034c] (2026-04-27).
+**Target release:** 0.6.0 (test-plan.md harness section).
+**Notes:** Multiple ACs depend on documented harnesses for corruption injection, power-cut simulation, and OS-crash simulation. test-plan.md owes:
+- Corruption-injection tool path (e.g. `tools/corrupt-page.py`) and the corrupted-state shape
+- Power-cut harness (kill -9 mid-commit timing strategy + reopen-and-check loop) + trial count
+- OS-crash harness (VM image + trigger mechanism, e.g. `echo c > /proc/sysrq-trigger` inside KVM with sync barrier preserved) + trial count
+- Sentinel pattern protocol for AC-044 (16-byte random per-test sentinel)
+- Fixture corpora at scale (1M rows, 1GB DB)
+
+## FU-AC-PROTOCOL-BACKFILL: Promote per-AC protocol parameters into ADRs vs test-plan.md
+
+**Origin:** Phase 3b critic [§Performance, AC-011a/b sample window, AC-012/13 sample count, AC-019 stress workload, AC-029 tolerance, AC-032b tolerance, AC-033 retention bound + tolerance, AC-035 worst-of-N] (2026-04-27).
+**Target release:** 0.6.0 (test-plan.md or ADR amendments).
+**Notes:** Acceptance.md draft deferred all measurement-protocol parameters to test-plan.md to avoid inventing numbers absent from ADRs. Decide before lock per parameter: (a) lift to ADR amendment (binding numerical commitment), or (b) leave in test-plan.md (binding test-protocol commitment, ADR silent on protocol). Default: leave in test-plan.md unless a reviewer wants the number ADR-grade.
