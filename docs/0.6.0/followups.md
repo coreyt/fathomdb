@@ -178,6 +178,7 @@ Seeded:
 
 **Origin:** ADR-0.6.0-text-query-latency-gates critic lows (2026-04-27).
 **Target release:** 0.6.0 (Phase 3) or 0.6.x amendment.
+**Status:** PARTIALLY RESOLVED 2026-04-27 — measurement-protocol backfill applied to ADR-0.6.0-retrieval-latency-gates (concurrency, warmup, sample count, in-process boundary, scope, fixture-share clarification, reference-target citation). Tiered-gate / budget-allocation framing (parse ≤ Xms, ANN ≤ Yms, fetch ≤ Zms) for regression triage NOT applied — defer to first real regression incident, since pre-emptive budget allocation is speculative without measurement.
 **Notes:** Text-query ADR specifies sample-count `≥ 1000`, warmup protocol, query-frequency band, in-process boundary. ADR-0.6.0-retrieval-latency-gates has the same omissions unaddressed. Amendment pass: backfill sample-count + warmup-protocol + boundary-clarification language into retrieval-latency-gates so both perf ADRs share a measurement protocol. Also: consider tiered-gate / budget-allocation framing (parse ≤ Xms, MATCH ≤ Yms, fetch ≤ Zms) for faster regression triage on either ADR — currently both gate only the end-to-end number.
 
 ## FU-FTS5-TOKENIZER: FTS5 default tokenizer decision
