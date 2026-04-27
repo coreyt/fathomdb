@@ -29,6 +29,54 @@ should:
 sqlite file as primary entities. Clients keep their own storage for
 whatever else they need.**
 
+### What lives in op-store (in scope)
+
+High-churn current-state bookkeeping where mutation history has
+little value and full node supersession would be pure write
+amplification:
+
+- connector health (per-minute updates)
+- scheduler cursors, poller `last_check` / `last_result`
+- queue state
+- debounce / heartbeat records
+- tool usage counters
+- singleton current-state blobs
+- `intake_log` lifecycle tracking
+- ephemeral "currently running" state
+
+### What does NOT live in op-store
+
+- `scheduled_tasks` — durable definitions with relationships → graph-native
+- `notifications` — user-visible, benefit from search/edges → graph-native
+- domain entities (goals, meetings, plans, knowledge objects) → graph-native
+- arbitrary application SQL tables → client storage, not op-store
+
+The op-store is **not** a back door for application domain schema.
+
+### Tables
+
+Three tables, named with the `operational_*` prefix (per OPS-1):
+
+- `operational_collections` — collection registry. Columns:
+  `name PK, kind, schema_json, retention_json, format_version,
+  created_at, disabled_at`. `kind` ∈ {`append_only_log`,
+  `latest_state`}.
+- `operational_mutations` — canonical append-only history. Columns:
+  `id PK, collection_name FK, record_key, op_kind, payload_json,
+  source_ref, created_at`. `op_kind` ∈ {`append`, `put`, `delete`,
+  `increment`}.
+- `operational_current` — derived / rebuildable latest-state
+  projection. Only meaningful for `latest_state` kind. Rebuildable
+  from `operational_mutations`.
+
+### Two collection kinds
+
+- **`append_only_log`** — every write appends; no current-state row;
+  reads stream recent mutations.
+- **`latest_state`** — every write appends a mutation; current-state
+  reads come from `operational_current` (rebuildable from the
+  mutation log).
+
 The four folded docs (op-store feature, op-store concept, payload schema
 validation, secondary indexes) all describe primitives that survive as
 **sections of the same file's logical surface** — they are not a
@@ -77,11 +125,11 @@ load-bearing for agentic workflows.
   transactional API shape lives in `design/engine.md`; the invariant
   is that no client-visible "wrote node but not its op-store row" state
   is observable.
-- **Schema namespacing (OPS-1 followup).** Op-store tables use a `op_*`
-  table-name prefix (or equivalent namespacing rule) to keep them
-  distinct from primary entity tables. Migration ordering: op-store
-  tables created in the same schema-migration step as the primary
-  tables they reference. Tracked as FU-OPS1.
+- **Schema namespacing (OPS-1).** Op-store tables use the
+  `operational_*` table-name prefix (folded-design convention).
+  CI rejects any op-store table without the prefix. Migration
+  ordering: op-store tables created in the same schema-migration
+  step as the primary tables they reference. Tracked as FU-OPS1.
 - **safe_export coverage + redaction (OPS-2 followup).** `safe_export`
   must enumerate op-store rows. Op-store JSON payloads may contain
   operator-supplied secrets; the redaction policy (operator-supplied

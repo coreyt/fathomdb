@@ -56,13 +56,13 @@ Seeded:
 
 **Origin:** critic-3 OPS-1 (2026-04-27); ADR-0.6.0-op-store-same-file.
 **Target release:** 0.6.0 (Phase 3 design/engine.md).
-**Notes:** Pin `op_*` (or equivalent) table-name prefix. Document migration ordering: op-store tables created in the same schema-migration step as the primary tables they reference. Reject any op-store table without the prefix in CI.
+**Notes:** `operational_*` prefix (folded-design convention: `operational_collections`, `operational_mutations`, `operational_current`). Document migration ordering: op-store tables created in the same schema-migration step as the primary tables they reference. Reject any op-store table without the prefix in CI.
 
 ## FU-OPS2: safe_export op-store coverage + redaction policy
 
 **Origin:** critic-3 OPS-2 (2026-04-27); ADR-0.6.0-op-store-same-file.
-**Target release:** 0.6.0 (Phase 3 design/engine.md + security-review.md).
-**Notes:** `safe_export` enumerates op-store rows. Redaction policy is **open**: candidates — (a) operator-supplied redaction allow-list, (b) default-redact-all-string-fields, (c) schema-driven (mark fields as `secret: true` in the payload schema). HITL substantive question.
+**Target release:** **0.8.0 (HITL deferral 2026-04-27).**
+**Notes:** `safe_export` of op-store rows + redaction policy deferred to 0.8.0. Rationale: 0.6.0 op-store payloads are operationally-bounded (connector health, cursors, counters, heartbeats) — high-sensitivity secrets are unlikely to land there in practice. Premature redaction policy adds surface without forcing function. Revisit when (a) op-store gains a use case with operator-supplied secrets, or (b) safe_export becomes a release-blocking feature for an external client. Until then, `safe_export` may emit op-store rows verbatim or omit them entirely; specific behavior decided at implementation time, not pinned by ADR.
 
 ## FU-OPS4: Op-store transaction boundary detail
 
@@ -97,5 +97,5 @@ Seeded:
 ## FU-M5: JSON Schema validation policy ADR
 
 **Origin:** critic-3 M-5 (2026-04-27); cross-cuts ADR-0.6.0-operator-config-json-only and ADR-0.6.0-op-store-same-file (op-store payload validation).
-**Target release:** 0.6.0 (Phase 3 design — substantive HITL question).
-**Notes:** Decide (a) where JSON Schemas live (in-repo `schemas/`? Operator-supplied? Both?), (b) when validation runs (engine-open vs save-time vs both), (c) what failure modes look like (reject-write vs warn-and-write). Substantive HITL ask listed in plan handoff.
+**Target release:** 0.6.0 (Phase 3 design).
+**Notes:** Schema location settled by HITL 2026-04-27: **in-repo `schemas/`**. Engine-side schemas ship in the fathomdb crate under `crates/fathomdb-engine/schemas/` (or workspace-level `schemas/`); each schema has a stable id (e.g. `operational_collection_v1.json`); op-store collections reference them via `schema_id`. Operator-supplied schemas are **not accepted** in 0.6.0 — that would re-open the JSON-only-config posture and expose the engine to arbitrary schema parsing. Open sub-questions for the ADR: (a) when validation runs (engine-open vs save-time vs both — likely save-time per write); (b) failure mode (reject-write is the default; warn-and-write would be the speculative-knob anti-pattern); (c) schema versioning (drop old `schema_id`s only across major release per ADR-0.6.0-no-shims-policy). Draft ADR before Phase 3 design lock.
