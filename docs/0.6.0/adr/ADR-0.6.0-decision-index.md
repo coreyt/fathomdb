@@ -1,10 +1,10 @@
 ---
 title: 0.6.0 Decision Index
-date: 2026-04-24
+date: 2026-04-25
 target_release: 0.6.0
 desc: Triage list of candidate decisions; not itself an ADR
 blast_radius: TBD
-status: not-started
+status: in-progress
 ---
 
 # Decision Index (triage)
@@ -12,13 +12,49 @@ status: not-started
 This file is a **triage list**, not a decision. Each row is a candidate decision
 that may become an accepted ADR.
 
-Workflow per row: I draft → critic (`architecture-inspector`) → user marks
-`decide-now | defer | drop`. Decide-now → ADR file `ADR-0.6.0-<kebab-title>.md`
-gets full options/tradeoffs/recommendation; user accepts → ADR `status: accepted`.
+Workflow per row: draft → critic (`architecture-inspector`) → HITL marks
+`decide-now | defer | drop`. Decide-now → ADR file
+`ADR-0.6.0-<kebab-title>.md` gets full options/tradeoffs/recommendation;
+HITL accepts → ADR `status: accepted`.
+
+## Phase 1 (already-decided / decision-recording ADRs)
+
+These were settled during Phase 1a/1b HITL. ADRs record the rationale and
+preserve options-considered for posterity; they do not deliberate.
 
 | # | Category | Candidate decision | HITL verdict | ADR file |
 |---|----------|-------------------|--------------|----------|
+| 1 | architecture | Async-surface for engine API (sync vs spawn-blocking adapters vs sqlx) | decide-now | ADR-0.6.0-async-surface.md *(promoted from Phase 2 per critic-B F4)* |
+| 2 | design | Default-embedder architecture (candle + tokenizers + sqlite-vec; mean-pool + L2-normalize; zerocopy BLOB) | decide-now (decision-recording) | ADR-0.6.0-default-embedder.md |
+| 3 | architecture | sqlite-vec accept-no-fallback (sole-maintainer risk) | decide-now (decision-recording) | ADR-0.6.0-sqlite-vec-acceptance.md |
+| 4 | interface | Operator config = JSON-only (toml dropped) | decide-now (decision-recording) | ADR-0.6.0-operator-config-json-only.md |
+| 5 | architecture | Typed at engine boundary; no raw SQL ever from clients | decide-now (decision-recording) | ADR-0.6.0-typed-write-boundary.md |
+| 6 | architecture | Operational store lives in same sqlite file (no dual-store) | decide-now (decision-recording) | ADR-0.6.0-op-store-same-file.md |
 
-TBD — populate in Phase 2a.
+## Phase 2 (deliberation ADRs)
 
-Categories: acceptance | architecture | design | interface.
+Decisions that are not yet settled. Drafts pending after Phase 1 ADRs land.
+
+| # | Category | Candidate decision | HITL verdict | ADR file |
+|---|----------|-------------------|--------------|----------|
+| 7 | acceptance | Single-process durability target (fsync policy, recovery time) | TBD | TBD |
+| 8 | acceptance | Projection freshness SLI numerical target | TBD | TBD |
+| 9 | acceptance | Retrieval p50/p99 latency gates | TBD | TBD |
+| 10 | acceptance | Tier-1 CI platforms list (Linux x86_64, Linux aarch64, macOS, Windows — already required globally; ADR pins minimum platform support window) | TBD | TBD |
+| 11 | architecture | Crate topology — keep `fathomdb-engine` monolith or split (storage / projection / vector / query) | TBD | TBD |
+| 12 | architecture | Single-writer thread vs MVCC | TBD | TBD |
+| 13 | architecture | Vector index location (vec0 in same sqlite file is the keep direction; ADR records and locks) | TBD | TBD |
+| 14 | architecture | Scheduler shape — Arc/async actor; client-visible "vec-not-yet-consistent" surface (per HITL F5) | TBD | TBD |
+| 15 | architecture | Wire format for subprocess bridge (proto / JSON / versioned) | TBD | TBD |
+| 16 | design | Projection model — pull (lazy) vs push (eager scheduler) vs hybrid | TBD | TBD |
+| 17 | design | Retrieval pipeline shape — fixed stages vs composable | TBD | TBD |
+| 18 | design | Error taxonomy — single crate-level error enum vs per-module | TBD | TBD |
+| 19 | design | PreparedWrite shape (typed boundary itself is settled per ADR-0.6.0-typed-write-boundary.md; this decides the type) | TBD | TBD |
+| 20 | interface | Python API shape — sync only / async only / both (gates on ADR-0.6.0-async-surface.md) | TBD | TBD |
+| 21 | interface | TypeScript API — mirror Python 1:1 vs idiomatic TS | TBD | TBD |
+| 22 | interface | CLI scope — admin-only vs full query | TBD | TBD |
+| 23 | interface | Deprecation policy for 0.5.x names (rewrite-proposal anti-requirement = no shims; this ADR records and pins) | TBD | TBD |
+
+## Categories
+
+acceptance | architecture | design | interface.
