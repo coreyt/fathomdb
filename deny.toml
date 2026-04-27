@@ -1,0 +1,68 @@
+# cargo-deny configuration for fathomdb
+# Phase 1a/1b followup (HITL 2026-04-25): allowlist for cargo-deny licenses.
+# Keep this list minimal; add a license only after confirming compatibility
+# with the workspace Apache-2.0 / MIT dual-license posture.
+
+[graph]
+# Audit only normal + build deps for licenses; dev deps are not redistributed.
+all-features = false
+no-default-features = false
+
+[licenses]
+version = 2
+# Allowed SPDX expressions. Strict permissive set + Unicode-3.0 for icu_*.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "MPL-2.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "BSL-1.0",
+    "OpenSSL",
+]
+confidence-threshold = 0.93
+
+# Per-crate exception clarifications for crates with unparseable or
+# license-file-only declarations. Add entries here only with a CITATION
+# to the crate's license file or upstream issue.
+exceptions = [
+    # ring uses a custom non-SPDX license string; vetted as MIT/ISC/OpenSSL.
+    { name = "ring", allow = ["MIT", "ISC", "OpenSSL"] },
+]
+
+[[licenses.clarify]]
+name = "ring"
+expression = "MIT AND ISC AND OpenSSL"
+license-files = [
+    { path = "LICENSE", hash = 0xbd0eed23 },
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Per HITL: paste is unmaintained (RUSTSEC-2024-0436) — track for replacement
+# but do not fail the build (transitive via tokenizers + pulp).
+deny = []
+skip = []
+
+[advisories]
+version = 2
+# Known transitive findings (per Phase 1a deps audit + cargo audit).
+# Both not exploitable in our paths; revisit on each release.
+ignore = [
+    "RUSTSEC-2026-0097",  # rand 0.9.2 — unsound only with custom logger; not triggered
+    "RUSTSEC-2024-0436",  # paste 1.0.15 — unmaintained, macro-only, low risk
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

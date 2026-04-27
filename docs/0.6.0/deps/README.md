@@ -21,15 +21,15 @@ records each platform's build status; any "asserted" or "unverified" entry must
 be promoted to CI evidence before the dep is locked. Aarch64-Linux is
 load-bearing per memory `feedback_cross_platform_rust` (c_char i8/u8 split).
 
-## Tooling signal availability (2026-04-25)
+## Tooling signal availability (2026-04-27)
 
 | Tool | Status |
 |------|--------|
 | `cargo tree -e normal --workspace --depth 1` | available, run |
 | `cargo audit` | available, run — see transitive findings below |
-| `cargo deny check` | **pending install** (HITL F1: block release-readiness on completion) |
-| `cargo udeps --workspace` | **pending install** (HITL F2: "no drops" verdict unverified until run) |
-| `cargo outdated -R` | pending install |
+| `cargo deny check` | **installed + run; clean** (config: `deny.toml`). Advisories ok / bans ok / licenses ok / sources ok. No flips. |
+| `cargo udeps --workspace` | install failed (libssl-dev missing on aarch64); HITL pending — sudo apt install libssl-dev pkg-config OR rustls-feature variant |
+| `cargo outdated -R` | install failed (same as udeps) |
 
 ### `cargo audit` — transitive findings
 - RUSTSEC-2026-0097 — `rand 0.9.2` unsound with custom logger. Reaches us via `ulid`, `tokenizers`, `candle-*`, `hf-hub`/`reqwest`/`quinn`, `rand_distr`, `criterion`. Not exploitable in our paths (we never install a custom rand logger). Track upstream rand bumps.
