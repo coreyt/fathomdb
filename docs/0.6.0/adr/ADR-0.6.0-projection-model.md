@@ -29,19 +29,59 @@ Vector projections must be computed for new chunks. Trigger model is the central
 - Freshness window made explicit by `projection_cursor` surface.
 - Matches accepted async-surface + scheduler-shape ADRs.
 
+### Granularity
+
+- **One projection job per chunk-batch**, default batch size B = 64. Tunable per `Engine.open`.
+- Fan-out happens at scheduler entry, **not** at commit. A 10k-chunk write transaction commits as one writer-thread operation; the scheduler then enqueues ⌈10000 / B⌉ jobs.
+- Per-call timeout (per ADR-0.6.0-embedder-protocol § Invariant 5) applies to one job, i.e. one batch — not per chunk.
+
+### Backpressure (layered defence; engine does NOT impose internal projection-queue bound)
+
+The 0.6.0 backpressure story is a four-layer composition; no single-knob queue limit:
+
+1. **WAL mode** (already mandatory per ADR-0.6.0-single-writer-thread + ADR-0.6.0-durability-fsync-policy) decouples readers from writers.
+2. **`busy_timeout` ≥ 5s** (already mandatory) absorbs short-term writer contention without erroring.
+3. **Single writer thread** (already locked) strictly limits concurrent writers to 1.
+4. **Adapter-level queue-depth monitoring + 429-equivalent shed.** Engine exposes `projection_queue_depth` and `embedder_saturation` metrics (per ADR-0.6.0-scheduler-shape § Observability). Bindings (Python, TS, CLI) sample these metrics and shed write submissions before memory saturates by returning a typed `EngineError::Overloaded { queue_depth, threshold }`. Threshold default + sampling cadence live in `design/scheduler.md`.
+
+This means the engine itself does not block writer-thread submission, does not reject-commit on backlog, and does not shed projection rows. Backlog is observable; binding-level shedding is the policy lever.
+
+### Failure handling
+
+Projection jobs that fail (embedder timeout per Invariant 5, transient I/O):
+
+- **Bounded retry** with exponential backoff (default: 3 retries, 1s/4s/16s; configurable per Engine.open).
+- After exhausted retries: **mark-failed-and-advance.** Failed batch is recorded in `operational_*` op-store row (per ADR-0.6.0-op-store-same-file `operational_mutations` with op_kind=append) under a `projection_failures` collection; cursor advances past the failed batch.
+- `projection_cursor` advances on **terminal state** (success or failed), never on in-flight. SLI #8 (p99 ≤ 5s) is measured against terminal states; in-flight rows are not part of the freshness contract.
+- Operators inspect `projection_failures` collection via CLI (per ADR-0.6.0-cli-scope). `regenerate` verb re-enqueues failed batches.
+
+### Restart durability
+
+- **No durable projection queue table.** Queue is **derived state.**
+- On `Engine.open`, scheduler scans for chunks where `chunk_id > projection_cursor` and re-enqueues them. No new schema; no migration step.
+- Failed batches recorded in op-store survive restart (op-store is durable per ADR-0.6.0-op-store-same-file); `regenerate` operator verb re-enqueues them on demand.
+
+### Read-path contract under cursor lag
+
+Reads MAY return results that lag the latest write by up to the freshness window (#8 p99 ≤ 5s). Reads NEVER block on cursor lag and NEVER error on cursor lag. Clients that need strict read-after-write semantics compare write-cursor (returned at commit) with query-cursor (returned at read) and poll. Cross-cite ADR-0.6.0-retrieval-pipeline-shape (#17 stage 1 read-path).
+
 ## Options considered
 
 **A — Push / eager (chosen).** Aligns with async-surface Invariant A; freshness SLI #8 makes window explicit. Best read latency.
 
-**B — Pull / lazy.** Projection computed on first read; cached. Worst-case read latency (first read for a chunk pays embedder cost); no scheduler complexity; freshness becomes per-read-trigger. First-read tail latency is brutal under interactive workloads.
+**B — Pull / lazy.** Projection computed on first read; cached. Worst-case read latency (first read for a chunk pays embedder cost); no scheduler complexity; freshness becomes per-read-trigger. First-read tail latency is brutal under interactive workloads. Note: decision assumes interactive read mix; analytical-only deployments (ingest-then-RAG-later, batch readers) where most chunks are never queried may revisit via amendment — push pays embedder cost on 100% of writes vs pull on N% of reads.
 
-**C — Hybrid (eager for "frequent," lazy for tail).** Best in theory; requires access-pattern tracking + a "what counts as frequent" threshold (speculative knob). Stop-doing speculative-knobs class.
+**C — Access-pattern hybrid (auto-detect "frequent," lazy for tail).** Requires access-pattern tracking + a "what counts as frequent" threshold (speculative knob). Stop-doing speculative-knobs class. **Rejected for 0.6.0.**
+
+**C′ — Per-profile lazy mode (operator-declared).** Operator marks a vector profile as `lazy=true` at registration time; profile-level pull semantics; no per-row decision. Not speculative-knob — explicit operator policy. **Deferred to a future ADR**, not foreclosed by this one. Forcing function: a real consumer with cold long-tail profiles.
 
 ## Consequences
 
 - `design/projections.md` documents the push model end-to-end (write → enqueue projection job → embedder dispatch → projection-row commit + cursor advance).
 - `design/vector.md` cross-cites the model when explaining the read path.
-- Pull and hybrid are out of scope for 0.6.0 — re-opens require an ADR amendment.
+- Pull and access-pattern hybrid are out of scope for 0.6.0 — re-opens require an ADR amendment.
+- Per-profile lazy mode (Option C′) is **deferred** (not rejected); future ADR if a real consumer needs it.
+- New typed error: `EngineError::Overloaded { queue_depth, threshold }` (added to error taxonomy per ADR-0.6.0-error-taxonomy).
 - Cross-cite #8 freshness SLI: the push model is what makes p99 ≤ 5s testable.
 - Cross-cite #17 retrieval pipeline: read path can rely on projection rows existing within the cursor window.
 

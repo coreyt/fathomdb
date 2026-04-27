@@ -19,10 +19,51 @@ ADR-0.6.0-async-surface Invariant A: scheduler dispatches post-commit; writer lo
 
 ## Decision
 
-- **Single tokio runtime owned by the engine.** Created at `Engine.open`; dropped at `Engine.close`.
-- **One async task per pending projection job.** Tasks consume embedder pool slots (per ADR-0.6.0-embedder-protocol § Invariant 4); embed result is submitted back to the writer thread for commit (per ADR-0.6.0-single-writer-thread).
-- **`projection_cursor` advanced atomically with the projection-row commit.** Cursor exposed on read transactions (per ADR-0.6.0-projection-freshness-sli).
-- **Pool size configurable** at `Engine.open` (default `num_cpus::get()`); same pool that drives embedder dispatch.
+### Two pools (corrected from prior draft)
+
+The engine owns **two distinct pools** — they are not the same pool:
+
+- **Tokio runtime worker pool — orchestration only.** Drives async tasks for projection jobs (await embedder result, submit commit to writer). Default size: 2 worker threads (`scheduler_runtime_threads`). Configurable per `Engine.open`. Tokio workers NEVER run `embed()` directly — that would violate ADR-0.6.0-embedder-protocol § Invariant 4.
+- **Embedder dispatch pool — `embed()` calls only.** Per ADR-0.6.0-embedder-protocol § Invariant 4. Default size: `num_cpus::get()` (`embedder_pool_size`). Configurable per `Engine.open`.
+- Scheduler tasks call `tokio::task::spawn_blocking` (or equivalent handoff) to move from the runtime pool onto the embedder pool when invoking `embed()`. Result is awaited back on the runtime pool.
+
+### Thread isolation
+
+- **Tokio runtime runs on its own dedicated worker threads.** Writer thread is a dedicated OS thread (per ADR-0.6.0-single-writer-thread); the writer thread is **never** a tokio worker.
+- Writer thread holds only a `tokio::runtime::Handle` for `spawn`. Writer thread NEVER calls `block_on`. (Writer code path: write commit → spawn projection job onto tokio handle → return; handle.spawn does not block.)
+- Submission from a scheduler task back to the writer (for projection-row commit) goes through an mpsc channel, not via tokio entering the writer thread.
+
+### Per-job lifecycle
+
+- **One async task per pending projection job.** (Job = one chunk-batch per ADR-0.6.0-projection-model § Granularity, default B=64.)
+- Tasks consume embedder pool slots via `spawn_blocking`; embed result is submitted to the writer thread via the mpsc channel.
+- **`projection_cursor` advanced atomically with the projection-row commit** on the writer thread (cursor is a column on the projection row's tx).
+
+### Concurrency bound (backpressure-internal)
+
+- **Bounded in-flight scheduler tasks** via `tokio::sync::Semaphore` sized `4 * embedder_pool_size`.
+- Excess pending jobs queue on the cursor surface (i.e. as un-spawned chunk_id-greater-than-cursor rows), NOT as live futures. Memory does not grow with backlog.
+- `projection_queue_depth` metric counts un-spawned pending jobs; `tasks_in_flight` counts live tokio tasks; `embedder_saturation` counts active embedder pool slots / pool size.
+
+### Per-job cancellation
+
+- **Generation-token check before embedder dispatch.** Each scheduler task carries the chunk's generation token (last-modified-version). Before `spawn_blocking(embed)`, task checks current token; if superseded by a later write, task discards (best-effort).
+- **In-flight `embed()` is NOT aborted** (best-effort per Invariant 5; no portable thread-cancel API). Result is discarded if generation has advanced by submission time.
+
+### Engine.close shutdown protocol (deadlock-free)
+
+Ordered shutdown:
+
+1. Stop accepting new write commits at the engine boundary (`Engine.close` returns `EngineError::Closing` for new writes).
+2. Cease scheduler dispatch (no new tokio tasks spawned).
+3. `runtime.shutdown_timeout(grace)` where `grace ≥ embedder_per_call_timeout` (default 30s per Invariant 5). In-flight embed calls finish or timeout; results are discarded if writer is already drained.
+4. Drain submission mpsc channel (writer thread processes any pending projection-row commits).
+5. Stop writer thread last; release database lock.
+
+### Observability
+
+- Metrics surface exposes: `projection_queue_depth`, `tasks_in_flight`, `embedder_saturation`. Used by binding-level adapters for 429-shed (per ADR-0.6.0-projection-model § Backpressure layer 4).
+- **Pool resize at runtime: out of scope** for 0.6.0. Sizes set at `Engine.open` only.
 
 ## Options considered
 

@@ -74,5 +74,5 @@ This ADR settles the remaining sub-questions.
 - ADR-0.6.0-op-store-same-file (operational_collections.schema_json).
 - ADR-0.6.0-operator-config-json-only (strict JSON).
 - ADR-0.6.0-no-shims-policy (no within-0.6.x deprecation cycles).
-- ADR-0.6.0-error-taxonomy (EngineError::SchemaValidation).
+- ADR-0.6.0-error-taxonomy (`SchemaValidationError` is a distinct module variant per § Module-error boundary table).
 - `feedback_no_data_migration` memory.
