@@ -1,6 +1,6 @@
 ---
 title: ADR-0.6.0-default-embedder
-date: 2026-04-25
+date: 2026-04-27
 target_release: 0.6.0
 desc: Default-embedder = candle + tokenizers + sqlite-vec; mean-pool + L2-normalize; zerocopy BLOB
 blast_radius: crates/fathomdb-engine feature `default-embedder` (model load + inference + vector write); deps candle-core, candle-nn, candle-transformers, tokenizers, hf-hub, sqlite-vec
@@ -77,6 +77,45 @@ Cons: loses the local-first single-process posture; adds an IPC seam;
 requires deployment coordination. Reserved as 0.7+ option if wheel-size
 or compile-time pain forces it.
 
+## Critic findings + resolutions (2026-04-27)
+
+- **EMB-1 BGE pooling.** Critic flagged that BGE checkpoints are often
+  trained with CLS-token pooling, so unconditional mean-pool may
+  diverge from the Python ST baseline. **HITL: mean-pool stays.**
+  Rationale: fathomdb's vectors store *canonical information* for
+  agentic search; mean-pool empirically gives better search accuracy
+  for that use case than CLS pooling on BGE-class models. Recorded
+  here so the choice is not silently re-litigated.
+- **EMB-2 L2-norm enforcement.** Embedder protocol requires unit-norm
+  vectors. Engine asserts `(‖v‖ - 1.0).abs() < 1e-5` in debug builds
+  on every vector handed back from `embed()`. Release builds document
+  the contract; no runtime cost. Same assertion applies to Rust /
+  Python / TS embedder impls — language-agnostic. Detailed in
+  ADR-0.6.0-embedder-protocol.md.
+- **EMB-3 Wheel size per-platform.** "+130 MB" approximate; actual
+  per-platform sizes measured in CI (Linux x86_64, Linux aarch64,
+  macOS, Windows). Per-platform CI gate flags regressions > 20 MB.
+  Followup tracked in `deps/README.md`.
+- **EMB-4 Embedder runs on engine-owned thread.** Per ADR-0.6.0-async-surface
+  Invariant B: candle inference runs on a dedicated engine-owned
+  thread pool (sized = `num_cpus::get()`), never on a binding's
+  caller thread, asyncio worker, or libuv thread. Mechanically
+  enforced in the embedder dispatch layer.
+- **EMB-5 hf-hub replacement is its own design.** The "thin ureq GET"
+  is a non-trivial decision (auth tokens, 302 to CloudFront,
+  range-resume, sha256 verification, atomic rename into cache). Lands
+  as a sub-design under `design/embedder.md` before code. Followup.
+- **EMB-6 Endianness.** Vectors stored as little-endian f32 BLOBs.
+  Documented as an invariant in ADR-0.6.0-zerocopy-blob.md (M-1).
+  Workspace targets are all LE (x86_64 + aarch64); BE platforms would
+  require an explicit byte-swap step before the cast.
+- **X-1 Cold-load × sync writer.** Per ADR-0.6.0-async-surface
+  Invariant D: BGE model loaded eagerly at `Engine.open`. Open
+  reports model-load duration in its status output (per
+  raw-req "schema migration auto-applies + reports per-step duration").
+  Cold-load inside a write transaction is a startup-time error in
+  debug builds; release builds log + prevent.
+
 ## Consequences
 
 - `python/pyproject.toml` `stella` and `embedders` extras drop
@@ -84,12 +123,21 @@ or compile-time pain forces it.
   the embedder protocol with their own `SentenceTransformer` instance.
 - `safetensors` direct dep dropped; use the candle re-export (deps F7).
 - `hf-hub` replaced with thin `ureq` GET against the resolve URL pattern
-  + best-effort cache compat at `~/.cache/huggingface` (deps F10).
+  + best-effort cache compat at `~/.cache/huggingface` (deps F10);
+  detailed sub-design in `design/embedder.md`.
 - L2-normalization is part of the embedder contract — every vector
-  emitted by the default-embedder is unit-norm. Recorded as an
-  invariant in `design/vector.md`.
+  emitted by the default-embedder is unit-norm. Engine asserts in
+  debug builds. Detailed in ADR-0.6.0-embedder-protocol.md.
 - The Rust `Vec<f32>` → BLOB transfer uses `zerocopy` (or equivalent
-  bytemuck `cast_slice`); no per-vector serialize step.
+  bytemuck `cast_slice`); no per-vector serialize step. Endianness
+  + alignment + dim×4 byte-length invariant pinned in
+  ADR-0.6.0-zerocopy-blob.md.
+- `Engine.open` blocks on model load (Invariant D); exposes load
+  duration in the open status report.
+- Embedder runs on engine-owned thread pool (Invariant B); no
+  caller-thread / asyncio / libuv execution.
+- Per-`embed()` timeout default 30s; configurable; failure is typed,
+  does not corrupt the writer.
 
 ## Citations
 

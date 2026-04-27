@@ -24,12 +24,15 @@ preserve options-considered for posterity; they do not deliberate.
 
 | # | Category | Candidate decision | HITL verdict | ADR file |
 |---|----------|-------------------|--------------|----------|
-| 1 | architecture | Async-surface for engine API (sync vs spawn-blocking adapters vs sqlx) | decide-now | ADR-0.6.0-async-surface.md *(promoted from Phase 2 per critic-B F4)* |
-| 2 | design | Default-embedder architecture (candle + tokenizers + sqlite-vec; mean-pool + L2-normalize; zerocopy BLOB) | decide-now (decision-recording) | ADR-0.6.0-default-embedder.md |
-| 3 | architecture | sqlite-vec accept-no-fallback (sole-maintainer risk) | decide-now (decision-recording) | ADR-0.6.0-sqlite-vec-acceptance.md |
-| 4 | interface | Operator config = JSON-only (toml dropped) | decide-now (decision-recording) | ADR-0.6.0-operator-config-json-only.md |
-| 5 | architecture | Typed at engine boundary; no raw SQL ever from clients | decide-now (decision-recording) | ADR-0.6.0-typed-write-boundary.md |
-| 6 | architecture | Operational store lives in same sqlite file (no dual-store) | decide-now (decision-recording) | ADR-0.6.0-op-store-same-file.md |
+| 1 | architecture | Async-surface for engine API (sync engine + Path 2 TS-binding fix + Invariants A-D) | accepted (deliberation) | ADR-0.6.0-async-surface.md |
+| 2 | design | Default-embedder architecture (candle + tokenizers + sqlite-vec; mean-pool + L2-normalize; zerocopy BLOB) | accepted (decision-recording) | ADR-0.6.0-default-embedder.md |
+| 3 | architecture | sqlite-vec accept-no-fallback (sole-maintainer risk) | accepted (decision-recording) | ADR-0.6.0-sqlite-vec-acceptance.md |
+| 4 | interface | Operator config = JSON-only (toml dropped) | accepted (decision-recording) | ADR-0.6.0-operator-config-json-only.md |
+| 5 | architecture | Typed at engine boundary; no raw SQL ever from clients | accepted (decision-recording) | ADR-0.6.0-typed-write-boundary.md |
+| 6 | architecture | Operational store lives in same sqlite file (no dual-store) | accepted (decision-recording) | ADR-0.6.0-op-store-same-file.md |
+| 7 | design | Embedder protocol contract (sync, unit-norm, no-reentrancy, engine-owned-thread, per-call-timeout) | accepted (deliberation) | ADR-0.6.0-embedder-protocol.md |
+| 8 | architecture | Vector BLOB on-disk invariants (LE f32, alignment, byte-length, BLOB affinity) | accepted (decision-recording) | ADR-0.6.0-zerocopy-blob.md |
+| 9 | interface | No 0.5.x→0.6.0 shims; no within-0.6.x multi-release deprecation cycles | accepted (decision-recording) | ADR-0.6.0-no-shims-policy.md |
 
 ## Phase 2 (deliberation ADRs)
 
