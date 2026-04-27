@@ -33,6 +33,8 @@ preserve options-considered for posterity; they do not deliberate.
 | 7 | design | Embedder protocol contract (sync, unit-norm, no-reentrancy, engine-owned-thread, per-call-timeout) | accepted (deliberation) | ADR-0.6.0-embedder-protocol.md |
 | 8 | architecture | Vector BLOB on-disk invariants (LE f32, alignment, byte-length, BLOB affinity) | accepted (decision-recording) | ADR-0.6.0-zerocopy-blob.md |
 | 9 | interface | No 0.5.x→0.6.0 shims; no within-0.6.x multi-release deprecation cycles | accepted (decision-recording) | ADR-0.6.0-no-shims-policy.md |
+| 10 | architecture | Single-writer-thread engine for 0.6.0; MVCC explicitly out of scope (closes Phase 2 #12 by deferral) | accepted (decision-recording) | ADR-0.6.0-single-writer-thread.md |
+| 11 | design | Vector identity belongs to the embedder; vector configs never carry identity strings | accepted (decision-recording) | ADR-0.6.0-vector-identity-embedder-owned.md |
 
 ## Phase 2 (deliberation ADRs)
 
@@ -45,7 +47,7 @@ Decisions that are not yet settled. Drafts pending after Phase 1 ADRs land.
 | 9 | acceptance | Retrieval p50/p99 latency gates | TBD | TBD |
 | 10 | acceptance | Tier-1 CI platforms list (Linux x86_64, Linux aarch64, macOS, Windows — already required globally; ADR pins minimum platform support window) | TBD | TBD |
 | 11 | architecture | Crate topology — keep `fathomdb-engine` monolith or split (storage / projection / vector / query) | TBD | TBD |
-| 12 | architecture | Single-writer thread vs MVCC | TBD | TBD |
+| 12 | architecture | Single-writer thread vs MVCC | resolved-by-deferral | → ADR-0.6.0-single-writer-thread.md (Phase 1 #10); MVCC deferred to 0.7+ |
 | 13 | architecture | Vector index location (vec0 in same sqlite file is the keep direction; ADR records and locks) | TBD | TBD |
 | 14 | architecture | Scheduler shape — Arc/async actor; client-visible "vec-not-yet-consistent" surface (per HITL F5) | TBD | TBD |
 | 15 | architecture | Wire format for subprocess bridge (proto / JSON / versioned) | TBD | TBD |
@@ -57,6 +59,7 @@ Decisions that are not yet settled. Drafts pending after Phase 1 ADRs land.
 | 21 | interface | TypeScript API — mirror Python 1:1 vs idiomatic TS | TBD | TBD |
 | 22 | interface | CLI scope — admin-only vs full query | TBD | TBD |
 | 23 | interface | Deprecation policy for 0.5.x names (rewrite-proposal anti-requirement = no shims; this ADR records and pins) | TBD | TBD |
+| 24 | acceptance | Write-throughput SLI (commits/sec target under single-writer-thread; forcing function for any future MVCC re-open) | decide-now (HITL 2026-04-27) | TBD |
 
 ## Categories
 
