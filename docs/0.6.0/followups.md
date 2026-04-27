@@ -105,3 +105,47 @@ Seeded:
 **Origin:** Phase 2 #17 deferral (HITL 2026-04-27).
 **Target release:** 0.8.0.
 **Notes:** Per ADR-0.6.0-retrieval-pipeline-shape, 0.6.0 ships fixed stages with per-stage config. Revisit composable middleware pipeline (trait-object stages, user-spliced stages) in 0.8.0 with concrete user needs. Forcing function: a real retrieval requirement that fixed-stage config cannot express. Until then, fixed stages remain.
+
+## FU-VEC13-CORRUPTION: Single-file corruption-recovery posture
+
+**Origin:** Phase 2 #13 critic [vec-loc-02] (2026-04-27); ADR-0.6.0-vector-index-location.
+**Target release:** 0.6.x (post-freeze if needed) or 0.7.0.
+**Notes:** Single SQLite file holds application + op-store + `vec0` shadow tables — one corruption blast-radius. Open: detection mechanism (PRAGMA integrity_check on open? on demand? scheduled?), `Engine.open` behavior on detected corruption (refuse-open vs open-read-only vs auto-attempt-recover), recovery ownership (CLI verb? programmatic API? both?). Decide as ADR-0.6.x-corruption-recovery if the failure mode lands in practice.
+
+## FU-PW19-BATCH-SEMANTICS: Write batch transactional semantics
+
+**Origin:** Phase 2 #19 critic [pw-01] (2026-04-27); ADR-0.6.0-prepared-write-shape.
+**Target release:** 0.6.0 (Phase 3 design/engine.md).
+**Notes:** ADR-0.6.0-prepared-write-shape commits to `&[PreparedWrite]` shape but defers transactional semantics: is the slice one transaction, N transactions, or per-variant-grouped? Decide in design/engine.md; promote to its own ADR if the answer is non-mechanical. Settling this also unlocks the per-variant-validation-error-with-batch-index question deferred in [pw-02].
+
+## FU-PW19-BINDING-EXHAUSTIVENESS: Non-exhaustive enum across bindings
+
+**Origin:** Phase 2 #19 critic [pw-04] (2026-04-27); ADR-0.6.0-prepared-write-shape.
+**Target release:** 0.6.0 (interfaces/python.md + interfaces/typescript.md).
+**Notes:** Rust `#[non_exhaustive]` does not protect Python `isinstance` chains or TS discriminated-union switches. Decide per-binding posture: default branch required by lint? runtime check on unknown variant? document the variant set as "stable within minor"? Resolve in the binding interface docs; promote to ADR if cross-binding posture diverges.
+
+## FU-PY20-STUB-GENERATION: Python type-stub generation method
+
+**Origin:** Phase 2 #20 critic [py-02] (2026-04-27); ADR-0.6.0-python-api-shape.
+**Target release:** 0.6.0 (Phase 5 implementation).
+**Notes:** ADR commits to `.pyi` shipping in the wheel. Generation method (hand-written, `pyo3-stub-gen`, `mypy stubgen`, custom) chosen at implementation time. Keep CI gate (`mypy --strict` against the stubs) regardless of generation choice.
+
+## FU-DEP23-WITHIN-MINOR-REUSE: Within-0.6.x removed-name reuse rule
+
+**Origin:** Phase 2 #23 critic [dep-01] (2026-04-27); ADR-0.6.0-deprecation-policy-0-5-names.
+**Target release:** 0.6.0 (release-policy.md) or 0.6.x as needed.
+**Notes:** ADR explicitly punts on "may a name removed in 0.6.x be reused with new meaning in a later 0.6.x release?" Resolve in release-policy.md. Default until decided: do not reuse — drop is forever within a minor series. If a real need surfaces, ADR-0.6.x-name-reuse settles it.
+
+## FU-LOWS-2026-04-27: Lite-batch ADR low-severity findings
+
+**Origin:** Critic on lite-batch ADRs (2026-04-27). Logged-not-applied per low-severity policy.
+**Target release:** N/A (cleanup at next ADR amendment).
+**Notes:**
+- [tier1-04] Drop / move "this dev box is Jetson" footnote.
+- [tier1-05] Name the perf-gate "reference target" (likely `x86_64-unknown-linux-gnu`) or strike the example.
+- [vec-loc-04] Pin `vec0` shadow-table naming as either private-impl or documented convention; not both.
+- [pw-05] Cite `AdminSchemaWrite` source or mark provisional pending design/engine.md.
+- [py-04] Make snake_case-fields commitment explicit alongside snake_case-methods.
+- [py-05] Name the structural enforcement of "asyncio threads never run embedders" or strike the bullet.
+- [dep-03] Reword "0.5.x callers cannot run on 0.6.0 anyway" — DB-freshness ≠ API-freshness.
+- [X-03] Optionally call out manylinux_2_28 baseline in 0.6.0 release notes.

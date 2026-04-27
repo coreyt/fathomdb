@@ -19,6 +19,17 @@ Critic mapping:
 Cadence: docs written/updated in batches within a turn. Critic + HITL review **after**
 the turn. Any doc changed after lock but before implementation → re-review.
 
+## Progress (as of 2026-04-27)
+
+**Phase 2 — Decision index + ADRs: complete.** All 24+5 = 29 candidate
+decisions resolved. Phase 1 ADRs (11), Phase 2 substantive ADRs (13),
+Phase 2 lite-batch closure ADRs (5: #10 tier1-ci-platforms, #13
+vector-index-location, #19 prepared-write-shape, #20 python-api-shape,
+#23 deprecation-policy-0-5-names). Critic pass on lite-batch applied 4
+high + 11 med findings inline; 6 low findings logged to followups. All
+ADRs status `accepted`. Next: Phase 3a (requirements.md from
+`learnings.md` raw-requirement candidates).
+
 ## Progress (as of 2026-04-25)
 
 **Phase 0 — Scaffold: done.** Doc-types + done-definitions encoded in this plan;
