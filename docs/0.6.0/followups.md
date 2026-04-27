@@ -149,3 +149,20 @@ Seeded:
 - [py-05] Name the structural enforcement of "asyncio threads never run embedders" or strike the bullet.
 - [dep-03] Reword "0.5.x callers cannot run on 0.6.0 anyway" — DB-freshness ≠ API-freshness.
 - [X-03] Optionally call out manylinux_2_28 baseline in 0.6.0 release notes.
+
+## FU-REQ-LOWS-2026-04-27: Phase 3a critic low-severity findings
+
+**Origin:** Critic on requirements.md draft (2026-04-27). Logged-not-applied per low-severity policy.
+**Target release:** N/A (cleanup at next requirements amendment).
+**Notes:**
+- [REQ-051 inverse] Behavior on vector-free DB when `sqlite-vec` is missing — REQ leaves ambiguous; ADR allows. Tighten if a real user hits it.
+- [REQ-018 citation] Re-cite to retrieval-latency-gates concurrent-read implication rather than dropped doc once acceptance.md has the AC.
+- [REQ-035 citation] `dev/design-note-encryption-at-rest-in-motion.md` is a deferred-doc; primary citation now on `production-acceptance-bar.md` (kept). Acceptable.
+- [REQ-031 retention specifics] Retention configuration shape (knob? cap? TTL?) deferred to design/engine.md.
+- [REQ-054 vs REQ-037] Pair retained (SDK-unreachability + CLI-completeness are distinct claims). Revisit only if a binding reviewer finds the pair confusing.
+
+## FU-REQ-010-TEXT-LATENCY: Text query latency ADR
+
+**Origin:** Phase 3a critic [REQ-010] (2026-04-27).
+**Target release:** 0.6.0 (Phase 3b acceptance.md or its own ADR).
+**Notes:** Text-query latency target has no accepted ADR; harvest carried `p95 ≤ 150 ms` from `production-acceptance-bar.md` but without workload definition or ADR backing. Decide before acceptance.md lock: either promote to `ADR-0.6.0-text-query-latency-gates` (paralleling retrieval-latency-gates) or commit to text-on-FTS being implicitly bounded by the canonical-read freshness REQ-013 + a generous fallback gate in acceptance.md. Don't lock requirements with a vague REQ.
