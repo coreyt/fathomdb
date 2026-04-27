@@ -25,3 +25,77 @@ Item format:
 
 Seeded:
 - **Upgrade path for 0.5.x users** — deferred from 0.6.0. Design in later release.
+
+---
+
+## FU-TWB1: CI lint gate for raw-SQL leaks
+
+**Origin:** critic-3 TWB-1 (2026-04-27); enforces ADR-0.6.0-typed-write-boundary.
+**Target release:** 0.6.0 (pre-implementation gate).
+**Notes:** Add CI step that fails on any new public API across bindings exposing a string-typed SQL parameter. Initial pattern: `rg 'pub.*sql.*&str|pub.*query.*&str' crates/*/src` returns zero. Lint must also catch the same in PyO3 / napi-rs binding source. Lives in pre-merge check; fails build on first regression.
+
+## FU-TWB2: Recovery verb set enumeration
+
+**Origin:** critic-3 TWB-2 (2026-04-27); ADR-0.6.0-typed-write-boundary cites recovery as "typed CLI flags, not SQL."
+**Target release:** 0.6.0 (Phase 3e interfaces/cli.md).
+**Notes:** Enumerate every recovery / inspection verb the CLI must expose so users have no reason to ask for an SQL escape hatch. Examples: dump-schema, dump-row-counts, dump-profile, vacuum, integrity-check, export-op-store, repair-vector-index. Land in `interfaces/cli.md`.
+
+## FU-JSON1: Operator-config site enumeration
+
+**Origin:** critic-3 JSON-1 (2026-04-27); ADR-0.6.0-operator-config-json-only.
+**Target release:** 0.6.0 (pre Phase 3e lock).
+**Notes:** Enumerate every config-accepting surface and confirm JSON-only. Known sites: `load_vector_regeneration_config`; engine-open options; embedder config; op-store payload-schema-validation config; FTS opts. Add a row per site; flag any that accept a non-JSON format.
+
+## FU-JSON2: Strict RFC-8259 documentation
+
+**Origin:** critic-3 JSON-2 (2026-04-27).
+**Target release:** 0.6.0 (Phase 3e interfaces).
+**Notes:** Document in every operator-facing config doc that JSON is strict RFC-8259: no comments, no trailing commas, no JSON5/JSONC. Recommend a sidecar `<config>.md` for human-readable notes. Add a parser-level rejection test for JSONC-style comments.
+
+## FU-OPS1: Op-store schema namespacing rule
+
+**Origin:** critic-3 OPS-1 (2026-04-27); ADR-0.6.0-op-store-same-file.
+**Target release:** 0.6.0 (Phase 3 design/engine.md).
+**Notes:** Pin `op_*` (or equivalent) table-name prefix. Document migration ordering: op-store tables created in the same schema-migration step as the primary tables they reference. Reject any op-store table without the prefix in CI.
+
+## FU-OPS2: safe_export op-store coverage + redaction policy
+
+**Origin:** critic-3 OPS-2 (2026-04-27); ADR-0.6.0-op-store-same-file.
+**Target release:** 0.6.0 (Phase 3 design/engine.md + security-review.md).
+**Notes:** `safe_export` enumerates op-store rows. Redaction policy is **open**: candidates — (a) operator-supplied redaction allow-list, (b) default-redact-all-string-fields, (c) schema-driven (mark fields as `secret: true` in the payload schema). HITL substantive question.
+
+## FU-OPS4: Op-store transaction boundary detail
+
+**Origin:** critic-3 OPS-4 (2026-04-27); ADR-0.6.0-op-store-same-file.
+**Target release:** 0.6.0 (Phase 3 design/engine.md).
+**Notes:** Document the exact transactional API shape for the "primary entity write + step row + op-store row" tuple. Land in `design/engine.md` writer section. The invariant (atomic commit on the writer thread) is settled by the ADR; only the API shape is open.
+
+## FU-EMB3: Per-platform wheel-size CI gate
+
+**Origin:** critic-3 EMB-3 (2026-04-27); ADR-0.6.0-default-embedder.
+**Target release:** 0.6.0 (CI matrix).
+**Notes:** CI fails if the published wheel grows by more than 20 MB between releases on any tier-1 platform (linux x86_64, linux aarch64, darwin universal, windows x86_64). Threshold prevents silent dep bloat from candle / tokenizers / hf-hub upgrades. Implementation: store wheel size per platform in a small JSON manifest under `dist-meta/`; CI compares.
+
+## FU-EMB5: hf-hub replacement design
+
+**Origin:** critic-3 EMB-5 (2026-04-27); ADR-0.6.0-default-embedder.
+**Target release:** 0.6.0 (Phase 3 design/embedder.md).
+**Notes:** `hf-hub` carries Tokio + reqwest. Design a replacement model-resolver that reuses an existing HTTP client (rusqlite has none; ureq is candidate) and a flat on-disk cache layout. Cache layout per ADR-0.6.0-operator-config-json-only X-3: HF cache files are internal artifacts, not user-facing config — exempt from JSON-only.
+
+## FU-EMB7: Structural lint for vector identity invariant
+
+**Origin:** critic on M-4 (2026-04-27); ADR-0.6.0-vector-identity-embedder-owned.
+**Target release:** 0.6.0 (CI gate).
+**Notes:** Replace the grep sketch with a typed AST / typegraph check: "no struct reachable from `VectorConfig` references `EmbedderIdentity` or any of its fields by type." Concrete crate path is `fathomdb-core::config::*`. Implementation candidates: a unit test over the type graph, a `#[cfg(test)]` `static_assertions` set, or a clippy lint. Pick whichever is simplest at implementation time.
+
+## FU-ASYNC5: TS cancellation semantics
+
+**Origin:** critic-3 ASYNC-5 (2026-04-27); ADR-0.6.0-async-surface.
+**Target release:** TBD (0.6.x or 0.7).
+**Notes:** TS `Promise<...>` returns are not cancellable in 0.6.0 initial. Design: optional `AbortSignal` parameter on each TS verb; signal cancellation surfaces as a typed `EngineError::Cancelled`. Open question: whether cancellation aborts the writer-thread submission or only the napi waiter. Defer until first user request.
+
+## FU-M5: JSON Schema validation policy ADR
+
+**Origin:** critic-3 M-5 (2026-04-27); cross-cuts ADR-0.6.0-operator-config-json-only and ADR-0.6.0-op-store-same-file (op-store payload validation).
+**Target release:** 0.6.0 (Phase 3 design — substantive HITL question).
+**Notes:** Decide (a) where JSON Schemas live (in-repo `schemas/`? Operator-supplied? Both?), (b) when validation runs (engine-open vs save-time vs both), (c) what failure modes look like (reject-write vs warn-and-write). Substantive HITL ask listed in plan handoff.

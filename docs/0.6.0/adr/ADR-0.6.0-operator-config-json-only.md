@@ -56,6 +56,24 @@ Worse than (A).
   TOML test write site. ~14 LoC.
 - Followup: any future operator config (engine-open options, etc.) defaults
   to JSON. No TOML re-introduction without revisiting this ADR.
+- **HF-Hub cache layout (X-3 cross-cite): not in scope.** This ADR governs
+  *operator-supplied* config files. HuggingFace Hub cache files (`refs/`,
+  `blobs/`, `snapshots/`, `meta.json`) are internal artifacts of the model
+  loader; their on-disk format is the loader's contract with itself, not
+  user-facing config. Whatever serialization HF cache uses (currently a
+  mix of plain text refs + JSON metadata + binary blobs) is exempt from
+  the JSON-only rule.
+- **Strict JSON only (JSON-2 followup).** RFC-8259 strict; no JSON5,
+  no JSONC, no comments, no trailing commas. Operators wanting comments
+  use a sidecar `.md` next to the config. Tracked as FU-JSON2.
+- **Config-site enumeration (JSON-1 followup).** Every config-accepting
+  surface (engine-open options, embedder config, op-store
+  payload-schema-validation config, FTS opts, future surfaces) must be
+  enumerated and confirmed JSON-only before Phase 3 interface lock.
+  Tracked as FU-JSON1.
+- **JSON Schema validation policy (M-5 followup).** When and where
+  operator-config JSON gets validated against a schema is open. Tracked
+  as FU-M5; gate on Phase 3 design.
 
 ## Citations
 

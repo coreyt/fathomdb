@@ -66,6 +66,32 @@ load-bearing for agentic workflows.
   input (bounded secondary-index contract).
 - Clients are free to keep their own state outside the FathomDB file.
   FathomDB does not document, depend on, or reach into client storage.
+- **Single-writer-thread inheritance (OPS-3).** Op-store writes share the
+  one Engine writer thread per ADR-0.6.0-single-writer-thread. No
+  separate writer lane; no separate transactional fence. Op-store rows
+  written from the same `WriteTx` as the primary-entity rows that
+  triggered them commit atomically.
+- **Txn boundary convention (OPS-4 sketch).** When a single client
+  operation produces "primary entity write + step row + op-store row,"
+  all three commit in one transaction on the writer thread. Specific
+  transactional API shape lives in `design/engine.md`; the invariant
+  is that no client-visible "wrote node but not its op-store row" state
+  is observable.
+- **Schema namespacing (OPS-1 followup).** Op-store tables use a `op_*`
+  table-name prefix (or equivalent namespacing rule) to keep them
+  distinct from primary entity tables. Migration ordering: op-store
+  tables created in the same schema-migration step as the primary
+  tables they reference. Tracked as FU-OPS1.
+- **safe_export coverage + redaction (OPS-2 followup).** `safe_export`
+  must enumerate op-store rows. Op-store JSON payloads may contain
+  operator-supplied secrets; the redaction policy (operator-supplied
+  redaction list vs default-redact-all-strings vs schema-driven) is
+  open. Tracked as FU-OPS2.
+- **Op-store payload typing (X-2 cross-cite).** Per
+  ADR-0.6.0-typed-write-boundary, `OpStoreInsert { kind, payload:
+  serde_json::Value, schema_id: Option<...> }` is the typed carrier
+  shape. The `Value` is structural, not raw SQL. Schema validation
+  against `schema_id` lives in the JSON-Schema policy (FU-M5).
 
 ## Citations
 

@@ -70,6 +70,20 @@ schema-leakage into client code.
   must each enumerate their typed verb set; no string-SQL path.
 - Recovery-tool CLIs (per Stop-doing "Recovery tooling is CLI-only, not
   SDK") are typed too — they take CLI flags, not SQL.
+- **Op-store payload is typed-by-structural-carrier (X-2 cross-cite).**
+  Op-store rows carry `OpStoreInsert { kind, payload: serde_json::Value,
+  schema_id: Option<...> }` per ADR-0.6.0-op-store-same-file. The
+  `serde_json::Value` is a structural carrier within a typed wrapper,
+  not a raw-SQL escape: clients submit `OpStoreInsert` values, never
+  SQL strings. Schema validation against `schema_id` (if present) is
+  the engine's responsibility per the JSON-Schema policy followup
+  (FU-M5).
+- **Offline diagnostic / SQL-capable read-only binary (TWB-3): rejected.**
+  An `fathomdb-inspect` style binary that opens the database and runs
+  arbitrary SQL would re-introduce the schema-leakage failure mode this
+  ADR closes (a tool today, a wrapper tomorrow, a binding next quarter).
+  Recovery and inspection are typed CLI verbs (TWB-2 followup
+  enumerates the verb set).
 
 ## Citations
 

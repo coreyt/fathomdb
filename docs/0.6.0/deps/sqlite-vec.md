@@ -22,7 +22,7 @@ future release — not pre-mitigated in 0.6.0.
 ## Current usage
 - Crates using it: fathomdb-engine, fathomdb-schema (feature-gated `sqlite-vec`)
 - Surface used: extension auto-load via `sqlite3_vec_init`; `vec0` virtual tables for ANN
-- Version pin: `0.1` (workspace); latest 0.1.x
+- Version pin: **exact (`=0.1.x`)** in workspace `Cargo.toml`. Per VEC-1 (critic-3), `sqlite-vec` bumps require an ADR amendment to ADR-0.6.0-sqlite-vec-acceptance — not a routine `cargo update`. The exact-pin is the structural enforcement of that policy. Tracked as implementer follow-up (Cargo.toml edit out of doc-phase scope).
 
 ## Maintenance signals
 - Last release: 2025 (active, asg017)
