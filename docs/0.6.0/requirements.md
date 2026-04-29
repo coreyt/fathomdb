@@ -318,9 +318,14 @@ the ADR is authoritative.
   *Source:* `dev/dbim-playbook.md` §7.
 
 - **REQ-041 — Single-file deploy.** Operator deploys one binary +
-  one `.sqlite` path; no server, no network dependency.
+  one `.sqlite` path; no server, no network dependency. Sidecar
+  artifacts auto-managed by the engine (`-wal`, `.lock`) live at the
+  same path with documented suffixes; they are part of the database
+  file set, not separate operator-managed inputs.
   *Source:* `dev/notes/0.6.0-rewrite-proposal.md` Essentials §17.
-  *Cross-cite:* ADR-0.6.0-vector-index-location, ADR-0.6.0-op-store-same-file.
+  *Cross-cite:* ADR-0.6.0-vector-index-location,
+  ADR-0.6.0-op-store-same-file,
+  ADR-0.6.0-database-lock-mechanism (sidecar `.lock` interpretation).
 
 ## Upgrade / compatibility (REQ-042..REQ-046)
 

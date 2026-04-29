@@ -116,8 +116,8 @@ Caller (Rust / Python / TS / CLI)
                               ▼
 (2) writer (single dedicated OS thread)
     - Owns the ONLY writer rusqlite connection
-      (single-writer-thread; database lock held via SQLite native
-       exclusive WAL lock)
+      (single-writer-thread; hybrid lock per ADR-0.6.0-database-lock-mechanism:
+       sidecar flock + PRAGMA locking_mode=EXCLUSIVE on writer in WAL)
     - synchronous=NORMAL + WAL (durability-fsync-policy)
     - Begin tx → insert canonical rows + matching FTS5 rows
                 + op-store rows (when batch carries OpStoreInsert)
@@ -236,16 +236,25 @@ ADR-0.6.0-zerocopy-blob, ADR-0.6.0-durability-fsync-policy.
 ```
 <db-name>.sqlite           ← single file: app + op-store + vec0 shadow
 <db-name>.sqlite-wal       ← SQLite WAL (synchronous=NORMAL)
-<db-name>.sqlite-shm       ← SQLite shared-memory (WAL coordination)
+<db-name>.sqlite.lock      ← sidecar advisory lock (BSD flock per OFD;
+                              ADR-database-lock-mechanism #30)
 <db-name>.sqlite-journal   ← optional: only if mode flips off WAL
                               (not in 0.6.0 default)
+                            (no `-shm` under WAL+EXCLUSIVE writer per
+                              ADR-database-lock-mechanism)
 ```
 
-**Lock mechanism:** SQLite native exclusive WAL lock on the main file.
-**No sidecar `.lock` file.** REQ-022a/b is satisfied by SQLite's own
-locking; second-process open returns `SQLITE_BUSY` which the engine
-surfaces as typed `DatabaseLocked`. (Earlier draft proposed a sidecar
-file — dropped per critic finding; no ADR authorizes it.)
+**Lock mechanism (per ADR-0.6.0-database-lock-mechanism, accepted
+2026-04-29 — overrides earlier "no sidecar" assertion):** Hybrid lock:
+sidecar `{database_path}.lock` flock (Rust std `File::try_lock`,
+per-OFD exclusion semantics) PLUS `PRAGMA locking_mode=EXCLUSIVE` on
+the writer connection in WAL. Sidecar = pre-open fail-fast +
+operator-diagnostic PID; SQLite EXCLUSIVE on writer = same-process
+backstop + removes `-shm`. Reader connections use NORMAL locking_mode
+(REQ-018 multi-reader concurrency preserved). REQ-022a/b satisfied;
+locked-DB second open surfaces as typed `DatabaseLocked { holder_pid:
+Option<u32> }`. Acquisition invariants Inv-Lock-1..4 in the ADR;
+runtime open-path step ordering owned by `design/engine.md`.
 
 **Embedder model files:** caller-supplied path; default-embedder per
 ADR-0.6.0-default-embedder loads from a path the operator provides
@@ -409,7 +418,11 @@ No orphan REQs.
 - **No data migration from 0.5.x.** Fresh-DB-only per plan.md non-goals.
 - **No internal-types public surface.** `pub(crate)` boundaries inside
   `fathomdb-engine`.
-- **No sidecar lock file.** SQLite native locking suffices.
+- ~~**No sidecar lock file.** SQLite native locking suffices.~~ Reversed
+  2026-04-29 by ADR-0.6.0-database-lock-mechanism (#30) after research
+  showed SQLite EXCLUSIVE locking_mode acquires lock on first read (not
+  at open) and BSD `flock` semantics are per-OFD. See § 5; the file set
+  during operation is `db.sqlite` + `db.sqlite-wal` + `db.sqlite.lock`.
 
 ## 9. Open architectural questions
 

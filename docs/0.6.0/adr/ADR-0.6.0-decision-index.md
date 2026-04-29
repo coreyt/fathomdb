@@ -65,6 +65,7 @@ Decisions that are not yet settled. Drafts pending after Phase 1 ADRs land.
 | 27 | acceptance | Recovery rank-correlation threshold (FU-AC-PROTOCOL-BACKFILL → AC-027d) | accepted (HITL 2026-04-27) | ADR-0.6.0-recovery-rank-correlation.md |
 | 28 | design | Provenance retention shape (FU-AC-PROTOCOL-BACKFILL → AC-033) | accepted (HITL 2026-04-27) | ADR-0.6.0-provenance-retention.md |
 | 29 | architecture | Corruption-on-open behavior (FU-VEC13-CORRUPTION + FU-RECOVERY-CORRUPTION-DETECTION resolved) | accepted (HITL 2026-04-29) | ADR-0.6.0-corruption-open-behavior.md |
+| 30 | architecture | Database lock mechanism (hybrid sidecar flock + PRAGMA locking_mode=EXCLUSIVE; overrides earlier "no sidecar" assertion in architecture.md § 5 + § 8 + § 11) | accepted (HITL 2026-04-29) | ADR-0.6.0-database-lock-mechanism.md |
 
 ## Categories
 
