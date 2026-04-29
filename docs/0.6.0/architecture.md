@@ -4,7 +4,8 @@ date: 2026-04-27
 target_release: 0.6.0
 desc: Crate topology, module subsystems, write/read flow, on-disk layout, ADR + REQ traceability
 blast_radius: workspace Cargo.toml; every crates/* dir; every design/*.md (subsystem boundaries derive from this doc); every interfaces/*.md (binding boundary derives from this doc); op-store + vector + projection writer paths; rusqlite usage shape
-status: draft
+status: locked
+locked_date: 2026-04-29
 ---
 
 # Architecture
@@ -30,7 +31,7 @@ Per ADR-0.6.0-crate-topology (and 2026-04-27 amendment): monolithic
 |---|---|---|
 | `crates/fathomdb` | exists | Top-level facade re-export crate (thin shim around `fathomdb-engine`) |
 | `crates/fathomdb-engine` | exists | Engine core — all module subsystems below |
-| `crates/fathomdb-query` | exists | Query parsing / planning (0.6.0 disposition: TBD — likely folded into `fathomdb-engine` `retrieval` module per `design/retrieval.md`) |
+| `crates/fathomdb-query` | exists | Pure AST-to-plan compiler — `QueryAst`, `QueryBuilder`, `compile_*` fns, `CompiledQuery` / `CompiledSearchPlan` types, FTS5 grammar adapt. No `dyn` trait objects, no runtime state, no I/O. Engine consumes as pure-function dependency. (0.6.0 disposition: KEPT separate per HITL 2026-04-29; rationale = compile-vs-runtime split, snapshot-test isolation; `design/retrieval.md` consumes.) |
 | `crates/fathomdb-schema` | exists | Schema migration definitions; runs at `Engine.open` per REQ-042 |
 | `python/` (cdylib package `fathomdb`) | exists | PyO3 binding (built via `pip install -e python/` per memory `feedback_python_native_build`); Python sync surface per ADR-0.6.0-python-api-shape |
 
@@ -43,9 +44,14 @@ Per ADR-0.6.0-crate-topology (and 2026-04-27 amendment): monolithic
 | `crates/fathomdb-embedder-api` | new in 0.6.0 | Sibling: shared trait crate — semver-stable surface pinning `Embedder` + `EmbedderIdentity` per ADR-0.6.0-embedder-protocol; enables version-skew detection at resolution time (REQ-047). Authorized by ADR-0.6.0-crate-topology 2026-04-27 amendment. |
 | `crates/fathomdb-embedder` | new in 0.6.0 | Sibling: operator-installable embedder package; depends on `fathomdb-embedder-api`; bundles default candle + tokenizers per ADR-0.6.0-default-embedder. |
 
-`fathomdb-query`'s ultimate disposition (fold vs keep) is owned by
-`design/retrieval.md`; if folded, the workspace shrinks by one crate
-in 0.6.0 implementation.
+`fathomdb-query` disposition resolved 2026-04-29 (HITL): **kept separate**.
+Rationale = pure AST-to-plan compiler with no `dyn` trait objects and no
+runtime state (the `QueryEmbedder` trait is deliberately placed in
+`fathomdb-engine`, not here, to preserve this property — see
+`crates/fathomdb-engine/src/embedder/mod.rs:1-7`); enables hermetic
+snapshot tests of compiled SQL without engine fs/lock/db dependencies;
+mirrors a compile-vs-runtime split. `design/retrieval.md` consumes it
+as a pure-function dependency.
 
 **Directory layout (`python/`, `ts/`) is unchanged from 0.5.x.** Only
 the cdylib crate name inside changes (the build path
@@ -420,10 +426,14 @@ These do not block lock; answered in named follow-on docs.
   is dbim-playbook 3-class / 4-invariant (folded; HITL F8).
 - **Backpressure detail.** `design/scheduler.md` owns the layer-by-layer
   detail of scheduler-shape's 4-layer backpressure.
-- **Corruption detection / `Engine.open` behavior.** FU-VEC13-CORRUPTION;
-  deferred ADR target 0.6.x or 0.7.
-- **`fathomdb-query` disposition.** Fold into engine `retrieval` module
-  vs keep as separate crate; `design/retrieval.md` decides.
+- ~~**Corruption detection / `Engine.open` behavior.**~~ Resolved
+  2026-04-29 by ADR-0.6.0-corruption-open-behavior (#29): refuse-fail-closed
+  with structured `EngineOpenError::Corruption`; recovery via
+  `fathomdb recover` CLI; detection cadence delegated to
+  `design/recovery.md` with anti-regression clause. FU-VEC13-CORRUPTION
+  + FU-RECOVERY-CORRUPTION-DETECTION closed.
+- ~~**`fathomdb-query` disposition.**~~ Resolved 2026-04-29 (HITL): kept
+  separate as pure AST-to-plan compiler. See § 1.
 
 ## 10. Architectural deltas vs 0.5.x
 

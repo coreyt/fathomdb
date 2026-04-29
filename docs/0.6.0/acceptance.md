@@ -527,6 +527,34 @@ the only test-plan.md responsibility for this section.)
 **Measurement:** Seed 1 GB DB; `kill -9` mid-write; time open + first-write-accept; repeat P-RECOV-N times; report worst; assert ≤ 2 s.
 **Fixture:** 1gb-unclean-shutdown fixture (test-plan.md fixture spec — pending).
 
+## AC-035a: Engine.open refuses on detected corruption
+**Requirement ref:** REQ-031d
+**Test id:** T-035a
+**Assertion:** For each documented corruption-injection fixture (one per `CorruptionKind` variant enumerated in `design/errors.md`), `Engine.open` returns `Err(EngineOpenError::Corruption(_))`. The engine never returns an `Engine` handle, never auto-truncates, never auto-rebuilds, never opens read-only.
+**Measurement:** Per fixture: invoke `Engine.open`; assert result is `Err`; downcast to `EngineOpenError::Corruption`; assert no `Engine` handle observable in caller scope; assert DB file mtime unchanged across the failed open (no truncation / no rebuild side effect); inspect process for absence of writer thread + scheduler.
+**Fixture:** corruption-injection suite (one fixture per `CorruptionKind` variant; test-plan.md fixture spec — pending).
+
+## AC-035b: CorruptionDetail shape
+**Requirement ref:** REQ-031d
+**Test id:** T-035b
+**Assertion:** Every `EngineOpenError::Corruption(detail)` returned by AC-035a fixtures carries: (1) `kind: CorruptionKind` (one of the variants enumerated in `design/errors.md`), (2) `stage: OpenStage` (NOT `LockAcquisition` — lock failures surface as `EngineOpenError::Locked`), (3) `locator: CorruptionLocator` (no free-form `Unspecified`; opaque-SQLite paths surface as `OpaqueSqliteError { sqlite_extended_code: i32 }`), (4) `recovery_hint: RecoveryHint { code: &'static str, doc_anchor: &'static str }` with stable machine-readable `code`.
+**Measurement:** Per fixture: extract the four fields; assert presence + variant correctness; assert `recovery_hint.code` matches the documented stable id for that `CorruptionKind`; assert `code` stability by re-running fixture and asserting bit-equal `code` string.
+**Fixture:** as AC-035a.
+
+## AC-035c: Lock released + no SQLite connection retained on Corruption error
+**Requirement ref:** REQ-031d
+**Test id:** T-035c
+**Assertion:** After `Engine.open` returns `Corruption`, the exclusive WAL lock on `{database_path}.lock` is released (a fresh `Engine.open` from a sibling process succeeds against the same path, modulo the corruption surfacing again); no SQLite connection to the database is observably retained by the failed-open process; no fathomdb writer thread or scheduler runtime is running in the failed-open process.
+**Measurement:** Trigger AC-035a fixture in process A; from sibling process B attempt `flock` (or equivalent) on the lock file → assert acquirable; in process A inspect open file descriptors → assert no fd points at the database file; inspect threads → assert no thread named per fathomdb writer / scheduler conventions.
+**Fixture:** sibling-lock + fd-introspection fixture.
+
+## AC-035d: Recovery reachable only via CLI
+**Requirement ref:** REQ-031d
+**Test id:** T-035d
+**Assertion:** `fathomdb recover` is invocable via the CLI with `--help` properties per AC-040a / AC-040b; no recovery verb is reachable from the runtime SDK (Python / TypeScript) — no public symbol named `recover`, `restore_*`, `repair`, or equivalent is exposed by the five-verb application surface (REQ-053 / AC-057a).
+**Measurement:** (1) Invoke `fathomdb recover --help`; assert per AC-040a / AC-040b. (2) Per binding: enumerate the public surface per AC-057a's surface definition; assert none of `{recover, restore, repair, fix, rebuild}` are members.
+**Fixture:** as AC-040a + as AC-057a.
+
 ## Security
 
 ## AC-036: No listening sockets opened
@@ -775,12 +803,19 @@ the only test-plan.md responsibility for this section.)
 **Measurement:** Issue write W; capture `c_w`; poll read-tx until `c_r >= c_w`; immediately query for W's projection; assert present.
 **Fixture:** write-cursor-projection fixture.
 
-## AC-060: Engine errors as typed language-idiomatic exceptions
+## AC-060a: Engine errors as typed language-idiomatic exceptions
 **Requirement ref:** REQ-056
-**Test id:** T-060
+**Test id:** T-060a
 **Assertion:** Every variant in the variant table of `ADR-0.6.0-error-taxonomy` § Decision maps to a distinct typed exception class in Python and a distinct typed error class in TypeScript; clients dispatch on the typed class without parsing error message strings.
 **Measurement:** Enumerate variants from the ADR variant table; per variant, trigger via fixture; per binding: assert `except <SpecificError>` (Python) / `instanceof <SpecificError>` (TS) catches it; assert no message-string parsing required to distinguish.
 **Fixture:** error-taxonomy-trigger suite (test-plan.md fixture spec — pending — one trigger per variant).
+
+## AC-060b: JSON-Schema validation fires save-time, pre-commit; no open-time re-validation
+**Requirement ref:** REQ-056
+**Test id:** T-060b
+**Assertion:** A `PreparedWrite::OpStore` whose payload fails its `schema_id`'s JSON Schema is rejected save-time with `WriteValidationError` BEFORE any row is written or committed; the writer transaction is not opened, no partial state is observable post-rejection. Re-opening the database with `Engine.open` on a DB containing historical op-store rows whose payloads no longer satisfy the current `schema_id`'s schema (e.g. schema tightened in-repo between releases) does NOT trigger validation; open succeeds.
+**Measurement:** (1) Submit `PreparedWrite::OpStore` with payload violating its schema; assert `WriteValidationError` raised; assert sqlite tx counter unchanged + zero rows added to op-store table. (2) Seed DB with historical op-store row, tighten in-repo schema for that `schema_id` so the row would now fail, restart engine via `Engine.open`; assert open succeeds without error and no validation runs.
+**Fixture:** json-schema-validation-cadence fixture (save-time-reject + open-time-skip).
 
 ---
 
@@ -831,6 +866,7 @@ Every REQ in `requirements.md` has ≥1 AC:
 | REQ-031 | AC-033 |
 | REQ-031b | AC-034a/b/c |
 | REQ-031c | AC-035 |
+| REQ-031d | AC-035a/b/c/d |
 | REQ-032 | AC-036 |
 | REQ-033 | AC-037 |
 | REQ-034 | AC-038 |
@@ -856,7 +892,7 @@ Every REQ in `requirements.md` has ≥1 AC:
 | REQ-053 | AC-057a |
 | REQ-054 | AC-058 |
 | REQ-055 | AC-059a/b |
-| REQ-056 | AC-060 |
+| REQ-056 | AC-060a/b |
 
 ## Lock-blocking dependencies
 

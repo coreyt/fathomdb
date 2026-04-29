@@ -106,11 +106,11 @@ Seeded:
 **Target release:** 0.8.0.
 **Notes:** Per ADR-0.6.0-retrieval-pipeline-shape, 0.6.0 ships fixed stages with per-stage config. Revisit composable middleware pipeline (trait-object stages, user-spliced stages) in 0.8.0 with concrete user needs. Forcing function: a real retrieval requirement that fixed-stage config cannot express. Until then, fixed stages remain.
 
-## FU-VEC13-CORRUPTION: Single-file corruption-recovery posture
+## FU-VEC13-CORRUPTION: Single-file corruption-recovery posture — RESOLVED
 
 **Origin:** Phase 2 #13 critic [vec-loc-02] (2026-04-27); ADR-0.6.0-vector-index-location.
-**Target release:** 0.6.x (post-freeze if needed) or 0.7.0.
-**Notes:** Single SQLite file holds application + op-store + `vec0` shadow tables — one corruption blast-radius. Open: detection mechanism (PRAGMA integrity_check on open? on demand? scheduled?), `Engine.open` behavior on detected corruption (refuse-open vs open-read-only vs auto-attempt-recover), recovery ownership (CLI verb? programmatic API? both?). Decide as ADR-0.6.x-corruption-recovery if the failure mode lands in practice.
+**Target release:** 0.6.0.
+**Status:** RESOLVED 2026-04-29 by ADR-0.6.0-corruption-open-behavior (#29). Engine.open behavior settled = refuse-fail-closed with structured `EngineOpenError::Corruption`; recovery ownership = `fathomdb recover` CLI exclusively (consistent with REQ-037, REQ-054). Detection mechanism (which checks run when) delegated to `design/recovery.md` per ADR §4 with anti-regression clause.
 
 ## FU-PW19-BATCH-SEMANTICS: Write batch transactional semantics
 
@@ -249,14 +249,25 @@ Seeded:
 - [errors module home] design/errors.md split out per critic; revisit if it grows trivial — could fold back into design/bindings.md error-mapping section.
 - [§7 meta-ADR framing] Subsection added per critic; future ADRs that decide policy-without-runtime-footprint should land here too.
 
-## FU-FATHOMDB-QUERY-DISPOSITION: fathomdb-query crate fold-or-keep
+## FU-FATHOMDB-QUERY-DISPOSITION: fathomdb-query crate fold-or-keep — RESOLVED
 
 **Origin:** Phase 3c architecture critic (2026-04-27); ADR-0.6.0-crate-topology amendment.
-**Target release:** 0.6.0 (Phase 3d design/retrieval.md).
-**Notes:** `crates/fathomdb-query` exists today but is unmentioned in the original ADR-crate-topology Decision. Architecture.md § 1 marks disposition TBD pending design/retrieval.md. Decide: fold into `fathomdb-engine` `retrieval` module (most likely; matches monolith posture) vs keep as separate crate (only if external consumers exist). If folded, workspace shrinks by one crate in 0.6.0 implementation.
+**Target release:** 0.6.0 (Phase 3c lock).
+**Status:** RESOLVED 2026-04-29 (HITL). Decision: **kept separate**.
+**Resolution:** Investigation surfaced documented invariant at
+`crates/fathomdb-engine/src/embedder/mod.rs:1-7`: the `QueryEmbedder` trait
+lives in `fathomdb-engine` (not `fathomdb-query`) so that `fathomdb-query`
+stays a pure AST-to-plan compiler with no `dyn` trait objects and no
+runtime state. Folding would lose: (a) compile-vs-runtime split,
+(b) hermetic insta snapshot tests of compiled SQL without engine fs/lock/db
+deps, (c) reverse-dependency hygiene preventing query crate from pulling
+in storage/threads/embedder, (d) the no-dyn / no-runtime-state invariant
+explicitly engineered into the placement of `QueryEmbedder`. Architecture.md
+§ 1 + § 9 updated; ADR-crate-topology unchanged (deferred-to-design clause
+satisfied).
 
-## FU-RECOVERY-CORRUPTION-DETECTION: corruption detection + Engine.open behavior
+## FU-RECOVERY-CORRUPTION-DETECTION: corruption detection + Engine.open behavior — RESOLVED
 
 **Origin:** Phase 3c architecture § 9 (cross-reference to FU-VEC13-CORRUPTION).
-**Target release:** 0.6.x or 0.7.
-**Notes:** No existing ADR specifies what `Engine.open` does on detected corruption (PRAGMA integrity_check fail). Current design.md punt: refuse-open vs open-read-only vs auto-attempt-recover. Decide via ADR-0.6.x-corruption-recovery if the failure mode lands. Cross-references existing FU-VEC13-CORRUPTION; consolidate at decision time.
+**Target release:** 0.6.0.
+**Status:** RESOLVED 2026-04-29 by ADR-0.6.0-corruption-open-behavior (#29). Engine.open behavior committed; detection cadence delegated to `design/recovery.md` with anti-regression clause (reducing the always-on detection set is a behavior change requiring ADR amendment). Consolidated with FU-VEC13-CORRUPTION (also resolved by #29).

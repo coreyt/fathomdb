@@ -241,6 +241,22 @@ the ADR is authoritative.
   transaction.
   *Source:* ADR-0.6.0-durability-fsync-policy.
 
+- **REQ-031d — Refuse-to-open on detected corruption.** `Engine.open`
+  fails closed when corruption is detected at any open-path stage
+  (WAL replay, schema migration, vector shadow-table validation,
+  PRAGMA integrity check when run, header/format mismatch). Failure
+  surfaces as a structured `EngineOpenError::Corruption` carrying
+  kind / stage / locator / `RecoveryHint { code, doc_anchor }`. The
+  engine MUST NOT auto-truncate, auto-rebuild, auto-replay-with-skip,
+  or auto-degrade to read-only. Recovery is reachable exclusively via
+  the separate `fathomdb recover` CLI tool (consistent with REQ-037,
+  REQ-054). On failure, no `Engine` handle is returned; the exclusive
+  WAL lock is released; no SQLite connection is retained; no writer
+  thread is spawned; no scheduler runs.
+  *Source:* ADR-0.6.0-corruption-open-behavior. *Cross-cite:*
+  ADR-0.6.0-error-taxonomy (variant table extension);
+  ADR-0.6.0-cli-scope (recovery CLI surface).
+
 ## Security (REQ-032..REQ-035)
 
 - **REQ-032 — No network listener, no wire protocol.** All access is
