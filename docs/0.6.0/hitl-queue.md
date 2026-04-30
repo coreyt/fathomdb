@@ -18,6 +18,7 @@ progress:
   - 2026-04-30 Tier 3 dispatched (E3 + E7 in parallel).
   - 2026-04-30 E3 resolved (conf 84%); 5 OpenStage + 5 CorruptionKind + 6 CorruptionLocator variants.
   - 2026-04-30 E7 resolved (conf 95%); confirms E2 pre-commit `Locked{holder_pid: Option<u32>}`; rejects holder_started_at + hostname.
+  - 2026-04-30 ENG3 resolved (conf 80%); explicit fallible `close()` + best-effort `Drop`; 30s drain timeout; detach + lock-release on timeout. Test plan extended (#27-30).
 ---
 
 # HITL Resolution Queue — Phase 3d (errors / recovery / engine)
@@ -627,6 +628,62 @@ Subsumed by X1 + X6 + R3. Skip if all resolved.
 **Reverse-ENG3 teardown also runs on post-step-10 open failure** (Inv-Lock-4): if any check after writer thread spawn fails, run steps 1–6 above BEFORE releasing lock and surfacing `EngineOpenError`. Engine handle MUST NOT be returned. ADR-corruption-open-behavior § 5 binds this even though writer thread was already alive.
 
 Code-level reference: existing `crates/fathomdb-engine/src/runtime.rs` already encodes drop-order docstring; verify it matches reverse of corrected ENG1 11-step order, not 0.5.x order.
+
+**Status:** RESOLVED 2026-04-30 by HITL (confidence 80%). Explicit fallible `close()` + best-effort `Drop`.
+
+**Resolution:**
+
+API shape:
+```rust
+impl Engine {
+    /// Primary shutdown path. Runs reverse-ENG3 teardown with bounded drain.
+    pub fn close(self) -> Result<CloseReport, EngineError>;
+}
+
+impl Drop for Engine {
+    /// Best-effort fallback. Each step wrapped in catch_unwind; logs warn on
+    /// failure; never panics; never returns. Runs same step sequence as close().
+    fn drop(&mut self);
+}
+
+#[derive(Debug, Clone)]
+pub struct CloseReport {
+    pub scheduler_drain_duration: Duration,
+    pub writer_drain_duration: Duration,
+    pub writer_thread_joined: bool,    // false if drain timed out → detached
+    pub reader_pool_close_duration: Duration,
+    pub sqlite_close_duration: Duration,
+    pub lock_release_duration: Duration,
+    pub total_close_duration: Duration,
+}
+```
+
+Drain timeout default: **30s** (mirrors Invariant D embedder timeout for symmetry).
+
+Timeout behavior: writer thread is **detached** (Rust has no thread-kill primitive); `EngineError::CloseTimeout { stage: CloseStage, elapsed: Duration }` returned. Lock fd **STILL released** (operator preference: stale flock release > leak — process still holds DB writer guarantee until detached thread exits).
+
+Post-step-10 open-failure teardown: runs `best_effort_close()` synchronously **before** lock release; original `EngineOpenError` surfaced (close error logged at `warn`, not returned).
+
+Idempotency: `close()` consumes `self` (compile-time exclusion of double-call). `Drop` always runs; `Drop` checks an internal `closed: AtomicBool` flag set by `close()` and skips if true.
+
+Panic safety: every step inside `Drop::drop` MUST be wrapped in `catch_unwind` per [std::ops::Drop docs](https://doc.rust-lang.org/std/ops/trait.Drop.html) — double-panic aborts process. CI invariant test: assert `Drop` runs same step sequence as `close()` (test #5 in test plan extension).
+
+**Cross-doc citations to add at draft:**
+- `design/engine.md` § Engine.close shutdown protocol — primary owner; cite [Sabrina Jewson — async-drop analysis](https://sabrinajewson.org/blog/async-drop), [Rust Book ch21 graceful shutdown](https://doc.rust-lang.org/book/ch21-03-graceful-shutdown-and-cleanup.html) for explicit-fallible-plus-Drop pattern; cite [std::ops::Drop](https://doc.rust-lang.org/std/ops/trait.Drop.html) for panic-in-drop rule; cite [Rust async-fundamentals roadmap](https://rust-lang.github.io/async-fundamentals-initiative/roadmap/async_drop.html) explaining why AsyncDrop is not used.
+- `adr/ADR-0.6.0-scheduler-shape.md` § Engine.close shutdown protocol — append: "drain timeout 30s; on timeout, writer thread detached, lock fd released, `CloseTimeout{stage, elapsed}` surfaced. Drop is best-effort fallback wrapping each step in catch_unwind."
+- `acceptance.md` AC-022a — extend Measurement: bounded drain timeout = 30s; `EngineError::CloseTimeout` test fires when writer thread holds longer.
+- `requirements.md` REQ-020a — cross-cite `CloseReport` shape.
+- `design/bindings.md` § 7 — `CloseReport` and `CloseTimeout` surface across bindings.
+- `design/errors.md` — add `EngineError::CloseTimeout { stage, elapsed }` variant + `CloseStage` enum (matches reverse-ENG1 step names).
+- `crates/fathomdb-engine/src/runtime.rs` — verify Drop docstring + impl match this protocol.
+
+**Tracking issue:** [coreyt/fathomdb#60](https://github.com/coreyt/fathomdb/issues/60) — migrate `Drop for Engine` to `AsyncDrop` once stabilized.
+
+**Test plan additions:**
+- Test #27 — `Drop` runs same sequence as `close()` (assert via tracing span replay).
+- Test #28 — drain timeout fires → `CloseTimeout`, lock released, writer thread detached (still alive).
+- Test #29 — panic inside step 1-3 of Drop → `catch_unwind` swallows, subsequent steps still run, lock released.
+- Test #30 — `close()` consumed semantics enforced at compile time (negative-compilation test).
 
 ---
 
