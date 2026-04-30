@@ -18,7 +18,8 @@ progress:
   - 2026-04-30 Tier 3 dispatched (E3 + E7 in parallel).
   - 2026-04-30 E3 resolved (conf 84%); 5 OpenStage + 5 CorruptionKind + 6 CorruptionLocator variants.
   - 2026-04-30 E7 resolved (conf 95%); confirms E2 pre-commit `Locked{holder_pid: Option<u32>}`; rejects holder_started_at + hostname.
-  - 2026-04-30 ENG3 resolved (conf 80%); explicit fallible `close()` + best-effort `Drop`; 30s drain timeout; detach + lock-release on timeout. Test plan extended (#27-30).
+  - 2026-04-30 ENG3 resolved (conf 80%); explicit fallible `close()` + best-effort `Drop`; 30s drain timeout; detach + lock-release on timeout. Test plan extended (#27-30). Tracking issue #60 for AsyncDrop migration.
+  - 2026-04-30 ENG6 resolved (conf 88%); idiomatic-only marshalling for OpenReport/CloseReport (ms sufficient — SLI surfaces are separate Report types not yet scoped). Over-design avoided after FathomDB sub-ms-use-case enumeration showed no SLI consumer reads these fields.
 ---
 
 # HITL Resolution Queue — Phase 3d (errors / recovery / engine)
@@ -751,6 +752,26 @@ pub struct DetectionReport {
 `embedder.identity()` is invoked at step 8 BEFORE warmup at step 9 (recommended ENG1 ordering). Bindings: Python flattens to dict; TS marshals struct. Field names exposed verbatim per bindings.md § 6 config-knob symmetry analog (report-field symmetry).
 
 Code-level reference: emit one structured event per step (REQ-042); accumulate into `OpenReport` for return. Tracing span hierarchy: `engine.open` parent → child spans for each step keyed on `OpenStage` discriminant.
+
+**Status:** RESOLVED 2026-04-30 by HITL (confidence 88%). Idiomatic-only marshalling.
+
+**Resolution:**
+
+`Duration` fields marshal as Python `timedelta` (μs precision) / TS `number` (ms, float allowed). `SystemTime` fields marshal as Python `datetime` (UTC) / TS `Date`. snake_case in Python; camelCase in TS. `OpenReport` and `CloseReport` are `#[non_exhaustive]` to permit field add without semver break.
+
+**No sibling `_ns` BigInt fields.** Survey of `docs/0.6.0/` SLI ADRs confirmed:
+- ADR-text-query-latency-gates (p50 ≤ 20ms), ADR-retrieval-latency-gates (p50 ≤ 50ms), ADR-write-throughput-sli, ADR-projection-freshness-sli — ALL gate at ms scale; SLI samples need sub-ms but NOT via OpenReport/CloseReport.
+- OpenReport field ranges: pragma 1-50ms, detection 1-100ms, migrations 10ms-30min, warmup 100ms-30s, total 200ms-60s. ms idiomatic sufficient.
+- CloseReport field ranges: same. ms idiomatic sufficient.
+- AC-035 P-RECOV-N=10 budget = 2s; per-trial μs detail not consumed by budget gate.
+
+Future SLI Report types (write/query/retrieval/projection metrics) — separate HITL not yet scoped — MUST use lossless marshalling (BigInt-ns or hybrid). NOT OpenReport/CloseReport's problem.
+
+**Cross-doc artifacts:** `design/engine.md` (`OpenReport` shape — primary owner; cite [PyO3 std time conversions](https://pyo3.rs/main/conversions/tables.html), [napi-rs values](https://napi.rs/docs/concepts/values)); `design/bindings.md` § 6 (report-field symmetry — names exposed verbatim across bindings); `design/errors.md` (`CloseReport` parallel — owned by ENG3); `requirements.md` REQ-042 (per-step migration events accumulated into OpenReport); `adr/ADR-0.6.0-async-surface.md` Invariant D (eager warmup duration field).
+
+**Test plan additions:**
+- Test #17 (binding marshaling round-trip) — assert idiomatic types; no BigInt path required.
+- Test #31 — Python `timedelta` round-trip preserves μs (not ns); document this in design/engine.md so reviewers do not regress to BigInt for SLI-irrelevant fields.
 
 ---
 
