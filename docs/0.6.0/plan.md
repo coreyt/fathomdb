@@ -19,6 +19,30 @@ Critic mapping:
 Cadence: docs written/updated in batches within a turn. Critic + HITL review **after**
 the turn. Any doc changed after lock but before implementation → re-review.
 
+## Progress (as of 2026-04-29)
+
+**Phase 2 — Decision index + ADRs: complete + extended.** 30 ADRs accepted. #1..#28 from earlier passes; #29 corruption-open-behavior (FU-VEC13-CORRUPTION + FU-RECOVERY-CORRUPTION-DETECTION resolved); #30 database-lock-mechanism (research-driven hybrid: sidecar flock + PRAGMA locking_mode=EXCLUSIVE on writer in WAL; overrides earlier "no sidecar" assertion in architecture.md).
+
+**Phase 3a — `requirements.md`: drafted + critic-applied; status: draft.** 56 REQs across observability / performance / reliability / security / operability / upgrade / supply chain / public surface. REQ-031d added 2026-04-29 (refuse-on-corruption per ADR #29). REQ-041 cross-cite added 2026-04-29 (sidecar artifact interpretation per ADR #30).
+
+**Phase 3b — `acceptance.md`: drafted + critic-applied; status: draft.** 60+ ACs; Parameter table OWNS every numerical threshold via P-NNN ids. AC-035a/b/c/d added 2026-04-29 (corruption refuse + structured error shape + lock release + recovery CLI-only). AC-060 split into AC-060a (typed errors) + AC-060b (JSON-Schema save-time validation cadence) 2026-04-29.
+
+**Phase 3c — `architecture.md`: drafted + critic-applied + locked 2026-04-29.** 13 design/*.md files proposed. Amended same-day for ADR #30 (§ 5 lock mechanism rewritten; § 8 deltas updated; § 11 writer ASCII updated; on-disk file layout adds `.lock`, removes `-shm` under WAL+EXCLUSIVE). Locked-doc amendment authorized by ADR per crate-topology precedent.
+
+**Phase 3d — `design/*.md`: STARTED.** `design/bindings.md` drafted + critic-applied per Phase 3 step 4 value-test framing; verdict = distinct role; KEEP. Status: draft (HITL gate before flip to locked). Other 12 design/*.md files: not started.
+
+**Phase 3e — `interfaces/*.md`: not started.** Scaffold stubs only.
+
+**Phase 3f — `test-plan.md`: not started.**
+
+**`security-review.md`: not started.**
+
+**Phase 4 — Freeze: not started.**
+
+**Followups closed during this run:** FU-VEC13-CORRUPTION, FU-RECOVERY-CORRUPTION-DETECTION, FU-FATHOMDB-QUERY-DISPOSITION (latter resolved = kept separate; pure AST-to-plan compiler invariant).
+
+**Next step:** HITL gate on `design/bindings.md` status flip; then Phase 3d remaining subsystem design files (parallelizable per plan.md soft deps once architecture is locked). Reader-pool sizing decision pending in design/engine.md (default = `num_cpus / 2`, config override; no ADR per HITL).
+
 ## Progress (as of 2026-04-27)
 
 **Phase 2 — Decision index + ADRs: complete.** All 24+5 = 29 candidate
