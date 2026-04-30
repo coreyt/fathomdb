@@ -286,14 +286,28 @@ the ADR is authoritative.
 
 ## Operability (REQ-036..REQ-041)
 
-- **REQ-036 — `fathomdb doctor` recovery surface.** Operator can recover
-  from physical, logical, or semantic corruption via a dedicated CLI
-  (verbs: `check-integrity`, `regen-vectors`, `rebuild-missing-projections`,
-  `rebuild-fts`, `excise-source`, `purge-logical-id`,
-  `restore-logical-id`, `safe-export`, `trace-source`) without writing
-  application code.
+- **REQ-036 — Two-root operator CLI: `recover` (lossy) + `doctor` (bit-preserving).**
+  Operator recovers from physical, logical, or semantic corruption via a
+  dedicated CLI without writing application code. Surface splits at the
+  root by mutation semantics:
+  - `fathomdb recover --accept-data-loss <sub-flag>...` — sole umbrella
+    for any non-bit-preserving path. Sub-flags include `--truncate-wal`,
+    `--rebuild-vec0`, `--rebuild-projections`, `--excise-source <id>`,
+    `--purge-logical-id <id>`, `--restore-logical-id <id>`. The
+    `--accept-data-loss` flag is mandatory; no default.
+  - `fathomdb doctor <verb>` — read-only and bit-preserving only. Verbs:
+    `check-integrity` (aggregator over R1 always-on + cheap-only tiers),
+    `safe-export <out>`, `verify-embedder`, `trace --source-ref <id>`,
+    `dump-schema`, `dump-row-counts`, `dump-profile`.
+  Verb-level enumeration with concrete flag spelling + exit-code numbers
+  lives in `interfaces/cli.md`; canonical verb table lives in
+  `design/recovery.md`. `--json` is mandatory on every verb (REQ-024).
+  Migrations are NOT a `doctor` verb — they run only inside `Engine.open`
+  per REQ-042 / ADR-0.6.0-corruption-open-behavior § 5.
   *Source:* `dev/notes/0.6.0-rewrite-proposal.md` § Recovery tooling;
-  `dev/dbim-playbook.md` §3, §11. *Cross-cite:* ADR-0.6.0-cli-scope.
+  `dev/dbim-playbook.md` §3, §11; HITL R3 (2026-04-30, conf 74%).
+  *Cross-cite:* ADR-0.6.0-cli-scope, ADR-0.6.0-corruption-open-behavior § 3,
+  design/recovery.md, design/bindings.md § 1.
 
 - **REQ-037 — Recovery tooling unreachable from runtime SDK.** Application
   callers cannot accidentally invoke `excise_source`, `purge_logical_id`,

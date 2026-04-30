@@ -2,8 +2,16 @@
 title: 0.6.0 HITL Resolution Queue (errors.md / recovery.md / engine.md)
 date: 2026-04-30
 target_release: 0.6.0
-status: open
+status: tier-1-resolved
 desc: Sequenced HITL queue for Phase 3d design files. Each item has an agent research prompt + structured deliverable contract. Resolve top-down; some downstream items depend on upstream resolutions.
+progress:
+  - 2026-04-30 E2 resolved (conf 82%); E6 flagged ambiguous for human.
+  - 2026-04-30 R1 resolved (conf 78%); composition A — minimal always-on.
+  - 2026-04-30 R3 resolved (conf 74%); shape A — two roots, lossy concentrated under `recover`.
+  - 2026-04-30 ENG1 resolved (conf 88%); 11-step order, ADR violation fixed (WAL before EXCLUSIVE), R1 split pre/post-migration.
+  - 2026-04-30 X1 resolved (conf 88%); Shape A — canonical table in `errors.md`, cite-by-code from engine.md + recovery.md.
+  - 2026-04-30 Tier 1 complete.
+  - 2026-04-30 E6 resolved by HITL (runtime-rooted `EmbedderError::Warmup`; E2 unchanged); ENG1 corrected order ADOPTED. Downstream annotations + test plan added below.
 ---
 
 # HITL Resolution Queue — Phase 3d (errors / recovery / engine)
@@ -52,6 +60,39 @@ Phase 3d design files (`errors.md`, `recovery.md`, `engine.md`) carry HITL touch
 
 **Blocks:** E3, E5, E6, E7, X1.
 
+**Status:** RESOLVED 2026-04-30 (confidence 82%).
+
+**Resolution:**
+
+`EngineOpenError` (open-only, `#[non_exhaustive]`):
+- `Io { source: std::io::Error }` — path canonicalize, sidecar create, non-PRAGMA IO.
+- `Locked { holder_pid: Option<u32> }` — sidecar flock contention; full shape per E7.
+- `Corruption(CorruptionDetail)` — per ADR-0.6.0-corruption-open-behavior § 2.
+- `Migration { step: MigrationStep, cause: SanitizedCause }` — REQ-042-shaped.
+- `Engine(#[from] EngineError)` — composes runtime errors that may surface at open.
+
+`EngineError` variants surfacing at open via `#[from]`:
+- `EngineError::EmbedderIdentityMismatch(#[from] EmbedderIdentityMismatchError)` — locked by ADR-0.6.0-error-taxonomy.
+- `EngineError::Embedder(#[from] EmbedderError)` with new `EmbedderError::Warmup` sub-variant — CONFIRMED by E6 (2026-04-30, conf 78%).
+
+REJECTED: `PragmaApplicationFailed` as standalone variant. PRAGMA failures wrap into `EngineOpenError::Io` (sanitized rusqlite cause); `locking_mode=EXCLUSIVE` busy is `Locked`.
+
+**ENG1 step→variant mapping (locked 2026-04-30):**
+| Step | Action | EngineOpenError variant on failure |
+|---|---|---|
+| 1 | canonicalize path | `Io` |
+| 2 | sidecar flock | `Locked{holder_pid}` or `Io` |
+| 3 | open SQLite writer conn | `Io` |
+| 4 | `PRAGMA journal_mode=WAL` | `Io` (rusqlite cause sanitized) |
+| 5 | EXCLUSIVE + sync + fk + first read | `Io` or `Locked` |
+| 6 | R1 pre-migration detection | `Corruption(WalReplay/HeaderProbe/SchemaProbe)` |
+| 7 | migration loop (REQ-042) | `Migration{step, cause}` or `Corruption` |
+| 8 | embedder identity probe | `Engine(EmbedderIdentityMismatch)` or `Corruption(EmbedderIdentity)` |
+| 9 | embedder eager warmup | `Engine(Embedder(Warmup))` per E6 |
+| 10 | spawn writer + scheduler + reader pool | `Engine(...)` after reverse-ENG3 teardown |
+
+**Cross-doc artifacts:** `design/errors.md` (canonical variant table — owner); `design/engine.md` (step→OpenStage mapping); `design/bindings.md` § 3 + § 11 (verify "more than one top-level error type" wording); `interfaces/python.md` + `interfaces/typescript.md` (per-language class enumeration, downstream); `adr/ADR-0.6.0-error-taxonomy.md` (no edit; already `#[non_exhaustive]`).
+
 ---
 
 #### `R1` — Always-on corruption detection set
@@ -75,6 +116,36 @@ Phase 3d design files (`errors.md`, `recovery.md`, `engine.md`) carry HITL touch
 > Return the 7-field structured output. Pro/con per **tier composition** (alternative always-on sets), not per individual check. Recommendation = a specific 3-tier list. Confidence calibrated to: how confident that this is the minimum set we can defend long-term without amendment.
 
 **Blocks:** R3, R4, R6, R7, ENG1, X1, X6.
+
+**Status:** RESOLVED 2026-04-30 (confidence 78%). Composition A — minimal always-on.
+
+**Resolution:**
+
+Always-on (frozen by ADR § 4):
+- WAL replay error (rusqlite open) → `OpenStage::WalReplay`. O(1).
+- Header magic / page-size sanity (one read of page 1) → `OpenStage::HeaderProbe`. O(1).
+- Schema-version / migration-table probe (`PRAGMA user_version` + `_fathomdb_migrations` existence) → `OpenStage::SchemaProbe`. O(1).
+- Embedder identity check vs stored profile (one row read) → `OpenStage::EmbedderIdentity`. O(1).
+
+Cheap-only (via `fathomdb doctor check-integrity`; NOT at open):
+- sqlite-vec `vec0` shadow-table consistency — metadata + row-count parity (NOT per-vector). O(partitions).
+- Canonical-table referential sanity (orphan ID scan). O(rows) single pass.
+- Provenance / FTS shadow-table existence + row-count parity per declared profile. O(profiles).
+
+Opt-in (explicit operator request only):
+- `PRAGMA quick_check` — `FATHOMDB_OPEN_INTEGRITY_CHECK=quick` or `doctor check-integrity --quick`. O(pages).
+- `PRAGMA integrity_check` — `=full` or `--full`. O(pages) thorough.
+- Vector round-trip / re-embed validation — `doctor check-integrity --round-trip`. O(rows × embedder).
+
+Rationale: composition A is the minimum defensible long-term without amendment — every item is already a precondition for `Engine.open` to function. vec0 metadata check tempting (composition B) but locks fathomdb to current sqlite-vec internals + risks REQ-031c on growth; safer in cheap tier.
+
+**Pre/post-migration split (forced by ENG1 adoption):**
+- Pre-migration (ENG1 step 6): WAL replay verdict, header probe, schema probe. Run before migrations to honor "no partial state on corrupt DB" (ADR-corruption § 5).
+- Post-migration (ENG1 step 8): embedder identity probe. Reads vector-profile row from migrated schema; cannot run pre-migration.
+- `OpenReport` (ENG6) carries TWO `DetectionReport` fields, not one.
+- R2 opt-in knob spelling MUST distinguish pre vs post-migration if `quick_check` / `integrity_check` could fire at either (recommendation: opt-in checks ONLY fire post-migration since they require a stable schema).
+
+**Cross-doc artifacts:** `design/recovery.md` (primary owner); `design/engine.md` (ENG1 stage ordering); `design/errors.md` (`OpenStage` variants: `WalReplay`, `HeaderProbe`, `SchemaProbe`, `EmbedderIdentity`, opt-in `IntegrityCheck`); `requirements.md` (verify REQ-031d alignment); `acceptance.md` (AC-035a/b fixtures, P-RECOV-N=10 budget re-confirm); `adr/ADR-0.6.0-corruption-open-behavior.md` § 4 anti-regression now binds these four items.
 
 ---
 
@@ -100,6 +171,27 @@ Phase 3d design files (`errors.md`, `recovery.md`, `engine.md`) carry HITL touch
 
 **Depends on:** R1 (always-on set determines what `doctor check-integrity` runs).
 **Blocks:** R4, R6, R7.
+
+**Status:** RESOLVED 2026-04-30 (confidence 74%). Shape A — two roots; lossy under `recover`.
+
+**Resolution:**
+
+| Verb | Path | Bit-preserving | Requires `--accept-data-loss` | Exit class | `--json` |
+|---|---|---|---|---|---|
+| recover (lossy gate) | `fathomdb recover --accept-data-loss [--truncate-wal] [--rebuild-vec0] [--rebuild-projections] [--excise-source <id>] [--purge-logical-id <id>] [--restore-logical-id <id>]` | N | Y mandatory | recover-* (0/64/70/71) | Y (NDJSON events + summary) |
+| check-integrity | `fathomdb doctor check-integrity [--quick] [--full] [--round-trip]` | Y | N | doctor-check-* (0/65/70) | Y mandatory |
+| safe-export | `fathomdb doctor safe-export <out> [--manifest <path>]` | Y | N | doctor-export-* (0/66/71) | Y |
+| verify-embedder | `fathomdb doctor verify-embedder` | Y | N | doctor-check-* (0/65) | Y |
+| trace | `fathomdb doctor trace --source-ref <id>` | Y | N | doctor-check-* | Y |
+| dump-{schema,row-counts,profile} | `fathomdb doctor dump-…` | Y | N | doctor-check-* | Y |
+
+REJECTED `doctor migrate`: would re-introduce open-without-engine path forbidden by ADR-corruption § 5; deferred to 0.6.x if demand surfaces.
+
+Exit codes (numbers fixed in `interfaces/cli.md`): 0 success / 64 partial-recover / 65 issues-found / 66 export-IO / 70 unrecoverable / 71 lock-held.
+
+`--json` mandatory on every verb (REQ-024). Pretty-print is optional fallback (R9 owns for check-integrity).
+
+**Cross-doc artifacts:** `design/recovery.md` (primary owner — new file); `requirements.md` REQ-036 (rewrite to two-root shape); `interfaces/cli.md` (concrete flag spelling + exit numbers); `acceptance.md` AC-035d (broaden to cover doctor non-mutation invariant); `adr/ADR-0.6.0-cli-scope.md` § Decision (cite recovery.md, no amendment needed); `design/errors.md` (variant→exit-code mapping). 0.5.x has no CLI binary — greenfield.
 
 ---
 
@@ -130,6 +222,34 @@ Phase 3d design files (`errors.md`, `recovery.md`, `engine.md`) carry HITL touch
 **Depends on:** E2 (variant placement), R1 (always-on set).
 **Blocks:** ENG3, ENG4, ENG6, X3.
 
+**Status:** RESOLVED 2026-04-30 (confidence 88%). ADR violation in proposed order fixed.
+
+**Resolution — corrected canonical 11-step order:**
+
+1. Canonicalize path. Failure → `Io`.
+2. Acquire sidecar `{path}.lock` flock (pre-IO, Inv-Lock-1). Failure → `Locked{holder_pid}` or `Io`.
+3. Open SQLite writer connection (no read yet). Failure → `Io`.
+4. Apply `PRAGMA journal_mode=WAL` (Inv-Lock-2: WAL MUST precede EXCLUSIVE so `-shm` is never created).
+5. Apply `PRAGMA locking_mode=EXCLUSIVE` + `synchronous=NORMAL` + `foreign_keys` + first read (Inv-Lock-3). Failure → `Io`/`Locked`.
+6. **R1 always-on detection — pre-migration subset:** WAL replay verdict + header/page-1 probe + schema/migration-table probe. Failure → `Corruption(OpenStage::{WalReplay,HeaderProbe,SchemaProbe})`.
+7. Schema migration loop (REQ-042 per-step events). Failure → `Migration` or `Corruption`.
+8. **R1 always-on — post-migration subset:** embedder identity check vs stored profile. Failure → `Engine(EmbedderIdentityMismatch)` or `Corruption(OpenStage::EmbedderIdentity)`.
+9. Embedder eager warmup (Invariant D). Failure → `Engine(EmbedderError)`.
+10. Spawn writer thread + scheduler runtime + reader pool + admin handle. On failure: run reverse-ENG3 teardown (drain+join writer, close pools, close conn) BEFORE releasing lock and surfacing error.
+11. Return `Engine` handle.
+
+**ADR violation caught:** Original proposed step 3 (`locking_mode=EXCLUSIVE` + first read) BEFORE step 4 (`journal_mode=WAL`) violates ADR-database-lock-mechanism Inv-Lock-2. Steps split + reordered.
+
+**R1 split rationale:** Embedder identity probe needs migrated schema (reads vector-profile row), so cannot be in pre-migration subset. WAL/header/schema probes MUST precede migrations to honor "no partial state on corrupt DB" (ADR-corruption § 5).
+
+**Failure semantics post-step-10:** Even after writer thread spawned, ENG3 close protocol runs in reverse before lock release if any later check fails (Inv-Lock-4 + ADR-corruption § 5).
+
+**Ambiguous flags:**
+- Step 8 vs 9 order: identity-then-warmup recommended (fail-fast no warmup cost) but defensible alternative if a binding's `Embedder` impl computes `identity()` lazily from loaded model. ADR-embedder-protocol treats `identity()` as cheap; recommendation stands. Flag for ENG6.
+- Step 6 WAL-replay sub-step: implicit in SQLite first read at step 5; "detection" is interpreting the verdict, not invoking a separate API. Document in design/engine.md.
+
+**Cross-doc artifacts:** `design/engine.md` (NEW — primary owner; does not yet exist); `design/errors.md` (step→OpenStage feeds E3); `design/recovery.md` (R1 pre/post split alignment); `architecture.md` § 5 (cite); `adr/ADR-0.6.0-database-lock-mechanism.md` § 3 (Inv-Lock-1..4 cite); `requirements.md` REQ-042 + REQ-031c; `crates/fathomdb-engine/src/runtime.rs` `EngineRuntime::open` (current 0.5.x order needs PRAGMA-EXCLUSIVE add, R1 insert, identity check, warmup).
+
 ---
 
 #### `X1` — Single canonical `(stage, kind, locator, code, doc_anchor)` table
@@ -150,6 +270,20 @@ Phase 3d design files (`errors.md`, `recovery.md`, `engine.md`) carry HITL touch
 
 **Depends on:** E2, R1, R3 (need to know the variant + detection + verb sets to size the table).
 **Blocks:** X4, X6.
+
+**Status:** RESOLVED 2026-04-30 (confidence 88%). Shape A.
+
+**Resolution:** `design/errors.md` hosts the canonical `(stage, kind, locator, code, doc_anchor)` table as the single materialized join. `design/engine.md` and `design/recovery.md` cite rows by stable `code` (e.g. `E_CORRUPT_WAL_REPLAY`); MUST NOT redeclare columns. May add prose for wiring/action context but variant identity lives once.
+
+Cite-by-code protocol:
+- engine.md / recovery.md MUST use literal `code` string when referencing a row.
+- CI fails if a cited code is absent from errors.md.
+- CI fails if errors.md has a code uncited by both engine.md and recovery.md (orphan codes).
+- X6 round-trip CI check becomes a single-table walk.
+
+Rationale: ADR-corruption § 2 already centralizes enum-membership in errors.md; bindings.md § 3 commits `code` as stable dispatch key; architecture.md § 2 assigns `errors` as the cross-cutting module. Shape B/C force tri-file reconciliation — equivalent CI work with three input dialects + drift as default failure mode (memory `feedback_reliability_principles`).
+
+**Cross-doc artifacts:** `design/errors.md` (host canonical table — new section); `design/engine.md` (cite by code); `design/recovery.md` (cite by code; doc_anchors resolve into this file); `design/bindings.md` § 3 (no change; protocol already committed); `adr/ADR-0.6.0-corruption-open-behavior.md` (no amendment).
 
 ---
 
@@ -244,6 +378,19 @@ Phase 3d design files (`errors.md`, `recovery.md`, `engine.md`) carry HITL touch
 
 **Depends on:** E2.
 
+**Status:** RESOLVED 2026-04-30 by HITL (confidence 78%). Runtime-rooted.
+
+**Resolution:** Add `EmbedderError::Warmup { cause: SanitizedCause }` to embedder module enum. Surfaces at `Engine.open` step 9 via existing `EngineError::Embedder(#[from] EmbedderError)` composition, then `EngineOpenError::Engine(#[from] EngineError)`. **E2 unchanged** — `EngineOpenError` keeps 5 variants.
+
+Caller-controllable distinction: NOT in variant shape. The sanitized cause chain preserves origin (default-embedder-internal vs user-supplied trait impl panic-converted-to-error) for engine-internal logging only; bindings see one variant.
+
+**Cross-doc artifacts:** `design/errors.md` (add `EmbedderError::Warmup` row; cite by code `E_EMBEDDER_WARMUP`); `design/engine.md` (ENG1 step 9 binding); `adr/ADR-0.6.0-error-taxonomy.md` (no amendment — pattern is the locked one); `adr/ADR-0.6.0-async-surface.md` Invariant D (cite `EmbedderError::Warmup` as the surface).
+
+**Sources:**
+- [Luca Palmieri — Error Handling in Rust](https://www.lpalmieri.com/posts/error-handling-rust/) (per-module enum + compose)
+- [thiserror+anyhow design guide](https://oneuptime.com/blog/post/2026-01-25-error-types-thiserror-anyhow-rust/view) (`#[from]` composition)
+- [nrc error-docs — Error type design](https://nrc.github.io/error-docs/error-design/error-type-design.html) (design by how errors arise, not when first observed)
+
 ---
 
 #### `E7` — `DatabaseLocked` variant shape
@@ -275,6 +422,8 @@ Subsumed by X4. Skip if X4 resolved.
 > Return the 7-field structured output.
 
 **Depends on:** R1, R3.
+
+**Annotation post-ENG1 adoption (2026-04-30):** R2 must address pre/post-migration split. Opt-in checks (`quick_check`, `integrity_check`, `round-trip`) require stable schema → fire post-migration only. Knob name proposals should reflect this: `FATHOMDB_OPEN_INTEGRITY_CHECK=quick|full|off` semantically applies post-step-7 (post-migration) only. Pre-migration tier is FROZEN at the four R1 always-on checks; no operator-tunable surface exists for them (composition is frozen by ADR § 4 anti-regression).
 
 ---
 
@@ -362,6 +511,21 @@ Subsumed by X1 + X6 + R3. Skip if all resolved.
 
 **Depends on:** ENG1.
 
+**Required behavior post-ENG1 adoption (2026-04-30):**
+
+`Engine.close` shutdown order MUST be strict reverse of ENG1 steps 10→2:
+
+1. Drop scheduler runtime + vector actor handle.
+2. Drain writer thread inbox; close inbox channel.
+3. Join writer thread (bounded timeout per AC-022a).
+4. Close reader pool connections.
+5. Close writer SQLite connection (releases SQLite native EXCLUSIVE lock).
+6. Drop sidecar lock fd (releases flock, then `unlink {path}.lock` — Inv-Lock-5).
+
+**Reverse-ENG3 teardown also runs on post-step-10 open failure** (Inv-Lock-4): if any check after writer thread spawn fails, run steps 1–6 above BEFORE releasing lock and surfacing `EngineOpenError`. Engine handle MUST NOT be returned. ADR-corruption-open-behavior § 5 binds this even though writer thread was already alive.
+
+Code-level reference: existing `crates/fathomdb-engine/src/runtime.rs` already encodes drop-order docstring; verify it matches reverse of corrected ENG1 11-step order, not 0.5.x order.
+
 ---
 
 #### `ENG4` — PRAGMA application order
@@ -401,6 +565,34 @@ Subsumed by X1 + X6 + R3. Skip if all resolved.
 
 **Depends on:** ENG1, R1.
 
+**Required behavior post-ENG1 adoption (2026-04-30):**
+
+`OpenReport` MUST carry per-stage timings reflecting R1 pre/post-migration split (not single "detection" duration):
+
+```rust
+#[derive(Debug, Clone)]
+pub struct OpenReport {
+    pub lock_acquired_at: SystemTime,           // step 2
+    pub pragma_setup_duration: Duration,         // steps 4-5 combined
+    pub detection_pre_migration: DetectionReport,// step 6 — WAL replay verdict, header, schema probe
+    pub migrations: Vec<MigrationStepReport>,    // step 7 — per REQ-042, includes failed step
+    pub detection_post_migration: DetectionReport,// step 8 — embedder identity probe
+    pub embedder_warmup_duration: Duration,      // step 9
+    pub thread_spawn_duration: Duration,         // step 10
+    pub total_open_duration: Duration,
+}
+
+#[derive(Debug, Clone)]
+pub struct DetectionReport {
+    pub checks_run: Vec<DetectionCheck>,         // each with name, duration, verdict
+    pub total_duration: Duration,
+}
+```
+
+`embedder.identity()` is invoked at step 8 BEFORE warmup at step 9 (recommended ENG1 ordering). Bindings: Python flattens to dict; TS marshals struct. Field names exposed verbatim per bindings.md § 6 config-knob symmetry analog (report-field symmetry).
+
+Code-level reference: emit one structured event per step (REQ-042); accumulate into `OpenReport` for return. Tracing span hierarchy: `engine.open` parent → child spans for each step keyed on `OpenStage` discriminant.
+
 ---
 
 #### `ENG7` — `embedder_pool_size` default vs reader pool default
@@ -422,6 +614,66 @@ Trivial: cite P-NNN from acceptance.md Parameter table for 30s default. No HITL 
 
 ---
 
+## Test planning — ENG1 + R1 + ENG3 + ENG6 + E6 (Tier 1 adoption, 2026-04-30)
+
+Comprehensive test matrix to catch ordering bugs, race conditions, partial-state leaks, and binding-surface regressions. Lives in `docs/0.6.0/test-plan.md` once drafted; this section is the authoritative checklist.
+
+### Step-ordering invariants (ENG1)
+
+1. **WAL-before-EXCLUSIVE invariant.** Open against a fresh DB; assert no `-shm` file exists on disk after open succeeds. Inverted test: monkey-patch PRAGMA application to apply EXCLUSIVE first → assert `-shm` IS created → confirms detection. Cite [SQLite WAL docs](https://sqlite.org/wal.html) Inv-Lock-2.
+2. **R1 pre-migration runs before migration loop.** Inject corrupt header on a fresh DB; assert `EngineOpenError::Corruption(HeaderProbe)` with NO migration-applied side effect (verify by checking `_fathomdb_migrations` table is unchanged from pre-open snapshot).
+3. **R1 post-migration runs after migration applies schema.** Open against a v(N-1) DB requiring migration to v(N) where the embedder-profile column gains a constraint at v(N); identity check at step 8 must read the migrated row, not the pre-migration row. Test: trigger identity mismatch via stored profile that conflicts with migrated-but-not-pre-migrated constraint → assert `EngineError::EmbedderIdentityMismatch` surfaces with the post-migration row content.
+4. **Step 1-10 monotonic span emission.** Assert tracing spans for `engine.open` parent emit child spans in numeric step order, never overlap, every span has `OpenStage` discriminant attribute.
+
+### Failure-path teardown (ENG3 + ADR-corruption § 5)
+
+5. **Failure at step 6 (corruption pre-migration).** Assert: lock fd released, SQLite conn closed, `.lock` sidecar `unlink`ed, NO writer thread spawned, NO `Engine` handle returned, NO migrations applied.
+6. **Failure at step 8 (embedder identity mismatch).** Same as #5 plus: migrations were applied — verify they remain committed (no rollback) since corruption-of-data was not the failure cause.
+7. **Failure at step 9 (warmup).** Same as #5 with migrations committed; assert `EngineError::Embedder(EmbedderError::Warmup)` cause chain preserves underlying embedder error for engine-internal logging but Display string is sanitized per X4 recipe.
+8. **Failure at step 10 (post-thread-spawn).** Most subtle. Force a panic inside scheduler bring-up after writer thread is alive; assert reverse-ENG3 teardown runs (writer drained + joined within AC-022a bound), THEN lock released, THEN error returned. NO writer-thread leak. NO `Engine` handle. Check via `lsof` or equivalent that no fd survives.
+
+### Race conditions (multi-process + multi-thread)
+
+9. **Two processes racing `Engine.open` on same path.** Process A holds flock; process B `try_lock` returns immediately with `EngineOpenError::Locked{holder_pid: Some(A.pid)}`. Verify `holder_pid` matches via `/proc` or process listing.
+10. **Stale `.lock` sidecar (holder crashed without `unlink`).** Lock fd auto-released on crash; new process should successfully acquire. Test: kill -9 holder mid-open, then immediately open from another process — assert success, no false `Locked` error.
+11. **Reader pool concurrent open during writer warmup.** Should NOT happen with current architecture (readers spawned at step 10 after warmup), but assert via thread-sanitizer + `cargo test --release` that no reader connection is opened before step 10.
+12. **Writer-thread shutdown timeout race.** `Engine.close` after a long-running write; writer drain hits AC-022a timeout. Assert close returns `EngineError` with timeout cause, lock STILL released, no zombie thread.
+13. **Embedder warmup timeout (Invariant D 30s default).** Inject a 35s sleep in test embedder's `warmup()`; assert `EmbedderError::Warmup` with timeout-class cause, lock released, no thread spawned.
+14. **Concurrent `Engine.open` + filesystem unlink of `.lock`.** Process A acquires flock; external `rm path.lock` while A is mid-open. Process B tries to open. Behavior: B creates a NEW `.lock`, gets a different fd, succeeds — DUAL WRITERS! This is a known fsync-policy edge case; document expected mitigation (ADR-database-lock-mechanism § Inv-Lock-1 plus advisory: operator MUST NOT manually unlink `.lock`).
+
+### OpenReport correctness (ENG6)
+
+15. **Per-stage durations sum to total within tolerance.** Sum of `pragma_setup_duration + detection_pre_migration.total_duration + Σ migrations[].duration + detection_post_migration.total_duration + embedder_warmup_duration + thread_spawn_duration` ≈ `total_open_duration` (allow <1ms drift for instrumentation overhead).
+16. **`OpenReport` returned even when there are zero migrations.** Empty `migrations: vec![]` valid; not `None`.
+17. **Binding marshaling round-trip.** Generate `OpenReport` from Rust → marshal to Python dict → assert all field names + types preserved. Same for TS struct via napi.
+18. **`lock_acquired_at` precedes all other timestamps.** Sanity check on monotonic ordering.
+
+### REQ-042 per-step migration events
+
+19. **Successful migration emits one event per applied step.** Apply 3 migrations; assert 3 events with monotonically-increasing step numbers, durations, and final summary event with `applied_versions: [n+1, n+2, n+3]`.
+20. **Failed migration mid-way.** Apply migration that fails at step 2 of 3; assert events for step 1 (success) + step 2 (failed with sanitized cause) + NO event for step 3, AND `EngineOpenError::Migration{step: 2, cause}` returned.
+
+### Cross-binding error surface (E2 + E6)
+
+21. **Python: `EngineError` is the sole top-level exception.** All variants surface as subclasses or attribute-tagged instances per bindings.md § 3. Test: trigger each ENG1 step→variant case from Python → assert `isinstance(e, EngineError)`.
+22. **TS: two roots OK, but `EmbedderError::Warmup` surfaces from `Engine.open` failure as an `EngineOpenError`-rooted class (since it composes via `#[from]`).** Assert TS class chain: `EngineOpenError` → `engineError` field → `embedderError` field → `kind: 'Warmup'`.
+23. **Sanitization: `Display` strings carry NO file paths, NO SQL fragments, NO parameter values, NO byte offsets.** Test: corrupt a DB at a known absolute path; assert error Display does not contain that path. Cite X4 recipe per foreign cause type.
+
+### Documentation invariants (X1 cite-by-code)
+
+24. **CI parses errors.md canonical table; every `code` referenced in engine.md or recovery.md exists.** Run as a doc-build hook (X6 territory but enforce here in advance).
+25. **Every code in errors.md is cited by at least one of engine.md / recovery.md.** Orphan codes fail CI.
+26. **Every `recovery_hint.doc_anchor` resolves to an existing heading in recovery.md.**
+
+### Sources
+
+- [SQLite Write-Ahead Logging](https://sqlite.org/wal.html) — WAL/EXCLUSIVE/`-shm` ordering invariant for tests #1-2.
+- [Luca Palmieri — Rust Error Handling](https://www.lpalmieri.com/posts/error-handling-rust/) — per-module compose pattern, basis for tests #21-22.
+- [thiserror+anyhow design](https://oneuptime.com/blog/post/2026-01-25-error-types-thiserror-anyhow-rust/view) — `#[from]` source-chain preservation, basis for test #7 + #23.
+- [nrc error-docs — Error type design](https://nrc.github.io/error-docs/error-design/error-type-design.html) — design-by-arising pattern, justification for E6 runtime-rooted choice.
+
+---
+
 ## Resolution sign-off
 
 When all Tier 1 + Tier 2 items resolved, main thread:
@@ -434,7 +686,26 @@ When all Tier 1 + Tier 2 items resolved, main thread:
 Skipped items (E8, R6, R7, ENG8) are subsumed by Tier 1/2 resolutions or trivial.
 
 ## Out of scope here
-
 - Bindings.md re-litigation (locked).
 - Architecture.md amendments (only loop-back if Tier 1 resolution forces it).
 - Design files beyond errors / recovery / engine (separate queue).
+
+
+## Approach
+- Use the agent orchestration runbook approach.
+- This 'main' conversation is the agent orchestrator.
+- Each item has agent prompt + 7-field deliverable contract + dependency arrows.
+- Preflight permissions check.
+- Manage potential and actual document conflicts. 
+- Mange sequence and document / decision dependency.
+- Manage using correct subagent for the work (is a new skill required?), informing subagent at start, monitoring agent output
+- Critic review
+- Resolution
+
+### Draft Sequencing
+- Draft order on resolution: errors → recovery → engine.
+- Next: dispatch Tier 1 agents. 
+   - Run sequentially due to dependency chain (E2 → ENG1; R1 → R3 → ENG1; X1 needs E2+R1+R3). 
+   - Suggested: E2 + R1 in parallel first (independent), then R3, then ENG1 + X1 in parallel.
+
+
