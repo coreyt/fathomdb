@@ -4,7 +4,7 @@ date: 2026-04-29
 target_release: 0.6.0
 desc: Cross-language binding strategy (Python, TypeScript, CLI) — concerns that span all bindings collectively, distinct from per-surface signatures owned by interfaces/{python,ts,cli}.md
 blast_radius: crates/fathomdb (Rust facade); crates/fathomdb-embedder-api (semver-pinned trait crate; REQ-047 link-time check); python/ (PyO3 cdylib); ts/ (napi-rs cdylib); crates/fathomdb-cli (binary); interfaces/{python,ts,cli,rust,wire}.md (per-surface signatures); design/errors.md (variant→class matrix owner); design/release.md (CI smoke gate owner); ADR-error-taxonomy + ADR-async-surface + ADR-python-api-shape + ADR-typescript-api-shape + ADR-cli-scope + ADR-embedder-protocol + ADR-prepared-write-shape + ADR-corruption-open-behavior; dev/design-logging-and-tracing.md (Tier 1/2 carryovers cited in § 8); build pipelines (pip + npm)
-status: draft
+status: locked
 ---
 
 # Bindings — Design
