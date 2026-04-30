@@ -2,7 +2,7 @@
 title: 0.6.0 HITL Resolution Queue (errors.md / recovery.md / engine.md)
 date: 2026-04-30
 target_release: 0.6.0
-status: tier-1-resolved
+status: tier-2-resolved
 desc: Sequenced HITL queue for Phase 3d design files. Each item has an agent research prompt + structured deliverable contract. Resolve top-down; some downstream items depend on upstream resolutions.
 progress:
   - 2026-04-30 E2 resolved (conf 82%); E6 flagged ambiguous for human.
@@ -12,6 +12,9 @@ progress:
   - 2026-04-30 X1 resolved (conf 88%); Shape A — canonical table in `errors.md`, cite-by-code from engine.md + recovery.md.
   - 2026-04-30 Tier 1 complete.
   - 2026-04-30 E6 resolved by HITL (runtime-rooted `EmbedderError::Warmup`; E2 unchanged); ENG1 corrected order ADOPTED. Downstream annotations + test plan added below.
+  - 2026-04-30 Tier 2 dispatched (X4 + X6 in parallel).
+  - 2026-04-30 X4 resolved (conf 84%); per-foreign-type recipe table.
+  - 2026-04-30 X6 resolved (conf 78%); test-time integration test + compile-time backstop.
 ---
 
 # HITL Resolution Queue — Phase 3d (errors / recovery / engine)
@@ -310,6 +313,27 @@ Rationale: ADR-corruption § 2 already centralizes enum-membership in errors.md;
 **Depends on:** none beyond ADR.
 **Blocks:** none directly; informs errors.md draft.
 
+**Status:** RESOLVED 2026-04-30 (confidence 84%).
+
+**Resolution — per-type recipe table** (lives in `design/errors.md` § Foreign-error sanitization):
+
+| Foreign type | Display keeps | Display drops | `source` preserved | Typed attrs |
+|---|---|---|---|---|
+| `rusqlite::Error` | `"sqlite operation failed"` + extended-code class label (`"corruption-class"`, `"busy"`, `"constraint"`) | SQL text, parameter values, table/column names, raw extended-code numeral, file paths | Y (debug-level only) | `sqlite_extended_code: i32`, `sqlite_primary_code: i32` |
+| `std::io::Error` | `"file IO failed"` + `ErrorKind` discriminant name | Absolute paths, relative paths, filename leaves, OsStr fragments, raw OS error text | Y | `io_kind: ErrorKind`, `os_error: Option<i32>` |
+| `serde_json::Error` | `"json parse failed"` + `Category` discriminant name | Byte offset, line, column, payload fragments, expected-token text | Y | `json_category: Category` |
+| `tokio::time::error::Elapsed` | `"operation timed out after {timeout:?}"` (config-derived) | n/a | Y | `timeout: Duration`, `operation: &'static str` |
+| `napi::Error` / `pyo3::PyErr` | `"binding-layer error"` + foreign type-name (e.g. `"PyErr<ValueError>"`) | Message text, traceback, file paths, JS stack frames, Python frame locals | Y | `binding_error_type: String` |
+
+**Implementation contract:**
+- `pub(crate) fn sanitize_<source>(e: <source>) -> SanitizedCause` lives next to first wrapper site; module-error variants call helper, never construct inline.
+- `SanitizedCause = pub struct { display: Cow<'static, str>, attrs: SanitizedAttrs, source: Box<dyn Error + Send + Sync + 'static> }`.
+- `Display` writes `display` only. `Error::source` returns `Some(&*source)`. Tracing emits chain at `debug` level (operator-controlled per ADR).
+- Bindings marshal `attrs` per bindings § 3 protocol; `display` is user-visible message.
+- CI invariant (test #23): `format!("{}", err)` MUST NOT contain `'/'`, `'.db'`, SQL keywords, numeric byte offsets.
+
+**Cross-doc artifacts:** `design/errors.md` (§ Foreign-error sanitization — primary owner; `SanitizedCause` shape; CI-greppable Display invariant); `design/engine.md` (ENG1 step→variant cite by foreign type); `design/recovery.md` (detection wrappers cite recipe); `design/op-store.md` (JSON validation + IO failures cite recipe); `adr/ADR-0.6.0-error-taxonomy.md` (no amendment; add forward-pointer at draft); `test-plan.md` (lift recipe as test oracle for #23); `crates/fathomdb-engine/src/errors/sanitize.rs` (new module — implementation home).
+
 ---
 
 #### `X6` — Round-trip validation contract for `recovery_hint`
@@ -332,6 +356,29 @@ Rationale: ADR-corruption § 2 already centralizes enum-membership in errors.md;
 
 **Depends on:** X1 (table shape), R1 (detection set), R3 (verb set).
 **Blocks:** none; informs acceptance.md AC update + test-plan.
+
+**Status:** RESOLVED 2026-04-30 (confidence 78%). Test-time integration test + compile-time backstop.
+
+**Resolution:**
+
+Primary gate: `tests/round_trip_recovery_hint.rs` integration test in `fathomdb` (or dedicated `fathomdb-doc-contract` xtest) crate that:
+1. Parses X1 canonical table in `docs/0.6.0/design/errors.md` with `pulldown-cmark`.
+2. Parses `docs/0.6.0/design/recovery.md` headings + always-on detection list.
+3. Asserts three invariants:
+   - Every `recovery_hint.code` referenced in engine.md / recovery.md exists in errors.md table.
+   - Every always-on detection step in recovery.md produces a code in `CorruptionKind`.
+   - Every `recovery_hint.doc_anchor` resolves to existing heading in recovery.md (slug-normalized).
+4. Reads `pub(crate) const RECOVERY_HINT_TABLE: &[(CorruptionKind, &str, &str)]` exported from errors module for code introspection.
+
+Compile-time backstop: `static_assertions::const_assert_eq!(RECOVERY_HINT_TABLE.len(), <CorruptionKind variant count>)` — catches locator→code closure without markdown parsing. Lives in `crates/fathomdb/src/errors.rs`.
+
+Setup: integration test runs under existing `cargo test --workspace` per ADR-0.6.0-tier1-ci-platforms; no new docs build pipeline.
+
+REJECTED:
+- Doc-build-time only: cannot see invariants #2 + #3.
+- Discipline only: violates `feedback_reliability_principles` (no punt for client-burning bugs); ADR § 4 anti-regression demands mechanical detector.
+
+**Cross-doc artifacts:** `test-plan.md` (three test ids: round-trip-anchors, round-trip-detection-codes, round-trip-locator-coverage; map to AC-035b; layer = integration; owning crate = fathomdb); `acceptance.md` AC-035b (cite round-trip integration test as mechanical gate); `design/errors.md` (declare X1 canonical table as parser input contract — column names, ordering, slug-normalization rule); `design/recovery.md` (freeze heading slugs; commit always-on detection set as list with stable per-step ids); `adr/ADR-0.6.0-corruption-open-behavior.md` § 4 (append: anti-regression enforced by `crates/fathomdb/tests/round_trip_recovery_hint.rs`); `crates/fathomdb/src/errors.rs` (export `RECOVERY_HINT_TABLE` const + `static_assertions`); `crates/fathomdb/tests/round_trip_recovery_hint.rs` (new — three `#[test]` fns).
 
 ---
 
