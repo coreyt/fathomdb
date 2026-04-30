@@ -2,7 +2,7 @@
 title: 0.6.0 HITL Resolution Queue (errors.md / recovery.md / engine.md)
 date: 2026-04-30
 target_release: 0.6.0
-status: tier-2-resolved
+status: tier-3-resolved
 desc: Sequenced HITL queue for Phase 3d design files. Each item has an agent research prompt + structured deliverable contract. Resolve top-down; some downstream items depend on upstream resolutions.
 progress:
   - 2026-04-30 E2 resolved (conf 82%); E6 flagged ambiguous for human.
@@ -15,6 +15,9 @@ progress:
   - 2026-04-30 Tier 2 dispatched (X4 + X6 in parallel).
   - 2026-04-30 X4 resolved (conf 84%); per-foreign-type recipe table.
   - 2026-04-30 X6 resolved (conf 78%); test-time integration test + compile-time backstop.
+  - 2026-04-30 Tier 3 dispatched (E3 + E7 in parallel).
+  - 2026-04-30 E3 resolved (conf 84%); 5 OpenStage + 5 CorruptionKind + 6 CorruptionLocator variants.
+  - 2026-04-30 E7 resolved (conf 95%); confirms E2 pre-commit `Locked{holder_pid: Option<u32>}`; rejects holder_started_at + hostname.
 ---
 
 # HITL Resolution Queue — Phase 3d (errors / recovery / engine)
@@ -399,6 +402,36 @@ REJECTED:
 
 **Depends on:** ENG1, R1, X1.
 
+**Status:** RESOLVED 2026-04-30 (confidence 84%). Option F — full enumeration.
+
+**Resolution:**
+
+`OpenStage` (5 variants — 1:1 with ENG1 detection-emitting steps; `LockAcquisition` excluded per ADR § 2):
+- `WalReplay` — ENG1 step 6 sub-check; rusqlite first-read WAL replay verdict; maps to `E_CORRUPT_WAL_REPLAY`.
+- `HeaderProbe` — ENG1 step 6 sub-check; page-1 magic / page-size sanity. Distinct fix path (no recover; export only).
+- `SchemaProbe` — ENG1 step 6 sub-check; `PRAGMA user_version` + `_fathomdb_migrations` existence. File structurally readable but not a fathomdb DB.
+- `EmbedderIdentity` — ENG1 step 8 (post-migration); reads vector-profile row from migrated schema.
+- `IntegrityCheck` — opt-in tier (R2 post-migration only); `PRAGMA quick_check`/`integrity_check` failure stage.
+
+`CorruptionKind` (5 variants — aligns with R1 detection set + opt-in tier):
+- `WalReplayFailure` — recovery: `recover --truncate-wal` (lossy only).
+- `HeaderMalformed` — recovery: `safe-export` then external rebuild.
+- `SchemaInconsistent` — recovery: `recover --rebuild-projections` or escalate.
+- `EmbedderIdentityDrift` — row decode-failed; recovery: `recover --rebuild-projections` with `accept_identity_change`. Distinct from non-corruption `EmbedderIdentityMismatchError`.
+- `IntegrityCheckFailed` — page-level damage from SQLite integrity check.
+
+`CorruptionLocator` (6 variants — every variant justified per ADR § 2 anti-regression):
+- `FileOffset { offset: u64 }` — produced by HeaderProbe + raw-page WAL diagnosis; needed for `safe-export` triage.
+- `PageId { page: u32 }` — produced by IntegrityCheck (enumerates damaged pages) + WalReplay (frame→page reference); primary handle for page-level recovery.
+- `TableRow { table: &'static str, rowid: i64 }` — produced by SchemaProbe orphan-row + EmbedderIdentity row decode failure; only way to point at a logical row when page intact.
+- `Vec0ShadowRow { partition: &'static str, rowid: i64 }` — produced by post-migration vec0 shadow-table consistency (cheap-only today; may promote); recovery is `recover --rebuild-vec0`. Distinct from `TableRow` because vec0 not user-named.
+- `MigrationStep { from: u32, to: u32 }` — locator IS migration edge, not row.
+- `OpaqueSqliteError { sqlite_extended_code: i32 }` — mandatory per ADR § 2; replaces forbidden `Unspecified`. SanitizedCause (X4) carries detail.
+
+**Cross-doc artifacts:** `design/errors.md` (canonical X1 table — primary owner; SanitizedCause for OpaqueSqliteError); `design/engine.md` (ENG1 step→OpenStage cite by name); `design/recovery.md` (CorruptionKind → recovery_hint.code → R3 verb mapping; doc anchors per kind); `crates/fathomdb/src/errors.rs` (`RECOVERY_HINT_TABLE` const + `static_assertions::const_assert_eq!` X6 backstop); `crates/fathomdb/tests/round_trip_recovery_hint.rs` (X6 test asserts every locator produced by ≥1 stage; every kind has recovery.md heading); `adr/ADR-0.6.0-corruption-open-behavior.md` § 2 anti-regression now bound to variant list.
+
+**Judgement-call flag:** `Vec0ShadowRow` included though shadow-table check is cheap-only (not always-on). Defended because produced by `doctor check-integrity` today. Drop to ~70% if reviewer prefers deferring until tier-promotion.
+
 ---
 
 #### `E5` — Migration error home
@@ -411,6 +444,8 @@ REJECTED:
 > Return the 7-field structured output.
 
 **Depends on:** E2.
+
+**Status:** RESOLVED by E2 (2026-04-30). `EngineOpenError::Migration { step: MigrationStep, cause: SanitizedCause }`. Per REQ-042: variant carries the failing step only; per-step progress events emitted via tracing during loop, accumulated into `OpenReport.migrations: Vec<MigrationStepReport>` (per ENG6) regardless of failure. SanitizedCause via X4 recipe. No further HITL needed.
 
 ---
 
@@ -450,6 +485,26 @@ Caller-controllable distinction: NOT in variant shape. The sanitized cause chain
 > Return the 7-field structured output.
 
 **Depends on:** none.
+
+**Status:** RESOLVED 2026-04-30 (confidence 95%). Confirms E2 pre-commit; no override.
+
+**Resolution:**
+```rust
+EngineOpenError::Locked {
+    holder_pid: Option<u32>,
+}
+```
+
+Single field. Mirrors `database_lock.rs::read_pid` signature; tolerates documented best-effort race (empty file mid-write, Windows unreadable under exclusive lock, recycled PID, malformed contents) without lying to operator.
+
+**Rejected:**
+- `holder_started_at`: ADR § 4 delegates staleness correctness to kernel-held flock; kernel releases on crash, so operators never observe stale lock requiring PID-time disambiguation.
+- `hostname` / `lock_version`: NFS/cross-host out of scope (ADR § 4); sidecar payload non-parsed-for-correctness, so version envelope dead weight. Adding either = speculative knob (bindings § 14 forbidden).
+- REQUIRED `holder_pid: u32`: violates reality — write to lock file non-atomic; would force synthetic 0 or panic; contradicts ADR § 1 "best-effort diagnostic".
+
+**Code-level reference:** `crates/fathomdb-engine/src/database_lock.rs` `try_lock` + `read_pid` already returns `Option<u32>`; tests `lock_file_contains_pid` + `lock_error_includes_holder_pid` (Unix-gated PID assertions) confirm cross-platform `Option` necessity. Test #9 (`holder_pid` matches via `/proc`) aligns with existing `lock_error_includes_holder_pid` assertion.
+
+**Cross-doc artifacts:** `adr/ADR-0.6.0-database-lock-mechanism.md` (no amendment — § 1, § 3 Inv-Lock-1/4, § 4 failure-mode table, Consequences already commit `Option<u32>`); `design/bindings.md` § 7 (`Optional[int]` / `number | null` marshalling); `design/errors.md` (variant→class mapping matrix — downstream consumer); `crates/fathomdb-engine/src/database_lock.rs` (already implements; no change).
 
 ---
 
