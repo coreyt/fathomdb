@@ -1,0 +1,21 @@
+[workspace]
+members = [
+    "crates/fathomdb",
+    "crates/fathomdb-cli",
+    "crates/fathomdb-embedder",
+    "crates/fathomdb-embedder-api",
+    "crates/fathomdb-engine",
+    "crates/fathomdb-query",
+    "crates/fathomdb-schema",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.6.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/coreyt/fathomdb"
+rust-version = "1.82"
+
+[workspace.metadata.fathomdb]
+active_docs = ["docs/0.6.0", "docs/0.8.0"]

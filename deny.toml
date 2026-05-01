@@ -1,0 +1,9 @@
+[graph]
+targets = []
+
+[advisories]
+version = 2
+yanked = "deny"
+
+[licenses]
+allow = ["Apache-2.0", "MIT", "Unicode-3.0"]
