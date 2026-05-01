@@ -530,15 +530,15 @@ the only test-plan.md responsibility for this section.)
 ## AC-035a: Engine.open refuses on detected corruption
 **Requirement ref:** REQ-031d
 **Test id:** T-035a
-**Assertion:** For each documented corruption-injection fixture (one per `CorruptionKind` variant enumerated in `design/errors.md`), `Engine.open` returns `Err(EngineOpenError::Corruption(_))`. The engine never returns an `Engine` handle, never auto-truncates, never auto-rebuilds, never opens read-only.
-**Measurement:** Per fixture: invoke `Engine.open`; assert result is `Err`; downcast to `EngineOpenError::Corruption`; assert no `Engine` handle observable in caller scope; assert DB file mtime unchanged across the failed open (no truncation / no rebuild side effect); inspect process for absence of writer thread + scheduler.
-**Fixture:** corruption-injection suite (one fixture per `CorruptionKind` variant; test-plan.md fixture spec — pending).
+**Assertion:** For each documented open-path corruption fixture in the 0.6.0 matrix `{WalReplayFailure, HeaderMalformed, SchemaInconsistent, EmbedderIdentityDrift}`, `Engine.open` returns `Err(EngineOpenError::Corruption(_))`. The engine never returns an `Engine` handle, never auto-truncates, never auto-rebuilds, never opens read-only.
+**Measurement:** Run four fixtures, one per open-path `CorruptionKind`: WAL-replay corruption, header/page-1 corruption, schema-probe inconsistency, and corrupt stored embedder-profile row. Per fixture: invoke `Engine.open`; assert result is `Err`; downcast to `EngineOpenError::Corruption`; assert no `Engine` handle observable in caller scope; assert DB file mtime unchanged across the failed open (no truncation / no rebuild side effect); inspect process for absence of writer thread + scheduler.
+**Fixture:** open-path corruption matrix (exactly four fixtures: `WalReplayFailure`, `HeaderMalformed`, `SchemaInconsistent`, `EmbedderIdentityDrift`; test-plan.md fixture spec — pending).
 
 ## AC-035b: CorruptionDetail shape
 **Requirement ref:** REQ-031d
 **Test id:** T-035b
-**Assertion:** Every `EngineOpenError::Corruption(detail)` returned by AC-035a fixtures carries: (1) `kind: CorruptionKind` (one of the variants enumerated in `design/errors.md`), (2) `stage: OpenStage` (NOT `LockAcquisition` — lock failures surface as `EngineOpenError::Locked`), (3) `locator: CorruptionLocator` (no free-form `Unspecified`; opaque-SQLite paths surface as `OpaqueSqliteError { sqlite_extended_code: i32 }`), (4) `recovery_hint: RecoveryHint { code: &'static str, doc_anchor: &'static str }` with stable machine-readable `code`.
-**Measurement:** Per fixture: extract the four fields; assert presence + variant correctness; assert `recovery_hint.code` matches the documented stable id for that `CorruptionKind`; assert `code` stability by re-running fixture and asserting bit-equal `code` string.
+**Assertion:** Every `EngineOpenError::Corruption(detail)` returned by AC-035a fixtures carries: (1) `kind: CorruptionKind` in `{WalReplayFailure, HeaderMalformed, SchemaInconsistent, EmbedderIdentityDrift}`, (2) `stage: OpenStage` in `{WalReplay, HeaderProbe, SchemaProbe, EmbedderIdentity}` and never `LockAcquisition`, (3) `locator: CorruptionLocator` with no free-form `Unspecified` and opaque-SQLite paths surfaced as `OpaqueSqliteError { sqlite_extended_code: i32 }`, (4) `recovery_hint: RecoveryHint { code: &'static str, doc_anchor: &'static str }` with stable machine-readable `code`.
+**Measurement:** Per AC-035a fixture: extract the four fields; assert presence + variant correctness; assert `(kind, stage, recovery_hint.code)` matches the documented rows `{WalReplayFailure, WalReplay, E_CORRUPT_WAL_REPLAY}`, `{HeaderMalformed, HeaderProbe, E_CORRUPT_HEADER}`, `{SchemaInconsistent, SchemaProbe, E_CORRUPT_SCHEMA}`, `{EmbedderIdentityDrift, EmbedderIdentity, E_CORRUPT_EMBEDDER_IDENTITY}`; assert `code` stability by re-running fixture and asserting bit-equal `code` string.
 **Fixture:** as AC-035a.
 
 ## AC-035c: Lock released + no SQLite connection retained on Corruption error
@@ -635,6 +635,13 @@ the only test-plan.md responsibility for this section.)
 **Assertion:** Each top-level section in AC-043a holds either a finding list (possibly empty) or an explicit `clean: true` marker.
 **Measurement:** Parse output; per section, assert either `findings: [...]` present or `clean: true` present.
 **Fixture:** as AC-043a.
+
+## AC-043c: `check-integrity --full` findings carry stable report fields
+**Requirement ref:** REQ-039
+**Test id:** T-043c
+**Assertion:** A `doctor check-integrity --full` finding record includes `code`, `doc_anchor`, `stage`, `locator`, and `detail`, and the emitted `code` set may include doctor-only `E_CORRUPT_INTEGRITY_CHECK`.
+**Measurement:** Run `fathomdb doctor check-integrity --full --json` against a fixture with deterministic page damage; parse the finding record(s); assert each emitted finding includes the five fields; assert at least one emitted finding has `code == E_CORRUPT_INTEGRITY_CHECK`; assert the code is surfaced without requiring a corresponding `Engine.open` `CorruptionKind`.
+**Fixture:** page-damage integrity fixture (test-plan.md fixture spec — pending).
 
 ## AC-044: Physical recovery rebuilds projections from canonical state
 **Requirement ref:** REQ-040
@@ -874,7 +881,7 @@ Every REQ in `requirements.md` has ≥1 AC:
 | REQ-036 | AC-040a/b |
 | REQ-037 | AC-041 |
 | REQ-038 | AC-042 |
-| REQ-039 | AC-043a/b |
+| REQ-039 | AC-043a/b/c |
 | REQ-040 | AC-044 |
 | REQ-041 | AC-045 |
 | REQ-042 | AC-046a/b/c |
@@ -908,10 +915,12 @@ build-once test artifacts, not threshold decisions:
 |---|---|
 | 1 M chunk-row corpus + FTS5 + `vec0` indexes | AC-012, AC-013, AC-019 |
 | 1 GB seeded DB | AC-035 |
+| Open-path corruption matrix (4 fixtures: WAL replay, header probe, schema probe, embedder-profile corruption) | AC-035a/b/c |
 | Power-cut harness (kill -9 mid-commit timing strategy + reopen loop) | AC-034a, AC-034b |
 | OS-crash harness (VM image + sysrq trigger with sync barrier preserved) | AC-034c |
 | Shadow-table corruption injection tool | AC-006, AC-027a/b/c/d, AC-044 |
 | Page-corruption tool (for SQLite-internal events) | AC-006 |
+| Page-damage integrity fixture for `doctor check-integrity --full` | AC-043c |
 | Deterministic-slow CTE fixture (≥ 200 ms guaranteed) + fast / slow pair | AC-007a, AC-007b |
 | Poison-fixture (deterministic op failure) | AC-003d, AC-009 |
 | Mixed-retrieval stress workload generator | AC-019 |

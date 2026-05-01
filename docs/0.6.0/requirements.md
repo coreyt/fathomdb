@@ -243,8 +243,8 @@ the ADR is authoritative.
 
 - **REQ-031d — Refuse-to-open on detected corruption.** `Engine.open`
   fails closed when corruption is detected at any open-path stage
-  (WAL replay, schema migration, vector shadow-table validation,
-  PRAGMA integrity check when run, header/format mismatch). Failure
+  (WAL replay, header/format probe, schema probe, corrupt stored
+  embedder-profile state). Failure
   surfaces as a structured `EngineOpenError::Corruption` carrying
   kind / stage / locator / `RecoveryHint { code, doc_anchor }`. The
   engine MUST NOT auto-truncate, auto-rebuild, auto-replay-with-skip,
@@ -323,7 +323,7 @@ the ADR is authoritative.
 
 - **REQ-039 — Single `check-integrity` invocation reports all integrity
   classes.** Physical, logical, and semantic integrity reported in one
-  operator call. (Specific check set owned by `design/admin.md`.)
+  operator call. (Specific check set owned by `design/recovery.md`.)
   *Source:* `dev/dbim-playbook.md` §10.
 
 - **REQ-040 — Physical recovery rebuilds projections from canonical

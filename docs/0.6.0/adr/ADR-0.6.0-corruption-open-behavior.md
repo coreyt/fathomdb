@@ -15,7 +15,7 @@ Phase 3c-promoted ADR. Resolves FU-VEC13-CORRUPTION + FU-RECOVERY-CORRUPTION-DET
 
 ## Context
 
-`Engine.open` runs at process start. It applies schema migrations (REQ-042), warms the embedder (Invariant D, owned by `embedder`), acquires the SQLite native exclusive WAL lock, and applies PRAGMAs. Any of these stages may surface corruption: WAL replay errors, schema migration failure on integrity-violating rows, header/format mismatch, sqlite-vec shadow-table inconsistency, or PRAGMA integrity-check violations (when run).
+`Engine.open` runs at process start. It applies schema migrations (REQ-042), warms the embedder (Invariant D, owned by `embedder`), acquires the SQLite native exclusive WAL lock, and applies PRAGMAs. Corruption may surface on the open path through the always-on detection subset owned by `design/recovery.md`: WAL replay errors, header/format mismatch, schema inconsistency, and corrupt stored embedder-profile state.
 
 What `Engine.open` does on detected corruption was unspecified across 0.5.x. Three plausible behaviors:
 
@@ -71,7 +71,7 @@ Recovery is invoked exclusively via `fathomdb recover` (CLI surface; consistent 
 
 ### 4. Detection cadence is design-owned
 
-This ADR does NOT mandate which checks run at every open or how expensive they may be. `design/recovery.md` owns the cadence policy: which checks are always-on vs cheap-only vs opt-in (e.g. `PRAGMA integrity_check` is O(N) on a large DB and likely opt-in via env or config). This ADR's commitment is purely behavioral: IF corruption is detected, REFUSE.
+This ADR does NOT mandate which checks run at every open or how expensive they may be. `design/recovery.md` owns the cadence policy: which checks are always-on vs doctor-only opt-in. In 0.6.0, opt-in integrity work lives on `doctor check-integrity` only; `Engine.open` has no env/config integrity knob. This ADR's commitment is purely behavioral: IF corruption is detected, REFUSE.
 
 `design/recovery.md` MUST enumerate the always-on detection set. Reducing that set is a behavior change requiring an ADR amendment (anti-regression clause).
 
@@ -99,8 +99,8 @@ When `Engine.open` fails with `Corruption`, no `Engine` handle is returned to th
 - **Adds ACs** to acceptance.md (4 ACs as enumerated): (1) refuse-to-open on detected corruption, (2) structured `EngineOpenError::Corruption(CorruptionDetail)` shape inc. `RecoveryHint { code, doc_anchor }`, (3) exclusive WAL lock released + no engine handle returned, (4) recovery reachable only via `fathomdb recover` CLI (SDK unreachability).
 - **`design/engine.md` runtime open path** spec must wrap each stage in a corruption-detector that produces `CorruptionDetail` on failure.
 - **`design/errors.md` + `design/bindings.md`** must surface `EngineOpenError::Corruption` as a typed binding error (Python: `CorruptionError`; TypeScript: `CorruptionError`); covered transitively by REQ-056 / AC-060a.
-- **`design/recovery.md`** owns: which checks run at open (cadence), which are opt-in vs always, what `fathomdb recover` does, and the `--accept-data-loss` opt-in surface.
-- **ADR-0.6.0-error-taxonomy** variant table extended with `CorruptionKind` enum (5 variants); error-taxonomy AC-060a measurement enumerates these per the existing protocol.
+- **`design/recovery.md`** owns: which checks run at open (cadence), the doctor-only opt-in integrity surface, what `fathomdb recover` does, and the `--accept-data-loss` opt-in surface.
+- **ADR-0.6.0-error-taxonomy** variant table extended with the open-path `CorruptionKind` enum owned by `design/errors.md`; 0.6.0 `Engine.open` uses the four-kind surface `WalReplayFailure`, `HeaderMalformed`, `SchemaInconsistent`, `EmbedderIdentityDrift`.
 - **FU-VEC13-CORRUPTION + FU-RECOVERY-CORRUPTION-DETECTION** resolved by this ADR + design/recovery.md ownership.
 - Operators who want availability over correctness on a corrupted DB must invoke recovery explicitly. There is no "just open it anyway" surface in 0.6.0.
 
