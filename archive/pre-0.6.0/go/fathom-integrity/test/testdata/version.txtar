@@ -1,3 +1,0 @@
-exec fathom-integrity version
-stdout 'fathom-integrity 0.1.0'
-stdout 'admin protocol 1'

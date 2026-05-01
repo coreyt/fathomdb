@@ -1,5 +1,0 @@
-# Documentation build dependencies
-# Install: pip install -r docs/requirements-docs.txt
-mkdocs-material>=9.5,<10
-mkdocstrings[python]>=0.27,<1
-griffe>=1.5,<2
