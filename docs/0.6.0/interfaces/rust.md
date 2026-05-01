@@ -3,13 +3,71 @@ title: Rust Public Interface
 date: 2026-04-24
 target_release: 0.6.0
 desc: Public Rust surface (traits, functions, types, errors) for 0.6.0
-blast_radius: TBD
-status: not-started
+blast_radius: crates/fathomdb; design/engine.md; design/bindings.md; design/errors.md; design/lifecycle.md
+status: draft
 ---
 
 # Rust Interface
 
-TBD — draft in Phase 3e (architect agent delegates after `architecture.md`).
+This file owns Rust-visible symbol spelling and result shape. Cross-binding
+parity rules remain owned by `design/bindings.md`.
 
-Per public symbol: signature, short example, error cases, stability posture.
-Critic = `code-reviewer`.
+## Support posture
+
+The Rust facade exists in 0.6.0 and is the ground-truth source for engine-side
+type names. Decision note: whether it is independently acceptance-locked as a
+first-class public SDK beyond the bindings remains open. See
+`acceptance.md` AC-057a and `design/bindings.md`.
+
+## Public surface
+
+Rust exposes:
+
+- `Engine::open(...) -> Result<OpenedEngine, EngineOpenError>`
+- `Engine::write(...) -> Result<WriteReceipt, EngineError>`
+- `Engine::search(...) -> Result<SearchResult, EngineError>`
+- `Engine::close(...) -> Result<(), EngineError>`
+
+`OpenedEngine` contains:
+
+- `engine`
+- `report`
+
+`report` is the `OpenReport` owned by `design/engine.md`.
+
+## Engine-attached instrumentation / control methods
+
+These are public instance methods, not extra top-level SDK verbs:
+
+- `Engine::drain(timeout_ms: u64) -> Result<(), EngineError>`
+- `Engine::counters() -> CounterSnapshot`
+- `Engine::set_profiling(enabled: bool) -> Result<(), EngineError>`
+- `Engine::set_slow_threshold_ms(value: u64) -> Result<(), EngineError>`
+- `Engine::subscribe(...) -> Subscription`
+
+`subscribe(...)` owns host-subscriber attachment and may carry heartbeat-cadence
+options. The payload semantics remain owned by `design/lifecycle.md` and
+`design/migrations.md`.
+
+## Caller-visible data shapes
+
+- `WriteReceipt` has exactly one public field: `cursor`
+- `SearchResult` exposes `projection_cursor`
+- hybrid fallback, when present, exposes a typed branch enum whose values are
+  owned by `design/retrieval.md`
+- counter/profile/stress payload shapes are owned by `design/lifecycle.md`
+
+## Errors
+
+Rust exposes typed open/runtime errors without message parsing:
+
+- `EngineOpenError`
+- `EngineError`
+
+Canonical leaf mapping lives in `design/errors.md`. This file adopts those
+types without renaming them.
+
+## Non-presence
+
+The Rust runtime surface does not expose recovery verbs. Recovery remains CLI
+only per `design/recovery.md` and `design/bindings.md`.

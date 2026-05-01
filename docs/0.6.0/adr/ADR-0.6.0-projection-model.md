@@ -31,7 +31,7 @@ Vector projections must be computed for new chunks. Trigger model is the central
 
 ### Granularity
 
-- **One projection job per chunk-batch**, default batch size B = 64. Tunable per `Engine.open`.
+- **One projection job per chunk-batch**, default batch size B = 64.
 - Fan-out happens at scheduler entry, **not** at commit. A 10k-chunk write transaction commits as one writer-thread operation; the scheduler then enqueues ⌈10000 / B⌉ jobs.
 - Per-call timeout (per ADR-0.6.0-embedder-protocol § Invariant 5) applies to one job, i.e. one batch — not per chunk.
 
@@ -50,16 +50,22 @@ This means the engine itself does not block writer-thread submission, does not r
 
 Projection jobs that fail (embedder timeout per Invariant 5, transient I/O):
 
-- **Bounded retry** with exponential backoff (default: 3 retries, 1s/4s/16s; configurable per Engine.open).
+- **Bounded retry** with exponential backoff using fixed 0.6.0 constants:
+  3 retries, then 1s / 4s / 16s backoff.
 - After exhausted retries: **mark-failed-and-advance.** Failed batch is recorded in `operational_*` op-store row (per ADR-0.6.0-op-store-same-file `operational_mutations` with op_kind=append) under a `projection_failures` collection; cursor advances past the failed batch.
 - `projection_cursor` advances on **terminal state** (success or failed), never on in-flight. SLI #8 (p99 ≤ 5s) is measured against terminal states; in-flight rows are not part of the freshness contract.
-- Operators inspect `projection_failures` collection via CLI (per ADR-0.6.0-cli-scope). `regenerate` verb re-enqueues failed batches.
+- Operators inspect durable `projection_failures` rows as part of the accepted
+  projection-failure workflow. The regenerate workflow in 0.6.0 is
+  `fathomdb recover --accept-data-loss --rebuild-projections` per
+  ADR-0.6.0-cli-scope; there is no separate top-level `regenerate` verb.
 
 ### Restart durability
 
 - **No durable projection queue table.** Queue is **derived state.**
 - On `Engine.open`, scheduler scans for chunks where `chunk_id > projection_cursor` and re-enqueues them. No new schema; no migration step.
-- Failed batches recorded in op-store survive restart (op-store is durable per ADR-0.6.0-op-store-same-file); `regenerate` operator verb re-enqueues them on demand.
+- Failed batches recorded in op-store survive restart (op-store is durable per
+  ADR-0.6.0-op-store-same-file); the explicit regenerate workflow
+  (`recover --rebuild-projections`) re-enqueues them on demand.
 
 ### Read-path contract under cursor lag
 

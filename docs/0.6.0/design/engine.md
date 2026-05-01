@@ -45,6 +45,34 @@ The corruption-producing stages are the four `OpenStage` values owned by
 `E_CORRUPT_INTEGRITY_CHECK` is not an open-path code. That code belongs only to
 `doctor check-integrity --full` per `design/recovery.md`.
 
+## `Engine.open` success result
+
+On success, `Engine.open` returns the live engine handle plus a structured open
+report.
+
+The canonical success shape is:
+
+- `engine`
+- `report`
+
+Where `report` carries at least:
+
+- `schema_version_before`
+- `schema_version_after`
+- `migration_steps`
+- `embedder_warmup_ms`
+
+Ownership split:
+
+- `design/migrations.md` owns `schema_version_*` and `migration_steps`
+- this file owns the outer "engine handle + report" return contract
+- `design/embedder.md` owns the semantics of warmup itself; this file owns the
+  fact that `embedder_warmup_ms` is surfaced as part of open success
+
+On migration failure, no engine handle is returned. The typed `MigrationError`
+instead carries the migration-owned failure report described in
+`design/migrations.md`.
+
 ## Writer / reader split
 
 - One dedicated writer thread owns the only write connection.
@@ -119,17 +147,41 @@ This distinction is load-bearing for REQ-055 and AC-059b and must remain
 consistent across `architecture.md`, `requirements.md`, `acceptance.md`, and
 `interfaces/*.md`.
 
+## `WriteReceipt`
+
+`WriteReceipt` has exactly one public field in 0.6.0:
+
+- `cursor`
+
+No additional `WriteReceipt` fields are public contract in 0.6.0. Internal
+batch bookkeeping may exist in implementation, but it must not leak into the
+binding-facing receipt shape without an explicit design amendment.
+
 ## EngineConfig ownership
 
 This file owns the canonical engine-config knob set and the rationale for any
 publicly exposed tunables. A knob is not considered stable public surface until
 it is named and justified here.
 
-Engine-owned 0.6.0 knobs include runtime controls such as
-`embedder_pool_size` and `scheduler_runtime_threads`. Binding adapter mechanics
-that exist only to bridge a language runtime into the engine are not part of
-this canonical knob set even if a binding chooses to surface them near
-`Engine.open`.
+The canonical 0.6.0 engine-owned knob set is:
+
+| Field | Type | Default | Owner note |
+|---|---|---|---|
+| `embedder_pool_size` | `usize` | `num_cpus::get()` | engine-owned runtime pool width |
+| `scheduler_runtime_threads` | `usize` | `2` | engine-owned scheduler runtime width |
+| `provenance_row_cap` | `u64` | `1_000_000` | REQ-031 / AC-033 retention cap |
+| `embedder_call_timeout_ms` | `u64` | `30_000` | invariant D watchdog default |
+| `slow_threshold_ms` | `u64` | `100` | lifecycle slow-signal threshold |
+
+Not part of the canonical `EngineConfig` set in 0.6.0:
+
+- heartbeat cadence: configurable on the feedback/subscriber surface, not as a
+  core engine-open knob; see `design/lifecycle.md` and `interfaces/{python,typescript,rust}.md`
+- Python executor usage: caller/runtime pattern, not engine config
+- TypeScript `ThreadsafeFunction` pool sizing: binding-runtime mechanism, not
+  canonical engine config
+
+The interface docs own per-language field spelling for the canonical knob set.
 
 ## Debug-only runtime guard
 

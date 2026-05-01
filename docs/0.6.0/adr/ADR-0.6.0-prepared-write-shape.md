@@ -110,7 +110,10 @@ builder per language; partial-build state is footgun-prone. Rejected.
 - `OpStoreInsert` (already named in ADR-0.6.0-typed-write-boundary X-2)
   is a `PreparedWrite::OpStore(_)` variant; not a side path.
 - `AdminSchemaWrite` covers admin DDL — same writer thread per
-  ADR-0.6.0-single-writer-thread; no separate admin path.
+  ADR-0.6.0-single-writer-thread; no separate admin path. The variant's
+  existence is required by the accepted `admin.configure` public surface and is
+  therefore locked for 0.6.0 even though the exact internal field set remains
+  owned by `design/engine.md`.
 - `error-taxonomy`: write errors flow as defined in
   ADR-0.6.0-error-taxonomy. **No new fields** added to
   `WriteValidationError` here — any "originating slice index" affordance

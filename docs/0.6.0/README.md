@@ -21,22 +21,33 @@ Start here:
 | Doc | Status | Notes |
 |-----|--------|-------|
 | plan.md | living | this plan |
-| requirements.md | not-started | |
-| acceptance.md | not-started | |
-| architecture.md | not-started | |
+| requirements.md | draft | |
+| acceptance.md | draft | |
+| architecture.md | locked | locked 2026-04-29 |
 | test-plan.md | not-started | |
 | security-review.md | not-started | |
-| learnings.md | not-started | living during 0.6.0 |
-| followups.md | not-started | write-mostly; do not read unless told |
+| learnings.md | living | living during 0.6.0 |
+| followups.md | living | write-mostly; do not read unless told |
 | deps/ | not-started | one file per dep; living folder |
-| design/bindings.md | not-started | written first (may fill distinct role vs. interfaces/) |
-| design/* (rest) | pending | architect agent proposes list post-architecture.md |
-| interfaces/rust.md | not-started | |
-| interfaces/python.md | not-started | |
-| interfaces/typescript.md | not-started | |
-| interfaces/cli.md | not-started | |
-| interfaces/wire.md | not-started | short OK |
-| adr/ADR-0.6.0-decision-index.md | not-started | triage list, not a decision |
+| design/bindings.md | locked | |
+| design/embedder.md | draft | |
+| design/engine.md | draft | |
+| design/errors.md | draft | |
+| design/lifecycle.md | draft | |
+| design/migrations.md | draft | |
+| design/op-store.md | draft | |
+| design/projections.md | draft | |
+| design/recovery.md | draft | |
+| design/release.md | draft | |
+| design/retrieval.md | draft | |
+| design/scheduler.md | draft | |
+| design/vector.md | draft | |
+| interfaces/rust.md | draft | |
+| interfaces/python.md | draft | |
+| interfaces/typescript.md | draft | |
+| interfaces/cli.md | draft | drafted out-of-band for OD-17 fix |
+| interfaces/wire.md | draft | short OK |
+| adr/ADR-0.6.0-decision-index.md | in-progress | triage list, not a decision |
 
 Lifecycle states: `not-started → draft → review → locked` (most docs);
 `not-started → draft → review → proposed → critic-reviewed → accepted | rejected | superseded` (ADRs);

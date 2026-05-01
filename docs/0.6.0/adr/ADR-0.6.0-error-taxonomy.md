@@ -69,7 +69,7 @@ Three "validation"-flavoured errors stay as **distinct** module variants. They a
 | `SchemaValidationError` | ADR-0.6.0-json-schema-policy | Write submission | Payload fails JSON Schema check against registered `schema_id` |
 | `EmbedderIdentityMismatchError` | ADR-0.6.0-vector-identity-embedder-owned | `Engine.open` | Open-time embedder identity ≠ recorded profile identity |
 
-Distinctness rationale: each is owned by its producing ADR (clean coupling); each maps to a different user remediation (fix input shape vs fix payload contents vs `accept_identity_change`); `EmbedderIdentityMismatchError` doesn't even surface at write time. Collapsing into one `WriteError` would lose this signal and force `EmbedderIdentityMismatch` (an `Engine.open` error) into a misnamed bucket.
+Distinctness rationale: each is owned by its producing ADR (clean coupling); each maps to a different user remediation (fix input shape vs fix payload contents vs resolve an open-time embedder mismatch); `EmbedderIdentityMismatchError` doesn't even surface at write time. Collapsing into one `WriteError` would lose this signal and force `EmbedderIdentityMismatch` (an `Engine.open` error) into a misnamed bucket.
 
 ### Foreign-error wrapping policy (security)
 

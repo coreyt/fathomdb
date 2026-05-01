@@ -103,11 +103,11 @@ profile recorded in the database:
 - If identities differ, fail with
   `EngineError::EmbedderIdentityMismatch { profile, recorded,
   supplied }`.
-- A user who *intends* to swap embedders passes
-  `Engine.open(... accept_identity_change: true)` (or equivalent
-  per-binding flag). This permits open; the recorded identity is
-  **not** updated until the user runs an explicit `regenerate`
-  against that profile.
+
+0.6.0 does **not** provide an open-time bypass for intentional
+identity swaps. `accept_identity_change` is deferred out of 0.6.0.
+Intentional embedder-swap workflow design moves to
+`docs/0.8.0/adr/ADR-0.8.0-embedder-identity-change-workflow.md`.
 
 The DB-recorded identity is a **derived projection** of "the
 embedder that was used to write these vectors." It is not a third
@@ -199,13 +199,6 @@ where the bytes are stored.
   names misses aliases (`model_name`, `dim`, `vector_size`,
   `revision`) and cannot detect a `String` field semantically used
   as identity. Concrete crate path + check shape land with EMB-7.
-- **Dimension validation when no embedder is open (read-only / query
-  paths).** The engine MAY cache `(profile, dimension)` in
-  coordinator state at first write, so subsequent read paths can
-  validate ADR-0.6.0-zerocopy-blob §Z-4 byte-length without an open
-  embedder. This cache is a derived projection of the open-time
-  embedder's identity; it is not a third source of truth. Cross-cite
-  ADR-0.6.0-zerocopy-blob §Z-4.
 - **Memory hygiene.** `project_vector_identity_invariant` memory
   record must be rewritten to a single-line pointer at this ADR in
   the same commit that lands this ADR. The memory's prior rule text
@@ -216,6 +209,8 @@ where the bytes are stored.
   `identity()` method is the implementation of this ADR.
 - Cross-cite ADR-0.6.0-no-shims-policy: 0.4.x configs with identity
   strings are not accepted under any compat flag.
+- Intentional identity-swap workflow is **deferred to 0.8.0**; 0.6.0
+  remains fail-closed on mismatch.
 
 ## Non-consequences (what this ADR does NOT do)
 

@@ -37,9 +37,14 @@ Engine.open    admin.configure    write    search    close
 
 (REQ-053; gated by AC-057a.) The parity claim is symmetric *across SDK bindings* (Python + TypeScript): a verb appears in every SDK binding or in none. Adding a verb requires updating all SDK bindings together; per-SDK-binding surface sets are not allowed to drift.
 
-CLI is a separate, non-SDK surface (per ADR-0.6.0-cli-scope, architecture.md § 1: "Does NOT mirror full SDK 5-verb surface"). CLI exposes a structurally distinct command set (`fathomdb doctor <verb>`, `fathomdb recover`, plus the read-only query subset per ADR-0.6.0-cli-scope). CLI parity with SDK is NOT required and NOT promised; adding an SDK verb does not imply adding a CLI command.
+CLI is a separate, non-SDK surface (per ADR-0.6.0-cli-scope, architecture.md § 1: "Does NOT mirror full SDK 5-verb surface"). CLI exposes a structurally distinct operator command set (`fathomdb doctor <verb>` and `fathomdb recover`). CLI parity with SDK is NOT required and NOT promised; adding an SDK verb does not imply adding a CLI command.
 
 The SDK surface MUST NOT contain any name in `{recover, restore, repair, fix, rebuild, doctor}` (REQ-037, REQ-054, REQ-031d). These verbs exist exclusively on the CLI surface.
+
+REQ-030's bounded-completion surface is **not** a sixth top-level SDK verb.
+It is an `Engine` instance method. The per-language method spelling is owned by
+`interfaces/{rust,python,typescript}.md`; this file commits only that it must
+not widen the top-level parity set from five verbs to six.
 
 ## 2. Lifecycle dispatch model
 
@@ -48,7 +53,7 @@ Each binding owns the dispatch model for its language. The protocol that connect
 | Binding | Dispatch model | Engine call shape | Owning ADR |
 |---|---|---|---|
 | Python | Sync surface (Path 1) | Direct PyO3 call into Rust; engine is sync; Python `asyncio` users wrap with `run_in_executor` (documented pattern, not first-party API). | ADR-0.6.0-python-api-shape; ADR-0.6.0-async-surface (Path 1 + Invariants) |
-| TypeScript | Promise surface (Path 2) | napi-rs `ThreadsafeFunction` + Rust-owned thread pool sized `num_cpus::get()` (configurable per Engine). Decoupled from libuv's `fs/dns/crypto` thread pool. | ADR-0.6.0-typescript-api-shape; ADR-0.6.0-async-surface (Path 2) |
+| TypeScript | Promise surface (Path 2) | napi-rs `ThreadsafeFunction` + Rust-owned thread pool sized `num_cpus::get()`. Decoupled from libuv's `fs/dns/crypto` thread pool. TS may expose adapter-specific sizing control, but that control is owned by the TS binding runtime rather than the canonical engine-config set. | ADR-0.6.0-typescript-api-shape; ADR-0.6.0-async-surface (Path 2) |
 | CLI | Sync subcommand entry; binary returns process exit code per ADR-0.6.0-cli-scope. | Direct sync call into Rust; same engine as SDK. | ADR-0.6.0-cli-scope |
 
 Async invariants A–D from ADR-0.6.0-async-surface manifest in every binding. The invariants themselves are owned by that ADR; this file commits only the *binding-side* assertion that no binding exposes an escape hatch:
@@ -71,6 +76,14 @@ Protocol commitments (apply to every binding):
 - **CLI is structural.** Each variant maps to a stable exit code + a structured stderr line carrying the variant's stable code (e.g. `recovery_hint.code` for `Corruption`). The exit-code table itself lives in `interfaces/cli.md`; the variant→exit-code authority is in `design/errors.md`.
 - **Top-level error type plurality.** The Rust surface exposes more than one top-level error type (`EngineError` for runtime ops, `EngineOpenError` for `Engine.open` per ADR-0.6.0-corruption-open-behavior). `design/errors.md` enumerates which top-level types exist and how each variant routes to a binding class; bindings flatten the hierarchy where idiomatic (Python typically presents one `EngineError` base and reroots `EngineOpenError` variants under it; TS may keep two roots).
 
+Decision note:
+
+- Preferred 0.6.0 posture is one exported catch-all base type across bindings.
+- If TypeScript keeps separate `EngineError` and `EngineOpenError` roots, it
+  MUST also export a shared base type that catches both.
+- The chosen TS root shape must be rendered in `interfaces/typescript.md` and
+  remain aligned with the leaf-class matrix in `design/errors.md`.
+
 This file does NOT enumerate the variant→class matrix; that authority lives in `design/errors.md` and is cited by `interfaces/{python,ts,cli}.md`. Per-language interface files do not duplicate the matrix.
 
 ## 4. Marshalling strategy
@@ -85,7 +98,10 @@ This file does NOT enumerate the variant→class matrix; that authority lives in
 | Engine → caller: search results | Engine returns owned typed result rows; bindings expose them as idiomatic types (Python `list[dict]`/dataclass; TS object). No lazy cursors crossing the FFI boundary. | ADR-0.6.0-retrieval-pipeline-shape |
 | Engine → caller: errors | Per § 3. | ADR-0.6.0-error-taxonomy |
 
-JSON-Schema validation behavior (AC-060b) is invariant across bindings: validation fires save-time, pre-commit, on the writer thread; failure surfaces as `WriteValidationError`; no open-time re-validation; bindings do *not* run their own pre-engine validation pass (single source of truth).
+JSON-Schema validation behavior (AC-060b) is invariant across bindings:
+validation fires save-time, pre-commit, on the writer thread; failure surfaces
+as `SchemaValidationError`; no open-time re-validation; bindings do *not* run
+their own pre-engine validation pass (single source of truth).
 
 ## 5. Embedder identity invariant
 
@@ -96,18 +112,38 @@ Per ADR-0.6.0-vector-identity-embedder-owned + ADR-0.6.0-embedder-protocol, vect
 - A user-supplied embedder (Python or TS impl) declares its `EmbedderIdentity` per ADR-0.6.0-embedder-protocol Invariants 1–4. Binding-side bindings do *not* synthesize identity from binding metadata; identity is the embedder's responsibility.
 - REQ-047 (embedder version-skew detection) is satisfied at link/resolution time by the semver-pinned `fathomdb-embedder-api` trait crate (architecture.md § 1) plus the embedder-owned `EmbedderIdentity` carried in stored vectors. Bindings do NOT perform runtime version-skew checks; they consume the typed mismatch error surfaced by the engine.
 
-## 6. EngineConfig surface symmetry
+## 6. SDK symmetry, CLI boundary, and config classes
 
-Every Engine-config knob reachable from one binding MUST be reachable from every binding. Binding-only config is forbidden by default. The canonical knob set lives in `design/engine.md`; bindings expose it identically (Python kwargs, TS options object, CLI flags). New knobs are added across all bindings together.
+Two different symmetry rules exist and must not be conflated:
 
-The single principled exception: **dispatch-pool sizing on Path 2 (TS) is an Engine-config knob with no Path-1 analogue.** Python's `run_in_executor` pattern is caller-side, not engine-config; it is not a binding-only knob — it is *not a knob at all* from the engine's perspective. The TS napi-rs pool size IS the only binding-only Engine-config knob in 0.6.0.
+- **SDK surface symmetry.** Python and TypeScript expose the same canonical SDK
+  verb set. This is the hard parity rule from § 1.
+- **Engine-config symmetry.** Engine-owned knobs named in `design/engine.md`
+  must be reachable from every SDK binding in idiomatic form.
 
-Knobs that look asymmetric but are NOT binding-only:
+CLI is outside both parity claims. It is a separate operator surface and does
+not promise flag-for-flag mirroring of SDK verbs or SDK config.
 
-- `embedder_pool_size` (default `num_cpus::get()` per architecture.md § 6 + ADR-0.6.0-default-embedder) — every binding exposes it.
-- `scheduler_runtime_threads` (default 2 per ADR-0.6.0-scheduler-shape) — every binding exposes it.
+The engine-config symmetry rule applies only to knobs that change engine
+behavior after the binding boundary. It does **not** apply to binding-runtime
+mechanics that exist only to bridge one host runtime into the engine.
 
-CLI inherits engine defaults for all knobs and does not expose tunables that are not exposed by the SDK bindings (CLI is not a config-shape outlier).
+Examples:
+
+- `embedder_pool_size` — engine-owned runtime knob; symmetry required across
+  SDK bindings.
+- `scheduler_runtime_threads` — engine-owned runtime knob; symmetry required
+  across SDK bindings.
+- Python `run_in_executor` usage — caller-side runtime pattern, not an engine
+  knob.
+- TypeScript `ThreadsafeFunction` pool sizing — TS binding runtime mechanic per
+  ADR-0.6.0-async-surface. A TS binding may surface it near `Engine.open`, but
+  it is not part of the canonical engine-config set and does not create a
+  Python-parity obligation.
+
+CLI inherits engine defaults unless `interfaces/cli.md` explicitly grants a
+flag. That inheritance posture does not weaken the SDK symmetry rule because
+CLI is not an SDK binding.
 
 ## 7. Lock + process-exclusivity contract
 
@@ -127,10 +163,38 @@ The corruption-on-open path (ADR-0.6.0-corruption-open-behavior § 5; AC-035c) M
 The engine emits structured tracing events (per `dev/design-logging-and-tracing.md` Tier 1/2 carryovers). Binding adapters attach a host subscriber:
 
 - Python: caller registers a `logging`-backed adapter via a binding-provided helper that maps tracing events into Python `LogRecord`s.
-- TypeScript: caller registers a callback (or the binding's default winston/pino adapter, optional) invoked per event.
-- CLI: when run interactively, attaches a console subscriber; when run with `--json` (per `interfaces/cli.md`), emits NDJSON events to stdout.
+- TypeScript: caller registers a callback invoked per event.
+- CLI: when run in human-facing mode, attaches a console subscriber; when run in machine-facing `--json` mode, emits the verb-owned JSON shape from `interfaces/cli.md` / `design/recovery.md`. `doctor check-integrity` is a single JSON object; other verbs own their own machine-readable contract.
 
-Across bindings, the *engine event payload* is wire-stable: same field names, same types, same lifecycle phase tag enum (AC-001). The host adapter MAY translate or derive **host-native required fields** (Python `LogRecord.levelname`, `LogRecord.created`; pino `level`, `time`) from the engine event, since those fields are dictated by the host logger backend. Engine event fields appear under a stable `fathomdb` payload key in the host record so downstream filters can target them precisely; the engine never emits a host-named field directly.
+Across bindings, the *engine event payload* is wire-stable: same field names,
+same types, same lifecycle phase tag enum (AC-001). The host adapter MAY
+translate or derive **host-native required fields** from the engine event when
+the host logger backend requires them. Engine event fields appear under a
+stable `fathomdb` payload key in the host record so downstream filters can
+target them precisely; the engine never emits a host-named field directly.
+
+### `fathomdb` payload envelope
+
+Within the host record, the stable `fathomdb` payload key carries one of these
+surface shapes:
+
+- response-cycle event: `phase` plus producer-owned operation context
+- diagnostic event: `source`, `category`, and producer-owned detail payload
+- counter snapshot: `counter_snapshot`
+- profile record: `profile_record`
+- stress-failure payload: `stress_failure`
+- migration step event: `migration_step`
+
+Ownership split:
+
+- `design/lifecycle.md` owns `phase`, `source`, `category`,
+  `counter_snapshot`, `profile_record`, and `stress_failure`
+- `design/migrations.md` owns `migration_step`
+- binding adapters own how these are embedded into host-native logger records
+
+Acceptance note: current ACs lock the typed payload members more directly than
+the outer `fathomdb` envelope key. Do not rename the envelope key without
+updating both this file and the interface docs.
 
 Default subscriber posture: when no subscriber is registered, the engine writes nothing — no log files, no stderr noise (AC-002).
 
@@ -158,9 +222,9 @@ This is a *non-presence* claim, not a per-binding signature, and is therefore ow
 |---|---|---|
 | Lock contention on open | `DatabaseLocked` per § 3 + § 7 | Every binding maps identically; no retry loop in the binding. |
 | Corruption on open | `CorruptionError` carrying `detail` per § 3 + ADR-0.6.0-corruption-open-behavior | Every binding surfaces `detail` as a structurally-typed object (not a stringified blob) exposing `recovery_hint.code` (idiomatic casing per binding) as the stable dispatch key, per ADR-corruption-open-behavior § 2. Exact attribute spelling owned by `interfaces/{python,ts}.md`. Bindings do NOT auto-invoke recovery. |
-| Embedder identity mismatch | `EmbedderIdentityMismatchError` per § 3 | Bindings do NOT auto-rebuild. Caller chooses to invoke `fathomdb recover` (CLI). |
+| Embedder identity mismatch | `EmbedderIdentityMismatchError` per § 3 | Bindings do NOT auto-rebuild and 0.6.0 provides no open-time bypass. Caller must resolve the mismatch outside the SDK surface. |
 | Schema migration failure | `MigrationError` per § 3 | Bindings surface per-step duration + failure reason from the engine's structured open result (REQ-042). |
-| Write validation failure (JSON Schema) | `WriteValidationError` per § 3 | Surfaces save-time, pre-commit (AC-060b); engine state is unchanged after rejection. Bindings do NOT pre-validate. |
+| Write validation failure (JSON Schema) | `SchemaValidationError` per § 3 | Surfaces save-time, pre-commit (AC-060b); engine state is unchanged after rejection. Bindings do NOT pre-validate. |
 | Engine.close while writes in flight | `ClosingError` per § 3 (variant per ADR-0.6.0-error-taxonomy § Consequences) | Bindings surface as a typed close-race error; `Engine.close` itself is required (REQ-020a; AC-022a) and bindings do not auto-retry. |
 | Backpressure exhaustion / overload | `OverloadedError` per § 3 (variant per ADR-0.6.0-error-taxonomy + ADR-0.6.0-projection-model layer-4 backpressure) | Bindings surface as a typed overload error; do NOT auto-retry; caller decides retry policy. |
 | User-supplied embedder buggy / blocking | Engine watchdog enforces per-call timeout per Invariant D (default 30 s); surfaces as `EmbedderError`. | Bindings document Invariant B + C constraints in their `Embedder` impl docs; tests verify a buggy embedder cannot deadlock the engine. |
@@ -170,7 +234,7 @@ This is a *non-presence* claim, not a per-binding signature, and is therefore ow
 | Lives here (`design/bindings.md`) | Lives there (`interfaces/{python,ts,cli}.md`) |
 |---|---|
 | Surface-set parity claim across all bindings | The exact public symbol list per binding |
-| Error variant → class mapping table (canonical) | Per-language stability posture, deprecation notes, exception hierarchy diagram |
+| Error-mapping protocol (the matrix itself lives in `design/errors.md`) | Per-language stability posture, deprecation notes, exception hierarchy diagram |
 | Async dispatch model + how Invariants A–D manifest per binding | Per-symbol async/sync signature, parameter types, return types |
 | Marshalling protocol (typed boundary; vector encoding; JSON-Schema cadence) | Per-language type names, type aliases, idiomatic accessors |
 | Embedder identity invariant across bindings | Per-binding `Embedder` trait/protocol shape and impl examples |
@@ -231,7 +295,8 @@ The bindings layer is normative on:
 4. Typed write boundary across bindings.
 5. JSON-Schema save-time validation cadence (no binding-side pre-validation).
 6. Cross-binding embedder identity.
-7. Engine-config knob symmetry (one principled exception: TS napi-rs pool size).
+7. Engine-config knob symmetry across SDK bindings; binding-runtime mechanics
+   like the TS dispatch pool are not canonical engine knobs.
 8. Lock contract uniformity (hybrid: sidecar flock + SQLite EXCLUSIVE writer per ADR #30).
 9. Logging engine-event payload wire-stability (host-native fields derived by adapter).
 10. Recovery non-presence on SDK surface.

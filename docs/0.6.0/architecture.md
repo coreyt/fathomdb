@@ -39,7 +39,7 @@ Per ADR-0.6.0-crate-topology (and 2026-04-27 amendment): monolithic
 
 | Crate | Phase 5 disposition | Responsibility |
 |---|---|---|
-| `crates/fathomdb-cli` | new in 0.6.0 | Single binary: application surface (subset per ADR-0.6.0-cli-scope: admin + recovery + read-only query) + `fathomdb doctor <verb>` (REQ-036, REQ-054). Does NOT mirror full SDK 5-verb surface. |
+| `crates/fathomdb-cli` | new in 0.6.0 | Single binary: two-root operator surface (`fathomdb recover` for lossy recovery; `fathomdb doctor <verb>` for bit-preserving inspection/export) per ADR-0.6.0-cli-scope. Does NOT mirror full SDK 5-verb surface. |
 | `ts/` (cdylib package `fathomdb`) | new in 0.6.0 | napi-rs binding: Promise surface per ADR-0.6.0-typescript-api-shape (Path 2 ThreadsafeFunction pool sized at `num_cpus::get()` per ADR-0.6.0-async-surface) |
 | `crates/fathomdb-embedder-api` | new in 0.6.0 | Sibling: shared trait crate — semver-stable surface pinning `Embedder` + `EmbedderIdentity` per ADR-0.6.0-embedder-protocol; enables version-skew detection at resolution time (REQ-047). Authorized by ADR-0.6.0-crate-topology 2026-04-27 amendment. |
 | `crates/fathomdb-embedder` | new in 0.6.0 | Sibling: operator-installable embedder package; depends on `fathomdb-embedder-api`; bundles default candle + tokenizers per ADR-0.6.0-default-embedder. |
@@ -82,14 +82,14 @@ are dependencies.
 | `reader` | Multi-connection reader pool (no serialization on a single conn per REQ-018); per-thread connection acquisition; SQLite WAL read-tx | async-surface (Path 1 sync read surface) | REQ-013, REQ-014, REQ-018 | `design/engine.md` (reader sub-section) |
 | `migrations` | Auto-migrate at `Engine.open`; per-step structured event emission (success + failure); accretion-guard linter target | (no dedicated ADR — leverages `fathomdb-schema`) | REQ-042, REQ-045 | `design/migrations.md` |
 | `errors` | Per-module error enums; top-level `EngineError` wrapping via `#[from]`; binding error-mapping tables | error-taxonomy | REQ-056 | `design/errors.md` (cross-cuts every module; standalone for clarity) |
-| `op_store` | `OpStoreInsert` PreparedWrite variant + `operational_*` tables in same SQLite file; transactional with primary writes; payload validation via JSON Schema per `schema_id` | op-store-same-file, json-schema-policy, typed-write-boundary | (no direct REQ — ADR-derived subsystem; user surface via `PreparedWrite::OpStore` per REQ-053) | `design/op-store.md` |
+| `op_store` | `OpStoreInsert` PreparedWrite variant + `operational_*` tables in same SQLite file; transactional with primary writes; payload validation via JSON Schema per `schema_id` | op-store-same-file, json-schema-policy, typed-write-boundary | REQ-053, REQ-057, REQ-058, REQ-059 | `design/op-store.md` |
 | `embedder` | Embedder dispatch pool (`embedder_pool_size`, default = `num_cpus::get()`); `embed()` invocation per ADR-0.6.0-embedder-protocol Invariants 1–4; eager warmup; per-call timeout (Invariant D); returns logical `Vec<Vector>` (BLOB encoding owned by `vector`) | async-surface (Invariants B + C + D), embedder-protocol, default-embedder, vector-identity-embedder-owned | REQ-028a/b/c, REQ-033 (no implicit network fetch) | `design/embedder.md` |
 | `scheduler` | Tokio runtime worker pool (orchestration only, default 2 threads); dispatches projection jobs post-commit per Invariant A; `spawn_blocking` to embedder pool; mpsc back to writer; 4-layer backpressure | scheduler-shape, async-surface (Invariant A), projection-model | REQ-015, REQ-016, REQ-027, REQ-029, REQ-030, REQ-055 | `design/scheduler.md` |
 | `vector` | `vec0` virtual table inside same SQLite file; LE-f32 BLOB encoding + alignment + byte-length invariants (BLOB encoding boundary); sqlite-vec usage; rebuild path for physical recovery | vector-index-location, sqlite-vec-acceptance, zerocopy-blob, vector-identity-embedder-owned, recovery-rank-correlation | REQ-011, REQ-025c, REQ-040, REQ-044, REQ-051 | `design/vector.md` |
-| `projection` | Push-model FTS5 + vector projections; `projection_cursor` allocation + advancement on writer thread; backpressure cooperation with scheduler; projection-status enum | projection-model, projection-freshness-sli, scheduler-shape | REQ-008, REQ-013, REQ-014, REQ-015, REQ-027, REQ-029, REQ-055 | `design/projections.md` |
-| `retrieval` | Fixed-stage pipeline (parse → match → fetch → optional rerank/expand); FTS5 + vector + hybrid paths; safe FTS5 grammar parser (no raw input passthrough) | retrieval-pipeline-shape, retrieval-latency-gates, text-query-latency-gates | REQ-010, REQ-011, REQ-017, REQ-018, REQ-029, REQ-034 | `design/retrieval.md` |
-| `lifecycle` | Phase tags ({Started, Heartbeat, Slow, Finished, Failed}); slow-statement detection at configurable threshold; host-subscriber routing; SQLite-internal event surfacing; cumulative counters; per-statement profile records | (no dedicated ADR — REQ-derived) | REQ-001..REQ-005, REQ-006a/b, REQ-007, REQ-003 (counter shape) | `design/lifecycle.md` |
-| `recovery` | `fathomdb doctor` recovery verbs (CLI-only — unreachable from runtime SDK); `check-integrity` aggregator; physical recovery from canonical state; `safe_export` + SHA-256 manifest; safe-export latency target | (no dedicated ADR — REQ-derived) | REQ-012, REQ-024, REQ-025a/b/c, REQ-026, REQ-035, REQ-036, REQ-037, REQ-038, REQ-039, REQ-040, REQ-054 | `design/recovery.md` |
+| `projection` | Push-model FTS5 + vector projections; `projection_cursor` allocation + advancement on writer thread; backpressure cooperation with scheduler; projection-status enum | projection-model, projection-freshness-sli, scheduler-shape | REQ-008, REQ-013, REQ-014, REQ-015, REQ-027, REQ-029, REQ-055, REQ-059 | `design/projections.md` |
+| `retrieval` | Fixed-stage pipeline (parse → match → fetch → optional expand); FTS5 + vector + hybrid paths; safe FTS5 grammar parser (no raw input passthrough) | retrieval-pipeline-shape, retrieval-latency-gates, text-query-latency-gates | REQ-010, REQ-011, REQ-017, REQ-018, REQ-029, REQ-034 | `design/retrieval.md` |
+| `lifecycle` | Phase tags ({Started, Slow, Heartbeat, Finished, Failed}); slow-statement detection at configurable threshold; host-subscriber routing; SQLite-internal event surfacing; cumulative counters; per-statement profile records | (no dedicated ADR — REQ-derived) | REQ-001..REQ-005, REQ-006a/b, REQ-007, REQ-003 (counter shape) | `design/lifecycle.md` |
+| `recovery` | `fathomdb doctor` recovery verbs (CLI-only — unreachable from runtime SDK); `check-integrity` aggregator; physical recovery from canonical state; `safe_export` + SHA-256 manifest; safe-export latency target | (no dedicated ADR — REQ-derived) | REQ-012, REQ-024, REQ-025a/b/c, REQ-026, REQ-035, REQ-036, REQ-037, REQ-038, REQ-039, REQ-040, REQ-054, REQ-059 | `design/recovery.md` |
 | `bindings facade` | Binding-side surface mapping (Rust = sync engine API; Python = sync, snake_case; TS = Promise, camelCase, idiomatic; CLI = typed verbs); error-mapping per binding; soft-fallback signal field-naming; drain verb name; cursor field on read-tx + write-commit return | python-api-shape, typescript-api-shape, async-surface (Path 1 + Path 2), cli-scope, no-shims-policy, deprecation-policy-0-5-names, prepared-write-shape | REQ-029, REQ-030, REQ-042, REQ-046a/b, REQ-053, REQ-055, REQ-056 | `design/bindings.md` (load-bearing — owns error-mapping + path-1/path-2 cross-binding contracts) |
 | `release` | CI / publish artifacts: version-consistency check, atomic multi-registry publish, registry-installed wheel smoke, sibling co-tagging | tier1-ci-platforms | REQ-047, REQ-048, REQ-049, REQ-050, REQ-052 | `design/release.md` |
 
@@ -130,6 +130,8 @@ Caller (Rust / Python / TS / CLI)
     - Provenance retention: if row count > cap × 1.05, evict oldest
       (provenance-retention)
     - Return WriteReceipt { cursor: c_w, ... } to caller
+      (`cursor` here is the write-commit cursor, not the read-side
+       `projection_cursor`)
     - INVARIANT (async-surface A): writer lock RELEASED before any
       scheduler dispatch fires
     - Visibility AFTER step 2:
@@ -218,7 +220,7 @@ Caller
     - Canonical row fetch by id from same read-tx
                               │
                               ▼
-(5) Optional reranker / graph-expand (default: off)
+(5) Optional graph-expand (default: off)
     - Stage-augmented latency NOT gated by 0.6.0 perf ADRs
                               │
                               ▼
@@ -402,6 +404,8 @@ Every REQ in `requirements.md` traces to ≥1 module via § 2:
 | REQ-054 | recovery + bindings facade (SDK-side absence) |
 | REQ-055 | bindings facade (cursor field) + projection (allocation) |
 | REQ-056 | errors + bindings facade (mapping) |
+| REQ-057, REQ-058 | op_store |
+| REQ-059 | projection + recovery + op_store |
 
 No orphan REQs.
 
@@ -434,7 +438,10 @@ These do not block lock; answered in named follow-on docs.
   pending forcing function.
 - **Provenance event table schema.** `design/engine.md`; retention shape
   settled by ADR-provenance-retention.
-- **Op-store transactional API shape.** FU-OPS4 — `design/op-store.md`.
+- ~~**Op-store transactional API shape.**~~ Resolved in
+  `design/engine.md` + `design/op-store.md`: one ordered
+  `&[PreparedWrite]` submission, single writer-thread transaction, atomic
+  visibility for same-batch primary and op-store rows.
 - **Recovery flow detail.** `design/recovery.md` owns; canonical model
   is dbim-playbook 3-class / 4-invariant (folded; HITL F8).
 - **Backpressure detail.** `design/scheduler.md` owns the layer-by-layer

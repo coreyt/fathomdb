@@ -89,6 +89,14 @@ Asyncio worker threads, libuv blocking pool, V8 main thread, JS
 worker_threads — none ever run an embedder call directly. Enforced by
 the bindings layer.
 
+The pool-size override exists because embedded deployments vary
+substantially: some colocate FathomDB with latency-sensitive app code
+and need to cap embedder concurrency to preserve host responsiveness,
+while others run bulkier local models and need to raise or lower
+parallelism to match actual CPU / memory pressure. This is an
+operator-facing throughput-vs-contention control, not a binding-only
+escape hatch.
+
 **Invariant 5 — Per-call timeout.** Every `embed()` call is wrapped in
 a timeout (default 30s; configurable). Timeout fails the call with
 `EmbedderError::Timeout`; does not corrupt writer state; cancels by

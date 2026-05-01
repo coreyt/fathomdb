@@ -32,6 +32,17 @@ application surface and does not ship `search` / `get` / `list` query verbs.
 - `--pretty` is a human-only formatter on verbs that explicitly document it;
   it is not a separate machine schema.
 
+## Exit-code classes
+
+| Code | Stable meaning | Primary owner |
+|---|---|---|
+| `0` | successful completion with no findings that require a non-zero exit | this file |
+| `64` | recovery completed only because lossy action was explicitly accepted | this file + `design/recovery.md` |
+| `65` | doctor/verification surface found actionable non-clean state | this file + `design/recovery.md` |
+| `66` | export/materialization failure on an artifact-producing doctor verb | this file + `design/recovery.md` |
+| `70` | unrecoverable command failure | this file |
+| `71` | lock-held or equivalent precondition-blocked outcome | this file + `design/bindings.md` |
+
 ## Doctor verbs
 
 | Verb | Synopsis | Exit class |
@@ -43,6 +54,9 @@ application surface and does not ship `search` / `get` / `list` query verbs.
 | `dump-schema` | `fathomdb doctor dump-schema` | `doctor-check-*` |
 | `dump-row-counts` | `fathomdb doctor dump-row-counts` | `doctor-check-*` |
 | `dump-profile` | `fathomdb doctor dump-profile` | `doctor-check-*` |
+
+`doctor-check-*` means the verb may use the exit-code class set `{0, 65, 70,
+71}` depending on clean/findings/unrecoverable/lock-held outcome.
 
 ## Recover root
 

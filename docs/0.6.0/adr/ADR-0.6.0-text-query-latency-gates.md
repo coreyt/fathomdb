@@ -70,7 +70,7 @@ vector retrieval gets, not a hand-waved acceptance bound.
 - **Latency boundary:** **in-process** client call → result list.
   Includes safe-grammar parse (per REQ-034) + FTS5 MATCH + canonical
   row fetch + result serialization to in-process result type. Excludes
-  IPC / network / subprocess-bridge envelope, reranker, graph-expand,
+  IPC / network / subprocess-bridge envelope, graph-expand,
   and FTS5 `snippet()` / `highlight()` extraction.
 
 Numbers tighter than the vector ADR because text query has no embedder
@@ -123,9 +123,8 @@ discipline. Rejected.
 - Concurrent-write impact on text-query latency is a separate followup
   (parallel to retrieval-latency-gates' equivalent followup); not gated
   here.
-- Reranker / graph-expand stages add their own latency; ADR sets the
-  **default-pipeline** gate. Stage-augmented latency is documented but
-  not gated in 0.6.0.
+- Graph-expand adds its own latency; ADR sets the **default-pipeline**
+  gate. Stage-augmented latency is documented but not gated in 0.6.0.
 - FU-REQ-010-TEXT-LATENCY closed by this ADR.
 
 ## Citations

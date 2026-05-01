@@ -2,10 +2,10 @@
 title: 0.6.0 HITL Resolution Queue (errors.md / recovery.md / engine.md)
 date: 2026-04-30
 target_release: 0.6.0
-status: tier-3-resolved
+status: tier-4-resolved
 desc: Sequenced HITL queue for Phase 3d design files. Each item has an agent research prompt + structured deliverable contract. Resolve top-down; some downstream items depend on upstream resolutions.
 progress:
-  - 2026-04-30 E2 resolved (conf 82%); E6 flagged ambiguous for human.
+  - 2026-04-30 E2 resolved (conf 82%); E6 initially left for human, then resolved later the same day.
   - 2026-04-30 R1 resolved (conf 78%); composition A — minimal always-on.
   - 2026-04-30 R3 resolved (conf 74%); shape A — two roots, lossy concentrated under `recover`.
   - 2026-04-30 ENG1 resolved (conf 88%); 11-step order, ADR violation fixed (WAL before EXCLUSIVE), R1 split pre/post-migration.
@@ -20,6 +20,15 @@ progress:
   - 2026-04-30 E7 resolved (conf 95%); confirms E2 pre-commit `Locked{holder_pid: Option<u32>}`; rejects holder_started_at + hostname.
   - 2026-04-30 ENG3 resolved (conf 80%); explicit fallible `close()` + best-effort `Drop`; 30s drain timeout; detach + lock-release on timeout. Test plan extended (#27-30). Tracking issue #60 for AsyncDrop migration.
   - 2026-04-30 ENG6 resolved (conf 88%); idiomatic-only marshalling for OpenReport/CloseReport (ms sufficient — SLI surfaces are separate Report types not yet scoped). Over-design avoided after FathomDB sub-ms-use-case enumeration showed no SLI consumer reads these fields.
+  - 2026-04-30 R9 resolved (conf 80%); single JSON object (3 sections per AC-043a/b), per-finding {code, stage, locator, doc_anchor, detail}, single exit code from R3 doctor-check class, `--pretty` fallback. No schema_version, no manifest envelope, no NDJSON (deferred non-breaking).
+  - 2026-04-30 Tier 4 dispatched in parallel (R2, R4, R5, R8, R9).
+  - 2026-04-30 R2 initially resolved (conf 78%) to env knob `FATHOMDB_OPEN_INTEGRITY_CHECK=off|quick|full` + R3 CLI verb, with SDK config deferred.
+  - 2026-04-30 R4 resolved (conf 86%); root-level `--accept-data-loss` on `recover` only. Per-sub-flag opt-in REJECTED (over-design falsified). `--restore-logical-id` adjudicated lossy.
+  - 2026-04-30 R5 resolved (conf 88%); plain `sha256sum`-compatible text manifest (`<hex>  <relpath>\n`). Schema versioning + JSON envelope REJECTED (over-design). Prompt errata: REQ-035 (not 039) is correct cite; no P-NNN exists for safe-export latency.
+  - 2026-04-30 R8 resolved (conf 86%); strategy β tiered — `recover` acquires hybrid lock per ENG1; read-only `doctor` skips sidecar + uses NORMAL reader. Strategy γ ("read-lock sidecar") REJECTED (over-design).
+  - 2026-04-30 R2 reconsidered after over-design audit found AC-035a `IntegrityCheckFailed` fixture as the only concrete 0.6.0 consumer of opt-in detection at `Engine.open`.
+  - 2026-04-30 R2 amended (conf 86%); final choice = no opt-in detection surface at `Engine.open` in 0.6.0. Keep opt-in integrity checks on `doctor check-integrity` only; do not ship env or SDK-config open-time knob.
+  - 2026-04-30 E3 amended by R2; open-path enums shrink to 4 `OpenStage` + 4 `CorruptionKind` variants. `doctor check-integrity --full` RETAINS dedicated page-damage finding code `E_CORRUPT_INTEGRITY_CHECK`, but that code is doctor-only report surface, not `Engine.open` corruption enum surface.
 ---
 
 # HITL Resolution Queue — Phase 3d (errors / recovery / engine)
@@ -404,35 +413,44 @@ REJECTED:
 
 **Depends on:** ENG1, R1, X1.
 
-**Status:** RESOLVED 2026-04-30 (confidence 84%). Option F — full enumeration.
+**Status:** AMENDED 2026-04-30 by R2 (original resolution 84%; amendment confidence 82%).
 
 **Resolution:**
 
-`OpenStage` (5 variants — 1:1 with ENG1 detection-emitting steps; `LockAcquisition` excluded per ADR § 2):
+`OpenStage` (4 variants — 1:1 with ENG1 detection-emitting steps; `LockAcquisition` excluded per ADR § 2):
 - `WalReplay` — ENG1 step 6 sub-check; rusqlite first-read WAL replay verdict; maps to `E_CORRUPT_WAL_REPLAY`.
 - `HeaderProbe` — ENG1 step 6 sub-check; page-1 magic / page-size sanity. Distinct fix path (no recover; export only).
 - `SchemaProbe` — ENG1 step 6 sub-check; `PRAGMA user_version` + `_fathomdb_migrations` existence. File structurally readable but not a fathomdb DB.
 - `EmbedderIdentity` — ENG1 step 8 (post-migration); reads vector-profile row from migrated schema.
-- `IntegrityCheck` — opt-in tier (R2 post-migration only); `PRAGMA quick_check`/`integrity_check` failure stage.
 
-`CorruptionKind` (5 variants — aligns with R1 detection set + opt-in tier):
+`CorruptionKind` (4 variants — aligns with the 0.6.0 `Engine.open` detection set only):
 - `WalReplayFailure` — recovery: `recover --truncate-wal` (lossy only).
 - `HeaderMalformed` — recovery: `safe-export` then external rebuild.
 - `SchemaInconsistent` — recovery: `recover --rebuild-projections` or escalate.
-- `EmbedderIdentityDrift` — row decode-failed; recovery: `recover --rebuild-projections` with `accept_identity_change`. Distinct from non-corruption `EmbedderIdentityMismatchError`.
-- `IntegrityCheckFailed` — page-level damage from SQLite integrity check.
+- `EmbedderIdentityDrift` — row decode-failed; 0.6.0 remains fail-closed here. Intentional identity-swap workflow is deferred to 0.8.0. Distinct from non-corruption `EmbedderIdentityMismatchError`.
 
 `CorruptionLocator` (6 variants — every variant justified per ADR § 2 anti-regression):
 - `FileOffset { offset: u64 }` — produced by HeaderProbe + raw-page WAL diagnosis; needed for `safe-export` triage.
-- `PageId { page: u32 }` — produced by IntegrityCheck (enumerates damaged pages) + WalReplay (frame→page reference); primary handle for page-level recovery.
+- `PageId { page: u32 }` — produced by WalReplay frame→page diagnosis; remains justified even after the R2 amendment removed opt-in `integrity_check` from the open path.
 - `TableRow { table: &'static str, rowid: i64 }` — produced by SchemaProbe orphan-row + EmbedderIdentity row decode failure; only way to point at a logical row when page intact.
 - `Vec0ShadowRow { partition: &'static str, rowid: i64 }` — produced by post-migration vec0 shadow-table consistency (cheap-only today; may promote); recovery is `recover --rebuild-vec0`. Distinct from `TableRow` because vec0 not user-named.
 - `MigrationStep { from: u32, to: u32 }` — locator IS migration edge, not row.
 - `OpaqueSqliteError { sqlite_extended_code: i32 }` — mandatory per ADR § 2; replaces forbidden `Unspecified`. SanitizedCause (X4) carries detail.
 
+**R2 amendment note:** `IntegrityCheck` / `IntegrityCheckFailed` were removed from the
+0.6.0 `Engine.open` enum surface because R2 concluded there is no justified
+open-time opt-in knob surface in 0.6.0. `doctor check-integrity --full`
+RETAINS dedicated page-damage finding code `E_CORRUPT_INTEGRITY_CHECK`, and
+that code belongs to the doctor report surface rather than the `Engine.open`
+`OpenStage` / `CorruptionKind` enum surface.
+
 **Cross-doc artifacts:** `design/errors.md` (canonical X1 table — primary owner; SanitizedCause for OpaqueSqliteError); `design/engine.md` (ENG1 step→OpenStage cite by name); `design/recovery.md` (CorruptionKind → recovery_hint.code → R3 verb mapping; doc anchors per kind); `crates/fathomdb/src/errors.rs` (`RECOVERY_HINT_TABLE` const + `static_assertions::const_assert_eq!` X6 backstop); `crates/fathomdb/tests/round_trip_recovery_hint.rs` (X6 test asserts every locator produced by ≥1 stage; every kind has recovery.md heading); `adr/ADR-0.6.0-corruption-open-behavior.md` § 2 anti-regression now bound to variant list.
 
-**Judgement-call flag:** `Vec0ShadowRow` included though shadow-table check is cheap-only (not always-on). Defended because produced by `doctor check-integrity` today. Drop to ~70% if reviewer prefers deferring until tier-promotion.
+**Judgement-call flag:** `Vec0ShadowRow` included though shadow-table check is
+cheap-only (not always-on). Defended because produced by `doctor
+check-integrity` today. The key distinction after the R2 amendment is that
+cheap-only doctor findings may justify locators or report codes without
+therefore justifying new `Engine.open` corruption kinds.
 
 ---
 
@@ -529,6 +547,65 @@ Subsumed by X4. Skip if X4 resolved.
 
 **Annotation post-ENG1 adoption (2026-04-30):** R2 must address pre/post-migration split. Opt-in checks (`quick_check`, `integrity_check`, `round-trip`) require stable schema → fire post-migration only. Knob name proposals should reflect this: `FATHOMDB_OPEN_INTEGRITY_CHECK=quick|full|off` semantically applies post-step-7 (post-migration) only. Pre-migration tier is FROZEN at the four R1 always-on checks; no operator-tunable surface exists for them (composition is frozen by ADR § 4 anti-regression).
 
+**Status:** RESOLVED 2026-04-30 by amendment (confidence 86%).
+
+**Original resolution (now SUPERSEDED):** Ship A + C; defer B (conf 78%).
+
+**Why amended:** over-design-audit skill (2026-04-30) ran consumer enumeration including **AC fixture coverage** as a profile the original prompt missed. Found `acceptance.md` AC-035a (REQ-031d, T-035a) requires "for each documented corruption-injection fixture (one per `CorruptionKind` variant enumerated in `design/errors.md`), `Engine.open` returns `Err(EngineOpenError::Corruption(_))`". E3 enumerated `IntegrityCheckFailed` as a `CorruptionKind` variant. R1 places `quick_check`/`integrity_check` in opt-in tier (default off). With R2 deferring SDK config B, the AC-035a fixture for `IntegrityCheckFailed` cannot trigger detection cleanly:
+
+- **Strategy A (env)** — `std::env::set_var` mid-test leaks across cargo test parallel execution; needs serial-test crate or test-mutex infra.
+- **Strategy C (CLI doctor)** — runs against closed DB; cannot satisfy "`Engine.open` returns `Err(...)`" assertion shape.
+- **Strategy B (SDK config)** — only path that cleanly satisfies AC-035a per-test.
+
+**Re-evaluation options:**
+
+(i) **Ship B in 0.6.0.** `EngineConfig.integrity_check_at_open: enum { Off, Quick, Full }` defaulting to `Off`; § 6 fan-out across Python kwarg + TS option + CLI flag. AC-035a fixture sets `Quick` or `Full` per-test. Restores symmetry with env, but the only concrete consumer is a test fixture.
+
+(ii) **Drop `IntegrityCheckFailed` from `CorruptionKind` for 0.6.0.** Defer the open-path variant + the AC-035a fixture for it. Opt-in tier becomes operator-only (`doctor check-integrity`); `Engine.open` never produces `IntegrityCheckFailed`. E3 open-path enum membership shrinks by one variant.
+
+(iii) **Strategy A + serial-test infra.** Add `serial_test` crate dependency; gate AC-035a `IntegrityCheckFailed` fixture with `#[serial]`. Env knob remains the only surface; SDK config still deferred. Test infrastructure cost exists solely to preserve a non-default open-path variant.
+
+**Amended resolution: choose (ii).**
+
+**Resolution:**
+
+- **No open-time opt-in knob ships in 0.6.0.** Neither env A nor SDK config B lands.
+- **Opt-in integrity work remains on the already-accepted operator surface only:** `fathomdb doctor check-integrity [--quick] [--full] [--round-trip]` per R3/R9.
+- **`Engine.open` therefore never produces an integrity-check-specific corruption stage/kind in 0.6.0.** AC-035a covers every kind the real 0.6.0 open path can produce, and no serial-test infrastructure is required.
+
+**Critique of the rejected surfaces:**
+
+- **A only (env):** avoids SDK fan-out but creates hostile test ergonomics (`std::env::set_var` leakage across parallel tests) and still buys no operator capability beyond R3 doctor.
+- **B only (SDK config):** gives clean per-engine tests, but the only concrete 0.6.0 consumer is that test fixture. Shipping a three-binding config field to satisfy one acceptance fixture is over-design by the project’s own standard.
+- **A + serial infra:** explicitly spends dev-dependency and test-complexity budget to preserve a non-default `Engine.open` corruption kind that operators do not need at open time.
+- **C already covers the real operator use case:** pre-open integrity assurance is `doctor check-integrity`, followed by `Engine.open` on the always-on tier.
+
+**Atomicity rebuttal (accepted):** the supposed "doctor then open" gap does not
+justify an `Engine.open` opt-in surface in 0.6.0. R8 already locks `recover`
+and constrains `doctor` / `open` semantics tightly enough that a hypothetical
+atomic verify-then-open guarantee would not protect against external file
+mutation anyway.
+
+**Important scope distinction:** this amendment removes the open-path knob and
+the open-path `IntegrityCheckFailed` variant. `doctor check-integrity --full`
+still emits structured page-damage finding code `E_CORRUPT_INTEGRITY_CHECK`;
+that code is doctor-report surface rather than `Engine.open`
+corruption-enum surface.
+
+**Cross-doc artifacts:** `design/recovery.md` (primary owner — remove env-knob
+surface; keep doctor-only opt-in tier and retain `E_CORRUPT_INTEGRITY_CHECK`
+for `--full` findings); `design/errors.md` (drop `OpenStage::IntegrityCheck` /
+`CorruptionKind::IntegrityCheckFailed` from the open-path enum table, but keep
+doctor-report code row / anchor for `E_CORRUPT_INTEGRITY_CHECK`); `acceptance.md`
+(remove AC-035a fixture expectation for the dropped open-path kind; add or keep
+doctor-report coverage via AC-043* or a follow-on AC in `acceptance.md`); `adr/ADR-0.6.0-corruption-open-behavior.md`
+§ 4 (clarify that 0.6.0 opt-in integrity work is doctor-only, not `Engine.open`
+surface); `design/engine.md` (remove env capture mention if drafted);
+`design/bindings.md` (no new knob fan-out); `interfaces/cli.md` (no change
+beyond existing R3 surface); `X1` / `R9` consumers (model
+`E_CORRUPT_INTEGRITY_CHECK` as doctor-report code, not `Engine.open`
+corruption kind).
+
 ---
 
 #### `R4` — `--accept-data-loss` scope
@@ -540,6 +617,25 @@ Subsumed by X4. Skip if X4 resolved.
 
 **Depends on:** R3.
 
+**Status:** RESOLVED 2026-04-30 (confidence 86%). Strategy A — root-level on `recover` only.
+
+**Resolution:** `--accept-data-loss` is root-level mandatory flag on `fathomdb recover` and on no other verb. No per-sub-flag opt-in flags. Subcommand parser rejects `recover` without flag BEFORE any DB IO.
+
+`--restore-logical-id` adjudicated **LOSSY**: restoring a previously-purged id rewrites canonical state (intervening writes against now-reused id are not rolled back). "Reversibility" argument is superficial — bit-preserving means on-disk bytes unchanged, not that future operator command can undo. Stays under `recover`.
+
+**Per-verb table (ratifies R3 with bit-preserving column):**
+
+| Verb / sub-flag | Bit-preserving | Requires `--accept-data-loss` |
+|---|---|---|
+| `recover` (umbrella) + all sub-flags (`--truncate-wal`, `--rebuild-vec0`, `--rebuild-projections`, `--excise-source`, `--purge-logical-id`, `--restore-logical-id`) | N | Y mandatory (root-level only) |
+| `doctor check-integrity` / `safe-export` / `verify-embedder` / `trace` / `dump-*` | Y | N |
+
+**Over-design (Strategy B per-sub-flag) FALSIFIED:** Workflow enumeration showed no operator workflow mixes lossy + bit-preserving in one `recover` call. Two-root partition itself enforces consent boundary. Strategy C (hybrid) similarly rejected — no objective threshold for "high enough blast-radius" inside `recover`.
+
+**Cross-doc artifacts:** `design/recovery.md` (primary — flag-scope section); `interfaces/cli.md` (clap/argparse: flag declared on `recover` parser only; missing-flag error class = `recover-* exit 70` before DB IO); `requirements.md` REQ-036 (no edit; spelling already matches); `acceptance.md` AC-035d (extend: "invoking `recover` without flag exits non-zero with NO DB IO and NO lock acquisition"; sibling AC: every `doctor` verb rejects `--accept-data-loss` as unknown flag); `adr/ADR-0.6.0-corruption-open-behavior.md` § 3 (no amendment; R4 ratifies); `crates/fathomdb-cli/` (greenfield).
+
+Test plan additions: (a) `recover` without flag → exit 70, zero DB IO; (b) every `doctor` verb rejects `--accept-data-loss`; (c) every `recover` sub-flag reachable only with root flag set; (d) `--restore-logical-id` test fixture asserts lossy classification (writes between purge + restore not preserved).
+
 ---
 
 #### `R5` — `safe_export` manifest format
@@ -550,6 +646,26 @@ Subsumed by X4. Skip if X4 resolved.
 > Return the 7-field structured output.
 
 **Depends on:** R3.
+
+**Status:** RESOLVED 2026-04-30 (confidence 88%). Plain `sha256sum`-compatible text.
+
+**Resolution:**
+
+Format: `sha256sum`-compatible text (`<64-hex-lowercase>  <relpath>\n`). Two-space separator. POSIX forward-slash relpaths relative to manifest dir. ASCII; LF terminator; no BOM; trailing newline. Sorted byte-wise by relpath → deterministic byte-identical output across runs of same DB.
+
+- Default path: `<out>.sha256` (sibling of export). Override via `--manifest <path>`.
+- Writer: stream each file, finalize hash, append line, fsync at end. No in-memory accumulation.
+- Verifier (in `--help`): `cd <out-dir> && sha256sum -c <out>.sha256` (or `shasum -a 256 -c` on macOS).
+
+**Over-design REJECTED:**
+- `manifest_version: u32` — single consumer pair (operator + fathomdb verifier); format decades-stable; YAGNI.
+- JSON envelope (`{"version":1,"files":[...]}`) — breaks `sha256sum -c` for zero benefit.
+- Per-file size/mtime/tool-version metadata — not required by REQ-035 / AC-039a/b; if ever needed, add sibling `<out>.manifest.json` without disturbing hash file.
+- Detached signature / GPG — deferred-doc territory (`dev/design-note-encryption-at-rest-in-motion.md`).
+
+**Prompt errata flagged by agent:** Original R5 prompt cited "REQ-039 SHA-256 per file" + "REQ-040 latency target with P-NNN" — actual SHA-256 manifest requirement is **REQ-035**; REQ-039 is `check-integrity` aggregator and REQ-040 is projection-rebuild; **no P-NNN latency parameter exists for safe-export**. Resolution binds R5 to REQ-035 / AC-039a / AC-039b.
+
+**Cross-doc artifacts:** `requirements.md` REQ-035 (append manifest format spec); `acceptance.md` AC-039a/b (clarify "manifest" = `sha256sum`-compatible text; verifier = `sha256sum -c`); `interfaces/cli.md` (`doctor safe-export` synopsis + `--help` example); `design/recovery.md` (verb row: format + streaming-hash writer + deterministic sort); `adr/ADR-0.6.0-cli-scope.md` (no change). No new ADR needed.
 
 ---
 
@@ -576,6 +692,27 @@ Subsumed by X1 + X6 + R3. Skip if all resolved.
 
 **Depends on:** R3.
 
+**Status:** RESOLVED 2026-04-30 (confidence 86%). Strategy β — per-verb tiered.
+
+**Resolution — per-verb lock matrix:**
+
+| Verb | Sidecar flock | Writer EXCLUSIVE PRAGMA | Reader conn | Coexists with live operator |
+|---|---|---|---|---|
+| `fathomdb recover --accept-data-loss [...]` | YES (ENG1 step 2) | YES (ENG1 step 5) | YES per ENG1 | NO — fails fast `Locked{holder_pid}` → exit 71 |
+| `doctor check-integrity` | NO | NO | YES NORMAL mode | YES (WAL multi-reader) |
+| `doctor safe-export <out>` | NO | NO | YES NORMAL inside long-running `BEGIN IMMEDIATE` (WAL snapshot isolation; no torn read) | YES |
+| `doctor verify-embedder` | NO | NO | YES NORMAL | YES |
+| `doctor trace --source-ref <id>` | NO | NO | YES NORMAL | YES |
+| `doctor dump-{schema,row-counts,profile}` | NO | NO | YES NORMAL | YES |
+
+`recover` reuses `EngineRuntime::open` (ENG1) verbatim — recovery IS `Engine.open` followed by typed mutations, not parallel open path. Read-only `doctor` constructs stripped-down `ReaderHandle::open_read_only` (NORMAL `locking_mode`, no writer conn, no sidecar acquisition; no embedder warmup unless verb needs it — `verify-embedder` does).
+
+R3 has zero mutating doctor verbs in 0.6.0; "mutating doctor" matrix row intentionally absent. Future lossy verb requires R3 re-open.
+
+**Over-design REJECTED — Strategy γ ("read-lock sidecar"):** SQLite WAL already provides shared/exclusive coordination at conn level; `BEGIN IMMEDIATE` takes snapshot surviving concurrent writer commits; no failure mode where read-only `doctor` corrupts writer view. Adding second sidecar would invent lease semantics, fork acquisition recipe, protect against zero documented failures. DELETE before ships.
+
+**Cross-doc artifacts:** `design/recovery.md` (primary — § Lock semantics with per-verb matrix); `design/engine.md` (ENG1 reused by `recover`; explicit non-acquisition list for read-only `doctor`); `interfaces/cli.md` (per-verb lock posture + exit codes; `Locked` → exit 71 only on `recover`); `adr/ADR-0.6.0-database-lock-mechanism.md` (no amendment — CLI is consumer of Inv-Lock-1..5, not new contract); `adr/ADR-0.6.0-cli-scope.md` (no amendment); `design/bindings.md` § 7 (no amendment — read-only `doctor` non-acquisition not a binding violation; doesn't call `Engine.open`); `crates/fathomdb-cli/src/{recover.rs,doctor.rs}` (greenfield); `acceptance.md` AC-035d (broaden: read-only `doctor` does NOT acquire sidecar; `recover` does).
+
 ---
 
 #### `R9` — `check-integrity` aggregator output schema
@@ -586,6 +723,69 @@ Subsumed by X1 + X6 + R3. Skip if all resolved.
 > Return the 7-field structured output.
 
 **Depends on:** R1 (which checks run).
+
+**Status:** RESOLVED 2026-04-30 (confidence 80%). Single JSON object, three sections (AC-043a), per-check structured records keyed by stable `code`, single global exit code, optional human pretty-print.
+
+**Resolution:**
+
+1. **ID** — R9
+2. **Title** — `doctor check-integrity` aggregator output schema
+3. **Description** — `doctor check-integrity` emits a single JSON object on stdout with three top-level keys (`physical`, `logical`, `semantic`) per AC-043a, each holding either `clean: true` or a `findings: [...]` list (AC-043b). Each finding is a structured record carrying the X1 stable `code`, locator, and `doc_anchor` so CI scripts dispatch on `code` and operators read pretty-printed output via `--pretty`. A single process-level exit code (0 clean / 65 issues-found / 70 unrecoverable / 71 lock-held per R3) covers partial failure; per-check exit codes are NOT used.
+4. **Pro/Con per shape**
+   - **Single JSON object (recommended).** Pro: trivial `jq` access, atomic write to stdout, matches AC-043a/b key-equality assertion, mirrors the `OpenReport` shape (ENG6) so operators learn one mental model. Con: large reports (`--full` integrity_check on big DB) buffer in memory before emit; not friendly to live progress. Mitigation: opt-in `--ndjson` is a future R-knob, NOT 0.6.0.
+   - **NDJSON streaming (per-check record).** Pro: progress observable; bounded memory. Con: AC-043a asserts JSON object key equality — NDJSON breaks the assertion verbatim; CI scripts must reassemble; operators piping to `jq` need `--slurp`; doubles the surface (consumers handle two encodings). Falsified against the actual consumer set (operator + CI assertions); progress is not a 0.6.0 acceptance bar.
+   - **Hybrid object-with-events.** Pro: live progress + final summary in one stream. Con: highest surface area; needs schema discriminator field; no acceptance criterion demands progress; classic over-design (memory `feedback_reliability_principles` — net-negative LoC posture). Rejected.
+5. **Interactions**
+   - **R1 (which checks fire).** `--quick`/`--full`/`--round-trip` opt-in flags gate population of corresponding finding lanes; cheap-only tier (vec0 metadata + row-count parity, canonical referential sanity, profile parity) always populates. The set of checks attempted is reflected in a `checks_run: ["wal_replay", "header_probe", "schema_probe", "embedder_identity", "vec0_parity", "canonical_orphan_scan", "profile_parity", ...]` array so silently-skipped checks cannot masquerade as `clean: true`.
+   - **R3 (CLI verb).** Verb is `fathomdb doctor check-integrity [--quick] [--full] [--round-trip] [--pretty]`. `--json` is the implicit default per R3 ("`--json` mandatory on every verb"); `--pretty` renders the same object via a deterministic human formatter (no separate schema). Exit class `doctor-check-*` (0/65/70) per R3.
+   - **X1 (cite-by-code).** Every finding record carries the X1 `code` field as primary key (e.g. `E_CORRUPT_VEC0_PARITY`). Schema MUST include `code` + `doc_anchor` (relative path); CI scripts dispatch on `code` and never parse human prose. Round-trip backstop (X6) extended: every `code` emitted by check-integrity MUST resolve to a row in the X1 canonical table.
+6. **Recommendation + concrete schema**
+
+   No `schema_version` field. Justification: `--json` is mandatory + frozen by REQ-024 + AC-043a; field additions are non-breaking by convention (matches X1 cite-by-code stability); a version field invites consumers to branch on it, expanding surface for no current need. **Over-design flag if added.**
+
+   No `manifest`/`metadata` envelope. Top-level is the report. Add `tool_version` (single string from `CARGO_PKG_VERSION`) and `target` (canonicalized DB path) at the root — both already needed for support triage; nothing speculative.
+
+   ```json
+   {
+     "tool_version": "0.6.0",
+     "target": "/var/lib/fathomdb/main.sqlite",
+     "checks_run": ["wal_replay", "header_probe", "schema_probe",
+                    "embedder_identity", "vec0_parity",
+                    "canonical_orphan_scan", "profile_parity"],
+     "physical": {
+       "findings": [
+         {
+           "code": "E_CORRUPT_VEC0_PARITY",
+           "stage": "Vec0Parity",
+           "locator": { "Vec0ShadowRow": { "partition": "default", "rowid": 4711 } },
+           "doc_anchor": "recovery.md#vec0-parity",
+           "detail": "shadow row count 38122 != canonical 38123"
+         }
+       ]
+     },
+     "logical": { "clean": true },
+     "semantic": { "clean": true },
+     "summary": { "total_findings": 1, "exit_code": 65 }
+   }
+   ```
+
+   Per-check record fields (frozen): `code` (X1), `stage` (X1 OpenStage when applicable, else CheckStage), `locator` (X1 enum), `doc_anchor` (X1), `detail` (free-form English; informational only — CI MUST NOT parse). Adding fields is non-breaking; removing/repurposing fields requires HITL re-resolution.
+
+   Exit-code semantics: process emits a single exit code from the R3 doctor-check class. `total_findings == 0` → 0; ≥1 finding → 65; lock-held at open → 71; opaque/unrecoverable → 70. **No per-check exit code.** Justification: operators script `if ! check-integrity; then ...`; CI scripts inspect `summary.total_findings` or per-section `findings` length. Two dispatch surfaces is one too many.
+
+   Pretty-print fallback: YES. `--pretty` renders the same JSON object via a deterministic human formatter (section heading + bullet list of `code: detail (doc_anchor)`). NOT a separate schema; NOT machine-readable. Default remains JSON to satisfy REQ-024.
+
+   NDJSON streaming: REJECTED for 0.6.0. Acceptance criteria do not demand progress; consumers (operator + CI) are happy with a single object; introducing it later is non-breaking (new verb flag, e.g. `--ndjson`, when an actual progress consumer surfaces).
+
+   **Over-design watch (called out and resolved):**
+   - `schema_version` — REJECTED (speculative; no consumer; field additions already non-breaking).
+   - `manifest`/`metadata` envelope — REJECTED (replaced by two flat root fields).
+   - Per-check exit codes — REJECTED (one exit class is sufficient for both consumers).
+   - NDJSON event mode — DEFERRED (no current consumer; non-breaking to add later).
+
+7. **Confidence** — 80%. Calibrated against: AC-043a/b already pin top-level shape; R1 + R3 + X1 are resolved upstream so the per-record key set is fully determined; the only judgement call is rejecting `schema_version` (downside: future format break would require a verb-flag escape; mitigation: field-additions + cite-by-code keep schema additive). 20% reserved for the case where an operator review surfaces a real NDJSON consumer (bulk-DB-fleet check-integrity loop) before lock; would add `--ndjson` flag but not change the default object schema.
+
+**Cross-doc artifacts:** `design/recovery.md` (primary owner — § `check-integrity` output schema; freeze top-level + per-record key sets); `interfaces/cli.md` (concrete `--pretty` flag spelling + exit-code numbers from R3 doctor-check class); `acceptance.md` AC-043a + AC-043b (no edit — schema satisfies both; consider adding AC-043c asserting per-finding `code` + `doc_anchor` presence to bind cite-by-code at output layer); `design/errors.md` (X1 canonical table is normative input — every emitted `code` MUST appear there; X6 round-trip extended to cover check-integrity emit path); `design/engine.md` (no edit — open-path errors surface via `EngineOpenError`, not via this report); `crates/fathomdb-cli/src/doctor/check_integrity.rs` (NEW — emits this schema; `--pretty` renderer co-located); `crates/fathomdb/tests/check_integrity_schema.rs` (NEW — golden JSON + AC-043a/b key-equality + per-finding code-resolves-in-X1 assertions).
 
 ---
 
@@ -777,14 +977,22 @@ Future SLI Report types (write/query/retrieval/projection metrics) — separate 
 
 #### `ENG7` — `embedder_pool_size` default vs reader pool default
 
-**Agent prompt:**
-> Confirm `embedder_pool_size` default = `num_cpus::get()` (per architecture.md § 6 + ADR-0.6.0-default-embedder) is intentional vs reader-pool default = `num_cpus / 2`. Justify divergence or recommend alignment.
->
-> Read: architecture.md § 6, ADR-0.6.0-default-embedder, ADR-0.6.0-async-surface (Invariant B + D).
->
-> Return the 7-field structured output.
+**Status:** RESOLVED 2026-04-30 by corpus amendment (confidence 84%).
 
-**Depends on:** ENG2.
+**Resolution:**
+
+Keep the divergence. `embedder_pool_size` is an operator-facing
+throughput-vs-contention knob for the engine-owned embedder pool, while the
+reader pool is a lighter SQLite read-concurrency facility. Embedded
+deployments range from laptops sharing CPU with latency-sensitive host code to
+dedicated ingest workers running heavier local models; embedder concurrency is
+therefore the load-bearing tuning lever. Reader-pool sizing remains a separate
+concern and does not force alignment.
+
+**Cross-doc artifacts:** `adr/ADR-0.6.0-embedder-protocol.md`
+(Invariant 4 rationale), `adr/ADR-0.6.0-scheduler-shape.md`
+(embedder-pool rationale), `design/embedder.md`
+(`embedder_pool_size` operator rationale).
 
 ---
 
@@ -887,5 +1095,3 @@ Skipped items (E8, R6, R7, ENG8) are subsumed by Tier 1/2 resolutions or trivial
 - Next: dispatch Tier 1 agents. 
    - Run sequentially due to dependency chain (E2 → ENG1; R1 → R3 → ENG1; X1 needs E2+R1+R3). 
    - Suggested: E2 + R1 in parallel first (independent), then R3, then ENG1 + X1 in parallel.
-
-

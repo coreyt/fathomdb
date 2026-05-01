@@ -597,7 +597,7 @@ the only test-plan.md responsibility for this section.)
 ## AC-040a: Every `fathomdb doctor` verb invocable
 **Requirement ref:** REQ-036
 **Test id:** T-040a
-**Assertion:** For each verb in `{check-integrity, regen-vectors, rebuild-missing-projections, rebuild-fts, excise-source, purge-logical-id, restore-logical-id, safe-export, trace-source}`, `fathomdb doctor <verb> --help` exits 0.
+**Assertion:** For each verb in `{check-integrity, safe-export, verify-embedder, trace, dump-schema, dump-row-counts, dump-profile}`, `fathomdb doctor <verb> --help` exits 0.
 **Measurement:** Loop the verb set; assert exit 0 each.
 **Fixture:** built CLI binary.
 
@@ -676,7 +676,7 @@ the only test-plan.md responsibility for this section.)
 ## AC-046c: Migration emits per-step duration event on failure
 **Requirement ref:** REQ-042
 **Test id:** T-046c
-**Assertion:** A migration that fails mid-step emits a structured event for the failed step with `failed: true` and `duration_ms` populated, and the open call returns a typed `MigrationFailed` error.
+**Assertion:** A migration that fails mid-step emits a structured event for the failed step with `failed: true` and `duration_ms` populated, and the open call returns a typed `MigrationError`.
 **Measurement:** Open DB through poison-migration fixture; assert typed exception; assert event captured with both fields.
 **Fixture:** poison-migration fixture (test-plan.md fixture spec — pending).
 
@@ -792,9 +792,9 @@ the only test-plan.md responsibility for this section.)
 ## AC-058: Recovery verbs CLI-reachable
 **Requirement ref:** REQ-054
 **Test id:** T-058
-**Assertion:** Every verb in REQ-054's canonical recovery-verb list is invocable via `fathomdb doctor <verb>` AND has the `--help` properties asserted by AC-040a / AC-040b.
-**Measurement:** Loop the canonical list; per AC-040a + AC-040b protocol.
-**Fixture:** as AC-040a.
+**Assertion:** The lossy recovery surface is reachable only via `fathomdb recover --accept-data-loss ...`; `fathomdb recover --help` documents every 0.6.0 recovery sub-flag in `{--truncate-wal, --rebuild-vec0, --rebuild-projections, --excise-source, --purge-logical-id, --restore-logical-id}`.
+**Measurement:** Invoke `fathomdb recover --help`; assert each sub-flag name appears exactly once in the help output and that `--accept-data-loss` is documented on the root command.
+**Fixture:** built CLI binary.
 
 ## AC-059a: `projection_cursor` exposed on read tx; monotonic non-decreasing
 **Requirement ref:** REQ-055
@@ -803,10 +803,10 @@ the only test-plan.md responsibility for this section.)
 **Measurement:** Run 1,000 sequential read-tx with interleaved writer thread; collect cursor values; assert `cursor[i+1] >= cursor[i]` for all i.
 **Fixture:** interleaved-write-cursor fixture.
 
-## AC-059b: Write commit returns `projection_cursor` at which write becomes visible
+## AC-059b: Write commit returns write cursor satisfiable by `projection_cursor`
 **Requirement ref:** REQ-055
 **Test id:** T-059b
-**Assertion:** A write commit returns a `projection_cursor` value `c_w` such that the write's projection becomes queryable at the moment a read-tx with `cursor >= c_w` is observable.
+**Assertion:** A write commit returns a monotonic write cursor `c_w` such that the write's projection becomes queryable at the moment a read-tx exposing `projection_cursor >= c_w` is observable.
 **Measurement:** Issue write W; capture `c_w`; poll read-tx until `c_r >= c_w`; immediately query for W's projection; assert present.
 **Fixture:** write-cursor-projection fixture.
 
@@ -820,9 +820,58 @@ the only test-plan.md responsibility for this section.)
 ## AC-060b: JSON-Schema validation fires save-time, pre-commit; no open-time re-validation
 **Requirement ref:** REQ-056
 **Test id:** T-060b
-**Assertion:** A `PreparedWrite::OpStore` whose payload fails its `schema_id`'s JSON Schema is rejected save-time with `WriteValidationError` BEFORE any row is written or committed; the writer transaction is not opened, no partial state is observable post-rejection. Re-opening the database with `Engine.open` on a DB containing historical op-store rows whose payloads no longer satisfy the current `schema_id`'s schema (e.g. schema tightened in-repo between releases) does NOT trigger validation; open succeeds.
-**Measurement:** (1) Submit `PreparedWrite::OpStore` with payload violating its schema; assert `WriteValidationError` raised; assert sqlite tx counter unchanged + zero rows added to op-store table. (2) Seed DB with historical op-store row, tighten in-repo schema for that `schema_id` so the row would now fail, restart engine via `Engine.open`; assert open succeeds without error and no validation runs.
+**Assertion:** A `PreparedWrite::OpStore` whose payload fails its `schema_id`'s JSON Schema is rejected save-time with `SchemaValidationError` BEFORE any row is written or committed; the writer transaction is not opened, no partial state is observable post-rejection. Re-opening the database with `Engine.open` on a DB containing historical op-store rows whose payloads no longer satisfy the current `schema_id`'s schema (e.g. schema tightened in-repo between releases) does NOT trigger validation; open succeeds.
+**Measurement:** (1) Submit `PreparedWrite::OpStore` with payload violating its schema; assert `SchemaValidationError` raised; assert sqlite tx counter unchanged + zero rows added to op-store table. (2) Seed DB with historical op-store row, tighten in-repo schema for that `schema_id` so the row would now fail, restart engine via `Engine.open`; assert open succeeds without error and no validation runs.
 **Fixture:** json-schema-validation-cadence fixture (save-time-reject + open-time-skip).
+
+## AC-061a: `append_only_log` writes preserve authoritative history
+**Requirement ref:** REQ-057
+**Test id:** T-061a
+**Assertion:** Two accepted writes to the same `append_only_log` collection and `record_key` produce two distinct authoritative rows in `operational_mutations`; neither write overwrites the earlier row.
+**Measurement:** Declare an `append_only_log` collection in fixture metadata; submit two `PreparedWrite::OpStore` writes with the same logical key and distinct payloads; query `operational_mutations`; assert row count increases by 2 and both payloads remain present in commit order.
+**Fixture:** op-store-append-log fixture (test-plan.md fixture spec — pending).
+
+## AC-061b: `latest_state` stores one authoritative current row per key
+**Requirement ref:** REQ-057
+**Test id:** T-061b
+**Assertion:** Two accepted writes to the same `latest_state` collection and `record_key` leave exactly one row in `operational_state` for that key, and that row's payload equals the second write's payload.
+**Measurement:** Declare a `latest_state` collection; submit two writes with the same key and distinct payloads; query `operational_state`; assert exactly one row for that key and payload equality with the later write.
+**Fixture:** op-store-latest-state fixture (test-plan.md fixture spec — pending).
+
+## AC-061c: No derived `operational_current` table exists
+**Requirement ref:** REQ-057
+**Test id:** T-061c
+**Assertion:** A migrated 0.6.0 database schema contains `operational_collections`, `operational_mutations`, and `operational_state`, and contains no table named `operational_current`.
+**Measurement:** Open a fresh 0.6.0 DB and inspect `sqlite_schema`; assert the three accepted table names exist and `operational_current` does not.
+**Fixture:** fresh-migrated-db fixture.
+
+## AC-062: Collection registry schema exposes the accepted narrow lifecycle
+**Requirement ref:** REQ-058
+**Test id:** T-062
+**Assertion:** `operational_collections` exposes exactly the lifecycle-bearing columns `name`, `kind`, `schema_json`, `retention_json`, `format_version`, `created_at` and exposes no `disabled_at` or equivalent status / rename column.
+**Measurement:** Inspect `PRAGMA table_info(operational_collections)`; assert the documented columns are present and assert absence of `disabled_at`, `renamed_from`, `retired_at`, and `status`.
+**Fixture:** fresh-migrated-db fixture.
+
+## AC-063a: Exhausted projection failure is recorded durably
+**Requirement ref:** REQ-059
+**Test id:** T-063a
+**Assertion:** A projection batch that exhausts the fixed retry policy records exactly one durable failure row in the `projection_failures` op-store collection and leaves the corresponding vector projection absent.
+**Measurement:** Use a deterministic failing embedder fixture; submit one vector-producing write; wait for retries to exhaust; query `operational_mutations` for collection `projection_failures`; assert exactly one new failure row for the batch and assert no vector row materialized for that batch's canonical row.
+**Fixture:** projection-failure fixture (test-plan.md fixture spec — pending).
+
+## AC-063b: Restart does not silently clear terminal projection failures
+**Requirement ref:** REQ-059
+**Test id:** T-063b
+**Assertion:** After AC-063a, closing and reopening the engine leaves the durable `projection_failures` row present and does not materialize the missing vector projection before any explicit regenerate workflow is invoked.
+**Measurement:** Produce AC-063a failure; record failure-row identity; close and reopen; assert the same failure row remains in `operational_mutations`; query for the vector projection before any recovery command; assert still absent.
+**Fixture:** as AC-063a.
+
+## AC-063c: `recover --rebuild-projections` performs the explicit regenerate workflow
+**Requirement ref:** REQ-059
+**Test id:** T-063c
+**Assertion:** Running `fathomdb recover --accept-data-loss --rebuild-projections` against the AC-063a fixture materializes the missing projection from canonical rows without requiring a second application write.
+**Measurement:** Produce AC-063a failure; run the documented recovery command; reopen if required by implementation; query for the previously-missing vector projection; assert present and queryable.
+**Fixture:** as AC-063a + built CLI binary.
 
 ---
 
@@ -900,6 +949,9 @@ Every REQ in `requirements.md` has ≥1 AC:
 | REQ-054 | AC-058 |
 | REQ-055 | AC-059a/b |
 | REQ-056 | AC-060a/b |
+| REQ-057 | AC-061a/b/c |
+| REQ-058 | AC-062 |
+| REQ-059 | AC-063a/b/c |
 
 ## Lock-blocking dependencies
 

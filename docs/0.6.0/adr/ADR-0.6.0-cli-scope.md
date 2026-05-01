@@ -2,7 +2,7 @@
 title: ADR-0.6.0-cli-scope
 date: 2026-04-27
 target_release: 0.6.0
-desc: CLI = admin + recovery + read-only query (search/get/list); writes stay binding-only
+desc: CLI = two-root operator surface (`recover` + `doctor`); writes and application queries stay SDK-only
 blast_radius: cli/ binding source; interfaces/cli.md; recovery verb set (FU-TWB2); ADR-0.6.0-typed-write-boundary; ADR-0.6.0-async-surface (CLI sync)
 status: accepted
 ---
@@ -22,32 +22,37 @@ CLI scope decides whether `fathomdb` binary is operator tool or query interface.
 
 ## Decision
 
-**Admin + recovery + read-only query.**
+**Two-root operator CLI.**
 
 Verb set:
 
-- **Admin / lifecycle:** `open`, `init`, `close`, `vacuum`.
-- **Recovery / inspection:** `dump-schema`, `dump-row-counts`, `dump-profile`, `integrity-check`, `export`, `regenerate` (vector projections).
-- **Read-only query:** `search`, `get`, `list`.
+- **Lossy / non-bit-preserving:** `fathomdb recover --accept-data-loss <sub-flag>...`
+  where the 0.6.0 sub-flag set is
+  `{--truncate-wal, --rebuild-vec0, --rebuild-projections, --excise-source <id>, --purge-logical-id <id>, --restore-logical-id <id>}`.
+- **Bit-preserving / read-only:** `fathomdb doctor <verb>`
+  where the 0.6.0 verb set is
+  `{check-integrity, safe-export, verify-embedder, trace, dump-schema, dump-row-counts, dump-profile}`.
 
-**Writes stay binding-only.** No `cli write-node`, no `cli set-config-from-flag`, no SQL escape hatch.
+`--accept-data-loss` is root-level and mandatory on `recover`; it is rejected on `doctor` verbs. `--json` is the normative machine-readable contract on every verb. `doctor check-integrity` emits a single JSON object; other verb-level JSON shapes are owned by `interfaces/cli.md` and `design/recovery.md`.
 
-Specific full verb enumeration with flags and examples lives in `interfaces/cli.md`; FU-TWB2 enumerates the recovery verb set in detail.
+**Writes stay binding-only.** No `cli write-node`, no `cli set-config-from-flag`, no SQL escape hatch. **Application query verbs also stay out of the 0.6.0 CLI.** Ad-hoc reads are handled via operator verbs such as `trace`, `dump-*`, and `check-integrity`, not a parallel `search/get/list` application surface.
+
+Specific full flag spelling and exit-code numbers live in `interfaces/cli.md`; canonical verb ownership and recovery semantics live in `design/recovery.md`.
 
 ## Options considered
 
-**A — Admin + recovery only.** Smallest CLI; clear operator role. Operators wanting ad-hoc reads must write a script using a binding. Pushes inspection burden onto bindings.
+**A — Two-root operator CLI (chosen).** Smallest operator-complete surface; clear mutation split (`recover` vs `doctor`); no SDK-mirroring query layer to maintain.
 
-**B — Admin + recovery + read-only query (chosen).** Covers operator inspection use case (TWB-2) without re-opening SQL escape-hatch class. Reads are valuable for operators and CI inspection scripts. Writes stay binding-only.
+**B — Operator CLI + read-only application query (`search/get/list`).** Covers ad-hoc inspection. Rejected: introduces a second public query surface with little additional operator value over `trace`, `dump-*`, and integrity tooling.
 
-**C — Full surface (admin + recovery + query + write).** CLI is complete interface. Largest surface; writes via CLI flags get unwieldy quickly (typed inputs collapse poorly into command-line flags); tempting but speculative.
+**C — Full surface (admin + recovery + query + write).** CLI is complete interface. Largest surface; typed writes via CLI flags get unwieldy quickly; query parity doubles public surface. Rejected.
 
 ## Consequences
 
-- `interfaces/cli.md` enumerates the verb set; each verb has typed CLI flags (no SQL).
-- Recovery verbs (TWB-2 followup) land here as concrete typed commands.
-- `search` / `get` / `list` are read-only typed verbs over the engine read surface.
-- Future write verbs are out of scope for 0.6.0; require this ADR to be re-opened.
+- `interfaces/cli.md` enumerates concrete flag spelling and exit-code numbers for the two roots.
+- `design/recovery.md` owns the canonical verb table, bit-preserving vs lossy classification, JSON-output posture, and `check-integrity` report shape.
+- Future application query verbs are out of scope for 0.6.0; adding them requires this ADR to be re-opened.
+- Future write verbs are out of scope for 0.6.0; adding them also requires this ADR to be re-opened.
 - CLI is sync (per async-surface ADR); no `--async` flag, no concurrency knobs.
 
 ## Citations

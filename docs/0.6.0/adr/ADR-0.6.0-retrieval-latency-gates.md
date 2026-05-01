@@ -45,7 +45,7 @@ Phase 2 #9 acceptance ADR. Sets end-to-end vector-search latency that 0.6.0 must
   engine-owned thread per ADR-0.6.0-async-surface Invariant B) + ANN
   candidate fetch + canonical row fetch + result serialization to
   in-process result type. **Excludes** IPC / network / subprocess-bridge
-  envelope, reranker, and graph-expand stages.
+  envelope and graph-expand stages.
 
 ## Options considered
 
@@ -71,9 +71,8 @@ Phase 2 #9 acceptance ADR. Sets end-to-end vector-search latency that 0.6.0 must
 - Concurrent-write impact on retrieval latency is a separate followup
   (write-throughput SLI #24 + checkpoint stall analysis); not gated
   here.
-- Reranker / graph-expand stages add their own latency; ADR sets the
-  **default-pipeline** gate. Stage-augmented latency is documented but
-  not gated in 0.6.0.
+- Graph-expand adds its own latency; ADR sets the **default-pipeline**
+  gate. Stage-augmented latency is documented but not gated in 0.6.0.
 - FU-PERF-ADR-ALIGN closed by this amendment: workload definition now
   matches text-query-latency-gates' protocol granularity.
 

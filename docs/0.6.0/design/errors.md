@@ -89,6 +89,39 @@ This file owns the stable inputs bindings map from:
 
 `interfaces/{python,ts,cli}.md` own idiomatic casing and concrete class names.
 
+## Binding-facing class matrix
+
+The matrix below is the canonical cross-binding class-stem table for 0.6.0.
+Per-language interface docs may apply idiomatic casing, but they must not
+rename the semantic class stems or collapse distinct rows.
+
+| Rust-side surface | Python class stem | TypeScript class stem | CLI dispatch class |
+|---|---|---|---|
+| `StorageError` | `StorageError` | `StorageError` | runtime failure |
+| `ProjectionError` | `ProjectionError` | `ProjectionError` | runtime failure |
+| `VectorError` | `VectorError` | `VectorError` | runtime failure |
+| `EmbedderError` | `EmbedderError` | `EmbedderError` | runtime failure |
+| `SchedulerError` | `SchedulerError` | `SchedulerError` | runtime failure |
+| `OpStoreError` | `OpStoreError` | `OpStoreError` | runtime failure |
+| `WriteValidationError` | `WriteValidationError` | `WriteValidationError` | runtime failure |
+| `SchemaValidationError` | `SchemaValidationError` | `SchemaValidationError` | runtime failure |
+| `Overloaded` | `OverloadedError` | `OverloadedError` | runtime failure |
+| `Closing` | `ClosingError` | `ClosingError` | runtime failure |
+| `DatabaseLocked` | `DatabaseLockedError` | `DatabaseLockedError` | lock-held |
+| `Corruption(CorruptionDetail)` | `CorruptionError` | `CorruptionError` | corruption |
+| `IncompatibleSchemaVersion` | `IncompatibleSchemaVersionError` | `IncompatibleSchemaVersionError` | incompatible-schema |
+| `MigrationError` | `MigrationError` | `MigrationError` | migration-failed |
+| `EmbedderIdentityMismatchError` | `EmbedderIdentityMismatchError` | `EmbedderIdentityMismatchError` | open mismatch |
+| `EmbedderDimensionMismatchError` | `EmbedderDimensionMismatchError` | `EmbedderDimensionMismatchError` | open/runtime mismatch |
+
+Decision note:
+
+- Python uses a single rooted hierarchy beneath one base class.
+- TypeScript root plurality remains a design-time choice preserved in
+  `design/bindings.md` and `interfaces/typescript.md`.
+- The leaf-class rows above are canonical regardless of whether TS ultimately
+  exports one root or two roots.
+
 ## Corruption detail owner
 
 This file is the canonical host for the `CorruptionDetail` payload contract
@@ -115,6 +148,19 @@ Doctor finding codes are not required to equal the `Engine.open`
 `CorruptionKind` set. In particular, `E_CORRUPT_INTEGRITY_CHECK` is a
 doctor-report code for `doctor check-integrity --full`, not an `Engine.open`
 corruption kind.
+
+### `OpenStage`
+
+The complete 0.6.0 `OpenStage` enum for corruption detail is exactly:
+
+- `WalReplay`
+- `HeaderProbe`
+- `SchemaProbe`
+- `EmbedderIdentity`
+
+Per ADR-0.6.0-corruption-open-behavior, `LockAcquisition` is not an
+`OpenStage` member. Lock contention is surfaced via a separate typed
+`DatabaseLocked` error, not as corruption detail.
 
 ### `Engine.open` corruption table
 

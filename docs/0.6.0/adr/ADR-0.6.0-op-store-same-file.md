@@ -31,9 +31,8 @@ whatever else they need.**
 
 ### What lives in op-store (in scope)
 
-High-churn current-state bookkeeping where mutation history has
-little value and full node supersession would be pure write
-amplification:
+High-churn operational data that belongs inside the embedded database
+but does not belong in the primary graph surface:
 
 - connector health (per-minute updates)
 - scheduler cursors, poller `last_check` / `last_result`
@@ -53,29 +52,42 @@ amplification:
 
 The op-store is **not** a back door for application domain schema.
 
+The op-store also does **not** store derived performance summaries or
+benchmark rollups. If operators need counts, rates, or timing
+aggregates from op-store data, those are computed at query time from
+authoritative rows.
+
 ### Tables
 
 Three tables, named with the `operational_*` prefix (per OPS-1):
 
 - `operational_collections` — collection registry. Columns:
   `name PK, kind, schema_json, retention_json, format_version,
-  created_at, disabled_at`. `kind` ∈ {`append_only_log`,
-  `latest_state`}.
-- `operational_mutations` — canonical append-only history. Columns:
+  created_at`. `kind` ∈ {`append_only_log`, `latest_state`}.
+- `operational_mutations` — authoritative append-only rows for
+  `append_only_log` collections. Columns:
   `id PK, collection_name FK, record_key, op_kind, payload_json,
-  source_ref, created_at`. `op_kind` ∈ {`append`, `put`, `delete`,
-  `increment`}.
-- `operational_current` — derived / rebuildable latest-state
-  projection. Only meaningful for `latest_state` kind. Rebuildable
-  from `operational_mutations`.
+  source_ref, created_at`. `op_kind` ∈ {`append`}.
+- `operational_state` — authoritative current-state rows for
+  `latest_state` collections. Columns:
+  `collection_name FK, record_key, payload_json, source_ref,
+  created_at, updated_at`; primary key = `(collection_name, record_key)`.
 
 ### Two collection kinds
 
-- **`append_only_log`** — every write appends; no current-state row;
-  reads stream recent mutations.
-- **`latest_state`** — every write appends a mutation; current-state
-  reads come from `operational_current` (rebuildable from the
-  mutation log).
+- **`append_only_log`** — every write appends one authoritative row
+  to `operational_mutations`; reads stream those rows directly.
+- **`latest_state`** — every write upserts one authoritative row in
+  `operational_state`; reads come directly from `operational_state`.
+  There is no derived / rebuildable companion table for op-store data
+  in 0.6.0.
+
+0.6.0 deliberately does **not** add first-class op-store verbs for
+`put`, `delete`, or `increment`, and it does not model collection
+disable / soft-retire lifecycle. Clients encode state transitions in
+their stored payloads and collection choice. If a future operator
+workflow needs explicit mutation verbs or collection-disable
+semantics, that reopens this ADR.
 
 The four folded docs (op-store feature, op-store concept, payload schema
 validation, secondary indexes) all describe primitives that survive as

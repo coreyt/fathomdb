@@ -417,7 +417,7 @@ the ADR is authoritative.
   `dev/notes/0.6.0-rewrite-proposal.md` Tests §5. *Cross-cite:*
   ADR-0.6.0-tier1-ci-platforms (per-binding smoke spec).
 
-## Public surface (REQ-053..REQ-056)
+## Public surface (REQ-053..REQ-059)
 
 - **REQ-053 — Five-verb application runtime SDK surface.** Public
   application runtime SDK surface is `Engine.open`, `admin.configure`,
@@ -428,7 +428,7 @@ the ADR is authoritative.
   *Cross-cite:* ADR-0.6.0-prepared-write-shape (write-shape),
   ADR-0.6.0-typed-write-boundary.
 
-- **REQ-054 — Recovery / admin verbs are CLI-only.** `rebuild_projections`,
+- **REQ-054 — Recovery / repair verbs are CLI-only.** `rebuild_projections`,
   `restore_*`, `check_integrity`, `safe_export`, etc. are reachable
   only via the CLI surface, not via the runtime SDK. (Distinct from
   REQ-037 which is the SDK-side unreachability claim; this is the
@@ -436,11 +436,12 @@ the ADR is authoritative.
   *Source:* `dev/notes/0.5.7-corrected-scope.md` D2. *Cross-cite:*
   ADR-0.6.0-cli-scope.
 
-- **REQ-055 — `projection_cursor` exposed on read tx + write commit.**
+- **REQ-055 — Freshness cursors exposed on read tx + write commit.**
   Read transactions expose a monotonic non-decreasing
-  `projection_cursor`; write commits return the cursor value at which
-  their write becomes visible. Clients reason about staleness without
-  polling internal state.
+  `projection_cursor`; write commits return a monotonic write cursor
+  identifying the commit just accepted. Clients reason about staleness
+  by polling until `read_projection_cursor >= write_cursor`; the write
+  return value is not itself the read-side `projection_cursor`.
   *Source:* ADR-0.6.0-projection-freshness-sli.
 
 - **REQ-056 — Engine errors as typed, language-idiomatic exceptions.**
@@ -448,6 +449,32 @@ the ADR is authoritative.
   a typed exception hierarchy; clients distinguish error classes
   without string-pattern matching.
   *Source:* ADR-0.6.0-error-taxonomy.
+
+- **REQ-057 — Op-store collection kinds are authoritative.** 0.6.0
+  operational-state persistence exposes exactly two authoritative collection
+  kinds: `append_only_log` and `latest_state`. `append_only_log` preserves
+  durable history by appending authoritative rows to
+  `operational_mutations`; `latest_state` stores the authoritative current row
+  directly in `operational_state` keyed by `(collection_name, record_key)`.
+  0.6.0 does not reintroduce a derived `operational_current` table.
+  *Source:* ADR-0.6.0-op-store-same-file.
+
+- **REQ-058 — Op-store collection lifecycle is explicit and narrow.**
+  Operational collections are named registry entries with declared metadata
+  (`kind`, schema/retention metadata, format version, creation time) and a
+  fixed collection kind. 0.6.0 exposes no collection rename, disable,
+  soft-retire, or alternate latest-state lifecycle.
+  *Source:* ADR-0.6.0-op-store-same-file. *Cross-cite:*
+  `design/op-store.md`.
+
+- **REQ-059 — Projection failure diagnosis and regeneration are operator
+  workflows.** Exhausted projection failures are recorded durably in
+  `projection_failures`, and operators can explicitly regenerate projections
+  from canonical state through the accepted recovery surface. The workflow name
+  "regenerate" in 0.6.0 maps to
+  `fathomdb recover --accept-data-loss --rebuild-projections`; it is not a
+  separate SDK verb or separate CLI root.
+  *Source:* ADR-0.6.0-projection-model; ADR-0.6.0-cli-scope.
 
 ---
 

@@ -56,7 +56,7 @@ Seeded:
 
 **Origin:** critic-3 OPS-1 (2026-04-27); ADR-0.6.0-op-store-same-file.
 **Target release:** 0.6.0 (Phase 3 design/engine.md).
-**Notes:** `operational_*` prefix (folded-design convention: `operational_collections`, `operational_mutations`, `operational_current`). Document migration ordering: op-store tables created in the same schema-migration step as the primary tables they reference. Reject any op-store table without the prefix in CI.
+**Notes:** `operational_*` prefix (folded-design convention: `operational_collections`, `operational_mutations`, `operational_state`). Document migration ordering: op-store tables created in the same schema-migration step as the primary tables they reference. Reject any op-store table without the prefix in CI.
 
 ## FU-OPS2: safe_export op-store coverage + redaction policy
 
@@ -87,6 +87,12 @@ Seeded:
 **Origin:** critic on M-4 (2026-04-27); ADR-0.6.0-vector-identity-embedder-owned.
 **Target release:** 0.6.0 (CI gate).
 **Notes:** Replace the grep sketch with a typed AST / typegraph check: "no struct reachable from `VectorConfig` references `EmbedderIdentity` or any of its fields by type." Concrete crate path is `fathomdb-core::config::*`. Implementation candidates: a unit test over the type graph, a `#[cfg(test)]` `static_assertions` set, or a clippy lint. Pick whichever is simplest at implementation time.
+
+## FU-EMB8: Intentional embedder identity-change workflow
+
+**Origin:** over-design audit OD-15 (2026-04-30); ADR-0.6.0-vector-identity-embedder-owned.
+**Target release:** 0.8.0.
+**Notes:** 0.6.0 fails closed on `EmbedderIdentityMismatch` and ships no `accept_identity_change` bypass. Revisit in 0.8.0 with a concrete operator workflow for intentional embedder swaps, recorded-identity update timing, and recovery / regeneration boundaries. Primary draft home: `docs/0.8.0/adr/ADR-0.8.0-embedder-identity-change-workflow.md`.
 
 ## FU-ASYNC5: TS cancellation semantics
 

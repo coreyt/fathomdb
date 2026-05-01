@@ -359,7 +359,7 @@ User-visible outcomes harvested from prior design notes. These feed Phase 3a; th
 
 ### Operability
 
-- Operator can recover from physical, logical, or semantic corruption via a dedicated `fathomdb doctor` CLI (check-integrity, regen-vectors, rebuild-missing-projections, rebuild-fts, excise-source, purge-logical-id, restore-logical-id, safe-export, trace-source) without writing application code. Source: `dev/notes/0.6.0-rewrite-proposal.md` § "Recovery tooling (CLI, not SDK)"; `dev/dbim-playbook.md` §3, §11. Category: operability.
+- Operator can recover from physical, logical, or semantic corruption via a dedicated two-root CLI: bit-preserving inspection/export under `fathomdb doctor <verb>` and lossy mutation paths under `fathomdb recover --accept-data-loss ...`, without writing application code. Source: `dev/notes/0.6.0-rewrite-proposal.md` § "Recovery tooling (CLI, not SDK)"; `dev/dbim-playbook.md` §3, §11. Category: operability.
 - Recovery tooling is never reachable from the application runtime SDK — runtime callers cannot accidentally invoke `excise_source`, `purge_logical_id`, or `safe_export`. Source: `dev/notes/0.5.7-corrected-scope.md` D2; `dev/notes/0.6.0-rewrite-proposal.md` § "Recovery tooling". Category: operability.
 - Operator can `trace --source-ref <id>` to enumerate every canonical row produced by a given run/step/action for blast-radius analysis before excision. Source: `dev/dbim-playbook.md` §6, §11. Category: operability.
 - Operator can run `check-integrity` to aggregate `PRAGMA integrity_check`, `PRAGMA foreign_key_check`, projection-shape checks, missing-chunk/vector detection, and active-row uniqueness per `logical_id` in one invocation. Source: `dev/dbim-playbook.md` §10. Category: operability.
@@ -388,4 +388,3 @@ User-visible outcomes harvested from prior design notes. These feed Phase 3a; th
 - Public Python admin surface is ≤ 5 verbs (`Engine.open`, `admin.configure`, `write`, `search`, `close`). Source: `dev/notes/0.5.7-corrected-scope.md` §"0.6.0 RFC"; `dev/notes/0.6.0-rewrite-proposal.md` §"Public API: five verbs". Category: other (API surface).
 - Recovery tools (`rebuild_projections`, `restore_*`, `check_integrity`, `safe_export`, etc.) are CLI-only, not part of the application runtime SDK. Source: `dev/notes/0.5.7-corrected-scope.md` D2. Category: other (surface boundary).
 - Engine ships as a single-file DB with no server and no network dependency. Source: `dev/notes/0.6.0-rewrite-proposal.md` Essentials §17. Category: other.
-

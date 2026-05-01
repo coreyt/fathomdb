@@ -25,6 +25,10 @@ The engine owns **two distinct pools** — they are not the same pool:
 
 - **Tokio runtime worker pool — orchestration only.** Drives async tasks for projection jobs (await embedder result, submit commit to writer). Default size: 2 worker threads (`scheduler_runtime_threads`). Configurable per `Engine.open`. Tokio workers NEVER run `embed()` directly — that would violate ADR-0.6.0-embedder-protocol § Invariant 4.
 - **Embedder dispatch pool — `embed()` calls only.** Per ADR-0.6.0-embedder-protocol § Invariant 4. Default size: `num_cpus::get()` (`embedder_pool_size`). Configurable per `Engine.open`.
+  The override exists because embedded deployments range from laptops
+  sharing cores with the host app to dedicated ingest workers; operators
+  need one lever to trade projection throughput against CPU / memory
+  contention from local embedding.
 - Scheduler tasks call `tokio::task::spawn_blocking` (or equivalent handoff) to move from the runtime pool onto the embedder pool when invoking `embed()`. Result is awaited back on the runtime pool.
 
 ### Thread isolation
@@ -43,7 +47,8 @@ The engine owns **two distinct pools** — they are not the same pool:
 
 - **Bounded in-flight scheduler tasks** via `tokio::sync::Semaphore` sized `4 * embedder_pool_size`.
 - Excess pending jobs queue on the cursor surface (i.e. as un-spawned chunk_id-greater-than-cursor rows), NOT as live futures. Memory does not grow with backlog.
-- `projection_queue_depth` metric counts un-spawned pending jobs; `tasks_in_flight` counts live tokio tasks; `embedder_saturation` counts active embedder pool slots / pool size.
+- `projection_queue_depth` counts un-spawned pending jobs; `embedder_saturation`
+  counts active embedder pool slots / pool size.
 
 ### Per-job cancellation
 
@@ -62,7 +67,9 @@ Ordered shutdown:
 
 ### Observability
 
-- Metrics surface exposes: `projection_queue_depth`, `tasks_in_flight`, `embedder_saturation`. Used by binding-level adapters for 429-shed (per ADR-0.6.0-projection-model § Backpressure layer 4).
+- Metrics surface exposes: `projection_queue_depth`, `embedder_saturation`.
+  Used by binding-level adapters for 429-shed (per
+  ADR-0.6.0-projection-model § Backpressure layer 4).
 - **Pool resize at runtime: out of scope** for 0.6.0. Sizes set at `Engine.open` only.
 
 ## Options considered

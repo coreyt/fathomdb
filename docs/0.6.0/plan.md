@@ -19,6 +19,32 @@ Critic mapping:
 Cadence: docs written/updated in batches within a turn. Critic + HITL review **after**
 the turn. Any doc changed after lock but before implementation → re-review.
 
+## Progress (as of 2026-05-01)
+
+**Phase 3a — `requirements.md`: status unchanged (`draft`).** REQ set extended through HITL queue + over-design audit resolutions (REQ-057/058/059 added per OD-29). Critic + HITL gates not yet flipped to `locked`.
+
+**Phase 3b — `acceptance.md`: status unchanged (`draft`).** AC coverage extended for op-store, projection-failure regenerate workflow (per OD-30). Not yet `locked`.
+
+**Phase 3c — `architecture.md`: locked 2026-04-29 (unchanged).** Subsequent corpus repairs (OD-22 / OD-25 / OD-28) applied as locked-doc amendments under same precedent.
+
+**Phase 3d — `design/*.md`: IN PROGRESS.** 13/13 files now drafted (vs 1/13 at last update). `design/lifecycle.md` landed on 2026-05-01 and the corpus status text now treats it as an existing draft, not a missing design slot. Status:
+- `design/bindings.md` — `locked` (unchanged from 2026-04-29).
+- `design/embedder.md`, `design/engine.md`, `design/errors.md`, `design/lifecycle.md`, `design/migrations.md`, `design/op-store.md`, `design/projections.md`, `design/recovery.md`, `design/release.md`, `design/retrieval.md`, `design/scheduler.md`, `design/vector.md` — `draft` (critic + HITL gates pending).
+
+**Over-design audit:** 30/30 resolved. OD-01 (`tasks_in_flight` orphan metric) and OD-02 (brand-specific default adapter clause) were removed. See `over-design-audit.md`.
+
+**HITL queue:** ENG6, ENG3, E3, E5, E7, X4, X6 adjudicated. Queue otherwise tracked separately in `hitl-queue.md`.
+
+**Phase 3e — `interfaces/*.md`: IN PROGRESS.** `interfaces/rust.md`, `interfaces/python.md`, `interfaces/typescript.md`, `interfaces/cli.md`, and `interfaces/wire.md` are now drafted. The remaining work is conflict cleanup, critic pass, and any HITL decisions on Rust support posture and TS error-root shape.
+
+**Phase 3f — `test-plan.md`: not started.**
+
+**`security-review.md`: not started.**
+
+**Phase 4 — Freeze: not started.**
+
+**Next step:** run critic pass on the now-complete draft design set (parallelizable per Phase 3d soft dep); then prepare the next HITL gate batch for Phase 3a / 3b / 3d lock flips.
+
 ## Progress (as of 2026-04-29)
 
 **Phase 2 — Decision index + ADRs: complete + extended.** 30 ADRs accepted. #1..#28 from earlier passes; #29 corruption-open-behavior (FU-VEC13-CORRUPTION + FU-RECOVERY-CORRUPTION-DETECTION resolved); #30 database-lock-mechanism (research-driven hybrid: sidecar flock + PRAGMA locking_mode=EXCLUSIVE on writer in WAL; overrides earlier "no sidecar" assertion in architecture.md).
@@ -29,7 +55,7 @@ the turn. Any doc changed after lock but before implementation → re-review.
 
 **Phase 3c — `architecture.md`: drafted + critic-applied + locked 2026-04-29.** 13 design/*.md files proposed. Amended same-day for ADR #30 (§ 5 lock mechanism rewritten; § 8 deltas updated; § 11 writer ASCII updated; on-disk file layout adds `.lock`, removes `-shm` under WAL+EXCLUSIVE). Locked-doc amendment authorized by ADR per crate-topology precedent.
 
-**Phase 3d — `design/*.md`: STARTED.** `design/bindings.md` drafted + critic-applied per Phase 3 step 4 value-test framing; verdict = distinct role; KEEP. Status: draft (HITL gate before flip to locked). Other 12 design/*.md files: not started.
+**Phase 3d — `design/*.md`: STARTED.** Historical snapshot only; superseded by the 2026-05-01 progress block above. At this point in the timeline only `design/bindings.md` had been drafted + critic-applied per Phase 3 step 4 value-test framing; verdict = distinct role; KEEP. Status: draft (HITL gate before flip to locked).
 
 **Phase 3e — `interfaces/*.md`: not started.** Scaffold stubs only.
 
@@ -41,7 +67,7 @@ the turn. Any doc changed after lock but before implementation → re-review.
 
 **Followups closed during this run:** FU-VEC13-CORRUPTION, FU-RECOVERY-CORRUPTION-DETECTION, FU-FATHOMDB-QUERY-DISPOSITION (latter resolved = kept separate; pure AST-to-plan compiler invariant).
 
-**Next step:** HITL gate on `design/bindings.md` status flip; then Phase 3d remaining subsystem design files (parallelizable per plan.md soft deps once architecture is locked). Reader-pool sizing decision pending in design/engine.md (default = `num_cpus / 2`, config override; no ADR per HITL).
+**Next step:** Historical next step from 2026-04-29: HITL gate on `design/bindings.md` status flip; then continue Phase 3d subsystem design drafting (parallelizable per plan.md soft deps once architecture is locked). Reader-pool sizing decision pending in design/engine.md (default = `num_cpus / 2`, config override; no ADR per HITL).
 
 ## Progress (as of 2026-04-27)
 
