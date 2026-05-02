@@ -20,3 +20,15 @@ if [ -f src/ts/package.json ] && [ ! -d src/ts/node_modules ]; then
   echo "Installing TypeScript dev tooling..."
   (cd src/ts && npm install --silent)
 fi
+
+# Repo-wide markdown tooling (markdownlint-cli2 + prettier).
+if [ -f package.json ] && [ ! -d node_modules ]; then
+  echo "Installing markdown dev tooling (markdownlint-cli2 + prettier)..."
+  npm install --silent
+fi
+
+# Lychee link checker (Rust binary).
+if ! command -v lychee >/dev/null 2>&1; then
+  echo "Installing lychee link checker..."
+  cargo install --locked --quiet lychee
+fi

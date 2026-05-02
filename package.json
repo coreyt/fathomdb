@@ -1,0 +1,14 @@
+{
+  "name": "fathomdb-dev-tooling",
+  "private": true,
+  "description": "Repo-wide dev tooling (markdown lint + format + link check). Not published. The TypeScript binding lives in src/ts/.",
+  "scripts": {
+    "lint:md": "markdownlint-cli2",
+    "lint:md-format": "prettier --check '**/*.md'",
+    "format:md": "prettier --write '**/*.md'"
+  },
+  "devDependencies": {
+    "markdownlint-cli2": "^0.18.0",
+    "prettier": "^3.4.0"
+  }
+}

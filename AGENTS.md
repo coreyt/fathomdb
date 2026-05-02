@@ -26,13 +26,15 @@ Bullet form, prescriptive, ≤300 lines. Link out, do not inline.
 
 Use the typed dev-loop verbs (Phase 2). Each emits **concise output on pass, structured diagnostic on fail**, with full output spilled to `/tmp/fathomdb-agent-<verb>-<pid>.log` when capped.
 
-| Verb | Script | Purpose |
-|------|--------|---------|
-| build | `./scripts/agent-build.sh` | Compile workspace (Rust + Python install + TS build if installed) |
-| lint | `./scripts/agent-lint.sh` | clippy + ruff |
-| typecheck | `./scripts/agent-typecheck.sh` | cargo check + pyright + tsc --noEmit |
-| test | `./scripts/agent-test.sh` | cargo test + pytest |
-| verify | `./scripts/agent-verify.sh` | lint → typecheck → test (short-circuits on first fail) |
+| Verb      | Script                         | Purpose                                                           |
+| --------- | ------------------------------ | ----------------------------------------------------------------- |
+| build     | `./scripts/agent-build.sh`     | Compile workspace (Rust + Python install + TS build if installed) |
+| lint      | `./scripts/agent-lint.sh`      | clippy + ruff + markdownlint + prettier --check + lychee          |
+| typecheck | `./scripts/agent-typecheck.sh` | cargo check + pyright + tsc --noEmit                              |
+| test      | `./scripts/agent-test.sh`      | cargo test + pytest                                               |
+| verify    | `./scripts/agent-verify.sh`    | lint → typecheck → test (short-circuits on first fail)            |
+
+Markdown lint covers `AGENTS.md`, `dev/plans/`, `dev/progress/`, README files, and root metadata. Pre-existing legacy under `dev/adr/`, `dev/design/`, `dev/agents/`, `dev/deps/`, etc. is excluded — clean up incrementally when touching those files. Auto-fix: `npm run format:md` (prettier --write) + `./node_modules/.bin/markdownlint-cli2 --fix`.
 
 Run `./scripts/agent-verify.sh` after every meaningful edit. Do not ship a PR with verify failing.
 
@@ -43,6 +45,7 @@ The broader CI gate is `./scripts/check.sh` (adds mkdocs build); the agent-loop 
 - Rust toolchain: stable per `rust-version` in `Cargo.toml`. clippy + rustfmt come with rustup defaults.
 - Python dev tooling: `pip install -e 'src/python[dev]'` — installs `pytest`, `hypothesis`, `ruff`, `pyright`. Without this, the Python lint/typecheck/test steps emit a skip notice and pass without exercising.
 - TypeScript: `cd src/ts && npm install` if you intend to touch TS. Without this, TS verbs skip.
+- Markdown tooling: `npm install` at repo root — installs `markdownlint-cli2` + `prettier`. `cargo install --locked lychee` for link checking (one-time). All wired up by `./scripts/bootstrap.sh`.
 
 ## 4. Verification ordering
 
@@ -72,7 +75,7 @@ Do not paraphrase, summarize, or shorten compiler diagnostics — pass them thro
 
 ## 7. Subagent rules
 
-- **Main thread orchestrates.** Do not spawn an "orchestrator" subagent — the main thread *is* the orchestrator. (`feedback_orchestrator_thread.md`)
+- **Main thread orchestrates.** Do not spawn an "orchestrator" subagent — the main thread _is_ the orchestrator. (`feedback_orchestrator_thread.md`)
 - **Releases:** main thread plans; delegate coding to `implementer` (in worktree); request diff review from `code-reviewer`. (`feedback_orchestrate_releases.md`)
 - **Subagents win for fan-out.** Parallel research, format-strict review, output isolation. Examples: searching across crates, auditing a diff, generating an ADR draft.
 - **Subagents lose for shared-state edits.** A multi-agent edit pipeline drops tacit context at every handoff. Single-agent for any edit on shared mutable state.

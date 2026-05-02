@@ -1,0 +1,54 @@
+// markdownlint-cli2 globs and ignore patterns.
+//
+// Scope: lint actively-maintained markdown only. Legacy / research-substrate
+// directories are excluded. The point of md lint is to keep agent-facing
+// instruction docs clean (AGENTS.md, plans, progress, ADRs); reflowing
+// historical research notes is busywork that violates F4 (stale > missing).
+{
+  "config": {
+    "extends": ".markdownlint.jsonc"
+  },
+  "globs": ["**/*.md"],
+  "ignores": [
+    // Vendored / build outputs
+    "node_modules/**",
+    "src/ts/node_modules/**",
+    "target/**",
+    "site/**",
+    "dist/**",
+    "**/dist/**",
+    ".venv/**",
+    "**/.venv/**",
+    ".cache/**",
+    ".wake/**",
+
+    // Research substrate — bare URLs are intentional citations.
+    "dev/tmp/**",
+    "dev/tmp2/**",
+    "dev/tmp3/**",
+
+    // Pre-existing legacy under dev/. Clean up incrementally; don't gate now.
+    "dev/acceptance.md",
+    "dev/hitl-queue.md",
+    "dev/architecture.md",
+    "dev/followups.md",
+    "dev/learnings.md",
+    "dev/requirements.md",
+    "dev/security-review.md",
+    "dev/test-plan.md",
+    "dev/adr/**",
+    "dev/agents/**",
+    "dev/deps/**",
+    "dev/design/**",
+    "dev/interfaces/**",
+    "dev/interface-inventory/**",
+    "dev/notes/**",
+    "dev/roadmap/**",
+
+    // Local-only agent config (gitignored, not part of repo).
+    ".claude/**",
+
+    // Public docs are gated by `mkdocs build --strict` already.
+    "docs/**"
+  ]
+}

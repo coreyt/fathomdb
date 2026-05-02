@@ -1,0 +1,50 @@
+node_modules/
+src/ts/node_modules/
+target/
+site/
+dist/
+**/dist/
+.venv/
+**/.venv/
+.cache/
+.wake/
+Cargo.lock
+src/ts/package-lock.json
+package-lock.json
+
+# Research substrate — preserve as captured.
+dev/tmp/
+dev/tmp2/
+dev/tmp3/
+
+# Pre-existing legacy. Clean up incrementally.
+dev/acceptance.md
+dev/hitl-queue.md
+dev/architecture.md
+dev/followups.md
+dev/learnings.md
+dev/requirements.md
+dev/security-review.md
+dev/test-plan.md
+dev/adr/
+dev/agents/
+dev/deps/
+dev/design/
+dev/interfaces/
+dev/interface-inventory/
+dev/notes/
+dev/roadmap/
+
+# Local-only agent config (gitignored).
+.claude/
+
+# Caches
+**/.pytest_cache/
+**/.ruff_cache/
+
+# Public docs are gated by mkdocs --strict.
+docs/
+
+# TS source belongs to the TS toolchain.
+src/ts/src/
+src/ts/tests/

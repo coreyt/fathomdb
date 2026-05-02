@@ -1,0 +1,68 @@
+# lychee link checker config. https://lychee.cli.rs/usage/config/
+
+# Accept transient HTTP codes — many public hosts rate-limit checkers.
+accept = ["100..=103", "200..=299", "403", "429"]
+
+# Follow redirects.
+max_redirects = 5
+
+# Concurrency / timeout sane defaults.
+max_concurrency = 8
+timeout = 20
+retry_wait_time = 2
+max_retries = 2
+
+# Glob patterns to check.
+include_verbatim = false
+
+# Skip file:// URLs we know are repo-relative; lychee resolves them.
+require_https = false
+
+# Skip noisy / firewalled hosts.
+exclude = [
+  # placeholder example URLs frequently appear in research notes
+  "^https?://example\\.com",
+  # internal hostnames
+  "^https?://(localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0)",
+]
+
+# Skip vendored / build / cache trees and pre-existing legacy.
+exclude_path = [
+  "node_modules",
+  "src/ts/node_modules",
+  "target",
+  "site",
+  "dist",
+  ".venv",
+  ".cache",
+  ".wake",
+  ".pytest_cache",
+  ".ruff_cache",
+  "dev/tmp",
+  "dev/tmp2",
+  "dev/tmp3",
+  "dev/adr",
+  "dev/agents",
+  "dev/deps",
+  "dev/design",
+  "dev/interfaces",
+  "dev/interface-inventory",
+  "dev/notes",
+  "dev/roadmap",
+  "dev/acceptance.md",
+  "dev/architecture.md",
+  "dev/followups.md",
+  "dev/hitl-queue.md",
+  "dev/learnings.md",
+  "dev/requirements.md",
+  "dev/security-review.md",
+  "dev/test-plan.md",
+  "docs",
+  ".claude",
+]
+
+# Don't check fragments — most md anchors are heading-derived.
+include_fragments = false
+
+# Skip mailto links.
+include_mail = false

@@ -22,3 +22,6 @@ fi
 
 # TypeScript: ESLint not configured yet
 skip_notice lint-ts "ESLint not configured"
+
+# Markdown: structural + format + link integrity
+"$SCRIPT_DIR/agent-lint-md.sh"
