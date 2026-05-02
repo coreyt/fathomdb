@@ -6,5 +6,13 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "fathomdb"
+path = "src/main.rs"
+
 [dependencies]
+clap = { version = "4.5", features = ["derive"] }
 fathomdb = { path = "../fathomdb" }

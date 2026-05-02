@@ -15,6 +15,11 @@ fn parse(args: &[&str]) -> Cli {
     Cli::try_parse_from(argv).expect("parse should succeed")
 }
 
+fn doctor(cli: Cli) -> DoctorCommand {
+    let Command::Doctor(d) = cli.command else { panic!("expected doctor variant") };
+    d.command
+}
+
 #[test]
 fn recover_accepts_all_six_subflags() {
     let cli = parse(&[
@@ -45,8 +50,9 @@ fn recover_accepts_all_six_subflags() {
 fn doctor_check_integrity_accepts_full_flag_set() {
     let cli =
         parse(&["doctor", "check-integrity", "--quick", "--full", "--round-trip", "--pretty"]);
-    let Command::Doctor(d) = cli.command else { panic!("expected doctor variant") };
-    let DoctorCommand::CheckIntegrity(args) = d else { panic!("expected check-integrity") };
+    let DoctorCommand::CheckIntegrity(args) = doctor(cli) else {
+        panic!("expected check-integrity")
+    };
     assert!(args.quick);
     assert!(args.full);
     assert!(args.round_trip);
@@ -56,7 +62,7 @@ fn doctor_check_integrity_accepts_full_flag_set() {
 #[test]
 fn doctor_safe_export_accepts_out_and_manifest() {
     let cli = parse(&["doctor", "safe-export", "/tmp/out", "--manifest", "/tmp/manifest.json"]);
-    let Command::Doctor(DoctorCommand::SafeExport(args)) = cli.command else {
+    let DoctorCommand::SafeExport(args) = doctor(cli) else {
         panic!("expected safe-export");
     };
     assert_eq!(args.out, std::path::PathBuf::from("/tmp/out"));
@@ -69,7 +75,7 @@ fn doctor_safe_export_accepts_out_and_manifest() {
 #[test]
 fn doctor_trace_requires_source_ref() {
     let cli = parse(&["doctor", "trace", "--source-ref", "src-99"]);
-    let Command::Doctor(DoctorCommand::Trace(args)) = cli.command else {
+    let DoctorCommand::Trace(args) = doctor(cli) else {
         panic!("expected trace");
     };
     assert_eq!(args.source_ref, "src-99");
@@ -81,11 +87,11 @@ fn doctor_trace_requires_source_ref() {
 fn doctor_simple_verbs_parse() {
     for verb in ["verify-embedder", "dump-schema", "dump-row-counts", "dump-profile"] {
         let cli = parse(&["doctor", verb]);
-        match (verb, cli.command) {
-            ("verify-embedder", Command::Doctor(DoctorCommand::VerifyEmbedder)) => {}
-            ("dump-schema", Command::Doctor(DoctorCommand::DumpSchema)) => {}
-            ("dump-row-counts", Command::Doctor(DoctorCommand::DumpRowCounts)) => {}
-            ("dump-profile", Command::Doctor(DoctorCommand::DumpProfile)) => {}
+        match (verb, doctor(cli)) {
+            ("verify-embedder", DoctorCommand::VerifyEmbedder) => {}
+            ("dump-schema", DoctorCommand::DumpSchema) => {}
+            ("dump-row-counts", DoctorCommand::DumpRowCounts) => {}
+            ("dump-profile", DoctorCommand::DumpProfile) => {}
             (other, parsed) => panic!("verb {other} parsed unexpectedly as {parsed:?}"),
         }
     }
@@ -106,7 +112,7 @@ fn unknown_root_command_is_rejected() {
 #[test]
 fn json_flag_available_on_doctor_verbs() {
     let cli = parse(&["doctor", "check-integrity", "--json"]);
-    let Command::Doctor(DoctorCommand::CheckIntegrity(args)) = cli.command else {
+    let DoctorCommand::CheckIntegrity(args) = doctor(cli) else {
         panic!("expected check-integrity");
     };
     assert!(args.json);
