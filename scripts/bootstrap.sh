@@ -11,8 +11,12 @@ echo "Run scripts/agent-verify.sh during the agent loop, scripts/check.sh as the
 
 # Python dev tooling — pytest, hypothesis, ruff, pyright.
 if [ -f src/python/pyproject.toml ]; then
-  echo "Installing Python dev tooling (pytest + hypothesis + ruff + pyright)..."
-  pip install --quiet -e 'src/python[dev]'
+  echo "Installing Python dev tooling into .venv (pytest + hypothesis + ruff + pyright)..."
+  python3 -m venv .venv
+  .venv/bin/python -m pip install --quiet --upgrade pip
+  .venv/bin/python -m pip install --quiet -e 'src/python[dev]'
+  .venv/bin/python -c 'import pytest, hypothesis'
+  .venv/bin/pyright -p src/python >/dev/null
 fi
 
 # TypeScript dev tooling.

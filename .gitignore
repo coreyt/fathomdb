@@ -16,6 +16,7 @@ coverage.out
 .DS_Store
 __pycache__/
 _site/
+site/
 node_modules/
 typescript/node_modules/
 typescript/packages/*/dist/

@@ -1,32 +1,33 @@
-# FathomDB 0.6.0 Rewrite Scaffold
+# FathomDB
 
-This branch is the clean active workspace for the `0.6.0` rewrite.
-The design corpus under `docs/0.6.0/` is the source of truth for
-crate boundaries, binding shapes, and release scope.
+FathomDB is a rewrite-in-progress centered on the `0.6.0` design corpus.
 
-Active roots:
+Repository layout:
 
-- `crates/` for the Rust workspace scaffold
-- `python/` for the Python package scaffold
-- `ts/` for the TypeScript package scaffold
-- `tests/` for rewrite-era integration scaffolding
-- `.github/workflows/` and `scripts/` for minimal rewrite checks
+- `docs/` contains public MkDocs source and client-facing technical positions.
+- `dev/` contains internal engineering material: requirements, architecture,
+  ADRs, subsystem design, interface contracts, and planning notes.
+- `src/` contains implementation roots and unit-test-adjacent code.
+- `test/` contains cross-language, smoke, fixture, and performance assets that
+  are not package-local unit tests.
 
-Start with:
+Implementation roots:
 
-- `docs/0.6.0/README.md`
-- `docs/0.6.0/architecture.md`
-- `docs/0.6.0/design/bindings.md`
+- Rust workspace members live under `src/rust/crates/`
+- Python package root lives under `src/python/`
+- TypeScript package root lives under `src/ts/`
 
-Local checks:
+Start here:
+
+- Public docs: `docs/index.md`
+- Internal docs index: `dev/README.md`
+- Workspace checks: `scripts/check.sh`
+
+Common commands:
 
 ```bash
-scripts/check.sh
-```
-
-Binding bootstrap entry points:
-
-```bash
-pip install -e python/
-cd ts && npm install
+cargo check --workspace
+pip install -e src/python/
+cd src/ts && npm install
+mkdocs build --strict
 ```

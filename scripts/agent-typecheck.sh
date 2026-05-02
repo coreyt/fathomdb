@@ -11,8 +11,15 @@ cd_repo_root
 run_capped typecheck-rust cargo check --workspace --quiet
 
 # Python: pyright if available
-if command -v pyright >/dev/null 2>&1; then
-  run_capped typecheck-python pyright src/python
+pyright_bin=""
+if [ -x .venv/bin/pyright ]; then
+  pyright_bin=".venv/bin/pyright"
+elif command -v pyright >/dev/null 2>&1; then
+  pyright_bin="$(command -v pyright)"
+fi
+
+if [ -n "$pyright_bin" ]; then
+  run_capped typecheck-python "$pyright_bin" -p src/python
 else
   skip_notice typecheck-python "pyright not installed"
 fi

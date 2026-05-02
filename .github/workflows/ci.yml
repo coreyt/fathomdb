@@ -23,5 +23,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: python compileall
-        run: python3 -m compileall python/fathomdb python/tests
+        run: python3 -m compileall src/python/fathomdb src/python/tests
+
+  ts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: npm install
+        run: npm install
+        working-directory: src/ts
+      - name: npm run typecheck
+        run: npm run typecheck
+        working-directory: src/ts
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install mkdocs
+        run: python3 -m pip install mkdocs
+      - name: build docs
+        run: mkdocs build --strict

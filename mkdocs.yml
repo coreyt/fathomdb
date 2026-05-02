@@ -1,0 +1,23 @@
+site_name: FathomDB
+site_description: Public documentation for FathomDB
+repo_url: https://github.com/coreyt/fathomdb
+docs_dir: docs
+site_dir: site
+theme:
+  name: mkdocs
+nav:
+  - Home: index.md
+  - Getting Started: getting-started/index.md
+  - Guides: guides/index.md
+  - Concepts: concepts/index.md
+  - Reference: reference/index.md
+  - Operations: operations/index.md
+  - Compatibility: compatibility/index.md
+  - Release Notes:
+      - 0.6.0: release-notes/0.6.0.md
+  - Positions:
+      - Index: positions/index.md
+      - SDK Parity: positions/sdk-parity.md
+      - Recovery Surface: positions/recovery-surface.md
+      - Tokenizer Policy: positions/tokenizer-policy.md
+      - Embedder Identity: positions/embedder-identity.md

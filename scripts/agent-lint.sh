@@ -14,8 +14,15 @@ run_capped lint-rust cargo clippy --workspace --all-targets --quiet -- -D warnin
 run_capped lint-rustfmt cargo fmt --all --check
 
 # Python: ruff if available
-if command -v ruff >/dev/null 2>&1; then
-  run_capped lint-python ruff check src/python
+ruff_bin=""
+if [ -x .venv/bin/ruff ]; then
+  ruff_bin=".venv/bin/ruff"
+elif command -v ruff >/dev/null 2>&1; then
+  ruff_bin="$(command -v ruff)"
+fi
+
+if [ -n "$ruff_bin" ]; then
+  run_capped lint-python "$ruff_bin" check src/python
 else
   skip_notice lint-python "ruff not installed"
 fi

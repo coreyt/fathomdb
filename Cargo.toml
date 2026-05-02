@@ -1,12 +1,12 @@
 [workspace]
 members = [
-    "crates/fathomdb",
-    "crates/fathomdb-cli",
-    "crates/fathomdb-embedder",
-    "crates/fathomdb-embedder-api",
-    "crates/fathomdb-engine",
-    "crates/fathomdb-query",
-    "crates/fathomdb-schema",
+    "src/rust/crates/fathomdb",
+    "src/rust/crates/fathomdb-cli",
+    "src/rust/crates/fathomdb-embedder",
+    "src/rust/crates/fathomdb-embedder-api",
+    "src/rust/crates/fathomdb-engine",
+    "src/rust/crates/fathomdb-query",
+    "src/rust/crates/fathomdb-schema",
 ]
 resolver = "2"
 
@@ -18,4 +18,5 @@ repository = "https://github.com/coreyt/fathomdb"
 rust-version = "1.82"
 
 [workspace.metadata.fathomdb]
-active_docs = ["docs/0.6.0", "docs/0.8.0"]
+public_docs = ["docs"]
+internal_docs = ["dev"]
