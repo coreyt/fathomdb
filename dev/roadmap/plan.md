@@ -14,6 +14,7 @@ Critic prompt-frame: attack hidden assumptions, missed alternatives, vague accep
 unacknowledged coupling, over-design, layering for its own sake.
 
 Critic mapping:
+
 - Requirements / acceptance / learnings → `general-purpose` w/ framed attack prompt.
 - Architecture / design / ADRs → `architecture-inspector`.
 - Interfaces → `code-reviewer`.
@@ -21,13 +22,19 @@ Critic mapping:
 Cadence: docs written/updated in batches within a turn. Critic + HITL review **after**
 the turn. Any doc changed after lock but before implementation → re-review.
 
-## Progress (as of 2026-05-01)
+## Progress (as of 2026-05-02)
 
 **Phase 0/1 mechanical relocation: committed.** Commit `0d817f1` moved the
 0.6.0 engineering corpus from `docs/0.6.0/` to `dev/`, relocated Rust crates
 under `src/rust/crates/`, moved Python/TypeScript bindings under `src/`, and
 added the public MkDocs skeleton. `./scripts/agent-verify.sh` passed before
 commit.
+
+**Phase 3 — `needs.md` + `traceability.md`: status unchanged (`draft`).** User
+needs drafted as "what/constraints" only (personas + jobs-to-be-done +
+customer/functional/non-functional needs). Traceability drafted as a coarse
+matrix and accepted as sufficient for now; deeper test-plan traceability is
+deferred until fixture specs and scaffold paths stabilize.
 
 **Phase 3a — `requirements.md`: status unchanged (`draft`).** REQ set extended through HITL queue + over-design audit resolutions (REQ-057/058/059 added per OD-29). The 2026-05-01 hard-conflict coherence pass satisfies the roadmap critic gate; HITL lock gate not yet flipped.
 
@@ -36,12 +43,13 @@ commit.
 **Phase 3c — `architecture.md`: locked 2026-04-29.** Subsequent corpus repairs (OD-22 / OD-25 / OD-28) and 2026-05-01 hard-conflict amendments applied under the same locked-doc amendment precedent. The 2026-05-01 amendments aligned CLI scope, hybrid locking, projection queue derivation, TS pool ownership, and write receipt shape.
 
 **Phase 3d — `design/*.md`: IN PROGRESS.** 13/13 files now drafted (vs 1/13 at last update). `design/lifecycle.md` landed on 2026-05-01 and the corpus status text now treats it as an existing draft, not a missing design slot. Status:
+
 - `design/bindings.md` — `locked` (unchanged from 2026-04-29).
 - `design/embedder.md`, `design/engine.md`, `design/errors.md`, `design/lifecycle.md`, `design/migrations.md`, `design/op-store.md`, `design/projections.md`, `design/recovery.md`, `design/release.md`, `design/retrieval.md`, `design/scheduler.md`, `design/vector.md` — `draft` (roadmap critic gate satisfied by the 2026-05-01 hard-conflict pass; HITL gates pending).
 
 **Over-design audit:** 30/30 resolved. OD-01 (`tasks_in_flight` orphan metric) and OD-02 (brand-specific default adapter clause) were removed. See `over-design-audit.md`.
 
-**HITL queue:** ENG6, ENG3, E3, E5, E7, X4, X6 adjudicated. Queue otherwise tracked separately in `hitl-queue.md`.
+**HITL queue:** ENG6, ENG3, E3, E5, E7, X4, X6 adjudicated. Full queue resolved (Tier 1–4, status `tier-4-resolved`) and archived at `archive/hitl-queue.md`.
 
 **Phase 3e — `interfaces/*.md`: IN PROGRESS.** `interfaces/rust.md`, `interfaces/python.md`, `interfaces/typescript.md`, `interfaces/cli.md`, and `interfaces/wire.md` are now drafted. Hard-conflict cleanup resolved Rust support posture (stable Rust facade outside Python/TS SDK parity) and TS error-root shape (`FathomDbError`). Remaining work: HITL lock gate.
 
@@ -55,8 +63,9 @@ satisfied; HITL gate pending.
 **Phase 4 — Freeze: not started.**
 
 **Next step:** prepare the next HITL gate batch for Phase 3a / 3b / 3d / 3e /
-3f lock flips, using `dev/progress/0.6.0-ranked-conflicts.md` as the
-resolved-conflict baseline.
+3f lock flips (requirements, acceptance, draft designs, interfaces, test plan),
+using `dev/progress/0.6.0-ranked-conflicts.md` as the resolved-conflict
+baseline. (`needs.md` and `traceability.md` are now drafted.)
 
 ## Progress (as of 2026-04-29)
 
@@ -88,7 +97,7 @@ resolved-conflict baseline.
 decisions resolved. Phase 1 ADRs (11), Phase 2 substantive ADRs (13),
 Phase 2 lite-batch closure ADRs (5: #10 tier1-ci-platforms, #13
 vector-index-location, #19 prepared-write-shape, #20 python-api-shape,
-#23 deprecation-policy-0-5-names). Critic pass on lite-batch applied 4
+\#23 deprecation-policy-0-5-names). Critic pass on lite-batch applied 4
 high + 11 med findings inline; 6 low findings logged to followups. All
 ADRs status `accepted`. Next: Phase 3a (requirements.md from
 `learnings.md` raw-requirement candidates).
@@ -114,10 +123,11 @@ pending (HITL-blocked behind tooling permission); any flips trigger HITL.
 **Phase 1b — Learnings: HITL-resolved.** Keep doing (15 items, F10 marked
 carry-forward-verify), Stop doing (16 items collapsed under "Defect deferral"
 per F7 + F13 atomic-pack rephrase), Raw requirement candidates (7 categories:
-observability / performance / reliability / security / operability / upgrade
-+ compatibility / supply chain / other; ~60 items total).
+observability / performance / reliability / security / operability / upgrade /
+compatibility / supply chain / other; ~60 items total).
 
 **Phase 2 — Decision index + ADRs: not started.** Phase 1 ADR queue identified:
+
 - `rusqlite` async-surface (sync vs spawn-blocking adapters vs sqlx) — HITL F4 promotion
 - Default-embedder architecture per NOTE 1 (decision-recording)
 - `sqlite-vec` accept-no-fallback (decision-recording)
@@ -152,7 +162,7 @@ observability / performance / reliability / security / operability / upgrade
 
 ## Sequencing + dependencies
 
-```
+```text
 Phase 0 scaffold  (incl. doc-types proposal → HITL → done-defs)
       │
       ▼
@@ -187,6 +197,7 @@ Phase 5 interface stubs (compile, no impl)
 ```
 
 Hard deps:
+
 - Acceptance blocks architecture (can't design for undefined success).
 - Architecture blocks design (subsystem boundaries first).
 - Design blocks interfaces (semantics before signatures).
@@ -194,6 +205,7 @@ Hard deps:
 - Test plan blocks freeze (every AC must have a test id).
 
 Soft deps (parallelizable):
+
 - Phase 1b ∥ Phase 2a.
 - Phase 3d subsystems ∥ each other once 3c locked.
 
@@ -214,7 +226,7 @@ Steps:
 
 Doc front-matter schema (all doc-types):
 
-```
+```yaml
 ---
 title: <doc title>
 date: YYYY-MM-DD
@@ -257,7 +269,7 @@ ADR `status` field (collapsed — no separate `decision_status`):
 
 Skeleton (subject to HITL step 1):
 
-```
+```text
 dev/
   README.md            index + doc status table (draft|review|locked)
   plan.md              this file
@@ -298,6 +310,7 @@ Add `dev/README.md` pointer to `CLAUDE.md` so agents load context narrowly.
 Source dirs: `dev/`, `dev/notes/`, `dev/archive/`, `docs/concepts/`, `docs/reference/`.
 
 For each design doc:
+
 - **Keep**: survives to 0.6.0 as-is or lightly edited → move to `dev/design/` or cite in ADR.
 - **Fold**: content merges into new consolidated doc.
 - **Archive**: still-valid history → `docs/archive/0.5.x/`.
@@ -306,6 +319,7 @@ For each design doc:
 Triage output: table in `learnings.md` § "Prior Work Disposition" — columns: file, verdict, target, notes.
 
 High-signal candidates (must review):
+
 - `dev/ARCHITECTURE.md`, `dev/ARCHITECTURE-deferred-expansion.md`
 - `dev/USER_NEEDS.md`
 - `dev/production-acceptance-bar.md`
@@ -343,7 +357,7 @@ different hat for no parallelism gain.
 
 #### Phase 1a/1b sequencing
 
-```
+```text
 [Prose harvester]  ──┐
                      │
                      ▼ disposition table
@@ -369,11 +383,13 @@ different hat for no parallelism gain.
 ```
 
 Hard deps:
+
 - Learnings harvester reads disposition table → must wait for prose harvester.
 - Move step must wait for HITL.
 - Dep auditor independent → launch concurrently with prose harvester.
 
 Soft deps:
+
 - Critic passes on (prose+learnings) and (deps) are independent — run parallel.
 
 #### Phase 1a/1b task list
@@ -395,6 +411,7 @@ Main-thread tasks (orchestration only, no content writing):
 Write `learnings.md` with two sections, each a bulleted list + 1-line rationale per item:
 
 **Keep doing (good practices)**
+
 - Red→green TDD (per memory `feedback_tdd.md`).
 - Orchestrator-on-main + implementer-in-worktree + code-reviewer pattern (per memory).
 - Per-commit clippy + fmt + cross-platform CI matrix.
@@ -404,6 +421,7 @@ Write `learnings.md` with two sections, each a bulleted list + 1-line rationale 
 - Post-publish smoke install from registry before "done."
 
 **Stop doing (anti-patterns from 0.5.x)**
+
 - Cypher / alt-query-language surface — scope creep, not user-needed.
 - Per-item variable embedding — identity leaked into vector config; invariant violation.
 - Layers-on-layers abstractions (e.g. nested profile→kind→vec configure).
@@ -431,6 +449,7 @@ user picks; ADR status → `accepted`.
 Categories + candidates:
 
 **Acceptance (what "0.6.0 shipped" means)**
+
 - Single-process durability target (fsync policy, recovery time).
 - Projection freshness SLI numerical target.
 - Retrieval p50/p99 latency gates.
@@ -438,6 +457,7 @@ Categories + candidates:
 - Platforms in tier-1 CI (linux x86/arm, darwin, windows).
 
 **Architecture**
+
 - Crate topology: keep `fathomdb-engine` monolith or split (storage / projection / vector / query)?
 - Single-writer thread vs. MVCC.
 - Vector index location: separate file vs. embedded in SQLite vs. external (sqlite-vec stays?).
@@ -445,12 +465,14 @@ Categories + candidates:
 - Wire format stability (proto? JSON? versioned?).
 
 **Design**
+
 - Projection model: pull (lazy) vs. push (eager with scheduler) vs. hybrid.
 - Embedding identity: embedder-owned (enforce invariant in code, not config).
 - Retrieval pipeline shape: fixed stages vs. composable.
 - Error taxonomy: single crate-level error enum vs. per-module.
 
 **Interface**
+
 - Python API shape: sync only, async only, or both?
 - TS API: mirror Python 1:1 or idiomatic TS?
 - CLI scope: admin-only or full query?
@@ -466,17 +488,26 @@ drafting until triage done.
 
 Order (each step gates next):
 
-1. `requirements.md` + non-goals — user-visible outcomes, explicit drops (no cypher etc).
-2. `acceptance.md` — `AC-001..AC-NNN`, each testable, each maps to a planned test id.
-3. `architecture.md` — reflects accepted ADRs, crate boundaries, data flow diagram (ascii OK).
-4. `design/*.md` — architect agent proposes the **needed subsystem design docs**
+1. `needs.md` — user needs and outcome-level jobs-to-be-done; no solution
+   design, API shape, or acceptance thresholds.
+2. `requirements.md` + non-goals — user-visible outcomes, explicit drops (no cypher etc).
+3. `acceptance.md` — `AC-001..AC-NNN`, each testable, each maps to a planned test id.
+4. `architecture.md` — reflects accepted ADRs, crate boundaries, data flow diagram (ascii OK).
+5. `design/*.md` — architect agent proposes the **needed subsystem design docs**
    after first draft of `architecture.md`; then one file per proposed subsystem,
    references ADRs, cites AC ids covered. `design/bindings.md` written first to
    test whether it fills a role distinct from `interfaces/{python,ts,cli}.md`.
-5. `interfaces/*.md` — signatures + short examples. Architect agent delegates
+6. `interfaces/*.md` — signatures + short examples. Architect agent delegates
    content post-`architecture.md`; `wire.md` written even if short.
-6. `test-plan.md` — mapping AC id → test id → layer (unit/integration/soak/perf).
-7. `security-review.md` — run `security-review` skill against locked design set
+7. `test-plan.md` — mapping AC id → test id → layer (unit/integration/soak/perf).
+8. `traceability.md` — matrix proving `needs.md` ↔ `requirements.md` ↔
+   `design/*.md` / `interfaces/*.md` ↔ `test-plan.md`; every need has at
+   least one requirement, every requirement has acceptance + design coverage,
+   and every planned test traces back to a requirement.
+   Initial lock may be coarse-grained (AC ranges per suite); later, once
+   test-plan fixtures and scaffold paths stabilize, deepen traceability to name
+   explicit `T-*` ids and test scaffold paths.
+9. `security-review.md` — run `security-review` skill against locked design set
    (requirements + architecture + design + interfaces). Findings resolved via ADR
    amendments or acceptance criteria additions before freeze.
 
@@ -512,12 +543,15 @@ handed to implementer phase downstream.)
 - [ ] `deps/*.md` populated (one per dep) + `deps/index.md` index
 - [ ] `adr/ADR-0.6.0-decision-index.md` triaged by user
 - [ ] ADRs accepted (per decide-now entry)
+- [ ] `needs.md` locked
 - [ ] `requirements.md` locked
 - [ ] `acceptance.md` locked (AC ids issued)
 - [ ] `architecture.md` locked
 - [ ] `design/*.md` locked
 - [ ] `interfaces/*.md` locked
 - [ ] `test-plan.md` locked (AC→test mapping complete)
+- [ ] `traceability.md` locked (needs↔requirements↔design↔test-plan)
+- [ ] `traceability.md` deepened to explicit `T-*` ids + test scaffold paths (post test-plan fixture lock)
 - [ ] `security-review.md` locked, findings resolved
 - [ ] `0.6.0-design-frozen` tag
 

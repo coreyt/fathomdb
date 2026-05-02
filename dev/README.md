@@ -22,11 +22,13 @@ Subdirectories:
 
 Top-level canonical docs:
 
+- `needs.md`
 - `requirements.md`
 - `acceptance.md`
 - `architecture.md`
 - `test-plan.md`
+- `traceability.md`
 - `security-review.md`
 - `learnings.md`
 - `followups.md`
-- `hitl-queue.md`
+- `archive/hitl-queue.md` (resolved Tier 1–4 HITL queue)
