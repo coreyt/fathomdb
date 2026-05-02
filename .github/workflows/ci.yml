@@ -1,56 +1,96 @@
-name: ci
+name: CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
 
-jobs:
-  rust:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - name: cargo fmt
-        run: cargo fmt --check
-      - name: cargo check
-        run: cargo check --workspace
-      - name: cargo test
-        run: cargo test --workspace
+# H-4 (pre-0.6.0 security fix): scope workflow permissions to least privilege.
+# Default GITHUB_TOKEN has broader access that a compromised third-party action
+# could exploit.
+permissions:
+  contents: read
 
-  python:
+jobs:
+  # Single agent-loop gate. Mirrors what scripts/agent-verify.sh does locally,
+  # so a green CI run = `verify` is green on the same toolchain set.
+  verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      # H-5 (pre-0.6.0 security fix): pin third-party actions to commit SHAs.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Configure per-session TMPDIR
+        shell: bash
+        run: |
+          # Per-session TMPDIR root so cleanup is one rm -rf at job end (GH #40).
+          # Set via $GITHUB_ENV — runner.* context isn't available at job-env level.
+          TMPDIR="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMPDIR"
+          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.12"
-      - name: python compileall
-        run: python3 -m compileall src/python/fathomdb src/python/tests
-
-  ts:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: "22"
-      - name: npm install
-        run: npm install
-        working-directory: src/ts
-      - name: npm run typecheck
-        run: npm run typecheck
-        working-directory: src/ts
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Bootstrap dev tooling
+        run: bash scripts/bootstrap.sh
+      - name: agent-verify (lint -> typecheck -> test)
+        run: bash scripts/agent-verify.sh
 
+  # Platform-sensitive engine code regresses on Windows/macOS often enough
+  # that pre-0.6.0 carried these matrix legs. Keep them.
+  rust-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Configure per-session TMPDIR
+        shell: bash
+        run: |
+          # Windows resolves temp dir via TMP/TEMP, not TMPDIR.
+          TMP="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMP"
+          echo "TMP=$TMP" >> "$GITHUB_ENV"
+          echo "TEMP=$TMP" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - run: cargo test --workspace
+
+  rust-macos:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Configure per-session TMPDIR
+        shell: bash
+        run: |
+          TMPDIR="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMPDIR"
+          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - run: cargo test --workspace
+
+  # mkdocs --strict is the broader CI gate beyond agent-verify (per AGENTS.md §3).
   docs:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.12"
-      - name: install mkdocs
-        run: python3 -m pip install mkdocs
-      - name: build docs
-        run: mkdocs build --strict
+      - run: python3 -m pip install --upgrade pip mkdocs
+      - run: mkdocs build --strict
