@@ -24,5 +24,9 @@ else
   skip_notice test-python "pytest not installed or no tests dir"
 fi
 
-# TypeScript: no test runner configured yet
-skip_notice test-ts "no test runner configured"
+# TypeScript
+if [ -d src/ts/node_modules ]; then
+  run_capped test-ts bash -c 'cd src/ts && npm test --silent'
+else
+  skip_notice test-ts "src/ts/node_modules not installed"
+fi
