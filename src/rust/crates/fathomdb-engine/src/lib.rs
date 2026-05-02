@@ -70,8 +70,7 @@ pub enum PreparedWrite {
 
 /// Snapshot of engine-internal counters returned by [`Engine::counters`].
 ///
-/// Field set is owned by `dev/design/lifecycle.md`; this 0.6.0 surface-stubs
-/// slice publishes the carrier type so callers can dispatch on it.
+/// Field set is owned by `dev/design/lifecycle.md`.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CounterSnapshot {}
 
@@ -148,7 +147,6 @@ pub struct RecoveryHint {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EngineOpenError {
-    EmptyPath,
     DatabaseLocked,
     Corruption(CorruptionDetail),
     IncompatibleSchemaVersion,
@@ -160,7 +158,6 @@ pub enum EngineOpenError {
 impl Display for EngineOpenError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::EmptyPath => write!(f, "engine path must not be empty"),
             Self::DatabaseLocked => write!(f, "database is locked by another engine instance"),
             Self::Corruption(detail) => {
                 write!(
@@ -188,8 +185,6 @@ impl Error for EngineOpenError {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EngineError {
-    Closed,
-    EmptyQuery,
     Storage,
     Projection,
     Vector,
@@ -205,8 +200,6 @@ pub enum EngineError {
 impl Display for EngineError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Closed => write!(f, "engine is closed"),
-            Self::EmptyQuery => write!(f, "search query must not be empty"),
             Self::Storage => write!(f, "storage error"),
             Self::Projection => write!(f, "projection error"),
             Self::Vector => write!(f, "vector error"),
@@ -226,9 +219,6 @@ impl Error for EngineError {}
 impl Engine {
     pub fn open(path: impl Into<PathBuf>) -> Result<OpenedEngine, EngineOpenError> {
         let path = path.into();
-        if path.as_os_str().is_empty() {
-            return Err(EngineOpenError::EmptyPath);
-        }
 
         let report = OpenReport {
             schema_version: SCHEMA_VERSION,
@@ -259,7 +249,7 @@ impl Engine {
     pub fn search(&self, query: &str) -> Result<SearchResult, EngineError> {
         self.ensure_open()?;
         if query.trim().is_empty() {
-            return Err(EngineError::EmptyQuery);
+            return Err(EngineError::WriteValidation);
         }
 
         let compiled = compile_text_query(query);
@@ -280,16 +270,14 @@ impl Engine {
     /// Block until in-flight writes drain or `timeout_ms` elapses.
     ///
     /// Surface owned by `dev/interfaces/rust.md` § Engine-attached
-    /// instrumentation; semantics are owned by `dev/design/lifecycle.md` and
-    /// land in a later slice. The 0.6.0 surface-stub returns immediately.
+    /// instrumentation; semantics are owned by `dev/design/lifecycle.md`.
     pub fn drain(&self, _timeout_ms: u64) -> Result<(), EngineError> {
         Ok(())
     }
 
     /// Snapshot of engine-internal counters.
     ///
-    /// Field set owned by `dev/design/lifecycle.md`. The 0.6.0 surface-stub
-    /// returns an empty snapshot.
+    /// Field set owned by `dev/design/lifecycle.md`.
     #[must_use]
     pub fn counters(&self) -> CounterSnapshot {
         CounterSnapshot::default()
@@ -308,8 +296,7 @@ impl Engine {
     /// Attach a host subscriber to engine events.
     ///
     /// Payload shape owned by `dev/design/lifecycle.md` and
-    /// `dev/design/migrations.md`. The 0.6.0 surface-stub returns an inert
-    /// subscription handle.
+    /// `dev/design/migrations.md`.
     #[must_use]
     pub fn subscribe(&self) -> Subscription {
         Subscription::default()
@@ -317,7 +304,7 @@ impl Engine {
 
     fn ensure_open(&self) -> Result<(), EngineError> {
         if self.closed.load(Ordering::SeqCst) {
-            return Err(EngineError::Closed);
+            return Err(EngineError::Closing);
         }
 
         Ok(())
