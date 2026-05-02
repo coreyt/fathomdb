@@ -4,6 +4,16 @@ Operating manual for AI coding agents (Claude Code, Codex, Cursor, Aider, Copilo
 
 Bullet form, prescriptive, ≤300 lines. Link out, do not inline.
 
+## 0. System layers — where each rule fits
+
+- **Invariants layer** — this file (front-loaded, cached, ≤300, bullets).
+- **Index layer** — `dev/adr/ADR-0.6.0-decision-index.md`, `dev/interfaces/*.md`. Linked, never inlined.
+- **Retrieval layer** — grep / glob / read / LSP / tree-sitter map on demand. No local vector index.
+- **Execution layer** — typed dev-loop verbs under `scripts/agent-*.sh` emit structured JSON. Tests are oracle.
+- **Persistence layer** — `dev/progress/<release>.md` + ADR supersession. Compaction-safe.
+- **Permission layer** — three-tier sandbox + worktree-per-task + egress allowlist (`.claude/settings.json`).
+- **Topology layer** — main thread orchestrates; implementer (worktree) + code-reviewer fan out at clean seams; single-agent for shared-state edits.
+
 ---
 
 ## 1. Invariants — read these first
@@ -93,7 +103,7 @@ Do not paraphrase, summarize, or shorten compiler diagnostics — pass them thro
 - **Interfaces:** `dev/interfaces/{rust,python,typescript,cli,wire}.md`
 - **Progress log:** `dev/progress/0.6.0.md`
 - **Plans:** `dev/plans/`
-- **Research:** `dev/tmp/context-research-agentic-best-practices.md` (the best-practices synthesis this file operationalizes)
+- **Research:** `dev/notes/context-research-agentic-best-practices.md` (the best-practices synthesis this file operationalizes)
 - **Memory:** `MEMORY.md` (auto-loaded into Claude Code session start)
 
 ## 10. Forbidden patterns
