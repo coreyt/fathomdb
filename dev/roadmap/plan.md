@@ -1,7 +1,9 @@
 # 0.6.0 Rewrite — Clean-Context Plan
 
 Goal: lock requirements, architecture, interfaces, acceptance, and test plan **before**
-touching `src/rust/crates/` or `src/python/` or `src/ts/`. Code PRs gated on `0.6.0-design-frozen` tag.
+substantive implementation in `src/rust/crates/`, `src/python/`, or `src/ts/`.
+Scaffold crates/bindings may exist for tooling and layout validation only. Code
+PRs gated on `0.6.0-design-frozen` tag.
 
 Owner: @coreyt. Branch: `0.6.0-rewrite`.
 
@@ -21,11 +23,17 @@ the turn. Any doc changed after lock but before implementation → re-review.
 
 ## Progress (as of 2026-05-01)
 
-**Phase 3a — `requirements.md`: status unchanged (`draft`).** REQ set extended through HITL queue + over-design audit resolutions (REQ-057/058/059 added per OD-29). Critic + HITL gates not yet flipped to `locked`.
+**Phase 0/1 mechanical relocation: committed.** Commit `0d817f1` moved the
+0.6.0 engineering corpus from `docs/0.6.0/` to `dev/`, relocated Rust crates
+under `src/rust/crates/`, moved Python/TypeScript bindings under `src/`, and
+added the public MkDocs skeleton. `./scripts/agent-verify.sh` passed before
+commit.
 
-**Phase 3b — `acceptance.md`: status unchanged (`draft`).** AC coverage extended for op-store, projection-failure regenerate workflow (per OD-30). Not yet `locked`.
+**Phase 3a — `requirements.md`: status unchanged (`draft`).** REQ set extended through HITL queue + over-design audit resolutions (REQ-057/058/059 added per OD-29). Hard-conflict cleanup applied during the 2026-05-01 coherence pass; critic + HITL gates not yet flipped to `locked`.
 
-**Phase 3c — `architecture.md`: locked 2026-04-29 (unchanged).** Subsequent corpus repairs (OD-22 / OD-25 / OD-28) applied as locked-doc amendments under same precedent.
+**Phase 3b — `acceptance.md`: status unchanged (`draft`).** AC coverage extended for op-store, projection-failure regenerate workflow (per OD-30). Hard-conflict cleanup applied during the 2026-05-01 coherence pass. Not yet `locked`.
+
+**Phase 3c — `architecture.md`: locked 2026-04-29.** Subsequent corpus repairs (OD-22 / OD-25 / OD-28) and 2026-05-01 hard-conflict amendments applied under the same locked-doc amendment precedent. The 2026-05-01 amendments aligned CLI scope, hybrid locking, projection queue derivation, TS pool ownership, and write receipt shape.
 
 **Phase 3d — `design/*.md`: IN PROGRESS.** 13/13 files now drafted (vs 1/13 at last update). `design/lifecycle.md` landed on 2026-05-01 and the corpus status text now treats it as an existing draft, not a missing design slot. Status:
 - `design/bindings.md` — `locked` (unchanged from 2026-04-29).
@@ -35,7 +43,7 @@ the turn. Any doc changed after lock but before implementation → re-review.
 
 **HITL queue:** ENG6, ENG3, E3, E5, E7, X4, X6 adjudicated. Queue otherwise tracked separately in `hitl-queue.md`.
 
-**Phase 3e — `interfaces/*.md`: IN PROGRESS.** `interfaces/rust.md`, `interfaces/python.md`, `interfaces/typescript.md`, `interfaces/cli.md`, and `interfaces/wire.md` are now drafted. The remaining work is conflict cleanup, critic pass, and any HITL decisions on Rust support posture and TS error-root shape.
+**Phase 3e — `interfaces/*.md`: IN PROGRESS.** `interfaces/rust.md`, `interfaces/python.md`, `interfaces/typescript.md`, `interfaces/cli.md`, and `interfaces/wire.md` are now drafted. Hard-conflict cleanup resolved Rust support posture (stable Rust facade outside Python/TS SDK parity) and TS error-root shape (`FathomDbError`). Remaining work: critic pass + HITL lock gate.
 
 **Phase 3f — `test-plan.md`: draft.** AC→T deterministic mapping, suite
 ownership, fixture families, scaffold paths, and component scaffold targets
@@ -46,7 +54,11 @@ pending.
 
 **Phase 4 — Freeze: not started.**
 
-**Next step:** run critic pass on the now-complete draft design set (parallelizable per Phase 3d soft dep); then prepare the next HITL gate batch for Phase 3a / 3b / 3d lock flips.
+**Next step:** run critic pass on requirements, acceptance, draft designs,
+interfaces, and test plan using
+`dev/progress/0.6.0-ranked-conflicts.md` as the resolved-conflict baseline;
+then prepare the next HITL gate batch for Phase 3a / 3b / 3d / 3e / 3f lock
+flips.
 
 ## Progress (as of 2026-04-29)
 
