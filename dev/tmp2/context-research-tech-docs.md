@@ -1,0 +1,77 @@
+# Context Research — tech-docs
+
+## Scope
+This dimension covers technical documentation surfaced to AI coding agents (Claude Code, OpenAI Codex, Cursor, Aider, Cognition, etc.): requirements/product specs, architecture docs, design docs, ADRs, interface/API specs (OpenAPI, JSON Schema, type signatures, IDL), and progress/handoff notes that function as living tech docs. Concerns include *what kinds* of docs to provide, *what shape* (markdown vs structured, full doc vs section), *what placement* (CLAUDE.md/AGENTS.md inline vs separate file vs retrieval), *what freshness/age* requirements apply, and *when* docs help vs hurt. Out of scope (other subagents own): inline source comments, docstrings, tests, build/CI/sandboxing, and the scaffolding mechanics of memory files themselves (we focus on tech-doc-shaped content that *belongs* in them).
+
+## Sources
+- [Effective context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) — Anthropic, 2025-09-29 — Frontier-lab guidance on upfront vs just-in-time context loading
+- [Best Practices for Claude Code](https://code.claude.com/docs/en/best-practices) — Anthropic, 2025 (current docs) — CLAUDE.md content rules and explicit include/exclude table
+- [Using CLAUDE.md files](https://claude.com/blog/using-claude-md-files) — Anthropic, 2025-11-25 — Anthropic editorial guidance on CLAUDE.md content scope
+- [Effective harnesses for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) — Anthropic, 2025-11-26 — Plan/progress files as session-handoff tech docs
+- [Agent Skills (Codex)](https://developers.openai.com/codex/skills) — OpenAI, 2025 — Progressive disclosure model for skill/doc loading
+- [Custom instructions with AGENTS.md](https://developers.openai.com/codex/guides/agents-md) and [agents.md spec](https://agents.md) — OpenAI / Linux Foundation Agentic AI Foundation, 2025 — Cross-vendor open standard for agent context files
+- [Agent READMEs: An Empirical Study of Context Files for Agentic Coding](https://arxiv.org/html/2511.12884v1) — arXiv, 2025-11 — Empirical analysis of 2,303 agent context files across Claude Code/Codex/Copilot
+- [Context Engineering for AI Agents in Open-Source Software](https://arxiv.org/html/2510.21413v1) — arXiv, 2025-10 — 14-category taxonomy of AGENTS.md content with distribution data
+- [Retrieval-Augmented Code Generation: A Survey with Focus on Repository-Level Approaches](https://arxiv.org/html/2510.04905v1) — arXiv, 2025-10 — Survey of structural/type/API context for repo-level agents
+- [Context Matters: Evaluating Context Strategies for Automated ADR Generation Using LLMs](https://arxiv.org/html/2604.03826v1) — arXiv, 2026 — Quantitative comparison of ADR-grounding strategies
+- [Making REST APIs Agent-Ready: From OpenAPI to MCP Servers](https://arxiv.org/html/2507.16044v1) — arXiv, 2025-07 — OpenAPI as machine-readable interface contract for agents
+
+## Findings
+
+### F1: CLAUDE.md should hold architectural decisions, not API reference docs
+- Evidence: Anthropic's Best Practices page lists "Architectural decisions specific to your project" in the *include* column and "Detailed API documentation (link to docs instead)" plus "File-by-file descriptions of the codebase" in the *exclude* column ([code.claude.com/docs/en/best-practices](https://code.claude.com/docs/en/best-practices), 2025). The 2025-11-25 CLAUDE.md post reinforces that for extensive docs you should "break up information into separate markdown files and reference them inside the CLAUDE.md file" ([claude.com/blog/using-claude-md-files](https://claude.com/blog/using-claude-md-files)).
+- Observations: Anthropic explicitly differentiates by doc *type* — high-signal, project-specific architectural decisions belong inline because they cannot be inferred from code; reference-shaped docs (APIs, file maps) belong out-of-line and retrieved on demand. The `@path/to/import` syntax is the supported bridge.
+- Recommendations: Put a short "Architecture" / "Key decisions" section in CLAUDE.md (or AGENTS.md) summarizing invariants and non-obvious tradeoffs. Link to the full ADR set under `docs/adr/`. Never paste OpenAPI specs, generated type indexes, or per-module READMEs inline.
+- Impact on agent LLM: HIGH
+  - Rationale: Anthropic states bloated context files cause Claude to "ignore your actual instructions" — bad placement here directly degrades adherence to the rules teams care most about.
+
+### F2: Architecture and structural context dominate real-world agent context files
+- Evidence: An empirical study of 2,303 context files across Claude Code, Codex, and Copilot found Architecture content in 67.7% of files, Implementation Details in 69.9%, Testing in 75.0%, and Build/Run in 62.3% ([arxiv.org/html/2511.12884v1](https://arxiv.org/html/2511.12884v1), 2025-11). A parallel 14-category taxonomy of AGENTS.md content found Architecture & Structure (47 instances) and Conventions/Best Practices (50 instances) the most-frequent categories ([arxiv.org/html/2510.21413v1](https://arxiv.org/html/2510.21413v1), 2025-10).
+- Observations: Practitioners converge on a tech-doc shape that is *structural and procedural*, not *narrative*. Security (14.5%) and performance (14.5%) are critically underrepresented — agents default to optimizing for functionality unless quality attributes are stated explicitly.
+- Recommendations: Always include a short architecture/structure section. If your project has security or performance constraints, encode them as explicit rules — not a separate doc the agent must hunt for. Prefer prescriptive ("Use X") and prohibitive ("Never Y") styles over descriptive prose; the same paper found these styles produce more reliable adherence.
+- Impact on agent LLM: HIGH
+  - Rationale: The omission pattern (security/perf absent → agents produce insecure/slow code) is documented across thousands of real repos and matches the well-known LLM tendency to default to mainstream patterns.
+
+### F3: API specs (OpenAPI, JSON Schema, type signatures) measurably reduce hallucination
+- Evidence: A 2025 RACG survey reports that systems retrieving API documentation and function signatures (CodeGenAPI, AllianceCoder, A3-CodGen) gain "particularly beneficial" results for tasks "involving global consistency or cross-file reasoning"; CatCoder uses a type-dependency graph from static analysis to guide prompt composition ([arxiv.org/html/2510.04905v1](https://arxiv.org/html/2510.04905v1), 2025-10). The OpenAPI-to-MCP work argues OpenAPI specs serve as "the single source of truth for function definitions, ensuring AI agents construct valid API calls without hallucinating parameters or endpoints" ([arxiv.org/html/2507.16044v1](https://arxiv.org/html/2507.16044v1), 2025-07).
+- Observations: Type/spec context attacks the highest-value failure mode — fabricated parameters and endpoints. The benefit is largest in cross-module/cross-service tasks where the agent cannot grep its way to the answer.
+- Recommendations: For any external API surface, give the agent the OpenAPI/JSON Schema file path or an MCP tool that reads it. For internal code, prefer typed languages where signatures are first-class; install an LSP/code-intelligence plugin so the agent can query symbols rather than guessing. Do not paste full OpenAPI specs into CLAUDE.md — point to them.
+- Impact on agent LLM: HIGH
+  - Rationale: Spec grounding directly addresses parameter/endpoint hallucination, the single most common cause of wrong-but-plausible API code in 2025-era agents.
+
+### F4: Just-in-time retrieval beats upfront loading for large doc corpora
+- Evidence: Anthropic's context-engineering post describes a hybrid: "CLAUDE.md files are naively dropped into context up front, while primitives like glob and grep allow it to navigate its environment and retrieve files just-in-time, effectively bypassing the issues of stale indexing" ([anthropic.com/engineering/effective-context-engineering-for-ai-agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents), 2025-09-29). The Codex Skills system applies the same model: agents see only the skill name/description (~2% context budget cap, ~8,000 chars) and load full instructions on selection ([developers.openai.com/codex/skills](https://developers.openai.com/codex/skills), 2025). The RACG survey reports long-context LLMs "match RAG performance" only on small, well-structured repos; "as repository size grows or structural complexity increases, RAG demonstrates clear advantages" ([arxiv.org/html/2510.04905v1](https://arxiv.org/html/2510.04905v1)).
+- Observations: Vendor and academic guidance now agree: pre-load only what is small and universally applicable; everything else gets a name + path so the agent can fetch on demand. Skills/AGENTS.md and `@import` references are the standard delivery mechanisms.
+- Recommendations: Treat ADR-by-ADR retrieval as the default for ADR sets. Surface only an ADR *index* (titles + 1-line summaries) from CLAUDE.md/AGENTS.md, with paths. Use Codex Skills or Claude Code Skills for domain-specific doc bundles that should activate only on matching tasks.
+- Impact on agent LLM: HIGH
+  - Rationale: Anthropic explicitly attributes performance degradation to context fill, and both labs have shipped progressive-disclosure features (Skills, `@import`) precisely to mitigate this.
+
+### F5: Plan/progress files act as session-bridging design docs
+- Evidence: Anthropic's harness post identifies a `claude-progress.txt`-style file as "the key insight for agents to quickly understand the state of work when starting with a fresh context window" ([anthropic.com/engineering/effective-harnesses-for-long-running-agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents), 2025-11-26). It also recommends a comprehensive feature list (the example used JSON with 200+ features) and structured commit messages, so each new session can "read progress files, review git logs, consult the feature list, verify the app still works, then begin targeted work on a single feature."
+- Observations: Anthropic positions plan/progress files as design-doc-shaped artifacts: an SPEC.md captured by Claude interviewing the user, plus a running progress log that survives `/clear` and context compaction. This is a tech-doc category absent from older guidance.
+- Recommendations: Adopt a `SPEC.md` (or equivalent) generated up-front via a Claude/Codex interview pass, plus a progress log that is updated each session. Treat both as living docs; review them like code.
+- Impact on agent LLM: MED
+  - Rationale: Anthropic guidance is explicit and concrete, but quantitative ablation evidence is not yet published; effect is plausibly large for multi-session work.
+
+### F6: Stale docs poison agent reasoning more than missing docs do
+- Evidence: Practitioner reports cited in 2025 surveys describe agents that "form a model of what they thought the codebase was doing, and then proceed with absolute certainty even when that model was wrong"; "if your agent uses outdated information when a current version exists in the same system, that's context staleness" (drift survey roundup, 2025). The ADR-grounding study found context-grounded approaches produced more focused outputs (avg 709.89 tokens) versus verbose, drifty output without grounding — but only when the grounding *matched* the current decision space ([arxiv.org/html/2604.03826v1](https://arxiv.org/html/2604.03826v1), 2026).
+- Observations: A confident agent + a wrong doc is worse than a cautious agent with no doc. Mitigation requires either (a) keeping docs close to code so they get updated together, or (b) explicitly marking superseded/old material.
+- Recommendations: Co-locate ADRs with code (e.g., `docs/adr/`) and require a checkbox in PR review for "ADR updated if architectural assumption changed." Mark superseded ADRs with explicit "Superseded by ADR-NNNN" headers — agents will read those headers and downweight the content. Avoid pre-loading any doc you cannot vouch for as current.
+- Impact on agent LLM: HIGH
+  - Rationale: This is a documented failure mode with severe consequences (architectural-level confident hallucination), and the mitigation cost is low.
+
+### F7: AGENTS.md is becoming a cross-vendor open standard for tech-doc-shaped context
+- Evidence: AGENTS.md is now stewarded by the Agentic AI Foundation under the Linux Foundation, with collaborative authorship across OpenAI Codex and others; the spec is "just standard Markdown" with no required fields ([agents.md](https://agents.md), 2025; [developers.openai.com/codex/guides/agents-md](https://developers.openai.com/codex/guides/agents-md), 2025). Recommended sections explicitly include project structure, architecture, coding standards, testing instructions, and security considerations. Codex reads `AGENTS.override.md` before `AGENTS.md` for layered overrides.
+- Observations: The cross-vendor standardization signal is significant: tech-doc content authored once for AGENTS.md travels to Claude Code (often via symlink or `@AGENTS.md` import), Codex, Cursor, and others. Anthropic's CLAUDE.md and Codex's AGENTS.md have converged on near-identical content rules.
+- Recommendations: Author primary agent-facing docs in AGENTS.md and have CLAUDE.md `@AGENTS.md` import it (or symlink). Avoid duplicating content per agent. For monorepos, nested AGENTS.md files override parents — use this for subsystem-specific tech docs.
+- Impact on agent LLM: MED
+  - Rationale: Format choice itself doesn't move benchmarks much, but reduced duplication and override-aware nesting materially reduces the chance of stale/conflicting docs (which from F6 *do* move benchmarks).
+
+## Synthesis
+A consistent picture emerges across Anthropic, OpenAI, and 2025-26 academic work: agents perform best when tech docs are split by *role*. High-signal, project-specific *decisions* (architecture invariants, prohibitions, conventions) belong inline in CLAUDE.md/AGENTS.md and should be short, prescriptive, and ruthlessly pruned. *Reference* material (full ADR text, OpenAPI specs, type indexes, per-module designs) belongs in retrievable files surfaced via `@import`, Skills, MCP, or grep-able paths — and progressive-disclosure mechanisms (Skills, ADR indexes) keep the upfront token budget small. API/type/spec grounding is the single biggest lever against hallucination of parameters and endpoints. The new entrant — plan/progress files as living design docs — extends the picture to multi-session work. The dominant *failure* mode is not absence of docs but *stale* docs the agent confidently trusts, which argues for co-located, version-controlled ADRs and explicit supersession markers. AGENTS.md is consolidating as the cross-vendor home for the inline portion of all this.
+
+## See also
+- F1, F4, F7 overlap with agent-scaffolding's memory-file mechanics (CLAUDE.md/AGENTS.md as a delivery channel) — this report covers *what content* belongs there; scaffolding owns *how the file is loaded, layered, and edited*.
+- F3 overlaps with code-intelligence/LSP tooling — type signatures are tech docs when authored (IDL/OpenAPI) but tools when queried via LSP.
+- F5 overlaps with workflow/process design — SPEC.md and progress files sit on the boundary between tech doc and orchestration state.
+- F6 overlaps with retrieval/RAG dimension — the staleness mitigation story depends on retrieval freshness as much as on doc authoring.
