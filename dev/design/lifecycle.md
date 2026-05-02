@@ -4,7 +4,7 @@ date: 2026-05-01
 target_release: 0.6.0
 desc: Lifecycle feedback phases, host-routed diagnostics, counters, and profiling ownership
 blast_radius: observability surfaces; REQ-001..REQ-007; AC-001..AC-009; bindings subscriber adapters; engine feedback emission sites
-status: draft
+status: locked
 ---
 
 # Lifecycle Design

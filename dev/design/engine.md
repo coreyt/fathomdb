@@ -4,7 +4,7 @@ date: 2026-04-30
 target_release: 0.6.0
 desc: Runtime open/close, writer/read path, engine config, and cursor semantics
 blast_radius: fathomdb-engine runtime/writer/reader; interfaces/*.md; acceptance.md REQ-020..REQ-055 intersections
-status: draft
+status: locked
 ---
 
 # Engine Design

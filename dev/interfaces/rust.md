@@ -4,7 +4,7 @@ date: 2026-04-24
 target_release: 0.6.0
 desc: Public Rust surface (traits, functions, types, errors) for 0.6.0
 blast_radius: src/rust/crates/fathomdb; design/engine.md; design/bindings.md; design/errors.md; design/lifecycle.md
-status: draft
+status: locked
 ---
 
 # Rust Interface

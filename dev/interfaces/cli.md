@@ -4,7 +4,7 @@ date: 2026-04-24
 target_release: 0.6.0
 desc: Public CLI surface for 0.6.0
 blast_radius: TBD
-status: draft
+status: locked
 ---
 
 # CLI Interface

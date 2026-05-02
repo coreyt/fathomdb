@@ -4,7 +4,7 @@ date: 2026-04-24
 target_release: 0.6.0
 desc: Public TypeScript surface for 0.6.0
 blast_radius: src/ts/; design/bindings.md; design/errors.md; design/lifecycle.md; design/engine.md
-status: draft
+status: locked
 ---
 
 # TypeScript Interface

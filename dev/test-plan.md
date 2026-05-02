@@ -4,7 +4,7 @@ date: 2026-05-01
 target_release: 0.6.0
 desc: AC id to test id to layer mapping for the 0.6.0 rewrite
 blast_radius: acceptance.md; src/rust/crates/*/tests; src/python/tests; src/ts/tests; CI workflows
-status: draft
+status: locked
 ---
 
 # Test Plan

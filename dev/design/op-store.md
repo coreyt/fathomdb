@@ -4,7 +4,7 @@ date: 2026-04-30
 target_release: 0.6.0
 desc: Operational collections, authoritative row semantics, and transactional behavior with primary writes
 blast_radius: op-store tables; PreparedWrite::OpStore; REQ-053; REQ-057..REQ-059; AC-060b; AC-061..AC-063
-status: draft
+status: locked
 ---
 
 # Op-Store Design

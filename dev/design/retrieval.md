@@ -4,7 +4,7 @@ date: 2026-04-30
 target_release: 0.6.0
 desc: Fixed-stage retrieval pipeline, query planning, and branch-fallback behavior
 blast_radius: search path; REQ-010, REQ-011, REQ-017, REQ-018, REQ-029, REQ-034
-status: draft
+status: locked
 ---
 
 # Retrieval Design

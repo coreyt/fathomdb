@@ -4,7 +4,7 @@ date: 2026-04-30
 target_release: 0.6.0
 desc: Auto-migration behavior at Engine.open and accretion-guard ownership
 blast_radius: fathomdb-schema; Engine.open; REQ-042, REQ-045
-status: draft
+status: locked
 ---
 
 # Migrations Design

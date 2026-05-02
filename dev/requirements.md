@@ -4,7 +4,7 @@ date: 2026-04-27
 target_release: 0.6.0
 desc: User-visible needs + explicit non-goals for 0.6.0 rewrite
 blast_radius: every public API surface; acceptance.md (1:1 mapping); test-plan.md (every REQ → ≥1 AC → ≥1 test); architecture.md (no orphan subsystems); design/* (each subsystem traces to ≥1 REQ)
-status: draft
+status: locked
 ---
 
 # Requirements
@@ -479,6 +479,78 @@ the ADR is authoritative.
   _Source:_ ADR-0.6.0-projection-model; ADR-0.6.0-cli-scope.
 
 ---
+
+## Security hardening (REQ-060..REQ-066)
+
+Added 2026-05-02 as an HITL amendment to the locked corpus per
+`dev/security-review.md` HITL decision. Each REQ closes a 0.6.0 security
+finding with a user-visible falsifiable outcome.
+
+- **REQ-060 — Op-store payload validation completes in bounded time.**
+  Op-store JSON-Schema payload validation against any registered
+  `schema_id` completes in bounded time even when the schema's `pattern`
+  / `patternProperties` regex is adversarial. Caller observes
+  `SchemaValidationError` (or success), never a wedged writer.
+  _Source:_ `dev/security-review.md` SR-002. _Cross-cite:_
+  `design/op-store.md` § Write contract; `design/errors.md`
+  `SchemaValidationError`.
+
+- **REQ-061 — Op-store schemas reject external `$ref`.** Schema
+  registration via `admin.configure` rejects any schema containing a
+  non-fragment `$ref` URI (`http://`, `https://`, `file://`, or any
+  network-resolvable scheme). Rejection happens at registration time,
+  before any payload validation, with a typed error.
+  _Source:_ `dev/security-review.md` SR-003. _Cross-cite:_
+  `design/op-store.md` schema registration.
+
+- **REQ-062 — Embedder-returned vector dimension validated before vec0
+  write.** A wrong-length vector returned by the caller-supplied
+  embedder surfaces as `EmbedderDimensionMismatchError` and produces no
+  vec0 row write; the writer transaction rolls back cleanly.
+  Dimension validation occurs at exactly one boundary, between embedder
+  return and vec0 write.
+  _Source:_ `dev/security-review.md` SR-004. _Cross-cite:_
+  `design/embedder.md`; `design/vector.md`; `design/errors.md`
+  `EmbedderDimensionMismatchError`.
+
+- **REQ-063 — FFI panics surface as language-native exceptions.** A
+  Rust panic raised inside a Python or TypeScript binding entry point
+  surfaces to the caller as a typed binding exception; it never aborts
+  the host process and never unwinds across the FFI boundary as
+  undefined behavior.
+  _Source:_ `dev/security-review.md` SR-006. _Cross-cite:_
+  `design/bindings.md`; `interfaces/python.md`;
+  `interfaces/typescript.md`.
+
+- **REQ-064 — FFI string inputs reject embedded NUL and unpaired
+  surrogates.** Any caller-supplied string (Python `str` /
+  TypeScript `string`) reaching a `write` / `search` /
+  `admin.configure` argument is rejected with `WriteValidationError`
+  if it contains an embedded `\0` byte or an unpaired UTF-16
+  surrogate. Rejection happens at the binding layer, before the
+  payload reaches the writer.
+  _Source:_ `dev/security-review.md` SR-007. _Cross-cite:_
+  `interfaces/python.md`; `interfaces/typescript.md`;
+  `design/errors.md` `WriteValidationError`.
+
+- **REQ-065 — Error `Display` output omits internal SQL, absolute
+  paths, and parser byte offsets.** The `Display` representation of
+  every `EngineError` and `EngineOpenError` variant (and their
+  language-native binding counterparts) omits raw SQL fragments,
+  absolute host filesystem paths, and parser byte offsets. Internal
+  diagnostic chains remain available to engine logging.
+  _Source:_ `dev/security-review.md` SR-008. _Cross-cite:_
+  `design/errors.md` § Foreign-cause sanitization.
+
+- **REQ-066 — Migration failure preserves prior `user_version`.** When
+  a schema migration fails mid-way, the SQLite `PRAGMA user_version`
+  remains at the prior version after `Engine.open` returns
+  `MigrationError`. A subsequent reopen with a corrected migration
+  step starts from the prior version, not from a partially-applied
+  state.
+  _Source:_ `dev/security-review.md` SR-010. _Cross-cite:_
+  `design/migrations.md`; `design/engine.md` open-path step 5;
+  `design/errors.md` `MigrationError`.
 
 ## Non-goals
 

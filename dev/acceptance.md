@@ -4,7 +4,7 @@ date: 2026-04-27
 target_release: 0.6.0
 desc: Testable AC-NNN criteria; each maps to a REQ + test id
 blast_radius: test-plan.md (every AC → ≥1 test); requirements.md (every REQ → ≥1 AC); CI gate definitions; release-checklist.md
-status: draft
+status: locked
 ---
 
 # Acceptance Criteria
@@ -981,6 +981,91 @@ the only test-plan.md responsibility for this section.)
 
 ---
 
+## Security hardening (AC-064..AC-070)
+
+Added 2026-05-02 as an HITL amendment to the locked corpus per
+`dev/security-review.md`. Each AC closes a 0.6.0 security finding.
+
+## AC-064: Op-store payload validation rejects ReDoS regex in bounded time
+
+**Requirement ref:** REQ-060
+**Test id:** T-064
+**Assertion:** Registering an op-store collection schema with `pattern: "^(a|a)*$"` and submitting a 30-char non-matching payload returns `SchemaValidationError` within 100 ms wall-clock; the writer thread is not stalled and accepts a subsequent benign write.
+**Measurement:** `admin.configure` registers the catastrophic schema; one `write` call submits payload `"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"`; assert `SchemaValidationError` raised in ≤ 100 ms; immediately submit a benign payload to the same collection; assert success.
+**Fixture:** in-memory fixture; ReDoS-pattern schema fixture (test-plan.md fixture spec — pending).
+
+---
+
+## AC-065: Op-store schema registration rejects external `$ref`
+
+**Requirement ref:** REQ-061
+**Test id:** T-065
+**Assertion:** `admin.configure` rejects a schema whose `$ref` value is `http://example/`, `https://example/`, or `file:///etc/passwd` with a typed registration error; no payload validation runs, and no outbound network request or filesystem read is attempted by the engine.
+**Measurement:** Three sub-assertions, one per scheme. Each: call `admin.configure` with the schema; assert error class is the typed schema-registration rejection; assert the engine made no DNS lookup, no socket open to the named host, and no `open(2)` of `/etc/passwd` (verified by side-channel, e.g., test-only network-deny harness + path probe).
+**Fixture:** netns-deny-egress + bpftrace harnesses (already cataloged for AC-036/AC-037).
+
+---
+
+## AC-066: Wrong-dimension embedder return rolls back without vec0 write
+
+**Requirement ref:** REQ-062
+**Test id:** T-066
+**Assertion:** A stub embedder returning a vector of length `dim - 1` (where `dim` is the configured embedder dimension) causes the in-flight write to fail with `EmbedderDimensionMismatchError`; the vec0 partition table for the affected source has zero new rows after rollback; a follow-up write with a correct-length vector succeeds.
+**Measurement:** Open engine with stub embedder; submit one write; assert exception class; query `SELECT count(*)` against vec0 partition for the source rowid; assert unchanged. Replace stub with correct-dim variant; submit write; assert success.
+**Fixture:** dimension-mismatch stub embedder (test-plan.md fixture spec — pending).
+
+---
+
+## AC-067: Rust panic in binding entry point surfaces as language-native exception
+
+**Requirement ref:** REQ-063
+**Test id:** T-067
+**Assertion:** Triggering a forced Rust `panic!` inside a binding entry point (via a debug-only test hook) surfaces to the caller as a typed binding exception (`PanicException`-class in Python, `FathomDbError` subclass in TypeScript); the host process does not abort and remains usable for subsequent calls.
+**Measurement:** Build engine with `cfg(test)` panic-injection hook reachable from a `force_panic_for_test` debug-only verb. Call from Python and TypeScript test runners. Assert exception raised, process PID unchanged, follow-up `engine.counters()` succeeds.
+**Fixture:** debug-only panic-injection hook (test-plan.md fixture spec — pending). Disabled in release builds.
+
+---
+
+## AC-068a: FFI rejects embedded NUL in string arguments
+
+**Requirement ref:** REQ-064
+**Test id:** T-068a
+**Assertion:** Submitting a write payload that contains an embedded `\0` in any string field (typed write or op-store payload) raises `WriteValidationError` from the binding layer; no SQLite bind happens, and no row is written.
+**Measurement:** From Python and TypeScript: submit payload with `"a\0b"` in a text field; assert `WriteValidationError`; assert no new row in canonical or op-store tables.
+**Fixture:** in-memory engine.
+
+---
+
+## AC-068b: FFI rejects unpaired surrogates in string arguments
+
+**Requirement ref:** REQ-064
+**Test id:** T-068b
+**Assertion:** Submitting a write payload that contains an unpaired UTF-16 surrogate (e.g., `"\ud800"` from Python `str`, or the equivalent constructed-string from TypeScript) raises `WriteValidationError` from the binding layer; no row is written.
+**Measurement:** From Python: `"a\ud800b"` in a text field; assert `WriteValidationError`. From TypeScript: equivalent constructed string via `String.fromCharCode(0xd800)`; assert `WriteValidationError`.
+**Fixture:** in-memory engine.
+
+---
+
+## AC-069: Error `Display` omits raw SQL, absolute paths, and parser byte offsets
+
+**Requirement ref:** REQ-065
+**Test id:** T-069
+**Assertion:** Across `EngineError` and `EngineOpenError` variants whose foreign cause carries SQL, absolute path, or byte-offset content, the `Display` (and `__str__` / `.message`) output contains none of those three fields.
+**Measurement:** Construct three foreign-cause fixtures: (1) `rusqlite::Error` with a SQL fragment; (2) `io::Error` with absolute path `/tmp/<random>/db.sqlite`; (3) `serde_json::Error` with a known byte offset. Wrap each in the appropriate engine error variant. Assert `Display` output contains zero substring matches against the SQL fragment, the absolute path, and the byte-offset literal.
+**Fixture:** in-process foreign-cause fixtures (test-plan.md fixture spec — pending).
+
+---
+
+## AC-070: Failed migration preserves prior `user_version`
+
+**Requirement ref:** REQ-066
+**Test id:** T-070
+**Assertion:** When a registered migration step is forced to fail mid-execution, `Engine.open` returns `MigrationError`; the database's `PRAGMA user_version` after the failed open equals the value held before the open attempt.
+**Measurement:** Open a fresh DB at user_version `N`; register a migration to `N+1` whose body contains a forced failing statement before the user_version bump; call `Engine.open`; assert `MigrationError`; reopen via a side-channel (or read user_version directly via raw rusqlite without the engine); assert `PRAGMA user_version` == `N`.
+**Fixture:** failing-migration fixture (test-plan.md fixture spec — pending).
+
+---
+
 ## Coverage trace
 
 Every REQ in `requirements.md` has ≥1 AC:
@@ -1058,6 +1143,13 @@ Every REQ in `requirements.md` has ≥1 AC:
 | REQ-057  | AC-061a/b/c           |
 | REQ-058  | AC-062                |
 | REQ-059  | AC-063a/b/c           |
+| REQ-060  | AC-064                |
+| REQ-061  | AC-065                |
+| REQ-062  | AC-066                |
+| REQ-063  | AC-067                |
+| REQ-064  | AC-068a/b             |
+| REQ-065  | AC-069                |
+| REQ-066  | AC-070                |
 
 ## Lock-blocking dependencies
 

@@ -4,7 +4,7 @@ date: 2026-04-30
 target_release: 0.6.0
 desc: Dispatch pool, warmup behavior, timeout handling, and identity checks
 blast_radius: embedder dispatch; Engine.open warmup; REQ-028*, REQ-033, REQ-044
-status: draft
+status: locked
 ---
 
 # Embedder Design

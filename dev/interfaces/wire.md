@@ -4,7 +4,7 @@ date: 2026-04-24
 target_release: 0.6.0
 desc: On-disk + IPC formats (if any) for 0.6.0; short OK
 blast_radius: architecture.md § 5; design/engine.md; design/migrations.md
-status: draft
+status: locked
 ---
 
 # Wire Format

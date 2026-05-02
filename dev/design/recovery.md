@@ -4,7 +4,7 @@ date: 2026-04-30
 target_release: 0.6.0
 desc: Canonical operator CLI verb table, corruption handling workflow, and check-integrity output contract
 blast_radius: fathomdb-cli; requirements REQ-035..REQ-040, REQ-054; acceptance AC-035d, AC-039*, AC-040*, AC-042..AC-044
-status: draft
+status: locked
 ---
 
 # Recovery Design

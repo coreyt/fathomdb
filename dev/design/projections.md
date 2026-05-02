@@ -4,7 +4,7 @@ date: 2026-04-30
 target_release: 0.6.0
 desc: FTS and vector projection model, projection status, and freshness wiring
 blast_radius: FTS/vector derived state; REQ-008, REQ-013, REQ-014, REQ-015, REQ-029, REQ-055, REQ-059
-status: draft
+status: locked
 ---
 
 # Projections Design

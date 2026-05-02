@@ -4,7 +4,7 @@ date: 2026-04-30
 target_release: 0.6.0
 desc: Canonical error-type ownership, binding mapping inputs, and corruption detail host file
 blast_radius: fathomdb-engine errors; bindings; acceptance AC-035* and AC-060*
-status: draft
+status: locked
 ---
 
 # Errors Design

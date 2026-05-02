@@ -4,7 +4,7 @@ date: 2026-04-30
 target_release: 0.6.0
 desc: Projection job dispatch, backpressure, retry behavior, and shutdown ordering
 blast_radius: projection scheduler; REQ-015, REQ-016, REQ-027, REQ-029, REQ-030, REQ-055
-status: draft
+status: locked
 ---
 
 # Scheduler Design

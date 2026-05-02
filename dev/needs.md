@@ -4,7 +4,7 @@ date: 2026-05-02
 target_release: 0.6.0
 desc: Customer, functional, and non-functional user needs for the 0.6.0 rewrite
 blast_radius: dev/requirements.md; dev/acceptance.md; dev/architecture.md; dev/design/*; dev/interfaces/*; dev/test-plan.md; docs/positions/*
-status: draft
+status: locked
 ---
 
 # User Needs
