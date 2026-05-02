@@ -5,7 +5,7 @@
 // wiring lands in a follow-up slice; the 0.6.0 surface-stub keeps the
 // engine in pure TypeScript so parser and error-hierarchy tests run.
 
-import { ClosingError } from "./errors.js";
+import { ClosingError, WriteValidationError } from "./errors.js";
 
 export * from "./errors.js";
 
@@ -84,7 +84,7 @@ export class Engine {
     this.ensureOpen();
     const normalized = query.trim();
     if (normalized.length === 0) {
-      throw new Error("query must not be empty");
+      throw new WriteValidationError("query must not be empty");
     }
     return {
       projectionCursor: this.#cursor,
@@ -118,7 +118,7 @@ export class Engine {
     void options;
   }
 
-  /** @internal stub hook used by `admin.configure`. */
+  /** @internal used by `admin.configure`. */
   recordAdminConfigure(_options: AdminConfigureOptions): WriteReceipt {
     this.ensureOpen();
     this.#cursor += 1;
