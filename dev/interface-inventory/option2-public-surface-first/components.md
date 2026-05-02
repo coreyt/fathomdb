@@ -117,7 +117,7 @@ covers the subsystem-side of the relationship.
   - Does not own variant→class mapping matrix (`design/errors.md`).
   - Does not own CI smoke gate (`design/release.md`).
   - Does not own developer ergonomics (e.g. "do not manually `cargo
-    build && cp`"; `design/bindings.md` § 9).
+build && cp`"; `design/bindings.md` § 9).
   - Does not commit any new error class, dispatch model, or
     `BindingsConfig` struct (`design/bindings.md` § 14).
 

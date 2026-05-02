@@ -116,18 +116,18 @@ Impact on agent LLM = HIGH + choosing the wrong context-acquisition mode either 
 
 Across Claude Code and Codex, the strongest pattern is that coding-agent quality depends less on raw model intelligence than on disciplined context engineering around it. Durable repo instructions (`CLAUDE.md`, `AGENTS.md`), concise local memory, live editor state, structured issue/PR metadata, and repo-native examples all reduce ambiguity before the model starts reasoning. Multi-agent setups help when they isolate research, implementation, and review into separate contexts, while human feedback remains essential at plan time and merge time. The best-performing workflow is therefore a hybrid: keep mandatory rules in checked-in instruction files, preserve a clean context budget, seed the agent with exact local examples and issue/diff context, let it use tools to explore live state when retrieval is insufficient, and require evidence-backed human review before accepting the result.
 
-[S1]: <https://code.claude.com/docs/en/memory>
-[S2]: <https://code.claude.com/docs/en/best-practices>
-[S3]: <https://code.claude.com/docs/en/vs-code>
-[S4]: <https://code.claude.com/docs/en/jetbrains>
-[S5]: <https://code.claude.com/docs/en/github-actions>
-[S6]: <https://www.anthropic.com/engineering/multi-agent-research-system>
-[S7]: <https://openai.com/index/introducing-codex/>
-[S8]: <https://developers.openai.com/codex/memories>
-[S9]: <https://developers.openai.com/codex/guides/agents-md>
-[S10]: <https://developers.openai.com/codex/ide>
-[S11]: <https://developers.openai.com/codex/integrations/github>
-[S12]: <https://developers.openai.com/codex/learn/best-practices>
-[S13]: <https://developers.openai.com/cookbook/examples/gpt-5/codex_prompting_guide>
-[S14]: <https://openai.com/business/guides-and-resources/a-practical-guide-to-building-ai-agents/>
-[S15]: <https://developers.openai.com/blog/run-long-horizon-tasks-with-codex>
+[S1]: https://code.claude.com/docs/en/memory
+[S2]: https://code.claude.com/docs/en/best-practices
+[S3]: https://code.claude.com/docs/en/vs-code
+[S4]: https://code.claude.com/docs/en/jetbrains
+[S5]: https://code.claude.com/docs/en/github-actions
+[S6]: https://www.anthropic.com/engineering/multi-agent-research-system
+[S7]: https://openai.com/index/introducing-codex/
+[S8]: https://developers.openai.com/codex/memories
+[S9]: https://developers.openai.com/codex/guides/agents-md
+[S10]: https://developers.openai.com/codex/ide
+[S11]: https://developers.openai.com/codex/integrations/github
+[S12]: https://developers.openai.com/codex/learn/best-practices
+[S13]: https://developers.openai.com/cookbook/examples/gpt-5/codex_prompting_guide
+[S14]: https://openai.com/business/guides-and-resources/a-practical-guide-to-building-ai-agents/
+[S15]: https://developers.openai.com/blog/run-long-horizon-tasks-with-codex

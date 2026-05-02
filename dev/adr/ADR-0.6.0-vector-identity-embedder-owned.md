@@ -55,8 +55,8 @@ Vector configuration structs **may** carry:
 - chunking policy (chunk size, overlap, splitter type)
 - input preprocessing (text-side hints only: language hint, strip
   whitespace, choose-which-field-to-embed). These do not change
-  vector identity because they affect *which text* is embedded, not
-  *how text→vector* is computed.
+  vector identity because they affect _which text_ is embedded, not
+  _how text→vector_ is computed.
 - batch sizing
 - retry behavior
 
@@ -102,12 +102,12 @@ profile recorded in the database:
   recorded for that profile at first write.
 - If identities differ, fail with
   `EngineError::EmbedderIdentityMismatch { profile, recorded,
-  supplied }`.
+supplied }`.
 
-0.6.0 does **not** provide an open-time bypass for intentional
-identity swaps. `accept_identity_change` is deferred out of 0.6.0.
-Intentional embedder-swap workflow design moves to
-`dev/adr/ADR-0.8.0-embedder-identity-change-workflow.md`.
+  0.6.0 does **not** provide an open-time bypass for intentional
+  identity swaps. `accept_identity_change` is deferred out of 0.6.0.
+  Intentional embedder-swap workflow design moves to
+  `dev/adr/ADR-0.8.0-embedder-identity-change-workflow.md`.
 
 The DB-recorded identity is a **derived projection** of "the
 embedder that was used to write these vectors." It is not a third
@@ -179,7 +179,7 @@ where the bytes are stored.
   authoritative struct and lists every field that lives there
   (model_identity, model_version, dimension, normalization_policy)
   - when each may be populated (e.g. fine-tuned variants override
-  model_version).
+    model_version).
 - `interfaces/rust.md`, `interfaces/python.md`,
   `interfaces/typescript.md` document the Embedder trait / ABC /
   interface with `identity()` as a required method on every binding.

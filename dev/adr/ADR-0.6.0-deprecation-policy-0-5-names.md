@@ -40,7 +40,7 @@ soft-removal cycles.**
   signature-incompatible with the 0.5.x call (different arity,
   different types, different return type — so the 0.5.x caller fails
   to compile / fails to import / raises immediately, not silently does
-  the wrong thing). If the 0.6.0 signature *would accept* a 0.5.x call
+  the wrong thing). If the 0.6.0 signature _would accept_ a 0.5.x call
   unchanged, the name reuse is forbidden — drop the name instead.
 - A 0.6.0 method may **drop** a 0.5.x name entirely; callers see
   `AttributeError` / `ImportError` / Rust compile error.

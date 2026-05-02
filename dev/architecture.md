@@ -27,23 +27,23 @@ Per ADR-0.6.0-crate-topology (and 2026-04-27 amendment): monolithic
 
 **Current workspace (2026-04-27):**
 
-| Crate | Status | Responsibility |
-|---|---|---|
-| `src/rust/crates/fathomdb` | exists | Top-level facade re-export crate (thin shim around `fathomdb-engine`) |
-| `src/rust/crates/fathomdb-engine` | exists | Engine core — all module subsystems below |
-| `src/rust/crates/fathomdb-query` | exists | Pure AST-to-plan compiler — `QueryAst`, `QueryBuilder`, `compile_*` fns, `CompiledQuery` / `CompiledSearchPlan` types, FTS5 grammar adapt. No `dyn` trait objects, no runtime state, no I/O. Engine consumes as pure-function dependency. (0.6.0 disposition: KEPT separate per HITL 2026-04-29; rationale = compile-vs-runtime split, snapshot-test isolation; `design/retrieval.md` consumes.) |
-| `src/rust/crates/fathomdb-schema` | exists | Schema migration definitions; runs at `Engine.open` per REQ-042 |
-| `src/python/` (cdylib package `fathomdb`) | exists | PyO3 binding (built via `pip install -e src/python/` per memory `feedback_python_native_build`); Python sync surface per ADR-0.6.0-python-api-shape |
+| Crate                                     | Status | Responsibility                                                                                                                                                                                                                                                                                                                                                                                   |
+| ----------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/rust/crates/fathomdb`                | exists | Top-level facade re-export crate (thin shim around `fathomdb-engine`)                                                                                                                                                                                                                                                                                                                            |
+| `src/rust/crates/fathomdb-engine`         | exists | Engine core — all module subsystems below                                                                                                                                                                                                                                                                                                                                                        |
+| `src/rust/crates/fathomdb-query`          | exists | Pure AST-to-plan compiler — `QueryAst`, `QueryBuilder`, `compile_*` fns, `CompiledQuery` / `CompiledSearchPlan` types, FTS5 grammar adapt. No `dyn` trait objects, no runtime state, no I/O. Engine consumes as pure-function dependency. (0.6.0 disposition: KEPT separate per HITL 2026-04-29; rationale = compile-vs-runtime split, snapshot-test isolation; `design/retrieval.md` consumes.) |
+| `src/rust/crates/fathomdb-schema`         | exists | Schema migration definitions; runs at `Engine.open` per REQ-042                                                                                                                                                                                                                                                                                                                                  |
+| `src/python/` (cdylib package `fathomdb`) | exists | PyO3 binding (built via `pip install -e src/python/` per memory `feedback_python_native_build`); Python sync surface per ADR-0.6.0-python-api-shape                                                                                                                                                                                                                                              |
 
 **0.6.0-target additions (present as scaffold crates; completed during
 implementation phase):**
 
-| Crate | Phase 5 disposition | Responsibility |
-|---|---|---|
-| `src/rust/crates/fathomdb-cli` | new in 0.6.0 | Single binary: two-root operator surface (`fathomdb recover` for lossy recovery; `fathomdb doctor <verb>` for bit-preserving inspection/export) per ADR-0.6.0-cli-scope. Does NOT mirror full SDK 5-verb surface. |
-| `src/ts/` (cdylib package `fathomdb`) | new in 0.6.0 | napi-rs binding: Promise surface per ADR-0.6.0-typescript-api-shape (Path 2 TS binding-owned ThreadsafeFunction handoff pool sized at `num_cpus::get()` per ADR-0.6.0-async-surface) |
-| `src/rust/crates/fathomdb-embedder-api` | new in 0.6.0 | Sibling: shared trait crate — semver-stable surface pinning `Embedder` + `EmbedderIdentity` per ADR-0.6.0-embedder-protocol; enables version-skew detection at resolution time (REQ-047). Authorized by ADR-0.6.0-crate-topology 2026-04-27 amendment. |
-| `src/rust/crates/fathomdb-embedder` | new in 0.6.0 | Sibling: operator-installable embedder package; depends on `fathomdb-embedder-api`; bundles default candle + tokenizers per ADR-0.6.0-default-embedder. |
+| Crate                                   | Phase 5 disposition | Responsibility                                                                                                                                                                                                                                         |
+| --------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/rust/crates/fathomdb-cli`          | new in 0.6.0        | Single binary: two-root operator surface (`fathomdb recover` for lossy recovery; `fathomdb doctor <verb>` for bit-preserving inspection/export) per ADR-0.6.0-cli-scope. Does NOT mirror full SDK 5-verb surface.                                      |
+| `src/ts/` (cdylib package `fathomdb`)   | new in 0.6.0        | napi-rs binding: Promise surface per ADR-0.6.0-typescript-api-shape (Path 2 TS binding-owned ThreadsafeFunction handoff pool sized at `num_cpus::get()` per ADR-0.6.0-async-surface)                                                                   |
+| `src/rust/crates/fathomdb-embedder-api` | new in 0.6.0        | Sibling: shared trait crate — semver-stable surface pinning `Embedder` + `EmbedderIdentity` per ADR-0.6.0-embedder-protocol; enables version-skew detection at resolution time (REQ-047). Authorized by ADR-0.6.0-crate-topology 2026-04-27 amendment. |
+| `src/rust/crates/fathomdb-embedder`     | new in 0.6.0        | Sibling: operator-installable embedder package; depends on `fathomdb-embedder-api`; bundles default candle + tokenizers per ADR-0.6.0-default-embedder.                                                                                                |
 
 `fathomdb-query` disposition resolved 2026-04-29 (HITL): **kept separate**.
 Rationale = pure AST-to-plan compiler with no `dyn` trait objects and no
@@ -76,23 +76,23 @@ Each module = one `design/<name>.md` file. Modules listed in approximate
 **top-down** order: `runtime` is the highest-level facade; lower rows
 are dependencies.
 
-| Module | Responsibility | Owning ADRs | Owning REQs | design/*.md file |
-|---|---|---|---|---|
-| `runtime` | `Engine.open` / `close`; database file lock acquisition (hybrid sidecar flock + writer `locking_mode=EXCLUSIVE` — see § 5); eager embedder warmup at open (Invariant D dispatched here, owned by `embedder`); engine-config marshal; PRAGMA application; `Engine` struct lifetime; binding-facing facade | single-writer-thread, async-surface (Invariant A coordination), default-embedder, op-store-same-file, vector-index-location, durability-fsync-policy (PRAGMAs at open), provenance-retention (cap configurable here) | REQ-020a/b, REQ-021, REQ-022a/b, REQ-023, REQ-031c, REQ-032, REQ-033, REQ-041, REQ-042, REQ-043, REQ-044, REQ-051 | `design/engine.md` (runtime + writer + reader + migrations sub-sections) |
-| `writer` | Single dedicated OS thread; owns the only writer rusqlite connection; processes `PreparedWrite` enum variants; commits each write transaction and leaves the SQLite writer critical section before scheduler dispatch; does not release the engine-lifetime sidecar database lock until close | single-writer-thread, typed-write-boundary, prepared-write-shape, async-surface (Invariant A), durability-fsync-policy, provenance-retention (eviction here) | REQ-009a/b, REQ-019, REQ-027, REQ-028a/b/c, REQ-031, REQ-031b, REQ-053 | `design/engine.md` (writer sub-section) |
-| `reader` | Multi-connection reader pool (no serialization on a single conn per REQ-018); per-thread connection acquisition; SQLite WAL read-tx | async-surface (Path 1 sync read surface) | REQ-013, REQ-014, REQ-018 | `design/engine.md` (reader sub-section) |
-| `migrations` | Auto-migrate at `Engine.open`; per-step structured event emission (success + failure); accretion-guard linter target | (no dedicated ADR — leverages `fathomdb-schema`) | REQ-042, REQ-045 | `design/migrations.md` |
-| `errors` | Per-module error enums; top-level `EngineError` wrapping via `#[from]`; binding error-mapping tables | error-taxonomy | REQ-056 | `design/errors.md` (cross-cuts every module; standalone for clarity) |
-| `op_store` | `OpStoreInsert` PreparedWrite variant + `operational_*` tables in same SQLite file; transactional with primary writes; payload validation via JSON Schema per `schema_id` | op-store-same-file, json-schema-policy, typed-write-boundary | REQ-053, REQ-057, REQ-058, REQ-059 | `design/op-store.md` |
-| `embedder` | Embedder dispatch pool (`embedder_pool_size`, default = `num_cpus::get()`); `embed()` invocation per ADR-0.6.0-embedder-protocol Invariants 1–4; eager warmup; per-call timeout (Invariant D); returns logical `Vec<Vector>` (BLOB encoding owned by `vector`) | async-surface (Invariants B + C + D), embedder-protocol, default-embedder, vector-identity-embedder-owned | REQ-028a/b/c, REQ-033 (no implicit network fetch) | `design/embedder.md` |
-| `scheduler` | Tokio runtime worker pool (orchestration only, default 2 threads); dispatches projection jobs post-commit per Invariant A; `spawn_blocking` to embedder pool; mpsc back to writer; 4-layer backpressure | scheduler-shape, async-surface (Invariant A), projection-model | REQ-015, REQ-016, REQ-027, REQ-029, REQ-030, REQ-055 | `design/scheduler.md` |
-| `vector` | `vec0` virtual table inside same SQLite file; LE-f32 BLOB encoding + alignment + byte-length invariants (BLOB encoding boundary); sqlite-vec usage; rebuild path for physical recovery | vector-index-location, sqlite-vec-acceptance, zerocopy-blob, vector-identity-embedder-owned, recovery-rank-correlation | REQ-011, REQ-025c, REQ-040, REQ-044, REQ-051 | `design/vector.md` |
-| `projection` | Push-model FTS5 + vector projections; `projection_cursor` allocation + advancement on writer thread; backpressure cooperation with scheduler; projection-status enum | projection-model, projection-freshness-sli, scheduler-shape | REQ-008, REQ-013, REQ-014, REQ-015, REQ-027, REQ-029, REQ-055, REQ-059 | `design/projections.md` |
-| `retrieval` | Fixed-stage pipeline (parse → match → fetch → optional expand); FTS5 + vector + hybrid paths; safe FTS5 grammar parser (no raw input passthrough) | retrieval-pipeline-shape, retrieval-latency-gates, text-query-latency-gates | REQ-010, REQ-011, REQ-017, REQ-018, REQ-029, REQ-034 | `design/retrieval.md` |
-| `lifecycle` | Phase tags ({Started, Slow, Heartbeat, Finished, Failed}); slow-statement detection at configurable threshold; host-subscriber routing; SQLite-internal event surfacing; cumulative counters; per-statement profile records | (no dedicated ADR — REQ-derived) | REQ-001..REQ-005, REQ-006a/b, REQ-007, REQ-003 (counter shape) | `design/lifecycle.md` |
-| `recovery` | CLI-only operator tooling: `fathomdb doctor <verb>` for bit-preserving inspection/export and `fathomdb recover --accept-data-loss` for lossy/non-bit-preserving repair; physical recovery from canonical state; `fathomdb doctor safe-export` + SHA-256 manifest; safe-export latency target; all recovery/doctor verbs unreachable from runtime SDKs | (no dedicated ADR — REQ-derived) | REQ-012, REQ-024, REQ-025a/b/c, REQ-026, REQ-035, REQ-036, REQ-037, REQ-038, REQ-039, REQ-040, REQ-054, REQ-059 | `design/recovery.md` |
-| `bindings facade` | Binding-side surface mapping (Rust = sync engine API; Python = sync, snake_case; TS = Promise, camelCase, idiomatic; CLI = typed verbs); error-mapping per binding; soft-fallback signal field-naming; drain verb name; cursor field on read-tx + write-commit return | python-api-shape, typescript-api-shape, async-surface (Path 1 + Path 2), cli-scope, no-shims-policy, deprecation-policy-0-5-names, prepared-write-shape | REQ-029, REQ-030, REQ-042, REQ-046a/b, REQ-053, REQ-055, REQ-056 | `design/bindings.md` (load-bearing — owns error-mapping + path-1/path-2 cross-binding contracts) |
-| `release` | CI / publish artifacts: version-consistency check, atomic multi-registry publish, registry-installed wheel smoke, sibling co-tagging | tier1-ci-platforms | REQ-047, REQ-048, REQ-049, REQ-050, REQ-052 | `design/release.md` |
+| Module            | Responsibility                                                                                                                                                                                                                                                                                                                                        | Owning ADRs                                                                                                                                                                                                          | Owning REQs                                                                                                       | design/\*.md file                                                                                |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `runtime`         | `Engine.open` / `close`; database file lock acquisition (hybrid sidecar flock + writer `locking_mode=EXCLUSIVE` — see § 5); eager embedder warmup at open (Invariant D dispatched here, owned by `embedder`); engine-config marshal; PRAGMA application; `Engine` struct lifetime; binding-facing facade                                              | single-writer-thread, async-surface (Invariant A coordination), default-embedder, op-store-same-file, vector-index-location, durability-fsync-policy (PRAGMAs at open), provenance-retention (cap configurable here) | REQ-020a/b, REQ-021, REQ-022a/b, REQ-023, REQ-031c, REQ-032, REQ-033, REQ-041, REQ-042, REQ-043, REQ-044, REQ-051 | `design/engine.md` (runtime + writer + reader + migrations sub-sections)                         |
+| `writer`          | Single dedicated OS thread; owns the only writer rusqlite connection; processes `PreparedWrite` enum variants; commits each write transaction and leaves the SQLite writer critical section before scheduler dispatch; does not release the engine-lifetime sidecar database lock until close                                                         | single-writer-thread, typed-write-boundary, prepared-write-shape, async-surface (Invariant A), durability-fsync-policy, provenance-retention (eviction here)                                                         | REQ-009a/b, REQ-019, REQ-027, REQ-028a/b/c, REQ-031, REQ-031b, REQ-053                                            | `design/engine.md` (writer sub-section)                                                          |
+| `reader`          | Multi-connection reader pool (no serialization on a single conn per REQ-018); per-thread connection acquisition; SQLite WAL read-tx                                                                                                                                                                                                                   | async-surface (Path 1 sync read surface)                                                                                                                                                                             | REQ-013, REQ-014, REQ-018                                                                                         | `design/engine.md` (reader sub-section)                                                          |
+| `migrations`      | Auto-migrate at `Engine.open`; per-step structured event emission (success + failure); accretion-guard linter target                                                                                                                                                                                                                                  | (no dedicated ADR — leverages `fathomdb-schema`)                                                                                                                                                                     | REQ-042, REQ-045                                                                                                  | `design/migrations.md`                                                                           |
+| `errors`          | Per-module error enums; top-level `EngineError` wrapping via `#[from]`; binding error-mapping tables                                                                                                                                                                                                                                                  | error-taxonomy                                                                                                                                                                                                       | REQ-056                                                                                                           | `design/errors.md` (cross-cuts every module; standalone for clarity)                             |
+| `op_store`        | `OpStoreInsert` PreparedWrite variant + `operational_*` tables in same SQLite file; transactional with primary writes; payload validation via JSON Schema per `schema_id`                                                                                                                                                                             | op-store-same-file, json-schema-policy, typed-write-boundary                                                                                                                                                         | REQ-053, REQ-057, REQ-058, REQ-059                                                                                | `design/op-store.md`                                                                             |
+| `embedder`        | Embedder dispatch pool (`embedder_pool_size`, default = `num_cpus::get()`); `embed()` invocation per ADR-0.6.0-embedder-protocol Invariants 1–4; eager warmup; per-call timeout (Invariant D); returns logical `Vec<Vector>` (BLOB encoding owned by `vector`)                                                                                        | async-surface (Invariants B + C + D), embedder-protocol, default-embedder, vector-identity-embedder-owned                                                                                                            | REQ-028a/b/c, REQ-033 (no implicit network fetch)                                                                 | `design/embedder.md`                                                                             |
+| `scheduler`       | Tokio runtime worker pool (orchestration only, default 2 threads); dispatches projection jobs post-commit per Invariant A; `spawn_blocking` to embedder pool; mpsc back to writer; 4-layer backpressure                                                                                                                                               | scheduler-shape, async-surface (Invariant A), projection-model                                                                                                                                                       | REQ-015, REQ-016, REQ-027, REQ-029, REQ-030, REQ-055                                                              | `design/scheduler.md`                                                                            |
+| `vector`          | `vec0` virtual table inside same SQLite file; LE-f32 BLOB encoding + alignment + byte-length invariants (BLOB encoding boundary); sqlite-vec usage; rebuild path for physical recovery                                                                                                                                                                | vector-index-location, sqlite-vec-acceptance, zerocopy-blob, vector-identity-embedder-owned, recovery-rank-correlation                                                                                               | REQ-011, REQ-025c, REQ-040, REQ-044, REQ-051                                                                      | `design/vector.md`                                                                               |
+| `projection`      | Push-model FTS5 + vector projections; `projection_cursor` allocation + advancement on writer thread; backpressure cooperation with scheduler; projection-status enum                                                                                                                                                                                  | projection-model, projection-freshness-sli, scheduler-shape                                                                                                                                                          | REQ-008, REQ-013, REQ-014, REQ-015, REQ-027, REQ-029, REQ-055, REQ-059                                            | `design/projections.md`                                                                          |
+| `retrieval`       | Fixed-stage pipeline (parse → match → fetch → optional expand); FTS5 + vector + hybrid paths; safe FTS5 grammar parser (no raw input passthrough)                                                                                                                                                                                                     | retrieval-pipeline-shape, retrieval-latency-gates, text-query-latency-gates                                                                                                                                          | REQ-010, REQ-011, REQ-017, REQ-018, REQ-029, REQ-034                                                              | `design/retrieval.md`                                                                            |
+| `lifecycle`       | Phase tags ({Started, Slow, Heartbeat, Finished, Failed}); slow-statement detection at configurable threshold; host-subscriber routing; SQLite-internal event surfacing; cumulative counters; per-statement profile records                                                                                                                           | (no dedicated ADR — REQ-derived)                                                                                                                                                                                     | REQ-001..REQ-005, REQ-006a/b, REQ-007, REQ-003 (counter shape)                                                    | `design/lifecycle.md`                                                                            |
+| `recovery`        | CLI-only operator tooling: `fathomdb doctor <verb>` for bit-preserving inspection/export and `fathomdb recover --accept-data-loss` for lossy/non-bit-preserving repair; physical recovery from canonical state; `fathomdb doctor safe-export` + SHA-256 manifest; safe-export latency target; all recovery/doctor verbs unreachable from runtime SDKs | (no dedicated ADR — REQ-derived)                                                                                                                                                                                     | REQ-012, REQ-024, REQ-025a/b/c, REQ-026, REQ-035, REQ-036, REQ-037, REQ-038, REQ-039, REQ-040, REQ-054, REQ-059   | `design/recovery.md`                                                                             |
+| `bindings facade` | Binding-side surface mapping (Rust = sync engine API; Python = sync, snake_case; TS = Promise, camelCase, idiomatic; CLI = typed verbs); error-mapping per binding; soft-fallback signal field-naming; drain verb name; cursor field on read-tx + write-commit return                                                                                 | python-api-shape, typescript-api-shape, async-surface (Path 1 + Path 2), cli-scope, no-shims-policy, deprecation-policy-0-5-names, prepared-write-shape                                                              | REQ-029, REQ-030, REQ-042, REQ-046a/b, REQ-053, REQ-055, REQ-056                                                  | `design/bindings.md` (load-bearing — owns error-mapping + path-1/path-2 cross-binding contracts) |
+| `release`         | CI / publish artifacts: version-consistency check, atomic multi-registry publish, registry-installed wheel smoke, sibling co-tagging                                                                                                                                                                                                                  | tier1-ci-platforms                                                                                                                                                                                                   | REQ-047, REQ-048, REQ-049, REQ-050, REQ-052                                                                       | `design/release.md`                                                                              |
 
 ## 3. Write path
 
@@ -302,14 +302,14 @@ the one `.sqlite` file.
 
 ## 6. Process / thread topology
 
-| Thread | Owner | Concurrency | Notes |
-|---|---|---|---|
-| Writer | engine | 1 (single OS thread) | Owns writer rusqlite conn; never a tokio worker; never calls `block_on` |
-| Reader | engine | N (per-thread acquisition from pool) | Multi-connection pool; serves SDK reads; sizing decided in `design/engine.md` |
-| Tokio runtime workers | engine | default 2 (`scheduler_runtime_threads`) | Orchestration only; spawn_blocking to embedder pool |
-| Embedder dispatch pool | engine | default `num_cpus::get()` (`embedder_pool_size`) | Runs `embed()` only; never tokio workers; never asyncio/V8 main thread |
-| napi-rs Rust pool | TS binding | default `num_cpus::get()` per ADR-0.6.0-async-surface Path 2 | ThreadsafeFunction handoff; decouples from libuv 4-thread default; not canonical `EngineConfig` |
-| Caller threads | host | 1+ (Python `asyncio.run_in_executor`, TS Promise consumers, etc.) | Engine API is sync from caller's POV (Rust/Python/CLI) or Promise (TS) |
+| Thread                 | Owner      | Concurrency                                                       | Notes                                                                                           |
+| ---------------------- | ---------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Writer                 | engine     | 1 (single OS thread)                                              | Owns writer rusqlite conn; never a tokio worker; never calls `block_on`                         |
+| Reader                 | engine     | N (per-thread acquisition from pool)                              | Multi-connection pool; serves SDK reads; sizing decided in `design/engine.md`                   |
+| Tokio runtime workers  | engine     | default 2 (`scheduler_runtime_threads`)                           | Orchestration only; spawn_blocking to embedder pool                                             |
+| Embedder dispatch pool | engine     | default `num_cpus::get()` (`embedder_pool_size`)                  | Runs `embed()` only; never tokio workers; never asyncio/V8 main thread                          |
+| napi-rs Rust pool      | TS binding | default `num_cpus::get()` per ADR-0.6.0-async-surface Path 2      | ThreadsafeFunction handoff; decouples from libuv 4-thread default; not canonical `EngineConfig` |
+| Caller threads         | host       | 1+ (Python `asyncio.run_in_executor`, TS Promise consumers, etc.) | Engine API is sync from caller's POV (Rust/Python/CLI) or Promise (TS)                          |
 
 All engine-internal threads are dropped on `Engine.close()`; the
 engine releases the lock before `close()` returns (REQ-020a, AC-022a).
@@ -321,101 +321,101 @@ engine releases the lock before `close()` returns (REQ-020a, AC-022a).
 Every accepted ADR with a runtime architectural footprint maps to ≥1
 component above:
 
-| ADR | Architectural home |
-|---|---|
-| async-surface | bindings facade + writer (Invariant A) + embedder (B/C/D) + reader (sync surface) |
-| default-embedder | embedder + runtime (warmup at open) |
-| sqlite-vec-acceptance | vector |
-| operator-config-json-only | bindings facade (config marshal) + op_store (schema validation) |
-| typed-write-boundary | bindings facade + writer |
-| op-store-same-file | op_store + on-disk layout |
-| embedder-protocol | embedder |
-| zerocopy-blob | vector |
-| no-shims-policy | bindings facade (no legacy_*); writer (no compat verbs) |
-| single-writer-thread | writer + runtime (lock) |
-| vector-identity-embedder-owned | embedder + vector + writer (boundary validation) |
-| durability-fsync-policy | runtime (PRAGMAs at open) + writer (commit semantics) |
-| projection-freshness-sli | scheduler + projection (cursor advancement) |
-| retrieval-latency-gates | retrieval (vector path) |
-| scheduler-shape | scheduler + embedder |
-| projection-model | projection + scheduler |
-| retrieval-pipeline-shape | retrieval |
-| error-taxonomy | errors module + bindings facade error mapping |
-| typescript-api-shape | bindings facade (TS) |
-| cli-scope | bindings facade (CLI) + recovery |
-| write-throughput-sli | writer |
-| json-schema-policy | op_store |
-| text-query-latency-gates | retrieval (FTS5 path) |
-| recovery-rank-correlation | recovery + vector (rebuild semantics) |
-| provenance-retention | writer (eviction) + runtime (configurable cap) |
-| vector-index-location | vector + on-disk layout |
-| prepared-write-shape | bindings facade + writer |
-| python-api-shape | bindings facade (Python) |
-| deprecation-policy-0-5-names | bindings facade |
+| ADR                            | Architectural home                                                                |
+| ------------------------------ | --------------------------------------------------------------------------------- |
+| async-surface                  | bindings facade + writer (Invariant A) + embedder (B/C/D) + reader (sync surface) |
+| default-embedder               | embedder + runtime (warmup at open)                                               |
+| sqlite-vec-acceptance          | vector                                                                            |
+| operator-config-json-only      | bindings facade (config marshal) + op_store (schema validation)                   |
+| typed-write-boundary           | bindings facade + writer                                                          |
+| op-store-same-file             | op_store + on-disk layout                                                         |
+| embedder-protocol              | embedder                                                                          |
+| zerocopy-blob                  | vector                                                                            |
+| no-shims-policy                | bindings facade (no legacy\_\*); writer (no compat verbs)                         |
+| single-writer-thread           | writer + runtime (lock)                                                           |
+| vector-identity-embedder-owned | embedder + vector + writer (boundary validation)                                  |
+| durability-fsync-policy        | runtime (PRAGMAs at open) + writer (commit semantics)                             |
+| projection-freshness-sli       | scheduler + projection (cursor advancement)                                       |
+| retrieval-latency-gates        | retrieval (vector path)                                                           |
+| scheduler-shape                | scheduler + embedder                                                              |
+| projection-model               | projection + scheduler                                                            |
+| retrieval-pipeline-shape       | retrieval                                                                         |
+| error-taxonomy                 | errors module + bindings facade error mapping                                     |
+| typescript-api-shape           | bindings facade (TS)                                                              |
+| cli-scope                      | bindings facade (CLI) + recovery                                                  |
+| write-throughput-sli           | writer                                                                            |
+| json-schema-policy             | op_store                                                                          |
+| text-query-latency-gates       | retrieval (FTS5 path)                                                             |
+| recovery-rank-correlation      | recovery + vector (rebuild semantics)                                             |
+| provenance-retention           | writer (eviction) + runtime (configurable cap)                                    |
+| vector-index-location          | vector + on-disk layout                                                           |
+| prepared-write-shape           | bindings facade + writer                                                          |
+| python-api-shape               | bindings facade (Python)                                                          |
+| deprecation-policy-0-5-names   | bindings facade                                                                   |
 
 ### Meta ADRs (no runtime footprint)
 
 These ADRs decide policy / topology / deferrals; they have no runtime
 component and are intentionally out of the runtime mapping above.
 
-| ADR | Why no runtime home |
-|---|---|
-| crate-topology | Decided by this doc § 1; not a runtime component |
-| subprocess-bridge-deferral | 0.6.0 ships nothing; deferred to 0.8.0 (FU-WIRE15) |
-| tier1-ci-platforms | CI gate; runtime engine has no per-platform code path beyond standard cross-compile |
+| ADR                        | Why no runtime home                                                                 |
+| -------------------------- | ----------------------------------------------------------------------------------- |
+| crate-topology             | Decided by this doc § 1; not a runtime component                                    |
+| subprocess-bridge-deferral | 0.6.0 ships nothing; deferred to 0.8.0 (FU-WIRE15)                                  |
+| tier1-ci-platforms         | CI gate; runtime engine has no per-platform code path beyond standard cross-compile |
 
 ### REQ coverage
 
 Every REQ in `requirements.md` traces to ≥1 module via § 2:
 
-| REQ | Module(s) |
-|---|---|
-| REQ-001..REQ-005, REQ-006a/b, REQ-007 | lifecycle |
-| REQ-003 (counters — restated for clarity) | lifecycle |
-| REQ-008 | projection |
-| REQ-009a/b | writer |
-| REQ-010 | retrieval (FTS5 path) |
-| REQ-011 | retrieval (vector path) |
-| REQ-012 | recovery |
-| REQ-013 | reader (canonical), writer (commit-shape) |
-| REQ-014 | reader (FTS), writer (commit-shape) |
-| REQ-015 | scheduler + projection |
-| REQ-016 | scheduler (drain semantics) |
-| REQ-017 | retrieval |
-| REQ-018 | reader |
-| REQ-019 | writer |
-| REQ-020a/b | runtime |
-| REQ-021 | runtime |
-| REQ-022a/b | runtime + writer |
-| REQ-023 | runtime + scheduler |
-| REQ-024 | recovery |
-| REQ-025a/b/c | recovery + vector |
-| REQ-026 | recovery |
-| REQ-027 | writer + projection |
-| REQ-028a/b/c | embedder + writer (boundary check) |
-| REQ-029 | retrieval + bindings facade (signal field) |
-| REQ-030 | scheduler + bindings facade (verb name) |
-| REQ-031 | writer + runtime |
-| REQ-031b | writer + runtime |
-| REQ-031c | runtime |
-| REQ-032 | runtime (no listener opened anywhere) |
-| REQ-033 | embedder + runtime (no fetch on open) |
-| REQ-034 | retrieval (parse stage) |
-| REQ-035 | recovery |
-| REQ-036, REQ-037, REQ-038, REQ-039, REQ-040 | recovery |
-| REQ-041 | runtime + on-disk layout |
-| REQ-042, REQ-045 | migrations |
-| REQ-043 | runtime (POST check) |
-| REQ-044 | runtime (POST check) + embedder + vector |
-| REQ-046a/b | bindings facade + release (changelog discipline) |
-| REQ-047, REQ-048, REQ-049, REQ-050, REQ-052 | release |
-| REQ-051 | runtime (POST check) + vector |
-| REQ-053 | bindings facade |
-| REQ-054 | recovery + bindings facade (SDK-side absence) |
-| REQ-055 | bindings facade (cursor field) + projection (allocation) |
-| REQ-056 | errors + bindings facade (mapping) |
-| REQ-057, REQ-058 | op_store |
-| REQ-059 | projection + recovery + op_store |
+| REQ                                         | Module(s)                                                |
+| ------------------------------------------- | -------------------------------------------------------- |
+| REQ-001..REQ-005, REQ-006a/b, REQ-007       | lifecycle                                                |
+| REQ-003 (counters — restated for clarity)   | lifecycle                                                |
+| REQ-008                                     | projection                                               |
+| REQ-009a/b                                  | writer                                                   |
+| REQ-010                                     | retrieval (FTS5 path)                                    |
+| REQ-011                                     | retrieval (vector path)                                  |
+| REQ-012                                     | recovery                                                 |
+| REQ-013                                     | reader (canonical), writer (commit-shape)                |
+| REQ-014                                     | reader (FTS), writer (commit-shape)                      |
+| REQ-015                                     | scheduler + projection                                   |
+| REQ-016                                     | scheduler (drain semantics)                              |
+| REQ-017                                     | retrieval                                                |
+| REQ-018                                     | reader                                                   |
+| REQ-019                                     | writer                                                   |
+| REQ-020a/b                                  | runtime                                                  |
+| REQ-021                                     | runtime                                                  |
+| REQ-022a/b                                  | runtime + writer                                         |
+| REQ-023                                     | runtime + scheduler                                      |
+| REQ-024                                     | recovery                                                 |
+| REQ-025a/b/c                                | recovery + vector                                        |
+| REQ-026                                     | recovery                                                 |
+| REQ-027                                     | writer + projection                                      |
+| REQ-028a/b/c                                | embedder + writer (boundary check)                       |
+| REQ-029                                     | retrieval + bindings facade (signal field)               |
+| REQ-030                                     | scheduler + bindings facade (verb name)                  |
+| REQ-031                                     | writer + runtime                                         |
+| REQ-031b                                    | writer + runtime                                         |
+| REQ-031c                                    | runtime                                                  |
+| REQ-032                                     | runtime (no listener opened anywhere)                    |
+| REQ-033                                     | embedder + runtime (no fetch on open)                    |
+| REQ-034                                     | retrieval (parse stage)                                  |
+| REQ-035                                     | recovery                                                 |
+| REQ-036, REQ-037, REQ-038, REQ-039, REQ-040 | recovery                                                 |
+| REQ-041                                     | runtime + on-disk layout                                 |
+| REQ-042, REQ-045                            | migrations                                               |
+| REQ-043                                     | runtime (POST check)                                     |
+| REQ-044                                     | runtime (POST check) + embedder + vector                 |
+| REQ-046a/b                                  | bindings facade + release (changelog discipline)         |
+| REQ-047, REQ-048, REQ-049, REQ-050, REQ-052 | release                                                  |
+| REQ-051                                     | runtime (POST check) + vector                            |
+| REQ-053                                     | bindings facade                                          |
+| REQ-054                                     | recovery + bindings facade (SDK-side absence)            |
+| REQ-055                                     | bindings facade (cursor field) + projection (allocation) |
+| REQ-056                                     | errors + bindings facade (mapping)                       |
+| REQ-057, REQ-058                            | op_store                                                 |
+| REQ-059                                     | projection + recovery + op_store                         |
 
 No orphan REQs.
 
@@ -445,7 +445,7 @@ These do not block lock; answered in named follow-on docs.
 - **Reader pool sizing + acquisition semantics.** No dedicated ADR;
   `design/engine.md` (reader sub-section) decides. Constraint: REQ-018
   - REQ-013/014. Critic flagged candidate ADR; folded into design doc
-  pending forcing function.
+    pending forcing function.
 - **Provenance event table schema.** `design/engine.md`; retention shape
   settled by ADR-provenance-retention.
 - ~~**Op-store transactional API shape.**~~ Resolved in

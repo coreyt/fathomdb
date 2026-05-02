@@ -13,7 +13,7 @@ status: draft
 
 ## HITL decision (2026-04-25)
 
-Critic-B F7: candle-* re-exports safetensors. Direct dep is dead weight.
+Critic-B F7: candle-\* re-exports safetensors. Direct dep is dead weight.
 HITL: use the candle re-export. ~10 LoC migration delta in
 `default-embedder` weight loader.
 

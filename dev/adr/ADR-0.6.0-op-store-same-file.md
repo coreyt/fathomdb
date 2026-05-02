@@ -63,15 +63,15 @@ Three tables, named with the `operational_*` prefix (per OPS-1):
 
 - `operational_collections` — collection registry. Columns:
   `name PK, kind, schema_json, retention_json, format_version,
-  created_at`. `kind` ∈ {`append_only_log`, `latest_state`}.
+created_at`. `kind` ∈ {`append_only_log`, `latest_state`}.
 - `operational_mutations` — authoritative append-only rows for
   `append_only_log` collections. Columns:
   `id PK, collection_name FK, record_key, op_kind, payload_json,
-  source_ref, created_at`. `op_kind` ∈ {`append`}.
+source_ref, created_at`. `op_kind` ∈ {`append`}.
 - `operational_state` — authoritative current-state rows for
   `latest_state` collections. Columns:
   `collection_name FK, record_key, payload_json, source_ref,
-  created_at, updated_at`; primary key = `(collection_name, record_key)`.
+created_at, updated_at`; primary key = `(collection_name, record_key)`.
 
 ### Two collection kinds
 
@@ -82,12 +82,12 @@ Three tables, named with the `operational_*` prefix (per OPS-1):
   There is no derived / rebuildable companion table for op-store data
   in 0.6.0.
 
-0.6.0 deliberately does **not** add first-class op-store verbs for
-`put`, `delete`, or `increment`, and it does not model collection
-disable / soft-retire lifecycle. Clients encode state transitions in
-their stored payloads and collection choice. If a future operator
-workflow needs explicit mutation verbs or collection-disable
-semantics, that reopens this ADR.
+  0.6.0 deliberately does **not** add first-class op-store verbs for
+  `put`, `delete`, or `increment`, and it does not model collection
+  disable / soft-retire lifecycle. Clients encode state transitions in
+  their stored payloads and collection choice. If a future operator
+  workflow needs explicit mutation verbs or collection-disable
+  semantics, that reopens this ADR.
 
 The four folded docs (op-store feature, op-store concept, payload schema
 validation, secondary indexes) all describe primitives that survive as
@@ -149,7 +149,7 @@ load-bearing for agentic workflows.
   open. Tracked as FU-OPS2.
 - **Op-store payload typing (X-2 cross-cite).** Per
   ADR-0.6.0-typed-write-boundary, `OpStoreInsert { kind, payload:
-  serde_json::Value, schema_id: Option<...> }` is the typed carrier
+serde_json::Value, schema_id: Option<...> }` is the typed carrier
   shape. The `Value` is structural, not raw SQL. Schema validation
   against `schema_id` lives in the JSON-Schema policy (FU-M5).
 

@@ -138,16 +138,16 @@ Web research on how Claude Code and OpenAI Codex use technical documentation dur
 
 The strongest pattern across Claude, Codex, and the cited research is that coding agents benefit less from "more documentation" in the abstract than from the right documentation in the right form: concise repo-local instruction files for operating rules, explicit requirement docs with acceptance checks, concrete architecture docs that map behavior to source structure, connected external design/product artifacts, and machine-readable interface contracts. The research reinforces the product docs: retrieval and summarization of the relevant slices outperform both in-file-only reasoning and indiscriminate context stuffing, while high-quality documentation measurably improves issue-solving when paired with source code and executable validation. In practice, the best agent-facing doc stack is layered, scoped, structured, and verifiable.
 
-[S1]: <https://openai.com/index/introducing-codex/>
-[S2]: <https://developers.openai.com/codex/guides/agents-md>
-[S3]: <https://developers.openai.com/learn/docs-mcp>
-[S4]: <https://developers.openai.com/api/docs/guides/function-calling>
-[S5]: <https://developers.openai.com/api/docs/guides/structured-outputs>
-[S6]: <https://code.claude.com/docs/en/memory>
-[S7]: <https://code.claude.com/docs/en/common-workflows>
-[S8]: <https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices#long-context-prompting>
-[S9]: <https://code.claude.com/docs/en/mcp>
-[S10]: <https://arxiv.org/abs/2207.05987>
-[S11]: <https://arxiv.org/abs/2303.12570>
-[S12]: <https://arxiv.org/abs/2602.08316>
-[S13]: <https://arxiv.org/abs/2604.06793>
+[S1]: https://openai.com/index/introducing-codex/
+[S2]: https://developers.openai.com/codex/guides/agents-md
+[S3]: https://developers.openai.com/learn/docs-mcp
+[S4]: https://developers.openai.com/api/docs/guides/function-calling
+[S5]: https://developers.openai.com/api/docs/guides/structured-outputs
+[S6]: https://code.claude.com/docs/en/memory
+[S7]: https://code.claude.com/docs/en/common-workflows
+[S8]: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices#long-context-prompting
+[S9]: https://code.claude.com/docs/en/mcp
+[S10]: https://arxiv.org/abs/2207.05987
+[S11]: https://arxiv.org/abs/2303.12570
+[S12]: https://arxiv.org/abs/2602.08316
+[S13]: https://arxiv.org/abs/2604.06793

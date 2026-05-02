@@ -134,7 +134,7 @@ customer-service paper. Specific design moves that consistently
 help: structured edit with immediate validation, viewer with
 pagination + ranges instead of `cat`, search that returns
 locations + context windows instead of raw grep dumps, error
-messages that explain *what to do next* rather than echoing libc
+messages that explain _what to do next_ rather than echoing libc
 errno text.
 
 **Recommendations:**
@@ -168,18 +168,18 @@ opinion-grade but converging direction).
 **Observations:**
 The pattern is universal across mature harnesses: edit →
 validate-locally → feed errors back → retry. The key empirical
-property is *fidelity of the error message*. rustc's
+property is _fidelity of the error message_. rustc's
 "consider adding `&`" hints, tsc's structured diagnostics, and
 clippy's machine-applicable suggestions feed agents better than
 mypy's positional errors or eslint's plain text. Compiler feedback
-is also high *information density per token*: a single rustc error
+is also high _information density per token_: a single rustc error
 points the agent at the exact line, the expected vs found type,
 and often the fix. Compare to runtime test failure, which often
 needs stack-trace digestion.
 
 **Recommendations:**
 Make `cargo check` / `tsc --noEmit` / `mypy` / `clippy` the
-*first* feedback loop after every edit, before tests. Surface them
+_first_ feedback loop after every edit, before tests. Surface them
 as structured diagnostics (file, line, severity, message,
 suggestion) rather than raw stderr. For Rust specifically, prefer
 `cargo check --message-format=json` and surface
@@ -208,8 +208,8 @@ number is from a practitioner blog, not a benchmark paper —
 directional, not load-bearing.
 
 **Observations:**
-Shell/grep is *necessary* (works in tmux, on remote servers, in
-CI) but not *sufficient*: it cannot disambiguate identifiers, walk
+Shell/grep is _necessary_ (works in tmux, on remote servers, in
+CI) but not _sufficient_: it cannot disambiguate identifiers, walk
 type relationships, or report post-edit diagnostics. LSP+shell is
 the dominant pattern: shell for execution and side effects, LSP for
 navigation and validation. The CLI-vs-IDE tradeoff (Claude Code as
@@ -390,7 +390,7 @@ dumber, it just makes a leak inevitable.
 
 **Evidence:**
 Claude Agent SDK (primary): permission evaluation runs hooks
-*first*, before allow/deny rules and permission mode. Hooks can
+_first_, before allow/deny rules and permission mode. Hooks can
 allow, deny, or modify a tool call. As of 2026 Claude Code has 21
 lifecycle events and 4 handler types (command/http/prompt/agent).
 Aider (primary): `--git-commit-verify` opts into pre-commit hooks;
@@ -415,7 +415,7 @@ message the agent sees, and that determines what it tries next.
 Encode invariants as hooks/gates, not as memory entries.
 Specifically: post-edit linter, post-edit typechecker, pre-commit
 test gate, deny-rules on dangerous commands, and an error-renderer
-that explains *why* a sandbox or policy denied an action. Reserve
+that explains _why_ a sandbox or policy denied an action. Reserve
 memory/system-prompt for taste and high-level priorities;
 everything load-bearing belongs in the harness.
 

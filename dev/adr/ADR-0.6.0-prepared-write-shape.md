@@ -65,7 +65,7 @@ impl Engine {
   per-variant-grouped is **not** decided here. That is a substantive
   design choice owned by `design/engine.md` (and possibly a sibling ADR
   if it does not reduce to mechanical specification). This ADR commits
-  only to the *shape* of the input.
+  only to the _shape_ of the input.
 
 ## Options considered
 

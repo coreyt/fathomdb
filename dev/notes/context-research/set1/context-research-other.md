@@ -10,26 +10,26 @@ Mix of empirical (peer-reviewed or vendor-benchmarked) and opinion (vendor docs,
 
 Primary documents fetched:
 
-- Anthropic — *Building agents with the Claude Agent SDK* — <https://claude.com/blog/building-agents-with-the-claude-agent-sdk>
-- Anthropic — *Effective context engineering for AI agents* — <https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents>
-- Anthropic — *The "think" tool: Enabling Claude to stop and think* — <https://www.anthropic.com/engineering/claude-think-tool>
-- Anthropic / Claude Code Docs — *How Claude remembers your project* — <https://code.claude.com/docs/en/memory>
-- LangChain — *Context Engineering for Agents* — <https://www.langchain.com/blog/context-engineering-for-agents>
-- Cline Docs — *Cline Memory Bank* — <https://docs.cline.bot/prompting/cline-memory-bank>
-- Aider — *Separating code reasoning and editing* — <https://aider.chat/2024/09/26/architect.html>
-- Cognition — *Rebuilding Devin for Claude Sonnet 4.5* — <https://cognition.ai/blog/devin-sonnet-4-5-lessons-and-challenges>
-- Packer et al., *MemGPT: Towards LLMs as Operating Systems*, arXiv:2310.08560 — <https://arxiv.org/abs/2310.08560>
-- Liu et al., *Lost in the Middle: How Language Models Use Long Contexts*, TACL 2024 / arXiv:2307.03172
-- Huang et al., *AgentCoder: Multi-Agent Code Generation with Effective Testing and Self-optimisation*, arXiv:2312.13010
-- Hong et al., *MetaGPT: Meta Programming for a Multi-Agent Collaborative Framework*, arXiv:2308.00352
-- Qian et al., *ChatDev: Communicative Agents for Software Development*, ACL 2024
-- *Curiosity by Design: An LLM-based Coding Assistant Asking Clarification Questions*, arXiv:2507.21285
-- Zheng et al., *When "A Helpful Assistant" Is Not Really Helpful: Personas in System Prompts Do Not Improve Performances of LLMs*, arXiv:2311.10054
-- *ReSum: Unlocking Long-Horizon Search Intelligence via Context Summarization*, arXiv:2509.13313
-- Cursor Docs / community — *.cursor/rules/* directory and Memory Bank framework
-- Practitioner: HumanLayer — *Writing a good CLAUDE.md*; Sankalp — *Claude Code 2.0 guide*
+- Anthropic — _Building agents with the Claude Agent SDK_ — <https://claude.com/blog/building-agents-with-the-claude-agent-sdk>
+- Anthropic — _Effective context engineering for AI agents_ — <https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents>
+- Anthropic — _The "think" tool: Enabling Claude to stop and think_ — <https://www.anthropic.com/engineering/claude-think-tool>
+- Anthropic / Claude Code Docs — _How Claude remembers your project_ — <https://code.claude.com/docs/en/memory>
+- LangChain — _Context Engineering for Agents_ — <https://www.langchain.com/blog/context-engineering-for-agents>
+- Cline Docs — _Cline Memory Bank_ — <https://docs.cline.bot/prompting/cline-memory-bank>
+- Aider — _Separating code reasoning and editing_ — <https://aider.chat/2024/09/26/architect.html>
+- Cognition — _Rebuilding Devin for Claude Sonnet 4.5_ — <https://cognition.ai/blog/devin-sonnet-4-5-lessons-and-challenges>
+- Packer et al., _MemGPT: Towards LLMs as Operating Systems_, arXiv:2310.08560 — <https://arxiv.org/abs/2310.08560>
+- Liu et al., _Lost in the Middle: How Language Models Use Long Contexts_, TACL 2024 / arXiv:2307.03172
+- Huang et al., _AgentCoder: Multi-Agent Code Generation with Effective Testing and Self-optimisation_, arXiv:2312.13010
+- Hong et al., _MetaGPT: Meta Programming for a Multi-Agent Collaborative Framework_, arXiv:2308.00352
+- Qian et al., _ChatDev: Communicative Agents for Software Development_, ACL 2024
+- _Curiosity by Design: An LLM-based Coding Assistant Asking Clarification Questions_, arXiv:2507.21285
+- Zheng et al., _When "A Helpful Assistant" Is Not Really Helpful: Personas in System Prompts Do Not Improve Performances of LLMs_, arXiv:2311.10054
+- _ReSum: Unlocking Long-Horizon Search Intelligence via Context Summarization_, arXiv:2509.13313
+- Cursor Docs / community — _.cursor/rules/_ directory and Memory Bank framework
+- Practitioner: HumanLayer — _Writing a good CLAUDE.md_; Sankalp — _Claude Code 2.0 guide_
 - MCP / tool-overload analyses (Eclipsesource, Jenova, NebulaGG dev.to posts)
-- Claude Cookbook — *SRE incident responder managed agent*
+- Claude Cookbook — _SRE incident responder managed agent_
 
 Secondary surveys consulted via web search but not deep-fetched (Sweep AI, GitHub Copilot Workspace, OpenCode, LSP-AI, AGENTS.md, Mem0, A-MEM).
 
@@ -47,11 +47,11 @@ Secondary surveys consulted via web search but not deep-fetched (Sweep AI, GitHu
 
 ### F2 — Project memory bank pattern (Cline) externalizes durable state into structured markdown read every session (category: memory)
 
-**Evidence:** Cline docs prescribe six core files — `projectbrief.md`, `productContext.md`, `activeContext.md`, `systemPatterns.md`, `techContext.md`, `progress.md` — read at the start of *every* task ("not optional"). `activeContext.md` "changes most frequently; update it after each session." Vendor-stated; widely cloned by Roo Code, Kilo, Cursor Memory Bank framework.
+**Evidence:** Cline docs prescribe six core files — `projectbrief.md`, `productContext.md`, `activeContext.md`, `systemPatterns.md`, `techContext.md`, `progress.md` — read at the start of _every_ task ("not optional"). `activeContext.md` "changes most frequently; update it after each session." Vendor-stated; widely cloned by Roo Code, Kilo, Cursor Memory Bank framework.
 
 **Observations:** Opinion / convention, not benchmarked. Strength: forces the human and agent to maintain a durable, externally inspectable state; survives unbounded context growth. Weakness: read-every-session can be expensive; staleness manifests as confidently wrong agent behaviour ("memory drift"). Cursor's `.cursor/rules/` superseded the older single `.cursorrules` file because consolidation produced unmanageable bloat.
 
-**Recommendations:** Use a small entry index file plus topic files loaded on demand (mirrors Claude Code auto-memory's `MEMORY.md` first-200-lines convention). Make staleness audit part of session lifecycle. Don't promote conversation transcripts into the memory bank — promote *decisions*.
+**Recommendations:** Use a small entry index file plus topic files loaded on demand (mirrors Claude Code auto-memory's `MEMORY.md` first-200-lines convention). Make staleness audit part of session lifecycle. Don't promote conversation transcripts into the memory bank — promote _decisions_.
 
 **Impact on agent LLM:** HIGH for long-lived projects; MEDIUM for one-shot tasks where the load tax outweighs continuity.
 
@@ -75,7 +75,7 @@ Secondary surveys consulted via web search but not deep-fetched (Sweep AI, GitHu
 
 **Impact on agent LLM:** MEDIUM — foundational influence; specific implementation choices vary.
 
-### F5 — Personas in system prompts do *not* improve performance on objective coding/factual tasks (category: system-prompt)
+### F5 — Personas in system prompts do _not_ improve performance on objective coding/factual tasks (category: system-prompt)
 
 **Evidence:** Zheng et al. (arXiv:2311.10054) — across 4 LLM families and 2,410 factual questions, "adding personas in system prompts does not improve model performance across a range of questions compared to the control setting where no persona is added." Domain-aligned roles produced small wins; selection of best persona was no better than random.
 
@@ -89,13 +89,13 @@ Secondary surveys consulted via web search but not deep-fetched (Sweep AI, GitHu
 
 **Evidence:** Anthropic effective-context-engineering: "right altitude … specific enough to guide behavior effectively, yet flexible enough to provide the model with strong heuristics." Tools must be "self-contained, robust to error, and extremely clear with respect to their intended use" — and "if a human engineer can't definitively say which tool should be used in a given situation, an AI agent can't be expected to do better."
 
-**Observations:** Vendor-stated, but consistent with repeated practitioner observation that 1000-line system prompts (Devin, early Cursor agent) underperform 200-line ones with sharp invariants. Aider's architect/editor split is a different cut at the same problem: have the architect prompt own *reasoning* and the editor prompt own *format*.
+**Observations:** Vendor-stated, but consistent with repeated practitioner observation that 1000-line system prompts (Devin, early Cursor agent) underperform 200-line ones with sharp invariants. Aider's architect/editor split is a different cut at the same problem: have the architect prompt own _reasoning_ and the editor prompt own _format_.
 
 **Recommendations:** Periodically prune system prompts; run a deletion test ("does removing this rule change behaviour on our eval set?"); when a rule fires rarely, move to a skill/path-scoped rule.
 
 **Impact on agent LLM:** HIGH — system prompt is the single most-amortized context surface.
 
-### F7 — Few-shot exemplar diffs measurably improve code generation; example *quality* dominates quantity (category: examples)
+### F7 — Few-shot exemplar diffs measurably improve code generation; example _quality_ dominates quantity (category: examples)
 
 **Evidence:** Survey work (PromptHub, Cognativ): few-shot prompting yields 15–40% accuracy improvement over zero-shot on code synthesis. ACM TOSEM 2025 (LLM-aware ICL for code): performance "heavily depends on the quality of demonstration examples"; random and pure-textual-similarity selection are sub-optimal vs. learned selectors. Anthropic guidance: "curate a set of diverse, canonical examples that effectively portray the expected behavior … examples are the 'pictures' worth a thousand words."
 
@@ -131,7 +131,7 @@ Secondary surveys consulted via web search but not deep-fetched (Sweep AI, GitHu
 
 **Observations:** Empirical (Anthropic-published) but with caveats — Cognition explicitly cautions on subagent delegation: their early Devin experiments found that handing off to subagents loses tacit context the orchestrator had ("improved judgment about when to externalize state" is something they're still tuning). MetaGPT and ChatDev show structured-document handoff (vs. free-form chat) reduces irrelevant content; AgentCoder's three-agent split (programmer / test designer / test executor) cuts token cost ~3x vs MetaGPT/ChatDev (56.9K vs 138.2K on HumanEval) while improving Pass@1.
 
-**Recommendations:** Use subagents for *fan-out search and review*, not for sequential implementation steps that share thick context. Hand off via structured artifacts (plan files, JSON results), not transcripts. Be skeptical of frameworks that claim subagent delegation universally helps.
+**Recommendations:** Use subagents for _fan-out search and review_, not for sequential implementation steps that share thick context. Hand off via structured artifacts (plan files, JSON results), not transcripts. Be skeptical of frameworks that claim subagent delegation universally helps.
 
 **Impact on agent LLM:** HIGH for parallelizable read-heavy tasks (multi-file search, parallel review); MEDIUM-LOW for tightly coupled implementation work.
 
@@ -139,7 +139,7 @@ Secondary surveys consulted via web search but not deep-fetched (Sweep AI, GitHu
 
 **Evidence:** Aider Sept 2024 post: pairing a strong reasoning model (architect) with an editor model that produces well-formed diffs improved Aider code-edit benchmark from 77.4% (Sonnet solo) to 80.5% (Sonnet+Sonnet); o1-preview + DeepSeek hit 85% SOTA. Empirical on a public benchmark.
 
-**Observations:** Confirms that *output-format pressure* and *reasoning pressure* compete for capacity; separating them helps. Generalizes to: have one prompt own "what to do," another own "how to write it" (e.g., commit message, diff, JSON tool call).
+**Observations:** Confirms that _output-format pressure_ and _reasoning pressure_ compete for capacity; separating them helps. Generalizes to: have one prompt own "what to do," another own "how to write it" (e.g., commit message, diff, JSON tool call).
 
 **Recommendations:** Worth piloting whenever the producing model struggles with strict output formats (diff syntax, JSON schemas, OpenAPI). Less useful when format is trivial.
 
@@ -167,7 +167,7 @@ Secondary surveys consulted via web search but not deep-fetched (Sweep AI, GitHu
 
 ### F14 — Clarifying questions before generation produce statistically large improvements in code quality (category: clarification)
 
-**Evidence:** *Curiosity by Design* (arXiv:2507.21285) — user study: precision/focus improved in 82% of cases (mean 4.4/5), contextual alignment 78%, usefulness 80%, correctness 66% (median 4.3/5). All differences p<0.001, Cohen's d > 1.2 ("very large effect size"). Empirical.
+**Evidence:** _Curiosity by Design_ (arXiv:2507.21285) — user study: precision/focus improved in 82% of cases (mean 4.4/5), contextual alignment 78%, usefulness 80%, correctness 66% (median 4.3/5). All differences p<0.001, Cohen's d > 1.2 ("very large effect size"). Empirical.
 
 **Observations:** Strong empirical support that the dominant failure mode of coding agents is acting on under-specified intent. But the practitioner ergonomics are bad — users dislike interruption. Devin's "Interactive Planning" mitigates by front-loading the clarification round before autonomous work begins.
 
@@ -187,15 +187,15 @@ Secondary surveys consulted via web search but not deep-fetched (Sweep AI, GitHu
 
 ### F16 — Git history / blame as targeted context improves repair accuracy (category: git)
 
-**Evidence:** HAFixAgent (arXiv:2511.01047 referenced in search): "injecting historical context derived from git blame commits (the last change touching a buggy line) can improve LLM repair performance." Practitioner tools (Selvedge, git-ai) explicitly capture intent at change time precisely because diffs alone don't carry the *why*.
+**Evidence:** HAFixAgent (arXiv:2511.01047 referenced in search): "injecting historical context derived from git blame commits (the last change touching a buggy line) can improve LLM repair performance." Practitioner tools (Selvedge, git-ai) explicitly capture intent at change time precisely because diffs alone don't carry the _why_.
 
-**Observations:** Empirical (HAFixAgent) but limited to repair tasks. Practical: blame surfaces *why* a line exists; commit messages on the touching commit are often more decision-relevant than surrounding code comments. Risk: dumping full blame for a 1000-line file is just noise — must be targeted to the line/range under question.
+**Observations:** Empirical (HAFixAgent) but limited to repair tasks. Practical: blame surfaces _why_ a line exists; commit messages on the touching commit are often more decision-relevant than surrounding code comments. Risk: dumping full blame for a 1000-line file is just noise — must be targeted to the line/range under question.
 
 **Recommendations:** Expose `git blame -L`, `git log -p -- <file>`, and `git log <commit>` as agent tools rather than pre-loading. Use only when the task is "why is this here / why did this change."
 
 **Impact on agent LLM:** MEDIUM — high signal when relevant, often irrelevant otherwise.
 
-### F17 — Issue/PR thread context anchors the *what* and *why* of work (category: issues)
+### F17 — Issue/PR thread context anchors the _what_ and _why_ of work (category: issues)
 
 **Evidence:** Sweep AI design (issue → PR pipeline): operates as GitHub App with native access to issues/comments/PRs and uses semantic indexing to find related code from issue text. GitHub Copilot Coding Agent and OpenCode follow similar patterns — issue body + comments + linked PRs are the seed context. Largely opinion / product description rather than benchmarked.
 
@@ -221,7 +221,7 @@ Secondary surveys consulted via web search but not deep-fetched (Sweep AI, GitHu
 
 **Observations:** Mix of vendor convention and emergent standard. Strength: solves training-cutoff staleness and version-mismatch hallucination. Weakness: doc fetches are slow, expensive in tokens, and rarely cached well; over-eager fetching balloons cost.
 
-**Recommendations:** Make external doc fetching a discretionary tool, not auto-RAG. Cache aggressively. Prefer authoritative `llms.txt` / vendor MCP over arbitrary web search where available. For library-API tasks, fetching the *exact version's* docs beats general web search.
+**Recommendations:** Make external doc fetching a discretionary tool, not auto-RAG. Cache aggressively. Prefer authoritative `llms.txt` / vendor MCP over arbitrary web search where available. For library-API tasks, fetching the _exact version's_ docs beats general web search.
 
 **Impact on agent LLM:** MEDIUM — high when version-pinning matters; LOW for tasks the model already knows well.
 
@@ -241,7 +241,7 @@ Across categories, three structural lessons recur:
 
 1. **Context is finite, expensive, and adversarial.** Anthropic states it explicitly ("finite resource with diminishing marginal returns"); lost-in-the-middle (F9), tool overload (F12), and compaction-fidelity loss (F8) all manifest the same scarcity. Every default in modern coding-agent harnesses (CLAUDE.md size limits, path-scoped rules, subagent isolation, "just-in-time" retrieval, auto-compact) is a response to this scarcity.
 
-2. **Externalize state into named artifacts that survive turns.** CLAUDE.md (F1), memory banks (F2), auto-memory (F3), MemGPT-style paged memory (F4), scratchpads/plan files (F13), and filesystem-as-context (F20) all instantiate the same pattern: durable, file-shaped, human-inspectable memory beats chat history. Compaction (F8) and lost-in-the-middle (F9) explain *why* — anything that lives only in chat is lossy.
+2. **Externalize state into named artifacts that survive turns.** CLAUDE.md (F1), memory banks (F2), auto-memory (F3), MemGPT-style paged memory (F4), scratchpads/plan files (F13), and filesystem-as-context (F20) all instantiate the same pattern: durable, file-shaped, human-inspectable memory beats chat history. Compaction (F8) and lost-in-the-middle (F9) explain _why_ — anything that lives only in chat is lossy.
 
 3. **Specialize via decomposition, but pay the seams cost.** Subagent isolation (F10), architect/editor splits (F11), and three-agent test loops (AgentCoder; F10) all yield real gains for fan-out and format-strict tasks. But Cognition's hard-won lesson on Devin is that handoffs lose tacit state, and structured artifacts (plan files, JSON results) outperform free-form transcripts at the seam.
 

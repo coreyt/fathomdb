@@ -165,13 +165,13 @@ it is named and justified here.
 
 The canonical 0.6.0 engine-owned knob set is:
 
-| Field | Type | Default | Owner note |
-|---|---|---|---|
-| `embedder_pool_size` | `usize` | `num_cpus::get()` | engine-owned runtime pool width |
-| `scheduler_runtime_threads` | `usize` | `2` | engine-owned scheduler runtime width |
-| `provenance_row_cap` | `u64` | `1_000_000` | REQ-031 / AC-033 retention cap |
-| `embedder_call_timeout_ms` | `u64` | `30_000` | invariant D watchdog default |
-| `slow_threshold_ms` | `u64` | `100` | initial lifecycle slow-signal threshold; `set_slow_threshold_ms` mutates the live value after open |
+| Field                       | Type    | Default           | Owner note                                                                                         |
+| --------------------------- | ------- | ----------------- | -------------------------------------------------------------------------------------------------- |
+| `embedder_pool_size`        | `usize` | `num_cpus::get()` | engine-owned runtime pool width                                                                    |
+| `scheduler_runtime_threads` | `usize` | `2`               | engine-owned scheduler runtime width                                                               |
+| `provenance_row_cap`        | `u64`   | `1_000_000`       | REQ-031 / AC-033 retention cap                                                                     |
+| `embedder_call_timeout_ms`  | `u64`   | `30_000`          | invariant D watchdog default                                                                       |
+| `slow_threshold_ms`         | `u64`   | `100`             | initial lifecycle slow-signal threshold; `set_slow_threshold_ms` mutates the live value after open |
 
 Not part of the canonical `EngineConfig` set in 0.6.0:
 

@@ -71,9 +71,9 @@ Semantics:
 - a failed step emits exactly one event for that step with `failed: true`
 - `duration_ms` is populated for both success and failure
 
-0.6.0 may carry additional internal migration metadata in implementation logs,
-but those fields are not part of the public migration-step payload contract
-until accepted elsewhere.
+  0.6.0 may carry additional internal migration metadata in implementation logs,
+  but those fields are not part of the public migration-step payload contract
+  until accepted elsewhere.
 
 ### Routing split with lifecycle
 

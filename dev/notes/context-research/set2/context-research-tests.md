@@ -19,26 +19,26 @@ still load-bearing.
 
 Primary:
 
-- Anthropic, *Best Practices for Claude Code* (code.claude.com/docs/en/best-practices, accessed 2026-05-01).
-- METR, *Recent Frontier Models Are Reward Hacking* (2025-06-05).
-- *ImpossibleBench: Measuring LLMs' Propensity of Exploiting Test Cases*, arXiv:2510.20270, Oct 2025.
-- *Are "Solved Issues" in SWE-bench Really Solved Correctly?*, arXiv:2503.15223, Mar 2025.
-- *SWT-Bench: Testing and Validating Real-World Bug-Fixes with Code Agents*, arXiv:2406.12952 (NeurIPS 2024; v3 Feb 2025).
-- *Agentic Property-Based Testing*, arXiv:2510.09907, Oct 2025.
-- *Use Property-Based Testing to Bridge LLM Code Generation and Validation* (Property-Generated Solver), arXiv:2506.18315, Jun 2025.
-- *LLM-Powered Test Case Generation for Detecting Tricky Bugs*, arXiv:2404.10304.
-- *CoverUp: Coverage-Guided LLM-Based Test Generation*, arXiv:2403.16218.
-- Cognition AI, *Devin's 2025 Performance Review* (Dec 2025).
+- Anthropic, _Best Practices for Claude Code_ (code.claude.com/docs/en/best-practices, accessed 2026-05-01).
+- METR, _Recent Frontier Models Are Reward Hacking_ (2025-06-05).
+- _ImpossibleBench: Measuring LLMs' Propensity of Exploiting Test Cases_, arXiv:2510.20270, Oct 2025.
+- _Are "Solved Issues" in SWE-bench Really Solved Correctly?_, arXiv:2503.15223, Mar 2025.
+- _SWT-Bench: Testing and Validating Real-World Bug-Fixes with Code Agents_, arXiv:2406.12952 (NeurIPS 2024; v3 Feb 2025).
+- _Agentic Property-Based Testing_, arXiv:2510.09907, Oct 2025.
+- _Use Property-Based Testing to Bridge LLM Code Generation and Validation_ (Property-Generated Solver), arXiv:2506.18315, Jun 2025.
+- _LLM-Powered Test Case Generation for Detecting Tricky Bugs_, arXiv:2404.10304.
+- _CoverUp: Coverage-Guided LLM-Based Test Generation_, arXiv:2403.16218.
+- Cognition AI, _Devin's 2025 Performance Review_ (Dec 2025).
 
-Corroborating: alexop.dev *Forcing Claude Code to TDD* (2025); SD Times
-*Closing the loop on agents with TDD* (2025); Harper Reed *My LLM codegen
-workflow* (Feb 2025).
+Corroborating: alexop.dev _Forcing Claude Code to TDD_ (2025); SD Times
+_Closing the loop on agents with TDD_ (2025); Harper Reed _My LLM codegen
+workflow_ (Feb 2025).
 
 ## Findings
 
 ### F1: Vendor consensus — tests are the highest-leverage verification signal an agent can be given
 
-- Evidence: Anthropic's *Best Practices for Claude Code* states verbatim,
+- Evidence: Anthropic's _Best Practices for Claude Code_ states verbatim,
   "Include tests, screenshots, or expected outputs so Claude can check
   itself. This is the single highest-leverage thing you can do"
   (code.claude.com/docs/en/best-practices, 2026-05-01). Anthropic
@@ -112,7 +112,7 @@ workflow* (Feb 2025).
 - Evidence: SWT-Bench (arXiv:2406.12952, NeurIPS 2024 / v3 Feb 2025)
   reports that LLM-generated reproduction tests, when used to filter
   candidate fixes, "doubl[e] the precision of SWE-Agent." Conversely,
-  *Are "Solved Issues" in SWE-bench Really Solved Correctly?*
+  _Are "Solved Issues" in SWE-bench Really Solved Correctly?_
   (arXiv:2503.15223, Mar 2025) finds 7.8% of patches pass the provided
   test suite but fail developer-written tests; 29.6% of plausible
   patches diverge behaviourally from ground truth; 28.6% of those
@@ -136,8 +136,7 @@ workflow* (Feb 2025).
 
 ### F5: Property-based testing is the strongest oracle layer above unit tests for agent-generated code
 
-- Evidence: *Agentic Property-Based Testing* (arXiv:2510.09907, Oct
-  2025) built a Claude Code-based agent using Hypothesis to test 100
+- Evidence: _Agentic Property-Based Testing_ (arXiv:2510.09907, Oct 2025) built a Claude Code-based agent using Hypothesis to test 100
   popular Python packages: 56% of 984 generated reports were valid
   bugs; 86% of top-ranked reports were valid; bugs in NumPy, AWS Lambda
   Powertools, and tokenizers were patched upstream. Property-Generated
@@ -161,13 +160,13 @@ workflow* (Feb 2025).
 
 ### F6: Agent-generated tests are noisy oracles — false-positive risk dominates
 
-- Evidence: *LLM-Powered Test Case Generation for Detecting Tricky
-  Bugs* (arXiv:2404.10304) measured ChatGPT defect-detection precision
+- Evidence: _LLM-Powered Test Case Generation for Detecting Tricky
+  Bugs_ (arXiv:2404.10304) measured ChatGPT defect-detection precision
   as low as 6.3%, with "93.7% of failures due to errors in the test
   cases themselves" and "92.2% of those errors due to incorrect test
-  oracles." *Understanding LLM-Driven Test Oracle Generation*
+  oracles." _Understanding LLM-Driven Test Oracle Generation_
   (arXiv:2601.05542) reports including the full class context improves
-  oracle quality by 12.9% over method-only prompts. *AugmenTest*
+  oracle quality by 12.9% over method-only prompts. _AugmenTest_
   (arXiv:2501.17461, Jan 2025) flags the same failure: tools
   "incorrectly interpret unintended behavior as correct."
 - Observations: A test the agent wrote against the code the agent
@@ -187,20 +186,20 @@ workflow* (Feb 2025).
 
 ### F7: Coverage is a scope signal, not a quality signal
 
-- Evidence: *CoverUp* (arXiv:2403.16218) drives test generation with
+- Evidence: _CoverUp_ (arXiv:2403.16218) drives test generation with
   branch-coverage feedback, "iteratively guid[ing] the LLM to generate
-  tests that improve line and branch coverage." *Enhancing LLM-Based
-  Test Generation by Eliminating Covered Code* (arXiv:2602.21997, late
+  tests that improve line and branch coverage." _Enhancing LLM-Based
+  Test Generation by Eliminating Covered Code_ (arXiv:2602.21997, late
   2025/early 2026) uses coverage diffing to prune already-covered code
   from the prompt — a context-economy use of coverage rather than a
-  quality metric. Cognition's Devin review cites coverage *increases*
+  quality metric. Cognition's Devin review cites coverage _increases_
   as headline (50–60% → 80–90%) but concedes "code quality is not
   straightforwardly verifiable" — coverage ≠ correctness.
 - Observations: Coverage usefully tells you which paths the suite
   touches, helping (a) scope what an agent reads and (b) prune
   context. It does not tell you the assertions are meaningful — high
   coverage with weak oracles is exactly the F6 failure mode.
-- Recommendations: Use coverage to *route the agent's attention* —
+- Recommendations: Use coverage to _route the agent's attention_ —
   load uncovered files into context for a coverage-improvement task;
   exclude already-covered files from a debugging task. Do not use
   coverage as acceptance for a fix; use it as scope.
@@ -241,7 +240,7 @@ workflow* (Feb 2025).
 
 Across frontier-lab guidance and 2025 academic work the picture is
 consistent: tests are the most powerful single context channel an agent
-has, *if* the tests are an honest external oracle. The failure modes
+has, _if_ the tests are an honest external oracle. The failure modes
 concentrate at the same point. Plausible-but-wrong patches (F4) and
 test-gaming (F3) both stem from one root cause — treating "tests pass"
 as the terminal condition when the test set under-specifies the spec.
@@ -265,9 +264,9 @@ round-trip behaviour.
 
 ## See also
 
-- Sibling dimension *retrieval* — code/context retrieval techniques and
+- Sibling dimension _retrieval_ — code/context retrieval techniques and
   how agents identify relevant tests to read.
-- Sibling dimension *build/lint/CI* — sandboxing mechanics, test-file
+- Sibling dimension _build/lint/CI_ — sandboxing mechanics, test-file
   read-only enforcement, retry-budget tooling.
-- Sibling dimension *docs* — how spec/ADR text complements tests as
+- Sibling dimension _docs_ — how spec/ADR text complements tests as
   oracle when no test exists yet.

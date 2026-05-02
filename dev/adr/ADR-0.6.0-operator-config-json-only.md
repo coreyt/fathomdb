@@ -57,7 +57,7 @@ Worse than (A).
 - Followup: any future operator config (engine-open options, etc.) defaults
   to JSON. No TOML re-introduction without revisiting this ADR.
 - **HF-Hub cache layout (X-3 cross-cite): not in scope.** This ADR governs
-  *operator-supplied* config files. HuggingFace Hub cache files (`refs/`,
+  _operator-supplied_ config files. HuggingFace Hub cache files (`refs/`,
   `blobs/`, `snapshots/`, `meta.json`) are internal artifacts of the model
   loader; their on-disk format is the loader's contract with itself, not
   user-facing config. Whatever serialization HF cache uses (currently a

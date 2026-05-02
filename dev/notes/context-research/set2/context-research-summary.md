@@ -16,11 +16,11 @@ Recency window of cited sources: 2025-05-01 through 2026-04 (12 months); foundat
 
 ### T1: Context is a budget, not a bucket — every dimension says this
 
-Appears in tech-docs F1/F4, source-code F5, dev-env F7, agent-scaffolding F1/F4. The frontier-lab consensus is unanimous: more context is not better, and pre-loading degrades performance. Mechanisms differ but the rule is the same — progressive disclosure (Skills, `@import`, ADR indexes), agentic retrieval over pre-built indexes, structural truncation of long outputs (~200 lines, head+tail+spill-to-file), and few-shot examples that are *canonical* not exhaustive.
+Appears in tech-docs F1/F4, source-code F5, dev-env F7, agent-scaffolding F1/F4. The frontier-lab consensus is unanimous: more context is not better, and pre-loading degrades performance. Mechanisms differ but the rule is the same — progressive disclosure (Skills, `@import`, ADR indexes), agentic retrieval over pre-built indexes, structural truncation of long outputs (~200 lines, head+tail+spill-to-file), and few-shot examples that are _canonical_ not exhaustive.
 
 ### T2: Persist load-bearing state to disk; treat conversation as ephemeral
 
-Compaction is now first-party (Anthropic `compact-2026-01-12`), and ~65% of enterprise AI failures in 2025 were context drift, not exhaustion (scaffolding F4). Tech-docs F5 (SPEC.md + progress logs), tests F2 (commit failing tests *before* implementation), and scaffolding F5 (plan mode + persistent todos) all point at the same answer: the agent will be compacted, so anything it must remember has to be on disk and re-readable.
+Compaction is now first-party (Anthropic `compact-2026-01-12`), and ~65% of enterprise AI failures in 2025 were context drift, not exhaustion (scaffolding F4). Tech-docs F5 (SPEC.md + progress logs), tests F2 (commit failing tests _before_ implementation), and scaffolding F5 (plan mode + persistent todos) all point at the same answer: the agent will be compacted, so anything it must remember has to be on disk and re-readable.
 
 ### T3: Stale/wrong context is worse than missing context
 
@@ -36,7 +36,7 @@ Tech-docs F6 (confident architectural hallucination from outdated ADRs), tests F
 
 ### T5: Verifiability is the load-bearing primitive
 
-Frontier models are now *trained* on execution feedback (RLEF/RLVR — dev-env F1), so structured pass/fail signals are no longer just a prompt pattern but a model-side capability. Tests F1 (Anthropic: "single highest-leverage thing you can do"), dev-env F2 (RustAssistant 74% vs `cargo fix` <10% on the same population), and tech-docs F3 (OpenAPI/JSON-Schema grounding kills parameter hallucination) all point the same way: give the agent a binary oracle and rich diagnostics, and don't paraphrase them.
+Frontier models are now _trained_ on execution feedback (RLEF/RLVR — dev-env F1), so structured pass/fail signals are no longer just a prompt pattern but a model-side capability. Tests F1 (Anthropic: "single highest-leverage thing you can do"), dev-env F2 (RustAssistant 74% vs `cargo fix` <10% on the same population), and tech-docs F3 (OpenAPI/JSON-Schema grounding kills parameter hallucination) all point the same way: give the agent a binary oracle and rich diagnostics, and don't paraphrase them.
 
 ### T6: Cross-vendor convergence on AGENTS.md as the scaffolding standard
 
@@ -50,7 +50,7 @@ Tech-docs F7 + scaffolding F1: AGENTS.md is now stewarded by the Linux Foundatio
 
 - Anthropic (Cherny): abandoned RAG; agentic grep "outperformed by a lot" + simpler ops.
 - Cursor: +12.5% accuracy from semantic search — but **on top of** grep, not replacing it.
-- Reconciliation (source-code F1/F2): grep wins for *local* agents on typed code with unique symbols; embeddings are an *additive* cloud-scale lever where you have remote infra and a controlled corpus. For a local agent on a single repo: grep + glob + read; do not build a local vector index.
+- Reconciliation (source-code F1/F2): grep wins for _local_ agents on typed code with unique symbols; embeddings are an _additive_ cloud-scale lever where you have remote infra and a controlled corpus. For a local agent on a single repo: grep + glob + read; do not build a local vector index.
 
 ### C2: Long-context windows vs retrieval
 
@@ -67,23 +67,23 @@ Tech-docs F7 + scaffolding F1: AGENTS.md is now stewarded by the Linux Foundatio
 
 ## Top actions ranked by impact × effort
 
-| # | Action | Dim(s) | Impact | Effort |
-|---|--------|--------|--------|--------|
-| 1 | Author one short AGENTS.md (≤300 lines, bullets, decisions+conventions+commands; **link** ADRs / API specs, don't inline). Symlink CLAUDE.md → AGENTS.md. | tech-docs F1/F4/F7, scaffolding F1 | HIGH | LOW |
-| 2 | Enable prompt caching on the stable prefix (system + tool defs + scaffolding). 1-hour TTL for long sessions. Track cache-hit rate. | scaffolding F3 | HIGH (5–10× input cost, 85% latency) | LOW |
-| 3 | TDD-with-agents discipline: commit failing tests *before* implementation, mark test files read-only during fix-to-spec, prefer property-based oracles for invariants. Cap retry-budget at ~2 same-issue corrections then `/clear`. | tests F1/F2/F3/F5/F8 | HIGH (test-gaming 76%→1% with right framing) | MED |
-| 4 | Treat dev-env signals as first-class: structured diagnostics (`--error-format=json`), typed tool verbs (`build`/`lint`/`test`), ~200-line output cap with spill-to-file, PostEdit hooks for fmt/lint, sandbox to skip approval prompts (84% reduction). | dev-env F1/F2/F3/F5/F7/F8 | HIGH (4× SWE-bench lift from ACI alone) | MED |
-| 5 | Source-code retrieval = grep/glob/read + tree-sitter repo map regenerated per task + LSP tools (`rust-analyzer`/`pyright`) + `git diff`/`git log` exposure. **No local vector index.** | source-code F1/F2/F4/F6/F7 | HIGH | MED |
-| 6 | Add a SPEC.md + progress log discipline for multi-session work; co-locate ADRs with code; mark superseded ADRs explicitly. | tech-docs F5/F6 | MED–HIGH | LOW |
-| 7 | Default to single-agent for code edits; reserve subagents for parallel reads / output isolation / independent verification with explicit objective + output schema + tool list + stop condition. | scaffolding F2 | HIGH cost-avoidance | LOW |
-| 8 | Surface remaining-iteration / token state to the agent each turn, plus a hard external cap. | dev-env F6 | MED | LOW |
+| #   | Action                                                                                                                                                                                                                                                  | Dim(s)                             | Impact                                       | Effort |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | -------------------------------------------- | ------ |
+| 1   | Author one short AGENTS.md (≤300 lines, bullets, decisions+conventions+commands; **link** ADRs / API specs, don't inline). Symlink CLAUDE.md → AGENTS.md.                                                                                               | tech-docs F1/F4/F7, scaffolding F1 | HIGH                                         | LOW    |
+| 2   | Enable prompt caching on the stable prefix (system + tool defs + scaffolding). 1-hour TTL for long sessions. Track cache-hit rate.                                                                                                                      | scaffolding F3                     | HIGH (5–10× input cost, 85% latency)         | LOW    |
+| 3   | TDD-with-agents discipline: commit failing tests _before_ implementation, mark test files read-only during fix-to-spec, prefer property-based oracles for invariants. Cap retry-budget at ~2 same-issue corrections then `/clear`.                      | tests F1/F2/F3/F5/F8               | HIGH (test-gaming 76%→1% with right framing) | MED    |
+| 4   | Treat dev-env signals as first-class: structured diagnostics (`--error-format=json`), typed tool verbs (`build`/`lint`/`test`), ~200-line output cap with spill-to-file, PostEdit hooks for fmt/lint, sandbox to skip approval prompts (84% reduction). | dev-env F1/F2/F3/F5/F7/F8          | HIGH (4× SWE-bench lift from ACI alone)      | MED    |
+| 5   | Source-code retrieval = grep/glob/read + tree-sitter repo map regenerated per task + LSP tools (`rust-analyzer`/`pyright`) + `git diff`/`git log` exposure. **No local vector index.**                                                                  | source-code F1/F2/F4/F6/F7         | HIGH                                         | MED    |
+| 6   | Add a SPEC.md + progress log discipline for multi-session work; co-locate ADRs with code; mark superseded ADRs explicitly.                                                                                                                              | tech-docs F5/F6                    | MED–HIGH                                     | LOW    |
+| 7   | Default to single-agent for code edits; reserve subagents for parallel reads / output isolation / independent verification with explicit objective + output schema + tool list + stop condition.                                                        | scaffolding F2                     | HIGH cost-avoidance                          | LOW    |
+| 8   | Surface remaining-iteration / token state to the agent each turn, plus a hard external cap.                                                                                                                                                             | dev-env F6                         | MED                                          | LOW    |
 
 ---
 
 ## Open questions / weak-evidence areas
 
 - **LSP-on vs LSP-off agent success deltas**: claims strong, public ablation numbers thin (source-code F6, dev-env F4). Worth running internally if we ship LSP-as-tool.
-- **Sandbox capability cost at task-success granularity**: 84% prompt reduction is measured (dev-env F5); whether *task success* changes is asserted-no-cost but unmeasured.
+- **Sandbox capability cost at task-success granularity**: 84% prompt reduction is measured (dev-env F5); whether _task success_ changes is asserted-no-cost but unmeasured.
 - **100-call tool-loop plateau**: from BrowseComp (web search), not SWE-bench (dev-env F6). The shape (premature termination without budget signal) clearly transfers; the specific number may not.
 - **Repo-map isolated contribution**: Aider, Devin DeepWiki, Cognition all ship repo maps but no public ablation isolates the map's win from agentic search + planning (source-code F4).
 - **Plan mode / progress files quantitative effect**: Anthropic guidance is concrete (tech-docs F5, scaffolding F5); no benchmark numbers published yet.

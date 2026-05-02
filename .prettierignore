@@ -17,23 +17,8 @@ dev/tmp/
 dev/tmp2/
 dev/tmp3/
 
-# Pre-existing legacy. Clean up incrementally.
-dev/acceptance.md
-dev/hitl-queue.md
-dev/architecture.md
-dev/followups.md
-dev/learnings.md
-dev/requirements.md
-dev/security-review.md
-dev/test-plan.md
-dev/adr/
-dev/agents/
-dev/deps/
-dev/design/
-dev/interfaces/
-dev/interface-inventory/
-dev/notes/
-dev/roadmap/
+# Archived / resolved artifacts — historical record, not actively maintained.
+dev/archive/
 
 # Local-only agent config (gitignored).
 .claude/

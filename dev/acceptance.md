@@ -44,7 +44,7 @@ T-NNN ids are placeholders until `test-plan.md` issues real ones.
 ## Parameter table
 
 acceptance.md OWNS every numerical measurement parameter cited by an
-AC. test-plan.md is the *measurer* — it executes the protocol but does
+AC. test-plan.md is the _measurer_ — it executes the protocol but does
 not own the threshold. Parameters with an ADR source restate the ADR.
 Parameters without an ADR source are owned by this doc and bound at
 acceptance lock; changing them post-lock follows the same critic + HITL
@@ -54,31 +54,31 @@ Discoverability: this is the canonical home for human + machine lookup
 of a parameter value. CI/test scripts consume parameters by `P-ID` from
 this table.
 
-| P-ID | Used by AC | Description | Value | Source |
-|---|---|---|---|---|
-| P-WTP-WARMUP | AC-011a, AC-011b | Write-throughput pre-measurement warmup window | 5 s | acceptance.md (this doc) |
-| P-WTP-RUN | AC-011a, AC-011b | Write-throughput steady-state measurement window | 60 s | acceptance.md |
-| P-PERF-SAMPLES | AC-012, AC-013, AC-017, AC-019 | Minimum measured samples per percentile calculation | 1,000 | ADR-0.6.0-text-query-latency-gates (sets ≥ 1,000 for text); applied uniformly to all latency ACs |
-| P-STRESS-MULT | AC-019 | Mixed-retrieval stress tail-latency multiplier vs baseline_p99 | 10× | acceptance.md |
-| P-STRESS-FLOOR | AC-019 | Mixed-retrieval stress tail-latency floor (max(mult × baseline, floor)) | 150 ms | acceptance.md |
-| P-PARALLEL-TOL | AC-020 | Concurrent-read wall-clock tolerance vs `T_seq / N` | 1.5× | acceptance.md |
-| P-FD-TOL | AC-022b | Post-close FD-count tolerance vs pre-open count | +0 (engine FDs) plus runtime-tolerance counted as `≤ +5` for runtime/GC FDs | acceptance.md |
-| P-LOCK-BOUND | AC-024a | Second-open `DatabaseLocked` rejection wall-clock bound | 1 s | acceptance.md |
-| P-TAU | AC-027d | Per-query Kendall tau threshold for post-recovery vector top-k vs pre-corruption baseline | ≥ 0.9 | ADR-0.6.0-recovery-rank-correlation |
-| P-TAU-PASS | AC-027d | Aggregate gate across the AC-027d query suite | 100% of queries meet P-TAU | ADR-0.6.0-recovery-rank-correlation |
-| P-STALL-TOL | AC-029 | Projection-stall vs unstalled write throughput tolerance | 1.5× wall-clock (i.e. stalled ≤ 1.5 × unstalled) | acceptance.md |
-| P-DRAIN-TOL | AC-032b | Drain-timeout overshoot tolerance — typed timeout returned within `tolerance × T` | 1.5× | acceptance.md |
-| P-RETENTION-CAP | AC-033 | Default provenance row-count cap | 1,000,000 rows | ADR-0.6.0-provenance-retention |
-| P-RETENTION-SLACK | AC-033 | Slack between cap and enforced upper bound (eviction batching headroom) | 5% (i.e. row count enforced as `≤ cap × 1.05`) | ADR-0.6.0-provenance-retention |
-| P-RETENTION-EVICT | AC-033 | Eviction policy | Oldest-first by primary key | ADR-0.6.0-provenance-retention |
-| P-AC033-WORKLOAD | AC-033 | Compressed-runtime workload write rate × duration (compressed for CI) | 10,000 writes/sec × 14 minutes (≈ 8.4 M writes; well past P-RETENTION-CAP × eviction cycles) | acceptance.md |
-| P-AC033-SAMPLE | AC-033 | Row-count sampling cadence during AC-033 | every 30 s | acceptance.md |
-| P-PWR-TRIALS | AC-034a, AC-034b | Power-cut harness trial count | 100 | acceptance.md |
-| P-OS-TRIALS | AC-034c | OS-crash harness trial count | 50 | acceptance.md |
-| P-RECOV-N | AC-035 | Recovery-time worst-of-N N value for 1 GB DB | 10 | acceptance.md |
-| P-AC036-CYCLE | AC-036 | Open + write + search + close cycle iterations under no-listen syscall capture | 1 (single full cycle sufficient — assertion is binary) | acceptance.md |
-| P-AC044-SENTINEL-LEN | AC-044 | Random-per-test sentinel byte length for shadow-table corruption detection | 16 bytes | acceptance.md |
-| P-AC046-K | AC-046a, AC-046b, AC-046c | Migration step count (k) for n-to-n+k migration fixture | 3 | acceptance.md |
+| P-ID                 | Used by AC                     | Description                                                                               | Value                                                                                        | Source                                                                                           |
+| -------------------- | ------------------------------ | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| P-WTP-WARMUP         | AC-011a, AC-011b               | Write-throughput pre-measurement warmup window                                            | 5 s                                                                                          | acceptance.md (this doc)                                                                         |
+| P-WTP-RUN            | AC-011a, AC-011b               | Write-throughput steady-state measurement window                                          | 60 s                                                                                         | acceptance.md                                                                                    |
+| P-PERF-SAMPLES       | AC-012, AC-013, AC-017, AC-019 | Minimum measured samples per percentile calculation                                       | 1,000                                                                                        | ADR-0.6.0-text-query-latency-gates (sets ≥ 1,000 for text); applied uniformly to all latency ACs |
+| P-STRESS-MULT        | AC-019                         | Mixed-retrieval stress tail-latency multiplier vs baseline_p99                            | 10×                                                                                          | acceptance.md                                                                                    |
+| P-STRESS-FLOOR       | AC-019                         | Mixed-retrieval stress tail-latency floor (max(mult × baseline, floor))                   | 150 ms                                                                                       | acceptance.md                                                                                    |
+| P-PARALLEL-TOL       | AC-020                         | Concurrent-read wall-clock tolerance vs `T_seq / N`                                       | 1.5×                                                                                         | acceptance.md                                                                                    |
+| P-FD-TOL             | AC-022b                        | Post-close FD-count tolerance vs pre-open count                                           | +0 (engine FDs) plus runtime-tolerance counted as `≤ +5` for runtime/GC FDs                  | acceptance.md                                                                                    |
+| P-LOCK-BOUND         | AC-024a                        | Second-open `DatabaseLocked` rejection wall-clock bound                                   | 1 s                                                                                          | acceptance.md                                                                                    |
+| P-TAU                | AC-027d                        | Per-query Kendall tau threshold for post-recovery vector top-k vs pre-corruption baseline | ≥ 0.9                                                                                        | ADR-0.6.0-recovery-rank-correlation                                                              |
+| P-TAU-PASS           | AC-027d                        | Aggregate gate across the AC-027d query suite                                             | 100% of queries meet P-TAU                                                                   | ADR-0.6.0-recovery-rank-correlation                                                              |
+| P-STALL-TOL          | AC-029                         | Projection-stall vs unstalled write throughput tolerance                                  | 1.5× wall-clock (i.e. stalled ≤ 1.5 × unstalled)                                             | acceptance.md                                                                                    |
+| P-DRAIN-TOL          | AC-032b                        | Drain-timeout overshoot tolerance — typed timeout returned within `tolerance × T`         | 1.5×                                                                                         | acceptance.md                                                                                    |
+| P-RETENTION-CAP      | AC-033                         | Default provenance row-count cap                                                          | 1,000,000 rows                                                                               | ADR-0.6.0-provenance-retention                                                                   |
+| P-RETENTION-SLACK    | AC-033                         | Slack between cap and enforced upper bound (eviction batching headroom)                   | 5% (i.e. row count enforced as `≤ cap × 1.05`)                                               | ADR-0.6.0-provenance-retention                                                                   |
+| P-RETENTION-EVICT    | AC-033                         | Eviction policy                                                                           | Oldest-first by primary key                                                                  | ADR-0.6.0-provenance-retention                                                                   |
+| P-AC033-WORKLOAD     | AC-033                         | Compressed-runtime workload write rate × duration (compressed for CI)                     | 10,000 writes/sec × 14 minutes (≈ 8.4 M writes; well past P-RETENTION-CAP × eviction cycles) | acceptance.md                                                                                    |
+| P-AC033-SAMPLE       | AC-033                         | Row-count sampling cadence during AC-033                                                  | every 30 s                                                                                   | acceptance.md                                                                                    |
+| P-PWR-TRIALS         | AC-034a, AC-034b               | Power-cut harness trial count                                                             | 100                                                                                          | acceptance.md                                                                                    |
+| P-OS-TRIALS          | AC-034c                        | OS-crash harness trial count                                                              | 50                                                                                           | acceptance.md                                                                                    |
+| P-RECOV-N            | AC-035                         | Recovery-time worst-of-N N value for 1 GB DB                                              | 10                                                                                           | acceptance.md                                                                                    |
+| P-AC036-CYCLE        | AC-036                         | Open + write + search + close cycle iterations under no-listen syscall capture            | 1 (single full cycle sufficient — assertion is binary)                                       | acceptance.md                                                                                    |
+| P-AC044-SENTINEL-LEN | AC-044                         | Random-per-test sentinel byte length for shadow-table corruption detection                | 16 bytes                                                                                     | acceptance.md                                                                                    |
+| P-AC046-K            | AC-046a, AC-046b, AC-046c      | Migration step count (k) for n-to-n+k migration fixture                                   | 3                                                                                            | acceptance.md                                                                                    |
 
 Parameters used inline by their assertion (e.g. AC-007a's `100 ms`
 slow-statement default threshold; AC-022c's `5 s` close-to-exit) are
@@ -90,26 +90,26 @@ already in the AC text and not duplicated here — they restate
 REQ → AC → P-ID coverage. Every numeric AC parameter resolves through
 this table to either an ADR or to an acceptance.md self-owned bullet.
 
-| AC | Owning REQ | Parameters consumed | Authoritative source(s) |
-|---|---|---|---|
-| AC-011a/b | REQ-009a/b | P-WTP-WARMUP, P-WTP-RUN | ADR-0.6.0-write-throughput-sli (gate); acceptance.md (protocol) |
-| AC-012 | REQ-010 | P-PERF-SAMPLES | ADR-0.6.0-text-query-latency-gates |
-| AC-013 | REQ-011 | P-PERF-SAMPLES | ADR-0.6.0-retrieval-latency-gates |
-| AC-017 | REQ-015 | P-PERF-SAMPLES | ADR-0.6.0-projection-freshness-sli |
-| AC-019 | REQ-017 | P-PERF-SAMPLES, P-STRESS-MULT, P-STRESS-FLOOR | acceptance.md |
-| AC-020 | REQ-018 | P-PARALLEL-TOL | acceptance.md |
-| AC-022b | REQ-020a | P-FD-TOL | acceptance.md |
-| AC-024a | REQ-022a | P-LOCK-BOUND | acceptance.md |
-| AC-027d | REQ-025c | P-TAU, P-TAU-PASS | ADR-0.6.0-recovery-rank-correlation |
-| AC-029 | REQ-027 | P-STALL-TOL | acceptance.md |
-| AC-032b | REQ-030 | P-DRAIN-TOL | acceptance.md |
-| AC-033 | REQ-031 | P-RETENTION-CAP, P-RETENTION-SLACK, P-RETENTION-EVICT, P-AC033-WORKLOAD, P-AC033-SAMPLE | ADR-0.6.0-provenance-retention (cap/slack/policy); acceptance.md (workload/sample) |
-| AC-034a/b | REQ-031b | P-PWR-TRIALS | acceptance.md |
-| AC-034c | REQ-031b | P-OS-TRIALS | acceptance.md |
-| AC-035 | REQ-031c | P-RECOV-N | acceptance.md |
-| AC-036 | REQ-032 | P-AC036-CYCLE | acceptance.md |
-| AC-044 | REQ-040 | P-AC044-SENTINEL-LEN | acceptance.md |
-| AC-046a/b/c | REQ-042 | P-AC046-K | acceptance.md |
+| AC          | Owning REQ | Parameters consumed                                                                     | Authoritative source(s)                                                            |
+| ----------- | ---------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| AC-011a/b   | REQ-009a/b | P-WTP-WARMUP, P-WTP-RUN                                                                 | ADR-0.6.0-write-throughput-sli (gate); acceptance.md (protocol)                    |
+| AC-012      | REQ-010    | P-PERF-SAMPLES                                                                          | ADR-0.6.0-text-query-latency-gates                                                 |
+| AC-013      | REQ-011    | P-PERF-SAMPLES                                                                          | ADR-0.6.0-retrieval-latency-gates                                                  |
+| AC-017      | REQ-015    | P-PERF-SAMPLES                                                                          | ADR-0.6.0-projection-freshness-sli                                                 |
+| AC-019      | REQ-017    | P-PERF-SAMPLES, P-STRESS-MULT, P-STRESS-FLOOR                                           | acceptance.md                                                                      |
+| AC-020      | REQ-018    | P-PARALLEL-TOL                                                                          | acceptance.md                                                                      |
+| AC-022b     | REQ-020a   | P-FD-TOL                                                                                | acceptance.md                                                                      |
+| AC-024a     | REQ-022a   | P-LOCK-BOUND                                                                            | acceptance.md                                                                      |
+| AC-027d     | REQ-025c   | P-TAU, P-TAU-PASS                                                                       | ADR-0.6.0-recovery-rank-correlation                                                |
+| AC-029      | REQ-027    | P-STALL-TOL                                                                             | acceptance.md                                                                      |
+| AC-032b     | REQ-030    | P-DRAIN-TOL                                                                             | acceptance.md                                                                      |
+| AC-033      | REQ-031    | P-RETENTION-CAP, P-RETENTION-SLACK, P-RETENTION-EVICT, P-AC033-WORKLOAD, P-AC033-SAMPLE | ADR-0.6.0-provenance-retention (cap/slack/policy); acceptance.md (workload/sample) |
+| AC-034a/b   | REQ-031b   | P-PWR-TRIALS                                                                            | acceptance.md                                                                      |
+| AC-034c     | REQ-031b   | P-OS-TRIALS                                                                             | acceptance.md                                                                      |
+| AC-035      | REQ-031c   | P-RECOV-N                                                                               | acceptance.md                                                                      |
+| AC-036      | REQ-032    | P-AC036-CYCLE                                                                           | acceptance.md                                                                      |
+| AC-044      | REQ-040    | P-AC044-SENTINEL-LEN                                                                    | acceptance.md                                                                      |
+| AC-046a/b/c | REQ-042    | P-AC046-K                                                                               | acceptance.md                                                                      |
 
 ACs not listed here have no quantitative parameter (purely structural
 or boolean assertions).
@@ -259,7 +259,7 @@ or boolean assertions).
 (Numerical gates restate ADR thresholds; measurement parameters
 — warmup, sample count, runner pinning, tolerances — are owned by the
 **Parameter table** above (cited by P-ID). `test-plan.md` is the
-*measurer* that executes the protocol; it does not own thresholds.
+_measurer_ that executes the protocol; it does not own thresholds.
 Fixture data corpora at scale (1M-row, 1GB-DB, harness binaries) are
 the only test-plan.md responsibility for this section.)
 
@@ -985,79 +985,79 @@ the only test-plan.md responsibility for this section.)
 
 Every REQ in `requirements.md` has ≥1 AC:
 
-| REQ | AC(s) |
-|---|---|
-| REQ-001 | AC-001 |
-| REQ-002 | AC-002, AC-003a/b/c/d |
-| REQ-003 | AC-004a/b/c |
-| REQ-004 | AC-005a/b |
-| REQ-005 | AC-006 |
-| REQ-006a | AC-007a/b |
-| REQ-006b | AC-008 |
-| REQ-007 | AC-009 |
-| REQ-008 | AC-010 |
-| REQ-009a | AC-011a |
-| REQ-009b | AC-011b |
-| REQ-010 | AC-012 |
-| REQ-011 | AC-013 |
-| REQ-012 | AC-014 |
-| REQ-013 | AC-015 |
-| REQ-014 | AC-016 |
-| REQ-015 | AC-017 |
-| REQ-016 | AC-018 |
-| REQ-017 | AC-019 |
-| REQ-018 | AC-020 |
-| REQ-019 | AC-021 |
-| REQ-020a | AC-022a/b |
-| REQ-020b | AC-022c |
-| REQ-021 | AC-023a/b |
-| REQ-022a | AC-024a |
-| REQ-022b | AC-024b |
-| REQ-023 | AC-025 |
-| REQ-024 | AC-026 |
-| REQ-025a | AC-027a |
-| REQ-025b | AC-027b |
-| REQ-025c | AC-027c/d |
-| REQ-026 | AC-028a/b/c |
-| REQ-027 | AC-029 |
-| REQ-028a | AC-030a |
-| REQ-028b | AC-030b |
-| REQ-028c | AC-030c |
-| REQ-029 | AC-031 |
-| REQ-030 | AC-032a/b |
-| REQ-031 | AC-033 |
-| REQ-031b | AC-034a/b/c |
-| REQ-031c | AC-035 |
-| REQ-031d | AC-035a/b/c/d |
-| REQ-032 | AC-036 |
-| REQ-033 | AC-037 |
-| REQ-034 | AC-038 |
-| REQ-035 | AC-039a/b |
-| REQ-036 | AC-040a/b |
-| REQ-037 | AC-041 |
-| REQ-038 | AC-042 |
-| REQ-039 | AC-043a/b/c |
-| REQ-040 | AC-044 |
-| REQ-041 | AC-045 |
-| REQ-042 | AC-046a/b/c |
-| REQ-043 | AC-047 |
-| REQ-044 | AC-048, AC-048b |
-| REQ-045 | AC-049 |
-| REQ-046a | AC-050a |
-| REQ-046b | AC-050b/c |
-| REQ-047 | AC-051a/b |
-| REQ-048 | AC-052 |
-| REQ-049 | AC-053 |
-| REQ-050 | AC-054 |
-| REQ-051 | AC-055 |
-| REQ-052 | AC-056 |
-| REQ-053 | AC-057a |
-| REQ-054 | AC-058 |
-| REQ-055 | AC-059a/b |
-| REQ-056 | AC-060a/b |
-| REQ-057 | AC-061a/b/c |
-| REQ-058 | AC-062 |
-| REQ-059 | AC-063a/b/c |
+| REQ      | AC(s)                 |
+| -------- | --------------------- |
+| REQ-001  | AC-001                |
+| REQ-002  | AC-002, AC-003a/b/c/d |
+| REQ-003  | AC-004a/b/c           |
+| REQ-004  | AC-005a/b             |
+| REQ-005  | AC-006                |
+| REQ-006a | AC-007a/b             |
+| REQ-006b | AC-008                |
+| REQ-007  | AC-009                |
+| REQ-008  | AC-010                |
+| REQ-009a | AC-011a               |
+| REQ-009b | AC-011b               |
+| REQ-010  | AC-012                |
+| REQ-011  | AC-013                |
+| REQ-012  | AC-014                |
+| REQ-013  | AC-015                |
+| REQ-014  | AC-016                |
+| REQ-015  | AC-017                |
+| REQ-016  | AC-018                |
+| REQ-017  | AC-019                |
+| REQ-018  | AC-020                |
+| REQ-019  | AC-021                |
+| REQ-020a | AC-022a/b             |
+| REQ-020b | AC-022c               |
+| REQ-021  | AC-023a/b             |
+| REQ-022a | AC-024a               |
+| REQ-022b | AC-024b               |
+| REQ-023  | AC-025                |
+| REQ-024  | AC-026                |
+| REQ-025a | AC-027a               |
+| REQ-025b | AC-027b               |
+| REQ-025c | AC-027c/d             |
+| REQ-026  | AC-028a/b/c           |
+| REQ-027  | AC-029                |
+| REQ-028a | AC-030a               |
+| REQ-028b | AC-030b               |
+| REQ-028c | AC-030c               |
+| REQ-029  | AC-031                |
+| REQ-030  | AC-032a/b             |
+| REQ-031  | AC-033                |
+| REQ-031b | AC-034a/b/c           |
+| REQ-031c | AC-035                |
+| REQ-031d | AC-035a/b/c/d         |
+| REQ-032  | AC-036                |
+| REQ-033  | AC-037                |
+| REQ-034  | AC-038                |
+| REQ-035  | AC-039a/b             |
+| REQ-036  | AC-040a/b             |
+| REQ-037  | AC-041                |
+| REQ-038  | AC-042                |
+| REQ-039  | AC-043a/b/c           |
+| REQ-040  | AC-044                |
+| REQ-041  | AC-045                |
+| REQ-042  | AC-046a/b/c           |
+| REQ-043  | AC-047                |
+| REQ-044  | AC-048, AC-048b       |
+| REQ-045  | AC-049                |
+| REQ-046a | AC-050a               |
+| REQ-046b | AC-050b/c             |
+| REQ-047  | AC-051a/b             |
+| REQ-048  | AC-052                |
+| REQ-049  | AC-053                |
+| REQ-050  | AC-054                |
+| REQ-051  | AC-055                |
+| REQ-052  | AC-056                |
+| REQ-053  | AC-057a               |
+| REQ-054  | AC-058                |
+| REQ-055  | AC-059a/b             |
+| REQ-056  | AC-060a/b             |
+| REQ-057  | AC-061a/b/c           |
+| REQ-058  | AC-062                |
+| REQ-059  | AC-063a/b/c           |
 
 ## Lock-blocking dependencies
 
@@ -1069,29 +1069,29 @@ acceptance.md does block on test-plan.md for **fixture corpora and
 harnesses** that an AC's measurement protocol invokes — these are
 build-once test artifacts, not threshold decisions:
 
-| Test-plan.md owes | Used by AC |
-|---|---|
-| 1 M chunk-row corpus + FTS5 + `vec0` indexes | AC-012, AC-013, AC-019 |
-| 1 GB seeded DB | AC-035 |
-| Open-path corruption matrix (4 fixtures: WAL replay, header probe, schema probe, embedder-profile corruption) | AC-035a/b/c |
-| Power-cut harness (kill -9 mid-commit timing strategy + reopen loop) | AC-034a, AC-034b |
-| OS-crash harness (VM image + sysrq trigger with sync barrier preserved) | AC-034c |
-| Shadow-table corruption injection tool | AC-006, AC-027a/b/c/d, AC-044 |
-| Page-corruption tool (for SQLite-internal events) | AC-006 |
-| Page-damage integrity fixture for `doctor check-integrity --full` | AC-043c |
-| Deterministic-slow CTE fixture (≥ 200 ms guaranteed) + fast / slow pair | AC-007a, AC-007b |
-| Poison-fixture (deterministic op failure) | AC-003d, AC-009 |
-| Mixed-retrieval stress workload generator | AC-019 |
-| Interactive read-mix definition (per-query-type ratios) | AC-020 |
-| Compressed-runtime write fixture (10k writes/sec × 14 min harness) | AC-033 |
-| Vector-100-query suite + FTS-100-query suite | AC-027b/d |
-| AST scanner script (Rust + Python + TS code-only scope) | AC-050a |
-| Removal-detect linter | AC-050c |
-| Cargo-skew + pip-skew constraint fixtures | AC-051a/b |
-| Synthetic-changelog fixtures | AC-050b |
-| netns-deny-egress + bpftrace harnesses | AC-036, AC-037 |
+| Test-plan.md owes                                                                                             | Used by AC                    |
+| ------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| 1 M chunk-row corpus + FTS5 + `vec0` indexes                                                                  | AC-012, AC-013, AC-019        |
+| 1 GB seeded DB                                                                                                | AC-035                        |
+| Open-path corruption matrix (4 fixtures: WAL replay, header probe, schema probe, embedder-profile corruption) | AC-035a/b/c                   |
+| Power-cut harness (kill -9 mid-commit timing strategy + reopen loop)                                          | AC-034a, AC-034b              |
+| OS-crash harness (VM image + sysrq trigger with sync barrier preserved)                                       | AC-034c                       |
+| Shadow-table corruption injection tool                                                                        | AC-006, AC-027a/b/c/d, AC-044 |
+| Page-corruption tool (for SQLite-internal events)                                                             | AC-006                        |
+| Page-damage integrity fixture for `doctor check-integrity --full`                                             | AC-043c                       |
+| Deterministic-slow CTE fixture (≥ 200 ms guaranteed) + fast / slow pair                                       | AC-007a, AC-007b              |
+| Poison-fixture (deterministic op failure)                                                                     | AC-003d, AC-009               |
+| Mixed-retrieval stress workload generator                                                                     | AC-019                        |
+| Interactive read-mix definition (per-query-type ratios)                                                       | AC-020                        |
+| Compressed-runtime write fixture (10k writes/sec × 14 min harness)                                            | AC-033                        |
+| Vector-100-query suite + FTS-100-query suite                                                                  | AC-027b/d                     |
+| AST scanner script (Rust + Python + TS code-only scope)                                                       | AC-050a                       |
+| Removal-detect linter                                                                                         | AC-050c                       |
+| Cargo-skew + pip-skew constraint fixtures                                                                     | AC-051a/b                     |
+| Synthetic-changelog fixtures                                                                                  | AC-050b                       |
+| netns-deny-egress + bpftrace harnesses                                                                        | AC-036, AC-037                |
 
 Test-plan.md does NOT decide thresholds. If a fixture / harness
-generates a number (e.g. baseline_p99 in AC-019), that number is a
-*measured* value, not a *threshold* — thresholds are compared against
+generates a number (e.g. baseline*p99 in AC-019), that number is a
+\_measured* value, not a _threshold_ — thresholds are compared against
 measurements per the parameter table.

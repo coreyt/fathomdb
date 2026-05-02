@@ -35,10 +35,10 @@ Reference (do not modify):
 
 Append to `dev/learnings.md` under heading `## Prior Work Disposition`:
 
-| File | Verdict | Target | Notes |
-|------|---------|--------|-------|
-| `dev/ARCHITECTURE.md` | fold | `dev/architecture.md` | crate topology + WAL section still valid; deferred-expansion section drop |
-| ... | ... | ... | ... |
+| File                  | Verdict | Target                | Notes                                                                     |
+| --------------------- | ------- | --------------------- | ------------------------------------------------------------------------- |
+| `dev/ARCHITECTURE.md` | fold    | `dev/architecture.md` | crate topology + WAL section still valid; deferred-expansion section drop |
+| ...                   | ...     | ...                   | ...                                                                       |
 
 Verdict semantics:
 

@@ -26,43 +26,43 @@ reference sites.
 
 Empirical / academic:
 
-- Macke & Doyle, *Testing the Effect of Code Documentation on Large Language
-  Model Code Understanding* — arXiv:2404.03114.
-- *Beyond Synthetic Benchmarks: Evaluating LLM Performance on Real-World
-  Class-Level Code Generation* — arXiv:2510.26130.
-- Liu et al., *Beyond Functional Correctness: Exploring Hallucinations in
-  LLM-Generated Code* — arXiv:2404.00971.
-- *LLM Hallucinations in Practical Code Generation: Phenomena, Mechanism, and
-  Mitigation* — Proc. ACM Softw. Eng. (2025), DOI 10.1145/3728894.
-- Nguyen & Nadi, *An Empirical Evaluation of GitHub Copilot's Code
-  Suggestions* — MSR 2022 (sarahnadi.org/assets/pdf/pubs/NguyenMSR22.pdf).
-- Mastropaolo et al., *On the Robustness of Code Generation Techniques: An
-  Empirical Study on GitHub Copilot* — ICSE 2023.
-- *Bridging Developer Instructions and Code Completion Through
-  Instruction-Aware Fill-in-the-Middle Paradigm* — arXiv:2509.24637.
-- *Evaluating AGENTS.md: Are Repository-Level Context Files Helpful for
-  Coding Agents?* — arXiv:2602.11988 (ETH Zurich, AGENTbench).
-- *Prompt Injection Attacks on Agentic Coding Assistants* —
+- Macke & Doyle, _Testing the Effect of Code Documentation on Large Language
+  Model Code Understanding_ — arXiv:2404.03114.
+- _Beyond Synthetic Benchmarks: Evaluating LLM Performance on Real-World
+  Class-Level Code Generation_ — arXiv:2510.26130.
+- Liu et al., _Beyond Functional Correctness: Exploring Hallucinations in
+  LLM-Generated Code_ — arXiv:2404.00971.
+- _LLM Hallucinations in Practical Code Generation: Phenomena, Mechanism, and
+  Mitigation_ — Proc. ACM Softw. Eng. (2025), DOI 10.1145/3728894.
+- Nguyen & Nadi, _An Empirical Evaluation of GitHub Copilot's Code
+  Suggestions_ — MSR 2022 (sarahnadi.org/assets/pdf/pubs/NguyenMSR22.pdf).
+- Mastropaolo et al., _On the Robustness of Code Generation Techniques: An
+  Empirical Study on GitHub Copilot_ — ICSE 2023.
+- _Bridging Developer Instructions and Code Completion Through
+  Instruction-Aware Fill-in-the-Middle Paradigm_ — arXiv:2509.24637.
+- _Evaluating AGENTS.md: Are Repository-Level Context Files Helpful for
+  Coding Agents?_ — arXiv:2602.11988 (ETH Zurich, AGENTbench).
+- _Prompt Injection Attacks on Agentic Coding Assistants_ —
   arXiv:2601.17548.
-- *The Power of Noise: Redefining Retrieval for RAG Systems* —
+- _The Power of Noise: Redefining Retrieval for RAG Systems_ —
   arXiv:2401.14887.
 
 Frontier-lab / vendor guidance:
 
-- Anthropic, *Best Practices for Claude Code* — code.claude.com/docs/en/best-practices.
+- Anthropic, _Best Practices for Claude Code_ — code.claude.com/docs/en/best-practices.
 - OpenAI Codex / AGENTS.md spec — agents.md, developers.openai.com/codex/guides/agents-md.
-- GitHub blog, *How to write a great agents.md: Lessons from over 2,500
-  repositories* — github.blog/ai-and-ml/github-copilot/...
-- Cursor, *Best practices for coding with agents* — cursor.com/blog/agent-best-practices.
+- GitHub blog, _How to write a great agents.md: Lessons from over 2,500
+  repositories_ — github.blog/ai-and-ml/github-copilot/...
+- Cursor, _Best practices for coding with agents_ — cursor.com/blog/agent-best-practices.
 - Sourcegraph Cody documentation — sourcegraph.com/docs/cody.
-- Cloudflare Engineering Blog, *Orchestrating AI Code Review at scale* —
+- Cloudflare Engineering Blog, _Orchestrating AI Code Review at scale_ —
   blog.cloudflare.com/ai-code-review.
 
 Practitioners (opinion-grade, marked as such):
 
-- Addy Osmani, *My LLM coding workflow going into 2026* — addyo.substack.com.
-- HumanLayer, *Writing a good CLAUDE.md*.
-- Thomas Landgraf, *Why I Choose TypeScript for LLM-Based Coding* — Medium.
+- Addy Osmani, _My LLM coding workflow going into 2026_ — addyo.substack.com.
+- HumanLayer, _Writing a good CLAUDE.md_.
+- Thomas Landgraf, _Why I Choose TypeScript for LLM-Based Coding_ — Medium.
 - InfoQ news summary of arXiv:2602.11988 (March 2026).
 
 ## Findings
@@ -108,7 +108,7 @@ specifically when docstrings were partial.
 
 **Observations:** Above some saturation threshold, more prose stops helping.
 Frontier code-tuned models already infer behaviour from signatures + body.
-Where docstrings *do* help, the mechanism overlaps with what RAG provides:
+Where docstrings _do_ help, the mechanism overlaps with what RAG provides:
 concrete usage examples and edge cases. This is the empirical rebuttal to
 the folk belief that "more docstrings = better completion."
 
@@ -180,7 +180,7 @@ project structure, code style, git workflow, and explicit boundaries
 ("never touch X"). Anthropic's Claude Code best-practices doc says
 explicitly: include "things Claude can't guess" — bash commands, env
 quirks, repository etiquette, architectural decisions, common gotchas —
-and *exclude* "anything Claude can figure out by reading code" and
+and _exclude_ "anything Claude can figure out by reading code" and
 "standard language conventions Claude already knows." These same heuristics
 apply at file/module-header scope: state ownership, invariants, and
 non-obvious lifecycle.
@@ -205,9 +205,9 @@ others — value is bimodal, not linear in coverage.
 where the logic isn't self-evident" and "Don't add docstrings, comments,
 or type annotations to code you didn't change." Cursor's agent
 best-practices makes the same call. Cloudflare's AI code-review writeup
-("telling an LLM what *not* to do is where the actual prompt engineering
-value resides") generalises: rationale comments that explain *why a
-seemingly natural alternative is wrong* prevent the agent from refactoring
+("telling an LLM what _not_ to do is where the actual prompt engineering
+value resides") generalises: rationale comments that explain _why a
+seemingly natural alternative is wrong_ prevent the agent from refactoring
 into the bug. This is opinion-grade across vendors but the convergence is
 strong.
 
@@ -282,7 +282,7 @@ content. Code-search practice at Sourcegraph Cody and Continue.dev
 favours symbol-graph + semantic search over pure embedding because
 prose-heavy chunks dominate similarity scores even when the relevant
 signal is a 3-line function body. The arXiv:2602.11988 AGENTbench result
-— LLM-generated AGENTS.md *reduced* task success by ~3% and increased
+— LLM-generated AGENTS.md _reduced_ task success by ~3% and increased
 inference cost by 20%, while human-written ones gave only a 4% gain at
 19% extra cost — shows the same pattern at file-context scope: prose
 expands the agent's exploration without commensurate accuracy gain.
@@ -302,8 +302,8 @@ agent-driven retrieval; less for in-IDE single-file edits.
 
 ### F10 — Comments are an attack surface (prompt-injection vector)
 
-**Evidence:** arXiv:2601.17548 (*Prompt Injection Attacks on Agentic
-Coding Assistants*) and Palo Alto Unit 42's field reports document
+**Evidence:** arXiv:2601.17548 (_Prompt Injection Attacks on Agentic
+Coding Assistants_) and Palo Alto Unit 42's field reports document
 in-code comments, package READMEs, and dependency docstrings as
 indirect-prompt-injection vectors. The OWASP LLM01:2025 prompt-injection
 guidance lists "comments and documentation that AI coding assistants

@@ -37,6 +37,7 @@ and 8 primary-source fetches (2026-05-01).
 ### F1 — Frontier coding agents are abandoning embedding RAG for agentic search
 
 **Evidence:**
+
 > "Early versions of Claude Code used RAG + a local vector db, but we found pretty quickly that agentic search generally works better." — Boris Cherny (Anthropic), quoted in <https://vadim.blog/claude-code-no-indexing>
 >
 > "Claude Code doesn't use RAG currently. In our testing we found that agentic search outperformed [it] by a lot, and this was surprising." — Anthropic engineer, same source.
@@ -52,7 +53,7 @@ and 8 primary-source fetches (2026-05-01).
 **Recommendations:**
 
 - Default a code agent to grep/glob/read tools over a vendored vector DB until a measured gap forces otherwise.
-- Treat embeddings as an *optional* booster (e.g. for natural-language-only queries against unfamiliar repos), not a required substrate.
+- Treat embeddings as an _optional_ booster (e.g. for natural-language-only queries against unfamiliar repos), not a required substrate.
 - Provide a sub-agent context for exploration so search churn does not pollute the planner's token budget.
 
 **Impact on agent LLM:** HIGH — this directly shapes the tool surface and whether you ship an indexer at all.
@@ -60,6 +61,7 @@ and 8 primary-source fetches (2026-05-01).
 ### F2 — Iterative retrieve→generate→re-retrieve materially beats single-shot retrieval
 
 **Evidence:**
+
 > RepoCoder "significantly improves the In-File completion baseline by over 10% in all settings and consistently outperforms the vanilla retrieval-augmented code completion approach." — <https://arxiv.org/abs/2303.12570>
 >
 > Sourcegraph agentic chat: "proactively gathers context from your codebase, shell, and the web... reviewing, and refining context to deliver high-quality, context-rich responses." — <https://sourcegraph.com/docs/cody/capabilities/agentic-context-fetching>
@@ -72,7 +74,7 @@ and 8 primary-source fetches (2026-05-01).
 
 **Recommendations:**
 
-- Wire context fetching as a *loop* the agent can re-enter, not a one-shot prefix.
+- Wire context fetching as a _loop_ the agent can re-enter, not a one-shot prefix.
 - Allow the agent to spend tokens on a second/third pass — this is cheap relative to wrong code.
 - Log retrieval queries; the second query (post-generation) is a strong signal of what was missing.
 
@@ -81,6 +83,7 @@ and 8 primary-source fetches (2026-05-01).
 ### F3 — Cross-file context is required for repo-realistic completion, and even good retrieval is far from sufficient
 
 **Evidence:**
+
 > "Performance improves dramatically when the cross-file context is added to the prompts, regardless of the size of code LMs... OpenAI's ada embedding generally performs the best, but its downstream generation accuracy is still suboptimal (<20 EM)." — CrossCodeEval, <https://crosscodeeval.github.io/>
 >
 > "Unlike existing datasets where the correct answer could be predicted with only context from the current file, CrossCodeEval strictly requires cross-file context to correctly complete the missing code." — same.
@@ -94,13 +97,14 @@ and 8 primary-source fetches (2026-05-01).
 **Recommendations:**
 
 - Context strategy for code agents must include a cross-file mechanism (repo map, symbol search, or retrieval) — relying on the active file is a known regression.
-- Track *retrieval* quality independently of *generation* quality; CCE shows they decouple sharply.
+- Track _retrieval_ quality independently of _generation_ quality; CCE shows they decouple sharply.
 
 **Impact on agent LLM:** HIGH — bounds the achievable quality of single-file-context systems.
 
 ### F4 — Long-context models do well on synthetic NIAH but degrade non-uniformly on real workloads
 
 **Evidence:**
+
 > Gemini 1.5 Pro: ">99.7% recall... up to 1 million tokens... extended to 10 million tokens for text" on NIAH. — <https://arxiv.org/pdf/2403.05530>
 >
 > Chroma's Context Rot study (18 LLMs incl. GPT-4.1, Claude 4, Gemini 2.5): "model performance varies significantly as input length changes, even on simple tasks... Even single distractors reduce performance compared to baseline... Counterintuitively, models performed better on shuffled, unstructured haystacks versus logically coherent ones." — <https://www.trychroma.com/research/context-rot>
@@ -110,13 +114,13 @@ and 8 primary-source fetches (2026-05-01).
 **Observations:**
 
 - The headline NIAH numbers describe a single-needle factoid retrieval, not multi-hop code reasoning.
-- Chroma's finding that *coherent* haystacks are *harder* than shuffled ones is striking for code: dumping a real repo (where related symbols cluster) may be worse than the synthetic benchmark suggests.
+- Chroma's finding that _coherent_ haystacks are _harder_ than shuffled ones is striking for code: dumping a real repo (where related symbols cluster) may be worse than the synthetic benchmark suggests.
 - Distractor sensitivity is highly relevant to repos full of similarly-named symbols.
 
 **Recommendations:**
 
 - Do not assume 1M-token context lets you dump the repo. Curate.
-- Place the most decision-relevant material (the file you'll edit, the failing test, the called helper) at the *start* or *end* of the prompt, not the middle.
+- Place the most decision-relevant material (the file you'll edit, the failing test, the called helper) at the _start_ or _end_ of the prompt, not the middle.
 - Prune distractors aggressively — even one near-duplicate hurts.
 
 **Impact on agent LLM:** HIGH — bounds the "just paste the whole repo" strategy that 1M-token marketing implies.
@@ -124,6 +128,7 @@ and 8 primary-source fetches (2026-05-01).
 ### F5 — AST/tree-sitter chunking measurably outperforms line-based chunking for code RAG
 
 **Evidence:**
+
 > cAST: "RepoEval Recall@5 improved by 1.8–4.3 points... Pass@1: StarCoder2-7B 51.7% with cAST vs. 47.5% with fixed-size chunking. SWE-Bench Pass@1 with Claude: 16.3% (cAST) vs. 13.7% (baseline). CrossCodeEval: up to 2.9-point improvement." — <https://arxiv.org/html/2506.15655v1>
 >
 > Aider repo map: "Using the AST, we can identify where functions, classes, variables, types and other definitions occur in the source code... The map is richer, showing full function call signatures." — <https://aider.chat/2023/10/22/repomap.html>
@@ -147,13 +152,14 @@ and 8 primary-source fetches (2026-05-01).
 ### F6 — Repo map of signatures is a strong cheap prefix for any code agent
 
 **Evidence:**
+
 > Aider: "Aider uses a concise map of the whole git repository that includes the most important classes and functions along with their types and call signatures... Aider optimizes the repo map by selecting the most important parts of the codebase which will fit into the token budget assigned by the user (via the `--map-tokens` switch, which defaults to 1k tokens)." — <https://aider.chat/2023/10/22/repomap.html> and <https://aider.chat/docs/repomap.html>
 >
 > Devin Wiki: "automatically indexes repositories every few hours, producing browsable documentation and architecture diagrams that link directly to relevant parts of the code." — <https://cognition.ai/blog/devin-2>
 
 **Observations:**
 
-- A signatures-only map is small (default 1k tokens) but conveys the symbol space the agent should grep into. It is *complementary* to agentic search, not competitive with it.
+- A signatures-only map is small (default 1k tokens) but conveys the symbol space the agent should grep into. It is _complementary_ to agentic search, not competitive with it.
 - Aider's PageRank-style ranking of which symbols to include is a notable detail — relevance, not arbitrary truncation.
 - Devin treats the same idea at a higher level: a continuously-regenerated wiki/architecture overview.
 
@@ -167,6 +173,7 @@ and 8 primary-source fetches (2026-05-01).
 ### F7 — Hierarchical localization (file → class → line) beats flat retrieval at SWE-bench economics
 
 **Evidence:**
+
 > Agentless: "hierarchical process to first localize the fault to specific files, then to relevant classes or functions, and finally to fine-grained edit locations... Results on the popular SWE-bench Lite benchmark show that surprisingly the simplistic Agentless is able to achieve both the highest performance (32.00%, 96 correct fixes) and low cost ($0.70)." — <https://arxiv.org/abs/2407.01489>
 >
 > AutoCodeRover seven-API surface: `search_class`, `search_class_in_file`, `search_method`, `search_method_in_class`, `search_method_in_file`, `search_code`, `search_code_in_file`. SWE-bench Pass@1 19% at $0.43/task. — <https://arxiv.org/html/arXiv:2404.05427>
@@ -188,6 +195,7 @@ and 8 primary-source fetches (2026-05-01).
 ### F8 — Diffs, not full-file rewrites, are the right edit format
 
 **Evidence:**
+
 > Aider: "GPT-4 Turbo (gpt-4-1106-preview): Baseline with SEARCH/REPLACE format: 20% score; with unified diffs: 61% score. Lazy comments reduced from 12 tasks to 4 tasks (3X improvement)." — <https://aider.chat/docs/unified-diffs.html>
 >
 > "Experiments without 'high level diff' prompting produce a 30-50% increase in editing errors. Experiments where flexible patching is disabled show a 9X increase in editing errors." — same.
@@ -195,13 +203,13 @@ and 8 primary-source fetches (2026-05-01).
 **Observations:**
 
 - This is one of the highest-effect-size ablations in the public literature on code agents: 3× pass rate from edit format alone, holding model and prompt constant.
-- The mechanism is dual: token efficiency (cheap output) *and* a quality boost from forcing structured local reasoning.
+- The mechanism is dual: token efficiency (cheap output) _and_ a quality boost from forcing structured local reasoning.
 - Caveat: input context still typically needs whole-function or whole-class views even when output is a diff.
 
 **Recommendations:**
 
 - Default tool-use shape: read whole-file (or whole-function) context in, emit unified diffs out.
-- Implement *flexible* patching (fuzzy whitespace, indentation tolerance) — strict patch matching costs 9× error rate.
+- Implement _flexible_ patching (fuzzy whitespace, indentation tolerance) — strict patch matching costs 9× error rate.
 - Use "high-level diff" prompting (describe the change before the diff) to keep the model from getting lazy.
 
 **Impact on agent LLM:** HIGH — directly governs both cost and reliability of edits.
@@ -209,13 +217,14 @@ and 8 primary-source fetches (2026-05-01).
 ### F9 — Bounded "agent-computer interface" view operations matter more than raw context window
 
 **Evidence:**
+
 > SWE-agent: "By restricting search output length and providing only relevant file fragments, the ACI reduces the likelihood of prompt overflow and hallucination caused by excessive or irrelevant context... Important operations (e.g., file navigation, editing) should be consolidated into as few actions as possible." — <https://arxiv.org/pdf/2405.15793>
 >
 > SWE-Edit decomposition: "a Viewer that extracts task-relevant code on demand, and an Editor that executes modifications from high-level plans." — <https://arxiv.org/abs/2604.26102>
 
 **Observations:**
 
-- SWE-agent's central thesis is that LM performance on code is a function of the *interface*, not just the model. Pagination of file views, capped grep output, and a syntax-aware editor materially improve outcomes without any model change.
+- SWE-agent's central thesis is that LM performance on code is a function of the _interface_, not just the model. Pagination of file views, capped grep output, and a syntax-aware editor materially improve outcomes without any model change.
 - Cline/Cursor design rationale matches: bounded read/scroll/edit primitives, not "here's a 500k-token blob."
 - Combines well with F4 (context rot) — the ACI is the mechanism that keeps long-context degradation from accumulating.
 
@@ -230,6 +239,7 @@ and 8 primary-source fetches (2026-05-01).
 ### F10 — Retrieval is necessary for unfamiliar/large repos, but the dominant trend is "search-as-tool" not "embed-everything"
 
 **Evidence:**
+
 > Continue.dev: "Continue indexes your codebase so that it can later automatically pull in the most relevant context... a combination of embeddings-based retrieval and keyword search... initially retrieves 25 results from the vector database and then uses an LLM to select the top 5 results through re-ranking." — <https://continue.dev/docs/walkthroughs/codebase-embeddings>
 >
 > Cursor: "Cursor breaks your code into meaningful chunks (functions, classes, logical blocks)... index stays current through automatic sync every 5 minutes, processing only changed files... Code content is never stored in plaintext." — <https://cursor.com/docs/context/codebase-indexing>

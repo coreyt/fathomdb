@@ -15,11 +15,11 @@ engine is doing while it is doing it.
 The lifecycle subsystem is not one monolithic stream. It owns three distinct
 but cooperating surfaces:
 
-| Surface | Purpose | Primary consumer |
-|---|---|---|
-| Response-cycle feedback | Liveness and phase attribution for one public operation | application code, operator UX |
-| Structured diagnostics | Engine and SQLite-originated events routed through the host subscriber | operators, debugging, incident triage |
-| Pull / opt-in telemetry | Cumulative counters and per-statement profile records | operators, capacity planning, query tuning |
+| Surface                 | Purpose                                                                | Primary consumer                           |
+| ----------------------- | ---------------------------------------------------------------------- | ------------------------------------------ |
+| Response-cycle feedback | Liveness and phase attribution for one public operation                | application code, operator UX              |
+| Structured diagnostics  | Engine and SQLite-originated events routed through the host subscriber | operators, debugging, incident triage      |
+| Pull / opt-in telemetry | Cumulative counters and per-statement profile records                  | operators, capacity planning, query tuning |
 
 These surfaces must not be collapsed into one free-form log stream. A caller
 must be able to consume lifecycle phase, diagnostics, and telemetry without
@@ -157,7 +157,7 @@ Stable `source` values:
 - `Engine`
 - `SqliteInternal`
 
-Stable engine-source categories used by AC-003*:
+Stable engine-source categories used by AC-003\*:
 
 - `writer`
 - `search`

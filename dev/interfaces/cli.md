@@ -34,26 +34,26 @@ application surface and does not ship `search` / `get` / `list` query verbs.
 
 ## Exit-code classes
 
-| Code | Stable meaning | Primary owner |
-|---|---|---|
-| `0` | successful completion with no findings that require a non-zero exit | this file |
+| Code | Stable meaning                                                       | Primary owner                    |
+| ---- | -------------------------------------------------------------------- | -------------------------------- |
+| `0`  | successful completion with no findings that require a non-zero exit  | this file                        |
 | `64` | recovery completed only because lossy action was explicitly accepted | this file + `design/recovery.md` |
-| `65` | doctor/verification surface found actionable non-clean state | this file + `design/recovery.md` |
-| `66` | export/materialization failure on an artifact-producing doctor verb | this file + `design/recovery.md` |
-| `70` | unrecoverable command failure | this file |
-| `71` | lock-held or equivalent precondition-blocked outcome | this file + `design/bindings.md` |
+| `65` | doctor/verification surface found actionable non-clean state         | this file + `design/recovery.md` |
+| `66` | export/materialization failure on an artifact-producing doctor verb  | this file + `design/recovery.md` |
+| `70` | unrecoverable command failure                                        | this file                        |
+| `71` | lock-held or equivalent precondition-blocked outcome                 | this file + `design/bindings.md` |
 
 ## Doctor verbs
 
-| Verb | Synopsis | Exit class |
-|---|---|---|
+| Verb              | Synopsis                                                                       | Exit class                          |
+| ----------------- | ------------------------------------------------------------------------------ | ----------------------------------- |
 | `check-integrity` | `fathomdb doctor check-integrity [--quick] [--full] [--round-trip] [--pretty]` | `doctor-check-*` = 0 / 65 / 70 / 71 |
-| `safe-export` | `fathomdb doctor safe-export <out> [--manifest <path>]` | `doctor-export-*` = 0 / 66 / 71 |
-| `verify-embedder` | `fathomdb doctor verify-embedder` | `doctor-check-*` = 0 / 65 |
-| `trace` | `fathomdb doctor trace --source-ref <id>` | `doctor-check-*` |
-| `dump-schema` | `fathomdb doctor dump-schema` | `doctor-check-*` |
-| `dump-row-counts` | `fathomdb doctor dump-row-counts` | `doctor-check-*` |
-| `dump-profile` | `fathomdb doctor dump-profile` | `doctor-check-*` |
+| `safe-export`     | `fathomdb doctor safe-export <out> [--manifest <path>]`                        | `doctor-export-*` = 0 / 66 / 71     |
+| `verify-embedder` | `fathomdb doctor verify-embedder`                                              | `doctor-check-*` = 0 / 65           |
+| `trace`           | `fathomdb doctor trace --source-ref <id>`                                      | `doctor-check-*`                    |
+| `dump-schema`     | `fathomdb doctor dump-schema`                                                  | `doctor-check-*`                    |
+| `dump-row-counts` | `fathomdb doctor dump-row-counts`                                              | `doctor-check-*`                    |
+| `dump-profile`    | `fathomdb doctor dump-profile`                                                 | `doctor-check-*`                    |
 
 `doctor-check-*` means the verb may use the exit-code class set `{0, 65, 70,
 71}` depending on clean/findings/unrecoverable/lock-held outcome.

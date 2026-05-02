@@ -30,13 +30,13 @@ to that platform across **every** binding, not just Python.
 
 **Tier-1 platforms (every binding must build, test, and publish on each):**
 
-| Platform | Target triple |
-|----------|---------------|
-| Linux x86_64 (glibc) | `x86_64-unknown-linux-gnu` (manylinux_2_28 for Python) |
+| Platform              | Target triple                                           |
+| --------------------- | ------------------------------------------------------- |
+| Linux x86_64 (glibc)  | `x86_64-unknown-linux-gnu` (manylinux_2_28 for Python)  |
 | Linux aarch64 (glibc) | `aarch64-unknown-linux-gnu` (manylinux_2_28 for Python) |
-| macOS x86_64 | `x86_64-apple-darwin` |
-| macOS aarch64 | `aarch64-apple-darwin` |
-| Windows x86_64 (MSVC) | `x86_64-pc-windows-msvc` |
+| macOS x86_64          | `x86_64-apple-darwin`                                   |
+| macOS aarch64         | `aarch64-apple-darwin`                                  |
+| Windows x86_64 (MSVC) | `x86_64-pc-windows-msvc`                                |
 
 **Bindings × platforms.** Python wheels + NAPI prebuilt + CLI binary
 ship per-target artifacts on all five targets at every release; the

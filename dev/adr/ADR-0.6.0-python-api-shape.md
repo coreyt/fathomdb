@@ -103,7 +103,7 @@ semantics. Rejected.
 - `_async` variants are forbidden in 0.6.x; PR adding one cites this
   ADR for rejection.
 - Type stubs (`.pyi`) generated alongside wheel build; CI gate (`mypy
-  --strict` against the stubs) added in test-plan.
+--strict` against the stubs) added in test-plan.
 - 0.5.x → 0.6.0 Python users see hard import / attribute errors per
   ADR-0.6.0-no-shims-policy. No `from fathomdb.legacy import ...`.
 

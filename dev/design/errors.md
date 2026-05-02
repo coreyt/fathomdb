@@ -36,18 +36,18 @@ Top-level ownership boundary:
 Per ADR-0.6.0-error-taxonomy, per-module errors stay distinct when they carry
 different remediation or cross-doc ownership.
 
-| Error type | Produced by | Routed through | Semantics owner | Why distinct |
-|---|---|---|---|---|
-| `StorageError` | canonical SQLite read/write path | `EngineError` | `design/engine.md` | physical storage / transaction failures are not projection or op-store failures |
-| `ProjectionError` | projection-row commit / terminal-state accounting | `EngineError` | `design/projections.md` | projection freshness and failure-state rules are distinct from canonical writes |
-| `VectorError` | `sqlite-vec` encode/load/query path | `EngineError` | `design/vector.md` | vector capability / encoding failures have vector-specific recovery |
-| `EmbedderError` | embedder dispatch, timeout, invalid vector return | `EngineError` | `design/embedder.md` | caller remediation is "fix or replace embedder," not "retry generic write" |
-| `SchedulerError` | scheduler startup/shutdown / queue orchestration | `EngineError` | `design/scheduler.md` | queue and shutdown failures are not vector math or write-shape failures |
-| `OpStoreError` | unknown collection, kind mismatch, registry misuse | `EngineError` | `design/op-store.md` | op-store contract failures are separate from primary graph writes |
-| `WriteValidationError` | malformed typed write shape | `EngineError` | `design/engine.md` | fix caller-submitted field shape / variant construction |
-| `SchemaValidationError` | JSON Schema rejection for op-store payloads | `EngineError` | `design/op-store.md` | fix payload contents against registered `schema_id` |
-| `EmbedderIdentityMismatchError` | open-time stored-vs-supplied identity comparison | `EngineOpenError` | `design/embedder.md` | open-time incompatibility, not runtime write/query failure |
-| `MigrationError` | schema migration execution | `EngineOpenError` | `design/migrations.md` | open-time schema transition failure with per-step reporting |
+| Error type                      | Produced by                                        | Routed through    | Semantics owner         | Why distinct                                                                    |
+| ------------------------------- | -------------------------------------------------- | ----------------- | ----------------------- | ------------------------------------------------------------------------------- |
+| `StorageError`                  | canonical SQLite read/write path                   | `EngineError`     | `design/engine.md`      | physical storage / transaction failures are not projection or op-store failures |
+| `ProjectionError`               | projection-row commit / terminal-state accounting  | `EngineError`     | `design/projections.md` | projection freshness and failure-state rules are distinct from canonical writes |
+| `VectorError`                   | `sqlite-vec` encode/load/query path                | `EngineError`     | `design/vector.md`      | vector capability / encoding failures have vector-specific recovery             |
+| `EmbedderError`                 | embedder dispatch, timeout, invalid vector return  | `EngineError`     | `design/embedder.md`    | caller remediation is "fix or replace embedder," not "retry generic write"      |
+| `SchedulerError`                | scheduler startup/shutdown / queue orchestration   | `EngineError`     | `design/scheduler.md`   | queue and shutdown failures are not vector math or write-shape failures         |
+| `OpStoreError`                  | unknown collection, kind mismatch, registry misuse | `EngineError`     | `design/op-store.md`    | op-store contract failures are separate from primary graph writes               |
+| `WriteValidationError`          | malformed typed write shape                        | `EngineError`     | `design/engine.md`      | fix caller-submitted field shape / variant construction                         |
+| `SchemaValidationError`         | JSON Schema rejection for op-store payloads        | `EngineError`     | `design/op-store.md`    | fix payload contents against registered `schema_id`                             |
+| `EmbedderIdentityMismatchError` | open-time stored-vs-supplied identity comparison   | `EngineOpenError` | `design/embedder.md`    | open-time incompatibility, not runtime write/query failure                      |
+| `MigrationError`                | schema migration execution                         | `EngineOpenError` | `design/migrations.md`  | open-time schema transition failure with per-step reporting                     |
 
 `Overloaded` and `Closing` remain direct `EngineError` variants rather than
 module errors because they are cross-cutting runtime states:
@@ -95,23 +95,23 @@ The matrix below is the canonical cross-binding class-stem table for 0.6.0.
 Per-language interface docs may apply idiomatic casing, but they must not
 rename the semantic class stems or collapse distinct rows.
 
-| Rust-side surface | Python class stem | TypeScript class stem | CLI dispatch class |
-|---|---|---|---|
-| `StorageError` | `StorageError` | `StorageError` | runtime failure |
-| `ProjectionError` | `ProjectionError` | `ProjectionError` | runtime failure |
-| `VectorError` | `VectorError` | `VectorError` | runtime failure |
-| `EmbedderError` | `EmbedderError` | `EmbedderError` | runtime failure |
-| `SchedulerError` | `SchedulerError` | `SchedulerError` | runtime failure |
-| `OpStoreError` | `OpStoreError` | `OpStoreError` | runtime failure |
-| `WriteValidationError` | `WriteValidationError` | `WriteValidationError` | runtime failure |
-| `SchemaValidationError` | `SchemaValidationError` | `SchemaValidationError` | runtime failure |
-| `Overloaded` | `OverloadedError` | `OverloadedError` | runtime failure |
-| `Closing` | `ClosingError` | `ClosingError` | runtime failure |
-| `DatabaseLocked` | `DatabaseLockedError` | `DatabaseLockedError` | lock-held |
-| `Corruption(CorruptionDetail)` | `CorruptionError` | `CorruptionError` | corruption |
-| `IncompatibleSchemaVersion` | `IncompatibleSchemaVersionError` | `IncompatibleSchemaVersionError` | incompatible-schema |
-| `MigrationError` | `MigrationError` | `MigrationError` | migration-failed |
-| `EmbedderIdentityMismatchError` | `EmbedderIdentityMismatchError` | `EmbedderIdentityMismatchError` | open mismatch |
+| Rust-side surface                | Python class stem                | TypeScript class stem            | CLI dispatch class    |
+| -------------------------------- | -------------------------------- | -------------------------------- | --------------------- |
+| `StorageError`                   | `StorageError`                   | `StorageError`                   | runtime failure       |
+| `ProjectionError`                | `ProjectionError`                | `ProjectionError`                | runtime failure       |
+| `VectorError`                    | `VectorError`                    | `VectorError`                    | runtime failure       |
+| `EmbedderError`                  | `EmbedderError`                  | `EmbedderError`                  | runtime failure       |
+| `SchedulerError`                 | `SchedulerError`                 | `SchedulerError`                 | runtime failure       |
+| `OpStoreError`                   | `OpStoreError`                   | `OpStoreError`                   | runtime failure       |
+| `WriteValidationError`           | `WriteValidationError`           | `WriteValidationError`           | runtime failure       |
+| `SchemaValidationError`          | `SchemaValidationError`          | `SchemaValidationError`          | runtime failure       |
+| `Overloaded`                     | `OverloadedError`                | `OverloadedError`                | runtime failure       |
+| `Closing`                        | `ClosingError`                   | `ClosingError`                   | runtime failure       |
+| `DatabaseLocked`                 | `DatabaseLockedError`            | `DatabaseLockedError`            | lock-held             |
+| `Corruption(CorruptionDetail)`   | `CorruptionError`                | `CorruptionError`                | corruption            |
+| `IncompatibleSchemaVersion`      | `IncompatibleSchemaVersionError` | `IncompatibleSchemaVersionError` | incompatible-schema   |
+| `MigrationError`                 | `MigrationError`                 | `MigrationError`                 | migration-failed      |
+| `EmbedderIdentityMismatchError`  | `EmbedderIdentityMismatchError`  | `EmbedderIdentityMismatchError`  | open mismatch         |
 | `EmbedderDimensionMismatchError` | `EmbedderDimensionMismatchError` | `EmbedderDimensionMismatchError` | open/runtime mismatch |
 
 Decision note:
@@ -167,12 +167,12 @@ Per ADR-0.6.0-corruption-open-behavior, `LockAcquisition` is not an
 `Engine.open` in 0.6.0 exposes exactly four corruption-emitting stages and four
 open-path corruption kinds.
 
-| `OpenStage` | `CorruptionKind` | Typical `CorruptionLocator` | `RecoveryHint.code` | `RecoveryHint.doc_anchor` |
-|---|---|---|---|---|
-| `WalReplay` | `WalReplayFailure` | `PageId { page: u32 }`, `FileOffset { offset: u64 }`, `OpaqueSqliteError { sqlite_extended_code: i32 }` | `E_CORRUPT_WAL_REPLAY` | `design/recovery.md#wal-replay-failures` |
-| `HeaderProbe` | `HeaderMalformed` | `FileOffset { offset: u64 }`, `OpaqueSqliteError { sqlite_extended_code: i32 }` | `E_CORRUPT_HEADER` | `design/recovery.md#header-malformed` |
-| `SchemaProbe` | `SchemaInconsistent` | `TableRow { table: &'static str, rowid: i64 }`, `MigrationStep { from: u32, to: u32 }`, `OpaqueSqliteError { sqlite_extended_code: i32 }` | `E_CORRUPT_SCHEMA` | `design/recovery.md#schema-inconsistent` |
-| `EmbedderIdentity` | `EmbedderIdentityDrift` | `TableRow { table: &'static str, rowid: i64 }`, `OpaqueSqliteError { sqlite_extended_code: i32 }` | `E_CORRUPT_EMBEDDER_IDENTITY` | `design/recovery.md#embedder-identity-drift` |
+| `OpenStage`        | `CorruptionKind`        | Typical `CorruptionLocator`                                                                                                               | `RecoveryHint.code`           | `RecoveryHint.doc_anchor`                    |
+| ------------------ | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | -------------------------------------------- |
+| `WalReplay`        | `WalReplayFailure`      | `PageId { page: u32 }`, `FileOffset { offset: u64 }`, `OpaqueSqliteError { sqlite_extended_code: i32 }`                                   | `E_CORRUPT_WAL_REPLAY`        | `design/recovery.md#wal-replay-failures`     |
+| `HeaderProbe`      | `HeaderMalformed`       | `FileOffset { offset: u64 }`, `OpaqueSqliteError { sqlite_extended_code: i32 }`                                                           | `E_CORRUPT_HEADER`            | `design/recovery.md#header-malformed`        |
+| `SchemaProbe`      | `SchemaInconsistent`    | `TableRow { table: &'static str, rowid: i64 }`, `MigrationStep { from: u32, to: u32 }`, `OpaqueSqliteError { sqlite_extended_code: i32 }` | `E_CORRUPT_SCHEMA`            | `design/recovery.md#schema-inconsistent`     |
+| `EmbedderIdentity` | `EmbedderIdentityDrift` | `TableRow { table: &'static str, rowid: i64 }`, `OpaqueSqliteError { sqlite_extended_code: i32 }`                                         | `E_CORRUPT_EMBEDDER_IDENTITY` | `design/recovery.md#embedder-identity-drift` |
 
 The table above is the only canonical materialized join for the open-path
 corruption contract in 0.6.0.
@@ -182,22 +182,22 @@ corruption contract in 0.6.0.
 `CorruptionLocator` keeps the broader locator enum even though `Engine.open`
 uses only a subset of variants today. Every variant remains justified:
 
-| `CorruptionLocator` | Why it exists in 0.6.0 |
-|---|---|
-| `FileOffset { offset: u64 }` | Header/page-byte diagnosis needs a byte-position locator that survives even when no logical row can be decoded. |
-| `PageId { page: u32 }` | WAL replay and page-level diagnosis still produce page ids; this remains justified even after integrity-check removal from the open path. |
-| `TableRow { table: &'static str, rowid: i64 }` | Schema and embedder-profile failures may be row-addressable even when the file is otherwise readable. |
-| `Vec0ShadowRow { partition: &'static str, rowid: i64 }` | Doctor / recovery diagnostics may need to point at sqlite-vec shadow rows, which are not user-named tables. |
-| `MigrationStep { from: u32, to: u32 }` | Some failures are best localized to a migration edge rather than a page or row. |
-| `OpaqueSqliteError { sqlite_extended_code: i32 }` | Required fallback when SQLite surfaces corruption without a usable structured locator; replaces any forbidden `Unspecified` escape hatch. |
+| `CorruptionLocator`                                     | Why it exists in 0.6.0                                                                                                                    |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `FileOffset { offset: u64 }`                            | Header/page-byte diagnosis needs a byte-position locator that survives even when no logical row can be decoded.                           |
+| `PageId { page: u32 }`                                  | WAL replay and page-level diagnosis still produce page ids; this remains justified even after integrity-check removal from the open path. |
+| `TableRow { table: &'static str, rowid: i64 }`          | Schema and embedder-profile failures may be row-addressable even when the file is otherwise readable.                                     |
+| `Vec0ShadowRow { partition: &'static str, rowid: i64 }` | Doctor / recovery diagnostics may need to point at sqlite-vec shadow rows, which are not user-named tables.                               |
+| `MigrationStep { from: u32, to: u32 }`                  | Some failures are best localized to a migration edge rather than a page or row.                                                           |
+| `OpaqueSqliteError { sqlite_extended_code: i32 }`       | Required fallback when SQLite surfaces corruption without a usable structured locator; replaces any forbidden `Unspecified` escape hatch. |
 
 ### Doctor-only finding codes
 
 Doctor/report codes share the same stable `code` dispatch surface, but they are
 not constrained to map 1:1 to open-path enums.
 
-| `code` | Surface | Meaning | `doc_anchor` |
-|---|---|---|---|
+| `code`                      | Surface                                 | Meaning                                                                                            | `doc_anchor`                                       |
+| --------------------------- | --------------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
 | `E_CORRUPT_INTEGRITY_CHECK` | `doctor check-integrity --full` finding | Page-damage finding emitted by dedicated full-integrity diagnosis; not returned from `Engine.open` | `design/recovery.md#integrity-check-full-findings` |
 
 ## Foreign-cause sanitization

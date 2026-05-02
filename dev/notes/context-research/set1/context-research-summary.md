@@ -145,14 +145,14 @@ on demand.
 
 ## Per-dimension highest-impact takeaways
 
-| Dimension | Top action | Empirical anchor |
-|---|---|---|
-| Tech-docs | CLAUDE.md ≤200 lines + path-indexed ADR/design corpus + executable acceptance | AutoMCP 99.9% after 19-line spec fix; Anthropic 49–67% retrieval-failure reduction |
-| Source code | Agentic grep/glob/LSP + tree-sitter signature map + AST-aware find_class/find_method | RepoCoder +10pp; Aider unified-diff 3x edit-pass; Agentless/AutoCodeRover SWE-bench leaders |
-| Comments | Why-not-what; types over prose; module-header invariants only when load-bearing | arXiv 2404.03114, 2510.26130 (~1–3% docstring lift); AGENTbench (19% cost / 4% gain) |
-| Tests | Tests-as-oracle in sandbox loop; failing test up front for new behavior; never trust agent-generated tests as oracle | Engineering Agent +15.4pp; SWT 2x precision; over-mocking studies |
-| Dev-env | 3-tier permission model + LSP + post-edit lint/typecheck hooks + disposable workspaces + egress allowlist | SWE-agent ACI SOTA; Tool Interface Design ~10pp; Cursor sandbox ~40% interruption delta |
-| Other | CLAUDE.md ≤200 lines; durable state in files; cap tool catalog; clarify-once up front; subagents for fan-out only | Lost-in-the-middle; Cognition Devin postmortem; Aider architect/editor benchmark |
+| Dimension   | Top action                                                                                                           | Empirical anchor                                                                            |
+| ----------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Tech-docs   | CLAUDE.md ≤200 lines + path-indexed ADR/design corpus + executable acceptance                                        | AutoMCP 99.9% after 19-line spec fix; Anthropic 49–67% retrieval-failure reduction          |
+| Source code | Agentic grep/glob/LSP + tree-sitter signature map + AST-aware find_class/find_method                                 | RepoCoder +10pp; Aider unified-diff 3x edit-pass; Agentless/AutoCodeRover SWE-bench leaders |
+| Comments    | Why-not-what; types over prose; module-header invariants only when load-bearing                                      | arXiv 2404.03114, 2510.26130 (~1–3% docstring lift); AGENTbench (19% cost / 4% gain)        |
+| Tests       | Tests-as-oracle in sandbox loop; failing test up front for new behavior; never trust agent-generated tests as oracle | Engineering Agent +15.4pp; SWT 2x precision; over-mocking studies                           |
+| Dev-env     | 3-tier permission model + LSP + post-edit lint/typecheck hooks + disposable workspaces + egress allowlist            | SWE-agent ACI SOTA; Tool Interface Design ~10pp; Cursor sandbox ~40% interruption delta     |
+| Other       | CLAUDE.md ≤200 lines; durable state in files; cap tool catalog; clarify-once up front; subagents for fan-out only    | Lost-in-the-middle; Cognition Devin postmortem; Aider architect/editor benchmark            |
 
 ## Recommended stack baseline
 
@@ -222,11 +222,11 @@ the cross-cutting research supports this baseline:
 
 ## Output index
 
-| Dimension | File | Findings |
-|---|---|---|
-| Technical documentation | dev/tmp/context-research-tech-docs.md | 12 |
-| Existing source code | dev/tmp/context-research-source-code.md | 10 |
-| Source code comments | dev/tmp/context-research-comments.md | 10 |
-| Tests | dev/tmp/context-research-tests.md | 10 |
-| Development environment | dev/tmp/context-research-dev-env.md | 10 |
-| Other | dev/tmp/context-research-other.md | 20 |
+| Dimension               | File                                    | Findings |
+| ----------------------- | --------------------------------------- | -------- |
+| Technical documentation | dev/tmp/context-research-tech-docs.md   | 12       |
+| Existing source code    | dev/tmp/context-research-source-code.md | 10       |
+| Source code comments    | dev/tmp/context-research-comments.md    | 10       |
+| Tests                   | dev/tmp/context-research-tests.md       | 10       |
+| Development environment | dev/tmp/context-research-dev-env.md     | 10       |
+| Other                   | dev/tmp/context-research-other.md       | 20       |

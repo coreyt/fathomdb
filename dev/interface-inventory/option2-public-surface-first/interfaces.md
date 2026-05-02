@@ -149,7 +149,7 @@ content.
   `projection_cursor`. Hybrid retrieval that loses one branch returns
   results plus a typed soft-fallback record naming the missed branch.
 - **Key types/fields/enums/errors.** `Search { results,
-  projection_cursor: c_r, soft_fallback: Option<...> }`;
+projection_cursor: c_r, soft_fallback: Option<...> }`;
   soft-fallback `branch` field with values including `Vector`.
 - **Requirement/AC refs.** REQ-018, REQ-029, REQ-055; AC-020, AC-031,
   AC-059a/b.
@@ -185,7 +185,7 @@ content.
 - **Evidence.** `design/engine.md` § Cursor contract ("This distinction
   is load-bearing for REQ-055 and AC-059b and must remain consistent
   across architecture.md, requirements.md, acceptance.md, and
-  interfaces/*.md."); `architecture.md` § 3 step 2 + § 4 step 2.
+  interfaces/\*.md."); `architecture.md` § 3 step 2 + § 4 step 2.
 - **Open questions.** Cursor type (integer? opaque?) not declared in
   the corpus.
 
@@ -259,7 +259,7 @@ content.
   `requirements.md` REQ-002, REQ-005; `acceptance.md` AC-002,
   AC-003a/b/c/d, AC-006.
 - **Contract summary.** Structured diagnostics carry `source ∈
-  {Engine, SqliteInternal}` and `category` from the source's stable
+{Engine, SqliteInternal}` and `category` from the source's stable
   set. Engine categories: `{writer, search, admin, error}`. SQLite
   categories: `{corruption, recovery, io}`. SQLite-internal events
   must NOT bypass the host subscriber path. No private sink: when no
@@ -586,7 +586,7 @@ content.
   bindings do not canonicalize. Corruption-on-open releases the lock
   before returning the error.
 - **Key types/fields/enums/errors.** `DatabaseLocked { holder_pid:
-  Option<u32> }`; sidecar file path convention.
+Option<u32> }`; sidecar file path convention.
 - **Requirement/AC refs.** REQ-020a, REQ-022a/b; AC-022a/b, AC-024a/b,
   AC-035c.
 - **Evidence.** `design/bindings.md` § 7 ("hybrid lock per
@@ -740,7 +740,7 @@ content.
 - **Contract summary.** Python: `pip install -e src/python/` (PyO3
   cdylib package `fathomdb`). TypeScript: `npm install` against
   `src/ts/` (napi-rs cdylib package `fathomdb`). CLI: `cargo build
-  --release -p fathomdb-cli`; one binary per platform.
+--release -p fathomdb-cli`; one binary per platform.
 - **Key types/fields/enums/errors.** N/A.
 - **Requirement/AC refs.** REQ-047, REQ-048, REQ-049, REQ-050, REQ-052;
   AC-051a/b, AC-052, AC-053, AC-054, AC-056.
@@ -765,8 +765,8 @@ content.
   ADR-0.6.0-durability-fsync-policy.
 - **Contract summary.** Stub. From architecture.md § 5: `<db>.sqlite`
   - `<db>.sqlite-wal` + `<db>.sqlite.lock`; tables: `nodes`, `edges`,
-  `chunks`, `<canonical>_fts`, `vec0` virtual tables, `operational_*`,
-  provenance event table; LE-f32 BLOB encoding for vectors.
+    `chunks`, `<canonical>_fts`, `vec0` virtual tables, `operational_*`,
+    provenance event table; LE-f32 BLOB encoding for vectors.
 - **Key types/fields/enums/errors.** Sidecar lock file; SQLite WAL
   format; `vec0` virtual table layout.
 - **Requirement/AC refs.** REQ-035, REQ-041, REQ-051;

@@ -191,7 +191,7 @@ acceptance.md commits its event payload
   `design/errors.md` enumerating each `EngineError` /
   `EngineOpenError` variant with one column per binding (Python,
   TypeScript). Class names can be placeholders ("`fathomdb.Embedder
-  IdentityMismatch`" etc.) pending interface lock.
+IdentityMismatch`" etc.) pending interface lock.
 
 ## F-9: TS error-root plurality left ambiguous
 
@@ -304,7 +304,7 @@ non-presence on the SDK is asserted only by parity invariant
   `acceptance.md` AC-035d, AC-041, AC-057a.
 - **Explanation.** The SDK five-verb parity claim and the recovery-
   name exclusion list (`{recover, restore, repair, fix, rebuild,
-  doctor}`) bound the SDK from above and from below. This is
+doctor}`) bound the SDK from above and from below. This is
   unusually clean. The minor risk is that the parity claim is
   enforced by name match — adding a synonym ("inspect", "diagnose")
   would not be caught by AC-041 / AC-057a, only by AC-057a's positive

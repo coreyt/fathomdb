@@ -69,9 +69,9 @@ load-bear on this invariant.
     `design/engine.md`; not zero, not unbounded).
   - `synchronous` setting lives in `design/engine.md` per
     durability ADR (Phase 2 #7).
-  These pragmas are part of the single-writer invariant: they are
-  what makes "no SQLITE_BUSY regressions" structural rather than
-  empirical.
+    These pragmas are part of the single-writer invariant: they are
+    what makes "no SQLITE_BUSY regressions" structural rather than
+    empirical.
 - **One Engine instance per database file.** Enforced by
   `EngineRuntime::open` acquiring an exclusive file lock on
   `{database_path}.lock`. Hard constraint already encoded in code.

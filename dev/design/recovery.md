@@ -16,9 +16,9 @@ and recovery.
 
 0.6.0 recovery tooling splits at the root by mutation semantics:
 
-| Root | Surface | Mutation class |
-|---|---|---|
-| `fathomdb doctor <verb>` | `check-integrity`, `safe-export`, `verify-embedder`, `trace`, `dump-schema`, `dump-row-counts`, `dump-profile` | bit-preserving / read-only |
+| Root                                                | Surface                                                                                                                                     | Mutation class             |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `fathomdb doctor <verb>`                            | `check-integrity`, `safe-export`, `verify-embedder`, `trace`, `dump-schema`, `dump-row-counts`, `dump-profile`                              | bit-preserving / read-only |
 | `fathomdb recover --accept-data-loss <sub-flag>...` | `--truncate-wal`, `--rebuild-vec0`, `--rebuild-projections`, `--excise-source <id>`, `--purge-logical-id <id>`, `--restore-logical-id <id>` | lossy / non-bit-preserving |
 
 `--accept-data-loss` is root-level and mandatory on `recover`. It is not valid
@@ -67,14 +67,14 @@ contract in 0.6.0.
 Each non-`recover` machine-readable verb returns one JSON object with a stable
 `verb` discriminator plus verb-owned keys.
 
-| Verb | Required top-level keys | Notes |
-|---|---|---|
-| `doctor safe-export` | `verb`, `export_path`, `manifest_path`, `manifest_sha256` | one object describing the completed export artifact and manifest |
-| `doctor verify-embedder` | `verb`, `stored_identity`, `stored_dimension`, `supplied_identity`, `supplied_dimension`, `status` | `status` is a typed match/mismatch result, not free text |
-| `doctor trace` | `verb`, `source_ref`, `events` | `events` is an ordered machine-readable lineage list for the requested source ref |
-| `doctor dump-schema` | `verb`, `user_version`, `tables`, `indexes` | schema inventory only; no recovery mutation |
-| `doctor dump-row-counts` | `verb`, `counts` | `counts` is an array of `{ name, rows }` records |
-| `doctor dump-profile` | `verb`, `embedder_identity`, `embedder_dimension`, `vectorized_kinds` | stored profile / vector posture dump |
+| Verb                     | Required top-level keys                                                                            | Notes                                                                             |
+| ------------------------ | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `doctor safe-export`     | `verb`, `export_path`, `manifest_path`, `manifest_sha256`                                          | one object describing the completed export artifact and manifest                  |
+| `doctor verify-embedder` | `verb`, `stored_identity`, `stored_dimension`, `supplied_identity`, `supplied_dimension`, `status` | `status` is a typed match/mismatch result, not free text                          |
+| `doctor trace`           | `verb`, `source_ref`, `events`                                                                     | `events` is an ordered machine-readable lineage list for the requested source ref |
+| `doctor dump-schema`     | `verb`, `user_version`, `tables`, `indexes`                                                        | schema inventory only; no recovery mutation                                       |
+| `doctor dump-row-counts` | `verb`, `counts`                                                                                   | `counts` is an array of `{ name, rows }` records                                  |
+| `doctor dump-profile`    | `verb`, `embedder_identity`, `embedder_dimension`, `vectorized_kinds`                              | stored profile / vector posture dump                                              |
 
 ## `recover` machine-readable output
 
@@ -175,13 +175,13 @@ identity change through `Engine.open`.
 
 ### Code-to-operator-action cross-reference
 
-| `RecoveryHint.code` | Canonical owner of typed payload | Operator path owner |
-|---|---|---|
-| `E_CORRUPT_WAL_REPLAY` | `design/errors.md` | this file, `#wal-replay-failures` |
-| `E_CORRUPT_HEADER` | `design/errors.md` | this file, `#header-malformed` |
-| `E_CORRUPT_SCHEMA` | `design/errors.md` | this file, `#schema-inconsistent` |
-| `E_CORRUPT_EMBEDDER_IDENTITY` | `design/errors.md` | this file, `#embedder-identity-drift` |
-| `E_CORRUPT_INTEGRITY_CHECK` | doctor-only report code in this file | this file, `#integrity-check-full-findings` |
+| `RecoveryHint.code`           | Canonical owner of typed payload     | Operator path owner                         |
+| ----------------------------- | ------------------------------------ | ------------------------------------------- |
+| `E_CORRUPT_WAL_REPLAY`        | `design/errors.md`                   | this file, `#wal-replay-failures`           |
+| `E_CORRUPT_HEADER`            | `design/errors.md`                   | this file, `#header-malformed`              |
+| `E_CORRUPT_SCHEMA`            | `design/errors.md`                   | this file, `#schema-inconsistent`           |
+| `E_CORRUPT_EMBEDDER_IDENTITY` | `design/errors.md`                   | this file, `#embedder-identity-drift`       |
+| `E_CORRUPT_INTEGRITY_CHECK`   | doctor-only report code in this file | this file, `#integrity-check-full-findings` |
 
 ## Relationship to runtime SDK
 
@@ -203,6 +203,6 @@ Projection failure handling crosses runtime and operator surfaces:
   status
 - repair is explicit via `fathomdb recover --accept-data-loss --rebuild-projections`
 
-0.6.0 does not promise an automatic background "heal failed projections"
-workflow at open, and it does not add a second repair command distinct from the
-accepted `recover` surface.
+  0.6.0 does not promise an automatic background "heal failed projections"
+  workflow at open, and it does not add a second repair command distinct from the
+  accepted `recover` surface.

@@ -62,7 +62,7 @@ Each row names:
 - `format_version`
 - `created_at`
 
-0.6.0 lifecycle posture:
+  0.6.0 lifecycle posture:
 
 - collections are declared and then preserved as named registry entries
 - `kind` is fixed for the life of a collection

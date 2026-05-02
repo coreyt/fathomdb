@@ -105,20 +105,20 @@ Research on how to provide existing source-code context to Claude and Codex for 
 
 The strongest pattern across Claude, Codex, and adjacent high-signal engineering work is to treat codebase context as a layered retrieval system, not a monolithic prompt: a short root instruction file acts as a map; deeper architecture and workflow docs live in the repo as source of truth; machine-generated repo maps and symbol graphs provide cheap global awareness; hybrid retrieval pulls the exact files, symbols, tests, and neighbors needed for the current task; and explicit memory plus verification artifacts keep long-running work coherent across sessions. The main failure modes are symmetric: too much context leads to salience loss, stale instructions, and long-context degradation, while too little context leads to generic but repo-wrong changes. For existing codebases, the practical target is not “maximum tokens” but “maximum task-relevant structure per token.”
 
-[S1]: <https://openai.com/index/harness-engineering/>
-[S2]: <https://openai.com/index/introducing-codex/>
-[S3]: <https://developers.openai.com/codex/guides/agents-md>
-[S4]: <https://developers.openai.com/api/docs/models/gpt-5.2-codex>
-[S5]: <https://developers.openai.com/codex/cloud>
-[S6]: <https://code.claude.com/docs/en/best-practices>
-[S7]: <https://code.claude.com/docs/en/memory>
-[S8]: <https://code.claude.com/docs/en/sub-agents>
-[S9]: <https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents>
-[S10]: <https://www.anthropic.com/engineering/contextual-retrieval>
-[S11]: <https://aider.chat/docs/repomap.html>
-[S12]: <https://aider.chat/2023/10/22/repomap.html>
-[S13]: <https://sourcegraph.com/docs/cody/core-concepts/context>
-[S14]: <https://sourcegraph.com/docs/cody/core-concepts/code-graph>
-[S15]: <https://sourcegraph.com/blog/how-cody-understands-your-codebase>
-[S16]: <https://huggingface.co/papers/2303.12570>
-[S17]: <https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00638/119630/Lost-in-the-Middle-How-Language-Models-Use-Long>
+[S1]: https://openai.com/index/harness-engineering/
+[S2]: https://openai.com/index/introducing-codex/
+[S3]: https://developers.openai.com/codex/guides/agents-md
+[S4]: https://developers.openai.com/api/docs/models/gpt-5.2-codex
+[S5]: https://developers.openai.com/codex/cloud
+[S6]: https://code.claude.com/docs/en/best-practices
+[S7]: https://code.claude.com/docs/en/memory
+[S8]: https://code.claude.com/docs/en/sub-agents
+[S9]: https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents
+[S10]: https://www.anthropic.com/engineering/contextual-retrieval
+[S11]: https://aider.chat/docs/repomap.html
+[S12]: https://aider.chat/2023/10/22/repomap.html
+[S13]: https://sourcegraph.com/docs/cody/core-concepts/context
+[S14]: https://sourcegraph.com/docs/cody/core-concepts/code-graph
+[S15]: https://sourcegraph.com/blog/how-cody-understands-your-codebase
+[S16]: https://huggingface.co/papers/2303.12570
+[S17]: https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00638/119630/Lost-in-the-Middle-How-Language-Models-Use-Long

@@ -40,7 +40,7 @@ It emphasizes what consistently matters across requirements, architecture/design
   2. scoped subsystem instructions
   3. retrievable deeper docs
   4. task-specific files/logs/tests
-  Full-repo dumps, giant manuals, and long noisy sessions reduce adherence and salience even on large-context models.
+     Full-repo dumps, giant manuals, and long noisy sessions reduce adherence and salience even on large-context models.
 - Recommendations
   Keep root agent docs concise and operational.
   Split detailed guidance by directory, subsystem, or topic.

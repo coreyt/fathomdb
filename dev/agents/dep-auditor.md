@@ -70,10 +70,10 @@ status: draft
 
 Then update `dev/deps/index.md` index:
 
-| Dep | Verdict | Replacement | Notes |
-|-----|---------|-------------|-------|
-| sqlite-vec | keep | — | sole vector index option meeting embedded constraint |
-| ... | ... | ... | ... |
+| Dep        | Verdict | Replacement | Notes                                                |
+| ---------- | ------- | ----------- | ---------------------------------------------------- |
+| sqlite-vec | keep    | —           | sole vector index option meeting embedded constraint |
+| ...        | ...     | ...         | ...                                                  |
 
 ## Method
 

@@ -2,14 +2,14 @@
 
 ## Inventory
 
-| Class | Surfaces in class |
-|---|---|
-| Public API | SDK five-verb surface, `Engine.open`, `write`, `search`, `admin.configure`, `close`, read/write freshness cursors |
-| Binding adapter | Cross-language parity, typed error mapping, subscriber attachment, marshalling to `PreparedWrite`, lock/exclusivity behavior, SDK-side recovery non-presence |
+| Class               | Surfaces in class                                                                                                                                                   |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Public API          | SDK five-verb surface, `Engine.open`, `write`, `search`, `admin.configure`, `close`, read/write freshness cursors                                                   |
+| Binding adapter     | Cross-language parity, typed error mapping, subscriber attachment, marshalling to `PreparedWrite`, lock/exclusivity behavior, SDK-side recovery non-presence        |
 | Event/observability | Lifecycle `phase` events, structured diagnostics, counter snapshots, per-statement profile records, stress-failure payloads, migration events routed to subscribers |
-| CLI/operator | `fathomdb doctor`, `fathomdb recover --accept-data-loss`, help/exit posture, doctor-only flags |
-| Data/schema/payload | `CorruptionDetail`, `RecoveryHint`, `CorruptionLocator`, `check-integrity` report schema, cursor values, migration step payload, profile-record schema |
-| Internal subsystem | Engine open-path ordering, writer/read split, migration loop, lifecycle-to-producer ownership split, recovery/projection regeneration routing |
+| CLI/operator        | `fathomdb doctor`, `fathomdb recover --accept-data-loss`, help/exit posture, doctor-only flags                                                                      |
+| Data/schema/payload | `CorruptionDetail`, `RecoveryHint`, `CorruptionLocator`, `check-integrity` report schema, cursor values, migration step payload, profile-record schema              |
+| Internal subsystem  | Engine open-path ordering, writer/read split, migration loop, lifecycle-to-producer ownership split, recovery/projection regeneration routing                       |
 
 ## Public API
 

@@ -218,7 +218,7 @@
 - `Contract summary`: Open-path corruption is surfaced as a typed payload joining `CorruptionKind`, `OpenStage`, `CorruptionLocator`, and `RecoveryHint { code, doc_anchor }`; only four open-path corruption rows exist in 0.6.0.
 - `Key types/fields/enums/errors`: `CorruptionKind`, `OpenStage`, `CorruptionLocator`, `RecoveryHint.code`, `RecoveryHint.doc_anchor`
 - `Requirement/AC refs`: `REQ-031d`, `AC-035a`, `AC-035b`, `AC-035c`
-- `Evidence`: `dev/design/errors.md` § `Corruption detail owner`; `dev/design/errors.md` § ``Engine.open`corruption table`; `dev/acceptance.md` § `AC-035b: CorruptionDetail shape`
+- `Evidence`: `dev/design/errors.md` § `Corruption detail owner`; `dev/design/errors.md` § ``Engine.open`corruption table`; `dev/acceptance.md`§`AC-035b: CorruptionDetail shape`
 - `Open questions`: Per-language field casing is delegated to interface docs that are still `TBD`.
 
 ## IF-014 — Typed Error Mapping Protocol
@@ -269,7 +269,7 @@
 - `Contract summary`: `doctor check-integrity --json` emits a single JSON object with top-level keys `physical`, `logical`, and `semantic`; findings carry stable report fields and may include doctor-only codes.
 - `Key types/fields/enums/errors`: top-level keys `physical`, `logical`, `semantic`; finding fields `code`, `stage`, `locator`, `doc_anchor`, `detail`; doctor-only code `E_CORRUPT_INTEGRITY_CHECK`
 - `Requirement/AC refs`: `REQ-036`, `REQ-039`, `AC-043a`, `AC-043b`, `AC-043c`
-- `Evidence`: `dev/design/recovery.md` § `Machine-readable output`; `dev/design/recovery.md` § ``check-integrity`schema owner`; `dev/acceptance.md` § `AC-043a: \`check-integrity\` produces structured report with three sections`
+- `Evidence`: `dev/design/recovery.md` § `Machine-readable output`; `dev/design/recovery.md` § ``check-integrity`schema owner`; `dev/acceptance.md`§`AC-043a: \`check-integrity\` produces structured report with three sections`
 - `Open questions`: The specific check set inside each section is intentionally not fully enumerated in the listed docs.
 
 ## IF-017 — `fathomdb doctor` Root and Verb Table
@@ -320,7 +320,7 @@
 - `Contract summary`: `safe_export` is a doctor verb whose artifact must be verifiable end-to-end through a SHA-256 manifest sidecar.
 - `Key types/fields/enums/errors`: artifact plus `.sha256` manifest
 - `Requirement/AC refs`: `REQ-024`, `REQ-035`, `AC-026`, `AC-039a`, `AC-039b`
-- `Evidence`: `dev/design/recovery.md` § `Two-root CLI split`; `dev/requirements.md` § `Security (REQ-032..REQ-035)`; `dev/acceptance.md` § `AC-039a: \`safe_export\` artifact ships SHA-256 manifest matching contents`;`dev/architecture.md` § `On-disk layout`
+- `Evidence`: `dev/design/recovery.md` § `Two-root CLI split`; `dev/requirements.md` § `Security (REQ-032..REQ-035)`; `dev/acceptance.md` § `AC-039a: \`safe_export\` artifact ships SHA-256 manifest matching contents`;`dev/architecture.md`§`On-disk layout`
 - `Open questions`: The machine-readable JSON payload for `doctor safe-export --json` is not yet defined in the listed docs.
 
 ## IF-020 — `trace --source-ref` Blast-Radius Report
@@ -354,7 +354,7 @@
 - `Contract summary`: Write commit returns a monotonic write cursor `c_w`, reads expose a monotonic non-decreasing `projection_cursor`, and vector read-after-write is satisfied when `projection_cursor >= c_w`.
 - `Key types/fields/enums/errors`: write cursor `c_w`; `projection_cursor`
 - `Requirement/AC refs`: `REQ-055`, `AC-017`, `AC-059a`, `AC-059b`
-- `Evidence`: `dev/design/engine.md` § `Cursor contract`; `dev/acceptance.md` § `AC-059a: \`projection_cursor\` exposed on read tx; monotonic non-decreasing`;`dev/acceptance.md` § `AC-059b: Write commit returns write cursor satisfiable by \`projection_cursor\``
+- `Evidence`: `dev/design/engine.md` § `Cursor contract`; `dev/acceptance.md` § `AC-059a: \`projection_cursor\` exposed on read tx; monotonic non-decreasing`;`dev/acceptance.md`§`AC-059b: Write commit returns write cursor satisfiable by \`projection_cursor\``
 - `Open questions`: Per-binding field names and return wrappers are not yet published in the interface docs.
 
 ## IF-022 — CLI Exit-Code Classes

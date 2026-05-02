@@ -16,26 +16,26 @@ practitioner opinion.
 
 Primary documents fetched and quoted:
 
-1. Anthropic, *Best Practices for Claude Code* —
+1. Anthropic, _Best Practices for Claude Code_ —
    <https://code.claude.com/docs/en/best-practices>
-2. Cursor, *Best practices for coding with agents* —
+2. Cursor, _Best practices for coding with agents_ —
    <https://cursor.com/blog/agent-best-practices>
-3. Aider, *Linting and testing* — <https://aider.chat/docs/usage/lint-test.html>
-4. Martin Fowler / Birgitta Böckeler, *Context Engineering for Coding Agents* —
+3. Aider, _Linting and testing_ — <https://aider.chat/docs/usage/lint-test.html>
+4. Martin Fowler / Birgitta Böckeler, _Context Engineering for Coding Agents_ —
    <https://martinfowler.com/articles/exploring-gen-ai/context-engineering-coding-agents.html>
-5. Xia et al., *Agentless: Demystifying LLM-based Software Engineering Agents*
+5. Xia et al., _Agentless: Demystifying LLM-based Software Engineering Agents_
    (arXiv 2407.01489) — <https://arxiv.org/pdf/2407.01489>
-6. Mündler et al., *SWT-Bench: Testing and Validating Real-World Bug-Fixes with
-   Code Agents* (NeurIPS 2024) — <https://arxiv.org/html/2406.12952>
-7. *Rethinking the Value of Agent-Generated Tests for LLM-Based SWE Agents*
+6. Mündler et al., _SWT-Bench: Testing and Validating Real-World Bug-Fixes with
+   Code Agents_ (NeurIPS 2024) — <https://arxiv.org/html/2406.12952>
+7. _Rethinking the Value of Agent-Generated Tests for LLM-Based SWE Agents_
    (arXiv 2602.07900) — <https://arxiv.org/html/2602.07900>
-8. *Are Coding Agents Generating Over-Mocked Tests? An Empirical Study*
+8. _Are Coding Agents Generating Over-Mocked Tests? An Empirical Study_
    (arXiv 2602.00409) — <https://arxiv.org/html/2602.00409v1>
-9. *Agentic Program Repair from Test Failures at Scale* (arXiv 2507.18755) —
+9. _Agentic Program Repair from Test Failures at Scale_ (arXiv 2507.18755) —
    <https://arxiv.org/html/2507.18755>
-10. Cognition, *Closing the Agent Loop: Devin Autofixes Review Comments* —
+10. Cognition, _Closing the Agent Loop: Devin Autofixes Review Comments_ —
     <https://cognition.ai/blog/closing-the-agent-loop-devin-autofixes-review-comments>
-11. OpenAI, *Introducing SWE-bench Verified* —
+11. OpenAI, _Introducing SWE-bench Verified_ —
     <https://openai.com/index/introducing-swe-bench-verified/>
 12. Sweep AI docs — <https://docs.sweep.dev/>
 
@@ -57,9 +57,9 @@ Anthropic's official Claude Code best-practices guide places tests at the top
 of its "Give Claude a way to verify its work" section, calling it (verbatim)
 "the single highest-leverage thing you can do." It instructs users to
 "include tests, screenshots, or expected outputs so Claude can check itself"
-and pairs the prompt example *"write a validateEmail function … run the tests
-after implementing"* against the weaker baseline *"implement a function that
-validates email addresses."* Cursor's best-practices doc echoes this:
+and pairs the prompt example _"write a validateEmail function … run the tests
+after implementing"_ against the weaker baseline _"implement a function that
+validates email addresses."_ Cursor's best-practices doc echoes this:
 "Agents can't fix what they don't know about. Use typed languages, configure
 linters, and write tests. Give the agent clear signals for whether changes
 are correct." Aider documents `--auto-test` / `--test-cmd`: "Aider will try
@@ -95,8 +95,8 @@ Cursor's TDD recipe is prescriptive: "Ask the agent to write tests based on
 expected input/output pairs. Be explicit that you're doing TDD so it avoids
 creating mock implementations" → verify tests fail → "write code that passes
 the tests, instructing it not to modify the tests" → "keep iterating until
-all tests pass." Anthropic's worked example in the same vein: *"write a
-failing test that reproduces the issue, then fix it."* DataCamp's Claude Code
+all tests pass." Anthropic's worked example in the same vein: _"write a
+failing test that reproduces the issue, then fix it."_ DataCamp's Claude Code
 best-practices write-up (search snippet) summarizes the working hypothesis as
 "each red-to-green cycle gives Claude unambiguous feedback, and it can
 iterate through the entire suite without human intervention, making
@@ -110,7 +110,7 @@ Two failure modes drive the framing rules: (a) without "don't modify the
 tests," the agent satisfies the test by deleting or weakening assertions;
 (b) without "we're doing TDD," it inlines mocks that make implementation
 appear to pass. Tooling responses (TDD-Guard hook, `disable-model-invocation`
-patterns) suggest the practitioner consensus is that *prompt-only* TDD is
+patterns) suggest the practitioner consensus is that _prompt-only_ TDD is
 unreliable past one or two cycles — a hook or harness is needed to enforce
 it. This is opinion-with-tooling, not a benchmark result, but the
 convergence across Cursor, Anthropic, Aider, and the Superpowers community
@@ -135,20 +135,19 @@ SWE-bench Verified hides the `test.patch` artifacts: per the
 methodology summary, "all 'test.patch' artifacts (unit or integration tests
 that formalize correctness) are hidden from both the agent and the user,
 ensuring that only pre-existing information is leveraged during resolution."
-Evaluation is binary on patch application + test pass. SWT-Bench (NeurIPS
-2024) inverts this — the agent must *generate* the F→P test rather than
+Evaluation is binary on patch application + test pass. SWT-Bench (NeurIPS 2024) inverts this — the agent must _generate_ the F→P test rather than
 satisfy a hidden one — and reports SWE-Agent+ landing 19.2% F→P with no P→F
 regressions, vs. 14.1% for libro (a test-generation-specialized system).
 The lesson the SWE-bench authors draw is implicit but consistent across
-follow-up work (Agentless, AutoCodeRover): the agent's job is to *infer the
-oracle from the issue and codebase*, not to read it.
+follow-up work (Agentless, AutoCodeRover): the agent's job is to _infer the
+oracle from the issue and codebase_, not to read it.
 
 **Observations:**
 Two consequences for production agents: (1) Hidden tests model the realistic
 case where users file a bug report and the agent must reconstruct the
 expected behavior — this is why issue text + repo + run-some-tests is the
 canonical interface, not "here is the assertion." (2) Conversely, when you
-*do* have the test, handing it to the agent is essentially cheating relative
+_do_ have the test, handing it to the agent is essentially cheating relative
 to SWE-bench, which is exactly why F1's recommendation works in practice:
 the human supplying tests collapses the oracle problem.
 
@@ -158,7 +157,7 @@ When delegating to an agent, decide explicitly whether you are running in
 provided, agent must satisfy). Don't run halfway: vague oracles plus partial
 tests is the worst regime, because the agent will fit to the partial tests
 and leave the unspecified behavior broken. AutoCodeRover and Agentless both
-use a *generated reproduction test* as a synthetic oracle in the
+use a _generated reproduction test_ as a synthetic oracle in the
 issue-only regime — useful pattern when porting agents to in-house bug
 queues without test cases.
 
@@ -169,13 +168,13 @@ agent know about correctness?"
 
 **Evidence:**
 Agentless (arXiv 2407.01489) uses generated reproduction tests + the
-existing regression suite as a *patch selector*: "run all existing tests in
+existing regression suite as a _patch selector_: "run all existing tests in
 the repository to identify passing tests, then run the set of regression
 tests on all generated patches, keeping patches with the lowest number of
 regression failures and running selected reproduction tests to verify
 patches output issue resolution." SWT-Bench (2406.12952) shows that filtering
 SWE-Agent's code fixes by "passes the agent's own self-generated test"
-*doubles precision* (~24% → 47.8%) at the cost of ~20% recall. The
+_doubles precision_ (~24% → 47.8%) at the cost of ~20% recall. The
 Engineering Agent paper (2507.18755) finds that 5 repeated runs with test
 feedback reach 61.0% solve rate vs. 28.5% single-run no-feedback — implying
 each test-driven retry has compounding value.
@@ -186,7 +185,7 @@ assertion diffs accumulate fast, and Anthropic's own guidance warns that
 "Claude's context window holds your entire conversation, including every
 message, every file Claude reads, and every command output. However, this
 can fill up fast." Practitioners (Aider, Sweep) avoid this by running tests
-*outside* the conversation and feeding back only the failure summary, not
+_outside_ the conversation and feeding back only the failure summary, not
 the entire stdout. Filtering candidates by test results — Agentless's
 approach — is empirically better than feeding all candidates' results back
 to the model and asking it to choose.
@@ -194,7 +193,7 @@ to the model and asking it to choose.
 **Recommendations:**
 (1) Always pipe test output through a summarizer/filter before it enters
 context — Aider's pattern of "run silently, only show failures" is correct.
-(2) Use tests for *selection* across N candidate patches, not just for
+(2) Use tests for _selection_ across N candidate patches, not just for
 guiding the next iteration in a single trace. (3) When iterating, include
 only the diff of failing assertions plus the immediately surrounding stack
 frame; full traces rarely add information after the first frame.
@@ -202,7 +201,7 @@ frame; full traces rarely add information after the first frame.
 **Impact on agent LLM:** HIGH — concrete benchmark numbers (precision 2x,
 solve rate ~2x with retries) and matches practitioner tooling defaults.
 
-### F5 — Agent-generated tests have *much weaker* downstream value than people assume; over-mocking is the dominant pathology
+### F5 — Agent-generated tests have _much weaker_ downstream value than people assume; over-mocking is the dominant pathology
 
 **Evidence:**
 "Rethinking the Value of Agent-Generated Tests" (2602.07900) reports a
@@ -221,8 +220,8 @@ outnumbered assertions by 4-10x across models."
 
 **Observations:**
 This is in tension with F1/F2 — but the resolution is precise: tests written
-*by humans (or scaffolded by humans)* are oracle-bearing context; tests
-written *by the agent itself, mid-task* are mostly debugging scratch and
+_by humans (or scaffolded by humans)_ are oracle-bearing context; tests
+written _by the agent itself, mid-task_ are mostly debugging scratch and
 their assertions are weak (matching exact output of buggy code). The mocking
 pathology compounds it: an agent that mocks the dependency it was supposed
 to fix produces a green test that means nothing. Cognition's Devin posts
@@ -235,7 +234,7 @@ tests."
 goodharted by mocking. (2) When agents write tests, require explicit
 non-mock guidance ("avoid mocks", per Anthropic's example) and prefer
 property-based or end-to-end tests over unit tests against agent-written
-mocks. (3) Use the agent's tests as a *patch selector* (Agentless / SWT
+mocks. (3) Use the agent's tests as a _patch selector_ (Agentless / SWT
 pattern, F4) rather than as an oracle of correctness. (4) For bugs, the
 human should write the failing test; for greenfield, the human should write
 input/output examples and let the agent translate them.
@@ -251,7 +250,7 @@ tests, and not the whole test suite, for performance." JetBrains research
 on context management (2025) reports that hybrid context-management
 techniques on SWE-bench-Verified with Qwen3-Coder 480B "reduced costs by 7%
 compared to pure observation masking and by 11% compared to using only LLM
-summarization." Fowler's *Context Engineering* article frames the
+summarization." Fowler's _Context Engineering_ article frames the
 underlying principle: "Context engineering is curating what the model sees
 so that you get a better result." Anthropic notes the failure mode plainly:
 "LLM performance degrades as context fills … Claude may start 'forgetting'
@@ -259,11 +258,11 @@ earlier instructions or making more mistakes."
 
 **Observations:**
 There's a second-order effect: large suites with many flaky or
-slow-irrelevant tests *poison* the loop, because the agent spends iterations
+slow-irrelevant tests _poison_ the loop, because the agent spends iterations
 fighting noise instead of converging. The Agentless authors handled this by
-*selecting* a regression subset and only running reproduction tests at the
+_selecting_ a regression subset and only running reproduction tests at the
 end. For interactive sessions, the implication is that the agent should
-have a tool to *list* tests and run a chosen subset — not a single-button
+have a tool to _list_ tests and run a chosen subset — not a single-button
 "run all tests."
 
 **Recommendations:**
@@ -271,7 +270,7 @@ have a tool to *list* tests and run a chosen subset — not a single-button
 (`pytest path::test_x`, `cargo test test_x`) and instruct the agent to use
 the narrowest relevant scope. (2) Maintain a "regression set" per module so
 the agent can ask "did I break anything nearby" without paying for the
-whole suite. (3) Disable or quarantine flaky tests *before* an agent run —
+whole suite. (3) Disable or quarantine flaky tests _before_ an agent run —
 flakes cost you twice (wasted iteration + corrupted reasoning trace).
 
 **Impact on agent LLM:** MEDIUM-HIGH — the cost/perf delta is real but the
@@ -321,7 +320,7 @@ well-documented.
 ### F8 — Snapshot/golden tests cause measurable agent overfitting — especially when an LLM judges
 
 **Evidence:**
-AI21's *"All that glitters"* analysis on coding-agent benchmarks finds:
+AI21's _"All that glitters"_ analysis on coding-agent benchmarks finds:
 "An LLM judge learned to favor solutions that look like gold answers —
 minimal, clean, focused — over outputs that actually work. The LLM Judge
 wasn't memorizing specific solutions, but it was learning the traits of
@@ -331,8 +330,8 @@ over functional correctness." Practitioner write-ups on golden datasets
 (getmaxim.ai, qawolf, helicone) consistently warn that "Golden Datasets
 limit a model's ability to handle diverse and evolving real-world inputs,
 and models trained on carefully selected, static data can lead to
-overfitting." Anthropic's CLAUDE.md guidance — *"Would removing this cause
-Claude to make mistakes?"* — is the same idea applied to context: snapshot
+overfitting." Anthropic's CLAUDE.md guidance — _"Would removing this cause
+Claude to make mistakes?"_ — is the same idea applied to context: snapshot
 data that the agent doesn't strictly need still biases generation.
 
 **Observations:**
@@ -373,13 +372,13 @@ go up while real validation goes down.
 **Observations:**
 Coverage % is a goodhart-prone signal: agents can reach high line coverage
 by writing tests that import code without asserting on it (recall the 4-10x
-print-vs-assertion ratio in F5). Where it *is* useful: as a binary
+print-vs-assertion ratio in F5). Where it _is_ useful: as a binary
 diagnostic ("did the changed lines get executed by any test at all?") and
 for spotting regressions in untouched modules.
 
 **Recommendations:**
 (1) Don't reward agents on coverage delta directly. (2) Do show the agent
-*line-level* coverage of its diff vs. the existing tests — "your change
+_line-level_ coverage of its diff vs. the existing tests — "your change
 touched these 12 lines; the existing suite hits 4 of them" is actionable
 context; "coverage went from 84% to 86%" is not. (3) Use coverage drops in
 unrelated modules as a warning signal that the agent broke something
@@ -441,7 +440,7 @@ unanimous than I expected:
 2. **Hidden vs. provided tests is a deliberate design choice, not a default.**
    SWE-bench's hidden-test design models the "user files a bug, agent
    reconstructs the spec" case; supplying the failing test up front is a
-   *different regime* (TDD) and is the strongest pattern for new behavior.
+   _different regime_ (TDD) and is the strongest pattern for new behavior.
    Halfway is the worst regime.
 3. **Agent-written tests are not the win they appear to be.** Resolution
    rates are insensitive to whether the agent writes its own tests; the

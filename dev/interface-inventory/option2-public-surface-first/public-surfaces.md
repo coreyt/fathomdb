@@ -112,13 +112,13 @@ surface boundary today.
   callers.
 - **Entry points / verbs.**
   - `fathomdb recover --accept-data-loss [--truncate-wal]
-    [--rebuild-vec0] [--rebuild-projections] [--excise-source <id>]
-    [--purge-logical-id <id>] [--restore-logical-id <id>]`
+[--rebuild-vec0] [--rebuild-projections] [--excise-source <id>]
+[--purge-logical-id <id>] [--restore-logical-id <id>]`
     (`interfaces/cli.md` § Recover root; `design/recovery.md` § Two-root
     CLI split; AC-058).
   - `fathomdb doctor <verb>` where verb ∈
     `{check-integrity, safe-export, verify-embedder, trace,
-    dump-schema, dump-row-counts, dump-profile}`
+dump-schema, dump-row-counts, dump-profile}`
     (`interfaces/cli.md` § Doctor verbs; AC-040a/b).
   - Doctor-only invocation flags: `--quick`, `--full`, `--round-trip`,
     `--pretty` (`design/recovery.md` § Doctor-only flags).
@@ -221,8 +221,8 @@ audience.
   - CLI `--json` per verb (S-4).
   - `EngineOpenError::Corruption(CorruptionDetail)` with
     `kind: CorruptionKind`, `stage: OpenStage`, `locator:
-    CorruptionLocator`, `recovery_hint: RecoveryHint { code,
-    doc_anchor }` (`design/errors.md` § Engine.open corruption table;
+CorruptionLocator`, `recovery_hint: RecoveryHint { code,
+doc_anchor }` (`design/errors.md` § Engine.open corruption table;
     AC-035b).
   - `RecoveryHint.code` stable string set: `E_CORRUPT_WAL_REPLAY`,
     `E_CORRUPT_HEADER`, `E_CORRUPT_SCHEMA`,

@@ -75,7 +75,7 @@ baseline. (`needs.md` and `traceability.md` are now drafted.)
 
 **Phase 3b — `acceptance.md`: drafted + critic-applied; status: draft.** 60+ ACs; Parameter table OWNS every numerical threshold via P-NNN ids. AC-035a/b/c/d added 2026-04-29 (corruption refuse + structured error shape + lock release + recovery CLI-only). AC-060 split into AC-060a (typed errors) + AC-060b (JSON-Schema save-time validation cadence) 2026-04-29.
 
-**Phase 3c — `architecture.md`: drafted + critic-applied + locked 2026-04-29.** 13 design/*.md files proposed. Amended same-day for ADR #30 (§ 5 lock mechanism rewritten; § 8 deltas updated; § 11 writer ASCII updated; on-disk file layout adds `.lock`, removes `-shm` under WAL+EXCLUSIVE). Locked-doc amendment authorized by ADR per crate-topology precedent.
+**Phase 3c — `architecture.md`: drafted + critic-applied + locked 2026-04-29.** 13 design/\*.md files proposed. Amended same-day for ADR #30 (§ 5 lock mechanism rewritten; § 8 deltas updated; § 11 writer ASCII updated; on-disk file layout adds `.lock`, removes `-shm` under WAL+EXCLUSIVE). Locked-doc amendment authorized by ADR per crate-topology precedent.
 
 **Phase 3d — `design/*.md`: STARTED.** Historical snapshot only; superseded by the 2026-05-01 progress block above. At this point in the timeline only `design/bindings.md` had been drafted + critic-applied per Phase 3 step 4 value-test framing; verdict = distinct role; KEEP. Status: draft (HITL gate before flip to locked).
 
@@ -342,11 +342,11 @@ Three specialized harvesters run in parallel. Full system-like prompts live
 under `dev/agents/`. Main thread spawns these via `Agent` tool, captures
 outputs, runs critic pass, then HITL.
 
-| Agent | Subagent type | System prompt | Target areas | Outputs |
-|-------|---------------|---------------|--------------|---------|
-| Prose harvester | `general-purpose` | [agents/prose-harvester.md](../agents/prose-harvester.md) | `dev/`, `dev/notes/`, `dev/archive/`, `docs/concepts/`, `docs/reference/` | `learnings.md` § Prior Work Disposition table |
-| Learnings harvester | `general-purpose` | [agents/learnings-harvester.md](../agents/learnings-harvester.md) | Files marked keep/fold/archive by prose harvester; user memory; git log | `learnings.md` § Keep doing, § Stop doing, § Raw requirement candidates |
-| Dep auditor | `architecture-inspector` | [agents/dep-auditor.md](../agents/dep-auditor.md) | `Cargo.toml` workspace + `src/rust/crates/`; `src/python/pyproject.toml`; `src/ts/package.json`; crates.io / docs.rs | `deps/<dep>.md` × N; `deps/index.md` verdict index |
+| Agent               | Subagent type            | System prompt                                                     | Target areas                                                                                                         | Outputs                                                                 |
+| ------------------- | ------------------------ | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Prose harvester     | `general-purpose`        | [agents/prose-harvester.md](../agents/prose-harvester.md)         | `dev/`, `dev/notes/`, `dev/archive/`, `docs/concepts/`, `docs/reference/`                                            | `learnings.md` § Prior Work Disposition table                           |
+| Learnings harvester | `general-purpose`        | [agents/learnings-harvester.md](../agents/learnings-harvester.md) | Files marked keep/fold/archive by prose harvester; user memory; git log                                              | `learnings.md` § Keep doing, § Stop doing, § Raw requirement candidates |
+| Dep auditor         | `architecture-inspector` | [agents/dep-auditor.md](../agents/dep-auditor.md)                 | `Cargo.toml` workspace + `src/rust/crates/`; `src/python/pyproject.toml`; `src/ts/package.json`; crates.io / docs.rs | `deps/<dep>.md` × N; `deps/index.md` verdict index                      |
 
 **Why three (not more, not fewer):** prose triage and dep audit are
 orthogonal axes (one reads English, one runs cargo tooling); learnings

@@ -35,7 +35,7 @@ A separate forcing function: detection cadence ("WHAT do we check, WHEN") is des
 
 ### 2. Structured error variant
 
-Failure surfaces as `EngineOpenError::Corruption(CorruptionDetail)`. This ADR commits to the OUTER variant + the SHAPE of `CorruptionDetail`; the inner enum *variant lists* (`CorruptionKind`, `OpenStage`, `CorruptionLocator`) extend the ADR-0.6.0-error-taxonomy variant table and their authoritative enumeration is owned by `design/errors.md` (which extends the taxonomy variant table per its existing protocol).
+Failure surfaces as `EngineOpenError::Corruption(CorruptionDetail)`. This ADR commits to the OUTER variant + the SHAPE of `CorruptionDetail`; the inner enum _variant lists_ (`CorruptionKind`, `OpenStage`, `CorruptionLocator`) extend the ADR-0.6.0-error-taxonomy variant table and their authoritative enumeration is owned by `design/errors.md` (which extends the taxonomy variant table per its existing protocol).
 
 ```rust
 pub enum EngineOpenError {

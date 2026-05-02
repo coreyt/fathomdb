@@ -6,17 +6,18 @@ This report examines how Claude and Codex benefit from source code comments and 
 
 ## Sources (URLs cited)
 
-[S1]: <https://code.claude.com/docs/en/memory>
-[S2]: <https://code.claude.com/docs/en/tutorials>
-[S3]: <https://openai.com/index/introducing-codex/>
-[S4]: <https://openai.com/business/guides-and-resources/how-openai-uses-codex/>
-[S5]: <https://openai.com/index/harness-engineering/>
-[S6]: <https://link.springer.com/article/10.1007/s10664-019-09694-w>
-[S7]: <https://link.springer.com/article/10.1007/s10664-023-10425-5>
-[S8]: <https://www.sciencedirect.com/science/article/abs/pii/S016412121100238X>
-[S9]: <https://link.springer.com/article/10.1007/s10664-022-10284-6>
-[S10]: <https://www.researchgate.net/publication/355393354_AugmentedCode_Examining_the_Effects_of_Natural_Language_Resources_in_Code_Retrieval_Models>
-[S11]: <https://aclanthology.org/2022.emnlp-main.372/>
+[S1]: https://code.claude.com/docs/en/memory
+[S2]: https://code.claude.com/docs/en/tutorials
+[S3]: https://openai.com/index/introducing-codex/
+[S4]: https://openai.com/business/guides-and-resources/how-openai-uses-codex/
+[S5]: https://openai.com/index/harness-engineering/
+[S6]: https://link.springer.com/article/10.1007/s10664-019-09694-w
+[S7]: https://link.springer.com/article/10.1007/s10664-023-10425-5
+[S8]: https://www.sciencedirect.com/science/article/abs/pii/S016412121100238X
+[S9]: https://link.springer.com/article/10.1007/s10664-022-10284-6
+[S10]: https://www.researchgate.net/publication/355393354_AugmentedCode_Examining_the_Effects_of_Natural_Language_Resources_in_Code_Retrieval_Models
+[S11]: https://aclanthology.org/2022.emnlp-main.372/
+
 [S12] <https://link.springer.com/article/10.1007/s10664-021-09981-5>
 
 ## Findings F1..F6

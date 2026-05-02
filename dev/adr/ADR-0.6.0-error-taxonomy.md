@@ -63,11 +63,11 @@ pub enum EngineError {
 
 Three "validation"-flavoured errors stay as **distinct** module variants. They are not redundant; each has a distinct producer ADR and distinct user-facing semantic:
 
-| Module error | Producer ADR | Surfaces when | User-facing meaning |
-|---|---|---|---|
-| `WriteValidationError` | ADR-0.6.0-typed-write-boundary | Write submission | Typed input is structurally malformed (wrong field, wrong shape) |
-| `SchemaValidationError` | ADR-0.6.0-json-schema-policy | Write submission | Payload fails JSON Schema check against registered `schema_id` |
-| `EmbedderIdentityMismatchError` | ADR-0.6.0-vector-identity-embedder-owned | `Engine.open` | Open-time embedder identity ≠ recorded profile identity |
+| Module error                    | Producer ADR                             | Surfaces when    | User-facing meaning                                              |
+| ------------------------------- | ---------------------------------------- | ---------------- | ---------------------------------------------------------------- |
+| `WriteValidationError`          | ADR-0.6.0-typed-write-boundary           | Write submission | Typed input is structurally malformed (wrong field, wrong shape) |
+| `SchemaValidationError`         | ADR-0.6.0-json-schema-policy             | Write submission | Payload fails JSON Schema check against registered `schema_id`   |
+| `EmbedderIdentityMismatchError` | ADR-0.6.0-vector-identity-embedder-owned | `Engine.open`    | Open-time embedder identity ≠ recorded profile identity          |
 
 Distinctness rationale: each is owned by its producing ADR (clean coupling); each maps to a different user remediation (fix input shape vs fix payload contents vs resolve an open-time embedder mismatch); `EmbedderIdentityMismatchError` doesn't even surface at write time. Collapsing into one `WriteError` would lose this signal and force `EmbedderIdentityMismatch` (an `Engine.open` error) into a misnamed bucket.
 

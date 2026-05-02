@@ -72,7 +72,7 @@ schema-leakage into client code.
   SDK") are typed too — they take CLI flags, not SQL.
 - **Op-store payload is typed-by-structural-carrier (X-2 cross-cite).**
   Op-store rows carry `OpStoreInsert { kind, payload: serde_json::Value,
-  schema_id: Option<...> }` per ADR-0.6.0-op-store-same-file. The
+schema_id: Option<...> }` per ADR-0.6.0-op-store-same-file. The
   `serde_json::Value` is a structural carrier within a typed wrapper,
   not a raw-SQL escape: clients submit `OpStoreInsert` values, never
   SQL strings. Schema validation against `schema_id` (if present) is
