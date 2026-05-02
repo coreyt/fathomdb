@@ -9,6 +9,9 @@ echo "Internal engineering docs live in dev/."
 echo "Rust workspace members live under src/rust/crates/."
 echo "Run scripts/agent-verify.sh during the agent loop, scripts/check.sh as the broader CI gate."
 
+# Repo-tracked git hooks (pre-commit fmt/lint, pre-push agent-verify).
+scripts/install-hooks.sh
+
 # Python dev tooling — pytest, hypothesis, ruff, pyright.
 if [ -f src/python/pyproject.toml ]; then
   echo "Installing Python dev tooling into .venv (pytest + hypothesis + ruff + pyright)..."

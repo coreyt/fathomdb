@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# pre-push: full agent-verify gate (lint -> typecheck -> test).
+# Mirrors what an agent runs locally before declaring work done; catches
+# CI-fail-but-local-pass drift.
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+exec scripts/agent-verify.sh

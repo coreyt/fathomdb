@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# pre-commit: fast format/lint checks on staged files only.
+# Heavy gates (clippy, typecheck, tests) run in pre-push via agent-verify.sh.
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+# --diff-filter=ACMR excludes deletions so tools don't try to read missing files.
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
+
+if [ -z "$STAGED" ]; then
+  exit 0
+fi
+
+# Rust: cargo fmt --check (whole workspace; rustfmt is context-sensitive).
+if echo "$STAGED" | grep -qE '\.rs$|Cargo\.toml$'; then
+  echo "[pre-commit] cargo fmt --check"
+  cargo fmt --all --check
+fi
+
+# Python: ruff check on staged .py files. Prefer .venv/bin/ruff.
+if echo "$STAGED" | grep -qE '\.py$'; then
+  ruff_bin=""
+  if [ -x .venv/bin/ruff ]; then
+    ruff_bin=".venv/bin/ruff"
+  elif command -v ruff >/dev/null 2>&1; then
+    ruff_bin="$(command -v ruff)"
+  fi
+  if [ -n "$ruff_bin" ]; then
+    echo "[pre-commit] ruff check (staged)"
+    # shellcheck disable=SC2086
+    PYFILES=$(echo "$STAGED" | grep '\.py$' | tr '\n' ' ')
+    $ruff_bin check $PYFILES
+  else
+    echo "[pre-commit] skipping ruff (not installed; run scripts/bootstrap.sh)"
+  fi
+fi
