@@ -7,6 +7,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { Engine } from "../src/index.js";
 import {
   ClosingError,
   CorruptionError,
@@ -88,4 +89,19 @@ test("EmbedderDimensionMismatchError carries typed dimensions", () => {
   const err = new EmbedderDimensionMismatchError({ stored: 384, supplied: 768 });
   assert.equal(err.stored, 384);
   assert.equal(err.supplied, 768);
+});
+
+test("search rejects empty query via WriteValidationError under FathomDbError root", async () => {
+  // Per dev/design/errors.md section Binding-facing class matrix, the
+  // empty-query rejection must surface as the typed WriteValidationError
+  // leaf beneath the single-rooted FathomDbError, not as a bare Error.
+  const engine = await Engine.open("test.sqlite");
+  await assert.rejects(
+    () => engine.search(""),
+    (err: unknown) => {
+      assert.ok(err instanceof FathomDbError, "must be a FathomDbError");
+      assert.ok(err instanceof WriteValidationError, "must be a WriteValidationError");
+      return true;
+    },
+  );
 });
