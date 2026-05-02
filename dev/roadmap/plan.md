@@ -30,42 +30,52 @@ under `src/rust/crates/`, moved Python/TypeScript bindings under `src/`, and
 added the public MkDocs skeleton. `./scripts/agent-verify.sh` passed before
 commit.
 
-**Phase 3 — `needs.md` + `traceability.md`: status unchanged (`draft`).** User
-needs drafted as "what/constraints" only (personas + jobs-to-be-done +
-customer/functional/non-functional needs). Traceability drafted as a coarse
-matrix and accepted as sufficient for now; deeper test-plan traceability is
-deferred until fixture specs and scaffold paths stabilize.
+**Phase 3 — design corpus: locked.** `needs.md`, `traceability.md`,
+`requirements.md`, `acceptance.md`, `architecture.md`, `design/*.md`,
+`interfaces/*.md`, and `test-plan.md` are locked. Traceability is intentionally
+coarse; explicit `T-*` expansion is deferred until fixture specs and scaffold
+paths stabilize.
 
-**Phase 3a — `requirements.md`: status unchanged (`draft`).** REQ set extended through HITL queue + over-design audit resolutions (REQ-057/058/059 added per OD-29). The 2026-05-01 hard-conflict coherence pass satisfies the roadmap critic gate; HITL lock gate not yet flipped.
+**Phase 3a — `requirements.md`: locked.** REQ set now includes REQ-001..REQ-066.
+REQ-060..REQ-066 were added by the security-review HITL amendment.
 
-**Phase 3b — `acceptance.md`: status unchanged (`draft`).** AC coverage extended for op-store, projection-failure regenerate workflow (per OD-30). The 2026-05-01 hard-conflict coherence pass satisfies the roadmap critic gate. Not yet `locked`.
+**Phase 3b — `acceptance.md`: locked.** AC coverage now includes
+AC-001..AC-070. AC-064..AC-070 cover the security-review amendments.
 
-**Phase 3c — `architecture.md`: locked 2026-04-29.** Subsequent corpus repairs (OD-22 / OD-25 / OD-28) and 2026-05-01 hard-conflict amendments applied under the same locked-doc amendment precedent. The 2026-05-01 amendments aligned CLI scope, hybrid locking, projection queue derivation, TS pool ownership, and write receipt shape.
+**Phase 3c — `architecture.md`: locked 2026-04-29.** Subsequent corpus repairs
+(OD-22 / OD-25 / OD-28), 2026-05-01 hard-conflict amendments, and
+security-review-driven doc amendments were applied under the locked-doc
+amendment precedent.
 
-**Phase 3d — `design/*.md`: IN PROGRESS.** 13/13 files now drafted (vs 1/13 at last update). `design/lifecycle.md` landed on 2026-05-01 and the corpus status text now treats it as an existing draft, not a missing design slot. Status:
-
-- `design/bindings.md` — `locked` (unchanged from 2026-04-29).
-- `design/embedder.md`, `design/engine.md`, `design/errors.md`, `design/lifecycle.md`, `design/migrations.md`, `design/op-store.md`, `design/projections.md`, `design/recovery.md`, `design/release.md`, `design/retrieval.md`, `design/scheduler.md`, `design/vector.md` — `draft` (roadmap critic gate satisfied by the 2026-05-01 hard-conflict pass; HITL gates pending).
+**Phase 3d — `design/*.md`: locked.** 13/13 design docs are locked:
+`bindings`, `embedder`, `engine`, `errors`, `lifecycle`, `migrations`,
+`op-store`, `projections`, `recovery`, `release`, `retrieval`, `scheduler`, and
+`vector`.
 
 **Over-design audit:** 30/30 resolved. OD-01 (`tasks_in_flight` orphan metric) and OD-02 (brand-specific default adapter clause) were removed. See `over-design-audit.md`.
 
 **HITL queue:** ENG6, ENG3, E3, E5, E7, X4, X6 adjudicated. Full queue resolved (Tier 1–4, status `tier-4-resolved`) and archived at `archive/hitl-queue.md`.
 
-**Phase 3e — `interfaces/*.md`: IN PROGRESS.** `interfaces/rust.md`, `interfaces/python.md`, `interfaces/typescript.md`, `interfaces/cli.md`, and `interfaces/wire.md` are now drafted. Hard-conflict cleanup resolved Rust support posture (stable Rust facade outside Python/TS SDK parity) and TS error-root shape (`FathomDbError`). Remaining work: HITL lock gate.
+**Phase 3e — `interfaces/*.md`: locked.** `interfaces/rust.md`,
+`interfaces/python.md`, `interfaces/typescript.md`, `interfaces/cli.md`, and
+`interfaces/wire.md` are locked.
 
-**Phase 3f — `test-plan.md`: draft.** AC→T deterministic mapping, suite
-ownership, fixture families, scaffold paths, and component scaffold targets
-landed during the 2026-05-01 hard-conflict coherence pass. Roadmap critic gate
-satisfied; HITL gate pending.
+**Phase 3f — `test-plan.md`: locked.** AC→T deterministic mapping, suite
+ownership, fixture families, scaffold paths, and component scaffold targets are
+locked at suite/scaffold granularity.
 
-**`security-review.md`: not started.**
+**`security-review.md`: locked.** All 11 findings disposed. REQ-060..REQ-066 and
+AC-064..AC-070 were added for accepted 0.6.0 hardening. SR-005 and SR-011 are
+postponed to `dev/roadmap/0.8.0.md`.
 
-**Phase 4 — Freeze: not started.**
+**Phase 4 — Freeze: complete.** Commit `02b2034` added
+`dev/psd/0.6.0-system-psd.md`; tag `0.6.0-design-frozen` points at `02b2034`.
 
-**Next step:** prepare the next HITL gate batch for Phase 3a / 3b / 3d / 3e /
-3f lock flips (requirements, acceptance, draft designs, interfaces, test plan),
-using `dev/progress/0.6.0-ranked-conflicts.md` as the resolved-conflict
-baseline. (`needs.md` and `traceability.md` are now drafted.)
+**Next step:** start Phase 5 interface stubs with failing tests first. The first
+slice should bind public contract surfaces without implementing engine behavior:
+Rust facade types/errors, Python/TypeScript five-verb SDK shape, CLI
+`doctor`/`recover` roots, and wire/on-disk sentinel constants. PRs must cite
+relevant AC ids and ADR ids.
 
 ## Progress (as of 2026-04-29)
 
@@ -524,7 +534,9 @@ Re-review required if doc changes after lock but before implementation.
 - All docs `status: locked`.
 - `security-review.md` findings resolved.
 - Tag: `git tag 0.6.0-design-frozen`.
-- Update `CLAUDE.md` with: "0.6.0 implementation MUST cite AC id + ADR id in PR body."
+- Implementation PR convention: cite relevant AC id(s) + ADR id(s) in the PR
+  body. `AGENTS.md` remains the canonical agent instruction file; no
+  `CLAUDE.md` is maintained.
 - Archive pre-0.6.0 design notes to `docs/archive/0.5.x/` (keep git history).
 - Add CI check: PRs touching `src/rust/crates/` without AC id in body → fail (warn-only first week).
 
@@ -542,18 +554,18 @@ handed to implementer phase downstream.)
 - [ ] Prior-work disposition table
 - [ ] `deps/*.md` populated (one per dep) + `deps/index.md` index
 - [ ] `adr/ADR-0.6.0-decision-index.md` triaged by user
-- [ ] ADRs accepted (per decide-now entry)
-- [ ] `needs.md` locked
-- [ ] `requirements.md` locked
-- [ ] `acceptance.md` locked (AC ids issued)
-- [ ] `architecture.md` locked
-- [ ] `design/*.md` locked
-- [ ] `interfaces/*.md` locked
-- [ ] `test-plan.md` locked (AC→test mapping complete)
-- [ ] `traceability.md` locked (needs↔requirements↔design↔test-plan)
+- [x] ADRs accepted (per decide-now entry)
+- [x] `needs.md` locked
+- [x] `requirements.md` locked
+- [x] `acceptance.md` locked (AC ids issued)
+- [x] `architecture.md` locked
+- [x] `design/*.md` locked
+- [x] `interfaces/*.md` locked
+- [x] `test-plan.md` locked (AC→test mapping complete)
+- [x] `traceability.md` locked (needs↔requirements↔design↔test-plan)
 - [ ] `traceability.md` deepened to explicit `T-*` ids + test scaffold paths (post test-plan fixture lock)
-- [ ] `security-review.md` locked, findings resolved
-- [ ] `0.6.0-design-frozen` tag
+- [x] `security-review.md` locked, findings resolved
+- [x] `0.6.0-design-frozen` tag
 
 ---
 
