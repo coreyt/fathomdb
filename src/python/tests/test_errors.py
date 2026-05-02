@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pytest
 
+from fathomdb import Engine
 from fathomdb.errors import (
     ClosingError,
     CorruptionError,
@@ -95,3 +96,14 @@ def test_embedder_dimension_mismatch_carries_typed_attrs() -> None:
     err = EmbedderDimensionMismatchError(stored=384, supplied=768)
     assert err.stored == 384
     assert err.supplied == 768
+
+
+def test_search_rejects_empty_query_via_write_validation_under_engine_error() -> None:
+    # Per dev/design/errors.md section Binding-facing class matrix, the
+    # empty-query rejection must surface as the typed WriteValidationError
+    # leaf beneath the single-rooted EngineError, not as a bare ValueError.
+    engine = Engine.open("rewrite.sqlite")
+    with pytest.raises(WriteValidationError) as excinfo:
+        engine.search("")
+    assert isinstance(excinfo.value, EngineError)
+    assert isinstance(excinfo.value, WriteValidationError)
