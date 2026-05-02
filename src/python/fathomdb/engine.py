@@ -69,7 +69,9 @@ class Engine:
     def search(self, query: str) -> SearchResult:
         self._ensure_open()
         if not query.strip():
-            raise ValueError("query must not be empty")
+            from fathomdb.errors import WriteValidationError
+
+            raise WriteValidationError("query must not be empty")
         return SearchResult(
             projection_cursor=self._cursor,
             soft_fallback=None,
