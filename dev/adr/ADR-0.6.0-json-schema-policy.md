@@ -18,6 +18,7 @@ FU-M5 promoted to Phase 2 ADR. Cross-cuts operator-config + op-store payload val
 ADR-0.6.0-operator-config-json-only locked operator config to strict JSON. ADR-0.6.0-op-store-same-file specified `operational_collections.schema_json` as declarative metadata. Open: where schemas live, when validation runs, how failures surface, how schemas evolve.
 
 HITL 2026-04-27 settled:
+
 - Schema location: in-repo `schemas/`.
 - Operator-supplied schemas: not accepted in 0.6.0.
 

@@ -764,7 +764,7 @@ content.
   ADR-0.6.0-op-store-same-file; ADR-0.6.0-zerocopy-blob;
   ADR-0.6.0-durability-fsync-policy.
 - **Contract summary.** Stub. From architecture.md § 5: `<db>.sqlite`
-  + `<db>.sqlite-wal` + `<db>.sqlite.lock`; tables: `nodes`, `edges`,
+  - `<db>.sqlite-wal` + `<db>.sqlite.lock`; tables: `nodes`, `edges`,
   `chunks`, `<canonical>_fts`, `vec0` virtual tables, `operational_*`,
   provenance event table; LE-f32 BLOB encoding for vectors.
 - **Key types/fields/enums/errors.** Sidecar lock file; SQLite WAL

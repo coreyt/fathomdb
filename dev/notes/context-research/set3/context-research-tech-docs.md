@@ -2,25 +2,25 @@
 
 Web research on how Claude Code and OpenAI Codex use technical documentation during AI-driven coding, with emphasis on which documentation forms most improve agent performance: requirements, architecture descriptions, design docs, and interface/API contracts. Priority was given to official Anthropic/OpenAI docs and product posts, then to research papers on documentation retrieval, repository context, and agent coding performance.
 
-# Sources (URLs cited)
+## Sources (URLs cited)
 
-- [S1] OpenAI, "Introducing Codex" (May 16, 2025): https://openai.com/index/introducing-codex/
-- [S2] OpenAI Codex docs, "Custom instructions with AGENTS.md": https://developers.openai.com/codex/guides/agents-md
-- [S3] OpenAI docs, "Docs MCP": https://developers.openai.com/learn/docs-mcp
-- [S4] OpenAI API docs, "Function calling": https://developers.openai.com/api/docs/guides/function-calling
-- [S5] OpenAI API docs, "Structured outputs": https://developers.openai.com/api/docs/guides/structured-outputs
-- [S6] Anthropic Claude Code docs, "How Claude remembers your project": https://code.claude.com/docs/en/memory
-- [S7] Anthropic Claude Code docs, "Common workflows": https://code.claude.com/docs/en/common-workflows
-- [S8] Anthropic docs, "Claude prompting best practices" (long-context section): https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices#long-context-prompting
-- [S9] Anthropic Claude Code docs, "Connect Claude Code to tools via MCP": https://code.claude.com/docs/en/mcp
-- [S10] Zhou et al., "DocPrompting: Generating Code by Retrieving the Docs" (arXiv:2207.05987): https://arxiv.org/abs/2207.05987
-- [S11] Zhang et al., "RepoCoder: Repository-Level Code Completion Through Iterative Retrieval and Generation" (arXiv:2303.12570): https://arxiv.org/abs/2303.12570
-- [S12] Zhu et al., "SWE-ContextBench: A Benchmark for Context Learning in Coding" (arXiv:2602.08316): https://arxiv.org/abs/2602.08316
-- [S13] Wang et al., "Evaluating Repository-level Software Documentation via Question Answering and Feature-Driven Development" (arXiv:2604.06793): https://arxiv.org/abs/2604.06793
+- [S1] OpenAI, "Introducing Codex" (May 16, 2025): <https://openai.com/index/introducing-codex/>
+- [S2] OpenAI Codex docs, "Custom instructions with AGENTS.md": <https://developers.openai.com/codex/guides/agents-md>
+- [S3] OpenAI docs, "Docs MCP": <https://developers.openai.com/learn/docs-mcp>
+- [S4] OpenAI API docs, "Function calling": <https://developers.openai.com/api/docs/guides/function-calling>
+- [S5] OpenAI API docs, "Structured outputs": <https://developers.openai.com/api/docs/guides/structured-outputs>
+- [S6] Anthropic Claude Code docs, "How Claude remembers your project": <https://code.claude.com/docs/en/memory>
+- [S7] Anthropic Claude Code docs, "Common workflows": <https://code.claude.com/docs/en/common-workflows>
+- [S8] Anthropic docs, "Claude prompting best practices" (long-context section): <https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices#long-context-prompting>
+- [S9] Anthropic Claude Code docs, "Connect Claude Code to tools via MCP": <https://code.claude.com/docs/en/mcp>
+- [S10] Zhou et al., "DocPrompting: Generating Code by Retrieving the Docs" (arXiv:2207.05987): <https://arxiv.org/abs/2207.05987>
+- [S11] Zhang et al., "RepoCoder: Repository-Level Code Completion Through Iterative Retrieval and Generation" (arXiv:2303.12570): <https://arxiv.org/abs/2303.12570>
+- [S12] Zhu et al., "SWE-ContextBench: A Benchmark for Context Learning in Coding" (arXiv:2602.08316): <https://arxiv.org/abs/2602.08316>
+- [S13] Wang et al., "Evaluating Repository-level Software Documentation via Question Answering and Feature-Driven Development" (arXiv:2604.06793): <https://arxiv.org/abs/2604.06793>
 
-# Findings F1..F7
+## Findings F1..F7
 
-## F1. Requirements docs help most when they define success criteria, scope boundaries, and verification steps explicitly.
+## F1. Requirements docs help most when they define success criteria, scope boundaries, and verification steps explicitly
 
 - Evidence
   - Anthropic recommends instructions that keep only facts Claude should hold every session: build commands, conventions, project layout, and "always do X" rules; project `CLAUDE.md` should include build/test commands, coding standards, architectural decisions, naming conventions, and workflows [S6].
@@ -36,7 +36,7 @@ Web research on how Claude Code and OpenAI Codex use technical documentation dur
 - Impact on agent LLM = HIGH + rationale
   - Claude and Codex both officially expose repo instruction files as operating context. Missing success criteria directly affects planning, tool use, and stopping conditions.
 
-## F2. Repo-local instruction files (`CLAUDE.md`, `AGENTS.md`) are the most leverage-dense documentation format for Claude and Codex.
+## F2. Repo-local instruction files (`CLAUDE.md`, `AGENTS.md`) are the most leverage-dense documentation format for Claude and Codex
 
 - Evidence
   - Anthropic positions `CLAUDE.md` as session-loaded project memory for coding standards, workflows, and project architecture; more specific files take precedence, and project files are meant to be shared in version control [S6].
@@ -52,7 +52,7 @@ Web research on how Claude Code and OpenAI Codex use technical documentation dur
 - Impact on agent LLM = HIGH + rationale
   - This is the most direct, officially supported way to shape Claude/Codex behavior inside a codebase. Good repo-local docs reduce retrieval failure and ambiguity before the agent starts editing.
 
-## F3. Architecture docs are useful only when they are concrete about flows, boundaries, and key models.
+## F3. Architecture docs are useful only when they are concrete about flows, boundaries, and key models
 
 - Evidence
   - Anthropic's recommended codebase-understanding workflow explicitly asks for "main architecture patterns," "key data models," and how cross-cutting concerns like authentication are handled [S7].
@@ -68,7 +68,7 @@ Web research on how Claude Code and OpenAI Codex use technical documentation dur
 - Impact on agent LLM = HIGH + rationale
   - Architecture comprehension is a prerequisite for non-local edits, refactors, and safe bug fixes. Without this, agents over-read the repo or make brittle single-file patches.
 
-## F4. Design docs and external requirements are invisible to the agent unless they are connected into the working context.
+## F4. Design docs and external requirements are invisible to the agent unless they are connected into the working context
 
 - Evidence
   - Anthropic's MCP guidance explicitly uses design and planning examples such as implementing a feature from Jira and updating a template from Figma designs posted in Slack [S9].
@@ -84,7 +84,7 @@ Web research on how Claude Code and OpenAI Codex use technical documentation dur
 - Impact on agent LLM = HIGH + rationale
   - Many coding failures are requirements failures, not syntax failures. If the agent cannot see the authoritative spec, it will optimize for the codebase's current shape instead of intended behavior.
 
-## F5. Interface and API contracts are most agent-usable when they are machine-readable, constrained, and example-rich.
+## F5. Interface and API contracts are most agent-usable when they are machine-readable, constrained, and example-rich
 
 - Evidence
   - OpenAI's function-calling docs define functions by JSON Schema and explicitly say the schema informs the model what the function does and what inputs it expects [S4].
@@ -100,7 +100,7 @@ Web research on how Claude Code and OpenAI Codex use technical documentation dur
 - Impact on agent LLM = HIGH + rationale
   - Interface mismatches are a major source of agent-generated defects. Structured contracts sharply reduce guessing at call signatures and response shapes.
 
-## F6. Retrieval quality and document structure matter more than raw document volume.
+## F6. Retrieval quality and document structure matter more than raw document volume
 
 - Evidence
   - Anthropic recommends putting long documents near the top of context, structuring multi-document inputs with tags and metadata, and grounding responses in quoted evidence first [S8].
@@ -118,7 +118,7 @@ Web research on how Claude Code and OpenAI Codex use technical documentation dur
 - Impact on agent LLM = HIGH + rationale
   - Context windows are large but still selective systems. Better retrieval and chunk design directly improve precision, latency, and cost.
 
-## F7. Documentation materially improves coding performance, but it complements rather than replaces source code and executable checks.
+## F7. Documentation materially improves coding performance, but it complements rather than replaces source code and executable checks
 
 - Evidence
   - SWD-Bench reports that higher-quality repository documentation improves SWE-Agent issue-solving by 20.00%, while also showing that source code provides complementary value [S13].
@@ -134,6 +134,20 @@ Web research on how Claude Code and OpenAI Codex use technical documentation dur
 - Impact on agent LLM = HIGH + rationale
   - This is the practical operating model for Claude/Codex-style coding agents: docs for intent and navigation, code/tests for truth and closure.
 
-# Synthesis (1 paragraph)
+## Synthesis (1 paragraph)
 
 The strongest pattern across Claude, Codex, and the cited research is that coding agents benefit less from "more documentation" in the abstract than from the right documentation in the right form: concise repo-local instruction files for operating rules, explicit requirement docs with acceptance checks, concrete architecture docs that map behavior to source structure, connected external design/product artifacts, and machine-readable interface contracts. The research reinforces the product docs: retrieval and summarization of the relevant slices outperform both in-file-only reasoning and indiscriminate context stuffing, while high-quality documentation measurably improves issue-solving when paired with source code and executable validation. In practice, the best agent-facing doc stack is layered, scoped, structured, and verifiable.
+
+[S1]: <https://openai.com/index/introducing-codex/>
+[S2]: <https://developers.openai.com/codex/guides/agents-md>
+[S3]: <https://developers.openai.com/learn/docs-mcp>
+[S4]: <https://developers.openai.com/api/docs/guides/function-calling>
+[S5]: <https://developers.openai.com/api/docs/guides/structured-outputs>
+[S6]: <https://code.claude.com/docs/en/memory>
+[S7]: <https://code.claude.com/docs/en/common-workflows>
+[S8]: <https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices#long-context-prompting>
+[S9]: <https://code.claude.com/docs/en/mcp>
+[S10]: <https://arxiv.org/abs/2207.05987>
+[S11]: <https://arxiv.org/abs/2303.12570>
+[S12]: <https://arxiv.org/abs/2602.08316>
+[S13]: <https://arxiv.org/abs/2604.06793>

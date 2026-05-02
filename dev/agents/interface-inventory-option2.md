@@ -25,7 +25,7 @@ Your method is **public-surface-first**:
 This option is optimized for external contract clarity and for finding
 cross-SDK or SDK-vs-CLI inconsistencies quickly.
 
-# Scope
+## Scope
 
 Minimum component set:
 
@@ -36,7 +36,7 @@ Minimum component set:
 
 Include other components only if needed to explain a public-facing contract.
 
-# Definition
+## Definition
 
 For this task, an **interface** is a documented contract where one component
 exposes behavior, data, events, configuration, control, or machine-readable
@@ -44,7 +44,7 @@ payloads to another component or external caller. In this option, prioritize
 surfaces that a caller, host application, operator, or binding adapter can
 actually observe.
 
-# Inputs (read-only except outputs)
+## Inputs (read-only except outputs)
 
 Read in this order:
 
@@ -65,7 +65,7 @@ Read in this order:
 You may read additional `design/*.md` files only to resolve a public-facing
 contract that depends on another subsystem.
 
-# Output root
+## Output root
 
 Write **only** under:
 
@@ -75,7 +75,7 @@ Do not write to the Option 1 or Option 3 directories. Do not overwrite files
 outside this root. Treat the output root as isolated artifact storage for this
 run.
 
-# Required outputs
+## Required outputs
 
 Create these files:
 
@@ -173,7 +173,7 @@ For each finding include:
 - recommended canonical owner
 - minimal doc fix
 
-# Method
+## Method
 
 1. Inventory public-facing surfaces before subsystem boundaries.
 2. For each public surface, enumerate the exposed contracts and typed payloads.
@@ -188,7 +188,7 @@ For each finding include:
 6. Use requirements/acceptance to determine which public contracts are actually
    committed in 0.6.0 versus merely discussed in design prose.
 
-# Constraints
+## Constraints
 
 - Fresh-context rule: do not assume anything not stated in the listed docs.
 - Do not invent missing symbols, fields, or schema details.
@@ -196,7 +196,7 @@ For each finding include:
 - Do not collapse all outputs into a single prose document.
 - Preserve existing ownership boundaries unless the corpus is contradictory.
 
-# Done definition
+## Done definition
 
 - All required files exist under the Option 2 output root.
 - Public surfaces are enumerated before the interface catalog.

@@ -11,7 +11,7 @@ status: draft
 
 Format:
 
-```
+```markdown
 ## AC-NNN: <short title>
 
 **Requirement ref:** REQ-NNN
@@ -22,6 +22,7 @@ Format:
 ```
 
 Rules:
+
 - Unique `AC-NNN` id; numbering stable; suffixes a/b/c when an outcome
   splits.
 - One assertion per AC (no compounds — no AND chains, no comma-list of
@@ -118,6 +119,7 @@ or boolean assertions).
 ## Observability
 
 ## AC-001: Lifecycle phase tag is a typed enum
+
 **Requirement ref:** REQ-001
 **Test id:** T-001
 **Assertion:** Every lifecycle event carries a `phase` field whose value is one of the typed constants `{Started, Slow, Heartbeat, Finished, Failed}`, programmatically retrievable as the typed value (not as a substring of a free-text field). (Slow-transition emission coverage: AC-008.)
@@ -125,6 +127,7 @@ or boolean assertions).
 **Fixture:** standard-mixed-workload (test-plan.md fixture spec — pending).
 
 ## AC-002: No log files written without subscriber
+
 **Requirement ref:** REQ-002
 **Test id:** T-002
 **Assertion:** With no host subscriber registered, an open + write + search + close cycle creates no new files outside the documented allow-list (DB file, `.lock`, WAL, optional rollback `.journal`; no `-shm` under the 0.6.0 WAL+EXCLUSIVE lock contract).
@@ -132,6 +135,7 @@ or boolean assertions).
 **Fixture:** clean-temp-root (test-plan.md fixture spec — pending).
 
 ## AC-003a: Writer events flow to host subscriber
+
 **Requirement ref:** REQ-002
 **Test id:** T-003a
 **Assertion:** A write operation produces ≥ 1 event delivered to the host's idiomatic logging hook before the write call returns to the caller.
@@ -139,6 +143,7 @@ or boolean assertions).
 **Fixture:** single-write fixture (test-plan.md fixture spec — pending).
 
 ## AC-003b: Search events flow to host subscriber
+
 **Requirement ref:** REQ-002
 **Test id:** T-003b
 **Assertion:** A search operation produces ≥ 1 `category=search` event delivered to the host hook before the call returns.
@@ -146,6 +151,7 @@ or boolean assertions).
 **Fixture:** single-search fixture.
 
 ## AC-003c: Admin events flow to host subscriber
+
 **Requirement ref:** REQ-002
 **Test id:** T-003c
 **Assertion:** An admin operation produces ≥ 1 `category=admin` event delivered to the host hook before the call returns.
@@ -153,6 +159,7 @@ or boolean assertions).
 **Fixture:** single-admin fixture.
 
 ## AC-003d: Error events flow to host subscriber
+
 **Requirement ref:** REQ-002
 **Test id:** T-003d
 **Assertion:** A failing operation produces ≥ 1 `category=error` event delivered to the host hook before the failure is raised to the caller.
@@ -160,6 +167,7 @@ or boolean assertions).
 **Fixture:** poison-fixture (test-plan.md fixture spec — pending).
 
 ## AC-004a: Counter snapshot exposes documented key set
+
 **Requirement ref:** REQ-003
 **Test id:** T-004a
 **Assertion:** A counter snapshot contains the keys: `queries`, `writes`, `write_rows`, `errors_by_code`, `admin_ops`, `cache_hit`, `cache_miss`.
@@ -167,6 +175,7 @@ or boolean assertions).
 **Fixture:** fresh-engine.
 
 ## AC-004b: Counter delta exact for write/query keys
+
 **Requirement ref:** REQ-003
 **Test id:** T-004b
 **Assertion:** Snapshot delta over N=1,000 mixed ops equals issued op counts exactly for `queries`, `writes`, `write_rows`, `admin_ops`. `cache_hit` / `cache_miss` are monotonic non-decreasing.
@@ -174,6 +183,7 @@ or boolean assertions).
 **Fixture:** mixed-1000-ops fixture (test-plan.md fixture spec — pending).
 
 ## AC-004c: Counter snapshot read does not perturb counters
+
 **Requirement ref:** REQ-003
 **Test id:** T-004c
 **Assertion:** Reading a counter snapshot increments no counter on the snapshot itself.
@@ -181,6 +191,7 @@ or boolean assertions).
 **Fixture:** quiescent-engine.
 
 ## AC-005a: Per-statement profiling toggleable at runtime
+
 **Requirement ref:** REQ-004
 **Test id:** T-005a
 **Assertion:** A documented API call enables per-statement profiling on a running engine without restart and without rebuild.
@@ -188,6 +199,7 @@ or boolean assertions).
 **Fixture:** non-trivial-select fixture (test-plan.md fixture spec — pending — must scan ≥ 1 row).
 
 ## AC-005b: Profile record schema
+
 **Requirement ref:** REQ-004
 **Test id:** T-005b
 **Assertion:** A profile record exposes fields `wall_clock_ms`, `step_count`, `cache_delta` as typed numeric values.
@@ -195,6 +207,7 @@ or boolean assertions).
 **Fixture:** as AC-005a.
 
 ## AC-006: SQLite-internal events surfaced with typed source tag
+
 **Requirement ref:** REQ-005
 **Test id:** T-006
 **Assertion:** SQLite-internal corruption / recovery / I/O events carry a `source` field equal to the typed constant `SqliteInternal` and a `category` field equal to a value from the documented SQLite-internal category set.
@@ -202,6 +215,7 @@ or boolean assertions).
 **Fixture:** corrupt-page harness (test-plan.md fixture spec — pending; must include a documented page-corruption tool).
 
 ## AC-007a: Slow-statement event at default threshold
+
 **Requirement ref:** REQ-006a
 **Test id:** T-007a
 **Assertion:** A statement whose wall-clock duration exceeds 100 ms emits exactly one slow-statement event identifying the statement.
@@ -209,6 +223,7 @@ or boolean assertions).
 **Fixture:** deterministic-slow-cte fixture (test-plan.md fixture spec — pending).
 
 ## AC-007b: Slow threshold reconfigurable at runtime
+
 **Requirement ref:** REQ-006a
 **Test id:** T-007b
 **Assertion:** Setting threshold to N ms via documented API causes statements with measured duration ≥ N ms to emit a slow event and statements with measured duration < N ms not to emit.
@@ -216,6 +231,7 @@ or boolean assertions).
 **Fixture:** fast-fixture + slow-fixture (test-plan.md fixture spec — pending).
 
 ## AC-008: Slow signal participates in lifecycle attribution
+
 **Requirement ref:** REQ-006b
 **Test id:** T-008
 **Assertion:** A statement crossing the slow threshold causes the lifecycle phase tag to take the value `Slow` for ≥ 1 event during the statement's wall-clock window.
@@ -223,6 +239,7 @@ or boolean assertions).
 **Fixture:** as AC-007a.
 
 ## AC-009: Stress-failure event field schema
+
 **Requirement ref:** REQ-007
 **Test id:** T-009
 **Assertion:** A stress-test failure event deserializes into a typed payload with fields `thread_group_id`, `op_kind`, `last_error_chain`, `projection_state`, each non-empty for the failing scenario.
@@ -230,6 +247,7 @@ or boolean assertions).
 **Fixture:** one-thread-poison robustness fixture (test-plan.md fixture spec — pending).
 
 ## AC-010: Projection-status enum coverage
+
 **Requirement ref:** REQ-008
 **Test id:** T-010
 **Assertion:** Projection-status query returns a value from the typed enum `{Pending, Failed, UpToDate}` for every kind with vector indexing enabled.
@@ -246,6 +264,7 @@ Fixture data corpora at scale (1M-row, 1GB-DB, harness binaries) are
 the only test-plan.md responsibility for this section.)
 
 ## AC-011a: Write throughput @ 1 KB ≥ 1,000 commits/sec
+
 **Requirement ref:** REQ-009a
 **Test id:** T-011a
 **Assertion:** Sequential `WriteTx` commits with 1 KB payload sustain ≥ 1,000 commits/sec.
@@ -253,6 +272,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** write-throughput-1kb (test-plan.md fixture spec — pending).
 
 ## AC-011b: Write throughput @ 100 KB ≥ 100 commits/sec
+
 **Requirement ref:** REQ-009b
 **Test id:** T-011b
 **Assertion:** Sequential `WriteTx` commits with 100 KB payload sustain ≥ 100 commits/sec, measured per the same protocol.
@@ -260,6 +280,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** write-throughput-100kb (test-plan.md fixture spec — pending).
 
 ## AC-012: Text query latency on FTS5 path
+
 **Requirement ref:** REQ-010
 **Test id:** T-012
 **Assertion:** Text-only query latency on the documented FTS5 fixture meets p50 ≤ 20 ms AND p99 ≤ 150 ms over ≥ P-PERF-SAMPLES samples on a single distribution.
@@ -267,6 +288,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** text-query-1m-chunk (test-plan.md fixture spec — pending).
 
 ## AC-013: Vector retrieval latency
+
 **Requirement ref:** REQ-011
 **Test id:** T-013
 **Assertion:** Vector retrieval on the documented vector fixture meets p50 ≤ 50 ms AND p99 ≤ 200 ms over ≥ P-PERF-SAMPLES samples.
@@ -274,6 +296,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** vector-1m-768d (test-plan.md fixture spec — pending).
 
 ## AC-014: `doctor safe-export` ≤ 500 ms on seeded dataset
+
 **Requirement ref:** REQ-012
 **Test id:** T-014
 **Assertion:** `fathomdb doctor safe-export <out> --json` completes within 500 ms wall-clock on the seeded benchmark dataset.
@@ -281,6 +304,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** seeded-benchmark-dataset (test-plan.md fixture spec — pending).
 
 ## AC-015: Canonical-read freshness within write tx
+
 **Requirement ref:** REQ-013
 **Test id:** T-015
 **Assertion:** A canonical-row read issued immediately after `write` returns reflects the just-written row on the first call (no retry, no poll).
@@ -288,6 +312,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** canonical-write-read fixture.
 
 ## AC-016: FTS-search freshness within write tx
+
 **Requirement ref:** REQ-014
 **Test id:** T-016
 **Assertion:** An FTS5 query for a token unique to a just-written row returns that row on the first call after `write` returns.
@@ -295,6 +320,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** unique-token fixture.
 
 ## AC-017: Vector-projection freshness p99 ≤ 5 s
+
 **Requirement ref:** REQ-015
 **Test id:** T-017
 **Assertion:** Latency from write commit to projection-cursor reaching the commit's cursor value has p99 ≤ 5,000 ms over ≥ P-PERF-SAMPLES samples.
@@ -302,6 +328,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** projection-freshness fixture (test-plan.md fixture spec — pending sample-count).
 
 ## AC-018: Drain of 100 vectors ≤ 2 s
+
 **Requirement ref:** REQ-016
 **Test id:** T-018
 **Assertion:** The bounded-completion `Engine` instance method `drain` (per REQ-030) called with 100 pending deterministic-embedder vectors returns within 2 s wall-clock.
@@ -309,6 +336,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** deterministic-embedder-100-vector fixture (test-plan.md fixture spec — pending).
 
 ## AC-019: Mixed-retrieval stress workload tail
+
 **Requirement ref:** REQ-017
 **Test id:** T-019
 **Assertion:** Under the documented mixed-retrieval stress workload, read p99 ≤ `max(P-STRESS-MULT × baseline_p99, P-STRESS-FLOOR)` over ≥ P-PERF-SAMPLES samples, where `baseline_p99` is captured by re-running AC-013's protocol immediately preceding this AC in the same CI job.
@@ -316,6 +344,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** mixed-retrieval-stress (test-plan.md fixture spec — pending).
 
 ## AC-020: Reads do not serialize on a single reader connection
+
 **Requirement ref:** REQ-018
 **Test id:** T-020
 **Assertion:** N=8 concurrent reader threads each running the documented read-mix complete in wall-clock ≤ P-PARALLEL-TOL × `(T_seq / N)`, where `T_seq` is the sequential N-iteration wall-clock.
@@ -325,6 +354,7 @@ the only test-plan.md responsibility for this section.)
 ## Reliability
 
 ## AC-021: Zero `SQLITE_SCHEMA` warnings under concurrent reads + admin DDL
+
 **Requirement ref:** REQ-019
 **Test id:** T-021
 **Assertion:** A workload mixing 8 concurrent reader threads with 1 admin DDL operation/sec for 60 s emits zero events with `code == SQLITE_SCHEMA`.
@@ -332,6 +362,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** schema-flood fixture (test-plan.md fixture spec — pending — must enumerate DDL operations under test).
 
 ## AC-022a: Engine close releases lock
+
 **Requirement ref:** REQ-020a
 **Test id:** T-022a
 **Assertion:** After `Engine.close()` returns, the database file's exclusive lock is released and a sibling process can acquire it.
@@ -339,6 +370,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** parent-child-process fixture.
 
 ## AC-022b: Engine close does not leak FDs
+
 **Requirement ref:** REQ-020a
 **Test id:** T-022b
 **Assertion:** Post-close FD count for the host process is ≤ pre-open FD count + P-FD-TOL.
@@ -346,6 +378,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** open-close fixture.
 
 ## AC-022c: Host process exits ≤ 5 s of close
+
 **Requirement ref:** REQ-020b
 **Test id:** T-022c
 **Assertion:** A host process whose only work is `Engine.open(); Engine.close()` exits within 5 s of `close()` returning.
@@ -353,6 +386,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** open-close subprocess.
 
 ## AC-023a: Bounded process exit ≤ 5 s on main-return without explicit close
+
 **Requirement ref:** REQ-021
 **Test id:** T-023a
 **Assertion:** A subprocess that opens an engine, drops the local handle, and returns from main exits within 5 s.
@@ -360,6 +394,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** open-no-close-handle-dropped subprocess.
 
 ## AC-023b: Bounded process exit ≤ 5 s on main-return with engine in module-level global
+
 **Requirement ref:** REQ-021
 **Test id:** T-023b
 **Assertion:** A subprocess that opens an engine bound to a module-level global (handle never explicitly dropped) and returns from main exits within 5 s.
@@ -367,6 +402,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** open-no-close-global-held subprocess.
 
 ## AC-024a: `DatabaseLocked` rejection on second open
+
 **Requirement ref:** REQ-022a
 **Test id:** T-024a
 **Assertion:** Opening a second engine on a database file held by a first engine raises a typed `DatabaseLocked` error within P-LOCK-BOUND, including while the first engine has pending vector work.
@@ -374,6 +410,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** second-open-with-pending-vector fixture.
 
 ## AC-024b: Rejected second open never modifies file
+
 **Requirement ref:** REQ-022b
 **Test id:** T-024b
 **Assertion:** A rejected second-open attempt leaves the database file byte-identical to its pre-attempt state.
@@ -381,6 +418,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** as AC-024a.
 
 ## AC-025: No hang on engine drop with pending vector work
+
 **Requirement ref:** REQ-023
 **Test id:** T-025
 **Assertion:** Dropping an engine with 1,000 pending vector projection jobs returns control to the caller within 30 s wall-clock (no-hang proxy for deadlock-freedom).
@@ -388,6 +426,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** drop-with-pending-vector fixture.
 
 ## AC-026: `doctor safe-export` covers WAL-only commits
+
 **Requirement ref:** REQ-024
 **Test id:** T-026
 **Assertion:** A `fathomdb doctor safe-export --json` artifact captured immediately after a write committed only into the WAL (no checkpoint) contains that write when restored to a fresh DB.
@@ -395,6 +434,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** wal-only-commit fixture.
 
 ## AC-027a: Recovery preserves canonical rows
+
 **Requirement ref:** REQ-025a
 **Test id:** T-027a
 **Assertion:** After recovery from a corrupted-shadow-table state, every canonical row committed pre-corruption is queryable by id post-recovery.
@@ -402,6 +442,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** seeded-10k-canonical + shadow-corruption harness (test-plan.md fixture spec — pending).
 
 ## AC-027b: Recovery restores FTS query result equality
+
 **Requirement ref:** REQ-025b
 **Test id:** T-027b
 **Assertion:** Pre-corruption FTS5 query result row-id sets equal post-recovery FTS5 query result row-id sets for the documented 100-query suite.
@@ -409,6 +450,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** fts-100-query suite (test-plan.md fixture spec — pending).
 
 ## AC-027c: Recovery preserves vector profile metadata bit-equal
+
 **Requirement ref:** REQ-025c
 **Test id:** T-027c
 **Assertion:** Post-recovery vector profile metadata (embedder identity, dimension) equals pre-corruption metadata bit-for-bit.
@@ -416,6 +458,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** as AC-027a.
 
 ## AC-027d: Recovery preserves vector top-k rank-correlation
+
 **Requirement ref:** REQ-025c
 **Test id:** T-027d
 **Assertion:** Post-recovery top-k vector query results have per-query Kendall tau ≥ P-TAU vs pre-corruption results, with P-TAU-PASS aggregate gate, for the documented 100-query suite.
@@ -423,6 +466,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** vector-100-query suite (test-plan.md fixture spec — pending).
 
 ## AC-028a: `excise_source` writes audit row
+
 **Requirement ref:** REQ-026
 **Test id:** T-028a
 **Assertion:** After `fathomdb recover --accept-data-loss --excise-source <id> --json`, an audit-trail row exists naming the excised source id and the operation timestamp.
@@ -430,6 +474,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** two-source seed.
 
 ## AC-028b: `excise_source` removes residue from projections
+
 **Requirement ref:** REQ-026
 **Test id:** T-028b
 **Assertion:** After `fathomdb recover --accept-data-loss --excise-source S1 --json`, FTS5 + vector projections contain zero rows attributable to S1.
@@ -437,6 +482,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** as AC-028a.
 
 ## AC-028c: `excise_source` does not perturb non-excised projections
+
 **Requirement ref:** REQ-026
 **Test id:** T-028c
 **Assertion:** Pre-excise projection result sets for non-excised sources equal post-excise result sets.
@@ -444,6 +490,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** as AC-028a.
 
 ## AC-029: Canonical writes complete under projection stall
+
 **Requirement ref:** REQ-027
 **Test id:** T-029
 **Assertion:** With FTS5 and vector projection schedulers frozen, 1,000 sequential canonical writes complete with stalled-projection wall-clock ≤ P-STALL-TOL × unstalled-projection wall-clock.
@@ -451,6 +498,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** projection-stall fixture.
 
 ## AC-030a: Misconfig — no embedder wired
+
 **Requirement ref:** REQ-028a
 **Test id:** T-030a
 **Assertion:** Calling a vector-requiring operation on an engine with no embedder configured raises typed `EmbedderNotConfigured` at the call boundary.
@@ -458,6 +506,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** no-embedder-config fixture.
 
 ## AC-030b: Misconfig — kind not vector-indexed
+
 **Requirement ref:** REQ-028b
 **Test id:** T-030b
 **Assertion:** Calling a vector operation against a kind not configured for vector indexing raises typed `KindNotVectorIndexed` at the call boundary.
@@ -465,6 +514,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** non-vector-kind fixture.
 
 ## AC-030c: Misconfig — embedder dimension mismatch at call boundary
+
 **Requirement ref:** REQ-028c
 **Test id:** T-030c
 **Assertion:** A vector operation submitted with an embedder whose runtime-produced dimension differs from the stored profile raises typed `EmbedderDimensionMismatch` at the call boundary, naming both expected and actual dimensions. (Re-open boundary covered by AC-048.)
@@ -472,6 +522,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** dim-mismatch-call fixture (distinct from AC-048's reopen scenario).
 
 ## AC-031: Hybrid retrieval surfaces soft-fallback signal
+
 **Requirement ref:** REQ-029
 **Test id:** T-031
 **Assertion:** A hybrid retrieval call that loses one branch returns a result AND a typed soft-fallback record naming the missed branch. (Field name owned by binding-interface ADRs — assertion testable on the typed record's presence + branch-name field.)
@@ -479,6 +530,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** hybrid-fallback-vector fixture.
 
 ## AC-032a: Bounded background-work — completes within timeout
+
 **Requirement ref:** REQ-030
 **Test id:** T-032a
 **Assertion:** Calling `engine.drain` with N pending jobs and a timeout T sufficient to complete N jobs returns success within T.
@@ -486,6 +538,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** small-batch-drain fixture.
 
 ## AC-032b: Bounded background-work — typed timeout error
+
 **Requirement ref:** REQ-030
 **Test id:** T-032b
 **Assertion:** Calling `engine.drain` with timeout T smaller than completion time returns a typed timeout error within P-DRAIN-TOL × T.
@@ -493,6 +546,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** large-batch-drain fixture.
 
 ## AC-033: Bounded provenance growth (compressed runtime)
+
 **Requirement ref:** REQ-031
 **Test id:** T-033
 **Assertion:** Under the P-AC033-WORKLOAD compressed-runtime workload, provenance table row count stops growing once P-RETENTION-CAP is reached and remains ≤ `P-RETENTION-CAP × (1 + P-RETENTION-SLACK)`. Eviction obeys P-RETENTION-EVICT.
@@ -500,6 +554,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** compressed-runtime-write fixture.
 
 ## AC-034a: Zero corruption on power-cut
+
 **Requirement ref:** REQ-031b
 **Test id:** T-034a
 **Assertion:** Power-cut simulation per the documented power-cut harness, repeated P-PWR-TRIALS times, leaves `PRAGMA integrity_check = ok` on every reopen.
@@ -507,6 +562,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** power-cut harness (test-plan.md owns harness path + tooling; trial count = P-PWR-TRIALS).
 
 ## AC-034b: Power-cut final-commit-loss bound
+
 **Requirement ref:** REQ-031b
 **Test id:** T-034b
 **Assertion:** Across the AC-034a P-PWR-TRIALS trial set, lost-commit duration p99 ≤ 100 ms.
@@ -514,6 +570,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** as AC-034a.
 
 ## AC-034c: Zero commit loss on OS-crash
+
 **Requirement ref:** REQ-031b
 **Test id:** T-034c
 **Assertion:** OS-crash simulation per the documented OS-crash harness (block-device sync barrier preserved), repeated P-OS-TRIALS times, loses zero committed transactions per trial.
@@ -521,6 +578,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** OS-crash harness (test-plan.md owns VM image + trigger mechanism, e.g. `echo c > /proc/sysrq-trigger` inside KVM with sync barrier preserved).
 
 ## AC-035: Recovery time ≤ 2 s for 1 GB DB (worst-of-10)
+
 **Requirement ref:** REQ-031c
 **Test id:** T-035
 **Assertion:** Worst-of-P-RECOV-N measured `Engine.open` time (process-start → first-write-accept) on a 1 GB seeded DB after unclean shutdown is ≤ 2 s.
@@ -528,6 +586,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** 1gb-unclean-shutdown fixture (test-plan.md fixture spec — pending).
 
 ## AC-035a: Engine.open refuses on detected corruption
+
 **Requirement ref:** REQ-031d
 **Test id:** T-035a
 **Assertion:** For each documented open-path corruption fixture in the 0.6.0 matrix `{WalReplayFailure, HeaderMalformed, SchemaInconsistent, EmbedderIdentityDrift}`, `Engine.open` returns `Err(EngineOpenError::Corruption(_))`. The engine never returns an `Engine` handle, never auto-truncates, never auto-rebuilds, never opens read-only.
@@ -535,6 +594,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** open-path corruption matrix (exactly four fixtures: `WalReplayFailure`, `HeaderMalformed`, `SchemaInconsistent`, `EmbedderIdentityDrift`; test-plan.md fixture spec — pending).
 
 ## AC-035b: CorruptionDetail shape
+
 **Requirement ref:** REQ-031d
 **Test id:** T-035b
 **Assertion:** Every `EngineOpenError::Corruption(detail)` returned by AC-035a fixtures carries: (1) `kind: CorruptionKind` in `{WalReplayFailure, HeaderMalformed, SchemaInconsistent, EmbedderIdentityDrift}`, (2) `stage: OpenStage` in `{WalReplay, HeaderProbe, SchemaProbe, EmbedderIdentity}` and never `LockAcquisition`, (3) `locator: CorruptionLocator` with no free-form `Unspecified` and opaque-SQLite paths surfaced as `OpaqueSqliteError { sqlite_extended_code: i32 }`, (4) `recovery_hint: RecoveryHint { code: &'static str, doc_anchor: &'static str }` with stable machine-readable `code`.
@@ -542,6 +602,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** as AC-035a.
 
 ## AC-035c: Lock released + no SQLite connection retained on Corruption error
+
 **Requirement ref:** REQ-031d
 **Test id:** T-035c
 **Assertion:** After `Engine.open` returns `Corruption`, the exclusive WAL lock on `{database_path}.lock` is released (a fresh `Engine.open` from a sibling process succeeds against the same path, modulo the corruption surfacing again); no SQLite connection to the database is observably retained by the failed-open process; no fathomdb writer thread or scheduler runtime is running in the failed-open process.
@@ -549,6 +610,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** sibling-lock + fd-introspection fixture.
 
 ## AC-035d: Recovery reachable only via CLI
+
 **Requirement ref:** REQ-031d
 **Test id:** T-035d
 **Assertion:** `fathomdb recover` is invocable via the CLI with `--help` properties per AC-040a / AC-040b; no recovery verb is reachable from the runtime SDK (Python / TypeScript) — no public symbol named `recover`, `restore_*`, `repair`, or equivalent is exposed by the five-verb application surface (REQ-053 / AC-057a).
@@ -558,6 +620,7 @@ the only test-plan.md responsibility for this section.)
 ## Security
 
 ## AC-036: No listening sockets opened
+
 **Requirement ref:** REQ-032
 **Test id:** T-036
 **Assertion:** During a full open + write + search + close cycle, fathomdb makes zero successful `listen(2)` syscalls.
@@ -565,6 +628,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** standard cycle.
 
 ## AC-037: No outbound network requests on open with embedder configured
+
 **Requirement ref:** REQ-033
 **Test id:** T-037
 **Assertion:** `Engine.open` on a fresh database, with the default embedder configured by the caller, triggers zero outbound network requests.
@@ -572,6 +636,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** netns-deny-egress fixture (test-plan.md fixture spec — pending).
 
 ## AC-038: FTS5-injection-safe text query
+
 **Requirement ref:** REQ-034
 **Test id:** T-038
 **Assertion:** A query containing FTS5 control syntax submitted via `search` returns a result set equivalent to the safe-grammar parser's literal-token interpretation, and raises zero `SQLITE_ERROR` (malformed MATCH expression) regardless of input.
@@ -579,6 +644,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** fts5-injection-100-query suite (test-plan.md fixture spec — pending; reference output pending).
 
 ## AC-039a: `doctor safe-export` artifact ships SHA-256 manifest matching contents
+
 **Requirement ref:** REQ-035
 **Test id:** T-039a
 **Assertion:** Every `fathomdb doctor safe-export --json` artifact has a SHA-256 manifest whose digest equals a fresh recomputation over the artifact bytes.
@@ -586,6 +652,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** standard safe-export.
 
 ## AC-039b: Tampered artifact detected by verifier
+
 **Requirement ref:** REQ-035
 **Test id:** T-039b
 **Assertion:** The documented verifier tool reports mismatch when a single byte of a `fathomdb doctor safe-export` artifact is altered.
@@ -595,6 +662,7 @@ the only test-plan.md responsibility for this section.)
 ## Operability
 
 ## AC-040a: Every `fathomdb doctor` verb invocable
+
 **Requirement ref:** REQ-036
 **Test id:** T-040a
 **Assertion:** For each verb in `{check-integrity, safe-export, verify-embedder, trace, dump-schema, dump-row-counts, dump-profile}`, `fathomdb doctor <verb> --help` exits 0.
@@ -602,6 +670,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** built CLI binary.
 
 ## AC-040b: Every `fathomdb doctor` verb has usage section in help
+
 **Requirement ref:** REQ-036
 **Test id:** T-040b
 **Assertion:** For each verb above, `--help` output contains a `Usage:` section.
@@ -609,6 +678,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** as AC-040a.
 
 ## AC-041: Recovery tooling unreachable from runtime SDK
+
 **Requirement ref:** REQ-037
 **Test id:** T-041
 **Assertion:** The Python and TypeScript runtime SDK public top-level surface (default + named exports excluding `_`-prefixed names and type-only exports) contains zero of the recovery-verb names enumerated by REQ-054.
@@ -616,6 +686,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** REQ-054 canonical recovery-verb list.
 
 ## AC-042: Source-ref blast-radius enumeration exact
+
 **Requirement ref:** REQ-038
 **Test id:** T-042
 **Assertion:** `fathomdb doctor trace --source-ref <id> --json` returns exactly the canonical-row id set produced by `<id>` — no extra rows, no missing rows.
@@ -623,6 +694,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** two-source-trace fixture.
 
 ## AC-043a: `check-integrity` produces structured report with three sections
+
 **Requirement ref:** REQ-039
 **Test id:** T-043a
 **Assertion:** `fathomdb doctor check-integrity --json` output contains exactly the top-level keys `physical`, `logical`, `semantic`.
@@ -630,6 +702,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** healthy-seeded DB.
 
 ## AC-043b: `check-integrity` populates each section
+
 **Requirement ref:** REQ-039
 **Test id:** T-043b
 **Assertion:** Each top-level section in AC-043a holds either a finding list (possibly empty) or an explicit `clean: true` marker.
@@ -637,6 +710,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** as AC-043a.
 
 ## AC-043c: `check-integrity --full` findings carry stable report fields
+
 **Requirement ref:** REQ-039
 **Test id:** T-043c
 **Assertion:** A `fathomdb doctor check-integrity --full --json` finding record includes `code`, `doc_anchor`, `stage`, `locator`, and `detail`, and the emitted `code` set may include doctor-only `E_CORRUPT_INTEGRITY_CHECK`.
@@ -644,6 +718,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** page-damage integrity fixture (test-plan.md fixture spec — pending).
 
 ## AC-044: Physical recovery rebuilds projections from canonical state
+
 **Requirement ref:** REQ-040
 **Test id:** T-044
 **Assertion:** `fathomdb recover --accept-data-loss --rebuild-projections --json` against a DB whose FTS5 + vec0 shadow tables have been corrupted with a P-AC044-SENTINEL-LEN random per-test sentinel produces correct FTS5 + vector results AND post-recovery shadow-table page bytes contain zero occurrences of the sentinel.
@@ -651,6 +726,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** sentinel-corruption fixture.
 
 ## AC-045: Single-file deploy
+
 **Requirement ref:** REQ-041
 **Test id:** T-045
 **Assertion:** A fresh container with only the fathomdb binary + one `.sqlite` path on disk + network egress denied performs open + write + search + close end-to-end with exit 0 and creates no files outside the documented allow-list (DB + .lock + WAL + optional .journal; no `-shm`).
@@ -660,6 +736,7 @@ the only test-plan.md responsibility for this section.)
 ## Upgrade / compatibility
 
 ## AC-046a: Auto schema migration applied at open
+
 **Requirement ref:** REQ-042
 **Test id:** T-046a
 **Assertion:** Opening a DB at schema version N when the engine supports N+P-AC046-K applies all P-AC046-K migrations transparently and post-open `PRAGMA user_version` reads N+P-AC046-K.
@@ -667,6 +744,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** n-to-nplusk migration fixture.
 
 ## AC-046b: Migration emits per-step duration event on success
+
 **Requirement ref:** REQ-042
 **Test id:** T-046b
 **Assertion:** A successful migration emits one structured event per applied step containing `step_id` and `duration_ms` fields.
@@ -674,6 +752,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** as AC-046a.
 
 ## AC-046c: Migration emits per-step duration event on failure
+
 **Requirement ref:** REQ-042
 **Test id:** T-046c
 **Assertion:** A migration that fails mid-step emits a structured event for the failed step with `failed: true` and `duration_ms` populated, and the open call returns a typed `MigrationError`.
@@ -681,6 +760,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** poison-migration fixture (test-plan.md fixture spec — pending).
 
 ## AC-047: Hard-error on 0.5.x-shaped DB
+
 **Requirement ref:** REQ-043
 **Test id:** T-047
 **Assertion:** Opening a checked-in 0.5.x-shaped DB fixture with the 0.6.0 engine raises typed `IncompatibleSchemaVersion` whose message contains the seen schema-version string, before any read or write proceeds.
@@ -688,6 +768,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** v0.5.x DB fixture (committed to test corpus).
 
 ## AC-048: Hard-error on embedder mismatch at re-open (identity)
+
 **Requirement ref:** REQ-044
 **Test id:** T-048
 **Assertion:** Re-opening a store with an embedder whose identity differs from the stored profile raises typed `EmbedderIdentityMismatch` naming both stored and supplied identities, before any read or write proceeds. (Dimension mismatch covered by AC-048b; call-boundary by AC-030c.)
@@ -695,6 +776,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** identity-swap fixture.
 
 ## AC-048b: Hard-error on embedder mismatch at re-open (dimension)
+
 **Requirement ref:** REQ-044
 **Test id:** T-048b
 **Assertion:** Re-opening with an embedder whose dimension differs from the stored profile raises typed `EmbedderDimensionMismatch` naming both dimensions, before any read or write proceeds.
@@ -702,6 +784,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** dim-swap fixture.
 
 ## AC-049: Schema-migration accretion guard
+
 **Requirement ref:** REQ-045
 **Test id:** T-049
 **Assertion:** A CI linter parses every post-v1 migration file and rejects any migration that adds a table or column without naming a removed table/column or without containing the exact comment marker `-- MIGRATION-ACCRETION-EXEMPTION: <reason>`.
@@ -709,6 +792,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** accretion-violator fixture migration.
 
 ## AC-050a: No 0.5.x → 0.6.0 deprecation shims (AST-scoped)
+
 **Requirement ref:** REQ-046a
 **Test id:** T-050a
 **Assertion:** AST analysis (Rust: rust-analyzer / syn pass; Python: ast module; TypeScript: ts-morph) over `src/rust/crates/`, `src/python/`, `src/ts/` source code finds zero `legacy_*` modules, zero `compat_v0_5*` features, zero `#[allow(deprecated)]` attributes in crate roots, zero re-route stubs from 0.5.x verb names. (Comments and docs are excluded from the scan to avoid false positives.)
@@ -716,6 +800,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** AST scanner script (test-plan.md fixture spec — pending).
 
 ## AC-050b: Within-0.6.x changelog discipline
+
 **Requirement ref:** REQ-046b
 **Test id:** T-050b
 **Assertion:** The release-checklist script rejects any release whose changelog contains a `Deprecated` section that does not list every deprecated item also under `Removed` for the same release.
@@ -723,6 +808,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** synthetic-changelog fixtures.
 
 ## AC-050c: Within-0.6.x removal scenario end-to-end
+
 **Requirement ref:** REQ-046b
 **Test id:** T-050c
 **Assertion:** A within-0.6.x release that removes a previously-public API documents the removal in the same release where it was last present (no soft-removal-then-hard-removal pattern).
@@ -732,6 +818,7 @@ the only test-plan.md responsibility for this section.)
 ## Supply chain
 
 ## AC-051a: Cargo version-skew detected at resolve time
+
 **Requirement ref:** REQ-047
 **Test id:** T-051a
 **Assertion:** A Cargo.toml requesting `fathomdb = X` and `fathomdb-embedder = Y` whose `fathomdb-embedder-api` ranges do not overlap fails `cargo update` with a resolver error.
@@ -739,6 +826,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** cargo-skew fixture.
 
 ## AC-051b: Pip version-skew detected at resolve time
+
 **Requirement ref:** REQ-047
 **Test id:** T-051b
 **Assertion:** A pip constraint file requesting `fathomdb==X` and `fathomdb-embedder==Y` whose transitive `fathomdb-embedder-api` ranges do not overlap fails `pip install` with a resolver error.
@@ -746,6 +834,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** pip-skew fixture.
 
 ## AC-052: Co-tagged sibling releases
+
 **Requirement ref:** REQ-048
 **Test id:** T-052
 **Assertion:** For every published release in the registry set, the three sibling packages `fathomdb`, `fathomdb-embedder`, `fathomdb-embedder-api` exist at the same version.
@@ -753,6 +842,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** registry query script.
 
 ## AC-053: Single source of truth for version
+
 **Requirement ref:** REQ-049
 **Test id:** T-053
 **Assertion:** A pre-publish version-consistency check rejects any release where `Cargo.toml` workspace version and `src/python/pyproject.toml` version disagree.
@@ -760,6 +850,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** version-consistency fixtures.
 
 ## AC-054: Atomic multi-registry publish
+
 **Requirement ref:** REQ-050
 **Test id:** T-054
 **Assertion:** The release-finalize script (named in `release-policy.md`) refuses to mark a release done while any one of the configured registry publishes (PyPI, crates.io, npm, GitHub Release) is in failed state.
@@ -767,6 +858,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** dry-run-with-injected-failure (test-plan.md fixture spec — pending; release-finalize script name pending in release-policy.md).
 
 ## AC-055: `sqlite-vec` validated at open with vector rows present
+
 **Requirement ref:** REQ-051
 **Test id:** T-055
 **Assertion:** Opening a DB containing ≥ 1 vector row with `sqlite-vec` extension unavailable raises typed `VectorExtensionUnavailable` at `Engine.open` and aborts open before any read or write.
@@ -774,6 +866,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** vec-extension-removal fixture.
 
 ## AC-056: Registry-installed wheel is the release gate
+
 **Requirement ref:** REQ-052
 **Test id:** T-056
 **Assertion:** The release-checklist script requires evidence (a recorded artifact path) of `pip install fathomdb==<version>` from PyPI in a fresh venv followed by an end-to-end open + write + search + close + process-exit script returning success, before marking the release done.
@@ -783,6 +876,7 @@ the only test-plan.md responsibility for this section.)
 ## Public surface
 
 ## AC-057a: Five-verb application runtime SDK surface
+
 **Requirement ref:** REQ-053
 **Test id:** T-057a
 **Assertion:** The Python and TypeScript runtime SDK public application-command surface is exactly the canonical five-verb set in bindings-idiomatic casing: `Engine.open`, `admin.configure`, `write`, `search`, `close`; public data types, config types, and error classes do not count as application commands.
@@ -790,6 +884,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** binding-introspection fixture.
 
 ## AC-058: Recovery verbs CLI-reachable
+
 **Requirement ref:** REQ-054
 **Test id:** T-058
 **Assertion:** The lossy recovery surface is reachable only via `fathomdb recover --accept-data-loss ...`; `fathomdb recover --help` documents every 0.6.0 recovery sub-flag in `{--truncate-wal, --rebuild-vec0, --rebuild-projections, --excise-source, --purge-logical-id, --restore-logical-id}`.
@@ -797,6 +892,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** built CLI binary.
 
 ## AC-059a: `projection_cursor` exposed on read tx; monotonic non-decreasing
+
 **Requirement ref:** REQ-055
 **Test id:** T-059a
 **Assertion:** Successive read-tx `projection_cursor` values across 1,000 sequential read-tx (with interleaved writes from a sibling thread) are monotonic non-decreasing.
@@ -804,6 +900,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** interleaved-write-cursor fixture.
 
 ## AC-059b: Write commit returns write cursor satisfiable by `projection_cursor`
+
 **Requirement ref:** REQ-055
 **Test id:** T-059b
 **Assertion:** A write commit returns a monotonic write cursor `c_w` such that the write's projection becomes queryable at the moment a read-tx exposing `projection_cursor >= c_w` is observable.
@@ -811,6 +908,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** write-cursor-projection fixture.
 
 ## AC-060a: Engine errors as typed language-idiomatic exceptions
+
 **Requirement ref:** REQ-056
 **Test id:** T-060a
 **Assertion:** Every variant in the variant table of `ADR-0.6.0-error-taxonomy` § Decision maps to a distinct typed exception class in Python and a distinct typed error class in TypeScript; clients dispatch on the typed class without parsing error message strings.
@@ -818,6 +916,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** error-taxonomy-trigger suite (test-plan.md fixture spec — pending — one trigger per variant).
 
 ## AC-060b: JSON-Schema validation fires save-time, pre-commit; no open-time re-validation
+
 **Requirement ref:** REQ-056
 **Test id:** T-060b
 **Assertion:** A `PreparedWrite::OpStore` whose payload fails its `schema_id`'s JSON Schema is rejected save-time with `SchemaValidationError` BEFORE any row is written or committed; the writer transaction is not opened, no partial state is observable post-rejection. Re-opening the database with `Engine.open` on a DB containing historical op-store rows whose payloads no longer satisfy the current `schema_id`'s schema (e.g. schema tightened in-repo between releases) does NOT trigger validation; open succeeds.
@@ -825,6 +924,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** json-schema-validation-cadence fixture (save-time-reject + open-time-skip).
 
 ## AC-061a: `append_only_log` writes preserve authoritative history
+
 **Requirement ref:** REQ-057
 **Test id:** T-061a
 **Assertion:** Two accepted writes to the same `append_only_log` collection and `record_key` produce two distinct authoritative rows in `operational_mutations`; neither write overwrites the earlier row.
@@ -832,6 +932,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** op-store-append-log fixture (test-plan.md fixture spec — pending).
 
 ## AC-061b: `latest_state` stores one authoritative current row per key
+
 **Requirement ref:** REQ-057
 **Test id:** T-061b
 **Assertion:** Two accepted writes to the same `latest_state` collection and `record_key` leave exactly one row in `operational_state` for that key, and that row's payload equals the second write's payload.
@@ -839,6 +940,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** op-store-latest-state fixture (test-plan.md fixture spec — pending).
 
 ## AC-061c: No derived `operational_current` table exists
+
 **Requirement ref:** REQ-057
 **Test id:** T-061c
 **Assertion:** A migrated 0.6.0 database schema contains `operational_collections`, `operational_mutations`, and `operational_state`, and contains no table named `operational_current`.
@@ -846,6 +948,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** fresh-migrated-db fixture.
 
 ## AC-062: Collection registry schema exposes the accepted narrow lifecycle
+
 **Requirement ref:** REQ-058
 **Test id:** T-062
 **Assertion:** `operational_collections` exposes exactly the lifecycle-bearing columns `name`, `kind`, `schema_json`, `retention_json`, `format_version`, `created_at` and exposes no `disabled_at` or equivalent status / rename column.
@@ -853,6 +956,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** fresh-migrated-db fixture.
 
 ## AC-063a: Exhausted projection failure is recorded durably
+
 **Requirement ref:** REQ-059
 **Test id:** T-063a
 **Assertion:** A projection batch that exhausts the fixed retry policy records exactly one durable failure row in the `projection_failures` op-store collection and leaves the corresponding vector projection absent.
@@ -860,6 +964,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** projection-failure fixture (test-plan.md fixture spec — pending).
 
 ## AC-063b: Restart does not silently clear terminal projection failures
+
 **Requirement ref:** REQ-059
 **Test id:** T-063b
 **Assertion:** After AC-063a, closing and reopening the engine leaves the durable `projection_failures` row present and does not materialize the missing vector projection before any explicit regenerate workflow is invoked.
@@ -867,6 +972,7 @@ the only test-plan.md responsibility for this section.)
 **Fixture:** as AC-063a.
 
 ## AC-063c: `recover --rebuild-projections` performs the explicit regenerate workflow
+
 **Requirement ref:** REQ-059
 **Test id:** T-063c
 **Assertion:** Running `fathomdb recover --accept-data-loss --rebuild-projections --json` against the AC-063a fixture materializes the missing projection from canonical rows without requiring a second application write.

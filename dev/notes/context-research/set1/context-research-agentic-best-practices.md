@@ -156,7 +156,7 @@ The findings below appear in **at least two of the three summaries** and are ran
 
 Rows = best practices F1–F14. Columns = the three research tracks. ✓ = explicitly named; ◐ = implied or partial; ✗ = absent.
 
-```
+```text
                                                           tmp   tmp2  tmp3
 F1  Curate; context budget                                 ✓     ✓     ✓
 F2  Durable state to disk                                  ✓     ✓     ✓
@@ -193,7 +193,7 @@ F15 Prescriptive bullets > narrative                       ◐     ✓     ◐
 
 ASCII bar chart. Bar units are illustrative and *not* comparable across rows (each row's anchor is a different metric — accuracy lift, cost reduction, etc.); they show within-row magnitude relative to the strongest claim.
 
-```
+```text
 F3  Executable feedback (RustAssistant 74% vs <10%)         ████████████████████  XL
 F6  Tool-surface design (~4× SWE-bench from json diags)     ████████████████████  XL
 F1  Curation (Anthropic 49–67% retrieval-failure cut)       █████████████████░░░  XL
@@ -212,7 +212,7 @@ F11 Comments = why/invariants (1–3% lift, stale-cost neg)   ████░░
 
 ### 3.4 Impact × Confidence quadrant
 
-```
+```text
                                IMPACT
                   ┌──────────────────┬──────────────────┐
                   │     LOW IMPACT   │   HIGH IMPACT    │
@@ -234,6 +234,7 @@ F11 Comments = why/invariants (1–3% lift, stale-cost neg)   ████░░
 Reading: every practice in the top-right cell is supported by ≥2 independent benchmarks plus convergent vendor guidance — adopt without measurement. The middle-right cell is also worth adopting, but instrument so you can measure whether the published numbers carry over to FathomDB's specific stack.
 
 †Split-confidence findings — placed at the higher rating because the *direction* is HIGH-confidence even where the isolated effect-size attribution is MED:
+
 - **F6** ACI: HIGH that tool-surface design matters; MED on the exact +10pp magnitude.
 - **F8** subagents: HIGH on the shape (fan-out yes, shared-state edits no); MED on the exact 15× token cost trade-off.
 - **F12** verification ordering: HIGH on lint→type→test order; MED on isolated effect attribution.
@@ -304,8 +305,8 @@ Adopt these practices **before** substantial 0.6.0 implementation lands. They ar
 
 **Deferred until code lands** (per F4 — stale > missing):
 
-9. **Per-crate / per-package AGENTS.md** under `src/rust/crates/<crate>/` and `src/python/`, `src/ts/`. Each ≤100 lines, scope-specific. Create on the crate's first non-scaffold PR, not before. *(F1, F7.)*
-10. **Stale-context CI check**: flag `dev/adr/` documents whose referenced symbols or paths no longer exist. Useful only once there are referenced symbols. *(F4.)*
+1. **Per-crate / per-package AGENTS.md** under `src/rust/crates/<crate>/` and `src/python/`, `src/ts/`. Each ≤100 lines, scope-specific. Create on the crate's first non-scaffold PR, not before. *(F1, F7.)*
+2. **Stale-context CI check**: flag `dev/adr/` documents whose referenced symbols or paths no longer exist. Useful only once there are referenced symbols. *(F4.)*
 
 ### What we are *not* doing (explicit non-actions)
 

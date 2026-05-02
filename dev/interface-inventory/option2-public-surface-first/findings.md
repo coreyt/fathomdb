@@ -60,6 +60,7 @@ public-surface-first method.
   `PRAGMA user_version` (already cited in architecture.md § 5).
 
 ## F-3: `design/migrations.md` is a one-paragraph stub but
+
 acceptance.md commits its event payload
 
 - **Severity.** high.
@@ -263,6 +264,7 @@ acceptance.md commits its event payload
   the interface files.
 
 ## F-13: `OpenStage` complete enum not enumerated; only the
+
 corruption-emitting subset is named
 
 - **Severity.** low.
@@ -294,6 +296,7 @@ corruption-emitting subset is named
   public field, `cursor`" or enumerate additional fields with types.
 
 ## F-15: SDK-vs-CLI boundary is well-drawn but `doctor`'s
+
 non-presence on the SDK is asserted only by parity invariant
 
 - **Severity.** low.
@@ -312,6 +315,7 @@ non-presence on the SDK is asserted only by parity invariant
   prophylactic; positive parity is the actual guarantee."
 
 ## F-16: Op-store `design/op-store.md` is outside this option's
+
 read set but its public surface is committed by acceptance
 
 - **Severity.** low (process-level, not contract-level).
@@ -331,6 +335,7 @@ read set but its public surface is committed by acceptance
   during a follow-on pass.
 
 ## F-17: Logging engine-event payload key is named but not
+
 schema-rendered
 
 - **Severity.** medium.
@@ -343,7 +348,7 @@ schema-rendered
   not connect them to the `fathomdb` envelope. A binding adapter
   cannot derive the on-the-wire shape from either doc alone.
 - **Recommended canonical owner.** `design/bindings.md` § 8 (envelope)
-  + `design/lifecycle.md` (field set per category).
+  - `design/lifecycle.md` (field set per category).
 - **Minimal doc fix.** Add to `design/bindings.md` § 8 a small
   sub-section "fathomdb payload structure" referencing
   `design/lifecycle.md`'s phase / counter / profile / stress
@@ -368,6 +373,7 @@ schema-rendered
   each, distinguishing rule from gate.
 
 ## F-19: `interfaces/cli.md` defers exit-code enumeration to "classes"
+
 without enumeration
 
 - **Severity.** low.

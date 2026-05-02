@@ -50,6 +50,7 @@ little-endian. The Tier-1 list IS the LE-target enumeration that Z-2's
 Tier-1 reopens both this ADR and zerocopy-blob.
 
 **Tier-1 gates (per release):**
+
 - Build green on all five.
 - Unit + integration tests green on all five.
 - Post-publish smoke (per `feedback_release_verification`) on all five.
@@ -104,7 +105,7 @@ coverage we will not maintain. Rejected.
 - `deps/*.md` records cross-platform support per dep; any dep that
   fails on a Tier-1 target is a blocker, not a workaround.
 - Followup `release-checklist.md` adds: "all 5 Tier-1 wheels published
-  + smoke-installed before release marked done."
+  - smoke-installed before release marked done."
 - Memory `feedback_cross_platform_rust` continues to apply at the
   C-interop boundary — this ADR does not relax it.
 

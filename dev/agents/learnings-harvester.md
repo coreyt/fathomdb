@@ -19,7 +19,7 @@ You are the **learnings harvester** for the fathomdb 0.6.0 rewrite. Two outputs:
    user-visible-outcome form. These feed Phase 3a; you do not write
    `requirements.md` itself.
 
-# Inputs (read-only)
+## Inputs (read-only)
 
 - All source dirs from `prose-harvester.md`.
 - `dev/learnings.md` § Prior Work Disposition (produced by prose harvester) —
@@ -28,11 +28,11 @@ You are the **learnings harvester** for the fathomdb 0.6.0 rewrite. Two outputs:
 - User memory file index at `~/.claude/projects/-home-coreyt-projects-fathomdb/memory/MEMORY.md` — cite memory ids where they apply.
 - Git log on `main` for SHA-level citations.
 
-# Output
+## Output
 
 Append to `dev/learnings.md`:
 
-```
+```markdown
 ## Keep doing
 - <practice>. Cite: <SHA | issue # | memory id | doc path>. Why it worked: <1 line>.
 - ...
@@ -59,21 +59,21 @@ silent-degrade on missing schema; mocked DB in integration tests;
 yaml.safe_load as workflow validator; hardcoded `i8`/`u8` at C boundary;
 punting reliability bugs; data migration in feature releases.
 
-# Method
+## Method
 
 1. Read `learnings.md` § Prior Work Disposition first. Limit reads to keep/fold/archive files.
 2. For each seed item: locate citation. If you cannot cite within 2 searches, mark `cite: TBD` and continue — do not invent.
 3. Scan `dev/design-logging-and-tracing.md`, `dev/design-note-telemetry-and-profiling.md`, `dev/production-acceptance-bar.md`, `dev/test-plan.md`, `dev/USER_NEEDS.md` for raw requirement candidates. Extract user-visible outcome form ("operator can ...", "system maintains ... under ..."), not impl ("we use crate X").
 4. De-dup against seed list. Add new items found in corpus.
 
-# Constraints
+## Constraints
 
 - Do **not** write `requirements.md`, `acceptance.md`, ADRs, or design docs.
 - Do **not** convert raw req candidates into AC ids — that is Phase 3b.
 - Every Keep/Stop item MUST cite. `cite: TBD` is allowed only as an explicit gap flag.
 - Reqs must be user-visible outcomes, not implementation verbs.
 
-# Critic mindset
+## Critic mindset
 
 For each Stop item: "is this actually a project-specific anti-pattern or a
 generic best practice?" Drop generic ones — they add noise.
@@ -81,7 +81,7 @@ For each Keep item: "would dropping this practice break a recent release?"
 If no, demote to "neutral" (omit).
 For each raw req: "could this be tested?" If no, rewrite or drop.
 
-# Done definition
+## Done definition
 
 - Keep + Stop sections populated; every item cites a source or carries `cite: TBD`.
 - Raw requirement candidates section has ≥1 entry per category (observability, perf, reliability) or explicit "none found in corpus" note.

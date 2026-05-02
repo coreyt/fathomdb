@@ -202,6 +202,7 @@ Lifecycle owns whether terminal feedback can be delivered for an observed
 operation. This file owns the resource invariant: after `close` returns, a
 sibling process can acquire the database lock and no fathomdb-owned SQLite
 connection remains open.
+
 - TypeScript `ThreadsafeFunction` pool sizing: binding-runtime mechanism, not
   canonical engine config
 

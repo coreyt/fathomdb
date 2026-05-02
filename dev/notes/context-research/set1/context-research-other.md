@@ -10,15 +10,15 @@ Mix of empirical (peer-reviewed or vendor-benchmarked) and opinion (vendor docs,
 
 Primary documents fetched:
 
-- Anthropic — *Building agents with the Claude Agent SDK* — https://claude.com/blog/building-agents-with-the-claude-agent-sdk
-- Anthropic — *Effective context engineering for AI agents* — https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents
-- Anthropic — *The "think" tool: Enabling Claude to stop and think* — https://www.anthropic.com/engineering/claude-think-tool
-- Anthropic / Claude Code Docs — *How Claude remembers your project* — https://code.claude.com/docs/en/memory
-- LangChain — *Context Engineering for Agents* — https://www.langchain.com/blog/context-engineering-for-agents
-- Cline Docs — *Cline Memory Bank* — https://docs.cline.bot/prompting/cline-memory-bank
-- Aider — *Separating code reasoning and editing* — https://aider.chat/2024/09/26/architect.html
-- Cognition — *Rebuilding Devin for Claude Sonnet 4.5* — https://cognition.ai/blog/devin-sonnet-4-5-lessons-and-challenges
-- Packer et al., *MemGPT: Towards LLMs as Operating Systems*, arXiv:2310.08560 — https://arxiv.org/abs/2310.08560
+- Anthropic — *Building agents with the Claude Agent SDK* — <https://claude.com/blog/building-agents-with-the-claude-agent-sdk>
+- Anthropic — *Effective context engineering for AI agents* — <https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents>
+- Anthropic — *The "think" tool: Enabling Claude to stop and think* — <https://www.anthropic.com/engineering/claude-think-tool>
+- Anthropic / Claude Code Docs — *How Claude remembers your project* — <https://code.claude.com/docs/en/memory>
+- LangChain — *Context Engineering for Agents* — <https://www.langchain.com/blog/context-engineering-for-agents>
+- Cline Docs — *Cline Memory Bank* — <https://docs.cline.bot/prompting/cline-memory-bank>
+- Aider — *Separating code reasoning and editing* — <https://aider.chat/2024/09/26/architect.html>
+- Cognition — *Rebuilding Devin for Claude Sonnet 4.5* — <https://cognition.ai/blog/devin-sonnet-4-5-lessons-and-challenges>
+- Packer et al., *MemGPT: Towards LLMs as Operating Systems*, arXiv:2310.08560 — <https://arxiv.org/abs/2310.08560>
 - Liu et al., *Lost in the Middle: How Language Models Use Long Contexts*, TACL 2024 / arXiv:2307.03172
 - Huang et al., *AgentCoder: Multi-Agent Code Generation with Effective Testing and Self-optimisation*, arXiv:2312.13010
 - Hong et al., *MetaGPT: Meta Programming for a Multi-Agent Collaborative Framework*, arXiv:2308.00352

@@ -1,23 +1,25 @@
-Scope
+# Context Research: Tests
+
+## Scope
 
 This report focuses on how tests function as precise context and feedback for AI coding agents, with explicit attention to Claude Code and Codex where the sources support it. The emphasis is on existing repository tests, test-driven prompting, regression tests, executable specifications, failing tests as search guidance, oracle/example use, overfitting risks, flaky or weak tests, and how much test output is useful before context quality degrades.
 
 Sources (URLs cited)
 
-- `S1` https://code.claude.com/docs/en/best-practices
-- `S2` https://openai.com/index/introducing-codex/
-- `S3` https://developers.openai.com/api/docs/guides/agent-evals
-- `S4` https://developers.openai.com/api/docs/guides/evaluation-best-practices
-- `S5` https://www.swebench.com/SWE-bench/faq/
-- `S6` https://arxiv.org/abs/2107.03374
-- `S7` https://arxiv.org/abs/2402.13521
-- `S8` https://arxiv.org/abs/2505.09027
-- `S9` https://arxiv.org/abs/2304.05128
-- `S10` https://arxiv.org/abs/2501.12793
-- `S11` https://arxiv.org/abs/2602.07900
-- `S12` https://www.microsoft.com/en-us/research/publication/precise-condition-synthesis-program-repair/
-- `S13` https://link.springer.com/article/10.1007/s10664-020-09920-w
-- `S14` https://www.researchgate.net/publication/348187542_On_the_Impact_of_Flaky_Tests_in_Automated_Program_Repair
+- `S1` <https://code.claude.com/docs/en/best-practices>
+- `S2` <https://openai.com/index/introducing-codex/>
+- `S3` <https://developers.openai.com/api/docs/guides/agent-evals>
+- `S4` <https://developers.openai.com/api/docs/guides/evaluation-best-practices>
+- `S5` <https://www.swebench.com/SWE-bench/faq/>
+- `S6` <https://arxiv.org/abs/2107.03374>
+- `S7` <https://arxiv.org/abs/2402.13521>
+- `S8` <https://arxiv.org/abs/2505.09027>
+- `S9` <https://arxiv.org/abs/2304.05128>
+- `S10` <https://arxiv.org/abs/2501.12793>
+- `S11` <https://arxiv.org/abs/2602.07900>
+- `S12` <https://www.microsoft.com/en-us/research/publication/precise-condition-synthesis-program-repair/>
+- `S13` <https://link.springer.com/article/10.1007/s10664-020-09920-w>
+- `S14` <https://www.researchgate.net/publication/348187542_On_the_Impact_of_Flaky_Tests_in_Automated_Program_Repair>
 
 Findings F1..Fn
 

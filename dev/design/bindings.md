@@ -31,7 +31,7 @@ Per-binding *signatures* still belong in `interfaces/{python,ts,cli}.md`. This f
 
 Every **SDK** binding's public top-level surface MUST be exactly the five-verb canonical set in that binding's idiomatic casing:
 
-```
+```text
 Engine.open    admin.configure    write    search    close
 ```
 

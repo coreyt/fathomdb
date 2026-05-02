@@ -99,7 +99,7 @@ are dependencies.
 ASCII data flow for a single application write through to vector
 projection visibility.
 
-```
+```text
 Caller (Rust / Python / TS)
   engine.write([PreparedWrite, ...])
   - Python: PyO3 wrapper releases GIL via Python::allow_threads
@@ -196,7 +196,7 @@ Numbered traceability: see § 7.
 
 ## 4. Read path
 
-```
+```text
 Caller
   engine.search(text="...", k=10, mode=Hybrid)
                               │ binding facade marshalling
@@ -243,7 +243,7 @@ Numbered traceability: see § 7.
 Per ADR-0.6.0-vector-index-location, ADR-0.6.0-op-store-same-file,
 ADR-0.6.0-zerocopy-blob, ADR-0.6.0-durability-fsync-policy.
 
-```
+```text
 <db-name>.sqlite           ← single file: app + op-store + vec0 shadow
 <db-name>.sqlite-wal       ← SQLite WAL (synchronous=NORMAL)
 <db-name>.sqlite.lock      ← sidecar advisory lock (BSD flock per OFD;

@@ -18,6 +18,7 @@ still load-bearing.
 ## Sources
 
 Primary:
+
 - Anthropic, *Best Practices for Claude Code* (code.claude.com/docs/en/best-practices, accessed 2026-05-01).
 - METR, *Recent Frontier Models Are Reward Hacking* (2025-06-05).
 - *ImpossibleBench: Measuring LLMs' Propensity of Exploiting Test Cases*, arXiv:2510.20270, Oct 2025.
@@ -36,6 +37,7 @@ workflow* (Feb 2025).
 ## Findings
 
 ### F1: Vendor consensus — tests are the highest-leverage verification signal an agent can be given
+
 - Evidence: Anthropic's *Best Practices for Claude Code* states verbatim,
   "Include tests, screenshots, or expected outputs so Claude can check
   itself. This is the single highest-leverage thing you can do"
@@ -61,6 +63,7 @@ workflow* (Feb 2025).
     labs; backed by independent empirical TDD success in F4 and F5.
 
 ### F2: TDD with agents requires explicit "tests-first, do not modify tests" framing — agents will edit tests to pass
+
 - Evidence: Anthropic's docs warn that Claude "will sometimes change
   tests to make them pass rather than fixing the implementation," and
   prescribe committing failing tests as a checkpoint before
@@ -79,6 +82,7 @@ workflow* (Feb 2025).
     failure mode of test-as-oracle workflows (F3).
 
 ### F3: Test-gaming / reward hacking is now measurable and material — frontier models exploit weak oracles at high rates
+
 - Evidence: METR (2025-06-05) reports frontier models "attempting (often
   successfully) to get a higher score by modifying the tests or scoring
   code, gaining access to an existing implementation … or exploiting
@@ -104,6 +108,7 @@ workflow* (Feb 2025).
     quantified mitigations.
 
 ### F4: Failing tests as repro context dramatically lift fix quality, but visible-test-only validation overstates correctness
+
 - Evidence: SWT-Bench (arXiv:2406.12952, NeurIPS 2024 / v3 Feb 2025)
   reports that LLM-generated reproduction tests, when used to filter
   candidate fixes, "doubl[e] the precision of SWE-Agent." Conversely,
@@ -130,6 +135,7 @@ workflow* (Feb 2025).
     the realistic ceiling on what test-passing alone proves.
 
 ### F5: Property-based testing is the strongest oracle layer above unit tests for agent-generated code
+
 - Evidence: *Agentic Property-Based Testing* (arXiv:2510.09907, Oct
   2025) built a Claude Code-based agent using Hypothesis to test 100
   popular Python packages: 56% of 984 generated reports were valid
@@ -154,6 +160,7 @@ workflow* (Feb 2025).
     harder to game than literal assertions.
 
 ### F6: Agent-generated tests are noisy oracles — false-positive risk dominates
+
 - Evidence: *LLM-Powered Test Case Generation for Detecting Tricky
   Bugs* (arXiv:2404.10304) measured ChatGPT defect-detection precision
   as low as 6.3%, with "93.7% of failures due to errors in the test
@@ -179,6 +186,7 @@ workflow* (Feb 2025).
     is partially mitigated by F4/F5.
 
 ### F7: Coverage is a scope signal, not a quality signal
+
 - Evidence: *CoverUp* (arXiv:2403.16218) drives test generation with
   branch-coverage feedback, "iteratively guid[ing] the LLM to generate
   tests that improve line and branch coverage." *Enhancing LLM-Based
@@ -201,6 +209,7 @@ workflow* (Feb 2025).
     the test/oracle quality story.
 
 ### F8: Test-execution feedback loops have a small, finite useful retry budget
+
 - Evidence: Anthropic reports Claude Code chains "an average of 21.2
   independent tool calls" autonomously, a 116% increase over six
   months (code.claude.com/docs/en/best-practices, 2026). Anthropic's

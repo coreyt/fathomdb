@@ -37,6 +37,7 @@ strongest cross-cutting consensus.
 ### U1 — Context is a finite, adversarial resource; more is not better
 
 Empirical anchors recur across tracks:
+
 - Lost-in-the-middle / Context-Rot: ~24–59% accuracy degradation at
   ~30k tokens of distractor density (tech-docs F, source-code F4,
   other F9).
@@ -63,6 +64,7 @@ guidance both argue this point empirically.
 ### U3 — Executable context dominates prose context
 
 A pattern repeated in five of six tracks:
+
 - Tests > docstrings as oracle (tests, comments).
 - Type signatures > prose comments as dense context (comments,
   source-code, tech-docs).

@@ -11,26 +11,26 @@ Cross-cutting synthesis of six parallel research reports on how to provide Claud
 
 It emphasizes what consistently matters across requirements, architecture/design/interface docs, source code, comments, tests, development environment, memory/prompts/orchestration, and live workflow artifacts.
 
-# Key Sources
+## Key Sources
 
-- OpenAI, "Introducing Codex": https://openai.com/index/introducing-codex/
-- OpenAI, "Harness engineering: leveraging Codex in an agent-first world": https://openai.com/index/harness-engineering/
-- OpenAI Codex docs, "AGENTS.md": https://developers.openai.com/codex/guides/agents-md
-- OpenAI Codex docs, "Best practices": https://developers.openai.com/codex/learn/best-practices
-- OpenAI, "A practical guide to building AI agents": https://openai.com/business/guides-and-resources/a-practical-guide-to-building-ai-agents/
-- Anthropic, "Best Practices for Claude Code": https://www.anthropic.com/engineering/claude-code-best-practices
-- Anthropic Claude Code docs, "Memory": https://code.claude.com/docs/en/memory
-- Anthropic Claude Code docs, "Subagents": https://docs.anthropic.com/en/docs/claude-code/sub-agents
-- Anthropic, "Contextual Retrieval": https://www.anthropic.com/engineering/contextual-retrieval
-- Anthropic, "Multi-agent research system": https://www.anthropic.com/engineering/multi-agent-research-system
-- Aider, "Repository map": https://aider.chat/docs/repomap.html
-- RepoCoder paper: https://arxiv.org/abs/2303.12570
-- SWE-bench paper: https://arxiv.org/abs/2310.06770
-- Lost in the Middle paper: https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00638/119630/Lost-in-the-Middle-How-Language-Models-Use-Long
+- OpenAI, "Introducing Codex": <https://openai.com/index/introducing-codex/>
+- OpenAI, "Harness engineering: leveraging Codex in an agent-first world": <https://openai.com/index/harness-engineering/>
+- OpenAI Codex docs, "AGENTS.md": <https://developers.openai.com/codex/guides/agents-md>
+- OpenAI Codex docs, "Best practices": <https://developers.openai.com/codex/learn/best-practices>
+- OpenAI, "A practical guide to building AI agents": <https://openai.com/business/guides-and-resources/a-practical-guide-to-building-ai-agents/>
+- Anthropic, "Best Practices for Claude Code": <https://www.anthropic.com/engineering/claude-code-best-practices>
+- Anthropic Claude Code docs, "Memory": <https://code.claude.com/docs/en/memory>
+- Anthropic Claude Code docs, "Subagents": <https://docs.anthropic.com/en/docs/claude-code/sub-agents>
+- Anthropic, "Contextual Retrieval": <https://www.anthropic.com/engineering/contextual-retrieval>
+- Anthropic, "Multi-agent research system": <https://www.anthropic.com/engineering/multi-agent-research-system>
+- Aider, "Repository map": <https://aider.chat/docs/repomap.html>
+- RepoCoder paper: <https://arxiv.org/abs/2303.12570>
+- SWE-bench paper: <https://arxiv.org/abs/2310.06770>
+- Lost in the Middle paper: <https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00638/119630/Lost-in-the-Middle-How-Language-Models-Use-Long>
 
-# Cross-Cutting Findings
+## Cross-Cutting Findings
 
-## F1. Layered context beats monolithic context.
+## F1. Layered context beats monolithic context
 
 - Evidence
   OpenAI and Anthropic both recommend short repo-local instruction files (`AGENTS.md`, `CLAUDE.md`) plus deeper docs loaded only when relevant. OpenAI’s harness engineering writeup explicitly says the successful pattern was to give Codex "a map, not a 1,000-page instruction manual." Anthropic’s Claude Code guidance repeatedly warns that context fills quickly and degrades performance.
@@ -48,7 +48,7 @@ It emphasizes what consistently matters across requirements, architecture/design
 - Impact on agent LLM = HIGH + rationale
   This shapes the default context every session and directly affects navigation, instruction retention, and token efficiency.
 
-## F2. The highest-leverage context is executable, not descriptive.
+## F2. The highest-leverage context is executable, not descriptive
 
 - Evidence
   Anthropic calls tests, screenshots, and expected outputs the single highest-leverage way to improve Claude Code. OpenAI says Codex performs best with reliable tests and configured environments, and can iteratively run them. SWE-bench and related repair literature reinforce that real software tasks require interaction with execution environments, not just code synthesis.
@@ -62,7 +62,7 @@ It emphasizes what consistently matters across requirements, architecture/design
 - Impact on agent LLM = HIGH + rationale
   Without executable feedback, the agent optimizes for plausibility. With it, the agent can search, verify, and stop correctly.
 
-## F3. Repo-local instructions are the control plane; memory is secondary.
+## F3. Repo-local instructions are the control plane; memory is secondary
 
 - Evidence
   Claude distinguishes checked-in `CLAUDE.md` from local memory and explicitly warns that memory is not the authoritative source of project rules. Codex says memories are optional local recall and should not hold required team guidance; `AGENTS.md` is the durable source of repository rules.
@@ -79,7 +79,7 @@ It emphasizes what consistently matters across requirements, architecture/design
 - Impact on agent LLM = HIGH + rationale
   This determines whether sessions start with the right defaults and whether behavior is consistent across users and environments.
 
-## F4. Retrieval for coding should be hybrid: lexical, semantic, and structural.
+## F4. Retrieval for coding should be hybrid: lexical, semantic, and structural
 
 - Evidence
   Anthropic’s Contextual Retrieval argues for combining retrieval modes instead of relying on embeddings alone. Sourcegraph and Aider show production use of symbol graphs and repo maps. RepoCoder reports gains from iterative repository retrieval over in-file-only baselines.
@@ -99,7 +99,7 @@ It emphasizes what consistently matters across requirements, architecture/design
 - Impact on agent LLM = HIGH + rationale
   Retrieval quality is often the difference between a repo-correct edit and a generic but wrong patch.
 
-## F5. Structured artifacts outperform prose-heavy artifacts.
+## F5. Structured artifacts outperform prose-heavy artifacts
 
 - Evidence
   The tech-docs and comments tracks both found that machine-readable contracts, structured docstrings, explicit examples, and stable headings beat freeform prose. OpenAI’s function-calling and structured-output docs show why schemas reduce ambiguity. Research on docstrings and documentation retrieval shows structure improves machine usability.
@@ -121,7 +121,7 @@ It emphasizes what consistently matters across requirements, architecture/design
 - Impact on agent LLM = HIGH + rationale
   Structured artifacts reduce guessing at names, types, constraints, and expected behavior.
 
-## F6. Trustworthiness matters more than volume; stale text is actively harmful.
+## F6. Trustworthiness matters more than volume; stale text is actively harmful
 
 - Evidence
   The comments track found consistent support for the harm caused by stale, redundant, or inconsistent comments. OpenAI’s harness engineering post makes the same point at repo-doc scale: monolithic stale guidance became an "attractive nuisance." Long-context research further shows that irrelevant or low-signal content can crowd out what matters.
@@ -135,7 +135,7 @@ It emphasizes what consistently matters across requirements, architecture/design
 - Impact on agent LLM = HIGH + rationale
   Stale context steers planning and edits toward wrong assumptions with high confidence.
 
-## F7. Comments and docs help most when they encode intent that code alone does not expose.
+## F7. Comments and docs help most when they encode intent that code alone does not expose
 
 - Evidence
   The comments research consistently favored rationale, invariants, warnings, restrictions, and architectural decisions over commentary that simply restates syntax. Claude and Codex official guidance both encourage storing information the model cannot infer from code alone.
@@ -153,7 +153,7 @@ It emphasizes what consistently matters across requirements, architecture/design
 - Impact on agent LLM = HIGH + rationale
   These are exactly the facts that agents struggle to reconstruct cheaply from source alone.
 
-## F8. Environment legibility is part of context engineering.
+## F8. Environment legibility is part of context engineering
 
 - Evidence
   The dev-env track found strong agreement across Anthropic and OpenAI: agents perform better when commands, logs, CI artifacts, sandboxes, and setup steps are explicit and reproducible. OpenAI’s Codex cloud and Anthropic’s Claude Code both emphasize isolated execution environments, permission controls, and verifiable logs.
@@ -174,7 +174,7 @@ It emphasizes what consistently matters across requirements, architecture/design
 - Impact on agent LLM = HIGH + rationale
   Strong environment legibility is what converts reasoning into reliable action.
 
-## F9. Subagents and human review improve quality by isolating uncertainty and preserving clean context.
+## F9. Subagents and human review improve quality by isolating uncertainty and preserving clean context
 
 - Evidence
   Anthropic’s subagent and multi-agent guidance emphasizes separate context windows for investigation. OpenAI recommends parallel well-scoped Codex tasks. Both vendors recommend human review of plans or outputs before integration.
@@ -191,7 +191,7 @@ It emphasizes what consistently matters across requirements, architecture/design
 - Impact on agent LLM = HIGH + rationale
   This reduces context pollution, self-confirmation bias, and long-horizon drift.
 
-# Relative Impact By Dimension
+## Relative Impact By Dimension
 
 - `tests`: HIGH. Strongest direct effect because tests shape both search and stopping criteria.
 - `dev-env`: HIGH. Needed for reliable verification, reproducibility, and safe action.
@@ -200,7 +200,7 @@ It emphasizes what consistently matters across requirements, architecture/design
 - `other`: HIGH. Prompt scaffolding, issue/PR structure, editor state, and orchestration materially change outcomes.
 - `comments`: MED to HIGH. High when they encode rationale/invariants; low or negative when stale or redundant.
 
-# Practical Synthesis
+## Practical Synthesis
 
 The most effective context stack for Claude Code or Codex is layered and operational:
 
@@ -213,6 +213,6 @@ The most effective context stack for Claude Code or Codex is layered and operati
 
 The main anti-patterns are equally clear: giant instruction files, stale comments, whole-repo dumps, weak or flaky tests, noisy logs, and reliance on private memory instead of checked-in repo guidance.
 
-# Synthesis
+## Synthesis
 
 Across academic work, frontier-lab docs, and engineering blog evidence, the central conclusion is that coding-agent performance depends less on raw context quantity than on context structure, trustworthiness, and executability. Claude Code and Codex both work best when the repository exposes a concise control plane (`CLAUDE.md` or `AGENTS.md`), retrievable deeper docs, machine-readable contracts, focused source-code navigation aids, and fast verification loops. Comments and design notes help when they preserve intent and invariants that code alone obscures, but they become liabilities when they drift. Multi-agent and IDE-attached workflows further improve results by isolating context and grounding the model in live task state. In practice, the right question is not "how much context should I give the agent?" but "what is the smallest set of high-trust artifacts that lets the agent navigate, decide, act, and verify?"

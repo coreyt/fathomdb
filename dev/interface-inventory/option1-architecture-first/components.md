@@ -1,3 +1,5 @@
+# Components
+
 ## Engine
 
 - Purpose: Own `Engine.open` / `close`, writer-reader split, batch write semantics, cursor semantics, lock lifetime, and the semver-stable Rust-facing facade over `fathomdb-engine`.

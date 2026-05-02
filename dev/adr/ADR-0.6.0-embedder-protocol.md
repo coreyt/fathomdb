@@ -158,7 +158,7 @@ support sub-interpreters). Premature; revisit in 0.7+.
 - HITL decision 2026-04-27 (Path 2 + Path 1 invariants from
   ADR-0.6.0-async-surface.md).
 - Critic-3 ASYNC-3 (GIL re-entrancy class) + EMB-2 (L2-norm enforcement)
-  + EMB-4 (engine-owned thread) + EMB-1 (mean-pool decision).
+  - EMB-4 (engine-owned thread) + EMB-1 (mean-pool decision).
 - Memory `project_vector_identity_invariant`.
 - Memory pattern from `dev/archive/pyo3-log-gil-deadlock-evidence.md`,
   commits `cf0b190`, `d09deb4`.

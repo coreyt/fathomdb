@@ -73,6 +73,7 @@ implementation, not surface.
 
 **A. Sync-only engine; bindings expose sync (Rust + Python + CLI) and
 spawn-blocking adapters (TypeScript).**
+
 - Engine API: `Engine::write(...) -> Result<...>` — fully sync.
 - Python: `engine.write(...)` returns directly. Python `asyncio` users
   call from `loop.run_in_executor()` themselves.
@@ -94,6 +95,7 @@ than a native `async def` would feel. They can wrap once in their own
 helper.
 
 **B. Sync engine + async wrapper layer per binding.**
+
 - Engine: sync.
 - Rust: `engine_async` module wraps every fn in `tokio::task::spawn_blocking`.
 - Python: ships both `engine.write_sync(...)` and `engine.write_async(...)`.
@@ -106,6 +108,7 @@ docs; doubles tests; binding maintainers must keep two paths in sync;
 remove.
 
 **C. Async-native engine via `sqlx`-on-sqlite (or equivalent).**
+
 - Engine API: `async fn write(...) -> Result<...>`.
 - Python: native `async def`; sync wrappers via `pyo3-asyncio`.
 - Rust: native async.

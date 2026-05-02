@@ -23,6 +23,7 @@ Vector index can live in: (a) the same SQLite file as application data via
 external store (lance, qdrant, FAISS-on-disk, hnswlib + manual persistence).
 
 Already-decided constraints lock the answer:
+
 - **ADR-0.6.0-sqlite-vec-acceptance** chose `sqlite-vec` because it is the
   only ANN that integrates as a SQLite virtual table, preserving the
   single-file invariant.

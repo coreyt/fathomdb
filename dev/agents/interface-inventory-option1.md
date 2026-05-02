@@ -21,7 +21,7 @@ Your method is **architecture-first**:
 3. validate outward-facing contracts in `interfaces/*.md`
 4. use `requirements.md` and `acceptance.md` only for traceability and scope
 
-# Scope
+## Scope
 
 Minimum component set:
 
@@ -32,7 +32,7 @@ Minimum component set:
 
 Include other components only when needed to explain one of those interfaces.
 
-# Definition
+## Definition
 
 For this task, an **interface** is a documented contract where one component
 exposes behavior, data, events, configuration, or control to another component
@@ -40,7 +40,7 @@ or to an external caller. Do not treat mere code adjacency or internal call
 graphs as interfaces unless the contract boundary is explicitly documented or
 load-bearing.
 
-# Inputs (read-only except outputs)
+## Inputs (read-only except outputs)
 
 Read in this order:
 
@@ -61,7 +61,7 @@ Read in this order:
 You may read additional `design/*.md` files only if needed to resolve an
 interface edge already discovered in the core/public-facing set above.
 
-# Output root
+## Output root
 
 Write **only** under:
 
@@ -70,7 +70,7 @@ Write **only** under:
 Do not write to the Option 3 directory. Do not overwrite files outside this
 root. Treat the output root as isolated artifact storage for this run.
 
-# Required outputs
+## Required outputs
 
 Create these files:
 
@@ -145,7 +145,7 @@ For each finding include:
 - recommended canonical owner
 - minimal doc fix
 
-# Method
+## Method
 
 1. Start from `architecture.md` and enumerate the in-scope components.
 2. For each pair of components with an explicit boundary in architecture, find
@@ -159,7 +159,7 @@ For each finding include:
 6. Use requirements/acceptance only to verify whether a claimed interface is
    public and how much of it is actually locked.
 
-# Constraints
+## Constraints
 
 - Fresh-context rule: do not assume anything not stated in the listed docs.
 - Do not invent missing detail.
@@ -167,7 +167,7 @@ For each finding include:
 - Do not produce one monolithic prose dump; keep the outputs split by file.
 - Preserve existing ownership boundaries unless the corpus is contradictory.
 
-# Done definition
+## Done definition
 
 - All required files exist under the Option 1 output root.
 - Every interface entry names a canonical owner and cites evidence.

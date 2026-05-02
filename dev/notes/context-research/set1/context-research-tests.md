@@ -17,34 +17,34 @@ practitioner opinion.
 Primary documents fetched and quoted:
 
 1. Anthropic, *Best Practices for Claude Code* —
-   https://code.claude.com/docs/en/best-practices
+   <https://code.claude.com/docs/en/best-practices>
 2. Cursor, *Best practices for coding with agents* —
-   https://cursor.com/blog/agent-best-practices
-3. Aider, *Linting and testing* — https://aider.chat/docs/usage/lint-test.html
+   <https://cursor.com/blog/agent-best-practices>
+3. Aider, *Linting and testing* — <https://aider.chat/docs/usage/lint-test.html>
 4. Martin Fowler / Birgitta Böckeler, *Context Engineering for Coding Agents* —
-   https://martinfowler.com/articles/exploring-gen-ai/context-engineering-coding-agents.html
+   <https://martinfowler.com/articles/exploring-gen-ai/context-engineering-coding-agents.html>
 5. Xia et al., *Agentless: Demystifying LLM-based Software Engineering Agents*
-   (arXiv 2407.01489) — https://arxiv.org/pdf/2407.01489
+   (arXiv 2407.01489) — <https://arxiv.org/pdf/2407.01489>
 6. Mündler et al., *SWT-Bench: Testing and Validating Real-World Bug-Fixes with
-   Code Agents* (NeurIPS 2024) — https://arxiv.org/html/2406.12952
+   Code Agents* (NeurIPS 2024) — <https://arxiv.org/html/2406.12952>
 7. *Rethinking the Value of Agent-Generated Tests for LLM-Based SWE Agents*
-   (arXiv 2602.07900) — https://arxiv.org/html/2602.07900
+   (arXiv 2602.07900) — <https://arxiv.org/html/2602.07900>
 8. *Are Coding Agents Generating Over-Mocked Tests? An Empirical Study*
-   (arXiv 2602.00409) — https://arxiv.org/html/2602.00409v1
+   (arXiv 2602.00409) — <https://arxiv.org/html/2602.00409v1>
 9. *Agentic Program Repair from Test Failures at Scale* (arXiv 2507.18755) —
-   https://arxiv.org/html/2507.18755
+   <https://arxiv.org/html/2507.18755>
 10. Cognition, *Closing the Agent Loop: Devin Autofixes Review Comments* —
-    https://cognition.ai/blog/closing-the-agent-loop-devin-autofixes-review-comments
+    <https://cognition.ai/blog/closing-the-agent-loop-devin-autofixes-review-comments>
 11. OpenAI, *Introducing SWE-bench Verified* —
-    https://openai.com/index/introducing-swe-bench-verified/
-12. Sweep AI docs — https://docs.sweep.dev/
+    <https://openai.com/index/introducing-swe-bench-verified/>
+12. Sweep AI docs — <https://docs.sweep.dev/>
 
 Secondary / supporting (search snippets only, used only where primary
 fetches were blocked):
 
-- SWE-bench paper (ICLR 2024) — https://arxiv.org/pdf/2310.06770
-- AutoCodeRover (arXiv 2404.05427) — https://arxiv.org/pdf/2404.05427
-- SWE-agent (NeurIPS 2024) — https://github.com/SWE-agent/SWE-agent
+- SWE-bench paper (ICLR 2024) — <https://arxiv.org/pdf/2310.06770>
+- AutoCodeRover (arXiv 2404.05427) — <https://arxiv.org/pdf/2404.05427>
+- SWE-agent (NeurIPS 2024) — <https://github.com/SWE-agent/SWE-agent>
 - Heterogeneous Prompting / Execution Feedback (arXiv 2508.06365)
 - "All that glitters" — AI21 on gold-like overfitting in coding benchmarks
 

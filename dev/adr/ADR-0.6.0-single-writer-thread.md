@@ -119,6 +119,7 @@ read-heavy path).
 
 **B — Writer pool with `BEGIN IMMEDIATE` retry.** Pros: theoretical
 write parallelism. Rejected on two distinct grounds:
+
 - (a) **No parallelism gain.** SQLite serialises writers at the file
   level under WAL; a writer pool only changes which thread waits, not
   whether wait happens. Retry loops add latency without throughput.
@@ -151,7 +152,7 @@ premature.
   dispatch) and explains how the scheduler avoids holding any
   reference to the writer lock.
 - `design/embedder.md` cites Invariant 4 (embedder thread separate)
-  + the writer-thread submission protocol.
+  - the writer-thread submission protocol.
 - `test-plan.md`: regression tests for the Stop-doing class —
   concurrent-writer attempts must not regress
   `SQLITE_SCHEMA`-flooding or writer-lock deadlocks. Acceptance

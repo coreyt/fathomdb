@@ -1,3 +1,5 @@
+# Findings
+
 ## Finding 1
 
 - Severity: `high`

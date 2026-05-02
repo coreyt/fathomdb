@@ -25,6 +25,7 @@ percentile model parallel to the vector retrieval ADR. Requirements lock
 blocked on a real text-query latency anchor.
 
 Two paths to resolution were available:
+
 1. Promote to its own ADR mirroring `ADR-0.6.0-retrieval-latency-gates`.
 2. Fold under canonical-read freshness (REQ-013) with a generous
    acceptance.md bound.

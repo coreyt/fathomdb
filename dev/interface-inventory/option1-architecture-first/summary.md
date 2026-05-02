@@ -1,3 +1,5 @@
+# Summary
+
 The 0.6.0 interface model is centered on one sync engine core with a bindings-owned public boundary: SDK callers get the same five runtime verbs, CLI operators get a separate two-root recovery surface, and observability/machine-readable contracts sit beside those call surfaces rather than hiding in free-form logs. Architecture-first ownership resolves most contracts to subsystem docs first, then to per-surface interface docs only where symbol spelling or CLI flag spelling is the actual contract.
 
 The main coupling risk is that several public owners are declared but not yet materialized. `interfaces/rust.md`, `interfaces/python.md`, `interfaces/typescript.md`, and `interfaces/wire.md` are still `TBD`, while `design/migrations.md` is too thin to carry the migration event payloads and open-result fields that acceptance already locks. That leaves bindings, errors, and architecture carrying more contract weight than their intended ownership split.

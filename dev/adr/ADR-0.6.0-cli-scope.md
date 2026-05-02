@@ -16,6 +16,7 @@ Phase 2 #22 interface ADR. Decides what verbs the `fathomdb` CLI ships in 0.6.0.
 ## Context
 
 CLI scope decides whether `fathomdb` binary is operator tool or query interface. Constrained by:
+
 - ADR-0.6.0-typed-write-boundary recovery-verb rule (typed CLI flags, not SQL).
 - TWB-3 rejection (no SQL escape hatch / offline diagnostic binary).
 - ADR-0.6.0-async-surface (CLI is sync).

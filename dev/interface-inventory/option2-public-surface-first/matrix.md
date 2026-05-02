@@ -27,6 +27,7 @@ Empty cells (`—`) record explicit non-ownership / non-contribution
 boundaries.
 
 ## Component-to-component interfaces directly supporting public
+
 surfaces
 
 Cells list the IF-### identifier(s) from `interfaces.md` that connect

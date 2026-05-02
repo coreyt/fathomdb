@@ -1,3 +1,5 @@
+# Interface Matrix
+
 | Producer | Consumer | Interface IDs | Public/Internal |
 |---|---|---|---|
 | Rust SDK | Rust application caller | `IF-001` | `Public` |

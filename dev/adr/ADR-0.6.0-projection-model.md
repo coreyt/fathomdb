@@ -16,6 +16,7 @@ Phase 2 #16 design ADR. Central design question of the rewrite: when does projec
 ## Context
 
 Vector projections must be computed for new chunks. Trigger model is the central question of the rewrite. Cross-cuts:
+
 - ADR-0.6.0-async-surface § Invariant A (post-commit dispatch is structural).
 - ADR-0.6.0-projection-freshness-sli (#8 freshness SLI).
 - ADR-0.6.0-scheduler-shape (#14).

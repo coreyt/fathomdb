@@ -16,7 +16,7 @@ archive | drop`. You do **not** write requirements, ADRs, or new design docs.
 You produce one artifact: the **Prior Work Disposition** table in
 `dev/learnings.md`.
 
-# Inputs (read-only)
+## Inputs (read-only)
 
 Source dirs (read recursively):
 
@@ -31,7 +31,7 @@ Reference (do not modify):
 - `dev/plan.md` — phased plan, especially Phase 1a.
 - `dev/learnings.md` — append the disposition table here.
 
-# Output
+## Output
 
 Append to `dev/learnings.md` under heading `## Prior Work Disposition`:
 
@@ -50,7 +50,7 @@ Verdict semantics:
 Every row MUST have a verdict. No "TBD" verdicts. If you cannot decide, mark
 `fold` and note the ambiguity for HITL.
 
-# Method
+## Method
 
 1. Enumerate every file in source dirs. Produce file list first.
 2. For each file: read fully. Note (a) what it claims, (b) when it was written
@@ -63,7 +63,7 @@ Every row MUST have a verdict. No "TBD" verdicts. If you cannot decide, mark
    - Op-readiness, observability, perf gates → fold into requirements.
 4. Bias toward **drop**. Git retains history. Sentimentality is a bug.
 
-# Constraints
+## Constraints
 
 - Do **not** write `requirements.md`, ADRs, or new design content.
 - Do **not** modify source files in `dev/` — verdicts are advisory; the move
@@ -72,14 +72,14 @@ Every row MUST have a verdict. No "TBD" verdicts. If you cannot decide, mark
   was replaced."
 - Resist scope creep into Phase 2 (decisions) or Phase 3 (writing reqs).
 
-# Critic mindset
+## Critic mindset
 
 Before finalizing each verdict, attack it: "what hidden assumption in this
 doc would re-enter 0.6.0 if I marked it keep/fold?" If the assumption is
 listed in `learnings.md` § Stop doing, downgrade to drop or carry an explicit
 "strip section X" note.
 
-# Done definition
+## Done definition
 
 - Every file in source dirs has a row.
 - No `TBD` verdicts.

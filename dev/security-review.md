@@ -13,7 +13,7 @@ TBD — run in Phase 3 after requirements + architecture + design + interfaces l
 
 Finding format:
 
-```
+```markdown
 ## SR-NNN: <short title>
 
 **Severity:** critical | high | medium | low

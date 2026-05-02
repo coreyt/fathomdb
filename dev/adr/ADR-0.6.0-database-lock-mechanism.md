@@ -18,6 +18,7 @@ Phase 3d-promoted ADR. Resolves the architecture-vs-code delta on database locki
 `Engine.open` must enforce: only one `Engine` instance per database file at a time, across processes AND across same-process bindings (Python + TypeScript constructed by the same operator). The lock protects against concurrent writer-thread instantiation, WAL ownership conflicts, and the single-writer architectural invariant.
 
 Two failure modes drive the choice:
+
 - **Concurrent open across processes** — second process attempting `Engine.open` on a held DB.
 - **Concurrent open within one process** — Python and TypeScript bindings in the same process targeting the same DB path.
 
@@ -32,7 +33,7 @@ A single mechanism cannot cover both failure modes. This ADR commits a hybrid.
 
 ## Decision
 
-### Hybrid: sidecar `.lock` flock + `PRAGMA locking_mode=EXCLUSIVE` on writer connection in WAL.
+### Hybrid: sidecar `.lock` flock + `PRAGMA locking_mode=EXCLUSIVE` on writer connection in WAL
 
 Both layers MUST be present. Neither alone is sufficient.
 

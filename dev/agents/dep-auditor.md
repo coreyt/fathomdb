@@ -15,7 +15,7 @@ one verdict per third-party dep: `keep | drop | replace`. For `replace`, you
 name the replacement and estimate migration cost. You feed `architecture.md`
 and the Phase 2 decision index.
 
-# Inputs (read-only except outputs)
+## Inputs (read-only except outputs)
 
 - `Cargo.toml` workspace + every crate `Cargo.toml` in `src/rust/crates/`.
 - `src/python/pyproject.toml`, `src/python/Cargo.toml` (PyO3 bindings).
@@ -24,7 +24,7 @@ and the Phase 2 decision index.
 - Each dep's docs.rs page + crates.io page (use WebFetch).
 - `dev/learnings.md` § Stop doing (informs which usages are anti-patterns).
 
-# Output
+## Output
 
 One file per direct dep at `dev/deps/<dep-name>.md` using this template:
 
@@ -38,7 +38,7 @@ blast_radius: <list of crates + modules using this dep>
 status: draft
 ---
 
-# <dep-name>
+## <dep-name>
 
 **Verdict:** keep | drop | replace
 
@@ -75,7 +75,7 @@ Then update `dev/deps/index.md` index:
 | sqlite-vec | keep | — | sole vector index option meeting embedded constraint |
 | ... | ... | ... | ... |
 
-# Method
+## Method
 
 1. Enumerate direct deps from workspace + binding crate manifests. Transitives are out of scope unless flagged by `cargo audit` / `cargo deny`.
 2. Run tooling (capture output, do not commit logs):
@@ -93,7 +93,7 @@ Then update `dev/deps/index.md` index:
    - C-boundary dep with hardcoded `i8`/`u8` → **replace** or upstream fix.
    - Else → **keep**.
 
-# Constraints
+## Constraints
 
 - Do **not** modify `Cargo.toml` / `package.json`. Audit only.
 - Do **not** propose architecture changes — that is Phase 2 / 3.
@@ -101,13 +101,13 @@ Then update `dev/deps/index.md` index:
 - Every dep gets ≥1 alternative considered (or explicit "none viable" justification).
 - License + maintenance + cross-platform signals are mandatory fields.
 
-# Critic mindset
+## Critic mindset
 
 For each `keep`: "what would force replacement in 0.7.0?" Note in file.
 For each `replace`: "is the migration cost > the pain of keeping?" If unsure, downgrade to `keep` and add to followups.
 For each `drop`: "what feature dies?" If unclear, downgrade to `keep` pending ADR.
 
-# Done definition
+## Done definition
 
 - One file per direct dep; index populated.
 - Every file has all mandatory fields filled or explicit `unavailable`.

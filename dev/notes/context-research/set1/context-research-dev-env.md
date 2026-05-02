@@ -15,45 +15,47 @@ choices.
 ## Sources
 
 Primary (fetched):
+
 - SWE-agent: Agent-Computer Interfaces Enable Automated Software
   Engineering (NeurIPS 2024), arXiv:2405.15793 —
-  https://arxiv.org/abs/2405.15793
+  <https://arxiv.org/abs/2405.15793>
 - OpenAI Codex CLI sandboxing concepts —
-  https://developers.openai.com/codex/concepts/sandboxing
+  <https://developers.openai.com/codex/concepts/sandboxing>
 - Claude Agent SDK permissions reference —
-  https://code.claude.com/docs/en/agent-sdk/permissions
+  <https://code.claude.com/docs/en/agent-sdk/permissions>
 - Aider linting and testing docs —
-  https://aider.chat/docs/usage/lint-test.html
+  <https://aider.chat/docs/usage/lint-test.html>
 - Cursor blog: Implementing a secure sandbox for local agents —
-  https://cursor.com/blog/agent-sandboxing
+  <https://cursor.com/blog/agent-sandboxing>
 - OpenHands runtime architecture docs —
-  https://docs.openhands.dev/openhands/usage/architecture/runtime
+  <https://docs.openhands.dev/openhands/usage/architecture/runtime>
 - The Art of Tool Interface Design (arXiv:2503.21036) —
-  https://arxiv.org/html/2503.21036v1
+  <https://arxiv.org/html/2503.21036v1>
 
 Secondary / corroborating (search-summarized):
+
 - OpenHands paper (ICLR 2025) arXiv:2407.16741 —
-  https://arxiv.org/pdf/2407.16741
+  <https://arxiv.org/pdf/2407.16741>
 - Cognition: Devin can now Manage Devins —
-  https://cognition.ai/blog/devin-can-now-manage-devins
+  <https://cognition.ai/blog/devin-can-now-manage-devins>
 - Cursor changelog 2.5 / Cursor 3.2 — sandbox + async subagents —
-  https://cursor.com/changelog/2-5
+  <https://cursor.com/changelog/2-5>
 - Claude Code hooks reference —
-  https://code.claude.com/docs/en/hooks
+  <https://code.claude.com/docs/en/hooks>
 - Codex sandboxing implementation deepwiki —
-  https://deepwiki.com/openai/codex/5.6-sandboxing-implementation
+  <https://deepwiki.com/openai/codex/5.6-sandboxing-implementation>
 - Modal/E2B/Daytona sandbox benchmark 2026 —
-  https://www.superagent.sh/blog/ai-code-sandbox-benchmark-2026
+  <https://www.superagent.sh/blog/ai-code-sandbox-benchmark-2026>
 - Daytona vs E2B 2026 (Northflank) —
-  https://northflank.com/blog/daytona-vs-e2b-ai-code-execution-sandboxes
+  <https://northflank.com/blog/daytona-vs-e2b-ai-code-execution-sandboxes>
 - Agent Vault (Infisical) — credential proxy for agents —
-  https://infisical.com/blog/agent-vault-the-open-source-credential-proxy-and-vault-for-agents
+  <https://infisical.com/blog/agent-vault-the-open-source-credential-proxy-and-vault-for-agents>
 - LSAP (Language Server Agent Protocol) —
-  https://github.com/lsp-client/LSAP
+  <https://github.com/lsp-client/LSAP>
 - "Inside the Agent Harness" (Codex vs Claude Code) —
-  https://medium.com/jonathans-musings/inside-the-agent-harness-how-codex-and-claude-code-actually-work-63593e26c176
+  <https://medium.com/jonathans-musings/inside-the-agent-harness-how-codex-and-claude-code-actually-work-63593e26c176>
 - Cursor sandbox analysis (Agent Safehouse) —
-  https://agent-safehouse.dev/docs/agent-investigations/cursor-agent
+  <https://agent-safehouse.dev/docs/agent-investigations/cursor-agent>
 
 Empirical-vs-opinion notes are flagged inline in each finding.
 

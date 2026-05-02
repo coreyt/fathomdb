@@ -1,31 +1,37 @@
+# Context Research: Development Environment
+
 ## Scope
+
 This report reviews source-backed guidance on how development environment context improves AI coding agents, with emphasis on Claude Code and OpenAI Codex. It focuses on the parts of the environment that create strong feedback loops for agents: explicit build/lint/test commands, CI and code-review signals, runtime logs and stack traces, sandboxing and permission controls, reproducible execution environments, and mechanisms that make a repository legible to an agent over repeated sessions.
 
 ## Sources (URLs cited)
-- S1: https://code.claude.com/docs/en/best-practices
-- S2: https://code.claude.com/docs/en/how-claude-code-works
-- S3: https://code.claude.com/docs/en/settings
-- S4: https://code.claude.com/docs/en/memory
-- S5: https://code.claude.com/docs/en/hooks
-- S6: https://code.claude.com/docs/en/common-workflows
-- S7: https://code.claude.com/docs/en/github-actions
-- S8: https://code.claude.com/docs/en/code-review
-- S9: https://developers.openai.com/codex/cli
-- S10: https://developers.openai.com/codex/cloud
-- S11: https://developers.openai.com/codex/cloud/internet-access
-- S12: https://developers.openai.com/api/docs/guides/tools-shell
-- S13: https://developers.openai.com/learn/docs-mcp
-- S14: https://openai.com/index/introducing-codex/
-- S15: https://openai.com/index/why-we-no-longer-evaluate-swe-bench-verified/
-- S16: https://openai.com/index/introducing-swe-bench-verified//
-- S17: https://github.com/openai/codex/blob/main/codex-rs/linux-sandbox/README.md
-- S18: https://github.com/openai/codex/blob/main/docs/agents_md.md
-- S19: https://github.com/SWE-bench/SWE-bench
-- S20: https://collaborate.princeton.edu/en/publications/swe-bench-can-language-models-resolve-real-world-github-issues/
-- S21: https://developers.openai.com/codex/use-cases
+
+- S1: <https://code.claude.com/docs/en/best-practices>
+- S2: <https://code.claude.com/docs/en/how-claude-code-works>
+- S3: <https://code.claude.com/docs/en/settings>
+- S4: <https://code.claude.com/docs/en/memory>
+- S5: <https://code.claude.com/docs/en/hooks>
+- S6: <https://code.claude.com/docs/en/common-workflows>
+- S7: <https://code.claude.com/docs/en/github-actions>
+- S8: <https://code.claude.com/docs/en/code-review>
+- S9: <https://developers.openai.com/codex/cli>
+- S10: <https://developers.openai.com/codex/cloud>
+- S11: <https://developers.openai.com/codex/cloud/internet-access>
+- S12: <https://developers.openai.com/api/docs/guides/tools-shell>
+- S13: <https://developers.openai.com/learn/docs-mcp>
+- S14: <https://openai.com/index/introducing-codex/>
+- S15: <https://openai.com/index/why-we-no-longer-evaluate-swe-bench-verified/>
+- S16: <https://openai.com/index/introducing-swe-bench-verified//>
+- S17: <https://github.com/openai/codex/blob/main/codex-rs/linux-sandbox/README.md>
+- S18: <https://github.com/openai/codex/blob/main/docs/agents_md.md>
+- S19: <https://github.com/SWE-bench/SWE-bench>
+- S20: <https://collaborate.princeton.edu/en/publications/swe-bench-can-language-models-resolve-real-world-github-issues/>
+- S21: <https://developers.openai.com/codex/use-cases>
 
 ## Findings F1..Fn
-### F1. Explicit runnable verification loops are the highest-leverage environment affordance for coding agents.
+
+### F1. Explicit runnable verification loops are the highest-leverage environment affordance for coding agents
+
 - Evidence:
   Claude’s own best-practices guide says giving the agent tests, screenshots, or expected outputs is the “single highest-leverage thing” and shows prompts that explicitly end with “run the tests after implementing” or compare screenshots and fix differences [S1]. Anthropic’s architecture page describes the core loop as gather context, take action, and verify results, with examples like run tests, read failures, edit, and rerun [S2]. OpenAI’s Codex cloud docs center the workflow around concrete artifacts such as PR diffs, stack traces, and follow-up prompts like “add tests for the following files” [S10]. The shell tool docs likewise frame agent use as a repeated command-output loop [S12]. OpenAI’s SWE-bench materials also define pass/fail by executing tests, while their later audit shows that poor tests can reject correct fixes or encode unspecified requirements [S15, S16, S19, S20].
 - Observations:
@@ -35,7 +41,8 @@ This report reviews source-backed guidance on how development environment contex
 - Impact on agent LLM = HIGH + rationale:
   Verification quality directly determines whether the agent can self-correct instead of waiting for a human to notice mistakes.
 
-### F2. Durable project instruction files are a major force multiplier when they encode commands, architecture, and environment quirks.
+### F2. Durable project instruction files are a major force multiplier when they encode commands, architecture, and environment quirks
+
 - Evidence:
   Anthropic recommends `CLAUDE.md` as startup context for Bash commands, testing instructions, workflow rules, code style, architectural decisions, and environment quirks, and explicitly says to include frequently used build/test/lint commands while keeping the file concise [S1, S4]. Claude’s memory docs show hierarchical project, user, and managed instruction scopes [S4]. OpenAI’s Docs MCP guide tells users to put durable routing instructions in `AGENTS.md`, and the Codex repo points to AGENTS-specific documentation as a first-class mechanism [S13, S18]. OpenAI’s Codex use cases explicitly highlight “Trace request flows, map unfamiliar modules, and find the right files fast,” which is effectively a demand for repo structure and dependency-legibility [S21].
 - Observations:
@@ -45,7 +52,8 @@ This report reviews source-backed guidance on how development environment contex
 - Impact on agent LLM = HIGH + rationale:
   A small amount of durable repo context reduces wasted search, wrong-tool selection, and repeated human corrections across sessions.
 
-### F3. Sandbox and permission policy should minimize approval fatigue while keeping blast radius narrow.
+### F3. Sandbox and permission policy should minimize approval fatigue while keeping blast radius narrow
+
 - Evidence:
   Anthropic’s docs describe a permissioned model with default approval for edits and shell commands, plus allowlists, auto mode, and OS-level sandboxing; they explicitly recommend allowlisting known-safe commands like `npm run lint` or `git commit` [S1, S2, S3]. The hooks and settings docs also allow persistent permission updates and deny rules for sensitive files [S3, S5]. OpenAI’s Codex cloud docs say agent internet access is blocked by default during the agent phase, while setup scripts still have internet so dependencies can be installed [S11]. The Codex Linux sandbox implementation documents read-only-by-default filesystem behavior, explicit writable roots, protected subpaths, isolated namespaces, and seccomp/network restrictions [S17]. OpenAI’s CLI guidance also presents sandboxed local operation as a core control surface for the local agent experience [S9].
 - Observations:
@@ -55,7 +63,8 @@ This report reviews source-backed guidance on how development environment contex
 - Impact on agent LLM = HIGH + rationale:
   Agents lose most of their practical value if every safe command needs manual confirmation, but they become unsafe if permissions are broad and implicit.
 
-### F4. Runtime feedback should be structured, bounded, and automatically surfaced to the agent.
+### F4. Runtime feedback should be structured, bounded, and automatically surfaced to the agent
+
 - Evidence:
   Claude’s docs show the loop consuming command outputs and note that context fills with every command result; they also recommend putting only broad, reusable rules in durable memory because context is scarce [S1, S2]. Anthropic exposes hooks that run after tool execution and can add context or replace tool output, plus notification hooks for long-running tasks [S5, S6]. Claude’s settings expose Bash timeout and output-length controls [S3]. Anthropic’s overview and best-practices materials show piping logs directly into Claude and using CLI composition for log analysis [S1]. OpenAI’s Codex internet-access page repeatedly tells users to review the work log, and the Codex cloud docs present stack traces as sufficient bug-fixing inputs in many cases [S10, S11].
 - Observations:
@@ -65,7 +74,8 @@ This report reviews source-backed guidance on how development environment contex
 - Impact on agent LLM = HIGH + rationale:
   Good runtime feedback lets the model update its plan from real execution state; bad feedback just consumes context and obscures the actual failure.
 
-### F5. CI signals and code-review artifacts are high-value external feedback loops and should be directly consumable by the agent.
+### F5. CI signals and code-review artifacts are high-value external feedback loops and should be directly consumable by the agent
+
 - Evidence:
   Claude Code has first-party GitHub Actions support, with examples triggered from issues and PR comments, and Anthropic’s docs say the action follows project standards and runs on GitHub’s runners [S7]. Anthropic’s managed Code Review product examines full-codebase context and posts inline findings tagged by severity [S8]. OpenAI’s Codex cloud docs support GitHub-connected work and explicitly mention reviewing a PR by appending `.diff` to the PR URL and loading the patch into the container [S10]. OpenAI’s product direction also calls out deeper integration with issue trackers and CI systems [S14].
 - Observations:
@@ -75,7 +85,8 @@ This report reviews source-backed guidance on how development environment contex
 - Impact on agent LLM = HIGH + rationale:
   CI and review signals are often the fastest trustworthy answer to “did the change actually work?” and “what broke outside the local path I tested?”
 
-### F6. Reproducible execution environments are necessary for trustworthy autonomous coding.
+### F6. Reproducible execution environments are necessary for trustworthy autonomous coding
+
 - Evidence:
   Codex cloud provisions a sandboxed environment per task, with configurable repo, setup steps, tools, and internet controls [S10, S11]. The Codex Linux sandbox documents explicit filesystem and network isolation behavior [S17]. Claude runs across local, cloud, and remote-control modes, and its worktree support gives isolated working directories per task [S2, S6]. Claude’s GitHub Actions docs emphasize execution on GitHub runners [S7]. SWE-bench’s own maintainers moved to a fully containerized Docker harness for reproducible evaluations, and OpenAI’s later audit notes that OS and Python-version differences can create spurious failures [S15, S19, S20].
 - Observations:
@@ -85,7 +96,8 @@ This report reviews source-backed guidance on how development environment contex
 - Impact on agent LLM = HIGH + rationale:
   If environment drift can flip pass/fail results, the model cannot reliably learn from execution feedback.
 
-### F7. Parallelism helps, but only when each agent instance gets isolation and a clean verification responsibility.
+### F7. Parallelism helps, but only when each agent instance gets isolation and a clean verification responsibility
+
 - Evidence:
   Anthropic documents multiple parallel Claude sessions, worktree-backed isolation, subagent worktrees, and explicit cleanup behavior [S6]. Anthropic also recommends multiple sessions for quality-focused patterns such as writer/reviewer separation [S1]. OpenAI positions Codex cloud as background work on many tasks in parallel, each in its own cloud environment [S10, S14].
 - Observations:
@@ -96,4 +108,5 @@ This report reviews source-backed guidance on how development environment contex
   Parallelism is a strong multiplier after the basics are in place, but it does not compensate for poor commands, weak tests, or unreadable environments.
 
 ## Synthesis (1 paragraph)
+
 The strongest common pattern across Claude Code, Codex, and the software-engineering benchmark literature is that coding agents do not primarily need “more context”; they need better environment interfaces. The most valuable interfaces are explicit runnable verification commands, durable repo instructions that encode build/test/run knowledge, bounded but low-friction permissions, concise runtime and CI feedback, and reproducible isolated execution surfaces. Claude’s docs make this explicit with `CLAUDE.md`, hooks, worktrees, and verification-first prompting; OpenAI’s Codex docs express the same operational requirements through cloud environments, work logs, GitHub-connected tasks, MCP-backed durable instructions, and sandbox controls. The practical implication is straightforward: if a repo is legible to a new engineer in terms of commands, artifacts, constraints, and feedback loops, it is usually far more legible to an agent too.

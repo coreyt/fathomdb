@@ -15,15 +15,19 @@ Recency window of cited sources: 2025-05-01 through 2026-04 (12 months); foundat
 ## Cross-cutting themes
 
 ### T1: Context is a budget, not a bucket — every dimension says this
+
 Appears in tech-docs F1/F4, source-code F5, dev-env F7, agent-scaffolding F1/F4. The frontier-lab consensus is unanimous: more context is not better, and pre-loading degrades performance. Mechanisms differ but the rule is the same — progressive disclosure (Skills, `@import`, ADR indexes), agentic retrieval over pre-built indexes, structural truncation of long outputs (~200 lines, head+tail+spill-to-file), and few-shot examples that are *canonical* not exhaustive.
 
 ### T2: Persist load-bearing state to disk; treat conversation as ephemeral
+
 Compaction is now first-party (Anthropic `compact-2026-01-12`), and ~65% of enterprise AI failures in 2025 were context drift, not exhaustion (scaffolding F4). Tech-docs F5 (SPEC.md + progress logs), tests F2 (commit failing tests *before* implementation), and scaffolding F5 (plan mode + persistent todos) all point at the same answer: the agent will be compacted, so anything it must remember has to be on disk and re-readable.
 
 ### T3: Stale/wrong context is worse than missing context
+
 Tech-docs F6 (confident architectural hallucination from outdated ADRs), tests F3 (wrong oracles → 76% test-gaming on impossible-SWEbench by GPT-5), source-code F5 (1M-context multi-fact recall ≈ 90% Claude / 60% Gemini — 1-in-10 confidently wrong). Mitigation is cheap and consistent across dims: co-locate docs with code, mark superseded material explicitly, use property-based oracles instead of pinned values, prefer iterative narrow retrieval over whole-repo dumps.
 
 ### T4: Structure beats prose, in every channel
+
 - Tech-docs F2: prescriptive bullets ("Use X" / "Never Y") outperform narrative.
 - Source-code F3: AST chunks (+2.67 SWE-bench Pass@1) over line-based.
 - Dev-env F2/F3: structured `--error-format=json` diagnostics + typed verbs (build/lint/test) over raw bash (4× SWE-bench lift from ACI design).
@@ -31,9 +35,11 @@ Tech-docs F6 (confident architectural hallucination from outdated ADRs), tests F
 - Scaffolding F1: bullet-form AGENTS.md, ≤300 lines, no narrative.
 
 ### T5: Verifiability is the load-bearing primitive
+
 Frontier models are now *trained* on execution feedback (RLEF/RLVR — dev-env F1), so structured pass/fail signals are no longer just a prompt pattern but a model-side capability. Tests F1 (Anthropic: "single highest-leverage thing you can do"), dev-env F2 (RustAssistant 74% vs `cargo fix` <10% on the same population), and tech-docs F3 (OpenAPI/JSON-Schema grounding kills parameter hallucination) all point the same way: give the agent a binary oracle and rich diagnostics, and don't paraphrase them.
 
 ### T6: Cross-vendor convergence on AGENTS.md as the scaffolding standard
+
 Tech-docs F7 + scaffolding F1: AGENTS.md is now stewarded by the Linux Foundation's Agentic AI Foundation; 60k+ OSS adopters; supported by Codex/Cursor/Copilot/Devin/Aider/Zed/Warp/goose/Factory/VS Code; Claude Code reads it natively. Author once, symlink CLAUDE.md → AGENTS.md.
 
 ---
@@ -41,15 +47,18 @@ Tech-docs F7 + scaffolding F1: AGENTS.md is now stewarded by the Linux Foundatio
 ## Conflicts and how to read them
 
 ### C1: RAG embeddings vs agentic grep
+
 - Anthropic (Cherny): abandoned RAG; agentic grep "outperformed by a lot" + simpler ops.
 - Cursor: +12.5% accuracy from semantic search — but **on top of** grep, not replacing it.
 - Reconciliation (source-code F1/F2): grep wins for *local* agents on typed code with unique symbols; embeddings are an *additive* cloud-scale lever where you have remote infra and a controlled corpus. For a local agent on a single repo: grep + glob + read; do not build a local vector index.
 
 ### C2: Long-context windows vs retrieval
+
 - Marketing implies 1M context lets you skip retrieval.
 - Reality (source-code F5): ~90% Claude / 60% Gemini multi-fact recall, lost-in-the-middle still real, 1250× cost penalty, 30–60× latency. Iterative narrow retrieval + prompt caching wins on accuracy and economics.
 
 ### C3: Multi-agent
+
 - Anthropic research mode: 90.2% lift over single Opus, 15× tokens.
 - Same Anthropic post: "most coding tasks ... are not a good fit"; Cognition Devin: "writes stay single-threaded."
 - Reconciliation (scaffolding F2): subagents for parallel reads / output condensation / independent verification; single-agent for edits.

@@ -178,7 +178,7 @@ where the bytes are stored.
 - `design/embedder.md` (Phase 3) documents `EmbedderIdentity` as the
   authoritative struct and lists every field that lives there
   (model_identity, model_version, dimension, normalization_policy)
-  + when each may be populated (e.g. fine-tuned variants override
+  - when each may be populated (e.g. fine-tuned variants override
   model_version).
 - `interfaces/rust.md`, `interfaces/python.md`,
   `interfaces/typescript.md` document the Embedder trait / ABC /

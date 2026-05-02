@@ -24,7 +24,7 @@ Your method is **event-and-contract-first hybrid**:
 This option is optimized to catch overlaps in observability, payload schemas,
 CLI/reporting, and cross-language surfaces.
 
-# Scope
+## Scope
 
 Minimum component set:
 
@@ -35,14 +35,14 @@ Minimum component set:
 
 Include other components only when required to explain one of those contracts.
 
-# Definition
+## Definition
 
 For this task, an **interface** is a documented contract where one component
 exposes behavior, data, events, configuration, control, or machine-readable
 payloads to another component or external caller. Contract classes matter more
 than module adjacency.
 
-# Inputs (read-only except outputs)
+## Inputs (read-only except outputs)
 
 Read in this order:
 
@@ -63,7 +63,7 @@ Read in this order:
 You may read additional `design/*.md` files only to resolve a contract or
 payload dependency discovered from the sources above.
 
-# Output root
+## Output root
 
 Write **only** under:
 
@@ -72,7 +72,7 @@ Write **only** under:
 Do not write to the Option 1 directory. Do not overwrite files outside this
 root. Treat the output root as isolated artifact storage for this run.
 
-# Required outputs
+## Required outputs
 
 Create these files:
 
@@ -168,7 +168,7 @@ For each finding include:
 - recommended canonical owner
 - minimal doc fix
 
-# Method
+## Method
 
 1. Enumerate contract classes before enumerating components.
 2. Identify the machine-readable and typed surfaces in each class.
@@ -182,7 +182,7 @@ For each finding include:
 6. Use requirements/acceptance to determine whether a contract is actually part
    of the public 0.6.0 commitment or merely discussed in design prose.
 
-# Constraints
+## Constraints
 
 - Fresh-context rule: do not assume anything not stated in the listed docs.
 - Do not invent missing schema or field details.
@@ -191,7 +191,7 @@ For each finding include:
   output structure.
 - Preserve existing ownership boundaries unless the corpus is contradictory.
 
-# Done definition
+## Done definition
 
 - All required files exist under the Option 3 output root.
 - Contract classes are enumerated before the interface catalog.
