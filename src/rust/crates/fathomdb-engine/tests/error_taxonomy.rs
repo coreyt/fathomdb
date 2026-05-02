@@ -9,8 +9,8 @@ use std::error::Error as _;
 
 use fathomdb_embedder_api::EmbedderIdentity;
 use fathomdb_engine::{
-    CorruptionDetail, CorruptionKind, CorruptionLocator, EngineError, EngineOpenError, OpenStage,
-    RecoveryHint, SoftFallback, SoftFallbackBranch,
+    CorruptionDetail, CorruptionKind, CorruptionLocator, Engine, EngineError, EngineOpenError,
+    OpenStage, RecoveryHint, SoftFallback, SoftFallbackBranch,
 };
 
 #[test]
@@ -122,6 +122,36 @@ fn engine_open_error_corruption_round_trips_detail() {
         EngineOpenError::Corruption(got) => assert_eq!(got, detail),
         _ => panic!("expected Corruption variant"),
     }
+}
+
+#[test]
+fn search_rejects_empty_query_via_write_validation_variant() {
+    // Per dev/design/errors.md, malformed typed write input shape is the
+    // WriteValidation row of the binding matrix; there is no EmptyQuery
+    // variant in the canonical taxonomy.
+    let opened = Engine::open("rewrite.sqlite").expect("scaffold engine should open");
+    let err = opened.engine.search("").expect_err("empty query must be rejected");
+    assert_eq!(err, EngineError::WriteValidation);
+}
+
+#[test]
+fn search_after_close_routes_through_closing_variant() {
+    // Per the matrix, in-flight rejection on a closed engine is the Closing
+    // row, not an undocumented Closed variant.
+    let opened = Engine::open("rewrite.sqlite").expect("scaffold engine should open");
+    opened.engine.close().expect("close should succeed");
+    let err = opened.engine.search("hello").expect_err("closed engine must reject search");
+    assert_eq!(err, EngineError::Closing);
+}
+
+#[test]
+fn open_accepts_any_path_input() {
+    // Empty-path is a caller-side input-validation failure that does not map
+    // cleanly onto an EngineOpenError row in dev/design/errors.md; the
+    // facade therefore accepts any PathBuf and lets real filesystem failures
+    // surface from the real implementation in a later slice.
+    let opened = Engine::open("").expect("facade must accept empty path input");
+    assert_eq!(opened.engine.path().as_os_str(), "");
 }
 
 #[test]
