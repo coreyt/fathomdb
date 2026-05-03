@@ -10,6 +10,9 @@ rust-version.workspace = true
 fathomdb-embedder-api = { path = "../fathomdb-embedder-api" }
 fathomdb-query = { path = "../fathomdb-query" }
 fathomdb-schema = { path = "../fathomdb-schema" }
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde_json = "1"
 
 [dev-dependencies]
 proptest = "1"
+tempfile = "3"

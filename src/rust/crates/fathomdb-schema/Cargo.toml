@@ -9,5 +9,8 @@ rust-version.workspace = true
 [lib]
 path = "src/lib.rs"
 
+[dependencies]
+rusqlite = { version = "0.31", features = ["bundled"] }
+
 [dev-dependencies]
 proptest = "1"

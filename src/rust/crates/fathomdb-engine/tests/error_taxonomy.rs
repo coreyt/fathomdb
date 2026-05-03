@@ -1,9 +1,7 @@
 //! Surface-level assertions for the typed error taxonomy and carrier types
 //! pinned by `dev/design/errors.md` and `dev/interfaces/rust.md`.
 //!
-//! These tests assert variant presence and field shape only; semantics for
-//! constructing real corruption / migration failures land later under
-//! `design/engine.md`.
+//! These tests assert variant presence, field shape, and basic typed routing.
 
 use std::error::Error as _;
 
@@ -12,6 +10,7 @@ use fathomdb_engine::{
     CorruptionDetail, CorruptionKind, CorruptionLocator, Engine, EngineError, EngineOpenError,
     OpenStage, RecoveryHint, SoftFallback, SoftFallbackBranch,
 };
+use tempfile::TempDir;
 
 #[test]
 fn engine_error_runtime_variants_exist() {
@@ -46,15 +45,20 @@ fn engine_open_error_variants_exist() {
     };
 
     let variants: Vec<EngineOpenError> = vec![
-        EngineOpenError::DatabaseLocked,
+        EngineOpenError::DatabaseLocked { holder_pid: Some(1) },
         EngineOpenError::Corruption(detail),
-        EngineOpenError::IncompatibleSchemaVersion,
-        EngineOpenError::MigrationError,
+        EngineOpenError::IncompatibleSchemaVersion { seen: 5, supported: 4 },
+        EngineOpenError::MigrationError {
+            schema_version_before: 1,
+            schema_version_current: 1,
+            step_id: 2,
+        },
         EngineOpenError::EmbedderIdentityMismatch {
             stored: EmbedderIdentity::new("a", "0"),
             supplied: EmbedderIdentity::new("b", "0"),
         },
         EngineOpenError::EmbedderDimensionMismatch { stored: 384, supplied: 768 },
+        EngineOpenError::Io { message: "sanitized".to_string() },
     ];
     for err in &variants {
         assert!(!err.to_string().is_empty(), "Display must be non-empty");
@@ -129,7 +133,8 @@ fn search_rejects_empty_query_via_write_validation_variant() {
     // Per dev/design/errors.md, malformed typed write input shape is the
     // WriteValidation row of the binding matrix; there is no EmptyQuery
     // variant in the canonical taxonomy.
-    let opened = Engine::open("rewrite.sqlite").expect("scaffold engine should open");
+    let dir = TempDir::new().unwrap();
+    let opened = Engine::open(dir.path().join("rewrite.sqlite")).expect("engine should open");
     let err = opened.engine.search("").expect_err("empty query must be rejected");
     assert_eq!(err, EngineError::WriteValidation);
 }
@@ -138,20 +143,17 @@ fn search_rejects_empty_query_via_write_validation_variant() {
 fn search_after_close_routes_through_closing_variant() {
     // Per the matrix, in-flight rejection on a closed engine is the Closing
     // row, not an undocumented Closed variant.
-    let opened = Engine::open("rewrite.sqlite").expect("scaffold engine should open");
+    let dir = TempDir::new().unwrap();
+    let opened = Engine::open(dir.path().join("rewrite.sqlite")).expect("engine should open");
     opened.engine.close().expect("close should succeed");
     let err = opened.engine.search("hello").expect_err("closed engine must reject search");
     assert_eq!(err, EngineError::Closing);
 }
 
 #[test]
-fn open_accepts_any_path_input() {
-    // Empty-path is a caller-side input-validation failure that does not map
-    // cleanly onto an EngineOpenError row in dev/design/errors.md; the
-    // facade therefore accepts any PathBuf and lets real filesystem failures
-    // surface from the real implementation in a later slice.
-    let opened = Engine::open("").expect("facade must accept empty path input");
-    assert_eq!(opened.engine.path().as_os_str(), "");
+fn open_rejects_empty_path_as_io_error() {
+    let err = Engine::open("").expect_err("real open path requires a database file name");
+    assert!(matches!(err, EngineOpenError::Io { .. }));
 }
 
 #[test]
