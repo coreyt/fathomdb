@@ -628,6 +628,26 @@ impl Engine {
         self.force_next_commit_failure.store(true, Ordering::SeqCst);
     }
 
+    /// Execute an arbitrary SQL statement on the writer connection through
+    /// the same wall-clock + slow-detect path as `write` / `search`.
+    ///
+    /// Test-only helper for the deterministic-slow-cte fixture used by
+    /// AC-007a / AC-007b. Not part of the public 0.6.0 surface; gated on
+    /// `debug_assertions` so release builds do not expose it.
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn execute_for_test(&self, sql: &str) -> Result<(), EngineError> {
+        self.ensure_open()?;
+        let started = Instant::now();
+        {
+            let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+            let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+            connection.execute_batch(sql).map_err(|_| EngineError::Storage)?;
+        }
+        self.detect_slow(started, lifecycle::EventCategory::Search);
+        Ok(())
+    }
+
     fn ensure_open(&self) -> Result<(), EngineError> {
         if self.closed.load(Ordering::SeqCst) {
             return Err(EngineError::Closing);
