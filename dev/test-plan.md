@@ -66,6 +66,10 @@ reused across suites:
    acceptance set. The AC-021 spec-conforming 60 s window is long-running
    CI work gated on `AGENT_LONG=1`; `agent-verify` runs a 5 s smoke variant
    and `scripts/check.sh` is responsible for invoking the 60 s variant.
+   `AGENT_LONG=1` also gates
+   `cursor_read_after_write::projection_cursor_bounds_observed_row_count`
+   (AC-059b: read-tx snapshot consistency under concurrent writes;
+   ~1000-iteration race fixture).
 4. Keep thresholds in `acceptance.md`; tests read or restate those parameters
    but do not invent new gates.
 
