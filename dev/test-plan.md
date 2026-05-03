@@ -66,7 +66,6 @@ reused across suites:
    acceptance set.
 
    **Gate boundary — agent-verify vs check.sh AGENT_LONG=1:**
-
    - `scripts/agent-verify.sh` (fast local loop) runs lint → typecheck →
      unit/integration tests EXCLUDING long-run variants. It does NOT
      exercise: AC-021's 60 s spec-conforming window, AC-059b's
@@ -82,6 +81,7 @@ reused across suites:
 
    A reviewer reading just this section should be able to attribute each
    long-run AC's evidence to a single command.
+
 4. Keep thresholds in `acceptance.md`; tests read or restate those parameters
    but do not invent new gates.
 
