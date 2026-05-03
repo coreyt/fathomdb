@@ -548,11 +548,28 @@ impl Engine {
 
         let compiled = compile_text_query(query);
         let mut results = vec![compiled.sql];
-        let cursor = self.next_cursor.load(Ordering::SeqCst);
-        if let Some(reader) = self.reader_pool.borrow() {
-            run_search_query(&reader, query.trim(), &mut results);
+        // REQ-013 / AC-059b / REQ-055: the cursor returned with a search
+        // MUST be derived from the same WAL snapshot the data was read
+        // from. Loading `next_cursor` from the writer-side atomic before
+        // the reader transaction acquires its snapshot races against
+        // concurrent writers — see `dev/design/engine.md` § Cursor
+        // contract. Run cursor probe + body query inside one read tx
+        // (BEGIN DEFERRED on a `query_only=ON` connection in WAL mode is
+        // a snapshot-stable read).
+        let cursor = if let Some(mut reader) = self.reader_pool.borrow() {
+            let cursor = match read_search_in_tx(&mut reader, query.trim(), &mut results) {
+                Ok(c) => c,
+                // On reader-tx error, fall back to the writer-side atomic
+                // — strictly weaker invariant, but search must still
+                // return a cursor. This mirrors how `run_search_query`
+                // previously degraded silently on prepare/query errors.
+                Err(_) => self.next_cursor.load(Ordering::SeqCst),
+            };
             self.reader_pool.release(reader);
-        }
+            cursor
+        } else {
+            self.next_cursor.load(Ordering::SeqCst)
+        };
 
         Ok(SearchResult { projection_cursor: cursor, soft_fallback: None, results })
     }
@@ -657,19 +674,34 @@ fn batch_is_admin(batch: &[PreparedWrite]) -> bool {
     !batch.is_empty() && batch.iter().all(|w| matches!(w, PreparedWrite::AdminSchema { .. }))
 }
 
-fn run_search_query(reader: &Connection, needle: &str, results: &mut Vec<String>) {
-    let Ok(mut statement) =
-        reader.prepare("SELECT body FROM canonical_nodes WHERE body LIKE ?1 ORDER BY write_cursor")
-    else {
-        return;
-    };
+/// Read `MAX(write_cursor)` and matching body rows inside one read tx.
+///
+/// WAL gives each transaction a stable snapshot at `BEGIN`; querying
+/// `MAX(write_cursor)` from inside that tx therefore yields a cursor
+/// value bounded by the snapshot the body query also reads. Returning
+/// the snapshot cursor satisfies REQ-013 / AC-059b read-after-write
+/// semantics and the REQ-055 monotonic-cursor contract.
+fn read_search_in_tx(
+    reader: &mut Connection,
+    needle: &str,
+    results: &mut Vec<String>,
+) -> rusqlite::Result<u64> {
+    let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
+    let cursor: u64 =
+        tx.query_row("SELECT COALESCE(MAX(write_cursor), 0) FROM canonical_nodes", [], |row| {
+            row.get(0)
+        })?;
     let pattern = format!("%{needle}%");
-    let Ok(rows) = statement.query_map([pattern], |row| row.get::<_, String>(0)) else {
-        return;
-    };
-    for row in rows.flatten() {
-        results.push(row);
+    {
+        let mut statement = tx
+            .prepare("SELECT body FROM canonical_nodes WHERE body LIKE ?1 ORDER BY write_cursor")?;
+        let rows = statement.query_map([pattern], |row| row.get::<_, String>(0))?;
+        for row in rows.flatten() {
+            results.push(row);
+        }
     }
+    tx.commit()?;
+    Ok(cursor)
 }
 
 fn canonical_database_path(path: &Path) -> Result<PathBuf, EngineOpenError> {
