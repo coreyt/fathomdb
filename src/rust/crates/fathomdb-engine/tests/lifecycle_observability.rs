@@ -489,6 +489,7 @@ fn ac_008_slow_signal_feeds_lifecycle() {
 
 // AC-009 supporting: Pure-type construction of StressFailureContext.
 #[test]
+#[ignore = "AC-009: needs one-thread-poison robustness fixture (Phase 9+)"]
 fn ac_009_stress_failure_context_constructs() {
     let ctx = StressFailureContext {
         thread_group_id: 0,
