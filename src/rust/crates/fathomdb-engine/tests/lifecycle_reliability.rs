@@ -1,7 +1,9 @@
 use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use fathomdb_engine::lifecycle::{Event, EventCategory, EventSource};
 use fathomdb_engine::Engine;
 use fathomdb_schema::SQLITE_SUFFIX;
 use tempfile::TempDir;
@@ -131,4 +133,42 @@ fn fd_count() -> usize {
     let ok = unsafe { GetProcessHandleCount(GetCurrentProcess(), &mut count) };
     assert!(ok != 0, "GetProcessHandleCount failed");
     count as usize
+}
+
+#[derive(Default)]
+struct CapturingSubscriber {
+    events: Mutex<Vec<Event>>,
+}
+
+impl fathomdb_engine::lifecycle::Subscriber for CapturingSubscriber {
+    fn on_event(&self, event: &Event) {
+        self.events.lock().unwrap().push(event.clone());
+    }
+}
+
+// AC-021: Zero SQLITE_SCHEMA warnings under concurrent reads + admin DDL.
+#[test]
+#[ignore = "AC-021: needs Phase 7 admin DDL path + concurrent reader pool"]
+fn ac_021_zero_sqlite_schema_warnings_under_concurrent_reads_and_ddl() {
+    let dir = TempDir::new().unwrap();
+    let opened = Engine::open(dir.path().join("schema_flood.sqlite")).expect("open");
+    let engine = Arc::new(opened.engine);
+
+    let sink = Arc::new(CapturingSubscriber::default());
+    let _sub = engine.subscribe();
+
+    // Phase 7-owned: spawn 8 concurrent reader threads + 1 DDL thread for 60 s.
+    // The DDL thread cycles admin.configure_kind add/remove and triggers
+    // schema-projection rebuilds. Once that wiring exists, replace this
+    // placeholder with the real workload driver.
+
+    let captured = sink.events.lock().unwrap();
+    let schema_errors = captured
+        .iter()
+        .filter(|e| e.source == EventSource::Engine && e.category == EventCategory::Error)
+        .count();
+    assert_eq!(
+        schema_errors, 0,
+        "expected zero SQLITE_SCHEMA error events under concurrent reads + DDL"
+    );
 }
