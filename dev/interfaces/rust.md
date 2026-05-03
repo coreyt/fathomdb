@@ -43,9 +43,9 @@ These are public instance methods, not extra top-level SDK verbs:
 - `Engine::counters() -> CounterSnapshot`
 - `Engine::set_profiling(enabled: bool) -> Result<(), EngineError>`
 - `Engine::set_slow_threshold_ms(value: u64) -> Result<(), EngineError>`
-- `Engine::subscribe(...) -> Subscription`
+- `Engine::subscribe(&self, subscriber: Arc<dyn lifecycle::Subscriber>) -> Subscription`
 
-`subscribe(...)` owns host-subscriber attachment and may carry heartbeat-cadence
+`subscribe` owns host-subscriber attachment and may carry heartbeat-cadence
 options. The payload semantics remain owned by `design/lifecycle.md` and
 `design/migrations.md`.
 
