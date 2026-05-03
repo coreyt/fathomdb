@@ -133,6 +133,7 @@ fn doctor_invocation(verb: &str) -> (Vec<&'static str>, &'static str) {
 }
 
 #[test]
+#[ignore = "dep-Phase-9-verb-bodies: pins scaffold not_implemented stub; retarget when verb bodies wire up"]
 fn t_doctor_verbs_emit_not_implemented_json_and_exit_70() {
     for verb in DOCTOR_VERBS {
         let (args, expected_verb) = doctor_invocation(verb);
@@ -160,6 +161,7 @@ fn t_doctor_verbs_emit_not_implemented_json_and_exit_70() {
 }
 
 #[test]
+#[ignore = "dep-Phase-9-verb-bodies: pins scaffold not_implemented stub; retarget when verb bodies wire up"]
 fn t_recover_emits_not_implemented_json_and_exits_70() {
     let output = fathomdb()
         .args(["recover", "--accept-data-loss", "--truncate-wal"])
