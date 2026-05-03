@@ -149,13 +149,13 @@ CLI is not an SDK binding.
 
 ## 7. Lock + process-exclusivity contract
 
-Per `architecture.md` § 5 + ADR-0.6.0-database-lock-mechanism (#30), only one `Engine` instance per database file may be open at a time. The lock mechanism is **hybrid**: a sidecar `{database_path}.lock` flock (Rust std `File::try_lock`, per-OFD exclusion semantics) PLUS `PRAGMA locking_mode=EXCLUSIVE` on the writer connection in WAL. Sidecar = pre-open fail-fast + operator-diagnostic PID. SQLite EXCLUSIVE writer-lock = same-process backstop + removes `-shm`. Reader connections use NORMAL locking_mode (REQ-018 multi-reader concurrency preserved).
+Per `architecture.md` § 5 + ADR-0.6.0-database-lock-mechanism-reader-pool-revision (#31, supersedes #30), only one `Engine` instance per database file may be open at a time. The lock mechanism is the sidecar `{database_path}.lock` flock (Rust std `File::try_lock`, per-OFD exclusion semantics). Sidecar = pre-open fail-fast + operator-diagnostic PID + load-bearing layer for both cross-process and same-process two-`Engine` exclusion. The writer connection runs WAL with default (NORMAL) locking_mode; `PRAGMA locking_mode=EXCLUSIVE` is NOT applied — it is incompatible with the Phase 8 reader pool because EXCLUSIVE causes SQLite to skip the WAL shared-memory wal-index. Reader connections use default (NORMAL) locking_mode and benefit from WAL multi-reader concurrency (REQ-018). `-shm` is created as a normal WAL artifact.
 
 Cross-binding consequences:
 
 - Python in process A holding `Engine.open(path)` → TS in process B calling `Engine.open(path)` MUST fail with `DatabaseLocked { holder_pid }` regardless of binding identity. The sidecar flock is the load-bearing layer for cross-process exclusion; it surfaces BEFORE SQLite I/O begins, so Engine.open does not pay migration / embedder warmup cost on a doomed open.
 - The lock's lifetime is bound to the `Engine` instance; closing or dropping the engine releases it (drops the sidecar lock fd + closes SQLite connections). `Engine.close` is required (REQ-020a; AC-022a).
-- Same-process two-`Engine` (Python `Engine` and TS `Engine` in the _same_ process targeting the _same_ path) is also forbidden. The second `Engine.open` opens a NEW `File` handle for the sidecar; per-OFD `flock` semantics return `WouldBlock`, surfacing as `DatabaseLocked`. The SQLite EXCLUSIVE writer-lock is the defense-in-depth backstop. Bindings do NOT maintain an in-process registry of held paths.
+- Same-process two-`Engine` (Python `Engine` and TS `Engine` in the _same_ process targeting the _same_ path) is also forbidden. The second `Engine.open` opens a NEW `File` handle for the sidecar; per-OFD `flock` semantics return `WouldBlock`, surfacing as `DatabaseLocked`. Bindings do NOT maintain an in-process registry of held paths.
 - Path canonicalization: `Engine.open` canonicalizes the parent directory and appends the leaf filename before deriving `{...}.lock` path, defeating symlink + bind-mount aliasing. Bindings do not perform their own canonicalization.
 
 The corruption-on-open path (ADR-0.6.0-corruption-open-behavior § 5; AC-035c) MUST release the sidecar lock + close any opened SQLite connection before returning `CorruptionError`. Bindings inherit this guarantee; no binding-level workaround is permitted.
@@ -299,7 +299,7 @@ The bindings layer is normative on:
 6. Cross-binding embedder identity.
 7. Engine-config knob symmetry across SDK bindings; binding-runtime mechanics
    like the TS dispatch pool are not canonical engine knobs.
-8. Lock contract uniformity (hybrid: sidecar flock + SQLite EXCLUSIVE writer per ADR #30).
+8. Lock contract uniformity (sidecar flock per ADR #31, supersedes #30; writer connection uses default (NORMAL) locking_mode in WAL — EXCLUSIVE was dropped to admit the reader pool).
 9. Logging engine-event payload wire-stability (host-native fields derived by adapter).
 10. Recovery non-presence on SDK surface.
 

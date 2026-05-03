@@ -130,7 +130,7 @@ or boolean assertions).
 
 **Requirement ref:** REQ-002
 **Test id:** T-002
-**Assertion:** With no host subscriber registered, an open + write + search + close cycle creates no new files outside the documented allow-list (DB file, `.lock`, WAL, optional rollback `.journal`; no `-shm` under the 0.6.0 WAL+EXCLUSIVE lock contract).
+**Assertion:** With no host subscriber registered, an open + write + search + close cycle creates no new files outside the documented allow-list (DB file, `.lock`, WAL, `-shm` (WAL shared-memory wal-index, per ADR-0.6.0-database-lock-mechanism-reader-pool-revision), optional rollback `.journal`).
 **Measurement:** Snapshot recursive directory tree of `$PWD`, `$HOME`, `$XDG_*`, `$TMPDIR` pre+post; assert diff = subset of allow-list paths.
 **Fixture:** clean-temp-root (test-plan.md fixture spec — pending).
 
