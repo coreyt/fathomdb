@@ -501,7 +501,7 @@ impl Engine {
         } else {
             lifecycle::EventCategory::Writer
         };
-        self.emit_event(lifecycle::Phase::Started, category);
+        self.emit_event(lifecycle::Phase::Started, category, None);
         let started = Instant::now();
         let outcome = self.write_inner(batch);
         self.detect_slow(started, category);
@@ -513,15 +513,20 @@ impl Engine {
                 } else {
                     self.counters.record_write(rows);
                 }
-                self.emit_event(lifecycle::Phase::Finished, category);
+                self.emit_event(lifecycle::Phase::Finished, category, None);
                 Ok(receipt)
             }
             Err(err) => {
-                self.counters.record_error(err.stable_code());
+                let code = err.stable_code();
+                self.counters.record_error(code);
                 // AC-003d: capture-ordinal < raise-ordinal — Failed and Error
                 // events both fire before the EngineError returns to the caller.
-                self.emit_event(lifecycle::Phase::Failed, category);
-                self.emit_event(lifecycle::Phase::Failed, lifecycle::EventCategory::Error);
+                self.emit_event(lifecycle::Phase::Failed, category, Some(code));
+                self.emit_event(
+                    lifecycle::Phase::Failed,
+                    lifecycle::EventCategory::Error,
+                    Some(code),
+                );
                 Err(err)
             }
         }
@@ -544,7 +549,8 @@ impl Engine {
         let increment = u64::try_from(batch.len()).unwrap_or(u64::MAX);
         let cursor = self.next_cursor.load(Ordering::SeqCst).saturating_add(increment);
 
-        if let Err(_err) = commit_batch(connection, batch, &plans, cursor) {
+        if let Err(err) = commit_batch(connection, batch, &plans, cursor) {
+            self.emit_sqlite_internal_error(&err);
             return Err(EngineError::Storage);
         }
         self.next_cursor.store(cursor, Ordering::SeqCst);
@@ -553,20 +559,29 @@ impl Engine {
     }
 
     pub fn search(&self, query: &str) -> Result<SearchResult, EngineError> {
-        self.emit_event(lifecycle::Phase::Started, lifecycle::EventCategory::Search);
+        self.emit_event(lifecycle::Phase::Started, lifecycle::EventCategory::Search, None);
         let started = Instant::now();
         let outcome = self.search_inner(query);
         self.detect_slow(started, lifecycle::EventCategory::Search);
         match outcome {
             Ok(result) => {
                 self.counters.record_query();
-                self.emit_event(lifecycle::Phase::Finished, lifecycle::EventCategory::Search);
+                self.emit_event(lifecycle::Phase::Finished, lifecycle::EventCategory::Search, None);
                 Ok(result)
             }
             Err(err) => {
-                self.counters.record_error(err.stable_code());
-                self.emit_event(lifecycle::Phase::Failed, lifecycle::EventCategory::Search);
-                self.emit_event(lifecycle::Phase::Failed, lifecycle::EventCategory::Error);
+                let code = err.stable_code();
+                self.counters.record_error(code);
+                self.emit_event(
+                    lifecycle::Phase::Failed,
+                    lifecycle::EventCategory::Search,
+                    Some(code),
+                );
+                self.emit_event(
+                    lifecycle::Phase::Failed,
+                    lifecycle::EventCategory::Error,
+                    Some(code),
+                );
                 Err(err)
             }
         }
@@ -577,21 +592,43 @@ impl Engine {
         let threshold = self.slow_threshold_ms.load(Ordering::Relaxed);
         let threshold_duration = std::time::Duration::from_millis(threshold);
         if elapsed > threshold_duration {
-            // Slow signal must surface a slow-statement signal AND a Slow
-            // lifecycle event during the operation's wall-clock window
-            // (AC-007a + AC-008). A single Slow event from the producing
-            // category satisfies both observability facts.
-            self.emit_event(lifecycle::Phase::Slow, category);
+            // `dev/design/lifecycle.md` § Slow and heartbeat policy: a slow
+            // operation produces TWO correlated facts. The
+            // statement-level slow-statement signal is dispatched by the
+            // sqlite3_profile callback (`profile_callback_trampoline`).
+            // This site emits the lifecycle `Phase::Slow` event for the
+            // outer operation envelope (AC-008).
+            self.emit_event(lifecycle::Phase::Slow, category, None);
         }
-        // `dev/design/lifecycle.md` § Slow and heartbeat policy: Heartbeat is
-        // emitted only while the operation is still in progress. Profile-
-        // record transport is owned by a future delivery surface (per
-        // AC-005a/b lock); it is not a post-completion Heartbeat event.
     }
 
-    fn emit_event(&self, phase: lifecycle::Phase, category: lifecycle::EventCategory) {
-        let event = lifecycle::Event { phase, source: lifecycle::EventSource::Engine, category };
+    fn emit_event(
+        &self,
+        phase: lifecycle::Phase,
+        category: lifecycle::EventCategory,
+        code: Option<&'static str>,
+    ) {
+        let event =
+            lifecycle::Event { phase, source: lifecycle::EventSource::Engine, category, code };
         self.subscribers.dispatch(&event);
+    }
+
+    /// Emit a `(SqliteInternal, Error, code: <SQLITE_*>)` lifecycle
+    /// event for a rusqlite error. Per `dev/design/lifecycle.md`
+    /// § Diagnostic source and category, SQLite-originated diagnostics
+    /// route through the same host subscriber as engine-originated
+    /// events with `source` preserved. AC-021 dispatches on
+    /// `code == "SQLITE_SCHEMA"`.
+    fn emit_sqlite_internal_error(&self, err: &rusqlite::Error) {
+        if let Some(code) = sqlite_extended_code_name(err) {
+            let event = lifecycle::Event {
+                phase: lifecycle::Phase::Failed,
+                source: lifecycle::EventSource::SqliteInternal,
+                category: lifecycle::EventCategory::Error,
+                code: Some(code),
+            };
+            self.subscribers.dispatch(&event);
+        }
     }
 
     fn search_inner(&self, query: &str) -> Result<SearchResult, EngineError> {
@@ -613,11 +650,19 @@ impl Engine {
         let cursor = if let Some(mut reader) = self.reader_pool.borrow() {
             let cursor = match read_search_in_tx(&mut reader, query.trim(), &mut results) {
                 Ok(c) => c,
-                // On reader-tx error, fall back to the writer-side atomic
-                // — strictly weaker invariant, but search must still
-                // return a cursor. This mirrors how `run_search_query`
-                // previously degraded silently on prepare/query errors.
-                Err(_) => self.next_cursor.load(Ordering::SeqCst),
+                Err(err) => {
+                    // Surface SQLite-internal failures (e.g. SQLITE_SCHEMA
+                    // cache invalidation under concurrent DDL) on the
+                    // host subscriber path before degrading. AC-021
+                    // dispatches on `code == "SQLITE_SCHEMA"`.
+                    self.emit_sqlite_internal_error(&err);
+                    // Fall back to the writer-side atomic — strictly
+                    // weaker invariant, but search must still return a
+                    // cursor. The previous helper degraded silently;
+                    // surfacing the SqliteInternal event preserves the
+                    // observability contract.
+                    self.next_cursor.load(Ordering::SeqCst)
+                }
             };
             self.reader_pool.release(reader);
             cursor
@@ -1159,6 +1204,47 @@ fn load_next_cursor(connection: &Connection) -> u64 {
 fn max_cursor(connection: &Connection, table: &str) -> rusqlite::Result<u64> {
     let sql = format!("SELECT COALESCE(MAX(write_cursor), 0) FROM {table}");
     connection.query_row(&sql, [], |row| row.get::<_, u64>(0))
+}
+
+/// Map a rusqlite error to its stable SQLite extended-code name.
+///
+/// Returns `None` for non-`SqliteFailure` variants (e.g. JSON conversion
+/// failures, type mismatches at the rusqlite layer) — those are not
+/// SQLite-internal events and should not be surfaced under
+/// `EventSource::SqliteInternal`. The names returned here are the
+/// canonical `SQLITE_*` symbol names from `sqlite3.h` and are stable
+/// dispatch keys for AC-021 / AC-006 binding adapters.
+///
+/// Only the subset of codes the engine can reach in 0.6.0 is enumerated
+/// — bare-extended-code matching covers the rest with a stable
+/// `"SQLITE_UNKNOWN"` fallback so subscribers always see a typed code.
+fn sqlite_extended_code_name(err: &rusqlite::Error) -> Option<&'static str> {
+    let sqlite_error = err.sqlite_error()?;
+    let extended = sqlite_error.extended_code;
+    Some(match extended {
+        rusqlite::ffi::SQLITE_SCHEMA => "SQLITE_SCHEMA",
+        rusqlite::ffi::SQLITE_BUSY => "SQLITE_BUSY",
+        rusqlite::ffi::SQLITE_LOCKED => "SQLITE_LOCKED",
+        rusqlite::ffi::SQLITE_CORRUPT => "SQLITE_CORRUPT",
+        rusqlite::ffi::SQLITE_NOTADB => "SQLITE_NOTADB",
+        rusqlite::ffi::SQLITE_IOERR => "SQLITE_IOERR",
+        rusqlite::ffi::SQLITE_FULL => "SQLITE_FULL",
+        rusqlite::ffi::SQLITE_READONLY => "SQLITE_READONLY",
+        rusqlite::ffi::SQLITE_CONSTRAINT => "SQLITE_CONSTRAINT",
+        rusqlite::ffi::SQLITE_MISUSE => "SQLITE_MISUSE",
+        rusqlite::ffi::SQLITE_INTERRUPT => "SQLITE_INTERRUPT",
+        rusqlite::ffi::SQLITE_NOMEM => "SQLITE_NOMEM",
+        rusqlite::ffi::SQLITE_PERM => "SQLITE_PERM",
+        rusqlite::ffi::SQLITE_ABORT => "SQLITE_ABORT",
+        rusqlite::ffi::SQLITE_PROTOCOL => "SQLITE_PROTOCOL",
+        rusqlite::ffi::SQLITE_RANGE => "SQLITE_RANGE",
+        rusqlite::ffi::SQLITE_TOOBIG => "SQLITE_TOOBIG",
+        rusqlite::ffi::SQLITE_MISMATCH => "SQLITE_MISMATCH",
+        rusqlite::ffi::SQLITE_AUTH => "SQLITE_AUTH",
+        rusqlite::ffi::SQLITE_NOTFOUND => "SQLITE_NOTFOUND",
+        rusqlite::ffi::SQLITE_CANTOPEN => "SQLITE_CANTOPEN",
+        _ => "SQLITE_UNKNOWN",
+    })
 }
 
 /// Install a `sqlite3_profile` callback on `connection` that dispatches

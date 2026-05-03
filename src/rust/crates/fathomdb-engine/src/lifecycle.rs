@@ -51,13 +51,25 @@ pub enum EventCategory {
 /// Public lifecycle event payload.
 ///
 /// The required public shape in 0.6.0 is the typed phase + source + category
-/// triple. Producing surfaces own additional non-required envelope fields
-/// per `dev/design/lifecycle.md` § Public event contract.
+/// triple. Producing surfaces may attach additional structured operation
+/// identity or timing context per `dev/design/lifecycle.md` § Public event
+/// contract.
+///
+/// `code` carries a stable machine-readable identifier for events that
+/// represent a concrete failure: SQLite-internal events use the SQLite
+/// extended-code name (e.g. `"SQLITE_SCHEMA"`, `"SQLITE_BUSY"`); engine
+/// errors use the stable `EngineError::stable_code` value (e.g.
+/// `"StorageError"`, `"WriteValidationError"` — matching the binding
+/// matrix in `dev/design/errors.md`). Non-error events leave `code`
+/// `None`. AC-021 dispatches on `code` rather than counting all error
+/// events — without it the test cannot distinguish `SQLITE_SCHEMA` from
+/// any other engine error.
 #[derive(Debug, Clone)]
 pub struct Event {
     pub phase: Phase,
     pub source: EventSource,
     pub category: EventCategory,
+    pub code: Option<&'static str>,
 }
 
 /// Host-routed subscriber boundary.

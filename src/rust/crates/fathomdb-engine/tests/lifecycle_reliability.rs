@@ -223,9 +223,17 @@ fn ac_021_zero_sqlite_schema_warnings_under_concurrent_reads_and_ddl() {
     ddl_handle.join().expect("ddl thread");
 
     let captured = sink.events.lock().unwrap();
+    // AC-021 dispatches on the stable error code, not on every error
+    // event. SQLITE_SCHEMA carries `source=SqliteInternal`; engine-side
+    // errors (`StorageError`, etc.) flow through the same subscriber
+    // path but do not satisfy the AC's `code == SQLITE_SCHEMA` clause.
     let schema_errors = captured
         .iter()
-        .filter(|e| e.source == EventSource::Engine && e.category == EventCategory::Error)
+        .filter(|e| {
+            e.source == EventSource::SqliteInternal
+                && e.category == EventCategory::Error
+                && e.code == Some("SQLITE_SCHEMA")
+        })
         .count();
     assert_eq!(
         schema_errors, 0,

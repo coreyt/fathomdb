@@ -61,10 +61,12 @@ fn ac_001_event_struct_carries_typed_source_and_category() {
         phase: Phase::Started,
         source: EventSource::Engine,
         category: EventCategory::Writer,
+        code: None,
     };
     assert_eq!(event.phase, Phase::Started);
     assert_eq!(event.source, EventSource::Engine);
     assert_eq!(event.category, EventCategory::Writer);
+    assert_eq!(event.code, None);
 }
 
 // AC-002: No log files written without subscriber. Needs FS-snapshot harness
