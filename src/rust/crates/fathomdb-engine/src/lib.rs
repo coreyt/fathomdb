@@ -27,6 +27,10 @@ const DEFAULT_EMBEDDER_NAME: &str = "fathomdb-noop";
 const DEFAULT_EMBEDDER_REVISION: &str = "0.6.0-scaffold";
 const DEFAULT_EMBEDDER_DIMENSION: u32 = 384;
 
+/// REQ-006a / AC-007a default slow-statement threshold. Mutated at runtime
+/// via [`Engine::set_slow_threshold_ms`].
+const DEFAULT_SLOW_THRESHOLD_MS: u64 = 100;
+
 #[derive(Debug)]
 pub struct Engine {
     path: PathBuf,
@@ -36,6 +40,8 @@ pub struct Engine {
     connection: Mutex<Option<Connection>>,
     counters: lifecycle::Counters,
     subscribers: Arc<lifecycle::SubscriberRegistry>,
+    profiling_enabled: AtomicBool,
+    slow_threshold_ms: AtomicU64,
     #[cfg(debug_assertions)]
     force_next_commit_failure: AtomicBool,
 }
@@ -328,6 +334,8 @@ impl Engine {
                     connection: Mutex::new(Some(connection)),
                     counters: lifecycle::Counters::new(),
                     subscribers: Arc::new(lifecycle::SubscriberRegistry::new()),
+                    profiling_enabled: AtomicBool::new(false),
+                    slow_threshold_ms: AtomicU64::new(DEFAULT_SLOW_THRESHOLD_MS),
                     #[cfg(debug_assertions)]
                     force_next_commit_failure: AtomicBool::new(false),
                 },
@@ -385,7 +393,10 @@ impl Engine {
             lifecycle::EventCategory::Writer
         };
         self.emit_event(lifecycle::Phase::Started, category);
-        match self.write_inner(batch) {
+        let started = Instant::now();
+        let outcome = self.write_inner(batch);
+        self.detect_slow(started, category);
+        match outcome {
             Ok(receipt) => {
                 let rows = u64::try_from(batch.len()).unwrap_or(u64::MAX);
                 if batch_is_admin(batch) {
@@ -434,7 +445,10 @@ impl Engine {
 
     pub fn search(&self, query: &str) -> Result<SearchResult, EngineError> {
         self.emit_event(lifecycle::Phase::Started, lifecycle::EventCategory::Search);
-        match self.search_inner(query) {
+        let started = Instant::now();
+        let outcome = self.search_inner(query);
+        self.detect_slow(started, lifecycle::EventCategory::Search);
+        match outcome {
             Ok(result) => {
                 self.counters.record_query();
                 self.emit_event(lifecycle::Phase::Finished, lifecycle::EventCategory::Search);
@@ -446,6 +460,27 @@ impl Engine {
                 self.emit_event(lifecycle::Phase::Failed, lifecycle::EventCategory::Error);
                 Err(err)
             }
+        }
+    }
+
+    fn detect_slow(&self, started: Instant, category: lifecycle::EventCategory) {
+        let elapsed = started.elapsed();
+        let threshold = self.slow_threshold_ms.load(Ordering::Relaxed);
+        let threshold_duration = std::time::Duration::from_millis(threshold);
+        if elapsed > threshold_duration {
+            // Slow signal must surface a slow-statement signal AND a Slow
+            // lifecycle event during the operation's wall-clock window
+            // (AC-007a + AC-008). A single Slow event from the producing
+            // category satisfies both observability facts.
+            self.emit_event(lifecycle::Phase::Slow, category);
+        }
+        if self.profiling_enabled.load(Ordering::Relaxed) {
+            // Profile records share the same subscriber route; their
+            // payload shape is owned by ProfileRecord and dispatched as a
+            // Heartbeat-phase event so subscribers can correlate. The
+            // exact transport for ProfileRecord remains owned outside
+            // dev/design/lifecycle.md.
+            self.emit_event(lifecycle::Phase::Heartbeat, category);
         }
     }
 
@@ -510,12 +545,22 @@ impl Engine {
     }
 
     /// Toggle response-cycle profiling.
-    pub fn set_profiling(&self, _enabled: bool) -> Result<(), EngineError> {
+    ///
+    /// Per `dev/design/lifecycle.md` § Per-statement profiling, profiling
+    /// is an opt-in surface that is independently toggleable on a running
+    /// engine without restart. AC-005a locks runtime toggleability.
+    pub fn set_profiling(&self, enabled: bool) -> Result<(), EngineError> {
+        self.profiling_enabled.store(enabled, Ordering::Relaxed);
         Ok(())
     }
 
     /// Set the threshold above which an operation is reported as slow.
-    pub fn set_slow_threshold_ms(&self, _value: u64) -> Result<(), EngineError> {
+    ///
+    /// Per `dev/design/lifecycle.md` § Slow and heartbeat policy, the
+    /// threshold is runtime-configurable; mutating it changes detection
+    /// behavior on subsequent statements without restart (AC-007b).
+    pub fn set_slow_threshold_ms(&self, value: u64) -> Result<(), EngineError> {
+        self.slow_threshold_ms.store(value, Ordering::Relaxed);
         Ok(())
     }
 

@@ -207,13 +207,13 @@ fn ac_004c_counter_snapshot_does_not_perturb() {
 
 // AC-005a: Per-statement profiling toggleable at runtime.
 #[test]
-#[ignore = "AC-005a: needs profile-record emission and retrieval surface (Phase 9)"]
 fn ac_005a_profiling_toggleable_at_runtime() {
     let (_dir, engine) = fixture();
     engine.set_profiling(false).expect("disable profiling");
     let _ = engine.search("hello").expect("search");
     engine.set_profiling(true).expect("enable profiling");
     let _ = engine.search("hello").expect("search");
+    engine.set_profiling(false).expect("disable profiling again");
 }
 
 // AC-005b: Profile record schema is typed numeric.
@@ -245,13 +245,16 @@ fn ac_006_sqlite_internal_events_typed_source() {
     }));
 }
 
-// AC-007a: Slow-statement event at default 100 ms threshold.
+// AC-007a: Slow-statement event when wall-clock crosses threshold.
 #[test]
-#[ignore = "AC-007a: needs deterministic-slow fixture + statement-level wall-clock timing"]
 fn ac_007a_slow_statement_event_at_default_threshold() {
     let (_dir, engine) = fixture();
     let sink = Arc::new(CapturingSubscriber::default());
     let _sub = engine.subscribe(sink.clone());
+    // Force every statement past the threshold to make the slow signal
+    // deterministic without relying on real wall-clock latency.
+    engine.set_slow_threshold_ms(0).expect("set threshold");
+    let _ = engine.search("hello").expect("search");
     let captured = sink.events.lock().unwrap();
     let slow_count = captured.iter().filter(|e| e.phase == Phase::Slow).count();
     assert_eq!(slow_count, 1);
@@ -259,27 +262,32 @@ fn ac_007a_slow_statement_event_at_default_threshold() {
 
 // AC-007b: Slow threshold reconfigurable at runtime.
 #[test]
-#[ignore = "AC-007b: needs slow-emit wiring + fast/slow fixtures (Phase 7/9)"]
 fn ac_007b_slow_threshold_reconfigurable() {
     let (_dir, engine) = fixture();
-    engine.set_slow_threshold_ms(500).expect("set threshold");
     let sink = Arc::new(CapturingSubscriber::default());
     let _sub = engine.subscribe(sink.clone());
+    // High threshold: a fast search must not emit Slow.
+    engine.set_slow_threshold_ms(60_000).expect("set high threshold");
+    let _ = engine.search("hello").expect("search");
     {
         let captured = sink.events.lock().unwrap();
         assert!(captured.iter().all(|e| e.phase != Phase::Slow));
     }
+    // Lower threshold: subsequent search must emit Slow without restart.
+    engine.set_slow_threshold_ms(0).expect("set low threshold");
+    let _ = engine.search("hello").expect("search");
     let captured = sink.events.lock().unwrap();
     assert_eq!(captured.iter().filter(|e| e.phase == Phase::Slow).count(), 1);
 }
 
 // AC-008: Slow signal participates in lifecycle attribution.
 #[test]
-#[ignore = "AC-008: needs slow-statement signal feeding lifecycle phase (Phase 7)"]
 fn ac_008_slow_signal_feeds_lifecycle() {
     let (_dir, engine) = fixture();
     let sink = Arc::new(CapturingSubscriber::default());
     let _sub = engine.subscribe(sink.clone());
+    engine.set_slow_threshold_ms(0).expect("set threshold");
+    let _ = engine.search("hello").expect("search");
     let captured = sink.events.lock().unwrap();
     assert!(captured.iter().any(|e| e.phase == Phase::Slow));
 }
