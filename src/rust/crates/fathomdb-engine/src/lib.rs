@@ -1276,10 +1276,14 @@ fn install_profile_callback(
     });
     let ctx_ptr: *mut ProfileContext = &mut *ctx;
 
-    // SAFETY: the Box outlives the connection — `Engine::close` /
-    // `Engine::drop` drops the writer + reader connections before
-    // dropping `profile_contexts`, so the callback's userdata pointer
-    // is valid for every callback invocation.
+    // SAFETY: the Box outlives the connection. Rust drops struct fields
+    // in declaration order. `connection` and `reader_pool` are declared
+    // before `profile_contexts`, so the connections — and SQLite's
+    // internal profile-callback state with them — are dropped before
+    // the `Box<ProfileContext>` allocations are freed. `Engine::close`
+    // additionally clears the callback via
+    // `sqlite3_profile(handle, None, NULL)` before connection close to
+    // drain any in-flight callback dispatch.
     unsafe {
         rusqlite::ffi::sqlite3_profile(
             connection.handle(),
