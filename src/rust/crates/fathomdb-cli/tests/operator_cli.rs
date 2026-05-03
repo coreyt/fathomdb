@@ -8,12 +8,20 @@
 //! - AC-040b: every `fathomdb doctor <verb> --help` prints a `Usage:` line.
 //! - AC-058: `fathomdb recover --help` enumerates the six recover sub-flags
 //!   plus `--accept-data-loss`.
+//! - Not-implemented JSON shape: every doctor verb and `recover` print
+//!   `{"status":"not_implemented","verb":"<name>"}` and exit
+//!   `exit_code::UNRECOVERABLE` (70). This pins the surface contract pinned
+//!   by `fathomdb_cli::run` in 0.6.0; verb bodies still do not touch a
+//!   database.
 //!
 //! These tests invoke the built `fathomdb` binary via `env!("CARGO_BIN_EXE_*")`
 //! so they exercise clap's runtime behavior, not just the parser surface
 //! pinned by `tests/parser.rs`.
 
 use std::process::Command;
+
+use fathomdb_cli::exit_code;
+use serde_json::Value;
 
 const DOCTOR_VERBS: &[&str] = &[
     "check-integrity",
@@ -106,6 +114,75 @@ fn t_035d_doctor_rejects_accept_data_loss_runtime() {
         "fathomdb doctor check-integrity --accept-data-loss must fail; \
          clap should reject the flag (it is owned by `recover`)",
     );
+}
+
+/// Argument vector and expected `verb` field for a doctor verb invocation.
+fn doctor_invocation(verb: &str) -> (Vec<&'static str>, &'static str) {
+    match verb {
+        "check-integrity" => (vec!["doctor", "check-integrity"], "doctor:check-integrity"),
+        "safe-export" => {
+            (vec!["doctor", "safe-export", "/tmp/fathomdb-test-export"], "doctor:safe-export")
+        }
+        "verify-embedder" => (vec!["doctor", "verify-embedder"], "doctor:verify-embedder"),
+        "trace" => (vec!["doctor", "trace", "--source-ref", "src-test"], "doctor:trace"),
+        "dump-schema" => (vec!["doctor", "dump-schema"], "doctor:dump-schema"),
+        "dump-row-counts" => (vec!["doctor", "dump-row-counts"], "doctor:dump-row-counts"),
+        "dump-profile" => (vec!["doctor", "dump-profile"], "doctor:dump-profile"),
+        other => panic!("unknown doctor verb in test fixture: {other}"),
+    }
+}
+
+#[test]
+fn t_doctor_verbs_emit_not_implemented_json_and_exit_70() {
+    for verb in DOCTOR_VERBS {
+        let (args, expected_verb) = doctor_invocation(verb);
+        let output = fathomdb().args(&args).output().expect("spawn");
+        assert_eq!(
+            output.status.code(),
+            Some(exit_code::UNRECOVERABLE),
+            "fathomdb doctor {verb} must exit {} (UNRECOVERABLE); got {:?} stderr={}",
+            exit_code::UNRECOVERABLE,
+            output.status,
+            String::from_utf8_lossy(&output.stderr),
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let parsed: Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|e| {
+            panic!("doctor {verb} stdout must be JSON; err={e} stdout={stdout}")
+        });
+        let obj = parsed.as_object().expect("expected JSON object");
+        let keys: std::collections::BTreeSet<&str> = obj.keys().map(String::as_str).collect();
+        let expected: std::collections::BTreeSet<&str> = ["status", "verb"].into_iter().collect();
+        assert_eq!(keys, expected, "doctor {verb} JSON keys must be exactly {{status, verb}}");
+        assert_eq!(obj.get("status").and_then(Value::as_str), Some("not_implemented"));
+        assert_eq!(obj.get("verb").and_then(Value::as_str), Some(expected_verb));
+    }
+}
+
+#[test]
+fn t_recover_emits_not_implemented_json_and_exits_70() {
+    let output = fathomdb()
+        .args(["recover", "--accept-data-loss", "--truncate-wal"])
+        .output()
+        .expect("spawn");
+    assert_eq!(
+        output.status.code(),
+        Some(exit_code::UNRECOVERABLE),
+        "fathomdb recover must exit {} (UNRECOVERABLE); got {:?} stderr={}",
+        exit_code::UNRECOVERABLE,
+        output.status,
+        String::from_utf8_lossy(&output.stderr),
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("recover stdout must be JSON; err={e} stdout={stdout}"));
+    let obj = parsed.as_object().expect("expected JSON object");
+    let keys: std::collections::BTreeSet<&str> = obj.keys().map(String::as_str).collect();
+    let expected: std::collections::BTreeSet<&str> = ["status", "verb"].into_iter().collect();
+    assert_eq!(keys, expected, "recover JSON keys must be exactly {{status, verb}}");
+    assert_eq!(obj.get("status").and_then(Value::as_str), Some("not_implemented"));
+    assert_eq!(obj.get("verb").and_then(Value::as_str), Some("recover"));
 }
 
 #[test]
