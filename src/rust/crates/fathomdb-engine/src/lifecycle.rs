@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, Weak};
 
 use crate::CounterSnapshot;
 
@@ -68,6 +68,75 @@ pub struct Event {
 /// subscriber. No private sink, no stderr fallback.
 pub trait Subscriber: Send + Sync {
     fn on_event(&self, event: &Event);
+}
+
+/// Engine-side registry of attached subscribers.
+///
+/// Holds attached subscribers behind a `Mutex<Vec<...>>`. Dispatch fans
+/// the event out to every live subscriber. Drop of a [`Subscription`]
+/// detaches that subscriber by id.
+#[derive(Default)]
+pub(crate) struct SubscriberRegistry {
+    next_id: AtomicU64,
+    entries: Mutex<Vec<(u64, Arc<dyn Subscriber>)>>,
+}
+
+impl std::fmt::Debug for SubscriberRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let count = self.entries.lock().map(|e| e.len()).unwrap_or(0);
+        f.debug_struct("SubscriberRegistry").field("subscribers", &count).finish()
+    }
+}
+
+impl SubscriberRegistry {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn attach(self: &Arc<Self>, subscriber: Arc<dyn Subscriber>) -> Subscription {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut entries) = self.entries.lock() {
+            entries.push((id, subscriber));
+        }
+        Subscription { id, registry: Arc::downgrade(self) }
+    }
+
+    fn detach(&self, id: u64) {
+        if let Ok(mut entries) = self.entries.lock() {
+            entries.retain(|(eid, _)| *eid != id);
+        }
+    }
+
+    pub(crate) fn dispatch(&self, event: &Event) {
+        // Snapshot the subscriber list so callbacks may not call back into the
+        // registry while we hold the lock.
+        let snapshot: Vec<Arc<dyn Subscriber>> = match self.entries.lock() {
+            Ok(entries) => entries.iter().map(|(_, s)| Arc::clone(s)).collect(),
+            Err(_) => return,
+        };
+        for sub in snapshot {
+            sub.on_event(event);
+        }
+    }
+}
+
+/// Handle returned by `Engine::subscribe`.
+///
+/// Dropping the handle detaches the subscriber. Subscriber payload
+/// semantics are owned by `dev/design/lifecycle.md` and
+/// `dev/design/migrations.md`.
+#[derive(Debug)]
+pub struct Subscription {
+    id: u64,
+    registry: Weak<SubscriberRegistry>,
+}
+
+impl Drop for Subscription {
+    fn drop(&mut self) {
+        if let Some(registry) = self.registry.upgrade() {
+            registry.detach(self.id);
+        }
+    }
 }
 
 /// Per-statement profile record shape.

@@ -7,7 +7,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use fathomdb_embedder_api::EmbedderIdentity;
@@ -35,6 +35,7 @@ pub struct Engine {
     lock: Mutex<Option<File>>,
     connection: Mutex<Option<Connection>>,
     counters: lifecycle::Counters,
+    subscribers: Arc<lifecycle::SubscriberRegistry>,
     #[cfg(debug_assertions)]
     force_next_commit_failure: AtomicBool,
 }
@@ -112,12 +113,7 @@ pub struct CounterSnapshot {
     pub cache_miss: u64,
 }
 
-/// Handle returned by [`Engine::subscribe`].
-///
-/// Subscriber payload semantics are owned by `dev/design/lifecycle.md` and
-/// `dev/design/migrations.md`. Dropping the handle detaches the subscriber.
-#[derive(Debug, Default)]
-pub struct Subscription {}
+pub use lifecycle::Subscription;
 
 /// Stable corruption-on-open detail carried by
 /// [`EngineOpenError::Corruption`].
@@ -331,6 +327,7 @@ impl Engine {
                     lock: Mutex::new(Some(lock)),
                     connection: Mutex::new(Some(connection)),
                     counters: lifecycle::Counters::new(),
+                    subscribers: Arc::new(lifecycle::SubscriberRegistry::new()),
                     #[cfg(debug_assertions)]
                     force_next_commit_failure: AtomicBool::new(false),
                 },
@@ -382,6 +379,12 @@ impl Engine {
     }
 
     pub fn write(&self, batch: &[PreparedWrite]) -> Result<WriteReceipt, EngineError> {
+        let category = if batch_is_admin(batch) {
+            lifecycle::EventCategory::Admin
+        } else {
+            lifecycle::EventCategory::Writer
+        };
+        self.emit_event(lifecycle::Phase::Started, category);
         match self.write_inner(batch) {
             Ok(receipt) => {
                 let rows = u64::try_from(batch.len()).unwrap_or(u64::MAX);
@@ -390,10 +393,15 @@ impl Engine {
                 } else {
                     self.counters.record_write(rows);
                 }
+                self.emit_event(lifecycle::Phase::Finished, category);
                 Ok(receipt)
             }
             Err(err) => {
                 self.counters.record_error(err.stable_code());
+                // AC-003d: capture-ordinal < raise-ordinal — Failed and Error
+                // events both fire before the EngineError returns to the caller.
+                self.emit_event(lifecycle::Phase::Failed, category);
+                self.emit_event(lifecycle::Phase::Failed, lifecycle::EventCategory::Error);
                 Err(err)
             }
         }
@@ -425,16 +433,25 @@ impl Engine {
     }
 
     pub fn search(&self, query: &str) -> Result<SearchResult, EngineError> {
+        self.emit_event(lifecycle::Phase::Started, lifecycle::EventCategory::Search);
         match self.search_inner(query) {
             Ok(result) => {
                 self.counters.record_query();
+                self.emit_event(lifecycle::Phase::Finished, lifecycle::EventCategory::Search);
                 Ok(result)
             }
             Err(err) => {
                 self.counters.record_error(err.stable_code());
+                self.emit_event(lifecycle::Phase::Failed, lifecycle::EventCategory::Search);
+                self.emit_event(lifecycle::Phase::Failed, lifecycle::EventCategory::Error);
                 Err(err)
             }
         }
+    }
+
+    fn emit_event(&self, phase: lifecycle::Phase, category: lifecycle::EventCategory) {
+        let event = lifecycle::Event { phase, source: lifecycle::EventSource::Engine, category };
+        self.subscribers.dispatch(&event);
     }
 
     fn search_inner(&self, query: &str) -> Result<SearchResult, EngineError> {
@@ -504,11 +521,12 @@ impl Engine {
 
     /// Attach a host subscriber to engine events.
     ///
+    /// Dropping the returned [`Subscription`] detaches the subscriber.
     /// Payload shape owned by `dev/design/lifecycle.md` and
     /// `dev/design/migrations.md`.
     #[must_use]
-    pub fn subscribe(&self) -> Subscription {
-        Subscription::default()
+    pub fn subscribe(&self, subscriber: Arc<dyn lifecycle::Subscriber>) -> Subscription {
+        self.subscribers.attach(subscriber)
     }
 
     #[cfg(debug_assertions)]

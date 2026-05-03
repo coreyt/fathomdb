@@ -70,7 +70,6 @@ fn ac_001_event_struct_carries_typed_source_and_category() {
 // AC-002: No log files written without subscriber. Needs FS-snapshot harness
 // + actual write/search/close paths emitting real work.
 #[test]
-#[ignore = "AC-002: needs filesystem snapshot harness + Phase 6/7 write/search wiring"]
 fn ac_002_no_log_files_without_subscriber() {
     let dir = TempDir::new().unwrap();
     let snapshot_before: Vec<_> =
@@ -102,13 +101,12 @@ fn ac_002_no_log_files_without_subscriber() {
     }
 }
 
-// AC-003a: Writer events flow to host subscriber. Needs Phase 7 emission.
+// AC-003a: Writer events flow to host subscriber.
 #[test]
-#[ignore = "AC-003a: needs writer event emission (Phase 7)"]
 fn ac_003a_writer_events_flow_to_subscriber() {
     let (_dir, engine) = fixture();
     let sink = Arc::new(CapturingSubscriber::default());
-    let _sub = engine.subscribe();
+    let _sub = engine.subscribe(sink.clone());
     let _ =
         engine.write(&[PreparedWrite::Node { kind: "doc".to_string(), body: "hello".to_string() }]);
     let captured = sink.events.lock().unwrap();
@@ -119,11 +117,10 @@ fn ac_003a_writer_events_flow_to_subscriber() {
 
 // AC-003b: Search events flow to host subscriber.
 #[test]
-#[ignore = "AC-003b: needs search event emission (Phase 7)"]
 fn ac_003b_search_events_flow_to_subscriber() {
     let (_dir, engine) = fixture();
     let sink = Arc::new(CapturingSubscriber::default());
-    let _sub = engine.subscribe();
+    let _sub = engine.subscribe(sink.clone());
     let _ = engine.search("hello");
     let captured = sink.events.lock().unwrap();
     assert!(captured
@@ -133,11 +130,10 @@ fn ac_003b_search_events_flow_to_subscriber() {
 
 // AC-003c: Admin events flow to host subscriber.
 #[test]
-#[ignore = "AC-003c: needs admin event emission (Phase 7)"]
 fn ac_003c_admin_events_flow_to_subscriber() {
     let (_dir, engine) = fixture();
     let sink = Arc::new(CapturingSubscriber::default());
-    let _sub = engine.subscribe();
+    let _sub = engine.subscribe(sink.clone());
     let _ = engine.write(&[PreparedWrite::AdminSchema {
         name: "things".to_string(),
         kind: "latest_state".to_string(),
@@ -152,11 +148,10 @@ fn ac_003c_admin_events_flow_to_subscriber() {
 
 // AC-003d: Error events flow to host subscriber before failure raises.
 #[test]
-#[ignore = "AC-003d: needs error event emission (Phase 7)"]
 fn ac_003d_error_events_flow_to_subscriber() {
     let (_dir, engine) = fixture();
     let sink = Arc::new(CapturingSubscriber::default());
-    let _sub = engine.subscribe();
+    let _sub = engine.subscribe(sink.clone());
     let _ = engine.write(&[]); // empty batch -> WriteValidation
     let captured = sink.events.lock().unwrap();
     assert!(captured
@@ -239,7 +234,7 @@ fn ac_005b_profile_record_typed_numeric_fields() {
 fn ac_006_sqlite_internal_events_typed_source() {
     let (_dir, engine) = fixture();
     let sink = Arc::new(CapturingSubscriber::default());
-    let _sub = engine.subscribe();
+    let _sub = engine.subscribe(sink.clone());
     let captured = sink.events.lock().unwrap();
     assert!(captured.iter().any(|e| {
         e.source == EventSource::SqliteInternal
@@ -256,7 +251,7 @@ fn ac_006_sqlite_internal_events_typed_source() {
 fn ac_007a_slow_statement_event_at_default_threshold() {
     let (_dir, engine) = fixture();
     let sink = Arc::new(CapturingSubscriber::default());
-    let _sub = engine.subscribe();
+    let _sub = engine.subscribe(sink.clone());
     let captured = sink.events.lock().unwrap();
     let slow_count = captured.iter().filter(|e| e.phase == Phase::Slow).count();
     assert_eq!(slow_count, 1);
@@ -269,7 +264,7 @@ fn ac_007b_slow_threshold_reconfigurable() {
     let (_dir, engine) = fixture();
     engine.set_slow_threshold_ms(500).expect("set threshold");
     let sink = Arc::new(CapturingSubscriber::default());
-    let _sub = engine.subscribe();
+    let _sub = engine.subscribe(sink.clone());
     {
         let captured = sink.events.lock().unwrap();
         assert!(captured.iter().all(|e| e.phase != Phase::Slow));
@@ -284,7 +279,7 @@ fn ac_007b_slow_threshold_reconfigurable() {
 fn ac_008_slow_signal_feeds_lifecycle() {
     let (_dir, engine) = fixture();
     let sink = Arc::new(CapturingSubscriber::default());
-    let _sub = engine.subscribe();
+    let _sub = engine.subscribe(sink.clone());
     let captured = sink.events.lock().unwrap();
     assert!(captured.iter().any(|e| e.phase == Phase::Slow));
 }

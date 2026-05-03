@@ -155,7 +155,7 @@ fn ac_021_zero_sqlite_schema_warnings_under_concurrent_reads_and_ddl() {
     let engine = Arc::new(opened.engine);
 
     let sink = Arc::new(CapturingSubscriber::default());
-    let _sub = engine.subscribe();
+    let _sub = engine.subscribe(sink.clone());
 
     // Phase 7-owned: spawn 8 concurrent reader threads + 1 DDL thread for 60 s.
     // The DDL thread cycles admin.configure_kind add/remove and triggers

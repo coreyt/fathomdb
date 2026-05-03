@@ -1,8 +1,17 @@
 //! Surface-level assertions for engine-attached instrumentation methods
 //! pinned by `dev/interfaces/rust.md` § Engine-attached instrumentation.
 
+use std::sync::Arc;
+
+use fathomdb_engine::lifecycle::{Event, Subscriber};
 use fathomdb_engine::{CounterSnapshot, Engine, Subscription};
 use tempfile::TempDir;
+
+struct NoopSubscriber;
+
+impl Subscriber for NoopSubscriber {
+    fn on_event(&self, _event: &Event) {}
+}
 
 fn fixture() -> (TempDir, Engine) {
     let dir = TempDir::new().unwrap();
@@ -40,5 +49,5 @@ fn set_slow_threshold_accepts_u64() {
 #[test]
 fn subscribe_returns_subscription_carrier() {
     let (_dir, engine) = fixture();
-    let _: Subscription = engine.subscribe();
+    let _: Subscription = engine.subscribe(Arc::new(NoopSubscriber));
 }
