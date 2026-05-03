@@ -109,8 +109,6 @@ fn ac_003a_writer_events_flow_to_subscriber() {
     let (_dir, engine) = fixture();
     let sink = Arc::new(CapturingSubscriber::default());
     let _sub = engine.subscribe();
-    // TODO(Phase 7): registration API will accept Arc<dyn Subscriber>; for
-    // now this test asserts the post-wiring shape.
     let _ =
         engine.write(&[PreparedWrite::Node { kind: "doc".to_string(), body: "hello".to_string() }]);
     let captured = sink.events.lock().unwrap();
@@ -220,11 +218,8 @@ fn ac_005a_profiling_toggleable_at_runtime() {
     let (_dir, engine) = fixture();
     engine.set_profiling(false).expect("disable profiling");
     let _ = engine.search("hello").expect("search");
-    // No profile records expected when disabled — retrieval API TBD in Phase 9.
     engine.set_profiling(true).expect("enable profiling");
     let _ = engine.search("hello").expect("search");
-    // After enable, at least one profile record should be retrievable —
-    // retrieval surface owned by Phase 9.
 }
 
 // AC-005b: Profile record schema is typed numeric.
@@ -246,8 +241,6 @@ fn ac_006_sqlite_internal_events_typed_source() {
     let (_dir, engine) = fixture();
     let sink = Arc::new(CapturingSubscriber::default());
     let _sub = engine.subscribe();
-    // Corruption injection harness pending; once available, trigger a
-    // SQLite-internal event and assert routed-through-subscriber.
     let captured = sink.events.lock().unwrap();
     assert!(captured.iter().any(|e| {
         e.source == EventSource::SqliteInternal
@@ -265,8 +258,6 @@ fn ac_007a_slow_statement_event_at_default_threshold() {
     let (_dir, engine) = fixture();
     let sink = Arc::new(CapturingSubscriber::default());
     let _sub = engine.subscribe();
-    // Run deterministic-slow fixture (≥200 ms via recursive CTE) — fixture
-    // pending Phase 9 / test-plan.md.
     let captured = sink.events.lock().unwrap();
     let slow_count = captured.iter().filter(|e| e.phase == Phase::Slow).count();
     assert_eq!(slow_count, 1);
@@ -280,12 +271,10 @@ fn ac_007b_slow_threshold_reconfigurable() {
     engine.set_slow_threshold_ms(500).expect("set threshold");
     let sink = Arc::new(CapturingSubscriber::default());
     let _sub = engine.subscribe();
-    // Run fast fixture (≤200 ms) — should emit no Slow events at 500 ms threshold.
     {
         let captured = sink.events.lock().unwrap();
         assert!(captured.iter().all(|e| e.phase != Phase::Slow));
     }
-    // Run slow fixture (≥600 ms) — should emit exactly one Slow event.
     let captured = sink.events.lock().unwrap();
     assert_eq!(captured.iter().filter(|e| e.phase == Phase::Slow).count(), 1);
 }
@@ -297,28 +286,8 @@ fn ac_008_slow_signal_feeds_lifecycle() {
     let (_dir, engine) = fixture();
     let sink = Arc::new(CapturingSubscriber::default());
     let _sub = engine.subscribe();
-    // 1 fast + 1 slow + 1 fast — assert ≥1 lifecycle event with phase == Slow
-    // during the slow statement's wall-clock window.
     let captured = sink.events.lock().unwrap();
     assert!(captured.iter().any(|e| e.phase == Phase::Slow));
-}
-
-// AC-009: Stress-failure event field schema (four required fields populated).
-#[test]
-#[ignore = "AC-009: needs robustness suite + one-thread-poison fixture"]
-fn ac_009_stress_failure_event_field_schema() {
-    let ctx = StressFailureContext {
-        thread_group_id: 7,
-        op_kind: "write".to_string(),
-        last_error_chain: vec!["WriteValidation".to_string()],
-        projection_state: "Pending".to_string(),
-    };
-    // Pure type construction — full population assertion lives here for the
-    // unwiring of the ignore once the robustness suite emits real payloads.
-    assert_eq!(ctx.thread_group_id, 7);
-    assert!(!ctx.op_kind.is_empty());
-    assert!(!ctx.last_error_chain.is_empty());
-    assert!(!ctx.projection_state.is_empty());
 }
 
 // AC-009 supporting: Pure-type construction of StressFailureContext.
