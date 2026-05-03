@@ -166,8 +166,9 @@ impl fathomdb_engine::lifecycle::Subscriber for CapturingSubscriber {
 
 // AC-021: Zero SQLITE_SCHEMA warnings under concurrent reads + admin DDL.
 //
-// Default short window (~5 s) keeps `agent-verify` fast. Setting
-// `AGENT_LONG=1` runs the full 60 s window from the AC fixture spec.
+// `agent-verify` runs the 5 s smoke window. `scripts/check.sh` sets
+// `AGENT_LONG=1` to run the full 60 s window from the AC fixture spec.
+// Catalog: `dev/test-plan.md` § Implementation Order step 3.
 #[test]
 fn ac_021_zero_sqlite_schema_warnings_under_concurrent_reads_and_ddl() {
     use fathomdb_engine::PreparedWrite;

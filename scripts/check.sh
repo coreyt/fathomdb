@@ -3,7 +3,9 @@ set -euo pipefail
 
 cargo fmt --check
 cargo check --workspace
-cargo test --workspace
+# `AGENT_LONG=1` exercises the spec-conforming long-running variants
+# (e.g. AC-021's 60 s schema-error window) as part of the broad CI gate.
+AGENT_LONG=1 cargo test --workspace
 python3 -m compileall src/python/fathomdb src/python/tests
 
 if [ -x src/ts/node_modules/.bin/tsc ]; then

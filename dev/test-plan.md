@@ -63,7 +63,9 @@ reused across suites:
 2. Add CLI recovery/doctor tests before implementing CLI verbs.
 3. Add durability/perf/soak harnesses behind explicit CI labels so normal
    `agent-verify` can stay fast while release gates still execute the full
-   acceptance set.
+   acceptance set. The AC-021 spec-conforming 60 s window is long-running
+   CI work gated on `AGENT_LONG=1`; `agent-verify` runs a 5 s smoke variant
+   and `scripts/check.sh` is responsible for invoking the 60 s variant.
 4. Keep thresholds in `acceptance.md`; tests read or restate those parameters
    but do not invent new gates.
 
