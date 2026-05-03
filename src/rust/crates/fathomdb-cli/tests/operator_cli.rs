@@ -17,6 +17,10 @@
 //! These tests invoke the built `fathomdb` binary via `env!("CARGO_BIN_EXE_*")`
 //! so they exercise clap's runtime behavior, not just the parser surface
 //! pinned by `tests/parser.rs`.
+//!
+//! The two `#[ignore]`'d not_implemented JSON shape tests are scaffold-phase
+//! pins; Phase 9 verb-body wiring will retarget them to real exit-class
+//! semantics.
 
 use std::process::Command;
 
@@ -101,10 +105,7 @@ fn t_058_recover_help_enumerates_canonical_flag_set() {
 }
 
 #[test]
-fn t_035d_doctor_rejects_accept_data_loss_runtime() {
-    // Cross-checks the parser-level assertion in tests/parser.rs by exercising
-    // the actual built binary: clap must reject `--accept-data-loss` on doctor
-    // verbs at runtime, not just at parse-call time.
+fn t_cli_doctor_rejects_accept_data_loss_binary() {
     let output = fathomdb()
         .args(["doctor", "check-integrity", "--accept-data-loss"])
         .output()
