@@ -7,7 +7,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::Instant;
 
 use fathomdb_embedder_api::EmbedderIdentity;
@@ -31,6 +31,11 @@ const DEFAULT_EMBEDDER_DIMENSION: u32 = 384;
 /// via [`Engine::set_slow_threshold_ms`].
 const DEFAULT_SLOW_THRESHOLD_MS: u64 = 100;
 
+/// Reader pool size. Per `dev/design/engine.md` § Writer / reader split,
+/// reader connections are pooled and never serialize behind one
+/// connection. AC-021 exercises 8 concurrent readers.
+const READER_POOL_SIZE: usize = 8;
+
 #[derive(Debug)]
 pub struct Engine {
     path: PathBuf,
@@ -38,12 +43,50 @@ pub struct Engine {
     closed: AtomicBool,
     lock: Mutex<Option<File>>,
     connection: Mutex<Option<Connection>>,
+    reader_pool: ReaderPool,
     counters: lifecycle::Counters,
     subscribers: Arc<lifecycle::SubscriberRegistry>,
     profiling_enabled: AtomicBool,
     slow_threshold_ms: AtomicU64,
     #[cfg(debug_assertions)]
     force_next_commit_failure: AtomicBool,
+}
+
+/// Bounded pool of read-only SQLite connections.
+///
+/// Per `dev/design/engine.md` § Writer / reader split, reader connections
+/// must not serialize behind a single mutex. Each connection opens with
+/// `journal_mode=WAL` and `query_only=ON` so concurrent reads coexist
+/// with one writer thread (AC-021).
+#[derive(Debug, Default)]
+struct ReaderPool {
+    inner: Mutex<Vec<Connection>>,
+    cvar: Condvar,
+}
+
+impl ReaderPool {
+    fn new(connections: Vec<Connection>) -> Self {
+        Self { inner: Mutex::new(connections), cvar: Condvar::new() }
+    }
+
+    fn borrow(&self) -> Option<Connection> {
+        let mut guard = self.inner.lock().ok()?;
+        while guard.is_empty() {
+            guard = self.cvar.wait(guard).ok()?;
+        }
+        guard.pop()
+    }
+
+    fn release(&self, conn: Connection) {
+        if let Ok(mut guard) = self.inner.lock() {
+            guard.push(conn);
+            self.cvar.notify_one();
+        }
+    }
+
+    fn drain(&self) -> Vec<Connection> {
+        self.inner.lock().map(|mut g| std::mem::take(&mut *g)).unwrap_or_default()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -325,13 +368,14 @@ impl Engine {
             Self::open_locked(canonical_path.clone(), migrations, emit_migration_event);
 
         match open_result {
-            Ok((connection, report)) => Ok(OpenedEngine {
+            Ok((connection, readers, report)) => Ok(OpenedEngine {
                 engine: Self {
                     path: canonical_path,
                     next_cursor: AtomicU64::new(load_next_cursor(&connection)),
                     closed: AtomicBool::new(false),
                     lock: Mutex::new(Some(lock)),
                     connection: Mutex::new(Some(connection)),
+                    reader_pool: ReaderPool::new(readers),
                     counters: lifecycle::Counters::new(),
                     subscribers: Arc::new(lifecycle::SubscriberRegistry::new()),
                     profiling_enabled: AtomicBool::new(false),
@@ -352,14 +396,11 @@ impl Engine {
         path: PathBuf,
         migrations: &'static [fathomdb_schema::Migration],
         emit_migration_event: &mut impl FnMut(&MigrationStepReport),
-    ) -> Result<(Connection, OpenReport), EngineOpenError> {
+    ) -> Result<(Connection, Vec<Connection>, OpenReport), EngineOpenError> {
         let connection = Connection::open(&path)
             .map_err(|_| EngineOpenError::Io { message: "could not open database".to_string() })?;
         connection.pragma_update(None, "journal_mode", "WAL").map_err(|_| EngineOpenError::Io {
             message: "could not set journal mode".to_string(),
-        })?;
-        connection.pragma_update(None, "locking_mode", "EXCLUSIVE").map_err(|_| {
-            EngineOpenError::Io { message: "could not set locking mode".to_string() }
         })?;
 
         reject_legacy_shape(&connection)?;
@@ -378,7 +419,21 @@ impl Engine {
             default_embedder: default_embedder_identity(),
         };
 
-        Ok((connection, report))
+        let mut readers = Vec::with_capacity(READER_POOL_SIZE);
+        for _ in 0..READER_POOL_SIZE {
+            let reader = Connection::open(&path).map_err(|_| EngineOpenError::Io {
+                message: "could not open reader connection".to_string(),
+            })?;
+            reader.pragma_update(None, "journal_mode", "WAL").map_err(|_| EngineOpenError::Io {
+                message: "could not set reader journal mode".to_string(),
+            })?;
+            reader.pragma_update(None, "query_only", "ON").map_err(|_| EngineOpenError::Io {
+                message: "could not set reader query_only".to_string(),
+            })?;
+            readers.push(reader);
+        }
+
+        Ok((connection, readers, report))
     }
 
     #[must_use]
@@ -497,21 +552,10 @@ impl Engine {
 
         let compiled = compile_text_query(query);
         let mut results = vec![compiled.sql];
-        let mut cursor = 0;
-        if let Ok(connection) = self.connection.lock() {
-            cursor = self.next_cursor.load(Ordering::SeqCst);
-            if let Some(connection) = connection.as_ref() {
-                if let Ok(mut statement) = connection.prepare(
-                    "SELECT body FROM canonical_nodes WHERE body LIKE ?1 ORDER BY write_cursor",
-                ) {
-                    let needle = format!("%{}%", query.trim());
-                    if let Ok(rows) = statement.query_map([needle], |row| row.get::<_, String>(0)) {
-                        for row in rows.flatten() {
-                            results.push(row);
-                        }
-                    }
-                }
-            }
+        let cursor = self.next_cursor.load(Ordering::SeqCst);
+        if let Some(reader) = self.reader_pool.borrow() {
+            run_search_query(&reader, query.trim(), &mut results);
+            self.reader_pool.release(reader);
         }
 
         Ok(SearchResult { projection_cursor: cursor, soft_fallback: None, results })
@@ -519,6 +563,10 @@ impl Engine {
 
     pub fn close(&self) -> Result<(), EngineError> {
         self.closed.store(true, Ordering::SeqCst);
+        // Drain readers before the writer connection so SQLite's last-handle
+        // checkpointer runs on the writer per `dev/design/engine.md` § Close
+        // path step 6.
+        drop(self.reader_pool.drain());
         if let Ok(mut connection) = self.connection.lock() {
             connection.take();
         }
@@ -591,6 +639,21 @@ impl Engine {
 
 fn batch_is_admin(batch: &[PreparedWrite]) -> bool {
     !batch.is_empty() && batch.iter().all(|w| matches!(w, PreparedWrite::AdminSchema { .. }))
+}
+
+fn run_search_query(reader: &Connection, needle: &str, results: &mut Vec<String>) {
+    let Ok(mut statement) =
+        reader.prepare("SELECT body FROM canonical_nodes WHERE body LIKE ?1 ORDER BY write_cursor")
+    else {
+        return;
+    };
+    let pattern = format!("%{needle}%");
+    let Ok(rows) = statement.query_map([pattern], |row| row.get::<_, String>(0)) else {
+        return;
+    };
+    for row in rows.flatten() {
+        results.push(row);
+    }
 }
 
 fn canonical_database_path(path: &Path) -> Result<PathBuf, EngineOpenError> {
