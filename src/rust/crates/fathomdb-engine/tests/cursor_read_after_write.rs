@@ -16,8 +16,13 @@
 //! snapshot but not in the reported cursor.
 //!
 //! Bounded operationally: 1,000 search calls, hard wall-clock cap of
-//! 30 s, writer throttled. Gated behind `AGENT_LONG=1`; `scripts/check.sh`
-//! opts in, `scripts/agent-verify.sh` does not.
+//! 30 s, writer throttled.
+//!
+//! Runtime-budget category: long-run only (~1000-iteration race fixture).
+//! `agent-verify.sh` skips this test entirely for runtime budget; the
+//! ~1000-iteration race fixture is exercised only by `scripts/check.sh`
+//! with `AGENT_LONG=1`. There is no smoke variant — the AC-059b evidence
+//! comes exclusively from the long-run gate.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;

@@ -48,7 +48,7 @@ Markdown lint covers `AGENTS.md`, `dev/plans/`, `dev/progress/`, README files, a
 
 Run `./scripts/agent-verify.sh` after every meaningful edit. Do not ship a PR with verify failing.
 
-The broader CI gate is `./scripts/check.sh` (adds mkdocs build); the agent-loop gate is `agent-verify.sh`.
+The broader CI gate is `./scripts/check.sh` (adds mkdocs build); the agent-loop gate is `agent-verify.sh`. Long-run test variants (e.g. AC-021 60 s window, AC-059b ~1000-iteration cursor-race fixture) are exercised only via `scripts/check.sh` with `AGENT_LONG=1`; `agent-verify.sh` skips them for runtime budget.
 
 ### One-time setup
 

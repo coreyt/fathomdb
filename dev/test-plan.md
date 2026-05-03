@@ -63,13 +63,25 @@ reused across suites:
 2. Add CLI recovery/doctor tests before implementing CLI verbs.
 3. Add durability/perf/soak harnesses behind explicit CI labels so normal
    `agent-verify` can stay fast while release gates still execute the full
-   acceptance set. The AC-021 spec-conforming 60 s window is long-running
-   CI work gated on `AGENT_LONG=1`; `agent-verify` runs a 5 s smoke variant
-   and `scripts/check.sh` is responsible for invoking the 60 s variant.
-   `AGENT_LONG=1` also gates
-   `cursor_read_after_write::projection_cursor_bounds_observed_row_count`
-   (AC-059b: read-tx snapshot consistency under concurrent writes;
-   ~1000-iteration race fixture).
+   acceptance set.
+
+   **Gate boundary — agent-verify vs check.sh AGENT_LONG=1:**
+
+   - `scripts/agent-verify.sh` (fast local loop) runs lint → typecheck →
+     unit/integration tests EXCLUDING long-run variants. It does NOT
+     exercise: AC-021's 60 s spec-conforming window, AC-059b's
+     ~1000-iteration cursor-race fixture
+     (`cursor_read_after_write::projection_cursor_bounds_observed_row_count`).
+     `agent-verify` runs the AC-021 5 s smoke variant only; the smoke run
+     does not satisfy AC-021's measurement protocol on its own.
+   - `scripts/check.sh` with `AGENT_LONG=1` (full evidence gate) runs
+     everything `agent-verify` runs PLUS the long-run variants: AC-021's
+     60 s spec-conforming window AND AC-059b's ~1000-iteration race
+     fixture. AC-059b has no smoke variant — its evidence comes
+     exclusively from this gate.
+
+   A reviewer reading just this section should be able to attribute each
+   long-run AC's evidence to a single command.
 4. Keep thresholds in `acceptance.md`; tests read or restate those parameters
    but do not invent new gates.
 
