@@ -3,6 +3,7 @@ use fathomdb_schema::{
     MigrationAccretionError, MigrationError, SCHEMA_VERSION,
 };
 use rusqlite::Connection;
+use std::process::Command;
 
 fn user_version(conn: &Connection) -> u32 {
     conn.query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0)).unwrap()
@@ -113,4 +114,29 @@ fn ac_049_accretion_guard_accepts_current_migrations_and_rejects_violator() {
         .expect_err("adding a column without removal or exemption must fail");
 
     assert_eq!(err, MigrationAccretionError { offender: "004_bad.sql".to_string() });
+}
+
+#[test]
+fn ac_049_repo_linter_accepts_actual_migrations_and_names_violator() {
+    let repo =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(4).expect("repo root");
+    let script = repo.join("scripts/agent-lint-migrations.sh");
+
+    let ok = Command::new(&script).current_dir(repo).output().expect("run linter");
+    assert!(
+        ok.status.success(),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&ok.stdout),
+        String::from_utf8_lossy(&ok.stderr)
+    );
+
+    let fixture = repo
+        .join("src/rust/crates/fathomdb-schema/tests/fixtures/migrations/accretion_violator.sql");
+    let failed = Command::new(&script)
+        .arg(&fixture)
+        .current_dir(repo)
+        .output()
+        .expect("run linter on fixture");
+    assert!(!failed.status.success());
+    assert!(String::from_utf8_lossy(&failed.stderr).contains("accretion_violator.sql"));
 }

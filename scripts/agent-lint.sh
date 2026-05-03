@@ -13,6 +13,9 @@ run_capped lint-rust cargo clippy --workspace --all-targets --quiet -- -D warnin
 # Rust: format check
 run_capped lint-rustfmt cargo fmt --all --check
 
+# Migration authoring policy
+run_capped lint-migrations "$SCRIPT_DIR/agent-lint-migrations.sh"
+
 # Python: ruff if available
 ruff_bin=""
 if [ -x .venv/bin/ruff ]; then

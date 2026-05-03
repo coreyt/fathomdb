@@ -264,9 +264,28 @@ impl Engine {
         path: impl Into<PathBuf>,
         mut emit_migration_event: impl FnMut(&MigrationStepReport),
     ) -> Result<OpenedEngine, EngineOpenError> {
+        Self::open_with_migrations(path, MIGRATIONS, &mut emit_migration_event)
+    }
+
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn open_with_migrations_for_test(
+        path: impl Into<PathBuf>,
+        migrations: &'static [fathomdb_schema::Migration],
+        mut emit_migration_event: impl FnMut(&MigrationStepReport),
+    ) -> Result<OpenedEngine, EngineOpenError> {
+        Self::open_with_migrations(path, migrations, &mut emit_migration_event)
+    }
+
+    fn open_with_migrations(
+        path: impl Into<PathBuf>,
+        migrations: &'static [fathomdb_schema::Migration],
+        emit_migration_event: &mut impl FnMut(&MigrationStepReport),
+    ) -> Result<OpenedEngine, EngineOpenError> {
         let canonical_path = canonical_database_path(&path.into())?;
         let lock = acquire_lock(&canonical_path)?;
-        let open_result = Self::open_locked(canonical_path.clone(), &mut emit_migration_event);
+        let open_result =
+            Self::open_locked(canonical_path.clone(), migrations, emit_migration_event);
 
         match open_result {
             Ok((connection, report)) => Ok(OpenedEngine {
@@ -290,6 +309,7 @@ impl Engine {
 
     fn open_locked(
         path: PathBuf,
+        migrations: &'static [fathomdb_schema::Migration],
         emit_migration_event: &mut impl FnMut(&MigrationStepReport),
     ) -> Result<(Connection, OpenReport), EngineOpenError> {
         let connection = Connection::open(&path)
@@ -302,7 +322,7 @@ impl Engine {
         })?;
 
         reject_legacy_shape(&connection)?;
-        let migration = migrate_with_event_sink(&connection, MIGRATIONS, emit_migration_event)
+        let migration = migrate_with_event_sink(&connection, migrations, emit_migration_event)
             .map_err(map_migration_error)?;
         check_embedder_profile(&connection)?;
 

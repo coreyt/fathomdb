@@ -1,6 +1,6 @@
 use fathomdb_embedder_api::EmbedderIdentity;
 use fathomdb_engine::{Engine, EngineOpenError};
-use fathomdb_schema::{SCHEMA_VERSION, SQLITE_SUFFIX};
+use fathomdb_schema::{Migration, SCHEMA_VERSION, SQLITE_SUFFIX};
 use rusqlite::{params, Connection};
 use tempfile::TempDir;
 
@@ -88,6 +88,46 @@ fn engine_open_emits_migration_step_events() {
     assert!(events.iter().all(|event| event.duration_ms.is_some()));
     assert!(events.iter().all(|event| !event.failed));
     assert_eq!(opened.report.migration_steps, events);
+}
+
+#[test]
+fn engine_open_poison_migration_reports_failure_and_preserves_user_version() {
+    static POISON: &[Migration] = &[Migration {
+        step_id: 2,
+        sql: "CREATE TABLE _poison(id INTEGER PRIMARY KEY); SELECT * FROM missing_table",
+    }];
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "poison");
+    let conn = Connection::open(&path).unwrap();
+    set_user_version(&conn, 1);
+    drop(conn);
+    let mut events = Vec::new();
+
+    let err = Engine::open_with_migrations_for_test(&path, POISON, |event| {
+        events.push(event.clone());
+    })
+    .expect_err("poison migration should fail during open");
+
+    match err {
+        EngineOpenError::MigrationError {
+            schema_version_before,
+            schema_version_current,
+            step_id,
+        } => {
+            assert_eq!(schema_version_before, 1);
+            assert_eq!(schema_version_current, 1);
+            assert_eq!(step_id, 2);
+        }
+        other => panic!("expected MigrationError, got {other:?}"),
+    }
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].step_id, 2);
+    assert!(events[0].failed);
+    assert!(events[0].duration_ms.is_some());
+
+    let conn = Connection::open(&path).unwrap();
+    let version: u32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0)).unwrap();
+    assert_eq!(version, 1);
 }
 
 #[test]
