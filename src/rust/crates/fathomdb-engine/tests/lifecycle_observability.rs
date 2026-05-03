@@ -96,6 +96,7 @@ fn ac_002_no_log_files_without_subscriber() {
         let allowed = file == "nolog.sqlite"
             || file == "nolog.sqlite.lock"
             || file == "nolog.sqlite-wal"
+            || file == "nolog.sqlite-shm"
             || file == "nolog.sqlite-journal";
         assert!(allowed, "unexpected file created without subscriber: {file}");
     }
