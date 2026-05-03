@@ -104,9 +104,13 @@ reused across suites:
   queries (`hybrid-*`) over a pre-drained vector-indexed fixture, 50 rounds
   per reader thread. It is evidenced by `scripts/check.sh` with
   `AGENT_LONG=1`; `agent-verify.sh` executes only the early-return path and is
-  not evidence for the AC. Current 2026-05-03 evidence is red:
-  `sequential=455.510692ms`, `concurrent=131.502285ms`, bound
-  `=85.408255ms`.
+  not evidence for the AC. AC-020 is currently long-run red. Latest evidence,
+  hypothesis ladder, kept/reverted experiment ledger, and active remediation
+  plan live in:
+  - `dev/notes/performance-whitepaper-notes.md` (numbers + breadcrumbs)
+  - `dev/plan/0.6.0-Phase-9-Pack-5-performance-diagnostics.md` (DoE plan)
+  Inline numbers are intentionally not duplicated here to avoid two truth
+  sources.
 
 ## Component Scaffold Targets
 

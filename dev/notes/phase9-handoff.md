@@ -55,9 +55,18 @@ Read `AGENTS.md`, `MEMORY.md`, `dev/plans/0.6.0-implementation.md` Phase 9, and 
 
 ### AC-020 reader-pool perf gate
 
+> **Pack 5 owns this.** Pack 4 landed an honest harness + retained
+> reader-side / projection-runtime changes that closed AC-018 but left
+> AC-020 long-run red. Subsequent diagnosis + remediation is scoped in
+> `dev/plan/0.6.0-Phase-9-Pack-5-performance-diagnostics.md`. Latest
+> numbers, hypothesis ladder, and the kept/reverted experiment ledger
+> live in `dev/notes/performance-whitepaper-notes.md`. Do **not** start
+> AC-020 work from this file — read those two first and follow the
+> Pack 5 plan's pre-flight + phase order.
+
 - Reader pool is wired; AC-021 already binds correctness under concurrent reads + admin DDL.
-- AC-020 is the perf gate: 8 reader threads complete the documented read-mix in `≤ P-PARALLEL-TOL × (T_seq / N)`. Per `dev/acceptance.md` AC-020. Phase 9 owns the read-mix fixture + the parallel measurement.
-- Will live in the long-run gate (`scripts/check.sh AGENT_LONG=1`), not `agent-verify.sh`. Document in `dev/test-plan.md` like AC-021 + AC-059b.
+- AC-020 is the perf gate: 8 reader threads complete the documented read-mix in `≤ P-PARALLEL-TOL × (T_seq / N)`. Per `dev/acceptance.md` AC-020. Pack 4 owns the read-mix fixture + the parallel measurement (already landed); Pack 5 owns the remediation.
+- Lives in the long-run gate (`scripts/check.sh AGENT_LONG=1`), not `agent-verify.sh`. Documented in `dev/test-plan.md` alongside AC-021 + AC-059b.
 
 ### Retrieval, vector, projections, scheduler
 
