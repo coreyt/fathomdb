@@ -314,7 +314,9 @@ fn ac_064_schema_validation_rejects_redos_pattern_quickly_and_writer_recovers() 
 fn ac_065_schema_registration_rejects_external_refs() {
     let (_dir, _path, opened) = open_fixture("refs");
 
-    for uri in ["http://example/", "https://example/", "file:///etc/passwd"] {
+    for uri in
+        ["http://example/", "https://example/", "file:///etc/passwd", "other-schema.json#/$defs/x"]
+    {
         let err = register_collection(
             &opened.engine,
             "bad_ref",
@@ -324,4 +326,12 @@ fn ac_065_schema_registration_rejects_external_refs() {
         .expect_err("external ref must be rejected");
         assert_eq!(err, EngineError::SchemaValidation);
     }
+
+    register_collection(
+        &opened.engine,
+        "local_ref",
+        "append_only_log",
+        r##"{"$defs":{"x":{"type":"string"}},"$ref":"#/$defs/x"}"##,
+    )
+    .expect("local fragment refs are allowed");
 }

@@ -61,13 +61,20 @@ fn failed_commit_does_not_publish_projection_cursor() {
         .engine
         .write(&[PreparedWrite::Node {
             kind: "force_storage_failure_for_test".to_string(),
-            body: "must fail".to_string(),
+            body: "allowed".to_string(),
         }])
+        .expect("test-like node kind is still user data");
+    assert_eq!(err.cursor, committed + 1);
+
+    opened.engine.force_next_commit_failure_for_test();
+    let err = opened
+        .engine
+        .write(&[PreparedWrite::Node { kind: "doc".to_string(), body: "must fail".to_string() }])
         .expect_err("forced storage failure should fail after validation");
     assert_eq!(err, fathomdb_engine::EngineError::Storage);
 
     let after_failure = opened.engine.search("first").unwrap().projection_cursor;
-    assert_eq!(after_failure, committed);
+    assert_eq!(after_failure, committed + 1);
 }
 
 #[test]
@@ -86,9 +93,10 @@ fn concurrent_search_does_not_observe_speculative_failed_cursor() {
     let writer_barrier = Arc::clone(&barrier);
     let writer = thread::spawn(move || {
         writer_barrier.wait();
+        writer_engine.force_next_commit_failure_for_test();
         writer_engine
             .write(&[PreparedWrite::Node {
-                kind: "force_storage_failure_for_test".to_string(),
+                kind: "doc".to_string(),
                 body: "must fail".to_string(),
             }])
             .expect_err("forced storage failure should fail")

@@ -71,6 +71,26 @@ fn future_schema_version_is_also_rejected() {
 }
 
 #[test]
+fn engine_open_emits_migration_step_events() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "events");
+    let conn = Connection::open(&path).unwrap();
+    set_user_version(&conn, 1);
+    drop(conn);
+    let mut events = Vec::new();
+
+    let opened = Engine::open_with_migration_event_sink(&path, |event| events.push(event.clone()))
+        .expect("open should migrate");
+    opened.engine.close().unwrap();
+
+    let step_ids: Vec<u32> = events.iter().map(|event| event.step_id).collect();
+    assert_eq!(step_ids, vec![2, 3, 4]);
+    assert!(events.iter().all(|event| event.duration_ms.is_some()));
+    assert!(events.iter().all(|event| !event.failed));
+    assert_eq!(opened.report.migration_steps, events);
+}
+
+#[test]
 fn ac_048_rejects_stored_embedder_identity_mismatch() {
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir, "identity");

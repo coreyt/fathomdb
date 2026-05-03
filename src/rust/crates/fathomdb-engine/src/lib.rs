@@ -10,8 +10,8 @@ use std::time::Instant;
 use fathomdb_embedder_api::EmbedderIdentity;
 use fathomdb_query::compile_text_query;
 use fathomdb_schema::{
-    migrate, MigrationError as SchemaMigrationError, MigrationStepReport, LOCK_SUFFIX,
-    SCHEMA_VERSION,
+    migrate_with_event_sink, MigrationError as SchemaMigrationError, MigrationStepReport,
+    LOCK_SUFFIX, MIGRATIONS, SCHEMA_VERSION,
 };
 use jsonschema::JSONSchema;
 use rusqlite::{params, Connection};
@@ -31,6 +31,8 @@ pub struct Engine {
     closed: AtomicBool,
     lock: Mutex<Option<File>>,
     connection: Mutex<Option<Connection>>,
+    #[cfg(debug_assertions)]
+    force_next_commit_failure: AtomicBool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -255,9 +257,16 @@ impl Error for EngineError {}
 
 impl Engine {
     pub fn open(path: impl Into<PathBuf>) -> Result<OpenedEngine, EngineOpenError> {
+        Self::open_with_migration_event_sink(path, |_| {})
+    }
+
+    pub fn open_with_migration_event_sink(
+        path: impl Into<PathBuf>,
+        mut emit_migration_event: impl FnMut(&MigrationStepReport),
+    ) -> Result<OpenedEngine, EngineOpenError> {
         let canonical_path = canonical_database_path(&path.into())?;
         let lock = acquire_lock(&canonical_path)?;
-        let open_result = Self::open_locked(canonical_path.clone());
+        let open_result = Self::open_locked(canonical_path.clone(), &mut emit_migration_event);
 
         match open_result {
             Ok((connection, report)) => Ok(OpenedEngine {
@@ -267,6 +276,8 @@ impl Engine {
                     closed: AtomicBool::new(false),
                     lock: Mutex::new(Some(lock)),
                     connection: Mutex::new(Some(connection)),
+                    #[cfg(debug_assertions)]
+                    force_next_commit_failure: AtomicBool::new(false),
                 },
                 report,
             }),
@@ -277,7 +288,10 @@ impl Engine {
         }
     }
 
-    fn open_locked(path: PathBuf) -> Result<(Connection, OpenReport), EngineOpenError> {
+    fn open_locked(
+        path: PathBuf,
+        emit_migration_event: &mut impl FnMut(&MigrationStepReport),
+    ) -> Result<(Connection, OpenReport), EngineOpenError> {
         let connection = Connection::open(&path)
             .map_err(|_| EngineOpenError::Io { message: "could not open database".to_string() })?;
         connection.pragma_update(None, "journal_mode", "WAL").map_err(|_| EngineOpenError::Io {
@@ -288,7 +302,8 @@ impl Engine {
         })?;
 
         reject_legacy_shape(&connection)?;
-        let migration = migrate(&connection).map_err(map_migration_error)?;
+        let migration = migrate_with_event_sink(&connection, MIGRATIONS, emit_migration_event)
+            .map_err(map_migration_error)?;
         check_embedder_profile(&connection)?;
 
         let warmup_started = Instant::now();
@@ -320,6 +335,10 @@ impl Engine {
         let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
         let connection = connection.as_mut().ok_or(EngineError::Closing)?;
         let plans = validate_batch(connection, batch)?;
+        #[cfg(debug_assertions)]
+        if self.force_next_commit_failure.swap(false, Ordering::SeqCst) {
+            return Err(EngineError::Storage);
+        }
         let increment = u64::try_from(batch.len()).unwrap_or(u64::MAX);
         let cursor = self.next_cursor.load(Ordering::SeqCst).saturating_add(increment);
 
@@ -403,6 +422,12 @@ impl Engine {
     #[must_use]
     pub fn subscribe(&self) -> Subscription {
         Subscription::default()
+    }
+
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn force_next_commit_failure_for_test(&self) {
+        self.force_next_commit_failure.store(true, Ordering::SeqCst);
     }
 
     fn ensure_open(&self) -> Result<(), EngineError> {
@@ -702,9 +727,7 @@ fn value_contains_external_ref(value: &Value) -> bool {
     match value {
         Value::Object(object) => object.iter().any(|(key, value)| {
             if key == "$ref" {
-                return value
-                    .as_str()
-                    .is_some_and(|uri| uri.contains("://") || uri.starts_with("file:"));
+                return value.as_str().is_some_and(|uri| !uri.starts_with('#'));
             }
             value_contains_external_ref(value)
         }),
@@ -724,9 +747,6 @@ fn commit_batch(
     for (write, plan) in batch.iter().zip(plans) {
         match (write, plan) {
             (PreparedWrite::Node { kind, body }, WritePlan::Node) => {
-                if kind == "force_storage_failure_for_test" {
-                    return Err(rusqlite::Error::InvalidQuery);
-                }
                 tx.execute(
                     "INSERT INTO canonical_nodes(write_cursor, kind, body) VALUES(?1, ?2, ?3)",
                     params![cursor, kind, body],
