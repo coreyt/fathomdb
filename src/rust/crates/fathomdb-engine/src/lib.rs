@@ -529,14 +529,10 @@ impl Engine {
             // category satisfies both observability facts.
             self.emit_event(lifecycle::Phase::Slow, category);
         }
-        if self.profiling_enabled.load(Ordering::Relaxed) {
-            // Profile records share the same subscriber route; their
-            // payload shape is owned by ProfileRecord and dispatched as a
-            // Heartbeat-phase event so subscribers can correlate. The
-            // exact transport for ProfileRecord remains owned outside
-            // dev/design/lifecycle.md.
-            self.emit_event(lifecycle::Phase::Heartbeat, category);
-        }
+        // `dev/design/lifecycle.md` § Slow and heartbeat policy: Heartbeat is
+        // emitted only while the operation is still in progress. Profile-
+        // record transport is owned by a future delivery surface (per
+        // AC-005a/b lock); it is not a post-completion Heartbeat event.
     }
 
     fn emit_event(&self, phase: lifecycle::Phase, category: lifecycle::EventCategory) {

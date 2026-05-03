@@ -1,10 +1,9 @@
 //! Lifecycle observability data types.
 //!
-//! Public type shape, phase semantics, diagnostic source/category taxonomy,
-//! counter snapshot key set, profile record shape, and stress-failure
-//! payload are owned by `dev/design/lifecycle.md`. This module exposes the
-//! types only — emission sites and counter increment wiring are owned by
-//! later phases.
+//! Pure data types and the subscriber boundary trait. Public type shape,
+//! phase semantics, diagnostic source/category taxonomy, counter snapshot
+//! key set, profile record shape, and stress-failure payload are owned by
+//! `dev/design/lifecycle.md`.
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};

@@ -1,11 +1,11 @@
-//! Phase 8 lifecycle observability red tests for AC-001..AC-010.
+//! Lifecycle observability tests bound to AC-001..AC-010.
 //!
 //! Pure-type tests exercise data-type contracts pinned by
 //! `dev/design/lifecycle.md` and `dev/acceptance.md`. Behavior tests that
-//! depend on Phase 6/7 wiring (event emission, counter increments,
-//! statement timing) are `#[ignore]`d with the AC tag and the dep reason;
-//! removing the ignore once wiring lands flips them green or surfaces a
-//! real gap.
+//! depend on fixtures not yet pinned (slow-cte, corruption injection,
+//! one-thread poison) are `#[ignore]`d with the AC tag and the dep reason;
+//! removing the ignore once the fixture lands flips them green or surfaces
+//! a real gap.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
