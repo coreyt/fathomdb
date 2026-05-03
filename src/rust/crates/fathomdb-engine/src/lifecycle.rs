@@ -111,7 +111,7 @@ pub struct StressFailureContext {
 /// Public snapshot key set is owned by `dev/design/lifecycle.md` § Public
 /// key set. Snapshotting performs only atomic loads and a map clone — it
 /// must not perturb counters (AC-004c).
-#[allow(dead_code)]
+#[derive(Debug)]
 pub(crate) struct Counters {
     queries: AtomicU64,
     writes: AtomicU64,
@@ -122,7 +122,6 @@ pub(crate) struct Counters {
     errors_by_code: Mutex<BTreeMap<String, u64>>,
 }
 
-#[allow(dead_code)]
 impl Counters {
     pub(crate) fn new() -> Self {
         Self {
@@ -136,7 +135,37 @@ impl Counters {
         }
     }
 
+    pub(crate) fn record_write(&self, rows: u64) {
+        self.writes.fetch_add(1, Ordering::Relaxed);
+        self.write_rows.fetch_add(rows, Ordering::Relaxed);
+    }
+
+    pub(crate) fn record_query(&self) {
+        self.queries.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub(crate) fn record_admin(&self) {
+        self.admin_ops.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub(crate) fn record_error(&self, code: &str) {
+        if let Ok(mut map) = self.errors_by_code.lock() {
+            *map.entry(code.to_string()).or_insert(0) += 1;
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn record_cache_hit(&self) {
+        self.cache_hit.fetch_add(1, Ordering::Relaxed);
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn record_cache_miss(&self) {
+        self.cache_miss.fetch_add(1, Ordering::Relaxed);
+    }
+
     pub(crate) fn snapshot(&self) -> CounterSnapshot {
+        // Treat poisoned lock as zero-error snapshot — prefer non-perturbing read over panic.
         let errors_by_code = self.errors_by_code.lock().map(|map| map.clone()).unwrap_or_default();
         CounterSnapshot {
             queries: self.queries.load(Ordering::Relaxed),

@@ -34,6 +34,7 @@ pub struct Engine {
     closed: AtomicBool,
     lock: Mutex<Option<File>>,
     connection: Mutex<Option<Connection>>,
+    counters: lifecycle::Counters,
     #[cfg(debug_assertions)]
     force_next_commit_failure: AtomicBool,
 }
@@ -266,6 +267,27 @@ impl Display for EngineError {
     }
 }
 
+impl EngineError {
+    /// Stable machine-readable code for `errors_by_code` keys.
+    ///
+    /// Names match the binding-facing class stems in
+    /// `dev/design/errors.md` § Binding-facing class matrix.
+    fn stable_code(&self) -> &'static str {
+        match self {
+            Self::Storage => "StorageError",
+            Self::Projection => "ProjectionError",
+            Self::Vector => "VectorError",
+            Self::Embedder => "EmbedderError",
+            Self::Scheduler => "SchedulerError",
+            Self::OpStore => "OpStoreError",
+            Self::WriteValidation => "WriteValidationError",
+            Self::SchemaValidation => "SchemaValidationError",
+            Self::Overloaded => "OverloadedError",
+            Self::Closing => "ClosingError",
+        }
+    }
+}
+
 impl Error for EngineError {}
 
 impl Engine {
@@ -308,6 +330,7 @@ impl Engine {
                     closed: AtomicBool::new(false),
                     lock: Mutex::new(Some(lock)),
                     connection: Mutex::new(Some(connection)),
+                    counters: lifecycle::Counters::new(),
                     #[cfg(debug_assertions)]
                     force_next_commit_failure: AtomicBool::new(false),
                 },
@@ -359,6 +382,24 @@ impl Engine {
     }
 
     pub fn write(&self, batch: &[PreparedWrite]) -> Result<WriteReceipt, EngineError> {
+        match self.write_inner(batch) {
+            Ok(receipt) => {
+                let rows = u64::try_from(batch.len()).unwrap_or(u64::MAX);
+                if batch_is_admin(batch) {
+                    self.counters.record_admin();
+                } else {
+                    self.counters.record_write(rows);
+                }
+                Ok(receipt)
+            }
+            Err(err) => {
+                self.counters.record_error(err.stable_code());
+                Err(err)
+            }
+        }
+    }
+
+    fn write_inner(&self, batch: &[PreparedWrite]) -> Result<WriteReceipt, EngineError> {
         self.ensure_open()?;
 
         if batch.is_empty() {
@@ -384,6 +425,19 @@ impl Engine {
     }
 
     pub fn search(&self, query: &str) -> Result<SearchResult, EngineError> {
+        match self.search_inner(query) {
+            Ok(result) => {
+                self.counters.record_query();
+                Ok(result)
+            }
+            Err(err) => {
+                self.counters.record_error(err.stable_code());
+                Err(err)
+            }
+        }
+    }
+
+    fn search_inner(&self, query: &str) -> Result<SearchResult, EngineError> {
         self.ensure_open()?;
         if query.trim().is_empty() {
             return Err(EngineError::WriteValidation);
@@ -435,7 +489,7 @@ impl Engine {
     /// Field set owned by `dev/design/lifecycle.md`.
     #[must_use]
     pub fn counters(&self) -> CounterSnapshot {
-        CounterSnapshot::default()
+        self.counters.snapshot()
     }
 
     /// Toggle response-cycle profiling.
@@ -470,6 +524,10 @@ impl Engine {
 
         Ok(())
     }
+}
+
+fn batch_is_admin(batch: &[PreparedWrite]) -> bool {
+    !batch.is_empty() && batch.iter().all(|w| matches!(w, PreparedWrite::AdminSchema { .. }))
 }
 
 fn canonical_database_path(path: &Path) -> Result<PathBuf, EngineOpenError> {

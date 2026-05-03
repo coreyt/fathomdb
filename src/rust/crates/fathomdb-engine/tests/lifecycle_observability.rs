@@ -182,7 +182,6 @@ fn ac_004a_counter_snapshot_key_set() {
 
 // AC-004b: Counter delta exact for write/query keys after N=1000 mixed ops.
 #[test]
-#[ignore = "AC-004b: needs counter increment wiring in write/search paths (Phase 7)"]
 fn ac_004b_counter_delta_exact_over_mixed_ops() {
     let (_dir, engine) = fixture();
     let s0 = engine.counters();
