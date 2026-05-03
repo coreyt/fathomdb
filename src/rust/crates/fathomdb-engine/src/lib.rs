@@ -1,3 +1,6 @@
+pub mod lifecycle;
+
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::fs::{File, OpenOptions};
@@ -94,9 +97,19 @@ pub enum PreparedWrite {
 
 /// Snapshot of engine-internal counters returned by [`Engine::counters`].
 ///
-/// Field set is owned by `dev/design/lifecycle.md`.
+/// Public key set is owned by `dev/design/lifecycle.md` § Public key set
+/// and locked by AC-004a. Reading a snapshot is non-perturbing per
+/// AC-004c. The 0.6.0 surface exposes exactly these seven fields.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct CounterSnapshot {}
+pub struct CounterSnapshot {
+    pub queries: u64,
+    pub writes: u64,
+    pub write_rows: u64,
+    pub errors_by_code: BTreeMap<String, u64>,
+    pub admin_ops: u64,
+    pub cache_hit: u64,
+    pub cache_miss: u64,
+}
 
 /// Handle returned by [`Engine::subscribe`].
 ///
