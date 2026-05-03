@@ -10,12 +10,10 @@
 //! snapshot saw"; that value can never exceed the cursor the reader
 //! also returned without violating the cursor contract.
 //!
-//! Failure mode being guarded against (Phase 8 Finding 1): the engine
-//! captured `next_cursor` from the writer-side atomic *before* the
-//! reader transaction acquired its WAL snapshot. A writer commit landing
-//! between those two events lands in the reader's snapshot — yet the
-//! reported `projection_cursor` is the older value, so a search returns
-//! more matching rows than the cursor permits.
+//! Failure mode under test: the engine loads `next_cursor` from the
+//! writer-side atomic before the reader connection runs its query; a
+//! writer commit between those two events appears in the reader's WAL
+//! snapshot but not in the reported cursor.
 //!
 //! Bounded operationally: 1,000 search calls, hard wall-clock cap of
 //! 30 s, writer throttled. Gated behind `AGENT_LONG=1`; `scripts/check.sh`
