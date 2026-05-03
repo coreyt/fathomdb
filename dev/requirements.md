@@ -341,7 +341,10 @@ the ADR is authoritative.
   _Source:_ `dev/notes/0.6.0-rewrite-proposal.md` Essentials §17.
   _Cross-cite:_ ADR-0.6.0-vector-index-location,
   ADR-0.6.0-op-store-same-file,
-  ADR-0.6.0-database-lock-mechanism (sidecar `.lock` interpretation).
+  ADR-0.6.0-database-lock-mechanism (sidecar `.lock` interpretation;
+  superseded 2026-05-02),
+  ADR-0.6.0-database-lock-mechanism-reader-pool-revision (current
+  contract; admits `-shm` as a normal WAL artifact during runtime).
 
 ## Upgrade / compatibility (REQ-042..REQ-046)
 

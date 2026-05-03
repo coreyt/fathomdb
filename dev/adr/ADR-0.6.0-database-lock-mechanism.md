@@ -4,12 +4,15 @@ date: 2026-04-29
 target_release: 0.6.0
 desc: Hybrid lock — sidecar flock (Rust File::try_lock, BSD flock semantics) PLUS PRAGMA locking_mode=EXCLUSIVE on the writer connection in WAL; sidecar = pre-open fail-fast + PID diagnostic, SQLite EXCLUSIVE = same-process two-Engine correctness backstop + removes -shm
 blast_radius: architecture.md § 5 + § 8 + § 11 (amend "no sidecar" assertion); design/engine.md (runtime open path); design/bindings.md § 7 (lock contract); src/rust/crates/fathomdb-engine/src/database_lock.rs (existing sidecar code retained); src/rust/crates/fathomdb-engine/src/runtime.rs (PRAGMA application); REQ-022a/b; REQ-041 (single-file-deploy interpretation refined)
-status: accepted
+status: superseded
+superseded_by: ADR-0.6.0-database-lock-mechanism-reader-pool-revision
 ---
 
 # ADR-0.6.0 — Database lock mechanism
 
-**Status:** accepted (HITL 2026-04-29).
+**Status:** superseded 2026-05-02 by [`ADR-0.6.0-database-lock-mechanism-reader-pool-revision`](./ADR-0.6.0-database-lock-mechanism-reader-pool-revision.md). Original status: accepted (HITL 2026-04-29).
+
+**Supersession note.** Superseded 2026-05-02 by `ADR-0.6.0-database-lock-mechanism-reader-pool-revision` after Phase 8 reader-pool work surfaced an irreconcilable conflict between `PRAGMA locking_mode=EXCLUSIVE` and the WAL shared-memory wal-index required by concurrent readers. The sidecar flock half of this ADR is retained verbatim by the successor; the SQLite EXCLUSIVE half is removed. Refer to the successor for current contract.
 
 Phase 3d-promoted ADR. Resolves the architecture-vs-code delta on database locking and the "no sidecar" assertion in architecture.md § 5 + § 8 + § 11, which was a critic-finding-driven removal not backed by an ADR. This ADR overrides that assertion with a documented trade-off analysis.
 
