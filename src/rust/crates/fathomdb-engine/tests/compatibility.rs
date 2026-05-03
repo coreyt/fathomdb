@@ -36,17 +36,35 @@ fn ac_047_rejects_05_shaped_database_before_use() {
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir, "legacy");
     let conn = Connection::open(&path).unwrap();
-    set_user_version(&conn, 5);
-    conn.execute("CREATE TABLE fathom_nodes(id TEXT PRIMARY KEY)", []).unwrap();
+    conn.execute_batch(include_str!("fixtures/v05_shape.sql")).unwrap();
     drop(conn);
 
     let err = Engine::open(&path).expect_err("0.5-shaped database must not open");
 
     match err {
         EngineOpenError::IncompatibleSchemaVersion { seen, supported } => {
-            assert_eq!(seen, 5);
+            assert_eq!(seen, 1);
             assert_eq!(supported, SCHEMA_VERSION);
-            assert!(err.to_string().contains("5"));
+            assert!(err.to_string().contains("1"));
+        }
+        other => panic!("expected IncompatibleSchemaVersion, got {other:?}"),
+    }
+}
+
+#[test]
+fn future_schema_version_is_also_rejected() {
+    let dir = TempDir::new().unwrap();
+    let path = db_path(&dir, "future");
+    let conn = Connection::open(&path).unwrap();
+    set_user_version(&conn, SCHEMA_VERSION + 1);
+    drop(conn);
+
+    let err = Engine::open(&path).expect_err("future schema version must not open");
+
+    match err {
+        EngineOpenError::IncompatibleSchemaVersion { seen, supported } => {
+            assert_eq!(seen, SCHEMA_VERSION + 1);
+            assert_eq!(supported, SCHEMA_VERSION);
         }
         other => panic!("expected IncompatibleSchemaVersion, got {other:?}"),
     }

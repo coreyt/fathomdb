@@ -1,5 +1,7 @@
 use fathomdb_engine::{Engine, PreparedWrite};
 use fathomdb_schema::SQLITE_SUFFIX;
+use std::sync::{Arc, Barrier};
+use std::thread;
 use tempfile::TempDir;
 
 fn open_fixture(name: &str) -> (TempDir, fathomdb_engine::OpenedEngine) {
@@ -43,4 +45,60 @@ fn ac_059b_write_cursor_is_satisfied_by_projection_cursor_and_queryable() {
     let result = opened.engine.search("findable").unwrap();
     assert!(result.projection_cursor >= write_cursor);
     assert!(result.results.iter().any(|row| row.contains("findable phase seven document")));
+}
+
+#[test]
+fn failed_commit_does_not_publish_projection_cursor() {
+    let (_dir, opened) = open_fixture("failed_cursor");
+
+    let committed = opened
+        .engine
+        .write(&[PreparedWrite::Node { kind: "doc".to_string(), body: "first".to_string() }])
+        .unwrap()
+        .cursor;
+
+    let err = opened
+        .engine
+        .write(&[PreparedWrite::Node {
+            kind: "force_storage_failure_for_test".to_string(),
+            body: "must fail".to_string(),
+        }])
+        .expect_err("forced storage failure should fail after validation");
+    assert_eq!(err, fathomdb_engine::EngineError::Storage);
+
+    let after_failure = opened.engine.search("first").unwrap().projection_cursor;
+    assert_eq!(after_failure, committed);
+}
+
+#[test]
+fn concurrent_search_does_not_observe_speculative_failed_cursor() {
+    let (_dir, opened) = open_fixture("failed_cursor_race");
+    let committed = opened
+        .engine
+        .write(&[PreparedWrite::Node { kind: "doc".to_string(), body: "first".to_string() }])
+        .unwrap()
+        .cursor;
+
+    let engine = Arc::new(opened.engine);
+    let barrier = Arc::new(Barrier::new(2));
+
+    let writer_engine = Arc::clone(&engine);
+    let writer_barrier = Arc::clone(&barrier);
+    let writer = thread::spawn(move || {
+        writer_barrier.wait();
+        writer_engine
+            .write(&[PreparedWrite::Node {
+                kind: "force_storage_failure_for_test".to_string(),
+                body: "must fail".to_string(),
+            }])
+            .expect_err("forced storage failure should fail")
+    });
+
+    barrier.wait();
+    let observed = engine.search("first").unwrap().projection_cursor;
+    let err = writer.join().unwrap();
+
+    assert_eq!(err, fathomdb_engine::EngineError::Storage);
+    assert_eq!(observed, committed);
+    assert_eq!(engine.search("first").unwrap().projection_cursor, committed);
 }

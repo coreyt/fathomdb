@@ -149,6 +149,14 @@ pub fn migrate_with_steps(
     conn: &Connection,
     migrations: &[Migration],
 ) -> Result<MigrationReport, MigrationError> {
+    migrate_with_event_sink(conn, migrations, |_| {})
+}
+
+pub fn migrate_with_event_sink(
+    conn: &Connection,
+    migrations: &[Migration],
+    mut emit: impl FnMut(&MigrationStepReport),
+) -> Result<MigrationReport, MigrationError> {
     let before = user_version(conn)?;
     if before > SCHEMA_VERSION {
         return Err(MigrationError::IncompatibleSchemaVersion {
@@ -174,6 +182,7 @@ pub fn migrate_with_steps(
                 duration_ms: Some(duration_ms(started)),
                 failed: true,
             });
+            emit(reports.last().expect("failed step report was just pushed"));
             let schema_version_current = user_version(conn).unwrap_or(current);
             return Err(MigrationError::MigrationError(MigrationFailureReport {
                 schema_version_before: before,
@@ -188,6 +197,7 @@ pub fn migrate_with_steps(
             duration_ms: Some(duration_ms(started)),
             failed: false,
         });
+        emit(reports.last().expect("successful step report was just pushed"));
     }
 
     Ok(MigrationReport {

@@ -116,6 +116,59 @@ fn ac_060b_schema_validation_failure_leaves_no_batch_residue() {
 }
 
 #[test]
+fn ac_060b_json_schema_required_properties_and_numeric_constraints_are_enforced() {
+    let (_dir, path, opened) = open_fixture("json_schema");
+    register_collection(
+        &opened.engine,
+        "objects",
+        "append_only_log",
+        r#"{
+            "type": "object",
+            "required": ["name", "count"],
+            "properties": {
+                "name": { "type": "string" },
+                "count": { "type": "integer", "minimum": 2 }
+            }
+        }"#,
+    )
+    .unwrap();
+
+    for body in [r#"{"name":"ok"}"#, r#"{"name":"ok","count":1}"#] {
+        let err = opened
+            .engine
+            .write(&[PreparedWrite::OpStore {
+                collection: "objects".to_string(),
+                record_key: "bad".to_string(),
+                schema_id: Some("objects".to_string()),
+                body: body.to_string(),
+            }])
+            .expect_err("invalid object must fail full JSON Schema validation");
+        assert_eq!(err, EngineError::SchemaValidation);
+    }
+
+    opened
+        .engine
+        .write(&[PreparedWrite::OpStore {
+            collection: "objects".to_string(),
+            record_key: "good".to_string(),
+            schema_id: Some("objects".to_string()),
+            body: r#"{"name":"ok","count":2}"#.to_string(),
+        }])
+        .unwrap();
+
+    opened.engine.close().unwrap();
+    let conn = Connection::open(&path).unwrap();
+    let count: u32 = conn
+        .query_row(
+            "SELECT count(*) FROM operational_mutations WHERE collection_name = 'objects'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 1);
+}
+
+#[test]
 fn ac_061b_latest_state_keeps_one_current_row_per_key() {
     let (_dir, path, opened) = open_fixture("latest");
     register_collection(&opened.engine, "state", "latest_state", "{}").unwrap();

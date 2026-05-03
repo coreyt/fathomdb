@@ -11,7 +11,9 @@ use fathomdb_embedder_api::EmbedderIdentity;
 use fathomdb_query::compile_text_query;
 use fathomdb_schema::{
     migrate, MigrationError as SchemaMigrationError, MigrationStepReport, LOCK_SUFFIX,
+    SCHEMA_VERSION,
 };
+use jsonschema::JSONSchema;
 use rusqlite::{params, Connection};
 use serde_json::Value;
 
@@ -285,6 +287,7 @@ impl Engine {
             EngineOpenError::Io { message: "could not set locking mode".to_string() }
         })?;
 
+        reject_legacy_shape(&connection)?;
         let migration = migrate(&connection).map_err(map_migration_error)?;
         check_embedder_profile(&connection)?;
 
@@ -318,13 +321,12 @@ impl Engine {
         let connection = connection.as_mut().ok_or(EngineError::Closing)?;
         let plans = validate_batch(connection, batch)?;
         let increment = u64::try_from(batch.len()).unwrap_or(u64::MAX);
-        let cursor =
-            self.next_cursor.fetch_add(increment, Ordering::SeqCst).saturating_add(increment);
+        let cursor = self.next_cursor.load(Ordering::SeqCst).saturating_add(increment);
 
         if let Err(_err) = commit_batch(connection, batch, &plans, cursor) {
-            self.next_cursor.fetch_sub(increment, Ordering::SeqCst);
             return Err(EngineError::Storage);
         }
+        self.next_cursor.store(cursor, Ordering::SeqCst);
 
         Ok(WriteReceipt { cursor })
     }
@@ -336,9 +338,10 @@ impl Engine {
         }
 
         let compiled = compile_text_query(query);
-        let cursor = self.next_cursor.load(Ordering::SeqCst);
         let mut results = vec![compiled.sql];
+        let mut cursor = 0;
         if let Ok(connection) = self.connection.lock() {
+            cursor = self.next_cursor.load(Ordering::SeqCst);
             if let Some(connection) = connection.as_ref() {
                 if let Ok(mut statement) = connection.prepare(
                     "SELECT body FROM canonical_nodes WHERE body LIKE ?1 ORDER BY write_cursor",
@@ -478,6 +481,29 @@ fn map_migration_error(err: SchemaMigrationError) -> EngineOpenError {
             EngineOpenError::Io { message: message.to_string() }
         }
     }
+}
+
+fn reject_legacy_shape(connection: &Connection) -> Result<(), EngineOpenError> {
+    let has_legacy_table = table_exists(connection, "fathom_nodes")
+        || table_exists(connection, "fathom_edges")
+        || table_exists(connection, "fathom_chunks");
+    if !has_legacy_table {
+        return Ok(());
+    }
+
+    let seen =
+        connection.query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0)).unwrap_or(0);
+    Err(EngineOpenError::IncompatibleSchemaVersion { seen, supported: SCHEMA_VERSION })
+}
+
+fn table_exists(connection: &Connection, table: &str) -> bool {
+    connection
+        .query_row(
+            "SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?1",
+            [table],
+            |_row| Ok(()),
+        )
+        .is_ok()
 }
 
 fn default_embedder_identity() -> EmbedderIdentity {
@@ -659,18 +685,8 @@ fn validate_payload(schema_json: &str, body: &str) -> Result<(), EngineError> {
         serde_json::from_str::<Value>(schema_json).map_err(|_| EngineError::SchemaValidation)?;
     let payload = serde_json::from_str::<Value>(body).map_err(|_| EngineError::SchemaValidation)?;
 
-    if schema.get("type").and_then(Value::as_str) == Some("string") && !payload.is_string() {
-        return Err(EngineError::SchemaValidation);
-    }
-
-    if schema.get("pattern").and_then(Value::as_str) == Some("^(a|a)*$") {
-        let Some(text) = payload.as_str() else {
-            return Err(EngineError::SchemaValidation);
-        };
-        if !text.bytes().all(|byte| byte == b'a') {
-            return Err(EngineError::SchemaValidation);
-        }
-    }
+    let compiled = JSONSchema::compile(&schema).map_err(|_| EngineError::SchemaValidation)?;
+    compiled.validate(&payload).map_err(|_| EngineError::SchemaValidation)?;
 
     Ok(())
 }
@@ -708,6 +724,9 @@ fn commit_batch(
     for (write, plan) in batch.iter().zip(plans) {
         match (write, plan) {
             (PreparedWrite::Node { kind, body }, WritePlan::Node) => {
+                if kind == "force_storage_failure_for_test" {
+                    return Err(rusqlite::Error::InvalidQuery);
+                }
                 tx.execute(
                     "INSERT INTO canonical_nodes(write_cursor, kind, body) VALUES(?1, ?2, ?3)",
                     params![cursor, kind, body],
