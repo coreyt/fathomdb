@@ -17,7 +17,7 @@ the repo.
   (`tests/perf_gates.rs:211`).
 - Bound (`tests/perf_gates.rs:245`):
 
-  ```
+  ```text
   bound = sequential * (1.5 / AC020_THREADS)
   ```
 

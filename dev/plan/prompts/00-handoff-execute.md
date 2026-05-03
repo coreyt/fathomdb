@@ -141,6 +141,7 @@ that check; do not proceed past pre-flight on partial PASS.
     `dev/test-plan.md`, `dev/progress/0.6.0.md`. Close the packet.
 
 Pause points (per plan §10):
+
 - Before pre-flight (now).
 - After A.0, A.1, A.2/A.3, A.4 — orchestrator confirms before next
   experiment lands.
@@ -199,12 +200,14 @@ Avoid these — they are how this packet has burned cycles already:
 ## 9. Decision authority and escalation
 
 You decide:
+
 - Whether to proceed past each pause point.
 - KEEP / REVERT / INCONCLUSIVE per experiment.
 - Whether reviewer BLOCK is overridden (must record rationale in §12).
 - When N exceeds the §3 floor for borderline measurements.
 
 Escalate to human:
+
 - Reviewer flags a Phase 7/8 invariant break that you cannot
   resolve via revert.
 - Phase A diagnostics produce no clear single-mutex bottleneck
