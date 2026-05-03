@@ -729,7 +729,7 @@ the only test-plan.md responsibility for this section.)
 
 **Requirement ref:** REQ-041
 **Test id:** T-045
-**Assertion:** A fresh container with only the fathomdb binary + one `.sqlite` path on disk + network egress denied performs open + write + search + close end-to-end with exit 0 and creates no files outside the documented allow-list (DB + .lock + WAL + optional .journal; no `-shm`).
+**Assertion:** A fresh container with only the fathomdb binary + one `.sqlite` path on disk + network egress denied performs open + write + search + close end-to-end with exit 0 and creates no files outside the documented allow-list (DB file, `.lock`, WAL, `-shm` (WAL shared-memory wal-index, per ADR-0.6.0-database-lock-mechanism-reader-pool-revision), optional rollback `.journal`).
 **Measurement:** Per AC-002 file-system snapshot; per AC-037 network-egress harness; run end-to-end script; assert exit 0; assert allow-list-only files created.
 **Fixture:** fresh-container fixture.
 
