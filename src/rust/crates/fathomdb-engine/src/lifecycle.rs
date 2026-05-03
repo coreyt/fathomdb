@@ -65,8 +65,33 @@ pub struct Event {
 /// `dev/design/lifecycle.md` § Host-routed diagnostics requires that all
 /// engine and SQLite-internal diagnostics flow through the host's chosen
 /// subscriber. No private sink, no stderr fallback.
+///
+/// `on_profile` and `on_slow_statement` are default-no-op so existing
+/// subscribers compile unchanged. Their payload shapes are owned by
+/// `dev/design/lifecycle.md` § Per-statement profiling and § Slow and
+/// heartbeat policy. A statement that crosses the slow threshold emits
+/// both a [`SlowStatement`] signal here AND a `Phase::Slow` lifecycle
+/// event via `on_event`, per the design's two-correlated-facts contract.
 pub trait Subscriber: Send + Sync {
     fn on_event(&self, event: &Event);
+
+    fn on_profile(&self, _record: &ProfileRecord) {}
+
+    fn on_slow_statement(&self, _signal: &SlowStatement) {}
+}
+
+/// Statement-level slow signal.
+///
+/// `dev/design/lifecycle.md` § Slow and heartbeat policy: when a
+/// statement crosses the configured threshold, "a slow signal must
+/// surface and identify the statement that crossed the threshold."
+/// `statement` is the SQL text of the slow statement (or a synthetic
+/// label for non-SQL operations such as the `search` / `write` outer
+/// envelope). `wall_clock_ms` is the measured duration.
+#[derive(Debug, Clone)]
+pub struct SlowStatement {
+    pub statement: String,
+    pub wall_clock_ms: u64,
 }
 
 /// Engine-side registry of attached subscribers.
@@ -107,14 +132,29 @@ impl SubscriberRegistry {
     }
 
     pub(crate) fn dispatch(&self, event: &Event) {
+        for sub in self.snapshot() {
+            sub.on_event(event);
+        }
+    }
+
+    pub(crate) fn dispatch_profile(&self, record: &ProfileRecord) {
+        for sub in self.snapshot() {
+            sub.on_profile(record);
+        }
+    }
+
+    pub(crate) fn dispatch_slow_statement(&self, signal: &SlowStatement) {
+        for sub in self.snapshot() {
+            sub.on_slow_statement(signal);
+        }
+    }
+
+    fn snapshot(&self) -> Vec<Arc<dyn Subscriber>> {
         // Snapshot the subscriber list so callbacks may not call back into the
         // registry while we hold the lock.
-        let snapshot: Vec<Arc<dyn Subscriber>> = match self.entries.lock() {
+        match self.entries.lock() {
             Ok(entries) => entries.iter().map(|(_, s)| Arc::clone(s)).collect(),
-            Err(_) => return,
-        };
-        for sub in snapshot {
-            sub.on_event(event);
+            Err(_) => Vec::new(),
         }
     }
 }

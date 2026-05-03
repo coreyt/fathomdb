@@ -46,10 +46,38 @@ pub struct Engine {
     reader_pool: ReaderPool,
     counters: lifecycle::Counters,
     subscribers: Arc<lifecycle::SubscriberRegistry>,
-    profiling_enabled: AtomicBool,
-    slow_threshold_ms: AtomicU64,
+    profiling_enabled: Arc<AtomicBool>,
+    slow_threshold_ms: Arc<AtomicU64>,
+    /// Per-connection profile-callback contexts. Each box's pointer is
+    /// installed into the connection's `sqlite3_profile` userdata; the
+    /// box must outlive the connection so the callback never reads
+    /// freed memory. Connections are dropped before this vec on
+    /// `close`/`Drop`, so the lifetime ordering holds.
+    ///
+    /// Why `Box<ProfileContext>` and not `ProfileContext` directly: the
+    /// FFI pointer captured during `install_profile_callback` MUST
+    /// remain stable for the connection's lifetime; pushing onto a
+    /// `Vec<ProfileContext>` could reallocate and invalidate that
+    /// pointer.
+    #[allow(clippy::vec_box)]
+    profile_contexts: Mutex<Vec<Box<ProfileContext>>>,
     #[cfg(debug_assertions)]
     force_next_commit_failure: AtomicBool,
+}
+
+/// Per-connection profile-callback context.
+///
+/// Holds the registry handle the callback dispatches to, plus shared
+/// references to the engine's profiling toggle and slow-statement
+/// threshold. The `Arc` clones here mirror the same atomics held by
+/// `Engine`, so `set_profiling` / `set_slow_threshold_ms` mutations are
+/// visible inside the callback without restart (REQ-006a / AC-005a /
+/// AC-007b runtime-toggle contract).
+#[derive(Debug)]
+struct ProfileContext {
+    subscribers: Arc<lifecycle::SubscriberRegistry>,
+    profiling_enabled: Arc<AtomicBool>,
+    slow_threshold_ms: Arc<AtomicU64>,
 }
 
 /// Bounded pool of read-only SQLite connections.
@@ -368,23 +396,49 @@ impl Engine {
             Self::open_locked(canonical_path.clone(), migrations, emit_migration_event);
 
         match open_result {
-            Ok((connection, readers, report)) => Ok(OpenedEngine {
-                engine: Self {
-                    path: canonical_path,
-                    next_cursor: AtomicU64::new(load_next_cursor(&connection)),
-                    closed: AtomicBool::new(false),
-                    lock: Mutex::new(Some(lock)),
-                    connection: Mutex::new(Some(connection)),
-                    reader_pool: ReaderPool::new(readers),
-                    counters: lifecycle::Counters::new(),
-                    subscribers: Arc::new(lifecycle::SubscriberRegistry::new()),
-                    profiling_enabled: AtomicBool::new(false),
-                    slow_threshold_ms: AtomicU64::new(DEFAULT_SLOW_THRESHOLD_MS),
-                    #[cfg(debug_assertions)]
-                    force_next_commit_failure: AtomicBool::new(false),
-                },
-                report,
-            }),
+            Ok((connection, readers, report)) => {
+                let next_cursor = load_next_cursor(&connection);
+                let subscribers = Arc::new(lifecycle::SubscriberRegistry::new());
+                let profiling_enabled = Arc::new(AtomicBool::new(false));
+                let slow_threshold_ms = Arc::new(AtomicU64::new(DEFAULT_SLOW_THRESHOLD_MS));
+                let mut profile_contexts: Vec<Box<ProfileContext>> = Vec::new();
+
+                install_profile_callback(
+                    &connection,
+                    &subscribers,
+                    &profiling_enabled,
+                    &slow_threshold_ms,
+                    &mut profile_contexts,
+                );
+                for reader in &readers {
+                    install_profile_callback(
+                        reader,
+                        &subscribers,
+                        &profiling_enabled,
+                        &slow_threshold_ms,
+                        &mut profile_contexts,
+                    );
+                }
+
+                Ok(OpenedEngine {
+                    engine: Self {
+                        path: canonical_path,
+                        next_cursor: AtomicU64::new(next_cursor),
+                        closed: AtomicBool::new(false),
+                        lock: Mutex::new(Some(lock)),
+                        connection: Mutex::new(Some(connection)),
+                        reader_pool: ReaderPool::new(readers),
+                        counters: lifecycle::Counters::new(),
+                        subscribers,
+                        profiling_enabled,
+                        slow_threshold_ms,
+                        profile_contexts: Mutex::new(profile_contexts),
+                        #[cfg(debug_assertions)]
+                        force_next_commit_failure: AtomicBool::new(false),
+                    },
+                    report,
+                })
+            }
             Err(err) => {
                 drop(lock);
                 Err(err)
@@ -576,12 +630,24 @@ impl Engine {
 
     pub fn close(&self) -> Result<(), EngineError> {
         self.closed.store(true, Ordering::SeqCst);
-        // Drain readers before the writer connection so SQLite's last-handle
-        // checkpointer runs on the writer per `dev/design/engine.md` § Close
-        // path step 6.
-        drop(self.reader_pool.drain());
+        // Uninstall profile callbacks before dropping the connections so
+        // SQLite cannot fire one last callback against a profile context
+        // whose Box is about to free. Per `dev/design/engine.md` § Close
+        // path step 6, readers drain before the writer connection so
+        // SQLite's last-handle checkpointer runs on the writer.
+        let readers = self.reader_pool.drain();
+        for reader in &readers {
+            uninstall_profile_callback(reader);
+        }
+        drop(readers);
         if let Ok(mut connection) = self.connection.lock() {
+            if let Some(conn) = connection.as_ref() {
+                uninstall_profile_callback(conn);
+            }
             connection.take();
+        }
+        if let Ok(mut contexts) = self.profile_contexts.lock() {
+            contexts.clear();
         }
         if let Ok(mut lock) = self.lock.lock() {
             lock.take();
@@ -1093,6 +1159,110 @@ fn load_next_cursor(connection: &Connection) -> u64 {
 fn max_cursor(connection: &Connection, table: &str) -> rusqlite::Result<u64> {
     let sql = format!("SELECT COALESCE(MAX(write_cursor), 0) FROM {table}");
     connection.query_row(&sql, [], |row| row.get::<_, u64>(0))
+}
+
+/// Install a `sqlite3_profile` callback on `connection` that dispatches
+/// per-statement profile records and slow-statement signals to the
+/// engine's subscriber registry.
+///
+/// Why FFI rather than `rusqlite::Connection::profile`: the safe API
+/// (rusqlite 0.31) accepts only a `fn(&str, Duration)` with no
+/// environment, so it cannot carry a per-engine subscriber-registry
+/// pointer. We use `sqlite3_profile` directly with a leaked-into-`Box`
+/// context whose pointer is tied to the engine's lifetime via
+/// `Engine::profile_contexts`.
+///
+/// `sqlite3_profile` is documented as deprecated in favor of
+/// `sqlite3_trace_v2`, but it remains supported and is sufficient for
+/// the wall-clock + SQL-text payload required by AC-005a/b.
+#[allow(clippy::vec_box)]
+fn install_profile_callback(
+    connection: &Connection,
+    subscribers: &Arc<lifecycle::SubscriberRegistry>,
+    profiling_enabled: &Arc<AtomicBool>,
+    slow_threshold_ms: &Arc<AtomicU64>,
+    contexts: &mut Vec<Box<ProfileContext>>,
+) {
+    let mut ctx = Box::new(ProfileContext {
+        subscribers: Arc::clone(subscribers),
+        profiling_enabled: Arc::clone(profiling_enabled),
+        slow_threshold_ms: Arc::clone(slow_threshold_ms),
+    });
+    let ctx_ptr: *mut ProfileContext = &mut *ctx;
+
+    // SAFETY: the Box outlives the connection — `Engine::close` /
+    // `Engine::drop` drops the writer + reader connections before
+    // dropping `profile_contexts`, so the callback's userdata pointer
+    // is valid for every callback invocation.
+    unsafe {
+        rusqlite::ffi::sqlite3_profile(
+            connection.handle(),
+            Some(profile_callback_trampoline),
+            ctx_ptr.cast::<std::ffi::c_void>(),
+        );
+    }
+    contexts.push(ctx);
+}
+
+/// Uninstall the profile callback so SQLite stops calling into our
+/// freed `Box<ProfileContext>` pointer once a connection is being torn
+/// down. Call before dropping `profile_contexts`.
+fn uninstall_profile_callback(connection: &Connection) {
+    // SAFETY: passing `None` as the callback unregisters the previous
+    // callback; SQLite documents this as legal and idempotent.
+    unsafe {
+        rusqlite::ffi::sqlite3_profile(connection.handle(), None, std::ptr::null_mut());
+    }
+}
+
+/// FFI trampoline for `sqlite3_profile`.
+///
+/// Invoked by SQLite at statement-finish with the SQL text and the
+/// statement's wall-clock cost in nanoseconds. We dispatch a
+/// `ProfileRecord` (when profiling is enabled) and a `SlowStatement`
+/// signal (when `wall_clock_ms` exceeds the configured slow threshold).
+///
+/// Per `dev/design/lifecycle.md` § Public record shape, the public
+/// payload exposes `wall_clock_ms`, `step_count`, and `cache_delta`.
+/// `sqlite3_profile` does not surface per-statement step counts or
+/// cache-hit deltas in its callback; we emit `0` for those fields and
+/// document the hazard. AC-005b requires the fields be typed numeric,
+/// not that they carry non-zero values for every backend.
+unsafe extern "C" fn profile_callback_trampoline(
+    user_data: *mut std::ffi::c_void,
+    sql: *const std::os::raw::c_char,
+    nanoseconds: u64,
+) {
+    if user_data.is_null() || sql.is_null() {
+        return;
+    }
+    let ctx = unsafe { &*(user_data.cast::<ProfileContext>()) };
+    let sql_text = match unsafe { std::ffi::CStr::from_ptr(sql) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+
+    let wall_clock_ms = nanoseconds / 1_000_000;
+
+    if ctx.profiling_enabled.load(Ordering::Relaxed) {
+        let record = lifecycle::ProfileRecord {
+            wall_clock_ms,
+            // step_count / cache_delta are not surfaced by
+            // sqlite3_profile; placeholder 0 satisfies AC-005b's
+            // "typed numeric" contract. A future profiling refactor
+            // around sqlite3_stmt_status + sqlite3_db_status would
+            // populate them with non-zero deltas.
+            step_count: 0,
+            cache_delta: 0,
+        };
+        ctx.subscribers.dispatch_profile(&record);
+    }
+
+    let threshold = ctx.slow_threshold_ms.load(Ordering::Relaxed);
+    if wall_clock_ms > threshold {
+        let signal = lifecycle::SlowStatement { statement: sql_text.to_string(), wall_clock_ms };
+        ctx.subscribers.dispatch_slow_statement(&signal);
+    }
 }
 
 #[cfg(test)]
