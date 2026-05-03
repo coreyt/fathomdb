@@ -63,7 +63,7 @@ that work is delegated to subagents per the §0 model+effort table.
 - Branch: `0.6.0-rewrite`. Baseline commit: `b4a3261`.
 - AC-017: green. AC-018: green. AC-020: long-run **red**.
 - AC-020 best retained: `sequential=456ms / concurrent=127ms /
-  bound=85ms`. Speedup 3.59x; bound requires 5.33x.
+bound=85ms`. Speedup 3.59x; bound requires 5.33x.
 - Hardware: ARMv8 12-core, Linux 5.15 Tegra.
 - Bundled SQLite via `rusqlite 0.31` features = ["bundled"]
   (`Cargo.toml:13`). Default `SQLITE_THREADSAFE=1` (serialized).

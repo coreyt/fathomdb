@@ -50,18 +50,18 @@ the repo.
 
 ## 2. Current status of perf gates
 
-| Gate    | State                | Notes                                            |
-| ------- | -------------------- | ------------------------------------------------ |
-| AC-017  | green                |                                                  |
-| AC-018  | green                | After persistent projection-runtime conns        |
-| AC-020  | red (long-run)       | Best retained: 3.6x speedup, need 5.33x          |
+| Gate   | State          | Notes                                     |
+| ------ | -------------- | ----------------------------------------- |
+| AC-017 | green          |                                           |
+| AC-018 | green          | After persistent projection-runtime conns |
+| AC-020 | red (long-run) | Best retained: 3.6x speedup, need 5.33x   |
 
 ### AC-020 retained run (best)
 
 - sequential = 456 ms
 - concurrent = 127 ms
-- bound      = 85 ms (= 456 \* 1.5 / 8)
-- speedup    = 3.59x; required = 5.33x
+- bound = 85 ms (= 456 \* 1.5 / 8)
+- speedup = 3.59x; required = 5.33x
 
 ### Other observed runs from the investigation
 

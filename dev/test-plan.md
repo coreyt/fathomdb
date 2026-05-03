@@ -109,8 +109,8 @@ reused across suites:
   plan live in:
   - `dev/notes/performance-whitepaper-notes.md` (numbers + breadcrumbs)
   - `dev/plan/0.6.0-Phase-9-Pack-5-performance-diagnostics.md` (DoE plan)
-  Inline numbers are intentionally not duplicated here to avoid two truth
-  sources.
+    Inline numbers are intentionally not duplicated here to avoid two truth
+    sources.
 
 ## Component Scaffold Targets
 
