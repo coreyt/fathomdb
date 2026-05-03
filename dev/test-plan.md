@@ -26,19 +26,19 @@ anchor. No test id is valid without an AC back-reference.
 
 ## Suite Map
 
-| AC ids           | Layer                | Owning package                                        | Fixture family                                                                                        | Scaffold path                                                                                                                          |
-| ---------------- | -------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-001..AC-010   | integration          | `fathomdb-engine` + bindings                          | lifecycle subscriber, diagnostics, counters, profiling, projection status                             | `src/rust/crates/fathomdb-engine/tests/lifecycle_observability.rs`; binding mirrors under `src/python/tests/` and `src/ts/tests/`      |
-| AC-011a..AC-020  | perf                 | `fathomdb-engine`                                     | 1M chunk/vector corpora, seeded benchmark DB, deterministic embedder, read-mix generator              | `src/rust/crates/fathomdb-engine/tests/perf_gates.rs`                                                                                  |
-| AC-021..AC-025   | integration          | `fathomdb-engine`                                     | concurrent reader/admin DDL, open/close fd accounting, second-open lock, pending-vector shutdown      | `src/rust/crates/fathomdb-engine/tests/lifecycle_reliability.rs`                                                                       |
-| AC-026..AC-028c  | integration          | `fathomdb-cli` + `fathomdb-engine`                    | WAL-only export, shadow corruption, recovery/excise source fixtures                                   | `src/rust/crates/fathomdb-cli/tests/recovery_cli.rs`                                                                                   |
-| AC-029..AC-033   | integration/soak     | `fathomdb-engine`                                     | frozen scheduler, deterministic drain jobs, provenance retention workload                             | `src/rust/crates/fathomdb-engine/tests/projection_runtime.rs`                                                                          |
-| AC-034a..AC-035c | soak                 | `fathomdb-engine`                                     | power-cut harness, OS-crash VM harness, 1GB recovery DB, open-path corruption matrix                  | `src/rust/crates/fathomdb-engine/tests/durability_soak.rs`                                                                             |
-| AC-035d..AC-045  | integration/security | `fathomdb-cli`, Python, TypeScript                    | no-listen syscall capture, netns-deny-egress, FTS injection, safe-export manifest, doctor/recover CLI | `src/rust/crates/fathomdb-cli/tests/operator_cli.rs`; `src/python/tests/test_public_surface.py`; `src/ts/tests/public-surface.test.ts` |
-| AC-046a..AC-050c | unit/integration     | `fathomdb-schema`, `fathomdb-engine`, release scripts | n-to-n+k migration DB, poison migration, 0.5 fixture, AST scanner, changelog/removal fixtures         | `src/rust/crates/fathomdb-schema/tests/migrations.rs`; `src/rust/crates/fathomdb-engine/tests/compatibility.rs`                        |
-| AC-051a..AC-056  | integration/release  | release scripts + package managers                    | cargo/pip skew fixtures, co-tag/version files, registry-installed wheel smoke                         | `dev/release/tests/` and CI release workflow checks                                                                                    |
-| AC-057a..AC-060b | integration          | Rust facade, Python, TypeScript                       | public-surface introspection, cursor read/write fixture, typed error matrix, JSON Schema payloads     | `src/rust/crates/fathomdb/tests/public_surface.rs`; `src/python/tests/test_public_surface.py`; `src/ts/tests/public-surface.test.ts`   |
-| AC-061a..AC-063c | integration          | `fathomdb-engine` + `fathomdb-cli`                    | op-store append/latest collections, registry lifecycle, projection failure/restart/regenerate         | `src/rust/crates/fathomdb-engine/tests/op_store.rs`; `src/rust/crates/fathomdb-cli/tests/recovery_cli.rs`                              |
+| AC ids           | Layer                | Owning package                                        | Fixture family                                                                                                                            | Scaffold path                                                                                                                          |
+| ---------------- | -------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-001..AC-010   | integration          | `fathomdb-engine` + bindings                          | lifecycle subscriber, diagnostics, counters, profiling, projection status                                                                 | `src/rust/crates/fathomdb-engine/tests/lifecycle_observability.rs`; binding mirrors under `src/python/tests/` and `src/ts/tests/`      |
+| AC-011a..AC-020  | perf                 | `fathomdb-engine`                                     | 1M chunk/vector corpora, seeded benchmark DB, deterministic embedder, read-mix generator, projection-freshness harness, drain-100 harness | `src/rust/crates/fathomdb-engine/tests/perf_gates.rs`                                                                                  |
+| AC-021..AC-025   | integration          | `fathomdb-engine`                                     | concurrent reader/admin DDL, open/close fd accounting, second-open lock, pending-vector shutdown                                          | `src/rust/crates/fathomdb-engine/tests/lifecycle_reliability.rs`                                                                       |
+| AC-026..AC-028c  | integration          | `fathomdb-cli` + `fathomdb-engine`                    | WAL-only export, shadow corruption, recovery/excise source fixtures                                                                       | `src/rust/crates/fathomdb-cli/tests/recovery_cli.rs`                                                                                   |
+| AC-029..AC-033   | integration/soak     | `fathomdb-engine`                                     | frozen scheduler, deterministic drain jobs, provenance retention workload                                                                 | `src/rust/crates/fathomdb-engine/tests/projection_runtime.rs`                                                                          |
+| AC-034a..AC-035c | soak                 | `fathomdb-engine`                                     | power-cut harness, OS-crash VM harness, 1GB recovery DB, open-path corruption matrix                                                      | `src/rust/crates/fathomdb-engine/tests/durability_soak.rs`                                                                             |
+| AC-035d..AC-045  | integration/security | `fathomdb-cli`, Python, TypeScript                    | no-listen syscall capture, netns-deny-egress, FTS injection, safe-export manifest, doctor/recover CLI                                     | `src/rust/crates/fathomdb-cli/tests/operator_cli.rs`; `src/python/tests/test_public_surface.py`; `src/ts/tests/public-surface.test.ts` |
+| AC-046a..AC-050c | unit/integration     | `fathomdb-schema`, `fathomdb-engine`, release scripts | n-to-n+k migration DB, poison migration, 0.5 fixture, AST scanner, changelog/removal fixtures                                             | `src/rust/crates/fathomdb-schema/tests/migrations.rs`; `src/rust/crates/fathomdb-engine/tests/compatibility.rs`                        |
+| AC-051a..AC-056  | integration/release  | release scripts + package managers                    | cargo/pip skew fixtures, co-tag/version files, registry-installed wheel smoke                                                             | `dev/release/tests/` and CI release workflow checks                                                                                    |
+| AC-057a..AC-060b | integration          | Rust facade, Python, TypeScript                       | public-surface introspection, cursor read/write fixture, typed error matrix, JSON Schema payloads                                         | `src/rust/crates/fathomdb/tests/public_surface.rs`; `src/python/tests/test_public_surface.py`; `src/ts/tests/public-surface.test.ts`   |
+| AC-061a..AC-063c | integration          | `fathomdb-engine` + `fathomdb-cli`                    | op-store append/latest collections, registry lifecycle, projection failure/restart/regenerate                                             | `src/rust/crates/fathomdb-engine/tests/op_store.rs`; `src/rust/crates/fathomdb-cli/tests/recovery_cli.rs`                              |
 
 ## Required Fixtures
 
@@ -70,20 +70,43 @@ reused across suites:
      unit/integration tests EXCLUDING long-run variants. It does NOT
      exercise: AC-021's 60 s spec-conforming window, AC-059b's
      ~1000-iteration cursor-race fixture
-     (`cursor_read_after_write::projection_cursor_bounds_observed_row_count`).
-     `agent-verify` runs the AC-021 5 s smoke variant only; the smoke run
+     (`cursor_read_after_write::projection_cursor_bounds_observed_row_count`),
+     and AC-020's sequential-vs-8-reader perf comparison once that
+     read-mix fixture is landed. `agent-verify` runs the AC-021 5 s
+     smoke variant only; the smoke run
      does not satisfy AC-021's measurement protocol on its own.
    - `scripts/check.sh` with `AGENT_LONG=1` (full evidence gate) runs
      everything `agent-verify` runs PLUS the long-run variants: AC-021's
-     60 s spec-conforming window AND AC-059b's ~1000-iteration race
-     fixture. AC-059b has no smoke variant — its evidence comes
-     exclusively from this gate.
+     60 s spec-conforming window, AC-059b's ~1000-iteration race
+     fixture, and AC-020's sequential-vs-8-reader comparison once the
+     read-mix fixture is protocol-complete. AC-059b has no smoke
+     variant — its evidence comes exclusively from this gate.
 
    A reviewer reading just this section should be able to attribute each
    long-run AC's evidence to a single command.
 
 4. Keep thresholds in `acceptance.md`; tests read or restate those parameters
    but do not invent new gates.
+
+## Current Perf Attribution
+
+- `src/rust/crates/fathomdb-engine/tests/perf_gates.rs` currently binds
+  AC-017 and AC-018 with active runtime measurements that run under
+  `scripts/agent-verify.sh`.
+- AC-012 and AC-013 remain `#[ignore]` because the accepted 1M-row / 1M-vector
+  corpus fixtures from `dev/acceptance.md` are not landed yet; green claims
+  would be protocol-incomplete without that corpus.
+- AC-019 remains `#[ignore]` because the accepted mixed-retrieval workload is
+  not yet landed at the accepted 1M-corpus scale, even though the search path
+  now has a real vector-contributed branch.
+- AC-020 is implemented as a long-run-only env-gated harness. The documented
+  read mix is 50% vector-only semantic queries (`semantic-*`) and 50% hybrid
+  queries (`hybrid-*`) over a pre-drained vector-indexed fixture, 50 rounds
+  per reader thread. It is evidenced by `scripts/check.sh` with
+  `AGENT_LONG=1`; `agent-verify.sh` executes only the early-return path and is
+  not evidence for the AC. Current 2026-05-03 evidence is red:
+  `sequential=455.510692ms`, `concurrent=131.502285ms`, bound
+  `=85.408255ms`.
 
 ## Component Scaffold Targets
 
