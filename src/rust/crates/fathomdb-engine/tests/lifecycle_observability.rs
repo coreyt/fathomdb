@@ -79,15 +79,75 @@ fn ac_001_event_struct_carries_typed_source_and_category() {
     assert_eq!(event.code, None);
 }
 
-// AC-002: No log files written without subscriber. Needs FS-snapshot harness
-// + actual write/search/close paths emitting real work.
+// AC-002: No log files written without subscriber.
+//
+// Measurement (`dev/acceptance.md`): "Snapshot recursive directory tree
+// of `$PWD`, `$HOME`, `$XDG_*`, `$TMPDIR` pre+post; assert diff = subset
+// of allow-list paths."
+//
+// Two-part assertion:
+// 1. Every new file inside the DB's parent directory matches the
+//    documented allow-list (DB file, `.lock`, `-wal`, `-shm`, optional
+//    `-journal`) per
+//    ADR-0.6.0-database-lock-mechanism-reader-pool-revision.
+// 2. No new file in `$PWD` / `$HOME` / `$XDG_*` whose path or name
+//    contains a fathomdb signature appears — i.e. the engine does not
+//    create a private log / telemetry spool outside the DB path.
+//    Pre/post diff under noisy roots is unavoidable in a parallel test
+//    process; the signature filter is the strongest assertion we can
+//    bind without serializing the whole runner.
 #[test]
 fn ac_002_no_log_files_without_subscriber() {
-    let dir = TempDir::new().unwrap();
-    let snapshot_before: Vec<_> =
-        std::fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
+    use std::collections::BTreeSet;
+    use std::path::PathBuf;
 
-    let opened = Engine::open(dir.path().join("nolog.sqlite")).expect("open");
+    fn walk(root: &std::path::Path, out: &mut BTreeSet<PathBuf>, depth: u32) {
+        if depth > 6 {
+            return;
+        }
+        let Ok(entries) = std::fs::read_dir(root) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Ok(meta) = entry.metadata() else { continue };
+            out.insert(path.clone());
+            if meta.is_dir() && !meta.file_type().is_symlink() {
+                walk(&path, out, depth + 1);
+            }
+        }
+    }
+
+    fn snapshot(roots: &[PathBuf]) -> BTreeSet<PathBuf> {
+        let mut out = BTreeSet::new();
+        for root in roots {
+            walk(root, &mut out, 0);
+        }
+        out
+    }
+
+    let dir = TempDir::new().unwrap();
+    let db_path = dir.path().join("nolog.sqlite");
+    let db_parent = db_path.parent().expect("db parent").to_path_buf();
+
+    // AC-002 measurement-protocol roots: $PWD, $HOME, $XDG_*, $TMPDIR.
+    let mut roots: Vec<PathBuf> = Vec::new();
+    if let Ok(p) = std::env::current_dir() {
+        roots.push(p);
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        roots.push(PathBuf::from(home));
+    }
+    for var in ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"] {
+        if let Some(v) = std::env::var_os(var) {
+            roots.push(PathBuf::from(v));
+        }
+    }
+    roots.push(std::env::temp_dir());
+
+    let before = snapshot(&roots);
+
+    let opened = Engine::open(&db_path).expect("open");
     opened
         .engine
         .write(&[PreparedWrite::Node { kind: "doc".to_string(), body: "hello".to_string() }])
@@ -95,22 +155,43 @@ fn ac_002_no_log_files_without_subscriber() {
     let _ = opened.engine.search("hello").expect("search");
     opened.engine.close().expect("close");
 
-    let snapshot_after: Vec<_> =
-        std::fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
+    let after = snapshot(&roots);
+    let new: Vec<&PathBuf> = after.difference(&before).collect();
 
-    let new_files: Vec<_> = snapshot_after
-        .iter()
-        .filter(|f| !snapshot_before.contains(f))
-        .map(|f| f.to_string_lossy().to_string())
-        .collect();
+    let allowed_names = [
+        "nolog.sqlite",
+        "nolog.sqlite.lock",
+        "nolog.sqlite-wal",
+        "nolog.sqlite-shm",
+        "nolog.sqlite-journal",
+    ];
 
-    for file in &new_files {
-        let allowed = file == "nolog.sqlite"
-            || file == "nolog.sqlite.lock"
-            || file == "nolog.sqlite-wal"
-            || file == "nolog.sqlite-shm"
-            || file == "nolog.sqlite-journal";
-        assert!(allowed, "unexpected file created without subscriber: {file}");
+    for path in &new {
+        // Part 1: every new file inside the DB parent must be on the
+        // allow-list.
+        if path.starts_with(&db_parent) {
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            // Allow the DB parent itself if it shows up as "new" (it
+            // was created as part of the TempDir).
+            if *path == &db_parent {
+                continue;
+            }
+            assert!(
+                allowed_names.contains(&name),
+                "engine created unexpected artifact inside DB parent: {}",
+                path.display(),
+            );
+            continue;
+        }
+
+        // Part 2: no fathomdb-signature file appears anywhere in the
+        // measurement roots.
+        let lossy = path.to_string_lossy().to_lowercase();
+        assert!(
+            !lossy.contains("fathomdb") && !lossy.contains("fathom_"),
+            "engine created a fathomdb-named artifact outside the DB path: {}",
+            path.display(),
+        );
     }
 }
 
@@ -188,25 +269,43 @@ fn ac_004a_counter_snapshot_key_set() {
     let _: BTreeMap<String, u64> = snapshot.errors_by_code.clone();
 }
 
-// AC-004b: Counter delta exact for write/query keys after N=1000 mixed ops.
+// AC-004b: Counter delta exact for write/query/admin keys after N=1,000
+// mixed ops.
+//
+// Measurement (`dev/acceptance.md`): "Snapshot delta over N=1,000 mixed
+// ops equals issued op counts exactly for `queries`, `writes`,
+// `write_rows`, `admin_ops`. `cache_hit` / `cache_miss` are monotonic
+// non-decreasing." Mix is 400 writes + 400 searches + 200 admin ops =
+// 1,000 ops.
 #[test]
 fn ac_004b_counter_delta_exact_over_mixed_ops() {
     let (_dir, engine) = fixture();
     let s0 = engine.counters();
-    for _ in 0..500 {
+    for _ in 0..400 {
         engine
             .write(&[PreparedWrite::Node { kind: "doc".to_string(), body: "hello".to_string() }])
             .expect("write");
     }
-    for _ in 0..500 {
+    for _ in 0..400 {
         let _ = engine.search("hello").expect("search");
     }
+    for i in 0..200 {
+        engine
+            .write(&[PreparedWrite::AdminSchema {
+                name: format!("things_{}", i % 4),
+                kind: "latest_state".to_string(),
+                schema_json: "{}".to_string(),
+                retention_json: "{}".to_string(),
+            }])
+            .expect("admin");
+    }
     let s1 = engine.counters();
-    assert_eq!(s1.writes - s0.writes, 500);
-    assert_eq!(s1.write_rows - s0.write_rows, 500);
-    assert_eq!(s1.queries - s0.queries, 500);
-    assert!(s1.cache_hit >= s0.cache_hit);
-    assert!(s1.cache_miss >= s0.cache_miss);
+    assert_eq!(s1.writes - s0.writes, 400, "writes");
+    assert_eq!(s1.write_rows - s0.write_rows, 400, "write_rows");
+    assert_eq!(s1.queries - s0.queries, 400, "queries");
+    assert_eq!(s1.admin_ops - s0.admin_ops, 200, "admin_ops");
+    assert!(s1.cache_hit >= s0.cache_hit, "cache_hit monotonic non-decreasing");
+    assert!(s1.cache_miss >= s0.cache_miss, "cache_miss monotonic non-decreasing");
 }
 
 // AC-004c: Counter snapshot read does not perturb counters.
