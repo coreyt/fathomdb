@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use fathomdb_engine::lifecycle::{
-    Event, EventCategory, EventSource, Phase, ProfileRecord, ProjectionStatus,
+    Event, EventCategory, EventSource, Phase, ProfileRecord, ProjectionStatus, SlowStatement,
     StressFailureContext, Subscriber,
 };
 use fathomdb_engine::{CounterSnapshot, Engine, PreparedWrite};
@@ -26,11 +26,21 @@ fn fixture() -> (TempDir, Engine) {
 #[derive(Default)]
 struct CapturingSubscriber {
     events: Mutex<Vec<Event>>,
+    profile_records: Mutex<Vec<ProfileRecord>>,
+    slow_statements: Mutex<Vec<SlowStatement>>,
 }
 
 impl Subscriber for CapturingSubscriber {
     fn on_event(&self, event: &Event) {
         self.events.lock().unwrap().push(event.clone());
+    }
+
+    fn on_profile(&self, record: &ProfileRecord) {
+        self.profile_records.lock().unwrap().push(*record);
+    }
+
+    fn on_slow_statement(&self, signal: &SlowStatement) {
+        self.slow_statements.lock().unwrap().push(signal.clone());
     }
 }
 
@@ -209,26 +219,59 @@ fn ac_004c_counter_snapshot_does_not_perturb() {
 }
 
 // AC-005a: Per-statement profiling toggleable at runtime.
+//
+// Measurement (`dev/acceptance.md`): "Open engine; assert profiling
+// disabled (no profile records on a fixture query); call enable-profiling
+// API; assert subsequent fixture query emits ≥ 1 profile record."
 #[test]
 fn ac_005a_profiling_toggleable_at_runtime() {
     let (_dir, engine) = fixture();
+    let sink = Arc::new(CapturingSubscriber::default());
+    let _sub = engine.subscribe(sink.clone());
+
+    // Profiling disabled by default — fixture query emits no records.
     engine.set_profiling(false).expect("disable profiling");
     let _ = engine.search("hello").expect("search");
+    assert_eq!(
+        sink.profile_records.lock().unwrap().len(),
+        0,
+        "no profile records expected while profiling disabled"
+    );
+
+    // Enabling profiling makes the next fixture query emit ≥ 1 record.
     engine.set_profiling(true).expect("enable profiling");
     let _ = engine.search("hello").expect("search");
+    let after = sink.profile_records.lock().unwrap().len();
+    assert!(after >= 1, "expected ≥ 1 profile record after enabling profiling, saw {after}");
+
+    // Disabling profiling stops further records (sanity check on the
+    // runtime-toggle contract).
     engine.set_profiling(false).expect("disable profiling again");
+    let frozen = sink.profile_records.lock().unwrap().len();
+    let _ = engine.search("hello").expect("search");
+    assert_eq!(sink.profile_records.lock().unwrap().len(), frozen);
 }
 
 // AC-005b: Profile record schema is typed numeric.
+//
+// Measurement: emit one profile record via AC-005a's protocol; assert
+// all three fields present and numeric. We deliberately do not pin
+// non-zero values — `step_count` and `cache_delta` are emitted as 0
+// in 0.6.0 because `sqlite3_profile` does not surface them in its
+// callback. AC-005b contract is "typed numeric", not "non-zero".
 #[test]
 fn ac_005b_profile_record_typed_numeric_fields() {
-    let record = ProfileRecord { wall_clock_ms: 12, step_count: 3, cache_delta: -7 };
+    let (_dir, engine) = fixture();
+    let sink = Arc::new(CapturingSubscriber::default());
+    let _sub = engine.subscribe(sink.clone());
+    engine.set_profiling(true).expect("enable profiling");
+    let _ = engine.search("hello").expect("search");
+
+    let records = sink.profile_records.lock().unwrap();
+    let record = records.first().expect("at least one profile record");
     let _: u64 = record.wall_clock_ms;
     let _: u64 = record.step_count;
     let _: i64 = record.cache_delta;
-    assert_eq!(record.wall_clock_ms, 12);
-    assert_eq!(record.step_count, 3);
-    assert_eq!(record.cache_delta, -7);
 }
 
 // AC-006: SQLite-internal events surfaced with typed source tag.
@@ -248,62 +291,101 @@ fn ac_006_sqlite_internal_events_typed_source() {
     }));
 }
 
-// AC-007a: Slow-statement event when wall-clock crosses threshold.
+// AC-007a: Slow-statement event when wall-clock crosses default threshold.
+//
+// Measurement: default threshold = 100 ms (REQ-006a). The
+// deterministic-slow-cte fixture (≥ 200 ms guaranteed by recursive-CTE
+// counter) emits exactly one slow-statement signal identifying the SQL.
 #[test]
-#[ignore = "AC-007a: needs deterministic-slow-cte fixture stable on CI baseline"]
 fn ac_007a_slow_statement_event_at_default_threshold() {
     let (_dir, engine) = fixture();
     let sink = Arc::new(CapturingSubscriber::default());
     let _sub = engine.subscribe(sink.clone());
-    // Default threshold = 100 ms (AC-007a). Run the deterministic-slow-cte
-    // fixture sized to ≥ 200 ms per AC-007a measurement.
     engine.execute_for_test(SLOW_CTE).expect("slow cte");
-    let captured = sink.events.lock().unwrap();
-    let slow_count = captured.iter().filter(|e| e.phase == Phase::Slow).count();
-    assert_eq!(slow_count, 1);
+
+    let signals = sink.slow_statements.lock().unwrap();
+    assert_eq!(
+        signals.len(),
+        1,
+        "expected exactly one slow-statement signal at default threshold, saw {}",
+        signals.len(),
+    );
+    assert!(
+        signals[0].statement.contains("RECURSIVE"),
+        "slow signal must identify the statement; got: {:?}",
+        signals[0].statement,
+    );
+    assert!(
+        signals[0].wall_clock_ms >= 100,
+        "slow signal wall_clock_ms must be ≥ 100 ms (default threshold); got {} ms",
+        signals[0].wall_clock_ms,
+    );
 }
 
 // AC-007b: Slow threshold reconfigurable at runtime.
+//
+// Measurement: set threshold = 500 ms; fast-fixture (≤ 200 ms) emits no
+// slow-statement signal; slow-fixture (≥ 600 ms) emits exactly one.
 #[test]
-#[ignore = "AC-007b: needs deterministic-slow-cte fixture stable on CI baseline"]
 fn ac_007b_slow_threshold_reconfigurable() {
     let (_dir, engine) = fixture();
     let sink = Arc::new(CapturingSubscriber::default());
     let _sub = engine.subscribe(sink.clone());
-    // Threshold = 500 ms per AC-007b measurement. Fast fixture (≤ 200 ms)
-    // must not emit Slow; slow fixture (≥ 600 ms) must emit one Slow.
     engine.set_slow_threshold_ms(500).expect("set threshold");
+
     engine.execute_for_test(FAST_CTE).expect("fast cte");
-    {
-        let captured = sink.events.lock().unwrap();
-        assert!(captured.iter().all(|e| e.phase != Phase::Slow));
-    }
+    assert_eq!(
+        sink.slow_statements.lock().unwrap().len(),
+        0,
+        "fast fixture must not emit a slow-statement signal at threshold=500 ms"
+    );
+
     engine.execute_for_test(SLOW_CTE).expect("slow cte");
-    let captured = sink.events.lock().unwrap();
-    assert_eq!(captured.iter().filter(|e| e.phase == Phase::Slow).count(), 1);
+    let signals = sink.slow_statements.lock().unwrap();
+    assert_eq!(
+        signals.len(),
+        1,
+        "slow fixture must emit exactly one slow-statement signal at threshold=500 ms"
+    );
+    assert!(signals[0].wall_clock_ms >= 500);
 }
 
 // Deterministic-slow-cte fixture (AC-007a/b). Recursive CTE counter
-// scales linearly with N. The exact N values are pinned to the CI
-// baseline once the runner is profiled; until then the test is gated
-// `#[ignore]`.
+// scales linearly with N. N values pinned to this runner's measured
+// baseline (probe captured 2026-05-02 on aarch64 Linux):
+//
+// - N=100_000 → ~89 ms (FAST: < 200 ms required by AC-007b)
+// - N=1_000_000 → ~800 ms (SLOW: ≥ 200 ms for AC-007a, ≥ 600 ms for AC-007b)
 const FAST_CTE: &str = "WITH RECURSIVE c(x) AS (VALUES(1) UNION ALL \
                         SELECT x + 1 FROM c WHERE x < 100000) \
                         SELECT count(*) FROM c";
 const SLOW_CTE: &str = "WITH RECURSIVE c(x) AS (VALUES(1) UNION ALL \
-                        SELECT x + 1 FROM c WHERE x < 10000000) \
+                        SELECT x + 1 FROM c WHERE x < 1000000) \
                         SELECT count(*) FROM c";
 
 // AC-008: Slow signal participates in lifecycle attribution.
+//
+// Measurement: per `dev/design/lifecycle.md` § Slow and heartbeat
+// policy, crossing the threshold produces TWO correlated facts —
+// (i) a statement-level slow-statement signal, (ii) ≥ 1 lifecycle
+// `phase == Slow` event during the operation's wall-clock window. The
+// slow CTE fixture from AC-007a satisfies both.
 #[test]
 fn ac_008_slow_signal_feeds_lifecycle() {
     let (_dir, engine) = fixture();
     let sink = Arc::new(CapturingSubscriber::default());
     let _sub = engine.subscribe(sink.clone());
-    engine.set_slow_threshold_ms(0).expect("set threshold");
-    let _ = engine.search("hello").expect("search");
-    let captured = sink.events.lock().unwrap();
-    assert!(captured.iter().any(|e| e.phase == Phase::Slow));
+
+    engine.execute_for_test(SLOW_CTE).expect("slow cte");
+
+    let signals = sink.slow_statements.lock().unwrap();
+    assert!(!signals.is_empty(), "expected at least one slow-statement signal");
+
+    let events = sink.events.lock().unwrap();
+    assert!(
+        events.iter().any(|e| e.phase == Phase::Slow),
+        "expected at least one lifecycle event with phase == Slow"
+    );
 }
 
 // AC-009 supporting: Pure-type construction of StressFailureContext.
