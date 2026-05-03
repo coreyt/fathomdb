@@ -55,21 +55,33 @@ fn ac_022a_close_releases_lock_for_sibling_process() {
 
 #[test]
 fn ac_022b_close_does_not_leak_file_descriptors() {
+    // Run in a sibling child process so FD accounting is local to the
+    // open/close window, not contaminated by parallel tests in the parent
+    // test binary. P-FD-TOL = 5 per `dev/acceptance.md` parameter table.
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir, "fd_leak");
+    let mut child = Command::new(current_test_binary())
+        .arg("--exact")
+        .arg("child_fd_leak_open_close")
+        .arg("--ignored")
+        .env("FATHOMDB_TEST_DB_PATH", &path)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn child");
+    assert!(wait_with_timeout(&mut child, Duration::from_secs(5)));
+    assert!(child.wait().expect("child status").success());
+}
 
-    let opened = Engine::open(&path).expect("open");
-    let before_close = fd_count();
-    opened.engine.close().expect("close");
-    let after_close = fd_count();
-
-    // Close must release at least the writer + reader pool's connection
-    // count's worth of fds. The producer-process fd count is global so
-    // we only assert "no leak" via after-close <= before-close.
-    assert!(
-        after_close <= before_close,
-        "fd count grew across close: before_close={before_close} after_close={after_close}"
-    );
+#[test]
+#[ignore]
+fn child_fd_leak_open_close() {
+    let path = std::env::var_os("FATHOMDB_TEST_DB_PATH").expect("db path");
+    let before = fd_count();
+    let opened = Engine::open(path).expect("child open");
+    opened.engine.close().expect("child close");
+    let after = fd_count();
+    assert!(after <= before + 5, "fd leak: before={before} after={after}");
 }
 
 #[test]
