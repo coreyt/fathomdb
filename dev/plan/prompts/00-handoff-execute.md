@@ -236,6 +236,20 @@ check 2 until check 1 PASS is recorded in `preflight-summary.md`.
 
 ---
 
+## 10.1 Progress tracking
+
+`dev/plan/runs/STATUS.md` is the single up-to-date progress board.
+Orchestrator (main thread) edits it at every plan §0.1 step-5
+decision point. Implementer subagents do **not** edit it — they
+write `<phase>-output.json`; the orchestrator reads that and folds
+the result into STATUS.md.
+
+When resuming a session: read STATUS.md first to know what phase is
+active, what KEEP/REVERT decisions have landed, and what the next
+action is.
+
+---
+
 ## 11. Success definition (§1, restated)
 
 - AC-020 passes `concurrent <= sequential * 1.25 / 8` over 5
