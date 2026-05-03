@@ -1218,6 +1218,14 @@ fn max_cursor(connection: &Connection, table: &str) -> rusqlite::Result<u64> {
 /// Only the subset of codes the engine can reach in 0.6.0 is enumerated
 /// — bare-extended-code matching covers the rest with a stable
 /// `"SQLITE_UNKNOWN"` fallback so subscribers always see a typed code.
+///
+/// Diagnostic completeness for unmapped codes: when this helper returns
+/// `"SQLITE_UNKNOWN"`, the numeric extended code is not lost — it
+/// remains on the underlying `rusqlite::Error::SqliteFailure` carried
+/// in the engine error chain that subscribers can inspect via
+/// `EngineError`'s `source()`. Expanding the enumerated subset (or
+/// surfacing the numeric code as a typed payload field) is a 0.7+
+/// improvement.
 fn sqlite_extended_code_name(err: &rusqlite::Error) -> Option<&'static str> {
     let sqlite_error = err.sqlite_error()?;
     let extended = sqlite_error.extended_code;
