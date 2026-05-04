@@ -171,5 +171,37 @@ small drift for unattributed frames; if >25% unattributed, recapture).
 
 ## Update log
 
-_(append dated notes here just before A.2 work begins — fold A.1
-numbers + flamegraph paths in)_
+- 2026-05-03 — A.1 KEEP `ca0d8f0` (FF-merged onto `0.6.0-rewrite`).
+  A.1 phase JSON marked decision INCONCLUSIVE per its own mandate
+  (capture only); orchestrator KEPT artifacts because all acceptance
+  criteria met. A.2 is the classifier.
+- A.1 numbers (N=5):
+  - sequential `[189,199,182,179,176]` ms — median 182, stddev 9.2
+  - concurrent `[120,110,117,115,112]` ms — median 115, stddev 4.0
+  - speedup_observed = 1.58× (required 5.33×; gap 3.4×)
+- Artifact paths (in-tree at `ca0d8f0`):
+  - `dev/notes/perf/ac020-sequential-fec71a0.svg` / `.folded`
+  - `dev/notes/perf/ac020-concurrent-fec71a0.svg` / `.folded`
+  - `dev/notes/perf/ac020-diff-fec71a0.svg`
+  - `dev/plan/runs/A1-folded-diff.txt`
+  - `dev/plan/runs/A1-perf-capture-output.json`
+- Top concurrent symbols (cycles:u): `__aarch64_swp4_rel` 11.2%,
+  `__aarch64_cas4_acq` 9.8%, `___pthread_mutex_lock` 6.8%,
+  `__aarch64_swp4_acq` 5.9%, `lll_mutex_lock_optimized` 1.8%
+  (~30% atomic/mutex vs ~5% sequential). Useful work
+  (`min_idx`, `vec0Filter_*`) drops 14.5% → 8.7%.
+- A.1 alternative_hypothesis (carry into A.2 classification):
+  dominant bottleneck likely SQLite WAL/pager spinlocks +
+  `___pthread_mutex_lock` serializing writers, NOT the
+  read/write connection lock hierarchy from §6 ladder.
+  Independent secondary: `sqlite3RunParser` 4-5% in both profiles
+  → no prepared-statement cache reuse.
+- A.1 caveats: perf 5.15.163 vs kernel 5.15.185-tegra (no errors);
+  CPU governor stayed at `schedutil` (no sudo) — observed
+  729-2035 MHz across 12 cores under load; `perf_event_paranoid=2`
+  blocked kernel events (`perf lock` / `perf c2c` unavailable
+  without sudo); raw `perf.data` files (10.3 MB) NOT committed —
+  regenerable via the A.0 entry points.
+- Sub-phase entry points (unchanged from A.1):
+  - `AC020_PHASE=sequential cargo test -p fathomdb-engine --release --test perf_gates -- --ignored ac_020_sequential_only --nocapture`
+  - `AC020_PHASE=concurrent cargo test -p fathomdb-engine --release --test perf_gates -- --ignored ac_020_concurrent_only --nocapture`

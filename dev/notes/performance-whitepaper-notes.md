@@ -413,3 +413,54 @@ per plan §0.1). Sub-phase entry points unblock A.1 perf capture
 Pre-existing compile errors in `tests/{compatibility,cursors,lifecycle_observability}.rs`
 flagged in A.0 output JSON as not-of-this-phase; agent-verify still
 green, so noted but not actioned here.
+
+**A.1 — perf capture (KEEP `ca0d8f0`, 2026-05-03).** Diagnostic
+capture only, no perf delta. N=5 `perf record -F 999 -g
+--call-graph dwarf` of each sub-phase via the A.0 entry points;
+flamegraphs + diff rendered with `inferno` v0.12.6. Numbers:
+sequential `[189,199,182,179,176]` ms (median 182, stddev 9.2),
+concurrent `[120,110,117,115,112]` ms (median 115, stddev 4.0),
+observed speedup 1.58× vs required 5.33× — gap 3.4×. Phase JSON
+self-marked INCONCLUSIVE because A.1 mandate is capture, not
+classify; orchestrator KEEP because every acceptance criterion
+hit and the artifacts are exactly what A.2 needs.
+
+Profile shape (concurrent vs sequential): atomic + mutex primitives
+dominate concurrent at ~30% of cycles
+(`__aarch64_swp4_rel` 11.2%, `__aarch64_cas4_acq` 9.8%,
+`___pthread_mutex_lock` 6.8%, `__aarch64_swp4_acq` 5.9%,
+`lll_mutex_lock_optimized` 1.8%) versus ~5% in sequential. Useful
+work fraction (`min_idx`, `vec0Filter_*`) drops 14.5% → 8.7% under
+contention even though wall-time is shorter. A.1's
+alternative_hypothesis frames this as SQLite WAL/pager spinlock +
+the global SQLite mutex serializing writers — *not* the read/write
+connection lock hierarchy from §6 ladder.
+
+Independent secondary signal in *both* profiles (4.6% sequential,
+3.4% concurrent): `sqlite3RunParser`. Every search call re-parses
+SQL; no prepared-statement cache reuse. Orthogonal to the
+concurrency bottleneck, so A.2 can keep it as a candidate Phase B/C
+target on its own merits.
+
+Caveats: perf binary `5.15.163` (extracted from
+`linux-tools-5.15.0-124-generic_arm64.deb` because no
+`linux-tools-tegra` exists) vs kernel `5.15.185-tegra` — minor
+skew, no recording errors. CPU governor could not be changed from
+`schedutil` (no sudo); cores observed 729-2035 MHz under load
+(rated max 2201 MHz). `perf_event_paranoid=2` blocks kernel
+events, so `perf lock` and `perf c2c` are unavailable without
+sudo — A.1's `data_for_pivot` lists USDT probes + `strace -c -f`
+(A.3 territory) as the fallbacks. Build used
+`RUSTFLAGS='-C force-frame-pointers=yes' cargo build --test
+perf_gates` (skips pre-existing compile errors in
+`tests/{cursors,lifecycle_observability,compatibility}.rs`).
+Sanity symbols `mem1Malloc` and `read_search_in_tx` were absent
+from the folded files: the former because this build uses
+`sqlite3MemMalloc` (different SQLite alloc shim), the latter
+because the rusqlite caller inlines it in release; both are
+expected and not capture failures.
+
+Raw `perf.data` files (8.1 MB concurrent + 2.2 MB sequential =
+10.3 MB) excluded from commit — regenerable via the documented
+A.0 entry points. Folded + SVG files (~1 MB total) committed for
+A.2 + final synthesis.

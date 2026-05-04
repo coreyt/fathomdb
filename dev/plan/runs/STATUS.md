@@ -5,22 +5,25 @@ Single up-to-date progress file for the AC-020 perf packet. Orchestrator
 point. Implementer subagents do **not** edit this file — they write
 `<phase>-output.json` instead, which the orchestrator reads.
 
-Last updated: 2026-05-03 (A.0 KEEP `fec71a0` FF-merged; ready to spawn A.1).
+Last updated: 2026-05-03 (A.1 KEEP `ca0d8f0` FF-merged; ready to spawn A.2).
 
 ---
 
 ## Current state
 
 - Branch: `0.6.0-rewrite`.
-- Branch tip: `fec71a0` (test(perf-gates): A.0 harness split, FF-merged
-  from `pack5-A0-harness-split-20260504T002643Z`). Not yet pushed.
-  Prior local commits: `fc8b8d8` docs alignment; `2dc2134` STATUS
-  refresh; `1980bf6` Pack 1-4 production.
+- Branch tip: `ca0d8f0` (diag(perf-gates): A.1 perf capture artifacts,
+  FF-merged from `pack5-A1-perf-capture-20260504T003956Z` after
+  rebase onto `522a88d`). Not yet pushed. Prior local commits:
+  `522a88d` A.0 bookkeeping; `fec71a0` A.0 harness split;
+  `fc8b8d8` docs alignment; `2dc2134` STATUS refresh;
+  `1980bf6` Pack 1-4 production.
 - A.0 spawn baseline (used): `0.6.0-rewrite` ref at spawn time =
-  `fc8b8d8` (descendant of plan-recorded baseline `1980bf6`). FF
-  applied cleanly.
-- A.1 spawn baseline: **`fec71a0`** (A.0 commit). A.1 needs the
-  split-test entry points.
+  `fc8b8d8` (descendant of plan-recorded baseline `1980bf6`).
+- A.1 spawn baseline (used): `fec71a0` (A.0 commit). FF applied
+  after rebase onto `522a88d`.
+- A.2 spawn baseline: **`ca0d8f0`** (A.1 commit). A.2 reads the
+  flamegraph + folded artifacts in tree.
 - Baseline drift note: original Pack 5 plan assumed a clean baseline
   with Pack 1-4 already committed, but those changes were sitting in
   the working tree. They were committed at `1980bf6` after running
@@ -32,9 +35,9 @@ Last updated: 2026-05-03 (A.0 KEEP `fec71a0` FF-merged; ready to spawn A.1).
   amendment required because none of the seven checks depend on the
   engine src state.)
 - Prompts: PASS — 13 files under `dev/plan/prompts/`.
-- Active phase: **none** — A.0 closed (KEEP, `fec71a0`); A.1 next.
-- Active worktrees: none (A.0 worktree force-removed after copying
-  `A0-harness-split-output.json` into main repo; phase branch deleted).
+- Active phase: **none** — A.1 closed (KEEP, `ca0d8f0`); A.2 next.
+- Active worktrees: none (A.1 worktree force-removed after committing
+  artifacts to its phase branch + FF-merge; phase branch deleted).
 
 ## Acceptance scoreboard
 
@@ -54,7 +57,7 @@ packet's acceptance criterion.
 | Phase | Spawned | Decision | Reviewer | Worktree | Commit | Notes / log             |
 | ----- | ------- | -------- | -------- | -------- | ------ | ----------------------- |
 | A.0   | 2026-05-03 | KEEP  | n/a (test-only) | cleaned | `fec71a0` | harness split; smoke seq=184/conc=117 N=1; output JSON `dev/plan/runs/A0-harness-split-output.json` |
-| A.1   | -       | -        | -        | -        | -      | -                       |
+| A.1   | 2026-05-03 | KEEP  | n/a (capture)   | cleaned | `ca0d8f0` | perf record N=5; seq median 182ms / conc 115ms / speedup 1.58×; flamegraphs in `dev/notes/perf/ac020-*-fec71a0.{svg,folded}`; phase JSON self-marked INCONCLUSIVE per A.1 capture-only mandate, orchestrator KEPT |
 | A.2   | -       | -        | -        | -        | -      | main thread             |
 | A.3   | -       | -        | -        | -        | -      | -                       |
 | A.4   | -       | -        | -        | -        | -      | main thread             |
@@ -75,6 +78,21 @@ Decision values: `KEEP` / `REVERT` / `INCONCLUSIVE` / `RECAPTURE` /
   seq=182ms / conc=118ms / bound=34ms / speedup=0.19. Numbers
   consistent within noise → fixture parity confirmed. Combined-gate
   bound failure was pre-existing (not introduced by A.0).
+- 2026-05-03 A.1 N=5 (perf record `cycles:u`, `-F 999 -g
+  --call-graph dwarf`):
+  - sequential: `[189,199,182,179,176]` ms — min 176, median 182,
+    max 199, stddev 9.2.
+  - concurrent: `[120,110,117,115,112]` ms — min 110, median 115,
+    max 120, stddev 4.0.
+  - speedup_observed = 1.58× (required 5.33×; gap 3.4×).
+  - Concurrent profile cycle distribution: ~30% in atomic/mutex
+    primitives (`__aarch64_swp4_rel` 11.2%, `__aarch64_cas4_acq`
+    9.8%, `___pthread_mutex_lock` 6.8%, `__aarch64_swp4_acq` 5.9%,
+    `lll_mutex_lock_optimized` 1.8%) vs ~5% in sequential.
+  - Useful work fraction (`min_idx` + `vec0Filter_*`) drops
+    14.5% → 8.7% under concurrency.
+  - Independent finding both profiles: `sqlite3RunParser` 4.6%
+    sequential / 3.4% concurrent — no prepared-statement cache.
 
 ## Outstanding worktrees
 
@@ -89,12 +107,14 @@ _(none yet — anything CONCERN-severity from reviewer goes here with §12 ref)_
 Pre-write all phase prompt files (plan §10 step 1) → **DONE**.
 Land Phase 9 Pack 1-4 baseline → **DONE** (`1980bf6`).
 Spawn Phase A.0 → **DONE** (KEEP, `fec71a0`, FF-merged).
+Spawn Phase A.1 → **DONE** (KEEP, `ca0d8f0`, FF-merged after rebase).
 
 **Pause point per resume §8** — confirm with human before spawning
-A.1 (perf record + flamegraph capture, Sonnet medium, baseline
-`fec71a0`). A.1 spawn block is in
-`dev/plan/prompts/A1-perf-capture.md` with Update log carrying
-A.0 numbers and baseline SHA.
+A.2 (symbol focus / bottleneck classification — main-thread phase
+per plan §10 + STATUS phase-results notes; reads A.1 artifacts in
+tree at `dev/notes/perf/ac020-*-fec71a0.{svg,folded}` +
+`dev/plan/runs/A1-folded-diff.txt`). Baseline = `ca0d8f0`. A.2
+prompt Update log already carries A.1 numbers + symbol top-10.
 
 ---
 
