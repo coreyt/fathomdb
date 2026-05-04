@@ -102,15 +102,25 @@ pub enum DoctorCommand {
     /// Materialize a safe export of the database.
     SafeExport(SafeExportArgs),
     /// Verify the embedder identity recorded in the database.
-    VerifyEmbedder,
+    VerifyEmbedder(JsonFlagArgs),
     /// Trace the resolution chain for a given source reference.
     Trace(TraceArgs),
     /// Dump the canonical schema definition.
-    DumpSchema,
+    DumpSchema(JsonFlagArgs),
     /// Dump per-table row counts.
-    DumpRowCounts,
+    DumpRowCounts(JsonFlagArgs),
     /// Dump the response-cycle profile recorded by the engine.
-    DumpProfile,
+    DumpProfile(JsonFlagArgs),
+}
+
+/// Shared `--json` carrier for doctor verbs whose only documented option is
+/// the machine-readable output toggle. `cli.md` § Output posture: `--json` is
+/// the normative machine-readable contract on every verb.
+#[derive(Debug, Args)]
+pub struct JsonFlagArgs {
+    /// Emit machine-readable JSON output.
+    #[arg(long)]
+    pub json: bool,
 }
 
 /// Per-verb argument set for `doctor check-integrity`.
@@ -164,26 +174,89 @@ pub struct TraceArgs {
     pub json: bool,
 }
 
+/// Outcome classes that map to the stable exit-code matrix in
+/// `dev/interfaces/cli.md` § Exit-code classes.
+///
+/// Phase 9 verb bodies produce a `CliOutcome`; the CLI maps it to an exit
+/// code via [`outcome_to_exit_code`]. Keeping the mapping in a pure function
+/// lets engine-side outcome producers stay independent of process-exit
+/// concerns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CliOutcome {
+    /// Verb completed successfully with no findings.
+    Clean,
+    /// Doctor / verification surface found actionable non-clean state.
+    Findings,
+    /// Export / materialization failure on an artifact-producing doctor verb.
+    ExportFailure,
+    /// `recover` completed only because lossy action was explicitly accepted.
+    RecoveryAcceptedLoss,
+    /// Lock-held or equivalent precondition-blocked outcome.
+    LockHeld,
+    /// Unrecoverable command failure.
+    Unrecoverable,
+}
+
+/// Map an outcome to the stable exit code defined in `cli.md`.
+#[must_use]
+pub fn outcome_to_exit_code(outcome: CliOutcome) -> i32 {
+    match outcome {
+        CliOutcome::Clean => exit_code::OK,
+        CliOutcome::Findings => exit_code::DOCTOR_FOUND_ISSUES,
+        CliOutcome::ExportFailure => exit_code::EXPORT_FAILURE,
+        CliOutcome::RecoveryAcceptedLoss => exit_code::RECOVERY_ACCEPTED_LOSS,
+        CliOutcome::LockHeld => exit_code::LOCK_HELD,
+        CliOutcome::Unrecoverable => exit_code::UNRECOVERABLE,
+    }
+}
+
 /// Run a parsed CLI command.
 ///
-/// 0.6.0 verb bodies intentionally do not touch a database; each prints the
-/// `{"status":"not_implemented","verb":"<name>"}` JSON shape and returns the
-/// `UNRECOVERABLE` exit code so parser-shape tests can pin the surface
-/// without asserting unimplemented happy-path semantics.
+/// 0.6.0 verb bodies intentionally do not touch a database. Most verbs print
+/// `{"status":"not_implemented","verb":"<name>"}` and return
+/// `exit_code::UNRECOVERABLE`. The one exception is `recover` invoked without
+/// `--accept-data-loss`: that case is refused at the CLI layer (no engine
+/// call) per `dev/interfaces/cli.md` and `dev/design/recovery.md` — recovery
+/// is the only lossy root and must not proceed without the explicit
+/// acknowledgement.
 #[must_use]
 pub fn run(cli: Cli) -> i32 {
+    if let Command::Recover(args) = &cli.command {
+        if !args.accept_data_loss {
+            println!(
+                r#"{{"status":"refused","verb":"recover","code":"E_RECOVER_REQUIRES_ACCEPT_DATA_LOSS"}}"#
+            );
+            return exit_code::UNRECOVERABLE;
+        }
+    }
+
     let verb = match &cli.command {
         Command::Recover(_) => "recover",
         Command::Doctor(d) => match &d.command {
             DoctorCommand::CheckIntegrity(_) => "doctor:check-integrity",
             DoctorCommand::SafeExport(_) => "doctor:safe-export",
-            DoctorCommand::VerifyEmbedder => "doctor:verify-embedder",
+            DoctorCommand::VerifyEmbedder(_) => "doctor:verify-embedder",
             DoctorCommand::Trace(_) => "doctor:trace",
-            DoctorCommand::DumpSchema => "doctor:dump-schema",
-            DoctorCommand::DumpRowCounts => "doctor:dump-row-counts",
-            DoctorCommand::DumpProfile => "doctor:dump-profile",
+            DoctorCommand::DumpSchema(_) => "doctor:dump-schema",
+            DoctorCommand::DumpRowCounts(_) => "doctor:dump-row-counts",
+            DoctorCommand::DumpProfile(_) => "doctor:dump-profile",
         },
     };
     println!(r#"{{"status":"not_implemented","verb":"{verb}"}}"#);
     exit_code::UNRECOVERABLE
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn outcome_mapping_covers_cli_md_exit_classes() {
+        assert_eq!(outcome_to_exit_code(CliOutcome::Clean), 0);
+        assert_eq!(outcome_to_exit_code(CliOutcome::RecoveryAcceptedLoss), 64);
+        assert_eq!(outcome_to_exit_code(CliOutcome::Findings), 65);
+        assert_eq!(outcome_to_exit_code(CliOutcome::ExportFailure), 66);
+        assert_eq!(outcome_to_exit_code(CliOutcome::Unrecoverable), 70);
+        assert_eq!(outcome_to_exit_code(CliOutcome::LockHeld), 71);
+    }
 }

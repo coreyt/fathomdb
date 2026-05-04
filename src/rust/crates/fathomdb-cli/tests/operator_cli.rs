@@ -189,6 +189,32 @@ fn t_recover_emits_not_implemented_json_and_exits_70() {
 }
 
 #[test]
+fn t_recover_refuses_without_accept_data_loss() {
+    // CLI-layer guard per `cli.md` § Recover root and `design/recovery.md`:
+    // `recover` is the only lossy root and must refuse before any engine
+    // interaction unless `--accept-data-loss` is explicitly supplied.
+    let output = fathomdb().args(["recover", "--truncate-wal"]).output().expect("spawn");
+    assert_eq!(
+        output.status.code(),
+        Some(exit_code::UNRECOVERABLE),
+        "recover without --accept-data-loss must exit UNRECOVERABLE; got {:?} stderr={}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr),
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("refusal stdout must be JSON; err={e} stdout={stdout}"));
+    let obj = parsed.as_object().expect("expected JSON object");
+    assert_eq!(obj.get("status").and_then(Value::as_str), Some("refused"));
+    assert_eq!(obj.get("verb").and_then(Value::as_str), Some("recover"));
+    assert_eq!(
+        obj.get("code").and_then(Value::as_str),
+        Some("E_RECOVER_REQUIRES_ACCEPT_DATA_LOSS"),
+    );
+}
+
+#[test]
 fn t_clap_parse_error_on_unknown_root_is_nonzero() {
     // Parser-level rejection is pinned by tests/parser.rs; this asserts the
     // built binary surfaces that rejection as a non-zero exit. The exact code

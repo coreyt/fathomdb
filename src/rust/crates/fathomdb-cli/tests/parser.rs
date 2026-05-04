@@ -88,12 +88,39 @@ fn doctor_simple_verbs_parse() {
     for verb in ["verify-embedder", "dump-schema", "dump-row-counts", "dump-profile"] {
         let cli = parse(&["doctor", verb]);
         match (verb, doctor(cli)) {
-            ("verify-embedder", DoctorCommand::VerifyEmbedder) => {}
-            ("dump-schema", DoctorCommand::DumpSchema) => {}
-            ("dump-row-counts", DoctorCommand::DumpRowCounts) => {}
-            ("dump-profile", DoctorCommand::DumpProfile) => {}
+            ("verify-embedder", DoctorCommand::VerifyEmbedder(args))
+            | ("dump-schema", DoctorCommand::DumpSchema(args))
+            | ("dump-row-counts", DoctorCommand::DumpRowCounts(args))
+            | ("dump-profile", DoctorCommand::DumpProfile(args)) => {
+                assert!(!args.json, "default --json must be false for {verb}");
+            }
             (other, parsed) => panic!("verb {other} parsed unexpectedly as {parsed:?}"),
         }
+    }
+}
+
+#[test]
+fn every_doctor_verb_accepts_json_flag() {
+    // `cli.md` § Output posture: `--json` is the normative machine-readable
+    // contract on every verb.
+    for verb in [
+        "check-integrity",
+        "safe-export",
+        "verify-embedder",
+        "trace",
+        "dump-schema",
+        "dump-row-counts",
+        "dump-profile",
+    ] {
+        let mut argv: Vec<&str> = vec!["fathomdb", "doctor", verb];
+        match verb {
+            "safe-export" => argv.push("/tmp/out"),
+            "trace" => argv.extend(["--source-ref", "src-1"]),
+            _ => {}
+        }
+        argv.push("--json");
+        Cli::try_parse_from(argv)
+            .unwrap_or_else(|e| panic!("doctor {verb} --json must parse; err={e}"));
     }
 }
 
