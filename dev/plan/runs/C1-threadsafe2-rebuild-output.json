@@ -1,0 +1,73 @@
+{
+  "phase": "C1",
+  "decision": "REVERT",
+  "build_route": "env_LIBSQLITE3_FLAGS",
+  "build_route_rationale": "LIBSQLITE3_FLAGS=-USQLITE_THREADSAFE -DSQLITE_THREADSAFE=2 set in workspace .cargo/config.toml; -U first to override libsqlite3-sys-0.28.0 build.rs line 137 hardcoded -DSQLITE_THREADSAFE=1; confirmed by two independent tests before revert",
+  "compile_options_threadsafe": "THREADSAFE=2",
+  "compile_options_full_path": "dev/plan/runs/C1-evidence-compile-options.txt",
+  "threadsafe_after_open": 2,
+  "build_time_clean_s": 80.7,
+  "binary_size_release_bytes": 1174428,
+  "binary_size_delta_vs_baseline_pct": null,
+  "before": {
+    "raw_runs": [
+      {"sequential_ms": 189, "concurrent_ms": 120},
+      {"sequential_ms": 199, "concurrent_ms": 110},
+      {"sequential_ms": 182, "concurrent_ms": 117},
+      {"sequential_ms": 179, "concurrent_ms": 115},
+      {"sequential_ms": 176, "concurrent_ms": 112}
+    ],
+    "sequential_ms": 182,
+    "concurrent_ms": 115,
+    "bound_ms": 34.1,
+    "speedup": 1.58,
+    "stddev_concurrent": 4.0,
+    "n": 5,
+    "source": "A.1 baseline (dev/plan/runs/A1-perf-capture-output.json, commit fec71a0)"
+  },
+  "after": {
+    "raw_runs": [
+      {"sequential_ms": 185.8, "concurrent_ms": 116.7, "bound_ms": 34.8, "speedup": 1.593},
+      {"sequential_ms": 179.7, "concurrent_ms": 126.8, "bound_ms": 33.7, "speedup": 1.417},
+      {"sequential_ms": 182.2, "concurrent_ms": 128.4, "bound_ms": 34.2, "speedup": 1.419},
+      {"sequential_ms": 184.4, "concurrent_ms": 121.5, "bound_ms": 34.6, "speedup": 1.518},
+      {"sequential_ms": 181.1, "concurrent_ms": 120.0, "bound_ms": 34.0, "speedup": 1.509}
+    ],
+    "sequential_ms": 182.2,
+    "concurrent_ms": 121.5,
+    "bound_ms": 34.2,
+    "speedup": 1.509,
+    "stddev_concurrent": 4.8,
+    "n": 5
+  },
+  "delta_concurrent_pct": 5.65,
+  "delta_sequential_pct": 0.11,
+  "delta_speedup_pct": -4.48,
+  "ac017_status": "green",
+  "ac018_status": "green",
+  "ac018_drain_ms_after": 220,
+  "ac020_passes_5_33x": false,
+  "ac020_passes_packet_1_25_margin": false,
+  "ci_cross_platform": "deferred:only local aarch64-linux build tested; libsqlite3-sys-0.28.0 build.rs LIBSQLITE3_FLAGS path is architecture-neutral (-D/-U flags only, no c_char hardcoding introduced); route should work on x86_64-linux and darwin-arm64 but not CI-verified in this run",
+  "ci_platforms_passed": ["aarch64-linux"],
+  "ci_platforms_failed": [],
+  "reviewer_verdict": "PENDING",
+  "phase78_review_verdict": "PENDING",
+  "deployment_mode_question": "C.1 REVERT confirms bundled-libsqlite3-sys compile flag approach works mechanically (THREADSAFE=2 confirmed by tests) but does not improve concurrency. The deployment-mode question (whitepaper §8 q3) remains: THREADSAFE=2 would require bundled-only commitment (system SQLite on most distros is THREADSAFE=1). Since C.1 shows no perf benefit, this question is moot until a future experiment re-examines it; for now the project stays THREADSAFE=1 (default bundled) without requiring a bundled-only deployment posture.",
+  "loc_added": 0,
+  "loc_removed": 0,
+  "files_changed_pre_revert": [
+    ".cargo/config.toml",
+    "src/rust/crates/fathomdb-engine/Cargo.toml",
+    "src/rust/crates/fathomdb-engine/tests/compile_options.rs"
+  ],
+  "files_changed": [
+    "dev/plan/runs/C1-evidence-compile-options.txt",
+    "dev/plan/runs/C1-threadsafe2-rebuild-output.json"
+  ],
+  "commit_sha": "none",
+  "data_for_pivot": "THREADSAFE=2 rebuild applied correctly and verified (sqlite3_threadsafe()==2, PRAGMA THREADSAFE=2, two independent green tests before revert). AC-020 concurrent median 121.5ms vs A.1 115ms (+5.65%) — essentially flat, speedup 1.509x vs 1.58x (-4.48%). Kill criterion MET: C.1 was the strongest compile-time mutex intervention (replaces B.1+B.3 stacked per update log); result is within ±5% of baseline (barely outside at +5.65%, within 1.2 stddev). The A.2 hot symbols (__aarch64_swp4_rel, __aarch64_cas4_acq, ___pthread_mutex_lock) are NOT SQLite compile-time threading mutexes — they are unaffected by SQLITE_THREADSAFE=2. Promote D.1 (per-connection lookaside or alt reader architecture). Reverting C.1 cleanly restores A.1 baseline state; Cargo.lock unchanged.",
+  "unexpected_observations": "sqlite3_threadsafe() confirmed returning compile-time value (2 after rebuild, as A.3 predicted). The THREADSAFE=2 compile flag was applied unambiguously via -USQLITE_THREADSAFE -DSQLITE_THREADSAFE=2 (undefine-before-redefine pattern matching libsqlite3-sys bundled-nosafety idiom). No new c_char/i8/u8 FFI hardcodes introduced. Pre-existing compile errors in tests/compatibility.rs, tests/cursors.rs, tests/lifecycle_observability.rs (A.0 baseline) unchanged. MUTEX_PTHREADS still appears in compile_options with THREADSAFE=2 — this is expected; MUTEX_PTHREADS is the mutex implementation backend, not the threading mode. The per-connection mutex is still physically present in the binary at THREADSAFE=2 (it is only disabled at THREADSAFE=0 or with SQLITE_NO_MUTEX). This may partially explain why the perf is flat: THREADSAFE=2 removes only the global allocator/pcache serialization mutex, not the per-connection mutex which dominates in the ReaderPool read path.",
+  "next_phase_recommendation": "D1",
+  "kill_criterion_status": "MET: C.1 concurrent median 121.5ms vs A.1 115ms (+5.65% ≈ flat within noise); speedup 1.509x vs 1.58x (-4.48%). Both THREADSAFE=2 (runtime path, B.1) and THREADSAFE=2 (compile-time path, C.1) show no improvement. Per A.4 kill criterion: mutex track is wrong — promote D.1 (per-conn lookaside, alt reader architecture, or WAL-pager contention investigation)."
+}
