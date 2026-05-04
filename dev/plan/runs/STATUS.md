@@ -271,14 +271,29 @@ pointer if G-phase exhausts and AC-020 still misses.
   Conc −7 ms / +0.191× speedup; misses formal KEEP threshold by
   4.89 ms (~0.41 stddev). Lookaside hiwtr=57 slots/worker after
   warmup, all 8 workers honored.
-- Next-phase pivot: G.0 + G.1 evidence points to **G.4** (private
-  page cache via `SQLITE_OPEN_PRIVATECACHE`) over G.2. Reason:
-  pcache1 global mutex is the next-largest contention path
-  (`page_cache = 6.29%` conc, 4.01× ratio per G.0); G.2 parse-
-  cache only reduces a CPU floor (Pack 5 E.1 ratio-worsening
-  risk). Awaiting human pick: G.2 (per original plan) or G.4
-  (per G.0/G.1 evidence). G.3 already shown irrelevant for the
-  read-only fixture.
+- **G.3.5 SKIP_G4** (2026-05-04). Per-worker delta-windowed
+  `DBSTATUS_CACHE_HIT/MISS/USED` snapshot on the G.1 tip (debug-
+  only `CacheStatus` broadcast, source `4f84278`). Result: every
+  worker post-AC-020-concurrent-body shows `cache_used_pct` =
+  3.35% (well below 50% SKIP threshold) AND `delta_miss_rate` ≈
+  0.023% (well below 5% SKIP threshold) — bit-identical
+  footprint across all 8 workers, no dispatch bias. Working set
+  (~70 KB / worker) sits ~30× below the default 2 MiB cache
+  cap. **G.4 (cache_size sweep) is a dead lever on this fixture
+  and host.** The G.0 page_cache 6.29% conc / +34.5M cycle
+  delta is therefore from pcache1 *mutex acquires on every page
+  fetch* (hit-path), not from cache misses — a lever that would
+  need `SQLITE_CONFIG_PCACHE2` custom allocator install (Pack 7
+  territory).
+- **Active G-phase position:** awaiting human pick between
+  - (a) **G.2 attempt** — per-worker prepared-statement cache on
+    F.0 sticky connections (Pack 5 E.1 ratio-worsening risk
+    still active; parse_compile 22.52% conc, 0.61 ratio), or
+  - (b) **Formal AC-020 deferral** — close Pack 6.G with G.1
+    KEPT + G.3.5 SKIP_G4 + G.3 falsified for read-only fixture;
+    ship 0.6.0 with REQ-020 deferred per handoff §9 + open
+    Pack 7 with cumulative G-phase evidence (PCACHE2 / WAL2 /
+    reader-writer split / vendor-SQLite candidates).
 - G.0 telemetry KEY FINDING: Pack 5 A.2's `mutex_atomic = 36.98%`
   conc was leaf-only misattribution. Stack-aware reclassification
   on F.0 tip shows `mutex_atomic` catch-all = 0% conc (F.0
