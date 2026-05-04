@@ -358,6 +358,119 @@ This note is the audit trail; no spawn, no prompt file, no §12 line
 created here. If/when the trigger fires, write the spawn brief at
 that point with the recapture numbers in hand.
 
+### 7.8 E synthesis track — staged residual tuning (2026-05-03 hypothesis)
+
+Hypothesis raised after B.1 falsification, while C.1 is in flight:
+the AC-020 shortfall is multi-cause, not single-cause. The
+mutex-contention track (B.1 / C.1) attacks the *largest* cycle
+sink but leaves several smaller-but-real costs that A.3 already
+surfaced:
+
+- `prepares_per_search = 4` (A.3.2 counters) — every `Engine::search`
+  re-prepares 4 statements. Combined with `sqlite3RunParser` at
+  4.6% (sequential) / 3.4% (concurrent) of cycles independent of
+  concurrency, this is a real per-call floor that B.1/C.1 cannot
+  touch.
+- `canonical_nodes` has no index on `write_cursor` (A.3.3 EXPLAIN).
+  Hidden by 4-row fixture today; correctness latency at scale.
+- `DEFAULT_MMAP_SIZE = 0`, `DEFAULT_CACHE_SIZE = -2000` (A.3.4).
+  Reader pool 8 × 2 MB cache = 16 MB across all readers; one cold
+  page can cost a syscall.
+- `DEFAULT_WAL_AUTOCHECKPOINT = 1000` pages (A.3.4). Writer thread
+  may stall mid-checkpoint; workload is read-heavy but writer
+  pressure exists.
+
+E is a synthesis, not a new theory:
+
+- Mutex contention is **dominant** (A.2 5.73× growth) — that's why
+  B.1 / C.1 came first.
+- B.1 falsified runtime mutex flip; C.1 tests the strongest possible
+  mutex intervention (compile-time elimination).
+- *After* the mutex track outcome lands, the residual gap is most
+  efficiently closed by tuning the per-query overheads listed above
+  in a single staged track, not as separate one-off experiments.
+
+E sub-experiments (run as a single phase if activated):
+
+- **E.1** — `prepare_cached` on the 4 read-path search statements
+  via long-lived reader connections. Whitepaper §4 already KEEPS
+  `prepare_cached` on writer-side; readers were tried in §5 but
+  the reverted entry doesn't specify which statements; redo
+  carefully on the named four (vec0_match, canonical_lookup,
+  soft_fallback_probe, fts_match per A.3.3). Risk: statement
+  cache TTL / invalidation across schema migrations — readers are
+  read-only and never see DDL, so cache is safe across the test's
+  lifetime. Expected impact: cuts per-query parse cost from
+  ~4 × ~25 µs ≈ 100 µs to amortized near-zero on warm-cache reads;
+  on a 542 µs/query baseline that's ~18% drop.
+- **E.2** — add index on `canonical_nodes(write_cursor)`. Latent
+  scale concern; cleanup either way. Expected impact on the 4-row
+  fixture: noise (no real visible saving). On scale fixtures this
+  becomes load-bearing.
+- **E.3** — bump reader `cache_size` and re-evaluate `mmap_size`.
+  §5 reverted "Reader-side `cache_size` / `mmap_size` tuning" with
+  the note "did not change the concurrency ratio" — that was at
+  THREADSAFE=1 with global mutex contention masking everything.
+  Worth re-trying *if* C.1 KEEPs (mutex contention removed) AND
+  the residual is read-bound. Skip if C.1 closes AC-020 alone.
+- **E.4** — WAL `wal_autocheckpoint` tuning + `journal_size_limit`.
+  Writer-side; only matters if A.1 re-capture against the post-mutex-
+  fix branch shows writer-thread cycles in checkpoint. Skip
+  otherwise.
+
+Activation logic (decided after C.1 returns):
+
+- **C.1 KEEPs** (AC-020 closed): E.2 only as separate cleanup
+  follow-up issue; E.1/E.3/E.4 unnecessary.
+- **C.1 REVERTs** (mutex track closed clean — even compile-time
+  elimination doesn't move AC-020): E full sequence (E.1 → E.2
+  → E.3 → E.4) becomes the next experiment branch, **replaces D.1
+  as next** because E's evidence chain is more specific than
+  D.1's. D.1 remains as fallback if E also lands flat.
+- **C.1 BLOCKER** (cross-platform build fails): E full sequence
+  regardless; C.1 retried separately with a build-flag harness.
+
+Decision rule for E (numeric, mirrors B.1/C.1 form):
+
+- KEEP iff `concurrent_median_ms ≤ 80` AND `speedup ≥ 5.0×` AND
+  AC-018 green. Same threshold; reuse same N=5 harness.
+- INCONCLUSIVE band 80–100 ms → re-capture A.1 against the E
+  branch and re-classify; the bottleneck has likely moved
+  (vec0_fts becomes the new ceiling at 11.43% concurrent share).
+- REVERT iff concurrent_median > 115 OR AC-018 red.
+
+Contract / durability risks per sub-experiment:
+
+- E.1: prepared-statement cache must be invalidated on schema
+  migration; readers don't see DDL but defensive code should
+  hold a generation counter. REQ-013 / AC-059b unaffected.
+- E.2: pure index addition, schema migration, must be in a new
+  schema version (Pack 5 said "no data migration in this packet"
+  per resume hard-rule §4.6 — so E.2 alone is a Pack 5 violation
+  unless run as a separate post-Pack-5 issue). Recording this as
+  the gating constraint.
+- E.3: reader-side pragma; durability unaffected (readers don't
+  write).
+- E.4: writer-side; could affect crash-recovery latency but not
+  durability semantics.
+
+Slot in the packet:
+
+- E does NOT replace C.1. C.1 is the strongest mutex test and
+  must run.
+- E activates only after C.1 returns; the activation table above
+  encodes the decision.
+- If E activates, it lands as Phase **E.1 / E.2 / E.3 / E.4** —
+  new prompts written at activation time with the carry-forward
+  numbers in hand. Plan §10 ordering does not change.
+- E.2 (the index addition) is **out of Pack 5 scope** under
+  resume hard-rule §4.6 unless explicitly authorized by the
+  human; the other E sub-experiments are pure runtime tuning
+  with no schema impact.
+
+This note is the audit trail; no spawn, no prompt file, no §12
+line created here. C.1 outcome decides activation.
+
 **B.1 attempt #1 — BLOCKER (2026-05-03, no commit).** First spawn
 of B.1 (Opus high) hit a real spec error and reverted per the
 STOP-and-report rule. Implementer built `init_sqlite_runtime()`
