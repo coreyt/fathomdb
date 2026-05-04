@@ -285,15 +285,21 @@ pointer if G-phase exhausts and AC-020 still misses.
   fetch* (hit-path), not from cache misses — a lever that would
   need `SQLITE_CONFIG_PCACHE2` custom allocator install (Pack 7
   territory).
-- **Active G-phase position:** awaiting human pick between
-  - (a) **G.2 attempt** — per-worker prepared-statement cache on
-    F.0 sticky connections (Pack 5 E.1 ratio-worsening risk
-    still active; parse_compile 22.52% conc, 0.61 ratio), or
-  - (b) **Formal AC-020 deferral** — close Pack 6.G with G.1
-    KEPT + G.3.5 SKIP_G4 + G.3 falsified for read-only fixture;
-    ship 0.6.0 with REQ-020 deferred per handoff §9 + open
-    Pack 7 with cumulative G-phase evidence (PCACHE2 / WAL2 /
-    reader-writer split / vendor-SQLite candidates).
+- **Pack 6.G CLOSED (2026-05-04).** AC-020 formally **DEFERRED**
+  for 0.6.0 per `dev/test-plan.md`. G.2 not attempted — Pack 5
+  E.1 ratio-worsening risk + low expected upside (parse_compile
+  ratio shrinks under contention) made it the weakest of the
+  remaining canonical-SQLite levers. Mutex + parse + pool-
+  topology + allocator-arena + page-cache + WAL + checkpoint
+  tracks all closed.
+- **Final medians on this host (N=5 at tip):** seq 563 ms /
+  conc 161 ms / speedup 3.530× vs required ≥ 5.33× test bound
+  (gap 1.80×, ~80 ms conc). Cumulative-vs-Pack-5 speedup gain
+  1.487× → 3.530× (+137%).
+- **Pack 7 next-packet pointer:**
+  `dev/plan/0.6.0-Phase-9-Pack-5-performance-diagnostics.md`
+  §13. Recommended starting point §13.1 (`SQLITE_CONFIG_PCACHE2`
+  per-worker arena pcache).
 - G.0 telemetry KEY FINDING: Pack 5 A.2's `mutex_atomic = 36.98%`
   conc was leaf-only misattribution. Stack-aware reclassification
   on F.0 tip shows `mutex_atomic` catch-all = 0% conc (F.0

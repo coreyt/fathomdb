@@ -1409,3 +1409,174 @@ contributor needs to re-walk the mutex / parse falsification.
   surface expansion, decision-rule mismatch). Reviewer mandate
   works as a guardrail; honor BLOCK verdicts even when the
   KEEP-narrative is sympathetic.
+
+---
+
+## 12. Phase 9 Pack 6 + Pack 6.G synthesis (append-only)
+
+Closes 2026-05-04. AC-020 formally **DEFERRED for 0.6.0** with the
+gate documented as RED in `dev/test-plan.md`; Pack 7 next-packet
+pointer in `dev/plan/0.6.0-Phase-9-Pack-5-performance-diagnostics.md`
+§13.
+
+### 12.1 Pack 6 (F.0) — thread-affine reader workers KEPT
+
+Replaces `ReaderPool::Mutex<Vec<Connection>>` borrow/release with
+8 long-lived reader worker threads, each owning one read-only
+SQLite `Connection` for its lifetime. Lock-free dispatch:
+`AtomicUsize::fetch_add(Relaxed) % 8` round-robin into per-worker
+bounded `SyncSender<ReaderRequest>`; oneshot reply per caller.
+Connections never cross thread boundaries after `Engine::open`.
+
+Numbers (this host, ~3× slower than Pack 5 reference machine):
+seq 531 ms / conc 155 ms / speedup **3.49×** (vs Pack 5 baseline
+seq 184.7 / conc 124 / 1.487× — speedup-ratio gain +2.34×).
+Misses the formal KEEP threshold (conc ≤ 80, speedup ≥ 5.0) by
+75 ms / 1.51×; codex `gpt-5.4` reviewer BLOCK on numeric +
+public-surface + agent-verify-path + TDD-ordering findings.
+Human override KEEP applied scoped per finding category: surface
+and verify resolved in landed code; numeric and TDD ordering
+acknowledged but not redoable.
+
+Why KEPT despite numeric REVERT: F.0 is strictly better than the
+prior topology on every dimension that matters for 0.6.0 GA —
+lower corruption surface (no shared `sqlite3*` handle across
+threads, SQLite serialized-mode mutex effectively unused), no
+hot-path mutex on dispatch, no cross-thread connection handoff,
+clean shutdown with worker join + connection drop. Source
+`b0aceca`-line: cherry-pick of `07388cf` plus cfg-gate fix
+`29cdc6f` for `_for_test` accessor convention.
+
+### 12.2 Pack 6.G G.0 — telemetry pass reframes the residual
+
+Stack-aware re-classification of perf-record samples on the F.0
+tip. **Reverses Pack 5 A.2's leaf-only `mutex_atomic = 36.98%`
+attribution.** F.0 collapsed serialized-connection mutex
+contention as designed (`mutex_atomic` catch-all = 0% conc on
+the measured-loop filter); the same pthread/aarch64 atomic
+samples now resolve up-stack to:
+
+- `allocator_lookaside` 26.67% conc, 3.89× ratio, +145.7M-cycle
+  delta — glibc malloc-arena mutex under `sqlite3Malloc.part.0`
+  / `pcache1Alloc`.
+- `page_cache` 6.29% conc, 4.01× ratio, +34.5M-cycle delta —
+  `pcache1Fetch` / `Unpin` / `Alloc` / `Destroy`.
+- `parse_compile` 22.52% conc, 0.61 ratio (share **shrinks**
+  under contention — being displaced, not driving).
+- `wal_atomics` 0% conc — falsified for AC-020 read-only fixture.
+- `checkpoint` 0% conc — falsified for read-only fixture.
+- `vec0_fts` 24.12% conc, 0.88 ratio — canonical SQL CPU floor.
+- `our_code` 19.78% full-stack (leaf 0.32% — not a hot spot).
+
+Decision: PICK_G1 (lookaside is the dominant contention class).
+Output `dev/plan/runs/G0-wal-checkpoint-telemetry-output.json`;
+flamegraphs `dev/notes/perf/ac020-{seq,conc}-c71f0cc.{folded,svg}`.
+
+### 12.3 Pack 6.G G.1 — per-connection lookaside LANDED (INCONCLUSIVE)
+
+`sqlite3_db_config(SQLITE_DBCONFIG_LOOKASIDE, NULL, 1200, 500)`
+on every F.0 reader worker connection immediately after
+`Connection::open` and before any PRAGMA / prepare (silent-ignore
+ordering trap guarded by `debug_assert_eq!(rc, SQLITE_OK)`).
+1200 B × 500 slots/worker (5× SQLite default 128) sized from G.0
+hot-stack evidence (`sqlite3Fts5ExprNew`, `vec0Filter_knn`).
+Applied via raw `rusqlite::ffi::sqlite3_db_config` — rusqlite
+0.31's safe wrapper does not cover `SQLITE_DBCONFIG_LOOKASIDE`.
+
+Numbers (post-lookaside, this host, N=5): seq 563 ms / conc
+161 ms / speedup **3.530×** vs G.0 baseline 168 / 3.339× — conc
+−7 ms / speedup +0.191×, no ratio worsening. Misses the formal
+KEEP threshold (G.0 baseline − 1×stddev = 156.11 ms) by 4.89 ms
+(~0.41 stddev). Implementer self-decision INCONCLUSIVE; codex
+`gpt-5.4` reviewer CONCERN with RUN_MORE_VERIFICATION on
+incomplete audit trail and one stale comment. Per-worker
+lookaside `hiwtr` after warmup uniformly 57/500 slots — config
+provably honored across all 8 workers.
+
+Landed regardless of numeric INCONCLUSIVE because (a) matches
+documented best-practice for sticky long-lived connections,
+(b) prereq for any future per-conn allocator work, (c) no
+public-surface expansion (debug-only `_for_test` helpers under
+`#[cfg(debug_assertions)]`), (d) clippy + fmt + agent-verify
+clean. Source `b0aceca` (cherry-pick of `46e3576`) + comment
+fix `5960741`.
+
+### 12.4 Pack 6.G G.3.5 — cache-pressure screening ⇒ SKIP_G4
+
+Per-worker delta-windowed `SQLITE_DBSTATUS_CACHE_HIT/MISS/USED`
+snapshot pre/post AC-020 concurrent body. Result: every worker
+shows `cache_used_pct` = 3.35% (50% SKIP threshold) AND
+`delta_miss_rate` = 0.023% (5% SKIP threshold). Bit-identical
+70 KB / worker footprint, ~30× headroom in default 2 MiB cache.
+Round-robin dispatch uniform within 1.032× max/min; no
+dispatch bias.
+
+**Implication.** G.0's `page_cache 6.29% conc / +34.5M cycle
+delta` is from `pcache1` mutex acquires on every page-fetch
+(hit-path), not from cache misses. **Any `cache_size` sweep
+is a dead lever.** The right intervention is
+`SQLITE_CONFIG_PCACHE2` custom allocator install (Pack 7).
+Source `4f84278` (debug-only `CacheStatus` broadcast plumbing,
+retained for Pack 7 audit). Output
+`dev/plan/runs/G3_5-cache-pressure-telemetry-output.json`.
+
+### 12.5 Cumulative position at Pack 6.G close
+
+| Track                             | Status                                                                                                                                         | Evidence           |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| Mutex (B.1, C.1)                  | CLOSED — falsified                                                                                                                             | Pack 5 §5 + §11    |
+| Parse-cost (E.1)                  | CLOSED — ratio-worsening on borrow/release pool                                                                                                | Pack 5 §5 + §11    |
+| Pool topology (F.0)               | KEPT — strictly better, +2.34× speedup-ratio                                                                                                   | §4 + §12.1         |
+| Allocator arena (G.1)             | LANDED INCONCLUSIVE — best-practice sized                                                                                                      | §4 + §12.3         |
+| WAL atomics (G.3)                 | SKIPPED — 0% conc share, fixture falsifies                                                                                                     | §12.2              |
+| Checkpoint (G.3)                  | SKIPPED — 0% conc share, read-only fixture                                                                                                     | §12.2              |
+| Page-cache (G.4)                  | SKIPPED — `pcache1` mutex on hit-path, `cache_size` cannot reach                                                                               | §12.4              |
+| Parse cache on sticky conns (G.2) | NOT ATTEMPTED — Pack 5 E.1 ratio-worsening risk on AC-020 ratio metric, low expected upside given parse_compile ratio shrinks under contention | §12.2 + handoff §4 |
+
+AC-020 not closed. Required ≥ 5.33× test bound vs measured
+3.530× (gap 1.80×, ~80 ms conc). Per Pack 6.G handoff §9, the
+remaining canonical-SQLite levers are exhausted; further work
+crosses into Pack 7 territory (PCACHE2 / WAL2 / vendor-SQLite /
+reader-writer split).
+
+### 12.6 Why ~3.5× and not 8×
+
+8 workers, ideal speedup 8×. Observed 3.5×. Sources of the
+4.5× shortfall, ranked by evidence weight:
+
+1. **`pcache1` global mutex on every page-fetch** — ~4300
+   acquires per concurrent body × 8 workers serialize on a
+   single global mutex. Not contended by `cache_size` (G.3.5
+   showed `cache_used` headroom is ~30×). Directly attackable
+   only by `SQLITE_CONFIG_PCACHE2`.
+2. **Allocator arena residual after lookaside** — G.1 sized
+   for FTS5 / vec0 small allocations (slot 1200 B); large
+   allocations (page-sized + bigger) still fall through to
+   glibc malloc arena. `SQLITE_CONFIG_MEMSYS3` / per-conn
+   private heap would address this; not canonical-SQLite
+   compatible without compile-time flag.
+3. **Parse-compile CPU floor** — 22.52% conc share, ratio
+   0.61. G.2 candidate; Pack 5 E.1 showed parse-cost relief
+   skews seq more than conc, worsening AC-020's ratio metric.
+   Treated as low-expected-upside on this fixture.
+4. **`vec0` / FTS5 inherent CPU work** — 24.12% conc, ratio
+   0.88. Not contended; takes wall time. Query-plan or
+   extension-level optimization, not packet 6.G material.
+
+### 12.7 Process meta-findings (Pack 6 + Pack 6.G)
+
+- F.0 reviewer (BLOCK) and G.1 reviewer (CONCERN) both flagged
+  audit-trail gaps (committed implementer log absent, stale
+  comments). Process fix: orchestrator now lands the
+  implementer log + reviewer verdict alongside every cherry-
+  pick, and reads the reviewer's specific findings list before
+  deciding KEEP / INCONCLUSIVE / REVERT.
+- Stack-aware symbol classification (G.0) is materially better
+  than leaf-only (Pack 5 A.2). Future perf packets should
+  default to stack-aware classification with explicit grouping
+  buckets; leaf-only stays as a cross-pack continuity column
+  only.
+- Three-way G.3.5 decision matrix (skip / probe / full sweep)
+  with per-worker delta-windowed counters and explicit
+  dispatch-bias check is the right shape for screening before
+  expensive sweeps. Carry this pattern into Pack 7.

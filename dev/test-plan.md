@@ -99,26 +99,54 @@ reused across suites:
 - AC-019 remains `#[ignore]` because the accepted mixed-retrieval workload is
   not yet landed at the accepted 1M-corpus scale, even though the search path
   now has a real vector-contributed branch.
-- AC-020 is implemented as a long-run-only env-gated harness. The documented
-  read mix is 50% vector-only semantic queries (`semantic-*`) and 50% hybrid
-  queries (`hybrid-*`) over a pre-drained vector-indexed fixture, 50 rounds
-  per reader thread. It is evidenced by `scripts/check.sh` with
-  `AGENT_LONG=1`; `agent-verify.sh` executes only the early-return path and is
-  not evidence for the AC. **AC-020 is long-run RED** as of Pack 5 close
-  (2026-05-03): N=5 medians seq=184.7 ms, conc=124.0 ms, bound=34.6 ms,
-  speedup=1.487× (required ≥ 5.33× for the test bound, ≥ 6.4× for the
-  Pack 5 §1 1.25/8 margin). AC-017 + AC-018 stay green throughout.
-  Latest evidence, hypothesis ladder, kept/reverted experiment ledger,
-  Pack 5 final synthesis, and Pack 6 starting-point recommendation
-  (architectural reader-pool refactor) live in:
-  - `dev/notes/performance-whitepaper-notes.md` (numbers + breadcrumbs;
-    §11 Pack 5 narrative; §7.7/§7.8 conditional follow-up tracks)
-  - `dev/plan/0.6.0-Phase-9-Pack-5-performance-diagnostics.md` (DoE plan,
-    §12 audit trail)
-  - `dev/plan/runs/final-synthesis-output.json` (Pack 5 close decision +
-    Pack 6 hand-off)
-    Inline numbers are intentionally not duplicated here to avoid two truth
-    sources.
+- AC-020 is **DEFERRED for 0.6.0** as of Pack 6.G close (2026-05-04).
+  Implemented as a long-run-only env-gated harness; the documented read
+  mix is 50% vector-only semantic queries (`semantic-*`) and 50% hybrid
+  queries (`hybrid-*`) over a pre-drained vector-indexed fixture, 50
+  rounds per reader thread. Evidenced by `scripts/check.sh` with
+  `AGENT_LONG=1`; `agent-verify.sh` executes only the early-return path
+  and is not evidence for the AC.
+
+  Latest measured medians (N=5, current `0.6.0-rewrite` tip, this host
+  Linux 5.15-tegra ~3× slower in absolute ms than the Pack 5 reference
+  machine): seq=563 ms, conc=161 ms, bound=105 ms, speedup=3.530×
+  (required ≥ 5.0× packet rule / ≥ 5.33× test bound). AC-017 + AC-018
+  stay green throughout. Best individual run on this host (G.1 run 5):
+  seq=503 / conc=118 / speedup=4.263× — single-run only, not a gate.
+
+  **Deferral rationale.** Pack 5 + Pack 6 + Pack 6.G falsified every
+  canonical-SQLite lever measurable on the AC-020 read-only fixture
+  (mutex track via B.1 / C.1; parse-cost track via E.1; pool-topology
+  track via F.0 KEPT but does not close; allocator-arena via G.1
+  LANDED INCONCLUSIVE; page-cache via G.3.5 SKIP_G4 — `cache_used` =
+  3.35% / `delta_miss_rate` = 0.023% leaves no headroom; WAL atomics +
+  checkpoint = 0% under stack-aware classification). Residual
+  `page_cache` 6.29% conc share is from `pcache1` mutex acquires on
+  every page-fetch (hit-path), which canonical SQLite cannot eliminate
+  without `SQLITE_CONFIG_PCACHE2` custom allocator install. That,
+  WAL2, reader/writer physical separation, and vendor-SQLite swap
+  are all Pack 7 territory — see
+  `dev/plan/0.6.0-Phase-9-Pack-5-performance-diagnostics.md` §13.
+
+  AC-020 stays RED in CI; the test bound (`tests/perf_gates.rs:245`)
+  is unchanged. 0.6.0 ships with the gate documented as DEFERRED, not
+  weakened. Pack 7 reopens the gate when a measured fix lands.
+
+  Evidence trail:
+  - `dev/notes/performance-whitepaper-notes.md` (§4 kept ledger
+    incl. F.0 / G.1; §5 reverted ledger; §11 Pack 5 narrative;
+    §12 Pack 6 + Pack 6.G synthesis).
+  - `dev/plan/0.6.0-Phase-9-Pack-5-performance-diagnostics.md` (DoE
+    plan, §12 audit trail, §13 Pack 7 proposed work).
+  - `dev/plan/runs/F0-thread-affine-readers-output.json` (F.0
+    topology + numbers).
+  - `dev/plan/runs/G0-wal-checkpoint-telemetry-output.json` (stack-
+    aware symbol classification).
+  - `dev/plan/runs/G1-reader-lookaside-output.json` (lookaside
+    LANDED INCONCLUSIVE).
+  - `dev/plan/runs/G3_5-cache-pressure-telemetry-output.json`
+    (page-cache lever falsified).
+  - `dev/plan/runs/STATUS.md` (Pack 5 / 6 / 6.G close-state board).
 
 ## Component Scaffold Targets
 
