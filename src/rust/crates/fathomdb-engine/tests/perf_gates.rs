@@ -248,3 +248,57 @@ fn ac_020_reads_do_not_serialize_on_a_single_reader_connection() {
         "AC-020 failed: concurrent={concurrent:?} bound={bound:?} sequential={sequential:?}"
     );
 }
+
+#[test]
+#[ignore = "profiling harness: set AC020_PHASE=sequential to opt in"]
+fn ac_020_sequential_only() {
+    if std::env::var("AC020_PHASE").as_deref() != Ok("sequential") {
+        return;
+    }
+
+    let (_dir, path) = fixture_path("ac020_sequential_only");
+    let embedder = Arc::new(RoutedEmbedder::new(3));
+    let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
+    seed_ac020_fixture(&opened.engine);
+
+    let started = Instant::now();
+    for _ in 0..AC020_THREADS {
+        run_ac020_mix(&opened.engine);
+    }
+    let elapsed = started.elapsed();
+
+    eprintln!("AC020_PHASE_SEQUENTIAL_MS={}", elapsed.as_millis());
+}
+
+#[test]
+#[ignore = "profiling harness: set AC020_PHASE=concurrent to opt in"]
+fn ac_020_concurrent_only() {
+    if std::env::var("AC020_PHASE").as_deref() != Ok("concurrent") {
+        return;
+    }
+
+    let (_dir, path) = fixture_path("ac020_concurrent_only");
+    let embedder = Arc::new(RoutedEmbedder::new(3));
+    let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
+    seed_ac020_fixture(&opened.engine);
+
+    let engine = Arc::new(opened.engine);
+    let barrier = Arc::new(Barrier::new(AC020_THREADS + 1));
+    let mut handles = Vec::with_capacity(AC020_THREADS);
+    for _ in 0..AC020_THREADS {
+        let engine = Arc::clone(&engine);
+        let barrier = Arc::clone(&barrier);
+        handles.push(thread::spawn(move || {
+            barrier.wait();
+            run_ac020_mix(&engine);
+        }));
+    }
+    let started = Instant::now();
+    barrier.wait();
+    for handle in handles {
+        handle.join().expect("reader thread");
+    }
+    let elapsed = started.elapsed();
+
+    eprintln!("AC020_PHASE_CONCURRENT_MS={}", elapsed.as_millis());
+}
