@@ -1,0 +1,79 @@
+{
+  "phase": "A3",
+  "decision": "PARTIAL",
+  "strace_top_10_syscalls": [],
+  "strace_summary": {
+    "total_syscalls": null,
+    "total_wall_s": null,
+    "futex_share_pct": null,
+    "io_share_pct": null,
+    "skip_reason": "strace not installed, no sudo access; see A3-evidence/strace-skipped.md"
+  },
+  "counters": {
+    "reader_borrow_ms_total": null,
+    "reader_borrow_ms_per_query": null,
+    "embedder_us_total": 23,
+    "embedder_us_per_query": 0,
+    "search_us_total": 867569,
+    "search_us_per_query": 542,
+    "proxy_borrow_plus_read_us_total": 867546,
+    "proxy_borrow_plus_read_us_per_query": 542,
+    "prepares_per_search": 4,
+    "queries_total": 1600
+  },
+  "counters_collection_status": "partial:borrow_wait and read_search_in_tx split require production hooks; search_us covers both; embed is RoutedEmbedder (~0 us), so proxy_borrow_plus_read_us ≈ search_us",
+  "threadsafe": 1,
+  "compile_options": {
+    "threadsafe": "THREADSAFE=1",
+    "memsys": "",
+    "mutex": "MUTEX_PTHREADS",
+    "default_pagesize": "DEFAULT_PAGE_SIZE=4096",
+    "default_cache_size": "DEFAULT_CACHE_SIZE=-2000",
+    "default_synchronous": "DEFAULT_SYNCHRONOUS=2",
+    "default_wal_synchronous": "DEFAULT_WAL_SYNCHRONOUS=2",
+    "default_mmap_size": "DEFAULT_MMAP_SIZE=0",
+    "system_malloc": "SYSTEM_MALLOC",
+    "full_path": "dev/plan/runs/A3-evidence/compile_options.txt"
+  },
+  "pragma_observed_per_reader": {
+    "journal_mode": "wal",
+    "query_only": 1,
+    "cache_size": -2000,
+    "mmap_size": 0,
+    "page_size": 4096,
+    "synchronous": 2
+  },
+  "explain_query_plan": [
+    {
+      "statement": "vec0_match",
+      "plan_summary": "SCAN vector_default VIRTUAL TABLE INDEX 0:3{___}___; USE TEMP B-TREE FOR ORDER BY",
+      "regression": false,
+      "notes": "vec0 virtual table SCAN with INDEX is expected; internal ANN index used transparently; TEMP B-TREE ORDER BY normal for vec0"
+    },
+    {
+      "statement": "canonical_lookup",
+      "plan_summary": "SCAN canonical_nodes",
+      "regression": false,
+      "notes": "Real-table full scan for WHERE write_cursor = ?1 LIMIT 1. No index on write_cursor. Latent scale concern (O(n) with node count). Not a planner regression — index never created. Flag for structural review."
+    },
+    {
+      "statement": "soft_fallback_probe",
+      "plan_summary": "SCAN search_index VIRTUAL TABLE INDEX 0:M3; SEARCH _fathomdb_vector_kinds USING COVERING INDEX; SEARCH _fathomdb_projection_terminal USING INTEGER PRIMARY KEY LEFT-JOIN",
+      "regression": false,
+      "notes": "FTS5 MATCH SCAN expected; both joins use indexed paths"
+    },
+    {
+      "statement": "fts_match",
+      "plan_summary": "SCAN search_index VIRTUAL TABLE INDEX 0:M3; USE TEMP B-TREE FOR ORDER BY",
+      "regression": false,
+      "notes": "FTS5 MATCH SCAN expected; TEMP B-TREE for ORDER BY write_cursor normal for FTS5"
+    }
+  ],
+  "explain_regression_observed": false,
+  "consistency_check_vs_a1_a2": "agree: A.2 identified mutex_atomic as dominant (5.73× growth). THREADSAFE=1 + MUTEX_PTHREADS confirms SQLite uses pthreads mutexes internally. With 8 threads and 8 readers in ReaderPool, the pool Mutex itself is a contention point — all threads compete to borrow/release via Mutex<Vec<Connection>>. The proxy counter shows search_us_per_query=542µs concurrent with embedder~0µs, meaning borrow+read dominates. This is consistent with A.2 mutex_atomic signal. strace futex count unavailable but THREADSAFE=1 pthreads path is confirmed.",
+  "data_for_pivot": "THREADSAFE=1 (MUTEX_PTHREADS) confirmed. A.2 mutex_atomic 5.73× growth + THREADSAFE=1 together point clearly at MULTITHREAD (THREADSAFE=2) upgrade as the targeted intervention: SQLite SERIALIZED mode uses a global recursive mutex per connection; switching to MULTITHREAD removes that per-connection serialization. ReaderPool has 8 connections and 8 threads — pool size is not the bottleneck, but the Mutex<Vec<Connection>> in ReaderPool::borrow/release adds Rust-side contention on top of SQLite's own per-connection mutex. B.1 should address both layers. The canonical_lookup full-scan (no index on write_cursor) is a secondary latency contributor that will grow with data volume — worth a follow-up but not the primary bottleneck at current fixture size.",
+  "unexpected_observations": "1) canonical_nodes has no index on write_cursor — a full table scan for each vec0 match result. Current fixture is 4 rows so invisible in perf, but this will degrade at scale. 2) DEFAULT_MMAP_SIZE=0 — no memory-mapped I/O configured; all reads go through the SQLite page cache (DEFAULT_CACHE_SIZE=-2000, ~8MB per connection × 9 connections = ~72MB total potential cache). 3) DEFAULT_SYNCHRONOUS=2 (FULL) — no WAL-specific reduction; writes are sync-heavy but reads are unaffected. 4) reader_pragmas show mmap_size=0 confirming no mmap on readers. 5) embedder_us=23µs total across 1600 queries (0µs/query) — embedder is entirely off the critical path for RoutedEmbedder; real production embedder latency would change this picture significantly.",
+  "evidence_dir": "dev/plan/runs/A3-evidence/",
+  "log_path": "dev/plan/runs/A3-secondary-diagnostics-output.json",
+  "next_phase_recommendation": "Feeds A4 decision: THREADSAFE=1 confirmed (baseline for B.1 MULTITHREAD=2 target). mutex_atomic A.2 verdict corroborated by MUTEX_PTHREADS compile option. strace unavailable but not blocking — A.2 flamegraph evidence is sufficient. A.4 can proceed with: THREADSAFE=1 baseline, mutex_atomic dominant, canonical_lookup missing-index as secondary observation. B.1 should target sqlite3_config(SQLITE_CONFIG_MULTITHREAD) + potentially add write_cursor index on canonical_nodes."
+}

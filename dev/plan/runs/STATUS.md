@@ -5,7 +5,7 @@ Single up-to-date progress file for the AC-020 perf packet. Orchestrator
 point. Implementer subagents do **not** edit this file — they write
 `<phase>-output.json` instead, which the orchestrator reads.
 
-Last updated: 2026-05-03 (A.2 PICK_B1, main thread; ready to spawn A.3 or B.1).
+Last updated: 2026-05-03 (A.3 PARTIAL_KEEP `edb0c84` + A.4 PICK_B1 main thread; pause for human before B.1 spawn per §8 A.4 gate).
 
 ---
 
@@ -25,9 +25,13 @@ Last updated: 2026-05-03 (A.2 PICK_B1, main thread; ready to spawn A.3 or B.1).
 - A.2 executed by main thread at baseline `ca0d8f0`; output JSON
   `dev/plan/runs/A2-symbol-focus-output.json`; no commit (docs +
   JSON only, bundled with bookkeeping commit).
-- A.3 / B.1 spawn baseline: **`0.6.0-rewrite`** tip (current after
-  A.2 bookkeeping). A.3 is optional per A.2 unambiguous signal —
-  plan §10 step 3 still calls for it as secondary diagnostic.
+- A.3 spawn baseline (used): `0.6.0-rewrite` at `3bbb9a1`. KEPT
+  as `edb0c84` (test-code commit FF-merged); evidence + output JSON
+  written to main repo by subagent via absolute path (kept as-is).
+- A.4 executed by main thread at `0.6.0-rewrite` tip; output JSON
+  `dev/plan/runs/A4-decision-record-output.json`.
+- B.1 spawn baseline: **`0.6.0-rewrite`** tip (current after A.4
+  bookkeeping commit). Reviewer (codex `gpt-5.4`) mandatory.
 - Baseline drift note: original Pack 5 plan assumed a clean baseline
   with Pack 1-4 already committed, but those changes were sitting in
   the working tree. They were committed at `1980bf6` after running
@@ -39,8 +43,8 @@ Last updated: 2026-05-03 (A.2 PICK_B1, main thread; ready to spawn A.3 or B.1).
   amendment required because none of the seven checks depend on the
   engine src state.)
 - Prompts: PASS — 13 files under `dev/plan/prompts/`.
-- Active phase: **none** — A.2 closed (PICK_B1, main thread); A.3
-  (optional secondary diagnostic) and/or B.1 next.
+- Active phase: **none** — A.0 / A.1 / A.2 / A.3 / A.4 all closed;
+  B.1 next (paused for human confirmation per §8 A.4 gate).
 - Active worktrees: none.
 
 ## Acceptance scoreboard
@@ -63,8 +67,8 @@ packet's acceptance criterion.
 | A.0   | 2026-05-03 | KEEP  | n/a (test-only) | cleaned | `fec71a0` | harness split; smoke seq=184/conc=117 N=1; output JSON `dev/plan/runs/A0-harness-split-output.json` |
 | A.1   | 2026-05-03 | KEEP  | n/a (capture)   | cleaned | `ca0d8f0` | perf record N=5; seq median 182ms / conc 115ms / speedup 1.58×; flamegraphs in `dev/notes/perf/ac020-*-fec71a0.{svg,folded}`; phase JSON self-marked INCONCLUSIVE per A.1 capture-only mandate, orchestrator KEPT |
 | A.2   | 2026-05-03 | PICK_B1 | self (main thread Opus) | n/a   | (no code) | mutex_atomic 6.45%→36.98% (5.73× growth, +262M cycles) — dominant; allocator 2× secondary; rest flat/shrinking. Output JSON `dev/plan/runs/A2-symbol-focus-output.json`. |
-| A.3   | -       | -        | -        | -        | -      | -                       |
-| A.4   | -       | -        | -        | -        | -      | main thread             |
+| A.3   | 2026-05-03 | PARTIAL_KEEP | n/a (diag) | cleaned | `edb0c84` | counters search_us=542/query, embedder=0; THREADSAFE=1 (MUTEX_PTHREADS) confirms A.2; strace skipped (no sudo); EXPLAIN no regressions, latent canonical_nodes missing-index flagged out-of-scope |
+| A.4   | 2026-05-03 | PICK_B1 | self (main thread Opus) | n/a   | (no code) | §5 OVERRIDE on prior MULTITHREAD revert (pre-init placement + return-code validation + threadsafe()==2 assertion test required); rule conc≤80ms AND speedup≥5×; alt-on-fail=B.3; kill: B.1+B.3 stacked <10% drop ⇒ promote D.1. Output `dev/plan/runs/A4-decision-record-output.json`. |
 | B.1   | -       | -        | -        | -        | -      | -                       |
 | B.2   | -       | -        | -        | -        | -      | conditional on B.1 KEEP |
 | B.3   | -       | -        | -        | -        | -      | conditional             |
@@ -111,6 +115,18 @@ Decision values: `KEEP` / `REVERT` / `INCONCLUSIVE` / `RECAPTURE` /
 
   mutex_atomic absolute delta = +262M cycles (largest of any
   category). Decision rule met → PICK_B1.
+- 2026-05-03 A.3 counters (1600 concurrent queries, 8×50×4):
+  - `search_us_per_query` = 542 µs
+  - `embedder_us_per_query` = 0 µs (RoutedEmbedder fixture)
+  - `proxy_borrow_plus_read_us_per_query` = 542 µs (split needs hook)
+- 2026-05-03 A.3 SQLite config: `sqlite3_threadsafe()` = `1`
+  (SERIALIZED, `MUTEX_PTHREADS`); `SYSTEM_MALLOC`;
+  `DEFAULT_MMAP_SIZE=0`; `DEFAULT_CACHE_SIZE=-2000`. Confirms
+  A.2 verdict.
+- 2026-05-03 A.4 baseline-of-record for B.1: seq_median=182ms,
+  conc_median=115ms, bound=34ms (combined-gate 1.5/8 form),
+  speedup=1.58×, n=5. Decision rule numeric: KEEP iff
+  conc_median≤80 AND speedup≥5.0 AND AC-018 green.
 
 ## Outstanding worktrees
 
@@ -124,24 +140,15 @@ _(none yet — anything CONCERN-severity from reviewer goes here with §12 ref)_
 
 Pre-write all phase prompt files (plan §10 step 1) → **DONE**.
 Land Phase 9 Pack 1-4 baseline → **DONE** (`1980bf6`).
-Spawn Phase A.0 → **DONE** (KEEP, `fec71a0`, FF-merged).
-Spawn Phase A.1 → **DONE** (KEEP, `ca0d8f0`, FF-merged after rebase).
-Phase A.2 → **DONE** (PICK_B1, main thread, no commit; bookkeeping
-bundled).
+Phase A.0 KEEP `fec71a0` → A.1 KEEP `ca0d8f0` → A.2 PICK_B1 → A.3
+PARTIAL_KEEP `edb0c84` → A.4 PICK_B1 OVERRIDE — all DONE.
 
-**Pause point per resume §8** — A.4 is the formal go/no-go gate for
-locking the first Phase B/C/D candidate. Two paths from here:
-
-1. Spawn A.3 (`strace -c -f` syscall distribution, Sonnet medium,
-   secondary diagnostic) for completeness, then A.4 lock-in.
-2. Skip A.3 (A.2 signal is unambiguous; A.4 can lock directly) and
-   spawn B.1 (multithread wiring, Opus xhigh, reviewer mandatory)
-   from `0.6.0-rewrite` tip.
-
-Resume §8 says pause after A.4 and confirm with human before
-spawning B/C/D. Recommend path 1 (run A.3 for evidence completeness,
-then A.4 lock, then human-confirm B.1 spawn). Either way: confirm
-with human before next spawn.
+**Pause point per resume §8 (A.4 gate).** Confirm with human
+before spawning B.1 (multithread wiring, Opus xhigh, reviewer
+codex `gpt-5.4` mandatory) from `0.6.0-rewrite` tip. B.1 prompt
+Update log carries A.4 OVERRIDE rationale + numeric KEEP/REVERT
+rule + ordering safety mandate (3 callsites + return-code check
++ `sqlite3_threadsafe()==2` assertion test).
 
 ---
 

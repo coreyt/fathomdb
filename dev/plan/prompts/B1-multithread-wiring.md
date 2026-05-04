@@ -274,3 +274,33 @@ AGENT_LONG=1 cargo test -p fathomdb-engine --release --test perf_gates \
   the SQLite global mutex (B.1 not applied to right connections)
   vs a different mutex (rusqlite-side or `ReaderPool::acquire`).
 - Reviewer: codex with `gpt-5.4` mandatory per plan §0.1 / resume §4.
+- 2026-05-03 — A.4 OVERRIDE on §5 prior MULTITHREAD revert. A.4 output
+  in `dev/plan/runs/A4-decision-record-output.json`. §5 entry failed
+  because `sqlite3_config(SQLITE_CONFIG_MULTITHREAD)` was placed
+  inside `register_sqlite_vec_extension`'s `Once` block (`lib.rs:1824`),
+  called from `Engine::open` at `lib.rs:746` — by then rusqlite has
+  triggered `sqlite3_initialize()` and `sqlite3_config` returns
+  `SQLITE_MISUSE` (silently ignored). B.1 implementer **must** do
+  ALL of:
+  1. Place the `sqlite3_config(SQLITE_CONFIG_MULTITHREAD)` call in a
+     NEW `Once` invoked at `Engine::open` ENTRY, BEFORE any
+     `Connection::open` (or via a process-wide static initializer).
+     The three `Connection::open` callsites that must be downstream
+     of this Once are `lib.rs:747`, `lib.rs:775`, `lib.rs:1574`.
+  2. Validate the `sqlite3_config` return code is `SQLITE_OK`. On
+     `SQLITE_MISUSE` return `EngineOpenError` (do not silently
+     succeed). Use `std::os::raw::c_int` for the FFI return type
+     (memory: `feedback_cross_platform_rust.md`).
+  3. Add a `#[ignore]` integration test that opens an Engine and
+     asserts `sqlite3_threadsafe() == 2` after open. Without this
+     test the change is indistinguishable from the §5 revert.
+- Decision rule (numeric, A.4-locked):
+  - KEEP iff `concurrent_median_ms ≤ 80` AND `speedup ≥ 5.0×` AND
+    AC-018 green (= ≥ 30% drop from A.1 baseline 115 ms).
+  - INCONCLUSIVE band 80-100 ms → recapture A.1 against B.1; if
+    mutex_atomic share dropped but speedup didn't reach 5.0×,
+    stack B.3 (per-conn lookaside) without reverting B.1.
+  - REVERT iff `concurrent_median_ms > 115` OR AC-018 red.
+- Kill criteria: B.1 + B.3 stacked still <10% drop ⇒ mutex track
+  wrong, promote D.1.
+- Expected outcome window: concurrent 30-80 ms median; speedup 5-12×.

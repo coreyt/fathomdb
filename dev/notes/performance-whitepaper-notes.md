@@ -514,3 +514,84 @@ concurrency (does not grow), but is a real time floor.
 Optimization is orthogonal to AC-020; can be picked up in a
 later packet or as a Phase D-class candidate if AC-020 is closed
 by B.1 alone.
+
+**A.3 — secondary diagnostics (PARTIAL_KEEP `edb0c84`,
+2026-05-03).** Three `#[ignore]` diagnostic tests added to
+`tests/perf_gates.rs` plus evidence under
+`dev/plan/runs/A3-evidence/`. A.3.4 is the critical
+corroboration: `sqlite3_threadsafe()` returns `1` (SERIALIZED)
+with `MUTEX_PTHREADS`, `SYSTEM_MALLOC`, `DEFAULT_MMAP_SIZE=0`,
+`DEFAULT_CACHE_SIZE=-2000`. That confirms A.2's verdict — the
+contended primitives in A.1 (`__aarch64_swp4_*`,
+`__aarch64_cas4_acq`, `___pthread_mutex_lock`,
+`__GI___lll_lock_wait`) are SQLite's serialized-mode mutexes
+exactly as predicted. A.3.2 counters: 542 µs/query under
+concurrency with embedder ~0 µs (RoutedEmbedder fixture-only),
+so per-query latency is essentially borrow_wait + read_search_in_tx;
+splitting those two requires a production hook, deferred.
+A.3.3 EXPLAIN: no planner regressions; latent
+`canonical_nodes` missing-index on `write_cursor` flagged as a
+structural follow-up (4-row fixture hides O(N) scan, not a Pack 5
+concern). A.3.1 strace skipped — no `strace` binary on this host
+and no sudo to install one; A.4 treats this as corroborative-not-
+load-bearing because the cycles signal already establishes the
+verdict. Subagent wrote the structured output JSON to main repo
+via absolute path (not the worktree), so the orchestrator
+FF-merged only the test-code commit and kept the subagent's
+JSON as canonical (it is more thorough than orchestrator's
+synthesis would have been).
+
+**A.4 — decision record (PICK B.1, 2026-05-03, main thread Opus
+4.7, intent: high).** Locks B.1 (runtime MULTITHREAD wiring,
+ordering-correct) as the first Phase B/C/D candidate.
+
+§5 cross-check: **OVERRIDE**. §5 already lists a prior reverted
+MULTITHREAD attempt — the `sqlite3_config(SQLITE_CONFIG_MULTITHREAD)`
+call placed inside `register_sqlite_vec_extension`'s `Once` block
+(`lib.rs:1824`), which produced no measurable change. The §5
+entry itself names the failure cause: by the time
+`register_sqlite_vec_extension` runs (called from `Engine::open`
+at `lib.rs:746`, one line before the writer `Connection::open`),
+rusqlite has already triggered `sqlite3_initialize()` on a prior
+connection open in the same process, so `sqlite3_config` returns
+`SQLITE_MISUSE` and is silently ignored. B.1's mandate is
+materially different: place the `sqlite3_config` call BEFORE any
+`sqlite3_initialize` trigger (a process-wide `Once` invoked from
+`Engine::open` *entry* before any `Connection::open`, or a
+`ctor`-style static init), validate the return code is
+`SQLITE_OK`, and add a `#[ignore]` integration test that asserts
+`sqlite3_threadsafe() == 2` after `Engine::open`. Without all
+three, the change is indistinguishable from the §5 attempt and
+must REVERT. This is the explicit override that resume hard-rule
+§4.4 requires; the §12 line points back here.
+
+Decision rule: **KEEP iff `concurrent_median_ms ≤ 80` AND
+`speedup ≥ 5.0×` AND AC-018 green** (≥ 30% drop from A.1
+baseline 115 ms). INCONCLUSIVE band 80–100 ms triggers a re-A.1
+capture against the B.1 branch; if mutex_atomic share dropped
+substantially but speedup didn't reach 5.0×, stack B.3
+(per-conn lookaside) without reverting B.1. REVERT iff
+concurrent regresses past 115 ms or AC-018 turns red.
+
+Kill criteria: if B.1 + B.3 stacked still produce < 10%
+concurrent_ms drop, the mutex_atomic track is wrong; promote D.1
+(single-stmt UNION refactor) and treat the residual mutex as
+something `MULTITHREAD` doesn't reach (likely the rusqlite-side
+Mutex around the connection pool or our own `ReaderPool::borrow`
+`Mutex<Vec<Connection>>`). Before declaring kill, re-capture A.1
+to confirm `mutex_atomic %` actually dropped — if it did but
+speedup didn't, the bottleneck moved to whatever sits next on the
+diff (likely vec0_fts becoming the new ceiling).
+
+Ordering safety check: three `Connection::open` callsites in
+`lib.rs` (writer 747, reader pool 775, third path 1574). All
+three are downstream of any `Engine::open` entry; the new Once
+must fire before any of them. Reviewer (codex) is mandatory for
+B.1 per plan §0.1 and resume §4 — primary review focus is the
+ordering invariant + the return-code validation + the
+`sqlite3_threadsafe() == 2` assertion test.
+
+Expected outcome window: concurrent 30-80 ms (median), speedup
+5-12×. Lower bound assumes near-linear 8-thread scaling once
+contention is removed; upper bound respects the vec0/FTS work
+that is itself non-trivial and can't be parallelised away.

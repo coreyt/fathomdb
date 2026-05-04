@@ -1,0 +1,8 @@
+{
+  "journal_mode": "wal",
+  "query_only": 1,
+  "cache_size": -2000,
+  "mmap_size": 0,
+  "page_size": 4096,
+  "synchronous": 2
+}

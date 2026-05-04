@@ -1,0 +1,42 @@
+# A.3.3 EXPLAIN QUERY PLAN — four read-path statements
+# Database: ac020 fixture (4 docs: 2 vector-only, 2 hybrid)
+# SQLite bundled (rusqlite 0.31, sqlite3_threadsafe=1, MUTEX_PTHREADS)
+
+=== vec0_match ===
+  SCAN vector_default VIRTUAL TABLE INDEX 0:3{___}___
+  USE TEMP B-TREE FOR ORDER BY
+
+  ANALYSIS: vec0 virtual table SCAN with INDEX label is expected — vec0 uses
+  its internal ANN index transparently. TEMP B-TREE for ORDER BY distance is
+  normal; vec0 does not expose pre-sorted cursors to SQLite planner. No regression.
+
+=== canonical_lookup ===
+  SCAN canonical_nodes
+
+  ANALYSIS: real-table full scan for WHERE write_cursor = ?1 LIMIT 1. No
+  index on write_cursor exists. For the 4-row fixture O(1) in practice, but
+  latent scale concern — scan grows linearly with node count. Missing index,
+  not a planner regression (index was never created). Flag for structural review.
+
+=== soft_fallback_probe ===
+  SCAN search_index VIRTUAL TABLE INDEX 0:M3
+  SEARCH _fathomdb_vector_kinds USING COVERING INDEX sqlite_autoindex__fathomdb_vector_kinds_1 (kind=?)
+  SEARCH _fathomdb_projection_terminal USING INTEGER PRIMARY KEY (rowid=?) LEFT-JOIN
+
+  ANALYSIS: FTS5 MATCH always shows SCAN — expected and correct. Both joins
+  use indexed paths (covering index + INTEGER PRIMARY KEY). No regression.
+
+=== fts_match ===
+  SCAN search_index VIRTUAL TABLE INDEX 0:M3
+  USE TEMP B-TREE FOR ORDER BY
+
+  ANALYSIS: FTS5 MATCH SCAN expected. TEMP B-TREE for ORDER BY write_cursor:
+  FTS5 does not expose write_cursor as sorted to planner. Normal. No regression.
+
+regression_observed: false
+regression_notes: >
+  Automated detection flagged all SCAN rows including virtual tables (false
+  positives). Manual analysis: virtual-table SCAN (vec0, fts5) is expected.
+  Only canonical_nodes shows a real-table scan for a point lookup — latent
+  missing-index concern, not a planner regression. No actual regression vs.
+  expected baseline.
