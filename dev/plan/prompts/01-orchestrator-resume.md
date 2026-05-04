@@ -100,15 +100,45 @@ WT=/tmp/fdb-pack5-${PHASE}-${TS}
 git -C /home/coreyt/projects/fathomdb worktree add "$WT" \
     -b "pack5-${PHASE}-${TS}" <BASELINE_COMMIT_SHA>
 
+# Anti-chaining preamble — prepend to prompt body via stdin.
+# B.1 attempt #1 (2026-05-03) chained: wrapper claude -p read the
+# prompt's "Spawn from main thread" block and spawned ANOTHER agent
+# via Task tool, then exited prematurely. Implementer's working code
+# was lost when the wrapper exited. Three-layer defense below.
+PREAMBLE=$(cat <<'EOF'
+============================================================
+YOU ARE THE IMPLEMENTER. Not the orchestrator.
+
+The "## Model + effort" section in this prompt describes how YOU
+were just launched (claude -p with the listed model/effort). Do NOT
+re-spawn yourself. Do NOT spawn other agents.
+
+The "Reviewer pass after implementer" block (if present) describes
+what the orchestrator (the human-facing main thread that launched
+you) will run AFTER you exit. You do NOT spawn the reviewer either.
+
+You are running inside the worktree shown by `pwd`. Do the work
+described under "## Mandate" / "## What to do", write the output
+JSON to the path under "## Log destination" / "## Required output",
+commit any code changes per the prompt's commit policy, then exit.
+
+If the spec is ambiguous or impossible (e.g. an assertion that
+SQLite docs prove cannot pass), STOP and report in your final
+result text — do not silently change the spec.
+============================================================
+EOF
+)
+
 ( cd "$WT" && \
-  cat /home/coreyt/projects/fathomdb/dev/plan/prompts/<id>.md \
+  ( echo "$PREAMBLE"; cat /home/coreyt/projects/fathomdb/dev/plan/prompts/<id>.md ) \
   | claude -p \
       --model claude-sonnet-4-6|claude-opus-4-7 \
       --effort medium|high|xhigh \
       --add-dir "$WT" \
       --allowedTools Read Edit Write Bash Grep Glob \
+      --disallowedTools Task Agent \
       --permission-mode bypassPermissions \
-      --output-format json \
+      --output-format stream-json --include-partial-messages --verbose \
   > "$LOG" 2>&1 )
 ```
 
@@ -120,6 +150,19 @@ forget):
 - No `--cwd`; use `--add-dir` plus shell-side `cd`.
 - `--effort` is intent-only — JSON envelope does not surface it.
 - Cross-worktree paths must be absolute.
+
+Anti-chaining amendments (added 2026-05-03 after B.1 #1 BLOCKER):
+
+- Prepend the PREAMBLE block above so the subagent knows it IS the
+  implementer (not an orchestrator delegating). The "Spawn from main
+  thread" block in each prompt was being misread as an instruction
+  to spawn rather than as a record of how the agent was launched.
+- `--disallowedTools Task Agent` to physically prevent chained
+  spawns even if the role confusion recurs.
+- `--output-format stream-json --include-partial-messages --verbose`
+  so the log file grows continuously and the orchestrator can
+  monitor mid-flight via `tail -f` / `wc -l`. Final result is the
+  last `result` event in the stream; parse with `jq` if needed.
 
 Reviewer skeleton (codex; read-only):
 
