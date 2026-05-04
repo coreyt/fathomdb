@@ -1,0 +1,156 @@
+{
+  "phase": "G.0",
+  "decision_self": "PICK_G1",
+  "commit_sha": "c71f0cc167a72c8c684c27494a29ba4c80558776",
+  "branch": "pack6G-G0-20260504T132839Z",
+  "host_caveat": "This worktree host (5.15-tegra, schedutil, ~3x slower in absolute ms than the Pack 5 reference machine). Use share/ratio comparisons across packs, not absolute ms.",
+  "ac017_runs": [
+    {
+      "passed": true,
+      "profile": "release",
+      "notes": "release-profile perf_gates run prior to perf capture: AC-017 + AC-018 ran via `cargo test --release -p fathomdb-engine --test perf_gates -- ac_017 ac_018`; AC018_NUMBERS drain_ms=51, both green."
+    },
+    {
+      "passed": true,
+      "profile": "dev (agent-verify retry)",
+      "notes": "First agent-verify run flaked AC-017 in dev profile at write 814 (5s deadline; slow host + dev-build write throughput). Retry passed cleanly. Treat AC-017 as green for the F.0 baseline."
+    }
+  ],
+  "ac018_runs": [
+    {
+      "drain_ms": 51,
+      "passed": true,
+      "notes": "release; AC018_NUMBERS drain_ms=51; well under the 2 s gate."
+    }
+  ],
+  "ac020_runs": [
+    {"run": 1, "sequential_ms": 542, "concurrent_ms": 175, "bound_ms": 101, "speedup": 3.097, "passed_5_33x": false, "passed_packet_1_25_margin": false},
+    {"run": 2, "sequential_ms": 552, "concurrent_ms": 175, "bound_ms": 103, "speedup": 3.154, "passed_5_33x": false, "passed_packet_1_25_margin": false},
+    {"run": 3, "sequential_ms": 523, "concurrent_ms": 143, "bound_ms": 98,  "speedup": 3.657, "passed_5_33x": false, "passed_packet_1_25_margin": false},
+    {"run": 4, "sequential_ms": 558, "concurrent_ms": 161, "bound_ms": 104, "speedup": 3.466, "passed_5_33x": false, "passed_packet_1_25_margin": false},
+    {"run": 5, "sequential_ms": 561, "concurrent_ms": 168, "bound_ms": 105, "speedup": 3.339, "passed_5_33x": false, "passed_packet_1_25_margin": false}
+  ],
+  "ac020_summary": {
+    "sequential_ms": {"min": 523, "median": 552, "max": 561, "stddev": 13.73},
+    "concurrent_ms": {"min": 143, "median": 168, "max": 175, "stddev": 11.89},
+    "speedup":      {"min": 3.097, "median": 3.339, "max": 3.657, "stddev": 0.205}
+  },
+  "baseline_of_record_for_g_phase": {
+    "note": "Use this median row as the post-F.0 baseline-of-record for G.1 / G.2 / G.3 KEEP/REVERT decisions on this host. Cross-pack comparisons should use the speedup ratio, not absolute ms.",
+    "sequential_ms_median": 552,
+    "concurrent_ms_median": 168,
+    "speedup_median": 3.339,
+    "n": 5
+  },
+  "perf_record_meta": {
+    "frequency_hz": 999,
+    "call_graph": "dwarf",
+    "event": "cycles:u",
+    "perf_binary": "/tmp/perf-real/usr/lib/linux-tools-5.15.0-124/perf",
+    "perf_version": "5.15.163",
+    "kernel": "5.15.185-tegra",
+    "perf_event_paranoid": 2,
+    "build_command": "RUSTFLAGS='-C force-frame-pointers=yes' cargo build -p fathomdb-engine --release --test perf_gates",
+    "test_binary": "target/release/deps/perf_gates-dc9b11b622356ab0",
+    "sequential_phase_entry": "AC020_PHASE=sequential ac_020_sequential_only --ignored",
+    "concurrent_phase_entry": "AC020_PHASE=concurrent ac_020_concurrent_only --ignored",
+    "samples_seq": 1406,
+    "samples_conc": 1201,
+    "wall_seq_ms": 566,
+    "wall_conc_ms": 120
+  },
+  "flamegraphs": {
+    "sequential_data":   "dev/notes/perf/ac020-seq-c71f0cc.data",
+    "concurrent_data":   "dev/notes/perf/ac020-conc-c71f0cc.data",
+    "sequential_folded": "dev/notes/perf/ac020-seq-c71f0cc.folded",
+    "concurrent_folded": "dev/notes/perf/ac020-conc-c71f0cc.folded",
+    "sequential_svg":    "dev/notes/perf/ac020-seq-c71f0cc.svg",
+    "concurrent_svg":    "dev/notes/perf/ac020-conc-c71f0cc.svg"
+  },
+  "classification_methodology": {
+    "filter": "Restricted to samples whose stack root is the `fathomdb-reader` worker thread OR whose stack contains `run_ac020_mix`. This excludes the seed/open/close phases and isolates the measured AC-020 loop on both seq and conc captures.",
+    "attribution": "Stack-aware. Atomic/mutex primitive leaves are reattributed up-stack: leaves under `sqlite3Malloc*` / `sqlite3_free` / `__libc_malloc/free` / `pcache1Alloc` etc. are classified as `allocator_lookaside`; leaves under `pcache1Fetch/Unpin/Destroy` etc. are classified as `page_cache`; leaves under WAL frames (`walIndexMap`, `walFrames`, `unixShm*`, `walRead*`, `walTryBeginRead`, `walRestartLog`, `walLockShared/Exclusive`, ...) are classified as `wal_atomics`. Only atomic/mutex primitives whose stack does NOT walk through any of those frames remain in the `mutex_atomic` catch-all.",
+    "why_this_differs_from_a2": "Pack 5 A.2 used leaf-only attribution and reported `mutex_atomic = 36.98%` conc as the dominant bottleneck. Stack-aware reclassification of the same primitive samples on the F.0 tip shows nearly all of those pthread/aarch64 atomic samples are reachable from `sqlite3Malloc.part.0` -> `__GI___libc_malloc` (glibc malloc-arena mutex) or from `pcache1Fetch/Alloc` (SQLite global pcache mutex), NOT from a SQLite serialized-connection mutex. Leaf-only A.2 conflated allocator-arena contention with connection-mutex contention. F.0 collapsed the connection-mutex cost (mutex_atomic catch-all bucket is 0% conc); the residual is allocator-arena + pcache1 mutex, which is a different lever.",
+    "filtered_total_cycles_seq": 402434425,
+    "filtered_total_cycles_conc": 649558353
+  },
+  "symbol_classification": [
+    {"name": "wal_atomics",         "seq_pct": 1.04,  "conc_pct": 0.00,  "ratio": 0.00, "delta_cycles_M": -4.18},
+    {"name": "checkpoint",          "seq_pct": 0.00,  "conc_pct": 0.00,  "ratio": null, "delta_cycles_M": 0.00},
+    {"name": "allocator_lookaside", "seq_pct": 6.86,  "conc_pct": 26.67, "ratio": 3.89, "delta_cycles_M": 145.66},
+    {"name": "page_cache",          "seq_pct": 1.57,  "conc_pct": 6.29,  "ratio": 4.01, "delta_cycles_M": 34.54},
+    {"name": "parse_compile",       "seq_pct": 36.95, "conc_pct": 22.52, "ratio": 0.61, "delta_cycles_M": -2.39},
+    {"name": "vec0_fts",            "seq_pct": 27.42, "conc_pct": 24.12, "ratio": 0.88, "delta_cycles_M": 46.34},
+    {"name": "our_code",            "seq_pct": 24.53, "conc_pct": 19.78, "ratio": 0.81, "delta_cycles_M": 29.75},
+    {"name": "mutex_atomic",        "seq_pct": 0.00,  "conc_pct": 0.00,  "ratio": null, "delta_cycles_M": 0.00},
+    {"name": "other",               "seq_pct": 1.64,  "conc_pct": 0.61,  "ratio": 0.37, "delta_cycles_M": -2.60}
+  ],
+  "leaf_only_classification_for_a2_comparison": {
+    "note": "Replicates A.2's leaf-only methodology on the same captures (no filter, full profile). Provided for cross-pack continuity. Stack-aware rows above are the load-bearing classification.",
+    "buckets": [
+      {"name": "wal_atomics",         "seq_pct": 1.21,  "conc_pct": 0.17,  "ratio": 0.14},
+      {"name": "checkpoint",          "seq_pct": 0.00,  "conc_pct": 0.00,  "ratio": null},
+      {"name": "allocator_lookaside", "seq_pct": 3.64,  "conc_pct": 4.53,  "ratio": 1.24},
+      {"name": "parse_compile",       "seq_pct": 20.04, "conc_pct": 16.35, "ratio": 0.82},
+      {"name": "vec0_fts",            "seq_pct": 16.44, "conc_pct": 12.44, "ratio": 0.76},
+      {"name": "our_code",            "seq_pct": 2.34,  "conc_pct": 0.40,  "ratio": 0.17},
+      {"name": "mutex_atomic",        "seq_pct": 8.41,  "conc_pct": 35.91, "ratio": 4.27},
+      {"name": "other",               "seq_pct": 47.92, "conc_pct": 30.21, "ratio": 0.63}
+    ],
+    "interpretation": "Leaf-only mutex_atomic (35.91%) on F.0 looks numerically identical to Pack 5 A.2 (36.98%). The stack-aware view above shows this is misleading: the share is now allocator-arena + pcache1 mutex, not the SQLite global serialized mutex. F.0 did move the bottleneck class even though the leaf-only number did not move."
+  },
+  "top_concurrent_mutex_atomic_call_sites": [
+    {"share_of_mutex_atomic_pct": 4.78, "context": "sqlite3BtreeIndexMoveto -> moveToRoot -> getAndInitPage -> getPageNormal -> pcache1Fetch -> mutex"},
+    {"share_of_mutex_atomic_pct": 3.76, "context": "sqlite3VdbeHalt -> sqlite3VdbeFreeCursorNN -> btreeReleaseAllCursorPages -> pthread_mutex_unlock"},
+    {"share_of_mutex_atomic_pct": 3.55, "context": "sqlite3VdbeExec -> sqlite3BtreeOpen -> sqlite3Malloc.part.0 -> pthread_mutex_unlock"},
+    {"share_of_mutex_atomic_pct": 3.46, "context": "getAndInitPage -> getPageNormal -> pcache1Fetch -> pthread_mutex_unlock"},
+    {"share_of_mutex_atomic_pct": 2.97, "context": "sqlite3Fts5ExprNew -> sqlite3Fts5ParseNearset -> sqlite3Malloc.part.0 -> pthread_mutex_lock"},
+    {"share_of_mutex_atomic_pct": 2.85, "context": "sqlite3Fts5IndexQuery -> fts5SegIterNextPage -> fts5DataRead -> sqlite3Malloc.part.0"},
+    {"share_of_mutex_atomic_pct": 2.79, "context": "sqlite3VdbeExec -> vec0Filter_knn_chunks_iter -> sqlite3_free"},
+    {"share_of_mutex_atomic_pct": 2.37, "context": "pcache1Destroy -> sqlite3_free -> pthread_mutex_lock -> __lll_lock_wait"},
+    {"share_of_mutex_atomic_pct": 2.18, "context": "sqlite3BtreeClose -> sqlite3_free -> pthread_mutex_lock -> __lll_lock_wait"},
+    {"share_of_mutex_atomic_pct": 2.03, "context": "pcache1FetchStage2 -> pcache1Alloc -> sqlite3Malloc.part.0 -> pthread_mutex_unlock"}
+  ],
+  "f0_topology_holds": true,
+  "f0_topology_holds_evidence": "After stack-aware reclassification, the `mutex_atomic` catch-all (atomic/mutex primitives that are NOT on allocator/pcache/wal paths) is 0.00% conc on the measured-loop filter. SQLite's serialized-connection mutex contention has been collapsed by F.0's thread-affine workers as expected. The residual concurrent-vs-sequential gap is allocator-arena and pcache1 mutex contention, plus baseline parse/vec0 work that does not scale super-linearly. The leaf-only number `mutex_atomic = 35.91%` looks unchanged from Pack 5 only because the same primitives now sit under different SQLite frames.",
+  "recommendation": {
+    "lever": "G.1",
+    "rationale": "allocator_lookaside is 26.67% of conc cycles with ratio 3.89 vs sequential and a +145.7M-cycle delta (the largest absolute contention delta in the profile). The hot stacks are sqlite3DbMallocRaw / sqlite3Malloc.part.0 -> __GI___libc_malloc / __libc_free, with pthread_mutex contention on the glibc malloc arena. This is exactly the documented happy-path for SQLite's per-connection lookaside (https://www.sqlite.org/malloc.html §3): a sticky long-lived reader connection is the right amortization shape, and F.0 just made every reader connection sticky for life. Lookaside satisfies most small allocations from a per-connection arena, drops the rate of __libc_malloc calls, and removes the glibc arena mutex from the hot path. Expected impact class: medium on concurrent_median_ms (allocator pressure pattern), small on sequential. page_cache is the next-largest growth (4.01x ratio, +34.5M delta) and would be a G.4 candidate if G.1 lands cleanly but does not close.",
+    "expected_impact_class": "medium",
+    "alternate_levers_considered": {
+      "G.2_per_worker_stmt_cache": "parse_compile is 22.52% conc but its ratio is 0.61 (share shrinks under concurrency; it is being displaced by contention, not driving it). G.2 reduces a CPU floor rather than removing a contention point, so it would lower seq more than conc and could worsen the speedup ratio (Pack 5 E.1 ratio-worsening risk). Defer until after G.1 settles.",
+      "G.3_checkpoint_or_wal_tuning": "wal_atomics is 0.00% conc, checkpoint is 0.00% conc on this read-heavy fixture. G.3 is not warranted in this packet; queue for a write-load packet."
+    },
+    "decision_rule_match": "Spec §2 G.0: 'If `allocator_lookaside > 8%` of conc cycles or shows the documented allocator pressure pattern: pick G.1 first.' We have 26.67% conc and the documented allocator-arena pressure pattern."
+  },
+  "unexpected_observations": [
+    "Pack 5 A.2's leaf-only `mutex_atomic = 36.98%` was conflating glibc malloc-arena mutex contention with SQLite serialized-connection mutex contention. Stack-aware re-classification on the F.0 tip shows the SQLite serialized-connection mutex contention is essentially zero (mutex_atomic catch-all = 0.00% conc) and the residual is dominated by glibc malloc-arena + SQLite pcache1 global mutex. This re-frames the alternative_hypothesis in F0-thread-affine-readers-output.json: it is NOT WAL shared-memory atomics but the per-connection allocator + global pcache that bound the F.0 speedup.",
+    "wal_atomics is 0.00% of concurrent measured-loop cycles — the canonical-SQLite WAL shared-memory contention hypothesis is FALSIFIED for this read-only AC-020 fixture. WAL2 / vendor-SQLite work (Pack 7) cannot be motivated by WAL-atomic evidence on this fixture; it would need a write-heavy or mixed workload to justify.",
+    "checkpoint is 0.00% — read-heavy fixture, no checkpoint pressure visible. G.3 is queued for a future write-load packet, not applicable in 6.G.",
+    "page_cache (pcache1Fetch / Unpin / Alloc / Destroy) shows 4.01x growth (1.57% -> 6.29%, +34.5M cycles). This is a SECOND independent contention path that G.1 will partially mask (lookaside reduces pcache1Alloc fall-through to sqlite3Malloc) but not fully remove (pcache1 has its own global mutex). If G.1 KEEPs and the residual gap is still concurrent_median_ms > 100 ms, the next G.4 lever is the global page-cache mutex (PRAGMA cache_size per-connection / private cache) — but that overlaps the §3 do-not-retry list on cache_size global tuning. Note for orchestrator: a per-connection (private) page cache is a different lever from global cache_size tuning and is canonical-SQLite (PRAGMA private_cache=ON / SQLITE_OPEN_PRIVATECACHE).",
+    "our_code = 19.78% conc when classified by full stack (any frame contains fathomdb_engine / Engine:: / read_search_in_tx / reader_worker_loop / etc). This is high because the entire SQLite stack runs UNDER our worker functions; it is not a hot spot — leaf-level our_code share is 0.32% conc, consistent with Pack 5 A.2's 0.17% leaf-only number. Reported here for transparency; the load-bearing reading is leaf-only or per-call-site."
+  ],
+  "agent_verify_status": "pass",
+  "agent_verify_reason": "First run flaked AC-017 in dev profile at write 814 (5 s deadline) — a known-flaky combination of slow host (5.15-tegra, schedutil, ~3x slower than Pack 5 reference) and dev-profile write throughput. Re-ran ./scripts/agent-verify.sh; second run completed with rc=0. Treat as pass for the F.0 baseline. Release-profile AC-017 + AC-018 ran clean in the perf-capture preflight (drain_ms=51).",
+  "do_not_retry_cross_check": [
+    {"item": "B.1 runtime sqlite3_config(SQLITE_CONFIG_MULTITHREAD)",                 "did_not_re_run": true, "evidence": "G.0 is read-only telemetry on the F.0 tip. No sqlite3_config calls were added or modified."},
+    {"item": "C.1 compile-time SQLITE_THREADSAFE=2 rebuild",                          "did_not_re_run": true, "evidence": "No libsqlite3-sys / build.rs changes; canonical SQLite serialized mode unchanged."},
+    {"item": "E.1 read-path prepare_cached on borrow/release pool connections",      "did_not_re_run": true, "evidence": "No prepare_cached changes. G.2 (sticky thread-affine prepared cache) is a future packet, not performed here."},
+    {"item": "Reader cache_size / mmap_size global tuning",                          "did_not_re_run": true, "evidence": "No PRAGMA cache_size / mmap_size production-default changes. G.0 only measures."},
+    {"item": "Reader open flags READ_ONLY | NO_MUTEX",                               "did_not_re_run": true, "evidence": "Reader connection open flags untouched."}
+  ],
+  "code_changes": "none",
+  "tests_run": [
+    "RUSTFLAGS='-C force-frame-pointers=yes' cargo build -p fathomdb-engine --release --test perf_gates — built clean (1 pre-existing dead_code warning on F.0's worker_count/live_count helpers)",
+    "cargo test --release -p fathomdb-engine --test perf_gates -- ac_017 ac_018 — both green; AC018 drain_ms=51",
+    "AGENT_LONG=1 cargo test --release -p fathomdb-engine --test perf_gates ac_020_reads_do_not_serialize -- --nocapture --test-threads=1 (x5) — gate fails as documented, all numeric output captured",
+    "AC020_PHASE=sequential perf record -F 999 -g --call-graph dwarf -- ac_020_sequential_only --ignored — 1406 samples, 11.5 MB",
+    "AC020_PHASE=concurrent perf record -F 999 -g --call-graph dwarf -- ac_020_concurrent_only --ignored — 1201 samples, 9.8 MB",
+    "inferno-collapse-perf + inferno-flamegraph for both seq/conc folded + svg",
+    "./scripts/agent-verify.sh — first run flaked AC-017 in dev profile (slow host); retry rc=0 pass"
+  ],
+  "next_phase_input": {
+    "for_orchestrator": "Spawn G.1 (reader-worker lookaside tuning) implementer prompt next. Carry these numbers as the post-F.0 baseline-of-record on this host: seq_median=552 ms, conc_median=168 ms, speedup_median=3.339x (N=5). KEEP target per handoff §4 G.1 row: any clean, reproducible improvement on concurrent_median_ms with no AC-017 / AC-018 regression. Strongest single-experiment lookaside candidate from the SQLite docs (https://www.sqlite.org/malloc.html §3) for a sticky reader-connection footprint: sqlite3_db_config(SQLITE_DBCONFIG_LOOKASIDE, NULL, slot_size, slot_count) with slot_size 1200 bytes and slot_count 500 (5x the SQLite default 128 to absorb sqlite3Fts5ExprNew + vec0Filter_knn allocations visible in the top-call-site table). The G.1 implementer should size from evidence — if the prompt author wants a cheap sweep, [128, 250, 500, 1000] x slot_size {512, 1200} is the canonical grid.",
+    "for_packet_close": "If G.1 KEEPs but residual gap remains, the next-priority lever is page_cache (pcache1 global mutex) via private cache mode, not G.2 or G.3."
+  }
+}

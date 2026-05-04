@@ -262,12 +262,27 @@ pointer if G-phase exhausts and AC-020 still misses.
 
 - Handoff: `dev/plan/prompts/04-pack6G-handoff-canonical-sqlite-tuning.md`.
 - G.0 prompt: `dev/plan/prompts/G0-wal-checkpoint-telemetry.md`.
-- Active phase: **G.0** (read-only diagnostics, spawn next).
-- Baseline-of-record at G.0 spawn = F.0 final medians:
-  seq 531 ms / conc 155 ms / speedup 3.49× (N=5,
-  `dev/plan/runs/F0-thread-affine-readers-output.json`).
+- Active phase: **G.1** (reader-worker lookaside) — G.0 closed
+  PICK_G1.
+- G.0 telemetry KEY FINDING: Pack 5 A.2's `mutex_atomic = 36.98%`
+  conc was leaf-only misattribution. Stack-aware reclassification
+  on F.0 tip shows `mutex_atomic` catch-all = 0% conc (F.0
+  collapsed serialized-connection mutex contention as designed),
+  and the residual is `allocator_lookaside = 26.67%` conc with
+  3.89× ratio + 145.7M-cycle delta, hot-stacked under
+  `sqlite3Malloc.part.0 → __GI___libc_malloc` (glibc malloc-arena
+  mutex). `wal_atomics = 0%` and `checkpoint = 0%` — both
+  hypotheses falsified for the read-only AC-020 fixture; G.3 is
+  queued for a write-load packet.
+- Post-F.0 baseline-of-record (this host, N=5): seq 552 ms /
+  conc 168 ms / speedup 3.339×. Use this row for G.1+ KEEP /
+  REVERT decisions on this host.
+- Pack 7 motivation note: WAL2 / vendor-SQLite cannot be motivated
+  by WAL-atomic evidence on AC-020 (0% measured); a write-heavy or
+  mixed fixture is required to justify Pack 7 work.
 - Reviewer mandatory on KEEP / INCONCLUSIVE for G.1 / G.2 / G.3
-  (codex `gpt-5.4` high). G.0 read-only — reviewer optional.
+  (codex `gpt-5.4` high). G.0 read-only — reviewer skipped (no
+  diff).
 
 ---
 
