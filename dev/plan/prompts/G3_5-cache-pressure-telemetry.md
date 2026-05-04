@@ -168,13 +168,13 @@ Required fields:
   that value (PRAGMA readback, default assumption, etc).
 - `per_worker_telemetry`: array of length 8 with
   `{worker_idx, pre_hit, pre_miss, pre_used_bytes, post_hit,
- post_miss, post_used_bytes, delta_hit, delta_miss,
- delta_total, delta_miss_rate, cache_used_post_pct_of_limit}`.
+post_miss, post_used_bytes, delta_hit, delta_miss,
+delta_total, delta_miss_rate, cache_used_post_pct_of_limit}`.
 - `aggregate_summary`:
   `{delta_miss_rate_min, delta_miss_rate_median,
- delta_miss_rate_max, delta_miss_rate_stddev,
- cache_used_pct_min, cache_used_pct_median,
- cache_used_pct_max, cache_used_pct_stddev}`.
+delta_miss_rate_max, delta_miss_rate_stddev,
+cache_used_pct_min, cache_used_pct_median,
+cache_used_pct_max, cache_used_pct_stddev}`.
 - `decision_matrix_evaluation`: free-form prose explaining which
   matrix row matched + why.
 - `dispatch_bias_evidence`: if flagged, show the per-worker
