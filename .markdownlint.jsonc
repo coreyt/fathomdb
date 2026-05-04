@@ -22,5 +22,12 @@
   // MD025 single-title: don't count frontmatter `title:` as an H1.
   // All docs use YAML frontmatter + a body H1; treating frontmatter title
   // as an H1 would make every such file a false positive.
-  "MD025": { "front_matter_title": "" }
+  "MD025": { "front_matter_title": "" },
+
+  // MD049/MD050 emphasis-style: align with prettier's default (underscore for
+  // _emphasis_, double-asterisk for **strong**) so the two formatters don't
+  // fight. Prettier writes `_emphasis_`; without this override markdownlint
+  // would re-flag every prettier-formatted file.
+  "MD049": { "style": "underscore" },
+  "MD050": { "style": "asterisk" }
 }

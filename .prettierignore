@@ -20,6 +20,10 @@ dev/tmp3/
 # Archived / resolved artifacts — historical record, not actively maintained.
 dev/archive/
 
+# Agent-emitted run logs + reviewer verdicts — verbatim subagent output;
+# formatting drifts per agent.
+dev/plan/runs/
+
 # Local-only agent config (gitignored).
 .claude/
 

@@ -263,7 +263,7 @@ AGENT_LONG=1 cargo test -p fathomdb-engine --release --test perf_gates \
 - Cross-platform checklist (load-bearing — the bundled build
   flag change must work on aarch64-Linux + x86_64-Linux + macOS):
   - `feedback_cross_platform_rust.md`: c_char is i8 on x86_64
-    + Darwin, u8 on aarch64 Linux. C.1 should not introduce new
+    plus Darwin; u8 on aarch64 Linux. C.1 should not introduce new
     FFI hardcodes; B.1 already used `std::os::raw::c_int` /
     `c_char`.
   - `libsqlite3-sys-0.30.1/build.rs:136` is the line to change

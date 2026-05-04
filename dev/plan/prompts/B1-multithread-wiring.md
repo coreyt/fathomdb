@@ -117,7 +117,7 @@ runtime, **before any** `Connection::open` or
    the §5 revert returned `SQLITE_MISUSE = 21` silently; B.1 must
    return `SQLITE_OK = 0`. **Do NOT use `sqlite3_threadsafe()` for
    the assertion — SQLite docs (sqlite3.h:249-252) state explicitly
-   that `sqlite3_threadsafe()` returns the *compile-time* setting
+   that `sqlite3_threadsafe()` returns the _compile-time_ setting
    and is unchanged by `sqlite3_config()`. Bundled libsqlite3-sys
    compiles with `-DSQLITE_THREADSAFE=1`, so `sqlite3_threadsafe()`
    always returns `1` regardless of runtime config.** That is C.1
@@ -336,9 +336,9 @@ AGENT_LONG=1 cargo test -p fathomdb-engine --release --test perf_gates \
   implementer in `b58meryie.txt`, worktree clean, no commit).
   Implementer correctly built `init_sqlite_runtime()` per spec and
   verified `config_rc = SQLITE_OK = 0` (vs §5's silent `SQLITE_MISUSE
-  = 21`), but the spec's `sqlite3_threadsafe() == 2` assertion is
+= 21`), but the spec's `sqlite3_threadsafe() == 2` assertion is
   **unreachable** by SQLite design: the SQLite header (sqlite3.h:249-252)
-  states `sqlite3_threadsafe()` returns the *compile-time*
+  states `sqlite3_threadsafe()` returns the _compile-time_
   `SQLITE_THREADSAFE` value and is unchanged by `sqlite3_config()`.
   Bundled libsqlite3-sys-0.30.1 compiles with `-DSQLITE_THREADSAFE=1`
   (`build.rs:136`), so the assertion always fails; that value can

@@ -204,7 +204,7 @@ without closing the gap.
   prior entry — `init_sqlite_runtime()` Once-guarded with
   `shutdown` → `config(MULTITHREAD)` → `initialize`. Captured rcs:
   shutdown=0, **config=0 (SQLITE_OK)**, initialize=0. Verified via
-  `pub fn sqlite_runtime_config_rc() -> Option<i32>` accessor and
+  `pub fn sqlite*runtime*config_rc() -> Option<i32>` accessor and
   `tests/multithread_wiring.rs` (2/2 passing pre-revert). The wiring
   is provably correct (cannot fail silently like the prior entry —
   return code is captured, asserted, and the test discriminates
@@ -289,7 +289,7 @@ shape of contention on a single shared mutex.
   compile-time constant per `sqlite3.h:249-252` and is unchanged
   by `sqlite3_config()`; bundled libsqlite3-sys is pinned at
   `THREADSAFE=1`). The §5 silent-no-op returned `SQLITE_MISUSE =
-  21`, so `rc == SQLITE_OK` is a real differentiator.
+21`, so `rc == SQLITE_OK` is a real differentiator.
 - This is the no-rebuild path to the same effect as 7.2 — but
   ordering-sensitive.
 
@@ -315,11 +315,11 @@ shape of contention on a single shared mutex.
 
 ### 7.7 SWMR + per-reader `OPEN_NOMUTEX` stacked on B.1 (2026-05-03 hypothesis)
 
-Hypothesis raised mid-Pack-5, after A.4 PICK_B1 locked: keep the current
+Hypothesis raised mid-Pack-5, after A.4 PICK*B1 locked: keep the current
 SWMR shape (single writer + 8-reader pool, WAL, BEGIN IMMEDIATE on
 writes, one-thread-per-connection ownership), and stack
 `SQLITE_OPEN_NOMUTEX` on the reader-pool connections **after** B.1's
-`sqlite3_config(SQLITE_CONFIG_MULTITHREAD)` lands. This is *not* a new
+`sqlite3_config(SQLITE_CONFIG_MULTITHREAD)` lands. This is \_not* a new
 B-track branch; it is a stack-experiment that becomes interesting only
 in one specific A.1-recapture outcome.
 
@@ -345,7 +345,7 @@ What §5 already settled:
 What is genuinely new:
 
 - After B.1 lands MULTITHREAD via `sqlite3_config`, the global mutexes
-  go away. *Then* per-connection mutexes (which NOMUTEX targets)
+  go away. _Then_ per-connection mutexes (which NOMUTEX targets)
   become the next-layer candidate — but only if A.1 recapture against
   the B.1 branch shows residual `mutex_atomic` cycles still localised
   in per-connection mutex symbols.
@@ -408,7 +408,7 @@ that point with the recapture numbers in hand.
 
 Hypothesis raised after B.1 falsification, while C.1 is in flight:
 the AC-020 shortfall is multi-cause, not single-cause. The
-mutex-contention track (B.1 / C.1) attacks the *largest* cycle
+mutex-contention track (B.1 / C.1) attacks the _largest_ cycle
 sink but leaves several smaller-but-real costs that A.3 already
 surfaced:
 
@@ -432,7 +432,7 @@ E is a synthesis, not a new theory:
   B.1 / C.1 came first.
 - B.1 falsified runtime mutex flip; C.1 tests the strongest possible
   mutex intervention (compile-time elimination).
-- *After* the mutex track outcome lands, the residual gap is most
+- _After_ the mutex track outcome lands, the residual gap is most
   efficiently closed by tuning the per-query overheads listed above
   in a single staged track, not as separate one-off experiments.
 
@@ -457,7 +457,7 @@ E sub-experiments (run as a single phase if activated):
   §5 reverted "Reader-side `cache_size` / `mmap_size` tuning" with
   the note "did not change the concurrency ratio" — that was at
   THREADSAFE=1 with global mutex contention masking everything.
-  Worth re-trying *if* C.1 KEEPs (mutex contention removed) AND
+  Worth re-trying _if_ C.1 KEEPs (mutex contention removed) AND
   the residual is read-bound. Skip if C.1 closes AC-020 alone.
 - **E.4** — WAL `wal_autocheckpoint` tuning + `journal_size_limit`.
   Writer-side; only matters if A.1 re-capture against the post-mutex-
@@ -545,7 +545,7 @@ from §7.3 ("Validate by checking `sqlite3_threadsafe()` return
 value (expect 2)"), which is now also corrected by reference.
 
 Orchestrator decision (re-spawn): replace the gate assertion
-with `fathomdb_engine::sqlite_runtime_config_rc() == 0` (or
+with `fathomdb_engine::sqlite*runtime*config_rc() == 0` (or
 `Some(0)` if the API is `Option<i32>`). Add this as a small
 `pub fn` accessor that reads the captured `c_int` from the
 `init_sqlite_runtime` `OnceLock`. The test compares against
@@ -564,7 +564,7 @@ the runtime config is provably in effect (rc proves it) but
 isn't reaching the contended mutexes. That pattern points at C.1
 (compile-time `SQLITE_THREADSAFE=2` rebuild) being the actual
 fix, not B.3 (lookaside). B.3 stays the right alt-on-fail when
-`mutex_atomic` share *does* drop under B.1 but speedup doesn't
+`mutex_atomic` share _does_ drop under B.1 but speedup doesn't
 hit 5×.
 
 Implementer report (full transcript, 211 KB): see audit trail at
@@ -574,7 +574,7 @@ Worktree from attempt #1 cleaned (no commit, no branch).
 
 **B.1 attempt #2 — REVERT (2026-05-03, `d448263` for the output
 JSON only; no source commit, source identical to baseline).** Ran
-on the corrected prompt (gate = `sqlite_runtime_config_rc() == 0`,
+on the corrected prompt (gate = `sqlite*runtime*config_rc() == 0`,
 no `sqlite3_threadsafe()` assertion) plus the 2026-05-03
 anti-chaining defenses (PREAMBLE prepended via stdin,
 `--disallowedTools Task Agent`, `stream-json` log). Spawn worked
@@ -585,21 +585,21 @@ What landed pre-revert: `init_sqlite_runtime()` `OnceLock<Result<i32,
 ...>>`-cached, sequence `sqlite3_shutdown` → `sqlite3_config(MULTITHREAD)`
 → `sqlite3_initialize` at `Engine::open_locked` head BEFORE
 `register_sqlite_vec_extension` and any `Connection::open`. New
-`pub fn sqlite_runtime_config_rc() -> Option<i32>` accessor and
+`pub fn sqlite*runtime*config_rc() -> Option<i32>` accessor and
 `tests/multithread_wiring.rs` (2 tests: post-open returns `Some(0)`;
 re-open is idempotent). FFI return types `std::os::raw::c_int`
 throughout. +119 LOC, 0 removed.
 
 Captured numeric evidence:
 
-| metric            | A.1 baseline | B.1 #2 after | delta   |
-|-------------------|--------------|--------------|---------|
-| sequential median | 182 ms       | 184.0 ms     | +1.1%   |
-| concurrent median | 115 ms       | 120.6 ms     | +4.9%   |
-| speedup median    | 1.58×        | 1.526×       | -3.4%   |
-| concurrent stddev | 4.0 ms       | 2.98 ms      | tighter |
-| sqlite3_config_rc | n/a          | 0 (SQLITE_OK)| —       |
-| AC-017 / AC-018   | green        | green        | flat    |
+| metric            | A.1 baseline | B.1 #2 after  | delta   |
+| ----------------- | ------------ | ------------- | ------- |
+| sequential median | 182 ms       | 184.0 ms      | +1.1%   |
+| concurrent median | 115 ms       | 120.6 ms      | +4.9%   |
+| speedup median    | 1.58×        | 1.526×        | -3.4%   |
+| concurrent stddev | 4.0 ms       | 2.98 ms       | tighter |
+| sqlite3_config_rc | n/a          | 0 (SQLITE_OK) | —       |
+| AC-017 / AC-018   | green        | green         | flat    |
 
 `config_rc=0` is the §5 differentiator: the §5 silent no-op would
 have returned `SQLITE_MISUSE = 21`. The wiring is provably correct.
@@ -619,7 +619,7 @@ A.1 mutex symbols (`__aarch64_swp4_rel`, `__aarch64_cas4_acq`,
   `SQLITE_NO_MUTEX` rebuild. Smaller-radius, tests the more
   specific hypothesis (per-connection mutex elimination is
   compile-time-only because the bundled SQLite is pinned at
-  `THREADSAFE=1`; `CONFIG_MULTITHREAD` only relaxes the *global*
+  `THREADSAFE=1`; `CONFIG_MULTITHREAD` only relaxes the _global_
   mutexes which apparently aren't the bottleneck).
 - (b) **D.1** — architectural (per-conn lookaside, alt reader
   topology, single-stmt UNION refactor). Activated as kill-track
@@ -657,7 +657,7 @@ size 1.17 MB; cross-platform CI deferred (aarch64-linux only).
 AC-020 numbers (N=5 each, AGENT_LONG=1):
 
 | metric            | A.1 baseline | C.1 after | delta   |
-|-------------------|--------------|-----------|---------|
+| ----------------- | ------------ | --------- | ------- |
 | sequential median | 182 ms       | 182.2 ms  | +0.1%   |
 | concurrent median | 115 ms       | 121.5 ms  | +5.65%  |
 | speedup median    | 1.58×        | 1.509×    | -4.48%  |
@@ -670,8 +670,8 @@ noise (+0.1%), confirming THREADSAFE=2 has no measurable effect
 on single-thread path either.
 
 Interpretation: this is the second clean falsification of the
-mutex track. B.1 falsified the *runtime* threading-mode flag;
-C.1 falsifies the *compile-time* threading-mode flag at the
+mutex track. B.1 falsified the _runtime_ threading-mode flag;
+C.1 falsifies the _compile-time_ threading-mode flag at the
 strongest setting. **The A.2 hot symbols are not SQLite
 threading-mode mutexes.** The most plausible remaining
 explanation is that `__aarch64_swp4_rel`, `__aarch64_cas4_acq`,
@@ -680,19 +680,19 @@ WAL shared-memory protocol (frame counters, page references,
 checkpoint sequence atomics) and the `pthread_mutex_lock` calls
 are coming from rusqlite-side or our own ReaderPool's
 `Mutex<Vec<Connection>>`. Neither layer is removed by
-`SQLITE_THREADSAFE=2`. The `MUTEX_PTHREADS` compile_options
+`SQLITE_THREADSAFE=2`. The `MUTEX_PTHREADS` compile*options
 entry persists at `THREADSAFE=2` because that flag selects the
-mutex backend implementation; it is *bypassed* in code paths
+mutex backend implementation; it is \_bypassed* in code paths
 that the threading mode disables (per-conn + per-stmt mutex
 bypass in MULTITHREAD), but the implementation symbols stay in
 the binary.
 
-Implementer's analysis was partially wrong about *why*
+Implementer's analysis was partially wrong about _why_
 THREADSAFE=2 didn't help (they wrote "per-connection mutex is
 still physically present in the binary at THREADSAFE=2; only
-disabled at THREADSAFE=0 or with SQLITE_NO_MUTEX") — that's
+disabled at THREADSAFE=0 or with SQLITE*NO_MUTEX") — that's
 binary-presence reasoning. The actual SQLite semantics are that
-THREADSAFE=2 *bypasses* the per-conn / per-stmt mutex API calls
+THREADSAFE=2 \_bypasses* the per-conn / per-stmt mutex API calls
 even though the symbols remain. The numerical conclusion
 (falsification) stands either way. Recording the corrected
 mechanism here so a future reader doesn't mis-design a
@@ -727,15 +727,49 @@ landed.
   return code; if it is `SQLITE_MISUSE`, the configuration call is a
   no-op and the whitepaper should call this out as a foot-gun specific
   to bundled rusqlite.
+  - **ANSWERED 2026-05-03 (B.1 #1+#2):** at the
+    `register_sqlite_vec_extension` callsite, `sqlite3_config` returns
+    `SQLITE_MISUSE = 21` silently because rusqlite has already
+    triggered `sqlite3_initialize()` on the prior `Connection::open`.
+    Moving the call to `Engine::open_locked` head BEFORE any
+    `Connection::open` makes it return `SQLITE_OK = 0`. Captured-rc
+    assertion (`sqlite*runtime*config_rc()`) is the correct
+    differentiator from §5's silent no-op pattern. **Foot-gun
+    confirmed; resolution: pre-init placement + return-code
+    validation.**
 - Is the `1.5 / AC020_THREADS` bound (concurrent <= sequential \* 1.5/8)
   the right contract, or should AC-020 specify the contention source it
   is gating against (allocator mutex / pcache mutex / etc.)? The current
   bound is a black-box ratio; a whitepaper-grade contract would tie it
   to a named mutex regime.
+  - **STILL OPEN, with new evidence (Pack 5):** the black-box ratio
+    is workable only when the contention source is the SQLite
+    threading layer. Pack 5 evidence shows the residual is upstream
+    of SQLite (rusqlite-side Mutex / our `ReaderPool::borrow` Mutex)
+    or sideways (WAL shared-memory atomics). A future packet may
+    refine the bound to specify a named runtime invariant
+    (e.g. "no mutex on the reader-pool borrow path"). Holding the
+    1.5/8 ratio for now; revisit when architectural fix lands.
 - For deployments using a host-system SQLite (non-bundled), `SQLITE_THREADSAFE`
   is fixed at the host-distro build flag and we lose the THREADSAFE=2
   knob entirely. The whitepaper should document this and either commit
   to bundled-only or describe degraded-mode behavior under THREADSAFE=1.
+  - **MOOT 2026-05-03 (C.1):** with bundled-only `THREADSAFE=2`
+    verified live, the AC-020 ratio doesn't move. The host-system
+    SQLite question is no longer a closure-blocker for AC-020.
+    Recommendation: stay bundled-default at `THREADSAFE=1`; do not
+    require bundled-only deployment for AC-020 reasons. The
+    deployment-mode discussion is now an API-availability concern
+    (host SQLite may lack vec0 / FTS5 features) but not a
+    performance-gate concern.
+- **NEW (Pack 5 surfaced):** What is the source of the
+  `___pthread_mutex_lock` + `__aarch64_swp4_rel` / `_cas4_acq` cycles
+  that survive `THREADSAFE=2`? Three candidates: rusqlite-side
+  internal Mutex, our `ReaderPool::borrow` Mutex<Vec<Connection>>,
+  WAL shared-memory atomics. Pack 6 starting point should perf-re-capture
+  against the current tip and classify by the same A.2-style
+  category aggregator (extended with `rusqlite::*` and `ReaderPool::*`
+  patterns) before writing code.
 
 ---
 
@@ -913,11 +947,11 @@ dominate concurrent at ~30% of cycles
 `lll_mutex_lock_optimized` 1.8%) versus ~5% in sequential. Useful
 work fraction (`min_idx`, `vec0Filter_*`) drops 14.5% → 8.7% under
 contention even though wall-time is shorter. A.1's
-alternative_hypothesis frames this as SQLite WAL/pager spinlock +
-the global SQLite mutex serializing writers — *not* the read/write
+alternative*hypothesis frames this as SQLite WAL/pager spinlock +
+the global SQLite mutex serializing writers — \_not* the read/write
 connection lock hierarchy from §6 ladder.
 
-Independent secondary signal in *both* profiles (4.6% sequential,
+Independent secondary signal in _both_ profiles (4.6% sequential,
 3.4% concurrent): `sqlite3RunParser`. Every search call re-parses
 SQL; no prepared-statement cache reuse. Orthogonal to the
 concurrency bottleneck, so A.2 can keep it as a candidate Phase B/C
@@ -954,15 +988,15 @@ patterns plus a few neighbours: `wal_pager`, `vdbe`,
 
 Classification (% of total cycles per profile):
 
-| Category      | Seq %  | Conc % | Ratio | Verdict                    |
-| ------------- | ------ | ------ | ----- | -------------------------- |
-| mutex_atomic  | 6.45   | 36.98  | 5.73× | **DOMINANT**               |
-| allocator     | 1.60   | 3.20   | 2.00× | secondary (small absolute) |
-| page_cache    | 1.64   | 1.46   | 0.89× | did not grow               |
-| vec0_fts      | 24.12  | 11.43  | 0.47× | useful work displaced      |
-| our_code      | 0.52   | 0.17   | 0.33× | not a bottleneck (inlined) |
-| embedder      | 0.0    | 0.0    | n/a   | not present in the loop    |
-| sql_parse     | 10.08  | 7.07   | 0.70× | independent (no prep cache)|
+| Category     | Seq % | Conc % | Ratio | Verdict                     |
+| ------------ | ----- | ------ | ----- | --------------------------- |
+| mutex_atomic | 6.45  | 36.98  | 5.73× | **DOMINANT**                |
+| allocator    | 1.60  | 3.20   | 2.00× | secondary (small absolute)  |
+| page_cache   | 1.64  | 1.46   | 0.89× | did not grow                |
+| vec0_fts     | 24.12 | 11.43  | 0.47× | useful work displaced       |
+| our_code     | 0.52  | 0.17   | 0.33× | not a bottleneck (inlined)  |
+| embedder     | 0.0   | 0.0    | n/a   | not present in the loop     |
+| sql_parse    | 10.08 | 7.07   | 0.70× | independent (no prep cache) |
 
 Decision rule (A.2 mandate): pick the category whose share grows
 super-linearly between sequential and concurrent. **mutex_atomic
@@ -974,7 +1008,7 @@ MULTITHREAD on the projection-runtime + reader connections so
 each connection has its own mutex domain instead of contending
 on the global SQLite mutex.
 
-This *replaces* the §6 hypothesis ladder's primary suspect (lock
+This _replaces_ the §6 hypothesis ladder's primary suspect (lock
 hierarchy between read/write connections). The actual bottleneck
 is one level deeper — SQLite's global mutex (`sqlite3_mutex_*`,
 `__aarch64_swp4_rel`, `__aarch64_cas4_acq`,
@@ -987,7 +1021,7 @@ gap. If B.1 lands with no speedup improvement, A.1 must
 re-capture against the B.1 branch and re-classify before
 picking again — same residual mutex symbol = B.1 missed the
 right connections; different mutex = different problem
-(rusqlite-side, ReaderPool::acquire). No recapture needed *now* —
+(rusqlite-side, ReaderPool::acquire). No recapture needed _now_ —
 A.1 signal is sufficient.
 
 `sqlite3RunParser` at 4-5% in both profiles is independent of
@@ -1038,7 +1072,7 @@ connection open in the same process, so `sqlite3_config` returns
 `SQLITE_MISUSE` and is silently ignored. B.1's mandate is
 materially different: place the `sqlite3_config` call BEFORE any
 `sqlite3_initialize` trigger (a process-wide `Once` invoked from
-`Engine::open` *entry* before any `Connection::open`, or a
+`Engine::open` _entry_ before any `Connection::open`, or a
 `ctor`-style static init), validate the return code is
 `SQLITE_OK`, and add a `#[ignore]` integration test that asserts
 `sqlite3_threadsafe() == 2` after `Engine::open`. Without all
@@ -1087,18 +1121,18 @@ on the long-lived reader connections; new
 from ~300 baseline to ≤ 32 (8 readers × 4 stmts) post-warmup.
 Sequential improved measurably — parse cost relief is real.
 
-| metric            | A.1 baseline | E.1 after | delta   |
-|-------------------|--------------|-----------|---------|
-| sequential median | 182 ms       | 157 ms    | -13.7%  |
-| concurrent median | 115 ms       | 125 ms    | +8.7%   |
-| speedup median    | 1.58×        | 1.266×    | -19.9%  |
-| prepares/search   | 4            | 0 (warm)  | ✓       |
-| AC-017 / AC-018   | green        | green     | flat    |
+| metric            | A.1 baseline | E.1 after | delta  |
+| ----------------- | ------------ | --------- | ------ |
+| sequential median | 182 ms       | 157 ms    | -13.7% |
+| concurrent median | 115 ms       | 125 ms    | +8.7%  |
+| speedup median    | 1.58×        | 1.266×    | -19.9% |
+| prepares/search   | 4            | 0 (warm)  | ✓      |
+| AC-017 / AC-018   | green        | green     | flat   |
 
 The concurrent change (+10 ms over A.1 / +3.5 ms over B.1/C.1
 drift) is statistical noise. **Sequential improvement does not
 help AC-020**: the gate is `concurrent ≤ sequential × 1.25/8`,
-so a lower sequential lowers the bound — gate gets *harder*,
+so a lower sequential lowers the bound — gate gets _harder_,
 not easier. -19.9% speedup confirms.
 
 Reviewer (codex `gpt-5.4`, mandatory for KEEP path per plan §0.1)
@@ -1110,7 +1144,7 @@ returned **BLOCK** with three substantive findings:
    `dev/interfaces/rust.md`. AGENTS.md §1 "Public surface is
    contract" — block.
 2. `concurrent_median = 125 ms > 115 ms threshold` matches the
-   *written* REVERT rule in the E.1 prompt, not the
+   _written_ REVERT rule in the E.1 prompt, not the
    `INCONCLUSIVE` decision the implementer recorded. The
    "environmental drift" allowance the implementer cited is not
    part of the written rule. Block.
@@ -1153,7 +1187,7 @@ mutex AND parse both ruled out, E.3's expected impact is small
 to proceed directly to final synthesis — the data is sufficient
 to characterize the residual without burning another experiment
 slot on a likely-flat outcome. If a future packet wants to
-revisit, the `cache_size` track is well-targeted at *absolute*
+revisit, the `cache_size` track is well-targeted at _absolute_
 sequential latency, not at the AC-020 ratio.
 
 **Pack 5 packet outcome (preliminary, pending final synthesis):**
@@ -1166,3 +1200,106 @@ or a structurally different SQLite usage pattern) that exceed
 Pack 5 scope. Recommendation: close Pack 5 as evidence-rich
 diagnostic packet; open a follow-up packet for the architectural
 intervention with this packet's evidence as its starting point.
+
+**Final synthesis — Pack 5 closes ESCALATE (2026-05-03, main
+thread Opus 4.7).** AC-020 did not close in Pack 5. N=5 final
+verification:
+
+| run        | seq ms    | conc ms   | bound ms | speedup   | passes 5.33× |
+| ---------- | --------- | --------- | -------- | --------- | ------------ |
+| 1          | 184.3     | 124.0     | 34.6     | 1.487     | no           |
+| 2          | 186.3     | 125.1     | 34.9     | 1.490     | no           |
+| 3          | 185.4     | 128.2     | 34.8     | 1.447     | no           |
+| 4          | 173.7     | 118.2     | 32.6     | 1.470     | no           |
+| 5          | 184.7     | 121.7     | 34.6     | 1.518     | no           |
+| **median** | **184.7** | **124.0** | **34.6** | **1.487** | —            |
+
+Required for AC-020 (test bound 1.5/8): speedup ≥ 5.33×.
+Required for Pack 5 §1 (1.25/8 margin): speedup ≥ 6.4×.
+Observed: 1.487× — far short on both. AC-017 + AC-018 stay
+green throughout.
+
+Experiment chain (3 KEEP diagnostic-only, 3 REVERT, 4 SKIPPED):
+
+- **A.0** KEEP `fec71a0` — harness split.
+- **A.1** KEEP `ca0d8f0` — perf record N=5 + flamegraphs;
+  baseline-of-record seq=182 / conc=115 / speedup=1.58×.
+- **A.2** PICK_B1 (main thread) — mutex_atomic 6.45→36.98
+  (5.73× growth, +262M cycles).
+- **A.3** PARTIAL_KEEP `edb0c84` — sqlite3_threadsafe()=1 +
+  MUTEX_PTHREADS confirms A.2; strace skipped (no sudo).
+- **A.4** PICK_B1 (main thread) — §5 OVERRIDE; numeric KEEP
+  rule conc ≤ 80 ms AND speedup ≥ 5×; alt-on-fail extended.
+- **B.1** REVERT `d448263` (output JSON only) — runtime
+  CONFIG_MULTITHREAD; config_rc=SQLITE_OK proven (real §5
+  differentiator vs SQLITE_MISUSE=21); AC-020 ratio flat;
+  hypothesis "runtime threading flag relieves bottleneck"
+  falsified clean.
+- **C.1** REVERT `15c6473` (output JSON + evidence) —
+  compile-time SQLITE_THREADSAFE=2 verified live; AC-020 still
+  flat; the strongest possible mutex intervention; the A.2 hot
+  symbols are NOT SQLite threading-mode mutexes. Mutex track
+  CLOSED.
+- **E.1** REVERT `1739b17`+`3e047a3` (revert of `e4ff255`+`91c69e9`)
+  — `prepare_cached` on 4 read-path stmts; sequential -13.7%
+  (parse cost real); concurrent unchanged; codex `gpt-5.4`
+  reviewer BLOCK with three findings (pub surface, decision-rule
+  mismatch, partial test). Phase 7/8 invariants PASS. Parse
+  track CLOSED.
+- **B.3 / D.1 / E.3 / E.4** SKIPPED — B.3/E.3/E.4 by evidence
+  exhaustion; D.1 architectural, out of Pack 5 scope.
+
+Net production-code LoC delta = **0**. Every src/ change in Pack
+5 was reverted. Diagnostic test additions (+316 LoC under
+`#[ignore]`) do not run in normal CI. Pack 5 is by construction
+a _diagnostic packet_: its product is evidence + decision
+records, not source-code changes.
+
+**Pivot for the next packet (Pack 6 recommendation):**
+architectural reader-pool refactor. Hypothesis: replace
+`ReaderPool::Mutex<Vec<Connection>>` (`lib.rs:154`) with a
+lock-free `crossbeam::queue::ArrayQueue<Connection>` for
+borrow/release. Expected to remove ~6.8 % concurrent cycles
+attributed to `___pthread_mutex_lock` + ~1.8 % from
+`lll_mutex_lock_optimized` + a meaningful fraction of the
+`__aarch64_swp4_rel` / `__aarch64_cas4_acq` CAS cycles that
+land on the pool slot. Combined with a perf re-capture against
+the post-revert tip to confirm the residual symbol-source
+_before_ writing code. Smallest-radius architectural change
+consistent with Pack 5's exhaustive falsification of the
+SQLite-internal hypotheses.
+
+**Alternative pivots if Pack 6 falsifies the lock-free-pool
+hypothesis:** (a) replace rusqlite with raw `libsqlite3-sys` +
+manual handle management to remove rusqlite's internal Mutex
+(high LoC, high risk); (b) switch to WAL2 mode (SQLite 3.45+;
+not yet in libsqlite3-sys-0.30) to reduce WAL shared-memory
+atomic contention; (c) split readers from writers across
+separate database files (architectural; loses cross-table
+consistency).
+
+**Recommended human decision:** approve Pack 6 per the lock-
+free-pool starting point, OR explicitly defer AC-020 and ship
+0.6.0 with the gate documented as known-not-met in
+`dev/test-plan.md` (REQ-020 column flips to "deferred"). Either
+way, the diagnostic record is sufficient that no future
+contributor needs to re-walk the mutex / parse falsification.
+
+**Meta-findings (apply to all future packets):**
+
+- The orchestrator-subagent chaining bug caught at B.1 #1 cost
+  one full Opus-high spawn cycle. The resume §4 anti-chaining
+  defenses landed at `fc3dda3` (PREAMBLE prepended via stdin,
+  `--disallowedTools Task Agent`, `--output-format stream-json
+--include-partial-messages --verbose`) worked first try on
+  every spawn after that. Keep all three on for every packet.
+- The B.1 prompt's `sqlite3_threadsafe()==2` assertion was a
+  real spec error inherited from whitepaper §7.3 — corrected
+  in-place. Future spec writers should validate runtime-observable
+  assertions against vendor docs before locking them into a
+  decision rule (e.g. SQLite header `sqlite3.h:249-252` is the
+  authoritative source on what `sqlite3_threadsafe()` reflects).
+- Reviewer process held strict on contract issues (E.1: pub
+  surface expansion, decision-rule mismatch). Reviewer mandate
+  works as a guardrail; honor BLOCK verdicts even when the
+  KEEP-narrative is sympathetic.

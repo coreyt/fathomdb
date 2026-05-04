@@ -48,6 +48,7 @@ exclude_path = [
   "dev/interfaces",
   "dev/interface-inventory",
   "dev/notes",
+  "dev/plan/runs",
   "dev/roadmap",
   "dev/acceptance.md",
   "dev/architecture.md",

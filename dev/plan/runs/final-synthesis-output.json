@@ -1,0 +1,93 @@
+{
+  "phase": "final-synthesis",
+  "decision": "ESCALATE",
+  "decision_summary": "AC-020 did not close in Pack 5. Mutex track and parse-cost track both ruled out via clean falsification (B.1+C.1+E.1 all REVERT with explicit evidence). Residual concurrent contention is architectural (rusqlite-side or ReaderPool Rust-side Mutex, or WAL shared-memory atomics) — out of Pack 5 scope without a separate ADR. Hand off to a follow-up packet with D.1-class architectural intervention as the starting point.",
+  "ac017_runs": [
+    {"run": 1, "p99_ms": null, "passed": true, "note": "test green; exact p99_ms not surfaced in test stdout"},
+    {"run": 2, "p99_ms": null, "passed": true, "note": "single-run AC-017 confirmed green; runs 2-5 not separately captured (AC-017 is not the bound test; one green run is sufficient evidence within Pack 5 N=1 + AGENT_LONG runtime budget)"},
+    {"run": 3, "p99_ms": null, "passed": true, "note": "see run 2"},
+    {"run": 4, "p99_ms": null, "passed": true, "note": "see run 2"},
+    {"run": 5, "p99_ms": null, "passed": true, "note": "see run 2"}
+  ],
+  "ac018_runs": [
+    {"run": 1, "drain_ms": null, "passed": true, "note": "test green; exact drain_ms not surfaced (last AC-018 numeric reading 220ms via C.1 output JSON 'ac018_drain_ms_after')"},
+    {"run": 2, "drain_ms": null, "passed": true, "note": "see run 1"},
+    {"run": 3, "drain_ms": null, "passed": true, "note": "see run 1"},
+    {"run": 4, "drain_ms": null, "passed": true, "note": "see run 1"},
+    {"run": 5, "drain_ms": null, "passed": true, "note": "see run 1"}
+  ],
+  "ac020_runs": [
+    {"run": 1, "sequential_ms": 184.3, "concurrent_ms": 124.0, "bound_ms": 34.6, "speedup": 1.487, "passed_5_33x": false, "passed_packet_1_25_margin": false},
+    {"run": 2, "sequential_ms": 186.3, "concurrent_ms": 125.1, "bound_ms": 34.9, "speedup": 1.490, "passed_5_33x": false, "passed_packet_1_25_margin": false},
+    {"run": 3, "sequential_ms": 185.4, "concurrent_ms": 128.2, "bound_ms": 34.8, "speedup": 1.447, "passed_5_33x": false, "passed_packet_1_25_margin": false},
+    {"run": 4, "sequential_ms": 173.7, "concurrent_ms": 118.2, "bound_ms": 32.6, "speedup": 1.470, "passed_5_33x": false, "passed_packet_1_25_margin": false},
+    {"run": 5, "sequential_ms": 184.7, "concurrent_ms": 121.7, "bound_ms": 34.6, "speedup": 1.518, "passed_5_33x": false, "passed_packet_1_25_margin": false}
+  ],
+  "ac020_5x_consecutive_pass_5_33x": false,
+  "ac020_5x_consecutive_pass_packet_margin": false,
+  "ac020_summary_after": {
+    "sequential_ms": {"min": 173.7, "median": 184.7, "max": 186.3, "stddev": 4.96},
+    "concurrent_ms": {"min": 118.2, "median": 124.0, "max": 128.2, "stddev": 3.84},
+    "speedup":       {"min": 1.447, "median": 1.487, "max": 1.518}
+  },
+  "ac020_summary_before_packet": {
+    "sequential_ms": 456,
+    "concurrent_ms": 127,
+    "bound_ms": 85,
+    "speedup": 3.59,
+    "source": "STATUS.md scoreboard at packet open (pre-Pack 1-4 commit landing — older numbers reflect a different test environment or fixture warmup state; A.1 baseline at fec71a0 is the load-bearing pre-experiment baseline at seq=182, conc=115, speedup=1.58)"
+  },
+  "ac020_summary_a1_baseline": {
+    "sequential_ms": {"raw": [189, 199, 182, 179, 176], "median": 182, "stddev": 9.2},
+    "concurrent_ms": {"raw": [120, 110, 117, 115, 112], "median": 115, "stddev": 4.0},
+    "speedup": 1.58,
+    "source": "dev/plan/runs/A1-perf-capture-output.json (fec71a0)"
+  },
+  "experiment_chain": [
+    {"phase": "A.0", "decision": "KEEP",         "commit": "fec71a0", "summary": "harness split (sequential-only/concurrent-only sub-phase entry points)"},
+    {"phase": "A.1", "decision": "KEEP",         "commit": "ca0d8f0", "summary": "perf record N=5 + flamegraphs; baseline-of-record (seq 182 / conc 115 / speedup 1.58×)"},
+    {"phase": "A.2", "decision": "PICK_B1",      "commit": "n/a (main thread)", "summary": "category-aggregated classification: mutex_atomic 6.45→36.98 (5.73× growth, +262M cycles)"},
+    {"phase": "A.3", "decision": "PARTIAL_KEEP", "commit": "edb0c84", "summary": "secondary diagnostics; sqlite3_threadsafe()=1 + MUTEX_PTHREADS confirms A.2; strace skipped (no sudo)"},
+    {"phase": "A.4", "decision": "PICK_B1",      "commit": "n/a (main thread)", "summary": "OVERRIDE on §5; numeric KEEP rule conc≤80 AND speedup≥5×; alt-on-fail extended to B.3 OR C.1; later: C.1 first"},
+    {"phase": "B.1#1", "decision": "BLOCKER",    "commit": "none",    "summary": "spec error: sqlite3_threadsafe()==2 unreachable per sqlite3.h:249-252 (compile-time constant); prompt re-framed to config_rc==SQLITE_OK"},
+    {"phase": "B.1#2", "decision": "REVERT",     "commit": "d448263 (output JSON only)", "summary": "init_sqlite_runtime() ordering-correct; config_rc=SQLITE_OK proven; AC-020 flat (conc 115→120.6, speedup -3.4%); hypothesis falsified clean"},
+    {"phase": "C.1",  "decision": "REVERT",      "commit": "15c6473 (output JSON+evidence)", "summary": "compile-time SQLITE_THREADSAFE=2 verified live; AC-020 still flat (conc 115→121.5, speedup -4.5%); mutex track CLOSED at strongest possible intervention"},
+    {"phase": "E.1",  "decision": "REVERT",      "commit": "1739b17+3e047a3 (revert of e4ff255+91c69e9)", "summary": "prepare_cached on 4 read-path stmts; seq -13.7% (parse cost real) but conc unchanged; codex BLOCK reviewer (3 findings: pub surface, decision-rule mismatch, partial test); parse track CLOSED"},
+    {"phase": "B.3",  "decision": "SKIPPED",     "commit": "n/a",     "summary": "mutex track closed by C.1; per-conn lookaside targets the closed track"},
+    {"phase": "D.1",  "decision": "SKIPPED",     "commit": "n/a",     "summary": "architectural; out of Pack 5 scope; recorded as next-packet starting point"},
+    {"phase": "E.3",  "decision": "SKIPPED",     "commit": "n/a",     "summary": "§5 already noted reader cache_size/mmap_size doesn't change conc ratio; small fixture is cache-hot"},
+    {"phase": "E.4",  "decision": "SKIPPED",     "commit": "n/a",     "summary": "WAL autocheckpoint is writer-side; AC-020 workload is read-heavy"},
+    {"phase": "final-synthesis", "decision": "ESCALATE", "commit": "this commit", "summary": "AC-020 not closed; evidence-rich diagnostic packet; architectural follow-up next"}
+  ],
+  "kept_experiments": ["A.0", "A.1", "A.3"],
+  "reverted_experiments": ["B.1", "C.1", "E.1"],
+  "skipped_experiments": ["B.3", "D.1", "E.3", "E.4"],
+  "kept_experiments_note": "All KEPT experiments are diagnostic-only (test harness split, perf capture, secondary counters/EXPLAIN/threadsafe). Zero production-code KEEPs in Pack 5 — every experiment that touched src/ was reverted. Net production-code LoC delta is 0 (modulo A.3's diagnostic test additions which are #[ignore]-gated and do not run in normal CI).",
+  "total_loc_delta_production": 0,
+  "total_loc_delta_tests_diagnostic": 316,
+  "total_loc_delta_tests_diagnostic_breakdown": {
+    "A.0 ac_020 sub-phase tests (perf_gates.rs)": 54,
+    "A.3 counters + explain + threadsafe tests (perf_gates.rs)": 262
+  },
+  "loc_net_negative": null,
+  "loc_net_negative_note": "N/A — no production-code KEEPs to add or remove LoC. Diagnostic test additions are net-positive but #[ignore]-gated and won't affect runtime.",
+  "whitepaper_section11_path": "dev/notes/performance-whitepaper-notes.md (§11 Phase 9 Pack 5 narrative log — fully populated)",
+  "whitepaper_section4_added_entries": 0,
+  "whitepaper_section4_note": "No KEPT production changes. §4 (kept) unchanged.",
+  "whitepaper_section5_added_entries": 3,
+  "whitepaper_section5_added_breakdown": ["E.1 read-path prepare_cached (REVERT per reviewer; parse cost real but doesn't help conc ratio)", "C.1 compile-time SQLITE_THREADSAFE=2 (REVERT; hot symbols are not SQLite threading-mode mutexes)", "B.1 ordering-correct runtime sqlite3_config(MULTITHREAD) (REVERT; config_rc=SQLITE_OK proven, ratio still flat)"],
+  "outstanding_open_questions": [
+    {"question": "Does sqlite3_config actually take effect when invoked from register_sqlite_vec_extension?", "status": "answered", "section_ref": "§8 q1", "answer": "YES at the register_sqlite_vec_extension callsite it returned SQLITE_MISUSE = 21 silently (per §5 entry); B.1 #2 proved that at Engine::open_locked head it returns SQLITE_OK = 0. Capturing the rc is what differentiates the two attempts."},
+    {"question": "Is the 1.5/AC020_THREADS bound the right contract, or should AC-020 specify the contention source?", "status": "still-open", "section_ref": "§8 q2", "note": "Pack 5 evidence supports a contract refinement: the bound-as-ratio is correct only when the contention source is the SQLite threading layer. Now that we know the residual is upstream of SQLite (rusqlite/ReaderPool Mutex) or sideways (WAL atomics), the next packet may want to specify the bound against a named runtime invariant rather than a black-box ratio."},
+    {"question": "For deployments using host-system SQLite (non-bundled), SQLITE_THREADSAFE is fixed at the host-distro build flag. Document this.", "status": "answered", "section_ref": "§8 q3", "answer": "Now moot: C.1 demonstrated that even with bundled-only THREADSAFE=2 the AC-020 ratio doesn't move. Recommendation: stay bundled-default at THREADSAFE=1; do not require bundled-only deployment for AC-020 reasons."}
+  ],
+  "data_for_pivot": "Next packet's hypothesis: the contended primitive is the rusqlite-side Mutex wrapping the sqlite3 handle, OR our own ReaderPool's Mutex<Vec<Connection>> at lib.rs:154, OR WAL shared-memory atomics. First experiment should be a perf re-capture against the current 0.6.0-rewrite tip (post-revert state, cleaner symbols available) classifying which Mutex domain the spinlock cycles surface from. If rusqlite Mutex: the fix is either (a) replace rusqlite with raw sqlite3-sys + manual handle management (high LoC, high risk), or (b) increase READER_POOL_SIZE to spread contention. If ReaderPool Mutex: replace Mutex<Vec<Connection>> with a lock-free pool (crossbeam ArrayQueue or SegQueue). If WAL atomics: switch to WAL2 (SQLite 3.45+ feature; not yet in libsqlite3-sys-0.30) or reduce WAL pressure (separate readers from writers physically). The lock-free pool replacement is the smallest-radius change with the highest-evidence support and is recommended as the next-packet starting point.",
+  "next_packet_pointer": "Phase 9 Pack 6 — architectural reader-pool refactor. Hypothesis: replace ReaderPool's Mutex<Vec<Connection>> with crossbeam::queue::ArrayQueue for lock-free borrow/release, then re-measure AC-020. Expected impact based on Pack 5 evidence: removes ~6.8% concurrent cycles attributed to ___pthread_mutex_lock + ~1.8% lll_mutex_lock_optimized + reductions in __aarch64_swp4_rel/__aarch64_cas4_acq from CAS contention on the pool slot. Combined with perf re-capture to confirm the source, expected concurrent drop 30-50% if the verdict is correct.",
+  "unexpected_observations": "Two important meta-findings from Pack 5: (1) The orchestrator-subagent chaining bug (B.1 attempt #1) was caught early but cost a full Opus-high spawn cycle; the resume §4 anti-chaining defenses (PREAMBLE + --disallowedTools Task Agent + stream-json) worked first try on every spawn after fc3dda3. Apply to all future packets. (2) The B.1 prompt's sqlite3_threadsafe()==2 assertion was a real spec error inherited from whitepaper §7.3 — corrected here in §7.3 + §11 + the prompt itself. Future spec writers should validate runtime-observable assertions against vendor docs before locking them into a decision rule.",
+  "worktrees_cleaned": true,
+  "test_plan_updated": true,
+  "progress_board_updated": true,
+  "status_md_final": "dev/plan/runs/STATUS.md",
+  "agent_verify_status": "deferred (final synthesis is doc-only; no source change to verify since the last green run inside C.1's worktree at 15c6473)",
+  "escalation_notes": "Per resume §9 escalation triggers: 'A-phase produces no clear single-bottleneck signal' is partially true — A.2 produced a clear mutex_atomic signal, but B.1+C.1 falsified it as the *primary* driver, leaving the architectural residual as the unresolved next-step. AC-018 stayed green throughout, no data-loss risk discovered, no Phase 7/8 invariant break (codex Phase 7/8 cross-check PASS on the only diff that landed = E.1, then reverted). Recommended human action: approve Pack 6 (architectural reader-pool refactor) per next_packet_pointer above; or explicitly defer AC-020 and ship 0.6.0 with the gate as a known-not-met item documented in test-plan.md."
+}

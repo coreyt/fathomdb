@@ -104,11 +104,19 @@ reused across suites:
   queries (`hybrid-*`) over a pre-drained vector-indexed fixture, 50 rounds
   per reader thread. It is evidenced by `scripts/check.sh` with
   `AGENT_LONG=1`; `agent-verify.sh` executes only the early-return path and is
-  not evidence for the AC. AC-020 is currently long-run red. Latest evidence,
-  hypothesis ladder, kept/reverted experiment ledger, and active remediation
-  plan live in:
-  - `dev/notes/performance-whitepaper-notes.md` (numbers + breadcrumbs)
-  - `dev/plan/0.6.0-Phase-9-Pack-5-performance-diagnostics.md` (DoE plan)
+  not evidence for the AC. **AC-020 is long-run RED** as of Pack 5 close
+  (2026-05-03): N=5 medians seq=184.7 ms, conc=124.0 ms, bound=34.6 ms,
+  speedup=1.487× (required ≥ 5.33× for the test bound, ≥ 6.4× for the
+  Pack 5 §1 1.25/8 margin). AC-017 + AC-018 stay green throughout.
+  Latest evidence, hypothesis ladder, kept/reverted experiment ledger,
+  Pack 5 final synthesis, and Pack 6 starting-point recommendation
+  (architectural reader-pool refactor) live in:
+  - `dev/notes/performance-whitepaper-notes.md` (numbers + breadcrumbs;
+    §11 Pack 5 narrative; §7.7/§7.8 conditional follow-up tracks)
+  - `dev/plan/0.6.0-Phase-9-Pack-5-performance-diagnostics.md` (DoE plan,
+    §12 audit trail)
+  - `dev/plan/runs/final-synthesis-output.json` (Pack 5 close decision +
+    Pack 6 hand-off)
     Inline numbers are intentionally not duplicated here to avoid two truth
     sources.
 

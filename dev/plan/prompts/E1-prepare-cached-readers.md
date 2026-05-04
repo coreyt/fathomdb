@@ -53,7 +53,7 @@ read-path hot loop in `Engine::search`).
 ## Context
 
 A.3 counters: each `Engine::search` call runs 4 prepares. Combined
-with `sqlite3RunParser` at 4-5% of cycles in *both* profiles
+with `sqlite3RunParser` at 4-5% of cycles in _both_ profiles
 (independent of concurrency = real per-call floor), this is a
 parse-cost residual that B.1/C.1 cannot reach. Whitepaper §4
 already KEEPS `prepare_cached` on the writer-side
@@ -88,7 +88,7 @@ carefully on the named four statements.
      each of the 4 statements prepared **once** total (or ≤ 8 ×
      N_threads = 8 for the 8 readers, whichever is correct under
      pool semantics — the failing baseline state would be `100 × 4
-     = 400` prepares). The counter goes through a small `pub fn`
+= 400` prepares). The counter goes through a small `pub fn`
      accessor on the engine that exposes a per-statement prepare
      count (gated by `#[cfg(any(test, feature = "metrics"))]` if
      the metrics gating pattern is already in use; otherwise just
@@ -97,7 +97,7 @@ carefully on the named four statements.
    - **Green**: switch the call sites to `prepare_cached`. Test
      passes (count drops to ≤ 8 per statement = 32 total).
    - **Refactor**: ensure no regression in `cargo test -p
-     fathomdb-engine`; AC-017 + AC-018 stay green.
+fathomdb-engine`; AC-017 + AC-018 stay green.
 
 5. **Decision rule (numeric)**:
    - **KEEP** iff `concurrent_median_ms ≤ 80` AND `speedup ≥ 5.0×`
@@ -111,8 +111,8 @@ carefully on the named four statements.
      migration test fails with a stale plan).
 
 6. **Kill criterion**: if E.1 lands `prepares_per_search drops to
-   1 (per cached statement) AND sequential drops as expected AND
-   concurrent doesn't move`, the per-call parse cost is real but
+1 (per cached statement) AND sequential drops as expected AND
+concurrent doesn't move`, the per-call parse cost is real but
    not the AC-020 bottleneck. Promote E.3 next; if E.3 also flat,
    D.1.
 
