@@ -5,7 +5,7 @@ Single up-to-date progress file for the AC-020 perf packet. Orchestrator
 point. Implementer subagents do **not** edit this file — they write
 `<phase>-output.json` instead, which the orchestrator reads.
 
-Last updated: 2026-05-03 (B.1 attempt #1 BLOCKER — sqlite3_threadsafe()==2 spec impossible; prompt re-framed to config_rc==SQLITE_OK; ready to re-spawn B.1).
+Last updated: 2026-05-03 (B.1 attempt #2 REVERT `d448263` — runtime CONFIG_MULTITHREAD applied-but-didn't-help; AC-020 unchanged; promote C.1 next).
 
 ---
 
@@ -43,11 +43,17 @@ Last updated: 2026-05-03 (B.1 attempt #1 BLOCKER — sqlite3_threadsafe()==2 spe
   amendment required because none of the seven checks depend on the
   engine src state.)
 - Prompts: PASS — 13 files under `dev/plan/prompts/`.
-- Active phase: **none** — A.0 / A.1 / A.2 / A.3 / A.4 closed;
-  B.1 attempt #1 BLOCKER (no commit, worktree cleaned). B.1 prompt
-  re-framed (`sqlite_runtime_config_rc() == 0` replaces
-  `sqlite3_threadsafe() == 2`); ready to re-spawn.
+- Active phase: **none** — A.0 / A.1 / A.2 / A.3 / A.4 / B.1 all
+  closed. B.1 attempt #1 BLOCKER (re-framed prompt). B.1 attempt #2
+  REVERT `d448263` (output JSON only, source unchanged) —
+  hypothesis falsified; promote C.1 next.
 - Active worktrees: none.
+- Anti-chaining defenses (resume §4 update at `fc3dda3`) verified
+  WORKING on B.1 #2: PREAMBLE prepended via stdin,
+  `--disallowedTools Task Agent`, `--output-format stream-json
+  --include-partial-messages --verbose`. Single coherent agent;
+  no Task spawns; mid-flight monitoring via stream events. Keep
+  on for all subsequent spawns.
 
 ## Acceptance scoreboard
 
@@ -71,7 +77,7 @@ packet's acceptance criterion.
 | A.2   | 2026-05-03 | PICK_B1 | self (main thread Opus) | n/a   | (no code) | mutex_atomic 6.45%→36.98% (5.73× growth, +262M cycles) — dominant; allocator 2× secondary; rest flat/shrinking. Output JSON `dev/plan/runs/A2-symbol-focus-output.json`. |
 | A.3   | 2026-05-03 | PARTIAL_KEEP | n/a (diag) | cleaned | `edb0c84` | counters search_us=542/query, embedder=0; THREADSAFE=1 (MUTEX_PTHREADS) confirms A.2; strace skipped (no sudo); EXPLAIN no regressions, latent canonical_nodes missing-index flagged out-of-scope |
 | A.4   | 2026-05-03 | PICK_B1 | self (main thread Opus) | n/a   | (no code) | §5 OVERRIDE on prior MULTITHREAD revert (pre-init placement + return-code validation + threadsafe()==2 assertion test required); rule conc≤80ms AND speedup≥5×; alt-on-fail=B.3; kill: B.1+B.3 stacked <10% drop ⇒ promote D.1. Output `dev/plan/runs/A4-decision-record-output.json`. |
-| B.1   | 2026-05-03 (#1) | BLOCKER | n/a | cleaned | none | spec assertion `sqlite3_threadsafe()==2` impossible (compile-time constant per `sqlite3.h:249-252`); `config_rc=SQLITE_OK=0` proven (vs §5's `SQLITE_MISUSE=21`); implementer reverted per STOP-and-report; prompt re-framed for re-spawn |
+| B.1   | 2026-05-03 (#1+#2) | REVERT | skipped (no diff) | cleaned | `d448263` (JSON only) | #1 BLOCKER on impossible `sqlite3_threadsafe()==2` spec; #2 REVERT — `config_rc=SQLITE_OK` proven (vs §5's `21`), but AC-020 conc 115→120.6ms (+4.9%, +1.7σ), speedup 1.58→1.526× — runtime CONFIG_MULTITHREAD provably applied-but-didn't-help. Promotes C.1. Output `dev/plan/runs/B1-multithread-wiring-output.json`. |
 | B.2   | -       | -        | -        | -        | -      | conditional on B.1 KEEP |
 | B.3   | -       | -        | -        | -        | -      | conditional             |
 | C.1   | -       | -        | -        | -        | -      | conditional             |
@@ -129,6 +135,20 @@ Decision values: `KEEP` / `REVERT` / `INCONCLUSIVE` / `RECAPTURE` /
   conc_median=115ms, bound=34ms (combined-gate 1.5/8 form),
   speedup=1.58×, n=5. Decision rule numeric: KEEP iff
   conc_median≤80 AND speedup≥5.0 AND AC-018 green.
+- 2026-05-03 B.1 #2 N=5 raw (release, AGENT_LONG=1):
+  - sequential `[181.5, 178.1, 189.0, 184.0, 186.0]` ms — median
+    184.0, stddev 3.73.
+  - concurrent `[121.6, 115.1, 124.0, 120.6, 118.8]` ms — median
+    120.6, stddev 2.98.
+  - speedup `[1.493, 1.547, 1.524, 1.526, 1.566]` — median 1.526,
+    stddev 0.025.
+  - bound (combined-gate `1.5/8` form, recorded for parity)
+    median 34.5 ms.
+  - sqlite3_config rc=0 (SQLITE_OK), shutdown=0, initialize=0.
+  - AC-017 + AC-018 green. AC-020 numeric REVERT.
+- 2026-05-03 baseline-of-record for **C.1** = A.1 baseline directly
+  (B.1 was REVERT, not KEPT — sequential 182, concurrent 115,
+  speedup 1.58, n=5).
 
 ## Outstanding worktrees
 
@@ -145,14 +165,23 @@ Land Phase 9 Pack 1-4 baseline → **DONE** (`1980bf6`).
 Phase A.0 KEEP `fec71a0` → A.1 KEEP `ca0d8f0` → A.2 PICK_B1 → A.3
 PARTIAL_KEEP `edb0c84` → A.4 PICK_B1 OVERRIDE — all DONE.
 
-B.1 attempt #1 returned BLOCKER on the `sqlite3_threadsafe()==2`
-spec assertion (impossible per SQLite header `sqlite3.h:249-252`).
-Prompt + A.4 mandate + whitepaper §7.3/§11 corrected: gate is now
-`sqlite_runtime_config_rc() == 0` (real §5 differentiator).
+B.1 closed (REVERT, hypothesis falsified clean: `config_rc=OK` AND
+AC-020 flat). C.1 promoted per A.4 alt-on-fail extension.
 
-**Re-spawn B.1** (Opus high, reviewer codex `gpt-5.4` mandatory)
-from `0.6.0-rewrite` tip after this bookkeeping commit lands.
-Pause for human confirmation per §8 A.4 gate before re-spawn.
+**Spawn C.1** (compile-time `SQLITE_THREADSAFE=2` rebuild — Opus
+high, reviewer codex `gpt-5.4` MANDATORY for cross-platform Cargo
+change) from `0.6.0-rewrite` tip after this bookkeeping commit
+lands. Use the 3-layer anti-chaining defenses (PREAMBLE +
+`--disallowedTools Task Agent` + `stream-json` log) — proven on
+B.1 #2. Pause for human confirmation per §8 A.4 gate before spawn.
+
+C.1 prompt Update log carries: B.1 falsification result, A.1
+baseline-of-record, A.2 mutex symbols to watch in `after`,
+decision rule (same numeric thresholds as B.1: KEEP iff
+conc≤80ms AND speedup≥5×), kill criterion (C.1 also flat ⇒ promote
+D.1, mutex track wrong), cross-platform checklist, and the
+mandate to delete `init_sqlite_runtime()` if C.1 KEEPs (net-negative
+LoC).
 
 ---
 

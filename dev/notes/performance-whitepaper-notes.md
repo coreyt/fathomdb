@@ -151,6 +151,31 @@ without closing the gap.
   it on first connection open), so `sqlite3_config` returns
   `SQLITE_MISUSE` and is silently ignored. Not yet validated by capturing
   the return code.
+- Runtime `sqlite3_config(SQLITE_CONFIG_MULTITHREAD)` placed at
+  `Engine::open_locked` head **before** any `Connection::open`
+  (B.1 attempt #2, 2026-05-03, REVERTED at `d448263`'s baseline,
+  no source commit). This is the ordering-correct version of the
+  prior entry — `init_sqlite_runtime()` Once-guarded with
+  `shutdown` → `config(MULTITHREAD)` → `initialize`. Captured rcs:
+  shutdown=0, **config=0 (SQLITE_OK)**, initialize=0. Verified via
+  `pub fn sqlite_runtime_config_rc() -> Option<i32>` accessor and
+  `tests/multithread_wiring.rs` (2/2 passing pre-revert). The wiring
+  is provably correct (cannot fail silently like the prior entry —
+  return code is captured, asserted, and the test discriminates
+  `Some(0)` from the `Some(21)` no-op pattern). **Yet AC-020 ratio
+  is unchanged**: sequential 182→184 ms (+1.1%), concurrent 115→121
+  ms (+4.9%), speedup 1.58→1.53× (-3.4%) — all within one stddev of
+  the A.1 baseline. Hypothesis "runtime threading-mode flag relieves
+  the bottleneck" is **falsified** with a high-confidence signal
+  (the gate is observable, not silent). Next experiment is C.1
+  (compile-time `SQLITE_THREADSAFE=2` rebuild — directly disables
+  the per-connection mutex symbols dominating the A.1 concurrent
+  flame, which `CONFIG_MULTITHREAD` cannot reach because the
+  bundled SQLite is compile-pinned at THREADSAFE=1). Do NOT retry
+  runtime CONFIG_MULTITHREAD without first showing a different
+  call path or a different SQLite build — the rc=0/idempotency
+  evidence is dispositive. Output JSON:
+  `dev/plan/runs/B1-multithread-wiring-output.json`.
 
 ---
 
@@ -387,6 +412,76 @@ Implementer report (full transcript, 211 KB): see audit trail at
 `/home/coreyt/.claude/projects/-home-coreyt-projects-fathomdb/0a705ea9-4d09-476f-bfb1-7fe41171ee12/tool-results/b58meryie.txt`.
 B.1 prompt updated in-place 2026-05-03 with corrected mandate.
 Worktree from attempt #1 cleaned (no commit, no branch).
+
+**B.1 attempt #2 — REVERT (2026-05-03, `d448263` for the output
+JSON only; no source commit, source identical to baseline).** Ran
+on the corrected prompt (gate = `sqlite_runtime_config_rc() == 0`,
+no `sqlite3_threadsafe()` assertion) plus the 2026-05-03
+anti-chaining defenses (PREAMBLE prepended via stdin,
+`--disallowedTools Task Agent`, `stream-json` log). Spawn worked
+cleanly: no chaining, no orphan implementer, single coherent
+agent doing the whole job and reporting at the end.
+
+What landed pre-revert: `init_sqlite_runtime()` `OnceLock<Result<i32,
+...>>`-cached, sequence `sqlite3_shutdown` → `sqlite3_config(MULTITHREAD)`
+→ `sqlite3_initialize` at `Engine::open_locked` head BEFORE
+`register_sqlite_vec_extension` and any `Connection::open`. New
+`pub fn sqlite_runtime_config_rc() -> Option<i32>` accessor and
+`tests/multithread_wiring.rs` (2 tests: post-open returns `Some(0)`;
+re-open is idempotent). FFI return types `std::os::raw::c_int`
+throughout. +119 LOC, 0 removed.
+
+Captured numeric evidence:
+
+| metric            | A.1 baseline | B.1 #2 after | delta   |
+|-------------------|--------------|--------------|---------|
+| sequential median | 182 ms       | 184.0 ms     | +1.1%   |
+| concurrent median | 115 ms       | 120.6 ms     | +4.9%   |
+| speedup median    | 1.58×        | 1.526×       | -3.4%   |
+| concurrent stddev | 4.0 ms       | 2.98 ms      | tighter |
+| sqlite3_config_rc | n/a          | 0 (SQLITE_OK)| —       |
+| AC-017 / AC-018   | green        | green        | flat    |
+
+`config_rc=0` is the §5 differentiator: the §5 silent no-op would
+have returned `SQLITE_MISUSE = 21`. The wiring is provably correct.
+Yet AC-020 ratio is essentially unchanged — concurrent shifted +1.7
+stddev on the wrong side of the 115 ms threshold; the strict A.4
+rule says REVERT. Implementer reverted source per spec policy and
+left the worktree clean (only the output JSON ran orphan, harvested
+into `d448263`).
+
+Decision interpretation (per A.4 `data_for_pivot` taxonomy):
+this is the **APPLIED-BUT-DIDN'T-HELP** branch, not the
+silent-no-op branch. Two surviving hypotheses for the dominant
+A.1 mutex symbols (`__aarch64_swp4_rel`, `__aarch64_cas4_acq`,
+`___pthread_mutex_lock`):
+
+- (a) **C.1** — compile-time `SQLITE_THREADSAFE=2` /
+  `SQLITE_NO_MUTEX` rebuild. Smaller-radius, tests the more
+  specific hypothesis (per-connection mutex elimination is
+  compile-time-only because the bundled SQLite is pinned at
+  `THREADSAFE=1`; `CONFIG_MULTITHREAD` only relaxes the *global*
+  mutexes which apparently aren't the bottleneck).
+- (b) **D.1** — architectural (per-conn lookaside, alt reader
+  topology, single-stmt UNION refactor). Activated as kill-track
+  fallback if C.1 also lands flat.
+
+A.4 alt-on-fail update: **C.1 first** (extends the prior
+"B.3 OR C.1" to "C.1 first; B.3 only if C.1 also flat AND mutex
+symbols still dominant in re-capture; D.1 if both flat"). The
+reasoning is that B.1's clean-falsification result targets the
+SQLite-mutex track specifically; C.1 is the compile-time test
+of the same track, while B.3 (per-conn lookaside) targets the
+allocator track which is a different category.
+
+Reviewer note: codex `gpt-5.4` was mandatory per plan §0.1 / resume
+§4 for B.1 KEEP. Skipped here because REVERT means there is no
+production diff to review. The output JSON commit (`d448263`) is
+docs-only and stands as the audit trail.
+
+Anti-chaining defenses (resume §4 update at `fc3dda3`) **worked**:
+single coherent agent, no Task spawns, no orphan implementer,
+clean structured output. Keep them on for all subsequent spawns.
 
 ---
 

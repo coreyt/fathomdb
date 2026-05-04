@@ -202,5 +202,79 @@ AGENT_LONG=1 cargo test -p fathomdb-engine --release --test perf_gates \
 
 ## Update log
 
-_(append B-stack KEPT numbers + decision rule + cross-platform
-checklist before spawn)_
+- 2026-05-03 — B.1 REVERT (`d448263`, output JSON only; source
+  unchanged). Runtime CONFIG_MULTITHREAD wiring is provably
+  correct (`sqlite3_config` rc=0, OnceLock-cached, idempotent,
+  test-asserted), but AC-020 ratio is unchanged within noise:
+  conc 115→120.6 ms (+4.9%, +1.7σ), speedup 1.58→1.526× (-3.4%).
+  Hypothesis "runtime threading-mode flag relieves bottleneck"
+  falsified high-confidence (the gate is observable, not silent).
+  C.1 is now the next experiment per A.4 alt-on-fail extended.
+- C.1 spawn baseline: `0.6.0-rewrite` tip after B.1 + this
+  bookkeeping commit lands. Replace `<B_STACK_KEPT_COMMIT_SHA>`
+  with `0.6.0-rewrite`. The B-stack is REVERT, NOT KEPT — `before`
+  block in C.1 output JSON sources from A.1 baseline directly
+  (sequential 182, concurrent 115, speedup 1.58, n=5). Do **not**
+  use B.1 #2 numbers as the `before` block — B.1's `after` was a
+  REVERT-state snapshot and is statistically indistinguishable
+  from A.1.
+- A.1 baseline (carry into `before` block):
+  - sequential N=5 `[189,199,182,179,176]` ms; median 182, stddev 9.2
+  - concurrent N=5 `[120,110,117,115,112]` ms; median 115, stddev 4.0
+  - speedup_observed 1.58×; required 5.33×; gap 3.4×
+- A.2 classification (carry-forward; the contended primitives C.1
+  must move):
+  - mutex_atomic 6.45% seq → 36.98% conc (5.73× growth, +262M cycles)
+  - Top concurrent symbols to watch on `after`:
+    `__aarch64_swp4_rel` 11.2%, `__aarch64_cas4_acq` 9.8%,
+    `___pthread_mutex_lock` 6.8%, `__aarch64_swp4_acq` 5.9%,
+    `lll_mutex_lock_optimized` 1.8%.
+  - If C.1 KEEPs but mutex_atomic share doesn't drop substantially
+    in a fresh A.1-recapture, C.1 didn't reach the right mutex
+    either — escalate (the WAL-pager spinlock would be unaffected
+    by `THREADSAFE=2`).
+- A.3 confirms `sqlite3_threadsafe()` returns the **compile-time**
+  value, currently `1`. After C.1 rebuild it should return `2`
+  (this assertion IS valid for C.1 because C.1 changes the
+  compile-time flag, unlike B.1 which only changed runtime config).
+- B.1 `init_sqlite_runtime()` should be deleted by C.1 if C.1 KEEPs
+  (`THREADSAFE=2` makes runtime config unnecessary). Net-negative
+  LoC per `feedback_reliability_principles.md`. If C.1 REVERTs,
+  B.1's revert state is already restored — nothing to undo.
+- Decision rule for C.1 KEEP/REVERT (numeric, mirrors A.4 form):
+  - KEEP iff `concurrent_median_ms ≤ 80` AND `speedup ≥ 5.0×` AND
+    AC-018 green (≥30% drop from A.1 baseline 115 ms). Same threshold
+    as B.1 because the goal is unchanged: close AC-020.
+  - INCONCLUSIVE band 80-100 ms → recapture A.1 against the C.1
+    branch and re-classify; if mutex_atomic share dropped but speedup
+    didn't reach 5.0×, the bottleneck moved (likely vec0_fts) →
+    promote D.1.
+  - REVERT iff `concurrent_median_ms > 115` OR AC-018 red OR
+    cross-platform build fails. Both `THREADSAFE=2` and
+    `NO_MUTEX` should be set together (per §7.2); reverting means
+    restoring the bundled SQLite default.
+- Kill criteria: if C.1 also lands flat (within ±5% of A.1
+  baseline AND mutex_atomic share unchanged in recapture), the
+  mutex track is wrong — promote D.1. Per A.4: "if B.1+B.3
+  stacked still <10% drop, mutex track wrong, promote D.1" —
+  C.1 substitutes for "B.1+B.3 stacked" because it directly
+  tests the mutex layer at the compile-time strongest
+  intervention.
+- Cross-platform checklist (load-bearing — the bundled build
+  flag change must work on aarch64-Linux + x86_64-Linux + macOS):
+  - `feedback_cross_platform_rust.md`: c_char is i8 on x86_64
+    + Darwin, u8 on aarch64 Linux. C.1 should not introduce new
+    FFI hardcodes; B.1 already used `std::os::raw::c_int` /
+    `c_char`.
+  - `libsqlite3-sys-0.30.1/build.rs:136` is the line to change
+    (`-DSQLITE_THREADSAFE=1` → `-DSQLITE_THREADSAFE=2`). Path
+    is `/home/coreyt/.cargo/registry/src/index.crates.io-...`;
+    the rebuild is via Cargo.toml feature flag or workspace
+    patch — see prompt §"What to do".
+  - Validate post-rebuild: `unsafe { rusqlite::ffi::sqlite3_threadsafe() } == 2`
+    (this assertion IS valid here, unlike B.1).
+- Reviewer (codex `gpt-5.4`) MANDATORY for C.1 — Cargo.toml /
+  build.rs change has cross-platform implications and the
+  reviewer must verify no new hardcoded `i8`/`u8` slipped in,
+  schema/migration files unchanged, no Cargo.lock churn that
+  would block downstream builds.
