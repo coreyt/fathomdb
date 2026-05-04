@@ -1580,3 +1580,86 @@ reader-writer split).
   with per-worker delta-windowed counters and explicit
   dispatch-bias check is the right shape for screening before
   expensive sweeps. Carry this pattern into Pack 7.
+
+---
+
+## 13. Appendix — lever enumeration across Pack 5 / Pack 6 / Pack 6.G
+
+Source-of-truth catalog of every AC-020 lever that has been tested
+or surfaced through Pack 6.G close (2026-05-04). Use this section
+for Pack 7 scoping; cross-reference §4 (kept), §5 (reverted), §11
+(Pack 5 narrative), §12 (Pack 6 + 6.G synthesis), and the Pack 5
+plan §13 (Pack 7 proposed work).
+
+### 13.1 Negative or nominal effect
+
+| Lever                                                | Phase       | Result                                                                                                      |
+| ---------------------------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------- |
+| Runtime `sqlite3_config(SQLITE_CONFIG_MULTITHREAD)`  | B.1         | REVERT. seq +1.1%, conc +4.9%, speedup -3.4%. `config_rc=0` proven; gate observable. Falsified.             |
+| Compile-time `SQLITE_THREADSAFE=2`                   | C.1         | REVERT. seq +0.1%, conc +5.65%, speedup -4.48%. Hot symbols survive (not threading-mode mutexes).           |
+| `prepare_cached` on borrow/release pool              | E.1         | REVERT. seq -13.7% (parse relief real), conc unchanged, ratio worsened -19.9% (gate tightens). Codex BLOCK. |
+| Reader-side global `cache_size` / `mmap_size` tuning | §5 (Pack 5) | REVERT. Per-connection page caches did not change concurrency ratio.                                        |
+| Reader open `READ_ONLY \| NO_MUTEX` flags            | §5          | REVERT. NOMUTEX only drops per-conn mutex; THREADSAFE=1 globals remain.                                     |
+| Read-tx teardown by drop vs explicit `commit()`      | §5          | Equivalent. Nominal.                                                                                        |
+| `READER_POOL_SIZE > 8`                               | §5          | No improvement. Pool capacity not the bottleneck.                                                           |
+| `SubscriberRegistry` empty-subs atomic fast-path     | §5          | ~8% conc improvement only; not the bottleneck.                                                              |
+| Single-stmt vec0+canonical join materialization      | §5          | No measurable gain on real gate; added query-plan complexity.                                               |
+
+### 13.2 Positive effect
+
+| Lever                                                        | Phase         | Result                                                                                                                               |
+| ------------------------------------------------------------ | ------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Thread-affine reader workers + lock-free dispatch            | F.0 (Pack 6)  | KEPT. Speedup **1.49x -> 3.49x (+2.34x)**. Removed Rust-side ReaderPool mutex + cross-thread handoff.                                |
+| Per-conn lookaside (`SQLITE_DBCONFIG_LOOKASIDE` 1200B x 500) | G.1           | LANDED INCONCLUSIVE. Conc -7 ms / speedup +0.19x (within noise band but consistent direction). `hiwtr=57/500` proves config honored. |
+| Persistent projection-runtime SQLite connections             | §4 (pre-P5)   | KEPT. Drove AC-018 from red -> green.                                                                                                |
+| Batched projection commits (per-batch not per-row)           | §4            | KEPT. AC-018 contributor.                                                                                                            |
+| Compute query embedding before borrow                        | §4            | KEPT. Shorter pooled-reader hold time.                                                                                               |
+| Stack-aware perf classification                              | G.0 telemetry | Meta-positive. Reframed Pack 5 A.2 misattribution; correctly identified `pcache1` hit-path mutex as residual.                        |
+
+### 13.3 Not tested or lacking data
+
+| Lever                                                   | Status     | Reason                                                                                                             |
+| ------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------ |
+| G.2 — `prepare_cached` on F.0 sticky reader connections | NOT TESTED | Skipped at Pack 6.G close on E.1 ratio-worsening risk + low expected upside. Untested under F.0 topology.          |
+| B.2 — `SQLITE_CONFIG_MEMSTATUS=0`                       | NOT TESTED | Mutex track closed before reaching; ~2-3% docs gain.                                                               |
+| B.3 — per-conn lookaside on borrow/release pool         | NOT TESTED | Pack 5 mutex track closed first; G.1 effectively superseded on F.0 topology.                                       |
+| D.1 — single-stmt UNION refactor (4 read stmts -> 1)    | NOT TESTED | Pack 5 promoted other tracks; structural change deferred.                                                          |
+| E.4 — WAL autocheckpoint policy / busy timeout tuning   | SKIPPED    | G.0 says `checkpoint = 0%` conc on read-heavy fixture. Untested under write-load fixture.                          |
+| `canonical_nodes(write_cursor)` index                   | NOT TESTED | Out-of-packet (data migration §4.6); A.3 EXPLAIN flagged latent.                                                   |
+| `mmap_size > 0` per worker on F.0 sticky conns          | NOT TESTED | §5 do-not-retry on borrow/release pool; F.0 topology re-opens the question.                                        |
+| `SQLITE_CONFIG_PCACHE2` custom allocator                | NOT TESTED | Pack 7 §13.1 (recommended starting point). Strongest evidence-supported untested lever.                            |
+| WAL2 mode                                               | NOT TESTED | Pack 7 §13.2. Not motivated by read-only fixture (0% WAL atomics in G.0).                                          |
+| Reader/writer physical separation (separate DB files)   | NOT TESTED | Pack 7 §13.3. Highest snapshot-invariant risk.                                                                     |
+| Vendor-SQLite swap (newer canonical or fork)            | NOT TESTED | Pack 7 §13.4. `MEMSTATUS=0` + per-conn `THREADSAFE=0` (legal on F.0 thread-affine) bundle.                         |
+| Replace `rusqlite` with raw `libsqlite3-sys`            | NOT TESTED | Pack 7 §13.5. Removes rusqlite per-call lock-then-borrow.                                                          |
+| Mixed read/write fixture for AC-020                     | NOT BUILT  | All Pack 5/6/6.G measurements were read-only. WAL/checkpoint hypotheses cannot be validated until fixture changes. |
+
+### 13.4 Re-combinations worth testing under design change
+
+Levers from §13.1 (negative/nominal) or §13.2 (positive) that
+plausibly change verdict under a different topology, fixture, or
+co-applied lever. Ranked by evidence support.
+
+| Combination                                                        | Why now-different                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **F.0 + G.1 + `SQLITE_CONFIG_PCACHE2`**                            | F.0 collapsed conn-mutex; G.1 collapsed small-alloc arena; PCACHE2 collapses page-cache hit-path mutex. The three attack each measured contention class. Strongest evidence-prioritized Pack 7 combination.                                                                                                         |
+| C.1 (a) `THREADSAFE=2` -> `THREADSAFE=0` per-conn on F.0 (b)       | C.1 was MULTITHREAD (lib-mutex on, conn-mutex off). With F.0 thread-affine ownership, `THREADSAFE=0` (single-threaded build) becomes legal and removes ALL SQLite-internal mutex acquires. **Strongest untested combination of an `a` lever with the `b` topology.** Needs §5 override + corruption-surface review. |
+| E.1 (a) `prepare_cached` on F.0 (b) sticky connections = G.2       | E.1 failed because borrow/release pool turns over parse-cache per borrow; F.0 sticky conns amortize across worker lifetime. Different topology, same SQL change. Risk: E.1 seq-vs-conc skew.                                                                                                                        |
+| `cache_size` (a) on F.0 (b) sticky conns                           | Pack 5 `cache_size` REVERT was on borrow/release pool. F.0 sticky conns hold pages over worker lifetime; structurally different cache hit dynamics. G.3.5 confirmed flat on small read-only fixture; larger fixture re-opens.                                                                                       |
+| `mmap_size > 0` (a) on F.0 (b) sticky conns                        | Same topology argument. mmap reduces pcache1 page-fetches (mmap'd pages don't go through pcache). Combine with PCACHE2 for full hit-path mutex elimination.                                                                                                                                                         |
+| Lookaside (b, G.1) + larger `slot_size` for FTS5 large allocations | G.1 `hiwtr=57/500` = 89% slot headroom but `slot_size=1200B` may miss FTS5/vec0 large allocs. Sweep `slot_size {1200, 2400, 4096}` could capture more allocations into the arena.                                                                                                                                   |
+| E.1 (a) + B.2 (untested) `MEMSTATUS=0` + G.1 (b) bundle            | E.1 gets seq parse relief; MEMSTATUS removes per-alloc bookkeeping mutex; G.1 captures small allocs. E.1's seq-skew might be partly offset because conc-side allocator pressure also drops. Speculative; needs telemetry.                                                                                           |
+
+### 13.5 Counts
+
+- 9 levers tested with negative or nominal AC-020 effect.
+- 6 levers with positive effect; 2 (F.0, G.1) are landed and
+  load-bearing on `0.6.0-rewrite`.
+- 13 levers untested or under-tested; 4 are Pack 7 starting
+  candidates.
+- 7 promising re-combinations identified.
+
+`F.0 + G.1 + PCACHE2` is the strongest evidence-supported Pack 7
+starting point. `F.0 + per-conn THREADSAFE=0` is the highest
+leverage-per-LoC untested combination if a §5 override and a
+corruption-surface review are acceptable.
