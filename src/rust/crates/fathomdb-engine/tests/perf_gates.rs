@@ -311,6 +311,121 @@ fn ac_020_concurrent_only() {
     eprintln!("AC020_PHASE_CONCURRENT_MS={}", elapsed.as_millis());
 }
 
+// ── G.3.5 cache-pressure telemetry ───────────────────────────────────────────
+
+/// Pack 6.G G.3.5 — read-only screening test that captures per-worker
+/// `SQLITE_DBSTATUS_CACHE_HIT` / `_CACHE_MISS` / `_CACHE_USED` deltas
+/// across one AC-020 concurrent body. Writes a sidecar JSON to the
+/// path given by `G3_5_OUTPUT_PATH` env var so the orchestrator can
+/// assemble the final per-phase JSON without re-running.
+///
+/// Run with:
+///   `G3_5_OUTPUT_PATH=/tmp/foo.json cargo test --release \
+///    -p fathomdb-engine --test perf_gates -- --ignored \
+///    g3_5_cache_pressure_telemetry --nocapture`
+#[cfg(debug_assertions)]
+#[test]
+#[ignore = "G.3.5 diagnostic: read-only cache-pressure telemetry"]
+fn g3_5_cache_pressure_telemetry() {
+    let output_path = std::env::var("G3_5_OUTPUT_PATH")
+        .expect("G3_5_OUTPUT_PATH env var required for the G.3.5 sidecar JSON");
+
+    let (_dir, path) = fixture_path("g3_5_cache_pressure_telemetry");
+    let embedder = Arc::new(RoutedEmbedder::new(3));
+    let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
+    seed_ac020_fixture(&opened.engine);
+    let worker_count = opened.engine.reader_worker_count_for_test();
+
+    // Warmup: 16 dispatched searches so the round-robin reaches every
+    // worker at least twice and the page cache reaches steady state on
+    // the seeded fixture before the pre snapshot.
+    for _ in 0..16 {
+        let _ = opened.engine.search("semantic-0").expect("warmup search");
+    }
+
+    let pre = opened.engine.cache_status_per_worker_for_test("pre");
+    assert_eq!(pre.len(), worker_count);
+
+    // Run the AC-020 concurrent body once (8 threads x 50 rounds x 4
+    // queries = 1600 dispatched searches). Same shape as
+    // `ac_020_concurrent_only` but inlined so we don't depend on env-
+    // gated test ordering.
+    let engine = Arc::new(opened.engine);
+    let barrier = Arc::new(Barrier::new(AC020_THREADS + 1));
+    let mut handles = Vec::with_capacity(AC020_THREADS);
+    for _ in 0..AC020_THREADS {
+        let engine = Arc::clone(&engine);
+        let barrier = Arc::clone(&barrier);
+        handles.push(thread::spawn(move || {
+            barrier.wait();
+            run_ac020_mix(&engine);
+        }));
+    }
+    let started = Instant::now();
+    barrier.wait();
+    for handle in handles {
+        handle.join().expect("reader thread");
+    }
+    let concurrent_ms = started.elapsed().as_millis() as u64;
+
+    let post = engine.cache_status_per_worker_for_test("post");
+    assert_eq!(post.len(), worker_count);
+
+    // Build per-worker telemetry as JSON-encoded bytes by hand so we
+    // do not pull serde_json into the test crate. Field order matches
+    // §6 of the G.3.5 prompt.
+    let mut per_worker = String::from("[");
+    for (idx, (p, q)) in pre.iter().zip(post.iter()).enumerate() {
+        let delta_hit = i64::from(q.cache_hit) - i64::from(p.cache_hit);
+        let delta_miss = i64::from(q.cache_miss) - i64::from(p.cache_miss);
+        let delta_total = delta_hit + delta_miss;
+        let delta_miss_rate =
+            if delta_total > 0 { (delta_miss as f64) / (delta_total as f64) } else { 0.0 };
+        // SQLite default cache_size is -2000 (KiB) => 2 MiB per
+        // connection. No production override is in place on the F.0
+        // reader connections (only `journal_mode=WAL` and `query_only=ON`
+        // PRAGMAs run at open time), so the limit assumed here is the
+        // canonical default.
+        let cache_size_limit_bytes: f64 = 2.0 * 1024.0 * 1024.0;
+        let pct = (q.cache_used_bytes as f64) / cache_size_limit_bytes;
+        if idx > 0 {
+            per_worker.push(',');
+        }
+        per_worker.push_str(&format!(
+            "{{\"worker_idx\":{wi},\"pre_hit\":{ph},\"pre_miss\":{pm},\"pre_used_bytes\":{pu},\
+\"post_hit\":{qh},\"post_miss\":{qm},\"post_used_bytes\":{qu},\"delta_hit\":{dh},\
+\"delta_miss\":{dm},\"delta_total\":{dt},\"delta_miss_rate\":{dmr:.6},\
+\"cache_used_post_pct_of_limit\":{pct:.6}}}",
+            wi = idx,
+            ph = p.cache_hit,
+            pm = p.cache_miss,
+            pu = p.cache_used_bytes,
+            qh = q.cache_hit,
+            qm = q.cache_miss,
+            qu = q.cache_used_bytes,
+            dh = delta_hit,
+            dm = delta_miss,
+            dt = delta_total,
+            dmr = delta_miss_rate,
+            pct = pct,
+        ));
+    }
+    per_worker.push(']');
+
+    let body = format!(
+        "{{\"worker_count\":{wc},\"concurrent_ms\":{cm},\"cache_size_limit_bytes_assumed\":{lim},\
+\"cache_size_limit_source\":\"sqlite default (-2000 KiB = 2 MiB per connection); no PRAGMA cache_size override on F.0 reader open path\",\
+\"per_worker_telemetry\":{pw}}}",
+        wc = worker_count,
+        cm = concurrent_ms,
+        lim = 2 * 1024 * 1024,
+        pw = per_worker,
+    );
+
+    eprintln!("G3_5_TELEMETRY_JSON={body}");
+    std::fs::write(&output_path, body).expect("write G.3.5 sidecar JSON");
+}
+
 // ── A.3 secondary diagnostics ────────────────────────────────────────────────
 
 const A3_EVIDENCE_DIR: &str = "dev/plan/runs/A3-evidence";

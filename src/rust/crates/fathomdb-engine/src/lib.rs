@@ -217,9 +217,33 @@ enum ReaderRequest {
     LookasideStatus {
         respond: SyncSender<i32>,
     },
+    /// Pack 6.G G.3.5 — debug-only request that asks a worker to read
+    /// `SQLITE_DBSTATUS_CACHE_HIT`, `_CACHE_MISS`, and `_CACHE_USED`
+    /// off its own connection and return them as `(hit, miss, used_bytes)`.
+    /// `snapshot_label` is opaque to the worker; the caller uses it to
+    /// distinguish pre/post snapshots in its own bookkeeping.
+    #[cfg(debug_assertions)]
+    CacheStatus {
+        snapshot_label: String,
+        respond: SyncSender<(String, i32, i32, i32)>,
+    },
 }
 
 type ReaderResponse = rusqlite::Result<(u64, Option<SoftFallback>, Vec<String>)>;
+
+/// Pack 6.G G.3.5 — per-worker cache-pressure snapshot. Carried only on
+/// the debug-only `CacheStatus` broadcast path and the test accessor;
+/// not part of the public 0.6.0 surface.
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+#[derive(Clone, Debug)]
+pub struct CacheStatusReply {
+    pub worker_idx: usize,
+    pub snapshot_label: String,
+    pub cache_hit: i32,
+    pub cache_miss: i32,
+    pub cache_used_bytes: i32,
+}
 
 /// Per-worker outbound channel capacity. Round-robin dispatch keeps
 /// queue depth at ~0 on hot paths; the small slack absorbs jitter
@@ -272,6 +296,43 @@ impl ReaderWorkerPool {
             } else {
                 results.push(-1);
             }
+        }
+        results
+    }
+
+    /// Pack 6.G G.3.5 — broadcast a `CacheStatus` request to every
+    /// worker and collect each worker's `(cache_hit, cache_miss,
+    /// cache_used_bytes)` triple. Same broadcast pattern as G.1's
+    /// `lookaside_used_per_worker`. Returns one `CacheStatusReply` per
+    /// worker in worker-index order.
+    #[cfg(debug_assertions)]
+    fn cache_status_per_worker(&self, snapshot_label: &str) -> Vec<CacheStatusReply> {
+        let mut results = Vec::with_capacity(self.senders.len());
+        for (idx, sender) in self.senders.iter().enumerate() {
+            let (tx, rx) = mpsc::sync_channel::<(String, i32, i32, i32)>(1);
+            let request = ReaderRequest::CacheStatus {
+                snapshot_label: snapshot_label.to_string(),
+                respond: tx,
+            };
+            if sender.send(request).is_ok() {
+                if let Ok((label, hit, miss, used)) = rx.recv() {
+                    results.push(CacheStatusReply {
+                        worker_idx: idx,
+                        snapshot_label: label,
+                        cache_hit: hit,
+                        cache_miss: miss,
+                        cache_used_bytes: used,
+                    });
+                    continue;
+                }
+            }
+            results.push(CacheStatusReply {
+                worker_idx: idx,
+                snapshot_label: snapshot_label.to_string(),
+                cache_hit: -1,
+                cache_miss: -1,
+                cache_used_bytes: -1,
+            });
         }
         results
     }
@@ -344,6 +405,11 @@ fn reader_worker_loop(
             #[cfg(debug_assertions)]
             ReaderRequest::LookasideStatus { respond } => {
                 let _ = respond.send(read_lookaside_used_hiwtr(&connection));
+            }
+            #[cfg(debug_assertions)]
+            ReaderRequest::CacheStatus { snapshot_label, respond } => {
+                let (hit, miss, used) = read_cache_status(&connection);
+                let _ = respond.send((snapshot_label, hit, miss, used));
             }
         }
     }
@@ -1269,6 +1335,17 @@ impl Engine {
     #[doc(hidden)]
     pub fn reader_lookaside_used_per_worker_for_test(&self) -> Vec<i32> {
         self.reader_pool.lookaside_used_per_worker()
+    }
+
+    /// Pack 6.G G.3.5 — broadcast a debug-only `CacheStatus` request to
+    /// every reader worker and collect per-worker
+    /// `SQLITE_DBSTATUS_CACHE_HIT` / `_CACHE_MISS` / `_CACHE_USED`
+    /// values. Counters are monotonic (reset flag = 0); callers compute
+    /// pre/post deltas explicitly.
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn cache_status_per_worker_for_test(&self, label: &str) -> Vec<CacheStatusReply> {
+        self.reader_pool.cache_status_per_worker(label)
     }
 
     #[cfg(debug_assertions)]
@@ -2721,6 +2798,54 @@ fn read_lookaside_used_hiwtr(connection: &Connection) -> std::os::raw::c_int {
         );
     }
     hiwtr
+}
+
+/// Pack 6.G G.3.5 — read the three page-cache pressure counters on
+/// `connection`: `SQLITE_DBSTATUS_CACHE_HIT`, `_CACHE_MISS`, and
+/// `_CACHE_USED`. Returns `(hit, miss, used_bytes)`. Hit/miss are
+/// monotonic counters (reset flag = 0 here); used_bytes is the live
+/// page-cache memory footprint at call time. The caller is expected to
+/// take pre/post snapshots and do delta arithmetic explicitly.
+#[cfg(debug_assertions)]
+fn read_cache_status(
+    connection: &Connection,
+) -> (std::os::raw::c_int, std::os::raw::c_int, std::os::raw::c_int) {
+    let mut hit_current: std::os::raw::c_int = 0;
+    let mut hit_hiwtr: std::os::raw::c_int = 0;
+    let mut miss_current: std::os::raw::c_int = 0;
+    let mut miss_hiwtr: std::os::raw::c_int = 0;
+    let mut used_current: std::os::raw::c_int = 0;
+    let mut used_hiwtr: std::os::raw::c_int = 0;
+    // SAFETY: `connection.handle()` returns a valid `*mut sqlite3` for
+    // the lifetime of `connection`. All out-pointers are to local stack
+    // ints. Reset flag 0 is documented as legal (no counter is reset).
+    unsafe {
+        rusqlite::ffi::sqlite3_db_status(
+            connection.handle(),
+            rusqlite::ffi::SQLITE_DBSTATUS_CACHE_HIT,
+            &mut hit_current,
+            &mut hit_hiwtr,
+            0,
+        );
+        rusqlite::ffi::sqlite3_db_status(
+            connection.handle(),
+            rusqlite::ffi::SQLITE_DBSTATUS_CACHE_MISS,
+            &mut miss_current,
+            &mut miss_hiwtr,
+            0,
+        );
+        rusqlite::ffi::sqlite3_db_status(
+            connection.handle(),
+            rusqlite::ffi::SQLITE_DBSTATUS_CACHE_USED,
+            &mut used_current,
+            &mut used_hiwtr,
+            0,
+        );
+    }
+    // CACHE_HIT / CACHE_MISS are monotonic counters reported in the
+    // `current` out-param; CACHE_USED is the live byte count, also in
+    // `current`. The hiwtr values are unused for this telemetry.
+    (hit_current, miss_current, used_current)
 }
 
 /// FFI trampoline for `sqlite3_profile`.
