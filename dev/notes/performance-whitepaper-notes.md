@@ -100,8 +100,8 @@ shared mutex bottleneck rather than CPU saturation (12 cores, 8 threads).
 
 ### Lifecycle anchors (`src/rust/crates/fathomdb-engine/src/lifecycle.rs`)
 
-- `pub(crate) struct SubscriberRegistry` — line 115.
-- `pub(crate) struct Counters` — line 235.
+- `pub(crate) struct SubscriberRegistry` — line 117.
+- `pub(crate) struct Counters` — line 250.
 
 ### Test anchors (`src/rust/crates/fathomdb-engine/tests/perf_gates.rs`)
 
@@ -227,6 +227,18 @@ without closing the gap.
 
 ## 6. Hypothesis hierarchy for the remaining gap
 
+> **2026-05-04 update — superseded by §11 Pack 5 close.** The primary
+> suspect below (SQLite global allocator / threading-mode mutexes) was
+> falsified clean by B.1 (runtime CONFIG_MULTITHREAD, `config_rc=0`,
+> AC-020 flat) and C.1 (compile-time `THREADSAFE=2` verified live,
+> AC-020 flat). The revised hypothesis ladder is in §11's closing
+> "Pivot for the next packet" paragraph: residual contention is in
+> rusqlite-side internal Mutex, our `ReaderPool::borrow`
+> `Mutex<Vec<Connection>>` (`lib.rs:158`), or WAL shared-memory
+> atomics — all upstream of where SQLite threading mode reaches.
+> §6 below is preserved as the pre-Pack-5 reasoning for historical
+> record; do not use it as a starting point for new experiments.
+
 We have a 12-core box, 8 worker threads, mostly read-only work on a tiny
 fixture. CPU is not the bound. Speedup of 1.5x–3.6x is the classic
 shape of contention on a single shared mutex.
@@ -314,6 +326,15 @@ shape of contention on a single shared mutex.
   too), but riskier than 7.2/7.3 — keep it as the structural follow-up.
 
 ### 7.7 SWMR + per-reader `OPEN_NOMUTEX` stacked on B.1 (2026-05-03 hypothesis)
+
+> **2026-05-04 status — trigger never fired; archived as conditional
+> plan record.** The activation trigger required B.1 to land
+> KEEP/INCONCLUSIVE; B.1 attempt #2 landed REVERT (clean falsification,
+> §11). C.1 then closed the SQLite mutex track entirely. NOMUTEX has
+> no remaining mechanism here — the residual primitives are not SQLite
+> threading-mode mutexes. Section preserved as a record of the
+> conditional plan; do not activate without re-establishing a live
+> SQLite per-connection-mutex hypothesis first.
 
 Hypothesis raised mid-Pack-5, after A.4 PICK*B1 locked: keep the current
 SWMR shape (single writer + 8-reader pool, WAL, BEGIN IMMEDIATE on
@@ -405,6 +426,15 @@ created here. If/when the trigger fires, write the spawn brief at
 that point with the recapture numbers in hand.
 
 ### 7.8 E synthesis track — staged residual tuning (2026-05-03 hypothesis)
+
+> **2026-05-04 status — activation table consumed.** C.1 REVERTed
+> (mutex track closed) → E.1 ran (`prepare_cached` on the four named
+> read-path stmts) → E.1 REVERTed (codex reviewer BLOCK; parse track
+> closed). E.2 deferred out-of-packet (no schema migration in Pack 5).
+> E.3 / E.4 SKIPPED by evidence exhaustion per §11 final-synthesis
+> paragraph. Section preserved as the activation record; do not
+> re-activate E.1 / E.3 without first understanding the upstream
+> per-call lock-contention layer (§11 closing paragraphs).
 
 Hypothesis raised after B.1 falsification, while C.1 is in flight:
 the AC-020 shortfall is multi-cause, not single-cause. The
@@ -536,8 +566,8 @@ The spec's gate assertion (`sqlite3_threadsafe() == 2`) is
 compile-time setting of thread safety, not any run-time changes
 to that setting made by `sqlite3_config()`. In other words, the
 return value from `sqlite3_threadsafe()` is unchanged by calls
-to `sqlite3_config()`." Bundled libsqlite3-sys-0.30.1 compiles
-with `-DSQLITE_THREADSAFE=1` (`build.rs:136`), so
+to `sqlite3_config()`." Bundled libsqlite3-sys-0.28.0 compiles
+with `-DSQLITE_THREADSAFE=1` (`build.rs:137`), so
 `sqlite3_threadsafe()` is pinned to `1` regardless of any
 runtime config. Changing it to `2` requires the C.1 compile-time
 rebuild path. A.4's mandate inherited this incorrect premise
@@ -1170,7 +1200,7 @@ the surviving candidates for the conc spinlock symbols are:
   (rusqlite is thread-safe via Mutex regardless of SQLite's
   THREADSAFE setting).
 - **Our own `ReaderPool::borrow` `Mutex<Vec<Connection>>`** at
-  `lib.rs:154` — every borrow + release acquires this Mutex.
+  `lib.rs:158` — every borrow + release acquires this Mutex.
 - **WAL shared-memory atomics** for frame counters / page refs
   (SQLite uses these regardless of threading mode).
 
@@ -1257,7 +1287,7 @@ records, not source-code changes.
 
 **Pivot for the next packet (Pack 6 recommendation):**
 architectural reader-pool refactor. Hypothesis: replace
-`ReaderPool::Mutex<Vec<Connection>>` (`lib.rs:154`) with a
+`ReaderPool::Mutex<Vec<Connection>>` (`lib.rs:158`) with a
 lock-free `crossbeam::queue::ArrayQueue<Connection>` for
 borrow/release. Expected to remove ~6.8 % concurrent cycles
 attributed to `___pthread_mutex_lock` + ~1.8 % from

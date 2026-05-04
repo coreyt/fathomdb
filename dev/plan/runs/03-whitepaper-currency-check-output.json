@@ -1,0 +1,122 @@
+{
+  "phase": "03-whitepaper-currency-check",
+  "decision": "FIXED_IN_PLACE",
+  "decision_summary": "Whitepaper audited against Pack 5 source-of-truth JSONs, git log, and engine source. Numbers + SHAs clean; 4 stale file:line refs and 1 stale dependency version corrected; §6 ladder appended with 2026-05-04 supersession pointer to §11; §7.7 marked archived (trigger never fired); §7.8 marked activation-consumed.",
+  "checks": {
+    "number_agreement": {
+      "issues_found": 0,
+      "issues_fixed": 0,
+      "issues_escalated": [],
+      "verified_against": [
+        "A1-perf-capture-output.json: seq=182 conc=115 speedup=1.58 n=5 (matches §11 A.1 paragraph and §1 baseline numbers)",
+        "B1-multithread-wiring-output.json: after.sequential_ms.median=184 after.concurrent_ms.median=120.6 speedup=1.526 (matches §11 B.1 #2 table)",
+        "C1-threadsafe2-rebuild-output.json: after.sequential_ms=182.2 after.concurrent_ms=121.5 speedup=1.509 delta_concurrent_pct=5.65 (matches §11 C.1 table)",
+        "E.1 numbers (seq 157, conc 125, speedup 1.266) match E1-review-20260504T031424Z.md (E.1 output JSON was reverted; only the reviewer log retains)",
+        "final-synthesis-output.json: ac020_runs medians seq=184.7 conc=124.0 speedup=1.487 (matches §11 final-synthesis table line-for-line)"
+      ]
+    },
+    "commit_sha_agreement": {
+      "stale_shas_found": [],
+      "stale_shas_fixed": 0,
+      "shas_verified": [
+        "b4a3261", "ba900a1", "2ef0efb", "09415b4", "c054487",
+        "fec71a0", "ca0d8f0", "edb0c84", "1980bf6", "fc8b8d8",
+        "d448263", "15c6473", "fc3dda3", "e4ff255", "91c69e9",
+        "1739b17", "3e047a3", "46f693a", "5f9c5f8", "ea2ec9f",
+        "28022be", "0c43647", "522a88d", "1f89169", "4a1b285",
+        "cc49a99", "c0fab7f", "e03658b", "b8d09f2", "3bbb9a1"
+      ]
+    },
+    "file_line_agreement": {
+      "missing_files": [],
+      "relocated_symbols": [
+        {
+          "ref": "lifecycle.rs SubscriberRegistry line 115",
+          "now_at": "src/rust/crates/fathomdb-engine/src/lifecycle.rs:117",
+          "delta_lines": 2,
+          "fix": "§3 anchor updated 115→117"
+        },
+        {
+          "ref": "lifecycle.rs Counters line 235",
+          "now_at": "src/rust/crates/fathomdb-engine/src/lifecycle.rs:250",
+          "delta_lines": 15,
+          "fix": "§3 anchor updated 235→250"
+        },
+        {
+          "ref": "lib.rs:154 (ReaderPool Mutex<Vec<Connection>>) — 2 occurrences in §11",
+          "now_at": "src/rust/crates/fathomdb-engine/src/lib.rs:158 (struct ReaderPool; inner Mutex on 159)",
+          "delta_lines": 4,
+          "fix": "Both §11 references updated 154→158"
+        },
+        {
+          "ref": "libsqlite3-sys-0.30.1/build.rs:136 (B.1 #1 paragraph)",
+          "now_at": "Cargo.lock pins libsqlite3-sys 0.28.0; SQLITE_THREADSAFE=1 hardcoded at libsqlite3-sys-0.28.0/build.rs:137 (matches §11 C.1 paragraph which already had the correct version+line)",
+          "delta_lines": 1,
+          "fix": "Updated 0.30.1→0.28.0, build.rs:136→build.rs:137"
+        }
+      ],
+      "verified_in_range": [
+        "lib.rs:48 READER_POOL_SIZE — exact",
+        "lib.rs:56 reader_pool field — exact",
+        "lib.rs:158 struct ReaderPool — exact",
+        "lib.rs:707 ReaderPool::new invocation — exact",
+        "lib.rs:740 fn open_locked — exact",
+        "lib.rs:746/747 register_sqlite_vec_extension + writer Connection::open — exact",
+        "lib.rs:773/774 reader pool fill loop — within ±1",
+        "lib.rs:775 reader Connection::open — exact",
+        "lib.rs:869 Engine::search — exact",
+        "lib.rs:942 search_inner — exact",
+        "lib.rs:965 read_search_in_tx call — exact",
+        "lib.rs:1283 read_search_in_tx — exact",
+        "lib.rs:1574 third Connection::open — exact",
+        "lib.rs:1824 register_sqlite_vec_extension fn — exact",
+        "lib.rs:2401 install_profile_callback — exact",
+        "lib.rs:2436 uninstall_profile_callback — exact",
+        "lib.rs:2457 profile_callback_trampoline — exact",
+        "tests/perf_gates.rs:11 AC020_THREADS — exact",
+        "tests/perf_gates.rs:43 RoutedEmbedder — exact",
+        "tests/perf_gates.rs:102 seed_ac020_fixture — exact",
+        "tests/perf_gates.rs:121/122 run_ac020_mix — within ±1",
+        "tests/perf_gates.rs:211 ac_020_reads_do_not_serialize — exact",
+        "tests/perf_gates.rs:222 sequential phase — exact",
+        "tests/perf_gates.rs:228 Barrier — exact",
+        "tests/perf_gates.rs:245 bound — exact",
+        "Cargo.toml:13 rusqlite version — exact"
+      ],
+      "external_unverifiable": [
+        "sqlite3.h:249-252 — vendored in libsqlite3-sys-0.28.0; not in repo. Documentation reference, not project source. Left as-is.",
+        "lib.rs:1285+1290 _for_test accessors — referenced in §11 E.1 paragraph as historical (pre-revert); accessors removed by `git revert` 1739b17. Annotation in §11 (E.1 REVERT paragraph) already specifies revert; no action."
+      ]
+    },
+    "hypothesis_ladder_currency": {
+      "option_chosen": "A",
+      "rationale": "Pack 6 has not run yet (only handoff prompts written at 5f9c5f8). Per prompt §4 default, append 2026-05-04 supersession note to §6 head pointing to §11's revised hierarchy; §6 body preserved as historical pre-Pack-5 reasoning."
+    },
+    "open_questions_currency": {
+      "questions_updated": 0,
+      "new_questions_added": 0,
+      "verified": "q1 ANSWERED (B.1 #1+#2 captured rc evidence) matches §11 B.1 paragraphs. q2 STILL-OPEN-with-evidence names rusqlite-side / ReaderPool Mutex / WAL atomics — matches §11 final-synthesis closing paragraph and Pack 6 handoff at 5f9c5f8. q3 MOOT 2026-05-03 (C.1) matches §11 C.1 paragraph. q4 NEW (Pack 5 surfaced) matches §11 final-synthesis pivot paragraph. No Pack 6 evidence yet to update q2 verdict."
+    },
+    "section_drift": {
+      "sections_marked_archived": [
+        "§7.7 SWMR+OPEN_NOMUTEX — trigger never fired (B.1 REVERT not KEEP/INCONCLUSIVE); appended archival note pointing to §11.",
+        "§7.8 E synthesis track — activation table consumed (C.1 REVERT → E.1 ran → E.1 REVERT → E.2 deferred → E.3/E.4 skipped); appended status note pointing to §11."
+      ],
+      "sections_in_sync": [
+        "§4 (kept) — empty; correct for Pack 5 (net production-code LoC delta = 0).",
+        "§5 (reverted) — 3 entries (B.1, C.1, E.1) each with hypothesis + why-it-didn't-work + do-not-retry rationale per resume §3.",
+        "§3 commit list — all SHAs resolve.",
+        "§11 narrative — agrees line-for-line with the JSON output files for A.0 / A.1 / A.2 / A.3 / A.4 / B.1 / C.1 / E.1 / final-synthesis.",
+        "§8 open questions — q1/q2/q3/q4 reflect Pack 5 close; no Pack 6 evidence to update yet.",
+        "§10 Packet 4 appendix — historical, untouched."
+      ]
+    }
+  },
+  "files_changed": ["dev/notes/performance-whitepaper-notes.md"],
+  "loc_added": 30,
+  "loc_removed": 4,
+  "loc_net_negative": false,
+  "loc_net_negative_rationale": "Audit added supersession/archival pointers (3 blockquote paragraphs, ~30 lines) to keep stale sections current rather than deleting them. AGENTS.md §1 'Stale > missing' permits annotation in place when the historical record has audit value. Pure stale-ref fixes (4 line-number/version corrections) are line-for-line.",
+  "next_audit_due": "Before Pack 6's first implementer spawn (per prompt §6 'When to invoke this audit'). If Pack 6 closes with KEEP/REVERT, re-run option B (rewrite §6 in place with post-Pack-6 hierarchy) is on the table with explicit human authorization.",
+  "unexpected_observations": "§7.3 still cites `sqlite3_threadsafe()` in the validation guidance even though §11 B.1 paragraphs document that this assertion is impossible by SQLite design (sqlite3.h:249-252). §7.3 already has the correction inline ('NOT by sqlite3_threadsafe()...') so this is internally consistent, but a future packet revising §7.3 could simplify by removing the original phrasing entirely. Not in scope for this audit (§7 is forward-looking design space; no live experiment depends on §7.3 wording)."
+}
