@@ -1,0 +1,34 @@
+{
+  "phase": "A0",
+  "decision": "KEEP",
+  "diff_summary": "Add ac_020_sequential_only + ac_020_concurrent_only #[ignore] tests gated by AC020_PHASE env var; combined gate unchanged",
+  "files_changed": ["src/rust/crates/fathomdb-engine/tests/perf_gates.rs"],
+  "loc_added": 54,
+  "loc_removed": 0,
+  "sequential_only_test_name": "ac_020_sequential_only",
+  "concurrent_only_test_name": "ac_020_concurrent_only",
+  "env_var_gate": "AC020_PHASE",
+  "marker_lines_emitted": ["AC020_PHASE_SEQUENTIAL_MS=184", "AC020_PHASE_CONCURRENT_MS=117"],
+  "smoke_run_sequential_ms": 184,
+  "smoke_run_concurrent_ms": 117,
+  "smoke_run_combined_gate_ms": {
+    "sequential_ms": 182,
+    "concurrent_ms": 118,
+    "bound_ms": 34,
+    "speedup": 0.19
+  },
+  "combined_gate_compiles": true,
+  "combined_gate_unchanged_diff": true,
+  "fixture_seed_drift_check": "no_drift",
+  "unexpected_observations": "Pre-existing compile errors in tests/compatibility.rs, tests/cursors.rs, tests/lifecycle_observability.rs — not caused by this phase, agent-verify.sh green regardless. Combined gate bound assertion fails (concurrent=118ms > bound=34ms) — pre-existing regression, not introduced here.",
+  "data_for_pivot": "Sequential 184ms and concurrent 118ms in same process suggests contention is already present in the engine-level lock. If A.1 perf capture shows the profile shape differs between split and combined runs, inline both phases into a single test process to control for JIT warmup and kernel scheduler effects. Key symbol to look for: the WAL checkpoint or connection-pool mutex.",
+  "log_path": "dev/plan/runs/A0-harness-split-20260504T002643Z.log",
+  "commit_sha": "fec71a0",
+  "next_phase_recommendation": "A1-perf-capture.md",
+  "downstream_invocations": {
+    "sequential": "AC020_PHASE=sequential cargo test -p fathomdb-engine --release --test perf_gates -- --ignored ac_020_sequential_only --nocapture",
+    "concurrent": "AC020_PHASE=concurrent cargo test -p fathomdb-engine --release --test perf_gates -- --ignored ac_020_concurrent_only --nocapture"
+  },
+  "worktree": "/tmp/fdb-pack5-A0-harness-split-20260504T002643Z",
+  "branch": "pack5-A0-harness-split-20260504T002643Z"
+}

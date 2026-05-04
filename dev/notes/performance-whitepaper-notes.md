@@ -396,4 +396,20 @@ Pack 5 baseline = `1980bf6`. See `dev/plan/runs/STATUS.md`
 "Baseline drift note" and the §11 preamble in
 `dev/plan/0.6.0-Phase-9-Pack-5-performance-diagnostics.md`.
 
-_(no experiment narratives yet — A.0 spawn pending)_
+**A.0 — harness split (KEEP, `fec71a0`, 2026-05-03).** Diagnostic
+prep, not a perf change. Added two `#[ignore]` tests in
+`tests/perf_gates.rs` (`ac_020_sequential_only`,
+`ac_020_concurrent_only`) gated by `AC020_PHASE` env var, sharing
+`seed_ac020_fixture` / `run_ac020_mix` / `AC020_THREADS` /
+`AC020_ROUNDS_PER_THREAD` with the combined gate so fixtures cannot
+drift. Each emits `AC020_PHASE_SEQUENTIAL_MS=<n>` /
+`AC020_PHASE_CONCURRENT_MS=<n>` on stderr for shell grep. Smoke run
+(N=1, not gate reading): seq=184ms, conc=117ms; combined gate at the
+same tree reported seq=182ms / conc=118ms / bound=34ms / speedup=0.19
+— consistent within noise, fixture parity confirmed. +54/-0 LOC,
+test-only. `agent-verify.sh` green. Reviewer skipped (test-only edit
+per plan §0.1). Sub-phase entry points unblock A.1 perf capture
+(`AC020_PHASE=sequential|concurrent cargo test … --ignored ac_020_*_only`).
+Pre-existing compile errors in `tests/{compatibility,cursors,lifecycle_observability}.rs`
+flagged in A.0 output JSON as not-of-this-phase; agent-verify still
+green, so noted but not actioned here.

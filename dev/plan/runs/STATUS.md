@@ -5,20 +5,22 @@ Single up-to-date progress file for the AC-020 perf packet. Orchestrator
 point. Implementer subagents do **not** edit this file — they write
 `<phase>-output.json` instead, which the orchestrator reads.
 
-Last updated: 2026-05-03 (Phase 9 Pack 1-4 production landed; markdown lint
-fixes landed; ready to spawn A.0).
+Last updated: 2026-05-03 (A.0 KEEP `fec71a0` FF-merged; ready to spawn A.1).
 
 ---
 
 ## Current state
 
 - Branch: `0.6.0-rewrite`.
-- Branch tip: `2dc2134` (docs: STATUS + resume baseline refresh).
-  Pushed to `origin/0.6.0-rewrite`.
-- A.0 spawn baseline: **`1980bf6`** (`feat(engine): Phase 9 Pack 1-4
-— vector runtime + projection terminal + FTS search index + AC-020
-perf gate`). Prior: `65b15fd` markdownlint fixes; `0dc4785` Pack 5
-  prompts + STATUS + preflight docs.
+- Branch tip: `fec71a0` (test(perf-gates): A.0 harness split, FF-merged
+  from `pack5-A0-harness-split-20260504T002643Z`). Not yet pushed.
+  Prior local commits: `fc8b8d8` docs alignment; `2dc2134` STATUS
+  refresh; `1980bf6` Pack 1-4 production.
+- A.0 spawn baseline (used): `0.6.0-rewrite` ref at spawn time =
+  `fc8b8d8` (descendant of plan-recorded baseline `1980bf6`). FF
+  applied cleanly.
+- A.1 spawn baseline: **`fec71a0`** (A.0 commit). A.1 needs the
+  split-test entry points.
 - Baseline drift note: original Pack 5 plan assumed a clean baseline
   with Pack 1-4 already committed, but those changes were sitting in
   the working tree. They were committed at `1980bf6` after running
@@ -30,8 +32,9 @@ perf gate`). Prior: `65b15fd` markdownlint fixes; `0dc4785` Pack 5
   amendment required because none of the seven checks depend on the
   engine src state.)
 - Prompts: PASS — 13 files under `dev/plan/prompts/`.
-- Active phase: **none yet** — A.0 next.
-- Active worktrees: none.
+- Active phase: **none** — A.0 closed (KEEP, `fec71a0`); A.1 next.
+- Active worktrees: none (A.0 worktree force-removed after copying
+  `A0-harness-split-output.json` into main repo; phase branch deleted).
 
 ## Acceptance scoreboard
 
@@ -50,7 +53,7 @@ packet's acceptance criterion.
 
 | Phase | Spawned | Decision | Reviewer | Worktree | Commit | Notes / log             |
 | ----- | ------- | -------- | -------- | -------- | ------ | ----------------------- |
-| A.0   | -       | -        | -        | -        | -      | -                       |
+| A.0   | 2026-05-03 | KEEP  | n/a (test-only) | cleaned | `fec71a0` | harness split; smoke seq=184/conc=117 N=1; output JSON `dev/plan/runs/A0-harness-split-output.json` |
 | A.1   | -       | -        | -        | -        | -      | -                       |
 | A.2   | -       | -        | -        | -        | -      | main thread             |
 | A.3   | -       | -        | -        | -        | -      | -                       |
@@ -67,7 +70,11 @@ Decision values: `KEEP` / `REVERT` / `INCONCLUSIVE` / `RECAPTURE` /
 
 ## Latest measurements (N=5 unless noted)
 
-_(none — populate from each phase's output.json after decision)_
+- 2026-05-03 A.0 smoke (N=1, NOT a gate reading): split harness
+  seq=184ms, conc=117ms; combined gate at same tree
+  seq=182ms / conc=118ms / bound=34ms / speedup=0.19. Numbers
+  consistent within noise → fixture parity confirmed. Combined-gate
+  bound failure was pre-existing (not introduced by A.0).
 
 ## Outstanding worktrees
 
@@ -81,8 +88,13 @@ _(none yet — anything CONCERN-severity from reviewer goes here with §12 ref)_
 
 Pre-write all phase prompt files (plan §10 step 1) → **DONE**.
 Land Phase 9 Pack 1-4 baseline → **DONE** (`1980bf6`).
-Spawn Phase A.0 (test-only harness split, Sonnet medium) from
-baseline `1980bf6`. Orchestrator confirmation pending.
+Spawn Phase A.0 → **DONE** (KEEP, `fec71a0`, FF-merged).
+
+**Pause point per resume §8** — confirm with human before spawning
+A.1 (perf record + flamegraph capture, Sonnet medium, baseline
+`fec71a0`). A.1 spawn block is in
+`dev/plan/prompts/A1-perf-capture.md` with Update log carrying
+A.0 numbers and baseline SHA.
 
 ---
 

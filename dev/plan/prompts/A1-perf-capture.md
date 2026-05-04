@@ -201,5 +201,23 @@ grep -c mem1Malloc dev/notes/perf/ac020-concurrent-<short-sha>.folded
 
 ## Update log
 
-_(append dated notes just before spawn — fold A.0 numbers + commit
-SHA + any blocker A.0 surfaced)_
+- 2026-05-03 — A.0 KEEP, baseline for A.1 = `fec71a0` (FF-merged
+  onto `0.6.0-rewrite`). Replace `<A0_COMMIT_SHA>` in spawn block
+  with `fec71a0` (or literal ref `0.6.0-rewrite` — currently
+  resolves to `fec71a0`).
+- A.0 smoke (N=1, not a gate reading): seq=184ms / conc=117ms via
+  split tests; combined gate at same tree reported
+  seq=182ms / conc=118ms / bound=34ms / speedup=0.19. Fixture parity
+  confirmed (no drift between split + combined harnesses).
+- Combined-gate bound assertion was already failing pre-A.0
+  (concurrent=118ms > bound=34ms); not introduced by harness split.
+  AC-020 packet bound = 1.25/8 ≈ 0.156; current speedup=0.19 is
+  combined-gate's own 1.5/8≈0.188 form. Either way, gap to close.
+- Pre-existing compile errors in `tests/{compatibility,cursors,lifecycle_observability}.rs`
+  noted by A.0 — `agent-verify.sh` still green; ignore unless
+  flamegraph capture path needs them.
+- Sub-phase entry points (use these exactly):
+  - `AC020_PHASE=sequential cargo test -p fathomdb-engine --release --test perf_gates -- --ignored ac_020_sequential_only --nocapture`
+  - `AC020_PHASE=concurrent cargo test -p fathomdb-engine --release --test perf_gates -- --ignored ac_020_concurrent_only --nocapture`
+- Markers to grep on stderr: `AC020_PHASE_SEQUENTIAL_MS=<n>` /
+  `AC020_PHASE_CONCURRENT_MS=<n>`.
