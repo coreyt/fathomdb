@@ -1,11 +1,33 @@
-# Phase 9 Pack 5 — status board
+# Phase 9 Pack 5 / Pack 6 — status board
 
 Single up-to-date progress file for the AC-020 perf packet. Orchestrator
 (main thread) updates this file at every plan §0.1 step-5 decision
 point. Implementer subagents do **not** edit this file — they write
 `<phase>-output.json` instead, which the orchestrator reads.
 
-Last updated: 2026-05-03 (Pack 5 CLOSED — ESCALATE; AC-020 not met; mutex+parse exhausted; Pack 6 architectural starting point recorded).
+Last updated: 2026-05-04 (Pack 6 OPEN — F.0 thread-affine reader workers
+queued; Pack 5 ESCALATE record below for history).
+
+---
+
+## Pack 6 current state
+
+- Branch: `0.6.0-rewrite`. Tip: `52f5572` (Pack 6 handoff rewrite +
+  Pack 5 audit-log artifacts landed).
+- Active phase: **F.0** — thread-affine reader workers (per
+  `dev/plan/prompts/02-pack6-handoff-readerpool-refactor.md` §4).
+- Baseline-of-record for F.0 = Pack 5 final synthesis medians:
+  seq 184.7 ms / conc 124.0 ms / bound 34.6 ms / speedup 1.487× (N=5).
+- Decision rule: KEEP iff conc ≤ 80 ms AND speedup ≥ 5.0× AND
+  AC-018 green AND no lifecycle/close regression.
+- Reviewer mandatory on KEEP / INCONCLUSIVE (codex `gpt-5.4` high).
+- Anti-chaining defenses still apply (PREAMBLE + `--disallowedTools
+  Task Agent` + stream-json).
+- Active worktrees: none yet.
+
+---
+
+## Pack 5 closed state (history)
 
 ---
 
@@ -188,18 +210,10 @@ PARTIAL_KEEP `edb0c84` → A.4 PICK_B1 OVERRIDE — all DONE.
 output at `dev/plan/runs/final-synthesis-output.json`. Whitepaper
 §11 carries the closing narrative + Pack 6 starting point.
 
-Recommended next action (human decision):
-
-- Approve Pack 6 (architectural reader-pool refactor: replace
-  `ReaderPool::Mutex<Vec<Connection>>` with
-  `crossbeam::queue::ArrayQueue` for lock-free borrow/release;
-  perf-recapture first to confirm residual symbol-source);
-- OR explicitly defer AC-020 and ship 0.6.0 with REQ-020 marked
-  "deferred" in `dev/test-plan.md`.
-
-See `dev/notes/performance-whitepaper-notes.md` §11 for the full
-case + alternative pivots if Pack 6's lock-free-pool hypothesis
-is also falsified.
+**Pack 6 OPEN — F.0 spawn next.** Human authorized the thread-affine
+reader-workers handoff (supersedes earlier ArrayQueue-only pool swap).
+Spawn block per `dev/plan/prompts/02-pack6-handoff-readerpool-refactor.md`
+§11; baseline `0.6.0-rewrite` tip `52f5572`.
 
 ---
 
