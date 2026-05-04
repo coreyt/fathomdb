@@ -5,7 +5,7 @@ Single up-to-date progress file for the AC-020 perf packet. Orchestrator
 point. Implementer subagents do **not** edit this file — they write
 `<phase>-output.json` instead, which the orchestrator reads.
 
-Last updated: 2026-05-03 (A.3 PARTIAL_KEEP `edb0c84` + A.4 PICK_B1 main thread; pause for human before B.1 spawn per §8 A.4 gate).
+Last updated: 2026-05-03 (B.1 attempt #1 BLOCKER — sqlite3_threadsafe()==2 spec impossible; prompt re-framed to config_rc==SQLITE_OK; ready to re-spawn B.1).
 
 ---
 
@@ -43,8 +43,10 @@ Last updated: 2026-05-03 (A.3 PARTIAL_KEEP `edb0c84` + A.4 PICK_B1 main thread; 
   amendment required because none of the seven checks depend on the
   engine src state.)
 - Prompts: PASS — 13 files under `dev/plan/prompts/`.
-- Active phase: **none** — A.0 / A.1 / A.2 / A.3 / A.4 all closed;
-  B.1 next (paused for human confirmation per §8 A.4 gate).
+- Active phase: **none** — A.0 / A.1 / A.2 / A.3 / A.4 closed;
+  B.1 attempt #1 BLOCKER (no commit, worktree cleaned). B.1 prompt
+  re-framed (`sqlite_runtime_config_rc() == 0` replaces
+  `sqlite3_threadsafe() == 2`); ready to re-spawn.
 - Active worktrees: none.
 
 ## Acceptance scoreboard
@@ -69,7 +71,7 @@ packet's acceptance criterion.
 | A.2   | 2026-05-03 | PICK_B1 | self (main thread Opus) | n/a   | (no code) | mutex_atomic 6.45%→36.98% (5.73× growth, +262M cycles) — dominant; allocator 2× secondary; rest flat/shrinking. Output JSON `dev/plan/runs/A2-symbol-focus-output.json`. |
 | A.3   | 2026-05-03 | PARTIAL_KEEP | n/a (diag) | cleaned | `edb0c84` | counters search_us=542/query, embedder=0; THREADSAFE=1 (MUTEX_PTHREADS) confirms A.2; strace skipped (no sudo); EXPLAIN no regressions, latent canonical_nodes missing-index flagged out-of-scope |
 | A.4   | 2026-05-03 | PICK_B1 | self (main thread Opus) | n/a   | (no code) | §5 OVERRIDE on prior MULTITHREAD revert (pre-init placement + return-code validation + threadsafe()==2 assertion test required); rule conc≤80ms AND speedup≥5×; alt-on-fail=B.3; kill: B.1+B.3 stacked <10% drop ⇒ promote D.1. Output `dev/plan/runs/A4-decision-record-output.json`. |
-| B.1   | -       | -        | -        | -        | -      | -                       |
+| B.1   | 2026-05-03 (#1) | BLOCKER | n/a | cleaned | none | spec assertion `sqlite3_threadsafe()==2` impossible (compile-time constant per `sqlite3.h:249-252`); `config_rc=SQLITE_OK=0` proven (vs §5's `SQLITE_MISUSE=21`); implementer reverted per STOP-and-report; prompt re-framed for re-spawn |
 | B.2   | -       | -        | -        | -        | -      | conditional on B.1 KEEP |
 | B.3   | -       | -        | -        | -        | -      | conditional             |
 | C.1   | -       | -        | -        | -        | -      | conditional             |
@@ -143,12 +145,14 @@ Land Phase 9 Pack 1-4 baseline → **DONE** (`1980bf6`).
 Phase A.0 KEEP `fec71a0` → A.1 KEEP `ca0d8f0` → A.2 PICK_B1 → A.3
 PARTIAL_KEEP `edb0c84` → A.4 PICK_B1 OVERRIDE — all DONE.
 
-**Pause point per resume §8 (A.4 gate).** Confirm with human
-before spawning B.1 (multithread wiring, Opus xhigh, reviewer
-codex `gpt-5.4` mandatory) from `0.6.0-rewrite` tip. B.1 prompt
-Update log carries A.4 OVERRIDE rationale + numeric KEEP/REVERT
-rule + ordering safety mandate (3 callsites + return-code check
-+ `sqlite3_threadsafe()==2` assertion test).
+B.1 attempt #1 returned BLOCKER on the `sqlite3_threadsafe()==2`
+spec assertion (impossible per SQLite header `sqlite3.h:249-252`).
+Prompt + A.4 mandate + whitepaper §7.3/§11 corrected: gate is now
+`sqlite_runtime_config_rc() == 0` (real §5 differentiator).
+
+**Re-spawn B.1** (Opus high, reviewer codex `gpt-5.4` mandatory)
+from `0.6.0-rewrite` tip after this bookkeeping commit lands.
+Pause for human confirmation per §8 A.4 gate before re-spawn.
 
 ---
 

@@ -213,7 +213,12 @@ shape of contention on a single shared mutex.
 - Sequence must be: `sqlite3_shutdown` → `sqlite3_config(MULTITHREAD)` →
   `sqlite3_initialize`, executed at process start, **before any
   `Engine::open`** or any other path that opens a Connection.
-- Validate by checking `sqlite3_threadsafe()` return value (expect 2).
+- Validate by checking `sqlite3_config()`'s return code is
+  `SQLITE_OK = 0` (NOT by `sqlite3_threadsafe()` — that is a
+  compile-time constant per `sqlite3.h:249-252` and is unchanged
+  by `sqlite3_config()`; bundled libsqlite3-sys is pinned at
+  `THREADSAFE=1`). The §5 silent-no-op returned `SQLITE_MISUSE =
+  21`, so `rc == SQLITE_OK` is a real differentiator.
 - This is the no-rebuild path to the same effect as 7.2 — but
   ordering-sensitive.
 
@@ -327,6 +332,61 @@ Slot in the packet:
 This note is the audit trail; no spawn, no prompt file, no §12 line
 created here. If/when the trigger fires, write the spawn brief at
 that point with the recapture numbers in hand.
+
+**B.1 attempt #1 — BLOCKER (2026-05-03, no commit).** First spawn
+of B.1 (Opus high) hit a real spec error and reverted per the
+STOP-and-report rule. Implementer built `init_sqlite_runtime()`
+exactly per spec — process-wide `OnceLock`, sequence
+`sqlite3_shutdown` → `sqlite3_config(SQLITE_CONFIG_MULTITHREAD)`
+→ `sqlite3_initialize`, all FFI through `rusqlite::ffi` with
+`std::os::raw::c_int` return types — and verified at runtime that
+all three calls returned `SQLITE_OK = 0`. **That `config_rc = 0`
+is the real differentiator from §5**, which (per its own entry)
+silently no-op'd because the call ran after rusqlite had
+triggered `sqlite3_initialize()` and would have returned
+`SQLITE_MISUSE = 21`. The B.1 ordering is correct.
+
+The spec's gate assertion (`sqlite3_threadsafe() == 2`) is
+**impossible by SQLite design**. Header `sqlite3.h:249-252`:
+"the return value of `sqlite3_threadsafe()` shows only the
+compile-time setting of thread safety, not any run-time changes
+to that setting made by `sqlite3_config()`. In other words, the
+return value from `sqlite3_threadsafe()` is unchanged by calls
+to `sqlite3_config()`." Bundled libsqlite3-sys-0.30.1 compiles
+with `-DSQLITE_THREADSAFE=1` (`build.rs:136`), so
+`sqlite3_threadsafe()` is pinned to `1` regardless of any
+runtime config. Changing it to `2` requires the C.1 compile-time
+rebuild path. A.4's mandate inherited this incorrect premise
+from §7.3 ("Validate by checking `sqlite3_threadsafe()` return
+value (expect 2)"), which is now also corrected by reference.
+
+Orchestrator decision (re-spawn): replace the gate assertion
+with `fathomdb_engine::sqlite_runtime_config_rc() == 0` (or
+`Some(0)` if the API is `Option<i32>`). Add this as a small
+`pub fn` accessor that reads the captured `c_int` from the
+`init_sqlite_runtime` `OnceLock`. The test compares against
+`SQLITE_OK = 0` and references `SQLITE_MISUSE = 21` in a comment
+as the §5 silent-no-op return code that B.1 guards against.
+This preserves the §5 differentiator (real, observable, runtime)
+without depending on a SQLite API that doesn't reflect runtime
+state. **AC-020 numeric KEEP rule (concurrent_median ≤ 80 ms
+AND speedup ≥ 5.0× AND AC-018 green) is unchanged** — that is
+the load-bearing gate; the accessor test is a safety check that
+distinguishes B.1 from a §5-style silent no-op.
+
+A.4 alt-on-fail extends to **B.3 OR C.1** (was B.3 alone).
+Rationale: if B.1 lands `config_rc = OK` but AC-020 doesn't move,
+the runtime config is provably in effect (rc proves it) but
+isn't reaching the contended mutexes. That pattern points at C.1
+(compile-time `SQLITE_THREADSAFE=2` rebuild) being the actual
+fix, not B.3 (lookaside). B.3 stays the right alt-on-fail when
+`mutex_atomic` share *does* drop under B.1 but speedup doesn't
+hit 5×.
+
+Implementer report (full transcript, 211 KB): see audit trail at
+`/home/coreyt/.claude/projects/-home-coreyt-projects-fathomdb/0a705ea9-4d09-476f-bfb1-7fe41171ee12/tool-results/b58meryie.txt`.
+B.1 prompt updated in-place 2026-05-03 with corrected mandate.
+Worktree from attempt #1 cleaned (no commit, no branch).
 
 ---
 

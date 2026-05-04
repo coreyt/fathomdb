@@ -108,19 +108,38 @@ runtime, **before any** `Connection::open` or
    - `register_sqlite_vec_extension();`
    - `Connection::open(&path)?;`
 
-3. After init, capture and log
-   `unsafe { rusqlite::ffi::sqlite3_threadsafe() }`. Expect `2`.
-   Log it via lifecycle subscriber (or, if simpler for this phase,
-   via `eprintln!` in a `#[cfg(debug_assertions)]` block — do not add
-   a new lifecycle event for this).
+3. After init, store the captured `sqlite3_config` return code in a
+   process-static accessor: add
+   `pub fn sqlite_runtime_config_rc() -> i32` (or
+   `pub fn sqlite_runtime_config_rc_for_test() -> Option<i32>`)
+   that returns the captured `c_int` from the `init_sqlite_runtime`
+   `OnceLock`. This is the test-observable differentiator from §5:
+   the §5 revert returned `SQLITE_MISUSE = 21` silently; B.1 must
+   return `SQLITE_OK = 0`. **Do NOT use `sqlite3_threadsafe()` for
+   the assertion — SQLite docs (sqlite3.h:249-252) state explicitly
+   that `sqlite3_threadsafe()` returns the *compile-time* setting
+   and is unchanged by `sqlite3_config()`. Bundled libsqlite3-sys
+   compiles with `-DSQLITE_THREADSAFE=1`, so `sqlite3_threadsafe()`
+   always returns `1` regardless of runtime config.** That is C.1
+   territory, not B.1.
 
 4. Test (red-green-refactor):
-   - **Red**: write a `#[test]` that opens an `Engine`, asserts
-     `unsafe { rusqlite::ffi::sqlite3_threadsafe() } == 2`. Run on
-     main first to confirm it fails (records baseline).
-   - **Green**: implement the init function. Test passes.
+   - **Red**: write a `#[test]` that calls
+     `fathomdb_engine::sqlite_runtime_config_rc()` BEFORE any
+     `Engine::open` and asserts it returns `None` /
+     placeholder (init has not run yet). Then opens an `Engine`,
+     calls the accessor again, asserts it returns
+     `Some(0) // SQLITE_OK` (or just `0` if the API is non-Option).
+     Run on main first to confirm RED (accessor doesn't exist yet).
+   - **Green**: implement `init_sqlite_runtime` + the accessor.
+     Test passes.
    - **Refactor**: tighten error path; ensure init runs only once
-     (re-open `Engine` second time does not call `sqlite3_shutdown`).
+     (re-open `Engine` second time observes the same return code,
+     does not re-shutdown).
+   - **Differentiator-from-§5 check**: include a comment in the
+     test referencing this prompt + A.4 OVERRIDE rationale, naming
+     `SQLITE_MISUSE = 21` as the §5 silent-no-op return code that
+     this assertion guards against.
 
 ### Risk mitigation
 
@@ -135,8 +154,11 @@ runtime, **before any** `Connection::open` or
 ## Acceptance criteria
 
 - `cargo test -p fathomdb-engine --release` is green.
-- New test asserting `sqlite3_threadsafe() == 2` after `Engine::open`
-  is green.
+- New test asserting `sqlite_runtime_config_rc() == 0` (`SQLITE_OK`)
+  after `Engine::open` is green. Asserting `sqlite3_threadsafe() == 2`
+  is **forbidden** — that value is a compile-time constant pinned to
+  `1` by the bundled SQLite (see §"Risk mitigation" + A.4 mandate
+  update 2026-05-03).
 - AC-018 stays green (re-run; concurrent drain unchanged).
 - AC-020 long-run improves: **decision rule from A.4** (typically
   concurrent drops by ≥ 30% vs A.1 baseline AND speedup ≥ 5.0x → KEEP).
@@ -150,8 +172,10 @@ runtime, **before any** `Connection::open` or
 
 - `src/rust/crates/fathomdb-engine/src/lib.rs` (insert
   `init_sqlite_runtime` + call from `open_locked`).
-- `src/rust/crates/fathomdb-engine/tests/lifecycle_observability.rs`
-  (or a new test file) — add the `sqlite3_threadsafe == 2` test.
+- `src/rust/crates/fathomdb-engine/tests/multithread_wiring.rs`
+  (new test file preferred — `lifecycle_observability.rs` is bound
+  to AC-001..AC-010) — add the `sqlite_runtime_config_rc() == 0`
+  test (the §5 differentiator).
 - `dev/plan/runs/B1-multithread-wiring-output.json` and `.log`.
 - §12 + whitepaper update (only after KEEP decision).
 
@@ -291,9 +315,13 @@ AGENT_LONG=1 cargo test -p fathomdb-engine --release --test perf_gates \
      `SQLITE_MISUSE` return `EngineOpenError` (do not silently
      succeed). Use `std::os::raw::c_int` for the FFI return type
      (memory: `feedback_cross_platform_rust.md`).
-  3. Add a `#[ignore]` integration test that opens an Engine and
-     asserts `sqlite3_threadsafe() == 2` after open. Without this
-     test the change is indistinguishable from the §5 revert.
+  3. Add an integration test (NOT `#[ignore]` — it must run in the
+     normal suite) that opens an Engine and asserts
+     `fathomdb_engine::sqlite_runtime_config_rc()` returns `0`
+     (`SQLITE_OK`) — equivalently `Some(0)` if the API is
+     `Option<i32>`. This is the §5 differentiator: the §5 revert
+     would have returned `SQLITE_MISUSE = 21`. **Do NOT assert
+     `sqlite3_threadsafe() == 2`** — see UPDATE 2026-05-03 below.
 - Decision rule (numeric, A.4-locked):
   - KEEP iff `concurrent_median_ms ≤ 80` AND `speedup ≥ 5.0×` AND
     AC-018 green (= ≥ 30% drop from A.1 baseline 115 ms).
@@ -304,3 +332,24 @@ AGENT_LONG=1 cargo test -p fathomdb-engine --release --test perf_gates \
 - Kill criteria: B.1 + B.3 stacked still <10% drop ⇒ mutex track
   wrong, promote D.1.
 - Expected outcome window: concurrent 30-80 ms median; speedup 5-12×.
+- 2026-05-03 UPDATE — first B.1 spawn returned BLOCKER (orphan
+  implementer in `b58meryie.txt`, worktree clean, no commit).
+  Implementer correctly built `init_sqlite_runtime()` per spec and
+  verified `config_rc = SQLITE_OK = 0` (vs §5's silent `SQLITE_MISUSE
+  = 21`), but the spec's `sqlite3_threadsafe() == 2` assertion is
+  **unreachable** by SQLite design: the SQLite header (sqlite3.h:249-252)
+  states `sqlite3_threadsafe()` returns the *compile-time*
+  `SQLITE_THREADSAFE` value and is unchanged by `sqlite3_config()`.
+  Bundled libsqlite3-sys-0.30.1 compiles with `-DSQLITE_THREADSAFE=1`
+  (`build.rs:136`), so the assertion always fails; that value can
+  only become `2` via C.1 (compile-time rebuild). Implementer
+  reverted all changes per spec STOP-and-report rule.
+  Orchestrator decision (this update): re-frame the assertion to
+  `sqlite_runtime_config_rc() == 0` (added as a new `pub fn`
+  accessor) — this IS a real differentiator from §5 (which returned
+  `21` silently) and IS observable at runtime. The AC-020 numeric
+  KEEP/REVERT rule is unchanged. C.1 is held in reserve as
+  alt-on-fail in addition to B.3.
+- Re-spawn baseline: `0.6.0-rewrite` tip (currently `c0fab7f` after
+  the §7.7 hypothesis note + this prompt update). Replace
+  `<A0_COMMIT_SHA>` with `0.6.0-rewrite`.
