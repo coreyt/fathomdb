@@ -237,6 +237,97 @@ shape of contention on a single shared mutex.
 - Worth doing regardless of mutex outcome (reduces sequential latency
   too), but riskier than 7.2/7.3 — keep it as the structural follow-up.
 
+### 7.7 SWMR + per-reader `OPEN_NOMUTEX` stacked on B.1 (2026-05-03 hypothesis)
+
+Hypothesis raised mid-Pack-5, after A.4 PICK_B1 locked: keep the current
+SWMR shape (single writer + 8-reader pool, WAL, BEGIN IMMEDIATE on
+writes, one-thread-per-connection ownership), and stack
+`SQLITE_OPEN_NOMUTEX` on the reader-pool connections **after** B.1's
+`sqlite3_config(SQLITE_CONFIG_MULTITHREAD)` lands. This is *not* a new
+B-track branch; it is a stack-experiment that becomes interesting only
+in one specific A.1-recapture outcome.
+
+What is already true today (no change needed):
+
+- single-writer / 8-reader pool — `lib.rs:158` (`ReaderPool`),
+  `READER_POOL_SIZE = 8` (`lib.rs:48`).
+- WAL — A.3.4 reader_pragmas: `journal_mode=wal`.
+- BEGIN IMMEDIATE on the writer side (migrations + writer txns).
+- one-thread-per-connection ownership — `ReaderPool::borrow` returns a
+  guard with exclusive access; writer is single-threaded by design.
+- `synchronous=2` (FULL) on readers — A.3.4 (readers don't fsync, so
+  this is durability-side; reading it from a reader is informational).
+
+What §5 already settled:
+
+- Reader-side `SQLITE_OPEN_NOMUTEX` was tried at THREADSAFE=1 and
+  reverted because "NOMUTEX only drops the per-connection mutex; we
+  still hit the global mutexes from THREADSAFE=1." The §5 entry is
+  layer-correct: at THREADSAFE=1 the global mutexes dominate and
+  NOMUTEX is irrelevant.
+
+What is genuinely new:
+
+- After B.1 lands MULTITHREAD via `sqlite3_config`, the global mutexes
+  go away. *Then* per-connection mutexes (which NOMUTEX targets)
+  become the next-layer candidate — but only if A.1 recapture against
+  the B.1 branch shows residual `mutex_atomic` cycles still localised
+  in per-connection mutex symbols.
+- `synchronous=NORMAL` and `busy_timeout` are NOT in scope. NORMAL is
+  a write-side durability change (reader pragma is informational),
+  REQ-013 / AC-059b are sacred per resume hard-rule §4.2 — out of
+  Pack 5 scope without a separate ADR. `busy_timeout` is irrelevant
+  (no SQLITE_BUSY observed in A.1/A.3). Shared-cache avoidance is
+  a no-op (rusqlite default already excludes it).
+
+Decision rule for this stack-experiment ("B.1.b" if it runs):
+
+- Trigger: B.1 lands KEEP **or** INCONCLUSIVE; A.1 recapture against
+  the B.1 branch shows residual `mutex_atomic` ≥ 5 % AND those
+  cycles localise in per-connection symbols (e.g. `pthreadMutexEnter`
+  on a per-conn handle), NOT in rusqlite-side or
+  `ReaderPool::borrow` Mutex.
+- Intervention: add `SQLITE_OPEN_NOMUTEX` to the reader-pool
+  `Connection::open_with_flags` call at `lib.rs:775` (writer
+  unchanged — writer is single-threaded but a future contributor
+  could parallelise it, leave the safety margin).
+- Acceptance: concurrent_median drops by an additional ≥ 10 % on top
+  of B.1 alone; `mutex_atomic` share drops at least proportionally;
+  AC-018 stays green.
+- Skip if: A.1 recapture shows residual mutex_atomic < 5 %, OR the
+  residual is in `ReaderPool::borrow`'s Rust-side `Mutex<Vec<Conn>>`
+  (different mutex domain — would need a different fix, e.g. a
+  lock-free pool), OR B.1 alone closes AC-020.
+
+Contract / durability risks:
+
+- `OPEN_NOMUTEX` is safe **iff** one-thread-per-connection is strict.
+  Today it is, but reviewer must check that no `&Connection` escapes
+  a `ReaderPool` guard (e.g. handed across an `await` boundary or
+  stored in a `Send + Sync` container). REQ-055 cursor contract +
+  AC-059b snapshot contract are unaffected because per-connection
+  mutex removal does not change isolation semantics inside a
+  `BEGIN`/`COMMIT` pair.
+- No durability change (synchronous, journal_mode, wal_checkpoint
+  unchanged).
+- Observability change is nil: `EngineEvent` emission, structured
+  errors, and probe paths use the connection through the existing
+  guard.
+
+Slot in the packet:
+
+- A.4 alt-on-fail stays B.3 (per-conn lookaside) — the allocator
+  share is the next-largest super-linear grower per A.2 (2.00×) and
+  has its own evidence chain. B.1.b sits between B.1 and B.3 only
+  if the recapture evidence demands it.
+- Plan §10 ordering and STATUS phase-results table do **not**
+  change. If B.1.b runs, it is recorded as a §12 entry and a §11
+  narrative paragraph just like any other Phase B slot.
+
+This note is the audit trail; no spawn, no prompt file, no §12 line
+created here. If/when the trigger fires, write the spawn brief at
+that point with the recapture numbers in hand.
+
 ---
 
 ## 8. Open questions for the whitepaper
