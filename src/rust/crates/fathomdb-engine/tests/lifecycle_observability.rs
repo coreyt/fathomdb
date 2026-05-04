@@ -8,13 +8,15 @@
 //! a real gap.
 
 use std::collections::BTreeMap;
+use std::fs::OpenOptions;
+use std::io::{Seek, SeekFrom, Write};
 use std::sync::{Arc, Mutex};
 
 use fathomdb_engine::lifecycle::{
     Event, EventCategory, EventSource, Phase, ProfileRecord, ProjectionStatus, SlowStatement,
     StressFailureContext, Subscriber,
 };
-use fathomdb_engine::{CounterSnapshot, Engine, PreparedWrite};
+use fathomdb_engine::{CounterSnapshot, Engine, EngineOpenError, PreparedWrite};
 use tempfile::TempDir;
 
 fn fixture() -> (TempDir, Engine) {
@@ -28,6 +30,7 @@ struct CapturingSubscriber {
     events: Mutex<Vec<Event>>,
     profile_records: Mutex<Vec<ProfileRecord>>,
     slow_statements: Mutex<Vec<SlowStatement>>,
+    stress_failures: Mutex<Vec<StressFailureContext>>,
 }
 
 impl Subscriber for CapturingSubscriber {
@@ -41,6 +44,10 @@ impl Subscriber for CapturingSubscriber {
 
     fn on_slow_statement(&self, signal: &SlowStatement) {
         self.slow_statements.lock().unwrap().push(signal.clone());
+    }
+
+    fn on_stress_failure(&self, context: &StressFailureContext) {
+        self.stress_failures.lock().unwrap().push(context.clone());
     }
 }
 
@@ -375,18 +382,22 @@ fn ac_005b_profile_record_typed_numeric_fields() {
 
 // AC-006: SQLite-internal events surfaced with typed source tag.
 #[test]
-#[ignore = "AC-006: needs corruption-injection harness + SqliteInternal routing"]
 fn ac_006_sqlite_internal_events_typed_source() {
-    let (_dir, engine) = fixture();
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("corrupt-open.sqlite");
+    let opened = Engine::open(&path).expect("seed database");
+    opened.engine.close().expect("close before corruption");
+    corrupt_header(&path);
+
     let sink = Arc::new(CapturingSubscriber::default());
-    let _sub = engine.subscribe(sink.clone());
+    let err = Engine::open_with_subscriber_for_test(&path, sink.clone())
+        .expect_err("corrupted database must fail open");
+
+    assert!(matches!(err, EngineOpenError::Corruption(_)));
+
     let captured = sink.events.lock().unwrap();
     assert!(captured.iter().any(|e| {
-        e.source == EventSource::SqliteInternal
-            && matches!(
-                e.category,
-                EventCategory::Corruption | EventCategory::Recovery | EventCategory::Io
-            )
+        e.source == EventSource::SqliteInternal && e.category == EventCategory::Corruption
     }));
 }
 
@@ -489,18 +500,22 @@ fn ac_008_slow_signal_feeds_lifecycle() {
 
 // AC-009 supporting: Pure-type construction of StressFailureContext.
 #[test]
-#[ignore = "AC-009: needs one-thread-poison robustness fixture (Phase 9+)"]
 fn ac_009_stress_failure_context_constructs() {
-    let ctx = StressFailureContext {
-        thread_group_id: 0,
-        op_kind: "search".to_string(),
-        last_error_chain: vec!["a".to_string(), "b".to_string()],
-        projection_state: "UpToDate".to_string(),
-    };
+    let (_dir, engine) = fixture();
+    let sink = Arc::new(CapturingSubscriber::default());
+    let _sub = engine.subscribe(sink.clone());
+
+    engine.run_one_thread_poison_for_test().expect("poison fixture should emit");
+
+    let captured = sink.stress_failures.lock().unwrap();
+    let ctx = captured.first().expect("one-thread poison must emit a stress failure context");
     let _: u64 = ctx.thread_group_id;
     let _: String = ctx.op_kind.clone();
     let _: Vec<String> = ctx.last_error_chain.clone();
     let _: String = ctx.projection_state.clone();
+    assert!(!ctx.op_kind.is_empty());
+    assert!(!ctx.last_error_chain.is_empty());
+    assert!(!ctx.projection_state.is_empty());
 }
 
 // AC-010: Projection-status enum coverage.
@@ -516,6 +531,13 @@ fn ac_010_projection_status_enum_three_values() {
     assert_ne!(ProjectionStatus::Pending, ProjectionStatus::Failed);
     assert_ne!(ProjectionStatus::Pending, ProjectionStatus::UpToDate);
     assert_ne!(ProjectionStatus::Failed, ProjectionStatus::UpToDate);
+}
+
+fn corrupt_header(path: &std::path::Path) {
+    let mut file = OpenOptions::new().read(true).write(true).open(path).unwrap();
+    file.seek(SeekFrom::Start(0)).unwrap();
+    file.write_all(b"not-a-sqlite-db!").unwrap();
+    file.flush().unwrap();
 }
 
 // Compile-level: CounterSnapshot Default produces zeroed snapshot.

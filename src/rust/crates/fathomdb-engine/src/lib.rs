@@ -1,16 +1,18 @@
 pub mod lifecycle;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::fs::{File, OpenOptions};
 use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Once;
 use std::sync::{Arc, Condvar, Mutex};
-use std::time::Instant;
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
-use fathomdb_embedder_api::EmbedderIdentity;
+use fathomdb_embedder_api::{Embedder, EmbedderError as RuntimeEmbedderError, EmbedderIdentity};
 use fathomdb_query::compile_text_query;
 use fathomdb_schema::{
     migrate_with_event_sink, MigrationError as SchemaMigrationError, MigrationStepReport,
@@ -19,6 +21,7 @@ use fathomdb_schema::{
 use jsonschema::JSONSchema;
 use rusqlite::{params, Connection};
 use serde_json::Value;
+use sqlite_vec::sqlite3_vec_init;
 
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
@@ -30,13 +33,20 @@ const DEFAULT_EMBEDDER_DIMENSION: u32 = 384;
 /// REQ-006a / AC-007a default slow-statement threshold. Mutated at runtime
 /// via [`Engine::set_slow_threshold_ms`].
 const DEFAULT_SLOW_THRESHOLD_MS: u64 = 100;
+const DEFAULT_VECTOR_PROFILE: &str = "default";
+const DEFAULT_VECTOR_PARTITION: &str = "vector_default";
+const DEFAULT_PROVENANCE_ROW_CAP: u64 = 1_000_000;
+const PROJECTION_CURSOR_KEY: &str = "projection_cursor";
+const PROJECTION_WORKERS: usize = 2;
+const PROJECTION_INFLIGHT_LIMIT: usize = PROJECTION_WORKERS * 4;
+const PROJECTION_COMMIT_BATCH: usize = 16;
+const DEFAULT_PROJECTION_RETRY_DELAYS_MS: [u64; 3] = [1_000, 4_000, 16_000];
 
 /// Reader pool size. Per `dev/design/engine.md` § Writer / reader split,
 /// reader connections are pooled and never serialize behind one
 /// connection. AC-021 exercises 8 concurrent readers.
 const READER_POOL_SIZE: usize = 8;
 
-#[derive(Debug)]
 pub struct Engine {
     path: PathBuf,
     next_cursor: AtomicU64,
@@ -48,6 +58,10 @@ pub struct Engine {
     subscribers: Arc<lifecycle::SubscriberRegistry>,
     profiling_enabled: Arc<AtomicBool>,
     slow_threshold_ms: Arc<AtomicU64>,
+    runtime_embedder: Option<Arc<dyn Embedder>>,
+    runtime_embedder_identity: EmbedderIdentity,
+    projection_runtime: ProjectionRuntime,
+    provenance_row_cap: AtomicU64,
     /// Per-connection profile-callback contexts. Each box's pointer is
     /// installed into the connection's `sqlite3_profile` userdata; the
     /// box must outlive the connection so the callback never reads
@@ -63,6 +77,60 @@ pub struct Engine {
     profile_contexts: Mutex<Vec<Box<ProfileContext>>>,
     #[cfg(debug_assertions)]
     force_next_commit_failure: AtomicBool,
+}
+
+#[derive(Clone, Debug)]
+struct ProjectionJob {
+    cursor: u64,
+    kind: String,
+    body: String,
+}
+
+#[derive(Debug, Default)]
+struct ProjectionRuntimeState {
+    active_jobs: usize,
+    queued_jobs: usize,
+    frozen: bool,
+    pending_scan: bool,
+    stopping: bool,
+    in_flight: BTreeSet<u64>,
+}
+
+struct ProjectionRuntimeShared {
+    path: PathBuf,
+    embedder: Option<Arc<dyn Embedder>>,
+    embedder_identity: EmbedderIdentity,
+    state: Mutex<ProjectionRuntimeState>,
+    state_cvar: Condvar,
+    queue: Mutex<VecDeque<ProjectionJob>>,
+    queue_cvar: Condvar,
+    retry_delays_ms: Mutex<Vec<u64>>,
+}
+
+impl std::fmt::Debug for ProjectionRuntimeShared {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProjectionRuntimeShared")
+            .field("path", &self.path)
+            .field("embedder_identity", &self.embedder_identity)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Debug)]
+struct ProjectionRuntime {
+    shared: Arc<ProjectionRuntimeShared>,
+    dispatcher: Mutex<Option<JoinHandle<()>>>,
+    workers: Mutex<Vec<JoinHandle<()>>>,
+}
+
+impl std::fmt::Debug for Engine {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Engine")
+            .field("path", &self.path)
+            .field("closed", &self.closed.load(Ordering::SeqCst))
+            .field("runtime_embedder_identity", &self.runtime_embedder_identity)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Per-connection profile-callback context.
@@ -114,6 +182,114 @@ impl ReaderPool {
 
     fn drain(&self) -> Vec<Connection> {
         self.inner.lock().map(|mut g| std::mem::take(&mut *g)).unwrap_or_default()
+    }
+}
+
+impl ProjectionRuntime {
+    fn new(
+        path: PathBuf,
+        embedder: Option<Arc<dyn Embedder>>,
+        embedder_identity: EmbedderIdentity,
+    ) -> Self {
+        let shared = Arc::new(ProjectionRuntimeShared {
+            path,
+            embedder,
+            embedder_identity,
+            state: Mutex::new(ProjectionRuntimeState::default()),
+            state_cvar: Condvar::new(),
+            queue: Mutex::new(VecDeque::new()),
+            queue_cvar: Condvar::new(),
+            retry_delays_ms: Mutex::new(DEFAULT_PROJECTION_RETRY_DELAYS_MS.to_vec()),
+        });
+
+        let dispatcher_shared = Arc::clone(&shared);
+        let dispatcher = thread::spawn(move || projection_dispatcher_loop(dispatcher_shared));
+
+        let mut workers = Vec::with_capacity(PROJECTION_WORKERS);
+        for _ in 0..PROJECTION_WORKERS {
+            let worker_shared = Arc::clone(&shared);
+            workers.push(thread::spawn(move || projection_worker_loop(worker_shared)));
+        }
+
+        Self { shared, dispatcher: Mutex::new(Some(dispatcher)), workers: Mutex::new(workers) }
+    }
+
+    fn notify_new_work(&self) {
+        if let Ok(mut state) = self.shared.state.lock() {
+            state.pending_scan = true;
+            self.shared.state_cvar.notify_all();
+        }
+    }
+
+    fn set_frozen(&self, frozen: bool) {
+        if let Ok(mut state) = self.shared.state.lock() {
+            state.frozen = frozen;
+            if !frozen {
+                state.pending_scan = true;
+            }
+            self.shared.state_cvar.notify_all();
+        }
+    }
+
+    fn wait_for_idle(&self, timeout_ms: u64) -> bool {
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+        let mut state = match self.shared.state.lock() {
+            Ok(state) => state,
+            Err(_) => return false,
+        };
+        loop {
+            if state.active_jobs == 0 && state.queued_jobs == 0 {
+                drop(state);
+                if !database_has_pending_projection_work(&self.shared.path).unwrap_or(true) {
+                    return true;
+                }
+                state = match self.shared.state.lock() {
+                    Ok(state) => state,
+                    Err(_) => return false,
+                };
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                return false;
+            }
+            let wait = deadline.saturating_duration_since(now);
+            let Ok((next_state, _)) = self.shared.state_cvar.wait_timeout(state, wait) else {
+                return false;
+            };
+            state = next_state;
+        }
+    }
+
+    fn set_retry_delays_for_test(&self, delays_ms: &[u64]) {
+        if let Ok(mut delays) = self.shared.retry_delays_ms.lock() {
+            *delays = delays_ms.to_vec();
+        }
+    }
+
+    fn stop(&self) {
+        if let Ok(mut state) = self.shared.state.lock() {
+            if state.stopping {
+                return;
+            }
+            state.stopping = true;
+            state.pending_scan = false;
+            self.shared.state_cvar.notify_all();
+        }
+        if let Ok(mut queue) = self.shared.queue.lock() {
+            queue.clear();
+            self.shared.queue_cvar.notify_all();
+        }
+
+        if let Ok(mut dispatcher) = self.dispatcher.lock() {
+            if let Some(handle) = dispatcher.take() {
+                let _ = handle.join();
+            }
+        }
+        if let Ok(mut workers) = self.workers.lock() {
+            for handle in workers.drain(..) {
+                let _ = handle.join();
+            }
+        }
     }
 }
 
@@ -315,6 +491,9 @@ pub enum EngineError {
     Projection,
     Vector,
     Embedder,
+    EmbedderNotConfigured,
+    KindNotVectorIndexed,
+    EmbedderDimensionMismatch { expected: u32, actual: u32 },
     Scheduler,
     OpStore,
     WriteValidation,
@@ -330,6 +509,11 @@ impl Display for EngineError {
             Self::Projection => write!(f, "projection error"),
             Self::Vector => write!(f, "vector error"),
             Self::Embedder => write!(f, "embedder error"),
+            Self::EmbedderNotConfigured => write!(f, "embedder is not configured"),
+            Self::KindNotVectorIndexed => write!(f, "kind is not configured for vector indexing"),
+            Self::EmbedderDimensionMismatch { expected, actual } => {
+                write!(f, "embedder dimension mismatch: expected {expected}, actual {actual}")
+            }
             Self::Scheduler => write!(f, "scheduler error"),
             Self::OpStore => write!(f, "op-store error"),
             Self::WriteValidation => write!(f, "write validation error"),
@@ -351,6 +535,9 @@ impl EngineError {
             Self::Projection => "ProjectionError",
             Self::Vector => "VectorError",
             Self::Embedder => "EmbedderError",
+            Self::EmbedderNotConfigured => "EmbedderNotConfiguredError",
+            Self::KindNotVectorIndexed => "KindNotVectorIndexedError",
+            Self::EmbedderDimensionMismatch { .. } => "EmbedderDimensionMismatchError",
             Self::Scheduler => "SchedulerError",
             Self::OpStore => "OpStoreError",
             Self::WriteValidation => "WriteValidationError",
@@ -363,16 +550,34 @@ impl EngineError {
 
 impl Error for EngineError {}
 
+impl Drop for Engine {
+    fn drop(&mut self) {
+        let _ = self.close();
+    }
+}
+
 impl Engine {
     pub fn open(path: impl Into<PathBuf>) -> Result<OpenedEngine, EngineOpenError> {
-        Self::open_with_migration_event_sink(path, |_| {})
+        Self::open_with_embedder_and_subscriber(
+            path,
+            default_embedder_identity(),
+            None,
+            None,
+            &mut |_| {},
+        )
     }
 
     pub fn open_with_migration_event_sink(
         path: impl Into<PathBuf>,
         mut emit_migration_event: impl FnMut(&MigrationStepReport),
     ) -> Result<OpenedEngine, EngineOpenError> {
-        Self::open_with_migrations(path, MIGRATIONS, &mut emit_migration_event)
+        Self::open_with_embedder_and_subscriber(
+            path,
+            default_embedder_identity(),
+            None,
+            None,
+            &mut emit_migration_event,
+        )
     }
 
     #[cfg(debug_assertions)]
@@ -382,18 +587,85 @@ impl Engine {
         migrations: &'static [fathomdb_schema::Migration],
         mut emit_migration_event: impl FnMut(&MigrationStepReport),
     ) -> Result<OpenedEngine, EngineOpenError> {
-        Self::open_with_migrations(path, migrations, &mut emit_migration_event)
+        Self::open_with_migrations(
+            path,
+            migrations,
+            default_embedder_identity(),
+            None,
+            &mut emit_migration_event,
+            None,
+        )
+    }
+
+    #[doc(hidden)]
+    pub fn open_with_subscriber_for_test(
+        path: impl Into<PathBuf>,
+        subscriber: Arc<dyn lifecycle::Subscriber>,
+    ) -> Result<OpenedEngine, EngineOpenError> {
+        Self::open_with_embedder_and_subscriber(
+            path,
+            default_embedder_identity(),
+            None,
+            Some(subscriber),
+            &mut |_| {},
+        )
+    }
+
+    #[doc(hidden)]
+    pub fn open_without_embedder_for_test(
+        path: impl Into<PathBuf>,
+    ) -> Result<OpenedEngine, EngineOpenError> {
+        Self::open_with_embedder_and_subscriber(
+            path,
+            default_embedder_identity(),
+            None,
+            None,
+            &mut |_| {},
+        )
+    }
+
+    #[doc(hidden)]
+    pub fn open_with_embedder_for_test(
+        path: impl Into<PathBuf>,
+        embedder: Arc<dyn Embedder>,
+    ) -> Result<OpenedEngine, EngineOpenError> {
+        let identity = embedder.identity();
+        Self::open_with_embedder_and_subscriber(path, identity, Some(embedder), None, &mut |_| {})
+    }
+
+    fn open_with_embedder_and_subscriber(
+        path: impl Into<PathBuf>,
+        embedder_identity: EmbedderIdentity,
+        runtime_embedder: Option<Arc<dyn Embedder>>,
+        initial_subscriber: Option<Arc<dyn lifecycle::Subscriber>>,
+        emit_migration_event: &mut impl FnMut(&MigrationStepReport),
+    ) -> Result<OpenedEngine, EngineOpenError> {
+        Self::open_with_migrations(
+            path,
+            MIGRATIONS,
+            embedder_identity,
+            runtime_embedder,
+            emit_migration_event,
+            initial_subscriber,
+        )
     }
 
     fn open_with_migrations(
         path: impl Into<PathBuf>,
         migrations: &'static [fathomdb_schema::Migration],
+        embedder_identity: EmbedderIdentity,
+        runtime_embedder: Option<Arc<dyn Embedder>>,
         emit_migration_event: &mut impl FnMut(&MigrationStepReport),
+        initial_subscriber: Option<Arc<dyn lifecycle::Subscriber>>,
     ) -> Result<OpenedEngine, EngineOpenError> {
         let canonical_path = canonical_database_path(&path.into())?;
         let lock = acquire_lock(&canonical_path)?;
-        let open_result =
-            Self::open_locked(canonical_path.clone(), migrations, emit_migration_event);
+        let open_result = Self::open_locked(
+            canonical_path.clone(),
+            migrations,
+            &embedder_identity,
+            emit_migration_event,
+        );
 
         match open_result {
             Ok((connection, readers, report)) => {
@@ -402,6 +674,11 @@ impl Engine {
                 let profiling_enabled = Arc::new(AtomicBool::new(false));
                 let slow_threshold_ms = Arc::new(AtomicU64::new(DEFAULT_SLOW_THRESHOLD_MS));
                 let mut profile_contexts: Vec<Box<ProfileContext>> = Vec::new();
+                let projection_runtime = ProjectionRuntime::new(
+                    canonical_path.clone(),
+                    runtime_embedder.clone(),
+                    embedder_identity.clone(),
+                );
 
                 install_profile_callback(
                     &connection,
@@ -420,9 +697,9 @@ impl Engine {
                     );
                 }
 
-                Ok(OpenedEngine {
+                let opened = OpenedEngine {
                     engine: Self {
-                        path: canonical_path,
+                        path: canonical_path.clone(),
                         next_cursor: AtomicU64::new(next_cursor),
                         closed: AtomicBool::new(false),
                         lock: Mutex::new(Some(lock)),
@@ -432,14 +709,28 @@ impl Engine {
                         subscribers,
                         profiling_enabled,
                         slow_threshold_ms,
+                        runtime_embedder,
+                        runtime_embedder_identity: embedder_identity,
+                        projection_runtime,
+                        provenance_row_cap: AtomicU64::new(DEFAULT_PROVENANCE_ROW_CAP),
                         profile_contexts: Mutex::new(profile_contexts),
                         #[cfg(debug_assertions)]
                         force_next_commit_failure: AtomicBool::new(false),
                     },
                     report,
-                })
+                };
+                if let Some(subscriber) = initial_subscriber {
+                    opened.engine.subscribers.attach_persistent(subscriber);
+                }
+                if database_has_pending_projection_work(&canonical_path).unwrap_or(false) {
+                    opened.engine.projection_runtime.notify_new_work();
+                }
+                Ok(opened)
             }
             Err(err) => {
+                if let Some(subscriber) = initial_subscriber {
+                    emit_open_error_event(&subscriber, &err);
+                }
                 drop(lock);
                 Err(err)
             }
@@ -449,18 +740,24 @@ impl Engine {
     fn open_locked(
         path: PathBuf,
         migrations: &'static [fathomdb_schema::Migration],
+        embedder_identity: &EmbedderIdentity,
         emit_migration_event: &mut impl FnMut(&MigrationStepReport),
     ) -> Result<(Connection, Vec<Connection>, OpenReport), EngineOpenError> {
+        register_sqlite_vec_extension();
         let connection = Connection::open(&path)
-            .map_err(|_| EngineOpenError::Io { message: "could not open database".to_string() })?;
-        connection.pragma_update(None, "journal_mode", "WAL").map_err(|_| EngineOpenError::Io {
-            message: "could not set journal mode".to_string(),
-        })?;
+            .map_err(|err| map_open_sqlite_error(err, OpenStage::HeaderProbe))?;
+        connection
+            .pragma_update(None, "journal_mode", "WAL")
+            .map_err(|err| map_open_sqlite_error(err, OpenStage::WalReplay))?;
+        probe_open_integrity(&connection)?;
 
         reject_legacy_shape(&connection)?;
         let migration = migrate_with_event_sink(&connection, migrations, emit_migration_event)
             .map_err(map_migration_error)?;
-        check_embedder_profile(&connection)?;
+        check_embedder_profile(&connection, embedder_identity)?;
+        ensure_vector_partition(&connection, embedder_identity.dimension).map_err(|_| {
+            EngineOpenError::Io { message: "could not initialize vector partition".to_string() }
+        })?;
 
         let warmup_started = Instant::now();
         let report = OpenReport {
@@ -469,21 +766,20 @@ impl Engine {
             migration_steps: migration.migration_steps,
             embedder_warmup_ms: u64::try_from(warmup_started.elapsed().as_millis())
                 .unwrap_or(u64::MAX),
-            query_backend: "fathomdb-query scaffold",
-            default_embedder: default_embedder_identity(),
+            query_backend: "fathomdb-query + sqlite-vec",
+            default_embedder: embedder_identity.clone(),
         };
 
         let mut readers = Vec::with_capacity(READER_POOL_SIZE);
         for _ in 0..READER_POOL_SIZE {
-            let reader = Connection::open(&path).map_err(|_| EngineOpenError::Io {
-                message: "could not open reader connection".to_string(),
-            })?;
-            reader.pragma_update(None, "journal_mode", "WAL").map_err(|_| EngineOpenError::Io {
-                message: "could not set reader journal mode".to_string(),
-            })?;
-            reader.pragma_update(None, "query_only", "ON").map_err(|_| EngineOpenError::Io {
-                message: "could not set reader query_only".to_string(),
-            })?;
+            let reader = Connection::open(&path)
+                .map_err(|err| map_open_sqlite_error(err, OpenStage::HeaderProbe))?;
+            reader
+                .pragma_update(None, "journal_mode", "WAL")
+                .map_err(|err| map_open_sqlite_error(err, OpenStage::WalReplay))?;
+            reader
+                .pragma_update(None, "query_only", "ON")
+                .map_err(|err| map_open_sqlite_error(err, OpenStage::SchemaProbe))?;
             readers.push(reader);
         }
 
@@ -542,18 +838,30 @@ impl Engine {
         let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
         let connection = connection.as_mut().ok_or(EngineError::Closing)?;
         let plans = validate_batch(connection, batch)?;
+        let projection_jobs = collect_projection_jobs(connection, batch)?;
         #[cfg(debug_assertions)]
         if self.force_next_commit_failure.swap(false, Ordering::SeqCst) {
             return Err(EngineError::Storage);
         }
         let increment = u64::try_from(batch.len()).unwrap_or(u64::MAX);
         let cursor = self.next_cursor.load(Ordering::SeqCst).saturating_add(increment);
+        let pending_projection = !projection_jobs.is_empty();
 
-        if let Err(err) = commit_batch(connection, batch, &plans, cursor) {
+        if let Err(err) = commit_batch(
+            connection,
+            batch,
+            &plans,
+            cursor,
+            pending_projection,
+            self.provenance_row_cap.load(Ordering::Relaxed),
+        ) {
             self.emit_sqlite_internal_error(&err);
             return Err(EngineError::Storage);
         }
         self.next_cursor.store(cursor, Ordering::SeqCst);
+        if pending_projection {
+            self.projection_runtime.notify_new_work();
+        }
 
         Ok(WriteReceipt { cursor })
     }
@@ -638,7 +946,6 @@ impl Engine {
         }
 
         let compiled = compile_text_query(query);
-        let mut results = vec![compiled.sql];
         // REQ-013 / AC-059b / REQ-055: the cursor returned with a search
         // MUST be derived from the same WAL snapshot the data was read
         // from. Loading `next_cursor` from the writer-side atomic before
@@ -647,34 +954,30 @@ impl Engine {
         // contract. Run cursor probe + body query inside one read tx
         // (BEGIN DEFERRED on a `query_only=ON` connection in WAL mode is
         // a snapshot-stable read).
-        let cursor = if let Some(mut reader) = self.reader_pool.borrow() {
-            let cursor = match read_search_in_tx(&mut reader, query.trim(), &mut results) {
-                Ok(c) => c,
-                Err(err) => {
-                    // Surface SQLite-internal failures (e.g. SQLITE_SCHEMA
-                    // cache invalidation under concurrent DDL) on the
-                    // host subscriber path before degrading. AC-021
-                    // dispatches on `code == "SQLITE_SCHEMA"`.
-                    self.emit_sqlite_internal_error(&err);
-                    // Fall back to the writer-side atomic — strictly
-                    // weaker invariant, but search must still return a
-                    // cursor. The previous helper degraded silently;
-                    // surfacing the SqliteInternal event preserves the
-                    // observability contract.
-                    self.next_cursor.load(Ordering::SeqCst)
-                }
-            };
-            self.reader_pool.release(reader);
-            cursor
-        } else {
-            self.next_cursor.load(Ordering::SeqCst)
+        let query_vector = self
+            .runtime_embedder
+            .as_ref()
+            .and_then(|embedder| embedder.embed(query).ok())
+            .and_then(|vector| serde_json::to_string(&vector).ok());
+        let Some(mut reader) = self.reader_pool.borrow() else {
+            return Err(EngineError::Storage);
+        };
+        let search_result = read_search_in_tx(&mut reader, &compiled, query_vector.as_deref());
+        self.reader_pool.release(reader);
+        let (cursor, soft_fallback, results) = match search_result {
+            Ok(result) => result,
+            Err(err) => {
+                self.emit_sqlite_internal_error(&err);
+                return Err(EngineError::Storage);
+            }
         };
 
-        Ok(SearchResult { projection_cursor: cursor, soft_fallback: None, results })
+        Ok(SearchResult { projection_cursor: cursor, soft_fallback, results })
     }
 
     pub fn close(&self) -> Result<(), EngineError> {
         self.closed.store(true, Ordering::SeqCst);
+        self.projection_runtime.stop();
         // Uninstall profile callbacks before dropping the connections so
         // SQLite cannot fire one last callback against a profile context
         // whose Box is about to free. Per `dev/design/engine.md` § Close
@@ -704,8 +1007,13 @@ impl Engine {
     ///
     /// Surface owned by `dev/interfaces/rust.md` § Engine-attached
     /// instrumentation; semantics are owned by `dev/design/lifecycle.md`.
-    pub fn drain(&self, _timeout_ms: u64) -> Result<(), EngineError> {
-        Ok(())
+    pub fn drain(&self, timeout_ms: u64) -> Result<(), EngineError> {
+        self.ensure_open()?;
+        if self.projection_runtime.wait_for_idle(timeout_ms) {
+            Ok(())
+        } else {
+            Err(EngineError::Scheduler)
+        }
     }
 
     /// Snapshot of engine-internal counters.
@@ -772,6 +1080,192 @@ impl Engine {
         Ok(())
     }
 
+    #[doc(hidden)]
+    pub fn run_one_thread_poison_for_test(&self) -> Result<(), EngineError> {
+        self.ensure_open()?;
+        let context = lifecycle::StressFailureContext {
+            thread_group_id: 1,
+            op_kind: "search".to_string(),
+            last_error_chain: vec![EngineError::Closing.to_string()],
+            projection_state: "UpToDate".to_string(),
+        };
+        self.subscribers.dispatch_stress_failure(&context);
+        Ok(())
+    }
+
+    #[doc(hidden)]
+    pub fn set_projection_scheduler_frozen_for_test(&self, frozen: bool) {
+        self.projection_runtime.set_frozen(frozen);
+    }
+
+    #[doc(hidden)]
+    pub fn set_projection_retry_delays_for_test(&self, delays_ms: &[u64]) {
+        self.projection_runtime.set_retry_delays_for_test(delays_ms);
+    }
+
+    #[doc(hidden)]
+    pub fn projection_status_for_test(
+        &self,
+        kind: &str,
+    ) -> Result<lifecycle::ProjectionStatus, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        projection_status(connection, kind)
+    }
+
+    #[doc(hidden)]
+    pub fn has_vector_for_cursor_for_test(&self, cursor: u64) -> Result<bool, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        terminal_state_for_cursor(connection, cursor)
+            .map(|state| matches!(state.as_deref(), Some("up_to_date")))
+            .map_err(|_| EngineError::Storage)
+    }
+
+    #[doc(hidden)]
+    pub fn projection_failure_count_for_test(&self, cursor: u64) -> Result<u64, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        connection
+            .query_row(
+                "SELECT COUNT(*) FROM operational_mutations
+                 WHERE collection_name = 'projection_failures'
+                   AND record_key = ?1",
+                [cursor.to_string()],
+                |row| row.get::<_, u64>(0),
+            )
+            .map_err(|_| EngineError::Storage)
+    }
+
+    #[doc(hidden)]
+    pub fn set_provenance_row_cap_for_test(&self, cap: Option<u64>) {
+        self.provenance_row_cap.store(cap.unwrap_or(0), Ordering::Relaxed);
+    }
+
+    #[doc(hidden)]
+    pub fn provenance_row_count_for_test(&self) -> Result<u64, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        connection
+            .query_row("SELECT COUNT(*) FROM operational_mutations", [], |row| row.get::<_, u64>(0))
+            .map_err(|_| EngineError::Storage)
+    }
+
+    #[doc(hidden)]
+    pub fn oldest_provenance_record_key_for_test(
+        &self,
+        collection: &str,
+    ) -> Result<Option<String>, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        connection
+            .query_row(
+                "SELECT record_key FROM operational_mutations
+                 WHERE collection_name = ?1
+                 ORDER BY id
+                 LIMIT 1",
+                [collection],
+                |row| row.get::<_, String>(0),
+            )
+            .map(Some)
+            .or_else(|err| match err {
+                rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                _ => Err(EngineError::Storage),
+            })
+    }
+
+    #[doc(hidden)]
+    pub fn configure_vector_kind_for_test(&self, kind: &str) -> Result<(), EngineError> {
+        self.ensure_open()?;
+        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+        connection
+            .execute(
+                "INSERT OR REPLACE INTO _fathomdb_vector_kinds(kind, profile, created_at)
+                 VALUES(?1, ?2, 0)",
+                params![kind, DEFAULT_VECTOR_PROFILE],
+            )
+            .map_err(|_| EngineError::Storage)?;
+        Ok(())
+    }
+
+    #[doc(hidden)]
+    pub fn write_vector_for_test(
+        &self,
+        kind: &str,
+        text: &str,
+    ) -> Result<WriteReceipt, EngineError> {
+        self.ensure_open()?;
+        let embedder =
+            self.runtime_embedder.as_ref().cloned().ok_or(EngineError::EmbedderNotConfigured)?;
+
+        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+        if !kind_is_vector_indexed(connection, kind)? {
+            return Err(EngineError::KindNotVectorIndexed);
+        }
+
+        let expected = default_profile_dimension(connection)?;
+        ensure_vector_partition(connection, expected).map_err(|_| EngineError::Storage)?;
+        let vector = embedder.embed(text).map_err(map_runtime_embedder_error)?;
+        let actual = u32::try_from(vector.len()).unwrap_or(u32::MAX);
+        if actual != expected {
+            return Err(EngineError::EmbedderDimensionMismatch { expected, actual });
+        }
+
+        let cursor = self.next_cursor.load(Ordering::SeqCst).saturating_add(1);
+        let blob = encode_vector_blob(&vector);
+        let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+        tx.execute(
+            "INSERT INTO _fathomdb_vector_rows(rowid, kind, write_cursor) VALUES(?1, ?2, ?3)",
+            params![cursor, kind, cursor],
+        )
+        .map_err(|_| EngineError::Storage)?;
+        tx.execute(
+            "INSERT INTO vector_default(rowid, embedding) VALUES(?1, ?2)",
+            params![cursor, blob],
+        )
+        .map_err(|_| EngineError::Storage)?;
+        tx.commit().map_err(|_| EngineError::Storage)?;
+        self.next_cursor.store(cursor, Ordering::SeqCst);
+        Ok(WriteReceipt { cursor })
+    }
+
+    #[doc(hidden)]
+    pub fn vector_row_count_for_test(&self) -> Result<u64, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        connection
+            .query_row("SELECT COUNT(*) FROM vector_default", [], |row| row.get::<_, u64>(0))
+            .map_err(|_| EngineError::Storage)
+    }
+
+    #[doc(hidden)]
+    pub fn read_vector_blob_for_test(&self, rowid: i64) -> Result<Vec<u8>, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        connection
+            .query_row("SELECT embedding FROM vector_default WHERE rowid = ?1", [rowid], |row| {
+                row.get::<_, Vec<u8>>(0)
+            })
+            .map_err(|_| EngineError::Storage)
+    }
+
+    #[doc(hidden)]
+    pub fn default_embedder_profile_for_test(&self) -> Result<EmbedderIdentity, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        load_default_profile(connection).map_err(|_| EngineError::Storage)
+    }
+
     fn ensure_open(&self) -> Result<(), EngineError> {
         if self.closed.load(Ordering::SeqCst) {
             return Err(EngineError::Closing);
@@ -785,34 +1279,477 @@ fn batch_is_admin(batch: &[PreparedWrite]) -> bool {
     !batch.is_empty() && batch.iter().all(|w| matches!(w, PreparedWrite::AdminSchema { .. }))
 }
 
-/// Read `MAX(write_cursor)` and matching body rows inside one read tx.
-///
-/// WAL gives each transaction a stable snapshot at `BEGIN`; querying
-/// `MAX(write_cursor)` from inside that tx therefore yields a cursor
-/// value bounded by the snapshot the body query also reads. Returning
-/// the snapshot cursor satisfies REQ-013 / AC-059b read-after-write
-/// semantics and the REQ-055 monotonic-cursor contract.
+/// Read projection cursor and matching body rows inside one read tx.
 fn read_search_in_tx(
     reader: &mut Connection,
-    needle: &str,
-    results: &mut Vec<String>,
-) -> rusqlite::Result<u64> {
+    compiled: &fathomdb_query::CompiledQuery,
+    query_vector: Option<&str>,
+) -> rusqlite::Result<(u64, Option<SoftFallback>, Vec<String>)> {
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
-    let cursor: u64 =
-        tx.query_row("SELECT COALESCE(MAX(write_cursor), 0) FROM canonical_nodes", [], |row| {
-            row.get(0)
-        })?;
-    let pattern = format!("%{needle}%");
-    {
-        let mut statement = tx
-            .prepare("SELECT body FROM canonical_nodes WHERE body LIKE ?1 ORDER BY write_cursor")?;
-        let rows = statement.query_map([pattern], |row| row.get::<_, String>(0))?;
-        for row in rows.flatten() {
+    let cursor = load_projection_cursor(&tx)?;
+    let vector_results = if let Some(query_vector) = query_vector {
+        let mut rowids = Vec::new();
+        {
+            let mut statement = tx.prepare(
+                "SELECT rowid
+                 FROM vector_default
+                 WHERE embedding MATCH vec_f32(?1)
+                 ORDER BY distance
+                 LIMIT 10",
+            )?;
+            let rows = statement.query_map([query_vector], |row| row.get::<_, i64>(0))?;
+            for row in rows.flatten() {
+                rowids.push(row);
+            }
+        }
+        let mut results = Vec::new();
+        let mut statement =
+            tx.prepare("SELECT body FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1")?;
+        for rowid in rowids {
+            if let Ok(body) = statement.query_row([rowid], |row| row.get::<_, String>(0)) {
+                results.push(body);
+            }
+        }
+        results
+    } else {
+        Vec::new()
+    };
+    let vector_rows_visible = !vector_results.is_empty();
+    let soft_fallback = if query_vector.is_some() && !vector_rows_visible {
+        tx.query_row(
+            "SELECT 1
+             FROM search_index
+             JOIN _fathomdb_vector_kinds ON _fathomdb_vector_kinds.kind = search_index.kind
+             LEFT JOIN _fathomdb_projection_terminal
+               ON _fathomdb_projection_terminal.write_cursor = search_index.write_cursor
+             WHERE search_index MATCH ?1
+              AND _fathomdb_projection_terminal.write_cursor IS NULL
+             LIMIT 1",
+            [compiled.match_expression.as_str()],
+            |_row| Ok(SoftFallback { branch: SoftFallbackBranch::Vector }),
+        )
+        .ok()
+    } else {
+        None
+    };
+    let mut seen = BTreeSet::new();
+    let mut results = Vec::new();
+    for row in vector_results {
+        if seen.insert(row.clone()) {
             results.push(row);
         }
     }
+    {
+        let mut statement = tx.prepare(
+            "SELECT body FROM search_index WHERE search_index MATCH ?1 ORDER BY write_cursor",
+        )?;
+        let rows = statement
+            .query_map([compiled.match_expression.as_str()], |row| row.get::<_, String>(0))?;
+        for row in rows.flatten() {
+            if seen.insert(row.clone()) {
+                results.push(row);
+            }
+        }
+    }
     tx.commit()?;
+    Ok((cursor, soft_fallback, results))
+}
+
+fn projection_dispatcher_loop(shared: Arc<ProjectionRuntimeShared>) {
+    let connection = match open_runtime_connection(&shared.path) {
+        Ok(connection) => connection,
+        Err(_) => return,
+    };
+    loop {
+        let in_flight = {
+            let mut state = match shared.state.lock() {
+                Ok(state) => state,
+                Err(_) => return,
+            };
+            while !state.stopping
+                && (!state.pending_scan
+                    || state.frozen
+                    || state.active_jobs + state.queued_jobs >= PROJECTION_INFLIGHT_LIMIT)
+            {
+                state = match shared.state_cvar.wait(state) {
+                    Ok(state) => state,
+                    Err(_) => return,
+                };
+            }
+            if state.stopping {
+                return;
+            }
+            state.pending_scan = false;
+            state.in_flight.clone()
+        };
+
+        match next_pending_projection_job(&connection, &in_flight) {
+            Ok(Some(job)) => {
+                if let Ok(mut state) = shared.state.lock() {
+                    state.queued_jobs = state.queued_jobs.saturating_add(1);
+                    state.in_flight.insert(job.cursor);
+                    state.pending_scan = true;
+                    shared.state_cvar.notify_all();
+                }
+                if let Ok(mut queue) = shared.queue.lock() {
+                    queue.push_back(job);
+                    shared.queue_cvar.notify_one();
+                }
+            }
+            Ok(None) => {}
+            Err(_) => {
+                if let Ok(mut state) = shared.state.lock() {
+                    state.pending_scan = false;
+                    shared.state_cvar.notify_all();
+                }
+            }
+        }
+    }
+}
+
+fn projection_worker_loop(shared: Arc<ProjectionRuntimeShared>) {
+    let mut connection = match open_runtime_connection(&shared.path) {
+        Ok(connection) => connection,
+        Err(_) => return,
+    };
+    if ensure_vector_partition(&connection, shared.embedder_identity.dimension).is_err() {
+        return;
+    }
+    loop {
+        let jobs = {
+            let mut queue = match shared.queue.lock() {
+                Ok(queue) => queue,
+                Err(_) => return,
+            };
+            loop {
+                let stopping = shared.state.lock().map(|state| state.stopping).unwrap_or(true);
+                if stopping && queue.is_empty() {
+                    return;
+                }
+                if let Some(job) = queue.pop_front() {
+                    let mut jobs = vec![job];
+                    while jobs.len() < PROJECTION_COMMIT_BATCH {
+                        let Some(job) = queue.pop_front() else {
+                            break;
+                        };
+                        jobs.push(job);
+                    }
+                    if let Ok(mut state) = shared.state.lock() {
+                        state.queued_jobs = state.queued_jobs.saturating_sub(jobs.len());
+                        state.active_jobs = state.active_jobs.saturating_add(jobs.len());
+                        shared.state_cvar.notify_all();
+                    }
+                    break jobs;
+                }
+                queue = match shared.queue_cvar.wait(queue) {
+                    Ok(queue) => queue,
+                    Err(_) => return,
+                };
+            }
+        };
+
+        run_projection_jobs(&shared, &mut connection, &jobs);
+
+        if let Ok(mut state) = shared.state.lock() {
+            state.active_jobs = state.active_jobs.saturating_sub(jobs.len());
+            for job in &jobs {
+                state.in_flight.remove(&job.cursor);
+            }
+            if !state.stopping {
+                state.pending_scan = true;
+            }
+            shared.state_cvar.notify_all();
+        }
+    }
+}
+
+enum ProjectionOutcome {
+    Success { cursor: u64, kind: String, blob: Vec<u8> },
+    Failure { cursor: u64, failure_code: &'static str },
+}
+
+fn run_projection_jobs(
+    shared: &ProjectionRuntimeShared,
+    connection: &mut Connection,
+    jobs: &[ProjectionJob],
+) {
+    let mut outcomes = Vec::with_capacity(jobs.len());
+    for job in jobs {
+        outcomes.push(run_projection_job(shared, job));
+    }
+    let _ = commit_projection_outcomes(connection, &outcomes);
+}
+
+fn run_projection_job(shared: &ProjectionRuntimeShared, job: &ProjectionJob) -> ProjectionOutcome {
+    let delays = shared.retry_delays_ms.lock().map(|delays| delays.clone()).unwrap_or_default();
+    let mut last_code = "EmbedderError";
+    for (attempt, delay_ms) in std::iter::once(0_u64).chain(delays.iter().copied()).enumerate() {
+        if attempt > 0 {
+            if shared.state.lock().map(|state| state.stopping).unwrap_or(true) {
+                return ProjectionOutcome::Failure { cursor: job.cursor, failure_code: last_code };
+            }
+            thread::sleep(Duration::from_millis(delay_ms));
+        }
+        let vector = match shared.embedder.as_ref() {
+            Some(embedder) => match embedder.embed(&job.body) {
+                Ok(vector) => vector,
+                Err(RuntimeEmbedderError::Timeout) => {
+                    last_code = "EmbedderError";
+                    continue;
+                }
+                Err(RuntimeEmbedderError::Failed { .. }) => {
+                    last_code = "EmbedderError";
+                    continue;
+                }
+            },
+            None => {
+                last_code = "EmbedderNotConfiguredError";
+                continue;
+            }
+        };
+
+        if u32::try_from(vector.len()).unwrap_or(u32::MAX) != shared.embedder_identity.dimension {
+            last_code = "EmbedderDimensionMismatchError";
+            continue;
+        }
+
+        let blob = encode_vector_blob(&vector);
+        return ProjectionOutcome::Success { cursor: job.cursor, kind: job.kind.clone(), blob };
+    }
+
+    ProjectionOutcome::Failure { cursor: job.cursor, failure_code: last_code }
+}
+
+fn next_pending_projection_job(
+    connection: &Connection,
+    in_flight: &BTreeSet<u64>,
+) -> rusqlite::Result<Option<ProjectionJob>> {
+    let cursor = load_projection_cursor(connection)?;
+    let mut statement = connection.prepare_cached(
+        "SELECT canonical_nodes.write_cursor, canonical_nodes.kind, canonical_nodes.body
+         FROM canonical_nodes
+         JOIN _fathomdb_vector_kinds ON _fathomdb_vector_kinds.kind = canonical_nodes.kind
+         LEFT JOIN _fathomdb_projection_terminal
+           ON _fathomdb_projection_terminal.write_cursor = canonical_nodes.write_cursor
+         WHERE canonical_nodes.write_cursor > ?1
+           AND _fathomdb_projection_terminal.write_cursor IS NULL
+         ORDER BY canonical_nodes.write_cursor
+         LIMIT 32",
+    )?;
+    let rows = statement.query_map([cursor], |row| {
+        Ok(ProjectionJob { cursor: row.get(0)?, kind: row.get(1)?, body: row.get(2)? })
+    })?;
+    for row in rows {
+        let job = row?;
+        if !in_flight.contains(&job.cursor) {
+            return Ok(Some(job));
+        }
+    }
+    Ok(None)
+}
+
+fn database_has_pending_projection_work(path: &Path) -> rusqlite::Result<bool> {
+    let connection = open_runtime_connection(path)?;
+    let cursor = load_projection_cursor(&connection)?;
+    connection
+        .query_row(
+            "SELECT 1
+             FROM canonical_nodes
+             JOIN _fathomdb_vector_kinds ON _fathomdb_vector_kinds.kind = canonical_nodes.kind
+             LEFT JOIN _fathomdb_projection_terminal
+               ON _fathomdb_projection_terminal.write_cursor = canonical_nodes.write_cursor
+             WHERE canonical_nodes.write_cursor > ?1
+               AND _fathomdb_projection_terminal.write_cursor IS NULL
+             LIMIT 1",
+            [cursor],
+            |_row| Ok(true),
+        )
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(false),
+            _ => Err(err),
+        })
+}
+
+fn open_runtime_connection(path: &Path) -> rusqlite::Result<Connection> {
+    let connection = Connection::open(path)?;
+    connection.pragma_update(None, "journal_mode", "WAL")?;
+    Ok(connection)
+}
+
+fn load_projection_cursor(connection: &Connection) -> rusqlite::Result<u64> {
+    connection
+        .query_row(
+            "SELECT value FROM _fathomdb_open_state WHERE key = ?1",
+            [PROJECTION_CURSOR_KEY],
+            |row| row.get::<_, String>(0),
+        )
+        .map(|value| value.parse::<u64>().unwrap_or(0))
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(0),
+            _ => Err(err),
+        })
+}
+
+fn store_projection_cursor(connection: &Connection, cursor: u64) -> rusqlite::Result<()> {
+    connection.execute(
+        "INSERT INTO _fathomdb_open_state(key, value) VALUES(?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![PROJECTION_CURSOR_KEY, cursor.to_string()],
+    )?;
+    Ok(())
+}
+
+fn record_projection_terminal(
+    connection: &Connection,
+    cursor: u64,
+    state: &str,
+) -> rusqlite::Result<()> {
+    connection.execute(
+        "INSERT OR IGNORE INTO _fathomdb_projection_terminal(write_cursor, state) VALUES(?1, ?2)",
+        params![cursor, state],
+    )?;
+    Ok(())
+}
+
+fn terminal_state_for_cursor(
+    connection: &Connection,
+    cursor: u64,
+) -> rusqlite::Result<Option<String>> {
+    connection
+        .query_row(
+            "SELECT state FROM _fathomdb_projection_terminal WHERE write_cursor = ?1",
+            [cursor],
+            |row| row.get::<_, String>(0),
+        )
+        .map(Some)
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            _ => Err(err),
+        })
+}
+
+fn advance_projection_cursor(connection: &Connection) -> rusqlite::Result<u64> {
+    let mut cursor = load_projection_cursor(connection)?;
+    loop {
+        let next = cursor.saturating_add(1);
+        if terminal_state_for_cursor(connection, next)?.is_some() {
+            cursor = next;
+        } else {
+            break;
+        }
+    }
+    store_projection_cursor(connection, cursor)?;
     Ok(cursor)
+}
+
+fn commit_projection_outcomes(
+    connection: &mut Connection,
+    outcomes: &[ProjectionOutcome],
+) -> rusqlite::Result<()> {
+    let tx = connection.transaction()?;
+    for outcome in outcomes {
+        match outcome {
+            ProjectionOutcome::Success { cursor, kind, blob } => {
+                if terminal_state_for_cursor(&tx, *cursor)?.is_some() {
+                    continue;
+                }
+                tx.execute(
+                    "INSERT OR IGNORE INTO _fathomdb_vector_rows(rowid, kind, write_cursor) VALUES(?1, ?2, ?3)",
+                    params![cursor, kind, cursor],
+                )?;
+                tx.execute(
+                    "INSERT OR IGNORE INTO vector_default(rowid, embedding) VALUES(?1, ?2)",
+                    params![cursor, blob],
+                )?;
+                record_projection_terminal(&tx, *cursor, "up_to_date")?;
+            }
+            ProjectionOutcome::Failure { cursor, failure_code } => {
+                if terminal_state_for_cursor(&tx, *cursor)?.is_some() {
+                    continue;
+                }
+                let existing: u64 = tx.query_row(
+                    "SELECT COUNT(*) FROM operational_mutations
+                     WHERE collection_name = 'projection_failures'
+                       AND json_extract(payload_json, '$.write_cursor') = ?1",
+                    [cursor],
+                    |row| row.get(0),
+                )?;
+                if existing == 0 {
+                    let payload = format!(
+                        r#"{{"write_cursor":{cursor},"failure_code":"{failure_code}","recorded_at":0}}"#
+                    );
+                    tx.execute(
+                        "INSERT INTO operational_mutations(
+                            collection_name, record_key, op_kind, payload_json, schema_id, write_cursor
+                         ) VALUES('projection_failures', ?1, 'append', ?2, NULL, ?3)",
+                        params![cursor.to_string(), payload, cursor],
+                    )?;
+                }
+                record_projection_terminal(&tx, *cursor, "failed")?;
+            }
+        }
+    }
+    advance_projection_cursor(&tx)?;
+    tx.commit()
+}
+
+fn enforce_provenance_retention(connection: &Connection, cap: u64) -> rusqlite::Result<()> {
+    if cap == 0 {
+        return Ok(());
+    }
+    let slack = cap.max(20) / 20;
+    let upper = cap.saturating_add(slack.max(1));
+    let count: u64 =
+        connection.query_row("SELECT COUNT(*) FROM operational_mutations", [], |row| row.get(0))?;
+    if count <= upper {
+        return Ok(());
+    }
+    let to_delete = count.saturating_sub(cap);
+    connection.execute(
+        "DELETE FROM operational_mutations
+         WHERE id IN (
+             SELECT id FROM operational_mutations
+             ORDER BY id
+             LIMIT ?1
+         )",
+        [to_delete],
+    )?;
+    Ok(())
+}
+
+fn projection_status(
+    connection: &Connection,
+    kind: &str,
+) -> Result<lifecycle::ProjectionStatus, EngineError> {
+    let latest = connection
+        .query_row(
+            "SELECT COALESCE(MAX(write_cursor), 0) FROM canonical_nodes WHERE kind = ?1",
+            [kind],
+            |row| row.get::<_, u64>(0),
+        )
+        .map_err(|_| EngineError::Storage)?;
+    if latest == 0 {
+        return Ok(lifecycle::ProjectionStatus::UpToDate);
+    }
+    let pending: u64 = connection
+        .query_row(
+            "SELECT COUNT(*)
+             FROM canonical_nodes
+             LEFT JOIN _fathomdb_projection_terminal
+               ON _fathomdb_projection_terminal.write_cursor = canonical_nodes.write_cursor
+             WHERE canonical_nodes.kind = ?1
+               AND _fathomdb_projection_terminal.write_cursor IS NULL",
+            [kind],
+            |row| row.get(0),
+        )
+        .map_err(|_| EngineError::Storage)?;
+    if pending > 0 {
+        return Ok(lifecycle::ProjectionStatus::Pending);
+    }
+    match terminal_state_for_cursor(connection, latest).map_err(|_| EngineError::Storage)? {
+        Some(state) if state == "failed" => Ok(lifecycle::ProjectionStatus::Failed),
+        _ => Ok(lifecycle::ProjectionStatus::UpToDate),
+    }
 }
 
 fn canonical_database_path(path: &Path) -> Result<PathBuf, EngineOpenError> {
@@ -884,6 +1821,25 @@ fn map_migration_error(err: SchemaMigrationError) -> EngineOpenError {
     }
 }
 
+fn register_sqlite_vec_extension() {
+    static REGISTER: Once = Once::new();
+    REGISTER.call_once(|| unsafe {
+        let entrypoint: unsafe extern "C" fn(
+            *mut rusqlite::ffi::sqlite3,
+            *mut *const std::os::raw::c_char,
+            *const rusqlite::ffi::sqlite3_api_routines,
+        ) -> std::os::raw::c_int = std::mem::transmute(sqlite3_vec_init as *const ());
+        rusqlite::ffi::sqlite3_auto_extension(Some(entrypoint));
+    });
+}
+
+fn probe_open_integrity(connection: &Connection) -> Result<(), EngineOpenError> {
+    connection
+        .query_row("PRAGMA schema_version", [], |row| row.get::<_, u32>(0))
+        .map(|_| ())
+        .map_err(|err| map_open_sqlite_error(err, OpenStage::SchemaProbe))
+}
+
 fn reject_legacy_shape(connection: &Connection) -> Result<(), EngineOpenError> {
     let has_legacy_table = table_exists(connection, "fathom_nodes")
         || table_exists(connection, "fathom_edges")
@@ -907,11 +1863,67 @@ fn table_exists(connection: &Connection, table: &str) -> bool {
         .is_ok()
 }
 
-fn default_embedder_identity() -> EmbedderIdentity {
-    EmbedderIdentity::new(DEFAULT_EMBEDDER_NAME, DEFAULT_EMBEDDER_REVISION)
+fn load_default_profile(connection: &Connection) -> rusqlite::Result<EmbedderIdentity> {
+    connection.query_row(
+        "SELECT name, revision, dimension FROM _fathomdb_embedder_profiles WHERE profile = ?1",
+        [DEFAULT_VECTOR_PROFILE],
+        |row| {
+            Ok(EmbedderIdentity::new(
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, u32>(2)?,
+            ))
+        },
+    )
 }
 
-fn check_embedder_profile(connection: &Connection) -> Result<(), EngineOpenError> {
+fn default_profile_dimension(connection: &Connection) -> Result<u32, EngineError> {
+    load_default_profile(connection)
+        .map(|identity| identity.dimension)
+        .map_err(|_| EngineError::Storage)
+}
+
+fn kind_is_vector_indexed(connection: &Connection, kind: &str) -> Result<bool, EngineError> {
+    connection
+        .query_row("SELECT 1 FROM _fathomdb_vector_kinds WHERE kind = ?1", [kind], |_row| Ok(()))
+        .map(|_| true)
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(false),
+            _ => Err(EngineError::Storage),
+        })
+}
+
+fn ensure_vector_partition(connection: &Connection, dimension: u32) -> rusqlite::Result<()> {
+    let sql = format!(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS {DEFAULT_VECTOR_PARTITION} USING vec0(embedding float[{dimension}])"
+    );
+    connection.execute_batch(&sql)
+}
+
+fn encode_vector_blob(vector: &[f32]) -> Vec<u8> {
+    vector.iter().flat_map(|value| value.to_le_bytes()).collect()
+}
+
+fn map_runtime_embedder_error(err: RuntimeEmbedderError) -> EngineError {
+    match err {
+        RuntimeEmbedderError::Failed { .. } | RuntimeEmbedderError::Timeout => {
+            EngineError::Embedder
+        }
+    }
+}
+
+fn default_embedder_identity() -> EmbedderIdentity {
+    EmbedderIdentity::new(
+        DEFAULT_EMBEDDER_NAME,
+        DEFAULT_EMBEDDER_REVISION,
+        DEFAULT_EMBEDDER_DIMENSION,
+    )
+}
+
+fn check_embedder_profile(
+    connection: &Connection,
+    supplied: &EmbedderIdentity,
+) -> Result<(), EngineOpenError> {
     let mut statement = match connection.prepare(
         "SELECT name, revision, dimension FROM _fathomdb_embedder_profiles WHERE profile = 'default'",
     ) {
@@ -942,39 +1954,45 @@ fn check_embedder_profile(connection: &Connection) -> Result<(), EngineOpenError
         })
     })?
     else {
+        connection
+            .execute(
+                "INSERT INTO _fathomdb_embedder_profiles(profile, name, revision, dimension)
+                 VALUES(?1, ?2, ?3, ?4)",
+                params![
+                    DEFAULT_VECTOR_PROFILE,
+                    supplied.name,
+                    supplied.revision,
+                    supplied.dimension
+                ],
+            )
+            .map_err(|_| EngineOpenError::Io {
+                message: "could not persist embedder profile".to_string(),
+            })?;
         return Ok(());
     };
 
-    let stored = EmbedderIdentity::new(
-        row.get::<_, String>(0).map_err(|_| {
-            EngineOpenError::Corruption(CorruptionDetail {
-                kind: CorruptionKind::EmbedderIdentityDrift,
-                stage: OpenStage::EmbedderIdentity,
-                locator: CorruptionLocator::TableRow {
-                    table: "_fathomdb_embedder_profiles",
-                    rowid: 0,
-                },
-                recovery_hint: RecoveryHint {
-                    code: "E_CORRUPT_EMBEDDER_IDENTITY",
-                    doc_anchor: "design/recovery.md#embedder-identity",
-                },
-            })
-        })?,
-        row.get::<_, String>(1).map_err(|_| {
-            EngineOpenError::Corruption(CorruptionDetail {
-                kind: CorruptionKind::EmbedderIdentityDrift,
-                stage: OpenStage::EmbedderIdentity,
-                locator: CorruptionLocator::TableRow {
-                    table: "_fathomdb_embedder_profiles",
-                    rowid: 0,
-                },
-                recovery_hint: RecoveryHint {
-                    code: "E_CORRUPT_EMBEDDER_IDENTITY",
-                    doc_anchor: "design/recovery.md#embedder-identity",
-                },
-            })
-        })?,
-    );
+    let stored_name = row.get::<_, String>(0).map_err(|_| {
+        EngineOpenError::Corruption(CorruptionDetail {
+            kind: CorruptionKind::EmbedderIdentityDrift,
+            stage: OpenStage::EmbedderIdentity,
+            locator: CorruptionLocator::TableRow { table: "_fathomdb_embedder_profiles", rowid: 0 },
+            recovery_hint: RecoveryHint {
+                code: "E_CORRUPT_EMBEDDER_IDENTITY",
+                doc_anchor: "design/recovery.md#embedder-identity",
+            },
+        })
+    })?;
+    let stored_revision = row.get::<_, String>(1).map_err(|_| {
+        EngineOpenError::Corruption(CorruptionDetail {
+            kind: CorruptionKind::EmbedderIdentityDrift,
+            stage: OpenStage::EmbedderIdentity,
+            locator: CorruptionLocator::TableRow { table: "_fathomdb_embedder_profiles", rowid: 0 },
+            recovery_hint: RecoveryHint {
+                code: "E_CORRUPT_EMBEDDER_IDENTITY",
+                doc_anchor: "design/recovery.md#embedder-identity",
+            },
+        })
+    })?;
     let dimension = row.get::<_, u32>(2).map_err(|_| {
         EngineOpenError::Corruption(CorruptionDetail {
             kind: CorruptionKind::EmbedderIdentityDrift,
@@ -986,15 +2004,19 @@ fn check_embedder_profile(connection: &Connection) -> Result<(), EngineOpenError
             },
         })
     })?;
-    let supplied = default_embedder_identity();
 
-    if stored != supplied {
-        return Err(EngineOpenError::EmbedderIdentityMismatch { stored, supplied });
+    let stored = EmbedderIdentity::new(stored_name, stored_revision, dimension);
+
+    if stored.name != supplied.name || stored.revision != supplied.revision {
+        return Err(EngineOpenError::EmbedderIdentityMismatch {
+            stored,
+            supplied: supplied.clone(),
+        });
     }
-    if dimension != DEFAULT_EMBEDDER_DIMENSION {
+    if dimension != supplied.dimension {
         return Err(EngineOpenError::EmbedderDimensionMismatch {
             stored: dimension,
-            supplied: DEFAULT_EMBEDDER_DIMENSION,
+            supplied: supplied.dimension,
         });
     }
 
@@ -1015,6 +2037,21 @@ fn validate_batch(
     batch: &[PreparedWrite],
 ) -> Result<Vec<WritePlan>, EngineError> {
     batch.iter().map(|write| validate_write(connection, write)).collect()
+}
+
+fn collect_projection_jobs(
+    connection: &Connection,
+    batch: &[PreparedWrite],
+) -> Result<Vec<ProjectionJob>, EngineError> {
+    let mut jobs = Vec::new();
+    for write in batch {
+        if let PreparedWrite::Node { kind, body } = write {
+            if kind_is_vector_indexed(connection, kind)? {
+                jobs.push(ProjectionJob { cursor: 0, kind: kind.clone(), body: body.clone() });
+            }
+        }
+    }
+    Ok(jobs)
 }
 
 fn validate_write(
@@ -1117,6 +2154,8 @@ fn commit_batch(
     batch: &[PreparedWrite],
     plans: &[WritePlan],
     cursor: u64,
+    pending_projection: bool,
+    provenance_row_cap: u64,
 ) -> rusqlite::Result<()> {
     let tx = connection.transaction()?;
 
@@ -1127,15 +2166,16 @@ fn commit_batch(
                     "INSERT INTO canonical_nodes(write_cursor, kind, body) VALUES(?1, ?2, ?3)",
                     params![cursor, kind, body],
                 )?;
-                if kind == "force_projection_failure" {
-                    let payload = format!(
-                        r#"{{"write_cursor":{cursor},"failure_code":"E_PROJECTION_FAILED","recorded_at":0}}"#
-                    );
+                tx.execute(
+                    "INSERT INTO search_index(body, kind, write_cursor) VALUES(?1, ?2, ?3)",
+                    params![body, kind, cursor],
+                )?;
+                if kind_is_vector_indexed(&tx, kind).unwrap_or(false) {
                     tx.execute(
-                        "INSERT INTO operational_mutations(
-                            collection_name, record_key, op_kind, payload_json, schema_id, write_cursor
-                         ) VALUES('projection_failures', ?1, 'append', ?2, NULL, ?3)",
-                        params![cursor.to_string(), payload, cursor],
+                        "INSERT INTO _fathomdb_projection_state(kind, last_enqueued_cursor, updated_at)
+                         VALUES(?1, ?2, 0)
+                         ON CONFLICT(kind) DO UPDATE SET last_enqueued_cursor = excluded.last_enqueued_cursor",
+                        params![kind, cursor],
                     )?;
                 }
             }
@@ -1189,6 +2229,12 @@ fn commit_batch(
             _ => return Err(rusqlite::Error::InvalidQuery),
         }
     }
+
+    if !pending_projection {
+        record_projection_terminal(&tx, cursor, "up_to_date")?;
+    }
+    enforce_provenance_retention(&tx, provenance_row_cap)?;
+    advance_projection_cursor(&tx)?;
 
     tx.commit()
 }
@@ -1253,6 +2299,88 @@ fn sqlite_extended_code_name(err: &rusqlite::Error) -> Option<&'static str> {
         rusqlite::ffi::SQLITE_CANTOPEN => "SQLITE_CANTOPEN",
         _ => "SQLITE_UNKNOWN",
     })
+}
+
+fn sqlite_extended_code_name_from_int(extended: i32) -> &'static str {
+    match extended {
+        rusqlite::ffi::SQLITE_SCHEMA => "SQLITE_SCHEMA",
+        rusqlite::ffi::SQLITE_BUSY => "SQLITE_BUSY",
+        rusqlite::ffi::SQLITE_LOCKED => "SQLITE_LOCKED",
+        rusqlite::ffi::SQLITE_CORRUPT => "SQLITE_CORRUPT",
+        rusqlite::ffi::SQLITE_NOTADB => "SQLITE_NOTADB",
+        rusqlite::ffi::SQLITE_IOERR => "SQLITE_IOERR",
+        rusqlite::ffi::SQLITE_FULL => "SQLITE_FULL",
+        rusqlite::ffi::SQLITE_READONLY => "SQLITE_READONLY",
+        rusqlite::ffi::SQLITE_CONSTRAINT => "SQLITE_CONSTRAINT",
+        rusqlite::ffi::SQLITE_MISUSE => "SQLITE_MISUSE",
+        rusqlite::ffi::SQLITE_INTERRUPT => "SQLITE_INTERRUPT",
+        rusqlite::ffi::SQLITE_NOMEM => "SQLITE_NOMEM",
+        rusqlite::ffi::SQLITE_PERM => "SQLITE_PERM",
+        rusqlite::ffi::SQLITE_ABORT => "SQLITE_ABORT",
+        rusqlite::ffi::SQLITE_PROTOCOL => "SQLITE_PROTOCOL",
+        rusqlite::ffi::SQLITE_RANGE => "SQLITE_RANGE",
+        rusqlite::ffi::SQLITE_TOOBIG => "SQLITE_TOOBIG",
+        rusqlite::ffi::SQLITE_MISMATCH => "SQLITE_MISMATCH",
+        rusqlite::ffi::SQLITE_AUTH => "SQLITE_AUTH",
+        rusqlite::ffi::SQLITE_NOTFOUND => "SQLITE_NOTFOUND",
+        rusqlite::ffi::SQLITE_CANTOPEN => "SQLITE_CANTOPEN",
+        _ => "SQLITE_UNKNOWN",
+    }
+}
+
+fn map_open_sqlite_error(err: rusqlite::Error, stage: OpenStage) -> EngineOpenError {
+    let Some(sqlite_error) = err.sqlite_error() else {
+        return EngineOpenError::Io { message: "could not open database".to_string() };
+    };
+    match sqlite_error.extended_code {
+        rusqlite::ffi::SQLITE_CORRUPT | rusqlite::ffi::SQLITE_NOTADB => {
+            EngineOpenError::Corruption(CorruptionDetail {
+                kind: match stage {
+                    OpenStage::WalReplay => CorruptionKind::WalReplayFailure,
+                    OpenStage::HeaderProbe => CorruptionKind::HeaderMalformed,
+                    OpenStage::SchemaProbe => CorruptionKind::SchemaInconsistent,
+                    OpenStage::EmbedderIdentity => CorruptionKind::EmbedderIdentityDrift,
+                },
+                stage,
+                locator: CorruptionLocator::OpaqueSqliteError {
+                    sqlite_extended_code: sqlite_error.extended_code,
+                },
+                recovery_hint: RecoveryHint {
+                    code: match stage {
+                        OpenStage::WalReplay => "E_CORRUPT_WAL_REPLAY",
+                        OpenStage::HeaderProbe => "E_CORRUPT_HEADER",
+                        OpenStage::SchemaProbe => "E_CORRUPT_SCHEMA",
+                        OpenStage::EmbedderIdentity => "E_CORRUPT_EMBEDDER_IDENTITY",
+                    },
+                    doc_anchor: match stage {
+                        OpenStage::WalReplay => "design/recovery.md#wal-replay",
+                        OpenStage::HeaderProbe => "design/recovery.md#header-format",
+                        OpenStage::SchemaProbe => "design/recovery.md#schema-inconsistency",
+                        OpenStage::EmbedderIdentity => "design/recovery.md#embedder-identity",
+                    },
+                },
+            })
+        }
+        _ => EngineOpenError::Io { message: "could not open database".to_string() },
+    }
+}
+
+fn emit_open_error_event(subscriber: &Arc<dyn lifecycle::Subscriber>, err: &EngineOpenError) {
+    if let EngineOpenError::Corruption(detail) = err {
+        let code = match detail.locator {
+            CorruptionLocator::OpaqueSqliteError { sqlite_extended_code } => {
+                Some(sqlite_extended_code_name_from_int(sqlite_extended_code))
+            }
+            _ => None,
+        };
+        let event = lifecycle::Event {
+            phase: lifecycle::Phase::Failed,
+            source: lifecycle::EventSource::SqliteInternal,
+            category: lifecycle::EventCategory::Corruption,
+            code,
+        };
+        subscriber.on_event(&event);
+    }
 }
 
 /// Install a `sqlite3_profile` callback on `connection` that dispatches

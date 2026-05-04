@@ -90,6 +90,8 @@ pub trait Subscriber: Send + Sync {
     fn on_profile(&self, _record: &ProfileRecord) {}
 
     fn on_slow_statement(&self, _signal: &SlowStatement) {}
+
+    fn on_stress_failure(&self, _context: &StressFailureContext) {}
 }
 
 /// Statement-level slow signal.
@@ -137,6 +139,13 @@ impl SubscriberRegistry {
         Subscription { id, registry: Arc::downgrade(self) }
     }
 
+    pub(crate) fn attach_persistent(&self, subscriber: Arc<dyn Subscriber>) {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut entries) = self.entries.lock() {
+            entries.push((id, subscriber));
+        }
+    }
+
     fn detach(&self, id: u64) {
         if let Ok(mut entries) = self.entries.lock() {
             entries.retain(|(eid, _)| *eid != id);
@@ -158,6 +167,12 @@ impl SubscriberRegistry {
     pub(crate) fn dispatch_slow_statement(&self, signal: &SlowStatement) {
         for sub in self.snapshot() {
             sub.on_slow_statement(signal);
+        }
+    }
+
+    pub(crate) fn dispatch_stress_failure(&self, context: &StressFailureContext) {
+        for sub in self.snapshot() {
+            sub.on_stress_failure(context);
         }
     }
 

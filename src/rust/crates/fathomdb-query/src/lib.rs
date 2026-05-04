@@ -5,20 +5,20 @@ pub struct QueryAst {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CompiledQuery {
-    pub sql: String,
+    pub match_expression: String,
 }
 
 #[must_use]
 pub fn compile_text_query(raw: impl Into<String>) -> CompiledQuery {
     let raw = raw.into();
-    let normalized = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    let normalized = raw.split_whitespace().filter(|token| !token.is_empty()).collect::<Vec<_>>();
+    let match_expression = normalized
+        .into_iter()
+        .map(|token| format!("\"{}\"", token.replace('"', "\"\"")))
+        .collect::<Vec<_>>()
+        .join(" AND ");
 
-    CompiledQuery {
-        sql: format!(
-            "SELECT document_id FROM search_index WHERE search_index MATCH {:?}",
-            normalized
-        ),
-    }
+    CompiledQuery { match_expression }
 }
 
 #[cfg(test)]
@@ -28,6 +28,12 @@ mod tests {
     #[test]
     fn normalizes_whitespace() {
         let compiled = compile_text_query("alpha   beta");
-        assert!(compiled.sql.contains("alpha beta"));
+        assert_eq!(compiled.match_expression, "\"alpha\" AND \"beta\"");
+    }
+
+    #[test]
+    fn escapes_double_quotes_in_tokens() {
+        let compiled = compile_text_query("alpha \"beta");
+        assert_eq!(compiled.match_expression, "\"alpha\" AND \"\"\"beta\"");
     }
 }

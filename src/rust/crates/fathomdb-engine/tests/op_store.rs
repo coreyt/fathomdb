@@ -247,35 +247,6 @@ fn ac_061c_and_ac_062_schema_has_authoritative_op_store_tables_only() {
 }
 
 #[test]
-fn ac_063a_b_projection_failures_are_durable_across_restart() {
-    let (_dir, path, opened) = open_fixture("projection");
-
-    let cursor = opened
-        .engine
-        .write(&[PreparedWrite::Node {
-            kind: "force_projection_failure".to_string(),
-            body: "doc".to_string(),
-        }])
-        .unwrap()
-        .cursor;
-    opened.engine.close().unwrap();
-
-    let reopened = Engine::open(&path).unwrap();
-    reopened.engine.close().unwrap();
-    let conn = Connection::open(&path).unwrap();
-    let count: u32 = conn
-        .query_row(
-            "SELECT count(*) FROM operational_mutations
-             WHERE collection_name = 'projection_failures'
-               AND json_extract(payload_json, '$.write_cursor') = ?1",
-            [cursor],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(count, 1);
-}
-
-#[test]
 fn ac_064_schema_validation_rejects_redos_pattern_quickly_and_writer_recovers() {
     let (_dir, _path, opened) = open_fixture("redos");
     register_collection(

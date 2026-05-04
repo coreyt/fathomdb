@@ -305,6 +305,7 @@ dependencies = [
  "proptest",
  "rusqlite",
  "serde_json",
+ "sqlite-vec",
  "tempfile",
 ]
 
@@ -1134,6 +1135,15 @@ name = "smallvec"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
+
+[[package]]
+name = "sqlite-vec"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76b546e18bc6c1ee5154218bd9a7a8a6807b7cbe7d377923ff76a0b6b399c4d5"
+dependencies = [
+ "cc",
+]
 
 [[package]]
 name = "stable_deref_trait"

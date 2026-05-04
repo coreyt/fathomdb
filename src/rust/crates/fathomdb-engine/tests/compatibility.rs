@@ -84,7 +84,7 @@ fn engine_open_emits_migration_step_events() {
     opened.engine.close().unwrap();
 
     let step_ids: Vec<u32> = events.iter().map(|event| event.step_id).collect();
-    assert_eq!(step_ids, vec![2, 3, 4]);
+    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7]);
     assert!(events.iter().all(|event| event.duration_ms.is_some()));
     assert!(events.iter().all(|event| !event.failed));
     assert_eq!(opened.report.migration_steps, events);
@@ -143,8 +143,8 @@ fn ac_048_rejects_stored_embedder_identity_mismatch() {
 
     match err {
         EngineOpenError::EmbedderIdentityMismatch { stored, supplied } => {
-            assert_eq!(stored, EmbedderIdentity::new("other-embedder", "rev-b"));
-            assert_eq!(supplied, EmbedderIdentity::new("fathomdb-noop", "0.6.0-scaffold"));
+            assert_eq!(stored, EmbedderIdentity::new("other-embedder", "rev-b", 384));
+            assert_eq!(supplied, EmbedderIdentity::new("fathomdb-noop", "0.6.0-scaffold", 384));
         }
         other => panic!("expected EmbedderIdentityMismatch, got {other:?}"),
     }

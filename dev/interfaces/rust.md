@@ -45,14 +45,29 @@ These are public instance methods, not extra top-level SDK verbs:
 - `Engine::set_slow_threshold_ms(value: u64) -> Result<(), EngineError>`
 - `Engine::subscribe(&self, subscriber: Arc<dyn lifecycle::Subscriber>) -> Subscription`
 
+`drain` is a bounded completion surface for post-commit projection work. It
+returns `Ok(())` when the engine-owned background projection queue reaches a
+quiescent state before `timeout_ms`, and returns a typed runtime error when the
+timeout elapses first.
+
 `subscribe` owns host-subscriber attachment and may carry heartbeat-cadence
 options. The payload semantics remain owned by `design/lifecycle.md` and
 `design/migrations.md`.
 
+## Companion embedder contract
+
+The Rust workspace also exposes the semver-stable companion crate
+`fathomdb-embedder-api` for engine-owned embedder dispatch:
+
+- `Embedder`
+- `EmbedderIdentity { name, revision, dimension }`
+- `EmbedderError`
+
 ## Caller-visible data shapes
 
 - `WriteReceipt` has exactly one public field: `cursor`
-- `SearchResult` exposes `projection_cursor`
+- `SearchResult` exposes `projection_cursor`, which names the terminal
+  projection-visible point for the search snapshot
 - hybrid fallback, when present, exposes a typed branch enum whose values are
   owned by `design/retrieval.md`
 - counter/profile/stress payload shapes are owned by `design/lifecycle.md`

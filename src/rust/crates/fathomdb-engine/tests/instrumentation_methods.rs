@@ -23,7 +23,7 @@ fn fixture() -> (TempDir, Engine) {
 #[test]
 fn drain_returns_ok_on_open_engine() {
     let (_dir, engine) = fixture();
-    engine.drain(0).expect("drain stub returns Ok");
+    engine.drain(0).expect("idle engine drain should return Ok");
 }
 
 #[test]

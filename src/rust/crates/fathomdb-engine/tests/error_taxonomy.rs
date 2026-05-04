@@ -54,8 +54,8 @@ fn engine_open_error_variants_exist() {
             step_id: 2,
         },
         EngineOpenError::EmbedderIdentityMismatch {
-            stored: EmbedderIdentity::new("a", "0"),
-            supplied: EmbedderIdentity::new("b", "0"),
+            stored: EmbedderIdentity::new("a", "0", 384),
+            supplied: EmbedderIdentity::new("b", "0", 384),
         },
         EngineOpenError::EmbedderDimensionMismatch { stored: 384, supplied: 768 },
         EngineOpenError::Io { message: "sanitized".to_string() },

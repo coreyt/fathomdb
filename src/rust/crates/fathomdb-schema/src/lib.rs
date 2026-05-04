@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use rusqlite::Connection;
 
-pub const SCHEMA_VERSION: u32 = 4;
+pub const SCHEMA_VERSION: u32 = 7;
 
 /// SQLite `PRAGMA` name carrying the on-disk schema-version sentinel.
 ///
@@ -137,6 +137,39 @@ pub const MIGRATIONS: &[Migration] = &[
                   '{}',
                   1,
                   0
+              );",
+    },
+    Migration {
+        step_id: 5,
+        sql: "CREATE VIRTUAL TABLE IF NOT EXISTS search_index USING fts5(
+                  body,
+                  kind UNINDEXED,
+                  write_cursor UNINDEXED
+              );",
+    },
+    Migration {
+        step_id: 6,
+        sql: "CREATE TABLE IF NOT EXISTS _fathomdb_projection_state(
+                  kind TEXT PRIMARY KEY,
+                  last_enqueued_cursor INTEGER NOT NULL DEFAULT 0,
+                  updated_at INTEGER NOT NULL DEFAULT 0
+              );
+              CREATE TABLE IF NOT EXISTS _fathomdb_vector_kinds(
+                  kind TEXT PRIMARY KEY,
+                  profile TEXT NOT NULL,
+                  created_at INTEGER NOT NULL DEFAULT 0
+              );
+              CREATE TABLE IF NOT EXISTS _fathomdb_vector_rows(
+                  rowid INTEGER PRIMARY KEY,
+                  kind TEXT NOT NULL,
+                  write_cursor INTEGER NOT NULL UNIQUE
+              );",
+    },
+    Migration {
+        step_id: 7,
+        sql: "CREATE TABLE IF NOT EXISTS _fathomdb_projection_terminal(
+                  write_cursor INTEGER PRIMARY KEY,
+                  state TEXT NOT NULL CHECK(state IN ('failed', 'up_to_date'))
               );",
     },
 ];
