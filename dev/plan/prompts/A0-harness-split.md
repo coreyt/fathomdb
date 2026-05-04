@@ -175,4 +175,11 @@ Write `dev/plan/runs/A0-harness-split-output.json`:
 
 ## Update log
 
-_(append dated notes here just before spawn — see plan §0.1 step 2)_
+- 2026-05-03 — Baseline commit for the spawn worktree is `1980bf6`
+  (`feat(engine): Phase 9 Pack 1-4 …`). Phase 9 Pack 1-4 production
+  work was sitting uncommitted in the working tree at the original
+  Pack 5 hand-off; landed clerically after `agent-verify.sh` green.
+  `0.6.0-rewrite` branch tip now contains `tests/perf_gates.rs` at
+  the line numbers cited in §"Context" (AC-020 test at line 211,
+  bound assertion at line 245). A.0 is test-only; this phase does
+  not touch any of the freshly landed production code.

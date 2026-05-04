@@ -5,15 +5,28 @@ Single up-to-date progress file for the AC-020 perf packet. Orchestrator
 point. Implementer subagents do **not** edit this file — they write
 `<phase>-output.json` instead, which the orchestrator reads.
 
-Last updated: 2026-05-03 (initial).
+Last updated: 2026-05-03 (Phase 9 Pack 1-4 production landed; markdown lint
+fixes landed; ready to spawn A.0).
 
 ---
 
 ## Current state
 
 - Branch: `0.6.0-rewrite`.
-- HEAD: `da9ae05` (4 docs commits on top of `b4a3261` plan baseline).
-- Pre-flight: PASS — see `dev/plan/runs/preflight-summary.md`.
+- HEAD: `1980bf6` (Phase 9 Pack 1-4 production work — vector runtime,
+  projection terminal, FTS search index, AC-020 perf gate). Prior:
+  `65b15fd` markdownlint fixes; `0dc4785` Pack 5 prompts + STATUS +
+  preflight docs.
+- Baseline drift note: original Pack 5 plan assumed a clean baseline
+  with Pack 1-4 already committed, but those changes were sitting in
+  the working tree. They were committed at `1980bf6` after running
+  `agent-verify.sh` green at that tree. No production changes
+  authored in this resume; the commit is a clerical land of existing
+  WT state.
+- Pre-flight: PASS — see `dev/plan/runs/preflight-summary.md`. (HEAD
+  drifted from `da9ae05` to `1980bf6` since pre-flight; no preflight
+  amendment required because none of the seven checks depend on the
+  engine src state.)
 - Prompts: PASS — 13 files under `dev/plan/prompts/`.
 - Active phase: **none yet** — A.0 next.
 - Active worktrees: none.
@@ -65,8 +78,9 @@ _(none yet — anything CONCERN-severity from reviewer goes here with §12 ref)_
 ## Next action
 
 Pre-write all phase prompt files (plan §10 step 1) → **DONE**.
-Spawn Phase A.0 (test-only harness split, Sonnet medium) once the
-orchestrator confirms.
+Land Phase 9 Pack 1-4 baseline → **DONE** (`1980bf6`).
+Spawn Phase A.0 (test-only harness split, Sonnet medium) from
+baseline `1980bf6`. Orchestrator confirmation pending.
 
 ---
 

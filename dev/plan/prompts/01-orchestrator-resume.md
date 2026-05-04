@@ -33,7 +33,9 @@ after each landed experiment, and close the packet.
 
 ## 2. State at this hand-off
 
-- Branch: `0.6.0-rewrite`. HEAD: `da9ae05`.
+- Branch: `0.6.0-rewrite`. HEAD: `1980bf6` (Phase 9 Pack 1-4
+  production landed clerically from working-tree state on
+  2026-05-03 — see STATUS.md "Baseline drift note").
 - Pre-flight: PASS — `dev/plan/runs/preflight-summary.md`.
 - All phase prompts pre-written under `dev/plan/prompts/`:
   `A0`, `A1`, `A2`, `A3`, `A4`, `B1`, `B2`, `B3`, `C1`, `D1`,
