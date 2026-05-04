@@ -249,11 +249,25 @@ output at `dev/plan/runs/final-synthesis-output.json`. Whitepaper
 landed on `0.6.0-rewrite`. Topology track closed for 0.6.0. AC-020
 itself does not close (conc 155 ms > 100 ms KEEP-rule bound) but the
 residual gap is now WAL/SQLite-internal per Pack 5 + Pack 6 evidence.
-Net position for 0.6.0 GA: ship F.0 + mark REQ-020 deferred in
-`dev/test-plan.md` (or open Pack 7 for WAL2 / vendor-SQLite / reader-
-writer split — not in this packet).
 
 Pack 6 packet CLOSED.
+
+**Pack 6.G OPEN — canonical-SQLite tuning on the F.0 baseline.**
+Read-only G.0 telemetry pass picks the next intervention from
+G.1 (reader lookaside) / G.2 (per-worker stmt cache, sticky-conn
+revisit of E.1) / G.3 (checkpoint policy). Default order
+G.1 → G.2 → G.3 unless G.0 telemetry says otherwise. Pack 7
+(WAL2 / vendor-SQLite / reader-writer split) is the next-packet
+pointer if G-phase exhausts and AC-020 still misses.
+
+- Handoff: `dev/plan/prompts/04-pack6G-handoff-canonical-sqlite-tuning.md`.
+- G.0 prompt: `dev/plan/prompts/G0-wal-checkpoint-telemetry.md`.
+- Active phase: **G.0** (read-only diagnostics, spawn next).
+- Baseline-of-record at G.0 spawn = F.0 final medians:
+  seq 531 ms / conc 155 ms / speedup 3.49× (N=5,
+  `dev/plan/runs/F0-thread-affine-readers-output.json`).
+- Reviewer mandatory on KEEP / INCONCLUSIVE for G.1 / G.2 / G.3
+  (codex `gpt-5.4` high). G.0 read-only — reviewer optional.
 
 ---
 
