@@ -19,7 +19,7 @@ use fathomdb_schema::{
     LOCK_SUFFIX, MIGRATIONS, SCHEMA_VERSION,
 };
 use jsonschema::JSONSchema;
-use rusqlite::{params, Connection, StatementStatus};
+use rusqlite::{params, Connection};
 use serde_json::Value;
 use sqlite_vec::sqlite3_vec_init;
 
@@ -62,9 +62,6 @@ pub struct Engine {
     runtime_embedder_identity: EmbedderIdentity,
     projection_runtime: ProjectionRuntime,
     provenance_row_cap: AtomicU64,
-    /// Counts cache misses for the 4 read-path statements in `read_search_in_tx`.
-    /// Exposed via `search_prepare_count_for_test` / `reset_search_prepare_count_for_test`.
-    search_prepare_misses: AtomicU64,
     /// Per-connection profile-callback contexts. Each box's pointer is
     /// installed into the connection's `sqlite3_profile` userdata; the
     /// box must outlive the connection so the callback never reads
@@ -716,7 +713,6 @@ impl Engine {
                         runtime_embedder_identity: embedder_identity,
                         projection_runtime,
                         provenance_row_cap: AtomicU64::new(DEFAULT_PROVENANCE_ROW_CAP),
-                        search_prepare_misses: AtomicU64::new(0),
                         profile_contexts: Mutex::new(profile_contexts),
                         #[cfg(debug_assertions)]
                         force_next_commit_failure: AtomicBool::new(false),
@@ -966,12 +962,7 @@ impl Engine {
         let Some(mut reader) = self.reader_pool.borrow() else {
             return Err(EngineError::Storage);
         };
-        let search_result = read_search_in_tx(
-            &mut reader,
-            &compiled,
-            query_vector.as_deref(),
-            &self.search_prepare_misses,
-        );
+        let search_result = read_search_in_tx(&mut reader, &compiled, query_vector.as_deref());
         self.reader_pool.release(reader);
         let (cursor, soft_fallback, results) = match search_result {
             Ok(result) => result,
@@ -1275,22 +1266,6 @@ impl Engine {
         load_default_profile(connection).map_err(|_| EngineError::Storage)
     }
 
-    /// Number of times a read-path search statement was NOT found in the
-    /// per-connection statement cache (i.e. a fresh SQLite prepare was issued).
-    ///
-    /// Baseline (no caching): increments 4× per `search` call.
-    /// After `prepare_cached`: increments once per unique SQL per reader
-    /// connection borrowed (≤ 8 readers × 4 statements = 32 ceiling).
-    #[doc(hidden)]
-    pub fn search_prepare_count_for_test(&self) -> u64 {
-        self.search_prepare_misses.load(Ordering::Relaxed)
-    }
-
-    #[doc(hidden)]
-    pub fn reset_search_prepare_count_for_test(&self) {
-        self.search_prepare_misses.store(0, Ordering::Relaxed);
-    }
-
     fn ensure_open(&self) -> Result<(), EngineError> {
         if self.closed.load(Ordering::SeqCst) {
             return Err(EngineError::Closing);
@@ -1309,42 +1284,30 @@ fn read_search_in_tx(
     reader: &mut Connection,
     compiled: &fathomdb_query::CompiledQuery,
     query_vector: Option<&str>,
-    prepare_miss_counter: &AtomicU64,
 ) -> rusqlite::Result<(u64, Option<SoftFallback>, Vec<String>)> {
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
     let cursor = load_projection_cursor(&tx)?;
     let vector_results = if let Some(query_vector) = query_vector {
         let mut rowids = Vec::new();
         {
-            // Readers are query_only=ON and never see DDL; statement cache is
-            // safe across this connection's lifetime (no schema invalidation).
-            let mut statement = tx.prepare_cached(
+            let mut statement = tx.prepare(
                 "SELECT rowid
                  FROM vector_default
                  WHERE embedding MATCH vec_f32(?1)
                  ORDER BY distance
                  LIMIT 10",
             )?;
-            if statement.get_status(StatementStatus::Run) == 0 {
-                prepare_miss_counter.fetch_add(1, Ordering::Relaxed);
-            }
             let rows = statement.query_map([query_vector], |row| row.get::<_, i64>(0))?;
             for row in rows.flatten() {
                 rowids.push(row);
             }
         }
         let mut results = Vec::new();
-        {
-            let mut statement = tx.prepare_cached(
-                "SELECT body FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1",
-            )?;
-            if statement.get_status(StatementStatus::Run) == 0 {
-                prepare_miss_counter.fetch_add(1, Ordering::Relaxed);
-            }
-            for rowid in rowids {
-                if let Ok(body) = statement.query_row([rowid], |row| row.get::<_, String>(0)) {
-                    results.push(body);
-                }
+        let mut statement =
+            tx.prepare("SELECT body FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1")?;
+        for rowid in rowids {
+            if let Ok(body) = statement.query_row([rowid], |row| row.get::<_, String>(0)) {
+                results.push(body);
             }
         }
         results
@@ -1353,7 +1316,7 @@ fn read_search_in_tx(
     };
     let vector_rows_visible = !vector_results.is_empty();
     let soft_fallback = if query_vector.is_some() && !vector_rows_visible {
-        let mut stmt = tx.prepare_cached(
+        tx.query_row(
             "SELECT 1
              FROM search_index
              JOIN _fathomdb_vector_kinds ON _fathomdb_vector_kinds.kind = search_index.kind
@@ -1362,13 +1325,9 @@ fn read_search_in_tx(
              WHERE search_index MATCH ?1
               AND _fathomdb_projection_terminal.write_cursor IS NULL
              LIMIT 1",
-        )?;
-        if stmt.get_status(StatementStatus::Run) == 0 {
-            prepare_miss_counter.fetch_add(1, Ordering::Relaxed);
-        }
-        stmt.query_row([compiled.match_expression.as_str()], |_row| {
-            Ok(SoftFallback { branch: SoftFallbackBranch::Vector })
-        })
+            [compiled.match_expression.as_str()],
+            |_row| Ok(SoftFallback { branch: SoftFallbackBranch::Vector }),
+        )
         .ok()
     } else {
         None
@@ -1381,12 +1340,9 @@ fn read_search_in_tx(
         }
     }
     {
-        let mut statement = tx.prepare_cached(
+        let mut statement = tx.prepare(
             "SELECT body FROM search_index WHERE search_index MATCH ?1 ORDER BY write_cursor",
         )?;
-        if statement.get_status(StatementStatus::Run) == 0 {
-            prepare_miss_counter.fetch_add(1, Ordering::Relaxed);
-        }
         let rows = statement
             .query_map([compiled.match_expression.as_str()], |row| row.get::<_, String>(0))?;
         for row in rows.flatten() {
