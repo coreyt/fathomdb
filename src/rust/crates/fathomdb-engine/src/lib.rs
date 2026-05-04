@@ -22,6 +22,7 @@ use fathomdb_schema::{
 use jsonschema::JSONSchema;
 use rusqlite::{params, Connection};
 use serde_json::Value;
+use sha2::Digest;
 use sqlite_vec::sqlite3_vec_init;
 
 #[cfg(unix)]
@@ -36,6 +37,12 @@ const DEFAULT_EMBEDDER_DIMENSION: u32 = 384;
 const DEFAULT_SLOW_THRESHOLD_MS: u64 = 100;
 const DEFAULT_VECTOR_PROFILE: &str = "default";
 const DEFAULT_VECTOR_PARTITION: &str = "vector_default";
+/// Default drain budget for `rebuild_projections` / `rebuild_vec0`. The
+/// rebuild path freezes the scheduler before truncating shadow rows, so
+/// the only outstanding work is whatever workers were mid-flight when
+/// the call landed; 30 s is generous for normal job sizes and bounded
+/// for tests.
+const REBUILD_DRAIN_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_PROVENANCE_ROW_CAP: u64 = 1_000_000;
 const PROJECTION_CURSOR_KEY: &str = "projection_cursor";
 const PROJECTION_WORKERS: usize = 2;
@@ -786,6 +793,58 @@ impl EngineError {
 }
 
 impl Error for EngineError {}
+
+/// Doctor `check-integrity` invocation flags. `quick` and `round_trip`
+/// are accepted in 0.6.0 but treated as default; only `full` activates
+/// `PRAGMA integrity_check`. Per `dev/design/recovery.md` § Doctor-only
+/// flags.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct CheckIntegrityOpts {
+    pub quick: bool,
+    pub full: bool,
+    pub round_trip: bool,
+}
+
+/// One section of an [`IntegrityReport`]. Either every check in the
+/// section was clean, or one or more typed [`Finding`]s describe the
+/// detected issue. Per AC-043b.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Section {
+    Clean,
+    Findings(Vec<Finding>),
+}
+
+/// Single doctor finding record. Stable report-shape per AC-043c. The
+/// `code` and `doc_anchor` strings are stable dispatch keys owned by
+/// `dev/design/recovery.md` § Code-to-operator-action cross-reference.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Finding {
+    pub code: &'static str,
+    pub stage: &'static str,
+    pub locator: CorruptionLocator,
+    pub doc_anchor: &'static str,
+    pub detail: String,
+}
+
+/// Three-section integrity report. AC-043a pins exactly these three
+/// keys.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IntegrityReport {
+    pub physical: Section,
+    pub logical: Section,
+    pub semantic: Section,
+}
+
+/// Result of a successful [`Engine::safe_export`] call. The returned
+/// `manifest_sha256` equals the SHA-256 of the export file bytes (per
+/// AC-039a) and matches the `sha256` field written into the manifest
+/// JSON.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SafeExportArtifact {
+    pub export_path: PathBuf,
+    pub manifest_path: PathBuf,
+    pub manifest_sha256: String,
+}
 
 impl Drop for Engine {
     fn drop(&mut self) {
@@ -1560,6 +1619,112 @@ impl Engine {
         load_default_profile(connection).map_err(|_| EngineError::Storage)
     }
 
+    /// Doctor read-only integrity report. Three-section output per
+    /// AC-043a/b. `opts.full` adds `PRAGMA integrity_check`. `quick` and
+    /// `round_trip` are accepted but treated as default for 0.6.0.
+    pub fn check_integrity(
+        &self,
+        opts: CheckIntegrityOpts,
+    ) -> Result<IntegrityReport, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        Ok(IntegrityReport {
+            physical: physical_section(connection, opts.full),
+            logical: logical_section(connection),
+            semantic: semantic_section(connection),
+        })
+    }
+
+    /// Doctor bit-preserving export. Runs `VACUUM INTO` to produce a
+    /// self-contained SQLite file at `out`, computes SHA-256 of the
+    /// resulting bytes, and writes a JSON manifest at `manifest`. Per
+    /// AC-039a/b.
+    pub fn safe_export(
+        &self,
+        out: &Path,
+        manifest: &Path,
+    ) -> Result<SafeExportArtifact, EngineError> {
+        self.ensure_open()?;
+        {
+            let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+            let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+            let target = out.to_string_lossy().to_string();
+            connection
+                .execute("VACUUM INTO ?1", params![target])
+                .map_err(|_| EngineError::Storage)?;
+        }
+        let bytes = std::fs::read(out).map_err(|_| EngineError::Storage)?;
+        let digest = sha2::Sha256::digest(&bytes);
+        let sha256_hex = hex_encode(digest.as_slice());
+        let export_abs = out.canonicalize().unwrap_or_else(|_| out.to_path_buf());
+        let manifest_json = serde_json::json!({
+            "export_path": export_abs.to_string_lossy(),
+            "sha256": sha256_hex,
+            "byte_count": bytes.len() as u64,
+        });
+        let manifest_bytes =
+            serde_json::to_vec_pretty(&manifest_json).map_err(|_| EngineError::Storage)?;
+        std::fs::write(manifest, &manifest_bytes).map_err(|_| EngineError::Storage)?;
+        Ok(SafeExportArtifact {
+            export_path: out.to_path_buf(),
+            manifest_path: manifest.to_path_buf(),
+            manifest_sha256: sha256_hex,
+        })
+    }
+
+    /// Operator regenerate workflow per `dev/design/projections.md`
+    /// § Regenerate workflow. Drains in-flight projection work, then
+    /// truncates FTS5 + vec0 shadow rows, resets the projection cursor,
+    /// and lets the scheduler re-enqueue every canonical row. Durable
+    /// `projection_failures` audit rows are preserved per design. AC-044
+    /// + AC-063c.
+    pub fn rebuild_projections(&self) -> Result<(), EngineError> {
+        self.ensure_open()?;
+        self.projection_runtime.set_frozen(true);
+        let _ = self.drain(REBUILD_DRAIN_TIMEOUT_MS);
+        self.rebuild_shadow_state(true)?;
+        self.projection_runtime.set_frozen(false);
+        Ok(())
+    }
+
+    /// Vec0-only variant of [`Engine::rebuild_projections`]. Leaves
+    /// FTS5 shadow content untouched; per recovery design,
+    /// `recover --rebuild-vec0` is the surface for vec0-only repair.
+    pub fn rebuild_vec0(&self) -> Result<(), EngineError> {
+        self.ensure_open()?;
+        self.projection_runtime.set_frozen(true);
+        let _ = self.drain(REBUILD_DRAIN_TIMEOUT_MS);
+        self.rebuild_shadow_state(false)?;
+        self.projection_runtime.set_frozen(false);
+        Ok(())
+    }
+
+    fn rebuild_shadow_state(&self, include_fts: bool) -> Result<(), EngineError> {
+        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+        let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+        if include_fts {
+            tx.execute("DELETE FROM search_index", []).map_err(|_| EngineError::Storage)?;
+        }
+        tx.execute("DELETE FROM vector_default", []).map_err(|_| EngineError::Storage)?;
+        tx.execute("DELETE FROM _fathomdb_vector_rows", []).map_err(|_| EngineError::Storage)?;
+        tx.execute("DELETE FROM _fathomdb_projection_terminal", [])
+            .map_err(|_| EngineError::Storage)?;
+        store_projection_cursor(&tx, 0).map_err(|_| EngineError::Storage)?;
+        if include_fts {
+            for row in canonical_node_rows(&tx).map_err(|_| EngineError::Storage)? {
+                tx.execute(
+                    "INSERT INTO search_index(body, kind, write_cursor) VALUES(?1, ?2, ?3)",
+                    params![row.body, row.kind, row.cursor],
+                )
+                .map_err(|_| EngineError::Storage)?;
+            }
+        }
+        tx.commit().map_err(|_| EngineError::Storage)?;
+        Ok(())
+    }
+
     fn ensure_open(&self) -> Result<(), EngineError> {
         if self.closed.load(Ordering::SeqCst) {
             return Err(EngineError::Closing);
@@ -1862,6 +2027,155 @@ fn database_has_pending_projection_work(path: &Path) -> rusqlite::Result<bool> {
             rusqlite::Error::QueryReturnedNoRows => Ok(false),
             _ => Err(err),
         })
+}
+
+struct CanonicalNodeRow {
+    cursor: u64,
+    kind: String,
+    body: String,
+}
+
+fn canonical_node_rows(connection: &Connection) -> rusqlite::Result<Vec<CanonicalNodeRow>> {
+    let mut statement = connection
+        .prepare("SELECT write_cursor, kind, body FROM canonical_nodes ORDER BY write_cursor")?;
+    let rows = statement.query_map([], |row| {
+        Ok(CanonicalNodeRow {
+            cursor: row.get::<_, u64>(0)?,
+            kind: row.get::<_, String>(1)?,
+            body: row.get::<_, String>(2)?,
+        })
+    })?;
+    rows.collect()
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        out.push(hex_nibble(byte >> 4));
+        out.push(hex_nibble(byte & 0x0f));
+    }
+    out
+}
+
+fn hex_nibble(value: u8) -> char {
+    match value {
+        0..=9 => (b'0' + value) as char,
+        10..=15 => (b'a' + value - 10) as char,
+        _ => unreachable!(),
+    }
+}
+
+fn physical_section(connection: &Connection, full: bool) -> Section {
+    let mut findings = Vec::new();
+    if let Err(err) = connection.query_row("PRAGMA page_count", [], |row| row.get::<_, i64>(0)) {
+        findings.push(Finding {
+            code: "E_CORRUPT_HEADER",
+            stage: "PhysicalProbe",
+            locator: locator_from_rusqlite_error(&err),
+            doc_anchor: "design/recovery.md#header-malformed",
+            detail: format!("page_count probe failed: {err}"),
+        });
+    }
+    if full {
+        match collect_integrity_check_findings(connection) {
+            Ok(rows) => findings.extend(rows),
+            Err(err) => findings.push(Finding {
+                code: "E_CORRUPT_INTEGRITY_CHECK",
+                stage: "IntegrityCheck",
+                locator: locator_from_rusqlite_error(&err),
+                doc_anchor: "design/recovery.md#integrity-check-full-findings",
+                detail: format!("PRAGMA integrity_check failed: {err}"),
+            }),
+        }
+    }
+    if findings.is_empty() {
+        Section::Clean
+    } else {
+        Section::Findings(findings)
+    }
+}
+
+fn logical_section(connection: &Connection) -> Section {
+    let mut findings = Vec::new();
+    if let Err(err) = connection.query_row("PRAGMA schema_version", [], |row| row.get::<_, i64>(0))
+    {
+        findings.push(Finding {
+            code: "E_CORRUPT_SCHEMA",
+            stage: "SchemaProbe",
+            locator: locator_from_rusqlite_error(&err),
+            doc_anchor: "design/recovery.md#schema-inconsistent",
+            detail: format!("schema_version probe failed: {err}"),
+        });
+    }
+    match connection.query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0)) {
+        Ok(0) => findings.push(Finding {
+            code: "E_CORRUPT_SCHEMA",
+            stage: "SchemaProbe",
+            locator: CorruptionLocator::MigrationStep { from: 0, to: 0 },
+            doc_anchor: "design/recovery.md#schema-inconsistent",
+            detail: "user_version is zero".to_string(),
+        }),
+        Ok(_) => {}
+        Err(err) => findings.push(Finding {
+            code: "E_CORRUPT_SCHEMA",
+            stage: "SchemaProbe",
+            locator: locator_from_rusqlite_error(&err),
+            doc_anchor: "design/recovery.md#schema-inconsistent",
+            detail: format!("user_version probe failed: {err}"),
+        }),
+    }
+    if findings.is_empty() {
+        Section::Clean
+    } else {
+        Section::Findings(findings)
+    }
+}
+
+fn semantic_section(connection: &Connection) -> Section {
+    match load_default_profile(connection) {
+        Ok(_) => Section::Clean,
+        Err(rusqlite::Error::QueryReturnedNoRows) => Section::Findings(vec![Finding {
+            code: "E_CORRUPT_EMBEDDER_IDENTITY",
+            stage: "EmbedderIdentity",
+            locator: CorruptionLocator::TableRow { table: "_fathomdb_embedder_profiles", rowid: 0 },
+            doc_anchor: "design/recovery.md#embedder-identity-drift",
+            detail: "default embedder profile row is missing".to_string(),
+        }]),
+        Err(err) => Section::Findings(vec![Finding {
+            code: "E_CORRUPT_EMBEDDER_IDENTITY",
+            stage: "EmbedderIdentity",
+            locator: locator_from_rusqlite_error(&err),
+            doc_anchor: "design/recovery.md#embedder-identity-drift",
+            detail: format!("default embedder profile probe failed: {err}"),
+        }]),
+    }
+}
+
+fn collect_integrity_check_findings(connection: &Connection) -> rusqlite::Result<Vec<Finding>> {
+    let mut statement = connection.prepare("PRAGMA integrity_check")?;
+    let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+    let mut findings = Vec::new();
+    for row in rows {
+        let message = row?;
+        if message == "ok" {
+            continue;
+        }
+        findings.push(Finding {
+            code: "E_CORRUPT_INTEGRITY_CHECK",
+            stage: "IntegrityCheck",
+            locator: CorruptionLocator::OpaqueSqliteError {
+                sqlite_extended_code: rusqlite::ffi::SQLITE_CORRUPT,
+            },
+            doc_anchor: "design/recovery.md#integrity-check-full-findings",
+            detail: message,
+        });
+    }
+    Ok(findings)
+}
+
+fn locator_from_rusqlite_error(err: &rusqlite::Error) -> CorruptionLocator {
+    let extended = err.sqlite_error().map(|inner| inner.extended_code).unwrap_or(0);
+    CorruptionLocator::OpaqueSqliteError { sqlite_extended_code: extended }
 }
 
 fn open_runtime_connection(path: &Path) -> rusqlite::Result<Connection> {
