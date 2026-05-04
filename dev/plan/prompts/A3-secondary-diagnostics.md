@@ -225,4 +225,25 @@ grep -E "^(THREADSAFE|MUTEX|MEMSYS)" dev/plan/runs/A3-evidence/compile_options.t
 
 ## Update log
 
-_(append dated notes here just before spawn)_
+- 2026-05-03 — A.2 PICK_B1 already locked (mutex_atomic 5.73×
+  growth dominant). A.3 runs anyway per plan §10 step 3 for
+  evidence completeness — strace syscall histogram + SQLite
+  THREADSAFE integer + futex/clone counter ratios cross-check the
+  A.2 verdict and provide A.4's decision record with quantitative
+  cross-corroboration.
+- A.1 baseline (carry into output JSON):
+  - sequential N=5 `[189,199,182,179,176]` ms; median 182, stddev 9.2
+  - concurrent N=5 `[120,110,117,115,112]` ms; median 115, stddev 4.0
+- A.2 classification (carry into output JSON / cross-check
+  expectations): mutex_atomic 6.45→36.98 (5.73×), allocator
+  1.60→3.20 (2.00×), vec0_fts 24.12→11.43 (0.47×), sql_parse
+  10.08→7.07, page_cache 1.64→1.46, our_code 0.52→0.17.
+- Expected strace signal under the mutex_atomic verdict:
+  `futex` calls per concurrent run should outnumber sequential by
+  ≥ 5× (consistent with the cycle-share growth). If `futex` does
+  NOT scale that way, A.3 contradicts A.2 — surface as A.4 input.
+- Spawn baseline: `0.6.0-rewrite` tip (currently `4a1b285`,
+  descendant of A.1 commit `ca0d8f0`). Replace `<A0_COMMIT_SHA>`
+  in spawn block with `0.6.0-rewrite`.
+- A.3 mandate is read-only diagnostic + numeric output JSON; no
+  production-code edits, no test edits.
