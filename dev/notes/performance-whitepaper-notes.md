@@ -151,6 +151,33 @@ without closing the gap.
   it on first connection open), so `sqlite3_config` returns
   `SQLITE_MISUSE` and is silently ignored. Not yet validated by capturing
   the return code.
+- Read-path `prepare_cached` on the four search statements
+  (`vec0_match`, `canonical_lookup`, `soft_fallback_probe`,
+  `fts_match`) at long-lived reader connections (E.1, 2026-05-03,
+  REVERTED via `git revert` `1739b17`+`3e047a3`). Implementation
+  worked: prepares per search dropped from 4 to 0 post-warmup
+  (verified by counter test). Sequential improved -13.7% (182→157
+  ms) — parse-cost relief is real. **But concurrent did NOT improve**
+  (115→125 ms; +3.5 ms over the B.1/C.1 environmental drift
+  baseline ~121 ms; statistically flat). Speedup 1.58→1.27×
+  (-19.9%) because sequential dropped without concurrent dropping
+  — gate ratio worsens. Codex `gpt-5.4` reviewer (mandatory for
+  KEEP path) returned **BLOCK** with three findings: (1) new
+  `pub fn ..._for_test` accessors expand public surface without
+  ADR / `dev/interfaces/rust.md` update — Public surface is
+  contract per AGENTS.md §1; (2) `concurrent_median = 125 > 115`
+  matches the **REVERT** threshold of the written rule, not the
+  `INCONCLUSIVE` decision the implementer recorded; (3) test
+  exercised 3 of 4 statements (300 baseline misses, not 400
+  mandated). Phase 7/8 invariants all PASS. Reverting per
+  reviewer; the parse-cost relief is real but does not help
+  AC-020 (in fact tightens the bound). Do NOT retry
+  `prepare_cached` on read-path search until the rusqlite-side
+  per-call lock-contention layer is understood — the residual
+  contention is upstream of where parse cost sits. Output:
+  `dev/plan/runs/E1-prepare-cached-readers-output.json` (now
+  removed by revert; archived in commit `91c69e9`'s tree). Review
+  verdict: `dev/plan/runs/E1-review-20260504T031424Z.md`.
 - Compile-time `SQLITE_THREADSAFE=2` rebuild via
   `LIBSQLITE3_FLAGS="-USQLITE_THREADSAFE -DSQLITE_THREADSAFE=2"`
   in `.cargo/config.toml` (C.1, 2026-05-03, REVERTED `15c6473`,
@@ -1049,3 +1076,93 @@ Expected outcome window: concurrent 30-80 ms (median), speedup
 5-12×. Lower bound assumes near-linear 8-thread scaling once
 contention is removed; upper bound respects the vec0/FTS work
 that is itself non-trivial and can't be parallelised away.
+
+**E.1 — `prepare_cached` on read-path (REVERT via `git revert`
+`1739b17`+`3e047a3`, 2026-05-03, Sonnet high; reviewer codex
+`gpt-5.4` BLOCK).** Implementation correct: 4 statements
+(`vec0_match`, `canonical_lookup`, `soft_fallback_probe`,
+`fts_match`) switched from `tx.prepare()` to `tx.prepare_cached()`
+on the long-lived reader connections; new
+`tests/prepare_cached_readers.rs` (4 tests) verified misses drop
+from ~300 baseline to ≤ 32 (8 readers × 4 stmts) post-warmup.
+Sequential improved measurably — parse cost relief is real.
+
+| metric            | A.1 baseline | E.1 after | delta   |
+|-------------------|--------------|-----------|---------|
+| sequential median | 182 ms       | 157 ms    | -13.7%  |
+| concurrent median | 115 ms       | 125 ms    | +8.7%   |
+| speedup median    | 1.58×        | 1.266×    | -19.9%  |
+| prepares/search   | 4            | 0 (warm)  | ✓       |
+| AC-017 / AC-018   | green        | green     | flat    |
+
+The concurrent change (+10 ms over A.1 / +3.5 ms over B.1/C.1
+drift) is statistical noise. **Sequential improvement does not
+help AC-020**: the gate is `concurrent ≤ sequential × 1.25/8`,
+so a lower sequential lowers the bound — gate gets *harder*,
+not easier. -19.9% speedup confirms.
+
+Reviewer (codex `gpt-5.4`, mandatory for KEEP path per plan §0.1)
+returned **BLOCK** with three substantive findings:
+
+1. `pub fn search_prepare_count_for_test()` and
+   `reset_search_prepare_count_for_test()` at `lib.rs:1285+1290`
+   expand the Rust public surface without an ADR or update to
+   `dev/interfaces/rust.md`. AGENTS.md §1 "Public surface is
+   contract" — block.
+2. `concurrent_median = 125 ms > 115 ms threshold` matches the
+   *written* REVERT rule in the E.1 prompt, not the
+   `INCONCLUSIVE` decision the implementer recorded. The
+   "environmental drift" allowance the implementer cited is not
+   part of the written rule. Block.
+3. Test exercised 3 of the 4 statements (300 baseline misses,
+   not the mandated 400). Concern.
+
+Phase 7/8 invariants (lifecycle event taxonomy, snapshot/cursor,
+profile-callback safety, reader-pool ADR, file lock,
+projection-runtime lifecycle) all PASS — code change was narrow
+and contract-respecting on the runtime side; only the surface-
+contract + decision-rule findings were load-bearing.
+
+Decision: REVERT per reviewer. Reverted via `git revert`
+(non-destructive) — both `1739b17` (source) and `3e047a3`
+(output JSON) recorded. Worktree + branch cleaned. Output JSON
+archived in the reverted commit `91c69e9`'s tree for audit.
+
+Pivot interpretation: the concurrent-side bottleneck is NOT
+parse cost. Combined with B.1+C.1 closing the SQLite mutex track,
+the surviving candidates for the conc spinlock symbols are:
+
+- **rusqlite-side internal Mutex** wrapping the sqlite3 handle
+  (rusqlite is thread-safe via Mutex regardless of SQLite's
+  THREADSAFE setting).
+- **Our own `ReaderPool::borrow` `Mutex<Vec<Connection>>`** at
+  `lib.rs:154` — every borrow + release acquires this Mutex.
+- **WAL shared-memory atomics** for frame counters / page refs
+  (SQLite uses these regardless of threading mode).
+
+The first two are architectural; the third is a SQLite-internal
+that no Pack 5 intervention can reach. **Do NOT retry
+`prepare_cached` on the read path until the upstream per-call
+lock-contention layer is understood.** The §5 entry has been
+updated with this finding.
+
+E.3 (reader `cache_size` / `mmap_size` re-try): §5's prior revert
+already noted "did not change the concurrency ratio." With
+mutex AND parse both ruled out, E.3's expected impact is small
+(reads on a 4-row fixture are already cache-hot). Skipping E.3
+to proceed directly to final synthesis — the data is sufficient
+to characterize the residual without burning another experiment
+slot on a likely-flat outcome. If a future packet wants to
+revisit, the `cache_size` track is well-targeted at *absolute*
+sequential latency, not at the AC-020 ratio.
+
+**Pack 5 packet outcome (preliminary, pending final synthesis):**
+Mutex track and parse-cost track both ruled out via clean
+falsification. Residual concurrent contention is in
+rusqlite-side or `ReaderPool` Rust-side Mutex (most likely) or
+WAL shared-memory atomics (less likely). All three require
+architectural changes (lock-free pool replacement, async I/O,
+or a structurally different SQLite usage pattern) that exceed
+Pack 5 scope. Recommendation: close Pack 5 as evidence-rich
+diagnostic packet; open a follow-up packet for the architectural
+intervention with this packet's evidence as its starting point.

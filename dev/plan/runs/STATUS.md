@@ -5,7 +5,7 @@ Single up-to-date progress file for the AC-020 perf packet. Orchestrator
 point. Implementer subagents do **not** edit this file — they write
 `<phase>-output.json` instead, which the orchestrator reads.
 
-Last updated: 2026-05-03 (C.1 REVERT `15c6473` — compile-time THREADSAFE=2 also flat; mutex track CLOSED; §7.8 activated → E.1 spawn next).
+Last updated: 2026-05-03 (E.1 REVERT via `git revert` `1739b17`+`3e047a3` per codex BLOCK; mutex+parse exhausted; final-synthesis next).
 
 ---
 
@@ -43,10 +43,12 @@ Last updated: 2026-05-03 (C.1 REVERT `15c6473` — compile-time THREADSAFE=2 als
   amendment required because none of the seven checks depend on the
   engine src state.)
 - Prompts: PASS — 13 files under `dev/plan/prompts/`.
-- Active phase: **none** — A.0 / A.1 / A.2 / A.3 / A.4 / B.1 / C.1
-  all closed. Both B.1 (runtime) and C.1 (compile-time) REVERT
-  clean. **Mutex track CLOSED.** Per A.4 kill criterion + §7.8:
-  E.1 next (replaces D.1).
+- Active phase: **none** — A.0 / A.1 / A.2 / A.3 / A.4 / B.1 / C.1 /
+  E.1 all closed. Mutex track CLOSED (B.1+C.1 REVERT). Parse track
+  CLOSED (E.1 REVERT per reviewer BLOCK; sequential improved but
+  concurrent unchanged + bound tightened). Residual is
+  architectural (rusqlite-side / ReaderPool Mutex / WAL atomics).
+  Final synthesis next.
 - Active worktrees: none.
 - Anti-chaining defenses (resume §4 update at `fc3dda3`) verified
   WORKING on B.1 #2 + C.1: PREAMBLE prepended via stdin,
@@ -81,7 +83,12 @@ packet's acceptance criterion.
 | B.2   | -       | -        | -        | -        | -      | conditional on B.1 KEEP |
 | B.3   | -       | -        | -        | -        | -      | conditional             |
 | C.1   | 2026-05-03 | REVERT | skipped (no diff) | cleaned | `15c6473` (JSON+evidence) | THREADSAFE=2 verified live (sqlite3_threadsafe()==2 + PRAGMA both green pre-revert), AC-020 conc 115→121.5ms (+5.65%, ~1.2σ), speedup 1.58→1.509× (-4.48%). Hot symbols are NOT SQLite threading-mode mutexes (likely WAL atomics). Mutex track CLOSED. |
-| E.1   | -       | -        | -        | -        | -      | activated per §7.8: prepare_cached on 4 read-path stmts |
+| E.1   | 2026-05-03 | REVERT | BLOCK (codex gpt-5.4) | cleaned | reverted via `1739b17`+`3e047a3` (orig `e4ff255`+`91c69e9`) | `prepare_cached` on 4 read stmts; seq -13.7% (parse-cost relief real) but conc unchanged + bound tightened (speedup 1.58→1.266×); reviewer flagged surface-contract + decision-rule mismatch + partial test coverage. Pivot: residual conc contention is upstream of parse cost — architectural. |
+| B.3   | -       | -        | -        | -        | -      | SKIPPED (mutex track closed by C.1) |
+| D.1   | -       | -        | -        | -        | -      | SKIPPED in-packet (architectural; out of Pack 5 scope) |
+| E.3   | -       | -        | -        | -        | -      | SKIPPED (§5 already noted cache_size doesn't move conc ratio) |
+| E.4   | -       | -        | -        | -        | -      | SKIPPED (writer-side; workload is read-heavy) |
+| final | 2026-05-03 | (in progress) | n/a | n/a | TBD | main thread synthesis |
 | D.1   | -       | -        | -        | -        | -      | parallel track          |
 | final | -       | -        | -        | -        | -      | -                       |
 
@@ -176,17 +183,15 @@ Land Phase 9 Pack 1-4 baseline → **DONE** (`1980bf6`).
 Phase A.0 KEEP `fec71a0` → A.1 KEEP `ca0d8f0` → A.2 PICK_B1 → A.3
 PARTIAL_KEEP `edb0c84` → A.4 PICK_B1 OVERRIDE — all DONE.
 
-B.1 + C.1 both REVERT (mutex track CLOSED). E.1 activated per
-§7.8. Auto-mode: continue without pause per user authorization
-2026-05-03.
+All planned experiments closed. Mutex (B.1+C.1) and parse
+(E.1) tracks both ruled out via clean falsification. Residual
+contention is architectural (rusqlite-side or ReaderPool Mutex,
+or WAL shared-memory atomics) — out of Pack 5 scope.
 
-**Spawn E.1** (`prepare_cached` on read-path search statements —
-Sonnet 4.6 high, reviewer codex `gpt-5.4` MANDATORY for KEEP
-path) from `0.6.0-rewrite` tip after this bookkeeping commit
-lands. 3-layer anti-chaining defenses on. Decision rule: KEEP
-iff conc_median≤80ms AND speedup≥5.0× AND AC-018 green.
-INCONCLUSIVE band 80-100 ms ⇒ stack E.3 (reader cache_size +
-mmap_size re-try) on top.
+**Final synthesis** (main thread Opus 4.7) — write closing
+narrative + recommendations + handoff to next packet. Output:
+`dev/plan/runs/final-synthesis-output.json` per
+`dev/plan/prompts/final-synthesis.md`.
 
 ---
 
