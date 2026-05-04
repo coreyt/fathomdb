@@ -2551,7 +2551,7 @@ fn check_embedder_profile(
             locator: CorruptionLocator::OpaqueSqliteError { sqlite_extended_code: 0 },
             recovery_hint: RecoveryHint {
                 code: "E_CORRUPT_EMBEDDER_IDENTITY",
-                doc_anchor: "design/recovery.md#embedder-identity",
+                doc_anchor: "design/recovery.md#embedder-identity-drift",
             },
         })
     })?;
@@ -2563,7 +2563,7 @@ fn check_embedder_profile(
             locator: CorruptionLocator::OpaqueSqliteError { sqlite_extended_code: 0 },
             recovery_hint: RecoveryHint {
                 code: "E_CORRUPT_EMBEDDER_IDENTITY",
-                doc_anchor: "design/recovery.md#embedder-identity",
+                doc_anchor: "design/recovery.md#embedder-identity-drift",
             },
         })
     })?
@@ -2592,7 +2592,7 @@ fn check_embedder_profile(
             locator: CorruptionLocator::TableRow { table: "_fathomdb_embedder_profiles", rowid: 0 },
             recovery_hint: RecoveryHint {
                 code: "E_CORRUPT_EMBEDDER_IDENTITY",
-                doc_anchor: "design/recovery.md#embedder-identity",
+                doc_anchor: "design/recovery.md#embedder-identity-drift",
             },
         })
     })?;
@@ -2603,7 +2603,7 @@ fn check_embedder_profile(
             locator: CorruptionLocator::TableRow { table: "_fathomdb_embedder_profiles", rowid: 0 },
             recovery_hint: RecoveryHint {
                 code: "E_CORRUPT_EMBEDDER_IDENTITY",
-                doc_anchor: "design/recovery.md#embedder-identity",
+                doc_anchor: "design/recovery.md#embedder-identity-drift",
             },
         })
     })?;
@@ -2614,7 +2614,7 @@ fn check_embedder_profile(
             locator: CorruptionLocator::TableRow { table: "_fathomdb_embedder_profiles", rowid: 0 },
             recovery_hint: RecoveryHint {
                 code: "E_CORRUPT_EMBEDDER_IDENTITY",
-                doc_anchor: "design/recovery.md#embedder-identity",
+                doc_anchor: "design/recovery.md#embedder-identity-drift",
             },
         })
     })?;
@@ -2967,10 +2967,10 @@ fn map_open_sqlite_error(err: rusqlite::Error, stage: OpenStage) -> EngineOpenEr
                         OpenStage::EmbedderIdentity => "E_CORRUPT_EMBEDDER_IDENTITY",
                     },
                     doc_anchor: match stage {
-                        OpenStage::WalReplay => "design/recovery.md#wal-replay",
-                        OpenStage::HeaderProbe => "design/recovery.md#header-format",
-                        OpenStage::SchemaProbe => "design/recovery.md#schema-inconsistency",
-                        OpenStage::EmbedderIdentity => "design/recovery.md#embedder-identity",
+                        OpenStage::WalReplay => "design/recovery.md#wal-replay-failures",
+                        OpenStage::HeaderProbe => "design/recovery.md#header-malformed",
+                        OpenStage::SchemaProbe => "design/recovery.md#schema-inconsistent",
+                        OpenStage::EmbedderIdentity => "design/recovery.md#embedder-identity-drift",
                     },
                 },
             })
