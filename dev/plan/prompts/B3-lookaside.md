@@ -42,7 +42,7 @@ Reviewer optional.
 - **TDD**: failing test first — assert that lookaside is configured
   on each reader (e.g. via `sqlite3_db_status(SQLITE_DBSTATUS_LOOKASIDE_USED)`
   > 0 after a known-allocating query, or rc check on the config call
-  exposed via a `#[cfg(test)]` hook). Then implement.
+  > exposed via a `#[cfg(test)]` hook). Then implement.
 - **Run `./scripts/agent-verify.sh`** before declaring success.
 
 ## Context

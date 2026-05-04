@@ -21,6 +21,7 @@ git -C /home/coreyt/projects/fathomdb worktree add "$WT" -b "pack5-${PHASE}-${TS
 ```
 
 Notes (from preflight summary §"Plan amendments"):
+
 - Prompt body via stdin, not positional.
 - No `--bare`, no `--cwd`.
 - `--effort medium` is intent-only — JSON envelope does not surface it.
@@ -79,13 +80,14 @@ Recommended shape (pick whichever is cleaner; both are acceptable):
    - `ac_020_sequential_only` — runs only the sequential loop and
      reports its elapsed time via `eprintln!`. Gated by
      `AC020_PHASE=sequential` env var so a `cargo test --
-     ac_020_sequential_only` invocation still requires opt-in.
+ac_020_sequential_only` invocation still requires opt-in.
    - `ac_020_concurrent_only` — runs only the concurrent phase
      (barrier + threads) and reports its elapsed time. Gated by
      `AC020_PHASE=concurrent`.
 2. **Or** a single new test that branches on `AC020_PHASE`. Same gating.
 
 Either way:
+
 - Both new tests must use the **same fixture seed and same query mix**
   as the combined gate. No fixture drift.
 - The combined gate at line 211 stays unchanged.

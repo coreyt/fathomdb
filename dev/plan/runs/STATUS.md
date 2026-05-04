@@ -20,11 +20,11 @@ Last updated: 2026-05-03 (initial).
 
 ## Acceptance scoreboard
 
-| Gate   | Required                                  | Latest reading                                  | Status |
-| ------ | ----------------------------------------- | ----------------------------------------------- | ------ |
-| AC-017 | green                                     | green (whitepaper §10)                          | green  |
-| AC-018 | green; no regression > 10 % vs baseline   | green (whitepaper §10)                          | green  |
-| AC-020 | `concurrent <= sequential * 1.25 / 8`, x5 | seq 456 / conc 127 / bound 85 / speedup 3.59x   | red    |
+| Gate   | Required                                  | Latest reading                                | Status |
+| ------ | ----------------------------------------- | --------------------------------------------- | ------ |
+| AC-017 | green                                     | green (whitepaper §10)                        | green  |
+| AC-018 | green; no regression > 10 % vs baseline   | green (whitepaper §10)                        | green  |
+| AC-020 | `concurrent <= sequential * 1.25 / 8`, x5 | seq 456 / conc 127 / bound 85 / speedup 3.59x | red    |
 
 Bound for AC-020 in this packet is the §1 20%-margin form
 (`1.25 / 8` ≈ 0.156), tighter than the test's literal `1.5 / 8`. The
@@ -33,19 +33,19 @@ packet's acceptance criterion.
 
 ## Phase results
 
-| Phase | Spawned | Decision        | Reviewer | Worktree    | Commit | Notes / log               |
-| ----- | ------- | --------------- | -------- | ----------- | ------ | ------------------------- |
-| A.0   | -       | -               | -        | -           | -      | -                         |
-| A.1   | -       | -               | -        | -           | -      | -                         |
-| A.2   | -       | -               | -        | -           | -      | main thread               |
-| A.3   | -       | -               | -        | -           | -      | -                         |
-| A.4   | -       | -               | -        | -           | -      | main thread               |
-| B.1   | -       | -               | -        | -           | -      | -                         |
-| B.2   | -       | -               | -        | -           | -      | conditional on B.1 KEEP   |
-| B.3   | -       | -               | -        | -           | -      | conditional               |
-| C.1   | -       | -               | -        | -           | -      | conditional               |
-| D.1   | -       | -               | -        | -           | -      | parallel track            |
-| final | -       | -               | -        | -           | -      | -                         |
+| Phase | Spawned | Decision | Reviewer | Worktree | Commit | Notes / log             |
+| ----- | ------- | -------- | -------- | -------- | ------ | ----------------------- |
+| A.0   | -       | -        | -        | -        | -      | -                       |
+| A.1   | -       | -        | -        | -        | -      | -                       |
+| A.2   | -       | -        | -        | -        | -      | main thread             |
+| A.3   | -       | -        | -        | -        | -      | -                       |
+| A.4   | -       | -        | -        | -        | -      | main thread             |
+| B.1   | -       | -        | -        | -        | -      | -                       |
+| B.2   | -       | -        | -        | -        | -      | conditional on B.1 KEEP |
+| B.3   | -       | -        | -        | -        | -      | conditional             |
+| C.1   | -       | -        | -        | -        | -      | conditional             |
+| D.1   | -       | -        | -        | -        | -      | parallel track          |
+| final | -       | -        | -        | -        | -      | -                       |
 
 Decision values: `KEEP` / `REVERT` / `INCONCLUSIVE` / `RECAPTURE` /
 `SKIPPED`. Reviewer values: `PASS` / `CONCERN` / `BLOCK` / `n/a`.

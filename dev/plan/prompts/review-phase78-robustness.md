@@ -93,7 +93,7 @@ for B.2 / B.3 / C.1.
 
 ### Output shape (Markdown)
 
-```
+```markdown
 # Phase 7/8 robustness verdict — <phase> — <ts>
 
 Verdict: PASS | CONCERN | BLOCK

@@ -6,6 +6,7 @@ during/before this session; all four are docs-only — Pack 5 plan, whitepaper
 notes, markdownlint, prettier — and do not affect production code).
 
 Tools:
+
 - `claude` 2.1.126 at `/home/coreyt/.local/bin/claude`
 - `codex-cli` 0.128.0 at `/home/coreyt/.nvm/versions/node/v24.15.0/bin/codex`
 
@@ -18,20 +19,21 @@ checks below recorded PASS (one with documented limitation; see check 2).
 
 Command shape:
 
-```
+```bash
 echo "Identify your model id. Print only the model identifier on a single line, nothing else." \
   | claude -p --model <MODEL> --output-format json --tools ""
 ```
 
-| Sub | Model              | Log                                                | Result               | Verdict |
-| --- | ------------------ | -------------------------------------------------- | -------------------- | ------- |
-| 1a  | claude-sonnet-4-6  | `preflight-check1-sonnet-20260503T201931Z.log`     | `claude-sonnet-4-6`  | PASS    |
-| 1b  | claude-opus-4-7    | `preflight-check1-opus-20260503T201945Z.log`       | `claude-opus-4-7`    | PASS    |
+| Sub | Model             | Log                                            | Result              | Verdict |
+| --- | ----------------- | ---------------------------------------------- | ------------------- | ------- |
+| 1a  | claude-sonnet-4-6 | `preflight-check1-sonnet-20260503T201931Z.log` | `claude-sonnet-4-6` | PASS    |
+| 1b  | claude-opus-4-7   | `preflight-check1-opus-20260503T201945Z.log`   | `claude-opus-4-7`   | PASS    |
 
 Both runs report matching `model` in `modelUsage`; result string equals the
 pinned model id verbatim. Exit 0.
 
 Notes:
+
 - `--bare` rejected because nested `claude -p` lacks keychain auth path; drop
   it for headless spawns.
 - `--tools ""` is variadic and consumes the prompt positional; pass prompt via
@@ -43,15 +45,15 @@ Notes:
 
 Command shape:
 
-```
+```bash
 echo "Respond with literal token: OK" \
   | claude -p --model claude-opus-4-7 --effort xhigh --output-format json --tools ""
 ```
 
-| Sub | What                              | Log                                                | Result                                          | Verdict |
-| --- | --------------------------------- | -------------------------------------------------- | ----------------------------------------------- | ------- |
-| 2a  | `/effort xhigh` slash in prompt    | `preflight-check2-effort-20260503T202048Z.log`     | `/effort isn't available in this environment.`  | N/A     |
-| 2b  | `--effort xhigh` CLI flag           | `preflight-check2-effort-flag-20260503T202058Z.log`| Exit 0, `result=OK`                              | PASS    |
+| Sub | What                            | Log                                                 | Result                                         | Verdict |
+| --- | ------------------------------- | --------------------------------------------------- | ---------------------------------------------- | ------- |
+| 2a  | `/effort xhigh` slash in prompt | `preflight-check2-effort-20260503T202048Z.log`      | `/effort isn't available in this environment.` | N/A     |
+| 2b  | `--effort xhigh` CLI flag       | `preflight-check2-effort-flag-20260503T202058Z.log` | Exit 0, `result=OK`                            | PASS    |
 
 Limitation recorded: headless `claude -p` accepts `--effort <low|medium|high|xhigh|max>`
 but the JSON result envelope does not surface effort level back. Behavioral
@@ -81,7 +83,7 @@ PASS — stdin handles >4KB Markdown intact.
 
 Command:
 
-```
+```bash
 claude -p --model claude-sonnet-4-6 --add-dir /tmp \
   --allowedTools Write --permission-mode bypassPermissions \
   --output-format json
@@ -91,6 +93,7 @@ Prompt (via stdin) instructed write of literal `FOO\n` to
 `/tmp/preflight-20260503T202204Z.txt` and forbade touching anything else.
 
 Log: `preflight-check4-instruct-20260503T202204Z.log`. Exit 0.
+
 - Target file exists, content `FOO\n`, 4 bytes.
 - Sentinel scratch dir `/tmp/preflight-scratch-20260503T202204Z` unchanged.
 - `permission_denials` empty.
@@ -105,10 +108,10 @@ instead. Plan amendment noted; will fold into Phase A.0 prompt Update log.
 
 Two probes:
 
-| Sub | What                          | Log                                          | Result                                                       | Verdict |
-| --- | ----------------------------- | -------------------------------------------- | ------------------------------------------------------------ | ------- |
-| 5a  | stdout / stderr split routing | `preflight-check5-stdout-20260503T202237Z.log` + `preflight-check5-stderr-20260503T202237Z.log` | stdout=10 bytes (`STDOUT_OK`), stderr=0 bytes, exit 0 | PASS    |
-| 5b  | bad-flag stderr + nonzero exit | `preflight-check5-badflag-20260503T202237Z.log` | `error: unknown option '--no-such-flag-xyzzy'`, exit 1     | PASS    |
+| Sub | What                           | Log                                                                                             | Result                                                 | Verdict |
+| --- | ------------------------------ | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ------- |
+| 5a  | stdout / stderr split routing  | `preflight-check5-stdout-20260503T202237Z.log` + `preflight-check5-stderr-20260503T202237Z.log` | stdout=10 bytes (`STDOUT_OK`), stderr=0 bytes, exit 0  | PASS    |
+| 5b  | bad-flag stderr + nonzero exit | `preflight-check5-badflag-20260503T202237Z.log`                                                 | `error: unknown option '--no-such-flag-xyzzy'`, exit 1 | PASS    |
 
 PASS — stdout / stderr / exit-code all reach separate destinations parseable
 either as JSON (when `--output-format json`) or raw text.
@@ -117,7 +120,7 @@ either as JSON (when `--output-format json`) or raw text.
 
 ## Check 6 — worktree isolation (claude)
 
-```
+```bash
 git worktree add /tmp/preflight-wt-<ts> -b preflight-tmp-<ts>
 ( cd /tmp/preflight-wt-<ts> && echo "..." | claude -p --model claude-sonnet-4-6 \
     --output-format text --tools "" > <log> 2>&1 )
@@ -142,23 +145,24 @@ absolute paths for any cross-worktree artifact.
 ## Check 7 — codex parallel
 
 Codex behavior notes:
+
 - `codex exec` reads stdin even when prompt provided as positional arg; pass
   `< /dev/null` to avoid blocking when no input is intended.
 - Default model: `gpt-5.4` (per `~/.codex/config.toml`). `gpt-5` flag is
   rejected on a ChatGPT account (`The 'gpt-5' model is not supported when
-  using Codex with a ChatGPT account.`). Planned reviewer model: **gpt-5.4**.
+using Codex with a ChatGPT account.`). Planned reviewer model: **gpt-5.4**.
 - Reasoning-effort flag observed name: **`-c model_reasoning_effort=<low|medium|high>`**.
   No `--reasoning-effort` short flag exists.
 
-| Sub | What                                                | Log                                                            | Result                                                            | Verdict |
-| --- | --------------------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------- | ------- |
-| 7a  | smoke (default model, prompt-only)                  | `preflight-check7a-codex-smoke-20260503T205240Z.log`           | `agent_message: CODEX_OK`                                         | PASS    |
-| 7b  | model pin gpt-5 → expected fail                     | `preflight-check7-codex-model-20260503T205300Z.log`            | 400 invalid_request_error (documented; use gpt-5.4)                | NOTE    |
-| 7c  | input >4KB + reasoning-effort low                   | `preflight-check7-codex-input-effort-low-20260503T205354Z.log` | 17838-byte fixture; marker echoed; `reasoning_output_tokens=11`   | PASS    |
-| 7d  | input >4KB + reasoning-effort high                  | `preflight-check7-codex-input-effort-high-20260503T205409Z.log`| same fixture-shape; marker echoed; `reasoning_output_tokens=22`   | PASS    |
-| 7e  | output capture (JSONL stream → log + exit code)     | implicit across 7a/7c/7d                                       | parseable JSONL + correct exit code                                | PASS    |
-| 7f  | instruction-following (string discipline)           | implicit via 7c/7d                                             | agent_message contains *only* the marker line                     | PASS    |
-| 7g  | instruction-following (file write)                  | not run                                                        | reviewer role is read-only per §0.1; deliberate skip               | N/A     |
+| Sub | What                                            | Log                                                             | Result                                                          | Verdict |
+| --- | ----------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------- | ------- |
+| 7a  | smoke (default model, prompt-only)              | `preflight-check7a-codex-smoke-20260503T205240Z.log`            | `agent_message: CODEX_OK`                                       | PASS    |
+| 7b  | model pin gpt-5 → expected fail                 | `preflight-check7-codex-model-20260503T205300Z.log`             | 400 invalid_request_error (documented; use gpt-5.4)             | NOTE    |
+| 7c  | input >4KB + reasoning-effort low               | `preflight-check7-codex-input-effort-low-20260503T205354Z.log`  | 17838-byte fixture; marker echoed; `reasoning_output_tokens=11` | PASS    |
+| 7d  | input >4KB + reasoning-effort high              | `preflight-check7-codex-input-effort-high-20260503T205409Z.log` | same fixture-shape; marker echoed; `reasoning_output_tokens=22` | PASS    |
+| 7e  | output capture (JSONL stream → log + exit code) | implicit across 7a/7c/7d                                        | parseable JSONL + correct exit code                             | PASS    |
+| 7f  | instruction-following (string discipline)       | implicit via 7c/7d                                              | agent*message contains \_only* the marker line                  | PASS    |
+| 7g  | instruction-following (file write)              | not run                                                         | reviewer role is read-only per §0.1; deliberate skip            | N/A     |
 
 Reasoning-effort flag effect: reasoning_output_tokens roughly doubled
 (11 → 22) at otherwise-fixed prompt + input. Flag is honored by the CLI and

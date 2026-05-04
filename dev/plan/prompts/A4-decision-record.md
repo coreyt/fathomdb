@@ -77,7 +77,8 @@ made here locks the next experiment.
    - Whitepaper §5 cross-check verdict.
 
 6. **Append a §12 line** to the plan file, format:
-   ```
+
+   ```text
    - 2026-MM-DD A.4 → chose <PHASE>; baseline seq=<n>ms conc=<n>ms bound=<n>ms; bottleneck=<symbol>; rule=<rule>.
    ```
 

@@ -94,6 +94,7 @@ future bump of `rusqlite`.
 ### Validation
 
 After build:
+
 - `unsafe { rusqlite::ffi::sqlite3_threadsafe() }` returns `2`.
 - `PRAGMA compile_options` includes `THREADSAFE=2`.
 - B.1's runtime `init_sqlite_runtime` may now be a no-op; leave it in

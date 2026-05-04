@@ -45,8 +45,8 @@ of execution, escalate to the human before proceeding.
 
 Read the two flamegraphs and the diff. Classify time spent in:
 
-| Category               | Symbols                                                       |
-| ---------------------- | ------------------------------------------------------------- |
+| Category               | Symbols                                                      |
+| ---------------------- | ------------------------------------------------------------ |
 | pthread / sqlite mutex | `pthread_mutex_lock`, `pthreadMutexEnter`, `sqlite3_mutex_*` |
 | Allocator              | `mem1Malloc`, `mem1Free`, `malloc`, `free`, `je_*`           |
 | Page cache             | `pcache1Fetch`, `pcache1Truncate`                            |
@@ -55,6 +55,7 @@ Read the two flamegraphs and the diff. Classify time spent in:
 | Embedder               | `RoutedEmbedder::embed`, allocator under it                  |
 
 For each category record:
+
 - Time-share in sequential profile (% of total samples).
 - Time-share in concurrent profile (% of total samples).
 - Ratio (concurrent / sequential).
@@ -66,13 +67,13 @@ more is.
 
 Then pick the next experiment:
 
-| Suspect category that grew | First Phase B/C/D candidate |
-| -------------------------- | --------------------------- |
-| pthread / sqlite mutex     | B.1 (runtime MULTITHREAD) — ordering-correct |
-| Allocator (mem1*)          | B.1, then B.3 (per-conn lookaside)            |
-| Page cache (pcache1*)       | B.3 (lookaside) + B.1 combined                |
-| vec0 / FTS                 | D.1 (single-stmt UNION refactor)              |
-| Our code (`read_search_in_tx` per-prepare) | D.1 first             |
+| Suspect category that grew                 | First Phase B/C/D candidate                  |
+| ------------------------------------------ | -------------------------------------------- |
+| pthread / sqlite mutex                     | B.1 (runtime MULTITHREAD) — ordering-correct |
+| Allocator (mem1\*)                         | B.1, then B.3 (per-conn lookaside)           |
+| Page cache (pcache1\*)                     | B.3 (lookaside) + B.1 combined               |
+| vec0 / FTS                                 | D.1 (single-stmt UNION refactor)             |
+| Our code (`read_search_in_tx` per-prepare) | D.1 first                                    |
 
 If multiple categories grew super-linearly, pick the one whose
 absolute time delta is largest.

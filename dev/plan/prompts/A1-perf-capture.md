@@ -72,12 +72,14 @@ two flamegraphs and a diff.
      `RUSTFLAGS="-C force-frame-pointers=yes" cargo build -p fathomdb-engine --release --tests`.
 
 2. **Capture sequential-only**:
+
    ```bash
    AC020_PHASE=sequential perf record -F 999 -g --call-graph dwarf \
        -o dev/plan/runs/perf-ac020-sequential-<ts>.data \
        -- cargo test -p fathomdb-engine --release --test perf_gates \
        -- --ignored ac_020_sequential_only --nocapture
    ```
+
    N = 5. Record elapsed times each run. Keep the perf.data file from
    the **median** elapsed run.
 
@@ -85,6 +87,7 @@ two flamegraphs and a diff.
    Same with `AC020_PHASE=concurrent` / `ac_020_concurrent_only`.
 
 4. **Render flamegraphs**:
+
    ```bash
    perf script -i <perf.data> > <name>.script
    inferno-collapse-perf < <name>.script > dev/notes/perf/ac020-<phase>-<short-sha>.folded
@@ -92,6 +95,7 @@ two flamegraphs and a diff.
    ```
 
 5. **Diff**:
+
    ```bash
    inferno-diff-folded dev/notes/perf/ac020-sequential-<sha>.folded \
                        dev/notes/perf/ac020-concurrent-<sha>.folded \

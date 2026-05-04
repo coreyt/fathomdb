@@ -75,7 +75,7 @@ Read the diff and the implementer log. Issue a structured verdict.
 
 ### Output shape (Markdown)
 
-```
+```markdown
 # Review verdict — <phase> — <ts>
 
 Verdict: PASS | CONCERN | BLOCK
