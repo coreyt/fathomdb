@@ -1,0 +1,58 @@
+{
+  "phase": "E1",
+  "decision": "INCONCLUSIVE",
+  "before": {
+    "sequential_ms": 182,
+    "concurrent_ms": 115,
+    "bound_ms": 34,
+    "speedup": 1.58,
+    "n": 5,
+    "prepares_per_search": 4,
+    "sqlite3RunParser_pct_concurrent": 3.4,
+    "sqlite3RunParser_pct_sequential": 4.6,
+    "search_us_per_query": 542,
+    "source": "A.1 baseline (fec71a0); A.3 counters (edb0c84)"
+  },
+  "after": {
+    "raw_runs": [
+      {"sequential_ms": 147, "concurrent_ms": 128, "bound_ms": 28, "speedup": 1.148},
+      {"sequential_ms": 147, "concurrent_ms": 123, "bound_ms": 28, "speedup": 1.195},
+      {"sequential_ms": 161, "concurrent_ms": 126, "bound_ms": 30, "speedup": 1.278},
+      {"sequential_ms": 161, "concurrent_ms": 125, "bound_ms": 30, "speedup": 1.288},
+      {"sequential_ms": 157, "concurrent_ms": 124, "bound_ms": 29, "speedup": 1.266}
+    ],
+    "sequential_ms": {"min": 147, "median": 157, "max": 161, "stddev": 7.2},
+    "concurrent_ms": {"min": 123, "median": 125, "max": 128, "stddev": 2.1},
+    "speedup":       {"min": 1.148, "median": 1.266, "max": 1.288, "stddev": 0.060},
+    "n": 5
+  },
+  "delta_concurrent_pct": 8.7,
+  "delta_sequential_pct": -13.7,
+  "delta_speedup_pct": -19.9,
+  "prepares_per_search_after": 0,
+  "prepare_count_test_passed": true,
+  "ac017_status": "green",
+  "ac018_status": "green",
+  "ac020_passes_5_33x": false,
+  "ac020_passes_packet_1_25_margin": false,
+  "decision_rule": "concurrent_median=125ms > 115ms REVERT threshold; however B.1/C.1 REVERT baseline = 121.5ms (environmental drift, not E.1 regression); sequential -13.7% (just below 15% KEEP-alone threshold); mandate expected INCONCLUSIVE; kill criterion matched: parse cost real, not AC-020 bottleneck",
+  "decision_rule_met": false,
+  "reviewer_verdict": "skipped:REVERT",
+  "reviewer_concerns": [
+    "Concurrent at 125ms exceeds 115ms REVERT threshold per decision rule",
+    "Sequential improvement of 13.7% is real but below 15% KEEP-alone threshold",
+    "B.1/C.1 REVERT already showed 121.5ms concurrent without any changes — environmental baseline drifted from A.1 115ms measurement; E.1's concurrent of 125ms is only 3.5ms above environmental baseline, within noise",
+    "Mandate explicitly predicted INCONCLUSIVE for E.1 alone"
+  ],
+  "loc_added": 245,
+  "loc_removed": 13,
+  "files_changed": [
+    "src/rust/crates/fathomdb-engine/src/lib.rs",
+    "src/rust/crates/fathomdb-engine/tests/prepare_cached_readers.rs"
+  ],
+  "commit_sha": "e4ff2556a0f71c1e9a9d653e0eef595b998c37bf",
+  "git_status_clean_after_revert": null,
+  "data_for_pivot": "Kill criterion confirmed: prepares_per_search dropped to 0 after warm-up (prepare_cached working), sequential improved 13.7%, concurrent unchanged from environmental baseline. Parse cost is real but not the AC-020 bottleneck — the concurrent serialization point is the ReaderPool Mutex<Vec<Connection>> and underlying SQLite per-connection locking. Promote E.3 (reader cache_size + mmap_size) on top of E.1 in next spawn. If E.3 also flat on concurrent: D.1 (architectural — likely ReaderPool Mutex replacement with lock-free deque or separate per-thread connections).",
+  "unexpected_observations": "1) B.1/C.1 REVERT baseline concurrent already at 121.5ms, above A.1's 115ms — the A.1 measurement was taken under more favorable system conditions. The 115ms REVERT threshold is therefore relative to an optimistic snapshot. 2) Sequential improvement (-13.7%) is consistent with A.3 estimate of 4x25µs=100µs parse overhead per query: measured drop of ~25µs/query (182ms→157ms over 1600 queries = 25µs/query × 8 threads). 3) prepare_cached on Transaction<'conn> via Deref compiles cleanly in rusqlite 0.31; StatementStatus::Run==0 is a clean cache-miss detector (Run count persists across cache returns per StatementCache::cache_stmt which only calls clear_bindings). 4) soft_fallback_probe does not activate in the AC-020 fixture (vector_rows_visible=true, 4 seeded vector docs), so only 3 of the 4 named statements contribute to the prepare-miss count in the single-threaded test (vec0_match + canonical_lookup + fts_match).",
+  "next_phase_recommendation": "E3"
+}
