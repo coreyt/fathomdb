@@ -1171,11 +1171,13 @@ impl Engine {
         self.subscribers.attach(subscriber)
     }
 
+    #[cfg(debug_assertions)]
     #[doc(hidden)]
     pub fn reader_worker_count_for_test(&self) -> usize {
         self.reader_pool.worker_count()
     }
 
+    #[cfg(debug_assertions)]
     #[doc(hidden)]
     pub fn live_reader_worker_count_for_test(&self) -> usize {
         self.reader_pool.live_count()
