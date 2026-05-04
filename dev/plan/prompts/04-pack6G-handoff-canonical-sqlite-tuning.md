@@ -93,7 +93,7 @@ adds a `#[ignore]`-gated counter test.
 Configure SQLite per-connection lookaside immediately after
 `Connection::open` for each F.0 reader worker. Use
 `sqlite3_db_config(SQLITE_DBCONFIG_LOOKASIDE, ...)` with
-documented sane defaults (per https://www.sqlite.org/malloc.html
+documented sane defaults (per <https://www.sqlite.org/malloc.html>
 §3 — typical 1200-byte slots, 100 slots, sized for the workload's
 prepared-statement footprint; revise from G.0 evidence).
 

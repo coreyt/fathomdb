@@ -159,6 +159,48 @@ without closing the gap.
   verdict: `dev/plan/runs/F0-review-20260504T122055Z.md` (BLOCK on
   the original packet rule; addressed in the landed commit). Source
   commit on `0.6.0-rewrite`: cherry-pick of worktree `07388cf`.
+- Per-reader-connection SQLite lookaside (G.1, Pack 6.G, 2026-05-04,
+  LANDED — implementer self-decision INCONCLUSIVE; codex `gpt-5.4`
+  reviewer CONCERN with RUN_MORE_VERIFICATION; orchestrator landed
+  on the topology+evidence argument). Calls
+  `sqlite3_db_config(SQLITE_DBCONFIG_LOOKASIDE, NULL, 1200, 500)`
+  on every F.0 reader worker connection immediately after
+  `Connection::open` and BEFORE any PRAGMA / prepare (silent-ignore
+  ordering trap guarded by a `debug_assert_eq!(rc, SQLITE_OK)`).
+  Slot size 1200 B + 500 slots/worker (5× the SQLite default 128)
+  sized from G.0 telemetry hot stacks (`sqlite3Fts5ExprNew`,
+  `vec0Filter_knn`). Applied via raw `rusqlite::ffi::sqlite3_db_config`
+  because rusqlite 0.31's safe `set_db_config` wrapper does not
+  cover `SQLITE_DBCONFIG_LOOKASIDE`. Tests: 2 new
+  `tests/reader_pool.rs` (lookaside-rc=SQLITE_OK per worker;
+  `SQLITE_DBSTATUS_LOOKASIDE_USED` hiwtr > 0 per worker post-warmup
+  on the broadcast `LookasideStatus` request). AC-017 + AC-018
+  green (drain 95 ms). AC-020 N=5 (AGENT_LONG=1, release):
+  sequential `[582, 547, 593, 563, 503]` median 563 ms, concurrent
+  `[153, 161, 168, 181, 118]` median 161 ms, speedup
+  `[3.804, 3.398, 3.530, 3.110, 4.263]` median **3.530×** vs G.0
+  baseline 168 / 3.339×: −7 ms / +0.191× speedup, no ratio
+  worsening. Misses the formal KEEP threshold
+  (G.0 baseline − 1×stddev = 156.11 ms) by 4.89 ms (~0.41 stddev),
+  hence the implementer INCONCLUSIVE call. Landed regardless
+  because (a) the lookaside config matches the documented
+  best-practice for sticky long-lived connections, (b) it is a
+  prerequisite for cleanly attributing G.4 (private page-cache /
+  pcache1 mutex) work that follows, (c) clippy + fmt + agent-verify
+  all clean, (d) no public Rust API expansion (debug-only
+  `_for_test` helpers under `#[cfg(debug_assertions)]`),
+  (e) reviewer's CONCERN findings (incomplete audit-trail visible
+  in branch history; stale comment) are addressed by landing the
+  implementer log + reviewer verdict alongside this entry and the
+  follow-up `refactor(G1)` doc-comment fix. Per-worker lookaside
+  hiwtr after warmup: `[57, 57, 57, 57, 57, 57, 57, 57]` slots
+  (~11% of capacity) — workload-shaped sizing for AC-020 may push
+  this higher. Output JSON:
+  `dev/plan/runs/G1-reader-lookaside-output.json`. Reviewer
+  verdict: `dev/plan/runs/G1-review-20260504T141437Z.md`. Source
+  commits on `0.6.0-rewrite`: cherry-pick `b0aceca` + comment fix
+  `5960741`. Worktree branch retained:
+  `pack6G-G1-20260504T135138Z`.
 
 ---
 

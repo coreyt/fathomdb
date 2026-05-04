@@ -262,8 +262,23 @@ pointer if G-phase exhausts and AC-020 still misses.
 
 - Handoff: `dev/plan/prompts/04-pack6G-handoff-canonical-sqlite-tuning.md`.
 - G.0 prompt: `dev/plan/prompts/G0-wal-checkpoint-telemetry.md`.
-- Active phase: **G.1** (reader-worker lookaside) — G.0 closed
-  PICK_G1.
+- Active phase: **G.1 LANDED (INCONCLUSIVE)** — cherry-pick
+  `b0aceca` + comment fix `5960741`. Reviewer codex `gpt-5.4`
+  CONCERN with RUN_MORE_VERIFICATION; orchestrator landed on
+  topology+evidence argument (canonical best-practice, prereq for
+  G.4, clean diff, no surface expansion). AC-020 N=5: seq
+  563 ms / conc 161 ms / speedup 3.530× (G.0 baseline 168 / 3.339).
+  Conc −7 ms / +0.191× speedup; misses formal KEEP threshold by
+  4.89 ms (~0.41 stddev). Lookaside hiwtr=57 slots/worker after
+  warmup, all 8 workers honored.
+- Next-phase pivot: G.0 + G.1 evidence points to **G.4** (private
+  page cache via `SQLITE_OPEN_PRIVATECACHE`) over G.2. Reason:
+  pcache1 global mutex is the next-largest contention path
+  (`page_cache = 6.29%` conc, 4.01× ratio per G.0); G.2 parse-
+  cache only reduces a CPU floor (Pack 5 E.1 ratio-worsening
+  risk). Awaiting human pick: G.2 (per original plan) or G.4
+  (per G.0/G.1 evidence). G.3 already shown irrelevant for the
+  read-only fixture.
 - G.0 telemetry KEY FINDING: Pack 5 A.2's `mutex_atomic = 36.98%`
   conc was leaf-only misattribution. Stack-aware reclassification
   on F.0 tip shows `mutex_atomic` catch-all = 0% conc (F.0

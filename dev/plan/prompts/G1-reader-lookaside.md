@@ -159,7 +159,7 @@ Required fields:
 - `red_tests_written`: list of test names + why each failed before
   the green refactor.
 - `lookaside_config`: `{slot_size_bytes, slot_count, applied_via,
- ordering_assertion_rc}` — `applied_via` records whether you
+ordering_assertion_rc}` — `applied_via` records whether you
   used a rusqlite safe wrapper or a raw `ffi::sqlite3_db_config`
   call.
 - `lookaside_used_evidence`: post-warmup
