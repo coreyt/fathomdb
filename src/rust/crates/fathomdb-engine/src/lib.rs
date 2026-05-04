@@ -6,7 +6,8 @@ use std::fmt::{Display, Formatter};
 use std::fs::{File, OpenOptions};
 use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::Once;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
@@ -53,7 +54,7 @@ pub struct Engine {
     closed: AtomicBool,
     lock: Mutex<Option<File>>,
     connection: Mutex<Option<Connection>>,
-    reader_pool: ReaderPool,
+    reader_pool: ReaderWorkerPool,
     counters: lifecycle::Counters,
     subscribers: Arc<lifecycle::SubscriberRegistry>,
     profiling_enabled: Arc<AtomicBool>,
@@ -148,41 +149,157 @@ struct ProfileContext {
     slow_threshold_ms: Arc<AtomicU64>,
 }
 
-/// Bounded pool of read-only SQLite connections.
+/// Thread-affine reader worker pool (Pack 6 F.0).
 ///
 /// Per `dev/design/engine.md` § Writer / reader split, reader connections
-/// must not serialize behind a single mutex. Each connection opens with
-/// `journal_mode=WAL` and `query_only=ON` so concurrent reads coexist
-/// with one writer thread (AC-021).
-#[derive(Debug, Default)]
-struct ReaderPool {
-    inner: Mutex<Vec<Connection>>,
-    cvar: Condvar,
+/// must not serialize behind a single mutex. Each worker thread owns
+/// exactly one read-only `Connection` for its lifetime; `Connection`
+/// objects never cross thread boundaries after startup. `Engine::search`
+/// dispatches a request via a per-worker bounded channel using a
+/// lock-free round-robin counter on the hot path.
+struct ReaderWorkerPool {
+    senders: Vec<SyncSender<ReaderRequest>>,
+    handles: Mutex<Option<Vec<JoinHandle<()>>>>,
+    next: AtomicUsize,
+    shutdown: AtomicBool,
+    live_workers: Arc<AtomicUsize>,
 }
 
-impl ReaderPool {
+impl std::fmt::Debug for ReaderWorkerPool {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReaderWorkerPool")
+            .field("worker_count", &self.senders.len())
+            .field("live_workers", &self.live_workers.load(Ordering::Relaxed))
+            .field("shutdown", &self.shutdown.load(Ordering::Relaxed))
+            .finish()
+    }
+}
+
+/// One request handled by exactly one reader worker. The response is
+/// returned through a fresh oneshot channel so requests cannot be
+/// routed to or duplicated across workers.
+enum ReaderRequest {
+    Search {
+        compiled: fathomdb_query::CompiledQuery,
+        query_vector: Option<String>,
+        respond: SyncSender<ReaderResponse>,
+    },
+    Shutdown,
+}
+
+type ReaderResponse = rusqlite::Result<(u64, Option<SoftFallback>, Vec<String>)>;
+
+/// Per-worker outbound channel capacity. Round-robin dispatch keeps
+/// queue depth at ~0 on hot paths; the small slack absorbs jitter
+/// without a runtime mutex.
+const READER_WORKER_CHANNEL_CAPACITY: usize = 4;
+
+impl ReaderWorkerPool {
     fn new(connections: Vec<Connection>) -> Self {
-        Self { inner: Mutex::new(connections), cvar: Condvar::new() }
-    }
-
-    fn borrow(&self) -> Option<Connection> {
-        let mut guard = self.inner.lock().ok()?;
-        while guard.is_empty() {
-            guard = self.cvar.wait(guard).ok()?;
+        let live_workers = Arc::new(AtomicUsize::new(0));
+        let mut senders = Vec::with_capacity(connections.len());
+        let mut handles = Vec::with_capacity(connections.len());
+        for (idx, connection) in connections.into_iter().enumerate() {
+            let (tx, rx) = mpsc::sync_channel::<ReaderRequest>(READER_WORKER_CHANNEL_CAPACITY);
+            let live = Arc::clone(&live_workers);
+            let handle = thread::Builder::new()
+                .name(format!("fathomdb-reader-{idx}"))
+                .spawn(move || reader_worker_loop(connection, rx, live))
+                .expect("spawn reader worker");
+            senders.push(tx);
+            handles.push(handle);
         }
-        guard.pop()
-    }
-
-    fn release(&self, conn: Connection) {
-        if let Ok(mut guard) = self.inner.lock() {
-            guard.push(conn);
-            self.cvar.notify_one();
+        Self {
+            senders,
+            handles: Mutex::new(Some(handles)),
+            next: AtomicUsize::new(0),
+            shutdown: AtomicBool::new(false),
+            live_workers,
         }
     }
 
-    fn drain(&self) -> Vec<Connection> {
-        self.inner.lock().map(|mut g| std::mem::take(&mut *g)).unwrap_or_default()
+    fn worker_count(&self) -> usize {
+        self.senders.len()
     }
+
+    fn live_count(&self) -> usize {
+        self.live_workers.load(Ordering::SeqCst)
+    }
+
+    /// Hot path. Lock-free dispatch: `AtomicUsize::fetch_add` selects
+    /// the worker, then a single `SyncSender::send` enqueues the
+    /// request. No global mutex is taken on the request path.
+    fn dispatch(&self, request: ReaderRequest) -> Result<(), ReaderRequest> {
+        if self.shutdown.load(Ordering::Relaxed) {
+            return Err(request);
+        }
+        let n = self.senders.len();
+        if n == 0 {
+            return Err(request);
+        }
+        let idx = self.next.fetch_add(1, Ordering::Relaxed) % n;
+        self.senders[idx].send(request).map_err(|err| err.0)
+    }
+
+    /// Signal every worker to exit and join its thread. Idempotent —
+    /// safe to call from `Engine::close` and again from
+    /// `ReaderWorkerPool::Drop`.
+    fn shutdown(&self) {
+        if self.shutdown.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        for sender in &self.senders {
+            let _ = sender.send(ReaderRequest::Shutdown);
+        }
+        if let Ok(mut slot) = self.handles.lock() {
+            if let Some(handles) = slot.take() {
+                for handle in handles {
+                    let _ = handle.join();
+                }
+            }
+        }
+    }
+}
+
+impl Drop for ReaderWorkerPool {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
+}
+
+fn reader_worker_loop(
+    mut connection: Connection,
+    rx: Receiver<ReaderRequest>,
+    live_workers: Arc<AtomicUsize>,
+) {
+    live_workers.fetch_add(1, Ordering::SeqCst);
+    // Drop guard so the live counter decrements even on panic.
+    struct LiveGuard(Arc<AtomicUsize>);
+    impl Drop for LiveGuard {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+    let _guard = LiveGuard(live_workers);
+
+    while let Ok(request) = rx.recv() {
+        match request {
+            ReaderRequest::Shutdown => break,
+            ReaderRequest::Search { compiled, query_vector, respond } => {
+                let result = read_search_in_tx(&mut connection, &compiled, query_vector.as_deref());
+                // Receiver may have been dropped if the caller went
+                // away; nothing to do in that case.
+                let _ = respond.send(result);
+            }
+        }
+    }
+
+    // Per `dev/design/engine.md` § Close path, uninstall the profile
+    // callback before dropping the connection so SQLite cannot fire
+    // one last callback against a `ProfileContext` whose Box is about
+    // to free.
+    uninstall_profile_callback(&connection);
+    drop(connection);
 }
 
 impl ProjectionRuntime {
@@ -704,7 +821,7 @@ impl Engine {
                         closed: AtomicBool::new(false),
                         lock: Mutex::new(Some(lock)),
                         connection: Mutex::new(Some(connection)),
-                        reader_pool: ReaderPool::new(readers),
+                        reader_pool: ReaderWorkerPool::new(readers),
                         counters: lifecycle::Counters::new(),
                         subscribers,
                         profiling_enabled,
@@ -959,11 +1076,12 @@ impl Engine {
             .as_ref()
             .and_then(|embedder| embedder.embed(query).ok())
             .and_then(|vector| serde_json::to_string(&vector).ok());
-        let Some(mut reader) = self.reader_pool.borrow() else {
-            return Err(EngineError::Storage);
-        };
-        let search_result = read_search_in_tx(&mut reader, &compiled, query_vector.as_deref());
-        self.reader_pool.release(reader);
+        let (response_tx, response_rx) = mpsc::sync_channel::<ReaderResponse>(1);
+        let request = ReaderRequest::Search { compiled, query_vector, respond: response_tx };
+        if self.reader_pool.dispatch(request).is_err() {
+            return Err(EngineError::Closing);
+        }
+        let search_result = response_rx.recv().map_err(|_| EngineError::Storage)?;
         let (cursor, soft_fallback, results) = match search_result {
             Ok(result) => result,
             Err(err) => {
@@ -982,12 +1100,11 @@ impl Engine {
         // SQLite cannot fire one last callback against a profile context
         // whose Box is about to free. Per `dev/design/engine.md` § Close
         // path step 6, readers drain before the writer connection so
-        // SQLite's last-handle checkpointer runs on the writer.
-        let readers = self.reader_pool.drain();
-        for reader in &readers {
-            uninstall_profile_callback(reader);
-        }
-        drop(readers);
+        // SQLite's last-handle checkpointer runs on the writer. Each
+        // reader worker uninstalls its own callback inside
+        // `reader_worker_loop` before dropping its connection, then
+        // exits — `shutdown` joins those threads here.
+        self.reader_pool.shutdown();
         if let Ok(mut connection) = self.connection.lock() {
             if let Some(conn) = connection.as_ref() {
                 uninstall_profile_callback(conn);
@@ -1052,6 +1169,16 @@ impl Engine {
     #[must_use]
     pub fn subscribe(&self, subscriber: Arc<dyn lifecycle::Subscriber>) -> Subscription {
         self.subscribers.attach(subscriber)
+    }
+
+    #[doc(hidden)]
+    pub fn reader_worker_count_for_test(&self) -> usize {
+        self.reader_pool.worker_count()
+    }
+
+    #[doc(hidden)]
+    pub fn live_reader_worker_count_for_test(&self) -> usize {
+        self.reader_pool.live_count()
     }
 
     #[cfg(debug_assertions)]
@@ -2414,9 +2541,12 @@ fn install_profile_callback(
 
     // SAFETY: the Box outlives the connection. Rust drops struct fields
     // in declaration order. `connection` and `reader_pool` are declared
-    // before `profile_contexts`, so the connections — and SQLite's
-    // internal profile-callback state with them — are dropped before
-    // the `Box<ProfileContext>` allocations are freed. `Engine::close`
+    // before `profile_contexts`. `ReaderWorkerPool::Drop` joins every
+    // reader worker, and each worker uninstalls and drops its owned
+    // connection inside `reader_worker_loop` before the worker thread
+    // returns. Therefore all connections — and SQLite's internal
+    // profile-callback state with them — are torn down before the
+    // `Box<ProfileContext>` allocations are freed. `Engine::close`
     // additionally clears the callback via
     // `sqlite3_profile(handle, None, NULL)` before connection close to
     // drain any in-flight callback dispatch.

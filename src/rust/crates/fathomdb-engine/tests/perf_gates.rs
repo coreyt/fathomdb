@@ -195,6 +195,8 @@ fn ac_018_drain_of_100_vectors_le_two_seconds() {
     opened.engine.drain(5_000).expect("drain");
     let elapsed = started.elapsed();
 
+    eprintln!("AC018_NUMBERS drain_ms={}", elapsed.as_millis());
+
     assert!(
         elapsed <= Duration::from_secs(2),
         "AC-018 failed: drain took {:?}, expected <= 2 s",
@@ -243,6 +245,12 @@ fn ac_020_reads_do_not_serialize_on_a_single_reader_connection() {
     let concurrent = concurrent_started.elapsed();
 
     let bound = sequential.mul_f32(1.5 / AC020_THREADS as f32);
+    eprintln!(
+        "AC020_NUMBERS sequential_ms={} concurrent_ms={} bound_ms={}",
+        sequential.as_millis(),
+        concurrent.as_millis(),
+        bound.as_millis(),
+    );
     assert!(
         concurrent <= bound,
         "AC-020 failed: concurrent={concurrent:?} bound={bound:?} sequential={sequential:?}"
