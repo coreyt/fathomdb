@@ -1681,11 +1681,7 @@ impl Engine {
     /// + AC-063c.
     pub fn rebuild_projections(&self) -> Result<(), EngineError> {
         self.ensure_open()?;
-        self.projection_runtime.set_frozen(true);
-        let _ = self.drain(REBUILD_DRAIN_TIMEOUT_MS);
-        self.rebuild_shadow_state(true)?;
-        self.projection_runtime.set_frozen(false);
-        Ok(())
+        self.run_rebuild(true)
     }
 
     /// Vec0-only variant of [`Engine::rebuild_projections`]. Leaves
@@ -1693,11 +1689,21 @@ impl Engine {
     /// `recover --rebuild-vec0` is the surface for vec0-only repair.
     pub fn rebuild_vec0(&self) -> Result<(), EngineError> {
         self.ensure_open()?;
+        self.run_rebuild(false)
+    }
+
+    fn run_rebuild(&self, include_fts: bool) -> Result<(), EngineError> {
         self.projection_runtime.set_frozen(true);
-        let _ = self.drain(REBUILD_DRAIN_TIMEOUT_MS);
-        self.rebuild_shadow_state(false)?;
+        // Drain MUST succeed: rebuild_shadow_state truncates shadow rows,
+        // and SQLite-WAL allows a worker that already dequeued a job to
+        // commit its `INSERT OR IGNORE INTO _fathomdb_vector_rows / vec0`
+        // after our truncate releases the writer lock, leaving stale
+        // rows. Surfacing the timeout (instead of swallowing it) lets the
+        // operator retry rather than silently corrupt the rebuild.
+        let drain_result = self.drain(REBUILD_DRAIN_TIMEOUT_MS);
+        let result = drain_result.and_then(|()| self.rebuild_shadow_state(include_fts));
         self.projection_runtime.set_frozen(false);
-        Ok(())
+        result
     }
 
     fn rebuild_shadow_state(&self, include_fts: bool) -> Result<(), EngineError> {
@@ -2137,7 +2143,7 @@ fn semantic_section(connection: &Connection) -> Section {
         Err(rusqlite::Error::QueryReturnedNoRows) => Section::Findings(vec![Finding {
             code: "E_CORRUPT_EMBEDDER_IDENTITY",
             stage: "EmbedderIdentity",
-            locator: CorruptionLocator::TableRow { table: "_fathomdb_embedder_profiles", rowid: 0 },
+            locator: CorruptionLocator::OpaqueSqliteError { sqlite_extended_code: 0 },
             doc_anchor: "design/recovery.md#embedder-identity-drift",
             detail: "default embedder profile row is missing".to_string(),
         }]),
