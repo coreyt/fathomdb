@@ -210,9 +210,9 @@ enum ReaderRequest {
     Shutdown,
     /// Pack 6.G G.1 — debug-only request that asks a worker to read its
     /// own connection's `SQLITE_DBSTATUS_LOOKASIDE_USED` and return the
-    /// current value. Used solely by the integration test that
-    /// asserts post-warmup lookaside slots were consumed; not on any
-    /// production path.
+    /// high-water mark (`hiwtr` out-param). Used solely by the integration
+    /// test that asserts post-warmup lookaside slots were consumed; not
+    /// on any production path.
     #[cfg(debug_assertions)]
     LookasideStatus {
         respond: SyncSender<i32>,
