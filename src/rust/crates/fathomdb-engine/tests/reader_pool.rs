@@ -140,3 +140,36 @@ fn concurrent_searches_route_to_workers_without_loss_or_duplication() {
     // All workers must still be live after the storm.
     assert_eq!(engine.live_reader_worker_count_for_test(), READER_POOL_SIZE);
 }
+
+// -- G.1 lookaside ---------------------------------------------------
+
+#[test]
+fn reader_workers_have_lookaside_configured_with_ok_rc() {
+    let (_dir, opened) = fresh_engine("reader_pool_lookaside_rc");
+    let rcs = opened.engine.reader_lookaside_config_rcs_for_test();
+    assert_eq!(rcs.len(), READER_POOL_SIZE);
+    for (idx, rc) in rcs.iter().enumerate() {
+        assert_eq!(*rc, 0, "worker {idx} sqlite3_db_config(LOOKASIDE) rc must be SQLITE_OK");
+    }
+}
+
+#[test]
+fn reader_workers_consume_lookaside_slots_after_warmup_read() {
+    let (_dir, opened) = fresh_engine("reader_pool_lookaside_used");
+
+    // Drive at least one search through every worker so each connection
+    // has prepared/stepped at least one statement.
+    for _ in 0..(READER_POOL_SIZE * 8) {
+        let _ = opened.engine.search("warmup").err();
+    }
+
+    let used = opened.engine.reader_lookaside_used_per_worker_for_test();
+    eprintln!("LOOKASIDE_USED_HIWTR_PER_WORKER={used:?}");
+    assert_eq!(used.len(), READER_POOL_SIZE);
+    for (idx, slots) in used.iter().enumerate() {
+        assert!(
+            *slots > 0,
+            "worker {idx} SQLITE_DBSTATUS_LOOKASIDE_USED must be >0 after warmup; got {slots}",
+        );
+    }
+}

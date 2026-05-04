@@ -48,6 +48,21 @@ const DEFAULT_PROJECTION_RETRY_DELAYS_MS: [u64; 3] = [1_000, 4_000, 16_000];
 /// connection. AC-021 exercises 8 concurrent readers.
 const READER_POOL_SIZE: usize = 8;
 
+/// Per-reader-connection lookaside slot size, in bytes. Pack 6.G G.1.
+/// Picked from G.0 telemetry (`allocator_lookaside` 26.67% conc cycles
+/// with 3.89× ratio) + the SQLite docs' typical-workload sizing
+/// guidance (https://www.sqlite.org/malloc.html §3): 1200-byte slots
+/// cover the small allocations from `sqlite3DbMallocRaw`,
+/// `sqlite3Fts5ExprNew`, and `vec0Filter_knn` visible at the top of the
+/// concurrent profile.
+const READER_LOOKASIDE_SLOT_SIZE: std::os::raw::c_int = 1200;
+
+/// Per-reader-connection lookaside slot count. SQLite default is 128;
+/// we use 500 to absorb the per-statement allocation footprint of the
+/// hybrid search workload across a sticky worker connection without
+/// falling back to the glibc malloc-arena mutex.
+const READER_LOOKASIDE_SLOT_COUNT: std::os::raw::c_int = 500;
+
 pub struct Engine {
     path: PathBuf,
     next_cursor: AtomicU64,
@@ -76,6 +91,14 @@ pub struct Engine {
     /// pointer.
     #[allow(clippy::vec_box)]
     profile_contexts: Mutex<Vec<Box<ProfileContext>>>,
+    /// Pack 6.G G.1 — `sqlite3_db_config(LOOKASIDE)` rc per reader
+    /// worker, captured at open time before any PRAGMA / prepare ran
+    /// on the connection. Read only by the debug-only test accessor
+    /// `reader_lookaside_config_rcs_for_test`; held in release builds
+    /// too because the field is set unconditionally at open and a cfg
+    /// gate would force two open-locked return shapes.
+    #[allow(dead_code)]
+    reader_lookaside_rcs: Vec<i32>,
     #[cfg(debug_assertions)]
     force_next_commit_failure: AtomicBool,
 }
@@ -185,6 +208,15 @@ enum ReaderRequest {
         respond: SyncSender<ReaderResponse>,
     },
     Shutdown,
+    /// Pack 6.G G.1 — debug-only request that asks a worker to read its
+    /// own connection's `SQLITE_DBSTATUS_LOOKASIDE_USED` and return the
+    /// current value. Used solely by the integration test that
+    /// asserts post-warmup lookaside slots were consumed; not on any
+    /// production path.
+    #[cfg(debug_assertions)]
+    LookasideStatus {
+        respond: SyncSender<i32>,
+    },
 }
 
 type ReaderResponse = rusqlite::Result<(u64, Option<SoftFallback>, Vec<String>)>;
@@ -224,6 +256,24 @@ impl ReaderWorkerPool {
 
     fn live_count(&self) -> usize {
         self.live_workers.load(Ordering::SeqCst)
+    }
+
+    /// Pack 6.G G.1 — broadcast a `LookasideStatus` request to every
+    /// worker (not round-robin) and collect each worker's
+    /// `SQLITE_DBSTATUS_LOOKASIDE_USED`. Used only by the debug
+    /// integration test for post-warmup lookaside-slot consumption.
+    #[cfg(debug_assertions)]
+    fn lookaside_used_per_worker(&self) -> Vec<i32> {
+        let mut results = Vec::with_capacity(self.senders.len());
+        for sender in &self.senders {
+            let (tx, rx) = mpsc::sync_channel::<i32>(1);
+            if sender.send(ReaderRequest::LookasideStatus { respond: tx }).is_ok() {
+                results.push(rx.recv().unwrap_or(-1));
+            } else {
+                results.push(-1);
+            }
+        }
+        results
     }
 
     /// Hot path. Lock-free dispatch: `AtomicUsize::fetch_add` selects
@@ -290,6 +340,10 @@ fn reader_worker_loop(
                 // Receiver may have been dropped if the caller went
                 // away; nothing to do in that case.
                 let _ = respond.send(result);
+            }
+            #[cfg(debug_assertions)]
+            ReaderRequest::LookasideStatus { respond } => {
+                let _ = respond.send(read_lookaside_used_hiwtr(&connection));
             }
         }
     }
@@ -785,7 +839,7 @@ impl Engine {
         );
 
         match open_result {
-            Ok((connection, readers, report)) => {
+            Ok((connection, readers, report, reader_lookaside_rcs)) => {
                 let next_cursor = load_next_cursor(&connection);
                 let subscribers = Arc::new(lifecycle::SubscriberRegistry::new());
                 let profiling_enabled = Arc::new(AtomicBool::new(false));
@@ -831,6 +885,7 @@ impl Engine {
                         projection_runtime,
                         provenance_row_cap: AtomicU64::new(DEFAULT_PROVENANCE_ROW_CAP),
                         profile_contexts: Mutex::new(profile_contexts),
+                        reader_lookaside_rcs,
                         #[cfg(debug_assertions)]
                         force_next_commit_failure: AtomicBool::new(false),
                     },
@@ -859,7 +914,7 @@ impl Engine {
         migrations: &'static [fathomdb_schema::Migration],
         embedder_identity: &EmbedderIdentity,
         emit_migration_event: &mut impl FnMut(&MigrationStepReport),
-    ) -> Result<(Connection, Vec<Connection>, OpenReport), EngineOpenError> {
+    ) -> Result<(Connection, Vec<Connection>, OpenReport, Vec<i32>), EngineOpenError> {
         register_sqlite_vec_extension();
         let connection = Connection::open(&path)
             .map_err(|err| map_open_sqlite_error(err, OpenStage::HeaderProbe))?;
@@ -888,9 +943,21 @@ impl Engine {
         };
 
         let mut readers = Vec::with_capacity(READER_POOL_SIZE);
+        let mut lookaside_rcs: Vec<i32> = Vec::with_capacity(READER_POOL_SIZE);
         for _ in 0..READER_POOL_SIZE {
             let reader = Connection::open(&path)
                 .map_err(|err| map_open_sqlite_error(err, OpenStage::HeaderProbe))?;
+            // Pack 6.G G.1: configure per-connection lookaside BEFORE
+            // any PRAGMA / prepare runs on this reader. Reordering this
+            // after the journal-mode / query_only PRAGMAs would let
+            // SQLite silently ignore the lookaside setting.
+            let rc: i32 = configure_reader_lookaside(&reader);
+            debug_assert_eq!(
+                rc,
+                rusqlite::ffi::SQLITE_OK,
+                "sqlite3_db_config(LOOKASIDE) must return SQLITE_OK on a freshly opened reader",
+            );
+            lookaside_rcs.push(rc);
             reader
                 .pragma_update(None, "journal_mode", "WAL")
                 .map_err(|err| map_open_sqlite_error(err, OpenStage::WalReplay))?;
@@ -900,7 +967,7 @@ impl Engine {
             readers.push(reader);
         }
 
-        Ok((connection, readers, report))
+        Ok((connection, readers, report, lookaside_rcs))
     }
 
     #[must_use]
@@ -1181,6 +1248,27 @@ impl Engine {
     #[doc(hidden)]
     pub fn live_reader_worker_count_for_test(&self) -> usize {
         self.reader_pool.live_count()
+    }
+
+    /// Pack 6.G G.1 — return the `sqlite3_db_config(LOOKASIDE)` rc
+    /// captured for each reader worker at open time, in worker index
+    /// order. SQLITE_OK (= 0) means the lookaside was configured
+    /// before any allocation happened on the connection.
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn reader_lookaside_config_rcs_for_test(&self) -> Vec<i32> {
+        self.reader_lookaside_rcs.clone()
+    }
+
+    /// Pack 6.G G.1 — query each reader worker's
+    /// `SQLITE_DBSTATUS_LOOKASIDE_USED` counter. A value > 0 means at
+    /// least one allocation was satisfied from the per-connection
+    /// lookaside arena (proof the configuration was honored before the
+    /// first prepare).
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn reader_lookaside_used_per_worker_for_test(&self) -> Vec<i32> {
+        self.reader_pool.lookaside_used_per_worker()
     }
 
     #[cfg(debug_assertions)]
@@ -2571,6 +2659,68 @@ fn uninstall_profile_callback(connection: &Connection) {
     unsafe {
         rusqlite::ffi::sqlite3_profile(connection.handle(), None, std::ptr::null_mut());
     }
+}
+
+/// Pack 6.G G.1 — configure SQLite per-connection lookaside on a reader
+/// worker connection. Must be called BEFORE any statement is prepared
+/// or any PRAGMA is run on `connection`; per the SQLite docs
+/// (https://www.sqlite.org/malloc.html §3) lookaside is silently
+/// ignored if reconfigured after the first allocation on the
+/// connection. Passing `NULL` for the buffer pointer lets SQLite
+/// allocate the lookaside backing memory itself.
+///
+/// rusqlite 0.31's `set_db_config` only handles the boolean
+/// `DbConfig::*` variants; `SQLITE_DBCONFIG_LOOKASIDE` is not surfaced
+/// (it is commented out in `rusqlite/src/config.rs`), so we call the
+/// raw FFI directly.
+///
+/// Returns the rc of `sqlite3_db_config` so callers can debug-assert
+/// `SQLITE_OK` and surface configuration failure under
+/// `debug_assertions` test builds without expanding the public surface.
+fn configure_reader_lookaside(connection: &Connection) -> std::os::raw::c_int {
+    // SAFETY: `connection.handle()` returns a valid `*mut sqlite3` for
+    // the lifetime of `connection`. The variadic
+    // `sqlite3_db_config(LOOKASIDE)` call expects three trailing
+    // arguments of types `void*`, `int`, `int` — the prototype shape
+    // documented in `sqlite3.h`. We pass a null buffer so SQLite owns
+    // the lookaside backing allocation, and the slot size / count from
+    // the G.1 constants. No allocations happen on the connection
+    // before this call (reader open path is `Connection::open` ->
+    // `configure_reader_lookaside` -> first PRAGMA).
+    unsafe {
+        rusqlite::ffi::sqlite3_db_config(
+            connection.handle(),
+            rusqlite::ffi::SQLITE_DBCONFIG_LOOKASIDE,
+            std::ptr::null_mut::<std::ffi::c_void>(),
+            READER_LOOKASIDE_SLOT_SIZE,
+            READER_LOOKASIDE_SLOT_COUNT,
+        )
+    }
+}
+
+/// Read the high-water-mark for `SQLITE_DBSTATUS_LOOKASIDE_USED` on
+/// `connection`. The `current` out-param is the live checked-out slot
+/// count and decays as transactions finalize, so it is unreliable as
+/// post-warmup evidence. The `hiwtr` out-param latches the largest
+/// observed `current` value since the last reset and is the right
+/// signal that lookaside was honored at any point on this connection.
+/// Reset flag is `0` so reading does not clear the high-water mark.
+#[cfg(debug_assertions)]
+fn read_lookaside_used_hiwtr(connection: &Connection) -> std::os::raw::c_int {
+    let mut current: std::os::raw::c_int = 0;
+    let mut hiwtr: std::os::raw::c_int = 0;
+    // SAFETY: handle is valid; both out pointers are to local stack
+    // ints; reset flag 0 is documented as legal.
+    unsafe {
+        rusqlite::ffi::sqlite3_db_status(
+            connection.handle(),
+            rusqlite::ffi::SQLITE_DBSTATUS_LOOKASIDE_USED,
+            &mut current,
+            &mut hiwtr,
+            0,
+        );
+    }
+    hiwtr
 }
 
 /// FFI trampoline for `sqlite3_profile`.
