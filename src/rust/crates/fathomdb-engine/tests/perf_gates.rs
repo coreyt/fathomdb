@@ -1,4 +1,4 @@
-use std::sync::{Arc, Barrier};
+use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -301,4 +301,265 @@ fn ac_020_concurrent_only() {
     let elapsed = started.elapsed();
 
     eprintln!("AC020_PHASE_CONCURRENT_MS={}", elapsed.as_millis());
+}
+
+// ── A.3 secondary diagnostics ────────────────────────────────────────────────
+
+const A3_EVIDENCE_DIR: &str = "dev/plan/runs/A3-evidence";
+
+fn a3_evidence_path(name: &str) -> std::path::PathBuf {
+    // Resolve relative to repo root (two levels up from tests/).
+    let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let repo_root = manifest.ancestors().nth(4).expect("repo root").to_path_buf();
+    let dir = repo_root.join(A3_EVIDENCE_DIR);
+    std::fs::create_dir_all(&dir).expect("create evidence dir");
+    dir.join(name)
+}
+
+/// A.3.2 — In-process timing counters for the concurrent read path.
+/// Measures total wall time per `Engine::search()`. Since `RoutedEmbedder` has no
+/// delay, search_us ≈ borrow_wait + read_search_in_tx. Splitting those requires
+/// production hooks; counters_collection_status is `partial`.
+#[test]
+#[ignore = "A.3 diagnostic: set AC020_PHASE=concurrent to opt in"]
+fn ac_a3_counters_concurrent() {
+    if std::env::var("AC020_PHASE").as_deref() != Ok("concurrent") {
+        return;
+    }
+
+    let (_dir, path) = fixture_path("a3_counters_concurrent");
+    let embedder = Arc::new(RoutedEmbedder::new(3));
+    let opened = Engine::open_with_embedder_for_test(&path, embedder.clone()).expect("open");
+    seed_ac020_fixture(&opened.engine);
+
+    let engine = Arc::new(opened.engine);
+    let barrier = Arc::new(Barrier::new(AC020_THREADS + 1));
+    let all_search_ms: Arc<Mutex<Vec<u64>>> = Arc::new(Mutex::new(Vec::new()));
+    let all_embed_ms: Arc<Mutex<Vec<u64>>> = Arc::new(Mutex::new(Vec::new()));
+
+    let mut handles = Vec::with_capacity(AC020_THREADS);
+    for _ in 0..AC020_THREADS {
+        let engine = Arc::clone(&engine);
+        let barrier = Arc::clone(&barrier);
+        let search_sink = Arc::clone(&all_search_ms);
+        let embed_sink = Arc::clone(&all_embed_ms);
+        let embedder = embedder.clone();
+        handles.push(thread::spawn(move || {
+            barrier.wait();
+            let mut local_search = Vec::new();
+            let mut local_embed = Vec::new();
+            for _ in 0..AC020_ROUNDS_PER_THREAD {
+                for query in ac020_queries() {
+                    let t_embed = Instant::now();
+                    let _ = embedder.embed(query);
+                    local_embed.push(t_embed.elapsed().as_micros() as u64);
+
+                    let t_search = Instant::now();
+                    engine.search(query).expect("search");
+                    local_search.push(t_search.elapsed().as_micros() as u64);
+                }
+            }
+            search_sink.lock().unwrap().extend(local_search);
+            embed_sink.lock().unwrap().extend(local_embed);
+        }));
+    }
+    barrier.wait();
+    for h in handles {
+        h.join().expect("thread");
+    }
+
+    let search_us = all_search_ms.lock().unwrap();
+    let embed_us = all_embed_ms.lock().unwrap();
+    let queries_total = search_us.len() as u64;
+    let search_total_us: u64 = search_us.iter().sum();
+    let embed_total_us: u64 = embed_us.iter().sum();
+    // proxy: borrow+read ≈ search - embed (embed is ~0 µs for RoutedEmbedder)
+    let proxy_read_total_us = search_total_us.saturating_sub(embed_total_us);
+
+    let search_per_query_us = search_total_us.checked_div(queries_total).unwrap_or(0);
+    let embed_per_query_us = embed_total_us.checked_div(queries_total).unwrap_or(0);
+    let proxy_per_query_us = proxy_read_total_us.checked_div(queries_total).unwrap_or(0);
+
+    // 4 SQL statements per search (vec0 match, canonical lookup, soft-fallback probe, fts match)
+    // — constant by code inspection of read_search_in_tx.
+    let prepares_per_search: u64 = 4;
+
+    let json = format!(
+        r#"{{
+  "reader_borrow_ms_total": "n/a: requires production hook",
+  "reader_borrow_ms_per_query": "n/a: requires production hook",
+  "embedder_us_total": {embed_total_us},
+  "embedder_us_per_query": {embed_per_query_us},
+  "search_us_total": {search_total_us},
+  "search_us_per_query": {search_per_query_us},
+  "proxy_borrow_plus_read_us_total": {proxy_read_total_us},
+  "proxy_borrow_plus_read_us_per_query": {proxy_per_query_us},
+  "prepares_per_search": {prepares_per_search},
+  "queries_total": {queries_total},
+  "counters_collection_status": "partial: borrow_wait and read_search_in_tx split requires production hooks; search_us covers both",
+  "note": "embed is RoutedEmbedder (instant), so proxy_borrow_plus_read_us ≈ read_search_in_tx_us + borrow_wait_us"
+}}"#
+    );
+
+    let out_path = a3_evidence_path("counters.json");
+    std::fs::write(&out_path, &json).expect("write counters.json");
+    eprintln!("A3_COUNTERS written to {}", out_path.display());
+    eprintln!("  queries_total={queries_total}");
+    eprintln!("  search_us_total={search_total_us}  per_query={search_per_query_us}");
+    eprintln!("  embed_us_total={embed_total_us}  per_query={embed_per_query_us}");
+    eprintln!("  proxy_read_us_total={proxy_read_total_us}  per_query={proxy_per_query_us}");
+}
+
+/// A.3.3 — EXPLAIN QUERY PLAN for the four read-path SQL statements.
+#[test]
+#[ignore = "A.3 diagnostic: opt-in with AC020_PHASE=concurrent"]
+fn ac_a3_explain_query_plan() {
+    if std::env::var("AC020_PHASE").as_deref() != Ok("concurrent") {
+        return;
+    }
+
+    let (_dir, path) = fixture_path("a3_explain");
+    let embedder = Arc::new(RoutedEmbedder::new(3));
+    let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
+    seed_ac020_fixture(&opened.engine);
+    // Engine must stay alive while we open a raw connection (WAL, shared cache).
+    let db_path = opened.engine.path().to_path_buf();
+
+    // Open a raw rusqlite connection — sqlite_vec auto-extension is process-global
+    // after the first Engine::open, so vec0 virtual tables are accessible.
+    let conn = rusqlite::Connection::open(&db_path).expect("raw conn");
+    conn.pragma_update(None, "query_only", "ON").ok();
+
+    // (label, sql-with-literal-placeholders-for-EXPLAIN, explain-literal-substituted)
+    // EXPLAIN QUERY PLAN requires parameter binding even though it doesn't execute.
+    // Use rusqlite::params! with one dummy value per ?1 slot.
+    let statements: &[(&str, &str, &str)] = &[
+        (
+            "vec0_match",
+            "SELECT rowid FROM vector_default WHERE embedding MATCH vec_f32(?1) ORDER BY distance LIMIT 10",
+            "SELECT rowid FROM vector_default WHERE embedding MATCH vec_f32('[1.0,0.0,0.0]') ORDER BY distance LIMIT 10",
+        ),
+        (
+            "canonical_lookup",
+            "SELECT body FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1",
+            "SELECT body FROM canonical_nodes WHERE write_cursor = 1 LIMIT 1",
+        ),
+        (
+            "soft_fallback_probe",
+            "SELECT 1
+             FROM search_index
+             JOIN _fathomdb_vector_kinds ON _fathomdb_vector_kinds.kind = search_index.kind
+             LEFT JOIN _fathomdb_projection_terminal
+               ON _fathomdb_projection_terminal.write_cursor = search_index.write_cursor
+             WHERE search_index MATCH ?1
+              AND _fathomdb_projection_terminal.write_cursor IS NULL
+             LIMIT 1",
+            "SELECT 1
+             FROM search_index
+             JOIN _fathomdb_vector_kinds ON _fathomdb_vector_kinds.kind = search_index.kind
+             LEFT JOIN _fathomdb_projection_terminal
+               ON _fathomdb_projection_terminal.write_cursor = search_index.write_cursor
+             WHERE search_index MATCH 'dummy'
+              AND _fathomdb_projection_terminal.write_cursor IS NULL
+             LIMIT 1",
+        ),
+        (
+            "fts_match",
+            "SELECT body FROM search_index WHERE search_index MATCH ?1 ORDER BY write_cursor",
+            "SELECT body FROM search_index WHERE search_index MATCH 'dummy' ORDER BY write_cursor",
+        ),
+    ];
+
+    let mut out = String::new();
+    let mut regression = false;
+
+    for (label, _parametric_sql, explain_sql) in statements {
+        out.push_str(&format!("=== {label} ===\n"));
+        let explain = format!("EXPLAIN QUERY PLAN {explain_sql}");
+        let mut stmt = conn.prepare(&explain).expect("prepare explain");
+        let rows: Vec<String> = stmt
+            .query_map([], |row| {
+                let detail: String = row.get(3)?;
+                Ok(detail)
+            })
+            .expect("query_map")
+            .flatten()
+            .collect();
+        for row in &rows {
+            out.push_str(&format!("  {row}\n"));
+            // Flag SCAN on canonical_nodes or search_index without SEARCH — potential regression.
+            if row.contains("SCAN") && !row.contains("vec0") && !row.contains("fts5") {
+                regression = true;
+                out.push_str("  *** REGRESSION CANDIDATE: unexpected SCAN ***\n");
+            }
+        }
+        out.push('\n');
+    }
+
+    out.push_str(&format!("regression_observed: {regression}\n"));
+
+    let out_path = a3_evidence_path("explain-query-plan.txt");
+    std::fs::write(&out_path, &out).expect("write explain-query-plan.txt");
+    eprintln!("A3_EXPLAIN written to {}", out_path.display());
+    eprintln!("{out}");
+}
+
+/// A.3.4 — sqlite3_threadsafe integer + PRAGMA compile_options.
+///
+/// Also probes the reader-connection pragma profile (cache_size, mmap_size,
+/// page_size, synchronous, journal_mode, query_only).
+#[test]
+#[ignore = "A.3 diagnostic: opt-in with AC020_PHASE=concurrent"]
+fn ac_a3_threadsafe_and_compile_options() {
+    if std::env::var("AC020_PHASE").as_deref() != Ok("concurrent") {
+        return;
+    }
+
+    let (_dir, path) = fixture_path("a3_threadsafe");
+    // Open via Engine to register extension and create schema.
+    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+    let db_path = opened.engine.path().to_path_buf();
+    drop(opened);
+
+    let conn = rusqlite::Connection::open(&db_path).expect("conn");
+
+    // A.3.4a — THREADSAFE
+    let threadsafe_val: i32 = unsafe { rusqlite::ffi::sqlite3_threadsafe() };
+    std::fs::write(a3_evidence_path("threadsafe.txt"), format!("{threadsafe_val}\n"))
+        .expect("write threadsafe.txt");
+    eprintln!("A3_THREADSAFE={threadsafe_val}");
+
+    // A.3.4b — compile_options
+    let mut stmt = conn.prepare("PRAGMA compile_options").expect("prepare compile_options");
+    let opts: Vec<String> =
+        stmt.query_map([], |r| r.get::<_, String>(0)).expect("query_map").flatten().collect();
+    let opts_text = opts.join("\n") + "\n";
+    std::fs::write(a3_evidence_path("compile_options.txt"), &opts_text)
+        .expect("write compile_options.txt");
+    eprintln!("A3_COMPILE_OPTIONS ({} lines):\n{opts_text}", opts.len());
+
+    // A.3.4c — reader pragma profile (WAL + query_only reader mimicking production)
+    conn.pragma_update(None, "journal_mode", "WAL").ok();
+    conn.pragma_update(None, "query_only", "ON").ok();
+    let journal_mode: String =
+        conn.pragma_query_value(None, "journal_mode", |r| r.get(0)).unwrap_or_default();
+    let query_only: i64 = conn.pragma_query_value(None, "query_only", |r| r.get(0)).unwrap_or(0);
+    let cache_size: i64 = conn.pragma_query_value(None, "cache_size", |r| r.get(0)).unwrap_or(0);
+    let mmap_size: i64 = conn.pragma_query_value(None, "mmap_size", |r| r.get(0)).unwrap_or(0);
+    let page_size: i64 = conn.pragma_query_value(None, "page_size", |r| r.get(0)).unwrap_or(0);
+    let synchronous: i64 = conn.pragma_query_value(None, "synchronous", |r| r.get(0)).unwrap_or(0);
+
+    let pragma_json = format!(
+        r#"{{
+  "journal_mode": "{journal_mode}",
+  "query_only": {query_only},
+  "cache_size": {cache_size},
+  "mmap_size": {mmap_size},
+  "page_size": {page_size},
+  "synchronous": {synchronous}
+}}"#
+    );
+    std::fs::write(a3_evidence_path("reader_pragmas.json"), &pragma_json)
+        .expect("write reader_pragmas.json");
+    eprintln!("A3_READER_PRAGMAS: {pragma_json}");
 }
