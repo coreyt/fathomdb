@@ -375,3 +375,25 @@ Observed effect:
   - untracked:
     `src/rust/crates/fathomdb-engine/tests/perf_gates.rs`,
     `src/rust/crates/fathomdb-engine/tests/projection_runtime.rs`
+
+---
+
+## 11. Phase 9 Pack 5 narrative log (append-only)
+
+Per STATUS.md update protocol step 6 and several phase prompts
+(A.2, B.1, B.2, B.3, C.1, D.1), each KEEP decision in Pack 5
+appends a paragraph here summarising hypothesis → measurement →
+decision. §4/§5 stay structured (kept / reverted experiments);
+§11 is the prose companion that A.2 and the final synthesis can
+quote from.
+
+Preamble (not an experiment): on 2026-05-03 the Phase 9 Pack 1-4
+production work — vector runtime, projection terminal, FTS search
+index, and the AC-020 perf gate — was found uncommitted in the
+working tree at orchestrator resume time. It was committed
+clerically at `1980bf6` after `agent-verify.sh` green at that tree.
+Pack 5 baseline = `1980bf6`. See `dev/plan/runs/STATUS.md`
+"Baseline drift note" and the §11 preamble in
+`dev/plan/0.6.0-Phase-9-Pack-5-performance-diagnostics.md`.
+
+_(no experiment narratives yet — A.0 spawn pending)_

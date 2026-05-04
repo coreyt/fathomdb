@@ -13,10 +13,12 @@ fixes landed; ready to spawn A.0).
 ## Current state
 
 - Branch: `0.6.0-rewrite`.
-- HEAD: `1980bf6` (Phase 9 Pack 1-4 production work — vector runtime,
-  projection terminal, FTS search index, AC-020 perf gate). Prior:
-  `65b15fd` markdownlint fixes; `0dc4785` Pack 5 prompts + STATUS +
-  preflight docs.
+- Branch tip: `2dc2134` (docs: STATUS + resume baseline refresh).
+  Pushed to `origin/0.6.0-rewrite`.
+- A.0 spawn baseline: **`1980bf6`** (`feat(engine): Phase 9 Pack 1-4
+— vector runtime + projection terminal + FTS search index + AC-020
+perf gate`). Prior: `65b15fd` markdownlint fixes; `0dc4785` Pack 5
+  prompts + STATUS + preflight docs.
 - Baseline drift note: original Pack 5 plan assumed a clean baseline
   with Pack 1-4 already committed, but those changes were sitting in
   the working tree. They were committed at `1980bf6` after running

@@ -33,10 +33,18 @@ after each landed experiment, and close the packet.
 
 ## 2. State at this hand-off
 
-- Branch: `0.6.0-rewrite`. HEAD: `1980bf6` (Phase 9 Pack 1-4
-  production landed clerically from working-tree state on
-  2026-05-03 — see STATUS.md "Baseline drift note").
-- Pre-flight: PASS — `dev/plan/runs/preflight-summary.md`.
+- Branch: `0.6.0-rewrite`. Branch tip: `2dc2134` (docs: STATUS +
+  resume baseline refresh).
+- A.0 spawn baseline: **`1980bf6`** (`feat(engine): Phase 9 Pack 1-4
+…`). Phase 9 Pack 1-4 production work was sitting uncommitted in
+  the working tree at original Pack 5 hand-off; landed clerically on
+  2026-05-03 after `agent-verify.sh` green. See STATUS.md "Baseline
+  drift note".
+- Pushed to `origin/0.6.0-rewrite` through `2dc2134`.
+- Pre-flight: PASS — `dev/plan/runs/preflight-summary.md`. Pre-flight
+  HEAD-snapshot was `da9ae05`; engine src was uncommitted at that
+  time. None of the seven pre-flight checks depend on engine src
+  state, so no preflight amendment required.
 - All phase prompts pre-written under `dev/plan/prompts/`:
   `A0`, `A1`, `A2`, `A3`, `A4`, `B1`, `B2`, `B3`, `C1`, `D1`,
   `final-synthesis`, `review-experiment`, `review-phase78-robustness`.
@@ -167,9 +175,14 @@ or REVERT, push back on the implementer subagent and re-spawn.
 
 1. Read STATUS.md.
 2. If "Next action" = spawn Phase A.0:
-   - Append A.0 prompt's `## Update log` with the date, baseline
-     commit `da9ae05` (or whatever HEAD is now), reminder that A.0
-     is test-only and `<BASELINE_COMMIT_SHA>` is `0.6.0-rewrite`.
+   - Confirm A.0 prompt's `## Update log` carries the baseline note
+     (already filled on 2026-05-03 with baseline `1980bf6`); top up
+     if HEAD has moved since.
+   - In the spawn block, `<BASELINE_COMMIT_SHA>` is the literal
+     branch ref `0.6.0-rewrite` — equivalent to whatever
+     `git rev-parse 0.6.0-rewrite` currently resolves to (today:
+     `2dc2134`; A.0's edits will branch off that tip with Pack 1-4
+     production at `1980bf6` already in history).
    - Run the Bash spawn block from `dev/plan/prompts/A0-harness-split.md`.
    - Wait for return.
    - Run decision loop (§3 above).
