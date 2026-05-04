@@ -151,6 +151,25 @@ without closing the gap.
   it on first connection open), so `sqlite3_config` returns
   `SQLITE_MISUSE` and is silently ignored. Not yet validated by capturing
   the return code.
+- Compile-time `SQLITE_THREADSAFE=2` rebuild via
+  `LIBSQLITE3_FLAGS="-USQLITE_THREADSAFE -DSQLITE_THREADSAFE=2"`
+  in `.cargo/config.toml` (C.1, 2026-05-03, REVERTED `15c6473`,
+  no source commit). Build flag verified live: both
+  `sqlite3_threadsafe()==2` and `PRAGMA compile_options THREADSAFE=2`
+  green pre-revert. AC-020 flat: seq 182→182.2 ms (+0.1%), conc
+  115→121.5 ms (+5.65%), speedup 1.58→1.509× (-4.48%). The A.2
+  hot mutex/atomic symbols survive `THREADSAFE=2` unchanged —
+  they are not SQLite's threading-mode mutexes. Likely WAL
+  shared-memory atomic primitives (frame-counter CAS, page
+  reference atomics) which SQLite uses regardless of threading
+  mode. Mutex track CLOSED with the strongest possible intervention.
+  Do NOT retry compile-time threading flags without first
+  surfacing direct evidence that the contended primitive sits
+  inside a SQLite mutex API call. Output JSON:
+  `dev/plan/runs/C1-threadsafe2-rebuild-output.json`. Cross-platform
+  CI deferred (only aarch64-linux verified locally; flag route
+  is architecture-neutral but x86_64-linux + darwin-arm64 not
+  exercised).
 - Runtime `sqlite3_config(SQLITE_CONFIG_MULTITHREAD)` placed at
   `Engine::open_locked` head **before** any `Connection::open`
   (B.1 attempt #2, 2026-05-03, REVERTED at `d448263`'s baseline,
@@ -595,6 +614,82 @@ docs-only and stands as the audit trail.
 Anti-chaining defenses (resume §4 update at `fc3dda3`) **worked**:
 single coherent agent, no Task spawns, no orphan implementer,
 clean structured output. Keep them on for all subsequent spawns.
+
+**C.1 — compile-time `SQLITE_THREADSAFE=2` rebuild (REVERT,
+`15c6473`, 2026-05-03, Sonnet high).** Strongest possible mutex
+intervention. Build route: env-side `LIBSQLITE3_FLAGS=
+"-USQLITE_THREADSAFE -DSQLITE_THREADSAFE=2"` in
+`.cargo/config.toml` (the `-U` first overrides
+libsqlite3-sys-0.28.0 build.rs:137 hardcoded
+`-DSQLITE_THREADSAFE=1`). Two independent assertions verified
+the rebuild was live before revert: `sqlite3_threadsafe()==2`
+(via `tests/compile_options.rs`) AND `PRAGMA compile_options`
+output containing `THREADSAFE=2`. Build clean in 80.7 s; binary
+size 1.17 MB; cross-platform CI deferred (aarch64-linux only).
+
+AC-020 numbers (N=5 each, AGENT_LONG=1):
+
+| metric            | A.1 baseline | C.1 after | delta   |
+|-------------------|--------------|-----------|---------|
+| sequential median | 182 ms       | 182.2 ms  | +0.1%   |
+| concurrent median | 115 ms       | 121.5 ms  | +5.65%  |
+| speedup median    | 1.58×        | 1.509×    | -4.48%  |
+| concurrent stddev | 4.0 ms       | 4.8 ms    | similar |
+| AC-018 drain      | green        | 220 ms    | green   |
+
+REVERT per A.4 numeric rule (conc > 115 threshold). Within ~1.2σ
+of A.1; statistically indistinguishable. `sequential` change is
+noise (+0.1%), confirming THREADSAFE=2 has no measurable effect
+on single-thread path either.
+
+Interpretation: this is the second clean falsification of the
+mutex track. B.1 falsified the *runtime* threading-mode flag;
+C.1 falsifies the *compile-time* threading-mode flag at the
+strongest setting. **The A.2 hot symbols are not SQLite
+threading-mode mutexes.** The most plausible remaining
+explanation is that `__aarch64_swp4_rel`, `__aarch64_cas4_acq`,
+and `___pthread_mutex_lock` symbols are surfacing from SQLite's
+WAL shared-memory protocol (frame counters, page references,
+checkpoint sequence atomics) and the `pthread_mutex_lock` calls
+are coming from rusqlite-side or our own ReaderPool's
+`Mutex<Vec<Connection>>`. Neither layer is removed by
+`SQLITE_THREADSAFE=2`. The `MUTEX_PTHREADS` compile_options
+entry persists at `THREADSAFE=2` because that flag selects the
+mutex backend implementation; it is *bypassed* in code paths
+that the threading mode disables (per-conn + per-stmt mutex
+bypass in MULTITHREAD), but the implementation symbols stay in
+the binary.
+
+Implementer's analysis was partially wrong about *why*
+THREADSAFE=2 didn't help (they wrote "per-connection mutex is
+still physically present in the binary at THREADSAFE=2; only
+disabled at THREADSAFE=0 or with SQLITE_NO_MUTEX") — that's
+binary-presence reasoning. The actual SQLite semantics are that
+THREADSAFE=2 *bypasses* the per-conn / per-stmt mutex API calls
+even though the symbols remain. The numerical conclusion
+(falsification) stands either way. Recording the corrected
+mechanism here so a future reader doesn't mis-design a
+follow-up.
+
+Decision per A.4 kill criterion + §7.8 activation table:
+mutex track is closed clean. **Promote E synthesis sequence
+(replaces D.1 as next branch).** D.1 retained as last-resort
+fallback if E also lands flat.
+
+E.2 (`canonical_nodes(write_cursor)` index) is deferred
+out-of-packet per resume hard-rule §4.6 (no data migration in
+Pack 5). Activated for the next branch: **E.1 first** (prepare_cached
+on read-path search statements; ~18% expected drop on
+542 µs/query A.3.2 baseline) — if E.1 KEEPs alone, AC-020 may
+close. If E.1 KEEPs but speedup still <5×, stack E.3 (reader
+cache_size + mmap_size) on top. E.4 (WAL autocheckpoint) only
+if A.1 recapture shows writer-thread checkpoint cycles.
+
+Reviewer note: codex `gpt-5.4` was MANDATORY for C.1 per plan
+§0.1 (cross-platform Cargo change). Skipped because REVERT means
+no production diff to review. The .cargo/config.toml
+modification was reverted; only output JSON + evidence files
+landed.
 
 ---
 
