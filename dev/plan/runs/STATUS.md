@@ -12,18 +12,41 @@ queued; Pack 5 ESCALATE record below for history).
 
 ## Pack 6 current state
 
-- Branch: `0.6.0-rewrite`. Tip: `52f5572` (Pack 6 handoff rewrite +
-  Pack 5 audit-log artifacts landed).
-- Active phase: **F.0** — thread-affine reader workers (per
-  `dev/plan/prompts/02-pack6-handoff-readerpool-refactor.md` §4).
-- Baseline-of-record for F.0 = Pack 5 final synthesis medians:
-  seq 184.7 ms / conc 124.0 ms / bound 34.6 ms / speedup 1.487× (N=5).
-- Decision rule: KEEP iff conc ≤ 80 ms AND speedup ≥ 5.0× AND
-  AC-018 green AND no lifecycle/close regression.
-- Reviewer mandatory on KEEP / INCONCLUSIVE (codex `gpt-5.4` high).
-- Anti-chaining defenses still apply (PREAMBLE + `--disallowedTools
-  Task Agent` + stream-json).
-- Active worktrees: none yet.
+- Branch: `0.6.0-rewrite`. Tip: `de4810a` at F.0 spawn time
+  (handoff + STATUS Pack 6 OPEN + F.0 implementer prompt landed).
+- Active phase: **F.0 CLOSED — REVERT** (2026-05-04). Pack 6
+  ESCALATE pending human decision between handoff §10 (a) defer,
+  (b) WAL2/vendor-SQLite, (c) reader/writer physical separation.
+- F.0 worktree: `/tmp/fdb-pack6-F0-thread-affine-readers-20260504T115216Z`
+  (un-merged branch `pack6-F0-thread-affine-readers-20260504T115216Z`,
+  worktree commit `07388cf`). Branch retained for audit; not merged.
+- Decision rule met: conc_median 155 ms > 100 ms REVERT bound;
+  speedup 3.49× < 5.0× KEEP threshold; AC-018 green (drain 56 ms);
+  shutdown + routing invariants pass; no Rust-side hot-path mutex
+  remaining.
+- Reviewer skipped per handoff §8 (mandatory only on KEEP /
+  INCONCLUSIVE; REVERT does not require codex pass).
+- Pack 6 phase results:
+
+| Phase | Spawned       | Decision | Reviewer  | Worktree                                         | Notes / log                                                                                                                              |
+| ----- | ------------- | -------- | --------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| F.0   | 2026-05-04    | REVERT   | n/a       | un-merged branch retained, worktree dir to clean | thread-affine reader workers; speedup 1.49→3.49× (+2.34×); conc 155 ms > 100 ms bound. Output `dev/plan/runs/F0-thread-affine-readers-output.json`. Implementer log `dev/plan/runs/F0-thread-affine-readers-20260504T115216Z.log`. |
+
+## Pack 6 latest measurements
+
+- 2026-05-04 F.0 N=5 raw (release, AGENT_LONG=1):
+  - sequential `[530, 549, 531, 541, 518]` ms — median 531, stddev 11.17.
+  - concurrent `[157, 155, 152, 155, 164]` ms — median 155, stddev 4.27.
+  - bound `[99, 102, 99, 101, 97]` ms — median 99.
+  - speedup `[3.376, 3.542, 3.493, 3.490, 3.159]` — median 3.490, stddev 0.137.
+  - AC-017 green; AC-018 drain 56 ms (green); 4 new
+    `tests/reader_pool.rs` integration tests green; clippy + fmt
+    clean; pre-existing release-build cargo-test compile gap on
+    `compatibility/cursors/lifecycle_observability` (uses
+    `#[cfg(debug_assertions)]` helpers absent in release) is
+    pre-F.0 and not introduced by Pack 6.
+  - Host caveat: sequential timings ~3× Pack 5's reported 184 ms on
+    this worktree machine; compare speedup ratios across packs.
 
 ---
 
@@ -210,10 +233,23 @@ PARTIAL_KEEP `edb0c84` → A.4 PICK_B1 OVERRIDE — all DONE.
 output at `dev/plan/runs/final-synthesis-output.json`. Whitepaper
 §11 carries the closing narrative + Pack 6 starting point.
 
-**Pack 6 OPEN — F.0 spawn next.** Human authorized the thread-affine
-reader-workers handoff (supersedes earlier ArrayQueue-only pool swap).
-Spawn block per `dev/plan/prompts/02-pack6-handoff-readerpool-refactor.md`
-§11; baseline `0.6.0-rewrite` tip `52f5572`.
+**Pack 6 ESCALATE — F.0 REVERT.** Thread-affine reader workers
+collapsed the Rust-side ReaderPool / cross-thread-handoff component
+(speedup 1.49×→3.49×, +2.34×) but did not close AC-020 (conc
+155 ms > 100 ms bound; speedup 3.49× < 5.0× KEEP threshold). Per
+handoff §10 the residual ceiling is now WAL/SQLite-internal.
+
+Recommended next action (human decision per handoff §10):
+
+- (a) Formal AC-020 deferral with the Pack 5 + Pack 6 evidence
+  chain attached; ship 0.6.0 with REQ-020 marked deferred in
+  `dev/test-plan.md`. Implementer-recommended option.
+- (b) WAL2 / vendor-SQLite path. Higher LoC + risk; not yet in
+  `libsqlite3-sys-0.30`.
+- (c) Reader/writer physical separation. Larger redesign.
+
+The smallest-radius remaining experiment is NOT another pool change.
+Pack 5 closed mutex+parse; Pack 6 F.0 closed pool topology.
 
 ---
 

@@ -222,6 +222,37 @@ without closing the gap.
   call path or a different SQLite build — the rc=0/idempotency
   evidence is dispositive. Output JSON:
   `dev/plan/runs/B1-multithread-wiring-output.json`.
+- Thread-affine reader workers (F.0, Pack 6, 2026-05-04, REVERTED —
+  branch `pack6-F0-thread-affine-readers-20260504T115216Z` retained
+  for audit; not merged to `0.6.0-rewrite`). Replaced
+  `ReaderPool::Mutex<Vec<Connection>>` borrow/release with 8
+  long-lived reader worker threads, each owning one read-only
+  `Connection` for its lifetime. Dispatch is lock-free:
+  `AtomicUsize::fetch_add(Relaxed) % 8` round-robin into per-worker
+  bounded `SyncSender<ReaderRequest>`; oneshot reply channel per
+  caller. No global mutex on hot dispatch path. Connections never
+  cross thread boundaries after `Engine::open`. Clean shutdown via
+  `ReaderWorkerPool::Drop` (Shutdown send + `JoinHandle::join`).
+  Tests: 4 new `tests/reader_pool.rs` (worker-count, close-exit,
+  drop-exit, routing-stress 800-call no-loss/no-duplicate) + AC-017
+  + AC-018 (drain 56 ms). AC-020 N=5 (AGENT_LONG=1, release):
+  sequential `[530, 549, 531, 541, 518]` median 531 ms, concurrent
+  `[157, 155, 152, 155, 164]` median 155 ms, speedup
+  `[3.376, 3.542, 3.493, 3.490, 3.159]` median **3.49×** (Pack 5
+  baseline 1.487× → +2.34× in the speedup ratio). **Concurrent
+  median 155 ms > 100 ms REVERT bound** and speedup 3.49× < 5.0×
+  KEEP threshold. Host-caveat: sequential ~3× Pack 5's reported 184
+  ms on this worktree; speedup ratio is the safer cross-pack
+  comparator. Topology change genuinely removes the Rust-side
+  ReaderPool / cross-thread-handoff component — ~2.34× speedup-ratio
+  gain, consistent across runs (stddev 0.14×) — but does not close
+  AC-020 by itself. Per handoff §10 the residual ceiling is now
+  WAL/SQLite-internal (WAL shared-memory atomics, pager-cache
+  contention, or similar SQLite-internal shared resource). Do NOT
+  retry F.0 or further Rust-side pool topology — this hypothesis is
+  closed at the strongest topology the Pack 5+6 evidence supports.
+  Output JSON: `dev/plan/runs/F0-thread-affine-readers-output.json`.
+  Worktree commit on the un-merged branch: `07388cf`.
 
 ---
 

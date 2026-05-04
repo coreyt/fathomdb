@@ -1,0 +1,158 @@
+{
+  "phase": "F.0",
+  "decision_self": "REVERT",
+  "commit_sha": "07388cf3b54a4e003dec818cf795ede49f2539fd",
+  "branch": "pack6-F0-thread-affine-readers-20260504T115216Z",
+  "red_tests_written": [
+    {
+      "name": "tests/reader_pool.rs::reader_pool_spawns_eight_worker_threads_at_open",
+      "why_failed_pre_change": "Pre-change Engine had no reader_worker_count_for_test or live_reader_worker_count_for_test helpers, and there was no worker-thread topology to count. Test fails to compile against the borrow/release ReaderPool shape — meaningful red because it is shape-specific to the new contract."
+    },
+    {
+      "name": "tests/reader_pool.rs::reader_workers_exit_on_close_and_drop_connections",
+      "why_failed_pre_change": "Pre-change there were no worker threads to count; live_reader_worker_count_for_test() did not exist. The post-close 'no deadlock + search no longer succeeds' assertion is the new contract — the old code drained connections from a Mutex and had no thread-exit invariant to test."
+    },
+    {
+      "name": "tests/reader_pool.rs::reader_workers_exit_on_drop_without_explicit_close",
+      "why_failed_pre_change": "Same — pre-change there was no Drop-side worker join contract; ReaderPool::drop simply released a Vec<Connection>. Test would fail to compile against the prior shape."
+    },
+    {
+      "name": "tests/reader_pool.rs::concurrent_searches_route_to_workers_without_loss_or_duplication",
+      "why_failed_pre_change": "Functionally pre-change code also returned one response per search (Mutex pool was correct), so this is not a behavior-novelty test. It fails to compile against pre-change because it depends on the helper accessors above and is the explicit routing/concurrency stress oracle the spec requires."
+    }
+  ],
+  "ac017_runs": [
+    {
+      "passed": true,
+      "notes": "release; standalone 'ac_017' in tests/perf_gates.rs; no AGENT_LONG required."
+    }
+  ],
+  "ac018_runs": [
+    {
+      "drain_ms": 56,
+      "passed": true,
+      "notes": "release; AC018_NUMBERS drain_ms=56; well under the 2 s gate."
+    }
+  ],
+  "ac020_runs": [
+    {
+      "run": 1,
+      "sequential_ms": 530,
+      "concurrent_ms": 157,
+      "bound_ms": 99,
+      "speedup": 3.376,
+      "passed_5_33x": false,
+      "passed_packet_1_25_margin": false
+    },
+    {
+      "run": 2,
+      "sequential_ms": 549,
+      "concurrent_ms": 155,
+      "bound_ms": 102,
+      "speedup": 3.542,
+      "passed_5_33x": false,
+      "passed_packet_1_25_margin": false
+    },
+    {
+      "run": 3,
+      "sequential_ms": 531,
+      "concurrent_ms": 152,
+      "bound_ms": 99,
+      "speedup": 3.493,
+      "passed_5_33x": false,
+      "passed_packet_1_25_margin": false
+    },
+    {
+      "run": 4,
+      "sequential_ms": 541,
+      "concurrent_ms": 155,
+      "bound_ms": 101,
+      "speedup": 3.490,
+      "passed_5_33x": false,
+      "passed_packet_1_25_margin": false
+    },
+    {
+      "run": 5,
+      "sequential_ms": 518,
+      "concurrent_ms": 164,
+      "bound_ms": 97,
+      "speedup": 3.159,
+      "passed_5_33x": false,
+      "passed_packet_1_25_margin": false
+    }
+  ],
+  "ac020_summary": {
+    "sequential_ms": {
+      "min": 518,
+      "median": 531,
+      "max": 549,
+      "stddev": 11.17
+    },
+    "concurrent_ms": {
+      "min": 152,
+      "median": 155,
+      "max": 164,
+      "stddev": 4.27
+    },
+    "speedup": {
+      "min": 3.159,
+      "median": 3.490,
+      "max": 3.542,
+      "stddev": 0.137
+    }
+  },
+  "worker_pool_summary": {
+    "worker_count": 8,
+    "dispatch_topology": "Per-worker SyncSender<ReaderRequest> with capacity 4. Engine::search builds a fresh oneshot SyncSender<ReaderResponse>(1), wraps the request, and routes via AtomicUsize::fetch_add(Relaxed) % 8 round-robin. Worker pulls request, runs read_search_in_tx on its owned Connection, sends ReaderResponse on the oneshot channel. Caller blocks on its private rx.recv().",
+    "connection_lifetime": "Each Connection is created at Engine::open, has its sqlite3_profile callback installed on the open thread, and is moved into one of 8 worker threads (thread::Builder::new().name(\"fathomdb-reader-{idx}\")). It lives there until the worker drains its channel (Shutdown variant or sender drop), at which point the worker uninstalls the profile callback and drops the Connection. No Connection ever crosses thread boundaries again after startup.",
+    "hot_path_synchronization": "Read of self.reader_pool.senders[idx] is a Vec index (no lock). next.fetch_add is a single relaxed atomic. SyncSender::send takes the channel's internal lock for the enqueue, but that lock is per-worker, not global, and is contended only by callers landing on the same worker. There is NO global mutex on the dispatch path. Shutdown is one-shot: AtomicBool::swap + per-worker Shutdown send + JoinHandle::join under a Mutex<Option<Vec<JoinHandle>>>, executed only on close/drop."
+  },
+  "shutdown_test_result": {
+    "passed": true,
+    "details": "Two integration tests cover this. (a) reader_workers_exit_on_close_and_drop_connections: opens engine, fires 32 dummy searches (each errors on empty query, but exercises the dispatch/return path), calls Engine::close, then asserts live_reader_worker_count_for_test()==0 within a 2 s deadline and that subsequent search() surfaces a closing/storage error rather than hanging. (b) reader_workers_exit_on_drop_without_explicit_close: opens engine, drops it without close(); ReaderWorkerPool::Drop is invoked synchronously, which sends Shutdown to each worker and joins every JoinHandle; the closing scope returning at all is the assertion. Both tests pass in 0.12 s combined."
+  },
+  "routing_stress_test_result": {
+    "passed": true,
+    "details": "concurrent_searches_route_to_workers_without_loss_or_duplication seeds one row, then spawns 32 caller threads each running 25 search('hello') calls (800 total). The success counter increments exactly once per Ok(_); duplication would inflate the count, loss would deflate. After the storm: success==800, failure==0, live_reader_worker_count_for_test()==8. No request lost, no request duplicated, no worker died."
+  },
+  "unexpected_observations": [
+    "Sequential AC-020 timing on this worktree machine (518..549 ms) is ~3x Pack 5's reported sequential of 184.7 ms. The host is plausibly different, so absolute Pack 5 vs F.0 deltas are not directly comparable. Speedup is the safer comparator: Pack 5 1.49x → F.0 3.49x median (2.34x improvement in the speedup ratio itself).",
+    "Even though concurrent absolute (155 ms median) is above the spec's 100 ms REVERT bound, the speedup gain is large and consistent across all 5 runs (stddev 0.14x). That is consistent with the borrow/release + cross-thread-handoff hypothesis being a real but partial contributor, with a remaining ceiling that is not Rust-side topology.",
+    "AC-018 drain measured 56 ms (gate is 2000 ms) — drain path is unaffected by the worker pool change as expected.",
+    "All 4 new reader_pool integration tests pass deterministically in <0.2 s; no flake observed across the implementation iterations."
+  ],
+  "alternative_hypothesis_if_revert": "Per Pack 5 final synthesis and handoff §10, after F.0 the remaining suspect is WAL shared-memory atomics inside SQLite itself (the WAL-index page contention seen on heavy concurrent reads). Rust-side mutex/handoff is now demonstrably collapsed (lock-free dispatch, thread-affine connections), yet concurrent_ms only fell from ~124 ms to ~155 ms (and notably did not scale linearly with seq/8). If absolute concurrent_ms scales with sequential_ms across hosts but the speedup ceiling sits at ~3.5x with 8 readers, that is the signature of a SQLite-internal shared resource — most plausibly WAL shared-memory or pager-cache contention.",
+  "data_for_pivot": {
+    "rust_side_topology_collapsed": true,
+    "speedup_pre_pack6": 1.49,
+    "speedup_post_f0_median": 3.49,
+    "speedup_post_f0_stddev": 0.137,
+    "concurrent_ms_post_f0_median": 155,
+    "concurrent_ms_required_for_keep": 80,
+    "absolute_keep_gap_ms": 75,
+    "next_packet_pointer_per_handoff_section_10": "F.0 has not closed AC-020 within bound. Per handoff §10 the next packet is one of: (a) formal AC-020 deferral with the Pack 5+6 evidence chain attached; (b) WAL2 / vendor-SQLite path; (c) reader/writer physical separation. The smallest-radius remaining experiment is NOT ArrayQueue (Pack 5 already showed mutex/handoff was a partial contributor and F.0 confirmed the rest is below SQLite's API). The orchestrator should pick between (a), (b), or (c) — recommend (a) as the calibrated next step given the cost/risk profile of (b) and (c).",
+    "host_caveat": "Sequential timings on this worktree host are ~3x Pack 5's reported sequential. Compare speedup ratios, not absolute concurrent_ms, when reasoning across packs. Within F.0 (consistent host, 5 runs) all numbers are tight."
+  },
+  "agent_verify_status": "not-run",
+  "agent_verify_reason": "dev/agent-verify.sh does not exist in this worktree. Per the implementer prompt §4 step 7, the script is run only when present.",
+  "extra_notes": {
+    "ac020_decision_rule_evaluation": {
+      "concurrent_median_ms": 155,
+      "speedup_median": 3.49,
+      "ac018_green": true,
+      "shutdown_invariants_green": true,
+      "delivery_invariants_green": true,
+      "rust_side_pool_or_handoff_remaining": false,
+      "decision_per_handoff_section_7": "REVERT — concurrent_median_ms (155) > 100 ms threshold. Speedup also below 5.0x. AC-018 stays green; shutdown/delivery invariants pass; new hot symbols are not on the table here, but the dispatch path is provably lock-free so the Rust-side suspect is closed."
+    },
+    "tests_run": [
+      "cargo test -p fathomdb-engine (dev profile, full suite incl. tests/reader_pool, tests/perf_gates ac_017/018/020 default-mode) — all green",
+      "cargo test --workspace (dev profile) — all green",
+      "cargo test --release -p fathomdb-engine --test perf_gates -- ac_017 ac_018 — green; AC018 drain=56 ms",
+      "AGENT_LONG=1 cargo test --release -p fathomdb-engine --test perf_gates ac_020_reads_do_not_serialize -- --nocapture --test-threads=1 (x5) — gate fails as documented; all numeric output captured above",
+      "cargo clippy -p fathomdb-engine --all-targets -- -D warnings — clean",
+      "cargo fmt --all -- --check — clean"
+    ],
+    "release_profile_engine_tests_pre_existing_caveat": "cargo test --release -p fathomdb-engine fails to BUILD several engine integration tests (compatibility, cursors, lifecycle_observability) because they depend on #[cfg(debug_assertions)] test helpers that are absent in release builds. This pre-dates F.0 (the impacted methods — execute_for_test, force_next_commit_failure_for_test, open_with_migrations_for_test — are pre-existing) and is not introduced by this packet. perf_gates tests build and run cleanly under --release."
+  }
+}
