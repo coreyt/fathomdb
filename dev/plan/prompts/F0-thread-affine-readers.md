@@ -84,11 +84,11 @@ Workflow:
    start the green refactor. (The orchestrator will inspect this.)
 3. Implement the worker pool and the search-path refactor (green).
 4. Run AC-017 + AC-018 + AC-020 standalone (`cargo test -- --ignored
-   --test-threads=1`-equivalent per existing harness) and a
+--test-threads=1`-equivalent per existing harness) and a
    workspace `cargo test --release`.
 5. Capture AC-020 N=5 with `AGENT_LONG=1`.
 6. Run `cargo clippy --all-targets -- -D warnings` and `cargo fmt
-   --check`.
+--check`.
 7. If `dev/agent-verify.sh` exists, run it.
 
 ## 5. Hard rules
@@ -126,7 +126,7 @@ Required fields:
 - `ac020_summary`: `{sequential_ms, concurrent_ms, speedup}` each
   with `min/median/max/stddev`.
 - `worker_pool_summary`: `{worker_count, dispatch_topology,
-  connection_lifetime, hot_path_synchronization}` (free-form prose
+connection_lifetime, hot_path_synchronization}` (free-form prose
   short).
 - `shutdown_test_result`: pass/fail + details.
 - `routing_stress_test_result`: pass/fail + details.

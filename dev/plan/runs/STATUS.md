@@ -12,25 +12,37 @@ queued; Pack 5 ESCALATE record below for history).
 
 ## Pack 6 current state
 
-- Branch: `0.6.0-rewrite`. Tip: `de4810a` at F.0 spawn time
-  (handoff + STATUS Pack 6 OPEN + F.0 implementer prompt landed).
-- Active phase: **F.0 CLOSED — REVERT** (2026-05-04). Pack 6
-  ESCALATE pending human decision between handoff §10 (a) defer,
-  (b) WAL2/vendor-SQLite, (c) reader/writer physical separation.
-- F.0 worktree: `/tmp/fdb-pack6-F0-thread-affine-readers-20260504T115216Z`
-  (un-merged branch `pack6-F0-thread-affine-readers-20260504T115216Z`,
-  worktree commit `07388cf`). Branch retained for audit; not merged.
-- Decision rule met: conc_median 155 ms > 100 ms REVERT bound;
-  speedup 3.49× < 5.0× KEEP threshold; AC-018 green (drain 56 ms);
-  shutdown + routing invariants pass; no Rust-side hot-path mutex
-  remaining.
-- Reviewer skipped per handoff §8 (mandatory only on KEEP /
-  INCONCLUSIVE; REVERT does not require codex pass).
+- Branch: `0.6.0-rewrite`. Tip: `4ebdd68` (F.0 cherry-pick) plus
+  follow-up cfg-gate + docs commits (see history below).
+- Active phase: **F.0 KEPT** (2026-05-04, human override of the
+  numeric REVERT rule). Topology change is strictly better than
+  the prior `Mutex<Vec<Connection>>` borrow/release on every
+  dimension that matters for 0.6.0 GA: lower corruption surface
+  (no shared `sqlite3*` handle across threads), no hot-path mutex,
+  no cross-thread connection handoff, +2.34× speedup-ratio gain.
+  AC-020 itself does not close — residual is WAL/SQLite-internal —
+  but the pool topology track is closed for 0.6.0.
+- Source: cherry-pick of worktree commit `07388cf` onto
+  `0.6.0-rewrite`; reviewer BLOCK on `_for_test` public surface
+  addressed by gating the two new accessors under
+  `#[cfg(debug_assertions)]` to match the existing convention.
+- Codex `gpt-5.4` reviewer verdict (mandatory on KEEP):
+  `dev/plan/runs/F0-review-20260504T122055Z.md`. Verdict was
+  `BLOCK` against the original packet rule (numeric REVERT +
+  surface expansion + agent-verify path mismatch); KEEP is a human
+  override scoped to the 0.6.0 release decision, not a
+  re-interpretation of the rule. Surface and verify findings
+  resolved in the landed commits; numeric finding is acknowledged
+  and recorded.
+- `./scripts/agent-verify.sh` PASS post-land (lint, typecheck,
+  test all green; release-build integration-test compile gap on
+  pre-existing `compatibility/cursors/lifecycle_observability`
+  helpers is unchanged from before F.0).
 - Pack 6 phase results:
 
 | Phase | Spawned       | Decision | Reviewer  | Worktree                                         | Notes / log                                                                                                                              |
 | ----- | ------------- | -------- | --------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| F.0   | 2026-05-04    | REVERT   | n/a       | un-merged branch retained, worktree dir to clean | thread-affine reader workers; speedup 1.49→3.49× (+2.34×); conc 155 ms > 100 ms bound. Output `dev/plan/runs/F0-thread-affine-readers-output.json`. Implementer log `dev/plan/runs/F0-thread-affine-readers-20260504T115216Z.log`. |
+| F.0   | 2026-05-04    | KEEP (human override) | codex gpt-5.4 BLOCK (numeric REVERT + surface expansion + verify path); surface + verify addressed, numeric acknowledged | cherry-picked from `pack6-F0-thread-affine-readers-20260504T115216Z` | thread-affine reader workers; speedup 1.49→3.49× (+2.34×); conc 155 ms > 100 ms but 0.6.0-GA-acceptable. Output `dev/plan/runs/F0-thread-affine-readers-output.json`. Implementer log `dev/plan/runs/F0-thread-affine-readers-20260504T115216Z.log`. Reviewer log `dev/plan/runs/F0-review-20260504T122055Z.md`. |
 
 ## Pack 6 latest measurements
 
@@ -233,23 +245,15 @@ PARTIAL_KEEP `edb0c84` → A.4 PICK_B1 OVERRIDE — all DONE.
 output at `dev/plan/runs/final-synthesis-output.json`. Whitepaper
 §11 carries the closing narrative + Pack 6 starting point.
 
-**Pack 6 ESCALATE — F.0 REVERT.** Thread-affine reader workers
-collapsed the Rust-side ReaderPool / cross-thread-handoff component
-(speedup 1.49×→3.49×, +2.34×) but did not close AC-020 (conc
-155 ms > 100 ms bound; speedup 3.49× < 5.0× KEEP threshold). Per
-handoff §10 the residual ceiling is now WAL/SQLite-internal.
+**Pack 6 — F.0 KEPT (human override).** Thread-affine reader workers
+landed on `0.6.0-rewrite`. Topology track closed for 0.6.0. AC-020
+itself does not close (conc 155 ms > 100 ms KEEP-rule bound) but the
+residual gap is now WAL/SQLite-internal per Pack 5 + Pack 6 evidence.
+Net position for 0.6.0 GA: ship F.0 + mark REQ-020 deferred in
+`dev/test-plan.md` (or open Pack 7 for WAL2 / vendor-SQLite / reader-
+writer split — not in this packet).
 
-Recommended next action (human decision per handoff §10):
-
-- (a) Formal AC-020 deferral with the Pack 5 + Pack 6 evidence
-  chain attached; ship 0.6.0 with REQ-020 marked deferred in
-  `dev/test-plan.md`. Implementer-recommended option.
-- (b) WAL2 / vendor-SQLite path. Higher LoC + risk; not yet in
-  `libsqlite3-sys-0.30`.
-- (c) Reader/writer physical separation. Larger redesign.
-
-The smallest-radius remaining experiment is NOT another pool change.
-Pack 5 closed mutex+parse; Pack 6 F.0 closed pool topology.
+Pack 6 packet CLOSED.
 
 ---
 
