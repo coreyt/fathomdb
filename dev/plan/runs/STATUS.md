@@ -5,7 +5,7 @@ Single up-to-date progress file for the AC-020 perf packet. Orchestrator
 point. Implementer subagents do **not** edit this file — they write
 `<phase>-output.json` instead, which the orchestrator reads.
 
-Last updated: 2026-05-03 (A.1 KEEP `ca0d8f0` FF-merged; ready to spawn A.2).
+Last updated: 2026-05-03 (A.2 PICK_B1, main thread; ready to spawn A.3 or B.1).
 
 ---
 
@@ -22,8 +22,12 @@ Last updated: 2026-05-03 (A.1 KEEP `ca0d8f0` FF-merged; ready to spawn A.2).
   `fc8b8d8` (descendant of plan-recorded baseline `1980bf6`).
 - A.1 spawn baseline (used): `fec71a0` (A.0 commit). FF applied
   after rebase onto `522a88d`.
-- A.2 spawn baseline: **`ca0d8f0`** (A.1 commit). A.2 reads the
-  flamegraph + folded artifacts in tree.
+- A.2 executed by main thread at baseline `ca0d8f0`; output JSON
+  `dev/plan/runs/A2-symbol-focus-output.json`; no commit (docs +
+  JSON only, bundled with bookkeeping commit).
+- A.3 / B.1 spawn baseline: **`0.6.0-rewrite`** tip (current after
+  A.2 bookkeeping). A.3 is optional per A.2 unambiguous signal —
+  plan §10 step 3 still calls for it as secondary diagnostic.
 - Baseline drift note: original Pack 5 plan assumed a clean baseline
   with Pack 1-4 already committed, but those changes were sitting in
   the working tree. They were committed at `1980bf6` after running
@@ -35,9 +39,9 @@ Last updated: 2026-05-03 (A.1 KEEP `ca0d8f0` FF-merged; ready to spawn A.2).
   amendment required because none of the seven checks depend on the
   engine src state.)
 - Prompts: PASS — 13 files under `dev/plan/prompts/`.
-- Active phase: **none** — A.1 closed (KEEP, `ca0d8f0`); A.2 next.
-- Active worktrees: none (A.1 worktree force-removed after committing
-  artifacts to its phase branch + FF-merge; phase branch deleted).
+- Active phase: **none** — A.2 closed (PICK_B1, main thread); A.3
+  (optional secondary diagnostic) and/or B.1 next.
+- Active worktrees: none.
 
 ## Acceptance scoreboard
 
@@ -58,7 +62,7 @@ packet's acceptance criterion.
 | ----- | ------- | -------- | -------- | -------- | ------ | ----------------------- |
 | A.0   | 2026-05-03 | KEEP  | n/a (test-only) | cleaned | `fec71a0` | harness split; smoke seq=184/conc=117 N=1; output JSON `dev/plan/runs/A0-harness-split-output.json` |
 | A.1   | 2026-05-03 | KEEP  | n/a (capture)   | cleaned | `ca0d8f0` | perf record N=5; seq median 182ms / conc 115ms / speedup 1.58×; flamegraphs in `dev/notes/perf/ac020-*-fec71a0.{svg,folded}`; phase JSON self-marked INCONCLUSIVE per A.1 capture-only mandate, orchestrator KEPT |
-| A.2   | -       | -        | -        | -        | -      | main thread             |
+| A.2   | 2026-05-03 | PICK_B1 | self (main thread Opus) | n/a   | (no code) | mutex_atomic 6.45%→36.98% (5.73× growth, +262M cycles) — dominant; allocator 2× secondary; rest flat/shrinking. Output JSON `dev/plan/runs/A2-symbol-focus-output.json`. |
 | A.3   | -       | -        | -        | -        | -      | -                       |
 | A.4   | -       | -        | -        | -        | -      | main thread             |
 | B.1   | -       | -        | -        | -        | -      | -                       |
@@ -93,6 +97,20 @@ Decision values: `KEEP` / `REVERT` / `INCONCLUSIVE` / `RECAPTURE` /
     14.5% → 8.7% under concurrency.
   - Independent finding both profiles: `sqlite3RunParser` 4.6%
     sequential / 3.4% concurrent — no prepared-statement cache.
+- 2026-05-03 A.2 category-aggregated classification (% total cycles,
+  same A.1 folded files):
+
+  | Category      | Seq %  | Conc % | Ratio |
+  | ------------- | ------ | ------ | ----- |
+  | mutex_atomic  | 6.45   | 36.98  | 5.73× |
+  | allocator     | 1.60   | 3.20   | 2.00× |
+  | page_cache    | 1.64   | 1.46   | 0.89× |
+  | vec0_fts      | 24.12  | 11.43  | 0.47× |
+  | sql_parse     | 10.08  | 7.07   | 0.70× |
+  | our_code      | 0.52   | 0.17   | 0.33× |
+
+  mutex_atomic absolute delta = +262M cycles (largest of any
+  category). Decision rule met → PICK_B1.
 
 ## Outstanding worktrees
 
@@ -108,13 +126,22 @@ Pre-write all phase prompt files (plan §10 step 1) → **DONE**.
 Land Phase 9 Pack 1-4 baseline → **DONE** (`1980bf6`).
 Spawn Phase A.0 → **DONE** (KEEP, `fec71a0`, FF-merged).
 Spawn Phase A.1 → **DONE** (KEEP, `ca0d8f0`, FF-merged after rebase).
+Phase A.2 → **DONE** (PICK_B1, main thread, no commit; bookkeeping
+bundled).
 
-**Pause point per resume §8** — confirm with human before spawning
-A.2 (symbol focus / bottleneck classification — main-thread phase
-per plan §10 + STATUS phase-results notes; reads A.1 artifacts in
-tree at `dev/notes/perf/ac020-*-fec71a0.{svg,folded}` +
-`dev/plan/runs/A1-folded-diff.txt`). Baseline = `ca0d8f0`. A.2
-prompt Update log already carries A.1 numbers + symbol top-10.
+**Pause point per resume §8** — A.4 is the formal go/no-go gate for
+locking the first Phase B/C/D candidate. Two paths from here:
+
+1. Spawn A.3 (`strace -c -f` syscall distribution, Sonnet medium,
+   secondary diagnostic) for completeness, then A.4 lock-in.
+2. Skip A.3 (A.2 signal is unambiguous; A.4 can lock directly) and
+   spawn B.1 (multithread wiring, Opus xhigh, reviewer mandatory)
+   from `0.6.0-rewrite` tip.
+
+Resume §8 says pause after A.4 and confirm with human before
+spawning B/C/D. Recommend path 1 (run A.3 for evidence completeness,
+then A.4 lock, then human-confirm B.1 spawn). Either way: confirm
+with human before next spawn.
 
 ---
 

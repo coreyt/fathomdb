@@ -464,3 +464,53 @@ Raw `perf.data` files (8.1 MB concurrent + 2.2 MB sequential =
 10.3 MB) excluded from commit — regenerable via the documented
 A.0 entry points. Folded + SVG files (~1 MB total) committed for
 A.2 + final synthesis.
+
+**A.2 — symbol-focus diff (PICK_B1, 2026-05-03, main thread Opus
+4.7).** Read both folded files into a category aggregator
+(awk-side classifier matched leaf symbols against the six A.2
+patterns plus a few neighbours: `wal_pager`, `vdbe`,
+`sqlite_hash`, `libc_mem`, `time_syscall`, `unknown`).
+
+Classification (% of total cycles per profile):
+
+| Category      | Seq %  | Conc % | Ratio | Verdict                    |
+| ------------- | ------ | ------ | ----- | -------------------------- |
+| mutex_atomic  | 6.45   | 36.98  | 5.73× | **DOMINANT**               |
+| allocator     | 1.60   | 3.20   | 2.00× | secondary (small absolute) |
+| page_cache    | 1.64   | 1.46   | 0.89× | did not grow               |
+| vec0_fts      | 24.12  | 11.43  | 0.47× | useful work displaced      |
+| our_code      | 0.52   | 0.17   | 0.33× | not a bottleneck (inlined) |
+| embedder      | 0.0    | 0.0    | n/a   | not present in the loop    |
+| sql_parse     | 10.08  | 7.07   | 0.70× | independent (no prep cache)|
+
+Decision rule (A.2 mandate): pick the category whose share grows
+super-linearly between sequential and concurrent. **mutex_atomic
+grows 5.73× with the largest absolute cycle delta (+262M cycles)
+out of 776M total in the concurrent profile** — unambiguous. Per
+A.2 mapping table → first Phase B/C/D candidate is **B.1
+(runtime MULTITHREAD, ordering-correct)**: swap SERIALIZED for
+MULTITHREAD on the projection-runtime + reader connections so
+each connection has its own mutex domain instead of contending
+on the global SQLite mutex.
+
+This *replaces* the §6 hypothesis ladder's primary suspect (lock
+hierarchy between read/write connections). The actual bottleneck
+is one level deeper — SQLite's global mutex (`sqlite3_mutex_*`,
+`__aarch64_swp4_rel`, `__aarch64_cas4_acq`,
+`___pthread_mutex_lock`, `__GI___lll_lock_wait`) serializing
+writers across our pool. B.1 directly targets this.
+
+Allocator at 2× ratio is real but small in absolute terms; held
+in reserve as the B.3 candidate if B.1 KEEPs without closing the
+gap. If B.1 lands with no speedup improvement, A.1 must
+re-capture against the B.1 branch and re-classify before
+picking again — same residual mutex symbol = B.1 missed the
+right connections; different mutex = different problem
+(rusqlite-side, ReaderPool::acquire). No recapture needed *now* —
+A.1 signal is sufficient.
+
+`sqlite3RunParser` at 4-5% in both profiles is independent of
+concurrency (does not grow), but is a real time floor.
+Optimization is orthogonal to AC-020; can be picked up in a
+later packet or as a Phase D-class candidate if AC-020 is closed
+by B.1 alone.

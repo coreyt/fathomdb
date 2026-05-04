@@ -239,5 +239,38 @@ AGENT_LONG=1 cargo test -p fathomdb-engine --release --test perf_gates \
 
 ## Update log
 
-_(append A.4 decision + baseline numbers + decision rule before
-spawn)_
+- 2026-05-03 — A.2 PICK_B1 (main thread Opus 4.7, no recapture
+  needed). Per `dev/plan/runs/A2-symbol-focus-output.json` and
+  whitepaper §11 A.2 entry. A.3 / A.4 may still run; B.1 is
+  pre-aligned with A.2's classification.
+- A.1 baseline (carry numbers into the JSON `before` block):
+  - sequential N=5 `[189,199,182,179,176]` ms; median 182, stddev 9.2
+  - concurrent N=5 `[120,110,117,115,112]` ms; median 115, stddev 4.0
+  - speedup_observed 1.58×; required 5.33×; gap 3.4×
+- A.2 classification (`before` distribution):
+  - mutex_atomic 6.45% seq → 36.98% conc (5.73× growth, +262M cycles)
+  - allocator 1.60% seq → 3.20% conc (2.00× growth, +19M cycles)
+  - vec0_fts 24.12% → 11.43% / sql_parse 10.08% → 7.07% / page_cache,
+    vdbe, our_code all flat-or-shrinking
+  - Top concurrent symbols to watch on `after`: `__aarch64_swp4_rel`
+    11.2%, `__aarch64_cas4_acq` 9.8%, `___pthread_mutex_lock` 6.8%,
+    `__aarch64_swp4_acq` 5.9%, `lll_mutex_lock_optimized` 1.8%,
+    `__GI___lll_lock_wait` ~1.2%.
+- B.1 spawn baseline = `ca0d8f0` (A.1 commit, current
+  `0.6.0-rewrite` tip after orchestrator bookkeeping commit
+  `1f89169`). Replace `<A0_COMMIT_SHA>` in spawn block with
+  `0.6.0-rewrite` (resolves to the current tip — `1f89169` at
+  spawn time, descendant of `ca0d8f0`).
+- Decision rule for B.1 KEEP/REVERT (per AC §1):
+  - KEEP iff concurrent median drops ≥ 30% vs A.1 baseline (115ms →
+    ≤ 80.5ms) AND speedup ≥ 5.0× AND AC-018 stays green.
+  - INCONCLUSIVE if speedup improves but does not reach 5.0× —
+    proceed to A.1 recapture against B.1 branch + re-classify;
+    candidate next is B.3 (per-conn lookaside) targeting the
+    secondary allocator share.
+  - REVERT if concurrent median regresses or AC-018 turns red.
+- A.2 alternative-if-fails: if B.1 lands without speedup change,
+  re-capture must show whether residual mutex_atomic is still in
+  the SQLite global mutex (B.1 not applied to right connections)
+  vs a different mutex (rusqlite-side or `ReaderPool::acquire`).
+- Reviewer: codex with `gpt-5.4` mandatory per plan §0.1 / resume §4.
