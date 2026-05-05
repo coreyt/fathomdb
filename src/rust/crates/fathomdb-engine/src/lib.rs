@@ -876,6 +876,35 @@ pub struct SafeExportArtifact {
     pub manifest_sha256: String,
 }
 
+/// Phase 9 Pack B trace report (AC-042). One event per canonical row
+/// attributable to the requested `source_id`, ordered by `write_cursor`
+/// ascending.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TraceReport {
+    pub source_ref: String,
+    pub events: Vec<TraceEvent>,
+}
+
+/// Single canonical-row tracing record. `table` is one of
+/// `"canonical_nodes"` or `"canonical_edges"`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TraceEvent {
+    pub write_cursor: u64,
+    pub kind: String,
+    pub table: &'static str,
+}
+
+/// Phase 9 Pack B excise report (AC-028a/b/c). Counts are post-excise
+/// totals; `projections_invalidated` reports the shadow-row invalidation
+/// total (FTS5 + vec0 + projection terminal) for the excised source.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExciseReport {
+    pub source_ref: String,
+    pub nodes_excised: u64,
+    pub edges_excised: u64,
+    pub projections_invalidated: u64,
+}
+
 impl Drop for Engine {
     fn drop(&mut self) {
         let _ = self.close();
@@ -1720,6 +1749,172 @@ impl Engine {
     pub fn rebuild_vec0(&self) -> Result<(), EngineError> {
         self.ensure_open()?;
         self.run_rebuild(false)
+    }
+
+    /// Phase 9 Pack B / AC-042 source trace. Returns the canonical-row
+    /// id set produced by `source_id`, ordered by `write_cursor`. Empty
+    /// string is not a valid `source_id`; rows with NULL `source_id`
+    /// are excluded from every result.
+    pub fn trace_source_ref(&self, source_id: &str) -> Result<TraceReport, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+
+        let mut events: Vec<TraceEvent> = Vec::new();
+        let mut nodes = connection
+            .prepare(
+                "SELECT write_cursor, kind FROM canonical_nodes WHERE source_id = ?1
+                 ORDER BY write_cursor",
+            )
+            .map_err(|_| EngineError::Storage)?;
+        let node_rows = nodes
+            .query_map([source_id], |row| {
+                Ok(TraceEvent {
+                    write_cursor: row.get::<_, i64>(0)? as u64,
+                    kind: row.get::<_, String>(1)?,
+                    table: "canonical_nodes",
+                })
+            })
+            .map_err(|_| EngineError::Storage)?;
+        for row in node_rows {
+            events.push(row.map_err(|_| EngineError::Storage)?);
+        }
+
+        let mut edges = connection
+            .prepare(
+                "SELECT write_cursor, kind FROM canonical_edges WHERE source_id = ?1
+                 ORDER BY write_cursor",
+            )
+            .map_err(|_| EngineError::Storage)?;
+        let edge_rows = edges
+            .query_map([source_id], |row| {
+                Ok(TraceEvent {
+                    write_cursor: row.get::<_, i64>(0)? as u64,
+                    kind: row.get::<_, String>(1)?,
+                    table: "canonical_edges",
+                })
+            })
+            .map_err(|_| EngineError::Storage)?;
+        for row in edge_rows {
+            events.push(row.map_err(|_| EngineError::Storage)?);
+        }
+
+        events.sort_by_key(|e| e.write_cursor);
+        Ok(TraceReport { source_ref: source_id.to_string(), events })
+    }
+
+    /// Phase 9 Pack B / AC-028a/b/c source excise. Drains in-flight
+    /// projection work, then deletes every canonical row attributable
+    /// to `source_id` plus the FTS5 + vec0 shadow rows that referenced
+    /// those cursors, and appends an audit row to the
+    /// `excise_source_audit` operational collection.
+    ///
+    /// Non-perturbation: rows from other sources (and rows with NULL
+    /// `source_id`) are untouched; the projection cursor is NOT reset
+    /// and no blanket projection rebuild is issued.
+    pub fn excise_source(&self, source_id: &str) -> Result<ExciseReport, EngineError> {
+        self.ensure_open()?;
+        if source_id.is_empty() {
+            return Err(EngineError::WriteValidation);
+        }
+
+        // Drain MUST succeed before the excise transaction. SQLite-WAL
+        // would otherwise allow a worker that already dequeued a job
+        // for an excised cursor to commit its INSERT into vec0 /
+        // _fathomdb_vector_rows after our DELETE releases the writer
+        // lock, leaving residue and breaking AC-028b. Surface the
+        // timeout instead of swallowing it (Pack A pattern).
+        self.projection_runtime.set_frozen(true);
+        let drain_result = self.drain(REBUILD_DRAIN_TIMEOUT_MS);
+        let outcome = drain_result.and_then(|()| self.excise_source_inner(source_id));
+        self.projection_runtime.set_frozen(false);
+        outcome
+    }
+
+    fn excise_source_inner(&self, source_id: &str) -> Result<ExciseReport, EngineError> {
+        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+        let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+
+        // Collect the cursor sets up-front so we can targeted-delete
+        // shadow rows AND emit an accurate audit row in one txn.
+        let node_cursors: Vec<i64> = {
+            let mut stmt = tx
+                .prepare("SELECT write_cursor FROM canonical_nodes WHERE source_id = ?1")
+                .map_err(|_| EngineError::Storage)?;
+            let rows = stmt
+                .query_map([source_id], |row| row.get::<_, i64>(0))
+                .map_err(|_| EngineError::Storage)?;
+            rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|_| EngineError::Storage)?
+        };
+        let edge_cursors: Vec<i64> = {
+            let mut stmt = tx
+                .prepare("SELECT write_cursor FROM canonical_edges WHERE source_id = ?1")
+                .map_err(|_| EngineError::Storage)?;
+            let rows = stmt
+                .query_map([source_id], |row| row.get::<_, i64>(0))
+                .map_err(|_| EngineError::Storage)?;
+            rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|_| EngineError::Storage)?
+        };
+
+        let mut shadow_invalidated: u64 = 0;
+        for cursor in node_cursors.iter().chain(edge_cursors.iter()) {
+            shadow_invalidated = shadow_invalidated.saturating_add(
+                tx.execute("DELETE FROM search_index WHERE write_cursor = ?1", [cursor])
+                    .map_err(|_| EngineError::Storage)? as u64,
+            );
+            // vec0 rowid is the canonical row's write_cursor (see
+            // `_fathomdb_vector_rows.write_cursor UNIQUE`).
+            shadow_invalidated = shadow_invalidated.saturating_add(
+                tx.execute("DELETE FROM vector_default WHERE rowid = ?1", [cursor])
+                    .map_err(|_| EngineError::Storage)? as u64,
+            );
+            shadow_invalidated = shadow_invalidated.saturating_add(
+                tx.execute("DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1", [cursor])
+                    .map_err(|_| EngineError::Storage)? as u64,
+            );
+            shadow_invalidated = shadow_invalidated.saturating_add(
+                tx.execute(
+                    "DELETE FROM _fathomdb_projection_terminal WHERE write_cursor = ?1",
+                    [cursor],
+                )
+                .map_err(|_| EngineError::Storage)? as u64,
+            );
+        }
+
+        let nodes_excised = tx
+            .execute("DELETE FROM canonical_nodes WHERE source_id = ?1", [source_id])
+            .map_err(|_| EngineError::Storage)? as u64;
+        let edges_excised = tx
+            .execute("DELETE FROM canonical_edges WHERE source_id = ?1", [source_id])
+            .map_err(|_| EngineError::Storage)? as u64;
+
+        // AC-028a audit row: a single append on the
+        // `excise_source_audit` collection naming the excised source.
+        let payload = serde_json::json!({
+            "source_id": source_id,
+            "excised_at": 0_u64,
+            "nodes_excised": nodes_excised,
+            "edges_excised": edges_excised,
+            "projections_invalidated": shadow_invalidated,
+        })
+        .to_string();
+        let audit_cursor = self.next_cursor.load(Ordering::SeqCst);
+        tx.execute(
+            "INSERT INTO operational_mutations(
+                collection_name, record_key, op_kind, payload_json, schema_id, write_cursor
+             ) VALUES('excise_source_audit', ?1, 'append', ?2, NULL, ?3)",
+            params![source_id, payload, audit_cursor],
+        )
+        .map_err(|_| EngineError::Storage)?;
+
+        tx.commit().map_err(|_| EngineError::Storage)?;
+        Ok(ExciseReport {
+            source_ref: source_id.to_string(),
+            nodes_excised,
+            edges_excised,
+            projections_invalidated: shadow_invalidated,
+        })
     }
 
     fn run_rebuild(&self, include_fts: bool) -> Result<(), EngineError> {
