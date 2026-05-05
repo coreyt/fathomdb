@@ -586,12 +586,42 @@ pub struct SearchResult {
     pub results: Vec<String>,
 }
 
+/// Batch input shape for [`Engine::write`].
+///
+/// Marked `#[non_exhaustive]` per ADR-0.6.0-prepared-write-shape; new
+/// entity variants land in 0.6.x without a major bump. Adding fields to
+/// existing variants remains a binding-coordination change.
+#[non_exhaustive]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PreparedWrite {
-    Node { kind: String, body: String },
-    Edge { kind: String, from: String, to: String },
-    OpStore { collection: String, record_key: String, schema_id: Option<String>, body: String },
-    AdminSchema { name: String, kind: String, schema_json: String, retention_json: String },
+    Node {
+        kind: String,
+        body: String,
+        /// REQ-026 / AC-028 / AC-042 recovery seam. `None` is the
+        /// back-compat default and lands as NULL on disk; callers that
+        /// participate in `excise_source` / `trace_source_ref` must
+        /// supply a stable identifier.
+        source_id: Option<String>,
+    },
+    Edge {
+        kind: String,
+        from: String,
+        to: String,
+        /// REQ-026 / AC-028 / AC-042 recovery seam — see Node.
+        source_id: Option<String>,
+    },
+    OpStore {
+        collection: String,
+        record_key: String,
+        schema_id: Option<String>,
+        body: String,
+    },
+    AdminSchema {
+        name: String,
+        kind: String,
+        schema_json: String,
+        retention_json: String,
+    },
 }
 
 /// Snapshot of engine-internal counters returned by [`Engine::counters`].
@@ -2659,7 +2689,7 @@ fn collect_projection_jobs(
 ) -> Result<Vec<ProjectionJob>, EngineError> {
     let mut jobs = Vec::new();
     for write in batch {
-        if let PreparedWrite::Node { kind, body } = write {
+        if let PreparedWrite::Node { kind, body, .. } = write {
             if kind_is_vector_indexed(connection, kind)? {
                 jobs.push(ProjectionJob { cursor: 0, kind: kind.clone(), body: body.clone() });
             }
@@ -2673,15 +2703,25 @@ fn validate_write(
     write: &PreparedWrite,
 ) -> Result<WritePlan, EngineError> {
     match write {
-        PreparedWrite::Node { kind, body } => {
+        PreparedWrite::Node { kind, body, source_id } => {
             if kind.trim().is_empty() || body.trim().is_empty() {
                 return Err(EngineError::WriteValidation);
             }
+            if let Some(source_id) = source_id {
+                if source_id.is_empty() {
+                    return Err(EngineError::WriteValidation);
+                }
+            }
             Ok(WritePlan::Node)
         }
-        PreparedWrite::Edge { kind, from, to } => {
+        PreparedWrite::Edge { kind, from, to, source_id } => {
             if kind.trim().is_empty() || from.trim().is_empty() || to.trim().is_empty() {
                 return Err(EngineError::WriteValidation);
+            }
+            if let Some(source_id) = source_id {
+                if source_id.is_empty() {
+                    return Err(EngineError::WriteValidation);
+                }
             }
             Ok(WritePlan::Edge)
         }
@@ -2775,10 +2815,11 @@ fn commit_batch(
 
     for (write, plan) in batch.iter().zip(plans) {
         match (write, plan) {
-            (PreparedWrite::Node { kind, body }, WritePlan::Node) => {
+            (PreparedWrite::Node { kind, body, source_id }, WritePlan::Node) => {
                 tx.execute(
-                    "INSERT INTO canonical_nodes(write_cursor, kind, body) VALUES(?1, ?2, ?3)",
-                    params![cursor, kind, body],
+                    "INSERT INTO canonical_nodes(write_cursor, kind, body, source_id)
+                     VALUES(?1, ?2, ?3, ?4)",
+                    params![cursor, kind, body, source_id],
                 )?;
                 tx.execute(
                     "INSERT INTO search_index(body, kind, write_cursor) VALUES(?1, ?2, ?3)",
@@ -2793,11 +2834,11 @@ fn commit_batch(
                     )?;
                 }
             }
-            (PreparedWrite::Edge { kind, from, to }, WritePlan::Edge) => {
+            (PreparedWrite::Edge { kind, from, to, source_id }, WritePlan::Edge) => {
                 tx.execute(
-                    "INSERT INTO canonical_edges(write_cursor, kind, from_id, to_id)
-                     VALUES(?1, ?2, ?3, ?4)",
-                    params![cursor, kind, from, to],
+                    "INSERT INTO canonical_edges(write_cursor, kind, from_id, to_id, source_id)
+                     VALUES(?1, ?2, ?3, ?4, ?5)",
+                    params![cursor, kind, from, to, source_id],
                 )?;
             }
             (
@@ -3229,7 +3270,11 @@ mod tests {
         let opened = Engine::open(dir.path().join("rewrite.sqlite")).expect("engine should open");
         let receipt = opened
             .engine
-            .write(&[PreparedWrite::Node { kind: "doc".to_string(), body: "hello".to_string() }])
+            .write(&[PreparedWrite::Node {
+                kind: "doc".to_string(),
+                body: "hello".to_string(),
+                source_id: None,
+            }])
             .expect("write should succeed");
 
         assert_eq!(receipt.cursor, 1);

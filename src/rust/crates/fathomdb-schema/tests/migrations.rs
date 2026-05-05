@@ -23,7 +23,7 @@ fn ac_046a_applies_ordered_migrations_to_current_version() {
     assert_eq!(report.schema_version_before, 1);
     assert_eq!(report.schema_version_after, SCHEMA_VERSION);
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
-    assert_eq!(report.migration_steps.len(), 6);
+    assert_eq!(report.migration_steps.len(), 7);
     assert!(report.migration_steps.iter().all(|step| !step.failed));
 }
 
@@ -35,7 +35,7 @@ fn ac_046b_success_report_contains_step_ids_and_durations() {
     let report = migrate(&conn).unwrap();
 
     let step_ids: Vec<u32> = report.migration_steps.iter().map(|step| step.step_id).collect();
-    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7]);
+    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8]);
     assert!(report.migration_steps.iter().all(|step| step.duration_ms.is_some()));
 }
 
@@ -51,7 +51,7 @@ fn ac_046b_success_emits_structured_step_events() {
     .unwrap();
 
     let step_ids: Vec<u32> = events.iter().map(|step| step.step_id).collect();
-    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7]);
+    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8]);
     assert!(events.iter().all(|step| step.duration_ms.is_some()));
     assert!(events.iter().all(|step| !step.failed));
 }
@@ -114,6 +114,51 @@ fn ac_049_accretion_guard_accepts_current_migrations_and_rejects_violator() {
         .expect_err("adding a column without removal or exemption must fail");
 
     assert_eq!(err, MigrationAccretionError { offender: "004_bad.sql".to_string() });
+}
+
+#[test]
+fn phase9_pack_b_migration_008_adds_source_id_columns_and_indexes() {
+    let conn = Connection::open_in_memory().unwrap();
+    set_user_version(&conn, 1);
+    migrate(&conn).unwrap();
+
+    let nodes_has_source_id: bool = conn
+        .prepare("PRAGMA table_info(canonical_nodes)")
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(1))
+        .unwrap()
+        .filter_map(Result::ok)
+        .any(|name| name == "source_id");
+    assert!(nodes_has_source_id, "canonical_nodes.source_id must be present after migration 8");
+
+    let edges_has_source_id: bool = conn
+        .prepare("PRAGMA table_info(canonical_edges)")
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(1))
+        .unwrap()
+        .filter_map(Result::ok)
+        .any(|name| name == "source_id");
+    assert!(edges_has_source_id, "canonical_edges.source_id must be present after migration 8");
+
+    let nodes_idx: u64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?1",
+            ["canonical_nodes_source_id_idx"],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(nodes_idx, 1);
+
+    let edges_idx: u64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?1",
+            ["canonical_edges_source_id_idx"],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(edges_idx, 1);
+
+    assert_eq!(user_version(&conn), SCHEMA_VERSION);
 }
 
 #[test]

@@ -106,12 +106,14 @@ fn seed_ac020_fixture(engine: &Engine) {
             .write(&[PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: format!("vector-doc-{i}"),
+                source_id: None,
             }])
             .expect("vector-only write");
         engine
             .write(&[PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: format!("hybrid doc hybrid-{i}"),
+                source_id: None,
             }])
             .expect("hybrid write");
     }
@@ -150,6 +152,7 @@ fn ac_017_vector_projection_freshness_p99_le_five_seconds() {
             .write(&[PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: format!("projection doc {i}"),
+                source_id: None,
             }])
             .expect("write");
 
@@ -187,7 +190,11 @@ fn ac_018_drain_of_100_vectors_le_two_seconds() {
     for i in 0..100 {
         opened
             .engine
-            .write(&[PreparedWrite::Node { kind: "doc".to_string(), body: format!("doc {i}") }])
+            .write(&[PreparedWrite::Node {
+                kind: "doc".to_string(),
+                body: format!("doc {i}"),
+                source_id: None,
+            }])
             .expect("write");
     }
 

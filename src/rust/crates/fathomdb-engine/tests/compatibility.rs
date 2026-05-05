@@ -84,7 +84,7 @@ fn engine_open_emits_migration_step_events() {
     opened.engine.close().unwrap();
 
     let step_ids: Vec<u32> = events.iter().map(|event| event.step_id).collect();
-    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7]);
+    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8]);
     assert!(events.iter().all(|event| event.duration_ms.is_some()));
     assert!(events.iter().all(|event| !event.failed));
     assert_eq!(opened.report.migration_steps, events);

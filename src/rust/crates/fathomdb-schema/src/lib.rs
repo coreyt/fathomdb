@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use rusqlite::Connection;
 
-pub const SCHEMA_VERSION: u32 = 7;
+pub const SCHEMA_VERSION: u32 = 8;
 
 /// SQLite `PRAGMA` name carrying the on-disk schema-version sentinel.
 ///
@@ -171,6 +171,22 @@ pub const MIGRATIONS: &[Migration] = &[
                   write_cursor INTEGER PRIMARY KEY,
                   state TEXT NOT NULL CHECK(state IN ('failed', 'up_to_date'))
               );",
+    },
+    // Phase 9 Pack B — REQ-026 / AC-028a/b/c / AC-042 recovery seam.
+    // `source_id` is nullable; existing canonical rows back-fill to NULL,
+    // so reads from older callers stay schema-stable. REQ-045 accretion
+    // offset is documented in `migrations/008_source_id.sql` as inherently
+    // impossible for this slice (every existing canonical column is
+    // load-bearing for replay / projections / recovery locators); the
+    // next schema-touching pack carries the offset budget for two adds.
+    Migration {
+        step_id: 8,
+        sql: "ALTER TABLE canonical_nodes ADD COLUMN source_id TEXT;
+              ALTER TABLE canonical_edges ADD COLUMN source_id TEXT;
+              CREATE INDEX IF NOT EXISTS canonical_nodes_source_id_idx
+                  ON canonical_nodes(source_id);
+              CREATE INDEX IF NOT EXISTS canonical_edges_source_id_idx
+                  ON canonical_edges(source_id);",
     },
 ];
 

@@ -38,7 +38,11 @@ fn ac_059a_projection_cursor_is_monotonic_non_decreasing() {
         if i % 10 == 0 {
             opened
                 .engine
-                .write(&[PreparedWrite::Node { kind: "doc".to_string(), body: format!("doc {i}") }])
+                .write(&[PreparedWrite::Node {
+                    kind: "doc".to_string(),
+                    body: format!("doc {i}"),
+                    source_id: None,
+                }])
                 .unwrap();
         }
         let current = opened.engine.search("doc").unwrap().projection_cursor;
@@ -59,6 +63,7 @@ fn ac_059b_write_cursor_is_satisfied_by_projection_cursor_and_queryable() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "findable phase seven document".to_string(),
+            source_id: None,
         }])
         .unwrap()
         .cursor;
@@ -85,7 +90,11 @@ fn failed_commit_does_not_publish_projection_cursor() {
 
     let committed = opened
         .engine
-        .write(&[PreparedWrite::Node { kind: "doc".to_string(), body: "first".to_string() }])
+        .write(&[PreparedWrite::Node {
+            kind: "doc".to_string(),
+            body: "first".to_string(),
+            source_id: None,
+        }])
         .unwrap()
         .cursor;
 
@@ -94,6 +103,7 @@ fn failed_commit_does_not_publish_projection_cursor() {
         .write(&[PreparedWrite::Node {
             kind: "force_storage_failure_for_test".to_string(),
             body: "allowed".to_string(),
+            source_id: None,
         }])
         .expect("test-like node kind is still user data");
     assert_eq!(err.cursor, committed + 1);
@@ -101,7 +111,11 @@ fn failed_commit_does_not_publish_projection_cursor() {
     opened.engine.force_next_commit_failure_for_test();
     let err = opened
         .engine
-        .write(&[PreparedWrite::Node { kind: "doc".to_string(), body: "must fail".to_string() }])
+        .write(&[PreparedWrite::Node {
+            kind: "doc".to_string(),
+            body: "must fail".to_string(),
+            source_id: None,
+        }])
         .expect_err("forced storage failure should fail after validation");
     assert_eq!(err, fathomdb_engine::EngineError::Storage);
 
@@ -114,7 +128,11 @@ fn concurrent_search_does_not_observe_speculative_failed_cursor() {
     let (_dir, opened) = open_fixture("failed_cursor_race");
     let committed = opened
         .engine
-        .write(&[PreparedWrite::Node { kind: "doc".to_string(), body: "first".to_string() }])
+        .write(&[PreparedWrite::Node {
+            kind: "doc".to_string(),
+            body: "first".to_string(),
+            source_id: None,
+        }])
         .unwrap()
         .cursor;
 
@@ -130,6 +148,7 @@ fn concurrent_search_does_not_observe_speculative_failed_cursor() {
             .write(&[PreparedWrite::Node {
                 kind: "doc".to_string(),
                 body: "must fail".to_string(),
+                source_id: None,
             }])
             .expect_err("forced storage failure should fail")
     });

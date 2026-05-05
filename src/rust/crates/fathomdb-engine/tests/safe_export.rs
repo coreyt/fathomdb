@@ -14,7 +14,11 @@ fn ac_039a_manifest_digest_matches_export_bytes() {
     let opened = Engine::open(&path).expect("open");
     opened
         .engine
-        .write(&[PreparedWrite::Node { kind: "doc".to_string(), body: "hello world".to_string() }])
+        .write(&[PreparedWrite::Node {
+            kind: "doc".to_string(),
+            body: "hello world".to_string(),
+            source_id: None,
+        }])
         .expect("write");
 
     let out_dir = TempDir::new().unwrap();
@@ -44,7 +48,11 @@ fn ac_039b_one_byte_tamper_detected_by_recompute() {
     let opened = Engine::open(&path).expect("open");
     opened
         .engine
-        .write(&[PreparedWrite::Node { kind: "doc".to_string(), body: "hello tamper".to_string() }])
+        .write(&[PreparedWrite::Node {
+            kind: "doc".to_string(),
+            body: "hello tamper".to_string(),
+            source_id: None,
+        }])
         .expect("write");
 
     let out_dir = TempDir::new().unwrap();

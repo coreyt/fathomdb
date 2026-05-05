@@ -157,7 +157,11 @@ fn ac_002_no_log_files_without_subscriber() {
     let opened = Engine::open(&db_path).expect("open");
     opened
         .engine
-        .write(&[PreparedWrite::Node { kind: "doc".to_string(), body: "hello".to_string() }])
+        .write(&[PreparedWrite::Node {
+            kind: "doc".to_string(),
+            body: "hello".to_string(),
+            source_id: None,
+        }])
         .expect("write");
     let _ = opened.engine.search("hello").expect("search");
     opened.engine.close().expect("close");
@@ -208,8 +212,11 @@ fn ac_003a_writer_events_flow_to_subscriber() {
     let (_dir, engine) = fixture();
     let sink = Arc::new(CapturingSubscriber::default());
     let _sub = engine.subscribe(sink.clone());
-    let _ =
-        engine.write(&[PreparedWrite::Node { kind: "doc".to_string(), body: "hello".to_string() }]);
+    let _ = engine.write(&[PreparedWrite::Node {
+        kind: "doc".to_string(),
+        body: "hello".to_string(),
+        source_id: None,
+    }]);
     let captured = sink.events.lock().unwrap();
     assert!(captured
         .iter()
@@ -290,7 +297,11 @@ fn ac_004b_counter_delta_exact_over_mixed_ops() {
     let s0 = engine.counters();
     for _ in 0..400 {
         engine
-            .write(&[PreparedWrite::Node { kind: "doc".to_string(), body: "hello".to_string() }])
+            .write(&[PreparedWrite::Node {
+                kind: "doc".to_string(),
+                body: "hello".to_string(),
+                source_id: None,
+            }])
             .expect("write");
     }
     for _ in 0..400 {

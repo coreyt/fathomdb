@@ -100,7 +100,11 @@ fn concurrent_searches_route_to_workers_without_loss_or_duplication() {
     // Seed one row so non-empty searches succeed deterministically.
     opened
         .engine
-        .write(&[PreparedWrite::Node { kind: "doc".to_string(), body: "hello world".to_string() }])
+        .write(&[PreparedWrite::Node {
+            kind: "doc".to_string(),
+            body: "hello world".to_string(),
+            source_id: None,
+        }])
         .expect("seed write");
 
     const CALLERS: usize = 32;

@@ -84,7 +84,11 @@ fn ac_060b_schema_validation_failure_leaves_no_batch_residue() {
     let err = opened
         .engine
         .write(&[
-            PreparedWrite::Node { kind: "doc".to_string(), body: "must not commit".to_string() },
+            PreparedWrite::Node {
+                kind: "doc".to_string(),
+                body: "must not commit".to_string(),
+                source_id: None,
+            },
             PreparedWrite::OpStore {
                 collection: "validated".to_string(),
                 record_key: "bad".to_string(),

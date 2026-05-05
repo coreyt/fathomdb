@@ -61,6 +61,7 @@ fn rebuild_vec0_resets_vector_rows_and_preserves_fts() {
         .write(&[PreparedWrite::Node {
             kind: "doc".to_string(),
             body: "fts content survives".to_string(),
+            source_id: None,
         }])
         .expect("write");
     opened.engine.drain(10_000).expect("drain");
