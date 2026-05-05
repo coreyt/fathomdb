@@ -564,6 +564,55 @@ fn ac_008_slow_signal_feeds_lifecycle() {
     );
 }
 
+// AC-009: Stress-failure event field schema bound to a deterministic
+// one-thread-poison fixture.
+//
+// The fixture spawns N reader threads and one writer thread that all
+// make forward progress, plus a single designated poison thread that
+// runs an op chosen to fail deterministically (an empty-batch write,
+// which is rejected with `EngineError::WriteValidation`). The resulting
+// `StressFailureContext` must have all four fields populated end-to-end:
+//
+// - `thread_group_id` non-zero
+// - `op_kind` is the documented op label ("write")
+// - `last_error_chain` carries `EngineError::stable_code()` as its first
+//   entry plus at least one causal-chain segment (the `Display` form of
+//   the engine error)
+// - `projection_state` is one of the `ProjectionStatus` variants
+//   stringified
+#[test]
+fn ac_009_poison_thread_emits_full_stress_failure_context() {
+    let (_dir, engine) = fixture();
+    let sink = Arc::new(CapturingSubscriber::default());
+    let _sub = engine.subscribe(sink.clone());
+
+    engine.run_one_thread_poison_for_test().expect("poison fixture should run");
+
+    let captured = sink.stress_failures.lock().unwrap();
+    let ctx = captured.first().expect("one-thread poison must emit a stress failure context");
+
+    assert_ne!(ctx.thread_group_id, 0, "thread_group_id must be non-zero");
+    assert_eq!(ctx.op_kind, "write", "op_kind must be the documented op label");
+    assert!(
+        ctx.last_error_chain.len() >= 2,
+        "last_error_chain must include stable_code + ≥ 1 causal-chain segment, got {:?}",
+        ctx.last_error_chain,
+    );
+    assert_eq!(
+        ctx.last_error_chain[0], "WriteValidationError",
+        "first chain entry must equal EngineError::stable_code"
+    );
+    assert!(
+        ctx.last_error_chain.iter().skip(1).any(|s| !s.is_empty()),
+        "at least one causal-chain segment after stable_code must be non-empty"
+    );
+    assert!(
+        matches!(ctx.projection_state.as_str(), "Pending" | "Failed" | "UpToDate"),
+        "projection_state must be a stringified ProjectionStatus variant, got {:?}",
+        ctx.projection_state,
+    );
+}
+
 // AC-009 supporting: Pure-type construction of StressFailureContext.
 #[test]
 fn ac_009_stress_failure_context_constructs() {

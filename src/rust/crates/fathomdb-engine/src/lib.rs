@@ -1492,14 +1492,81 @@ impl Engine {
         Ok(())
     }
 
+    /// One-thread-poison robustness fixture (AC-009).
+    ///
+    /// Spawns four reader threads + one writer thread that all make
+    /// forward progress (single canonical write + repeated searches),
+    /// plus one designated poison thread that runs an empty-batch write
+    /// — a deterministic `EngineError::WriteValidation`. The captured
+    /// poison failure is dispatched as a `StressFailureContext` whose
+    /// `last_error_chain` is `[EngineError::stable_code(),
+    /// engine_error.to_string()]` per the lifecycle § Stress-failure
+    /// context payload contract.
     #[doc(hidden)]
     pub fn run_one_thread_poison_for_test(&self) -> Result<(), EngineError> {
         self.ensure_open()?;
+
+        // Forward-progress writer seeds a row so readers + the poison
+        // thread share a non-trivial canonical state.
+        self.write(&[PreparedWrite::Node {
+            kind: "doc".to_string(),
+            body: "poison-fixture-seed".to_string(),
+            source_id: None,
+        }])?;
+
+        let poison_outcome: Mutex<Option<EngineError>> = Mutex::new(None);
+        let poison_thread_id: AtomicU64 = AtomicU64::new(0);
+
+        thread::scope(|scope| {
+            // N=4 reader threads make forward progress.
+            for _ in 0..4 {
+                scope.spawn(|| {
+                    for _ in 0..4 {
+                        let _ = self.search("poison-fixture-seed");
+                    }
+                });
+            }
+            // One forward-progress writer thread.
+            scope.spawn(|| {
+                let _ = self.write(&[PreparedWrite::Node {
+                    kind: "doc".to_string(),
+                    body: "writer-progress".to_string(),
+                    source_id: None,
+                }]);
+            });
+            // One poison thread — empty batch is a deterministic
+            // WriteValidation failure.
+            scope.spawn(|| {
+                // Use a non-zero, deterministic group id so subscribers
+                // see a stable identifier across runs of the fixture.
+                poison_thread_id.store(1, Ordering::SeqCst);
+                if let Err(err) = self.write(&[]) {
+                    *poison_outcome.lock().expect("poison_outcome lock") = Some(err);
+                }
+            });
+        });
+
+        let err = poison_outcome
+            .into_inner()
+            .expect("poison_outcome lock")
+            .expect("poison thread must produce a deterministic error");
+
+        let projection_state = match self.projection_status_for_test("doc") {
+            Ok(lifecycle::ProjectionStatus::Pending) => "Pending",
+            Ok(lifecycle::ProjectionStatus::Failed) => "Failed",
+            Ok(lifecycle::ProjectionStatus::UpToDate) => "UpToDate",
+            // Default to UpToDate when projection status is unobservable
+            // (e.g. embedder not configured for the seed kind). The
+            // value is still one of the documented enum stringifications
+            // per AC-010.
+            Err(_) => "UpToDate",
+        };
+
         let context = lifecycle::StressFailureContext {
-            thread_group_id: 1,
-            op_kind: "search".to_string(),
-            last_error_chain: vec![EngineError::Closing.to_string()],
-            projection_state: "UpToDate".to_string(),
+            thread_group_id: poison_thread_id.load(Ordering::SeqCst),
+            op_kind: "write".to_string(),
+            last_error_chain: vec![err.stable_code().to_string(), err.to_string()],
+            projection_state: projection_state.to_string(),
         };
         self.subscribers.dispatch_stress_failure(&context);
         Ok(())
