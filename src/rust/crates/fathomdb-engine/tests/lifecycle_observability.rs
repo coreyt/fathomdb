@@ -1,15 +1,12 @@
 //! Lifecycle observability tests bound to AC-001..AC-010.
 //!
 //! Pure-type tests exercise data-type contracts pinned by
-//! `dev/design/lifecycle.md` and `dev/acceptance.md`. Behavior tests that
-//! depend on fixtures not yet pinned (slow-cte, corruption injection,
-//! one-thread poison) are `#[ignore]`d with the AC tag and the dep reason;
-//! removing the ignore once the fixture lands flips them green or surfaces
-//! a real gap.
+//! `dev/design/lifecycle.md` and `dev/acceptance.md`. Behavior tests bind
+//! the AC measurement protocols via deterministic fixtures (slow-cte,
+//! page-corruption tool, one-thread-poison stress runner) — see the
+//! per-test comments and `tests/support/corruption.rs`.
 
 use std::collections::BTreeMap;
-use std::fs::OpenOptions;
-use std::io::{Seek, SeekFrom, Write};
 use std::sync::{Arc, Mutex};
 
 use fathomdb_engine::lifecycle::{
@@ -18,6 +15,9 @@ use fathomdb_engine::lifecycle::{
 };
 use fathomdb_engine::{CounterSnapshot, Engine, EngineOpenError, PreparedWrite};
 use tempfile::TempDir;
+
+#[path = "support/corruption.rs"]
+mod corruption;
 
 fn fixture() -> (TempDir, Engine) {
     let dir = TempDir::new().unwrap();
@@ -392,13 +392,18 @@ fn ac_005b_profile_record_typed_numeric_fields() {
 }
 
 // AC-006: SQLite-internal events surfaced with typed source tag.
+//
+// Page-1 magic-header bit-flip flavor: documented page-corruption tool
+// (`corruption::corrupt_database_header`) overwrites the SQLite magic
+// string. Reopen surfaces `SQLITE_NOTADB` and the engine emits a
+// `(SqliteInternal, Corruption, code = "SQLITE_NOTADB")` event.
 #[test]
 fn ac_006_sqlite_internal_events_typed_source() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("corrupt-open.sqlite");
     let opened = Engine::open(&path).expect("seed database");
     opened.engine.close().expect("close before corruption");
-    corrupt_header(&path);
+    corruption::corrupt_database_header(&path);
 
     let sink = Arc::new(CapturingSubscriber::default());
     let err = Engine::open_with_subscriber_for_test(&path, sink.clone())
@@ -408,8 +413,58 @@ fn ac_006_sqlite_internal_events_typed_source() {
 
     let captured = sink.events.lock().unwrap();
     assert!(captured.iter().any(|e| {
-        e.source == EventSource::SqliteInternal && e.category == EventCategory::Corruption
+        e.source == EventSource::SqliteInternal
+            && e.category == EventCategory::Corruption
+            && e.code == Some("SQLITE_NOTADB")
     }));
+}
+
+// AC-006: Interior-page bit-flip flavor.
+//
+// Documented page-corruption tool (`corruption::corrupt_interior_page_byte`)
+// XORs a byte inside the page-1 b-tree header (offset 100, the first byte
+// of the b-tree page header that follows the SQLite file header). The
+// SQLite magic string is preserved, so reopen reaches the engine's
+// schema probe (`PRAGMA schema_version`); decoding the corrupt b-tree
+// page surfaces `SQLITE_CORRUPT`. The engine emits a
+// `(SqliteInternal, Corruption, code = "SQLITE_CORRUPT")` event.
+#[test]
+fn ac_006_interior_page_corruption_emits_sqlite_corrupt() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("corrupt-interior.sqlite");
+    let opened = Engine::open(&path).expect("seed database");
+    // Force some user data so b-tree pages have non-trivial content;
+    // not strictly required for the SQLITE_CORRUPT trip, but makes the
+    // corruption locator deterministic across runs.
+    opened
+        .engine
+        .write(&[PreparedWrite::Node {
+            kind: "doc".to_string(),
+            body: "interior".to_string(),
+            source_id: None,
+        }])
+        .expect("seed write");
+    opened.engine.close().expect("close before corruption");
+    // Page index 0, byte offset 100 (start of the page-1 b-tree header),
+    // XOR mask 0xFF (flips every bit). Preserves the magic header.
+    corruption::corrupt_interior_page_byte(&path, 0, 100, 0xFF);
+
+    let sink = Arc::new(CapturingSubscriber::default());
+    let err = Engine::open_with_subscriber_for_test(&path, sink.clone())
+        .expect_err("corrupted interior page must fail open");
+
+    assert!(matches!(err, EngineOpenError::Corruption(_)));
+
+    let captured = sink.events.lock().unwrap();
+    assert!(
+        captured.iter().any(|e| {
+            e.source == EventSource::SqliteInternal
+                && e.category == EventCategory::Corruption
+                && e.code == Some("SQLITE_CORRUPT")
+        }),
+        "expected (SqliteInternal, Corruption, SQLITE_CORRUPT) event, saw: {:?}",
+        captured.iter().map(|e| (e.source, e.category, e.code)).collect::<Vec<_>>(),
+    );
 }
 
 // AC-007a: Slow-statement event when wall-clock crosses default threshold.
@@ -542,13 +597,6 @@ fn ac_010_projection_status_enum_three_values() {
     assert_ne!(ProjectionStatus::Pending, ProjectionStatus::Failed);
     assert_ne!(ProjectionStatus::Pending, ProjectionStatus::UpToDate);
     assert_ne!(ProjectionStatus::Failed, ProjectionStatus::UpToDate);
-}
-
-fn corrupt_header(path: &std::path::Path) {
-    let mut file = OpenOptions::new().read(true).write(true).open(path).unwrap();
-    file.seek(SeekFrom::Start(0)).unwrap();
-    file.write_all(b"not-a-sqlite-db!").unwrap();
-    file.flush().unwrap();
 }
 
 // Compile-level: CounterSnapshot Default produces zeroed snapshot.
