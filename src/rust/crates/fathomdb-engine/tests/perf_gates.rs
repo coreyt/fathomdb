@@ -129,13 +129,406 @@ fn run_ac020_mix(engine: &Engine) {
     }
 }
 
-#[test]
-#[ignore = "protocol-incomplete: 1M text-query fixture from dev/acceptance.md is not landed yet"]
-fn ac_012_text_query_latency_on_fts5_path() {}
+// ── AC-012 / AC-013 / AC-019 retrieval perf-gate fixtures ───────────────────
+//
+// Per `dev/plans/0.6.0-Phase-9-Pack-D-retrieval-perf-fixtures.md` and
+// ADR-0.6.0-{text-query,retrieval}-latency-gates the canonical fixture
+// scale is 1,000,000 chunk rows / 768-d vectors. Seeding 1M rows under
+// AGENT_LONG=1 on the aarch64 dev runner is hours-of-wall-clock; the
+// canonical x86_64 tier-1 CI runner sets `AC_FULL_SCALE=1` to honor
+// the 1M scale. AGENT_LONG=1 on the dev runner uses the env-tunable
+// scale below (AC-007a/b runner-pin precedent) and asserts the same
+// budget. See `dev/test-plan.md` § Current Perf Attribution and
+// `dev/notes/performance-whitepaper-notes.md` for measured medians.
+const AC012_DEFAULT_N: usize = 100_000;
+const AC013_DEFAULT_N: usize = 50_000;
+const AC019_THREADS: usize = 8;
+const AC019_QUERIES_PER_THREAD: usize = 250;
+const AC012_BUDGET_P50: Duration = Duration::from_millis(20);
+const AC012_BUDGET_P99: Duration = Duration::from_millis(150);
+const AC013_BUDGET_P50: Duration = Duration::from_millis(50);
+const AC013_BUDGET_P99: Duration = Duration::from_millis(200);
+const AC019_STRESS_FLOOR: Duration = Duration::from_millis(150);
+const AC019_STRESS_MULT: u32 = 10;
+const RETRIEVAL_VECTOR_DIM: u32 = 768;
+
+fn env_usize(key: &str, default_full: usize, default_short: usize) -> usize {
+    if let Ok(raw) = std::env::var(key) {
+        if let Ok(parsed) = raw.parse::<usize>() {
+            return parsed;
+        }
+    }
+    if std::env::var_os("AC_FULL_SCALE").is_some() {
+        default_full
+    } else {
+        default_short
+    }
+}
+
+fn ac012_corpus_n() -> usize {
+    env_usize("AC012_CORPUS_N", 1_000_000, AC012_DEFAULT_N)
+}
+
+fn ac013_corpus_n() -> usize {
+    env_usize("AC013_CORPUS_N", 1_000_000, AC013_DEFAULT_N)
+}
+
+/// Deterministic seeded LCG. Generates reproducible token streams so the
+/// AC-012 corpus and the held-out query set are both byte-stable across
+/// runs (per ADR-0.6.0-text-query-latency-gates "synthetic-English-like
+/// text with a Zipfian token-frequency distribution").
+struct SeededRng {
+    state: u64,
+}
+
+impl SeededRng {
+    fn new(seed: u64) -> Self {
+        Self { state: seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(1) }
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        self.state = self.state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        self.state
+    }
+
+    fn next_in(&mut self, bound: usize) -> usize {
+        (self.next_u64() as usize) % bound
+    }
+
+    fn next_f64(&mut self) -> f64 {
+        (self.next_u64() >> 11) as f64 / ((1u64 << 53) as f64)
+    }
+}
+
+/// Vocabulary of synthetic English-like tokens. Size ~1024 keeps the
+/// FTS index dense; tokens are short, ASCII, lowercase, deterministic.
+fn perf_vocab() -> Vec<String> {
+    let mut out = Vec::with_capacity(1024);
+    for i in 0..1024 {
+        let a = (b'a' + ((i / 26 / 26) % 26) as u8) as char;
+        let b = (b'a' + ((i / 26) % 26) as u8) as char;
+        let c = (b'a' + (i % 26) as u8) as char;
+        out.push(format!("{a}{b}{c}{i:04}"));
+    }
+    out
+}
+
+/// Sample a token index under a Zipfian-ish distribution with shape s=1.0,
+/// using inverse-CDF on a precomputed cumulative weight table. Returns an
+/// index into the vocabulary in [0, vocab_size).
+fn zipf_index(rng: &mut SeededRng, cumulative: &[f64]) -> usize {
+    let r = rng.next_f64() * cumulative[cumulative.len() - 1];
+    match cumulative.binary_search_by(|w| w.partial_cmp(&r).unwrap_or(std::cmp::Ordering::Equal)) {
+        Ok(idx) => idx,
+        Err(idx) => idx.min(cumulative.len() - 1),
+    }
+}
+
+fn zipf_cumulative(vocab_size: usize) -> Vec<f64> {
+    let mut cumulative = Vec::with_capacity(vocab_size);
+    let mut acc = 0.0_f64;
+    for k in 1..=vocab_size {
+        acc += 1.0_f64 / k as f64;
+        cumulative.push(acc);
+    }
+    cumulative
+}
+
+/// Generate one synthetic chunk body of approximately `target_bytes`
+/// (~500 B per ADR) using the Zipfian sampler. Tokens are space-joined.
+fn synth_chunk_body(rng: &mut SeededRng, vocab: &[String], cumulative: &[f64]) -> String {
+    // Tokens average ~7 chars + 1 separator, target ~500 B => ~63 tokens.
+    let mut body = String::with_capacity(512);
+    let token_count = 55 + rng.next_in(20);
+    for i in 0..token_count {
+        if i > 0 {
+            body.push(' ');
+        }
+        body.push_str(&vocab[zipf_index(rng, cumulative)]);
+    }
+    body
+}
+
+/// Choose a held-out query token from the 50th–90th percentile
+/// term-frequency band per ADR-0.6.0-text-query-latency-gates. Vocab is
+/// indexed by descending frequency rank (rank 0 most frequent), so the
+/// band maps to indices [0.10*vocab, 0.50*vocab) (frequency rank space).
+/// The Zipfian sampler yields rank 0 most often, so this band carves out
+/// the body of the distribution.
+fn ac012_query_token_band(vocab: &[String]) -> Vec<String> {
+    let lo = vocab.len() / 10;
+    let hi = vocab.len() / 2;
+    vocab[lo..hi].to_vec()
+}
+
+/// AC-012 deterministic seeder: 1 chunk body per write batch (4096 nodes
+/// per `engine.write()`). Returns elapsed seed time for diagnostics.
+fn seed_ac012_corpus(engine: &Engine, n: usize) -> Duration {
+    const BATCH: usize = 4096;
+    let vocab = perf_vocab();
+    let cumulative = zipf_cumulative(vocab.len());
+    let mut rng = SeededRng::new(0x0AC0_12C0_12C0);
+    let started = Instant::now();
+    let mut written = 0usize;
+    while written < n {
+        let take = BATCH.min(n - written);
+        let mut batch = Vec::with_capacity(take);
+        for _ in 0..take {
+            batch.push(PreparedWrite::Node {
+                kind: "doc".to_string(),
+                body: synth_chunk_body(&mut rng, &vocab, &cumulative),
+                source_id: None,
+            });
+        }
+        engine.write(&batch).expect("ac-012 seed write");
+        written += take;
+    }
+    // No vector kind configured -> projection runtime still drains FTS index.
+    engine.drain(600_000).expect("ac-012 drain");
+    started.elapsed()
+}
+
+/// Deterministic varying-vector embedder. Projects an input token's
+/// stable hash onto a single coordinate per call so vec0 ANN search
+/// returns distinct k=10 neighbors (a constant-vector embedder would
+/// collapse all distances to 0). Reproducible byte-for-byte across runs.
+#[derive(Clone, Debug)]
+struct VaryingEmbedder {
+    identity: EmbedderIdentity,
+    dim: u32,
+}
+
+impl VaryingEmbedder {
+    fn new(dim: u32) -> Self {
+        Self { identity: EmbedderIdentity::new("varying", "perf-gates", dim), dim }
+    }
+
+    fn vector_for(&self, text: &str) -> Vector {
+        let dim = self.dim as usize;
+        let mut v = vec![0.0_f32; dim];
+        // FNV-1a 64-bit on the input; spread across coordinates with
+        // deterministic small magnitudes so distance is meaningful.
+        let mut h: u64 = 0xcbf29ce484222325;
+        for &b in text.as_bytes() {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x100000001b3);
+        }
+        // Place mass on a small handful of coordinates derived from h.
+        for k in 0..6 {
+            let coord = ((h >> (k * 8)) as usize) % dim;
+            let sign = if (h >> (k * 8 + 7)) & 1 == 0 { 1.0 } else { -1.0 };
+            v[coord] += sign * 0.5_f32;
+        }
+        // Normalize-ish so all vectors have similar magnitude.
+        let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-6);
+        for x in &mut v {
+            *x /= norm;
+        }
+        v
+    }
+}
+
+impl Embedder for VaryingEmbedder {
+    fn identity(&self) -> EmbedderIdentity {
+        self.identity.clone()
+    }
+
+    fn embed(&self, text: &str) -> Result<Vector, EmbedderError> {
+        Ok(self.vector_for(text))
+    }
+}
+
+/// AC-013 deterministic seeder: N vector rows with varying embeddings.
+/// Returns elapsed seed time. Bodies double as both FTS5 documents and
+/// the input to the embedder, so the same fixture supports AC-019's
+/// FTS+vector mixed workload.
+fn seed_ac013_corpus(engine: &Engine, n: usize) -> Duration {
+    const BATCH: usize = 1024;
+    let vocab = perf_vocab();
+    let cumulative = zipf_cumulative(vocab.len());
+    let mut rng = SeededRng::new(0x0AC0_13D0_13D0);
+    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+    let started = Instant::now();
+    let mut written = 0usize;
+    while written < n {
+        let take = BATCH.min(n - written);
+        let mut batch = Vec::with_capacity(take);
+        for _ in 0..take {
+            batch.push(PreparedWrite::Node {
+                kind: "doc".to_string(),
+                body: synth_chunk_body(&mut rng, &vocab, &cumulative),
+                source_id: None,
+            });
+        }
+        engine.write(&batch).expect("ac-013 seed write");
+        written += take;
+    }
+    engine.drain(1_800_000).expect("ac-013 drain");
+    started.elapsed()
+}
+
+/// Build a held-out reproducible query set drawn from the same
+/// distribution as the indexed corpus (ADR-0.6.0-retrieval-latency-gates
+/// "Query vectors drawn from a held-out slice of the same distribution").
+fn ac013_query_bodies(count: usize) -> Vec<String> {
+    let vocab = perf_vocab();
+    let cumulative = zipf_cumulative(vocab.len());
+    // Use a different seed than the corpus so the query set is held out
+    // (not byte-equal to seeded chunks but drawn from same distribution).
+    let mut rng = SeededRng::new(0x0AC0_130D_EC0D_E000);
+    (0..count).map(|_| synth_chunk_body(&mut rng, &vocab, &cumulative)).collect()
+}
+
+/// Bounded-size histogram for AC-019 tail-latency capture. Single
+/// power-of-two bucketing in microseconds; avoids unbounded
+/// `Vec<Duration>` per the Pack D plan (`Histogram::record` style).
+struct LatencyHistogram {
+    /// Bucket i spans [2^i us, 2^(i+1) us). 32 buckets covers 1 us .. ~71 minutes.
+    buckets: [u64; 32],
+    count: u64,
+}
+
+impl LatencyHistogram {
+    fn new() -> Self {
+        Self { buckets: [0; 32], count: 0 }
+    }
+
+    fn record(&mut self, d: Duration) {
+        let us = d.as_micros().max(1) as u64;
+        let bucket = (63 - us.leading_zeros()) as usize;
+        let bucket = bucket.min(self.buckets.len() - 1);
+        self.buckets[bucket] += 1;
+        self.count += 1;
+    }
+
+    fn merge(&mut self, other: &LatencyHistogram) {
+        for i in 0..self.buckets.len() {
+            self.buckets[i] += other.buckets[i];
+        }
+        self.count += other.count;
+    }
+
+    /// Return the upper bound of the bucket containing the requested
+    /// percentile (numerator/denominator). Conservative ceiling.
+    fn percentile_ceil(&self, numerator: u64, denominator: u64) -> Duration {
+        if self.count == 0 {
+            return Duration::ZERO;
+        }
+        let target = (self.count * numerator).div_ceil(denominator);
+        let mut acc: u64 = 0;
+        for (i, count) in self.buckets.iter().enumerate() {
+            acc += count;
+            if acc >= target {
+                let upper_us = 1u64 << (i + 1);
+                return Duration::from_micros(upper_us);
+            }
+        }
+        let i = self.buckets.len() - 1;
+        Duration::from_micros(1u64 << (i + 1))
+    }
+}
 
 #[test]
-#[ignore = "blocked on a protocol-complete vector-latency fixture and retrieval-path evidence"]
-fn ac_013_vector_retrieval_latency() {}
+fn ac_012_text_query_latency_on_fts5_path() {
+    if !long_run_enabled() {
+        return;
+    }
+
+    let n = ac012_corpus_n();
+    let (_dir, path) = fixture_path("ac012_text_query");
+    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+    let seed_elapsed = seed_ac012_corpus(&opened.engine, n);
+
+    // Build the held-out query token band (50th–90th percentile term
+    // frequency per the ADR). Reproducible: seeded from the vocab order.
+    let vocab = perf_vocab();
+    let band = ac012_query_token_band(&vocab);
+    let mut rng = SeededRng::new(0x0AC0_120D_EC0D_E000);
+    let queries: Vec<String> =
+        (0..PERF_SAMPLES).map(|_| band[rng.next_in(band.len())].clone()).collect();
+
+    // Warmup: full pass discarded, per ADR ("run the full query suite
+    // once and discard; measure on the second pass").
+    for q in &queries {
+        let _ = opened.engine.search(q).expect("warmup search");
+    }
+
+    // Measurement pass.
+    let mut samples = Vec::with_capacity(PERF_SAMPLES);
+    for q in &queries {
+        let started = Instant::now();
+        let _ = opened.engine.search(q).expect("measure search");
+        samples.push(started.elapsed());
+    }
+
+    let p50 = percentile_ceil(&samples, 50, 100);
+    let p99 = percentile_ceil(&samples, 99, 100);
+    eprintln!(
+        "AC012_NUMBERS n={n} samples={s} seed_ms={seed} p50_ms={p50} p99_ms={p99}",
+        s = samples.len(),
+        seed = seed_elapsed.as_millis(),
+        p50 = p50.as_millis(),
+        p99 = p99.as_millis(),
+    );
+
+    assert!(
+        p50 <= AC012_BUDGET_P50,
+        "AC-012 failed: p50={p50:?} > budget {budget:?} at n={n}",
+        budget = AC012_BUDGET_P50,
+    );
+    assert!(
+        p99 <= AC012_BUDGET_P99,
+        "AC-012 failed: p99={p99:?} > budget {budget:?} at n={n}",
+        budget = AC012_BUDGET_P99,
+    );
+}
+
+#[test]
+fn ac_013_vector_retrieval_latency() {
+    if !long_run_enabled() {
+        return;
+    }
+
+    let n = ac013_corpus_n();
+    let (_dir, path) = fixture_path("ac013_vector_retrieval");
+    let embedder = Arc::new(VaryingEmbedder::new(RETRIEVAL_VECTOR_DIM));
+    let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
+    let seed_elapsed = seed_ac013_corpus(&opened.engine, n);
+
+    let queries = ac013_query_bodies(PERF_SAMPLES);
+
+    for q in &queries {
+        let _ = opened.engine.search(q).expect("warmup search");
+    }
+
+    let mut samples = Vec::with_capacity(PERF_SAMPLES);
+    for q in &queries {
+        let started = Instant::now();
+        let _ = opened.engine.search(q).expect("measure search");
+        samples.push(started.elapsed());
+    }
+
+    let p50 = percentile_ceil(&samples, 50, 100);
+    let p99 = percentile_ceil(&samples, 99, 100);
+    eprintln!(
+        "AC013_NUMBERS n={n} samples={s} seed_ms={seed} p50_ms={p50} p99_ms={p99}",
+        s = samples.len(),
+        seed = seed_elapsed.as_millis(),
+        p50 = p50.as_millis(),
+        p99 = p99.as_millis(),
+    );
+
+    assert!(
+        p50 <= AC013_BUDGET_P50,
+        "AC-013 failed: p50={p50:?} > budget {budget:?} at n={n}",
+        budget = AC013_BUDGET_P50,
+    );
+    assert!(
+        p99 <= AC013_BUDGET_P99,
+        "AC-013 failed: p99={p99:?} > budget {budget:?} at n={n}",
+        budget = AC013_BUDGET_P99,
+    );
+}
 
 #[test]
 fn ac_017_vector_projection_freshness_p99_le_five_seconds() {
@@ -213,8 +606,96 @@ fn ac_018_drain_of_100_vectors_le_two_seconds() {
 }
 
 #[test]
-#[ignore = "blocked on a protocol-complete mixed-retrieval workload that exercises a non-synthetic second branch"]
-fn ac_019_mixed_retrieval_stress_workload_tail() {}
+fn ac_019_mixed_retrieval_stress_workload_tail() {
+    if !long_run_enabled() {
+        return;
+    }
+
+    let n = ac013_corpus_n();
+    let (_dir, path) = fixture_path("ac019_mixed_retrieval");
+    let embedder = Arc::new(VaryingEmbedder::new(RETRIEVAL_VECTOR_DIM));
+    let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
+    let seed_elapsed = seed_ac013_corpus(&opened.engine, n);
+
+    // Baseline pass — re-run AC-013's protocol immediately preceding
+    // the stress pass per acceptance.md AC-019 ("baseline_p99 is
+    // captured by re-running AC-013's protocol immediately preceding
+    // this AC in the same CI job").
+    let queries = ac013_query_bodies(PERF_SAMPLES);
+    for q in &queries {
+        let _ = opened.engine.search(q).expect("baseline warmup");
+    }
+    let mut baseline = Vec::with_capacity(PERF_SAMPLES);
+    for q in &queries {
+        let started = Instant::now();
+        let _ = opened.engine.search(q).expect("baseline measure");
+        baseline.push(started.elapsed());
+    }
+    let baseline_p99 = percentile_ceil(&baseline, 99, 100);
+
+    // Stress pass — N concurrent reader threads, mixed FTS5 + vector
+    // + canonical reads. The single embedder-bearing `search()` path
+    // exercises both vector ANN and FTS5 MATCH per call (see
+    // `read_search_in_tx` in fathomdb-engine/src/lib.rs); mixing
+    // distinct query bodies across threads keeps the working set
+    // realistic.
+    let engine = Arc::new(opened.engine);
+    let barrier = Arc::new(Barrier::new(AC019_THREADS + 1));
+    let histograms: Arc<Mutex<Vec<LatencyHistogram>>> = Arc::new(Mutex::new(Vec::new()));
+    let mut handles = Vec::with_capacity(AC019_THREADS);
+    let stress_queries: Arc<Vec<String>> =
+        Arc::new(ac013_query_bodies(AC019_QUERIES_PER_THREAD * AC019_THREADS));
+    for tid in 0..AC019_THREADS {
+        let engine = Arc::clone(&engine);
+        let barrier = Arc::clone(&barrier);
+        let queries = Arc::clone(&stress_queries);
+        let sink = Arc::clone(&histograms);
+        handles.push(thread::spawn(move || {
+            let mut hist = LatencyHistogram::new();
+            let base = tid * AC019_QUERIES_PER_THREAD;
+            barrier.wait();
+            for i in 0..AC019_QUERIES_PER_THREAD {
+                let q = &queries[(base + i) % queries.len()];
+                let started = Instant::now();
+                let _ = engine.search(q).expect("stress search");
+                hist.record(started.elapsed());
+            }
+            sink.lock().unwrap().push(hist);
+        }));
+    }
+    let stress_started = Instant::now();
+    barrier.wait();
+    for h in handles {
+        h.join().expect("stress thread");
+    }
+    let stress_elapsed = stress_started.elapsed();
+
+    let mut combined = LatencyHistogram::new();
+    for hist in histograms.lock().unwrap().iter() {
+        combined.merge(hist);
+    }
+    let stress_p99 = combined.percentile_ceil(99, 100);
+    let bound = std::cmp::max(baseline_p99 * AC019_STRESS_MULT, AC019_STRESS_FLOOR);
+
+    eprintln!(
+        "AC019_NUMBERS n={n} threads={t} per_thread={p} stress_ms={se} \
+         seed_ms={seed} baseline_p99_ms={bp} stress_p99_ms={sp} bound_ms={bm}",
+        t = AC019_THREADS,
+        p = AC019_QUERIES_PER_THREAD,
+        se = stress_elapsed.as_millis(),
+        seed = seed_elapsed.as_millis(),
+        bp = baseline_p99.as_millis(),
+        sp = stress_p99.as_millis(),
+        bm = bound.as_millis(),
+    );
+
+    assert!(
+        stress_p99 <= bound,
+        "AC-019 failed: stress p99={stress_p99:?} > bound {bound:?} \
+         (baseline_p99={baseline_p99:?}, mult={AC019_STRESS_MULT}x, floor={floor:?})",
+        floor = AC019_STRESS_FLOOR,
+    );
+}
 
 #[test]
 fn ac_020_reads_do_not_serialize_on_a_single_reader_connection() {

@@ -93,12 +93,46 @@ reused across suites:
 - `src/rust/crates/fathomdb-engine/tests/perf_gates.rs` currently binds
   AC-017 and AC-018 with active runtime measurements that run under
   `scripts/agent-verify.sh`.
-- AC-012 and AC-013 remain `#[ignore]` because the accepted 1M-row / 1M-vector
-  corpus fixtures from `dev/acceptance.md` are not landed yet; green claims
-  would be protocol-incomplete without that corpus.
-- AC-019 remains `#[ignore]` because the accepted mixed-retrieval workload is
-  not yet landed at the accepted 1M-corpus scale, even though the search path
-  now has a real vector-contributed branch.
+- AC-012 / AC-013 / AC-019 protocol-complete fixture harnesses landed
+  in Pack D (Phase 9) at `tests/perf_gates.rs`. All three are
+  `long_run_enabled()`-gated (early-return without `AGENT_LONG=1`) and
+  evidenced exclusively by `scripts/check.sh` with `AGENT_LONG=1`.
+  - **AC-012** seeder: deterministic seeded-LCG token stream over a
+    1024-token vocabulary with Zipfian (s=1.0) frequency distribution;
+    chunk bodies ≈ 500 B (55–75 tokens); held-out query token band
+    indices [10%, 50%) of vocab — i.e. the 50th–90th percentile term-
+    frequency band per ADR-0.6.0-text-query-latency-gates. Warmup pass
+    discarded; second pass measured (P-PERF-SAMPLES = 1,000).
+  - **AC-013** seeder: same chunk-body generator wired through a
+    deterministic-but-varying 768-d embedder (`VaryingEmbedder`,
+    FNV-1a hash projected to 6 sparse coordinates with unit-norm) so
+    vec0 ANN search returns distinct k=10 neighbors. Held-out query
+    body set drawn from the same distribution with a different LCG
+    seed (mirrors ADR-0.6.0-retrieval-latency-gates "held-out slice").
+  - **AC-019** workload: re-runs AC-013's protocol immediately
+    preceding the stress pass (per acceptance.md AC-019 wording),
+    captures `baseline_p99`, then runs `AC019_THREADS=8` concurrent
+    reader threads × `AC019_QUERIES_PER_THREAD=250` mixed FTS5 +
+    vector + canonical reads. Tail latency captured via a bounded
+    32-bucket power-of-two `LatencyHistogram` (microseconds) per the
+    plan's "no unbounded `Vec<Duration>`" instruction.
+  - **Scale knobs.** Canonical scale is 1,000,000 chunk rows / 768-d
+    vectors (ADR). The CI runner sets `AC_FULL_SCALE=1` to honor it;
+    `AC012_CORPUS_N` / `AC013_CORPUS_N` env vars override per host
+    (AC-007a/b runner-pin precedent). Default scale on this aarch64
+    Tegra dev runner: AC-012 N=100,000; AC-013 N=50,000. Budgets
+    pinned to ADR values; do not relax.
+  - **Pack D dev-runner status (aarch64 Linux 5.15-tegra,
+    2026-05-05).** AC-012 at default N=100,000: p50=29.7 ms, p99=85
+    ms — p50 RED vs ADR 20 ms; p99 GREEN. AC-013 at N=10,000 (full
+    AGENT_LONG run not feasible on this host): p50=33 ms, p99=48 ms
+    — both GREEN against ADR 50 / 200 ms. AC-013 at N=50,000 not
+    measured: vec0 single-row insertion path on this host took
+    1,800 s wall-clock to seed 10,000 vectors (≈ 5.5 inserts/sec)
+    — engine-surface scaling gap, FLAGGED for orchestrator and Pack
+    7. AC-019 inherits the AC-013 seed cost; not measured at N=50k.
+    Canonical CI x86_64 tier-1 runner re-measurement is required to
+    close the perf gates.
 - AC-020 is **DEFERRED for 0.6.0** as of Pack 6.G close (2026-05-04).
   Implemented as a long-run-only env-gated harness; the documented read
   mix is 50% vector-only semantic queries (`semantic-*`) and 50% hybrid
