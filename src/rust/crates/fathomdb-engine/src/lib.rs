@@ -11,7 +11,7 @@ use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::Once;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use fathomdb_embedder_api::{Embedder, EmbedderError as RuntimeEmbedderError, EmbedderIdentity};
 use fathomdb_query::compile_text_query;
@@ -1757,6 +1757,9 @@ impl Engine {
     /// are excluded from every result.
     pub fn trace_source_ref(&self, source_id: &str) -> Result<TraceReport, EngineError> {
         self.ensure_open()?;
+        if source_id.is_empty() {
+            return Err(EngineError::WriteValidation);
+        }
         let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
         let connection = connection.as_ref().ok_or(EngineError::Closing)?;
 
@@ -1891,15 +1894,20 @@ impl Engine {
 
         // AC-028a audit row: a single append on the
         // `excise_source_audit` collection naming the excised source.
+        // `next_cursor` after a prior write holds the LAST committed cursor;
+        // mirror the vec writer pattern (load + 1, then store post-commit)
+        // so the audit row's `write_cursor` is strictly greater than every
+        // canonical row that preceded it.
+        let excised_at = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
         let payload = serde_json::json!({
             "source_id": source_id,
-            "excised_at": 0_u64,
+            "excised_at": excised_at,
             "nodes_excised": nodes_excised,
             "edges_excised": edges_excised,
             "projections_invalidated": shadow_invalidated,
         })
         .to_string();
-        let audit_cursor = self.next_cursor.load(Ordering::SeqCst);
+        let audit_cursor = self.next_cursor.load(Ordering::SeqCst).saturating_add(1);
         tx.execute(
             "INSERT INTO operational_mutations(
                 collection_name, record_key, op_kind, payload_json, schema_id, write_cursor
@@ -1909,6 +1917,7 @@ impl Engine {
         .map_err(|_| EngineError::Storage)?;
 
         tx.commit().map_err(|_| EngineError::Storage)?;
+        self.next_cursor.store(audit_cursor, Ordering::SeqCst);
         Ok(ExciseReport {
             source_ref: source_id.to_string(),
             nodes_excised,

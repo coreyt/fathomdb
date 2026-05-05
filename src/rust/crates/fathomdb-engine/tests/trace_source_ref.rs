@@ -82,8 +82,10 @@ fn ac_042_trace_source_ref_excludes_null_source_rows() {
         }])
         .expect("write");
 
-    let report = opened.engine.trace_source_ref("").expect("trace empty");
-    assert!(report.events.is_empty(), "empty string must not match NULL source_id rows");
+    opened
+        .engine
+        .trace_source_ref("")
+        .expect_err("empty string must be rejected as invalid source_id");
 
     let report_unknown = opened.engine.trace_source_ref("NOPE").expect("trace unknown");
     assert!(report_unknown.events.is_empty());
