@@ -1503,6 +1503,7 @@ impl Engine {
     /// engine_error.to_string()]` per the lifecycle § Stress-failure
     /// context payload contract.
     #[doc(hidden)]
+    #[cfg(debug_assertions)]
     pub fn run_one_thread_poison_for_test(&self) -> Result<(), EngineError> {
         self.ensure_open()?;
 

@@ -5,12 +5,13 @@
 //! `(EventSource::SqliteInternal, EventCategory::Corruption)`:
 //!
 //! - [`corrupt_database_header`] — overwrites the SQLite magic-header
-//!   string at the start of page 1. On reopen this surfaces
-//!   `SQLITE_NOTADB`.
+//!   string at the start of the page at index 0 (the header-bearing
+//!   page). On reopen this surfaces `SQLITE_NOTADB`.
 //! - [`corrupt_interior_page_byte`] — XORs a single byte at a caller
-//!   chosen `(page_index, byte_offset)` outside the magic header. With a
-//!   non-page-1 target this hits the SQLite B-tree decoder during the
-//!   `Engine::open` schema probe and surfaces `SQLITE_CORRUPT`.
+//!   chosen `(page_index, byte_offset)` outside the magic header. With
+//!   `byte_offset >= 100` on the page at index 0 (or any byte on a
+//!   page at index >= 1) this hits the SQLite B-tree decoder during
+//!   the `Engine::open` schema probe and surfaces `SQLITE_CORRUPT`.
 //!
 //! Both helpers operate on a CLOSED database file. They MUST NOT be
 //! called against an open SQLite handle: the harness writes raw bytes via
@@ -29,7 +30,8 @@ use std::path::Path;
 /// canonical b-trees.
 pub const DEFAULT_PAGE_SIZE: u64 = 4096;
 
-/// Overwrite the SQLite magic-header string at the start of page 1.
+/// Overwrite the SQLite magic-header string at the start of the page
+/// at index 0 (the header-bearing page).
 ///
 /// Effect on reopen: `Connection::open` (or the first `PRAGMA` call)
 /// fails with extended code `SQLITE_NOTADB`, which the engine maps to
@@ -49,12 +51,14 @@ pub fn corrupt_database_header(path: &Path) {
 
 /// XOR a single byte at `(page_index, byte_offset)` with `xor_mask`.
 ///
-/// Use `page_index = 0, byte_offset >= 100` to corrupt the page-1
-/// B-tree header / cell-pointer region while preserving the SQLite
-/// magic string. On reopen the engine's schema probe (`PRAGMA
-/// schema_version`) then forces SQLite to decode the corrupt b-tree
-/// page and fails with extended code `SQLITE_CORRUPT`, which the engine
-/// maps to `EngineOpenError::Corruption(CorruptionDetail { kind:
+/// Use `page_index = 0, byte_offset >= 100` to corrupt the B-tree
+/// header / cell-pointer region of the page at index 0 while
+/// preserving the SQLite magic string (the magic occupies the first
+/// 16 bytes; the database header occupies bytes 0..100). On reopen
+/// the engine's schema probe (`PRAGMA schema_version`) then forces
+/// SQLite to decode the corrupt b-tree page and fails with extended
+/// code `SQLITE_CORRUPT`, which the engine maps to
+/// `EngineOpenError::Corruption(CorruptionDetail { kind:
 /// SchemaInconsistent, .. })` and emits `(SqliteInternal, Corruption,
 /// code = "SQLITE_CORRUPT")`.
 ///
