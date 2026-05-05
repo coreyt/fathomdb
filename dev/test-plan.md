@@ -133,6 +133,14 @@ reused across suites:
     7. AC-019 inherits the AC-013 seed cost; not measured at N=50k.
     Canonical CI x86_64 tier-1 runner re-measurement is required to
     close the perf gates.
+  - **Deferral.** AC-012 / AC-013 / AC-019 are **DEFERRED for 0.6.0**
+    as of Pack D close (2026-05-05) — paralleling AC-020. Harnesses
+    are protocol-complete and `AGENT_LONG`-gated; canonical-runner
+    measurement + the vec0 bulk-seed engine-surface gap are early
+    Pack 7 work per
+    `dev/plans/0.6.0-Phase-9-Pack-7-canonical-perf-measurement.md`.
+    0.6.0 ships with these three gates documented as DEFERRED, not
+    weakened. Budgets stay pinned at ADR values.
 - AC-020 is **DEFERRED for 0.6.0** as of Pack 6.G close (2026-05-04).
   Implemented as a long-run-only env-gated harness; the documented read
   mix is 50% vector-only semantic queries (`semantic-*`) and 50% hybrid
