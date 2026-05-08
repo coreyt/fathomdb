@@ -1,0 +1,112 @@
+{
+  "phase": "G.3.5",
+  "decision_self": "SKIP_G4",
+  "decision_self_rationale": "All 8 reader workers post-AC020-concurrent-body show cache_used_post_pct_of_limit = 3.35% (well below the 50% SKIP threshold) AND delta_miss_rate ranging 0.0230%-0.0237% (well below the 5% SKIP threshold). Both SKIP criteria are met cleanly across every worker — there is no cache pressure on the F.0 reader-worker page caches under the AC-020 hybrid-retrieval workload. G.4 (per-worker reader PRAGMA cache_size sweep) is not justified by the current evidence on this fixture and host.",
+  "dispatch_bias_flag": false,
+  "commit_sha": "b8a3770f3c52373a3d64b5804d9ac32d195c301d",
+  "branch": "pack6G-G3_5-20260504T144523Z",
+  "host_caveat": "Same worktree host as G.0 / G.1 (Linux 5.15-tegra, ~3x slower than the Pack 5 reference machine). G.3.5 is a screening step, not a perf packet — no AC-020 N=5 capture; absolute counts (~4250 hits / ~1 miss per worker per concurrent body) are not directly cross-host comparable but the ratios are.",
+  "red_tests_written": [
+    {
+      "name": "g3_5_cache_pressure_telemetry",
+      "file": "src/rust/crates/fathomdb-engine/tests/perf_gates.rs",
+      "red_failure_mode": "Compile-time: method `cache_status_per_worker_for_test` does not exist on `fathomdb_engine::Engine` (E0599) on the G.3.5-prompt tip d9adf23. Verified by `git grep cache_status_per_worker_for_test d9adf23 -- src/` returning no hits. The test was authored first to exercise the new debug-only `ReaderRequest::CacheStatus` broadcast; once the helper exists, the test would also panic at runtime if the cache_status reply count != worker_count (assertions on lines `assert_eq!(pre.len(), worker_count)` / `assert_eq!(post.len(), worker_count)`)."
+    }
+  ],
+  "cache_size_limit_bytes_assumed": 2097152,
+  "cache_size_limit_source": "SQLite default cache_size = -2000 (KiB) = 2 MiB per connection. No `PRAGMA cache_size` override is present on the F.0 reader open path — only `PRAGMA journal_mode=WAL` and `PRAGMA query_only=ON` run after `Connection::open`, and the per-connection lookaside is configured via `sqlite3_db_config` (which does not affect cache_size). Pack 5 §5 do-not-retry list bars touching the production cache_size in this packet, and G.3.5 measures only.",
+  "per_worker_telemetry": [
+    {"worker_idx": 0, "pre_hit": 27, "pre_miss": 17, "pre_used_bytes": 65968, "post_hit": 4381, "post_miss": 18, "post_used_bytes": 70320, "delta_hit": 4354, "delta_miss": 1, "delta_total": 4355, "delta_miss_rate": 0.000230, "cache_used_post_pct_of_limit": 0.033531},
+    {"worker_idx": 1, "pre_hit": 27, "pre_miss": 17, "pre_used_bytes": 65968, "post_hit": 4336, "post_miss": 18, "post_used_bytes": 70320, "delta_hit": 4309, "delta_miss": 1, "delta_total": 4310, "delta_miss_rate": 0.000232, "cache_used_post_pct_of_limit": 0.033531},
+    {"worker_idx": 2, "pre_hit": 27, "pre_miss": 17, "pre_used_bytes": 65968, "post_hit": 4311, "post_miss": 18, "post_used_bytes": 70320, "delta_hit": 4284, "delta_miss": 1, "delta_total": 4285, "delta_miss_rate": 0.000233, "cache_used_post_pct_of_limit": 0.033531},
+    {"worker_idx": 3, "pre_hit": 27, "pre_miss": 17, "pre_used_bytes": 65968, "post_hit": 4366, "post_miss": 18, "post_used_bytes": 70320, "delta_hit": 4339, "delta_miss": 1, "delta_total": 4340, "delta_miss_rate": 0.000230, "cache_used_post_pct_of_limit": 0.033531},
+    {"worker_idx": 4, "pre_hit": 27, "pre_miss": 17, "pre_used_bytes": 65968, "post_hit": 4276, "post_miss": 18, "post_used_bytes": 70320, "delta_hit": 4249, "delta_miss": 1, "delta_total": 4250, "delta_miss_rate": 0.000235, "cache_used_post_pct_of_limit": 0.033531},
+    {"worker_idx": 5, "pre_hit": 27, "pre_miss": 17, "pre_used_bytes": 65968, "post_hit": 4246, "post_miss": 18, "post_used_bytes": 70320, "delta_hit": 4219, "delta_miss": 1, "delta_total": 4220, "delta_miss_rate": 0.000237, "cache_used_post_pct_of_limit": 0.033531},
+    {"worker_idx": 6, "pre_hit": 27, "pre_miss": 17, "pre_used_bytes": 65968, "post_hit": 4346, "post_miss": 18, "post_used_bytes": 70320, "delta_hit": 4319, "delta_miss": 1, "delta_total": 4320, "delta_miss_rate": 0.000231, "cache_used_post_pct_of_limit": 0.033531},
+    {"worker_idx": 7, "pre_hit": 27, "pre_miss": 17, "pre_used_bytes": 65968, "post_hit": 4346, "post_miss": 18, "post_used_bytes": 70320, "delta_hit": 4319, "delta_miss": 1, "delta_total": 4320, "delta_miss_rate": 0.000231, "cache_used_post_pct_of_limit": 0.033531}
+  ],
+  "aggregate_summary": {
+    "delta_miss_rate_min": 0.000230,
+    "delta_miss_rate_median": 0.0002315,
+    "delta_miss_rate_max": 0.000237,
+    "delta_miss_rate_stddev": 0.00000234,
+    "cache_used_pct_min": 0.033531,
+    "cache_used_pct_median": 0.033531,
+    "cache_used_pct_max": 0.033531,
+    "cache_used_pct_stddev": 0.0
+  },
+  "decision_matrix_evaluation": "Row 1 (SKIP_G4) matches: all 8 workers have cache_used_post_pct_of_limit = 0.033531 (3.35%) which is < 50%, AND all 8 workers have delta_miss_rate in [0.0230%, 0.0237%] which is < 5%. Row 2 (FULL_G4_SWEEP) does not match: no worker hits >= 90% cache used or > 15% miss rate; not even close. Row 3 (DISPATCH_BIAS_FLAG) does not match — see `dispatch_bias_evidence` below: max/min ratio for delta_hit is 1.032x (4354 / 4219) < 2x; delta_miss is uniformly 1 across workers; cache_used_post_bytes is uniformly 70320 across workers. Verdict: SKIP_G4, no bias flag.",
+  "dispatch_bias_evidence": {
+    "checked": true,
+    "delta_hit_min_max": [4219, 4354],
+    "delta_hit_max_over_min_ratio": 1.0320,
+    "delta_miss_min_max": [1, 1],
+    "delta_miss_max_over_min_ratio": 1.0,
+    "post_used_bytes_min_max": [70320, 70320],
+    "post_used_bytes_max_over_min_ratio": 1.0,
+    "verdict": "round-robin dispatch is uniform within ~3.2% across workers on this AC-020 concurrent body; well under the 2x bias threshold. Page-cache footprint is bit-identical across workers (every reader sees the same query mix and the fixture is small)."
+  },
+  "ac017_runs": [
+    {
+      "passed": true,
+      "profile": "release",
+      "notes": "`cargo test --release -p fathomdb-engine --test perf_gates -- ac_017 ac_018 --nocapture`. `test ac_017_vector_projection_freshness_p99_le_five_seconds ... ok`. Total wall: 14.70 s for the perf_gates test binary."
+    }
+  ],
+  "ac018_runs": [
+    {
+      "drain_ms": 80,
+      "passed": true,
+      "notes": "release profile; `AC018_NUMBERS drain_ms=80`. Well under the 2 s gate. Slightly faster than G.1's 95 ms; consistent with run-to-run host jitter on this Linux 5.15-tegra worktree."
+    }
+  ],
+  "g3_5_diagnostic_runs": [
+    {
+      "profile": "dev (debug_assertions=true)",
+      "command": "G3_5_OUTPUT_PATH=/tmp/g3_5_evidence.json cargo test -p fathomdb-engine --test perf_gates -- --ignored g3_5_cache_pressure_telemetry --nocapture",
+      "concurrent_ms": 196,
+      "passed": true,
+      "notes": "Test is `#[cfg(debug_assertions)]`-gated because the underlying `cache_status_per_worker_for_test` accessor follows the F.0 / G.1 `#[cfg(debug_assertions)] #[doc(hidden)]` convention. Spec §4.4 suggested `cargo test --release`, but that compiles out the helper; G.1's reader_pool tests ran in dev mode for the same reason. AC-017 / AC-018 still ran in release per §4.3."
+    }
+  ],
+  "unexpected_observations": [
+    "Per-worker page-cache footprint is BIT-IDENTICAL across all 8 workers post-AC020 (70320 bytes each). This is a fingerprint of the small AC-020 fixture: 4 seeded docs + 4 distinct queries means each thread-affine connection materializes the exact same set of b-tree / vec0 / fts5 pages into its private page cache. On a larger fixture this uniformity would relax. For the G.3.5 SKIP_G4 verdict it tightens the case: there is no worker outlier hiding behind the median.",
+    "Hit:miss ratio is ~4300:1 on the concurrent body — the F.0 reader page caches are running in steady-state happy-path mode after the 16-search warmup. The single residual miss per worker per concurrent body is plausibly the first vec0/fts5 page that escapes the warmup query set. In other words the residual AC-020 gap on this host is NOT a page-cache-thrashing problem; it is something else (most likely the SQLite pcache1 global mutex itself, the WAL shared-memory atomics, or the parse_compile floor — all already on the orchestrator's G-phase candidate list).",
+    "delta_used_bytes (post - pre) is +4352 bytes uniformly per worker. That is exactly +1 SQLite default page (4 KiB) plus a small per-connection bookkeeping delta. A second page would only be materialized under cache pressure. The 2 MiB per-connection cache is thus carrying the AC-020 working set with ~30x headroom on this fixture.",
+    "Because cache_size is the canonical SQLite default (-2000 KiB), the 50% / 90% thresholds in §2 are evaluated against 2 MiB. If the orchestrator wants to verify the assumption empirically rather than assume it, a one-line `PRAGMA cache_size` readback in the same broadcast would suffice; G.3.5 deliberately did not add that to keep the diff minimal and inside the 'measure-only' mandate."
+  ],
+  "data_for_pivot": {
+    "if_skip_g4": {
+      "next_action": "Defer G.4 entirely on this fixture and host. The page-cache evidence does not justify the run cost. Reassess G.2 (per-worker prepared-statement cache, sticky-connection revisit of E.1) per Pack 6.G handoff §4 default ordering — parse_compile = 22.52% conc from G.0 telemetry is the next-highest-share canonical-SQLite-amenable residual. If G.2 also lands INCONCLUSIVE / KEEP-but-no-AC-020-closure, the §9 packet-close path applies: ship 0.6.0 with REQ-020 deferred, open Pack 7 with the cumulative G-phase evidence including G.3.5's SKIP_G4 verdict as the bound on per-connection page-cache contribution.",
+      "rationale": "Both SKIP thresholds are met by ~15x margin (3.35% vs 50% used; 0.023% vs 5% miss). A bigger reader cache cannot help when the existing one has 96.65% headroom and the steady-state miss rate is 1 page per 4300 hits.",
+      "rejected_alternative_PROBE_G4_MINUS_8000": "Not selected. PROBE would be defensible if any worker were near a 50% cache_used or 5% miss-rate threshold; none are. Spending the worktree-spawn cost on a single sweep point that the data already says will be flat is not a positive-EV step."
+    },
+    "if_full_g4_sweep": {
+      "next_action": "Not applicable to this evidence. Recorded for completeness: would have spawned G.4 with the full {-2000, -8000, -32000} KiB grid."
+    },
+    "for_orchestrator": "Codex `gpt-5.4` high reviewer optional per Pack 6.G §7 (G.3.5 is a screening pass, not a KEEP/REVERT lever — it adds debug-only diagnostic plumbing and a single `#[ignore]`-gated test). If the orchestrator wants reviewer cover anyway, the diff is small and the SKIP_G4 verdict is supported entirely by the 8 numbers in `per_worker_telemetry`."
+  },
+  "agent_verify_status": "pass",
+  "agent_verify_reason": "`./scripts/agent-verify.sh` (verbose) returned `ok verify 71s`. Steps: lint-rust 317ms, lint-rustfmt 208ms, lint-migrations 54ms, lint-python 21ms, lint-md-links 64ms, typecheck-rust 229ms, typecheck-python 1889ms, test-rust 67468ms, test-python 869ms. ESLint / TS / markdownlint / prettier are environment skips, not failures. `cargo clippy --all-targets -- -D warnings` ran clean (one pre-existing dead_code warning on `ReaderWorkerPool::worker_count` / `live_count` was already present on the G.3.5 prompt tip d9adf23 and is unrelated to this commit; verified by `git stash && cargo build --release` on the unmodified tree).",
+  "do_not_retry_cross_check": [
+    {"item": "B.1 runtime sqlite3_config(SQLITE_CONFIG_MULTITHREAD)", "did_not_re_run": true, "evidence": "G.3.5 only adds `sqlite3_db_status` (per-connection counter read) FFI calls. No `sqlite3_config` (capital-C global) calls were added or modified. Diff: `git show b8a3770 -- src/rust/crates/fathomdb-engine/src/lib.rs` shows only a new `#[cfg(debug_assertions)]` ReaderRequest variant + helper struct + worker arm + read_cache_status fn."},
+    {"item": "C.1 compile-time SQLITE_THREADSAFE=2 rebuild", "did_not_re_run": true, "evidence": "No libsqlite3-sys / build.rs / Cargo.toml feature changes. Canonical SQLite serialized mode unchanged."},
+    {"item": "E.1 read-path prepare_cached on borrow/release pool connections", "did_not_re_run": true, "evidence": "No prepare_cached changes. G.2 (sticky thread-affine prepared-statement cache) is still future-packet."},
+    {"item": "Reader cache_size / mmap_size global tuning", "did_not_re_run": true, "evidence": "No PRAGMA cache_size or mmap_size production-default changes — G.3.5 explicitly measures only. `cache_size_limit_bytes_assumed` is the SQLite-default 2 MiB; nothing in `Engine::open_with_embedder_for_test` reader-open path has been touched."},
+    {"item": "Reader open flags READ_ONLY | NO_MUTEX", "did_not_re_run": true, "evidence": "Reader open flags untouched: still `Connection::open(&path)` with default flags. `sqlite3_db_status` is a per-connection counter read; not an open-flag change."}
+  ],
+  "tests_run": [
+    "cargo build -p fathomdb-engine --tests — green",
+    "cargo build --release -p fathomdb-engine — green (pre-existing dead_code warning on worker_count/live_count, unrelated)",
+    "cargo test -p fathomdb-engine --test reader_pool — 6 tests green (4 F.0 worker-pool tests + 2 G.1 lookaside tests)",
+    "G3_5_OUTPUT_PATH=/tmp/g3_5_evidence.json cargo test -p fathomdb-engine --test perf_gates -- --ignored g3_5_cache_pressure_telemetry --nocapture — 1 passed, sidecar JSON written",
+    "cargo test --release -p fathomdb-engine --test perf_gates -- ac_017 ac_018 --nocapture — 2 passed; AC018_NUMBERS drain_ms=80",
+    "cargo fmt --all -- --check — clean (after one fmt run on the new test body)",
+    "cargo clippy --all-targets -- -D warnings — clean",
+    "./scripts/agent-verify.sh — rc=0, 71s wall"
+  ],
+  "next_phase_input": {
+    "for_orchestrator": "Apply the §8 stop rule SKIP_G4 branch: defer G.4 (per-worker reader PRAGMA cache_size sweep) and reassess G.2 (per-worker prepared-statement cache, sticky-connection revisit of E.1) per Pack 6.G handoff §4 default ordering. The G.3.5 evidence bounds the per-connection page-cache contribution to AC-020 at <= ~0.023% miss / <= 3.35% used — i.e. there is essentially no headroom for a bigger reader cache to recover. The remaining canonical-SQLite levers worth a worktree spawn are G.2 (parse_compile floor, 22.52% conc share from G.0) and / or G.3 (WAL checkpoint policy, only if G.0 evidence supports a write-side residual; G.0 reported checkpoint cost is small on the read-heavy fixture).",
+    "for_packet_close": "G.3.5 itself is a screening step; it does not move AC-020 numbers. Cumulative-vs-F.0 speedup is unchanged from the G.1 INCONCLUSIVE state (~3.53x median on this host vs the 5.33x KEEP target). Per Pack 6.G §9, packet success is 'every canonical-SQLite lever tried, KEEPs landed, residual gap documented for Pack 7' — G.3.5 contributes the page-cache leg of that documentation by ruling out the per-connection cache_size lever as a closer."
+  }
+}

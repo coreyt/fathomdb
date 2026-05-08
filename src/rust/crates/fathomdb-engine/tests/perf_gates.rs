@@ -916,7 +916,7 @@ fn g3_5_cache_pressure_telemetry() {
 
 // ── A.3 secondary diagnostics ────────────────────────────────────────────────
 
-const A3_EVIDENCE_DIR: &str = "dev/plan/runs/A3-evidence";
+const A3_EVIDENCE_DIR: &str = "dev/plans/runs/A3-evidence";
 
 fn a3_evidence_path(name: &str) -> std::path::PathBuf {
     // Resolve relative to repo root (two levels up from tests/).

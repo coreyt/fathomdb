@@ -129,8 +129,7 @@ reused across suites:
     — both GREEN against ADR 50 / 200 ms. AC-013 at N=50,000 not
     measured: vec0 single-row insertion path on this host took
     1,800 s wall-clock to seed 10,000 vectors (≈ 5.5 inserts/sec)
-    — engine-surface scaling gap, FLAGGED for orchestrator and Pack
-    7. AC-019 inherits the AC-013 seed cost; not measured at N=50k.
+    — engine-surface scaling gap, FLAGGED for orchestrator and Pack 7. AC-019 inherits the AC-013 seed cost; not measured at N=50k.
     Canonical CI x86_64 tier-1 runner re-measurement is required to
     close the perf gates.
   - **Deferral.** AC-012 / AC-013 / AC-019 are **DEFERRED for 0.6.0**
@@ -168,7 +167,7 @@ reused across suites:
   without `SQLITE_CONFIG_PCACHE2` custom allocator install. That,
   WAL2, reader/writer physical separation, and vendor-SQLite swap
   are all Pack 7 territory — see
-  `dev/plan/0.6.0-Phase-9-Pack-5-performance-diagnostics.md` §13.
+  `dev/plans/0.6.0-Phase-9-Pack-5-performance-diagnostics.md` §13.
 
   AC-020 stays RED in CI; the test bound (`tests/perf_gates.rs:245`)
   is unchanged. 0.6.0 ships with the gate documented as DEFERRED, not
@@ -178,17 +177,17 @@ reused across suites:
   - `dev/notes/performance-whitepaper-notes.md` (§4 kept ledger
     incl. F.0 / G.1; §5 reverted ledger; §11 Pack 5 narrative;
     §12 Pack 6 + Pack 6.G synthesis).
-  - `dev/plan/0.6.0-Phase-9-Pack-5-performance-diagnostics.md` (DoE
+  - `dev/plans/0.6.0-Phase-9-Pack-5-performance-diagnostics.md` (DoE
     plan, §12 audit trail, §13 Pack 7 proposed work).
-  - `dev/plan/runs/F0-thread-affine-readers-output.json` (F.0
+  - `dev/plans/runs/F0-thread-affine-readers-output.json` (F.0
     topology + numbers).
-  - `dev/plan/runs/G0-wal-checkpoint-telemetry-output.json` (stack-
+  - `dev/plans/runs/G0-wal-checkpoint-telemetry-output.json` (stack-
     aware symbol classification).
-  - `dev/plan/runs/G1-reader-lookaside-output.json` (lookaside
+  - `dev/plans/runs/G1-reader-lookaside-output.json` (lookaside
     LANDED INCONCLUSIVE).
-  - `dev/plan/runs/G3_5-cache-pressure-telemetry-output.json`
+  - `dev/plans/runs/G3_5-cache-pressure-telemetry-output.json`
     (page-cache lever falsified).
-  - `dev/plan/runs/STATUS.md` (Pack 5 / 6 / 6.G close-state board).
+  - `dev/plans/runs/STATUS.md` (Pack 5 / 6 / 6.G close-state board).
 
 ## Component Scaffold Targets
 

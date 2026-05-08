@@ -1,0 +1,80 @@
+{
+  "phase": "A2",
+  "decision": "PICK_B1",
+  "executed_by": "main_thread (Opus 4.7)",
+  "input_artifacts": {
+    "sequential_folded": "dev/notes/perf/ac020-sequential-fec71a0.folded",
+    "concurrent_folded": "dev/notes/perf/ac020-concurrent-fec71a0.folded",
+    "diff_folded": "dev/plan/runs/A1-folded-diff.txt",
+    "a1_output_json": "dev/plan/runs/A1-perf-capture-output.json"
+  },
+  "totals": {
+    "sequential_total_cycles": 386400903,
+    "concurrent_total_cycles": 776719920,
+    "concurrent_threads": 8,
+    "note": "concurrent ran ~8 threads in parallel; total cycles is sum across threads. Per-thread cycle budget concurrent ~97M vs sequential 386M -> each concurrent thread does ~25% the work of the single sequential thread in same wall budget, consistent with severe contention."
+  },
+  "classification": {
+    "mutex_atomic": {
+      "patterns": ["pthread_mutex_lock", "pthreadMutexEnter", "sqlite3_mutex_*", "lll_mutex_*", "__aarch64_swp*", "__aarch64_cas*", "__aarch64_ldadd*", "__aarch64_ldset*"],
+      "sequential_pct": 6.45,
+      "concurrent_pct": 36.98,
+      "ratio": 5.73,
+      "absolute_cycle_delta": 262268027,
+      "verdict": "DOMINANT BOTTLENECK"
+    },
+    "allocator": {
+      "patterns": ["mem1Malloc", "mem1Free", "sqlite3MemMalloc/Free", "sqlite3Malloc", "sqlite3DbMalloc", "sqlite3Realloc", "__libc_malloc/free/calloc", "je_*"],
+      "sequential_pct": 1.60,
+      "concurrent_pct": 3.20,
+      "ratio": 2.00,
+      "absolute_cycle_delta": 18661992,
+      "verdict": "secondary growth (2x); small absolute share"
+    },
+    "page_cache": {
+      "patterns": ["pcache1Fetch", "pcache1Truncate", "pcache1Pin/Unpin", "sqlite3Pcache*"],
+      "sequential_pct": 1.64,
+      "concurrent_pct": 1.46,
+      "ratio": 0.89,
+      "verdict": "did not grow"
+    },
+    "vec0_fts": {
+      "patterns": ["vec0_*", "vec0Filter*", "vec0Column*", "min_idx", "bitmap_get", "sqlite3VtabCall*", "fts5_*"],
+      "sequential_pct": 24.12,
+      "concurrent_pct": 11.43,
+      "ratio": 0.47,
+      "verdict": "useful work displaced by contention; not a bottleneck"
+    },
+    "our_code": {
+      "patterns": ["read_search_in_tx", "ReaderPool::*", "fathomdb_engine::*", "Engine::search", "dispatch*"],
+      "sequential_pct": 0.52,
+      "concurrent_pct": 0.17,
+      "ratio": 0.33,
+      "verdict": "not a bottleneck (most engine work inlined into deeper SQLite frames)"
+    },
+    "embedder": {
+      "patterns": ["RoutedEmbedder::*", "embed*"],
+      "sequential_pct": 0.0,
+      "concurrent_pct": 0.0,
+      "ratio": null,
+      "verdict": "not present (workload is search-heavy; embed is amortized in fixture seed, not in measured loop)"
+    }
+  },
+  "non_category_observations": {
+    "sql_parse_share": {"seq": 10.08, "conc": 7.07, "ratio": 0.70, "note": "did not grow under concurrency, but absolute floor is high; independent optimization opportunity (no prepared-statement cache)"},
+    "lll_lock_wait_concurrent_only": "__GI___lll_lock_wait at ~9.4M cycles in concurrent profile reinforces mutex_atomic verdict (would lift concurrent share by ~1pp if reclassified)",
+    "unknown_concurrent_share": 2.92,
+    "useful_work_drop": "min_idx + vec0Filter share 14.5% sequential -> 8.7% concurrent — engine doing less useful work per cycle under contention"
+  },
+  "decision_rule": "Per A.2 mandate: bottleneck = category whose share grows super-linearly (>= 2x) between sequential and concurrent. mutex_atomic grows 5.73x with the largest absolute cycle delta (+262M). Pick the matching first Phase B/C/D candidate from A.2 mapping table.",
+  "primary_bottleneck": "mutex_atomic",
+  "primary_bottleneck_evidence": "concurrent share 36.98% vs sequential 6.45% (ratio 5.73); top concurrent symbols include __aarch64_swp4_rel (11.2%), __aarch64_cas4_acq (9.8%), ___pthread_mutex_lock (6.8%), __aarch64_swp4_acq (5.9%), lll_mutex_lock_optimized (1.8%); concurrent profile also shows __GI___lll_lock_wait (~1.2% reclassified). Pattern is consistent with SQLite WAL/pager spinlocks + the global SQLite mutex serializing writers, NOT the read/write connection lock hierarchy from whitepaper §6.",
+  "first_phase_b_candidate": "B.1",
+  "first_phase_b_rationale": "Per A.2 mapping: pthread / sqlite mutex bottleneck -> B.1 (runtime MULTITHREAD) — ordering-correct. B.1 swaps the SERIALIZED threading mode for MULTITHREAD on the projection-runtime + reader connections so each connection is its own mutex domain instead of all sharing the global SQLite mutex. Direct fix for the dominant cycle sink. If B.1 KEEPs but does not close the gap, B.3 (per-connection lookaside) is the natural follow-up because allocator is the next-largest growing category at 2x.",
+  "alternative_if_b1_fails": "If B.1 lands without speedup change, capture must show whether the residual mutex_atomic cycles are still in the same SQLite global mutex (B.1 not actually applied to the right connections) vs a different mutex (e.g. rusqlite-side or our ReaderPool::acquire). Re-run A.1 capture against the B.1 branch and re-classify before picking the next experiment.",
+  "should_recapture": false,
+  "recapture_reason": null,
+  "next_phase": "B1-runtime-multithread.md",
+  "commit_sha_baseline": "ca0d8f0",
+  "log_path": "n/a (main thread)"
+}

@@ -1,0 +1,14 @@
+{
+  "reader_borrow_ms_total": "n/a: requires production hook",
+  "reader_borrow_ms_per_query": "n/a: requires production hook",
+  "embedder_us_total": 23,
+  "embedder_us_per_query": 0,
+  "search_us_total": 867569,
+  "search_us_per_query": 542,
+  "proxy_borrow_plus_read_us_total": 867546,
+  "proxy_borrow_plus_read_us_per_query": 542,
+  "prepares_per_search": 4,
+  "queries_total": 1600,
+  "counters_collection_status": "partial: borrow_wait and read_search_in_tx split requires production hooks; search_us covers both",
+  "note": "embed is RoutedEmbedder (instant), so proxy_borrow_plus_read_us ≈ read_search_in_tx_us + borrow_wait_us"
+}

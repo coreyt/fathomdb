@@ -1,0 +1,98 @@
+{
+  "phase": "A1",
+  "decision": "INCONCLUSIVE",
+  "sequential_ms": {
+    "raw_runs": [189, 199, 182, 179, 176],
+    "min": 176,
+    "median": 182,
+    "max": 199,
+    "stddev": 9.2,
+    "n": 5
+  },
+  "concurrent_ms": {
+    "raw_runs": [120, 110, 117, 115, 112],
+    "min": 110,
+    "median": 115,
+    "max": 120,
+    "stddev": 4.0,
+    "n": 5
+  },
+  "speedup_observed": 1.58,
+  "speedup_required": 5.33,
+  "flamegraph_paths": {
+    "sequential": "dev/notes/perf/ac020-sequential-fec71a0.svg",
+    "concurrent": "dev/notes/perf/ac020-concurrent-fec71a0.svg",
+    "diff": "dev/notes/perf/ac020-diff-fec71a0.svg"
+  },
+  "folded_paths": {
+    "sequential": "dev/notes/perf/ac020-sequential-fec71a0.folded",
+    "concurrent": "dev/notes/perf/ac020-concurrent-fec71a0.folded"
+  },
+  "perf_data_paths": {
+    "sequential": "dev/plan/runs/perf-ac020-sequential-fec71a0.data",
+    "concurrent": "dev/plan/runs/perf-ac020-concurrent-fec71a0.data"
+  },
+  "perf_record_meta": {
+    "frequency_hz": 999,
+    "call_graph": "dwarf",
+    "event": "cycles:u",
+    "events_captured_sequential": 259,
+    "events_captured_concurrent": 978,
+    "perf_binary": "/tmp/perf-real/usr/lib/linux-tools-5.15.0-124/perf",
+    "perf_version": "5.15.163",
+    "kernel_version": "5.15.185-tegra",
+    "kernel_warnings": "perf_event_paranoid=2: kernel profiling excluded; userspace cycles:u profiling succeeded. Version skew: perf 5.15.163 vs kernel 5.15.185-tegra (no recording errors observed). perf binary was extracted from linux-tools-5.15.0-124-generic_5.15.0-124.134_arm64.deb (ports.ubuntu.com) due to no linux-tools-tegra package available.",
+    "note_sample_count": "concurrent profile has 978 samples vs sequential 259 because concurrent workload spawns ~8 threads all sampled across the 115ms window"
+  },
+  "cpu_governor_action": "could_not_set:no_root_no_sudo",
+  "cpu_governor_original": "schedutil",
+  "cpu_freq_observed_mhz": {
+    "min": 729,
+    "max": 2035
+  },
+  "cpu_freq_note": "schedutil governor; CPU was at max freq (2201 MHz rated) during build but 729-2035 MHz observed across 12 cores during post-capture read. Benchmark load likely drove cores to max; idle cores read lower.",
+  "sanity_symbols_present": ["pthread_mutex_lock", "pcache1Fetch", "vec0_*"],
+  "sanity_symbols_absent": {
+    "mem1Malloc": "Not present; SQLite uses sqlite3MemMalloc (7 occurrences) and sqlite3Malloc/dbMallocRawNN. mem1Malloc is the default SQLite allocator name; this build uses the standard malloc shim (sqlite3MemMalloc -> __libc_malloc). The symbol may differ by SQLite compilation flags.",
+    "read_search_in_tx": "Not present; function exists in src/rust/crates/fathomdb-engine/src/lib.rs but is inlined by the Rust release optimizer into Engine::search call sites. Its callee (rusqlite row iteration) is visible in both profiles."
+  },
+  "top_10_symbols_sequential": [
+    {"symbol": "min_idx", "self_pct": 12.4, "context": "sqlite-vec KNN minimum-heap index selection"},
+    {"symbol": "bitmap_get", "self_pct": 6.7, "context": "sqlite-vec chunk bitmap scan"},
+    {"symbol": "sqlite3RunParser", "self_pct": 4.6, "context": "SQL parsing per-query (no prepared statement cache hit)"},
+    {"symbol": "sqlite3VdbeExec", "self_pct": 3.8, "context": "VDBE bytecode execution"},
+    {"symbol": "resolveExprStep", "self_pct": 2.6, "context": "SQL expression resolution during parse"},
+    {"symbol": "__aarch64_swp4_rel", "self_pct": 2.5, "context": "ARM atomic swap release (SQLite WAL / pager spinlock)"},
+    {"symbol": "findElementWithHash.constprop.0", "self_pct": 2.4, "context": "SQLite hash table lookup"},
+    {"symbol": "__aarch64_cas4_acq", "self_pct": 2.3, "context": "ARM compare-and-swap acquire (lock contention)"},
+    {"symbol": "vec0Filter_knn_chunks_iter", "self_pct": 2.1, "context": "sqlite-vec KNN chunk iteration"},
+    {"symbol": "__memcpy_generic", "self_pct": 2.0, "context": "memory copy (row data, VDBE stack)"}
+  ],
+  "top_10_symbols_concurrent": [
+    {"symbol": "__aarch64_swp4_rel", "self_pct": 11.2, "context": "ARM atomic swap release — 4.5x higher than sequential; SQLite WAL/pager write spinlock contention"},
+    {"symbol": "__aarch64_cas4_acq", "self_pct": 9.8, "context": "ARM CAS acquire — 4.3x higher than sequential; mutex acquisition contention"},
+    {"symbol": "___pthread_mutex_lock", "self_pct": 6.8, "context": "pthread mutex lock — confirms SQLite serialized-writes bottleneck"},
+    {"symbol": "min_idx", "self_pct": 6.6, "context": "KNN index — 1.9x lower fraction than sequential (useful work displaced by contention)"},
+    {"symbol": "__aarch64_swp4_acq", "self_pct": 5.9, "context": "ARM atomic swap acquire — additional contention path"},
+    {"symbol": "sqlite3RunParser", "self_pct": 3.4, "context": "SQL parsing"},
+    {"symbol": "sqlite3VdbeExec", "self_pct": 3.3, "context": "VDBE bytecode execution"},
+    {"symbol": "[unknown]", "self_pct": 2.9, "context": "Frames not resolved via dwarf unwind (likely within JIT or VDSO)"},
+    {"symbol": "resolveExprStep", "self_pct": 1.9, "context": "SQL expression resolution"},
+    {"symbol": "lll_mutex_lock_optimized", "self_pct": 1.8, "context": "glibc optimized mutex lock path"}
+  ],
+  "total_cycles_sequential": 386400903,
+  "total_cycles_concurrent": 776719920,
+  "unexpected_observations": "1) Concurrent profile shows ~30% of cycles in atomic/mutex primitives (__aarch64_swp4_rel=11.2%, __aarch64_cas4_acq=9.8%, ___pthread_mutex_lock=6.8%, __aarch64_swp4_acq=5.9%, lll_mutex_lock_optimized=1.8%) vs ~5% in sequential. This is severe spinlock+mutex contention, not I/O or memory bandwidth. 2) Sequential sample count (259) is sparse at 999Hz for 182ms — expect ~182 samples per thread but got 259 total, suggesting single-threaded capture at 999Hz is near-correct. Concurrent got 978 samples across ~8 threads which is proportional. 3) sqlite3RunParser appears prominently in BOTH profiles (4.6% seq, 3.4% conc) — every search call re-parses SQL. No prepared statement reuse. This is an independent optimization opportunity unrelated to concurrency. 4) Total cycle count for concurrent (776M) is 2x sequential (386M) despite being faster in wall time (115ms vs 182ms) — indicates 8 threads were running but most cycles were wasted in spinloops. Useful work (min_idx, vec0Filter) dropped from 14.5% to 8.7% of cycles.",
+  "alternative_hypothesis": "The dominant bottleneck is NOT the lock hierarchy between read/write connections (as §6 hypothesis ladder suggests) but rather SQLite's internal WAL/pager spinlocks (__aarch64_swp4_rel, __aarch64_cas4_acq) plus the SQLite mutex (___pthread_mutex_lock) that serializes all writers. Even read-heavy concurrent workloads hit these because every query goes through sqlite3LockAndPrepare. A secondary opportunity is SQL re-parsing: sqlite3RunParser at 4-5% of cycles suggests prepared statements are not cached across calls.",
+  "data_for_pivot": "If A.2 cannot isolate the specific spinlock being contended: (1) `perf lock` subcommand (needs kernel events, blocked by paranoid=2 — would need sudo); (2) `perf c2c` for cache-line false sharing detection (also needs kernel events); (3) add USDT probes to SQLite WAL acquire/release to measure hold times without kernel profiling; (4) run `strace -c -f` against both entry points to see syscall distribution — A.3 is already planned for this. The folded diff clearly shows the atomic/mutex excess in concurrent and should be sufficient for A.2 bottleneck classification.",
+  "log_path": "dev/plan/runs/A1-perf-capture-output.json",
+  "commit_sha": "fec71a0",
+  "pre_flight_notes": {
+    "perf_source": "Extracted from linux-tools-5.15.0-124-generic arm64.deb (ports.ubuntu.com) — no linux-tools-tegra package; version skew 5.15.163 vs 5.15.185 minor, no issues observed",
+    "inferno_installed": "cargo install inferno v0.12.6",
+    "build_command": "RUSTFLAGS='-C force-frame-pointers=yes' cargo build -p fathomdb-engine --release --test perf_gates",
+    "build_note": "Used --test perf_gates (not --tests) to skip pre-existing compile errors in cursors/lifecycle_observability/compatibility tests noted by A.0",
+    "cpu_governor": "Could not set to 'performance' — no sudo access. Original: schedutil. CPU ran at near-max freq (2035 MHz observed, 2201 MHz rated max) during benchmarks."
+  },
+  "next_phase_recommendation": "A2-symbol-focus.md"
+}

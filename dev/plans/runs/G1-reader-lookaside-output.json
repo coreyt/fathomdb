@@ -1,0 +1,133 @@
+{
+  "phase": "G.1",
+  "decision_self": "INCONCLUSIVE",
+  "decision_self_rationale": "AC-017 + AC-018 stayed green. Concurrent_median improved 168 ms -> 161 ms (-7 ms, ~4.2%) and speedup_median improved 3.339x -> 3.530x (+0.191x, no ratio worsening). Per handoff §6 / §8 the KEEP threshold is `concurrent_median < baseline - 1*stddev` = 168 - 11.89 = 156.11 ms; observed 161 ms misses the threshold by 4.89 ms (less than half a stddev). Movement is in the right direction but inside the noise band, so the implementer self-decision is INCONCLUSIVE. Lookaside-applied evidence captured below for the orchestrator + codex `gpt-5.4` high reviewer to confirm KEEP-or-REVERT.",
+  "commit_sha": "46e3576ba92047b68d1a8c8163e580e065871d8d",
+  "branch": "pack6G-G1-20260504T135138Z",
+  "host_caveat": "Same worktree host as G.0 (Linux 5.15-tegra, schedutil, ~3x slower than the Pack 5 reference machine). Cross-pack comparisons should use ratios, not absolute ms.",
+  "red_tests_written": [
+    {
+      "name": "reader_workers_have_lookaside_configured_with_ok_rc",
+      "file": "src/rust/crates/fathomdb-engine/tests/reader_pool.rs",
+      "red_failure_mode": "Compile-time: method `reader_lookaside_config_rcs_for_test` does not exist on `fathomdb_engine::Engine` (E0599). Pre-implementation. Asserts the rc of `sqlite3_db_config(LOOKASIDE)` captured at open time is SQLITE_OK (0) for every reader worker."
+    },
+    {
+      "name": "reader_workers_consume_lookaside_slots_after_warmup_read",
+      "file": "src/rust/crates/fathomdb-engine/tests/reader_pool.rs",
+      "red_failure_mode": "Compile-time: method `reader_lookaside_used_per_worker_for_test` does not exist on `fathomdb_engine::Engine` (E0599). Pre-implementation. Once compiling, this test would also fail at runtime if lookaside were misconfigured (e.g. ordered after a PRAGMA so SQLite silently ignored it) because `SQLITE_DBSTATUS_LOOKASIDE_USED` hiwtr would remain 0 after warmup. Initially also failed at runtime when the test read `current` instead of `hiwtr` (slots returned to the pool when the search transaction closed) — fixed by asserting on hiwtr, which is the right semantic for 'at least one slot was honored at any point'."
+    }
+  ],
+  "lookaside_config": {
+    "slot_size_bytes": 1200,
+    "slot_count": 500,
+    "applied_via": "raw FFI: rusqlite::ffi::sqlite3_db_config(handle, ffi::SQLITE_DBCONFIG_LOOKASIDE, NULL, 1200, 500). rusqlite 0.31's safe `set_db_config` wrapper only supports the boolean DbConfig::* variants; `SQLITE_DBCONFIG_LOOKASIDE` is explicitly commented out in `rusqlite-0.31.0/src/config.rs`. Used the named symbol `ffi::SQLITE_DBCONFIG_LOOKASIDE` (= 1001) rather than a magic number per cross-platform Rust convention.",
+    "ordering_assertion_rc": "0 (SQLITE_OK) for every reader worker, captured at open time before any PRAGMA / prepare ran on the connection. Captured per-worker into `Engine::reader_lookaside_rcs: Vec<i32>` (allow(dead_code) in release; read by `reader_lookaside_config_rcs_for_test` in debug)."
+  },
+  "lookaside_used_evidence": {
+    "method": "Debug-only `ReaderRequest::LookasideStatus` request broadcast to every worker (not round-robin); each worker calls `sqlite3_db_status(SQLITE_DBSTATUS_LOOKASIDE_USED)` and returns the high-water-mark out-param. `current` was tried first but decays as transactions finalize so it is unreliable for post-warmup evidence; `hiwtr` is the correct latched signal that lookaside was honored at any point.",
+    "after_warmup_test_workload": "READER_POOL_SIZE * 8 = 64 dispatched `engine.search('warmup')` calls (each routed round-robin to one of the 8 workers) on a fresh empty engine, search() returns Err but still parses + prepares + steps which exercises the lookaside arena.",
+    "hiwtr_per_worker": [57, 57, 57, 57, 57, 57, 57, 57],
+    "interpretation": "Every worker has hiwtr=57 slots used (well below the configured 500-slot capacity, ~11%). Uniformity across workers reflects the round-robin dispatch + the fact that `engine.search('warmup')` exercises the same transaction shape on each. AC-020's hybrid retrieval workload is more allocation-heavy and would push hiwtr higher; the test gate is 'consumed > 0', not 'saturated'."
+  },
+  "ac017_runs": [
+    {
+      "passed": true,
+      "profile": "release",
+      "notes": "Run via `cargo test --release -p fathomdb-engine --test perf_gates -- ac_017 ac_018 --nocapture`; `test ac_017_vector_projection_freshness_p99_le_five_seconds ... ok` in 14.64 s wall."
+    }
+  ],
+  "ac018_runs": [
+    {
+      "drain_ms": 95,
+      "passed": true,
+      "notes": "release; AC018_NUMBERS drain_ms=95; well under the 2 s gate. Slightly higher than G.0's 51 ms (run-to-run; G.0 itself reported 56 ms in F.0 baseline)."
+    }
+  ],
+  "ac020_runs": [
+    {"run": 1, "sequential_ms": 582, "concurrent_ms": 153, "bound_ms": 109, "speedup": 3.804, "passed_5_33x": false, "passed_packet_1_25_margin": false},
+    {"run": 2, "sequential_ms": 547, "concurrent_ms": 161, "bound_ms": 102, "speedup": 3.398, "passed_5_33x": false, "passed_packet_1_25_margin": false},
+    {"run": 3, "sequential_ms": 593, "concurrent_ms": 168, "bound_ms": 111, "speedup": 3.530, "passed_5_33x": false, "passed_packet_1_25_margin": false},
+    {"run": 4, "sequential_ms": 563, "concurrent_ms": 181, "bound_ms": 105, "speedup": 3.110, "passed_5_33x": false, "passed_packet_1_25_margin": false},
+    {"run": 5, "sequential_ms": 503, "concurrent_ms": 118, "bound_ms": 94,  "speedup": 4.263, "passed_5_33x": false, "passed_packet_1_25_margin": false}
+  ],
+  "ac020_summary": {
+    "sequential_ms": {"min": 503, "median": 563, "max": 593, "stddev": 33.40},
+    "concurrent_ms": {"min": 118, "median": 161, "max": 181, "stddev": 22.83},
+    "speedup":      {"min": 3.110, "median": 3.530, "max": 4.263, "stddev": 0.428}
+  },
+  "comparison_to_g0_baseline": {
+    "g0_baseline_of_record": {
+      "sequential_ms_median": 552,
+      "concurrent_ms_median": 168,
+      "speedup_median": 3.339,
+      "concurrent_ms_stddev": 11.89,
+      "n": 5
+    },
+    "g1_observed": {
+      "sequential_ms_median": 563,
+      "concurrent_ms_median": 161,
+      "speedup_median": 3.530,
+      "concurrent_ms_stddev": 22.83,
+      "n": 5
+    },
+    "deltas": {
+      "sequential_ms_median_delta": "+11 ms (+2.0%) — within run-to-run noise",
+      "concurrent_ms_median_delta": "-7 ms (-4.2%) — improvement, but inside G.0's 1*stddev band (11.89 ms)",
+      "speedup_median_delta": "+0.191x (+5.7%) — no ratio worsening",
+      "concurrent_ms_stddev_delta": "+10.94 ms — G.1 run shows higher variance, partly driven by run 5 (118 ms) and run 4 (181 ms); not a regression but a wider band that loosens the KEEP threshold further on this sample"
+    },
+    "keep_threshold_evaluation": {
+      "rule": "concurrent_median < g0_baseline.concurrent_median - 1 * g0_baseline.stddev",
+      "threshold_ms": 156.11,
+      "observed_ms": 161,
+      "verdict": "miss by 4.89 ms (~0.41 * stddev); does NOT meet KEEP threshold",
+      "ratio_floor_evaluation": {
+        "rule": "speedup_median >= g0_baseline.speedup_median",
+        "threshold": 3.339,
+        "observed": 3.530,
+        "verdict": "pass; no ratio worsening"
+      }
+    }
+  },
+  "optional_sweep_results": null,
+  "optional_sweep_notes": "Did not run the [128, 250, 500, 1000] x {512, 1200} sweep grid. Spec §2 makes it optional ('do NOT bake the sweep into the production code path'); G.0 telemetry already pointed at 1200 x 500 as the right canonical sizing for the sticky reader topology and the small-allocation footprint of the FTS5 / vec0 hot stacks. If the orchestrator + reviewer want the sweep before deciding KEEP vs INCONCLUSIVE, it can be done as a follow-up under a debug-gated env knob without re-opening the public surface; the lookaside-call helper is already isolated in `configure_reader_lookaside`.",
+  "unexpected_observations": [
+    "AC-020 run-to-run variance widened on this G.1 sample (concurrent stddev 22.83 ms vs G.0's 11.89 ms). Run 5 in particular hit 118 ms / 4.263x — the best concurrent number observed in any G-phase run on this host so far — while run 4 hit 181 ms / 3.110x. The wider band loosens the formal KEEP threshold but suggests lookaside is doing real work when contention is the bottleneck (run 5 is plausibly an arena-pressure best-case). A larger N (e.g. N=10) would tighten the verdict; the spec calls for N=5 so I did not run more.",
+    "Sequential_median moved +11 ms (552 -> 563). Within noise, but consistent with the documented 'lookaside has a small overhead per allocation when the slot pool is healthy' note in the SQLite docs; sequential perf shouldn't IMPROVE from lookaside on a single-threaded fixture (no malloc-arena contention to remove), and a small regression in the 1-2% band is expected and tolerable.",
+    "Per-worker `LOOKASIDE_USED` hiwtr after warmup is uniform at 57 slots/worker, which is ~11% of the 500-slot capacity. AC-020's hybrid retrieval workload would push that higher (the warmup test does only a 64-call light-search loop on an empty DB). Slot_count 500 may be over-provisioned for the warmup fixture but well-sized for AC-020 + the FTS5/vec0 stacks visible in the G.0 top-call-site table. No evidence of a `LOOKASIDE_MISS_FULL` wall.",
+    "AC-018 drain_ms moved from 51 ms (G.0 release run) to 95 ms (G.1 release run). Still trivially under the 2 s gate, no contract impact, but worth noting if the 6.G synthesis tracks AC-018 trend. Likely host-jitter; the writer connection does NOT have lookaside applied in this packet (G.1 scope is reader-side only)."
+  ],
+  "alternative_hypothesis_if_revert": "If a follow-on run on the orchestrator side shows the concurrent_median improvement does NOT reproduce (i.e. observed median > 168 + 1 * stddev), the most likely explanation is that the dominant residual on AC-020 is NOT the glibc malloc-arena mutex but the SQLite pcache1 global mutex (G.0 reported `page_cache` = 6.29% conc with 4.01x ratio, the second-largest contention class). Lookaside reduces calls to `pcache1Alloc -> sqlite3Malloc -> __libc_malloc` but does NOT eliminate the pcache1 mutex itself, which still sits on the page-fetch hot path. Per the G.0 unexpected_observations, a per-connection (private) page cache (`PRAGMA private_cache=ON` / `SQLITE_OPEN_PRIVATECACHE`) would attack that residual; that's a candidate G.4. The G.1 numbers being just below the 1*stddev threshold are consistent with this: lookaside removed some malloc-arena calls but the pcache1-mutex floor is still there.",
+  "data_for_pivot": {
+    "if_keep": {
+      "next_lever": "G.4 — per-connection (private) page cache. G.0 telemetry called this out: page_cache (pcache1Fetch / Unpin / Alloc / Destroy) shows 4.01x growth concurrent vs sequential and is the second-largest contention path after allocator_lookaside. Lookaside masks pcache1Alloc fall-through to malloc but not the pcache1 global mutex itself. Canonical-SQLite lever: `SQLITE_OPEN_PRIVATECACHE` open flag or `PRAGMA cache=private` per-reader-connection. Distinct from the §3 do-not-retry `cache_size` global tuning entry.",
+      "deferred": "G.2 (per-worker prepared-statement cache, sticky-connection revisit of E.1) is still motivated by parse_compile = 22.52% conc, but its ratio is 0.61 (share shrinks under concurrency), so it lowers a CPU floor more than it removes a contention point. Defer until G.4 settles."
+    },
+    "if_revert_or_inconclusive": {
+      "recommended_orchestrator_action": "Run an independent N=5 confirmation pass on the same commit with the same agent-verify-style guardrails. If the second pass reproduces concurrent_median ~ 161 ms (one stddev above the KEEP threshold), this is genuinely lookaside-improving-allocator-pressure but the F.0 baseline's 11.89 ms stddev was tighter than reality; KEEP on a relaxed 'concurrent_median < baseline AND speedup_median > baseline' rule is defensible (movement direction + ratio floor both pass). If the second pass shows no movement or regression, REVERT and pivot directly to G.4 (private page cache) since allocator-arena is then NOT the rate-limiting residual on this host.",
+      "reviewer_specific_notes_for_codex_gpt54_high": "Lookaside is not on the §5 do-not-retry list. No public Rust API expansion: only `#[cfg(debug_assertions)] #[doc(hidden)]` test accessors per F.0 reviewer convention, and one debug-only `ReaderRequest` variant. FFI uses `c_int` per `feedback_cross_platform_rust.md`; named symbol `ffi::SQLITE_DBCONFIG_LOOKASIDE` not magic 1001. Ordering rc captured + debug-asserted before any PRAGMA / prepare runs. AC-018 unchanged (still green, drain 95 ms). Same-snapshot cursor contract / AC-021 / AC-022 / AC-059b untouched (no read-path SQL or transaction-shape changes)."
+    }
+  },
+  "agent_verify_status": "pass",
+  "agent_verify_reason": "`./scripts/agent-verify.sh` (per F.0 reviewer block #3 — NOT `dev/agent-verify.sh`) returned rc=0 on a clean run. First fmt run flagged a rustfmt-style block-vs-inline struct expansion on the new `LookasideStatus` ReaderRequest variant; fixed by running `cargo fmt --all` and re-running. AC-017 + AC-018 release-profile runs both green prior to the AC-020 capture (AC018_NUMBERS drain_ms=95).",
+  "do_not_retry_cross_check": [
+    {"item": "B.1 runtime sqlite3_config(SQLITE_CONFIG_MULTITHREAD)",                 "did_not_re_run": true, "evidence": "G.1 only adds `sqlite3_db_config(SQLITE_DBCONFIG_LOOKASIDE)` — a per-connection allocator setting. No `sqlite3_config` (capital-C global) calls were added or modified. `git log -p f1e66bc..46e3576 -- src/rust/crates/fathomdb-engine/src/lib.rs` shows no SQLITE_CONFIG_MULTITHREAD touch."},
+    {"item": "C.1 compile-time SQLITE_THREADSAFE=2 rebuild",                          "did_not_re_run": true, "evidence": "No libsqlite3-sys / build.rs / Cargo.toml feature changes; canonical SQLite serialized mode unchanged. No reproducible-bin layer touched."},
+    {"item": "E.1 read-path prepare_cached on borrow/release pool connections",      "did_not_re_run": true, "evidence": "No prepare_cached changes anywhere in this commit. G.2 (sticky thread-affine prepared cache) is still future-packet."},
+    {"item": "Reader cache_size / mmap_size global tuning",                          "did_not_re_run": true, "evidence": "No PRAGMA cache_size / mmap_size production-default changes. Only PRAGMAs touched on reader connections at open are the pre-existing journal_mode=WAL + query_only=ON; nothing added."},
+    {"item": "Reader open flags READ_ONLY | NO_MUTEX",                               "did_not_re_run": true, "evidence": "Reader open flags untouched: still `Connection::open(&path)` with default flags. Lookaside is a per-connection allocator setting, not an open-flag bit; the §3 NO_MUTEX entry is unrelated and stays not-retried."}
+  ],
+  "tests_run": [
+    "cargo build --tests -p fathomdb-engine — green",
+    "cargo test -p fathomdb-engine --test reader_pool (6 tests, all green; 2 new G.1 lookaside tests + the 4 existing F.0 worker-pool tests)",
+    "cargo test --release -p fathomdb-engine --test perf_gates -- ac_017 ac_018 --nocapture — both green; AC018_NUMBERS drain_ms=95",
+    "AGENT_LONG=1 cargo test --release -p fathomdb-engine --test perf_gates ac_020_reads_do_not_serialize -- --nocapture --test-threads=1 (x5) — gate fails as expected (still chasing 5.33x), all numerics captured",
+    "cargo clippy --all-targets -- -D warnings — clean",
+    "cargo fmt --all -- --check — clean",
+    "./scripts/agent-verify.sh — rc=0"
+  ],
+  "next_phase_input": {
+    "for_orchestrator": "Codex `gpt-5.4` high reviewer mandatory on this INCONCLUSIVE per handoff §7. If the reviewer + orchestrator KEEP, pivot to G.4 (private page cache) — that lever attacks the second-largest G.0 contention class (`page_cache` 6.29% conc with 4.01x ratio) and is canonical-SQLite (`SQLITE_OPEN_PRIVATECACHE` / `PRAGMA cache=private`), distinct from the §3 do-not-retry `cache_size` global tuning entry. If the reviewer REVERTS, the same G.4 candidate becomes the next phase since the residual is then NOT allocator-arena.",
+    "for_packet_close": "G.1 is a small-radius lever; if it KEEPs the cumulative speedup vs F.0 is ~+0.19x (3.339x -> 3.530x). AC-020's 5.33x KEEP target / 5.0x packet floor is still ~1.5-1.8x away. Per handoff §9, packet success is 'every canonical-SQLite lever tried, KEEPs landed, residual gap documented for Pack 7' — not 'AC-020 closes within 0.6.0'."
+  }
+}

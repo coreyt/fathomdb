@@ -1,0 +1,39 @@
+{
+  "phase": "A4",
+  "executed_by": "main_thread (Opus 4.7, intent: high)",
+  "decision": "B1",
+  "rationale": "A.2 classification puts mutex_atomic at 36.98% of concurrent cycles vs 6.45% sequential (5.73x growth, +262M absolute cycles), the only category that grew super-linearly with the largest absolute delta. A.3.4 confirms sqlite3_threadsafe()=1 (SERIALIZED, MUTEX_PTHREADS) — exactly the SQLite mode whose global recursive mutexes show up as the contended primitives in the A.1 flamegraph. B.1 (runtime MULTITHREAD via sqlite3_config(SQLITE_CONFIG_MULTITHREAD), ordering-correct so it runs before sqlite3_initialize) directly removes the per-connection serialization at the SQLite layer. No other category has comparable evidence; allocator at 2.00x growth is held in reserve as B.3 follow-up.",
+  "decision_rule": "concurrent_median_ms drops by >= 30% vs A.1 baseline (115ms -> <= 80.5ms) AND speedup_observed >= 5.0x AND AC-018 stays green. Numeric form: KEEP iff conc_median <= 80 AND speedup >= 5.0 AND ac_018_green. INCONCLUSIVE if conc_median in (80, 100] -> recapture A.1 against B.1 branch + re-classify; if mutex_atomic share dropped substantially but didn't close to <5x speedup, stack B.3 next. REVERT iff conc_median > A.1 baseline (>115ms) OR AC-018 red.",
+  "kill_criteria": "If concurrent_ms doesn't drop by >= 10% even after stacking B.1 + B.3 (lookaside), the mutex_atomic track is wrong and we promote D.1 (single-stmt UNION refactor) — that would mean the mutex contention is on something MULTITHREAD doesn't touch (e.g. rusqlite-side pool Mutex, ReaderPool::borrow). Before declaring kill: re-capture A.1 to confirm mutex_atomic % actually dropped — if it did but speedup didn't, the bottleneck moved to whatever's next on the diff (likely vec0_fts becoming the new ceiling).",
+  "expected_outcome_range": {"concurrent_ms_min": 30, "concurrent_ms_max": 80, "speedup_min": 5.0, "speedup_max": 12.0},
+  "expected_outcome_rationale": "If MULTITHREAD removes ~25 of the 30 contended pp (some residual from rusqlite-side or our ReaderPool::borrow Mutex), per-thread useful work fraction goes from 8.7% back toward sequential's 14.5%, ~1.7x productivity uplift on top of 8 threads = ~1.7x * sequential/8 = 1.7 * 22.75 ~= 38ms ideal floor. Realistic 50-70ms range; speedup 5-7x. Upper bound 80ms because of vec0/FTS work that is itself non-trivial.",
+  "baseline": {"sequential_ms": 182, "concurrent_ms": 115, "bound_ms": 34, "speedup": 1.58, "n": 5, "source": "A.1 N=5 medians; bound from combined-gate at A.1 commit ca0d8f0 (1.5/8 form)"},
+  "evidence_consistency": {
+    "a2_a3_agree": true,
+    "agreement_summary": "A.2 mutex_atomic 5.73x growth + A.3.4 THREADSAFE=1 (MUTEX_PTHREADS) point at the same intervention. A.3.2 counters (542us/query, embedder 0us) consistent with mutex-bound 8-thread workload.",
+    "discrepancies": [],
+    "missing_evidence": "A.3.1 strace futex histogram (skipped — no strace binary, no sudo). Corroborative not load-bearing; A.2 already established the verdict from cycles."
+  },
+  "alternative_chosen_if_primary_fails": "B3",
+  "alternative_rationale": "Allocator was the only other category to grow super-linearly (2.00x, +19M cycles). If MULTITHREAD removes the SQLite global mutex but the per-connection allocator pressure remains, B.3 (per-connection lookaside) attacks the next layer of the same allocator-mutex story. A.3.4 confirms SYSTEM_MALLOC (no jemalloc/tcmalloc) so glibc arena/tcache contention is a plausible residual. Stack B.1 + B.3 before considering D.1.",
+  "evidence_paths": {
+    "a1": "dev/plan/runs/A1-perf-capture-output.json",
+    "a2": "dev/plan/runs/A2-symbol-focus-output.json",
+    "a3": "dev/plan/runs/A3-secondary-diagnostics-output.json"
+  },
+  "section5_crosscheck": "OVERRIDE",
+  "section5_override_rationale": "Whitepaper §5 contains a prior reverted attempt: 'Runtime sqlite3_config(SQLITE_CONFIG_MULTITHREAD) placed inside the existing register_sqlite_vec_extension Once block (lib.rs:1824). No measurable change.' The §5 entry itself names the failure cause: by the time register_sqlite_vec_extension runs (called from Engine::open), rusqlite has already called sqlite3_initialize() on first connection open, so sqlite3_config returns SQLITE_MISUSE and is silently ignored. B.1's mandate is *ordering-correct* placement: call sqlite3_config BEFORE any sqlite3_initialize trigger (i.e. before any rusqlite Connection::open in this process), AND validate the return code is SQLITE_OK. Different placement + return-code validation = materially different intervention from the §5 attempt. Per resume hard-rule §4.4 (no §5 retry without explicit override + §12 rationale), this A.4 entry is the explicit override; the §12 line will reference it.",
+  "ordering_safety_check_b1": {
+    "performed": true,
+    "extra_connection_open_callsites_found": [
+      "src/rust/crates/fathomdb-engine/src/lib.rs:747 (writer connection)",
+      "src/rust/crates/fathomdb-engine/src/lib.rs:775 (reader pool connection)",
+      "src/rust/crates/fathomdb-engine/src/lib.rs:1574 (third Connection::open — separate path, must check)"
+    ],
+    "verdict": "safe-with-mandate: implementer must ensure sqlite3_config(SQLITE_CONFIG_MULTITHREAD) runs before ALL three callsites. Existing Once at register_sqlite_vec_extension (line 1824) is called from line 746 — exactly one line before line 747's Connection::open. That ordering is too late for sqlite3_initialize. B.1 implementer must (a) introduce a NEW Once that runs the sqlite3_config call from a separate path executed at Engine::open ENTRY (or use a ctor/static initializer), (b) validate return code is SQLITE_OK and panic/Err on SQLITE_MISUSE, (c) add a #[ignore] integration test that asserts sqlite3_threadsafe() == 2 after Engine::open. Without all three, the change is indistinguishable from the §5 reverted attempt.",
+    "callsites_to_audit_in_review": ["lib.rs:747", "lib.rs:775", "lib.rs:1574", "any Connection::open in tests/ that runs before Engine::open"]
+  },
+  "next_prompt_file": "dev/plan/prompts/B1-multithread-wiring.md",
+  "data_for_pivot": "If B.1 lands with concurrent_ms dropping but speedup still < 5.0x, stack B.3 (per-conn lookaside) on top BEFORE recapturing — the two are stackable and the residual signal will be clearer from the combined branch. If B.1 + B.3 stacked still < 30% drop: re-capture A.1 against the stacked branch and re-classify; the bottleneck has moved (likely to vec0_fts which currently sits at 11.43% concurrent, would become the new ceiling once mutex is removed). At that point D.1 (single-stmt UNION refactor) is the next experiment because it directly attacks vec0/FTS work fusion, not contention. Last-resort kill: if even the stacked branch shows the SAME mutex symbols at the SAME share, MULTITHREAD didn't actually take effect — escalate to human (likely a build-time SQLITE_THREADSAFE=2 problem requiring C.1 instead of B.1's runtime path).",
+  "unexpected_observations": "A.3.4 surfaced a structural latent issue: canonical_nodes lacks an index on write_cursor. 4-row fixture hides it; will degrade at scale. NOT in scope for AC-020 closure (A.1 didn't flag it as a bottleneck — vec0_fts dominates on read path, canonical lookup is point-lookup amortized) but worth its own follow-up issue once Pack 5 closes. Independent finding sqlite3RunParser at 4-5% in both profiles still stands as a separate Phase D candidate if AC-020 closes by B.1 alone."
+}

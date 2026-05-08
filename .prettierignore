@@ -22,7 +22,7 @@ dev/archive/
 
 # Agent-emitted run logs + reviewer verdicts — verbatim subagent output;
 # formatting drifts per agent.
-dev/plan/runs/
+dev/plans/runs/
 
 # Local-only agent config (gitignored).
 .claude/

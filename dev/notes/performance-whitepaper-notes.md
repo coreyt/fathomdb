@@ -155,8 +155,8 @@ without closing the gap.
   decision because the residual gap is WAL/SQLite-internal (Pack 5
   and Pack 6 evidence chain) and would be re-opened by any subsequent
   WAL2 / vendor-SQLite work. Output JSON:
-  `dev/plan/runs/F0-thread-affine-readers-output.json`. Reviewer
-  verdict: `dev/plan/runs/F0-review-20260504T122055Z.md` (BLOCK on
+  `dev/plans/runs/F0-thread-affine-readers-output.json`. Reviewer
+  verdict: `dev/plans/runs/F0-review-20260504T122055Z.md` (BLOCK on
   the original packet rule; addressed in the landed commit). Source
   commit on `0.6.0-rewrite`: cherry-pick of worktree `07388cf`.
 - Per-reader-connection SQLite lookaside (G.1, Pack 6.G, 2026-05-04,
@@ -196,8 +196,8 @@ without closing the gap.
   hiwtr after warmup: `[57, 57, 57, 57, 57, 57, 57, 57]` slots
   (~11% of capacity) — workload-shaped sizing for AC-020 may push
   this higher. Output JSON:
-  `dev/plan/runs/G1-reader-lookaside-output.json`. Reviewer
-  verdict: `dev/plan/runs/G1-review-20260504T141437Z.md`. Source
+  `dev/plans/runs/G1-reader-lookaside-output.json`. Reviewer
+  verdict: `dev/plans/runs/G1-review-20260504T141437Z.md`. Source
   commits on `0.6.0-rewrite`: cherry-pick `b0aceca` + comment fix
   `5960741`. Worktree branch retained:
   `pack6G-G1-20260504T135138Z`.
@@ -251,9 +251,9 @@ without closing the gap.
   `prepare_cached` on read-path search until the rusqlite-side
   per-call lock-contention layer is understood — the residual
   contention is upstream of where parse cost sits. Output:
-  `dev/plan/runs/E1-prepare-cached-readers-output.json` (now
+  `dev/plans/runs/E1-prepare-cached-readers-output.json` (now
   removed by revert; archived in commit `91c69e9`'s tree). Review
-  verdict: `dev/plan/runs/E1-review-20260504T031424Z.md`.
+  verdict: `dev/plans/runs/E1-review-20260504T031424Z.md`.
 - Compile-time `SQLITE_THREADSAFE=2` rebuild via
   `LIBSQLITE3_FLAGS="-USQLITE_THREADSAFE -DSQLITE_THREADSAFE=2"`
   in `.cargo/config.toml` (C.1, 2026-05-03, REVERTED `15c6473`,
@@ -269,7 +269,7 @@ without closing the gap.
   Do NOT retry compile-time threading flags without first
   surfacing direct evidence that the contended primitive sits
   inside a SQLite mutex API call. Output JSON:
-  `dev/plan/runs/C1-threadsafe2-rebuild-output.json`. Cross-platform
+  `dev/plans/runs/C1-threadsafe2-rebuild-output.json`. Cross-platform
   CI deferred (only aarch64-linux verified locally; flag route
   is architecture-neutral but x86_64-linux + darwin-arm64 not
   exercised).
@@ -297,7 +297,7 @@ without closing the gap.
   runtime CONFIG_MULTITHREAD without first showing a different
   call path or a different SQLite build — the rc=0/idempotency
   evidence is dispositive. Output JSON:
-  `dev/plan/runs/B1-multithread-wiring-output.json`.
+  `dev/plans/runs/B1-multithread-wiring-output.json`.
 
 ---
 
@@ -1013,9 +1013,9 @@ production work — vector runtime, projection terminal, FTS search
 index, and the AC-020 perf gate — was found uncommitted in the
 working tree at orchestrator resume time. It was committed
 clerically at `1980bf6` after `agent-verify.sh` green at that tree.
-Pack 5 baseline = `1980bf6`. See `dev/plan/runs/STATUS.md`
+Pack 5 baseline = `1980bf6`. See `dev/plans/runs/STATUS.md`
 "Baseline drift note" and the §11 preamble in
-`dev/plan/0.6.0-Phase-9-Pack-5-performance-diagnostics.md`.
+`dev/plans/0.6.0-Phase-9-Pack-5-performance-diagnostics.md`.
 
 **A.0 — harness split (KEEP, `fec71a0`, 2026-05-03).** Diagnostic
 prep, not a perf change. Added two `#[ignore]` tests in
@@ -1139,7 +1139,7 @@ by B.1 alone.
 **A.3 — secondary diagnostics (PARTIAL_KEEP `edb0c84`,
 2026-05-03).** Three `#[ignore]` diagnostic tests added to
 `tests/perf_gates.rs` plus evidence under
-`dev/plan/runs/A3-evidence/`. A.3.4 is the critical
+`dev/plans/runs/A3-evidence/`. A.3.4 is the critical
 corroboration: `sqlite3_threadsafe()` returns `1` (SERIALIZED)
 with `MUTEX_PTHREADS`, `SYSTEM_MALLOC`, `DEFAULT_MMAP_SIZE=0`,
 `DEFAULT_CACHE_SIZE=-2000`. That confirms A.2's verdict — the
@@ -1416,7 +1416,7 @@ contributor needs to re-walk the mutex / parse falsification.
 
 Closes 2026-05-04. AC-020 formally **DEFERRED for 0.6.0** with the
 gate documented as RED in `dev/test-plan.md`; Pack 7 next-packet
-pointer in `dev/plan/0.6.0-Phase-9-Pack-5-performance-diagnostics.md`
+pointer in `dev/plans/0.6.0-Phase-9-Pack-5-performance-diagnostics.md`
 §13.
 
 ### 12.1 Pack 6 (F.0) — thread-affine reader workers KEPT
@@ -1469,7 +1469,7 @@ samples now resolve up-stack to:
 - `our_code` 19.78% full-stack (leaf 0.32% — not a hot spot).
 
 Decision: PICK_G1 (lookaside is the dominant contention class).
-Output `dev/plan/runs/G0-wal-checkpoint-telemetry-output.json`;
+Output `dev/plans/runs/G0-wal-checkpoint-telemetry-output.json`;
 flamegraphs `dev/notes/perf/ac020-{seq,conc}-c71f0cc.{folded,svg}`.
 
 ### 12.3 Pack 6.G G.1 — per-connection lookaside LANDED (INCONCLUSIVE)
@@ -1518,7 +1518,7 @@ is a dead lever.** The right intervention is
 `SQLITE_CONFIG_PCACHE2` custom allocator install (Pack 7).
 Source `4f84278` (debug-only `CacheStatus` broadcast plumbing,
 retained for Pack 7 audit). Output
-`dev/plan/runs/G3_5-cache-pressure-telemetry-output.json`.
+`dev/plans/runs/G3_5-cache-pressure-telemetry-output.json`.
 
 ### 12.5 Cumulative position at Pack 6.G close
 

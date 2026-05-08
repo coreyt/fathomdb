@@ -58,7 +58,7 @@ Read `AGENTS.md`, `MEMORY.md`, `dev/plans/0.6.0-implementation.md` Phase 9, and 
 > **Pack 5 owns this.** Pack 4 landed an honest harness + retained
 > reader-side / projection-runtime changes that closed AC-018 but left
 > AC-020 long-run red. Subsequent diagnosis + remediation is scoped in
-> `dev/plan/0.6.0-Phase-9-Pack-5-performance-diagnostics.md`. Latest
+> `dev/plans/0.6.0-Phase-9-Pack-5-performance-diagnostics.md`. Latest
 > numbers, hypothesis ladder, and the kept/reverted experiment ledger
 > live in `dev/notes/performance-whitepaper-notes.md`. Do **not** start
 > AC-020 work from this file — read those two first and follow the

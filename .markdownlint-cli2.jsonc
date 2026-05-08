@@ -30,7 +30,7 @@
 
     // Agent-emitted run logs + reviewer verdicts — verbatim subagent output;
     // not actively maintained, formatting drifts per agent.
-    "dev/plan/runs/**",
+    "dev/plans/runs/**",
 
     // Local-only agent config (gitignored, not part of repo).
     ".claude/**",
