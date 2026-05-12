@@ -12,15 +12,15 @@ status: open
 Each row below MUST satisfy both AC-040a (`fathomdb doctor <verb> --help`
 exits 0) and AC-040b (`--help` output contains a `Usage:` section).
 
-| Row | Verb              | Engine seam method               | 10a / 10b | Stub status post-Phase-5 |
-| --- | ----------------- | -------------------------------- | --------- | ------------------------ |
-| R1  | `check-integrity` | `Engine::check_integrity`        | 10a       | scaffolded               |
-| R2  | `safe-export`     | `Engine::safe_export`            | 10a       | scaffolded               |
-| R3  | `trace`           | `Engine::trace_source_ref`       | 10a       | scaffolded               |
-| R4  | `verify-embedder` | (10b) `Engine::verify_embedder`  | 10b       | parser stub needed       |
-| R5  | `dump-schema`     | (10b) `Engine::dump_schema`      | 10b       | parser stub needed       |
-| R6  | `dump-row-counts` | (10b) `Engine::dump_row_counts`  | 10b       | parser stub needed       |
-| R7  | `dump-profile`    | (10b) `Engine::dump_profile`     | 10b       | parser stub needed       |
+| Row | Verb              | Engine seam method              | 10a / 10b | Stub status post-Phase-5 |
+| --- | ----------------- | ------------------------------- | --------- | ------------------------ |
+| R1  | `check-integrity` | `Engine::check_integrity`       | 10a       | scaffolded               |
+| R2  | `safe-export`     | `Engine::safe_export`           | 10a       | scaffolded               |
+| R3  | `trace`           | `Engine::trace_source_ref`      | 10a       | scaffolded               |
+| R4  | `verify-embedder` | (10b) `Engine::verify_embedder` | 10b       | parser stub needed       |
+| R5  | `dump-schema`     | (10b) `Engine::dump_schema`     | 10b       | parser stub needed       |
+| R6  | `dump-row-counts` | (10b) `Engine::dump_row_counts` | 10b       | parser stub needed       |
+| R7  | `dump-profile`    | (10b) `Engine::dump_profile`    | 10b       | parser stub needed       |
 
 ## Closure protocol
 

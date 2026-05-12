@@ -6,11 +6,12 @@ desc: CI workflows from pre-0.6.0 that were intentionally not restored at scaffo
 status: active
 ---
 
-> 2026-05-12 — Release-process policy resolved. Two version axes (workspace
-> + `fathomdb-embedder-api` independent) and the 8-tier topological publish
-> order are now spec'd in `dev/design/release.md`. The `set-version.sh`
-> rewrite and `release.yml` restoration in Phase 11 implement that policy;
-> no remaining ADR work blocks restoration.
+> 2026-05-12 — Release-process policy resolved. Two version axes
+> (workspace lockstep plus `fathomdb-embedder-api` independent) and the
+> 8-tier topological publish order are now spec'd in
+> `dev/design/release.md`. The `set-version.sh` rewrite and `release.yml`
+> restoration in Phase 11 implement that policy; no remaining ADR work
+> blocks restoration.
 
 # Deferred CI Work
 
@@ -38,7 +39,7 @@ Pre-0.6.0 source commit: `39ee271^` (the commit before
   - Drop maturin until PyO3 actually lands in Phase 11.
   - Drop napi prebuild matrix until napi-rs actually lands in Phase 11.
   - Implement the 8-tier publish order from `design/release.md § Tiered
-    publish order` against the seven 0.6.0 crates plus the two binding
+publish order` against the seven 0.6.0 crates plus the two binding
     packages.
   - Re-do `scripts/verify-release-gates.py` and
     `scripts/check-version-consistency.py` to enforce both version axes

@@ -48,16 +48,16 @@ The publish order is a strict topological sort of the workspace crate
 dependency graph plus the two binding packages. Index-propagation sleeps
 sit between tiers (pattern from pre-0.6.0 `.github/workflows/release.yml`).
 
-| Tier | Targets                                                          | Why                                                                                                                                                                |
-| ---- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| T1   | `fathomdb-embedder-api`                                          | Leaf. Axis E. Must publish first so every later crate can resolve it on crates.io.                                                                                 |
-| T2   | `fathomdb-schema`                                                | Leaf (no in-workspace deps beyond external crates).                                                                                                                |
-| T3   | `fathomdb-query`                                                 | Depends on `fathomdb-schema` (per ADR-0.6.0-crate-topology consequences) and `fathomdb-embedder-api` indirectly via retrieval glue.                                |
-| T4   | `fathomdb-engine`                                                | Depends on T1+T2+T3. Largest crate; publishes only after its deps are resolvable on crates.io.                                                                     |
-| T5   | `fathomdb-embedder`                                              | Depends on `fathomdb-embedder-api` (Axis E). Independent of `fathomdb-engine`.                                                                                      |
-| T6   | `fathomdb`                                                       | Facade. Depends on `fathomdb-engine`.                                                                                                                              |
-| T7   | `fathomdb-cli`                                                   | Depends on `fathomdb` facade per ADR-0.6.0-crate-topology amendment 2026-05-11.                                                                                    |
-| T8   | Python wheel (`src/python/`); TypeScript package (`src/ts/`)     | Both wrap `fathomdb-engine` directly (PyO3 / napi-rs); they can publish in parallel after T4 resolves on crates.io. PyPI / npm publishing is independent of T5..T7. |
+| Tier | Targets                                                      | Why                                                                                                                                                                 |
+| ---- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T1   | `fathomdb-embedder-api`                                      | Leaf. Axis E. Must publish first so every later crate can resolve it on crates.io.                                                                                  |
+| T2   | `fathomdb-schema`                                            | Leaf (no in-workspace deps beyond external crates).                                                                                                                 |
+| T3   | `fathomdb-query`                                             | Depends on `fathomdb-schema` (per ADR-0.6.0-crate-topology consequences) and `fathomdb-embedder-api` indirectly via retrieval glue.                                 |
+| T4   | `fathomdb-engine`                                            | Depends on T1+T2+T3. Largest crate; publishes only after its deps are resolvable on crates.io.                                                                      |
+| T5   | `fathomdb-embedder`                                          | Depends on `fathomdb-embedder-api` (Axis E). Independent of `fathomdb-engine`.                                                                                      |
+| T6   | `fathomdb`                                                   | Facade. Depends on `fathomdb-engine`.                                                                                                                               |
+| T7   | `fathomdb-cli`                                               | Depends on `fathomdb` facade per ADR-0.6.0-crate-topology amendment 2026-05-11.                                                                                     |
+| T8   | Python wheel (`src/python/`); TypeScript package (`src/ts/`) | Both wrap `fathomdb-engine` directly (PyO3 / napi-rs); they can publish in parallel after T4 resolves on crates.io. PyPI / npm publishing is independent of T5..T7. |
 
 Cross-ecosystem gate: every tier must succeed before the next tier
 starts. `all-builds-passed` gates Tier T1 from starting until every
