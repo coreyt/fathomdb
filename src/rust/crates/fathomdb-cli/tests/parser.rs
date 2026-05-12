@@ -34,6 +34,7 @@ fn recover_accepts_all_six_subflags() {
         "lid-1",
         "--restore-logical-id",
         "lid-2",
+        "/tmp/db.sqlite",
     ]);
 
     let Command::Recover(args) = cli.command else { panic!("expected recover variant") };
@@ -48,8 +49,15 @@ fn recover_accepts_all_six_subflags() {
 
 #[test]
 fn doctor_check_integrity_accepts_full_flag_set() {
-    let cli =
-        parse(&["doctor", "check-integrity", "--quick", "--full", "--round-trip", "--pretty"]);
+    let cli = parse(&[
+        "doctor",
+        "check-integrity",
+        "--quick",
+        "--full",
+        "--round-trip",
+        "--pretty",
+        "/tmp/db.sqlite",
+    ]);
     let DoctorCommand::CheckIntegrity(args) = doctor(cli) else {
         panic!("expected check-integrity")
     };
@@ -61,7 +69,14 @@ fn doctor_check_integrity_accepts_full_flag_set() {
 
 #[test]
 fn doctor_safe_export_accepts_out_and_manifest() {
-    let cli = parse(&["doctor", "safe-export", "/tmp/out", "--manifest", "/tmp/manifest.json"]);
+    let cli = parse(&[
+        "doctor",
+        "safe-export",
+        "/tmp/out",
+        "--manifest",
+        "/tmp/manifest.json",
+        "/tmp/db.sqlite",
+    ]);
     let DoctorCommand::SafeExport(args) = doctor(cli) else {
         panic!("expected safe-export");
     };
@@ -74,7 +89,7 @@ fn doctor_safe_export_accepts_out_and_manifest() {
 
 #[test]
 fn doctor_trace_requires_source_ref() {
-    let cli = parse(&["doctor", "trace", "--source-ref", "src-99"]);
+    let cli = parse(&["doctor", "trace", "--source-ref", "src-99", "/tmp/db.sqlite"]);
     let DoctorCommand::Trace(args) = doctor(cli) else {
         panic!("expected trace");
     };
@@ -86,7 +101,7 @@ fn doctor_trace_requires_source_ref() {
 #[test]
 fn doctor_simple_verbs_parse() {
     for verb in ["verify-embedder", "dump-schema", "dump-row-counts", "dump-profile"] {
-        let cli = parse(&["doctor", verb]);
+        let cli = parse(&["doctor", verb, "/tmp/db.sqlite"]);
         match (verb, doctor(cli)) {
             ("verify-embedder", DoctorCommand::VerifyEmbedder(args))
             | ("dump-schema", DoctorCommand::DumpSchema(args))
@@ -119,6 +134,7 @@ fn every_doctor_verb_accepts_json_flag() {
             _ => {}
         }
         argv.push("--json");
+        argv.push("/tmp/db.sqlite");
         Cli::try_parse_from(argv)
             .unwrap_or_else(|e| panic!("doctor {verb} --json must parse; err={e}"));
     }
@@ -138,7 +154,7 @@ fn unknown_root_command_is_rejected() {
 
 #[test]
 fn json_flag_available_on_doctor_verbs() {
-    let cli = parse(&["doctor", "check-integrity", "--json"]);
+    let cli = parse(&["doctor", "check-integrity", "--json", "/tmp/db.sqlite"]);
     let DoctorCommand::CheckIntegrity(args) = doctor(cli) else {
         panic!("expected check-integrity");
     };
