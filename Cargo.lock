@@ -320,6 +320,7 @@ dependencies = [
  "clap",
  "fathomdb",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]
