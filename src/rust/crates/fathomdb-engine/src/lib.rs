@@ -894,6 +894,30 @@ pub struct TraceEvent {
     pub table: &'static str,
 }
 
+/// Which shadow-state surface a [`RebuildReport`] describes.
+/// `Projections` covers the full FTS5 + vec0 + projection-terminal
+/// rebuild emitted by [`Engine::rebuild_projections`]. `Vec0` covers
+/// the vec0-only path emitted by [`Engine::rebuild_vec0`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RebuildKind {
+    Projections,
+    Vec0,
+}
+
+/// Structured result of a rebuild operation. `rows_invalidated` is the
+/// total shadow-state rows truncated before re-derivation; `rows_rebuilt`
+/// is the count of rows the synchronous rebuild loop re-materialised
+/// (asynchronous re-enqueue work performed by the projection scheduler is
+/// not counted here). `projection_cursor_after` is the post-rebuild value
+/// of the projection cursor.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RebuildReport {
+    pub kind: RebuildKind,
+    pub rows_invalidated: u64,
+    pub rows_rebuilt: u64,
+    pub projection_cursor_after: u64,
+}
+
 /// Phase 9 Pack B excise report (AC-028a/b/c). Counts are post-excise
 /// totals; `projections_invalidated` reports the shadow-row invalidation
 /// total (FTS5 + vec0 + projection terminal) for the excised source.
@@ -1806,17 +1830,17 @@ impl Engine {
     /// and lets the scheduler re-enqueue every canonical row. Durable
     /// `projection_failures` audit rows are preserved per design. AC-044
     /// + AC-063c.
-    pub fn rebuild_projections(&self) -> Result<(), EngineError> {
+    pub fn rebuild_projections(&self) -> Result<RebuildReport, EngineError> {
         self.ensure_open()?;
-        self.run_rebuild(true)
+        self.run_rebuild(true, RebuildKind::Projections)
     }
 
     /// Vec0-only variant of [`Engine::rebuild_projections`]. Leaves
     /// FTS5 shadow content untouched; per recovery design,
     /// `recover --rebuild-vec0` is the surface for vec0-only repair.
-    pub fn rebuild_vec0(&self) -> Result<(), EngineError> {
+    pub fn rebuild_vec0(&self) -> Result<RebuildReport, EngineError> {
         self.ensure_open()?;
-        self.run_rebuild(false)
+        self.run_rebuild(false, RebuildKind::Vec0)
     }
 
     /// Phase 9 Pack B / AC-042 source trace. Returns the canonical-row
@@ -1994,7 +2018,11 @@ impl Engine {
         })
     }
 
-    fn run_rebuild(&self, include_fts: bool) -> Result<(), EngineError> {
+    fn run_rebuild(
+        &self,
+        include_fts: bool,
+        kind: RebuildKind,
+    ) -> Result<RebuildReport, EngineError> {
         self.projection_runtime.set_frozen(true);
         // Drain MUST succeed: rebuild_shadow_state truncates shadow rows,
         // and SQLite-WAL allows a worker that already dequeued a job to
@@ -2003,23 +2031,36 @@ impl Engine {
         // rows. Surfacing the timeout (instead of swallowing it) lets the
         // operator retry rather than silently corrupt the rebuild.
         let drain_result = self.drain(REBUILD_DRAIN_TIMEOUT_MS);
-        let result = drain_result.and_then(|()| self.rebuild_shadow_state(include_fts));
+        let result = drain_result.and_then(|()| self.rebuild_shadow_state(include_fts, kind));
         self.projection_runtime.set_frozen(false);
         result
     }
 
-    fn rebuild_shadow_state(&self, include_fts: bool) -> Result<(), EngineError> {
+    fn rebuild_shadow_state(
+        &self,
+        include_fts: bool,
+        kind: RebuildKind,
+    ) -> Result<RebuildReport, EngineError> {
         let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
         let connection = connection.as_mut().ok_or(EngineError::Closing)?;
         let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+        let mut rows_invalidated: u64 = 0;
         if include_fts {
-            tx.execute("DELETE FROM search_index", []).map_err(|_| EngineError::Storage)?;
+            let n = tx.execute("DELETE FROM search_index", []).map_err(|_| EngineError::Storage)?;
+            rows_invalidated = rows_invalidated.saturating_add(n as u64);
         }
-        tx.execute("DELETE FROM vector_default", []).map_err(|_| EngineError::Storage)?;
-        tx.execute("DELETE FROM _fathomdb_vector_rows", []).map_err(|_| EngineError::Storage)?;
-        tx.execute("DELETE FROM _fathomdb_projection_terminal", [])
+        let n = tx.execute("DELETE FROM vector_default", []).map_err(|_| EngineError::Storage)?;
+        rows_invalidated = rows_invalidated.saturating_add(n as u64);
+        let n = tx
+            .execute("DELETE FROM _fathomdb_vector_rows", [])
             .map_err(|_| EngineError::Storage)?;
+        rows_invalidated = rows_invalidated.saturating_add(n as u64);
+        let n = tx
+            .execute("DELETE FROM _fathomdb_projection_terminal", [])
+            .map_err(|_| EngineError::Storage)?;
+        rows_invalidated = rows_invalidated.saturating_add(n as u64);
         store_projection_cursor(&tx, 0).map_err(|_| EngineError::Storage)?;
+        let mut rows_rebuilt: u64 = 0;
         if include_fts {
             for row in canonical_node_rows(&tx).map_err(|_| EngineError::Storage)? {
                 tx.execute(
@@ -2027,10 +2068,13 @@ impl Engine {
                     params![row.body, row.kind, row.cursor],
                 )
                 .map_err(|_| EngineError::Storage)?;
+                rows_rebuilt = rows_rebuilt.saturating_add(1);
             }
         }
+        let projection_cursor_after =
+            load_projection_cursor(&tx).map_err(|_| EngineError::Storage)?;
         tx.commit().map_err(|_| EngineError::Storage)?;
-        Ok(())
+        Ok(RebuildReport { kind, rows_invalidated, rows_rebuilt, projection_cursor_after })
     }
 
     fn ensure_open(&self) -> Result<(), EngineError> {
