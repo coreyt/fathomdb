@@ -34,6 +34,32 @@ This file's status flips `open` → `closed` only when ALL of:
 When all rows green, this file's `status` frontmatter flips to `closed`
 and a closure note is added (date, commits that landed each row).
 
+## 2026-05-12 — Phase 10a partial closure
+
+Rows R1..R3 (`check-integrity`, `safe-export`, `trace`) satisfied by real
+engine wire-up: every verb invokes its landed engine seam, emits a single
+JSON object under the `{ "verb": "<name>", ... }` envelope, and maps
+`EngineError` through the `cli.md § Error → exit-code mapping` table.
+Rows R4..R7 (`verify-embedder`, `dump-schema`, `dump-row-counts`,
+`dump-profile`) satisfied by parser stub path only: `--help` exits 0 with
+a `Usage:` line (AC-040a/b), runtime invocation surfaces lock-held / open
+errors then emits the `not_implemented` JSON envelope and exits 70.
+
+Full row-set closure (status `open` → `closed`) requires Phase 10b engine
+seam landings for R4..R7.
+
+Commits (10a closure):
+
+- `1f824a6` — `feat(engine): RebuildReport + RebuildKind ...`
+- `98a779c` — `docs(interfaces/rust): reconcile recovery seam ...`
+- `573e351` — `test(engine): assert vec0 rebuild rows_rebuilt==0 ...`
+- `e163153` — `feat(facade): re-export recovery seam types ...`
+- `53e58eb` — `feat(cli): wire doctor + recover verbs to landed engine seams`
+- `30cb007` — `test(cli): bind AC-035d/036/037/038/045 runtime + flip Phase-9-deferred ignores`
+- `29aa705` — `fix(cli): safe-export errors map to exit 66; strip doctor: prefix`
+
+Status: remains `open` until 10b lands.
+
 ## Citations
 
 - `dev/acceptance.md` AC-040a, AC-040b (single assertions; this file is
