@@ -74,6 +74,29 @@ the forcing function.
 
 These will be created in the 0.6.0 implementation phase.
 
+## Amendment 2026-05-11 — `fathomdb-cli` depends on facade, not engine
+
+Phase 10 wiring slice clarified the dependency direction for the CLI:
+
+- `src/rust/crates/fathomdb-cli/Cargo.toml` depends on `fathomdb` (the
+  facade), NOT directly on `fathomdb-engine`.
+- The original Decision text ("they depend on `fathomdb-engine`") referred
+  to bindings collectively. For 0.6.0 the CLI consumes engine seams through
+  facade re-exports listed in `dev/interfaces/rust.md`. PyO3 / napi-rs
+  bindings continue to depend on `fathomdb-engine` directly.
+
+Rationale:
+
+- `fathomdb` is already declared the public Rust contract surface (per
+  `interfaces/rust.md`); the CLI is a public consumer, so it imports from
+  the public surface.
+- Six recovery/reporting types are a small surface to re-export.
+- Phase 11 bindings consume the same surface — diverging CLI vs binding
+  import paths is avoidable debt.
+
+This refinement does not split or merge any crate and is consistent with
+the original "monolith + sibling crates + binding crates" topology.
+
 ## Citations
 
 - HITL 2026-04-27.

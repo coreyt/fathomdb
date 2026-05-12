@@ -1,8 +1,8 @@
 ---
 title: Engine Subsystem Design
-date: 2026-04-30
+date: 2026-05-12
 target_release: 0.6.0
-desc: Runtime open/close, writer/read path, engine config, and cursor semantics
+desc: Runtime open/close, writer/read path, engine config, cursor semantics, and canonical-row supersession
 blast_radius: fathomdb-engine runtime/writer/reader; interfaces/*.md; acceptance.md REQ-020..REQ-055 intersections
 status: locked
 ---
@@ -103,6 +103,94 @@ Status in 0.6.0:
 - The exact field set of `AdminSchemaWrite` remains owned here and by the
   interface docs. It is still an internal engine carrier, not a promise that
   callers directly construct arbitrary DDL payloads.
+
+## Canonical identity and supersession
+
+Folded 2026-05-12 from archived `design-detailed-supersession.md` +
+`design-id-generation-policy.md` per the Phase 1a learnings disposition
+(`learnings.md:94, 98`). This section is the authoritative home for the
+0.6.0 canonical identity contract.
+
+### Identity model
+
+Canonical rows separate physical row identity from logical entity identity:
+
+- `row_id` — identifies one physical version of a node, edge, chunk, run,
+  step, or action. Globally unique.
+- `logical_id` — identifies the application entity across versions. Stable
+  across supersessions. Required on `NodeInsert` and `EdgeInsert`; chunk /
+  run / step / action use the single `id` field which is both physical and
+  logical (these row kinds are not superseded in 0.6.0).
+- The **active** version is the row for a given `logical_id` whose
+  `superseded_at IS NULL`.
+- A partial unique index enforces at most one active row per `logical_id`
+  per kind.
+
+Edges reference logical identities; traversals resolve to the current
+active endpoint at read time.
+
+### ID generation policy
+
+Caller-owned IDs. The engine does not generate, assign, or sequence IDs as
+part of the write path:
+
+- Callers MUST provide `row_id` and `logical_id` on every `NodeInsert` and
+  `EdgeInsert`.
+- Callers MUST provide `id` on every `ChunkInsert`, `RunInsert`,
+  `StepInsert`, and `ActionInsert`.
+- Empty or duplicate-within-request IDs are rejected at `prepare_write`
+  validation as a `WriteValidationError`, not at SQLite execution time.
+- Cross-request uniqueness violations surface as the typed SQLite-mapped
+  error per `design/errors.md`.
+
+Rationale: caller-owned IDs preserve idempotent replay, keep the engine
+stateless for ID sequencing, and let supersession address rows by stable
+`logical_id` without a query round-trip.
+
+The engine ships a standalone `new_id() -> String` utility (26-character
+ULID) for callers that lack their own ID scheme. The utility is not part
+of the write path; callers with existing identifiers do not need it.
+
+### Write semantics under supersession
+
+Each accepted batch executes one SQLite transaction (see "Batch submission
+semantics" below). Within that transaction, supersession proceeds as:
+
+1. Validate canonical rows and references.
+2. Append new physical rows (nodes, edges, chunks, runs, steps, actions).
+3. For each replaced `logical_id`, mark the prior active row superseded
+   (`superseded_at = <commit timestamp>`); do NOT mutate the prior row's
+   value columns.
+4. Enqueue derived-projection invalidation for affected logical ids and
+   kinds (FTS rows for retired chunks, vector rows for retired nodes).
+5. Commit, or roll the entire batch back.
+
+Supersession preserves both the old and the new physical row as separate
+facts. The old row is marked inactive; its content is not rewritten.
+
+### Restoration as a canonical write
+
+"Restore a `logical_id`" means making a previously superseded physical row
+active again. The 0.6.0 restoration operator (`Engine::restore_logical_id`,
+recovery-only — see `design/recovery.md`) appends a new active row that
+preserves restore provenance rather than mutating the historical
+`superseded_at` column. The replay source is the op-store
+`append_only_log` write history for the logical id (see
+`design/recovery.md § Logical-id purge and restore`).
+
+### Projection invariants
+
+Projections follow canonical active state:
+
+- FTS rows derive from active chunks; supersession retires the
+  corresponding FTS row.
+- Per-kind vector rows (`vec_<kind>`) derive from active nodes;
+  supersession retires the corresponding vector row.
+- A canonical row whose `superseded_at IS NOT NULL` has no derived
+  projection rows for that logical id and kind.
+
+Recovery tooling (`recover --rebuild-projections`, `--rebuild-vec0`)
+rebuilds projections from the active canonical state, not from history.
 
 ## Batch submission semantics
 

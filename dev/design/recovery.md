@@ -1,6 +1,6 @@
 ---
 title: Recovery Subsystem Design
-date: 2026-04-30
+date: 2026-05-12
 target_release: 0.6.0
 desc: Canonical operator CLI verb table, corruption handling workflow, and check-integrity output contract
 blast_radius: fathomdb-cli; requirements REQ-035..REQ-040, REQ-054; acceptance AC-035d, AC-039*, AC-040*, AC-042..AC-044
@@ -75,6 +75,92 @@ Each non-`recover` machine-readable verb returns one JSON object with a stable
 | `doctor dump-schema`     | `verb`, `user_version`, `tables`, `indexes`                                                        | schema inventory only; no recovery mutation                                       |
 | `doctor dump-row-counts` | `verb`, `counts`                                                                                   | `counts` is an array of `{ name, rows }` records                                  |
 | `doctor dump-profile`    | `verb`, `embedder_identity`, `embedder_dimension`, `vectorized_kinds`                              | stored profile / vector posture dump                                              |
+
+## Logical-id purge and restore
+
+`fathomdb recover --accept-data-loss --purge-logical-id <id>` and
+`--restore-logical-id <id>` operate on the canonical identity model owned
+by `design/engine.md § Canonical identity and supersession`. This section
+specifies their cascade scope, replay source, output report shape, and
+failure modes.
+
+### Cascade scope (`--purge-logical-id`)
+
+Purge is lossy. The cascade scope is:
+
+- **Canonical:** delete every physical row (`row_id`) matching the
+  `logical_id`, across all canonical tables and kinds. Includes both
+  active and superseded rows for that logical id.
+- **`latest_state` op-store collections:** delete keyed entries for the
+  logical id. `latest_state` is the current-state map and must not retain
+  stale references.
+- **Derived projections:** drop FTS rows and per-kind vector rows
+  attributable to the logical id (the rows are no longer recoverable from
+  canonical state).
+- **`append_only_log` op-store collections:** **preserved**. The event
+  stream is durable audit history and is the replay source for
+  `--restore-logical-id`. Purge does not rewrite history.
+- **Other sources:** untouched. Rows associated with sibling source ids
+  remain. The non-perturbation rule from Pack B (`excise_source`) applies:
+  no blanket projection rebuild; invalidate only the affected logical id.
+
+Report shape (`PurgeLogicalIdReport`):
+
+- `verb`
+- `logical_id`
+- `canonical_rows_deleted` — count, sum across kinds
+- `latest_state_keys_deleted` — count
+- `projection_rows_invalidated` — count, sum of FTS + vector rows
+- `append_only_log_rows_preserved` — count, informational
+- `status` — typed success / no-op (logical id not present) / partial
+
+Failure modes:
+
+- `LogicalIdNotFound` — id matches no canonical row and no `latest_state`
+  key. Returns `status = no_op`, not a hard error.
+- Standard transactional rollback on any sub-step failure; no partial
+  purge state persists.
+
+### Replay source and semantics (`--restore-logical-id`)
+
+Restore replays the `append_only_log` write history for the logical id
+back into canonical state through the standard writer:
+
+1. Read the ordered `append_only_log` events for the logical id.
+2. Verify no active canonical row currently exists for the logical id
+   (precondition for restore — restore does not overwrite live state).
+3. Replay the event stream through the writer, producing canonical rows
+   and supersession markers identical to the original write history,
+   except the final active row carries a new `restore_provenance` field
+   marking it as restoration output.
+4. Re-derive projections (FTS + vector) from the restored active state.
+5. Commit as one transaction.
+
+Report shape (`RestoreLogicalIdReport`):
+
+- `verb`
+- `logical_id`
+- `events_replayed` — count
+- `canonical_rows_restored` — count, sum across kinds
+- `projection_rows_rebuilt` — count
+- `restore_cursor` — the `c_w` of the commit
+- `status` — typed success / failure variant
+
+Failure modes (typed; not free-text):
+
+- `NoRestorationSource` — `append_only_log` has no events for the logical
+  id. Restore is impossible.
+- `ConflictingActiveRow` — a canonical row with `superseded_at IS NULL`
+  already exists for the logical id. Operator must purge first or accept
+  the existing row.
+- `IncompatibleSchema` — replay would write columns or kinds no longer
+  present in the current schema. Restore aborts; the operator must
+  migrate manually.
+- Standard transactional rollback on writer / projection failures.
+
+Restore is reachable only via `recover --accept-data-loss
+--restore-logical-id <id>`; it is not an SDK runtime verb, consistent
+with the `recover` boundary in `ADR-0.6.0-cli-scope`.
 
 ## `recover` machine-readable output
 

@@ -1,10 +1,16 @@
 ---
 title: Deferred CI Work for 0.6.0
-date: 2026-05-02
+date: 2026-05-12
 target_release: 0.6.0
 desc: CI workflows from pre-0.6.0 that were intentionally not restored at scaffold time
-status: draft
+status: active
 ---
+
+> 2026-05-12 — Release-process policy resolved. Two version axes (workspace
+> + `fathomdb-embedder-api` independent) and the 8-tier topological publish
+> order are now spec'd in `dev/design/release.md`. The `set-version.sh`
+> rewrite and `release.yml` restoration in Phase 11 implement that policy;
+> no remaining ADR work blocks restoration.
 
 # Deferred CI Work
 
@@ -23,21 +29,21 @@ Pre-0.6.0 source commit: `39ee271^` (the commit before
   `build-rust`) -> `all-builds-passed` cross-ecosystem gate -> tiered
   `publish-rust` (leaf -> engine -> facade with index-propagation sleeps),
   `publish-pypi`. NPM publish was added in `0.5.x` follow-ups.
-- Why deferred: 0.6.0 scaffold has no PyO3, no napi-rs, no maturin, no
-  multi-package version-sync policy. Building/publishing these without a
-  release-process ADR would freeze decisions that the freeze corpus
-  (`dev/release/...`) is still expected to record.
+- Why deferred (resolved 2026-05-12): 0.6.0 scaffold has no PyO3, no
+  napi-rs, no maturin. The multi-package version-sync policy is now
+  resolved in `dev/design/release.md` (two version axes; 8-tier topological
+  publish order).
 - Adaptations required for 0.6.0:
   - Repath `python/` -> `src/python/`, `typescript/` -> `src/ts/`.
   - Drop maturin until PyO3 actually lands in Phase 11.
   - Drop napi prebuild matrix until napi-rs actually lands in Phase 11.
-  - Re-decide the tiered crate publish order against the seven 0.6.0 crates
-    (`fathomdb`, `fathomdb-cli`, `fathomdb-engine`, `fathomdb-query`,
-    `fathomdb-schema`, `fathomdb-embedder`, `fathomdb-embedder-api`) — the
-    pre-0.6.0 order assumed four crates.
+  - Implement the 8-tier publish order from `design/release.md § Tiered
+    publish order` against the seven 0.6.0 crates plus the two binding
+    packages.
   - Re-do `scripts/verify-release-gates.py` and
-    `scripts/check-version-consistency.py` against the new package paths, or
-    drop them if the release-process ADR replaces them.
+    `scripts/check-version-consistency.py` to enforce both version axes
+    (Axis W lockstep across workspace crates + bindings; Axis E
+    independent for `fathomdb-embedder-api`).
 
 ## benchmark-and-robustness.yml — Phase 12
 
@@ -59,8 +65,10 @@ Pre-0.6.0 source commit: `39ee271^` (the commit before
 ## scripts/set-version.sh — Phase 11
 
 - Source: `git show 39ee271^:scripts/set-version.sh`
-- Why deferred: requires a release-process ADR (single-source-of-truth
-  package version, multi-package sync policy) that has not been written.
+- Why deferred (resolved 2026-05-12): release-process policy is now
+  resolved in `dev/design/release.md`. Rewrite `set-version.sh` to enforce
+  the two version axes (Axis W lockstep across workspace + bindings; Axis
+  E independent for `fathomdb-embedder-api`).
 - Pre-push hook (`scripts/hooks/pre-push`) intentionally does not call
   `set-version.sh --check-files` for 0.6.0 — the script does not exist in
   this tree. Restore the pre-push step in the same PR that restores the

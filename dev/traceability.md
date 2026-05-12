@@ -1,6 +1,6 @@
 ---
 title: 0.6.0 Traceability Matrix
-date: 2026-05-02
+date: 2026-05-11
 target_release: 0.6.0
 desc: Needs to requirements to design/interfaces to test-plan traceability for the 0.6.0 rewrite
 blast_radius: dev/needs.md; dev/requirements.md; dev/acceptance.md; dev/design/*; dev/interfaces/*; dev/test-plan.md
@@ -47,11 +47,23 @@ coverage for execution identity.
 | NEED-017  | no implicit model download            | REQ-033                                                                | design/embedder.md                                                           | interfaces/{python,typescript,rust}.md                    | AC-035d..AC-045                                     |
 | NEED-020  | bounded shutdown/no deadlocks         | REQ-021, REQ-023, REQ-024, REQ-030                                     | design/engine.md, design/lifecycle.md, design/scheduler.md                   | interfaces/{python,typescript,rust}.md                    | AC-021..AC-025, AC-029..AC-033                      |
 | NEED-020a | concurrent queries stay low-latency   | REQ-010, REQ-011, REQ-018, REQ-022a                                    | design/retrieval.md, design/engine.md                                        | interfaces/{python,typescript,rust}.md                    | AC-011a..AC-020, AC-021..AC-025                     |
-| NEED-021  | corruption detection/diagnostics      | REQ-031d, REQ-038, REQ-039, REQ-040                                    | design/recovery.md, design/errors.md, design/engine.md                       | interfaces/cli.md, interfaces/{python,typescript,rust}.md | AC-035d..AC-045, AC-043a/b/c                        |
+| NEED-021  | corruption detection/diagnostics      | REQ-031d, REQ-038, REQ-039, REQ-040, REQ-063, REQ-064                  | design/recovery.md, design/errors.md, design/engine.md                       | interfaces/cli.md, interfaces/{python,typescript,rust}.md | AC-035d..AC-045, AC-043a/b/c, AC-069, AC-070        |
 | NEED-022  | interactive performance               | REQ-009a/b, REQ-010, REQ-011                                           | design/retrieval.md, design/vector.md                                        | interfaces/{python,typescript,rust}.md                    | AC-011a..AC-020                                     |
 | NEED-023  | usable without DB expertise           | REQ-001..REQ-008, REQ-042, REQ-056                                     | design/lifecycle.md, design/errors.md, design/engine.md                      | interfaces/{python,typescript,rust,cli}.md                | AC-001..AC-010, AC-057a..AC-060b                    |
 | NEED-024  | operational transparency              | REQ-001..REQ-008                                                       | design/lifecycle.md                                                          | interfaces/{python,typescript,rust}.md                    | AC-001..AC-010                                      |
 | NEED-025  | minimal migrations/upgrade complexity | REQ-046a/b, REQ-047..REQ-050                                           | design/migrations.md, design/release.md                                      | (n/a)                                                     | AC-046a..AC-056                                     |
+| NEED-026  | security hardening (no implicit network egress; bounded validation; FTS5 / input safety) | REQ-060, REQ-061, REQ-062, REQ-065, REQ-066                            | design/embedder.md, design/op-store.md, design/retrieval.md, design/errors.md | interfaces/cli.md, interfaces/{python,typescript,rust}.md | AC-064, AC-065, AC-066, AC-067, AC-068a/b           |
+
+### Note on NEED-026
+
+NEED-026 was added 2026-05-11 to give the security-hardening AC cluster
+(REQ-060..REQ-066 / AC-064..AC-070) an explicit traceability row. The
+underlying user-facing concerns are implicit in NEED-001 (trustworthy
+storage), NEED-002 (local-first / no implicit egress), and NEED-021
+(corruption detection / safety). NEED-026 is the dedicated trace row for
+the 2026-05-02 HITL security amendment; NEED-021 also picks up the
+diagnostic-facing REQ-063 / REQ-064 / AC-069 / AC-070 rows because they
+overlap with corruption diagnostics.
 
 ## Pre-Lock Validation
 
