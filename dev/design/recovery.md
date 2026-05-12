@@ -29,6 +29,22 @@ projection repair. The corpus may use "regenerate" as the workflow name, but it
 does not imply a separate CLI root or verb outside the accepted `recover`
 surface.
 
+### Lock posture
+
+All operator seams (doctor + recover) serialize on the engine's main
+`Mutex<connection>`. Neither root uses the runtime reader pool; the reader
+pool is runtime-only and is owned by `ReaderWorkerPool`.
+
+- `doctor check-integrity`, `doctor safe-export`, and `doctor trace` hold
+  an immutable lock and do not open a transaction.
+- `recover --rebuild-projections`, `recover --rebuild-vec0`, and
+  `recover --excise-source` hold a mutable lock plus a SQLite transaction.
+  They freeze the projection runtime before acquiring the lock and unfreeze
+  on commit or rollback.
+- Concurrent `doctor` and `recover` invocations against the same engine
+  block at the mutex. This is acceptable for operator workflows and matches
+  the `ADR-0.6.0-single-writer-thread` invariant.
+
 ## Machine-readable output
 
 `--json` is the normative machine-readable contract on every CLI verb.
@@ -187,6 +203,15 @@ owned by the action being reported.
 `--quick`, `--full`, and `--round-trip` are doctor-only invocation flags in
 0.6.0. They do not configure `Engine.open`, do not correspond to an SDK
 `EngineConfig` knob, and do not imply an open-path opt-in integrity surface.
+
+All three flags are accepted on `doctor check-integrity`. `--full` activates
+`PRAGMA integrity_check` in the engine (`Engine::check_integrity` honours
+`opts.full`). `--quick` and `--round-trip` are accepted-as-default in 0.6.0:
+the CLI emits no error, no warning, and no log event, and behaves identically
+to the no-flag default path. Rationale: the flag surface is locked in
+`interfaces/cli.md`, but the engine has no separate fast or round-trip path
+in 0.6.0. Future 0.6.x / 0.7.0 may diverge behavior on these flags without
+changing the locked flag surface.
 
 ### Open-path always-on detection set
 
