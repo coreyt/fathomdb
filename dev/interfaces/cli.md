@@ -1,9 +1,9 @@
 ---
 title: CLI Public Interface
-date: 2026-04-24
+date: 2026-05-12
 target_release: 0.6.0
 desc: Public CLI surface for 0.6.0
-blast_radius: TBD
+blast_radius: src/rust/crates/fathomdb-cli/src/lib.rs; design/recovery.md; design/errors.md
 status: locked
 ---
 
@@ -80,3 +80,49 @@ reject it as unknown.
 `--rebuild-projections` is the canonical 0.6.0 regenerate workflow for failed
 or stale projections. The docs may refer to "regenerate" as the workflow name,
 but there is no separate `fathomdb regenerate` command in 0.6.0.
+
+## Error to exit-code mapping
+
+The CLI dispatcher translates engine error variants (and CLI-detected
+preconditions) to the exit-code classes above. This table binds each variant
+to its class.
+
+| Source error variant                             | Exit code | Class         |
+| ------------------------------------------------ | --------- | ------------- |
+| (clean completion)                               | 0         | success       |
+| recover sub-action gated by `--accept-data-loss` | 64        | data-loss-ack |
+| `doctor check-integrity` findings non-empty      | 65        | findings      |
+| `doctor safe-export` failed manifest/export step | 66        | artifact-fail |
+| `EngineError::Storage`                           | 70        | unrecoverable |
+| `EngineError::Projection`                        | 70        | unrecoverable |
+| `EngineError::Vector`                            | 70        | unrecoverable |
+| `EngineError::Embedder`                          | 70        | unrecoverable |
+| `EngineError::Scheduler`                         | 70        | unrecoverable |
+| `EngineError::OpStore`                           | 70        | unrecoverable |
+| `EngineError::Overloaded`                        | 70        | unrecoverable |
+| `EngineError::SchemaValidation`                  | 70        | unrecoverable |
+| `EngineError::WriteValidation`                   | 70        | unrecoverable |
+| `EngineError::EmbedderNotConfigured`             | 70        | unrecoverable |
+| `EngineError::KindNotVectorIndexed`              | 70        | unrecoverable |
+| `EngineError::EmbedderDimensionMismatch{..}`     | 70        | unrecoverable |
+| `EngineOpenError::DatabaseLocked{..}`            | 71        | lock-held     |
+| `EngineError::Closing`                           | 71        | lock-held     |
+| `EngineOpenError::Corruption(..)`                | 70        | unrecoverable |
+| `EngineOpenError::IncompatibleSchemaVersion{..}` | 70        | unrecoverable |
+| `EngineOpenError::MigrationError{..}`            | 70        | unrecoverable |
+| `EngineOpenError::EmbedderIdentityMismatch{..}`  | 70        | unrecoverable |
+| `EngineOpenError::EmbedderDimensionMismatch{..}` | 70        | unrecoverable |
+| `EngineOpenError::Io{..}`                        | 70        | unrecoverable |
+
+## JSON output wrapping
+
+`fathomdb-cli` owns top-level discriminator wrapping. The engine returns
+typed report structs; the CLI serializes them under a `verb` discriminator.
+
+- All `--json` output is one JSON object (or an NDJSON stream for `recover`).
+- Doctor verb wrapping pattern: `{ "verb": "<verb-name>", ...flattened_engine_report_fields... }`.
+- Non-flat reports nest naturally. For example, `IntegrityReport` serializes
+  as `{ "verb": "check-integrity", "physical": {...}, "logical": {...}, "semantic": {...} }`.
+- Field name policy: serde default `snake_case`. Any divergence from engine
+  field spellings lives in the CLI serialization layer; the engine report
+  structs are not renamed to satisfy CLI spelling requirements.
