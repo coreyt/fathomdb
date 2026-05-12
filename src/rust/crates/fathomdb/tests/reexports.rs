@@ -22,4 +22,13 @@ fn re_exports_compile() {
     let _ = std::any::type_name::<fathomdb::SoftFallbackBranch>();
     let _ = std::any::type_name::<fathomdb::CounterSnapshot>();
     let _ = std::any::type_name::<fathomdb::Subscription>();
+
+    let _ = std::any::type_name::<fathomdb::CheckIntegrityOpts>();
+    let _ = std::any::type_name::<fathomdb::ExciseReport>();
+    let _ = std::any::type_name::<fathomdb::IntegrityReport>();
+    let _ = std::any::type_name::<fathomdb::RebuildKind>();
+    let _ = std::any::type_name::<fathomdb::RebuildReport>();
+    let _ = std::any::type_name::<fathomdb::SafeExportArtifact>();
+    let _ = std::any::type_name::<fathomdb::TraceEvent>();
+    let _ = std::any::type_name::<fathomdb::TraceReport>();
 }
