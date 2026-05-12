@@ -1,6 +1,6 @@
 ---
 title: Rust Public Interface
-date: 2026-04-24
+date: 2026-05-12
 target_release: 0.6.0
 desc: Public Rust surface (traits, functions, types, errors) for 0.6.0
 blast_radius: src/rust/crates/fathomdb; design/engine.md; design/bindings.md; design/errors.md; design/lifecycle.md
@@ -90,13 +90,15 @@ these types) compiles against the public Rust surface, not engine internals.
 These are CLI-only ergonomic types; they are NOT exposed as runtime SDK
 verbs (recovery remains CLI-only — see Non-presence below).
 
-Re-exported types (canonical spellings, locked 2026-05-11):
+Re-exported types (canonical spellings, locked 2026-05-12):
 
 - `CheckIntegrityOpts`
-- `CheckIntegrityReport`
-- `SafeExportManifest`
-- `TraceSourceRef`
+- `IntegrityReport`
+- `SafeExportArtifact`
+- `TraceReport`
+- `TraceEvent`
 - `RebuildReport`
+- `RebuildKind`
 - `ExciseReport`
 
 Engine methods backing these types are owned by `design/recovery.md` and
