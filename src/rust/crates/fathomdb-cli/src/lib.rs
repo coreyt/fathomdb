@@ -326,10 +326,15 @@ fn run_doctor(cmd: DoctorCommand) -> i32 {
                 p.set_file_name(format!("{name}.manifest.json"));
                 p
             });
-            run_doctor_verb(&args.db_path, "safe-export", |e| {
-                e.safe_export(&args.out, &manifest)
-                    .map(|r| (safe_export_json(&r), CliOutcome::Clean))
-            })
+            run_doctor_verb_with_error_outcome(
+                &args.db_path,
+                "safe-export",
+                CliOutcome::ExportFailure,
+                |e| {
+                    e.safe_export(&args.out, &manifest)
+                        .map(|r| (safe_export_json(&r), CliOutcome::Clean))
+                },
+            )
         }
         DoctorCommand::Trace(args) => run_doctor_verb(&args.db_path, "trace", |e| {
             e.trace_source_ref(&args.source_ref).map(|r| (trace_report_json(&r), CliOutcome::Clean))
@@ -348,7 +353,7 @@ fn run_doctor(cmd: DoctorCommand) -> i32 {
 fn stub_doctor(db_path: &std::path::Path, verb: &str) -> i32 {
     match Engine::open(db_path.to_path_buf()) {
         Ok(_opened) => {
-            println!(r#"{{"status":"not_implemented","verb":"doctor:{verb}"}}"#);
+            println!(r#"{{"status":"not_implemented","verb":"{verb}"}}"#);
             exit_code::UNRECOVERABLE
         }
         Err(err) => emit_engine_open_error(verb, &err),
@@ -361,6 +366,34 @@ fn run_doctor_verb<F>(db_path: &std::path::Path, verb: &str, f: F) -> i32
 where
     F: FnOnce(&Engine) -> Result<(Value, CliOutcome), EngineError>,
 {
+    run_doctor_verb_inner(db_path, verb, None, f)
+}
+
+/// Variant that overrides the `EngineError` → outcome mapping for verbs
+/// with a dedicated failure class (per `cli.md § Error → exit-code
+/// mapping`). Example: `doctor safe-export` maps engine errors to
+/// `ExportFailure` (66), not the default `Unrecoverable` (70).
+fn run_doctor_verb_with_error_outcome<F>(
+    db_path: &std::path::Path,
+    verb: &str,
+    error_outcome: CliOutcome,
+    f: F,
+) -> i32
+where
+    F: FnOnce(&Engine) -> Result<(Value, CliOutcome), EngineError>,
+{
+    run_doctor_verb_inner(db_path, verb, Some(error_outcome), f)
+}
+
+fn run_doctor_verb_inner<F>(
+    db_path: &std::path::Path,
+    verb: &str,
+    error_outcome: Option<CliOutcome>,
+    f: F,
+) -> i32
+where
+    F: FnOnce(&Engine) -> Result<(Value, CliOutcome), EngineError>,
+{
     let opened = match Engine::open(db_path.to_path_buf()) {
         Ok(o) => o,
         Err(err) => return emit_engine_open_error(verb, &err),
@@ -370,7 +403,10 @@ where
             println!("{value}");
             outcome_to_exit_code(outcome)
         }
-        Err(err) => emit_engine_error(verb, &err),
+        Err(err) => match error_outcome {
+            Some(outcome) => emit_engine_error_with_outcome(verb, &err, outcome),
+            None => emit_engine_error(verb, &err),
+        },
     }
 }
 
@@ -394,7 +430,10 @@ where
 }
 
 fn emit_engine_error(verb: &str, err: &EngineError) -> i32 {
-    let outcome = engine_error_to_outcome(err);
+    emit_engine_error_with_outcome(verb, err, engine_error_to_outcome(err))
+}
+
+fn emit_engine_error_with_outcome(verb: &str, err: &EngineError, outcome: CliOutcome) -> i32 {
     let payload = json!({
         "status": "error",
         "verb": verb,

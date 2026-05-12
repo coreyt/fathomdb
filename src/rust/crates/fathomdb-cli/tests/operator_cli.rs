@@ -351,6 +351,32 @@ fn t_recover_excise_source_with_accept_data_loss_succeeds() {
 }
 
 #[test]
+fn t_safe_export_engine_error_exits_export_failure_66() {
+    // `cli.md` § Error → exit-code mapping pins `doctor safe-export` failure
+    // to class `artifact-fail` = exit 66. Trigger an engine error by
+    // pointing the export target at a path inside a nonexistent directory
+    // so the underlying `VACUUM INTO` step fails.
+    let (dir, db) = seeded_db();
+    let bad_out = dir.path().join("nonexistent").join("export.sqlite");
+    let output = fathomdb()
+        .args(["doctor", "safe-export", bad_out.to_str().unwrap(), db.to_str().unwrap(), "--json"])
+        .output()
+        .expect("spawn");
+    assert_eq!(
+        output.status.code(),
+        Some(exit_code::EXPORT_FAILURE),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let v: Value = serde_json::from_str(stdout.trim()).expect("one json object");
+    assert_eq!(v.get("verb").and_then(Value::as_str), Some("safe-export"));
+    assert_eq!(v.get("status").and_then(Value::as_str), Some("error"));
+    drop(dir);
+}
+
+#[test]
 fn t_clap_parse_error_on_unknown_root_is_nonzero() {
     // Parser-level rejection is pinned by tests/parser.rs; this asserts the
     // built binary surfaces that rejection as a non-zero exit. The exact code
