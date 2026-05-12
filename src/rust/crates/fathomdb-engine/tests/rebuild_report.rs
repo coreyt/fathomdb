@@ -101,5 +101,9 @@ fn rebuild_vec0_returns_structured_report() {
         "rows_invalidated should be > 0 (was {})",
         report.rows_invalidated
     );
+    assert_eq!(
+        report.rows_rebuilt, 0,
+        "vec0 rebuild does no synchronous re-insert; re-derivation is async via projection scheduler"
+    );
     assert_eq!(report.projection_cursor_after, 0);
 }
