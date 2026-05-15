@@ -218,7 +218,7 @@ After all commands pass, write
 ```json
 {
   "phase": "10b-A",
-  "baseline_sha": "bd0cba1debcea738802cc3b87315b95dcc0af355",
+  "baseline_sha": "73406cb",
   "branch": "phase-10b-A-low-risk-seams-<ts>",
   "head_sha": "<HEAD after final commit>",
   "seams_added": [
