@@ -49,7 +49,7 @@ application surface and does not ship `search` / `get` / `list` query verbs.
 | ----------------- | ------------------------------------------------------------------------------ | ----------------------------------- |
 | `check-integrity` | `fathomdb doctor check-integrity [--quick] [--full] [--round-trip] [--pretty]` | `doctor-check-*` = 0 / 65 / 70 / 71 |
 | `safe-export`     | `fathomdb doctor safe-export <out> [--manifest <path>]`                        | `doctor-export-*` = 0 / 66 / 71     |
-| `verify-embedder` | `fathomdb doctor verify-embedder`                                              | `doctor-check-*` = 0 / 65           |
+| `verify-embedder` | `fathomdb doctor verify-embedder --identity <s> --dimension <n>`               | `doctor-check-*` = 0 / 65           |
 | `trace`           | `fathomdb doctor trace --source-ref <id>`                                      | `doctor-check-*`                    |
 | `dump-schema`     | `fathomdb doctor dump-schema`                                                  | `doctor-check-*`                    |
 | `dump-row-counts` | `fathomdb doctor dump-row-counts`                                              | `doctor-check-*`                    |
