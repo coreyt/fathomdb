@@ -11,8 +11,10 @@ use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
 use fathomdb::{
-    CheckIntegrityOpts, CorruptionLocator, Engine, EngineError, EngineOpenError, ExciseReport,
-    Finding, IntegrityReport, RebuildKind, RebuildReport, SafeExportArtifact, Section, TraceReport,
+    CheckIntegrityOpts, CorruptionLocator, DumpProfileReport, DumpRowCountsReport,
+    DumpSchemaReport, Engine, EngineError, EngineOpenError, ExciseReport, Finding, IntegrityReport,
+    RebuildKind, RebuildReport, SafeExportArtifact, SchemaObject, Section, TraceReport,
+    TruncateWalReport, TruncateWalStatus, VerifyEmbedderReport, VerifyEmbedderStatus,
 };
 use serde_json::{json, Value};
 
@@ -117,7 +119,7 @@ pub enum DoctorCommand {
     /// Materialize a safe export of the database.
     SafeExport(SafeExportArgs),
     /// Verify the embedder identity recorded in the database.
-    VerifyEmbedder(SimpleDoctorArgs),
+    VerifyEmbedder(VerifyEmbedderArgs),
     /// Trace the resolution chain for a given source reference.
     Trace(TraceArgs),
     /// Dump the canonical schema definition.
@@ -183,6 +185,28 @@ pub struct SafeExportArgs {
     pub json: bool,
 
     /// Path to the database file to export.
+    pub db_path: PathBuf,
+}
+
+/// Per-verb argument set for `doctor verify-embedder`. `cli.md`
+/// (amended 2026-05-15) locks the invocation as
+/// `verify-embedder --identity <s> --dimension <n> <db_path>`.
+#[derive(Debug, Args)]
+pub struct VerifyEmbedderArgs {
+    /// Stored-embedder identity string the operator expects (typically
+    /// `<name>:<revision>`).
+    #[arg(long)]
+    pub identity: String,
+
+    /// Stored-embedder dimension the operator expects.
+    #[arg(long)]
+    pub dimension: u32,
+
+    /// Emit machine-readable JSON output.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Path to the database file to inspect.
     pub db_path: PathBuf,
 }
 
@@ -298,6 +322,11 @@ fn run_recover(args: RecoverArgs) -> i32 {
             e.excise_source(source_id).map(|r| excise_report_json(&r))
         });
     }
+    if args.truncate_wal {
+        return wire_recover(&args.db_path, "truncate-wal", |e| {
+            e.truncate_wal().map(|r| truncate_wal_report_json(&r))
+        });
+    }
 
     // No bound sub-action selected → stub.
     println!(r#"{{"status":"not_implemented","verb":"recover"}}"#);
@@ -339,24 +368,25 @@ fn run_doctor(cmd: DoctorCommand) -> i32 {
         DoctorCommand::Trace(args) => run_doctor_verb(&args.db_path, "trace", |e| {
             e.trace_source_ref(&args.source_ref).map(|r| (trace_report_json(&r), CliOutcome::Clean))
         }),
-        DoctorCommand::VerifyEmbedder(args) => stub_doctor(&args.db_path, "verify-embedder"),
-        DoctorCommand::DumpSchema(args) => stub_doctor(&args.db_path, "dump-schema"),
-        DoctorCommand::DumpRowCounts(args) => stub_doctor(&args.db_path, "dump-row-counts"),
-        DoctorCommand::DumpProfile(args) => stub_doctor(&args.db_path, "dump-profile"),
-    }
-}
-
-/// Stub body for doctor verbs whose engine seam has not landed yet. Opens
-/// the engine (so lock-held / open-error classes still surface) and then
-/// emits a `not_implemented` JSON envelope. Returns `UNRECOVERABLE`
-/// (matches the Phase 9 surface-stub posture).
-fn stub_doctor(db_path: &std::path::Path, verb: &str) -> i32 {
-    match Engine::open(db_path.to_path_buf()) {
-        Ok(_opened) => {
-            println!(r#"{{"status":"not_implemented","verb":"{verb}"}}"#);
-            exit_code::UNRECOVERABLE
+        DoctorCommand::VerifyEmbedder(args) => {
+            let identity = args.identity.clone();
+            let dimension = args.dimension;
+            run_doctor_verb(&args.db_path, "verify-embedder", |e| {
+                e.verify_embedder(&identity, dimension)
+                    .map(|r| (verify_embedder_report_json(&r), CliOutcome::Clean))
+            })
         }
-        Err(err) => emit_engine_open_error(verb, &err),
+        DoctorCommand::DumpSchema(args) => run_doctor_verb(&args.db_path, "dump-schema", |e| {
+            e.dump_schema().map(|r| (dump_schema_report_json(&r), CliOutcome::Clean))
+        }),
+        DoctorCommand::DumpRowCounts(args) => {
+            run_doctor_verb(&args.db_path, "dump-row-counts", |e| {
+                e.dump_row_counts().map(|r| (dump_row_counts_report_json(&r), CliOutcome::Clean))
+            })
+        }
+        DoctorCommand::DumpProfile(args) => run_doctor_verb(&args.db_path, "dump-profile", |e| {
+            e.dump_profile().map(|r| (dump_profile_report_json(&r), CliOutcome::Clean))
+        }),
     }
 }
 
@@ -588,6 +618,69 @@ fn excise_report_json(r: &ExciseReport) -> Value {
         "nodes_excised": r.nodes_excised,
         "edges_excised": r.edges_excised,
         "projections_invalidated": r.projections_invalidated,
+    })
+}
+
+fn verify_embedder_report_json(r: &VerifyEmbedderReport) -> Value {
+    let status = match r.status {
+        VerifyEmbedderStatus::Match => "match",
+        VerifyEmbedderStatus::IdentityMismatch => "identity_mismatch",
+        VerifyEmbedderStatus::DimensionMismatch => "dimension_mismatch",
+        VerifyEmbedderStatus::BothMismatch => "both_mismatch",
+    };
+    json!({
+        "verb": "verify-embedder",
+        "stored_identity": r.stored_identity,
+        "stored_dimension": r.stored_dimension,
+        "supplied_identity": r.supplied_identity,
+        "supplied_dimension": r.supplied_dimension,
+        "status": status,
+    })
+}
+
+fn schema_object_json(o: &SchemaObject) -> Value {
+    json!({ "name": o.name, "sql": o.sql })
+}
+
+fn dump_schema_report_json(r: &DumpSchemaReport) -> Value {
+    json!({
+        "verb": "dump-schema",
+        "user_version": r.user_version,
+        "tables": r.tables.iter().map(schema_object_json).collect::<Vec<_>>(),
+        "indexes": r.indexes.iter().map(schema_object_json).collect::<Vec<_>>(),
+    })
+}
+
+fn dump_row_counts_report_json(r: &DumpRowCountsReport) -> Value {
+    json!({
+        "verb": "dump-row-counts",
+        "counts": r.counts.iter().map(|c| json!({
+            "name": c.name,
+            "rows": c.rows,
+        })).collect::<Vec<_>>(),
+    })
+}
+
+fn dump_profile_report_json(r: &DumpProfileReport) -> Value {
+    json!({
+        "verb": "dump-profile",
+        "embedder_identity": r.embedder_identity,
+        "embedder_dimension": r.embedder_dimension,
+        "vectorized_kinds": r.vectorized_kinds,
+    })
+}
+
+fn truncate_wal_report_json(r: &TruncateWalReport) -> Value {
+    let status = match r.status {
+        TruncateWalStatus::Done => "done",
+        TruncateWalStatus::Busy => "busy",
+    };
+    json!({
+        "verb": "truncate-wal",
+        "status": status,
+        "busy": r.busy,
+        "log_frames": r.log_frames,
+        "checkpointed_frames": r.checkpointed_frames,
     })
 }
 

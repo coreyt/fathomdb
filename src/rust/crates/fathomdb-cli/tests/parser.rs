@@ -100,11 +100,10 @@ fn doctor_trace_requires_source_ref() {
 
 #[test]
 fn doctor_simple_verbs_parse() {
-    for verb in ["verify-embedder", "dump-schema", "dump-row-counts", "dump-profile"] {
+    for verb in ["dump-schema", "dump-row-counts", "dump-profile"] {
         let cli = parse(&["doctor", verb, "/tmp/db.sqlite"]);
         match (verb, doctor(cli)) {
-            ("verify-embedder", DoctorCommand::VerifyEmbedder(args))
-            | ("dump-schema", DoctorCommand::DumpSchema(args))
+            ("dump-schema", DoctorCommand::DumpSchema(args))
             | ("dump-row-counts", DoctorCommand::DumpRowCounts(args))
             | ("dump-profile", DoctorCommand::DumpProfile(args)) => {
                 assert!(!args.json, "default --json must be false for {verb}");
@@ -112,6 +111,29 @@ fn doctor_simple_verbs_parse() {
             (other, parsed) => panic!("verb {other} parsed unexpectedly as {parsed:?}"),
         }
     }
+}
+
+#[test]
+fn doctor_verify_embedder_requires_identity_and_dimension() {
+    // `cli.md:52` locks `verify-embedder --identity <s> --dimension <n>`.
+    let cli = parse(&[
+        "doctor",
+        "verify-embedder",
+        "--identity",
+        "model-x:rev-1",
+        "--dimension",
+        "384",
+        "/tmp/db.sqlite",
+    ]);
+    let DoctorCommand::VerifyEmbedder(args) = doctor(cli) else {
+        panic!("expected verify-embedder");
+    };
+    assert_eq!(args.identity, "model-x:rev-1");
+    assert_eq!(args.dimension, 384);
+    assert!(!args.json);
+
+    Cli::try_parse_from(["fathomdb", "doctor", "verify-embedder", "/tmp/db.sqlite"])
+        .expect_err("verify-embedder requires --identity and --dimension");
 }
 
 #[test]
@@ -131,6 +153,7 @@ fn every_doctor_verb_accepts_json_flag() {
         match verb {
             "safe-export" => argv.push("/tmp/out"),
             "trace" => argv.extend(["--source-ref", "src-1"]),
+            "verify-embedder" => argv.extend(["--identity", "model-x:rev-1", "--dimension", "384"]),
             _ => {}
         }
         argv.push("--json");

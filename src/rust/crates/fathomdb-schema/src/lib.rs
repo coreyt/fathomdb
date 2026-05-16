@@ -33,6 +33,20 @@ pub fn bootstrap_steps() -> &'static [&'static str] {
     &["create canonical tables", "register projection metadata", "seed rewrite-era configuration"]
 }
 
+/// Canonical tables owned by the rewrite-era schema, in stable display
+/// order. Excludes FTS, vec0, and projection shadow tables (re-derivable
+/// from canonical state) and internal `_fathomdb_*` metadata.
+///
+/// `doctor dump-row-counts` enumerates this set; `doctor dump-schema`
+/// uses it to order canonical tables ahead of derived/internal ones.
+pub const CANONICAL_TABLES: &[&str] = &[
+    "canonical_nodes",
+    "canonical_edges",
+    "operational_collections",
+    "operational_mutations",
+    "operational_state",
+];
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Migration {
     pub step_id: u32,

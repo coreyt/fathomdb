@@ -261,6 +261,41 @@ fn t_063c_recover_rebuild_projections_cli_regenerate_workflow() {
     drop(dir);
 }
 
+#[test]
+fn t_058_recover_truncate_wal_with_accept_data_loss_succeeds() {
+    // AC-058 CLI half: `recover --accept-data-loss --truncate-wal` exits
+    // 64 (RECOVERY_ACCEPTED_LOSS) and emits a JSON envelope with
+    // `verb: "truncate-wal"`, `status`, and the three SQLite counters.
+    let (dir, db) = seeded_db();
+    let (code, parsed) =
+        run_json(&["recover", "--accept-data-loss", "--truncate-wal", db.to_str().unwrap()]);
+    assert_eq!(code, Some(exit_code::RECOVERY_ACCEPTED_LOSS));
+    assert_eq!(parsed.get("verb").and_then(Value::as_str), Some("truncate-wal"));
+    let status = parsed.get("status").and_then(Value::as_str).expect("status");
+    assert!(status == "done" || status == "busy", "status must be done|busy; got {status}");
+    assert!(parsed.get("busy").and_then(Value::as_u64).is_some());
+    assert!(parsed.get("log_frames").and_then(Value::as_u64).is_some());
+    assert!(parsed.get("checkpointed_frames").and_then(Value::as_u64).is_some());
+    drop(dir);
+}
+
+#[test]
+fn t_058_recover_truncate_wal_refused_without_accept_data_loss() {
+    // AC-058 CLI half: `recover --truncate-wal` (no --accept-data-loss)
+    // is refused with the standard recover-refusal envelope.
+    let (dir, db) = seeded_db();
+    let output = fathomdb()
+        .args(["recover", "--truncate-wal", db.to_str().unwrap()])
+        .output()
+        .expect("spawn");
+    assert_eq!(output.status.code(), Some(exit_code::UNRECOVERABLE));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: Value = serde_json::from_str(stdout.trim()).expect("json");
+    assert_eq!(parsed.get("status").and_then(Value::as_str), Some("refused"));
+    assert_eq!(parsed.get("verb").and_then(Value::as_str), Some("recover"));
+    drop(dir);
+}
+
 // ---- Still ignored: fixture / engine-seam gaps remain ----
 
 #[test]

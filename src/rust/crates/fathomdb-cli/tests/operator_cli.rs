@@ -141,6 +141,12 @@ fn doctor_invocation(verb: &str, db_path: &str, out_path: &str) -> Vec<String> {
             argv.push("--source-ref".to_string());
             argv.push("src-test".to_string());
         }
+        "verify-embedder" => {
+            argv.push("--identity".to_string());
+            argv.push("fathomdb-noop:0.6.0-scaffold".to_string());
+            argv.push("--dimension".to_string());
+            argv.push("384".to_string());
+        }
         _ => {}
     }
     argv.push(db_path.to_string());
@@ -373,6 +379,96 @@ fn t_safe_export_engine_error_exits_export_failure_66() {
     let v: Value = serde_json::from_str(stdout.trim()).expect("one json object");
     assert_eq!(v.get("verb").and_then(Value::as_str), Some("safe-export"));
     assert_eq!(v.get("status").and_then(Value::as_str), Some("error"));
+    drop(dir);
+}
+
+#[test]
+fn t_040a_verify_embedder_cli_emits_match_status_on_matching_input() {
+    // AC-040a CLI half: `doctor verify-embedder --identity --dimension`
+    // emits the locked JSON shape with status=match against a freshly
+    // opened DB (default embedder identity).
+    let (dir, db) = seeded_db();
+    let output = fathomdb()
+        .args([
+            "doctor",
+            "verify-embedder",
+            "--identity",
+            "fathomdb-noop:0.6.0-scaffold",
+            "--dimension",
+            "384",
+            "--json",
+            db.to_str().unwrap(),
+        ])
+        .output()
+        .expect("spawn");
+    assert_eq!(output.status.code(), Some(exit_code::OK));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: Value = serde_json::from_str(stdout.trim()).expect("json");
+    assert_eq!(parsed.get("verb").and_then(Value::as_str), Some("verify-embedder"));
+    assert_eq!(
+        parsed.get("stored_identity").and_then(Value::as_str),
+        Some("fathomdb-noop:0.6.0-scaffold"),
+    );
+    assert_eq!(parsed.get("stored_dimension").and_then(Value::as_u64), Some(384));
+    assert_eq!(parsed.get("status").and_then(Value::as_str), Some("match"));
+    drop(dir);
+}
+
+#[test]
+fn t_040a_dump_schema_cli_emits_locked_top_level_keys() {
+    // AC-040a CLI half: `doctor dump-schema --json` emits {verb,
+    // user_version, tables, indexes}.
+    let (dir, db) = seeded_db();
+    let output = fathomdb()
+        .args(["doctor", "dump-schema", "--json", db.to_str().unwrap()])
+        .output()
+        .expect("spawn");
+    assert_eq!(output.status.code(), Some(exit_code::OK));
+    let parsed: Value = serde_json::from_slice(&output.stdout).expect("json");
+    assert_eq!(parsed.get("verb").and_then(Value::as_str), Some("dump-schema"));
+    assert!(parsed.get("user_version").and_then(Value::as_u64).is_some(), "user_version missing");
+    let tables = parsed.get("tables").and_then(Value::as_array).expect("tables array");
+    assert!(!tables.is_empty(), "tables must be non-empty after open");
+    assert!(parsed.get("indexes").and_then(Value::as_array).is_some());
+    drop(dir);
+}
+
+#[test]
+fn t_040a_dump_row_counts_cli_emits_counts_array() {
+    // AC-040a CLI half: `doctor dump-row-counts --json` emits
+    // {verb, counts: [{name, rows}, ...]}.
+    let (dir, db) = seeded_db();
+    let output = fathomdb()
+        .args(["doctor", "dump-row-counts", "--json", db.to_str().unwrap()])
+        .output()
+        .expect("spawn");
+    assert_eq!(output.status.code(), Some(exit_code::OK));
+    let parsed: Value = serde_json::from_slice(&output.stdout).expect("json");
+    assert_eq!(parsed.get("verb").and_then(Value::as_str), Some("dump-row-counts"));
+    let counts = parsed.get("counts").and_then(Value::as_array).expect("counts");
+    assert!(!counts.is_empty(), "canonical-table count list must not be empty");
+    for entry in counts {
+        assert!(entry.get("name").and_then(Value::as_str).is_some());
+        assert!(entry.get("rows").and_then(Value::as_u64).is_some());
+    }
+    drop(dir);
+}
+
+#[test]
+fn t_040a_dump_profile_cli_emits_embedder_identity_and_vectorized_kinds() {
+    // AC-040a CLI half: `doctor dump-profile --json` emits
+    // {verb, embedder_identity, embedder_dimension, vectorized_kinds}.
+    let (dir, db) = seeded_db();
+    let output = fathomdb()
+        .args(["doctor", "dump-profile", "--json", db.to_str().unwrap()])
+        .output()
+        .expect("spawn");
+    assert_eq!(output.status.code(), Some(exit_code::OK));
+    let parsed: Value = serde_json::from_slice(&output.stdout).expect("json");
+    assert_eq!(parsed.get("verb").and_then(Value::as_str), Some("dump-profile"));
+    assert!(parsed.get("embedder_identity").and_then(Value::as_str).is_some());
+    assert!(parsed.get("embedder_dimension").and_then(Value::as_u64).is_some());
+    assert!(parsed.get("vectorized_kinds").and_then(Value::as_array).is_some());
     drop(dir);
 }
 

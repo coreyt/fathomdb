@@ -90,7 +90,8 @@ these types) compiles against the public Rust surface, not engine internals.
 These are CLI-only ergonomic types; they are NOT exposed as runtime SDK
 verbs (recovery remains CLI-only — see Non-presence below).
 
-Re-exported types (canonical spellings, locked 2026-05-12):
+Re-exported types (canonical spellings, locked 2026-05-12; extended
+2026-05-15):
 
 - `CheckIntegrityOpts`
 - `IntegrityReport`
@@ -100,14 +101,22 @@ Re-exported types (canonical spellings, locked 2026-05-12):
 - `RebuildReport`
 - `RebuildKind`
 - `ExciseReport`
+- `VerifyEmbedderReport`
+- `VerifyEmbedderStatus`
+- `DumpSchemaReport`
+- `SchemaObject`
+- `DumpRowCountsReport`
+- `TableRowCount`
+- `DumpProfileReport`
+- `TruncateWalReport`
+- `TruncateWalStatus`
 
 Engine methods backing these types are owned by `design/recovery.md` and
-listed in `dev/plans/0.6.0-implementation.md` (Phase 10a). Additional
-recovery seam types added by Phase 10b (e.g. `VerifyEmbedderReport`,
-`DumpSchemaReport`, `DumpRowCountsReport`, `DumpProfileReport`,
-`TruncateWalReport`, `PurgeLogicalIdReport`, `RestoreLogicalIdReport`) land
-here as the corresponding engine seams are implemented, per the same
-re-export rule.
+listed in `dev/plans/0.6.0-implementation.md` (Phase 10a + Phase 10b-A).
+Additional recovery seam types added by Phase 10b-B (e.g.
+`PurgeLogicalIdReport`, `RestoreLogicalIdReport`) land here as the
+corresponding engine seams are implemented, per the same re-export
+rule.
 
 ## Non-presence
 

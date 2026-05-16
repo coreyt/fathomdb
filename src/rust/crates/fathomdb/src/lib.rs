@@ -1,7 +1,9 @@
 pub use fathomdb_engine::{
     CheckIntegrityOpts, CorruptionDetail, CorruptionKind, CorruptionLocator, CounterSnapshot,
-    Engine, EngineError, EngineOpenError, ExciseReport, Finding, IntegrityReport, OpenReport,
-    OpenStage, OpenedEngine, PreparedWrite, RebuildKind, RebuildReport, RecoveryHint,
-    SafeExportArtifact, SearchResult, Section, SoftFallback, SoftFallbackBranch, Subscription,
-    TraceEvent, TraceReport, WriteReceipt,
+    DumpProfileReport, DumpRowCountsReport, DumpSchemaReport, Engine, EngineError, EngineOpenError,
+    ExciseReport, Finding, IntegrityReport, OpenReport, OpenStage, OpenedEngine, PreparedWrite,
+    RebuildKind, RebuildReport, RecoveryHint, SafeExportArtifact, SchemaObject, SearchResult,
+    Section, SoftFallback, SoftFallbackBranch, Subscription, TableRowCount, TraceEvent,
+    TraceReport, TruncateWalReport, TruncateWalStatus, VerifyEmbedderReport, VerifyEmbedderStatus,
+    WriteReceipt,
 };

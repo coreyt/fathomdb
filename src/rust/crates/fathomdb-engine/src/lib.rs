@@ -17,7 +17,7 @@ use fathomdb_embedder_api::{Embedder, EmbedderError as RuntimeEmbedderError, Emb
 use fathomdb_query::compile_text_query;
 use fathomdb_schema::{
     migrate_with_event_sink, MigrationError as SchemaMigrationError, MigrationStepReport,
-    LOCK_SUFFIX, MIGRATIONS, SCHEMA_VERSION,
+    CANONICAL_TABLES, LOCK_SUFFIX, MIGRATIONS, SCHEMA_VERSION,
 };
 use jsonschema::JSONSchema;
 use rusqlite::{params, Connection};
@@ -927,6 +927,92 @@ pub struct ExciseReport {
     pub nodes_excised: u64,
     pub edges_excised: u64,
     pub projections_invalidated: u64,
+}
+
+/// Typed outcome of [`Engine::verify_embedder`]. Mismatches do not raise
+/// `EngineError`; the operator workflow needs to see the stored vs.
+/// supplied pair to decide on next action.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VerifyEmbedderStatus {
+    Match,
+    IdentityMismatch,
+    DimensionMismatch,
+    BothMismatch,
+}
+
+/// Result of [`Engine::verify_embedder`]. `stored_identity` is the
+/// `name:revision` pair persisted in `_fathomdb_embedder_profiles`;
+/// `supplied_identity` echoes the operator's input verbatim.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifyEmbedderReport {
+    pub stored_identity: String,
+    pub stored_dimension: u32,
+    pub supplied_identity: String,
+    pub supplied_dimension: u32,
+    pub status: VerifyEmbedderStatus,
+}
+
+/// Single table or index entry emitted by [`Engine::dump_schema`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SchemaObject {
+    pub name: String,
+    pub sql: String,
+}
+
+/// Result of [`Engine::dump_schema`]. `user_version` is the
+/// `PRAGMA user_version` sentinel. Canonical tables appear first per
+/// [`fathomdb_schema::CANONICAL_TABLES`], then remaining non-`sqlite_*`
+/// tables alphabetically. Indexes follow the same alphabetical rule.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DumpSchemaReport {
+    pub user_version: u32,
+    pub tables: Vec<SchemaObject>,
+    pub indexes: Vec<SchemaObject>,
+}
+
+/// Single canonical-table row count emitted by [`Engine::dump_row_counts`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TableRowCount {
+    pub name: String,
+    pub rows: u64,
+}
+
+/// Result of [`Engine::dump_row_counts`]. Canonical tables only;
+/// projection / FTS / vec0 shadow tables are excluded. Order matches
+/// [`fathomdb_schema::CANONICAL_TABLES`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DumpRowCountsReport {
+    pub counts: Vec<TableRowCount>,
+}
+
+/// Result of [`Engine::dump_profile`]. Mirrors the open-time embedder
+/// posture + the per-kind vector configuration registered in
+/// `_fathomdb_vector_kinds`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DumpProfileReport {
+    pub embedder_identity: String,
+    pub embedder_dimension: u32,
+    pub vectorized_kinds: Vec<String>,
+}
+
+/// Typed outcome of [`Engine::truncate_wal`]. `Done` matches SQLite's
+/// `busy = 0` return from `PRAGMA wal_checkpoint(TRUNCATE)`; any other
+/// value surfaces as `Busy`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TruncateWalStatus {
+    Done,
+    Busy,
+}
+
+/// Result of [`Engine::truncate_wal`]. Carries the three counters
+/// returned by `PRAGMA wal_checkpoint(TRUNCATE)`: `busy`, `log_frames`,
+/// `checkpointed_frames`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TruncateWalReport {
+    pub status: TruncateWalStatus,
+    pub busy: u32,
+    pub log_frames: u32,
+    pub checkpointed_frames: u32,
 }
 
 impl Drop for Engine {
@@ -1926,6 +2012,115 @@ impl Engine {
         outcome
     }
 
+    /// Doctor `verify-embedder` seam (AC-040a). Compares the
+    /// `_fathomdb_embedder_profiles` row to the operator-supplied
+    /// `name:revision` identity + dimension; never raises on mismatch.
+    pub fn verify_embedder(
+        &self,
+        supplied_identity: &str,
+        supplied_dimension: u32,
+    ) -> Result<VerifyEmbedderReport, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let stored = load_default_profile(connection).map_err(|_| EngineError::Storage)?;
+        let stored_identity = format!("{}:{}", stored.name, stored.revision);
+        let identity_match = stored_identity == supplied_identity;
+        let dimension_match = stored.dimension == supplied_dimension;
+        let status = match (identity_match, dimension_match) {
+            (true, true) => VerifyEmbedderStatus::Match,
+            (false, true) => VerifyEmbedderStatus::IdentityMismatch,
+            (true, false) => VerifyEmbedderStatus::DimensionMismatch,
+            (false, false) => VerifyEmbedderStatus::BothMismatch,
+        };
+        Ok(VerifyEmbedderReport {
+            stored_identity,
+            stored_dimension: stored.dimension,
+            supplied_identity: supplied_identity.to_string(),
+            supplied_dimension,
+            status,
+        })
+    }
+
+    /// Doctor `dump-schema` seam (AC-040a). Returns the
+    /// `PRAGMA user_version` sentinel plus the table + index inventory
+    /// from `sqlite_schema`, excluding `sqlite_*` internal rows.
+    /// Canonical tables appear first per [`CANONICAL_TABLES`].
+    pub fn dump_schema(&self) -> Result<DumpSchemaReport, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let user_version: u32 = connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .map_err(|_| EngineError::Storage)?;
+        let tables = read_schema_objects(connection, "table")?;
+        let indexes = read_schema_objects(connection, "index")?;
+        Ok(DumpSchemaReport { user_version, tables: order_canonical_first(tables), indexes })
+    }
+
+    /// Doctor `dump-row-counts` seam (AC-040a). Emits canonical-table
+    /// counts only; projection / FTS / vec0 shadow tables are excluded.
+    pub fn dump_row_counts(&self) -> Result<DumpRowCountsReport, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let mut counts = Vec::with_capacity(CANONICAL_TABLES.len());
+        for name in CANONICAL_TABLES {
+            let rows: u64 = connection
+                .query_row(&format!("SELECT COUNT(*) FROM {name}"), [], |row| row.get(0))
+                .map_err(|_| EngineError::Storage)?;
+            counts.push(TableRowCount { name: (*name).to_string(), rows });
+        }
+        Ok(DumpRowCountsReport { counts })
+    }
+
+    /// Doctor `dump-profile` seam (AC-040a). Returns the stored
+    /// embedder identity + dimension plus the registered vectorized
+    /// kinds from `_fathomdb_vector_kinds`.
+    pub fn dump_profile(&self) -> Result<DumpProfileReport, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let stored = load_default_profile(connection).map_err(|_| EngineError::Storage)?;
+        let mut stmt = connection
+            .prepare("SELECT kind FROM _fathomdb_vector_kinds ORDER BY kind")
+            .map_err(|_| EngineError::Storage)?;
+        let rows =
+            stmt.query_map([], |row| row.get::<_, String>(0)).map_err(|_| EngineError::Storage)?;
+        let mut vectorized_kinds = Vec::new();
+        for row in rows {
+            vectorized_kinds.push(row.map_err(|_| EngineError::Storage)?);
+        }
+        Ok(DumpProfileReport {
+            embedder_identity: format!("{}:{}", stored.name, stored.revision),
+            embedder_dimension: stored.dimension,
+            vectorized_kinds,
+        })
+    }
+
+    /// Recover `--truncate-wal` seam. Runs
+    /// `PRAGMA wal_checkpoint(TRUNCATE)` and returns the three counters
+    /// SQLite reports. `status = Busy` when SQLite signalled a blocked
+    /// checkpoint (`busy != 0`); the WAL may still be partially
+    /// checkpointed in that case.
+    pub fn truncate_wal(&self) -> Result<TruncateWalReport, EngineError> {
+        self.ensure_open()?;
+        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+        let (busy, log_frames, checkpointed_frames): (i64, i64, i64) = connection
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .map_err(|_| EngineError::Storage)?;
+        let status = if busy == 0 { TruncateWalStatus::Done } else { TruncateWalStatus::Busy };
+        Ok(TruncateWalReport {
+            status,
+            busy: busy.max(0) as u32,
+            log_frames: log_frames.max(0) as u32,
+            checkpointed_frames: checkpointed_frames.max(0) as u32,
+        })
+    }
+
     fn excise_source_inner(&self, source_id: &str) -> Result<ExciseReport, EngineError> {
         let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
         let connection = connection.as_mut().ok_or(EngineError::Closing)?;
@@ -2821,6 +3016,40 @@ fn table_exists(connection: &Connection, table: &str) -> bool {
             |_row| Ok(()),
         )
         .is_ok()
+}
+
+fn read_schema_objects(
+    connection: &Connection,
+    obj_type: &str,
+) -> Result<Vec<SchemaObject>, EngineError> {
+    let mut stmt = connection
+        .prepare(
+            "SELECT name, sql FROM sqlite_schema
+             WHERE type = ?1 AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL
+             ORDER BY name",
+        )
+        .map_err(|_| EngineError::Storage)?;
+    let rows = stmt
+        .query_map([obj_type], |row| {
+            Ok(SchemaObject { name: row.get::<_, String>(0)?, sql: row.get::<_, String>(1)? })
+        })
+        .map_err(|_| EngineError::Storage)?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row.map_err(|_| EngineError::Storage)?);
+    }
+    Ok(out)
+}
+
+fn order_canonical_first(mut objects: Vec<SchemaObject>) -> Vec<SchemaObject> {
+    let mut canonical: Vec<SchemaObject> = Vec::new();
+    for name in CANONICAL_TABLES {
+        if let Some(pos) = objects.iter().position(|o| o.name == *name) {
+            canonical.push(objects.remove(pos));
+        }
+    }
+    canonical.extend(objects);
+    canonical
 }
 
 fn load_default_profile(connection: &Connection) -> rusqlite::Result<EmbedderIdentity> {
