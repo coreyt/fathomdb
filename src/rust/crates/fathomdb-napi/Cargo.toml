@@ -1,0 +1,27 @@
+[package]
+name = "fathomdb-napi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+name = "fathomdb_napi"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+test-hooks = []
+
+[dependencies]
+fathomdb-engine = { path = "../fathomdb-engine" }
+napi = { version = "2", features = ["napi8", "async", "tokio_rt", "serde-json"] }
+napi-derive = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread"] }
+
+[build-dependencies]
+napi-build = "2"
