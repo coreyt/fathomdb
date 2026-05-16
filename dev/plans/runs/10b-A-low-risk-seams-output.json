@@ -1,0 +1,47 @@
+{
+  "phase": "10b-A",
+  "baseline_sha": "73406cb",
+  "branch": "phase-10b-A-low-risk-seams-20260515T234104Z",
+  "head_sha": "273a5fba09bd4ca7e6cd742321d2e697f697fa97",
+  "seams_added": [
+    "Engine::verify_embedder",
+    "Engine::dump_schema",
+    "Engine::dump_row_counts",
+    "Engine::dump_profile",
+    "Engine::truncate_wal"
+  ],
+  "facade_reexports_added": [
+    "VerifyEmbedderReport",
+    "VerifyEmbedderStatus",
+    "DumpSchemaReport",
+    "SchemaObject",
+    "DumpRowCountsReport",
+    "TableRowCount",
+    "DumpProfileReport",
+    "TruncateWalReport",
+    "TruncateWalStatus"
+  ],
+  "tests_added": [
+    "fathomdb-engine::verify_embedder::ac_040a_matching_identity_and_dimension_returns_match",
+    "fathomdb-engine::verify_embedder::ac_040a_mismatched_identity_returns_identity_mismatch",
+    "fathomdb-engine::verify_embedder::ac_040a_mismatched_dimension_returns_dimension_mismatch",
+    "fathomdb-engine::verify_embedder::ac_040a_both_mismatched_returns_both_mismatch",
+    "fathomdb-engine::dump_schema::ac_040a_dump_schema_reports_current_user_version_and_canonical_tables",
+    "fathomdb-engine::dump_row_counts::ac_040a_dump_row_counts_empty_database_returns_all_zero",
+    "fathomdb-engine::dump_row_counts::ac_040a_dump_row_counts_reflects_canonical_writes",
+    "fathomdb-engine::dump_profile::ac_040a_dump_profile_returns_stored_identity_and_dimension",
+    "fathomdb-engine::dump_profile::ac_040a_dump_profile_lists_registered_vectorized_kinds",
+    "fathomdb-engine::truncate_wal::ac_040a_truncate_wal_on_empty_db_reports_done",
+    "fathomdb-engine::truncate_wal::ac_040a_truncate_wal_after_write_reports_done",
+    "fathomdb-cli::parser::doctor_verify_embedder_requires_identity_and_dimension",
+    "fathomdb-cli::operator_cli::t_040a_verify_embedder_cli_emits_match_status_on_matching_input",
+    "fathomdb-cli::operator_cli::t_040a_dump_schema_cli_emits_locked_top_level_keys",
+    "fathomdb-cli::operator_cli::t_040a_dump_row_counts_cli_emits_counts_array",
+    "fathomdb-cli::operator_cli::t_040a_dump_profile_cli_emits_embedder_identity_and_vectorized_kinds",
+    "fathomdb-cli::recovery_cli::t_058_recover_truncate_wal_with_accept_data_loss_succeeds",
+    "fathomdb-cli::recovery_cli::t_058_recover_truncate_wal_refused_without_accept_data_loss"
+  ],
+  "acceptance_ids_bound": ["AC-040a", "AC-040b", "AC-058"],
+  "agent_verify_result": "pass (clean run on retry; first run hit a known perf-sensitive flake on tests/projection_runtime.rs::ac_029_canonical_writes_complete_under_projection_stall — unrelated to this slice, passes in isolation and on a clean baseline)",
+  "next_step_for_orchestrator": "spawn 10b-A reviewer"
+}
