@@ -1,5 +1,7 @@
 // Surface assertions for the TypeScript SDK.
 //
+// Binds AC-057a (REQ-053): five-verb runtime SDK surface.
+//
 // Pins the five-verb top-level surface, the engine-attached
 // instrumentation methods, the options.engineConfig camelCase knobs,
 // the soft-fallback record shape, and the FathomDbError single-rooted

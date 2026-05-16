@@ -283,6 +283,19 @@ where
     }
 }
 
+/// Sync sibling of [`call_engine`]: wrap a non-blocking accessor in
+/// `catch_unwind` so a panic on the JS thread surfaces as [`panic_error`]
+/// instead of unwinding into napi-rs's default `GenericFailure` path.
+fn call_engine_sync<R, F>(f: F) -> Result<R>
+where
+    F: FnOnce() -> Result<R>,
+{
+    match catch_unwind(AssertUnwindSafe(f)) {
+        Ok(result) => result,
+        Err(_panic) => Err(panic_error()),
+    }
+}
+
 // ===== Data classes ===================================================
 
 #[napi(object)]
@@ -430,26 +443,33 @@ impl Engine {
     }
 
     #[napi]
-    pub fn counters(&self) -> CounterSnapshot {
-        let snap = self.inner.counters();
-        CounterSnapshot {
-            queries: snap.queries as i64,
-            writes: snap.writes as i64,
-            write_rows: snap.write_rows as i64,
-            admin_ops: snap.admin_ops as i64,
-            cache_hit: snap.cache_hit as i64,
-            cache_miss: snap.cache_miss as i64,
-        }
+    pub fn counters(&self) -> Result<CounterSnapshot> {
+        let engine = Arc::clone(&self.inner);
+        call_engine_sync(move || {
+            let snap = engine.counters();
+            Ok(CounterSnapshot {
+                queries: snap.queries as i64,
+                writes: snap.writes as i64,
+                write_rows: snap.write_rows as i64,
+                admin_ops: snap.admin_ops as i64,
+                cache_hit: snap.cache_hit as i64,
+                cache_miss: snap.cache_miss as i64,
+            })
+        })
     }
 
     #[napi]
     pub fn set_profiling(&self, enabled: bool) -> Result<()> {
-        self.inner.set_profiling(enabled).map_err(engine_error_to_napi)
+        let engine = Arc::clone(&self.inner);
+        call_engine_sync(move || engine.set_profiling(enabled).map_err(engine_error_to_napi))
     }
 
     #[napi]
     pub fn set_slow_threshold_ms(&self, value: u32) -> Result<()> {
-        self.inner.set_slow_threshold_ms(value as u64).map_err(engine_error_to_napi)
+        let engine = Arc::clone(&self.inner);
+        call_engine_sync(move || {
+            engine.set_slow_threshold_ms(value as u64).map_err(engine_error_to_napi)
+        })
     }
 
     /// Subscriber wiring lands in a later 0.6.x slice; the binding
@@ -463,7 +483,7 @@ impl Engine {
     ) -> Result<()> {
         let _ = callback;
         let _ = options;
-        Ok(())
+        call_engine_sync(|| Ok(()))
     }
 }
 
@@ -678,6 +698,18 @@ fn translate_admin_schema(item: &JsonValue) -> Result<PreparedWrite> {
 #[napi(js_name = "forcePanicForTest")]
 pub fn force_panic_for_test() -> Result<()> {
     call_panicking_engine_for_test()
+}
+
+/// AC-067 sync-path probe: exercises [`call_engine_sync`] so the
+/// TS-side test asserts that panics on a sync `#[napi]` accessor land
+/// as `FathomDbPanicError` (code `FDB_PANIC`) too, not just the async
+/// path covered by [`force_panic_for_test`].
+#[cfg(any(test, feature = "test-hooks"))]
+#[napi(js_name = "forcePanicInAccessorForTest")]
+pub fn force_panic_in_accessor_for_test() -> Result<()> {
+    call_engine_sync(|| -> Result<()> {
+        panic!("force_panic_in_accessor_for_test: AC-067 sync probe");
+    })
 }
 
 #[cfg(any(test, feature = "test-hooks"))]

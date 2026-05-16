@@ -51,6 +51,30 @@ test("AC-067 panic surfaces as FathomDbPanicError, process unchanged", async () 
   }
 });
 
+test("AC-067 panic on sync accessor surfaces as FathomDbPanicError", () => {
+  assert.equal(
+    typeof native.forcePanicInAccessorForTest,
+    "function",
+    "sync force-panic hook must be exposed",
+  );
+
+  assert.throws(
+    () => {
+      try {
+        native.forcePanicInAccessorForTest!();
+      } catch (err) {
+        rethrowTyped(err);
+      }
+    },
+    (err: unknown) => {
+      assert.ok(err instanceof FathomDbPanicError, "must be FathomDbPanicError");
+      assert.ok(!(err instanceof FathomDbError), "panic must NOT subclass FathomDbError");
+      assert.match((err as Error).message, /engine panic/);
+      return true;
+    },
+  );
+});
+
 test("AC-068a embedded NUL in op-store body rejected as WriteValidationError", async () => {
   const engine = await Engine.open(freshDbPath());
   try {

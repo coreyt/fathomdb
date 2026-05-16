@@ -113,6 +113,7 @@ export interface NativeModule {
     options: NativeAdminConfigureOptions,
   ): Promise<NativeWriteReceipt>;
   forcePanicForTest?: () => void;
+  forcePanicInAccessorForTest?: () => void;
 }
 
 export const native = loadNative() as NativeModule;
