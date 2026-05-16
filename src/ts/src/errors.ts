@@ -1,8 +1,14 @@
 // Single-rooted FathomDbError hierarchy for the TypeScript SDK.
 //
-// Layout owned by `dev/design/errors.md` § Binding-facing class matrix and
-// `dev/design/bindings.md` § 3. Per-leaf payloads are typed object
+// Layout owned by `dev/design/errors.md` § Binding-facing class matrix
+// and `dev/design/bindings.md` § 3. Per-leaf payloads are typed object
 // arguments; callers narrow with `instanceof`.
+//
+// The napi-rs binding cannot throw a Rust-defined JS class with a TS
+// `instanceof` chain. Instead, it throws `Error` whose `message` is a
+// JSON envelope `{ code, message, payload }`. `rethrowTyped` parses
+// that envelope and constructs the matching leaf class so `instanceof
+// FathomDbError` narrowing works on the TS side.
 
 export class FathomDbError extends Error {
   constructor(message: string) {
@@ -21,6 +27,9 @@ export class WriteValidationError extends FathomDbError {}
 export class SchemaValidationError extends FathomDbError {}
 export class OverloadedError extends FathomDbError {}
 export class ClosingError extends FathomDbError {}
+
+export class EmbedderNotConfiguredError extends EmbedderError {}
+export class KindNotVectorIndexedError extends VectorError {}
 
 export interface DatabaseLockedErrorPayload {
   holderPid?: number;
@@ -97,4 +106,150 @@ export class EmbedderDimensionMismatchError extends FathomDbError {
     this.stored = payload.stored;
     this.supplied = payload.supplied;
   }
+}
+
+// Panic is a contract bug, not a typed engine outcome — intentionally
+// NOT a FathomDbError subclass so callers that catch FathomDbError do
+// not silently swallow it. Mirrors PyO3 PanicException in 11a.
+export class FathomDbPanicError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FathomDbPanicError";
+  }
+}
+
+// ===== Typed-error rethrow ============================================
+
+type ErrorCode =
+  | "FDB_STORAGE"
+  | "FDB_PROJECTION"
+  | "FDB_VECTOR"
+  | "FDB_EMBEDDER"
+  | "FDB_EMBEDDER_NOT_CONFIGURED"
+  | "FDB_KIND_NOT_VECTOR_INDEXED"
+  | "FDB_EMBEDDER_DIMENSION_MISMATCH"
+  | "FDB_SCHEDULER"
+  | "FDB_OP_STORE"
+  | "FDB_WRITE_VALIDATION"
+  | "FDB_SCHEMA_VALIDATION"
+  | "FDB_OVERLOADED"
+  | "FDB_CLOSING"
+  | "FDB_DATABASE_LOCKED"
+  | "FDB_CORRUPTION"
+  | "FDB_INCOMPATIBLE_SCHEMA_VERSION"
+  | "FDB_MIGRATION"
+  | "FDB_EMBEDDER_IDENTITY_MISMATCH"
+  | "FDB_PANIC";
+
+interface Envelope {
+  code: ErrorCode;
+  message: string;
+  payload: Record<string, unknown> | null;
+}
+
+function parseEnvelope(raw: unknown): Envelope | null {
+  if (typeof raw !== "string" || raw.length === 0 || raw[0] !== "{") {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== "object") {
+    return null;
+  }
+  const obj = parsed as Record<string, unknown>;
+  if (typeof obj.code !== "string" || typeof obj.message !== "string") {
+    return null;
+  }
+  return {
+    code: obj.code as ErrorCode,
+    message: obj.message,
+    payload: (obj.payload as Record<string, unknown> | null) ?? null,
+  };
+}
+
+function build(envelope: Envelope): Error {
+  const p = envelope.payload ?? {};
+  switch (envelope.code) {
+    case "FDB_STORAGE":
+      return new StorageError(envelope.message);
+    case "FDB_PROJECTION":
+      return new ProjectionError(envelope.message);
+    case "FDB_VECTOR":
+      return new VectorError(envelope.message);
+    case "FDB_EMBEDDER":
+      return new EmbedderError(envelope.message);
+    case "FDB_EMBEDDER_NOT_CONFIGURED":
+      return new EmbedderNotConfiguredError(envelope.message);
+    case "FDB_KIND_NOT_VECTOR_INDEXED":
+      return new KindNotVectorIndexedError(envelope.message);
+    case "FDB_EMBEDDER_DIMENSION_MISMATCH":
+      return new EmbedderDimensionMismatchError({
+        stored: Number(p.stored),
+        supplied: Number(p.supplied),
+      });
+    case "FDB_SCHEDULER":
+      return new SchedulerError(envelope.message);
+    case "FDB_OP_STORE":
+      return new OpStoreError(envelope.message);
+    case "FDB_WRITE_VALIDATION":
+      return new WriteValidationError(envelope.message);
+    case "FDB_SCHEMA_VALIDATION":
+      return new SchemaValidationError(envelope.message);
+    case "FDB_OVERLOADED":
+      return new OverloadedError(envelope.message);
+    case "FDB_CLOSING":
+      return new ClosingError(envelope.message);
+    case "FDB_DATABASE_LOCKED":
+      return new DatabaseLockedError({
+        holderPid: typeof p.holderPid === "number" ? p.holderPid : undefined,
+      });
+    case "FDB_CORRUPTION":
+      return new CorruptionError({
+        kind: String(p.kind ?? ""),
+        stage: String(p.stage ?? ""),
+        recoveryHintCode: String(p.recoveryHintCode ?? ""),
+        docAnchor: String(p.docAnchor ?? ""),
+      });
+    case "FDB_INCOMPATIBLE_SCHEMA_VERSION":
+      return new IncompatibleSchemaVersionError(envelope.message);
+    case "FDB_MIGRATION":
+      return new MigrationError(envelope.message);
+    case "FDB_EMBEDDER_IDENTITY_MISMATCH":
+      return new EmbedderIdentityMismatchError({
+        storedName: String(p.storedName ?? ""),
+        storedRevision: String(p.storedRevision ?? ""),
+        suppliedName: String(p.suppliedName ?? ""),
+        suppliedRevision: String(p.suppliedRevision ?? ""),
+      });
+    case "FDB_PANIC":
+      return new FathomDbPanicError(envelope.message);
+    default: {
+      // Exhaustiveness — if ErrorCode union grows and switch arms
+      // don't cover it, this branch becomes reachable and TS narrows
+      // `envelope.code` to `never`, surfacing as a compile error.
+      const _exhaustive: never = envelope.code;
+      return new Error(`unrecognised error code: ${String(_exhaustive)}`);
+    }
+  }
+}
+
+/**
+ * Re-raise a binding-thrown error as the corresponding TS leaf class.
+ *
+ * Errors not carrying the JSON envelope are rethrown unchanged so
+ * non-binding errors (e.g. native panics from outside the catch
+ * surface) reach the caller untouched.
+ */
+export function rethrowTyped(err: unknown): never {
+  if (err instanceof Error) {
+    const env = parseEnvelope(err.message);
+    if (env !== null) {
+      throw build(env);
+    }
+  }
+  throw err;
 }

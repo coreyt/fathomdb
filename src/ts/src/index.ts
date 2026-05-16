@@ -1,20 +1,19 @@
 // FathomDB TypeScript SDK public surface.
 //
-// Five-verb top-level surface, options.engineConfig camelCase knobs, and
-// caller-visible result shapes per `dev/interfaces/typescript.md`. napi-rs
-// wiring lands in a follow-up slice; the 0.6.0 surface-stub keeps the
-// engine in pure TypeScript so parser and error-hierarchy tests run.
+// Five-verb top-level surface (Engine.open, engine.write, engine.search,
+// engine.close, admin.configure), engine-attached instrumentation, and
+// the FathomDbError leaf-class hierarchy per
+// `dev/interfaces/typescript.md` and `dev/design/bindings.md` § 3. The
+// runtime is the napi-rs binding in `fathomdb-napi`; this file is a
+// thin TS wrapper that funnels every native error through
+// `rethrowTyped`.
 
-import { ClosingError, WriteValidationError } from "./errors.js";
+import { native, type NativeEngine } from "./binding.js";
+import { rethrowTyped } from "./errors.js";
+import { validateFfiString, validateFfiTree } from "./validation.js";
 
 export * from "./errors.js";
 
-/**
- * Engine-owned runtime knobs.
- *
- * Field set mirrors the Python EngineConfig in camelCase per
- * `dev/interfaces/typescript.md` § Runtime surface.
- */
 export interface EngineConfig {
   embedderPoolSize?: number;
   schedulerRuntimeThreads?: number;
@@ -23,7 +22,6 @@ export interface EngineConfig {
   slowThresholdMs?: number;
 }
 
-/** Options object accepted by `Engine.open`. */
 export interface EngineOpenOptions {
   engineConfig?: EngineConfig;
 }
@@ -44,9 +42,18 @@ export interface SearchResult {
   results: string[];
 }
 
-export interface CounterSnapshot {}
+export interface CounterSnapshot {
+  queries: number;
+  writes: number;
+  writeRows: number;
+  adminOps: number;
+  cacheHit: number;
+  cacheMiss: number;
+}
 
-export interface SubscriberEvent {}
+export interface SubscriberEvent {
+  [key: string]: unknown;
+}
 
 export type SubscriberCallback = (event: SubscriberEvent) => void;
 
@@ -59,91 +66,88 @@ export interface AdminConfigureOptions {
   body: string;
 }
 
-export class Engine {
-  readonly path: string;
-  readonly config: EngineConfig;
-  #cursor = 0;
-  #closed = false;
+async function intercept<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    rethrowTyped(err);
+  }
+}
 
-  private constructor(path: string, config: EngineConfig) {
-    this.path = path;
+function interceptSync<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (err) {
+    rethrowTyped(err);
+  }
+}
+
+export class Engine {
+  readonly #native: NativeEngine;
+  readonly config: EngineConfig;
+
+  private constructor(inner: NativeEngine, config: EngineConfig) {
+    this.#native = inner;
     this.config = config;
   }
 
   static async open(path: string, options: EngineOpenOptions = {}): Promise<Engine> {
-    return new Engine(path, options.engineConfig ?? {});
+    validateFfiString(path);
+    const inner = await intercept(() => native.Engine.open(path, options));
+    return new Engine(inner, options.engineConfig ?? {});
   }
 
   async write(batch: unknown[] = []): Promise<WriteReceipt> {
-    this.ensureOpen();
-    this.#cursor += Math.max(batch.length, 1);
-    return { cursor: this.#cursor };
+    validateFfiTree(batch);
+    return intercept(() => this.#native.write(batch));
   }
 
   async search(query: string): Promise<SearchResult> {
-    this.ensureOpen();
-    const normalized = query.trim();
-    if (normalized.length === 0) {
-      throw new WriteValidationError("query must not be empty");
-    }
+    validateFfiString(query);
+    const r = await intercept(() => this.#native.search(query));
+    const branch = r.softFallback?.branch;
     return {
-      projectionCursor: this.#cursor,
-      softFallback: null,
-      results: [`rewrite scaffold query: ${normalized}`],
+      projectionCursor: r.projectionCursor,
+      softFallback:
+        branch === "vector" || branch === "text" ? { branch } : null,
+      results: r.results,
     };
   }
 
   async close(): Promise<void> {
-    this.#closed = true;
+    await intercept(() => this.#native.close());
   }
 
   async drain(timeoutMs: number): Promise<void> {
-    void timeoutMs;
+    await intercept(() => this.#native.drain(timeoutMs));
   }
 
   counters(): CounterSnapshot {
-    return {};
+    return interceptSync(() => this.#native.counters());
   }
 
-  async setProfiling(enabled: boolean): Promise<void> {
-    void enabled;
+  setProfiling(enabled: boolean): void {
+    interceptSync(() => this.#native.setProfiling(enabled));
   }
 
-  async setSlowThresholdMs(value: number): Promise<void> {
-    void value;
+  setSlowThresholdMs(value: number): void {
+    interceptSync(() => this.#native.setSlowThresholdMs(value));
   }
 
   attachSubscriber(callback: SubscriberCallback, options: AttachSubscriberOptions = {}): void {
-    void callback;
-    void options;
+    interceptSync(() => this.#native.attachSubscriber(callback, options));
   }
 
-  /** @internal used by `admin.configure`. */
-  recordAdminConfigure(_options: AdminConfigureOptions): WriteReceipt {
-    this.ensureOpen();
-    this.#cursor += 1;
-    return { cursor: this.#cursor };
-  }
-
-  private ensureOpen(): void {
-    if (this.#closed) {
-      throw new ClosingError("engine is closed");
-    }
+  /** @internal — handle to the napi-rs binding, used by `admin.configure`. */
+  get _native(): NativeEngine {
+    return this.#native;
   }
 }
 
-/**
- * Admin namespace exposing the fifth canonical SDK verb.
- *
- * Per `dev/interfaces/typescript.md` § Runtime surface, `admin.configure` is
- * the cross-binding admin entry point. The 0.6.0 stub does not commit
- * anything to a real engine.
- */
 export const admin = {
   async configure(engine: Engine, options: AdminConfigureOptions): Promise<WriteReceipt> {
-    if (!options.name) {
-      throw new Error("admin.configure requires a non-empty name");
-    }
-    return engine.recordAdminConfigure(options);
+    validateFfiString(options.name);
+    validateFfiString(options.body);
+    return intercept(() => native.adminConfigure(engine._native, options));
   },
 };
