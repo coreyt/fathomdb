@@ -98,12 +98,17 @@ def test_embedder_dimension_mismatch_carries_typed_attrs() -> None:
     assert err.supplied == 768
 
 
-def test_search_rejects_empty_query_via_write_validation_under_engine_error() -> None:
+def test_search_rejects_empty_query_via_write_validation_under_engine_error(
+    db_path: str,
+) -> None:
     # Per dev/design/errors.md section Binding-facing class matrix, the
     # empty-query rejection must surface as the typed WriteValidationError
     # leaf beneath the single-rooted EngineError, not as a bare ValueError.
-    engine = Engine.open("rewrite.sqlite")
-    with pytest.raises(WriteValidationError) as excinfo:
-        engine.search("")
-    assert isinstance(excinfo.value, EngineError)
-    assert isinstance(excinfo.value, WriteValidationError)
+    engine = Engine.open(db_path)
+    try:
+        with pytest.raises(WriteValidationError) as excinfo:
+            engine.search("")
+        assert isinstance(excinfo.value, EngineError)
+        assert isinstance(excinfo.value, WriteValidationError)
+    finally:
+        engine.close()

@@ -27,9 +27,12 @@ def test_engine_class_has_no_recovery_methods() -> None:
     assert FORBIDDEN.isdisjoint(_public(Engine))
 
 
-def test_engine_instance_has_no_recovery_methods() -> None:
-    engine = Engine.open("rewrite.sqlite")
-    assert FORBIDDEN.isdisjoint(_public(engine))
+def test_engine_instance_has_no_recovery_methods(db_path: str) -> None:
+    engine = Engine.open(db_path)
+    try:
+        assert FORBIDDEN.isdisjoint(_public(engine))
+    finally:
+        engine.close()
 
 
 def test_admin_namespace_has_no_recovery_symbols() -> None:

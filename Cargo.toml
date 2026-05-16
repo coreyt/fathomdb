@@ -5,6 +5,7 @@ members = [
     "src/rust/crates/fathomdb-embedder",
     "src/rust/crates/fathomdb-embedder-api",
     "src/rust/crates/fathomdb-engine",
+    "src/rust/crates/fathomdb-py",
     "src/rust/crates/fathomdb-query",
     "src/rust/crates/fathomdb-schema",
 ]

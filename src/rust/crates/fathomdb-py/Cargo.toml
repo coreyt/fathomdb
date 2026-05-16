@@ -1,0 +1,21 @@
+[package]
+name = "fathomdb-py"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+name = "fathomdb_py"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["test-hooks"]
+test-hooks = []
+
+[dependencies]
+fathomdb-engine = { path = "../fathomdb-engine" }
+pyo3 = { version = "0.22", features = ["extension-module", "abi3-py310"] }
+serde_json = "1"

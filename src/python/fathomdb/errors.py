@@ -1,131 +1,116 @@
 """Single-rooted exception hierarchy for the FathomDB Python SDK.
 
 Layout owned by `dev/design/errors.md` § Binding-facing class matrix and
-`dev/design/bindings.md` § 3. Per-leaf attributes are typed; callers
-dispatch on `except <Specific>` rather than on message text.
+`dev/design/bindings.md` § 3. Concrete leaf classes are created by the
+PyO3 binding (`fathomdb._fathomdb`); they inherit from `EngineError`
+which inherits from Python `Exception`. Typed payload attributes
+(`holder_pid`, `kind`, `stage`, `recovery_hint_code`, `doc_anchor`,
+`stored`, `supplied`, `stored_name`, `stored_revision`, `supplied_name`,
+`supplied_revision`) are set by the binding's
+`engine_error_to_py` / `engine_open_error_to_py` translators on raise.
+
+For Python-only construction with typed kwargs (used by binding tests),
+`_install_typed_init` layers a keyword-only `__init__` onto each
+PyO3-created class that stores the documented payload fields as
+instance attributes.
 """
 
 from __future__ import annotations
 
+from fathomdb._fathomdb import (
+    ClosingError as _ClosingError,
+)
+from fathomdb._fathomdb import (
+    CorruptionError as _CorruptionError,
+)
+from fathomdb._fathomdb import (
+    DatabaseLockedError as _DatabaseLockedError,
+)
+from fathomdb._fathomdb import (
+    EmbedderDimensionMismatchError as _EmbedderDimensionMismatchError,
+)
+from fathomdb._fathomdb import (
+    EmbedderError as _EmbedderError,
+)
+from fathomdb._fathomdb import (
+    EmbedderIdentityMismatchError as _EmbedderIdentityMismatchError,
+)
+from fathomdb._fathomdb import (
+    EngineError as _EngineError,
+)
+from fathomdb._fathomdb import (
+    IncompatibleSchemaVersionError as _IncompatibleSchemaVersionError,
+)
+from fathomdb._fathomdb import (
+    MigrationError as _MigrationError,
+)
+from fathomdb._fathomdb import (
+    OpStoreError as _OpStoreError,
+)
+from fathomdb._fathomdb import (
+    OverloadedError as _OverloadedError,
+)
+from fathomdb._fathomdb import (
+    ProjectionError as _ProjectionError,
+)
+from fathomdb._fathomdb import (
+    SchedulerError as _SchedulerError,
+)
+from fathomdb._fathomdb import (
+    SchemaValidationError as _SchemaValidationError,
+)
+from fathomdb._fathomdb import (
+    StorageError as _StorageError,
+)
+from fathomdb._fathomdb import (
+    VectorError as _VectorError,
+)
+from fathomdb._fathomdb import (
+    WriteValidationError as _WriteValidationError,
+)
 
-class EngineError(Exception):
-    """Catch-all base class for every engine-surfaced error.
-
-    Concrete leaf classes carry typed attributes named in
-    `dev/design/errors.md`; callers should narrow on those leaves rather than
-    on the message string.
-    """
-
-
-class StorageError(EngineError):
-    """Canonical SQLite read/write path failure."""
-
-
-class ProjectionError(EngineError):
-    """Projection-row commit or terminal-state accounting failure."""
-
-
-class VectorError(EngineError):
-    """`sqlite-vec` encode/load/query path failure."""
-
-
-class EmbedderError(EngineError):
-    """Embedder dispatch, timeout, or invalid-vector-return failure."""
-
-
-class SchedulerError(EngineError):
-    """Scheduler startup, shutdown, or queue orchestration failure."""
-
-
-class OpStoreError(EngineError):
-    """Op-store collection / kind / registry contract failure."""
-
-
-class WriteValidationError(EngineError):
-    """Submitted typed write is malformed before payload checks run."""
-
-
-class SchemaValidationError(EngineError):
-    """Op-store payload failed the registered `schema_id` JSON Schema."""
-
-
-class OverloadedError(EngineError):
-    """Backpressure exhaustion / engine overload."""
-
-
-class ClosingError(EngineError):
-    """Operation rejected because the engine is closing."""
-
-
-class DatabaseLockedError(EngineError):
-    """Database is locked by another `Engine` instance."""
-
-    def __init__(self, *, holder_pid: int | None = None) -> None:
-        super().__init__(f"database locked (holder_pid={holder_pid!r})")
-        self.holder_pid = holder_pid
-
-
-class CorruptionError(EngineError):
-    """Open-path corruption surfaced from `Engine.open`.
-
-    Carries the stable dispatch key `recovery_hint_code` plus the
-    documentation pointer `doc_anchor` per
-    `dev/design/errors.md` § Corruption detail owner.
-    """
-
-    def __init__(
-        self,
-        *,
-        kind: str,
-        stage: str,
-        recovery_hint_code: str,
-        doc_anchor: str,
-    ) -> None:
-        super().__init__(f"corruption {kind} at stage {stage} ({recovery_hint_code})")
-        self.kind = kind
-        self.stage = stage
-        self.recovery_hint_code = recovery_hint_code
-        self.doc_anchor = doc_anchor
+EngineError = _EngineError
+StorageError = _StorageError
+ProjectionError = _ProjectionError
+VectorError = _VectorError
+EmbedderError = _EmbedderError
+SchedulerError = _SchedulerError
+OpStoreError = _OpStoreError
+WriteValidationError = _WriteValidationError
+SchemaValidationError = _SchemaValidationError
+OverloadedError = _OverloadedError
+ClosingError = _ClosingError
+DatabaseLockedError = _DatabaseLockedError
+CorruptionError = _CorruptionError
+IncompatibleSchemaVersionError = _IncompatibleSchemaVersionError
+MigrationError = _MigrationError
+EmbedderIdentityMismatchError = _EmbedderIdentityMismatchError
+EmbedderDimensionMismatchError = _EmbedderDimensionMismatchError
 
 
-class IncompatibleSchemaVersionError(EngineError):
-    """Database schema version is incompatible with this engine build."""
+def _install_typed_init(cls: type, fields: tuple[str, ...]) -> None:
+    def __init__(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        payload = {name: kwargs.pop(name, None) for name in fields}
+        if kwargs:
+            unexpected = ", ".join(sorted(kwargs))
+            raise TypeError(f"unexpected keyword arguments: {unexpected}")
+        Exception.__init__(self, *args)
+        for name, value in payload.items():
+            object.__setattr__(self, name, value)
+
+    cls.__init__ = __init__  # type: ignore[method-assign]
 
 
-class MigrationError(EngineError):
-    """Schema migration failed during `Engine.open`."""
-
-
-class EmbedderIdentityMismatchError(EngineError):
-    """Stored vs supplied embedder identity disagree on open."""
-
-    def __init__(
-        self,
-        *,
-        stored_name: str,
-        stored_revision: str,
-        supplied_name: str,
-        supplied_revision: str,
-    ) -> None:
-        super().__init__(
-            f"embedder identity mismatch: stored {stored_name}@{stored_revision}, "
-            f"supplied {supplied_name}@{supplied_revision}"
-        )
-        self.stored_name = stored_name
-        self.stored_revision = stored_revision
-        self.supplied_name = supplied_name
-        self.supplied_revision = supplied_revision
-
-
-class EmbedderDimensionMismatchError(EngineError):
-    """Stored vs supplied embedder vector dimensions disagree."""
-
-    def __init__(self, *, stored: int, supplied: int) -> None:
-        super().__init__(
-            f"embedder vector dimension mismatch: stored {stored}, supplied {supplied}"
-        )
-        self.stored = stored
-        self.supplied = supplied
+_install_typed_init(DatabaseLockedError, ("holder_pid",))
+_install_typed_init(
+    CorruptionError,
+    ("kind", "stage", "recovery_hint_code", "doc_anchor"),
+)
+_install_typed_init(
+    EmbedderIdentityMismatchError,
+    ("stored_name", "stored_revision", "supplied_name", "supplied_revision"),
+)
+_install_typed_init(EmbedderDimensionMismatchError, ("stored", "supplied"))
 
 
 __all__ = [

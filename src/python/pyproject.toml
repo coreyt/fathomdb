@@ -1,11 +1,11 @@
 [build-system]
-requires = ["setuptools>=69"]
-build-backend = "setuptools.build_meta"
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
 
 [project]
 name = "fathomdb"
 version = "0.6.0"
-description = "Python scaffold for the FathomDB 0.6.0 rewrite"
+description = "FathomDB Python SDK — PyO3 binding to the fathomdb-engine Rust core"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
@@ -17,6 +17,12 @@ lint = ["ruff>=0.6"]
 typecheck = ["pyright>=1.1.380"]
 dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.6", "pyright>=1.1.380"]
 
+[tool.maturin]
+manifest-path = "../rust/crates/fathomdb-py/Cargo.toml"
+module-name = "fathomdb._fathomdb"
+python-source = "."
+features = ["pyo3/extension-module"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"
@@ -27,10 +33,3 @@ typeCheckingMode = "standard"
 pythonVersion = "3.10"
 venvPath = "../.."
 venv = ".venv"
-
-[tool.setuptools]
-package-dir = { "" = "." }
-
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["fathomdb*"]

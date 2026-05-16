@@ -1,19 +1,27 @@
-"""Pure-Python engine surface stub.
+"""Python wrapper around the native PyO3 engine handle.
 
-Pins the five-verb shape and engine-attached instrumentation methods owned by
-`dev/interfaces/python.md`. PyO3 wiring lands in a follow-up slice; the 0.6.0
-surface-stub keeps every body inert beyond a synthetic cursor counter that
-lets parser tests assert call sequencing.
+`Engine` mirrors the public five-verb surface owned by
+`dev/interfaces/python.md`. The native PyO3 class
+(`fathomdb._fathomdb.Engine`) holds the `Arc<fathomdb_engine::Engine>`
+and runs every blocking call under `py.allow_threads`; this Python
+wrapper converts native return values into the dataclasses in
+`fathomdb.types` and rejects unknown `open()` kwargs.
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
+from fathomdb._fathomdb import Engine as _NativeEngine
 from fathomdb.config import EngineConfig
-from fathomdb.types import CounterSnapshot, SearchResult, WriteReceipt
+from fathomdb.types import (
+    CounterSnapshot,
+    SearchResult,
+    SoftFallback,
+    SoftFallbackBranch,
+    WriteReceipt,
+)
 
 _KWARG_FIELDS = {
     "embedder_pool_size",
@@ -24,14 +32,21 @@ _KWARG_FIELDS = {
 }
 
 
-@dataclass
 class Engine:
-    """Pure-Python placeholder for the future PyO3-backed engine handle."""
+    """Python handle that wraps the native PyO3 engine."""
 
-    path: str
-    config: EngineConfig = field(default_factory=EngineConfig)
-    _cursor: int = 0
-    _closed: bool = False
+    __slots__ = ("_native", "_path", "_config")
+
+    def __init__(
+        self,
+        native: _NativeEngine,
+        *,
+        path: str,
+        config: EngineConfig,
+    ) -> None:
+        self._native = native
+        self._path = path
+        self._config = config
 
     @classmethod
     def open(
@@ -41,10 +56,10 @@ class Engine:
         config: EngineConfig | None = None,
         **engine_config: Any,
     ) -> "Engine":
-        """Open (or scaffold-open) a database at `path`.
+        """Open the database at `path`.
 
-        Either `config` or per-knob `**engine_config` keyword arguments may be
-        supplied, but not both. Unknown keyword arguments are rejected.
+        Either `config` or per-knob keyword arguments may be supplied,
+        but not both. Unknown keyword arguments are rejected.
         """
 
         if config is not None and engine_config:
@@ -59,45 +74,52 @@ class Engine:
             )
 
         resolved = config if config is not None else EngineConfig(**engine_config)
-        return cls(path=path, config=resolved)
+        native = _NativeEngine.open(path)
+        return cls(native, path=path, config=resolved)
+
+    @property
+    def path(self) -> str:
+        return self._path
+
+    @property
+    def config(self) -> EngineConfig:
+        return self._config
 
     def write(self, batch: list[Any] | None = None) -> WriteReceipt:
-        self._ensure_open()
-        self._cursor += max(len(batch or []), 1)
-        return WriteReceipt(cursor=self._cursor)
+        receipt = self._native.write(batch or [])
+        return WriteReceipt(cursor=receipt.cursor)
 
     def search(self, query: str) -> SearchResult:
-        self._ensure_open()
-        if not query.strip():
-            from fathomdb.errors import WriteValidationError
-
-            raise WriteValidationError("query must not be empty")
+        result = self._native.search(query)
+        fallback = result.soft_fallback
+        soft = (
+            SoftFallback(branch=cast(SoftFallbackBranch, fallback.branch))
+            if fallback is not None
+            else None
+        )
         return SearchResult(
-            projection_cursor=self._cursor,
-            soft_fallback=None,
-            results=[f"rewrite scaffold query: {query.strip()}"],
+            projection_cursor=result.projection_cursor,
+            soft_fallback=soft,
+            results=list(result.results),
         )
 
     def close(self) -> None:
-        self._closed = True
+        self._native.close()
 
     def drain(self, *, timeout_s: float | int = 0) -> None:
-        """Block until in-flight writes drain or `timeout_s` elapses.
+        """Block until in-flight writes drain or `timeout_s` elapses."""
 
-        Semantics owned by `dev/design/lifecycle.md`; the 0.6.0 stub returns
-        immediately without blocking.
-        """
-
-        del timeout_s
+        self._native.drain(timeout_s=float(timeout_s))
 
     def counters(self) -> CounterSnapshot:
+        self._native.counters()
         return CounterSnapshot()
 
     def set_profiling(self, *, enabled: bool) -> None:
-        del enabled
+        self._native.set_profiling(enabled)
 
     def set_slow_threshold_ms(self, *, value: int) -> None:
-        del value
+        self._native.set_slow_threshold_ms(value)
 
     def attach_logging_subscriber(
         self,
@@ -107,24 +129,15 @@ class Engine:
     ) -> None:
         """Bind engine events into the supplied `logging.Logger`.
 
-        The 0.6.0 stub does not emit any events; the helper exists so callers
-        can wire a logger up against the public surface in advance of
-        subscriber wiring.
+        Subscriber wiring lands in a later 0.6.x slice; the native call
+        accepts the parameters so callers can wire a logger against the
+        public surface.
         """
 
-        del logger, heartbeat_interval_ms
-
-    def _record_admin_configure(self, *, name: str, body: str) -> WriteReceipt:
-        del name, body
-        self._ensure_open()
-        self._cursor += 1
-        return WriteReceipt(cursor=self._cursor)
-
-    def _ensure_open(self) -> None:
-        if self._closed:
-            from fathomdb.errors import ClosingError
-
-            raise ClosingError("engine is closed")
+        self._native.attach_logging_subscriber(
+            logger,
+            heartbeat_interval_ms=heartbeat_interval_ms,
+        )
 
 
 __all__ = ["Engine"]

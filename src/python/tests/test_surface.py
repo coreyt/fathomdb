@@ -46,9 +46,9 @@ def test_engine_exposes_five_verbs_plus_instrumentation() -> None:
         assert hasattr(Engine, instr), f"Engine must expose {instr}"
 
 
-def test_engine_open_accepts_kwargs_and_engine_config() -> None:
-    by_kwargs = Engine.open(
-        "rewrite.sqlite",
+def test_engine_open_accepts_kwargs_and_engine_config(tmp_path) -> None:
+    a = Engine.open(
+        str(tmp_path / "a.sqlite"),
         embedder_pool_size=2,
         scheduler_runtime_threads=4,
         provenance_row_cap=1024,
@@ -62,33 +62,41 @@ def test_engine_open_accepts_kwargs_and_engine_config() -> None:
         embedder_call_timeout_ms=30_000,
         slow_threshold_ms=250,
     )
-    by_config = Engine.open("rewrite.sqlite", config=cfg)
+    b = Engine.open(str(tmp_path / "b.sqlite"), config=cfg)
 
-    assert by_kwargs.config == by_config.config
+    assert a.config == b.config
+    a.close()
+    b.close()
 
 
-def test_engine_open_rejects_kwargs_and_config_together() -> None:
+def test_engine_open_rejects_kwargs_and_config_together(db_path: str) -> None:
     cfg = EngineConfig()
     try:
-        Engine.open("rewrite.sqlite", config=cfg, embedder_pool_size=2)
+        Engine.open(db_path, config=cfg, embedder_pool_size=2)
     except ValueError:
         return
     raise AssertionError("Engine.open must reject config + kwargs in the same call")
 
 
-def test_write_receipt_carries_cursor() -> None:
-    engine = Engine.open("rewrite.sqlite")
-    receipt = engine.write([{"kind": "doc"}])
-    assert isinstance(receipt, WriteReceipt)
-    assert isinstance(receipt.cursor, int)
+def test_write_receipt_carries_cursor(db_path: str) -> None:
+    engine = Engine.open(db_path)
+    try:
+        receipt = engine.write([{"kind": "doc", "body": "{}"}])
+        assert isinstance(receipt, WriteReceipt)
+        assert isinstance(receipt.cursor, int)
+    finally:
+        engine.close()
 
 
-def test_search_result_carries_optional_soft_fallback() -> None:
-    engine = Engine.open("rewrite.sqlite")
-    result = engine.search("hello")
-    assert isinstance(result, SearchResult)
-    assert isinstance(result.projection_cursor, int)
-    assert result.soft_fallback is None
+def test_search_result_carries_optional_soft_fallback(db_path: str) -> None:
+    engine = Engine.open(db_path)
+    try:
+        result = engine.search("hello")
+        assert isinstance(result, SearchResult)
+        assert isinstance(result.projection_cursor, int)
+        assert result.soft_fallback is None
+    finally:
+        engine.close()
 
 
 def test_soft_fallback_branch_is_typed() -> None:
@@ -98,23 +106,28 @@ def test_soft_fallback_branch_is_typed() -> None:
     assert f.branch == "text"
 
 
-def test_admin_configure_returns_write_receipt_shape() -> None:
-    engine = Engine.open("rewrite.sqlite")
-    receipt = admin.configure(engine, name="default", body="{}")
-    assert isinstance(receipt, WriteReceipt)
-    assert isinstance(receipt.cursor, int)
+def test_admin_configure_returns_write_receipt_shape(db_path: str) -> None:
+    engine = Engine.open(db_path)
+    try:
+        receipt = admin.configure(engine, name="default", body="{}")
+        assert isinstance(receipt, WriteReceipt)
+        assert isinstance(receipt.cursor, int)
+    finally:
+        engine.close()
 
 
-def test_engine_attached_stub_methods_return_canonical_types() -> None:
-    engine = Engine.open("rewrite.sqlite")
+def test_engine_attached_stub_methods_return_canonical_types(db_path: str) -> None:
+    engine = Engine.open(db_path)
+    try:
+        engine.drain(timeout_s=0)
+        snapshot = engine.counters()
+        assert snapshot is not None
 
-    engine.drain(timeout_s=0)
-    snapshot = engine.counters()
-    assert snapshot is not None
+        engine.set_profiling(enabled=True)
+        engine.set_slow_threshold_ms(value=100)
 
-    engine.set_profiling(enabled=True)
-    engine.set_slow_threshold_ms(value=100)
+        import logging
 
-    import logging
-
-    engine.attach_logging_subscriber(logging.getLogger("fathomdb-test"))
+        engine.attach_logging_subscriber(logging.getLogger("fathomdb-test"))
+    finally:
+        engine.close()
