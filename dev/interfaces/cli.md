@@ -68,8 +68,6 @@ fathomdb recover --accept-data-loss
   [--rebuild-vec0]
   [--rebuild-projections]
   [--excise-source <id>]
-  [--purge-logical-id <id>]
-  [--restore-logical-id <id>]
 ```
 
 Exit class: `recover-*` = 0 / 64 / 70 / 71.

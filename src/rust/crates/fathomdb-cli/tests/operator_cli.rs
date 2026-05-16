@@ -43,8 +43,6 @@ const RECOVER_FLAGS: &[&str] = &[
     "--rebuild-vec0",
     "--rebuild-projections",
     "--excise-source",
-    "--purge-logical-id",
-    "--restore-logical-id",
     "--accept-data-loss",
 ];
 

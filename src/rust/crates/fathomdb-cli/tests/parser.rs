@@ -30,10 +30,6 @@ fn recover_accepts_all_six_subflags() {
         "--rebuild-projections",
         "--excise-source",
         "src-1",
-        "--purge-logical-id",
-        "lid-1",
-        "--restore-logical-id",
-        "lid-2",
         "/tmp/db.sqlite",
     ]);
 
@@ -43,8 +39,6 @@ fn recover_accepts_all_six_subflags() {
     assert!(args.rebuild_vec0);
     assert!(args.rebuild_projections);
     assert_eq!(args.excise_source.as_deref(), Some("src-1"));
-    assert_eq!(args.purge_logical_id.as_deref(), Some("lid-1"));
-    assert_eq!(args.restore_logical_id.as_deref(), Some("lid-2"));
 }
 
 #[test]

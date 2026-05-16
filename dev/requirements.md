@@ -294,8 +294,9 @@ the ADR is authoritative.
   root by mutation semantics:
   - `fathomdb recover --accept-data-loss <sub-flag>...` — sole umbrella
     for any non-bit-preserving path. Sub-flags include `--truncate-wal`,
-    `--rebuild-vec0`, `--rebuild-projections`, `--excise-source <id>`,
-    `--purge-logical-id <id>`, `--restore-logical-id <id>`. The
+    `--rebuild-vec0`, `--rebuild-projections`, `--excise-source <id>`.
+    (`--purge-logical-id` and `--restore-logical-id` deferred to 0.7.x
+    per ADR-0.6.0-cli-scope 2026-05-16 amendment.) The
     `--accept-data-loss` flag is mandatory; no default.
   - `fathomdb doctor <verb>` — read-only and bit-preserving only. Verbs:
     `check-integrity` (aggregator over R1 always-on + cheap-only tiers),

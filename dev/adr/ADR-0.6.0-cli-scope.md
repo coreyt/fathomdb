@@ -9,7 +9,7 @@ status: accepted
 
 # ADR-0.6.0 — CLI scope
 
-**Status:** accepted (HITL 2026-04-27).
+**Status:** accepted (HITL 2026-04-27); amended (HITL 2026-05-16) — `--purge-logical-id` and `--restore-logical-id` removed from 0.6.0 recover sub-flag set, deferred to 0.7.x (blocked on canonical identity substrate; see `design/recovery.md § Logical-id purge and restore — deferred to 0.7.x`).
 
 Phase 2 #22 interface ADR. Decides what verbs the `fathomdb` CLI ships in 0.6.0.
 
@@ -29,7 +29,7 @@ Verb set:
 
 - **Lossy / non-bit-preserving:** `fathomdb recover --accept-data-loss <sub-flag>...`
   where the 0.6.0 sub-flag set is
-  `{--truncate-wal, --rebuild-vec0, --rebuild-projections, --excise-source <id>, --purge-logical-id <id>, --restore-logical-id <id>}`.
+  `{--truncate-wal, --rebuild-vec0, --rebuild-projections, --excise-source <id>}`. (`--purge-logical-id` and `--restore-logical-id` deferred to 0.7.x per 2026-05-16 amendment above.)
 - **Bit-preserving / read-only:** `fathomdb doctor <verb>`
   where the 0.6.0 verb set is
   `{check-integrity, safe-export, verify-embedder, trace, dump-schema, dump-row-counts, dump-profile}`.

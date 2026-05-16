@@ -1,0 +1,55 @@
+{
+  "phase": "10b-B",
+  "status": "blocked",
+  "baseline_sha": "f1c89ce",
+  "branch": "phase-10b-B-purge-restore-20260516T131040Z",
+  "head_sha": "718fabeeb101d184ce4b8cadfa5da9aceb84db6e",
+  "seams_added": [],
+  "engine_error_variants_added": [],
+  "facade_reexports_added": [],
+  "schema_bump": "none — blocked before any schema work",
+  "tests_added": [],
+  "spec_sections_bound": [],
+  "acceptance_ids_bound": [],
+  "red_runs_captured": [],
+  "agent_verify_result": "not run (blocked before implementation)",
+  "blocker": {
+    "summary": "Canonical identity model from design/engine.md § Canonical identity and supersession (lines 107-194) is design-only — zero implementation in the engine or schema. Purge/restore cannot be built per spec without first landing that model. The handoff prompt anticipated at most a single restore_provenance column add; the actual gap is the entire row_id / logical_id / superseded_at substrate.",
+    "missing_substrate": [
+      "canonical_nodes / canonical_edges have no logical_id column (current schema is (write_cursor, kind, body, source_id) per src/rust/crates/fathomdb-schema/src/lib.rs:110-111 + step 8 ALTER at lines 196-204)",
+      "canonical_nodes / canonical_edges have no row_id column (write_cursor is the de facto physical key today)",
+      "canonical_nodes / canonical_edges have no superseded_at column",
+      "no partial unique index enforcing 'at most one active row per logical_id per kind' (engine.md:126-127)",
+      "PreparedWrite::Node and PreparedWrite::Edge carry no logical_id field (src/rust/crates/fathomdb-engine/src/lib.rs:596-612); writer accepts kind+body+source_id only",
+      "no restore_provenance column / no restore-aware writer path (engine.md:171-179 / recovery.md:148-151)",
+      "latest_state op-store collections are keyed by caller-supplied opaque record_key (src/rust/crates/fathomdb-engine/src/lib.rs:3415-3427); there is no record_key == logical_id contract today, so recovery.md:110-112 has no concrete cascade target",
+      "append_only_log op-store collections have no logical_id index / contract; recovery.md:142-145 requires 'ordered events for the logical_id' but the schema cannot answer that query"
+    ],
+    "consequences_for_this_slice": [
+      "Engine::purge_logical_id cannot delete canonical rows by logical_id — column does not exist; cascade scope (recovery.md:107-115) is unreachable without inventing semantics (record_key == logical_id, etc.) which the prompt explicitly forbids.",
+      "Engine::restore_logical_id cannot replay append_only_log into canonical state — writer has no logical_id input, canonical tables have no logical_id column, no supersession, no restore_provenance.",
+      "EngineError variants (NoRestorationSource / ConflictingActiveRow / IncompatibleSchema) could be added as enum entries, but with no emit sites they would be dead code — net-positive LoC for zero behavior, contrary to feedback_reliability_principles.md.",
+      "CLI wire-up is downstream of the engine seams and cannot proceed."
+    ],
+    "what_was_NOT_touched": [
+      "No schema migration written (step 9+ accretion deferred to HITL).",
+      "No PreparedWrite variant change.",
+      "No EngineError variant addition.",
+      "No facade re-export change.",
+      "No CLI dispatcher change.",
+      "No new test files.",
+      "Tree is clean at 718fabe — same as start of slice."
+    ],
+    "prompt_clauses_invoked": [
+      "Scope §2 step 3 implementation note: 'if a schema bump is required, surface as a blocker BEFORE writing the schema migration — confirm with the HITL through the orchestrator log first.'",
+      "Discipline: 'If the writer path needs a restore_provenance column and schema bump, surface BEFORE adding migration code. The HITL has not pre-approved a schema bump in this slice.'",
+      "Scope §1 latest_state cascade note: 'Confirm exact key shape by reading the writer; if latest_state is keyed differently for some kinds, surface as a blocker — do not invent semantics.'"
+    ],
+    "minimum_unblock": [
+      "HITL decision on a precursor slice (call it 10b-B-pre) that lands the canonical identity substrate: schema migration adding row_id (TEXT NOT NULL) and logical_id (TEXT NOT NULL) and superseded_at (INTEGER NULL) and restore_provenance (TEXT NULL) to canonical_nodes + canonical_edges, partial unique index on (logical_id, kind) WHERE superseded_at IS NULL, plus PreparedWrite::Node/Edge field additions, plus writer supersession step (engine.md:154-169).",
+      "Once that lands, this 10b-B slice is straightforward: cascade by logical_id, replay append_only_log through the standard writer with restore_provenance marked.",
+      "Alternative HITL decision: amend the spec so 'logical_id' is defined as the existing canonical row identity (e.g. (kind, write_cursor) tuple, or a normalised source_id-scoped key) — but that would invalidate engine.md § Canonical identity and supersession and recovery.md § Logical-id purge and restore wholesale."
+    ]
+  },
+  "next_step_for_orchestrator": "HITL: choose between (a) spawn precursor slice 10b-B-pre to land the canonical identity substrate, then re-spawn 10b-B; or (b) amend the engine.md / recovery.md specs to redefine 'logical_id' against existing schema. Until then, 10b-B is unreachable per the prompt's own anti-invention rules."
+}

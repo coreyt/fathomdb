@@ -95,14 +95,6 @@ pub struct RecoverArgs {
     #[arg(long)]
     pub excise_source: Option<String>,
 
-    /// Purge a logical id and all rows it owns.
-    #[arg(long)]
-    pub purge_logical_id: Option<String>,
-
-    /// Restore a previously purged logical id from operator-supplied source.
-    #[arg(long)]
-    pub restore_logical_id: Option<String>,
-
     /// Emit machine-readable JSON output.
     #[arg(long)]
     pub json: bool,
@@ -302,11 +294,6 @@ fn run_recover(args: RecoverArgs) -> i32 {
         return exit_code::UNRECOVERABLE;
     }
 
-    // Pick the bound sub-action. Only one is wired in Phase 10a per
-    // call; if multiple are passed, dispatch the first landed seam in
-    // declaration order. Unsupported recover sub-flags (`--truncate-wal`,
-    // `--purge-logical-id`, `--restore-logical-id`) fall through to a
-    // not-implemented refusal until their engine seams land.
     if args.rebuild_projections {
         return wire_recover(&args.db_path, "rebuild-projections", |e| {
             e.rebuild_projections().map(|r| rebuild_report_json("rebuild-projections", &r))
