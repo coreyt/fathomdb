@@ -388,7 +388,7 @@ After all commands pass, write
 ```json
 {
   "phase": "10b-B",
-  "baseline_sha": "e18747a",
+  "baseline_sha": "f1c89ce",
   "branch": "phase-10b-B-purge-restore-<ts>",
   "head_sha": "<HEAD after final commit>",
   "seams_added": ["Engine::purge_logical_id", "Engine::restore_logical_id"],
