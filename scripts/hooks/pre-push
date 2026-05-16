@@ -6,4 +6,9 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
+# Axis W / Axis E version consistency (dev/design/release.md § Version axes).
+# Runs before agent-verify so version drift surfaces with an actionable
+# message even if lint/typecheck would also catch downstream symptoms.
+scripts/set-version.sh --check-files
+
 exec scripts/agent-verify.sh

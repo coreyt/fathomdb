@@ -1,0 +1,300 @@
+#!/usr/bin/env bash
+# scripts/set-version.sh — two-axis version single source of truth.
+#
+# Axis W (workspace lockstep): Cargo.toml [workspace.package].version,
+# src/python/pyproject.toml [project].version, src/ts/package.json
+# top-level "version". Inherited by every workspace crate via
+# `version.workspace = true`.
+#
+# Axis E (embedder-api independent semver):
+# src/rust/crates/fathomdb-embedder-api/Cargo.toml [package].version.
+#
+# Owner: dev/design/release.md § Version axes.
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE' >&2
+Usage: scripts/set-version.sh <mode> [args]
+
+Modes:
+  --workspace <new-w-version>     Set Axis W (Cargo workspace + python + ts).
+  --embedder-api <new-e-version>  Set Axis E (fathomdb-embedder-api only).
+  --check-files                   Verify both axes are internally consistent.
+
+Examples:
+  scripts/set-version.sh --workspace 0.6.1
+  scripts/set-version.sh --embedder-api 0.7.0
+  scripts/set-version.sh --check-files
+USAGE
+}
+
+die_usage() {
+  if [ -n "${1:-}" ]; then
+    printf 'error: %s\n' "$1" >&2
+  fi
+  usage
+  exit 2
+}
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CARGO="$REPO_ROOT/Cargo.toml"
+PYPROJ="$REPO_ROOT/src/python/pyproject.toml"
+NPMPKG="$REPO_ROOT/src/ts/package.json"
+EMB_API_DIR="$REPO_ROOT/src/rust/crates/fathomdb-embedder-api"
+EMB_API="$EMB_API_DIR/Cargo.toml"
+CRATES_DIR="$REPO_ROOT/src/rust/crates"
+
+# Atomic write: edits "$1" with awk program "$2" via a tmpfile mv.
+awk_inplace() {
+  local target="$1"
+  local prog="$2"
+  local tmp
+  tmp="$(mktemp "${target}.XXXXXX")"
+  awk "$prog" "$target" >"$tmp"
+  mv "$tmp" "$target"
+}
+
+# Set [workspace.package].version in Cargo.toml.
+set_workspace_version() {
+  local new="$1"
+  awk_inplace "$CARGO" '
+    BEGIN { in_block = 0 }
+    /^\[workspace\.package\]/ { in_block = 1; print; next }
+    /^\[/ { in_block = 0; print; next }
+    {
+      if (in_block && $0 ~ /^version[[:space:]]*=/) {
+        print "version = \"'"$new"'\""
+      } else {
+        print
+      }
+    }
+  '
+}
+
+# Set [project].version in pyproject.toml.
+set_pyproject_version() {
+  local new="$1"
+  awk_inplace "$PYPROJ" '
+    BEGIN { in_block = 0 }
+    /^\[project\]/ { in_block = 1; print; next }
+    /^\[/ { in_block = 0; print; next }
+    {
+      if (in_block && $0 ~ /^version[[:space:]]*=/) {
+        print "version = \"'"$new"'\""
+      } else {
+        print
+      }
+    }
+  '
+}
+
+# Set the top-level "version" field in package.json.
+# Constraint: only rewrite the first occurrence so a nested "version" inside
+# devDependencies cannot be touched.
+set_npm_version() {
+  local new="$1"
+  local tmp
+  tmp="$(mktemp "${NPMPKG}.XXXXXX")"
+  awk -v new="$new" '
+    BEGIN { done = 0 }
+    {
+      if (!done && match($0, /"version"[[:space:]]*:[[:space:]]*"[^"]*"/)) {
+        sub(/"version"[[:space:]]*:[[:space:]]*"[^"]*"/, "\"version\": \"" new "\"")
+        done = 1
+      }
+      print
+    }
+  ' "$NPMPKG" >"$tmp"
+  mv "$tmp" "$NPMPKG"
+}
+
+# Set [package].version in fathomdb-embedder-api/Cargo.toml. Preserves any
+# leading comment lines inside the [package] block (so the Axis-E why-comment
+# survives re-runs).
+set_embedder_api_version() {
+  local new="$1"
+  awk_inplace "$EMB_API" '
+    BEGIN { in_block = 0 }
+    /^\[package\]/ { in_block = 1; print; next }
+    /^\[/ { in_block = 0; print; next }
+    {
+      if (in_block && $0 ~ /^version[[:space:]]*=/) {
+        print "version = \"'"$new"'\""
+      } else {
+        print
+      }
+    }
+  '
+}
+
+# --- readers ---------------------------------------------------------------
+
+read_workspace_version() {
+  awk '
+    /^\[workspace\.package\]/ { in_block = 1; next }
+    /^\[/                     { in_block = 0 }
+    in_block && /^version[[:space:]]*=/ {
+      n = split($0, parts, "\"")
+      if (n >= 3) { print parts[2] }
+      exit
+    }
+  ' "$CARGO"
+}
+
+read_pyproject_version() {
+  awk '
+    /^\[project\]/ { in_block = 1; next }
+    /^\[/          { in_block = 0 }
+    in_block && /^version[[:space:]]*=/ {
+      n = split($0, parts, "\"")
+      if (n >= 3) { print parts[2] }
+      exit
+    }
+  ' "$PYPROJ"
+}
+
+read_npm_version() {
+  sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$NPMPKG" | head -1
+}
+
+# Returns the literal text of the version line inside [package] of the
+# embedder-api crate (e.g. `version = "0.6.0"` or `version.workspace = true`).
+read_embedder_api_version_line() {
+  awk '
+    /^\[package\]/ { in_block = 1; next }
+    /^\[/          { in_block = 0 }
+    in_block && /^version[[:space:]]*[=.]/ {
+      print
+      exit
+    }
+  ' "$EMB_API"
+}
+
+# Parse out the value portion: returns "0.6.0" for `version = "0.6.0"`, or
+# the literal "workspace" sentinel for `version.workspace = true`.
+embedder_api_version_value() {
+  local line
+  line="$(read_embedder_api_version_line)"
+  case "$line" in
+    version.workspace*) printf 'workspace' ;;
+    version[[:space:]]*=*\"*) printf '%s' "$line" | sed -n 's/.*"\([^"]*\)".*/\1/p' ;;
+    *) printf 'unknown' ;;
+  esac
+}
+
+# --- check-files -----------------------------------------------------------
+
+check_files() {
+  local ws py npm emb
+  ws="$(read_workspace_version)"
+  py="$(read_pyproject_version)"
+  npm="$(read_npm_version)"
+  emb="$(embedder_api_version_value)"
+
+  local rc=0
+
+  if [ -z "$ws" ]; then
+    printf 'error: %s: no [workspace.package] version found\n' "$CARGO" >&2
+    rc=1
+  fi
+
+  if [ "$py" != "$ws" ]; then
+    printf 'drift: %s: Axis W version "%s" != Cargo.toml workspace "%s"\n' "$PYPROJ" "$py" "$ws" >&2
+    rc=1
+  fi
+
+  if [ "$npm" != "$ws" ]; then
+    printf 'drift: %s: Axis W version "%s" != Cargo.toml workspace "%s"\n' "$NPMPKG" "$npm" "$ws" >&2
+    rc=1
+  fi
+
+  case "$emb" in
+    workspace)
+      printf 'drift: %s: Axis E must declare explicit [package] version (found `version.workspace = true`)\n' "$EMB_API" >&2
+      rc=1
+      ;;
+    unknown|'')
+      printf 'drift: %s: Axis E [package] version not parseable\n' "$EMB_API" >&2
+      rc=1
+      ;;
+  esac
+
+  # Every workspace crate except fathomdb-embedder-api must inherit Axis W
+  # via `version.workspace = true`. Catch silent decoupling regressions.
+  local crate manifest line
+  for crate in "$CRATES_DIR"/*; do
+    [ -d "$crate" ] || continue
+    manifest="$crate/Cargo.toml"
+    [ -f "$manifest" ] || continue
+    if [ "$crate" = "$EMB_API_DIR" ]; then
+      continue
+    fi
+    line="$(awk '
+      /^\[package\]/ { in_block = 1; next }
+      /^\[/          { in_block = 0 }
+      in_block && /^version[[:space:]]*[=.]/ {
+        print
+        exit
+      }
+    ' "$manifest")"
+    case "$line" in
+      version.workspace[[:space:]]*=[[:space:]]*true) ;;
+      '')
+        printf 'drift: %s: missing [package] version declaration\n' "$manifest" >&2
+        rc=1
+        ;;
+      *)
+        printf 'drift: %s: Axis W crate must use `version.workspace = true`; found `%s`\n' "$manifest" "$line" >&2
+        rc=1
+        ;;
+    esac
+  done
+
+  if [ $rc -eq 0 ]; then
+    printf 'ok: Axis W = %s; Axis E = %s\n' "$ws" "$emb"
+  fi
+  return $rc
+}
+
+# --- dispatch --------------------------------------------------------------
+
+if [ $# -eq 0 ]; then
+  die_usage "no mode given"
+fi
+
+mode="$1"
+shift || true
+
+case "$mode" in
+  --workspace)
+    if [ $# -ne 1 ] || [ -z "${1:-}" ]; then
+      die_usage "--workspace requires <new-w-version>"
+    fi
+    new="$1"
+    set_workspace_version "$new"
+    set_pyproject_version "$new"
+    set_npm_version "$new"
+    check_files
+    ;;
+  --embedder-api)
+    if [ $# -ne 1 ] || [ -z "${1:-}" ]; then
+      die_usage "--embedder-api requires <new-e-version>"
+    fi
+    new="$1"
+    set_embedder_api_version "$new"
+    check_files
+    ;;
+  --check-files)
+    if [ $# -ne 0 ]; then
+      die_usage "--check-files takes no arguments"
+    fi
+    check_files
+    ;;
+  -h|--help)
+    usage
+    exit 0
+    ;;
+  *)
+    die_usage "unknown mode: $mode"
+    ;;
+esac

@@ -7,6 +7,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lib/agent-output.sh"
 cd_repo_root
 
+# Scripts (bash): set-version.sh two-axis enforcement.
+run_capped test-set-version bash scripts/tests/test_set_version.sh
+
 # Rust
 run_capped test-rust cargo test --workspace --quiet --no-fail-fast
 
