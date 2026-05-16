@@ -126,17 +126,41 @@ else
   fail "check-files should be clean after --embedder-api 8.8.8"
 fi
 
-# 4. Manual drift on one Axis W file → --check-files exits 1 + names file.
+# Helper: assert that $out (a check-files stderr capture) contains a
+# structured drift line for the given file naming observed/expected.
+assert_drift_line() {
+  local label="$1" out="$2" file_substr="$3" observed="$4" expected="$5"
+  local missing=0
+  printf '%s' "$out" | grep -qE "${file_substr}:[0-9]+:" || missing=1
+  printf '%s' "$out" | grep -qF "observed \"${observed}\""        || missing=$((missing + 2))
+  printf '%s' "$out" | grep -qF "expected \"${expected}\""        || missing=$((missing + 4))
+  if [ "$missing" -eq 0 ]; then
+    pass "$label"
+  else
+    fail "$label (missing bits=$missing); got: $out"
+  fi
+}
+
+# 4a. Axis W drift on pyproject → structured diagnostic.
 restore
-# Pyproject is the easiest to drift without disturbing Cargo TOML structure.
+WS_BEFORE="$(ws_version)"
 sed -i 's/^version = "[^"]*"/version = "7.7.7"/' "$PYPROJ"
 if out="$("$SV" --check-files 2>&1)"; then
   fail "check-files should fail on drifted pyproject"
 else
-  case "$out" in
-    *pyproject.toml*) pass "check-files names drifted file" ;;
-    *) fail "check-files error must name pyproject.toml; got: $out" ;;
-  esac
+  assert_drift_line "check-files: pyproject drift structured diagnostic" \
+    "$out" "pyproject.toml" "7.7.7" "$WS_BEFORE"
+fi
+
+# 4b. Axis W drift on package.json → structured diagnostic.
+restore
+WS_BEFORE="$(ws_version)"
+sed -i 's/"version"[[:space:]]*:[[:space:]]*"[^"]*"/"version": "7.7.7"/' "$NPMPKG"
+if out="$("$SV" --check-files 2>&1)"; then
+  fail "check-files should fail on drifted package.json"
+else
+  assert_drift_line "check-files: package.json drift structured diagnostic" \
+    "$out" "package.json" "7.7.7" "$WS_BEFORE"
 fi
 
 # 5. Idempotent: --workspace <current> twice in a row → no second-pass change.
@@ -184,10 +208,39 @@ sed -i 's/^version = "0.6.0"$/version.workspace = true/' "$EMBAPI"
 if out="$("$SV" --check-files 2>&1)"; then
   fail "check-files should fail when Axis E inherits workspace"
 else
-  case "$out" in
-    *fathomdb-embedder-api*) pass "check-files flags Axis E inheritance regression" ;;
-    *) fail "check-files must name fathomdb-embedder-api; got: $out" ;;
+  assert_drift_line "check-files: Axis E inheritance-regression structured diagnostic" \
+    "$out" "fathomdb-embedder-api/Cargo.toml" \
+    "version.workspace = true" "explicit [package] version"
+fi
+
+# 9. Drift on a non-embedder-api crate: replace `version.workspace = true`
+#    with an explicit literal version → must be flagged with structured
+#    diagnostic naming the crate manifest, observed=literal line,
+#    expected=version.workspace = true.
+restore
+VICTIM=""
+for c in "$REPO_ROOT"/src/rust/crates/*/Cargo.toml; do
+  case "$c" in
+    *fathomdb-embedder-api*) continue ;;
   esac
+  if grep -q '^version\.workspace[[:space:]]*=[[:space:]]*true' "$c"; then
+    VICTIM="$c"
+    break
+  fi
+done
+if [ -z "$VICTIM" ]; then
+  fail "test 9 setup: no non-embedder-api crate uses version.workspace=true"
+else
+  cp "$VICTIM" "$TMPDIR_ROOT/victim.snap"
+  sed -i 's/^version\.workspace[[:space:]]*=[[:space:]]*true/version = "9.9.9"/' "$VICTIM"
+  if out="$("$SV" --check-files 2>&1)"; then
+    cp "$TMPDIR_ROOT/victim.snap" "$VICTIM"
+    fail "check-files should fail when a non-embedder-api crate hardcodes version"
+  else
+    cp "$TMPDIR_ROOT/victim.snap" "$VICTIM"
+    assert_drift_line "check-files: non-emb-api crate hardcoded-version structured diagnostic" \
+      "$out" "Cargo.toml" 'version = "9.9.9"' "version.workspace = true"
+  fi
 fi
 
 restore

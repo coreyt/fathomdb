@@ -184,6 +184,31 @@ embedder_api_version_value() {
 
 # --- check-files -----------------------------------------------------------
 
+# Line number of the first `version =` / `version.workspace` declaration
+# inside the given TOML [table] of the given file. Empty if not present.
+_toml_version_line() {
+  local file="$1" table="$2"
+  awk -v table="$table" '
+    $0 == table { in_block = 1; next }
+    /^\[/ && in_block { exit }
+    in_block && /^version[[:space:]]*[=.]/ { print NR; exit }
+  ' "$file"
+}
+
+# Line number of the first "version" key in a JSON file.
+_json_version_line() {
+  grep -n '"version"' "$1" | head -1 | cut -d: -f1
+}
+
+# Emit a structured drift diagnostic: `<file>:<line>: version drift —
+# observed "X", expected "Y"`. Centralized so every drift site has the
+# same shape (parseable by tooling, asserted in test_set_version.sh).
+_drift() {
+  local file="$1" line="$2" observed="$3" expected="$4"
+  printf '%s:%s: version drift — observed "%s", expected "%s"\n' \
+    "$file" "${line:-?}" "$observed" "$expected" >&2
+}
+
 check_files() {
   local ws py npm emb
   ws="$(read_workspace_version)"
@@ -199,29 +224,31 @@ check_files() {
   fi
 
   if [ "$py" != "$ws" ]; then
-    printf 'drift: %s: Axis W version "%s" != Cargo.toml workspace "%s"\n' "$PYPROJ" "$py" "$ws" >&2
+    _drift "$PYPROJ" "$(_toml_version_line "$PYPROJ" '[project]')" "$py" "$ws"
     rc=1
   fi
 
   if [ "$npm" != "$ws" ]; then
-    printf 'drift: %s: Axis W version "%s" != Cargo.toml workspace "%s"\n' "$NPMPKG" "$npm" "$ws" >&2
+    _drift "$NPMPKG" "$(_json_version_line "$NPMPKG")" "$npm" "$ws"
     rc=1
   fi
 
   case "$emb" in
     workspace)
-      printf 'drift: %s: Axis E must declare explicit [package] version (found `version.workspace = true`)\n' "$EMB_API" >&2
+      _drift "$EMB_API" "$(_toml_version_line "$EMB_API" '[package]')" \
+        "version.workspace = true" "explicit [package] version"
       rc=1
       ;;
     unknown|'')
-      printf 'drift: %s: Axis E [package] version not parseable\n' "$EMB_API" >&2
+      _drift "$EMB_API" "$(_toml_version_line "$EMB_API" '[package]')" \
+        "unparseable" "explicit [package] version"
       rc=1
       ;;
   esac
 
   # Every workspace crate except fathomdb-embedder-api must inherit Axis W
   # via `version.workspace = true`. Catch silent decoupling regressions.
-  local crate manifest line
+  local crate manifest line line_no pkg_line
   for crate in "$CRATES_DIR"/*; do
     [ -d "$crate" ] || continue
     manifest="$crate/Cargo.toml"
@@ -240,11 +267,13 @@ check_files() {
     case "$line" in
       version.workspace[[:space:]]*=[[:space:]]*true) ;;
       '')
-        printf 'drift: %s: missing [package] version declaration\n' "$manifest" >&2
+        pkg_line="$(grep -n '^\[package\]' "$manifest" | head -1 | cut -d: -f1)"
+        _drift "$manifest" "${pkg_line:-1}" "<missing>" "version.workspace = true"
         rc=1
         ;;
       *)
-        printf 'drift: %s: Axis W crate must use `version.workspace = true`; found `%s`\n' "$manifest" "$line" >&2
+        line_no="$(_toml_version_line "$manifest" '[package]')"
+        _drift "$manifest" "${line_no:-1}" "$line" "version.workspace = true"
         rc=1
         ;;
     esac
