@@ -95,24 +95,24 @@ The matrix below is the canonical cross-binding class-stem table for 0.6.0.
 Per-language interface docs may apply idiomatic casing, but they must not
 rename the semantic class stems or collapse distinct rows.
 
-| Rust-side surface                | Python class stem                | TypeScript class stem            | CLI dispatch class    |
-| -------------------------------- | -------------------------------- | -------------------------------- | --------------------- |
-| `StorageError`                   | `StorageError`                   | `StorageError`                   | runtime failure       |
-| `ProjectionError`                | `ProjectionError`                | `ProjectionError`                | runtime failure       |
-| `VectorError`                    | `VectorError`                    | `VectorError`                    | runtime failure       |
-| `EmbedderError`                  | `EmbedderError`                  | `EmbedderError`                  | runtime failure       |
-| `SchedulerError`                 | `SchedulerError`                 | `SchedulerError`                 | runtime failure       |
-| `OpStoreError`                   | `OpStoreError`                   | `OpStoreError`                   | runtime failure       |
-| `WriteValidationError`           | `WriteValidationError`           | `WriteValidationError`           | runtime failure       |
-| `SchemaValidationError`          | `SchemaValidationError`          | `SchemaValidationError`          | runtime failure       |
-| `Overloaded`                     | `OverloadedError`                | `OverloadedError`                | runtime failure       |
-| `Closing`                        | `ClosingError`                   | `ClosingError`                   | runtime failure       |
-| `DatabaseLocked`                 | `DatabaseLockedError`            | `DatabaseLockedError`            | lock-held             |
-| `Corruption(CorruptionDetail)`   | `CorruptionError`                | `CorruptionError`                | corruption            |
-| `IncompatibleSchemaVersion`      | `IncompatibleSchemaVersionError` | `IncompatibleSchemaVersionError` | incompatible-schema   |
-| `MigrationError`                 | `MigrationError`                 | `MigrationError`                 | migration-failed      |
-| `EmbedderIdentityMismatchError`  | `EmbedderIdentityMismatchError`  | `EmbedderIdentityMismatchError`  | open mismatch         |
-| `EmbedderDimensionMismatchError` | `EmbedderDimensionMismatchError` | `EmbedderDimensionMismatchError` | open/runtime mismatch |
+| Rust-side surface                    | Python class stem                | TypeScript class stem            | CLI dispatch class    |
+| ------------------------------------ | -------------------------------- | -------------------------------- | --------------------- |
+| `StorageError`                       | `StorageError`                   | `StorageError`                   | runtime failure       |
+| `ProjectionError`                    | `ProjectionError`                | `ProjectionError`                | runtime failure       |
+| `VectorError`                        | `VectorError`                    | `VectorError`                    | runtime failure       |
+| `EmbedderError`                      | `EmbedderError`                  | `EmbedderError`                  | runtime failure       |
+| `SchedulerError`                     | `SchedulerError`                 | `SchedulerError`                 | runtime failure       |
+| `OpStoreError`                       | `OpStoreError`                   | `OpStoreError`                   | runtime failure       |
+| `WriteValidationError`               | `WriteValidationError`           | `WriteValidationError`           | runtime failure       |
+| `SchemaValidationError`              | `SchemaValidationError`          | `SchemaValidationError`          | runtime failure       |
+| `Overloaded`                         | `OverloadedError`                | `OverloadedError`                | runtime failure       |
+| `Closing`                            | `ClosingError`                   | `ClosingError`                   | runtime failure       |
+| `DatabaseLocked`                     | `DatabaseLockedError`            | `DatabaseLockedError`            | lock-held             |
+| `Corruption(CorruptionDetail)`       | `CorruptionError`                | `CorruptionError`                | corruption            |
+| `IncompatibleSchemaVersion`          | `IncompatibleSchemaVersionError` | `IncompatibleSchemaVersionError` | incompatible-schema   |
+| `MigrationError`                     | `MigrationError`                 | `MigrationError`                 | migration-failed      |
+| `EmbedderIdentityMismatchError`      | `EmbedderIdentityMismatchError`  | `EmbedderIdentityMismatchError`  | open mismatch         |
+| `EmbedderDimensionMismatchError`     | `EmbedderDimensionMismatchError` | `EmbedderDimensionMismatchError` | open/runtime mismatch |
 | `EngineError::EmbedderNotConfigured` | `EmbedderNotConfiguredError`     | `EmbedderNotConfiguredError`     | runtime failure       |
 | `EngineError::KindNotVectorIndexed`  | `KindNotVectorIndexedError`      | `KindNotVectorIndexedError`      | runtime failure       |
 
