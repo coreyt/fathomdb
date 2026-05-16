@@ -410,6 +410,11 @@ fn t_040a_verify_embedder_cli_emits_match_status_on_matching_input() {
         Some("fathomdb-noop:0.6.0-scaffold"),
     );
     assert_eq!(parsed.get("stored_dimension").and_then(Value::as_u64), Some(384));
+    assert_eq!(
+        parsed.get("supplied_identity").and_then(Value::as_str),
+        Some("fathomdb-noop:0.6.0-scaffold"),
+    );
+    assert_eq!(parsed.get("supplied_dimension").and_then(Value::as_u64), Some(384));
     assert_eq!(parsed.get("status").and_then(Value::as_str), Some("match"));
     drop(dir);
 }
