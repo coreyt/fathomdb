@@ -1,0 +1,8 @@
+# AC-051b: post-publication constraint shape this fixture stands in for.
+# Today fathomdb-embedder-api is not on PyPI; the wheels-build below uses
+# `mock-skew-api` as the shared dependency so the resolver mechanism is
+# exercised offline. Once REQ-048 publishing lands, swap to the real
+# names without changing the assertion.
+fathomdb==0.6.0
+fathomdb-embedder==0.6.0
+fathomdb-embedder-api==99.99.99

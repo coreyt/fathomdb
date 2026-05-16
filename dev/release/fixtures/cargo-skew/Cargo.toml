@@ -1,0 +1,19 @@
+# AC-051a fixture: exercises cargo's resolver-time skew detection on
+# `fathomdb-embedder-api`. The vendored copy in `vendor-api/` is pinned
+# to version "0.6.0"; this probe requests `= "=99.99.99"`, which cannot
+# be satisfied. `cargo update` must fail with a resolver error naming
+# the crate. See dev/release/tests/cargo_skew.sh.
+
+[workspace]
+
+[package]
+name = "cargo-skew-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+fathomdb-embedder-api = { path = "vendor-api", version = "=99.99.99" }

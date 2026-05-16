@@ -1,0 +1,12 @@
+# AC-051a vendored stub: stands in for the published
+# fathomdb-embedder-api at version "0.6.0" so the probe's "=99.99.99"
+# constraint has a name to clash with offline.
+
+[package]
+name = "fathomdb-embedder-api"
+version = "0.6.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"

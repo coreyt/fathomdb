@@ -10,6 +10,10 @@ cd_repo_root
 # Scripts (bash): set-version.sh two-axis enforcement.
 run_capped test-set-version bash scripts/tests/test_set_version.sh
 
+# AC-051a / AC-051b: cross-ecosystem version-skew resolver fixtures.
+run_capped test-cargo-skew bash dev/release/tests/cargo_skew.sh
+run_capped test-pip-skew bash dev/release/tests/pip_skew.sh
+
 # Rust
 run_capped test-rust cargo test --workspace --quiet --no-fail-fast
 
