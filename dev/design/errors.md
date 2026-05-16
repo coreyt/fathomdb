@@ -1,6 +1,6 @@
 ---
 title: Errors Subsystem Design
-date: 2026-04-30
+date: 2026-05-16
 target_release: 0.6.0
 desc: Canonical error-type ownership, binding mapping inputs, and corruption detail host file
 blast_radius: fathomdb-engine errors; bindings; acceptance AC-035* and AC-060*
@@ -113,6 +113,14 @@ rename the semantic class stems or collapse distinct rows.
 | `MigrationError`                 | `MigrationError`                 | `MigrationError`                 | migration-failed      |
 | `EmbedderIdentityMismatchError`  | `EmbedderIdentityMismatchError`  | `EmbedderIdentityMismatchError`  | open mismatch         |
 | `EmbedderDimensionMismatchError` | `EmbedderDimensionMismatchError` | `EmbedderDimensionMismatchError` | open/runtime mismatch |
+| `EngineError::EmbedderNotConfigured` | `EmbedderNotConfiguredError`     | `EmbedderNotConfiguredError`     | runtime failure       |
+| `EngineError::KindNotVectorIndexed`  | `KindNotVectorIndexedError`      | `KindNotVectorIndexedError`      | runtime failure       |
+
+2026-05-16 amendment: `EmbedderNotConfigured` and `KindNotVectorIndexed` leaf
+classes added per Phase 11a codex reviewer finding #3. Python and TS bindings
+expose them as distinct leaves; both descend from the single rooted base
+(`EmbedderNotConfiguredError` ← `EmbedderError` ← `EngineError`;
+`KindNotVectorIndexedError` ← `VectorError` ← `EngineError`).
 
 Decision note:
 

@@ -1,5 +1,7 @@
 """Public surface assertions for the Python SDK.
 
+Binds AC-057a (REQ-053): five-verb runtime SDK surface.
+
 Pins the five-verb top-level surface, the engine-attached instrumentation
 methods, the keyword vs EngineConfig forms of `Engine.open`, and the
 soft-fallback record shape per `dev/interfaces/python.md` and

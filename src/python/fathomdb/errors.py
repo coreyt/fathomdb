@@ -33,6 +33,9 @@ from fathomdb._fathomdb import (
     EmbedderError as _EmbedderError,
 )
 from fathomdb._fathomdb import (
+    EmbedderNotConfiguredError as _EmbedderNotConfiguredError,
+)
+from fathomdb._fathomdb import (
     EmbedderIdentityMismatchError as _EmbedderIdentityMismatchError,
 )
 from fathomdb._fathomdb import (
@@ -63,6 +66,9 @@ from fathomdb._fathomdb import (
     StorageError as _StorageError,
 )
 from fathomdb._fathomdb import (
+    KindNotVectorIndexedError as _KindNotVectorIndexedError,
+)
+from fathomdb._fathomdb import (
     VectorError as _VectorError,
 )
 from fathomdb._fathomdb import (
@@ -74,6 +80,8 @@ StorageError = _StorageError
 ProjectionError = _ProjectionError
 VectorError = _VectorError
 EmbedderError = _EmbedderError
+EmbedderNotConfiguredError = _EmbedderNotConfiguredError
+KindNotVectorIndexedError = _KindNotVectorIndexedError
 SchedulerError = _SchedulerError
 OpStoreError = _OpStoreError
 WriteValidationError = _WriteValidationError
@@ -120,8 +128,10 @@ __all__ = [
     "EmbedderDimensionMismatchError",
     "EmbedderError",
     "EmbedderIdentityMismatchError",
+    "EmbedderNotConfiguredError",
     "EngineError",
     "IncompatibleSchemaVersionError",
+    "KindNotVectorIndexedError",
     "MigrationError",
     "OpStoreError",
     "OverloadedError",

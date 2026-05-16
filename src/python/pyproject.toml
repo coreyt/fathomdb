@@ -21,7 +21,7 @@ dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.6", "pyright>=1.1.380"]
 manifest-path = "../rust/crates/fathomdb-py/Cargo.toml"
 module-name = "fathomdb._fathomdb"
 python-source = "."
-features = ["pyo3/extension-module"]
+features = ["pyo3/extension-module", "test-hooks"]
 
 [tool.ruff]
 line-length = 100

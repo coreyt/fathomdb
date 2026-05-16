@@ -17,13 +17,29 @@ from fathomdb.errors import EngineError, WriteValidationError
 
 
 def test_panic_surfaces_as_python_exception(db_path: str) -> None:
-    """AC-067 — engine panics must not abort the host process."""
+    """AC-067 — engine panics must not abort the host process.
+
+    The binding must raise PyO3's `PanicException` (not `EngineError`):
+    panic is a contract bug, not a typed engine outcome, so callers that
+    catch `EngineError` must not silently swallow it.
+    """
 
     pid_before = os.getpid()
-    with pytest.raises(BaseException):
+    with pytest.raises(BaseException) as excinfo:
         force_panic_for_test()
     pid_after = os.getpid()
     assert pid_before == pid_after, "host process must not be aborted by engine panic"
+
+    exc_type = type(excinfo.value)
+    assert exc_type.__name__ == "PanicException", (
+        f"expected pyo3 PanicException, got {exc_type.__module__}.{exc_type.__name__}"
+    )
+    assert exc_type.__module__ == "pyo3_runtime", (
+        f"PanicException must come from pyo3_runtime, got {exc_type.__module__}"
+    )
+    assert not isinstance(excinfo.value, EngineError), (
+        "PanicException must NOT subclass EngineError"
+    )
 
     # Subsequent engine work must still succeed.
     engine = Engine.open(db_path)

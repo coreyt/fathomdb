@@ -20,12 +20,14 @@
 //! 3. Every string crossing the FFI is checked by [`validate_ffi_string`]
 //!    for embedded NUL or unpaired UTF-16 surrogates BEFORE the writer
 //!    transaction opens (AC-068a / AC-068b).
-//! 4. Panics inside engine code surface as Python `EngineError`
-//!    instances; the host process is not aborted (AC-067). PyO3 0.22
-//!    converts unwinding panics escaping a `#[pymethod]` to a
-//!    `PanicException`; we additionally wrap engine calls in
-//!    `catch_unwind` and translate to `EngineError` so callers see the
-//!    typed leaf class.
+//! 4. Panics inside engine code surface as Python `PanicException`
+//!    instances (PyO3 `pyo3::panic::PanicException`); the host process
+//!    is not aborted (AC-067). Engine calls are wrapped in
+//!    `catch_unwind` so the panic is translated on the Rust side rather
+//!    than relying on PyO3's implicit conversion at the FFI boundary.
+//!    PanicException is intentionally NOT an `EngineError` subclass:
+//!    panic is a contract bug, not a typed engine outcome, and callers
+//!    that catch `EngineError` must not silently swallow it.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
@@ -37,6 +39,7 @@ use fathomdb_engine::{
 };
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyTypeError, PyValueError};
+use pyo3::panic::PanicException;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
@@ -50,7 +53,9 @@ create_exception!(_fathomdb, EngineError, PyException);
 create_exception!(_fathomdb, StorageError, EngineError);
 create_exception!(_fathomdb, ProjectionError, EngineError);
 create_exception!(_fathomdb, VectorError, EngineError);
+create_exception!(_fathomdb, KindNotVectorIndexedError, VectorError);
 create_exception!(_fathomdb, EmbedderError, EngineError);
+create_exception!(_fathomdb, EmbedderNotConfiguredError, EmbedderError);
 create_exception!(_fathomdb, SchedulerError, EngineError);
 create_exception!(_fathomdb, OpStoreError, EngineError);
 create_exception!(_fathomdb, WriteValidationError, EngineError);
@@ -119,10 +124,10 @@ fn engine_error_to_py(err: RustEngineError) -> PyErr {
         RustEngineError::Vector => VectorError::new_err("vector error"),
         RustEngineError::Embedder => EmbedderError::new_err("embedder error"),
         RustEngineError::EmbedderNotConfigured => {
-            EmbedderError::new_err("embedder is not configured")
+            EmbedderNotConfiguredError::new_err("embedder is not configured")
         }
         RustEngineError::KindNotVectorIndexed => {
-            VectorError::new_err("kind is not configured for vector indexing")
+            KindNotVectorIndexedError::new_err("kind is not configured for vector indexing")
         }
         RustEngineError::EmbedderDimensionMismatch { expected, actual } => {
             let exc = EmbedderDimensionMismatchError::new_err(format!(
@@ -254,7 +259,7 @@ fn call_engine<R: Send>(
     match result {
         Ok(Ok(value)) => Ok(value),
         Ok(Err(err)) => Err(engine_error_to_py(err)),
-        Err(_) => Err(EngineError::new_err("engine panic (see logs)")),
+        Err(_) => Err(PanicException::new_err("engine panic (see logs)")),
     }
 }
 
@@ -333,7 +338,7 @@ impl PyEngine {
         validate_ffi_string_py(&path)?;
         let opened = py
             .allow_threads(|| catch_unwind(AssertUnwindSafe(|| RustEngine::open(path))))
-            .map_err(|_| EngineError::new_err("engine panic during open"))?
+            .map_err(|_| PanicException::new_err("engine panic during open"))?
             .map_err(engine_open_error_to_py)?;
         Ok(Self { inner: Arc::new(opened.engine) })
     }
@@ -555,7 +560,9 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add("StorageError", py.get_type_bound::<StorageError>())?;
     m.add("ProjectionError", py.get_type_bound::<ProjectionError>())?;
     m.add("VectorError", py.get_type_bound::<VectorError>())?;
+    m.add("KindNotVectorIndexedError", py.get_type_bound::<KindNotVectorIndexedError>())?;
     m.add("EmbedderError", py.get_type_bound::<EmbedderError>())?;
+    m.add("EmbedderNotConfiguredError", py.get_type_bound::<EmbedderNotConfiguredError>())?;
     m.add("SchedulerError", py.get_type_bound::<SchedulerError>())?;
     m.add("OpStoreError", py.get_type_bound::<OpStoreError>())?;
     m.add("WriteValidationError", py.get_type_bound::<WriteValidationError>())?;
