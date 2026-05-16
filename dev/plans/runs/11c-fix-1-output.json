@@ -1,0 +1,20 @@
+{
+  "phase": "11c-fix-1",
+  "baseline_sha": "d408361",
+  "branch": "phase-11c-set-version-20260516T221655Z",
+  "head_sha": "de6962e",
+  "findings_addressed": [
+    "1 [high]: cargo-skew fixture rewritten as mock-skew-api + mock-skew-consumer-a/b shape; cargo_skew.sh asserts resolver names mock-skew-api conflict",
+    "2 [medium]: set-version.sh --check-files emits `<file>:<line>: version drift — observed \"X\", expected \"Y\"` at every drift site; test suite asserts the structured shape",
+    "3 [low]: output.json regenerated with correct head_sha + post-fix commit list"
+  ],
+  "cargo_skew_fixture_approach": "path-deps (single shared mock-skew-api path crate; sibling consumer-a pins =1.0.0, consumer-b pins =2.0.0, probe pulls both → resolver names mock-skew-api conflict). The prompt's alternative two-api-dir shape with ^1/^2 ranges was tested and does NOT fail — cargo treats two same-name path packages at different majors as distinct sources rather than a resolver conflict. The single-api + sibling-conflicting-pins variant is the minimal shape that reliably produces the named resolver error without a registry.",
+  "tests_tightened": [
+    "check-files: pyproject drift structured diagnostic",
+    "check-files: package.json drift structured diagnostic (NEW)",
+    "check-files: Axis E inheritance-regression structured diagnostic",
+    "check-files: non-emb-api crate hardcoded-version structured diagnostic (NEW)"
+  ],
+  "agent_verify_result": "pass",
+  "next_step_for_orchestrator": "promote to 0.6.0-rewrite; respawn codex reviewer for clean PASS"
+}
