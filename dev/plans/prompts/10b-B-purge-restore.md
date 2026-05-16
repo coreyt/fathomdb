@@ -159,8 +159,8 @@ Cascade scope (per `dev/design/recovery.md:103-121`):
 
 Transaction discipline:
 
-- Drain projection runtime first (`projection_runtime.set_frozen(true)`
-  - `drain(REBUILD_DRAIN_TIMEOUT_MS)`) — mirrors excise.
+- Drain projection runtime first: `projection_runtime.set_frozen(true)`
+  then `drain(REBUILD_DRAIN_TIMEOUT_MS)` — mirrors excise.
 - All cascade steps execute in one SQLite transaction; rollback on
   any failure.
 - Restore frozen state on exit (success OR failure).
