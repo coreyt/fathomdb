@@ -1,0 +1,11 @@
+[package]
+name = "mock-skew-consumer-a"
+version = "1.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+mock-skew-api = { path = "../mock-skew-api", version = "=1.0.0" }

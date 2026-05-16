@@ -1,8 +1,12 @@
-# AC-051a fixture: exercises cargo's resolver-time skew detection on
-# `fathomdb-embedder-api`. The vendored copy in `vendor-api/` is pinned
-# to version "0.6.0"; this probe requests `= "=99.99.99"`, which cannot
-# be satisfied. `cargo update` must fail with a resolver error naming
-# the crate. See dev/release/tests/cargo_skew.sh.
+# AC-051a synthetic fixture: exercises cargo's resolver-time skew detection
+# on a SIBLING-TRANSITIVE shape, matching the real release shape
+# (`fathomdb` + `fathomdb-embedder` skewing on `fathomdb-embedder-api`).
+# `mock-skew-consumer-a` (analogue of `fathomdb`) pins `mock-skew-api =
+# "=1.0.0"`; `mock-skew-consumer-b` (analogue of `fathomdb-embedder`) pins
+# `mock-skew-api = "=2.0.0"`. The probe pulls both, so cargo must resolve
+# `mock-skew-api` to a single version satisfying both pins — impossible.
+# Real-name swap (`fathomdb-embedder-api` etc.) deferred until REQ-048
+# publishing lands.
 
 [workspace]
 
@@ -16,4 +20,5 @@ publish = false
 path = "src/lib.rs"
 
 [dependencies]
-fathomdb-embedder-api = { path = "vendor-api", version = "=99.99.99" }
+mock-skew-consumer-a = { path = "./mock-skew-consumer-a" }
+mock-skew-consumer-b = { path = "./mock-skew-consumer-b" }
