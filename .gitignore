@@ -28,6 +28,10 @@ dist/
 prebuilds/
 **/prebuilds/
 
+src/ts/*.node
+src/ts/index.d.ts
+src/ts/index.js
+
 # bream cache directory
 .bream-cache/
 
