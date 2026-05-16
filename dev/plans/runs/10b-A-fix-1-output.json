@@ -1,0 +1,9 @@
+{
+  "phase": "10b-A-fix-1",
+  "baseline_sha": "273a5fb",
+  "branch": "phase-10b-A-fix-1-20260516T004813Z",
+  "head_sha": "cae46e165f1436c020770499c5c65d2653a7be9c",
+  "tests_modified": ["fathomdb-cli::operator_cli::t_040a_verify_embedder_cli_emits_match_status_on_matching_input"],
+  "agent_verify_result": "pass",
+  "next_step_for_orchestrator": "merge worktree branches into 0.6.0-rewrite"
+}
