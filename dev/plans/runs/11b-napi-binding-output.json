@@ -1,0 +1,35 @@
+{
+  "phase": "11b",
+  "baseline_sha": "61f7386c353764a267a75a4f498d8ebf25d33266",
+  "branch": "phase-11b-napi-binding-20260516T210327Z",
+  "head_sha": "a886afe92b6c11989c90a3e1fe4f4d46be23c5d6",
+  "new_crate": "fathomdb-napi",
+  "ffi_contract_parity_with_11a": [
+    "async #[napi] off main thread (tokio::task::spawn_blocking analogue of py.allow_threads)",
+    "explicit catch_unwind in every async entry point; panics rethrown as FathomDbPanicError (code FDB_PANIC) intentionally NOT a FathomDbError subclass",
+    "validate_ffi_string rejects NUL + unpaired surrogate -> WriteValidationError; TS-side guard catches surrogates that napi-rs would silently replace with U+FFFD",
+    "engine_error_to_napi: single-switch typed mapping, no catch-all arm; TS rethrowTyped exhaustiveness check (TypeScript `never` narrowing) mirrors the Rust enum",
+    "EmbedderNotConfiguredError + KindNotVectorIndexedError leaf classes mirror 11a (under EmbedderError / VectorError under FathomDbError)"
+  ],
+  "tests_added": [
+    "src/ts/tests/ffi-safety.test.ts",
+    "src/ts/tests/typed-errors.test.ts",
+    "src/ts/tests/save-time-validation.test.ts",
+    "src/ts/tests/helpers.ts (freshDbPath fixture)",
+    "src/rust/crates/fathomdb-napi/src/lib.rs #[cfg(test)] validate_ffi_string unit tests"
+  ],
+  "acceptance_ids_bound": [
+    "AC-057a",
+    "AC-060a",
+    "AC-060b",
+    "AC-067",
+    "AC-068a",
+    "AC-068b"
+  ],
+  "test_results": {
+    "cargo_test_fathomdb_napi": "4 passed; 0 failed",
+    "ts_npm_test": "31 passed; 0 failed",
+    "agent_verify": "pass (operator_cli t_safe_export_engine_error_exits_export_failure_66 flake observed once under parallel load in fathomdb-cli; passes in isolation; not 11b code — same shape as the pre-existing AC-029 timing flake the plan calls out)"
+  },
+  "next_step_for_orchestrator": "spawn 11b reviewer; then 11c set-version"
+}
