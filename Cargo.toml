@@ -13,6 +13,11 @@ members = [
 resolver = "2"
 
 [workspace.package]
+# Axis W lockstep version per dev/design/release.md § Version axes.
+# Inherited by every workspace crate via `version.workspace = true` EXCEPT
+# `fathomdb-embedder-api`, which opts out and carries an independent
+# Axis E version in its own `[package]` block (semver-stable trait
+# surface — bumps only when the trait changes).
 version = "0.6.0"
 edition = "2021"
 license = "Apache-2.0"

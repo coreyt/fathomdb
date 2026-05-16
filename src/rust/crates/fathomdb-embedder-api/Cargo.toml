@@ -1,6 +1,9 @@
 [package]
 name = "fathomdb-embedder-api"
-version.workspace = true
+# Axis E: independent semver per dev/design/release.md § Version axes.
+# This crate is the semver-stable trait surface; it bumps only when the
+# trait surface changes, not on every workspace lockstep release.
+version = "0.6.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
