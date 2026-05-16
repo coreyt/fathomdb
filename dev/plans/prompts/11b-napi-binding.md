@@ -114,12 +114,15 @@ Module exports (via `#[napi]`):
   Methods (all `#[napi]`, async or sync per blocking-vs-pure rule):
   - `open(path: String, options?: EngineOpenOptions): Promise<Engine>`
     — async, runs on libuv pool.
-  - `write(batch: Buffer): Promise<WriteReceipt>` — async. The
-    parameter shape needs care; the Python side accepts a `list` of
-    typed-write dicts. Use the same JSON-as-payload representation
-    here unless the engine surface dictates otherwise. Mirror what
-    `fathomdb-py` does. If you have to invent a richer napi shape,
-    document why in the binding entry module's `// why:` comment.
+  - `write(batch: Array<unknown>): Promise<WriteReceipt>` — async.
+    Mirrors 11a `Engine.write` exactly: take a JS array of typed-write
+    objects, run a `translate_batch` helper that produces
+    `Vec<PreparedWrite>` (see `src/rust/crates/fathomdb-py/src/lib.rs`
+    `translate_batch` / `translate_write_item` /
+    `translate_node` / `translate_edge` — port the same dispatch
+    against napi-rs `Object` / `Array` types). Engine surface is
+    `engine.write(&[PreparedWrite])` — verified at
+    `src/rust/crates/fathomdb-engine/src/lib.rs:1272`.
   - `search(query: String): Promise<SearchResult>` — async.
   - `close(): Promise<void>` — async.
   - `drain(timeoutMs: u32): Promise<void>` — async.
@@ -133,10 +136,31 @@ Module exports (via `#[napi]`):
   — free `#[napi]` function. TS-side `admin.configure` thin-wraps it
   to preserve the namespace verb shape locked in
   `dev/interfaces/typescript.md` § Runtime surface.
-- One `#[napi(custom_finalize, js_name = "...")]` per concrete error
-  class in `src/ts/src/errors.ts` (16 base classes plus the two
-  amendment leaves `EmbedderNotConfiguredError`,
-  `KindNotVectorIndexedError` = 18 total). All extend `FathomDbError`.
+- **Typed errors crossing the FFI.** napi-rs does NOT have a direct
+  analogue of PyO3's `create_exception!` — there is no idiomatic way
+  to throw a Rust-defined JS class with an `instanceof FathomDbError`
+  chain from Rust. The canonical napi-rs pattern is:
+  1. Rust side throws `napi::Error::new(Status::GenericFailure, msg)`
+     and attaches a stable `code` discriminator (one per error variant,
+     e.g. `"FDB_DATABASE_LOCKED"`, `"FDB_EMBEDDER_NOT_CONFIGURED"`).
+  2. TS side defines `FathomDbError` and every leaf class natively in
+     TypeScript (already done in `src/ts/src/errors.ts`).
+  3. TS side wraps every binding call in a single `rethrowTyped(err)`
+     helper that reads `err.code`, looks up the matching class in a
+     static map, constructs it with the structured payload, and
+     `throw`s. `instanceof` works because the leaf class is JS-native.
+     This means `src/ts/src/errors.ts` keeps its native class
+     declarations (do NOT replace them with napi-side re-exports), and
+     the napi binding only carries the `code` + payload, not the class
+     identity. Single-switch / no-catch-all rule applies on the Rust
+     side (`engine_error_to_napi`) and on the TS side (`rethrowTyped`):
+     drift between engine variants and TS class set must fail
+     compilation, not silently fall back.
+
+  Class count: 16 base classes plus the two amendment leaves
+  (`EmbedderNotConfiguredError`, `KindNotVectorIndexedError`) =
+  18 classes total. All native TS, all extend `FathomDbError`.
+
 - Data classes: `WriteReceipt`, `SearchResult`, `SoftFallback`,
   `CounterSnapshot`, `SubscriberEvent` — `#[napi(object)]` with the
   camelCase field names from `dev/interfaces/typescript.md`
@@ -239,23 +263,31 @@ helpers. `admin.configure` stays as a thin TS wrapper around the
 underlying `adminConfigure` napi free function so the namespace shape
 locked in `dev/interfaces/typescript.md` is preserved.
 
-`src/ts/src/errors.ts`: replace each class body with a thin
-re-export of the napi-side class so `instanceof` checks against the
-imported class match the actual thrown class. Pattern:
+`src/ts/src/errors.ts`: KEEP the existing native TS class
+declarations. Per § 1 (typed-errors substrate note), classes are
+TS-native and the napi binding only carries `code` + payload.
+
+Add two new TS-native classes mirroring the 11a amendment:
 
 ```ts
-import { FathomDbError as _FathomDbError } from "./_napi.js";
-export const FathomDbError = _FathomDbError;
+export class EmbedderNotConfiguredError extends EmbedderError {}
+export class KindNotVectorIndexedError extends VectorError {}
 ```
 
-(Or `export { FathomDbError } from "./_napi.js"` if napi-rs exports
-the symbols at top level.)
+Add both to the `LEAF_CLASSES` list in `errors.test.ts` and assert
+their inheritance chain (`EmbedderNotConfiguredError extends
+EmbedderError extends FathomDbError`,
+`KindNotVectorIndexedError extends VectorError extends
+FathomDbError`).
 
-Add `EmbedderNotConfiguredError` and `KindNotVectorIndexedError` to
-the exports. Update `errors.test.ts` to include them in the
-`LEAF_CLASSES` list and to assert their inheritance chain
-(`EmbedderNotConfiguredError extends EmbedderError`,
-`KindNotVectorIndexedError extends VectorError`).
+Add a single `rethrowTyped(err: unknown): never` helper in
+`src/ts/src/errors.ts` (or a sibling file) that maps `err.code` to
+the typed leaf class. Every public-surface call in `index.ts` and
+`admin.configure` wraps its `await` in a try/catch that delegates
+to `rethrowTyped`. The mapping table is exhaustive — no default
+arm; an unknown code throws a plain `FathomDbError` and the build
+fails a compile-time exhaustiveness check (use TypeScript's
+`never` exhaustiveness pattern over a `Code` union).
 
 ### 4. Tests
 
@@ -264,7 +296,13 @@ TDD: red-green-refactor.
 - **Existing tests stay green.** `surface.test.ts`, `errors.test.ts`,
   `no-recovery-surface.test.ts` already pin shape and the rooted
   hierarchy. They must pass against the napi binding with import
-  paths unchanged.
+  paths unchanged. Note: existing tests open `Engine.open("test.sqlite")`
+  multiple times — under a real SQLite binding this creates / locks
+  the file. Use the same fresh-DB-per-test pattern that 11a landed
+  in `src/python/tests/conftest.py` (tempdir fixture); port to a TS
+  helper (e.g. `freshDbPath()` returning `path.join(os.tmpdir(),
+randomUUID() + ".sqlite")`) and update the existing tests to
+  use it. This is a test-only change; no public surface impact.
 
 - **New: `src/ts/tests/ffi-safety.test.ts`.** Mirrors
   `src/python/tests/test_ffi_safety.py`. Covers AC-067, AC-068a,
@@ -304,13 +342,29 @@ TDD: red-green-refactor.
 
 ### 5. Bootstrap + agent-verify
 
-`scripts/bootstrap.sh`: extend to run `npm install` and the napi
-build in `src/ts/` if the script does not already. Same idempotent
-pattern as the 11a maturin/pip integration.
+`scripts/agent-test.sh` already runs `cd src/ts && npm test` when
+`src/ts/node_modules` exists (verified). The phase-11b agent-verify
+gate therefore requires:
 
-If `scripts/agent-verify.sh` does not already exercise
-`npm run build && npm test` in `src/ts/`, the Phase 11 exit gate
-cannot pass — surface as a blocker, do NOT silently bypass.
+- `scripts/bootstrap.sh` runs `npm install` in `src/ts/` so
+  `node_modules` is present in fresh trees. Extend if missing.
+- `npm test` invokes `npm run build` first (or equivalent) so the
+  napi `.node` binary is built before the node test runner imports
+  it. Confirm via the new `package.json` `scripts.test`.
+
+If bootstrap cannot be made to populate `src/ts/node_modules`
+without rewriting `bootstrap.sh` itself (out of scope), surface as
+a blocker — do NOT silently bypass.
+
+### 6. Non-presence (AC-041 parity)
+
+`src/ts/tests/no-recovery-surface.test.ts` already asserts that
+`recover`, `restore`, `repair`, `fix`, `rebuild` are not exported
+from the top-level `fathomdb` module, `Engine`, or `admin`. After
+the napi wiring this test MUST still pass — the napi binding must
+not surface a `recover*` / `restore*` / `repair*` / `fix*` /
+`rebuild*` symbol at any level. Recovery is CLI-only per
+`dev/interfaces/cli.md`.
 
 ## Required commands
 
@@ -359,8 +413,14 @@ If any of these are true, STOP and write the blocker report:
 - `fathomdb-engine` is missing a public method matching any TS verb.
   (11a already exercised the engine surface; this should not happen.)
 - napi-rs 2.x does not expose the `ThreadsafeFunction` shape needed
-  for `attachSubscriber`, and a substitute that preserves the
-  binding-side callback contract requires substrate not in this slice.
+  to wrap a JS callback as a Rust `Arc<dyn lifecycle::Subscriber>`
+  for `engine.subscribe()` (verified at
+  `src/rust/crates/fathomdb-engine/src/lib.rs:1531`), and a
+  substitute that preserves the binding-side callback contract
+  requires substrate not in this slice. If only the subscriber
+  path is blocked while open/write/search/close/drain work, ship
+  the rest and leave `attachSubscriber` as a no-op stub with a
+  follow-up issue — do NOT block the whole slice on the subscriber.
 - `scripts/agent-verify.sh` cannot be extended to exercise
   `npm run build && npm test` without rewriting `agent-verify.sh`
   itself (out of scope).
