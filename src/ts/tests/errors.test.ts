@@ -15,8 +15,10 @@ import {
   EmbedderDimensionMismatchError,
   EmbedderError,
   EmbedderIdentityMismatchError,
+  EmbedderNotConfiguredError,
   FathomDbError,
   IncompatibleSchemaVersionError,
+  KindNotVectorIndexedError,
   MigrationError,
   OpStoreError,
   OverloadedError,
@@ -27,6 +29,7 @@ import {
   VectorError,
   WriteValidationError,
 } from "../src/errors.js";
+import { freshDbPath } from "./helpers.js";
 
 const LEAF_CLASSES = [
   StorageError,
@@ -45,6 +48,8 @@ const LEAF_CLASSES = [
   MigrationError,
   EmbedderIdentityMismatchError,
   EmbedderDimensionMismatchError,
+  EmbedderNotConfiguredError,
+  KindNotVectorIndexedError,
 ] as const;
 
 test("every leaf class extends FathomDbError", () => {
@@ -53,6 +58,22 @@ test("every leaf class extends FathomDbError", () => {
     assert.ok(instance instanceof FathomDbError, `${Cls.name} must extend FathomDbError`);
     assert.notEqual(Cls, FathomDbError);
   }
+});
+
+test("EmbedderNotConfiguredError sits under EmbedderError under FathomDbError", () => {
+  const err = Object.create(EmbedderNotConfiguredError.prototype) as object;
+  assert.ok(err instanceof EmbedderNotConfiguredError);
+  assert.ok(err instanceof EmbedderError);
+  assert.ok(err instanceof FathomDbError);
+  assert.notEqual(EmbedderNotConfiguredError, EmbedderError);
+});
+
+test("KindNotVectorIndexedError sits under VectorError under FathomDbError", () => {
+  const err = Object.create(KindNotVectorIndexedError.prototype) as object;
+  assert.ok(err instanceof KindNotVectorIndexedError);
+  assert.ok(err instanceof VectorError);
+  assert.ok(err instanceof FathomDbError);
+  assert.notEqual(KindNotVectorIndexedError, VectorError);
 });
 
 test("CorruptionError carries typed recovery hint payload", () => {
@@ -95,13 +116,17 @@ test("search rejects empty query via WriteValidationError under FathomDbError ro
   // Per dev/design/errors.md section Binding-facing class matrix, the
   // empty-query rejection must surface as the typed WriteValidationError
   // leaf beneath the single-rooted FathomDbError, not as a bare Error.
-  const engine = await Engine.open("test.sqlite");
-  await assert.rejects(
-    () => engine.search(""),
-    (err: unknown) => {
-      assert.ok(err instanceof FathomDbError, "must be a FathomDbError");
-      assert.ok(err instanceof WriteValidationError, "must be a WriteValidationError");
-      return true;
-    },
-  );
+  const engine = await Engine.open(freshDbPath());
+  try {
+    await assert.rejects(
+      () => engine.search(""),
+      (err: unknown) => {
+        assert.ok(err instanceof FathomDbError, "must be a FathomDbError");
+        assert.ok(err instanceof WriteValidationError, "must be a WriteValidationError");
+        return true;
+      },
+    );
+  } finally {
+    await engine.close();
+  }
 });

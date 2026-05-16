@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 
 import * as fathomdb from "../src/index.js";
 import { Engine, admin } from "../src/index.js";
+import { freshDbPath } from "./helpers.js";
 
 const FORBIDDEN = new Set(["recover", "restore", "repair", "fix", "rebuild"]);
 
@@ -33,14 +34,18 @@ test("Engine class statics include no recovery methods", () => {
 });
 
 test("Engine instance has no recovery methods", async () => {
-  const engine = await Engine.open("test.sqlite");
-  const proto = Object.getPrototypeOf(engine) as object;
-  const protoNames = new Set(
-    Object.getOwnPropertyNames(proto).filter((n) => !n.startsWith("_") && n !== "constructor"),
-  );
-  const ownNames = publicNames(engine);
-  const all = new Set<string>([...protoNames, ...ownNames]);
-  assert.deepEqual(intersection(all, FORBIDDEN), []);
+  const engine = await Engine.open(freshDbPath());
+  try {
+    const proto = Object.getPrototypeOf(engine) as object;
+    const protoNames = new Set(
+      Object.getOwnPropertyNames(proto).filter((n) => !n.startsWith("_") && n !== "constructor"),
+    );
+    const ownNames = publicNames(engine);
+    const all = new Set<string>([...protoNames, ...ownNames]);
+    assert.deepEqual(intersection(all, FORBIDDEN), []);
+  } finally {
+    await engine.close();
+  }
 });
 
 test("admin namespace exports no recovery verbs", () => {
