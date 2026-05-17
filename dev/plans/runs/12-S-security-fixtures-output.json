@@ -1,0 +1,114 @@
+{
+  "phase": "12-S-security-fixtures",
+  "baseline_sha": "f2f21b59338a706de625096b099b041e01c1a1c2",
+  "branch": "phase-12-S-security-fixtures-20260517T195735Z",
+  "head_sha": "dea312ead2629111ac1d35fd875beb3fd484df5e",
+  "commits": [
+    "dea312e: test(12-S): land AC-036/037/038/050a/050c security fixtures"
+  ],
+  "sub_scopes_landed": [
+    "1 (AC-036)",
+    "2 (AC-037)",
+    "3 (AC-038)",
+    "4 (AC-050a)",
+    "5 (AC-050c)"
+  ],
+  "acs_addressed": [
+    "AC-036",
+    "AC-037",
+    "AC-038",
+    "AC-050a",
+    "AC-050c"
+  ],
+  "scripts_added": [
+    "scripts/agent-security.sh",
+    "scripts/security/ast_scan.py",
+    "scripts/security/ast-scan-rust.sh",
+    "scripts/security/ast-scan-python.py",
+    "scripts/security/ast-scan-ts.sh",
+    "scripts/security/check_removal_changelog.py",
+    "scripts/security/check-removal-changelog.sh",
+    "scripts/security/check-no-listen.sh",
+    "scripts/security/check-netns-deny-egress.sh"
+  ],
+  "scripts_modified": [
+    "scripts/bootstrap.sh (added apt install strace clause)"
+  ],
+  "tests_added": [
+    "src/rust/crates/fathomdb-engine/tests/fts5_injection_safety.rs",
+    "scripts/tests/test_ast_scan.sh",
+    "scripts/tests/test_removal_detect.sh"
+  ],
+  "fixtures_added": [
+    "scripts/tests/fixtures/ast-shim/rust/clean/ok.rs",
+    "scripts/tests/fixtures/ast-shim/rust/dirty/legacy_admin.rs",
+    "scripts/tests/fixtures/ast-shim/python/clean/ok.py",
+    "scripts/tests/fixtures/ast-shim/python/dirty/legacy_client.py",
+    "scripts/tests/fixtures/ast-shim/ts/clean/ok.ts",
+    "scripts/tests/fixtures/ast-shim/ts/dirty/legacy_binding.ts",
+    "scripts/tests/fixtures/removal-detect/clean/{CHANGELOG.md,diff.patch}",
+    "scripts/tests/fixtures/removal-detect/undocumented/{CHANGELOG.md,diff.patch}",
+    "scripts/tests/fixtures/removal-detect/moved-in-file/{CHANGELOG.md,diff.patch}",
+    "src/rust/crates/fathomdb-engine/examples/security_cycle.rs"
+  ],
+  "supporting_files_added": [
+    "CHANGELOG.md (stub with [Unreleased]/Removed section)"
+  ],
+  "no_shim_enforcement_live": true,
+  "gate_results_on_this_host": {
+    "AC-036 no-listen-syscall": "BLOCKER (strace missing on aarch64 dev host)",
+    "AC-037 netns-deny-egress": "BLOCKER (strace missing; userns enabled, unshare ok)",
+    "AC-038 fts5_injection_safety": "PASS (2/2 tests)",
+    "AC-050a ast-scan-rust": "PASS (src/rust/crates clean)",
+    "AC-050a ast-scan-python": "PASS (src/python clean)",
+    "AC-050a ast-scan-ts": "PASS (src/ts clean)",
+    "AC-050c removal-detect": "PASS (no removals 0.6.0-rewrite..HEAD; CHANGELOG present)",
+    "scripts/tests/test_ast_scan.sh": "PASS (clean+dirty per language)",
+    "scripts/tests/test_removal_detect.sh": "PASS (clean+undocumented+moved-in-file)",
+    "scripts/agent-security.sh": "PASS (0 violations, 2 blockers; non-strict)"
+  },
+  "blockers_encountered": [
+    {
+      "id": "12-S-blocker-1",
+      "scope": "AC-036 + AC-037",
+      "summary": "strace not installed on this aarch64 dev host (Linux ubuntu 5.15.185-tegra). Both check-no-listen.sh and check-netns-deny-egress.sh exit code 2 (BLOCKER) and surface a clear apt-install diagnostic; agent-security.sh treats blockers as non-fatal unless STRICT=1.",
+      "remediation": "scripts/bootstrap.sh now installs strace via apt-get when available. CI runner ops must re-run bootstrap (or sudo apt install strace) before the AC-036/AC-037 gates can demonstrate green. Once strace is on PATH no code change is required.",
+      "owner_recommendation": "phase 12-DX or orchestrator: re-run scripts/agent-security.sh on a strace-equipped CI runner to capture the post-bootstrap PASS evidence."
+    },
+    {
+      "id": "12-S-note-2",
+      "scope": "AC-050a TS scanner",
+      "summary": "TS surface scanned by line-anchored regex on .ts/.tsx (comment-aware) rather than @typescript-eslint/parser or ts-morph. Adding either would expand the npm dependency tree.",
+      "remediation": "Acceptable: the banned-pattern set (legacy_* / compat_v0_5* names; deprecated re-exports) is textual and bounded. Upgrade to a real AST parser is a follow-up if/when the banned-pattern surface grows beyond name prefixes.",
+      "owner_recommendation": "DEFER unless a future shim pattern requires structural matching."
+    },
+    {
+      "id": "12-S-note-3",
+      "scope": "AC-050a Rust scanner",
+      "summary": "Rust surface uses line-anchored regex (comment-skipping) over `*.rs` rather than `syn` AST parsing. Same scope/scale tradeoff as the TS scanner.",
+      "remediation": "Acceptable for the current banned-pattern set; promote to a `syn`-based scanner if the banned list ever needs token-tree awareness (e.g. macro-generated identifiers).",
+      "owner_recommendation": "DEFER."
+    },
+    {
+      "id": "12-S-note-4",
+      "scope": "AC-050a verb list",
+      "summary": "V05_VERBS in scripts/security/ast_scan.py is empty (no canonical 0.5.x verb list enumerated yet). Scanner runs as a no-op for that rule until the verb list lands.",
+      "remediation": "Append 0.5.x verb names to V05_VERBS as they become known (e.g. when CHANGELOG records the 0.5.x→0.6.0 verb renames). No code change required to start enforcing.",
+      "owner_recommendation": "DOCUMENT in 0.6.0 release-notes and append verbs at GA freeze."
+    },
+    {
+      "id": "12-S-note-5",
+      "scope": "Required-commands invocation form",
+      "summary": "Prompt’s required-commands list shows `bash scripts/security/ast-scan-python.py`. That fails because the file is a Python script. Invoke as `python3 scripts/security/ast-scan-python.py` or via the shebang `scripts/security/ast-scan-python.py` (file is +x).",
+      "remediation": "Reviewer: please use python3/shebang form. No script-level fix because doing so would mean a bash-only wrapper named `.py`, which is more confusing than the typo.",
+      "owner_recommendation": "Update the prompt template for future security-fixture phases."
+    }
+  ],
+  "agent_verify_result": "pass",
+  "discipline_notes": [
+    "TDD: each new linter/script landed with a positive (clean) and negative (synthetic-shim / undocumented-removal) fixture before wiring.",
+    "Net LoC: ~720 added across 27 files (scripts + fixtures + 1 example + 1 test). No production-code change.",
+    "AC-050a + AC-050c are the enforcement mechanisms for the no-0.5.x-shim policy and removal discipline; both are live on `agent-security.sh`."
+  ],
+  "next_step_for_orchestrator": "promote to 0.6.0-rewrite; respawn codex reviewer for verdict. Run scripts/bootstrap.sh on the reviewer host so strace is available for AC-036/AC-037 evidence capture."
+}
