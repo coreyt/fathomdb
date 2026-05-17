@@ -1,0 +1,32 @@
+{
+  "phase": "12-D-fix-1",
+  "baseline_sha": "df7456b",
+  "branch": "phase-12-D-durability-harnesses-20260517T185755Z",
+  "head_sha": "1ac62c650ada70e99468a8cebc9d9d553da74f76",
+  "commits": [
+    "d021ec9: fix(open): probe_wal_sidecar bounded 32-byte read (12-D-fix-1 #1)",
+    "1ac62c6: test(durability): 12-D-fix-1 findings 2/3/4"
+  ],
+  "findings_addressed": [
+    "1 [high]: probe_wal_sidecar bounded read — std::fs::read replaced with File::open + read_exact(&mut [u8; 32]); new test probe_wal_sidecar_bounded_read builds a 256 MiB sparse WAL sidecar with valid magic + invalid page size and asserts Engine::open completes in <= 200 ms (red against the unbounded impl at ~318 ms on the dev runner, green after the fix at <1 ms)",
+    "2 [medium]: AC-034b harness uses per-trial sentinel-wait + full-N p99 — victim writes FATHOMDB_POWER_CUT_VICTIM_SENTINEL after its first commit lands; parent blocks on the sentinel (5 s budget) before sampling the kill delay; lost_commit_ms is mandatory u128 (no Option/filter); p99 computed across the full P_PWR_TRIALS = 100 set; sentinel timeout surfaces as harness panic with runaway-victim SIGKILL guard",
+    "3 [medium]: AC-035c lock-released asserts via spawned sibling process — new linux-only #[ignore] entry-point _lock_acquire_probe_entry routed via FATHOMDB_TEST_LOCK_PROBE; parent spawns child via Command::new(current_exe()), child attempts flock(LOCK_EX | LOCK_NB) and exits 0/1; parent asserts exit success; existing in-process fd reacquire kept as additional sanity check",
+    "4 [low]: AC-034c body is now panic!() carrying the substrate-gap text + pointer to output JSON blocker-3 — clearing #[ignore] without landing the KVM image fails loudly instead of green-passing"
+  ],
+  "notes": [
+    "Finding 1 bounded-read assertion uses wall-clock-only signal (per prompt fallback): no read_bytes_counter test hook was added because that would require engine surface expansion. 256 MiB sparse WAL fixture gives ~300+ ms vs <1 ms separation on the dev runner — well clear of the 200 ms budget either way. RSS measurement skipped for portability.",
+    "Same-process fd reacquire retained in AC-035c tests alongside the sibling-process check; reviewer signal was 'useful but not the contract', so kept as belt-and-suspenders rather than removed."
+  ],
+  "long_run_results_post_fix": {
+    "ac_034a_integrity_check_ok_per_trial": "100/100",
+    "ac_034b_lost_commit_p99_ms": "1 (computed across full 100-trial set; sentinel-wait fence guarantees every trial committed at least one row before SIGKILL — no Option/filter)",
+    "ac_034b_lost_commit_min_median_ms": "min=0, median=0, p99=1",
+    "ac_034b_harness_wall_clock_seconds": 16.30
+  },
+  "regression_results": {
+    "durability_open_path": "12 passed, 1 ignored (entry-point) — includes new probe_wal_sidecar_bounded_read",
+    "error_taxonomy": "12 passed",
+    "agent_verify_result": "pass (one known-flake retry on ac_017_vector_projection_freshness_p99_le_five_seconds per prompt allowance)"
+  },
+  "next_step_for_orchestrator": "promote to 0.6.0-rewrite; respawn codex reviewer for clean PASS"
+}
