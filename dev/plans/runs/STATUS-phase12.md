@@ -17,9 +17,11 @@ Last updated: 2026-05-17 (Phase 12 starting; nothing closed yet).
 
 - **Branch:** `0.6.0-rewrite`. Tip: `4309d8d` (12-D-fix-1 audit
   trail) + closure commit (this one).
-- **Active slices (parallel):** **12-S security fixtures** ⏳
-  (bash ID `bi6taw7b4`, Opus high) + **12-B benchmark workflow**
-  ⏳ (bash ID `bsoip617j`, Opus medium). Wave 1 parallel.
+- **Active slice:** **12-S security fixtures** ⏳ (bash ID
+  `bi6taw7b4`, Opus high).
+- **12-B DEFERRED to Pack 7 (2026-05-17)** at `e4ab3f9`. Implementer
+  surfaced clean blocker (5 jobs / 5 substrate gaps). `ci-deferred.md`
+  updated; restoration waits for Pack 7 substrate work.
 - **12-D CLOSED 2026-05-17** at `f2f21b5` (PASS via fix-1).
 - **Phase 11 closed:** 2026-05-17 (all four sub-phases CLOSED).
 - **Outstanding worktrees:** 3 — 12-D (retained), 12-S, 12-B.
@@ -37,7 +39,7 @@ Last updated: 2026-05-17 (Phase 12 starting; nothing closed yet).
 | ------ | ------ | ------- | -------- | -------- | -------- | --------------- | ----- |
 | 12-D   | ✅ CLOSED   | 2026-05-17 | CONCERN→fix-1→PASS | PASS (codex gpt-5.4) | retained | `b70fbca`+`2a1c203`+`89c7300`+`40a6c16`+`5449d2e`+`4309d8d` | AC-034a 100/100; AC-034b p99=1ms across full N=100; AC-035a/b/c green; AC-034c blocker→12-D-OS-CRASH follow-up. 3 real engine reliability fixes landed (open_locked stage reorder; probe_open_integrity b-tree traversal; probe_wal_sidecar bounded 32-byte read). |
 | 12-S   | ⏳ in flight | 2026-05-17 | pending      | pending  | `/tmp/fdb-12-S-security-fixtures-*` | -               | AC-036/037/038/050a/050c (5 sub-scopes); bash ID `bi6taw7b4` |
-| 12-B   | ⏳ in flight | 2026-05-17 | pending      | pending  | `/tmp/fdb-12-B-benchmark-robustness-workflow-*` | -               | benchmark-and-robustness.yml restoration; bash ID `bsoip617j` |
+| 12-B   | 🚫 DEFERRED to Pack 7 | 2026-05-17 | BLOCKER (substrate gap; no diff) | n/a (no diff to review) | `/tmp/fdb-12-B-benchmark-robustness-workflow-20260517T195737Z` | `e4ab3f9` (blocker report only) | All 5 jobs' substrate absent in 0.6.0; demoted in ci-deferred.md; restore when Pack 7 lands harnesses. Per `feedback_reliability_principles` no-stub. |
 | 12-P   | ❌ not started | -        | -            | -        | -        | -               | HITL re-confirm AC-012/013/019/020 deferrals (per-AC analysis in plan § "Performance ACs deferral analysis") |
 | 12-V-VERBS | ❌ not started | -    | -            | -        | -        | -               | HITL deferred-verbs review (per plan § "Deferred verbs enumeration") |
 | 12-TX  | ❌ not started | -        | -            | -        | -        | -               | TS → Python-parity (lands after 12-P + 12-V-VERBS so doesn't chase moving surface) |

@@ -46,22 +46,48 @@ publish order` against the seven 0.6.0 crates plus the two binding
     (Axis W lockstep across workspace crates + bindings; Axis E
     independent for `fathomdb-embedder-api`).
 
-## benchmark-and-robustness.yml — Phase 12
+## benchmark-and-robustness.yml — DEMOTED to Pack 7 prerequisite (2026-05-17)
+
+> **DEMOTED 2026-05-17 from Phase 12 to Pack 7 prerequisite.** Phase
+> 12-B implementer surfaced clean blocker: all 5 pre-0.6.0 jobs depend
+> on substrate that does not exist in 0.6.0-rewrite. Authoring the
+> missing harnesses is out-of-scope per `feedback_reliability_principles`
+> net-negative-LoC bias and the Pack 7 perf-evidence guard. Restoration
+> waits for Pack 7 (or later) when the substrate lands. See
+> `dev/plans/runs/12-B-benchmark-robustness-workflow-output.json` for
+> per-job substrate-gap evidence.
 
 - Source: `git show 39ee271^:.github/workflows/benchmark-and-robustness.yml`
 - Pre-0.6.0 shape: weekly cron (`0 7 * * 1`); jobs:
   `rust-benchmarks`, `go-fuzz-smoke`, `rust-scale-tests`,
   `rust-tracing-stress`, `python-stress-tests`,
   `typescript-observability-harness`.
-- Why deferred: scale/stress/fuzz harnesses do not exist yet on 0.6.0. The
-  workflow without targets would be a green no-op that misleads reviewers.
-- Adaptations required for 0.6.0:
-  - Drop `go-fuzz-smoke` entirely (no `go/` surface).
+- Per-job substrate gaps in 0.6.0 (per 12-B blocker report):
+  - `rust-benchmarks` — `scripts/run-benchmarks.sh` absent;
+    `fathomdb-engine` has no `benches/` dir, no `[[bench]]` entry,
+    no criterion dep. Pre-0.6.0 bench ran against a single `fathomdb`
+    crate with `production_paths` bench — that crate is now a re-export
+    facade. Resurrection = net-new authorship, not restoration.
+  - `rust-scale-tests` — `fathomdb-engine` has no `scale.rs` test
+    target. Never existed in 0.6.0-rewrite.
+  - `rust-tracing-stress` — `fathomdb-engine` has no `tracing` cargo
+    feature (no `[features]` section in Cargo.toml) + no
+    `tracing_events` test. Authoring both is out-of-slice production
+    work.
+  - `python-stress-tests` — `src/python/tests/test_stress.py` absent.
+    Pre-0.6.0 stress suite targeted the prior Python binding; semantics
+    don't map onto PyO3 surface.
+  - `typescript-observability-harness` — `src/ts/` is a single package
+    (`fathomdb`), NOT a workspace. No `@fathomdb/sdk-harness` workspace
+    exists. Re-introducing the multi-workspace layout is a Phase 11+
+    topology decision, not workflow restoration.
+- Workflow adaptations (if/when Pack 7 lands the substrate):
+  - Drop `go-fuzz-smoke` entirely (no `go/` surface in 0.6.0).
   - Repath `python/` -> `src/python/`, `typescript/` -> `src/ts/`.
-  - Drop the `cargo build -p fathomdb --features node` step until napi-rs
-    lands.
-  - Re-target `python-stress-tests` to whatever `--features python` /
-    binding shape Phase 11 chose.
+  - Use Phase 11b napi-rs build (`cd src/ts && npm run build:native`),
+    not pre-0.6.0 `cargo build --features node`.
+  - Use Phase 11d Python build pattern (`pip install -e src/python/`
+    via maturin), not pre-0.6.0 `pip install -e python --no-build-isolation`.
 
 ## scripts/set-version.sh — Phase 11
 
