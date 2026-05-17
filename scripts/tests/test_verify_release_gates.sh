@@ -165,6 +165,45 @@ else
     || fail "wrong diagnostic for unreachable HEAD; got: $out"
 fi
 
+# 9. workflow_dispatch + dry_run=true: tag-format check skipped, other
+#    gates still run. GITHUB_REF_NAME is a branch name, no v-prefix.
+restore
+printf '# Changelog\n\n## %s\n' "$WS" > "$CL_PATH"
+GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="true" \
+  GITHUB_REF_NAME="phase-11d-release-workflow" "$VRG" >/dev/null 2>&1 \
+  && pass "dispatch+dry_run=true skips tag check and passes" \
+  || fail "dispatch+dry_run=true should pass on otherwise-clean state"
+
+# 10. workflow_dispatch + dry_run=false: emergency-republish path emits
+#     an explicit warning to stderr but does not fail on clean state.
+restore
+printf '# Changelog\n\n## %s\n' "$WS" > "$CL_PATH"
+if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="false" \
+    GITHUB_REF_NAME="phase-11d-release-workflow" "$VRG" 2>&1)"; then
+  printf '%s' "$out" | grep -qi 'emergency-republish' \
+    && pass "dispatch+dry_run=false emits emergency-republish warning" \
+    || fail "dispatch+dry_run=false missing emergency-republish warning; got: $out"
+else
+  fail "dispatch+dry_run=false should not fail on otherwise-clean state; got: $out"
+fi
+
+# 11. workflow_dispatch + dry_run=true + crate metadata broken: still fails.
+#     Non-tag gates must keep running on dispatch.
+restore
+printf '# Changelog\n\n## %s\n' "$WS" > "$CL_PATH"
+ENG="$REPO_ROOT/src/rust/crates/fathomdb-engine/Cargo.toml"
+sed -i '/^description[[:space:]]*=/d' "$ENG"
+if out="$(GITHUB_EVENT_NAME="workflow_dispatch" DRY_RUN="true" \
+    GITHUB_REF_NAME="phase-11d-release-workflow" "$VRG" 2>&1)"; then
+  cp "$SNAP_CRATES/fathomdb-engine.toml" "$ENG"
+  fail "dispatch+broken metadata should still fail crate-metadata check"
+else
+  cp "$SNAP_CRATES/fathomdb-engine.toml" "$ENG"
+  printf '%s' "$out" | grep -qi 'description' \
+    && pass "dispatch keeps non-tag gates enforced" \
+    || fail "wrong diagnostic on dispatch metadata break; got: $out"
+fi
+
 restore
 
 if [ "$FAILED" -gt 0 ]; then

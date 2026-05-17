@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Rehearse against test.pypi + cargo --dry-run + npm --dry-run (no real publish)."
+        description: "Rehearse cargo --dry-run + npm --dry-run; PyPI publish + post-publish smoke skipped entirely (no test.pypi slot burn)."
         type: boolean
         default: true
 
@@ -41,11 +41,9 @@ jobs:
       - name: Validate workflow YAML
         run: actionlint .github/workflows/*.yml
       - name: Run release gates
-        # Only runs on real tag pushes. workflow_dispatch rehearsals have
-        # no v* tag context, so the tag/Cargo.toml-lockstep check would
-        # always fail; dry-run is for exercising the publish path, not
-        # the gate.
-        if: github.event_name == 'push'
+        # Runs on push (tag-format + version-axis enforced) and
+        # workflow_dispatch (tag check skipped, all other gates enforced;
+        # dispatch with dry_run=false emits an emergency-republish warning).
         run: bash scripts/verify-release-gates.sh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -357,6 +355,11 @@ jobs:
 
   publish-pypi:
     runs-on: ubuntu-latest
+    # TestPyPI also rejects same-version re-uploads — dry-run rehearsals would
+    # consume the next-release version slot. Skip the publish step entirely
+    # on dispatch; the build-python matrix still runs on dry-run so wheel
+    # buildability stays exercised across platforms.
+    if: ${{ inputs.dry_run != true }}
     needs: publish-rust-t4-engine
     environment:
       name: pypi
@@ -366,11 +369,10 @@ jobs:
           pattern: python-dist-*
           merge-multiple: true
           path: dist
-      - name: Publish to PyPI (or test.pypi on dry-run)
+      - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
         with:
           packages-dir: dist
-          repository-url: ${{ env.DRY_RUN == 'true' && 'https://test.pypi.org/legacy/' || '' }}
 
   publish-npm:
     runs-on: ubuntu-latest

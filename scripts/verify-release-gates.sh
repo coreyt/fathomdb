@@ -44,24 +44,36 @@ read_workspace_version() {
 }
 
 # --- Check 1: tag presence + Axis W match -----------------------------------
+# workflow_dispatch fires from a branch ref (refs/heads/...), so there is no
+# v-tag to validate. Skip the tag check on dispatch but keep every other gate;
+# dispatch with dry_run=false is an emergency-republish path that still
+# benefits from --check-files / CHANGELOG / metadata enforcement.
 
-if [ -z "${GITHUB_REF_NAME:-}" ]; then
-  die "GITHUB_REF_NAME is not set; this script must run under a tag push (refs/tags/v*)"
-fi
-
-TAG="$GITHUB_REF_NAME"
-case "$TAG" in
-  v*) ;;
-  *) die "tag '$TAG' does not start with 'v'; release tags must look like v<axis-W-version>" ;;
-esac
-
-TAG_VERSION="${TAG#v}"
+EVENT_NAME="${GITHUB_EVENT_NAME:-push}"
 WS_VERSION="$(read_workspace_version)"
 if [ -z "$WS_VERSION" ]; then
   die "Cargo.toml: no [workspace.package] version found"
 fi
-if [ "$TAG_VERSION" != "$WS_VERSION" ]; then
-  die "tag/workspace version mismatch — tag is '$TAG_VERSION', Cargo.toml [workspace.package].version is '$WS_VERSION'"
+
+if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+  if [ "${DRY_RUN:-}" != "true" ]; then
+    printf 'release-gate: WARNING — dispatch with dry_run=false is an emergency-republish path; verify the dispatched ref matches the intended tag manually before approving.\n' >&2
+  fi
+else
+  if [ -z "${GITHUB_REF_NAME:-}" ]; then
+    die "GITHUB_REF_NAME is not set; this script must run under a tag push (refs/tags/v*)"
+  fi
+
+  TAG="$GITHUB_REF_NAME"
+  case "$TAG" in
+    v*) ;;
+    *) die "tag '$TAG' does not start with 'v'; release tags must look like v<axis-W-version>" ;;
+  esac
+
+  TAG_VERSION="${TAG#v}"
+  if [ "$TAG_VERSION" != "$WS_VERSION" ]; then
+    die "tag/workspace version mismatch — tag is '$TAG_VERSION', Cargo.toml [workspace.package].version is '$WS_VERSION'"
+  fi
 fi
 
 # --- Check 2: --check-files lockstep ----------------------------------------
@@ -141,4 +153,4 @@ if [ "$missing" -ne 0 ]; then
   die "one or more crates are missing cargo publish metadata; fix and retag"
 fi
 
-printf 'release-gate: ok — tag=%s, axis-W=%s\n' "$TAG" "$WS_VERSION"
+printf 'release-gate: ok — event=%s, axis-W=%s\n' "$EVENT_NAME" "$WS_VERSION"
