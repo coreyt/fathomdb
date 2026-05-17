@@ -3025,14 +3025,23 @@ fn probe_wal_sidecar(db_path: &Path) -> Result<(), EngineOpenError> {
     let mut wal_path = db_path.as_os_str().to_owned();
     wal_path.push("-wal");
     let wal_path = PathBuf::from(wal_path);
-    let bytes = match std::fs::read(&wal_path) {
-        Ok(bytes) => bytes,
+    // Bounded read: the WAL header is fixed-layout in the first 32
+    // bytes (magic + format + page-size + checkpoint-seq + salts +
+    // checksums); frame data starts at offset 32 and is irrelevant to
+    // the magic + page-size pre-check. A `std::fs::read` of the whole
+    // sidecar would force an unclean-shutdown open path to allocate
+    // and copy the entire WAL into memory before SQLite touches
+    // recovery — a real latency + RSS regression on AC-035.
+    use std::io::Read;
+    let mut file = match std::fs::File::open(&wal_path) {
+        Ok(file) => file,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(_) => return Ok(()),
     };
-    // A short (< 32-byte) sidecar carries no committed frames; SQLite
-    // treats it as empty and re-initializes WAL state, which is safe.
-    if bytes.len() < 32 {
+    let mut bytes = [0u8; 32];
+    if file.read_exact(&mut bytes).is_err() {
+        // A short (< 32-byte) sidecar carries no committed frames;
+        // SQLite treats it as empty and re-initializes WAL state.
         return Ok(());
     }
     let magic = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);

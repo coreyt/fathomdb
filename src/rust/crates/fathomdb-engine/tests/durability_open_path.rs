@@ -338,3 +338,61 @@ fn lock_path_for(db_path: &Path) -> PathBuf {
     lock.push(".lock");
     PathBuf::from(lock)
 }
+
+// ── Finding 1: bounded WAL sidecar probe ────────────────────────────────────
+//
+// `probe_wal_sidecar` must only read the 32-byte WAL header, never the
+// full sidecar. Without this guard, an unclean shutdown that leaves a
+// large -wal file behind would force `Engine::open` to slurp the whole
+// file into memory before SQLite itself touches recovery — measurable
+// latency + RSS regression on the open path. Test makes the WAL sidecar
+// 256 MiB; bounded read returns in ~ms, a full read pays ~hundreds of
+// ms (alloc + copy) and would flunk the wall-clock bound.
+#[test]
+fn probe_wal_sidecar_bounded_read() {
+    let _guard = serial_guard();
+    let dir = TempDir::new().expect("tempdir");
+    let path = dir.path().join("bounded.sqlite");
+    // Seed a real DB so the open path reaches `probe_wal_sidecar`.
+    let opened = Engine::open(&path).expect("seed open");
+    opened.engine.close().expect("seed close");
+    drop(opened);
+
+    let wal_path = corruption::wal_sidecar_path(&path);
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&wal_path)
+        .expect("create large wal");
+    // Valid WAL magic + version, invalid page size so the probe still
+    // rejects; the rest of the sidecar is sparse zeros. A full-file
+    // read pays for the entire 256 MiB.
+    let mut header = [0u8; 32];
+    header[0..4].copy_from_slice(&0x377f_0683_u32.to_be_bytes());
+    header[4..8].copy_from_slice(&3_007_000_u32.to_be_bytes());
+    header[8..12].copy_from_slice(&0x0080_0000_u32.to_be_bytes());
+    use std::io::Write;
+    file.write_all(&header).expect("wal header");
+    const WAL_LEN: u64 = 256 * 1024 * 1024;
+    file.set_len(WAL_LEN).expect("set_len 256 MiB sparse");
+    file.sync_all().expect("fsync large wal");
+    drop(file);
+
+    let started = std::time::Instant::now();
+    let result = Engine::open(&path);
+    let elapsed = started.elapsed();
+
+    assert!(
+        matches!(result, Err(EngineOpenError::Corruption(_))),
+        "expected Corruption on invalid page size, got {result:?}"
+    );
+    // Bounded read is sub-ms; an unbounded `std::fs::read` of 256 MiB
+    // measurably loses this margin. 200 ms is generous for slow CI
+    // hosts while still flagging a regression to full-file read.
+    assert!(
+        elapsed < std::time::Duration::from_millis(200),
+        "probe_wal_sidecar took {elapsed:?} on a 256 MiB sidecar; \
+         must read only the 32-byte header"
+    );
+}
