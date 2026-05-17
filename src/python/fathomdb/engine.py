@@ -112,8 +112,15 @@ class Engine:
         self._native.drain(timeout_s=float(timeout_s))
 
     def counters(self) -> CounterSnapshot:
-        self._native.counters()
-        return CounterSnapshot()
+        snap = self._native.counters()
+        return CounterSnapshot(
+            queries=snap.queries,
+            writes=snap.writes,
+            write_rows=snap.write_rows,
+            admin_ops=snap.admin_ops,
+            cache_hit=snap.cache_hit,
+            cache_miss=snap.cache_miss,
+        )
 
     def set_profiling(self, *, enabled: bool) -> None:
         self._native.set_profiling(enabled)

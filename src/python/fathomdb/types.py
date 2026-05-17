@@ -44,9 +44,17 @@ class SearchResult:
 class CounterSnapshot:
     """Snapshot of engine-internal counters returned by `engine.counters`.
 
-    Field set is owned by `dev/design/lifecycle.md`; the 0.6.0 stub publishes
-    the carrier type so callers can dispatch on it.
+    Field set mirrors the napi-rs `CounterSnapshot` in idiomatic snake_case
+    per `dev/interfaces/python.md` § Engine-attached instrumentation and the
+    cross-binding data-shape parity claim in `dev/design/bindings.md` § 1.
     """
+
+    queries: int = 0
+    writes: int = 0
+    write_rows: int = 0
+    admin_ops: int = 0
+    cache_hit: int = 0
+    cache_miss: int = 0
 
 
 __all__ = [

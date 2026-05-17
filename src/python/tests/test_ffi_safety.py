@@ -59,7 +59,7 @@ def test_embedded_nul_in_body_rejected_before_write(db_path: str) -> None:
         # Register a latest-state collection so the body would otherwise
         # commit a row.
         admin.configure(engine, name="nul_col", body="{}")
-        before = engine._native.counters().write_rows
+        before = engine.counters().write_rows
 
         with pytest.raises(WriteValidationError) as excinfo:
             engine.write(
@@ -75,7 +75,7 @@ def test_embedded_nul_in_body_rejected_before_write(db_path: str) -> None:
             )
         assert isinstance(excinfo.value, EngineError)
 
-        after = engine._native.counters().write_rows
+        after = engine.counters().write_rows
         assert after == before, "no row may be written when a NUL is rejected"
     finally:
         engine.close()
@@ -88,7 +88,7 @@ def test_unpaired_surrogate_in_body_rejected_before_write(db_path: str) -> None:
     engine = Engine.open(db_path)
     try:
         admin.configure(engine, name="sur_col", body="{}")
-        before = engine._native.counters().write_rows
+        before = engine.counters().write_rows
 
         with pytest.raises(WriteValidationError) as excinfo:
             engine.write(
@@ -104,7 +104,7 @@ def test_unpaired_surrogate_in_body_rejected_before_write(db_path: str) -> None:
             )
         assert isinstance(excinfo.value, EngineError)
 
-        after = engine._native.counters().write_rows
+        after = engine.counters().write_rows
         assert after == before, "no row may be written when a surrogate is rejected"
     finally:
         engine.close()

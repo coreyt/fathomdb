@@ -13,7 +13,15 @@ from __future__ import annotations
 import inspect
 
 import fathomdb
-from fathomdb import Engine, EngineConfig, SearchResult, SoftFallback, WriteReceipt, admin
+from fathomdb import (
+    CounterSnapshot,
+    Engine,
+    EngineConfig,
+    SearchResult,
+    SoftFallback,
+    WriteReceipt,
+    admin,
+)
 
 
 def test_top_level_exports_match_canonical_set() -> None:
@@ -131,5 +139,29 @@ def test_engine_attached_stub_methods_return_canonical_types(db_path: str) -> No
         import logging
 
         engine.attach_logging_subscriber(logging.getLogger("fathomdb-test"))
+    finally:
+        engine.close()
+
+
+def test_counters_snapshot_carries_six_canonical_fields(db_path: str) -> None:
+    """Phase 12-TX: parity with TS `CounterSnapshot` six-field shape per
+    `dev/design/bindings.md` § 1. The PyO3 binding already returns the
+    six fields; the Python wrapper must not drop them."""
+
+    engine = Engine.open(db_path)
+    try:
+        snap = engine.counters()
+        assert isinstance(snap, CounterSnapshot)
+        for f in (
+            "queries",
+            "writes",
+            "write_rows",
+            "admin_ops",
+            "cache_hit",
+            "cache_miss",
+        ):
+            assert isinstance(getattr(snap, f), int), (
+                f"CounterSnapshot.{f} must be int (parity with TS CounterSnapshot)"
+            )
     finally:
         engine.close()

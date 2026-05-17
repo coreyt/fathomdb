@@ -19,7 +19,7 @@ def test_op_store_write_violating_schema_raises_and_writes_no_row(db_path: str) 
     try:
         schema_body = '{"type":"object","required":["foo"]}'
         admin.configure(engine, name="strict_col", body=schema_body)
-        before = engine._native.counters().write_rows
+        before = engine.counters().write_rows
 
         with pytest.raises(SchemaValidationError):
             engine.write(
@@ -34,7 +34,7 @@ def test_op_store_write_violating_schema_raises_and_writes_no_row(db_path: str) 
                     }
                 ]
             )
-        after = engine._native.counters().write_rows
+        after = engine.counters().write_rows
         assert after == before, "schema-violating write must not commit a row"
     finally:
         engine.close()

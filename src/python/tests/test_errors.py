@@ -18,8 +18,10 @@ from fathomdb.errors import (
     EmbedderDimensionMismatchError,
     EmbedderError,
     EmbedderIdentityMismatchError,
+    EmbedderNotConfiguredError,
     EngineError,
     IncompatibleSchemaVersionError,
+    KindNotVectorIndexedError,
     MigrationError,
     OpStoreError,
     OverloadedError,
@@ -48,6 +50,8 @@ LEAF_CLASSES = [
     MigrationError,
     EmbedderIdentityMismatchError,
     EmbedderDimensionMismatchError,
+    EmbedderNotConfiguredError,
+    KindNotVectorIndexedError,
 ]
 
 
