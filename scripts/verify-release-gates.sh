@@ -84,16 +84,34 @@ if ! cf_out="$(bash "$SET_VERSION" --check-files 2>&1)"; then
 fi
 
 # --- Check 3: HEAD reachable from main --------------------------------------
+#
+# GA tags (e.g. v0.6.0, v0.7.0) MUST be cut from main. Release-candidate
+# tags (e.g. v0.6.0-rc.1, v0.7.0-rc.2) are allowed from any branch — the
+# RC cycle exists precisely so that a candidate can be cut, smoke-tested
+# against real registries, and either promoted to GA (which DOES require
+# the main merge) or re-cut as rc.N+1 from the same branch. HITL decision
+# 2026-05-17 in dev/progress/0.6.0.md.
+#
+# An RC version carries a hyphen (semver pre-release marker, e.g.
+# "0.6.0-rc.1"); a GA version does not (e.g. "0.6.0"). We detect the
+# split by checking for `-` in the Axis-W version string read above.
 
 if [ "${RELEASE_GATES_SKIP_GIT_REACH:-0}" != "1" ]; then
-  main_ref="${RELEASE_GATES_HEAD_REF:-refs/heads/main}"
-  if ! git -C "$REPO_ROOT" rev-parse --verify "$main_ref" >/dev/null 2>&1; then
-    die "cannot resolve $main_ref; release tags must be cut from a commit on main"
-  fi
-  head_sha="$(git -C "$REPO_ROOT" rev-parse HEAD)"
-  if ! git -C "$REPO_ROOT" merge-base --is-ancestor "$head_sha" "$main_ref" 2>/dev/null; then
-    die "HEAD ($head_sha) is not reachable from $main_ref; release tags must be cut from main"
-  fi
+  case "$WS_VERSION" in
+    *-*)
+      printf 'release-gate: NOTE — %s is a release candidate (RC); HEAD-on-main check skipped per HITL 2026-05-17. GA tags still enforce.\n' "$WS_VERSION" >&2
+      ;;
+    *)
+      main_ref="${RELEASE_GATES_HEAD_REF:-refs/heads/main}"
+      if ! git -C "$REPO_ROOT" rev-parse --verify "$main_ref" >/dev/null 2>&1; then
+        die "cannot resolve $main_ref; release tags must be cut from a commit on main"
+      fi
+      head_sha="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+      if ! git -C "$REPO_ROOT" merge-base --is-ancestor "$head_sha" "$main_ref" 2>/dev/null; then
+        die "HEAD ($head_sha) is not reachable from $main_ref; release tags must be cut from main"
+      fi
+      ;;
+  esac
 fi
 
 # --- Check 4: CHANGELOG heading for this version ----------------------------

@@ -204,6 +204,24 @@ else
     || fail "wrong diagnostic on dispatch metadata break; got: $out"
 fi
 
+# 12. RC version (hyphen in WS_VERSION) + non-existent main ref:
+#     HEAD-on-main check is SKIPPED per HITL 2026-05-17. Gate emits a
+#     NOTE to stderr but does not die. GA tags still enforce (covered by
+#     test #8).
+restore
+RC_VERSION="${WS}-rc.1"
+bash "$REPO_ROOT/scripts/set-version.sh" --workspace "$RC_VERSION"
+printf '# Changelog\n\n## %s\n' "$RC_VERSION" > "$CL_PATH"
+if out="$(RELEASE_GATES_SKIP_GIT_REACH=0 RELEASE_GATES_HEAD_REF="refs/heads/__nonexistent__" \
+    GITHUB_REF_NAME="v${RC_VERSION}" "$VRG" 2>&1)"; then
+  printf '%s' "$out" | grep -qiE 'release candidate|RC' \
+    && pass "RC version (${RC_VERSION}) skips HEAD-on-main with NOTE" \
+    || fail "RC version should emit RC-skip NOTE; got: $out"
+else
+  fail "RC version should pass gates with bogus main ref; got: $out"
+fi
+restore
+
 restore
 
 if [ "$FAILED" -gt 0 ]; then
