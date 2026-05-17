@@ -59,7 +59,7 @@ after each landed experiment, and close the packet.
 
 ## 3. Your decision loop (per plan §0.1 step 5)
 
-After every spawned phase returns:
+Pack-5 era loop (perf-experiment-oriented):
 
 1. Read `dev/plans/runs/<phase>-output.json`.
 2. Read reviewer verdict file (when applicable).
@@ -79,6 +79,29 @@ After every spawned phase returns:
    numbers, decision rule, baseline commit SHA. **Without this step
    the next prompt is stale.**
 
+Phase 11+ loop (release-engineering-oriented, no perf measurement):
+
+1. Read `dev/plans/runs/<phase>-output.json` (per §4.7 schema).
+2. Cherry-pick implementer commits from WT branch onto mainline
+   release branch (per §4.4).
+3. Spawn codex reviewer on the WT branch HEAD (per §4.2).
+4. Promote codex verdict body from log to canonical
+   `dev/plans/runs/<phase>-review-<rts>.md` (per §4.3).
+5. Decide:
+   - **PASS** → close phase, advance.
+   - **CONCERN (structural / prompt-induced)** → orchestrator
+     override (per §4.6), close phase.
+   - **CONCERN (substantive) / BLOCK** → fix-1 remediation (per
+     §4.5), goto step 1.
+6. Edit `dev/plans/0.6.0-implementation.md` "Immediate Next Slice"
+   section: add Phase <id> CLOSED block, advance "Mainline next
+   slice" pointer.
+7. Commit plan + verdict + prompt files in single docs commit:
+   `docs(<phase>): promote codex <verdict>; close Phase <id>;
+   advance to <next>`.
+8. After all sub-phases of a phase family close: worktree cleanup
+   (remove WT, delete branch) — see §11.
+
 ---
 
 ## 4. Spawning subagents (NOT the Agent tool)
@@ -86,19 +109,18 @@ After every spawned phase returns:
 Per plan §0.1 Route 1: spawn each phase as a fresh `claude -p`
 process via the Bash tool. Do **not** use the Agent tool /
 subagent_type — that path lacks per-spawn `--model` and effort knobs
-this packet requires.
+required for orchestrated work.
 
-Implementer skeleton (each prompt's "## Model + effort" section has
-the exact invocation):
+### 4.1 Implementer (Claude writes code)
 
 ```bash
-PHASE=<id>
+PHASE=<id>                  # e.g. 11d-release-workflow, 11d-fix-1
 TS=$(date -u +%Y%m%dT%H%M%SZ)
 LOG=/home/coreyt/projects/fathomdb/dev/plans/runs/${PHASE}-${TS}.log
-WT=/tmp/fdb-pack5-${PHASE}-${TS}
+WT=/tmp/fdb-${PHASE}-${TS}  # generic prefix; pack5- was Phase 9 legacy
 
 git -C /home/coreyt/projects/fathomdb worktree add "$WT" \
-    -b "pack5-${PHASE}-${TS}" <BASELINE_COMMIT_SHA>
+    -b "phase-${PHASE}-${TS}" <BASELINE_COMMIT_SHA>
 
 # Anti-chaining preamble — prepend to prompt body via stdin.
 # B.1 attempt #1 (2026-05-03) chained: wrapper claude -p read the
@@ -142,43 +164,161 @@ EOF
   > "$LOG" 2>&1 )
 ```
 
-Pre-flight amendments (already encoded in every prompt; do not
-forget):
+Invocation rules (do not forget):
 
 - Prompt body via stdin, not positional.
 - No `--bare` (keychain-only OAuth path needs standard).
-- No `--cwd`; use `--add-dir` plus shell-side `cd`.
+- No `--cwd` on claude; use `--add-dir` plus shell-side `cd`.
 - `--effort` is intent-only — JSON envelope does not surface it.
 - Cross-worktree paths must be absolute.
-
-Anti-chaining amendments (added 2026-05-03 after B.1 #1 BLOCKER):
-
-- Prepend the PREAMBLE block above so the subagent knows it IS the
-  implementer (not an orchestrator delegating). The "Spawn from main
-  thread" block in each prompt was being misread as an instruction
-  to spawn rather than as a record of how the agent was launched.
-- `--disallowedTools Task Agent` to physically prevent chained
-  spawns even if the role confusion recurs.
+- `--disallowedTools Task Agent` physically prevents chained spawns
+  (added 2026-05-03 after B.1 #1 BLOCKER incident).
 - `--output-format stream-json --include-partial-messages --verbose`
-  so the log file grows continuously and the orchestrator can
-  monitor mid-flight via `tail -f` / `wc -l`. Final result is the
-  last `result` event in the stream; parse with `jq` if needed.
+  so the log file grows continuously; monitor mid-flight via
+  `tail -f` / `wc -l`. Final result is the last `result` event;
+  parse with `jq` if needed.
+- Run as `run_in_background: true` Bash; you get notified on
+  completion. Do NOT poll.
 
-Reviewer skeleton (codex; read-only):
+### 4.2 Reviewer (Codex reads diff, returns verdict)
 
 ```bash
+PHASE=<id>                  # match implementer PHASE
 RTS=$(date -u +%Y%m%dT%H%M%SZ)
-RLOG=/home/coreyt/projects/fathomdb/dev/plans/runs/<phase>-review-${RTS}.md
+REV_LOG=/home/coreyt/projects/fathomdb/dev/plans/runs/${PHASE}-review-${RTS}.log
+WT=/tmp/fdb-${PHASE}-<implementer-ts>   # implementer worktree, post-commit
 
-( cd "$WT" && \
-  cat /home/coreyt/projects/fathomdb/dev/plans/prompts/review-experiment.md \
-       /home/coreyt/projects/fathomdb/dev/plans/prompts/review-phase78-robustness.md \
-  | codex exec --model gpt-5.4 -c model_reasoning_effort=high \
-  > "$RLOG" 2>&1 < /dev/null )
+PROMPT=$(cat <<'EOF'
+You are reviewing Phase <id>.
+
+Branch: phase-<id>-<ts>, HEAD <sha>.
+Baseline: <prior-CLOSED-sha>.
+
+Required reading:
+- dev/plans/prompts/<id>.md (the spec)
+- dev/plans/runs/<id>-output.json (closure artifact)
+- Commits <baseline-sha>..<head-sha> in chronological order
+
+Verdict format:
+- PASS / CONCERN / BLOCK on first line of verdict block
+- Findings as `### N. [severity] short title` then `Refs:` (file:line
+  citations) then 2-4 line explanation. Severity: high/medium/low.
+- "Addressed" section listing fixes from prior verdict if a fix-1 pass.
+- "Reviewer process notes" wrap.
+
+Focus the review on <slice-specific assertions>. Sandbox is
+read-only; do not attempt to write the verdict file — main thread
+promotes it.
+EOF
+)
+
+printf '%s\n' "$PROMPT" \
+  | codex exec \
+      --model gpt-5.4 \
+      -c model_reasoning_effort=high \
+      --sandbox read-only \
+      --cd "$WT" \
+      - \
+  > "$REV_LOG" 2>&1
 ```
 
-Reviewer is mandatory for B.1 + D.1 (see plan §0.1).
-`gpt-5` is rejected on a ChatGPT account; use `gpt-5.4`.
+Invocation rules:
+
+- `gpt-5` is rejected on ChatGPT account; use `gpt-5.4`.
+- `-c model_reasoning_effort=high` — codex defaults to lower effort;
+  always set explicitly.
+- `--sandbox read-only` — reviewer must not modify worktree (drift
+  would corrupt the diff under review).
+- `--cd "$WT"` — codex's working-directory flag (distinct from
+  claude's banned `--cwd`).
+- `-` positional reads prompt from stdin (fed via `printf '%s\n'`).
+  Do NOT use `echo "$PROMPT"` — it loses escaping on multiline
+  bodies.
+- Reviewer prompt is inline per-slice, not template-cat. Templates
+  (`review-experiment.md`, `review-phase78-robustness.md`) are
+  Pack-5 specific; phase-11+ uses targeted inline prompts.
+
+### 4.3 Verdict promotion (codex sandbox cannot write)
+
+Codex sandbox is read-only — reviewer cannot write the verdict file
+to canonical paths. Main thread promotes the verdict body from the
+log:
+
+```bash
+# 1. Read $REV_LOG, locate the verdict block (typically last ~100 lines).
+# 2. Write to canonical path with frontmatter:
+#    dev/plans/runs/<phase>-review-<rts>.md
+# 3. Verdict format (canonical, Phase 11+ practice):
+#    ## Verdict: PASS|CONCERN|BLOCK
+#    ### 1. [severity] short title
+#    Refs: file:line citations
+#    <2-4 line explanation>
+#    ## Addressed (for fix-N passes)
+#    ## Reviewer process notes
+#    ## Orchestrator triage (main thread's KEEP / FIX-1 / OVERRIDE call)
+```
+
+### 4.4 Cherry-pick to mainline
+
+Implementer commits sit on `phase-<id>-<ts>` branch in worktree.
+After reviewer PASS (or orchestrator override), cherry-pick the
+slice onto the mainline branch:
+
+```bash
+# In main repo, on 0.6.0-rewrite (or current release branch):
+git cherry-pick <implementer-sha-1> <implementer-sha-2> ...
+```
+
+Cherry-pick (not merge) lets the orchestrator select exactly which
+commits land — skips WT-internal experiments + keeps mainline
+history linear.
+
+### 4.5 Fix-1 remediation pass (on BLOCK / CONCERN)
+
+If reviewer returns BLOCK or actionable CONCERN, write a targeted
+remediation prompt `dev/plans/prompts/<id>-fix-1.md` and re-spawn
+the implementer in the **existing** worktree on the **existing**
+branch (don't add a new worktree). Build new commits on top of the
+prior head.
+
+Spawn pattern: same as §4.1 but with `WT=<existing-wt-path>` (no
+`git worktree add`). Prompt operates additively — no rewrites of
+landed commits.
+
+After fix-1: cherry-pick the new commit(s), respawn the reviewer
+for re-verdict. Iterate until PASS or orchestrator override.
+
+### 4.6 Orchestrator override (CONCERN accept)
+
+When reviewer returns CONCERN and the finding is structural (e.g.
+output.json self-reference: docs commit cannot contain its own SHA)
+or prompt-induced (implementer followed the prompt literally, but
+prompt produced an awkward artifact), the orchestrator may accept
+the CONCERN without further remediation.
+
+Override discipline:
+
+- Add explicit "Orchestrator override <YYYY-MM-DD>: CONCERN
+  accepted." line to the verdict .md.
+- Document the rationale in `## Orchestrator triage` section.
+- Never override BLOCK — that's a code or correctness issue;
+  always remediate.
+
+### 4.7 Closure output.json schema (per slice)
+
+```json
+{
+  "phase": "<id>",
+  "baseline_sha": "<sha branch was cut from>",
+  "branch": "phase-<id>-<ts>",
+  "head_sha": "<HEAD after final commit>",
+  "commits": ["<sha>: <subject>", "..."],
+  "findings_addressed": ["..."],          // for fix-N passes
+  "blockers_encountered": [{...}],         // surface-and-resolve log
+  "agent_verify_result": "pass | fail",
+  "next_step_for_orchestrator": "..."
+}
+```
 
 ---
 
@@ -268,3 +408,32 @@ authorization.
   verdict + §12 entry + whitepaper update.
 - All worktrees from `/tmp/fdb-pack5-*` cleaned.
 - STATUS.md final state = "packet closed" or escalation pointer.
+
+---
+
+## 11. Worktree cleanup (after phase family closes)
+
+After all sub-phases of a phase family CLOSE (e.g. 11a + 11b + 11c +
+11d all cherry-picked and PASS/override-accepted):
+
+1. Verify each WT branch head has equivalent commits on mainline:
+   `git log --oneline --grep="<phase>" <mainline-branch> | head`.
+2. Save any uncommitted closure artifacts in the WT
+   (`dev/plans/runs/<phase>-*-output.json` that the implementer
+   wrote but never committed) — Write tool into main repo, commit.
+3. Remove worktrees **one per Bash call** (bundled destructive ops
+   trigger permission denial):
+   ```bash
+   git worktree remove --force /tmp/fdb-<phase-family>-...
+   ```
+4. Delete branches **one per Bash call**:
+   ```bash
+   git branch -D phase-<phase-family>-...
+   ```
+5. Verify clean:
+   `git worktree list` should show only the main repo;
+   `git branch | grep phase-<phase-family>` should be empty.
+
+Per `feedback_file_deletion.md` memory: never `find -delete`. Stray
+sidecar lock files (`*.sqlite.lock`) in WTs are disposable — they
+disappear with `git worktree remove --force`.
