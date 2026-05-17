@@ -17,12 +17,12 @@ Last updated: 2026-05-17 (Phase 12 starting; nothing closed yet).
 
 - **Branch:** `0.6.0-rewrite`. Tip: `4309d8d` (12-D-fix-1 audit
   trail) + closure commit (this one).
-- **Active slice:** none. **12-D CLOSED 2026-05-17** (PASS via
-  fix-1). Next mainline: Wave 1 parallel slices 12-S security
-  fixtures + 12-B benchmark-and-robustness.yml.
+- **Active slices (parallel):** **12-S security fixtures** ⏳
+  (bash ID `bi6taw7b4`, Opus high) + **12-B benchmark workflow**
+  ⏳ (bash ID `bsoip617j`, Opus medium). Wave 1 parallel.
+- **12-D CLOSED 2026-05-17** at `f2f21b5` (PASS via fix-1).
 - **Phase 11 closed:** 2026-05-17 (all four sub-phases CLOSED).
-- **Outstanding worktrees:** 1 — 12-D worktree retained until
-  Wave 1 cleanup (or removed now per orchestration § 11; user call).
+- **Outstanding worktrees:** 3 — 12-D (retained), 12-S, 12-B.
 - **Open HITL questions:** none yet — 12-P and 12-V-VERBS will surface
   some.
 - **Branch divergence:** ~265 commits ahead of `main`, 0 behind.
@@ -36,8 +36,8 @@ Last updated: 2026-05-17 (Phase 12 starting; nothing closed yet).
 | Slice  | Status | Spawned | Decision | Reviewer | Worktree | Cherry-pick SHA | Notes |
 | ------ | ------ | ------- | -------- | -------- | -------- | --------------- | ----- |
 | 12-D   | ✅ CLOSED   | 2026-05-17 | CONCERN→fix-1→PASS | PASS (codex gpt-5.4) | retained | `b70fbca`+`2a1c203`+`89c7300`+`40a6c16`+`5449d2e`+`4309d8d` | AC-034a 100/100; AC-034b p99=1ms across full N=100; AC-035a/b/c green; AC-034c blocker→12-D-OS-CRASH follow-up. 3 real engine reliability fixes landed (open_locked stage reorder; probe_open_integrity b-tree traversal; probe_wal_sidecar bounded 32-byte read). |
-| 12-S   | ❌ not started | -        | -            | -        | -        | -               | Security fixtures AC-064/065/066 + AST + linter |
-| 12-B   | ❌ not started | -        | -            | -        | -        | -               | benchmark-and-robustness.yml restoration |
+| 12-S   | ⏳ in flight | 2026-05-17 | pending      | pending  | `/tmp/fdb-12-S-security-fixtures-*` | -               | AC-036/037/038/050a/050c (5 sub-scopes); bash ID `bi6taw7b4` |
+| 12-B   | ⏳ in flight | 2026-05-17 | pending      | pending  | `/tmp/fdb-12-B-benchmark-robustness-workflow-*` | -               | benchmark-and-robustness.yml restoration; bash ID `bsoip617j` |
 | 12-P   | ❌ not started | -        | -            | -        | -        | -               | HITL re-confirm AC-012/013/019/020 deferrals (per-AC analysis in plan § "Performance ACs deferral analysis") |
 | 12-V-VERBS | ❌ not started | -    | -            | -        | -        | -               | HITL deferred-verbs review (per plan § "Deferred verbs enumeration") |
 | 12-TX  | ❌ not started | -        | -            | -        | -        | -               | TS → Python-parity (lands after 12-P + 12-V-VERBS so doesn't chase moving surface) |
@@ -55,7 +55,7 @@ Reviewer values: PASS / CONCERN / BLOCK / n/a (no diff).
 | AC group        | ACs in flight                                         | Latest status            | Owner slice |
 | --------------- | ----------------------------------------------------- | ------------------------ | ----------- |
 | Durability      | AC-034a, AC-034b, AC-034c, AC-035a, AC-035b, AC-035c | ✅ AC-034a/b + AC-035a/b/c GREEN; AC-034c ⚠️ blocker→12-D-OS-CRASH follow-up | 12-D (done) + 12-D-OS-CRASH |
-| Security        | AC-064, AC-065, AC-066                                | ❌ not started           | 12-S        |
+| Security        | AC-036, AC-037, AC-038, AC-050a, AC-050c              | ❌ not started           | 12-S        |
 | Co-tagging      | AC-052                                                 | ✅ landed in 11d (assert script + workflow gate) | 11d (verified at 12-RC1) |
 | Version SoT     | AC-053                                                 | ✅ landed in 11c (set-version.sh --check-files)  | 11c (verified at 12-RC1) |
 | Registry smoke  | AC-056                                                 | ⏳ scripts ready (11d); evaluable only post-publish | 12-RC1 + 12-V |
