@@ -1,0 +1,6 @@
+{
+  "crate": {"name": "fathomdb-embedder"},
+  "versions": [
+    {"num": "0.5.0", "yanked": false}
+  ]
+}

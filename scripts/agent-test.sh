@@ -13,6 +13,10 @@ run_capped test-set-version bash scripts/tests/test_set_version.sh
 # Scripts (bash): release-time preflight (tag/--check-files/CHANGELOG/metadata).
 run_capped test-verify-release-gates bash scripts/tests/test_verify_release_gates.sh
 
+# Scripts (bash): sibling-package co-tagging assert (AC-052). Offline via
+# python3 -m http.server fixture; never hits crates.io.
+run_capped test-assert-co-tagging bash scripts/tests/test_assert_co_tagging.sh
+
 # AC-051a / AC-051b: cross-ecosystem version-skew resolver fixtures.
 run_capped test-cargo-skew bash dev/release/tests/cargo_skew.sh
 run_capped test-pip-skew bash dev/release/tests/pip_skew.sh
