@@ -44,8 +44,8 @@ Last updated: 2026-05-17 (Phase 12 starting; nothing closed yet).
 | 12-D   | ✅ CLOSED   | 2026-05-17 | CONCERN→fix-1→PASS | PASS (codex gpt-5.4) | retained | `b70fbca`+`2a1c203`+`89c7300`+`40a6c16`+`5449d2e`+`4309d8d` | AC-034a 100/100; AC-034b p99=1ms across full N=100; AC-035a/b/c green; AC-034c blocker→12-D-OS-CRASH follow-up. 3 real engine reliability fixes landed (open_locked stage reorder; probe_open_integrity b-tree traversal; probe_wal_sidecar bounded 32-byte read). |
 | 12-S   | ✅ CLOSED   | 2026-05-17 | BLOCK→BLOCK→PASS (2 fix rounds) | PASS (codex gpt-5.4 fix-2) | cleaned | `8569c80`+`d6b8f95`+`98e5693`+`637617b`+`abe286b`+`cbb7223`+`2b32659`+`eaeae40` | 5 ACs: AC-036/037/038/050a/050c. V05_VERBS=32; char-walk depth-counter Rust block-comment; STRICT=1 wired into agent-verify; CHANGELOG.md stub. No-shim policy enforcement live. |
 | 12-B   | 🚫 DEFERRED to Pack 7 | 2026-05-17 | BLOCKER (substrate gap; no diff) | n/a (no diff to review) | `/tmp/fdb-12-B-benchmark-robustness-workflow-20260517T195737Z` | `e4ab3f9` (blocker report only) | All 5 jobs' substrate absent in 0.6.0; demoted in ci-deferred.md; restore when Pack 7 lands harnesses. Per `feedback_reliability_principles` no-stub. |
-| 12-P   | ❌ not started | -        | -            | -        | -        | -               | HITL re-confirm AC-012/013/019/020 deferrals (per-AC analysis in plan § "Performance ACs deferral analysis") |
-| 12-V-VERBS | ❌ not started | -    | -            | -        | -        | -               | HITL deferred-verbs review (per plan § "Deferred verbs enumeration") |
+| 12-P   | ⏳ awaiting HITL | 2026-05-17 | decision package ready (recommend A all 4) | n/a (HITL slice) | n/a    | -               | Decision package at `dev/plans/prompts/12-P-decision.md`; needs user signoff |
+| 12-V-VERBS | ⏳ awaiting HITL | 2026-05-17 | decision package ready (recommend A 0.7.x) | n/a (HITL slice) | n/a    | -               | Decision package at `dev/plans/prompts/12-V-VERBS-decision.md`; needs user signoff |
 | 12-TX  | ❌ not started | -        | -            | -        | -        | -               | TS → Python-parity (lands after 12-P + 12-V-VERBS so doesn't chase moving surface) |
 | 12-DX  | ❌ not started | -        | -            | -        | -        | -               | External-user docs: mkdocs quickstart + install + API ref |
 | 12-RC1 | ❌ not started | -        | -            | -        | -        | -               | Tag `v0.6.0-rc.1` → release.yml fires → 9 publishes + smoke |
@@ -115,13 +115,24 @@ _(populate as Phase 12 progresses — newest on top)_
 
 ## Next action
 
-**Wave 1 complete.** Mainline next: Wave 2 parallel HITL slices
-**12-P** (perf-deferral re-confirm AC-012/013/019/020) + **12-V-VERBS**
-(deferred-verbs review). Both are HITL-decision slices; orchestrator
-drafts decision-options prompts but actual close requires user
-signoff.
+**Wave 2 decision packages drafted, awaiting user HITL signoff.**
 
-Out-of-band follow-ups tracked (not Wave 2 blocking):
+User reads:
+1. `dev/plans/prompts/12-P-decision.md` — 4 ACs, 4 checkboxes per AC.
+   Orchestrator recommends (A) keep-deferred for all four.
+2. `dev/plans/prompts/12-V-VERBS-decision.md` — paired verb set + spec
+   amendment option. Orchestrator recommends (A) confirm 0.7.x.
+
+User signs (checkbox + initials) inline OR replies with decisions;
+orchestrator then records to `dev/progress/0.6.0.md`, refreshes
+release-notes + test-plan, and closes 12-P + 12-V-VERBS in this
+STATUS + plan doc.
+
+After both close → Wave 3: **12-TX** (TS Python-parity) → **12-DX**
+(external user docs) → **12-RC1** (tag rc.1) → **12-V** (independent
+verification on fresh host) → **12-GA** (tag GA + merge to main).
+
+Out-of-band follow-ups tracked (not Wave 2/3 blocking):
 - **12-D-OS-CRASH** (per 12-D blocker-3) — AC-034c VM substrate.
 - **Pack 7** — perf-experiment substrate; unlocks 12-B restoration
   and AC-020 closure.
