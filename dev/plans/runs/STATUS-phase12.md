@@ -15,11 +15,13 @@ Last updated: 2026-05-17 (Phase 12 starting; nothing closed yet).
 
 ## Current state
 
-- **Branch:** `0.6.0-rewrite`. Tip: `a5a9a24` (docs-client-preview +
-  Phase 12 expansion).
-- **Active slice:** none. Next mainline: **12-D durability harnesses**.
+- **Branch:** `0.6.0-rewrite`. Tip: `23292b1` (context-mgmt infra).
+- **Active slice:** **12-D durability harnesses** ⏳ in flight since
+  2026-05-17 (bash ID `b058cxqju`). Worktree
+  `/tmp/fdb-12-D-durability-harnesses-<ts>` on branch
+  `phase-12-D-durability-harnesses-<ts>`.
 - **Phase 11 closed:** 2026-05-17 (all four sub-phases CLOSED).
-- **Outstanding worktrees:** none.
+- **Outstanding worktrees:** 1 — 12-D.
 - **Open HITL questions:** none yet — 12-P and 12-V-VERBS will surface
   some.
 - **Branch divergence:** 249 commits ahead of `main`, 0 behind.
@@ -29,7 +31,7 @@ Last updated: 2026-05-17 (Phase 12 starting; nothing closed yet).
 
 | Slice  | Status | Spawned | Decision | Reviewer | Worktree | Cherry-pick SHA | Notes |
 | ------ | ------ | ------- | -------- | -------- | -------- | --------------- | ----- |
-| 12-D   | ❌ not started | -        | -            | -        | -        | -               | Durability harnesses AC-034a..AC-035c |
+| 12-D   | ⏳ in flight | 2026-05-17 | pending      | pending  | `/tmp/fdb-12-D-durability-harnesses-*` | -               | Durability harnesses AC-034a..AC-035c; bash ID `b058cxqju` |
 | 12-S   | ❌ not started | -        | -            | -        | -        | -               | Security fixtures AC-064/065/066 + AST + linter |
 | 12-B   | ❌ not started | -        | -            | -        | -        | -               | benchmark-and-robustness.yml restoration |
 | 12-P   | ❌ not started | -        | -            | -        | -        | -               | HITL re-confirm AC-012/013/019/020 deferrals (per-AC analysis in plan § "Performance ACs deferral analysis") |
