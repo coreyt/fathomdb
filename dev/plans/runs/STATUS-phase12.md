@@ -48,7 +48,7 @@ Last updated: 2026-05-17 (Phase 12 starting; nothing closed yet).
 | 12-B   | 🚫 DEFERRED to Pack 7 | 2026-05-17 | BLOCKER (substrate gap; no diff) | n/a (no diff to review) | `/tmp/fdb-12-B-benchmark-robustness-workflow-20260517T195737Z` | `e4ab3f9` (blocker report only) | All 5 jobs' substrate absent in 0.6.0; demoted in ci-deferred.md; restore when Pack 7 lands harnesses. Per `feedback_reliability_principles` no-stub. |
 | 12-P   | ✅ CLOSED | 2026-05-17 | HITL (A) all 4 | n/a (HITL slice) | n/a    | <closure-sha> | All 4 perf ACs stay deferred. AC-012→0.6.1; AC-013/019→Pack 7 batched-insert; AC-020→Pack 7 architectural. Release notes refreshed. |
 | 12-V-VERBS | ✅ CLOSED | 2026-05-17 | HITL (A) 0.7.x | n/a (HITL slice) | n/a    | <closure-sha> | purge + restore deferred 0.7.x. Client 0.6.0 workaround: `recover --excise-source`. Release notes refreshed. |
-| 12-TX  | ❌ not started | -        | -            | -        | -        | -               | TS → Python-parity (lands after 12-P + 12-V-VERBS so doesn't chase moving surface) |
+| 12-TX  | ✅ CLOSED | 2026-05-17 | CONCERN→override | CONCERN (codex gpt-5.4); orchestrator-direct amendment | cleaned | `e31507b` + closure | 41-row parity matrix (28 OK / 3 closed / 10 divergence / 1 deferred-open-report→0.6.1); 19 error classes both sides; pytest 50/50 + npm test 33/33. Follow-up 12-TX-OPENREPORT for 0.6.1. |
 | 12-DX  | ❌ not started | -        | -            | -        | -        | -               | External-user docs: mkdocs quickstart + install + API ref |
 | 12-RC1 | ❌ not started | -        | -            | -        | -        | -               | Tag `v0.6.0-rc.1` → release.yml fires → 9 publishes + smoke |
 | 12-V   | ❌ not started | -        | -            | -        | -        | -               | Independent verification on fresh non-CI host |
@@ -117,20 +117,22 @@ _(populate as Phase 12 progresses — newest on top)_
 
 ## Next action
 
-**Wave 2 complete (HITL signoffs 2026-05-17).**
+**12-TX CLOSED 2026-05-17.** Wave 3 advances.
 
-Mainline next: **Wave 3 first slice — 12-TX TS Python-parity**.
-Draft `dev/plans/prompts/12-TX-ts-python-parity.md` then spawn.
-Per plan ordering: TS parity lands now (after 12-P + 12-V-VERBS)
-so TS doesn't chase a moving runtime surface.
+Mainline next: **12-DX external user docs**. Draft
+`dev/plans/prompts/12-DX-external-user-docs.md` then spawn. Scope per
+plan § Path-to-Client-Ready: mkdocs quickstart + install-from-PyPI/
+npm/cargo pages + API ref (Python + TS + Rust facade) wired via
+mkdocstrings or equivalent.
 
-Wave 3 sequence (serial after 12-TX): **12-DX** (external user docs)
-→ **12-RC1** (tag rc.1 + release.yml fires) → **12-V** (independent
-verification on fresh non-CI host) → **12-GA** (tag GA + merge to
-main).
+Wave 3 remaining (serial after 12-DX): **12-RC1** (tag rc.1 +
+release.yml fires) → **12-V** (independent verification on fresh
+non-CI host) → **12-GA** (tag GA + merge to main).
 
 Out-of-band follow-ups tracked (not Wave 3 blocking):
 - **12-D-OS-CRASH** (per 12-D blocker-3) — AC-034c VM substrate.
+- **12-TX-OPENREPORT** — `Engine.open` open-report surfacing on both
+  bindings (deferred to 0.6.1).
 - **Pack 7** — perf-experiment substrate; unlocks 12-B restoration
   and AC-013/019/020 closure.
 - **0.6.1 canonical-runner re-measurement** — AC-012 closure.

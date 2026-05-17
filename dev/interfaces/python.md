@@ -25,6 +25,14 @@ The canonical runtime verbs available to Python callers are:
 `Engine.open(...)` returns the engine handle plus the structured open report
 owned by `design/engine.md`.
 
+> **0.6.0 caveat (2026-05-17, Phase 12-TX).** The PyO3 binding currently
+> returns the engine handle only; the structured open report is dropped.
+> Native Rust `Engine::open` returns `OpenedEngine { engine, report:
+> OpenReport }` and the report is populated, but binding-side surfacing
+> defers to 0.6.1 (slice 12-TX-OPENREPORT). Clients that need
+> migration-version-reached / embedder-identity-confirmed / open-stage
+> data wait for 0.6.1.
+
 `Engine.open(path, *, config=None, **engine_config)` accepts the
 engine-owned knobs from `design/engine.md` in snake_case:
 
