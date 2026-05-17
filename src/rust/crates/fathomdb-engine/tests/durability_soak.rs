@@ -38,6 +38,11 @@ const PWR_MAX_KILL_MS: u64 = 180;
 // Time budget for the victim child to die after SIGKILL before we
 // declare the trial degenerate. Generous; SIGKILL is immediate.
 const VICTIM_REAP_BUDGET: Duration = Duration::from_secs(5);
+// Per-trial wait for the victim to land its first commit (signaled
+// via sentinel file). Without this fence the parent can SIGKILL
+// before any row reaches disk, producing degenerate "no surviving
+// commit" trials that AC-034b's full-N p99 contract forbids.
+const SENTINEL_WAIT_BUDGET: Duration = Duration::from_secs(5);
 
 // ── Victim entry-point ──────────────────────────────────────────────────────
 
@@ -53,17 +58,29 @@ fn _power_cut_victim_entry() {
         return;
     };
     let path = PathBuf::from(db_path_os);
+    let sentinel = std::env::var_os("FATHOMDB_POWER_CUT_VICTIM_SENTINEL").map(PathBuf::from);
     let opened = Engine::open(&path).expect("victim engine open");
     // Commit single-row writes carrying the wall-clock timestamp of the
     // commit in the body field. The parent recovers the maximum body
     // value after kill — that is the last-surviving-commit timestamp
     // per AC-034b measurement protocol.
+    let mut first = true;
     loop {
         let body = micros_since_epoch().to_string();
         opened
             .engine
             .write(&[PreparedWrite::Node { kind: "doc".to_string(), body, source_id: None }])
             .expect("victim write");
+        if first {
+            // Fence: the parent waits for this sentinel before sampling
+            // the kill delay, so every trial yields at least one
+            // surviving commit and AC-034b's p99 is computed across the
+            // full P-PWR-TRIALS set (not a filtered subset).
+            if let Some(path) = sentinel.as_ref() {
+                std::fs::File::create(path).expect("victim sentinel create");
+            }
+            first = false;
+        }
     }
 }
 
@@ -81,6 +98,18 @@ fn ac_034a_and_b_power_cut_zero_corruption_and_p99_lost_commit() {
     }
     let outcomes = run_power_cut_trials(P_PWR_TRIALS);
 
+    // Full-N contract: every trial must have yielded a measurable
+    // lost-commit sample, otherwise the p99 below is not actually
+    // "across P-PWR-TRIALS" and AC-034b is being measured on a
+    // filtered subset (the original review finding).
+    assert_eq!(
+        outcomes.len(),
+        P_PWR_TRIALS,
+        "AC-034b: harness collected {} trials, expected {}",
+        outcomes.len(),
+        P_PWR_TRIALS,
+    );
+
     // AC-034a: integrity_check == "ok" on every trial.
     let bad: Vec<_> = outcomes.iter().filter(|o| o.integrity != "ok").collect();
     assert!(
@@ -91,15 +120,10 @@ fn ac_034a_and_b_power_cut_zero_corruption_and_p99_lost_commit() {
         bad,
     );
 
-    // AC-034b: p99 lost-commit duration ≤ 100 ms.
-    let mut lost: Vec<u128> = outcomes.iter().filter_map(|o| o.lost_commit_ms).collect();
-    assert!(
-        lost.len() >= (outcomes.len() * 9 / 10),
-        "AC-034b: only {} of {} trials yielded a surviving commit; \
-         the harness is killing the victim before any write lands",
-        lost.len(),
-        outcomes.len(),
-    );
+    // AC-034b: p99 lost-commit duration ≤ 100 ms, computed across the
+    // full set (sentinel-wait guarantees every trial committed at
+    // least once before SIGKILL).
+    let mut lost: Vec<u128> = outcomes.iter().map(|o| o.lost_commit_ms).collect();
     lost.sort_unstable();
     let p99_index = ((lost.len() as f64 * 0.99).ceil() as usize).saturating_sub(1);
     let p99 = lost[p99_index];
@@ -122,7 +146,7 @@ fn ac_034a_and_b_power_cut_zero_corruption_and_p99_lost_commit() {
 #[derive(Debug)]
 struct TrialOutcome {
     integrity: String,
-    lost_commit_ms: Option<u128>,
+    lost_commit_ms: u128,
 }
 
 fn run_power_cut_trials(trials: usize) -> Vec<TrialOutcome> {
@@ -131,10 +155,12 @@ fn run_power_cut_trials(trials: usize) -> Vec<TrialOutcome> {
     for trial in 0..trials {
         let dir = TempDir::new().expect("tempdir");
         let db_path = dir.path().join("power-cut.sqlite");
+        let sentinel_path = dir.path().join("first-commit.sentinel");
 
         let mut child = Command::new(&exe)
             .args(["--exact", "--ignored", "_power_cut_victim_entry"])
             .env("FATHOMDB_POWER_CUT_VICTIM_DB", &db_path)
+            .env("FATHOMDB_POWER_CUT_VICTIM_SENTINEL", &sentinel_path)
             // Per-trial stdio drop; the parent does not parse victim
             // output, and leaving stdout connected to the parent test
             // would interleave with `cargo test` framing.
@@ -144,9 +170,15 @@ fn run_power_cut_trials(trials: usize) -> Vec<TrialOutcome> {
             .expect("spawn victim");
         let pid = child.id() as i32;
 
-        // Allow the child to start writing before we kill it. Without
-        // a floor, the kill races the engine-open path and most trials
-        // produce zero surviving commits.
+        // Fence on the victim's first-commit sentinel. The full-N p99
+        // contract requires every trial to record a real lost-commit
+        // sample; sampling the kill delay before this fence would let
+        // SIGKILL race the open path on slow hosts and bias the
+        // distribution toward "no surviving commit" outliers.
+        wait_for_sentinel(&sentinel_path, SENTINEL_WAIT_BUDGET, pid, trial);
+
+        // Allow the child to keep writing past the first commit so the
+        // kill point sweeps the commit cycle deterministically.
         let sleep_ms = trial_sleep_ms(trial);
         std::thread::sleep(Duration::from_millis(sleep_ms));
 
@@ -163,17 +195,39 @@ fn run_power_cut_trials(trials: usize) -> Vec<TrialOutcome> {
         // before we touch the WAL file from the parent.
         wait_with_budget(&mut child, VICTIM_REAP_BUDGET, trial);
 
-        let last_commit_micros = read_last_commit_micros(&db_path);
-        let integrity = run_integrity_check(&db_path);
-        let lost_commit_ms = last_commit_micros.map(|last| {
-            // `kill_micros >= last` holds by construction (last is read
-            // from a committed row, kill_micros samples after spawn).
-            // Saturating sub guards against clock jumps under load.
-            kill_micros.saturating_sub(last) / 1_000
+        let last_commit_micros = read_last_commit_micros(&db_path).unwrap_or_else(|| {
+            panic!(
+                "trial {trial}: sentinel landed but no committed row \
+                 recovered after SIGKILL — open path lost a durably \
+                 committed write"
+            )
         });
+        let integrity = run_integrity_check(&db_path);
+        // `kill_micros >= last_commit_micros` holds by construction
+        // (sentinel proves at least one commit landed before kill,
+        // and kill_micros was sampled after the post-sentinel sleep).
+        // Saturating sub guards against clock jumps under load.
+        let lost_commit_ms = kill_micros.saturating_sub(last_commit_micros) / 1_000;
         outcomes.push(TrialOutcome { integrity, lost_commit_ms });
     }
     outcomes
+}
+
+fn wait_for_sentinel(sentinel: &std::path::Path, budget: Duration, pid: i32, trial: usize) {
+    let started = Instant::now();
+    while !sentinel.exists() {
+        if started.elapsed() > budget {
+            // Don't leave the victim around as a runaway writer if the
+            // harness gives up on it.
+            let _ = unsafe { libc::kill(pid, libc::SIGKILL) };
+            panic!(
+                "trial {trial}: victim did not land its first commit \
+                 within {budget:?}; AC-034b full-N p99 contract requires \
+                 every trial to commit at least once before SIGKILL"
+            );
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
 }
 
 fn trial_sleep_ms(trial: usize) -> u64 {
@@ -240,15 +294,17 @@ fn run_integrity_check(db_path: &std::path::Path) -> String {
             output JSON (blocker-3). Do NOT clear the #[ignore] until \
             the VM image lands in dev/test-plan.md."]
 fn ac_034c_os_crash_zero_committed_tx_loss() {
-    // Intentionally empty body. The `#[ignore]` carries the blocker so
-    // `cargo test --release --test durability_soak ac_034c` reports
-    // "1 ignored" — visible in CI logs, not a silent skip — without
-    // pretending to verify the AC. Substituting `kill -9` for an OS
-    // crash would be silent AC weakening (per
-    // `feedback_reliability_principles.md` no-punt rule).
-    //
-    // To unblock: land the KVM image + `echo c > /proc/sysrq-trigger`
-    // workflow per `dev/acceptance.md` § AC-034c fixture, clear the
-    // `#[ignore]`, and wire trial loop here following the AC-034a/b
-    // shape above.
+    // Loud-fail body: clearing `#[ignore]` without landing the VM
+    // substrate now panics instead of green-passing vacuously.
+    // Substituting `kill -9` for an OS crash would be silent AC
+    // weakening (per `feedback_reliability_principles.md` no-punt
+    // rule).
+    panic!(
+        "AC-034c requires a KVM image with `echo c > /proc/sysrq-trigger` \
+         and a preserved disk sync barrier (per `dev/acceptance.md` § \
+         AC-034c fixture). That VM substrate does not exist in this repo. \
+         See `dev/plans/runs/12-D-durability-harnesses-output.json` \
+         blocker-3 for the substrate-gap detail and the recommended \
+         12-D-OS-CRASH follow-up slice."
+    );
 }

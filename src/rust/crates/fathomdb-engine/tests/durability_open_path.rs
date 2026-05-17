@@ -280,9 +280,30 @@ fn assert_lock_released_and_no_engine_residue(kind: CorruptionKind) {
     let lock_path = lock_path_for(&path);
     assert!(lock_path.exists(), "engine should have created the lockfile before releasing it");
 
-    // Re-acquire the advisory lock that the engine took on `.lock`. If
-    // the failed open leaked the file lock, this `flock(LOCK_EX|NB)`
-    // would return EWOULDBLOCK.
+    // True sibling-process check (AC-035c contract): a separate
+    // process B must observe the lock as acquirable. Re-entering the
+    // test binary with `FATHOMDB_TEST_LOCK_PROBE` routes to
+    // `_lock_acquire_probe_entry`, which exits 0 on `flock(LOCK_EX |
+    // LOCK_NB)` success and 1 on EWOULDBLOCK. Same-process fd
+    // reacquire is useful signal but is not the documented contract.
+    let exe = std::env::current_exe().expect("current_exe");
+    let probe_status = std::process::Command::new(&exe)
+        .args(["--exact", "--ignored", "_lock_acquire_probe_entry"])
+        .env("FATHOMDB_TEST_LOCK_PROBE", &lock_path)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .expect("spawn lock-probe sibling");
+    assert!(
+        probe_status.success(),
+        "AC-035c: sibling process could not acquire .lock after failed \
+         open ({}): probe exit {:?}",
+        lock_path.display(),
+        probe_status.code(),
+    );
+
+    // Same-process fd reacquire kept as a sanity check on top of the
+    // sibling-process contract.
     let probe = File::options().read(true).write(true).open(&lock_path).expect("open lock file");
     let probe_fd: i32 = std::os::unix::io::AsRawFd::as_raw_fd(&probe);
     let rc = unsafe { libc::flock(probe_fd, libc::LOCK_EX | libc::LOCK_NB) };
@@ -330,6 +351,32 @@ fn assert_lock_released_and_no_engine_residue(kind: CorruptionKind) {
             "AC-035c: thread named '{comm}' is still live after a failed open"
         );
     }
+}
+
+/// Test-binary-as-sibling entry. Re-invoked from `assert_lock_released_*`
+/// with `FATHOMDB_TEST_LOCK_PROBE` set to the engine's `.lock` path.
+/// Attempts `flock(LOCK_EX | LOCK_NB)` and exits 0 on success / 1 on
+/// `EWOULDBLOCK`, giving the parent a true sibling-process check
+/// (AC-035c contract) instead of the in-process fd reacquire.
+/// Without the env var the test is a no-op so plain
+/// `cargo test --test durability_open_path -- --ignored` is safe.
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "test-binary-as-sibling entry-point for the AC-035c lock-released harness"]
+fn _lock_acquire_probe_entry() {
+    let Some(lock_path) = std::env::var_os("FATHOMDB_TEST_LOCK_PROBE") else {
+        return;
+    };
+    let path = PathBuf::from(lock_path);
+    let probe =
+        File::options().read(true).write(true).open(&path).expect("sibling: open lock file");
+    let probe_fd: i32 = std::os::unix::io::AsRawFd::as_raw_fd(&probe);
+    let rc = unsafe { libc::flock(probe_fd, libc::LOCK_EX | libc::LOCK_NB) };
+    if rc == 0 {
+        let _ = unsafe { libc::flock(probe_fd, libc::LOCK_UN) };
+        std::process::exit(0);
+    }
+    std::process::exit(1);
 }
 
 #[cfg(target_os = "linux")]
