@@ -1,5 +1,6 @@
 [package]
 name = "fathomdb-embedder-api"
+description = "FathomDB embedder trait surface — semver-stable contract for embedder plugins (Axis E)."
 # Axis E: independent semver per dev/design/release.md § Version axes.
 # This crate is the semver-stable trait surface; it bumps only when the
 # trait surface changes, not on every workspace lockstep release.

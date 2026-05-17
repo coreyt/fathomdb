@@ -1,5 +1,6 @@
 [package]
 name = "fathomdb"
+description = "FathomDB facade crate — re-exports the public Rust surface of fathomdb-engine."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

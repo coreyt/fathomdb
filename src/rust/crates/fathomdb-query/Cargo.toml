@@ -1,5 +1,6 @@
 [package]
 name = "fathomdb-query"
+description = "FathomDB query layer — JSON-filter AST and validation surface (leaf crate)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

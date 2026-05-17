@@ -1,5 +1,6 @@
 [package]
 name = "fathomdb-cli"
+description = "FathomDB CLI — operator and diagnostics binary (fathomdb doctor, fathomdb export, ...)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -1,5 +1,6 @@
 [package]
 name = "fathomdb-embedder"
+description = "FathomDB embedder runtime — built-in embedder implementations for the fathomdb-embedder-api trait."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

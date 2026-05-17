@@ -1,5 +1,6 @@
 [package]
 name = "fathomdb-engine"
+description = "FathomDB engine — embedded vector + JSON database core (storage, projection, ingest, query)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
