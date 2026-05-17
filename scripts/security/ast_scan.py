@@ -130,30 +130,30 @@ def scan_rust(root: Path) -> list[Finding]:
             continue
         lines = text.splitlines()
         is_crate_root = path.name in ("lib.rs", "main.rs")
-        in_block_comment = False
+        # Why: Rust permits nested block comments (edition 2018+);
+        # track depth not boolean so `/* /* */ */` only closes the
+        # outer block after both `*/` tokens.
+        block_depth = 0
         for i, raw in enumerate(lines, 1):
-            stripped = raw.strip()
-            # Strip /* ... */ and /** ... */ block-comment regions so
-            # banned names inside doc examples don't false-fire.
-            if in_block_comment:
-                if "*/" in stripped:
-                    in_block_comment = False
-                    # tail after */ may contain real code; re-process it
-                    tail = stripped.split("*/", 1)[1].strip()
-                    if not tail:
-                        continue
-                    stripped = tail
+            out: list[str] = []
+            j = 0
+            line = raw
+            while j < len(line):
+                if block_depth == 0 and line[j : j + 2] == "/*":
+                    block_depth = 1
+                    j += 2
+                elif block_depth > 0 and line[j : j + 2] == "/*":
+                    block_depth += 1
+                    j += 2
+                elif block_depth > 0 and line[j : j + 2] == "*/":
+                    block_depth -= 1
+                    j += 2
+                elif block_depth > 0:
+                    j += 1
                 else:
-                    continue
-            while stripped.startswith("/*"):
-                if "*/" in stripped[2:]:
-                    stripped = stripped.split("*/", 1)[1].strip()
-                    if not stripped:
-                        break
-                else:
-                    in_block_comment = True
-                    stripped = ""
-                    break
+                    out.append(line[j])
+                    j += 1
+            stripped = "".join(out).strip()
             if not stripped:
                 continue
             if stripped.startswith("//"):
