@@ -15,23 +15,27 @@ Last updated: 2026-05-17 (Phase 12 starting; nothing closed yet).
 
 ## Current state
 
-- **Branch:** `0.6.0-rewrite`. Tip: `23292b1` (context-mgmt infra).
-- **Active slice:** **12-D durability harnesses** ⏳ in flight since
-  2026-05-17 (bash ID `b058cxqju`). Worktree
-  `/tmp/fdb-12-D-durability-harnesses-<ts>` on branch
-  `phase-12-D-durability-harnesses-<ts>`.
+- **Branch:** `0.6.0-rewrite`. Tip: `4309d8d` (12-D-fix-1 audit
+  trail) + closure commit (this one).
+- **Active slice:** none. **12-D CLOSED 2026-05-17** (PASS via
+  fix-1). Next mainline: Wave 1 parallel slices 12-S security
+  fixtures + 12-B benchmark-and-robustness.yml.
 - **Phase 11 closed:** 2026-05-17 (all four sub-phases CLOSED).
-- **Outstanding worktrees:** 1 — 12-D.
+- **Outstanding worktrees:** 1 — 12-D worktree retained until
+  Wave 1 cleanup (or removed now per orchestration § 11; user call).
 - **Open HITL questions:** none yet — 12-P and 12-V-VERBS will surface
   some.
-- **Branch divergence:** 249 commits ahead of `main`, 0 behind.
+- **Branch divergence:** ~265 commits ahead of `main`, 0 behind.
 - **Mainline target:** `v0.6.0` tag + merge to `main` at slice 12-GA.
+- **Follow-up tracked:** **12-D-OS-CRASH** (per 12-D blocker-3) —
+  AC-034c VM substrate work; ignored placeholder panics loudly if
+  cleared without substrate.
 
 ## Slice scoreboard
 
 | Slice  | Status | Spawned | Decision | Reviewer | Worktree | Cherry-pick SHA | Notes |
 | ------ | ------ | ------- | -------- | -------- | -------- | --------------- | ----- |
-| 12-D   | ⏳ in flight | 2026-05-17 | pending      | pending  | `/tmp/fdb-12-D-durability-harnesses-*` | -               | Durability harnesses AC-034a..AC-035c; bash ID `b058cxqju` |
+| 12-D   | ✅ CLOSED   | 2026-05-17 | CONCERN→fix-1→PASS | PASS (codex gpt-5.4) | retained | `b70fbca`+`2a1c203`+`89c7300`+`40a6c16`+`5449d2e`+`4309d8d` | AC-034a 100/100; AC-034b p99=1ms across full N=100; AC-035a/b/c green; AC-034c blocker→12-D-OS-CRASH follow-up. 3 real engine reliability fixes landed (open_locked stage reorder; probe_open_integrity b-tree traversal; probe_wal_sidecar bounded 32-byte read). |
 | 12-S   | ❌ not started | -        | -            | -        | -        | -               | Security fixtures AC-064/065/066 + AST + linter |
 | 12-B   | ❌ not started | -        | -            | -        | -        | -               | benchmark-and-robustness.yml restoration |
 | 12-P   | ❌ not started | -        | -            | -        | -        | -               | HITL re-confirm AC-012/013/019/020 deferrals (per-AC analysis in plan § "Performance ACs deferral analysis") |
@@ -50,7 +54,7 @@ Reviewer values: PASS / CONCERN / BLOCK / n/a (no diff).
 
 | AC group        | ACs in flight                                         | Latest status            | Owner slice |
 | --------------- | ----------------------------------------------------- | ------------------------ | ----------- |
-| Durability      | AC-034a, AC-034b, AC-034c, AC-035a, AC-035b, AC-035c | ❌ not started           | 12-D        |
+| Durability      | AC-034a, AC-034b, AC-034c, AC-035a, AC-035b, AC-035c | ✅ AC-034a/b + AC-035a/b/c GREEN; AC-034c ⚠️ blocker→12-D-OS-CRASH follow-up | 12-D (done) + 12-D-OS-CRASH |
 | Security        | AC-064, AC-065, AC-066                                | ❌ not started           | 12-S        |
 | Co-tagging      | AC-052                                                 | ✅ landed in 11d (assert script + workflow gate) | 11d (verified at 12-RC1) |
 | Version SoT     | AC-053                                                 | ✅ landed in 11c (set-version.sh --check-files)  | 11c (verified at 12-RC1) |
@@ -105,10 +109,13 @@ _(populate as Phase 12 progresses — newest on top)_
 
 ## Next action
 
-Spawn **12-D durability harnesses**. Prompt to be drafted at
-`dev/plans/prompts/12-D-durability-harnesses.md`. Baseline: current tip
-of `0.6.0-rewrite`. Reviewer: mandatory (durability harnesses gate
-data-correctness ACs).
+**12-D CLOSED.** Next mainline: Wave 1 parallel slices **12-S
+security fixtures** + **12-B benchmark-and-robustness.yml**
+(independent files per plan § Parallelization opportunities). Draft
+both prompts; spawn in parallel.
+
+Out-of-band follow-up: **12-D-OS-CRASH** when VM substrate
+available (per 12-D blocker-3). Not Wave-1 blocking.
 
 ## Compaction-resume checklist
 
