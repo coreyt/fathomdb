@@ -1,0 +1,499 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Rehearse against test.pypi + cargo --dry-run + npm --dry-run (no real publish)."
+        type: boolean
+        default: true
+
+permissions:
+  actions: read
+  contents: write
+  id-token: write
+
+env:
+  DRY_RUN: ${{ inputs.dry_run || 'false' }}
+
+jobs:
+  # Single ubuntu preflight. Combines:
+  #   - scripts/verify-release-gates.sh (tag↔Cargo.toml lockstep, set-version
+  #     --check-files lockstep, HEAD-on-main, CHANGELOG section, crate
+  #     publish metadata).
+  #   - actionlint on all workflow files (per feedback_workflow_validation —
+  #     yaml.safe_load passes schema-invalid syntax GitHub silently rejects).
+  verify-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0  # need refs/heads/main for HEAD-reach check
+      - name: Install actionlint
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash \
+            | bash -s -- 1.7.7
+          sudo mv actionlint /usr/local/bin/actionlint
+      - name: Validate workflow YAML
+        run: actionlint .github/workflows/*.yml
+      - name: Run release gates
+        # Only runs on real tag pushes. workflow_dispatch rehearsals have
+        # no v* tag context, so the tag/Cargo.toml-lockstep check would
+        # always fail; dry-run is for exercising the publish path, not
+        # the gate.
+        if: github.event_name == 'push'
+        run: bash scripts/verify-release-gates.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  # Multi-platform Python wheels via PyO3/maturin-action. Produces manylinux,
+  # macOS (x86_64 + arm64), and Windows wheels for Python 3.10-3.12. The
+  # working-directory must be `src/python` so maturin reads our pyproject.toml
+  # there (manifest-path = ../rust/crates/fathomdb-py/Cargo.toml).
+  build-python:
+    needs: verify-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            manylinux: "2_28"
+          - runner: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            manylinux: "2_28"
+          - runner: macos-latest
+            target: x86_64-apple-darwin
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.11"
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          target: ${{ matrix.target }}
+          # Explicit -i: cross-compile Docker containers can pick up
+          # python3.14 which pyo3 0.23 does not support. Bump alongside the
+          # pyo3 upgrade landing in dev/notes/pyo3-0.28-upgrade-plan.md.
+          args: --release --out dist -i python3.10 python3.11 python3.12
+          manylinux: ${{ matrix.manylinux || 'auto' }}
+          working-directory: src/python
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: python-dist-${{ matrix.target }}
+          path: src/python/dist/*
+
+  # Native binding prebuilds for npm. The napi-rs CLI handles the rename to
+  # fathomdb.<platform-label>.node per the `napi.triples` block in
+  # src/ts/package.json — prefer this over a raw `cargo build` + manual cp
+  # because the platform-label convention lives in the napi-rs CLI, not in
+  # us. Binary lands flat at src/ts/fathomdb.<label>.node (NO prebuilds/
+  # subdir; that was the pre-0.6.0 layout).
+  build-napi:
+    needs: verify-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            label: linux-x64-gnu
+          - runner: macos-latest
+            target: x86_64-apple-darwin
+            label: darwin-x64
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+            label: darwin-arm64
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            label: win32-x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: "22"
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Install ts deps
+        working-directory: src/ts
+        run: npm ci
+      - name: Build napi binding
+        working-directory: src/ts
+        env:
+          CARGO_BUILD_TARGET: ${{ matrix.target }}
+        run: npm run build:native
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: napi-${{ matrix.label }}
+          path: src/ts/fathomdb.${{ matrix.label }}.node
+
+  # Pre-publish packaging verification for Rust crates:
+  #   1. cargo build --release --workspace — compile check of every crate
+  #      we are about to publish.
+  #   2. cargo package --no-verify for the three leaf crates with no
+  #      in-workspace dependencies (fathomdb-embedder-api, fathomdb-schema,
+  #      fathomdb-query). Validates manifest/readme/license metadata
+  #      without invoking the registry.
+  #
+  # The dependent crates (fathomdb-engine, fathomdb-embedder, fathomdb,
+  # fathomdb-cli) are NOT packaged here: cargo package rewrites path deps
+  # to versioned deps and then does a registry resolve on the rewritten
+  # manifest. For a fresh release the leaf crates are not published yet,
+  # so the resolve cannot find e.g. fathomdb-schema@0.6.0 and fails.
+  # Manifest correctness of the dependent crates is enforced at actual
+  # publish time inside `cargo publish`, which we do not want to duplicate
+  # at CI cost.
+  build-rust:
+    runs-on: ubuntu-latest
+    needs: verify-release
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Verify workspace builds in release mode
+        run: cargo build --release --workspace
+      - name: Package fathomdb-embedder-api (leaf, Axis E)
+        run: cargo package --no-verify -p fathomdb-embedder-api
+      - name: Package fathomdb-schema (leaf, no in-workspace deps)
+        run: cargo package --no-verify -p fathomdb-schema
+      - name: Package fathomdb-query (leaf, no in-workspace deps)
+        run: cargo package --no-verify -p fathomdb-query
+
+  # Cross-ecosystem gate: every build must succeed before ANY publish runs.
+  # Without this, a partial release (e.g. crates.io 0.6.0 published but
+  # pypi 0.6.0 blocked on a build failure) leaves downstream versioning
+  # unrecoverable — 0.6.1 would then have mismatched ecosystem coverage.
+  all-builds-passed:
+    runs-on: ubuntu-latest
+    needs:
+      - verify-release
+      - build-python
+      - build-napi
+      - build-rust
+    steps:
+      - run: echo "all release build gates passed"
+
+  # --- Tiered cargo publish (T1..T7) -----------------------------------------
+  # Each tier publishes one crate, then sleeps 60s to let the crates.io
+  # index propagate before the next tier resolves the dep against it.
+  # --locked is omitted: the lock file is generated against local path
+  # dependencies, which do not match the crates.io index state during
+  # tiered publishing.
+  # Order rationale: see dev/design/release.md § Tiered publish order.
+
+  publish-rust-t1-embedder-api:
+    runs-on: ubuntu-latest
+    needs: all-builds-passed
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+      - name: cargo publish fathomdb-embedder-api
+        run: |
+          if [ "${DRY_RUN}" = "true" ]; then
+            cargo publish --dry-run -p fathomdb-embedder-api
+          else
+            cargo publish -p fathomdb-embedder-api --token "${CARGO_REGISTRY_TOKEN}"
+          fi
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Wait for crates.io index propagation
+        if: ${{ inputs.dry_run != true }}
+        run: sleep 60
+
+  publish-rust-t2-schema:
+    runs-on: ubuntu-latest
+    needs: publish-rust-t1-embedder-api
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+      - name: cargo publish fathomdb-schema
+        run: |
+          if [ "${DRY_RUN}" = "true" ]; then
+            cargo publish --dry-run -p fathomdb-schema
+          else
+            cargo publish -p fathomdb-schema --token "${CARGO_REGISTRY_TOKEN}"
+          fi
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Wait for crates.io index propagation
+        if: ${{ inputs.dry_run != true }}
+        run: sleep 60
+
+  publish-rust-t3-query:
+    runs-on: ubuntu-latest
+    needs: publish-rust-t2-schema
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+      - name: cargo publish fathomdb-query
+        run: |
+          if [ "${DRY_RUN}" = "true" ]; then
+            cargo publish --dry-run -p fathomdb-query
+          else
+            cargo publish -p fathomdb-query --token "${CARGO_REGISTRY_TOKEN}"
+          fi
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Wait for crates.io index propagation
+        if: ${{ inputs.dry_run != true }}
+        run: sleep 60
+
+  publish-rust-t4-engine:
+    runs-on: ubuntu-latest
+    needs: publish-rust-t3-query
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+      - name: cargo publish fathomdb-engine
+        run: |
+          if [ "${DRY_RUN}" = "true" ]; then
+            cargo publish --dry-run -p fathomdb-engine
+          else
+            cargo publish -p fathomdb-engine --token "${CARGO_REGISTRY_TOKEN}"
+          fi
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Wait for crates.io index propagation
+        if: ${{ inputs.dry_run != true }}
+        run: sleep 60
+
+  publish-rust-t5-embedder:
+    runs-on: ubuntu-latest
+    # T5 depends on Axis E (T1) in graph terms but waits for T4 here so the
+    # 60s index-propagation cadence stays linear; parallelizing T5 with T4
+    # would race the crates.io index from two directions for no real wall-
+    # clock win.
+    needs: publish-rust-t4-engine
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+      - name: cargo publish fathomdb-embedder
+        run: |
+          if [ "${DRY_RUN}" = "true" ]; then
+            cargo publish --dry-run -p fathomdb-embedder
+          else
+            cargo publish -p fathomdb-embedder --token "${CARGO_REGISTRY_TOKEN}"
+          fi
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Wait for crates.io index propagation
+        if: ${{ inputs.dry_run != true }}
+        run: sleep 60
+
+  publish-rust-t6-facade:
+    runs-on: ubuntu-latest
+    needs: publish-rust-t5-embedder
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+      - name: cargo publish fathomdb (facade)
+        run: |
+          if [ "${DRY_RUN}" = "true" ]; then
+            cargo publish --dry-run -p fathomdb
+          else
+            cargo publish -p fathomdb --token "${CARGO_REGISTRY_TOKEN}"
+          fi
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Wait for crates.io index propagation
+        if: ${{ inputs.dry_run != true }}
+        run: sleep 60
+
+  publish-rust-t7-cli:
+    runs-on: ubuntu-latest
+    needs: publish-rust-t6-facade
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+      - name: cargo publish fathomdb-cli
+        run: |
+          if [ "${DRY_RUN}" = "true" ]; then
+            cargo publish --dry-run -p fathomdb-cli
+          else
+            cargo publish -p fathomdb-cli --token "${CARGO_REGISTRY_TOKEN}"
+          fi
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Wait for crates.io index propagation
+        if: ${{ inputs.dry_run != true }}
+        run: sleep 60
+
+  # --- Tier 8: binding-package parallel publishes ----------------------------
+  # PyPI + npm wrap fathomdb-engine directly (PyO3 / napi-rs). They publish
+  # in parallel after T4 resolves on crates.io — independent of T5..T7.
+
+  publish-pypi:
+    runs-on: ubuntu-latest
+    needs: publish-rust-t4-engine
+    environment:
+      name: pypi
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: python-dist-*
+          merge-multiple: true
+          path: dist
+      - name: Publish to PyPI (or test.pypi on dry-run)
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
+        with:
+          packages-dir: dist
+          repository-url: ${{ env.DRY_RUN == 'true' && 'https://test.pypi.org/legacy/' || '' }}
+
+  publish-npm:
+    runs-on: ubuntu-latest
+    needs: publish-rust-t4-engine
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: src/ts
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+      # Pull every platform binary into src/ts/ as siblings of dist/ — the
+      # napi loader expects fathomdb.<platform>-<arch>.node relative to
+      # the compiled JS, and the package.json `files` list ships them.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: napi-*
+          merge-multiple: true
+          path: src/ts
+      - name: List staged artifacts
+        run: ls -la
+      - name: Install + build TypeScript
+        run: |
+          npm ci
+          # The native binaries are already downloaded from build-napi;
+          # only the tsc step is needed here.
+          npx tsc -p tsconfig.json
+      # npm OIDC trusted publishing requires npm >= 11.5.1 but Node 22
+      # ships with npm 10.x. Using npx to invoke the latest npm avoids
+      # the MODULE_NOT_FOUND bug from `npm install -g npm@latest` while
+      # still getting a version that supports OIDC. --access public makes
+      # the bare (unscoped) package publishable; --provenance attests
+      # the build came from this workflow run.
+      - name: Publish to npm (or dry-run rehearsal)
+        run: |
+          if [ "${DRY_RUN}" = "true" ]; then
+            npx npm@latest publish --dry-run --access public --provenance
+          else
+            npx npm@latest publish --provenance --access public
+          fi
+
+  # --- Post-publish verification --------------------------------------------
+  # AC-056: a published artifact is not "done" until it installs cleanly from
+  # the registry on a fresh machine and the SDK opens + closes + process-exits.
+  # Skipped on dry-run — install-from-test.pypi does not mirror prod closely
+  # enough to make the smoke meaningful, and npm has no comparable staging.
+  post-publish-smoke:
+    runs-on: ubuntu-latest
+    if: ${{ inputs.dry_run != true }}
+    needs:
+      - publish-rust-t7-cli
+      - publish-pypi
+      - publish-npm
+    strategy:
+      fail-fast: false
+      matrix:
+        smoke:
+          - crates-cli
+          - pypi-wheel
+          - npm-package
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        if: matrix.smoke == 'pypi-wheel'
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        if: matrix.smoke == 'npm-package'
+        with:
+          node-version: "22"
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        if: matrix.smoke == 'crates-cli'
+        with:
+          toolchain: stable
+      - name: Resolve tag version
+        id: ver
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          echo "version=${v}" >> "$GITHUB_OUTPUT"
+      - name: Run smoke
+        run: bash "scripts/release/smoke/smoke-${{ matrix.smoke }}.sh" "${{ steps.ver.outputs.version }}"
+
+  # AC-052: sibling triple (fathomdb + fathomdb-embedder + fathomdb-embedder-
+  # api) must all exist in the registry at the expected versions after the
+  # tier 1..7 publishes complete. Skipped on dry-run since no real publish
+  # happened.
+  co-tagging-assert:
+    runs-on: ubuntu-latest
+    if: ${{ inputs.dry_run != true }}
+    needs:
+      - publish-rust-t7-cli
+      - publish-pypi
+      - publish-npm
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Resolve tag version
+        id: ver
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          echo "version=${v}" >> "$GITHUB_OUTPUT"
+      - name: Assert sibling-package co-tagging
+        run: bash scripts/release/assert-co-tagging.sh "${{ steps.ver.outputs.version }}"
+
+  # AC-054 partial: only this job marks the release complete by creating the
+  # GitHub Release. If any smoke or co-tagging job is red, this job does not
+  # run, so the release is never marked done. Skipped on dry-run.
+  github-release:
+    runs-on: ubuntu-latest
+    if: ${{ inputs.dry_run != true }}
+    needs:
+      - post-publish-smoke
+      - co-tagging-assert
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: python-dist-*
+          merge-multiple: true
+          path: dist
+      - uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2.6.1
+        with:
+          files: dist/*
