@@ -7,12 +7,24 @@ theme:
   name: mkdocs
 nav:
   - Home: index.md
-  - Getting Started: getting-started/index.md
-  - Guides: guides/index.md
+  - Getting Started:
+      - Overview: getting-started/index.md
+      - Quickstart: getting-started/quickstart.md
+  - Install:
+      - Python: install/python.md
+      - TypeScript: install/typescript.md
+      - Rust: install/rust.md
+  - Reference:
+      - Overview: reference/index.md
+      - Python API: reference/python-api.md
+      - TypeScript API: reference/typescript-api.md
+      - CLI: reference/cli.md
+      - Errors: reference/errors.md
+      - Config: reference/config.md
   - Concepts: concepts/index.md
-  - Reference: reference/index.md
-  - Operations: operations/index.md
   - Compatibility: compatibility/index.md
+  - Operations: operations/index.md
+  - Guides: guides/index.md
   - Release Notes:
       - 0.6.0: release-notes/0.6.0.md
   - Positions:
