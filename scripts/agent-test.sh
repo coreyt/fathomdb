@@ -22,6 +22,9 @@ run_capped test-assert-co-tagging bash scripts/tests/test_assert_co_tagging.sh
 # time by the release workflow, not here.
 run_capped test-smoke-scripts bash scripts/tests/test_smoke_scripts.sh
 
+# actionlint binary present + rejects deliberately-broken fixture.
+run_capped test-actionlint-fixture bash scripts/tests/test_actionlint_fixture.sh
+
 # AC-051a / AC-051b: cross-ecosystem version-skew resolver fixtures.
 run_capped test-cargo-skew bash dev/release/tests/cargo_skew.sh
 run_capped test-pip-skew bash dev/release/tests/pip_skew.sh

@@ -1,0 +1,20 @@
+# Deliberately invalid workflow used by test_actionlint_fixture.sh to
+# prove the actionlint binary is present + working. NOT scanned by the
+# .github/workflows/*.yml glob in scripts/agent-lint.sh because it sits
+# outside that path.
+name: bad-workflow
+on:
+  push:
+    branches: [main]
+jobs:
+  oops:
+    runs-on: ubuntu-latest
+    env:
+      # ${{ runner.* }} at job-env level is invalid — the per-job env
+      # block does not have access to the runner context. This is the
+      # exact regression that motivated feedback_workflow_validation:
+      # yaml.safe_load accepts this, GitHub rejects it at run time.
+      WHO: ${{ runner.os }}
+    steps:
+      - name: do something
+        run: echo "$WHO"

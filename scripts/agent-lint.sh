@@ -33,5 +33,13 @@ fi
 # TypeScript: ESLint not configured yet
 skip_notice lint-ts "ESLint not configured"
 
+# Workflows: actionlint is the canonical validator per feedback_workflow_validation
+# (yaml.safe_load passes schema-invalid syntax GitHub silently rejects).
+if command -v actionlint >/dev/null 2>&1; then
+  run_capped lint-actions actionlint .github/workflows/*.yml
+else
+  skip_notice lint-actions "actionlint not installed (run scripts/bootstrap.sh)"
+fi
+
 # Markdown: structural + format + link integrity
 "$SCRIPT_DIR/agent-lint-md.sh"

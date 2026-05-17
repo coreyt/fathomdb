@@ -39,3 +39,17 @@ if ! command -v lychee >/dev/null 2>&1; then
   echo "Installing lychee link checker..."
   cargo install --locked --quiet lychee
 fi
+
+# actionlint — workflow validator. Pinned: yaml.safe_load passes
+# schema-invalid syntax that GitHub silently rejects, so we need a real
+# linter for .github/workflows/*.yml. Version pin matches a recent stable
+# release; bump deliberately, not drifted.
+if ! command -v actionlint >/dev/null 2>&1; then
+  if command -v go >/dev/null 2>&1; then
+    echo "Installing actionlint v1.7.7 via go install..."
+    GO111MODULE=on go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+  else
+    echo "actionlint not installed and go toolchain unavailable; install actionlint manually" >&2
+    echo "  see https://github.com/rhysd/actionlint/releases (pin v1.7.7)" >&2
+  fi
+fi
