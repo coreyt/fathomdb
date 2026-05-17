@@ -7,8 +7,12 @@
 #   1  — at least one gate found a real violation.
 #   2  — toolchain blocker (e.g. strace missing for AC-036/AC-037);
 #        gates that BLOCKER do not fail the overall script unless
-#        STRICT=1 is set (CI runner ops can promote to strict once
-#        bootstrap.sh has installed the missing deps).
+#        STRICT=1 is set.
+#
+# Wiring: scripts/agent-verify.sh invokes this with STRICT=1, so any
+# blocker fails the agent loop on hosts where bootstrap.sh has run.
+# Local dev hosts without strace must either run scripts/bootstrap.sh
+# (which apt-installs strace on Debian) or install strace manually.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

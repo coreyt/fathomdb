@@ -47,6 +47,10 @@ fi
 if ! command -v strace >/dev/null 2>&1; then
   if command -v apt-get >/dev/null 2>&1; then
     echo "Installing strace (AC-036/AC-037 security fixtures)..."
+    # GitHub-hosted runners ship with stale apt indexes; without an
+    # update first, `apt-get install` can fail on 404. Local dev runs
+    # bootstrap rarely, so the extra ~5s is acceptable.
+    sudo apt-get update -qq >/dev/null 2>&1 || true
     sudo apt-get install --no-install-recommends -y strace >/dev/null 2>&1 || \
       echo "strace install failed; AC-036/AC-037 will report BLOCKER until installed" >&2
   else
