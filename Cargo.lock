@@ -361,6 +361,7 @@ dependencies = [
  "fathomdb-query",
  "fathomdb-schema",
  "jsonschema",
+ "libc",
  "proptest",
  "rusqlite",
  "serde_json",

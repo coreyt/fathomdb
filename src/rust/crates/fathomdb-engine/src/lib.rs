@@ -1212,10 +1212,19 @@ impl Engine {
         register_sqlite_vec_extension();
         let connection = Connection::open(&path)
             .map_err(|err| map_open_sqlite_error(err, OpenStage::HeaderProbe))?;
+        // Order pinned by `dev/design/errors.md` § OpenStage matrix: each
+        // step routes its own SQLite-level error to a distinct
+        // `CorruptionKind` (Header → WalReplay → Schema → EmbedderIdentity).
+        // The schema and WAL probes both happen BEFORE `pragma WAL`
+        // because that pragma also reads page 1 — letting it run first
+        // would reclassify schema-side corruption as a WAL replay
+        // failure, breaking the AC-035b stable-code contract.
+        probe_database_header(&connection)?;
+        probe_open_integrity(&connection)?;
+        probe_wal_sidecar(&path)?;
         connection
             .pragma_update(None, "journal_mode", "WAL")
             .map_err(|err| map_open_sqlite_error(err, OpenStage::WalReplay))?;
-        probe_open_integrity(&connection)?;
 
         reject_legacy_shape(&connection)?;
         let migration = migrate_with_event_sink(&connection, migrations, emit_migration_event)
@@ -2989,10 +2998,66 @@ fn register_sqlite_vec_extension() {
 }
 
 fn probe_open_integrity(connection: &Connection) -> Result<(), EngineOpenError> {
+    // `SELECT COUNT(*) FROM sqlite_schema` forces a full traversal of the
+    // sqlite_schema b-tree; this surfaces page-1 b-tree corruption that a
+    // bare `PRAGMA schema_version` (which only reads the schema cookie
+    // out of the file header) would miss.
     connection
-        .query_row("PRAGMA schema_version", [], |row| row.get::<_, u32>(0))
+        .query_row("SELECT COUNT(*) FROM sqlite_schema", [], |row| row.get::<_, i64>(0))
         .map(|_| ())
         .map_err(|err| map_open_sqlite_error(err, OpenStage::SchemaProbe))
+}
+
+fn probe_database_header(connection: &Connection) -> Result<(), EngineOpenError> {
+    connection
+        .query_row("PRAGMA application_id", [], |row| row.get::<_, i64>(0))
+        .map(|_| ())
+        .map_err(|err| map_open_sqlite_error(err, OpenStage::HeaderProbe))
+}
+
+/// Pre-`pragma WAL` sidecar validation. SQLite silently discards a WAL
+/// file whose header magic is wrong or whose advertised page size is
+/// outside `[512, SQLITE_MAX_PAGE_SIZE]`, which would cause us to lose
+/// committed frames at open time. AC-035a requires that we instead
+/// refuse to open with `Corruption(WalReplayFailure)` rather than
+/// silently rebuild from a truncated WAL.
+fn probe_wal_sidecar(db_path: &Path) -> Result<(), EngineOpenError> {
+    let mut wal_path = db_path.as_os_str().to_owned();
+    wal_path.push("-wal");
+    let wal_path = PathBuf::from(wal_path);
+    let bytes = match std::fs::read(&wal_path) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(_) => return Ok(()),
+    };
+    // A short (< 32-byte) sidecar carries no committed frames; SQLite
+    // treats it as empty and re-initializes WAL state, which is safe.
+    if bytes.len() < 32 {
+        return Ok(());
+    }
+    let magic = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+    let page_size = u32::from_be_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]);
+    // WAL_MAGIC mask per SQLite `walIndexRecover`: low bit distinguishes
+    // big-endian vs little-endian checksum encoding; the rest of the
+    // magic is fixed.
+    const WAL_MAGIC_MASK: u32 = 0xFFFF_FFFE;
+    const WAL_MAGIC: u32 = 0x377F_0682;
+    const SQLITE_MAX_PAGE_SIZE: u32 = 65536;
+    let magic_ok = (magic & WAL_MAGIC_MASK) == WAL_MAGIC;
+    let page_size_ok =
+        page_size.is_power_of_two() && (512..=SQLITE_MAX_PAGE_SIZE).contains(&page_size);
+    if magic_ok && page_size_ok {
+        return Ok(());
+    }
+    Err(EngineOpenError::Corruption(CorruptionDetail {
+        kind: CorruptionKind::WalReplayFailure,
+        stage: OpenStage::WalReplay,
+        locator: CorruptionLocator::FileOffset { offset: if !magic_ok { 0 } else { 8 } },
+        recovery_hint: RecoveryHint {
+            code: "E_CORRUPT_WAL_REPLAY",
+            doc_anchor: "design/recovery.md#wal-replay-failures",
+        },
+    }))
 }
 
 fn reject_legacy_shape(connection: &Connection) -> Result<(), EngineOpenError> {

@@ -21,9 +21,9 @@
 //! before reopen — otherwise the kernel page cache can mask the flip and
 //! reproduce a clean page on the next open.
 
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// SQLite default page size used by the engine. Page 0 is the
 /// header-bearing page; pages 1..N are interior / leaf pages of the
@@ -77,4 +77,75 @@ pub fn corrupt_interior_page_byte(path: &Path, page_index: u32, byte_offset: u16
     file.write_all(&buf).expect("write corrupted byte");
     file.flush().expect("flush corruption");
     file.sync_all().expect("fsync after interior corruption");
+}
+
+/// Path of the SQLite write-ahead-log sidecar file for `db_path`.
+///
+/// SQLite appends the literal suffix `-wal` to the database file name;
+/// it does NOT swap a file extension. `foo.sqlite` → `foo.sqlite-wal`.
+#[allow(dead_code)]
+pub fn wal_sidecar_path(db_path: &Path) -> PathBuf {
+    let mut wal = db_path.as_os_str().to_owned();
+    wal.push("-wal");
+    PathBuf::from(wal)
+}
+
+/// Replace `db_path`'s WAL sidecar with a header that advertises a page
+/// size larger than `SQLITE_MAX_PAGE_SIZE` (65536). On reopen the engine's
+/// WAL-replay step (`PRAGMA journal_mode = WAL`) refuses to apply the
+/// log and surfaces `SQLITE_CORRUPT`, which the engine maps to
+/// `EngineOpenError::Corruption(CorruptionDetail { kind:
+/// WalReplayFailure, stage: WalReplay, .. })`.
+///
+/// MUST be called against a CLOSED database. The previous WAL sidecar
+/// (if any) is truncated and rewritten.
+#[allow(dead_code)]
+pub fn corrupt_wal_invalid_page_size(db_path: &Path) {
+    let wal_path = wal_sidecar_path(db_path);
+    let mut file = File::create(&wal_path).expect("create -wal sidecar");
+    // WAL header layout (`sqlite3WalOpen` / `walIndexRecover` in SQLite):
+    //   off  0 .. 3  magic (big-endian 0x377f0682 or 0x377f0683)
+    //   off  4 .. 7  file format version (big-endian, expected 3007000)
+    //   off  8 .. 11 page size (big-endian; rejected if > SQLITE_MAX_PAGE_SIZE)
+    //   off 12 .. 15 checkpoint sequence
+    //   off 16 .. 19 salt-1
+    //   off 20 .. 23 salt-2
+    //   off 24 .. 27 checksum-1
+    //   off 28 .. 31 checksum-2
+    let mut header = [0u8; 32];
+    header[0..4].copy_from_slice(&0x377f_0683_u32.to_be_bytes());
+    header[4..8].copy_from_slice(&3_007_000_u32.to_be_bytes());
+    // 0x0080_0000 (8 MiB) exceeds SQLITE_MAX_PAGE_SIZE (65 536).
+    header[8..12].copy_from_slice(&0x0080_0000_u32.to_be_bytes());
+    file.write_all(&header).expect("write wal header");
+    file.flush().expect("flush wal header");
+    file.sync_all().expect("fsync after wal header corruption");
+}
+
+/// Null out the `dimension` column of the default embedder profile row
+/// so that on reopen `check_embedder_profile` cannot decode the stored
+/// identity. The engine maps this to
+/// `EngineOpenError::Corruption(CorruptionDetail { kind:
+/// EmbedderIdentityDrift, stage: EmbedderIdentity, .. })`.
+///
+/// MUST be called against a CLOSED database. Uses a raw rusqlite
+/// connection to bypass the engine's open path so the corruption is
+/// committed before the test re-opens.
+#[allow(dead_code)]
+pub fn corrupt_embedder_profile_row(db_path: &Path) {
+    let conn = rusqlite::Connection::open(db_path).expect("open db for profile corruption");
+    // NEGATIVE dimension passes the `NOT NULL` constraint but fails
+    // `row.get::<_, u32>(2)` with `IntegralValueOutOfRange`, which the
+    // engine maps to `Corruption(EmbedderIdentityDrift)`. NULL would
+    // hit the `NOT NULL` schema constraint and never commit.
+    conn.execute(
+        "UPDATE _fathomdb_embedder_profiles SET dimension = -1 WHERE profile = 'default'",
+        [],
+    )
+    .expect("set embedder profile dimension to -1");
+    // Force a checkpoint so the corruption lands in the main DB file
+    // rather than sitting in the -wal sidecar (the open path examines
+    // both, but we want the corruption to survive a -wal teardown).
+    conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)").ok();
+    drop(conn);
 }
