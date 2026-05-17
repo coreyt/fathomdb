@@ -353,13 +353,159 @@ Per `feedback_file_deletion.md` memory: never `find -delete`. Stray
 sidecar lock files (`*.sqlite.lock`) in WTs are disposable — they
 disappear with `git worktree remove --force`.
 
-## 12. References
+## 12. Context management
+
+Long multi-phase work (Phase 11 = 4 slices + 4 fix-1 passes ~$30 +
+~80min; Phase 12 = 10 slices spanning weeks) requires discipline
+about what lives where so context survives compaction + new
+sessions.
+
+### 12.1 Three context tiers
+
+| Tier | Lifetime | What lives there |
+|------|----------|------------------|
+| **Subagent (implementer/reviewer)** | Single slice spawn (~10-30min) | Per-slice prompt + worktree files only. Fresh `claude -p` / `codex exec` every spawn — never grows. |
+| **Main-thread conversation** | Single session (hours-days, until `/compact` or new session) | Plan-update decisions, codex verdict promotion, cherry-picks, HITL escalation. Limited by Claude Code's context window. |
+| **On-disk** | Survives forever (compaction-safe) | Plan doc, prompts/, runs/, design docs, MEMORY, progress log, STATUS-<phase>.md. |
+
+**Rule:** if it must survive a `/compact` or new session, it goes on
+disk. Main-thread chat is throwaway working memory.
+
+### 12.2 Cold-start resume protocol
+
+Codified read order on every new session (or post-compact resume):
+
+1. `AGENTS.md` — ~300-line invariants (front-loaded, cached).
+2. `MEMORY.md` — index of feedback/project memories (auto-loaded).
+3. `dev/plans/<release>-implementation.md` § "Immediate Next Slice"
+   — next mainline pointer with prior-slice CLOSED blocks.
+4. `dev/plans/<release>-implementation.md` § "Path to Client-Ready"
+   (or equivalent slice-sequence section) — find current slice's
+   row in the table.
+5. `dev/progress/<release>.md` top entry — per-session log,
+   newest on top.
+6. `dev/plans/runs/STATUS-<phase>.md` — live state board for the
+   current phase (slice scoreboard, open HITL questions, outstanding
+   worktrees, next action).
+7. Slice prompt file `dev/plans/prompts/<slice-id>.md` — the work
+   itself.
+
+Steps 1-6 are ~600 lines of focused reading; cold-resume to
+oriented in <5min.
+
+### 12.3 Per-slice context discipline
+
+Each slice gets the proven Phase 11 substrate:
+
+- `dev/plans/prompts/<slice-id>.md` — self-contained prompt
+  (canonical pattern per §§ 2, 3 of this doc).
+- `dev/plans/runs/<slice-id>-<ts>.log` — implementer stdout.
+- `dev/plans/runs/<slice-id>-output.json` — closure artifact
+  (per § 8).
+- `dev/plans/runs/<slice-id>-review-<ts>.md` — promoted codex
+  verdict.
+- Worktree at `/tmp/fdb-<slice-id>-<ts>` — cleaned after PASS/override
+  per § 11.
+
+**Implementer subagent never sees prior-slice conversation context.**
+Prompt carries everything it needs by file reference (baseline SHA,
+AC ids, design-doc links, prior-slice `output.json` if relevant).
+
+### 12.4 Plan doc as canonical state machine
+
+The release plan (`dev/plans/<release>-implementation.md`) is the
+authoritative source of "where are we?". Discipline:
+
+- Each closed slice gets a `CLOSED` block in "Immediate Next Slice"
+  section with cherry-pick SHA + codex verdict arc + key
+  deliverables.
+- "Immediate Next Slice" pointer advances in the **same commit**
+  that closes the prior slice. No drift.
+- Per-AC scoreboard rows in the slice-sequence table mark
+  ✅/⚠️/❌/⏳ as work lands. State visible at a glance.
+- **No state in chat that's also in the plan doc.** Chat is
+  throwaway.
+
+### 12.5 Phase STATUS board
+
+For phases > 4 slices, create `dev/plans/runs/STATUS-<phase>.md`
+modeled on Pack 5/6 STATUS.md. Single source of truth for the
+phase's live state. Update at every slice close. Includes:
+
+- Current slice in flight
+- Per-slice status table (CLOSED / IN-FLIGHT / BLOCKED / not-started)
+- Per-AC scoreboard for ACs the phase targets
+- Parallelization plan (which slices can run concurrently)
+- Open HITL questions (with decision-options + recommendation)
+- Outstanding worktrees
+- Recent decisions (newest on top)
+- Next action
+- Compaction-resume checklist
+
+Worked example: `dev/plans/runs/STATUS-phase12.md`.
+
+### 12.6 Compaction discipline
+
+When main-thread context approaches limit:
+
+1. **Land everything in flight** — commit any docs/plan updates,
+   cherry-pick any pending slices, promote any pending verdicts.
+2. **Update `dev/progress/<release>.md`** — newest-on-top entry
+   summarizing the session.
+3. **Update STATUS-<phase>.md** — "Current state" + scoreboard.
+4. `/compact` (or start new session).
+5. **First post-compact prompt:** cold-start resume — read the 6
+   files in § 12.2.
+
+**Do not compact mid-flight.** If a worktree is active, a codex
+review is pending, or a HITL question is open, let it land first.
+Capture state on disk. Then compact.
+
+### 12.7 HITL gates as natural conversation boundaries
+
+HITL-decision slices (e.g. 12-P perf re-confirm, 12-V-VERBS deferred
+verbs, 12-GA release notes signoff) are natural session boundaries.
+Main thread escalates, captures HITL decision in
+`dev/progress/<release>.md`, then `/compact` or starts new session.
+Reduces context bloat between distinct work phases.
+
+### 12.8 Perf-experiment work (Pack 7+ shape)
+
+Perf-experiment packs (Pack 5/6/6.G/7) follow a **different decision
+loop** than mainline release slices:
+
+- Mainline (Phase 11+): per § 9 — cherry-pick → review → PASS /
+  CONCERN+override / BLOCK→fix-N.
+- Perf-experiment (Pack 5+): KEEP / REVERT / INCONCLUSIVE with
+  numeric decision rules; falsified levers go on a do-not-retry list
+  (`dev/notes/performance-whitepaper-notes.md` § 5) to avoid burning
+  cycles re-trying them.
+
+Each perf pack carries:
+
+- Hypothesis ladder (whitepaper § 6).
+- Kept-experiments ledger (whitepaper § 4) + raw N=5 numbers.
+- Reverted-experiments ledger (whitepaper § 5) — do-not-retry.
+- Open questions (whitepaper § 8).
+- Per-experiment prompt files (Pack 7 = `dev/plans/prompts/P7-*.md`).
+- Separate STATUS board (`STATUS-pack7.md`) — perf state moves
+  faster than release slices.
+
+If Pack 7 spins up, the dual-track structure (mainline + perf) means
+each track has its own STATUS board + decision loop but they share
+the plan doc, MEMORY, and AGENTS.md invariants.
+
+## 13. References
 
 - `AGENTS.md` § 7 — principles (this doc owns mechanics).
 - `MEMORY.md` entries: `feedback_orchestrator_thread.md`,
-  `feedback_orchestrate_releases.md`.
+  `feedback_orchestrate_releases.md`, `project_orchestration_doc.md`.
 - `dev/plans/prompts/01-orchestrator-resume.md` — Pack-5 resume
   wrapper; § 4 SUPERSEDED by this file, other sections retained as
   Pack-5 historical state.
 - Phase 11 prompts (`dev/plans/prompts/11{a,b,c,d}-*.md`) as worked
   examples of this pattern.
+- `dev/plans/runs/STATUS-phase12.md` — worked example of
+  per-phase STATUS board.
+- `dev/notes/performance-whitepaper-notes.md` — worked example of
+  perf-experiment context discipline (Pack 5/6/6.G).
