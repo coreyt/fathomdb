@@ -6,9 +6,15 @@ inspect counters, close, exit cleanly. Python is the primary language
 [release notes § TypeScript SDK parity](../release-notes/0.6.0.md));
 TS snippets sit alongside.
 
-This page mirrors the post-publish smoke
-`scripts/release/smoke/smoke-pypi-wheel.sh` (AC-056). If the two
-diverge, treat it as a release-gate blocker.
+This page covers the same five operations in the same order as the
+post-publish smoke `scripts/release/smoke/smoke-pypi-wheel.sh`
+(AC-056): `Engine.open` → `write` → `search` → `close` → process-
+exit. The two scripts diverge in ergonomics only — the smoke reads
+the DB path from `sys.argv[1]` and uses a one-letter variable name
+for CI; this quickstart hardcodes a relative path and uses
+`engine` for readability, and prints `engine.counters()` as an
+instrumentation example. If the two scripts diverge on the
+**five-operation contract**, treat it as a release-gate blocker.
 
 ## 1. Install
 
@@ -158,9 +164,13 @@ engine.close()
 print("ok")
 ```
 
-This is byte-for-byte the body of `smoke-pypi-wheel.sh` (with
-`engine.counters()` added). The CI smoke runs this against a
-PyPI-installed wheel as the release gate per AC-056.
+This program exercises the same five-operation contract as
+`smoke-pypi-wheel.sh` (with `engine.counters()` added as an
+instrumentation example). The CI smoke variant reads the DB path
+from `sys.argv[1]`, uses a one-letter variable name, and searches
+for `"smoke"`; CI ergonomics aside, both scripts cover the same
+`Engine.open` → `write` → `search` → `close` → process-exit
+sequence per AC-056.
 
 ## Next steps
 

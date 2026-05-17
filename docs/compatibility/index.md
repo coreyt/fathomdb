@@ -80,6 +80,15 @@ Engine surfaces these as documented gates, not weakened ones. See
 `dev/test-plan.md` § Current Perf Attribution and
 [release notes — 0.6.0 § Performance gates](../release-notes/0.6.0.md).
 
+## SDK maturity posture
+
+The Python SDK is the more mature option in 0.6.0; **prefer it for
+production pilots**. The TypeScript SDK shipped its first working
+slice on 2026-04-07 and is functionally covered for the locked
+five-verb surface (see [SDK parity matrix](../reference/typescript-api.md))
+but is the less-mature option. See
+[release notes — 0.6.0 § TypeScript SDK parity](../release-notes/0.6.0.md).
+
 ## API surface deferrals
 
 - `Engine.open` structured open report dropped by both bindings;

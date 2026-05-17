@@ -49,7 +49,7 @@ Last updated: 2026-05-17 (Phase 12 starting; nothing closed yet).
 | 12-P   | ✅ CLOSED | 2026-05-17 | HITL (A) all 4 | n/a (HITL slice) | n/a    | <closure-sha> | All 4 perf ACs stay deferred. AC-012→0.6.1; AC-013/019→Pack 7 batched-insert; AC-020→Pack 7 architectural. Release notes refreshed. |
 | 12-V-VERBS | ✅ CLOSED | 2026-05-17 | HITL (A) 0.7.x | n/a (HITL slice) | n/a    | <closure-sha> | purge + restore deferred 0.7.x. Client 0.6.0 workaround: `recover --excise-source`. Release notes refreshed. |
 | 12-TX  | ✅ CLOSED | 2026-05-17 | CONCERN→override | CONCERN (codex gpt-5.4); orchestrator-direct amendment | cleaned | `e31507b` + closure | 41-row parity matrix (28 OK / 3 closed / 10 divergence / 1 deferred-open-report→0.6.1); 19 error classes both sides; pytest 50/50 + npm test 33/33. Follow-up 12-TX-OPENREPORT for 0.6.1. |
-| 12-DX  | ❌ not started | -        | -            | -        | -        | -               | External-user docs: mkdocs quickstart + install + API ref |
+| 12-DX  | ✅ CLOSED | 2026-05-17 | CONCERN→override | CONCERN (codex gpt-5.4); orchestrator-direct amendment | cleaned | `aa75d48`+`0cf6a21`+closure | 9 new pages + 6 modified; hand-written API ref; mkdocs --strict clean; 10 pages carry all deferral disclosures; quickstart aligned with smoke-pypi-wheel five-operation contract |
 | 12-RC1 | ❌ not started | -        | -            | -        | -        | -               | Tag `v0.6.0-rc.1` → release.yml fires → 9 publishes + smoke |
 | 12-V   | ❌ not started | -        | -            | -        | -        | -               | Independent verification on fresh non-CI host |
 | 12-GA  | ❌ not started | -        | -            | -        | -        | -               | Tag `v0.6.0` + release notes + merge to main |
@@ -117,22 +117,26 @@ _(populate as Phase 12 progresses — newest on top)_
 
 ## Next action
 
-**12-TX CLOSED 2026-05-17.** Wave 3 advances.
+**12-DX CLOSED 2026-05-17.** Wave 3 advances.
 
-Mainline next: **12-DX external user docs**. Draft
-`dev/plans/prompts/12-DX-external-user-docs.md` then spawn. Scope per
-plan § Path-to-Client-Ready: mkdocs quickstart + install-from-PyPI/
-npm/cargo pages + API ref (Python + TS + Rust facade) wired via
-mkdocstrings or equivalent.
+Mainline next: **12-RC1 tag v0.6.0-rc.1**. THIS IS THE FIRST
+IRREVERSIBLE PUBLISH — fires release.yml, 9 publishes to
+crates.io/PyPI/npm at `0.6.0-rc.1`, post-publish smoke runs.
+Approach:
+1. Orchestrator drafts 12-RC1 plan + dry-run rehearsal (via
+   `workflow_dispatch` with `dry_run: true`).
+2. User reviews dry-run output + approves push of `v0.6.0-rc.1` tag.
+3. Tag fires real release.yml; orchestrator monitors + records
+   per-tier results in this STATUS.
 
-Wave 3 remaining (serial after 12-DX): **12-RC1** (tag rc.1 +
-release.yml fires) → **12-V** (independent verification on fresh
-non-CI host) → **12-GA** (tag GA + merge to main).
+Wave 3 remaining (serial after 12-RC1): **12-V** (independent
+verification on fresh non-CI host) → **12-GA** (tag GA + merge to
+main).
 
 Out-of-band follow-ups tracked (not Wave 3 blocking):
 - **12-D-OS-CRASH** (per 12-D blocker-3) — AC-034c VM substrate.
-- **12-TX-OPENREPORT** — `Engine.open` open-report surfacing on both
-  bindings (deferred to 0.6.1).
+- **12-TX-OPENREPORT** — `Engine.open` open-report surfacing on
+  both bindings (deferred to 0.6.1).
 - **Pack 7** — perf-experiment substrate; unlocks 12-B restoration
   and AC-013/019/020 closure.
 - **0.6.1 canonical-runner re-measurement** — AC-012 closure.
