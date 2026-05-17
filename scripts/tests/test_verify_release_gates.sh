@@ -153,17 +153,23 @@ else
 fi
 
 # 8. RELEASE_GATES_SKIP_GIT_REACH=0 + bogus ref → fail (head-on-main check
-#    enforced when not skipped, exercised via a non-existent ref).
+#    enforced when not skipped, exercised via a non-existent ref). MUST use
+#    a GA-shape version (no hyphen) so the RC-skip path (per HITL
+#    2026-05-17) doesn't bypass the check. Bumps workspace to a synthetic
+#    GA version, then restore() resets state.
 restore
-printf '# Changelog\n\n## %s\n' "$WS" > "$CL_PATH"
+GA_VERSION="0.999.0"
+bash "$REPO_ROOT/scripts/set-version.sh" --workspace "$GA_VERSION" >/dev/null
+printf '# Changelog\n\n## %s\n' "$GA_VERSION" > "$CL_PATH"
 if out="$(RELEASE_GATES_SKIP_GIT_REACH=0 RELEASE_GATES_HEAD_REF="refs/heads/__nonexistent__" \
-    GITHUB_REF_NAME="v${WS}" "$VRG" 2>&1)"; then
-  fail "head-not-on-main should fail when reach check enabled"
+    GITHUB_REF_NAME="v${GA_VERSION}" "$VRG" 2>&1)"; then
+  fail "head-not-on-main should fail when reach check enabled (GA shape)"
 else
   printf '%s' "$out" | grep -qiE 'main|reach' \
-    && pass "head-not-reachable-from-main rejected" \
+    && pass "head-not-reachable-from-main rejected (GA shape)" \
     || fail "wrong diagnostic for unreachable HEAD; got: $out"
 fi
+restore
 
 # 9. workflow_dispatch + dry_run=true: tag-format check skipped, other
 #    gates still run. GITHUB_REF_NAME is a branch name, no v-prefix.
@@ -209,7 +215,11 @@ fi
 #     NOTE to stderr but does not die. GA tags still enforce (covered by
 #     test #8).
 restore
-RC_VERSION="${WS}-rc.1"
+# Strip any existing pre-release suffix from $WS before appending -rc.1 so
+# the synthetic version stays well-formed even when run against a tree
+# already on a hyphenated version (e.g. 0.6.0-rc.1).
+WS_BASE="${WS%%-*}"
+RC_VERSION="${WS_BASE}-rc.1"
 bash "$REPO_ROOT/scripts/set-version.sh" --workspace "$RC_VERSION"
 printf '# Changelog\n\n## %s\n' "$RC_VERSION" > "$CL_PATH"
 if out="$(RELEASE_GATES_SKIP_GIT_REACH=0 RELEASE_GATES_HEAD_REF="refs/heads/__nonexistent__" \
