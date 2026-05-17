@@ -29,10 +29,54 @@ from pathlib import Path
 
 
 # 0.5.x verb names whose re-route stubs are banned at the public API
-# surface. Empty until the canonical 0.5.x verb list is enumerated —
-# the scanner is still wired so that adding a name here begins to
-# enforce immediately.
-V05_VERBS: tuple[str, ...] = ()
+# surface. Inventoried from pre-0.6.0 source (`git show 39ee271^:`):
+# python/fathomdb/_engine.py + _admin.py, plus the TS facade. A name
+# belongs here only if the 0.5.x verb has NO 0.6.0 equivalent (or
+# its 0.6.0 name differs). Verbs whose name is unchanged across the
+# rewrite (open/close/write/search/drain/configure/counters/...) are
+# intentionally excluded — they ARE the 0.6.0 surface. Removed verbs
+# kept in 0.6.0 under the same name (check_integrity/safe_export/
+# excise_source) are also excluded.
+#
+# Why: the verb-reroute rule (AC-050a) catches `pub fn <old>() { new() }`
+# shims that would re-introduce 0.5.x compatibility surface. An empty
+# list silently disables the rule.
+V05_VERBS: tuple[str, ...] = (
+    # Engine surface removed/redesigned in 0.6.0
+    "submit",
+    "touch_last_accessed",
+    "fallback_search",
+    "telemetry_snapshot",
+    # AdminClient surface collapsed into `admin.configure(name, body)`
+    "check_semantics",
+    "rebuild",
+    "rebuild_missing",
+    "restore_vector_profiles",
+    "regenerate_vector_embeddings",
+    "restore_logical_id",
+    "purge_logical_id",
+    "configure_fts",
+    "configure_vec",
+    "configure_vec_kinds",
+    "configure_embedding",
+    "capabilities",
+    "current_config",
+    "describe_kind",
+    "drain_vector_projection",
+    "preview_projection_impact",
+    "get_fts_profile",
+    "get_vec_profile",
+    "register_fts_property_schema",
+    "describe_fts_property_schema",
+    "list_fts_property_schemas",
+    "remove_fts_property_schema",
+    "get_rebuild_progress",
+    "register_operational_collection",
+    "describe_operational_collection",
+    "trace_operational_collection",
+    "read_operational_collection",
+    "rebuild_operational_current",
+)
 
 FORBIDDEN_PREFIX = re.compile(r"^(legacy_|compat_v0_5)")
 
@@ -86,8 +130,32 @@ def scan_rust(root: Path) -> list[Finding]:
             continue
         lines = text.splitlines()
         is_crate_root = path.name in ("lib.rs", "main.rs")
+        in_block_comment = False
         for i, raw in enumerate(lines, 1):
             stripped = raw.strip()
+            # Strip /* ... */ and /** ... */ block-comment regions so
+            # banned names inside doc examples don't false-fire.
+            if in_block_comment:
+                if "*/" in stripped:
+                    in_block_comment = False
+                    # tail after */ may contain real code; re-process it
+                    tail = stripped.split("*/", 1)[1].strip()
+                    if not tail:
+                        continue
+                    stripped = tail
+                else:
+                    continue
+            while stripped.startswith("/*"):
+                if "*/" in stripped[2:]:
+                    stripped = stripped.split("*/", 1)[1].strip()
+                    if not stripped:
+                        break
+                else:
+                    in_block_comment = True
+                    stripped = ""
+                    break
+            if not stripped:
+                continue
             if stripped.startswith("//"):
                 continue
             # crate-root inner attribute that suppresses deprecation
@@ -113,7 +181,7 @@ def scan_rust(root: Path) -> list[Finding]:
             if m:
                 findings.extend(_check_name(path, i, m.group(1), "rust-public-symbol"))
             for verb in V05_VERBS:
-                if re.search(rf"\b(?:fn|pub\s+fn)\s+{re.escape(verb)}\b", stripped):
+                if re.search(rf"\bpub(?:\([^)]+\))?\s+fn\s+{re.escape(verb)}\b", stripped):
                     findings.append(
                         Finding(
                             path,
