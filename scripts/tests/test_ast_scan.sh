@@ -75,4 +75,12 @@ echo "OK ts v05 verb-reroute"
 run_dirty rust "$FIX/rust/block-comment-real" "(legacy_|rust-public-symbol)"
 echo "OK rust block-comment does not swallow real code"
 
+# Nested block comments (Rust edition 2018+ allows /* /* */ */).
+# Clean nested fixture rides in rust/clean/. Dirty nested fixture
+# lives in its own dir so the assertion proves the depth-counter
+# (vs boolean) state machine: outer closes only after BOTH */ tokens,
+# leaving `pub fn legacy_admin` as live code that MUST flag.
+run_dirty rust "$FIX/rust/nested-block-real" "(legacy_admin|rust-public-symbol)"
+echo "OK rust nested block-comment (depth counter)"
+
 echo "test_ast_scan.sh: all language fixtures pass"
