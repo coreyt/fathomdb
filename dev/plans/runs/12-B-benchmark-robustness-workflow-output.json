@@ -1,0 +1,86 @@
+{
+  "phase": "12-B-benchmark-robustness-workflow",
+  "baseline_sha": "f2f21b59338a706de625096b099b041e01c1a1c2",
+  "branch": "phase-12-B-benchmark-robustness-workflow-20260517T195737Z",
+  "head_sha": "05b08af",
+  "commits": ["05b08af: docs(12-B): blocker report — benchmark-and-robustness substrate absent"],
+  "workflow_file": ".github/workflows/benchmark-and-robustness.yml",
+  "workflow_line_count": 0,
+  "jobs_restored": [],
+  "jobs_dropped": [
+    "go-fuzz-smoke (no go/ surface in 0.6.0 — definitive per ci-deferred.md)"
+  ],
+  "scripts_restored_or_added": [],
+  "dry_run_supported": false,
+  "actionlint_result": "n/a — no workflow written",
+  "agent_verify_result": "not run — STOPPED at blocker surfacing per prompt instruction",
+  "blockers_encountered": [
+    {
+      "id": "B1",
+      "item": "rust-benchmarks",
+      "missing": "scripts/run-benchmarks.sh + cargo bench target",
+      "evidence": {
+        "scripts_run_benchmarks_sh": "absent in current tree (ls scripts/ shows no run-benchmarks.sh)",
+        "fathomdb_benches": "absent (src/rust/crates/fathomdb has no benches/ dir; Cargo.toml is pure facade, no [[bench]] entry, no criterion dep)",
+        "pre_0_6_0_script": "git show 39ee271^:scripts/run-benchmarks.sh ran `cargo bench -p fathomdb --bench production_paths --features sqlite-vec` — neither bench nor feature exists in 0.6.0 facade crate"
+      },
+      "option_a_viable": false,
+      "rationale_a_rejected": "Pre-0.6.0 substrate ran against a wholly different Rust crate shape (single `fathomdb` crate with criterion benches + sqlite-vec feature). 0.6.0 facade crate is a re-export shell; resurrecting `production_paths` bench is net-new authorship of a benchmark harness against a redesigned engine, not restoration. Violates `feedback_reliability_principles` net-negative-LoC bias and `delete-before-add` discipline — that's a Pack 7 perf-evidence slice, explicitly out-of-scope per prompt header.",
+      "option_b_recommendation": "Omit rust-benchmarks job entirely from initial workflow landing. Track restoration in ci-deferred.md as Pack 7 dependency."
+    },
+    {
+      "id": "B2",
+      "item": "rust-scale-tests",
+      "missing": "fathomdb-engine `scale` integration test target",
+      "evidence": {
+        "engine_tests_dir": "src/rust/crates/fathomdb-engine/tests/ — listed contents have no scale.rs (closest matches: durability_soak.rs, perf_gates.rs, neither is a `scale` test)",
+        "pre_0_6_0_invocation": "cargo nextest run -p fathomdb --test scale (pre-0.6.0 crate name; renamed to fathomdb-engine in 0.6.0)"
+      },
+      "option_a_viable": false,
+      "rationale_a_rejected": "No scale.rs ever existed in the 0.6.0-rewrite engine substrate; authoring one is Pack 7 territory.",
+      "option_b_recommendation": "Omit rust-scale-tests; or substitute `durability_soak` if orchestrator wants the slot occupied — though `durability_soak` violates `feedback_reliability_principles` (no soak). Recommend: drop."
+    },
+    {
+      "id": "B3",
+      "item": "rust-tracing-stress",
+      "missing": "fathomdb-engine `tracing` cargo feature AND `tracing_events` test",
+      "evidence": {
+        "engine_cargo_toml_features": "src/rust/crates/fathomdb-engine/Cargo.toml has no [features] section at all — `--features tracing` will fail with `Package fathomdb-engine v0.6.0 does not have feature 'tracing'`",
+        "tracing_events_test": "absent (closest: trace_source_ref.rs which is unrelated)",
+        "tracing_events_continue_under_concurrent_load": "function does not exist"
+      },
+      "option_a_viable": false,
+      "rationale_a_rejected": "Requires adding a cargo feature + writing a tracing-stress test against current engine — net-new production-surface work, not workflow restoration.",
+      "option_b_recommendation": "Drop rust-tracing-stress job. Defer to whenever tracing-events instrumentation lands as a Phase 12+ slice."
+    },
+    {
+      "id": "B4",
+      "item": "python-stress-tests",
+      "missing": "src/python/tests/test_stress.py",
+      "evidence": {
+        "tests_dir_listing": "src/python/tests/: conftest.py, test_errors.py, test_ffi_safety.py, test_no_recovery_surface.py, test_property_template.py, test_save_time_validation.py, test_scaffold.py, test_surface.py, test_typed_errors.py — no test_stress.py"
+      },
+      "option_a_viable": false,
+      "rationale_a_rejected": "Pre-0.6.0 stress suite targeted the prior Python binding; semantics don't map onto current PyO3 surface without authoring a new harness."
+    },
+    {
+      "id": "B5",
+      "item": "typescript-observability-harness",
+      "missing": "@fathomdb/sdk-harness workspace in src/ts",
+      "evidence": {
+        "src_ts_package_json": "Single package `fathomdb`, NOT a workspace. No `workspaces` key. No sdk-harness subpackage.",
+        "scripts_shape": "build:native runs napi build against ../rust/crates/fathomdb-napi; `test` script: `npm run build:debug && node --test dist/tests/*.test.js`",
+        "pre_0_6_0_invocation": "npm run build --workspace @fathomdb/sdk-harness + npm test --workspace @fathomdb/sdk-harness — workspace structure does not exist in 0.6.0"
+      },
+      "option_a_viable": false,
+      "rationale_a_rejected": "Pre-0.6.0 had a multi-workspace npm layout (fathomdb + sdk-harness); 0.6.0 collapsed to a single package. Re-introducing the workspace + porting the harness is a Phase 11+ topology decision, not workflow restoration."
+    }
+  ],
+  "summary": "All five would-be jobs in benchmark-and-robustness.yml depend on substrate that does not exist in the 0.6.0 codebase: a benchmark harness + script, a scale test target, a tracing cargo feature + stress test, a Python stress test file, and a TS sdk-harness workspace. The pre-0.6.0 workflow was a thin shell over substrate that was deleted during the rewrite. Per `feedback_reliability_principles` (net-negative LoC, delete-before-add) and the prompt's explicit out-of-scope note (\"Any actual perf-evidence work (Pack 7 territory; this slice ships the workflow, not the experiments)\"), authoring the missing harnesses is out-of-scope for 12-B. The shippable artifact reduces to either (a) a workflow with zero non-noop jobs (worse than no workflow — wastes a weekly cron slot for a green-by-vacuity result) or (b) a workflow shell with all five jobs commented out with TODO references (writes a placeholder that misleads future readers).",
+  "next_step_for_orchestrator": "STOP 12-B as currently scoped. Orchestrator decision required between three paths: (1) Close 12-B as no-op and demote ci-deferred.md § benchmark-and-robustness.yml to a Pack 7 prerequisite (recommended — most honest). (2) Re-scope 12-B narrowly to ship the workflow with only jobs whose substrate exists (currently: zero) plus follow-up tickets per dropped job. (3) Expand 12-B to include substrate authorship for one or more jobs — exits Wave 1 parallel budget, becomes its own multi-slice initiative. Do not respawn codex reviewer until orchestrator picks a path; there is no implementation diff to review.",
+  "discipline_notes": [
+    "Did not write a workflow yaml that would actionlint-green but reference non-existent test targets — actionlint validates syntax, not target existence, so a green actionlint on a workflow citing missing tests would be a false reassurance.",
+    "Did not stub bash scripts to satisfy `bash scripts/run-benchmarks.sh` — would violate prompt's 'Don't stub workflows that can't actually run' rule.",
+    "Did not invent cargo features or test files — would violate `feedback_reliability_principles` and exceed slice scope per the prompt's 'No data migration; no production code changes' bound."
+  ]
+}
