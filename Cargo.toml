@@ -18,7 +18,7 @@ resolver = "2"
 # `fathomdb-embedder-api`, which opts out and carries an independent
 # Axis E version in its own `[package]` block (semver-stable trait
 # surface — bumps only when the trait changes).
-version = "0.6.0"
+version = "0.6.0-rc.1"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/coreyt/fathomdb"
@@ -38,9 +38,9 @@ internal_docs = ["dev"]
 # Axis E (fathomdb-embedder-api) carries its independent version per
 # dev/design/release.md § Version axes.
 [workspace.dependencies]
-fathomdb              = { path = "src/rust/crates/fathomdb",              version = "0.6.0" }
-fathomdb-embedder     = { path = "src/rust/crates/fathomdb-embedder",     version = "0.6.0" }
+fathomdb              = { path = "src/rust/crates/fathomdb",              version = "0.6.0-rc.1" }
+fathomdb-embedder     = { path = "src/rust/crates/fathomdb-embedder",     version = "0.6.0-rc.1" }
 fathomdb-embedder-api = { path = "src/rust/crates/fathomdb-embedder-api", version = "0.6.0" }
-fathomdb-engine       = { path = "src/rust/crates/fathomdb-engine",       version = "0.6.0" }
-fathomdb-query        = { path = "src/rust/crates/fathomdb-query",        version = "0.6.0" }
-fathomdb-schema       = { path = "src/rust/crates/fathomdb-schema",       version = "0.6.0" }
+fathomdb-engine       = { path = "src/rust/crates/fathomdb-engine",       version = "0.6.0-rc.1" }
+fathomdb-query        = { path = "src/rust/crates/fathomdb-query",        version = "0.6.0-rc.1" }
+fathomdb-schema       = { path = "src/rust/crates/fathomdb-schema",       version = "0.6.0-rc.1" }
