@@ -1,0 +1,84 @@
+{
+  "phase": "12-DX-external-user-docs",
+  "baseline_sha": "646c50f7ef8fb9c4dc0fa66ce840dac4664a050a",
+  "branch": "phase-12-DX-external-user-docs-20260517T210205Z",
+  "head_sha": "028295a666bc220c326bd7786ac294fc9050e9e5",
+  "commits": [
+    "028295a: docs(12-DX): external user docs — install + quickstart + reference + concepts/compatibility"
+  ],
+  "pages_added": [
+    "docs/getting-started/quickstart.md",
+    "docs/install/python.md",
+    "docs/install/typescript.md",
+    "docs/install/rust.md",
+    "docs/reference/python-api.md",
+    "docs/reference/typescript-api.md",
+    "docs/reference/cli.md",
+    "docs/reference/errors.md",
+    "docs/reference/config.md"
+  ],
+  "pages_modified": [
+    "docs/index.md",
+    "docs/getting-started/index.md",
+    "docs/reference/index.md",
+    "docs/compatibility/index.md",
+    "docs/concepts/index.md",
+    "mkdocs.yml"
+  ],
+  "api_ref_tooling": "hand-written",
+  "api_ref_tooling_rationale": "mkdocstrings + mkdocstrings-python ARE installed (0.30.1 / 2.0.3) and would work with the basic mkdocs theme, but Python source docstrings are sparse (29 triple-quoted strings across 6 modules; most functions have no docstring beyond the module-level prose). Adding docstrings to drive mkdocstrings = scope creep + drift risk against locked interface specs. Hand-written ref pages cite dev/interfaces/*.md as authoritative, keep LoC bounded, and stay aligned with the locked specs by construction. TS is hand-written per spec (avoids npm typedoc dep). Rust ref defers to docs.rs post-publish + GitHub source link pre-GA per spec.",
+  "mkdocs_strict_result": "pass (clean — no warnings; build time 0.24s)",
+  "quickstart_smoke_equivalence": "matches — quickstart's full Python program (docs/getting-started/quickstart.md § Full Python program) is byte-for-byte the body of scripts/release/smoke/smoke-pypi-wheel.sh with print(engine.counters()) added between search() and close(). Same 5 operations in same order: Engine.open → write([]) → search(query) → close() → print('ok'). No divergence; AC-056 gate text and client experience aligned.",
+  "deferral_disclosures_visible_from": [
+    "compatibility/index.md (performance gates AC-012/013/019/020; no-0.5.x-shim; open-report deferral; logical-id deferral)",
+    "reference/errors.md (recovery hint codes + corruption recovery worked example)",
+    "reference/python-api.md (open-report 0.6.0 caveat on Engine.open)",
+    "reference/typescript-api.md (open-report 0.6.0 caveat + TS-not-yet-parity caveat)",
+    "reference/cli.md (logical-id verb deferral + client workaround via --excise-source)",
+    "install/typescript.md (TS-not-yet-parity caveat)",
+    "getting-started/quickstart.md (open-report deferral inline in step 2)",
+    "getting-started/index.md (consolidated 'Deferred for 0.6.0' section)",
+    "concepts/index.md (logical-id deferral mentioned in recovery surface section)",
+    "release-notes/0.6.0.md (canonical disclosures — unchanged)"
+  ],
+  "total_markdown_loc_added": 1217,
+  "loc_breakdown": {
+    "new_files": {
+      "docs/getting-started/quickstart.md": 173,
+      "docs/install/python.md": 81,
+      "docs/install/typescript.md": 73,
+      "docs/install/rust.md": 78,
+      "docs/reference/python-api.md": 167,
+      "docs/reference/typescript-api.md": 173,
+      "docs/reference/cli.md": 95,
+      "docs/reference/errors.md": 102,
+      "docs/reference/config.md": 81
+    },
+    "modified_net": {
+      "docs/index.md": "+26 (22 → 48)",
+      "docs/getting-started/index.md": "-53 (103 → 50)",
+      "docs/reference/index.md": "+25 (8 → 33)",
+      "docs/compatibility/index.md": "+87 (4 → 91)",
+      "docs/concepts/index.md": "+97 (5 → 102)",
+      "mkdocs.yml": "+11 (24 → 35)"
+    },
+    "git_diffstat": "15 files changed, 1363 insertions(+), 146 deletions(-)"
+  },
+  "loc_budget_note": "Spec budget was ~500-800 LoC of markdown. Actual additions land at ~1217 net new lines. Overshoot driven by 5 reference pages (python-api 167 + typescript-api 173 + cli 95 + errors 102 + config 81 = 618 LoC) which carry the locked-surface field-by-field documentation that clients need to actually use the SDKs. Each reference page is bounded (≤173 LoC) and cites the authoritative spec rather than duplicating it. Net-negative-LoC bias was applied to guides/operations (left as post-GA stubs) and to concepts/compatibility (60-100 LoC tight overview, not deep treatment). If orchestrator/reviewer wants the LoC under 800, candidates to trim are the worked-example block in errors.md and the per-step prose in quickstart.md, but neither is recommended — both serve concrete client utility.",
+  "blockers_encountered": [
+    {
+      "id": "agent-verify-strace",
+      "description": "scripts/agent-verify.sh hits AC-036/AC-037 strace BLOCKER on bare host (no sudo available to install strace). Documented in spec § 'Known flakes' — bootstrap installs strace; this is the 12-S baseline behavior on hosts without strace pre-installed. UNRELATED to docs slice content.",
+      "impact": "agent-verify reports '0 violation(s), 2 blocker(s)'. lint/typecheck/test/FTS5-injection/ast-scan-{rust,python,ts}/removal-detect all PASS.",
+      "resolution": "documented; orchestrator/reviewer to confirm strace blocker is acceptable for a docs-only slice. No code or docs change required."
+    }
+  ],
+  "blockers_NOT_encountered": [
+    "mkdocstrings vs basic-theme compat — not exercised (went hand-written per spec rationale).",
+    "Python source docstring sparseness — confirmed sparse but moot once hand-written path chosen.",
+    "quickstart-vs-smoke divergence — verified equivalent; documented in quickstart_smoke_equivalence above.",
+    "pre-GA install paths breaking on dev host — not verified live (docs-only slice; install pages cite the documented commands)."
+  ],
+  "agent_verify_result": "lint/typecheck/test/FTS5-injection/ast-scan(rust,python,ts)/removal-detect PASS; AC-036/AC-037 strace BLOCKER (host-config, 12-S baseline, no sudo for apt install strace). Tail: 'agent-security: 0 violation(s), 2 blocker(s)'.",
+  "next_step_for_orchestrator": "promote to 0.6.0-rewrite; respawn codex reviewer for verdict"
+}
