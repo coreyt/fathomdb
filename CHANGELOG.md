@@ -51,7 +51,7 @@ engineering substrate landed across Phases 5-12. Axis W bumped to
   against fresh registry installs, co-tagging assert.
 - actionlint v1.7.7 wired as canonical workflow validator.
 - External user docs: install + quickstart + reference + concepts
-  + compatibility (Phase 12-DX).
+  - compatibility (Phase 12-DX).
 
 ### Deferred
 

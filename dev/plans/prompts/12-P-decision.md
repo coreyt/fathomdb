@@ -90,6 +90,7 @@ canonical-runner re-measurement, possibly engine work).
 
 All four: **option (A) keep deferred** with the noted commitments.
 Net effect on GA:
+
 - Release notes disclose the four deferred gates honestly.
 - AC-012 closes in 0.6.1 with no engine work (canonical-runner
   re-measurement).
@@ -104,7 +105,8 @@ Net effect on GA:
 1. Append HITL decision row to `dev/progress/0.6.0.md` per
    `dev/design/orchestration.md` § 12.7 (HITL gates as conversation
    boundaries):
-   ```
+
+   ```text
    ## 2026-MM-DD — Phase 12-P HITL decision
    - AC-012: (A) keep deferred — canonical-runner re-measurement
      queued for 0.6.1
@@ -114,6 +116,7 @@ Net effect on GA:
      (vendor-SQLite / PCACHE2 / WAL2 / reader-writer split); 0.6.0
      ships with documented architectural gap
    ```
+
 2. Refresh `dev/test-plan.md` § Current Perf Attribution if any
    wording needs update.
 3. Update `docs/release-notes/0.6.0.md` § Performance gates to

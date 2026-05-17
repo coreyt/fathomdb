@@ -1,0 +1,51 @@
+{
+  "phase": "12-TX-ts-python-parity",
+  "baseline_sha": "8992628a86ba9665332d09abe7562047d404f668",
+  "branch": "phase-12-TX-ts-python-parity-20260517T204414Z",
+  "head_sha": "03b572d7f84a1b7da49d2dc0763006a8ce1db6b4",
+  "commits": [
+    "03b572d: fix(12-TX): TS↔Python SDK parity — close 3 gaps"
+  ],
+  "parity_matrix_summary": {
+    "total_rows": 41,
+    "parity_ok": 28,
+    "gaps_closed": 3,
+    "divergence_by_design": 10
+  },
+  "parity_matrix_file": "dev/notes/12-TX-parity-matrix.md",
+  "error_classes_python": 19,
+  "error_classes_ts": 19,
+  "error_classes_note": "Both surfaces expose 1 catch-all root (EngineError / FathomDbError) plus 18 concrete leaves. Counts include EmbedderDimensionMismatchError as a top-level leaf per dev/design/errors.md. Per-leaf payload attrs match modulo idiomatic casing (snake_case vs camelCase). No new leaves needed.",
+  "data_fields_added_ts": [],
+  "data_fields_added_python": [
+    "CounterSnapshot.queries",
+    "CounterSnapshot.writes",
+    "CounterSnapshot.write_rows",
+    "CounterSnapshot.admin_ops",
+    "CounterSnapshot.cache_hit",
+    "CounterSnapshot.cache_miss"
+  ],
+  "data_fields_note": "Python CounterSnapshot dataclass was empty; the PyO3 binding already returned the six fields, but the Python wrapper Engine.counters() threw them away (returned bare CounterSnapshot()). Added the six fields to types.py and wired engine.py to copy them through. Existing tests that bypassed the wrapper via engine._native.counters() now use the public surface.",
+  "tests_ported_to_ts": [
+    "src/ts/tests/scaffold.test.ts (ported from src/python/tests/test_scaffold.py — cursor-advances-on-write)"
+  ],
+  "tests_marked_python_specific": [
+    "src/python/tests/test_property_template.py — hypothesis scaffold; placeholder (test asserts x == x). Marked as divergence-by-design per parity matrix § 6 with explicit rationale: adding a fast-check dependency for an equally trivial placeholder is net-negative per feedback_reliability_principles. Port lands when either side gets a real property test."
+  ],
+  "type_stubs_updated": [],
+  "type_stubs_note": "src/python/fathomdb/_fathomdb.pyi was already complete and accurate. CounterSnapshot fields already declared. No edits needed. TS-side `binding.ts` NativeEngine + NativeModule declarations also already complete. The lone divergence — `forcePanicInAccessorForTest` in TS only — is intentional (no PyO3 async/sync split to test); documented as divergence-by-design in parity matrix § 5.",
+  "python_pytest_result": "pass — 50/50 passed in 0.87s (includes new test_counters_snapshot_carries_six_canonical_fields + two existing tests updated to use the public counters() wrapper)",
+  "ts_npm_test_result": "pass — 33/33 passed in 362ms (includes new scaffold.test.ts)",
+  "ts_typecheck_result": "pass — `npx tsc --noEmit -p tsconfig.json` clean (no output)",
+  "python_typecheck_result": "pass — `pyright src/python/` reports 0 errors, 0 warnings, 0 informations",
+  "blockers_encountered": [
+    {
+      "id": "agent-security strace missing",
+      "description": "scripts/agent-verify.sh fails at the STRICT=1 agent-security step because AC-036 and AC-037 require strace, which is not installed on this host. Pre-existing host bootstrap gap (the script itself prints `AC-036 BLOCKER: strace not installed. Add to scripts/bootstrap.sh`). Not caused by this slice; orchestrator-side fix is `sudo apt install strace` per the script's own remediation message.",
+      "in_scope_for_12_TX": false,
+      "workaround_taken": "Ran agent-lint.sh + agent-typecheck.sh + agent-test.sh as separate invocations; all three exit 0 cleanly. Documented agent-verify exit=1 here so the reviewer sees it."
+    }
+  ],
+  "agent_verify_result": "fail (strace toolchain blocker only; agent-lint + agent-typecheck + agent-test individually all exit 0). Logs: agent-security reports `0 violation(s), 2 blocker(s)` for AC-036/AC-037 strace requirement. STRICT=1 promotes that to a hard fail.",
+  "next_step_for_orchestrator": "Promote to 0.6.0-rewrite; respawn codex reviewer for verdict. Reviewer should treat the agent-verify failure as out-of-scope-for-12-TX (pre-existing strace toolchain gap) and verify (a) parity matrix completeness against dev/interfaces/{python,typescript}.md + dev/design/bindings.md § 1, (b) the three closed gaps are genuine parity wins not idiom over-translation, (c) test_property_template.py divergence-by-design rationale is sound (no fast-check dependency added for a placeholder)."
+}

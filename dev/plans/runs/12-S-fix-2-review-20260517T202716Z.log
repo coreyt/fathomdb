@@ -1,0 +1,930 @@
+OpenAI Codex v0.128.0 (research preview)
+--------
+workdir: /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 019e379f-24bf-7563-bc48-d751bad77aeb
+--------
+user
+You are reviewing Phase 12-S-fix-2, the single-finding remediation
+for `dev/plans/runs/12-S-fix-1-review-20260517T201827Z.md` (Rust
+nested block comments — depth counter not boolean).
+
+Branch: phase-12-S-security-fixtures-20260517T195735Z, HEAD c7b4ea1.
+Baseline: 27a818e (fix-1 HEAD).
+Cherry-picked to 0.6.0-rewrite as cbb7223 + 2b32659 + eaeae40.
+
+Required reading:
+- dev/plans/runs/12-S-fix-1-review-20260517T201827Z.md — verdict
+  triggering fix-2.
+- dev/plans/prompts/12-S-fix-2.md — spec.
+- dev/plans/runs/12-S-fix-2-output.json — closure artifact.
+
+Commits:
+- 79c1af0 — RED fixtures (nested clean + nested dirty).
+- 2cb7c8b — depth-counter fix in scan_rust().
+- c7b4ea1 — output JSON.
+
+Read deltas:
+- scripts/security/ast_scan.py (scan_rust block-comment depth
+  counter logic)
+- scripts/tests/fixtures/ast-shim/rust/clean/nested_block_comment_safe.rs
+- scripts/tests/fixtures/ast-shim/rust/nested-block-real/nested_real.rs
+- scripts/tests/test_ast_scan.sh new invocations
+
+Verdict format: `## Verdict: PASS|CONCERN|BLOCK`, findings with
+`### N. [severity]` + Refs + explanation, "Addressed", "Reviewer
+process notes".
+
+Focus your review on:
+
+1. Depth counter logic correctness: walks char-by-char or
+   regex-based? Handles `/* outer /* inner */ still outer */ pub
+   fn legacy_foo` correctly (legacy_foo flagged at end of line
+   where depth returns to 0)?
+2. Handles edge cases: `*/ pub fn legacy_foo() {}` (depth
+   1→0 mid-line, code after); `/* text */ pub fn legacy_foo() {}
+   /* text */` (mixed code + comment regions on one line);
+   nested `/* /* */ */` (depth 1→2→1→0).
+3. RED fixtures actually fail without the fix (TDD evidence)? Both
+   `nested_block_comment_safe.rs` (should NOT flag) and
+   `nested_real.rs` (should flag) covered.
+4. test_ast_scan.sh expanded with proper assertions for both new
+   fixtures.
+5. No regression in the prior 11 test cases.
+
+Output the verdict as final message body. Sandbox is read-only.
+
+codex
+Reviewing the phase-12-S fix against the required artifacts and the repo’s memory/invariant files first, then I’ll inspect the targeted deltas and test coverage before issuing a verdict.
+exec
+/bin/bash -lc "pwd && ls -1 && printf '\\n--- MEMORY ---\\n' && sed -n '1,220p' MEMORY.md" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ exited 2 in 0ms:
+/tmp/fdb-12-S-security-fixtures-20260517T195735Z
+AGENTS.md
+CHANGELOG.md
+Cargo.lock
+Cargo.toml
+LICENSE
+README.md
+deny.toml
+dev
+docs
+lychee.toml
+mkdocs.yml
+package-lock.json
+package.json
+rust-toolchain.toml
+rustfmt.toml
+scripts
+src
+target
+test
+
+--- MEMORY ---
+sed: can't read MEMORY.md: No such file or directory
+
+exec
+/bin/bash -lc "rg --files -g 'feedback_*.md'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ exited 1 in 0ms:
+exec
+/bin/bash -lc "sed -n '1,260p' dev/plans/runs/12-S-fix-1-review-20260517T201827Z.md" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ exited 2 in 0ms:
+sed: can't read dev/plans/runs/12-S-fix-1-review-20260517T201827Z.md: No such file or directory
+
+exec
+/bin/bash -lc "sed -n '1,260p' dev/plans/prompts/12-S-fix-2.md" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ exited 2 in 0ms:
+sed: can't read dev/plans/prompts/12-S-fix-2.md: No such file or directory
+
+exec
+/bin/bash -lc "sed -n '1,260p' dev/plans/runs/12-S-fix-2-output.json" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+{
+  "phase": "12-S-fix-2",
+  "baseline_sha": "27a818e",
+  "branch": "phase-12-S-security-fixtures-20260517T195735Z",
+  "head_sha": "2cb7c8bac0b37587538ff0ef4e85ea114ab99b00",
+  "commits": [
+    "79c1af0: test(12-S-fix-2): RED fixtures for nested Rust block comments",
+    "2cb7c8b: fix(12-S-fix-2): nested Rust block comments — depth counter"
+  ],
+  "findings_addressed": [
+    "1 [medium]: scan_rust() block-comment uses depth counter; nested /* /* */ */ correctly tracked; clean + dirty nested fixtures added"
+  ],
+  "agent_verify_local_aarch64_status": "fail (strace absent; expected)",
+  "test_ast_scan_result": "pass (including 2 new nested-block cases)",
+  "next_step_for_orchestrator": "promote to 0.6.0-rewrite; respawn codex reviewer for PASS"
+}
+
+codex
+The required files aren’t at the paths named in the prompt, so I’m locating the repo’s actual memory files and the review/spec artifacts before I inspect code and tests.
+exec
+/bin/bash -lc "rg --files | rg '("'^|/)MEMORY'"\\.md"'$|feedback_.*'"\\.md"'$|12-S-fix-1-review|12-S-fix-2|ast_scan'"\\.py|test_ast_scan\\.sh|nested_block_comment_safe\\.rs|nested_real\\.rs'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+scripts/tests/test_ast_scan.sh
+scripts/security/ast_scan.py
+scripts/tests/fixtures/ast-shim/rust/clean/nested_block_comment_safe.rs
+scripts/tests/fixtures/ast-shim/rust/nested-block-real/nested_real.rs
+dev/plans/runs/12-S-fix-2-output.json
+
+exec
+/bin/bash -lc "find dev -maxdepth 4 \\( -name '*12-S*' -o -name '*fix-2*' -o -name '*fix-1-review*' \\) | sort" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+dev/plans/runs/11a-fix-1-review-20260516T185855Z.md
+dev/plans/runs/11b-fix-1-review-20260516T215255Z.md
+dev/plans/runs/11c-fix-1-review-20260516T230749Z.md
+dev/plans/runs/11d-fix-1-review-20260517T174940Z.md
+dev/plans/runs/12-D-fix-1-review-20260517T193739Z.md
+dev/plans/runs/12-S-fix-1-output.json
+dev/plans/runs/12-S-fix-2-output.json
+dev/plans/runs/12-S-security-fixtures-output.json
+
+codex
+I’ve confirmed the code/test files exist, but the named fix-1 review and fix-2 prompt docs are missing from this worktree. I’m moving to the actual diffs and fixture/test content now, and I’ll treat the missing artifacts as a process note unless they block the technical verdict.
+exec
+/bin/bash -lc 'git show --stat --summary 79c1af0 2cb7c8b c7b4ea1' in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+commit 79c1af0a2b47e04c67f1ed237eaeef5ab8f02599
+Author: Corey Thompson <coreyt@gmail.com>
+Date:   Sun May 17 15:26:15 2026 -0500
+
+    test(12-S-fix-2): RED fixtures for nested Rust block comments
+    
+    Adds rust/clean/nested_block_comment_safe.rs and isolated
+    rust/nested-block-real/nested_real.rs. Latter exposes scan_rust()
+    boolean-state-machine bug: outer `/* /* */ */` closes after first
+    inner `*/`, hiding `pub fn legacy_admin` from rust-public-symbol
+    check. Test fails RED until depth counter lands in fix-2.
+
+ .../fixtures/ast-shim/rust/clean/nested_block_comment_safe.rs     | 3 +++
+ .../tests/fixtures/ast-shim/rust/nested-block-real/nested_real.rs | 1 +
+ scripts/tests/test_ast_scan.sh                                    | 8 ++++++++
+ 3 files changed, 12 insertions(+)
+ create mode 100644 scripts/tests/fixtures/ast-shim/rust/clean/nested_block_comment_safe.rs
+ create mode 100644 scripts/tests/fixtures/ast-shim/rust/nested-block-real/nested_real.rs
+
+commit 2cb7c8bac0b37587538ff0ef4e85ea114ab99b00
+Author: Corey Thompson <coreyt@gmail.com>
+Date:   Sun May 17 15:26:28 2026 -0500
+
+    fix(12-S-fix-2): nested Rust block comments — depth counter
+    
+    Replaces `in_block_comment: bool` with character-walked
+    `block_depth: int`. Rust permits nested `/* /* */ */` (edition
+    2018+); boolean state machine closed outer on first inner `*/`,
+    leaking subsequent live code into the scan (codex finding,
+    medium). Walker emits only depth==0 characters; nested fixture
+    asserts `pub fn legacy_admin` now flags as rust-public-symbol.
+
+ scripts/security/ast_scan.py | 44 ++++++++++++++++++++++----------------------
+ 1 file changed, 22 insertions(+), 22 deletions(-)
+
+commit c7b4ea1668d7cfecc1ef788cb8b1cf3313ffb3f3
+Author: Corey Thompson <coreyt@gmail.com>
+Date:   Sun May 17 15:26:49 2026 -0500
+
+    docs(12-S-fix-2): output JSON — nested-comment finding closed
+    
+    Records HEAD 2cb7c8b, two-commit RED→GREEN, agent-verify
+    local-aarch64 expected-fail (strace absent), and orchestrator
+    next step: promote + respawn codex reviewer.
+
+ dev/plans/runs/12-S-fix-2-output.json | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+ create mode 100644 dev/plans/runs/12-S-fix-2-output.json
+
+exec
+/bin/bash -lc "git rev-parse HEAD && git rev-parse --short HEAD && git status --short && printf '\\n--- commits ---\\n' && git log --oneline --decorate -n 8" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+c7b4ea1668d7cfecc1ef788cb8b1cf3313ffb3f3
+c7b4ea1
+
+--- commits ---
+c7b4ea1 (HEAD -> phase-12-S-security-fixtures-20260517T195735Z) docs(12-S-fix-2): output JSON — nested-comment finding closed
+2cb7c8b fix(12-S-fix-2): nested Rust block comments — depth counter
+79c1af0 test(12-S-fix-2): RED fixtures for nested Rust block comments
+7b0f30c docs(12-S-fix-1): output JSON — three findings closed, agent-verify wired
+e77265c fix(12-S-fix-1): finding 3 — wire STRICT=1 + apt-get update
+d25c55d fix(12-S-fix-1): findings 1+2 — populate V05_VERBS, harden Rust scanner
+d48d226 docs(12-S): output JSON — five sub-scopes landed, two blockers surfaced
+dea312e test(12-S): land AC-036/037/038/050a/050c security fixtures
+
+exec
+/bin/bash -lc 'git diff --unified=80 27a818e..c7b4ea1 -- scripts/security/ast_scan.py scripts/tests/test_ast_scan.sh scripts/tests/fixtures/ast-shim/rust/clean/nested_block_comment_safe.rs scripts/tests/fixtures/ast-shim/rust/nested-block-real/nested_real.rs' in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+diff --git a/scripts/security/ast_scan.py b/scripts/security/ast_scan.py
+index 0112bce..e899de4 100755
+--- a/scripts/security/ast_scan.py
++++ b/scripts/security/ast_scan.py
+@@ -53,184 +53,184 @@ V05_VERBS: tuple[str, ...] = (
+     "rebuild_missing",
+     "restore_vector_profiles",
+     "regenerate_vector_embeddings",
+     "restore_logical_id",
+     "purge_logical_id",
+     "configure_fts",
+     "configure_vec",
+     "configure_vec_kinds",
+     "configure_embedding",
+     "capabilities",
+     "current_config",
+     "describe_kind",
+     "drain_vector_projection",
+     "preview_projection_impact",
+     "get_fts_profile",
+     "get_vec_profile",
+     "register_fts_property_schema",
+     "describe_fts_property_schema",
+     "list_fts_property_schemas",
+     "remove_fts_property_schema",
+     "get_rebuild_progress",
+     "register_operational_collection",
+     "describe_operational_collection",
+     "trace_operational_collection",
+     "read_operational_collection",
+     "rebuild_operational_current",
+ )
+ 
+ FORBIDDEN_PREFIX = re.compile(r"^(legacy_|compat_v0_5)")
+ 
+ PATH_EXCLUDES = (
+     "node_modules",
+     "target",
+     ".venv",
+     "dist",
+     "build",
+     "__pycache__",
+ )
+ 
+ 
+ @dataclass(frozen=True)
+ class Finding:
+     path: Path
+     line: int
+     rule: str
+     detail: str
+ 
+     def render(self, root: Path) -> str:
+         rel = self.path.relative_to(root) if self.path.is_absolute() else self.path
+         loc = f"{rel}:{self.line}" if self.line else str(rel)
+         return f"{loc}: [{self.rule}] {self.detail}"
+ 
+ 
+ def excluded(path: Path, scan_root: Path) -> bool:
+     try:
+         rel = path.relative_to(scan_root)
+     except ValueError:
+         rel = path
+     parts = set(rel.parts)
+     return any(token in parts for token in PATH_EXCLUDES)
+ 
+ 
+ def _check_name(path: Path, line: int, name: str, rule: str) -> list[Finding]:
+     if FORBIDDEN_PREFIX.match(name):
+         return [Finding(path, line, rule, f"forbidden name: {name}")]
+     return []
+ 
+ 
+ def scan_rust(root: Path) -> list[Finding]:
+     findings: list[Finding] = []
+     for path in sorted(root.rglob("*.rs")):
+         if excluded(path, root):
+             continue
+         findings.extend(_check_name(path, 0, path.stem, "rust-module-name"))
+         try:
+             text = path.read_text(encoding="utf-8", errors="replace")
+         except OSError:
+             continue
+         lines = text.splitlines()
+         is_crate_root = path.name in ("lib.rs", "main.rs")
+-        in_block_comment = False
++        # Why: Rust permits nested block comments (edition 2018+);
++        # track depth not boolean so `/* /* */ */` only closes the
++        # outer block after both `*/` tokens.
++        block_depth = 0
+         for i, raw in enumerate(lines, 1):
+-            stripped = raw.strip()
+-            # Strip /* ... */ and /** ... */ block-comment regions so
+-            # banned names inside doc examples don't false-fire.
+-            if in_block_comment:
+-                if "*/" in stripped:
+-                    in_block_comment = False
+-                    # tail after */ may contain real code; re-process it
+-                    tail = stripped.split("*/", 1)[1].strip()
+-                    if not tail:
+-                        continue
+-                    stripped = tail
+-                else:
+-                    continue
+-            while stripped.startswith("/*"):
+-                if "*/" in stripped[2:]:
+-                    stripped = stripped.split("*/", 1)[1].strip()
+-                    if not stripped:
+-                        break
++            out: list[str] = []
++            j = 0
++            line = raw
++            while j < len(line):
++                if block_depth == 0 and line[j : j + 2] == "/*":
++                    block_depth = 1
++                    j += 2
++                elif block_depth > 0 and line[j : j + 2] == "/*":
++                    block_depth += 1
++                    j += 2
++                elif block_depth > 0 and line[j : j + 2] == "*/":
++                    block_depth -= 1
++                    j += 2
++                elif block_depth > 0:
++                    j += 1
+                 else:
+-                    in_block_comment = True
+-                    stripped = ""
+-                    break
++                    out.append(line[j])
++                    j += 1
++            stripped = "".join(out).strip()
+             if not stripped:
+                 continue
+             if stripped.startswith("//"):
+                 continue
+             # crate-root inner attribute that suppresses deprecation
+             if is_crate_root and stripped.startswith("#![allow(") and "deprecated" in stripped:
+                 findings.append(
+                     Finding(
+                         path,
+                         i,
+                         "rust-crate-root-allow-deprecated",
+                         "crate-root #![allow(deprecated)] is banned",
+                     )
+                 )
+             # mod legacy_foo; / pub mod compat_v0_5_admin;
+             m = re.match(r"(?:pub\s+(?:\([^)]+\)\s+)?)?mod\s+([A-Za-z_][A-Za-z0-9_]*)", stripped)
+             if m:
+                 findings.extend(_check_name(path, i, m.group(1), "rust-mod-decl"))
+             # pub fn / pub struct / pub enum / pub trait names
+             m = re.match(
+                 r"pub(?:\([^)]+\))?\s+(?:unsafe\s+|async\s+|const\s+)*"
+                 r"(?:fn|struct|enum|trait|type|const|static)\s+([A-Za-z_][A-Za-z0-9_]*)",
+                 stripped,
+             )
+             if m:
+                 findings.extend(_check_name(path, i, m.group(1), "rust-public-symbol"))
+             for verb in V05_VERBS:
+                 if re.search(rf"\bpub(?:\([^)]+\))?\s+fn\s+{re.escape(verb)}\b", stripped):
+                     findings.append(
+                         Finding(
+                             path,
+                             i,
+                             "rust-05x-verb-reroute",
+                             f"0.5.x verb re-route stub: {verb}",
+                         )
+                     )
+     return findings
+ 
+ 
+ def scan_python(root: Path) -> list[Finding]:
+     findings: list[Finding] = []
+     for path in sorted(root.rglob("*.py")):
+         if excluded(path, root):
+             continue
+         findings.extend(_check_name(path, 0, path.stem, "python-module-name"))
+         try:
+             tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+         except (SyntaxError, OSError):
+             continue
+         for node in ast.walk(tree):
+             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                 findings.extend(
+                     _check_name(path, node.lineno, node.name, "python-symbol")
+                 )
+                 if node.name in V05_VERBS:
+                     findings.append(
+                         Finding(
+                             path,
+                             node.lineno,
+                             "python-05x-verb-reroute",
+                             f"0.5.x verb re-route stub: {node.name}",
+                         )
+                     )
+     return findings
+ 
+ 
+ def scan_ts(root: Path) -> list[Finding]:
+     findings: list[Finding] = []
+     decl = re.compile(
+         r"(?:export\s+(?:default\s+)?(?:async\s+)?)?"
+         r"(?:class|function|interface|const|let|var|type|enum|namespace|module)\s+"
+         r"([A-Za-z_$][A-Za-z0-9_$]*)"
+     )
+     for path in sorted(list(root.rglob("*.ts")) + list(root.rglob("*.tsx"))):
+         if excluded(path, root):
+             continue
+         findings.extend(_check_name(path, 0, path.stem, "ts-module-name"))
+         try:
+             lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+         except OSError:
+diff --git a/scripts/tests/fixtures/ast-shim/rust/clean/nested_block_comment_safe.rs b/scripts/tests/fixtures/ast-shim/rust/clean/nested_block_comment_safe.rs
+new file mode 100644
+index 0000000..4b7486b
+--- /dev/null
++++ b/scripts/tests/fixtures/ast-shim/rust/clean/nested_block_comment_safe.rs
+@@ -0,0 +1,3 @@
++// Nested-block-comment safety fixture for AC-050a.
++/* outer /* legacy_inner */ still outer — must not flag */
++pub fn safe_function() {}
+diff --git a/scripts/tests/fixtures/ast-shim/rust/nested-block-real/nested_real.rs b/scripts/tests/fixtures/ast-shim/rust/nested-block-real/nested_real.rs
+new file mode 100644
+index 0000000..b4e903d
+--- /dev/null
++++ b/scripts/tests/fixtures/ast-shim/rust/nested-block-real/nested_real.rs
+@@ -0,0 +1 @@
++/* /* inner */ outer */ pub fn legacy_admin() {}
+diff --git a/scripts/tests/test_ast_scan.sh b/scripts/tests/test_ast_scan.sh
+index b234c09..feec57f 100755
+--- a/scripts/tests/test_ast_scan.sh
++++ b/scripts/tests/test_ast_scan.sh
+@@ -1,78 +1,86 @@
+ #!/usr/bin/env bash
+ # Self-test for AC-050a AST no-shim scanner (scripts/security/ast_scan.py).
+ # Drives clean + dirty fixtures per language, plus targeted sub-fixtures
+ # for the verb-reroute, crate-root, and block-comment rules.
+ set -euo pipefail
+ 
+ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+ SCAN="$REPO_ROOT/scripts/security/ast_scan.py"
+ FIX="$SCRIPT_DIR/fixtures/ast-shim"
+ 
+ fail() { echo "FAIL: $*" >&2; exit 1; }
+ 
+ run_clean() {
+     local lang="$1" path="$2"
+     if ! python3 "$SCAN" --language "$lang" --path "$path" --repo-root "$REPO_ROOT" >/dev/null 2>&1; then
+         fail "$lang clean fixture ($path) must exit 0"
+     fi
+ }
+ 
+ run_dirty() {
+     local lang="$1" path="$2" expect_pattern="$3"
+     local errf
+     errf=$(mktemp)
+     set +e
+     python3 "$SCAN" --language "$lang" --path "$path" --repo-root "$REPO_ROOT" >/dev/null 2>"$errf"
+     local rc=$?
+     set -e
+     if [ "$rc" -ne 1 ]; then
+         cat "$errf" >&2
+         rm -f "$errf"
+         fail "$lang dirty fixture ($path) must exit 1, got $rc"
+     fi
+     if ! grep -qE "$expect_pattern" "$errf"; then
+         cat "$errf" >&2
+         rm -f "$errf"
+         fail "$lang dirty fixture ($path): expected pattern '$expect_pattern' missing"
+     fi
+     rm -f "$errf"
+ }
+ 
+ # V05_VERBS must be non-empty — sentinel that the rule is enforced.
+ verb_count=$(python3 -c 'import sys; sys.path.insert(0, "'"$REPO_ROOT"'/scripts/security"); import ast_scan; print(len(ast_scan.V05_VERBS))')
+ if [ "$verb_count" -lt 1 ]; then
+     fail "V05_VERBS is empty — verb-reroute rule is unenforced"
+ fi
+ echo "OK V05_VERBS populated ($verb_count entries)"
+ 
+ for lang in rust python ts; do
+     run_clean "$lang" "$FIX/$lang/clean"
+     echo "OK $lang clean"
+     run_dirty "$lang" "$FIX/$lang/dirty" "(legacy_|compat_v0_5|allow\\(deprecated\\)|verb re-route)"
+     echo "OK $lang dirty"
+ done
+ 
+ # Targeted sub-rules: each fixture lives in its own directory so the
+ # scanner's rglob finds exactly one file and the assertion is isolated.
+ run_dirty rust "$FIX/rust/crate-root" "rust-crate-root-allow-deprecated"
+ echo "OK rust crate-root rule (lib.rs isolated)"
+ 
+ run_dirty rust "$FIX/rust/verb-reroute" "rust-05x-verb-reroute"
+ echo "OK rust v05 verb-reroute"
+ 
+ run_dirty python "$FIX/python/verb-reroute" "python-05x-verb-reroute"
+ echo "OK python v05 verb-reroute"
+ 
+ run_dirty ts "$FIX/ts/verb-reroute" "ts-05x-verb-reroute"
+ echo "OK ts v05 verb-reroute"
+ 
+ # Block-comment stripping: banned names inside /* */ must NOT flag
+ # (asserted by the rust/clean directory passing — block_comment_safe.rs
+ # embeds banned names in /* */, /*! */, and /** */ doc comments).
+ # Real code OUTSIDE a block comment in a file that ALSO contains a
+ # block comment must still flag.
+ run_dirty rust "$FIX/rust/block-comment-real" "(legacy_|rust-public-symbol)"
+ echo "OK rust block-comment does not swallow real code"
+ 
++# Nested block comments (Rust edition 2018+ allows /* /* */ */).
++# Clean nested fixture rides in rust/clean/. Dirty nested fixture
++# lives in its own dir so the assertion proves the depth-counter
++# (vs boolean) state machine: outer closes only after BOTH */ tokens,
++# leaving `pub fn legacy_admin` as live code that MUST flag.
++run_dirty rust "$FIX/rust/nested-block-real" "(legacy_admin|rust-public-symbol)"
++echo "OK rust nested block-comment (depth counter)"
++
+ echo "test_ast_scan.sh: all language fixtures pass"
+
+codex
+I have the core diff. Next I’m validating behavior directly: current tests for regression coverage, and a baseline-vs-fixed scanner check to confirm the new nested fixtures were genuinely RED before the depth-counter change.
+exec
+/bin/bash -lc 'bash scripts/tests/test_ast_scan.sh' in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+exec
+/bin/bash -lc "python3 - <<'PY'
+from pathlib import Path
+import scripts.security.ast_scan as mod
+repo = Path('/tmp/fdb-12-S-security-fixtures-20260517T195735Z')
+fixture = repo / 'scripts/tests/fixtures/ast-shim/rust/nested-block-real'
+findings = mod.scan_rust(fixture)
+print('new_nested_real_findings=', [f.render(fixture) for f in findings])
+fixture2 = repo / 'scripts/tests/fixtures/ast-shim/rust/clean'
+findings2 = mod.scan_rust(fixture2)
+print('new_clean_nested_has_safe=', [f.render(fixture2) for f in findings2 if 'nested_block_comment_safe' in str(f.path)])
+PY" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+new_nested_real_findings= ['nested_real.rs:1: [rust-public-symbol] forbidden name: legacy_admin']
+new_clean_nested_has_safe= []
+
+exec
+/bin/bash -lc "python3 - <<'PY'
+from pathlib import Path
+import subprocess, types
+repo = Path('/tmp/fdb-12-S-security-fixtures-20260517T195735Z')
+fixture = repo / 'scripts/tests/fixtures/ast-shim/rust/nested-block-real'
+source = subprocess.check_output(['git','show','79c1af0:scripts/security/ast_scan.py'], cwd=repo, text=True)
+mod = types.ModuleType('ast_scan_old')
+exec(compile(source, 'ast_scan_old', 'exec'), mod.__dict__)
+findings = mod.scan_rust(fixture)
+print('old_nested_real_findings=', [f.render(fixture) for f in findings])
+fixture2 = repo / 'scripts/tests/fixtures/ast-shim/rust/clean'
+findings2 = mod.scan_rust(fixture2)
+print('old_clean_nested_has_safe=', [f.render(fixture2) for f in findings2 if 'nested_block_comment_safe' in str(f.path)])
+PY" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ exited 1 in 143ms:
+OK rust clean
+mktemp: failed to create file via template ‘/tmp/tmp.XXXXXXXXXX’: Read-only file system
+
+ exited 1 in 141ms:
+Traceback (most recent call last):
+  File "<stdin>", line 7, in <module>
+  File "ast_scan_old", line 94, in <module>
+  File "/usr/lib/python3.10/dataclasses.py", line 1175, in wrap
+    return _process_class(cls, init, repr, eq, order, unsafe_hash,
+  File "/usr/lib/python3.10/dataclasses.py", line 944, in _process_class
+    and _is_type(type, cls, dataclasses, dataclasses.KW_ONLY,
+  File "/usr/lib/python3.10/dataclasses.py", line 711, in _is_type
+    ns = sys.modules.get(cls.__module__).__dict__
+AttributeError: 'NoneType' object has no attribute '__dict__'. Did you mean: '__dir__'?
+
+codex
+`test_ast_scan.sh` can’t run unmodified in this sandbox because `mktemp` is blocked by the read-only `/tmp`. I’m replacing that with a read-only Python harness that checks the same expectations and also probes the exact mid-line/nesting edge cases you asked about.
+exec
+/bin/bash -lc "python3 - <<'PY'
+from pathlib import Path
+import subprocess, sys, types
+repo = Path('/tmp/fdb-12-S-security-fixtures-20260517T195735Z')
+
+# Load old scanner from pre-fix commit.
+source_old = subprocess.check_output(['git','show','79c1af0:scripts/security/ast_scan.py'], cwd=repo, text=True)
+mod_old = types.ModuleType('ast_scan_old')
+mod_old.__file__ = 'ast_scan_old'
+sys.modules['ast_scan_old'] = mod_old
+exec(compile(source_old, 'ast_scan_old', 'exec'), mod_old.__dict__)
+
+# Load new scanner from worktree.
+sys.path.insert(0, str(repo / 'scripts/security'))
+import ast_scan as mod_new
+
+fixture_nested_dirty = repo / 'scripts/tests/fixtures/ast-shim/rust/nested-block-real'
+fixture_clean = repo / 'scripts/tests/fixtures/ast-shim/rust/clean'
+
+print('old nested dirty:', [f.render(fixture_nested_dirty) for f in mod_old.scan_rust(fixture_nested_dirty)])
+print('new nested dirty:', [f.render(fixture_nested_dirty) for f in mod_new.scan_rust(fixture_nested_dirty)])
+print('old nested clean fixture findings:', [f.render(fixture_clean) for f in mod_old.scan_rust(fixture_clean) if f.path.name == 'nested_block_comment_safe.rs'])
+print('new nested clean fixture findings:', [f.render(fixture_clean) for f in mod_new.scan_rust(fixture_clean) if f.path.name == 'nested_block_comment_safe.rs'])
+PY" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+old nested dirty: []
+new nested dirty: ['nested_real.rs:1: [rust-public-symbol] forbidden name: legacy_admin']
+old nested clean fixture findings: []
+new nested clean fixture findings: []
+
+exec
+/bin/bash -lc "python3 - <<'PY'
+from pathlib import Path
+import subprocess
+repo = Path('/tmp/fdb-12-S-security-fixtures-20260517T195735Z')
+source = subprocess.check_output(['git','show','c7b4ea1:scripts/tests/test_ast_scan.sh'], cwd=repo, text=True)
+count = sum(1 for line in source.splitlines() if line.strip().startswith('run_clean ') or line.strip().startswith('run_dirty '))
+print('assertion_invocations=', count)
+for n, line in enumerate(source.splitlines(), 1):
+    if 'nested-block-real' in line or 'block-comment-real' in line or 'crate-root' in line or 'verb-reroute' in line or 'run_clean \""'$lang" "$FIX/$lang/clean"'"' in line or 'run_dirty \""'$lang" "$FIX/$lang/dirty"'"' in line:
+        print(f'{n}: {line}')
+PY" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+assertion_invocations= 8
+4: # for the verb-reroute, crate-root, and block-comment rules.
+45:     fail "V05_VERBS is empty — verb-reroute rule is unenforced"
+50:     run_clean "$lang" "$FIX/$lang/clean"
+52:     run_dirty "$lang" "$FIX/$lang/dirty" "(legacy_|compat_v0_5|allow\\(deprecated\\)|verb re-route)"
+58: run_dirty rust "$FIX/rust/crate-root" "rust-crate-root-allow-deprecated"
+59: echo "OK rust crate-root rule (lib.rs isolated)"
+61: run_dirty rust "$FIX/rust/verb-reroute" "rust-05x-verb-reroute"
+62: echo "OK rust v05 verb-reroute"
+64: run_dirty python "$FIX/python/verb-reroute" "python-05x-verb-reroute"
+65: echo "OK python v05 verb-reroute"
+67: run_dirty ts "$FIX/ts/verb-reroute" "ts-05x-verb-reroute"
+68: echo "OK ts v05 verb-reroute"
+75: run_dirty rust "$FIX/rust/block-comment-real" "(legacy_|rust-public-symbol)"
+83: run_dirty rust "$FIX/rust/nested-block-real" "(legacy_admin|rust-public-symbol)"
+
+exec
+/bin/bash -lc "python3 - <<'PY'
+# Reproduce the current line-scanning logic in-memory to validate edge cases.
+def strip_line(raw, depth):
+    out = []
+    j = 0
+    while j < len(raw):
+        if depth == 0 and raw[j:j+2] == '/*':
+            depth = 1
+            j += 2
+        elif depth > 0 and raw[j:j+2] == '/*':
+            depth += 1
+            j += 2
+        elif depth > 0 and raw[j:j+2] == '*/':
+            depth -= 1
+            j += 2
+        elif depth > 0:
+            j += 1
+        else:
+            out.append(raw[j])
+            j += 1
+    return ''.join(out).strip(), depth
+
+cases = [
+    ('nested_then_code', '/* outer /* inner */ still outer */ pub fn legacy_foo() {}', 0),
+    ('close_then_code', '*/ pub fn legacy_foo() {}', 1),
+    ('mixed_comment_code_comment', '/* text */ pub fn legacy_foo() {} /* text */', 0),
+    ('depth_1_2_1_0', '/* /* */ */', 0),
+]
+for name, raw, depth0 in cases:
+    stripped, depth1 = strip_line(raw, depth0)
+    print(name, '=>', {'stripped': stripped, 'depth_end': depth1})
+PY" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+nested_then_code => {'stripped': 'pub fn legacy_foo() {}', 'depth_end': 0}
+close_then_code => {'stripped': 'pub fn legacy_foo() {}', 'depth_end': 0}
+mixed_comment_code_comment => {'stripped': 'pub fn legacy_foo() {}', 'depth_end': 0}
+depth_1_2_1_0 => {'stripped': '', 'depth_end': 0}
+
+codex
+I’ve confirmed the old scanner misses the dirty nested fixture and the fixed scanner catches it. I’m doing one last pass with a read-only harness that mirrors `test_ast_scan.sh` across all fixture directories so the verdict can explicitly cover the prior 11 checks plus the new nested one.
+exec
+/bin/bash -lc "python3 - <<'PY'
+from pathlib import Path
+import sys
+repo = Path('/tmp/fdb-12-S-security-fixtures-20260517T195735Z')
+sys.path.insert(0, str(repo / 'scripts/security'))
+import ast_scan
+
+FIX = repo / 'scripts/tests/fixtures/ast-shim'
+
+def scan(lang, path):
+    if lang == 'rust':
+        return ast_scan.scan_rust(path)
+    if lang == 'python':
+        return ast_scan.scan_python(path)
+    if lang == 'ts':
+        return ast_scan.scan_ts(path)
+    raise ValueError(lang)
+
+checks = []
+for lang in ('rust', 'python', 'ts'):
+    checks.append((f'{lang} clean', lang, FIX / lang / 'clean', True, None))
+    checks.append((f'{lang} dirty', lang, FIX / lang / 'dirty', False, r'(legacy_|compat_v0_5|allow\\(deprecated\\)|verb re-route)'))
+checks.extend([
+    ('rust crate-root', 'rust', FIX / 'rust' / 'crate-root', False, 'rust-crate-root-allow-deprecated'),
+    ('rust verb-reroute', 'rust', FIX / 'rust' / 'verb-reroute', False, 'rust-05x-verb-reroute'),
+    ('python verb-reroute', 'python', FIX / 'python' / 'verb-reroute', False, 'python-05x-verb-reroute'),
+    ('ts verb-reroute', 'ts', FIX / 'ts' / 'verb-reroute', False, 'ts-05x-verb-reroute'),
+    ('rust block-comment-real', 'rust', FIX / 'rust' / 'block-comment-real', False, 'rust-public-symbol'),
+    ('rust nested-block-real', 'rust', FIX / 'rust' / 'nested-block-real', False, 'rust-public-symbol'),
+])
+
+import re
+failures = []
+for name, lang, path, should_be_clean, pattern in checks:
+    findings = scan(lang, path)
+    rendered = [f.render(path) for f in findings]
+    if should_be_clean:
+        ok = not findings
+    else:
+        ok = any(re.search(pattern, x) for x in rendered)
+    print(name, 'PASS' if ok else 'FAIL', rendered)
+    if not ok:
+        failures.append(name)
+
+print('total_checks=', len(checks))
+print('failures=', failures)
+PY" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+rust clean PASS []
+rust dirty PASS ['legacy_admin.rs: [rust-module-name] forbidden name: legacy_admin', 'legacy_admin.rs:6: [rust-mod-decl] forbidden name: compat_v0_5_admin', 'legacy_admin.rs:8: [rust-public-symbol] forbidden name: legacy_open']
+python clean PASS []
+python dirty PASS ['legacy_client.py: [python-module-name] forbidden name: legacy_client', 'legacy_client.py:4: [python-symbol] forbidden name: legacy_Client', 'legacy_client.py:8: [python-symbol] forbidden name: compat_v0_5_open']
+ts clean PASS []
+ts dirty PASS ['legacy_binding.ts: [ts-module-name] forbidden name: legacy_binding', 'legacy_binding.ts:2: [ts-symbol] forbidden name: legacy_connect', 'legacy_binding.ts:3: [ts-symbol] forbidden name: compat_v0_5_Client']
+rust crate-root PASS ['lib.rs:4: [rust-crate-root-allow-deprecated] crate-root #![allow(deprecated)] is banned']
+rust verb-reroute PASS ['api.rs:4: [rust-05x-verb-reroute] 0.5.x verb re-route stub: configure_fts']
+python verb-reroute PASS ['api.py:6: [python-05x-verb-reroute] 0.5.x verb re-route stub: rebuild']
+ts verb-reroute PASS ['api.ts:3: [ts-05x-verb-reroute] 0.5.x verb re-route stub: configure_vec']
+rust block-comment-real PASS ['real.rs:4: [rust-public-symbol] forbidden name: legacy_real_shim']
+rust nested-block-real PASS ['nested_real.rs:1: [rust-public-symbol] forbidden name: legacy_admin']
+total_checks= 12
+failures= []
+
+exec
+/bin/bash -lc "nl -ba scripts/security/ast_scan.py | sed -n '110,185p'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+   110	        rel = path
+   111	    parts = set(rel.parts)
+   112	    return any(token in parts for token in PATH_EXCLUDES)
+   113	
+   114	
+   115	def _check_name(path: Path, line: int, name: str, rule: str) -> list[Finding]:
+   116	    if FORBIDDEN_PREFIX.match(name):
+   117	        return [Finding(path, line, rule, f"forbidden name: {name}")]
+   118	    return []
+   119	
+   120	
+   121	def scan_rust(root: Path) -> list[Finding]:
+   122	    findings: list[Finding] = []
+   123	    for path in sorted(root.rglob("*.rs")):
+   124	        if excluded(path, root):
+   125	            continue
+   126	        findings.extend(_check_name(path, 0, path.stem, "rust-module-name"))
+   127	        try:
+   128	            text = path.read_text(encoding="utf-8", errors="replace")
+   129	        except OSError:
+   130	            continue
+   131	        lines = text.splitlines()
+   132	        is_crate_root = path.name in ("lib.rs", "main.rs")
+   133	        # Why: Rust permits nested block comments (edition 2018+);
+   134	        # track depth not boolean so `/* /* */ */` only closes the
+   135	        # outer block after both `*/` tokens.
+   136	        block_depth = 0
+   137	        for i, raw in enumerate(lines, 1):
+   138	            out: list[str] = []
+   139	            j = 0
+   140	            line = raw
+   141	            while j < len(line):
+   142	                if block_depth == 0 and line[j : j + 2] == "/*":
+   143	                    block_depth = 1
+   144	                    j += 2
+   145	                elif block_depth > 0 and line[j : j + 2] == "/*":
+   146	                    block_depth += 1
+   147	                    j += 2
+   148	                elif block_depth > 0 and line[j : j + 2] == "*/":
+   149	                    block_depth -= 1
+   150	                    j += 2
+   151	                elif block_depth > 0:
+   152	                    j += 1
+   153	                else:
+   154	                    out.append(line[j])
+   155	                    j += 1
+   156	            stripped = "".join(out).strip()
+   157	            if not stripped:
+   158	                continue
+   159	            if stripped.startswith("//"):
+   160	                continue
+   161	            # crate-root inner attribute that suppresses deprecation
+   162	            if is_crate_root and stripped.startswith("#![allow(") and "deprecated" in stripped:
+   163	                findings.append(
+   164	                    Finding(
+   165	                        path,
+   166	                        i,
+   167	                        "rust-crate-root-allow-deprecated",
+   168	                        "crate-root #![allow(deprecated)] is banned",
+   169	                    )
+   170	                )
+   171	            # mod legacy_foo; / pub mod compat_v0_5_admin;
+   172	            m = re.match(r"(?:pub\s+(?:\([^)]+\)\s+)?)?mod\s+([A-Za-z_][A-Za-z0-9_]*)", stripped)
+   173	            if m:
+   174	                findings.extend(_check_name(path, i, m.group(1), "rust-mod-decl"))
+   175	            # pub fn / pub struct / pub enum / pub trait names
+   176	            m = re.match(
+   177	                r"pub(?:\([^)]+\))?\s+(?:unsafe\s+|async\s+|const\s+)*"
+   178	                r"(?:fn|struct|enum|trait|type|const|static)\s+([A-Za-z_][A-Za-z0-9_]*)",
+   179	                stripped,
+   180	            )
+   181	            if m:
+   182	                findings.extend(_check_name(path, i, m.group(1), "rust-public-symbol"))
+   183	            for verb in V05_VERBS:
+   184	                if re.search(rf"\bpub(?:\([^)]+\))?\s+fn\s+{re.escape(verb)}\b", stripped):
+   185	                    findings.append(
+
+exec
+/bin/bash -lc "nl -ba scripts/tests/test_ast_scan.sh | sed -n '45,95p'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+    45	    fail "V05_VERBS is empty — verb-reroute rule is unenforced"
+    46	fi
+    47	echo "OK V05_VERBS populated ($verb_count entries)"
+    48	
+    49	for lang in rust python ts; do
+    50	    run_clean "$lang" "$FIX/$lang/clean"
+    51	    echo "OK $lang clean"
+    52	    run_dirty "$lang" "$FIX/$lang/dirty" "(legacy_|compat_v0_5|allow\\(deprecated\\)|verb re-route)"
+    53	    echo "OK $lang dirty"
+    54	done
+    55	
+    56	# Targeted sub-rules: each fixture lives in its own directory so the
+    57	# scanner's rglob finds exactly one file and the assertion is isolated.
+    58	run_dirty rust "$FIX/rust/crate-root" "rust-crate-root-allow-deprecated"
+    59	echo "OK rust crate-root rule (lib.rs isolated)"
+    60	
+    61	run_dirty rust "$FIX/rust/verb-reroute" "rust-05x-verb-reroute"
+    62	echo "OK rust v05 verb-reroute"
+    63	
+    64	run_dirty python "$FIX/python/verb-reroute" "python-05x-verb-reroute"
+    65	echo "OK python v05 verb-reroute"
+    66	
+    67	run_dirty ts "$FIX/ts/verb-reroute" "ts-05x-verb-reroute"
+    68	echo "OK ts v05 verb-reroute"
+    69	
+    70	# Block-comment stripping: banned names inside /* */ must NOT flag
+    71	# (asserted by the rust/clean directory passing — block_comment_safe.rs
+    72	# embeds banned names in /* */, /*! */, and /** */ doc comments).
+    73	# Real code OUTSIDE a block comment in a file that ALSO contains a
+    74	# block comment must still flag.
+    75	run_dirty rust "$FIX/rust/block-comment-real" "(legacy_|rust-public-symbol)"
+    76	echo "OK rust block-comment does not swallow real code"
+    77	
+    78	# Nested block comments (Rust edition 2018+ allows /* /* */ */).
+    79	# Clean nested fixture rides in rust/clean/. Dirty nested fixture
+    80	# lives in its own dir so the assertion proves the depth-counter
+    81	# (vs boolean) state machine: outer closes only after BOTH */ tokens,
+    82	# leaving `pub fn legacy_admin` as live code that MUST flag.
+    83	run_dirty rust "$FIX/rust/nested-block-real" "(legacy_admin|rust-public-symbol)"
+    84	echo "OK rust nested block-comment (depth counter)"
+    85	
+    86	echo "test_ast_scan.sh: all language fixtures pass"
+
+exec
+/bin/bash -lc "nl -ba scripts/tests/fixtures/ast-shim/rust/clean/nested_block_comment_safe.rs && printf '\\n' && nl -ba scripts/tests/fixtures/ast-shim/rust/nested-block-real/nested_real.rs" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+     1	// Nested-block-comment safety fixture for AC-050a.
+     2	/* outer /* legacy_inner */ still outer — must not flag */
+     3	pub fn safe_function() {}
+
+     1	/* /* inner */ outer */ pub fn legacy_admin() {}
+
+codex
+## Verdict: PASS
+
+No findings.
+
+### Addressed
+- Depth-counter logic is correct in [scripts/security/ast_scan.py](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/security/ast_scan.py:121). It is a character-walk, not a regex strip, and `block_depth` persists across the full file. The transition handling at lines 142-155 correctly supports `1→2→1→0` nesting and resumes emitting live code on the same line once depth returns to `0`.
+- The requested edge cases check out against the current logic:
+  - `/* outer /* inner */ still outer */ pub fn legacy_foo() {}` reduces to live `pub fn ...` once the outer close is seen.
+  - `*/ pub fn legacy_foo() {}` with incoming depth `1` reduces to live `pub fn ...` mid-line.
+  - `/* text */ pub fn legacy_foo() {} /* text */` preserves the code between comment regions.
+  - `/* /* */ */` ends with depth `0` and no emitted code.
+- RED evidence is present and reproducible from the commit sequence. The pre-fix scanner from `79c1af0` returns no finding for [nested_real.rs](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/tests/fixtures/ast-shim/rust/nested-block-real/nested_real.rs:1), while the fixed scanner flags `legacy_admin` there. The clean nested fixture [nested_block_comment_safe.rs](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/tests/fixtures/ast-shim/rust/clean/nested_block_comment_safe.rs:1) stays clean before and after, which is the expected TDD shape for this bug.
+- [scripts/tests/test_ast_scan.sh](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/tests/test_ast_scan.sh:49) now covers both new cases. The existing loop still exercises the prior 6 clean/dirty fixture checks, and lines 58-83 cover the 6 targeted Rust/Python/TS sub-rules including the new nested-block case.
+- No regression was evident in the prior 11 checks. A read-only harness mirroring the shell assertions passed all 12 current cases, including the original 11 plus the new nested-block test.
+
+### Reviewer process notes
+- The named required-reading files `dev/plans/runs/12-S-fix-1-review-20260517T201827Z.md` and `dev/plans/prompts/12-S-fix-2.md` are not present in this worktree, so the review used the actual branch artifacts, commit deltas, and closure JSON that are present.
+- `scripts/tests/test_ast_scan.sh` could not be run verbatim in this sandbox because `mktemp` writes to read-only `/tmp`. I validated equivalent expectations with a read-only Python harness instead, and also loaded the pre-fix scanner from commit `79c1af0` to confirm the nested dirty fixture was genuinely RED before `2cb7c8b`.
+tokens used
+31,756
+## Verdict: PASS
+
+No findings.
+
+### Addressed
+- Depth-counter logic is correct in [scripts/security/ast_scan.py](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/security/ast_scan.py:121). It is a character-walk, not a regex strip, and `block_depth` persists across the full file. The transition handling at lines 142-155 correctly supports `1→2→1→0` nesting and resumes emitting live code on the same line once depth returns to `0`.
+- The requested edge cases check out against the current logic:
+  - `/* outer /* inner */ still outer */ pub fn legacy_foo() {}` reduces to live `pub fn ...` once the outer close is seen.
+  - `*/ pub fn legacy_foo() {}` with incoming depth `1` reduces to live `pub fn ...` mid-line.
+  - `/* text */ pub fn legacy_foo() {} /* text */` preserves the code between comment regions.
+  - `/* /* */ */` ends with depth `0` and no emitted code.
+- RED evidence is present and reproducible from the commit sequence. The pre-fix scanner from `79c1af0` returns no finding for [nested_real.rs](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/tests/fixtures/ast-shim/rust/nested-block-real/nested_real.rs:1), while the fixed scanner flags `legacy_admin` there. The clean nested fixture [nested_block_comment_safe.rs](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/tests/fixtures/ast-shim/rust/clean/nested_block_comment_safe.rs:1) stays clean before and after, which is the expected TDD shape for this bug.
+- [scripts/tests/test_ast_scan.sh](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/tests/test_ast_scan.sh:49) now covers both new cases. The existing loop still exercises the prior 6 clean/dirty fixture checks, and lines 58-83 cover the 6 targeted Rust/Python/TS sub-rules including the new nested-block case.
+- No regression was evident in the prior 11 checks. A read-only harness mirroring the shell assertions passed all 12 current cases, including the original 11 plus the new nested-block test.
+
+### Reviewer process notes
+- The named required-reading files `dev/plans/runs/12-S-fix-1-review-20260517T201827Z.md` and `dev/plans/prompts/12-S-fix-2.md` are not present in this worktree, so the review used the actual branch artifacts, commit deltas, and closure JSON that are present.
+- `scripts/tests/test_ast_scan.sh` could not be run verbatim in this sandbox because `mktemp` writes to read-only `/tmp`. I validated equivalent expectations with a read-only Python harness instead, and also loaded the pre-fix scanner from commit `79c1af0` to confirm the nested dirty fixture was genuinely RED before `2cb7c8b`.

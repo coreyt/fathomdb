@@ -135,13 +135,13 @@ publish step (lines 412-418); leave as-is if confirmed.
 
 Update the workflow_dispatch input description on line 10 from:
 
-```
+```text
 "Rehearse against test.pypi + cargo --dry-run + npm --dry-run (no real publish)."
 ```
 
 to:
 
-```
+```text
 "Rehearse cargo --dry-run + npm --dry-run; PyPI publish + post-publish smoke skipped entirely (no test.pypi slot burn)."
 ```
 
@@ -151,7 +151,7 @@ so the help text matches actual behavior.
 
 Current state (`dev/design/release.md:82-86`):
 
-```
+```text
 Per `feedback_release_verification`, "green CI + published wheel" is not
 done. Release-evidence sweep installs the published wheel from PyPI and
 runs an end-to-end open + close + exit smoke before the release is

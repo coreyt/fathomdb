@@ -82,7 +82,7 @@ defines `FathomDbError` plus 18 concrete leaves. Both bindings expose
 | `MigrationError`                   | ✅                | ✅            |
 | `EmbedderIdentityMismatchError`    | ✅ + `stored_name` / `stored_revision` / `supplied_name` / `supplied_revision` | ✅ + camelCase counterparts |
 | `EmbedderDimensionMismatchError`   | ✅ + `stored` / `supplied` | ✅ + `stored` / `supplied` |
-| Panic carrier (contract bug; not a `FathomDbError` subclass) | `pyo3_runtime.PanicException` (PyO3-owned, not `EngineError`) | `FathomDbPanicError` (TS-owned; not `FathomDbError`) | ✅ both deliberately outside the catch-all root |
+| Panic carrier (contract bug; not a `FathomDbError` subclass) | `pyo3_runtime.PanicException` (PyO3-owned; not `EngineError`) | `FathomDbPanicError` (TS-owned; not `FathomDbError`; both deliberately outside the catch-all root) |
 
 **Status: parity-OK after 12-TX.** No new TS leaves required.
 

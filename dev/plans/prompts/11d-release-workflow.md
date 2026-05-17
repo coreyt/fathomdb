@@ -9,6 +9,7 @@ sleeps, and wires registry-installed post-publish smoke per
 workflow edits don't bit-rot.
 
 Out of scope:
+
 - PyO3 (11a closed), napi-rs (11b closed), `set-version.sh` (11c closed).
 - Phase 12 `benchmark-and-robustness.yml`.
 - Actual production publishing — this slice ships the workflow + smoke
@@ -309,6 +310,7 @@ Wire test file into `scripts/agent-test.sh`.
 
 Add `workflow_dispatch` trigger with a `dry_run: boolean` input.
 When `dry_run: true`:
+
 - All `cargo publish` steps run with `--dry-run`.
 - `pypa/gh-action-pypi-publish` uses a `repository-url:
   https://test.pypi.org/legacy/` override (test.pypi).
@@ -328,6 +330,7 @@ graph shape.
 ### Item 5 — `scripts/release/assert-co-tagging.sh`
 
 Bash. Accepts version as `$1` (Axis W). Queries:
+
 - `https://crates.io/api/v1/crates/fathomdb` → assert `$1` in
   `versions[].num`.
 - `https://crates.io/api/v1/crates/fathomdb-embedder` → assert `$1`.
@@ -389,6 +392,7 @@ bash scripts/agent-verify.sh
 ```
 
 All must pass. Flake reruns (rerun once before declaring red):
+
 - `ac_029_canonical_writes_complete_under_projection_stall`
 - `ac_017_vector_projection_freshness_p99_le_five_seconds`
 - `t_safe_export_engine_error_exits_export_failure_66`

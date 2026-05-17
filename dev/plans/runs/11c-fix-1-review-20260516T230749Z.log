@@ -1,0 +1,1864 @@
+OpenAI Codex v0.128.0 (research preview)
+--------
+workdir: /tmp/fdb-11c-set-version-20260516T221655Z
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: medium
+reasoning summaries: none
+session id: 019e330b-c873-7f43-b2ff-f0db4f9d9518
+--------
+user
+You are the reviewer for fathomdb Phase 11c-fix-1 (remediation pass).
+
+Baseline of original 11c review: d408361 (BLOCK verdict — see
+/home/coreyt/projects/fathomdb/dev/plans/runs/11c-review-20260516T223403Z.md).
+This pass: HEAD a9a7a17 on branch phase-11c-set-version-20260516T221655Z
+in worktree /tmp/fdb-11c-set-version-20260516T221655Z. Three commits:
+- 8846926 test: cargo-skew fixture rewrite (mock-skew shape)
+- de6962e fix: structured --check-files drift diagnostics
+- a9a7a17 docs: output.json closure
+
+Cherry-picked to 0.6.0-rewrite as d4e197b / 7ff7803 / 291587d.
+
+Read remediation prompt:
+/home/coreyt/projects/fathomdb/dev/plans/prompts/11c-fix-1.md
+
+Confirm all three prior findings are addressed:
+
+1. cargo-skew fixture rewritten as synthetic mock-skew-api +
+   mock-skew-consumer-a/b shape (sibling-transitive skew, not direct pin).
+   cargo_skew.sh asserts non-zero exit AND stderr names mock-skew-api as
+   the conflict. (Implementer note in output.json: ran with single shared
+   mock-skew-api + pinned consumers because the two-api-dir ^1/^2 variant
+   does not actually fail under current cargo.)
+2. scripts/set-version.sh --check-files emits structured one-line
+   diagnostics of shape <file>:<line>: version drift — observed "X",
+   expected "Y" at every drift site. Test suite asserts the structured
+   shape including file:line prefix + observed + expected substrings.
+3. output.json head_sha + commit list regenerated.
+
+Emit PASS / CONCERN / BLOCK with file:line refs and severity tags.
+
+Write verdict to: /home/coreyt/projects/fathomdb/dev/plans/runs/11c-fix-1-review-20260516T230749Z.md
+If sandbox blocks the write, dump the verdict body as final message and
+note the sandbox issue — main thread will promote.
+
+codex
+Reviewing the remediation pass against the three original findings. I’m loading the repo guidance first, then I’ll inspect the prompt, prior review record, and the three fixing commits before I decide PASS/CONCERN/BLOCK.
+exec
+/bin/bash -lc "sed -n '1,220p' MEMORY.md" in /tmp/fdb-11c-set-version-20260516T221655Z
+ exited 2 in 0ms:
+sed: can't read MEMORY.md: No such file or directory
+
+exec
+/bin/bash -lc "sed -n '1,220p' /home/coreyt/projects/fathomdb/dev/plans/prompts/11c-fix-1.md" in /tmp/fdb-11c-set-version-20260516T221655Z
+ succeeded in 0ms:
+# Phase 11c-fix-1 — Reviewer remediation pass
+
+Targeted fix for the three codex `gpt-5.4` findings on Phase 11c
+(verdict `BLOCK`, see `dev/plans/runs/11c-review-20260516T223403Z.md`).
+
+Operates in the **existing 11c worktree**
+`/tmp/fdb-11c-set-version-20260516T221655Z` on branch
+`phase-11c-set-version-20260516T221655Z`. Builds new commits on top
+of `d408361`.
+
+## Model + effort
+
+Opus 4.7, intent: medium. Spawn from main thread:
+
+```bash
+PHASE=11c-fix-1
+TS=$(date -u +%Y%m%dT%H%M%SZ)
+LOG=/home/coreyt/projects/fathomdb/dev/plans/runs/${PHASE}-${TS}.log
+WT=/tmp/fdb-11c-set-version-20260516T221655Z
+PREAMBLE=$(cat <<'EOF'
+YOU ARE THE IMPLEMENTER. Not the orchestrator. Do the work in this
+worktree. Do NOT re-spawn yourself. Do NOT spawn other agents. Use
+--disallowedTools Task Agent as a hard guard. Write code, run tests,
+commit. Done.
+EOF
+)
+( cd "$WT" && \
+  ( echo "$PREAMBLE"; cat /home/coreyt/projects/fathomdb/dev/plans/prompts/11c-fix-1.md ) \
+  | claude -p --model claude-opus-4-7 --effort medium \
+      --add-dir "$WT" \
+      --allowedTools Read Edit Write Bash Grep Glob \
+      --disallowedTools Task Agent \
+      --permission-mode bypassPermissions \
+      --output-format stream-json --include-partial-messages --verbose \
+  > "$LOG" 2>&1 )
+```
+
+## Required reading
+
+- `dev/plans/runs/11c-review-20260516T223403Z.md` — reviewer verdict.
+- `dev/plans/prompts/11c-set-version.md` — original spec, esp. § 4
+  (skew fixtures) and § 2 (`--check-files` diagnostic contract).
+- `dev/acceptance.md` AC-051a (line 823) — the assertion text you
+  must satisfy in shape, not just spirit.
+- `dev/release/fixtures/pip-skew/` (already landed) — read this
+  whole fixture. Finding 1's solution is the **cargo analogue** of
+  what pip-skew did. Use the same naming pattern (`mock-skew-*`).
+
+## Scope — three findings, one commit per finding is fine
+
+### Finding 1 (`high`) — Real sibling-skew shape for AC-051a
+
+The current cargo-skew fixture
+(`dev/release/fixtures/cargo-skew/Cargo.toml`) directly pins
+`fathomdb-embedder-api = "=99.99.99"`. That proves direct-pin
+rejection, NOT what AC-051a actually requires.
+
+**What AC-051a actually requires (from `dev/acceptance.md:823`):**
+
+> A Cargo.toml requesting `fathomdb = X` and `fathomdb-embedder = Y`
+> whose `fathomdb-embedder-api` ranges do not overlap fails
+> `cargo update` with a resolver error.
+
+The skew is **transitive** between two sibling consumer crates
+through their shared dep on `fathomdb-embedder-api`. The fixture
+needs three synthetic crates that mirror the real release shape.
+
+**Required structure:**
+
+`dev/release/fixtures/cargo-skew/` (rewrite):
+
+```text
+cargo-skew/
+├── Cargo.toml             # workspace + probe consumer
+├── mock-skew-api/         # analogue of fathomdb-embedder-api
+│   ├── Cargo.toml         # name = "mock-skew-api", version = "1.0.0"
+│   └── src/lib.rs         # empty pub trait MockApi {}
+├── mock-skew-consumer-a/  # analogue of fathomdb
+│   ├── Cargo.toml         # name = "mock-skew-consumer-a"
+│   │                      # version = "1.0.0"
+│   │                      # [dependencies] mock-skew-api = { path = "../mock-skew-api", version = "^1" }
+│   └── src/lib.rs         # empty
+├── mock-skew-consumer-b/  # analogue of fathomdb-embedder
+│   ├── Cargo.toml         # name = "mock-skew-consumer-b"
+│   │                      # version = "1.0.0"
+│   │                      # [dependencies] mock-skew-api = { path = "../mock-skew-api-v2", version = "^2" }
+│   └── src/lib.rs         # empty
+└── mock-skew-api-v2/      # second copy of mock-skew-api at version 2.0.0
+    ├── Cargo.toml         # name = "mock-skew-api", version = "2.0.0"
+    └── src/lib.rs         # empty pub trait MockApi {}
+```
+
+`cargo-skew/Cargo.toml` (the probe consumer at the root) depends on
+both consumer crates by path:
+
+```toml
+[package]
+name = "cargo-skew-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+mock-skew-consumer-a = { path = "./mock-skew-consumer-a" }
+mock-skew-consumer-b = { path = "./mock-skew-consumer-b" }
+```
+
+Resolver outcome: probe transitively requires `mock-skew-api^1` (via
+consumer-a) AND `mock-skew-api^2` (via consumer-b). With both
+crates declared as path deps to the same package name at
+incompatible major versions, `cargo update` (or `cargo check`) MUST
+fail with a resolver error citing `mock-skew-api`. That is the
+sibling-package transitive-skew shape AC-051a wants.
+
+**Verification path** (the cleanest one likely to actually fail at
+resolve time):
+
+Some cargo versions treat two path-deps to same-name different-version
+crates as "different sources" rather than as a resolver conflict.
+If the path-dep approach does not produce a resolver error in your
+local cargo, fall back to the canonical approach: use `[patch.crates-io]`
+to inject conflicting sources, OR publish the three mock crates to a
+local registry (e.g. `cargo-local-registry` or `cargo-publish` to a
+tempdir) and depend on them by version. Whichever path you take,
+the SUCCESS CRITERION is: a non-zero `cargo update` exit with stderr
+naming the `mock-skew-api` version conflict.
+
+If none of these work without substrate not in this slice (e.g.
+installing a registry tool that bootstrap doesn't have), STOP and
+write a blocker report. Do NOT silently ship a fixture that doesn't
+actually exercise the resolver.
+
+`dev/release/tests/cargo_skew.sh` (rewrite):
+
+- Run `cargo update` (or `cargo check`) inside
+  `dev/release/fixtures/cargo-skew/`.
+- Assert exit non-zero.
+- Assert stderr contains `mock-skew-api` (the conflicting package
+  name) — proving the resolver named the actual conflict, not some
+  unrelated error.
+- Print `PASS: AC-051a — cargo resolver detected mock-skew-api
+sibling skew`.
+
+Add a one-line note in
+`dev/release/fixtures/cargo-skew/Cargo.toml` (or a sibling README):
+"Synthetic mock-skew-\* names mirror the AC-051a shape
+(`fathomdb` + `fathomdb-embedder` skewing on `fathomdb-embedder-api`).
+Real-name swap deferred until REQ-048 publishing lands."
+
+### Finding 2 (`medium`) — `--check-files` diagnostic format
+
+`scripts/set-version.sh` (lines 202, 207, 213, 243, 247): every
+drift-emit site must produce a structured one-line error of the form:
+
+```text
+<path>:<line>: version drift — observed "<observed>", expected "<expected>"
+```
+
+For files where a line number is not naturally available (e.g.
+inferred from a grep match), include the line number of the version
+declaration that was checked. Example output:
+
+```text
+src/python/pyproject.toml:7: version drift — observed "0.6.1", expected "0.6.0"
+src/ts/package.json:3: version drift — observed "0.6.1", expected "0.6.0"
+src/rust/crates/fathomdb-engine/Cargo.toml:7: version drift — observed inheritance, expected `version.workspace = true`
+```
+
+Approach:
+
+- For TOML manifests (Cargo.toml, pyproject.toml): `grep -n
+'^version' <file>` returns `<line>:<content>`; parse the line
+  number from that.
+- For JSON (package.json): `grep -n '"version"' <file>` works
+  identically since the field is on its own line in our package.json.
+- Centralize a `_drift_line(file, observed, expected)` helper so all
+  drift sites emit the same shape.
+
+`scripts/tests/test_set_version.sh` (line 136 and any other
+drift-coverage cases): tighten the assertions. Each drift-detection
+test must assert:
+
+1. The output contains `<file>:<line>:` (the file:line prefix).
+2. The output contains `observed "<observed-value>"`.
+3. The output contains `expected "<expected-value>"`.
+
+Add at least one new test case per drift type (Axis W version
+mismatch, Axis E inheritance-regression, missing Axis W
+`version.workspace = true` on a non-embedder-api crate) so each
+diagnostic shape is independently exercised.
+
+### Finding 3 (`low`) — Regenerate `output.json`
+
+`dev/plans/runs/11c-set-version-output.json` currently records
+`head_sha: "3cf95ca…"` and omits the final docs commit. After this
+remediation pass:
+
+- Update `head_sha` to the HEAD of this fix-1 work (your final
+  commit on the branch).
+- Update `commits` to list the original four + your new fix-1
+  commits in chronological order.
+- Add a `remediation_findings_addressed` array describing the three
+  fixes by short label.
+
+## Required commands
+
+```bash
+cd /tmp/fdb-11c-set-version-20260516T221655Z
+# Workspace still resolves with the new fixture present (fixture is
+# outside the workspace; cargo check at the repo root must remain green).
+cargo check --workspace
+# Set-version unit tests with the new diagnostic assertions.
+bash scripts/tests/test_set_version.sh
+# AC-051a synthetic-skew fixture must produce a resolver failure.
+bash dev/release/tests/cargo_skew.sh
+# Pip-skew fixture (unchanged from 11c) still passes.
+bash dev/release/tests/pip_skew.sh
+# Canonical local gate.
+./scripts/agent-verify.sh
+```
+
+exec
+/bin/bash -lc "sed -n '1,260p' /home/coreyt/projects/fathomdb/dev/plans/runs/11c-review-20260516T223403Z.md" in /tmp/fdb-11c-set-version-20260516T221655Z
+ succeeded in 0ms:
+# Phase 11c Review — codex gpt-5.4 verdict
+
+Reviewer: `codex --model gpt-5.4 --sandbox read-only`.
+Target: branch `phase-11c-set-version-20260516T221655Z` HEAD `d408361`.
+Baseline: `1404bf2` on `0.6.0-rewrite`.
+Cherry-pick: `7c1391c` / `2e5f00d` / `e1465d9` / `d5bff2b` on
+`0.6.0-rewrite`.
+Review log: `dev/plans/runs/11c-review-20260516T223403Z.log`.
+
+Sandbox note: reviewer could not write this file directly (read-only
+sandbox). Main thread promoted the verbatim verdict from log line
+2604+.
+
+## Verdict: BLOCK
+
+### 1. [high] AC-051a under-covered — fixture is a direct pin, not sibling transitive skew
+
+Refs:
+
+- `dev/release/fixtures/cargo-skew/Cargo.toml:18`
+- `dev/release/tests/cargo_skew.sh:24`
+- `dev/acceptance.md:823`
+
+The acceptance text requires a fixture where `fathomdb = X` and
+`fathomdb-embedder = Y` pull incompatible transitive
+`fathomdb-embedder-api` ranges, but the landed fixture only creates
+a single direct dependency on `fathomdb-embedder-api = "=99.99.99"`.
+That proves Cargo rejects an impossible direct pin; it does not
+prove sibling-package skew is detected in the real release shape.
+
+### 2. [medium] `--check-files` diagnostics weaker than contract
+
+Refs:
+
+- `scripts/set-version.sh:202`
+- `scripts/set-version.sh:207`
+- `scripts/set-version.sh:213`
+- `scripts/set-version.sh:243`
+- `scripts/set-version.sh:247`
+- `scripts/tests/test_set_version.sh:136`
+
+The prompt requires one drift line per mismatch with `file:line`
+plus observed/expected values, but the script emits only file paths
+and messages, and the test suite only checks that the filename
+appears.
+
+### 3. [low] `output.json` stale relative to slice HEAD
+
+Refs:
+
+- `dev/plans/runs/11c-set-version-output.json:5`
+- `dev/plans/runs/11c-set-version-output.json:27`
+
+`output.json` records `head_sha` as `3cf95ca` and omits the final
+docs commit, even though the reviewed head is `d408361`. Since this
+file exists to capture closure state, it should be regenerated.
+
+## What passed on inspection
+
+- Axis E decoupling is present.
+- The workspace comment cites `dev/design/release.md`.
+- `scripts/hooks/pre-push` runs `scripts/set-version.sh --check-files`
+  before `agent-verify.sh`.
+- The pip-skew fixture documents the synthetic-package rationale in
+  `output.json`.
+- `scripts/agent-test.sh` wires the new tests into the agent test
+  loop.
+
+## Reviewer process notes
+
+- Reviewer could not write the verdict file directly (read-only
+  sandbox); main thread promoted from log.
+- Reviewer could not rerun write-heavy commands (cargo check,
+  agent-verify); pass claims for those rely on the checked-in
+  artifact plus code inspection. Main thread independently verified
+  cargo check + set-version test + set-version --check-files all
+  green on `0.6.0-rewrite` after cherry-pick.
+
+## Orchestrator triage
+
+- Finding 1 = real AC binding gap. The current cargo-skew fixture
+  is symmetric in shape to the pip-skew problem (no published
+  packages mean transitive sibling skew can't be exercised against
+  the real release names). Same solution applies: build synthetic
+  mock-skew-a + mock-skew-b crates (analogues to pip-skew's
+  `mock-skew-api` + `probe-a` / `probe-b`) that declare conflicting
+  ranges on a shared synthetic api crate. Document the
+  real-name swap as part of REQ-048 publishing landing.
+- Finding 2 = mechanical. Each drift-emit site adds `file:line` +
+  observed + expected values. ~15 LOC patch. Update the test suite
+  assertions to match.
+- Finding 3 = regenerate output.json with the correct head_sha and
+  the post-fix commit list.
+
+Recommendation: spawn 11c-fix-1 remediation pass (Opus 4.7 medium).
+
+codex
+The repo-local worktree doesn’t contain `MEMORY.md` at its root, so I’m resolving it from the canonical repo and then I’ll inspect the remediation commits and touched files directly.
+exec
+/bin/bash -lc "rg --files /home/coreyt/projects/fathomdb | rg '("'^|/)MEMORY'"\\.md"'$|feedback_.*'"\\.md"'$'"'" in /tmp/fdb-11c-set-version-20260516T221655Z
+ exited 1 in 0ms:
+exec
+/bin/bash -lc 'git diff d408361..HEAD -- dev/release/fixtures/cargo-skew dev/release/tests/cargo_skew.sh scripts/set-version.sh scripts/tests/test_set_version.sh dev/plans/runs/11c-set-version-output.json' in /tmp/fdb-11c-set-version-20260516T221655Z
+ succeeded in 0ms:
+diff --git a/dev/plans/runs/11c-set-version-output.json b/dev/plans/runs/11c-set-version-output.json
+index edafa0e..5492ea2 100644
+--- a/dev/plans/runs/11c-set-version-output.json
++++ b/dev/plans/runs/11c-set-version-output.json
+@@ -2,7 +2,7 @@
+   "phase": "11c",
+   "baseline_sha": "1404bf232d881e4dd0eba0b1be9a15e0267a237d",
+   "branch": "phase-11c-set-version-20260516T221655Z",
+-  "head_sha": "3cf95ca3ce213a29b3df785ca0cbb0cb1991d3f0",
++  "head_sha": "de6962e",
+   "axis_e_decoupled": true,
+   "axis_e_value": "0.6.0",
+   "axis_w_value": "0.6.0",
+@@ -16,6 +16,7 @@
+   "ac_051a_test": "dev/release/tests/cargo_skew.sh",
+   "ac_051b_fixture": "dev/release/fixtures/pip-skew/",
+   "ac_051b_test": "dev/release/tests/pip_skew.sh",
++  "ac_051a_substrate_note": "fathomdb-embedder-api is not yet on crates.io; the fixture uses synthetic mock-skew-api + sibling consumer crates (mock-skew-consumer-a, mock-skew-consumer-b) with conflicting `=` pins to exercise cargo's sibling-transitive resolver detection offline. Swap to real names once REQ-048 publishing lands.",
+   "ac_051b_substrate_note": "fathomdb-embedder-api is not yet on PyPI; the fixture uses synthetic `mock-skew-api` + two probes to exercise the pip resolver offline. Real-name mapping documented in dev/release/fixtures/pip-skew/constraints.txt; swap to real names once REQ-048 publishing lands.",
+   "tests_added": [
+     "scripts/tests/test_set_version.sh",
+@@ -27,16 +28,24 @@
+   "commits": [
+     "6aa37d9 feat(11c-1): decouple fathomdb-embedder-api to Axis E",
+     "28c3923 feat(11c-2): set-version.sh + pre-push hook + tests",
+-    "3cf95ca test(11c-3): AC-051a/b version-skew resolver fixtures"
++    "3cf95ca test(11c-3): AC-051a/b version-skew resolver fixtures",
++    "d408361 docs(11c): closure output.json",
++    "8846926 test(11c-fix-1): rewrite cargo-skew fixture as mock-skew sibling-transitive shape",
++    "de6962e fix(11c-fix-1): structured --check-files drift diagnostics"
++  ],
++  "remediation_findings_addressed": [
++    "1 [high]: cargo-skew fixture rewritten as mock-skew-api + mock-skew-consumer-a/b sibling-transitive shape; cargo_skew.sh asserts resolver names mock-skew-api conflict",
++    "2 [medium]: set-version.sh --check-files emits `<file>:<line>: version drift — observed \"X\", expected \"Y\"` at every drift site; test suite asserts the structured shape",
++    "3 [low]: output.json regenerated with correct head_sha + post-fix commit list"
+   ],
+   "required_commands": {
+     "cargo_check_workspace": "pass",
+-    "test_set_version": "pass (12/12 PASS)",
++    "test_set_version": "pass (14/14 PASS)",
+     "cargo_skew": "pass",
+     "pip_skew": "pass",
+-    "agent_verify": "pass (rerun once for pre-existing host-load timing flake `ac_017_vector_projection_freshness_p99_le_five_seconds`, same class as AC-029 / t_safe_export_engine_error_exits_export_failure_66 noted in the prompt; second run clean in 81s)"
++    "agent_verify": "pass"
+   },
+   "agent_verify_result": "pass",
+   "blockers": [],
+-  "next_step_for_orchestrator": "spawn 11c reviewer; then 11d release.yml"
++  "next_step_for_orchestrator": "promote to 0.6.0-rewrite; respawn codex reviewer for clean PASS, then 11d release.yml"
+ }
+diff --git a/dev/release/fixtures/cargo-skew/Cargo.toml b/dev/release/fixtures/cargo-skew/Cargo.toml
+index 841ecb7..54c0cbc 100644
+--- a/dev/release/fixtures/cargo-skew/Cargo.toml
++++ b/dev/release/fixtures/cargo-skew/Cargo.toml
+@@ -1,8 +1,12 @@
+-# AC-051a fixture: exercises cargo's resolver-time skew detection on
+-# `fathomdb-embedder-api`. The vendored copy in `vendor-api/` is pinned
+-# to version "0.6.0"; this probe requests `= "=99.99.99"`, which cannot
+-# be satisfied. `cargo update` must fail with a resolver error naming
+-# the crate. See dev/release/tests/cargo_skew.sh.
++# AC-051a synthetic fixture: exercises cargo's resolver-time skew detection
++# on a SIBLING-TRANSITIVE shape, matching the real release shape
++# (`fathomdb` + `fathomdb-embedder` skewing on `fathomdb-embedder-api`).
++# `mock-skew-consumer-a` (analogue of `fathomdb`) pins `mock-skew-api =
++# "=1.0.0"`; `mock-skew-consumer-b` (analogue of `fathomdb-embedder`) pins
++# `mock-skew-api = "=2.0.0"`. The probe pulls both, so cargo must resolve
++# `mock-skew-api` to a single version satisfying both pins — impossible.
++# Real-name swap (`fathomdb-embedder-api` etc.) deferred until REQ-048
++# publishing lands.
+ 
+ [workspace]
+ 
+@@ -16,4 +20,5 @@ publish = false
+ path = "src/lib.rs"
+ 
+ [dependencies]
+-fathomdb-embedder-api = { path = "vendor-api", version = "=99.99.99" }
++mock-skew-consumer-a = { path = "./mock-skew-consumer-a" }
++mock-skew-consumer-b = { path = "./mock-skew-consumer-b" }
+diff --git a/dev/release/fixtures/cargo-skew/mock-skew-api/Cargo.toml b/dev/release/fixtures/cargo-skew/mock-skew-api/Cargo.toml
+new file mode 100644
+index 0000000..69fe06b
+--- /dev/null
++++ b/dev/release/fixtures/cargo-skew/mock-skew-api/Cargo.toml
+@@ -0,0 +1,8 @@
++[package]
++name = "mock-skew-api"
++version = "1.0.0"
++edition = "2021"
++publish = false
++
++[lib]
++path = "src/lib.rs"
+diff --git a/dev/release/fixtures/cargo-skew/mock-skew-api/src/lib.rs b/dev/release/fixtures/cargo-skew/mock-skew-api/src/lib.rs
+new file mode 100644
+index 0000000..87f541a
+--- /dev/null
++++ b/dev/release/fixtures/cargo-skew/mock-skew-api/src/lib.rs
+@@ -0,0 +1 @@
++pub trait MockApi {}
+diff --git a/dev/release/fixtures/cargo-skew/mock-skew-consumer-a/Cargo.toml b/dev/release/fixtures/cargo-skew/mock-skew-consumer-a/Cargo.toml
+new file mode 100644
+index 0000000..5843869
+--- /dev/null
++++ b/dev/release/fixtures/cargo-skew/mock-skew-consumer-a/Cargo.toml
+@@ -0,0 +1,11 @@
++[package]
++name = "mock-skew-consumer-a"
++version = "1.0.0"
++edition = "2021"
++publish = false
++
++[lib]
++path = "src/lib.rs"
++
++[dependencies]
++mock-skew-api = { path = "../mock-skew-api", version = "=1.0.0" }
+diff --git a/dev/release/fixtures/cargo-skew/mock-skew-consumer-a/src/lib.rs b/dev/release/fixtures/cargo-skew/mock-skew-consumer-a/src/lib.rs
+new file mode 100644
+index 0000000..e69de29
+diff --git a/dev/release/fixtures/cargo-skew/mock-skew-consumer-b/Cargo.toml b/dev/release/fixtures/cargo-skew/mock-skew-consumer-b/Cargo.toml
+new file mode 100644
+index 0000000..8df6041
+--- /dev/null
++++ b/dev/release/fixtures/cargo-skew/mock-skew-consumer-b/Cargo.toml
+@@ -0,0 +1,11 @@
++[package]
++name = "mock-skew-consumer-b"
++version = "1.0.0"
++edition = "2021"
++publish = false
++
++[lib]
++path = "src/lib.rs"
++
++[dependencies]
++mock-skew-api = { path = "../mock-skew-api", version = "=2.0.0" }
+diff --git a/dev/release/fixtures/cargo-skew/mock-skew-consumer-b/src/lib.rs b/dev/release/fixtures/cargo-skew/mock-skew-consumer-b/src/lib.rs
+new file mode 100644
+index 0000000..e69de29
+diff --git a/dev/release/fixtures/cargo-skew/src/lib.rs b/dev/release/fixtures/cargo-skew/src/lib.rs
+index d825719..e69de29 100644
+--- a/dev/release/fixtures/cargo-skew/src/lib.rs
++++ b/dev/release/fixtures/cargo-skew/src/lib.rs
+@@ -1,2 +0,0 @@
+-// AC-051a probe crate body — intentionally empty. The fixture exists to
+-// exercise the resolver, not to compile.
+diff --git a/dev/release/fixtures/cargo-skew/vendor-api/Cargo.toml b/dev/release/fixtures/cargo-skew/vendor-api/Cargo.toml
+deleted file mode 100644
+index 3b94649..0000000
+--- a/dev/release/fixtures/cargo-skew/vendor-api/Cargo.toml
++++ /dev/null
+@@ -1,12 +0,0 @@
+-# AC-051a vendored stub: stands in for the published
+-# fathomdb-embedder-api at version "0.6.0" so the probe's "=99.99.99"
+-# constraint has a name to clash with offline.
+-
+-[package]
+-name = "fathomdb-embedder-api"
+-version = "0.6.0"
+-edition = "2021"
+-publish = false
+-
+-[lib]
+-path = "src/lib.rs"
+diff --git a/dev/release/fixtures/cargo-skew/vendor-api/src/lib.rs b/dev/release/fixtures/cargo-skew/vendor-api/src/lib.rs
+deleted file mode 100644
+index ad343c7..0000000
+--- a/dev/release/fixtures/cargo-skew/vendor-api/src/lib.rs
++++ /dev/null
+@@ -1 +0,0 @@
+-// AC-051a vendored stub body — intentionally empty.
+diff --git a/dev/release/tests/cargo_skew.sh b/dev/release/tests/cargo_skew.sh
+index 432764b..26d5720 100755
+--- a/dev/release/tests/cargo_skew.sh
++++ b/dev/release/tests/cargo_skew.sh
+@@ -2,9 +2,12 @@
+ # AC-051a: cargo version-skew detected at resolve time.
+ #
+ # Runs `cargo update` against the fixture in
+-# dev/release/fixtures/cargo-skew/, which pins
+-# `fathomdb-embedder-api = "=99.99.99"` against a vendored copy at
+-# "0.6.0". Asserts non-zero exit and that stderr names the crate.
++# dev/release/fixtures/cargo-skew/. The fixture wires sibling consumer
++# crates (mock-skew-consumer-a, mock-skew-consumer-b) that pin
++# incompatible exact versions of a shared dependency (mock-skew-api).
++# The probe pulls in both consumers, so the resolver must reject:
++# mock-skew-api cannot be both =1.0.0 and =2.0.0 simultaneously.
++# Asserts non-zero exit and that stderr names the conflicting crate.
+ set -euo pipefail
+ 
+ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+@@ -17,20 +20,17 @@ fi
+ 
+ cd "$FIXTURE"
+ 
+-# Use CARGO_TARGET_DIR to avoid polluting the repo workspace target.
+ export CARGO_TARGET_DIR="$(mktemp -d)"
+ trap 'rm -rf "$CARGO_TARGET_DIR"' EXIT
+ 
+-# Offline so we never accidentally hit crates.io. The fixture is fully
+-# vendored; resolution should fail strictly on the version-pin mismatch.
+ if out="$(cargo update --offline 2>&1)"; then
+   printf 'FAIL: cargo update unexpectedly succeeded; expected resolver error\n%s\n' "$out" >&2
+   exit 1
+ fi
+ 
+-if ! printf '%s' "$out" | grep -q 'fathomdb-embedder-api'; then
+-  printf 'FAIL: cargo update error did not name fathomdb-embedder-api\n%s\n' "$out" >&2
++if ! printf '%s' "$out" | grep -q 'mock-skew-api'; then
++  printf 'FAIL: cargo update error did not name mock-skew-api\n%s\n' "$out" >&2
+   exit 1
+ fi
+ 
+-printf 'PASS: AC-051a — cargo resolver detected fathomdb-embedder-api skew\n'
++printf 'PASS: AC-051a — cargo resolver detected mock-skew-api sibling skew\n'
+diff --git a/scripts/set-version.sh b/scripts/set-version.sh
+index 883fd62..c8226fd 100755
+--- a/scripts/set-version.sh
++++ b/scripts/set-version.sh
+@@ -184,6 +184,31 @@ embedder_api_version_value() {
+ 
+ # --- check-files -----------------------------------------------------------
+ 
++# Line number of the first `version =` / `version.workspace` declaration
++# inside the given TOML [table] of the given file. Empty if not present.
++_toml_version_line() {
++  local file="$1" table="$2"
++  awk -v table="$table" '
++    $0 == table { in_block = 1; next }
++    /^\[/ && in_block { exit }
++    in_block && /^version[[:space:]]*[=.]/ { print NR; exit }
++  ' "$file"
++}
++
++# Line number of the first "version" key in a JSON file.
++_json_version_line() {
++  grep -n '"version"' "$1" | head -1 | cut -d: -f1
++}
++
++# Emit a structured drift diagnostic: `<file>:<line>: version drift —
++# observed "X", expected "Y"`. Centralized so every drift site has the
++# same shape (parseable by tooling, asserted in test_set_version.sh).
++_drift() {
++  local file="$1" line="$2" observed="$3" expected="$4"
++  printf '%s:%s: version drift — observed "%s", expected "%s"\n' \
++    "$file" "${line:-?}" "$observed" "$expected" >&2
++}
++
+ check_files() {
+   local ws py npm emb
+   ws="$(read_workspace_version)"
+@@ -199,29 +224,31 @@ check_files() {
+   fi
+ 
+   if [ "$py" != "$ws" ]; then
+-    printf 'drift: %s: Axis W version "%s" != Cargo.toml workspace "%s"\n' "$PYPROJ" "$py" "$ws" >&2
++    _drift "$PYPROJ" "$(_toml_version_line "$PYPROJ" '[project]')" "$py" "$ws"
+     rc=1
+   fi
+ 
+   if [ "$npm" != "$ws" ]; then
+-    printf 'drift: %s: Axis W version "%s" != Cargo.toml workspace "%s"\n' "$NPMPKG" "$npm" "$ws" >&2
++    _drift "$NPMPKG" "$(_json_version_line "$NPMPKG")" "$npm" "$ws"
+     rc=1
+   fi
+ 
+   case "$emb" in
+     workspace)
+-      printf 'drift: %s: Axis E must declare explicit [package] version (found `version.workspace = true`)\n' "$EMB_API" >&2
++      _drift "$EMB_API" "$(_toml_version_line "$EMB_API" '[package]')" \
++        "version.workspace = true" "explicit [package] version"
+       rc=1
+       ;;
+     unknown|'')
+-      printf 'drift: %s: Axis E [package] version not parseable\n' "$EMB_API" >&2
++      _drift "$EMB_API" "$(_toml_version_line "$EMB_API" '[package]')" \
++        "unparseable" "explicit [package] version"
+       rc=1
+       ;;
+   esac
+ 
+   # Every workspace crate except fathomdb-embedder-api must inherit Axis W
+   # via `version.workspace = true`. Catch silent decoupling regressions.
+-  local crate manifest line
++  local crate manifest line line_no pkg_line
+   for crate in "$CRATES_DIR"/*; do
+     [ -d "$crate" ] || continue
+     manifest="$crate/Cargo.toml"
+@@ -240,11 +267,13 @@ check_files() {
+     case "$line" in
+       version.workspace[[:space:]]*=[[:space:]]*true) ;;
+       '')
+-        printf 'drift: %s: missing [package] version declaration\n' "$manifest" >&2
++        pkg_line="$(grep -n '^\[package\]' "$manifest" | head -1 | cut -d: -f1)"
++        _drift "$manifest" "${pkg_line:-1}" "<missing>" "version.workspace = true"
+         rc=1
+         ;;
+       *)
+-        printf 'drift: %s: Axis W crate must use `version.workspace = true`; found `%s`\n' "$manifest" "$line" >&2
++        line_no="$(_toml_version_line "$manifest" '[package]')"
++        _drift "$manifest" "${line_no:-1}" "$line" "version.workspace = true"
+         rc=1
+         ;;
+     esac
+diff --git a/scripts/tests/test_set_version.sh b/scripts/tests/test_set_version.sh
+index c0b10fe..4319389 100755
+--- a/scripts/tests/test_set_version.sh
++++ b/scripts/tests/test_set_version.sh
+@@ -126,17 +126,41 @@ else
+   fail "check-files should be clean after --embedder-api 8.8.8"
+ fi
+ 
+-# 4. Manual drift on one Axis W file → --check-files exits 1 + names file.
++# Helper: assert that $out (a check-files stderr capture) contains a
++# structured drift line for the given file naming observed/expected.
++assert_drift_line() {
++  local label="$1" out="$2" file_substr="$3" observed="$4" expected="$5"
++  local missing=0
++  printf '%s' "$out" | grep -qE "${file_substr}:[0-9]+:" || missing=1
++  printf '%s' "$out" | grep -qF "observed \"${observed}\""        || missing=$((missing + 2))
++  printf '%s' "$out" | grep -qF "expected \"${expected}\""        || missing=$((missing + 4))
++  if [ "$missing" -eq 0 ]; then
++    pass "$label"
++  else
++    fail "$label (missing bits=$missing); got: $out"
++  fi
++}
++
++# 4a. Axis W drift on pyproject → structured diagnostic.
+ restore
+-# Pyproject is the easiest to drift without disturbing Cargo TOML structure.
++WS_BEFORE="$(ws_version)"
+ sed -i 's/^version = "[^"]*"/version = "7.7.7"/' "$PYPROJ"
+ if out="$("$SV" --check-files 2>&1)"; then
+   fail "check-files should fail on drifted pyproject"
+ else
+-  case "$out" in
+-    *pyproject.toml*) pass "check-files names drifted file" ;;
+-    *) fail "check-files error must name pyproject.toml; got: $out" ;;
+-  esac
++  assert_drift_line "check-files: pyproject drift structured diagnostic" \
++    "$out" "pyproject.toml" "7.7.7" "$WS_BEFORE"
++fi
++
++# 4b. Axis W drift on package.json → structured diagnostic.
++restore
++WS_BEFORE="$(ws_version)"
++sed -i 's/"version"[[:space:]]*:[[:space:]]*"[^"]*"/"version": "7.7.7"/' "$NPMPKG"
++if out="$("$SV" --check-files 2>&1)"; then
++  fail "check-files should fail on drifted package.json"
++else
++  assert_drift_line "check-files: package.json drift structured diagnostic" \
++    "$out" "package.json" "7.7.7" "$WS_BEFORE"
+ fi
+ 
+ # 5. Idempotent: --workspace <current> twice in a row → no second-pass change.
+@@ -184,10 +208,39 @@ sed -i 's/^version = "0.6.0"$/version.workspace = true/' "$EMBAPI"
+ if out="$("$SV" --check-files 2>&1)"; then
+   fail "check-files should fail when Axis E inherits workspace"
+ else
+-  case "$out" in
+-    *fathomdb-embedder-api*) pass "check-files flags Axis E inheritance regression" ;;
+-    *) fail "check-files must name fathomdb-embedder-api; got: $out" ;;
++  assert_drift_line "check-files: Axis E inheritance-regression structured diagnostic" \
++    "$out" "fathomdb-embedder-api/Cargo.toml" \
++    "version.workspace = true" "explicit [package] version"
++fi
++
++# 9. Drift on a non-embedder-api crate: replace `version.workspace = true`
++#    with an explicit literal version → must be flagged with structured
++#    diagnostic naming the crate manifest, observed=literal line,
++#    expected=version.workspace = true.
++restore
++VICTIM=""
++for c in "$REPO_ROOT"/src/rust/crates/*/Cargo.toml; do
++  case "$c" in
++    *fathomdb-embedder-api*) continue ;;
+   esac
++  if grep -q '^version\.workspace[[:space:]]*=[[:space:]]*true' "$c"; then
++    VICTIM="$c"
++    break
++  fi
++done
++if [ -z "$VICTIM" ]; then
++  fail "test 9 setup: no non-embedder-api crate uses version.workspace=true"
++else
++  cp "$VICTIM" "$TMPDIR_ROOT/victim.snap"
++  sed -i 's/^version\.workspace[[:space:]]*=[[:space:]]*true/version = "9.9.9"/' "$VICTIM"
++  if out="$("$SV" --check-files 2>&1)"; then
++    cp "$TMPDIR_ROOT/victim.snap" "$VICTIM"
++    fail "check-files should fail when a non-embedder-api crate hardcodes version"
++  else
++    cp "$TMPDIR_ROOT/victim.snap" "$VICTIM"
++    assert_drift_line "check-files: non-emb-api crate hardcoded-version structured diagnostic" \
++      "$out" "Cargo.toml" 'version = "9.9.9"' "version.workspace = true"
++  fi
+ fi
+ 
+ restore
+
+exec
+/bin/bash -lc "git log --oneline --decorate -3 && printf '\\n---\\n' && git show --stat --oneline --decorate --no-patch HEAD && printf '\\n---\\n' && git diff d408361..HEAD --stat" in /tmp/fdb-11c-set-version-20260516T221655Z
+ succeeded in 0ms:
+a9a7a17 (HEAD -> phase-11c-set-version-20260516T221655Z) docs(11c-fix-1): closure output.json + remediation summary
+de6962e fix(11c-fix-1): structured --check-files drift diagnostics
+8846926 test(11c-fix-1): rewrite cargo-skew fixture as mock-skew sibling-transitive shape
+
+---
+a9a7a17 (HEAD -> phase-11c-set-version-20260516T221655Z) docs(11c-fix-1): closure output.json + remediation summary
+
+---
+ dev/plans/runs/11c-fix-1-output.json               | 20 ++++++
+ dev/plans/runs/11c-set-version-output.json         | 19 ++++--
+ dev/release/fixtures/cargo-skew/Cargo.toml         | 17 ++++--
+ .../fixtures/cargo-skew/mock-skew-api/Cargo.toml   |  8 +++
+ .../fixtures/cargo-skew/mock-skew-api/src/lib.rs   |  1 +
+ .../cargo-skew/mock-skew-consumer-a/Cargo.toml     | 11 ++++
+ .../cargo-skew/mock-skew-consumer-a/src/lib.rs     |  0
+ .../cargo-skew/mock-skew-consumer-b/Cargo.toml     | 11 ++++
+ .../cargo-skew/mock-skew-consumer-b/src/lib.rs     |  0
+ dev/release/fixtures/cargo-skew/src/lib.rs         |  2 -
+ .../fixtures/cargo-skew/vendor-api/Cargo.toml      | 12 ----
+ .../fixtures/cargo-skew/vendor-api/src/lib.rs      |  1 -
+ dev/release/tests/cargo_skew.sh                    | 18 +++---
+ scripts/set-version.sh                             | 43 ++++++++++---
+ scripts/tests/test_set_version.sh                  | 71 +++++++++++++++++++---
+ 15 files changed, 183 insertions(+), 51 deletions(-)
+
+codex
+I have the patch surface now. Next I’m checking the canonical `MEMORY.md` and the feedback docs it references, then I’ll verify whether the remediation actually satisfies the original contract rather than just changing the text.
+exec
+/bin/bash -lc "rg --files /home/coreyt/projects/fathomdb | grep '/MEMORY\\.md"'$'"\\|/feedback_.*\\.md"'$'"'" in /tmp/fdb-11c-set-version-20260516T221655Z
+ exited 1 in 0ms:
+exec
+/bin/bash -lc "nl -ba dev/release/fixtures/cargo-skew/Cargo.toml && printf '\\n---\\n' && nl -ba dev/release/tests/cargo_skew.sh && printf '\\n---\\n' && nl -ba scripts/set-version.sh | sed -n '184,285p' && printf '\\n---\\n' && nl -ba scripts/tests/test_set_version.sh | sed -n '126,255p' && printf '\\n---\\n' && nl -ba dev/plans/runs/11c-set-version-output.json" in /tmp/fdb-11c-set-version-20260516T221655Z
+ succeeded in 0ms:
+     1	# AC-051a synthetic fixture: exercises cargo's resolver-time skew detection
+     2	# on a SIBLING-TRANSITIVE shape, matching the real release shape
+     3	# (`fathomdb` + `fathomdb-embedder` skewing on `fathomdb-embedder-api`).
+     4	# `mock-skew-consumer-a` (analogue of `fathomdb`) pins `mock-skew-api =
+     5	# "=1.0.0"`; `mock-skew-consumer-b` (analogue of `fathomdb-embedder`) pins
+     6	# `mock-skew-api = "=2.0.0"`. The probe pulls both, so cargo must resolve
+     7	# `mock-skew-api` to a single version satisfying both pins — impossible.
+     8	# Real-name swap (`fathomdb-embedder-api` etc.) deferred until REQ-048
+     9	# publishing lands.
+    10	
+    11	[workspace]
+    12	
+    13	[package]
+    14	name = "cargo-skew-probe"
+    15	version = "0.0.0"
+    16	edition = "2021"
+    17	publish = false
+    18	
+    19	[lib]
+    20	path = "src/lib.rs"
+    21	
+    22	[dependencies]
+    23	mock-skew-consumer-a = { path = "./mock-skew-consumer-a" }
+    24	mock-skew-consumer-b = { path = "./mock-skew-consumer-b" }
+
+---
+     1	#!/usr/bin/env bash
+     2	# AC-051a: cargo version-skew detected at resolve time.
+     3	#
+     4	# Runs `cargo update` against the fixture in
+     5	# dev/release/fixtures/cargo-skew/. The fixture wires sibling consumer
+     6	# crates (mock-skew-consumer-a, mock-skew-consumer-b) that pin
+     7	# incompatible exact versions of a shared dependency (mock-skew-api).
+     8	# The probe pulls in both consumers, so the resolver must reject:
+     9	# mock-skew-api cannot be both =1.0.0 and =2.0.0 simultaneously.
+    10	# Asserts non-zero exit and that stderr names the conflicting crate.
+    11	set -euo pipefail
+    12	
+    13	SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    14	FIXTURE="$SCRIPT_DIR/../fixtures/cargo-skew"
+    15	
+    16	if ! command -v cargo >/dev/null 2>&1; then
+    17	  echo "skip: cargo not on PATH" >&2
+    18	  exit 0
+    19	fi
+    20	
+    21	cd "$FIXTURE"
+    22	
+    23	export CARGO_TARGET_DIR="$(mktemp -d)"
+    24	trap 'rm -rf "$CARGO_TARGET_DIR"' EXIT
+    25	
+    26	if out="$(cargo update --offline 2>&1)"; then
+    27	  printf 'FAIL: cargo update unexpectedly succeeded; expected resolver error\n%s\n' "$out" >&2
+    28	  exit 1
+    29	fi
+    30	
+    31	if ! printf '%s' "$out" | grep -q 'mock-skew-api'; then
+    32	  printf 'FAIL: cargo update error did not name mock-skew-api\n%s\n' "$out" >&2
+    33	  exit 1
+    34	fi
+    35	
+    36	printf 'PASS: AC-051a — cargo resolver detected mock-skew-api sibling skew\n'
+
+---
+   184	
+   185	# --- check-files -----------------------------------------------------------
+   186	
+   187	# Line number of the first `version =` / `version.workspace` declaration
+   188	# inside the given TOML [table] of the given file. Empty if not present.
+   189	_toml_version_line() {
+   190	  local file="$1" table="$2"
+   191	  awk -v table="$table" '
+   192	    $0 == table { in_block = 1; next }
+   193	    /^\[/ && in_block { exit }
+   194	    in_block && /^version[[:space:]]*[=.]/ { print NR; exit }
+   195	  ' "$file"
+   196	}
+   197	
+   198	# Line number of the first "version" key in a JSON file.
+   199	_json_version_line() {
+   200	  grep -n '"version"' "$1" | head -1 | cut -d: -f1
+   201	}
+   202	
+   203	# Emit a structured drift diagnostic: `<file>:<line>: version drift —
+   204	# observed "X", expected "Y"`. Centralized so every drift site has the
+   205	# same shape (parseable by tooling, asserted in test_set_version.sh).
+   206	_drift() {
+   207	  local file="$1" line="$2" observed="$3" expected="$4"
+   208	  printf '%s:%s: version drift — observed "%s", expected "%s"\n' \
+   209	    "$file" "${line:-?}" "$observed" "$expected" >&2
+   210	}
+   211	
+   212	check_files() {
+   213	  local ws py npm emb
+   214	  ws="$(read_workspace_version)"
+   215	  py="$(read_pyproject_version)"
+   216	  npm="$(read_npm_version)"
+   217	  emb="$(embedder_api_version_value)"
+   218	
+   219	  local rc=0
+   220	
+   221	  if [ -z "$ws" ]; then
+   222	    printf 'error: %s: no [workspace.package] version found\n' "$CARGO" >&2
+   223	    rc=1
+   224	  fi
+   225	
+   226	  if [ "$py" != "$ws" ]; then
+   227	    _drift "$PYPROJ" "$(_toml_version_line "$PYPROJ" '[project]')" "$py" "$ws"
+   228	    rc=1
+   229	  fi
+   230	
+   231	  if [ "$npm" != "$ws" ]; then
+   232	    _drift "$NPMPKG" "$(_json_version_line "$NPMPKG")" "$npm" "$ws"
+   233	    rc=1
+   234	  fi
+   235	
+   236	  case "$emb" in
+   237	    workspace)
+   238	      _drift "$EMB_API" "$(_toml_version_line "$EMB_API" '[package]')" \
+   239	        "version.workspace = true" "explicit [package] version"
+   240	      rc=1
+   241	      ;;
+   242	    unknown|'')
+   243	      _drift "$EMB_API" "$(_toml_version_line "$EMB_API" '[package]')" \
+   244	        "unparseable" "explicit [package] version"
+   245	      rc=1
+   246	      ;;
+   247	  esac
+   248	
+   249	  # Every workspace crate except fathomdb-embedder-api must inherit Axis W
+   250	  # via `version.workspace = true`. Catch silent decoupling regressions.
+   251	  local crate manifest line line_no pkg_line
+   252	  for crate in "$CRATES_DIR"/*; do
+   253	    [ -d "$crate" ] || continue
+   254	    manifest="$crate/Cargo.toml"
+   255	    [ -f "$manifest" ] || continue
+   256	    if [ "$crate" = "$EMB_API_DIR" ]; then
+   257	      continue
+   258	    fi
+   259	    line="$(awk '
+   260	      /^\[package\]/ { in_block = 1; next }
+   261	      /^\[/          { in_block = 0 }
+   262	      in_block && /^version[[:space:]]*[=.]/ {
+   263	        print
+   264	        exit
+   265	      }
+   266	    ' "$manifest")"
+   267	    case "$line" in
+   268	      version.workspace[[:space:]]*=[[:space:]]*true) ;;
+   269	      '')
+   270	        pkg_line="$(grep -n '^\[package\]' "$manifest" | head -1 | cut -d: -f1)"
+   271	        _drift "$manifest" "${pkg_line:-1}" "<missing>" "version.workspace = true"
+   272	        rc=1
+   273	        ;;
+   274	      *)
+   275	        line_no="$(_toml_version_line "$manifest" '[package]')"
+   276	        _drift "$manifest" "${line_no:-1}" "$line" "version.workspace = true"
+   277	        rc=1
+   278	        ;;
+   279	    esac
+   280	  done
+   281	
+   282	  if [ $rc -eq 0 ]; then
+   283	    printf 'ok: Axis W = %s; Axis E = %s\n' "$ws" "$emb"
+   284	  fi
+   285	  return $rc
+
+---
+   126	  fail "check-files should be clean after --embedder-api 8.8.8"
+   127	fi
+   128	
+   129	# Helper: assert that $out (a check-files stderr capture) contains a
+   130	# structured drift line for the given file naming observed/expected.
+   131	assert_drift_line() {
+   132	  local label="$1" out="$2" file_substr="$3" observed="$4" expected="$5"
+   133	  local missing=0
+   134	  printf '%s' "$out" | grep -qE "${file_substr}:[0-9]+:" || missing=1
+   135	  printf '%s' "$out" | grep -qF "observed \"${observed}\""        || missing=$((missing + 2))
+   136	  printf '%s' "$out" | grep -qF "expected \"${expected}\""        || missing=$((missing + 4))
+   137	  if [ "$missing" -eq 0 ]; then
+   138	    pass "$label"
+   139	  else
+   140	    fail "$label (missing bits=$missing); got: $out"
+   141	  fi
+   142	}
+   143	
+   144	# 4a. Axis W drift on pyproject → structured diagnostic.
+   145	restore
+   146	WS_BEFORE="$(ws_version)"
+   147	sed -i 's/^version = "[^"]*"/version = "7.7.7"/' "$PYPROJ"
+   148	if out="$("$SV" --check-files 2>&1)"; then
+   149	  fail "check-files should fail on drifted pyproject"
+   150	else
+   151	  assert_drift_line "check-files: pyproject drift structured diagnostic" \
+   152	    "$out" "pyproject.toml" "7.7.7" "$WS_BEFORE"
+   153	fi
+   154	
+   155	# 4b. Axis W drift on package.json → structured diagnostic.
+   156	restore
+   157	WS_BEFORE="$(ws_version)"
+   158	sed -i 's/"version"[[:space:]]*:[[:space:]]*"[^"]*"/"version": "7.7.7"/' "$NPMPKG"
+   159	if out="$("$SV" --check-files 2>&1)"; then
+   160	  fail "check-files should fail on drifted package.json"
+   161	else
+   162	  assert_drift_line "check-files: package.json drift structured diagnostic" \
+   163	    "$out" "package.json" "7.7.7" "$WS_BEFORE"
+   164	fi
+   165	
+   166	# 5. Idempotent: --workspace <current> twice in a row → no second-pass change.
+   167	restore
+   168	CUR="$(ws_version)"
+   169	"$SV" --workspace "$CUR" >/dev/null
+   170	HASH1="$(sha256sum "$CARGO" "$PYPROJ" "$NPMPKG" | sha256sum)"
+   171	"$SV" --workspace "$CUR" >/dev/null
+   172	HASH2="$(sha256sum "$CARGO" "$PYPROJ" "$NPMPKG" | sha256sum)"
+   173	if [ "$HASH1" = "$HASH2" ]; then
+   174	  pass "workspace re-run is idempotent (hash stable)"
+   175	else
+   176	  fail "workspace re-run mutated content"
+   177	fi
+   178	
+   179	# 6. Unknown flag → exit 2 with usage on stderr.
+   180	restore
+   181	if out="$("$SV" --bogus-flag 2>&1)"; then
+   182	  fail "unknown flag should exit non-zero"
+   183	else
+   184	  rc=$?
+   185	  if [ "$rc" -eq 2 ] && printf '%s' "$out" | grep -q -i 'usage'; then
+   186	    pass "unknown flag → exit 2 + usage"
+   187	  else
+   188	    fail "unknown flag wrong exit ($rc) or no usage; got: $out"
+   189	  fi
+   190	fi
+   191	
+   192	# 7. Missing argument to --workspace → exit 2 with usage.
+   193	restore
+   194	if out="$("$SV" --workspace 2>&1)"; then
+   195	  fail "missing arg should exit non-zero"
+   196	else
+   197	  rc=$?
+   198	  if [ "$rc" -eq 2 ] && printf '%s' "$out" | grep -q -i 'usage'; then
+   199	    pass "missing arg → exit 2 + usage"
+   200	  else
+   201	    fail "missing arg wrong exit ($rc) or no usage; got: $out"
+   202	  fi
+   203	fi
+   204	
+   205	# 8. Drift on Axis E (explicit version replaced with workspace inheritance) → fail.
+   206	restore
+   207	sed -i 's/^version = "0.6.0"$/version.workspace = true/' "$EMBAPI"
+   208	if out="$("$SV" --check-files 2>&1)"; then
+   209	  fail "check-files should fail when Axis E inherits workspace"
+   210	else
+   211	  assert_drift_line "check-files: Axis E inheritance-regression structured diagnostic" \
+   212	    "$out" "fathomdb-embedder-api/Cargo.toml" \
+   213	    "version.workspace = true" "explicit [package] version"
+   214	fi
+   215	
+   216	# 9. Drift on a non-embedder-api crate: replace `version.workspace = true`
+   217	#    with an explicit literal version → must be flagged with structured
+   218	#    diagnostic naming the crate manifest, observed=literal line,
+   219	#    expected=version.workspace = true.
+   220	restore
+   221	VICTIM=""
+   222	for c in "$REPO_ROOT"/src/rust/crates/*/Cargo.toml; do
+   223	  case "$c" in
+   224	    *fathomdb-embedder-api*) continue ;;
+   225	  esac
+   226	  if grep -q '^version\.workspace[[:space:]]*=[[:space:]]*true' "$c"; then
+   227	    VICTIM="$c"
+   228	    break
+   229	  fi
+   230	done
+   231	if [ -z "$VICTIM" ]; then
+   232	  fail "test 9 setup: no non-embedder-api crate uses version.workspace=true"
+   233	else
+   234	  cp "$VICTIM" "$TMPDIR_ROOT/victim.snap"
+   235	  sed -i 's/^version\.workspace[[:space:]]*=[[:space:]]*true/version = "9.9.9"/' "$VICTIM"
+   236	  if out="$("$SV" --check-files 2>&1)"; then
+   237	    cp "$TMPDIR_ROOT/victim.snap" "$VICTIM"
+   238	    fail "check-files should fail when a non-embedder-api crate hardcodes version"
+   239	  else
+   240	    cp "$TMPDIR_ROOT/victim.snap" "$VICTIM"
+   241	    assert_drift_line "check-files: non-emb-api crate hardcoded-version structured diagnostic" \
+   242	      "$out" "Cargo.toml" 'version = "9.9.9"' "version.workspace = true"
+   243	  fi
+   244	fi
+   245	
+   246	restore
+   247	
+   248	if [ "$FAILED" -gt 0 ]; then
+   249	  printf '\n%d test(s) failed\n' "$FAILED" >&2
+   250	  exit 1
+   251	fi
+   252	printf '\nAll set-version.sh tests passed\n'
+
+---
+     1	{
+     2	  "phase": "11c",
+     3	  "baseline_sha": "1404bf232d881e4dd0eba0b1be9a15e0267a237d",
+     4	  "branch": "phase-11c-set-version-20260516T221655Z",
+     5	  "head_sha": "de6962e",
+     6	  "axis_e_decoupled": true,
+     7	  "axis_e_value": "0.6.0",
+     8	  "axis_w_value": "0.6.0",
+     9	  "set_version_modes": [
+    10	    "--workspace",
+    11	    "--embedder-api",
+    12	    "--check-files"
+    13	  ],
+    14	  "pre_push_hook_wired": true,
+    15	  "ac_051a_fixture": "dev/release/fixtures/cargo-skew/",
+    16	  "ac_051a_test": "dev/release/tests/cargo_skew.sh",
+    17	  "ac_051b_fixture": "dev/release/fixtures/pip-skew/",
+    18	  "ac_051b_test": "dev/release/tests/pip_skew.sh",
+    19	  "ac_051a_substrate_note": "fathomdb-embedder-api is not yet on crates.io; the fixture uses synthetic mock-skew-api + sibling consumer crates (mock-skew-consumer-a, mock-skew-consumer-b) with conflicting `=` pins to exercise cargo's sibling-transitive resolver detection offline. Swap to real names once REQ-048 publishing lands.",
+    20	  "ac_051b_substrate_note": "fathomdb-embedder-api is not yet on PyPI; the fixture uses synthetic `mock-skew-api` + two probes to exercise the pip resolver offline. Real-name mapping documented in dev/release/fixtures/pip-skew/constraints.txt; swap to real names once REQ-048 publishing lands.",
+    21	  "tests_added": [
+    22	    "scripts/tests/test_set_version.sh",
+    23	    "dev/release/tests/cargo_skew.sh",
+    24	    "dev/release/tests/pip_skew.sh"
+    25	  ],
+    26	  "tests_wired_into": "scripts/agent-test.sh",
+    27	  "acceptance_ids_bound": ["AC-051a", "AC-051b"],
+    28	  "commits": [
+    29	    "6aa37d9 feat(11c-1): decouple fathomdb-embedder-api to Axis E",
+    30	    "28c3923 feat(11c-2): set-version.sh + pre-push hook + tests",
+    31	    "3cf95ca test(11c-3): AC-051a/b version-skew resolver fixtures",
+    32	    "d408361 docs(11c): closure output.json",
+    33	    "8846926 test(11c-fix-1): rewrite cargo-skew fixture as mock-skew sibling-transitive shape",
+    34	    "de6962e fix(11c-fix-1): structured --check-files drift diagnostics"
+    35	  ],
+    36	  "remediation_findings_addressed": [
+    37	    "1 [high]: cargo-skew fixture rewritten as mock-skew-api + mock-skew-consumer-a/b sibling-transitive shape; cargo_skew.sh asserts resolver names mock-skew-api conflict",
+    38	    "2 [medium]: set-version.sh --check-files emits `<file>:<line>: version drift — observed \"X\", expected \"Y\"` at every drift site; test suite asserts the structured shape",
+    39	    "3 [low]: output.json regenerated with correct head_sha + post-fix commit list"
+    40	  ],
+    41	  "required_commands": {
+    42	    "cargo_check_workspace": "pass",
+    43	    "test_set_version": "pass (14/14 PASS)",
+    44	    "cargo_skew": "pass",
+    45	    "pip_skew": "pass",
+    46	    "agent_verify": "pass"
+    47	  },
+    48	  "agent_verify_result": "pass",
+    49	  "blockers": [],
+    50	  "next_step_for_orchestrator": "promote to 0.6.0-rewrite; respawn codex reviewer for clean PASS, then 11d release.yml"
+    51	}
+
+exec
+/bin/bash -lc "git show --stat --summary 8846926 && printf '\\n---PATCH---\\n' && git show --stat --summary de6962e && printf '\\n---PATCH---\\n' && git show --stat --summary a9a7a17" in /tmp/fdb-11c-set-version-20260516T221655Z
+ succeeded in 0ms:
+commit 88469264d4059e4690cf4abf49e64d157e26eb71
+Author: Corey Thompson <coreyt@gmail.com>
+Date:   Sat May 16 18:01:09 2026 -0500
+
+    test(11c-fix-1): rewrite cargo-skew fixture as mock-skew sibling-transitive shape
+    
+    AC-051a requires sibling consumer crates pulling incompatible
+    transitive ranges on a shared dep — the prior fixture was a direct
+    =99.99.99 pin and only proved direct-pin rejection. Replace with
+    mock-skew-api + mock-skew-consumer-a (=1.0.0) + mock-skew-consumer-b
+    (=2.0.0); probe pulls both, resolver must reject. cargo_skew.sh
+    asserts stderr names mock-skew-api. Real-name swap deferred to
+    REQ-048 publishing.
+
+ dev/release/fixtures/cargo-skew/Cargo.toml             | 17 +++++++++++------
+ .../fixtures/cargo-skew/mock-skew-api/Cargo.toml       |  8 ++++++++
+ .../fixtures/cargo-skew/mock-skew-api/src/lib.rs       |  1 +
+ .../cargo-skew/mock-skew-consumer-a/Cargo.toml         | 11 +++++++++++
+ .../cargo-skew/mock-skew-consumer-a/src/lib.rs         |  0
+ .../cargo-skew/mock-skew-consumer-b/Cargo.toml         | 11 +++++++++++
+ .../cargo-skew/mock-skew-consumer-b/src/lib.rs         |  0
+ dev/release/fixtures/cargo-skew/src/lib.rs             |  2 --
+ dev/release/fixtures/cargo-skew/vendor-api/Cargo.toml  | 12 ------------
+ dev/release/fixtures/cargo-skew/vendor-api/src/lib.rs  |  1 -
+ dev/release/tests/cargo_skew.sh                        | 18 +++++++++---------
+ 11 files changed, 51 insertions(+), 30 deletions(-)
+ create mode 100644 dev/release/fixtures/cargo-skew/mock-skew-api/Cargo.toml
+ create mode 100644 dev/release/fixtures/cargo-skew/mock-skew-api/src/lib.rs
+ create mode 100644 dev/release/fixtures/cargo-skew/mock-skew-consumer-a/Cargo.toml
+ create mode 100644 dev/release/fixtures/cargo-skew/mock-skew-consumer-a/src/lib.rs
+ create mode 100644 dev/release/fixtures/cargo-skew/mock-skew-consumer-b/Cargo.toml
+ create mode 100644 dev/release/fixtures/cargo-skew/mock-skew-consumer-b/src/lib.rs
+ delete mode 100644 dev/release/fixtures/cargo-skew/vendor-api/Cargo.toml
+ delete mode 100644 dev/release/fixtures/cargo-skew/vendor-api/src/lib.rs
+
+---PATCH---
+commit de6962ebba70bf2c7da82ba6aac0c1ec001e1a9c
+Author: Corey Thompson <coreyt@gmail.com>
+Date:   Sat May 16 18:01:54 2026 -0500
+
+    fix(11c-fix-1): structured --check-files drift diagnostics
+    
+    Every drift-emit site in set-version.sh --check-files now produces a
+    single line of the form:
+    
+      <file>:<line>: version drift — observed "X", expected "Y"
+    
+    Centralized through a _drift() helper so all sites share shape. Line
+    numbers resolved per-format: _toml_version_line() for TOML manifests,
+    _json_version_line() for package.json. Tightens test_set_version.sh
+    with assert_drift_line() that requires file:line prefix + observed +
+    expected substrings; adds new coverage for npm drift, Axis E
+    inheritance regression, and non-embedder-api crate hardcoded-version
+    regression.
+
+ scripts/set-version.sh            | 43 ++++++++++++++++++++----
+ scripts/tests/test_set_version.sh | 71 ++++++++++++++++++++++++++++++++++-----
+ 2 files changed, 98 insertions(+), 16 deletions(-)
+
+---PATCH---
+commit a9a7a17558177771b7327febc36fe3e23d9c0a2f
+Author: Corey Thompson <coreyt@gmail.com>
+Date:   Sat May 16 18:07:24 2026 -0500
+
+    docs(11c-fix-1): closure output.json + remediation summary
+    
+    Regenerates dev/plans/runs/11c-set-version-output.json with the
+    post-fix-1 head_sha (de6962e), the full commit list, and a
+    remediation_findings_addressed block. Adds dev/plans/runs/11c-fix-1-output.json
+    documenting fixture approach (single shared mock-skew-api + sibling
+    =1.0.0 / =2.0.0 pins; two-api ^1/^2 variant tested + rejected) and
+    tightened tests.
+
+ dev/plans/runs/11c-fix-1-output.json       | 20 ++++++++++++++++++++
+ dev/plans/runs/11c-set-version-output.json | 19 ++++++++++++++-----
+ 2 files changed, 34 insertions(+), 5 deletions(-)
+ create mode 100644 dev/plans/runs/11c-fix-1-output.json
+
+codex
+I’ve confirmed the changed files. One thing already stands out: the closure artifact was updated in the docs commit, but its recorded `head_sha` may still lag the actual branch head. I’m checking that and the synthetic cargo-skew shape against the exact acceptance wording now.
+exec
+/bin/bash -lc "sed -n '1,220p' dev/plans/runs/11c-fix-1-output.json" in /tmp/fdb-11c-set-version-20260516T221655Z
+ succeeded in 0ms:
+{
+  "phase": "11c-fix-1",
+  "baseline_sha": "d408361",
+  "branch": "phase-11c-set-version-20260516T221655Z",
+  "head_sha": "de6962e",
+  "findings_addressed": [
+    "1 [high]: cargo-skew fixture rewritten as mock-skew-api + mock-skew-consumer-a/b shape; cargo_skew.sh asserts resolver names mock-skew-api conflict",
+    "2 [medium]: set-version.sh --check-files emits `<file>:<line>: version drift — observed \"X\", expected \"Y\"` at every drift site; test suite asserts the structured shape",
+    "3 [low]: output.json regenerated with correct head_sha + post-fix commit list"
+  ],
+  "cargo_skew_fixture_approach": "path-deps (single shared mock-skew-api path crate; sibling consumer-a pins =1.0.0, consumer-b pins =2.0.0, probe pulls both → resolver names mock-skew-api conflict). The prompt's alternative two-api-dir shape with ^1/^2 ranges was tested and does NOT fail — cargo treats two same-name path packages at different majors as distinct sources rather than a resolver conflict. The single-api + sibling-conflicting-pins variant is the minimal shape that reliably produces the named resolver error without a registry.",
+  "tests_tightened": [
+    "check-files: pyproject drift structured diagnostic",
+    "check-files: package.json drift structured diagnostic (NEW)",
+    "check-files: Axis E inheritance-regression structured diagnostic",
+    "check-files: non-emb-api crate hardcoded-version structured diagnostic (NEW)"
+  ],
+  "agent_verify_result": "pass",
+  "next_step_for_orchestrator": "promote to 0.6.0-rewrite; respawn codex reviewer for clean PASS"
+}
+
+exec
+/bin/bash -lc "sed -n '800,840p' dev/acceptance.md && printf '\\n---\\n' && sed -n '1,260p' dev/plans/prompts/11c-set-version.md" in /tmp/fdb-11c-set-version-20260516T221655Z
+ succeeded in 0ms:
+**Fixture:** AST scanner script (test-plan.md fixture spec — pending).
+
+## AC-050b: Within-0.6.x changelog discipline
+
+**Requirement ref:** REQ-046b
+**Test id:** T-050b
+**Assertion:** The release-checklist script rejects any release whose changelog contains a `Deprecated` section that does not list every deprecated item also under `Removed` for the same release.
+**Measurement:** Run release-checklist against synthetic changelog with deprecation-but-no-removal; assert non-zero exit + named violation. Run against valid pair; assert exit 0.
+**Fixture:** synthetic-changelog fixtures.
+
+## AC-050c: Within-0.6.x removal scenario end-to-end
+
+**Requirement ref:** REQ-046b
+**Test id:** T-050c
+**Assertion:** A within-0.6.x release that removes a previously-public API documents the removal in the same release where it was last present (no soft-removal-then-hard-removal pattern).
+**Measurement:** Release-checklist scans the release's diff for removed public API symbols; for each, asserts the removed symbol's removal is announced in the same release's changelog `Removed` section.
+**Fixture:** removal-detect linter (test-plan.md fixture spec — pending).
+
+## Supply chain
+
+## AC-051a: Cargo version-skew detected at resolve time
+
+**Requirement ref:** REQ-047
+**Test id:** T-051a
+**Assertion:** A Cargo.toml requesting `fathomdb = X` and `fathomdb-embedder = Y` whose `fathomdb-embedder-api` ranges do not overlap fails `cargo update` with a resolver error.
+**Measurement:** Construct fixture Cargo.toml; run `cargo update`; assert non-zero exit naming the conflict.
+**Fixture:** cargo-skew fixture.
+
+## AC-051b: Pip version-skew detected at resolve time
+
+**Requirement ref:** REQ-047
+**Test id:** T-051b
+**Assertion:** A pip constraint file requesting `fathomdb==X` and `fathomdb-embedder==Y` whose transitive `fathomdb-embedder-api` ranges do not overlap fails `pip install` with a resolver error.
+**Measurement:** Construct fixture constraint file; run `pip install -c constraints.txt fathomdb fathomdb-embedder`; assert non-zero exit.
+**Fixture:** pip-skew fixture.
+
+## AC-052: Co-tagged sibling releases
+
+**Requirement ref:** REQ-048
+**Test id:** T-052
+**Assertion:** For every published release in the registry set, the three sibling packages `fathomdb`, `fathomdb-embedder`, `fathomdb-embedder-api` exist at the same version.
+
+---
+# Phase 11c — Two-axis version single-source-of-truth + set-version.sh rewrite
+
+Phase 11 third slice. Decouples the embedder-api crate from workspace
+lockstep, restores `scripts/set-version.sh` with two-axis enforcement,
+wires the pre-push hook, and lands the AC-051a/b skew fixtures.
+
+Out of scope: PyO3 (11a closed), napi-rs (11b closed), `release.yml`
+restoration (11d).
+
+## Model + effort
+
+Opus 4.7, intent: high. Spawn from main thread:
+
+```bash
+PHASE=11c-set-version
+TS=$(date -u +%Y%m%dT%H%M%SZ)
+LOG=/home/coreyt/projects/fathomdb/dev/plans/runs/${PHASE}-${TS}.log
+WT=/tmp/fdb-${PHASE}-${TS}
+git -C /home/coreyt/projects/fathomdb worktree add "$WT" -b "phase-${PHASE}-${TS}" 0.6.0-rewrite
+PREAMBLE=$(cat <<'EOF'
+YOU ARE THE IMPLEMENTER. Not the orchestrator. Do the work in this
+worktree. Do NOT re-spawn yourself. Do NOT spawn other agents. The
+"## Model + effort" section in this prompt describes how YOU were
+just launched (claude -p with the listed model/effort). Do NOT re-run
+that block. Use --disallowedTools Task Agent as a hard guard if you
+forget. Write code, run tests, commit. Done.
+EOF
+)
+( cd "$WT" && \
+  ( echo "$PREAMBLE"; cat /home/coreyt/projects/fathomdb/dev/plans/prompts/11c-set-version.md ) \
+  | claude -p --model claude-opus-4-7 --effort high \
+      --add-dir "$WT" \
+      --allowedTools Read Edit Write Bash Grep Glob \
+      --disallowedTools Task Agent \
+      --permission-mode bypassPermissions \
+      --output-format stream-json --include-partial-messages --verbose \
+  > "$LOG" 2>&1 )
+```
+
+Anti-chaining: PREAMBLE prepended via stdin per
+`dev/plans/prompts/01-orchestrator-resume.md` §4. Reviewer
+(`codex --model gpt-5.4`) MANDATORY: this slice changes the version
+substrate that the 11d release workflow will consume.
+
+## Log destination
+
+- stdout/stderr: `dev/plans/runs/11c-set-version-<ts>.log`
+- structured output: `dev/plans/runs/11c-set-version-output.json`
+- reviewer verdict: `dev/plans/runs/11c-review-<ts>.md`
+
+## Required reading
+
+- `AGENTS.md` (§1, §3, §4, §5, §7).
+- `MEMORY.md`, especially `feedback_tdd.md`,
+  `feedback_reliability_principles.md`,
+  `feedback_release_verification.md`.
+- `dev/design/release.md` (entire file, ~99 lines). The two-axis
+  policy and 8-tier publish order are owned here.
+- `dev/plans/ci-deferred.md` § `scripts/set-version.sh — Phase 11`
+  (the rewrite ticket).
+- `dev/acceptance.md` AC-051a (Cargo skew), AC-051b (pip skew),
+  AC-052 (sibling co-tagging — context only; not in this slice).
+- Pre-0.6.0 set-version.sh for layout reference only — DO NOT copy
+  blindly, the new layout uses `src/{rust,python,ts}/`:
+  `git show 39ee271^:scripts/set-version.sh`.
+- Current state to patch:
+  - `Cargo.toml` lines 15-16 (`[workspace.package] version = "0.6.0"`).
+  - `src/rust/crates/fathomdb-embedder-api/Cargo.toml` —
+    **currently uses `version.workspace = true`; this is wrong**.
+  - All other `src/rust/crates/*/Cargo.toml` — keep
+    `version.workspace = true`.
+  - `src/python/pyproject.toml` `[project] version`.
+  - `src/ts/package.json` `version`.
+  - `scripts/hooks/pre-push` (only runs `agent-verify.sh` today).
+  - `scripts/hooks/pre-commit` (for reference).
+
+## Scope
+
+Four work items, one commit per item is fine.
+
+### 1. Decouple Axis E from workspace lockstep
+
+`src/rust/crates/fathomdb-embedder-api/Cargo.toml`:
+
+- Replace `version.workspace = true` with explicit
+  `version = "0.6.0"`. (Initial Axis E value happens to equal Axis W
+  today; the axes will diverge as the trait surface evolves.)
+
+`Cargo.toml`:
+
+- Add a comment beside `[workspace.package]` explaining: workspace
+  version is Axis W lockstep; `fathomdb-embedder-api` is the only
+  workspace crate that opts out and carries an independent Axis E
+  version in its own `[package]` block. Cite
+  `dev/design/release.md § Version axes`.
+
+Verify `cargo check` still passes — the decoupling is metadata-only
+and must not break workspace resolution.
+
+### 2. `scripts/set-version.sh` rewrite
+
+New executable bash script at `scripts/set-version.sh`. Three modes:
+
+```text
+scripts/set-version.sh --workspace <new-w-version>
+scripts/set-version.sh --embedder-api <new-e-version>
+scripts/set-version.sh --check-files
+```
+
+Behavior:
+
+- `--workspace <new>`:
+  - Update `Cargo.toml` `[workspace.package] version`.
+  - Update `src/python/pyproject.toml` `[project] version`.
+  - Update `src/ts/package.json` top-level `"version"`.
+  - Do NOT touch `src/rust/crates/fathomdb-embedder-api/Cargo.toml`
+    (Axis E).
+  - Idempotent — re-running with the same `<new>` is a no-op.
+  - After write, run `--check-files` and fail if inconsistent.
+
+- `--embedder-api <new>`:
+  - Update `src/rust/crates/fathomdb-embedder-api/Cargo.toml`
+    `[package] version`.
+  - Do NOT touch any Axis W manifest.
+  - Idempotent.
+
+- `--check-files`:
+  - Read `[workspace.package] version` from `Cargo.toml`.
+  - Assert `src/python/pyproject.toml` `[project] version` matches.
+  - Assert `src/ts/package.json` `"version"` matches.
+  - For every `src/rust/crates/*/Cargo.toml` except
+    `fathomdb-embedder-api`: assert `version.workspace = true`
+    (no per-crate explicit version pinning that would silently drift).
+  - Assert `fathomdb-embedder-api/Cargo.toml` has an explicit
+    `[package] version` value (proof Axis E is decoupled).
+  - Exit 0 on consistent, exit 1 on any drift, with one error line
+    per drift naming `file:line` + observed vs expected.
+
+Implementation notes:
+
+- Use POSIX-portable bash (`#!/usr/bin/env bash`, `set -euo pipefail`).
+- Parse TOML / JSON with `sed`/`awk`/`grep` (no extra deps assumed in
+  bootstrap). If you need a TOML lib, prefer reading a single
+  declared-format line per file rather than installing a parser.
+- All writes must be atomic (`mv tmpfile orig` after sed-on-tmp);
+  partial-write on a manifest is unacceptable.
+- Treat unknown flags / missing args / wrong format as errors with
+  usage text on stderr and exit 2.
+
+### 3. Wire pre-push hook
+
+`scripts/hooks/pre-push`:
+
+- Add `scripts/set-version.sh --check-files` as the FIRST step,
+  before `agent-verify.sh`. If `--check-files` fails, the push is
+  blocked with the actionable error.
+
+Resolved per `dev/plans/ci-deferred.md` note: the pre-push hook
+omitted this previously because the script did not exist. Now it
+does. No `--no-verify` skip authorization beyond what AGENTS.md
+already says.
+
+### 4. AC-051a/b skew fixtures + tests
+
+`dev/test-plan.md` (or wherever cargo-skew / pip-skew fixtures live
+— search first; if `dev/release/tests/` does not exist yet, create
+it). Two fixtures + two test scripts. Both are tiny.
+
+#### Cargo-skew fixture (AC-051a)
+
+`dev/release/fixtures/cargo-skew/Cargo.toml`:
+
+```toml
+[package]
+name = "cargo-skew-probe"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+fathomdb = "=0.6.0"
+fathomdb-embedder = "=0.6.0"
+# Force a constraint that cannot resolve under the current
+# fathomdb-embedder-api Axis E value.
+fathomdb-embedder-api = "=99.99.99"
+```
+
+`dev/release/tests/cargo_skew.sh` (or equivalent Rust integration
+test under a crate): invokes `cargo update` in the fixture against
+a local-path override that pins the workspace crates to the live
+versions; asserts non-zero exit; asserts stderr names the conflict.
+
+#### Pip-skew fixture (AC-051b)
+
+`dev/release/fixtures/pip-skew/constraints.txt`:
+
+```text
+fathomdb==0.6.0
+fathomdb-embedder==0.6.0
+fathomdb-embedder-api==99.99.99
+```
+
+`dev/release/tests/pip_skew.sh`: runs
+`pip install -c constraints.txt fathomdb fathomdb-embedder` in a
+clean venv; asserts non-zero exit; asserts stderr names the
+conflict. Note: `fathomdb-embedder-api` is not currently published
+to PyPI, so this test may need to use a local-built wheel index;
+if achieving real pip resolution requires substrate not in this
+slice (e.g. building wheels for all three packages), surface as a
+blocker — do NOT silently skip.
+
+### 5. set-version.sh tests
+
+`scripts/tests/test_set_version.sh` (or `.bats` if bats is already
+in bootstrap; otherwise plain bash). Cover:
+
+- `--check-files` returns 0 on a clean tree.
+- `--workspace 9.9.9` updates all Axis W manifests; `--check-files`
+  still 0; revert via `--workspace 0.6.0`.
+- `--embedder-api 9.9.9` updates only the Axis E manifest; Axis W
+  manifests untouched; `--check-files` still 0; revert.
+- Manual drift on one Axis W file → `--check-files` exits 1 with the
+  drift named.
+- Idempotent re-run: `--workspace 0.6.0` twice in a row is a no-op
+  (no file mtime change on the second run, OR the second run
+  detects a clean tree and exits 0).
+- Unknown flag → exit 2 with usage.
+
+Wire the test runner into `scripts/agent-test.sh` so
+`agent-verify.sh` exercises it. The wiring should match the existing
+pattern for python/ts test invocations in `agent-test.sh`.
+
+## Required commands
+
+```bash
+cd "$WT"
+# Sanity: workspace still resolves after Axis E decoupling.
+cargo check --workspace
+# set-version.sh script tests.
+bash scripts/tests/test_set_version.sh
+# Skew fixture tests (if landed).
+bash dev/release/tests/cargo_skew.sh
+bash dev/release/tests/pip_skew.sh
+# Canonical local gate.
+./scripts/agent-verify.sh
+```
+
+All must pass. If `agent-verify.sh` flakes on the known
+`ac_029_canonical_writes_complete_under_projection_stall` or
+`t_safe_export_engine_error_exits_export_failure_66`, rerun once —
+both are pre-existing host-load timing flakes unrelated to 11c.
+
+## Discipline
+
+- TDD per `feedback_tdd.md`: write each test before its code.
+- No scope creep into 11d (`release.yml`). 11d consumes
+  `set-version.sh` but does not itself land here.
+- No backwards-compat shim that allows Axis E to inherit from the
+  workspace version "for now". The decoupling is the slice.
+- Comment policy per `AGENTS.md`: no WHAT comments, only non-obvious
+  WHY. Document the Axis E decoupling in `Cargo.toml` because the
+
+exec
+/bin/bash -lc "find /home/coreyt/projects/fathomdb -name 'MEMORY.md' -o -name 'feedback_*.md' | sort" in /tmp/fdb-11c-set-version-20260516T221655Z
+ succeeded in 121ms:
+codex
+The acceptance text confirms the standard I need to judge against. I still haven’t located a `MEMORY.md` or `feedback_*.md` file in the canonical repo path, so unless they live outside the project tree, there was nothing further to load there.
+exec
+/bin/bash -lc "ls -la /home/coreyt/projects/fathomdb | sed -n '1,120p'" in /tmp/fdb-11c-set-version-20260516T221655Z
+ succeeded in 0ms:
+total 240
+drwxrwxr-x 19 coreyt coreyt  4096 May 16 18:07 .
+drwxrwxr-x 39 coreyt coreyt  4096 May  4 15:44 ..
+drwxr-xr-x  2 coreyt coreyt  4096 Apr 30 17:33 .agents
+drwxrwxr-x  3 coreyt coreyt  4096 May  1 18:35 .cache
+drwxrwxr-x  5 coreyt coreyt  4096 May  4 07:17 .claude
+-r--r--r--  1 coreyt coreyt     0 Apr 10 18:41 .codex
+drwxrwxr-x  9 coreyt coreyt  4096 May 16 18:07 .git
+drwxrwxr-x  3 coreyt coreyt  4096 May  2 17:22 .github
+-rw-rw-r--  1 coreyt coreyt   644 May 16 16:27 .gitignore
+drwxrwxr-x  3 coreyt coreyt  4096 May  1 22:07 .hypothesis
+-rw-rw-r--  1 coreyt coreyt  1080 May  8 10:10 .markdownlint-cli2.jsonc
+-rw-rw-r--  1 coreyt coreyt  1350 May  3 22:35 .markdownlint.jsonc
+-rw-rw-r--  1 coreyt coreyt   657 May  8 10:57 .prettierignore
+-rw-rw-r--  1 coreyt coreyt   296 May  1 19:09 .prettierrc.json
+drwxrwxr-x  4 coreyt coreyt  4096 May  1 22:07 .ruff_cache
+drwxrwxr-x  5 coreyt coreyt  4096 May  1 19:46 .venv
+drwxrwxr-x  2 coreyt coreyt  4096 May 16 18:07 .wake
+-rw-rw-r--  1 coreyt coreyt 11130 May  3 10:16 AGENTS.md
+-rw-rw-r--  1 coreyt coreyt 47822 May 16 16:27 Cargo.lock
+-rw-------  1 coreyt coreyt   942 May 16 18:07 Cargo.toml
+-rw-rw-r--  1 coreyt coreyt  1078 Apr  6 07:52 LICENSE
+-rw-rw-r--  1 coreyt coreyt   939 May  1 15:21 README.md
+-rw-rw-r--  1 coreyt coreyt   120 May  1 12:51 deny.toml
+drwxrwxr-x 18 coreyt coreyt  4096 May 16 08:17 dev
+drwxrwxr-x 10 coreyt coreyt  4096 May  1 15:21 docs
+-rw-rw-r--  1 coreyt coreyt  1481 May  8 10:58 lychee.toml
+-rw-rw-r--  1 coreyt coreyt   731 May  1 15:21 mkdocs.yml
+drwxrwxr-x 79 coreyt coreyt  4096 May  1 19:09 node_modules
+-rw-rw-r--  1 coreyt coreyt 45133 May  1 19:09 package-lock.json
+-rw-rw-r--  1 coreyt coreyt   436 May  1 19:08 package.json
+-rw-rw-r--  1 coreyt coreyt    66 May  1 12:51 rust-toolchain.toml
+-rw-rw-r--  1 coreyt coreyt    45 May  1 12:51 rustfmt.toml
+drwxrwxr-x  5 coreyt coreyt  4096 May 16 18:07 scripts
+drwxrwxr-x 15 coreyt coreyt  4096 May  3 10:20 site
+drwxrwxr-x  5 coreyt coreyt  4096 May  1 15:19 src
+drwxrwxr-x  7 coreyt coreyt  4096 May 16 13:58 target
+drwxrwxr-x  6 coreyt coreyt  4096 May  1 15:20 test
+
+exec
+/bin/bash -lc "find /home/coreyt/projects/fathomdb -maxdepth 3 \\( -name 'MEMORY.md' -o -name 'feedback_*.md' \\) -print | sort" in /tmp/fdb-11c-set-version-20260516T221655Z
+ succeeded in 0ms:
+exec
+/bin/bash -lc "git rev-parse HEAD && printf '\\n' && git rev-parse --short HEAD && printf '\\n---\\n' && git rev-list --oneline d408361..HEAD" in /tmp/fdb-11c-set-version-20260516T221655Z
+ succeeded in 0ms:
+a9a7a17558177771b7327febc36fe3e23d9c0a2f
+
+a9a7a17
+
+---
+a9a7a17 docs(11c-fix-1): closure output.json + remediation summary
+de6962e fix(11c-fix-1): structured --check-files drift diagnostics
+8846926 test(11c-fix-1): rewrite cargo-skew fixture as mock-skew sibling-transitive shape
+
+codex
+I’ve confirmed the branch head is `a9a7a17`, while both closure JSON files still record `de6962e`. That means finding 3 is not actually fixed yet unless there’s another artifact I haven’t seen. I’m doing one more pass on the test harnesses to separate a stale artifact from anything else.
+exec
+/bin/bash -lc "sed -n '1,125p' scripts/tests/test_set_version.sh" in /tmp/fdb-11c-set-version-20260516T221655Z
+ succeeded in 0ms:
+#!/usr/bin/env bash
+# scripts/tests/test_set_version.sh — coverage for set-version.sh
+# two-axis enforcement per dev/design/release.md § Version axes.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+SV="$REPO_ROOT/scripts/set-version.sh"
+
+CARGO="$REPO_ROOT/Cargo.toml"
+PYPROJ="$REPO_ROOT/src/python/pyproject.toml"
+NPMPKG="$REPO_ROOT/src/ts/package.json"
+EMBAPI="$REPO_ROOT/src/rust/crates/fathomdb-embedder-api/Cargo.toml"
+
+FAILED=0
+TMPDIR_ROOT="$(mktemp -d)"
+trap 'restore; rm -rf "$TMPDIR_ROOT"' EXIT
+
+# Snapshot the four manifests so the test never leaves the tree dirty.
+SNAP="$TMPDIR_ROOT/snap"
+mkdir -p "$SNAP"
+cp "$CARGO" "$SNAP/Cargo.toml"
+cp "$PYPROJ" "$SNAP/pyproject.toml"
+cp "$NPMPKG" "$SNAP/package.json"
+cp "$EMBAPI" "$SNAP/embedder-api.toml"
+
+restore() {
+  cp "$SNAP/Cargo.toml" "$CARGO" 2>/dev/null || true
+  cp "$SNAP/pyproject.toml" "$PYPROJ" 2>/dev/null || true
+  cp "$SNAP/package.json" "$NPMPKG" 2>/dev/null || true
+  cp "$SNAP/embedder-api.toml" "$EMBAPI" 2>/dev/null || true
+}
+
+pass() { printf 'PASS  %s\n' "$1"; }
+fail() { printf 'FAIL  %s\n' "$1" >&2; FAILED=$((FAILED + 1)); }
+
+# Extract Axis W workspace version from Cargo.toml [workspace.package].
+ws_version() {
+  awk '
+    /^\[workspace\.package\]/ { in_block = 1; next }
+    /^\[/                     { in_block = 0 }
+    in_block && /^version[[:space:]]*=/ {
+      n = split($0, parts, "\"")
+      if (n >= 3) { print parts[2] }
+      exit
+    }
+  ' "$CARGO"
+}
+
+# Extract Axis E embedder-api version from its [package] block.
+emb_version() {
+  awk '
+    /^\[package\]/ { in_block = 1; next }
+    /^\[/          { in_block = 0 }
+    in_block && /^version[[:space:]]*=/ {
+      n = split($0, parts, "\"")
+      if (n >= 3) { print parts[2] }
+      exit
+    }
+  ' "$EMBAPI"
+}
+
+py_version() {
+  awk '
+    /^\[project\]/ { in_block = 1; next }
+    /^\[/          { in_block = 0 }
+    in_block && /^version[[:space:]]*=/ {
+      n = split($0, parts, "\"")
+      if (n >= 3) { print parts[2] }
+      exit
+    }
+  ' "$PYPROJ"
+}
+
+npm_version() {
+  sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$NPMPKG" | head -1
+}
+
+# 1. --check-files clean tree → 0.
+restore
+if "$SV" --check-files >/dev/null 2>&1; then
+  pass "check-files clean tree exits 0"
+else
+  fail "check-files clean tree should exit 0"
+fi
+
+# 2. --workspace 9.9.9 updates all Axis W manifests; Axis E untouched.
+restore
+ORIG_EMB="$(emb_version)"
+"$SV" --workspace 9.9.9 >/dev/null
+if [ "$(ws_version)" = "9.9.9" ] && [ "$(py_version)" = "9.9.9" ] && [ "$(npm_version)" = "9.9.9" ]; then
+  pass "workspace 9.9.9 updates Cargo+pyproject+package.json"
+else
+  fail "workspace 9.9.9 did not propagate: ws=$(ws_version) py=$(py_version) npm=$(npm_version)"
+fi
+if [ "$(emb_version)" = "$ORIG_EMB" ]; then
+  pass "workspace 9.9.9 leaves Axis E ($ORIG_EMB) untouched"
+else
+  fail "workspace 9.9.9 mutated Axis E: $ORIG_EMB → $(emb_version)"
+fi
+if "$SV" --check-files >/dev/null 2>&1; then
+  pass "check-files clean after --workspace 9.9.9"
+else
+  fail "check-files should be clean after --workspace 9.9.9"
+fi
+
+# 3. --embedder-api 8.8.8 updates only Axis E; Axis W untouched.
+restore
+ORIG_WS="$(ws_version)"
+ORIG_PY="$(py_version)"
+ORIG_NPM="$(npm_version)"
+"$SV" --embedder-api 8.8.8 >/dev/null
+if [ "$(emb_version)" = "8.8.8" ]; then
+  pass "embedder-api 8.8.8 updates Axis E"
+else
+  fail "embedder-api 8.8.8 did not update Axis E: $(emb_version)"
+fi
+if [ "$(ws_version)" = "$ORIG_WS" ] && [ "$(py_version)" = "$ORIG_PY" ] && [ "$(npm_version)" = "$ORIG_NPM" ]; then
+  pass "embedder-api 8.8.8 leaves Axis W untouched"
+else
+  fail "embedder-api 8.8.8 leaked into Axis W"
+fi
+if "$SV" --check-files >/dev/null 2>&1; then
+  pass "check-files clean after --embedder-api 8.8.8"
+else
+
+exec
+/bin/bash -lc "git show HEAD:dev/plans/runs/11c-set-version-output.json | sed -n '1,120p'" in /tmp/fdb-11c-set-version-20260516T221655Z
+ succeeded in 0ms:
+{
+  "phase": "11c",
+  "baseline_sha": "1404bf232d881e4dd0eba0b1be9a15e0267a237d",
+  "branch": "phase-11c-set-version-20260516T221655Z",
+  "head_sha": "de6962e",
+  "axis_e_decoupled": true,
+  "axis_e_value": "0.6.0",
+  "axis_w_value": "0.6.0",
+  "set_version_modes": [
+    "--workspace",
+    "--embedder-api",
+    "--check-files"
+  ],
+  "pre_push_hook_wired": true,
+  "ac_051a_fixture": "dev/release/fixtures/cargo-skew/",
+  "ac_051a_test": "dev/release/tests/cargo_skew.sh",
+  "ac_051b_fixture": "dev/release/fixtures/pip-skew/",
+  "ac_051b_test": "dev/release/tests/pip_skew.sh",
+  "ac_051a_substrate_note": "fathomdb-embedder-api is not yet on crates.io; the fixture uses synthetic mock-skew-api + sibling consumer crates (mock-skew-consumer-a, mock-skew-consumer-b) with conflicting `=` pins to exercise cargo's sibling-transitive resolver detection offline. Swap to real names once REQ-048 publishing lands.",
+  "ac_051b_substrate_note": "fathomdb-embedder-api is not yet on PyPI; the fixture uses synthetic `mock-skew-api` + two probes to exercise the pip resolver offline. Real-name mapping documented in dev/release/fixtures/pip-skew/constraints.txt; swap to real names once REQ-048 publishing lands.",
+  "tests_added": [
+    "scripts/tests/test_set_version.sh",
+    "dev/release/tests/cargo_skew.sh",
+    "dev/release/tests/pip_skew.sh"
+  ],
+  "tests_wired_into": "scripts/agent-test.sh",
+  "acceptance_ids_bound": ["AC-051a", "AC-051b"],
+  "commits": [
+    "6aa37d9 feat(11c-1): decouple fathomdb-embedder-api to Axis E",
+    "28c3923 feat(11c-2): set-version.sh + pre-push hook + tests",
+    "3cf95ca test(11c-3): AC-051a/b version-skew resolver fixtures",
+    "d408361 docs(11c): closure output.json",
+    "8846926 test(11c-fix-1): rewrite cargo-skew fixture as mock-skew sibling-transitive shape",
+    "de6962e fix(11c-fix-1): structured --check-files drift diagnostics"
+  ],
+  "remediation_findings_addressed": [
+    "1 [high]: cargo-skew fixture rewritten as mock-skew-api + mock-skew-consumer-a/b sibling-transitive shape; cargo_skew.sh asserts resolver names mock-skew-api conflict",
+    "2 [medium]: set-version.sh --check-files emits `<file>:<line>: version drift — observed \"X\", expected \"Y\"` at every drift site; test suite asserts the structured shape",
+    "3 [low]: output.json regenerated with correct head_sha + post-fix commit list"
+  ],
+  "required_commands": {
+    "cargo_check_workspace": "pass",
+    "test_set_version": "pass (14/14 PASS)",
+    "cargo_skew": "pass",
+    "pip_skew": "pass",
+    "agent_verify": "pass"
+  },
+  "agent_verify_result": "pass",
+  "blockers": [],
+  "next_step_for_orchestrator": "promote to 0.6.0-rewrite; respawn codex reviewer for clean PASS, then 11d release.yml"
+}
+
+codex
+Sandbox prevented writing `/home/coreyt/projects/fathomdb/dev/plans/runs/11c-fix-1-review-20260516T230749Z.md` from this read-only session, so the verdict body is below for promotion.
+
+## Verdict: CONCERN
+
+1. [low] Finding 3 is still not fully addressed in [dev/plans/runs/11c-set-version-output.json](/tmp/fdb-11c-set-version-20260516T221655Z/dev/plans/runs/11c-set-version-output.json:5). The branch `HEAD` is `a9a7a17`, but `head_sha` is still `de6962e`, and the `commits` list at [dev/plans/runs/11c-set-version-output.json](/tmp/fdb-11c-set-version-20260516T221655Z/dev/plans/runs/11c-set-version-output.json:28) omits the final docs commit `a9a7a17`. The same stale `head_sha` appears in [dev/plans/runs/11c-fix-1-output.json](/tmp/fdb-11c-set-version-20260516T221655Z/dev/plans/runs/11c-fix-1-output.json:4). The remediation prompt required the closure artifact to record the final post-fix `HEAD` and the full chronological commit list, so the closure metadata remains stale.
+
+## Addressed
+
+- Finding 1 appears fixed. The cargo fixture now uses sibling consumers depending transitively on `mock-skew-api` via [dev/release/fixtures/cargo-skew/Cargo.toml](/tmp/fdb-11c-set-version-20260516T221655Z/dev/release/fixtures/cargo-skew/Cargo.toml:1), [mock-skew-consumer-a/Cargo.toml](/tmp/fdb-11c-set-version-20260516T221655Z/dev/release/fixtures/cargo-skew/mock-skew-consumer-a/Cargo.toml:1), and [mock-skew-consumer-b/Cargo.toml](/tmp/fdb-11c-set-version-20260516T221655Z/dev/release/fixtures/cargo-skew/mock-skew-consumer-b/Cargo.toml:1), and [dev/release/tests/cargo_skew.sh](/tmp/fdb-11c-set-version-20260516T221655Z/dev/release/tests/cargo_skew.sh:26) now asserts non-zero exit plus stderr naming `mock-skew-api`.
+- Finding 2 appears fixed. All drift sites route through `_drift()` in [scripts/set-version.sh](/tmp/fdb-11c-set-version-20260516T221655Z/scripts/set-version.sh:203), which emits the required `<file>:<line>: version drift — observed "X", expected "Y"` shape, and [scripts/tests/test_set_version.sh](/tmp/fdb-11c-set-version-20260516T221655Z/scripts/tests/test_set_version.sh:129) now asserts file:line plus observed/expected substrings across the relevant drift cases.
+
+## Reviewer note
+
+I could not execute the write-heavy verification scripts in this sandbox. A direct run of `bash dev/release/tests/cargo_skew.sh` failed at `mktemp` because `/tmp` is mounted read-only here, so the execution verdict above is based on code inspection plus the checked-in artifacts, not a fresh local rerun.
+tokens used
+32,657
+Sandbox prevented writing `/home/coreyt/projects/fathomdb/dev/plans/runs/11c-fix-1-review-20260516T230749Z.md` from this read-only session, so the verdict body is below for promotion.
+
+## Verdict: CONCERN
+
+1. [low] Finding 3 is still not fully addressed in [dev/plans/runs/11c-set-version-output.json](/tmp/fdb-11c-set-version-20260516T221655Z/dev/plans/runs/11c-set-version-output.json:5). The branch `HEAD` is `a9a7a17`, but `head_sha` is still `de6962e`, and the `commits` list at [dev/plans/runs/11c-set-version-output.json](/tmp/fdb-11c-set-version-20260516T221655Z/dev/plans/runs/11c-set-version-output.json:28) omits the final docs commit `a9a7a17`. The same stale `head_sha` appears in [dev/plans/runs/11c-fix-1-output.json](/tmp/fdb-11c-set-version-20260516T221655Z/dev/plans/runs/11c-fix-1-output.json:4). The remediation prompt required the closure artifact to record the final post-fix `HEAD` and the full chronological commit list, so the closure metadata remains stale.
+
+## Addressed
+
+- Finding 1 appears fixed. The cargo fixture now uses sibling consumers depending transitively on `mock-skew-api` via [dev/release/fixtures/cargo-skew/Cargo.toml](/tmp/fdb-11c-set-version-20260516T221655Z/dev/release/fixtures/cargo-skew/Cargo.toml:1), [mock-skew-consumer-a/Cargo.toml](/tmp/fdb-11c-set-version-20260516T221655Z/dev/release/fixtures/cargo-skew/mock-skew-consumer-a/Cargo.toml:1), and [mock-skew-consumer-b/Cargo.toml](/tmp/fdb-11c-set-version-20260516T221655Z/dev/release/fixtures/cargo-skew/mock-skew-consumer-b/Cargo.toml:1), and [dev/release/tests/cargo_skew.sh](/tmp/fdb-11c-set-version-20260516T221655Z/dev/release/tests/cargo_skew.sh:26) now asserts non-zero exit plus stderr naming `mock-skew-api`.
+- Finding 2 appears fixed. All drift sites route through `_drift()` in [scripts/set-version.sh](/tmp/fdb-11c-set-version-20260516T221655Z/scripts/set-version.sh:203), which emits the required `<file>:<line>: version drift — observed "X", expected "Y"` shape, and [scripts/tests/test_set_version.sh](/tmp/fdb-11c-set-version-20260516T221655Z/scripts/tests/test_set_version.sh:129) now asserts file:line plus observed/expected substrings across the relevant drift cases.
+
+## Reviewer note
+
+I could not execute the write-heavy verification scripts in this sandbox. A direct run of `bash dev/release/tests/cargo_skew.sh` failed at `mktemp` because `/tmp` is mounted read-only here, so the execution verdict above is based on code inspection plus the checked-in artifacts, not a fresh local rerun.

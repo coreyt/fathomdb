@@ -115,6 +115,7 @@ before signing.
 ## Orchestrator recommendation
 
 **Option (A) confirm 0.7.x deferral.** Rationale:
+
 - Memory `project_logical_id_deferred_0_7_x` already records the
   decision (HITL 2026-05-16).
 - Pushing 10b-B-pre into 0.6.0 expands GA scope by 2-4 weeks for
@@ -123,12 +124,13 @@ before signing.
   benefit (clients can use `recover --excise-source` for the
   bulk-delete use case today).
 - 0.7.x is the right vehicle for the canonical-identity substrate
-  + the verbs together.
+  - the verbs together.
 
 ## Outputs after signoff
 
 1. Append HITL decision row to `dev/progress/0.6.0.md`:
-   ```
+
+   ```text
    ## 2026-MM-DD — Phase 12-V-VERBS HITL decision
    - purge_logical_id + restore_logical_id (paired): (A) confirmed
      deferred to 0.7.x per project_logical_id_deferred_0_7_x memory
@@ -138,6 +140,7 @@ before signing.
      `recover --excise-source` for the bulk-delete case.
    - No other design-only verbs surfaced in 2026-05-17 survey.
    ```
+
 2. Update `docs/release-notes/0.6.0.md` § "Logical-id verbs" to
    reflect HITL-confirmed status.
 3. Mark 12-V-VERBS CLOSED in `dev/plans/runs/STATUS-phase12.md` +

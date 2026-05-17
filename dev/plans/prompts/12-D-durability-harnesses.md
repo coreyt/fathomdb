@@ -7,6 +7,7 @@ matrix (AC-035a/b/c). First of 10 slices in the Path-to-Client-Ready
 `dev/plans/0.6.0-implementation.md` § Path to Client-Ready).
 
 Out of scope:
+
 - Security fixtures (12-S separate slice).
 - benchmark-and-robustness.yml (12-B separate slice).
 - AC-035 (recovery time ≤ 2s for 1 GB DB worst-of-10) — separate AC
@@ -247,6 +248,7 @@ bash scripts/agent-verify.sh
 
 All commands above must pass. Flake reruns (rerun once before
 declaring red):
+
 - `ac_029_canonical_writes_complete_under_projection_stall`
 - `ac_017_vector_projection_freshness_p99_le_five_seconds`
 - `t_safe_export_engine_error_exits_export_failure_66`

@@ -51,9 +51,10 @@ EOF
 Rust allows nested `/* /* */ */` block comments (edition 2018+).
 Current state machine uses a boolean flag, so on the input
 `/* outer /* inner */ still outer */ pub fn legacy_foo() {}`:
+
 - The first `/*` sets `in_block_comment = true`.
 - The first `*/` (closing inner) sets `in_block_comment = false`.
-- ` still outer */ pub fn legacy_foo() {}` is now treated as live
+- `still outer */ pub fn legacy_foo() {}` is now treated as live
   code → false-positive flag on `legacy_foo`.
 
 **Required fix:**
@@ -80,19 +81,23 @@ Current state machine uses a boolean flag, so on the input
 
 5. Add a Rust fixture for nested block comments:
    `scripts/tests/fixtures/ast-shim/rust/clean/nested_block_comment_safe.rs`:
+
    ```rust
    // Nested-block-comment safety fixture for AC-050a.
    /* outer /* legacy_inner */ still outer — must not flag */
    pub fn safe_function() {}
    ```
+
    Expected: scanner does NOT flag (legacy_inner is inside a
    block comment, and "outer" + "still outer" are also inside
    the OUTER block comment).
 6. Add a dirty Rust fixture for nested-block-then-real-code:
    `scripts/tests/fixtures/ast-shim/rust/block-comment-real/nested_real.rs`:
+
    ```rust
    /* /* inner */ outer */ pub fn legacy_admin() {}
    ```
+
    Expected: scanner DOES flag legacy_admin (outer block fully
    closes after the second `*/`; subsequent `pub fn legacy_admin`
    is live code).

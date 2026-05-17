@@ -1,0 +1,21 @@
+OpenAI Codex v0.128.0 (research preview)
+--------
+workdir: /tmp/fdb-11c-set-version-20260516T221655Z
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: medium
+reasoning summaries: none
+session id: 019e32ec-9b2f-7121-bce0-89bc9a194b60
+--------
+user
+$PROMPT
+
+codex
+The task content came through as literal `$PROMPT`, so there is no actionable request to execute yet. Provide the actual change, bug, review target, or command you want handled in this repo, and I’ll work from there.
+codex
+No task was included beyond the literal `$PROMPT`. Send the actual request and I’ll handle it in this repo.
+tokens used
+11,472
+No task was included beyond the literal `$PROMPT`. Send the actual request and I’ll handle it in this repo.

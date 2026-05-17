@@ -338,13 +338,17 @@ After all sub-phases of a phase family CLOSE (e.g. 11a + 11b + 11c +
    wrote but never committed) — Write tool into main repo, commit.
 3. Remove worktrees **one per Bash call** (bundled destructive ops
    trigger permission denial):
+
    ```bash
    git worktree remove --force /tmp/fdb-<phase-family>-...
    ```
+
 4. Delete branches **one per Bash call**:
+
    ```bash
    git branch -D phase-<phase-family>-...
    ```
+
 5. Verify clean:
    `git worktree list` should show only the main repo;
    `git branch | grep phase-<phase-family>` should be empty.

@@ -5,6 +5,7 @@ benchmark + robustness workflow adapted to 0.6.0 topology. Per
 `dev/plans/ci-deferred.md` § benchmark-and-robustness.yml — Phase 12.
 
 Out of scope:
+
 - 12-D durability harnesses (closed at `f2f21b5`).
 - 12-S security fixtures (Wave 1 sibling slice).
 - Any actual perf-evidence work (Pack 7 territory; this slice
@@ -152,6 +153,7 @@ chain). Per pre-0.6.0 source — same shape.
 
 If pre-0.6.0 had `scripts/run-benchmarks.sh` and it's not in the
 current tree, the workflow can't run. Two options:
+
 - (a) If the script existed pre-0.6.0 and was lost in the rewrite,
   restore it from `git show 39ee271^:scripts/run-benchmarks.sh`
   adapted to current crate layout. Per "delete-before-add"
@@ -227,7 +229,7 @@ If any blocks, STOP and write blocker report at
 1. **`scripts/run-benchmarks.sh` missing.** See Item 2 (a)/(b)
    options.
 2. **`fathomdb-engine` `scale` test target missing.** Surface
-   + recommend comment-out + follow-up slice.
+   - recommend comment-out + follow-up slice.
 3. **`fathomdb-engine` `tracing` feature missing.** Same.
 4. **`src/python/tests/test_stress.py` missing.** Same.
 5. **`src/ts/` `sdk-harness` workspace missing.** May need

@@ -188,7 +188,7 @@ adding a new workflow.
 **Sub-3b: bootstrap.sh `sudo apt-get update` before install**
 
 Per GitHub Actions runner customization docs
-(https://docs.github.com/en/actions/how-tos/manage-runners/github-hosted-runners/customize-runners),
+(<https://docs.github.com/en/actions/how-tos/manage-runners/github-hosted-runners/customize-runners>),
 `sudo apt-get update` must precede `sudo apt-get install` because
 package indexes on hosted runners can be stale.
 

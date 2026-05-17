@@ -7,6 +7,7 @@ Path-to-Client-Ready sequence (per
 GA), 12-S row).
 
 Out of scope:
+
 - 12-D durability harnesses (closed at `f2f21b5`).
 - 12-B benchmark-and-robustness.yml (Wave 1 sibling slice).
 - AC-064/065/066 op-store / schema validation (different ACs;
@@ -91,6 +92,7 @@ EOF
 TDD discipline: red test → green fix.
 
 **Inventory before writing.** Some substrate may exist:
+
 - search `scripts/` + `tests/` for any existing `listen` /
   `connect` / `netns` / `FTS5 injection` / `AST scanner` / `removal`
   scaffolding.

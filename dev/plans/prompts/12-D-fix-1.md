@@ -89,7 +89,7 @@ WALs; threatens AC-035 budget.
 
 WAL header layout reference:
 
-```
+```text
 offset 0:  u32 BE magic (0x377f0682 or 0x377f0683)
 offset 4:  u32 BE format version (3007000)
 offset 8:  u32 BE page size

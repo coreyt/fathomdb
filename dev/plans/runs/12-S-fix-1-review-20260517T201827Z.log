@@ -1,0 +1,3086 @@
+OpenAI Codex v0.128.0 (research preview)
+--------
+workdir: /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 019e3797-15a0-7752-84ad-2d532f5587cd
+--------
+user
+You are reviewing Phase 12-S-fix-1 (remediation pass for the three
+codex findings in dev/plans/runs/12-S-review-20260517T200825Z.md).
+
+Branch: phase-12-S-security-fixtures-20260517T195735Z, HEAD 27a818e.
+Baseline: d48d226 (original 12-S BLOCK verdict commit).
+Cherry-picked to 0.6.0-rewrite as 98e5693 + 637617b + abe286b.
+
+Required reading:
+
+- dev/plans/runs/12-S-review-20260517T200825Z.md — original BLOCK
+  verdict.
+- dev/plans/prompts/12-S-fix-1.md — remediation spec.
+- dev/plans/runs/12-S-fix-1-output.json — closure artifact.
+
+Read the three commits:
+
+- d25c55d — findings 1 + 2: V05_VERBS populated (32 verbs from
+  pre-0.6.0 source); scan_rust() block-comment state machine;
+  crate-root rule fixture isolated to lib.rs.
+- e77265c — finding 3: scripts/agent-verify.sh wires
+  `STRICT=1 bash scripts/agent-security.sh`; bootstrap.sh runs
+  `apt-get update -qq` before install.
+- 7b0f30c — output JSON.
+
+Read deltas:
+- scripts/security/ast_scan.py (V05_VERBS list + scan_rust block-
+  comment logic)
+- scripts/tests/test_ast_scan.sh (sentinel test + new fixtures)
+- scripts/tests/fixtures/ast-shim/{rust,python,ts}/verb-reroute/*
+- scripts/tests/fixtures/ast-shim/rust/clean/block_comment_safe.rs
+- scripts/tests/fixtures/ast-shim/rust/block-comment-real/real.rs
+- scripts/tests/fixtures/ast-shim/rust/crate-root/lib.rs
+- scripts/agent-verify.sh delta
+- scripts/bootstrap.sh delta
+
+Verdict format: `## Verdict: PASS|CONCERN|BLOCK`, findings with
+`### N. [severity]` + Refs + explanation, "Addressed", "What passed
+on inspection", "Reviewer process notes".
+
+Focus your review on:
+
+1. V05_VERBS quality: 32 verbs is a lot — verify they're genuinely
+   pre-0.6.0 verbs NOT present in 0.6.0 (no false-positives that
+   would flag legitimate 0.6.0 code). Spot-check 5-10 entries
+   against current src/python/fathomdb/ + src/rust/.
+2. Block-comment state machine correctness: does it handle nested
+   `/* /* */ */`? edge case `/* text */ legacy_foo() {} /* text */`?
+   line with `*/ pub fn legacy_foo() {}`? Check the state-machine
+   logic in scan_rust().
+3. Crate-root rule isolation: does the dedicated lib.rs fixture
+   actually exercise the crate-root code path (the rule that
+   checks `#![allow(deprecated)]` ONLY in lib.rs/main.rs)?
+4. agent-verify STRICT wiring: does it run between typecheck and
+   test? Does failure mode cleanly surface the violation list?
+5. bootstrap apt-get update: is it `-qq` (quiet) or noisy? Does
+   the failure mode handle apt mirror flakes (per implementer
+   note: "best-effort so a flaky mirror does not block all dev
+   tooling")?
+6. Any regression in the prior PASS gates (AC-038, AC-050a x3,
+   AC-050c)?
+
+Output the verdict as the final message body. Sandbox is read-only;
+do not attempt to write the verdict file — main thread promotes it.
+
+codex
+Reviewing the remediation pass against the original BLOCK verdict and the fix spec first, then I’ll inspect the cited deltas and spot-check the verb list against current `src/python` and `src/rust` to decide whether the fixes actually close the three findings.
+exec
+/bin/bash -lc "sed -n '1,220p' MEMORY.md" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ exited 2 in 0ms:
+sed: can't read MEMORY.md: No such file or directory
+
+exec
+/bin/bash -lc "rg --files -g 'feedback_*.md'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ exited 1 in 0ms:
+exec
+/bin/bash -lc "sed -n '1,240p' dev/plans/runs/12-S-review-20260517T200825Z.md" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ exited 2 in 0ms:
+sed: can't read dev/plans/runs/12-S-review-20260517T200825Z.md: No such file or directory
+
+exec
+/bin/bash -lc "sed -n '1,240p' dev/plans/prompts/12-S-fix-1.md" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ exited 2 in 0ms:
+sed: can't read dev/plans/prompts/12-S-fix-1.md: No such file or directory
+
+exec
+/bin/bash -lc "sed -n '1,240p' dev/plans/runs/12-S-fix-1-output.json" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+{
+  "phase": "12-S-fix-1",
+  "baseline_sha": "d48d226",
+  "branch": "phase-12-S-security-fixtures-20260517T195735Z",
+  "head_sha": "27a818e",
+  "commits": [
+    "d25c55d: fix(12-S-fix-1): findings 1+2 — populate V05_VERBS, harden Rust scanner",
+    "e77265c: fix(12-S-fix-1): finding 3 — wire STRICT=1 + apt-get update"
+  ],
+  "findings_addressed": [
+    "1 [high]: V05_VERBS populated with 32 verbs inventoried from 39ee271^:python/fathomdb/_engine.py + _admin.py (verbs removed/redesigned in 0.6.0, no equivalent name). Rust matcher tightened to `pub fn` to suppress private-helper false positives. Per-language v05_verb_reroute fixtures + sentinel test (len(V05_VERBS) > 0) added.",
+    "2 [medium]: scan_rust() strips /* */, /** */, and /*! */ block comments via in_block_comment state machine that handles tails after */ on the same line. New rust/clean/block_comment_safe.rs proves doc-comment names don't false-fire; rust/block-comment-real/ proves real code is still flagged when a block comment exists elsewhere. Crate-root #![allow(deprecated)] rule isolated to rust/crate-root/lib.rs; legacy_admin.rs no longer conflates two rules.",
+    "3 [high]: scripts/agent-verify.sh now invokes `STRICT=1 bash scripts/agent-security.sh` between typecheck and test. scripts/bootstrap.sh runs `sudo apt-get update -qq` before `apt-get install strace` (best-effort so a flaky mirror does not block all dev tooling). agent-security.sh header documents the wiring."
+  ],
+  "v05_verbs_count": 32,
+  "v05_verbs_source": "git show 39ee271^:python/fathomdb/_engine.py + 39ee271^:python/fathomdb/_admin.py (cross-checked against current src/python and src/rust to drop names still in 0.6.0)",
+  "agent_verify_local_aarch64_status": "fail (rc=1) — strace absent on this dev host; STRICT=1 path correctly promotes the AC-036/AC-037 BLOCKERs to a hard failure",
+  "agent_verify_ci_expected": "pass — bootstrap.sh apt-installs strace before agent-verify runs",
+  "blockers_encountered": [],
+  "agent_verify_result": "fail (expected on aarch64 local; CI expected pass). Tail: `agent-security: 0 violation(s), 2 blocker(s)` — AC-036 + AC-037 BLOCKER on missing strace. Other gates (AC-038, AC-050a x3, AC-050c) PASS.",
+  "test_ast_scan_result": "pass — 12 OK lines including V05_VERBS sentinel, per-language verb-reroute, crate-root isolation, block-comment safe + real",
+  "next_step_for_orchestrator": "promote to 0.6.0-rewrite; respawn codex reviewer for clean PASS"
+}
+
+codex
+The required plan files are not at the repo root path the prompt named, so I’m locating the actual tree layout first and then I’ll read the memory files and review artifacts from their real paths.
+exec
+/bin/bash -lc pwd in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+/tmp/fdb-12-S-security-fixtures-20260517T195735Z
+
+exec
+/bin/bash -lc "find .. -maxdepth 3 -name MEMORY.md -o -name '12-S-review-20260517T200825Z.md' -o -name '12-S-fix-1.md' | sort" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+find: ‘../systemd-private-534d431b57c34b178dce76927ca4f59b-power-profiles-daemon.service-LY2Vrm’: Permission denied
+find: ‘../snap-private-tmp’: Permission denied
+find: ‘../systemd-private-534d431b57c34b178dce76927ca4f59b-colord.service-xdwL1T’: Permission denied
+find: ‘../systemd-private-534d431b57c34b178dce76927ca4f59b-switcheroo-control.service-j4W31R’: Permission denied
+find: ‘../systemd-private-534d431b57c34b178dce76927ca4f59b-systemd-timesyncd.service-nYEUKk’: Permission denied
+find: ‘../systemd-private-534d431b57c34b178dce76927ca4f59b-systemd-logind.service-1u9k6s’: Permission denied
+find: ‘../systemd-private-534d431b57c34b178dce76927ca4f59b-haveged.service-rsjSm4’: Permission denied
+find: ‘../systemd-private-534d431b57c34b178dce76927ca4f59b-upower.service-xTPs6L’: Permission denied
+find: ‘../systemd-private-534d431b57c34b178dce76927ca4f59b-bluetooth.service-nQKlmV’: Permission denied
+find: ‘../systemd-private-534d431b57c34b178dce76927ca4f59b-systemd-resolved.service-Bze3ba’: Permission denied
+find: ‘../systemd-private-534d431b57c34b178dce76927ca4f59b-ModemManager.service-pf1p3M’: Permission denied
+
+exec
+/bin/bash -lc "find . -maxdepth 3 -type d | sort | sed -n '1,200p'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+.
+./.github
+./.github/workflows
+./.hypothesis
+./.hypothesis/constants
+./.ruff_cache
+./.ruff_cache/0.15.9
+./dev
+./dev/acceptance-rowsets
+./dev/adr
+./dev/agents
+./dev/archive
+./dev/deps
+./dev/design
+./dev/interface-inventory
+./dev/interface-inventory/option1-architecture-first
+./dev/interface-inventory/option2-public-surface-first
+./dev/interface-inventory/option3-contract-first
+./dev/interfaces
+./dev/notes
+./dev/notes/context-research
+./dev/notes/perf
+./dev/plans
+./dev/plans/prompts
+./dev/plans/runs
+./dev/progress
+./dev/psd
+./dev/release
+./dev/release/fixtures
+./dev/release/tests
+./dev/roadmap
+./dev/templates
+./docs
+./docs/compatibility
+./docs/concepts
+./docs/getting-started
+./docs/guides
+./docs/operations
+./docs/positions
+./docs/reference
+./docs/release-notes
+./scripts
+./scripts/hooks
+./scripts/lib
+./scripts/release
+./scripts/release/smoke
+./scripts/security
+./scripts/security/__pycache__
+./scripts/tests
+./scripts/tests/fixtures
+./src
+./src/python
+./src/python/.pytest_cache
+./src/python/.ruff_cache
+./src/python/fathomdb
+./src/python/tests
+./src/rust
+./src/rust/crates
+./src/ts
+./src/ts/src
+./src/ts/tests
+./target
+./target/debug
+./target/debug/.fingerprint
+./target/debug/build
+./target/debug/deps
+./target/debug/examples
+./target/debug/incremental
+./target/tmp
+./test
+./test/cross-language
+./test/fixtures
+./test/performance
+./test/smoke
+
+exec
+/bin/bash -lc 'ls -la' in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+total 2260
+drwxrwxr-x  11 coreyt coreyt     4096 May 17 15:05 .
+drwxrwxrwt 271 nobody nogroup 2093056 May 17 15:18 ..
+-rw-rw-r--   1 coreyt coreyt       98 May 17 14:57 .git
+drwxrwxr-x   3 coreyt coreyt     4096 May 17 14:57 .github
+-rw-rw-r--   1 coreyt coreyt      644 May 17 14:57 .gitignore
+drwxrwxr-x   3 coreyt coreyt     4096 May 17 15:05 .hypothesis
+-rw-rw-r--   1 coreyt coreyt     1080 May 17 14:57 .markdownlint-cli2.jsonc
+-rw-rw-r--   1 coreyt coreyt     1350 May 17 14:57 .markdownlint.jsonc
+-rw-rw-r--   1 coreyt coreyt      657 May 17 14:57 .prettierignore
+-rw-rw-r--   1 coreyt coreyt      296 May 17 14:57 .prettierrc.json
+drwxrwxr-x   3 coreyt coreyt     4096 May 17 15:03 .ruff_cache
+-rw-rw-r--   1 coreyt coreyt    11489 May 17 14:57 AGENTS.md
+-rw-rw-r--   1 coreyt coreyt      388 May 17 14:58 CHANGELOG.md
+-rw-rw-r--   1 coreyt coreyt    47831 May 17 14:57 Cargo.lock
+-rw-------   1 coreyt coreyt     2053 May 17 15:05 Cargo.toml
+-rw-rw-r--   1 coreyt coreyt     1078 May 17 14:57 LICENSE
+-rw-rw-r--   1 coreyt coreyt      939 May 17 14:57 README.md
+-rw-rw-r--   1 coreyt coreyt      120 May 17 14:57 deny.toml
+drwxrwxr-x  17 coreyt coreyt     4096 May 17 14:57 dev
+drwxrwxr-x  10 coreyt coreyt     4096 May 17 14:57 docs
+-rw-rw-r--   1 coreyt coreyt     1481 May 17 14:57 lychee.toml
+-rw-rw-r--   1 coreyt coreyt      731 May 17 14:57 mkdocs.yml
+-rw-rw-r--   1 coreyt coreyt    45133 May 17 14:57 package-lock.json
+-rw-rw-r--   1 coreyt coreyt      436 May 17 14:57 package.json
+-rw-rw-r--   1 coreyt coreyt       66 May 17 14:57 rust-toolchain.toml
+-rw-rw-r--   1 coreyt coreyt       45 May 17 14:57 rustfmt.toml
+drwxrwxr-x   7 coreyt coreyt     4096 May 17 15:17 scripts
+drwxrwxr-x   5 coreyt coreyt     4096 May 17 14:57 src
+drwxrwxr-x   4 coreyt coreyt     4096 May 17 15:01 target
+drwxrwxr-x   6 coreyt coreyt     4096 May 17 14:57 test
+
+exec
+/bin/bash -lc "rg --files | rg '("'^|/)MEMORY'"\\.md"'$|(''^|/)feedback_.*'"\\.md"'$'"'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ exited 1 in 0ms:
+exec
+/bin/bash -lc "sed -n '1,260p' dev/plans/runs/12-S-review-20260517T200825Z.md" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ exited 2 in 0ms:
+sed: can't read dev/plans/runs/12-S-review-20260517T200825Z.md: No such file or directory
+
+exec
+/bin/bash -lc "sed -n '1,260p' dev/plans/prompts/12-S-fix-1.md" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ exited 2 in 0ms:
+sed: can't read dev/plans/prompts/12-S-fix-1.md: No such file or directory
+
+codex
+The repo has the expected top-level folders, but the specific review files are named differently than the prompt states. I’m enumerating `dev/plans` now and then I’ll inspect the exact review and remediation artifacts that correspond to Phase 12-S.
+exec
+/bin/bash -lc "find dev/plans -maxdepth 3 -type f | sort | rg '12-S|12-S-fix|12-S-review|security-fixtures|review'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+dev/plans/prompts/review-experiment.md
+dev/plans/prompts/review-phase78-robustness.md
+dev/plans/runs/10b-A-review-20260516T000718Z.md
+dev/plans/runs/11a-fix-1-review-20260516T185855Z.md
+dev/plans/runs/11a-review-20260516T184507Z.md
+dev/plans/runs/11b-fix-1-review-20260516T215255Z.md
+dev/plans/runs/11b-review-20260516T212745Z.md
+dev/plans/runs/11c-fix-1-review-20260516T230749Z.md
+dev/plans/runs/11c-review-20260516T223403Z.md
+dev/plans/runs/11d-fix-1-review-20260517T174940Z.md
+dev/plans/runs/11d-review-20260517T152114Z.md
+dev/plans/runs/12-D-fix-1-review-20260517T193739Z.md
+dev/plans/runs/12-D-review-20260517T191833Z.md
+dev/plans/runs/12-S-fix-1-output.json
+dev/plans/runs/12-S-security-fixtures-output.json
+dev/plans/runs/E1-review-20260504T031328Z.md
+dev/plans/runs/E1-review-20260504T031353Z.md
+dev/plans/runs/E1-review-20260504T031424Z.md
+dev/plans/runs/F0-review-20260504T121701Z.md
+dev/plans/runs/F0-review-20260504T121732Z.md
+dev/plans/runs/F0-review-20260504T122055Z.md
+dev/plans/runs/G1-review-20260504T141139Z.md
+dev/plans/runs/G1-review-20260504T141437Z.md
+
+exec
+/bin/bash -lc "find dev -maxdepth 2 -type f | sort | rg 'MEMORY|feedback_'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ exited 1 in 0ms:
+exec
+/bin/bash -lc 'git status --short' in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+exec
+/bin/bash -lc "sed -n '1,260p' dev/plans/runs/12-S-security-fixtures-output.json" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+{
+  "phase": "12-S-security-fixtures",
+  "baseline_sha": "f2f21b59338a706de625096b099b041e01c1a1c2",
+  "branch": "phase-12-S-security-fixtures-20260517T195735Z",
+  "head_sha": "dea312ead2629111ac1d35fd875beb3fd484df5e",
+  "commits": [
+    "dea312e: test(12-S): land AC-036/037/038/050a/050c security fixtures"
+  ],
+  "sub_scopes_landed": [
+    "1 (AC-036)",
+    "2 (AC-037)",
+    "3 (AC-038)",
+    "4 (AC-050a)",
+    "5 (AC-050c)"
+  ],
+  "acs_addressed": [
+    "AC-036",
+    "AC-037",
+    "AC-038",
+    "AC-050a",
+    "AC-050c"
+  ],
+  "scripts_added": [
+    "scripts/agent-security.sh",
+    "scripts/security/ast_scan.py",
+    "scripts/security/ast-scan-rust.sh",
+    "scripts/security/ast-scan-python.py",
+    "scripts/security/ast-scan-ts.sh",
+    "scripts/security/check_removal_changelog.py",
+    "scripts/security/check-removal-changelog.sh",
+    "scripts/security/check-no-listen.sh",
+    "scripts/security/check-netns-deny-egress.sh"
+  ],
+  "scripts_modified": [
+    "scripts/bootstrap.sh (added apt install strace clause)"
+  ],
+  "tests_added": [
+    "src/rust/crates/fathomdb-engine/tests/fts5_injection_safety.rs",
+    "scripts/tests/test_ast_scan.sh",
+    "scripts/tests/test_removal_detect.sh"
+  ],
+  "fixtures_added": [
+    "scripts/tests/fixtures/ast-shim/rust/clean/ok.rs",
+    "scripts/tests/fixtures/ast-shim/rust/dirty/legacy_admin.rs",
+    "scripts/tests/fixtures/ast-shim/python/clean/ok.py",
+    "scripts/tests/fixtures/ast-shim/python/dirty/legacy_client.py",
+    "scripts/tests/fixtures/ast-shim/ts/clean/ok.ts",
+    "scripts/tests/fixtures/ast-shim/ts/dirty/legacy_binding.ts",
+    "scripts/tests/fixtures/removal-detect/clean/{CHANGELOG.md,diff.patch}",
+    "scripts/tests/fixtures/removal-detect/undocumented/{CHANGELOG.md,diff.patch}",
+    "scripts/tests/fixtures/removal-detect/moved-in-file/{CHANGELOG.md,diff.patch}",
+    "src/rust/crates/fathomdb-engine/examples/security_cycle.rs"
+  ],
+  "supporting_files_added": [
+    "CHANGELOG.md (stub with [Unreleased]/Removed section)"
+  ],
+  "no_shim_enforcement_live": true,
+  "gate_results_on_this_host": {
+    "AC-036 no-listen-syscall": "BLOCKER (strace missing on aarch64 dev host)",
+    "AC-037 netns-deny-egress": "BLOCKER (strace missing; userns enabled, unshare ok)",
+    "AC-038 fts5_injection_safety": "PASS (2/2 tests)",
+    "AC-050a ast-scan-rust": "PASS (src/rust/crates clean)",
+    "AC-050a ast-scan-python": "PASS (src/python clean)",
+    "AC-050a ast-scan-ts": "PASS (src/ts clean)",
+    "AC-050c removal-detect": "PASS (no removals 0.6.0-rewrite..HEAD; CHANGELOG present)",
+    "scripts/tests/test_ast_scan.sh": "PASS (clean+dirty per language)",
+    "scripts/tests/test_removal_detect.sh": "PASS (clean+undocumented+moved-in-file)",
+    "scripts/agent-security.sh": "PASS (0 violations, 2 blockers; non-strict)"
+  },
+  "blockers_encountered": [
+    {
+      "id": "12-S-blocker-1",
+      "scope": "AC-036 + AC-037",
+      "summary": "strace not installed on this aarch64 dev host (Linux ubuntu 5.15.185-tegra). Both check-no-listen.sh and check-netns-deny-egress.sh exit code 2 (BLOCKER) and surface a clear apt-install diagnostic; agent-security.sh treats blockers as non-fatal unless STRICT=1.",
+      "remediation": "scripts/bootstrap.sh now installs strace via apt-get when available. CI runner ops must re-run bootstrap (or sudo apt install strace) before the AC-036/AC-037 gates can demonstrate green. Once strace is on PATH no code change is required.",
+      "owner_recommendation": "phase 12-DX or orchestrator: re-run scripts/agent-security.sh on a strace-equipped CI runner to capture the post-bootstrap PASS evidence."
+    },
+    {
+      "id": "12-S-note-2",
+      "scope": "AC-050a TS scanner",
+      "summary": "TS surface scanned by line-anchored regex on .ts/.tsx (comment-aware) rather than @typescript-eslint/parser or ts-morph. Adding either would expand the npm dependency tree.",
+      "remediation": "Acceptable: the banned-pattern set (legacy_* / compat_v0_5* names; deprecated re-exports) is textual and bounded. Upgrade to a real AST parser is a follow-up if/when the banned-pattern surface grows beyond name prefixes.",
+      "owner_recommendation": "DEFER unless a future shim pattern requires structural matching."
+    },
+    {
+      "id": "12-S-note-3",
+      "scope": "AC-050a Rust scanner",
+      "summary": "Rust surface uses line-anchored regex (comment-skipping) over `*.rs` rather than `syn` AST parsing. Same scope/scale tradeoff as the TS scanner.",
+      "remediation": "Acceptable for the current banned-pattern set; promote to a `syn`-based scanner if the banned list ever needs token-tree awareness (e.g. macro-generated identifiers).",
+      "owner_recommendation": "DEFER."
+    },
+    {
+      "id": "12-S-note-4",
+      "scope": "AC-050a verb list",
+      "summary": "V05_VERBS in scripts/security/ast_scan.py is empty (no canonical 0.5.x verb list enumerated yet). Scanner runs as a no-op for that rule until the verb list lands.",
+      "remediation": "Append 0.5.x verb names to V05_VERBS as they become known (e.g. when CHANGELOG records the 0.5.x→0.6.0 verb renames). No code change required to start enforcing.",
+      "owner_recommendation": "DOCUMENT in 0.6.0 release-notes and append verbs at GA freeze."
+    },
+    {
+      "id": "12-S-note-5",
+      "scope": "Required-commands invocation form",
+      "summary": "Prompt’s required-commands list shows `bash scripts/security/ast-scan-python.py`. That fails because the file is a Python script. Invoke as `python3 scripts/security/ast-scan-python.py` or via the shebang `scripts/security/ast-scan-python.py` (file is +x).",
+      "remediation": "Reviewer: please use python3/shebang form. No script-level fix because doing so would mean a bash-only wrapper named `.py`, which is more confusing than the typo.",
+      "owner_recommendation": "Update the prompt template for future security-fixture phases."
+    }
+  ],
+  "agent_verify_result": "pass",
+  "discipline_notes": [
+    "TDD: each new linter/script landed with a positive (clean) and negative (synthetic-shim / undocumented-removal) fixture before wiring.",
+    "Net LoC: ~720 added across 27 files (scripts + fixtures + 1 example + 1 test). No production-code change.",
+    "AC-050a + AC-050c are the enforcement mechanisms for the no-0.5.x-shim policy and removal discipline; both are live on `agent-security.sh`."
+  ],
+  "next_step_for_orchestrator": "promote to 0.6.0-rewrite; respawn codex reviewer for verdict. Run scripts/bootstrap.sh on the reviewer host so strace is available for AC-036/AC-037 evidence capture."
+}
+
+exec
+/bin/bash -lc "sed -n '1,260p' dev/plans/runs/12-S-fix-1-output.json" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+{
+  "phase": "12-S-fix-1",
+  "baseline_sha": "d48d226",
+  "branch": "phase-12-S-security-fixtures-20260517T195735Z",
+  "head_sha": "27a818e",
+  "commits": [
+    "d25c55d: fix(12-S-fix-1): findings 1+2 — populate V05_VERBS, harden Rust scanner",
+    "e77265c: fix(12-S-fix-1): finding 3 — wire STRICT=1 + apt-get update"
+  ],
+  "findings_addressed": [
+    "1 [high]: V05_VERBS populated with 32 verbs inventoried from 39ee271^:python/fathomdb/_engine.py + _admin.py (verbs removed/redesigned in 0.6.0, no equivalent name). Rust matcher tightened to `pub fn` to suppress private-helper false positives. Per-language v05_verb_reroute fixtures + sentinel test (len(V05_VERBS) > 0) added.",
+    "2 [medium]: scan_rust() strips /* */, /** */, and /*! */ block comments via in_block_comment state machine that handles tails after */ on the same line. New rust/clean/block_comment_safe.rs proves doc-comment names don't false-fire; rust/block-comment-real/ proves real code is still flagged when a block comment exists elsewhere. Crate-root #![allow(deprecated)] rule isolated to rust/crate-root/lib.rs; legacy_admin.rs no longer conflates two rules.",
+    "3 [high]: scripts/agent-verify.sh now invokes `STRICT=1 bash scripts/agent-security.sh` between typecheck and test. scripts/bootstrap.sh runs `sudo apt-get update -qq` before `apt-get install strace` (best-effort so a flaky mirror does not block all dev tooling). agent-security.sh header documents the wiring."
+  ],
+  "v05_verbs_count": 32,
+  "v05_verbs_source": "git show 39ee271^:python/fathomdb/_engine.py + 39ee271^:python/fathomdb/_admin.py (cross-checked against current src/python and src/rust to drop names still in 0.6.0)",
+  "agent_verify_local_aarch64_status": "fail (rc=1) — strace absent on this dev host; STRICT=1 path correctly promotes the AC-036/AC-037 BLOCKERs to a hard failure",
+  "agent_verify_ci_expected": "pass — bootstrap.sh apt-installs strace before agent-verify runs",
+  "blockers_encountered": [],
+  "agent_verify_result": "fail (expected on aarch64 local; CI expected pass). Tail: `agent-security: 0 violation(s), 2 blocker(s)` — AC-036 + AC-037 BLOCKER on missing strace. Other gates (AC-038, AC-050a x3, AC-050c) PASS.",
+  "test_ast_scan_result": "pass — 12 OK lines including V05_VERBS sentinel, per-language verb-reroute, crate-root isolation, block-comment safe + real",
+  "next_step_for_orchestrator": "promote to 0.6.0-rewrite; respawn codex reviewer for clean PASS"
+}
+
+exec
+/bin/bash -lc "sed -n '1,260p' dev/plans/runs/12-D-review-20260517T191833Z.md" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+# Phase 12-D Review — codex gpt-5.4 verdict
+
+Reviewer: `codex --model gpt-5.4 --sandbox read-only`.
+Target: branch `phase-12-D-durability-harnesses-20260517T185755Z` HEAD
+`df7456b`.
+Baseline: `23292b1` (close of Phase 11 + context-mgmt infra on
+`0.6.0-rewrite`).
+Cherry-pick: `b70fbca` / `2a1c203` / `89c7300` on `0.6.0-rewrite`.
+Review log: `dev/plans/runs/12-D-review-20260517T191833Z.log`.
+
+Sandbox note: reviewer could not write this file directly (read-only
+sandbox). Main thread promoted the verbatim verdict from log line
+~4750+.
+
+## Verdict: CONCERN
+
+### 1. [high] `probe_wal_sidecar` reads the entire WAL file on every open
+
+Refs:
+
+- `src/rust/crates/fathomdb-engine/src/lib.rs:3024`
+- `dev/acceptance.md:580`
+
+`probe_wal_sidecar()` uses `std::fs::read(&wal_path)` just to inspect
+the header. That makes `Engine.open` pull the full `-wal` sidecar
+into memory before SQLite does its own recovery work. On large
+unclean-shutdown WALs, this is a real open-path latency and RSS
+regression, and it directly risks the later AC-035 recovery-time
+budget. The schema-probe change is not the main latency concern
+here; the full-file WAL read is.
+
+### 2. [medium] AC-034b drops some trials from the p99 instead of measuring across all P-PWR-TRIALS
+
+Refs:
+
+- `src/rust/crates/fathomdb-engine/tests/durability_soak.rs:95`
+- `src/rust/crates/fathomdb-engine/tests/durability_soak.rs:128`
+- `dev/acceptance.md:568`
+
+The harness records `lost_commit_ms: Option<u128>`, filters out
+`None`, then computes p99 on the surviving subset. It only requires
+that 90% of trials have at least one surviving commit. That is
+weaker than AC-034b's stated measurement "report p99 across
+P-PWR-TRIALS trials," and it means the parent never actually
+guarantees that each victim committed at least one row before
+`SIGKILL`.
+
+### 3. [medium] AC-035c's lock-release check is same-process, not sibling-process
+
+Refs:
+
+- `src/rust/crates/fathomdb-engine/tests/durability_open_path.rs:286`
+- `dev/acceptance.md:608`
+
+The test reacquires `.lock` with a second fd in the same process
+and calls `flock` there. That is useful signal, but it is not the
+documented measurement, which requires process A to fail open and
+sibling process B to observe the lock as acquirable. Given the
+explicit AC text, this is a partial proof, not the full contract.
+
+### 4. [low] The AC-034c ignored test is informative, but its body is a stub
+
+Refs:
+
+- `src/rust/crates/fathomdb-engine/tests/durability_soak.rs:238`
+
+The `#[ignore]` reason is good and points at the missing VM/sysrq
+substrate, but the body is intentionally empty. If someone clears
+`#[ignore]` without implementing the harness, the test would pass
+vacuously. This is not a current false green because it is ignored,
+but it is not a runnable placeholder.
+
+## What passed on inspection
+
+- The `open_locked` reorder is directionally correct: header and
+  schema probing now happen before `journal_mode=WAL`, which
+  prevents header/page-1 and schema-btree corruption from being
+  misclassified as WAL replay.
+- AC-035b is asserted per fixture for all four documented rows.
+  Tests check exact `kind`, `stage`, `recovery_hint.code`, and
+  `doc_anchor`. Code-stability test checks both string equality
+  and pointer equality for the `&'static str`.
+- `serial_guard()` is taken by every test in
+  `durability_open_path.rs`, not just the AC-035c tests, so
+  same-binary thread/fd contamination is actually serialized
+  away.
+- The thread/fd residue assertions are consistent with the engine
+  lifecycle: reader threads and the projection runtime are only
+  created after `open_locked` succeeds, so a corruption return
+  from `open_locked` should not leave engine-started threads
+  behind.
+- No meaningful large-schema regression from `SELECT COUNT(*) FROM
+  sqlite_schema` itself; schema surface is small and mostly fixed.
+
+## Reviewer process notes
+
+- Read `dev/acceptance.md`, `dev/design/recovery.md`,
+  `dev/design/errors.md`, output JSON, all three commits, and the
+  full `durability_open_path.rs`, `durability_soak.rs`,
+  `tests/support/corruption.rs`, and `src/lib.rs` deltas.
+- `dev/plans/prompts/12-D-durability-harnesses.md` not present in
+  sparse worktree (out-of-tree by design); could not compare
+  against prompt directly.
+- `MEMORY.md` and `feedback_*.md` not present in worktree; TDD
+  claim not independently verifiable from repo files. Git history
+  bundles tests + engine changes together; red-before-green
+  evidence not recoverable from commits alone.
+- Review was static only; harnesses not executed in read-only
+  sandbox.
+
+## Orchestrator triage
+
+All four findings substantive and actionable. None
+structural/prompt-induced — orchestrator override not appropriate.
+**Fix-1 remediation required.**
+
+- **Finding 1 (high)**: `probe_wal_sidecar` must only read the
+  WAL header (first ~32 bytes — magic, page-size, salts), not the
+  full file. SQLite's WAL header is fixed-layout; we don't need
+  the frame data. Fix: replace `std::fs::read` with a bounded
+  `File::open` + `read_exact(&mut [u8; HEADER_LEN])`. Add a test
+  that opens a large fixture WAL (e.g. 10 MB) and asserts RSS
+  delta is bounded.
+- **Finding 2 (medium)**: ensure every victim commits at least
+  one row before SIGKILL. Parent should signal "ready" via a
+  per-trial sentinel file the child writes after its first commit
+  lands; parent waits for sentinel before scheduling the kill.
+  Then `lost_commit_ms` is `Some(_)` for every trial and p99 is
+  computed across the full P-PWR-TRIALS=100 set.
+- **Finding 3 (medium)**: replace in-process flock reacquire with
+  true sibling-process check. Reuse Sub-2's test-binary-as-victim
+  trick: spawn a child via `Command::new(current_exe())` with an
+  env-var-gated entry point that attempts `flock` on `<db>.lock`
+  and exits 0 if acquired / 1 if blocked. Parent invokes the
+  AC-035c fixture, then asserts the child exits 0.
+- **Finding 4 (low)**: AC-034c body must `panic!()` with the
+  blocker text + a pointer to the missing substrate. Cleared
+  `#[ignore]` without doing the work = test fails loudly instead
+  of passing vacuously.
+
+Spawn 12-D-fix-1 (Opus 4.7 medium).
+
+exec
+/bin/bash -lc "find dev/plans -type f | sort | rg '12-S'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+dev/plans/runs/12-S-fix-1-output.json
+dev/plans/runs/12-S-security-fixtures-output.json
+
+Running a static review of the 12-S remediation pass in read-only mode. I’ve confirmed the repo layout and found the available 12-S artifacts; the prompt-named review/spec markdown files are absent, so I’ll rely on the available JSON artifact plus the cited commits and current tree.
+  → Read the 12-S remediation commits and current deltas for the scanner, fixtures, verify script, and bootstrap script
+  • Spot-check V05_VERBS against current Python and Rust surfaces and evaluate false-positive risk
+  • Inspect the Rust block-comment state machine and fixture coverage for nested/tail/comment-edge cases and crate-root isolation
+  • Inspect STRICT wiring, bootstrap apt-get behavior, and look for regressions in prior PASS gates
+  • Write the verdict with findings, addressed items, passed checks, and reviewer notes
+codex
+I’ve got enough context to work the actual review now. Next I’m reading the two remediation commits, the current scanner and fixture files they touched, and the verify/bootstrap scripts so I can test the three claimed closures against the code rather than the JSON summary.
+exec
+/bin/bash -lc 'git show --stat --oneline d25c55d --' in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+d25c55d fix(12-S-fix-1): findings 1+2 — populate V05_VERBS, harden Rust scanner
+ scripts/security/ast_scan.py                       | 78 ++++++++++++++++++++--
+ .../fixtures/ast-shim/python/verb-reroute/api.py   |  7 ++
+ .../ast-shim/rust/block-comment-real/real.rs       |  4 ++
+ .../ast-shim/rust/clean/block_comment_safe.rs      | 10 +++
+ .../tests/fixtures/ast-shim/rust/crate-root/lib.rs |  4 ++
+ .../fixtures/ast-shim/rust/dirty/legacy_admin.rs   |  8 +--
+ .../fixtures/ast-shim/rust/verb-reroute/api.rs     |  4 ++
+ .../tests/fixtures/ast-shim/ts/verb-reroute/api.ts |  3 +
+ scripts/tests/test_ast_scan.sh                     | 69 +++++++++++++++----
+ 9 files changed, 165 insertions(+), 22 deletions(-)
+
+exec
+/bin/bash -lc 'git show --stat --oneline e77265c --' in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+e77265c fix(12-S-fix-1): finding 3 — wire STRICT=1 + apt-get update
+ scripts/agent-security.sh | 8 ++++++--
+ scripts/agent-verify.sh   | 4 ++++
+ scripts/bootstrap.sh      | 4 ++++
+ 3 files changed, 14 insertions(+), 2 deletions(-)
+
+exec
+/bin/bash -lc "sed -n '1,260p' scripts/security/ast_scan.py" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+#!/usr/bin/env python3
+"""AC-050a AST no-shim scanner.
+
+Scans Rust, Python, and TypeScript source trees for banned shim
+patterns that would let 0.5.x compatibility code linger past the
+0.6.0 rewrite cutover. Banned patterns:
+
+  * Module / file names matching ``legacy_*`` or ``compat_v0_5*``.
+  * Symbol declarations (fn/class/struct/etc.) with those prefixes.
+  * Crate-root ``#![allow(deprecated)]`` (Rust ``lib.rs`` / ``main.rs``).
+  * Re-route stubs from a configured set of 0.5.x verb names
+    (empty by default — no-op until the verb list lands).
+
+The Python surface is parsed with the stdlib ``ast`` module. Rust
+and TypeScript surfaces are tokenized with grammar-scoped regex
+(line-anchored, comment-aware where it matters). Full ``syn`` /
+``ts-morph`` integration is filed as a follow-up; the patterns this
+scanner hunts are textual and bounded.
+"""
+
+from __future__ import annotations
+
+import argparse
+import ast
+import re
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+
+# 0.5.x verb names whose re-route stubs are banned at the public API
+# surface. Inventoried from pre-0.6.0 source (`git show 39ee271^:`):
+# python/fathomdb/_engine.py + _admin.py, plus the TS facade. A name
+# belongs here only if the 0.5.x verb has NO 0.6.0 equivalent (or
+# its 0.6.0 name differs). Verbs whose name is unchanged across the
+# rewrite (open/close/write/search/drain/configure/counters/...) are
+# intentionally excluded — they ARE the 0.6.0 surface. Removed verbs
+# kept in 0.6.0 under the same name (check_integrity/safe_export/
+# excise_source) are also excluded.
+#
+# Why: the verb-reroute rule (AC-050a) catches `pub fn <old>() { new() }`
+# shims that would re-introduce 0.5.x compatibility surface. An empty
+# list silently disables the rule.
+V05_VERBS: tuple[str, ...] = (
+    # Engine surface removed/redesigned in 0.6.0
+    "submit",
+    "touch_last_accessed",
+    "fallback_search",
+    "telemetry_snapshot",
+    # AdminClient surface collapsed into `admin.configure(name, body)`
+    "check_semantics",
+    "rebuild",
+    "rebuild_missing",
+    "restore_vector_profiles",
+    "regenerate_vector_embeddings",
+    "restore_logical_id",
+    "purge_logical_id",
+    "configure_fts",
+    "configure_vec",
+    "configure_vec_kinds",
+    "configure_embedding",
+    "capabilities",
+    "current_config",
+    "describe_kind",
+    "drain_vector_projection",
+    "preview_projection_impact",
+    "get_fts_profile",
+    "get_vec_profile",
+    "register_fts_property_schema",
+    "describe_fts_property_schema",
+    "list_fts_property_schemas",
+    "remove_fts_property_schema",
+    "get_rebuild_progress",
+    "register_operational_collection",
+    "describe_operational_collection",
+    "trace_operational_collection",
+    "read_operational_collection",
+    "rebuild_operational_current",
+)
+
+FORBIDDEN_PREFIX = re.compile(r"^(legacy_|compat_v0_5)")
+
+PATH_EXCLUDES = (
+    "node_modules",
+    "target",
+    ".venv",
+    "dist",
+    "build",
+    "__pycache__",
+)
+
+
+@dataclass(frozen=True)
+class Finding:
+    path: Path
+    line: int
+    rule: str
+    detail: str
+
+    def render(self, root: Path) -> str:
+        rel = self.path.relative_to(root) if self.path.is_absolute() else self.path
+        loc = f"{rel}:{self.line}" if self.line else str(rel)
+        return f"{loc}: [{self.rule}] {self.detail}"
+
+
+def excluded(path: Path, scan_root: Path) -> bool:
+    try:
+        rel = path.relative_to(scan_root)
+    except ValueError:
+        rel = path
+    parts = set(rel.parts)
+    return any(token in parts for token in PATH_EXCLUDES)
+
+
+def _check_name(path: Path, line: int, name: str, rule: str) -> list[Finding]:
+    if FORBIDDEN_PREFIX.match(name):
+        return [Finding(path, line, rule, f"forbidden name: {name}")]
+    return []
+
+
+def scan_rust(root: Path) -> list[Finding]:
+    findings: list[Finding] = []
+    for path in sorted(root.rglob("*.rs")):
+        if excluded(path, root):
+            continue
+        findings.extend(_check_name(path, 0, path.stem, "rust-module-name"))
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        lines = text.splitlines()
+        is_crate_root = path.name in ("lib.rs", "main.rs")
+        in_block_comment = False
+        for i, raw in enumerate(lines, 1):
+            stripped = raw.strip()
+            # Strip /* ... */ and /** ... */ block-comment regions so
+            # banned names inside doc examples don't false-fire.
+            if in_block_comment:
+                if "*/" in stripped:
+                    in_block_comment = False
+                    # tail after */ may contain real code; re-process it
+                    tail = stripped.split("*/", 1)[1].strip()
+                    if not tail:
+                        continue
+                    stripped = tail
+                else:
+                    continue
+            while stripped.startswith("/*"):
+                if "*/" in stripped[2:]:
+                    stripped = stripped.split("*/", 1)[1].strip()
+                    if not stripped:
+                        break
+                else:
+                    in_block_comment = True
+                    stripped = ""
+                    break
+            if not stripped:
+                continue
+            if stripped.startswith("//"):
+                continue
+            # crate-root inner attribute that suppresses deprecation
+            if is_crate_root and stripped.startswith("#![allow(") and "deprecated" in stripped:
+                findings.append(
+                    Finding(
+                        path,
+                        i,
+                        "rust-crate-root-allow-deprecated",
+                        "crate-root #![allow(deprecated)] is banned",
+                    )
+                )
+            # mod legacy_foo; / pub mod compat_v0_5_admin;
+            m = re.match(r"(?:pub\s+(?:\([^)]+\)\s+)?)?mod\s+([A-Za-z_][A-Za-z0-9_]*)", stripped)
+            if m:
+                findings.extend(_check_name(path, i, m.group(1), "rust-mod-decl"))
+            # pub fn / pub struct / pub enum / pub trait names
+            m = re.match(
+                r"pub(?:\([^)]+\))?\s+(?:unsafe\s+|async\s+|const\s+)*"
+                r"(?:fn|struct|enum|trait|type|const|static)\s+([A-Za-z_][A-Za-z0-9_]*)",
+                stripped,
+            )
+            if m:
+                findings.extend(_check_name(path, i, m.group(1), "rust-public-symbol"))
+            for verb in V05_VERBS:
+                if re.search(rf"\bpub(?:\([^)]+\))?\s+fn\s+{re.escape(verb)}\b", stripped):
+                    findings.append(
+                        Finding(
+                            path,
+                            i,
+                            "rust-05x-verb-reroute",
+                            f"0.5.x verb re-route stub: {verb}",
+                        )
+                    )
+    return findings
+
+
+def scan_python(root: Path) -> list[Finding]:
+    findings: list[Finding] = []
+    for path in sorted(root.rglob("*.py")):
+        if excluded(path, root):
+            continue
+        findings.extend(_check_name(path, 0, path.stem, "python-module-name"))
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+        except (SyntaxError, OSError):
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                findings.extend(
+                    _check_name(path, node.lineno, node.name, "python-symbol")
+                )
+                if node.name in V05_VERBS:
+                    findings.append(
+                        Finding(
+                            path,
+                            node.lineno,
+                            "python-05x-verb-reroute",
+                            f"0.5.x verb re-route stub: {node.name}",
+                        )
+                    )
+    return findings
+
+
+def scan_ts(root: Path) -> list[Finding]:
+    findings: list[Finding] = []
+    decl = re.compile(
+        r"(?:export\s+(?:default\s+)?(?:async\s+)?)?"
+        r"(?:class|function|interface|const|let|var|type|enum|namespace|module)\s+"
+        r"([A-Za-z_$][A-Za-z0-9_$]*)"
+    )
+    for path in sorted(list(root.rglob("*.ts")) + list(root.rglob("*.tsx"))):
+        if excluded(path, root):
+            continue
+        findings.extend(_check_name(path, 0, path.stem, "ts-module-name"))
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        in_block_comment = False
+        for i, raw in enumerate(lines, 1):
+            stripped = raw.strip()
+            # Strip simple block-comment regions to avoid matching banned
+            # names that only appear in JSDoc examples.
+            if in_block_comment:
+                if "*/" in stripped:
+                    in_block_comment = False
+                continue
+            if stripped.startswith("/*"):
+                if "*/" not in stripped[2:]:
+                    in_block_comment = True
+                continue
+            if stripped.startswith("//"):
+                continue
+            m = decl.search(stripped)
+            if m:
+                findings.extend(_check_name(path, i, m.group(1), "ts-symbol"))
+                if m.group(1) in V05_VERBS:
+                    findings.append(
+                        Finding(
+                            path,
+                            i,
+
+exec
+/bin/bash -lc "sed -n '1,260p' scripts/tests/test_ast_scan.sh" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+#!/usr/bin/env bash
+# Self-test for AC-050a AST no-shim scanner (scripts/security/ast_scan.py).
+# Drives clean + dirty fixtures per language, plus targeted sub-fixtures
+# for the verb-reroute, crate-root, and block-comment rules.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+SCAN="$REPO_ROOT/scripts/security/ast_scan.py"
+FIX="$SCRIPT_DIR/fixtures/ast-shim"
+
+fail() { echo "FAIL: $*" >&2; exit 1; }
+
+run_clean() {
+    local lang="$1" path="$2"
+    if ! python3 "$SCAN" --language "$lang" --path "$path" --repo-root "$REPO_ROOT" >/dev/null 2>&1; then
+        fail "$lang clean fixture ($path) must exit 0"
+    fi
+}
+
+run_dirty() {
+    local lang="$1" path="$2" expect_pattern="$3"
+    local errf
+    errf=$(mktemp)
+    set +e
+    python3 "$SCAN" --language "$lang" --path "$path" --repo-root "$REPO_ROOT" >/dev/null 2>"$errf"
+    local rc=$?
+    set -e
+    if [ "$rc" -ne 1 ]; then
+        cat "$errf" >&2
+        rm -f "$errf"
+        fail "$lang dirty fixture ($path) must exit 1, got $rc"
+    fi
+    if ! grep -qE "$expect_pattern" "$errf"; then
+        cat "$errf" >&2
+        rm -f "$errf"
+        fail "$lang dirty fixture ($path): expected pattern '$expect_pattern' missing"
+    fi
+    rm -f "$errf"
+}
+
+# V05_VERBS must be non-empty — sentinel that the rule is enforced.
+verb_count=$(python3 -c 'import sys; sys.path.insert(0, "'"$REPO_ROOT"'/scripts/security"); import ast_scan; print(len(ast_scan.V05_VERBS))')
+if [ "$verb_count" -lt 1 ]; then
+    fail "V05_VERBS is empty — verb-reroute rule is unenforced"
+fi
+echo "OK V05_VERBS populated ($verb_count entries)"
+
+for lang in rust python ts; do
+    run_clean "$lang" "$FIX/$lang/clean"
+    echo "OK $lang clean"
+    run_dirty "$lang" "$FIX/$lang/dirty" "(legacy_|compat_v0_5|allow\\(deprecated\\)|verb re-route)"
+    echo "OK $lang dirty"
+done
+
+# Targeted sub-rules: each fixture lives in its own directory so the
+# scanner's rglob finds exactly one file and the assertion is isolated.
+run_dirty rust "$FIX/rust/crate-root" "rust-crate-root-allow-deprecated"
+echo "OK rust crate-root rule (lib.rs isolated)"
+
+run_dirty rust "$FIX/rust/verb-reroute" "rust-05x-verb-reroute"
+echo "OK rust v05 verb-reroute"
+
+run_dirty python "$FIX/python/verb-reroute" "python-05x-verb-reroute"
+echo "OK python v05 verb-reroute"
+
+run_dirty ts "$FIX/ts/verb-reroute" "ts-05x-verb-reroute"
+echo "OK ts v05 verb-reroute"
+
+# Block-comment stripping: banned names inside /* */ must NOT flag
+# (asserted by the rust/clean directory passing — block_comment_safe.rs
+# embeds banned names in /* */, /*! */, and /** */ doc comments).
+# Real code OUTSIDE a block comment in a file that ALSO contains a
+# block comment must still flag.
+run_dirty rust "$FIX/rust/block-comment-real" "(legacy_|rust-public-symbol)"
+echo "OK rust block-comment does not swallow real code"
+
+echo "test_ast_scan.sh: all language fixtures pass"
+
+exec
+/bin/bash -lc "sed -n '1,220p' scripts/agent-verify.sh" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+#!/usr/bin/env bash
+# Run lint -> typecheck -> test in latency order. Short-circuit on first failure.
+# This is the agent-loop gate. The broader CI gate is scripts/check.sh.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd_repo_root() { cd "$(git rev-parse --show-toplevel)"; }
+cd_repo_root
+
+start=$(date +%s)
+
+run_step() {
+  local step="$1"
+  if ! "$SCRIPT_DIR/agent-$step.sh"; then
+    local end
+    end=$(date +%s)
+    printf 'FAIL verify at step=%s (%ss elapsed)\n' "$step" "$((end - start))"
+    return 1
+  fi
+}
+
+run_step lint || exit 1
+run_step typecheck || exit 1
+# AC-036/037/038/050a/050c. STRICT=1 promotes toolchain blockers to
+# hard failures so the gate is real (rc=2 → exit). Local dev hosts
+# without strace must run scripts/bootstrap.sh first.
+STRICT=1 bash "$SCRIPT_DIR/agent-security.sh" || exit 1
+run_step test || exit 1
+
+end=$(date +%s)
+if [ "${AGENT_VERBOSE:-0}" = "1" ]; then
+  printf 'ok verify %ss\n' "$((end - start))"
+fi
+
+exec
+/bin/bash -lc "sed -n '1,260p' scripts/bootstrap.sh" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+echo "FathomDB scaffold bootstrap"
+echo "Public docs live in docs/ and build with MkDocs."
+echo "Internal engineering docs live in dev/."
+echo "Rust workspace members live under src/rust/crates/."
+echo "Run scripts/agent-verify.sh during the agent loop, scripts/check.sh as the broader CI gate."
+
+# Repo-tracked git hooks (pre-commit fmt/lint, pre-push agent-verify).
+scripts/install-hooks.sh
+
+# Python dev tooling — pytest, hypothesis, ruff, pyright.
+if [ -f src/python/pyproject.toml ]; then
+  echo "Installing Python dev tooling into .venv (pytest + hypothesis + ruff + pyright)..."
+  python3 -m venv .venv
+  .venv/bin/python -m pip install --quiet --upgrade pip
+  .venv/bin/python -m pip install --quiet -e 'src/python[dev]'
+  .venv/bin/python -c 'import pytest, hypothesis'
+  .venv/bin/pyright -p src/python >/dev/null
+fi
+
+# TypeScript dev tooling.
+if [ -f src/ts/package.json ] && [ ! -d src/ts/node_modules ]; then
+  echo "Installing TypeScript dev tooling..."
+  (cd src/ts && npm install --silent)
+fi
+
+# Repo-wide markdown tooling (markdownlint-cli2 + prettier).
+if [ -f package.json ] && [ ! -d node_modules ]; then
+  echo "Installing markdown dev tooling (markdownlint-cli2 + prettier)..."
+  npm install --silent
+fi
+
+# Lychee link checker (Rust binary).
+if ! command -v lychee >/dev/null 2>&1; then
+  echo "Installing lychee link checker..."
+  cargo install --locked --quiet lychee
+fi
+
+# strace — required by the AC-036 no-listen and AC-037 netns-deny-egress
+# security fixtures under scripts/security/. ~50KB, unprivileged at
+# runtime. Skip silently if apt isn't available (non-Debian hosts); the
+# fixtures will report a BLOCKER exit themselves.
+if ! command -v strace >/dev/null 2>&1; then
+  if command -v apt-get >/dev/null 2>&1; then
+    echo "Installing strace (AC-036/AC-037 security fixtures)..."
+    # GitHub-hosted runners ship with stale apt indexes; without an
+    # update first, `apt-get install` can fail on 404. Local dev runs
+    # bootstrap rarely, so the extra ~5s is acceptable.
+    sudo apt-get update -qq >/dev/null 2>&1 || true
+    sudo apt-get install --no-install-recommends -y strace >/dev/null 2>&1 || \
+      echo "strace install failed; AC-036/AC-037 will report BLOCKER until installed" >&2
+  else
+    echo "strace not installed and apt-get unavailable; install via host package manager" >&2
+    echo "  (required by scripts/security/check-no-listen.sh + check-netns-deny-egress.sh)" >&2
+  fi
+fi
+
+# actionlint — workflow validator. Pinned: yaml.safe_load passes
+# schema-invalid syntax that GitHub silently rejects, so we need a real
+# linter for .github/workflows/*.yml. Version pin matches a recent stable
+# release; bump deliberately, not drifted.
+if ! command -v actionlint >/dev/null 2>&1; then
+  if command -v go >/dev/null 2>&1; then
+    echo "Installing actionlint v1.7.7 via go install..."
+    GO111MODULE=on go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+  else
+    echo "actionlint not installed and go toolchain unavailable; install actionlint manually" >&2
+    echo "  see https://github.com/rhysd/actionlint/releases (pin v1.7.7)" >&2
+  fi
+fi
+
+codex
+The scanner and verify wiring are in view now. I’m checking the weak spots the prompt called out: whether the verb inventory actually excludes live 0.6.0 names, whether `scan_rust()` really handles Rust’s nested block comments, and whether the dedicated `lib.rs` fixture is the only thing exercising the crate-root rule.
+exec
+/bin/bash -lc "sed -n '1,200p' scripts/tests/fixtures/ast-shim/rust/clean/block_comment_safe.rs" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+/*!
+ * Doc comment that legitimately references the legacy_admin module name
+ * and the configure_fts verb in prose. The scanner must strip block
+ * comments and leave this fixture clean.
+ */
+
+/* pub fn legacy_should_not_match() {} */
+
+/** Outer doc comment: compat_v0_5_engine appears here too. */
+pub fn modern_helper() {}
+
+exec
+/bin/bash -lc "sed -n '1,160p' scripts/tests/fixtures/ast-shim/rust/block-comment-real/real.rs" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+/* A block comment up top that mentions legacy_thing in prose.
+ * The scanner must NOT trip on this and must continue parsing
+ * real code below. */
+pub fn legacy_real_shim() {}
+
+exec
+/bin/bash -lc "sed -n '1,120p' scripts/tests/fixtures/ast-shim/rust/crate-root/lib.rs" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+// Isolates the crate-root #![allow(deprecated)] rule. The filename is
+// lib.rs precisely because the rule only fires for lib.rs / main.rs;
+// putting this attribute in any other file would not trigger AC-050a.
+#![allow(deprecated)]
+
+exec
+/bin/bash -lc "sed -n '1,200p' scripts/tests/fixtures/ast-shim/rust/dirty/legacy_admin.rs" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+// Negative fixture for AC-050a: forbidden module name + public-symbol
+// prefix. The crate-root #![allow(deprecated)] rule is exercised by
+// the dedicated lib.rs fixture in this directory — keep that rule
+// separate so a regression in either path can't be masked by the other.
+
+pub mod compat_v0_5_admin {}
+
+pub fn legacy_open() {}
+
+exec
+/bin/bash -lc "sed -n '1,120p' scripts/tests/fixtures/ast-shim/rust/verb-reroute/api.rs" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+// Negative fixture for the V05_VERBS re-route rule. `configure_fts`
+// was an AdminClient verb in 0.5.x; in 0.6.0 it MUST NOT exist as a
+// public symbol — collapsed into `admin::configure(name, body)`.
+pub fn configure_fts() {}
+
+exec
+/bin/bash -lc "sed -n '1,120p' scripts/tests/fixtures/ast-shim/python/verb-reroute/api.py" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+"""Negative fixture for the V05_VERBS re-route rule. `rebuild` was an
+AdminClient verb in 0.5.x and has no 0.6.0 equivalent — defining a
+public function with that name in 0.6.0 is banned."""
+
+
+def rebuild():
+    pass
+
+exec
+/bin/bash -lc "sed -n '1,120p' scripts/tests/fixtures/ast-shim/ts/verb-reroute/api.ts" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+// Negative fixture: configure_vec was an AdminClient verb in 0.5.x
+// and has no 0.6.0 equivalent.
+export function configure_vec() {}
+
+exec
+/bin/bash -lc "nl -ba scripts/security/ast_scan.py | sed -n '1,220p'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+     1	#!/usr/bin/env python3
+     2	"""AC-050a AST no-shim scanner.
+     3	
+     4	Scans Rust, Python, and TypeScript source trees for banned shim
+     5	patterns that would let 0.5.x compatibility code linger past the
+     6	0.6.0 rewrite cutover. Banned patterns:
+     7	
+     8	  * Module / file names matching ``legacy_*`` or ``compat_v0_5*``.
+     9	  * Symbol declarations (fn/class/struct/etc.) with those prefixes.
+    10	  * Crate-root ``#![allow(deprecated)]`` (Rust ``lib.rs`` / ``main.rs``).
+    11	  * Re-route stubs from a configured set of 0.5.x verb names
+    12	    (empty by default — no-op until the verb list lands).
+    13	
+    14	The Python surface is parsed with the stdlib ``ast`` module. Rust
+    15	and TypeScript surfaces are tokenized with grammar-scoped regex
+    16	(line-anchored, comment-aware where it matters). Full ``syn`` /
+    17	``ts-morph`` integration is filed as a follow-up; the patterns this
+    18	scanner hunts are textual and bounded.
+    19	"""
+    20	
+    21	from __future__ import annotations
+    22	
+    23	import argparse
+    24	import ast
+    25	import re
+    26	import sys
+    27	from dataclasses import dataclass
+    28	from pathlib import Path
+    29	
+    30	
+    31	# 0.5.x verb names whose re-route stubs are banned at the public API
+    32	# surface. Inventoried from pre-0.6.0 source (`git show 39ee271^:`):
+    33	# python/fathomdb/_engine.py + _admin.py, plus the TS facade. A name
+    34	# belongs here only if the 0.5.x verb has NO 0.6.0 equivalent (or
+    35	# its 0.6.0 name differs). Verbs whose name is unchanged across the
+    36	# rewrite (open/close/write/search/drain/configure/counters/...) are
+    37	# intentionally excluded — they ARE the 0.6.0 surface. Removed verbs
+    38	# kept in 0.6.0 under the same name (check_integrity/safe_export/
+    39	# excise_source) are also excluded.
+    40	#
+    41	# Why: the verb-reroute rule (AC-050a) catches `pub fn <old>() { new() }`
+    42	# shims that would re-introduce 0.5.x compatibility surface. An empty
+    43	# list silently disables the rule.
+    44	V05_VERBS: tuple[str, ...] = (
+    45	    # Engine surface removed/redesigned in 0.6.0
+    46	    "submit",
+    47	    "touch_last_accessed",
+    48	    "fallback_search",
+    49	    "telemetry_snapshot",
+    50	    # AdminClient surface collapsed into `admin.configure(name, body)`
+    51	    "check_semantics",
+    52	    "rebuild",
+    53	    "rebuild_missing",
+    54	    "restore_vector_profiles",
+    55	    "regenerate_vector_embeddings",
+    56	    "restore_logical_id",
+    57	    "purge_logical_id",
+    58	    "configure_fts",
+    59	    "configure_vec",
+    60	    "configure_vec_kinds",
+    61	    "configure_embedding",
+    62	    "capabilities",
+    63	    "current_config",
+    64	    "describe_kind",
+    65	    "drain_vector_projection",
+    66	    "preview_projection_impact",
+    67	    "get_fts_profile",
+    68	    "get_vec_profile",
+    69	    "register_fts_property_schema",
+    70	    "describe_fts_property_schema",
+    71	    "list_fts_property_schemas",
+    72	    "remove_fts_property_schema",
+    73	    "get_rebuild_progress",
+    74	    "register_operational_collection",
+    75	    "describe_operational_collection",
+    76	    "trace_operational_collection",
+    77	    "read_operational_collection",
+    78	    "rebuild_operational_current",
+    79	)
+    80	
+    81	FORBIDDEN_PREFIX = re.compile(r"^(legacy_|compat_v0_5)")
+    82	
+    83	PATH_EXCLUDES = (
+    84	    "node_modules",
+    85	    "target",
+    86	    ".venv",
+    87	    "dist",
+    88	    "build",
+    89	    "__pycache__",
+    90	)
+    91	
+    92	
+    93	@dataclass(frozen=True)
+    94	class Finding:
+    95	    path: Path
+    96	    line: int
+    97	    rule: str
+    98	    detail: str
+    99	
+   100	    def render(self, root: Path) -> str:
+   101	        rel = self.path.relative_to(root) if self.path.is_absolute() else self.path
+   102	        loc = f"{rel}:{self.line}" if self.line else str(rel)
+   103	        return f"{loc}: [{self.rule}] {self.detail}"
+   104	
+   105	
+   106	def excluded(path: Path, scan_root: Path) -> bool:
+   107	    try:
+   108	        rel = path.relative_to(scan_root)
+   109	    except ValueError:
+   110	        rel = path
+   111	    parts = set(rel.parts)
+   112	    return any(token in parts for token in PATH_EXCLUDES)
+   113	
+   114	
+   115	def _check_name(path: Path, line: int, name: str, rule: str) -> list[Finding]:
+   116	    if FORBIDDEN_PREFIX.match(name):
+   117	        return [Finding(path, line, rule, f"forbidden name: {name}")]
+   118	    return []
+   119	
+   120	
+   121	def scan_rust(root: Path) -> list[Finding]:
+   122	    findings: list[Finding] = []
+   123	    for path in sorted(root.rglob("*.rs")):
+   124	        if excluded(path, root):
+   125	            continue
+   126	        findings.extend(_check_name(path, 0, path.stem, "rust-module-name"))
+   127	        try:
+   128	            text = path.read_text(encoding="utf-8", errors="replace")
+   129	        except OSError:
+   130	            continue
+   131	        lines = text.splitlines()
+   132	        is_crate_root = path.name in ("lib.rs", "main.rs")
+   133	        in_block_comment = False
+   134	        for i, raw in enumerate(lines, 1):
+   135	            stripped = raw.strip()
+   136	            # Strip /* ... */ and /** ... */ block-comment regions so
+   137	            # banned names inside doc examples don't false-fire.
+   138	            if in_block_comment:
+   139	                if "*/" in stripped:
+   140	                    in_block_comment = False
+   141	                    # tail after */ may contain real code; re-process it
+   142	                    tail = stripped.split("*/", 1)[1].strip()
+   143	                    if not tail:
+   144	                        continue
+   145	                    stripped = tail
+   146	                else:
+   147	                    continue
+   148	            while stripped.startswith("/*"):
+   149	                if "*/" in stripped[2:]:
+   150	                    stripped = stripped.split("*/", 1)[1].strip()
+   151	                    if not stripped:
+   152	                        break
+   153	                else:
+   154	                    in_block_comment = True
+   155	                    stripped = ""
+   156	                    break
+   157	            if not stripped:
+   158	                continue
+   159	            if stripped.startswith("//"):
+   160	                continue
+   161	            # crate-root inner attribute that suppresses deprecation
+   162	            if is_crate_root and stripped.startswith("#![allow(") and "deprecated" in stripped:
+   163	                findings.append(
+   164	                    Finding(
+   165	                        path,
+   166	                        i,
+   167	                        "rust-crate-root-allow-deprecated",
+   168	                        "crate-root #![allow(deprecated)] is banned",
+   169	                    )
+   170	                )
+   171	            # mod legacy_foo; / pub mod compat_v0_5_admin;
+   172	            m = re.match(r"(?:pub\s+(?:\([^)]+\)\s+)?)?mod\s+([A-Za-z_][A-Za-z0-9_]*)", stripped)
+   173	            if m:
+   174	                findings.extend(_check_name(path, i, m.group(1), "rust-mod-decl"))
+   175	            # pub fn / pub struct / pub enum / pub trait names
+   176	            m = re.match(
+   177	                r"pub(?:\([^)]+\))?\s+(?:unsafe\s+|async\s+|const\s+)*"
+   178	                r"(?:fn|struct|enum|trait|type|const|static)\s+([A-Za-z_][A-Za-z0-9_]*)",
+   179	                stripped,
+   180	            )
+   181	            if m:
+   182	                findings.extend(_check_name(path, i, m.group(1), "rust-public-symbol"))
+   183	            for verb in V05_VERBS:
+   184	                if re.search(rf"\bpub(?:\([^)]+\))?\s+fn\s+{re.escape(verb)}\b", stripped):
+   185	                    findings.append(
+   186	                        Finding(
+   187	                            path,
+   188	                            i,
+   189	                            "rust-05x-verb-reroute",
+   190	                            f"0.5.x verb re-route stub: {verb}",
+   191	                        )
+   192	                    )
+   193	    return findings
+   194	
+   195	
+   196	def scan_python(root: Path) -> list[Finding]:
+   197	    findings: list[Finding] = []
+   198	    for path in sorted(root.rglob("*.py")):
+   199	        if excluded(path, root):
+   200	            continue
+   201	        findings.extend(_check_name(path, 0, path.stem, "python-module-name"))
+   202	        try:
+   203	            tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+   204	        except (SyntaxError, OSError):
+   205	            continue
+   206	        for node in ast.walk(tree):
+   207	            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+   208	                findings.extend(
+   209	                    _check_name(path, node.lineno, node.name, "python-symbol")
+   210	                )
+   211	                if node.name in V05_VERBS:
+   212	                    findings.append(
+   213	                        Finding(
+   214	                            path,
+   215	                            node.lineno,
+   216	                            "python-05x-verb-reroute",
+   217	                            f"0.5.x verb re-route stub: {node.name}",
+   218	                        )
+   219	                    )
+   220	    return findings
+
+exec
+/bin/bash -lc "sed -n '1,220p' scripts/agent-security.sh" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+#!/usr/bin/env bash
+# Aggregate security-fixture gate. Runs the AC-036, AC-037, AC-038,
+# AC-050a, and AC-050c gates that live under scripts/security/.
+#
+# Exit semantics:
+#   0  — every gate green.
+#   1  — at least one gate found a real violation.
+#   2  — toolchain blocker (e.g. strace missing for AC-036/AC-037);
+#        gates that BLOCKER do not fail the overall script unless
+#        STRICT=1 is set.
+#
+# Wiring: scripts/agent-verify.sh invokes this with STRICT=1, so any
+# blocker fails the agent loop on hosts where bootstrap.sh has run.
+# Local dev hosts without strace must either run scripts/bootstrap.sh
+# (which apt-installs strace on Debian) or install strace manually.
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SEC="$SCRIPT_DIR/security"
+
+violations=0
+blockers=0
+
+run_gate() {
+    local label="$1"
+    shift
+    echo "==> $label"
+    set +e
+    "$@"
+    local rc=$?
+    set -e
+    if [ "$rc" -eq 0 ]; then
+        echo "    PASS"
+    elif [ "$rc" -eq 2 ]; then
+        echo "    BLOCKER (toolchain missing)" >&2
+        blockers=$((blockers + 1))
+    else
+        echo "    FAIL (rc=$rc)" >&2
+        violations=$((violations + 1))
+    fi
+}
+
+run_gate "AC-036 no-listen-syscall"     bash "$SEC/check-no-listen.sh"
+run_gate "AC-037 netns-deny-egress"     bash "$SEC/check-netns-deny-egress.sh"
+run_gate "AC-038 FTS5-injection-safe"   cargo test -p fathomdb-engine --test fts5_injection_safety --quiet
+run_gate "AC-050a ast-scan rust"        python3 "$SEC/ast_scan.py" --language rust
+run_gate "AC-050a ast-scan python"      python3 "$SEC/ast_scan.py" --language python
+run_gate "AC-050a ast-scan ts"          python3 "$SEC/ast_scan.py" --language ts
+run_gate "AC-050c removal-detect"       bash "$SEC/check-removal-changelog.sh"
+
+echo
+echo "agent-security: $violations violation(s), $blockers blocker(s)"
+
+if [ "$violations" -gt 0 ]; then
+    exit 1
+fi
+if [ "$blockers" -gt 0 ] && [ "${STRICT:-0}" = "1" ]; then
+    exit 2
+fi
+exit 0
+
+exec
+/bin/bash -lc 'git show 39ee271''^:src/python/fathomdb/_engine.py | rg -n '"'"'^'"\\s*(def|async def)\\s+(submit|touch_last_accessed|fallback_search|telemetry_snapshot)\\b'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ exited 1 in 0ms:
+fatal: path 'src/python/fathomdb/_engine.py' does not exist in '39ee271^'
+
+exec
+/bin/bash -lc 'git show 39ee271''^:src/python/fathomdb/_admin.py | rg -n '"'"'^'"\\s*(def|async def)\\s+(check_semantics|rebuild|configure_fts|current_config|capabilities|trace_operational_collection|rebuild_operational_current)\\b'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ exited 1 in 0ms:
+fatal: path 'src/python/fathomdb/_admin.py' does not exist in '39ee271^'
+
+exec
+/bin/bash -lc "rg -n '\\b(submit|touch_last_accessed|fallback_search|telemetry_snapshot|check_semantics|rebuild|configure_fts|current_config|capabilities|trace_operational_collection|rebuild_operational_current)\\b' src/python/fathomdb src/rust" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+src/rust/crates/fathomdb/tests/no_recovery_surface.rs:19://!   `{recover, restore, repair, fix, rebuild}`.
+src/rust/crates/fathomdb-cli/tests/recovery_cli.rs:15://! - AC-044, AC-063c: `recover --rebuild-projections` runs end-to-end.
+src/rust/crates/fathomdb-cli/tests/recovery_cli.rs:20://! - AC-027a/b/c/d: pre/post vec0-rebuild canonical+FTS+vector parity
+src/rust/crates/fathomdb-cli/tests/recovery_cli.rs:236:    // AC-044 CLI half: `recover --accept-data-loss --rebuild-projections`
+src/rust/crates/fathomdb-cli/tests/recovery_cli.rs:237:    // exits 64 and emits a rebuild report with the
+src/rust/crates/fathomdb-cli/tests/recovery_cli.rs:238:    // `projection_cursor_after` field. Engine-side projection-rebuild
+src/rust/crates/fathomdb-cli/tests/recovery_cli.rs:242:        run_json(&["recover", "--accept-data-loss", "--rebuild-projections", db.to_str().unwrap()]);
+src/rust/crates/fathomdb-cli/tests/recovery_cli.rs:244:    assert_eq!(parsed.get("verb").and_then(Value::as_str), Some("rebuild-projections"));
+src/rust/crates/fathomdb-cli/tests/recovery_cli.rs:247:        "rebuild report must carry projection_cursor_after",
+src/rust/crates/fathomdb-cli/tests/recovery_cli.rs:254:    // AC-063c CLI half: `recover --rebuild-projections` is the
+src/rust/crates/fathomdb-cli/tests/recovery_cli.rs:259:        run_json(&["recover", "--accept-data-loss", "--rebuild-projections", db.to_str().unwrap()]);
+src/rust/crates/fathomdb-cli/tests/recovery_cli.rs:309:#[ignore = "AC-027a: dep-Phase-10a-vec0-rebuild-pre-post-canonical-compare; engine-side fixture not shared with CLI"]
+src/rust/crates/fathomdb-engine/tests/rebuild_vec0.rs:22:        Self { identity: EmbedderIdentity::new("vec0-rebuild", "rev-a", dim), vector }
+src/rust/crates/fathomdb-cli/tests/parser.rs:29:        "--rebuild-vec0",
+src/rust/crates/fathomdb-cli/tests/parser.rs:30:        "--rebuild-projections",
+src/rust/crates/fathomdb-cli/tests/operator_cli.rs:43:    "--rebuild-vec0",
+src/rust/crates/fathomdb-cli/tests/operator_cli.rs:44:    "--rebuild-projections",
+src/rust/crates/fathomdb-engine/tests/rebuild_report.rs:18:        Self { identity: EmbedderIdentity::new("rebuild-report", "rev-a", dim), vector }
+src/rust/crates/fathomdb-engine/tests/rebuild_report.rs:45:    // Write a small fixture of canonical rows so rebuild has real work.
+src/rust/crates/fathomdb-engine/tests/rebuild_report.rs:71:    // projection_cursor_after is reset to 0 (per current rebuild semantics).
+src/rust/crates/fathomdb-engine/tests/rebuild_report.rs:106:        "vec0 rebuild does no synchronous re-insert; re-derivation is async via projection scheduler"
+src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:24:        Self { identity: EmbedderIdentity::new("rebuild", "rev-a", dim), vector }
+src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:47:            identity: EmbedderIdentity::new("rebuild", "rev-a", dim),
+src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:130:        opened.engine.drain(10_000).expect("post-rebuild drain");
+src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:144:        "sentinel still present in shadow-table pages after rebuild"
+src/rust/crates/fathomdb-cli/src/lib.rs:5://! `doctor safe-export`, `doctor trace`, `recover --rebuild-projections`,
+src/rust/crates/fathomdb-cli/src/lib.rs:6://! `recover --rebuild-vec0`, and `recover --excise-source` invoke the
+src/rust/crates/fathomdb-cli/src/lib.rs:298:        return wire_recover(&args.db_path, "rebuild-projections", |e| {
+src/rust/crates/fathomdb-cli/src/lib.rs:299:            e.rebuild_projections().map(|r| rebuild_report_json("rebuild-projections", &r))
+src/rust/crates/fathomdb-cli/src/lib.rs:303:        return wire_recover(&args.db_path, "rebuild-vec0", |e| {
+src/rust/crates/fathomdb-cli/src/lib.rs:304:            e.rebuild_vec0().map(|r| rebuild_report_json("rebuild-vec0", &r))
+src/rust/crates/fathomdb-engine/src/lib.rs:41:/// rebuild path freezes the scheduler before truncating shadow rows, so
+src/rust/crates/fathomdb-engine/src/lib.rs:899:/// rebuild emitted by [`Engine::rebuild_projections`]. `Vec0` covers
+src/rust/crates/fathomdb-engine/src/lib.rs:907:/// Structured result of a rebuild operation. `rows_invalidated` is the
+src/rust/crates/fathomdb-engine/src/lib.rs:909:/// is the count of rows the synchronous rebuild loop re-materialised
+src/rust/crates/fathomdb-engine/src/lib.rs:911:/// not counted here). `projection_cursor_after` is the post-rebuild value
+src/rust/crates/fathomdb-engine/src/lib.rs:1935:    /// `recover --rebuild-vec0` is the surface for vec0-only repair.
+src/rust/crates/fathomdb-engine/src/lib.rs:2004:    /// and no blanket projection rebuild is issued.
+src/rust/crates/fathomdb-engine/src/lib.rs:2236:        // operator retry rather than silently corrupt the rebuild.
+src/rust/crates/fathomdb-engine/src/lib.rs:3023:/// silently rebuild from a truncated WAL.
+
+exec
+/bin/bash -lc "python3 - <<'PY'
+import re
+from pathlib import Path
+from scripts.security.ast_scan import V05_VERBS
+roots=[Path('src/python/fathomdb'), Path('src/rust')]
+for verb in V05_VERBS:
+    hits=[]
+    pat=re.compile(rf'\\b{re.escape(verb)}\\b')
+    for root in roots:
+        for path in root.rglob('*'):
+            if path.is_file() and path.suffix in {'.py','.rs','.toml','.md'}:
+                try:
+                    text=path.read_text(encoding='utf-8', errors='replace')
+                except Exception:
+                    continue
+                for i,line in enumerate(text.splitlines(),1):
+                    if pat.search(line):
+                        hits.append(f'{path}:{i}:{line.strip()}')
+    print(verb, len(hits))
+    for h in hits[:3]:
+        print('  ', h)
+PY" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 682ms:
+submit 0
+touch_last_accessed 0
+fallback_search 0
+telemetry_snapshot 0
+check_semantics 0
+rebuild 40
+   src/rust/crates/fathomdb-engine/src/lib.rs:41:/// rebuild path freezes the scheduler before truncating shadow rows, so
+   src/rust/crates/fathomdb-engine/src/lib.rs:899:/// rebuild emitted by [`Engine::rebuild_projections`]. `Vec0` covers
+   src/rust/crates/fathomdb-engine/src/lib.rs:907:/// Structured result of a rebuild operation. `rows_invalidated` is the
+rebuild_missing 0
+restore_vector_profiles 0
+regenerate_vector_embeddings 0
+restore_logical_id 0
+purge_logical_id 0
+configure_fts 0
+configure_vec 0
+configure_vec_kinds 0
+configure_embedding 0
+capabilities 0
+current_config 0
+describe_kind 0
+drain_vector_projection 0
+preview_projection_impact 0
+get_fts_profile 0
+get_vec_profile 0
+register_fts_property_schema 0
+describe_fts_property_schema 0
+list_fts_property_schemas 0
+remove_fts_property_schema 0
+get_rebuild_progress 0
+register_operational_collection 0
+describe_operational_collection 0
+trace_operational_collection 0
+read_operational_collection 0
+rebuild_operational_current 0
+
+exec
+/bin/bash -lc 'git ls-tree -r --name-only 39ee271''^ | rg '"'/_engine\\.py"'$|/_admin'"\\.py"'$|fathomdb/.+'"\\.py"'$'"'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+python/fathomdb/__init__.py
+python/fathomdb/_admin.py
+python/fathomdb/_cli.py
+python/fathomdb/_engine.py
+python/fathomdb/_feedback.py
+python/fathomdb/_query.py
+python/fathomdb/_types.py
+python/fathomdb/_write_builder.py
+python/fathomdb/embedders/__init__.py
+python/fathomdb/embedders/_base.py
+python/fathomdb/embedders/_builtin.py
+python/fathomdb/embedders/_jina.py
+python/fathomdb/embedders/_openai.py
+python/fathomdb/embedders/_stella.py
+python/fathomdb/embedders/_subprocess.py
+python/fathomdb/errors.py
+python/fathomdb/tests/__init__.py
+python/fathomdb/tests/test_grouped_expand.py
+
+exec
+/bin/bash -lc "rg -n --glob '*.py' --glob '*.rs' --glob '*.ts' --glob '*.tsx' '\\b(submit|telemetry_snapshot|check_semantics|configure_fts|current_config|capabilities|trace_operational_collection|rebuild_operational_current)\\b' src/python/fathomdb src/rust src/ts" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ exited 1 in 0ms:
+exec
+/bin/bash -lc "python3 - <<'PY'
+import ast, pathlib, re
+text=pathlib.Path('scripts/security/ast_scan.py').read_text()
+mod=ast.parse(text)
+verbs=[]
+for node in mod.body:
+    if isinstance(node, ast.AnnAssign) and getattr(node.target, 'id', None)=='V05_VERBS':
+        verbs=[elt.value for elt in node.value.elts]
+        break
+samples=['submit','telemetry_snapshot','check_semantics','configure_fts','current_config','capabilities','trace_operational_collection','rebuild_operational_current']
+for verb in samples:
+    print('---', verb)
+    cmd=f\"rg -n --glob '*.py' --glob '*.rs' --glob '*.ts' --glob '*.tsx' '\\\\b{re.escape(verb)}\\\\b' src/python/fathomdb src/rust src/ts\"
+    print(cmd)
+PY" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+--- submit
+rg -n --glob '*.py' --glob '*.rs' --glob '*.ts' --glob '*.tsx' '\bsubmit\b' src/python/fathomdb src/rust src/ts
+--- telemetry_snapshot
+rg -n --glob '*.py' --glob '*.rs' --glob '*.ts' --glob '*.tsx' '\btelemetry_snapshot\b' src/python/fathomdb src/rust src/ts
+--- check_semantics
+rg -n --glob '*.py' --glob '*.rs' --glob '*.ts' --glob '*.tsx' '\bcheck_semantics\b' src/python/fathomdb src/rust src/ts
+--- configure_fts
+rg -n --glob '*.py' --glob '*.rs' --glob '*.ts' --glob '*.tsx' '\bconfigure_fts\b' src/python/fathomdb src/rust src/ts
+--- current_config
+rg -n --glob '*.py' --glob '*.rs' --glob '*.ts' --glob '*.tsx' '\bcurrent_config\b' src/python/fathomdb src/rust src/ts
+--- capabilities
+rg -n --glob '*.py' --glob '*.rs' --glob '*.ts' --glob '*.tsx' '\bcapabilities\b' src/python/fathomdb src/rust src/ts
+--- trace_operational_collection
+rg -n --glob '*.py' --glob '*.rs' --glob '*.ts' --glob '*.tsx' '\btrace_operational_collection\b' src/python/fathomdb src/rust src/ts
+--- rebuild_operational_current
+rg -n --glob '*.py' --glob '*.rs' --glob '*.ts' --glob '*.tsx' '\brebuild_operational_current\b' src/python/fathomdb src/rust src/ts
+
+exec
+/bin/bash -lc 'git show 39ee271''^:python/fathomdb/_engine.py | rg -n '"'"'^'"\\s*(def|async def)\\s+(submit|touch_last_accessed|fallback_search|telemetry_snapshot)\\b'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+168:    def telemetry_snapshot(self) -> TelemetrySnapshot:
+202:    def fallback_search(
+270:    def submit(
+284:    def touch_last_accessed(
+
+exec
+/bin/bash -lc 'git show 39ee271''^:python/fathomdb/_admin.py | rg -n '"'"'^'"\\s*(def|async def)\\s+(check_semantics|rebuild|rebuild_missing|configure_fts|configure_vec|current_config|capabilities|trace_operational_collection|rebuild_operational_current)\\b'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+96:    def check_semantics(
+113:    def rebuild(
+141:    def rebuild_missing(
+554:    def configure_fts(
+613:    def configure_vec(
+733:    def capabilities(self) -> dict:
+744:    def current_config(self) -> dict:
+952:    def trace_operational_collection(
+1009:    def rebuild_operational_current(
+
+exec
+/bin/bash -lc 'git show 39ee271''^:python/fathomdb/_admin.py | sed -n '"'1,260p'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+from __future__ import annotations
+
+import json
+import os
+
+from ._feedback import run_with_feedback
+from ._fathomdb import EngineCore, list_tokenizer_presets as _list_tokenizer_presets
+from ._types import (
+    FeedbackConfig,
+    FtsProfile,
+    FtsPropertyPathMode,
+    FtsPropertyPathSpec,
+    FtsPropertySchemaRecord,
+    ImpactReport,
+    IntegrityReport,
+    LogicalPurgeReport,
+    LogicalRestoreReport,
+    OperationalCollectionRecord,
+    OperationalCompactionReport,
+    OperationalHistoryValidationReport,
+    OperationalPurgeReport,
+    OperationalReadReport,
+    OperationalReadRequest,
+    OperationalRegisterRequest,
+    OperationalRepairReport,
+    OperationalRetentionPlanReport,
+    OperationalRetentionRunReport,
+    OperationalSecondaryIndexRebuildReport,
+    OperationalTraceReport,
+    ProjectionRepairReport,
+    ProjectionTarget,
+    ProvenancePurgeReport,
+    RebuildImpactError,
+    RebuildMode,
+    RebuildProgress,
+    SafeExportManifest,
+    SemanticReport,
+    TraceReport,
+    VecProfile,
+    VectorRegenerationConfig,
+    VectorRegenerationReport,
+)
+
+# ARCH-006: Rust (`fathomdb_engine::TOKENIZER_PRESETS`) is the single source of
+# truth. This dict is populated from the native extension at import time so we
+# never have to hand-sync a duplicate across Rust/Python/TypeScript.
+TOKENIZER_PRESETS: dict[str, str] = _list_tokenizer_presets()
+
+
+def _resolve_max_tokens(embedder) -> int:
+    """Extract ``max_tokens`` from an embedder, defaulting to 512.
+
+    Works for real ``QueryEmbedder`` implementations (which expose a
+    ``max_tokens()`` callable) and for test mocks where the attribute may
+    be missing or non-numeric.
+    """
+    fn = getattr(embedder, "max_tokens", None)
+    if callable(fn):
+        try:
+            value = fn()
+        except Exception:  # noqa: BLE001
+            return 512
+        if isinstance(value, int) and value > 0:
+            return value
+    return 512
+
+
+class AdminClient:
+    """Administrative operations for a fathomdb database.
+
+    Provides integrity checks, projection rebuilds, source tracing, safe
+    exports, and operational collection management.  Accessed via
+    :attr:`Engine.admin`.
+    """
+
+    def __init__(self, core: EngineCore) -> None:
+        self._core = core
+
+    def check_integrity(
+        self, *, progress_callback=None, feedback_config: FeedbackConfig | None = None
+    ) -> IntegrityReport:
+        """Run physical and logical integrity checks on the database."""
+        return IntegrityReport.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="admin.check_integrity",
+                    metadata=None,
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=self._core.check_integrity,
+                )
+            )
+        )
+
+    def check_semantics(
+        self, *, progress_callback=None, feedback_config: FeedbackConfig | None = None
+    ) -> SemanticReport:
+        """Run semantic validation (orphan chunks, dangling edges, etc.)."""
+        return SemanticReport.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="admin.check_semantics",
+                    metadata=None,
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=self._core.check_semantics,
+                )
+            )
+        )
+
+    def rebuild(
+        self,
+        target: ProjectionTarget | str = ProjectionTarget.ALL,
+        *,
+        progress_callback=None,
+        feedback_config: FeedbackConfig | None = None,
+    ) -> ProjectionRepairReport:
+        """Rebuild projection indexes (FTS, vector, or all).
+
+        Args:
+            target: Which projections to rebuild ("fts", "vec", or "all").
+            progress_callback: Optional callback invoked with feedback events.
+            feedback_config: Timing thresholds for progress feedback.
+        """
+        value = target.value if isinstance(target, ProjectionTarget) else target
+        return ProjectionRepairReport.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="admin.rebuild_projections",
+                    metadata={"target": value},
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=lambda: self._core.rebuild_projections(value),
+                )
+            )
+        )
+
+    def rebuild_missing(
+        self, *, progress_callback=None, feedback_config: FeedbackConfig | None = None
+    ) -> ProjectionRepairReport:
+        """Rebuild only missing projection rows without touching existing ones."""
+        return ProjectionRepairReport.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="admin.rebuild_missing_projections",
+                    metadata=None,
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=self._core.rebuild_missing_projections,
+                )
+            )
+        )
+
+    # ── Vector profile management ──────────────────────────────────
+
+    def restore_vector_profiles(
+        self,
+        *,
+        progress_callback=None,
+        feedback_config: FeedbackConfig | None = None,
+    ) -> ProjectionRepairReport:
+        """Restore vector profile metadata from the database schema."""
+        return ProjectionRepairReport.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="admin.restore_vector_profiles",
+                    metadata=None,
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=self._core.restore_vector_profiles,
+                )
+            )
+        )
+
+    def regenerate_vector_embeddings(
+        self,
+        config: VectorRegenerationConfig,
+        *,
+        progress_callback=None,
+        feedback_config: FeedbackConfig | None = None,
+    ) -> VectorRegenerationReport:
+        """Regenerate vector embeddings using the engine's configured embedder.
+
+        The 0.4.0 architectural invariant is that vector identity is the
+        embedder's responsibility. The engine must have been opened with
+        a non-None ``EmbedderChoice``; the regen path stamps the
+        resulting profile directly from ``embedder.identity()`` so
+        identity cannot drift between the read-path and the regen-path.
+
+        Args:
+            config: Destination / chunking configuration. Identity
+                fields (``model_identity``, ``model_version``,
+                ``dimension``, ``normalization_policy``,
+                ``generator_command``) are no longer accepted — they
+                were removed in 0.4.0.
+            progress_callback: Optional callback invoked with feedback events.
+            feedback_config: Timing thresholds for progress feedback.
+        """
+        return VectorRegenerationReport.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="admin.regenerate_vector_embeddings",
+                    metadata={
+                        "kind": config.kind,
+                        "profile": config.profile,
+                    },
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=lambda: self._core.regenerate_vector_embeddings(
+                        json.dumps(config.to_wire())
+                    ),
+                )
+            )
+        )
+
+    def trace_source(
+        self,
+        source_ref: str,
+        *,
+        progress_callback=None,
+        feedback_config: FeedbackConfig | None = None,
+    ) -> TraceReport:
+        """Trace all nodes, edges, and actions originating from a source reference."""
+        return TraceReport.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="admin.trace_source",
+                    metadata={"source_ref": source_ref},
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=lambda: self._core.trace_source(source_ref),
+                )
+            )
+        )
+
+    def excise_source(
+        self,
+        source_ref: str,
+        *,
+        progress_callback=None,
+        feedback_config: FeedbackConfig | None = None,
+    ) -> TraceReport:
+        """Remove all data originating from a source reference."""
+        return TraceReport.from_wire(
+            json.loads(
+                run_with_feedback(
+                    surface="python",
+                    operation_kind="admin.excise_source",
+                    metadata={"source_ref": source_ref},
+                    progress_callback=progress_callback,
+                    feedback_config=feedback_config,
+                    operation=lambda: self._core.excise_source(source_ref),
+                )
+
+exec
+/bin/bash -lc "rg -n '"'^'"\\s*(def|async def)\\s+rebuild\\b|\\brebuild\\(' src/python/fathomdb src/rust/crates -g '*.py' -g '*.rs'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ exited 1 in 0ms:
+exec
+/bin/bash -lc 'git show --stat --oneline 7b0f30c --' in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+7b0f30c docs(12-S-fix-1): output JSON — three findings closed, agent-verify wired
+ dev/plans/runs/12-S-fix-1-output.json | 23 +++++++++++++++++++++++
+ 1 file changed, 23 insertions(+)
+
+exec
+/bin/bash -lc 'git show --stat --oneline d48d226 --' in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+d48d226 docs(12-S): output JSON — five sub-scopes landed, two blockers surfaced
+ dev/plans/runs/12-S-security-fixtures-output.json | 114 ++++++++++++++++++++++
+ 1 file changed, 114 insertions(+)
+
+exec
+/bin/bash -lc 'git log --oneline --decorate -n 10' in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+7b0f30c (HEAD -> phase-12-S-security-fixtures-20260517T195735Z) docs(12-S-fix-1): output JSON — three findings closed, agent-verify wired
+e77265c fix(12-S-fix-1): finding 3 — wire STRICT=1 + apt-get update
+d25c55d fix(12-S-fix-1): findings 1+2 — populate V05_VERBS, harden Rust scanner
+d48d226 docs(12-S): output JSON — five sub-scopes landed, two blockers surfaced
+dea312e test(12-S): land AC-036/037/038/050a/050c security fixtures
+f2f21b5 docs(12-D): promote codex PASS verdict; close Phase 12-D; advance to Wave 1 (12-S + 12-B)
+4309d8d docs(12-D-fix-1): output JSON + 12-D review verdict + fix-1 prompt
+5449d2e test(durability): 12-D-fix-1 findings 2/3/4
+40a6c16 fix(open): probe_wal_sidecar bounded 32-byte read (12-D-fix-1 #1)
+89c7300 docs(12-D): output JSON — Sub-1/Sub-2 landed, Sub-3 surfaced as blocker-3
+
+codex
+I’ve identified one likely remaining hole in the Rust scanner just from the code: it tracks block comments with a boolean, but Rust permits nested `/* ... */`. I’m going to exercise that and the tail-after-`*/` edge cases directly with the scanner in a temp directory so the verdict is evidence-backed.
+exec
+/bin/bash -lc 'bash scripts/tests/test_ast_scan.sh' in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+exec
+/bin/bash -lc "python3 - <<'PY'
+import re
+from pathlib import Path
+text=Path('scripts/security/ast_scan.py').read_text()
+start=text.index('V05_VERBS')
+print('V05_VERBS count =', text[start:].count('\"')//2)
+PY" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+V05_VERBS count = 110
+
+exec
+/bin/bash -lc "python3 - <<'PY'
+import tempfile
+from pathlib import Path
+from scripts.security.ast_scan import scan_rust
+cases = {
+    'nested_comment_only': '/* outer /* legacy_nested */ still outer */\\npub fn modern() {}\\n',
+    'nested_comment_then_code': '/* outer /* inner */ still outer */ pub fn legacy_nested() {}\\n',
+    'tail_after_closer': '/* comment\\n*/ pub fn legacy_tail() {}\\n',
+    'same_line_prefix_and_suffix': '/* text */ pub fn legacy_inline() {} /* text */\\n',
+}
+with tempfile.TemporaryDirectory() as td:
+    root = Path(td)
+    for name, text in cases.items():
+        p = root / f'{name}.rs'
+        p.write_text(text)
+        findings = scan_rust(root)
+        print(name)
+        if not findings:
+            print('  NO_FINDINGS')
+        else:
+            for f in findings:
+                print(' ', f.render(root))
+        for child in root.glob('*.rs'):
+            if child.name "'!= p.name:
+                child.unlink()
+PY' in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+exec
+/bin/bash -lc "python3 - <<'PY'
+from pathlib import Path
+import re
+from scripts.security.ast_scan import V05_VERBS
+roots=[Path('src/python/fathomdb'), Path('src/rust')]
+samples=['submit','touch_last_accessed','telemetry_snapshot','check_semantics','configure_fts','current_config','trace_operational_collection','rebuild_operational_current']
+for verb in samples:
+    found=False
+    for root in roots:
+        for path in root.rglob('*'):
+            if path.is_file() and path.suffix in {'.py','.rs'}:
+                text=path.read_text(encoding='utf-8', errors='replace')
+                if re.search(rf'\\b{re.escape(verb)}\\b', text):
+                    print(f'{verb}: HIT {path}')
+                    found=True
+                    break
+        if found:
+            break
+    if not found:
+        print(f'{verb}: absent from src/python/fathomdb + src/rust')
+PY" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ exited 1 in 132ms:
+OK rust clean
+mktemp: failed to create file via template ‘/tmp/tmp.XXXXXXXXXX’: Read-only file system
+
+ exited 1 in 131ms:
+Traceback (most recent call last):
+  File "<stdin>", line 10, in <module>
+  File "/usr/lib/python3.10/tempfile.py", line 974, in __init__
+    self.name = mkdtemp(suffix, prefix, dir)
+  File "/usr/lib/python3.10/tempfile.py", line 512, in mkdtemp
+    prefix, suffix, dir, output_type = _sanitize_params(prefix, suffix, dir)
+  File "/usr/lib/python3.10/tempfile.py", line 265, in _sanitize_params
+    dir = gettempdir()
+  File "/usr/lib/python3.10/tempfile.py", line 454, in gettempdir
+    return _os.fsdecode(_gettempdir())
+  File "/usr/lib/python3.10/tempfile.py", line 447, in _gettempdir
+    tempdir = _get_default_tempdir()
+  File "/usr/lib/python3.10/tempfile.py", line 362, in _get_default_tempdir
+    raise FileNotFoundError(_errno.ENOENT,
+FileNotFoundError: [Errno 2] No usable temporary directory found in ['/tmp', '/var/tmp', '/usr/tmp', '/tmp/fdb-12-S-security-fixtures-20260517T195735Z']
+
+ succeeded in 204ms:
+submit: absent from src/python/fathomdb + src/rust
+touch_last_accessed: absent from src/python/fathomdb + src/rust
+telemetry_snapshot: absent from src/python/fathomdb + src/rust
+check_semantics: absent from src/python/fathomdb + src/rust
+configure_fts: absent from src/python/fathomdb + src/rust
+current_config: absent from src/python/fathomdb + src/rust
+trace_operational_collection: absent from src/python/fathomdb + src/rust
+rebuild_operational_current: absent from src/python/fathomdb + src/rust
+
+codex
+The sandbox blocks `mktemp`, so the repo’s shell self-test can’t run end-to-end here. I can still exercise the Rust comment-stripping logic without writing files by replaying the exact `scan_rust()` state machine against representative lines in-memory.
+exec
+/bin/bash -lc "git show d25c55d:scripts/security/ast_scan.py | sed -n '121,193p'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+def scan_rust(root: Path) -> list[Finding]:
+    findings: list[Finding] = []
+    for path in sorted(root.rglob("*.rs")):
+        if excluded(path, root):
+            continue
+        findings.extend(_check_name(path, 0, path.stem, "rust-module-name"))
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        lines = text.splitlines()
+        is_crate_root = path.name in ("lib.rs", "main.rs")
+        in_block_comment = False
+        for i, raw in enumerate(lines, 1):
+            stripped = raw.strip()
+            # Strip /* ... */ and /** ... */ block-comment regions so
+            # banned names inside doc examples don't false-fire.
+            if in_block_comment:
+                if "*/" in stripped:
+                    in_block_comment = False
+                    # tail after */ may contain real code; re-process it
+                    tail = stripped.split("*/", 1)[1].strip()
+                    if not tail:
+                        continue
+                    stripped = tail
+                else:
+                    continue
+            while stripped.startswith("/*"):
+                if "*/" in stripped[2:]:
+                    stripped = stripped.split("*/", 1)[1].strip()
+                    if not stripped:
+                        break
+                else:
+                    in_block_comment = True
+                    stripped = ""
+                    break
+            if not stripped:
+                continue
+            if stripped.startswith("//"):
+                continue
+            # crate-root inner attribute that suppresses deprecation
+            if is_crate_root and stripped.startswith("#![allow(") and "deprecated" in stripped:
+                findings.append(
+                    Finding(
+                        path,
+                        i,
+                        "rust-crate-root-allow-deprecated",
+                        "crate-root #![allow(deprecated)] is banned",
+                    )
+                )
+            # mod legacy_foo; / pub mod compat_v0_5_admin;
+            m = re.match(r"(?:pub\s+(?:\([^)]+\)\s+)?)?mod\s+([A-Za-z_][A-Za-z0-9_]*)", stripped)
+            if m:
+                findings.extend(_check_name(path, i, m.group(1), "rust-mod-decl"))
+            # pub fn / pub struct / pub enum / pub trait names
+            m = re.match(
+                r"pub(?:\([^)]+\))?\s+(?:unsafe\s+|async\s+|const\s+)*"
+                r"(?:fn|struct|enum|trait|type|const|static)\s+([A-Za-z_][A-Za-z0-9_]*)",
+                stripped,
+            )
+            if m:
+                findings.extend(_check_name(path, i, m.group(1), "rust-public-symbol"))
+            for verb in V05_VERBS:
+                if re.search(rf"\bpub(?:\([^)]+\))?\s+fn\s+{re.escape(verb)}\b", stripped):
+                    findings.append(
+                        Finding(
+                            path,
+                            i,
+                            "rust-05x-verb-reroute",
+                            f"0.5.x verb re-route stub: {verb}",
+                        )
+                    )
+    return findings
+
+exec
+/bin/bash -lc "git show d25c55d:scripts/tests/test_ast_scan.sh | sed -n '1,220p'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+#!/usr/bin/env bash
+# Self-test for AC-050a AST no-shim scanner (scripts/security/ast_scan.py).
+# Drives clean + dirty fixtures per language, plus targeted sub-fixtures
+# for the verb-reroute, crate-root, and block-comment rules.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+SCAN="$REPO_ROOT/scripts/security/ast_scan.py"
+FIX="$SCRIPT_DIR/fixtures/ast-shim"
+
+fail() { echo "FAIL: $*" >&2; exit 1; }
+
+run_clean() {
+    local lang="$1" path="$2"
+    if ! python3 "$SCAN" --language "$lang" --path "$path" --repo-root "$REPO_ROOT" >/dev/null 2>&1; then
+        fail "$lang clean fixture ($path) must exit 0"
+    fi
+}
+
+run_dirty() {
+    local lang="$1" path="$2" expect_pattern="$3"
+    local errf
+    errf=$(mktemp)
+    set +e
+    python3 "$SCAN" --language "$lang" --path "$path" --repo-root "$REPO_ROOT" >/dev/null 2>"$errf"
+    local rc=$?
+    set -e
+    if [ "$rc" -ne 1 ]; then
+        cat "$errf" >&2
+        rm -f "$errf"
+        fail "$lang dirty fixture ($path) must exit 1, got $rc"
+    fi
+    if ! grep -qE "$expect_pattern" "$errf"; then
+        cat "$errf" >&2
+        rm -f "$errf"
+        fail "$lang dirty fixture ($path): expected pattern '$expect_pattern' missing"
+    fi
+    rm -f "$errf"
+}
+
+# V05_VERBS must be non-empty — sentinel that the rule is enforced.
+verb_count=$(python3 -c 'import sys; sys.path.insert(0, "'"$REPO_ROOT"'/scripts/security"); import ast_scan; print(len(ast_scan.V05_VERBS))')
+if [ "$verb_count" -lt 1 ]; then
+    fail "V05_VERBS is empty — verb-reroute rule is unenforced"
+fi
+echo "OK V05_VERBS populated ($verb_count entries)"
+
+for lang in rust python ts; do
+    run_clean "$lang" "$FIX/$lang/clean"
+    echo "OK $lang clean"
+    run_dirty "$lang" "$FIX/$lang/dirty" "(legacy_|compat_v0_5|allow\\(deprecated\\)|verb re-route)"
+    echo "OK $lang dirty"
+done
+
+# Targeted sub-rules: each fixture lives in its own directory so the
+# scanner's rglob finds exactly one file and the assertion is isolated.
+run_dirty rust "$FIX/rust/crate-root" "rust-crate-root-allow-deprecated"
+echo "OK rust crate-root rule (lib.rs isolated)"
+
+run_dirty rust "$FIX/rust/verb-reroute" "rust-05x-verb-reroute"
+echo "OK rust v05 verb-reroute"
+
+run_dirty python "$FIX/python/verb-reroute" "python-05x-verb-reroute"
+echo "OK python v05 verb-reroute"
+
+run_dirty ts "$FIX/ts/verb-reroute" "ts-05x-verb-reroute"
+echo "OK ts v05 verb-reroute"
+
+# Block-comment stripping: banned names inside /* */ must NOT flag
+# (asserted by the rust/clean directory passing — block_comment_safe.rs
+# embeds banned names in /* */, /*! */, and /** */ doc comments).
+# Real code OUTSIDE a block comment in a file that ALSO contains a
+# block comment must still flag.
+run_dirty rust "$FIX/rust/block-comment-real" "(legacy_|rust-public-symbol)"
+echo "OK rust block-comment does not swallow real code"
+
+echo "test_ast_scan.sh: all language fixtures pass"
+
+exec
+/bin/bash -lc "python3 - <<'PY'
+# Replay the exact scan_rust block-comment state machine on representative lines.
+def process(lines):
+    in_block_comment = False
+    out=[]
+    for raw in lines:
+        stripped = raw.strip()
+        if in_block_comment:
+            if '*/' in stripped:
+                in_block_comment = False
+                tail = stripped.split('*/', 1)[1].strip()
+                if not tail:
+                    out.append('<continue-empty-tail>')
+                    continue
+                stripped = tail
+            else:
+                out.append('<continue-in-comment>')
+                continue
+        while stripped.startswith('/*'):
+            if '*/' in stripped[2:]:
+                stripped = stripped.split('*/', 1)[1].strip()
+                if not stripped:
+                    break
+            else:
+                in_block_comment = True
+                stripped = ''
+                break
+        out.append(stripped if stripped else '<empty>')
+    return out
+
+cases = {
+    'nested_comment_only': ['/* outer /* legacy_nested */ still outer */', 'pub fn modern() {}'],
+    'nested_comment_then_code_same_line': ['/* outer /* inner */ still outer */ pub fn legacy_nested() {}'],
+    'tail_after_closer': ['/* comment', '*/ pub fn legacy_tail() {}'],
+    'same_line_prefix_and_suffix': ['/* text */ pub fn legacy_inline() {} /* text */'],
+}
+for name, lines in cases.items():
+    print(name)
+    for item in process(lines):
+        print(' ', item)
+PY" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+nested_comment_only
+  still outer */
+  pub fn modern() {}
+nested_comment_then_code_same_line
+  still outer */ pub fn legacy_nested() {}
+tail_after_closer
+  <empty>
+  pub fn legacy_tail() {}
+same_line_prefix_and_suffix
+  pub fn legacy_inline() {} /* text */
+
+exec
+/bin/bash -lc "rg -n '"'^'"\\s*def\\s+(submit|touch_last_accessed|telemetry_snapshot|check_semantics|configure_fts|current_config|trace_operational_collection|rebuild_operational_current)\\b' src/python/fathomdb" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ exited 1 in 0ms:
+exec
+/bin/bash -lc "rg -n '"'^'"\\s*pub(?:\\(["'^)]+'"\\))?\\s+(?:unsafe\\s+|async\\s+|const\\s+)*(?:fn|struct|enum|trait|type|const|static)\\s+(submit|touch_last_accessed|telemetry_snapshot|check_semantics|configure_fts|current_config|trace_operational_collection|rebuild_operational_current)\\b' src/rust" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ exited 1 in 0ms:
+exec
+/bin/bash -lc 'git show 39ee271''^:python/fathomdb/_engine.py | rg -n '"'"'^'"\\s*(def|async def)\\s+(submit|touch_last_accessed|telemetry_snapshot)\\b'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+168:    def telemetry_snapshot(self) -> TelemetrySnapshot:
+270:    def submit(
+284:    def touch_last_accessed(
+
+exec
+/bin/bash -lc 'git show 39ee271''^:python/fathomdb/_admin.py | rg -n '"'"'^'"\\s*(def|async def)\\s+(check_semantics|configure_fts|current_config|trace_operational_collection|rebuild_operational_current)\\b'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+96:    def check_semantics(
+554:    def configure_fts(
+744:    def current_config(self) -> dict:
+952:    def trace_operational_collection(
+1009:    def rebuild_operational_current(
+
+exec
+/bin/bash -lc "nl -ba scripts/agent-verify.sh | sed -n '1,120p'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+     1	#!/usr/bin/env bash
+     2	# Run lint -> typecheck -> test in latency order. Short-circuit on first failure.
+     3	# This is the agent-loop gate. The broader CI gate is scripts/check.sh.
+     4	set -euo pipefail
+     5	
+     6	SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+     7	cd_repo_root() { cd "$(git rev-parse --show-toplevel)"; }
+     8	cd_repo_root
+     9	
+    10	start=$(date +%s)
+    11	
+    12	run_step() {
+    13	  local step="$1"
+    14	  if ! "$SCRIPT_DIR/agent-$step.sh"; then
+    15	    local end
+    16	    end=$(date +%s)
+    17	    printf 'FAIL verify at step=%s (%ss elapsed)\n' "$step" "$((end - start))"
+    18	    return 1
+    19	  fi
+    20	}
+    21	
+    22	run_step lint || exit 1
+    23	run_step typecheck || exit 1
+    24	# AC-036/037/038/050a/050c. STRICT=1 promotes toolchain blockers to
+    25	# hard failures so the gate is real (rc=2 → exit). Local dev hosts
+    26	# without strace must run scripts/bootstrap.sh first.
+    27	STRICT=1 bash "$SCRIPT_DIR/agent-security.sh" || exit 1
+    28	run_step test || exit 1
+    29	
+    30	end=$(date +%s)
+    31	if [ "${AGENT_VERBOSE:-0}" = "1" ]; then
+    32	  printf 'ok verify %ss\n' "$((end - start))"
+    33	fi
+
+exec
+/bin/bash -lc "nl -ba scripts/bootstrap.sh | sed -n '1,140p'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+     1	#!/usr/bin/env bash
+     2	set -euo pipefail
+     3	
+     4	cd "$(git rev-parse --show-toplevel)"
+     5	
+     6	echo "FathomDB scaffold bootstrap"
+     7	echo "Public docs live in docs/ and build with MkDocs."
+     8	echo "Internal engineering docs live in dev/."
+     9	echo "Rust workspace members live under src/rust/crates/."
+    10	echo "Run scripts/agent-verify.sh during the agent loop, scripts/check.sh as the broader CI gate."
+    11	
+    12	# Repo-tracked git hooks (pre-commit fmt/lint, pre-push agent-verify).
+    13	scripts/install-hooks.sh
+    14	
+    15	# Python dev tooling — pytest, hypothesis, ruff, pyright.
+    16	if [ -f src/python/pyproject.toml ]; then
+    17	  echo "Installing Python dev tooling into .venv (pytest + hypothesis + ruff + pyright)..."
+    18	  python3 -m venv .venv
+    19	  .venv/bin/python -m pip install --quiet --upgrade pip
+    20	  .venv/bin/python -m pip install --quiet -e 'src/python[dev]'
+    21	  .venv/bin/python -c 'import pytest, hypothesis'
+    22	  .venv/bin/pyright -p src/python >/dev/null
+    23	fi
+    24	
+    25	# TypeScript dev tooling.
+    26	if [ -f src/ts/package.json ] && [ ! -d src/ts/node_modules ]; then
+    27	  echo "Installing TypeScript dev tooling..."
+    28	  (cd src/ts && npm install --silent)
+    29	fi
+    30	
+    31	# Repo-wide markdown tooling (markdownlint-cli2 + prettier).
+    32	if [ -f package.json ] && [ ! -d node_modules ]; then
+    33	  echo "Installing markdown dev tooling (markdownlint-cli2 + prettier)..."
+    34	  npm install --silent
+    35	fi
+    36	
+    37	# Lychee link checker (Rust binary).
+    38	if ! command -v lychee >/dev/null 2>&1; then
+    39	  echo "Installing lychee link checker..."
+    40	  cargo install --locked --quiet lychee
+    41	fi
+    42	
+    43	# strace — required by the AC-036 no-listen and AC-037 netns-deny-egress
+    44	# security fixtures under scripts/security/. ~50KB, unprivileged at
+    45	# runtime. Skip silently if apt isn't available (non-Debian hosts); the
+    46	# fixtures will report a BLOCKER exit themselves.
+    47	if ! command -v strace >/dev/null 2>&1; then
+    48	  if command -v apt-get >/dev/null 2>&1; then
+    49	    echo "Installing strace (AC-036/AC-037 security fixtures)..."
+    50	    # GitHub-hosted runners ship with stale apt indexes; without an
+    51	    # update first, `apt-get install` can fail on 404. Local dev runs
+    52	    # bootstrap rarely, so the extra ~5s is acceptable.
+    53	    sudo apt-get update -qq >/dev/null 2>&1 || true
+    54	    sudo apt-get install --no-install-recommends -y strace >/dev/null 2>&1 || \
+    55	      echo "strace install failed; AC-036/AC-037 will report BLOCKER until installed" >&2
+    56	  else
+    57	    echo "strace not installed and apt-get unavailable; install via host package manager" >&2
+    58	    echo "  (required by scripts/security/check-no-listen.sh + check-netns-deny-egress.sh)" >&2
+    59	  fi
+    60	fi
+    61	
+    62	# actionlint — workflow validator. Pinned: yaml.safe_load passes
+    63	# schema-invalid syntax that GitHub silently rejects, so we need a real
+    64	# linter for .github/workflows/*.yml. Version pin matches a recent stable
+    65	# release; bump deliberately, not drifted.
+    66	if ! command -v actionlint >/dev/null 2>&1; then
+    67	  if command -v go >/dev/null 2>&1; then
+    68	    echo "Installing actionlint v1.7.7 via go install..."
+    69	    GO111MODULE=on go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+    70	  else
+    71	    echo "actionlint not installed and go toolchain unavailable; install actionlint manually" >&2
+    72	    echo "  see https://github.com/rhysd/actionlint/releases (pin v1.7.7)" >&2
+    73	  fi
+    74	fi
+
+exec
+/bin/bash -lc "nl -ba scripts/tests/test_ast_scan.sh | sed -n '1,220p'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+     1	#!/usr/bin/env bash
+     2	# Self-test for AC-050a AST no-shim scanner (scripts/security/ast_scan.py).
+     3	# Drives clean + dirty fixtures per language, plus targeted sub-fixtures
+     4	# for the verb-reroute, crate-root, and block-comment rules.
+     5	set -euo pipefail
+     6	
+     7	SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+     8	REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+     9	SCAN="$REPO_ROOT/scripts/security/ast_scan.py"
+    10	FIX="$SCRIPT_DIR/fixtures/ast-shim"
+    11	
+    12	fail() { echo "FAIL: $*" >&2; exit 1; }
+    13	
+    14	run_clean() {
+    15	    local lang="$1" path="$2"
+    16	    if ! python3 "$SCAN" --language "$lang" --path "$path" --repo-root "$REPO_ROOT" >/dev/null 2>&1; then
+    17	        fail "$lang clean fixture ($path) must exit 0"
+    18	    fi
+    19	}
+    20	
+    21	run_dirty() {
+    22	    local lang="$1" path="$2" expect_pattern="$3"
+    23	    local errf
+    24	    errf=$(mktemp)
+    25	    set +e
+    26	    python3 "$SCAN" --language "$lang" --path "$path" --repo-root "$REPO_ROOT" >/dev/null 2>"$errf"
+    27	    local rc=$?
+    28	    set -e
+    29	    if [ "$rc" -ne 1 ]; then
+    30	        cat "$errf" >&2
+    31	        rm -f "$errf"
+    32	        fail "$lang dirty fixture ($path) must exit 1, got $rc"
+    33	    fi
+    34	    if ! grep -qE "$expect_pattern" "$errf"; then
+    35	        cat "$errf" >&2
+    36	        rm -f "$errf"
+    37	        fail "$lang dirty fixture ($path): expected pattern '$expect_pattern' missing"
+    38	    fi
+    39	    rm -f "$errf"
+    40	}
+    41	
+    42	# V05_VERBS must be non-empty — sentinel that the rule is enforced.
+    43	verb_count=$(python3 -c 'import sys; sys.path.insert(0, "'"$REPO_ROOT"'/scripts/security"); import ast_scan; print(len(ast_scan.V05_VERBS))')
+    44	if [ "$verb_count" -lt 1 ]; then
+    45	    fail "V05_VERBS is empty — verb-reroute rule is unenforced"
+    46	fi
+    47	echo "OK V05_VERBS populated ($verb_count entries)"
+    48	
+    49	for lang in rust python ts; do
+    50	    run_clean "$lang" "$FIX/$lang/clean"
+    51	    echo "OK $lang clean"
+    52	    run_dirty "$lang" "$FIX/$lang/dirty" "(legacy_|compat_v0_5|allow\\(deprecated\\)|verb re-route)"
+    53	    echo "OK $lang dirty"
+    54	done
+    55	
+    56	# Targeted sub-rules: each fixture lives in its own directory so the
+    57	# scanner's rglob finds exactly one file and the assertion is isolated.
+    58	run_dirty rust "$FIX/rust/crate-root" "rust-crate-root-allow-deprecated"
+    59	echo "OK rust crate-root rule (lib.rs isolated)"
+    60	
+    61	run_dirty rust "$FIX/rust/verb-reroute" "rust-05x-verb-reroute"
+    62	echo "OK rust v05 verb-reroute"
+    63	
+    64	run_dirty python "$FIX/python/verb-reroute" "python-05x-verb-reroute"
+    65	echo "OK python v05 verb-reroute"
+    66	
+    67	run_dirty ts "$FIX/ts/verb-reroute" "ts-05x-verb-reroute"
+    68	echo "OK ts v05 verb-reroute"
+    69	
+    70	# Block-comment stripping: banned names inside /* */ must NOT flag
+    71	# (asserted by the rust/clean directory passing — block_comment_safe.rs
+    72	# embeds banned names in /* */, /*! */, and /** */ doc comments).
+    73	# Real code OUTSIDE a block comment in a file that ALSO contains a
+    74	# block comment must still flag.
+    75	run_dirty rust "$FIX/rust/block-comment-real" "(legacy_|rust-public-symbol)"
+    76	echo "OK rust block-comment does not swallow real code"
+    77	
+    78	echo "test_ast_scan.sh: all language fixtures pass"
+
+exec
+/bin/bash -lc "git show e77265c:scripts/bootstrap.sh | nl -ba | sed -n '35,70p'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+    35	fi
+    36	
+    37	# Lychee link checker (Rust binary).
+    38	if ! command -v lychee >/dev/null 2>&1; then
+    39	  echo "Installing lychee link checker..."
+    40	  cargo install --locked --quiet lychee
+    41	fi
+    42	
+    43	# strace — required by the AC-036 no-listen and AC-037 netns-deny-egress
+    44	# security fixtures under scripts/security/. ~50KB, unprivileged at
+    45	# runtime. Skip silently if apt isn't available (non-Debian hosts); the
+    46	# fixtures will report a BLOCKER exit themselves.
+    47	if ! command -v strace >/dev/null 2>&1; then
+    48	  if command -v apt-get >/dev/null 2>&1; then
+    49	    echo "Installing strace (AC-036/AC-037 security fixtures)..."
+    50	    # GitHub-hosted runners ship with stale apt indexes; without an
+    51	    # update first, `apt-get install` can fail on 404. Local dev runs
+    52	    # bootstrap rarely, so the extra ~5s is acceptable.
+    53	    sudo apt-get update -qq >/dev/null 2>&1 || true
+    54	    sudo apt-get install --no-install-recommends -y strace >/dev/null 2>&1 || \
+    55	      echo "strace install failed; AC-036/AC-037 will report BLOCKER until installed" >&2
+    56	  else
+    57	    echo "strace not installed and apt-get unavailable; install via host package manager" >&2
+    58	    echo "  (required by scripts/security/check-no-listen.sh + check-netns-deny-egress.sh)" >&2
+    59	  fi
+    60	fi
+    61	
+    62	# actionlint — workflow validator. Pinned: yaml.safe_load passes
+    63	# schema-invalid syntax that GitHub silently rejects, so we need a real
+    64	# linter for .github/workflows/*.yml. Version pin matches a recent stable
+    65	# release; bump deliberately, not drifted.
+    66	if ! command -v actionlint >/dev/null 2>&1; then
+    67	  if command -v go >/dev/null 2>&1; then
+    68	    echo "Installing actionlint v1.7.7 via go install..."
+    69	    GO111MODULE=on go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+    70	  else
+
+exec
+/bin/bash -lc "python3 - <<'PY'
+import ast, re
+from pathlib import Path
+from scripts.security.ast_scan import V05_VERBS
+verbs=set(V05_VERBS)
+py_defs=set()
+for path in Path('src/python/fathomdb').rglob('*.py'):
+    tree=ast.parse(path.read_text(encoding='utf-8', errors='replace'))
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            py_defs.add(node.name)
+rust_defs=set()
+pat=re.compile(r'"'^'"\\s*pub(?:\\(["'^)]+'"\\))?\\s+(?:unsafe\\s+|async\\s+|const\\s+)*(?:fn|struct|enum|trait|type|const|static)\\s+([A-Za-z_][A-Za-z0-9_]*)')
+for path in Path('src/rust').rglob('*.rs'):
+    for line in path.read_text(encoding='utf-8', errors='replace').splitlines():
+        m=pat.match(line)
+        if m:
+            rust_defs.add(m.group(1))
+print('python intersections:', sorted(verbs & py_defs))
+print('rust intersections:', sorted(verbs & rust_defs))
+PY" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+python intersections: []
+rust intersections: []
+
+exec
+/bin/bash -lc "python3 - <<'PY'
+import ast, re
+from pathlib import Path
+from scripts.security.ast_scan import V05_VERBS
+verbs=set(V05_VERBS)
+# Show 10 current public Python surface names nearest to admin/engine for sanity.
+for path in sorted(Path('src/python/fathomdb').glob('*.py')):
+    tree=ast.parse(path.read_text(encoding='utf-8', errors='replace'))
+    names=[]
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef):
+            for item in node.body:
+                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and not item.name.startswith('_'):
+                    names.append(item.name)
+    if names:
+        print(path)
+        print(' ', ', '.join(names[:20]))
+PY" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+src/python/fathomdb/engine.py
+  open, path, config, write, search, close, drain, counters, set_profiling, set_slow_threshold_ms, attach_logging_subscriber
+
+codex
+The remediation only touched the security scripts and fixtures, so AC-038 should be structurally untouched. I’m still running the live read-only gates that don’t need a writable build cache: the three AST scans and the removal-detect script, to see whether any regression slipped in on the enforcement side.
+exec
+/bin/bash -lc 'python3 scripts/security/ast_scan.py --language rust' in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+exec
+/bin/bash -lc 'python3 scripts/security/ast_scan.py --language python' in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+AC-050a OK: python surface clean (/tmp/fdb-12-S-security-fixtures-20260517T195735Z/src/python)
+
+exec
+/bin/bash -lc 'python3 scripts/security/ast_scan.py --language ts' in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+AC-050a OK: ts surface clean (/tmp/fdb-12-S-security-fixtures-20260517T195735Z/src/ts)
+
+exec
+/bin/bash -lc 'bash scripts/security/check-removal-changelog.sh' in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+ succeeded in 878ms:
+AC-050a OK: rust surface clean (/tmp/fdb-12-S-security-fixtures-20260517T195735Z/src/rust/crates)
+
+codex
+I’ve confirmed the non-comment pieces: the verb list intersects neither the current Python nor Rust public surfaces, the crate-root fixture is isolated to `lib.rs`, and `agent-verify` wires `STRICT=1` exactly between typecheck and test. I’m pulling exact line references now, then I’ll write the verdict around the one remediation gap that remains in `scan_rust()`.
+exec
+/bin/bash -lc "nl -ba dev/plans/runs/12-S-fix-1-output.json | sed -n '1,220p'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+     1	{
+     2	  "phase": "12-S-fix-1",
+     3	  "baseline_sha": "d48d226",
+     4	  "branch": "phase-12-S-security-fixtures-20260517T195735Z",
+     5	  "head_sha": "27a818e",
+     6	  "commits": [
+     7	    "d25c55d: fix(12-S-fix-1): findings 1+2 — populate V05_VERBS, harden Rust scanner",
+     8	    "e77265c: fix(12-S-fix-1): finding 3 — wire STRICT=1 + apt-get update"
+     9	  ],
+    10	  "findings_addressed": [
+    11	    "1 [high]: V05_VERBS populated with 32 verbs inventoried from 39ee271^:python/fathomdb/_engine.py + _admin.py (verbs removed/redesigned in 0.6.0, no equivalent name). Rust matcher tightened to `pub fn` to suppress private-helper false positives. Per-language v05_verb_reroute fixtures + sentinel test (len(V05_VERBS) > 0) added.",
+    12	    "2 [medium]: scan_rust() strips /* */, /** */, and /*! */ block comments via in_block_comment state machine that handles tails after */ on the same line. New rust/clean/block_comment_safe.rs proves doc-comment names don't false-fire; rust/block-comment-real/ proves real code is still flagged when a block comment exists elsewhere. Crate-root #![allow(deprecated)] rule isolated to rust/crate-root/lib.rs; legacy_admin.rs no longer conflates two rules.",
+    13	    "3 [high]: scripts/agent-verify.sh now invokes `STRICT=1 bash scripts/agent-security.sh` between typecheck and test. scripts/bootstrap.sh runs `sudo apt-get update -qq` before `apt-get install strace` (best-effort so a flaky mirror does not block all dev tooling). agent-security.sh header documents the wiring."
+    14	  ],
+    15	  "v05_verbs_count": 32,
+    16	  "v05_verbs_source": "git show 39ee271^:python/fathomdb/_engine.py + 39ee271^:python/fathomdb/_admin.py (cross-checked against current src/python and src/rust to drop names still in 0.6.0)",
+    17	  "agent_verify_local_aarch64_status": "fail (rc=1) — strace absent on this dev host; STRICT=1 path correctly promotes the AC-036/AC-037 BLOCKERs to a hard failure",
+    18	  "agent_verify_ci_expected": "pass — bootstrap.sh apt-installs strace before agent-verify runs",
+    19	  "blockers_encountered": [],
+    20	  "agent_verify_result": "fail (expected on aarch64 local; CI expected pass). Tail: `agent-security: 0 violation(s), 2 blocker(s)` — AC-036 + AC-037 BLOCKER on missing strace. Other gates (AC-038, AC-050a x3, AC-050c) PASS.",
+    21	  "test_ast_scan_result": "pass — 12 OK lines including V05_VERBS sentinel, per-language verb-reroute, crate-root isolation, block-comment safe + real",
+    22	  "next_step_for_orchestrator": "promote to 0.6.0-rewrite; respawn codex reviewer for clean PASS"
+    23	}
+
+exec
+/bin/bash -lc "nl -ba dev/plans/runs/12-S-security-fixtures-output.json | sed -n '1,260p'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+     1	{
+     2	  "phase": "12-S-security-fixtures",
+     3	  "baseline_sha": "f2f21b59338a706de625096b099b041e01c1a1c2",
+     4	  "branch": "phase-12-S-security-fixtures-20260517T195735Z",
+     5	  "head_sha": "dea312ead2629111ac1d35fd875beb3fd484df5e",
+     6	  "commits": [
+     7	    "dea312e: test(12-S): land AC-036/037/038/050a/050c security fixtures"
+     8	  ],
+     9	  "sub_scopes_landed": [
+    10	    "1 (AC-036)",
+    11	    "2 (AC-037)",
+    12	    "3 (AC-038)",
+    13	    "4 (AC-050a)",
+    14	    "5 (AC-050c)"
+    15	  ],
+    16	  "acs_addressed": [
+    17	    "AC-036",
+    18	    "AC-037",
+    19	    "AC-038",
+    20	    "AC-050a",
+    21	    "AC-050c"
+    22	  ],
+    23	  "scripts_added": [
+    24	    "scripts/agent-security.sh",
+    25	    "scripts/security/ast_scan.py",
+    26	    "scripts/security/ast-scan-rust.sh",
+    27	    "scripts/security/ast-scan-python.py",
+    28	    "scripts/security/ast-scan-ts.sh",
+    29	    "scripts/security/check_removal_changelog.py",
+    30	    "scripts/security/check-removal-changelog.sh",
+    31	    "scripts/security/check-no-listen.sh",
+    32	    "scripts/security/check-netns-deny-egress.sh"
+    33	  ],
+    34	  "scripts_modified": [
+    35	    "scripts/bootstrap.sh (added apt install strace clause)"
+    36	  ],
+    37	  "tests_added": [
+    38	    "src/rust/crates/fathomdb-engine/tests/fts5_injection_safety.rs",
+    39	    "scripts/tests/test_ast_scan.sh",
+    40	    "scripts/tests/test_removal_detect.sh"
+    41	  ],
+    42	  "fixtures_added": [
+    43	    "scripts/tests/fixtures/ast-shim/rust/clean/ok.rs",
+    44	    "scripts/tests/fixtures/ast-shim/rust/dirty/legacy_admin.rs",
+    45	    "scripts/tests/fixtures/ast-shim/python/clean/ok.py",
+    46	    "scripts/tests/fixtures/ast-shim/python/dirty/legacy_client.py",
+    47	    "scripts/tests/fixtures/ast-shim/ts/clean/ok.ts",
+    48	    "scripts/tests/fixtures/ast-shim/ts/dirty/legacy_binding.ts",
+    49	    "scripts/tests/fixtures/removal-detect/clean/{CHANGELOG.md,diff.patch}",
+    50	    "scripts/tests/fixtures/removal-detect/undocumented/{CHANGELOG.md,diff.patch}",
+    51	    "scripts/tests/fixtures/removal-detect/moved-in-file/{CHANGELOG.md,diff.patch}",
+    52	    "src/rust/crates/fathomdb-engine/examples/security_cycle.rs"
+    53	  ],
+    54	  "supporting_files_added": [
+    55	    "CHANGELOG.md (stub with [Unreleased]/Removed section)"
+    56	  ],
+    57	  "no_shim_enforcement_live": true,
+    58	  "gate_results_on_this_host": {
+    59	    "AC-036 no-listen-syscall": "BLOCKER (strace missing on aarch64 dev host)",
+    60	    "AC-037 netns-deny-egress": "BLOCKER (strace missing; userns enabled, unshare ok)",
+    61	    "AC-038 fts5_injection_safety": "PASS (2/2 tests)",
+    62	    "AC-050a ast-scan-rust": "PASS (src/rust/crates clean)",
+    63	    "AC-050a ast-scan-python": "PASS (src/python clean)",
+    64	    "AC-050a ast-scan-ts": "PASS (src/ts clean)",
+    65	    "AC-050c removal-detect": "PASS (no removals 0.6.0-rewrite..HEAD; CHANGELOG present)",
+    66	    "scripts/tests/test_ast_scan.sh": "PASS (clean+dirty per language)",
+    67	    "scripts/tests/test_removal_detect.sh": "PASS (clean+undocumented+moved-in-file)",
+    68	    "scripts/agent-security.sh": "PASS (0 violations, 2 blockers; non-strict)"
+    69	  },
+    70	  "blockers_encountered": [
+    71	    {
+    72	      "id": "12-S-blocker-1",
+    73	      "scope": "AC-036 + AC-037",
+    74	      "summary": "strace not installed on this aarch64 dev host (Linux ubuntu 5.15.185-tegra). Both check-no-listen.sh and check-netns-deny-egress.sh exit code 2 (BLOCKER) and surface a clear apt-install diagnostic; agent-security.sh treats blockers as non-fatal unless STRICT=1.",
+    75	      "remediation": "scripts/bootstrap.sh now installs strace via apt-get when available. CI runner ops must re-run bootstrap (or sudo apt install strace) before the AC-036/AC-037 gates can demonstrate green. Once strace is on PATH no code change is required.",
+    76	      "owner_recommendation": "phase 12-DX or orchestrator: re-run scripts/agent-security.sh on a strace-equipped CI runner to capture the post-bootstrap PASS evidence."
+    77	    },
+    78	    {
+    79	      "id": "12-S-note-2",
+    80	      "scope": "AC-050a TS scanner",
+    81	      "summary": "TS surface scanned by line-anchored regex on .ts/.tsx (comment-aware) rather than @typescript-eslint/parser or ts-morph. Adding either would expand the npm dependency tree.",
+    82	      "remediation": "Acceptable: the banned-pattern set (legacy_* / compat_v0_5* names; deprecated re-exports) is textual and bounded. Upgrade to a real AST parser is a follow-up if/when the banned-pattern surface grows beyond name prefixes.",
+    83	      "owner_recommendation": "DEFER unless a future shim pattern requires structural matching."
+    84	    },
+    85	    {
+    86	      "id": "12-S-note-3",
+    87	      "scope": "AC-050a Rust scanner",
+    88	      "summary": "Rust surface uses line-anchored regex (comment-skipping) over `*.rs` rather than `syn` AST parsing. Same scope/scale tradeoff as the TS scanner.",
+    89	      "remediation": "Acceptable for the current banned-pattern set; promote to a `syn`-based scanner if the banned list ever needs token-tree awareness (e.g. macro-generated identifiers).",
+    90	      "owner_recommendation": "DEFER."
+    91	    },
+    92	    {
+    93	      "id": "12-S-note-4",
+    94	      "scope": "AC-050a verb list",
+    95	      "summary": "V05_VERBS in scripts/security/ast_scan.py is empty (no canonical 0.5.x verb list enumerated yet). Scanner runs as a no-op for that rule until the verb list lands.",
+    96	      "remediation": "Append 0.5.x verb names to V05_VERBS as they become known (e.g. when CHANGELOG records the 0.5.x→0.6.0 verb renames). No code change required to start enforcing.",
+    97	      "owner_recommendation": "DOCUMENT in 0.6.0 release-notes and append verbs at GA freeze."
+    98	    },
+    99	    {
+   100	      "id": "12-S-note-5",
+   101	      "scope": "Required-commands invocation form",
+   102	      "summary": "Prompt’s required-commands list shows `bash scripts/security/ast-scan-python.py`. That fails because the file is a Python script. Invoke as `python3 scripts/security/ast-scan-python.py` or via the shebang `scripts/security/ast-scan-python.py` (file is +x).",
+   103	      "remediation": "Reviewer: please use python3/shebang form. No script-level fix because doing so would mean a bash-only wrapper named `.py`, which is more confusing than the typo.",
+   104	      "owner_recommendation": "Update the prompt template for future security-fixture phases."
+   105	    }
+   106	  ],
+   107	  "agent_verify_result": "pass",
+   108	  "discipline_notes": [
+   109	    "TDD: each new linter/script landed with a positive (clean) and negative (synthetic-shim / undocumented-removal) fixture before wiring.",
+   110	    "Net LoC: ~720 added across 27 files (scripts + fixtures + 1 example + 1 test). No production-code change.",
+   111	    "AC-050a + AC-050c are the enforcement mechanisms for the no-0.5.x-shim policy and removal discipline; both are live on `agent-security.sh`."
+   112	  ],
+   113	  "next_step_for_orchestrator": "promote to 0.6.0-rewrite; respawn codex reviewer for verdict. Run scripts/bootstrap.sh on the reviewer host so strace is available for AC-036/AC-037 evidence capture."
+   114	}
+
+exec
+/bin/bash -lc "nl -ba scripts/tests/fixtures/ast-shim/rust/crate-root/lib.rs | sed -n '1,80p'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+     1	// Isolates the crate-root #![allow(deprecated)] rule. The filename is
+     2	// lib.rs precisely because the rule only fires for lib.rs / main.rs;
+     3	// putting this attribute in any other file would not trigger AC-050a.
+     4	#![allow(deprecated)]
+
+exec
+/bin/bash -lc "nl -ba scripts/tests/fixtures/ast-shim/rust/dirty/legacy_admin.rs | sed -n '1,80p'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+     1	// Negative fixture for AC-050a: forbidden module name + public-symbol
+     2	// prefix. The crate-root #![allow(deprecated)] rule is exercised by
+     3	// the dedicated lib.rs fixture in this directory — keep that rule
+     4	// separate so a regression in either path can't be masked by the other.
+     5	
+     6	pub mod compat_v0_5_admin {}
+     7	
+     8	pub fn legacy_open() {}
+
+exec
+/bin/bash -lc "nl -ba scripts/tests/fixtures/ast-shim/rust/clean/block_comment_safe.rs | sed -n '1,120p'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+     1	/*!
+     2	 * Doc comment that legitimately references the legacy_admin module name
+     3	 * and the configure_fts verb in prose. The scanner must strip block
+     4	 * comments and leave this fixture clean.
+     5	 */
+     6	
+     7	/* pub fn legacy_should_not_match() {} */
+     8	
+     9	/** Outer doc comment: compat_v0_5_engine appears here too. */
+    10	pub fn modern_helper() {}
+
+exec
+/bin/bash -lc "nl -ba scripts/tests/fixtures/ast-shim/rust/block-comment-real/real.rs | sed -n '1,80p'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+     1	/* A block comment up top that mentions legacy_thing in prose.
+     2	 * The scanner must NOT trip on this and must continue parsing
+     3	 * real code below. */
+     4	pub fn legacy_real_shim() {}
+
+exec
+/bin/bash -lc "nl -ba src/python/fathomdb/engine.py | sed -n '1,220p'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+     1	"""Python wrapper around the native PyO3 engine handle.
+     2	
+     3	`Engine` mirrors the public five-verb surface owned by
+     4	`dev/interfaces/python.md`. The native PyO3 class
+     5	(`fathomdb._fathomdb.Engine`) holds the `Arc<fathomdb_engine::Engine>`
+     6	and runs every blocking call under `py.allow_threads`; this Python
+     7	wrapper converts native return values into the dataclasses in
+     8	`fathomdb.types` and rejects unknown `open()` kwargs.
+     9	"""
+    10	
+    11	from __future__ import annotations
+    12	
+    13	import logging
+    14	from typing import Any, cast
+    15	
+    16	from fathomdb._fathomdb import Engine as _NativeEngine
+    17	from fathomdb.config import EngineConfig
+    18	from fathomdb.types import (
+    19	    CounterSnapshot,
+    20	    SearchResult,
+    21	    SoftFallback,
+    22	    SoftFallbackBranch,
+    23	    WriteReceipt,
+    24	)
+    25	
+    26	_KWARG_FIELDS = {
+    27	    "embedder_pool_size",
+    28	    "scheduler_runtime_threads",
+    29	    "provenance_row_cap",
+    30	    "embedder_call_timeout_ms",
+    31	    "slow_threshold_ms",
+    32	}
+    33	
+    34	
+    35	class Engine:
+    36	    """Python handle that wraps the native PyO3 engine."""
+    37	
+    38	    __slots__ = ("_native", "_path", "_config")
+    39	
+    40	    def __init__(
+    41	        self,
+    42	        native: _NativeEngine,
+    43	        *,
+    44	        path: str,
+    45	        config: EngineConfig,
+    46	    ) -> None:
+    47	        self._native = native
+    48	        self._path = path
+    49	        self._config = config
+    50	
+    51	    @classmethod
+    52	    def open(
+    53	        cls,
+    54	        path: str,
+    55	        *,
+    56	        config: EngineConfig | None = None,
+    57	        **engine_config: Any,
+    58	    ) -> "Engine":
+    59	        """Open the database at `path`.
+    60	
+    61	        Either `config` or per-knob keyword arguments may be supplied,
+    62	        but not both. Unknown keyword arguments are rejected.
+    63	        """
+    64	
+    65	        if config is not None and engine_config:
+    66	            raise ValueError(
+    67	                "Engine.open accepts either config= or per-knob keyword arguments, not both",
+    68	            )
+    69	
+    70	        unknown = set(engine_config) - _KWARG_FIELDS
+    71	        if unknown:
+    72	            raise TypeError(
+    73	                f"Engine.open got unexpected keyword arguments: {sorted(unknown)!r}",
+    74	            )
+    75	
+    76	        resolved = config if config is not None else EngineConfig(**engine_config)
+    77	        native = _NativeEngine.open(path)
+    78	        return cls(native, path=path, config=resolved)
+    79	
+    80	    @property
+    81	    def path(self) -> str:
+    82	        return self._path
+    83	
+    84	    @property
+    85	    def config(self) -> EngineConfig:
+    86	        return self._config
+    87	
+    88	    def write(self, batch: list[Any] | None = None) -> WriteReceipt:
+    89	        receipt = self._native.write(batch or [])
+    90	        return WriteReceipt(cursor=receipt.cursor)
+    91	
+    92	    def search(self, query: str) -> SearchResult:
+    93	        result = self._native.search(query)
+    94	        fallback = result.soft_fallback
+    95	        soft = (
+    96	            SoftFallback(branch=cast(SoftFallbackBranch, fallback.branch))
+    97	            if fallback is not None
+    98	            else None
+    99	        )
+   100	        return SearchResult(
+   101	            projection_cursor=result.projection_cursor,
+   102	            soft_fallback=soft,
+   103	            results=list(result.results),
+   104	        )
+   105	
+   106	    def close(self) -> None:
+   107	        self._native.close()
+   108	
+   109	    def drain(self, *, timeout_s: float | int = 0) -> None:
+   110	        """Block until in-flight writes drain or `timeout_s` elapses."""
+   111	
+   112	        self._native.drain(timeout_s=float(timeout_s))
+   113	
+   114	    def counters(self) -> CounterSnapshot:
+   115	        self._native.counters()
+   116	        return CounterSnapshot()
+   117	
+   118	    def set_profiling(self, *, enabled: bool) -> None:
+   119	        self._native.set_profiling(enabled)
+   120	
+   121	    def set_slow_threshold_ms(self, *, value: int) -> None:
+   122	        self._native.set_slow_threshold_ms(value)
+   123	
+   124	    def attach_logging_subscriber(
+   125	        self,
+   126	        logger: logging.Logger,
+   127	        *,
+   128	        heartbeat_interval_ms: int | None = None,
+   129	    ) -> None:
+   130	        """Bind engine events into the supplied `logging.Logger`.
+   131	
+   132	        Subscriber wiring lands in a later 0.6.x slice; the native call
+   133	        accepts the parameters so callers can wire a logger against the
+   134	        public surface.
+   135	        """
+   136	
+   137	        self._native.attach_logging_subscriber(
+   138	            logger,
+   139	            heartbeat_interval_ms=heartbeat_interval_ms,
+   140	        )
+   141	
+   142	
+   143	__all__ = ["Engine"]
+
+exec
+/bin/bash -lc "nl -ba scripts/tests/fixtures/ast-shim/rust/verb-reroute/api.rs | sed -n '1,80p'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+     1	// Negative fixture for the V05_VERBS re-route rule. `configure_fts`
+     2	// was an AdminClient verb in 0.5.x; in 0.6.0 it MUST NOT exist as a
+     3	// public symbol — collapsed into `admin::configure(name, body)`.
+     4	pub fn configure_fts() {}
+
+exec
+/bin/bash -lc "nl -ba scripts/tests/fixtures/ast-shim/python/verb-reroute/api.py | sed -n '1,80p'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+     1	"""Negative fixture for the V05_VERBS re-route rule. `rebuild` was an
+     2	AdminClient verb in 0.5.x and has no 0.6.0 equivalent — defining a
+     3	public function with that name in 0.6.0 is banned."""
+     4	
+     5	
+     6	def rebuild():
+     7	    pass
+
+exec
+/bin/bash -lc "nl -ba scripts/tests/fixtures/ast-shim/ts/verb-reroute/api.ts | sed -n '1,80p'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+     1	// Negative fixture: configure_vec was an AdminClient verb in 0.5.x
+     2	// and has no 0.6.0 equivalent.
+     3	export function configure_vec() {}
+
+  ✓ Read the 12-S remediation commits and current deltas for the scanner, fixtures, verify script, and bootstrap script
+  ✓ Spot-check V05_VERBS against current Python and Rust surfaces and evaluate false-positive risk
+  ✓ Inspect the Rust block-comment state machine and fixture coverage for nested/tail/comment-edge cases and crate-root isolation
+  ✓ Inspect STRICT wiring, bootstrap apt-get behavior, and look for regressions in prior PASS gates
+  → Write the verdict with findings, addressed items, passed checks, and reviewer notes
+exec
+/bin/bash -lc "nl -ba scripts/agent-security.sh | sed -n '1,120p'" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+     1	#!/usr/bin/env bash
+     2	# Aggregate security-fixture gate. Runs the AC-036, AC-037, AC-038,
+     3	# AC-050a, and AC-050c gates that live under scripts/security/.
+     4	#
+     5	# Exit semantics:
+     6	#   0  — every gate green.
+     7	#   1  — at least one gate found a real violation.
+     8	#   2  — toolchain blocker (e.g. strace missing for AC-036/AC-037);
+     9	#        gates that BLOCKER do not fail the overall script unless
+    10	#        STRICT=1 is set.
+    11	#
+    12	# Wiring: scripts/agent-verify.sh invokes this with STRICT=1, so any
+    13	# blocker fails the agent loop on hosts where bootstrap.sh has run.
+    14	# Local dev hosts without strace must either run scripts/bootstrap.sh
+    15	# (which apt-installs strace on Debian) or install strace manually.
+    16	set -uo pipefail
+    17	
+    18	SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    19	SEC="$SCRIPT_DIR/security"
+    20	
+    21	violations=0
+    22	blockers=0
+    23	
+    24	run_gate() {
+    25	    local label="$1"
+    26	    shift
+    27	    echo "==> $label"
+    28	    set +e
+    29	    "$@"
+    30	    local rc=$?
+    31	    set -e
+    32	    if [ "$rc" -eq 0 ]; then
+    33	        echo "    PASS"
+    34	    elif [ "$rc" -eq 2 ]; then
+    35	        echo "    BLOCKER (toolchain missing)" >&2
+    36	        blockers=$((blockers + 1))
+    37	    else
+    38	        echo "    FAIL (rc=$rc)" >&2
+    39	        violations=$((violations + 1))
+    40	    fi
+    41	}
+    42	
+    43	run_gate "AC-036 no-listen-syscall"     bash "$SEC/check-no-listen.sh"
+    44	run_gate "AC-037 netns-deny-egress"     bash "$SEC/check-netns-deny-egress.sh"
+    45	run_gate "AC-038 FTS5-injection-safe"   cargo test -p fathomdb-engine --test fts5_injection_safety --quiet
+    46	run_gate "AC-050a ast-scan rust"        python3 "$SEC/ast_scan.py" --language rust
+    47	run_gate "AC-050a ast-scan python"      python3 "$SEC/ast_scan.py" --language python
+    48	run_gate "AC-050a ast-scan ts"          python3 "$SEC/ast_scan.py" --language ts
+    49	run_gate "AC-050c removal-detect"       bash "$SEC/check-removal-changelog.sh"
+    50	
+    51	echo
+    52	echo "agent-security: $violations violation(s), $blockers blocker(s)"
+    53	
+    54	if [ "$violations" -gt 0 ]; then
+    55	    exit 1
+    56	fi
+    57	if [ "$blockers" -gt 0 ] && [ "${STRICT:-0}" = "1" ]; then
+    58	    exit 2
+    59	fi
+    60	exit 0
+
+exec
+/bin/bash -lc "python3 - <<'PY'
+from scripts.security.ast_scan import V05_VERBS
+print(len(V05_VERBS))
+PY" in /tmp/fdb-12-S-security-fixtures-20260517T195735Z
+ succeeded in 0ms:
+32
+
+codex
+## Verdict: BLOCK
+
+### 1. [medium] `scan_rust()` still mis-parses legal nested Rust block comments, so finding 2 is not fully closed
+
+Refs:
+- [scripts/security/ast_scan.py](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/security/ast_scan.py:133)
+- [scripts/security/ast_scan.py](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/security/ast_scan.py:148)
+- [scripts/tests/test_ast_scan.sh](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/tests/test_ast_scan.sh:70)
+- [scripts/tests/fixtures/ast-shim/rust/clean/block_comment_safe.rs](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/tests/fixtures/ast-shim/rust/clean/block_comment_safe.rs:1)
+- [scripts/tests/fixtures/ast-shim/rust/block-comment-real/real.rs](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/tests/fixtures/ast-shim/rust/block-comment-real/real.rs:1)
+- [dev/plans/runs/12-S-fix-1-output.json](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/dev/plans/runs/12-S-fix-1-output.json:12)
+
+Explanation:
+The new Rust comment stripper tracks block comments with a boolean, not a nesting depth. Rust allows nested `/* ... */`, and replaying this exact state machine against `/* outer /* legacy_nested */ still outer */` leaves `still outer */` as live code instead of keeping the scanner inside the outer comment. The prompt’s other two edge cases are handled correctly: `*/ pub fn legacy_foo() {}` is reprocessed, and `/* text */ pub fn legacy_foo() {} /* text */` still exposes the real `pub fn`. But the remediation artifact says finding 2 is closed, while the current fixtures only cover non-nested comments, so that claim is overstated. Because AC-050a is now wired into `agent-verify`, this remains a real hard-gate false-positive risk on valid Rust code.
+
+**Addressed**
+
+- V05_VERBS quality looks good. [scripts/security/ast_scan.py](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/security/ast_scan.py:44) now carries 32 verbs, and I spot-checked `submit`, `touch_last_accessed`, `telemetry_snapshot`, `check_semantics`, `configure_fts`, `current_config`, `trace_operational_collection`, and `rebuild_operational_current` against pre-0.6.0 definitions in `39ee271^:python/fathomdb/_engine.py` and `39ee271^:python/fathomdb/_admin.py`. I found no intersections with current Python/Rust public declarations, and the current Python engine surface in [src/python/fathomdb/engine.py](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/src/python/fathomdb/engine.py:51) is the expected 0.6.0 set.
+- Crate-root rule isolation is correct. The dedicated [scripts/tests/fixtures/ast-shim/rust/crate-root/lib.rs](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/tests/fixtures/ast-shim/rust/crate-root/lib.rs:1) fixture is the only thing exercising `#![allow(deprecated)]`, and [scripts/tests/fixtures/ast-shim/rust/dirty/legacy_admin.rs](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/tests/fixtures/ast-shim/rust/dirty/legacy_admin.rs:1) no longer conflates that rule.
+- STRICT wiring is correct. [scripts/agent-verify.sh](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/agent-verify.sh:22) runs `lint -> typecheck -> STRICT=1 agent-security -> test`, and [scripts/agent-security.sh](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/agent-security.sh:24) still surfaces per-gate `PASS`/`BLOCKER`/`FAIL` plus the final violation/blocker summary at [scripts/agent-security.sh](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/agent-security.sh:52).
+- Bootstrap behavior is correct. [scripts/bootstrap.sh](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/bootstrap.sh:47) does `sudo apt-get update -qq` before install, redirects it quietly, and uses `|| true`, so a flaky mirror does not abort bootstrap; install failure degrades to a clear warning at [scripts/bootstrap.sh](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/bootstrap.sh:54).
+
+**What passed on inspection**
+
+- The verb-reroute fixtures are isolated and correctly targeted in [scripts/tests/fixtures/ast-shim/rust/verb-reroute/api.rs](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/tests/fixtures/ast-shim/rust/verb-reroute/api.rs:1), [scripts/tests/fixtures/ast-shim/python/verb-reroute/api.py](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/tests/fixtures/ast-shim/python/verb-reroute/api.py:1), and [scripts/tests/fixtures/ast-shim/ts/verb-reroute/api.ts](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/tests/fixtures/ast-shim/ts/verb-reroute/api.ts:1).
+- I ran the live read-only gates that do not need a writable cargo cache: `python3 scripts/security/ast_scan.py --language rust`, `python`, `ts`, and `bash scripts/security/check-removal-changelog.sh`. AC-050a x3 and AC-050c passed on the current tree.
+- AC-038 appears untouched by `d25c55d` and `e77265c`; those commits only touch security scripts, fixtures, `agent-verify`, and `bootstrap`. I did not rerun the cargo test in this sandbox.
+
+**Reviewer process notes**
+
+- The prompt-named `dev/plans/runs/12-S-review-20260517T200825Z.md`, `dev/plans/prompts/12-S-fix-1.md`, `MEMORY.md`, and `feedback_*.md` were not present in this worktree. I used [dev/plans/runs/12-S-security-fixtures-output.json](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/dev/plans/runs/12-S-security-fixtures-output.json:1), [dev/plans/runs/12-S-fix-1-output.json](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/dev/plans/runs/12-S-fix-1-output.json:1), the cited commits, and the current deltas instead.
+- `scripts/tests/test_ast_scan.sh` could not be run end-to-end in this sandbox because `mktemp` has no writable temp directory here. The review above is therefore static plus read-only gate execution, not a full shell-test rerun.
+tokens used
+91,100
+## Verdict: BLOCK
+
+### 1. [medium] `scan_rust()` still mis-parses legal nested Rust block comments, so finding 2 is not fully closed
+
+Refs:
+- [scripts/security/ast_scan.py](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/security/ast_scan.py:133)
+- [scripts/security/ast_scan.py](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/security/ast_scan.py:148)
+- [scripts/tests/test_ast_scan.sh](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/tests/test_ast_scan.sh:70)
+- [scripts/tests/fixtures/ast-shim/rust/clean/block_comment_safe.rs](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/tests/fixtures/ast-shim/rust/clean/block_comment_safe.rs:1)
+- [scripts/tests/fixtures/ast-shim/rust/block-comment-real/real.rs](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/tests/fixtures/ast-shim/rust/block-comment-real/real.rs:1)
+- [dev/plans/runs/12-S-fix-1-output.json](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/dev/plans/runs/12-S-fix-1-output.json:12)
+
+Explanation:
+The new Rust comment stripper tracks block comments with a boolean, not a nesting depth. Rust allows nested `/* ... */`, and replaying this exact state machine against `/* outer /* legacy_nested */ still outer */` leaves `still outer */` as live code instead of keeping the scanner inside the outer comment. The prompt’s other two edge cases are handled correctly: `*/ pub fn legacy_foo() {}` is reprocessed, and `/* text */ pub fn legacy_foo() {} /* text */` still exposes the real `pub fn`. But the remediation artifact says finding 2 is closed, while the current fixtures only cover non-nested comments, so that claim is overstated. Because AC-050a is now wired into `agent-verify`, this remains a real hard-gate false-positive risk on valid Rust code.
+
+**Addressed**
+
+- V05_VERBS quality looks good. [scripts/security/ast_scan.py](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/security/ast_scan.py:44) now carries 32 verbs, and I spot-checked `submit`, `touch_last_accessed`, `telemetry_snapshot`, `check_semantics`, `configure_fts`, `current_config`, `trace_operational_collection`, and `rebuild_operational_current` against pre-0.6.0 definitions in `39ee271^:python/fathomdb/_engine.py` and `39ee271^:python/fathomdb/_admin.py`. I found no intersections with current Python/Rust public declarations, and the current Python engine surface in [src/python/fathomdb/engine.py](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/src/python/fathomdb/engine.py:51) is the expected 0.6.0 set.
+- Crate-root rule isolation is correct. The dedicated [scripts/tests/fixtures/ast-shim/rust/crate-root/lib.rs](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/tests/fixtures/ast-shim/rust/crate-root/lib.rs:1) fixture is the only thing exercising `#![allow(deprecated)]`, and [scripts/tests/fixtures/ast-shim/rust/dirty/legacy_admin.rs](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/tests/fixtures/ast-shim/rust/dirty/legacy_admin.rs:1) no longer conflates that rule.
+- STRICT wiring is correct. [scripts/agent-verify.sh](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/agent-verify.sh:22) runs `lint -> typecheck -> STRICT=1 agent-security -> test`, and [scripts/agent-security.sh](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/agent-security.sh:24) still surfaces per-gate `PASS`/`BLOCKER`/`FAIL` plus the final violation/blocker summary at [scripts/agent-security.sh](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/agent-security.sh:52).
+- Bootstrap behavior is correct. [scripts/bootstrap.sh](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/bootstrap.sh:47) does `sudo apt-get update -qq` before install, redirects it quietly, and uses `|| true`, so a flaky mirror does not abort bootstrap; install failure degrades to a clear warning at [scripts/bootstrap.sh](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/bootstrap.sh:54).
+
+**What passed on inspection**
+
+- The verb-reroute fixtures are isolated and correctly targeted in [scripts/tests/fixtures/ast-shim/rust/verb-reroute/api.rs](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/tests/fixtures/ast-shim/rust/verb-reroute/api.rs:1), [scripts/tests/fixtures/ast-shim/python/verb-reroute/api.py](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/tests/fixtures/ast-shim/python/verb-reroute/api.py:1), and [scripts/tests/fixtures/ast-shim/ts/verb-reroute/api.ts](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/scripts/tests/fixtures/ast-shim/ts/verb-reroute/api.ts:1).
+- I ran the live read-only gates that do not need a writable cargo cache: `python3 scripts/security/ast_scan.py --language rust`, `python`, `ts`, and `bash scripts/security/check-removal-changelog.sh`. AC-050a x3 and AC-050c passed on the current tree.
+- AC-038 appears untouched by `d25c55d` and `e77265c`; those commits only touch security scripts, fixtures, `agent-verify`, and `bootstrap`. I did not rerun the cargo test in this sandbox.
+
+**Reviewer process notes**
+
+- The prompt-named `dev/plans/runs/12-S-review-20260517T200825Z.md`, `dev/plans/prompts/12-S-fix-1.md`, `MEMORY.md`, and `feedback_*.md` were not present in this worktree. I used [dev/plans/runs/12-S-security-fixtures-output.json](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/dev/plans/runs/12-S-security-fixtures-output.json:1), [dev/plans/runs/12-S-fix-1-output.json](/tmp/fdb-12-S-security-fixtures-20260517T195735Z/dev/plans/runs/12-S-fix-1-output.json:1), the cited commits, and the current deltas instead.
+- `scripts/tests/test_ast_scan.sh` could not be run end-to-end in this sandbox because `mktemp` has no writable temp directory here. The review above is therefore static plus read-only gate execution, not a full shell-test rerun.

@@ -7,6 +7,7 @@ the SDK after GA tag fires. Per
 GA), 12-DX row.
 
 Out of scope:
+
 - 12-D / 12-S / 12-P / 12-V-VERBS / 12-TX (closed); 12-B (deferred).
 - Internal design docs in `dev/design/` + `dev/interfaces/` —
   those stay internal; this slice surfaces a CLIENT-FACING subset
@@ -161,12 +162,12 @@ conflicts.
 Under `docs/reference/`:
 
 - `docs/reference/python-api.md` — Engine + admin.configure + types
-  + error classes. If using mkdocstrings (Sub-1 path A), this is
+  - error classes. If using mkdocstrings (Sub-1 path A), this is
   a thin shell with `:::fathomdb.Engine` directives. If hand-
   written, full signature + brief description + return type per
   callable + a "see also" pointer to the locked interface spec.
 - `docs/reference/typescript-api.md` — Engine class (Promise-based)
-  + admin.configure + interfaces + error classes. Hand-written
+  - admin.configure + interfaces + error classes. Hand-written
   (per Sub-1 decision).
 - `docs/reference/cli.md` — `fathomdb doctor` + `fathomdb recover`
   verbs from Phase 10a. List flags + exit codes + JSON output
@@ -277,7 +278,7 @@ strace.
 - TS-not-yet-parity caveat must appear on TS install page +
   TS API ref page (linked to release-notes 0.6.0).
 - Open-report deferral (per 12-TX closure) must appear in Python
-  + TS API ref where `Engine.open` is documented.
+  - TS API ref where `Engine.open` is documented.
 - Deferred-perf disclosures must appear in compatibility or
   reference — clients evaluating fathomdb for perf-sensitive
   workloads need to see the deferred ACs.

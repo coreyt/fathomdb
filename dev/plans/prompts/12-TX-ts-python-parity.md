@@ -6,6 +6,7 @@ are spec'd intentionally) and closes any found. Per plan §
 "TypeScript SDK Python-parity (12-TX)".
 
 Out of scope:
+
 - 12-D / 12-S / 12-P / 12-V-VERBS / 12-B (already closed or deferred).
 - Cross-language idiom translation (camelCase vs snake_case, positional
   vs kwarg, Promise vs sync) — these are **intentional per
@@ -72,7 +73,7 @@ EOF
   INTENTIONAL per this spec.
 - **`dev/design/bindings.md` § 1 Surface-set parity invariant** —
   the canonical PARITY DEFINITION. "Same five-verb canonical set
-  + same error class taxonomy + same data shapes in language-
+  - same error class taxonomy + same data shapes in language-
   idiomatic spelling."
 - `dev/design/errors.md` — error class taxonomy (15 classes
   required across all SDKs per the matrix).
@@ -107,6 +108,7 @@ public surface to its TS counterpart per
 - Test counterparts (Python test_X.py vs TS X.test.ts)
 
 For each row, mark:
+
 - ✅ **parity-OK** (both surfaces present; spec-compliant idiom
   differences acknowledged)
 - ❌ **gap** (TS missing what Python has, or vice versa, where
@@ -122,11 +124,11 @@ Write the matrix into the prompt's output JSON as
 ### Sub-2: Close error-class taxonomy gaps
 
 Python has 15 classes per `src/python/fathomdb/errors.py`:
-`EngineError` + `StorageError` + `ProjectionError` + `VectorError`
-+ `KindNotVectorIndexedError` + `EmbedderError` +
-`EmbedderNotConfiguredError` + `SchedulerError` + `OpStoreError` +
-`WriteValidationError` + `SchemaValidationError` + `OverloadedError`
-+ `ClosingError` + `DatabaseLockedError` + `CorruptionError` +
+`EngineError`, `StorageError`, `ProjectionError`, `VectorError`,
+`KindNotVectorIndexedError`, `EmbedderError`,
+`EmbedderNotConfiguredError`, `SchedulerError`, `OpStoreError`,
+`WriteValidationError`, `SchemaValidationError`, `OverloadedError`,
+`ClosingError`, `DatabaseLockedError`, `CorruptionError`,
 `IncompatibleSchemaVersionError`.
 
 Wait — that's 16 including `EngineError`. Verify exact count from
@@ -136,6 +138,7 @@ the Python source. Then count TS leaf classes in
 Errors: one TS leaf per canonical row.
 
 If TS is missing any class:
+
 1. Add the missing leaf to `src/ts/src/errors.ts` (extending
    `FathomDbError`).
 2. Add the variant mapping in `rethrowTyped` (or equivalent
@@ -189,6 +192,7 @@ napi or hand-written in `binding.ts` / `index.ts`).
 
 For each native method that exists in BOTH `fathomdb-py/src/lib.rs`
 and `fathomdb-napi/src/lib.rs`:
+
 - Verify the Python `.pyi` declares it.
 - Verify the TS type definitions declare it (in `binding.ts`'s
   `NativeEngine` interface or equivalent).
