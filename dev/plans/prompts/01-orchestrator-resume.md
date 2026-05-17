@@ -106,10 +106,15 @@ Phase 11+ loop (release-engineering-oriented, no perf measurement):
 
 ## 4. Spawning subagents (NOT the Agent tool)
 
-Per plan §0.1 Route 1: spawn each phase as a fresh `claude -p`
-process via the Bash tool. Do **not** use the Agent tool /
-subagent_type — that path lacks per-spawn `--model` and effort knobs
-required for orchestrated work.
+**This section was promoted to canonical doc 2026-05-17.** Read
+`dev/design/orchestration.md` as the source of truth for invocation
+patterns, codex reviewer flags, cherry-pick + fix-1 + override
+discipline, and worktree cleanup.
+
+The expanded subsections below (4.1 implementer through 4.7 output
+schema) are preserved verbatim for Pack-5 audit-trail purposes and
+are kept in lockstep with the canonical doc. **When in doubt or in
+conflict, defer to `dev/design/orchestration.md`.**
 
 ### 4.1 Implementer (Claude writes code)
 

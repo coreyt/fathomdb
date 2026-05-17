@@ -1,5 +1,11 @@
 # Hand-off — Execute 0.6.0 Phase 9 Pack 5
 
+> **SUPERSEDED 2026-05-17 for orchestration patterns.** Pack 5 itself
+> is CLOSED. Multi-agent invocation patterns (§3-5 of this file) now
+> live canonically at `dev/design/orchestration.md`. This file
+> remains as the Pack 5 historical handoff brief. **For any new
+> orchestration work, follow `dev/design/orchestration.md`.**
+
 Self-contained brief for the agent (or future-you) who will execute
 `dev/plans/0.6.0-Phase-9-Pack-5-performance-diagnostics.md` end-to-end.
 Read this file in full before touching anything else.
