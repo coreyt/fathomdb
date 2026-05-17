@@ -8,4 +8,4 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-fathomdb-embedder-api = { path = "../fathomdb-embedder-api" }
+fathomdb-embedder-api.workspace = true

@@ -27,3 +27,20 @@ rust-version = "1.95"
 [workspace.metadata.fathomdb]
 public_docs = ["docs"]
 internal_docs = ["dev"]
+
+# In-workspace sibling crate dependencies. `cargo publish` requires every
+# dep to carry a `version` requirement so the registry resolver can find
+# them once `path` is stripped at publish time. Centralizing the version
+# pins here keeps the release substrate (`scripts/set-version.sh`) editing
+# one location per axis, not N call-sites.
+#
+# Axis W entries are bumped lockstep with [workspace.package].version.
+# Axis E (fathomdb-embedder-api) carries its independent version per
+# dev/design/release.md § Version axes.
+[workspace.dependencies]
+fathomdb              = { path = "src/rust/crates/fathomdb",              version = "0.6.0" }
+fathomdb-embedder     = { path = "src/rust/crates/fathomdb-embedder",     version = "0.6.0" }
+fathomdb-embedder-api = { path = "src/rust/crates/fathomdb-embedder-api", version = "0.6.0" }
+fathomdb-engine       = { path = "src/rust/crates/fathomdb-engine",       version = "0.6.0" }
+fathomdb-query        = { path = "src/rust/crates/fathomdb-query",        version = "0.6.0" }
+fathomdb-schema       = { path = "src/rust/crates/fathomdb-schema",       version = "0.6.0" }

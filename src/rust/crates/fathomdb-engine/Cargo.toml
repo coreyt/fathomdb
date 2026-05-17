@@ -8,9 +8,9 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-fathomdb-embedder-api = { path = "../fathomdb-embedder-api" }
-fathomdb-query = { path = "../fathomdb-query" }
-fathomdb-schema = { path = "../fathomdb-schema" }
+fathomdb-embedder-api.workspace = true
+fathomdb-query.workspace = true
+fathomdb-schema.workspace = true
 rusqlite = { version = "0.31", features = ["bundled"] }
 jsonschema = { version = "0.18", default-features = false }
 serde_json = "1"

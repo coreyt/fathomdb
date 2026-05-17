@@ -243,6 +243,49 @@ else
   fi
 fi
 
+# 10. Workspace.dependencies pin drift on an Axis W entry → structured
+#     diagnostic. cargo publish requires every in-workspace dep to carry
+#     a version requirement, and the pin must match the axis.
+restore
+sed -i 's/^fathomdb-engine[[:space:]]*=.*$/fathomdb-engine       = { path = "src\/rust\/crates\/fathomdb-engine",       version = "5.5.5" }/' "$CARGO"
+if out="$("$SV" --check-files 2>&1)"; then
+  fail "check-files should fail on drifted workspace.dependencies pin"
+else
+  assert_drift_line "check-files: workspace.dependencies pin drift structured diagnostic" \
+    "$out" "Cargo.toml" "5.5.5" "$(ws_version)"
+fi
+
+# 11. --embedder-api updates the workspace.dependencies pin for
+#     fathomdb-embedder-api, not just the [package] block.
+restore
+"$SV" --embedder-api 3.3.3 >/dev/null
+if grep -E '^fathomdb-embedder-api[[:space:]]*=.*version[[:space:]]*=[[:space:]]*"3\.3\.3"' "$CARGO" >/dev/null; then
+  pass "embedder-api 3.3.3 propagates to workspace.dependencies pin"
+else
+  fail "embedder-api 3.3.3 did not update workspace.dependencies pin"
+fi
+
+# 12. --workspace updates every Axis-W pin in workspace.dependencies,
+#     and leaves the Axis-E pin (fathomdb-embedder-api) alone.
+restore
+"$SV" --embedder-api 2.2.2 >/dev/null
+"$SV" --workspace 4.4.4 >/dev/null
+# Axis W pins must all be 4.4.4.
+bad=0
+for name in fathomdb fathomdb-embedder fathomdb-engine fathomdb-query fathomdb-schema; do
+  if ! grep -E "^${name}[[:space:]]*=.*version[[:space:]]*=[[:space:]]*\"4\.4\.4\"" "$CARGO" >/dev/null; then
+    bad=1
+    fail "workspace 4.4.4 did not propagate to workspace.dependencies pin for $name"
+  fi
+done
+[ "$bad" -eq 0 ] && pass "workspace 4.4.4 propagated to every Axis-W workspace.dependencies pin"
+# Axis E pin must still be 2.2.2.
+if grep -E '^fathomdb-embedder-api[[:space:]]*=.*version[[:space:]]*=[[:space:]]*"2\.2\.2"' "$CARGO" >/dev/null; then
+  pass "workspace 4.4.4 left Axis-E workspace.dependencies pin (2.2.2) alone"
+else
+  fail "workspace 4.4.4 mutated Axis-E workspace.dependencies pin"
+fi
+
 restore
 
 if [ "$FAILED" -gt 0 ]; then

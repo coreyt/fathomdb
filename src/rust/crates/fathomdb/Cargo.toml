@@ -8,4 +8,4 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-fathomdb-engine = { path = "../fathomdb-engine" }
+fathomdb-engine.workspace = true

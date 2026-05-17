@@ -71,6 +71,55 @@ set_workspace_version() {
   '
 }
 
+# Update every Axis-W entry in [workspace.dependencies]. fathomdb-embedder-api
+# is Axis E and is skipped here — its version is set separately via
+# set_workspace_dep_embedder_api_version().
+#
+# Each line we touch is of the shape:
+#   fathomdb-<name> = { path = "...", version = "X.Y.Z" }
+# We rewrite only the version="X.Y.Z" segment; path is preserved.
+set_workspace_dep_axis_w_versions() {
+  local new="$1"
+  awk_inplace "$CARGO" '
+    BEGIN { in_block = 0 }
+    /^\[workspace\.dependencies\]/ { in_block = 1; print; next }
+    /^\[/ { in_block = 0; print; next }
+    {
+      if (in_block && $0 ~ /^fathomdb(-[a-z]+)*[[:space:]]*=/) {
+        # Skip Axis E (fathomdb-embedder-api).
+        if ($0 ~ /^fathomdb-embedder-api[[:space:]]*=/) {
+          print; next
+        }
+        # Rewrite version="..." in-place, preserve everything else.
+        if (sub(/version[[:space:]]*=[[:space:]]*"[^"]*"/,
+                "version = \"'"$new"'\"")) {
+          print; next
+        }
+      }
+      print
+    }
+  '
+}
+
+# Update the Axis-E entry in [workspace.dependencies] (fathomdb-embedder-api).
+set_workspace_dep_embedder_api_version() {
+  local new="$1"
+  awk_inplace "$CARGO" '
+    BEGIN { in_block = 0 }
+    /^\[workspace\.dependencies\]/ { in_block = 1; print; next }
+    /^\[/ { in_block = 0; print; next }
+    {
+      if (in_block && $0 ~ /^fathomdb-embedder-api[[:space:]]*=/) {
+        if (sub(/version[[:space:]]*=[[:space:]]*"[^"]*"/,
+                "version = \"'"$new"'\"")) {
+          print; next
+        }
+      }
+      print
+    }
+  '
+}
+
 # Set [project].version in pyproject.toml.
 set_pyproject_version() {
   local new="$1"
@@ -279,6 +328,37 @@ check_files() {
     esac
   done
 
+  # [workspace.dependencies] version pins must match Axis W (or Axis E for
+  # fathomdb-embedder-api). `cargo publish` requires each in-workspace dep
+  # to carry a version requirement — if the pins drift from the axis
+  # version, the published manifest will fail registry resolution at the
+  # next tier.
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    local dep_name dep_ver expected line_no
+    dep_name="$(printf '%s' "$entry" | awk -F'[[:space:]]*=' '{print $1}')"
+    dep_ver="$(printf '%s' "$entry" | sed -nE 's/.*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p')"
+    case "$dep_name" in
+      fathomdb-embedder-api) expected="$emb" ;;
+      *)                     expected="$ws"  ;;
+    esac
+    if [ -z "$dep_ver" ]; then
+      line_no="$(grep -nE "^${dep_name}[[:space:]]*=" "$CARGO" | head -1 | cut -d: -f1)"
+      _drift "$CARGO" "${line_no:-1}" "<missing version>" "$expected"
+      rc=1
+    elif [ "$dep_ver" != "$expected" ]; then
+      line_no="$(grep -nE "^${dep_name}[[:space:]]*=" "$CARGO" | head -1 | cut -d: -f1)"
+      _drift "$CARGO" "${line_no:-1}" "$dep_ver" "$expected"
+      rc=1
+    fi
+  done <<EOF
+$(awk '
+  /^\[workspace\.dependencies\]/ { in_block = 1; next }
+  /^\[/ && in_block { exit }
+  in_block && /^fathomdb/ { print }
+' "$CARGO")
+EOF
+
   if [ $rc -eq 0 ]; then
     printf 'ok: Axis W = %s; Axis E = %s\n' "$ws" "$emb"
   fi
@@ -301,6 +381,7 @@ case "$mode" in
     fi
     new="$1"
     set_workspace_version "$new"
+    set_workspace_dep_axis_w_versions "$new"
     set_pyproject_version "$new"
     set_npm_version "$new"
     check_files
@@ -311,6 +392,7 @@ case "$mode" in
     fi
     new="$1"
     set_embedder_api_version "$new"
+    set_workspace_dep_embedder_api_version "$new"
     check_files
     ;;
   --check-files)
