@@ -40,6 +40,21 @@ if ! command -v lychee >/dev/null 2>&1; then
   cargo install --locked --quiet lychee
 fi
 
+# strace — required by the AC-036 no-listen and AC-037 netns-deny-egress
+# security fixtures under scripts/security/. ~50KB, unprivileged at
+# runtime. Skip silently if apt isn't available (non-Debian hosts); the
+# fixtures will report a BLOCKER exit themselves.
+if ! command -v strace >/dev/null 2>&1; then
+  if command -v apt-get >/dev/null 2>&1; then
+    echo "Installing strace (AC-036/AC-037 security fixtures)..."
+    sudo apt-get install --no-install-recommends -y strace >/dev/null 2>&1 || \
+      echo "strace install failed; AC-036/AC-037 will report BLOCKER until installed" >&2
+  else
+    echo "strace not installed and apt-get unavailable; install via host package manager" >&2
+    echo "  (required by scripts/security/check-no-listen.sh + check-netns-deny-egress.sh)" >&2
+  fi
+fi
+
 # actionlint — workflow validator. Pinned: yaml.safe_load passes
 # schema-invalid syntax that GitHub silently rejects, so we need a real
 # linter for .github/workflows/*.yml. Version pin matches a recent stable

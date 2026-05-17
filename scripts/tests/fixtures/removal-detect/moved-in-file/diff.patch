@@ -1,0 +1,8 @@
+diff --git a/src/rust/crates/example/src/lib.rs b/src/rust/crates/example/src/lib.rs
+--- a/src/rust/crates/example/src/lib.rs
++++ b/src/rust/crates/example/src/lib.rs
+@@ -1,5 +1,5 @@
+-pub fn alpha() {}
+ pub fn beta() {}
++pub fn alpha() {}
+ pub fn gamma() {}
