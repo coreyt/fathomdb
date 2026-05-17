@@ -1,9 +1,19 @@
 {
   "name": "fathomdb",
   "version": "0.6.0",
-  "private": true,
-  "type": "module",
   "description": "TypeScript SDK for FathomDB 0.6.0 — napi-rs binding to fathomdb-engine",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/coreyt/fathomdb"
+  },
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "fathomdb.*.node"
+  ],
   "scripts": {
     "build:native": "napi build --platform --release --cargo-cwd ../rust/crates/fathomdb-napi --js false",
     "build:native:debug": "napi build --platform --cargo-cwd ../rust/crates/fathomdb-napi --features test-hooks --js false",
