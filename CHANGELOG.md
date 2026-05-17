@@ -45,7 +45,7 @@ engineering substrate landed across Phases 5-12. Axis W bumped to
 - CLI (`fathomdb-cli`) — `doctor` and `recover` verbs (Phase 10a).
 - Two-axis versioning (Axis W workspace lockstep + Axis E
   independent embedder-api semver) with `scripts/set-version.sh
-  --check-files` enforcement and pre-push hook integration.
+--check-files` enforcement and pre-push hook integration.
 - 8-tier topological publish workflow `.github/workflows/release.yml`
   with crates.io index-propagation sleeps, post-publish smoke
   against fresh registry installs, co-tagging assert.

@@ -22,11 +22,11 @@ principles; this file owns the mechanics.
 
 ## 1. Three-role separation
 
-| Role | Who | Tools | Output |
-| --- | --- | --- | --- |
-| **Orchestrator** | Main thread (you). Always. | Bash, Edit, Read, Write. May spawn subagents. | Plan files, cherry-picks, verdict promotions, commit decisions. |
-| **Implementer** | Fresh `claude -p` process in a git worktree. | Read, Edit, Write, Bash, Grep, Glob. **NEVER Task/Agent.** | Commits on a `phase-<id>-<ts>` branch + structured `<phase>-output.json`. |
-| **Reviewer** | `codex exec` against the implementer's worktree. | Read-only sandbox. | Verdict body (PASS / CONCERN / BLOCK) in log; main thread promotes to .md. |
+| Role             | Who                                              | Tools                                                      | Output                                                                     |
+| ---------------- | ------------------------------------------------ | ---------------------------------------------------------- | -------------------------------------------------------------------------- |
+| **Orchestrator** | Main thread (you). Always.                       | Bash, Edit, Read, Write. May spawn subagents.              | Plan files, cherry-picks, verdict promotions, commit decisions.            |
+| **Implementer**  | Fresh `claude -p` process in a git worktree.     | Read, Edit, Write, Bash, Grep, Glob. **NEVER Task/Agent.** | Commits on a `phase-<id>-<ts>` branch + structured `<phase>-output.json`.  |
+| **Reviewer**     | `codex exec` against the implementer's worktree. | Read-only sandbox.                                         | Verdict body (PASS / CONCERN / BLOCK) in log; main thread promotes to .md. |
 
 Anti-patterns (do not violate):
 
@@ -259,7 +259,7 @@ orchestrator may accept the CONCERN without further remediation.
 Override discipline:
 
 - Add explicit `**Orchestrator override <YYYY-MM-DD>: CONCERN
-  accepted.**` line to the verdict .md.
+accepted.**` line to the verdict .md.
 - Document the rationale in `## Orchestrator triage` section.
 - **Never override BLOCK** — that's a code or correctness issue;
   always remediate.
@@ -309,7 +309,7 @@ After implementer returns:
    add `Phase <id> CLOSED` block, advance mainline pointer.
 7. Commit plan + verdict + prompt files in single docs commit:
    `docs(<phase>): promote codex <verdict>; close Phase <id>;
-   advance to <next>`.
+advance to <next>`.
 8. After all sub-phases of a phase family close: worktree cleanup
    (per § 11).
 
@@ -366,11 +366,11 @@ sessions.
 
 ### 12.1 Three context tiers
 
-| Tier | Lifetime | What lives there |
-|------|----------|------------------|
-| **Subagent (implementer/reviewer)** | Single slice spawn (~10-30min) | Per-slice prompt + worktree files only. Fresh `claude -p` / `codex exec` every spawn — never grows. |
-| **Main-thread conversation** | Single session (hours-days, until `/compact` or new session) | Plan-update decisions, codex verdict promotion, cherry-picks, HITL escalation. Limited by Claude Code's context window. |
-| **On-disk** | Survives forever (compaction-safe) | Plan doc, prompts/, runs/, design docs, MEMORY, progress log, STATUS-<phase>.md. |
+| Tier                                | Lifetime                                                     | What lives there                                                                                                        |
+| ----------------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| **Subagent (implementer/reviewer)** | Single slice spawn (~10-30min)                               | Per-slice prompt + worktree files only. Fresh `claude -p` / `codex exec` every spawn — never grows.                     |
+| **Main-thread conversation**        | Single session (hours-days, until `/compact` or new session) | Plan-update decisions, codex verdict promotion, cherry-picks, HITL escalation. Limited by Claude Code's context window. |
+| **On-disk**                         | Survives forever (compaction-safe)                           | Plan doc, prompts/, runs/, design docs, MEMORY, progress log, STATUS-<phase>.md.                                        |
 
 **Rule:** if it must survive a `/compact` or new session, it goes on
 disk. Main-thread chat is throwaway working memory.

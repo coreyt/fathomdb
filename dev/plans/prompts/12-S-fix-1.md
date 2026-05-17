@@ -73,7 +73,7 @@ required by AC-050a. Empty `V05_VERBS` = unenforced clause.
 **Required fix:**
 
 1. Inventory 0.5.x verbs from pre-0.6.0 source (`git show
-   39ee271^:`). Look at:
+39ee271^:`). Look at:
    - `python/fathomdb/__init__.py` (top-level Python verbs)
    - `typescript/packages/fathomdb/src/index.ts` (TS exports)
    - `rust/src/lib.rs` or equivalent (Rust facade verbs)
@@ -93,11 +93,11 @@ required by AC-050a. Empty `V05_VERBS` = unenforced clause.
      where the function body delegates to a 0.6.0 surface.
    - Python: `def <V05_VERB>(...): return <0.6.0-verb>(...)`.
    - TS: `export function <V05_VERB>(...) { return
-     <0.6.0-verb>(...); }`.
-   If V05_VERBS list is genuinely "all verbs that should NOT
-   exist by name in 0.6.0", the simpler `function-name-matches`
-   check is fine — but then the list must NOT include
-   `open`/`close`/`search`/`write`/`configure` (the kept verbs).
+<0.6.0-verb>(...); }`.
+     If V05_VERBS list is genuinely "all verbs that should NOT
+     exist by name in 0.6.0", the simpler `function-name-matches`
+     check is fine — but then the list must NOT include
+     `open`/`close`/`search`/`write`/`configure` (the kept verbs).
 4. Add a dirty fixture under
    `scripts/tests/fixtures/ast-shim/rust/dirty/v05_verb_reroute.rs`
    that defines a 0.5.x verb name as a function. Same for
@@ -108,8 +108,8 @@ required by AC-050a. Empty `V05_VERBS` = unenforced clause.
    - Assert scanner exits zero on the clean fixtures (regression
      guard).
    - Assert `V05_VERBS` is non-empty (sentinel test: `python3 -c
-     "from scripts.security.ast_scan import V05_VERBS; assert
-     len(V05_VERBS) > 0"` or equivalent grep-based check).
+"from scripts.security.ast_scan import V05_VERBS; assert
+len(V05_VERBS) > 0"` or equivalent grep-based check).
 
 **If the 0.5.x verb inventory is genuinely empty** (i.e. no verbs
 were renamed/removed in the 0.5.x→0.6.0 transition; rare but
@@ -193,7 +193,7 @@ Per GitHub Actions runner customization docs
 package indexes on hosted runners can be stale.
 
 1. Edit `scripts/bootstrap.sh` strace-install clause: add `sudo
-   apt-get update -qq` before `sudo apt-get install -y strace`.
+apt-get update -qq` before `sudo apt-get install -y strace`.
 2. Keep the OS gating (apt-get only on Linux) intact.
 3. If `sudo apt-get update` would slow down local dev
    (developers running bootstrap repeatedly), gate the update on

@@ -113,7 +113,7 @@ ships the release gate that REQ-048 tag-time fires.
     `fathomdb` and currently `"private": true` — see Blocker 7.
   - Build script `npm run build:native` (in `src/ts/package.json`)
     invokes `napi build --platform --release --cargo-cwd
-    ../rust/crates/fathomdb-napi --js false`. Prefer this over a raw
+../rust/crates/fathomdb-napi --js false`. Prefer this over a raw
     `cargo build` + manual rename — the napi-rs CLI handles the
     platform-label rename per the `napi.triples` config.
 
@@ -156,7 +156,7 @@ Job graph (each job uses `needs:` to gate, mirroring pre-0.6.0):
 3. **`build-napi`** — matrix of (linux-x86_64-gnu, darwin-x86_64,
    darwin-aarch64, win32-x86_64). Builds the napi binding via the
    `src/ts/` package script: `cd src/ts && npm ci && npm run
-   build:native` with the target injected via `CARGO_BUILD_TARGET`
+build:native` with the target injected via `CARGO_BUILD_TARGET`
    (or by setting `--target <target>` on a `napi build` override
    step). The napi-rs CLI handles the rename to
    `fathomdb.<platform-label>.node` per the `napi.triples` config in
@@ -178,24 +178,24 @@ Job graph (each job uses `needs:` to gate, mirroring pre-0.6.0):
      Comment the rationale in the workflow (the pre-0.6.0 comment is
      correct and should be carried forward).
 5. **`all-builds-passed`** — ubuntu cross-ecosystem gate. `needs:
-   [verify-release, build-python, build-napi, build-rust]`. Single
+[verify-release, build-python, build-napi, build-rust]`. Single
    `echo` step. Rationale comment per pre-0.6.0 source.
 6. **`publish-rust-t1-embedder-api`** — Tier 1. `needs:
-   all-builds-passed`. `cargo publish -p fathomdb-embedder-api
-   --token ${{ secrets.CARGO_REGISTRY_TOKEN }}`. Then `sleep 60` for
+all-builds-passed`. `cargo publish -p fathomdb-embedder-api
+--token ${{ secrets.CARGO_REGISTRY_TOKEN }}`. Then `sleep 60` for
    index propagation.
 7. **`publish-rust-t2-schema`** — Tier 2. `needs:
-   publish-rust-t1-embedder-api`. Publish + sleep 60.
+publish-rust-t1-embedder-api`. Publish + sleep 60.
 8. **`publish-rust-t3-query`** — Tier 3. `needs: publish-rust-t2-schema`.
    Publish + sleep 60.
 9. **`publish-rust-t4-engine`** — Tier 4. `needs: publish-rust-t3-query`.
    Publish + sleep 60.
 10. **`publish-rust-t5-embedder`** — Tier 5. `needs:
-    publish-rust-t4-engine` (per release.md "independent of engine"
+publish-rust-t4-engine` (per release.md "independent of engine"
     in graph terms, but T5 must wait for the publish gate ordering;
     chain on T4 for the index sleep cadence). Publish + sleep 60.
 11. **`publish-rust-t6-facade`** — Tier 6. `needs:
-    publish-rust-t5-embedder`. Publish (fathomdb) + sleep 60.
+publish-rust-t5-embedder`. Publish (fathomdb) + sleep 60.
 12. **`publish-rust-t7-cli`** — Tier 7. `needs: publish-rust-t6-facade`.
     Publish `fathomdb-cli` + sleep 60.
 13. **`publish-pypi`** — Tier 8a. `needs: publish-rust-t4-engine`
@@ -212,26 +212,23 @@ Job graph (each job uses `needs:` to gate, mirroring pre-0.6.0):
     Blocker 7. Workflow must not paper over a misconfigured package.
 15. **`post-publish-smoke`** — NEW per AC-056 + AC-053 +
     `feedback_release_verification`. `needs: [publish-rust-t7-cli,
-    publish-pypi, publish-npm]`. Runs three smoke matrices in parallel
-    (one job each, or a 3-leg matrix):
-    - `crates-io-smoke`: fresh ubuntu. `cargo install fathomdb-cli
-      --version <tag-version>`. Create a tempdir fixture DB. Run
-      `fathomdb doctor check-integrity --json` (per release.md
-      § Post-publish smoke). Assert exit 0 + the JSON parses.
-    - `pypi-smoke`: fresh ubuntu. `python -m venv /tmp/smoke && source
-      /tmp/smoke/bin/activate && pip install fathomdb==<tag-version>`.
-      Run an end-to-end script (NEW — see Item 3) that opens a DB,
-      writes a row, runs a query, closes, and exits with status 0.
-    - `npm-smoke`: fresh ubuntu. `mkdir /tmp/smoke && cd /tmp/smoke
-      && npm init -y && npm install <published-npm-name>@<tag-version>`.
-      Run the TS equivalent end-to-end smoke script. The published
-      npm name MUST match what publish-npm actually publishes — keep
-      a single source of truth (e.g. read from
-      `src/ts/package.json` `name` at workflow time).
+publish-pypi, publish-npm]`. Runs three smoke matrices in parallel
+    (one job each, or a 3-leg matrix): - `crates-io-smoke`: fresh ubuntu. `cargo install fathomdb-cli
+--version <tag-version>`. Create a tempdir fixture DB. Run
+    `fathomdb doctor check-integrity --json` (per release.md
+    § Post-publish smoke). Assert exit 0 + the JSON parses. - `pypi-smoke`: fresh ubuntu. `python -m venv /tmp/smoke && source
+/tmp/smoke/bin/activate && pip install fathomdb==<tag-version>`.
+    Run an end-to-end script (NEW — see Item 3) that opens a DB,
+    writes a row, runs a query, closes, and exits with status 0. - `npm-smoke`: fresh ubuntu. `mkdir /tmp/smoke && cd /tmp/smoke
+  && npm init -y && npm install <published-npm-name>@<tag-version>`.
+    Run the TS equivalent end-to-end smoke script. The published
+    npm name MUST match what publish-npm actually publishes — keep
+    a single source of truth (e.g. read from
+    `src/ts/package.json` `name` at workflow time).
     Extract `<tag-version>` from `${{ github.ref_name }}` stripping the
     leading `v`.
 16. **`co-tagging-assert`** — NEW per AC-052. `needs:
-    [publish-rust-t7-cli, publish-pypi, publish-npm]`. Runs
+[publish-rust-t7-cli, publish-pypi, publish-npm]`. Runs
     `scripts/release/assert-co-tagging.sh <tag-version>` (NEW — see
     Item 5). Queries crates.io / PyPI / npm via curl + jq for the
     sibling triple `fathomdb` + `fathomdb-embedder` +
@@ -239,7 +236,7 @@ Job graph (each job uses `needs:` to gate, mirroring pre-0.6.0):
     expected version (Axis W for the first two; Axis E for the third,
     read from `fathomdb-embedder-api/Cargo.toml` at the tag commit).
 17. **`github-release`** — `needs: [post-publish-smoke,
-    co-tagging-assert]`. Only this job marks the release done by
+co-tagging-assert]`. Only this job marks the release done by
     creating the GitHub Release. Implements AC-054 atomicity: if any
     smoke or co-tagging job is red, this job does not run, so the
     release is not marked complete.
@@ -285,12 +282,12 @@ Three scripts under `scripts/release/smoke/`:
    tempdir fixture DB, runs `fathomdb doctor check-integrity --json`,
    asserts exit 0 + valid JSON output. Cleans tempdir.
 2. `smoke-pypi-wheel.sh` — creates a venv, `pip install
-   fathomdb==$1`, invokes a Python one-liner that opens a DB at
+fathomdb==$1`, invokes a Python one-liner that opens a DB at
    a tempdir, writes a row through the SDK, runs a query, closes,
    exits 0. Per AC-056 the script also process-exits cleanly (the
    open + close + exit pattern from `feedback_release_verification`).
 3. `smoke-npm-package.sh` — `npm init -y`, `npm install
-   @fathomdb/fathomdb@$1`, runs a Node one-liner that exercises the
+@fathomdb/fathomdb@$1`, runs a Node one-liner that exercises the
    napi binding end-to-end + process-exits cleanly.
 
 Each smoke script: hardened bash (`set -euo pipefail`), accepts the
@@ -313,7 +310,7 @@ When `dry_run: true`:
 
 - All `cargo publish` steps run with `--dry-run`.
 - `pypa/gh-action-pypi-publish` uses a `repository-url:
-  https://test.pypi.org/legacy/` override (test.pypi).
+https://test.pypi.org/legacy/` override (test.pypi).
 - `npm publish` runs with `--dry-run`.
 - Post-publish smoke jobs are SKIPPED (cannot install from test.pypi
   in a way that mirrors prod; the smoke is structured around real
@@ -353,7 +350,7 @@ Per `feedback_workflow_validation.md` — actionlint is the validator.
 
 1. Add `actionlint` install step to `scripts/bootstrap.sh`. The
    actionlint binary release pattern: `go install
-   github.com/rhysd/actionlint/cmd/actionlint@v1.7.7` (pin the
+github.com/rhysd/actionlint/cmd/actionlint@v1.7.7` (pin the
    version; verify v1.7.7 is current — if newer is out, bump and
    note in commit). Cache the binary path consistent with how
    bootstrap handles other go-installed binaries.

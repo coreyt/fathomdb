@@ -124,7 +124,7 @@ Three pages under `docs/install/`:
   (Rust stable + sqlite-vec system lib); `cargo add fathomdb`
   (facade crate, post-GA); CLI install `cargo install fathomdb-cli`;
   pre-GA `cargo add fathomdb --git
-  https://github.com/coreyt/fathomdb --branch 0.6.0-rewrite`.
+https://github.com/coreyt/fathomdb --branch 0.6.0-rewrite`.
 
 Each page is ~50-80 lines. Cite the locked interface spec for surface
 details (don't duplicate).
@@ -163,12 +163,12 @@ Under `docs/reference/`:
 
 - `docs/reference/python-api.md` — Engine + admin.configure + types
   - error classes. If using mkdocstrings (Sub-1 path A), this is
-  a thin shell with `:::fathomdb.Engine` directives. If hand-
-  written, full signature + brief description + return type per
-  callable + a "see also" pointer to the locked interface spec.
+    a thin shell with `:::fathomdb.Engine` directives. If hand-
+    written, full signature + brief description + return type per
+    callable + a "see also" pointer to the locked interface spec.
 - `docs/reference/typescript-api.md` — Engine class (Promise-based)
   - admin.configure + interfaces + error classes. Hand-written
-  (per Sub-1 decision).
+    (per Sub-1 decision).
 - `docs/reference/cli.md` — `fathomdb doctor` + `fathomdb recover`
   verbs from Phase 10a. List flags + exit codes + JSON output
   shape per `dev/interfaces/cli.md`.

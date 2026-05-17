@@ -98,7 +98,7 @@ Phase 11+ loop (release-engineering-oriented, no perf measurement):
    slice" pointer.
 7. Commit plan + verdict + prompt files in single docs commit:
    `docs(<phase>): promote codex <verdict>; close Phase <id>;
-   advance to <next>`.
+advance to <next>`.
 8. After all sub-phases of a phase family close: worktree cleanup
    (remove WT, delete branch) — see §11.
 

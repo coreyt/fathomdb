@@ -74,7 +74,7 @@ EOF
 - **`dev/design/bindings.md` § 1 Surface-set parity invariant** —
   the canonical PARITY DEFINITION. "Same five-verb canonical set
   - same error class taxonomy + same data shapes in language-
-  idiomatic spelling."
+    idiomatic spelling."
 - `dev/design/errors.md` — error class taxonomy (15 classes
   required across all SDKs per the matrix).
 
@@ -256,7 +256,7 @@ Known flakes: `ac_029`, `ac_017`, `t_safe_export_engine_error_exits_export_failu
    attributes** (e.g. `holder_pid` on DatabaseLockedError). If TS
    can't surface custom attrs the way Python's exception classes
    do, surface + propose a normalized shape (e.g. `error.detail
-   = { holderPid: number }`).
+= { holderPid: number }`).
 4. **Test counterpart is Python-specific.** If `test_scaffold.py`
    tests something like pytest plugin behavior or Python import
    semantics that doesn't map to TS, surface as

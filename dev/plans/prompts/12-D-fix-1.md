@@ -130,7 +130,7 @@ Approach:
    randomized kill delay, THEN `SIGKILL`.
 3. After SIGKILL, parent reopens DB, reads the latest commit
    timestamp, computes `lost_commit_ms = (kill_ts -
-   last_commit_ts).as_millis()`. Always `Some(_)`.
+last_commit_ts).as_millis()`. Always `Some(_)`.
 4. Compute p99 across all 100 trials. Assert ≤ 100 ms per AC-034b.
 
 Tighten the assertion: `assert!(trials.len() == P_PWR_TRIALS)` and
@@ -150,15 +150,15 @@ as acquirable.
    `durability_open_path.rs` (or `tests/support/`):
    `_lock_acquire_probe_entry` — env-var-gated
    (`FATHOMDB_TEST_LOCK_PROBE=<path>`); attempts `flock(LOCK_EX |
-   LOCK_NB)` on the path; exits 0 on success, 1 on `EWOULDBLOCK`.
+LOCK_NB)` on the path; exits 0 on success, 1 on `EWOULDBLOCK`.
 2. Modify AC-035c lock-release tests to:
    - Trigger the corruption fixture in process A (current test
      process).
    - Assert `Engine::open` returns `Corruption(...)`.
    - Spawn child via
      `Command::new(std::env::current_exe()).env("FATHOMDB_TEST_LOCK_PROBE",
-     <lock_path>).args(&["--ignored",
-     "_lock_acquire_probe_entry"])`.
+<lock_path>).args(&["--ignored",
+"_lock_acquire_probe_entry"])`.
    - Assert child exits 0 (lock was acquirable from sibling
      process).
 3. Same change for both `linux-only` AC-035c tests (header +

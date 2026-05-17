@@ -136,12 +136,8 @@ in `tests/support/corruption.rs`. The work is:
      opaque-SQLite paths surface as
      `OpaqueSqliteError { sqlite_extended_code: i32 }`.
    - `recovery_hint: RecoveryHint { code: &'static str, doc_anchor:
-     &'static str }` carries the documented `(kind, stage, code)`
-     tuple per AC-035b assertion text:
-     - `(WalReplayFailure, WalReplay, "E_CORRUPT_WAL_REPLAY")`
-     - `(HeaderMalformed, HeaderProbe, "E_CORRUPT_HEADER")`
-     - `(SchemaInconsistent, SchemaProbe, "E_CORRUPT_SCHEMA")`
-     - `(EmbedderIdentityDrift, EmbedderIdentity, "E_CORRUPT_EMBEDDER_IDENTITY")`
+&'static str }` carries the documented `(kind, stage, code)`
+     tuple per AC-035b assertion text: - `(WalReplayFailure, WalReplay, "E_CORRUPT_WAL_REPLAY")` - `(HeaderMalformed, HeaderProbe, "E_CORRUPT_HEADER")` - `(SchemaInconsistent, SchemaProbe, "E_CORRUPT_SCHEMA")` - `(EmbedderIdentityDrift, EmbedderIdentity, "E_CORRUPT_EMBEDDER_IDENTITY")`
    - `code` stability: re-run the fixture and assert bit-equal
      `code` string.
 4. **AC-035c sibling-lock + fd-introspection** — for the
@@ -185,7 +181,7 @@ This is new tooling. Approach:
 3. **AC-034a assertion**: `integrity_check == "ok"` on every one
    of the 100 trials.
 4. **AC-034b assertion**: `(kill_ts - last_commit_ts).quantile(0.99)
-   <= 100ms` across the 100 trials.
+<= 100ms` across the 100 trials.
 
 Test file: `src/rust/crates/fathomdb-engine/tests/durability_soak.rs`
 per `test-plan.md` § AC-034a..AC-035c row.
@@ -288,7 +284,7 @@ for the format):
    `/proc/self/*` approach won't work. Surface + recommend
    linux-only-CI scoping for the gate.
 2. **Power-cut victim binary substrate.** If `Command::new(
-   current_exe())` + env-var-gated entry point cannot be wired
+current_exe())` + env-var-gated entry point cannot be wired
    (e.g. test runner forbids re-entry), surface + recommend
    alternative (dedicated `cargo-bin` victim binary or test crate).
 3. **OS-crash VM substrate missing.** Surface clean per Sub-3

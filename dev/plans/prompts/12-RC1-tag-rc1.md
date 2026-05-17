@@ -177,6 +177,7 @@ After implementer prep returns + cherry-pick lands on
    ```
 
    (Requires `gh` CLI + repo write permission.)
+
 2. Watch the run:
 
    ```bash
@@ -272,16 +273,16 @@ be re-used.
 
 Failure scenarios:
 
-| Failure stage | Recovery |
-|---------------|----------|
-| `verify-release` fail | No real publish yet; fix locally + re-push tag is NOT allowed (tag is published). Use `rc.2`. |
-| Build matrix fail | Same — no publish yet; bump to `rc.2`. |
-| T1 publish fail (network glitch) | Manually retry `cargo publish -p fathomdb-embedder-api --token $TOKEN` from a local checkout; resume from T2 by re-running workflow with `--rerun-failed`. If unrecoverable, bump to `rc.2`. |
-| T2-T7 fail mid-tier | Crates already published at T1..T(N-1) cannot be re-published. Bump to `rc.2`; the partial-published crates stay at `0.6.0-rc.1` forever. New RC must bump ALL crates to `0.6.0-rc.2` for consistency, even though some were green at rc.1. |
-| T8 PyPI/npm fail after T7 green | PyPI version slot consumed if `publish-pypi` partial. npm easier (can usually re-trigger). Bump to `rc.2`. |
-| `post-publish-smoke` fail | Crates already published. Investigate smoke failure; if smoke caught a real client-breaking bug, hotfix → `rc.2`. If smoke flake, document + retry the smoke step only. |
-| `co-tagging-assert` fail | Sibling triple version mismatch. Indicates set-version drift. Should have been caught at `verify-release`; if it slipped, hotfix + `rc.2`. |
-| `github-release` fail | All publishes already done; just need to manually create the github release via `gh release create v0.6.0-rc.1` with notes. Not a re-cut trigger. |
+| Failure stage                    | Recovery                                                                                                                                                                                                                                    |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `verify-release` fail            | No real publish yet; fix locally + re-push tag is NOT allowed (tag is published). Use `rc.2`.                                                                                                                                               |
+| Build matrix fail                | Same — no publish yet; bump to `rc.2`.                                                                                                                                                                                                      |
+| T1 publish fail (network glitch) | Manually retry `cargo publish -p fathomdb-embedder-api --token $TOKEN` from a local checkout; resume from T2 by re-running workflow with `--rerun-failed`. If unrecoverable, bump to `rc.2`.                                                |
+| T2-T7 fail mid-tier              | Crates already published at T1..T(N-1) cannot be re-published. Bump to `rc.2`; the partial-published crates stay at `0.6.0-rc.1` forever. New RC must bump ALL crates to `0.6.0-rc.2` for consistency, even though some were green at rc.1. |
+| T8 PyPI/npm fail after T7 green  | PyPI version slot consumed if `publish-pypi` partial. npm easier (can usually re-trigger). Bump to `rc.2`.                                                                                                                                  |
+| `post-publish-smoke` fail        | Crates already published. Investigate smoke failure; if smoke caught a real client-breaking bug, hotfix → `rc.2`. If smoke flake, document + retry the smoke step only.                                                                     |
+| `co-tagging-assert` fail         | Sibling triple version mismatch. Indicates set-version drift. Should have been caught at `verify-release`; if it slipped, hotfix + `rc.2`.                                                                                                  |
+| `github-release` fail            | All publishes already done; just need to manually create the github release via `gh release create v0.6.0-rc.1` with notes. Not a re-cut trigger.                                                                                           |
 
 Per `feedback_reliability_principles` no-punt rule: surface failures
 explicitly, don't paper over.

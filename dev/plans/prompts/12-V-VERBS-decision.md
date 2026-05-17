@@ -16,10 +16,10 @@ purge and restore section refreshed if any verb decision changes.
 Two verbs surfaced as design-only in 0.6.0 per Phase 10b-B blocker
 (2026-05-16):
 
-| Verb | Spec source | Substrate gap |
-|------|-------------|----------------|
-| `purge_logical_id` | `dev/design/recovery.md` § Logical-id purge and restore | `canonical_nodes` + `canonical_edges` lack `logical_id` / `row_id` / `superseded_at` / `restore_provenance` columns; `PreparedWrite::{Node,Edge}` carry no `logical_id` field; no partial unique index on `(logical_id, kind)`; no supersession writer step; `latest_state` op-store has no `record_key == logical_id` contract; `append_only_log` has no `logical_id` index |
-| `restore_logical_id` | Same | Same + no `restore_provenance` writer path |
+| Verb                 | Spec source                                             | Substrate gap                                                                                                                                                                                                                                                                                                                                                                |
+| -------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `purge_logical_id`   | `dev/design/recovery.md` § Logical-id purge and restore | `canonical_nodes` + `canonical_edges` lack `logical_id` / `row_id` / `superseded_at` / `restore_provenance` columns; `PreparedWrite::{Node,Edge}` carry no `logical_id` field; no partial unique index on `(logical_id, kind)`; no supersession writer step; `latest_state` op-store has no `record_key == logical_id` contract; `append_only_log` has no `logical_id` index |
+| `restore_logical_id` | Same                                                    | Same + no `restore_provenance` writer path                                                                                                                                                                                                                                                                                                                                   |
 
 Both verbs paired (closing one without the other is incoherent).
 Both blocked on the **same** precursor: a canonical-identity

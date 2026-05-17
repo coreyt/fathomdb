@@ -108,7 +108,7 @@ portable, pid-scoped, runs unprivileged. Use strace.
    - spawns a `fathomdb` binary running an env-gated test fixture
      entry-point that performs open+write+search+close.
    - wraps the spawn under `strace -f -e trace=socket,listen
-     -o <log>`.
+-o <log>`.
    - parses the strace log; asserts zero `listen(` syscalls that
      succeed (returns non-negative fd or `0`).
    - exits 0/1 per AC-036.
@@ -208,7 +208,7 @@ CHANGELOG `Removed` section.
      `0.6.0-rewrite^..HEAD`).
    - Extracts removed public symbols from
      `git diff <base>..<head> -- 'src/rust/crates/**' 'src/python/**'
-     'src/ts/**'`.
+'src/ts/**'`.
      "Removed public symbol" = a `-` line whose content matches
      `pub fn|pub struct|pub enum|pub trait|pub const|pub type` (Rust),
      `^def [a-zA-Z]` or `^class [A-Z]` at module top-level (Python),

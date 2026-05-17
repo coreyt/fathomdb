@@ -91,6 +91,7 @@ Current state machine uses a boolean flag, so on the input
    Expected: scanner does NOT flag (legacy_inner is inside a
    block comment, and "outer" + "still outer" are also inside
    the OUTER block comment).
+
 6. Add a dirty Rust fixture for nested-block-then-real-code:
    `scripts/tests/fixtures/ast-shim/rust/block-comment-real/nested_real.rs`:
 
@@ -101,6 +102,7 @@ Current state machine uses a boolean flag, so on the input
    Expected: scanner DOES flag legacy_admin (outer block fully
    closes after the second `*/`; subsequent `pub fn legacy_admin`
    is live code).
+
 7. Extend `scripts/tests/test_ast_scan.sh` to invoke both
    fixtures + assert expected behavior.
 

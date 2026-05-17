@@ -62,7 +62,7 @@ EOF
   - Drop `go-fuzz-smoke` entirely (no `go/` surface in 0.6.0).
   - Repath `python/` → `src/python/`, `typescript/` → `src/ts/`.
   - Drop `cargo build -p fathomdb --features node` step until
-    napi-rs lands.  **NOTE: napi-rs HAS LANDED (Phase 11b).**
+    napi-rs lands. **NOTE: napi-rs HAS LANDED (Phase 11b).**
     Adapt this step to the new napi build (`npm run build:native`
     in `src/ts`) per `dev/design/orchestration.md` § 4.2 or per
     `.github/workflows/release.yml` build-napi job for reference.
@@ -114,26 +114,26 @@ Jobs (drop pre-0.6.0 `go-fuzz-smoke` entirely):
    (don't write a stub). It existed pre-0.6.0; verify it survived
    the rewrite.
 2. **`rust-scale-tests`** — `cargo nextest run -p fathomdb-engine
-   --test scale --run-ignored=only`. Verify `fathomdb-engine`
+--test scale --run-ignored=only`. Verify `fathomdb-engine`
    has a `scale` test target; if not, surface as blocker (or scope
    in placeholder per orchestrator decision).
    `FATHOM_RUST_STRESS_DURATION_SECONDS: "60"` env.
 3. **`rust-tracing-stress`** — `cargo test -p fathomdb-engine
-   --features tracing --test tracing_events
-   tracing_events_continue_under_concurrent_load`. Verify the
+--features tracing --test tracing_events
+tracing_events_continue_under_concurrent_load`. Verify the
    `tracing` feature exists on `fathomdb-engine` + the test
    exists. If not, surface.
    `FATHOM_RUST_TRACING_STRESS_DURATION_SECONDS: "60"`.
 4. **`python-stress-tests`** — adapted: `pip install -e src/python/`
    (per `feedback_python_native_build` memory; NOT `pip install -e
-   python` like pre-0.6.0). Then `pytest src/python/tests/test_stress.py
-   -v --timeout=120` if the test file exists; if not, surface as
+python` like pre-0.6.0). Then `pytest src/python/tests/test_stress.py
+-v --timeout=120` if the test file exists; if not, surface as
    blocker (don't stub).
    `FATHOM_PY_STRESS_DURATION_SECONDS: "60"`.
 5. **`typescript-observability-harness`** — adapted:
    `working-directory: src/ts`. Use `npm ci` + `npm run
-   build:native` (the Phase 11b napi build script) + `npm run
-   build` + the harness test. Check if a `sdk-harness` workspace
+build:native` (the Phase 11b napi build script) + `npm run
+build` + the harness test. Check if a `sdk-harness` workspace
    or equivalent exists in `src/ts`; if not, surface.
    `FATHOM_TS_STRESS_DURATION_SECONDS: "30"`.
 

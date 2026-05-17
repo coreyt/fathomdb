@@ -19,12 +19,12 @@ carry accurate disclosures. Full per-AC analysis already in
 `dev/plans/0.6.0-implementation.md` § "Performance ACs deferral
 analysis"; condensed here for decision.
 
-| AC | Budget | Latest dev-runner reading | Core-change risk if un-deferred |
-|----|--------|---------------------------|----------------------------------|
-| **AC-012** text query (FTS5) | p50 ≤ 20 ms / p99 ≤ 150 ms | p50=29.7 ms RED / p99=85 ms GREEN at N=100,000 (aarch64 Tegra ~3× slower than canonical x86_64) | **LOW** — likely closes on canonical runner without engine work |
-| **AC-013** vector retrieval | p50 ≤ 50 ms / p99 ≤ 200 ms | p50=33 ms / p99=48 ms GREEN at N=10,000; N=50,000 unmeasurable (vec0 seed = 5.5 inserts/sec) | **MEDIUM** — bulk-seed engine-surface gap; Pack 7 batched-insert API work |
-| **AC-019** mixed-retrieval stress | p99 ≤ max(10×baseline_p99, 150 ms) | Not measured at scale (inherits AC-013 seed cost) | **MEDIUM** — same as AC-013 |
-| **AC-020** N=8 concurrent reader | concurrent ≤ sequential × 1.25 / 8 | Best 3.530× speedup vs required 5.33× (gap 1.80×, ~80 ms conc) | **HIGH** — `pcache1` mutex on every page-fetch; closure requires `SQLITE_CONFIG_PCACHE2` / vendor-SQLite swap / WAL2 / reader-writer split (Pack 7 territory; weeks of work) |
+| AC                                | Budget                             | Latest dev-runner reading                                                                       | Core-change risk if un-deferred                                                                                                                                              |
+| --------------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **AC-012** text query (FTS5)      | p50 ≤ 20 ms / p99 ≤ 150 ms         | p50=29.7 ms RED / p99=85 ms GREEN at N=100,000 (aarch64 Tegra ~3× slower than canonical x86_64) | **LOW** — likely closes on canonical runner without engine work                                                                                                              |
+| **AC-013** vector retrieval       | p50 ≤ 50 ms / p99 ≤ 200 ms         | p50=33 ms / p99=48 ms GREEN at N=10,000; N=50,000 unmeasurable (vec0 seed = 5.5 inserts/sec)    | **MEDIUM** — bulk-seed engine-surface gap; Pack 7 batched-insert API work                                                                                                    |
+| **AC-019** mixed-retrieval stress | p99 ≤ max(10×baseline_p99, 150 ms) | Not measured at scale (inherits AC-013 seed cost)                                               | **MEDIUM** — same as AC-013                                                                                                                                                  |
+| **AC-020** N=8 concurrent reader  | concurrent ≤ sequential × 1.25 / 8 | Best 3.530× speedup vs required 5.33× (gap 1.80×, ~80 ms conc)                                  | **HIGH** — `pcache1` mutex on every page-fetch; closure requires `SQLITE_CONFIG_PCACHE2` / vendor-SQLite swap / WAL2 / reader-writer split (Pack 7 territory; weeks of work) |
 
 ## Decision per AC
 
