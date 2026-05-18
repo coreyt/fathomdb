@@ -12,6 +12,26 @@ AC-050c) gates merges against this invariant.
 
 (none yet)
 
+## 0.6.0-rc.3 - 2026-05-18
+
+Cut after rc.2's post-publish gates (co-tagging-assert + three
+`smoke-*` jobs + github-release) failed on a hardcoded
+`MAJOR.MINOR.PATCH` regex that rejected the `-rc.N` suffix.
+rc.2 artifacts ARE live on crates.io, PyPI, and npm, but no
+GitHub release entry was created for `v0.6.0-rc.2`; rc.3
+supersedes it. No functional engine or SDK code change since
+rc.2.
+
+### Changed
+
+- Release workflow: `assert-co-tagging.sh` and the three
+  `smoke-{crates,pypi-wheel,npm}.sh` scripts now accept
+  `MAJOR.MINOR.PATCH(-PRERELEASE)?` so pre-release tags pass
+  the post-publish gates (fix landed in `70e6487`).
+- Release workflow: `smoke-pypi-wheel.sh` normalizes SemVer to
+  PEP 440 (`0.6.0-rc.3` → `0.6.0rc3`) before `pip install` so
+  the wheel resolves under pip's normalized version index.
+
 ## 0.6.0-rc.2 - 2026-05-18
 
 Real release candidate of 0.6.0. The `0.6.0-rc.1` slot was consumed
