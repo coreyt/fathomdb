@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Rehearse cargo --dry-run + npm --dry-run; PyPI publish + post-publish smoke skipped entirely (no test.pypi slot burn)."
+        description: "Rehearse cargo package (no real publish; skips sibling-crate resolution that breaks cargo publish --dry-run for intra-workspace deps) + npm --dry-run; PyPI publish + post-publish smoke skipped entirely (no test.pypi slot burn)."
         type: boolean
         default: true
 
@@ -117,7 +117,7 @@ jobs:
             label: darwin-arm64
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
-            label: win32-x64
+            label: win32-x64-msvc
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -209,7 +209,7 @@ jobs:
       - name: cargo publish fathomdb-embedder-api
         run: |
           if [ "${DRY_RUN}" = "true" ]; then
-            cargo publish --dry-run -p fathomdb-embedder-api
+            cargo package --allow-dirty --no-verify -p fathomdb-embedder-api
           else
             cargo publish -p fathomdb-embedder-api --token "${CARGO_REGISTRY_TOKEN}"
           fi
@@ -230,7 +230,7 @@ jobs:
       - name: cargo publish fathomdb-schema
         run: |
           if [ "${DRY_RUN}" = "true" ]; then
-            cargo publish --dry-run -p fathomdb-schema
+            cargo package --allow-dirty --no-verify -p fathomdb-schema
           else
             cargo publish -p fathomdb-schema --token "${CARGO_REGISTRY_TOKEN}"
           fi
@@ -251,7 +251,7 @@ jobs:
       - name: cargo publish fathomdb-query
         run: |
           if [ "${DRY_RUN}" = "true" ]; then
-            cargo publish --dry-run -p fathomdb-query
+            cargo package --allow-dirty --no-verify -p fathomdb-query
           else
             cargo publish -p fathomdb-query --token "${CARGO_REGISTRY_TOKEN}"
           fi
@@ -272,7 +272,7 @@ jobs:
       - name: cargo publish fathomdb-engine
         run: |
           if [ "${DRY_RUN}" = "true" ]; then
-            cargo publish --dry-run -p fathomdb-engine
+            cargo package --allow-dirty --no-verify -p fathomdb-engine
           else
             cargo publish -p fathomdb-engine --token "${CARGO_REGISTRY_TOKEN}"
           fi
@@ -297,7 +297,7 @@ jobs:
       - name: cargo publish fathomdb-embedder
         run: |
           if [ "${DRY_RUN}" = "true" ]; then
-            cargo publish --dry-run -p fathomdb-embedder
+            cargo package --allow-dirty --no-verify -p fathomdb-embedder
           else
             cargo publish -p fathomdb-embedder --token "${CARGO_REGISTRY_TOKEN}"
           fi
@@ -318,7 +318,7 @@ jobs:
       - name: cargo publish fathomdb (facade)
         run: |
           if [ "${DRY_RUN}" = "true" ]; then
-            cargo publish --dry-run -p fathomdb
+            cargo package --allow-dirty --no-verify -p fathomdb
           else
             cargo publish -p fathomdb --token "${CARGO_REGISTRY_TOKEN}"
           fi
@@ -339,7 +339,7 @@ jobs:
       - name: cargo publish fathomdb-cli
         run: |
           if [ "${DRY_RUN}" = "true" ]; then
-            cargo publish --dry-run -p fathomdb-cli
+            cargo package --allow-dirty --no-verify -p fathomdb-cli
           else
             cargo publish -p fathomdb-cli --token "${CARGO_REGISTRY_TOKEN}"
           fi
