@@ -12,6 +12,28 @@ AC-050c) gates merges against this invariant.
 
 (none yet)
 
+## 0.6.0-rc.2 - 2026-05-18
+
+Real release candidate of 0.6.0. The `0.6.0-rc.1` slot was consumed
+by the bootstrap publish (`dev/design/release.md` § RC1 bootstrap
+publish) that seeded crates.io with the seven Axis-W crates plus
+`fathomdb-embedder-api`; rc.2 is the first RC that exercises the
+full tag-trigger workflow end-to-end (smoke + co-tagging +
+github-release jobs). No functional engine or SDK code change
+since rc.1.
+
+### Changed
+
+- Release workflow: napi build matrix uses the canonical
+  `win32-x64-msvc` target label (npm `optionalDependencies`
+  resolution).
+- Release workflow: `publish-rust` dry-run cascade restored via the
+  rc.1 bootstrap publish that seeded sibling-dep versions on
+  crates.io.
+- Release workflow: npm `publish` passes `--tag next` for
+  prerelease versions to keep the `latest` dist-tag pointing at the
+  most recent stable.
+
 ## 0.6.0-rc.1 - 2026-05-17
 
 First release candidate of 0.6.0. Engine + bindings + release-
