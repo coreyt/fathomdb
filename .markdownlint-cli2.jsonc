@@ -25,6 +25,9 @@
     "dev/tmp2/**",
     "dev/tmp3/**",
 
+    // Memex-related scratch notes (gitignored, mirrors .gitignore dev/memex/).
+    "dev/memex/**",
+
     // Archived / resolved artifacts — historical record, not actively maintained.
     "dev/archive/**",
 

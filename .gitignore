@@ -32,6 +32,9 @@ src/ts/*.node
 src/ts/index.d.ts
 src/ts/index.js
 
+# Memex-related scratch notes (not tracked).
+dev/memex/
+
 # bream cache directory
 .bream-cache/
 
