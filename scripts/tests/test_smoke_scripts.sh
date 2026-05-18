@@ -57,9 +57,10 @@ check_common() {
     fail "$label_prefix: missing bash shebang"
   fi
   assert_contains "$label_prefix: set -euo pipefail" "$script" 'set -euo pipefail'
-  # Version regex — semver MAJOR.MINOR.PATCH guard on $1.
+  # Version regex — SemVer 2.0 (MAJOR.MINOR.PATCH with optional
+  # pre-release identifier) guard on $1.
   assert_matches  "$label_prefix: version regex guard on \$1" "$script" \
-    '\^\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\$'
+    '\^\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\(-\[0-9A-Za-z\.-\]\+\)\?\$'
   assert_contains "$label_prefix: mktemp -d for fixture dir" "$script" 'mktemp -d'
   assert_contains "$label_prefix: EXIT trap cleanup" "$script" "trap 'rm -rf"
 }
@@ -79,7 +80,10 @@ assert_contains "smoke-crates-cli: jq parses check-integrity output" "$CRATES" \
 check_common "$PYPI" "smoke-pypi-wheel"
 assert_contains "smoke-pypi-wheel: fresh venv" "$PYPI" 'python3 -m venv'
 assert_contains "smoke-pypi-wheel: pinned pip install" "$PYPI" \
-  'pip install --quiet "fathomdb==${VERSION}"'
+  'pip install --quiet "fathomdb==${PIP_VERSION}"'
+# PEP 440 normalization helper present (SemVer -rc.N -> PEP 440 rcN).
+assert_contains "smoke-pypi-wheel: PEP 440 normalization" "$PYPI" \
+  'pep440_normalize()'
 assert_contains "smoke-pypi-wheel: open/close exercise" "$PYPI" 'Engine.open'
 assert_contains "smoke-pypi-wheel: close call" "$PYPI" 'e.close()'
 

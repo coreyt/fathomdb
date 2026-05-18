@@ -32,8 +32,11 @@ if [ "$#" -ne 1 ]; then
 fi
 
 VERSION="$1"
-if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-  printf 'assert-co-tagging: invalid version "%s" — expected semver MAJOR.MINOR.PATCH\n' \
+# SemVer 2.0: MAJOR.MINOR.PATCH with optional pre-release identifier
+# (e.g. 0.6.0, 0.6.0-rc.2, 0.6.0-alpha.1). Build metadata (+...) not
+# accepted — we never publish with it.
+if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+  printf 'assert-co-tagging: invalid version "%s" — expected semver MAJOR.MINOR.PATCH[-PRERELEASE]\n' \
     "$VERSION" >&2
   usage
   exit 2

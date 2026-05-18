@@ -15,11 +15,26 @@ if [ "$#" -ne 1 ]; then
   exit 2
 fi
 VERSION="$1"
-if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-  printf 'smoke-pypi-wheel: invalid version "%s" — expected semver MAJOR.MINOR.PATCH\n' \
+if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+  printf 'smoke-pypi-wheel: invalid version "%s" — expected semver MAJOR.MINOR.PATCH[-PRERELEASE]\n' \
     "$VERSION" >&2
   exit 2
 fi
+
+# PEP 440 normalization: PyPI stores pre-releases without the hyphen/dot
+# separators that SemVer uses (0.6.0-rc.2 -> 0.6.0rc2). maturin emits PEP
+# 440 versions when building the wheel, so the registry-side version
+# differs from the workflow's $GITHUB_REF_NAME-derived tag version.
+pep440_normalize() {
+  local v="$1"
+  case "$v" in
+    *-rc.*)    printf '%s' "${v%-rc.*}rc${v##*-rc.}" ;;
+    *-alpha.*) printf '%s' "${v%-alpha.*}a${v##*-alpha.}" ;;
+    *-beta.*)  printf '%s' "${v%-beta.*}b${v##*-beta.}" ;;
+    *)         printf '%s' "$v" ;;
+  esac
+}
+PIP_VERSION="$(pep440_normalize "$VERSION")"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -28,7 +43,7 @@ python3 -m venv "$WORK/venv"
 # shellcheck source=/dev/null
 . "$WORK/venv/bin/activate"
 pip install --quiet --upgrade pip
-pip install --quiet "fathomdb==${VERSION}"
+pip install --quiet "fathomdb==${PIP_VERSION}"
 
 DB="$WORK/smoke.fdb"
 python3 - "$DB" <<'PY'

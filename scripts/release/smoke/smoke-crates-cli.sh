@@ -19,8 +19,8 @@ if [ "$#" -ne 1 ]; then
   exit 2
 fi
 VERSION="$1"
-if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-  printf 'smoke-crates-cli: invalid version "%s" — expected semver MAJOR.MINOR.PATCH\n' \
+if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+  printf 'smoke-crates-cli: invalid version "%s" — expected semver MAJOR.MINOR.PATCH[-PRERELEASE]\n' \
     "$VERSION" >&2
   exit 2
 fi
