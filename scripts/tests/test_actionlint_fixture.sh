@@ -42,21 +42,22 @@ for label in linux-x64-gnu darwin-x64 darwin-arm64 win32-x64-msvc; do
 done
 printf 'PASS  release.yml carries all 4 canonical napi labels\n'
 
-# cargo publish --dry-run rejects workspaces with un-published sibling deps
-# (T2..T7 fail at "no matching package named ... found" before the registry
-# would ever see the upload). cargo package --allow-dirty --no-verify packs
-# the crate identically without touching the registry — equivalent gate for
-# our manifests, and the only one that succeeds across the whole tier chain
-# pre-publish. Forbid the publish --dry-run regression in the workflow.
+# Sibling-dep resolution: cargo publish --dry-run requires every in-workspace
+# dep to be resolvable from the registry. The 0.6.0-rc.1 bootstrap publish
+# (scripts/release/publish-rc1-bootstrap.sh, operator-run) seeds crates.io
+# with all 7 axis-W crates + axis-E embedder-api so subsequent dispatches
+# (rc.2, rc.3, …, GA) can use the canonical `cargo publish --dry-run` gate.
+# Lock that gate in here; forbid the cargo-package workaround that briefly
+# replaced it pre-bootstrap.
 for tier in t1-embedder-api t2-schema t3-query t4-engine t5-embedder t6-facade t7-cli; do
   block=$(awk "/publish-rust-${tier}:/{flag=1} flag; /^  [a-z]/&&!/publish-rust-${tier}:/{if(flag){flag=0}}" "$RELEASE_YML")
-  if ! grep -qE 'cargo package --allow-dirty --no-verify -p ' <<<"$block"; then
-    printf 'FAIL  publish-rust-%s dry-run branch is not cargo package --allow-dirty --no-verify\n' "$tier" >&2
+  if ! grep -qE 'cargo publish --dry-run -p ' <<<"$block"; then
+    printf 'FAIL  publish-rust-%s dry-run branch is not cargo publish --dry-run -p\n' "$tier" >&2
     exit 1
   fi
-  if grep -qE 'cargo publish --dry-run' <<<"$block"; then
-    printf 'FAIL  publish-rust-%s still uses cargo publish --dry-run (forbidden — fails on sibling deps)\n' "$tier" >&2
+  if grep -qE 'cargo package --allow-dirty --no-verify' <<<"$block"; then
+    printf 'FAIL  publish-rust-%s still uses cargo package --allow-dirty --no-verify (forbidden post-bootstrap)\n' "$tier" >&2
     exit 1
   fi
 done
-printf 'PASS  release.yml publish-rust-t1..t7 dry-run uses cargo package\n'
+printf 'PASS  release.yml publish-rust-t1..t7 dry-run uses cargo publish --dry-run\n'

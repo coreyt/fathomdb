@@ -204,7 +204,7 @@ fi
 
 # 8. Drift on Axis E (explicit version replaced with workspace inheritance) → fail.
 restore
-sed -i 's/^version = "0.6.0"$/version.workspace = true/' "$EMBAPI"
+sed -i 's/^version = "0\.6\.0-rc\.1"$/version.workspace = true/' "$EMBAPI"
 if out="$("$SV" --check-files 2>&1)"; then
   fail "check-files should fail when Axis E inherits workspace"
 else

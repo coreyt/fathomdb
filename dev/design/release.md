@@ -69,6 +69,33 @@ Tier inter-step sleep: keep the pre-0.6.0 60-second
 crates.io-index-propagation sleep between tiers. Without the sleep,
 later tiers race the index and fail dependency resolution.
 
+## RC1 bootstrap publish (2026-05-18)
+
+`cargo publish --dry-run` resolves every in-workspace sibling dep against
+crates.io (path stripping happens before resolution), so the dry-run
+gate cannot succeed for T2-T7 until the registry holds the prior tier's
+crate at the matching version. Pre-0.6.0 the registry was empty for
+all seven crates, so the first dry-run cascade had nowhere to resolve
+from.
+
+The 0.6.0 RC slot is split: `0.6.0-rc.1` is a one-time, operator-run
+bootstrap publish that seeds crates.io with registry presence for
+every axis-W crate plus axis-E `fathomdb-embedder-api`. The first
+"real" RC tag is `0.6.0-rc.2`; rc.1 is consumed by the bootstrap.
+
+- Bootstrap script: `scripts/release/publish-rc1-bootstrap.sh`
+  (sequential `cargo publish` of T1-T7 at `0.6.0-rc.1` with 60s
+  inter-tier sleeps; idempotent — skips crates already on the
+  registry at that version).
+- After bootstrap, every axis-W dispatch (`0.6.0-rc.2`, `…`, GA) uses
+  `cargo publish --dry-run -p <crate>` as the dry-run gate; sibling
+  resolution succeeds against the rc.1 state on crates.io.
+- Axis-E (`fathomdb-embedder-api`) is held on axis-W lockstep through
+  the RC1 bootstrap so a single sentinel-publish establishes
+  registry presence for all eight crates at once. Axis-E
+  independence resumes at/after 0.6.0 GA — embedder-api may then
+  bump on its own cadence when the trait surface changes.
+
 ## Sibling-package co-tagging
 
 Per REQ-048, `fathomdb-embedder-api` and `fathomdb-embedder` carry the

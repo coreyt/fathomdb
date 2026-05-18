@@ -18,6 +18,12 @@ resolver = "2"
 # `fathomdb-embedder-api`, which opts out and carries an independent
 # Axis E version in its own `[package]` block (semver-stable trait
 # surface — bumps only when the trait changes).
+#
+# Axis E note: through the 0.6.0 RC bootstrap (rc.1), axis-E is held on
+# axis-W lockstep so a single sentinel-publish establishes registry
+# presence for all 7 crates plus embedder-api. Axis-E independence
+# resumes at/after the 0.6.0 GA cut — embedder-api may then bump on its
+# own cadence when the trait surface changes.
 version = "0.6.0-rc.1"
 edition = "2021"
 license = "Apache-2.0"
@@ -40,7 +46,7 @@ internal_docs = ["dev"]
 [workspace.dependencies]
 fathomdb              = { path = "src/rust/crates/fathomdb",              version = "0.6.0-rc.1" }
 fathomdb-embedder     = { path = "src/rust/crates/fathomdb-embedder",     version = "0.6.0-rc.1" }
-fathomdb-embedder-api = { path = "src/rust/crates/fathomdb-embedder-api", version = "0.6.0" }
+fathomdb-embedder-api = { path = "src/rust/crates/fathomdb-embedder-api", version = "0.6.0-rc.1" }
 fathomdb-engine       = { path = "src/rust/crates/fathomdb-engine",       version = "0.6.0-rc.1" }
 fathomdb-query        = { path = "src/rust/crates/fathomdb-query",        version = "0.6.0-rc.1" }
 fathomdb-schema       = { path = "src/rust/crates/fathomdb-schema",       version = "0.6.0-rc.1" }
