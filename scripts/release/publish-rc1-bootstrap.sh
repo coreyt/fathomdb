@@ -21,7 +21,8 @@ TIERS=(
 # returns the latest), so this stays idempotent after rc.2/GA
 # land.
 sparse_path() {
-  local name="$1" len="${#name}"
+  local name="$1"
+  local len="${#name}"
   case "$len" in
     1) printf '1/%s' "$name" ;;
     2) printf '2/%s' "$name" ;;
