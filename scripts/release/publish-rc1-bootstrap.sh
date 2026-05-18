@@ -16,9 +16,24 @@ TIERS=(
   fathomdb
   fathomdb-cli
 )
+# Sparse-index path per cargo registry convention. Enumerates
+# every published version (unlike `cargo search`, which only
+# returns the latest), so this stays idempotent after rc.2/GA
+# land.
+sparse_path() {
+  local name="$1" len="${#name}"
+  case "$len" in
+    1) printf '1/%s' "$name" ;;
+    2) printf '2/%s' "$name" ;;
+    3) printf '3/%s/%s' "${name:0:1}" "$name" ;;
+    *) printf '%s/%s/%s' "${name:0:2}" "${name:2:2}" "$name" ;;
+  esac
+}
 for c in "${TIERS[@]}"; do
-  # Idempotent: skip if already on crates.io at RC_VERSION.
-  if cargo search "$c" --limit 1 | grep -qE "^${c} = \"${RC_VERSION}\""; then
+  # Idempotent: skip if RC_VERSION appears anywhere in the
+  # crate's sparse-index version list.
+  url="https://index.crates.io/$(sparse_path "$c")"
+  if curl -fsS "$url" 2>/dev/null | grep -qF "\"vers\":\"${RC_VERSION}\""; then
     printf 'SKIP  %s %s already on crates.io\n' "$c" "$RC_VERSION"
     continue
   fi

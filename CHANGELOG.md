@@ -16,8 +16,11 @@ AC-050c) gates merges against this invariant.
 
 First release candidate of 0.6.0. Engine + bindings + release-
 engineering substrate landed across Phases 5-12. Axis W bumped to
-`0.6.0-rc.1`; Axis E (`fathomdb-embedder-api`) unchanged at `0.6.0`
-(trait surface stable since lock).
+`0.6.0-rc.1`; Axis E (`fathomdb-embedder-api`) joined the lockstep
+at `0.6.0-rc.1` solely to seed crates.io for the RC1 bootstrap
+publish (`dev/design/release.md` § RC1 bootstrap publish) — the
+trait surface is unchanged. Axis-E independence resumes at/after
+0.6.0 GA.
 
 ### Added
 
