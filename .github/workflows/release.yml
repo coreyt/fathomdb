@@ -411,12 +411,25 @@ jobs:
       # still getting a version that supports OIDC. --access public makes
       # the bare (unscoped) package publishable; --provenance attests
       # the build came from this workflow run.
+      # npm refuses to publish a prerelease version (anything with a
+      # `-` per semver: `0.6.0-rc.1`) without an explicit `--tag`,
+      # since otherwise it would be auto-tagged `latest` and served as
+      # the default install. Map prereleases to `next`; GA to `latest`.
+      - name: Resolve npm dist-tag
+        id: npm_tag
+        run: |
+          v=$(node -e "console.log(require('./package.json').version)")
+          case "$v" in
+            *-*) tag=next ;;
+            *)   tag=latest ;;
+          esac
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
       - name: Publish to npm (or dry-run rehearsal)
         run: |
           if [ "${DRY_RUN}" = "true" ]; then
-            npx npm@latest publish --dry-run --access public --provenance
+            npx npm@latest publish --dry-run --access public --provenance --tag "${{ steps.npm_tag.outputs.tag }}"
           else
-            npx npm@latest publish --provenance --access public
+            npx npm@latest publish --provenance --access public --tag "${{ steps.npm_tag.outputs.tag }}"
           fi
 
   # --- Post-publish verification --------------------------------------------
