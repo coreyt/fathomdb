@@ -404,7 +404,7 @@ jobs:
           npm ci
           # The native binaries are already downloaded from build-napi;
           # only the tsc step is needed here.
-          npx tsc -p tsconfig.json
+          npx tsc -p tsconfig.build.json
       # npm OIDC trusted publishing requires npm >= 11.5.1 but Node 22
       # ships with npm 10.x. Using npx to invoke the latest npm avoids
       # the MODULE_NOT_FOUND bug from `npm install -g npm@latest` while

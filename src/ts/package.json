@@ -17,10 +17,10 @@
   "scripts": {
     "build:native": "napi build --platform --release --cargo-cwd ../rust/crates/fathomdb-napi --js false",
     "build:native:debug": "napi build --platform --cargo-cwd ../rust/crates/fathomdb-napi --features test-hooks --js false",
-    "build": "npm run build:native && tsc -p tsconfig.json",
-    "build:debug": "npm run build:native:debug && tsc -p tsconfig.json",
+    "build": "npm run build:native && tsc -p tsconfig.build.json",
+    "build:debug": "npm run build:native:debug && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "npm run build:debug && node --test dist/tests/*.test.js"
+    "test": "npm run build:native:debug && tsc -p tsconfig.json && node --test dist/tests/*.test.js"
   },
   "devDependencies": {
     "@napi-rs/cli": "^2.18.4",

@@ -33,7 +33,7 @@ cat > smoke.mjs <<'JS'
 import { Engine } from "fathomdb";
 const dbPath = process.argv[2];
 const e = await Engine.open(dbPath);
-await e.write([]);
+await e.write([{ kind: "doc", body: "{}" }]);
 await e.search("smoke");
 await e.close();
 console.log("ok");

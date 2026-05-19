@@ -51,7 +51,7 @@ import sys
 from fathomdb import Engine
 db_path = sys.argv[1]
 e = Engine.open(db_path)
-e.write([])
+e.write([{"kind": "doc", "body": "{}"}])
 e.search("smoke")
 e.close()
 print("ok")

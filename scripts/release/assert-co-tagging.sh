@@ -72,7 +72,9 @@ assert_crate_has_version() {
   local crate="$1" expected="$2"
   local url="${REGISTRY_BASE}/api/v1/crates/${crate}"
   local body
-  if ! body="$(curl --silent --show-error --fail --max-time 30 "$url" 2>&1)"; then
+  if ! body="$(curl --silent --show-error --fail --max-time 30 \
+        -H "User-Agent: fathomdb-release-co-tagging-check (https://github.com/coreyt/fathomdb)" \
+        "$url" 2>&1)"; then
     printf 'assert-co-tagging: registry query failed for %s — %s\n' \
       "$crate" "$body" >&2
     return 2

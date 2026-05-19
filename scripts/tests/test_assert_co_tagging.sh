@@ -69,6 +69,12 @@ stop_server() {
   mkdir -p "$SERVE_DIR/api/v1/crates"
 }
 
+# Regression guard: script must send a User-Agent header (crates.io
+# returns HTTP 403 without one).
+grep -q 'User-Agent:' "$ASSERT" \
+  && pass "assert-co-tagging.sh sets User-Agent for crates.io" \
+  || fail "assert-co-tagging.sh missing User-Agent header"
+
 # Positive case: all three crates present at 0.6.0 (Axis W) /
 # 0.6.0-rc.1 (Axis E read from src/rust/crates/fathomdb-embedder-api/Cargo.toml).
 start_server ok
