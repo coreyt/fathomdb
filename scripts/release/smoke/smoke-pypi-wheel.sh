@@ -4,7 +4,7 @@
 #   $1 = version (e.g. 0.6.0)
 #
 # Installs fathomdb==$1 from PyPI into a fresh venv, exercises the SDK
-# end-to-end (open + write empty batch + search + close), and asserts
+# end-to-end (open + write minimal record + search + close), and asserts
 # the python process exits cleanly. Per `feedback_release_verification`:
 # the wheel-on-disk lock cleanup + process exit are the bug signal that
 # only fires under real install-from-registry conditions.

@@ -4,7 +4,7 @@
 #   $1 = version (e.g. 0.6.0)
 #
 # Installs fathomdb@$1 from npm into a fresh workspace, exercises the
-# napi binding end-to-end (open + write empty batch + search + close),
+# napi binding end-to-end (open + write minimal record + search + close),
 # and asserts the node process exits cleanly. Same `feedback_release_
 # verification` rationale as the PyPI smoke — locks + process exit are
 # the bug signal that only fires under real install-from-registry.
