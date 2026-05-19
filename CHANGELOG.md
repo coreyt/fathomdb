@@ -12,6 +12,30 @@ AC-050c) gates merges against this invariant.
 
 (none yet)
 
+## 0.6.0-rc.4 - 2026-05-18
+
+Cut after rc.3's post-publish gates (`assert-co-tagging` +
+`smoke-pypi-wheel` + `smoke-npm`) failed on three real defects
+in the verification scripts themselves. rc.3 artifacts ARE
+correct and live on crates.io, PyPI, and npm, but no GitHub
+release entry was created for `v0.6.0-rc.3`; rc.4 supersedes
+it on the GitHub-Release axis. No functional engine or SDK code
+change since rc.3.
+
+### Changed
+
+- Release workflow: `assert-co-tagging.sh` now sends a
+  `User-Agent` header on crates.io API calls (the registry
+  returns HTTP 403 without one) — fix landed in `26bb7da`.
+- Release workflow: PyPI + npm smoke scripts write a minimal
+  valid record (`{"kind":"doc","body":"{}"}`) instead of an
+  empty batch that the engine rejects per the 5-verb invariant.
+- Release workflow: new `src/ts/tsconfig.build.json` emits
+  `dist/index.js` at the path `package.json "main"` points to;
+  the previous layout emitted `dist/src/index.js` so the
+  published npm tarball was broken at
+  `import { Engine } from "fathomdb"`.
+
 ## 0.6.0-rc.3 - 2026-05-18
 
 Cut after rc.2's post-publish gates (co-tagging-assert + three

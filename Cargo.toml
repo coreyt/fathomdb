@@ -24,7 +24,7 @@ resolver = "2"
 # presence for all 7 crates plus embedder-api. Axis-E independence
 # resumes at/after the 0.6.0 GA cut — embedder-api may then bump on its
 # own cadence when the trait surface changes.
-version = "0.6.0-rc.3"
+version = "0.6.0-rc.4"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/coreyt/fathomdb"
@@ -44,9 +44,9 @@ internal_docs = ["dev"]
 # Axis E (fathomdb-embedder-api) carries its independent version per
 # dev/design/release.md § Version axes.
 [workspace.dependencies]
-fathomdb              = { path = "src/rust/crates/fathomdb",              version = "0.6.0-rc.3" }
-fathomdb-embedder     = { path = "src/rust/crates/fathomdb-embedder",     version = "0.6.0-rc.3" }
-fathomdb-embedder-api = { path = "src/rust/crates/fathomdb-embedder-api", version = "0.6.0-rc.3" }
-fathomdb-engine       = { path = "src/rust/crates/fathomdb-engine",       version = "0.6.0-rc.3" }
-fathomdb-query        = { path = "src/rust/crates/fathomdb-query",        version = "0.6.0-rc.3" }
-fathomdb-schema       = { path = "src/rust/crates/fathomdb-schema",       version = "0.6.0-rc.3" }
+fathomdb              = { path = "src/rust/crates/fathomdb",              version = "0.6.0-rc.4" }
+fathomdb-embedder     = { path = "src/rust/crates/fathomdb-embedder",     version = "0.6.0-rc.4" }
+fathomdb-embedder-api = { path = "src/rust/crates/fathomdb-embedder-api", version = "0.6.0-rc.4" }
+fathomdb-engine       = { path = "src/rust/crates/fathomdb-engine",       version = "0.6.0-rc.4" }
+fathomdb-query        = { path = "src/rust/crates/fathomdb-query",        version = "0.6.0-rc.4" }
+fathomdb-schema       = { path = "src/rust/crates/fathomdb-schema",       version = "0.6.0-rc.4" }
