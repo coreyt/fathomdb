@@ -99,8 +99,9 @@ TypeScript SDKs.
   Canonical-identity substrate design-only in 0.6.0. Client
   workaround: `fathomdb recover --excise-source <id>`.
 - **TypeScript SDK Python-parity** — TS milestone 1 shipped
-  2026-04-07; full parity is a Phase 12 deliverable, lands before
-  GA tag. Prefer Python SDK for production pilots until then.
+  2026-04-07; full Python-parity did NOT land at 0.6.0 GA and
+  carries forward as a post-GA deliverable. Prefer Python SDK
+  for production pilots until parity ships.
 
 ### Removed
 
