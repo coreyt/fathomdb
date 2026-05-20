@@ -73,7 +73,7 @@ shape as 12-RC4-bump.md, with three additions:
 
 3. **CHANGELOG consolidation.** Replace the four
    `## 0.6.0-rc.{1,2,3,4}` sections with a single `## 0.6.0 -
-   2026-05-19` block. Preserve all substantive content; drop
+2026-05-19` block. Preserve all substantive content; drop
    the rc-narrative meta-text (e.g. "Cut after rc.3's
    post-publish gates failed…"). Structure:
 
@@ -145,7 +145,6 @@ shape as 12-RC4-bump.md, with three additions:
 
    All must pass. Known parallel-race flakes (rerun with
    `--test-threads=1` if hit on first run, then declare green):
-
    - `t_028a_excise_source_cli_returns_excise_report`
    - `t_042_trace_cli_enumerates_canonical_rows_for_source`
    - `t_058_recover_truncate_wal_with_accept_data_loss_succeeds`
