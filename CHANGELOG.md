@@ -12,81 +12,11 @@ AC-050c) gates merges against this invariant.
 
 (none yet)
 
-## 0.6.0-rc.4 - 2026-05-18
+## 0.6.0 - 2026-05-19
 
-Cut after rc.3's post-publish gates (`assert-co-tagging` +
-`smoke-pypi-wheel` + `smoke-npm`) failed on three real defects
-in the verification scripts themselves. rc.3 artifacts ARE
-correct and live on crates.io, PyPI, and npm, but no GitHub
-release entry was created for `v0.6.0-rc.3`; rc.4 supersedes
-it on the GitHub-Release axis. No functional engine or SDK code
-change since rc.3.
-
-### Changed
-
-- Release workflow: `assert-co-tagging.sh` now sends a
-  `User-Agent` header on crates.io API calls (the registry
-  returns HTTP 403 without one) — fix landed in `26bb7da`.
-- Release workflow: PyPI + npm smoke scripts write a minimal
-  valid record (`{"kind":"doc","body":"{}"}`) instead of an
-  empty batch that the engine rejects per the 5-verb invariant.
-- Release workflow: new `src/ts/tsconfig.build.json` emits
-  `dist/index.js` at the path `package.json "main"` points to;
-  the previous layout emitted `dist/src/index.js` so the
-  published npm tarball was broken at
-  `import { Engine } from "fathomdb"`.
-
-## 0.6.0-rc.3 - 2026-05-18
-
-Cut after rc.2's post-publish gates (co-tagging-assert + three
-`smoke-*` jobs + github-release) failed on a hardcoded
-`MAJOR.MINOR.PATCH` regex that rejected the `-rc.N` suffix.
-rc.2 artifacts ARE live on crates.io, PyPI, and npm, but no
-GitHub release entry was created for `v0.6.0-rc.2`; rc.3
-supersedes it. No functional engine or SDK code change since
-rc.2.
-
-### Changed
-
-- Release workflow: `assert-co-tagging.sh` and the three
-  `smoke-{crates,pypi-wheel,npm}.sh` scripts now accept
-  `MAJOR.MINOR.PATCH(-PRERELEASE)?` so pre-release tags pass
-  the post-publish gates (fix landed in `70e6487`).
-- Release workflow: `smoke-pypi-wheel.sh` normalizes SemVer to
-  PEP 440 (`0.6.0-rc.3` → `0.6.0rc3`) before `pip install` so
-  the wheel resolves under pip's normalized version index.
-
-## 0.6.0-rc.2 - 2026-05-18
-
-Real release candidate of 0.6.0. The `0.6.0-rc.1` slot was consumed
-by the bootstrap publish (`dev/design/release.md` § RC1 bootstrap
-publish) that seeded crates.io with the seven Axis-W crates plus
-`fathomdb-embedder-api`; rc.2 is the first RC that exercises the
-full tag-trigger workflow end-to-end (smoke + co-tagging +
-github-release jobs). No functional engine or SDK code change
-since rc.1.
-
-### Changed
-
-- Release workflow: napi build matrix uses the canonical
-  `win32-x64-msvc` target label (npm `optionalDependencies`
-  resolution).
-- Release workflow: `publish-rust` dry-run cascade restored via the
-  rc.1 bootstrap publish that seeded sibling-dep versions on
-  crates.io.
-- Release workflow: npm `publish` passes `--tag next` for
-  prerelease versions to keep the `latest` dist-tag pointing at the
-  most recent stable.
-
-## 0.6.0-rc.1 - 2026-05-17
-
-First release candidate of 0.6.0. Engine + bindings + release-
-engineering substrate landed across Phases 5-12. Axis W bumped to
-`0.6.0-rc.1`; Axis E (`fathomdb-embedder-api`) joined the lockstep
-at `0.6.0-rc.1` solely to seed crates.io for the RC1 bootstrap
-publish (`dev/design/release.md` § RC1 bootstrap publish) — the
-trait surface is unchanged. Axis-E independence resumes at/after
-0.6.0 GA.
+First stable release of FathomDB 0.6.0 — local-first retrieval
+engine on SQLite (FTS5 + `sqlite-vec`) with Rust, Python, and
+TypeScript SDKs.
 
 ### Added
 
@@ -121,6 +51,35 @@ trait surface is unchanged. Axis-E independence resumes at/after
 - actionlint v1.7.7 wired as canonical workflow validator.
 - External user docs: install + quickstart + reference + concepts
   - compatibility (Phase 12-DX).
+
+### Changed
+
+- Release workflow: napi build matrix uses the canonical
+  `win32-x64-msvc` target label for npm `optionalDependencies`
+  resolution.
+- Release workflow: `publish-rust` dry-run cascade restored via
+  the rc.1 bootstrap publish that seeded sibling-dep versions on
+  crates.io.
+- Release workflow: npm `publish` passes `--tag next` for
+  prerelease versions so the `latest` dist-tag stays pinned to
+  the most recent stable.
+- Release workflow: post-publish gates (`assert-co-tagging.sh`
+  and the three `smoke-{crates,pypi-wheel,npm}.sh` scripts)
+  accept `MAJOR.MINOR.PATCH(-PRERELEASE)?` SemVer.
+- Release workflow: `smoke-pypi-wheel.sh` normalizes SemVer to
+  PEP 440 (e.g. `0.6.0-rc.4` → `0.6.0rc4`) before `pip install`
+  so the wheel resolves under pip's normalized version index.
+- Release workflow: `assert-co-tagging.sh` sends a `User-Agent`
+  header on crates.io API calls (the registry returns HTTP 403
+  without one).
+- Release workflow: PyPI + npm smoke scripts write a minimal
+  valid record (`{"kind":"doc","body":"{}"}`) instead of an
+  empty batch that the engine rejects per the 5-verb invariant.
+- Release workflow: new `src/ts/tsconfig.build.json` emits
+  `dist/index.js` at the path `package.json "main"` points to.
+- Release workflow: `github-release` job explicitly sets
+  `prerelease: ${{ contains(github.ref_name, '-') }}` so future
+  RC tags are flagged as prereleases on GitHub.
 
 ### Deferred
 
