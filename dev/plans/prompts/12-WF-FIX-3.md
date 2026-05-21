@@ -106,7 +106,7 @@ confirms this — `find src/ts/dist -name index.js` returns the
 `dist/index.js` directly + excludes tests from the published tarball:
 
 1. Add `src/ts/tsconfig.build.json` with `rootDir: "src"`, `include:
-   ["src/**/*.ts"]`, `outDir: "dist"`, and `exclude: ["tests"]`.
+["src/**/*.ts"]`, `outDir: "dist"`, and `exclude: ["tests"]`.
    Extend `./tsconfig.json` and override only the differences.
 
 2. Edit `src/ts/package.json` `"scripts"`:
