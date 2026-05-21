@@ -13,9 +13,9 @@ dependencies = []
 
 [project.optional-dependencies]
 test = ["pytest>=8", "hypothesis>=6"]
-lint = ["ruff>=0.6"]
+lint = ["ruff>=0.15.13"]
 typecheck = ["pyright>=1.1.380"]
-dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.6", "pyright>=1.1.380"]
+dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.15.13", "pyright>=1.1.380"]
 
 [tool.maturin]
 manifest-path = "../rust/crates/fathomdb-py/Cargo.toml"
