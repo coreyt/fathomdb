@@ -12,10 +12,10 @@ license = { text = "Apache-2.0" }
 dependencies = []
 
 [project.optional-dependencies]
-test = ["pytest>=8", "hypothesis>=6"]
+test = ["pytest>=8", "hypothesis>=6.152.9"]
 lint = ["ruff>=0.6"]
 typecheck = ["pyright>=1.1.380"]
-dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.6", "pyright>=1.1.380"]
+dev = ["pytest>=8", "hypothesis>=6.152.9", "ruff>=0.6", "pyright>=1.1.380"]
 
 [tool.maturin]
 manifest-path = "../rust/crates/fathomdb-py/Cargo.toml"
