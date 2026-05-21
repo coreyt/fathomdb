@@ -44,9 +44,17 @@ jobs:
         # Runs on push (tag-format + version-axis enforced) and
         # workflow_dispatch (tag check skipped, all other gates enforced;
         # dispatch with dry_run=false emits an emergency-republish warning).
+        #
+        # RELEASE_GATES_HEAD_REF: actions/checkout fetches all refs under
+        # refs/remotes/origin/* but does NOT create a local refs/heads/main
+        # when checking out a tag, so the gate's default lookup of
+        # refs/heads/main fails on CI. Point the gate at the remote-tracking
+        # ref. Local dev environments leave this unset and use the local
+        # main branch as before.
         run: bash scripts/verify-release-gates.sh
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_GATES_HEAD_REF: refs/remotes/origin/main
 
   # Multi-platform Python wheels via PyO3/maturin-action. Produces manylinux,
   # macOS (x86_64 + arm64), and Windows wheels for Python 3.10-3.12. The
