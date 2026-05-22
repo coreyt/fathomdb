@@ -1,0 +1,124 @@
+{
+  "phase": "0.6.1-planning",
+  "baseline_sha": "76d8d6e",
+  "baseline_note": "Worktree cut from main HEAD = 76d8d6e per HITL 2026-05-22 (0.6.0-rewrite closed; new work lands on main). Prompt-expected 8b5c81d was 5 commits behind main (all docs-only: 0.6.1 + 0.7.0 planning prompts, prettier-fixups, memex compat note, MD-lint fix).",
+  "branch": "phase-0.6.1-planning-20260522-101428",
+  "head_sha": "<set after final commit>",
+  "commits": ["<sha>: docs(0.6.1): planning slice — design verification + plan doc + slice skeletons + canonical-runner template"],
+  "plan_doc": "dev/plans/0.6.1-implementation.md",
+  "plan_doc_lines": 342,
+  "plan_doc_length_note": "Below the 400-600 line target; patch release is genuinely smaller than 0.6.0 minor — terse-and-factual per prompt tone guidance.",
+  "slice_count": 9,
+  "slice_skeletons": [
+    "dev/plans/prompts/0.6.1-AC012-measure.md",
+    "dev/plans/prompts/0.6.1-OPENREPORT-py.md",
+    "dev/plans/prompts/0.6.1-OPENREPORT-ts.md",
+    "dev/plans/prompts/0.6.1-DEPENDABOT.md",
+    "dev/plans/prompts/0.6.1-AXIS-E-PIN.md",
+    "dev/plans/prompts/0.6.1-BUMP.md",
+    "dev/plans/prompts/0.6.1-RC1.md",
+    "dev/plans/prompts/0.6.1-V.md",
+    "dev/plans/prompts/0.6.1-GA.md"
+  ],
+  "skeleton_lines_per_file": {
+    "0.6.1-AC012-measure.md": 68,
+    "0.6.1-OPENREPORT-py.md": 79,
+    "0.6.1-OPENREPORT-ts.md": 80,
+    "0.6.1-DEPENDABOT.md": 68,
+    "0.6.1-AXIS-E-PIN.md": 65,
+    "0.6.1-BUMP.md": 79,
+    "0.6.1-RC1.md": 72,
+    "0.6.1-V.md": 58,
+    "0.6.1-GA.md": 64,
+    "_note": "All skeletons in target 30-80 line range (pre-prettier); prettier-fixup may have nudged line counts ±2 but stayed in range."
+  },
+  "design_amendments": [],
+  "design_amendment_note": "No design-doc amendments required. Existing python.md L28-34 and typescript.md L30-36 caveat block-quotes already say 'defers to 0.6.1 (slice 12-TX-OPENREPORT)' — spec language stands as-is; the OPENREPORT-py/ts slices REMOVE the caveats when the bindings land. No ADR amendments either.",
+  "new_files_added": [
+    "dev/notes/perf-canonical-runner-2026-MM.md (template; 0.6.1-AC012-measure slice fills numbers + verdict + flips status: template -> measured)"
+  ],
+  "new_ac_proposals": [
+    {
+      "ac_id": "AC-068c",
+      "title": "Python binding surfaces OpenedEngine.report",
+      "depends_on_slice": "0.6.1-OPENREPORT-py",
+      "fields_to_surface": ["migration_version_reached: int", "embedder_identity_confirmed: bool", "open_stage: str"],
+      "verification_test": "src/python/tests/test_openreport.py (new)",
+      "cites": ["src/rust/crates/fathomdb-engine/src/lib.rs:541-553", "dev/interfaces/python.md (post-caveat-removal)"]
+    },
+    {
+      "ac_id": "AC-068d",
+      "title": "TypeScript binding surfaces OpenedEngine.report",
+      "depends_on_slice": "0.6.1-OPENREPORT-ts",
+      "fields_to_surface": ["migrationVersionReached: number", "embedderIdentityConfirmed: boolean", "openStage: string"],
+      "verification_test": "src/ts/tests/openreport.test.ts (new)",
+      "cites": ["src/rust/crates/fathomdb-engine/src/lib.rs:541-553", "dev/interfaces/typescript.md (post-caveat-removal)"]
+    }
+  ],
+  "ac_id_acceptance_md_state": "Not appended to dev/acceptance.md; HITL confirms first per planning-prompt § 4. Current max in acceptance.md: AC-070 (AC-068a/b under AC-068 family; new IDs slot as AC-068c/d).",
+  "dependabot_classification": {
+    "pyo3_low_x2": "version bump only (transitive); no fathomdb API surface impact. Existing Dependabot PRs on branches dependabot/cargo/pyo3-0.24.1 and dependabot/cargo/pyo3-0.28.3.",
+    "js-yaml_medium": "version bump only; dev-dep only (TS toolchain); fathomdb does not use YAML merge operator. Existing PR on dependabot/npm_and_yarn/js-yaml-4.1.1.",
+    "idna_medium": "version bump only; transitive Python dep; fathomdb does not process untrusted IDNA in any user-facing path. No dedicated PR branch — resolves via uv lock --upgrade-package idna."
+  },
+  "axis_e_pin_verified": "true — scripts/set-version.sh L88-92 explicitly skips fathomdb-embedder-api in set_workspace_dep_axis_w_versions(); --workspace mode L378-388 does NOT call set_embedder_api_version or set_workspace_dep_embedder_api_version; check_files L261-366 enforces explicit [package].version on embedder-api crate (rejects version.workspace = true). No regression from 0.6.0 GA shape. The AXIS-E-PIN slice's job is to LOCK-IN this behavior via a regression test.",
+  "parity_matrix_unresolved_gaps": [
+    {
+      "row": "Engine.open structured open report",
+      "matrix_location": "dev/notes/12-TX-parity-matrix.md L32 (§ 1 row 2)",
+      "resolution_slices": ["0.6.1-OPENREPORT-py", "0.6.1-OPENREPORT-ts"]
+    }
+  ],
+  "parity_matrix_resolved_in_12_tx": [
+    "CounterSnapshot 6 fields (matrix L55)",
+    "test_errors.py LEAF_CLASSES (matrix L113)",
+    "test_scaffold.py (matrix L119)"
+  ],
+  "parity_close_observation": "TXPARITY-N slice family proposed by the planning prompt collapses to {OPENREPORT-py, OPENREPORT-ts} — the parity matrix has only one open ❌ row, and it is the OpenReport row. No additional TXPARITY slices needed.",
+  "verification": {
+    "mkdocs_build_strict": "GREEN (uvx mkdocs build --strict; 0.12s)",
+    "agent_verify": "2 BLOCKERs reproduce on main with no changes (env, not introduced by this slice): (1) AC-037 netns-deny-egress needs unshare -rUn (sandbox unavailable); (2) AC-050c removal-detect references '0.6.0-rewrite..HEAD' which fails since the local branch no longer exists post-closure. 0 violations.",
+    "file_presence": {
+      "plan_doc_present": true,
+      "slice_skeletons_count": 9,
+      "canonical_runner_template_present": true
+    },
+    "prettier": "npx prettier --write applied to plan doc + all 9 new skeletons + canonical-runner template (per 0.6.0 GA prettier-rebound lesson).",
+    "rustup_action_taken": "Updated rustup stable from 1.94.1 -> 1.95.0 to clear pre-existing lint-step toolchain gap before re-running agent-verify."
+  },
+  "blockers_encountered": [
+    {
+      "id": "B-001",
+      "scope": "scripts/agent-verify.sh AC-050c removal-detect",
+      "summary": "Step invokes `git rev-list 0.6.0-rewrite..HEAD` but local `0.6.0-rewrite` branch ref no longer exists post-0.6.0 GA closure (only origin/0.6.0-rewrite remains). agent-verify reports this as 'BLOCKER (toolchain missing)'. Reproduces on main with no changes — pre-existing post-0.6.0-rewrite-closure regression.",
+      "recommended_action": "Spawn a one-off fix slice that updates the verify-script's removal-detect baseline reference (e.g., to `v0.6.0..HEAD` or `origin/main..HEAD`). Out of scope for the planning slice per § Hard constraints 'NO source code changes', but orchestrator should land this before 0.6.1-AXIS-E-PIN (which wires a new test into agent-verify)."
+    },
+    {
+      "id": "B-002",
+      "scope": "scripts/agent-verify.sh AC-037 netns-deny-egress",
+      "summary": "Step invokes `unshare -rUn` to assert no-egress posture; rootless userns+netns unavailable in this Claude Code sandbox. Reports BLOCKER. Reproduces on main with no changes — environmental, not introduced by this slice.",
+      "recommended_action": "No action; canonical CI tier-1 runner can rootless-userns. Orchestrator notes this BLOCKER is sandbox-only when running this slice's verification locally."
+    }
+  ],
+  "open_hitl_questions": [
+    {
+      "id": "Q-001",
+      "topic": "Append AC-068c + AC-068d to dev/acceptance.md?",
+      "options": "append now (HITL approves text proposed in plan doc § Per-AC scoreboard) | wait until OPENREPORT-py/ts slices land and append at GA",
+      "recommendation": "Append at start of OPENREPORT-py slice — gives the slice a citable AC for its RED test (per TDD discipline)."
+    },
+    {
+      "id": "Q-002",
+      "topic": "OpenReport binding return shape — backward-compat strategy",
+      "options": "(a) NamedTuple/wrapper that's still Engine-typed and supports legacy `engine = Engine.open(...)` destructure | (b) introduce Engine.open_with_report (py) / Engine.openWithReport (ts) and keep Engine.open returning the engine handle only",
+      "recommendation": "(a) — symmetric, no new verb, closer to native shape. Patch-release contract favors additive-compatible shapes. Surface at codex review of OPENREPORT-py."
+    },
+    {
+      "id": "Q-003",
+      "topic": "Fix B-001 (agent-verify removal-detect base-ref) in 0.6.1 scope?",
+      "options": "(a) yes — orchestrator spawns one-off WF-fix-style slice before AXIS-E-PIN | (b) no — log under 0.6.x patch chain follow-up",
+      "recommendation": "(a) — AXIS-E-PIN wires a new test into agent-verify; verify-script should be GREEN before then."
+    }
+  ],
+  "next_step_for_orchestrator": "code-reviewer pass on plan doc + 9 skeletons + canonical-runner template via dev/design/orchestration.md § 3 (codex exec --model gpt-5.4 --sandbox read-only); HITL on Q-001..Q-003; resolve B-001 (verify-script base-ref) BEFORE spawning AXIS-E-PIN; cherry-pick onto a 0.6.1-rewrite branch cut from main (or land directly on main for docs-only — confirm with user); begin 0.6.1-AC012-measure slice (parallel-safe with DEPENDABOT)."
+}
