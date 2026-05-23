@@ -1,0 +1,111 @@
+{
+  "phase": "0.6.1-AC012-measure",
+  "baseline_sha": "3180a0c",
+  "branch": "phase-0.6.1-AC012-measure-20260523-122028",
+  "head_sha": "<set after final commit>",
+  "commits": [],
+  "workflow_runs": {
+    "dry_run": {
+      "url": "https://github.com/coreyt/fathomdb/actions/runs/26346370369",
+      "ac012_corpus_n": 10000,
+      "run_full_scale": false,
+      "verdict": "PASS (workflow shape validated; not a canonical measurement)",
+      "p50_ms": 0,
+      "p99_ms": 3,
+      "duration": "1m32s"
+    },
+    "canonical": {
+      "url": "https://github.com/coreyt/fathomdb/actions/runs/26346417896",
+      "ac012_corpus_n": 1000000,
+      "run_full_scale": true,
+      "verdict": "RED",
+      "duration": "6m37s",
+      "test_duration": "382.89s"
+    }
+  },
+  "runner_spec": {
+    "cpu_model": "AMD EPYC 9V74 80-Core Processor",
+    "cores_allocated": 4,
+    "os": "Ubuntu 24.04.4 LTS",
+    "kernel": "Linux 6.17.0-1013-azure #13~24.04.1-Ubuntu SMP x86_64",
+    "glibc": "2.39",
+    "rustc": "1.95.0 (59807616e 2026-04-14)",
+    "sqlite_version_proxy": "libsqlite3-sys 0.28.0 (bundled SQLite 3.45.x; exact patch version not captured at runtime)",
+    "sqlite_version_capture_followup": "Workflow's scripts/sqlite-version/ helper path does not exist; the bash fallback logged. Follow-up: add a cargo example crate or inline `cargo run` snippet exposing rusqlite::version().",
+    "runner_identifier": "ubuntu-latest (Linux/X64) — Azure runnervmg397c",
+    "tier_1_compliance": "Matches ADR-0.6.0-tier1-ci-platforms (x86_64-unknown-linux-gnu). Core count not pinned by ADR; 4-core slice does not contribute to RED at QPS=1."
+  },
+  "ac012_measurement": {
+    "corpus_n": 1000000,
+    "sample_count": 1000,
+    "seed_ms": 33618,
+    "p50_ms": 140.947602,
+    "p99_ms": 458,
+    "budget_p50_ms": 20,
+    "budget_p99_ms": 150,
+    "verdict": "RED",
+    "p50_overshoot_multiple": 7.05,
+    "p99_overshoot_multiple": 3.05,
+    "p50_overshoot_pct": 604.74,
+    "p99_overshoot_pct": 205.33,
+    "raw_harness_line": "AC012_NUMBERS n=1000000 samples=1000 seed_ms=33618 p50_ms=140 p99_ms=458",
+    "panic_message": "AC-012 failed: p50=140.947602ms > budget 20ms at n=1000000",
+    "source_line": "src/rust/crates/fathomdb-engine/tests/perf_gates.rs:474"
+  },
+  "pack7_trigger_evaluation": {
+    "trigger_1_canonical_regression_over_20pct": {
+      "fires": true,
+      "evidence": "p50 605% over budget; p99 205% over budget. Threshold is 20%."
+    },
+    "trigger_2_consumer_incident_reported": {
+      "fires": false,
+      "evidence": "No 0.6.0 consumer incident reported in this session; trigger 1 already fires."
+    },
+    "trigger_3_release_evidence_sweep_design_on_paper": {
+      "fires": "not_evaluated",
+      "evidence": "Pack 7 fires on trigger 1; not evaluated."
+    },
+    "decision": "Pack 7 un-defer trigger FIRES.",
+    "rationale": "Re-measure regression exceeds 20% threshold by ~30×. Cannot be papered over."
+  },
+  "actions_taken": [
+    "dev/notes/perf-canonical-runner-2026-MM.md: filled spec + numbers + verdict; flipped status: template -> status: measured.",
+    "This output.json authored.",
+    "No version bump (axis-W stays at 0.6.0).",
+    "No deferral lift in dev/test-plan.md (AC-012 stays DEFERRED).",
+    "No AC scoreboard flip in dev/plans/0.6.1-implementation.md beyond annotating the RED measurement."
+  ],
+  "actions_NOT_taken": [
+    "Did NOT lift AC-012 deferral in dev/test-plan.md L135-142.",
+    "Did NOT update docs/release-notes/0.6.1.md (release notes are BUMP-slice territory; BUMP is now blocked).",
+    "Did NOT proceed to BUMP, RC1, V, or GA slices.",
+    "Did NOT touch engine code (slice hard-constraint)."
+  ],
+  "release_implications": {
+    "0.6.1_bump_blocked": true,
+    "0.6.1_bump_block_reason": "AC012-measure slice prompt § Hard constraints: 'If RED: STOP and surface to orchestrator. Do NOT bump axis-W. 0.6.1 scope re-opens for HITL decision.' Plan-doc slice sequence: BUMP depends on AC012-measure CLOSING (GREEN); BUMP exit criteria not met."
+  },
+  "blockers_encountered": [
+    {
+      "id": "AC012-B-1",
+      "scope": "AC-012 perf gate at canonical scale",
+      "summary": "p50=140.95ms (budget 20ms; 7.05× over). p99=458ms (budget 150ms; 3.05× over). Test panics on assertion line 474 of perf_gates.rs.",
+      "recommended_action": "HITL decides among: (a) Pack 7 lands in 0.6.1 (engine work to close AC-012 budget — root-cause TBD; likely FTS5 path tuning); (b) Pack 7 escalates to 0.7.x and 0.6.1 ships under a re-titled scope NOT claiming AC-012 closure; (c) re-open ADR-0.6.0-text-query-latency-gates to assess whether the budget is achievable on canonical x86_64 4-core ubuntu-latest at all (budget-revision is a minor-release ADR change; not patch-release-safe per ADR-0.6.0-no-shims-policy § 54)."
+    }
+  ],
+  "open_hitl_questions": [
+    {
+      "id": "Q-A1",
+      "topic": "Pack 7 un-defer disposition",
+      "options": "(a) Land Pack 7 in 0.6.1 scope (engine work to close AC-012 budget). | (b) Escalate Pack 7 to 0.7.x; re-title 0.6.1 to drop the AC-012 claim. | (c) Open a new ADR to revise the AC-012 budget; this is a minor-release change, not a patch.",
+      "recommendation": "(b) Escalate to 0.7.x. The 0.6.1 patch-release contract (ADR-0.6.0-no-shims-policy § 54) does not allow new engine work or budget revision; the other three closures (OPENREPORT-py/ts, Dependabot, axis-E demo) are independent and patch-safe. Re-title 0.6.1's plan-doc § Status to drop the AC-012 closure claim; carry the RED measurement forward as evidence for the 0.7.x Pack 7 work."
+    },
+    {
+      "id": "Q-A2",
+      "topic": "SQLite version capture follow-up",
+      "options": "(a) Add a tiny scripts/sqlite-version/ cargo crate that prints rusqlite::version() and update the workflow. | (b) Inline a `cargo run --example` invocation if a suitable example exists. | (c) Skip — Cargo.lock proxy (libsqlite3-sys = 0.28.0) is sufficient for the release-notes audit trail.",
+      "recommendation": "(c) for 0.6.1; (a) for 0.7.0 if Pack 7 work touches SQLite version pinning."
+    }
+  ],
+  "next_step_for_orchestrator": "Surface Q-A1 to HITL immediately — this is the critical decision that determines whether 0.6.1 ships at all in current shape. If (b) is chosen, update dev/plans/0.6.1-implementation.md § Status + § Slice sequence to drop AC012-measure as a CLOSING slice (it remains a documentation slice that records the RED measurement; AC-012 stays DEFERRED, just with fresher numbers); proceed with OPENREPORT-py/ts + DEPENDABOT + AXIS-E-PIN + B-001 + BUMP + RC1 + V + GA. If (a) is chosen, Pack 7 work blocks BUMP and orchestrator opens the Pack 7 sub-planning slice."
+}
