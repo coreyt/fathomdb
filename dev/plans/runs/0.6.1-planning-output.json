@@ -42,17 +42,35 @@
       "ac_id": "AC-068c",
       "title": "Python binding surfaces OpenedEngine.report",
       "depends_on_slice": "0.6.1-OPENREPORT-py",
-      "fields_to_surface": ["migration_version_reached: int", "embedder_identity_confirmed: bool", "open_stage: str"],
+      "fields_to_surface": [
+        "schema_version_before: int",
+        "schema_version_after: int",
+        "migration_steps: list[MigrationStepReport]",
+        "embedder_warmup_ms: int",
+        "query_backend: str",
+        "default_embedder: EmbedderIdentity"
+      ],
+      "field_source_note": "Verbatim from native struct src/rust/crates/fathomdb-engine/src/lib.rs:541-548; spec-locked subset (first 4 fields) per dev/design/engine.md § Engine.open success result. The earlier paraphrased names (migration-version-reached / embedder-identity-confirmed / open-stage) appearing in the dev/interfaces/python.md L28-34 caveat are informal shorthand and not the actual field identifiers — codex review 2026-05-23 flagged this; fix-1 corrected.",
       "verification_test": "src/python/tests/test_openreport.py (new)",
-      "cites": ["src/rust/crates/fathomdb-engine/src/lib.rs:541-553", "dev/interfaces/python.md (post-caveat-removal)"]
+      "legacy_compat_test": "Regression test asserting `engine = Engine.open(path)` single-name binding still receives an engine-like object bit-for-bit identical to 0.6.0 — this is the PRIMARY gate, not optional.",
+      "cites": ["src/rust/crates/fathomdb-engine/src/lib.rs:541-548", "dev/design/engine.md § Engine.open success result", "dev/interfaces/python.md (post-caveat-removal)"]
     },
     {
       "ac_id": "AC-068d",
       "title": "TypeScript binding surfaces OpenedEngine.report",
       "depends_on_slice": "0.6.1-OPENREPORT-ts",
-      "fields_to_surface": ["migrationVersionReached: number", "embedderIdentityConfirmed: boolean", "openStage: string"],
+      "fields_to_surface": [
+        "schemaVersionBefore: number",
+        "schemaVersionAfter: number",
+        "migrationSteps: ReadonlyArray<MigrationStepReport>",
+        "embedderWarmupMs: number",
+        "queryBackend: string",
+        "defaultEmbedder: EmbedderIdentity"
+      ],
+      "field_source_note": "camelCase mirror of native struct lib.rs:541-548 per dev/interfaces/typescript.md casing convention.",
       "verification_test": "src/ts/tests/openreport.test.ts (new)",
-      "cites": ["src/rust/crates/fathomdb-engine/src/lib.rs:541-553", "dev/interfaces/typescript.md (post-caveat-removal)"]
+      "legacy_compat_test": "Regression test asserting `const engine = await Engine.open(path)` still receives an engine-like object bit-for-bit identical to 0.6.0 — PRIMARY gate.",
+      "cites": ["src/rust/crates/fathomdb-engine/src/lib.rs:541-548", "dev/design/engine.md § Engine.open success result", "dev/interfaces/typescript.md (post-caveat-removal)"]
     }
   ],
   "ac_id_acceptance_md_state": "Not appended to dev/acceptance.md; HITL confirms first per planning-prompt § 4. Current max in acceptance.md: AC-070 (AC-068a/b under AC-068 family; new IDs slot as AC-068c/d).",
@@ -109,9 +127,9 @@
     },
     {
       "id": "Q-002",
-      "topic": "OpenReport binding return shape — backward-compat strategy",
-      "options": "(a) NamedTuple/wrapper that's still Engine-typed and supports legacy `engine = Engine.open(...)` destructure | (b) introduce Engine.open_with_report (py) / Engine.openWithReport (ts) and keep Engine.open returning the engine handle only",
-      "recommendation": "(a) — symmetric, no new verb, closer to native shape. Patch-release contract favors additive-compatible shapes. Surface at codex review of OPENREPORT-py."
+      "topic": "OpenReport binding return shape — backward-compat mechanism",
+      "status": "CLOSED in fix-1 per codex BLOCK 2026-05-23: option (b) `Engine.open_with_report` / `Engine.openWithReport` REMOVED because a new verb violates the patch-release contract (ADR-0.6.0-no-shims-policy § 54). Mechanism is locked to option (a): the existing `Engine.open` returns a wrapper/NamedTuple that legacy single-name binding (`engine = Engine.open(path)`) treats as an engine handle. Exact mechanism (NamedTuple-with-engine-attribute vs wrapper-class-with-__getattr__-delegation vs proxy) is a codex-review-time decision within the py slice; ts slice mirrors.",
+      "open_sub_question": "Mechanism choice: NamedTuple vs wrapper class vs proxy. Decide at OPENREPORT-py codex review; document choice in slice output.json under binding_return_shape."
     },
     {
       "id": "Q-003",
@@ -120,5 +138,17 @@
       "recommendation": "(a) — AXIS-E-PIN wires a new test into agent-verify; verify-script should be GREEN before then."
     }
   ],
-  "next_step_for_orchestrator": "code-reviewer pass on plan doc + 9 skeletons + canonical-runner template via dev/design/orchestration.md § 3 (codex exec --model gpt-5.4 --sandbox read-only); HITL on Q-001..Q-003; resolve B-001 (verify-script base-ref) BEFORE spawning AXIS-E-PIN; cherry-pick onto a 0.6.1-rewrite branch cut from main (or land directly on main for docs-only — confirm with user); begin 0.6.1-AC012-measure slice (parallel-safe with DEPENDABOT)."
+  "next_step_for_orchestrator": "code-reviewer pass on plan doc + 9 skeletons + canonical-runner template via dev/design/orchestration.md § 3 (codex exec --model gpt-5.4 --sandbox read-only); HITL on Q-001..Q-003; resolve B-001 (verify-script base-ref) BEFORE spawning AXIS-E-PIN; cherry-pick onto a 0.6.1-rewrite branch cut from main (or land directly on main for docs-only — confirm with user); begin 0.6.1-AC012-measure slice (parallel-safe with DEPENDABOT).",
+  "codex_review_history": [
+    {
+      "rts": "20260523T162359Z",
+      "verdict": "BLOCK",
+      "verdict_doc": "dev/plans/runs/0.6.1-planning-review-20260523T162359Z.md",
+      "log": "dev/plans/runs/0.6.1-planning-review-20260523T162359Z.log",
+      "findings": [
+        {"id": "F-1", "severity": "high", "title": "OPENREPORT slices target the wrong report schema", "addressed_by": "fix-1 — replaced paraphrased field names (migration_version_reached / embedder_identity_confirmed / open_stage) with the actual native struct fields (schema_version_before, schema_version_after, migration_steps, embedder_warmup_ms, query_backend, default_embedder) across OPENREPORT-py + OPENREPORT-ts skeletons, plan doc § Slice sequence row + § Proposed new ACs, and this output.json. Cited dev/design/engine.md § Engine.open success result + lib.rs:541-548 explicitly."},
+        {"id": "F-2", "severity": "medium", "title": "Legacy Engine.open compatibility only partially pinned", "addressed_by": "fix-1 — promoted legacy-callsite regression test to MANDATORY PRIMARY GATE in OPENREPORT-py + OPENREPORT-ts hard-constraints; closed Q-002 by removing the openWithReport option (new verb conflicts with patch-release contract); locked Q-002 outcome to option (a) wrapper/NamedTuple; only sub-choice of mechanism (NamedTuple vs wrapper class vs proxy) remains for the per-slice codex review."}
+      ]
+    }
+  ]
 }
