@@ -76,10 +76,16 @@ jobs:
           echo "=== SQLite version (compiled-in via rusqlite) ==="
           cargo run -q --manifest-path scripts/sqlite-version/Cargo.toml 2>/dev/null \
             || echo "(scripts/sqlite-version helper not present; run a small rust snippet locally to extract)"
-      - name: Build perf_gates (release, AGENT_LONG features)
+      - name: Build perf_gates (release; only the perf_gates test binary)
         shell: bash
         run: |
-          cargo build --release --tests -p fathomdb-engine
+          # Scope to the perf_gates integration test binary only.
+          # Other integration tests (e.g. tests/compatibility.rs) use
+          # `#[cfg(debug_assertions)]`-gated helpers that disappear in
+          # --release, so `--tests` (which builds ALL test binaries)
+          # fails the release build despite perf_gates itself being
+          # release-clean.
+          cargo test --release --no-run -p fathomdb-engine --test perf_gates
       - name: Run AC-012 canonical re-measurement
         env:
           AGENT_LONG: "1"
