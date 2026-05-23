@@ -1,0 +1,124 @@
+name: perf-canonical (AC-012 / AC-013 / AC-019 long-run gate)
+
+# Canonical-runner perf re-measurement for the 0.6.1 deferred items
+# (AC-012 text-query latency; AC-013 retrieval latency; AC-019 mixed
+# stress). Long-run harness invoked under AGENT_LONG=1 +
+# AC_FULL_SCALE=1 on tier-1 ubuntu-latest x86_64 per
+# ADR-0.6.0-tier1-ci-platforms.
+#
+# Manually-triggered only — these are hours-of-wall-clock runs at
+# canonical scale. Default scale (corpus_n inputs) lets the user
+# downscale for diagnostic dry-runs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ac012_corpus_n:
+        description: "AC-012 corpus row count (1000000 = canonical; lower for dry-run)"
+        required: false
+        default: "1000000"
+      ac013_corpus_n:
+        description: "AC-013 corpus row count (1000000 = canonical; ignored if Pack 7 Track 2 seed seam not landed yet)"
+        required: false
+        default: "10000"
+      run_full_scale:
+        description: "Set AC_FULL_SCALE=1 (canonical 1M scale; otherwise honors corpus_n env knobs)"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  ac012-canonical-measure:
+    name: AC-012 canonical re-measurement
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Configure per-session TMPDIR
+        shell: bash
+        run: |
+          TMPDIR="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMPDIR"
+          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Capture canonical-runner spec
+        shell: bash
+        run: |
+          echo "=== Runner spec (paste into dev/notes/perf-canonical-runner-2026-MM.md) ==="
+          echo "CPU model:"
+          grep "model name" /proc/cpuinfo | head -1
+          echo ""
+          echo "Core count / threads:"
+          nproc
+          echo ""
+          echo "OS:"
+          lsb_release -d 2>/dev/null || cat /etc/os-release | grep PRETTY_NAME
+          echo ""
+          echo "Kernel:"
+          uname -a
+          echo ""
+          echo "glibc:"
+          ldd --version | head -1
+          echo ""
+          echo "rustc:"
+          rustc --version
+          echo ""
+          echo "Runner identifier: ${RUNNER_NAME:-ubuntu-latest} (${RUNNER_OS}/${RUNNER_ARCH})"
+          echo "Workflow run URL: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          echo ""
+          echo "=== SQLite version (compiled-in via rusqlite) ==="
+          cargo run -q --manifest-path scripts/sqlite-version/Cargo.toml 2>/dev/null \
+            || echo "(scripts/sqlite-version helper not present; run a small rust snippet locally to extract)"
+      - name: Build perf_gates (release, AGENT_LONG features)
+        shell: bash
+        run: |
+          cargo build --release --tests -p fathomdb-engine
+      - name: Run AC-012 canonical re-measurement
+        env:
+          AGENT_LONG: "1"
+          AC_FULL_SCALE: ${{ inputs.run_full_scale && '1' || '' }}
+          AC012_CORPUS_N: ${{ inputs.ac012_corpus_n }}
+          AC013_CORPUS_N: ${{ inputs.ac013_corpus_n }}
+          RUST_BACKTRACE: "1"
+        shell: bash
+        run: |
+          set -o pipefail
+          # Run only the AC-012 perf gate; explicit test filter so we don't
+          # also drag in AC-013 / AC-019 / AC-020 (Pack 7 territory).
+          # Test is `#[test]` (not `#[ignore]`); long-run-gated via
+          # `AGENT_LONG=1` env. Filter to AC-012 only — AC-013/019/020 stay
+          # deferred per Pack 7 trigger evaluation.
+          cargo test --release -p fathomdb-engine --test perf_gates -- \
+            --nocapture ac_012 \
+            2>&1 | tee perf-canonical-ac012.log
+      - name: Upload measurement log
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: perf-canonical-ac012-log
+          path: perf-canonical-ac012.log
+          retention-days: 30
+      - name: Summarize verdict
+        if: always()
+        shell: bash
+        run: |
+          echo "=== Verdict guidance ==="
+          echo "ADR-0.6.0-text-query-latency-gates budgets: p50 ≤ 20 ms; p99 ≤ 150 ms"
+          echo ""
+          echo "Copy the measured numbers from perf-canonical-ac012.log into:"
+          echo "  dev/notes/perf-canonical-runner-2026-MM.md § Measured numbers"
+          echo ""
+          echo "Then flip the file's status: template -> status: measured,"
+          echo "and update dev/test-plan.md § Current Perf Attribution AC-012"
+          echo "to lift the DEFERRED label if GREEN."
+          echo ""
+          echo "If RED on p50 or p99: do NOT lift the deferral. Surface to"
+          echo "orchestrator — Pack 7 un-defer trigger fires (per"
+          echo "dev/plans/0.6.0-implementation.md § Pack 7 un-defer trigger)."
