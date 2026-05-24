@@ -28,11 +28,13 @@
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
 
+use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
 use fathomdb_engine::{
     CorruptionDetail, CorruptionKind, Engine as RustEngine, EngineError as RustEngineError,
-    EngineOpenError, OpenStage, PreparedWrite, SearchResult as RustSearchResult,
-    SoftFallbackBranch, WriteReceipt as RustWriteReceipt,
+    EngineOpenError, OpenReport as RustOpenReport, OpenStage, PreparedWrite,
+    SearchResult as RustSearchResult, SoftFallbackBranch, WriteReceipt as RustWriteReceipt,
 };
+use fathomdb_schema::MigrationStepReport as RustMigrationStepReport;
 use napi::{Error, JsUnknown, Result, Status};
 use napi_derive::napi;
 use serde::Serialize;
@@ -338,6 +340,55 @@ impl SearchResult {
 }
 
 #[napi(object)]
+pub struct MigrationStepReport {
+    pub step_id: u32,
+    pub duration_ms: Option<i64>,
+    pub failed: bool,
+}
+
+impl MigrationStepReport {
+    fn from_rust(r: &RustMigrationStepReport) -> Self {
+        Self { step_id: r.step_id, duration_ms: r.duration_ms.map(|v| v as i64), failed: r.failed }
+    }
+}
+
+#[napi(object)]
+pub struct EmbedderIdentity {
+    pub name: String,
+    pub revision: String,
+    pub dimension: u32,
+}
+
+impl EmbedderIdentity {
+    fn from_rust(id: &RustEmbedderIdentity) -> Self {
+        Self { name: id.name.clone(), revision: id.revision.clone(), dimension: id.dimension }
+    }
+}
+
+#[napi(object)]
+pub struct OpenReport {
+    pub schema_version_before: u32,
+    pub schema_version_after: u32,
+    pub migration_steps: Vec<MigrationStepReport>,
+    pub embedder_warmup_ms: i64,
+    pub query_backend: String,
+    pub default_embedder: EmbedderIdentity,
+}
+
+impl OpenReport {
+    fn from_rust(r: &RustOpenReport) -> Self {
+        Self {
+            schema_version_before: r.schema_version_before,
+            schema_version_after: r.schema_version_after,
+            migration_steps: r.migration_steps.iter().map(MigrationStepReport::from_rust).collect(),
+            embedder_warmup_ms: r.embedder_warmup_ms as i64,
+            query_backend: r.query_backend.to_string(),
+            default_embedder: EmbedderIdentity::from_rust(&r.default_embedder),
+        }
+    }
+}
+
+#[napi(object)]
 pub struct CounterSnapshot {
     pub queries: i64,
     pub writes: i64,
@@ -377,6 +428,7 @@ pub struct AdminConfigureOptions {
 #[napi]
 pub struct Engine {
     inner: Arc<RustEngine>,
+    open_report: Arc<RustOpenReport>,
 }
 
 #[napi]
@@ -403,7 +455,17 @@ impl Engine {
                 ))
             }
         };
-        Ok(Engine { inner: Arc::new(opened.engine) })
+        Ok(Engine { inner: Arc::new(opened.engine), open_report: Arc::new(opened.report) })
+    }
+
+    /// Structured open report captured at [`Engine::open`] time. Sync
+    /// accessor (no Promise — the data lives on the engine struct
+    /// after open). Idempotent: each call returns a fresh copy of the
+    /// same snapshot.
+    #[napi]
+    pub fn open_report(&self) -> Result<OpenReport> {
+        let report = Arc::clone(&self.open_report);
+        call_engine_sync(move || Ok(OpenReport::from_rust(&report)))
     }
 
     #[napi]

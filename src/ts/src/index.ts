@@ -42,6 +42,27 @@ export interface SearchResult {
   results: string[];
 }
 
+export interface MigrationStepReport {
+  readonly stepId: number;
+  readonly durationMs: number | null;
+  readonly failed: boolean;
+}
+
+export interface EmbedderIdentity {
+  readonly name: string;
+  readonly revision: string;
+  readonly dimension: number;
+}
+
+export interface OpenReport {
+  readonly schemaVersionBefore: number;
+  readonly schemaVersionAfter: number;
+  readonly migrationSteps: ReadonlyArray<MigrationStepReport>;
+  readonly embedderWarmupMs: number;
+  readonly queryBackend: string;
+  readonly defaultEmbedder: EmbedderIdentity;
+}
+
 export interface CounterSnapshot {
   queries: number;
   writes: number;
@@ -124,6 +145,10 @@ export class Engine {
 
   counters(): CounterSnapshot {
     return interceptSync(() => this.#native.counters());
+  }
+
+  openReport(): OpenReport {
+    return interceptSync(() => this.#native.openReport());
   }
 
   setProfiling(enabled: boolean): void {

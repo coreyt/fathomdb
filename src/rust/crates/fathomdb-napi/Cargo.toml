@@ -16,7 +16,9 @@ default = []
 test-hooks = []
 
 [dependencies]
+fathomdb-embedder-api.workspace = true
 fathomdb-engine.workspace = true
+fathomdb-schema.workspace = true
 napi = { version = "2", features = ["napi8", "async", "tokio_rt", "serde-json"] }
 napi-derive = "2"
 serde = { version = "1", features = ["derive"] }

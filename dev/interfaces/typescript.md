@@ -24,16 +24,10 @@ The canonical runtime verbs available to TypeScript callers are:
 
 All runtime operations are Promise-returning on the TS surface.
 
-`Engine.open(...)` returns the engine handle plus the structured open report
-owned by `design/engine.md`.
-
-> **0.6.0 caveat (2026-05-17, Phase 12-TX).** The napi-rs binding currently
-> returns the engine handle only; the structured open report is dropped.
-> Native Rust `Engine::open` returns `OpenedEngine { engine, report:
-OpenReport }` and the report is populated, but binding-side surfacing
-> defers to 0.6.1 (slice 12-TX-OPENREPORT). Clients that need
-> migration-version-reached / embedder-identity-confirmed / open-stage
-> data wait for 0.6.1.
+`Engine.open(...)` returns a Promise resolving to the engine handle. The
+structured open report owned by `design/engine.md` is accessible after open
+via `engine.openReport()` (see Engine-attached instrumentation / control
+below).
 
 `Engine.open(path, options?)` accepts an options object with an `engineConfig`
 member carrying the engine-owned knobs from `design/engine.md` in camelCase:
@@ -54,6 +48,7 @@ These are public instance methods, not extra top-level SDK verbs:
 
 - `engine.drain(timeoutMs)`
 - `engine.counters()`
+- `engine.openReport()`
 - `engine.setProfiling(enabled)`
 - `engine.setSlowThresholdMs(value)`
 

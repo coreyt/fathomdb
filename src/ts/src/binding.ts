@@ -63,6 +63,27 @@ interface NativeSearchResult {
   results: string[];
 }
 
+interface NativeMigrationStepReport {
+  stepId: number;
+  durationMs: number | null;
+  failed: boolean;
+}
+
+interface NativeEmbedderIdentity {
+  name: string;
+  revision: string;
+  dimension: number;
+}
+
+interface NativeOpenReport {
+  schemaVersionBefore: number;
+  schemaVersionAfter: number;
+  migrationSteps: NativeMigrationStepReport[];
+  embedderWarmupMs: number;
+  queryBackend: string;
+  defaultEmbedder: NativeEmbedderIdentity;
+}
+
 interface NativeCounterSnapshot {
   queries: number;
   writes: number;
@@ -99,6 +120,7 @@ export interface NativeEngine {
   close(): Promise<void>;
   drain(timeoutMs: number): Promise<void>;
   counters(): NativeCounterSnapshot;
+  openReport(): NativeOpenReport;
   setProfiling(enabled: boolean): void;
   setSlowThresholdMs(value: number): void;
   attachSubscriber(callback: unknown, options?: NativeAttachSubscriberOptions): void;
