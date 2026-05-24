@@ -61,7 +61,11 @@
   "pyo3_0_28_3_evaluation": {
     "verdict": "REQUIRES_CODE_CHANGES",
     "reason": "pyo3 0.28.x removed get_type_bound() (renamed back to get_type()). fathomdb-py/src/lib.rs uses get_type_bound at lines 643-645. Code change would be required — out of scope per ADR-0.6.0-no-shims-policy § 54 patch-release constraint. Fallback to 0.24.1 applied.",
-    "fallback": "pyo3-0.24.1"
+    "fallback": "pyo3-0.24.1",
+    "additional_0_28_blockers_per_codex_2026_05_24": [
+      "Python::with_gil(...) → Python::attach(...) rename: 5 call sites in fathomdb-py/src/lib.rs (codex review at marker.rs:410 + marker.rs:648 in pyo3-0.28.3). The 0.28.x migration will need to rewrite these too, not just the get_type_bound block at L643-645. Initial output.json text understated the migration scope; this entry corrects the record so 0.7.0 perf-slice planners know the actual surface area when the pyo3 bump is paired with their work."
+    ],
+    "future_migration_owner": "0.7.0 perf slice OR a dedicated 0.6.x pyo3-bump slice if Dependabot re-surfaces a fresh pyo3 advisory before 0.7.0 ships. Not in 0.6.1 scope (patch contract)."
   },
 
   "lockfiles_updated": [
