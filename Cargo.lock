@@ -387,7 +387,9 @@ dependencies = [
 name = "fathomdb-py"
 version = "0.6.0"
 dependencies = [
+ "fathomdb-embedder-api",
  "fathomdb-engine",
+ "fathomdb-schema",
  "pyo3",
  "serde_json",
 ]

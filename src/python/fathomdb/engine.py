@@ -17,6 +17,9 @@ from fathomdb._fathomdb import Engine as _NativeEngine
 from fathomdb.config import EngineConfig
 from fathomdb.types import (
     CounterSnapshot,
+    EmbedderIdentity,
+    MigrationStepReport,
+    OpenReport,
     SearchResult,
     SoftFallback,
     SoftFallbackBranch,
@@ -110,6 +113,36 @@ class Engine:
         """Block until in-flight writes drain or `timeout_s` elapses."""
 
         self._native.drain(timeout_s=float(timeout_s))
+
+    def open_report(self) -> OpenReport:
+        """Return the structured open-time report captured at `Engine.open`.
+
+        Shape D (locked HITL 2026-05-24): the report is exposed as an
+        engine-attached accessor, not a return-shape change on
+        `Engine.open`. Idempotent — repeat calls return the same data;
+        the report is a snapshot from open time, not live state.
+        """
+
+        native = self._native.open_report()
+        return OpenReport(
+            schema_version_before=native.schema_version_before,
+            schema_version_after=native.schema_version_after,
+            migration_steps=[
+                MigrationStepReport(
+                    step_id=step.step_id,
+                    duration_ms=step.duration_ms,
+                    failed=step.failed,
+                )
+                for step in native.migration_steps
+            ],
+            embedder_warmup_ms=native.embedder_warmup_ms,
+            query_backend=native.query_backend,
+            default_embedder=EmbedderIdentity(
+                name=native.default_embedder.name,
+                revision=native.default_embedder.revision,
+                dimension=native.default_embedder.dimension,
+            ),
+        )
 
     def counters(self) -> CounterSnapshot:
         snap = self._native.counters()

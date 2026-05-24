@@ -1046,6 +1046,26 @@ Added 2026-05-02 as an HITL amendment to the locked corpus per
 
 ---
 
+## AC-068c: Python `engine.open_report()` surfaces structured open report
+
+**Requirement ref:** REQ-064
+**Test id:** T-068c
+**Assertion:** Python `engine.open_report()` returns the structured open report captured at `Engine.open` time. Caller receives every field of the native `OpenReport` struct (`src/rust/crates/fathomdb-engine/src/lib.rs:541-548`) under the same snake_case identifiers: `schema_version_before: int`, `schema_version_after: int`, `migration_steps: list`, `embedder_warmup_ms: int`, `query_backend: str`, and `default_embedder` (embedder-identity payload). The accessor is idempotent — repeat calls return identical data (the report is a snapshot, not live state). `Engine.open(...)` signature unchanged from 0.6.0 (returns just `Engine`); no return-shape regression.
+**Measurement:** From Python: open a fresh DB; call `engine.open_report()` twice; assert every field populated AND identical across calls. Cites `dev/design/engine.md` § "`Engine.open` success result" (spec-locked field subset: `schema_version_before`, `schema_version_after`, `migration_steps`, `embedder_warmup_ms`) and `dev/interfaces/python.md` (Engine-attached instrumentation list, post-spec-edit).
+**Fixture:** in-memory engine (per-test `tmp_path` per `src/python/tests/conftest.py`).
+
+---
+
+## AC-068d: TypeScript `engine.openReport()` surfaces structured open report
+
+**Requirement ref:** REQ-064
+**Test id:** T-068d
+**Assertion:** TypeScript `engine.openReport()` returns the structured open report (sync return — data lives in the napi engine struct after open). Caller receives the camelCase mirror of the native fields: `schemaVersionBefore: number`, `schemaVersionAfter: number`, `migrationSteps: ReadonlyArray<MigrationStepReport>`, `embedderWarmupMs: number`, `queryBackend: string`, `defaultEmbedder` (embedder-identity payload). Idempotent — repeat calls return identical data. `Engine.open(...)` Promise signature unchanged from 0.6.0 (resolves to just `Engine`).
+**Measurement:** From TypeScript: open a fresh DB; call `engine.openReport()` twice; assert every field populated AND identical across calls. Cites `src/rust/crates/fathomdb-engine/src/lib.rs:541-548` and `dev/interfaces/typescript.md` (Engine-attached instrumentation list, post-spec-edit).
+**Fixture:** in-memory engine (per-test temp path per `src/ts/tests/` conventions).
+
+---
+
 ## AC-069: Error `Display` omits raw SQL, absolute paths, and parser byte offsets
 
 **Requirement ref:** REQ-065
@@ -1147,7 +1167,7 @@ Every REQ in `requirements.md` has ≥1 AC:
 | REQ-061  | AC-065                |
 | REQ-062  | AC-066                |
 | REQ-063  | AC-067                |
-| REQ-064  | AC-068a/b             |
+| REQ-064  | AC-068a/b/c/d         |
 | REQ-065  | AC-069                |
 | REQ-066  | AC-070                |
 

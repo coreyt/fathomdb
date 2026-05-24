@@ -26,9 +26,28 @@ class CounterSnapshot:
     cache_hit: int
     cache_miss: int
 
+class MigrationStepReport:
+    step_id: int
+    duration_ms: int | None
+    failed: bool
+
+class EmbedderIdentity:
+    name: str
+    revision: str
+    dimension: int
+
+class OpenReport:
+    schema_version_before: int
+    schema_version_after: int
+    migration_steps: list[MigrationStepReport]
+    embedder_warmup_ms: int
+    query_backend: str
+    default_embedder: EmbedderIdentity
+
 class Engine:
     @staticmethod
     def open(path: str) -> "Engine": ...
+    def open_report(self) -> OpenReport: ...
     def write(self, batch: Iterable[Any]) -> WriteReceipt: ...
     def search(self, query: str) -> SearchResult: ...
     def close(self) -> None: ...

@@ -32,11 +32,14 @@
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
 
+use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
 use fathomdb_engine::{
     CorruptionDetail, CorruptionKind, Engine as RustEngine, EngineError as RustEngineError,
-    EngineOpenError, OpenStage, PreparedWrite, SearchResult as RustSearchResult,
-    SoftFallback as RustSoftFallback, SoftFallbackBranch, WriteReceipt as RustWriteReceipt,
+    EngineOpenError, OpenReport as RustOpenReport, OpenStage, PreparedWrite,
+    SearchResult as RustSearchResult, SoftFallback as RustSoftFallback, SoftFallbackBranch,
+    WriteReceipt as RustWriteReceipt,
 };
+use fathomdb_schema::MigrationStepReport as RustMigrationStepReport;
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyTypeError, PyValueError};
 use pyo3::panic::PanicException;
@@ -323,11 +326,68 @@ struct PyCounterSnapshot {
     cache_miss: u64,
 }
 
+#[pyclass(module = "fathomdb._fathomdb", name = "MigrationStepReport", frozen, get_all)]
+#[derive(Clone)]
+struct PyMigrationStepReport {
+    step_id: u32,
+    duration_ms: Option<u64>,
+    failed: bool,
+}
+
+impl PyMigrationStepReport {
+    fn from_rust(r: &RustMigrationStepReport) -> Self {
+        Self { step_id: r.step_id, duration_ms: r.duration_ms, failed: r.failed }
+    }
+}
+
+#[pyclass(module = "fathomdb._fathomdb", name = "EmbedderIdentity", frozen, get_all)]
+#[derive(Clone)]
+struct PyEmbedderIdentity {
+    name: String,
+    revision: String,
+    dimension: u32,
+}
+
+impl PyEmbedderIdentity {
+    fn from_rust(id: &RustEmbedderIdentity) -> Self {
+        Self { name: id.name.clone(), revision: id.revision.clone(), dimension: id.dimension }
+    }
+}
+
+#[pyclass(module = "fathomdb._fathomdb", name = "OpenReport", frozen, get_all)]
+#[derive(Clone)]
+struct PyOpenReport {
+    schema_version_before: u32,
+    schema_version_after: u32,
+    migration_steps: Vec<PyMigrationStepReport>,
+    embedder_warmup_ms: u64,
+    query_backend: String,
+    default_embedder: PyEmbedderIdentity,
+}
+
+impl PyOpenReport {
+    fn from_rust(r: &RustOpenReport) -> Self {
+        Self {
+            schema_version_before: r.schema_version_before,
+            schema_version_after: r.schema_version_after,
+            migration_steps: r
+                .migration_steps
+                .iter()
+                .map(PyMigrationStepReport::from_rust)
+                .collect(),
+            embedder_warmup_ms: r.embedder_warmup_ms,
+            query_backend: r.query_backend.to_string(),
+            default_embedder: PyEmbedderIdentity::from_rust(&r.default_embedder),
+        }
+    }
+}
+
 // ===== Engine =========================================================
 
 #[pyclass(module = "fathomdb._fathomdb", name = "Engine")]
 struct PyEngine {
     inner: Arc<RustEngine>,
+    open_report: PyOpenReport,
 }
 
 #[pymethods]
@@ -340,7 +400,12 @@ impl PyEngine {
             .allow_threads(|| catch_unwind(AssertUnwindSafe(|| RustEngine::open(path))))
             .map_err(|_| PanicException::new_err("engine panic during open"))?
             .map_err(engine_open_error_to_py)?;
-        Ok(Self { inner: Arc::new(opened.engine) })
+        let open_report = PyOpenReport::from_rust(&opened.report);
+        Ok(Self { inner: Arc::new(opened.engine), open_report })
+    }
+
+    fn open_report(&self) -> PyOpenReport {
+        self.open_report.clone()
     }
 
     fn write(&self, py: Python<'_>, batch: Bound<'_, PyList>) -> PyResult<PyWriteReceipt> {
@@ -551,6 +616,9 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySoftFallback>()?;
     m.add_class::<PySearchResult>()?;
     m.add_class::<PyCounterSnapshot>()?;
+    m.add_class::<PyMigrationStepReport>()?;
+    m.add_class::<PyEmbedderIdentity>()?;
+    m.add_class::<PyOpenReport>()?;
     m.add_function(wrap_pyfunction!(admin_configure, &m)?)?;
 
     #[cfg(any(test, feature = "test-hooks"))]

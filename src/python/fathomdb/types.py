@@ -41,6 +41,48 @@ class SearchResult:
 
 
 @dataclass(frozen=True)
+class MigrationStepReport:
+    """One row in `OpenReport.migration_steps`.
+
+    Mirrors the native `fathomdb_schema::MigrationStepReport` per
+    `src/rust/crates/fathomdb-engine/src/lib.rs:541-548`.
+    """
+
+    step_id: int
+    duration_ms: int | None
+    failed: bool
+
+
+@dataclass(frozen=True)
+class EmbedderIdentity:
+    """Embedder identity payload carried on `OpenReport.default_embedder`.
+
+    Mirrors `fathomdb_embedder_api::EmbedderIdentity`.
+    """
+
+    name: str
+    revision: str
+    dimension: int
+
+
+@dataclass(frozen=True)
+class OpenReport:
+    """Structured open-time report owned by `dev/design/engine.md`.
+
+    Captured at `Engine.open` time and surfaced via the engine-attached
+    accessor `engine.open_report()` (Shape D, locked HITL 2026-05-24).
+    The accessor is idempotent — the report is a snapshot, not live state.
+    """
+
+    schema_version_before: int
+    schema_version_after: int
+    migration_steps: list[MigrationStepReport]
+    embedder_warmup_ms: int
+    query_backend: str
+    default_embedder: EmbedderIdentity
+
+
+@dataclass(frozen=True)
 class CounterSnapshot:
     """Snapshot of engine-internal counters returned by `engine.counters`.
 
@@ -59,6 +101,9 @@ class CounterSnapshot:
 
 __all__ = [
     "CounterSnapshot",
+    "EmbedderIdentity",
+    "MigrationStepReport",
+    "OpenReport",
     "SearchResult",
     "SoftFallback",
     "SoftFallbackBranch",
