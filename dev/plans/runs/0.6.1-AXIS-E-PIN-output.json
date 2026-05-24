@@ -12,7 +12,7 @@
     "(13d) every non-embedder-api workspace crate uses version.workspace = true",
     "(13e) --check-files exits 0 after the bump"
   ],
-  "regression_novelty": "Test #13 exercises the scenario where both axes start at 0.6.0 before the bump. Tests 2 and 12 cannot catch accidental axis-E mutation in this case because they either use a fixed distinct axis-E value (12: pre-set to 2.2.2) or don't check the workspace.dependencies pin explicitly (2). A future change that drops the embedder-api guard in set_workspace_dep_axis_w_versions() would bump the pin from 0.6.0 to 0.6.1 — caught only by this test.",
+  "regression_novelty": "Test #13 explicitly asserts axis-E preservation when both axes start at 0.6.0 — the 0.6.0 → 0.6.1 patch-bump scenario. Tests 2 and 12 do indirectly catch a dropped embedder-api guard (per codex review 2026-05-24: test 2's --workspace path ends in check_files, which would fail if the embedder-api workspace-dep pin drifted to match axis-W; test 12 pre-sets axis-E to 2.2.2 and asserts the pin stays at 2.2.2). Test #13 adds explicit-assertion clarity (the implicit check_files coverage in test 2 is harder to read at a glance) plus the same-starting-version scenario specifically aligned with the 0.6.0 → 0.6.1 bump shape per Wake decision d-001. Earlier 'uniquely catches' framing in this artifact was overstated and is corrected here.",
   "script_status": "UNCHANGED — design verification (2026-05-22) confirmed correct; all 23 tests GREEN on first run",
   "passed_count": 23,
   "failed_count": 0
