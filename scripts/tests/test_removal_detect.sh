@@ -48,4 +48,21 @@ if ! python3 "$LINT" \
 fi
 echo "OK moved-in-file"
 
+# default-base-ref live-git path — exercises the default --base argument
+# against live git history (no --diff-file). Catches the B-001 regression
+# where the default base-ref was "0.6.0-rewrite" (a closed branch removed
+# at 0.6.0 GA), causing `fatal: bad revision '0.6.0-rewrite..HEAD'`.
+# See: dev/plans/runs/0.6.1-planning-output.json § blockers_encountered B-001.
+set +e
+stderr_out="$(bash "$REPO_ROOT/scripts/security/check-removal-changelog.sh" 2>&1 >/dev/null)"
+rc=$?
+set -e
+if [ "$rc" -ne 0 ]; then
+    fail "default-base-ref live-git path: expected exit 0, got $rc (stderr: $stderr_out)"
+fi
+if echo "$stderr_out" | grep -q "fatal: bad revision"; then
+    fail "default-base-ref live-git path: got 'fatal: bad revision' in stderr — default base-ref is broken"
+fi
+echo "OK default-base-ref live-git path"
+
 echo "test_removal_detect.sh: all cases pass"

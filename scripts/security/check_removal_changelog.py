@@ -169,7 +169,7 @@ def load_diff(args: argparse.Namespace) -> str:
 
 def main(argv: list[str]) -> int:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--base", default="0.6.0-rewrite", help="base git ref")
+    p.add_argument("--base", default="v0.6.0", help="base git ref")
     p.add_argument("--head", default="HEAD", help="head git ref")
     p.add_argument("--diff-file", default=None, help="read diff from a file instead of git")
     p.add_argument("--changelog", default=None, help="CHANGELOG.md path (default: <repo>/CHANGELOG.md)")
