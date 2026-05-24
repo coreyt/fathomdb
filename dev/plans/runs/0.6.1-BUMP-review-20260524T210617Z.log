@@ -1,0 +1,2504 @@
+OpenAI Codex v0.120.0 (research preview)
+--------
+workdir: /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 019e5bcf-6254-7b12-9f7b-9aac8e0dd813
+--------
+user
+You are reviewing Phase 0.6.1-BUMP.
+
+Branch: phase-0.6.1-BUMP-20260524T205921Z.
+Baseline: a2da356 (AXIS-E-PIN landing on main).
+HEAD: f024d2d (af96a5b release commit + f024d2d chore output JSON).
+
+Required reading:
+- dev/plans/prompts/0.6.1-BUMP.md (the spec — including task step
+  7 'Retag AC-050c removal-detect default base-ref' added in
+  d33207a per B-001 codex CONCERN-accept)
+- dev/plans/0.6.1-implementation.md (the release plan; especially
+  § "AC-012 canonical re-measurement — RED outcome and 0.7.0
+  escalation" and § "Q-002 resolution (HITL 2026-05-24)")
+- dev/plans/runs/0.6.1-BUMP-output.json (closure artifact)
+- git show af96a5b (the single release commit — 10 files +296/-21)
+- Cargo.toml + Cargo.lock (axis-W bump; embedder-api pin)
+- src/python/pyproject.toml + src/python/uv.lock (python axis-W)
+- src/ts/package.json + src/ts/package-lock.json (npm axis-W)
+- src/rust/crates/fathomdb-embedder-api/Cargo.toml (axis-E HELD;
+  this file must NOT have changed)
+- CHANGELOG.md (new ## 0.6.1 block — should list 3 closures +
+  dependabot + AC-012 RED carry-forward, NOT claim AC-012 closure)
+- docs/release-notes/0.6.1.md (new file — 187 lines per stat)
+- scripts/security/check_removal_changelog.py (line ~172 —
+  v0.6.0 → v0.6.1 retag per B-001 forward-retag obligation)
+- scripts/security/check-removal-changelog.sh (header comment
+  updated to match)
+- scripts/set-version.sh (UNCHANGED — verify the implementer ran
+  the script, did not edit it)
+- dev/adr/ADR-0.6.0-no-shims-policy.md § 54 (patch-release
+  contract)
+
+Verdict format:
+- `## Verdict: PASS|CONCERN|BLOCK` markdown header
+- Findings as `### N. [severity] short title` then `Refs:` (file:line citations) then 2-4 line explanation.
+- `## What passed on inspection` wrap.
+- `## Reviewer process notes` wrap.
+
+Focus the review on:
+
+1. **Axis-W complete bump.** Every workspace.dependencies pin for
+   fathomdb / fathomdb-cli / fathomdb-embedder / fathomdb-engine /
+   fathomdb-napi / fathomdb-py / fathomdb-query / fathomdb-schema
+   (everything except fathomdb-embedder-api) bumped to 0.6.1?
+   Workspace [package].version = 0.6.1? Python + npm versions
+   bumped? Cargo.lock + uv.lock + package-lock.json reflect 0.6.1?
+
+2. **Axis-E held at 0.6.0.** fathomdb-embedder-api/Cargo.toml
+   [package].version still 0.6.0? workspace.dependencies pin for
+   fathomdb-embedder-api still 0.6.0? Wake d-001 demonstrated.
+
+3. **check-files verdict.** Verify the implementer's claim
+   "ok: Axis W = 0.6.1; Axis E = 0.6.0". Read the relevant
+   manifests yourself; do the strings agree?
+
+4. **CHANGELOG accuracy.** New ## 0.6.1 block lists:
+   - Fixed: OpenReport surfaced (AC-068c/d) on both bindings.
+   - Security: pyo3 + js-yaml advisories closed; idna false-
+     positive noted.
+   - Performance / Deferred: AC-012 RED canonical-runner measurement
+     carried forward as evidence, NOT claimed as closure.
+     Pack 7 escalates to 0.7.0.
+   - Internal: B-001 base-ref fix; axis-E independence demo;
+     uv.lock added.
+   AC-012 closure language MUST NOT appear; only the carry-forward.
+
+5. **Release notes (`docs/release-notes/0.6.1.md`) accuracy.**
+   Same content as CHANGELOG but client-facing prose. Does it
+   describe Shape D accurately (engine.open_report() /
+   engine.openReport() accessors, not return-shape change)?
+   Does it carry the AC-012 RED honestly (no "deferred to a
+   future release" weaseling that obscures the empirical RED)?
+
+6. **B-001 retag.** check_removal_changelog.py:172 default --base
+   = "v0.6.1" (advanced from "v0.6.0"). Wrapper header comment
+   matches. Transient gap (live-git case will fail until v0.6.1
+   tag lands at GA) is documented somewhere readable.
+
+7. **No code edits, no tag.** Spec says "No code edits. Only
+   version manifests + CHANGELOG + release notes."
+   check_removal_changelog.py is a script, not engine code, and
+   the retag was explicitly added to the spec at d33207a. Any
+   OTHER non-script code changes?
+
+8. **Single commit per spec.** The spec said "Single commit:
+   release(0.6.1): bump axis-W to 0.6.1; CHANGELOG + release
+   notes. Co-touch axis-E held at 0.6.0 — document in commit
+   body." Implementer landed af96a5b as the single release
+   commit + f024d2d as the chore output-JSON commit. Acceptable
+   per orchestration.md § 8 (closure artifact as sibling chore
+   commit)?
+
+9. **Patch-release-contract compliance.** ADR-0.6.0-no-shims-policy
+   § 54 ('no API breaks. Bugfix-only.') — verify the diff has no
+   API breaks. CHANGELOG/release-notes wording must not promise
+   anything 0.6.1 doesn't actually deliver.
+
+Sandbox is read-only; do not write the verdict file.
+
+codex
+Reviewing the 0.6.1-BUMP branch against the required spec and release artifacts. I’m starting with the repo invariants in `MEMORY.md` and the cited plan/spec files, then I’ll inspect the exact diff and manifests for versioning, axis separation, and release-note accuracy.
+exec
+/bin/bash -lc "sed -n '1,220p' MEMORY.md" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ exited 2 in 0ms:
+sed: can't read MEMORY.md: No such file or directory
+
+exec
+/bin/bash -lc "sed -n '1,260p' AGENTS.md" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+# AGENTS.md — FathomDB
+
+Operating manual for AI coding agents (Claude Code, Codex, Cursor, Aider, Copilot) working in this repo. Cross-vendor convention. This is the canonical agent-instruction file; **no `CLAUDE.md` is maintained** — Claude Code reads `AGENTS.md` natively.
+
+Bullet form, prescriptive, ≤300 lines. Link out, do not inline.
+
+## 0. System layers — where each rule fits
+
+- **Invariants layer** — this file (front-loaded, cached, ≤300, bullets).
+- **Index layer** — `dev/adr/ADR-0.6.0-decision-index.md`, `dev/interfaces/*.md`. Linked, never inlined.
+- **Retrieval layer** — grep / glob / read / LSP / tree-sitter map on demand. No local vector index.
+- **Execution layer** — typed dev-loop verbs under `scripts/agent-*.sh` emit structured JSON. Tests are oracle.
+- **Persistence layer** — `dev/progress/<release>.md` + ADR supersession. Compaction-safe.
+- **Permission layer** — three-tier sandbox + worktree-per-task + egress allowlist (`.claude/settings.json`).
+- **Topology layer** — main thread orchestrates; implementer (worktree) + code-reviewer fan out at clean seams; single-agent for shared-state edits.
+
+---
+
+## 1. Invariants — read these first
+
+- **Memory first.** Read `MEMORY.md` and the `feedback_*.md` files it points to before planning any change. They encode prior corrections that override default behavior.
+- **ADRs are authoritative.** Decisions live in `dev/adr/`. Index: `dev/adr/ADR-0.6.0-decision-index.md`. Do not contradict an accepted ADR; propose a successor instead.
+- **TDD is mandatory.** Failing test first; red → green → refactor. Mechanical version bumps and renames are the only exception. (`feedback_tdd.md`)
+- **Stale > missing.** A wrong comment, doc, or ADR is more harmful than its absence. If you cannot maintain something, delete it.
+- **Public surface is contract.** Anything in `dev/interfaces/` or `pub` Rust APIs is a contract; changes need an ADR or interface-doc update in the same PR.
+
+## 2. Repo shape
+
+- **Rust workspace** under `src/rust/crates/` — 7 crates: `fathomdb`, `fathomdb-cli`, `fathomdb-engine`, `fathomdb-query`, `fathomdb-schema`, `fathomdb-embedder`, `fathomdb-embedder-api`.
+- **Python bindings** under `src/python/` (package: `fathomdb`).
+- **TypeScript bindings** under `src/ts/`.
+- **Public docs** under `docs/` (MkDocs-built).
+- **Internal engineering docs** under `dev/`: `adr/`, `interfaces/`, `progress/`, `plans/`, `tmp/`.
+
+## 3. Build / test / lint commands
+
+Use the typed dev-loop verbs (Phase 2). Each emits **concise output on pass, structured diagnostic on fail**, with full output spilled to `/tmp/fathomdb-agent-<verb>-<pid>.log` when capped.
+
+| Verb      | Script                         | Purpose                                                           |
+| --------- | ------------------------------ | ----------------------------------------------------------------- |
+| build     | `./scripts/agent-build.sh`     | Compile workspace (Rust + Python install + TS build if installed) |
+| lint      | `./scripts/agent-lint.sh`      | clippy + ruff + markdownlint + prettier --check + lychee          |
+| typecheck | `./scripts/agent-typecheck.sh` | cargo check + pyright + tsc --noEmit                              |
+| test      | `./scripts/agent-test.sh`      | cargo test + pytest                                               |
+| verify    | `./scripts/agent-verify.sh`    | lint → typecheck → test (short-circuits on first fail)            |
+
+Markdown lint covers `AGENTS.md`, `dev/plans/`, `dev/progress/`, README files, and root metadata. Pre-existing legacy under `dev/adr/`, `dev/design/`, `dev/agents/`, `dev/deps/`, etc. is excluded — clean up incrementally when touching those files. Auto-fix: `npm run format:md` (prettier --write) + `./node_modules/.bin/markdownlint-cli2 --fix`.
+
+Run `./scripts/agent-verify.sh` after every meaningful edit. Do not ship a PR with verify failing.
+
+The broader CI gate is `./scripts/check.sh` (adds mkdocs build); the agent-loop gate is `agent-verify.sh`. Long-run test variants (e.g. AC-021 60 s window, AC-059b ~1000-iteration cursor-race fixture) are exercised only via `scripts/check.sh` with `AGENT_LONG=1`; `agent-verify.sh` skips them for runtime budget.
+
+### One-time setup
+
+- Rust toolchain: stable per `rust-version` in `Cargo.toml`. clippy + rustfmt come with rustup defaults.
+- Python dev tooling: `pip install -e 'src/python[dev]'` — installs `pytest`, `hypothesis`, `ruff`, `pyright`. Without this, the Python lint/typecheck/test steps emit a skip notice and pass without exercising.
+- TypeScript: `cd src/ts && npm install` if you intend to touch TS. Without this, TS verbs skip.
+- Markdown tooling: `npm install` at repo root — installs `markdownlint-cli2` + `prettier`. `cargo install --locked lychee` for link checking (one-time). All wired up by `./scripts/bootstrap.sh`.
+
+## 4. Verification ordering
+
+Run in latency order; short-circuit on first failure:
+
+1. **lint** (clippy / ruff) — fastest signal, catches most style + correctness issues
+2. **typecheck** (cargo check / pyright / tsc) — catches type errors before tests run them
+3. **unit tests** (`agent-test.sh`)
+4. **integration tests** — opt-in, gated by feature/env flag; not part of `agent-verify`
+
+Do not paraphrase, summarize, or shorten compiler diagnostics — pass them through unaltered. Rust diagnostics in particular are best-in-class; Anthropic's RustAssistant numbers depend on them being unaltered.
+
+## 5. Test discipline
+
+- **Failing test first.** Write the failing test, commit it (or stage it visible to the reviewer), then implement.
+- **Test files are read-only during fix-to-spec.** Do not edit a test to make a failing build pass; fix the code.
+- **Property-based tests required** for codec / projection / recovery / round-trip layers. Rust: `proptest` (dev-dep on `fathomdb-schema`, `fathomdb-engine`, `fathomdb-query`). Python: `hypothesis` (in `[dev]` and `[test]` optional deps; install via `pip install -e 'src/python[dev]'`). Scaffolds: `src/rust/crates/<crate>/tests/property_template.rs` and `src/python/tests/test_property_template.py` — replace the trivial property with real round-trip / invariant assertions when domain types land.
+- **No agent-generated oracles.** Tests must encode human intent; do not regenerate snapshot or golden tests autonomously.
+- **Retry budget.** If you hit the same failure mode twice, stop. Re-read the failing test, the relevant ADR, and the relevant `feedback_*.md`. Do not loop a third time without re-thinking; if necessary, `/clear` and reset.
+
+## 6. Comment policy
+
+- **Public-API docstrings:** required for `pub` Rust items, top-level Python functions/classes, exported TS symbols. Document contract: inputs, outputs, errors, panics, invariants.
+- **Internal helpers:** no docstrings unless behavior is non-obvious. Names should carry the meaning.
+- **Inline comments:** why / invariants / hazards only. Never restate what code does. Never reference the current task or PR. (Per CLAUDE-default rules and `feedback_reliability_principles.md`.)
+- **Stale comment > delete.** If a comment no longer matches the code, delete it; do not "update later."
+
+## 7. Subagent rules
+
+- **Main thread orchestrates.** Do not spawn an "orchestrator" subagent — the main thread _is_ the orchestrator. (`feedback_orchestrator_thread.md`)
+- **Releases:** main thread plans; delegate coding to `implementer` (in worktree); request diff review from `code-reviewer`. (`feedback_orchestrate_releases.md`)
+- **Subagents win for fan-out.** Parallel research, format-strict review, output isolation. Examples: searching across crates, auditing a diff, generating an ADR draft.
+- **Subagents lose for shared-state edits.** A multi-agent edit pipeline drops tacit context at every handoff. Single-agent for any edit on shared mutable state.
+- **Worktrees** are the unit of isolation. Implementer subagents always operate in a fresh worktree; main thread never edits in a subagent's worktree.
+- **Canonical mechanics:** `dev/design/orchestration.md` owns Claude-implementer + Codex-reviewer spawn discipline (PREAMBLE anti-chaining, flag set, cherry-pick + fix-N + override patterns, worktree cleanup). This file owns the principles; that file owns the bash.
+
+## 8. Iteration discipline
+
+- **Cap retry-budget at ~2 same-issue corrections.** Beyond that, stop, externalize plan to `dev/progress/0.6.0.md`, `/clear`, restart with the plan in front of you.
+- **Compact-aware.** Anything that must survive compaction goes on disk: ADRs, progress logs, plan files, MEMORY entries. Do not rely on chat to remember.
+- **Front-load invariants, end-load tasks.** When prompting yourself or constructing context, put rules near the top, the immediate task near the bottom (lost-in-the-middle).
+
+## 9. Pointers
+
+- **Decisions:** `dev/adr/ADR-0.6.0-decision-index.md`
+- **Interfaces:** `dev/interfaces/{rust,python,typescript,cli,wire}.md`
+- **Orchestration mechanics:** `dev/design/orchestration.md` (Claude+Codex spawn discipline)
+- **Progress log:** `dev/progress/0.6.0.md`
+- **Plans:** `dev/plans/`
+- **Research:** `dev/notes/context-research-agentic-best-practices.md` (the best-practices synthesis this file operationalizes)
+- **Memory:** `MEMORY.md` (auto-loaded into Claude Code session start)
+
+## 10. Forbidden patterns
+
+Pulled from MEMORY `feedback_*.md`. Violations are correctness bugs, not style preferences.
+
+- **No mocking the database.** Integration tests hit a real database. (`feedback_tdd.md`-adjacent; prior incident.)
+- **No skipping hooks.** Never `--no-verify`, never `--no-gpg-sign` unless explicitly approved.
+- **No backwards-compatibility shims** in pre-1.0 rewrites.
+- **No data migrations** in managed-vec projection releases. (`feedback_no_data_migration.md`)
+- **No `c_char` hardcoded as `i8` or `u8`** at C interop boundaries. (`feedback_cross_platform_rust.md`)
+- **No `pip install` + manual `cargo build` + `cp`** for Python native modules — use `pip install -e python/`. (`feedback_python_native_build.md`)
+- **No `yaml.safe_load` as workflow validator** — use `actionlint`. (`feedback_workflow_validation.md`)
+- **No "fix in 0.7"** for reliability bugs. Net-negative LoC on reliability releases. (`feedback_reliability_principles.md`)
+- **No "green CI = done"** for releases — install the published wheel and run end-to-end open/close/exit before declaring done. (`feedback_release_verification.md`)
+- **Vector identity belongs to the embedder.** (`project_vector_identity_invariant.md`)
+
+## 11. Permission model (for the Claude Code harness)
+
+`.claude/settings.json` enforces a 3-tier model:
+
+- **read-only** (auto-allowed): `Read`, `Grep`, `Glob`, plus `Bash` for the agent-loop verbs and read-only git/cargo/uv operations.
+- **workspace-write** (auto-allowed): `Edit`, `Write` within the repo; `git add`, `git commit`, `git restore`.
+- **escalated** (denied or asked): destructive ops (`rm`, `mv`, `git reset --hard`, `git clean`); network beyond the package registries (`curl`, `wget`); `git push` requires confirmation.
+
+If the agent needs an op outside this model, surface it to the user; do not look for workarounds.
+
+## 12. Working with this file
+
+- This file should stay ≤300 lines. If it grows, link out to a scoped doc and reference it.
+- Per-crate `AGENTS.md` files are **not maintained** until each crate has non-scaffold content. Stale > missing.
+- Update this file in the same PR as any change that invalidates one of its rules.
+
+exec
+/bin/bash -lc 'git status --short --branch' in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+## phase-0.6.1-BUMP-20260524T205921Z
+
+codex
+`MEMORY.md` is not at repo root in this worktree, so I’m locating it and the referenced feedback files before I continue the review. After that I’ll read the release spec, implementation plan, and the exact release diff side by side.
+exec
+/bin/bash -lc "rg --files -g 'MEMORY.md' -g 'feedback_*.md' -g 'project_vector_identity_invariant.md'" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ exited 1 in 0ms:
+exec
+/bin/bash -lc "sed -n '1,260p' dev/plans/prompts/0.6.1-BUMP.md" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+# Slice 0.6.1-BUMP — axis-W 0.6.0 → 0.6.1, axis-E held at 0.6.0
+
+## State at spawn
+
+TBD — orchestrator fills baseline SHA + confirms all prerequisite
+slices CLOSED (AC012-measure, OPENREPORT-py, OPENREPORT-ts,
+DEPENDABOT, AXIS-E-PIN).
+
+## Required reading
+
+- `dev/plans/prompts/12-GA-bump.md` — most-recent bump prompt;
+  this slice mirrors its shape (BUMP-only; tag separate slice).
+- `scripts/set-version.sh` — modes + `--check-files` invariants.
+- `dev/design/release.md` § Version axes; § Tiered publish order.
+- `dev/plans/0.6.1-implementation.md` § "Slice sequence" + § "GA-class
+  pre-tag checklist".
+- `CHANGELOG.md` — 0.6.0 block for prose style precedent.
+- `docs/release-notes/0.6.0.md` — template for the 0.6.1 release-
+  notes doc.
+- Wake decision `d-001` — axis-E held at 0.6.0 because no trait
+  surface change.
+
+## Tasks
+
+1. Pre-flight: verify all prerequisites CLOSED. If AC012-measure
+   verdict was RED, STOP — Pack 7 un-defer must close before BUMP.
+2. Run `scripts/set-version.sh --workspace 0.6.1`. Confirm the
+   script reports `ok: Axis W = 0.6.1; Axis E = 0.6.0`.
+3. Run `scripts/set-version.sh --check-files` standalone; must
+   exit 0.
+4. Write `## 0.6.1` block in `CHANGELOG.md` listing:
+   - `Fixed` — OpenReport surfaced in Python + TypeScript bindings
+     (closes 12-TX-OPENREPORT carryover; AC-068c / AC-068d).
+   - `Performance` — AC-012 canonical-runner re-measurement
+     verdict (if GREEN, deferral lifted; cite measurement note).
+   - `Security` — pyo3, js-yaml, idna advisories resolved.
+   - `Deferred (carry-over)` — AC-013 / AC-019 / AC-020 stay
+     deferred per Pack 7 trigger evaluation.
+5. Create `docs/release-notes/0.6.1.md` from the
+   `docs/release-notes/0.6.0.md` template:
+   - Header + date.
+   - What's new (the 4 closed items + dependabot resolutions).
+   - What stays deferred (Pack 7, logical-id verbs).
+   - Upgrade notes — none (patch release; semver patch implies
+     no breaking changes; OpenReport return-shape additions are
+     backward-compatible per OPENREPORT-py/ts hard-constraint).
+   - Compatibility — explicit "no 0.5.x compat shim per
+     ADR-0.6.0-no-shims-policy" reminder.
+6. Single commit: `release(0.6.1): bump axis-W to 0.6.1; CHANGELOG +
+release notes`. Co-touch axis-E held at 0.6.0 — document in
+   commit body.
+7. **Retag AC-050c removal-detect default base-ref.** Edit
+   `scripts/security/check_removal_changelog.py` (line ~172) and
+   `scripts/security/check-removal-changelog.sh` header comment to
+   change the `--base` default from `"v0.6.0"` to `"v0.6.1"`. This
+   advances the "removals since last released API" anchor as 0.6.1
+   becomes the new GA. Owns the obligation flagged by the B-001
+   codex CONCERN (2026-05-24). Note: the v0.6.1 tag does NOT yet
+   exist when this slice runs (RC1 / GA slices land it later) —
+   but the default string update is correct; the live invocation
+   only fails between BUMP commit and v0.6.1 tag push, which is a
+   ~minutes window owned by the orchestrator running the next slices.
+   Confirm `bash scripts/tests/test_removal_detect.sh` still GREEN
+   (fixture-based cases unaffected) and accept that
+   `bash scripts/security/check-removal-changelog.sh` (no args) will
+   transiently fail with `fatal: bad revision 'v0.6.1..HEAD'` until
+   the GA tag lands — document this transient in the commit body.
+8. `agent-verify` GREEN post-bump (modulo the transient AC-050c
+   gap noted above; orchestrator may run agent-verify with
+   `AGENT_LONG=0 SKIP_AC050C=1` if a sanity check is needed before
+   GA tag, otherwise wait until GA tag lands and re-run).
+9. Push the release branch to `origin` (NO tag yet — tag is
+   the RC1 slice).
+
+## Hard constraints
+
+- **Single commit.** BUMP is one commit covering versions +
+  CHANGELOG + release-notes. Do not split.
+- **No tag, no `gh release create`.** RC1 slice owns the tag.
+- **No code edits.** Only version manifests + CHANGELOG +
+  release notes.
+- **`--check-files` must be GREEN before commit.**
+- **Axis-E stays at 0.6.0.** If `set-version.sh` somehow flipped
+  axis-E, STOP and surface — that's the AXIS-E-PIN test bug.
+- **Prettier-fixup on `docs/release-notes/0.6.1.md` and CHANGELOG
+  before commit** (per 0.6.0 GA lesson).
+
+## Output
+
+`dev/plans/runs/0.6.1-BUMP-output.json`. Required fields:
+
+- `axis_w_before`, `axis_w_after` (= "0.6.1").
+- `axis_e_before`, `axis_e_after` (= "0.6.0", unchanged).
+- `commit_sha`.
+- `check_files_verdict`: "ok".
+- `release_notes_path`.
+
+<!-- ORCHESTRATOR: spawn this slice via dev/design/orchestration.md
+§ 2 mechanics; codex review per § 3 -->
+
+exec
+/bin/bash -lc "sed -n '1,320p' dev/plans/0.6.1-implementation.md" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+---
+title: 0.6.1 Implementation Plan
+date: 2026-05-22
+target_release: 0.6.1
+desc: Patch release closing three 0.6.0 deferred items (12-TX-OPENREPORT binding closure via engine.open_report()/openReport() accessor, Dependabot advisories, axis-E independence demo); AC-012 canonical re-measurement attempted in this release line, verdict RED, AC-012 closure escalated to 0.7.0
+blast_radius: src/rust/crates/fathomdb-py/src/lib.rs; src/rust/crates/fathomdb-napi/src/lib.rs; src/python/fathomdb/types.py; src/python/fathomdb/_fathomdb.pyi; src/python/fathomdb/engine.py; src/ts/src/index.ts; src/ts/src/binding.ts; dev/interfaces/python.md; dev/interfaces/typescript.md; dev/notes/12-TX-parity-matrix.md; dev/notes/perf-canonical-runner-2026-MM.md (new); CHANGELOG.md; docs/release-notes/0.6.1.md (new); Cargo.lock; src/python/uv.lock; src/ts/package-lock.json; .github/workflows/release.yml (no edits expected)
+status: active
+---
+
+# 0.6.1 Implementation Plan
+
+This is the **single source of truth** for 0.6.1 sequencing and execution
+posture. 0.6.1 is a **patch release** per
+`dev/adr/ADR-0.6.0-no-shims-policy.md` § 54: literal contract is
+**"no API breaks. Bugfix-only."** Additive surface (new engine-attached
+methods, new optional fields, dependency bumps that don't change the
+fathomdb surface) is patch-safe; API breaks and schema-additions are
+not. Scope-creep into feature work blocks the release; each slice below
+verifies against that rule.
+
+0.6.0 GA shipped 2026-05-20 at `edf00f7` (Phase 12 fully CLOSED — see
+`dev/plans/0.6.0-implementation.md` § "Phase 12 scoreboard" L805-818).
+0.6.1 closes **three** items that were explicitly deferred at 0.6.0
+GA. The fourth candidate (AC-012 canonical-runner re-measurement)
+was attempted in this release line — verdict RED on canonical x86_64
+tier-1 — and the closure escalated to 0.7.0. See § "AC-012 canonical
+re-measurement — RED outcome and 0.7.0 escalation" below for the
+rescope rationale.
+
+0.6.x release-line goal (locked HITL 2026-05-24): **be fully
+functional, including TypeScript parity.** Performance improvement
+is the 0.7.0 anchor; knowledge-store / retrieval features for Memex
+are the 0.8.0 anchor (see `dev/roadmap/0.8.0.md`).
+
+1. **12-TX-OPENREPORT** — Python (PyO3) and TypeScript (napi) bindings
+   currently drop `OpenedEngine.report`. Native Rust populates it;
+   bindings surface the engine handle only. 0.6.1 surfaces the report
+   via a new engine-attached accessor: `engine.open_report()` (py) /
+   `engine.openReport()` (ts), per Shape D — see § "Q-002 resolution
+   (HITL 2026-05-24)" below for the design rationale. `Engine.open`
+   signature is unchanged from 0.6.0 (zero legacy-callsite risk).
+   Symmetric closure (parity matrix § 1 row 2; not a TS-vs-Python
+   gap). This is the "TypeScript parity" anchor for the 0.6.x
+   release-line goal.
+2. **TS↔Python parity matrix close** — `dev/notes/12-TX-parity-matrix.md`
+   § 8 lists three gaps; two closed in 12-TX (`CounterSnapshot` fields,
+   `test_errors.py LEAF_CLASSES`, `test_scaffold.py`). The remaining
+   ❌ row is the OpenReport row from item 1 — so item 1 is the parity
+   close. **No additional TXPARITY-N slices needed**; the ❌ inventory
+   is already exhausted by OPENREPORT. (Verified 2026-05-22 by re-read
+   of parity matrix L29-37 and § 8 summary L137-150.)
+3. **Axis-E independence demo** — per Wake decision `d-001`, axis-E
+   (`fathomdb-embedder-api`) is structurally independent of axis-W
+   (workspace lockstep). The 0.6.0 → 0.6.1 axis-W bump is the first
+   post-GA opportunity to demonstrate the discipline holds. No trait-
+   surface change in 0.6.1 → axis-E stays at `0.6.0`. Discipline
+   check, not a feature.
+
+Plus **Dependabot 4 open advisories** (pyo3 low ×2, js-yaml medium,
+idna medium) triaged below.
+
+## AC-012 canonical re-measurement — RED outcome and 0.7.0 escalation
+
+Originally listed as the fourth 0.6.1 closure item. The
+`0.6.1-AC012-measure` slice ran on 2026-05-23 via
+`.github/workflows/perf-canonical.yml`
+([workflow run 26346417896](https://github.com/coreyt/fathomdb/actions/runs/26346417896))
+on canonical x86_64 tier-1 hardware (AMD EPYC 9V74, 4 cores,
+Ubuntu 24.04, rustc 1.95.0, SQLite 3.45.x).
+
+Result: **RED on both percentiles at N=1,000,000.**
+
+| Metric     | Observed (ms) | Budget (ms) | Verdict | Multiple over budget |
+| ---------- | ------------- | ----------- | ------- | -------------------- |
+| AC-012 p50 | 140.95        | ≤ 20        | **RED** | 7.05×                |
+| AC-012 p99 | 458           | ≤ 150       | **RED** | 3.05×                |
+
+Pack 7 un-defer trigger (`dev/plans/0.6.0-implementation.md` L254-269,
+"regression > 20% vs ADR-pinned budget") fires by ~30×.
+
+Full measurement record: `dev/notes/perf-canonical-runner-2026-MM.md`
+
+- `dev/plans/runs/0.6.1-AC012-measure-output.json`.
+
+**HITL disposition (2026-05-24, locked):**
+
+- Pack 7 perf work + AC-012 budget revision **escalates to 0.7.0**.
+- 0.6.1 ships under a **re-titled scope**: the three remaining
+  closure items (OPENREPORT-py/ts, Dependabot, axis-E demo) plus
+  the RED measurement as documented evidence. 0.6.1 release notes
+  do NOT claim AC-012 closure.
+- AC-012 stays DEFERRED in `dev/test-plan.md` § Current Perf
+  Attribution; deferral target language updated from "Pack 7" to
+  "0.7.0 (per HITL 2026-05-24)".
+- 0.7.0 is now **perf-only** (single thrust). Two-pronged:
+  (1) revise the AC-012/AC-013/AC-019/AC-020 budgets empirically
+  against canonical measurements; (2) tune SQLite + FathomDB
+  (including a top-K LIMIT cap on the search verb as one engine
+  lever among others). The canonical-identity substrate + logical-id
+  verbs that were previously the 0.7.0 anchor move to 0.8.0
+  alongside Memex knowledge-store / retrieval features
+  (`dev/roadmap/0.8.0.md`).
+
+Rationale: ADR-0.6.0-no-shims-policy § 54 forbids new engine work
+and ADR budget revision in a patch release. The 7× p50 miss is
+empirical, scales with corpus size (Tegra N=100K p50=29.7ms →
+canonical N=1M p50=140.95ms; ~5× latency growth for 10× corpus),
+and is not a runner artifact — it requires either engine tuning or
+budget revision, both minor-release-shaped. Shipping 0.6.1 without
+the AC-012 claim preserves the patch contract; carrying the RED
+measurement forward gives 0.7.0 an empirical baseline for the
+successor `ADR-0.7.0-text-query-latency-gates-revised`.
+
+## Q-002 resolution (HITL 2026-05-24): OpenReport surfacing shape
+
+The planning-slice output.json initially closed Q-002 by mandating a
+wrapper / NamedTuple return on `Engine.open(...)` (Shape A) and
+forbidding a new verb. HITL 2026-05-24 reopened Q-002 after
+recognizing that ADR-0.6.0-no-shims-policy § 54 says exactly _"no
+API breaks. Bugfix-only."_ — not "no new verbs". With the strict
+contract read, the four shapes were re-evaluated:
+
+- **Shape A — wrapper return on `Engine.open`** (initial closure):
+  type-checker friction, `isinstance`/pickling edge cases, awkward
+  TS Promise-of-wrapper ergonomics. Rejected.
+- **Shape B — tuple return on `Engine.open`**: breaks legacy
+  callers. Rejected (violates § 54 "no API breaks").
+- **Shape C — new top-level verb `Engine.open_with_report` /
+  `Engine.openWithReport`**: clean types, zero legacy risk, but
+  joins the five-verb canonical surface as a sixth verb. Acceptable
+  but not preferred.
+- **Shape D — engine-attached accessor `engine.open_report()` /
+  `engine.openReport()`** (CHOSEN): zero risk to `Engine.open`,
+  clean types, slots into the existing engine-attached
+  instrumentation taxonomy alongside `engine.counters()`,
+  `engine.drain()`. Spec edit relocates the report mention from
+  "Runtime surface" to "Engine-attached instrumentation / control".
+  Patch-release-safe (additive only). Idempotency contract:
+  repeated calls return identical data captured at open time.
+
+OPENREPORT-py and OPENREPORT-ts skeletons updated to spec Shape D
+verbatim. AC-068c / AC-068d wording rewritten accordingly. Append
+of AC-068c + AC-068d to `dev/acceptance.md` happens at
+OPENREPORT-py spawn (Q-001 disposition; both IDs land together).
+
+## Contract inputs
+
+Implementation rule inherited from 0.6.0: **TDD is mandatory** for any
+behavior-changing slice (OPENREPORT-py, OPENREPORT-ts, AXIS-E-PIN).
+Each starts with a failing test citing at least one `AC-*` id and one
+relevant ADR or interface spec. Mechanical slices (DEPENDABOT, BUMP,
+RC1, V, GA) use the existing test suite as the gate.
+
+Cherry-pick discipline per `dev/design/orchestration.md` § 5: slices
+land on a `0.6.1-rewrite` branch cut from `main`, get reviewed under
+`dev/design/orchestration.md` §§ 2-9, then cherry-pick to mainline at
+GA. (Per 2026-05-22 HITL: 0.6.0-rewrite is closed; 0.6.1 work happens
+directly on `main` via the per-slice worktree pattern — orchestrator
+manages branch shape.)
+
+## Design verification summary (2026-05-22)
+
+Walked each candidate slice against the locked design corpus. No new
+ADR required; no existing ADR amended. Spec status:
+
+- **AC-012.** `dev/adr/ADR-0.6.0-text-query-latency-gates.md` L40-75
+  fully specifies workload (1M chunks, Zipfian token distribution,
+  50–90th percentile term-freq band, QPS=1, warm cache, ≥1000 samples,
+  in-process latency boundary) and budgets (p50 ≤ 20 ms; p99 ≤ 150 ms).
+  Tier-1 runner shape: `x86_64-unknown-linux-gnu` per
+  `ADR-0.6.0-tier1-ci-platforms`. `dev/test-plan.md` § "Current Perf
+  Attribution" L91-142 documents the Pack D seeder + the aarch64 Tegra
+  dev-runner RED measurement that motivates re-measurement. **Spec
+  sufficient.** Canonical-runner CPU / OS / kernel / SQLite version
+  capture is the AC012-measure slice's deliverable per Pack 7 Track 1
+  (`dev/plans/0.6.0-Phase-9-Pack-7-canonical-perf-measurement.md`
+  L46-62, L144-152) — template file landed under this planning slice
+  at `dev/notes/perf-canonical-runner-2026-MM.md`.
+- **12-TX-OPENREPORT.** Native shape locked at
+  `src/rust/crates/fathomdb-engine/src/lib.rs:541` (`pub struct
+OpenReport`) and L551-553 (`pub struct OpenedEngine { engine, report:
+OpenReport }`). `Engine::open` and its variants (lib.rs L1025-1125)
+  return `OpenedEngine`. Caveat lines for removal:
+  - `dev/interfaces/python.md` L28-34 (block-quote "0.6.0 caveat").
+  - `dev/interfaces/typescript.md` L30-36 (block-quote "0.6.0 caveat").
+    Parity-matrix row at `dev/notes/12-TX-parity-matrix.md` L32 flips
+    ❌ → ✅ when both bindings surface the report.
+- **Parity matrix close.** Re-walked `dev/notes/12-TX-parity-matrix.md`.
+  Only ❌ remaining = OpenReport row. All other ❌ rows already
+  resolved in 12-TX (`CounterSnapshot` L55; `test_errors.py LEAF_CLASSES`
+  L113; `tests/scaffold.test.ts` L119). No additional TXPARITY-N slices.
+- **Axis-E independence.** `scripts/set-version.sh` L81-101
+  (`set_workspace_dep_axis_w_versions`) explicitly skips
+  `fathomdb-embedder-api`. `--workspace` mode (L378-388) calls only
+  workspace + pyproject + npm setters — does NOT touch
+  `set_embedder_api_version` or `set_workspace_dep_embedder_api_version`.
+  `check_files` (L261-366) enforces `[package].version` is explicit
+  on the embedder-api crate (rejects `version.workspace = true`) and
+  enforces every other crate uses `version.workspace = true`. **No
+  regression from 0.6.0 GA shape; structural separation already
+  enforced by the script.** The AXIS-E-PIN slice adds a regression
+  test (`tests/test_set_version.sh` or `scripts/set-version-test.sh`)
+  that exercises the `--workspace 0.6.1` invocation and asserts the
+  embedder-api crate + `[workspace.dependencies]` pin stay at `0.6.0`.
+- **Dependabot advisories** (gh api repos/coreyt/fathomdb/dependabot/
+  alerts, captured 2026-05-22):
+  - `pyo3` low × 2 — same CVE (`PyString::from_object` buffer overflow)
+    surfaced once per version range; existing Dependabot PRs already
+    open on branches `dependabot/cargo/pyo3-0.24.1` and
+    `dependabot/cargo/pyo3-0.28.3`. **Classification: version bump
+    only (transitive); no fathomdb API surface impact.**
+  - `js-yaml` medium — prototype-pollution via `<<` merge syntax.
+    fathomdb does not ingest untrusted YAML and does not use the merge
+    operator; dev-dep only (TS toolchain). **Classification: version
+    bump only; no API risk.**
+  - `idna` medium — CVE-2024-3651 bypass. fathomdb does not process
+    untrusted IDNA domain names in any user-facing path; transitive
+    Python dep. **Classification: version bump only; no API risk.**
+
+  All 4 are in-scope for a patch release (transitive dep bumps that
+  do not change fathomdb's surface).
+
+## Status
+
+Worktree cut from `main` at `76d8d6e` (= 0.6.0 GA closeout
+`edf00f7` + 5 docs-only commits authored 2026-05-22: planning prompts
+for 0.6.1 + 0.7.0, prettier-fixups, memex compat note, MD-lint fix).
+Branch: `phase-0.6.1-planning-20260522-101428`.
+
+Wake decisions outstanding to honor through this release:
+
+- `d-001` — axis-E moves only on trait-surface change. 0.6.1 changes
+  no traits; axis-E stays at `0.6.0`.
+- `d-002` — Phase 12-GA CLOSED.
+
+## Slice sequence
+
+| Slice ID              | Scope                                                                                                                                                                                                                                                                                                                                                                                                                               | Exit criteria                                                                                                                                                                                                                                                    | HITL-required?                | Depends-on                                                                         |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | ---------------------------------------------------------------------------------- |
+| `0.6.1-AC012-measure` | **CLOSED 2026-05-23, verdict RED.** Numbers + verdict in `dev/notes/perf-canonical-runner-2026-MM.md`; slice output `dev/plans/runs/0.6.1-AC012-measure-output.json`. AC-012 budget revision + Pack 7 perf work escalate to 0.7.0 per HITL 2026-05-24. No further 0.6.1 action.                                                                                                                                                     | Slice CLOSED with RED verdict; documentation evidence carried forward to 0.7.0. AC-012 stays DEFERRED until 0.7.0.                                                                                                                                               | n/a (closed)                  | none                                                                               |
+| `0.6.1-OPENREPORT-py` | **Shape D (HITL 2026-05-24):** PyO3 binding adds `engine.open_report()` engine-attached accessor returning the native `OpenReport` fields verbatim (`schema_version_before`, `schema_version_after`, `migration_steps`, `embedder_warmup_ms`, `query_backend`, `default_embedder`). `Engine.open` signature unchanged from 0.6.0. Append AC-068c + AC-068d to `dev/acceptance.md` in this slice's first commit (Q-001 disposition). | TDD-RED test for new AC-068c GREEN (idempotency assertion included). Stub `_fathomdb.pyi` updated. `dev/interfaces/python.md` caveat L28-34 removed and L25-26 rewritten to point at the accessor. Parity matrix row flips ❌ → ✅.                              | No                            | none                                                                               |
+| `0.6.1-OPENREPORT-ts` | **Shape D (HITL 2026-05-24):** napi-rs binding adds `engine.openReport()` engine-attached accessor returning the native `OpenReport` fields in camelCase (`schemaVersionBefore`, `schemaVersionAfter`, `migrationSteps`, `embedderWarmupMs`, `queryBackend`, `defaultEmbedder`). Accessor is sync (data lives in the napi engine struct). `Engine.open` Promise signature unchanged from 0.6.0.                                     | TDD-RED test for new AC-068d GREEN (idempotency assertion included). `binding.ts` updated. `dev/interfaces/typescript.md` caveat L30-36 removed and L27-29 rewritten to point at the accessor. Parity matrix row finalized ❌ → ✅ (if not flipped by py slice). | No                            | OPENREPORT-py (Shape D semantics locked first; napi mirrors per 11a/11b precedent) |
+| `0.6.1-DEPENDABOT`    | Merge / re-merge 4 advisories: pyo3 (cargo), js-yaml (npm), idna (transitive python). One commit per ecosystem; verify `cargo audit` / `pnpm audit` / `pip-audit` clean.                                                                                                                                                                                                                                                            | All 4 advisories resolved on the release branch; `agent-verify` GREEN; no API surface change observable in parity matrix.                                                                                                                                        | No                            | none                                                                               |
+| `0.6.1-AXIS-E-PIN`    | Regression test: invoke `scripts/set-version.sh --workspace 0.6.1`, assert axis-E version unchanged on `fathomdb-embedder-api` `[package].version` AND on `[workspace.dependencies]` pin.                                                                                                                                                                                                                                           | New test under `scripts/` or `src/rust/crates/fathomdb-py/tests/` (test location TBD). Test RED before any defensive shim, GREEN with existing script unchanged (script already correct per design verification).                                                | No                            | none                                                                               |
+| `0.6.1-BUMP`          | Single-commit version bump: axis-W `0.6.0` → `0.6.1`; axis-E stays at `0.6.0`. CHANGELOG `## 0.6.1` block; `docs/release-notes/0.6.1.md` authored. Mirrors `dev/plans/prompts/12-GA-bump.md` shape.                                                                                                                                                                                                                                 | `scripts/set-version.sh --check-files` GREEN; release-notes block lists the three closed items + dependabot resolutions + the AC-012 RED measurement (carried forward as evidence, NOT claimed as closure); CHANGELOG updated.                                   | Yes (HITL approves bump diff) | OPENREPORT-py, OPENREPORT-ts, DEPENDABOT, AXIS-E-PIN                               |
+| `0.6.1-RC1`           | First tagged RC = `v0.6.1-rc.1`. Fires `release.yml` 8-tier publish + post-publish smoke.                                                                                                                                                                                                                                                                                                                                           | All 8 tiers GREEN; co-tagging assert GREEN; GitHub Release prerelease created.                                                                                                                                                                                   | Yes (HITL approves tag push)  | BUMP                                                                               |
+| `0.6.1-V`             | Independent verification on a fresh non-CI host per `feedback_release_verification`: install from registries (pypi+npm+crates), exercise the 5-verb canonical surface, confirm OpenReport surfaces.                                                                                                                                                                                                                                 | Fresh-host smoke transcript captured. All three registries serve `0.6.1-rc.1`.                                                                                                                                                                                   | No                            | RC1                                                                                |
+| `0.6.1-GA`            | Tag `v0.6.1` on `main` after RC green; merge release branch → `main`; GitHub Release flipped to `isPrerelease=false`.                                                                                                                                                                                                                                                                                                               | `v0.6.1` tag present; `main` FFed; release.yml GA run green; progress doc updated.                                                                                                                                                                               | Yes (HITL approves GA tag)    | V                                                                                  |
+
+**Slice count: 9.**
+
+### Ordering rules
+
+- `AC012-measure` **already CLOSED with RED verdict** (2026-05-23); skip in new orchestrator spawns. Historically: was parallel-safe (no code touch); slot first so the
+  Pack 7 un-defer trigger evaluation has fresh numbers before BUMP.
+- `OPENREPORT-py` and `OPENREPORT-ts` share the engine→binding
+  contract; sequence py-first per Phase 11 precedent
+  (PyO3 contract locked, napi mirrors). May be parallelized once the
+  py contract is reviewed.
+- `DEPENDABOT` runs any time before `BUMP`; isolated from the other
+  slices.
+- `AXIS-E-PIN` lands before `BUMP` (BUMP is the demonstration).
+- `BUMP → RC1 → V → GA` strictly serial.
+
+### Parallelization opportunities
+
+- DEPENDABOT + AXIS-E-PIN can run concurrently (no shared files).
+  AC012-measure is already CLOSED.
+- OPENREPORT-ts can begin once OPENREPORT-py review locks the API
+  shape (see Phase 11a/b precedent).
+
+## Per-AC scoreboard (entry state)
+
+| AC      | 0.6.0 GA state                                                                          | 0.6.1 entry action                                                                                                                                                                                                                                                                                                                                                         | 0.6.1 exit state                                                                                                                                 |
+| ------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| AC-012  | DEFERRED (RED on aarch64 dev runner)                                                    | Re-measure on canonical x86_64 tier-1 CI — **MEASURED 2026-05-23: RED. p50=140.95 ms (budget 20; 7.05× over); p99=458 ms (budget 150; 3.05× over). Pack 7 un-defer trigger FIRES. See `dev/notes/perf-canonical-runner-2026-MM.md` + `dev/plans/runs/0.6.1-AC012-measure-output.json`. HITL 2026-05-24: escalate to 0.7.0 (perf-only release; budget revision + tuning).** | DEFERRED — target moved from "Pack 7" to "0.7.0". 0.6.1 ships with the RED measurement as documented evidence and does NOT claim AC-012 closure. |
+| AC-013  | DEFERRED (vec0 single-row insertion bottleneck blocks N=1M seed)                        | Out of scope — depends on Pack 7 Track 2 bulk-seed seam                                                                                                                                                                                                                                                                                                                    | DEFERRED (no change; Pack 7 territory)                                                                                                           |
+| AC-019  | DEFERRED (inherits AC-013 seed cost)                                                    | Out of scope — depends on AC-013                                                                                                                                                                                                                                                                                                                                           | DEFERRED                                                                                                                                         |
+| AC-020  | DEFERRED (canonical-SQLite levers exhausted per Pack 5/6/6.G; pcache1 mutex bottleneck) | Out of scope — Pack 7 Track 3 architectural lever (ADR-class)                                                                                                                                                                                                                                                                                                              | DEFERRED                                                                                                                                         |
+| AC-068a | GREEN (PyO3 NUL rejection)                                                              | n/a                                                                                                                                                                                                                                                                                                                                                                        | GREEN                                                                                                                                            |
+| AC-068b | GREEN (PyO3 surrogate rejection)                                                        | n/a                                                                                                                                                                                                                                                                                                                                                                        | GREEN                                                                                                                                            |
+
+### Proposed new ACs (HITL confirms before `dev/acceptance.md` append)
+
+- **AC-068c (proposed).** Python `engine.open_report()` returns the
+  structured open report captured at `Engine.open` time. Caller
+  receives every field of the native `OpenReport` struct
+  (`src/rust/crates/fathomdb-engine/src/lib.rs:541-548`) under the
+  same snake_case identifiers: `schema_version_before: int`,
+  `schema_version_after: int`, `migration_steps: list`,
+  `embedder_warmup_ms: int`, `query_backend: str`, and
+  `default_embedder` (embedder-identity payload). The accessor is
+  idempotent — repeat calls return identical data (the report is a
+  snapshot, not live state). `Engine.open(...)` signature unchanged
+  from 0.6.0 (returns just `Engine`); no return-shape regression.
+  Verified by `tests/test_openreport.py` opening a fresh DB,
+  calling `engine.open_report()` twice, asserting every field
+  populated AND identical across calls. Cites `dev/design/engine.md`
+  § "`Engine.open` success result" (spec-locked field subset:
+  `schema_version_before`, `schema_version_after`, `migration_steps`,
+  `embedder_warmup_ms`) and `dev/interfaces/python.md`
+  (Engine-attached instrumentation list, post-spec-edit).
+- **AC-068d (proposed).** TypeScript `engine.openReport()` returns
+  the structured open report (sync return — data lives in the
+  napi engine struct after open). Caller receives the camelCase
+  mirror of the native fields: `schemaVersionBefore: number`,
+  `schemaVersionAfter: number`,
+  `migrationSteps: ReadonlyArray<MigrationStepReport>`,
+  `embedderWarmupMs: number`, `queryBackend: string`,
+  `defaultEmbedder` (embedder-identity payload). Idempotent —
+  repeat calls return identical data. `Engine.open(...)` Promise
+  signature unchanged from 0.6.0 (resolves to just `Engine`).
+  Verified by `tests/openreport.test.ts` asserting every field
+  populated AND identical across calls. Cites
+  `src/rust/crates/fathomdb-engine/src/lib.rs:541-548` and
+  `dev/interfaces/typescript.md` (Engine-attached instrumentation
+  list, post-spec-edit).
+
+AC IDs land forward of the current max (`AC-068b`); next free ID
+range is AC-068c / AC-068d (AC-069 / AC-070 already exist per
+
+codex
+I have the release prompt and implementation plan in hand. Next I’m checking the exact changed files and the release artifacts against the manifests so I can separate mechanical versioning from any out-of-scope edits.
+exec
+/bin/bash -lc 'git show --stat --summary --format=fuller af96a5b' in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+commit af96a5bc4dd9bb62e143a5fcd6d0ce39b167f720
+Author:     Corey Thompson <coreyt@gmail.com>
+AuthorDate: Sun May 24 16:04:10 2026 -0500
+Commit:     Corey Thompson <coreyt@gmail.com>
+CommitDate: Sun May 24 16:04:10 2026 -0500
+
+    release(0.6.1): bump axis-W to 0.6.1; CHANGELOG + release notes
+    
+    Patch release. Closes three 0.6.0 deferred items (Python and TypeScript
+    OpenReport surfacing via engine.open_report() / engine.openReport()
+    accessors; axis-E independence demonstration), resolves three Dependabot
+    advisories (pyo3, js-yaml, idna), and carries the AC-012 canonical-
+    runner re-measurement as documented evidence (verdict RED; Pack 7 perf
+    work escalates to 0.7.0 per HITL 2026-05-24).
+    
+    Axis-W (workspace lockstep): 0.6.0 -> 0.6.1 across Cargo.toml,
+    pyproject.toml, package.json, the five workspace.dependencies pins
+    for fathomdb / fathomdb-embedder / fathomdb-engine / fathomdb-query /
+    fathomdb-schema, Cargo.lock, src/python/uv.lock, src/ts/package-lock.json.
+    
+    Axis-E (fathomdb-embedder-api): held at 0.6.0 per Wake decision d-001.
+    No trait-surface change in 0.6.1 -> axis-E does not bump in lockstep.
+    This is the first post-GA exercise of the two-axis discipline; the
+    regression-sentinel test added in 26ec74e
+    (scripts/tests/test_set_version.sh test #13) codifies the invariant.
+    
+    scripts/set-version.sh --check-files: GREEN (Axis W = 0.6.1, Axis E = 0.6.0).
+    npx prettier --check on CHANGELOG.md and docs/release-notes/0.6.1.md: GREEN.
+    
+    Includes the B-001 forward-retag obligation: advance the AC-050c
+    removal-detect default --base from "v0.6.0" to "v0.6.1" in both
+    scripts/security/check_removal_changelog.py (line 172) and the bash
+    wrapper header comment. The v0.6.1 tag does NOT yet exist when this
+    commit lands -- RC1 / GA slices push it -- so the live-git invocation
+    (scripts/tests/test_removal_detect.sh case #4 "default-base-ref
+    live-git path") will be transiently RED with `fatal: bad revision
+    'v0.6.1..HEAD'` between this commit and the v0.6.1 tag push. The
+    three fixture-based cases (clean / undocumented / moved-in-file) are
+    unaffected and remain GREEN. The transient is the documented hand-off
+    cost flagged in the B-001 codex CONCERN-accept (d33207a).
+    
+    No code edits; no tag; no `gh release create` (tag is the RC1 slice
+    per dev/plans/0.6.1-implementation.md "Slice sequence").
+    
+    Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+
+ CHANGELOG.md                                |  88 +++++++++++++
+ Cargo.lock                                  |  16 +--
+ Cargo.toml                                  |  12 +-
+ docs/release-notes/0.6.1.md                 | 187 ++++++++++++++++++++++++++++
+ scripts/security/check-removal-changelog.sh |   2 +-
+ scripts/security/check_removal_changelog.py |   2 +-
+ src/python/pyproject.toml                   |   2 +-
+ src/python/uv.lock                          |   2 +-
+ src/ts/package-lock.json                    |   4 +-
+ src/ts/package.json                         |   2 +-
+ 10 files changed, 296 insertions(+), 21 deletions(-)
+ create mode 100644 docs/release-notes/0.6.1.md
+
+exec
+/bin/bash -lc 'git show --stat --summary --format=fuller f024d2d' in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+commit f024d2d0597976ba3aab3aad4119e18b4a8d047e
+Author:     Corey Thompson <coreyt@gmail.com>
+AuthorDate: Sun May 24 16:05:39 2026 -0500
+Commit:     Corey Thompson <coreyt@gmail.com>
+CommitDate: Sun May 24 16:05:39 2026 -0500
+
+    chore(runs): 0.6.1-BUMP slice output JSON
+    
+    Closure artifact for af96a5b (the single release commit). Per
+    orchestration.md § 8, the output JSON lands as a sibling chore
+    commit rather than being folded into the release commit (the spec
+    says BUMP is a single 'release(0.6.1)' commit covering versions +
+    CHANGELOG + release notes; the closure artifact is a separate
+    slice deliverable).
+    
+    Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+
+ dev/plans/runs/0.6.1-BUMP-output.json | 89 +++++++++++++++++++++++++++++++++++
+ 1 file changed, 89 insertions(+)
+ create mode 100644 dev/plans/runs/0.6.1-BUMP-output.json
+
+exec
+/bin/bash -lc "sed -n '1,220p' dev/plans/runs/0.6.1-BUMP-output.json" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+{
+  "phase": "0.6.1-BUMP",
+  "baseline_sha": "a2da356",
+  "branch": "phase-0.6.1-BUMP-20260524T205921Z",
+  "head_sha": "af96a5bc4dd9bb62e143a5fcd6d0ce39b167f720",
+  "commits": [
+    "af96a5bc4dd9bb62e143a5fcd6d0ce39b167f720: release(0.6.1): bump axis-W to 0.6.1; CHANGELOG + release notes"
+  ],
+  "commit_sha": "af96a5bc4dd9bb62e143a5fcd6d0ce39b167f720",
+  "axis_w_before": "0.6.0",
+  "axis_w_after": "0.6.1",
+  "axis_e_before": "0.6.0",
+  "axis_e_after": "0.6.0",
+  "check_files_verdict": "ok",
+  "check_files_stdout": "ok: Axis W = 0.6.1; Axis E = 0.6.0",
+  "release_notes_path": "docs/release-notes/0.6.1.md",
+  "files_touched": [
+    "CHANGELOG.md",
+    "Cargo.lock",
+    "Cargo.toml",
+    "docs/release-notes/0.6.1.md",
+    "scripts/security/check-removal-changelog.sh",
+    "scripts/security/check_removal_changelog.py",
+    "src/python/pyproject.toml",
+    "src/python/uv.lock",
+    "src/ts/package-lock.json",
+    "src/ts/package.json"
+  ],
+  "prerequisites_verified_closed": {
+    "0.6.1-AC012-measure": "CLOSED 2026-05-23, verdict RED -> Pack 7 escalated to 0.7.0 per HITL 2026-05-24",
+    "0.6.1-OPENREPORT-py": "CLOSED (commit da13b74 + fix-1 708a47f); AC-068c GREEN",
+    "0.6.1-OPENREPORT-ts": "CLOSED (commit 01f6d79); AC-068d GREEN",
+    "0.6.1-DEPENDABOT": "CLOSED (commits b7c16b7 / adc207d / 1a38f81 + fix-1 cc12d9e); pyo3 / js-yaml resolved; idna false-positive",
+    "0.6.1-AXIS-E-PIN": "CLOSED (commit 26fa3ec + fix-1 d148f1b); regression sentinel test #13 in scripts/tests/test_set_version.sh",
+    "0.6.1-B-001-removal-detect-baseref": "CLOSED (commit 0d575d1); pinned to v0.6.0, retag obligation transferred to this BUMP slice per d33207a CONCERN-accept"
+  },
+  "axis_e_independence_demonstration": {
+    "claim": "First post-GA axis-W bump that holds axis-E. Wake decision d-001 codified.",
+    "before": "Cargo.toml [workspace.package].version = 0.6.0; fathomdb-embedder-api [package].version = 0.6.0; workspace.dependencies pin for fathomdb-embedder-api = 0.6.0",
+    "after": "Cargo.toml [workspace.package].version = 0.6.1; fathomdb-embedder-api [package].version = 0.6.0 (UNCHANGED); workspace.dependencies pin for fathomdb-embedder-api = 0.6.0 (UNCHANGED)",
+    "set_version_check_files_verdict": "ok: Axis W = 0.6.1; Axis E = 0.6.0"
+  },
+  "b001_forward_retag": {
+    "changed": "scripts/security/check_removal_changelog.py default --base v0.6.0 -> v0.6.1; scripts/security/check-removal-changelog.sh header comment updated to match.",
+    "rationale": "Advances 'removals since last released API' anchor as 0.6.1 becomes the new GA. Owns the obligation flagged by the B-001 codex CONCERN-accept (d33207a, 2026-05-24).",
+    "test_removal_detect_status": {
+      "fixture_cases_green": ["clean", "undocumented", "moved-in-file"],
+      "live_git_case_transiently_red": "default-base-ref live-git path: fatal: bad revision 'v0.6.1..HEAD' until v0.6.1 tag is pushed by RC1/GA slices",
+      "documented_in_commit_body": true
+    }
+  },
+  "prettier_verdict": "GREEN (npx prettier --check CHANGELOG.md docs/release-notes/0.6.1.md)",
+  "lockfiles_refreshed": {
+    "Cargo.lock": "cargo update -w bumped 8 workspace crates 0.6.0 -> 0.6.1",
+    "src/python/uv.lock": "fathomdb [editable] 0.6.0 -> 0.6.1 (single occurrence; only fathomdb itself is editable)",
+    "src/ts/package-lock.json": "top-level + packages[''] entries 0.6.0 -> 0.6.1 (2 occurrences)"
+  },
+  "release_notes_contents_summary": {
+    "fixed": [
+      "OpenReport surfacing in Python (AC-068c)",
+      "OpenReport surfacing in TypeScript (AC-068d)",
+      "AC-050c removal-detect default --base advanced v0.6.0 -> v0.6.1 (B-001 retag)"
+    ],
+    "security": [
+      "RUSTSEC-2025-0020 (pyo3 0.22.6 -> 0.24.1)",
+      "GHSA-mh29-5h37-fv8m (js-yaml 4.1.0 -> 4.1.1 via markdownlint-cli2 0.18 -> 0.22.1)",
+      "CVE-2024-3651 idna confirmed false-positive (not in python dep graph); uv.lock committed for audit reproducibility"
+    ],
+    "changed": [
+      "axis-E independence demonstration codified in scripts/tests/test_set_version.sh test #13"
+    ],
+    "deferred_carry_over": [
+      "AC-012 -> 0.7.0 (RED measurement carried as evidence, NOT claimed as closure)",
+      "AC-013 / AC-019 / AC-020 -> 0.7.0 (Pack 7 escalation alongside AC-012)",
+      "Logical-id verbs (purge_logical_id / restore_logical_id) -> 0.8.0 per HITL 2026-05-24 rescope"
+    ]
+  },
+  "hard_constraints_met": {
+    "single_commit": true,
+    "no_tag": true,
+    "no_gh_release_create": true,
+    "no_code_edits": "BUMP-only: version manifests + lockfiles + CHANGELOG + release notes + B-001 retag (default-arg strings, no behavior code)",
+    "check_files_green_before_commit": true,
+    "axis_e_held_at_0_6_0": true,
+    "prettier_fixup_run_before_commit": true
+  },
+  "blockers_encountered": [],
+  "next_step_for_orchestrator": "codex review per orchestration.md § 3. On PASS / CONCERN-accept: cherry-pick onto 0.6.1-rewrite release branch and push to origin (NO tag). RC1 slice owns the v0.6.1-rc.1 tag and fires release.yml 8-tier publish."
+}
+
+codex
+I’ve confirmed the branch shape: the release payload is one `release(0.6.1)` commit plus a sibling chore commit for the output JSON. Now I’m validating the actual manifest lines, lockfiles, changelog/release-notes wording, and the B-001 retag against the spec text.
+exec
+/bin/bash -lc 'git log --oneline --decorate a2da356..HEAD' in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+f024d2d (HEAD -> phase-0.6.1-BUMP-20260524T205921Z) chore(runs): 0.6.1-BUMP slice output JSON
+af96a5b release(0.6.1): bump axis-W to 0.6.1; CHANGELOG + release notes
+
+exec
+/bin/bash -lc 'git diff --name-only a2da356..HEAD' in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+CHANGELOG.md
+Cargo.lock
+Cargo.toml
+dev/plans/runs/0.6.1-BUMP-output.json
+docs/release-notes/0.6.1.md
+scripts/security/check-removal-changelog.sh
+scripts/security/check_removal_changelog.py
+src/python/pyproject.toml
+src/python/uv.lock
+src/ts/package-lock.json
+src/ts/package.json
+
+exec
+/bin/bash -lc 'git diff --stat a2da356..HEAD' in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+ CHANGELOG.md                                |  88 +++++++++++++
+ Cargo.lock                                  |  16 +--
+ Cargo.toml                                  |  12 +-
+ dev/plans/runs/0.6.1-BUMP-output.json       |  89 +++++++++++++
+ docs/release-notes/0.6.1.md                 | 187 ++++++++++++++++++++++++++++
+ scripts/security/check-removal-changelog.sh |   2 +-
+ scripts/security/check_removal_changelog.py |   2 +-
+ src/python/pyproject.toml                   |   2 +-
+ src/python/uv.lock                          |   2 +-
+ src/ts/package-lock.json                    |   4 +-
+ src/ts/package.json                         |   2 +-
+ 11 files changed, 385 insertions(+), 21 deletions(-)
+
+exec
+/bin/bash -lc "nl -ba Cargo.toml | sed -n '1,220p'" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+     1	[workspace]
+     2	members = [
+     3	    "src/rust/crates/fathomdb",
+     4	    "src/rust/crates/fathomdb-cli",
+     5	    "src/rust/crates/fathomdb-embedder",
+     6	    "src/rust/crates/fathomdb-embedder-api",
+     7	    "src/rust/crates/fathomdb-engine",
+     8	    "src/rust/crates/fathomdb-napi",
+     9	    "src/rust/crates/fathomdb-py",
+    10	    "src/rust/crates/fathomdb-query",
+    11	    "src/rust/crates/fathomdb-schema",
+    12	]
+    13	resolver = "2"
+    14	
+    15	[workspace.package]
+    16	# Axis W lockstep version per dev/design/release.md § Version axes.
+    17	# Inherited by every workspace crate via `version.workspace = true` EXCEPT
+    18	# `fathomdb-embedder-api`, which opts out and carries an independent
+    19	# Axis E version in its own `[package]` block (semver-stable trait
+    20	# surface — bumps only when the trait changes).
+    21	#
+    22	# Axis E note: axis-E (`fathomdb-embedder-api`) was held on axis-W
+    23	# lockstep through the 0.6.0 RC bootstrap (rc.1) and the GA cut so a
+    24	# single sentinel-publish established registry presence for all 7 crates
+    25	# plus embedder-api at `0.6.0`. Post-GA, axis-E is independent —
+    26	# embedder-api bumps on its own cadence when the trait surface changes,
+    27	# decoupled from axis-W bumps.
+    28	version = "0.6.1"
+    29	edition = "2021"
+    30	license = "Apache-2.0"
+    31	repository = "https://github.com/coreyt/fathomdb"
+    32	rust-version = "1.95"
+    33	
+    34	[workspace.metadata.fathomdb]
+    35	public_docs = ["docs"]
+    36	internal_docs = ["dev"]
+    37	
+    38	# In-workspace sibling crate dependencies. `cargo publish` requires every
+    39	# dep to carry a `version` requirement so the registry resolver can find
+    40	# them once `path` is stripped at publish time. Centralizing the version
+    41	# pins here keeps the release substrate (`scripts/set-version.sh`) editing
+    42	# one location per axis, not N call-sites.
+    43	#
+    44	# Axis W entries are bumped lockstep with [workspace.package].version.
+    45	# Axis E (fathomdb-embedder-api) carries its independent version per
+    46	# dev/design/release.md § Version axes.
+    47	[workspace.dependencies]
+    48	fathomdb              = { path = "src/rust/crates/fathomdb",              version = "0.6.1" }
+    49	fathomdb-embedder     = { path = "src/rust/crates/fathomdb-embedder",     version = "0.6.1" }
+    50	fathomdb-embedder-api = { path = "src/rust/crates/fathomdb-embedder-api", version = "0.6.0" }
+    51	fathomdb-engine       = { path = "src/rust/crates/fathomdb-engine",       version = "0.6.1" }
+    52	fathomdb-query        = { path = "src/rust/crates/fathomdb-query",        version = "0.6.1" }
+    53	fathomdb-schema       = { path = "src/rust/crates/fathomdb-schema",       version = "0.6.1" }
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-embedder-api/Cargo.toml | sed -n '1,120p'" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+     1	[package]
+     2	name = "fathomdb-embedder-api"
+     3	description = "FathomDB embedder trait surface — semver-stable contract for embedder plugins (Axis E)."
+     4	# Axis E: independent semver per dev/design/release.md § Version axes.
+     5	# This crate is the semver-stable trait surface; it bumps only when the
+     6	# trait surface changes, not on every workspace lockstep release.
+     7	version = "0.6.0"
+     8	edition.workspace = true
+     9	license.workspace = true
+    10	repository.workspace = true
+    11	rust-version.workspace = true
+    12	
+    13	[lib]
+    14	path = "src/lib.rs"
+
+exec
+/bin/bash -lc "nl -ba src/python/pyproject.toml | sed -n '1,120p'" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+     1	[build-system]
+     2	requires = ["maturin>=1.7,<2"]
+     3	build-backend = "maturin"
+     4	
+     5	[project]
+     6	name = "fathomdb"
+     7	version = "0.6.1"
+     8	description = "FathomDB Python SDK — PyO3 binding to the fathomdb-engine Rust core"
+     9	readme = "README.md"
+    10	requires-python = ">=3.10"
+    11	license = { text = "Apache-2.0" }
+    12	dependencies = []
+    13	
+    14	[project.optional-dependencies]
+    15	test = ["pytest>=8", "hypothesis>=6"]
+    16	lint = ["ruff>=0.6"]
+    17	typecheck = ["pyright>=1.1.380"]
+    18	dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.6", "pyright>=1.1.380"]
+    19	
+    20	[tool.maturin]
+    21	manifest-path = "../rust/crates/fathomdb-py/Cargo.toml"
+    22	module-name = "fathomdb._fathomdb"
+    23	python-source = "."
+    24	features = ["pyo3/extension-module", "test-hooks"]
+    25	
+    26	[tool.ruff]
+    27	line-length = 100
+    28	target-version = "py310"
+    29	
+    30	[tool.pyright]
+    31	include = ["fathomdb", "tests"]
+    32	typeCheckingMode = "standard"
+    33	pythonVersion = "3.10"
+    34	venvPath = "../.."
+    35	venv = ".venv"
+
+exec
+/bin/bash -lc "nl -ba src/ts/package.json | sed -n '1,140p'" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+     1	{
+     2	  "name": "fathomdb",
+     3	  "version": "0.6.1",
+     4	  "description": "TypeScript SDK for FathomDB 0.6.0 — napi-rs binding to fathomdb-engine",
+     5	  "license": "Apache-2.0",
+     6	  "repository": {
+     7	    "type": "git",
+     8	    "url": "https://github.com/coreyt/fathomdb"
+     9	  },
+    10	  "type": "module",
+    11	  "main": "dist/index.js",
+    12	  "types": "dist/index.d.ts",
+    13	  "files": [
+    14	    "dist",
+    15	    "fathomdb.*.node"
+    16	  ],
+    17	  "scripts": {
+    18	    "build:native": "napi build --platform --release --cargo-cwd ../rust/crates/fathomdb-napi --js false",
+    19	    "build:native:debug": "napi build --platform --cargo-cwd ../rust/crates/fathomdb-napi --features test-hooks --js false",
+    20	    "build": "npm run build:native && tsc -p tsconfig.build.json",
+    21	    "build:debug": "npm run build:native:debug && tsc -p tsconfig.build.json",
+    22	    "typecheck": "tsc --noEmit -p tsconfig.json",
+    23	    "test": "npm run build:native:debug && tsc -p tsconfig.json && node --test dist/tests/*.test.js"
+    24	  },
+    25	  "devDependencies": {
+    26	    "@napi-rs/cli": "^2.18.4",
+    27	    "@types/node": "^25.6.0",
+    28	    "typescript": "^5.8.3"
+    29	  },
+    30	  "napi": {
+    31	    "name": "fathomdb",
+    32	    "triples": {
+    33	      "defaults": true,
+    34	      "additional": []
+    35	    }
+    36	  }
+    37	}
+
+exec
+/bin/bash -lc "rg -n 'name = \"fathomdb(-cli|-embedder|-embedder-api|-engine|-napi|-py|-query|-schema)?\"|version = \"0\\.6\\.[01]\"' Cargo.lock" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+exec
+/bin/bash -lc "rg -n 'version = \"0\\.6\\.[01]\"|name = \"fathomdb\"' src/python/uv.lock" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+217:version = "0.6.0"
+329:name = "fathomdb"
+330:version = "0.6.1"
+336:name = "fathomdb-cli"
+337:version = "0.6.1"
+346:name = "fathomdb-embedder"
+347:version = "0.6.1"
+353:name = "fathomdb-embedder-api"
+354:version = "0.6.0"
+357:name = "fathomdb-engine"
+358:version = "0.6.1"
+374:name = "fathomdb-napi"
+375:version = "0.6.1"
+389:name = "fathomdb-py"
+390:version = "0.6.1"
+400:name = "fathomdb-query"
+401:version = "0.6.1"
+407:name = "fathomdb-schema"
+408:version = "0.6.1"
+
+ succeeded in 0ms:
+27:name = "fathomdb"
+28:version = "0.6.1"
+
+exec
+/bin/bash -lc "rg -n '\"version\": \"0\\.6\\.[01]\"|\"name\": \"fathomdb\"' src/ts/package-lock.json" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+2:  "name": "fathomdb",
+3:  "version": "0.6.1",
+8:      "name": "fathomdb",
+9:      "version": "0.6.1",
+
+exec
+/bin/bash -lc 'git diff --name-only a2da356..af96a5b -- scripts/set-version.sh && git diff --unified=0 a2da356..af96a5b -- scripts/set-version.sh' in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+exec
+/bin/bash -lc "nl -ba CHANGELOG.md | sed -n '1,220p'" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+     1	# Changelog
+     2	
+     3	Release notes for the FathomDB engine, Python SDK, and TypeScript SDK.
+     4	Cuts follow the version tagged on `0.6.0-rewrite`. Each released section
+     5	MUST list every removed public symbol under a `### Removed` heading;
+     6	the removal-detect linter (`scripts/security/check-removal-changelog.sh`,
+     7	AC-050c) gates merges against this invariant.
+     8	
+     9	## [Unreleased]
+    10	
+    11	### Removed
+    12	
+    13	(none yet)
+    14	
+    15	## 0.6.1 - 2026-05-24
+    16	
+    17	Patch release. Closes three 0.6.0 deferred items (Python and TypeScript
+    18	`OpenReport` surfacing, plus the axis-E independence demonstration),
+    19	resolves three Dependabot advisories, and carries the AC-012 canonical-
+    20	runner re-measurement as documented evidence (verdict RED; Pack 7 perf
+    21	work escalates to 0.7.0 per HITL 2026-05-24).
+    22	
+    23	Axis-E (`fathomdb-embedder-api`) stays at `0.6.0` per Wake decision
+    24	`d-001`: no trait-surface change in this release, so axis-E does not
+    25	bump in lockstep with axis-W. This is the first post-GA exercise of
+    26	the two-axis discipline.
+    27	
+    28	### Fixed
+    29	
+    30	- `OpenReport` is now surfaced from both bindings via an engine-attached
+    31	  accessor (closes 12-TX-OPENREPORT carry-over from 0.6.0 GA):
+    32	  - Python: `engine.open_report()` returns the native `OpenReport`
+    33	    fields verbatim under snake_case identifiers
+    34	    (`schema_version_before`, `schema_version_after`,
+    35	    `migration_steps`, `embedder_warmup_ms`, `query_backend`,
+    36	    `default_embedder`). Idempotent — repeat calls return identical
+    37	    data (snapshot, not live state). Closes **AC-068c**.
+    38	  - TypeScript: `engine.openReport()` returns the camelCase mirror
+    39	    (`schemaVersionBefore`, `schemaVersionAfter`, `migrationSteps`,
+    40	    `embedderWarmupMs`, `queryBackend`, `defaultEmbedder`). Sync
+    41	    return — data lives in the napi engine struct after `open`.
+    42	    Closes **AC-068d**.
+    43	  - `Engine.open(...)` signatures are unchanged from 0.6.0 in both
+    44	    bindings (additive accessor; no return-shape regression).
+    45	- `scripts/security/check_removal_changelog.py` and its bash wrapper
+    46	  point their `--base` default at `v0.6.1` (was `v0.6.0`), advancing
+    47	  the "removals since last released API" anchor as 0.6.1 becomes the
+    48	  new GA reference. AC-050c regression-sentinel test #4 will be
+    49	  transiently RED in the BUMP → RC1 → GA window until the `v0.6.1`
+    50	  tag is pushed.
+    51	
+    52	### Security
+    53	
+    54	- **RUSTSEC-2025-0020** — bump `pyo3` `0.22.6` → `0.24.1` across the
+    55	  workspace; rename `*_bound` PyO3 APIs (24 callsites) to drop the
+    56	  deprecation warnings under `-D warnings`.
+    57	- **GHSA-mh29-5h37-fv8m** — bump `js-yaml` `4.1.0` → `4.1.1` via
+    58	  `markdownlint-cli2` `0.18` → `0.22.1` (transitive).
+    59	- **CVE-2024-3651 (idna)** — confirmed false-positive against
+    60	  fathomdb (not in the Python dependency graph after lock-file
+    61	  audit); `src/python/uv.lock` checked in to make the audit
+    62	  reproducible.
+    63	
+    64	### Changed
+    65	
+    66	- `scripts/set-version.sh --workspace 0.6.1` exercises the axis-E
+    67	  independence invariant for the first time post-GA: axis-W
+    68	  (`Cargo.toml`, `pyproject.toml`, `package.json`, and the five
+    69	  workspace.dependencies pins for `fathomdb`, `fathomdb-embedder`,
+    70	  `fathomdb-engine`, `fathomdb-query`, `fathomdb-schema`) advances
+    71	  to `0.6.1`; axis-E (`fathomdb-embedder-api` `[package].version`
+    72	  and its `workspace.dependencies` pin) stays at `0.6.0`.
+    73	  Regression sentinel codified in
+    74	  `scripts/tests/test_set_version.sh` test #13.
+    75	- B-001 forward-retag — `scripts/security/check_removal_changelog.py`
+    76	  and `scripts/security/check-removal-changelog.sh` default `--base`
+    77	  advanced from `v0.6.0` to `v0.6.1`.
+    78	
+    79	### Removed
+    80	
+    81	(none — patch release, no public symbol removals.)
+    82	
+    83	### Deferred (carry-over)
+    84	
+    85	- **AC-012** text-query latency on FTS5 (p50 ≤ 20 ms / p99 ≤ 150 ms):
+    86	  re-measured 2026-05-23 on canonical x86_64 tier-1 CI (AMD EPYC
+    87	  9V74, 4 cores, Ubuntu 24.04.4, rustc 1.95.0, SQLite 3.45.x via
+    88	  `libsqlite3-sys` 0.28.0) at N=1,000,000. Verdict **RED**:
+    89	  p50 = 140.95 ms (7.05× over budget), p99 = 458 ms (3.05× over
+    90	  budget). Pack 7 un-defer trigger fires; AC-012 closure target
+    91	  moved to **0.7.0** (perf-only release; budget revision + tuning).
+    92	  Evidence: `dev/notes/perf-canonical-runner-2026-MM.md` and
+    93	  `dev/plans/runs/0.6.1-AC012-measure-output.json` (workflow run
+    94	  26346417896). 0.6.1 carries this measurement as evidence and
+    95	  does NOT claim AC-012 closure.
+    96	- **AC-013** vector retrieval latency, **AC-019** mixed-retrieval
+    97	  stress tail, **AC-020** N=8 concurrent reader scaling: stay
+    98	  deferred per Pack 7 trigger evaluation (Pack 7 escalated to
+    99	  0.7.0 alongside AC-012).
+   100	- **Logical-id verbs** (`purge_logical_id` / `restore_logical_id`)
+   101	  stay deferred to **0.8.0** per HITL 2026-05-24 rescope.
+   102	
+   103	## 0.6.0 - 2026-05-19
+   104	
+   105	First stable release of FathomDB 0.6.0 — local-first retrieval
+   106	engine on SQLite (FTS5 + `sqlite-vec`) with Rust, Python, and
+   107	TypeScript SDKs.
+   108	
+   109	### Added
+   110	
+   111	- Local-first retrieval engine on SQLite (FTS5 + `sqlite-vec`):
+   112	  canonical writes, vector projections, scheduler, op-store, reader
+   113	  pool with thread-affine workers.
+   114	- Five-verb runtime SDK surface: `Engine.open`, `engine.write`,
+   115	  `engine.search`, `engine.close`, `admin.configure`.
+   116	- Typed error hierarchy under `EngineError` (`StorageError`,
+   117	  `ProjectionError`, `VectorError`, `EmbedderError`,
+   118	  `EmbedderNotConfiguredError`, `KindNotVectorIndexedError`,
+   119	  `SchedulerError`, `OpStoreError`, `WriteValidationError`,
+   120	  `SchemaValidationError`, `OverloadedError`, `ClosingError`,
+   121	  `DatabaseLockedError`, `CorruptionError`,
+   122	  `IncompatibleSchemaVersionError`).
+   123	- Engine-attached instrumentation: `engine.drain`,
+   124	  `engine.counters`, `engine.set_profiling`,
+   125	  `engine.set_slow_threshold_ms`, host logging subscriber attach.
+   126	- Python SDK (`fathomdb`) — PyO3 binding with type stubs.
+   127	- TypeScript SDK (`fathomdb`) — napi-rs binding, Promise API,
+   128	  handoff pool, typed exception envelope (TS milestone 1; not yet
+   129	  Python-parity — see Deferred).
+   130	- Rust facade crate (`fathomdb`) re-exporting runtime verbs from
+   131	  `fathomdb-engine`.
+   132	- CLI (`fathomdb-cli`) — `doctor` and `recover` verbs (Phase 10a).
+   133	- Two-axis versioning (Axis W workspace lockstep + Axis E
+   134	  independent embedder-api semver) with `scripts/set-version.sh
+   135	--check-files` enforcement and pre-push hook integration.
+   136	- 8-tier topological publish workflow `.github/workflows/release.yml`
+   137	  with crates.io index-propagation sleeps, post-publish smoke
+   138	  against fresh registry installs, co-tagging assert.
+   139	- actionlint v1.7.7 wired as canonical workflow validator.
+   140	- External user docs: install + quickstart + reference + concepts
+   141	  - compatibility (Phase 12-DX).
+   142	
+   143	### Changed
+   144	
+   145	- Release workflow: napi build matrix uses the canonical
+   146	  `win32-x64-msvc` target label for npm `optionalDependencies`
+   147	  resolution.
+   148	- Release workflow: `publish-rust` dry-run cascade restored via
+   149	  the rc.1 bootstrap publish that seeded sibling-dep versions on
+   150	  crates.io.
+   151	- Release workflow: npm `publish` passes `--tag next` for
+   152	  prerelease versions so the `latest` dist-tag stays pinned to
+   153	  the most recent stable.
+   154	- Release workflow: post-publish gates (`assert-co-tagging.sh`
+   155	  and the three `smoke-{crates,pypi-wheel,npm}.sh` scripts)
+   156	  accept `MAJOR.MINOR.PATCH(-PRERELEASE)?` SemVer.
+   157	- Release workflow: `smoke-pypi-wheel.sh` normalizes SemVer to
+   158	  PEP 440 (e.g. `0.6.0-rc.4` → `0.6.0rc4`) before `pip install`
+   159	  so the wheel resolves under pip's normalized version index.
+   160	- Release workflow: `assert-co-tagging.sh` sends a `User-Agent`
+   161	  header on crates.io API calls (the registry returns HTTP 403
+   162	  without one).
+   163	- Release workflow: PyPI + npm smoke scripts write a minimal
+   164	  valid record (`{"kind":"doc","body":"{}"}`) instead of an
+   165	  empty batch that the engine rejects per the 5-verb invariant.
+   166	- Release workflow: new `src/ts/tsconfig.build.json` emits
+   167	  `dist/index.js` at the path `package.json "main"` points to.
+   168	- Release workflow: `github-release` job explicitly sets
+   169	  `prerelease: ${{ contains(github.ref_name, '-') }}` so future
+   170	  RC tags are flagged as prereleases on GitHub.
+   171	
+   172	### Deferred
+   173	
+   174	- **Performance gates AC-012 / AC-013 / AC-019 / AC-020** deferred
+   175	  to 0.6.1 + Pack 7 (HITL re-confirmed 2026-05-17, Phase 12-P).
+   176	  AC-020 N=8 concurrent reader scaling is an architectural gap
+   177	  requiring vendor-SQLite work; AC-012 expected to close on
+   178	  canonical-runner re-measurement; AC-013/AC-019 close via Pack 7
+   179	  batched-insert vec0 API. See `dev/test-plan.md` § Current Perf
+   180	  Attribution.
+   181	- **`Engine.open` structured open report** dropped by both Python
+   182	  and TypeScript bindings in 0.6.0; populated native-side but not
+   183	  surfaced. Closes in 0.6.1 (slice `12-TX-OPENREPORT`). Symmetric,
+   184	  not a parity gap.
+   185	- **Logical-id verbs** (`purge_logical_id`, `restore_logical_id`)
+   186	  deferred to 0.7.x (HITL re-confirmed 2026-05-17, Phase 12-V-VERBS).
+   187	  Canonical-identity substrate design-only in 0.6.0. Client
+   188	  workaround: `fathomdb recover --excise-source <id>`.
+   189	- **TypeScript SDK Python-parity** — TS milestone 1 shipped
+   190	  2026-04-07; full Python-parity did NOT land at 0.6.0 GA and
+   191	  carries forward as a post-GA deliverable. Prefer Python SDK
+   192	  for production pilots until parity ships.
+   193	
+   194	### Removed
+   195	
+   196	(none — 0.6.0 is a rewrite; no 0.5.x→0.6.0 deprecation shims)
+
+exec
+/bin/bash -lc "nl -ba docs/release-notes/0.6.1.md | sed -n '1,260p'" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+     1	# 0.6.1 Release Notes
+     2	
+     3	**Released: 2026-05-24** (pending RC1 → V → GA slices on the
+     4	`0.6.1-rewrite` release branch).
+     5	
+     6	0.6.1 is a **patch release** on the 0.6.x line per
+     7	`ADR-0.6.0-no-shims-policy.md` § 54 (literal contract:
+     8	**no API breaks, bugfix-only**). It closes three items deferred
+     9	at 0.6.0 GA, resolves three open Dependabot advisories, and carries
+    10	the AC-012 canonical-runner re-measurement as documented evidence
+    11	(verdict RED — Pack 7 performance work escalates to 0.7.0 per
+    12	HITL 2026-05-24).
+    13	
+    14	## What's new in 0.6.1
+    15	
+    16	### `Engine.open` structured open report — bindings closure
+    17	
+    18	Both the Python and TypeScript SDKs now surface the structured
+    19	open report that native Rust populates at `Engine.open` time.
+    20	0.6.0 GA dropped this on both bindings (the
+    21	[`12-TX-OPENREPORT` deferred item](https://github.com/coreyt/fathomdb/blob/main/docs/release-notes/0.6.0.md#engineopen-structured-open-report));
+    22	0.6.1 surfaces it via a new engine-attached accessor — Shape D
+    23	per HITL 2026-05-24. The `Engine.open(...)` signature is
+    24	unchanged in both bindings (additive accessor; zero legacy-
+    25	callsite risk).
+    26	
+    27	- **Python** (`AC-068c`):
+    28	
+    29	  ```python
+    30	  engine = fathomdb.Engine.open(...)
+    31	  report = engine.open_report()
+    32	  report.schema_version_before   # int
+    33	  report.schema_version_after    # int
+    34	  report.migration_steps         # list
+    35	  report.embedder_warmup_ms      # int
+    36	  report.query_backend           # str
+    37	  report.default_embedder        # embedder-identity payload
+    38	  ```
+    39	
+    40	  Snake-case identifiers mirror the native `OpenReport` struct
+    41	  verbatim. Idempotent — repeat calls return identical data
+    42	  (the report is a snapshot, not live state).
+    43	
+    44	- **TypeScript** (`AC-068d`):
+    45	
+    46	  ```ts
+    47	  const engine = await fathomdb.Engine.open(...);
+    48	  const report = engine.openReport();
+    49	  report.schemaVersionBefore;   // number
+    50	  report.schemaVersionAfter;    // number
+    51	  report.migrationSteps;        // ReadonlyArray<MigrationStepReport>
+    52	  report.embedderWarmupMs;      // number
+    53	  report.queryBackend;          // string
+    54	  report.defaultEmbedder;       // embedder-identity payload
+    55	  ```
+    56	
+    57	  CamelCase mirror of the native fields. `openReport()` is
+    58	  **sync** — the report lives in the napi engine struct once
+    59	  the `Engine.open` Promise has resolved. Idempotent.
+    60	
+    61	This closes the last ❌ row in
+    62	`dev/notes/12-TX-parity-matrix.md` and is the TypeScript-parity
+    63	anchor for the 0.6.x release-line goal.
+    64	
+    65	### Axis-E independence — first post-GA demonstration
+    66	
+    67	`fathomdb-embedder-api` (axis E) stayed at `0.6.0` across the
+    68	axis-W bump from `0.6.0` → `0.6.1`. Per Wake decision `d-001`,
+    69	the embedder-API trait surface bumps on its own cadence — only
+    70	when the trait surface changes — and 0.6.1 ships no trait-
+    71	surface change. This is the first post-GA exercise of the
+    72	two-axis discipline; a regression-sentinel test
+    73	(`scripts/tests/test_set_version.sh` test #13) codifies the
+    74	invariant for future bumps.
+    75	
+    76	### Security advisories resolved
+    77	
+    78	Three of the four open Dependabot advisories at 0.6.0 GA are
+    79	closed in this release; the fourth was a false-positive against
+    80	fathomdb.
+    81	
+    82	| Advisory                  | Ecosystem | Fix                                                                 |
+    83	| ------------------------- | --------- | ------------------------------------------------------------------- |
+    84	| **RUSTSEC-2025-0020**     | cargo     | `pyo3` `0.22.6` → `0.24.1`; `*_bound` API rename (24 callsites)     |
+    85	| **GHSA-mh29-5h37-fv8m**   | npm       | `js-yaml` `4.1.0` → `4.1.1` via `markdownlint-cli2` `0.18` → `0.22.1` |
+    86	| **CVE-2024-3651** (`idna`) | python   | Confirmed false-positive — `idna` is not in the dependency graph; `src/python/uv.lock` checked in to make the audit reproducible |
+    87	
+    88	### B-001 forward-retag
+    89	
+    90	`scripts/security/check_removal_changelog.py` and its bash
+    91	wrapper advance their default `--base` ref from `v0.6.0` to
+    92	`v0.6.1`, so the "removals since last released API" anchor
+    93	tracks the new GA. The AC-050c regression-sentinel test #4
+    94	(live-git default-base-ref path) will be **transiently RED in
+    95	the BUMP → RC1 → GA window** until the `v0.6.1` tag is pushed;
+    96	this is the documented hand-off cost flagged in the B-001
+    97	codex CONCERN (2026-05-24).
+    98	
+    99	## What stays deferred
+   100	
+   101	### AC-012 canonical re-measurement — RED, escalated to 0.7.0
+   102	
+   103	`AC-012` (text-query latency on FTS5, p50 ≤ 20 ms / p99 ≤ 150 ms)
+   104	was originally a 0.6.1 candidate, intended to close via canonical-
+   105	runner re-measurement (the dev runner that produced the 0.6.0 RED
+   106	verdict was aarch64 Tegra ~3× slower than canonical x86_64). The
+   107	0.6.1-AC012-measure slice ran on 2026-05-23 via
+   108	[`.github/workflows/perf-canonical.yml`](https://github.com/coreyt/fathomdb/actions/runs/26346417896)
+   109	on canonical x86_64 tier-1 hardware (AMD EPYC 9V74, 4 cores,
+   110	Ubuntu 24.04.4, rustc 1.95.0, SQLite 3.45.x via
+   111	`libsqlite3-sys` 0.28.0) at N=1,000,000.
+   112	
+   113	Verdict: **RED on both percentiles.**
+   114	
+   115	| Metric     | Observed (ms) | Budget (ms) | Verdict | Multiple over budget |
+   116	| ---------- | ------------- | ----------- | ------- | -------------------- |
+   117	| AC-012 p50 | 140.95        | ≤ 20        | **RED** | 7.05×                |
+   118	| AC-012 p99 | 458           | ≤ 150       | **RED** | 3.05×                |
+   119	
+   120	The Pack 7 un-defer trigger (regression > 20% vs ADR-pinned
+   121	budget) fires by ~30× on p50. Per HITL 2026-05-24, Pack 7
+   122	escalates to **0.7.0** as a perf-only release (budget revision +
+   123	tuning). 0.6.1 carries this measurement as evidence and does
+   124	NOT claim AC-012 closure. Full slice output:
+   125	`dev/plans/runs/0.6.1-AC012-measure-output.json`.
+   126	
+   127	### Pack 7 sibling perf ACs
+   128	
+   129	`AC-013` (vector retrieval latency), `AC-019` (mixed-retrieval
+   130	stress tail), and `AC-020` (N=8 concurrent reader scaling) stay
+   131	deferred to 0.7.0 alongside AC-012. AC-020 closure is
+   132	architectural (vendor-SQLite work — `SQLITE_CONFIG_PCACHE2` /
+   133	WAL2 / reader-writer physical separation); see the 0.6.0 release
+   134	notes for the substrate analysis.
+   135	
+   136	### Logical-id verbs — 0.8.0
+   137	
+   138	`purge_logical_id` and `restore_logical_id` stay deferred to
+   139	**0.8.0** per HITL 2026-05-24 rescope (the 0.6.0 release notes
+   140	said 0.7.x; this slipped one minor as Pack 7 perf work claimed
+   141	the 0.7.0 anchor). The canonical-identity substrate stays
+   142	design-only in 0.6.1 — same as 0.6.0.
+   143	
+   144	For 0.6.x clients, bulk-delete by source still uses
+   145	`fathomdb recover --excise-source <id>` (Phase 10a).
+   146	Restore-from-log workflows wait for 0.8.0.
+   147	
+   148	## Upgrade notes
+   149	
+   150	Patch release — **no breaking changes.** Semver patch implies
+   151	the public surface from 0.6.0 still works unchanged. The two
+   152	new accessors (`engine.open_report()` / `engine.openReport()`)
+   153	are **additive**; `Engine.open(...)` signatures are unchanged
+   154	from 0.6.0 in both bindings.
+   155	
+   156	```sh
+   157	# crates.io (Rust)
+   158	cargo update -p fathomdb --precise 0.6.1
+   159	
+   160	# PyPI
+   161	pip install --upgrade fathomdb==0.6.1
+   162	
+   163	# npm
+   164	npm install fathomdb@0.6.1
+   165	```
+   166	
+   167	Axis-E consumers — `fathomdb-embedder-api` is unchanged at
+   168	`0.6.0`. No update required for downstream embedder
+   169	implementations.
+   170	
+   171	## Compatibility
+   172	
+   173	**No 0.5.x compatibility shims or migrations** — same posture
+   174	as 0.6.0 per `ADR-0.6.0-no-shims-policy.md`. Clients on 0.5.x
+   175	must follow a separate migration path (not provided in this
+   176	release).
+   177	
+   178	## References
+   179	
+   180	- Plan: `dev/plans/0.6.1-implementation.md`.
+   181	- Slice outputs: `dev/plans/runs/0.6.1-*-output.json`.
+   182	- AC-012 measurement evidence:
+   183	  `dev/notes/perf-canonical-runner-2026-MM.md`,
+   184	  `dev/plans/runs/0.6.1-AC012-measure-output.json`.
+   185	- Public interface specs:
+   186	  `dev/interfaces/{rust,python,typescript,cli,wire}.md`.
+   187	- Acceptance scoreboard: `dev/acceptance.md`.
+
+exec
+/bin/bash -lc "nl -ba scripts/security/check_removal_changelog.py | sed -n '150,210p'" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+   150	    undocumented = []
+   151	    for r in removed:
+   152	        if not re.search(r"\b" + re.escape(r.name) + r"\b", haystack):
+   153	            undocumented.append(r)
+   154	    return undocumented
+   155	
+   156	
+   157	def load_diff(args: argparse.Namespace) -> str:
+   158	    if args.diff_file:
+   159	        return Path(args.diff_file).read_text(encoding="utf-8")
+   160	    cmd = ["git", "-C", str(args.repo_root), "diff", f"{args.base}..{args.head}", "--"]
+   161	    for prefix in SCAN_PREFIXES:
+   162	        cmd.append(f"{prefix}**")
+   163	    completed = subprocess.run(cmd, check=False, capture_output=True, text=True)
+   164	    if completed.returncode != 0:
+   165	        sys.stderr.write(completed.stderr)
+   166	        sys.exit(2)
+   167	    return completed.stdout
+   168	
+   169	
+   170	def main(argv: list[str]) -> int:
+   171	    p = argparse.ArgumentParser(description=__doc__)
+   172	    p.add_argument("--base", default="v0.6.1", help="base git ref")
+   173	    p.add_argument("--head", default="HEAD", help="head git ref")
+   174	    p.add_argument("--diff-file", default=None, help="read diff from a file instead of git")
+   175	    p.add_argument("--changelog", default=None, help="CHANGELOG.md path (default: <repo>/CHANGELOG.md)")
+   176	    p.add_argument("--repo-root", default=None, help="repository root (default: git rev-parse)")
+   177	    args = p.parse_args(argv)
+   178	
+   179	    if args.repo_root is None:
+   180	        try:
+   181	            args.repo_root = subprocess.check_output(
+   182	                ["git", "rev-parse", "--show-toplevel"], text=True
+   183	            ).strip()
+   184	        except subprocess.CalledProcessError:
+   185	            sys.stderr.write("not inside a git repo; pass --repo-root\n")
+   186	            return 2
+   187	
+   188	    changelog_path = Path(args.changelog) if args.changelog else Path(args.repo_root) / "CHANGELOG.md"
+   189	    if not changelog_path.exists():
+   190	        sys.stderr.write(f"CHANGELOG.md missing at {changelog_path}\n")
+   191	        return 2
+   192	
+   193	    diff_text = load_diff(args)
+   194	    removals, additions = parse_diff(diff_text)
+   195	    truly_removed = real_removals(removals, additions)
+   196	    undocumented = changelog_documents(changelog_path, truly_removed)
+   197	
+   198	    if undocumented:
+   199	        sys.stderr.write("AC-050c: removed public symbols missing from CHANGELOG Removed section:\n")
+   200	        for r in undocumented:
+   201	            sys.stderr.write(f"  {r.path}: {r.symbol_kind} {r.name}\n")
+   202	        return 1
+   203	
+   204	    if truly_removed:
+   205	        sys.stdout.write(f"AC-050c OK: {len(truly_removed)} removals all documented.\n")
+   206	    return 0
+   207	
+   208	
+   209	if __name__ == "__main__":
+   210	    sys.exit(main(sys.argv[1:]))
+
+exec
+/bin/bash -lc "nl -ba scripts/security/check-removal-changelog.sh | sed -n '1,80p'" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+     1	#!/usr/bin/env bash
+     2	# AC-050c removal-detect linter wrapper. Forwards args to the python
+     3	# implementation; defaults base=v0.6.1, head=HEAD.
+     4	set -euo pipefail
+     5	
+     6	SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+     7	exec python3 "$SCRIPT_DIR/check_removal_changelog.py" "$@"
+
+exec
+/bin/bash -lc "nl -ba dev/adr/ADR-0.6.0-no-shims-policy.md | sed -n '45,70p'" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+    45	- No "raw_sql escape hatch for migration" (would also violate
+    46	  ADR-0.6.0-typed-write-boundary).
+    47	- No re-routing of old verbs through new ones (e.g. no
+    48	  `configure_vec(embedder)` → `configure_embedding` adapter).
+    49	- 0.5.x clients cannot import 0.6.0; 0.6.0 clients cannot run against
+    50	  0.5.x DBs (already fresh-DB-only).
+    51	
+    52	### Within 0.6.x (0.6.0 → 0.6.x patch / minor)
+    53	
+    54	- Patch releases (0.6.0 → 0.6.1): no API breaks. Bugfix-only.
+    55	- Minor breaks within 0.6.x are discouraged. When they happen, change
+    56	  is announced + removed in the **same release**. No multi-release
+    57	  deprecation cycles. No "soft-removal then hard-removal" pattern.
+    58	
+    59	### Across-major (0.6 → 0.7+): out of scope
+    60	
+    61	- Future major-version transitions are decided in their own ADRs.
+    62	- This ADR does **not** prejudge 0.7's posture.
+    63	
+    64	## Options considered
+    65	
+    66	**A — Zero shims at major boundary; no within-major deprecation
+    67	cycles (chosen).** Pros: cleanest possible boundary; matches
+    68	already-decided non-goals (no data migration, no upgrade path);
+    69	removes the "speculative knobs / silent feature-gated fallbacks"
+    70	Stop-doing class at the source. Cons: 0.5.x users have no migration
+
+exec
+/bin/bash -lc "nl -ba dev/design/orchestration.md | sed -n '150,240p'" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+   150	Invocation rules:
+   151	
+   152	- **Model**: `gpt-5.4`. `gpt-5` is rejected on a ChatGPT account.
+   153	- **Effort**: `-c model_reasoning_effort=high` — codex defaults to
+   154	  lower effort; always set explicitly.
+   155	- **Sandbox**: `--sandbox read-only` — reviewer MUST NOT modify the
+   156	  worktree (drift would corrupt the diff under review).
+   157	- **Working directory**: `--cd "$WT"` — codex's wd flag. Distinct
+   158	  from claude's banned `--cwd`. Required so codex can read the
+   159	  implementer's WT files.
+   160	- **Stdin**: `printf '%s\n' "$PROMPT" | codex exec ... -`. The `-`
+   161	  positional reads stdin. **Do NOT use `echo "$PROMPT"`** — it loses
+   162	  escaping on multiline bodies. The `printf '%s\n'` form preserves
+   163	  literal newlines.
+   164	- **Reviewer prompt is inline per-slice**, not template-cat. Pack-5
+   165	  templates (`review-experiment.md`, `review-phase78-robustness.md`)
+   166	  remain for Pack-5 historical retries only; current practice writes
+   167	  targeted inline prompts.
+   168	
+   169	## 4. Verdict promotion (codex sandbox cannot write)
+   170	
+   171	Codex read-only sandbox cannot write the verdict file to canonical
+   172	paths. Main thread promotes the verdict body from the log:
+   173	
+   174	1. Read `$REV_LOG`, locate the verdict block (typically last
+   175	   ~100 lines).
+   176	2. Write to canonical path: `dev/plans/runs/<phase>-review-<rts>.md`.
+   177	3. Canonical verdict format:
+   178	
+   179	```markdown
+   180	# Phase <id> Review — codex gpt-5.4 verdict
+   181	
+   182	Reviewer: `codex --model gpt-5.4 --sandbox read-only`.
+   183	Target: branch `phase-<id>-<ts>` HEAD `<sha>`.
+   184	Baseline: `<prior-CLOSED-sha>`.
+   185	Cherry-pick: `<sha-on-mainline>` on `<mainline-branch>`.
+   186	Review log: `dev/plans/runs/<phase>-review-<rts>.log`.
+   187	
+   188	Sandbox note: reviewer could not write this file directly (read-only
+   189	sandbox). Main thread promoted the verbatim verdict from log line
+   190	<N>+.
+   191	
+   192	## Verdict: PASS|CONCERN|BLOCK
+   193	
+   194	### 1. [severity] short title
+   195	Refs: file:line citations
+   196	<2-4 line explanation>
+   197	
+   198	## Addressed
+   199	<for fix-N passes: list what was fixed from prior verdict>
+   200	
+   201	## What passed on inspection
+   202	<reviewer's positive findings>
+   203	
+   204	## Reviewer process notes
+   205	<sandbox limits, what was/wasn't verified>
+   206	
+   207	## Orchestrator triage
+   208	<main thread's KEEP / FIX-1 / OVERRIDE call with rationale>
+   209	```
+   210	
+   211	## 5. Cherry-pick to mainline
+   212	
+   213	Implementer commits sit on `phase-<id>-<ts>` branch in the worktree.
+   214	After reviewer PASS (or orchestrator override), cherry-pick the
+   215	slice onto the mainline branch:
+   216	
+   217	```bash
+   218	# In main repo, on the release branch (e.g. 0.6.0-rewrite):
+   219	git cherry-pick <implementer-sha-1> <implementer-sha-2> ...
+   220	```
+   221	
+   222	Cherry-pick (not merge) lets the orchestrator select exactly which
+   223	commits land — skips WT-internal experiments and keeps mainline
+   224	history linear.
+   225	
+   226	Order matters: cherry-pick BEFORE spawning the reviewer when the
+   227	reviewer needs to see the mainline state, or AFTER review verdict
+   228	when the reviewer should see only the worktree branch. Phase 11+
+   229	practice: cherry-pick before review so mainline reflects intended
+   230	land state during reviewer execution.
+   231	
+   232	## 6. Fix-1 remediation pass (on BLOCK / CONCERN)
+   233	
+   234	If reviewer returns BLOCK or an actionable CONCERN, write a
+   235	targeted remediation prompt `dev/plans/prompts/<id>-fix-1.md` and
+   236	re-spawn the implementer in the **existing** worktree on the
+   237	**existing** branch (don't add a new worktree). Build new commits
+   238	on top of the prior head.
+   239	
+   240	Spawn pattern: same as § 2 but with `WT=<existing-wt-path>` (no
+
+exec
+/bin/bash -lc 'git show --unified=0 af96a5b -- Cargo.toml CHANGELOG.md docs/release-notes/0.6.1.md scripts/security/check_removal_changelog.py scripts/security/check-removal-changelog.sh src/python/pyproject.toml src/ts/package.json src/python/uv.lock src/ts/package-lock.json Cargo.lock' in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+commit af96a5bc4dd9bb62e143a5fcd6d0ce39b167f720
+Author: Corey Thompson <coreyt@gmail.com>
+Date:   Sun May 24 16:04:10 2026 -0500
+
+    release(0.6.1): bump axis-W to 0.6.1; CHANGELOG + release notes
+    
+    Patch release. Closes three 0.6.0 deferred items (Python and TypeScript
+    OpenReport surfacing via engine.open_report() / engine.openReport()
+    accessors; axis-E independence demonstration), resolves three Dependabot
+    advisories (pyo3, js-yaml, idna), and carries the AC-012 canonical-
+    runner re-measurement as documented evidence (verdict RED; Pack 7 perf
+    work escalates to 0.7.0 per HITL 2026-05-24).
+    
+    Axis-W (workspace lockstep): 0.6.0 -> 0.6.1 across Cargo.toml,
+    pyproject.toml, package.json, the five workspace.dependencies pins
+    for fathomdb / fathomdb-embedder / fathomdb-engine / fathomdb-query /
+    fathomdb-schema, Cargo.lock, src/python/uv.lock, src/ts/package-lock.json.
+    
+    Axis-E (fathomdb-embedder-api): held at 0.6.0 per Wake decision d-001.
+    No trait-surface change in 0.6.1 -> axis-E does not bump in lockstep.
+    This is the first post-GA exercise of the two-axis discipline; the
+    regression-sentinel test added in 26ec74e
+    (scripts/tests/test_set_version.sh test #13) codifies the invariant.
+    
+    scripts/set-version.sh --check-files: GREEN (Axis W = 0.6.1, Axis E = 0.6.0).
+    npx prettier --check on CHANGELOG.md and docs/release-notes/0.6.1.md: GREEN.
+    
+    Includes the B-001 forward-retag obligation: advance the AC-050c
+    removal-detect default --base from "v0.6.0" to "v0.6.1" in both
+    scripts/security/check_removal_changelog.py (line 172) and the bash
+    wrapper header comment. The v0.6.1 tag does NOT yet exist when this
+    commit lands -- RC1 / GA slices push it -- so the live-git invocation
+    (scripts/tests/test_removal_detect.sh case #4 "default-base-ref
+    live-git path") will be transiently RED with `fatal: bad revision
+    'v0.6.1..HEAD'` between this commit and the v0.6.1 tag push. The
+    three fixture-based cases (clean / undocumented / moved-in-file) are
+    unaffected and remain GREEN. The transient is the documented hand-off
+    cost flagged in the B-001 codex CONCERN-accept (d33207a).
+    
+    No code edits; no tag; no `gh release create` (tag is the RC1 slice
+    per dev/plans/0.6.1-implementation.md "Slice sequence").
+    
+    Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index f400aa6..e28cde5 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -14,0 +15,88 @@ AC-050c) gates merges against this invariant.
++## 0.6.1 - 2026-05-24
++
++Patch release. Closes three 0.6.0 deferred items (Python and TypeScript
++`OpenReport` surfacing, plus the axis-E independence demonstration),
++resolves three Dependabot advisories, and carries the AC-012 canonical-
++runner re-measurement as documented evidence (verdict RED; Pack 7 perf
++work escalates to 0.7.0 per HITL 2026-05-24).
++
++Axis-E (`fathomdb-embedder-api`) stays at `0.6.0` per Wake decision
++`d-001`: no trait-surface change in this release, so axis-E does not
++bump in lockstep with axis-W. This is the first post-GA exercise of
++the two-axis discipline.
++
++### Fixed
++
++- `OpenReport` is now surfaced from both bindings via an engine-attached
++  accessor (closes 12-TX-OPENREPORT carry-over from 0.6.0 GA):
++  - Python: `engine.open_report()` returns the native `OpenReport`
++    fields verbatim under snake_case identifiers
++    (`schema_version_before`, `schema_version_after`,
++    `migration_steps`, `embedder_warmup_ms`, `query_backend`,
++    `default_embedder`). Idempotent — repeat calls return identical
++    data (snapshot, not live state). Closes **AC-068c**.
++  - TypeScript: `engine.openReport()` returns the camelCase mirror
++    (`schemaVersionBefore`, `schemaVersionAfter`, `migrationSteps`,
++    `embedderWarmupMs`, `queryBackend`, `defaultEmbedder`). Sync
++    return — data lives in the napi engine struct after `open`.
++    Closes **AC-068d**.
++  - `Engine.open(...)` signatures are unchanged from 0.6.0 in both
++    bindings (additive accessor; no return-shape regression).
++- `scripts/security/check_removal_changelog.py` and its bash wrapper
++  point their `--base` default at `v0.6.1` (was `v0.6.0`), advancing
++  the "removals since last released API" anchor as 0.6.1 becomes the
++  new GA reference. AC-050c regression-sentinel test #4 will be
++  transiently RED in the BUMP → RC1 → GA window until the `v0.6.1`
++  tag is pushed.
++
++### Security
++
++- **RUSTSEC-2025-0020** — bump `pyo3` `0.22.6` → `0.24.1` across the
++  workspace; rename `*_bound` PyO3 APIs (24 callsites) to drop the
++  deprecation warnings under `-D warnings`.
++- **GHSA-mh29-5h37-fv8m** — bump `js-yaml` `4.1.0` → `4.1.1` via
++  `markdownlint-cli2` `0.18` → `0.22.1` (transitive).
++- **CVE-2024-3651 (idna)** — confirmed false-positive against
++  fathomdb (not in the Python dependency graph after lock-file
++  audit); `src/python/uv.lock` checked in to make the audit
++  reproducible.
++
++### Changed
++
++- `scripts/set-version.sh --workspace 0.6.1` exercises the axis-E
++  independence invariant for the first time post-GA: axis-W
++  (`Cargo.toml`, `pyproject.toml`, `package.json`, and the five
++  workspace.dependencies pins for `fathomdb`, `fathomdb-embedder`,
++  `fathomdb-engine`, `fathomdb-query`, `fathomdb-schema`) advances
++  to `0.6.1`; axis-E (`fathomdb-embedder-api` `[package].version`
++  and its `workspace.dependencies` pin) stays at `0.6.0`.
++  Regression sentinel codified in
++  `scripts/tests/test_set_version.sh` test #13.
++- B-001 forward-retag — `scripts/security/check_removal_changelog.py`
++  and `scripts/security/check-removal-changelog.sh` default `--base`
++  advanced from `v0.6.0` to `v0.6.1`.
++
++### Removed
++
++(none — patch release, no public symbol removals.)
++
++### Deferred (carry-over)
++
++- **AC-012** text-query latency on FTS5 (p50 ≤ 20 ms / p99 ≤ 150 ms):
++  re-measured 2026-05-23 on canonical x86_64 tier-1 CI (AMD EPYC
++  9V74, 4 cores, Ubuntu 24.04.4, rustc 1.95.0, SQLite 3.45.x via
++  `libsqlite3-sys` 0.28.0) at N=1,000,000. Verdict **RED**:
++  p50 = 140.95 ms (7.05× over budget), p99 = 458 ms (3.05× over
++  budget). Pack 7 un-defer trigger fires; AC-012 closure target
++  moved to **0.7.0** (perf-only release; budget revision + tuning).
++  Evidence: `dev/notes/perf-canonical-runner-2026-MM.md` and
++  `dev/plans/runs/0.6.1-AC012-measure-output.json` (workflow run
++  26346417896). 0.6.1 carries this measurement as evidence and
++  does NOT claim AC-012 closure.
++- **AC-013** vector retrieval latency, **AC-019** mixed-retrieval
++  stress tail, **AC-020** N=8 concurrent reader scaling: stay
++  deferred per Pack 7 trigger evaluation (Pack 7 escalated to
++  0.7.0 alongside AC-012).
++- **Logical-id verbs** (`purge_logical_id` / `restore_logical_id`)
++  stay deferred to **0.8.0** per HITL 2026-05-24 rescope.
++
+diff --git a/Cargo.lock b/Cargo.lock
+index 17222db..3104de7 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -330 +330 @@ name = "fathomdb"
+-version = "0.6.0"
++version = "0.6.1"
+@@ -337 +337 @@ name = "fathomdb-cli"
+-version = "0.6.0"
++version = "0.6.1"
+@@ -347 +347 @@ name = "fathomdb-embedder"
+-version = "0.6.0"
++version = "0.6.1"
+@@ -358 +358 @@ name = "fathomdb-engine"
+-version = "0.6.0"
++version = "0.6.1"
+@@ -375 +375 @@ name = "fathomdb-napi"
+-version = "0.6.0"
++version = "0.6.1"
+@@ -390 +390 @@ name = "fathomdb-py"
+-version = "0.6.0"
++version = "0.6.1"
+@@ -401 +401 @@ name = "fathomdb-query"
+-version = "0.6.0"
++version = "0.6.1"
+@@ -408 +408 @@ name = "fathomdb-schema"
+-version = "0.6.0"
++version = "0.6.1"
+diff --git a/Cargo.toml b/Cargo.toml
+index c7a4af6..475d2f1 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -28 +28 @@ resolver = "2"
+-version = "0.6.0"
++version = "0.6.1"
+@@ -48,2 +48,2 @@ internal_docs = ["dev"]
+-fathomdb              = { path = "src/rust/crates/fathomdb",              version = "0.6.0" }
+-fathomdb-embedder     = { path = "src/rust/crates/fathomdb-embedder",     version = "0.6.0" }
++fathomdb              = { path = "src/rust/crates/fathomdb",              version = "0.6.1" }
++fathomdb-embedder     = { path = "src/rust/crates/fathomdb-embedder",     version = "0.6.1" }
+@@ -51,3 +51,3 @@ fathomdb-embedder-api = { path = "src/rust/crates/fathomdb-embedder-api", versio
+-fathomdb-engine       = { path = "src/rust/crates/fathomdb-engine",       version = "0.6.0" }
+-fathomdb-query        = { path = "src/rust/crates/fathomdb-query",        version = "0.6.0" }
+-fathomdb-schema       = { path = "src/rust/crates/fathomdb-schema",       version = "0.6.0" }
++fathomdb-engine       = { path = "src/rust/crates/fathomdb-engine",       version = "0.6.1" }
++fathomdb-query        = { path = "src/rust/crates/fathomdb-query",        version = "0.6.1" }
++fathomdb-schema       = { path = "src/rust/crates/fathomdb-schema",       version = "0.6.1" }
+diff --git a/docs/release-notes/0.6.1.md b/docs/release-notes/0.6.1.md
+new file mode 100644
+index 0000000..c974fa5
+--- /dev/null
++++ b/docs/release-notes/0.6.1.md
+@@ -0,0 +1,187 @@
++# 0.6.1 Release Notes
++
++**Released: 2026-05-24** (pending RC1 → V → GA slices on the
++`0.6.1-rewrite` release branch).
++
++0.6.1 is a **patch release** on the 0.6.x line per
++`ADR-0.6.0-no-shims-policy.md` § 54 (literal contract:
++**no API breaks, bugfix-only**). It closes three items deferred
++at 0.6.0 GA, resolves three open Dependabot advisories, and carries
++the AC-012 canonical-runner re-measurement as documented evidence
++(verdict RED — Pack 7 performance work escalates to 0.7.0 per
++HITL 2026-05-24).
++
++## What's new in 0.6.1
++
++### `Engine.open` structured open report — bindings closure
++
++Both the Python and TypeScript SDKs now surface the structured
++open report that native Rust populates at `Engine.open` time.
++0.6.0 GA dropped this on both bindings (the
++[`12-TX-OPENREPORT` deferred item](https://github.com/coreyt/fathomdb/blob/main/docs/release-notes/0.6.0.md#engineopen-structured-open-report));
++0.6.1 surfaces it via a new engine-attached accessor — Shape D
++per HITL 2026-05-24. The `Engine.open(...)` signature is
++unchanged in both bindings (additive accessor; zero legacy-
++callsite risk).
++
++- **Python** (`AC-068c`):
++
++  ```python
++  engine = fathomdb.Engine.open(...)
++  report = engine.open_report()
++  report.schema_version_before   # int
++  report.schema_version_after    # int
++  report.migration_steps         # list
++  report.embedder_warmup_ms      # int
++  report.query_backend           # str
++  report.default_embedder        # embedder-identity payload
++  ```
++
++  Snake-case identifiers mirror the native `OpenReport` struct
++  verbatim. Idempotent — repeat calls return identical data
++  (the report is a snapshot, not live state).
++
++- **TypeScript** (`AC-068d`):
++
++  ```ts
++  const engine = await fathomdb.Engine.open(...);
++  const report = engine.openReport();
++  report.schemaVersionBefore;   // number
++  report.schemaVersionAfter;    // number
++  report.migrationSteps;        // ReadonlyArray<MigrationStepReport>
++  report.embedderWarmupMs;      // number
++  report.queryBackend;          // string
++  report.defaultEmbedder;       // embedder-identity payload
++  ```
++
++  CamelCase mirror of the native fields. `openReport()` is
++  **sync** — the report lives in the napi engine struct once
++  the `Engine.open` Promise has resolved. Idempotent.
++
++This closes the last ❌ row in
++`dev/notes/12-TX-parity-matrix.md` and is the TypeScript-parity
++anchor for the 0.6.x release-line goal.
++
++### Axis-E independence — first post-GA demonstration
++
++`fathomdb-embedder-api` (axis E) stayed at `0.6.0` across the
++axis-W bump from `0.6.0` → `0.6.1`. Per Wake decision `d-001`,
++the embedder-API trait surface bumps on its own cadence — only
++when the trait surface changes — and 0.6.1 ships no trait-
++surface change. This is the first post-GA exercise of the
++two-axis discipline; a regression-sentinel test
++(`scripts/tests/test_set_version.sh` test #13) codifies the
++invariant for future bumps.
++
++### Security advisories resolved
++
++Three of the four open Dependabot advisories at 0.6.0 GA are
++closed in this release; the fourth was a false-positive against
++fathomdb.
++
++| Advisory                  | Ecosystem | Fix                                                                 |
++| ------------------------- | --------- | ------------------------------------------------------------------- |
++| **RUSTSEC-2025-0020**     | cargo     | `pyo3` `0.22.6` → `0.24.1`; `*_bound` API rename (24 callsites)     |
++| **GHSA-mh29-5h37-fv8m**   | npm       | `js-yaml` `4.1.0` → `4.1.1` via `markdownlint-cli2` `0.18` → `0.22.1` |
++| **CVE-2024-3651** (`idna`) | python   | Confirmed false-positive — `idna` is not in the dependency graph; `src/python/uv.lock` checked in to make the audit reproducible |
++
++### B-001 forward-retag
++
++`scripts/security/check_removal_changelog.py` and its bash
++wrapper advance their default `--base` ref from `v0.6.0` to
++`v0.6.1`, so the "removals since last released API" anchor
++tracks the new GA. The AC-050c regression-sentinel test #4
++(live-git default-base-ref path) will be **transiently RED in
++the BUMP → RC1 → GA window** until the `v0.6.1` tag is pushed;
++this is the documented hand-off cost flagged in the B-001
++codex CONCERN (2026-05-24).
++
++## What stays deferred
++
++### AC-012 canonical re-measurement — RED, escalated to 0.7.0
++
++`AC-012` (text-query latency on FTS5, p50 ≤ 20 ms / p99 ≤ 150 ms)
++was originally a 0.6.1 candidate, intended to close via canonical-
++runner re-measurement (the dev runner that produced the 0.6.0 RED
++verdict was aarch64 Tegra ~3× slower than canonical x86_64). The
++0.6.1-AC012-measure slice ran on 2026-05-23 via
++[`.github/workflows/perf-canonical.yml`](https://github.com/coreyt/fathomdb/actions/runs/26346417896)
++on canonical x86_64 tier-1 hardware (AMD EPYC 9V74, 4 cores,
++Ubuntu 24.04.4, rustc 1.95.0, SQLite 3.45.x via
++`libsqlite3-sys` 0.28.0) at N=1,000,000.
++
++Verdict: **RED on both percentiles.**
++
++| Metric     | Observed (ms) | Budget (ms) | Verdict | Multiple over budget |
++| ---------- | ------------- | ----------- | ------- | -------------------- |
++| AC-012 p50 | 140.95        | ≤ 20        | **RED** | 7.05×                |
++| AC-012 p99 | 458           | ≤ 150       | **RED** | 3.05×                |
++
++The Pack 7 un-defer trigger (regression > 20% vs ADR-pinned
++budget) fires by ~30× on p50. Per HITL 2026-05-24, Pack 7
++escalates to **0.7.0** as a perf-only release (budget revision +
++tuning). 0.6.1 carries this measurement as evidence and does
++NOT claim AC-012 closure. Full slice output:
++`dev/plans/runs/0.6.1-AC012-measure-output.json`.
++
++### Pack 7 sibling perf ACs
++
++`AC-013` (vector retrieval latency), `AC-019` (mixed-retrieval
++stress tail), and `AC-020` (N=8 concurrent reader scaling) stay
++deferred to 0.7.0 alongside AC-012. AC-020 closure is
++architectural (vendor-SQLite work — `SQLITE_CONFIG_PCACHE2` /
++WAL2 / reader-writer physical separation); see the 0.6.0 release
++notes for the substrate analysis.
++
++### Logical-id verbs — 0.8.0
++
++`purge_logical_id` and `restore_logical_id` stay deferred to
++**0.8.0** per HITL 2026-05-24 rescope (the 0.6.0 release notes
++said 0.7.x; this slipped one minor as Pack 7 perf work claimed
++the 0.7.0 anchor). The canonical-identity substrate stays
++design-only in 0.6.1 — same as 0.6.0.
++
++For 0.6.x clients, bulk-delete by source still uses
++`fathomdb recover --excise-source <id>` (Phase 10a).
++Restore-from-log workflows wait for 0.8.0.
++
++## Upgrade notes
++
++Patch release — **no breaking changes.** Semver patch implies
++the public surface from 0.6.0 still works unchanged. The two
++new accessors (`engine.open_report()` / `engine.openReport()`)
++are **additive**; `Engine.open(...)` signatures are unchanged
++from 0.6.0 in both bindings.
++
++```sh
++# crates.io (Rust)
++cargo update -p fathomdb --precise 0.6.1
++
++# PyPI
++pip install --upgrade fathomdb==0.6.1
++
++# npm
++npm install fathomdb@0.6.1
++```
++
++Axis-E consumers — `fathomdb-embedder-api` is unchanged at
++`0.6.0`. No update required for downstream embedder
++implementations.
++
++## Compatibility
++
++**No 0.5.x compatibility shims or migrations** — same posture
++as 0.6.0 per `ADR-0.6.0-no-shims-policy.md`. Clients on 0.5.x
++must follow a separate migration path (not provided in this
++release).
++
++## References
++
++- Plan: `dev/plans/0.6.1-implementation.md`.
++- Slice outputs: `dev/plans/runs/0.6.1-*-output.json`.
++- AC-012 measurement evidence:
++  `dev/notes/perf-canonical-runner-2026-MM.md`,
++  `dev/plans/runs/0.6.1-AC012-measure-output.json`.
++- Public interface specs:
++  `dev/interfaces/{rust,python,typescript,cli,wire}.md`.
++- Acceptance scoreboard: `dev/acceptance.md`.
+diff --git a/scripts/security/check-removal-changelog.sh b/scripts/security/check-removal-changelog.sh
+index 3c400fd..9f34d9f 100755
+--- a/scripts/security/check-removal-changelog.sh
++++ b/scripts/security/check-removal-changelog.sh
+@@ -3 +3 @@
+-# implementation; defaults base=v0.6.0, head=HEAD.
++# implementation; defaults base=v0.6.1, head=HEAD.
+diff --git a/scripts/security/check_removal_changelog.py b/scripts/security/check_removal_changelog.py
+index 6c522eb..b7fa759 100755
+--- a/scripts/security/check_removal_changelog.py
++++ b/scripts/security/check_removal_changelog.py
+@@ -172 +172 @@ def main(argv: list[str]) -> int:
+-    p.add_argument("--base", default="v0.6.0", help="base git ref")
++    p.add_argument("--base", default="v0.6.1", help="base git ref")
+diff --git a/src/python/pyproject.toml b/src/python/pyproject.toml
+index 6a564b2..a7ed76e 100644
+--- a/src/python/pyproject.toml
++++ b/src/python/pyproject.toml
+@@ -7 +7 @@ name = "fathomdb"
+-version = "0.6.0"
++version = "0.6.1"
+diff --git a/src/python/uv.lock b/src/python/uv.lock
+index f55a7b8..61e3baa 100644
+--- a/src/python/uv.lock
++++ b/src/python/uv.lock
+@@ -28 +28 @@ name = "fathomdb"
+-version = "0.6.0"
++version = "0.6.1"
+diff --git a/src/ts/package-lock.json b/src/ts/package-lock.json
+index 1b3b8f7..eaf5827 100644
+--- a/src/ts/package-lock.json
++++ b/src/ts/package-lock.json
+@@ -3 +3 @@
+-  "version": "0.6.0",
++  "version": "0.6.1",
+@@ -9 +9 @@
+-      "version": "0.6.0",
++      "version": "0.6.1",
+diff --git a/src/ts/package.json b/src/ts/package.json
+index eddf951..c9ebe91 100644
+--- a/src/ts/package.json
++++ b/src/ts/package.json
+@@ -3 +3 @@
+-  "version": "0.6.0",
++  "version": "0.6.1",
+
+codex
+I’ve finished the core spec cross-check. I’m doing one last sweep for leftover `0.6.0` strings in files touched by the bump so I don’t miss stale release metadata that the mechanical version update would not catch.
+exec
+/bin/bash -lc "rg -n '0\\.6\\.0' Cargo.toml Cargo.lock src/python/pyproject.toml src/python/uv.lock src/ts/package.json src/ts/package-lock.json CHANGELOG.md docs/release-notes/0.6.1.md scripts/security/check_removal_changelog.py scripts/security/check-removal-changelog.sh" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+docs/release-notes/0.6.1.md:7:`ADR-0.6.0-no-shims-policy.md` § 54 (literal contract:
+docs/release-notes/0.6.1.md:9:at 0.6.0 GA, resolves three open Dependabot advisories, and carries
+docs/release-notes/0.6.1.md:20:0.6.0 GA dropped this on both bindings (the
+docs/release-notes/0.6.1.md:21:[`12-TX-OPENREPORT` deferred item](https://github.com/coreyt/fathomdb/blob/main/docs/release-notes/0.6.0.md#engineopen-structured-open-report));
+docs/release-notes/0.6.1.md:67:`fathomdb-embedder-api` (axis E) stayed at `0.6.0` across the
+docs/release-notes/0.6.1.md:68:axis-W bump from `0.6.0` → `0.6.1`. Per Wake decision `d-001`,
+docs/release-notes/0.6.1.md:78:Three of the four open Dependabot advisories at 0.6.0 GA are
+docs/release-notes/0.6.1.md:91:wrapper advance their default `--base` ref from `v0.6.0` to
+docs/release-notes/0.6.1.md:105:runner re-measurement (the dev runner that produced the 0.6.0 RED
+docs/release-notes/0.6.1.md:133:WAL2 / reader-writer physical separation); see the 0.6.0 release
+docs/release-notes/0.6.1.md:139:**0.8.0** per HITL 2026-05-24 rescope (the 0.6.0 release notes
+docs/release-notes/0.6.1.md:142:design-only in 0.6.1 — same as 0.6.0.
+docs/release-notes/0.6.1.md:151:the public surface from 0.6.0 still works unchanged. The two
+docs/release-notes/0.6.1.md:154:from 0.6.0 in both bindings.
+docs/release-notes/0.6.1.md:168:`0.6.0`. No update required for downstream embedder
+docs/release-notes/0.6.1.md:174:as 0.6.0 per `ADR-0.6.0-no-shims-policy.md`. Clients on 0.5.x
+src/ts/package.json:4:  "description": "TypeScript SDK for FathomDB 0.6.0 — napi-rs binding to fathomdb-engine",
+CHANGELOG.md:4:Cuts follow the version tagged on `0.6.0-rewrite`. Each released section
+CHANGELOG.md:17:Patch release. Closes three 0.6.0 deferred items (Python and TypeScript
+CHANGELOG.md:23:Axis-E (`fathomdb-embedder-api`) stays at `0.6.0` per Wake decision
+CHANGELOG.md:31:  accessor (closes 12-TX-OPENREPORT carry-over from 0.6.0 GA):
+CHANGELOG.md:43:  - `Engine.open(...)` signatures are unchanged from 0.6.0 in both
+CHANGELOG.md:46:  point their `--base` default at `v0.6.1` (was `v0.6.0`), advancing
+CHANGELOG.md:72:  and its `workspace.dependencies` pin) stays at `0.6.0`.
+CHANGELOG.md:77:  advanced from `v0.6.0` to `v0.6.1`.
+CHANGELOG.md:103:## 0.6.0 - 2026-05-19
+CHANGELOG.md:105:First stable release of FathomDB 0.6.0 — local-first retrieval
+CHANGELOG.md:158:  PEP 440 (e.g. `0.6.0-rc.4` → `0.6.0rc4`) before `pip install`
+CHANGELOG.md:182:  and TypeScript bindings in 0.6.0; populated native-side but not
+CHANGELOG.md:187:  Canonical-identity substrate design-only in 0.6.0. Client
+CHANGELOG.md:190:  2026-04-07; full Python-parity did NOT land at 0.6.0 GA and
+CHANGELOG.md:196:(none — 0.6.0 is a rewrite; no 0.5.x→0.6.0 deprecation shims)
+Cargo.lock:217:version = "0.6.0"
+Cargo.lock:354:version = "0.6.0"
+Cargo.toml:23:# lockstep through the 0.6.0 RC bootstrap (rc.1) and the GA cut so a
+Cargo.toml:25:# plus embedder-api at `0.6.0`. Post-GA, axis-E is independent —
+Cargo.toml:50:fathomdb-embedder-api = { path = "src/rust/crates/fathomdb-embedder-api", version = "0.6.0" }
+
+exec
+/bin/bash -lc 'git diff --name-only a2da356..af96a5b -- src/rust/crates/fathomdb-embedder-api/Cargo.toml' in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+exec
+/bin/bash -lc 'git diff --name-only a2da356..af96a5b -- scripts/set-version.sh' in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+exec
+/bin/bash -lc "rg -n 'sibling chore commit|output JSON|closure artifact|§ 8' dev/design/orchestration.md" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+123:- dev/plans/runs/<id>-output.json (closure artifact)
+296:1. Read `dev/plans/runs/<phase>-output.json` (per § 8 schema).
+336:2. Save any uncommitted closure artifacts in the WT
+407:- `dev/plans/runs/<slice-id>-output.json` — closure artifact
+408:  (per § 8).
+493:- Open questions (whitepaper § 8).
+
+exec
+/bin/bash -lc "nl -ba dev/plans/runs/0.6.1-BUMP-output.json | sed -n '1,220p'" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+     1	{
+     2	  "phase": "0.6.1-BUMP",
+     3	  "baseline_sha": "a2da356",
+     4	  "branch": "phase-0.6.1-BUMP-20260524T205921Z",
+     5	  "head_sha": "af96a5bc4dd9bb62e143a5fcd6d0ce39b167f720",
+     6	  "commits": [
+     7	    "af96a5bc4dd9bb62e143a5fcd6d0ce39b167f720: release(0.6.1): bump axis-W to 0.6.1; CHANGELOG + release notes"
+     8	  ],
+     9	  "commit_sha": "af96a5bc4dd9bb62e143a5fcd6d0ce39b167f720",
+    10	  "axis_w_before": "0.6.0",
+    11	  "axis_w_after": "0.6.1",
+    12	  "axis_e_before": "0.6.0",
+    13	  "axis_e_after": "0.6.0",
+    14	  "check_files_verdict": "ok",
+    15	  "check_files_stdout": "ok: Axis W = 0.6.1; Axis E = 0.6.0",
+    16	  "release_notes_path": "docs/release-notes/0.6.1.md",
+    17	  "files_touched": [
+    18	    "CHANGELOG.md",
+    19	    "Cargo.lock",
+    20	    "Cargo.toml",
+    21	    "docs/release-notes/0.6.1.md",
+    22	    "scripts/security/check-removal-changelog.sh",
+    23	    "scripts/security/check_removal_changelog.py",
+    24	    "src/python/pyproject.toml",
+    25	    "src/python/uv.lock",
+    26	    "src/ts/package-lock.json",
+    27	    "src/ts/package.json"
+    28	  ],
+    29	  "prerequisites_verified_closed": {
+    30	    "0.6.1-AC012-measure": "CLOSED 2026-05-23, verdict RED -> Pack 7 escalated to 0.7.0 per HITL 2026-05-24",
+    31	    "0.6.1-OPENREPORT-py": "CLOSED (commit da13b74 + fix-1 708a47f); AC-068c GREEN",
+    32	    "0.6.1-OPENREPORT-ts": "CLOSED (commit 01f6d79); AC-068d GREEN",
+    33	    "0.6.1-DEPENDABOT": "CLOSED (commits b7c16b7 / adc207d / 1a38f81 + fix-1 cc12d9e); pyo3 / js-yaml resolved; idna false-positive",
+    34	    "0.6.1-AXIS-E-PIN": "CLOSED (commit 26fa3ec + fix-1 d148f1b); regression sentinel test #13 in scripts/tests/test_set_version.sh",
+    35	    "0.6.1-B-001-removal-detect-baseref": "CLOSED (commit 0d575d1); pinned to v0.6.0, retag obligation transferred to this BUMP slice per d33207a CONCERN-accept"
+    36	  },
+    37	  "axis_e_independence_demonstration": {
+    38	    "claim": "First post-GA axis-W bump that holds axis-E. Wake decision d-001 codified.",
+    39	    "before": "Cargo.toml [workspace.package].version = 0.6.0; fathomdb-embedder-api [package].version = 0.6.0; workspace.dependencies pin for fathomdb-embedder-api = 0.6.0",
+    40	    "after": "Cargo.toml [workspace.package].version = 0.6.1; fathomdb-embedder-api [package].version = 0.6.0 (UNCHANGED); workspace.dependencies pin for fathomdb-embedder-api = 0.6.0 (UNCHANGED)",
+    41	    "set_version_check_files_verdict": "ok: Axis W = 0.6.1; Axis E = 0.6.0"
+    42	  },
+    43	  "b001_forward_retag": {
+    44	    "changed": "scripts/security/check_removal_changelog.py default --base v0.6.0 -> v0.6.1; scripts/security/check-removal-changelog.sh header comment updated to match.",
+    45	    "rationale": "Advances 'removals since last released API' anchor as 0.6.1 becomes the new GA. Owns the obligation flagged by the B-001 codex CONCERN-accept (d33207a, 2026-05-24).",
+    46	    "test_removal_detect_status": {
+    47	      "fixture_cases_green": ["clean", "undocumented", "moved-in-file"],
+    48	      "live_git_case_transiently_red": "default-base-ref live-git path: fatal: bad revision 'v0.6.1..HEAD' until v0.6.1 tag is pushed by RC1/GA slices",
+    49	      "documented_in_commit_body": true
+    50	    }
+    51	  },
+    52	  "prettier_verdict": "GREEN (npx prettier --check CHANGELOG.md docs/release-notes/0.6.1.md)",
+    53	  "lockfiles_refreshed": {
+    54	    "Cargo.lock": "cargo update -w bumped 8 workspace crates 0.6.0 -> 0.6.1",
+    55	    "src/python/uv.lock": "fathomdb [editable] 0.6.0 -> 0.6.1 (single occurrence; only fathomdb itself is editable)",
+    56	    "src/ts/package-lock.json": "top-level + packages[''] entries 0.6.0 -> 0.6.1 (2 occurrences)"
+    57	  },
+    58	  "release_notes_contents_summary": {
+    59	    "fixed": [
+    60	      "OpenReport surfacing in Python (AC-068c)",
+    61	      "OpenReport surfacing in TypeScript (AC-068d)",
+    62	      "AC-050c removal-detect default --base advanced v0.6.0 -> v0.6.1 (B-001 retag)"
+    63	    ],
+    64	    "security": [
+    65	      "RUSTSEC-2025-0020 (pyo3 0.22.6 -> 0.24.1)",
+    66	      "GHSA-mh29-5h37-fv8m (js-yaml 4.1.0 -> 4.1.1 via markdownlint-cli2 0.18 -> 0.22.1)",
+    67	      "CVE-2024-3651 idna confirmed false-positive (not in python dep graph); uv.lock committed for audit reproducibility"
+    68	    ],
+    69	    "changed": [
+    70	      "axis-E independence demonstration codified in scripts/tests/test_set_version.sh test #13"
+    71	    ],
+    72	    "deferred_carry_over": [
+    73	      "AC-012 -> 0.7.0 (RED measurement carried as evidence, NOT claimed as closure)",
+    74	      "AC-013 / AC-019 / AC-020 -> 0.7.0 (Pack 7 escalation alongside AC-012)",
+    75	      "Logical-id verbs (purge_logical_id / restore_logical_id) -> 0.8.0 per HITL 2026-05-24 rescope"
+    76	    ]
+    77	  },
+    78	  "hard_constraints_met": {
+    79	    "single_commit": true,
+    80	    "no_tag": true,
+    81	    "no_gh_release_create": true,
+    82	    "no_code_edits": "BUMP-only: version manifests + lockfiles + CHANGELOG + release notes + B-001 retag (default-arg strings, no behavior code)",
+    83	    "check_files_green_before_commit": true,
+    84	    "axis_e_held_at_0_6_0": true,
+    85	    "prettier_fixup_run_before_commit": true
+    86	  },
+    87	  "blockers_encountered": [],
+    88	  "next_step_for_orchestrator": "codex review per orchestration.md § 3. On PASS / CONCERN-accept: cherry-pick onto 0.6.1-rewrite release branch and push to origin (NO tag). RC1 slice owns the v0.6.1-rc.1 tag and fires release.yml 8-tier publish."
+    89	}
+
+exec
+/bin/bash -lc "nl -ba src/ts/package-lock.json | sed -n '1,40p'" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+     1	{
+     2	  "name": "fathomdb",
+     3	  "version": "0.6.1",
+     4	  "lockfileVersion": 3,
+     5	  "requires": true,
+     6	  "packages": {
+     7	    "": {
+     8	      "name": "fathomdb",
+     9	      "version": "0.6.1",
+    10	      "license": "Apache-2.0",
+    11	      "devDependencies": {
+    12	        "@napi-rs/cli": "^2.18.4",
+    13	        "@types/node": "^25.6.0",
+    14	        "typescript": "^5.8.3"
+    15	      }
+    16	    },
+    17	    "node_modules/@napi-rs/cli": {
+    18	      "version": "2.18.4",
+    19	      "resolved": "https://registry.npmjs.org/@napi-rs/cli/-/cli-2.18.4.tgz",
+    20	      "integrity": "sha512-SgJeA4df9DE2iAEpr3M2H0OKl/yjtg1BnRI5/JyowS71tUWhrfSu2LT0V3vlHET+g1hBVlrO60PmEXwUEKp8Mg==",
+    21	      "dev": true,
+    22	      "license": "MIT",
+    23	      "bin": {
+    24	        "napi": "scripts/index.js"
+    25	      },
+    26	      "engines": {
+    27	        "node": ">= 10"
+    28	      },
+    29	      "funding": {
+    30	        "type": "github",
+    31	        "url": "https://github.com/sponsors/Brooooooklyn"
+    32	      }
+    33	    },
+    34	    "node_modules/@types/node": {
+    35	      "version": "25.6.0",
+    36	      "resolved": "https://registry.npmjs.org/@types/node/-/node-25.6.0.tgz",
+    37	      "integrity": "sha512-+qIYRKdNYJwY3vRCZMdJbPLJAtGjQBudzZzdzwQYkEPQd+PJGixUL5QfvCLDaULoLv+RhT3LDkwEfKaAkgSmNQ==",
+    38	      "dev": true,
+    39	      "license": "MIT",
+    40	      "dependencies": {
+
+exec
+/bin/bash -lc "nl -ba src/python/uv.lock | sed -n '20,40p'" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+    20	]
+    21	sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371, upload-time = "2025-11-21T23:01:54.787Z" }
+    22	wheels = [
+    23	    { url = "https://files.pythonhosted.org/packages/8a/0e/97c33bf5009bdbac74fd2beace167cab3f978feb69cc36f1ef79360d6c4e/exceptiongroup-1.3.1-py3-none-any.whl", hash = "sha256:a7a39a3bd276781e98394987d3a5701d0c4edffb633bb7a5144577f82c773598", size = 16740, upload-time = "2025-11-21T23:01:53.443Z" },
+    24	]
+    25	
+    26	[[package]]
+    27	name = "fathomdb"
+    28	version = "0.6.1"
+    29	source = { editable = "." }
+    30	
+    31	[package.optional-dependencies]
+    32	dev = [
+    33	    { name = "hypothesis" },
+    34	    { name = "pyright" },
+    35	    { name = "pytest" },
+    36	    { name = "ruff" },
+    37	]
+    38	lint = [
+    39	    { name = "ruff" },
+    40	]
+
+exec
+/bin/bash -lc "nl -ba dev/design/orchestration.md | sed -n '392,430p'" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+   392	   current phase (slice scoreboard, open HITL questions, outstanding
+   393	   worktrees, next action).
+   394	7. Slice prompt file `dev/plans/prompts/<slice-id>.md` — the work
+   395	   itself.
+   396	
+   397	Steps 1-6 are ~600 lines of focused reading; cold-resume to
+   398	oriented in <5min.
+   399	
+   400	### 12.3 Per-slice context discipline
+   401	
+   402	Each slice gets the proven Phase 11 substrate:
+   403	
+   404	- `dev/plans/prompts/<slice-id>.md` — self-contained prompt
+   405	  (canonical pattern per §§ 2, 3 of this doc).
+   406	- `dev/plans/runs/<slice-id>-<ts>.log` — implementer stdout.
+   407	- `dev/plans/runs/<slice-id>-output.json` — closure artifact
+   408	  (per § 8).
+   409	- `dev/plans/runs/<slice-id>-review-<ts>.md` — promoted codex
+   410	  verdict.
+   411	- Worktree at `/tmp/fdb-<slice-id>-<ts>` — cleaned after PASS/override
+   412	  per § 11.
+   413	
+   414	**Implementer subagent never sees prior-slice conversation context.**
+   415	Prompt carries everything it needs by file reference (baseline SHA,
+   416	AC ids, design-doc links, prior-slice `output.json` if relevant).
+   417	
+   418	### 12.4 Plan doc as canonical state machine
+   419	
+   420	The release plan (`dev/plans/<release>-implementation.md`) is the
+   421	authoritative source of "where are we?". Discipline:
+   422	
+   423	- Each closed slice gets a `CLOSED` block in "Immediate Next Slice"
+   424	  section with cherry-pick SHA + codex verdict arc + key
+   425	  deliverables.
+   426	- "Immediate Next Slice" pointer advances in the **same commit**
+   427	  that closes the prior slice. No drift.
+   428	- Per-AC scoreboard rows in the slice-sequence table mark
+   429	  ✅/⚠️/❌/⏳ as work lands. State visible at a glance.
+   430	- **No state in chat that's also in the plan doc.** Chat is
+
+exec
+/bin/bash -lc "rg -n 'directly on "'`main`|release branch'"' dev/plans/0.6.1-implementation.md docs/release-notes/0.6.1.md" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+docs/release-notes/0.6.1.md:4:`0.6.1-rewrite` release branch).
+dev/plans/0.6.1-implementation.md:158:directly on `main` via the per-slice worktree pattern — orchestrator
+dev/plans/0.6.1-implementation.md:243:| `0.6.1-DEPENDABOT`    | Merge / re-merge 4 advisories: pyo3 (cargo), js-yaml (npm), idna (transitive python). One commit per ecosystem; verify `cargo audit` / `pnpm audit` / `pip-audit` clean.                                                                                                                                                                                                                                                            | All 4 advisories resolved on the release branch; `agent-verify` GREEN; no API surface change observable in parity matrix.                                                                                                                                        | No                            | none                                                                               |
+dev/plans/0.6.1-implementation.md:248:| `0.6.1-GA`            | Tag `v0.6.1` on `main` after RC green; merge release branch → `main`; GitHub Release flipped to `isPrerelease=false`.                                                                                                                                                                                                                                                                                                               | `v0.6.1` tag present; `main` FFed; release.yml GA run green; progress doc updated.                                                                                                                                                                               | Yes (HITL approves GA tag)    | V                                                                                  |
+dev/plans/0.6.1-implementation.md:348:to the release branch via cherry-pick. At GA, the release branch
+dev/plans/0.6.1-implementation.md:352:a `0.6.1-rewrite` branch cut from `main` (or directly on `main` for
+dev/plans/0.6.1-implementation.md:385:- [ ] `main` is fast-forwarded to the tip of the release branch
+dev/plans/0.6.1-implementation.md:387:      `refs/remotes/origin/main`; if `main` lags the release branch,
+
+exec
+/bin/bash -lc "rg -n '"'^name = "fathomdb(-cli|-embedder|-embedder-api|-engine|-napi|-py|-query|-schema)?"|''^version'"\\.workspace = true|"'^version = "0'"\\.6\\.[01]\"' src/rust/crates/*/Cargo.toml" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+exec
+/bin/bash -lc "sed -n '150,165p' dev/plans/0.6.1-implementation.md" in /tmp/fdb-0.6.1-BUMP-20260524T205921Z
+ succeeded in 0ms:
+Each starts with a failing test citing at least one `AC-*` id and one
+relevant ADR or interface spec. Mechanical slices (DEPENDABOT, BUMP,
+RC1, V, GA) use the existing test suite as the gate.
+
+Cherry-pick discipline per `dev/design/orchestration.md` § 5: slices
+land on a `0.6.1-rewrite` branch cut from `main`, get reviewed under
+`dev/design/orchestration.md` §§ 2-9, then cherry-pick to mainline at
+GA. (Per 2026-05-22 HITL: 0.6.0-rewrite is closed; 0.6.1 work happens
+directly on `main` via the per-slice worktree pattern — orchestrator
+manages branch shape.)
+
+## Design verification summary (2026-05-22)
+
+Walked each candidate slice against the locked design corpus. No new
+ADR required; no existing ADR amended. Spec status:
+
+
+ succeeded in 0ms:
+src/rust/crates/fathomdb/Cargo.toml:2:name = "fathomdb"
+src/rust/crates/fathomdb/Cargo.toml:4:version.workspace = true
+src/rust/crates/fathomdb-schema/Cargo.toml:2:name = "fathomdb-schema"
+src/rust/crates/fathomdb-schema/Cargo.toml:4:version.workspace = true
+src/rust/crates/fathomdb-py/Cargo.toml:2:name = "fathomdb-py"
+src/rust/crates/fathomdb-py/Cargo.toml:3:version.workspace = true
+src/rust/crates/fathomdb-napi/Cargo.toml:2:name = "fathomdb-napi"
+src/rust/crates/fathomdb-napi/Cargo.toml:3:version.workspace = true
+src/rust/crates/fathomdb-query/Cargo.toml:2:name = "fathomdb-query"
+src/rust/crates/fathomdb-query/Cargo.toml:4:version.workspace = true
+src/rust/crates/fathomdb-embedder/Cargo.toml:2:name = "fathomdb-embedder"
+src/rust/crates/fathomdb-embedder/Cargo.toml:4:version.workspace = true
+src/rust/crates/fathomdb-engine/Cargo.toml:2:name = "fathomdb-engine"
+src/rust/crates/fathomdb-engine/Cargo.toml:4:version.workspace = true
+src/rust/crates/fathomdb-cli/Cargo.toml:2:name = "fathomdb-cli"
+src/rust/crates/fathomdb-cli/Cargo.toml:4:version.workspace = true
+src/rust/crates/fathomdb-cli/Cargo.toml:14:name = "fathomdb"
+src/rust/crates/fathomdb-embedder-api/Cargo.toml:2:name = "fathomdb-embedder-api"
+src/rust/crates/fathomdb-embedder-api/Cargo.toml:7:version = "0.6.0"
+
+codex
+## Verdict: CONCERN
+
+### 1. [low] TypeScript package metadata still advertises 0.6.0
+Refs: [src/ts/package.json:3](/tmp/fdb-0.6.1-BUMP-20260524T205921Z/src/ts/package.json:3), [src/ts/package.json:4](/tmp/fdb-0.6.1-BUMP-20260524T205921Z/src/ts/package.json:4), [docs/release-notes/0.6.1.md:6](/tmp/fdb-0.6.1-BUMP-20260524T205921Z/docs/release-notes/0.6.1.md:6)
+
+The actual npm package version was bumped to `0.6.1`, but the published description string still says `TypeScript SDK for FathomDB 0.6.0`. Because `package.json` is shipped registry metadata and this file was already part of the release-touch set, this leaves stale user-visible versioning in the 0.6.1 artifact.
+
+## What passed on inspection
+
+- Axis-W bump is otherwise correct. `[workspace.package].version` is `0.6.1`, the five existing `workspace.dependencies` pins moved to `0.6.1`, Python and npm versions moved to `0.6.1`, and the lockfiles reflect that. `Cargo.lock` shows `fathomdb`, `fathomdb-cli`, `fathomdb-embedder`, `fathomdb-engine`, `fathomdb-napi`, `fathomdb-py`, `fathomdb-query`, and `fathomdb-schema` at `0.6.1`.
+- Axis-E is correctly held. `src/rust/crates/fathomdb-embedder-api/Cargo.toml` remains `0.6.0`, and the `workspace.dependencies` pin for `fathomdb-embedder-api` also remains `0.6.0`.
+- The recorded `--check-files` verdict matches the manifests: `ok: Axis W = 0.6.1; Axis E = 0.6.0`.
+- `CHANGELOG.md` is honest about the scope: OpenReport Shape D is described as `engine.open_report()` / `engine.openReport()` accessors, not an `Engine.open(...)` return-shape change; AC-012 is carried forward as RED evidence and is not claimed as closed.
+- `docs/release-notes/0.6.1.md` matches that same posture and does not hide the AC-012 RED result behind vague “future release” wording.
+- B-001 retag is present and correctly targeted: `check_removal_changelog.py` now defaults `--base` to `v0.6.1`, the bash wrapper header matches, and the transient pre-tag failure window is documented in readable prose.
+- Diff scope is within spec. Between `a2da356` and `HEAD`, the only touched files are manifests/lockfiles, `CHANGELOG.md`, `docs/release-notes/0.6.1.md`, the approved AC-050c script retag, and the sibling `dev/plans/runs/0.6.1-BUMP-output.json` chore commit.
+- The two-commit shape is acceptable under the orchestration doc’s closure-artifact pattern: one release commit (`af96a5b`) plus one sibling chore commit (`f024d2d`) for `output.json`.
+- I found no API-break evidence in the diff; this stays within ADR-0.6.0-no-shims-policy §54’s patch-release contract.
+
+## Reviewer process notes
+
+- Reviewed `AGENTS.md`, the BUMP prompt, the 0.6.1 implementation plan, the closure artifact JSON, `git show af96a5b`, the cited manifests/lockfiles, the AC-050c retag files, ADR-0.6.0-no-shims-policy §54, and orchestration guidance on closure artifacts.
+- Sandbox was read-only, so I did not write the verdict file.
+- `MEMORY.md` and the referenced `feedback_*.md` files were not present in this worktree root, so I could not consult that corpus.
+- I did not rerun `scripts/set-version.sh --check-files` or `agent-verify`; the review conclusions above are from direct manifest/diff inspection plus the recorded slice artifact.
+tokens used
+125,377
+## Verdict: CONCERN
+
+### 1. [low] TypeScript package metadata still advertises 0.6.0
+Refs: [src/ts/package.json:3](/tmp/fdb-0.6.1-BUMP-20260524T205921Z/src/ts/package.json:3), [src/ts/package.json:4](/tmp/fdb-0.6.1-BUMP-20260524T205921Z/src/ts/package.json:4), [docs/release-notes/0.6.1.md:6](/tmp/fdb-0.6.1-BUMP-20260524T205921Z/docs/release-notes/0.6.1.md:6)
+
+The actual npm package version was bumped to `0.6.1`, but the published description string still says `TypeScript SDK for FathomDB 0.6.0`. Because `package.json` is shipped registry metadata and this file was already part of the release-touch set, this leaves stale user-visible versioning in the 0.6.1 artifact.
+
+## What passed on inspection
+
+- Axis-W bump is otherwise correct. `[workspace.package].version` is `0.6.1`, the five existing `workspace.dependencies` pins moved to `0.6.1`, Python and npm versions moved to `0.6.1`, and the lockfiles reflect that. `Cargo.lock` shows `fathomdb`, `fathomdb-cli`, `fathomdb-embedder`, `fathomdb-engine`, `fathomdb-napi`, `fathomdb-py`, `fathomdb-query`, and `fathomdb-schema` at `0.6.1`.
+- Axis-E is correctly held. `src/rust/crates/fathomdb-embedder-api/Cargo.toml` remains `0.6.0`, and the `workspace.dependencies` pin for `fathomdb-embedder-api` also remains `0.6.0`.
+- The recorded `--check-files` verdict matches the manifests: `ok: Axis W = 0.6.1; Axis E = 0.6.0`.
+- `CHANGELOG.md` is honest about the scope: OpenReport Shape D is described as `engine.open_report()` / `engine.openReport()` accessors, not an `Engine.open(...)` return-shape change; AC-012 is carried forward as RED evidence and is not claimed as closed.
+- `docs/release-notes/0.6.1.md` matches that same posture and does not hide the AC-012 RED result behind vague “future release” wording.
+- B-001 retag is present and correctly targeted: `check_removal_changelog.py` now defaults `--base` to `v0.6.1`, the bash wrapper header matches, and the transient pre-tag failure window is documented in readable prose.
+- Diff scope is within spec. Between `a2da356` and `HEAD`, the only touched files are manifests/lockfiles, `CHANGELOG.md`, `docs/release-notes/0.6.1.md`, the approved AC-050c script retag, and the sibling `dev/plans/runs/0.6.1-BUMP-output.json` chore commit.
+- The two-commit shape is acceptable under the orchestration doc’s closure-artifact pattern: one release commit (`af96a5b`) plus one sibling chore commit (`f024d2d`) for `output.json`.
+- I found no API-break evidence in the diff; this stays within ADR-0.6.0-no-shims-policy §54’s patch-release contract.
+
+## Reviewer process notes
+
+- Reviewed `AGENTS.md`, the BUMP prompt, the 0.6.1 implementation plan, the closure artifact JSON, `git show af96a5b`, the cited manifests/lockfiles, the AC-050c retag files, ADR-0.6.0-no-shims-policy §54, and orchestration guidance on closure artifacts.
+- Sandbox was read-only, so I did not write the verdict file.
+- `MEMORY.md` and the referenced `feedback_*.md` files were not present in this worktree root, so I could not consult that corpus.
+- I did not rerun `scripts/set-version.sh --check-files` or `agent-verify`; the review conclusions above are from direct manifest/diff inspection plus the recorded slice artifact.
