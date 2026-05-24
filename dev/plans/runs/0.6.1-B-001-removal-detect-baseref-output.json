@@ -1,0 +1,28 @@
+{
+  "phase": "0.6.1-B-001-removal-detect-baseref",
+  "baseline_sha": "fbc9686",
+  "branch": "phase-0.6.1-B-001-removal-detect-baseref-20260524T194613Z",
+  "head_sha": "0d575d11c3706cc8db78de6de7842e546e93b193",
+  "commits": [
+    "0d575d11c3706cc8db78de6de7842e546e93b193: fix(security): point AC-050c removal-detect default base-ref at v0.6.0 tag"
+  ],
+  "files_touched": [
+    "scripts/security/check_removal_changelog.py",
+    "scripts/security/check-removal-changelog.sh",
+    "scripts/tests/test_removal_detect.sh"
+  ],
+  "tdd_evidence": {
+    "red_demonstrated": true,
+    "red_evidence": "Test case 'default-base-ref live-git path' failed before fix with `fatal: bad revision '0.6.0-rewrite..HEAD'` (exit code 2); all three prior fixture cases passed, confirming only the new live-git path was broken.",
+    "green_after_fix": true,
+    "existing_tests_still_green": true
+  },
+  "agent_verify_status": {
+    "ac_050c_removal_detect": "PASS",
+    "preexisting_blockers_unrelated": [
+      "AC-037 netns-deny-egress (rootless userns+netns unavailable in sandbox)"
+    ]
+  },
+  "blockers_encountered": [],
+  "next_step_for_orchestrator": "codex review per orchestration.md § 3; if PASS / CONCERN-accept, FF main and push; AXIS-E-PIN slice unblocked."
+}
