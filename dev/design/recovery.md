@@ -92,7 +92,7 @@ Each non-`recover` machine-readable verb returns one JSON object with a stable
 | `doctor dump-row-counts` | `verb`, `counts`                                                                                   | `counts` is an array of `{ name, rows }` records                                  |
 | `doctor dump-profile`    | `verb`, `embedder_identity`, `embedder_dimension`, `vectorized_kinds`                              | stored profile / vector posture dump                                              |
 
-## Logical-id purge and restore — deferred to 0.7.x
+## Logical-id purge and restore — deferred to 0.8.0
 
 HITL 2026-05-16: `--purge-logical-id` and `--restore-logical-id` are
 removed from the 0.6.0 recover sub-flag set. Implementation was blocked
@@ -104,13 +104,20 @@ identity substrate (`design/engine.md § Canonical identity and
 supersession`) is design-only in 0.6.0 and must land before the two
 verbs are buildable.
 
-Deferred to 0.7.x. Re-introducing the verbs requires landing the
-identity substrate first (schema bump on `canonical_nodes` /
-`canonical_edges`, `PreparedWrite` field additions, writer supersession
-step, op-store cascade contract). The cascade scope, replay source,
-report shapes, and typed failure modes previously specified in this
-section are preserved in version-control history and will be reinstated
-when 0.7.x re-opens this scope.
+**Originally deferred to 0.7.x; moved to 0.8.0 per HITL 2026-05-24.**
+0.7.0 is now perf-only (single thrust: AC-012/013/019/020 budget
+revision + SQLite/FathomDB tuning). The canonical-identity substrate
+plus the two CLI verbs land in 0.8.0 alongside the Memex
+knowledge-store / retrieval features that consume the substrate
+(`dev/roadmap/0.8.0.md`).
+
+Re-introducing the verbs requires landing the identity substrate
+first (schema bump on `canonical_nodes` / `canonical_edges`,
+`PreparedWrite` field additions, writer supersession step, op-store
+cascade contract). The cascade scope, replay source, report shapes,
+and typed failure modes previously specified in this section are
+preserved in version-control history and will be reinstated when
+0.8.0 re-opens this scope.
 
 ## `recover` machine-readable output
 
