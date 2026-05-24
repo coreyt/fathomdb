@@ -12,6 +12,94 @@ AC-050c) gates merges against this invariant.
 
 (none yet)
 
+## 0.6.1 - 2026-05-24
+
+Patch release. Closes three 0.6.0 deferred items (Python and TypeScript
+`OpenReport` surfacing, plus the axis-E independence demonstration),
+resolves three Dependabot advisories, and carries the AC-012 canonical-
+runner re-measurement as documented evidence (verdict RED; Pack 7 perf
+work escalates to 0.7.0 per HITL 2026-05-24).
+
+Axis-E (`fathomdb-embedder-api`) stays at `0.6.0` per Wake decision
+`d-001`: no trait-surface change in this release, so axis-E does not
+bump in lockstep with axis-W. This is the first post-GA exercise of
+the two-axis discipline.
+
+### Fixed
+
+- `OpenReport` is now surfaced from both bindings via an engine-attached
+  accessor (closes 12-TX-OPENREPORT carry-over from 0.6.0 GA):
+  - Python: `engine.open_report()` returns the native `OpenReport`
+    fields verbatim under snake_case identifiers
+    (`schema_version_before`, `schema_version_after`,
+    `migration_steps`, `embedder_warmup_ms`, `query_backend`,
+    `default_embedder`). Idempotent — repeat calls return identical
+    data (snapshot, not live state). Closes **AC-068c**.
+  - TypeScript: `engine.openReport()` returns the camelCase mirror
+    (`schemaVersionBefore`, `schemaVersionAfter`, `migrationSteps`,
+    `embedderWarmupMs`, `queryBackend`, `defaultEmbedder`). Sync
+    return — data lives in the napi engine struct after `open`.
+    Closes **AC-068d**.
+  - `Engine.open(...)` signatures are unchanged from 0.6.0 in both
+    bindings (additive accessor; no return-shape regression).
+- `scripts/security/check_removal_changelog.py` and its bash wrapper
+  point their `--base` default at `v0.6.1` (was `v0.6.0`), advancing
+  the "removals since last released API" anchor as 0.6.1 becomes the
+  new GA reference. AC-050c regression-sentinel test #4 will be
+  transiently RED in the BUMP → RC1 → GA window until the `v0.6.1`
+  tag is pushed.
+
+### Security
+
+- **RUSTSEC-2025-0020** — bump `pyo3` `0.22.6` → `0.24.1` across the
+  workspace; rename `*_bound` PyO3 APIs (24 callsites) to drop the
+  deprecation warnings under `-D warnings`.
+- **GHSA-mh29-5h37-fv8m** — bump `js-yaml` `4.1.0` → `4.1.1` via
+  `markdownlint-cli2` `0.18` → `0.22.1` (transitive).
+- **CVE-2024-3651 (idna)** — confirmed false-positive against
+  fathomdb (not in the Python dependency graph after lock-file
+  audit); `src/python/uv.lock` checked in to make the audit
+  reproducible.
+
+### Changed
+
+- `scripts/set-version.sh --workspace 0.6.1` exercises the axis-E
+  independence invariant for the first time post-GA: axis-W
+  (`Cargo.toml`, `pyproject.toml`, `package.json`, and the five
+  workspace.dependencies pins for `fathomdb`, `fathomdb-embedder`,
+  `fathomdb-engine`, `fathomdb-query`, `fathomdb-schema`) advances
+  to `0.6.1`; axis-E (`fathomdb-embedder-api` `[package].version`
+  and its `workspace.dependencies` pin) stays at `0.6.0`.
+  Regression sentinel codified in
+  `scripts/tests/test_set_version.sh` test #13.
+- B-001 forward-retag — `scripts/security/check_removal_changelog.py`
+  and `scripts/security/check-removal-changelog.sh` default `--base`
+  advanced from `v0.6.0` to `v0.6.1`.
+
+### Removed
+
+(none — patch release, no public symbol removals.)
+
+### Deferred (carry-over)
+
+- **AC-012** text-query latency on FTS5 (p50 ≤ 20 ms / p99 ≤ 150 ms):
+  re-measured 2026-05-23 on canonical x86_64 tier-1 CI (AMD EPYC
+  9V74, 4 cores, Ubuntu 24.04.4, rustc 1.95.0, SQLite 3.45.x via
+  `libsqlite3-sys` 0.28.0) at N=1,000,000. Verdict **RED**:
+  p50 = 140.95 ms (7.05× over budget), p99 = 458 ms (3.05× over
+  budget). Pack 7 un-defer trigger fires; AC-012 closure target
+  moved to **0.7.0** (perf-only release; budget revision + tuning).
+  Evidence: `dev/notes/perf-canonical-runner-2026-MM.md` and
+  `dev/plans/runs/0.6.1-AC012-measure-output.json` (workflow run
+  26346417896). 0.6.1 carries this measurement as evidence and
+  does NOT claim AC-012 closure.
+- **AC-013** vector retrieval latency, **AC-019** mixed-retrieval
+  stress tail, **AC-020** N=8 concurrent reader scaling: stay
+  deferred per Pack 7 trigger evaluation (Pack 7 escalated to
+  0.7.0 alongside AC-012).
+- **Logical-id verbs** (`purge_logical_id` / `restore_logical_id`)
+  stay deferred to **0.8.0** per HITL 2026-05-24 rescope.
+
 ## 0.6.0 - 2026-05-19
 
 First stable release of FathomDB 0.6.0 — local-first retrieval
