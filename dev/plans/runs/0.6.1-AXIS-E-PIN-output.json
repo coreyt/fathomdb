@@ -1,0 +1,19 @@
+{
+  "slice": "0.6.1-AXIS-E-PIN",
+  "test_path": "scripts/tests/test_set_version.sh",
+  "test_case_added": "test #13 (lines appended before final restore+summary)",
+  "test_initial_verdict": "GREEN",
+  "agent_verify_wired": true,
+  "wiring_path": "scripts/agent-test.sh → run_capped test-set-version bash scripts/tests/test_set_version.sh",
+  "assertions_covered": [
+    "(13a) Cargo.toml [workspace.package].version flips to 0.6.1",
+    "(13b) fathomdb-embedder-api/Cargo.toml [package].version preserved at 0.6.0",
+    "(13c) Cargo.toml [workspace.dependencies] fathomdb-embedder-api pin preserved at 0.6.0",
+    "(13d) every non-embedder-api workspace crate uses version.workspace = true",
+    "(13e) --check-files exits 0 after the bump"
+  ],
+  "regression_novelty": "Test #13 exercises the scenario where both axes start at 0.6.0 before the bump. Tests 2 and 12 cannot catch accidental axis-E mutation in this case because they either use a fixed distinct axis-E value (12: pre-set to 2.2.2) or don't check the workspace.dependencies pin explicitly (2). A future change that drops the embedder-api guard in set_workspace_dep_axis_w_versions() would bump the pin from 0.6.0 to 0.6.1 — caught only by this test.",
+  "script_status": "UNCHANGED — design verification (2026-05-22) confirmed correct; all 23 tests GREEN on first run",
+  "passed_count": 23,
+  "failed_count": 0
+}

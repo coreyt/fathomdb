@@ -288,6 +288,66 @@ else
   fail "workspace 4.4.4 mutated Axis-E workspace.dependencies pin"
 fi
 
+# 13. --workspace 0.6.1 (real release bump) preserves axis-E pin at 0.6.0
+#     when BOTH axes start at the same 0.6.0 value.
+#
+#     This is the key regression sentinel: if set_workspace_dep_axis_w_versions()
+#     loses its embedder-api guard, it would silently bump the workspace.dependencies
+#     pin from 0.6.0 to 0.6.1 — indistinguishable from a correct bump unless you
+#     assert the exact retained value (test #12 can't catch this because it pre-sets
+#     axis-E to a distinct version before running --workspace).
+#
+#     Per dev/design/release.md § Version axes and ADR-0.6.0-embedder-protocol,
+#     axis-E is independent and MUST NOT be touched by --workspace.
+restore
+AXIS_E_BEFORE="$(emb_version)"  # 0.6.0 on this branch
+"$SV" --workspace 0.6.1 >/dev/null
+
+# (a) Workspace version flipped to 0.6.1.
+if [ "$(ws_version)" = "0.6.1" ]; then
+  pass "axis-E-pin(13a): workspace version flipped to 0.6.1"
+else
+  fail "axis-E-pin(13a): workspace version not 0.6.1, got $(ws_version)"
+fi
+
+# (b) fathomdb-embedder-api/Cargo.toml [package].version unchanged at axis-E value.
+if [ "$(emb_version)" = "$AXIS_E_BEFORE" ]; then
+  pass "axis-E-pin(13b): embedder-api [package].version preserved ($AXIS_E_BEFORE)"
+else
+  fail "axis-E-pin(13b): embedder-api [package].version changed: $AXIS_E_BEFORE → $(emb_version)"
+fi
+
+# (c) workspace.dependencies pin for fathomdb-embedder-api stays at axis-E value.
+if grep -E "^fathomdb-embedder-api[[:space:]]*=.*version[[:space:]]*=[[:space:]]*\"${AXIS_E_BEFORE}\"" "$CARGO" >/dev/null; then
+  pass "axis-E-pin(13c): workspace.dependencies pin for fathomdb-embedder-api preserved ($AXIS_E_BEFORE)"
+else
+  ACTUAL_PIN="$(grep -E '^fathomdb-embedder-api[[:space:]]*=' "$CARGO" | sed -n 's/.*version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p')"
+  fail "axis-E-pin(13c): workspace.dependencies pin changed: expected $AXIS_E_BEFORE, got $ACTUAL_PIN"
+fi
+
+# (d) Every non-embedder-api workspace crate still uses version.workspace = true
+#     (guards against silent drift introduced by the bump pass).
+bad13=0
+for c13 in "$REPO_ROOT"/src/rust/crates/*/Cargo.toml; do
+  case "$c13" in *fathomdb-embedder-api*) continue ;; esac
+  vline13="$(awk '/^\[package\]/ { in_block = 1; next } /^\[/ { in_block = 0 } in_block && /^version/ { print; exit }' "$c13")"
+  case "$vline13" in
+    version.workspace[[:space:]]*=[[:space:]]*true) ;;
+    *)
+      fail "axis-E-pin(13d): $(basename "$(dirname "$c13")") has unexpected version line: $vline13"
+      bad13=$((bad13 + 1))
+      ;;
+  esac
+done
+[ "$bad13" -eq 0 ] && pass "axis-E-pin(13d): all non-embedder-api crates use version.workspace = true"
+
+# (e) --check-files exits 0 after the bump.
+if "$SV" --check-files >/dev/null 2>&1; then
+  pass "axis-E-pin(13e): check-files exits 0 after --workspace 0.6.1"
+else
+  fail "axis-E-pin(13e): check-files failed after --workspace 0.6.1"
+fi
+
 restore
 
 if [ "$FAILED" -gt 0 ]; then
