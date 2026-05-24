@@ -137,7 +137,7 @@ fn engine_error_to_py(err: RustEngineError) -> PyErr {
                 "embedder vector dimension mismatch: stored {expected}, supplied {actual}",
             ));
             Python::with_gil(|py| {
-                let v = exc.value_bound(py);
+                let v = exc.value(py);
                 let _ = v.setattr("stored", expected);
                 let _ = v.setattr("supplied", actual);
             });
@@ -180,7 +180,7 @@ fn engine_open_error_to_py(err: EngineOpenError) -> PyErr {
                 None => "database is locked by another engine instance".to_string(),
             });
             Python::with_gil(|py| {
-                let _ = exc.value_bound(py).setattr("holder_pid", holder_pid);
+                let _ = exc.value(py).setattr("holder_pid", holder_pid);
             });
             exc
         }
@@ -203,7 +203,7 @@ fn engine_open_error_to_py(err: EngineOpenError) -> PyErr {
                 stored.name, stored.revision, supplied.name, supplied.revision,
             ));
             Python::with_gil(|py| {
-                let v = exc.value_bound(py);
+                let v = exc.value(py);
                 let _ = v.setattr("stored_name", stored.name);
                 let _ = v.setattr("stored_revision", stored.revision);
                 let _ = v.setattr("supplied_name", supplied.name);
@@ -216,7 +216,7 @@ fn engine_open_error_to_py(err: EngineOpenError) -> PyErr {
                 "embedder vector dimension mismatch: stored {stored}, supplied {supplied}",
             ));
             Python::with_gil(|py| {
-                let v = exc.value_bound(py);
+                let v = exc.value(py);
                 let _ = v.setattr("stored", stored);
                 let _ = v.setattr("supplied", supplied);
             });
@@ -237,7 +237,7 @@ fn corruption_to_py(detail: CorruptionDetail) -> PyErr {
         "corruption {kind} at stage {stage} ({recovery_hint_code})"
     ));
     Python::with_gil(|py| {
-        let v = exc.value_bound(py);
+        let v = exc.value(py);
         let _ = v.setattr("kind", kind);
         let _ = v.setattr("stage", stage);
         let _ = v.setattr("recovery_hint_code", recovery_hint_code);
@@ -624,25 +624,25 @@ fn _fathomdb(py: Python<'_>, m: Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(any(test, feature = "test-hooks"))]
     m.add_function(wrap_pyfunction!(force_panic_for_test, &m)?)?;
 
-    m.add("EngineError", py.get_type_bound::<EngineError>())?;
-    m.add("StorageError", py.get_type_bound::<StorageError>())?;
-    m.add("ProjectionError", py.get_type_bound::<ProjectionError>())?;
-    m.add("VectorError", py.get_type_bound::<VectorError>())?;
-    m.add("KindNotVectorIndexedError", py.get_type_bound::<KindNotVectorIndexedError>())?;
-    m.add("EmbedderError", py.get_type_bound::<EmbedderError>())?;
-    m.add("EmbedderNotConfiguredError", py.get_type_bound::<EmbedderNotConfiguredError>())?;
-    m.add("SchedulerError", py.get_type_bound::<SchedulerError>())?;
-    m.add("OpStoreError", py.get_type_bound::<OpStoreError>())?;
-    m.add("WriteValidationError", py.get_type_bound::<WriteValidationError>())?;
-    m.add("SchemaValidationError", py.get_type_bound::<SchemaValidationError>())?;
-    m.add("OverloadedError", py.get_type_bound::<OverloadedError>())?;
-    m.add("ClosingError", py.get_type_bound::<ClosingError>())?;
-    m.add("DatabaseLockedError", py.get_type_bound::<DatabaseLockedError>())?;
-    m.add("CorruptionError", py.get_type_bound::<CorruptionError>())?;
-    m.add("IncompatibleSchemaVersionError", py.get_type_bound::<IncompatibleSchemaVersionError>())?;
-    m.add("MigrationError", py.get_type_bound::<MigrationError>())?;
-    m.add("EmbedderIdentityMismatchError", py.get_type_bound::<EmbedderIdentityMismatchError>())?;
-    m.add("EmbedderDimensionMismatchError", py.get_type_bound::<EmbedderDimensionMismatchError>())?;
+    m.add("EngineError", py.get_type::<EngineError>())?;
+    m.add("StorageError", py.get_type::<StorageError>())?;
+    m.add("ProjectionError", py.get_type::<ProjectionError>())?;
+    m.add("VectorError", py.get_type::<VectorError>())?;
+    m.add("KindNotVectorIndexedError", py.get_type::<KindNotVectorIndexedError>())?;
+    m.add("EmbedderError", py.get_type::<EmbedderError>())?;
+    m.add("EmbedderNotConfiguredError", py.get_type::<EmbedderNotConfiguredError>())?;
+    m.add("SchedulerError", py.get_type::<SchedulerError>())?;
+    m.add("OpStoreError", py.get_type::<OpStoreError>())?;
+    m.add("WriteValidationError", py.get_type::<WriteValidationError>())?;
+    m.add("SchemaValidationError", py.get_type::<SchemaValidationError>())?;
+    m.add("OverloadedError", py.get_type::<OverloadedError>())?;
+    m.add("ClosingError", py.get_type::<ClosingError>())?;
+    m.add("DatabaseLockedError", py.get_type::<DatabaseLockedError>())?;
+    m.add("CorruptionError", py.get_type::<CorruptionError>())?;
+    m.add("IncompatibleSchemaVersionError", py.get_type::<IncompatibleSchemaVersionError>())?;
+    m.add("MigrationError", py.get_type::<MigrationError>())?;
+    m.add("EmbedderIdentityMismatchError", py.get_type::<EmbedderIdentityMismatchError>())?;
+    m.add("EmbedderDimensionMismatchError", py.get_type::<EmbedderDimensionMismatchError>())?;
     Ok(())
 }
 
