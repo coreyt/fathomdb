@@ -128,8 +128,10 @@
     {
       "id": "Q-002",
       "topic": "OpenReport binding return shape — backward-compat mechanism",
-      "status": "CLOSED in fix-1 per codex BLOCK 2026-05-23: option (b) `Engine.open_with_report` / `Engine.openWithReport` REMOVED because a new verb violates the patch-release contract (ADR-0.6.0-no-shims-policy § 54). Mechanism is locked to option (a): the existing `Engine.open` returns a wrapper/NamedTuple that legacy single-name binding (`engine = Engine.open(path)`) treats as an engine handle. Exact mechanism (NamedTuple-with-engine-attribute vs wrapper-class-with-__getattr__-delegation vs proxy) is a codex-review-time decision within the py slice; ts slice mirrors.",
-      "open_sub_question": "Mechanism choice: NamedTuple vs wrapper class vs proxy. Decide at OPENREPORT-py codex review; document choice in slice output.json under binding_return_shape."
+      "status": "CLOSED in fix-3 per HITL 2026-05-24. fix-1 had over-strictly closed this against the wrapper option (A), citing 'no new verbs' which is a paraphrase, not the literal § 54 contract ('no API breaks. Bugfix-only.'). Re-read of § 54 admits new methods as patch-safe additive surface. Four shapes re-evaluated: A wrapper return (type-checker friction, isinstance/pickling edge cases), B tuple return (rejected — breaks legacy), C new top-level verb `Engine.open_with_report` / `Engine.openWithReport` (clean but joins five-verb surface), D engine-attached accessor `engine.open_report()` / `engine.openReport()` (CHOSEN). Shape D rationale: zero risk to `Engine.open` (signature unchanged), clean types, slots into the existing engine-attached instrumentation taxonomy alongside `engine.counters()`, `engine.drain()`. Spec edits relocate the report from 'Runtime surface' to 'Engine-attached instrumentation / control' in both `dev/interfaces/python.md` and `dev/interfaces/typescript.md`. Idempotency contract: repeated calls return identical data captured at open time. Full rationale in `dev/plans/0.6.1-implementation.md` § 'Q-002 resolution (HITL 2026-05-24)'.",
+      "shape_chosen": "D-engine-attached-accessor",
+      "accessor_py": "engine.open_report() -> OpenReport",
+      "accessor_ts": "engine.openReport(): OpenReport (sync — data captured at open)"
     },
     {
       "id": "Q-003",
@@ -147,7 +149,16 @@
       "log": "dev/plans/runs/0.6.1-planning-review-20260523T162359Z.log",
       "findings": [
         {"id": "F-1", "severity": "high", "title": "OPENREPORT slices target the wrong report schema", "addressed_by": "fix-1 — replaced paraphrased field names (migration_version_reached / embedder_identity_confirmed / open_stage) with the actual native struct fields (schema_version_before, schema_version_after, migration_steps, embedder_warmup_ms, query_backend, default_embedder) across OPENREPORT-py + OPENREPORT-ts skeletons, plan doc § Slice sequence row + § Proposed new ACs, and this output.json. Cited dev/design/engine.md § Engine.open success result + lib.rs:541-548 explicitly."},
-        {"id": "F-2", "severity": "medium", "title": "Legacy Engine.open compatibility only partially pinned", "addressed_by": "fix-1 — promoted legacy-callsite regression test to MANDATORY PRIMARY GATE in OPENREPORT-py + OPENREPORT-ts hard-constraints; closed Q-002 by removing the openWithReport option (new verb conflicts with patch-release contract); locked Q-002 outcome to option (a) wrapper/NamedTuple; only sub-choice of mechanism (NamedTuple vs wrapper class vs proxy) remains for the per-slice codex review."}
+        {"id": "F-2", "severity": "medium", "title": "Legacy Engine.open compatibility only partially pinned", "addressed_by": "fix-1 promoted legacy-callsite regression test to PRIMARY GATE and closed Q-002 against new verbs. fix-3 (HITL 2026-05-24) reopened Q-002 against the strict § 54 text ('no API breaks. Bugfix-only.'), evaluated four shapes, chose Shape D (engine-attached accessor `engine.open_report()` / `engine.openReport()`). `Engine.open` signature stays unchanged from 0.6.0; legacy compat is now structural, not test-only. OPENREPORT-py / OPENREPORT-ts skeletons + plan-doc slice-sequence rows + AC-068c/d wording updated for Shape D."}
+      ]
+    },
+    {
+      "rts": "20260524T143622Z",
+      "verdict": "n/a (HITL-locked, no codex pass)",
+      "verdict_doc": null,
+      "log": null,
+      "findings": [
+        {"id": "F-3", "severity": "n/a", "title": "Q-002 reopened and re-resolved as Shape D (HITL 2026-05-24)", "addressed_by": "Plan-doc § 'Q-002 resolution (HITL 2026-05-24)' added; OPENREPORT-py and OPENREPORT-ts skeletons rewritten to spec the engine-attached accessor; AC-068c/d wording rewritten; slice-sequence rows updated. No codex re-review for this fix — the change is HITL-directed and reduces surface (drops the wrapper-class machinery), not increases it. Codex review for the actual OPENREPORT slices happens per-slice when spawned."}
       ]
     }
   ]
