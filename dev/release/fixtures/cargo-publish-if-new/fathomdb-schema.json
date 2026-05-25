@@ -1,0 +1,6 @@
+{
+  "crate": {"name": "fathomdb-schema"},
+  "versions": [
+    {"num": "0.6.0", "yanked": false}
+  ]
+}

@@ -205,6 +205,11 @@ jobs:
   # dependencies, which do not match the crates.io index state during
   # tiered publishing.
   # Order rationale: see dev/design/release.md § Tiered publish order.
+  #
+  # Idempotency: every tier delegates to scripts/release/cargo-publish-if-new.sh,
+  # which checks crates.io for the target version and skips the publish
+  # (exit 0) if it already exists. This covers axis-W-only patch releases
+  # (axis-E held at a prior version) and partial-republish retries.
 
   publish-rust-t1-embedder-api:
     runs-on: ubuntu-latest
@@ -217,9 +222,9 @@ jobs:
       - name: cargo publish fathomdb-embedder-api
         run: |
           if [ "${DRY_RUN}" = "true" ]; then
-            cargo publish --dry-run -p fathomdb-embedder-api
+            bash scripts/release/cargo-publish-if-new.sh --dry-run fathomdb-embedder-api
           else
-            cargo publish -p fathomdb-embedder-api --token "${CARGO_REGISTRY_TOKEN}"
+            bash scripts/release/cargo-publish-if-new.sh fathomdb-embedder-api
           fi
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -238,9 +243,9 @@ jobs:
       - name: cargo publish fathomdb-schema
         run: |
           if [ "${DRY_RUN}" = "true" ]; then
-            cargo publish --dry-run -p fathomdb-schema
+            bash scripts/release/cargo-publish-if-new.sh --dry-run fathomdb-schema
           else
-            cargo publish -p fathomdb-schema --token "${CARGO_REGISTRY_TOKEN}"
+            bash scripts/release/cargo-publish-if-new.sh fathomdb-schema
           fi
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -259,9 +264,9 @@ jobs:
       - name: cargo publish fathomdb-query
         run: |
           if [ "${DRY_RUN}" = "true" ]; then
-            cargo publish --dry-run -p fathomdb-query
+            bash scripts/release/cargo-publish-if-new.sh --dry-run fathomdb-query
           else
-            cargo publish -p fathomdb-query --token "${CARGO_REGISTRY_TOKEN}"
+            bash scripts/release/cargo-publish-if-new.sh fathomdb-query
           fi
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -280,9 +285,9 @@ jobs:
       - name: cargo publish fathomdb-engine
         run: |
           if [ "${DRY_RUN}" = "true" ]; then
-            cargo publish --dry-run -p fathomdb-engine
+            bash scripts/release/cargo-publish-if-new.sh --dry-run fathomdb-engine
           else
-            cargo publish -p fathomdb-engine --token "${CARGO_REGISTRY_TOKEN}"
+            bash scripts/release/cargo-publish-if-new.sh fathomdb-engine
           fi
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -305,9 +310,9 @@ jobs:
       - name: cargo publish fathomdb-embedder
         run: |
           if [ "${DRY_RUN}" = "true" ]; then
-            cargo publish --dry-run -p fathomdb-embedder
+            bash scripts/release/cargo-publish-if-new.sh --dry-run fathomdb-embedder
           else
-            cargo publish -p fathomdb-embedder --token "${CARGO_REGISTRY_TOKEN}"
+            bash scripts/release/cargo-publish-if-new.sh fathomdb-embedder
           fi
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -326,9 +331,9 @@ jobs:
       - name: cargo publish fathomdb (facade)
         run: |
           if [ "${DRY_RUN}" = "true" ]; then
-            cargo publish --dry-run -p fathomdb
+            bash scripts/release/cargo-publish-if-new.sh --dry-run fathomdb
           else
-            cargo publish -p fathomdb --token "${CARGO_REGISTRY_TOKEN}"
+            bash scripts/release/cargo-publish-if-new.sh fathomdb
           fi
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -347,9 +352,9 @@ jobs:
       - name: cargo publish fathomdb-cli
         run: |
           if [ "${DRY_RUN}" = "true" ]; then
-            cargo publish --dry-run -p fathomdb-cli
+            bash scripts/release/cargo-publish-if-new.sh --dry-run fathomdb-cli
           else
-            cargo publish -p fathomdb-cli --token "${CARGO_REGISTRY_TOKEN}"
+            bash scripts/release/cargo-publish-if-new.sh fathomdb-cli
           fi
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
