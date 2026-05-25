@@ -150,9 +150,16 @@ registry_has_version() {
 LOCAL_VERSION="$(resolve_local_version)"
 
 if [ "$DRY_RUN" -eq 1 ]; then
-  printf 'cargo-publish-if-new: %s@%s — --dry-run; forwarding to cargo publish --dry-run\n' \
+  # --no-verify: skip compile + workspace-dep resolve. Required for
+  # dependent crates (fathomdb-engine etc.) because dry-run does NOT
+  # actually upload, so the just-"published" sibling crate version
+  # is not resolvable on crates.io. Leaf crates also tolerate
+  # --no-verify; manifest validation still runs. Matches the
+  # pre-publish packaging rationale in .github/workflows/release.yml
+  # L153-170. See WF-FIX-2 commit body for context.
+  printf 'cargo-publish-if-new: %s@%s — --dry-run; forwarding to cargo publish --dry-run --no-verify\n' \
     "$CRATE" "$LOCAL_VERSION"
-  exec cargo publish --dry-run -p "$CRATE"
+  exec cargo publish --dry-run --no-verify -p "$CRATE"
 fi
 
 set +e

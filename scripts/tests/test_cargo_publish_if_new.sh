@@ -164,13 +164,18 @@ else
   fail "rc-skip-case: helper exited non-zero: $out"
 fi
 
-# 4) --dry-run forwards to cargo publish --dry-run regardless of registry state.
+# 4) --dry-run forwards to cargo publish --dry-run --no-verify regardless
+#    of registry state. --no-verify is required because dependent crates
+#    (fathomdb-engine etc.) can't resolve sibling workspace versions
+#    against crates.io during a dry-run (the just-"published" siblings
+#    were never actually uploaded). See WF-FIX-2 / release.yml L153-170.
 reset_shim_log
 if out="$(CARGO_PUBLISH_IF_NEW_LOCAL_VERSION=0.6.0 \
             run_helper --dry-run fathomdb-embedder-api 2>&1)"; then
   if grep -q -- '--dry-run' "$CARGO_LOG" \
+     && grep -q -- '--no-verify' "$CARGO_LOG" \
      && grep -q -- '-p fathomdb-embedder-api' "$CARGO_LOG"; then
-    pass "--dry-run forwards regardless of registry state"
+    pass "--dry-run forwards with --no-verify regardless of registry state"
   else
     fail "dry-run-case: shim='$(cat "$CARGO_LOG")' helper='$out'"
   fi
