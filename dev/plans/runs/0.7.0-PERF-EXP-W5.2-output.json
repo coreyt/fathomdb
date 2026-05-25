@@ -1,0 +1,37 @@
+{
+  "experiment_id": "W5.2",
+  "lever_id": "L-Y1+L-B5+L-B4+L-C1-k1000",
+  "dev_box_pre_screen": {
+    "timestamp_utc": "2026-05-25T20:35:28Z",
+    "branch": "main",
+    "head_sha": "a9f225337b70cfc31647de425fe234d43aa2239d",
+    "host": {
+      "cpu_model": "AMD Ryzen Threadripper PRO 5945WX 12-Cores",
+      "cores": 24,
+      "os": "Ubuntu 24.04.4 LTS",
+      "kernel": "Linux 6.17.0-29-generic x86_64",
+      "glibc": "2.39",
+      "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+      "libsqlite3_sys": "libsqlite3-sys-0.28.0"
+    },
+    "results": {
+      "ac012": {
+        "n": 1000000,
+        "samples": 1000,
+        "seed_ms": 25478,
+        "p50_ms": 48,
+        "p99_ms": 166
+      },
+      "ac020": {
+        "sequential_ms": 128,
+        "concurrent_ms": 34,
+        "bound_ms": 24,
+        "speedup": 3.765
+      }
+    }
+  },
+  "verdict": "PENDING",
+  "evidence_notes": "",
+  "next_step": "",
+  "canonical_ci_url": null
+}

@@ -1209,6 +1209,7 @@ impl Engine {
         embedder_identity: &EmbedderIdentity,
         emit_migration_event: &mut impl FnMut(&MigrationStepReport),
     ) -> Result<(Connection, Vec<Connection>, OpenReport, Vec<i32>), EngineOpenError> {
+        init_perf_experiments_runtime();
         register_sqlite_vec_extension();
         let connection = Connection::open(&path)
             .map_err(|err| map_open_sqlite_error(err, OpenStage::HeaderProbe))?;
@@ -3000,6 +3001,51 @@ fn map_migration_error(err: SchemaMigrationError) -> EngineOpenError {
             EngineOpenError::Io { message: message.to_string() }
         }
     }
+}
+
+/// 0.7.0 perf-experiments hook: process-start `sqlite3_config` calls.
+/// Runs exactly once per process; must precede any `Connection::open`.
+/// Gated on `FATHOMDB_PERF_EXPERIMENTS=1`. Each individual config
+/// option is opt-in via its own env var so unrelated experiments do
+/// not implicitly co-fire.
+///
+/// Currently supports:
+/// - `FATHOMDB_PERF_SQLITE_MEMSTATUS_OFF=1`:
+///   `sqlite3_config(SQLITE_CONFIG_MEMSTATUS, 0)` — drops the
+///   allocator stats locking surface (whitepaper § 7.4). Composes
+///   with other levers; small payoff alone.
+///
+/// Pattern: shutdown → config → initialize, mirroring B.1 attempt #2
+/// (`d448263`, reverted). The captured rc for each config call is
+/// logged to stderr so experiments can verify the call took effect.
+fn init_perf_experiments_runtime() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        if std::env::var_os("FATHOMDB_PERF_EXPERIMENTS").is_none() {
+            return;
+        }
+        let memstatus_off =
+            std::env::var_os("FATHOMDB_PERF_SQLITE_MEMSTATUS_OFF").is_some_and(|v| v == "1");
+        if !memstatus_off {
+            return;
+        }
+        // SAFETY: sqlite3_shutdown / sqlite3_initialize are documented
+        // as safe to call before any other SQLite API; sqlite3_config
+        // must be called between shutdown and initialize. We pre-empt
+        // rusqlite's lazy first-call sqlite3_initialize via this
+        // explicit shutdown-then-config-then-initialize sequence,
+        // identical to B.1 attempt #2's plumbing.
+        unsafe {
+            let rc_shutdown = rusqlite::ffi::sqlite3_shutdown();
+            let rc_config =
+                rusqlite::ffi::sqlite3_config(rusqlite::ffi::SQLITE_CONFIG_MEMSTATUS, 0_i32);
+            let rc_init = rusqlite::ffi::sqlite3_initialize();
+            eprintln!(
+                "perf-experiment: SQLITE_CONFIG_MEMSTATUS=0 rcs shutdown={rc_shutdown} \
+                 config={rc_config} initialize={rc_init} (0=SQLITE_OK; 21=SQLITE_MISUSE)"
+            );
+        }
+    });
 }
 
 fn register_sqlite_vec_extension() {
