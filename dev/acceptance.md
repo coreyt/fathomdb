@@ -887,7 +887,7 @@ the only test-plan.md responsibility for this section.)
 
 **Requirement ref:** REQ-054
 **Test id:** T-058
-**Assertion:** The lossy recovery surface is reachable only via `fathomdb recover --accept-data-loss ...`; `fathomdb recover --help` documents every 0.6.0 recovery sub-flag in `{--truncate-wal, --rebuild-vec0, --rebuild-projections, --excise-source}`. (`--purge-logical-id` and `--restore-logical-id` deferred to 0.7.x per ADR-0.6.0-cli-scope 2026-05-16 amendment.)
+**Assertion:** The lossy recovery surface is reachable only via `fathomdb recover --accept-data-loss ...`; `fathomdb recover --help` documents every 0.6.0 recovery sub-flag in `{--truncate-wal, --rebuild-vec0, --rebuild-projections, --excise-source}`. (`--purge-logical-id` and `--restore-logical-id` deferred to 0.8.0 per HITL 2026-05-24; originally deferred to 0.7.x per ADR-0.6.0-cli-scope 2026-05-16 amendment — see `dev/roadmap/0.8.0.md`.)
 **Measurement:** Invoke `fathomdb recover --help` (help output is human-facing and exempt from the non-help `--json` execution contract); assert each sub-flag name appears exactly once in the help output and that `--accept-data-loss` is documented on the root command.
 **Fixture:** built CLI binary.
 

@@ -114,10 +114,12 @@ Re-exported types (canonical spellings, locked 2026-05-12; extended
 Engine methods backing these types are owned by `design/recovery.md` and
 listed in `dev/plans/0.6.0-implementation.md` (Phase 10a + Phase 10b-A).
 `PurgeLogicalIdReport` and `RestoreLogicalIdReport` were originally
-forward-referenced for Phase 10b-B; both verbs are deferred to 0.7.x
-per `design/recovery.md § Logical-id purge and restore — deferred to
-0.7.x` and ADR-0.6.0-cli-scope 2026-05-16 amendment. When 0.7.x
-re-opens the scope these types land here per the same re-export rule.
+forward-referenced for Phase 10b-B; both verbs are deferred to 0.8.0
+(originally 0.7.x per ADR-0.6.0-cli-scope 2026-05-16 amendment;
+re-targeted to 0.8.0 per HITL 2026-05-24 — see `dev/roadmap/0.8.0.md`
+and the deferral note in `design/recovery.md § Logical-id purge and
+restore`). When 0.8.0 re-opens the scope these types land here per
+the same re-export rule.
 
 ## Non-presence
 

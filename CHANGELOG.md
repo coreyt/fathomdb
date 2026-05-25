@@ -192,9 +192,11 @@ TypeScript SDKs.
   surfaced. Closes in 0.6.1 (slice `12-TX-OPENREPORT`). Symmetric,
   not a parity gap.
 - **Logical-id verbs** (`purge_logical_id`, `restore_logical_id`)
-  deferred to 0.7.x (HITL re-confirmed 2026-05-17, Phase 12-V-VERBS).
-  Canonical-identity substrate design-only in 0.6.0. Client
-  workaround: `fathomdb recover --excise-source <id>`.
+  deferred to 0.8.0 (originally deferred to 0.7.x at Phase 12-V-VERBS
+  2026-05-17; re-targeted to 0.8.0 per HITL 2026-05-24 alongside the
+  canonical-identity substrate and Memex knowledge-store work — see
+  `dev/roadmap/0.8.0.md`). Canonical-identity substrate design-only
+  in 0.6.0. Client workaround: `fathomdb recover --excise-source <id>`.
 - **TypeScript SDK Python-parity** — TS milestone 1 shipped
   2026-04-07; full Python-parity did NOT land at 0.6.0 GA and
   carries forward as a post-GA deliverable. Prefer Python SDK
