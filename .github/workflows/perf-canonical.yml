@@ -59,7 +59,7 @@ jobs:
           nproc
           echo ""
           echo "OS:"
-          lsb_release -d 2>/dev/null || cat /etc/os-release | grep PRETTY_NAME
+          lsb_release -d 2>/dev/null || grep PRETTY_NAME /etc/os-release
           echo ""
           echo "Kernel:"
           uname -a
