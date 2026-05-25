@@ -1223,6 +1223,12 @@ impl Engine {
         probe_database_header(&connection)?;
         probe_open_integrity(&connection)?;
         probe_wal_sidecar(&path)?;
+        // 0.7.0 perf-experiments: apply writer-side experiment PRAGMAs
+        // (page_size, etc.) BEFORE journal_mode + migrations. page_size
+        // is silently ignored once any table exists; this is the only
+        // legal window to set it on a fresh DB. Gated on
+        // FATHOMDB_PERF_EXPERIMENTS=1; no-op in production.
+        apply_perf_experiment_writer_pragmas(&connection);
         connection
             .pragma_update(None, "journal_mode", "WAL")
             .map_err(|err| map_open_sqlite_error(err, OpenStage::WalReplay))?;
@@ -3026,7 +3032,13 @@ fn init_perf_experiments_runtime() {
         }
         let memstatus_off =
             std::env::var_os("FATHOMDB_PERF_SQLITE_MEMSTATUS_OFF").is_some_and(|v| v == "1");
-        if !memstatus_off {
+        // FATHOMDB_PERF_SQLITE_PAGECACHE=<page_size_bytes>:<page_count>
+        // E.g. "4096:5000" => pre-allocate 4096 B × 5000 pages = 20 MB
+        // global page-cache backing. SQLite distributes this across
+        // connections; reduces global allocator pressure for page
+        // cache fills.
+        let pagecache = std::env::var("FATHOMDB_PERF_SQLITE_PAGECACHE").ok();
+        if !memstatus_off && pagecache.is_none() {
             return;
         }
         // SAFETY: sqlite3_shutdown / sqlite3_initialize are documented
@@ -3037,12 +3049,39 @@ fn init_perf_experiments_runtime() {
         // identical to B.1 attempt #2's plumbing.
         unsafe {
             let rc_shutdown = rusqlite::ffi::sqlite3_shutdown();
-            let rc_config =
-                rusqlite::ffi::sqlite3_config(rusqlite::ffi::SQLITE_CONFIG_MEMSTATUS, 0_i32);
+            let rc_memstatus = if memstatus_off {
+                rusqlite::ffi::sqlite3_config(rusqlite::ffi::SQLITE_CONFIG_MEMSTATUS, 0_i32)
+            } else {
+                -1
+            };
+            // SQLITE_CONFIG_PAGECACHE = 7 per sqlite3.h. With buffer=NULL,
+            // SQLite allocates the backing memory itself but still
+            // partitions it for use as the page-cache pool.
+            let rc_pagecache = if let Some(spec) = pagecache.as_ref() {
+                let mut parts = spec.split(':');
+                let sz = parts.next().and_then(|s| s.parse::<i32>().ok()).unwrap_or(0);
+                let n = parts.next().and_then(|s| s.parse::<i32>().ok()).unwrap_or(0);
+                if sz > 0 && n > 0 {
+                    rusqlite::ffi::sqlite3_config(
+                        7, // SQLITE_CONFIG_PAGECACHE
+                        std::ptr::null_mut::<std::ffi::c_void>(),
+                        sz,
+                        n,
+                    )
+                } else {
+                    eprintln!(
+                        "perf-experiment: bad FATHOMDB_PERF_SQLITE_PAGECACHE spec '{spec}' (expect '<bytes>:<count>')"
+                    );
+                    -1
+                }
+            } else {
+                -1
+            };
             let rc_init = rusqlite::ffi::sqlite3_initialize();
             eprintln!(
-                "perf-experiment: SQLITE_CONFIG_MEMSTATUS=0 rcs shutdown={rc_shutdown} \
-                 config={rc_config} initialize={rc_init} (0=SQLITE_OK; 21=SQLITE_MISUSE)"
+                "perf-experiment: runtime-config rcs shutdown={rc_shutdown} \
+                 memstatus={rc_memstatus} pagecache={rc_pagecache} initialize={rc_init} \
+                 (0=SQLITE_OK; 21=SQLITE_MISUSE; -1=not configured)"
             );
         }
     });
@@ -3812,6 +3851,49 @@ fn uninstall_profile_callback(connection: &Connection) {
 /// `dev/plans/0.7.0-perf-experiments.md`. Once Wave 5 picks the
 /// landing combination, the chosen PRAGMAs are hardcoded as the new
 /// reader-open default and this hook is removed.
+/// 0.7.0 perf-experiments hook: apply writer-side PRAGMAs from
+/// `FATHOMDB_PERF_WRITER_PRAGMAS` (same format as reader hook).
+/// **Runs BEFORE migrations** so PRAGMAs like `page_size` that must
+/// precede any table creation take effect on a fresh DB.
+///
+/// Gated on `FATHOMDB_PERF_EXPERIMENTS=1`. No-op otherwise.
+fn apply_perf_experiment_writer_pragmas(connection: &Connection) {
+    if std::env::var_os("FATHOMDB_PERF_EXPERIMENTS").is_none() {
+        return;
+    }
+    let raw = match std::env::var("FATHOMDB_PERF_WRITER_PRAGMAS") {
+        Ok(s) if !s.is_empty() => s,
+        _ => return,
+    };
+    for entry in raw.split(',') {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        let (name, value) = match entry.split_once('=') {
+            Some((n, v)) => (n.trim(), v.trim()),
+            None => {
+                eprintln!("perf-experiment: bad writer pragma entry (expect name=value): {entry}");
+                continue;
+            }
+        };
+        if name.is_empty() {
+            eprintln!("perf-experiment: empty pragma name in writer entry: {entry}");
+            continue;
+        }
+        match connection.pragma_update(None, name, value) {
+            Ok(()) => {
+                eprintln!(
+                    "perf-experiment: applied PRAGMA {name}={value} on writer (pre-migration)"
+                );
+            }
+            Err(err) => {
+                eprintln!("perf-experiment: writer PRAGMA {name}={value} failed: {err}");
+            }
+        }
+    }
+}
+
 fn apply_perf_experiment_reader_pragmas(connection: &Connection) {
     if std::env::var_os("FATHOMDB_PERF_EXPERIMENTS").is_none() {
         return;
