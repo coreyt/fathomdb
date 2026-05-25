@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "fathomdb"
-version = "0.6.1"
+version = "0.6.1-rc.1"
 description = "FathomDB Python SDK — PyO3 binding to the fathomdb-engine Rust core"
 readme = "README.md"
 requires-python = ">=3.10"

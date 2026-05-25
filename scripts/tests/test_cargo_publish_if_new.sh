@@ -85,12 +85,17 @@ cat >"$FIX_DIR/fathomdb-embedder-api.json" <<'JSON'
   ]
 }
 JSON
-# Pre-release fixture: a crate whose registry has 0.6.1-rc.1 already.
+# Pre-release fixture: a crate whose registry has a historical RC version.
+# 0.0.0-test-rc is a sentinel that will never collide with the live
+# workspace version — test #3 uses it via CARGO_PUBLISH_IF_NEW_LOCAL_VERSION
+# bypass, and test #10 (manifest reader) reads the real workspace version
+# from Cargo.toml, which must NOT be in this fixture for the publish path
+# to be exercised.
 cat >"$FIX_DIR/fathomdb-engine.json" <<'JSON'
 {
   "crate": {"name": "fathomdb-engine"},
   "versions": [
-    {"num": "0.6.1-rc.1", "yanked": false},
+    {"num": "0.0.0-test-rc", "yanked": false},
     {"num": "0.6.0", "yanked": false}
   ]
 }
@@ -152,7 +157,7 @@ fi
 
 # 3) Pre-release version present in registry → still skip.
 reset_shim_log
-if out="$(CARGO_PUBLISH_IF_NEW_LOCAL_VERSION=0.6.1-rc.1 \
+if out="$(CARGO_PUBLISH_IF_NEW_LOCAL_VERSION=0.0.0-test-rc \
             run_helper fathomdb-engine 2>&1)"; then
   if printf '%s' "$out" | grep -q 'already published; skipping' \
      && ! [ -s "$CARGO_LOG" ]; then

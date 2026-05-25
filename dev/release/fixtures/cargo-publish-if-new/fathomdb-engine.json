@@ -1,7 +1,7 @@
 {
   "crate": {"name": "fathomdb-engine"},
   "versions": [
-    {"num": "0.6.1-rc.1", "yanked": false},
+    {"num": "0.0.0-test-rc", "yanked": false},
     {"num": "0.6.0", "yanked": false}
   ]
 }

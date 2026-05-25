@@ -12,7 +12,7 @@ AC-050c) gates merges against this invariant.
 
 (none yet)
 
-## 0.6.1 - 2026-05-24
+## 0.6.1-rc.1 - 2026-05-25
 
 Patch release. Closes three 0.6.0 deferred items (Python and TypeScript
 `OpenReport` surfacing, plus the axis-E independence demonstration),
