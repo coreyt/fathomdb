@@ -96,6 +96,74 @@ every axis-W crate plus axis-E `fathomdb-embedder-api`. The first
   independence resumes at/after 0.6.0 GA — embedder-api may then
   bump on its own cadence when the trait surface changes.
 
+## Pre-tag procedure (2026-05-25)
+
+`scripts/verify-release-gates.sh:74` enforces strict equality between
+the tag's bare version and `Cargo.toml [workspace.package].version`.
+Every release tag (RC or GA) requires a preceding **workspace-version
+bump** on `main`. The canonical sequence for either kind of tag:
+
+1. `bash scripts/set-version.sh --workspace <target>` — bumps
+   `[workspace.package].version`, every Axis-W entry in
+   `[workspace.dependencies]`, `pyproject.toml`, and `package.json`
+   in lockstep. Skips Axis-E (`fathomdb-embedder-api/Cargo.toml`).
+   Targets: `0.6.1-rc.1`, `0.6.1-rc.2`, …, `0.6.1` (GA).
+2. `cargo update --workspace` — refresh `Cargo.lock` so the in-
+   workspace path-dep entries pin to the new versions. The build
+   step in `release.yml` does not pass `--locked` (L179), so a
+   stale lockfile would silently regenerate during CI; refreshing
+   here keeps the diff atomic with the bump commit.
+3. `CHANGELOG.md` — add or rename the section heading to match the
+   new workspace version (e.g. `## 0.6.1-rc.1 - 2026-05-25` or
+   `## 0.6.1 - 2026-05-NN`). `verify-release-gates.sh:123` matches
+   on this heading.
+4. `bash scripts/release/local-dry-run.sh` — runs the validatable
+   subset of `release.yml` on the developer host: gates preflight,
+   workspace build, leaf-crate package + dry-run publish. This is
+   the primary debug loop; CI dry-run dispatch becomes a final
+   confirmation.
+5. Single commit on `main`: `chore(release): bump to <version>`.
+6. Annotated tag at the bump commit: `git tag -a v<version>` and
+   `git push origin v<version>`.
+
+### Dependent-crate dry-run limitation (WF-FIX-2, 2026-05-25)
+
+`cargo publish --dry-run --no-verify` for dependent crates
+(`fathomdb-engine`, `fathomdb-embedder`, `fathomdb`, `fathomdb-cli`)
+cannot succeed in either CI or local rehearsal. `--no-verify` skips
+the verify (compile) step, **not** the package step. `cargo package`
+rewrites path dependencies to versioned dependencies and resolves
+them against the registry; the just-"published" sibling versions
+aren't actually on crates.io during a dry-run, so the resolve fails
+with `failed to select a version for the requirement
+fathomdb-query = "^X.Y.Z"`.
+
+This is the same limitation the `build-rust` job acknowledges by
+packaging only leaf crates. `scripts/release/cargo-publish-if-new.sh`
+short-circuits dependent crates in `--dry-run` mode with an "skipped"
+diagnostic + exit 0; the real publish path is exercised by the actual
+tag push. Manifest correctness for dependent crates is enforced at
+real publish time inside `cargo publish`.
+
+### Idempotency contract (WF-FIX-1, 2026-05-25)
+
+`scripts/release/cargo-publish-if-new.sh` queries crates.io before
+each tier's `cargo publish` and exits 0 if the target version is
+already on the registry. This covers two scenarios:
+
+- **Axis-W-only patch releases** (e.g. `0.6.1` while Axis-E
+  `fathomdb-embedder-api` stays at `0.6.0`): T1
+  short-circuits because `fathomdb-embedder-api@0.6.0` is already
+  on the registry from the prior GA train.
+- **Partial-republish retries**: if RC1 published T1-T3 cleanly but
+  failed at T4, a follow-up RC2 with the same tags would re-attempt
+  T1-T3 and now no-op cleanly.
+
+The helper reads the local crate version from
+`src/rust/crates/<crate>/Cargo.toml` (resolving `version.workspace =
+true` to the root `[workspace.package]`), so it stays correct across
+both axis-W bumps and axis-E independent bumps.
+
 ## Sibling-package co-tagging
 
 Per REQ-048, `fathomdb-embedder-api` and `fathomdb-embedder` carry the
