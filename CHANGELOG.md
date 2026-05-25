@@ -12,6 +12,15 @@ AC-050c) gates merges against this invariant.
 
 (none yet)
 
+## 0.6.1 - 2026-05-25
+
+Promotion of `0.6.1-rc.1` to GA following V-slice fresh-install
+verification (GREEN on all three bindings — see
+`dev/plans/runs/0.6.1-V-transcript.txt`). Scope identical to RC1
+below; no code or interface change between RC1 and GA. Axis E
+(`fathomdb-embedder-api`) remains at `0.6.0` per Wake decision
+`d-001`.
+
 ## 0.6.1-rc.1 - 2026-05-25
 
 Patch release. Closes three 0.6.0 deferred items (Python and TypeScript
