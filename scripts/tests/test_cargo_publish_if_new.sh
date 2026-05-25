@@ -108,6 +108,8 @@ JSON
 cp "$FIX_DIR/fathomdb-embedder-api.json" "$SERVE_DIR/api/v1/crates/fathomdb-embedder-api"
 cp "$FIX_DIR/fathomdb-engine.json"       "$SERVE_DIR/api/v1/crates/fathomdb-engine"
 cp "$FIX_DIR/fathomdb-schema.json"       "$SERVE_DIR/api/v1/crates/fathomdb-schema"
+# Malformed JSON fixture — HTTP 200 but body is not valid JSON (truncated).
+printf '{bad json' >"$SERVE_DIR/api/v1/crates/fathomdb-broken"
 
 start_server
 
@@ -202,6 +204,54 @@ if grep -q 'User-Agent:' "$HELPER"; then
   pass "helper sets User-Agent for crates.io"
 else
   fail "helper missing User-Agent header"
+fi
+
+# 8) [FINDING 1] Malformed JSON from registry → exit 2 (fail-closed); cargo NOT
+#    invoked. Before the fix the jq lookup silently falls through to "not found",
+#    the helper returns 1 and invokes cargo publish — a fail-open bug.
+reset_shim_log
+set +e
+out="$(CARGO_PUBLISH_IF_NEW_LOCAL_VERSION=0.6.1 run_helper fathomdb-broken 2>&1)"
+malformed_rc=$?
+set -e
+if [ "$malformed_rc" -eq 2 ] \
+   && printf '%s' "$out" | grep -qi 'malformed' \
+   && ! [ -s "$CARGO_LOG" ]; then
+  pass "malformed registry JSON → exit 2, fail-closed, no cargo call"
+else
+  fail "malformed-json-case: expected exit 2 + 'malformed' diagnostic + no cargo call; got rc=$malformed_rc cargo='$(cat "$CARGO_LOG")' out='$out'"
+fi
+
+# 9) [FINDING 2a] Manifest reader — inline version. Read version directly from
+#    the real fathomdb-embedder-api Cargo.toml (version = "0.6.0"); no
+#    CARGO_PUBLISH_IF_NEW_LOCAL_VERSION bypass. Registry has 0.6.0 → skip.
+reset_shim_log
+if out="$(run_helper fathomdb-embedder-api 2>&1)"; then
+  if printf '%s' "$out" | grep -q 'already published; skipping' \
+     && ! [ -s "$CARGO_LOG" ]; then
+    pass "manifest reader: inline version (0.6.0) → skip already-published"
+  else
+    fail "manifest-inline-case: log='$out' shim_log='$(cat "$CARGO_LOG")'"
+  fi
+else
+  fail "manifest-inline-case: helper exited non-zero: $out"
+fi
+
+# 10) [FINDING 2b] Manifest reader — workspace-inherited version. Read version
+#     from the real fathomdb-engine Cargo.toml (version.workspace = true →
+#     0.6.1 per [workspace.package]); no CARGO_PUBLISH_IF_NEW_LOCAL_VERSION
+#     bypass. Registry has only 0.6.1-rc.1 and 0.6.0 → publish.
+reset_shim_log
+if out="$(run_helper fathomdb-engine 2>&1)"; then
+  if grep -q -- '-p fathomdb-engine' "$CARGO_LOG" \
+     && grep -q 'publish' "$CARGO_LOG" \
+     && ! grep -q -- '--dry-run' "$CARGO_LOG"; then
+    pass "manifest reader: workspace-inherited version (0.6.1) → cargo publish"
+  else
+    fail "manifest-workspace-case: shim_log='$(cat "$CARGO_LOG")' helper='$out'"
+  fi
+else
+  fail "manifest-workspace-case: helper exited non-zero: $out"
 fi
 
 stop_server

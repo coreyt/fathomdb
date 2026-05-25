@@ -132,6 +132,14 @@ registry_has_version() {
       "$crate" "$body" >&2
     return 2
   fi
+  # Fail-closed: validate the body is parseable JSON before inspecting it.
+  # A malformed/truncated 200 response would otherwise silently fall through
+  # as "version not found" (return 1) and trigger an unnecessary publish attempt.
+  if ! printf '%s' "$body" | jq . >/dev/null 2>&1; then
+    printf 'cargo-publish-if-new: registry returned malformed JSON for %s\n' \
+      "$crate" >&2
+    return 2
+  fi
   if printf '%s' "$body" | jq -e --arg v "$version" \
        '.versions | map(.num) | index($v) != null' >/dev/null 2>&1; then
     return 0
