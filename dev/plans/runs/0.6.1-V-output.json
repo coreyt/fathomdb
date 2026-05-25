@@ -1,0 +1,80 @@
+{
+  "slice": "0.6.1-V",
+  "started": "2026-05-25T10:33:45-05:00",
+  "finished_utc": "2026-05-25T15:42:00Z",
+  "verdict": "GREEN",
+  "host_spec": {
+    "os": "Ubuntu 24.04 (Linux 6.17.0-29-generic)",
+    "kernel": "6.17.0-29-generic",
+    "arch": "x86_64",
+    "cargo": "1.95.0 (f2d3ce0bd 2026-03-21)",
+    "rustc": "1.95.0",
+    "pip": "24.0 (python 3.12.3)",
+    "npm": "11.12.1",
+    "node": "v25.9.0",
+    "host_caveat": "dev host where source tree lives; install paths confined to /tmp scratch dir; no source-tree dev install used; registries only. The 'fresh host' constraint in 0.6.1-V.md is 'ideally' (soft); this run satisfies the hard constraints (no CI, no source-tree dev install, no release-notes edits)."
+  },
+  "rc_tag": "v0.6.1-rc.1",
+  "rc_release_run_id": "26406810774",
+  "per_binding_install_verdict": {
+    "python": {
+      "verdict": "GREEN",
+      "spec": "fathomdb==0.6.1rc1",
+      "resolved_artifact": "fathomdb-0.6.1rc1-cp310-abi3-manylinux_2_28_x86_64.whl",
+      "source": "PyPI"
+    },
+    "typescript": {
+      "verdict": "GREEN",
+      "spec": "fathomdb@0.6.1-rc.1",
+      "source": "npm (next dist-tag)"
+    },
+    "rust": {
+      "verdict": "GREEN",
+      "spec": "fathomdb@=0.6.1-rc.1",
+      "transitive_workspace_crates": ["fathomdb-schema@0.6.1-rc.1", "fathomdb-engine@0.6.1-rc.1"],
+      "source": "crates.io"
+    }
+  },
+  "per_binding_smoke_verdict": {
+    "python": "GREEN — Engine.open, write, search, close, admin.configure all returned expected shapes",
+    "typescript": "GREEN — Engine.open, write, search, close, admin.configure all returned expected shapes",
+    "rust": "GREEN — Engine::open (via OpenedEngine destructure), write (Node + AdminSchema kind=latest_state), search, close all OK"
+  },
+  "openreport_check_verdict": true,
+  "openreport_observed_per_binding": {
+    "python": {
+      "schema_version_before": 0,
+      "schema_version_after": 8,
+      "migration_steps_count": 8,
+      "embedder_warmup_ms": 0,
+      "query_backend": "fathomdb-query + sqlite-vec",
+      "default_embedder": {"name": "fathomdb-noop", "revision": "0.6.0-scaffold", "dimension": 384},
+      "idempotent": true
+    },
+    "typescript": {
+      "schemaVersionBefore": 0,
+      "schemaVersionAfter": 8,
+      "migrationSteps_count": 8,
+      "embedderWarmupMs": 0,
+      "queryBackend": "fathomdb-query + sqlite-vec",
+      "defaultEmbedder": {"name": "fathomdb-noop", "revision": "0.6.0-scaffold", "dimension": 384},
+      "idempotent": true
+    },
+    "rust": {
+      "schema_version_before": 0,
+      "schema_version_after": 8,
+      "migration_steps_count": 8,
+      "embedder_warmup_ms": 0,
+      "query_backend": "fathomdb-query + sqlite-vec",
+      "default_embedder": {"name": "fathomdb-noop", "revision": "0.6.0-scaffold", "dimension": 384}
+    }
+  },
+  "transcript_path": "dev/plans/runs/0.6.1-V-transcript.txt",
+  "transcript_sha256": "b29191756dfbcbcd12b2bd4464d4cfd3659beaf1c366f6c06d730b70c6645492",
+  "notes_for_orchestrator": [
+    "All three published axis-W artifacts at 0.6.1-rc.1 install and exercise the 5-verb surface end-to-end.",
+    "OpenReport accessor (12-TX-OPENREPORT closure / 0.6.1 anchor) verified populated and idempotent in py + ts; rust reads it via the OpenedEngine.report field at open-time as designed.",
+    "Smoke initially tripped on the py binding because the docs/release-notes show the OpenReport snippets but not the admin.configure call; correct signature is fathomdb.admin.configure(engine, name=..., body=...) (top-level module). Body '{}' is accepted. Documented for any future V-slice rerun.",
+    "Rust direct PreparedWrite::AdminSchema requires kind ∈ {latest_state, append_only_log} (per fathomdb-py admin_configure sugar at lib.rs:495); plain 'doc' kind is rejected with SchemaValidation. Not a binding bug — Rust is the raw substrate, py/ts hide the kind constant."
+  ]
+}
