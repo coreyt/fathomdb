@@ -1,0 +1,47 @@
+{
+  "phase": "0.6.1-WF-FIX-1-axis-e-idempotent-publish",
+  "pass": "fix-1",
+  "codex_review_date": "2026-05-25",
+  "baseline_sha": "f4afbb0",
+  "branch": "phase-0.6.1-WF-FIX-1-axis-e-idempotent-publish-20260525T010638Z",
+  "findings_addressed": [
+    {
+      "id": "FINDING-1",
+      "severity": "medium",
+      "title": "Fail-open on malformed JSON",
+      "location": "scripts/release/cargo-publish-if-new.sh: registry_has_version()",
+      "root_cause": "When crates.io returns HTTP 200 with a non-JSON body, jq exits non-zero silently, the version check falls through to `return 1` (not found), and the helper proceeds to `cargo publish`. Duplicate-version error at registry, not a graceful abort.",
+      "fix": "Added JSON parse validation (jq .) immediately after curl succeeds, before the version lookup. If parse fails: print 'registry returned malformed JSON for <crate>' to stderr and return 2. Existing curl-failure → return 2 path unchanged.",
+      "fail_closed": true
+    },
+    {
+      "id": "FINDING-2",
+      "severity": "low",
+      "title": "Tests don't exercise the manifest reader",
+      "location": "scripts/tests/test_cargo_publish_if_new.sh",
+      "root_cause": "All decision-case tests injected CARGO_PUBLISH_IF_NEW_LOCAL_VERSION, bypassing resolve_local_version entirely. Neither the inline `version = \"X\"` nor `version.workspace = true` code path was covered.",
+      "fix": "Added two new test cases (tests 9 and 10) that invoke the helper WITHOUT CARGO_PUBLISH_IF_NEW_LOCAL_VERSION, forcing the manifest reader to run against the real repo Cargo.toml files (read-only path, safe in test): (a) fathomdb-embedder-api with inline `version = \"0.6.0\"` → skip; (b) fathomdb-engine with `version.workspace = true` resolved to 0.6.1 → cargo publish."
+    }
+  ],
+  "files_touched": [
+    "scripts/release/cargo-publish-if-new.sh",
+    "scripts/tests/test_cargo_publish_if_new.sh"
+  ],
+  "tdd_evidence": {
+    "red_demonstrated": true,
+    "red_evidence": "Ran scripts/tests/test_cargo_publish_if_new.sh with the 3 new test cases added but BEFORE the helper fix. Test 8 (malformed JSON) FAILED: rc=0, cargo was invoked ('publish -p fathomdb-broken --token test-token'), helper output='cargo-publish-if-new: fathomdb-broken@0.6.1 not on registry; publishing' — proving the fail-open bug. Tests 9 and 10 PASSED, confirming the existing manifest reader correctly handles both inline and workspace-inherited versions.",
+    "green_after_fix": true,
+    "green_evidence": "After adding the jq parse-validation guard to registry_has_version(), re-ran scripts/tests/test_cargo_publish_if_new.sh. All 10 tests pass: 7 original + test 8 (malformed JSON → exit 2) + test 9 (inline manifest reader) + test 10 (workspace manifest reader)."
+  },
+  "test_count": {
+    "before": 7,
+    "after": 10,
+    "new_tests": [
+      "8: malformed registry JSON → exit 2, fail-closed, no cargo call",
+      "9: manifest reader: inline version (0.6.0) → skip already-published",
+      "10: manifest reader: workspace-inherited version (0.6.1) → cargo publish"
+    ]
+  },
+  "scope_compliance": "Helper-script + tests only. No engine code changes. No release.yml workflow edits.",
+  "next_step_for_orchestrator": "codex re-review of fix-1 delta; on PASS, FF main; spawn 0.6.1-RC1 slice."
+}
