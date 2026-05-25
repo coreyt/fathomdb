@@ -1,0 +1,107 @@
+{
+  "phase": "0.7.0-planning",
+  "baseline_sha": "6bf582567d1cd4df4b7075436da17a58bde5bec8",
+  "branch": "main",
+  "head_sha": "4232349f0f7712a5fe8dd9a06d966d4b94dec468",
+  "commits": [
+    "4232349: docs(0.7.0): planning slice — revised-budgets + AC-020 ADR drafts + plan doc + slice skeletons"
+  ],
+  "plan_doc": "dev/plans/0.7.0-implementation.md",
+  "adr_drafts": [
+    "dev/adr/ADR-0.7.0-text-query-latency-gates-revised.md",
+    "dev/adr/ADR-0.7.0-ac020-architectural-lever.md"
+  ],
+  "slice_count": 11,
+  "slice_skeletons": [
+    "dev/plans/prompts/0.7.0-WF-FIX-PYPI-SMOKE.md",
+    "dev/plans/prompts/0.7.0-PERF-DIAG.md",
+    "dev/plans/prompts/0.7.0-PERF-TOPK-LIMIT.md",
+    "dev/plans/prompts/0.7.0-PERF-PRAGMA.md",
+    "dev/plans/prompts/0.7.0-PERF-AC020.md",
+    "dev/plans/prompts/0.7.0-PERF-AC013-AC019.md",
+    "dev/plans/prompts/0.7.0-DOCS.md",
+    "dev/plans/prompts/0.7.0-BUMP.md",
+    "dev/plans/prompts/0.7.0-RC1.md",
+    "dev/plans/prompts/0.7.0-V.md",
+    "dev/plans/prompts/0.7.0-GA.md"
+  ],
+  "new_ac_proposals": [
+    {
+      "ac_id": "AC-071",
+      "title": "Revised AC-012 budget (LIMIT-off) met on canonical runner at 1M corpus",
+      "depends_on_adr": "ADR-0.7.0-text-query-latency-gates-revised",
+      "draft_budget": "p50 ≤ 50 ms; p99 ≤ 200 ms (Option B of ADR-revised § AC-012)"
+    },
+    {
+      "ac_id": "AC-072",
+      "title": "Revised AC-013 budget met on canonical runner (conditional on bulk-vec seed seam in 0.7.0)",
+      "depends_on_adr": "ADR-0.7.0-text-query-latency-gates-revised",
+      "draft_budget": "p50 ≤ 80 ms; p99 ≤ 300 ms"
+    },
+    {
+      "ac_id": "AC-073",
+      "title": "Revised AC-019 budget met (conditional on AC-072)",
+      "depends_on_adr": "ADR-0.7.0-text-query-latency-gates-revised",
+      "draft_budget": "stressed p99 ≤ 2× baseline p99"
+    },
+    {
+      "ac_id": "AC-074",
+      "title": "Revised AC-020 envelope met after chosen architectural lever lands",
+      "depends_on_adr": "ADR-0.7.0-ac020-architectural-lever",
+      "draft_budget": "sequential ≤ 600 ms; concurrent ≤ 200 ms; speedup ≥ 5.33×"
+    },
+    {
+      "ac_id": "AC-075",
+      "title": "Caller-visible top-K LIMIT argument honored on the search verb (conditional on Q4 = additive)",
+      "depends_on_adr": "ADR-0.7.0-text-query-latency-gates-revised",
+      "draft_budget": "behavioral; default unlimited; LIMIT-on perf-sub-budget p50 ≤ 25 ms; p99 ≤ 100 ms"
+    }
+  ],
+  "pack7_trigger_snapshot": {
+    "ac012_p50_ms_observed": 140.95,
+    "ac012_p99_ms_observed": 458,
+    "ac012_p50_ms_budget_legacy": 20,
+    "ac012_p99_ms_budget_legacy": 150,
+    "regression_multiple_p50": 7.05,
+    "regression_multiple_p99": 3.05,
+    "workflow_run": "https://github.com/coreyt/fathomdb/actions/runs/26346417896",
+    "runner_spec": "AMD EPYC 9V74 80-core (4 cores); Ubuntu 24.04.4 LTS; glibc 2.39; SQLite 3.45.x via libsqlite3-sys 0.28.0; rustc 1.95.0; ubuntu-latest x86_64",
+    "verdict": "FIRES"
+  },
+  "axis_e_movement_decision": "stays at 0.6.0 (perf-only does not move trait surface per Wake d-001)",
+  "verify": {
+    "mkdocs_strict": "green (Cleaning + Building; INFO note for release-notes/0.6.1.md not in nav is non-blocking)",
+    "agent_verify": "ok (exit 0; AC-037 BLOCKER on unshare -rUn is toolchain-missing env, not a regression)",
+    "files_present": "ok (plan doc + 2 ADR drafts + 11 slice skeletons + HANDOFF + planning prompt)"
+  },
+  "blockers_encountered": [
+    "AC-037 toolchain blocker on rootless userns+netns; environmental, does not affect planning-slice deliverable; documented for orchestrator awareness"
+  ],
+  "open_hitl_questions": [
+    {
+      "id": "Q1",
+      "topic": "Revised budgets for AC-012/013/019/020",
+      "options": "omnibus single ADR | split (AC-012 ADR + parallel AC-013/019/020 successor ADRs)",
+      "recommendation": "split; AC-012 budget per Option B (p50 ≤ 50 ms; p99 ≤ 200 ms); AC-013/019 conditional on bulk-vec seed seam being feasible in 0.7.0; AC-020 mechanism owned by ADR-0.7.0-ac020-architectural-lever"
+    },
+    {
+      "id": "Q2",
+      "topic": "AC-020 architectural lever (PCACHE2 / WAL2 / R-W split / vendor swap)",
+      "options": "PCACHE2 (smallest blast radius) | WAL2 (durability surface) | R-W split (architecture change) | vendor swap (last resort)",
+      "recommendation": "PCACHE2 default contingent on PERF-DIAG slice confirming H1 (page-cache mutex contention) as primary hypothesis; fallback ranking per ADR § Recommendation"
+    },
+    {
+      "id": "Q3",
+      "topic": "Per-lever measurement plan (order + stop-rule)",
+      "options": "diagnostic-first (PERF-DIAG before any structural lever) | optimistic (PRAGMA + lever in parallel)",
+      "recommendation": "diagnostic-first per whitepaper § 7.1; stop-rule: if PERF-DIAG shows no super-linear-grower at canonical scale, close AC-020 by re-measurement without any lever landing"
+    },
+    {
+      "id": "Q4",
+      "topic": "Caller-visible top-K LIMIT shape (additive vs breaking)",
+      "options": "additive (default unlimited, opt-in cap) | breaking (required arg)",
+      "recommendation": "additive; preserves 0.6.x caller-spec; semver-minor allows additive surface but should not silently break callers per ADR-0.6.0-no-shims-policy"
+    }
+  ],
+  "next_step_for_orchestrator": "codex reviewer pass on plan doc + ADR drafts per dev/design/orchestration.md § 3; HITL on Q1..Q4 before any PERF-* slice opens; ADR drafts flip to status: locked only after HITL closes the questions; do NOT spawn any PERF-* implementer until referenced ADRs read status: locked (grep -l 'status: locked' dev/adr/ADR-0.7.0-*.md)."
+}

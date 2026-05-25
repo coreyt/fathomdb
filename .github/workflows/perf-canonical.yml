@@ -26,13 +26,31 @@ on:
         required: false
         type: boolean
         default: true
+      experiment_id:
+        description: "0.7.0 perf-experiments id (e.g. W1.1); blank = legacy AC-012-only run"
+        required: false
+        default: ""
+      lever_id:
+        description: "0.7.0 lever id from dev/plans/0.7.0-perf-experiments.md (e.g. L-A0)"
+        required: false
+        default: "L-A0"
+      targets:
+        description: "Space-separated targets: ac012 ac020 ac013 (default ac012)"
+        required: false
+        default: "ac012"
+      perf_record:
+        description: "Capture perf record -g --call-graph dwarf + perf report (L-A1 diagnostic)"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
   ac012-canonical-measure:
-    name: AC-012 canonical re-measurement
+    name: AC-012 canonical re-measurement (legacy)
+    if: inputs.experiment_id == ''
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
@@ -128,3 +146,102 @@ jobs:
           echo "If RED on p50 or p99: do NOT lift the deferral. Surface to"
           echo "orchestrator — Pack 7 un-defer trigger fires (per"
           echo "dev/plans/0.6.0-implementation.md § Pack 7 un-defer trigger)."
+
+  perf-experiment:
+    name: 0.7.0 perf-experiment (${{ inputs.experiment_id }} ${{ inputs.lever_id }})
+    if: inputs.experiment_id != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Configure per-session TMPDIR
+        shell: bash
+        run: |
+          TMPDIR="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMPDIR"
+          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Capture canonical-runner spec
+        shell: bash
+        run: |
+          echo "=== Runner spec ==="
+          grep "model name" /proc/cpuinfo | head -1
+          echo "cores=$(nproc)"
+          uname -srm
+          ldd --version | head -1
+          rustc --version
+          echo "experiment_id=${{ inputs.experiment_id }}"
+          echo "lever_id=${{ inputs.lever_id }}"
+          echo "targets=${{ inputs.targets }}"
+          echo "perf_record=${{ inputs.perf_record }}"
+          echo "ac012_corpus_n=${{ inputs.ac012_corpus_n }}"
+          echo "ac013_corpus_n=${{ inputs.ac013_corpus_n }}"
+          echo "run_full_scale=${{ inputs.run_full_scale }}"
+      - name: Install perf (for L-A1 diagnostic)
+        if: ${{ inputs.perf_record == true }}
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq linux-tools-common linux-tools-generic "linux-tools-$(uname -r)" || \
+            sudo apt-get install -y -qq linux-tools-common linux-tools-generic
+          which perf || true
+      - name: Build perf_gates (release)
+        shell: bash
+        run: |
+          cargo test --release --no-run -p fathomdb-engine --test perf_gates
+      - name: Run perf-experiment driver
+        env:
+          AGENT_LONG: "1"
+          AC_FULL_SCALE: ${{ inputs.run_full_scale && '1' || '' }}
+          AC012_CORPUS_N: ${{ inputs.ac012_corpus_n }}
+          AC013_CORPUS_N: ${{ inputs.ac013_corpus_n }}
+          RUST_BACKTRACE: "1"
+          EXP_ID: ${{ inputs.experiment_id }}
+          LEVER_ID: ${{ inputs.lever_id }}
+          TARGETS: ${{ inputs.targets }}
+          RUN_LOCATION: canonical-ci
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p dev/plans/runs
+          if [ "${{ inputs.perf_record }}" = "true" ]; then
+            # Wrap the harness in perf record for L-A1 diagnostic.
+            # The driver itself runs the harness; we wrap the driver.
+            sudo sysctl -w kernel.perf_event_paranoid=-1 || true
+            sudo sysctl -w kernel.kptr_restrict=0 || true
+            perf record -g --call-graph dwarf -o perf.data -- \
+              bash scripts/perf-experiments/run-experiment.sh 2>&1 | tee experiment.log || true
+            perf report --stdio --no-children -i perf.data | head -200 > perf-report-top.txt || true
+            echo "=== perf report (top 200 lines) ===" >> experiment.log
+            cat perf-report-top.txt >> experiment.log
+          else
+            bash scripts/perf-experiments/run-experiment.sh 2>&1 | tee experiment.log
+          fi
+      - name: Upload experiment artifacts
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: perf-experiment-${{ inputs.experiment_id }}-${{ inputs.lever_id }}
+          path: |
+            experiment.log
+            perf.data
+            perf-report-top.txt
+            dev/plans/runs/0.7.0-PERF-EXP-${{ inputs.experiment_id }}-output.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Append workflow URL to closure JSON
+        if: always()
+        shell: bash
+        run: |
+          OUT="dev/plans/runs/0.7.0-PERF-EXP-${{ inputs.experiment_id }}-output.json"
+          URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          if [ -f "$OUT" ]; then
+            python3 scripts/perf-experiments/append-workflow-url.py "$OUT" "$URL"
+            cat "$OUT"
+          else
+            echo "warn: $OUT not found; driver may have failed before writing"
+          fi

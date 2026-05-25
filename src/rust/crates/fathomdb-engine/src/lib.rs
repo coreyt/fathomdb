@@ -1267,6 +1267,7 @@ impl Engine {
             reader
                 .pragma_update(None, "query_only", "ON")
                 .map_err(|err| map_open_sqlite_error(err, OpenStage::SchemaProbe))?;
+            apply_perf_experiment_reader_pragmas(&reader);
             readers.push(reader);
         }
 
@@ -2355,9 +2356,25 @@ fn read_search_in_tx(
         }
     }
     {
-        let mut statement = tx.prepare(
-            "SELECT body FROM search_index WHERE search_index MATCH ?1 ORDER BY write_cursor",
-        )?;
+        // 0.7.0 perf-experiments: optional FTS5 LIMIT cap. Gated on
+        // FATHOMDB_PERF_EXPERIMENTS=1; opt-in via
+        // FATHOMDB_PERF_SEARCH_LIMIT=<k>. No-op by default — preserves
+        // 0.6.x unbounded result-set semantics. Removed (or made the
+        // hardcoded default) at Wave 5 landing per
+        // dev/plans/0.7.0-perf-experiments.md.
+        let perf_limit: Option<usize> = if std::env::var_os("FATHOMDB_PERF_EXPERIMENTS").is_some() {
+            std::env::var("FATHOMDB_PERF_SEARCH_LIMIT").ok().and_then(|s| s.parse().ok())
+        } else {
+            None
+        };
+        let sql = match perf_limit {
+            Some(k) => format!(
+                "SELECT body FROM search_index WHERE search_index MATCH ?1 ORDER BY write_cursor LIMIT {k}"
+            ),
+            None => "SELECT body FROM search_index WHERE search_index MATCH ?1 ORDER BY write_cursor"
+                .to_string(),
+        };
+        let mut statement = tx.prepare(&sql)?;
         let rows = statement
             .query_map([compiled.match_expression.as_str()], |row| row.get::<_, String>(0))?;
         for row in rows.flatten() {
@@ -3734,6 +3751,56 @@ fn uninstall_profile_callback(connection: &Connection) {
 /// Returns the rc of `sqlite3_db_config` so callers can debug-assert
 /// `SQLITE_OK` and surface configuration failure under
 /// `debug_assertions` test builds without expanding the public surface.
+/// 0.7.0 perf-experiments hook: apply caller-supplied reader PRAGMAs
+/// from the `FATHOMDB_PERF_READER_PRAGMAS` env var. Format:
+/// comma-separated `name=value` pairs (e.g.
+/// `cache_size=-262144,mmap_size=268435456,temp_store=MEMORY`).
+///
+/// **Gated on `FATHOMDB_PERF_EXPERIMENTS=1`.** No-op if the gate env
+/// var is unset, so production paths are never affected. Failures to
+/// apply individual PRAGMAs are logged to stderr (via `eprintln!`) but
+/// do not error the connection open — experiments are best-effort,
+/// not contract.
+///
+/// Scope: 0.7.0 perf-experiment campaign per
+/// `dev/plans/0.7.0-perf-experiments.md`. Once Wave 5 picks the
+/// landing combination, the chosen PRAGMAs are hardcoded as the new
+/// reader-open default and this hook is removed.
+fn apply_perf_experiment_reader_pragmas(connection: &Connection) {
+    if std::env::var_os("FATHOMDB_PERF_EXPERIMENTS").is_none() {
+        return;
+    }
+    let raw = match std::env::var("FATHOMDB_PERF_READER_PRAGMAS") {
+        Ok(s) if !s.is_empty() => s,
+        _ => return,
+    };
+    for entry in raw.split(',') {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        let (name, value) = match entry.split_once('=') {
+            Some((n, v)) => (n.trim(), v.trim()),
+            None => {
+                eprintln!("perf-experiment: bad pragma entry (expect name=value): {entry}");
+                continue;
+            }
+        };
+        if name.is_empty() {
+            eprintln!("perf-experiment: empty pragma name in entry: {entry}");
+            continue;
+        }
+        match connection.pragma_update(None, name, value) {
+            Ok(()) => {
+                eprintln!("perf-experiment: applied PRAGMA {name}={value} on reader");
+            }
+            Err(err) => {
+                eprintln!("perf-experiment: PRAGMA {name}={value} failed: {err}");
+            }
+        }
+    }
+}
+
 fn configure_reader_lookaside(connection: &Connection) -> std::os::raw::c_int {
     // SAFETY: `connection.handle()` returns a valid `*mut sqlite3` for
     // the lifetime of `connection`. The variadic
