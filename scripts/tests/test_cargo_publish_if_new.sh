@@ -259,6 +259,43 @@ else
   fail "manifest-workspace-case: helper exited non-zero: $out"
 fi
 
+# 11) [WF-FIX-2] Dependent crate + --dry-run → skip without invoking cargo.
+#     fathomdb-engine, -embedder, fathomdb, fathomdb-cli are dependent crates;
+#     `cargo publish --dry-run --no-verify` would still fail on the package
+#     step's workspace-dep resolve. Helper must short-circuit to exit 0 with
+#     a clear "skipped" diagnostic and NOT invoke cargo at all.
+for dep_crate in fathomdb-engine fathomdb-embedder fathomdb fathomdb-cli; do
+  reset_shim_log
+  if out="$(CARGO_PUBLISH_IF_NEW_LOCAL_VERSION=0.6.1 \
+              run_helper --dry-run "$dep_crate" 2>&1)"; then
+    if printf '%s' "$out" | grep -qi 'dry-run skipped' \
+       && ! [ -s "$CARGO_LOG" ]; then
+      pass "dependent-crate $dep_crate + --dry-run → skip, no cargo call"
+    else
+      fail "dependent-dry-run-case $dep_crate: log='$out' shim='$(cat "$CARGO_LOG")'"
+    fi
+  else
+    fail "dependent-dry-run-case $dep_crate: helper exited non-zero: $out"
+  fi
+done
+
+# 12) [WF-FIX-2] Leaf crate + --dry-run still forwards to cargo (regression
+#     guard — leaves remain dry-run-publishable; only dependents are skipped).
+for leaf_crate in fathomdb-embedder-api fathomdb-schema fathomdb-query; do
+  reset_shim_log
+  if out="$(CARGO_PUBLISH_IF_NEW_LOCAL_VERSION=0.6.1 \
+              run_helper --dry-run "$leaf_crate" 2>&1)"; then
+    if grep -q -- '--dry-run' "$CARGO_LOG" \
+       && grep -q -- "-p $leaf_crate" "$CARGO_LOG"; then
+      pass "leaf-crate $leaf_crate + --dry-run → forwards to cargo"
+    else
+      fail "leaf-dry-run-case $leaf_crate: shim='$(cat "$CARGO_LOG")' log='$out'"
+    fi
+  else
+    fail "leaf-dry-run-case $leaf_crate: helper exited non-zero: $out"
+  fi
+done
+
 stop_server
 
 if [ "$FAILED" -gt 0 ]; then

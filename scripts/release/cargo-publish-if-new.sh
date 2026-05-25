@@ -149,14 +149,32 @@ registry_has_version() {
 
 LOCAL_VERSION="$(resolve_local_version)"
 
+# Dependent crates: cannot be dry-run-published because `cargo package`
+# rewrites path deps to versioned deps and then resolves them against the
+# registry. The just-"published" sibling versions aren't actually on
+# crates.io during a dry-run (no real upload happened), so the resolve
+# fails with "failed to select a version for the requirement …".
+# `--no-verify` only skips the verify step (compile the packaged tarball),
+# NOT the package step where the resolve happens. This matches the
+# rationale already documented in .github/workflows/release.yml L153-170:
+# build-rust packages leaf crates only, for the same reason.
+#
+# Manifest correctness for dependent crates is enforced at real publish
+# time inside `cargo publish`; the local-dry-run.sh script + build-rust
+# job cover everything else (compile, leaf packaging, leaf publish path).
+is_dependent_crate() {
+  case "$1" in
+    fathomdb-engine|fathomdb-embedder|fathomdb|fathomdb-cli) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 if [ "$DRY_RUN" -eq 1 ]; then
-  # --no-verify: skip compile + workspace-dep resolve. Required for
-  # dependent crates (fathomdb-engine etc.) because dry-run does NOT
-  # actually upload, so the just-"published" sibling crate version
-  # is not resolvable on crates.io. Leaf crates also tolerate
-  # --no-verify; manifest validation still runs. Matches the
-  # pre-publish packaging rationale in .github/workflows/release.yml
-  # L153-170. See WF-FIX-2 commit body for context.
+  if is_dependent_crate "$CRATE"; then
+    printf 'cargo-publish-if-new: %s@%s — --dry-run skipped (dependent crate; cross-tier workspace-dep resolve only succeeds after real publish; manifest validated at real publish time)\n' \
+      "$CRATE" "$LOCAL_VERSION"
+    exit 0
+  fi
   printf 'cargo-publish-if-new: %s@%s — --dry-run; forwarding to cargo publish --dry-run --no-verify\n' \
     "$CRATE" "$LOCAL_VERSION"
   exec cargo publish --dry-run --no-verify -p "$CRATE"
