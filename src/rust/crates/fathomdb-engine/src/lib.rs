@@ -1,4 +1,5 @@
 pub mod lifecycle;
+mod pcache2;
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::error::Error;
@@ -3038,7 +3039,12 @@ fn init_perf_experiments_runtime() {
         // connections; reduces global allocator pressure for page
         // cache fills.
         let pagecache = std::env::var("FATHOMDB_PERF_SQLITE_PAGECACHE").ok();
-        if !memstatus_off && pagecache.is_none() {
+        // FATHOMDB_PERF_SQLITE_PCACHE2=1 installs the per-instance
+        // custom page-cache allocator (pcache2.rs). Targets AC-020
+        // residual contention on the default pcache1 mutex.
+        let pcache2_on =
+            std::env::var_os("FATHOMDB_PERF_SQLITE_PCACHE2").is_some_and(|v| v == "1");
+        if !memstatus_off && pagecache.is_none() && !pcache2_on {
             return;
         }
         // SAFETY: sqlite3_shutdown / sqlite3_initialize are documented
@@ -3077,11 +3083,22 @@ fn init_perf_experiments_runtime() {
             } else {
                 -1
             };
+            let rc_pcache2 = if pcache2_on {
+                // SQLITE_CONFIG_PCACHE2 = 18 per sqlite3.h. The methods
+                // table must outlive the SQLite engine; we pass a
+                // pointer to our static.
+                rusqlite::ffi::sqlite3_config(
+                    rusqlite::ffi::SQLITE_CONFIG_PCACHE2,
+                    &raw const pcache2::PCACHE2_METHODS.0,
+                )
+            } else {
+                -1
+            };
             let rc_init = rusqlite::ffi::sqlite3_initialize();
             eprintln!(
                 "perf-experiment: runtime-config rcs shutdown={rc_shutdown} \
-                 memstatus={rc_memstatus} pagecache={rc_pagecache} initialize={rc_init} \
-                 (0=SQLITE_OK; 21=SQLITE_MISUSE; -1=not configured)"
+                 memstatus={rc_memstatus} pagecache={rc_pagecache} pcache2={rc_pcache2} \
+                 initialize={rc_init} (0=SQLITE_OK; 21=SQLITE_MISUSE; -1=not configured)"
             );
         }
     });

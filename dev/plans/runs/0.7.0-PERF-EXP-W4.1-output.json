@@ -1,0 +1,23 @@
+{
+  "experiment_id": "W4.1",
+  "lever_id": "L-D1-pcache2-proto",
+  "dev_box_pre_screen": {
+    "timestamp_utc": "2026-05-25T23:50:29Z",
+    "branch": "main",
+    "head_sha": "df3a120442f25aa2e48223543e2c8be2c58caf98",
+    "host": {
+      "cpu_model": "AMD Ryzen Threadripper PRO 5945WX 12-Cores",
+      "cores": 24,
+      "os": "Ubuntu 24.04.4 LTS",
+      "kernel": "Linux 6.17.0-29-generic x86_64",
+      "glibc": "2.39",
+      "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+      "libsqlite3_sys": "libsqlite3-sys-0.28.0"
+    },
+    "results": {}
+  },
+  "verdict": "PENDING",
+  "evidence_notes": "",
+  "next_step": "",
+  "canonical_ci_url": null
+}
