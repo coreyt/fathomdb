@@ -1,0 +1,66 @@
+{
+  "experiment_id": "W1.1",
+  "lever_id": "L-A0",
+  "dev_box_pre_screen": {
+    "timestamp_utc": "2026-05-25T18:21:01Z",
+    "branch": "main",
+    "head_sha": "4232349f0f7712a5fe8dd9a06d966d4b94dec468",
+    "host": {
+      "cpu_model": "AMD Ryzen Threadripper PRO 5945WX 12-Cores",
+      "cores": 24,
+      "os": "Ubuntu 24.04.4 LTS",
+      "kernel": "Linux 6.17.0-29-generic x86_64",
+      "glibc": "2.39",
+      "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+      "libsqlite3_sys": "libsqlite3-sys-0.28.0"
+    },
+    "results": {
+      "ac012": {
+        "n": 1000000,
+        "samples": 1000,
+        "seed_ms": 25112,
+        "p50_ms": 129,
+        "p99_ms": 425
+      },
+      "ac020": {
+        "sequential_ms": 121,
+        "concurrent_ms": 45,
+        "bound_ms": 22,
+        "speedup": 2.689
+      }
+    }
+  },
+  "verdict": "PENDING",
+  "evidence_notes": "",
+  "next_step": "",
+  "canonical_ci_url": null,
+  "canonical_ci": {
+    "timestamp_utc": "2026-05-26T14:44:58Z",
+    "branch": "main",
+    "head_sha": "336ae3bedaecb0949c718e188b6a16b5572c6f69",
+    "host": {
+      "cpu_model": "AMD EPYC 9V74 80-Core Processor",
+      "cores": 4,
+      "os": "Ubuntu 24.04.4 LTS",
+      "kernel": "Linux 6.17.0-1013-azure x86_64",
+      "glibc": "2.39",
+      "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+      "libsqlite3_sys": "libsqlite3-sys-0.28.0"
+    },
+    "results": {
+      "ac012": {
+        "n": 1000000,
+        "samples": 1000,
+        "seed_ms": 34363,
+        "p50_ms": 162,
+        "p99_ms": 526
+      },
+      "ac020": {
+        "sequential_ms": 177,
+        "concurrent_ms": 65,
+        "bound_ms": 33,
+        "speedup": 2.723
+      }
+    }
+  }
+}
