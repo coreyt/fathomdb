@@ -38,11 +38,19 @@
 //   for the canonical-SQLite-stack baseline this prototype is
 //   evaluated against.
 
+use std::alloc::{alloc_zeroed, dealloc, Layout};
 use std::collections::HashMap;
 use std::os::raw::{c_int, c_uint, c_void};
 use std::sync::Mutex;
 
 use rusqlite::ffi;
+
+/// Alignment used for both pBuf and pExtra allocations. SQLite stores
+/// a `PgHdr1`-style C struct in pExtra; on x86_64 the natural
+/// alignment is 8 bytes. We allocate both regions through the global
+/// allocator at this alignment so writes through pExtra cannot trip
+/// unaligned-access UB.
+const PAGE_ALIGN: usize = 16;
 
 // Each cache instance owns a Mutex<State> guarding its hashmap.
 struct Cache {
@@ -63,37 +71,79 @@ struct State {
 }
 
 struct Page {
-    /// Combined backing buffer: `sz_page` bytes for pBuf, then
-    /// `sz_extra` bytes for pExtra. Heap-allocated and pinned
-    /// because SQLite stores raw pointers into it.
-    buffer: Vec<u8>,
-    sz_page: c_int,
+    /// Embedded handle returned to SQLite from xFetch. SQLite uses
+    /// this pointer as the page handle and expects the same address
+    /// back on repeated fetches of the same key while pinned, so
+    /// this field lives inside the Page (which is heap-allocated and
+    /// never moves) and its address is what we hand out.
+    handle: ffi::sqlite3_pcache_page,
+    /// pBuf backing: `sz_page` bytes, zeroed, aligned to PAGE_ALIGN.
+    buf_ptr: *mut u8,
+    /// pExtra backing: `sz_extra` bytes, zeroed, aligned to
+    /// PAGE_ALIGN. When `sz_extra == 0`, allocated as 1 byte so the
+    /// pointer is non-null and distinct from buf_ptr.
+    extra_ptr: *mut u8,
+    sz_page: usize,
+    sz_extra: usize,
     pinned: bool,
 }
 
+// SAFETY: Page owns two heap allocations via raw pointers but never
+// shares them across threads except through the Mutex<State> on the
+// owning Cache. Sending Page across threads moves both the struct
+// and the pointed-to memory ownership together.
+unsafe impl Send for Page {}
+
 impl Page {
-    fn buf_ptr(&mut self) -> *mut c_void {
-        self.buffer.as_mut_ptr().cast::<c_void>()
+    fn new(sz_page: usize, sz_extra: usize) -> Box<Page> {
+        debug_assert!(sz_page % PAGE_ALIGN == 0, "sz_page {sz_page} not aligned to {PAGE_ALIGN}");
+        // SAFETY: Layout sizes are non-zero (sz_page is at least the
+        // SQLite page size; sz_extra clamped to >=1). alloc_zeroed
+        // returns a pointer aligned to the requested alignment or
+        // null on failure; we assert non-null because OOM at this
+        // path would corrupt SQLite anyway.
+        unsafe {
+            let buf_layout = Layout::from_size_align(sz_page, PAGE_ALIGN).expect("buf layout");
+            let buf_ptr = alloc_zeroed(buf_layout);
+            assert!(!buf_ptr.is_null(), "pcache2: buf allocation failed");
+            let extra_sz = sz_extra.max(1);
+            let extra_layout = Layout::from_size_align(extra_sz, PAGE_ALIGN).expect("extra layout");
+            let extra_ptr = alloc_zeroed(extra_layout);
+            assert!(!extra_ptr.is_null(), "pcache2: extra allocation failed");
+            Box::new(Page {
+                handle: ffi::sqlite3_pcache_page {
+                    pBuf: buf_ptr.cast::<c_void>(),
+                    pExtra: extra_ptr.cast::<c_void>(),
+                },
+                buf_ptr,
+                extra_ptr,
+                sz_page,
+                sz_extra,
+                pinned: true,
+            })
+        }
     }
-    fn extra_ptr(&mut self) -> *mut c_void {
-        // SAFETY: buffer length is sz_page + sz_extra; offset by
-        // sz_page is in-bounds.
-        unsafe { self.buffer.as_mut_ptr().add(self.sz_page as usize).cast::<c_void>() }
+
+    fn handle_ptr(&mut self) -> *mut ffi::sqlite3_pcache_page {
+        &mut self.handle as *mut _
     }
 }
 
-// Note: SQLite's sqlite3_pcache_page layout is `{ pBuf, pExtra }` —
-// we use rusqlite::ffi::sqlite3_pcache_page directly (see page_repr
-// below). No local mirror struct is needed; the historical
-// `OurPcachePage` was removed.
-
-// SQLite treats sqlite3_pcache_page as a header — the layout MUST
-// match. rusqlite::ffi::sqlite3_pcache_page has the same shape:
-// { pBuf: *mut c_void, pExtra: *mut c_void }. We allocate one
-// inline per Page so the pointer stays stable until the page is
-// freed.
-fn page_repr(p: &mut Page) -> ffi::sqlite3_pcache_page {
-    ffi::sqlite3_pcache_page { pBuf: p.buf_ptr(), pExtra: p.extra_ptr() }
+impl Drop for Page {
+    fn drop(&mut self) {
+        // SAFETY: pointers were obtained from alloc_zeroed with the
+        // matching Layout below.
+        unsafe {
+            if !self.buf_ptr.is_null() {
+                let layout = Layout::from_size_align_unchecked(self.sz_page, PAGE_ALIGN);
+                dealloc(self.buf_ptr, layout);
+            }
+            if !self.extra_ptr.is_null() {
+                let layout = Layout::from_size_align_unchecked(self.sz_extra.max(1), PAGE_ALIGN);
+                dealloc(self.extra_ptr, layout);
+            }
+        }
+    }
 }
 
 // -- sqlite3_pcache_methods2 callbacks --
@@ -136,20 +186,19 @@ unsafe extern "C" fn pcache_fetch(
     create_flag: c_int,
 ) -> *mut ffi::sqlite3_pcache_page {
     let cache_ref: &Cache = &*cache.cast::<Cache>();
+    debug_assert!(
+        (cache_ref.sz_page as usize) % PAGE_ALIGN == 0,
+        "SQLite passed sz_page={} not aligned to {PAGE_ALIGN}",
+        cache_ref.sz_page,
+    );
     let mut s = cache_ref.state.lock().unwrap();
 
     if let Some(page) = s.pages.get_mut(&key) {
         page.pinned = true;
+        let ptr = page.handle_ptr();
         // Drop from LRU since it's now pinned.
         s.lru.retain(|k| *k != key);
-        let page = s.pages.get_mut(&key).unwrap();
-        // Allocate a per-call sqlite3_pcache_page struct on the heap;
-        // SQLite hands this back to xUnpin/xRekey so it must outlive
-        // the xFetch call. We embed it in the Page itself via the
-        // page's leading-zero offset: since we just need a stable
-        // pointer, allocate a tiny boxed struct here.
-        let pp = Box::new(page_repr(page));
-        return Box::into_raw(pp);
+        return ptr;
     }
 
     if create_flag == 0 {
@@ -169,12 +218,10 @@ unsafe extern "C" fn pcache_fetch(
         }
     }
 
-    let total = (cache_ref.sz_page + cache_ref.sz_extra).max(1) as usize;
-    let mut page =
-        Box::new(Page { buffer: vec![0_u8; total], sz_page: cache_ref.sz_page, pinned: true });
-    let pp = Box::new(page_repr(&mut page));
+    let mut page = Page::new(cache_ref.sz_page as usize, cache_ref.sz_extra as usize);
+    let ptr = page.handle_ptr();
     s.pages.insert(key, page);
-    Box::into_raw(pp)
+    ptr
 }
 
 unsafe extern "C" fn pcache_unpin(
@@ -186,17 +233,12 @@ unsafe extern "C" fn pcache_unpin(
         return;
     }
     let cache_ref: &Cache = &*cache.cast::<Cache>();
-    // Find the page by matching its pBuf address.
+    // The handle pointer is the address of the Page's embedded
+    // `handle` field; find the Page whose buf_ptr matches.
     let buf_addr = (*page_ptr).pBuf as usize;
-    // Drop the heap-allocated pcache_page struct.
-    drop(Box::from_raw(page_ptr));
 
     let mut s = cache_ref.state.lock().unwrap();
-    // Find key whose page's first byte == buf_addr.
-    let key = s
-        .pages
-        .iter_mut()
-        .find_map(|(k, p)| (p.buffer.as_ptr() as usize == buf_addr).then_some(*k));
+    let key = s.pages.iter().find_map(|(k, p)| (p.buf_ptr as usize == buf_addr).then_some(*k));
     let Some(key) = key else {
         return;
     };
