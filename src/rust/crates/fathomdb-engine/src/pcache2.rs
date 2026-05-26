@@ -39,7 +39,7 @@
 //   evaluated against.
 
 use std::alloc::{alloc_zeroed, dealloc, Layout};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::os::raw::{c_int, c_uint, c_void};
 use std::sync::Mutex;
 
@@ -62,9 +62,11 @@ struct Cache {
 
 struct State {
     pages: HashMap<c_uint, Box<Page>>,
-    /// LRU ordering (front = LRU, back = MRU). Entries are page keys
-    /// that are currently unpinned.
-    lru: Vec<c_uint>,
+    /// Keys of currently-unpinned pages (eviction candidates). Not
+    /// LRU-ordered — the prototype only needs O(1) membership and
+    /// "pick one to evict", not strict recency. SQLite already gives
+    /// us cache-size hints so wrong-page eviction is bounded.
+    unpinned: HashSet<c_uint>,
     /// Soft limit on the number of pages SQLite asked us to retain.
     /// `0` means unlimited.
     cache_size_hint: c_int,
@@ -85,6 +87,9 @@ struct Page {
     extra_ptr: *mut u8,
     sz_page: usize,
     sz_extra: usize,
+    /// SQLite page number for this entry. Stored so xUnpin can
+    /// recover the key from the handle pointer in O(1).
+    key: c_uint,
     pinned: bool,
 }
 
@@ -95,7 +100,7 @@ struct Page {
 unsafe impl Send for Page {}
 
 impl Page {
-    fn new(sz_page: usize, sz_extra: usize) -> Box<Page> {
+    fn new(sz_page: usize, sz_extra: usize, key: c_uint) -> Box<Page> {
         debug_assert!(sz_page % PAGE_ALIGN == 0, "sz_page {sz_page} not aligned to {PAGE_ALIGN}");
         // SAFETY: Layout sizes are non-zero (sz_page is at least the
         // SQLite page size; sz_extra clamped to >=1). alloc_zeroed
@@ -119,6 +124,7 @@ impl Page {
                 extra_ptr,
                 sz_page,
                 sz_extra,
+                key,
                 pinned: true,
             })
         }
@@ -126,6 +132,22 @@ impl Page {
 
     fn handle_ptr(&mut self) -> *mut ffi::sqlite3_pcache_page {
         &mut self.handle as *mut _
+    }
+
+    /// Recover the owning Page from a handle pointer that we
+    /// previously returned to SQLite from xFetch. SQLite hands the
+    /// same pointer back to xUnpin / xRekey, and since the handle
+    /// is an inline field, subtracting `offset_of!(Page, handle)`
+    /// gives the Page address.
+    ///
+    /// SAFETY: caller must ensure `handle` is a non-null pointer
+    /// returned by this module's xFetch and still owned by the
+    /// caching cache instance (i.e. not freed by a prior discarding
+    /// unpin).
+    unsafe fn from_handle_ptr<'a>(handle: *mut ffi::sqlite3_pcache_page) -> &'a Page {
+        debug_assert!(!handle.is_null());
+        let off = std::mem::offset_of!(Page, handle);
+        &*(handle as *mut u8).sub(off).cast::<Page>()
     }
 }
 
@@ -163,7 +185,11 @@ unsafe extern "C" fn pcache_create(
         sz_page,
         sz_extra,
         purgeable: purgeable != 0,
-        state: Mutex::new(State { pages: HashMap::new(), lru: Vec::new(), cache_size_hint: 0 }),
+        state: Mutex::new(State {
+            pages: HashMap::new(),
+            unpinned: HashSet::new(),
+            cache_size_hint: 0,
+        }),
     });
     Box::into_raw(cache).cast::<ffi::sqlite3_pcache>()
 }
@@ -196,8 +222,7 @@ unsafe extern "C" fn pcache_fetch(
     if let Some(page) = s.pages.get_mut(&key) {
         page.pinned = true;
         let ptr = page.handle_ptr();
-        // Drop from LRU since it's now pinned.
-        s.lru.retain(|k| *k != key);
+        s.unpinned.remove(&key);
         return ptr;
     }
 
@@ -205,20 +230,20 @@ unsafe extern "C" fn pcache_fetch(
         return std::ptr::null_mut();
     }
 
-    // Evict if at capacity (best-effort).
+    // Evict if at capacity (best-effort; not LRU-ordered).
     if cache_ref.purgeable && s.cache_size_hint > 0 {
         let limit = s.cache_size_hint as usize;
         while s.pages.len() >= limit {
-            let evict = match s.lru.first().copied() {
+            let evict = match s.unpinned.iter().next().copied() {
                 Some(k) => k,
                 None => break, // no unpinned page available
             };
-            s.lru.remove(0);
+            s.unpinned.remove(&evict);
             s.pages.remove(&evict);
         }
     }
 
-    let mut page = Page::new(cache_ref.sz_page as usize, cache_ref.sz_extra as usize);
+    let mut page = Page::new(cache_ref.sz_page as usize, cache_ref.sz_extra as usize, key);
     let ptr = page.handle_ptr();
     s.pages.insert(key, page);
     ptr
@@ -233,23 +258,18 @@ unsafe extern "C" fn pcache_unpin(
         return;
     }
     let cache_ref: &Cache = &*cache.cast::<Cache>();
-    // The handle pointer is the address of the Page's embedded
-    // `handle` field; find the Page whose buf_ptr matches.
-    let buf_addr = (*page_ptr).pBuf as usize;
+    // Recover the key from the handle pointer in O(1): the handle
+    // is an inline field of the Page, so subtracting its offset
+    // gives the Page, which carries its own `key`.
+    let key = Page::from_handle_ptr(page_ptr).key;
 
     let mut s = cache_ref.state.lock().unwrap();
-    let key = s.pages.iter().find_map(|(k, p)| (p.buf_ptr as usize == buf_addr).then_some(*k));
-    let Some(key) = key else {
-        return;
-    };
     if discard != 0 {
         s.pages.remove(&key);
-        s.lru.retain(|k| *k != key);
+        s.unpinned.remove(&key);
     } else if let Some(p) = s.pages.get_mut(&key) {
         p.pinned = false;
-        if !s.lru.contains(&key) {
-            s.lru.push(key);
-        }
+        s.unpinned.insert(key);
     }
 }
 
@@ -261,13 +281,12 @@ unsafe extern "C" fn pcache_rekey(
 ) {
     let cache_ref: &Cache = &*cache.cast::<Cache>();
     let mut s = cache_ref.state.lock().unwrap();
-    if let Some(page) = s.pages.remove(&old_key) {
+    if let Some(mut page) = s.pages.remove(&old_key) {
+        page.key = new_key;
         s.pages.insert(new_key, page);
     }
-    for k in s.lru.iter_mut() {
-        if *k == old_key {
-            *k = new_key;
-        }
+    if s.unpinned.remove(&old_key) {
+        s.unpinned.insert(new_key);
     }
 }
 
@@ -277,7 +296,7 @@ unsafe extern "C" fn pcache_truncate(cache: *mut ffi::sqlite3_pcache, i_limit: c
     let drop_keys: Vec<c_uint> = s.pages.keys().copied().filter(|k| *k >= i_limit).collect();
     for k in drop_keys {
         s.pages.remove(&k);
-        s.lru.retain(|x| *x != k);
+        s.unpinned.remove(&k);
     }
 }
 
@@ -292,7 +311,7 @@ unsafe extern "C" fn pcache_shrink(cache: *mut ffi::sqlite3_pcache) {
     let cache_ref: &Cache = &*cache.cast::<Cache>();
     let mut s = cache_ref.state.lock().unwrap();
     // Free all unpinned pages.
-    let to_evict: Vec<c_uint> = s.lru.drain(..).collect();
+    let to_evict: Vec<c_uint> = s.unpinned.drain().collect();
     for k in to_evict {
         s.pages.remove(&k);
     }
