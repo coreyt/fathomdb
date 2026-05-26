@@ -101,7 +101,10 @@ unsafe impl Send for Page {}
 
 impl Page {
     fn new(sz_page: usize, sz_extra: usize, key: c_uint) -> Box<Page> {
-        debug_assert!(sz_page % PAGE_ALIGN == 0, "sz_page {sz_page} not aligned to {PAGE_ALIGN}");
+        debug_assert!(
+            sz_page.is_multiple_of(PAGE_ALIGN),
+            "sz_page {sz_page} not aligned to {PAGE_ALIGN}"
+        );
         // SAFETY: Layout sizes are non-zero (sz_page is at least the
         // SQLite page size; sz_extra clamped to >=1). alloc_zeroed
         // returns a pointer aligned to the requested alignment or
@@ -213,7 +216,7 @@ unsafe extern "C" fn pcache_fetch(
 ) -> *mut ffi::sqlite3_pcache_page {
     let cache_ref: &Cache = &*cache.cast::<Cache>();
     debug_assert!(
-        (cache_ref.sz_page as usize) % PAGE_ALIGN == 0,
+        (cache_ref.sz_page as usize).is_multiple_of(PAGE_ALIGN),
         "SQLite passed sz_page={} not aligned to {PAGE_ALIGN}",
         cache_ref.sz_page,
     );
