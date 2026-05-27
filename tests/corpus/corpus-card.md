@@ -182,6 +182,7 @@ Authoritative copy lives in
 | Source | Upstream ID | Snapshot | Output SHA-256 |
 |---|---|---|---|
 | CNN/DailyMail | HF `abisee/cnn_dailymail` config `3.0.0` | rev `96df5e68…6223d` (2024-01-18) | `7c371528…493d09` |
+| Landes to-dos | GH `plandes/todo-task` `resources/todo-dataset.json` | rev `06bcd261…d26f` (2018-06-29) | `74f02482…0e812` |
 
 ## Out of scope for 0.7.0
 
