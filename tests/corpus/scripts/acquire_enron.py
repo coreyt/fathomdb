@@ -46,12 +46,11 @@ import re
 import sys
 import tarfile
 from email.message import Message
-from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Iterator
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _corpus_lib import CorpusDoc, corpus_data_dir, doc_id, write_jsonl  # noqa: E402
+from _corpus_lib import CorpusDoc, corpus_dir, doc_id, write_jsonl  # noqa: E402
 
 UPSTREAM_URL = "https://www.cs.cmu.edu/~enron/enron_mail_20150507.tar.gz"
 UPSTREAM_LAST_MODIFIED = "2015-05-07T20:35:29Z"
@@ -59,7 +58,7 @@ UPSTREAM_ETAG = '"1a6b8803-51583da2f8640"'  # from CMU HTTP HEAD
 ENRON_CACHE_TARBALL = Path(
     os.environ.get(
         "ENRON_CACHE_TARBALL",
-        str(corpus_data_dir() / "downloads" / "enron_mail_20150507.tar.gz"),
+        str(Path.home() / ".cache" / "fathomdb-corpus" / "enron_mail_20150507.tar.gz"),
     )
 )
 PROVENANCE = "cmu-enron-2015-05-07"
@@ -178,7 +177,9 @@ def build_doc(user: str, tar_path: str, msg: Message, body: str) -> CorpusDoc | 
     if in_reply_to and in_reply_to != message_id:
         parent_doc_id = doc_id(PROVENANCE, in_reply_to)
     date_hdr = header(msg, "Date")
+    # Best-effort ISO-8601 conversion via email.utils.parsedate_to_datetime
     try:
+        from email.utils import parsedate_to_datetime
         dt = parsedate_to_datetime(date_hdr) if date_hdr else None
         created_at = dt.isoformat() if dt is not None else "2001-01-01T00:00:00+00:00"
     except Exception:
@@ -216,7 +217,7 @@ def main() -> int:
     print(f"tarball sha256: {sha}")
     print(f"  upstream:     etag={UPSTREAM_ETAG} last-modified={UPSTREAM_LAST_MODIFIED}")
 
-    out_path = corpus_data_dir() / "raw" / "enron.jsonl"
+    out_path = corpus_dir() / "raw" / "enron.jsonl"
 
     # Pass 1: collect SENT_PER_USER candidate messages per user.
     print(f"opening tarball {ENRON_CACHE_TARBALL} (sequential read)", flush=True)
