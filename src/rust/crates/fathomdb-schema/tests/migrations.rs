@@ -4,6 +4,21 @@ use fathomdb_schema::{
 };
 use rusqlite::Connection;
 use std::process::Command;
+use std::sync::Once;
+
+// Pack 1 (step 9) creates a vec0 virtual table; register sqlite-vec
+// once per test-binary so the migration step can execute.
+fn register_sqlite_vec_once() {
+    static REGISTER: Once = Once::new();
+    REGISTER.call_once(|| unsafe {
+        let entrypoint: unsafe extern "C" fn(
+            *mut rusqlite::ffi::sqlite3,
+            *mut *const std::os::raw::c_char,
+            *const rusqlite::ffi::sqlite3_api_routines,
+        ) -> std::os::raw::c_int = std::mem::transmute(sqlite_vec::sqlite3_vec_init as *const ());
+        rusqlite::ffi::sqlite3_auto_extension(Some(entrypoint));
+    });
+}
 
 fn user_version(conn: &Connection) -> u32 {
     conn.query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0)).unwrap()
@@ -15,6 +30,7 @@ fn set_user_version(conn: &Connection, version: u32) {
 
 #[test]
 fn ac_046a_applies_ordered_migrations_to_current_version() {
+    register_sqlite_vec_once();
     let conn = Connection::open_in_memory().unwrap();
     set_user_version(&conn, 1);
 
@@ -23,24 +39,26 @@ fn ac_046a_applies_ordered_migrations_to_current_version() {
     assert_eq!(report.schema_version_before, 1);
     assert_eq!(report.schema_version_after, SCHEMA_VERSION);
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
-    assert_eq!(report.migration_steps.len(), 7);
+    assert_eq!(report.migration_steps.len(), 8);
     assert!(report.migration_steps.iter().all(|step| !step.failed));
 }
 
 #[test]
 fn ac_046b_success_report_contains_step_ids_and_durations() {
+    register_sqlite_vec_once();
     let conn = Connection::open_in_memory().unwrap();
     set_user_version(&conn, 1);
 
     let report = migrate(&conn).unwrap();
 
     let step_ids: Vec<u32> = report.migration_steps.iter().map(|step| step.step_id).collect();
-    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8]);
+    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9]);
     assert!(report.migration_steps.iter().all(|step| step.duration_ms.is_some()));
 }
 
 #[test]
 fn ac_046b_success_emits_structured_step_events() {
+    register_sqlite_vec_once();
     let conn = Connection::open_in_memory().unwrap();
     set_user_version(&conn, 1);
     let mut events = Vec::new();
@@ -51,7 +69,7 @@ fn ac_046b_success_emits_structured_step_events() {
     .unwrap();
 
     let step_ids: Vec<u32> = events.iter().map(|step| step.step_id).collect();
-    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8]);
+    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9]);
     assert!(events.iter().all(|step| step.duration_ms.is_some()));
     assert!(events.iter().all(|step| !step.failed));
 }
@@ -118,6 +136,7 @@ fn ac_049_accretion_guard_accepts_current_migrations_and_rejects_violator() {
 
 #[test]
 fn phase9_pack_b_migration_008_adds_source_id_columns_and_indexes() {
+    register_sqlite_vec_once();
     let conn = Connection::open_in_memory().unwrap();
     set_user_version(&conn, 1);
     migrate(&conn).unwrap();

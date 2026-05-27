@@ -409,6 +409,7 @@ version = "0.6.1"
 dependencies = [
  "proptest",
  "rusqlite",
+ "sqlite-vec",
 ]
 
 [[package]]

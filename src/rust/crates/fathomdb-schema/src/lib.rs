@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use rusqlite::Connection;
 
-pub const SCHEMA_VERSION: u32 = 8;
+pub const SCHEMA_VERSION: u32 = 9;
 
 /// SQLite `PRAGMA` name carrying the on-disk schema-version sentinel.
 ///
@@ -201,6 +201,79 @@ pub const MIGRATIONS: &[Migration] = &[
                   ON canonical_nodes(source_id);
               CREATE INDEX IF NOT EXISTS canonical_edges_source_id_idx
                   ON canonical_edges(source_id);",
+    },
+    // 0.7.0 Pack 1 — Vector binary-quantization data encoding.
+    // Per `dev/design/0.7.0-vector-quant-pack1.md` D4 (fix-3). Stages
+    // the existing f32 corpus + kind mapping into a regular SQL table,
+    // drops + recreates `vector_default` with the new schema (sibling
+    // `embedding_bin bit[768]`, `source_type TEXT partition key`,
+    // `kind TEXT`, `created_at INTEGER`), then repopulates with
+    // SQL-side `vec_quantize_binary` and the D3 CASE mapping. A
+    // prefix CHECK-constraint preflight aborts the migration if any
+    // `_fathomdb_vector_rows.kind` is outside the locked vocabulary.
+    //
+    // `<dim>=768` is hardcoded against the default profile
+    // (`load_default_profile` -> `DEFAULT_EMBEDDER_DIMENSION` in
+    // fathomdb-engine). The design notes this constraint and defers
+    // a runtime-dim migration to 0.7.1.
+    Migration {
+        step_id: 9,
+        sql: "-- Pre-step: ensure the old-shape vector_default exists so the staged
+              -- copy below has something to JOIN against. Pre-Pack-1 engines
+              -- created vector_default in ensure_vector_partition AFTER
+              -- migrations ran, so a fresh DB reaching step 9 has no
+              -- vector_default at all. IF NOT EXISTS is a no-op for an
+              -- already-migrated old DB (which has the single-column shape).
+              CREATE VIRTUAL TABLE IF NOT EXISTS vector_default USING vec0(
+                  embedding float[768]
+              );
+              CREATE TEMP TABLE _vec0_migration_assertion(
+                  check_passes INTEGER NOT NULL CHECK(check_passes = 1)
+              );
+              INSERT INTO _vec0_migration_assertion(check_passes)
+                  SELECT CASE WHEN EXISTS (
+                      SELECT 1 FROM _fathomdb_vector_rows
+                      WHERE kind NOT IN ('email','article','paper','meeting','note','todo','doc')
+                  ) THEN 0 ELSE 1 END;
+              CREATE TABLE _fathomdb_vector_migration_v0_7_0 (
+                  rowid     INTEGER PRIMARY KEY,
+                  embedding BLOB NOT NULL,
+                  kind      TEXT NOT NULL
+              );
+              INSERT INTO _fathomdb_vector_migration_v0_7_0(rowid, embedding, kind)
+                  SELECT v.rowid, v.embedding, r.kind
+                  FROM vector_default v
+                  JOIN _fathomdb_vector_rows r ON r.rowid = v.rowid;
+              DROP TABLE vector_default;
+              CREATE VIRTUAL TABLE vector_default USING vec0(
+                  embedding float[768],
+                  embedding_bin bit[768],
+                  source_type TEXT partition key,
+                  kind TEXT,
+                  created_at INTEGER
+              );
+              INSERT INTO vector_default(
+                  rowid, embedding, embedding_bin, source_type, kind, created_at
+              )
+              SELECT
+                  s.rowid,
+                  s.embedding,
+                  vec_quantize_binary(s.embedding),
+                  CASE s.kind
+                      WHEN 'email'   THEN 'email'
+                      WHEN 'article' THEN 'article'
+                      WHEN 'paper'   THEN 'paper'
+                      WHEN 'meeting' THEN 'meeting'
+                      WHEN 'note'    THEN 'note'
+                      WHEN 'todo'    THEN 'todo'
+                      WHEN 'doc'     THEN 'article'
+                      ELSE 'article'
+                  END,
+                  s.kind,
+                  strftime('%s', 'now')
+              FROM _fathomdb_vector_migration_v0_7_0 s;
+              DROP TABLE _fathomdb_vector_migration_v0_7_0;
+              DROP TABLE _vec0_migration_assertion;",
     },
 ];
 

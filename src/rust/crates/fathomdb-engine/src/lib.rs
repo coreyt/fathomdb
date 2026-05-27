@@ -3276,8 +3276,20 @@ fn kind_is_vector_indexed(connection: &Connection, kind: &str) -> Result<bool, E
 }
 
 fn ensure_vector_partition(connection: &Connection, dimension: u32) -> rusqlite::Result<()> {
+    // 0.7.0 Pack 1 schema: f32 `embedding` + binary-quant sibling
+    // `embedding_bin` + `source_type` partition key + `kind` +
+    // `created_at`. Per dev/design/0.7.0-vector-quant-pack1.md D1/D2.
+    // Established DBs reach this point after migration step 9 has
+    // already created the new shape; fresh DBs land it directly via
+    // this CREATE.
     let sql = format!(
-        "CREATE VIRTUAL TABLE IF NOT EXISTS {DEFAULT_VECTOR_PARTITION} USING vec0(embedding float[{dimension}])"
+        "CREATE VIRTUAL TABLE IF NOT EXISTS {DEFAULT_VECTOR_PARTITION} USING vec0(\
+            embedding float[{dimension}],\
+            embedding_bin bit[{dimension}],\
+            source_type TEXT partition key,\
+            kind TEXT,\
+            created_at INTEGER\
+         )"
     );
     connection.execute_batch(&sql)
 }
