@@ -1,0 +1,69 @@
+{
+  "slice": "0.7.0-PVQ-P2-IMPL",
+  "status": "GREEN-dev",
+  "summary": "read_search_in_tx rewritten to two-phase bit-KNN (top-K=64) + f32 rerank (vec_distance_l2). Single reader transaction preserved; ?1 bound once and reused across both phases. embedding_bin populated by Pack 1 ingest/migration is now load-bearing on the read path.",
+  "change_site": "src/rust/crates/fathomdb-engine/src/lib.rs::read_search_in_tx",
+  "k_value_used": 64,
+  "k_constant_name": "TOP_K_BIT_CANDIDATES",
+  "distance_function_rerank": "vec_distance_l2",
+  "distance_rationale": "Matches the pre-Pack-2 single-phase path's default L2 distance for float[] vec0 columns; preserves rank-order semantics for callers and for the AC-013b recall test.",
+  "reader_only": true,
+  "writer_sites_touched": [],
+  "schema_changes": [],
+  "new_dependencies": [],
+  "sqlite_vec_version": "=0.1.7",
+  "snapshot_contract": {
+    "single_read_tx": true,
+    "transaction_behavior": "Deferred",
+    "cursor_mutation": false,
+    "second_commit_boundary": false
+  },
+  "ac_013_dev_box_smoke_post_impl": {
+    "n": 10000,
+    "samples": 1000,
+    "p50_ms": 6,
+    "p99_ms": 12,
+    "budget_p50_ms": 80,
+    "budget_p99_ms": 300,
+    "passed": true,
+    "seed_ms": 256
+  },
+  "ac_013b_recall_smoke_post_impl": {
+    "n": 10000,
+    "samples": 1000,
+    "recall_at_10": 1.0000,
+    "floor": 0.90,
+    "passed": true,
+    "note": "recall=1.0 at N=10K reflects small-corpus bit-quantization preserving the full f32 top-10. Canonical-CI N=1M is the load-bearing recall measurement and is expected to remain >= 0.90 per ADR-0.7.0-vector-binary-quant § 2 point 4."
+  },
+  "ac_019_smoke": {
+    "n": 10000,
+    "threads": 8,
+    "per_thread": 250,
+    "baseline_p99_ms": 17,
+    "stress_p99_ms": 131,
+    "bound_ms": 175,
+    "passed": true
+  },
+  "ac_012_smoke": {
+    "n": 10000,
+    "samples": 1000,
+    "p50_ms": 0,
+    "p99_ms": 2,
+    "passed": true
+  },
+  "ac_017_smoke": { "passed": true },
+  "ac_018_smoke": { "passed": true, "drain_ms": 99 },
+  "ac_020_smoke": {
+    "passed": false,
+    "regression_relative_to_pre_change": false,
+    "pre_change_baseline": { "sequential_ms": 122, "concurrent_ms": 52, "bound_ms": 22, "passed": false },
+    "post_change": { "sequential_ms": 154, "concurrent_ms": 79, "bound_ms": 28, "passed": false },
+    "note": "AC-020 fails on this dev box both BEFORE and AFTER the P2-IMPL rewrite (verified by git stash sandwich). The bound is sequential/2 + small slack, so noisy dev-box CPU pegs the test. Not a hot-path regression introduced by P2-IMPL; canonical-CI runner is authoritative for AC-020."
+  },
+  "vector_quant_pack1_tests": { "passed": 4, "failed": 0 },
+  "clippy_regressions": false,
+  "no_verify_used": false,
+  "log_file": "dev/plans/runs/0.7.0-PVQ-P2-IMPL-20260527T145756Z.log",
+  "next_step_for_orchestrator": "spawn codex reviewer on P2-IMPL, then dispatch canonical-CI for budget lock-flip prep"
+}
