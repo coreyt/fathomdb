@@ -18,6 +18,23 @@
       "sha256": "7c371528f9f86d5ca06a0ed39e3ed2da63bf09cbd71de988f692129c69493d09",
       "acquired_at": "2026-05-27"
     },
+    "synthetic_notes": {
+      "script": "generate_synthetic_notes.py",
+      "upstream": {
+        "kind": "synthetic",
+        "seed": "0x53EEDFA7C012B0F1"
+      },
+      "license": "Apache-2.0",
+      "distribution": "commit",
+      "output": "tests/corpus/raw/synthetic_notes.jsonl",
+      "doc_count": 1200,
+      "doc_count_breakdown": {
+        "fleeting": 150, "project": 150, "reading": 150, "idea": 150,
+        "decision-log": 150, "someday-maybe": 150, "personal-crm": 150, "meeting-follow": 150
+      },
+      "sha256": "b4d19f05a7b9c13bfe0bd303ef2aa7de44a321011700de1cfd6f47c247855eb3",
+      "acquired_at": "2026-05-27"
+    },
     "enron": {
       "script": "acquire_enron.py",
       "upstream": {

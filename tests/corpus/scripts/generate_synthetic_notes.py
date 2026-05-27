@@ -38,7 +38,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _corpus_lib import CorpusDoc, corpus_data_dir, doc_id, write_jsonl  # noqa: E402
+from _corpus_lib import CorpusDoc, corpus_dir, doc_id, write_jsonl  # noqa: E402
 
 PROVENANCE = "synthetic:fathomdb-corpus-v1"
 LICENSE_SPDX = "Apache-2.0"  # project license; same as the FathomDB repo
@@ -234,7 +234,7 @@ def main() -> int:
                 provenance=PROVENANCE,
             ))
 
-    out_path = corpus_data_dir() / "raw" / "synthetic_notes.jsonl"
+    out_path = corpus_dir() / "raw" / "synthetic_notes.jsonl"
     count, sha = write_jsonl(out_path, docs)
     print(f"wrote {count} docs to {out_path}")
     print(f"sha256 = {sha}")
