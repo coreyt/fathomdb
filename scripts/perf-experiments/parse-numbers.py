@@ -25,6 +25,12 @@ PATTERNS = {
         r"AC020_NUMBERS\s+sequential_ms=(?P<seq>\d+)\s+concurrent_ms=(?P<conc>\d+)"
         r"\s+bound_ms=(?P<bound>\d+)"
     ),
+    "ac019": re.compile(
+        r"AC019_NUMBERS\s+n=(?P<n>\d+)\s+threads=(?P<threads>\d+)"
+        r"\s+per_thread=(?P<per>\d+)\s+stress_ms=(?P<stress>\d+)"
+        r"\s+seed_ms=(?P<seed>\d+)\s+baseline_p99_ms=(?P<baseline_p99>\d+)"
+        r"\s+stress_p99_ms=(?P<stress_p99>\d+)\s+bound_ms=(?P<bound>\d+)"
+    ),
 }
 
 
@@ -49,6 +55,18 @@ def parse(path: str) -> dict:
             "seed_ms": int(m["seed"]),
             "p50_ms": int(m["p50"]),
             "p99_ms": int(m["p99"]),
+        }
+    m = PATTERNS["ac019"].search(text)
+    if m:
+        out["ac019"] = {
+            "n": int(m["n"]),
+            "threads": int(m["threads"]),
+            "per_thread": int(m["per"]),
+            "stress_ms": int(m["stress"]),
+            "seed_ms": int(m["seed"]),
+            "baseline_p99_ms": int(m["baseline_p99"]),
+            "stress_p99_ms": int(m["stress_p99"]),
+            "bound_ms": int(m["bound"]),
         }
     m = PATTERNS["ac020"].search(text)
     if m:

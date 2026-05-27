@@ -69,6 +69,15 @@ for target in $TARGETS; do
       bash "$SCRIPT_DIR/run-ac013.sh" >/dev/null 2>&1 || echo "warn: ac013 exited non-zero" >&2
       LOG_PATHS+=("$LOG")
       ;;
+    ac019)
+      LOG="$LOG_DIR/ac019.log"
+      AC013_CORPUS_N="$AC013_CORPUS_N" \
+      AC_FULL_SCALE="${AC_FULL_SCALE:-}" \
+      LOG_PATH="$LOG" \
+      AGENT_LONG=1 \
+      bash "$SCRIPT_DIR/run-ac019.sh" >/dev/null 2>&1 || echo "warn: ac019 exited non-zero" >&2
+      LOG_PATHS+=("$LOG")
+      ;;
     *)
       echo "unknown target: $target" >&2
       exit 2
