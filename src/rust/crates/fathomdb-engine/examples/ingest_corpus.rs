@@ -262,7 +262,7 @@ fn run(args: Args) -> Result<(), String> {
         });
         if node_batch.len() >= NODE_BATCH {
             nodes_written += flush_nodes(&engine, &mut node_batch)?;
-            if nodes_written % 2000 == 0 {
+            if nodes_written.is_multiple_of(2000) {
                 eprintln!("  nodes written: {nodes_written}");
             }
         }
