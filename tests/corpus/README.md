@@ -18,6 +18,9 @@ tests/corpus/
     ├── generate_*.py       # deterministic generators
     └── manifest.json       # upstream pins + output sha256 contract
 
+src/rust/crates/fathomdb-engine/examples/
+└── ingest_corpus.rs    # Pack 3 ingest harness (CLI; cargo run --example ingest_corpus)
+
 data/corpus-data/    # PRODUCED DATA (gitignored, see top-level .gitignore)
 ├── downloads/       # raw upstream artifacts (e.g. enron tarball)
 └── raw/             # canonical per-source JSONL
@@ -50,9 +53,28 @@ Every script's run prints a `sha256 = ...` line that must match the
 entry in `scripts/manifest.json` for the run to be considered
 reproducible.
 
+## Ingesting into FathomDB
+
+Once the acquisition + chain-generation scripts have populated
+`data/corpus-data/raw/` and `tests/corpus/chains/`, the Rust ingest
+harness loads the corpus into a FathomDB instance via the public
+`engine.write` API:
+
+```bash
+cargo run --example ingest_corpus -p fathomdb-engine -- \
+  --db tests/corpus/.cache/db \
+  --jsonl-dir data/corpus-data/raw \
+  --chains-dir tests/corpus/chains
+```
+
+The harness is idempotent (re-runs skip already-ingested docs via
+`engine.trace_source_ref`), batches writes, and emits a JSON closure
+summary on stdout (node/edge counts, per-source-type / per-relation
+breakdown, validated chains, elapsed time).
+
 ## Status
 
-Corpus-Pack 1 in progress (7 of ~10 planned sources acquired). PMC OA
-is deferred. Pack 2 (cross-doc chain generator) is next. Implementation
-handoff:
+Pack 1, Pack 2, and Pack 3 landed on `0.7.0/corpus-packs`. PMC OA
+deferred per HITL 2026-05-27. Pack 4 (search-validation integration
+tests) is next. Implementation handoff:
 [`dev/plans/prompts/0.7.0-CORPUS-BUILD-HANDOFF.md`](../../dev/plans/prompts/0.7.0-CORPUS-BUILD-HANDOFF.md).

@@ -220,7 +220,7 @@ Authoritative copy lives in
 | bahmutov daily-logs | GH `bahmutov/daily-logs` monthly Markdown | rev `521476da…19b7` (2020-09-01) | `bdecf3e8…0e81` |
 | Enron (CMU) | CMU `enron_mail_20150507.tar.gz` | tarball sha `b3da1b3f…48ca7` (2015-05-07) | `c4df0c71…486ab` |
 | Synthetic notes | generator seed `0x53EEDFA7C012B0F1` | n/a | `b4d19f05…55eb3` |
-| QMSum | GH `Yale-LILY/QMSum` archive | rev `83d7768c…bb7e` (2023-08-29), arch sha `b6970687…7d7f` | `19a2e5b4…5e2e` |
+| QMSum | GH `Yale-LILY/QMSum` archive | rev `83d7768c…bb7e` (2023-08-29), arch sha `b6970687…7d7f` | `717e9fb5…e593` |
 | EnronQA | HF `MichaelR207/enron_qa_0922` | rev `c0b3a919…221e` (2024-09-22) | `bc30eb06…48ab` |
 | Chain connectives | generator seed `0xC4A1C0A0C4A1AB1E` over Pack-1 anchors | n/a | `21777248…58d07` |
 
@@ -237,9 +237,12 @@ Authoritative copy lives in
 ## Implementation order
 
 Corpus-Pack 1 (acquisition + cleaning) → Corpus-Pack 2
-(chain generator) → **wait on PERF-VECTOR-QUANT Pack 1 schema
-landing** → Corpus-Pack 3 (ingest harness) → Corpus-Pack 4
-(search validation tests).
+(chain generator) → Corpus-Pack 3 (ingest harness;
+`src/rust/crates/fathomdb-engine/examples/ingest_corpus.rs`)
+→ Corpus-Pack 4 (search validation tests).
 
-Each pack closes with a commit on `main` and a closure note in
-`dev/plans/runs/0.7.0-CORPUS-BUILD-output.json`.
+Pack 3 builds against the current `PreparedWrite::{Node,Edge}` API.
+The PVQ Pack 1 schema migration (`embedding_bin` + `source_type` +
+metadata columns) is internal to the engine writer — the harness
+public-API surface does not change, so the harness runs unchanged
+against both pre- and post-PVQ engines.
