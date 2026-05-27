@@ -3333,13 +3333,35 @@ fn create_vector_partition(connection: &Connection, dimension: u32) -> rusqlite:
     connection.execute_batch(&sql)
 }
 
-/// Pack 1 in-place reshape of `vector_default`. Atomic under a single
-/// IMMEDIATE transaction: stages the existing f32 corpus + the row's
-/// kind, drops the old single-column vec0 table, recreates at the
-/// runtime `dimension` with the Pack 1 columns, then repopulates with
-/// SQL-side `vec_quantize_binary` + the D3 `kind -> source_type`
-/// mapping. The preflight CHECK on unknown kinds has already run as
-/// migration step 9 by the time we get here.
+/// SQL fragment implementing the D3 `kind -> source_type` map.
+/// Used both by the Pack 1 reshape migration and by the drift-detection
+/// unit test that pins it to [`resolve_source_type`].
+const KIND_TO_SOURCE_TYPE_CASE_SQL: &str = "CASE s.kind
+    WHEN 'email'   THEN 'email'
+    WHEN 'article' THEN 'article'
+    WHEN 'paper'   THEN 'paper'
+    WHEN 'meeting' THEN 'meeting'
+    WHEN 'note'    THEN 'note'
+    WHEN 'todo'    THEN 'todo'
+    WHEN 'doc'     THEN 'article'
+    ELSE 'article'
+END";
+
+/// Pack 1 in-place reshape of `vector_default`. Stages the existing
+/// f32 corpus + each row's `kind`, drops the old single-column vec0
+/// table, recreates at the runtime `dimension` with the Pack 1
+/// columns, then repopulates with SQL-side `vec_quantize_binary` +
+/// the D3 `kind -> source_type` mapping. The preflight CHECK on
+/// unknown kinds has already run as migration step 9 by the time we
+/// get here.
+///
+/// Atomicity: the DROP+CREATE+repopulate sequence runs inside a
+/// rusqlite `Connection::transaction()` (DEFERRED begin per rusqlite
+/// `transaction.rs:417`). Cross-process serialization is provided by
+/// the engine's sidecar `acquire_lock` at `open_with_migrations`
+/// (`lib.rs:1127` area); reader handles are not opened until
+/// `ensure_vector_partition` returns (`lib.rs:1241` area), so readers
+/// never observe a partial reshape.
 fn migrate_vector_partition_to_pack1(
     connection: &mut Connection,
     dimension: u32,
@@ -3367,7 +3389,7 @@ fn migrate_vector_partition_to_pack1(
          )"
     );
     tx.execute_batch(&create_sql)?;
-    tx.execute_batch(
+    let repopulate_sql = format!(
         "INSERT INTO vector_default(
              rowid, embedding, embedding_bin, source_type, kind, created_at
          )
@@ -3375,21 +3397,13 @@ fn migrate_vector_partition_to_pack1(
              s.rowid,
              s.embedding,
              vec_quantize_binary(s.embedding),
-             CASE s.kind
-                 WHEN 'email'   THEN 'email'
-                 WHEN 'article' THEN 'article'
-                 WHEN 'paper'   THEN 'paper'
-                 WHEN 'meeting' THEN 'meeting'
-                 WHEN 'note'    THEN 'note'
-                 WHEN 'todo'    THEN 'todo'
-                 WHEN 'doc'     THEN 'article'
-                 ELSE 'article'
-             END,
+             {KIND_TO_SOURCE_TYPE_CASE_SQL},
              s.kind,
              strftime('%s', 'now')
          FROM _fathomdb_vector_migration_v0_7_0 s;
-         DROP TABLE _fathomdb_vector_migration_v0_7_0;",
-    )?;
+         DROP TABLE _fathomdb_vector_migration_v0_7_0;"
+    );
+    tx.execute_batch(&repopulate_sql)?;
     tx.commit()
 }
 
@@ -4223,17 +4237,26 @@ unsafe extern "C" fn profile_callback_trampoline(
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_source_type, Engine, PreparedWrite};
+    use super::{resolve_source_type, Engine, PreparedWrite, KIND_TO_SOURCE_TYPE_CASE_SQL};
+    use rusqlite::Connection;
     use tempfile::TempDir;
 
     // Pack 1 drift-detection: the Rust helper used by the two writer
-    // sites must agree with the CASE WHEN inlined in migration step 9
-    // for every kind in the locked Pack 1 vocabulary (incl. the
-    // synthetic `doc` -> `article` coercion). See
+    // sites must agree with the CASE WHEN used by the Pack 1 reshape
+    // migration in `migrate_vector_partition_to_pack1`. The CASE SQL
+    // is exported as `KIND_TO_SOURCE_TYPE_CASE_SQL`; this test
+    // exercises it against an in-memory SQLite (no sqlite-vec extension
+    // required — only the CASE) and asserts byte-equal output with the
+    // Rust helper for every kind in the locked Pack 1 vocabulary
+    // (incl. the synthetic `doc` -> `article` coercion). See
     // `dev/design/0.7.0-vector-quant-pack1.md` D3 / D4.
     #[test]
     fn resolve_source_type_drift_check() {
-        let cases: &[(&str, &str)] = &[
+        let kinds = ["email", "article", "paper", "meeting", "note", "todo", "doc"];
+
+        // 1. Rust helper return values (table is the contract: changes
+        //    here must be reflected in the SQL CASE or this test fails).
+        let want: &[(&str, &str)] = &[
             ("email", "email"),
             ("article", "article"),
             ("paper", "paper"),
@@ -4242,16 +4265,41 @@ mod tests {
             ("todo", "todo"),
             ("doc", "article"),
         ];
-        for (kind, want) in cases {
+        for (kind, expected) in want {
             let got = resolve_source_type(kind).unwrap_or_else(|_| {
-                panic!("resolve_source_type({kind}) returned Err; want Ok({want})")
+                panic!("resolve_source_type({kind}) returned Err; want Ok({expected})")
             });
-            assert_eq!(got, *want, "mapping drift for kind={kind}");
+            assert_eq!(got, *expected, "Rust helper drift for kind={kind}");
         }
         assert!(
             resolve_source_type("banana").is_err(),
             "unknown kind must surface as writer error"
         );
+
+        // 2. SQL CASE evaluated against the same kinds. Build a
+        //    one-row staging row per kind and SELECT through
+        //    KIND_TO_SOURCE_TYPE_CASE_SQL; assert each row equals the
+        //    Rust helper's output. Drift in either direction fails.
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        conn.execute_batch("CREATE TABLE s(kind TEXT NOT NULL)").expect("create s");
+        for kind in &kinds {
+            conn.execute("INSERT INTO s(kind) VALUES (?1)", [kind]).expect("insert kind");
+        }
+        let sql = format!("SELECT s.kind, {KIND_TO_SOURCE_TYPE_CASE_SQL} FROM s");
+        let mut stmt = conn.prepare(&sql).expect("prepare CASE");
+        let rows: Vec<(String, String)> = stmt
+            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+            .expect("query")
+            .map(|r| r.expect("row"))
+            .collect();
+        assert_eq!(rows.len(), kinds.len(), "row count drift");
+        for (kind, sql_result) in &rows {
+            let rust_result = resolve_source_type(kind).expect("known kind");
+            assert_eq!(
+                sql_result, rust_result,
+                "SQL CASE vs Rust helper drift for kind={kind}: SQL={sql_result}, Rust={rust_result}"
+            );
+        }
     }
 
     #[test]
