@@ -1,7 +1,11 @@
 # PCACHE2 — post-0.7.0 follow-up candidates
 
 Written: 2026-05-26
-Status: **DEFERRED to post-0.7.0 production-hardening pass.**
+Status: **HITL-DECIDED 2026-05-26 — DEFERRED to post-0.7.0.** Stay
+with W4.1-stacked-O1 as the locked 0.7.0 stack; do not pursue
+proper-LRU or `page_size=16384` (alone or combined) in this
+release. Revisit per the trigger conditions in § "When to
+revisit" below.
 
 The 0.7.0 perf-experiments campaign locked
 **W4.1-stacked-O1** as the production stack for PCACHE2 (see
