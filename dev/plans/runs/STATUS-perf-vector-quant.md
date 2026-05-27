@@ -1,6 +1,6 @@
 # STATUS — 0.7.0 PERF-VECTOR-QUANT
 
-_Last updated: 2026-05-27 — Pack 1 + Pack 2 implementation CLOSED. P2-CANONICAL awaits user authorization._
+_Last updated: 2026-05-27 — Pack 1 + Pack 2 implementation CLOSED. Engine batch-collapse bug RESOLVED (commit `4a95cfd`). Dev-box AC-013 re-baselined at honest N=10K. P2-CANONICAL awaits user authorization._
 
 Orchestrator: main thread (Claude Code session). Pattern per `dev/design/orchestration.md`.
 
@@ -32,9 +32,9 @@ Orchestrator: main thread (Claude Code session). Pattern per `dev/design/orchest
 
 | AC | Pre-campaign | Dev-box smoke N=10K | Canonical N=1M target | Status |
 |---|---|---|---|---|
-| AC-013 p50 | 2048 ms @ N=1M (W4.1) | 6 ms (post-P2) | ≤ 80 ms | GREEN at dev-box; awaits canonical-CI |
-| AC-013 p99 | 2327 ms @ N=1M (W4.1) | 12 ms (post-P2) | ≤ 300 ms | GREEN at dev-box; awaits canonical-CI |
-| AC-013b recall@10 | n/a | 1.0 (post-P2) | ≥ 0.90 | GREEN at dev-box; awaits canonical-CI |
+| AC-013 p50 | 2048 ms @ N=1M (W4.1) | 12 ms (post-batch-fix) | ≤ 80 ms | GREEN at dev-box; awaits canonical-CI |
+| AC-013 p99 | 2327 ms @ N=1M (W4.1) | 16 ms (post-batch-fix) | ≤ 300 ms | GREEN at dev-box; awaits canonical-CI |
+| AC-013b recall@10 | n/a | not yet re-measured | ≥ 0.90 | needs re-run after projection-scanner perf tuning (see below) |
 | AC-019 stress p99 | 8388 ms @ N=1M (W4.1) | 131 ms (post-P2) | improve | GREEN at dev-box; awaits canonical-CI |
 | AC-012 / AC-017 / AC-018 | GREEN | GREEN | GREEN | unchanged |
 | AC-020 | GREEN at canonical | flaky dev-box (pre-existing, stash-sandwich confirmed) | GREEN | unchanged |
@@ -58,6 +58,41 @@ Orchestrator: main thread (Claude Code session). Pattern per `dev/design/orchest
 **Pack 2 tests**:
 - `AC013_BUDGET_P50/P99` re-pinned to 80/300 ms.
 - `ac_013b_recall_at_10_floor` — recall ≥ 0.90 against in-test f32 brute-force ground truth.
+
+## Post-fix findings (2026-05-27)
+
+**Engine batch-collapse bug resolved** (`4a95cfd`). `write_inner` now
+allocates one cursor per row in the batch; vec0 holds N distinct
+rows for a batch of N. Regression test
+`tests/batch_write_per_row_cursor.rs` GREEN. Per-node workaround in
+`tests/support/corpus_subset.rs` reverted to batched ingest;
+`corpus_fts.rs` / `corpus_vector.rs` / `corpus_graph.rs` all GREEN
+with the batched path.
+
+**Honest dev-box AC-013 numbers** (post-fix, N=10K, AGENT_LONG=1):
+- seed_ms = 28113 (vs <1s pre-fix when only ~10 unique rows were
+  embedded — the new seed cost is the honest one, ~2.8 ms per row
+  embed+commit through the projection runtime).
+- p50 = 12 ms, p99 = 16 ms — well within the 80/300 budget.
+- The latency rise from 6/12 to 12/16 reflects vec0 now actually
+  holding 10K rows to search; previously the bit-KNN was searching a
+  ~10-row partition.
+
+**New finding — projection-scanner throughput is one-row-per-cycle.**
+The collapse was masking this. `projection_dispatcher_loop`
+(`lib.rs:2432`) and `next_pending_projection_job` (`lib.rs:2597`)
+together enqueue exactly one job per scan cycle (the SQL has
+`LIMIT 32` but only the first non-in-flight row is returned). At ~2.8
+ms/row this is fine for AC-013 dev-box (~28 s for N=10K) but
+projects to ~46 min just to seed N=1M on canonical-CI. AC-013b's
+recall measurement (1000 queries × f32 brute-force ground truth over
+the same fixture) is what hung the previous re-baseline attempt —
+killed after 25 min before the ground-truth pass finished.
+
+A follow-up slice should widen the dispatcher to enqueue all rows
+returned by the LIMIT-32 SELECT (respecting
+`PROJECTION_INFLIGHT_LIMIT`). Out of scope for the immediate batch-
+collapse fix.
 
 ## Open HITL items (awaits user)
 
