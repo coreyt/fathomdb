@@ -33,7 +33,7 @@ from pathlib import Path
 
 # Make _corpus_lib importable when running via `uv run --script`.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _corpus_lib import CorpusDoc, corpus_dir, doc_id, write_jsonl  # noqa: E402
+from _corpus_lib import CorpusDoc, corpus_data_dir, doc_id, write_jsonl  # noqa: E402
 
 DATASET_ID = "abisee/cnn_dailymail"
 DATASET_CONFIG = "3.0.0"
@@ -85,7 +85,7 @@ def build_doc(row: dict) -> CorpusDoc:
 def main() -> int:
     from datasets import load_dataset  # type: ignore[import-not-found]
 
-    out_path = corpus_dir() / "raw" / "cnn_dailymail.jsonl"
+    out_path = corpus_data_dir() / "raw" / "cnn_dailymail.jsonl"
 
     print(f"streaming {DATASET_ID} ({DATASET_CONFIG}, revision={DATASET_REVISION})")
     ds = load_dataset(

@@ -32,7 +32,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _corpus_lib import CorpusDoc, corpus_dir, doc_id, write_jsonl  # noqa: E402
+from _corpus_lib import CorpusDoc, corpus_data_dir, doc_id, write_jsonl  # noqa: E402
 
 UPSTREAM_REPO = "plandes/todo-task"
 UPSTREAM_SHA = "06bcd261fe09e767282c73bf59a480a71bd8d26f"
@@ -163,7 +163,7 @@ def build_variant_doc(row: dict, variant: int) -> CorpusDoc:
 def main() -> int:
     rows = download_raw()
     print(f"loaded {len(rows)} real Landes rows")
-    out_path = corpus_dir() / "raw" / "landes_todos.jsonl"
+    out_path = corpus_data_dir() / "raw" / "landes_todos.jsonl"
 
     docs: list[CorpusDoc] = [build_real_doc(r) for r in rows]
     # Generate variants deterministically by walking rows in order; each
