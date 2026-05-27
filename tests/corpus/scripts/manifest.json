@@ -17,6 +17,23 @@
       "doc_count": 2500,
       "sha256": "7c371528f9f86d5ca06a0ed39e3ed2da63bf09cbd71de988f692129c69493d09",
       "acquired_at": "2026-05-27"
+    },
+    "landes_todos": {
+      "script": "acquire_landes_todos.py",
+      "upstream": {
+        "kind": "github_repo_raw_file",
+        "id": "plandes/todo-task",
+        "path": "resources/todo-dataset.json",
+        "revision": "06bcd261fe09e767282c73bf59a480a71bd8d26f",
+        "last_modified": "2018-06-29T01:38:23Z"
+      },
+      "license": "MIT",
+      "distribution": "commit",
+      "output": "tests/corpus/raw/landes_todos.jsonl",
+      "doc_count": 500,
+      "doc_count_breakdown": {"real": 253, "synthesised_variants": 247},
+      "sha256": "74f0248261f701856f72f2921abb1cd004b1773c13201e7b6ae5ad93e810e812",
+      "acquired_at": "2026-05-27"
     }
   }
 }
