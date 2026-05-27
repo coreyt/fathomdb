@@ -18,6 +18,25 @@
       "sha256": "7c371528f9f86d5ca06a0ed39e3ed2da63bf09cbd71de988f692129c69493d09",
       "acquired_at": "2026-05-27"
     },
+    "qmsum": {
+      "script": "acquire_qmsum.py",
+      "upstream": {
+        "kind": "github_archive_tarball",
+        "id": "Yale-LILY/QMSum",
+        "revision": "83d7768c1f2b4dfeb091385d3dc7e239b8e5bb7e",
+        "last_modified": "2023-08-29T01:07:05Z",
+        "archive_url": "https://codeload.github.com/Yale-LILY/QMSum/tar.gz/83d7768c1f2b4dfeb091385d3dc7e239b8e5bb7e",
+        "archive_sha256": "b6970687b0f56dbd0a7f66a2ff15c501a3e57e6f60750971466c678cf5b17d7f"
+      },
+      "license": "LicenseRef-QMSum-MIT-with-upstream-chain",
+      "license_notes": "QMSum annotations MIT; underlying transcripts derive from AMI (CC-BY-4.0), ICSI (CC-BY-NC variants), Canadian Parliament transcripts (Crown copyright). Upstream chain not verified for unrestricted redistribution; cache-only until a future HITL pass flips this.",
+      "distribution": "cache",
+      "output": "tests/corpus/cache/raw/qmsum.jsonl",
+      "doc_count": 600,
+      "doc_count_breakdown": {"transcript": 200, "general-summary": 200, "specific-summary": 200},
+      "sha256": "19a2e5b45174380b3bf46b2926b66500e121d2ac7e0679009957440b8f9f5e2e",
+      "acquired_at": "2026-05-27"
+    },
     "synthetic_notes": {
       "script": "generate_synthetic_notes.py",
       "upstream": {

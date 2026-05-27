@@ -186,6 +186,7 @@ Authoritative copy lives in
 | bahmutov daily-logs | GH `bahmutov/daily-logs` monthly Markdown | rev `521476da…19b7` (2020-09-01) | `bdecf3e8…0e81` |
 | Enron (CMU) | CMU `enron_mail_20150507.tar.gz` | tarball sha `b3da1b3f…48ca7` (2015-05-07) | `c4df0c71…486ab` |
 | Synthetic notes | generator seed `0x53EEDFA7C012B0F1` | n/a | `b4d19f05…55eb3` |
+| QMSum (cache) | GH `Yale-LILY/QMSum` archive | rev `83d7768c…bb7e` (2023-08-29), arch sha `b6970687…7d7f` | `19a2e5b4…5e2e` |
 
 ## Out of scope for 0.7.0
 
