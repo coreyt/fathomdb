@@ -1,0 +1,39 @@
+{
+  "slice": "0.7.0-PVQ-P1-DESIGN",
+  "pass": "fix-2",
+  "status": "ready_for_review",
+  "branch": "phase-0.7.0-PVQ-P1-DESIGN-20260527T132416Z",
+  "baseline_commit": "64c5d6e",
+  "addresses_review": "dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-1-review-20260527T134214Z.md",
+  "artifacts": {
+    "memo": "dev/design/0.7.0-vector-quant-pack1.md",
+    "log": "dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-2-20260527T134539Z.log"
+  },
+  "changes": {
+    "scope": "D4 only; D1/D2/D3/D5/D6/D7/D8 unchanged",
+    "summary": [
+      "D4 rewritten: repopulation is a single SQL migration step under apply_one, not rebuild_vec0. Sub-steps: stage to regular SQL table joining vector_default + _fathomdb_vector_rows.kind; DROP TABLE vector_default; CREATE VIRTUAL TABLE under same name; INSERT ... SELECT from staging with vec_quantize_binary SQL-side and CASE for D3 kind->source_type map; DROP staging.",
+      "Properties recorded: synchronous, no embedder rerun, atomic via BEGIN IMMEDIATE/COMMIT in apply_one (fathomdb-schema/src/lib.rs:273-288), vec_quantize_binary SQL-side once per row.",
+      "AC-013 562 s seed time removed as a cost baseline (embedder work the migration avoids by construction); 60-90 s ADR estimate retained.",
+      "Rejected-alternative subsection added: rebuild_vec0 / RebuildKind::Vec0 is async (rebuild_vec0.rs:80-98) and re-runs the embedder (lib.rs:2523-2557); explicitly not used by Pack 1's migration.",
+      "Fix-2 changelog section appended; fix-1 changelog entry 1.2 amended in place to note the fix-2 supersession of the repopulation shape.",
+      "Frontmatter status bumped: draft fix-1 -> draft fix-2."
+    ]
+  },
+  "verified_anchors": [
+    "src/rust/crates/fathomdb-engine/src/lib.rs:2523-2557 (run_projection_job calls embedder.embed)",
+    "src/rust/crates/fathomdb-engine/src/lib.rs:2845-2853 (existing writer + _fathomdb_vector_rows.kind source of truth)",
+    "src/rust/crates/fathomdb-engine/src/lib.rs:1238 (migrate_with_event_sink call site)",
+    "src/rust/crates/fathomdb-engine/tests/rebuild_vec0.rs:80-98 (async drain semantics)",
+    "src/rust/crates/fathomdb-schema/src/lib.rs:51-54 (Migration { step_id, sql: &'static str })",
+    "src/rust/crates/fathomdb-schema/src/lib.rs:218-271 (migrate_with_event_sink impl)",
+    "src/rust/crates/fathomdb-schema/src/lib.rs:273-288 (apply_one BEGIN IMMEDIATE / COMMIT / ROLLBACK)"
+  ],
+  "hard_constraints_check": {
+    "additive_only": true,
+    "no_code_changes": true,
+    "ascii_only": true,
+    "anchors_verified_by_read": true
+  },
+  "next_step_for_orchestrator": "re-spawn codex reviewer for fix-2 verdict"
+}

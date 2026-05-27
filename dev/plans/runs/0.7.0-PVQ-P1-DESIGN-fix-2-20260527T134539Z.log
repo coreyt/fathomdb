@@ -1,0 +1,55 @@
+0.7.0-PVQ-P1-DESIGN fix-2 implementer log
+===========================================
+TS: 20260527T134539Z
+Model: claude-opus-4-7 (effort: high)
+Worktree: /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+Branch: phase-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+Baseline: 64c5d6e (fix-1)
+Addresses: dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-1-review-20260527T134214Z.md (BLOCK)
+
+Inputs read
+-----------
+- fix-1 review verdict (BLOCK, one high finding on D4 semantics)
+- dev/design/0.7.0-vector-quant-pack1.md (memo to edit)
+- Rust anchors re-read line-by-line:
+  * src/rust/crates/fathomdb-engine/src/lib.rs:2520-2561  -> run_projection_job re-runs embedder per job (line 2534: embedder.embed(&job.body))
+  * src/rust/crates/fathomdb-engine/src/lib.rs:2840-2853  -> existing writer; _fathomdb_vector_rows.kind is source of truth
+  * src/rust/crates/fathomdb-engine/src/lib.rs:1238       -> migrate_with_event_sink call site (re-confirmed)
+  * src/rust/crates/fathomdb-engine/tests/rebuild_vec0.rs:75-98 -> async drain assertion (FTS count must be untouched; wait_until polls projection_status_for_test)
+  * src/rust/crates/fathomdb-schema/src/lib.rs:215-288    -> migrate_with_event_sink + apply_one BEGIN IMMEDIATE/COMMIT/ROLLBACK
+  * src/rust/crates/fathomdb-schema/src/lib.rs:51-54      -> Migration { step_id: u32, sql: &'static str } -- pure SQL, no Rust hook
+
+Action
+------
+Edited dev/design/0.7.0-vector-quant-pack1.md (D4 + fix-2 changelog only).
+Rest of memo unchanged.
+
+D4 new shape
+------------
+1. CREATE TABLE _fathomdb_vector_migration_v0_7_0(rowid PK, embedding BLOB, kind TEXT)
+2. INSERT staging FROM vector_default v JOIN _fathomdb_vector_rows r ON r.rowid=v.rowid
+3. DROP TABLE vector_default
+4. CREATE VIRTUAL TABLE vector_default USING vec0(...)
+5. INSERT INTO vector_default SELECT rowid, embedding, vec_quantize_binary(embedding),
+   CASE kind ... END, kind, <now> FROM staging
+6. DROP TABLE _fathomdb_vector_migration_v0_7_0
+   (all inside one Migration.sql; apply_one wraps in BEGIN IMMEDIATE / COMMIT)
+
+Rejected alternative subsection added under D4: rebuild_vec0 / RebuildKind::Vec0 is
+async + re-runs the embedder; cited rebuild_vec0.rs:80-98 and lib.rs:2523-2557.
+
+Fix-2 changelog
+---------------
+Appended new "## Fix-2 changelog" section with two entries (2.1 high finding;
+2.2 consequence on Migration shape constraint). Fix-1 changelog 1.2 amended in
+place to mark its repopulation claim as superseded.
+
+Artifacts
+---------
+- dev/design/0.7.0-vector-quant-pack1.md (edited)
+- dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-2-output.json
+- dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-2-20260527T134539Z.log (this file)
+
+Next step for orchestrator
+--------------------------
+re-spawn codex reviewer for fix-2 verdict
