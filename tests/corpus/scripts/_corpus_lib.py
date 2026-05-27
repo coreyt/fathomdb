@@ -82,16 +82,5 @@ def repo_root() -> Path:
     raise RuntimeError("could not locate repo root from " + str(here))
 
 
-def corpus_data_dir() -> Path:
-    """Root of produced corpus data (raw downloads + per-source JSONL).
-
-    Lives at <repo>/data/corpus-data/ and is .gitignored — acquisition
-    scripts here are the reproducible source of truth, the data they
-    produce is not tracked. CI fetches/restores into this directory.
-    """
-    return repo_root() / "data" / "corpus-data"
-
-
-def corpus_doc_dir() -> Path:
-    """Documentation / spec layout (corpus-card.md, chain definitions)."""
+def corpus_dir() -> Path:
     return repo_root() / "tests" / "corpus"
