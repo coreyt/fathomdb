@@ -1828,6 +1828,9 @@ impl Engine {
 
         let cursor = self.next_cursor.load(Ordering::SeqCst).saturating_add(1);
         let blob = encode_vector_blob(&vector);
+        let source_type = resolve_source_type(kind)?;
+        let now_unix =
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
         let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
         tx.execute(
             "INSERT INTO _fathomdb_vector_rows(rowid, kind, write_cursor) VALUES(?1, ?2, ?3)",
@@ -1835,8 +1838,10 @@ impl Engine {
         )
         .map_err(|_| EngineError::Storage)?;
         tx.execute(
-            "INSERT INTO vector_default(rowid, embedding) VALUES(?1, ?2)",
-            params![cursor, blob],
+            "INSERT INTO vector_default(
+                rowid, embedding, embedding_bin, source_type, kind, created_at
+             ) VALUES(?1, ?2, vec_quantize_binary(?2), ?3, ?4, ?5)",
+            params![cursor, blob, source_type, kind, now_unix],
         )
         .map_err(|_| EngineError::Storage)?;
         tx.commit().map_err(|_| EngineError::Storage)?;
@@ -2842,13 +2847,24 @@ fn commit_projection_outcomes(
                 if terminal_state_for_cursor(&tx, *cursor)?.is_some() {
                     continue;
                 }
+                let source_type = resolve_source_type(kind).map_err(|_| {
+                    rusqlite::Error::SqliteFailure(
+                        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
+                        Some(format!("unknown kind for source_type mapping: {kind}")),
+                    )
+                })?;
+                let now_unix =
+                    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+                        as i64;
                 tx.execute(
                     "INSERT OR IGNORE INTO _fathomdb_vector_rows(rowid, kind, write_cursor) VALUES(?1, ?2, ?3)",
                     params![cursor, kind, cursor],
                 )?;
                 tx.execute(
-                    "INSERT OR IGNORE INTO vector_default(rowid, embedding) VALUES(?1, ?2)",
-                    params![cursor, blob],
+                    "INSERT OR IGNORE INTO vector_default(
+                        rowid, embedding, embedding_bin, source_type, kind, created_at
+                     ) VALUES(?1, ?2, vec_quantize_binary(?2), ?3, ?4, ?5)",
+                    params![cursor, blob, source_type, kind, now_unix],
                 )?;
                 record_projection_terminal(&tx, *cursor, "up_to_date")?;
             }
@@ -3299,12 +3315,23 @@ fn encode_vector_blob(vector: &[f32]) -> Vec<u8> {
 }
 
 /// Maps the writer-facing `kind` value to the locked Pack 1
-/// `source_type` partition-key vocabulary. Pack 1 stub for the RED
-/// drift-check test; the full mapping lands with the writer
-/// double-write per `dev/design/0.7.0-vector-quant-pack1.md` D3.
-#[allow(dead_code)]
-fn resolve_source_type(_kind: &str) -> Result<&'static str, EngineError> {
-    Err(EngineError::Storage)
+/// `source_type` partition-key vocabulary. Must stay in lockstep with
+/// the CASE WHEN inlined in migration step 9
+/// (`fathomdb-schema/src/lib.rs`); the drift-detection unit test in
+/// this module's `tests` mod enforces that. Per
+/// `dev/design/0.7.0-vector-quant-pack1.md` D3.
+fn resolve_source_type(kind: &str) -> Result<&'static str, EngineError> {
+    Ok(match kind {
+        "email" => "email",
+        "article" => "article",
+        "paper" => "paper",
+        "meeting" => "meeting",
+        "note" => "note",
+        "todo" => "todo",
+        // Synthetic AC-013 test fixture; coerced so the 6-value HITL lock holds.
+        "doc" => "article",
+        _ => return Err(EngineError::Storage),
+    })
 }
 
 fn map_runtime_embedder_error(err: RuntimeEmbedderError) -> EngineError {
@@ -4122,7 +4149,6 @@ mod tests {
     // synthetic `doc` -> `article` coercion). See
     // `dev/design/0.7.0-vector-quant-pack1.md` D3 / D4.
     #[test]
-    #[ignore = "RED: helper stub returns Err until Pack 1 writer commit"]
     fn resolve_source_type_drift_check() {
         let cases: &[(&str, &str)] = &[
             ("email", "email"),

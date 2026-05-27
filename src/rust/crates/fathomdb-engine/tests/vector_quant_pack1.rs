@@ -1,9 +1,5 @@
-// Pack 1 RED tests for the binary-quant schema migration and ingest
+// Pack 1 tests for the binary-quant schema migration and ingest
 // double-write per `dev/design/0.7.0-vector-quant-pack1.md` D1-D8.
-// These are intentionally failing in the initial RED commit; the
-// `#[ignore]` keeps them compiling-but-skipped between the Phase A
-// commit and the implementation commits. The Phase B writer/migration
-// commits remove the `#[ignore]` markers.
 
 use std::sync::Arc;
 
@@ -55,7 +51,6 @@ fn popcount(bytes: &[u8]) -> u32 {
 }
 
 #[test]
-#[ignore = "RED: requires Pack 1 schema migration + writer double-write"]
 fn binary_quant_roundtrip_popcount_384() {
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir, "popcount");
@@ -78,7 +73,6 @@ fn binary_quant_roundtrip_popcount_384() {
 }
 
 #[test]
-#[ignore = "RED: requires Pack 1 migration preflight (step 9)"]
 fn migration_preflight_rejects_unknown_kind() {
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir, "preflight");
@@ -114,7 +108,6 @@ fn migration_preflight_rejects_unknown_kind() {
 }
 
 #[test]
-#[ignore = "RED: requires Pack 1 writer double-write"]
 fn writer_double_write_populates_bin_column() {
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir, "bincol");
@@ -141,7 +134,6 @@ fn writer_double_write_populates_bin_column() {
 }
 
 #[test]
-#[ignore = "RED: requires Pack 1 writer source_type coercion"]
 fn writer_populates_source_type_partition_key() {
     let dir = TempDir::new().unwrap();
     let path = db_path(&dir, "stype");
