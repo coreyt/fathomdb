@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "7b70e8ef46578301",
+    "f287c76a0484e2e1"
+  ],
+  "chain_id": "chain-email_meeting_todo-0093",
+  "chain_shape": "EMAIL->MEETING->TODO",
+  "doc_ids": [
+    "7b70e8ef46578301",
+    "f287c76a0484e2e1",
+    "f569524d175a8a0a"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "7b70e8ef46578301",
+        "f287c76a0484e2e1",
+        "f569524d175a8a0a"
+      ],
+      "query": "what's the action item from cooper.richey@enron.com's thread that ended in a meeting?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "f569524d175a8a0a"
+  ]
+}

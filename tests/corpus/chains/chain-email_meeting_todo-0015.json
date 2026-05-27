@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "d8c7461e34ead165",
+    "23f2fdca52ae6df3"
+  ],
+  "chain_id": "chain-email_meeting_todo-0015",
+  "chain_shape": "EMAIL->MEETING->TODO",
+  "doc_ids": [
+    "d8c7461e34ead165",
+    "23f2fdca52ae6df3",
+    "2bd85cd25467289a"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "d8c7461e34ead165",
+        "23f2fdca52ae6df3",
+        "2bd85cd25467289a"
+      ],
+      "query": "what's the action item from chris.dorland@enron.com's thread that ended in a meeting?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "2bd85cd25467289a"
+  ]
+}

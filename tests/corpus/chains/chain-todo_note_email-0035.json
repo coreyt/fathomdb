@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "fc8c61f2193f2567"
+  ],
+  "chain_id": "chain-todo_note_email-0035",
+  "chain_shape": "TODO->NOTE->EMAIL",
+  "doc_ids": [
+    "fc8c61f2193f2567",
+    "f4921d45e16ecf5a",
+    "1e5f9d148e0108df"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "fc8c61f2193f2567",
+        "f4921d45e16ecf5a",
+        "1e5f9d148e0108df"
+      ],
+      "query": "what's the status of the personal to-do about Mail nonprofit checks to Kyle!!!!!?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "f4921d45e16ecf5a",
+    "1e5f9d148e0108df"
+  ]
+}

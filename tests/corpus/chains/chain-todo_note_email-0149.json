@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "6b9012efa00e80ff"
+  ],
+  "chain_id": "chain-todo_note_email-0149",
+  "chain_shape": "TODO->NOTE->EMAIL",
+  "doc_ids": [
+    "6b9012efa00e80ff",
+    "91cca04b7c6fc8ca",
+    "aa336f185effbb6f"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "6b9012efa00e80ff",
+        "91cca04b7c6fc8ca",
+        "aa336f185effbb6f"
+      ],
+      "query": "what's the status of the compliance-audit to-do about Apply to Southxchange?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "91cca04b7c6fc8ca",
+    "aa336f185effbb6f"
+  ]
+}

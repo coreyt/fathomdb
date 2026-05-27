@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "05233a8d162175bc"
+  ],
+  "chain_id": "chain-meeting_todo_note-0194",
+  "chain_shape": "MEETING->TODO->NOTE(contradicts)",
+  "doc_ids": [
+    "05233a8d162175bc",
+    "4356d1f707af9fcd",
+    "25afd9d91c4bad57"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "05233a8d162175bc",
+        "4356d1f707af9fcd",
+        "25afd9d91c4bad57"
+      ],
+      "query": "what did we decide in the meeting about \"Product meeting: TS3011b\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "25afd9d91c4bad57",
+        "05233a8d162175bc"
+      ],
+      "query": "did we end up reversing the product decision?",
+      "relation_type": "contradicts"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "4356d1f707af9fcd",
+    "25afd9d91c4bad57"
+  ]
+}

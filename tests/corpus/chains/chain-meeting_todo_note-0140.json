@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "9e7d0f7a9993753f"
+  ],
+  "chain_id": "chain-meeting_todo_note-0140",
+  "chain_shape": "MEETING->TODO->NOTE(contradicts)",
+  "doc_ids": [
+    "9e7d0f7a9993753f",
+    "f6003c96f1a04443",
+    "6d57c758761d5c0d"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "9e7d0f7a9993753f",
+        "f6003c96f1a04443",
+        "6d57c758761d5c0d"
+      ],
+      "query": "what did we decide in the meeting about \"Why did Marketing disagree with kinetic energy as a solution proposed by Industr\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "6d57c758761d5c0d",
+        "9e7d0f7a9993753f"
+      ],
+      "query": "did we end up reversing the product decision?",
+      "relation_type": "contradicts"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "f6003c96f1a04443",
+    "6d57c758761d5c0d"
+  ]
+}

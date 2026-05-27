@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "1b6bb98e88d4f585"
+  ],
+  "chain_id": "chain-article_note_email-0055",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "1b6bb98e88d4f585",
+    "b8a68a27940a6a11",
+    "7dc1b5606104a480"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "1b6bb98e88d4f585",
+        "b8a68a27940a6a11",
+        "7dc1b5606104a480"
+      ],
+      "query": "what's the context around \"(InStyle) -- While the Academy of Motion Picture Arts and Sciences has been cele\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "7dc1b5606104a480",
+        "b8a68a27940a6a11"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "b8a68a27940a6a11",
+    "7dc1b5606104a480"
+  ]
+}

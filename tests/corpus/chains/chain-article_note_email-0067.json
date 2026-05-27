@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "947eac63ba5b5363"
+  ],
+  "chain_id": "chain-article_note_email-0067",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "947eac63ba5b5363",
+    "a671c05a28e71b47",
+    "dd5069a67f74bbef"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "947eac63ba5b5363",
+        "a671c05a28e71b47",
+        "dd5069a67f74bbef"
+      ],
+      "query": "what's the context around \"LAS VEGAS, Nevada (CNN)  -- A jury of nine women and three men -- none of them b\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "dd5069a67f74bbef",
+        "a671c05a28e71b47"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "a671c05a28e71b47",
+    "dd5069a67f74bbef"
+  ]
+}

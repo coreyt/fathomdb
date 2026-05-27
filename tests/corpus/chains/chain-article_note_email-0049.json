@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "584a5bb7712c7366"
+  ],
+  "chain_id": "chain-article_note_email-0049",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "584a5bb7712c7366",
+    "b2a430f8019309db",
+    "8db557e49b74cf7d"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "584a5bb7712c7366",
+        "b2a430f8019309db",
+        "8db557e49b74cf7d"
+      ],
+      "query": "what's the context around \"LOS ANGELES, California (CNN)  -- A hearing is set for Monday in a case involvin\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "8db557e49b74cf7d",
+        "b2a430f8019309db"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "b2a430f8019309db",
+    "8db557e49b74cf7d"
+  ]
+}

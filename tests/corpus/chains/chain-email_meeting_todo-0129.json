@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "30cd53a3fc28144c",
+    "71d64bc0acb69640"
+  ],
+  "chain_id": "chain-email_meeting_todo-0129",
+  "chain_shape": "EMAIL->MEETING->TODO",
+  "doc_ids": [
+    "30cd53a3fc28144c",
+    "71d64bc0acb69640",
+    "cdf3c7fb9fe199a3"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "30cd53a3fc28144c",
+        "71d64bc0acb69640",
+        "cdf3c7fb9fe199a3"
+      ],
+      "query": "what's the action item from monique.sanchez@enron.com's thread that ended in a meeting?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "cdf3c7fb9fe199a3"
+  ]
+}

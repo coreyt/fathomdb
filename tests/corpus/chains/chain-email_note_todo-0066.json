@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "4c649e3c5192dd5b"
+  ],
+  "chain_id": "chain-email_note_todo-0066",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "4c649e3c5192dd5b",
+    "1c7358767a976a9e",
+    "54824c931b86c6bf"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "4c649e3c5192dd5b",
+        "1c7358767a976a9e",
+        "54824c931b86c6bf"
+      ],
+      "query": "what was decided after the email about \"Re: EOG Agreement\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "54824c931b86c6bf",
+        "1c7358767a976a9e"
+      ],
+      "query": "what's the follow-up action from michelle.lokay@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "1c7358767a976a9e",
+    "54824c931b86c6bf"
+  ]
+}

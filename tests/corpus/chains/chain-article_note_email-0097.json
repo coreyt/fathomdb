@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "3a3dac0af4fa036d"
+  ],
+  "chain_id": "chain-article_note_email-0097",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "3a3dac0af4fa036d",
+    "1fb5ecf54c16a0fb",
+    "1a904741f4bc4f74"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "3a3dac0af4fa036d",
+        "1fb5ecf54c16a0fb",
+        "1a904741f4bc4f74"
+      ],
+      "query": "what's the context around \"(CNN) -- Legendary singer/songwriter Aretha Franklin sang \"My Country 'Tis of Th\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "1a904741f4bc4f74",
+        "1fb5ecf54c16a0fb"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "1fb5ecf54c16a0fb",
+    "1a904741f4bc4f74"
+  ]
+}

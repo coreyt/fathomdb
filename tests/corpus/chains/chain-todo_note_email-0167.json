@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "9fdfa5684a728ed3"
+  ],
+  "chain_id": "chain-todo_note_email-0167",
+  "chain_shape": "TODO->NOTE->EMAIL",
+  "doc_ids": [
+    "9fdfa5684a728ed3",
+    "2615b56612db52f3",
+    "7b223f9810dafaee"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "9fdfa5684a728ed3",
+        "2615b56612db52f3",
+        "7b223f9810dafaee"
+      ],
+      "query": "what's the status of the research-reading to-do about order a meditation cushion?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "2615b56612db52f3",
+    "7b223f9810dafaee"
+  ]
+}

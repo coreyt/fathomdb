@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "a59194de10d41791",
+    "79222cdbb91a7643"
+  ],
+  "chain_id": "chain-email_meeting_todo-0135",
+  "chain_shape": "EMAIL->MEETING->TODO",
+  "doc_ids": [
+    "a59194de10d41791",
+    "79222cdbb91a7643",
+    "596d48a23d2fd43c"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "a59194de10d41791",
+        "79222cdbb91a7643",
+        "596d48a23d2fd43c"
+      ],
+      "query": "what's the action item from danny.mccarty@enron.com's thread that ended in a meeting?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "596d48a23d2fd43c"
+  ]
+}

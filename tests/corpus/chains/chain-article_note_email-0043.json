@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "688f5aa3ff80c5d0"
+  ],
+  "chain_id": "chain-article_note_email-0043",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "688f5aa3ff80c5d0",
+    "233ec62ea556783b",
+    "632a0eeeca501356"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "688f5aa3ff80c5d0",
+        "233ec62ea556783b",
+        "632a0eeeca501356"
+      ],
+      "query": "what's the context around \"(CNN) -- The body of a fugitive U.S\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "632a0eeeca501356",
+        "233ec62ea556783b"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "233ec62ea556783b",
+    "632a0eeeca501356"
+  ]
+}

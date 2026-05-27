@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "e89945231eea0d23",
+    "aa6b8f520c917ce5"
+  ],
+  "chain_id": "chain-email_meeting_todo-0099",
+  "chain_shape": "EMAIL->MEETING->TODO",
+  "doc_ids": [
+    "e89945231eea0d23",
+    "aa6b8f520c917ce5",
+    "83ac7183389f4676"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "e89945231eea0d23",
+        "aa6b8f520c917ce5",
+        "83ac7183389f4676"
+      ],
+      "query": "what's the action item from joe.quenet@enron.com's thread that ended in a meeting?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "83ac7183389f4676"
+  ]
+}

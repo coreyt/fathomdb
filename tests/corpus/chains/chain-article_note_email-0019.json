@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "8804825aad10f0ec"
+  ],
+  "chain_id": "chain-article_note_email-0019",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "8804825aad10f0ec",
+    "38aa9c95d1c59178",
+    "1aab51372f823863"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "8804825aad10f0ec",
+        "38aa9c95d1c59178",
+        "1aab51372f823863"
+      ],
+      "query": "what's the context around \"WASHINGTON (CNN)  -- The State Department called the expulsion of the second U.S\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "1aab51372f823863",
+        "38aa9c95d1c59178"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "38aa9c95d1c59178",
+    "1aab51372f823863"
+  ]
+}

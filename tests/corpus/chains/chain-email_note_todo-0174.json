@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "22aab1cfb79ff54b"
+  ],
+  "chain_id": "chain-email_note_todo-0174",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "22aab1cfb79ff54b",
+    "12ade354556b1b65",
+    "bfe665ab1574299f"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "22aab1cfb79ff54b",
+        "12ade354556b1b65",
+        "bfe665ab1574299f"
+      ],
+      "query": "what was decided after the email about \"Re: Reply to this....\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "bfe665ab1574299f",
+        "12ade354556b1b65"
+      ],
+      "query": "what's the follow-up action from chris.dorland@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "12ade354556b1b65",
+    "bfe665ab1574299f"
+  ]
+}

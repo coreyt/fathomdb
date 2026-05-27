@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "7c3919fcee3da6c5"
+  ],
+  "chain_id": "chain-meeting_todo_note-0170",
+  "chain_shape": "MEETING->TODO->NOTE(contradicts)",
+  "doc_ids": [
+    "7c3919fcee3da6c5",
+    "125e340cd1c1e066",
+    "b132f25e68c1ac62"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "7c3919fcee3da6c5",
+        "125e340cd1c1e066",
+        "b132f25e68c1ac62"
+      ],
+      "query": "what did we decide in the meeting about \"Summarize the discussion about the results from the experiments\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "b132f25e68c1ac62",
+        "7c3919fcee3da6c5"
+      ],
+      "query": "did we end up reversing the academic decision?",
+      "relation_type": "contradicts"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "125e340cd1c1e066",
+    "b132f25e68c1ac62"
+  ]
+}

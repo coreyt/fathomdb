@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "b9bbc868627d2694"
+  ],
+  "chain_id": "chain-todo_note_email-0197",
+  "chain_shape": "TODO->NOTE->EMAIL",
+  "doc_ids": [
+    "b9bbc868627d2694",
+    "d5e35f0d60f312d3",
+    "59e3fa5b3c1aaf36"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "b9bbc868627d2694",
+        "d5e35f0d60f312d3",
+        "59e3fa5b3c1aaf36"
+      ],
+      "query": "what's the status of the personal to-do about assemble first aid kit?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "d5e35f0d60f312d3",
+    "59e3fa5b3c1aaf36"
+  ]
+}

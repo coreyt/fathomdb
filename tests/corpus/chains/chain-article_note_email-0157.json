@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "9f7f5cbdc4a2df4b"
+  ],
+  "chain_id": "chain-article_note_email-0157",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "9f7f5cbdc4a2df4b",
+    "ba0f9746bee054dd",
+    "ce2f6893059405fb"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "9f7f5cbdc4a2df4b",
+        "ba0f9746bee054dd",
+        "ce2f6893059405fb"
+      ],
+      "query": "what's the context around \"(CNN) -- Two international journalists, along with their Somali colleague and a \"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "ce2f6893059405fb",
+        "ba0f9746bee054dd"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "ba0f9746bee054dd",
+    "ce2f6893059405fb"
+  ]
+}

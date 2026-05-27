@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "4add10345d5db636"
+  ],
+  "chain_id": "chain-article_note_todo-0088",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "4add10345d5db636",
+    "8a8c0fd73d613e32",
+    "c4daf9024d3b6fee"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "4add10345d5db636",
+        "8a8c0fd73d613e32",
+        "c4daf9024d3b6fee"
+      ],
+      "query": "what's on my to-do list from the article about \"LONDON, England (CNN) -- Videos of the chaos and horrified reactions after the J\"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "8a8c0fd73d613e32",
+    "c4daf9024d3b6fee"
+  ]
+}

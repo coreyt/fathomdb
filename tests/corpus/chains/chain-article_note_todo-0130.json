@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "359838318f3874f3"
+  ],
+  "chain_id": "chain-article_note_todo-0130",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "359838318f3874f3",
+    "f0264bb823bf3c0b",
+    "145ea5783f9b5037"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "359838318f3874f3",
+        "f0264bb823bf3c0b",
+        "145ea5783f9b5037"
+      ],
+      "query": "what's on my to-do list from the article about \"(CNN) -- Voters in Nashville, Tennessee -- a city that has seen a dramatic incre\"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "f0264bb823bf3c0b",
+    "145ea5783f9b5037"
+  ]
+}

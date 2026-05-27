@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "4d59ff44aea6b2f7"
+  ],
+  "chain_id": "chain-article_note_email-0127",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "4d59ff44aea6b2f7",
+    "2a9d96df7e474a8f",
+    "294c9475e93282b4"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "4d59ff44aea6b2f7",
+        "2a9d96df7e474a8f",
+        "294c9475e93282b4"
+      ],
+      "query": "what's the context around \"LONDON, England (CNN) -- A neighborhood in east London was getting back to norma\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "294c9475e93282b4",
+        "2a9d96df7e474a8f"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "2a9d96df7e474a8f",
+    "294c9475e93282b4"
+  ]
+}

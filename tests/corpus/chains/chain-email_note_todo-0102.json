@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "afd2019be380a4d3"
+  ],
+  "chain_id": "chain-email_note_todo-0102",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "afd2019be380a4d3",
+    "0cf93ebb443fc751",
+    "284b0c3760cbc405"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "afd2019be380a4d3",
+        "0cf93ebb443fc751",
+        "284b0c3760cbc405"
+      ],
+      "query": "what was decided after the email about \"Re: Deal#662577\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "284b0c3760cbc405",
+        "0cf93ebb443fc751"
+      ],
+      "query": "what's the follow-up action from chris.germany@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "0cf93ebb443fc751",
+    "284b0c3760cbc405"
+  ]
+}

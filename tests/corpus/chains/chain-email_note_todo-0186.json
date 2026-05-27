@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "5e866b708f6a73aa"
+  ],
+  "chain_id": "chain-email_note_todo-0186",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "5e866b708f6a73aa",
+    "610c703ab7eaf50a",
+    "9408e7170bff90f1"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "5e866b708f6a73aa",
+        "610c703ab7eaf50a",
+        "9408e7170bff90f1"
+      ],
+      "query": "what was decided after the email about \"Re:\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "9408e7170bff90f1",
+        "610c703ab7eaf50a"
+      ],
+      "query": "what's the follow-up action from stanley.horton@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "610c703ab7eaf50a",
+    "9408e7170bff90f1"
+  ]
+}

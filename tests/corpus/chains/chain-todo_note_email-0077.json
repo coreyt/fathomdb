@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "be4138ea36658f98"
+  ],
+  "chain_id": "chain-todo_note_email-0077",
+  "chain_shape": "TODO->NOTE->EMAIL",
+  "doc_ids": [
+    "be4138ea36658f98",
+    "baf5acb96295e56e",
+    "9eb651e15be130a3"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "be4138ea36658f98",
+        "baf5acb96295e56e",
+        "9eb651e15be130a3"
+      ],
+      "query": "what's the status of the anniversary to-do about Provide final headcount to site coordinator?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "baf5acb96295e56e",
+    "9eb651e15be130a3"
+  ]
+}

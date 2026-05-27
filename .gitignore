@@ -1,6 +1,14 @@
 .wake/
 !.wake/shared/
 !.wake/shared/**
+
+# Corpus build artifacts — raw upstream downloads and produced JSONL.
+# Acquisition scripts in tests/corpus/scripts/ produce these
+# reproducibly; the data itself is not tracked. See
+# tests/corpus/corpus-card.md for distribution + license posture.
+/data/corpus-data
+/data/corpus-data/
+
 .codex
 .claude/
 .local/

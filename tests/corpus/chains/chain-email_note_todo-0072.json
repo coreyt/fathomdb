@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "2080f16ed5a02bc2"
+  ],
+  "chain_id": "chain-email_note_todo-0072",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "2080f16ed5a02bc2",
+    "4cf7dbb69cb201d8",
+    "707bef613072aa75"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "2080f16ed5a02bc2",
+        "4cf7dbb69cb201d8",
+        "707bef613072aa75"
+      ],
+      "query": "what was decided after the email about \"VaR\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "707bef613072aa75",
+        "4cf7dbb69cb201d8"
+      ],
+      "query": "what's the follow-up action from doug.gilbert-smith@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "4cf7dbb69cb201d8",
+    "707bef613072aa75"
+  ]
+}

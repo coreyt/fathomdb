@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "9a434ee74e6dddc8"
+  ],
+  "chain_id": "chain-email_note_todo-0162",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "9a434ee74e6dddc8",
+    "96ee9b9f973f12a8",
+    "65e833eb8d9d6163"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "9a434ee74e6dddc8",
+        "96ee9b9f973f12a8",
+        "65e833eb8d9d6163"
+      ],
+      "query": "what was decided after the email about \"Re: Thanks\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "65e833eb8d9d6163",
+        "96ee9b9f973f12a8"
+      ],
+      "query": "what's the follow-up action from robin.rodrigue@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "96ee9b9f973f12a8",
+    "65e833eb8d9d6163"
+  ]
+}

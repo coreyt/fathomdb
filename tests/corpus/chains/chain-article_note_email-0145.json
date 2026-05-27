@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "a028a453bfa3032c"
+  ],
+  "chain_id": "chain-article_note_email-0145",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "a028a453bfa3032c",
+    "9dd5bd0f971adf33",
+    "b76992197a6bb324"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "a028a453bfa3032c",
+        "9dd5bd0f971adf33",
+        "b76992197a6bb324"
+      ],
+      "query": "what's the context around \"(CNN) -- Residents living in single-family homes in some parts of coastal Texas \"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "b76992197a6bb324",
+        "9dd5bd0f971adf33"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "9dd5bd0f971adf33",
+    "b76992197a6bb324"
+  ]
+}

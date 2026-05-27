@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "fa26440e9f5162f5"
+  ],
+  "chain_id": "chain-email_note_todo-0042",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "fa26440e9f5162f5",
+    "e787a11449442ede",
+    "9c4504c415e0e626"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "fa26440e9f5162f5",
+        "e787a11449442ede",
+        "9c4504c415e0e626"
+      ],
+      "query": "what was decided after the email about \"Re: Got the expense check + other\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "9c4504c415e0e626",
+        "e787a11449442ede"
+      ],
+      "query": "what's the follow-up action from brad.mckay@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "e787a11449442ede",
+    "9c4504c415e0e626"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "984ac920c9ddd56f"
+  ],
+  "chain_id": "chain-email_note_todo-0144",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "984ac920c9ddd56f",
+    "4d8d4b0c17806727",
+    "f40e7213a91bbc21"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "984ac920c9ddd56f",
+        "4d8d4b0c17806727",
+        "f40e7213a91bbc21"
+      ],
+      "query": "what was decided after the email about \"RE: New Folder to be set up\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "f40e7213a91bbc21",
+        "4d8d4b0c17806727"
+      ],
+      "query": "what's the follow-up action from john.griffith@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "4d8d4b0c17806727",
+    "f40e7213a91bbc21"
+  ]
+}

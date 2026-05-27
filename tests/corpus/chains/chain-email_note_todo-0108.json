@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "10ba8fc353f8b1fb"
+  ],
+  "chain_id": "chain-email_note_todo-0108",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "10ba8fc353f8b1fb",
+    "8da01c1083e5a7ef",
+    "f338ba6ecf46e3ce"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "10ba8fc353f8b1fb",
+        "8da01c1083e5a7ef",
+        "f338ba6ecf46e3ce"
+      ],
+      "query": "what was decided after the email about \"RE: EOT Documents - Siemens Settlement\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "f338ba6ecf46e3ce",
+        "8da01c1083e5a7ef"
+      ],
+      "query": "what's the follow-up action from rob.gay@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "8da01c1083e5a7ef",
+    "f338ba6ecf46e3ce"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "8ca4400dcd807c5c"
+  ],
+  "chain_id": "chain-article_note_email-0121",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "8ca4400dcd807c5c",
+    "bb888c761e8d53bc",
+    "316b6c5cb7210b50"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "8ca4400dcd807c5c",
+        "bb888c761e8d53bc",
+        "316b6c5cb7210b50"
+      ],
+      "query": "what's the context around \"BAGHDAD, Iraq (CNN) -- The top court in Iraq sentenced two of Saddam Hussein's h\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "316b6c5cb7210b50",
+        "bb888c761e8d53bc"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "bb888c761e8d53bc",
+    "316b6c5cb7210b50"
+  ]
+}

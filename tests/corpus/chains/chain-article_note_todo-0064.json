@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "3a571cecda40d289"
+  ],
+  "chain_id": "chain-article_note_todo-0064",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "3a571cecda40d289",
+    "4afbbe509177956f",
+    "2bda0b26ea84c200"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "3a571cecda40d289",
+        "4afbbe509177956f",
+        "2bda0b26ea84c200"
+      ],
+      "query": "what's on my to-do list from the article about \"LONDON, England (CNN) -- Edwin van der Sar claimed the all-time British record f\"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "4afbbe509177956f",
+    "2bda0b26ea84c200"
+  ]
+}

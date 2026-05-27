@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "c8aba7ca782be445"
+  ],
+  "chain_id": "chain-meeting_todo_note-0068",
+  "chain_shape": "MEETING->TODO->NOTE(contradicts)",
+  "doc_ids": [
+    "c8aba7ca782be445",
+    "9e4b9c0e5908ad05",
+    "04372471475cc727"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "c8aba7ca782be445",
+        "9e4b9c0e5908ad05",
+        "04372471475cc727"
+      ],
+      "query": "what did we decide in the meeting about \"Academic meeting: Bro019\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "04372471475cc727",
+        "c8aba7ca782be445"
+      ],
+      "query": "did we end up reversing the academic decision?",
+      "relation_type": "contradicts"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "9e4b9c0e5908ad05",
+    "04372471475cc727"
+  ]
+}

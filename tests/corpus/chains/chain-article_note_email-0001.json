@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "e114fa557b9f88de"
+  ],
+  "chain_id": "chain-article_note_email-0001",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "e114fa557b9f88de",
+    "257ecc320b8fe03d",
+    "b34a009d7984ab92"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "e114fa557b9f88de",
+        "257ecc320b8fe03d",
+        "b34a009d7984ab92"
+      ],
+      "query": "what's the context around \"WASHINGTON (CNN)  -- Several Marines who were involved in the November 2004 offe\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "b34a009d7984ab92",
+        "257ecc320b8fe03d"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "257ecc320b8fe03d",
+    "b34a009d7984ab92"
+  ]
+}

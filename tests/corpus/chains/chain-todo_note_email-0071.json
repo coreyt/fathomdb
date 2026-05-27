@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "5ba40c4182c97250"
+  ],
+  "chain_id": "chain-todo_note_email-0071",
+  "chain_shape": "TODO->NOTE->EMAIL",
+  "doc_ids": [
+    "5ba40c4182c97250",
+    "a485daafae6ff56e",
+    "b22620f7443e8935"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "5ba40c4182c97250",
+        "a485daafae6ff56e",
+        "b22620f7443e8935"
+      ],
+      "query": "what's the status of the anniversary to-do about Buy container mix?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "a485daafae6ff56e",
+    "b22620f7443e8935"
+  ]
+}

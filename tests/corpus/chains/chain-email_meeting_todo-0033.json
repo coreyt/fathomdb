@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "c747e8c4fb901f14",
+    "d11ec235d46fd7ef"
+  ],
+  "chain_id": "chain-email_meeting_todo-0033",
+  "chain_shape": "EMAIL->MEETING->TODO",
+  "doc_ids": [
+    "c747e8c4fb901f14",
+    "d11ec235d46fd7ef",
+    "9c6e61413a0fc304"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "c747e8c4fb901f14",
+        "d11ec235d46fd7ef",
+        "9c6e61413a0fc304"
+      ],
+      "query": "what's the action item from liz.taylor@enron.com's thread that ended in a meeting?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "9c6e61413a0fc304"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "c53210b61443f09a"
+  ],
+  "chain_id": "chain-article_note_email-0007",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "c53210b61443f09a",
+    "020d91dfe7c84758",
+    "d5d3268d87591729"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "c53210b61443f09a",
+        "020d91dfe7c84758",
+        "d5d3268d87591729"
+      ],
+      "query": "what's the context around \"WASHINGTON (CNN) -- A slim majority of Americans think churches should stay out \"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "d5d3268d87591729",
+        "020d91dfe7c84758"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "020d91dfe7c84758",
+    "d5d3268d87591729"
+  ]
+}

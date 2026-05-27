@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "d00ed98050f83944"
+  ],
+  "chain_id": "chain-article_note_todo-0190",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "d00ed98050f83944",
+    "18ed5e3fe7d1072c",
+    "92740a9233c9a22b"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "d00ed98050f83944",
+        "18ed5e3fe7d1072c",
+        "92740a9233c9a22b"
+      ],
+      "query": "what's on my to-do list from the article about \"WASHINGTON (CNN)  -- The nation's largest publicly owned utility company may be \"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "18ed5e3fe7d1072c",
+    "92740a9233c9a22b"
+  ]
+}

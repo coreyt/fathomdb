@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "c7b1145a43cbf193"
+  ],
+  "chain_id": "chain-article_note_todo-0196",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "c7b1145a43cbf193",
+    "1c996ad66f264273",
+    "230209ccbf0789ce"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "c7b1145a43cbf193",
+        "1c996ad66f264273",
+        "230209ccbf0789ce"
+      ],
+      "query": "what's on my to-do list from the article about \"LONDON, England (CNN) -- The first child in Britain known to have been screened \"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "1c996ad66f264273",
+    "230209ccbf0789ce"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "1c4550cf6a5cd7f3"
+  ],
+  "chain_id": "chain-article_note_email-0151",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "1c4550cf6a5cd7f3",
+    "534c4d771927d619",
+    "5e63b006a8a690e5"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "1c4550cf6a5cd7f3",
+        "534c4d771927d619",
+        "5e63b006a8a690e5"
+      ],
+      "query": "what's the context around \"WASHINGTON (CNN) -- Iraq's smaller religious groups have been facing \"ongoing se\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "5e63b006a8a690e5",
+        "534c4d771927d619"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "534c4d771927d619",
+    "5e63b006a8a690e5"
+  ]
+}

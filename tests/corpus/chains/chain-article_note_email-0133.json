@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "9986fea43475cc13"
+  ],
+  "chain_id": "chain-article_note_email-0133",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "9986fea43475cc13",
+    "63b122ae1d9765ff",
+    "d26250daa55ee31f"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "9986fea43475cc13",
+        "63b122ae1d9765ff",
+        "d26250daa55ee31f"
+      ],
+      "query": "what's the context around \"(CNN) -- A Phoenix, Arizona, elementary school bus careened out of control for n\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "d26250daa55ee31f",
+        "63b122ae1d9765ff"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "63b122ae1d9765ff",
+    "d26250daa55ee31f"
+  ]
+}

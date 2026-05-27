@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "b3fa95d7da6d9469"
+  ],
+  "chain_id": "chain-article_note_todo-0040",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "b3fa95d7da6d9469",
+    "bcab50ce40a71270",
+    "eed65722a3b270d6"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "b3fa95d7da6d9469",
+        "bcab50ce40a71270",
+        "eed65722a3b270d6"
+      ],
+      "query": "what's on my to-do list from the article about \"BANGKOK, Thailand (CNN) -- A Thai court has found deposed prime minister Thaksin\"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "bcab50ce40a71270",
+    "eed65722a3b270d6"
+  ]
+}
