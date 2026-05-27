@@ -1339,27 +1339,34 @@ impl Engine {
         if self.force_next_commit_failure.swap(false, Ordering::SeqCst) {
             return Err(EngineError::Storage);
         }
+        // One cursor per row. `base_cursor` is the last committed cursor;
+        // row i in the batch gets cursor `base_cursor + i + 1`, and the
+        // batch's final cursor (returned in WriteReceipt and stored as
+        // the new `next_cursor`) is `base_cursor + batch.len()`. Sharing
+        // one cursor across the batch previously collapsed every vec0
+        // INSERT onto the same rowid via `INSERT OR IGNORE` — see
+        // `dev/notes/0.7.0-engine-batch-vec0-collapse.md`.
+        let base_cursor = self.next_cursor.load(Ordering::SeqCst);
         let increment = u64::try_from(batch.len()).unwrap_or(u64::MAX);
-        let cursor = self.next_cursor.load(Ordering::SeqCst).saturating_add(increment);
+        let last_cursor = base_cursor.saturating_add(increment);
         let pending_projection = !projection_jobs.is_empty();
 
         if let Err(err) = commit_batch(
             connection,
             batch,
             &plans,
-            cursor,
-            pending_projection,
+            base_cursor,
             self.provenance_row_cap.load(Ordering::Relaxed),
         ) {
             self.emit_sqlite_internal_error(&err);
             return Err(EngineError::Storage);
         }
-        self.next_cursor.store(cursor, Ordering::SeqCst);
+        self.next_cursor.store(last_cursor, Ordering::SeqCst);
         if pending_projection {
             self.projection_runtime.notify_new_work();
         }
 
-        Ok(WriteReceipt { cursor })
+        Ok(WriteReceipt { cursor: last_cursor })
     }
 
     pub fn search(&self, query: &str) -> Result<SearchResult, EngineError> {
@@ -3712,13 +3719,15 @@ fn commit_batch(
     connection: &mut Connection,
     batch: &[PreparedWrite],
     plans: &[WritePlan],
-    cursor: u64,
-    pending_projection: bool,
+    base_cursor: u64,
     provenance_row_cap: u64,
 ) -> rusqlite::Result<()> {
     let tx = connection.transaction()?;
 
-    for (write, plan) in batch.iter().zip(plans) {
+    for (i, (write, plan)) in batch.iter().zip(plans).enumerate() {
+        // Per-row cursor: row i gets `base_cursor + i + 1`. See the
+        // comment in `Engine::write_inner`.
+        let cursor = base_cursor.saturating_add((i as u64).saturating_add(1));
         match (write, plan) {
             (PreparedWrite::Node { kind, body, source_id }, WritePlan::Node) => {
                 tx.execute(
@@ -3737,6 +3746,11 @@ fn commit_batch(
                          ON CONFLICT(kind) DO UPDATE SET last_enqueued_cursor = excluded.last_enqueued_cursor",
                         params![kind, cursor],
                     )?;
+                } else {
+                    // Non-vector-indexed nodes will never be projected,
+                    // so terminate the cursor up-front to let
+                    // `advance_projection_cursor` walk past it.
+                    record_projection_terminal(&tx, cursor, "up_to_date")?;
                 }
             }
             (PreparedWrite::Edge { kind, from, to, source_id }, WritePlan::Edge) => {
@@ -3745,6 +3759,7 @@ fn commit_batch(
                      VALUES(?1, ?2, ?3, ?4, ?5)",
                     params![cursor, kind, from, to, source_id],
                 )?;
+                record_projection_terminal(&tx, cursor, "up_to_date")?;
             }
             (
                 PreparedWrite::AdminSchema { name, kind, schema_json, retention_json },
@@ -3759,6 +3774,7 @@ fn commit_batch(
                         retention_json = excluded.retention_json",
                     params![name, kind, schema_json, retention_json],
                 )?;
+                record_projection_terminal(&tx, cursor, "up_to_date")?;
             }
             (
                 PreparedWrite::OpStore { collection, record_key, schema_id, body },
@@ -3770,6 +3786,7 @@ fn commit_batch(
                      ) VALUES(?1, ?2, 'append', ?3, ?4, ?5)",
                     params![collection, record_key, body, schema_id, cursor],
                 )?;
+                record_projection_terminal(&tx, cursor, "up_to_date")?;
             }
             (
                 PreparedWrite::OpStore { collection, record_key, schema_id, body },
@@ -3785,14 +3802,12 @@ fn commit_batch(
                         write_cursor = excluded.write_cursor",
                     params![collection, record_key, body, schema_id, cursor],
                 )?;
+                record_projection_terminal(&tx, cursor, "up_to_date")?;
             }
             _ => return Err(rusqlite::Error::InvalidQuery),
         }
     }
 
-    if !pending_projection {
-        record_projection_terminal(&tx, cursor, "up_to_date")?;
-    }
     enforce_provenance_retention(&tx, provenance_row_cap)?;
     advance_projection_cursor(&tx)?;
 

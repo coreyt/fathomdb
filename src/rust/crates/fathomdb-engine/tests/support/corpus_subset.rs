@@ -292,38 +292,34 @@ pub fn fixture_engine() -> (TempDir, Engine) {
 /// mapping as `examples/ingest_corpus.rs`. Returns a tuple of
 /// (nodes_written, edges_written, edges_by_relation).
 ///
-/// **One write per node.** A multi-node `engine.write(batch)` call
-/// reserves one shared write_cursor for the whole batch, which
-/// collapses to a single row in `vector_default` (`INSERT OR IGNORE`
-/// on the cursor-rowid PK). Pack-4 tests need a vec0 row per node, so
-/// each node here ships its own `engine.write` call. Documented in
-/// `dev/notes/0.7.0-engine-batch-vec0-collapse.md`; once the engine
-/// owner lands a fix, the workaround can be reverted to a batched
-/// write.
+/// Uses batched `engine.write` calls — one batch per phase (nodes,
+/// then edges). The engine allocates a distinct write_cursor per row
+/// inside the batch, so a batch of N vector-indexed nodes produces N
+/// rows in `vector_default`.
 pub fn ingest(engine: &Engine, docs: &[Doc]) -> (usize, usize, BTreeMap<String, usize>) {
-    let mut nodes_written = 0usize;
-    let mut edges_written = 0usize;
     let mut edges_by_relation: BTreeMap<String, usize> = BTreeMap::new();
     let doc_ids: HashSet<String> = docs.iter().map(|d| d.doc_id.clone()).collect();
 
-    for doc in docs {
-        engine
-            .write(&[PreparedWrite::Node {
-                // NB: tests deliberately use the locked vector kind
-                // ("doc") for every doc rather than the doc's source_type.
-                // The configure_vector_kind_for_test API lets us register
-                // exactly one kind as vector-indexed; all corpus nodes
-                // share that kind so engine.search can score them
-                // uniformly. The doc's *semantic* source_type is preserved
-                // in source_id-style metadata downstream.
-                kind: VECTOR_KIND.to_string(),
-                body: doc.body.clone(),
-                source_id: Some(doc.doc_id.clone()),
-            }])
-            .expect("write node");
-        nodes_written += 1;
+    // NB: tests deliberately use the locked vector kind ("doc") for
+    // every doc rather than the doc's source_type. The
+    // configure_vector_kind_for_test API lets us register exactly one
+    // kind as vector-indexed; all corpus nodes share that kind so
+    // engine.search can score them uniformly. The doc's *semantic*
+    // source_type is preserved in source_id-style metadata downstream.
+    let node_batch: Vec<PreparedWrite> = docs
+        .iter()
+        .map(|doc| PreparedWrite::Node {
+            kind: VECTOR_KIND.to_string(),
+            body: doc.body.clone(),
+            source_id: Some(doc.doc_id.clone()),
+        })
+        .collect();
+    let nodes_written = node_batch.len();
+    if !node_batch.is_empty() {
+        engine.write(&node_batch).expect("write nodes batch");
     }
 
+    let mut edge_batch: Vec<PreparedWrite> = Vec::new();
     for doc in docs {
         let Some(parent) = doc.parent_doc_id.as_ref() else { continue };
         if !doc_ids.contains(parent) {
@@ -331,15 +327,16 @@ pub fn ingest(engine: &Engine, docs: &[Doc]) -> (usize, usize, BTreeMap<String, 
         }
         let kind = doc.relation_hint.clone().unwrap_or_else(|| "linked".to_string());
         *edges_by_relation.entry(kind.clone()).or_insert(0) += 1;
-        engine
-            .write(&[PreparedWrite::Edge {
-                kind,
-                from: parent.clone(),
-                to: doc.doc_id.clone(),
-                source_id: Some(doc.doc_id.clone()),
-            }])
-            .expect("write edge");
-        edges_written += 1;
+        edge_batch.push(PreparedWrite::Edge {
+            kind,
+            from: parent.clone(),
+            to: doc.doc_id.clone(),
+            source_id: Some(doc.doc_id.clone()),
+        });
+    }
+    let edges_written = edge_batch.len();
+    if !edge_batch.is_empty() {
+        engine.write(&edge_batch).expect("write edges batch");
     }
 
     engine.drain(30_000).expect("drain after ingest");
