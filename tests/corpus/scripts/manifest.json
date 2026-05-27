@@ -1,5 +1,5 @@
 {
-  "comment": "Upstream pins + checksums for tests/corpus/raw/*.jsonl. Each entry is the contract between an acquisition script and the file it produces. A second build pass against the same upstream snapshot must reproduce the same sha256.",
+  "comment": "Upstream pins + checksums for data/corpus-data/raw/*.jsonl. Each entry is the contract between an acquisition script and the file it produces. A second build pass against the same upstream snapshot must reproduce the same sha256. The 'distribution' field records license posture only — 'commit' = license-clean enough that we could commit if policy permits, 'cache' = license-blocked. All produced JSONL currently lives under data/corpus-data/ (gitignored) regardless of license posture.",
   "schema_version": 1,
   "sources": {
     "cnn_dailymail": {
@@ -13,9 +13,25 @@
       },
       "license": "Apache-2.0",
       "distribution": "commit",
-      "output": "tests/corpus/raw/cnn_dailymail.jsonl",
+      "output": "data/corpus-data/raw/cnn_dailymail.jsonl",
       "doc_count": 2500,
       "sha256": "7c371528f9f86d5ca06a0ed39e3ed2da63bf09cbd71de988f692129c69493d09",
+      "acquired_at": "2026-05-27"
+    },
+    "enronqa": {
+      "script": "acquire_enronqa.py",
+      "upstream": {
+        "kind": "huggingface_dataset",
+        "id": "MichaelR207/enron_qa_0922",
+        "revision": "c0b3a9190fd970e83cfbe7d399a08860e43e221e",
+        "last_modified": "2024-09-22T17:42:07Z"
+      },
+      "license": "LicenseRef-EnronQA-Undeclared",
+      "license_notes": "No license declared on the HF dataset card; derived from Enron base which is research-use convention. Treat as cache-only until clarified.",
+      "distribution": "cache",
+      "output": "data/corpus-data/raw/enronqa.jsonl",
+      "doc_count": 200,
+      "sha256": "bc30eb0674eb72e6c762e094a514983f767e5122a6dd3a711325dd0fde5248ab",
       "acquired_at": "2026-05-27"
     },
     "qmsum": {
@@ -31,9 +47,13 @@
       "license": "LicenseRef-QMSum-MIT-with-upstream-chain",
       "license_notes": "QMSum annotations MIT; underlying transcripts derive from AMI (CC-BY-4.0), ICSI (CC-BY-NC variants), Canadian Parliament transcripts (Crown copyright). Upstream chain not verified for unrestricted redistribution; cache-only until a future HITL pass flips this.",
       "distribution": "cache",
-      "output": "tests/corpus/cache/raw/qmsum.jsonl",
+      "output": "data/corpus-data/raw/qmsum.jsonl",
       "doc_count": 600,
-      "doc_count_breakdown": {"transcript": 200, "general-summary": 200, "specific-summary": 200},
+      "doc_count_breakdown": {
+        "transcript": 200,
+        "general-summary": 200,
+        "specific-summary": 200
+      },
       "sha256": "19a2e5b45174380b3bf46b2926b66500e121d2ac7e0679009957440b8f9f5e2e",
       "acquired_at": "2026-05-27"
     },
@@ -45,11 +65,17 @@
       },
       "license": "Apache-2.0",
       "distribution": "commit",
-      "output": "tests/corpus/raw/synthetic_notes.jsonl",
+      "output": "data/corpus-data/raw/synthetic_notes.jsonl",
       "doc_count": 1200,
       "doc_count_breakdown": {
-        "fleeting": 150, "project": 150, "reading": 150, "idea": 150,
-        "decision-log": 150, "someday-maybe": 150, "personal-crm": 150, "meeting-follow": 150
+        "fleeting": 150,
+        "project": 150,
+        "reading": 150,
+        "idea": 150,
+        "decision-log": 150,
+        "someday-maybe": 150,
+        "personal-crm": 150,
+        "meeting-follow": 150
       },
       "sha256": "b4d19f05a7b9c13bfe0bd303ef2aa7de44a321011700de1cfd6f47c247855eb3",
       "acquired_at": "2026-05-27"
@@ -65,8 +91,8 @@
       },
       "license": "LicenseRef-Enron-Research-Use",
       "distribution": "commit",
-      "notes": "HITL OK (2026-05-27) with the CMU April-2026 impersonation note recorded in corpus-card.md. Tarball cached at ~/.cache/fathomdb-corpus/enron_mail_20150507.tar.gz (not committed).",
-      "output": "tests/corpus/raw/enron.jsonl",
+      "notes": "HITL OK (2026-05-27) with the CMU April-2026 impersonation note recorded in corpus-card.md. Tarball cached at data/corpus-data/downloads/enron_mail_20150507.tar.gz (gitignored).",
+      "output": "data/corpus-data/raw/enron.jsonl",
       "doc_count": 2000,
       "subsample": "round-robin across 149 users (sent-folder messages, lex-first 30/user, then RR fill)",
       "sha256": "c4df0c71e2de1505c8114ae3f96ff5dac2769786eee6028ba2d46bf0e83486ab",
@@ -82,7 +108,7 @@
       },
       "license": "MIT",
       "distribution": "commit",
-      "output": "tests/corpus/raw/bahmutov_dailylogs.jsonl",
+      "output": "data/corpus-data/raw/bahmutov_dailylogs.jsonl",
       "doc_count": 300,
       "sha256": "bdecf3e8ffef86dc2cb136bce9912b629f91774c41d9cf34224f3f7d8e1a0e81",
       "acquired_at": "2026-05-27"
@@ -98,9 +124,12 @@
       },
       "license": "MIT",
       "distribution": "commit",
-      "output": "tests/corpus/raw/landes_todos.jsonl",
+      "output": "data/corpus-data/raw/landes_todos.jsonl",
       "doc_count": 500,
-      "doc_count_breakdown": {"real": 253, "synthesised_variants": 247},
+      "doc_count_breakdown": {
+        "real": 253,
+        "synthesised_variants": 247
+      },
       "sha256": "74f0248261f701856f72f2921abb1cd004b1773c13201e7b6ae5ad93e810e812",
       "acquired_at": "2026-05-27"
     }

@@ -1,5 +1,0 @@
-# Cache-only corpus artifacts — never commit anything in this directory.
-# Cache-only sources (per ../corpus-card.md §"Source catalogue") fetch
-# from upstream on cache miss and emit canonical JSONL here.
-*
-!.gitignore

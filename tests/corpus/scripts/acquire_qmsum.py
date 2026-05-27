@@ -16,9 +16,11 @@ meeting transcripts derive from three pre-existing corpora — AMI
 Standing Committee transcripts (Crown copyright, redistribution per
 the Reproduction of Federal Law Order). Per research doc §1.2 this
 chain has not been verified end-to-end for unrestricted commercial
-redistribution, so QMSum-derived JSONL is treated as **cache-only**
-(written to tests/corpus/cache/raw/qmsum.jsonl, gitignored). A future
-HITL pass can flip this to commit-OK if the chain is verified.
+redistribution, so QMSum-derived JSONL is treated as **cache-only**.
+A future HITL pass can flip this to commit-OK if the chain is verified.
+
+All produced JSONL lives at data/corpus-data/raw/qmsum.jsonl
+(gitignored — see ../corpus-card.md §"CI artifact + cache layout").
 
 The pipeline:
   1. Download the repo's archive tarball at the pinned SHA (faster
@@ -48,7 +50,7 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _corpus_lib import CorpusDoc, corpus_dir, doc_id, write_jsonl  # noqa: E402
+from _corpus_lib import CorpusDoc, corpus_data_dir, doc_id, write_jsonl  # noqa: E402
 
 UPSTREAM_REPO = "Yale-LILY/QMSum"
 UPSTREAM_SHA = "83d7768c1f2b4dfeb091385d3dc7e239b8e5bb7e"
@@ -191,7 +193,7 @@ def main() -> int:
     archive_sha = hashlib.sha256(archive).hexdigest()
     print(f"archive sha256: {archive_sha}", flush=True)
 
-    out_path = corpus_dir() / "cache" / "raw" / "qmsum.jsonl"
+    out_path = corpus_data_dir() / "raw" / "qmsum.jsonl"
 
     docs: list[CorpusDoc] = []
     meetings_seen = 0
