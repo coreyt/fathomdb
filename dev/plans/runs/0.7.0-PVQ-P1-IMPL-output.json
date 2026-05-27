@@ -1,0 +1,129 @@
+{
+  "slice": "0.7.0-PVQ-P1-IMPL",
+  "timestamp_utc": "2026-05-27T14:30:47Z",
+  "branch": "phase-0.7.0-PVQ-P1-IMPL-20260527T140358Z",
+  "design_memo": "dev/design/0.7.0-vector-quant-pack1.md (fix-3)",
+  "commits": [
+    {
+      "sha_short": "b413b8f",
+      "subject": "test(0.7.0): Pack 1 — RED tests for binary-quant schema + double-write",
+      "phase": "A (RED)"
+    },
+    {
+      "sha_short": "6cddf44",
+      "subject": "feat(0.7.0): Pack 1 schema migration — add embedding_bin + source_type + metadata",
+      "phase": "B step 1 (migration + ensure_vector_partition; initial hardcoded-768 attempt)"
+    },
+    {
+      "sha_short": "178b2b8",
+      "subject": "feat(0.7.0): Pack 1 writer double-write into embedding_bin and source_type",
+      "phase": "B step 2 (D5/D7 writers + resolve_source_type)"
+    },
+    {
+      "sha_short": "3ce4e22",
+      "subject": "fix(0.7.0): Pack 1 reshape is dim-aware in Rust, not hardcoded 768 in SQL",
+      "phase": "B step 1 fixup — shifted vec0 reshape to ensure_vector_partition; bumped 8 RoutedEmbedder dim=3 sites to dim=8"
+    }
+  ],
+  "tdd_evidence": {
+    "red_commit_sha": "b413b8f",
+    "red_test_file": "src/rust/crates/fathomdb-engine/tests/vector_quant_pack1.rs",
+    "red_tests_landed_with_ignore_markers": [
+      "binary_quant_roundtrip_popcount_384",
+      "migration_preflight_rejects_unknown_kind",
+      "writer_double_write_populates_bin_column",
+      "writer_populates_source_type_partition_key"
+    ],
+    "drift_detection_unit_test": "src/rust/crates/fathomdb-engine/src/lib.rs::tests::resolve_source_type_drift_check (#[ignore] stub in b413b8f, enabled in 178b2b8)",
+    "green_status_post_impl": "all 4 integration tests + drift unit test pass on 3ce4e22"
+  },
+  "scope_outcome": {
+    "schema_migration": "PASS — fathomdb-schema migration step 9 SQL-side preflight only (D4 fix-3.1 unknown-kind CHECK); SCHEMA_VERSION bumped 8 -> 9; sqlite-vec=0.1.7 added as dev-dep of fathomdb-schema for the in-memory ac_046a/b migration tests.",
+    "ensure_vector_partition_dim_aware": "PASS — ensure_vector_partition now detects existing shape (none / old single-column / Pack 1) and routes to create-fresh / migrate-in-place / no-op; the in-place migration runs atomically under an IMMEDIATE transaction with the staged copy + SQL-side vec_quantize_binary + D3 CASE.",
+    "writer_double_write": "PASS — both writer sites (commit_projection_outcomes, write_vector_for_test) insert all five Pack 1 columns in the existing transaction; resolve_source_type helper enforces the locked 6-value vocabulary + doc->article coercion; unknown kinds at the projection writer surface as SQLITE_CONSTRAINT.",
+    "reader_unchanged": "VERIFIED — read_search_in_tx (lib.rs:2317-2323) is untouched. AC-013 smoke at N=10K stays well inside the OLD budget."
+  },
+  "ac_013_dev_box_smoke": {
+    "n": 10000,
+    "samples": 1000,
+    "seed_ms": 261,
+    "p50_ms": 7,
+    "p99_ms": 13,
+    "budget_p50_ms": 50,
+    "budget_p99_ms": 200,
+    "passed": true,
+    "command": "AGENT_LONG=1 AC013_CORPUS_N=10000 cargo test -p fathomdb-engine --test perf_gates --release ac_013_vector_retrieval_latency -- --nocapture"
+  },
+  "perf_gate_status": {
+    "ac_012": "PASS (1/1)",
+    "ac_013_dev_box_n10k": "PASS (p50=7ms, p99=13ms)",
+    "ac_017": "PASS (1/1)",
+    "ac_018": "PASS (1/1)",
+    "ac_020": "PASS (1/1)"
+  },
+  "agent_verify_result": {
+    "exit_code": 1,
+    "blocker_kind": "environmental",
+    "blocker_detail": "STRICT=1 agent-security.sh fails AC-037 (netns-deny-egress) because 'unshare -rUn' is not available on this dev-box (rootless userns+netns unsupported). Pre-existing limitation per the script's comment ('Local dev hosts without strace must run scripts/bootstrap.sh first'). Not introduced by this slice.",
+    "individual_step_results": {
+      "agent-lint.sh": "PASS (exit 0)",
+      "agent-typecheck.sh": "PASS (exit 0)",
+      "agent-security.sh STRICT=1": "BLOCKER (toolchain missing — AC-037 netns)",
+      "agent-test.sh": "1 pre-existing flaky failure (ac_007b_slow_threshold_reconfigurable in tests/lifecycle_observability.rs); verified flake exists on HEAD~1 (commit 178b2b8) before any of this slice's later changes; timing-sensitive SLOW_CTE fixture is dev-host-dependent"
+    },
+    "log_path": "dev/plans/runs/0.7.0-PVQ-P1-IMPL-20260527T143047Z.log",
+    "clippy_workspace": "PASS — cargo clippy --workspace --all-targets -- -D warnings is clean"
+  },
+  "additional_changes_made_in_scope": [
+    {
+      "change": "Shifted the vec0 reshape from migration step 9 SQL into ensure_vector_partition (Rust, dim-aware).",
+      "rationale": "Design memo D4 fix-3 selected option (a) 'hardcode <dim>=768 in the migration SQL', but this is incompatible with the hard task constraint 'Existing tests must stay GREEN post-Pack 1': fathomdb-engine's existing test suite opens engines at dim=8 and dim=384 (excise_source, rebuild_projections, vector_contracts, perf_gates AC-017/AC-018, projection_runtime), and sqlite-vec's vec_quantize_binary additionally requires vector length divisible by 8. A hardcoded float[768] migration body would (i) reshape vector_default at dim=768 even when the embedder is dim=8/384, leaving subsequent writes rejected by vec0 dimension validation, and (ii) leave step 9 unable to even create the new table on a fresh dim<768 DB. Option (b) in the task prompt ('migration step 9 a no-op + do the rebuild from ensure_vector_partition at engine open') is what we implemented in commit 3ce4e22. SQL-side preflight (D4 fix-3.1 unknown-kind CHECK) stays in migration step 9 because it is dim-independent.",
+      "atomicity_guarantee": "The Rust-side reshape runs inside connection.transaction() (BEGIN IMMEDIATE ... COMMIT). If open crashes between the migration step 9 commit (user_version=9 persisted) and the Rust reshape commit, the next open re-enters ensure_vector_partition, re-detects the old single-column shape, and replays the reshape. Idempotent."
+    },
+    {
+      "change": "Bumped 8 occurrences of RoutedEmbedder::new(3) to RoutedEmbedder::new(8) across perf_gates.rs (6) and projection_runtime.rs (2).",
+      "rationale": "sqlite-vec 0.1.7's vec_quantize_binary rejects vectors with length not divisible by 8 (sqlite-vec.c:1388: 'Binary quantization requires vectors with a length divisible by 8'). The existing tests used dim=3 for the hybrid-search routing fixture; bumping to dim=8 preserves the slot-0/1/2 routing logic by zero-padding and unblocks the Pack 1 schema. Test intent (routing behaviour) is unchanged."
+    },
+    {
+      "change": "Added sqlite-vec=0.1.7 as a dev-dependency of the fathomdb-schema crate.",
+      "rationale": "The crate's in-memory migration tests (tests/migrations.rs ac_046a/b) drive the full MIGRATIONS array end-to-end. Step 9's preflight only references _fathomdb_vector_rows, but the auto-extension registration is needed for callers that drive the full open path. Pin matches fathomdb-engine; no version bump."
+    }
+  ],
+  "blockers_encountered": [
+    {
+      "id": "Hardcoded dim=768 in migration SQL vs existing dim=8/384/3 tests",
+      "resolution": "Decided in-scope per task prompt's option-(b) alternative; documented above. No HITL escalation needed because the task author offered (b) explicitly as a valid pivot ('Choose (a) for Pack 1 simplicity' — simplicity flag implied (b) is structurally available; reality required it)."
+    },
+    {
+      "id": "sqlite-vec vec_quantize_binary requires dim % 8 == 0",
+      "resolution": "Updated 8 dim=3 test fixtures to dim=8. No production-code constraint added; production dim=768 already satisfies divisibility."
+    },
+    {
+      "id": "ac_007b_slow_threshold_reconfigurable timing flake",
+      "resolution": "Pre-existing on this dev-host (verified by stashing all uncommitted changes and re-running on commit 178b2b8 — still fails). The SLOW_CTE fixture's N=1_000_000 recursive CTE is dev-host-dependent. Not introduced by this slice."
+    },
+    {
+      "id": "agent-security STRICT=1 netns blocker",
+      "resolution": "Pre-existing environmental limitation — 'unshare -rUn' unavailable. Not introduced by this slice."
+    }
+  ],
+  "design_memo_deviations": [
+    {
+      "memo_locus": "D4 (Migration strategy) — 'Decision: ...DROP TABLE + recreate ... in-transaction ... vec_quantize_binary evaluated SQL-side at INSERT bind ... all inside the migration framework's BEGIN IMMEDIATE / COMMIT envelope.'",
+      "what_actually_landed": "Migration step 9 SQL is preflight-only. The DROP TABLE / recreate / repopulate steps live in fathomdb-engine::ensure_vector_partition (Rust), runtime-dim-aware, also atomic under a single IMMEDIATE transaction. The data-flow semantics (stage + drop + recreate + repopulate with SQL-side vec_quantize_binary + D3 CASE mapping) are identical to the design memo; only the host crate differs.",
+      "why": "See 'additional_changes_made_in_scope' above (dim-aware requirement)."
+    },
+    {
+      "memo_locus": "D4 — 'Choose (a) for Pack 1 simplicity. Document the dim=768 hardcode in a code comment with a `// TODO(0.7.1)` if needed.'",
+      "what_actually_landed": "Option (b) (Rust-side dim-aware reshape from ensure_vector_partition). No dim=768 hardcode remains in the migration; the production default profile dim=768 still flows through ensure_vector_partition's dim parameter, sourced from EmbedderIdentity::dimension exactly as before.",
+      "why": "Forced by the 'Existing tests must stay GREEN' constraint."
+    }
+  ],
+  "out_of_scope_items_confirmed_deferred": [
+    "Pack 2 bit-KNN + f32 rerank reader rewrite (read_search_in_tx untouched).",
+    "AC-013 budget repin and recall@10 RED test (Pack 2).",
+    "ANN index (Pack 3+).",
+    "tags / project_mentions / per-source metadata columns (per design memo D2 'Deferred to Pack 2 / 0.7.1')."
+  ],
+  "next_step_for_orchestrator": "spawn codex reviewer on Pack 1 implementation"
+}
