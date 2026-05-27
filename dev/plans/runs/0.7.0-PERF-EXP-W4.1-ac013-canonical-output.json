@@ -1,0 +1,41 @@
+{
+  "experiment_id": "W4.1-ac013",
+  "lever_id": "L-Y1+L-Y2+L-B5+L-B4+L-D1-pcache2-O1",
+  "canonical_ci": {
+    "timestamp_utc": "2026-05-27T02:50:49Z",
+    "branch": "main",
+    "head_sha": "cb9547195e1ac9f18104301b36f3711e6f29919f",
+    "host": {
+      "cpu_model": "AMD EPYC 7763 64-Core Processor",
+      "cores": 4,
+      "os": "Ubuntu 24.04.4 LTS",
+      "kernel": "Linux 6.17.0-1013-azure x86_64",
+      "glibc": "2.39",
+      "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+      "libsqlite3_sys": "libsqlite3-sys-0.28.0"
+    },
+    "results": {
+      "ac013": {
+        "n": 1000000,
+        "samples": 1000,
+        "seed_ms": 562576,
+        "p50_ms": 2048,
+        "p99_ms": 2327
+      },
+      "ac019": {
+        "n": 1000000,
+        "threads": 8,
+        "per_thread": 250,
+        "stress_ms": 1273088,
+        "seed_ms": 557942,
+        "baseline_p99_ms": 2096,
+        "stress_p99_ms": 8388,
+        "bound_ms": 20964
+      }
+    }
+  },
+  "verdict": "PENDING",
+  "evidence_notes": "",
+  "next_step": "",
+  "canonical_ci_url": null
+}
