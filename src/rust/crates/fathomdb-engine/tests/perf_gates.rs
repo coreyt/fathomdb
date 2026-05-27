@@ -146,8 +146,17 @@ const AC019_THREADS: usize = 8;
 const AC019_QUERIES_PER_THREAD: usize = 250;
 const AC012_BUDGET_P50: Duration = Duration::from_millis(20);
 const AC012_BUDGET_P99: Duration = Duration::from_millis(150);
-const AC013_BUDGET_P50: Duration = Duration::from_millis(50);
-const AC013_BUDGET_P99: Duration = Duration::from_millis(200);
+// Pack 2 RED re-pin (dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md
+// § Pack 2.1): canonical-CI N=1M observed p50=2048 ms / p99=2327 ms on the
+// f32-brute-force read path (dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-
+// canonical-output.json). HITL-locked target post bit-quant + rerank is
+// ≤ 80 / 300 ms — RED at canonical scale until P2-IMPL lands.
+const AC013_BUDGET_P50: Duration = Duration::from_millis(80);
+const AC013_BUDGET_P99: Duration = Duration::from_millis(300);
+// Recall floor for AC-013b: HITL-locked ≥ 0.90 at k=10 vs f32 ground truth
+// (dev/plans/0.7.0-HITL-recommendations.md:89; ADR-0.7.0-vector-binary-
+// quant.md § 2 point 4).
+const AC013B_RECALL_FLOOR: f64 = 0.90;
 const AC019_STRESS_FLOOR: Duration = Duration::from_millis(150);
 const AC019_STRESS_MULT: u32 = 10;
 const RETRIEVAL_VECTOR_DIM: u32 = 768;
@@ -527,6 +536,84 @@ fn ac_013_vector_retrieval_latency() {
         p99 <= AC013_BUDGET_P99,
         "AC-013 failed: p99={p99:?} > budget {budget:?} at n={n}",
         budget = AC013_BUDGET_P99,
+    );
+}
+
+#[test]
+fn ac_013b_recall_at_10_floor() {
+    // Pack 2 RED: pre-IMPL the production read path is byte-equal to the
+    // brute-force f32 ground truth, so recall = 1.0 at land time. Post-
+    // P2-IMPL the production path switches to bit-KNN + f32 rerank; this
+    // test then measures how well the candidate set preserves the f32
+    // top-10. HITL-locked floor is 0.90 (see AC013B_RECALL_FLOOR).
+    if !long_run_enabled() {
+        return;
+    }
+
+    let n = ac013_corpus_n();
+    let (_dir, path) = fixture_path("ac013b_recall");
+    let embedder = Arc::new(VaryingEmbedder::new(RETRIEVAL_VECTOR_DIM));
+    let opened = Engine::open_with_embedder_for_test(&path, embedder.clone()).expect("open");
+    let _seed_elapsed = seed_ac013_corpus(&opened.engine, n);
+
+    let queries = ac013_query_bodies(PERF_SAMPLES);
+
+    // Raw read-only connection for the f32 ground-truth pass. sqlite_vec
+    // is process-global after Engine::open, so vec0 vtabs are reachable.
+    // Mirrors the SQL at src/rust/crates/fathomdb-engine/src/lib.rs:2317-
+    // 2342 (rowid lookup against vector_default, body fetch against
+    // canonical_nodes by write_cursor).
+    let db_path = opened.engine.path().to_path_buf();
+    let conn = rusqlite::Connection::open(&db_path).expect("raw ground-truth conn");
+    conn.pragma_update(None, "query_only", "ON").ok();
+
+    let mut total_hits = 0usize;
+    let mut total_queries = 0usize;
+
+    for q in &queries {
+        let vector = embedder.embed(q).expect("embed");
+        let vector_json = serde_json::to_string(&vector).expect("json");
+
+        let mut gt_rowid_stmt = conn
+            .prepare(
+                "SELECT rowid
+                 FROM vector_default
+                 WHERE embedding MATCH vec_f32(?1)
+                 ORDER BY distance
+                 LIMIT 10",
+            )
+            .expect("prepare gt rowid");
+        let gt_rowids: Vec<i64> = gt_rowid_stmt
+            .query_map([&vector_json], |row| row.get::<_, i64>(0))
+            .expect("gt rowid query")
+            .filter_map(|r| r.ok())
+            .collect();
+
+        let mut body_stmt = conn
+            .prepare("SELECT body FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1")
+            .expect("prepare body");
+        let mut gt_bodies = Vec::with_capacity(gt_rowids.len());
+        for rowid in &gt_rowids {
+            if let Ok(body) = body_stmt.query_row([rowid], |row| row.get::<_, String>(0)) {
+                gt_bodies.push(body);
+            }
+        }
+
+        let prod = opened.engine.search(q).expect("measure search").results;
+
+        let gt_set: std::collections::HashSet<&String> = gt_bodies.iter().collect();
+        let hits = prod.iter().filter(|b| gt_set.contains(b)).count();
+        total_hits += hits;
+        total_queries += 1;
+    }
+
+    let recall = total_hits as f64 / (10.0 * total_queries.max(1) as f64);
+    eprintln!("RECALL_NUMBERS n={n} samples={s} recall_at_10={recall:.4}", s = total_queries,);
+
+    assert!(
+        recall >= AC013B_RECALL_FLOOR,
+        "AC-013b failed: recall@10 {recall:.4} < floor {floor:.2} at n={n}",
+        floor = AC013B_RECALL_FLOOR,
     );
 }
 

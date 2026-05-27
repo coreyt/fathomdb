@@ -109,6 +109,20 @@ reused across suites:
     vec0 ANN search returns distinct k=10 neighbors. Held-out query
     body set drawn from the same distribution with a different LCG
     seed (mirrors ADR-0.6.0-retrieval-latency-gates "held-out slice").
+  - **AC-013b** recall@10 floor (Pack 2 RED, 2026-05-27): reuses
+    `seed_ac013_corpus` + `ac013_query_bodies` so latency and recall
+    share a single corpus. Per query: re-embeds via `VaryingEmbedder`,
+    runs `engine.search` for production top-10, runs the brute-force
+    f32 ground-truth SQL (`SELECT rowid FROM vector_default WHERE
+    embedding MATCH vec_f32(?1) ORDER BY distance LIMIT 10`) via a
+    raw read-only `rusqlite::Connection` on the same DB path, looks
+    up bodies through `canonical_nodes.write_cursor`, and reports
+    `RECALL_NUMBERS` with mean recall@10 over `PERF_SAMPLES`. Floor
+    HITL-locked at ≥ 0.90 (`dev/plans/0.7.0-HITL-recommendations.md`
+    line 89; ADR-0.7.0-vector-binary-quant § 2). Pre-Pack-2-IMPL the
+    production path is byte-equal to the ground-truth SQL so recall =
+    1.0; the test exists as the canonical regression gate for the
+    bit-KNN + f32 rerank rewrite in P2-IMPL.
   - **AC-019** workload: re-runs AC-013's protocol immediately
     preceding the stress pass (per acceptance.md AC-019 wording),
     captures `baseline_p99`, then runs `AC019_THREADS=8` concurrent
@@ -121,7 +135,13 @@ reused across suites:
     `AC012_CORPUS_N` / `AC013_CORPUS_N` env vars override per host
     (AC-007a/b runner-pin precedent). Default scale on this aarch64
     Tegra dev runner: AC-012 N=100,000; AC-013 N=50,000. Budgets
-    pinned to ADR values; do not relax.
+    pinned to ADR values; do not relax. **AC-013 budget re-pinned
+    2026-05-27 (Pack 2 RED) to p50 ≤ 80 ms / p99 ≤ 300 ms — the
+    HITL-locked target for the bit-KNN + f32 rerank reader rewrite
+    in P2-IMPL. Canonical-CI N=1M measured 2048 / 2327 ms on the
+    f32-brute-force path
+    (`dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json`),
+    so the new budget is RED at canonical scale until P2-IMPL lands.**
   - **Pack D dev-runner status (aarch64 Linux 5.15-tegra,
     2026-05-05).** AC-012 at default N=100,000: p50=29.7 ms, p99=85
     ms — p50 RED vs ADR 20 ms; p99 GREEN. AC-013 at N=10,000 (full
