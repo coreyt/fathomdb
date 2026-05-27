@@ -9,6 +9,14 @@ name: perf-canonical (AC-012 / AC-013 / AC-019 long-run gate)
 # Manually-triggered only — these are hours-of-wall-clock runs at
 # canonical scale. Default scale (corpus_n inputs) lets the user
 # downscale for diagnostic dry-runs.
+#
+# POLICY (see dev/notes/ac013-ac019-canonical-scale-policy.md):
+# AC-013 / AC-019 at ac013_corpus_n=1000000 takes ~2-3 hours on
+# the current 4-core canonical EPYC runner — too long to gate
+# on. This workflow MUST remain workflow_dispatch-only; do NOT
+# add push: / pull_request: / schedule: triggers that invoke
+# AC-013 or AC-019 at N=1M. The canonical-scale measurement is a
+# once-per-release exercise, not a per-slice gate.
 
 on:
   workflow_dispatch:
@@ -18,7 +26,7 @@ on:
         required: false
         default: "1000000"
       ac013_corpus_n:
-        description: "AC-013 corpus row count (1000000 = canonical; ignored if Pack 7 Track 2 seed seam not landed yet)"
+        description: "AC-013 corpus row count (default 10000; canonical 1000000 takes ~2-3h on 4-core runner — see dev/notes/ac013-ac019-canonical-scale-policy.md)"
         required: false
         default: "10000"
       run_full_scale:
