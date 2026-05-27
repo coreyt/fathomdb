@@ -1,0 +1,22 @@
+{
+  "comment": "Upstream pins + checksums for tests/corpus/raw/*.jsonl. Each entry is the contract between an acquisition script and the file it produces. A second build pass against the same upstream snapshot must reproduce the same sha256.",
+  "schema_version": 1,
+  "sources": {
+    "cnn_dailymail": {
+      "script": "acquire_cnn_dailymail.py",
+      "upstream": {
+        "kind": "huggingface_dataset",
+        "id": "abisee/cnn_dailymail",
+        "config": "3.0.0",
+        "revision": "96df5e686bee6baa90b8bee7c28b81fa3fa6223d",
+        "last_modified": "2024-01-18T15:31:34Z"
+      },
+      "license": "Apache-2.0",
+      "distribution": "commit",
+      "output": "tests/corpus/raw/cnn_dailymail.jsonl",
+      "doc_count": 2500,
+      "sha256": "7c371528f9f86d5ca06a0ed39e3ed2da63bf09cbd71de988f692129c69493d09",
+      "acquired_at": "2026-05-27"
+    }
+  }
+}

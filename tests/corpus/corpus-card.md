@@ -175,13 +175,13 @@ lands.
 
 ## Upstream checksums
 
-Populated by the acquisition pipeline (Corpus-Pack 1). Each row
-records:
+Authoritative copy lives in
+[`scripts/manifest.json`](./scripts/manifest.json) (machine-readable
++ verified by the build pipeline). Summary table:
 
-| Source | URL / dataset ID | Snapshot tag | SHA-256 |
+| Source | Upstream ID | Snapshot | Output SHA-256 |
 |---|---|---|---|
-
-(Empty until Corpus-Pack 1 lands.)
+| CNN/DailyMail | HF `abisee/cnn_dailymail` config `3.0.0` | rev `96df5e68…6223d` (2024-01-18) | `7c371528…493d09` |
 
 ## Out of scope for 0.7.0
 
