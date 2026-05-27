@@ -18,6 +18,24 @@
       "sha256": "7c371528f9f86d5ca06a0ed39e3ed2da63bf09cbd71de988f692129c69493d09",
       "acquired_at": "2026-05-27"
     },
+    "enron": {
+      "script": "acquire_enron.py",
+      "upstream": {
+        "kind": "http_tarball",
+        "url": "https://www.cs.cmu.edu/~enron/enron_mail_20150507.tar.gz",
+        "etag": "\"1a6b8803-51583da2f8640\"",
+        "last_modified": "2015-05-07T20:35:29Z",
+        "tarball_sha256": "b3da1b3fe0369ec3140bb4fbce94702c33b7da810ec15d718b3fadf5cd748ca7"
+      },
+      "license": "LicenseRef-Enron-Research-Use",
+      "distribution": "commit",
+      "notes": "HITL OK (2026-05-27) with the CMU April-2026 impersonation note recorded in corpus-card.md. Tarball cached at ~/.cache/fathomdb-corpus/enron_mail_20150507.tar.gz (not committed).",
+      "output": "tests/corpus/raw/enron.jsonl",
+      "doc_count": 2000,
+      "subsample": "round-robin across 149 users (sent-folder messages, lex-first 30/user, then RR fill)",
+      "sha256": "c4df0c71e2de1505c8114ae3f96ff5dac2769786eee6028ba2d46bf0e83486ab",
+      "acquired_at": "2026-05-27"
+    },
     "bahmutov_dailylogs": {
       "script": "acquire_bahmutov_dailylogs.py",
       "upstream": {
