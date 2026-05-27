@@ -2308,6 +2308,13 @@ fn batch_is_admin(batch: &[PreparedWrite]) -> bool {
     !batch.is_empty() && batch.iter().all(|w| matches!(w, PreparedWrite::AdminSchema { .. }))
 }
 
+// 0.7.0 Pack 2 (ADR-0.7.0-vector-binary-quant § 2; handoff § 2.2):
+// bit-KNN candidate-set size for the two-phase read path. Tuned with
+// the recall@10 floor in tests/perf_gates.rs::ac_013b_recall_at_10_floor;
+// raise (128/256) if the floor regresses on a future fixture per
+// the ADR open question.
+const TOP_K_BIT_CANDIDATES: usize = 64;
+
 /// Read projection cursor and matching body rows inside one read tx.
 fn read_search_in_tx(
     reader: &mut Connection,
@@ -2319,13 +2326,28 @@ fn read_search_in_tx(
     let vector_results = if let Some(query_vector) = query_vector {
         let mut rowids = Vec::new();
         {
-            let mut statement = tx.prepare(
-                "SELECT rowid
-                 FROM vector_default
-                 WHERE embedding MATCH vec_f32(?1)
-                 ORDER BY distance
+            // Phase 1: bit-KNN over `embedding_bin` to a top-K candidate
+            // set; Phase 2: f32 rerank on the candidate set via
+            // vec_distance_l2 against the retained `embedding` column.
+            // ?1 is bound once and reused in both phases (rusqlite
+            // positional reuse). Distance function matches the prior
+            // single-phase path's implicit L2 default for float[] vec0.
+            let sql = format!(
+                "WITH candidates AS (
+                     SELECT rowid
+                     FROM vector_default
+                     WHERE embedding_bin MATCH vec_quantize_binary(vec_f32(?1))
+                     ORDER BY distance
+                     LIMIT {top_k}
+                 )
+                 SELECT c.rowid
+                 FROM candidates c
+                 JOIN vector_default v ON v.rowid = c.rowid
+                 ORDER BY vec_distance_l2(v.embedding, vec_f32(?1))
                  LIMIT 10",
-            )?;
+                top_k = TOP_K_BIT_CANDIDATES,
+            );
+            let mut statement = tx.prepare(&sql)?;
             let rows = statement.query_map([query_vector], |row| row.get::<_, i64>(0))?;
             for row in rows.flatten() {
                 rowids.push(row);
