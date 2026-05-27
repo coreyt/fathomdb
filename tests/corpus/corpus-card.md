@@ -183,6 +183,7 @@ Authoritative copy lives in
 |---|---|---|---|
 | CNN/DailyMail | HF `abisee/cnn_dailymail` config `3.0.0` | rev `96df5e68…6223d` (2024-01-18) | `7c371528…493d09` |
 | Landes to-dos | GH `plandes/todo-task` `resources/todo-dataset.json` | rev `06bcd261…d26f` (2018-06-29) | `74f02482…0e812` |
+| bahmutov daily-logs | GH `bahmutov/daily-logs` monthly Markdown | rev `521476da…19b7` (2020-09-01) | `bdecf3e8…0e81` |
 
 ## Out of scope for 0.7.0
 

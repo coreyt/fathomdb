@@ -18,6 +18,21 @@
       "sha256": "7c371528f9f86d5ca06a0ed39e3ed2da63bf09cbd71de988f692129c69493d09",
       "acquired_at": "2026-05-27"
     },
+    "bahmutov_dailylogs": {
+      "script": "acquire_bahmutov_dailylogs.py",
+      "upstream": {
+        "kind": "github_repo_markdown_tree",
+        "id": "bahmutov/daily-logs",
+        "revision": "521476da90da3c3f095e458c2b92e8bf379819b7",
+        "last_modified": "2020-09-01T13:48:25Z"
+      },
+      "license": "MIT",
+      "distribution": "commit",
+      "output": "tests/corpus/raw/bahmutov_dailylogs.jsonl",
+      "doc_count": 300,
+      "sha256": "bdecf3e8ffef86dc2cb136bce9912b629f91774c41d9cf34224f3f7d8e1a0e81",
+      "acquired_at": "2026-05-27"
+    },
     "landes_todos": {
       "script": "acquire_landes_todos.py",
       "upstream": {

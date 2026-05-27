@@ -33,7 +33,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _corpus_lib import CorpusDoc, corpus_data_dir, doc_id, write_jsonl  # noqa: E402
+from _corpus_lib import CorpusDoc, corpus_dir, doc_id, write_jsonl  # noqa: E402
 
 UPSTREAM_REPO = "bahmutov/daily-logs"
 UPSTREAM_SHA = "521476da90da3c3f095e458c2b92e8bf379819b7"
@@ -138,7 +138,7 @@ def build_doc(heading: str, body: str, iso_date: str, native_id: str) -> CorpusD
 
 
 def main() -> int:
-    out_path = corpus_data_dir() / "raw" / "bahmutov_dailylogs.jsonl"
+    out_path = corpus_dir() / "raw" / "bahmutov_dailylogs.jsonl"
     docs: list[CorpusDoc] = []
 
     for year, fname in MONTH_FILES:
