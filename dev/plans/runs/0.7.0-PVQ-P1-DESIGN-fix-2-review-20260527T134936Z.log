@@ -1,0 +1,3234 @@
+OpenAI Codex v0.120.0 (research preview)
+--------
+workdir: /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 019e69b2-a8cc-7ea2-9d6a-e66c7cf1728e
+--------
+user
+You are re-reviewing Phase 0.7.0-PVQ-P1-DESIGN after fix-2.
+
+Branch: phase-0.7.0-PVQ-P1-DESIGN-20260527T132416Z, HEAD f7343c8.
+Baseline: 277fa4c. Commits: 14a4612 (original), 64c5d6e (fix-1), f7343c8 (fix-2).
+
+Required reading:
+- dev/plans/prompts/0.7.0-PVQ-P1-DESIGN-fix-2.md (fix-2 spec)
+- dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-1-review-20260527T134214Z.md (prior verdict)
+- dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-2-output.json (closure)
+- The fix-2 commit f7343c8 (dev/design/0.7.0-vector-quant-pack1.md D4 section + Rejected alternative + Fix-2 changelog)
+- src/rust/crates/fathomdb-schema/src/lib.rs (especially Migration struct ~line 51-54 and apply_one ~line 273-288)
+- src/rust/crates/fathomdb-engine/src/lib.rs writer-site (commit_projection_outcomes ~2834-2854 — confirm _fathomdb_vector_rows.kind is the source of kind metadata for the JOIN)
+
+Verdict format: same as before (Verdict + findings + Addressed + What passed + Reviewer process notes).
+
+Focus the re-review on:
+1. Does D4 now describe a synchronous, in-transaction, embedder-free migration?
+2. Are the cited Rust anchors (Migration struct, apply_one, kind source) correct?
+3. Is the CASE-WHEN SQL for kind->source_type consistent with the D3 mapping table?
+4. Does the migration handle the `_fathomdb_vector_rows.kind` JOIN correctly (every row in vector_default has a matching _fathomdb_vector_rows entry, per the writer contract at lib.rs:2845-2853)?
+5. Any NEW concerns introduced by fix-2.
+6. Confirm D1, D2, D3, D5, D6, D7, D8 are still consistent (fix-2 should not have regressed them).
+
+Sandbox read-only. Main thread promotes verdict.
+
+codex
+Reviewing fix-2 against the requested anchors and prior verdict first. I’m loading the repo instructions, memory files, the fix-2 spec/output, and the relevant Rust/doc sections before I compare the commit.
+exec
+/bin/bash -lc 'git log --oneline --decorate -n 8' in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ succeeded in 0ms:
+f7343c8 (HEAD -> phase-0.7.0-PVQ-P1-DESIGN-20260527T132416Z) docs(0.7.0): Pack 1 design fix-2 — D4 synchronous staged migration
+64c5d6e docs(0.7.0): Pack 1 design fix-1 — honor source_type lock; migration via real framework
+14a4612 docs(0.7.0): Pack 1 design memo — schema, writer, kind->source_type
+277fa4c docs(0.7.0): close PVQ-S0 — promote codex CONCERN verdict; fix AC-019/normalization wording
+27ab8df feat(0.7.0): CORPUS-1 — CNN/DailyMail acquisition (2500 articles)
+79cea9f docs(0.7.0): draft ADR for vector binary quantization (Pack 1+2)
+aa954f6 docs(0.7.0): scaffold tests/corpus/ + corpus-card with HITL locks
+68c6339 (origin/main, origin/HEAD) docs(0.7.0): lock corpus HITL answers + corpus-build agent handoff
+
+exec
+/bin/bash -lc "pwd && rg --files -g 'MEMORY.md' -g 'feedback_*.md' -g 'dev/plans/prompts/0.7.0-PVQ-P1-DESIGN-fix-2.md' -g 'dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-1-review-20260527T134214Z.md' -g 'dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-2-output.json' -g 'dev/design/0.7.0-vector-quant-pack1.md' -g 'src/rust/crates/fathomdb-schema/src/lib.rs' -g 'src/rust/crates/fathomdb-engine/src/lib.rs' -g 'dev/adr/ADR-0.6.0-decision-index.md'" in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ succeeded in 0ms:
+/tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+src/rust/crates/fathomdb-engine/src/lib.rs
+src/rust/crates/fathomdb-schema/src/lib.rs
+dev/adr/ADR-0.6.0-decision-index.md
+dev/design/0.7.0-vector-quant-pack1.md
+dev/plans/prompts/0.7.0-PVQ-P1-DESIGN-fix-2.md
+dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-2-output.json
+dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-1-review-20260527T134214Z.md
+
+exec
+/bin/bash -lc 'git rev-parse --abbrev-ref HEAD && git rev-parse HEAD && git status --short' in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ succeeded in 0ms:
+phase-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+f7343c846d26f8b4f8e74926eac4298263680346
+?? dev/plans/prompts/0.7.0-PVQ-P1-DESIGN-fix-2.md
+?? dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-1-review-20260527T134214Z.md
+
+codex
+The initial glob only hit the files named in the request. I’m locating `MEMORY.md` and the referenced `feedback_*.md` files now, then I’ll read the fix-2 materials and the exact code anchors.
+exec
+/bin/bash -lc "sed -n '1,220p' AGENTS.md" in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ succeeded in 0ms:
+# AGENTS.md — FathomDB
+
+Operating manual for AI coding agents (Claude Code, Codex, Cursor, Aider, Copilot) working in this repo. Cross-vendor convention. This is the canonical agent-instruction file; **no `CLAUDE.md` is maintained** — Claude Code reads `AGENTS.md` natively.
+
+Bullet form, prescriptive, ≤300 lines. Link out, do not inline.
+
+## 0. System layers — where each rule fits
+
+- **Invariants layer** — this file (front-loaded, cached, ≤300, bullets).
+- **Index layer** — `dev/adr/ADR-0.6.0-decision-index.md`, `dev/interfaces/*.md`. Linked, never inlined.
+- **Retrieval layer** — grep / glob / read / LSP / tree-sitter map on demand. No local vector index.
+- **Execution layer** — typed dev-loop verbs under `scripts/agent-*.sh` emit structured JSON. Tests are oracle.
+- **Persistence layer** — `dev/progress/<release>.md` + ADR supersession. Compaction-safe.
+- **Permission layer** — three-tier sandbox + worktree-per-task + egress allowlist (`.claude/settings.json`).
+- **Topology layer** — main thread orchestrates; implementer (worktree) + code-reviewer fan out at clean seams; single-agent for shared-state edits.
+
+---
+
+## 1. Invariants — read these first
+
+- **Memory first.** Read `MEMORY.md` and the `feedback_*.md` files it points to before planning any change. They encode prior corrections that override default behavior.
+- **ADRs are authoritative.** Decisions live in `dev/adr/`. Index: `dev/adr/ADR-0.6.0-decision-index.md`. Do not contradict an accepted ADR; propose a successor instead.
+- **TDD is mandatory.** Failing test first; red → green → refactor. Mechanical version bumps and renames are the only exception. (`feedback_tdd.md`)
+- **Stale > missing.** A wrong comment, doc, or ADR is more harmful than its absence. If you cannot maintain something, delete it.
+- **Public surface is contract.** Anything in `dev/interfaces/` or `pub` Rust APIs is a contract; changes need an ADR or interface-doc update in the same PR.
+
+## 2. Repo shape
+
+- **Rust workspace** under `src/rust/crates/` — 7 crates: `fathomdb`, `fathomdb-cli`, `fathomdb-engine`, `fathomdb-query`, `fathomdb-schema`, `fathomdb-embedder`, `fathomdb-embedder-api`.
+- **Python bindings** under `src/python/` (package: `fathomdb`).
+- **TypeScript bindings** under `src/ts/`.
+- **Public docs** under `docs/` (MkDocs-built).
+- **Internal engineering docs** under `dev/`: `adr/`, `interfaces/`, `progress/`, `plans/`, `tmp/`.
+
+## 3. Build / test / lint commands
+
+Use the typed dev-loop verbs (Phase 2). Each emits **concise output on pass, structured diagnostic on fail**, with full output spilled to `/tmp/fathomdb-agent-<verb>-<pid>.log` when capped.
+
+| Verb      | Script                         | Purpose                                                           |
+| --------- | ------------------------------ | ----------------------------------------------------------------- |
+| build     | `./scripts/agent-build.sh`     | Compile workspace (Rust + Python install + TS build if installed) |
+| lint      | `./scripts/agent-lint.sh`      | clippy + ruff + markdownlint + prettier --check + lychee          |
+| typecheck | `./scripts/agent-typecheck.sh` | cargo check + pyright + tsc --noEmit                              |
+| test      | `./scripts/agent-test.sh`      | cargo test + pytest                                               |
+| verify    | `./scripts/agent-verify.sh`    | lint → typecheck → test (short-circuits on first fail)            |
+
+Markdown lint covers `AGENTS.md`, `dev/plans/`, `dev/progress/`, README files, and root metadata. Pre-existing legacy under `dev/adr/`, `dev/design/`, `dev/agents/`, `dev/deps/`, etc. is excluded — clean up incrementally when touching those files. Auto-fix: `npm run format:md` (prettier --write) + `./node_modules/.bin/markdownlint-cli2 --fix`.
+
+Run `./scripts/agent-verify.sh` after every meaningful edit. Do not ship a PR with verify failing.
+
+The broader CI gate is `./scripts/check.sh` (adds mkdocs build); the agent-loop gate is `agent-verify.sh`. Long-run test variants (e.g. AC-021 60 s window, AC-059b ~1000-iteration cursor-race fixture) are exercised only via `scripts/check.sh` with `AGENT_LONG=1`; `agent-verify.sh` skips them for runtime budget.
+
+### One-time setup
+
+- Rust toolchain: stable per `rust-version` in `Cargo.toml`. clippy + rustfmt come with rustup defaults.
+- Python dev tooling: `pip install -e 'src/python[dev]'` — installs `pytest`, `hypothesis`, `ruff`, `pyright`. Without this, the Python lint/typecheck/test steps emit a skip notice and pass without exercising.
+- TypeScript: `cd src/ts && npm install` if you intend to touch TS. Without this, TS verbs skip.
+- Markdown tooling: `npm install` at repo root — installs `markdownlint-cli2` + `prettier`. `cargo install --locked lychee` for link checking (one-time). All wired up by `./scripts/bootstrap.sh`.
+
+## 4. Verification ordering
+
+Run in latency order; short-circuit on first failure:
+
+1. **lint** (clippy / ruff) — fastest signal, catches most style + correctness issues
+2. **typecheck** (cargo check / pyright / tsc) — catches type errors before tests run them
+3. **unit tests** (`agent-test.sh`)
+4. **integration tests** — opt-in, gated by feature/env flag; not part of `agent-verify`
+
+Do not paraphrase, summarize, or shorten compiler diagnostics — pass them through unaltered. Rust diagnostics in particular are best-in-class; Anthropic's RustAssistant numbers depend on them being unaltered.
+
+## 5. Test discipline
+
+- **Failing test first.** Write the failing test, commit it (or stage it visible to the reviewer), then implement.
+- **Test files are read-only during fix-to-spec.** Do not edit a test to make a failing build pass; fix the code.
+- **Property-based tests required** for codec / projection / recovery / round-trip layers. Rust: `proptest` (dev-dep on `fathomdb-schema`, `fathomdb-engine`, `fathomdb-query`). Python: `hypothesis` (in `[dev]` and `[test]` optional deps; install via `pip install -e 'src/python[dev]'`). Scaffolds: `src/rust/crates/<crate>/tests/property_template.rs` and `src/python/tests/test_property_template.py` — replace the trivial property with real round-trip / invariant assertions when domain types land.
+- **No agent-generated oracles.** Tests must encode human intent; do not regenerate snapshot or golden tests autonomously.
+- **Retry budget.** If you hit the same failure mode twice, stop. Re-read the failing test, the relevant ADR, and the relevant `feedback_*.md`. Do not loop a third time without re-thinking; if necessary, `/clear` and reset.
+
+## 6. Comment policy
+
+- **Public-API docstrings:** required for `pub` Rust items, top-level Python functions/classes, exported TS symbols. Document contract: inputs, outputs, errors, panics, invariants.
+- **Internal helpers:** no docstrings unless behavior is non-obvious. Names should carry the meaning.
+- **Inline comments:** why / invariants / hazards only. Never restate what code does. Never reference the current task or PR. (Per CLAUDE-default rules and `feedback_reliability_principles.md`.)
+- **Stale comment > delete.** If a comment no longer matches the code, delete it; do not "update later."
+
+## 7. Subagent rules
+
+- **Main thread orchestrates.** Do not spawn an "orchestrator" subagent — the main thread _is_ the orchestrator. (`feedback_orchestrator_thread.md`)
+- **Releases:** main thread plans; delegate coding to `implementer` (in worktree); request diff review from `code-reviewer`. (`feedback_orchestrate_releases.md`)
+- **Subagents win for fan-out.** Parallel research, format-strict review, output isolation. Examples: searching across crates, auditing a diff, generating an ADR draft.
+- **Subagents lose for shared-state edits.** A multi-agent edit pipeline drops tacit context at every handoff. Single-agent for any edit on shared mutable state.
+- **Worktrees** are the unit of isolation. Implementer subagents always operate in a fresh worktree; main thread never edits in a subagent's worktree.
+- **Canonical mechanics:** `dev/design/orchestration.md` owns Claude-implementer + Codex-reviewer spawn discipline (PREAMBLE anti-chaining, flag set, cherry-pick + fix-N + override patterns, worktree cleanup). This file owns the principles; that file owns the bash.
+
+## 8. Iteration discipline
+
+- **Cap retry-budget at ~2 same-issue corrections.** Beyond that, stop, externalize plan to `dev/progress/0.6.0.md`, `/clear`, restart with the plan in front of you.
+- **Compact-aware.** Anything that must survive compaction goes on disk: ADRs, progress logs, plan files, MEMORY entries. Do not rely on chat to remember.
+- **Front-load invariants, end-load tasks.** When prompting yourself or constructing context, put rules near the top, the immediate task near the bottom (lost-in-the-middle).
+
+## 9. Pointers
+
+- **Decisions:** `dev/adr/ADR-0.6.0-decision-index.md`
+- **Interfaces:** `dev/interfaces/{rust,python,typescript,cli,wire}.md`
+- **Orchestration mechanics:** `dev/design/orchestration.md` (Claude+Codex spawn discipline)
+- **Progress log:** `dev/progress/0.6.0.md`
+- **Plans:** `dev/plans/`
+- **Research:** `dev/notes/context-research-agentic-best-practices.md` (the best-practices synthesis this file operationalizes)
+- **Memory:** `MEMORY.md` (auto-loaded into Claude Code session start)
+
+## 10. Forbidden patterns
+
+Pulled from MEMORY `feedback_*.md`. Violations are correctness bugs, not style preferences.
+
+- **No mocking the database.** Integration tests hit a real database. (`feedback_tdd.md`-adjacent; prior incident.)
+- **No skipping hooks.** Never `--no-verify`, never `--no-gpg-sign` unless explicitly approved.
+- **No backwards-compatibility shims** in pre-1.0 rewrites.
+- **No data migrations** in managed-vec projection releases. (`feedback_no_data_migration.md`)
+- **No `c_char` hardcoded as `i8` or `u8`** at C interop boundaries. (`feedback_cross_platform_rust.md`)
+- **No `pip install` + manual `cargo build` + `cp`** for Python native modules — use `pip install -e python/`. (`feedback_python_native_build.md`)
+- **No `yaml.safe_load` as workflow validator** — use `actionlint`. (`feedback_workflow_validation.md`)
+- **No "fix in 0.7"** for reliability bugs. Net-negative LoC on reliability releases. (`feedback_reliability_principles.md`)
+- **No "green CI = done"** for releases — install the published wheel and run end-to-end open/close/exit before declaring done. (`feedback_release_verification.md`)
+- **Vector identity belongs to the embedder.** (`project_vector_identity_invariant.md`)
+
+## 11. Permission model (for the Claude Code harness)
+
+`.claude/settings.json` enforces a 3-tier model:
+
+- **read-only** (auto-allowed): `Read`, `Grep`, `Glob`, plus `Bash` for the agent-loop verbs and read-only git/cargo/uv operations.
+- **workspace-write** (auto-allowed): `Edit`, `Write` within the repo; `git add`, `git commit`, `git restore`.
+- **escalated** (denied or asked): destructive ops (`rm`, `mv`, `git reset --hard`, `git clean`); network beyond the package registries (`curl`, `wget`); `git push` requires confirmation.
+
+If the agent needs an op outside this model, surface it to the user; do not look for workarounds.
+
+## 12. Working with this file
+
+- This file should stay ≤300 lines. If it grows, link out to a scoped doc and reference it.
+- Per-crate `AGENTS.md` files are **not maintained** until each crate has non-scaffold content. Stale > missing.
+- Update this file in the same PR as any change that invalidates one of its rules.
+
+exec
+/bin/bash -lc "find .. -name MEMORY.md -o -name 'feedback_*.md' | sed 's#"'^./##'"' | sort" in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ succeeded in 0ms:
+find: ‘../systemd-private-1ef53ead6abd42d8b7f456842cdf7520-systemd-logind.service-iX9j36’: Permission denied
+find: ‘../systemd-private-1ef53ead6abd42d8b7f456842cdf7520-ModemManager.service-p0MVrP’: Permission denied
+find: ‘../systemd-private-1ef53ead6abd42d8b7f456842cdf7520-colord.service-Bmfezu’: Permission denied
+find: ‘../containers-user-1001’: Permission denied
+find: ‘../systemd-private-1ef53ead6abd42d8b7f456842cdf7520-fwupd.service-0v12ls’: Permission denied
+find: ‘../systemd-private-1ef53ead6abd42d8b7f456842cdf7520-systemd-resolved.service-qkyv26’: Permission denied
+find: ‘../systemd-private-1ef53ead6abd42d8b7f456842cdf7520-power-profiles-daemon.service-6n89Oz’: Permission denied
+find: ‘../snap-private-tmp’: Permission denied
+find: ‘../systemd-private-1ef53ead6abd42d8b7f456842cdf7520-systemd-timesyncd.service-UCsVxG’: Permission denied
+find: ‘../systemd-private-1ef53ead6abd42d8b7f456842cdf7520-polkit.service-BPxhYl’: Permission denied
+find: ‘../systemd-private-1ef53ead6abd42d8b7f456842cdf7520-upower.service-u0T3Ig’: Permission denied
+find: ‘../systemd-private-1ef53ead6abd42d8b7f456842cdf7520-systemd-oomd.service-lnAlMA’: Permission denied
+find: ‘../systemd-private-1ef53ead6abd42d8b7f456842cdf7520-switcheroo-control.service-BIxRCA’: Permission denied
+
+exec
+/bin/bash -lc "sed -n '1,220p' dev/adr/ADR-0.6.0-decision-index.md" in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ succeeded in 0ms:
+---
+title: 0.6.0 Decision Index
+date: 2026-04-25
+target_release: 0.6.0
+desc: Triage list of candidate decisions; not itself an ADR
+blast_radius: TBD
+status: in-progress
+---
+
+# Decision Index (triage)
+
+This file is a **triage list**, not a decision. Each row is a candidate decision
+that may become an accepted ADR.
+
+Workflow per row: draft → critic (`architecture-inspector`) → HITL marks
+`decide-now | defer | drop`. Decide-now → ADR file
+`ADR-0.6.0-<kebab-title>.md` gets full options/tradeoffs/recommendation;
+HITL accepts → ADR `status: accepted`.
+
+## Phase 1 (already-decided / decision-recording ADRs)
+
+These were settled during Phase 1a/1b HITL. ADRs record the rationale and
+preserve options-considered for posterity; they do not deliberate.
+
+| #   | Category     | Candidate decision                                                                                        | HITL verdict                  | ADR file                                    |
+| --- | ------------ | --------------------------------------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------- |
+| 1   | architecture | Async-surface for engine API (sync engine + Path 2 TS-binding fix + Invariants A-D)                       | accepted (deliberation)       | ADR-0.6.0-async-surface.md                  |
+| 2   | design       | Default-embedder architecture (candle + tokenizers + sqlite-vec; mean-pool + L2-normalize; zerocopy BLOB) | accepted (decision-recording) | ADR-0.6.0-default-embedder.md               |
+| 3   | architecture | sqlite-vec accept-no-fallback (sole-maintainer risk)                                                      | accepted (decision-recording) | ADR-0.6.0-sqlite-vec-acceptance.md          |
+| 4   | interface    | Operator config = JSON-only (toml dropped)                                                                | accepted (decision-recording) | ADR-0.6.0-operator-config-json-only.md      |
+| 5   | architecture | Typed at engine boundary; no raw SQL ever from clients                                                    | accepted (decision-recording) | ADR-0.6.0-typed-write-boundary.md           |
+| 6   | architecture | Operational store lives in same sqlite file (no dual-store)                                               | accepted (decision-recording) | ADR-0.6.0-op-store-same-file.md             |
+| 7   | design       | Embedder protocol contract (sync, unit-norm, no-reentrancy, engine-owned-thread, per-call-timeout)        | accepted (deliberation)       | ADR-0.6.0-embedder-protocol.md              |
+| 8   | architecture | Vector BLOB on-disk invariants (LE f32, alignment, byte-length, BLOB affinity)                            | accepted (decision-recording) | ADR-0.6.0-zerocopy-blob.md                  |
+| 9   | interface    | No 0.5.x→0.6.0 shims; no within-0.6.x multi-release deprecation cycles                                    | accepted (decision-recording) | ADR-0.6.0-no-shims-policy.md                |
+| 10  | architecture | Single-writer-thread engine for 0.6.0; MVCC explicitly out of scope (closes Phase 2 #12 by deferral)      | accepted (decision-recording) | ADR-0.6.0-single-writer-thread.md           |
+| 11  | design       | Vector identity belongs to the embedder; vector configs never carry identity strings                      | accepted (decision-recording) | ADR-0.6.0-vector-identity-embedder-owned.md |
+
+## Phase 2 (deliberation ADRs)
+
+Decisions that are not yet settled. Drafts pending after Phase 1 ADRs land.
+
+| #   | Category     | Candidate decision                                                                                                                                           | HITL verdict                                                                      | ADR file                                                                 |
+| --- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| 7   | acceptance   | Single-process durability target (fsync policy, recovery time)                                                                                               | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-durability-fsync-policy.md                                     |
+| 8   | acceptance   | Projection freshness SLI numerical target                                                                                                                    | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-projection-freshness-sli.md                                    |
+| 9   | acceptance   | Retrieval p50/p99 latency gates                                                                                                                              | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-retrieval-latency-gates.md                                     |
+| 10  | acceptance   | Tier-1 CI platforms list                                                                                                                                     | accepted (HITL 2026-04-27, lite batch)                                            | ADR-0.6.0-tier1-ci-platforms.md                                          |
+| 11  | architecture | Crate topology — keep `fathomdb-engine` monolith or split                                                                                                    | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-crate-topology.md                                              |
+| 12  | architecture | Single-writer thread vs MVCC                                                                                                                                 | resolved-by-deferral                                                              | → ADR-0.6.0-single-writer-thread.md (Phase 1 #10); MVCC deferred to 0.7+ |
+| 13  | architecture | Vector index location (vec0 in same sqlite file)                                                                                                             | accepted (HITL 2026-04-27, lite batch)                                            | ADR-0.6.0-vector-index-location.md                                       |
+| 14  | architecture | Scheduler shape — tokio runtime + per-job tasks                                                                                                              | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-scheduler-shape.md                                             |
+| 15  | architecture | Wire format for subprocess bridge                                                                                                                            | resolved-by-deferral                                                              | ADR-0.6.0-subprocess-bridge-deferral.md (revisit 0.8.0)                  |
+| 16  | design       | Projection model — push (eager)                                                                                                                              | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-projection-model.md                                            |
+| 17  | design       | Retrieval pipeline shape — fixed stages                                                                                                                      | accepted (HITL 2026-04-27); composable middleware revisit 0.8.0                   | ADR-0.6.0-retrieval-pipeline-shape.md                                    |
+| 18  | design       | Error taxonomy — per-module + top-level wrap                                                                                                                 | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-error-taxonomy.md                                              |
+| 19  | design       | PreparedWrite shape                                                                                                                                          | accepted (HITL 2026-04-27, lite batch)                                            | ADR-0.6.0-prepared-write-shape.md                                        |
+| 20  | interface    | Python API shape                                                                                                                                             | accepted (HITL 2026-04-27, lite batch)                                            | ADR-0.6.0-python-api-shape.md                                            |
+| 21  | interface    | TypeScript API — idiomatic + 1:1 type names                                                                                                                  | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-typescript-api-shape.md                                        |
+| 22  | interface    | CLI scope — admin + recovery + read-only query                                                                                                               | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-cli-scope.md                                                   |
+| 23  | interface    | Deprecation policy for 0.5.x names                                                                                                                           | accepted (HITL 2026-04-27, lite batch)                                            | ADR-0.6.0-deprecation-policy-0-5-names.md                                |
+| 24  | acceptance   | Write-throughput SLI                                                                                                                                         | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-write-throughput-sli.md                                        |
+| 25  | design       | JSON Schema validation policy (FU-M5 promoted)                                                                                                               | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-json-schema-policy.md                                          |
+| 26  | acceptance   | Text-query latency gates (FU-REQ-010 promoted)                                                                                                               | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-text-query-latency-gates.md                                    |
+| 27  | acceptance   | Recovery rank-correlation threshold (FU-AC-PROTOCOL-BACKFILL → AC-027d)                                                                                      | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-recovery-rank-correlation.md                                   |
+| 28  | design       | Provenance retention shape (FU-AC-PROTOCOL-BACKFILL → AC-033)                                                                                                | accepted (HITL 2026-04-27)                                                        | ADR-0.6.0-provenance-retention.md                                        |
+| 29  | architecture | Corruption-on-open behavior (FU-VEC13-CORRUPTION + FU-RECOVERY-CORRUPTION-DETECTION resolved)                                                                | accepted (HITL 2026-04-29)                                                        | ADR-0.6.0-corruption-open-behavior.md                                    |
+| 30  | architecture | Database lock mechanism (hybrid sidecar flock + PRAGMA locking_mode=EXCLUSIVE; overrides earlier "no sidecar" assertion in architecture.md § 5 + § 8 + § 11) | superseded (2026-05-02) by ADR-0.6.0-database-lock-mechanism-reader-pool-revision | ADR-0.6.0-database-lock-mechanism.md                                     |
+| 31  | architecture | Database lock mechanism — reader-pool revision (drops PRAGMA locking_mode=EXCLUSIVE; retains sidecar flock; admits `-shm` as a normal WAL artifact)          | accepted (HITL 2026-05-02)                                                        | ADR-0.6.0-database-lock-mechanism-reader-pool-revision.md                |
+
+## Categories
+
+acceptance | architecture | design | interface.
+
+exec
+/bin/bash -lc "rg --files . | rg '("'^|/)MEMORY'"\\.md"'$|(''^|/)feedback_.*'"\\.md"'$'"'" in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ exited 1 in 0ms:
+exec
+/bin/bash -lc "find . -name MEMORY.md -o -name 'feedback_*.md' | sort" in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ succeeded in 0ms:
+exec
+/bin/bash -lc 'git show --stat --oneline f7343c8' in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ succeeded in 0ms:
+f7343c8 docs(0.7.0): Pack 1 design fix-2 — D4 synchronous staged migration
+ dev/design/0.7.0-vector-quant-pack1.md             | 288 +++++++++++++++------
+ .../0.7.0-PVQ-P1-DESIGN-fix-2-20260527T134539Z.log |  55 ++++
+ .../runs/0.7.0-PVQ-P1-DESIGN-fix-2-output.json     |  39 +++
+ 3 files changed, 305 insertions(+), 77 deletions(-)
+
+codex
+No `MEMORY.md` or `feedback_*.md` exists in this snapshot, so I’m proceeding with the repo-local instructions plus the requested artifacts. Next I’m reading the prior verdict, fix-2 spec/closure, the D4 doc section, and the cited Rust ranges side by side.
+exec
+/bin/bash -lc "sed -n '1,240p' dev/plans/prompts/0.7.0-PVQ-P1-DESIGN-fix-2.md" in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ succeeded in 0ms:
+# Slice P1-DESIGN fix-2 — remediation after codex fix-1 BLOCK
+
+## Model + effort
+
+`claude-opus-4-7` at `high`. Same worktree, additive commit on top of `64c5d6e`.
+
+## Context
+
+The fix-1 memo was re-reviewed by codex with verdict **BLOCK** (one new high finding): D4 still misdescribes the engine's actual rebuild semantics. See `dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-1-review-20260527T134214Z.md`.
+
+The error: fix-1 claimed `rebuild_vec0` → `rebuild_shadow_state(RebuildKind::Vec0)` repopulates `vector_default` synchronously and "does not re-run the embedder." Codex correctly identified that:
+- `rebuild_shadow_state` only truncates vec0 + resets the projection cursor.
+- Re-derivation is async via the projection scheduler.
+- The async reprojection re-runs `embedder.embed(&job.body)`.
+- The test `rebuild_report.rs:96-108` locks in `rows_rebuilt == 0`.
+
+So D4 must be rewritten with a **migration-time, synchronous** repopulation path that does not go through `rebuild_vec0`.
+
+## Required reading
+
+1. `dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-1-review-20260527T134214Z.md` — verdict you're addressing.
+2. `dev/design/0.7.0-vector-quant-pack1.md` — the memo to fix again (D4 section only).
+3. `src/rust/crates/fathomdb-engine/src/lib.rs:2528-2557` — confirm the projection-runtime re-embeds path so you can describe what the rebuild path actually does (and why we are NOT using it for the migration).
+4. `src/rust/crates/fathomdb-engine/tests/rebuild_vec0.rs:80-98` — the test asserting async semantics.
+5. `src/rust/crates/fathomdb-schema/src/lib.rs:218-287` — actual implementation of `migrate_with_event_sink` / user_version pump.
+6. `dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md` § 1.1 — note the original handoff explicitly said the migration is `INSERT … SELECT vec_quantize_binary(embedding) FROM vector_default`. The migration is synchronous + in-place + reuses existing f32 data; no embedder rerun.
+
+## Mandate — rewrite D4 only
+
+Replace the existing D4 section with the following migration shape (still inside `migrate_with_event_sink` + `PRAGMA user_version` gate):
+
+1. Schema-version bump (same as fix-1).
+2. **Stage**: create regular SQL table `_fathomdb_vector_migration_v0_7_0(rowid INTEGER PRIMARY KEY, embedding BLOB NOT NULL, kind TEXT NOT NULL)`. INSERT INTO it from the JOIN of `vector_default` + `_fathomdb_vector_rows` (which provides the `kind` per writer-site at `lib.rs:2845-2853`). Note: `_fathomdb_vector_rows.kind` is the source of truth for the existing rows' kind — cite that anchor.
+3. `DROP TABLE vector_default`.
+4. `CREATE VIRTUAL TABLE vector_default USING vec0(embedding float[<dim>], embedding_bin bit[<dim>], source_type TEXT partition key, kind TEXT, created_at INTEGER)`.
+5. **Repopulate**: Rust-side loop over staging rows, computing `source_type` via the D3 coercion map (already defined in the memo). Bind into `INSERT INTO vector_default(rowid, embedding, embedding_bin, source_type, kind, created_at) VALUES(?1, ?2, vec_quantize_binary(?2), ?3, ?4, ?5)`. `created_at` is the migration timestamp (UNIX seconds at migration time — uniform across migrated rows; OK as a backfill value).
+6. `DROP TABLE _fathomdb_vector_migration_v0_7_0`.
+
+Properties to record explicitly in the D4 section:
+
+- **Synchronous** — runs inside the writer's migration transaction.
+- **No embedder rerun** — copies existing f32 blobs unchanged.
+- **Atomicity** — the entire DROP+CREATE+repopulate sequence is inside the migration transaction; if it fails midway, the prior schema version is preserved (cite the schema crate's transaction handling at `src/rust/crates/fathomdb-schema/src/lib.rs:218-287`).
+- **Cost** — 2× scan of the 3 GB f32 corpus; ~64-90 s on the dev box for 1 M rows. Update the citation: do **not** reference AC-013's 562 s seed time (that includes embedder work this migration avoids).
+- **vec_quantize_binary call site** — runs SQL-side at INSERT bind, once per row, on the existing f32 blob. No Rust-side bit math.
+- **Why not `rebuild_vec0` / `RebuildKind::Vec0`** — explicitly state: that path is async, re-runs the embedder, and would multiply the migration cost; codex fix-1 review found this contradiction (`dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-1-review-20260527T134214Z.md` finding 1). Include a one-paragraph "Rejected alternative" subsection under D4.
+
+The rest of the memo (D1, D2, D3, D5, D6, D7, D8) is unchanged. Update the `## Fix-1 changelog` section into a `## Fix-2 changelog` (or add a new section preserving the fix-1 entries) reflecting this third pass.
+
+## Hard constraints
+
+- Additive only. New commit on top of `64c5d6e`. Do not rewrite prior commits.
+- No code changes. Only `dev/design/0.7.0-vector-quant-pack1.md` + closure JSON.
+- Verify every Rust anchor by Reading the cited lines before claiming what the function does — fix-1's failure was claiming semantics from anchor names alone.
+- ASCII only.
+
+## Required output
+
+- Edited `dev/design/0.7.0-vector-quant-pack1.md` (D4 rewritten; changelog appended).
+- Closure JSON: `dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-2-output.json`. `next_step_for_orchestrator`: `"re-spawn codex reviewer for fix-2 verdict"`.
+
+## Commit policy
+
+One commit:
+
+```
+docs(0.7.0): Pack 1 design fix-2 — D4 synchronous staged migration
+
+Addresses codex BLOCK on fix-1
+(dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-1-review-20260527T134214Z.md):
+rebuild_vec0 / rebuild_shadow_state is async and re-runs the embedder;
+the migration path must be a synchronous in-transaction staged copy
+that reuses the existing f32 blobs and runs vec_quantize_binary
+SQL-side at INSERT time.
+```
+
+## Log destination
+
+`dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-2-<TS>.log`.
+
+exec
+/bin/bash -lc "sed -n '1,260p' dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-1-review-20260527T134214Z.md" in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ succeeded in 0ms:
+# Phase 0.7.0-PVQ-P1-DESIGN fix-1 Review — codex gpt-5.4 verdict
+
+Reviewer: `codex --model gpt-5.4 --sandbox read-only`.
+Target: branch `phase-0.7.0-PVQ-P1-DESIGN-20260527T132416Z` HEAD `64c5d6e`.
+Baseline: `277fa4c`. Commits under review: `14a4612` (original), `64c5d6e` (fix-1).
+Cherry-pick: `83869d6` on `main`.
+Review log: `dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-1-review-20260527T134214Z.log`.
+
+Sandbox note: reviewer could not write this file directly. Main thread promoted from log.
+
+## Verdict: BLOCK
+
+### 1. [high] D4 still claims synchronous vec0 repopulation semantics the engine does not have
+Refs: `dev/design/0.7.0-vector-quant-pack1.md:245-298`; `src/rust/crates/fathomdb-engine/src/lib.rs:1945-1947`, `2234-2289`, `2528-2557`, `2834-2854`, `462-476`, `1192-1194`; `src/rust/crates/fathomdb-engine/tests/rebuild_report.rs:96-108`; `src/rust/crates/fathomdb-engine/tests/rebuild_vec0.rs:80-98`
+
+The cited anchors are real, but the memo's description is not. `rebuild_vec0()` calls `run_rebuild(false, RebuildKind::Vec0)`, and `rebuild_shadow_state()` only truncates vec0 state and resets the projection cursor; the repo's own test locks this in with `rows_rebuilt == 0`, stating re-derivation is async via the projection scheduler. The actual reprojection path re-runs `embedder.embed(&job.body)` and then reinserts into `vector_default`, so D4's claims that the driver already repopulates synchronously, that readers cannot observe a partial rebuild before open completes, and that the migration "does not re-run the embedder" are all contradicted by the current code and tests.
+
+## Addressed
+
+- Prior finding 1 (D3 source_type lock) — FIXED.
+- Prior finding 3 (D6 secondary fixture) — FIXED.
+
+## What passed on inspection
+
+- D3 no longer expands source_type to 7 values.
+- Anchor claims exist: `migrate_with_event_sink` at `lib.rs:1238`, `Engine::rebuild_vec0` at `lib.rs:1945-1947`, `run_rebuild` / `rebuild_shadow_state` at `lib.rs:2234-2289`.
+- `PRAGMA user_version` + `migrate_with_event_sink` is the right schema-version ownership path; actual implementation in `src/rust/crates/fathomdb-schema/src/lib.rs:218-287`.
+- `DROP TABLE vector_default` + `CREATE VIRTUAL TABLE vector_default ...` same-name shape avoids the vec0 rename limitation.
+
+## Reviewer process notes
+
+- `MEMORY.md` absent from this checkout; used repo-local artifacts.
+- Read-only review on `64c5d6e`.
+
+## Orchestrator triage
+
+Date: 2026-05-27. BLOCK — fix-2 required (no override on BLOCK).
+
+The actual migration shape needs to be:
+
+1. Schema-version gate via `migrate_with_event_sink` + `PRAGMA user_version` (unchanged from fix-1).
+2. **Stage existing f32 rows synchronously inside the migration transaction** (not via `rebuild_vec0`):
+   - `CREATE TABLE _fathomdb_vector_migration_v0_7_0 (rowid INTEGER PRIMARY KEY, embedding BLOB NOT NULL, kind TEXT NOT NULL)` — a regular SQL staging table.
+   - `INSERT INTO _fathomdb_vector_migration_v0_7_0 (rowid, embedding, kind) SELECT v.rowid, v.embedding, r.kind FROM vector_default v JOIN _fathomdb_vector_rows r ON r.rowid = v.rowid`.
+3. `DROP TABLE vector_default`.
+4. `CREATE VIRTUAL TABLE vector_default USING vec0(embedding float[<dim>], embedding_bin bit[<dim>], source_type TEXT partition key, kind TEXT, created_at INTEGER)`.
+5. Repopulate from staging: iterate Rust-side over staging rows (or use a SQL INSERT … SELECT with a Rust-registered scalar function for kind→source_type, but Rust loop is simpler and 1 M rows is fast). For each row: `INSERT INTO vector_default(rowid, embedding, embedding_bin, source_type, kind, created_at) VALUES(?1, ?2, vec_quantize_binary(?2), ?3, ?4, ?5)` where `source_type` is the Rust-computed coercion of `kind` and `created_at` is the migration timestamp.
+6. `DROP TABLE _fathomdb_vector_migration_v0_7_0`.
+
+This is **synchronous**, **inside the migration transaction**, **does not re-run the embedder**, and **does not depend on `RebuildKind::Vec0`**. Cost ~64-90 s for 1 M rows (two scans of the existing 3 GB f32 data, no embed work). The handoff §1.1 originally specified exactly this shape (`one-pass INSERT ... SELECT vec_quantize_binary(embedding)`); fix-1 incorrectly pivoted to the async rebuild driver.
+
+Fix-2 prompt at `dev/plans/prompts/0.7.0-PVQ-P1-DESIGN-fix-2.md`.
+
+exec
+/bin/bash -lc "sed -n '1,260p' dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-2-output.json" in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ succeeded in 0ms:
+{
+  "slice": "0.7.0-PVQ-P1-DESIGN",
+  "pass": "fix-2",
+  "status": "ready_for_review",
+  "branch": "phase-0.7.0-PVQ-P1-DESIGN-20260527T132416Z",
+  "baseline_commit": "64c5d6e",
+  "addresses_review": "dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-1-review-20260527T134214Z.md",
+  "artifacts": {
+    "memo": "dev/design/0.7.0-vector-quant-pack1.md",
+    "log": "dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-2-20260527T134539Z.log"
+  },
+  "changes": {
+    "scope": "D4 only; D1/D2/D3/D5/D6/D7/D8 unchanged",
+    "summary": [
+      "D4 rewritten: repopulation is a single SQL migration step under apply_one, not rebuild_vec0. Sub-steps: stage to regular SQL table joining vector_default + _fathomdb_vector_rows.kind; DROP TABLE vector_default; CREATE VIRTUAL TABLE under same name; INSERT ... SELECT from staging with vec_quantize_binary SQL-side and CASE for D3 kind->source_type map; DROP staging.",
+      "Properties recorded: synchronous, no embedder rerun, atomic via BEGIN IMMEDIATE/COMMIT in apply_one (fathomdb-schema/src/lib.rs:273-288), vec_quantize_binary SQL-side once per row.",
+      "AC-013 562 s seed time removed as a cost baseline (embedder work the migration avoids by construction); 60-90 s ADR estimate retained.",
+      "Rejected-alternative subsection added: rebuild_vec0 / RebuildKind::Vec0 is async (rebuild_vec0.rs:80-98) and re-runs the embedder (lib.rs:2523-2557); explicitly not used by Pack 1's migration.",
+      "Fix-2 changelog section appended; fix-1 changelog entry 1.2 amended in place to note the fix-2 supersession of the repopulation shape.",
+      "Frontmatter status bumped: draft fix-1 -> draft fix-2."
+    ]
+  },
+  "verified_anchors": [
+    "src/rust/crates/fathomdb-engine/src/lib.rs:2523-2557 (run_projection_job calls embedder.embed)",
+    "src/rust/crates/fathomdb-engine/src/lib.rs:2845-2853 (existing writer + _fathomdb_vector_rows.kind source of truth)",
+    "src/rust/crates/fathomdb-engine/src/lib.rs:1238 (migrate_with_event_sink call site)",
+    "src/rust/crates/fathomdb-engine/tests/rebuild_vec0.rs:80-98 (async drain semantics)",
+    "src/rust/crates/fathomdb-schema/src/lib.rs:51-54 (Migration { step_id, sql: &'static str })",
+    "src/rust/crates/fathomdb-schema/src/lib.rs:218-271 (migrate_with_event_sink impl)",
+    "src/rust/crates/fathomdb-schema/src/lib.rs:273-288 (apply_one BEGIN IMMEDIATE / COMMIT / ROLLBACK)"
+  ],
+  "hard_constraints_check": {
+    "additive_only": true,
+    "no_code_changes": true,
+    "ascii_only": true,
+    "anchors_verified_by_read": true
+  },
+  "next_step_for_orchestrator": "re-spawn codex reviewer for fix-2 verdict"
+}
+
+exec
+/bin/bash -lc "nl -ba dev/design/0.7.0-vector-quant-pack1.md | sed -n '1,420p'" in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ succeeded in 0ms:
+     1	---
+     2	title: 0.7.0 Vector binary-quant — Pack 1 design
+     3	date: 2026-05-27
+     4	target_release: 0.7.0
+     5	desc: Pack 1 schema-migration + ingest double-write decisions for
+     6	  the binary-quantization data-encoding change locked by
+     7	  ADR-0.7.0-vector-binary-quant.md.
+     8	blast_radius: src/rust/crates/fathomdb-engine/src/lib.rs (schema +
+     9	  writer); src/rust/crates/fathomdb-engine/tests/perf_gates.rs
+    10	  (existing fixture continuity); dev/adr/ADR-0.7.0-vector-binary-quant.md
+    11	  (implements its Pack 1 section).
+    12	status: draft fix-2 (consumed by Pack 1 implementation)
+    13	---
+    14	
+    15	# 0.7.0 Vector binary-quant — Pack 1 design
+    16	
+    17	This memo resolves the open design questions called out in
+    18	`dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md` § "Pack 1"
+    19	and § "Open items the implementing agent should escalate to HITL"
+    20	so that Pack 1 implementation can land mechanically. Pairs with
+    21	ADR-0.7.0-vector-binary-quant.md (which records the *what*); this
+    22	memo records the *exact shape*.
+    23	
+    24	Scope: Pack 1 only — schema migration + writer double-write. No
+    25	reader changes. The Pack 2 query rewrite is out of scope for this
+    26	memo and is owned by a separate design pass when Pack 2 starts.
+    27	
+    28	## D1 — Sibling column vs. sibling table
+    29	
+    30	**Decision: sibling column on `vector_default`.**
+    31	
+    32	The migrated declaration is:
+    33	
+    34	```
+    35	CREATE VIRTUAL TABLE vector_default USING vec0(
+    36	  embedding float[<dim>],
+    37	  embedding_bin bit[<dim>],
+    38	  source_type TEXT partition key,
+    39	  kind TEXT,
+    40	  created_at INTEGER
+    41	);
+    42	```
+    43	
+    44	(`<dim>` = 768 for the current default profile; the existing
+    45	`ensure_vector_partition` builds the dimension from
+    46	`load_default_profile` at `lib.rs:3278-3283`.)
+    47	
+    48	- Alternatives weighed: sibling table `vector_default_bin` (one
+    49	  extra join on every read; fan-out cost on the Pack 2 reader; two
+    50	  inserts per row instead of one; two DELETE sites in every
+    51	  excise / rebuild path — `lib.rs:2177`, `:2181`, `:2265`).
+    52	- Citation: the sqlite-vec binary-quant guide demonstrates the
+    53	  exact mixed-flavour declaration
+    54	  `create virtual table vec_movies using vec0(synopsis_embedding
+    55	  float[768], synopsis_embedding_coarse bit[768])`
+    56	  (https://alexgarcia.xyz/sqlite-vec/guides/binary-quant.html);
+    57	  confirmed empirically by WebFetch on 2026-05-27 against the
+    58	  same page.
+    59	
+    60	The sibling-column shape is the default in the handoff
+    61	(§ 1.1) and in the ADR (§ 2 / Pack 1.1). The sibling-table
+    62	fallback remains documented in both as a recovery path **only if**
+    63	the 16-metadata-column cap is exceeded (see D2) — that is not the
+    64	case for Pack 1.
+    65	
+    66	## D2 — Metadata column inventory (vec0 16-col cap)
+    67	
+    68	vec0 caps metadata columns at 16 and partition keys at 4
+    69	(`dev/notes/0.7.0-vector-cost-research.md:70-71`). The Pack 1
+    70	schema lands the minimum-viable set with headroom for the
+    71	real-workload extension already foreseen by the ADR and the
+    72	HITL doc.
+    73	
+    74	Pack 1 column inventory on `vector_default`:
+    75	
+    76	| # | Column            | Type           | Role                  | Source                                                         |
+    77	|---|-------------------|----------------|-----------------------|----------------------------------------------------------------|
+    78	| 0 | `rowid`           | INTEGER        | (implicit pk)         | `cursor` (existing — `lib.rs:2845-2851`).                      |
+    79	| 1 | `embedding`       | `float[<dim>]` | vector                | existing — `vec_quantize_binary` input + Pack 2 rerank.        |
+    80	| 2 | `embedding_bin`   | `bit[<dim>]`   | quantized vector      | `vec_quantize_binary(embedding)` at write time.                |
+    81	| 3 | `source_type`     | `TEXT`         | **partition key**     | derived from `kind` per D3.                                    |
+    82	| 4 | `kind`            | `TEXT`         | metadata col          | existing `ProjectionOutcome::Success.kind` (`lib.rs:2841`).    |
+    83	| 5 | `created_at`      | `INTEGER`     | metadata col          | UNIX seconds at write time (mirrors `excised_at` pattern at `lib.rs:2206`). |
+    84	
+    85	Headroom: **11 free metadata column slots + 3 free partition-key
+    86	slots** after Pack 1.
+    87	
+    88	Deferred to Pack 2 / 0.7.1 (NOT landed in Pack 1):
+    89	
+    90	- `tags`, `project_mentions` — named in the handoff § 1.1 but not
+    91	  populated by today's writer; the chunk record carries no such
+    92	  field. Wiring requires upstream code changes that are out of
+    93	  scope for the Pack 1 schema-only slice. Headroom preserved.
+    94	- Any per-source metadata (sender, doc URL, etc.) — corpus-card
+    95	  work; lives outside Pack 1.
+    96	
+    97	Rationale for landing `created_at` now: it is the one non-
+    98	controversial metadata field with a deterministic write-time
+    99	source (clock at insert), it is cheap to add to the migration,
+   100	and the alternative (a second migration in 0.7.1 to add it) costs
+   101	another ~64 s rebuild of the 1 M-row corpus. Adds zero
+   102	implementation risk because the writer site already calls
+   103	`SystemTime::now()` for the excise-audit path (`lib.rs:2206`).
+   104	
+   105	## D3 — `kind` -> `source_type` mapping
+   106	
+   107	The locked `source_type` vocabulary is
+   108	{`email`, `article`, `paper`, `meeting`, `note`, `todo`}
+   109	(`dev/plans/0.7.0-HITL-recommendations.md:135-137`; cardinality
+   110	"~6" in the ADR § 2).
+   111	
+   112	The current writer at `commit_projection_outcomes`
+   113	(`lib.rs:2841`) receives `kind: String` from
+   114	`ProjectionOutcome::Success`. The only kind exercised by tests
+   115	today is `"doc"` (AC-013 fixture seed at
+   116	`tests/perf_gates.rs:350`), a synthetic name introduced for the
+   117	performance fixture and **not** in the locked source_type
+   118	vocabulary.
+   119	
+   120	**Decision: the locked 6-value `source_type` vocabulary holds
+   121	unchanged. The synthetic test fixture kind `"doc"` is coerced
+   122	at the writer to `source_type = "article"`; the vocabulary is
+   123	not extended.** No HITL re-open required — the lock at
+   124	`dev/plans/0.7.0-HITL-recommendations.md:135-137` is honored
+   125	exactly.
+   126	
+   127	Mapping table (Pack 1, deterministic, total):
+   128	
+   129	| Incoming `kind` value | Resolved `source_type` |
+   130	|-----------------------|------------------------|
+   131	| `"email"`             | `email`                |
+   132	| `"article"`           | `article`              |
+   133	| `"paper"`             | `paper`                |
+   134	| `"meeting"`           | `meeting`              |
+   135	| `"note"`              | `note`                 |
+   136	| `"todo"`              | `todo`                 |
+   137	| `"doc"` (synthetic test fixture from `tests/perf_gates.rs:350`) | `article` (coerced) |
+   138	| anything else         | **writer error** — fail the projection outcome (`EngineError::Storage`); do not silently default. |
+   139	
+   140	Rationale for the `doc` -> `article` coercion: AC-013 seeds
+   141	synthetic doc-shaped bodies (long-form text) that are the most
+   142	semantically aligned with the `article` source within the locked
+   143	6-value set. The coercion (a) preserves the partition_key
+   144	utility for the AC-013 fixture rows (they aggregate under a real
+   145	source_type bucket the corpus-build work will also populate),
+   146	(b) avoids any test churn — the fixture continues to write
+   147	`kind="doc"`; only the resolved `source_type` differs, (c)
+   148	matches what `CORPUS-1` (CNN/DailyMail acquisition, commit
+   149	`27ab8df`) will land as the production article source. The
+   150	coercion is writer-internal; the canonical `kind` value is
+   151	preserved verbatim in the `kind` metadata column (and in
+   152	`_fathomdb_vector_rows`), so any consumer needing to distinguish
+   153	fixture rows from corpus rows can still do so by reading `kind`.
+   154	
+   155	Rejected alternatives:
+   156	
+   157	- "Add `doc` as a 7th `source_type` value" — extends the
+   158	  HITL-locked vocabulary without authorization. This was the
+   159	  original draft and is the blocking finding in the codex
+   160	  verdict (`dev/plans/runs/0.7.0-PVQ-P1-DESIGN-review-20260527T132959Z.md`
+   161	  finding 1).
+   162	- "Rename the fixture kind from `doc` to one of the 6 locked
+   163	  values" — touches every test that reads the AC-013 fixture
+   164	  (larger blast radius than a writer-side coercion).
+   165	- "Leave `source_type` nullable for unmapped kinds" — loses the
+   166	  partition_key benefit for the AC-013 fixture and breaks the
+   167	  "partition_key is locked" guarantee in HITL Q5.
+   168	
+   169	Citation: HITL lock at
+   170	`dev/plans/0.7.0-HITL-recommendations.md:135-137` (vocabulary +
+   171	"supersedes the `kind` default in the Pack 1 handoff").
+   172	
+   173	The mapping is implemented in a single Rust helper:
+   174	
+   175	```rust
+   176	fn resolve_source_type(kind: &str) -> Result<&'static str, EngineError> {
+   177	    Ok(match kind {
+   178	        "email" => "email",
+   179	        "article" => "article",
+   180	        "paper" => "paper",
+   181	        "meeting" => "meeting",
+   182	        "note" => "note",
+   183	        "todo" => "todo",
+   184	        // Synthetic AC-013 test fixture; coerced to "article" so
+   185	        // the 6-value HITL lock holds. See D3 rationale above.
+   186	        "doc" => "article",
+   187	        _ => return Err(EngineError::Storage),
+   188	    })
+   189	}
+   190	```
+   191	
+   192	(no allocator pressure; returns `&'static str`; used at both
+   193	writer sites in D7.)
+   194	
+   195	## D4 — NOT NULL + migration strategy
+   196	
+   197	vec0 virtual tables in sqlite-vec `=0.1.7` (this repo's pin)
+   198	support neither `ALTER TABLE ... ADD COLUMN` (a SQLite-level
+   199	rule for virtual tables — https://www.sqlite.org/vtab.html) nor
+   200	`ALTER TABLE ... RENAME` (rename support landed in sqlite-vec
+   201	`v0.1.10-alpha.2`, April 2026, per the sqlite-vec release
+   202	history). The migration is therefore a `DROP TABLE` + recreate
+   203	under the same name. Repopulation must be **synchronous and
+   204	in-transaction**, copying the existing f32 blobs verbatim — it
+   205	must NOT go through the engine's async rebuild driver.
+   206	
+   207	**Decision: land NOT NULL constraints from the start. The
+   208	migration is a single SQL migration step that (a) stages the
+   209	existing f32 rows + kind into a regular SQL table, (b) drops
+   210	and recreates `vector_default` with the new schema under the
+   211	same name, (c) repopulates `vector_default` from the staging
+   212	table with `vec_quantize_binary` evaluated SQL-side at INSERT
+   213	bind, and (d) drops the staging table — all inside the migration
+   214	framework's `BEGIN IMMEDIATE` / `COMMIT` envelope. The writer
+   215	enforces non-nullability from commit zero.**
+   216	
+   217	Schema versioning is owned by the engine's real migration
+   218	framework: `migrate_with_event_sink(...)` at
+   219	`src/rust/crates/fathomdb-engine/src/lib.rs:1238`, which is a
+   220	thin re-export of `fathomdb_schema::migrate_with_event_sink`
+   221	implemented at `src/rust/crates/fathomdb-schema/src/lib.rs:218-271`.
+   222	`apply_one` (`src/rust/crates/fathomdb-schema/src/lib.rs:273-288`)
+   223	wraps each migration step in `BEGIN IMMEDIATE` ... `COMMIT`,
+   224	calling `conn.execute_batch(migration.sql)` followed by
+   225	`pragma_update(PRAGMA_USER_VERSION, step_id)`, and rolling back
+   226	on any error. `Migration` itself is `{ step_id: u32, sql:
+   227	&'static str }` (`fathomdb-schema/src/lib.rs:51-54`) — pure SQL,
+   228	no Rust callback hook. The new vec0 schema lands as a new
+   229	`fathomdb_schema::Migration` step appended to the existing
+   230	migration array passed into `open_with_migrations`
+   231	(`lib.rs:1119-1131`); `migrate_with_event_sink` bumps
+   232	`PRAGMA user_version` on commit and gates re-entry on the same
+   233	sentinel, so re-opens are naturally idempotent. The previously
+   234	proposed `operational_mutations` schema stamp is **not** the
+   235	schema-version owner — that collection is excise audit rows
+   236	(`lib.rs:2217-2221`) — and is dropped from the design.
+   237	
+   238	Migration step (Pack 1) — single SQL blob, executed atomically
+   239	by `apply_one` (`fathomdb-schema/src/lib.rs:273-288`):
+   240	
+   241	```sql
+   242	-- Step body. Runs inside BEGIN IMMEDIATE ... COMMIT supplied
+   243	-- by apply_one. <dim> is rendered at migration-build time
+   244	-- (768 for the default profile, see ensure_vector_partition at
+   245	-- lib.rs:3278-3283). <now> is the migration timestamp (UNIX
+   246	-- seconds), rendered by the engine when the migration array is
+   247	-- constructed at open_with_migrations (lib.rs:1119-1131); the
+   248	-- whole corpus is backfilled with the same created_at value.
+   249	
+   250	-- 1. Stage existing f32 blobs + kind into a regular SQL table.
+   251	--    _fathomdb_vector_rows.kind is the source of truth for the
+   252	--    existing rows' kind (writer site at lib.rs:2845-2853).
+   253	CREATE TABLE _fathomdb_vector_migration_v0_7_0 (
+   254	  rowid     INTEGER PRIMARY KEY,
+   255	  embedding BLOB NOT NULL,
+   256	  kind      TEXT NOT NULL
+   257	);
+   258	INSERT INTO _fathomdb_vector_migration_v0_7_0(rowid, embedding, kind)
+   259	SELECT v.rowid, v.embedding, r.kind
+   260	  FROM vector_default v
+   261	  JOIN _fathomdb_vector_rows r ON r.rowid = v.rowid;
+   262	
+   263	-- 2. Drop the old vec0 table and recreate under the same name.
+   264	DROP TABLE vector_default;
+   265	CREATE VIRTUAL TABLE vector_default USING vec0(
+   266	  embedding float[<dim>],
+   267	  embedding_bin bit[<dim>],
+   268	  source_type TEXT partition key,
+   269	  kind TEXT,
+   270	  created_at INTEGER
+   271	);
+   272	
+   273	-- 3. Repopulate from staging. vec_quantize_binary runs SQL-side
+   274	--    once per row against the existing f32 blob; source_type is
+   275	--    coerced from kind via the D3 mapping using a CASE
+   276	--    expression. Any kind outside the D3 vocabulary raises
+   277	--    SQLITE_CONSTRAINT (NOT NULL) on source_type, which aborts
+   278	--    the migration and rolls back the whole step — matching the
+   279	--    "writer error on unknown kind" rule in D3.
+   280	INSERT INTO vector_default(
+   281	  rowid, embedding, embedding_bin, source_type, kind, created_at
+   282	)
+   283	SELECT
+   284	  s.rowid,
+   285	  s.embedding,
+   286	  vec_quantize_binary(s.embedding),
+   287	  CASE s.kind
+   288	    WHEN 'email'   THEN 'email'
+   289	    WHEN 'article' THEN 'article'
+   290	    WHEN 'paper'   THEN 'paper'
+   291	    WHEN 'meeting' THEN 'meeting'
+   292	    WHEN 'note'    THEN 'note'
+   293	    WHEN 'todo'    THEN 'todo'
+   294	    WHEN 'doc'     THEN 'article'  -- AC-013 fixture coercion; see D3.
+   295	    ELSE NULL
+   296	  END AS source_type,
+   297	  s.kind,
+   298	  <now>
+   299	FROM _fathomdb_vector_migration_v0_7_0 s;
+   300	
+   301	-- 4. Drop the staging table.
+   302	DROP TABLE _fathomdb_vector_migration_v0_7_0;
+   303	```
+   304	
+   305	Why the D3 mapping is inlined in SQL (and not a Rust loop): the
+   306	`Migration` shape at `fathomdb-schema/src/lib.rs:51-54` is
+   307	`{ step_id, sql: &'static str }` — pure SQL, no Rust callback
+   308	extension point. The CASE WHEN above is the literal byte-for-byte
+   309	transcription of the D3 mapping table; a Rust-side loop would
+   310	require extending the schema crate's migration trait (a
+   311	larger-blast-radius change that this slice does not authorize).
+   312	The CASE shape also avoids registering an ad-hoc Rust scalar
+   313	function on the migration connection. The D3 helper
+   314	`resolve_source_type` (defined in this memo for the writer
+   315	sites D5/D7) is the canonical lookup at write time; the CASE
+   316	above is the migration-time mirror of that table and must be
+   317	kept in lockstep with it — P1-IMPL adds a co-located assertion
+   318	in tests/migration coverage to catch drift.
+   319	
+   320	Properties of this migration step:
+   321	
+   322	- **Synchronous.** All four sub-steps run inside the same
+   323	  `apply_one` transaction (`fathomdb-schema/src/lib.rs:273-288`),
+   324	  on the migration thread, before `migrate_with_event_sink`
+   325	  returns. There is no async hand-off.
+   326	- **No embedder rerun.** The f32 blobs are copied verbatim from
+   327	  `vector_default.embedding` into the staging table and back
+   328	  out. The embedder is never invoked.
+   329	- **`vec_quantize_binary` call site.** SQL-side at the
+   330	  repopulation `INSERT`'s SELECT projection, once per row,
+   331	  evaluated against the f32 blob already materialised in the
+   332	  staging row. No Rust-side bit math; no double scan of the
+   333	  source blob.
+   334	- **Atomicity.** `apply_one` wraps the whole SQL blob in
+   335	  `BEGIN IMMEDIATE` ... `COMMIT` and `ROLLBACK`s on any error
+   336	  (`fathomdb-schema/src/lib.rs:273-288`). If any sub-step
+   337	  fails (e.g. an unmapped `kind` value triggers the NULL ->
+   338	  NOT-NULL constraint at sub-step 3), the migration is rolled
+   339	  back, `PRAGMA user_version` stays at the previous value, and
+   340	  the next open re-attempts the migration cleanly. The staging
+   341	  table is part of the same transaction and is dropped on
+   342	  rollback alongside the would-be new `vector_default`.
+   343	- **NOT NULL enforcement at write time.** vec0 metadata columns
+   344	  do not have a declarative `NOT NULL` constraint in the
+   345	  sqlite-vec DDL surface
+   346	  (https://alexgarcia.xyz/blog/2024/sqlite-vec-metadata-release/index.html);
+   347	  non-nullability is contract-enforced by the migration and by
+   348	  the D5/D7 writers. Pack 1 writers always supply all five
+   349	  metadata columns; the migration always supplies them (or
+   350	  fails atomically). No row can land with a NULL.
+   351	
+   352	Migration cost: dominated by two sequential scans of the
+   353	existing 3 GB f32 corpus on the 1 M-row fixture — one for the
+   354	staging `INSERT ... SELECT` (sub-step 1) and one for the
+   355	repopulation `INSERT ... SELECT` (sub-step 3). The
+   356	`vec_quantize_binary` work is a sign-bit fold per coordinate,
+   357	negligible relative to the I/O. The working budget remains the
+   358	60-90 s estimate from ADR § 4. The migration **does not** re-run
+   359	the embedder, so the AC-013 562 s seed time
+   360	(`dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json`)
+   361	is **not** a comparable baseline — that figure includes embedder
+   362	work this migration avoids by construction. A concrete
+   363	measurement lands in P1-IMPL's GREEN gate.
+   364	
+   365	Idempotence: `PRAGMA user_version` already guards re-entry
+   366	(`fathomdb-schema/src/lib.rs:234`, `:277`). On the second open
+   367	the migration step is skipped because `migration.step_id <=
+   368	before`, and `vector_default` keeps the rows from the first
+   369	pass.
+   370	
+   371	### Rejected alternative — repopulate via `Engine::rebuild_vec0` / `RebuildKind::Vec0`
+   372	
+   373	The fix-1 draft of D4 proposed driving repopulation through
+   374	`Engine::rebuild_vec0` (`lib.rs:1947`), which calls
+   375	`run_rebuild` -> `rebuild_shadow_state` with `RebuildKind::Vec0`
+   376	(`lib.rs:2234-2289`). Codex fix-1 review (finding 1,
+   377	`dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-1-review-20260527T134214Z.md`)
+   378	correctly flagged that this path:
+   379	
+   380	- Is asynchronous. `rebuild_shadow_state` only truncates vec0
+   381	  state and resets the projection cursor; the actual
+   382	  re-derivation runs on the projection scheduler. The test at
+   383	  `src/rust/crates/fathomdb-engine/tests/rebuild_vec0.rs:80-98`
+   384	  observes `rebuild_vec0` returns immediately and polls
+   385	  `projection_status_for_test` to wait for the async drain.
+   386	- Re-runs the embedder. The projection scheduler's
+   387	  `run_projection_job` calls `embedder.embed(&job.body)` at
+   388	  `src/rust/crates/fathomdb-engine/src/lib.rs:2528-2557` for
+   389	  every row it re-derives.
+   390	- Is therefore not equivalent to copying the existing f32
+   391	  blobs: it would multiply the migration cost by the embedder
+   392	  work the migration is specifically designed to avoid, and it
+   393	  would leak a window in which `vector_default` is empty before
+   394	  the async drain catches up.
+   395	
+   396	The staged-copy migration above replaces this path entirely.
+   397	`rebuild_vec0` remains as it is in tree for the operator-driven
+   398	"rebuild from canonical" tool; Pack 1's migration does not call
+   399	it.
+   400	
+   401	## D5 — Writer transaction shape
+   402	
+   403	The writer site is `commit_projection_outcomes` at
+   404	`lib.rs:2845-2853`. The double-write lands in the **same**
+   405	`tx.execute` sequence between the existing
+   406	`_fathomdb_vector_rows` insert and the existing
+   407	`record_projection_terminal` call. No extra commit; no extra
+   408	lock; no extra connection.
+   409	
+   410	**Decision: compute `vec_quantize_binary` inside the SQL
+   411	statement (single `INSERT` per row), not in Rust ahead of bind.**
+   412	
+   413	The rewritten statement:
+   414	
+   415	```rust
+   416	tx.execute(
+   417	    "INSERT OR IGNORE INTO vector_default(
+   418	        rowid, embedding, embedding_bin, source_type, kind, created_at
+   419	     ) VALUES(?1, ?2, vec_quantize_binary(?2), ?3, ?4, ?5)",
+   420	    params![cursor, blob, resolve_source_type(kind)?, kind, now_unix],
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-schema/src/lib.rs | sed -n '1,360p'" in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ succeeded in 0ms:
+     1	use std::fmt::{Display, Formatter};
+     2	use std::time::Instant;
+     3	
+     4	use rusqlite::Connection;
+     5	
+     6	pub const SCHEMA_VERSION: u32 = 8;
+     7	
+     8	/// SQLite `PRAGMA` name carrying the on-disk schema-version sentinel.
+     9	///
+    10	/// Public on-disk surface per `dev/interfaces/wire.md` § Schema-version
+    11	/// sentinel; advanced by successful migrations per `dev/design/migrations.md`.
+    12	pub const PRAGMA_USER_VERSION: &str = "user_version";
+    13	
+    14	/// Suffix of the canonical SQLite database file (`<db-name>.sqlite`).
+    15	pub const SQLITE_SUFFIX: &str = ".sqlite";
+    16	
+    17	/// Suffix of the SQLite write-ahead log file (`<db-name>.sqlite-wal`).
+    18	pub const WAL_SUFFIX: &str = "-wal";
+    19	
+    20	/// Suffix of the sidecar lock file (`<db-name>.sqlite.lock`).
+    21	///
+    22	/// Per `dev/design/bindings.md` § 7, this sidecar flock is the load-bearing
+    23	/// cross-process exclusion layer; it surfaces lock contention before SQLite
+    24	/// I/O begins.
+    25	pub const LOCK_SUFFIX: &str = ".lock";
+    26	
+    27	/// Suffix of the optional SQLite rollback journal file
+    28	/// (`<db-name>.sqlite-journal`).
+    29	pub const JOURNAL_SUFFIX: &str = "-journal";
+    30	
+    31	#[must_use]
+    32	pub fn bootstrap_steps() -> &'static [&'static str] {
+    33	    &["create canonical tables", "register projection metadata", "seed rewrite-era configuration"]
+    34	}
+    35	
+    36	/// Canonical tables owned by the rewrite-era schema, in stable display
+    37	/// order. Excludes FTS, vec0, and projection shadow tables (re-derivable
+    38	/// from canonical state) and internal `_fathomdb_*` metadata.
+    39	///
+    40	/// `doctor dump-row-counts` enumerates this set; `doctor dump-schema`
+    41	/// uses it to order canonical tables ahead of derived/internal ones.
+    42	pub const CANONICAL_TABLES: &[&str] = &[
+    43	    "canonical_nodes",
+    44	    "canonical_edges",
+    45	    "operational_collections",
+    46	    "operational_mutations",
+    47	    "operational_state",
+    48	];
+    49	
+    50	#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    51	pub struct Migration {
+    52	    pub step_id: u32,
+    53	    pub sql: &'static str,
+    54	}
+    55	
+    56	#[derive(Clone, Debug, Eq, PartialEq)]
+    57	pub struct MigrationStepReport {
+    58	    pub step_id: u32,
+    59	    pub duration_ms: Option<u64>,
+    60	    pub failed: bool,
+    61	}
+    62	
+    63	#[derive(Clone, Debug, Eq, PartialEq)]
+    64	pub struct MigrationReport {
+    65	    pub schema_version_before: u32,
+    66	    pub schema_version_after: u32,
+    67	    pub migration_steps: Vec<MigrationStepReport>,
+    68	}
+    69	
+    70	#[derive(Clone, Debug, Eq, PartialEq)]
+    71	pub struct MigrationFailureReport {
+    72	    pub schema_version_before: u32,
+    73	    pub schema_version_current: u32,
+    74	    pub migration_steps: Vec<MigrationStepReport>,
+    75	}
+    76	
+    77	#[derive(Clone, Debug, Eq, PartialEq)]
+    78	pub enum MigrationError {
+    79	    IncompatibleSchemaVersion { seen: u32, supported: u32 },
+    80	    MigrationError(MigrationFailureReport),
+    81	    Storage { message: &'static str },
+    82	}
+    83	
+    84	impl Display for MigrationError {
+    85	    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    86	        match self {
+    87	            Self::IncompatibleSchemaVersion { seen, supported } => {
+    88	                write!(f, "database schema version {seen} is incompatible with supported version {supported}")
+    89	            }
+    90	            Self::MigrationError(report) => write!(
+    91	                f,
+    92	                "schema migration failed at step {}",
+    93	                report.migration_steps.last().map_or(0, |step| step.step_id)
+    94	            ),
+    95	            Self::Storage { message } => write!(f, "schema storage error: {message}"),
+    96	        }
+    97	    }
+    98	}
+    99	
+   100	impl std::error::Error for MigrationError {}
+   101	
+   102	pub const MIGRATIONS: &[Migration] = &[
+   103	    Migration {
+   104	        step_id: 1,
+   105	        sql: "CREATE TABLE IF NOT EXISTS _fathomdb_schema_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+   106	    },
+   107	    Migration {
+   108	        step_id: 2,
+   109	        sql: "CREATE TABLE IF NOT EXISTS _fathomdb_migrations(step_id INTEGER PRIMARY KEY, applied_at_ms INTEGER NOT NULL);
+   110	              CREATE TABLE IF NOT EXISTS canonical_nodes(write_cursor INTEGER NOT NULL, kind TEXT NOT NULL, body TEXT NOT NULL);
+   111	              CREATE TABLE IF NOT EXISTS canonical_edges(write_cursor INTEGER NOT NULL, kind TEXT NOT NULL, from_id TEXT NOT NULL, to_id TEXT NOT NULL);",
+   112	    },
+   113	    Migration {
+   114	        step_id: 3,
+   115	        sql: "CREATE TABLE IF NOT EXISTS _fathomdb_embedder_profiles(profile TEXT PRIMARY KEY, name TEXT NOT NULL, revision TEXT NOT NULL, dimension INTEGER NOT NULL)",
+   116	    },
+   117	    Migration {
+   118	        step_id: 4,
+   119	        sql: "CREATE TABLE IF NOT EXISTS operational_collections(
+   120	                  name TEXT PRIMARY KEY,
+   121	                  kind TEXT NOT NULL CHECK(kind IN ('append_only_log', 'latest_state')),
+   122	                  schema_json TEXT NOT NULL,
+   123	                  retention_json TEXT NOT NULL,
+   124	                  format_version INTEGER NOT NULL,
+   125	                  created_at INTEGER NOT NULL
+   126	              );
+   127	              CREATE TABLE IF NOT EXISTS operational_mutations(
+   128	                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+   129	                  collection_name TEXT NOT NULL,
+   130	                  record_key TEXT NOT NULL,
+   131	                  op_kind TEXT NOT NULL CHECK(op_kind = 'append'),
+   132	                  payload_json TEXT NOT NULL,
+   133	                  schema_id TEXT,
+   134	                  write_cursor INTEGER NOT NULL
+   135	              );
+   136	              CREATE TABLE IF NOT EXISTS operational_state(
+   137	                  collection_name TEXT NOT NULL,
+   138	                  record_key TEXT NOT NULL,
+   139	                  payload_json TEXT NOT NULL,
+   140	                  schema_id TEXT,
+   141	                  write_cursor INTEGER NOT NULL,
+   142	                  PRIMARY KEY(collection_name, record_key)
+   143	              );
+   144	              CREATE TABLE IF NOT EXISTS _fathomdb_open_state(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+   145	              INSERT OR IGNORE INTO operational_collections(
+   146	                  name, kind, schema_json, retention_json, format_version, created_at
+   147	              ) VALUES (
+   148	                  'projection_failures',
+   149	                  'append_only_log',
+   150	                  '{\"type\":\"object\"}',
+   151	                  '{}',
+   152	                  1,
+   153	                  0
+   154	              );",
+   155	    },
+   156	    Migration {
+   157	        step_id: 5,
+   158	        sql: "CREATE VIRTUAL TABLE IF NOT EXISTS search_index USING fts5(
+   159	                  body,
+   160	                  kind UNINDEXED,
+   161	                  write_cursor UNINDEXED
+   162	              );",
+   163	    },
+   164	    Migration {
+   165	        step_id: 6,
+   166	        sql: "CREATE TABLE IF NOT EXISTS _fathomdb_projection_state(
+   167	                  kind TEXT PRIMARY KEY,
+   168	                  last_enqueued_cursor INTEGER NOT NULL DEFAULT 0,
+   169	                  updated_at INTEGER NOT NULL DEFAULT 0
+   170	              );
+   171	              CREATE TABLE IF NOT EXISTS _fathomdb_vector_kinds(
+   172	                  kind TEXT PRIMARY KEY,
+   173	                  profile TEXT NOT NULL,
+   174	                  created_at INTEGER NOT NULL DEFAULT 0
+   175	              );
+   176	              CREATE TABLE IF NOT EXISTS _fathomdb_vector_rows(
+   177	                  rowid INTEGER PRIMARY KEY,
+   178	                  kind TEXT NOT NULL,
+   179	                  write_cursor INTEGER NOT NULL UNIQUE
+   180	              );",
+   181	    },
+   182	    Migration {
+   183	        step_id: 7,
+   184	        sql: "CREATE TABLE IF NOT EXISTS _fathomdb_projection_terminal(
+   185	                  write_cursor INTEGER PRIMARY KEY,
+   186	                  state TEXT NOT NULL CHECK(state IN ('failed', 'up_to_date'))
+   187	              );",
+   188	    },
+   189	    // Phase 9 Pack B — REQ-026 / AC-028a/b/c / AC-042 recovery seam.
+   190	    // `source_id` is nullable; existing canonical rows back-fill to NULL,
+   191	    // so reads from older callers stay schema-stable. REQ-045 accretion
+   192	    // offset is documented in `migrations/008_source_id.sql` as inherently
+   193	    // impossible for this slice (every existing canonical column is
+   194	    // load-bearing for replay / projections / recovery locators); the
+   195	    // next schema-touching pack carries the offset budget for two adds.
+   196	    Migration {
+   197	        step_id: 8,
+   198	        sql: "ALTER TABLE canonical_nodes ADD COLUMN source_id TEXT;
+   199	              ALTER TABLE canonical_edges ADD COLUMN source_id TEXT;
+   200	              CREATE INDEX IF NOT EXISTS canonical_nodes_source_id_idx
+   201	                  ON canonical_nodes(source_id);
+   202	              CREATE INDEX IF NOT EXISTS canonical_edges_source_id_idx
+   203	                  ON canonical_edges(source_id);",
+   204	    },
+   205	];
+   206	
+   207	pub fn migrate(conn: &Connection) -> Result<MigrationReport, MigrationError> {
+   208	    migrate_with_steps(conn, MIGRATIONS)
+   209	}
+   210	
+   211	pub fn migrate_with_steps(
+   212	    conn: &Connection,
+   213	    migrations: &[Migration],
+   214	) -> Result<MigrationReport, MigrationError> {
+   215	    migrate_with_event_sink(conn, migrations, |_| {})
+   216	}
+   217	
+   218	pub fn migrate_with_event_sink(
+   219	    conn: &Connection,
+   220	    migrations: &[Migration],
+   221	    mut emit: impl FnMut(&MigrationStepReport),
+   222	) -> Result<MigrationReport, MigrationError> {
+   223	    let before = user_version(conn)?;
+   224	    if before > SCHEMA_VERSION {
+   225	        return Err(MigrationError::IncompatibleSchemaVersion {
+   226	            seen: before,
+   227	            supported: SCHEMA_VERSION,
+   228	        });
+   229	    }
+   230	
+   231	    let mut current = before;
+   232	    let mut reports = Vec::new();
+   233	
+   234	    for migration in migrations.iter().filter(|migration| migration.step_id > before) {
+   235	        if migration.step_id != current.saturating_add(1) {
+   236	            return Err(MigrationError::Storage {
+   237	                message: "migration registry is not contiguous",
+   238	            });
+   239	        }
+   240	
+   241	        let started = Instant::now();
+   242	        if let Err(_err) = apply_one(conn, migration) {
+   243	            reports.push(MigrationStepReport {
+   244	                step_id: migration.step_id,
+   245	                duration_ms: Some(duration_ms(started)),
+   246	                failed: true,
+   247	            });
+   248	            emit(reports.last().expect("failed step report was just pushed"));
+   249	            let schema_version_current = user_version(conn).unwrap_or(current);
+   250	            return Err(MigrationError::MigrationError(MigrationFailureReport {
+   251	                schema_version_before: before,
+   252	                schema_version_current,
+   253	                migration_steps: reports,
+   254	            }));
+   255	        }
+   256	
+   257	        current = migration.step_id;
+   258	        reports.push(MigrationStepReport {
+   259	            step_id: migration.step_id,
+   260	            duration_ms: Some(duration_ms(started)),
+   261	            failed: false,
+   262	        });
+   263	        emit(reports.last().expect("successful step report was just pushed"));
+   264	    }
+   265	
+   266	    Ok(MigrationReport {
+   267	        schema_version_before: before,
+   268	        schema_version_after: user_version(conn)?,
+   269	        migration_steps: reports,
+   270	    })
+   271	}
+   272	
+   273	fn apply_one(conn: &Connection, migration: &Migration) -> rusqlite::Result<()> {
+   274	    conn.execute_batch("BEGIN IMMEDIATE")?;
+   275	    let result = (|| {
+   276	        conn.execute_batch(migration.sql)?;
+   277	        conn.pragma_update(None, PRAGMA_USER_VERSION, migration.step_id)?;
+   278	        Ok(())
+   279	    })();
+   280	
+   281	    match result {
+   282	        Ok(()) => conn.execute_batch("COMMIT"),
+   283	        Err(err) => {
+   284	            let _ = conn.execute_batch("ROLLBACK");
+   285	            Err(err)
+   286	        }
+   287	    }
+   288	}
+   289	
+   290	fn user_version(conn: &Connection) -> Result<u32, MigrationError> {
+   291	    conn.query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
+   292	        .map_err(|_| MigrationError::Storage { message: "could not read schema version" })
+   293	}
+   294	
+   295	fn duration_ms(started: Instant) -> u64 {
+   296	    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
+   297	}
+   298	
+   299	#[derive(Clone, Debug, Eq, PartialEq)]
+   300	pub struct MigrationAccretionError {
+   301	    pub offender: String,
+   302	}
+   303	
+   304	impl Display for MigrationAccretionError {
+   305	    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+   306	        write!(f, "migration accretion guard rejected {}", self.offender)
+   307	    }
+   308	}
+   309	
+   310	impl std::error::Error for MigrationAccretionError {}
+   311	
+   312	pub fn check_migration_accretion(name: &str, sql: &str) -> Result<(), MigrationAccretionError> {
+   313	    let upper = sql.to_ascii_uppercase();
+   314	    let adds_schema = upper.contains("CREATE TABLE") || upper.contains("ADD COLUMN");
+   315	    let names_removal = upper.contains("DROP TABLE") || upper.contains("DROP COLUMN");
+   316	    let has_exemption = sql.contains("-- MIGRATION-ACCRETION-EXEMPTION: ");
+   317	
+   318	    if adds_schema && !names_removal && !has_exemption {
+   319	        return Err(MigrationAccretionError { offender: name.to_string() });
+   320	    }
+   321	
+   322	    Ok(())
+   323	}
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/src/lib.rs | sed -n '2810,2875p'" in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ succeeded in 0ms:
+  2810	            [cursor],
+  2811	            |row| row.get::<_, String>(0),
+  2812	        )
+  2813	        .map(Some)
+  2814	        .or_else(|err| match err {
+  2815	            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+  2816	            _ => Err(err),
+  2817	        })
+  2818	}
+  2819	
+  2820	fn advance_projection_cursor(connection: &Connection) -> rusqlite::Result<u64> {
+  2821	    let mut cursor = load_projection_cursor(connection)?;
+  2822	    loop {
+  2823	        let next = cursor.saturating_add(1);
+  2824	        if terminal_state_for_cursor(connection, next)?.is_some() {
+  2825	            cursor = next;
+  2826	        } else {
+  2827	            break;
+  2828	        }
+  2829	    }
+  2830	    store_projection_cursor(connection, cursor)?;
+  2831	    Ok(cursor)
+  2832	}
+  2833	
+  2834	fn commit_projection_outcomes(
+  2835	    connection: &mut Connection,
+  2836	    outcomes: &[ProjectionOutcome],
+  2837	) -> rusqlite::Result<()> {
+  2838	    let tx = connection.transaction()?;
+  2839	    for outcome in outcomes {
+  2840	        match outcome {
+  2841	            ProjectionOutcome::Success { cursor, kind, blob } => {
+  2842	                if terminal_state_for_cursor(&tx, *cursor)?.is_some() {
+  2843	                    continue;
+  2844	                }
+  2845	                tx.execute(
+  2846	                    "INSERT OR IGNORE INTO _fathomdb_vector_rows(rowid, kind, write_cursor) VALUES(?1, ?2, ?3)",
+  2847	                    params![cursor, kind, cursor],
+  2848	                )?;
+  2849	                tx.execute(
+  2850	                    "INSERT OR IGNORE INTO vector_default(rowid, embedding) VALUES(?1, ?2)",
+  2851	                    params![cursor, blob],
+  2852	                )?;
+  2853	                record_projection_terminal(&tx, *cursor, "up_to_date")?;
+  2854	            }
+  2855	            ProjectionOutcome::Failure { cursor, failure_code } => {
+  2856	                if terminal_state_for_cursor(&tx, *cursor)?.is_some() {
+  2857	                    continue;
+  2858	                }
+  2859	                let existing: u64 = tx.query_row(
+  2860	                    "SELECT COUNT(*) FROM operational_mutations
+  2861	                     WHERE collection_name = 'projection_failures'
+  2862	                       AND json_extract(payload_json, '$.write_cursor') = ?1",
+  2863	                    [cursor],
+  2864	                    |row| row.get(0),
+  2865	                )?;
+  2866	                if existing == 0 {
+  2867	                    let payload = format!(
+  2868	                        r#"{{"write_cursor":{cursor},"failure_code":"{failure_code}","recorded_at":0}}"#
+  2869	                    );
+  2870	                    tx.execute(
+  2871	                        "INSERT INTO operational_mutations(
+  2872	                            collection_name, record_key, op_kind, payload_json, schema_id, write_cursor
+  2873	                         ) VALUES('projection_failures', ?1, 'append', ?2, NULL, ?3)",
+  2874	                        params![cursor.to_string(), payload, cursor],
+  2875	                    )?;
+
+codex
+I have the main D4 block and the two requested Rust anchors. I’m checking the surrounding engine paths now: the async rebuild path, the migration call site, the rest of D5-D8, and the exact fix-2 diff to look for regressions or new contradictions.
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/src/lib.rs | sed -n '1110,1255p'" in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ succeeded in 0ms:
+  1110	            path,
+  1111	            MIGRATIONS,
+  1112	            embedder_identity,
+  1113	            runtime_embedder,
+  1114	            emit_migration_event,
+  1115	            initial_subscriber,
+  1116	        )
+  1117	    }
+  1118	
+  1119	    fn open_with_migrations(
+  1120	        path: impl Into<PathBuf>,
+  1121	        migrations: &'static [fathomdb_schema::Migration],
+  1122	        embedder_identity: EmbedderIdentity,
+  1123	        runtime_embedder: Option<Arc<dyn Embedder>>,
+  1124	        emit_migration_event: &mut impl FnMut(&MigrationStepReport),
+  1125	        initial_subscriber: Option<Arc<dyn lifecycle::Subscriber>>,
+  1126	    ) -> Result<OpenedEngine, EngineOpenError> {
+  1127	        let canonical_path = canonical_database_path(&path.into())?;
+  1128	        let lock = acquire_lock(&canonical_path)?;
+  1129	        let open_result = Self::open_locked(
+  1130	            canonical_path.clone(),
+  1131	            migrations,
+  1132	            &embedder_identity,
+  1133	            emit_migration_event,
+  1134	        );
+  1135	
+  1136	        match open_result {
+  1137	            Ok((connection, readers, report, reader_lookaside_rcs)) => {
+  1138	                let next_cursor = load_next_cursor(&connection);
+  1139	                let subscribers = Arc::new(lifecycle::SubscriberRegistry::new());
+  1140	                let profiling_enabled = Arc::new(AtomicBool::new(false));
+  1141	                let slow_threshold_ms = Arc::new(AtomicU64::new(DEFAULT_SLOW_THRESHOLD_MS));
+  1142	                let mut profile_contexts: Vec<Box<ProfileContext>> = Vec::new();
+  1143	                let projection_runtime = ProjectionRuntime::new(
+  1144	                    canonical_path.clone(),
+  1145	                    runtime_embedder.clone(),
+  1146	                    embedder_identity.clone(),
+  1147	                );
+  1148	
+  1149	                install_profile_callback(
+  1150	                    &connection,
+  1151	                    &subscribers,
+  1152	                    &profiling_enabled,
+  1153	                    &slow_threshold_ms,
+  1154	                    &mut profile_contexts,
+  1155	                );
+  1156	                for reader in &readers {
+  1157	                    install_profile_callback(
+  1158	                        reader,
+  1159	                        &subscribers,
+  1160	                        &profiling_enabled,
+  1161	                        &slow_threshold_ms,
+  1162	                        &mut profile_contexts,
+  1163	                    );
+  1164	                }
+  1165	
+  1166	                let opened = OpenedEngine {
+  1167	                    engine: Self {
+  1168	                        path: canonical_path.clone(),
+  1169	                        next_cursor: AtomicU64::new(next_cursor),
+  1170	                        closed: AtomicBool::new(false),
+  1171	                        lock: Mutex::new(Some(lock)),
+  1172	                        connection: Mutex::new(Some(connection)),
+  1173	                        reader_pool: ReaderWorkerPool::new(readers),
+  1174	                        counters: lifecycle::Counters::new(),
+  1175	                        subscribers,
+  1176	                        profiling_enabled,
+  1177	                        slow_threshold_ms,
+  1178	                        runtime_embedder,
+  1179	                        runtime_embedder_identity: embedder_identity,
+  1180	                        projection_runtime,
+  1181	                        provenance_row_cap: AtomicU64::new(DEFAULT_PROVENANCE_ROW_CAP),
+  1182	                        profile_contexts: Mutex::new(profile_contexts),
+  1183	                        reader_lookaside_rcs,
+  1184	                        #[cfg(debug_assertions)]
+  1185	                        force_next_commit_failure: AtomicBool::new(false),
+  1186	                    },
+  1187	                    report,
+  1188	                };
+  1189	                if let Some(subscriber) = initial_subscriber {
+  1190	                    opened.engine.subscribers.attach_persistent(subscriber);
+  1191	                }
+  1192	                if database_has_pending_projection_work(&canonical_path).unwrap_or(false) {
+  1193	                    opened.engine.projection_runtime.notify_new_work();
+  1194	                }
+  1195	                Ok(opened)
+  1196	            }
+  1197	            Err(err) => {
+  1198	                if let Some(subscriber) = initial_subscriber {
+  1199	                    emit_open_error_event(&subscriber, &err);
+  1200	                }
+  1201	                drop(lock);
+  1202	                Err(err)
+  1203	            }
+  1204	        }
+  1205	    }
+  1206	
+  1207	    fn open_locked(
+  1208	        path: PathBuf,
+  1209	        migrations: &'static [fathomdb_schema::Migration],
+  1210	        embedder_identity: &EmbedderIdentity,
+  1211	        emit_migration_event: &mut impl FnMut(&MigrationStepReport),
+  1212	    ) -> Result<(Connection, Vec<Connection>, OpenReport, Vec<i32>), EngineOpenError> {
+  1213	        init_perf_experiments_runtime();
+  1214	        register_sqlite_vec_extension();
+  1215	        let connection = Connection::open(&path)
+  1216	            .map_err(|err| map_open_sqlite_error(err, OpenStage::HeaderProbe))?;
+  1217	        // Order pinned by `dev/design/errors.md` § OpenStage matrix: each
+  1218	        // step routes its own SQLite-level error to a distinct
+  1219	        // `CorruptionKind` (Header → WalReplay → Schema → EmbedderIdentity).
+  1220	        // The schema and WAL probes both happen BEFORE `pragma WAL`
+  1221	        // because that pragma also reads page 1 — letting it run first
+  1222	        // would reclassify schema-side corruption as a WAL replay
+  1223	        // failure, breaking the AC-035b stable-code contract.
+  1224	        probe_database_header(&connection)?;
+  1225	        probe_open_integrity(&connection)?;
+  1226	        probe_wal_sidecar(&path)?;
+  1227	        // 0.7.0 perf-experiments: apply writer-side experiment PRAGMAs
+  1228	        // (page_size, etc.) BEFORE journal_mode + migrations. page_size
+  1229	        // is silently ignored once any table exists; this is the only
+  1230	        // legal window to set it on a fresh DB. Gated on
+  1231	        // FATHOMDB_PERF_EXPERIMENTS=1; no-op in production.
+  1232	        apply_perf_experiment_writer_pragmas(&connection);
+  1233	        connection
+  1234	            .pragma_update(None, "journal_mode", "WAL")
+  1235	            .map_err(|err| map_open_sqlite_error(err, OpenStage::WalReplay))?;
+  1236	
+  1237	        reject_legacy_shape(&connection)?;
+  1238	        let migration = migrate_with_event_sink(&connection, migrations, emit_migration_event)
+  1239	            .map_err(map_migration_error)?;
+  1240	        check_embedder_profile(&connection, embedder_identity)?;
+  1241	        ensure_vector_partition(&connection, embedder_identity.dimension).map_err(|_| {
+  1242	            EngineOpenError::Io { message: "could not initialize vector partition".to_string() }
+  1243	        })?;
+  1244	
+  1245	        let warmup_started = Instant::now();
+  1246	        let report = OpenReport {
+  1247	            schema_version_before: migration.schema_version_before,
+  1248	            schema_version_after: migration.schema_version_after,
+  1249	            migration_steps: migration.migration_steps,
+  1250	            embedder_warmup_ms: u64::try_from(warmup_started.elapsed().as_millis())
+  1251	                .unwrap_or(u64::MAX),
+  1252	            query_backend: "fathomdb-query + sqlite-vec",
+  1253	            default_embedder: embedder_identity.clone(),
+  1254	        };
+  1255	
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/src/lib.rs | sed -n '1938,2295p'" in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ succeeded in 0ms:
+  1938	        self.ensure_open()?;
+  1939	        self.run_rebuild(true, RebuildKind::Projections)
+  1940	    }
+  1941	
+  1942	    /// Vec0-only variant of [`Engine::rebuild_projections`]. Leaves
+  1943	    /// FTS5 shadow content untouched; per recovery design,
+  1944	    /// `recover --rebuild-vec0` is the surface for vec0-only repair.
+  1945	    pub fn rebuild_vec0(&self) -> Result<RebuildReport, EngineError> {
+  1946	        self.ensure_open()?;
+  1947	        self.run_rebuild(false, RebuildKind::Vec0)
+  1948	    }
+  1949	
+  1950	    /// Phase 9 Pack B / AC-042 source trace. Returns the canonical-row
+  1951	    /// id set produced by `source_id`, ordered by `write_cursor`. Empty
+  1952	    /// string is not a valid `source_id`; rows with NULL `source_id`
+  1953	    /// are excluded from every result.
+  1954	    pub fn trace_source_ref(&self, source_id: &str) -> Result<TraceReport, EngineError> {
+  1955	        self.ensure_open()?;
+  1956	        if source_id.is_empty() {
+  1957	            return Err(EngineError::WriteValidation);
+  1958	        }
+  1959	        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+  1960	        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+  1961	
+  1962	        let mut events: Vec<TraceEvent> = Vec::new();
+  1963	        let mut nodes = connection
+  1964	            .prepare(
+  1965	                "SELECT write_cursor, kind FROM canonical_nodes WHERE source_id = ?1
+  1966	                 ORDER BY write_cursor",
+  1967	            )
+  1968	            .map_err(|_| EngineError::Storage)?;
+  1969	        let node_rows = nodes
+  1970	            .query_map([source_id], |row| {
+  1971	                Ok(TraceEvent {
+  1972	                    write_cursor: row.get::<_, i64>(0)? as u64,
+  1973	                    kind: row.get::<_, String>(1)?,
+  1974	                    table: "canonical_nodes",
+  1975	                })
+  1976	            })
+  1977	            .map_err(|_| EngineError::Storage)?;
+  1978	        for row in node_rows {
+  1979	            events.push(row.map_err(|_| EngineError::Storage)?);
+  1980	        }
+  1981	
+  1982	        let mut edges = connection
+  1983	            .prepare(
+  1984	                "SELECT write_cursor, kind FROM canonical_edges WHERE source_id = ?1
+  1985	                 ORDER BY write_cursor",
+  1986	            )
+  1987	            .map_err(|_| EngineError::Storage)?;
+  1988	        let edge_rows = edges
+  1989	            .query_map([source_id], |row| {
+  1990	                Ok(TraceEvent {
+  1991	                    write_cursor: row.get::<_, i64>(0)? as u64,
+  1992	                    kind: row.get::<_, String>(1)?,
+  1993	                    table: "canonical_edges",
+  1994	                })
+  1995	            })
+  1996	            .map_err(|_| EngineError::Storage)?;
+  1997	        for row in edge_rows {
+  1998	            events.push(row.map_err(|_| EngineError::Storage)?);
+  1999	        }
+  2000	
+  2001	        events.sort_by_key(|e| e.write_cursor);
+  2002	        Ok(TraceReport { source_ref: source_id.to_string(), events })
+  2003	    }
+  2004	
+  2005	    /// Phase 9 Pack B / AC-028a/b/c source excise. Drains in-flight
+  2006	    /// projection work, then deletes every canonical row attributable
+  2007	    /// to `source_id` plus the FTS5 + vec0 shadow rows that referenced
+  2008	    /// those cursors, and appends an audit row to the
+  2009	    /// `excise_source_audit` operational collection.
+  2010	    ///
+  2011	    /// Non-perturbation: rows from other sources (and rows with NULL
+  2012	    /// `source_id`) are untouched; the projection cursor is NOT reset
+  2013	    /// and no blanket projection rebuild is issued.
+  2014	    pub fn excise_source(&self, source_id: &str) -> Result<ExciseReport, EngineError> {
+  2015	        self.ensure_open()?;
+  2016	        if source_id.is_empty() {
+  2017	            return Err(EngineError::WriteValidation);
+  2018	        }
+  2019	
+  2020	        // Drain MUST succeed before the excise transaction. SQLite-WAL
+  2021	        // would otherwise allow a worker that already dequeued a job
+  2022	        // for an excised cursor to commit its INSERT into vec0 /
+  2023	        // _fathomdb_vector_rows after our DELETE releases the writer
+  2024	        // lock, leaving residue and breaking AC-028b. Surface the
+  2025	        // timeout instead of swallowing it (Pack A pattern).
+  2026	        self.projection_runtime.set_frozen(true);
+  2027	        let drain_result = self.drain(REBUILD_DRAIN_TIMEOUT_MS);
+  2028	        let outcome = drain_result.and_then(|()| self.excise_source_inner(source_id));
+  2029	        self.projection_runtime.set_frozen(false);
+  2030	        outcome
+  2031	    }
+  2032	
+  2033	    /// Doctor `verify-embedder` seam (AC-040a). Compares the
+  2034	    /// `_fathomdb_embedder_profiles` row to the operator-supplied
+  2035	    /// `name:revision` identity + dimension; never raises on mismatch.
+  2036	    pub fn verify_embedder(
+  2037	        &self,
+  2038	        supplied_identity: &str,
+  2039	        supplied_dimension: u32,
+  2040	    ) -> Result<VerifyEmbedderReport, EngineError> {
+  2041	        self.ensure_open()?;
+  2042	        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+  2043	        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+  2044	        let stored = load_default_profile(connection).map_err(|_| EngineError::Storage)?;
+  2045	        let stored_identity = format!("{}:{}", stored.name, stored.revision);
+  2046	        let identity_match = stored_identity == supplied_identity;
+  2047	        let dimension_match = stored.dimension == supplied_dimension;
+  2048	        let status = match (identity_match, dimension_match) {
+  2049	            (true, true) => VerifyEmbedderStatus::Match,
+  2050	            (false, true) => VerifyEmbedderStatus::IdentityMismatch,
+  2051	            (true, false) => VerifyEmbedderStatus::DimensionMismatch,
+  2052	            (false, false) => VerifyEmbedderStatus::BothMismatch,
+  2053	        };
+  2054	        Ok(VerifyEmbedderReport {
+  2055	            stored_identity,
+  2056	            stored_dimension: stored.dimension,
+  2057	            supplied_identity: supplied_identity.to_string(),
+  2058	            supplied_dimension,
+  2059	            status,
+  2060	        })
+  2061	    }
+  2062	
+  2063	    /// Doctor `dump-schema` seam (AC-040a). Returns the
+  2064	    /// `PRAGMA user_version` sentinel plus the table + index inventory
+  2065	    /// from `sqlite_schema`, excluding `sqlite_*` internal rows.
+  2066	    /// Canonical tables appear first per [`CANONICAL_TABLES`].
+  2067	    pub fn dump_schema(&self) -> Result<DumpSchemaReport, EngineError> {
+  2068	        self.ensure_open()?;
+  2069	        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+  2070	        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+  2071	        let user_version: u32 = connection
+  2072	            .query_row("PRAGMA user_version", [], |row| row.get(0))
+  2073	            .map_err(|_| EngineError::Storage)?;
+  2074	        let tables = read_schema_objects(connection, "table")?;
+  2075	        let indexes = read_schema_objects(connection, "index")?;
+  2076	        Ok(DumpSchemaReport { user_version, tables: order_canonical_first(tables), indexes })
+  2077	    }
+  2078	
+  2079	    /// Doctor `dump-row-counts` seam (AC-040a). Emits canonical-table
+  2080	    /// counts only; projection / FTS / vec0 shadow tables are excluded.
+  2081	    pub fn dump_row_counts(&self) -> Result<DumpRowCountsReport, EngineError> {
+  2082	        self.ensure_open()?;
+  2083	        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+  2084	        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+  2085	        let mut counts = Vec::with_capacity(CANONICAL_TABLES.len());
+  2086	        for name in CANONICAL_TABLES {
+  2087	            let rows: u64 = connection
+  2088	                .query_row(&format!("SELECT COUNT(*) FROM {name}"), [], |row| row.get(0))
+  2089	                .map_err(|_| EngineError::Storage)?;
+  2090	            counts.push(TableRowCount { name: (*name).to_string(), rows });
+  2091	        }
+  2092	        Ok(DumpRowCountsReport { counts })
+  2093	    }
+  2094	
+  2095	    /// Doctor `dump-profile` seam (AC-040a). Returns the stored
+  2096	    /// embedder identity + dimension plus the registered vectorized
+  2097	    /// kinds from `_fathomdb_vector_kinds`.
+  2098	    pub fn dump_profile(&self) -> Result<DumpProfileReport, EngineError> {
+  2099	        self.ensure_open()?;
+  2100	        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+  2101	        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+  2102	        let stored = load_default_profile(connection).map_err(|_| EngineError::Storage)?;
+  2103	        let mut stmt = connection
+  2104	            .prepare("SELECT kind FROM _fathomdb_vector_kinds ORDER BY kind")
+  2105	            .map_err(|_| EngineError::Storage)?;
+  2106	        let rows =
+  2107	            stmt.query_map([], |row| row.get::<_, String>(0)).map_err(|_| EngineError::Storage)?;
+  2108	        let mut vectorized_kinds = Vec::new();
+  2109	        for row in rows {
+  2110	            vectorized_kinds.push(row.map_err(|_| EngineError::Storage)?);
+  2111	        }
+  2112	        Ok(DumpProfileReport {
+  2113	            embedder_identity: format!("{}:{}", stored.name, stored.revision),
+  2114	            embedder_dimension: stored.dimension,
+  2115	            vectorized_kinds,
+  2116	        })
+  2117	    }
+  2118	
+  2119	    /// Recover `--truncate-wal` seam. Runs
+  2120	    /// `PRAGMA wal_checkpoint(TRUNCATE)` and returns the three counters
+  2121	    /// SQLite reports. `status = Busy` when SQLite signalled a blocked
+  2122	    /// checkpoint (`busy != 0`); the WAL may still be partially
+  2123	    /// checkpointed in that case.
+  2124	    pub fn truncate_wal(&self) -> Result<TruncateWalReport, EngineError> {
+  2125	        self.ensure_open()?;
+  2126	        let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+  2127	        let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+  2128	        let (busy, log_frames, checkpointed_frames): (i64, i64, i64) = connection
+  2129	            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+  2130	                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+  2131	            })
+  2132	            .map_err(|_| EngineError::Storage)?;
+  2133	        let status = if busy == 0 { TruncateWalStatus::Done } else { TruncateWalStatus::Busy };
+  2134	        Ok(TruncateWalReport {
+  2135	            status,
+  2136	            busy: busy.max(0) as u32,
+  2137	            log_frames: log_frames.max(0) as u32,
+  2138	            checkpointed_frames: checkpointed_frames.max(0) as u32,
+  2139	        })
+  2140	    }
+  2141	
+  2142	    fn excise_source_inner(&self, source_id: &str) -> Result<ExciseReport, EngineError> {
+  2143	        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+  2144	        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+  2145	        let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+  2146	
+  2147	        // Collect the cursor sets up-front so we can targeted-delete
+  2148	        // shadow rows AND emit an accurate audit row in one txn.
+  2149	        let node_cursors: Vec<i64> = {
+  2150	            let mut stmt = tx
+  2151	                .prepare("SELECT write_cursor FROM canonical_nodes WHERE source_id = ?1")
+  2152	                .map_err(|_| EngineError::Storage)?;
+  2153	            let rows = stmt
+  2154	                .query_map([source_id], |row| row.get::<_, i64>(0))
+  2155	                .map_err(|_| EngineError::Storage)?;
+  2156	            rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|_| EngineError::Storage)?
+  2157	        };
+  2158	        let edge_cursors: Vec<i64> = {
+  2159	            let mut stmt = tx
+  2160	                .prepare("SELECT write_cursor FROM canonical_edges WHERE source_id = ?1")
+  2161	                .map_err(|_| EngineError::Storage)?;
+  2162	            let rows = stmt
+  2163	                .query_map([source_id], |row| row.get::<_, i64>(0))
+  2164	                .map_err(|_| EngineError::Storage)?;
+  2165	            rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|_| EngineError::Storage)?
+  2166	        };
+  2167	
+  2168	        let mut shadow_invalidated: u64 = 0;
+  2169	        for cursor in node_cursors.iter().chain(edge_cursors.iter()) {
+  2170	            shadow_invalidated = shadow_invalidated.saturating_add(
+  2171	                tx.execute("DELETE FROM search_index WHERE write_cursor = ?1", [cursor])
+  2172	                    .map_err(|_| EngineError::Storage)? as u64,
+  2173	            );
+  2174	            // vec0 rowid is the canonical row's write_cursor (see
+  2175	            // `_fathomdb_vector_rows.write_cursor UNIQUE`).
+  2176	            shadow_invalidated = shadow_invalidated.saturating_add(
+  2177	                tx.execute("DELETE FROM vector_default WHERE rowid = ?1", [cursor])
+  2178	                    .map_err(|_| EngineError::Storage)? as u64,
+  2179	            );
+  2180	            shadow_invalidated = shadow_invalidated.saturating_add(
+  2181	                tx.execute("DELETE FROM _fathomdb_vector_rows WHERE write_cursor = ?1", [cursor])
+  2182	                    .map_err(|_| EngineError::Storage)? as u64,
+  2183	            );
+  2184	            shadow_invalidated = shadow_invalidated.saturating_add(
+  2185	                tx.execute(
+  2186	                    "DELETE FROM _fathomdb_projection_terminal WHERE write_cursor = ?1",
+  2187	                    [cursor],
+  2188	                )
+  2189	                .map_err(|_| EngineError::Storage)? as u64,
+  2190	            );
+  2191	        }
+  2192	
+  2193	        let nodes_excised = tx
+  2194	            .execute("DELETE FROM canonical_nodes WHERE source_id = ?1", [source_id])
+  2195	            .map_err(|_| EngineError::Storage)? as u64;
+  2196	        let edges_excised = tx
+  2197	            .execute("DELETE FROM canonical_edges WHERE source_id = ?1", [source_id])
+  2198	            .map_err(|_| EngineError::Storage)? as u64;
+  2199	
+  2200	        // AC-028a audit row: a single append on the
+  2201	        // `excise_source_audit` collection naming the excised source.
+  2202	        // `next_cursor` after a prior write holds the LAST committed cursor;
+  2203	        // mirror the vec writer pattern (load + 1, then store post-commit)
+  2204	        // so the audit row's `write_cursor` is strictly greater than every
+  2205	        // canonical row that preceded it.
+  2206	        let excised_at = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+  2207	        let payload = serde_json::json!({
+  2208	            "source_id": source_id,
+  2209	            "excised_at": excised_at,
+  2210	            "nodes_excised": nodes_excised,
+  2211	            "edges_excised": edges_excised,
+  2212	            "projections_invalidated": shadow_invalidated,
+  2213	        })
+  2214	        .to_string();
+  2215	        let audit_cursor = self.next_cursor.load(Ordering::SeqCst).saturating_add(1);
+  2216	        tx.execute(
+  2217	            "INSERT INTO operational_mutations(
+  2218	                collection_name, record_key, op_kind, payload_json, schema_id, write_cursor
+  2219	             ) VALUES('excise_source_audit', ?1, 'append', ?2, NULL, ?3)",
+  2220	            params![source_id, payload, audit_cursor],
+  2221	        )
+  2222	        .map_err(|_| EngineError::Storage)?;
+  2223	
+  2224	        tx.commit().map_err(|_| EngineError::Storage)?;
+  2225	        self.next_cursor.store(audit_cursor, Ordering::SeqCst);
+  2226	        Ok(ExciseReport {
+  2227	            source_ref: source_id.to_string(),
+  2228	            nodes_excised,
+  2229	            edges_excised,
+  2230	            projections_invalidated: shadow_invalidated,
+  2231	        })
+  2232	    }
+  2233	
+  2234	    fn run_rebuild(
+  2235	        &self,
+  2236	        include_fts: bool,
+  2237	        kind: RebuildKind,
+  2238	    ) -> Result<RebuildReport, EngineError> {
+  2239	        self.projection_runtime.set_frozen(true);
+  2240	        // Drain MUST succeed: rebuild_shadow_state truncates shadow rows,
+  2241	        // and SQLite-WAL allows a worker that already dequeued a job to
+  2242	        // commit its `INSERT OR IGNORE INTO _fathomdb_vector_rows / vec0`
+  2243	        // after our truncate releases the writer lock, leaving stale
+  2244	        // rows. Surfacing the timeout (instead of swallowing it) lets the
+  2245	        // operator retry rather than silently corrupt the rebuild.
+  2246	        let drain_result = self.drain(REBUILD_DRAIN_TIMEOUT_MS);
+  2247	        let result = drain_result.and_then(|()| self.rebuild_shadow_state(include_fts, kind));
+  2248	        self.projection_runtime.set_frozen(false);
+  2249	        result
+  2250	    }
+  2251	
+  2252	    fn rebuild_shadow_state(
+  2253	        &self,
+  2254	        include_fts: bool,
+  2255	        kind: RebuildKind,
+  2256	    ) -> Result<RebuildReport, EngineError> {
+  2257	        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+  2258	        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+  2259	        let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+  2260	        let mut rows_invalidated: u64 = 0;
+  2261	        if include_fts {
+  2262	            let n = tx.execute("DELETE FROM search_index", []).map_err(|_| EngineError::Storage)?;
+  2263	            rows_invalidated = rows_invalidated.saturating_add(n as u64);
+  2264	        }
+  2265	        let n = tx.execute("DELETE FROM vector_default", []).map_err(|_| EngineError::Storage)?;
+  2266	        rows_invalidated = rows_invalidated.saturating_add(n as u64);
+  2267	        let n = tx
+  2268	            .execute("DELETE FROM _fathomdb_vector_rows", [])
+  2269	            .map_err(|_| EngineError::Storage)?;
+  2270	        rows_invalidated = rows_invalidated.saturating_add(n as u64);
+  2271	        let n = tx
+  2272	            .execute("DELETE FROM _fathomdb_projection_terminal", [])
+  2273	            .map_err(|_| EngineError::Storage)?;
+  2274	        rows_invalidated = rows_invalidated.saturating_add(n as u64);
+  2275	        store_projection_cursor(&tx, 0).map_err(|_| EngineError::Storage)?;
+  2276	        let mut rows_rebuilt: u64 = 0;
+  2277	        if include_fts {
+  2278	            for row in canonical_node_rows(&tx).map_err(|_| EngineError::Storage)? {
+  2279	                tx.execute(
+  2280	                    "INSERT INTO search_index(body, kind, write_cursor) VALUES(?1, ?2, ?3)",
+  2281	                    params![row.body, row.kind, row.cursor],
+  2282	                )
+  2283	                .map_err(|_| EngineError::Storage)?;
+  2284	                rows_rebuilt = rows_rebuilt.saturating_add(1);
+  2285	            }
+  2286	        }
+  2287	        let projection_cursor_after =
+  2288	            load_projection_cursor(&tx).map_err(|_| EngineError::Storage)?;
+  2289	        tx.commit().map_err(|_| EngineError::Storage)?;
+  2290	        Ok(RebuildReport { kind, rows_invalidated, rows_rebuilt, projection_cursor_after })
+  2291	    }
+  2292	
+  2293	    fn ensure_open(&self) -> Result<(), EngineError> {
+  2294	        if self.closed.load(Ordering::SeqCst) {
+  2295	            return Err(EngineError::Closing);
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/src/lib.rs | sed -n '2518,2565p'" in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ succeeded in 0ms:
+  2518	        outcomes.push(run_projection_job(shared, job));
+  2519	    }
+  2520	    let _ = commit_projection_outcomes(connection, &outcomes);
+  2521	}
+  2522	
+  2523	fn run_projection_job(shared: &ProjectionRuntimeShared, job: &ProjectionJob) -> ProjectionOutcome {
+  2524	    let delays = shared.retry_delays_ms.lock().map(|delays| delays.clone()).unwrap_or_default();
+  2525	    let mut last_code = "EmbedderError";
+  2526	    for (attempt, delay_ms) in std::iter::once(0_u64).chain(delays.iter().copied()).enumerate() {
+  2527	        if attempt > 0 {
+  2528	            if shared.state.lock().map(|state| state.stopping).unwrap_or(true) {
+  2529	                return ProjectionOutcome::Failure { cursor: job.cursor, failure_code: last_code };
+  2530	            }
+  2531	            thread::sleep(Duration::from_millis(delay_ms));
+  2532	        }
+  2533	        let vector = match shared.embedder.as_ref() {
+  2534	            Some(embedder) => match embedder.embed(&job.body) {
+  2535	                Ok(vector) => vector,
+  2536	                Err(RuntimeEmbedderError::Timeout) => {
+  2537	                    last_code = "EmbedderError";
+  2538	                    continue;
+  2539	                }
+  2540	                Err(RuntimeEmbedderError::Failed { .. }) => {
+  2541	                    last_code = "EmbedderError";
+  2542	                    continue;
+  2543	                }
+  2544	            },
+  2545	            None => {
+  2546	                last_code = "EmbedderNotConfiguredError";
+  2547	                continue;
+  2548	            }
+  2549	        };
+  2550	
+  2551	        if u32::try_from(vector.len()).unwrap_or(u32::MAX) != shared.embedder_identity.dimension {
+  2552	            last_code = "EmbedderDimensionMismatchError";
+  2553	            continue;
+  2554	        }
+  2555	
+  2556	        let blob = encode_vector_blob(&vector);
+  2557	        return ProjectionOutcome::Success { cursor: job.cursor, kind: job.kind.clone(), blob };
+  2558	    }
+  2559	
+  2560	    ProjectionOutcome::Failure { cursor: job.cursor, failure_code: last_code }
+  2561	}
+  2562	
+  2563	fn next_pending_projection_job(
+  2564	    connection: &Connection,
+  2565	    in_flight: &BTreeSet<u64>,
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/tests/rebuild_vec0.rs | sed -n '1,140p'" in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ succeeded in 0ms:
+     1	use std::sync::Arc;
+     2	use std::thread;
+     3	use std::time::Duration;
+     4	
+     5	use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
+     6	use fathomdb_engine::lifecycle::ProjectionStatus;
+     7	use fathomdb_engine::{Engine, PreparedWrite};
+     8	use fathomdb_schema::SQLITE_SUFFIX;
+     9	use rusqlite::Connection;
+    10	use tempfile::TempDir;
+    11	
+    12	#[derive(Clone, Debug)]
+    13	struct DeterministicEmbedder {
+    14	    identity: EmbedderIdentity,
+    15	    vector: Vector,
+    16	}
+    17	
+    18	impl DeterministicEmbedder {
+    19	    fn new(dim: u32) -> Self {
+    20	        let mut vector = vec![0.0_f32; dim as usize];
+    21	        vector[0] = 1.0;
+    22	        Self { identity: EmbedderIdentity::new("vec0-rebuild", "rev-a", dim), vector }
+    23	    }
+    24	}
+    25	
+    26	impl Embedder for DeterministicEmbedder {
+    27	    fn identity(&self) -> EmbedderIdentity {
+    28	        self.identity.clone()
+    29	    }
+    30	
+    31	    fn embed(&self, _text: &str) -> Result<Vector, EmbedderError> {
+    32	        Ok(self.vector.clone())
+    33	    }
+    34	}
+    35	
+    36	fn db_path(dir: &TempDir, name: &str) -> std::path::PathBuf {
+    37	    dir.path().join(format!("{name}{SQLITE_SUFFIX}"))
+    38	}
+    39	
+    40	fn wait_until<F: FnMut() -> bool>(mut predicate: F, timeout: Duration) -> bool {
+    41	    let started = std::time::Instant::now();
+    42	    while started.elapsed() < timeout {
+    43	        if predicate() {
+    44	            return true;
+    45	        }
+    46	        thread::sleep(Duration::from_millis(20));
+    47	    }
+    48	    predicate()
+    49	}
+    50	
+    51	#[test]
+    52	fn rebuild_vec0_resets_vector_rows_and_preserves_fts() {
+    53	    let dir = TempDir::new().unwrap();
+    54	    let path = db_path(&dir, "rebuild_vec0");
+    55	
+    56	    let embedder = Arc::new(DeterministicEmbedder::new(8));
+    57	    let opened = Engine::open_with_embedder_for_test(&path, embedder.clone()).expect("open");
+    58	    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+    59	    opened
+    60	        .engine
+    61	        .write(&[PreparedWrite::Node {
+    62	            kind: "doc".to_string(),
+    63	            body: "fts content survives".to_string(),
+    64	            source_id: None,
+    65	        }])
+    66	        .expect("write");
+    67	    opened.engine.drain(10_000).expect("drain");
+    68	    let pre = opened.engine.vector_row_count_for_test().expect("count");
+    69	    assert!(pre >= 1);
+    70	
+    71	    let fts_count_before = {
+    72	        let connection = Connection::open(&path).expect("open sqlite");
+    73	        let total: i64 = connection
+    74	            .query_row("SELECT COUNT(*) FROM search_index", [], |row| row.get(0))
+    75	            .expect("count fts");
+    76	        total
+    77	    };
+    78	    assert!(fts_count_before >= 1);
+    79	
+    80	    opened.engine.rebuild_vec0().expect("rebuild_vec0");
+    81	    assert!(wait_until(
+    82	        || opened
+    83	            .engine
+    84	            .projection_status_for_test("doc")
+    85	            .map(|s| s == ProjectionStatus::UpToDate)
+    86	            .unwrap_or(false),
+    87	        Duration::from_secs(10),
+    88	    ));
+    89	
+    90	    let fts_count_after = {
+    91	        let connection = Connection::open(&path).expect("open sqlite");
+    92	        let total: i64 = connection
+    93	            .query_row("SELECT COUNT(*) FROM search_index", [], |row| row.get(0))
+    94	            .expect("count fts");
+    95	        total
+    96	    };
+    97	    assert_eq!(fts_count_after, fts_count_before, "FTS5 must be untouched by rebuild_vec0");
+    98	    assert!(opened.engine.vector_row_count_for_test().expect("count after") >= 1);
+    99	}
+
+exec
+/bin/bash -lc "nl -ba dev/design/0.7.0-vector-quant-pack1.md | sed -n '401,620p'" in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ succeeded in 0ms:
+   401	## D5 — Writer transaction shape
+   402	
+   403	The writer site is `commit_projection_outcomes` at
+   404	`lib.rs:2845-2853`. The double-write lands in the **same**
+   405	`tx.execute` sequence between the existing
+   406	`_fathomdb_vector_rows` insert and the existing
+   407	`record_projection_terminal` call. No extra commit; no extra
+   408	lock; no extra connection.
+   409	
+   410	**Decision: compute `vec_quantize_binary` inside the SQL
+   411	statement (single `INSERT` per row), not in Rust ahead of bind.**
+   412	
+   413	The rewritten statement:
+   414	
+   415	```rust
+   416	tx.execute(
+   417	    "INSERT OR IGNORE INTO vector_default(
+   418	        rowid, embedding, embedding_bin, source_type, kind, created_at
+   419	     ) VALUES(?1, ?2, vec_quantize_binary(?2), ?3, ?4, ?5)",
+   420	    params![cursor, blob, resolve_source_type(kind)?, kind, now_unix],
+   421	)?;
+   422	```
+   423	
+   424	Justification (one paragraph):
+   425	
+   426	The SQL-side shape keeps the f32 blob single-bound (one rusqlite
+   427	`Vec<u8>` allocation, one bind), lets sqlite-vec compute the
+   428	bit-vector against its own internal blob layout (which is what
+   429	the Pack 2 reader will also see), and avoids pulling a Rust-side
+   430	`vec_quantize_binary` dependency or re-implementing the sign-bit
+   431	fold in the engine crate. The "double-evaluation" concern (vec0
+   432	materialising `?2` twice) is a non-issue because the binary
+   433	quantization is a single sequential sign-bit pass over the same
+   434	in-memory blob — both passes operate on the same bound parameter
+   435	and the SQLite parameter store does not copy. The Rust-side
+   436	alternative would (a) require either linking against sqlite-vec's
+   437	C symbols from Rust or shipping a hand-rolled sign-fold, (b)
+   438	double the f32 footprint at bind time, and (c) couple the engine
+   439	crate to the on-the-wire bit format which is sqlite-vec's
+   440	internal concern. SQL-side is the cleaner contract surface.
+   441	
+   442	## D6 — `vec_quantize_binary()` contract validation plan
+   443	
+   444	The Pack 1 RED test is a round-trip:
+   445	
+   446	1. Build a known f32 vector `v` of length `<dim>` whose sign
+   447	   pattern is hand-checkable.
+   448	2. Insert via the writer path.
+   449	3. Assert `vec_distance_hamming(embedding_bin, vec_quantize_binary(vec_f32(v))) = 0`.
+   450	
+   451	Specified fixture (deterministic, no normalisation involved):
+   452	
+   453	```
+   454	dim = 768.
+   455	v[i] = +1.0 for i in 0..384, -1.0 for i in 384..768.
+   456	```
+   457	
+   458	Expected `embedding_bin`: 384 set bits in the leading half, 384
+   459	clear bits in the trailing half. Popcount = 384. The exact bit
+   460	ordering (LSB-first within each byte vs MSB-first) is an
+   461	sqlite-vec internal contract; the round-trip via
+   462	`vec_quantize_binary` guarantees both writer and reader see the
+   463	same packing, which is the only invariant the engine relies on.
+   464	`vec_distance_hamming` against the same vector binarised the same
+   465	way must be 0.
+   466	
+   467	One fixture is sufficient. The previously-drafted secondary
+   468	"normalised alternating-sign" fixture is removed (its claim that
+   469	`normalise([1,-1,1,-1,...])` and the half/half vector share
+   470	"identical sign patterns at every coordinate" is wrong — one is
+   471	half-positive/half-negative, the other alternates — see codex
+   472	verdict finding 3). If P1-IMPL wants a second fixture for
+   473	defence-in-depth, the recommended shape is a vector that is +1
+   474	on every fourth coordinate and -1 elsewhere
+   475	(`v3[i] = +1.0 if i % 4 == 0 else -1.0` for dim=768): popcount
+   476	of the quantization is exactly 192 set bits, trivially
+   477	hand-checked, and clearly distinct from the half/half fixture's
+   478	popcount of 384.
+   479	
+   480	Validation status: **empirical validation deferred to P1-IMPL's
+   481	RED test.** A one-shot `sqlite3` confirmation against a temp DB
+   482	with `sqlite-vec` loaded was considered for this memo but
+   483	rejected because (a) the Rust crate is the binding the writer
+   484	actually uses and the sqlite3 CLI binding is a separate code
+   485	path, (b) P1-IMPL's RED test exercises the engine writer
+   486	end-to-end which is the only contract that matters, and (c) the
+   487	binary-quant guide
+   488	(https://alexgarcia.xyz/sqlite-vec/guides/binary-quant.html)
+   489	already documents the round-trip shape and `vec_distance_hamming`
+   490	behaviour. If the RED test surfaces a contract surprise (signed
+   491	zero, NaN, byte-order), that is HITL escalation territory per
+   492	the ADR § 6 / "vec_quantize_binary() input expectations" — not
+   493	something this design memo can resolve in advance.
+   494	
+   495	Open-item linkage: the ADR § 6 third bullet calls out the
+   496	fixture's "atypically friendly" sign-pattern concentration (mass
+   497	on 6 of 768 coordinates per `tests/perf_gates.rs:317`). That is a
+   498	recall-headroom concern for Pack 2, not a contract concern for
+   499	Pack 1. Pack 1's RED test is correctness, not recall.
+   500	
+   501	## D7 — Second writer site (test-only)
+   502	
+   503	Confirmed. The test-only helper at
+   504	`Engine::write_vector_for_test` (`lib.rs:1806-1845`) is a second
+   505	ingest path that inserts into `vector_default` (line 1838). Pack 1
+   506	must update this site in lockstep with `commit_projection_outcomes`
+   507	or it will violate the NOT NULL contract on `embedding_bin` /
+   508	`source_type` / `kind` / `created_at` and break every test that
+   509	goes through `write_vector_for_test`.
+   510	
+   511	The rewritten test helper insert is structurally identical to D5:
+   512	
+   513	```rust
+   514	tx.execute(
+   515	    "INSERT INTO vector_default(
+   516	        rowid, embedding, embedding_bin, source_type, kind, created_at
+   517	     ) VALUES(?1, ?2, vec_quantize_binary(?2), ?3, ?4, ?5)",
+   518	    params![cursor, blob, resolve_source_type(kind)?, kind, now_unix],
+   519	)?;
+   520	```
+   521	
+   522	Pack 1 implementation MUST touch both:
+   523	
+   524	- `lib.rs:1832-1841` (test helper writer; the
+   525	  `_fathomdb_vector_rows` insert at :1832-1836 also needs the
+   526	  same `kind` value flow as `commit_projection_outcomes`).
+   527	- `lib.rs:2845-2852` (production writer; D5 site).
+   528	
+   529	No other writer site touches `vector_default`. The delete sites
+   530	(`lib.rs:2177`, `:2265`) are unaffected — they target the row by
+   531	rowid and the column changes are append-only at the schema level.
+   532	The writer-loop pins at `:2174`, `:2181`, `:2242` are not touched
+   533	(they DELETE-by-rowid or operate on the shadow `_fathomdb_vector_rows`
+   534	table, not on the metadata columns being added).
+   535	
+   536	## D8 — Reader-path NO-OP guarantee
+   537	
+   538	The Pack 2 reader rewrite is out of scope. The Pack 1 question is:
+   539	does the **existing** reader at `read_search_in_tx`
+   540	(`lib.rs:2317-2323`) keep working over the migrated schema?
+   541	
+   542	The existing query is:
+   543	
+   544	```sql
+   545	SELECT rowid FROM vector_default
+   546	WHERE embedding MATCH vec_f32(?1)
+   547	ORDER BY distance
+   548	LIMIT 10
+   549	```
+   550	
+   551	**Decision: confirmed no-op. The existing reader continues to
+   552	return identical results post-migration.**
+   553	
+   554	Reasoning:
+   555	
+   556	- The `embedding` column is **retained** (ADR § 2.1 "the f32
+   557	  `embedding` column is retained"). Its declared type
+   558	  `float[<dim>]` is unchanged.
+   559	- vec0's MATCH semantics dispatch on the column referenced in the
+   560	  predicate; adding sibling vector columns
+   561	  (`embedding_bin bit[<dim>]`) and metadata columns
+   562	  (`source_type`, `kind`, `created_at`) does not alter the
+   563	  semantics of `embedding MATCH vec_f32(?)`.
+   564	- The metadata + partition-key release blog
+   565	  (https://alexgarcia.xyz/blog/2024/sqlite-vec-metadata-release/index.html)
+   566	  demonstrates a vec0 declaration with `partition key` + plain
+   567	  metadata columns + the vector column, queried by the vector
+   568	  predicate alone; the additional columns are filterable via
+   569	  `WHERE` but do not become mandatory in the query shape.
+   570	- The Pack 1 migration preserves the `rowid <-> write_cursor`
+   571	  identity used throughout the writer loop (`lib.rs:2174-2175`
+   572	  comment, `:2177`, `:2181`, `:2265`); the `INSERT INTO
+   573	  vector_default_v2 ... SELECT v.rowid` clause is explicit
+   574	  about it.
+   575	
+   576	AC-013 latency therefore stays at 2048 / 2327 ms post-Pack 1
+   577	(matches the ADR § 4 / handoff § 1 stated contract). AC-019
+   578	stays at its existing bound. AC-012 / AC-017 / AC-018 / AC-020
+   579	are untouched because they do not query `vector_default`.
+   580	
+   581	## Open escalations
+   582	
+   583	None. All eight decisions resolved against repo + cited external
+   584	docs. The pre-existing open items in the ADR § 6 ("final numeric
+   585	budgets", "K-value selection", "fixture-friendliness for recall")
+   586	are Pack 2 concerns and are not affected by Pack 1.
+   587	
+   588	## Fix-1 changelog
+   589	
+   590	Addresses codex BLOCK verdict at
+   591	`dev/plans/runs/0.7.0-PVQ-P1-DESIGN-review-20260527T132959Z.md`.
+   592	
+   593	- **Fix 1.1 (verdict finding 1, high).** D3 no longer extends
+   594	  the HITL-locked 6-value `source_type` vocabulary. The
+   595	  synthetic AC-013 fixture kind `"doc"` is now coerced at the
+   596	  writer to `source_type = "article"`. The locked vocabulary
+   597	  `{email, article, paper, meeting, note, todo}` holds exactly;
+   598	  no HITL re-open required. Mapping table + rationale + reject
+   599	  list updated in D3.
+   600	- **Fix 1.2 (verdict finding 2, high).** D4 migration rewritten
+   601	  to use the engine's real migration framework:
+   602	  `migrate_with_event_sink(...)` at `lib.rs:1238`, gated by
+   603	  `PRAGMA user_version`. The vec0 rebuild is `DROP TABLE` +
+   604	  `CREATE VIRTUAL TABLE` under the same name (sqlite-vec 0.1.7
+   605	  has no `ALTER TABLE RENAME` support; that lands in
+   606	  `v0.1.10-alpha.2`). (Repopulation shape later replaced by
+   607	  the fix-2 staged copy; see Fix-2 changelog below.)
+   608	- **Fix 1.3 (verdict finding 3, medium).** D6 secondary
+   609	  "normalised alternating-sign" fixture is removed. The
+   610	  half/half popcount-384 fixture remains as the sole RED-test
+   611	  fixture; an optional defence-in-depth fixture
+   612	  (`v[i] = +1.0 if i % 4 == 0 else -1.0`, popcount = 192) is
+   613	  recorded for P1-IMPL's discretion.
+   614	
+   615	## Fix-2 changelog
+   616	
+   617	Addresses codex BLOCK verdict at
+   618	`dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-1-review-20260527T134214Z.md`
+   619	(one new high finding on D4's repopulation semantics).
+   620	
+
+exec
+/bin/bash -lc 'git diff --unified=80 64c5d6e f7343c8 -- dev/design/0.7.0-vector-quant-pack1.md' in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ succeeded in 0ms:
+diff --git a/dev/design/0.7.0-vector-quant-pack1.md b/dev/design/0.7.0-vector-quant-pack1.md
+index 4ec04cb..adfae25 100644
+--- a/dev/design/0.7.0-vector-quant-pack1.md
++++ b/dev/design/0.7.0-vector-quant-pack1.md
+@@ -1,92 +1,92 @@
+ ---
+ title: 0.7.0 Vector binary-quant — Pack 1 design
+ date: 2026-05-27
+ target_release: 0.7.0
+ desc: Pack 1 schema-migration + ingest double-write decisions for
+   the binary-quantization data-encoding change locked by
+   ADR-0.7.0-vector-binary-quant.md.
+ blast_radius: src/rust/crates/fathomdb-engine/src/lib.rs (schema +
+   writer); src/rust/crates/fathomdb-engine/tests/perf_gates.rs
+   (existing fixture continuity); dev/adr/ADR-0.7.0-vector-binary-quant.md
+   (implements its Pack 1 section).
+-status: draft fix-1 (consumed by Pack 1 implementation)
++status: draft fix-2 (consumed by Pack 1 implementation)
+ ---
+ 
+ # 0.7.0 Vector binary-quant — Pack 1 design
+ 
+ This memo resolves the open design questions called out in
+ `dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md` § "Pack 1"
+ and § "Open items the implementing agent should escalate to HITL"
+ so that Pack 1 implementation can land mechanically. Pairs with
+ ADR-0.7.0-vector-binary-quant.md (which records the *what*); this
+ memo records the *exact shape*.
+ 
+ Scope: Pack 1 only — schema migration + writer double-write. No
+ reader changes. The Pack 2 query rewrite is out of scope for this
+ memo and is owned by a separate design pass when Pack 2 starts.
+ 
+ ## D1 — Sibling column vs. sibling table
+ 
+ **Decision: sibling column on `vector_default`.**
+ 
+ The migrated declaration is:
+ 
+ ```
+ CREATE VIRTUAL TABLE vector_default USING vec0(
+   embedding float[<dim>],
+   embedding_bin bit[<dim>],
+   source_type TEXT partition key,
+   kind TEXT,
+   created_at INTEGER
+ );
+ ```
+ 
+ (`<dim>` = 768 for the current default profile; the existing
+ `ensure_vector_partition` builds the dimension from
+ `load_default_profile` at `lib.rs:3278-3283`.)
+ 
+ - Alternatives weighed: sibling table `vector_default_bin` (one
+   extra join on every read; fan-out cost on the Pack 2 reader; two
+   inserts per row instead of one; two DELETE sites in every
+   excise / rebuild path — `lib.rs:2177`, `:2181`, `:2265`).
+ - Citation: the sqlite-vec binary-quant guide demonstrates the
+   exact mixed-flavour declaration
+   `create virtual table vec_movies using vec0(synopsis_embedding
+   float[768], synopsis_embedding_coarse bit[768])`
+   (https://alexgarcia.xyz/sqlite-vec/guides/binary-quant.html);
+   confirmed empirically by WebFetch on 2026-05-27 against the
+   same page.
+ 
+ The sibling-column shape is the default in the handoff
+ (§ 1.1) and in the ADR (§ 2 / Pack 1.1). The sibling-table
+ fallback remains documented in both as a recovery path **only if**
+ the 16-metadata-column cap is exceeded (see D2) — that is not the
+ case for Pack 1.
+ 
+ ## D2 — Metadata column inventory (vec0 16-col cap)
+ 
+ vec0 caps metadata columns at 16 and partition keys at 4
+ (`dev/notes/0.7.0-vector-cost-research.md:70-71`). The Pack 1
+ schema lands the minimum-viable set with headroom for the
+ real-workload extension already foreseen by the ADR and the
+ HITL doc.
+ 
+ Pack 1 column inventory on `vector_default`:
+ 
+ | # | Column            | Type           | Role                  | Source                                                         |
+ |---|-------------------|----------------|-----------------------|----------------------------------------------------------------|
+ | 0 | `rowid`           | INTEGER        | (implicit pk)         | `cursor` (existing — `lib.rs:2845-2851`).                      |
+ | 1 | `embedding`       | `float[<dim>]` | vector                | existing — `vec_quantize_binary` input + Pack 2 rerank.        |
+ | 2 | `embedding_bin`   | `bit[<dim>]`   | quantized vector      | `vec_quantize_binary(embedding)` at write time.                |
+ | 3 | `source_type`     | `TEXT`         | **partition key**     | derived from `kind` per D3.                                    |
+ | 4 | `kind`            | `TEXT`         | metadata col          | existing `ProjectionOutcome::Success.kind` (`lib.rs:2841`).    |
+ | 5 | `created_at`      | `INTEGER`     | metadata col          | UNIX seconds at write time (mirrors `excised_at` pattern at `lib.rs:2206`). |
+ 
+ Headroom: **11 free metadata column slots + 3 free partition-key
+ slots** after Pack 1.
+ 
+ Deferred to Pack 2 / 0.7.1 (NOT landed in Pack 1):
+ 
+ - `tags`, `project_mentions` — named in the handoff § 1.1 but not
+   populated by today's writer; the chunk record carries no such
+   field. Wiring requires upstream code changes that are out of
+@@ -123,256 +123,357 @@ at the writer to `source_type = "article"`; the vocabulary is
+ not extended.** No HITL re-open required — the lock at
+ `dev/plans/0.7.0-HITL-recommendations.md:135-137` is honored
+ exactly.
+ 
+ Mapping table (Pack 1, deterministic, total):
+ 
+ | Incoming `kind` value | Resolved `source_type` |
+ |-----------------------|------------------------|
+ | `"email"`             | `email`                |
+ | `"article"`           | `article`              |
+ | `"paper"`             | `paper`                |
+ | `"meeting"`           | `meeting`              |
+ | `"note"`              | `note`                 |
+ | `"todo"`              | `todo`                 |
+ | `"doc"` (synthetic test fixture from `tests/perf_gates.rs:350`) | `article` (coerced) |
+ | anything else         | **writer error** — fail the projection outcome (`EngineError::Storage`); do not silently default. |
+ 
+ Rationale for the `doc` -> `article` coercion: AC-013 seeds
+ synthetic doc-shaped bodies (long-form text) that are the most
+ semantically aligned with the `article` source within the locked
+ 6-value set. The coercion (a) preserves the partition_key
+ utility for the AC-013 fixture rows (they aggregate under a real
+ source_type bucket the corpus-build work will also populate),
+ (b) avoids any test churn — the fixture continues to write
+ `kind="doc"`; only the resolved `source_type` differs, (c)
+ matches what `CORPUS-1` (CNN/DailyMail acquisition, commit
+ `27ab8df`) will land as the production article source. The
+ coercion is writer-internal; the canonical `kind` value is
+ preserved verbatim in the `kind` metadata column (and in
+ `_fathomdb_vector_rows`), so any consumer needing to distinguish
+ fixture rows from corpus rows can still do so by reading `kind`.
+ 
+ Rejected alternatives:
+ 
+ - "Add `doc` as a 7th `source_type` value" — extends the
+   HITL-locked vocabulary without authorization. This was the
+   original draft and is the blocking finding in the codex
+   verdict (`dev/plans/runs/0.7.0-PVQ-P1-DESIGN-review-20260527T132959Z.md`
+   finding 1).
+ - "Rename the fixture kind from `doc` to one of the 6 locked
+   values" — touches every test that reads the AC-013 fixture
+   (larger blast radius than a writer-side coercion).
+ - "Leave `source_type` nullable for unmapped kinds" — loses the
+   partition_key benefit for the AC-013 fixture and breaks the
+   "partition_key is locked" guarantee in HITL Q5.
+ 
+ Citation: HITL lock at
+ `dev/plans/0.7.0-HITL-recommendations.md:135-137` (vocabulary +
+ "supersedes the `kind` default in the Pack 1 handoff").
+ 
+ The mapping is implemented in a single Rust helper:
+ 
+ ```rust
+ fn resolve_source_type(kind: &str) -> Result<&'static str, EngineError> {
+     Ok(match kind {
+         "email" => "email",
+         "article" => "article",
+         "paper" => "paper",
+         "meeting" => "meeting",
+         "note" => "note",
+         "todo" => "todo",
+         // Synthetic AC-013 test fixture; coerced to "article" so
+         // the 6-value HITL lock holds. See D3 rationale above.
+         "doc" => "article",
+         _ => return Err(EngineError::Storage),
+     })
+ }
+ ```
+ 
+ (no allocator pressure; returns `&'static str`; used at both
+ writer sites in D7.)
+ 
+ ## D4 — NOT NULL + migration strategy
+ 
+ vec0 virtual tables in sqlite-vec `=0.1.7` (this repo's pin)
+ support neither `ALTER TABLE ... ADD COLUMN` (a SQLite-level
+ rule for virtual tables — https://www.sqlite.org/vtab.html) nor
+ `ALTER TABLE ... RENAME` (rename support landed in sqlite-vec
+ `v0.1.10-alpha.2`, April 2026, per the sqlite-vec release
+ history). The migration is therefore a `DROP TABLE` + recreate
+-under the same name, with the row population rebuilt from
+-canonical state via the existing rebuild driver — not the
+-staging-table + RENAME shape originally drafted.
++under the same name. Repopulation must be **synchronous and
++in-transaction**, copying the existing f32 blobs verbatim — it
++must NOT go through the engine's async rebuild driver.
+ 
+ **Decision: land NOT NULL constraints from the start. The
+-migration is a single writer-envelope rebuild — DROP the old
+-`vector_default`, CREATE it again with the new schema under the
+-same name, then repopulate via the existing
+-`Engine::rebuild_vec0` / `rebuild_shadow_state` path
+-(`RebuildKind::Vec0`). The writer enforces non-nullability from
+-commit zero.**
++migration is a single SQL migration step that (a) stages the
++existing f32 rows + kind into a regular SQL table, (b) drops
++and recreates `vector_default` with the new schema under the
++same name, (c) repopulates `vector_default` from the staging
++table with `vec_quantize_binary` evaluated SQL-side at INSERT
++bind, and (d) drops the staging table — all inside the migration
++framework's `BEGIN IMMEDIATE` / `COMMIT` envelope. The writer
++enforces non-nullability from commit zero.**
+ 
+ Schema versioning is owned by the engine's real migration
+ framework: `migrate_with_event_sink(...)` at
+-`src/rust/crates/fathomdb-engine/src/lib.rs:1238`, gated by
+-`PRAGMA user_version` (probed at `lib.rs:2071-2072` for the
+-`dump_schema` surface and at `lib.rs:2691` for the open-time
+-sanity check). The new vec0 schema lands as a new
++`src/rust/crates/fathomdb-engine/src/lib.rs:1238`, which is a
++thin re-export of `fathomdb_schema::migrate_with_event_sink`
++implemented at `src/rust/crates/fathomdb-schema/src/lib.rs:218-271`.
++`apply_one` (`src/rust/crates/fathomdb-schema/src/lib.rs:273-288`)
++wraps each migration step in `BEGIN IMMEDIATE` ... `COMMIT`,
++calling `conn.execute_batch(migration.sql)` followed by
++`pragma_update(PRAGMA_USER_VERSION, step_id)`, and rolling back
++on any error. `Migration` itself is `{ step_id: u32, sql:
++&'static str }` (`fathomdb-schema/src/lib.rs:51-54`) — pure SQL,
++no Rust callback hook. The new vec0 schema lands as a new
+ `fathomdb_schema::Migration` step appended to the existing
+ migration array passed into `open_with_migrations`
+ (`lib.rs:1119-1131`); `migrate_with_event_sink` bumps
+ `PRAGMA user_version` on commit and gates re-entry on the same
+ sentinel, so re-opens are naturally idempotent. The previously
+ proposed `operational_mutations` schema stamp is **not** the
+ schema-version owner — that collection is excise audit rows
+ (`lib.rs:2217-2221`) — and is dropped from the design.
+ 
+-Migration step (Pack 1):
++Migration step (Pack 1) — single SQL blob, executed atomically
++by `apply_one` (`fathomdb-schema/src/lib.rs:273-288`):
+ 
+ ```sql
+--- Step body, executed by migrate_with_event_sink at lib.rs:1238.
+--- Runs inside the migration framework's transaction envelope.
++-- Step body. Runs inside BEGIN IMMEDIATE ... COMMIT supplied
++-- by apply_one. <dim> is rendered at migration-build time
++-- (768 for the default profile, see ensure_vector_partition at
++-- lib.rs:3278-3283). <now> is the migration timestamp (UNIX
++-- seconds), rendered by the engine when the migration array is
++-- constructed at open_with_migrations (lib.rs:1119-1131); the
++-- whole corpus is backfilled with the same created_at value.
++
++-- 1. Stage existing f32 blobs + kind into a regular SQL table.
++--    _fathomdb_vector_rows.kind is the source of truth for the
++--    existing rows' kind (writer site at lib.rs:2845-2853).
++CREATE TABLE _fathomdb_vector_migration_v0_7_0 (
++  rowid     INTEGER PRIMARY KEY,
++  embedding BLOB NOT NULL,
++  kind      TEXT NOT NULL
++);
++INSERT INTO _fathomdb_vector_migration_v0_7_0(rowid, embedding, kind)
++SELECT v.rowid, v.embedding, r.kind
++  FROM vector_default v
++  JOIN _fathomdb_vector_rows r ON r.rowid = v.rowid;
++
++-- 2. Drop the old vec0 table and recreate under the same name.
+ DROP TABLE vector_default;
+ CREATE VIRTUAL TABLE vector_default USING vec0(
+   embedding float[<dim>],
+   embedding_bin bit[<dim>],
+   source_type TEXT partition key,
+   kind TEXT,
+   created_at INTEGER
+ );
++
++-- 3. Repopulate from staging. vec_quantize_binary runs SQL-side
++--    once per row against the existing f32 blob; source_type is
++--    coerced from kind via the D3 mapping using a CASE
++--    expression. Any kind outside the D3 vocabulary raises
++--    SQLITE_CONSTRAINT (NOT NULL) on source_type, which aborts
++--    the migration and rolls back the whole step — matching the
++--    "writer error on unknown kind" rule in D3.
++INSERT INTO vector_default(
++  rowid, embedding, embedding_bin, source_type, kind, created_at
++)
++SELECT
++  s.rowid,
++  s.embedding,
++  vec_quantize_binary(s.embedding),
++  CASE s.kind
++    WHEN 'email'   THEN 'email'
++    WHEN 'article' THEN 'article'
++    WHEN 'paper'   THEN 'paper'
++    WHEN 'meeting' THEN 'meeting'
++    WHEN 'note'    THEN 'note'
++    WHEN 'todo'    THEN 'todo'
++    WHEN 'doc'     THEN 'article'  -- AC-013 fixture coercion; see D3.
++    ELSE NULL
++  END AS source_type,
++  s.kind,
++  <now>
++FROM _fathomdb_vector_migration_v0_7_0 s;
++
++-- 4. Drop the staging table.
++DROP TABLE _fathomdb_vector_migration_v0_7_0;
+ ```
+ 
+-Repopulation: deliberately not done by `INSERT ... SELECT` from
+-the old vec0 (the old table is dropped above and the new one
+-has zero rows). Instead, after the migration commits, the open
+-path invokes the existing vec0 rebuild driver,
++Why the D3 mapping is inlined in SQL (and not a Rust loop): the
++`Migration` shape at `fathomdb-schema/src/lib.rs:51-54` is
++`{ step_id, sql: &'static str }` — pure SQL, no Rust callback
++extension point. The CASE WHEN above is the literal byte-for-byte
++transcription of the D3 mapping table; a Rust-side loop would
++require extending the schema crate's migration trait (a
++larger-blast-radius change that this slice does not authorize).
++The CASE shape also avoids registering an ad-hoc Rust scalar
++function on the migration connection. The D3 helper
++`resolve_source_type` (defined in this memo for the writer
++sites D5/D7) is the canonical lookup at write time; the CASE
++above is the migration-time mirror of that table and must be
++kept in lockstep with it — P1-IMPL adds a co-located assertion
++in tests/migration coverage to catch drift.
++
++Properties of this migration step:
++
++- **Synchronous.** All four sub-steps run inside the same
++  `apply_one` transaction (`fathomdb-schema/src/lib.rs:273-288`),
++  on the migration thread, before `migrate_with_event_sink`
++  returns. There is no async hand-off.
++- **No embedder rerun.** The f32 blobs are copied verbatim from
++  `vector_default.embedding` into the staging table and back
++  out. The embedder is never invoked.
++- **`vec_quantize_binary` call site.** SQL-side at the
++  repopulation `INSERT`'s SELECT projection, once per row,
++  evaluated against the f32 blob already materialised in the
++  staging row. No Rust-side bit math; no double scan of the
++  source blob.
++- **Atomicity.** `apply_one` wraps the whole SQL blob in
++  `BEGIN IMMEDIATE` ... `COMMIT` and `ROLLBACK`s on any error
++  (`fathomdb-schema/src/lib.rs:273-288`). If any sub-step
++  fails (e.g. an unmapped `kind` value triggers the NULL ->
++  NOT-NULL constraint at sub-step 3), the migration is rolled
++  back, `PRAGMA user_version` stays at the previous value, and
++  the next open re-attempts the migration cleanly. The staging
++  table is part of the same transaction and is dropped on
++  rollback alongside the would-be new `vector_default`.
++- **NOT NULL enforcement at write time.** vec0 metadata columns
++  do not have a declarative `NOT NULL` constraint in the
++  sqlite-vec DDL surface
++  (https://alexgarcia.xyz/blog/2024/sqlite-vec-metadata-release/index.html);
++  non-nullability is contract-enforced by the migration and by
++  the D5/D7 writers. Pack 1 writers always supply all five
++  metadata columns; the migration always supplies them (or
++  fails atomically). No row can land with a NULL.
++
++Migration cost: dominated by two sequential scans of the
++existing 3 GB f32 corpus on the 1 M-row fixture — one for the
++staging `INSERT ... SELECT` (sub-step 1) and one for the
++repopulation `INSERT ... SELECT` (sub-step 3). The
++`vec_quantize_binary` work is a sign-bit fold per coordinate,
++negligible relative to the I/O. The working budget remains the
++60-90 s estimate from ADR § 4. The migration **does not** re-run
++the embedder, so the AC-013 562 s seed time
++(`dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json`)
++is **not** a comparable baseline — that figure includes embedder
++work this migration avoids by construction. A concrete
++measurement lands in P1-IMPL's GREEN gate.
++
++Idempotence: `PRAGMA user_version` already guards re-entry
++(`fathomdb-schema/src/lib.rs:234`, `:277`). On the second open
++the migration step is skipped because `migration.step_id <=
++before`, and `vector_default` keeps the rows from the first
++pass.
++
++### Rejected alternative — repopulate via `Engine::rebuild_vec0` / `RebuildKind::Vec0`
++
++The fix-1 draft of D4 proposed driving repopulation through
+ `Engine::rebuild_vec0` (`lib.rs:1947`), which calls
+ `run_rebuild` -> `rebuild_shadow_state` with `RebuildKind::Vec0`
+-(`lib.rs:2234-2289`). That driver already knows how to:
+-
+-- Truncate the (newly-created, empty) `vector_default` and
+-  `_fathomdb_vector_rows` shadow tables (no-op on first pass
+-  but kept for the contract — see `lib.rs:2265-2270`).
+-- Re-derive rows from `canonical_nodes` via the standard
+-  projection pipeline, which writes through the Pack 1 writer
+-  in D5 and therefore lands `embedding_bin`, `source_type`,
+-  `kind`, `created_at` correctly on every row.
+-
+-The whole sequence runs under the engine's existing
+-single-writer envelope: `migrate_with_event_sink` holds the
+-writer for the DDL step, and `run_rebuild` re-acquires the
+-writer transaction (`lib.rs:2257-2259`) immediately after.
+-There is no window in which a reader can observe a partially
+-rebuilt `vector_default`, because the engine does not advertise
+-itself as open until `open_with_migrations` returns
+-(`lib.rs:1238-1255`).
+-
+-NOT NULL enforcement:
+-
+-- `embedding`, `embedding_bin`, `source_type`, `kind`,
+-  `created_at` are all written on every insert by Pack 1's
+-  writer; no row can land with a NULL.
+-- vec0 metadata columns do not have a declarative `NOT NULL`
+-  constraint in the sqlite-vec DDL surface
+-  (https://alexgarcia.xyz/blog/2024/sqlite-vec-metadata-release/index.html).
+-  Non-nullability is therefore enforced **at the writer**, not
+-  by the DDL. This is a contract, not a column constraint.
+-- The rebuild from canonical leaves no nullable row to clean up
+-  later, so there is no Pack 2 "tighten to NOT NULL" follow-up.
+-
+-Migration cost: the rebuild scans `canonical_nodes` end-to-end
+-and re-runs the projection writer for each row. The comparable
+-baseline is the AC-013 seed cost — 562 s on canonical CI per
+-`dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json`
+-— but the migration **does not** re-run the embedder (canonical
+-state already carries the f32 embeddings via the existing vec0
+-restore path used by the rebuild driver), so the wall time
+-should land well below 562 s on the 1 M-row fixture. The
+-60-90 s ADR § 4 estimate remains the working budget; the seed
+-time is cited only as an upper bound. A concrete measurement
+-lands in P1-IMPL's GREEN gate.
+-
+-Idempotence: `PRAGMA user_version` already guards re-entry. On
+-the second open the migration step is skipped by
+-`migrate_with_event_sink`, the rebuild driver is not invoked,
+-and `vector_default` keeps the rows from the first pass.
++(`lib.rs:2234-2289`). Codex fix-1 review (finding 1,
++`dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-1-review-20260527T134214Z.md`)
++correctly flagged that this path:
++
++- Is asynchronous. `rebuild_shadow_state` only truncates vec0
++  state and resets the projection cursor; the actual
++  re-derivation runs on the projection scheduler. The test at
++  `src/rust/crates/fathomdb-engine/tests/rebuild_vec0.rs:80-98`
++  observes `rebuild_vec0` returns immediately and polls
++  `projection_status_for_test` to wait for the async drain.
++- Re-runs the embedder. The projection scheduler's
++  `run_projection_job` calls `embedder.embed(&job.body)` at
++  `src/rust/crates/fathomdb-engine/src/lib.rs:2528-2557` for
++  every row it re-derives.
++- Is therefore not equivalent to copying the existing f32
++  blobs: it would multiply the migration cost by the embedder
++  work the migration is specifically designed to avoid, and it
++  would leak a window in which `vector_default` is empty before
++  the async drain catches up.
++
++The staged-copy migration above replaces this path entirely.
++`rebuild_vec0` remains as it is in tree for the operator-driven
++"rebuild from canonical" tool; Pack 1's migration does not call
++it.
+ 
+ ## D5 — Writer transaction shape
+ 
+ The writer site is `commit_projection_outcomes` at
+ `lib.rs:2845-2853`. The double-write lands in the **same**
+ `tx.execute` sequence between the existing
+ `_fathomdb_vector_rows` insert and the existing
+ `record_projection_terminal` call. No extra commit; no extra
+ lock; no extra connection.
+ 
+ **Decision: compute `vec_quantize_binary` inside the SQL
+ statement (single `INSERT` per row), not in Rust ahead of bind.**
+ 
+ The rewritten statement:
+ 
+ ```rust
+ tx.execute(
+     "INSERT OR IGNORE INTO vector_default(
+         rowid, embedding, embedding_bin, source_type, kind, created_at
+      ) VALUES(?1, ?2, vec_quantize_binary(?2), ?3, ?4, ?5)",
+     params![cursor, blob, resolve_source_type(kind)?, kind, now_unix],
+ )?;
+ ```
+ 
+ Justification (one paragraph):
+ 
+ The SQL-side shape keeps the f32 blob single-bound (one rusqlite
+ `Vec<u8>` allocation, one bind), lets sqlite-vec compute the
+ bit-vector against its own internal blob layout (which is what
+ the Pack 2 reader will also see), and avoids pulling a Rust-side
+ `vec_quantize_binary` dependency or re-implementing the sign-bit
+ fold in the engine crate. The "double-evaluation" concern (vec0
+ materialising `?2` twice) is a non-issue because the binary
+ quantization is a single sequential sign-bit pass over the same
+ in-memory blob — both passes operate on the same bound parameter
+ and the SQLite parameter store does not copy. The Rust-side
+ alternative would (a) require either linking against sqlite-vec's
+ C symbols from Rust or shipping a hand-rolled sign-fold, (b)
+ double the f32 footprint at bind time, and (c) couple the engine
+ crate to the on-the-wire bit format which is sqlite-vec's
+ internal concern. SQL-side is the cleaner contract surface.
+ 
+ ## D6 — `vec_quantize_binary()` contract validation plan
+ 
+ The Pack 1 RED test is a round-trip:
+ 
+ 1. Build a known f32 vector `v` of length `<dim>` whose sign
+    pattern is hand-checkable.
+ 2. Insert via the writer path.
+ 3. Assert `vec_distance_hamming(embedding_bin, vec_quantize_binary(vec_f32(v))) = 0`.
+ 
+ Specified fixture (deterministic, no normalisation involved):
+ 
+ ```
+ dim = 768.
+ v[i] = +1.0 for i in 0..384, -1.0 for i in 384..768.
+ ```
+ 
+ Expected `embedding_bin`: 384 set bits in the leading half, 384
+ clear bits in the trailing half. Popcount = 384. The exact bit
+ ordering (LSB-first within each byte vs MSB-first) is an
+ sqlite-vec internal contract; the round-trip via
+ `vec_quantize_binary` guarantees both writer and reader see the
+ same packing, which is the only invariant the engine relies on.
+ `vec_distance_hamming` against the same vector binarised the same
+ way must be 0.
+ 
+ One fixture is sufficient. The previously-drafted secondary
+ "normalised alternating-sign" fixture is removed (its claim that
+ `normalise([1,-1,1,-1,...])` and the half/half vector share
+ "identical sign patterns at every coordinate" is wrong — one is
+ half-positive/half-negative, the other alternates — see codex
+ verdict finding 3). If P1-IMPL wants a second fixture for
+ defence-in-depth, the recommended shape is a vector that is +1
+ on every fourth coordinate and -1 elsewhere
+ (`v3[i] = +1.0 if i % 4 == 0 else -1.0` for dim=768): popcount
+ of the quantization is exactly 192 set bits, trivially
+ hand-checked, and clearly distinct from the half/half fixture's
+ popcount of 384.
+ 
+@@ -425,94 +526,127 @@ Pack 1 implementation MUST touch both:
+   same `kind` value flow as `commit_projection_outcomes`).
+ - `lib.rs:2845-2852` (production writer; D5 site).
+ 
+ No other writer site touches `vector_default`. The delete sites
+ (`lib.rs:2177`, `:2265`) are unaffected — they target the row by
+ rowid and the column changes are append-only at the schema level.
+ The writer-loop pins at `:2174`, `:2181`, `:2242` are not touched
+ (they DELETE-by-rowid or operate on the shadow `_fathomdb_vector_rows`
+ table, not on the metadata columns being added).
+ 
+ ## D8 — Reader-path NO-OP guarantee
+ 
+ The Pack 2 reader rewrite is out of scope. The Pack 1 question is:
+ does the **existing** reader at `read_search_in_tx`
+ (`lib.rs:2317-2323`) keep working over the migrated schema?
+ 
+ The existing query is:
+ 
+ ```sql
+ SELECT rowid FROM vector_default
+ WHERE embedding MATCH vec_f32(?1)
+ ORDER BY distance
+ LIMIT 10
+ ```
+ 
+ **Decision: confirmed no-op. The existing reader continues to
+ return identical results post-migration.**
+ 
+ Reasoning:
+ 
+ - The `embedding` column is **retained** (ADR § 2.1 "the f32
+   `embedding` column is retained"). Its declared type
+   `float[<dim>]` is unchanged.
+ - vec0's MATCH semantics dispatch on the column referenced in the
+   predicate; adding sibling vector columns
+   (`embedding_bin bit[<dim>]`) and metadata columns
+   (`source_type`, `kind`, `created_at`) does not alter the
+   semantics of `embedding MATCH vec_f32(?)`.
+ - The metadata + partition-key release blog
+   (https://alexgarcia.xyz/blog/2024/sqlite-vec-metadata-release/index.html)
+   demonstrates a vec0 declaration with `partition key` + plain
+   metadata columns + the vector column, queried by the vector
+   predicate alone; the additional columns are filterable via
+   `WHERE` but do not become mandatory in the query shape.
+ - The Pack 1 migration preserves the `rowid <-> write_cursor`
+   identity used throughout the writer loop (`lib.rs:2174-2175`
+   comment, `:2177`, `:2181`, `:2265`); the `INSERT INTO
+   vector_default_v2 ... SELECT v.rowid` clause is explicit
+   about it.
+ 
+ AC-013 latency therefore stays at 2048 / 2327 ms post-Pack 1
+ (matches the ADR § 4 / handoff § 1 stated contract). AC-019
+ stays at its existing bound. AC-012 / AC-017 / AC-018 / AC-020
+ are untouched because they do not query `vector_default`.
+ 
+ ## Open escalations
+ 
+ None. All eight decisions resolved against repo + cited external
+ docs. The pre-existing open items in the ADR § 6 ("final numeric
+ budgets", "K-value selection", "fixture-friendliness for recall")
+ are Pack 2 concerns and are not affected by Pack 1.
+ 
+ ## Fix-1 changelog
+ 
+ Addresses codex BLOCK verdict at
+ `dev/plans/runs/0.7.0-PVQ-P1-DESIGN-review-20260527T132959Z.md`.
+ 
+ - **Fix 1.1 (verdict finding 1, high).** D3 no longer extends
+   the HITL-locked 6-value `source_type` vocabulary. The
+   synthetic AC-013 fixture kind `"doc"` is now coerced at the
+   writer to `source_type = "article"`. The locked vocabulary
+   `{email, article, paper, meeting, note, todo}` holds exactly;
+   no HITL re-open required. Mapping table + rationale + reject
+   list updated in D3.
+ - **Fix 1.2 (verdict finding 2, high).** D4 migration rewritten
+   to use the engine's real migration framework:
+   `migrate_with_event_sink(...)` at `lib.rs:1238`, gated by
+   `PRAGMA user_version`. The vec0 rebuild is `DROP TABLE` +
+   `CREATE VIRTUAL TABLE` under the same name (sqlite-vec 0.1.7
+   has no `ALTER TABLE RENAME` support; that lands in
+-  `v0.1.10-alpha.2`), with repopulation through the existing
+-  `Engine::rebuild_vec0` / `rebuild_shadow_state` path
+-  (`RebuildKind::Vec0`, `lib.rs:1947` and `lib.rs:2234-2289`).
+-  The fabricated `operational_mutations` schema stamp is
+-  removed. Cost baseline is the AC-013 562 s seed time
+-  (`dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json`),
+-  with the rebuild expected materially under that since the
+-  embedder does not re-run.
++  `v0.1.10-alpha.2`). (Repopulation shape later replaced by
++  the fix-2 staged copy; see Fix-2 changelog below.)
+ - **Fix 1.3 (verdict finding 3, medium).** D6 secondary
+   "normalised alternating-sign" fixture is removed. The
+   half/half popcount-384 fixture remains as the sole RED-test
+   fixture; an optional defence-in-depth fixture
+   (`v[i] = +1.0 if i % 4 == 0 else -1.0`, popcount = 192) is
+   recorded for P1-IMPL's discretion.
++
++## Fix-2 changelog
++
++Addresses codex BLOCK verdict at
++`dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-1-review-20260527T134214Z.md`
++(one new high finding on D4's repopulation semantics).
++
++- **Fix 2.1 (verdict finding 1, high).** D4 repopulation no
++  longer routes through `Engine::rebuild_vec0` /
++  `rebuild_shadow_state` (`RebuildKind::Vec0`). Verified against
++  the actual code: `run_projection_job` at
++  `src/rust/crates/fathomdb-engine/src/lib.rs:2523-2557` calls
++  `embedder.embed(&job.body)` per row, and the rebuild test at
++  `src/rust/crates/fathomdb-engine/tests/rebuild_vec0.rs:80-98`
++  locks in async drain semantics — both contradict the fix-1
++  claim that repopulation is synchronous and avoids the
++  embedder. D4 is replaced with a single SQL migration step
++  executed under `apply_one` (`fathomdb-schema/src/lib.rs:273-288`,
++  re-verified): (1) stage existing `vector_default` rows
++  JOIN-ed with `_fathomdb_vector_rows.kind` into a regular
++  staging table, (2) `DROP TABLE vector_default` + recreate
++  with the Pack 1 schema, (3) `INSERT ... SELECT` from staging
++  with `vec_quantize_binary` SQL-side and a CASE expression
++  rendering the D3 `kind -> source_type` map, (4) drop the
++  staging table. Properties recorded explicitly: synchronous,
++  no embedder rerun, atomic under `BEGIN IMMEDIATE`/`COMMIT`,
++  `vec_quantize_binary` SQL-side once per row. Cost citation
++  updated: the AC-013 562 s seed figure is no longer cited as
++  a baseline because it includes embedder work this migration
++  avoids; budget remains the 60-90 s ADR § 4 estimate. A
++  "Rejected alternative" subsection added under D4 explaining
++  why `rebuild_vec0` is not used.
++- **Fix 2.2 (consequence).** D4 SQL-only migration shape is
++  justified against the actual `Migration { step_id: u32, sql:
++  &'static str }` shape at `fathomdb-schema/src/lib.rs:51-54`
++  (re-verified) — pure SQL, no Rust callback extension point.
++  CASE WHEN is the migration-time mirror of the D3 helper
++  `resolve_source_type`; P1-IMPL is directed to add a
++  co-located drift-detection assertion.
+
+codex
+The main question now is whether fix-2 only corrected D4 or also introduced a new mismatch elsewhere. I’m checking the second writer path, the static migration shape, and any claims in D8/changelog that no longer line up with the rewritten D4 SQL.
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/src/lib.rs | sed -n '1798,1848p'" in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ succeeded in 0ms:
+  1798	                 VALUES(?1, ?2, 0)",
+  1799	                params![kind, DEFAULT_VECTOR_PROFILE],
+  1800	            )
+  1801	            .map_err(|_| EngineError::Storage)?;
+  1802	        Ok(())
+  1803	    }
+  1804	
+  1805	    #[doc(hidden)]
+  1806	    pub fn write_vector_for_test(
+  1807	        &self,
+  1808	        kind: &str,
+  1809	        text: &str,
+  1810	    ) -> Result<WriteReceipt, EngineError> {
+  1811	        self.ensure_open()?;
+  1812	        let embedder =
+  1813	            self.runtime_embedder.as_ref().cloned().ok_or(EngineError::EmbedderNotConfigured)?;
+  1814	
+  1815	        let mut connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+  1816	        let connection = connection.as_mut().ok_or(EngineError::Closing)?;
+  1817	        if !kind_is_vector_indexed(connection, kind)? {
+  1818	            return Err(EngineError::KindNotVectorIndexed);
+  1819	        }
+  1820	
+  1821	        let expected = default_profile_dimension(connection)?;
+  1822	        ensure_vector_partition(connection, expected).map_err(|_| EngineError::Storage)?;
+  1823	        let vector = embedder.embed(text).map_err(map_runtime_embedder_error)?;
+  1824	        let actual = u32::try_from(vector.len()).unwrap_or(u32::MAX);
+  1825	        if actual != expected {
+  1826	            return Err(EngineError::EmbedderDimensionMismatch { expected, actual });
+  1827	        }
+  1828	
+  1829	        let cursor = self.next_cursor.load(Ordering::SeqCst).saturating_add(1);
+  1830	        let blob = encode_vector_blob(&vector);
+  1831	        let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+  1832	        tx.execute(
+  1833	            "INSERT INTO _fathomdb_vector_rows(rowid, kind, write_cursor) VALUES(?1, ?2, ?3)",
+  1834	            params![cursor, kind, cursor],
+  1835	        )
+  1836	        .map_err(|_| EngineError::Storage)?;
+  1837	        tx.execute(
+  1838	            "INSERT INTO vector_default(rowid, embedding) VALUES(?1, ?2)",
+  1839	            params![cursor, blob],
+  1840	        )
+  1841	        .map_err(|_| EngineError::Storage)?;
+  1842	        tx.commit().map_err(|_| EngineError::Storage)?;
+  1843	        self.next_cursor.store(cursor, Ordering::SeqCst);
+  1844	        Ok(WriteReceipt { cursor })
+  1845	    }
+  1846	
+  1847	    #[doc(hidden)]
+  1848	    pub fn vector_row_count_for_test(&self) -> Result<u64, EngineError> {
+
+exec
+/bin/bash -lc "rg -n \"vector_default_v2|<now>|apply_one|resolve_source_type|CASE s\\.kind|source_type TEXT partition key|created_at\" dev/design/0.7.0-vector-quant-pack1.md src/rust/crates/fathomdb-engine/src/lib.rs src/rust/crates/fathomdb-schema/src/lib.rs" in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ succeeded in 0ms:
+src/rust/crates/fathomdb-schema/src/lib.rs:125:                  created_at INTEGER NOT NULL
+src/rust/crates/fathomdb-schema/src/lib.rs:146:                  name, kind, schema_json, retention_json, format_version, created_at
+src/rust/crates/fathomdb-schema/src/lib.rs:174:                  created_at INTEGER NOT NULL DEFAULT 0
+src/rust/crates/fathomdb-schema/src/lib.rs:242:        if let Err(_err) = apply_one(conn, migration) {
+src/rust/crates/fathomdb-schema/src/lib.rs:273:fn apply_one(conn: &Connection, migration: &Migration) -> rusqlite::Result<()> {
+dev/design/0.7.0-vector-quant-pack1.md:38:  source_type TEXT partition key,
+dev/design/0.7.0-vector-quant-pack1.md:40:  created_at INTEGER
+dev/design/0.7.0-vector-quant-pack1.md:83:| 5 | `created_at`      | `INTEGER`     | metadata col          | UNIX seconds at write time (mirrors `excised_at` pattern at `lib.rs:2206`). |
+dev/design/0.7.0-vector-quant-pack1.md:97:Rationale for landing `created_at` now: it is the one non-
+dev/design/0.7.0-vector-quant-pack1.md:176:fn resolve_source_type(kind: &str) -> Result<&'static str, EngineError> {
+dev/design/0.7.0-vector-quant-pack1.md:222:`apply_one` (`src/rust/crates/fathomdb-schema/src/lib.rs:273-288`)
+dev/design/0.7.0-vector-quant-pack1.md:239:by `apply_one` (`fathomdb-schema/src/lib.rs:273-288`):
+dev/design/0.7.0-vector-quant-pack1.md:243:-- by apply_one. <dim> is rendered at migration-build time
+dev/design/0.7.0-vector-quant-pack1.md:245:-- lib.rs:3278-3283). <now> is the migration timestamp (UNIX
+dev/design/0.7.0-vector-quant-pack1.md:248:-- whole corpus is backfilled with the same created_at value.
+dev/design/0.7.0-vector-quant-pack1.md:268:  source_type TEXT partition key,
+dev/design/0.7.0-vector-quant-pack1.md:270:  created_at INTEGER
+dev/design/0.7.0-vector-quant-pack1.md:281:  rowid, embedding, embedding_bin, source_type, kind, created_at
+dev/design/0.7.0-vector-quant-pack1.md:287:  CASE s.kind
+dev/design/0.7.0-vector-quant-pack1.md:298:  <now>
+dev/design/0.7.0-vector-quant-pack1.md:314:`resolve_source_type` (defined in this memo for the writer
+dev/design/0.7.0-vector-quant-pack1.md:323:  `apply_one` transaction (`fathomdb-schema/src/lib.rs:273-288`),
+dev/design/0.7.0-vector-quant-pack1.md:334:- **Atomicity.** `apply_one` wraps the whole SQL blob in
+dev/design/0.7.0-vector-quant-pack1.md:418:        rowid, embedding, embedding_bin, source_type, kind, created_at
+dev/design/0.7.0-vector-quant-pack1.md:420:    params![cursor, blob, resolve_source_type(kind)?, kind, now_unix],
+dev/design/0.7.0-vector-quant-pack1.md:508:`source_type` / `kind` / `created_at` and break every test that
+dev/design/0.7.0-vector-quant-pack1.md:516:        rowid, embedding, embedding_bin, source_type, kind, created_at
+dev/design/0.7.0-vector-quant-pack1.md:518:    params![cursor, blob, resolve_source_type(kind)?, kind, now_unix],
+dev/design/0.7.0-vector-quant-pack1.md:562:  (`source_type`, `kind`, `created_at`) does not alter the
+dev/design/0.7.0-vector-quant-pack1.md:573:  vector_default_v2 ... SELECT v.rowid` clause is explicit
+dev/design/0.7.0-vector-quant-pack1.md:631:  executed under `apply_one` (`fathomdb-schema/src/lib.rs:273-288`,
+dev/design/0.7.0-vector-quant-pack1.md:651:  `resolve_source_type`; P1-IMPL is directed to add a
+src/rust/crates/fathomdb-engine/src/lib.rs:1797:                "INSERT OR REPLACE INTO _fathomdb_vector_kinds(kind, profile, created_at)
+src/rust/crates/fathomdb-engine/src/lib.rs:3588:                        name, kind, schema_json, retention_json, format_version, created_at
+
+exec
+/bin/bash -lc "git show f7343c8:dev/design/0.7.0-vector-quant-pack1.md | sed -n '560,700p'" in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ succeeded in 0ms:
+  predicate; adding sibling vector columns
+  (`embedding_bin bit[<dim>]`) and metadata columns
+  (`source_type`, `kind`, `created_at`) does not alter the
+  semantics of `embedding MATCH vec_f32(?)`.
+- The metadata + partition-key release blog
+  (https://alexgarcia.xyz/blog/2024/sqlite-vec-metadata-release/index.html)
+  demonstrates a vec0 declaration with `partition key` + plain
+  metadata columns + the vector column, queried by the vector
+  predicate alone; the additional columns are filterable via
+  `WHERE` but do not become mandatory in the query shape.
+- The Pack 1 migration preserves the `rowid <-> write_cursor`
+  identity used throughout the writer loop (`lib.rs:2174-2175`
+  comment, `:2177`, `:2181`, `:2265`); the `INSERT INTO
+  vector_default_v2 ... SELECT v.rowid` clause is explicit
+  about it.
+
+AC-013 latency therefore stays at 2048 / 2327 ms post-Pack 1
+(matches the ADR § 4 / handoff § 1 stated contract). AC-019
+stays at its existing bound. AC-012 / AC-017 / AC-018 / AC-020
+are untouched because they do not query `vector_default`.
+
+## Open escalations
+
+None. All eight decisions resolved against repo + cited external
+docs. The pre-existing open items in the ADR § 6 ("final numeric
+budgets", "K-value selection", "fixture-friendliness for recall")
+are Pack 2 concerns and are not affected by Pack 1.
+
+## Fix-1 changelog
+
+Addresses codex BLOCK verdict at
+`dev/plans/runs/0.7.0-PVQ-P1-DESIGN-review-20260527T132959Z.md`.
+
+- **Fix 1.1 (verdict finding 1, high).** D3 no longer extends
+  the HITL-locked 6-value `source_type` vocabulary. The
+  synthetic AC-013 fixture kind `"doc"` is now coerced at the
+  writer to `source_type = "article"`. The locked vocabulary
+  `{email, article, paper, meeting, note, todo}` holds exactly;
+  no HITL re-open required. Mapping table + rationale + reject
+  list updated in D3.
+- **Fix 1.2 (verdict finding 2, high).** D4 migration rewritten
+  to use the engine's real migration framework:
+  `migrate_with_event_sink(...)` at `lib.rs:1238`, gated by
+  `PRAGMA user_version`. The vec0 rebuild is `DROP TABLE` +
+  `CREATE VIRTUAL TABLE` under the same name (sqlite-vec 0.1.7
+  has no `ALTER TABLE RENAME` support; that lands in
+  `v0.1.10-alpha.2`). (Repopulation shape later replaced by
+  the fix-2 staged copy; see Fix-2 changelog below.)
+- **Fix 1.3 (verdict finding 3, medium).** D6 secondary
+  "normalised alternating-sign" fixture is removed. The
+  half/half popcount-384 fixture remains as the sole RED-test
+  fixture; an optional defence-in-depth fixture
+  (`v[i] = +1.0 if i % 4 == 0 else -1.0`, popcount = 192) is
+  recorded for P1-IMPL's discretion.
+
+## Fix-2 changelog
+
+Addresses codex BLOCK verdict at
+`dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-1-review-20260527T134214Z.md`
+(one new high finding on D4's repopulation semantics).
+
+- **Fix 2.1 (verdict finding 1, high).** D4 repopulation no
+  longer routes through `Engine::rebuild_vec0` /
+  `rebuild_shadow_state` (`RebuildKind::Vec0`). Verified against
+  the actual code: `run_projection_job` at
+  `src/rust/crates/fathomdb-engine/src/lib.rs:2523-2557` calls
+  `embedder.embed(&job.body)` per row, and the rebuild test at
+  `src/rust/crates/fathomdb-engine/tests/rebuild_vec0.rs:80-98`
+  locks in async drain semantics — both contradict the fix-1
+  claim that repopulation is synchronous and avoids the
+  embedder. D4 is replaced with a single SQL migration step
+  executed under `apply_one` (`fathomdb-schema/src/lib.rs:273-288`,
+  re-verified): (1) stage existing `vector_default` rows
+  JOIN-ed with `_fathomdb_vector_rows.kind` into a regular
+  staging table, (2) `DROP TABLE vector_default` + recreate
+  with the Pack 1 schema, (3) `INSERT ... SELECT` from staging
+  with `vec_quantize_binary` SQL-side and a CASE expression
+  rendering the D3 `kind -> source_type` map, (4) drop the
+  staging table. Properties recorded explicitly: synchronous,
+  no embedder rerun, atomic under `BEGIN IMMEDIATE`/`COMMIT`,
+  `vec_quantize_binary` SQL-side once per row. Cost citation
+  updated: the AC-013 562 s seed figure is no longer cited as
+  a baseline because it includes embedder work this migration
+  avoids; budget remains the 60-90 s ADR § 4 estimate. A
+  "Rejected alternative" subsection added under D4 explaining
+  why `rebuild_vec0` is not used.
+- **Fix 2.2 (consequence).** D4 SQL-only migration shape is
+  justified against the actual `Migration { step_id: u32, sql:
+  &'static str }` shape at `fathomdb-schema/src/lib.rs:51-54`
+  (re-verified) — pure SQL, no Rust callback extension point.
+  CASE WHEN is the migration-time mirror of the D3 helper
+  `resolve_source_type`; P1-IMPL is directed to add a
+  co-located drift-detection assertion.
+
+exec
+/bin/bash -lc "rg -n \"MIGRATIONS|open_with_migrations\\(|migrate_with_event_sink\\(|SCHEMA_VERSION\" src/rust/crates/fathomdb-engine/src/lib.rs src/rust/crates/fathomdb-schema/src/lib.rs" in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ succeeded in 0ms:
+src/rust/crates/fathomdb-schema/src/lib.rs:6:pub const SCHEMA_VERSION: u32 = 8;
+src/rust/crates/fathomdb-schema/src/lib.rs:102:pub const MIGRATIONS: &[Migration] = &[
+src/rust/crates/fathomdb-schema/src/lib.rs:208:    migrate_with_steps(conn, MIGRATIONS)
+src/rust/crates/fathomdb-schema/src/lib.rs:215:    migrate_with_event_sink(conn, migrations, |_| {})
+src/rust/crates/fathomdb-schema/src/lib.rs:218:pub fn migrate_with_event_sink(
+src/rust/crates/fathomdb-schema/src/lib.rs:224:    if before > SCHEMA_VERSION {
+src/rust/crates/fathomdb-schema/src/lib.rs:227:            supported: SCHEMA_VERSION,
+src/rust/crates/fathomdb-engine/src/lib.rs:21:    CANONICAL_TABLES, LOCK_SUFFIX, MIGRATIONS, SCHEMA_VERSION,
+src/rust/crates/fathomdb-engine/src/lib.rs:1056:        Self::open_with_migrations(
+src/rust/crates/fathomdb-engine/src/lib.rs:1109:        Self::open_with_migrations(
+src/rust/crates/fathomdb-engine/src/lib.rs:1111:            MIGRATIONS,
+src/rust/crates/fathomdb-engine/src/lib.rs:1119:    fn open_with_migrations(
+src/rust/crates/fathomdb-engine/src/lib.rs:1238:        let migration = migrate_with_event_sink(&connection, migrations, emit_migration_event)
+src/rust/crates/fathomdb-engine/src/lib.rs:3201:    Err(EngineOpenError::IncompatibleSchemaVersion { seen, supported: SCHEMA_VERSION })
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/src/lib.rs | sed -n '1088,1125p'" in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ succeeded in 0ms:
+  1088	            None,
+  1089	            &mut |_| {},
+  1090	        )
+  1091	    }
+  1092	
+  1093	    #[doc(hidden)]
+  1094	    pub fn open_with_embedder_for_test(
+  1095	        path: impl Into<PathBuf>,
+  1096	        embedder: Arc<dyn Embedder>,
+  1097	    ) -> Result<OpenedEngine, EngineOpenError> {
+  1098	        let identity = embedder.identity();
+  1099	        Self::open_with_embedder_and_subscriber(path, identity, Some(embedder), None, &mut |_| {})
+  1100	    }
+  1101	
+  1102	    fn open_with_embedder_and_subscriber(
+  1103	        path: impl Into<PathBuf>,
+  1104	        embedder_identity: EmbedderIdentity,
+  1105	        runtime_embedder: Option<Arc<dyn Embedder>>,
+  1106	        initial_subscriber: Option<Arc<dyn lifecycle::Subscriber>>,
+  1107	        emit_migration_event: &mut impl FnMut(&MigrationStepReport),
+  1108	    ) -> Result<OpenedEngine, EngineOpenError> {
+  1109	        Self::open_with_migrations(
+  1110	            path,
+  1111	            MIGRATIONS,
+  1112	            embedder_identity,
+  1113	            runtime_embedder,
+  1114	            emit_migration_event,
+  1115	            initial_subscriber,
+  1116	        )
+  1117	    }
+  1118	
+  1119	    fn open_with_migrations(
+  1120	        path: impl Into<PathBuf>,
+  1121	        migrations: &'static [fathomdb_schema::Migration],
+  1122	        embedder_identity: EmbedderIdentity,
+  1123	        runtime_embedder: Option<Arc<dyn Embedder>>,
+  1124	        emit_migration_event: &mut impl FnMut(&MigrationStepReport),
+  1125	        initial_subscriber: Option<Arc<dyn lifecycle::Subscriber>>,
+
+exec
+/bin/bash -lc "nl -ba dev/design/0.7.0-vector-quant-pack1.md | sed -n '620,660p'" in /tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z
+ succeeded in 0ms:
+   620	
+   621	- **Fix 2.1 (verdict finding 1, high).** D4 repopulation no
+   622	  longer routes through `Engine::rebuild_vec0` /
+   623	  `rebuild_shadow_state` (`RebuildKind::Vec0`). Verified against
+   624	  the actual code: `run_projection_job` at
+   625	  `src/rust/crates/fathomdb-engine/src/lib.rs:2523-2557` calls
+   626	  `embedder.embed(&job.body)` per row, and the rebuild test at
+   627	  `src/rust/crates/fathomdb-engine/tests/rebuild_vec0.rs:80-98`
+   628	  locks in async drain semantics — both contradict the fix-1
+   629	  claim that repopulation is synchronous and avoids the
+   630	  embedder. D4 is replaced with a single SQL migration step
+   631	  executed under `apply_one` (`fathomdb-schema/src/lib.rs:273-288`,
+   632	  re-verified): (1) stage existing `vector_default` rows
+   633	  JOIN-ed with `_fathomdb_vector_rows.kind` into a regular
+   634	  staging table, (2) `DROP TABLE vector_default` + recreate
+   635	  with the Pack 1 schema, (3) `INSERT ... SELECT` from staging
+   636	  with `vec_quantize_binary` SQL-side and a CASE expression
+   637	  rendering the D3 `kind -> source_type` map, (4) drop the
+   638	  staging table. Properties recorded explicitly: synchronous,
+   639	  no embedder rerun, atomic under `BEGIN IMMEDIATE`/`COMMIT`,
+   640	  `vec_quantize_binary` SQL-side once per row. Cost citation
+   641	  updated: the AC-013 562 s seed figure is no longer cited as
+   642	  a baseline because it includes embedder work this migration
+   643	  avoids; budget remains the 60-90 s ADR § 4 estimate. A
+   644	  "Rejected alternative" subsection added under D4 explaining
+   645	  why `rebuild_vec0` is not used.
+   646	- **Fix 2.2 (consequence).** D4 SQL-only migration shape is
+   647	  justified against the actual `Migration { step_id: u32, sql:
+   648	  &'static str }` shape at `fathomdb-schema/src/lib.rs:51-54`
+   649	  (re-verified) — pure SQL, no Rust callback extension point.
+   650	  CASE WHEN is the migration-time mirror of the D3 helper
+   651	  `resolve_source_type`; P1-IMPL is directed to add a
+   652	  co-located drift-detection assertion.
+
+codex
+**Verdict: BLOCK**
+
+**Findings**
+1. [high] D4 still does not encode D3’s “unknown kind = error” rule coherently. Refs: [dev/design/0.7.0-vector-quant-pack1.md](/tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z/dev/design/0.7.0-vector-quant-pack1.md:287), [dev/design/0.7.0-vector-quant-pack1.md](/tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z/dev/design/0.7.0-vector-quant-pack1.md:343), [dev/design/0.7.0-vector-quant-pack1.md](/tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z/dev/design/0.7.0-vector-quant-pack1.md:138), [src/rust/crates/fathomdb-schema/src/lib.rs](/tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z/src/rust/crates/fathomdb-schema/src/lib.rs:51)  
+   The known `CASE` branches match D3, but the fallback does not. D4 says `ELSE NULL` will raise `SQLITE_CONSTRAINT` via a NOT NULL check and roll the migration back, yet the same section later says vec0 metadata columns do not have declarative `NOT NULL` support and the migration surface is pure SQL. As written, the memo no longer proves that an unexpected legacy `kind` aborts the migration instead of inserting a `NULL source_type`, so D3 and D4 are still inconsistent on the error behavior.
+
+2. [medium] The new `<now>` backfill claim is tied to the wrong Rust anchor and introduces an unsupported mechanism. Refs: [dev/design/0.7.0-vector-quant-pack1.md](/tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z/dev/design/0.7.0-vector-quant-pack1.md:243), [src/rust/crates/fathomdb-engine/src/lib.rs](/tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z/src/rust/crates/fathomdb-engine/src/lib.rs:1119), [src/rust/crates/fathomdb-schema/src/lib.rs](/tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z/src/rust/crates/fathomdb-schema/src/lib.rs:102)  
+   D4 says `<now>` is rendered when the migration array is constructed at `open_with_migrations`, but that anchor only accepts an already-built `&'static [Migration]`; the actual registry is the static `MIGRATIONS` table. If the design wants a uniform migration-time timestamp literal, it needs a supported construction path or a different anchor. Right now the cited code does not back the claim.
+
+3. [low] D8 still contains a stale proof point from the pre-fix-2 migration shape. Ref: [dev/design/0.7.0-vector-quant-pack1.md](/tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z/dev/design/0.7.0-vector-quant-pack1.md:570)  
+   It cites an `INSERT INTO vector_default_v2 ... SELECT v.rowid` clause that no longer exists after the staged-copy rewrite. The rowid-preservation conclusion is still fine, but this specific reference is stale.
+
+**Addressed**
+- Prior finding about `rebuild_vec0` semantics is fixed. D4 now describes a synchronous, in-transaction, embedder-free staged migration and explicitly rejects the async rebuild path.
+- The cited anchors for `Migration { step_id, sql }`, `apply_one`, `run_projection_job`, and `_fathomdb_vector_rows.kind` are real and used for the right broad points.
+- D3’s locked six-value vocabulary and the `doc -> article` coercion remain intact.
+- D6 remains fixed; the bad secondary fixture did not regress.
+
+**What passed**
+- The D4 core shape is now aligned with the requested migration model: stage from `vector_default` + `_fathomdb_vector_rows`, drop/recreate `vector_default`, repopulate synchronously, drop staging.
+- The `CASE` mapping for known values is consistent with the D3 table: `email`, `article`, `paper`, `meeting`, `note`, `todo`, and `doc -> article`.
+- The `_fathomdb_vector_rows.kind` JOIN is consistent with the writer contract. Both [commit_projection_outcomes](/tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z/src/rust/crates/fathomdb-engine/src/lib.rs:2845) and [write_vector_for_test](/tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z/src/rust/crates/fathomdb-engine/src/lib.rs:1832) insert `_fathomdb_vector_rows` before `vector_default`, so the design’s “kind comes from `_fathomdb_vector_rows`” claim is consistent with current writers.
+- D1, D2, D5, D6, and D7 are still consistent. D8’s conclusion is still consistent, but one cited clause is stale.
+
+**Reviewer process notes**
+- `MEMORY.md` and `feedback_*.md` were not present in this checkout; I used `AGENTS.md` plus the requested artifacts.
+- Read-only re-review on branch `phase-0.7.0-PVQ-P1-DESIGN-20260527T132416Z`, HEAD `f7343c8`, against baseline `277fa4c`.
+tokens used
+66,668
+**Verdict: BLOCK**
+
+**Findings**
+1. [high] D4 still does not encode D3’s “unknown kind = error” rule coherently. Refs: [dev/design/0.7.0-vector-quant-pack1.md](/tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z/dev/design/0.7.0-vector-quant-pack1.md:287), [dev/design/0.7.0-vector-quant-pack1.md](/tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z/dev/design/0.7.0-vector-quant-pack1.md:343), [dev/design/0.7.0-vector-quant-pack1.md](/tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z/dev/design/0.7.0-vector-quant-pack1.md:138), [src/rust/crates/fathomdb-schema/src/lib.rs](/tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z/src/rust/crates/fathomdb-schema/src/lib.rs:51)  
+   The known `CASE` branches match D3, but the fallback does not. D4 says `ELSE NULL` will raise `SQLITE_CONSTRAINT` via a NOT NULL check and roll the migration back, yet the same section later says vec0 metadata columns do not have declarative `NOT NULL` support and the migration surface is pure SQL. As written, the memo no longer proves that an unexpected legacy `kind` aborts the migration instead of inserting a `NULL source_type`, so D3 and D4 are still inconsistent on the error behavior.
+
+2. [medium] The new `<now>` backfill claim is tied to the wrong Rust anchor and introduces an unsupported mechanism. Refs: [dev/design/0.7.0-vector-quant-pack1.md](/tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z/dev/design/0.7.0-vector-quant-pack1.md:243), [src/rust/crates/fathomdb-engine/src/lib.rs](/tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z/src/rust/crates/fathomdb-engine/src/lib.rs:1119), [src/rust/crates/fathomdb-schema/src/lib.rs](/tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z/src/rust/crates/fathomdb-schema/src/lib.rs:102)  
+   D4 says `<now>` is rendered when the migration array is constructed at `open_with_migrations`, but that anchor only accepts an already-built `&'static [Migration]`; the actual registry is the static `MIGRATIONS` table. If the design wants a uniform migration-time timestamp literal, it needs a supported construction path or a different anchor. Right now the cited code does not back the claim.
+
+3. [low] D8 still contains a stale proof point from the pre-fix-2 migration shape. Ref: [dev/design/0.7.0-vector-quant-pack1.md](/tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z/dev/design/0.7.0-vector-quant-pack1.md:570)  
+   It cites an `INSERT INTO vector_default_v2 ... SELECT v.rowid` clause that no longer exists after the staged-copy rewrite. The rowid-preservation conclusion is still fine, but this specific reference is stale.
+
+**Addressed**
+- Prior finding about `rebuild_vec0` semantics is fixed. D4 now describes a synchronous, in-transaction, embedder-free staged migration and explicitly rejects the async rebuild path.
+- The cited anchors for `Migration { step_id, sql }`, `apply_one`, `run_projection_job`, and `_fathomdb_vector_rows.kind` are real and used for the right broad points.
+- D3’s locked six-value vocabulary and the `doc -> article` coercion remain intact.
+- D6 remains fixed; the bad secondary fixture did not regress.
+
+**What passed**
+- The D4 core shape is now aligned with the requested migration model: stage from `vector_default` + `_fathomdb_vector_rows`, drop/recreate `vector_default`, repopulate synchronously, drop staging.
+- The `CASE` mapping for known values is consistent with the D3 table: `email`, `article`, `paper`, `meeting`, `note`, `todo`, and `doc -> article`.
+- The `_fathomdb_vector_rows.kind` JOIN is consistent with the writer contract. Both [commit_projection_outcomes](/tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z/src/rust/crates/fathomdb-engine/src/lib.rs:2845) and [write_vector_for_test](/tmp/fdb-0.7.0-PVQ-P1-DESIGN-20260527T132416Z/src/rust/crates/fathomdb-engine/src/lib.rs:1832) insert `_fathomdb_vector_rows` before `vector_default`, so the design’s “kind comes from `_fathomdb_vector_rows`” claim is consistent with current writers.
+- D1, D2, D5, D6, and D7 are still consistent. D8’s conclusion is still consistent, but one cited clause is stale.
+
+**Reviewer process notes**
+- `MEMORY.md` and `feedback_*.md` were not present in this checkout; I used `AGENTS.md` plus the requested artifacts.
+- Read-only re-review on branch `phase-0.7.0-PVQ-P1-DESIGN-20260527T132416Z`, HEAD `f7343c8`, against baseline `277fa4c`.
