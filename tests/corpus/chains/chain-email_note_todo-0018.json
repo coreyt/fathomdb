@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "8264e016de4117ca"
+  ],
+  "chain_id": "chain-email_note_todo-0018",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "8264e016de4117ca",
+    "9a67ee5c3e157120",
+    "77e50e5a92dd12d4"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "8264e016de4117ca",
+        "9a67ee5c3e157120",
+        "77e50e5a92dd12d4"
+      ],
+      "query": "what was decided after the email about \"Subject: Re: coral Sender: stacy.dickson@enron.com Recipients: ['steve.richman@e\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "77e50e5a92dd12d4",
+        "9a67ee5c3e157120"
+      ],
+      "query": "what's the follow-up action from dickson-s?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "9a67ee5c3e157120",
+    "77e50e5a92dd12d4"
+  ]
+}

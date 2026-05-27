@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "c26041a214550de9"
+  ],
+  "chain_id": "chain-article_note_todo-0184",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "c26041a214550de9",
+    "58350b89f69c599c",
+    "7395f737fbc46ce7"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "c26041a214550de9",
+        "58350b89f69c599c",
+        "7395f737fbc46ce7"
+      ],
+      "query": "what's on my to-do list from the article about \"(CNN) -- A judge ordered Tuesday that the man accused of killing singer and actr\"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "58350b89f69c599c",
+    "7395f737fbc46ce7"
+  ]
+}

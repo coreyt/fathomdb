@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "5feddc590ece9977"
+  ],
+  "chain_id": "chain-article_note_email-0031",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "5feddc590ece9977",
+    "1490afa2c0350988",
+    "602150941d403ab5"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "5feddc590ece9977",
+        "1490afa2c0350988",
+        "602150941d403ab5"
+      ],
+      "query": "what's the context around \"(CNN) -- She'll never forget the day her 17-year-old son, John, asked her permis\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "602150941d403ab5",
+        "1490afa2c0350988"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "1490afa2c0350988",
+    "602150941d403ab5"
+  ]
+}

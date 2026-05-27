@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "091a3f729871f3c6"
+  ],
+  "chain_id": "chain-article_note_todo-0070",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "091a3f729871f3c6",
+    "27c8f057fd4b021f",
+    "60e7e54dbe17733a"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "091a3f729871f3c6",
+        "27c8f057fd4b021f",
+        "60e7e54dbe17733a"
+      ],
+      "query": "what's on my to-do list from the article about \"(InStyle) -- After years in the bronze age, when sun-kissed cheeks and gloss rei\"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "27c8f057fd4b021f",
+    "60e7e54dbe17733a"
+  ]
+}

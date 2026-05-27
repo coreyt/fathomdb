@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "6bf6dab01939670e"
+  ],
+  "chain_id": "chain-article_note_email-0199",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "6bf6dab01939670e",
+    "adb447e8d0d70855",
+    "95b45d346d6fa782"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "6bf6dab01939670e",
+        "adb447e8d0d70855",
+        "95b45d346d6fa782"
+      ],
+      "query": "what's the context around \"(CNN)  -- The man arrested for the videotaped rape of a toddler in Las Vegas, Ne\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "95b45d346d6fa782",
+        "adb447e8d0d70855"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "adb447e8d0d70855",
+    "95b45d346d6fa782"
+  ]
+}

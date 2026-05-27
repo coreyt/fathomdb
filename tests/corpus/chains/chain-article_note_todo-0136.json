@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "7b6b919727723f69"
+  ],
+  "chain_id": "chain-article_note_todo-0136",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "7b6b919727723f69",
+    "e3fe6521b2d3f4e6",
+    "0b192485b69e787e"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "7b6b919727723f69",
+        "e3fe6521b2d3f4e6",
+        "0b192485b69e787e"
+      ],
+      "query": "what's on my to-do list from the article about \"(CNN)  -- One Australian soldier, three civilians and Taliban militants were kil\"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "e3fe6521b2d3f4e6",
+    "0b192485b69e787e"
+  ]
+}

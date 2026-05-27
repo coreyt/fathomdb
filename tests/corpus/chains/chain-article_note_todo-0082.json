@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "1d240277917cb9fa"
+  ],
+  "chain_id": "chain-article_note_todo-0082",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "1d240277917cb9fa",
+    "d2d2bc64bccadb1c",
+    "36bae724f94fde0f"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "1d240277917cb9fa",
+        "d2d2bc64bccadb1c",
+        "36bae724f94fde0f"
+      ],
+      "query": "what's on my to-do list from the article about \"TAMPA, Florida (CNN) -- After witnessing the rapid devastation of a Cayman Islan\"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "d2d2bc64bccadb1c",
+    "36bae724f94fde0f"
+  ]
+}

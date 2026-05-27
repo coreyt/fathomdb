@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "30cd53a3fc28144c"
+  ],
+  "chain_id": "chain-email_note_todo-0126",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "30cd53a3fc28144c",
+    "c115b8af4c1b9757",
+    "3dd9d5727080c0d2"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "30cd53a3fc28144c",
+        "c115b8af4c1b9757",
+        "3dd9d5727080c0d2"
+      ],
+      "query": "what was decided after the email about \"yo\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "3dd9d5727080c0d2",
+        "c115b8af4c1b9757"
+      ],
+      "query": "what's the follow-up action from monique.sanchez@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "c115b8af4c1b9757",
+    "3dd9d5727080c0d2"
+  ]
+}

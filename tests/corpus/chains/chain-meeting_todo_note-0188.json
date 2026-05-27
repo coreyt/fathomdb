@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "d340fca47b5544e4"
+  ],
+  "chain_id": "chain-meeting_todo_note-0188",
+  "chain_shape": "MEETING->TODO->NOTE(contradicts)",
+  "doc_ids": [
+    "d340fca47b5544e4",
+    "5d0b43b52800e39e",
+    "fe482506cff3a313"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "d340fca47b5544e4",
+        "5d0b43b52800e39e",
+        "fe482506cff3a313"
+      ],
+      "query": "what did we decide in the meeting about \"What was concluded on semantic specification?\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "fe482506cff3a313",
+        "d340fca47b5544e4"
+      ],
+      "query": "did we end up reversing the academic decision?",
+      "relation_type": "contradicts"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "5d0b43b52800e39e",
+    "fe482506cff3a313"
+  ]
+}

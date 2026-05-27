@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "e7f18ad35dfb4d5d"
+  ],
+  "chain_id": "chain-todo_note_email-0155",
+  "chain_shape": "TODO->NOTE->EMAIL",
+  "doc_ids": [
+    "e7f18ad35dfb4d5d",
+    "1e32cf2fb17a2575",
+    "121f17342fe844df"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "e7f18ad35dfb4d5d",
+        "1e32cf2fb17a2575",
+        "121f17342fe844df"
+      ],
+      "query": "what's the status of the compliance-audit to-do about touch base w judy on WF account?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "1e32cf2fb17a2575",
+    "121f17342fe844df"
+  ]
+}

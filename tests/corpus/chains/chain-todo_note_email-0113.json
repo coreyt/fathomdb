@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "32ec37a4f13bed9b"
+  ],
+  "chain_id": "chain-todo_note_email-0113",
+  "chain_shape": "TODO->NOTE->EMAIL",
+  "doc_ids": [
+    "32ec37a4f13bed9b",
+    "7b4b6a8fbc164c32",
+    "6f0d5c037e170d35"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "32ec37a4f13bed9b",
+        "7b4b6a8fbc164c32",
+        "6f0d5c037e170d35"
+      ],
+      "query": "what's the status of the Q1-launch to-do about plant more plants?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "7b4b6a8fbc164c32",
+    "6f0d5c037e170d35"
+  ]
+}

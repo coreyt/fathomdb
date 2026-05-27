@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "33db060edd0eb37c"
+  ],
+  "chain_id": "chain-todo_note_email-0173",
+  "chain_shape": "TODO->NOTE->EMAIL",
+  "doc_ids": [
+    "33db060edd0eb37c",
+    "854560fdb497089f",
+    "8f7cf9b05589d10a"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "33db060edd0eb37c",
+        "854560fdb497089f",
+        "8f7cf9b05589d10a"
+      ],
+      "query": "what's the status of the household to-do about review orienteering basics?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "854560fdb497089f",
+    "8f7cf9b05589d10a"
+  ]
+}

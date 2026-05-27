@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "c101f09654c2f6d7"
+  ],
+  "chain_id": "chain-article_note_todo-0034",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "c101f09654c2f6d7",
+    "4c8f6c3c8789d857",
+    "b46bbe169d96fbd1"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "c101f09654c2f6d7",
+        "4c8f6c3c8789d857",
+        "b46bbe169d96fbd1"
+      ],
+      "query": "what's on my to-do list from the article about \"NAIROBI, Kenya (CNN) -- Gangs of young men armed with machetes are roaming the s\"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "4c8f6c3c8789d857",
+    "b46bbe169d96fbd1"
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "881fc4f399a3d669"
+  ],
+  "chain_id": "chain-article_note_todo-0076",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "881fc4f399a3d669",
+    "40ac3f6a2499c685",
+    "43c747a99d3b943f"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "881fc4f399a3d669",
+        "40ac3f6a2499c685",
+        "43c747a99d3b943f"
+      ],
+      "query": "what's on my to-do list from the article about \"(CNN) -- Antarctica is warming in line with the rest of the world, according to \"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "40ac3f6a2499c685",
+    "43c747a99d3b943f"
+  ]
+}

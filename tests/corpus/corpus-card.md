@@ -149,14 +149,28 @@ Relation vocabulary (locked):
 `contradicts`, `mentions`, `cites`.
 
 Synthetic connective docs (the notes/emails/todos generated
-by the chain generator) live in the appropriate per-source
-JSONL with `provenance: synthetic-chain` and `tags` containing
-the chain_id. **Synthetic content must not exceed 20 % of the
-total corpus by doc count** — escalation trigger per the
-handoff.
+by the chain generator) live in a dedicated JSONL at
+`data/corpus-data/raw/chain_connectives.jsonl` with
+`provenance: synthetic-chain:...` and `tags` containing
+`synthetic-chain` + `chain:<chain_id>` + `role:<role>`.
+**Synthetic content must not exceed 20 % of the total corpus
+by doc count** — escalation trigger per the handoff.
 
-Determinism: fixed RNG seed; documented here once generator
-lands.
+Determinism: generator seed `0xC4A1C0A0C4A1AB1E`. Re-running
+`tests/corpus/scripts/generate_chain_corpus.py` against the
+same Pack-1 JSONLs produces bit-identical chain JSONs +
+connective JSONL.
+
+**Pack-2 state (2026-05-27)**: 200 chains across 6 shapes
+(EMAIL→NOTE→TODO, ARTICLE→NOTE→EMAIL, MEETING→TODO→NOTE
+contradicts, EMAIL→MEETING→TODO, ARTICLE→NOTE→TODO,
+TODO→NOTE→EMAIL), 301 ground-truth queries across 5 relation
+types (`summarizes`, `action_from`, `follows_up_on`,
+`mentions`, `contradicts`). 367 synthetic connective docs
+added to the corpus = 4.8 % of total — well under the 20 %
+cap. The `replies_to` / `cites` relations remain unused; they
+need a `paper` source_type or richer email-thread anchoring
+which is deferred behind PMC/S2ORC.
 
 ## CI artifact + cache layout
 
@@ -208,6 +222,7 @@ Authoritative copy lives in
 | Synthetic notes | generator seed `0x53EEDFA7C012B0F1` | n/a | `b4d19f05…55eb3` |
 | QMSum | GH `Yale-LILY/QMSum` archive | rev `83d7768c…bb7e` (2023-08-29), arch sha `b6970687…7d7f` | `19a2e5b4…5e2e` |
 | EnronQA | HF `MichaelR207/enron_qa_0922` | rev `c0b3a919…221e` (2024-09-22) | `bc30eb06…48ab` |
+| Chain connectives | generator seed `0xC4A1C0A0C4A1AB1E` over Pack-1 anchors | n/a | `21777248…58d07` |
 
 ## Out of scope for 0.7.0
 

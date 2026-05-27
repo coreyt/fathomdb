@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "da51a6e5d19b5fb6"
+  ],
+  "chain_id": "chain-email_note_todo-0060",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "da51a6e5d19b5fb6",
+    "31143780a8e6a1b0",
+    "d6d7eb5d32714ea9"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "da51a6e5d19b5fb6",
+        "31143780a8e6a1b0",
+        "d6d7eb5d32714ea9"
+      ],
+      "query": "what was decided after the email about \"packers beat the steelers\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "d6d7eb5d32714ea9",
+        "31143780a8e6a1b0"
+      ],
+      "query": "what's the follow-up action from steven.south@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "31143780a8e6a1b0",
+    "d6d7eb5d32714ea9"
+  ]
+}

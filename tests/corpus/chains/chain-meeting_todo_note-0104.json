@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "7356a5fb02f9aa85"
+  ],
+  "chain_id": "chain-meeting_todo_note-0104",
+  "chain_shape": "MEETING->TODO->NOTE(contradicts)",
+  "doc_ids": [
+    "7356a5fb02f9aa85",
+    "9b34b0bb1e57f723",
+    "a665c61e97cdd4ea"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "7356a5fb02f9aa85",
+        "9b34b0bb1e57f723",
+        "a665c61e97cdd4ea"
+      ],
+      "query": "what did we decide in the meeting about \"Summarize the discussion about the user Interfaceof the remote control.\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "a665c61e97cdd4ea",
+        "7356a5fb02f9aa85"
+      ],
+      "query": "did we end up reversing the product decision?",
+      "relation_type": "contradicts"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "9b34b0bb1e57f723",
+    "a665c61e97cdd4ea"
+  ]
+}

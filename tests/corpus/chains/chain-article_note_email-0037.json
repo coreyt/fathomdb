@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "58a2636f3923b9c5"
+  ],
+  "chain_id": "chain-article_note_email-0037",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "58a2636f3923b9c5",
+    "3777c5ef1f3ace30",
+    "2d79684e35e1c484"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "58a2636f3923b9c5",
+        "3777c5ef1f3ace30",
+        "2d79684e35e1c484"
+      ],
+      "query": "what's the context around \"EDINBURGH, Scotland -- Hibernian have named former striker Mixu Paatelainen as t\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "2d79684e35e1c484",
+        "3777c5ef1f3ace30"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "3777c5ef1f3ace30",
+    "2d79684e35e1c484"
+  ]
+}

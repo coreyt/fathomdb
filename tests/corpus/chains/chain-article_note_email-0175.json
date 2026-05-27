@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "39e45ca073d590f0"
+  ],
+  "chain_id": "chain-article_note_email-0175",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "39e45ca073d590f0",
+    "732dcff98d782285",
+    "c3c1e9a4b75800e0"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "39e45ca073d590f0",
+        "732dcff98d782285",
+        "c3c1e9a4b75800e0"
+      ],
+      "query": "what's the context around \"(CNN) -- Top Democratic lawmakers called Tuesday for high taxes on the controver\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "c3c1e9a4b75800e0",
+        "732dcff98d782285"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "732dcff98d782285",
+    "c3c1e9a4b75800e0"
+  ]
+}

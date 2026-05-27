@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "2dad2c90fa3cad4b"
+  ],
+  "chain_id": "chain-email_note_todo-0054",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "2dad2c90fa3cad4b",
+    "170dad4bbe77e36a",
+    "6c79917b0015502f"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "2dad2c90fa3cad4b",
+        "170dad4bbe77e36a",
+        "6c79917b0015502f"
+      ],
+      "query": "what was decided after the email about \"Subject: RE: DSL Sender: stacy.dickson@enron.com Recipients: ['ssmgranmayeh@msn.\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "6c79917b0015502f",
+        "170dad4bbe77e36a"
+      ],
+      "query": "what's the follow-up action from dickson-s?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "170dad4bbe77e36a",
+    "6c79917b0015502f"
+  ]
+}

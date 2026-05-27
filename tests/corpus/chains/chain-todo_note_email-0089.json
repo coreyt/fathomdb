@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "5285f24e7ec0d0fe"
+  ],
+  "chain_id": "chain-todo_note_email-0089",
+  "chain_shape": "TODO->NOTE->EMAIL",
+  "doc_ids": [
+    "5285f24e7ec0d0fe",
+    "272ea127cd8f4c58",
+    "e26fe54c9c170fb4"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "5285f24e7ec0d0fe",
+        "272ea127cd8f4c58",
+        "e26fe54c9c170fb4"
+      ],
+      "query": "what's the status of the tax-prep to-do about cancel renters insurance with AAA?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "272ea127cd8f4c58",
+    "e26fe54c9c170fb4"
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "c9ba94e0126de256",
+    "019559b229752a43"
+  ],
+  "chain_id": "chain-email_meeting_todo-0177",
+  "chain_shape": "EMAIL->MEETING->TODO",
+  "doc_ids": [
+    "c9ba94e0126de256",
+    "019559b229752a43",
+    "ac6017c988680975"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "c9ba94e0126de256",
+        "019559b229752a43",
+        "ac6017c988680975"
+      ],
+      "query": "what's the action item from carol.clair@enron.com's thread that ended in a meeting?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "ac6017c988680975"
+  ]
+}

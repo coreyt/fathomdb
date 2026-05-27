@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "cd30113a9f064896"
+  ],
+  "chain_id": "chain-email_note_todo-0006",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "cd30113a9f064896",
+    "77a4ad3f54838157",
+    "2662d31544349ea1"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "cd30113a9f064896",
+        "77a4ad3f54838157",
+        "2662d31544349ea1"
+      ],
+      "query": "what was decided after the email about \"next weekend\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "2662d31544349ea1",
+        "77a4ad3f54838157"
+      ],
+      "query": "what's the follow-up action from monique.sanchez@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "77a4ad3f54838157",
+    "2662d31544349ea1"
+  ]
+}

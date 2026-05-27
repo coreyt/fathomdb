@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "5869df9bfae424b1"
+  ],
+  "chain_id": "chain-meeting_todo_note-0146",
+  "chain_shape": "MEETING->TODO->NOTE(contradicts)",
+  "doc_ids": [
+    "5869df9bfae424b1",
+    "af1f2a4110a96d1d",
+    "f7a8b1de8914e533"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "5869df9bfae424b1",
+        "af1f2a4110a96d1d",
+        "f7a8b1de8914e533"
+      ],
+      "query": "what did we decide in the meeting about \"Committee meeting: covid_4\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "f7a8b1de8914e533",
+        "5869df9bfae424b1"
+      ],
+      "query": "did we end up reversing the committee decision?",
+      "relation_type": "contradicts"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "af1f2a4110a96d1d",
+    "f7a8b1de8914e533"
+  ]
+}

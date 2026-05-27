@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "a5a60d810b35538b"
+  ],
+  "chain_id": "chain-article_note_todo-0046",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "a5a60d810b35538b",
+    "4bf75fe322b72111",
+    "848acf84d108eeba"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "a5a60d810b35538b",
+        "4bf75fe322b72111",
+        "848acf84d108eeba"
+      ],
+      "query": "what's on my to-do list from the article about \"(CNN) -- The ambush by up to a dozen gunmen of a bus carrying members of the Sri\"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "4bf75fe322b72111",
+    "848acf84d108eeba"
+  ]
+}

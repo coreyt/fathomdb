@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "ce38a9881ce31746"
+  ],
+  "chain_id": "chain-email_note_todo-0150",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "ce38a9881ce31746",
+    "0247de8f7541ae99",
+    "60388fb0194056a4"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "ce38a9881ce31746",
+        "0247de8f7541ae99",
+        "60388fb0194056a4"
+      ],
+      "query": "what was decided after the email about \"Hiring People\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "60388fb0194056a4",
+        "0247de8f7541ae99"
+      ],
+      "query": "what's the follow-up action from rick.buy@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "0247de8f7541ae99",
+    "60388fb0194056a4"
+  ]
+}

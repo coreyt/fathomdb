@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "b8ec5c0a0e7dc157"
+  ],
+  "chain_id": "chain-email_note_todo-0168",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "b8ec5c0a0e7dc157",
+    "baf10c1fe8ef6660",
+    "2f823b3d84d4e3cc"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "b8ec5c0a0e7dc157",
+        "baf10c1fe8ef6660",
+        "2f823b3d84d4e3cc"
+      ],
+      "query": "what was decided after the email about \"Credit Report -4/18/01\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "2f823b3d84d4e3cc",
+        "baf10c1fe8ef6660"
+      ],
+      "query": "what's the follow-up action from darron.giron@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "baf10c1fe8ef6660",
+    "2f823b3d84d4e3cc"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "c98dab028bdf7b4e"
+  ],
+  "chain_id": "chain-email_note_todo-0114",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "c98dab028bdf7b4e",
+    "80a281af8b656239",
+    "384325ccca42790c"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "c98dab028bdf7b4e",
+        "80a281af8b656239",
+        "384325ccca42790c"
+      ],
+      "query": "what was decided after the email about \"Subject: Length from APX Sender: bill.iii@enron.com Recipients: ['portland.shift\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "384325ccca42790c",
+        "80a281af8b656239"
+      ],
+      "query": "what's the follow-up action from merriss-s?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "80a281af8b656239",
+    "384325ccca42790c"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "92e777f294cab3d7"
+  ],
+  "chain_id": "chain-email_note_todo-0132",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "92e777f294cab3d7",
+    "1625e2bc99401e99",
+    "aa254a07ddfff6a5"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "92e777f294cab3d7",
+        "1625e2bc99401e99",
+        "aa254a07ddfff6a5"
+      ],
+      "query": "what was decided after the email about \"Curtail200206.db Question\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "aa254a07ddfff6a5",
+        "1625e2bc99401e99"
+      ],
+      "query": "what's the follow-up action from mark.fisher@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "1625e2bc99401e99",
+    "aa254a07ddfff6a5"
+  ]
+}

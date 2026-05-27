@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "00d7bd62dd0324d6"
+  ],
+  "chain_id": "chain-email_note_todo-0000",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "00d7bd62dd0324d6",
+    "4e5bf59b78e7ad53",
+    "5a4fc48a23b984ff"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "00d7bd62dd0324d6",
+        "4e5bf59b78e7ad53",
+        "5a4fc48a23b984ff"
+      ],
+      "query": "what was decided after the email about \"Re: ClickPaper counterparty approvals, 10-13-00\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "5a4fc48a23b984ff",
+        "4e5bf59b78e7ad53"
+      ],
+      "query": "what's the follow-up action from tana.jones@enron.com?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "4e5bf59b78e7ad53",
+    "5a4fc48a23b984ff"
+  ]
+}

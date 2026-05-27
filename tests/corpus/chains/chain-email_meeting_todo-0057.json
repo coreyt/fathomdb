@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "fc30537e36f03b11",
+    "dbdc585508747d86"
+  ],
+  "chain_id": "chain-email_meeting_todo-0057",
+  "chain_shape": "EMAIL->MEETING->TODO",
+  "doc_ids": [
+    "fc30537e36f03b11",
+    "dbdc585508747d86",
+    "df04c7fae7e2bf6b"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "fc30537e36f03b11",
+        "dbdc585508747d86",
+        "df04c7fae7e2bf6b"
+      ],
+      "query": "what's the action item from benjamin.rogers@enron.com's thread that ended in a meeting?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "df04c7fae7e2bf6b"
+  ]
+}

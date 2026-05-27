@@ -57,6 +57,32 @@
       "sha256": "19a2e5b45174380b3bf46b2926b66500e121d2ac7e0679009957440b8f9f5e2e",
       "acquired_at": "2026-05-27"
     },
+    "chain_connectives": {
+      "script": "generate_chain_corpus.py",
+      "upstream": {
+        "kind": "synthetic",
+        "seed": "0xC4A1C0A0C4A1AB1E",
+        "anchors": "Pack-1 JSONLs in data/corpus-data/raw/"
+      },
+      "license": "Apache-2.0",
+      "distribution": "commit",
+      "output": "data/corpus-data/raw/chain_connectives.jsonl",
+      "doc_count": 367,
+      "doc_count_breakdown": {"note": 167, "todo": 133, "email": 67},
+      "chain_count": 200,
+      "chain_shapes": [
+        "EMAIL->NOTE->TODO",
+        "ARTICLE->NOTE->EMAIL",
+        "MEETING->TODO->NOTE(contradicts)",
+        "EMAIL->MEETING->TODO",
+        "ARTICLE->NOTE->TODO",
+        "TODO->NOTE->EMAIL"
+      ],
+      "ground_truth_query_count": 301,
+      "chain_definitions": "tests/corpus/chains/chain-*.json (committed)",
+      "sha256": "2177724835bc74fc969e586d62b5c49c02dfff7deabc9911c3f1c630f3c58d07",
+      "acquired_at": "2026-05-27"
+    },
     "synthetic_notes": {
       "script": "generate_synthetic_notes.py",
       "upstream": {

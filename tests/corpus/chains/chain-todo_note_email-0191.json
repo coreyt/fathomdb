@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "3cb8f186fc2a3bbd"
+  ],
+  "chain_id": "chain-todo_note_email-0191",
+  "chain_shape": "TODO->NOTE->EMAIL",
+  "doc_ids": [
+    "3cb8f186fc2a3bbd",
+    "b36fd13e20a152d4",
+    "fd88c0963371e96b"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "3cb8f186fc2a3bbd",
+        "b36fd13e20a152d4",
+        "fd88c0963371e96b"
+      ],
+      "query": "what's the status of the household to-do about Take out the dog?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "b36fd13e20a152d4",
+    "fd88c0963371e96b"
+  ]
+}

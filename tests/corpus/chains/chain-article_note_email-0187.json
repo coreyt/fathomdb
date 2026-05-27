@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "5e5d37afe602c937"
+  ],
+  "chain_id": "chain-article_note_email-0187",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "5e5d37afe602c937",
+    "282e413213d546eb",
+    "53ab06396c083aca"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "5e5d37afe602c937",
+        "282e413213d546eb",
+        "53ab06396c083aca"
+      ],
+      "query": "what's the context around \"(CNN) -- In an age when many people become celebrities through looks or connecti\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "53ab06396c083aca",
+        "282e413213d546eb"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "282e413213d546eb",
+    "53ab06396c083aca"
+  ]
+}

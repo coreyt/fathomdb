@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "d136a0ca4068b6a7"
+  ],
+  "chain_id": "chain-email_note_todo-0084",
+  "chain_shape": "EMAIL->NOTE->TODO",
+  "doc_ids": [
+    "d136a0ca4068b6a7",
+    "c693cdd11fa8ea08",
+    "45b042868e734687"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "d136a0ca4068b6a7",
+        "c693cdd11fa8ea08",
+        "45b042868e734687"
+      ],
+      "query": "what was decided after the email about \"Subject: hEY Sender: mark.guzman@enron.com Recipients: ['albert.meyers@enron.com\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "45b042868e734687",
+        "c693cdd11fa8ea08"
+      ],
+      "query": "what's the follow-up action from meyers-a?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "c693cdd11fa8ea08",
+    "45b042868e734687"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "f99d00b4c5237519"
+  ],
+  "chain_id": "chain-article_note_email-0085",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "f99d00b4c5237519",
+    "a272e39c142bed42",
+    "be9ed1addca76906"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "f99d00b4c5237519",
+        "a272e39c142bed42",
+        "be9ed1addca76906"
+      ],
+      "query": "what's the context around \"(CNN) -- In focus: The business of education \"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "be9ed1addca76906",
+        "a272e39c142bed42"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "a272e39c142bed42",
+    "be9ed1addca76906"
+  ]
+}

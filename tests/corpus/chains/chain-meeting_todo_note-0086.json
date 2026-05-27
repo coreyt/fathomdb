@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "6d2425b659536ee5"
+  ],
+  "chain_id": "chain-meeting_todo_note-0086",
+  "chain_shape": "MEETING->TODO->NOTE(contradicts)",
+  "doc_ids": [
+    "6d2425b659536ee5",
+    "3cdfa3e40ca8400e",
+    "2d93b481488c5ea7"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "6d2425b659536ee5",
+        "3cdfa3e40ca8400e",
+        "2d93b481488c5ea7"
+      ],
+      "query": "what did we decide in the meeting about \"Summarize the discussion about desired features of the new remote controls.\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "2d93b481488c5ea7",
+        "6d2425b659536ee5"
+      ],
+      "query": "did we end up reversing the product decision?",
+      "relation_type": "contradicts"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "3cdfa3e40ca8400e",
+    "2d93b481488c5ea7"
+  ]
+}

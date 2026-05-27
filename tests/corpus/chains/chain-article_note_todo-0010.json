@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "39fba63d1b7e2392"
+  ],
+  "chain_id": "chain-article_note_todo-0010",
+  "chain_shape": "ARTICLE->NOTE->TODO",
+  "doc_ids": [
+    "39fba63d1b7e2392",
+    "d987b4f748c6bab7",
+    "e91360611f31d61e"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "39fba63d1b7e2392",
+        "d987b4f748c6bab7",
+        "e91360611f31d61e"
+      ],
+      "query": "what's on my to-do list from the article about \"(CNN) -- A plane crash in eastern Guatemala on Sunday killed 10 people, includin\"?",
+      "relation_type": "action_from"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "d987b4f748c6bab7",
+    "e91360611f31d61e"
+  ]
+}

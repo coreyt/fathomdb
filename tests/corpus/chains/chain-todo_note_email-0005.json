@@ -1,0 +1,27 @@
+{
+  "anchor_doc_ids": [
+    "89a0e5624f3c7080"
+  ],
+  "chain_id": "chain-todo_note_email-0005",
+  "chain_shape": "TODO->NOTE->EMAIL",
+  "doc_ids": [
+    "89a0e5624f3c7080",
+    "086d1763e5ca7e8e",
+    "f8e301cc278e0af1"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "89a0e5624f3c7080",
+        "086d1763e5ca7e8e",
+        "f8e301cc278e0af1"
+      ],
+      "query": "what's the status of the anniversary to-do about pay mortgage?",
+      "relation_type": "follows_up_on"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "086d1763e5ca7e8e",
+    "f8e301cc278e0af1"
+  ]
+}

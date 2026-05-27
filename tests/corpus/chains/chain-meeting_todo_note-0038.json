@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "50e42e6eb7526a3b"
+  ],
+  "chain_id": "chain-meeting_todo_note-0038",
+  "chain_shape": "MEETING->TODO->NOTE(contradicts)",
+  "doc_ids": [
+    "50e42e6eb7526a3b",
+    "5fae003fd43edcc3",
+    "7fb46ca1cce729d7"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "50e42e6eb7526a3b",
+        "5fae003fd43edcc3",
+        "7fb46ca1cce729d7"
+      ],
+      "query": "what did we decide in the meeting about \"Summarize the discussion about schools causing concern with questions from Irran\"?",
+      "relation_type": "summarizes"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "7fb46ca1cce729d7",
+        "50e42e6eb7526a3b"
+      ],
+      "query": "did we end up reversing the committee decision?",
+      "relation_type": "contradicts"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "5fae003fd43edcc3",
+    "7fb46ca1cce729d7"
+  ]
+}

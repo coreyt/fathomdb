@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "9d170781b6b92c79"
+  ],
+  "chain_id": "chain-article_note_email-0169",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "9d170781b6b92c79",
+    "855152cac8967527",
+    "414a61b980c31b0c"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "9d170781b6b92c79",
+        "855152cac8967527",
+        "414a61b980c31b0c"
+      ],
+      "query": "what's the context around \"WASHINGTON (CNN) -- The U.S\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "414a61b980c31b0c",
+        "855152cac8967527"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "855152cac8967527",
+    "414a61b980c31b0c"
+  ]
+}

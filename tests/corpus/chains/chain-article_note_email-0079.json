@@ -1,0 +1,35 @@
+{
+  "anchor_doc_ids": [
+    "61b0bde32d89c4ef"
+  ],
+  "chain_id": "chain-article_note_email-0079",
+  "chain_shape": "ARTICLE->NOTE->EMAIL",
+  "doc_ids": [
+    "61b0bde32d89c4ef",
+    "ee15f5abeb130e3c",
+    "280c2b53c286e201"
+  ],
+  "ground_truth_queries": [
+    {
+      "expected_top_k_doc_ids": [
+        "61b0bde32d89c4ef",
+        "ee15f5abeb130e3c",
+        "280c2b53c286e201"
+      ],
+      "query": "what's the context around \"(CNN)  -- South Africa inflicted the first home series defeat on Australia in al\"?",
+      "relation_type": "mentions"
+    },
+    {
+      "expected_top_k_doc_ids": [
+        "280c2b53c286e201",
+        "ee15f5abeb130e3c"
+      ],
+      "query": "what did I send alex.barker about research-reading?",
+      "relation_type": "mentions"
+    }
+  ],
+  "synthetic_doc_ids": [
+    "ee15f5abeb130e3c",
+    "280c2b53c286e201"
+  ]
+}
