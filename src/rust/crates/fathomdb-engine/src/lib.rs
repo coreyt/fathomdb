@@ -3286,6 +3286,15 @@ fn encode_vector_blob(vector: &[f32]) -> Vec<u8> {
     vector.iter().flat_map(|value| value.to_le_bytes()).collect()
 }
 
+/// Maps the writer-facing `kind` value to the locked Pack 1
+/// `source_type` partition-key vocabulary. Pack 1 stub for the RED
+/// drift-check test; the full mapping lands with the writer
+/// double-write per `dev/design/0.7.0-vector-quant-pack1.md` D3.
+#[allow(dead_code)]
+fn resolve_source_type(_kind: &str) -> Result<&'static str, EngineError> {
+    Err(EngineError::Storage)
+}
+
 fn map_runtime_embedder_error(err: RuntimeEmbedderError) -> EngineError {
     match err {
         RuntimeEmbedderError::Failed { .. } | RuntimeEmbedderError::Timeout => {
@@ -4092,8 +4101,37 @@ unsafe extern "C" fn profile_callback_trampoline(
 
 #[cfg(test)]
 mod tests {
-    use super::{Engine, PreparedWrite};
+    use super::{resolve_source_type, Engine, PreparedWrite};
     use tempfile::TempDir;
+
+    // Pack 1 drift-detection: the Rust helper used by the two writer
+    // sites must agree with the CASE WHEN inlined in migration step 9
+    // for every kind in the locked Pack 1 vocabulary (incl. the
+    // synthetic `doc` -> `article` coercion). See
+    // `dev/design/0.7.0-vector-quant-pack1.md` D3 / D4.
+    #[test]
+    #[ignore = "RED: helper stub returns Err until Pack 1 writer commit"]
+    fn resolve_source_type_drift_check() {
+        let cases: &[(&str, &str)] = &[
+            ("email", "email"),
+            ("article", "article"),
+            ("paper", "paper"),
+            ("meeting", "meeting"),
+            ("note", "note"),
+            ("todo", "todo"),
+            ("doc", "article"),
+        ];
+        for (kind, want) in cases {
+            let got = resolve_source_type(kind).unwrap_or_else(|_| {
+                panic!("resolve_source_type({kind}) returned Err; want Ok({want})")
+            });
+            assert_eq!(got, *want, "mapping drift for kind={kind}");
+        }
+        assert!(
+            resolve_source_type("banana").is_err(),
+            "unknown kind must surface as writer error"
+        );
+    }
 
     #[test]
     fn write_advances_cursor() {
