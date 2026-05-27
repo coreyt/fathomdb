@@ -1,0 +1,59 @@
+{
+  "slice": "0.7.0-PVQ-P1-DESIGN-fix-3",
+  "timestamp": "20260527T135512Z",
+  "branch": "phase-0.7.0-PVQ-P1-DESIGN-20260527T132416Z",
+  "baseline_commit": "f7343c8",
+  "model": "claude-opus-4-7",
+  "effort": "high",
+  "verdict_addressed": "dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-2-review-20260527T135041Z.md",
+  "findings_addressed": [
+    {
+      "id": "fix-3.1",
+      "severity": "high",
+      "summary": "D4 unknown-kind preflight via CHECK-constraint sentinel table replaces unsupported ELSE NULL + NOT NULL claim.",
+      "primitive": "CREATE TEMP TABLE _vec0_migration_assertion(check_passes INTEGER NOT NULL CHECK(check_passes = 1)) + INSERT of CASE WHEN EXISTS(... kind NOT IN locked-vocab ...) THEN 0 ELSE 1 END.",
+      "citations": [
+        "https://www.sqlite.org/lang_createtable.html#check_constraints",
+        "src/rust/crates/fathomdb-schema/src/lib.rs:273-288 (apply_one)",
+        "src/rust/crates/fathomdb-schema/src/lib.rs:276 (conn.execute_batch(migration.sql) — multi-statement semantics re-verified)"
+      ],
+      "case_else_branch": "'article' (defence-in-depth past the preflight; preflight already guarantees no unknown kinds reach the INSERT)"
+    },
+    {
+      "id": "fix-3.2",
+      "severity": "medium",
+      "summary": "created_at filled by strftime('%s','now') at INSERT time; removed Rust-side <now> rendering claim and lib.rs:1119 anchor.",
+      "citations": ["https://www.sqlite.org/lang_datefunc.html"],
+      "uniform_timestamp_note": "SQLite documents that built-in date/time functions return the same value across all rows in a single statement when no varying arguments are passed."
+    },
+    {
+      "id": "fix-3.3",
+      "severity": "low",
+      "summary": "D8 stale 'INSERT INTO vector_default_v2 ... SELECT v.rowid' reference rewritten against the staged-copy migration shape.",
+      "citations": [
+        "src/rust/crates/fathomdb-engine/src/lib.rs:2174-2175",
+        "src/rust/crates/fathomdb-engine/src/lib.rs:2177",
+        "src/rust/crates/fathomdb-engine/src/lib.rs:2181",
+        "src/rust/crates/fathomdb-engine/src/lib.rs:2265"
+      ]
+    }
+  ],
+  "apply_one_verification": {
+    "execution_model": "multi-statement",
+    "evidence": "fathomdb-schema/src/lib.rs:276 invokes conn.execute_batch(migration.sql); :274 begins the transaction with BEGIN IMMEDIATE; :282 commits; :284 rolls back on error.",
+    "consequence": "Preflight assertion can live as a prefix statement in the same migration SQL string; no Rust-side preflight or single-statement CTE workaround required."
+  },
+  "files_changed": [
+    "dev/design/0.7.0-vector-quant-pack1.md"
+  ],
+  "outputs": [
+    "dev/design/0.7.0-vector-quant-pack1.md (D4 + D8 edited; Fix-3 changelog appended; status -> draft fix-3)",
+    "dev/plans/runs/0.7.0-PVQ-P1-DESIGN-fix-3-output.json"
+  ],
+  "constraints_honored": {
+    "additive_commit_on_top_of_f7343c8": true,
+    "no_code_changes": true,
+    "rust_anchors_verified": true,
+    "ascii_only": true
+  }
+}

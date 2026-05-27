@@ -1,0 +1,1 @@
+fix-3 log: edits to dev/design/0.7.0-vector-quant-pack1.md (D4 preflight, strftime, D8 ref) and closure JSON. apply_one verified at src/rust/crates/fathomdb-schema/src/lib.rs:273-288 (execute_batch -> multi-statement).
