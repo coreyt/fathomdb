@@ -185,6 +185,7 @@ Authoritative copy lives in
 | Landes to-dos | GH `plandes/todo-task` `resources/todo-dataset.json` | rev `06bcd261…d26f` (2018-06-29) | `74f02482…0e812` |
 | bahmutov daily-logs | GH `bahmutov/daily-logs` monthly Markdown | rev `521476da…19b7` (2020-09-01) | `bdecf3e8…0e81` |
 | Enron (CMU) | CMU `enron_mail_20150507.tar.gz` | tarball sha `b3da1b3f…48ca7` (2015-05-07) | `c4df0c71…486ab` |
+| Synthetic notes | generator seed `0x53EEDFA7C012B0F1` | n/a | `b4d19f05…55eb3` |
 
 ## Out of scope for 0.7.0
 
