@@ -1,0 +1,2578 @@
+OpenAI Codex v0.120.0 (research preview)
+--------
+workdir: /tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 019e69eb-c76d-73b1-91ca-3331029ab63f
+--------
+user
+Reviewing Phase 0.7.0-PVQ-P2-RED — tests-only slice.
+
+Branch: phase-0.7.0-PVQ-P2-RED-20260527T144439Z, HEAD eee91b8.
+Baseline: cc5d15e. Cherry-pick: d468999 on main.
+
+Required reading:
+- dev/plans/runs/0.7.0-PVQ-P2-RED-output.json (closure)
+- The single commit eee91b8 (tests/perf_gates.rs + dev/test-plan.md)
+- dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md §Pack 2.1
+- dev/adr/ADR-0.7.0-vector-binary-quant.md §2 point 4 (recall floor 0.90 @ k=10)
+- src/rust/crates/fathomdb-engine/src/lib.rs:2317-2342 (existing reader path that the ground-truth SQL mirrors)
+- dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json (canonical-CI baseline that proves RED at N=1M)
+
+Verdict format: PASS|CONCERN|BLOCK with findings, Addressed, What passed, Reviewer notes.
+
+Focus narrowly on:
+1. AC013_BUDGET_P50/P99 changed to 80/300 ms.
+2. New ac_013b_recall_at_10_floor test: ground-truth SQL byte-matches the production reader (so recall=1.0 pre-IMPL); recall metric is mean over queries; floor 0.90 asserted; AGENT_LONG-gated.
+3. No production code changes (no edits in src/rust/crates/fathomdb-engine/src/lib.rs or schema crate).
+4. dev/test-plan.md documents AC-013 repin + AC-013b.
+5. Will the new 80/300 budget genuinely fail at N=1M canonical-CI? (cite W4.1 measurement)
+6. Will the recall test still be GREEN at dev-box AND canonical pre-IMPL? (yes — same SQL on both paths)
+
+Be terse — at most 2 findings. PASS expected.
+Sandbox read-only; main thread promotes verdict.
+
+codex
+Reviewing the tests-only slice against the required artifacts first, then I’ll compare the new test logic and budgets to the cited baseline evidence and produce a narrow verdict.
+exec
+/bin/bash -lc "sed -n '1,220p' MEMORY.md" in /tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z
+ exited 2 in 0ms:
+sed: can't read MEMORY.md: No such file or directory
+
+exec
+/bin/bash -lc "rg --files -g 'feedback_*.md'" in /tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z
+ exited 1 in 0ms:
+codex
+The repo root here doesn’t contain `MEMORY.md`, so I’m locating the actual files the repo instructions point to before reading the requested slice.
+exec
+/bin/bash -lc pwd in /tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z
+ succeeded in 0ms:
+/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z
+
+exec
+/bin/bash -lc 'git rev-parse --show-toplevel' in /tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z
+ succeeded in 0ms:
+/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z
+
+exec
+/bin/bash -lc "rg --files | rg '("'^|/)MEMORY'"\\.md"'$|(''^|/)feedback_.*'"\\.md"'$|AGENTS'"\\.md"'$'"'" in /tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z
+ succeeded in 0ms:
+AGENTS.md
+
+codex
+I’ve confirmed this worktree only exposes `AGENTS.md`; there’s no checked-in `MEMORY.md` or `feedback_*.md` to read here, so I’m proceeding with the repo-local artifacts the review request explicitly named.
+exec
+/bin/bash -lc 'git show --stat --oneline --name-only eee91b8' in /tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z
+ succeeded in 0ms:
+eee91b8 test(0.7.0): Pack 2 RED — re-pin AC-013 to 80/300 ms; add AC-013b recall@10 floor
+dev/plans/runs/0.7.0-PVQ-P2-RED-20260527T145000Z.log
+dev/plans/runs/0.7.0-PVQ-P2-RED-output.json
+dev/test-plan.md
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs
+
+exec
+/bin/bash -lc "sed -n '1,220p' dev/plans/runs/0.7.0-PVQ-P2-RED-output.json" in /tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z
+ succeeded in 0ms:
+{
+  "slice_id": "0.7.0-PVQ-P2-RED",
+  "phase": "RED tests for Pack 2 (budget repin + recall@10 floor)",
+  "model": "claude-opus-4-7",
+  "effort": "high",
+  "worktree": "/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z",
+  "branch": "phase-0.7.0-PVQ-P2-RED-20260527T144439Z",
+  "ts": "20260527T145000Z",
+  "files_changed": [
+    "src/rust/crates/fathomdb-engine/tests/perf_gates.rs",
+    "dev/test-plan.md"
+  ],
+  "production_code_changed": false,
+  "ac_013_budget_repin": {
+    "old_p50_ms": 50,
+    "old_p99_ms": 200,
+    "new_p50_ms": 80,
+    "new_p99_ms": 300,
+    "rationale": "HITL-locked target post bit-KNN + f32 rerank (dev/plans/0.7.0-HITL-recommendations.md). Canonical-CI N=1M observed p50=2048 ms / p99=2327 ms on the f32-brute-force read path (dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json), so the new 80/300 budget is RED at canonical scale until P2-IMPL lands."
+  },
+  "ac_013b_recall_test": {
+    "fn_name": "ac_013b_recall_at_10_floor",
+    "file": "src/rust/crates/fathomdb-engine/tests/perf_gates.rs",
+    "floor": 0.90,
+    "fixture_reuse": "seed_ac013_corpus + ac013_query_bodies (same corpus + held-out queries as AC-013)",
+    "ground_truth_path": "raw rusqlite::Connection on engine.path() running 'SELECT rowid FROM vector_default WHERE embedding MATCH vec_f32(?1) ORDER BY distance LIMIT 10' + canonical_nodes body lookup by write_cursor (mirrors lib.rs:2317-2342)",
+    "production_path": "engine.search(query).results",
+    "metric": "mean over PERF_SAMPLES of |prod_top10 ∩ ground_truth_top10| / 10",
+    "log_line": "RECALL_NUMBERS n=<N> samples=<S> recall_at_10=<R>",
+    "gating": "long_run_enabled() / AGENT_LONG=1 (same as AC-013)"
+  },
+  "ac_013_dev_box_smoke_after_repin": {
+    "n": 10000,
+    "samples": 1000,
+    "seed_ms": 255,
+    "p50_ms": 8,
+    "p99_ms": 13,
+    "budget_p50_ms": 80,
+    "budget_p99_ms": 300,
+    "passed": true,
+    "note": "dev-box smoke remains GREEN against the new 80/300 budget (8/13 << 80/300). RED expected at canonical N=1M per the cited W4.1 measurement."
+  },
+  "recall_dev_box_smoke": {
+    "n": 10000,
+    "samples": 1000,
+    "recall_at_10": 1.0,
+    "floor": 0.90,
+    "passed": true,
+    "note": "Pre-Pack-2-IMPL the production read path is byte-equal to the ground-truth SQL, so recall = 1.0 at land time. Post-P2-IMPL the production path uses bit-KNN + f32 rerank and recall will measure top-10 preservation against the f32 ground truth."
+  },
+  "preexisting_perf_tests": {
+    "ac_013_vector_retrieval_latency": "GREEN at dev-box smoke with new budget",
+    "ac_017_vector_projection_freshness_p99_le_five_seconds": "unchanged, untouched",
+    "ac_018_drain_of_100_vectors_le_two_seconds": "unchanged, untouched",
+    "ac_019_mixed_retrieval_stress_workload_tail": "unchanged, untouched",
+    "ac_020_reads_do_not_serialize_on_a_single_reader_connection": "unchanged, untouched"
+  },
+  "clippy": "cargo clippy -p fathomdb-engine --tests -- -D warnings -> clean",
+  "log_path": "dev/plans/runs/0.7.0-PVQ-P2-RED-20260527T145000Z.log",
+  "canonical_red_evidence": {
+    "source": "dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json",
+    "n": 1000000,
+    "samples": 1000,
+    "p50_ms": 2048,
+    "p99_ms": 2327,
+    "budget_p50_ms": 80,
+    "budget_p99_ms": 300,
+    "verdict": "RED at canonical scale — confirms the budget repin is a real gate, not a no-op"
+  },
+  "next_step_for_orchestrator": "spawn codex reviewer on P2-RED, then advance to P2-IMPL"
+}
+
+exec
+/bin/bash -lc "sed -n '1,260p' dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md" in /tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z
+ succeeded in 0ms:
+# 0.7.0 PERF-VECTOR-QUANT — implementation handoff
+
+Drafted: 2026-05-27
+Type: **Implementation handoff** — TDD-disciplined slice work
+across 2 packs. ADR drafting comes first; then Pack 1; then
+Pack 2.
+
+## What you are shipping
+
+Binary-quantization (`bit[768]`) with f32 rerank on the existing
+`sqlite-vec` extension, plus a metadata+partition_key schema
+migration. Closes AC-013 (currently p50=2048 ms / p99=2327 ms at
+canonical-CI N=1M) to within the proposed 80 / 300 ms budget by
+~20× reduction in per-query bytes-scanned.
+
+The research that grounds this work:
+`dev/notes/0.7.0-vector-cost-research.md` (HITL-RESPONDED).
+Read it first. The HITL doc
+`dev/plans/0.7.0-HITL-recommendations.md` is the authoritative
+record of decisions.
+
+## Hard constraints carried forward
+
+- **Canonical CI is the only honored signal for verdict
+  purposes** (perf-experiments hard constraint).
+- **TDD discipline**: every behavior-change lands with a RED
+  test first. The recall-floor test and the re-pinned AC-013
+  latency test must FAIL at canonical-CI scale before Pack 2's
+  query-path change.
+- **`SQLITE_CONFIG_PCACHE2` is the architectural lever for 0.7.0.**
+  This binary-quant + rerank work is a **data-encoding change**,
+  not a second architectural lever — see the architectural-lever
+  accounting in `dev/notes/0.7.0-vector-cost-research.md`. If a
+  reviewer disagrees, fallback is to ship Pack 1 only in 0.7.0
+  and slip Pack 2 to 0.7.1.
+- **No push to origin without explicit user OK.**
+- **No ADR lock-flip without HITL sign-off.**
+- **Single-writer + projection-cursor freshness contracts**
+  (`crates/fathomdb-engine/src/database_lock.rs`,
+   `crates/fathomdb-engine/src/lib.rs` writer loop) must be
+  preserved. Double-write of the bit column happens inside the
+  same writer transaction that inserts the f32 row.
+- **`EmbedderIdentity` contract is unchanged.** Do NOT switch
+  the embedder. The existing `VaryingEmbedder` /
+  embedder-profile pinning at `lib.rs:3248-3260` stays.
+
+## Read first (in order)
+
+1. `dev/notes/0.7.0-vector-cost-research.md` — load-bearing
+   plan; Pack 1/2 split, HITL locks, technique citations.
+2. `dev/plans/0.7.0-HITL-recommendations.md` — HITL decision
+   record (PCACHE2 stack + this vector-cost work).
+3. `dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json`
+   — the canonical-CI measurement that drove the work.
+4. `src/rust/crates/fathomdb-engine/src/lib.rs`:
+   - **`register_sqlite_vec_extension`** (~line 3107) — extension registration; bit[N] is already available via sqlite-vec 0.1.7.
+   - **`read_search_in_tx`** (~line 2317-2323) — the hot
+     query you're rewriting in Pack 2.
+   - **`_fathomdb_vector_rows` writer insert** (~line 2846)
+     — the ingest site you're double-writing at in Pack 1.
+   - **`vector_default` CREATE VIRTUAL TABLE** (~line
+     3278-3283) — schema you're migrating in Pack 1.
+   - **`_fathomdb_embedder_profiles`** (~line 3248-3260) —
+     embedder identity / profile pinning. Leave alone.
+   - Writer loop pins: lines 2174, 2242, 2846.
+5. `src/rust/crates/fathomdb-engine/tests/perf_gates.rs`:
+   - `ac_013_vector_retrieval_latency` (~line 487).
+   - `ac_019_mixed_retrieval_stress_workload_tail` (~line 609).
+   - `seed_ac013_corpus` + `ac013_query_bodies` for the fixture.
+   - `AC013_BUDGET_*` constants at lines 149-150.
+6. `crates/fathomdb-engine/Cargo.toml` — confirm
+   `sqlite-vec = "=0.1.7"` pin. Pack 1 may optionally bump to
+   `0.1.9` for the constraint-column improvements — only if
+   needed; not required for `bit[N]`.
+
+## Step 0 — Draft the ADR
+
+Before Pack 1 lands a single byte of code, draft an ADR:
+
+`dev/adr/ADR-0.7.0-vector-binary-quant.md` (or rename the
+existing `ADR-0.7.0-text-query-latency-gates-revised.md` if it
+makes more sense to bundle).
+
+The ADR must cover:
+
+- Problem (AC-013 canonical-CI gap, root cause).
+- Decision: binary quantization + f32 rerank on `sqlite-vec`
+  0.1.7; metadata + partition_key on the same migration.
+- Alternatives considered (vectorlite, sqlite-vec ANN alpha,
+  Rust-side `usearch`, embedder change) — all rejected, with
+  reasons from the research doc.
+- Consequences: schema change, ingest cost, query-path
+  rewrite, recall floor as RED test, post-0.7.0 follow-ups.
+- Status: `draft, HITL-required` initially. Lock-flip is
+  orchestrator's; do not flip prematurely.
+
+## Pack 1 — schema migration + ingest double-write
+
+Goal: land the new schema and the new ingest path. **No reader
+behavior change.** AC-013 / AC-019 still measure on the
+unindexed f32 path; their numbers stay at 2048/2327 until
+Pack 2.
+
+### 1.1 — Schema migration
+
+Modify `vector_default` (or add a sibling
+`vector_default_bin`). Decision criterion:
+
+- **Sibling column on the same vec0 table** — simpler
+  application code; sqlite-vec supports mixed `float[768]` +
+  `bit[768]` columns on the same vec0. **Default choice.**
+- **Sibling table** — only if the column-flavour hits a
+  vec0 limitation (e.g., metadata column count limit, which is
+  16 per
+  [sqlite-vec features](https://alexgarcia.xyz/blog/2024/sqlite-vec-metadata-release/index.html)).
+
+New columns:
+
+- `embedding_bin bit[768]` — the load-bearing quantized
+  column. Built with `vec_quantize_binary(embedding)`.
+- `source_type TEXT` — **partition_key, locked HITL
+  2026-05-27**. Cardinality ~6 (email, article, paper, meeting,
+  note, todo). Maps to user-facing search-scope filters and
+  yields fast pre-filtered KNN under `WHERE source_type = ?`.
+  Existing chunk records have a vector kind via
+  `_fathomdb_vector_rows.kind` (verify exact column name when
+  reading lib.rs); map kind → source_type at write time
+  (deterministic 1:1 mapping for current kinds; the
+  source_type vocabulary is the authoritative set going
+  forward).
+- Additional metadata columns (non-partition): `kind` (kept
+  for backwards compat if it differs from source_type),
+  `created_at`, `tags`, `project_mentions`, etc. Per HITL
+  Q5: descriptive retrieval filters go in metadata columns +
+  WHERE predicates, not partition_keys. vec0 metadata column
+  limit is 16; budget the schema with headroom.
+
+Migration SQL: one-pass `INSERT ... SELECT
+vec_quantize_binary(embedding) FROM vector_default` for the
+existing 1 M test corpus. Costs ~64 s on the dev box; well
+inside the workflow timeout.
+
+### 1.2 — Writer ingest double-write
+
+At `_fathomdb_vector_rows` insert site (`lib.rs:2846` area):
+
+- After the f32 `embedding` insert, compute
+  `vec_quantize_binary(embedding)` and insert into the
+  `embedding_bin` column in the same transaction.
+- The bit column is non-nullable post-Pack 1 (every f32 row
+  has a bit row); enforce via NOT NULL or by post-write
+  migration.
+- Populate `kind` + `partition_key` from the existing chunk
+  record fields.
+- The writer transaction commits all columns atomically — no
+  separate commit for the bit column.
+
+### 1.3 — Pack 1 tests
+
+- **Migration round-trip test** — insert a known f32 vector,
+  verify the bit column contains the expected popcount
+  pattern (`vec_distance_hamming` returns 0 against itself
+  after binarization).
+- **Writer regression** — existing AC-012, AC-017, AC-018,
+  AC-020 tests continue to pass. Pack 1 changes schema but
+  not query semantics, so all should be GREEN.
+- **No AC-013 budget change yet** — AC-013 stays pinned at
+  the unindexed 50/200 budget (current `perf_gates.rs:149-150`)
+  and continues to fail at canonical-CI 1M scale until
+  Pack 2.
+
+### 1.4 — Pack 1 closure
+
+Land the schema + ingest changes as one or two commits on
+`main` (campaign convention from PCACHE2). No canonical-CI
+dispatch is required for Pack 1 — the schema change has no
+RED gate at canonical scale. Smoke test via dev-box AC-013 at
+N=10_000 to confirm the ingest double-write doesn't crash.
+
+## Pack 2 — query-path swap + RED tests
+
+Goal: switch the reader to bit-KNN → f32 rerank and pin the
+new AC-013 budgets.
+
+### 2.1 — RED tests FIRST
+
+Before the query rewrite, land:
+
+- **AC-013 latency budget re-pin** in
+  `tests/perf_gates.rs:149-150`:
+  - `AC013_BUDGET_P50 = Duration::from_millis(80);`
+  - `AC013_BUDGET_P99 = Duration::from_millis(300);`
+- **New AC recall-floor test** (e.g., `ac_NNN_recall_at_10`):
+  - Computes brute-force f32 ground truth at test-setup
+    (one pass through the existing f32 column, no
+    rerank).
+  - Runs the production search path, captures top-10 IDs
+    per query.
+  - Asserts `recall@10 ≥ 0.90` (HITL-locked floor).
+  - The ground-truth pass uses the *same* f32 column that
+    Pack 2 retains for rerank — single corpus, both jobs.
+
+Both tests must FAIL at canonical-CI N=1M before the query
+rewrite lands. Dispatch the perf-canonical workflow with
+`targets="ac013 ac019"` and the locked W4.1-stacked-O1 env
+knobs (see HITL doc) to confirm RED.
+
+### 2.2 — `read_search_in_tx` rewrite
+
+At `lib.rs:2317-2323`, replace the single-phase f32 KNN with
+two-phase:
+
+```sql
+-- Phase 1: bit-KNN to top-K candidates (K=64 default)
+WITH candidates AS (
+  SELECT rowid, distance AS bit_distance
+  FROM vector_default
+  WHERE embedding_bin MATCH vec_quantize_binary(vec_f32(?1))
+  ORDER BY distance
+  LIMIT 64
+)
+-- Phase 2: f32 rerank on the candidate set
+SELECT c.rowid, vec_distance_l2(v.embedding, vec_f32(?1)) AS d
+FROM candidates c
+JOIN vector_default v USING (rowid)
+ORDER BY d
+LIMIT 10
+```
+
+(Exact SQL TBD against sqlite-vec syntax — see
+[sqlite-vec API ref](https://deepwiki.com/asg017/sqlite-vec/3-api-reference)
+and the binary-quant guide cited in the research doc.)
+
+K=64 picked from the binary-quant literature (Cohere, Kyle
+Howells benches) for ≥ 95 % recall@10 at our scale. Make K a
+constant / config knob so future tuning is cheap.
+
+### 2.3 — Pack 2 validation
+
+- Local dev-box smoke at N=10_000 — both tests pass.
+- Canonical-CI dispatch with the same lever stack:
+  - AC-013 GREEN at ≤ 80 / 300 ms.
+  - AC-019 GREEN (existing 10× bound; should improve
+    substantially).
+  - Recall@10 ≥ 0.90 against f32 ground truth.
+
+### 2.4 — Pack 2 closure
+
+Once canonical-CI is GREEN, the AC-013 / AC-019 rows in the
+revised-budgets ADR can be filled with the measurement
+numbers + headroom (~10 %), and the ADR lock-flip can
+proceed.
+
+## Done = ?
+
+This handoff closes when:
+
+- ADR drafted (`status: draft, HITL-required`).
+- Pack 1 lands; ingest double-writes; schema migration
+  documented in the ADR.
+
+exec
+/bin/bash -lc "sed -n '1,220p' dev/adr/ADR-0.7.0-vector-binary-quant.md" in /tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z
+ succeeded in 0ms:
+---
+title: ADR-0.7.0-vector-binary-quant
+date: 2026-05-27
+target_release: 0.7.0
+desc: Binary quantization (bit[768]) plus f32 rerank on the existing sqlite-vec extension, with metadata + partition_key schema migration, as the data-encoding change that closes AC-013 within the proposed 80 / 300 ms latency envelope. AC-019 keeps its existing 10× bound and is collaterally re-measured under the new query path. Architectural-lever accounting reaffirmed: PCACHE2 remains the 0.7.0 architectural lever; this is a data-encoding change.
+blast_radius: src/rust/crates/fathomdb-engine/src/lib.rs:2317-2323 (read_search_in_tx hot SQL; Pack 2 rewrite); src/rust/crates/fathomdb-engine/src/lib.rs:2846 (_fathomdb_vector_rows writer insert; Pack 1 double-write); src/rust/crates/fathomdb-engine/src/lib.rs:3278-3283 (vector_default CREATE VIRTUAL TABLE; Pack 1 schema migration); src/rust/crates/fathomdb-engine/src/lib.rs:3107 (register_sqlite_vec_extension; unchanged but inspected); src/rust/crates/fathomdb-engine/src/lib.rs:3248-3260 (_fathomdb_embedder_profiles; UNCHANGED — embedder contract preserved); src/rust/crates/fathomdb-engine/src/lib.rs:2174,2242 (writer-loop pins; unchanged); src/rust/crates/fathomdb-engine/tests/perf_gates.rs:149-150 (AC013_BUDGET_P50/P99 re-pin in Pack 2); src/rust/crates/fathomdb-engine/tests/perf_gates.rs:487 (ac_013_vector_retrieval_latency); src/rust/crates/fathomdb-engine/tests/perf_gates.rs:609 (ac_019_mixed_retrieval_stress_workload_tail); src/rust/crates/fathomdb-engine/tests/perf_gates.rs new ac_NNN_recall_at_10 test (Pack 2); src/rust/crates/fathomdb-engine/Cargo.toml:18 (sqlite-vec pin; stays =0.1.7); dev/adr/ADR-0.7.0-text-query-latency-gates-revised.md (numeric lock-flip target, post Pack 2); dev/notes/pcache2-followups.md (post-0.7.0 ANN follow-ups)
+status: draft, HITL-required
+---
+
+# ADR-0.7.0 — Vector binary quantization (Pack 1 + Pack 2)
+
+**Status:** draft, HITL-required.
+
+This ADR records the data-encoding decision that closes AC-013
+within the proposed 80 / 300 ms envelope in 0.7.0. AC-019 is
+collaterally re-measured under the new query path — its existing
+10× stress-bound is expected to improve proportionally but its
+budget shape is unchanged and its numeric row in the budgets ADR
+remains a placeholder pending the post-Pack-2 canonical-CI run
+(see § 6). It is paired with — and feeds into — the numeric
+lock-flip that will be made post-Pack-2 against
+`dev/adr/ADR-0.7.0-text-query-latency-gates-revised.md`. That ADR
+remains the budget owner; this ADR commits the architectural shape
+that makes those budgets reachable.
+
+## 1. Problem
+
+Canonical-CI measurement on 2026-05-27 under the locked
+W4.1-stacked-O1 (`L-Y1+L-Y2+L-B5+L-B4+L-D1-pcache2-O1`) stack
+(`dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json`)
+reports AC-013 at **p50 = 2048 ms, p99 = 2327 ms** on the
+N = 1,000,000 / dim 768 f32 fixture seeded by `VaryingEmbedder`
+(`src/rust/crates/fathomdb-engine/tests/perf_gates.rs:296` and
+`:317`). AC-019 stress p99 = 8388 ms under bound 20964 ms; the
+bound is met today but the underlying per-query cost is the same
+hot path.
+
+The proposed budgets in
+`dev/adr/ADR-0.7.0-text-query-latency-gates-revised.md` are
+**80 ms p50 / 300 ms p99**. The measurement is therefore
+**~25–40× over** the budget envelope. The current
+`AC013_BUDGET_P50 = 50ms` / `AC013_BUDGET_P99 = 200ms` constants in
+`src/rust/crates/fathomdb-engine/tests/perf_gates.rs:149-150` are
+the unindexed-path-pre-lock values; the revised budgets ADR drafts
+80 / 300 ms but they have not yet been pinned in the test, by
+design (the re-pin is itself the Pack 2 RED gate).
+
+**Root cause.** The hot SQL at
+`src/rust/crates/fathomdb-engine/src/lib.rs:2317-2323`
+
+```
+SELECT rowid FROM vector_default
+WHERE embedding MATCH vec_f32(?1)
+ORDER BY distance
+LIMIT 10
+```
+
+drives a per-query O(N) brute-force scan over the
+`vector_default` vec0 table declared at
+`src/rust/crates/fathomdb-engine/src/lib.rs:3278-3283` as
+`USING vec0(embedding float[<dim>])` — i.e. a single global f32
+table with no metadata columns, no partition keys, no auxiliary
+index. At N = 1 M × dim 768 × 4 B that is 3.0 GB of memory
+streamed per query; the observed 2048 ms p50 corresponds to
+~1.5 GB/s, which sits at the single-thread memory-read ceiling
+on the canonical AMD EPYC 7763 runner. No SQLite engine knob can
+move this — the bytes-per-row × rows-per-query product is the
+floor. To close the gate we must either shrink the bytes per row,
+shrink the row count visited per query, or both.
+
+Cross-reference: `dev/notes/0.7.0-vector-cost-research.md`
+§ "Problem restated" through § "Tier 1 combined estimate" enumerates
+the lever surface; the present ADR commits to the Tier-1 #4 +
+Tier-1 #1/#2 bundle as the load-bearing decision.
+
+## 2. Decision
+
+Adopt the following, to ship in two packs within the 0.7.0 release
+line (Pack 1 then Pack 2; pack boundary is for review granularity,
+not release-boundary):
+
+1. **Binary quantization** of the f32 embedding into a sibling
+   `bit[768]` column on the existing `vector_default` vec0 table
+   (Pack 1.1 default per
+   `dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md`
+   § 1.1). The bit column is computed via sqlite-vec's
+   `vec_quantize_binary(embedding)` and written inside the same
+   writer transaction as the existing f32 insert. Sibling-table
+   fallback (`vector_default_bin`) is selected only if the
+   sibling-column shape hits the vec0 metadata column limit
+   (16 cols). The f32 `embedding` column is **retained** for
+   the rerank phase and for the recall-floor ground-truth pass —
+   it has two jobs after Pack 1.
+
+2. **Two-phase query** (Pack 2): bit-KNN top-K=64 candidates →
+   f32 rerank → top-10. The exact SQL shape (subject to the
+   sqlite-vec syntax confirmation called out in
+   `dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md` § 2.2)
+   replaces the single-phase scan at
+   `src/rust/crates/fathomdb-engine/src/lib.rs:2317-2323`. K is
+   a named constant / config knob so future tuning is cheap; the
+   K = 64 default is taken from the Kyle Howells and Cohere
+   binary-quant benches cited in
+   `dev/notes/0.7.0-vector-cost-research.md` § Tier 1 #4.
+
+3. **Schema extension shipped on the same migration** (Pack 1):
+   - `source_type TEXT` as a vec0 **partition_key**
+     (HITL-locked 2026-05-27 in
+     `dev/plans/0.7.0-HITL-recommendations.md`; cardinality ~6:
+     email, article, paper, meeting, note, todo). Maps from the
+     existing chunk-record vector kind at write time
+     (deterministic 1:1 mapping for the current single-kind
+     fixture; `source_type` is the authoritative going-forward
+     vocabulary).
+   - Additional metadata columns (`kind`, `created_at`, `tags`,
+     `project_mentions`, …) populated from the existing chunk
+     record. Per HITL Q5 in
+     `dev/plans/0.7.0-HITL-recommendations.md` and
+     `dev/notes/0.7.0-vector-cost-research.md` Tier 1 #1,
+     descriptive retrieval filters live in metadata columns +
+     WHERE predicates, not in partition keys. The vec0 limit is
+     16 metadata columns; the Pack 1 schema MUST budget headroom.
+
+4. **Recall floor: ≥ 0.90 recall@10** vs f32 brute-force ground
+   truth on the AC-013 fixture
+   (`dev/plans/0.7.0-HITL-recommendations.md`,
+   `dev/notes/0.7.0-vector-cost-research.md` § HITL responses #1).
+   Enforced by a new perf-gates test (`ac_NNN_recall_at_10`)
+   landed RED in Pack 2 before the query rewrite. Ground truth
+   is computed at test-setup via a one-pass brute-force scan
+   through the retained f32 column — single corpus, two jobs.
+
+5. **sqlite-vec pin stays `=0.1.7`**
+   (`src/rust/crates/fathomdb-engine/Cargo.toml:18`). 0.1.7
+   already ships `bit[N]` and `vec_quantize_binary` per the
+   sqlite-vec release notes
+   (`dev/notes/0.7.0-vector-cost-research.md` Tier 1 #4
+   citation). Bump to `=0.1.9` is allowed in Pack 1 **only if
+   needed** for constraint-column refinements; not required and
+   not recommended without justification.
+
+6. **Embedder unchanged.** The `EmbedderIdentity` contract,
+   `VaryingEmbedder`, and the profile-pinning logic at
+   `src/rust/crates/fathomdb-engine/src/lib.rs:3248-3260` are
+   not touched. HITL Q2 in
+   `dev/notes/0.7.0-vector-cost-research.md` § HITL responses
+   locked: KEEP existing embedder. Tier-1 #3 (smaller
+   embeddings) and Tier-1 #5 (matryoshka) are out of scope
+   for 0.7.0.
+
+7. **Single-writer + projection-cursor contracts preserved.**
+   Both column inserts commit in the same writer transaction at
+   the `_fathomdb_vector_rows` insert site near
+   `src/rust/crates/fathomdb-engine/src/lib.rs:2846`. The
+   writer-loop pins at `:2174` and `:2242` are not touched.
+   AC-017 / AC-018 / AC-020 behavior is preserved.
+
+## 3. Alternatives considered (and rejected)
+
+Each alternative below was considered against the AC-013 gap; the
+research doc carries the long-form analysis.
+
+- **Vectorlite (HNSW SQLite extension).** Mechanism: load a
+  separate `USING vectorlite(...)` virtual table backed by an
+  HNSW graph stored in shadow tables. Rejected because the
+  upstream has had no release since 2024-08-19, has no
+  published 1 M × 768 benchmark, and counts as a structural
+  architectural lever stacked on top of PCACHE2 — violates the
+  one-architectural-lever-per-release rule. Cited:
+  `dev/notes/0.7.0-vector-cost-research.md` § Tier 2.
+
+- **sqlite-vec ANN alpha (v0.1.10-alpha.1).** Mechanism: use
+  the upstream-experimental ANN indices (`rescore`, `ivf`,
+  `DiskANN`). Rejected because the release is alpha-tagged and
+  upstream classifies it as not production-ready. Cited:
+  `dev/notes/0.7.0-vector-cost-research.md` § Tier 3,
+  sqlite-vec releases.
+
+- **Rust-side `usearch` / `instant-distance`.** Mechanism:
+  pull KNN out of SQLite into a Rust-side ANN library and
+  rebuild the search verb around it. Rejected because the
+  blast radius (leaving SQLite for the KNN step, snapshot /
+  freshness handshake redesign, AC-017 cursor-freshness
+  re-derivation) is far larger than two packs of in-place
+  schema + query work, and the data-encoding lever closes the
+  gap without it. Cited:
+  `dev/notes/0.7.0-vector-cost-research.md` § Tier 3 (integration
+  shape C).
+
+- **Embedder swap (dim reduction 768 → 384 or 256).**
+  Mechanism: replace `VaryingEmbedder` with a smaller embedder
+  to shrink bytes-per-row. Rejected by HITL Q2 lock 2026-05-27:
+  keep existing embedder. Rationale: switching embedders
+  requires a profile rotation through
+  `_fathomdb_embedder_profiles` and a corpus rebuild
+  (writer-cooperation cost), and even at dim 128 the
+  arithmetic-only saving is ~6× — well short of the ~25–40×
+  gap. Cited:
+  `dev/notes/0.7.0-vector-cost-research.md` § Tier 1 #3,
+  § HITL responses.
+
+- **Partitioning alone (metadata prefilter / partition_key
+  without quantization).** Mechanism: keep the f32 column,
+  add `source_type` partition_key + metadata columns, push
+  filters into the WHERE clause. Rejected as load-bearing:
+  the AC-013 fixture is single-kind, so partitioning yields
+  zero benefit at the gate. Partitioning is **kept** as a
+  bundled deliverable in Pack 1 because it is the correct
+  shape for real workloads and avoids a second migration in
+  0.7.1 — but it does not close the gate on its own. Cited:
+  `dev/notes/0.7.0-vector-cost-research.md` § Tier 1 #1, #2.
+
+## 4. Consequences
+
+- **Schema change (Pack 1).** `vector_default` gains the
+  `embedding_bin bit[768]` column, the `source_type` vec0
+  partition_key, and additional metadata columns (within the
+  vec0 16-column budget). Migration is a one-pass
+  `INSERT … SELECT vec_quantize_binary(embedding) FROM
+  vector_default` populating the bit column for the existing
+
+exec
+/bin/bash -lc "sed -n '2308,2350p' src/rust/crates/fathomdb-engine/src/lib.rs" in /tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z
+ succeeded in 0ms:
+    !batch.is_empty() && batch.iter().all(|w| matches!(w, PreparedWrite::AdminSchema { .. }))
+}
+
+/// Read projection cursor and matching body rows inside one read tx.
+fn read_search_in_tx(
+    reader: &mut Connection,
+    compiled: &fathomdb_query::CompiledQuery,
+    query_vector: Option<&str>,
+) -> rusqlite::Result<(u64, Option<SoftFallback>, Vec<String>)> {
+    let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
+    let cursor = load_projection_cursor(&tx)?;
+    let vector_results = if let Some(query_vector) = query_vector {
+        let mut rowids = Vec::new();
+        {
+            let mut statement = tx.prepare(
+                "SELECT rowid
+                 FROM vector_default
+                 WHERE embedding MATCH vec_f32(?1)
+                 ORDER BY distance
+                 LIMIT 10",
+            )?;
+            let rows = statement.query_map([query_vector], |row| row.get::<_, i64>(0))?;
+            for row in rows.flatten() {
+                rowids.push(row);
+            }
+        }
+        let mut results = Vec::new();
+        let mut statement =
+            tx.prepare("SELECT body FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1")?;
+        for rowid in rowids {
+            if let Ok(body) = statement.query_row([rowid], |row| row.get::<_, String>(0)) {
+                results.push(body);
+            }
+        }
+        results
+    } else {
+        Vec::new()
+    };
+    let vector_rows_visible = !vector_results.is_empty();
+    let soft_fallback = if query_vector.is_some() && !vector_rows_visible {
+        tx.query_row(
+            "SELECT 1
+             FROM search_index
+
+exec
+/bin/bash -lc "sed -n '1,220p' dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json" in /tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z
+ succeeded in 0ms:
+{
+  "experiment_id": "W4.1-ac013",
+  "lever_id": "L-Y1+L-Y2+L-B5+L-B4+L-D1-pcache2-O1",
+  "canonical_ci": {
+    "timestamp_utc": "2026-05-27T02:50:49Z",
+    "branch": "main",
+    "head_sha": "cb9547195e1ac9f18104301b36f3711e6f29919f",
+    "host": {
+      "cpu_model": "AMD EPYC 7763 64-Core Processor",
+      "cores": 4,
+      "os": "Ubuntu 24.04.4 LTS",
+      "kernel": "Linux 6.17.0-1013-azure x86_64",
+      "glibc": "2.39",
+      "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+      "libsqlite3_sys": "libsqlite3-sys-0.28.0"
+    },
+    "results": {
+      "ac013": {
+        "n": 1000000,
+        "samples": 1000,
+        "seed_ms": 562576,
+        "p50_ms": 2048,
+        "p99_ms": 2327
+      },
+      "ac019": {
+        "n": 1000000,
+        "threads": 8,
+        "per_thread": 250,
+        "stress_ms": 1273088,
+        "seed_ms": 557942,
+        "baseline_p99_ms": 2096,
+        "stress_p99_ms": 8388,
+        "bound_ms": 20964
+      }
+    }
+  },
+  "verdict": "PENDING",
+  "evidence_notes": "",
+  "next_step": "",
+  "canonical_ci_url": null
+}
+codex
+I have the commit scope and the cited baseline numbers; now I’m checking the actual test code and test-plan text to confirm the ground-truth path is truly byte-mirrored and that only tests/docs changed.
+exec
+/bin/bash -lc 'git diff --stat cc5d15e..eee91b8' in /tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z
+ succeeded in 0ms:
+ .../runs/0.7.0-PVQ-P2-RED-20260527T145000Z.log     | 22 ++++++
+ dev/plans/runs/0.7.0-PVQ-P2-RED-output.json        | 71 +++++++++++++++++
+ dev/test-plan.md                                   | 22 +++++-
+ .../crates/fathomdb-engine/tests/perf_gates.rs     | 91 +++++++++++++++++++++-
+ 4 files changed, 203 insertions(+), 3 deletions(-)
+
+exec
+/bin/bash -lc 'git diff cc5d15e..eee91b8 -- src/rust/crates/fathomdb-engine/tests/perf_gates.rs dev/test-plan.md' in /tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z
+ succeeded in 0ms:
+diff --git a/dev/test-plan.md b/dev/test-plan.md
+index 299368c..931e05a 100644
+--- a/dev/test-plan.md
++++ b/dev/test-plan.md
+@@ -109,6 +109,20 @@ reused across suites:
+     vec0 ANN search returns distinct k=10 neighbors. Held-out query
+     body set drawn from the same distribution with a different LCG
+     seed (mirrors ADR-0.6.0-retrieval-latency-gates "held-out slice").
++  - **AC-013b** recall@10 floor (Pack 2 RED, 2026-05-27): reuses
++    `seed_ac013_corpus` + `ac013_query_bodies` so latency and recall
++    share a single corpus. Per query: re-embeds via `VaryingEmbedder`,
++    runs `engine.search` for production top-10, runs the brute-force
++    f32 ground-truth SQL (`SELECT rowid FROM vector_default WHERE
++    embedding MATCH vec_f32(?1) ORDER BY distance LIMIT 10`) via a
++    raw read-only `rusqlite::Connection` on the same DB path, looks
++    up bodies through `canonical_nodes.write_cursor`, and reports
++    `RECALL_NUMBERS` with mean recall@10 over `PERF_SAMPLES`. Floor
++    HITL-locked at ≥ 0.90 (`dev/plans/0.7.0-HITL-recommendations.md`
++    line 89; ADR-0.7.0-vector-binary-quant § 2). Pre-Pack-2-IMPL the
++    production path is byte-equal to the ground-truth SQL so recall =
++    1.0; the test exists as the canonical regression gate for the
++    bit-KNN + f32 rerank rewrite in P2-IMPL.
+   - **AC-019** workload: re-runs AC-013's protocol immediately
+     preceding the stress pass (per acceptance.md AC-019 wording),
+     captures `baseline_p99`, then runs `AC019_THREADS=8` concurrent
+@@ -121,7 +135,13 @@ reused across suites:
+     `AC012_CORPUS_N` / `AC013_CORPUS_N` env vars override per host
+     (AC-007a/b runner-pin precedent). Default scale on this aarch64
+     Tegra dev runner: AC-012 N=100,000; AC-013 N=50,000. Budgets
+-    pinned to ADR values; do not relax.
++    pinned to ADR values; do not relax. **AC-013 budget re-pinned
++    2026-05-27 (Pack 2 RED) to p50 ≤ 80 ms / p99 ≤ 300 ms — the
++    HITL-locked target for the bit-KNN + f32 rerank reader rewrite
++    in P2-IMPL. Canonical-CI N=1M measured 2048 / 2327 ms on the
++    f32-brute-force path
++    (`dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json`),
++    so the new budget is RED at canonical scale until P2-IMPL lands.**
+   - **Pack D dev-runner status (aarch64 Linux 5.15-tegra,
+     2026-05-05).** AC-012 at default N=100,000: p50=29.7 ms, p99=85
+     ms — p50 RED vs ADR 20 ms; p99 GREEN. AC-013 at N=10,000 (full
+diff --git a/src/rust/crates/fathomdb-engine/tests/perf_gates.rs b/src/rust/crates/fathomdb-engine/tests/perf_gates.rs
+index 4f4af71..9c0a811 100644
+--- a/src/rust/crates/fathomdb-engine/tests/perf_gates.rs
++++ b/src/rust/crates/fathomdb-engine/tests/perf_gates.rs
+@@ -146,8 +146,17 @@ const AC019_THREADS: usize = 8;
+ const AC019_QUERIES_PER_THREAD: usize = 250;
+ const AC012_BUDGET_P50: Duration = Duration::from_millis(20);
+ const AC012_BUDGET_P99: Duration = Duration::from_millis(150);
+-const AC013_BUDGET_P50: Duration = Duration::from_millis(50);
+-const AC013_BUDGET_P99: Duration = Duration::from_millis(200);
++// Pack 2 RED re-pin (dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md
++// § Pack 2.1): canonical-CI N=1M observed p50=2048 ms / p99=2327 ms on the
++// f32-brute-force read path (dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-
++// canonical-output.json). HITL-locked target post bit-quant + rerank is
++// ≤ 80 / 300 ms — RED at canonical scale until P2-IMPL lands.
++const AC013_BUDGET_P50: Duration = Duration::from_millis(80);
++const AC013_BUDGET_P99: Duration = Duration::from_millis(300);
++// Recall floor for AC-013b: HITL-locked ≥ 0.90 at k=10 vs f32 ground truth
++// (dev/plans/0.7.0-HITL-recommendations.md:89; ADR-0.7.0-vector-binary-
++// quant.md § 2 point 4).
++const AC013B_RECALL_FLOOR: f64 = 0.90;
+ const AC019_STRESS_FLOOR: Duration = Duration::from_millis(150);
+ const AC019_STRESS_MULT: u32 = 10;
+ const RETRIEVAL_VECTOR_DIM: u32 = 768;
+@@ -530,6 +539,84 @@ fn ac_013_vector_retrieval_latency() {
+     );
+ }
+ 
++#[test]
++fn ac_013b_recall_at_10_floor() {
++    // Pack 2 RED: pre-IMPL the production read path is byte-equal to the
++    // brute-force f32 ground truth, so recall = 1.0 at land time. Post-
++    // P2-IMPL the production path switches to bit-KNN + f32 rerank; this
++    // test then measures how well the candidate set preserves the f32
++    // top-10. HITL-locked floor is 0.90 (see AC013B_RECALL_FLOOR).
++    if !long_run_enabled() {
++        return;
++    }
++
++    let n = ac013_corpus_n();
++    let (_dir, path) = fixture_path("ac013b_recall");
++    let embedder = Arc::new(VaryingEmbedder::new(RETRIEVAL_VECTOR_DIM));
++    let opened = Engine::open_with_embedder_for_test(&path, embedder.clone()).expect("open");
++    let _seed_elapsed = seed_ac013_corpus(&opened.engine, n);
++
++    let queries = ac013_query_bodies(PERF_SAMPLES);
++
++    // Raw read-only connection for the f32 ground-truth pass. sqlite_vec
++    // is process-global after Engine::open, so vec0 vtabs are reachable.
++    // Mirrors the SQL at src/rust/crates/fathomdb-engine/src/lib.rs:2317-
++    // 2342 (rowid lookup against vector_default, body fetch against
++    // canonical_nodes by write_cursor).
++    let db_path = opened.engine.path().to_path_buf();
++    let conn = rusqlite::Connection::open(&db_path).expect("raw ground-truth conn");
++    conn.pragma_update(None, "query_only", "ON").ok();
++
++    let mut total_hits = 0usize;
++    let mut total_queries = 0usize;
++
++    for q in &queries {
++        let vector = embedder.embed(q).expect("embed");
++        let vector_json = serde_json::to_string(&vector).expect("json");
++
++        let mut gt_rowid_stmt = conn
++            .prepare(
++                "SELECT rowid
++                 FROM vector_default
++                 WHERE embedding MATCH vec_f32(?1)
++                 ORDER BY distance
++                 LIMIT 10",
++            )
++            .expect("prepare gt rowid");
++        let gt_rowids: Vec<i64> = gt_rowid_stmt
++            .query_map([&vector_json], |row| row.get::<_, i64>(0))
++            .expect("gt rowid query")
++            .filter_map(|r| r.ok())
++            .collect();
++
++        let mut body_stmt = conn
++            .prepare("SELECT body FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1")
++            .expect("prepare body");
++        let mut gt_bodies = Vec::with_capacity(gt_rowids.len());
++        for rowid in &gt_rowids {
++            if let Ok(body) = body_stmt.query_row([rowid], |row| row.get::<_, String>(0)) {
++                gt_bodies.push(body);
++            }
++        }
++
++        let prod = opened.engine.search(q).expect("measure search").results;
++
++        let gt_set: std::collections::HashSet<&String> = gt_bodies.iter().collect();
++        let hits = prod.iter().filter(|b| gt_set.contains(b)).count();
++        total_hits += hits;
++        total_queries += 1;
++    }
++
++    let recall = total_hits as f64 / (10.0 * total_queries.max(1) as f64);
++    eprintln!("RECALL_NUMBERS n={n} samples={s} recall_at_10={recall:.4}", s = total_queries,);
++
++    assert!(
++        recall >= AC013B_RECALL_FLOOR,
++        "AC-013b failed: recall@10 {recall:.4} < floor {floor:.2} at n={n}",
++        floor = AC013B_RECALL_FLOOR,
++    );
++}
++
+ #[test]
+ fn ac_017_vector_projection_freshness_p99_le_five_seconds() {
+     let (_dir, path) = fixture_path("projection_freshness");
+
+exec
+/bin/bash -lc "sed -n '1,260p' src/rust/crates/fathomdb-engine/tests/perf_gates.rs" in /tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z
+ succeeded in 0ms:
+use std::sync::{Arc, Barrier, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
+
+use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
+use fathomdb_engine::{Engine, PreparedWrite};
+use fathomdb_schema::SQLITE_SUFFIX;
+use tempfile::TempDir;
+
+const PERF_SAMPLES: usize = 1_000;
+const AC020_THREADS: usize = 8;
+const AC020_ROUNDS_PER_THREAD: usize = 50;
+
+#[derive(Clone, Debug)]
+struct DeterministicEmbedder {
+    identity: EmbedderIdentity,
+    vector: Vector,
+    delay: Duration,
+}
+
+impl DeterministicEmbedder {
+    fn new(dimension: u32, delay: Duration) -> Self {
+        Self {
+            identity: EmbedderIdentity::new("deterministic", "perf-gates", dimension),
+            vector: unit_vector(dimension as usize),
+            delay,
+        }
+    }
+}
+
+impl Embedder for DeterministicEmbedder {
+    fn identity(&self) -> EmbedderIdentity {
+        self.identity.clone()
+    }
+
+    fn embed(&self, _text: &str) -> Result<Vector, EmbedderError> {
+        thread::sleep(self.delay);
+        Ok(self.vector.clone())
+    }
+}
+
+#[derive(Clone, Debug)]
+struct RoutedEmbedder {
+    identity: EmbedderIdentity,
+}
+
+impl RoutedEmbedder {
+    fn new(dimension: u32) -> Self {
+        Self { identity: EmbedderIdentity::new("routed", "perf-gates", dimension) }
+    }
+}
+
+impl Embedder for RoutedEmbedder {
+    fn identity(&self) -> EmbedderIdentity {
+        self.identity.clone()
+    }
+
+    fn embed(&self, text: &str) -> Result<Vector, EmbedderError> {
+        let mut vector = vec![0.0_f32; self.identity.dimension as usize];
+        let slot = if text.starts_with("semantic-") || text.starts_with("vector-doc-") {
+            0
+        } else if text.starts_with("hybrid-") || text.starts_with("hybrid doc") {
+            1
+        } else {
+            2
+        };
+        vector[slot] = 1.0;
+        Ok(vector)
+    }
+}
+
+fn fixture_path(name: &str) -> (TempDir, std::path::PathBuf) {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join(format!("{name}{SQLITE_SUFFIX}"));
+    (dir, path)
+}
+
+fn percentile_ceil(samples: &[Duration], numerator: usize, denominator: usize) -> Duration {
+    assert!(!samples.is_empty());
+    let mut sorted = samples.to_vec();
+    sorted.sort_unstable();
+    let index = ((sorted.len() * numerator).div_ceil(denominator)).saturating_sub(1);
+    sorted[index]
+}
+
+fn unit_vector(dimension: usize) -> Vector {
+    let mut values = vec![0.0_f32; dimension];
+    if dimension > 0 {
+        values[0] = 1.0;
+    }
+    values
+}
+
+fn long_run_enabled() -> bool {
+    std::env::var_os("AGENT_LONG").is_some()
+}
+
+fn ac020_queries() -> [&'static str; 4] {
+    ["semantic-0", "hybrid-0", "semantic-1", "hybrid-1"]
+}
+
+fn seed_ac020_fixture(engine: &Engine) {
+    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+    for i in 0..2 {
+        engine
+            .write(&[PreparedWrite::Node {
+                kind: "doc".to_string(),
+                body: format!("vector-doc-{i}"),
+                source_id: None,
+            }])
+            .expect("vector-only write");
+        engine
+            .write(&[PreparedWrite::Node {
+                kind: "doc".to_string(),
+                body: format!("hybrid doc hybrid-{i}"),
+                source_id: None,
+            }])
+            .expect("hybrid write");
+    }
+    engine.drain(10_000).expect("drain");
+}
+
+fn run_ac020_mix(engine: &Engine) {
+    for _ in 0..AC020_ROUNDS_PER_THREAD {
+        for query in ac020_queries() {
+            let result = engine.search(query).expect("search");
+            assert!(!result.results.is_empty(), "read-mix query {query} must yield a result");
+        }
+    }
+}
+
+// ── AC-012 / AC-013 / AC-019 retrieval perf-gate fixtures ───────────────────
+//
+// Per `dev/plans/0.6.0-Phase-9-Pack-D-retrieval-perf-fixtures.md` and
+// ADR-0.6.0-{text-query,retrieval}-latency-gates the canonical fixture
+// scale is 1,000,000 chunk rows / 768-d vectors. Seeding 1M rows under
+// AGENT_LONG=1 on the aarch64 dev runner is hours-of-wall-clock; the
+// canonical x86_64 tier-1 CI runner sets `AC_FULL_SCALE=1` to honor
+// the 1M scale. AGENT_LONG=1 on the dev runner uses the env-tunable
+// scale below (AC-007a/b runner-pin precedent) and asserts the same
+// budget. See `dev/test-plan.md` § Current Perf Attribution and
+// `dev/notes/performance-whitepaper-notes.md` for measured medians.
+const AC012_DEFAULT_N: usize = 100_000;
+const AC013_DEFAULT_N: usize = 50_000;
+const AC019_THREADS: usize = 8;
+const AC019_QUERIES_PER_THREAD: usize = 250;
+const AC012_BUDGET_P50: Duration = Duration::from_millis(20);
+const AC012_BUDGET_P99: Duration = Duration::from_millis(150);
+// Pack 2 RED re-pin (dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md
+// § Pack 2.1): canonical-CI N=1M observed p50=2048 ms / p99=2327 ms on the
+// f32-brute-force read path (dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-
+// canonical-output.json). HITL-locked target post bit-quant + rerank is
+// ≤ 80 / 300 ms — RED at canonical scale until P2-IMPL lands.
+const AC013_BUDGET_P50: Duration = Duration::from_millis(80);
+const AC013_BUDGET_P99: Duration = Duration::from_millis(300);
+// Recall floor for AC-013b: HITL-locked ≥ 0.90 at k=10 vs f32 ground truth
+// (dev/plans/0.7.0-HITL-recommendations.md:89; ADR-0.7.0-vector-binary-
+// quant.md § 2 point 4).
+const AC013B_RECALL_FLOOR: f64 = 0.90;
+const AC019_STRESS_FLOOR: Duration = Duration::from_millis(150);
+const AC019_STRESS_MULT: u32 = 10;
+const RETRIEVAL_VECTOR_DIM: u32 = 768;
+
+fn env_usize(key: &str, default_full: usize, default_short: usize) -> usize {
+    if let Ok(raw) = std::env::var(key) {
+        if let Ok(parsed) = raw.parse::<usize>() {
+            return parsed;
+        }
+    }
+    if std::env::var_os("AC_FULL_SCALE").is_some() {
+        default_full
+    } else {
+        default_short
+    }
+}
+
+fn ac012_corpus_n() -> usize {
+    env_usize("AC012_CORPUS_N", 1_000_000, AC012_DEFAULT_N)
+}
+
+fn ac013_corpus_n() -> usize {
+    env_usize("AC013_CORPUS_N", 1_000_000, AC013_DEFAULT_N)
+}
+
+/// Deterministic seeded LCG. Generates reproducible token streams so the
+/// AC-012 corpus and the held-out query set are both byte-stable across
+/// runs (per ADR-0.6.0-text-query-latency-gates "synthetic-English-like
+/// text with a Zipfian token-frequency distribution").
+struct SeededRng {
+    state: u64,
+}
+
+impl SeededRng {
+    fn new(seed: u64) -> Self {
+        Self { state: seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(1) }
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        self.state = self.state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        self.state
+    }
+
+    fn next_in(&mut self, bound: usize) -> usize {
+        (self.next_u64() as usize) % bound
+    }
+
+    fn next_f64(&mut self) -> f64 {
+        (self.next_u64() >> 11) as f64 / ((1u64 << 53) as f64)
+    }
+}
+
+/// Vocabulary of synthetic English-like tokens. Size ~1024 keeps the
+/// FTS index dense; tokens are short, ASCII, lowercase, deterministic.
+fn perf_vocab() -> Vec<String> {
+    let mut out = Vec::with_capacity(1024);
+    for i in 0..1024 {
+        let a = (b'a' + ((i / 26 / 26) % 26) as u8) as char;
+        let b = (b'a' + ((i / 26) % 26) as u8) as char;
+        let c = (b'a' + (i % 26) as u8) as char;
+        out.push(format!("{a}{b}{c}{i:04}"));
+    }
+    out
+}
+
+/// Sample a token index under a Zipfian-ish distribution with shape s=1.0,
+/// using inverse-CDF on a precomputed cumulative weight table. Returns an
+/// index into the vocabulary in [0, vocab_size).
+fn zipf_index(rng: &mut SeededRng, cumulative: &[f64]) -> usize {
+    let r = rng.next_f64() * cumulative[cumulative.len() - 1];
+    match cumulative.binary_search_by(|w| w.partial_cmp(&r).unwrap_or(std::cmp::Ordering::Equal)) {
+        Ok(idx) => idx,
+        Err(idx) => idx.min(cumulative.len() - 1),
+    }
+}
+
+fn zipf_cumulative(vocab_size: usize) -> Vec<f64> {
+    let mut cumulative = Vec::with_capacity(vocab_size);
+    let mut acc = 0.0_f64;
+    for k in 1..=vocab_size {
+        acc += 1.0_f64 / k as f64;
+        cumulative.push(acc);
+    }
+    cumulative
+}
+
+/// Generate one synthetic chunk body of approximately `target_bytes`
+/// (~500 B per ADR) using the Zipfian sampler. Tokens are space-joined.
+fn synth_chunk_body(rng: &mut SeededRng, vocab: &[String], cumulative: &[f64]) -> String {
+    // Tokens average ~7 chars + 1 separator, target ~500 B => ~63 tokens.
+    let mut body = String::with_capacity(512);
+    let token_count = 55 + rng.next_in(20);
+    for i in 0..token_count {
+        if i > 0 {
+            body.push(' ');
+        }
+        body.push_str(&vocab[zipf_index(rng, cumulative)]);
+    }
+    body
+}
+
+
+exec
+/bin/bash -lc "sed -n '260,760p' src/rust/crates/fathomdb-engine/tests/perf_gates.rs" in /tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z
+ succeeded in 0ms:
+
+/// Choose a held-out query token from the 50th–90th percentile
+/// term-frequency band per ADR-0.6.0-text-query-latency-gates. Vocab is
+/// indexed by descending frequency rank (rank 0 most frequent), so the
+/// band maps to indices [0.10*vocab, 0.50*vocab) (frequency rank space).
+/// The Zipfian sampler yields rank 0 most often, so this band carves out
+/// the body of the distribution.
+fn ac012_query_token_band(vocab: &[String]) -> Vec<String> {
+    let lo = vocab.len() / 10;
+    let hi = vocab.len() / 2;
+    vocab[lo..hi].to_vec()
+}
+
+/// AC-012 deterministic seeder: 1 chunk body per write batch (4096 nodes
+/// per `engine.write()`). Returns elapsed seed time for diagnostics.
+fn seed_ac012_corpus(engine: &Engine, n: usize) -> Duration {
+    const BATCH: usize = 4096;
+    let vocab = perf_vocab();
+    let cumulative = zipf_cumulative(vocab.len());
+    let mut rng = SeededRng::new(0x0AC0_12C0_12C0);
+    let started = Instant::now();
+    let mut written = 0usize;
+    while written < n {
+        let take = BATCH.min(n - written);
+        let mut batch = Vec::with_capacity(take);
+        for _ in 0..take {
+            batch.push(PreparedWrite::Node {
+                kind: "doc".to_string(),
+                body: synth_chunk_body(&mut rng, &vocab, &cumulative),
+                source_id: None,
+            });
+        }
+        engine.write(&batch).expect("ac-012 seed write");
+        written += take;
+    }
+    // No vector kind configured -> projection runtime still drains FTS index.
+    engine.drain(600_000).expect("ac-012 drain");
+    started.elapsed()
+}
+
+/// Deterministic varying-vector embedder. Projects an input token's
+/// stable hash onto a single coordinate per call so vec0 ANN search
+/// returns distinct k=10 neighbors (a constant-vector embedder would
+/// collapse all distances to 0). Reproducible byte-for-byte across runs.
+#[derive(Clone, Debug)]
+struct VaryingEmbedder {
+    identity: EmbedderIdentity,
+    dim: u32,
+}
+
+impl VaryingEmbedder {
+    fn new(dim: u32) -> Self {
+        Self { identity: EmbedderIdentity::new("varying", "perf-gates", dim), dim }
+    }
+
+    fn vector_for(&self, text: &str) -> Vector {
+        let dim = self.dim as usize;
+        let mut v = vec![0.0_f32; dim];
+        // FNV-1a 64-bit on the input; spread across coordinates with
+        // deterministic small magnitudes so distance is meaningful.
+        let mut h: u64 = 0xcbf29ce484222325;
+        for &b in text.as_bytes() {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x100000001b3);
+        }
+        // Place mass on a small handful of coordinates derived from h.
+        for k in 0..6 {
+            let coord = ((h >> (k * 8)) as usize) % dim;
+            let sign = if (h >> (k * 8 + 7)) & 1 == 0 { 1.0 } else { -1.0 };
+            v[coord] += sign * 0.5_f32;
+        }
+        // Normalize-ish so all vectors have similar magnitude.
+        let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-6);
+        for x in &mut v {
+            *x /= norm;
+        }
+        v
+    }
+}
+
+impl Embedder for VaryingEmbedder {
+    fn identity(&self) -> EmbedderIdentity {
+        self.identity.clone()
+    }
+
+    fn embed(&self, text: &str) -> Result<Vector, EmbedderError> {
+        Ok(self.vector_for(text))
+    }
+}
+
+/// AC-013 deterministic seeder: N vector rows with varying embeddings.
+/// Returns elapsed seed time. Bodies double as both FTS5 documents and
+/// the input to the embedder, so the same fixture supports AC-019's
+/// FTS+vector mixed workload.
+fn seed_ac013_corpus(engine: &Engine, n: usize) -> Duration {
+    const BATCH: usize = 1024;
+    let vocab = perf_vocab();
+    let cumulative = zipf_cumulative(vocab.len());
+    let mut rng = SeededRng::new(0x0AC0_13D0_13D0);
+    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+    let started = Instant::now();
+    let mut written = 0usize;
+    while written < n {
+        let take = BATCH.min(n - written);
+        let mut batch = Vec::with_capacity(take);
+        for _ in 0..take {
+            batch.push(PreparedWrite::Node {
+                kind: "doc".to_string(),
+                body: synth_chunk_body(&mut rng, &vocab, &cumulative),
+                source_id: None,
+            });
+        }
+        engine.write(&batch).expect("ac-013 seed write");
+        written += take;
+    }
+    engine.drain(1_800_000).expect("ac-013 drain");
+    started.elapsed()
+}
+
+/// Build a held-out reproducible query set drawn from the same
+/// distribution as the indexed corpus (ADR-0.6.0-retrieval-latency-gates
+/// "Query vectors drawn from a held-out slice of the same distribution").
+fn ac013_query_bodies(count: usize) -> Vec<String> {
+    let vocab = perf_vocab();
+    let cumulative = zipf_cumulative(vocab.len());
+    // Use a different seed than the corpus so the query set is held out
+    // (not byte-equal to seeded chunks but drawn from same distribution).
+    let mut rng = SeededRng::new(0x0AC0_130D_EC0D_E000);
+    (0..count).map(|_| synth_chunk_body(&mut rng, &vocab, &cumulative)).collect()
+}
+
+/// Bounded-size histogram for AC-019 tail-latency capture. Single
+/// power-of-two bucketing in microseconds; avoids unbounded
+/// `Vec<Duration>` per the Pack D plan (`Histogram::record` style).
+struct LatencyHistogram {
+    /// Bucket i spans [2^i us, 2^(i+1) us). 32 buckets covers 1 us .. ~71 minutes.
+    buckets: [u64; 32],
+    count: u64,
+}
+
+impl LatencyHistogram {
+    fn new() -> Self {
+        Self { buckets: [0; 32], count: 0 }
+    }
+
+    fn record(&mut self, d: Duration) {
+        let us = d.as_micros().max(1) as u64;
+        let bucket = (63 - us.leading_zeros()) as usize;
+        let bucket = bucket.min(self.buckets.len() - 1);
+        self.buckets[bucket] += 1;
+        self.count += 1;
+    }
+
+    fn merge(&mut self, other: &LatencyHistogram) {
+        for i in 0..self.buckets.len() {
+            self.buckets[i] += other.buckets[i];
+        }
+        self.count += other.count;
+    }
+
+    /// Return the upper bound of the bucket containing the requested
+    /// percentile (numerator/denominator). Conservative ceiling.
+    fn percentile_ceil(&self, numerator: u64, denominator: u64) -> Duration {
+        if self.count == 0 {
+            return Duration::ZERO;
+        }
+        let target = (self.count * numerator).div_ceil(denominator);
+        let mut acc: u64 = 0;
+        for (i, count) in self.buckets.iter().enumerate() {
+            acc += count;
+            if acc >= target {
+                let upper_us = 1u64 << (i + 1);
+                return Duration::from_micros(upper_us);
+            }
+        }
+        let i = self.buckets.len() - 1;
+        Duration::from_micros(1u64 << (i + 1))
+    }
+}
+
+#[test]
+fn ac_012_text_query_latency_on_fts5_path() {
+    if !long_run_enabled() {
+        return;
+    }
+
+    let n = ac012_corpus_n();
+    let (_dir, path) = fixture_path("ac012_text_query");
+    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+    let seed_elapsed = seed_ac012_corpus(&opened.engine, n);
+
+    // Build the held-out query token band (50th–90th percentile term
+    // frequency per the ADR). Reproducible: seeded from the vocab order.
+    let vocab = perf_vocab();
+    let band = ac012_query_token_band(&vocab);
+    let mut rng = SeededRng::new(0x0AC0_120D_EC0D_E000);
+    let queries: Vec<String> =
+        (0..PERF_SAMPLES).map(|_| band[rng.next_in(band.len())].clone()).collect();
+
+    // Warmup: full pass discarded, per ADR ("run the full query suite
+    // once and discard; measure on the second pass").
+    for q in &queries {
+        let _ = opened.engine.search(q).expect("warmup search");
+    }
+
+    // Measurement pass.
+    let mut samples = Vec::with_capacity(PERF_SAMPLES);
+    for q in &queries {
+        let started = Instant::now();
+        let _ = opened.engine.search(q).expect("measure search");
+        samples.push(started.elapsed());
+    }
+
+    let p50 = percentile_ceil(&samples, 50, 100);
+    let p99 = percentile_ceil(&samples, 99, 100);
+    eprintln!(
+        "AC012_NUMBERS n={n} samples={s} seed_ms={seed} p50_ms={p50} p99_ms={p99}",
+        s = samples.len(),
+        seed = seed_elapsed.as_millis(),
+        p50 = p50.as_millis(),
+        p99 = p99.as_millis(),
+    );
+
+    assert!(
+        p50 <= AC012_BUDGET_P50,
+        "AC-012 failed: p50={p50:?} > budget {budget:?} at n={n}",
+        budget = AC012_BUDGET_P50,
+    );
+    assert!(
+        p99 <= AC012_BUDGET_P99,
+        "AC-012 failed: p99={p99:?} > budget {budget:?} at n={n}",
+        budget = AC012_BUDGET_P99,
+    );
+}
+
+#[test]
+fn ac_013_vector_retrieval_latency() {
+    if !long_run_enabled() {
+        return;
+    }
+
+    let n = ac013_corpus_n();
+    let (_dir, path) = fixture_path("ac013_vector_retrieval");
+    let embedder = Arc::new(VaryingEmbedder::new(RETRIEVAL_VECTOR_DIM));
+    let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
+    let seed_elapsed = seed_ac013_corpus(&opened.engine, n);
+
+    let queries = ac013_query_bodies(PERF_SAMPLES);
+
+    for q in &queries {
+        let _ = opened.engine.search(q).expect("warmup search");
+    }
+
+    let mut samples = Vec::with_capacity(PERF_SAMPLES);
+    for q in &queries {
+        let started = Instant::now();
+        let _ = opened.engine.search(q).expect("measure search");
+        samples.push(started.elapsed());
+    }
+
+    let p50 = percentile_ceil(&samples, 50, 100);
+    let p99 = percentile_ceil(&samples, 99, 100);
+    eprintln!(
+        "AC013_NUMBERS n={n} samples={s} seed_ms={seed} p50_ms={p50} p99_ms={p99}",
+        s = samples.len(),
+        seed = seed_elapsed.as_millis(),
+        p50 = p50.as_millis(),
+        p99 = p99.as_millis(),
+    );
+
+    assert!(
+        p50 <= AC013_BUDGET_P50,
+        "AC-013 failed: p50={p50:?} > budget {budget:?} at n={n}",
+        budget = AC013_BUDGET_P50,
+    );
+    assert!(
+        p99 <= AC013_BUDGET_P99,
+        "AC-013 failed: p99={p99:?} > budget {budget:?} at n={n}",
+        budget = AC013_BUDGET_P99,
+    );
+}
+
+#[test]
+fn ac_013b_recall_at_10_floor() {
+    // Pack 2 RED: pre-IMPL the production read path is byte-equal to the
+    // brute-force f32 ground truth, so recall = 1.0 at land time. Post-
+    // P2-IMPL the production path switches to bit-KNN + f32 rerank; this
+    // test then measures how well the candidate set preserves the f32
+    // top-10. HITL-locked floor is 0.90 (see AC013B_RECALL_FLOOR).
+    if !long_run_enabled() {
+        return;
+    }
+
+    let n = ac013_corpus_n();
+    let (_dir, path) = fixture_path("ac013b_recall");
+    let embedder = Arc::new(VaryingEmbedder::new(RETRIEVAL_VECTOR_DIM));
+    let opened = Engine::open_with_embedder_for_test(&path, embedder.clone()).expect("open");
+    let _seed_elapsed = seed_ac013_corpus(&opened.engine, n);
+
+    let queries = ac013_query_bodies(PERF_SAMPLES);
+
+    // Raw read-only connection for the f32 ground-truth pass. sqlite_vec
+    // is process-global after Engine::open, so vec0 vtabs are reachable.
+    // Mirrors the SQL at src/rust/crates/fathomdb-engine/src/lib.rs:2317-
+    // 2342 (rowid lookup against vector_default, body fetch against
+    // canonical_nodes by write_cursor).
+    let db_path = opened.engine.path().to_path_buf();
+    let conn = rusqlite::Connection::open(&db_path).expect("raw ground-truth conn");
+    conn.pragma_update(None, "query_only", "ON").ok();
+
+    let mut total_hits = 0usize;
+    let mut total_queries = 0usize;
+
+    for q in &queries {
+        let vector = embedder.embed(q).expect("embed");
+        let vector_json = serde_json::to_string(&vector).expect("json");
+
+        let mut gt_rowid_stmt = conn
+            .prepare(
+                "SELECT rowid
+                 FROM vector_default
+                 WHERE embedding MATCH vec_f32(?1)
+                 ORDER BY distance
+                 LIMIT 10",
+            )
+            .expect("prepare gt rowid");
+        let gt_rowids: Vec<i64> = gt_rowid_stmt
+            .query_map([&vector_json], |row| row.get::<_, i64>(0))
+            .expect("gt rowid query")
+            .filter_map(|r| r.ok())
+            .collect();
+
+        let mut body_stmt = conn
+            .prepare("SELECT body FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1")
+            .expect("prepare body");
+        let mut gt_bodies = Vec::with_capacity(gt_rowids.len());
+        for rowid in &gt_rowids {
+            if let Ok(body) = body_stmt.query_row([rowid], |row| row.get::<_, String>(0)) {
+                gt_bodies.push(body);
+            }
+        }
+
+        let prod = opened.engine.search(q).expect("measure search").results;
+
+        let gt_set: std::collections::HashSet<&String> = gt_bodies.iter().collect();
+        let hits = prod.iter().filter(|b| gt_set.contains(b)).count();
+        total_hits += hits;
+        total_queries += 1;
+    }
+
+    let recall = total_hits as f64 / (10.0 * total_queries.max(1) as f64);
+    eprintln!("RECALL_NUMBERS n={n} samples={s} recall_at_10={recall:.4}", s = total_queries,);
+
+    assert!(
+        recall >= AC013B_RECALL_FLOOR,
+        "AC-013b failed: recall@10 {recall:.4} < floor {floor:.2} at n={n}",
+        floor = AC013B_RECALL_FLOOR,
+    );
+}
+
+#[test]
+fn ac_017_vector_projection_freshness_p99_le_five_seconds() {
+    let (_dir, path) = fixture_path("projection_freshness");
+    let embedder = Arc::new(DeterministicEmbedder::new(384, Duration::from_millis(1)));
+    let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
+    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+
+    let mut samples = Vec::with_capacity(PERF_SAMPLES);
+    for i in 0..PERF_SAMPLES {
+        let commit_started = Instant::now();
+        let receipt = opened
+            .engine
+            .write(&[PreparedWrite::Node {
+                kind: "doc".to_string(),
+                body: format!("projection doc {i}"),
+                source_id: None,
+            }])
+            .expect("write");
+
+        loop {
+            let result = opened.engine.search("projection").expect("search");
+            if result.projection_cursor >= receipt.cursor {
+                samples.push(commit_started.elapsed());
+                break;
+            }
+            assert!(
+                commit_started.elapsed() < Duration::from_secs(5),
+                "projection cursor did not reach commit cursor within 5 s for write {}",
+                receipt.cursor
+            );
+            thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    let p99 = percentile_ceil(&samples, 99, 100);
+    assert!(
+        p99 <= Duration::from_secs(5),
+        "AC-017 failed: p99 freshness {:?} exceeded 5 s over {} samples",
+        p99,
+        samples.len()
+    );
+}
+
+#[test]
+fn ac_018_drain_of_100_vectors_le_two_seconds() {
+    let (_dir, path) = fixture_path("drain_100_vectors");
+    let embedder = Arc::new(DeterministicEmbedder::new(384, Duration::from_millis(1)));
+    let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
+    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+
+    for i in 0..100 {
+        opened
+            .engine
+            .write(&[PreparedWrite::Node {
+                kind: "doc".to_string(),
+                body: format!("doc {i}"),
+                source_id: None,
+            }])
+            .expect("write");
+    }
+
+    let started = Instant::now();
+    opened.engine.drain(5_000).expect("drain");
+    let elapsed = started.elapsed();
+
+    eprintln!("AC018_NUMBERS drain_ms={}", elapsed.as_millis());
+
+    assert!(
+        elapsed <= Duration::from_secs(2),
+        "AC-018 failed: drain took {:?}, expected <= 2 s",
+        elapsed
+    );
+    assert_eq!(opened.engine.vector_row_count_for_test().expect("vector rows"), 100);
+}
+
+#[test]
+fn ac_019_mixed_retrieval_stress_workload_tail() {
+    if !long_run_enabled() {
+        return;
+    }
+
+    let n = ac013_corpus_n();
+    let (_dir, path) = fixture_path("ac019_mixed_retrieval");
+    let embedder = Arc::new(VaryingEmbedder::new(RETRIEVAL_VECTOR_DIM));
+    let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
+    let seed_elapsed = seed_ac013_corpus(&opened.engine, n);
+
+    // Baseline pass — re-run AC-013's protocol immediately preceding
+    // the stress pass per acceptance.md AC-019 ("baseline_p99 is
+    // captured by re-running AC-013's protocol immediately preceding
+    // this AC in the same CI job").
+    let queries = ac013_query_bodies(PERF_SAMPLES);
+    for q in &queries {
+        let _ = opened.engine.search(q).expect("baseline warmup");
+    }
+    let mut baseline = Vec::with_capacity(PERF_SAMPLES);
+    for q in &queries {
+        let started = Instant::now();
+        let _ = opened.engine.search(q).expect("baseline measure");
+        baseline.push(started.elapsed());
+    }
+    let baseline_p99 = percentile_ceil(&baseline, 99, 100);
+
+    // Stress pass — N concurrent reader threads, mixed FTS5 + vector
+    // + canonical reads. The single embedder-bearing `search()` path
+    // exercises both vector ANN and FTS5 MATCH per call (see
+    // `read_search_in_tx` in fathomdb-engine/src/lib.rs); mixing
+    // distinct query bodies across threads keeps the working set
+    // realistic.
+    let engine = Arc::new(opened.engine);
+    let barrier = Arc::new(Barrier::new(AC019_THREADS + 1));
+    let histograms: Arc<Mutex<Vec<LatencyHistogram>>> = Arc::new(Mutex::new(Vec::new()));
+    let mut handles = Vec::with_capacity(AC019_THREADS);
+    let stress_queries: Arc<Vec<String>> =
+        Arc::new(ac013_query_bodies(AC019_QUERIES_PER_THREAD * AC019_THREADS));
+    for tid in 0..AC019_THREADS {
+        let engine = Arc::clone(&engine);
+        let barrier = Arc::clone(&barrier);
+        let queries = Arc::clone(&stress_queries);
+        let sink = Arc::clone(&histograms);
+        handles.push(thread::spawn(move || {
+            let mut hist = LatencyHistogram::new();
+            let base = tid * AC019_QUERIES_PER_THREAD;
+            barrier.wait();
+            for i in 0..AC019_QUERIES_PER_THREAD {
+                let q = &queries[(base + i) % queries.len()];
+                let started = Instant::now();
+                let _ = engine.search(q).expect("stress search");
+                hist.record(started.elapsed());
+            }
+            sink.lock().unwrap().push(hist);
+        }));
+    }
+    let stress_started = Instant::now();
+    barrier.wait();
+    for h in handles {
+        h.join().expect("stress thread");
+    }
+    let stress_elapsed = stress_started.elapsed();
+
+    let mut combined = LatencyHistogram::new();
+
+exec
+/bin/bash -lc "sed -n '1,220p' dev/test-plan.md" in /tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z
+ succeeded in 0ms:
+---
+title: 0.6.0 Test Plan
+date: 2026-05-01
+target_release: 0.6.0
+desc: AC id to test id to layer mapping for the 0.6.0 rewrite
+blast_radius: acceptance.md; src/rust/crates/*/tests; src/python/tests; src/ts/tests; CI workflows
+status: locked
+---
+
+# Test Plan
+
+This file binds every `acceptance.md` criterion to an executable test identity,
+layer, owner, fixture family, and scaffold location.
+
+## ID convention
+
+Every AC has exactly one primary test id by deterministic transform:
+
+- `AC-001` -> `T-001`
+- `AC-003a` -> `T-003a`
+- `AC-048b` -> `T-048b`
+
+Additional narrow tests may suffix the primary id, for example
+`T-035a-open-wal-replay`, but the unsuffixed id remains the traceability
+anchor. No test id is valid without an AC back-reference.
+
+## Suite Map
+
+| AC ids           | Layer                | Owning package                                        | Fixture family                                                                                                                            | Scaffold path                                                                                                                                                                                                                                                   |
+| ---------------- | -------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-001..AC-010   | integration          | `fathomdb-engine` + bindings                          | lifecycle subscriber, diagnostics, counters, profiling, projection status                                                                 | `src/rust/crates/fathomdb-engine/tests/lifecycle_observability.rs`; binding mirrors under `src/python/tests/` and `src/ts/tests/`                                                                                                                               |
+| AC-011a..AC-020  | perf                 | `fathomdb-engine`                                     | 1M chunk/vector corpora, seeded benchmark DB, deterministic embedder, read-mix generator, projection-freshness harness, drain-100 harness | `src/rust/crates/fathomdb-engine/tests/perf_gates.rs`                                                                                                                                                                                                           |
+| AC-021..AC-025   | integration          | `fathomdb-engine`                                     | concurrent reader/admin DDL, open/close fd accounting, second-open lock, pending-vector shutdown                                          | `src/rust/crates/fathomdb-engine/tests/lifecycle_reliability.rs`                                                                                                                                                                                                |
+| AC-026..AC-028c  | integration          | `fathomdb-cli` + `fathomdb-engine`                    | WAL-only export, shadow corruption, recovery/excise source fixtures                                                                       | `src/rust/crates/fathomdb-cli/tests/recovery_cli.rs`                                                                                                                                                                                                            |
+| AC-029..AC-033   | integration/soak     | `fathomdb-engine`                                     | frozen scheduler, deterministic drain jobs, provenance retention workload                                                                 | `src/rust/crates/fathomdb-engine/tests/projection_runtime.rs`                                                                                                                                                                                                   |
+| AC-034a..AC-035c | soak                 | `fathomdb-engine`                                     | power-cut harness, OS-crash VM harness, 1GB recovery DB, open-path corruption matrix                                                      | `src/rust/crates/fathomdb-engine/tests/durability_soak.rs`                                                                                                                                                                                                      |
+| AC-035d..AC-045  | integration/security | `fathomdb-cli`, Python, TypeScript                    | no-listen syscall capture, netns-deny-egress, FTS injection, safe-export manifest, doctor/recover CLI                                     | `src/rust/crates/fathomdb-cli/tests/operator_cli.rs`; `src/rust/crates/fathomdb-cli/tests/recovery_cli.rs`; `src/python/tests/test_no_recovery_surface.py`; `src/ts/tests/no-recovery-surface.test.ts`; `src/rust/crates/fathomdb/tests/no_recovery_surface.rs` |
+| AC-046a..AC-050c | unit/integration     | `fathomdb-schema`, `fathomdb-engine`, release scripts | n-to-n+k migration DB, poison migration, 0.5 fixture, AST scanner, changelog/removal fixtures                                             | `src/rust/crates/fathomdb-schema/tests/migrations.rs`; `src/rust/crates/fathomdb-engine/tests/compatibility.rs`                                                                                                                                                 |
+| AC-051a..AC-056  | integration/release  | release scripts + package managers                    | cargo/pip skew fixtures, co-tag/version files, registry-installed wheel smoke                                                             | `dev/release/tests/` and CI release workflow checks                                                                                                                                                                                                             |
+| AC-057a..AC-060b | integration          | Rust facade, Python, TypeScript                       | public-surface introspection, cursor read/write fixture, typed error matrix, JSON Schema payloads                                         | `src/rust/crates/fathomdb/tests/public_surface.rs`; `src/python/tests/test_public_surface.py`; `src/ts/tests/public-surface.test.ts`                                                                                                                            |
+| AC-061a..AC-063c | integration          | `fathomdb-engine` + `fathomdb-cli`                    | op-store append/latest collections, registry lifecycle, projection failure/restart/regenerate                                             | `src/rust/crates/fathomdb-engine/tests/op_store.rs`; `src/rust/crates/fathomdb-cli/tests/recovery_cli.rs`                                                                                                                                                       |
+
+## Required Fixtures
+
+The lock-blocking fixture set from `acceptance.md` is implemented once and
+reused across suites:
+
+- 1M chunk-row corpus with FTS5 + `vec0` indexes
+- 1GB seeded DB
+- open-path corruption matrix: WAL replay, header probe, schema probe,
+  embedder-profile corruption
+- power-cut and OS-crash harnesses
+- shadow-table and page-corruption injection tools
+- deterministic slow CTE, poison operation, mixed retrieval stress, read-mix,
+  compressed provenance workload, vector/FTS 100-query suites
+- AST scanner, removal-detect linter, cargo/pip skew fixtures, synthetic
+  changelog fixtures, netns-deny-egress, and no-listen syscall capture
+
+## Implementation Order
+
+1. Replace scaffold property tests with failing tests for public surface,
+   locking, cursor, and migration contracts.
+2. Add CLI recovery/doctor tests before implementing CLI verbs.
+3. Add durability/perf/soak harnesses behind explicit CI labels so normal
+   `agent-verify` can stay fast while release gates still execute the full
+   acceptance set.
+
+   **Gate boundary — agent-verify vs check.sh AGENT_LONG=1:**
+   - `scripts/agent-verify.sh` (fast local loop) runs lint → typecheck →
+     unit/integration tests EXCLUDING long-run variants. It does NOT
+     exercise: AC-021's 60 s spec-conforming window, AC-059b's
+     ~1000-iteration cursor-race fixture
+     (`cursor_read_after_write::projection_cursor_bounds_observed_row_count`),
+     and AC-020's sequential-vs-8-reader perf comparison once that
+     read-mix fixture is landed. `agent-verify` runs the AC-021 5 s
+     smoke variant only; the smoke run
+     does not satisfy AC-021's measurement protocol on its own.
+   - `scripts/check.sh` with `AGENT_LONG=1` (full evidence gate) runs
+     everything `agent-verify` runs PLUS the long-run variants: AC-021's
+     60 s spec-conforming window, AC-059b's ~1000-iteration race
+     fixture, and AC-020's sequential-vs-8-reader comparison once the
+     read-mix fixture is protocol-complete. AC-059b has no smoke
+     variant — its evidence comes exclusively from this gate.
+
+   A reviewer reading just this section should be able to attribute each
+   long-run AC's evidence to a single command.
+
+4. Keep thresholds in `acceptance.md`; tests read or restate those parameters
+   but do not invent new gates.
+
+## Current Perf Attribution
+
+- `src/rust/crates/fathomdb-engine/tests/perf_gates.rs` currently binds
+  AC-017 and AC-018 with active runtime measurements that run under
+  `scripts/agent-verify.sh`.
+- AC-012 / AC-013 / AC-019 protocol-complete fixture harnesses landed
+  in Pack D (Phase 9) at `tests/perf_gates.rs`. All three are
+  `long_run_enabled()`-gated (early-return without `AGENT_LONG=1`) and
+  evidenced exclusively by `scripts/check.sh` with `AGENT_LONG=1`.
+  - **AC-012** seeder: deterministic seeded-LCG token stream over a
+    1024-token vocabulary with Zipfian (s=1.0) frequency distribution;
+    chunk bodies ≈ 500 B (55–75 tokens); held-out query token band
+    indices [10%, 50%) of vocab — i.e. the 50th–90th percentile term-
+    frequency band per ADR-0.6.0-text-query-latency-gates. Warmup pass
+    discarded; second pass measured (P-PERF-SAMPLES = 1,000).
+  - **AC-013** seeder: same chunk-body generator wired through a
+    deterministic-but-varying 768-d embedder (`VaryingEmbedder`,
+    FNV-1a hash projected to 6 sparse coordinates with unit-norm) so
+    vec0 ANN search returns distinct k=10 neighbors. Held-out query
+    body set drawn from the same distribution with a different LCG
+    seed (mirrors ADR-0.6.0-retrieval-latency-gates "held-out slice").
+  - **AC-013b** recall@10 floor (Pack 2 RED, 2026-05-27): reuses
+    `seed_ac013_corpus` + `ac013_query_bodies` so latency and recall
+    share a single corpus. Per query: re-embeds via `VaryingEmbedder`,
+    runs `engine.search` for production top-10, runs the brute-force
+    f32 ground-truth SQL (`SELECT rowid FROM vector_default WHERE
+    embedding MATCH vec_f32(?1) ORDER BY distance LIMIT 10`) via a
+    raw read-only `rusqlite::Connection` on the same DB path, looks
+    up bodies through `canonical_nodes.write_cursor`, and reports
+    `RECALL_NUMBERS` with mean recall@10 over `PERF_SAMPLES`. Floor
+    HITL-locked at ≥ 0.90 (`dev/plans/0.7.0-HITL-recommendations.md`
+    line 89; ADR-0.7.0-vector-binary-quant § 2). Pre-Pack-2-IMPL the
+    production path is byte-equal to the ground-truth SQL so recall =
+    1.0; the test exists as the canonical regression gate for the
+    bit-KNN + f32 rerank rewrite in P2-IMPL.
+  - **AC-019** workload: re-runs AC-013's protocol immediately
+    preceding the stress pass (per acceptance.md AC-019 wording),
+    captures `baseline_p99`, then runs `AC019_THREADS=8` concurrent
+    reader threads × `AC019_QUERIES_PER_THREAD=250` mixed FTS5 +
+    vector + canonical reads. Tail latency captured via a bounded
+    32-bucket power-of-two `LatencyHistogram` (microseconds) per the
+    plan's "no unbounded `Vec<Duration>`" instruction.
+  - **Scale knobs.** Canonical scale is 1,000,000 chunk rows / 768-d
+    vectors (ADR). The CI runner sets `AC_FULL_SCALE=1` to honor it;
+    `AC012_CORPUS_N` / `AC013_CORPUS_N` env vars override per host
+    (AC-007a/b runner-pin precedent). Default scale on this aarch64
+    Tegra dev runner: AC-012 N=100,000; AC-013 N=50,000. Budgets
+    pinned to ADR values; do not relax. **AC-013 budget re-pinned
+    2026-05-27 (Pack 2 RED) to p50 ≤ 80 ms / p99 ≤ 300 ms — the
+    HITL-locked target for the bit-KNN + f32 rerank reader rewrite
+    in P2-IMPL. Canonical-CI N=1M measured 2048 / 2327 ms on the
+    f32-brute-force path
+    (`dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json`),
+    so the new budget is RED at canonical scale until P2-IMPL lands.**
+  - **Pack D dev-runner status (aarch64 Linux 5.15-tegra,
+    2026-05-05).** AC-012 at default N=100,000: p50=29.7 ms, p99=85
+    ms — p50 RED vs ADR 20 ms; p99 GREEN. AC-013 at N=10,000 (full
+    AGENT_LONG run not feasible on this host): p50=33 ms, p99=48 ms
+    — both GREEN against ADR 50 / 200 ms. AC-013 at N=50,000 not
+    measured: vec0 single-row insertion path on this host took
+    1,800 s wall-clock to seed 10,000 vectors (≈ 5.5 inserts/sec)
+    — engine-surface scaling gap, FLAGGED for orchestrator and Pack 7. AC-019 inherits the AC-013 seed cost; not measured at N=50k.
+    Canonical CI x86_64 tier-1 runner re-measurement is required to
+    close the perf gates.
+  - **Deferral.** AC-012 / AC-013 / AC-019 are **DEFERRED for 0.6.0**
+    as of Pack D close (2026-05-05) — paralleling AC-020. Harnesses
+    are protocol-complete and `AGENT_LONG`-gated; canonical-runner
+    measurement + the vec0 bulk-seed engine-surface gap are early
+    Pack 7 work per
+    `dev/plans/0.6.0-Phase-9-Pack-7-canonical-perf-measurement.md`.
+    0.6.0 ships with these three gates documented as DEFERRED, not
+    weakened. Budgets stay pinned at ADR values.
+- AC-020 is **DEFERRED for 0.6.0** as of Pack 6.G close (2026-05-04).
+  Implemented as a long-run-only env-gated harness; the documented read
+  mix is 50% vector-only semantic queries (`semantic-*`) and 50% hybrid
+  queries (`hybrid-*`) over a pre-drained vector-indexed fixture, 50
+  rounds per reader thread. Evidenced by `scripts/check.sh` with
+  `AGENT_LONG=1`; `agent-verify.sh` executes only the early-return path
+  and is not evidence for the AC.
+
+  Latest measured medians (N=5, current `0.6.0-rewrite` tip, this host
+  Linux 5.15-tegra ~3× slower in absolute ms than the Pack 5 reference
+  machine): seq=563 ms, conc=161 ms, bound=105 ms, speedup=3.530×
+  (required ≥ 5.0× packet rule / ≥ 5.33× test bound). AC-017 + AC-018
+  stay green throughout. Best individual run on this host (G.1 run 5):
+  seq=503 / conc=118 / speedup=4.263× — single-run only, not a gate.
+
+  **Deferral rationale.** Pack 5 + Pack 6 + Pack 6.G falsified every
+  canonical-SQLite lever measurable on the AC-020 read-only fixture
+  (mutex track via B.1 / C.1; parse-cost track via E.1; pool-topology
+  track via F.0 KEPT but does not close; allocator-arena via G.1
+  LANDED INCONCLUSIVE; page-cache via G.3.5 SKIP_G4 — `cache_used` =
+  3.35% / `delta_miss_rate` = 0.023% leaves no headroom; WAL atomics +
+  checkpoint = 0% under stack-aware classification). Residual
+  `page_cache` 6.29% conc share is from `pcache1` mutex acquires on
+  every page-fetch (hit-path), which canonical SQLite cannot eliminate
+  without `SQLITE_CONFIG_PCACHE2` custom allocator install. That,
+  WAL2, reader/writer physical separation, and vendor-SQLite swap
+  are all Pack 7 territory — see
+  `dev/plans/0.6.0-Phase-9-Pack-5-performance-diagnostics.md` §13.
+
+  AC-020 stays RED in CI; the test bound (`tests/perf_gates.rs:245`)
+  is unchanged. 0.6.0 ships with the gate documented as DEFERRED, not
+  weakened. Pack 7 reopens the gate when a measured fix lands.
+
+  Evidence trail:
+  - `dev/notes/performance-whitepaper-notes.md` (§4 kept ledger
+    incl. F.0 / G.1; §5 reverted ledger; §11 Pack 5 narrative;
+    §12 Pack 6 + Pack 6.G synthesis).
+  - `dev/plans/0.6.0-Phase-9-Pack-5-performance-diagnostics.md` (DoE
+    plan, §12 audit trail, §13 Pack 7 proposed work).
+  - `dev/plans/runs/F0-thread-affine-readers-output.json` (F.0
+    topology + numbers).
+  - `dev/plans/runs/G0-wal-checkpoint-telemetry-output.json` (stack-
+    aware symbol classification).
+  - `dev/plans/runs/G1-reader-lookaside-output.json` (lookaside
+    LANDED INCONCLUSIVE).
+  - `dev/plans/runs/G3_5-cache-pressure-telemetry-output.json`
+    (page-cache lever falsified).
+  - `dev/plans/runs/STATUS.md` (Pack 5 / 6 / 6.G close-state board).
+
+## Component Scaffold Targets
+
+The implementation module tree for `fathomdb-engine/src/` should be:
+
+- `runtime/` for `Engine.open`, `Engine.close`, config, lock lifecycle, and
+  open reports
+- `writer/` and `reader/` for connection ownership and typed execution
+- `migrations/`, `errors/`, `op_store/`, `embedder/`, `scheduler/`, `vector/`,
+  `projections/`, `retrieval/`, and `lifecycle/` matching `architecture.md`
+
+codex
+I’ve finished the logic check; I’m pulling exact line references for the final verdict so the review can stay terse and sourceable.
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/tests/perf_gates.rs | sed -n '145,635p'" in /tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z
+ succeeded in 0ms:
+   145	const AC019_THREADS: usize = 8;
+   146	const AC019_QUERIES_PER_THREAD: usize = 250;
+   147	const AC012_BUDGET_P50: Duration = Duration::from_millis(20);
+   148	const AC012_BUDGET_P99: Duration = Duration::from_millis(150);
+   149	// Pack 2 RED re-pin (dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md
+   150	// § Pack 2.1): canonical-CI N=1M observed p50=2048 ms / p99=2327 ms on the
+   151	// f32-brute-force read path (dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-
+   152	// canonical-output.json). HITL-locked target post bit-quant + rerank is
+   153	// ≤ 80 / 300 ms — RED at canonical scale until P2-IMPL lands.
+   154	const AC013_BUDGET_P50: Duration = Duration::from_millis(80);
+   155	const AC013_BUDGET_P99: Duration = Duration::from_millis(300);
+   156	// Recall floor for AC-013b: HITL-locked ≥ 0.90 at k=10 vs f32 ground truth
+   157	// (dev/plans/0.7.0-HITL-recommendations.md:89; ADR-0.7.0-vector-binary-
+   158	// quant.md § 2 point 4).
+   159	const AC013B_RECALL_FLOOR: f64 = 0.90;
+   160	const AC019_STRESS_FLOOR: Duration = Duration::from_millis(150);
+   161	const AC019_STRESS_MULT: u32 = 10;
+   162	const RETRIEVAL_VECTOR_DIM: u32 = 768;
+   163	
+   164	fn env_usize(key: &str, default_full: usize, default_short: usize) -> usize {
+   165	    if let Ok(raw) = std::env::var(key) {
+   166	        if let Ok(parsed) = raw.parse::<usize>() {
+   167	            return parsed;
+   168	        }
+   169	    }
+   170	    if std::env::var_os("AC_FULL_SCALE").is_some() {
+   171	        default_full
+   172	    } else {
+   173	        default_short
+   174	    }
+   175	}
+   176	
+   177	fn ac012_corpus_n() -> usize {
+   178	    env_usize("AC012_CORPUS_N", 1_000_000, AC012_DEFAULT_N)
+   179	}
+   180	
+   181	fn ac013_corpus_n() -> usize {
+   182	    env_usize("AC013_CORPUS_N", 1_000_000, AC013_DEFAULT_N)
+   183	}
+   184	
+   185	/// Deterministic seeded LCG. Generates reproducible token streams so the
+   186	/// AC-012 corpus and the held-out query set are both byte-stable across
+   187	/// runs (per ADR-0.6.0-text-query-latency-gates "synthetic-English-like
+   188	/// text with a Zipfian token-frequency distribution").
+   189	struct SeededRng {
+   190	    state: u64,
+   191	}
+   192	
+   193	impl SeededRng {
+   194	    fn new(seed: u64) -> Self {
+   195	        Self { state: seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(1) }
+   196	    }
+   197	
+   198	    fn next_u64(&mut self) -> u64 {
+   199	        self.state = self.state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+   200	        self.state
+   201	    }
+   202	
+   203	    fn next_in(&mut self, bound: usize) -> usize {
+   204	        (self.next_u64() as usize) % bound
+   205	    }
+   206	
+   207	    fn next_f64(&mut self) -> f64 {
+   208	        (self.next_u64() >> 11) as f64 / ((1u64 << 53) as f64)
+   209	    }
+   210	}
+   211	
+   212	/// Vocabulary of synthetic English-like tokens. Size ~1024 keeps the
+   213	/// FTS index dense; tokens are short, ASCII, lowercase, deterministic.
+   214	fn perf_vocab() -> Vec<String> {
+   215	    let mut out = Vec::with_capacity(1024);
+   216	    for i in 0..1024 {
+   217	        let a = (b'a' + ((i / 26 / 26) % 26) as u8) as char;
+   218	        let b = (b'a' + ((i / 26) % 26) as u8) as char;
+   219	        let c = (b'a' + (i % 26) as u8) as char;
+   220	        out.push(format!("{a}{b}{c}{i:04}"));
+   221	    }
+   222	    out
+   223	}
+   224	
+   225	/// Sample a token index under a Zipfian-ish distribution with shape s=1.0,
+   226	/// using inverse-CDF on a precomputed cumulative weight table. Returns an
+   227	/// index into the vocabulary in [0, vocab_size).
+   228	fn zipf_index(rng: &mut SeededRng, cumulative: &[f64]) -> usize {
+   229	    let r = rng.next_f64() * cumulative[cumulative.len() - 1];
+   230	    match cumulative.binary_search_by(|w| w.partial_cmp(&r).unwrap_or(std::cmp::Ordering::Equal)) {
+   231	        Ok(idx) => idx,
+   232	        Err(idx) => idx.min(cumulative.len() - 1),
+   233	    }
+   234	}
+   235	
+   236	fn zipf_cumulative(vocab_size: usize) -> Vec<f64> {
+   237	    let mut cumulative = Vec::with_capacity(vocab_size);
+   238	    let mut acc = 0.0_f64;
+   239	    for k in 1..=vocab_size {
+   240	        acc += 1.0_f64 / k as f64;
+   241	        cumulative.push(acc);
+   242	    }
+   243	    cumulative
+   244	}
+   245	
+   246	/// Generate one synthetic chunk body of approximately `target_bytes`
+   247	/// (~500 B per ADR) using the Zipfian sampler. Tokens are space-joined.
+   248	fn synth_chunk_body(rng: &mut SeededRng, vocab: &[String], cumulative: &[f64]) -> String {
+   249	    // Tokens average ~7 chars + 1 separator, target ~500 B => ~63 tokens.
+   250	    let mut body = String::with_capacity(512);
+   251	    let token_count = 55 + rng.next_in(20);
+   252	    for i in 0..token_count {
+   253	        if i > 0 {
+   254	            body.push(' ');
+   255	        }
+   256	        body.push_str(&vocab[zipf_index(rng, cumulative)]);
+   257	    }
+   258	    body
+   259	}
+   260	
+   261	/// Choose a held-out query token from the 50th–90th percentile
+   262	/// term-frequency band per ADR-0.6.0-text-query-latency-gates. Vocab is
+   263	/// indexed by descending frequency rank (rank 0 most frequent), so the
+   264	/// band maps to indices [0.10*vocab, 0.50*vocab) (frequency rank space).
+   265	/// The Zipfian sampler yields rank 0 most often, so this band carves out
+   266	/// the body of the distribution.
+   267	fn ac012_query_token_band(vocab: &[String]) -> Vec<String> {
+   268	    let lo = vocab.len() / 10;
+   269	    let hi = vocab.len() / 2;
+   270	    vocab[lo..hi].to_vec()
+   271	}
+   272	
+   273	/// AC-012 deterministic seeder: 1 chunk body per write batch (4096 nodes
+   274	/// per `engine.write()`). Returns elapsed seed time for diagnostics.
+   275	fn seed_ac012_corpus(engine: &Engine, n: usize) -> Duration {
+   276	    const BATCH: usize = 4096;
+   277	    let vocab = perf_vocab();
+   278	    let cumulative = zipf_cumulative(vocab.len());
+   279	    let mut rng = SeededRng::new(0x0AC0_12C0_12C0);
+   280	    let started = Instant::now();
+   281	    let mut written = 0usize;
+   282	    while written < n {
+   283	        let take = BATCH.min(n - written);
+   284	        let mut batch = Vec::with_capacity(take);
+   285	        for _ in 0..take {
+   286	            batch.push(PreparedWrite::Node {
+   287	                kind: "doc".to_string(),
+   288	                body: synth_chunk_body(&mut rng, &vocab, &cumulative),
+   289	                source_id: None,
+   290	            });
+   291	        }
+   292	        engine.write(&batch).expect("ac-012 seed write");
+   293	        written += take;
+   294	    }
+   295	    // No vector kind configured -> projection runtime still drains FTS index.
+   296	    engine.drain(600_000).expect("ac-012 drain");
+   297	    started.elapsed()
+   298	}
+   299	
+   300	/// Deterministic varying-vector embedder. Projects an input token's
+   301	/// stable hash onto a single coordinate per call so vec0 ANN search
+   302	/// returns distinct k=10 neighbors (a constant-vector embedder would
+   303	/// collapse all distances to 0). Reproducible byte-for-byte across runs.
+   304	#[derive(Clone, Debug)]
+   305	struct VaryingEmbedder {
+   306	    identity: EmbedderIdentity,
+   307	    dim: u32,
+   308	}
+   309	
+   310	impl VaryingEmbedder {
+   311	    fn new(dim: u32) -> Self {
+   312	        Self { identity: EmbedderIdentity::new("varying", "perf-gates", dim), dim }
+   313	    }
+   314	
+   315	    fn vector_for(&self, text: &str) -> Vector {
+   316	        let dim = self.dim as usize;
+   317	        let mut v = vec![0.0_f32; dim];
+   318	        // FNV-1a 64-bit on the input; spread across coordinates with
+   319	        // deterministic small magnitudes so distance is meaningful.
+   320	        let mut h: u64 = 0xcbf29ce484222325;
+   321	        for &b in text.as_bytes() {
+   322	            h ^= b as u64;
+   323	            h = h.wrapping_mul(0x100000001b3);
+   324	        }
+   325	        // Place mass on a small handful of coordinates derived from h.
+   326	        for k in 0..6 {
+   327	            let coord = ((h >> (k * 8)) as usize) % dim;
+   328	            let sign = if (h >> (k * 8 + 7)) & 1 == 0 { 1.0 } else { -1.0 };
+   329	            v[coord] += sign * 0.5_f32;
+   330	        }
+   331	        // Normalize-ish so all vectors have similar magnitude.
+   332	        let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-6);
+   333	        for x in &mut v {
+   334	            *x /= norm;
+   335	        }
+   336	        v
+   337	    }
+   338	}
+   339	
+   340	impl Embedder for VaryingEmbedder {
+   341	    fn identity(&self) -> EmbedderIdentity {
+   342	        self.identity.clone()
+   343	    }
+   344	
+   345	    fn embed(&self, text: &str) -> Result<Vector, EmbedderError> {
+   346	        Ok(self.vector_for(text))
+   347	    }
+   348	}
+   349	
+   350	/// AC-013 deterministic seeder: N vector rows with varying embeddings.
+   351	/// Returns elapsed seed time. Bodies double as both FTS5 documents and
+   352	/// the input to the embedder, so the same fixture supports AC-019's
+   353	/// FTS+vector mixed workload.
+   354	fn seed_ac013_corpus(engine: &Engine, n: usize) -> Duration {
+   355	    const BATCH: usize = 1024;
+   356	    let vocab = perf_vocab();
+   357	    let cumulative = zipf_cumulative(vocab.len());
+   358	    let mut rng = SeededRng::new(0x0AC0_13D0_13D0);
+   359	    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+   360	    let started = Instant::now();
+   361	    let mut written = 0usize;
+   362	    while written < n {
+   363	        let take = BATCH.min(n - written);
+   364	        let mut batch = Vec::with_capacity(take);
+   365	        for _ in 0..take {
+   366	            batch.push(PreparedWrite::Node {
+   367	                kind: "doc".to_string(),
+   368	                body: synth_chunk_body(&mut rng, &vocab, &cumulative),
+   369	                source_id: None,
+   370	            });
+   371	        }
+   372	        engine.write(&batch).expect("ac-013 seed write");
+   373	        written += take;
+   374	    }
+   375	    engine.drain(1_800_000).expect("ac-013 drain");
+   376	    started.elapsed()
+   377	}
+   378	
+   379	/// Build a held-out reproducible query set drawn from the same
+   380	/// distribution as the indexed corpus (ADR-0.6.0-retrieval-latency-gates
+   381	/// "Query vectors drawn from a held-out slice of the same distribution").
+   382	fn ac013_query_bodies(count: usize) -> Vec<String> {
+   383	    let vocab = perf_vocab();
+   384	    let cumulative = zipf_cumulative(vocab.len());
+   385	    // Use a different seed than the corpus so the query set is held out
+   386	    // (not byte-equal to seeded chunks but drawn from same distribution).
+   387	    let mut rng = SeededRng::new(0x0AC0_130D_EC0D_E000);
+   388	    (0..count).map(|_| synth_chunk_body(&mut rng, &vocab, &cumulative)).collect()
+   389	}
+   390	
+   391	/// Bounded-size histogram for AC-019 tail-latency capture. Single
+   392	/// power-of-two bucketing in microseconds; avoids unbounded
+   393	/// `Vec<Duration>` per the Pack D plan (`Histogram::record` style).
+   394	struct LatencyHistogram {
+   395	    /// Bucket i spans [2^i us, 2^(i+1) us). 32 buckets covers 1 us .. ~71 minutes.
+   396	    buckets: [u64; 32],
+   397	    count: u64,
+   398	}
+   399	
+   400	impl LatencyHistogram {
+   401	    fn new() -> Self {
+   402	        Self { buckets: [0; 32], count: 0 }
+   403	    }
+   404	
+   405	    fn record(&mut self, d: Duration) {
+   406	        let us = d.as_micros().max(1) as u64;
+   407	        let bucket = (63 - us.leading_zeros()) as usize;
+   408	        let bucket = bucket.min(self.buckets.len() - 1);
+   409	        self.buckets[bucket] += 1;
+   410	        self.count += 1;
+   411	    }
+   412	
+   413	    fn merge(&mut self, other: &LatencyHistogram) {
+   414	        for i in 0..self.buckets.len() {
+   415	            self.buckets[i] += other.buckets[i];
+   416	        }
+   417	        self.count += other.count;
+   418	    }
+   419	
+   420	    /// Return the upper bound of the bucket containing the requested
+   421	    /// percentile (numerator/denominator). Conservative ceiling.
+   422	    fn percentile_ceil(&self, numerator: u64, denominator: u64) -> Duration {
+   423	        if self.count == 0 {
+   424	            return Duration::ZERO;
+   425	        }
+   426	        let target = (self.count * numerator).div_ceil(denominator);
+   427	        let mut acc: u64 = 0;
+   428	        for (i, count) in self.buckets.iter().enumerate() {
+   429	            acc += count;
+   430	            if acc >= target {
+   431	                let upper_us = 1u64 << (i + 1);
+   432	                return Duration::from_micros(upper_us);
+   433	            }
+   434	        }
+   435	        let i = self.buckets.len() - 1;
+   436	        Duration::from_micros(1u64 << (i + 1))
+   437	    }
+   438	}
+   439	
+   440	#[test]
+   441	fn ac_012_text_query_latency_on_fts5_path() {
+   442	    if !long_run_enabled() {
+   443	        return;
+   444	    }
+   445	
+   446	    let n = ac012_corpus_n();
+   447	    let (_dir, path) = fixture_path("ac012_text_query");
+   448	    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+   449	    let seed_elapsed = seed_ac012_corpus(&opened.engine, n);
+   450	
+   451	    // Build the held-out query token band (50th–90th percentile term
+   452	    // frequency per the ADR). Reproducible: seeded from the vocab order.
+   453	    let vocab = perf_vocab();
+   454	    let band = ac012_query_token_band(&vocab);
+   455	    let mut rng = SeededRng::new(0x0AC0_120D_EC0D_E000);
+   456	    let queries: Vec<String> =
+   457	        (0..PERF_SAMPLES).map(|_| band[rng.next_in(band.len())].clone()).collect();
+   458	
+   459	    // Warmup: full pass discarded, per ADR ("run the full query suite
+   460	    // once and discard; measure on the second pass").
+   461	    for q in &queries {
+   462	        let _ = opened.engine.search(q).expect("warmup search");
+   463	    }
+   464	
+   465	    // Measurement pass.
+   466	    let mut samples = Vec::with_capacity(PERF_SAMPLES);
+   467	    for q in &queries {
+   468	        let started = Instant::now();
+   469	        let _ = opened.engine.search(q).expect("measure search");
+   470	        samples.push(started.elapsed());
+   471	    }
+   472	
+   473	    let p50 = percentile_ceil(&samples, 50, 100);
+   474	    let p99 = percentile_ceil(&samples, 99, 100);
+   475	    eprintln!(
+   476	        "AC012_NUMBERS n={n} samples={s} seed_ms={seed} p50_ms={p50} p99_ms={p99}",
+   477	        s = samples.len(),
+   478	        seed = seed_elapsed.as_millis(),
+   479	        p50 = p50.as_millis(),
+   480	        p99 = p99.as_millis(),
+   481	    );
+   482	
+   483	    assert!(
+   484	        p50 <= AC012_BUDGET_P50,
+   485	        "AC-012 failed: p50={p50:?} > budget {budget:?} at n={n}",
+   486	        budget = AC012_BUDGET_P50,
+   487	    );
+   488	    assert!(
+   489	        p99 <= AC012_BUDGET_P99,
+   490	        "AC-012 failed: p99={p99:?} > budget {budget:?} at n={n}",
+   491	        budget = AC012_BUDGET_P99,
+   492	    );
+   493	}
+   494	
+   495	#[test]
+   496	fn ac_013_vector_retrieval_latency() {
+   497	    if !long_run_enabled() {
+   498	        return;
+   499	    }
+   500	
+   501	    let n = ac013_corpus_n();
+   502	    let (_dir, path) = fixture_path("ac013_vector_retrieval");
+   503	    let embedder = Arc::new(VaryingEmbedder::new(RETRIEVAL_VECTOR_DIM));
+   504	    let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
+   505	    let seed_elapsed = seed_ac013_corpus(&opened.engine, n);
+   506	
+   507	    let queries = ac013_query_bodies(PERF_SAMPLES);
+   508	
+   509	    for q in &queries {
+   510	        let _ = opened.engine.search(q).expect("warmup search");
+   511	    }
+   512	
+   513	    let mut samples = Vec::with_capacity(PERF_SAMPLES);
+   514	    for q in &queries {
+   515	        let started = Instant::now();
+   516	        let _ = opened.engine.search(q).expect("measure search");
+   517	        samples.push(started.elapsed());
+   518	    }
+   519	
+   520	    let p50 = percentile_ceil(&samples, 50, 100);
+   521	    let p99 = percentile_ceil(&samples, 99, 100);
+   522	    eprintln!(
+   523	        "AC013_NUMBERS n={n} samples={s} seed_ms={seed} p50_ms={p50} p99_ms={p99}",
+   524	        s = samples.len(),
+   525	        seed = seed_elapsed.as_millis(),
+   526	        p50 = p50.as_millis(),
+   527	        p99 = p99.as_millis(),
+   528	    );
+   529	
+   530	    assert!(
+   531	        p50 <= AC013_BUDGET_P50,
+   532	        "AC-013 failed: p50={p50:?} > budget {budget:?} at n={n}",
+   533	        budget = AC013_BUDGET_P50,
+   534	    );
+   535	    assert!(
+   536	        p99 <= AC013_BUDGET_P99,
+   537	        "AC-013 failed: p99={p99:?} > budget {budget:?} at n={n}",
+   538	        budget = AC013_BUDGET_P99,
+   539	    );
+   540	}
+   541	
+   542	#[test]
+   543	fn ac_013b_recall_at_10_floor() {
+   544	    // Pack 2 RED: pre-IMPL the production read path is byte-equal to the
+   545	    // brute-force f32 ground truth, so recall = 1.0 at land time. Post-
+   546	    // P2-IMPL the production path switches to bit-KNN + f32 rerank; this
+   547	    // test then measures how well the candidate set preserves the f32
+   548	    // top-10. HITL-locked floor is 0.90 (see AC013B_RECALL_FLOOR).
+   549	    if !long_run_enabled() {
+   550	        return;
+   551	    }
+   552	
+   553	    let n = ac013_corpus_n();
+   554	    let (_dir, path) = fixture_path("ac013b_recall");
+   555	    let embedder = Arc::new(VaryingEmbedder::new(RETRIEVAL_VECTOR_DIM));
+   556	    let opened = Engine::open_with_embedder_for_test(&path, embedder.clone()).expect("open");
+   557	    let _seed_elapsed = seed_ac013_corpus(&opened.engine, n);
+   558	
+   559	    let queries = ac013_query_bodies(PERF_SAMPLES);
+   560	
+   561	    // Raw read-only connection for the f32 ground-truth pass. sqlite_vec
+   562	    // is process-global after Engine::open, so vec0 vtabs are reachable.
+   563	    // Mirrors the SQL at src/rust/crates/fathomdb-engine/src/lib.rs:2317-
+   564	    // 2342 (rowid lookup against vector_default, body fetch against
+   565	    // canonical_nodes by write_cursor).
+   566	    let db_path = opened.engine.path().to_path_buf();
+   567	    let conn = rusqlite::Connection::open(&db_path).expect("raw ground-truth conn");
+   568	    conn.pragma_update(None, "query_only", "ON").ok();
+   569	
+   570	    let mut total_hits = 0usize;
+   571	    let mut total_queries = 0usize;
+   572	
+   573	    for q in &queries {
+   574	        let vector = embedder.embed(q).expect("embed");
+   575	        let vector_json = serde_json::to_string(&vector).expect("json");
+   576	
+   577	        let mut gt_rowid_stmt = conn
+   578	            .prepare(
+   579	                "SELECT rowid
+   580	                 FROM vector_default
+   581	                 WHERE embedding MATCH vec_f32(?1)
+   582	                 ORDER BY distance
+   583	                 LIMIT 10",
+   584	            )
+   585	            .expect("prepare gt rowid");
+   586	        let gt_rowids: Vec<i64> = gt_rowid_stmt
+   587	            .query_map([&vector_json], |row| row.get::<_, i64>(0))
+   588	            .expect("gt rowid query")
+   589	            .filter_map(|r| r.ok())
+   590	            .collect();
+   591	
+   592	        let mut body_stmt = conn
+   593	            .prepare("SELECT body FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1")
+   594	            .expect("prepare body");
+   595	        let mut gt_bodies = Vec::with_capacity(gt_rowids.len());
+   596	        for rowid in &gt_rowids {
+   597	            if let Ok(body) = body_stmt.query_row([rowid], |row| row.get::<_, String>(0)) {
+   598	                gt_bodies.push(body);
+   599	            }
+   600	        }
+   601	
+   602	        let prod = opened.engine.search(q).expect("measure search").results;
+   603	
+   604	        let gt_set: std::collections::HashSet<&String> = gt_bodies.iter().collect();
+   605	        let hits = prod.iter().filter(|b| gt_set.contains(b)).count();
+   606	        total_hits += hits;
+   607	        total_queries += 1;
+   608	    }
+   609	
+   610	    let recall = total_hits as f64 / (10.0 * total_queries.max(1) as f64);
+   611	    eprintln!("RECALL_NUMBERS n={n} samples={s} recall_at_10={recall:.4}", s = total_queries,);
+   612	
+   613	    assert!(
+   614	        recall >= AC013B_RECALL_FLOOR,
+   615	        "AC-013b failed: recall@10 {recall:.4} < floor {floor:.2} at n={n}",
+   616	        floor = AC013B_RECALL_FLOOR,
+   617	    );
+   618	}
+   619	
+   620	#[test]
+   621	fn ac_017_vector_projection_freshness_p99_le_five_seconds() {
+   622	    let (_dir, path) = fixture_path("projection_freshness");
+   623	    let embedder = Arc::new(DeterministicEmbedder::new(384, Duration::from_millis(1)));
+   624	    let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
+   625	    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+   626	
+   627	    let mut samples = Vec::with_capacity(PERF_SAMPLES);
+   628	    for i in 0..PERF_SAMPLES {
+   629	        let commit_started = Instant::now();
+   630	        let receipt = opened
+   631	            .engine
+   632	            .write(&[PreparedWrite::Node {
+   633	                kind: "doc".to_string(),
+   634	                body: format!("projection doc {i}"),
+   635	                source_id: None,
+
+exec
+/bin/bash -lc "nl -ba dev/test-plan.md | sed -n '105,145p'" in /tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z
+ succeeded in 0ms:
+   105	    discarded; second pass measured (P-PERF-SAMPLES = 1,000).
+   106	  - **AC-013** seeder: same chunk-body generator wired through a
+   107	    deterministic-but-varying 768-d embedder (`VaryingEmbedder`,
+   108	    FNV-1a hash projected to 6 sparse coordinates with unit-norm) so
+   109	    vec0 ANN search returns distinct k=10 neighbors. Held-out query
+   110	    body set drawn from the same distribution with a different LCG
+   111	    seed (mirrors ADR-0.6.0-retrieval-latency-gates "held-out slice").
+   112	  - **AC-013b** recall@10 floor (Pack 2 RED, 2026-05-27): reuses
+   113	    `seed_ac013_corpus` + `ac013_query_bodies` so latency and recall
+   114	    share a single corpus. Per query: re-embeds via `VaryingEmbedder`,
+   115	    runs `engine.search` for production top-10, runs the brute-force
+   116	    f32 ground-truth SQL (`SELECT rowid FROM vector_default WHERE
+   117	    embedding MATCH vec_f32(?1) ORDER BY distance LIMIT 10`) via a
+   118	    raw read-only `rusqlite::Connection` on the same DB path, looks
+   119	    up bodies through `canonical_nodes.write_cursor`, and reports
+   120	    `RECALL_NUMBERS` with mean recall@10 over `PERF_SAMPLES`. Floor
+   121	    HITL-locked at ≥ 0.90 (`dev/plans/0.7.0-HITL-recommendations.md`
+   122	    line 89; ADR-0.7.0-vector-binary-quant § 2). Pre-Pack-2-IMPL the
+   123	    production path is byte-equal to the ground-truth SQL so recall =
+   124	    1.0; the test exists as the canonical regression gate for the
+   125	    bit-KNN + f32 rerank rewrite in P2-IMPL.
+   126	  - **AC-019** workload: re-runs AC-013's protocol immediately
+   127	    preceding the stress pass (per acceptance.md AC-019 wording),
+   128	    captures `baseline_p99`, then runs `AC019_THREADS=8` concurrent
+   129	    reader threads × `AC019_QUERIES_PER_THREAD=250` mixed FTS5 +
+   130	    vector + canonical reads. Tail latency captured via a bounded
+   131	    32-bucket power-of-two `LatencyHistogram` (microseconds) per the
+   132	    plan's "no unbounded `Vec<Duration>`" instruction.
+   133	  - **Scale knobs.** Canonical scale is 1,000,000 chunk rows / 768-d
+   134	    vectors (ADR). The CI runner sets `AC_FULL_SCALE=1` to honor it;
+   135	    `AC012_CORPUS_N` / `AC013_CORPUS_N` env vars override per host
+   136	    (AC-007a/b runner-pin precedent). Default scale on this aarch64
+   137	    Tegra dev runner: AC-012 N=100,000; AC-013 N=50,000. Budgets
+   138	    pinned to ADR values; do not relax. **AC-013 budget re-pinned
+   139	    2026-05-27 (Pack 2 RED) to p50 ≤ 80 ms / p99 ≤ 300 ms — the
+   140	    HITL-locked target for the bit-KNN + f32 rerank reader rewrite
+   141	    in P2-IMPL. Canonical-CI N=1M measured 2048 / 2327 ms on the
+   142	    f32-brute-force path
+   143	    (`dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json`),
+   144	    so the new budget is RED at canonical scale until P2-IMPL lands.**
+   145	  - **Pack D dev-runner status (aarch64 Linux 5.15-tegra,
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/src/lib.rs | sed -n '2317,2342p'" in /tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z
+ succeeded in 0ms:
+  2317	    let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
+  2318	    let cursor = load_projection_cursor(&tx)?;
+  2319	    let vector_results = if let Some(query_vector) = query_vector {
+  2320	        let mut rowids = Vec::new();
+  2321	        {
+  2322	            let mut statement = tx.prepare(
+  2323	                "SELECT rowid
+  2324	                 FROM vector_default
+  2325	                 WHERE embedding MATCH vec_f32(?1)
+  2326	                 ORDER BY distance
+  2327	                 LIMIT 10",
+  2328	            )?;
+  2329	            let rows = statement.query_map([query_vector], |row| row.get::<_, i64>(0))?;
+  2330	            for row in rows.flatten() {
+  2331	                rowids.push(row);
+  2332	            }
+  2333	        }
+  2334	        let mut results = Vec::new();
+  2335	        let mut statement =
+  2336	            tx.prepare("SELECT body FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1")?;
+  2337	        for rowid in rowids {
+  2338	            if let Ok(body) = statement.query_row([rowid], |row| row.get::<_, String>(0)) {
+  2339	                results.push(body);
+  2340	            }
+  2341	        }
+  2342	        results
+
+exec
+/bin/bash -lc "rg -n \"recall@10|0\\.90|Pack 2\\.1|2048|2327|80 / 300|80 ms|300 ms\" dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md dev/adr/ADR-0.7.0-vector-binary-quant.md dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json dev/plans/runs/0.7.0-PVQ-P2-RED-output.json" in /tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z
+ succeeded in 0ms:
+dev/plans/runs/0.7.0-PVQ-P2-RED-output.json:3:  "phase": "RED tests for Pack 2 (budget repin + recall@10 floor)",
+dev/plans/runs/0.7.0-PVQ-P2-RED-output.json:19:    "rationale": "HITL-locked target post bit-KNN + f32 rerank (dev/plans/0.7.0-HITL-recommendations.md). Canonical-CI N=1M observed p50=2048 ms / p99=2327 ms on the f32-brute-force read path (dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json), so the new 80/300 budget is RED at canonical scale until P2-IMPL lands."
+dev/plans/runs/0.7.0-PVQ-P2-RED-output.json:24:    "floor": 0.90,
+dev/plans/runs/0.7.0-PVQ-P2-RED-output.json:47:    "floor": 0.90,
+dev/plans/runs/0.7.0-PVQ-P2-RED-output.json:64:    "p50_ms": 2048,
+dev/plans/runs/0.7.0-PVQ-P2-RED-output.json:65:    "p99_ms": 2327,
+dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json:22:        "p50_ms": 2048,
+dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json:23:        "p99_ms": 2327
+dev/adr/ADR-0.7.0-vector-binary-quant.md:5:desc: Binary quantization (bit[768]) plus f32 rerank on the existing sqlite-vec extension, with metadata + partition_key schema migration, as the data-encoding change that closes AC-013 within the proposed 80 / 300 ms latency envelope. AC-019 keeps its existing 10× bound and is collaterally re-measured under the new query path. Architectural-lever accounting reaffirmed: PCACHE2 remains the 0.7.0 architectural lever; this is a data-encoding change.
+dev/adr/ADR-0.7.0-vector-binary-quant.md:15:within the proposed 80 / 300 ms envelope in 0.7.0. AC-019 is
+dev/adr/ADR-0.7.0-vector-binary-quant.md:31:reports AC-013 at **p50 = 2048 ms, p99 = 2327 ms** on the
+dev/adr/ADR-0.7.0-vector-binary-quant.md:40:**80 ms p50 / 300 ms p99**. The measurement is therefore
+dev/adr/ADR-0.7.0-vector-binary-quant.md:45:80 / 300 ms but they have not yet been pinned in the test, by
+dev/adr/ADR-0.7.0-vector-binary-quant.md:64:streamed per query; the observed 2048 ms p50 corresponds to
+dev/adr/ADR-0.7.0-vector-binary-quant.md:124:4. **Recall floor: ≥ 0.90 recall@10** vs f32 brute-force ground
+dev/adr/ADR-0.7.0-vector-binary-quant.md:248:  `recall@10 ≥ 0.90` on the AC-013 fixture. Lands RED in
+dev/adr/ADR-0.7.0-vector-binary-quant.md:249:  Pack 2.1 alongside the latency budget re-pin
+dev/adr/ADR-0.7.0-vector-binary-quant.md:250:  (`tests/perf_gates.rs:149-150` → 80 / 300 ms) and must
+dev/adr/ADR-0.7.0-vector-binary-quant.md:299:2048 / 2327 ms) and slip **Pack 2 to 0.7.1** (query rewrite + RED
+dev/adr/ADR-0.7.0-vector-binary-quant.md:308:- **Final numeric AC-013 / AC-019 budgets.** The 80 / 300 ms
+dev/adr/ADR-0.7.0-vector-binary-quant.md:315:  uses 80 / 300 ms initially; HITL may tighten by ~10 % headroom
+dev/adr/ADR-0.7.0-vector-binary-quant.md:319:  literature. If the recall-floor test falls below 0.90 at K = 64
+dev/adr/ADR-0.7.0-vector-binary-quant.md:368:  re-pinned 80 / 300 ms (or HITL-revised) budgets; the new
+dev/adr/ADR-0.7.0-vector-binary-quant.md:369:  recall-floor test is GREEN at ≥ 0.90; AC-019 verdict is
+dev/adr/ADR-0.7.0-vector-binary-quant.md:382:  record: recall floor 0.90 @ k=10; `source_type` partition_key;
+dev/adr/ADR-0.7.0-vector-binary-quant.md:390:  (canonical-CI measurement: p50 = 2048 ms, p99 = 2327 ms at
+dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md:12:migration. Closes AC-013 (currently p50=2048 ms / p99=2327 ms at
+dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md:13:canonical-CI N=1M) to within the proposed 80 / 300 ms budget by
+dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md:101:unindexed f32 path; their numbers stay at 2048/2327 until
+dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md:199:  - Asserts `recall@10 ≥ 0.90` (HITL-locked floor).
+dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md:235:Howells benches) for ≥ 95 % recall@10 at our scale. Make K a
+dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md:242:  - AC-013 GREEN at ≤ 80 / 300 ms.
+dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md:245:  - Recall@10 ≥ 0.90 against f32 ground truth.
+dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md:262:  canonical-CI; recall@10 ≥ 0.90.
+dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md:289:- If the recall floor at K=64 falls below 0.90 on the AC-013
+
+codex
+I’m at the final pass. One last lookup for exact JSON line numbers, then I’ll deliver the verdict in the requested format.
+exec
+/bin/bash -lc "nl -ba dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json | sed -n '15,28p'" in /tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z
+ succeeded in 0ms:
+    15	      "libsqlite3_sys": "libsqlite3-sys-0.28.0"
+    16	    },
+    17	    "results": {
+    18	      "ac013": {
+    19	        "n": 1000000,
+    20	        "samples": 1000,
+    21	        "seed_ms": 562576,
+    22	        "p50_ms": 2048,
+    23	        "p99_ms": 2327
+    24	      },
+    25	      "ac019": {
+    26	        "n": 1000000,
+    27	        "threads": 8,
+    28	        "per_thread": 250,
+
+exec
+/bin/bash -lc "nl -ba dev/plans/runs/0.7.0-PVQ-P2-RED-output.json | sed -n '11,27p'" in /tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z
+ succeeded in 0ms:
+    11	    "dev/test-plan.md"
+    12	  ],
+    13	  "production_code_changed": false,
+    14	  "ac_013_budget_repin": {
+    15	    "old_p50_ms": 50,
+    16	    "old_p99_ms": 200,
+    17	    "new_p50_ms": 80,
+    18	    "new_p99_ms": 300,
+    19	    "rationale": "HITL-locked target post bit-KNN + f32 rerank (dev/plans/0.7.0-HITL-recommendations.md). Canonical-CI N=1M observed p50=2048 ms / p99=2327 ms on the f32-brute-force read path (dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json), so the new 80/300 budget is RED at canonical scale until P2-IMPL lands."
+    20	  },
+    21	  "ac_013b_recall_test": {
+    22	    "fn_name": "ac_013b_recall_at_10_floor",
+    23	    "file": "src/rust/crates/fathomdb-engine/tests/perf_gates.rs",
+    24	    "floor": 0.90,
+    25	    "fixture_reuse": "seed_ac013_corpus + ac013_query_bodies (same corpus + held-out queries as AC-013)",
+    26	    "ground_truth_path": "raw rusqlite::Connection on engine.path() running 'SELECT rowid FROM vector_default WHERE embedding MATCH vec_f32(?1) ORDER BY distance LIMIT 10' + canonical_nodes body lookup by write_cursor (mirrors lib.rs:2317-2342)",
+    27	    "production_path": "engine.search(query).results",
+
+codex
+PASS
+
+**Findings**
+- None.
+
+**Addressed**
+- `AC013_BUDGET_P50/P99` is re-pinned to `80/300 ms` in [perf_gates.rs](/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z/src/rust/crates/fathomdb-engine/tests/perf_gates.rs:149).
+- `ac_013b_recall_at_10_floor` is added in [perf_gates.rs](/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z/src/rust/crates/fathomdb-engine/tests/perf_gates.rs:543), is `AGENT_LONG`-gated at [perf_gates.rs](/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z/src/rust/crates/fathomdb-engine/tests/perf_gates.rs:549), and computes mean recall@10 as `total_hits / (10 * total_queries)` at [perf_gates.rs](/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z/src/rust/crates/fathomdb-engine/tests/perf_gates.rs:610).
+- The ground-truth path byte-mirrors the current production reader: test SQL/body lookup at [perf_gates.rs](/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z/src/rust/crates/fathomdb-engine/tests/perf_gates.rs:577) and [perf_gates.rs](/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z/src/rust/crates/fathomdb-engine/tests/perf_gates.rs:592) matches [lib.rs](/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z/src/rust/crates/fathomdb-engine/src/lib.rs:2322) and [lib.rs](/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z/src/rust/crates/fathomdb-engine/src/lib.rs:2335).
+- No production code changed: the closure record marks `production_code_changed: false` in [0.7.0-PVQ-P2-RED-output.json](/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z/dev/plans/runs/0.7.0-PVQ-P2-RED-output.json:13), and the commit file list is tests/docs plus run artifacts only.
+- [dev/test-plan.md](/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z/dev/test-plan.md:112) documents AC-013b, and [dev/test-plan.md](/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z/dev/test-plan.md:138) documents the AC-013 re-pin.
+
+**What passed**
+- The new `80/300 ms` budget is a genuine RED gate at canonical scale: W4.1 records `n=1_000_000`, `p50=2048 ms`, `p99=2327 ms` in [0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json](/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z/dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json:18).
+- The recall test should stay GREEN pre-IMPL on both dev-box and canonical, because both paths use the same brute-force f32 SQL plus the same `canonical_nodes.write_cursor` body lookup; that implies recall remains `1.0` before the reader rewrite.
+
+**Reviewer notes**
+- Scope is consistent with Pack 2.1 and ADR §2 point 4. I did not execute the long-run tests in this review; verdict is from code and cited evidence inspection.
+tokens used
+70,778
+PASS
+
+**Findings**
+- None.
+
+**Addressed**
+- `AC013_BUDGET_P50/P99` is re-pinned to `80/300 ms` in [perf_gates.rs](/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z/src/rust/crates/fathomdb-engine/tests/perf_gates.rs:149).
+- `ac_013b_recall_at_10_floor` is added in [perf_gates.rs](/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z/src/rust/crates/fathomdb-engine/tests/perf_gates.rs:543), is `AGENT_LONG`-gated at [perf_gates.rs](/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z/src/rust/crates/fathomdb-engine/tests/perf_gates.rs:549), and computes mean recall@10 as `total_hits / (10 * total_queries)` at [perf_gates.rs](/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z/src/rust/crates/fathomdb-engine/tests/perf_gates.rs:610).
+- The ground-truth path byte-mirrors the current production reader: test SQL/body lookup at [perf_gates.rs](/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z/src/rust/crates/fathomdb-engine/tests/perf_gates.rs:577) and [perf_gates.rs](/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z/src/rust/crates/fathomdb-engine/tests/perf_gates.rs:592) matches [lib.rs](/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z/src/rust/crates/fathomdb-engine/src/lib.rs:2322) and [lib.rs](/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z/src/rust/crates/fathomdb-engine/src/lib.rs:2335).
+- No production code changed: the closure record marks `production_code_changed: false` in [0.7.0-PVQ-P2-RED-output.json](/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z/dev/plans/runs/0.7.0-PVQ-P2-RED-output.json:13), and the commit file list is tests/docs plus run artifacts only.
+- [dev/test-plan.md](/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z/dev/test-plan.md:112) documents AC-013b, and [dev/test-plan.md](/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z/dev/test-plan.md:138) documents the AC-013 re-pin.
+
+**What passed**
+- The new `80/300 ms` budget is a genuine RED gate at canonical scale: W4.1 records `n=1_000_000`, `p50=2048 ms`, `p99=2327 ms` in [0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json](/tmp/fdb-0.7.0-PVQ-P2-RED-20260527T144439Z/dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json:18).
+- The recall test should stay GREEN pre-IMPL on both dev-box and canonical, because both paths use the same brute-force f32 SQL plus the same `canonical_nodes.write_cursor` body lookup; that implies recall remains `1.0` before the reader rewrite.
+
+**Reviewer notes**
+- Scope is consistent with Pack 2.1 and ADR §2 point 4. I did not execute the long-run tests in this review; verdict is from code and cited evidence inspection.
