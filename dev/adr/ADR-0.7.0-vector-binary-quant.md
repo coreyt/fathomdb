@@ -2,7 +2,7 @@
 title: ADR-0.7.0-vector-binary-quant
 date: 2026-05-27
 target_release: 0.7.0
-desc: Binary quantization (bit[768]) plus f32 rerank on the existing sqlite-vec extension, with metadata + partition_key schema migration, as the data-encoding change that closes AC-013 / AC-019 within the proposed 80 / 300 ms latency envelope. Architectural-lever accounting reaffirmed: PCACHE2 remains the 0.7.0 architectural lever; this is a data-encoding change.
+desc: Binary quantization (bit[768]) plus f32 rerank on the existing sqlite-vec extension, with metadata + partition_key schema migration, as the data-encoding change that closes AC-013 within the proposed 80 / 300 ms latency envelope. AC-019 keeps its existing 10× bound and is collaterally re-measured under the new query path. Architectural-lever accounting reaffirmed: PCACHE2 remains the 0.7.0 architectural lever; this is a data-encoding change.
 blast_radius: src/rust/crates/fathomdb-engine/src/lib.rs:2317-2323 (read_search_in_tx hot SQL; Pack 2 rewrite); src/rust/crates/fathomdb-engine/src/lib.rs:2846 (_fathomdb_vector_rows writer insert; Pack 1 double-write); src/rust/crates/fathomdb-engine/src/lib.rs:3278-3283 (vector_default CREATE VIRTUAL TABLE; Pack 1 schema migration); src/rust/crates/fathomdb-engine/src/lib.rs:3107 (register_sqlite_vec_extension; unchanged but inspected); src/rust/crates/fathomdb-engine/src/lib.rs:3248-3260 (_fathomdb_embedder_profiles; UNCHANGED — embedder contract preserved); src/rust/crates/fathomdb-engine/src/lib.rs:2174,2242 (writer-loop pins; unchanged); src/rust/crates/fathomdb-engine/tests/perf_gates.rs:149-150 (AC013_BUDGET_P50/P99 re-pin in Pack 2); src/rust/crates/fathomdb-engine/tests/perf_gates.rs:487 (ac_013_vector_retrieval_latency); src/rust/crates/fathomdb-engine/tests/perf_gates.rs:609 (ac_019_mixed_retrieval_stress_workload_tail); src/rust/crates/fathomdb-engine/tests/perf_gates.rs new ac_NNN_recall_at_10 test (Pack 2); src/rust/crates/fathomdb-engine/Cargo.toml:18 (sqlite-vec pin; stays =0.1.7); dev/adr/ADR-0.7.0-text-query-latency-gates-revised.md (numeric lock-flip target, post Pack 2); dev/notes/pcache2-followups.md (post-0.7.0 ANN follow-ups)
 status: draft, HITL-required
 ---
@@ -11,10 +11,14 @@ status: draft, HITL-required
 
 **Status:** draft, HITL-required.
 
-This ADR records the data-encoding decision that closes AC-013 (and
-collaterally AC-019) within the proposed 80 / 300 ms envelope in
-0.7.0. It is paired with — and feeds into — the numeric lock-flip
-that will be made post-Pack-2 against
+This ADR records the data-encoding decision that closes AC-013
+within the proposed 80 / 300 ms envelope in 0.7.0. AC-019 is
+collaterally re-measured under the new query path — its existing
+10× stress-bound is expected to improve proportionally but its
+budget shape is unchanged and its numeric row in the budgets ADR
+remains a placeholder pending the post-Pack-2 canonical-CI run
+(see § 6). It is paired with — and feeds into — the numeric
+lock-flip that will be made post-Pack-2 against
 `dev/adr/ADR-0.7.0-text-query-latency-gates-revised.md`. That ADR
 remains the budget owner; this ADR commits the architectural shape
 that makes those budgets reachable.
@@ -327,10 +331,18 @@ items the implementing agent should escalate to HITL".
   is the sibling-table shape (`vector_default_bin`) called out
   in § 2 / Pack 1.1.
 
-- **`vec_quantize_binary()` input expectations.** The function is
-  assumed to accept the unnormalised f32 vectors that
-  `VaryingEmbedder` produces. If sqlite-vec 0.1.7's
-  `vec_quantize_binary()` requires pre-normalisation, escalate
+- **`vec_quantize_binary()` input expectations.** `VaryingEmbedder`
+  produces L2-normalised f32 vectors
+  (`src/rust/crates/fathomdb-engine/tests/perf_gates.rs:322-326`),
+  and the research note records the same
+  (`dev/notes/0.7.0-vector-cost-research.md:164-165`). Binary
+  quantization via `vec_quantize_binary()` is a sign-pattern
+  transform that is invariant to positive scaling, so L2 norm
+  itself is not load-bearing, but the function's exact input
+  contract (signed-zero handling, NaN behaviour) has not been
+  validated against `VaryingEmbedder` output. If sqlite-vec 0.1.7's
+  `vec_quantize_binary()` rejects the f32 blobs produced by the
+  current writer path or returns degenerate bit patterns, escalate
   before Pack 1 ingest changes land (per the handoff § "Open
   items"). The fixture concentrates mass on 6 of 768 coordinates
   (`src/rust/crates/fathomdb-engine/tests/perf_gates.rs:317`),
