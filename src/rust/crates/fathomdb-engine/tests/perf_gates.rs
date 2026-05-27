@@ -704,7 +704,7 @@ fn ac_020_reads_do_not_serialize_on_a_single_reader_connection() {
     }
 
     let (_dir, path) = fixture_path("ac020_read_mix");
-    let embedder = Arc::new(RoutedEmbedder::new(3));
+    let embedder = Arc::new(RoutedEmbedder::new(8));
     let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
     seed_ac020_fixture(&opened.engine);
 
@@ -753,7 +753,7 @@ fn ac_020_sequential_only() {
     }
 
     let (_dir, path) = fixture_path("ac020_sequential_only");
-    let embedder = Arc::new(RoutedEmbedder::new(3));
+    let embedder = Arc::new(RoutedEmbedder::new(8));
     let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
     seed_ac020_fixture(&opened.engine);
 
@@ -774,7 +774,7 @@ fn ac_020_concurrent_only() {
     }
 
     let (_dir, path) = fixture_path("ac020_concurrent_only");
-    let embedder = Arc::new(RoutedEmbedder::new(3));
+    let embedder = Arc::new(RoutedEmbedder::new(8));
     let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
     seed_ac020_fixture(&opened.engine);
 
@@ -819,7 +819,7 @@ fn g3_5_cache_pressure_telemetry() {
         .expect("G3_5_OUTPUT_PATH env var required for the G.3.5 sidecar JSON");
 
     let (_dir, path) = fixture_path("g3_5_cache_pressure_telemetry");
-    let embedder = Arc::new(RoutedEmbedder::new(3));
+    let embedder = Arc::new(RoutedEmbedder::new(8));
     let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
     seed_ac020_fixture(&opened.engine);
     let worker_count = opened.engine.reader_worker_count_for_test();
@@ -939,7 +939,7 @@ fn ac_a3_counters_concurrent() {
     }
 
     let (_dir, path) = fixture_path("a3_counters_concurrent");
-    let embedder = Arc::new(RoutedEmbedder::new(3));
+    let embedder = Arc::new(RoutedEmbedder::new(8));
     let opened = Engine::open_with_embedder_for_test(&path, embedder.clone()).expect("open");
     seed_ac020_fixture(&opened.engine);
 
@@ -1030,7 +1030,7 @@ fn ac_a3_explain_query_plan() {
     }
 
     let (_dir, path) = fixture_path("a3_explain");
-    let embedder = Arc::new(RoutedEmbedder::new(3));
+    let embedder = Arc::new(RoutedEmbedder::new(8));
     let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
     seed_ac020_fixture(&opened.engine);
     // Engine must stay alive while we open a raw connection (WAL, shared cache).

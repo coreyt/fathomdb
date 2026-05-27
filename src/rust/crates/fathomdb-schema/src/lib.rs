@@ -218,16 +218,20 @@ pub const MIGRATIONS: &[Migration] = &[
     // a runtime-dim migration to 0.7.1.
     Migration {
         step_id: 9,
-        sql: "-- Pre-step: ensure the old-shape vector_default exists so the staged
-              -- copy below has something to JOIN against. Pre-Pack-1 engines
-              -- created vector_default in ensure_vector_partition AFTER
-              -- migrations ran, so a fresh DB reaching step 9 has no
-              -- vector_default at all. IF NOT EXISTS is a no-op for an
-              -- already-migrated old DB (which has the single-column shape).
-              CREATE VIRTUAL TABLE IF NOT EXISTS vector_default USING vec0(
-                  embedding float[768]
-              );
-              CREATE TEMP TABLE _vec0_migration_assertion(
+        // SQL-side: D4 fix-3.1 preflight only. The vec0 reshape itself is
+        // dim-aware and lives in the engine crate's
+        // `ensure_vector_partition_pack1` (called by `ensure_vector_partition`
+        // immediately after `migrate_with_event_sink` returns). Splitting the
+        // preflight (SQL, in-tx with `apply_one`) from the reshape (Rust,
+        // dim-driven by `_fathomdb_embedder_profiles.dimension`) is required
+        // because `fathomdb-schema::Migration` is a `&'static str` with no
+        // runtime parameterization, and the existing dim=8 / dim=384 test
+        // suite must stay GREEN. The reshape is idempotent across crashes:
+        // if open fails between this step's commit (user_version=9) and the
+        // Rust reshape, the next open re-detects the old shape and replays
+        // the reshape. See dev/plans/runs/0.7.0-PVQ-P1-IMPL-output.json
+        // for the design-memo deviation note.
+        sql: "CREATE TEMP TABLE _vec0_migration_assertion(
                   check_passes INTEGER NOT NULL CHECK(check_passes = 1)
               );
               INSERT INTO _vec0_migration_assertion(check_passes)
@@ -235,44 +239,6 @@ pub const MIGRATIONS: &[Migration] = &[
                       SELECT 1 FROM _fathomdb_vector_rows
                       WHERE kind NOT IN ('email','article','paper','meeting','note','todo','doc')
                   ) THEN 0 ELSE 1 END;
-              CREATE TABLE _fathomdb_vector_migration_v0_7_0 (
-                  rowid     INTEGER PRIMARY KEY,
-                  embedding BLOB NOT NULL,
-                  kind      TEXT NOT NULL
-              );
-              INSERT INTO _fathomdb_vector_migration_v0_7_0(rowid, embedding, kind)
-                  SELECT v.rowid, v.embedding, r.kind
-                  FROM vector_default v
-                  JOIN _fathomdb_vector_rows r ON r.rowid = v.rowid;
-              DROP TABLE vector_default;
-              CREATE VIRTUAL TABLE vector_default USING vec0(
-                  embedding float[768],
-                  embedding_bin bit[768],
-                  source_type TEXT partition key,
-                  kind TEXT,
-                  created_at INTEGER
-              );
-              INSERT INTO vector_default(
-                  rowid, embedding, embedding_bin, source_type, kind, created_at
-              )
-              SELECT
-                  s.rowid,
-                  s.embedding,
-                  vec_quantize_binary(s.embedding),
-                  CASE s.kind
-                      WHEN 'email'   THEN 'email'
-                      WHEN 'article' THEN 'article'
-                      WHEN 'paper'   THEN 'paper'
-                      WHEN 'meeting' THEN 'meeting'
-                      WHEN 'note'    THEN 'note'
-                      WHEN 'todo'    THEN 'todo'
-                      WHEN 'doc'     THEN 'article'
-                      ELSE 'article'
-                  END,
-                  s.kind,
-                  strftime('%s', 'now')
-              FROM _fathomdb_vector_migration_v0_7_0 s;
-              DROP TABLE _fathomdb_vector_migration_v0_7_0;
               DROP TABLE _vec0_migration_assertion;",
     },
 ];

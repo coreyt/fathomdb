@@ -21,7 +21,7 @@ use fathomdb_schema::{
     CANONICAL_TABLES, LOCK_SUFFIX, MIGRATIONS, SCHEMA_VERSION,
 };
 use jsonschema::JSONSchema;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
 use sha2::Digest;
 use sqlite_vec::sqlite3_vec_init;
@@ -1212,7 +1212,7 @@ impl Engine {
     ) -> Result<(Connection, Vec<Connection>, OpenReport, Vec<i32>), EngineOpenError> {
         init_perf_experiments_runtime();
         register_sqlite_vec_extension();
-        let connection = Connection::open(&path)
+        let mut connection = Connection::open(&path)
             .map_err(|err| map_open_sqlite_error(err, OpenStage::HeaderProbe))?;
         // Order pinned by `dev/design/errors.md` § OpenStage matrix: each
         // step routes its own SQLite-level error to a distinct
@@ -1238,7 +1238,7 @@ impl Engine {
         let migration = migrate_with_event_sink(&connection, migrations, emit_migration_event)
             .map_err(map_migration_error)?;
         check_embedder_profile(&connection, embedder_identity)?;
-        ensure_vector_partition(&connection, embedder_identity.dimension).map_err(|_| {
+        ensure_vector_partition(&mut connection, embedder_identity.dimension).map_err(|_| {
             EngineOpenError::Io { message: "could not initialize vector partition".to_string() }
         })?;
 
@@ -2457,7 +2457,7 @@ fn projection_worker_loop(shared: Arc<ProjectionRuntimeShared>) {
         Ok(connection) => connection,
         Err(_) => return,
     };
-    if ensure_vector_partition(&connection, shared.embedder_identity.dimension).is_err() {
+    if ensure_vector_partition(&mut connection, shared.embedder_identity.dimension).is_err() {
         return;
     }
     loop {
@@ -3291,13 +3291,36 @@ fn kind_is_vector_indexed(connection: &Connection, kind: &str) -> Result<bool, E
         })
 }
 
-fn ensure_vector_partition(connection: &Connection, dimension: u32) -> rusqlite::Result<()> {
-    // 0.7.0 Pack 1 schema: f32 `embedding` + binary-quant sibling
-    // `embedding_bin` + `source_type` partition key + `kind` +
-    // `created_at`. Per dev/design/0.7.0-vector-quant-pack1.md D1/D2.
-    // Established DBs reach this point after migration step 9 has
-    // already created the new shape; fresh DBs land it directly via
-    // this CREATE.
+fn ensure_vector_partition(connection: &mut Connection, dimension: u32) -> rusqlite::Result<()> {
+    // 0.7.0 Pack 1 schema per dev/design/0.7.0-vector-quant-pack1.md D1/D2:
+    // f32 `embedding` + binary-quant sibling `embedding_bin` + `source_type`
+    // partition key + `kind` + `created_at`. The vec0 column type is
+    // dim-parameterized, so the reshape lives here rather than in the
+    // SQL-only migration framework — see fathomdb-schema migration step 9
+    // and dev/plans/runs/0.7.0-PVQ-P1-IMPL-output.json for the deviation
+    // from the design memo's "Choose (a)" guidance.
+    //
+    // Three paths:
+    //   (1) no vector_default       -> CREATE at new shape.
+    //   (2) old single-column shape -> stage + drop + recreate at new shape
+    //                                  + repopulate with vec_quantize_binary.
+    //   (3) already new shape       -> no-op.
+    let existing_sql: Option<String> = connection
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name=?1",
+            [DEFAULT_VECTOR_PARTITION],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+
+    match existing_sql {
+        None => create_vector_partition(connection, dimension),
+        Some(sql) if sql.contains("embedding_bin") => Ok(()),
+        Some(_) => migrate_vector_partition_to_pack1(connection, dimension),
+    }
+}
+
+fn create_vector_partition(connection: &Connection, dimension: u32) -> rusqlite::Result<()> {
     let sql = format!(
         "CREATE VIRTUAL TABLE IF NOT EXISTS {DEFAULT_VECTOR_PARTITION} USING vec0(\
             embedding float[{dimension}],\
@@ -3308,6 +3331,66 @@ fn ensure_vector_partition(connection: &Connection, dimension: u32) -> rusqlite:
          )"
     );
     connection.execute_batch(&sql)
+}
+
+/// Pack 1 in-place reshape of `vector_default`. Atomic under a single
+/// IMMEDIATE transaction: stages the existing f32 corpus + the row's
+/// kind, drops the old single-column vec0 table, recreates at the
+/// runtime `dimension` with the Pack 1 columns, then repopulates with
+/// SQL-side `vec_quantize_binary` + the D3 `kind -> source_type`
+/// mapping. The preflight CHECK on unknown kinds has already run as
+/// migration step 9 by the time we get here.
+fn migrate_vector_partition_to_pack1(
+    connection: &mut Connection,
+    dimension: u32,
+) -> rusqlite::Result<()> {
+    let tx = connection.transaction()?;
+    tx.execute_batch(
+        "CREATE TABLE _fathomdb_vector_migration_v0_7_0 (
+             rowid     INTEGER PRIMARY KEY,
+             embedding BLOB NOT NULL,
+             kind      TEXT NOT NULL
+         );
+         INSERT INTO _fathomdb_vector_migration_v0_7_0(rowid, embedding, kind)
+             SELECT v.rowid, v.embedding, r.kind
+             FROM vector_default v
+             JOIN _fathomdb_vector_rows r ON r.rowid = v.rowid;
+         DROP TABLE vector_default;",
+    )?;
+    let create_sql = format!(
+        "CREATE VIRTUAL TABLE {DEFAULT_VECTOR_PARTITION} USING vec0(\
+            embedding float[{dimension}],\
+            embedding_bin bit[{dimension}],\
+            source_type TEXT partition key,\
+            kind TEXT,\
+            created_at INTEGER\
+         )"
+    );
+    tx.execute_batch(&create_sql)?;
+    tx.execute_batch(
+        "INSERT INTO vector_default(
+             rowid, embedding, embedding_bin, source_type, kind, created_at
+         )
+         SELECT
+             s.rowid,
+             s.embedding,
+             vec_quantize_binary(s.embedding),
+             CASE s.kind
+                 WHEN 'email'   THEN 'email'
+                 WHEN 'article' THEN 'article'
+                 WHEN 'paper'   THEN 'paper'
+                 WHEN 'meeting' THEN 'meeting'
+                 WHEN 'note'    THEN 'note'
+                 WHEN 'todo'    THEN 'todo'
+                 WHEN 'doc'     THEN 'article'
+                 ELSE 'article'
+             END,
+             s.kind,
+             strftime('%s', 'now')
+         FROM _fathomdb_vector_migration_v0_7_0 s;
+         DROP TABLE _fathomdb_vector_migration_v0_7_0;",
+    )?;
+    tx.commit()
 }
 
 fn encode_vector_blob(vector: &[f32]) -> Vec<u8> {

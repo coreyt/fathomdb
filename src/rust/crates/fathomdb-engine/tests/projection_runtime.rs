@@ -257,7 +257,7 @@ fn ac_031_hybrid_search_surfaces_vector_soft_fallback_when_projection_lags() {
 #[test]
 fn hybrid_search_returns_vector_results_when_text_branch_has_no_match() {
     let (_dir, path) = fixture_path("vector_materialization");
-    let embedder = Arc::new(RoutedEmbedder::new(3));
+    let embedder = Arc::new(RoutedEmbedder::new(8));
     let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
     opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
 
@@ -279,7 +279,7 @@ fn hybrid_search_returns_vector_results_when_text_branch_has_no_match() {
 #[test]
 fn hybrid_search_deduplicates_rows_seen_by_text_and_vector_branches() {
     let (_dir, path) = fixture_path("hybrid_dedup");
-    let embedder = Arc::new(RoutedEmbedder::new(3));
+    let embedder = Arc::new(RoutedEmbedder::new(8));
     let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
     opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
 
