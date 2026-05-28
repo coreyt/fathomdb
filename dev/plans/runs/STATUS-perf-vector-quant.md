@@ -139,20 +139,38 @@ fixture designed for dense embeddings.
 Two fixture replacements are being considered; this section records
 the research, the value each option provides, and the recommendation.
 
-#### Important context: no production embedder is shipped
+#### Important context: production embedder is picked but unimplemented
 
-Per ADR-0.6.0-default-embedder (deferred) and ADR-0.6.0-embedder-
-protocol (contract), fathomdb defines an `Embedder` trait
+Per ADR-0.6.0-default-embedder (Accepted 2026-04-27 but
+implementation deferred 0.6.0 → 0.6.1 → 0.7.0) and ADR-0.6.0-
+embedder-protocol (contract), fathomdb defines an `Embedder` trait
 (`fathomdb-embedder-api`) but ships only `NoopEmbedder`
 (`fathomdb-embedder`, returns `[1.0, 0.0, ...]` for all inputs).
 Neither the Python (`fathomdb-py`) nor TypeScript (`fathomdb-napi`)
 bindings expose an `Embedder` parameter — both call `Engine::open()`
-with no embedder wiring. The candle-based default embedder ADR-
-0.6.0 intended was never built.
+with no embedder wiring.
 
-**Implication for Option 2:** there is no "real production embedder"
-to test against. Choosing one is an open, HITL-gated architectural
-decision (the same one that ADR-0.6.0-default-embedder deferred).
+**The model itself IS picked**, not open: ADR-0.6.0-default-embedder
+§ 2 commits to **`BAAI/bge-small-en-v1.5`** via candle-transformers
+(`bert::BertModel`), mean-pool + L2-norm, dim=384. What's open is
+the implementation, the binding surface, and the EMB-5 loader
+sub-design — not the embedder family. Other candidates
+(all-MiniLM-L6-v2, e5-small, bge-base, gte-small, nomic-embed,
+text-embedding-3-*) appear in the research notes (`dev/notes/0.7.0-
+vector-cost-research.md` Tier-1 #3 / #5) but were rejected for
+0.7.0 work. Matryoshka was HITL-locked out of 0.7.0 as a technique
+("dominated by binary quantization for our setting").
+
+**Implication for Option 2:** the 0.7.1 un-deferral campaign
+(`dev/plans/prompts/0.7.1-EMBEDDER-UNDEFER-HANDOFF.md`) ships the
+already-decided BGE-small. The campaign's *first slice* (EU-0) is
+empirical research to validate that BGE-small actually meets the
+recall floor under Pack 2's K=64 + sign-bit pipeline — because the
+ADR was written before the 0.7.0 PVQ pipeline existed, and recent
+literature shows 384d models under sign-bit can fall well below
+0.90 recall@10 at K=64. HITL re-decision (alternate model, raise
+K, or accept caveat) only triggers if EU-0 RED-shows BGE-small
+fails.
 
 #### Research summary — sign-bit + f32 rerank, recall@10, K~4–6×
 
@@ -240,12 +258,13 @@ Objective reasoning:
    fixture's distribution is representative of production —
    currently it is not.
 
-3. Option 2 requires choosing an embedder for the test fixture that
-   is **representative of an embedder that does not yet exist** in
-   the project. That selection is the same load-bearing decision
-   that ADR-0.6.0-default-embedder deferred. Doing it inside this
-   campaign is scope creep; doing it separately with HITL is the
-   right shape.
+3. Option 2 requires the candle BGE-small impl (per ADR-0.6.0-
+   default-embedder § 2) plus binding surface plus the EMB-5
+   loader sub-design — none of which exists yet. The 0.7.1 plan
+   (`dev/plans/prompts/0.7.1-EMBEDDER-UNDEFER-HANDOFF.md`)
+   sequences this work and includes empirical validation (slice
+   EU-0) as its first step. The embedder *family* is not open;
+   the implementation work is.
 
 4. K=64 was sourced from "Kyle Howells and Cohere binary-quant
    benches" (ADR § 2 point 2). Those benches use modern well-
@@ -298,11 +317,15 @@ Re-measure dev-box AC-013b at N=10K.
    019 closure under the new lever and the Option-2 follow-up.
 6. **Push to origin** — explicit user OK required (per handoff
    constraint).
-7. **Schedule 0.7.1 "production-embedder + real-corpus recall"
-   slice** — choose embedder (HITL), wire into bindings (revives
-   ADR-0.6.0-default-embedder work), run AC-013b against real
-   embeddings on `data/corpus-data/raw/*.jsonl` (amplified to N=1M
-   via deterministic permutation if needed).
+7. **0.7.1 EMBEDDER-UNDEFER campaign** — plan landed at
+   `dev/plans/prompts/0.7.1-EMBEDDER-UNDEFER-HANDOFF.md`. Ships
+   the candle BGE-small-en-v1.5 impl already committed in
+   ADR-0.6.0-default-embedder, the EMB-5 loader sub-design, a
+   tightly-scoped NEED-017/REQ-033 download exception, Python+TS
+   bindings, and real-corpus AC-013b validation. Empirical
+   recall research (EU-0) runs first to confirm BGE-small meets
+   the floor at K=64 under the 0.7.0 PVQ pipeline; HITL re-
+   decision only if EU-0 RED.
 
 ## Compaction-resume checklist
 
