@@ -148,3 +148,49 @@ or compile-time pain forces it.
 - `dev/notes/project-vector-identity-invariant.md` — embedder owns
   identity; vector configs never carry identity strings.
 - Stop-doing: per-item variable embedding; speculative knobs.
+
+## 0.7.1 implementation choice (HITL 2026-05-28)
+
+The 0.6.0 ADR established the architecture but deferred the model name and
+the binary-quant-pipeline parameters. The 0.7.1 EMBEDDER-UNDEFER campaign
+(`dev/plans/prompts/0.7.1-EMBEDDER-UNDEFER-HANDOFF.md`) resolved both
+empirically (research artifact: `dev/notes/0.7.1-default-embedder-research.md`).
+
+**Chosen configuration:**
+
+| Knob                   | Value                                |
+|------------------------|--------------------------------------|
+| Model                  | `BAAI/bge-small-en-v1.5`             |
+| Dimension              | 384                                  |
+| Pooling                | mean-pool over attention mask (EMB-1) |
+| Post-pool norm         | L2 (EMB-2)                           |
+| Rerank K (sign-bit → f32) | **128**                           |
+| Mean-centering         | **ON** — subtract corpus-mean f32 vector before sign-quantize, at both write and query |
+
+**New architectural element introduced by 0.7.1 (mean-centering).** The
+corpus-mean f32 vector (1536 bytes at 384d) is a per-workspace constant
+stored alongside the index in `_fathomdb_embedder_profiles`. It is
+subtracted from each vector before the sign-bit quantization step on both
+the write path (`run_projection_job`) and the query path (synchronous
+caller-thread embed). The f32 rerank uses the un-centered f32 vector — the
+centering is purely a sign-bit-quantization bias-correction, not a change
+to the geometry of the f32 space. Recomputation policy and persistence
+schema are an EU-2 design decision (forward-cited).
+
+**Why this model + K + mc combination.** Empirically (N=100 synthetic
+queries against the 7,667-doc 0.7.0 corpus): bge-small + mc at K=128 reaches
+recall@10 = 0.907 (95% CI overlapping 0.90); bge-base at K=96 reaches 0.914
+at ~2× storage and ~3× per-query embed latency. CIs overlap; the cost
+delta does not. HITL accepted the thinner floor headroom in exchange for
+the storage/latency win, with the explicit follow-up that
+`AC013B_RECALL_FLOOR` is re-derived against real bge-small embeddings
+before the EU-5 lock-flip (the existing floor was calibrated on the
+isotropic AC-013b fixture and is not directly portable to real anisotropic
+embeddings).
+
+**Status update.** This ADR's "accepted but unimplemented" posture
+transitions to "implemented in 0.7.1" once EU-5 lands. The EMB-5 loader
+sub-design (cited at line 106-109) is still required and is the EU-2
+deliverable; the 0.7.1 weight-fetch exception to NEED-017 / REQ-033 is
+captured separately in `ADR-0.7.1-default-embedder-weight-fetch.md`
+(EU-1 deliverable).
