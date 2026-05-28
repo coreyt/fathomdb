@@ -177,8 +177,8 @@ pub enum EmbedderLoadError {
         attempts: u32,
     },
 
-    #[error("checksum mismatch for {file}: expected {expected}, observed {observed}")]
-    ChecksumMismatch { file: String, expected: String, observed: String },
+    #[error("checksum mismatch for {file:?}: expected {expected}, actual {actual}")]
+    ChecksumMismatch { file: PathBuf, expected: String, actual: String },
 
     #[error("cache I/O error at {path:?}: {source}")]
     CacheIoError {
@@ -187,16 +187,26 @@ pub enum EmbedderLoadError {
         source: std::io::Error,
     },
 
-    /// Reserved for EU-4 (model byte → `BertModel` parse failures).
-    #[error("model deserialize: {0}")]
-    ModelDeserialize(String),
+    /// Model byte → `BertModel` parse failure (EU-4). Wraps the candle
+    /// error verbatim so the engine layer (EU-5) can pattern-match on
+    /// concrete variants when classifying.
+    #[error("model deserialize: {source}")]
+    ModelDeserialize {
+        #[source]
+        source: candle_core::Error,
+    },
 
-    /// Reserved for EU-4 (`tokenizer.json` parse failures).
-    #[error("tokenizer load: {0}")]
-    TokenizerLoad(String),
+    /// `tokenizer.json` parse failure (EU-4). Wraps the tokenizers error
+    /// verbatim. Boxed because `tokenizers::Error` is a
+    /// `Box<dyn Error + Send + Sync>` alias, and we need a sized type.
+    #[error("tokenizer load: {source}")]
+    TokenizerLoad {
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
 
-    #[error("timed out acquiring embedder cache lock after {0:?}")]
-    LockTimeout(Duration),
+    #[error("timed out acquiring embedder cache lock at {lock_path:?} after {waited_s}s")]
+    LockTimeout { lock_path: PathBuf, waited_s: u64 },
 }
 
 /// Per-attempt download error. This is the internal error type used by
@@ -556,9 +566,9 @@ fn fetch_under_lock(
         // Fail-closed: remove the partial (design §6).
         let _ = fs::remove_file(&partial_path);
         return Err(EmbedderLoadError::ChecksumMismatch {
-            file: file_name.to_string(),
+            file: partial_path.clone(),
             expected: expected_sha.to_string(),
-            observed: observed_sha,
+            actual: observed_sha,
         });
     }
 
@@ -660,7 +670,10 @@ fn acquire_exclusive_with_timeout(
                     });
                 }
                 if Instant::now() >= deadline {
-                    return Err(EmbedderLoadError::LockTimeout(timeout));
+                    return Err(EmbedderLoadError::LockTimeout {
+                        lock_path: lock_path.to_path_buf(),
+                        waited_s: timeout.as_secs(),
+                    });
                 }
                 std::thread::sleep(Duration::from_millis(25));
             }

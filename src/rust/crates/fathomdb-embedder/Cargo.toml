@@ -20,9 +20,31 @@ fs2 = { version = "0.4", optional = true }
 serde_json = { version = "1", optional = true }
 thiserror = { version = "1", optional = true }
 
+# Candle stack + tokenizer for the default `CandleBgeEmbedder` (EU-4).
+# Pinned to candle 0.10 (current stable line) and tokenizers 0.21. Gated
+# under `default-embedder` so the no-feature build closure remains thin
+# (EMB-3 wheel-size gate). `safetensors` is reached transitively via
+# candle-core's re-export per ADR-0.6.0-default-embedder consequences;
+# no direct dep here.
+candle-core         = { version = "0.10", optional = true }
+candle-nn           = { version = "0.10", optional = true }
+candle-transformers = { version = "0.10", optional = true, default-features = false }
+tokenizers          = { version = "0.20", optional = true, default-features = false, features = ["onig"] }
+
 [features]
 default = []
-default-embedder = ["dep:ureq", "dep:sha2", "dep:dirs", "dep:fs2", "dep:serde_json", "dep:thiserror"]
+default-embedder = [
+    "dep:ureq",
+    "dep:sha2",
+    "dep:dirs",
+    "dep:fs2",
+    "dep:serde_json",
+    "dep:thiserror",
+    "dep:candle-core",
+    "dep:candle-nn",
+    "dep:candle-transformers",
+    "dep:tokenizers",
+]
 # Exposes `LoaderConfig` constructors/setters and `load_with_config` so
 # integration tests (or downstream test harnesses) can substitute base URLs,
 # cache roots, and pinned shas. Production callers MUST NOT enable this

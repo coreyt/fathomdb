@@ -3,6 +3,12 @@ use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 #[cfg(feature = "default-embedder")]
 pub mod loader;
 
+#[cfg(feature = "default-embedder")]
+mod candle_bge;
+
+#[cfg(feature = "default-embedder")]
+pub use candle_bge::{CandleBgeEmbedder, DEFAULT_EMBEDDER_DIM, DEFAULT_EMBEDDER_NAME};
+
 #[derive(Clone, Debug)]
 pub struct NoopEmbedder {
     identity: EmbedderIdentity,
