@@ -37,6 +37,7 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use fs2::FileExt;
@@ -73,12 +74,33 @@ const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// Default read timeout (design §2).
 const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(60);
 /// Total attempts including the first (design §2).
+///
+/// Design §2 calls out "three attempts per file, with exponential backoff
+/// of 1s, 2s, 4s between attempts." We interpret that literally as **3
+/// attempt slots** (initial + 2 retries), with sleeps of **1s and 2s**
+/// between them — the trailing "4s" in the design phrasing is the
+/// hypothetical sleep that would precede a fourth slot we never make.
+/// See Issue 4 in the EU-3 FIX-1 review notes.
 const MAX_ATTEMPTS: u32 = 3;
 /// Default lock acquisition timeout (design §10).
 const DEFAULT_LOCK_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Env var consulted for the lock timeout override.
 pub(crate) const ENV_LOCK_TIMEOUT: &str = "FATHOMDB_EMBEDDER_LOCK_TIMEOUT_SECS";
+
+/// Returns the 12-hex-char model-sha-prefix used in the cache layout
+/// (design §4): `sha256("<repo>@<revision>")[..12]`. Computed once and
+/// memoized — the inputs are compile-time constants but `sha2::Sha256`
+/// has no const-eval path, so we lazy-cache.
+fn model_sha_prefix() -> &'static str {
+    static PREFIX: OnceLock<String> = OnceLock::new();
+    PREFIX.get_or_init(|| {
+        let mut h = Sha256::new();
+        h.update(format!("{HF_REPO}@{HF_REVISION}").as_bytes());
+        let hex = format!("{:x}", h.finalize());
+        hex[..12].to_string()
+    })
+}
 
 // ----- Public types ---------------------------------------------------------
 
@@ -149,11 +171,76 @@ pub enum EmbedderLoadError {
     #[error("tokenizer load: {0}")]
     TokenizerLoad(String),
 
-    #[error("HTTP error fetching {file}: status {status}")]
-    HttpStatus { file: String, status: u16 },
-
     #[error("timed out acquiring embedder cache lock after {0:?}")]
     LockTimeout(Duration),
+}
+
+/// Whether a given error should be retried within `download_with_retries`
+/// (design §2). Connect failures, 5xx, read timeouts, 408, and 429 are
+/// retryable; everything else fails fast (including 4xx other than 408/429,
+/// `CacheIoError`, `ChecksumMismatch`, and `LockTimeout`).
+fn retry_decision(err: &EmbedderLoadError) -> RetryDecision {
+    match err {
+        EmbedderLoadError::NetworkUnavailable { source, .. } => {
+            // Inspect the message; the `ureq::Error` Display surfaces the
+            // status code on `Status(code, _)` errors. Transport errors
+            // (DNS/TCP/timeout) are `Transport(_)` — those always retry.
+            let s = source.to_string();
+            // Heuristic: numeric status preceded by a non-digit and followed
+            // by a non-digit. Cheap and good enough for the small set we care
+            // about, without taking a concrete `ureq::Error` dependency in
+            // this dispatch.
+            if let Some(code) = extract_http_status(&s) {
+                if (500..=599).contains(&code) || code == 408 || code == 429 {
+                    RetryDecision::Retry
+                } else {
+                    RetryDecision::FailFast
+                }
+            } else {
+                // No status → transport-level error (DNS/connect/read timeout).
+                RetryDecision::Retry
+            }
+        }
+        // CacheIoError, ChecksumMismatch, LockTimeout, ModelDeserialize,
+        // TokenizerLoad are all fail-fast per design §2.
+        _ => RetryDecision::FailFast,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RetryDecision {
+    Retry,
+    FailFast,
+}
+
+/// Pulls the first `100..=599` token out of an error message. Used to
+/// classify retryability of an HTTP error without coupling to `ureq`'s
+/// concrete error enum at this layer.
+fn extract_http_status(msg: &str) -> Option<u16> {
+    let bytes = msg.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i].is_ascii_digit() {
+            let mut j = i;
+            while j < bytes.len() && bytes[j].is_ascii_digit() {
+                j += 1;
+            }
+            // Require a 3-digit run, not flanked by another digit.
+            if j - i == 3 {
+                if let Ok(s) = std::str::from_utf8(&bytes[i..j]) {
+                    if let Ok(n) = s.parse::<u16>() {
+                        if (100..=599).contains(&n) {
+                            return Some(n);
+                        }
+                    }
+                }
+            }
+            i = j;
+        } else {
+            i += 1;
+        }
+    }
+    None
 }
 
 // ----- Loader configuration -------------------------------------------------
@@ -164,11 +251,11 @@ pub enum EmbedderLoadError {
 /// surfaces explicitly designed for testing (base URL, cache root, pinned
 /// shas, HF token).
 ///
-/// **Scope guardrail**: this type is `pub` so the test integration file can
-/// name it, but every setter is similarly only useful inside tests; in
-/// production the loader is invoked exclusively through the zero-arg entry
-/// point. None of the public surface accepts a caller-controlled URL,
-/// repo, or model name.
+/// **Scope guardrail (ADR-0.7.1 #1)**: outside the `loader-test-hooks`
+/// feature, this type's constructors, setters, and the
+/// `load_with_config` entry point are unreachable from external crates.
+/// In production, `load_pinned_default_embedder()` is the only public
+/// surface — base URL, repo, and pinned shas cannot be substituted.
 #[derive(Debug, Clone)]
 pub struct LoaderConfig {
     base_url: String,
@@ -185,7 +272,11 @@ pub struct LoaderConfig {
 impl LoaderConfig {
     /// Production constructor: real HF base URL, OS cache dir, real pinned
     /// shas, `HF_TOKEN` env var (if set).
-    pub fn production() -> Result<Self, EmbedderLoadError> {
+    ///
+    /// `pub(crate)` so only `load_pinned_default_embedder()` can build a
+    /// production-config — downstream callers cannot reach a `LoaderConfig`
+    /// without enabling `loader-test-hooks` (ADR-0.7.1 scope guardrail #1).
+    pub(crate) fn production() -> Result<Self, EmbedderLoadError> {
         let cache_root = dirs::cache_dir().ok_or_else(|| EmbedderLoadError::CacheIoError {
             path: PathBuf::from("<dirs::cache_dir>"),
             source: std::io::Error::new(
@@ -214,6 +305,7 @@ impl LoaderConfig {
     /// Test constructor: dummy base URL / cache, placeholder shas. Callers
     /// (tests only — see module docs) override what they care about via the
     /// builder setters below.
+    #[cfg(any(test, feature = "loader-test-hooks"))]
     pub fn for_tests() -> Self {
         Self {
             base_url: "http://127.0.0.1:0".to_string(),
@@ -228,21 +320,25 @@ impl LoaderConfig {
         }
     }
 
+    #[cfg(any(test, feature = "loader-test-hooks"))]
     pub fn with_base_url(mut self, base_url: String) -> Self {
         self.base_url = base_url;
         self
     }
 
+    #[cfg(any(test, feature = "loader-test-hooks"))]
     pub fn with_cache_root(mut self, cache_root: PathBuf) -> Self {
         self.cache_root = cache_root;
         self
     }
 
+    #[cfg(any(test, feature = "loader-test-hooks"))]
     pub fn with_hf_token(mut self, token: Option<String>) -> Self {
         self.hf_token = token;
         self
     }
 
+    #[cfg(any(test, feature = "loader-test-hooks"))]
     pub fn with_test_pins(
         mut self,
         config_sha: String,
@@ -257,11 +353,19 @@ impl LoaderConfig {
 
     /// Directory where the three files will live. Exposed for tests so they
     /// can pre-stage `.partial` fixtures.
+    #[cfg(any(test, feature = "loader-test-hooks"))]
     pub fn expected_cache_dir(&self) -> PathBuf {
-        // Use the first 12 hex of the pinned model sha so the cache key
-        // changes whenever the underlying weights change (design §4).
-        let prefix = &self.model_sha[..12.min(self.model_sha.len())];
-        self.cache_root.join("fathomdb").join("embedders").join(prefix)
+        self.cache_dir_internal()
+    }
+
+    /// Internal cache-dir resolver — uses `sha256("<repo>@<revision>")[..12]`
+    /// per design §4 (Issue 2 fix). Note: this depends only on the repo +
+    /// revision identity, NOT on the file's own sha — so an empty
+    /// `model_sha` (as in `for_tests()`) no longer collapses the prefix to
+    /// `""`, and a future revision bump that touches only `config.json`
+    /// still lands in a distinct cache dir.
+    fn cache_dir_internal(&self) -> PathBuf {
+        self.cache_root.join("fathomdb").join("embedders").join(model_sha_prefix())
     }
 }
 
@@ -270,14 +374,20 @@ impl LoaderConfig {
 /// Zero-arg production entry point. The only function a caller outside the
 /// crate ever needs.
 pub fn load_pinned_default_embedder() -> Result<LoadedWeights, EmbedderLoadError> {
-    load_with_config(LoaderConfig::production()?)
+    load_with_config_internal(LoaderConfig::production()?)
 }
 
 /// Test/integration entry point. Same body as the production path but takes
-/// an explicit `LoaderConfig`. Kept `pub` so the loader integration tests can
-/// pin it.
+/// an explicit `LoaderConfig`. Gated behind `loader-test-hooks` so
+/// downstream crates cannot substitute base URL / pinned shas in
+/// production builds (ADR-0.7.1 scope guardrail #1).
+#[cfg(any(test, feature = "loader-test-hooks"))]
 pub fn load_with_config(cfg: LoaderConfig) -> Result<LoadedWeights, EmbedderLoadError> {
-    let cache_dir = cfg.expected_cache_dir();
+    load_with_config_internal(cfg)
+}
+
+fn load_with_config_internal(cfg: LoaderConfig) -> Result<LoadedWeights, EmbedderLoadError> {
+    let cache_dir = cfg.cache_dir_internal();
     fs::create_dir_all(&cache_dir)
         .map_err(|source| EmbedderLoadError::CacheIoError { path: cache_dir.clone(), source })?;
 
@@ -436,9 +546,18 @@ fn download_with_retries(
         match download_once(cfg, url, partial_path, file_name) {
             Ok(n) => return Ok(n),
             Err(e) => {
+                // Fail-fast errors (4xx other than 408/429, CacheIoError,
+                // ChecksumMismatch, LockTimeout) abort retries immediately
+                // per design §2.
+                if retry_decision(&e) == RetryDecision::FailFast {
+                    return Err(e);
+                }
                 last_err = Some(e);
                 if attempt + 1 < MAX_ATTEMPTS {
-                    std::thread::sleep(Duration::from_millis(100 * (1 << attempt) as u64));
+                    // Design §2: 1s, 2s, (4s) — for MAX_ATTEMPTS=3 that's
+                    // 1s then 2s before the second and third tries.
+                    let secs = 1u64 << attempt;
+                    std::thread::sleep(Duration::from_secs(secs));
                 }
             }
         }
@@ -475,10 +594,23 @@ fn download_once(
 
     let status = resp.status();
     if !(status == 200 || status == 206) {
-        return Err(EmbedderLoadError::HttpStatus { file: file_name.to_string(), status });
+        // Fold HTTP status failures into NetworkUnavailable so the retry
+        // discriminator (`retry_decision`) classifies them uniformly.
+        // The numeric status appears in the message so `extract_http_status`
+        // can read it.
+        return Err(EmbedderLoadError::NetworkUnavailable {
+            file: file_name.to_string(),
+            source: format!("HTTP status {status}").into(),
+        });
     }
 
-    // Open in append mode for resume (206); truncate for 200 to start fresh.
+    // Non-resume path uses `create_new` per design §5 step 2: a stale
+    // `.partial` from a crashed prior run that didn't pass sha verification
+    // must NOT be silently appended-to. Issue 3 (FIX-1): if a stale partial
+    // is present here, we are by definition not in the resume path
+    // (`existing == 0` OR server returned 200, discarding the old bytes), so
+    // the partial is stale and we delete-then-recreate. The alternative
+    // would be to fail; we pick delete-and-retry because it self-heals.
     let mut f = if status == 206 && existing > 0 {
         let mut f = OpenOptions::new().write(true).open(partial_path).map_err(|source| {
             EmbedderLoadError::CacheIoError { path: partial_path.to_path_buf(), source }
@@ -489,9 +621,29 @@ fn download_once(
         })?;
         f
     } else {
-        OpenOptions::new().create(true).write(true).truncate(true).open(partial_path).map_err(
-            |source| EmbedderLoadError::CacheIoError { path: partial_path.to_path_buf(), source },
-        )?
+        match OpenOptions::new().write(true).create_new(true).open(partial_path) {
+            Ok(f) => f,
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                // Stale partial from a crashed prior run. Design §5 step 2
+                // forbids silent overwrite — clean up explicitly, then
+                // retry create_new.
+                fs::remove_file(partial_path).map_err(|source| {
+                    EmbedderLoadError::CacheIoError { path: partial_path.to_path_buf(), source }
+                })?;
+                OpenOptions::new().write(true).create_new(true).open(partial_path).map_err(
+                    |source| EmbedderLoadError::CacheIoError {
+                        path: partial_path.to_path_buf(),
+                        source,
+                    },
+                )?
+            }
+            Err(source) => {
+                return Err(EmbedderLoadError::CacheIoError {
+                    path: partial_path.to_path_buf(),
+                    source,
+                });
+            }
+        }
     };
 
     let mut reader = resp.into_reader();

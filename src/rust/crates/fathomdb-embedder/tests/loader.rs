@@ -22,7 +22,7 @@
 //! hitting HTTP at all. This variant is cleaner to assert and exercises the
 //! "cache-hit path does NOT take the lock" property.
 
-#![cfg(feature = "default-embedder")]
+#![cfg(all(feature = "default-embedder", feature = "loader-test-hooks"))]
 
 use std::fs;
 use std::io::Write;
