@@ -34,7 +34,7 @@ Orchestrator: main thread (Claude Code session). Pattern per `dev/design/orchest
 |---|---|---|---|---|
 | AC-013 p50 | 2048 ms @ N=1M (W4.1) | 12 ms (post-batch-fix) | ≤ 80 ms | GREEN at dev-box; awaits canonical-CI |
 | AC-013 p99 | 2327 ms @ N=1M (W4.1) | 16 ms (post-batch-fix) | ≤ 300 ms | GREEN at dev-box; awaits canonical-CI |
-| AC-013b recall@10 | n/a | not yet re-measured | ≥ 0.90 | needs re-run after projection-scanner perf tuning (see below) |
+| AC-013b recall@10 | n/a (collapsed) | **0.1572** at N=10K (post-batch-fix) | ≥ 0.90 | **RED — embedder-fixture issue, see below** |
 | AC-019 stress p99 | 8388 ms @ N=1M (W4.1) | 131 ms (post-P2) | improve | GREEN at dev-box; awaits canonical-CI |
 | AC-012 / AC-017 / AC-018 | GREEN | GREEN | GREEN | unchanged |
 | AC-020 | GREEN at canonical | flaky dev-box (pre-existing, stash-sandwich confirmed) | GREEN | unchanged |
@@ -93,6 +93,70 @@ A follow-up slice should widen the dispatcher to enqueue all rows
 returned by the LIMIT-32 SELECT (respecting
 `PROJECTION_INFLIGHT_LIMIT`). Out of scope for the immediate batch-
 collapse fix.
+
+**Update (post-fix, commit `53a270d`):** scanner fix landed.
+PROJECTION_INFLIGHT_LIMIT raised 8 → 32; dispatcher now fills the
+full inflight budget per scan cycle. Dev-box AC-013 seed dropped
+28113 → 2548 ms (11× faster); full AC-013/AC-013b test runtime
+fell from 25+ min (killed) to 65 s at N=10K.
+
+## Critical finding — AC-013b recall floor is currently NOT MET
+
+With the batch collapse fixed AND the scanner fix landed, the
+honest dev-box AC-013b recall measurement at N=10K is:
+
+```
+RECALL_NUMBERS n=10000 samples=1000 recall_at_10=0.1572
+```
+
+That is **far below** the HITL-locked `≥ 0.90` floor and would also
+fail at canonical-CI N=1M.
+
+Pre-fix this read 1.0 because the corpus collapsed to ~10 unique
+vec0 rows per 10K writes; brute-force ground truth and production
+both returned the same trivially-small set, making recall=1.0 a
+degenerate measurement.
+
+**Likely root cause — embedder-fixture pathology, not Pack 2 SQL.**
+`VaryingEmbedder` (perf_gates.rs:~310, corpus_subset.rs:~239)
+produces vectors with only 6 of 768 coordinates non-zero (FNV-1a
+hash → 6 ±0.5 coord placements, then L2-normalize). After
+`vec_quantize_binary` takes the sign bit of every coordinate, ~762
+of the 768 bits encode the IEEE sign of an exact 0.0 (positive),
+i.e. the bit-distance between any two corpus vectors is dominated by
+762 bits of constant noise and only ~6 bits of actual signal. The
+bit-KNN top-K=64 ANN step then returns essentially random
+candidates, and the f32 rerank can only pick the true top-10 from
+what's in those candidates — hence recall ≈ K/N rather than ≈ 1.0.
+
+This makes the `=0.1572` measurement **not** a fault of Pack 2's SQL
+shape, the K=64 choice, or the binary-quant ADR — it's a fault of
+using a sparse-by-construction synthetic embedder to validate a
+fixture designed for dense embeddings.
+
+**Next-step options (pick one before P2-CANONICAL dispatch):**
+
+1. **Switch the perf_gates fixture to a denser synthetic embedder.**
+   Replace VaryingEmbedder with one that fills every coordinate
+   (e.g. deterministic Gaussian / sign-balanced random, seeded by
+   FNV hash). Re-measure dev-box AC-013b; expect recall ≥ 0.90.
+   Then dispatch canonical-CI. Cheapest path.
+
+2. **Switch the perf_gates fixture to the real corpus** via the new
+   `examples/ingest_corpus.rs` + `data/corpus-data/raw/*.jsonl`
+   path. Real-embedding cost dominates and the corpus is small
+   (~7,667 docs), so N=1M canonical-CI would still need a synthetic
+   amplification. Best for fidelity, more work.
+
+3. **Re-evaluate K=64.** Only meaningful AFTER (1) or (2) — until
+   the fixture supports bit-quantization, K can't be tuned.
+
+4. **HITL re-decision.** Re-open ADR § 6 open question with the
+   above context.
+
+The campaign **must not** lock-flip the ADRs (open HITL item 3)
+until AC-013b is honestly ≥ 0.90 against a representative fixture.
+
 
 ## Open HITL items (awaits user)
 
