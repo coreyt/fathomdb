@@ -133,6 +133,21 @@ NEED-017: **No implicit model download or network dependency.**
 Users need embedder/model lifecycle to remain caller-owned; the system should
 not surprise them by downloading model weights or requiring external services.
 
+**Exception (default embedder only, opt-in).** When the caller opts into
+the default embedder by passing `use_default_embedder=true` (or by
+selecting it explicitly at construction), the engine MAY download the
+single declared default-embedder weight set from a fixed URL set on first
+use, cache it under the platform user-cache directory, verify by sha256,
+and load it. This exception is scoped to: (a) the single named
+default-embedder identity recorded in the workspace; (b) weight files
+referenced by sha256 in the published `fathomdb-embedder` crate; (c) no
+other model, no arbitrary URL, no user-controllable model name.
+Caller-supplied embedders remain caller-owned per the unchanged rule.
+The first-use download path SHALL emit a structured
+`default_embedder_download` event in `OpenReport.embedder_events`
+describing url + bytes + sha256 + cache-path, so the wire/disk activity
+is visible. _Cross-cite:_ ADR-0.7.1-default-embedder-weight-fetch.
+
 ## Non-Functional Needs
 
 NEED-020: **Reliability: bounded shutdown and no deadlocks.**

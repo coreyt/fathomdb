@@ -68,6 +68,15 @@ Decisions that are not yet settled. Drafts pending after Phase 1 ADRs land.
 | 30  | architecture | Database lock mechanism (hybrid sidecar flock + PRAGMA locking_mode=EXCLUSIVE; overrides earlier "no sidecar" assertion in architecture.md § 5 + § 8 + § 11) | superseded (2026-05-02) by ADR-0.6.0-database-lock-mechanism-reader-pool-revision | ADR-0.6.0-database-lock-mechanism.md                                     |
 | 31  | architecture | Database lock mechanism — reader-pool revision (drops PRAGMA locking_mode=EXCLUSIVE; retains sidecar flock; admits `-shm` as a normal WAL artifact)          | accepted (HITL 2026-05-02)                                                        | ADR-0.6.0-database-lock-mechanism-reader-pool-revision.md                |
 
+## Phase 0.7.1 (campaign-specific ADRs)
+
+Decisions that arose during the 0.7.1 EMBEDDER-UNDEFER campaign. Listed
+separately because they post-date the 0.6.0 Phase 1/2 deliberation.
+
+| #   | Category | Candidate decision                                                                                                                               | HITL verdict               | ADR file                                   |
+| --- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- | ------------------------------------------ |
+| 32  | design   | Narrow exception to NEED-017 / REQ-033 permitting opt-in default-embedder weight fetch on first use, sha256-pinned, with `OpenReport` visibility | accepted (HITL 2026-05-28) | ADR-0.7.1-default-embedder-weight-fetch.md |
+
 ## Categories
 
 acceptance | architecture | design | interface.

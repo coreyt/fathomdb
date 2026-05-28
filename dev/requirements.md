@@ -270,8 +270,23 @@ the ADR is authoritative.
 - **REQ-033 — No implicit network fetch on `Engine.open`.** Engine never
   downloads or hosts embedder model weights; embedder is supplied by
   the caller.
+  **Exception (default embedder only, opt-in).** When the caller opts
+  into the default embedder by passing `use_default_embedder=true` (or
+  by selecting it explicitly at construction), the engine MAY download
+  the single declared default-embedder weight set from a fixed URL set
+  on first use, cache it under the platform user-cache directory,
+  verify by sha256, and load it. This exception is scoped to: (a) the
+  single named default-embedder identity recorded in the workspace;
+  (b) weight files referenced by sha256 in the published
+  `fathomdb-embedder` crate; (c) no other model, no arbitrary URL, no
+  user-controllable model name. Caller-supplied embedders remain
+  caller-owned per the unchanged rule. The first-use download path
+  SHALL emit a structured `default_embedder_download` event in
+  `OpenReport.embedder_events` describing url + bytes + sha256 +
+  cache-path, so the wire/disk activity is visible.
   _Source:_ `dev/notes/0.6.0-rewrite-proposal.md` § Anti-requirements
-  (embedder model hosting). _Cross-cite:_ ADR-0.6.0-default-embedder.
+  (embedder model hosting). _Cross-cite:_ ADR-0.6.0-default-embedder;
+  ADR-0.7.1-default-embedder-weight-fetch (exception).
 
 - **REQ-034 — FTS5 injection-safe text queries.** Agent / LLM-generated
   text queries cannot inject FTS5 control syntax; safe grammar tokenises
