@@ -1,5 +1,8 @@
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 
+#[cfg(feature = "default-embedder")]
+pub mod loader;
+
 #[derive(Clone, Debug)]
 pub struct NoopEmbedder {
     identity: EmbedderIdentity,
