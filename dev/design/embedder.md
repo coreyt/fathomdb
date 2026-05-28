@@ -715,6 +715,10 @@ pub enum EmbedderLoadError {
     },
     #[error("tokenizer load failed")]
     TokenizerLoad {
+        // Boxed at the impl site because `tokenizers::Error` is itself a
+        // `Box<dyn Error + Send + Sync>` type alias upstream; the design
+        // wrote the literal name for clarity, the implementation uses
+        // `Box<dyn Error + Send + Sync>` directly (EU-4 reconciliation).
         #[source] source: tokenizers::Error,
     },
     #[error("lock acquisition timed out on {lock_path:?} after {waited_s}s")]

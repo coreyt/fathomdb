@@ -21,7 +21,7 @@ serde_json = { version = "1", optional = true }
 thiserror = { version = "1", optional = true }
 
 # Candle stack + tokenizer for the default `CandleBgeEmbedder` (EU-4).
-# Pinned to candle 0.10 (current stable line) and tokenizers 0.21. Gated
+# Pinned to candle 0.10 (current stable line) and tokenizers 0.20. Gated
 # under `default-embedder` so the no-feature build closure remains thin
 # (EMB-3 wheel-size gate). `safetensors` is reached transitively via
 # candle-core's re-export per ADR-0.6.0-default-embedder consequences;
