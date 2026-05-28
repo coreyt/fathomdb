@@ -2475,7 +2475,7 @@ fn projection_dispatcher_loop(shared: Arc<ProjectionRuntimeShared>) {
             };
             PROJECTION_INFLIGHT_LIMIT.saturating_sub(state.active_jobs + state.queued_jobs)
         };
-        let fetch_cap = budget.min(PROJECTION_SCAN_FETCH).max(1);
+        let fetch_cap = budget.clamp(1, PROJECTION_SCAN_FETCH);
         match next_pending_projection_jobs(&connection, &in_flight, fetch_cap) {
             Ok(jobs) if !jobs.is_empty() => {
                 if let Ok(mut state) = shared.state.lock() {
