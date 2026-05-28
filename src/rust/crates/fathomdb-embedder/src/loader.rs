@@ -85,8 +85,32 @@ const MAX_ATTEMPTS: u32 = 3;
 /// Default lock acquisition timeout (design §10).
 const DEFAULT_LOCK_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// Env var consulted for the lock timeout override.
-pub(crate) const ENV_LOCK_TIMEOUT: &str = "FATHOMDB_EMBEDDER_LOCK_TIMEOUT_SECS";
+/// Env var consulted for the lock timeout override (design §10).
+pub(crate) const ENV_LOCK_TIMEOUT: &str = "FATHOMDB_EMBEDDER_LOCK_TIMEOUT_S";
+
+/// Env var consulted for the HTTP connect timeout override (design §2).
+pub(crate) const ENV_CONNECT_TIMEOUT: &str = "FATHOMDB_EMBEDDER_CONNECT_TIMEOUT_S";
+
+/// Env var consulted for the HTTP read timeout override (design §2).
+pub(crate) const ENV_READ_TIMEOUT: &str = "FATHOMDB_EMBEDDER_READ_TIMEOUT_S";
+
+/// Parse a `u64`-seconds env var, returning the default on missing/invalid.
+/// On invalid input emits a `stderr` warning (no panic, no `unwrap`).
+fn parse_secs_env_or_default(var: &str, default: Duration) -> Duration {
+    match std::env::var(var) {
+        Ok(s) => match s.parse::<u64>() {
+            Ok(n) => Duration::from_secs(n),
+            Err(_) => {
+                eprintln!(
+                    "fathomdb-embedder: invalid value for {var} ({s:?}); falling back to default \
+                     {default:?}"
+                );
+                default
+            }
+        },
+        Err(_) => default,
+    }
+}
 
 /// Returns the 12-hex-char model-sha-prefix used in the cache layout
 /// (design §4): `sha256("<repo>@<revision>")[..12]`. Computed once and
@@ -146,11 +170,11 @@ pub enum EmbedderEvent {
 /// Failure taxonomy (design §9). Engine-level mapping is owned by EU-5.
 #[derive(Debug, Error)]
 pub enum EmbedderLoadError {
-    #[error("network unavailable while fetching {file}: {source}")]
+    #[error("network unavailable after {attempts} attempts: {source}")]
     NetworkUnavailable {
-        file: String,
         #[source]
-        source: Box<dyn std::error::Error + Send + Sync>,
+        source: ureq::Error,
+        attempts: u32,
     },
 
     #[error("checksum mismatch for {file}: expected {expected}, observed {observed}")]
@@ -175,35 +199,40 @@ pub enum EmbedderLoadError {
     LockTimeout(Duration),
 }
 
-/// Whether a given error should be retried within `download_with_retries`
-/// (design §2). Connect failures, 5xx, read timeouts, 408, and 429 are
-/// retryable; everything else fails fast (including 4xx other than 408/429,
-/// `CacheIoError`, `ChecksumMismatch`, and `LockTimeout`).
-fn retry_decision(err: &EmbedderLoadError) -> RetryDecision {
+/// Per-attempt download error. This is the internal error type used by
+/// `download_once`/`download_with_retries`: it preserves the concrete
+/// `ureq::Error` so the design-§9 `NetworkUnavailable.source: ureq::Error`
+/// shape is honored when retries are exhausted, while also carrying
+/// fatal cache I/O failures that should abort retries immediately.
+enum DownloadAttemptError {
+    /// Network-class failure (connect, read, HTTP status). Classified into
+    /// `RetryDecision` via `retry_decision_ureq`.
+    Network(ureq::Error),
+    /// Mid-stream read failure on the response body. ureq does not expose
+    /// a public `Transport` constructor, so we cannot package this as a
+    /// `ureq::Error::Transport` directly; instead we keep the raw
+    /// `io::Error` and the retry loop maps it to the same retry-class as
+    /// a `Transport`-level error per design §2 (read timeouts retry).
+    NetworkStreamIo(std::io::Error),
+    /// Cache I/O failure during the attempt (writing the `.partial`,
+    /// opening, fsync, etc.). Always fail-fast.
+    CacheIo { path: PathBuf, source: std::io::Error },
+}
+
+/// Whether a given network error should be retried within
+/// `download_with_retries` (design §2). Connect failures, 5xx, read
+/// timeouts, 408, and 429 are retryable; 4xx other than 408/429 fail fast.
+fn retry_decision_ureq(err: &ureq::Error) -> RetryDecision {
     match err {
-        EmbedderLoadError::NetworkUnavailable { source, .. } => {
-            // Inspect the message; the `ureq::Error` Display surfaces the
-            // status code on `Status(code, _)` errors. Transport errors
-            // (DNS/TCP/timeout) are `Transport(_)` — those always retry.
-            let s = source.to_string();
-            // Heuristic: numeric status preceded by a non-digit and followed
-            // by a non-digit. Cheap and good enough for the small set we care
-            // about, without taking a concrete `ureq::Error` dependency in
-            // this dispatch.
-            if let Some(code) = extract_http_status(&s) {
-                if (500..=599).contains(&code) || code == 408 || code == 429 {
-                    RetryDecision::Retry
-                } else {
-                    RetryDecision::FailFast
-                }
-            } else {
-                // No status → transport-level error (DNS/connect/read timeout).
+        ureq::Error::Status(code, _) => {
+            if (500..=599).contains(code) || *code == 408 || *code == 429 {
                 RetryDecision::Retry
+            } else {
+                RetryDecision::FailFast
             }
         }
-        // CacheIoError, ChecksumMismatch, LockTimeout, ModelDeserialize,
-        // TokenizerLoad are all fail-fast per design §2.
-        _ => RetryDecision::FailFast,
+        // Transport-level errors (DNS, connect, read timeout) always retry.
+        ureq::Error::Transport(_) => RetryDecision::Retry,
     }
 }
 
@@ -211,36 +240,6 @@ fn retry_decision(err: &EmbedderLoadError) -> RetryDecision {
 enum RetryDecision {
     Retry,
     FailFast,
-}
-
-/// Pulls the first `100..=599` token out of an error message. Used to
-/// classify retryability of an HTTP error without coupling to `ureq`'s
-/// concrete error enum at this layer.
-fn extract_http_status(msg: &str) -> Option<u16> {
-    let bytes = msg.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i].is_ascii_digit() {
-            let mut j = i;
-            while j < bytes.len() && bytes[j].is_ascii_digit() {
-                j += 1;
-            }
-            // Require a 3-digit run, not flanked by another digit.
-            if j - i == 3 {
-                if let Ok(s) = std::str::from_utf8(&bytes[i..j]) {
-                    if let Ok(n) = s.parse::<u16>() {
-                        if (100..=599).contains(&n) {
-                            return Some(n);
-                        }
-                    }
-                }
-            }
-            i = j;
-        } else {
-            i += 1;
-        }
-    }
-    None
 }
 
 // ----- Loader configuration -------------------------------------------------
@@ -267,6 +266,14 @@ pub struct LoaderConfig {
     connect_timeout: Duration,
     read_timeout: Duration,
     lock_timeout: Duration,
+    /// HF-hub root used by the design-§4 compat probe.
+    ///
+    /// `None` → production behavior: probe `$HF_HOME` (or
+    /// `~/.cache/huggingface` if unset). `Some(p)` → probe only `p`.
+    /// Tests use `Some(<tempdir>)` (or `Some(<nonexistent>)`) to keep
+    /// the probe deterministic and prevent the user's actual HF cache
+    /// from leaking into the test harness.
+    hf_hub_root: Option<PathBuf>,
 }
 
 impl LoaderConfig {
@@ -284,11 +291,10 @@ impl LoaderConfig {
                 "platform cache dir unavailable",
             ),
         })?;
-        let lock_timeout = std::env::var(ENV_LOCK_TIMEOUT)
-            .ok()
-            .and_then(|s| s.parse::<u64>().ok())
-            .map(Duration::from_secs)
-            .unwrap_or(DEFAULT_LOCK_TIMEOUT);
+        let lock_timeout = parse_secs_env_or_default(ENV_LOCK_TIMEOUT, DEFAULT_LOCK_TIMEOUT);
+        let connect_timeout =
+            parse_secs_env_or_default(ENV_CONNECT_TIMEOUT, DEFAULT_CONNECT_TIMEOUT);
+        let read_timeout = parse_secs_env_or_default(ENV_READ_TIMEOUT, DEFAULT_READ_TIMEOUT);
         Ok(Self {
             base_url: HF_BASE_URL.to_string(),
             cache_root,
@@ -296,9 +302,10 @@ impl LoaderConfig {
             config_sha: CONFIG_JSON_SHA256.to_string(),
             tokenizer_sha: TOKENIZER_JSON_SHA256.to_string(),
             model_sha: MODEL_SAFETENSORS_SHA256.to_string(),
-            connect_timeout: DEFAULT_CONNECT_TIMEOUT,
-            read_timeout: DEFAULT_READ_TIMEOUT,
+            connect_timeout,
+            read_timeout,
             lock_timeout,
+            hf_hub_root: None,
         })
     }
 
@@ -317,7 +324,20 @@ impl LoaderConfig {
             connect_timeout: DEFAULT_CONNECT_TIMEOUT,
             read_timeout: DEFAULT_READ_TIMEOUT,
             lock_timeout: DEFAULT_LOCK_TIMEOUT,
+            // Default test posture: point hub probe at a guaranteed-empty
+            // path so a developer's real `~/.cache/huggingface` cannot
+            // shadow the mock server in the test harness.
+            hf_hub_root: Some(PathBuf::from("/nonexistent-fathomdb-embedder-test-hub")),
         }
+    }
+
+    /// Override the HF-hub root for the design-§4 compat probe. Tests
+    /// pass `Some(<tempdir>)` to verify the probe; production callers
+    /// have no way to reach this setter (it is `loader-test-hooks`-gated).
+    #[cfg(any(test, feature = "loader-test-hooks"))]
+    pub fn with_hf_hub_root(mut self, root: Option<PathBuf>) -> Self {
+        self.hf_hub_root = root;
+        self
     }
 
     #[cfg(any(test, feature = "loader-test-hooks"))]
@@ -356,6 +376,35 @@ impl LoaderConfig {
     #[cfg(any(test, feature = "loader-test-hooks"))]
     pub fn expected_cache_dir(&self) -> PathBuf {
         self.cache_dir_internal()
+    }
+
+    /// Construct a `LoaderConfig` reading `connect_timeout`/`read_timeout`
+    /// from the design-§2 env vars (with the standard defaults on
+    /// missing/invalid). Exposed for tests that assert the env-override
+    /// parsing path produces the expected `Duration` values.
+    #[cfg(any(test, feature = "loader-test-hooks"))]
+    pub fn for_tests_reading_timeout_env() -> Self {
+        let connect_timeout =
+            parse_secs_env_or_default(ENV_CONNECT_TIMEOUT, DEFAULT_CONNECT_TIMEOUT);
+        let read_timeout = parse_secs_env_or_default(ENV_READ_TIMEOUT, DEFAULT_READ_TIMEOUT);
+        let mut cfg = Self::for_tests();
+        cfg.connect_timeout = connect_timeout;
+        cfg.read_timeout = read_timeout;
+        cfg
+    }
+
+    /// Returns the loader's effective HTTP connect timeout. Exposed for
+    /// tests asserting env-override behavior.
+    #[cfg(any(test, feature = "loader-test-hooks"))]
+    pub fn connect_timeout(&self) -> Duration {
+        self.connect_timeout
+    }
+
+    /// Returns the loader's effective HTTP read timeout. Exposed for
+    /// tests asserting env-override behavior.
+    #[cfg(any(test, feature = "loader-test-hooks"))]
+    pub fn read_timeout(&self) -> Duration {
+        self.read_timeout
     }
 
     /// Internal cache-dir resolver — uses `sha256("<repo>@<revision>")[..12]`
@@ -415,6 +464,23 @@ fn load_with_config_internal(cfg: LoaderConfig) -> Result<LoadedWeights, Embedde
             continue;
         }
 
+        // HF-hub read-only compat probe (design §4): if the user already
+        // has the file under `$HF_HOME/hub/...` and its sha matches the
+        // pinned constant, copy/hard-link it into our cache and short-circuit
+        // network. The HF-hub layout is NEVER written to.
+        if let Some(hub_path) = hf_hub_candidate_path(&cfg, file_name) {
+            if file_matches_sha(&hub_path, expected_sha)? {
+                materialize_from_hf_hub(&hub_path, &final_path)?;
+                events.push(EmbedderEvent::DefaultEmbedderCacheHit {
+                    file: (*file_name).to_string(),
+                    sha256: expected_sha.clone(),
+                    cache_path: final_path.clone(),
+                });
+                paths.push(final_path);
+                continue;
+            }
+        }
+
         // Cold or stale: lock, re-check, fetch.
         let (n, fetched_event) = fetch_under_lock(&cfg, &cache_dir, file_name, expected_sha)?;
         bytes_downloaded = bytes_downloaded.saturating_add(n);
@@ -456,7 +522,7 @@ fn fetch_under_lock(
         .open(&lock_path)
         .map_err(|source| EmbedderLoadError::CacheIoError { path: lock_path.clone(), source })?;
 
-    acquire_exclusive_with_timeout(&lock_file, cfg.lock_timeout)?;
+    acquire_exclusive_with_timeout(&lock_file, &lock_path, cfg.lock_timeout)?;
 
     // RAII lock release on drop (fs2 unlocks on close).
     let _guard = LockGuard(&lock_file);
@@ -500,6 +566,12 @@ fn fetch_under_lock(
     fs::rename(&partial_path, &final_path)
         .map_err(|source| EmbedderLoadError::CacheIoError { path: final_path.clone(), source })?;
 
+    // fsync the parent directory so the rename survives a power loss
+    // between the rename and the next implicit fsync. POSIX only;
+    // Windows journaling already covers this (design §5 step 6).
+    #[cfg(unix)]
+    fsync_parent_dir(&final_path)?;
+
     Ok((
         bytes,
         FetchOutcome::Downloaded(EmbedderEvent::DefaultEmbedderDownload {
@@ -513,12 +585,80 @@ fn fetch_under_lock(
     ))
 }
 
-fn acquire_exclusive_with_timeout(f: &File, timeout: Duration) -> Result<(), EmbedderLoadError> {
+/// `fsync` the parent directory of `path`. POSIX only — used after a
+/// rename to make the directory-entry change durable across a power loss
+/// before the next file-level fsync (design §5 step 6).
+#[cfg(unix)]
+fn fsync_parent_dir(path: &Path) -> Result<(), EmbedderLoadError> {
+    if let Some(parent) = path.parent() {
+        let dir = File::open(parent).map_err(|source| EmbedderLoadError::CacheIoError {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+        dir.sync_all().map_err(|source| EmbedderLoadError::CacheIoError {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+    Ok(())
+}
+
+/// Compute the HF-hub layout path for `file_name` at the pinned repo +
+/// revision: `$HF_HOME/hub/models--<owner>--<repo>/snapshots/<rev>/<file>`.
+/// `$HF_HOME` defaults to `~/.cache/huggingface`. Returns `None` if no
+/// home directory can be resolved (and `HF_HOME` is unset).
+fn hf_hub_candidate_path(cfg: &LoaderConfig, file_name: &str) -> Option<PathBuf> {
+    let hf_home = if let Some(root) = &cfg.hf_hub_root {
+        root.clone()
+    } else {
+        match std::env::var_os("HF_HOME") {
+            Some(p) => PathBuf::from(p),
+            None => dirs::home_dir()?.join(".cache").join("huggingface"),
+        }
+    };
+    let repo_encoded = format!("models--{}", HF_REPO.replace('/', "--"));
+    Some(hf_home.join("hub").join(repo_encoded).join("snapshots").join(HF_REVISION).join(file_name))
+}
+
+/// Copy `src` into `dst`, preferring a POSIX hard-link when possible
+/// (same filesystem; saves disk + lets the kernel share inodes). Falls
+/// back to a byte copy on any error from `hard_link` (different
+/// filesystem, permission, Windows, etc.). The HF-hub source is never
+/// modified. Surfaces failures as `CacheIoError`.
+fn materialize_from_hf_hub(src: &Path, dst: &Path) -> Result<(), EmbedderLoadError> {
+    // Hardlink first; copy as fallback. `fs::hard_link` errors on
+    // cross-filesystem and on Windows for non-NTFS volumes; either way the
+    // byte copy is correct.
+    #[cfg(unix)]
+    {
+        if fs::hard_link(src, dst).is_ok() {
+            return Ok(());
+        }
+    }
+    fs::copy(src, dst)
+        .map(|_| ())
+        .map_err(|source| EmbedderLoadError::CacheIoError { path: dst.to_path_buf(), source })
+}
+
+fn acquire_exclusive_with_timeout(
+    f: &File,
+    lock_path: &Path,
+    timeout: Duration,
+) -> Result<(), EmbedderLoadError> {
     let deadline = Instant::now() + timeout;
     loop {
         match f.try_lock_exclusive() {
             Ok(()) => return Ok(()),
-            Err(_) => {
+            Err(e) => {
+                // Only `WouldBlock` means "another holder; retry". Real
+                // I/O errors (permission denied, EIO, ...) are fatal —
+                // surface immediately rather than polling until timeout.
+                if e.kind() != std::io::ErrorKind::WouldBlock {
+                    return Err(EmbedderLoadError::CacheIoError {
+                        path: lock_path.to_path_buf(),
+                        source: e,
+                    });
+                }
                 if Instant::now() >= deadline {
                     return Err(EmbedderLoadError::LockTimeout(timeout));
                 }
@@ -539,20 +679,27 @@ fn download_with_retries(
     cfg: &LoaderConfig,
     url: &str,
     partial_path: &Path,
-    file_name: &str,
+    _file_name: &str,
 ) -> Result<u64, EmbedderLoadError> {
-    let mut last_err: Option<EmbedderLoadError> = None;
+    let mut last_net_err: Option<ureq::Error> = None;
+    let mut last_stream_io: Option<std::io::Error> = None;
+    let mut completed_attempts: u32 = 0;
     for attempt in 0..MAX_ATTEMPTS {
-        match download_once(cfg, url, partial_path, file_name) {
+        completed_attempts = attempt + 1;
+        match download_once(cfg, url, partial_path) {
             Ok(n) => return Ok(n),
-            Err(e) => {
-                // Fail-fast errors (4xx other than 408/429, CacheIoError,
-                // ChecksumMismatch, LockTimeout) abort retries immediately
-                // per design §2.
-                if retry_decision(&e) == RetryDecision::FailFast {
-                    return Err(e);
+            Err(DownloadAttemptError::CacheIo { path, source }) => {
+                // Fail-fast: cache I/O is not a transient network condition.
+                return Err(EmbedderLoadError::CacheIoError { path, source });
+            }
+            Err(DownloadAttemptError::Network(e)) => {
+                if retry_decision_ureq(&e) == RetryDecision::FailFast {
+                    return Err(EmbedderLoadError::NetworkUnavailable {
+                        source: e,
+                        attempts: completed_attempts,
+                    });
                 }
-                last_err = Some(e);
+                last_net_err = Some(e);
                 if attempt + 1 < MAX_ATTEMPTS {
                     // Design §2: 1s, 2s, (4s) — for MAX_ATTEMPTS=3 that's
                     // 1s then 2s before the second and third tries.
@@ -560,20 +707,43 @@ fn download_with_retries(
                     std::thread::sleep(Duration::from_secs(secs));
                 }
             }
+            Err(DownloadAttemptError::NetworkStreamIo(io)) => {
+                // Read-timeout / connection-reset mid-body: design §2
+                // classes as a retryable read error.
+                last_stream_io = Some(io);
+                if attempt + 1 < MAX_ATTEMPTS {
+                    let secs = 1u64 << attempt;
+                    std::thread::sleep(Duration::from_secs(secs));
+                }
+            }
         }
     }
-    Err(last_err.expect("at least one attempt"))
+    // All attempts exhausted. Prefer a real `ureq::Error` for the
+    // design-§9 `source` field if we collected one; otherwise the only
+    // failures we saw were mid-stream IO with no public ureq constructor,
+    // and we surface them as a CacheIoError attributed to the partial path
+    // (the only path involved in a mid-stream failure on the loader side).
+    if let Some(source) = last_net_err {
+        return Err(EmbedderLoadError::NetworkUnavailable { source, attempts: completed_attempts });
+    }
+    Err(EmbedderLoadError::CacheIoError {
+        path: partial_path.to_path_buf(),
+        source: last_stream_io.expect("at least one attempt produced a stream-io failure"),
+    })
 }
 
 fn download_once(
     cfg: &LoaderConfig,
     url: &str,
     partial_path: &Path,
-    file_name: &str,
-) -> Result<u64, EmbedderLoadError> {
+) -> Result<u64, DownloadAttemptError> {
     let agent = ureq::AgentBuilder::new()
         .timeout_connect(cfg.connect_timeout)
         .timeout_read(cfg.read_timeout)
+        // Design §2: explicit redirect budget (≥3). ureq's default is 5,
+        // which satisfies the design floor incidentally; we set it
+        // deliberately so the value is part of the contract.
+        .redirects(3)
         .build();
 
     // Resume support (design §2): if a `.partial` exists, request the suffix.
@@ -587,22 +757,20 @@ fn download_once(
         req = req.set("Range", &format!("bytes={existing}-"));
     }
 
-    let resp = req.call().map_err(|e| EmbedderLoadError::NetworkUnavailable {
-        file: file_name.to_string(),
-        source: Box::new(e),
-    })?;
+    let resp = req.call().map_err(DownloadAttemptError::Network)?;
 
     let status = resp.status();
     if !(status == 200 || status == 206) {
-        // Fold HTTP status failures into NetworkUnavailable so the retry
-        // discriminator (`retry_decision`) classifies them uniformly.
-        // The numeric status appears in the message so `extract_http_status`
-        // can read it.
-        return Err(EmbedderLoadError::NetworkUnavailable {
-            file: file_name.to_string(),
-            source: format!("HTTP status {status}").into(),
-        });
+        // Convert into a synthetic ureq::Status error so it goes through
+        // the same retry-decision path as a directly-surfaced HTTP error.
+        // `resp.into()` builds the Status variant with the response payload.
+        return Err(DownloadAttemptError::Network(ureq::Error::Status(status, resp)));
     }
+
+    let mk_io = |source: std::io::Error| DownloadAttemptError::CacheIo {
+        path: partial_path.to_path_buf(),
+        source,
+    };
 
     // Non-resume path uses `create_new` per design §5 step 2: a stale
     // `.partial` from a crashed prior run that didn't pass sha verification
@@ -612,13 +780,8 @@ fn download_once(
     // the partial is stale and we delete-then-recreate. The alternative
     // would be to fail; we pick delete-and-retry because it self-heals.
     let mut f = if status == 206 && existing > 0 {
-        let mut f = OpenOptions::new().write(true).open(partial_path).map_err(|source| {
-            EmbedderLoadError::CacheIoError { path: partial_path.to_path_buf(), source }
-        })?;
-        f.seek(SeekFrom::End(0)).map_err(|source| EmbedderLoadError::CacheIoError {
-            path: partial_path.to_path_buf(),
-            source,
-        })?;
+        let mut f = OpenOptions::new().write(true).open(partial_path).map_err(mk_io)?;
+        f.seek(SeekFrom::End(0)).map_err(mk_io)?;
         f
     } else {
         match OpenOptions::new().write(true).create_new(true).open(partial_path) {
@@ -627,21 +790,11 @@ fn download_once(
                 // Stale partial from a crashed prior run. Design §5 step 2
                 // forbids silent overwrite — clean up explicitly, then
                 // retry create_new.
-                fs::remove_file(partial_path).map_err(|source| {
-                    EmbedderLoadError::CacheIoError { path: partial_path.to_path_buf(), source }
-                })?;
-                OpenOptions::new().write(true).create_new(true).open(partial_path).map_err(
-                    |source| EmbedderLoadError::CacheIoError {
-                        path: partial_path.to_path_buf(),
-                        source,
-                    },
-                )?
+                fs::remove_file(partial_path).map_err(mk_io)?;
+                OpenOptions::new().write(true).create_new(true).open(partial_path).map_err(mk_io)?
             }
             Err(source) => {
-                return Err(EmbedderLoadError::CacheIoError {
-                    path: partial_path.to_path_buf(),
-                    source,
-                });
+                return Err(mk_io(source));
             }
         }
     };
@@ -653,25 +806,22 @@ fn download_once(
         match reader.read(&mut buf) {
             Ok(0) => break,
             Ok(n) => {
-                f.write_all(&buf[..n]).map_err(|source| EmbedderLoadError::CacheIoError {
-                    path: partial_path.to_path_buf(),
-                    source,
-                })?;
+                f.write_all(&buf[..n]).map_err(mk_io)?;
                 written += n as u64;
             }
             Err(source) => {
-                return Err(EmbedderLoadError::NetworkUnavailable {
-                    file: file_name.to_string(),
-                    source: Box::new(source),
-                });
+                // Mid-stream read failure on the response body. ureq's
+                // `Transport` has no public constructor so we cannot
+                // forge a `ureq::Error::Transport`; instead we carry the
+                // raw `io::Error` through a dedicated variant so the
+                // retry loop treats it as a read-timeout-class retryable
+                // failure (design §2).
+                return Err(DownloadAttemptError::NetworkStreamIo(source));
             }
         }
     }
 
-    f.sync_all().map_err(|source| EmbedderLoadError::CacheIoError {
-        path: partial_path.to_path_buf(),
-        source,
-    })?;
+    f.sync_all().map_err(mk_io)?;
 
     Ok(written)
 }

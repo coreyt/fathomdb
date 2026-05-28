@@ -340,6 +340,128 @@ fn auth_token_sent_when_env_set() {
 }
 
 #[test]
+fn respects_timeout_env_overrides() {
+    // EU-3 FIX-2 #2: design §2 promises `FATHOMDB_EMBEDDER_CONNECT_TIMEOUT_S`
+    // and `FATHOMDB_EMBEDDER_READ_TIMEOUT_S` env overrides parse as u64
+    // seconds; invalid → default with a warning (no panic, no unwrap).
+    //
+    // We assert the parsing logic directly via `for_tests_reading_timeout_env`
+    // which goes through the same `parse_secs_env_or_default` path the
+    // production constructor uses. Holding the env-mutex prevents races with
+    // other tests that touch the same vars.
+    let _g = ENV_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+
+    // Save existing values so we restore the process env.
+    let prev_connect = std::env::var("FATHOMDB_EMBEDDER_CONNECT_TIMEOUT_S").ok();
+    let prev_read = std::env::var("FATHOMDB_EMBEDDER_READ_TIMEOUT_S").ok();
+
+    // Valid overrides parse and apply.
+    std::env::set_var("FATHOMDB_EMBEDDER_CONNECT_TIMEOUT_S", "7");
+    std::env::set_var("FATHOMDB_EMBEDDER_READ_TIMEOUT_S", "111");
+    let cfg = LoaderConfig::for_tests_reading_timeout_env();
+    assert_eq!(cfg.connect_timeout(), Duration::from_secs(7));
+    assert_eq!(cfg.read_timeout(), Duration::from_secs(111));
+
+    // Invalid → default, no panic.
+    std::env::set_var("FATHOMDB_EMBEDDER_CONNECT_TIMEOUT_S", "not-a-number");
+    std::env::set_var("FATHOMDB_EMBEDDER_READ_TIMEOUT_S", "");
+    let cfg = LoaderConfig::for_tests_reading_timeout_env();
+    assert_eq!(cfg.connect_timeout(), Duration::from_secs(10), "invalid → default 10s");
+    assert_eq!(cfg.read_timeout(), Duration::from_secs(60), "invalid → default 60s");
+
+    // Unset → default.
+    std::env::remove_var("FATHOMDB_EMBEDDER_CONNECT_TIMEOUT_S");
+    std::env::remove_var("FATHOMDB_EMBEDDER_READ_TIMEOUT_S");
+    let cfg = LoaderConfig::for_tests_reading_timeout_env();
+    assert_eq!(cfg.connect_timeout(), Duration::from_secs(10));
+    assert_eq!(cfg.read_timeout(), Duration::from_secs(60));
+
+    // Restore previous values.
+    match prev_connect {
+        Some(v) => std::env::set_var("FATHOMDB_EMBEDDER_CONNECT_TIMEOUT_S", v),
+        None => std::env::remove_var("FATHOMDB_EMBEDDER_CONNECT_TIMEOUT_S"),
+    }
+    match prev_read {
+        Some(v) => std::env::set_var("FATHOMDB_EMBEDDER_READ_TIMEOUT_S", v),
+        None => std::env::remove_var("FATHOMDB_EMBEDDER_READ_TIMEOUT_S"),
+    }
+}
+
+#[test]
+fn hf_hub_compat_probe_reads_from_hub_layout() {
+    // EU-3 FIX-2 #6: when the file is already present under the HF-hub
+    // read-only layout AND its sha matches the pinned constant, the
+    // loader copies/hard-links it into the fathomdb cache without making
+    // any network request. The HF-hub layout is never written to.
+    let fix = Fixture::new();
+    let server = MockServer::start();
+    let tmp = TempDir::new().unwrap();
+    let cache = tmp.path().to_path_buf();
+
+    // Pre-stage just `config.json` in the HF-hub layout. The other two
+    // files go via mock so we can assert exactly which requests fly.
+    let hf_home = tmp.path().join("hf_home");
+    let hub_dir = hf_home
+        .join("hub")
+        .join("models--BAAI--bge-small-en-v1.5")
+        .join("snapshots")
+        .join(HF_REVISION);
+    fs::create_dir_all(&hub_dir).unwrap();
+    let hub_config = hub_dir.join("config.json");
+    fs::write(&hub_config, &fix.config_bytes).unwrap();
+
+    // Mock: only tokenizer + model served from network. config.json must
+    // NOT be requested — if the loader hits it, the test fails the
+    // explicit `assert_hits(0)` assertion below.
+    let m_cfg_must_not_hit = server.mock(|when, then| {
+        when.method(GET).path(resolve_path("config.json"));
+        then.status(200).body(&fix.config_bytes);
+    });
+    let m_tok = server.mock(|when, then| {
+        when.method(GET).path(resolve_path("tokenizer.json"));
+        then.status(200).body(&fix.tokenizer_bytes);
+    });
+    let m_mdl = server.mock(|when, then| {
+        when.method(GET).path(resolve_path("model.safetensors"));
+        then.status(200).body(&fix.model_bytes);
+    });
+
+    let cfg = test_config(&server.base_url(), &cache, &fix).with_hf_hub_root(Some(hf_home.clone()));
+    let loaded = load_with_config(cfg).expect("loader ok with hub-probe hit");
+
+    // Mock-side: config.json was served from the hub, not the network.
+    m_cfg_must_not_hit.assert_hits(0);
+    m_tok.assert();
+    m_mdl.assert();
+
+    // Loader emitted a cache-hit event for config.json.
+    let cache_hit_files: Vec<&str> = loaded
+        .events
+        .iter()
+        .filter_map(|e| match e {
+            EmbedderEvent::DefaultEmbedderCacheHit { file, .. } => Some(file.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        cache_hit_files.contains(&"config.json"),
+        "expected DefaultEmbedderCacheHit for config.json, got {cache_hit_files:?}"
+    );
+
+    // The HF-hub source is intact (read-only probe).
+    let hub_bytes = fs::read(&hub_config).unwrap();
+    assert_eq!(hub_bytes, fix.config_bytes, "hub source must not be modified");
+
+    // The fathomdb cache materialized the file.
+    let on_disk = fs::read(&loaded.config_json_path).unwrap();
+    assert_eq!(on_disk, fix.config_bytes);
+}
+
+/// Serializes tests that mutate the process env so set/restore cycles
+/// don't race with each other.
+static ENV_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[test]
 fn public_api_exists() {
     // Compile-time check: the zero-arg public entry point referenced by EU-4
     // and EU-5 exists and has the documented signature. It is not invoked
