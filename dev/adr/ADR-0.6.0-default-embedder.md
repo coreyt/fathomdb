@@ -175,7 +175,12 @@ the write path (`run_projection_job`) and the query path (synchronous
 caller-thread embed). The f32 rerank uses the un-centered f32 vector — the
 centering is purely a sign-bit-quantization bias-correction, not a change
 to the geometry of the f32 space. Recomputation policy and persistence
-schema are an EU-2 design decision (forward-cited).
+schema are an EU-2 design decision (forward-cited). The pin threshold is
+locked at `MEAN_VEC_PIN_THRESHOLD = 256` in EU-2, with the statistical
+and operational justification (per-axis sample SE σ/16 ≈ ±6% at N=256,
+diminishing returns past N=512, workload-fit against agentic-memory
+workspace sizes, topic-drift caveat) recorded in
+`dev/design/embedder.md` §0.3.
 
 **Why this model + K + mc combination.** Empirically (N=100 synthetic
 queries against the 7,667-doc 0.7.0 corpus): bge-small + mc at K=128 reaches

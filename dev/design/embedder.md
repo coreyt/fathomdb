@@ -103,15 +103,63 @@ Concretely:
    implemented in 0.7.1** — reindex is a separate campaign. Documented
    as a known limitation in this design and in the 0.7.1 release notes.
 
-**Why N = 256.** Same order of magnitude as the model dimension (384) so
-the per-axis sample mean has comparable sample-size to its axis count;
-small enough that the pre-pin window is a brief warmup window on any
-non-trivial workspace; large enough that the materialized mean is not
-dominated by a single document's vector. The choice is not load-bearing
-to within a factor of 2 — N anywhere in `[128, 1024]` would be defensible
-— but it is locked here so that EU-3 and EU-5 have a single number to
-implement against. The constant lives in `fathomdb-engine` as
+The constant lives in `fathomdb-engine` as
 `MEAN_VEC_PIN_THRESHOLD: u64 = 256`.
+
+**Why a threshold this size matters at all.** The threshold controls
+when the corpus-mean f32 vector gets computed and frozen. Below it,
+sign-quant runs without centering and the §0.5 re-quantize pass
+backfills at pin commit. Above it, no further mean updates ever happen
+(refresh requires explicit reindex). The choice is therefore bounded on
+both sides:
+
+- **Too small (N=1, N=10).** The pinned mean is dominated by the first
+  few documents. The per-axis sample standard error is σ/√N, so at N=10
+  each axis sits only ±0.32σ around the true mean. The "centering"
+  applied to every subsequent document is then mostly random noise and
+  could hurt recall as easily as help it.
+- **Too large (N=10k, N=100k).** Very stable estimate, but most
+  realistic agentic-memory workspaces are 100s–1000s of docs total. A
+  threshold of 10k would mean most workspaces never pin and run forever
+  on the un-centered path that EU-0 measured at -5pp recall@10.
+  §0.5's at-pin backfill also grows linearly with N.
+
+**Why 256 specifically.**
+
+- **Statistical.** Per-axis sample standard error at N=256 is σ/16 ≈
+  ±6% of axis variance. That puts the estimated mean within the same
+  neighborhood as the steady-state mean — close enough that centering
+  moves vectors in roughly the right direction for nearly all
+  subsequent docs. Going to N=512 only buys ±4% (σ/22); going to N=1024
+  buys ±3%. Diminishing returns.
+- **Operational.** 256 = 2⁸, naturally aligned with typical batch sizes
+  (32 or 64) — 4–8 projection-worker batches. Easy to test.
+- **Workload-fit.** 256 matches the "non-trivial workspace" bar — any
+  real ingest crosses 256 quickly; tiny workspaces (≤256 docs) are
+  searched mostly via f32 rerank where centering does not matter
+  anyway. The Hamming-candidate quality difference is dominated by
+  quantization noise at that scale regardless.
+- **Order-of-magnitude match to dim (384).** Not strict, but a
+  reasonable proxy — O(dim) samples to estimate a dim-dimensional mean
+  stably.
+
+The choice is not load-bearing to within a factor of 2 — N anywhere in
+`[128, 1024]` would be defensible — but it is locked here so that EU-3
+and EU-5 have a single number to implement against.
+
+**Documented failure mode: topic drift.** A workspace that ingests 256
+documents about topic A and then pivots to topic B pins a topic-A-skewed
+mean and may underperform on topic B. §0.5 and the lifecycle rule above
+acknowledge this: reindex is the only refresh path, and reindex is
+deferred to a separate campaign.
+
+**Could-be-adaptive escape hatch.** The threshold could be replaced by
+an adaptive rule — pin when the running mean estimate stabilizes within
+ε for K consecutive batches — but it is locked at the constant 256
+because (a) the statistical case for 256 is solid on its own, (b) the
+§0.5 backfill makes early-pin cheap to correct if needed via reindex,
+and (c) a single constant is testable. If real-world drift becomes a
+problem, the next campaign can revisit.
 
 **Provenance of N=256.** This number is **new in EU-2**. No prior
 document (EU-0 research note, EU-1 ADR, handoff §0/§EU-2) pinned a
