@@ -51,6 +51,14 @@ pub(crate) const HF_REPO: &str = "BAAI/bge-small-en-v1.5";
 
 /// Pinned revision (commit SHA) on the HF repo. Bumping this is a deliberate
 /// release-engineering action, not a runtime input.
+///
+/// Exposed as `pub` only under `cfg(any(test, feature = "loader-test-hooks"))`
+/// so the integration test crate can reference it directly (avoiding the
+/// drift hazard of a duplicated constant). Production callers see
+/// `pub(crate)` and cannot reach this symbol from another crate.
+#[cfg(any(test, feature = "loader-test-hooks"))]
+pub const HF_REVISION: &str = "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a";
+#[cfg(not(any(test, feature = "loader-test-hooks")))]
 pub(crate) const HF_REVISION: &str = "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a";
 
 /// Production HF base URL. Tests override via `LoaderConfig::with_base_url`.
@@ -170,15 +178,31 @@ pub enum EmbedderEvent {
 /// Failure taxonomy (design §9). Engine-level mapping is owned by EU-5.
 #[derive(Debug, Error)]
 pub enum EmbedderLoadError {
+    /// Network unavailable after retry exhaustion.
+    ///
+    /// `source` is widened from `ureq::Error` to `Box<dyn Error + Send + Sync>`
+    /// so it can carry both real `ureq::Error` values from connect / status
+    /// failures AND wrapped `io::Error`s from mid-stream response-body reads
+    /// (ureq's `Transport` has no public constructor, so we cannot forge a
+    /// `ureq::Error::Transport` from an `io::Error`). Design §9 reflects
+    /// this shape.
     #[error("network unavailable after {attempts} attempts: {source}")]
     NetworkUnavailable {
         #[source]
-        source: ureq::Error,
+        source: Box<dyn std::error::Error + Send + Sync>,
         attempts: u32,
     },
 
     #[error("checksum mismatch for {file:?}: expected {expected}, actual {actual}")]
     ChecksumMismatch { file: PathBuf, expected: String, actual: String },
+
+    /// Pinned model config violates the protocol expected by the embedder
+    /// (e.g. `hidden_size` does not match `DEFAULT_EMBEDDER_DIM`). This is
+    /// distinct from `ModelDeserialize` (a parse failure) — the bytes
+    /// parsed cleanly but their content disagreed with a hard-coded
+    /// invariant. Always points at a deliberate model/version drift.
+    #[error("model dimension mismatch: expected {expected}, got {actual}")]
+    DimensionMismatch { expected: u32, actual: u32 },
 
     #[error("cache I/O error at {path:?}: {source}")]
     CacheIoError {
@@ -211,9 +235,12 @@ pub enum EmbedderLoadError {
 
 /// Per-attempt download error. This is the internal error type used by
 /// `download_once`/`download_with_retries`: it preserves the concrete
-/// `ureq::Error` so the design-§9 `NetworkUnavailable.source: ureq::Error`
-/// shape is honored when retries are exhausted, while also carrying
-/// fatal cache I/O failures that should abort retries immediately.
+/// `ureq::Error` for HTTP-layer failures and a raw `io::Error` for
+/// mid-stream body reads. After retry exhaustion both are boxed into
+/// `EmbedderLoadError::NetworkUnavailable.source` (design §9 widened
+/// to `Box<dyn Error + Send + Sync>` for exactly this reason — see
+/// `NetworkStreamIo` doc). Fatal cache I/O failures abort retries
+/// immediately.
 enum DownloadAttemptError {
     /// Network-class failure (connect, read, HTTP status). Classified into
     /// `RetryDecision` via `retry_decision_ureq`.
@@ -694,8 +721,7 @@ fn download_with_retries(
     partial_path: &Path,
     _file_name: &str,
 ) -> Result<u64, EmbedderLoadError> {
-    let mut last_net_err: Option<ureq::Error> = None;
-    let mut last_stream_io: Option<std::io::Error> = None;
+    let mut last_net_err: Option<Box<dyn std::error::Error + Send + Sync>> = None;
     let mut completed_attempts: u32 = 0;
     for attempt in 0..MAX_ATTEMPTS {
         completed_attempts = attempt + 1;
@@ -708,11 +734,11 @@ fn download_with_retries(
             Err(DownloadAttemptError::Network(e)) => {
                 if retry_decision_ureq(&e) == RetryDecision::FailFast {
                     return Err(EmbedderLoadError::NetworkUnavailable {
-                        source: e,
+                        source: Box::new(e),
                         attempts: completed_attempts,
                     });
                 }
-                last_net_err = Some(e);
+                last_net_err = Some(Box::new(e));
                 if attempt + 1 < MAX_ATTEMPTS {
                     // Design §2: 1s, 2s, (4s) — for MAX_ATTEMPTS=3 that's
                     // 1s then 2s before the second and third tries.
@@ -722,8 +748,11 @@ fn download_with_retries(
             }
             Err(DownloadAttemptError::NetworkStreamIo(io)) => {
                 // Read-timeout / connection-reset mid-body: design §2
-                // classes as a retryable read error.
-                last_stream_io = Some(io);
+                // classes as a retryable read error. With the §9
+                // `NetworkUnavailable.source` widened to a boxed dyn
+                // Error, we now box the raw io::Error directly — no need
+                // to drop it onto the CacheIoError path.
+                last_net_err = Some(Box::new(io));
                 if attempt + 1 < MAX_ATTEMPTS {
                     let secs = 1u64 << attempt;
                     std::thread::sleep(Duration::from_secs(secs));
@@ -731,17 +760,11 @@ fn download_with_retries(
             }
         }
     }
-    // All attempts exhausted. Prefer a real `ureq::Error` for the
-    // design-§9 `source` field if we collected one; otherwise the only
-    // failures we saw were mid-stream IO with no public ureq constructor,
-    // and we surface them as a CacheIoError attributed to the partial path
-    // (the only path involved in a mid-stream failure on the loader side).
-    if let Some(source) = last_net_err {
-        return Err(EmbedderLoadError::NetworkUnavailable { source, attempts: completed_attempts });
-    }
-    Err(EmbedderLoadError::CacheIoError {
-        path: partial_path.to_path_buf(),
-        source: last_stream_io.expect("at least one attempt produced a stream-io failure"),
+    // All attempts exhausted. The boxed `source` carries whichever of
+    // `ureq::Error` or mid-stream `io::Error` was observed last.
+    Err(EmbedderLoadError::NetworkUnavailable {
+        source: last_net_err.expect("at least one retryable attempt produced an error"),
+        attempts: completed_attempts,
     })
 }
 

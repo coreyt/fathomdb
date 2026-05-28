@@ -695,7 +695,13 @@ on a BE platform. That is its own ADR, deferred.
 pub enum EmbedderLoadError {
     #[error("network unavailable after {attempts} attempts")]
     NetworkUnavailable {
-        #[source] source: ureq::Error,
+        // Widened from `ureq::Error` so the same variant can carry both
+        // HTTP-layer failures (`ureq::Error`) AND wrapped `io::Error`s
+        // from mid-response-body reads. ureq's `Transport` has no public
+        // constructor, so a mid-stream `io::Error` cannot be repackaged
+        // as `ureq::Error::Transport`; the boxed dyn-Error reconciles
+        // this without leaking an internal sum-type.
+        #[source] source: Box<dyn std::error::Error + Send + Sync>,
         attempts: u32,
     },
     #[error("checksum mismatch on {file:?}: expected {expected}, got {actual}")]
@@ -708,6 +714,11 @@ pub enum EmbedderLoadError {
     CacheIoError {
         path: PathBuf,
         #[source] source: std::io::Error,
+    },
+    #[error("model dimension mismatch: expected {expected}, got {actual}")]
+    DimensionMismatch {
+        expected: u32,
+        actual: u32,
     },
     #[error("safetensors deserialization failed")]
     ModelDeserialize {
@@ -737,6 +748,7 @@ level open returns a typed error, never `panic!`):
 | `NetworkUnavailable`     | `EngineOpenError::Embedder`   | YES        | Re-open; check network; consider HF mirror    |
 | `ChecksumMismatch`       | `EngineOpenError::Embedder`   | NO         | Investigate compromised cache/mirror; file bug|
 | `CacheIoError`           | `EngineOpenError::Embedder`   | NO         | Inspect disk; permissions; full disk          |
+| `DimensionMismatch`      | `EngineOpenError::Embedder`   | NO         | Investigate model/version drift; pin a known-good revision. |
 | `ModelDeserialize`       | `EngineOpenError::Embedder`   | NO         | Cache corruption or weights/code skew         |
 | `TokenizerLoad`          | `EngineOpenError::Embedder`   | NO         | Same                                          |
 | `LockTimeout`            | `EngineOpenError::Embedder`   | YES        | Re-open after the holder completes            |

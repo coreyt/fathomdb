@@ -32,13 +32,9 @@
 
 #![cfg(all(feature = "default-embedder", feature = "loader-test-hooks"))]
 
+use fathomdb_embedder::loader::HF_REVISION as PINNED_REVISION;
 use fathomdb_embedder::CandleBgeEmbedder;
 use fathomdb_embedder_api::Embedder;
-
-/// The pinned HF revision (commit sha) for `BAAI/bge-small-en-v1.5`.
-/// Mirrors `loader::HF_REVISION` — duplicated as a const here because the
-/// loader constant is `pub(crate)`.
-const PINNED_REVISION: &str = "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a";
 
 fn make_embedder() -> CandleBgeEmbedder {
     CandleBgeEmbedder::new().expect("CandleBgeEmbedder::new must succeed")

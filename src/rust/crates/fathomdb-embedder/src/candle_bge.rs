@@ -72,12 +72,14 @@ impl CandleBgeEmbedder {
         // match our public dim constant. If a future revision bump changes
         // hidden_size, fail loudly here.
         if config.hidden_size != DEFAULT_EMBEDDER_DIM as usize {
-            return Err(EmbedderLoadError::ModelDeserialize {
-                source: candle_core::Error::Msg(format!(
-                    "pinned bge-small-en-v1.5 config.hidden_size={} but \
-                     DEFAULT_EMBEDDER_DIM={}; revision-bump check required",
-                    config.hidden_size, DEFAULT_EMBEDDER_DIM
-                )),
+            // Distinct from `ModelDeserialize`: the bytes parsed cleanly
+            // but the pinned model's `hidden_size` disagrees with our
+            // compile-time `DEFAULT_EMBEDDER_DIM`. This always points at
+            // a deliberate model/version drift — see design §9 row
+            // "DimensionMismatch".
+            return Err(EmbedderLoadError::DimensionMismatch {
+                expected: DEFAULT_EMBEDDER_DIM,
+                actual: config.hidden_size as u32,
             });
         }
 
