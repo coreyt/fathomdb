@@ -47,8 +47,14 @@ const REBUILD_DRAIN_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_PROVENANCE_ROW_CAP: u64 = 1_000_000;
 const PROJECTION_CURSOR_KEY: &str = "projection_cursor";
 const PROJECTION_WORKERS: usize = 2;
-const PROJECTION_INFLIGHT_LIMIT: usize = PROJECTION_WORKERS * 4;
 const PROJECTION_COMMIT_BATCH: usize = 16;
+// Each worker should be able to grab a full commit batch while another
+// worker has the same waiting in the queue. Below this, the dispatcher
+// throttles below the workers' commit-batch capacity.
+const PROJECTION_INFLIGHT_LIMIT: usize = PROJECTION_WORKERS * PROJECTION_COMMIT_BATCH;
+// SQL fetch cap inside the dispatcher: enough to fill the in-flight
+// budget in a single scan so we don't pay one SQL roundtrip per job.
+const PROJECTION_SCAN_FETCH: usize = PROJECTION_INFLIGHT_LIMIT;
 const DEFAULT_PROJECTION_RETRY_DELAYS_MS: [u64; 3] = [1_000, 4_000, 16_000];
 
 /// Reader pool size. Per `dev/design/engine.md` § Writer / reader split,
@@ -2457,20 +2463,37 @@ fn projection_dispatcher_loop(shared: Arc<ProjectionRuntimeShared>) {
             state.in_flight.clone()
         };
 
-        match next_pending_projection_job(&connection, &in_flight) {
-            Ok(Some(job)) => {
+        // Fetch up to the in-flight budget in one SQL roundtrip and
+        // enqueue them as a batch — previously this loop fetched ONE job
+        // per cycle, which capped projection throughput at one row per
+        // scanner/worker handshake regardless of how much work was queued
+        // in canonical_nodes.
+        let budget = {
+            let state = match shared.state.lock() {
+                Ok(state) => state,
+                Err(_) => return,
+            };
+            PROJECTION_INFLIGHT_LIMIT.saturating_sub(state.active_jobs + state.queued_jobs)
+        };
+        let fetch_cap = budget.min(PROJECTION_SCAN_FETCH).max(1);
+        match next_pending_projection_jobs(&connection, &in_flight, fetch_cap) {
+            Ok(jobs) if !jobs.is_empty() => {
                 if let Ok(mut state) = shared.state.lock() {
-                    state.queued_jobs = state.queued_jobs.saturating_add(1);
-                    state.in_flight.insert(job.cursor);
+                    state.queued_jobs = state.queued_jobs.saturating_add(jobs.len());
+                    for job in &jobs {
+                        state.in_flight.insert(job.cursor);
+                    }
                     state.pending_scan = true;
                     shared.state_cvar.notify_all();
                 }
                 if let Ok(mut queue) = shared.queue.lock() {
-                    queue.push_back(job);
-                    shared.queue_cvar.notify_one();
+                    for job in jobs {
+                        queue.push_back(job);
+                    }
+                    shared.queue_cvar.notify_all();
                 }
             }
-            Ok(None) => {}
+            Ok(_) => {}
             Err(_) => {
                 if let Ok(mut state) = shared.state.lock() {
                     state.pending_scan = false;
@@ -2594,12 +2617,19 @@ fn run_projection_job(shared: &ProjectionRuntimeShared, job: &ProjectionJob) -> 
     ProjectionOutcome::Failure { cursor: job.cursor, failure_code: last_code }
 }
 
-fn next_pending_projection_job(
+fn next_pending_projection_jobs(
     connection: &Connection,
     in_flight: &BTreeSet<u64>,
-) -> rusqlite::Result<Option<ProjectionJob>> {
+    max_jobs: usize,
+) -> rusqlite::Result<Vec<ProjectionJob>> {
+    if max_jobs == 0 {
+        return Ok(Vec::new());
+    }
     let cursor = load_projection_cursor(connection)?;
-    let mut statement = connection.prepare_cached(
+    // Over-fetch by `in_flight.len()` so the post-filter still returns
+    // up to `max_jobs` after skipping cursors already in-flight.
+    let sql_limit = max_jobs.saturating_add(in_flight.len()).min(256);
+    let sql = format!(
         "SELECT canonical_nodes.write_cursor, canonical_nodes.kind, canonical_nodes.body
          FROM canonical_nodes
          JOIN _fathomdb_vector_kinds ON _fathomdb_vector_kinds.kind = canonical_nodes.kind
@@ -2608,18 +2638,24 @@ fn next_pending_projection_job(
          WHERE canonical_nodes.write_cursor > ?1
            AND _fathomdb_projection_terminal.write_cursor IS NULL
          ORDER BY canonical_nodes.write_cursor
-         LIMIT 32",
-    )?;
+         LIMIT {sql_limit}"
+    );
+    let mut statement = connection.prepare_cached(&sql)?;
     let rows = statement.query_map([cursor], |row| {
         Ok(ProjectionJob { cursor: row.get(0)?, kind: row.get(1)?, body: row.get(2)? })
     })?;
+    let mut jobs = Vec::with_capacity(max_jobs);
     for row in rows {
         let job = row?;
-        if !in_flight.contains(&job.cursor) {
-            return Ok(Some(job));
+        if in_flight.contains(&job.cursor) {
+            continue;
+        }
+        jobs.push(job);
+        if jobs.len() >= max_jobs {
+            break;
         }
     }
-    Ok(None)
+    Ok(jobs)
 }
 
 fn database_has_pending_projection_work(path: &Path) -> rusqlite::Result<bool> {
