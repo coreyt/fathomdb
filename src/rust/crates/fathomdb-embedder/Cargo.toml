@@ -9,3 +9,22 @@ rust-version.workspace = true
 
 [dependencies]
 fathomdb-embedder-api.workspace = true
+
+# Default-embedder loader deps. Gated behind the `default-embedder` feature
+# per dev/plans/prompts/0.7.1-EMBEDDER-UNDEFER-HANDOFF.md §EU-3 so callers
+# who never opt in pay zero dependency cost.
+ureq = { version = "2", optional = true, default-features = false, features = ["tls"] }
+sha2 = { version = "0.10", optional = true }
+dirs = { version = "5", optional = true }
+fs2 = { version = "0.4", optional = true }
+serde_json = { version = "1", optional = true }
+thiserror = { version = "1", optional = true }
+
+[features]
+default = []
+default-embedder = ["dep:ureq", "dep:sha2", "dep:dirs", "dep:fs2", "dep:serde_json", "dep:thiserror"]
+
+[dev-dependencies]
+httpmock = "0.7"
+tempfile = "3"
+sha2 = "0.10"
