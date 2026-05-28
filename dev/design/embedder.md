@@ -113,6 +113,13 @@ to within a factor of 2 — N anywhere in `[128, 1024]` would be defensible
 implement against. The constant lives in `fathomdb-engine` as
 `MEAN_VEC_PIN_THRESHOLD: u64 = 256`.
 
+**Provenance of N=256.** This number is **new in EU-2**. No prior
+document (EU-0 research note, EU-1 ADR, handoff §0/§EU-2) pinned a
+specific threshold; EU-0 computed its mean over the entire 7,667-doc
+corpus at once because it was a one-shot research notebook, not a
+workspace lifecycle. The threshold is therefore a fresh EU-2 decision
+recorded here, not a re-statement of an earlier number.
+
 ### §0.4 Apply rule
 
 **Write path.** In `run_projection_job`
@@ -149,67 +156,138 @@ boundary. Stored f32 BLOBs are un-centered; the query f32 is un-centered;
 cosine over those un-centered, L2-normed vectors is the canonical
 distance.
 
-### §0.5 Pin-before-quantize asymmetry
+### §0.5 Pin-commit re-quantize pass (no asymmetry)
 
-In the pre-pin window (the first up-to-255 documents), sign quantization
-runs **without** centering. After pin, all writes use the pinned mean.
-This means the first few hundred documents in a brand-new workspace are
-sign-quantized under a different mean (effectively zero) than every
-subsequent write. Their Hamming-candidate quality is therefore slightly
-degraded relative to the post-pin steady state.
+The pre-pin window holds the first up-to-255 documents in a brand-new
+workspace. During that window, the projection worker has nonetheless
+sign-quantized each f32 vector under a placeholder "no-centering" rule
+so that vector visibility remains immediate per `design/engine.md:230`.
+This would, naively, leave those first ≤255 rows with sign-quant bits
+that do not match the rest of the workspace's centered bits.
 
-**Why this asymmetry is acceptable.** The EU-0 recall-floor measurement
-(`research.md` §2.2.1) was made on a corpus already well past N=256, so
-the floor target itself reflects steady-state behavior. The asymmetry
-manifests as recall noise on the first few hundred documents — i.e. at a
-point where the absolute corpus is tiny, the f32 rerank dominates
-candidate-set quality, and end-user recall is dominated by quantization
-noise at small N regardless of centering.
+**That asymmetry is not accepted.** The HITL directive at EU-2 review
+required that, at pin time, the workspace transition to a clean,
+uniformly-centered state — no row's sign-quant bits should reflect a
+different centering than any other row.
+
+**At-pin re-quantize pass.** In the **same transaction** that materializes
+`mean_vec` on the threshold-crossing commit, the projection worker also:
+
+1. Reads back every previously-written f32 BLOB from the vector index
+   for the workspace's vector tables (the f32 BLOBs are stored
+   un-centered per §0.4 — they are the canonical, correct
+   representation, so no re-embed is required).
+2. For each, computes `bits' = sign_quantize(&subtract(&f32_vec, &mean))`.
+3. Updates the corresponding sign-bit columns in-place with `bits'`.
+
+The pass is **deterministic** (input = stored un-centered f32, output =
+sign-quant under the just-pinned mean) and **bounded** (touches at most
+`MEAN_VEC_PIN_THRESHOLD - 1` rows per vector table = at most 255 rows at
+N=256). It runs in the projection worker, not on the user's write
+thread, preserving the async write-path contract from §async-surface.
+
+**Atomicity.** The re-quantize updates AND the `mean_vec` write AND the
+threshold-crossing batch's sign-quant inserts all land in the same
+SQLite transaction. Either the workspace ends the transaction in
+fully-centered steady state, or no part of the pin transition is
+visible — there is no partially-pinned intermediate state observable
+across an `Engine.open` boundary.
+
+**Crash recovery.** If the engine dies between the start of the at-pin
+re-quantize pass and the transaction commit, the WAL replay rolls the
+entire batch back: `mean_vec` is still `NULL`, the sign-bit columns are
+unchanged, and the next ingest will simply retry the pin attempt when
+its commit pushes `count ≥ 256` again. The recovery surface is
+unchanged from any other transactional write.
+
+**Cost.** At N=256 with dim=384, the re-quantize pass reads at most
+255 × 1536 bytes = ~384 KB of f32 BLOBs, does 255 × 384 = ~98k f32
+subtractions + sign-tests, and writes 255 × 48 bytes (384/8) = ~12 KB
+of bit-packed sign columns. This is microseconds of CPU plus one
+transactional batch update — invisible against any realistic ingest
+rate.
 
 **Alternative considered: defer all sign-quantization until N≥256.**
 Queue f32-only writes in a staging table, and on pin, batch-quantize the
-backlog with the pinned mean. **Rejected** because:
-- It bloats the pre-pin staging area (full f32 vectors retained for what
-  could be hours of ingest before pin on a slow corpus).
-- It complicates crash-recovery: the engine must distinguish "pre-pin
-  staging not yet quantized" from "post-pin sign-bit rows" in WAL
-  replay, doubling the recovery surface.
-- It delays the search-readiness of newly-ingested documents until pin,
-  violating the implicit "write → search-visible" latency contract.
+backlog with the pinned mean. **Rejected** because it delays the
+search-readiness of newly-ingested documents until pin, violating the
+implicit "write → search-visible" latency contract from
+`design/engine.md:230`. The re-quantize pass above achieves correctness
+without that latency penalty.
 
-The asymmetry is the simpler trade.
+**Alternative considered: accept the asymmetry (no re-quantize).**
+Rejected by HITL at EU-2 review; recorded here so the rejection is not
+re-litigated. The cost analysis above shows the correctness fix is
+microseconds and one bounded transaction — there is no performance
+argument for accepting the asymmetry.
 
 ### §0.6 Visibility
 
-`OpenReport` (`fathomdb-engine/src/lib.rs:548-554`) gains two booleans:
+`OpenReport` (`fathomdb-engine/src/lib.rs:548-554`) gains two booleans
+that together describe the workspace's mean-centering state. They are
+deliberately split into a **static identity capability** and a **dynamic
+workspace state** so that callers do not have to derive one from the
+other:
 
-```
+```rust
 pub struct OpenReport {
     // ... existing fields ...
-    pub embedder_mean_centering: bool,   // true iff this embedder's identity uses MC
-    pub embedder_mean_vec_pinned: bool,  // true iff mean_vec IS NOT NULL in this workspace
+
+    /// Static: does this embedder identity REQUIRE mean-centering as
+    /// part of its sign-quantization pipeline? True iff the identity
+    /// recorded in `_fathomdb_embedder_profiles.identity_name` is one
+    /// whose pinned protocol uses MC (true for the 0.7.1 default
+    /// `fathomdb-bge-small-en-v1.5`; false for `fathomdb-noop` and any
+    /// caller-supplied embedder that does not opt in).
+    ///
+    /// This bool does NOT change over the workspace's lifetime — it is
+    /// determined by the embedder identity, which is itself fail-closed
+    /// after first profile-pin per ADR-0.6.0-vector-identity-embedder-owned.
+    pub embedder_mean_centering_required: bool,
+
+    /// Dynamic: has this workspace materialized the pinned mean vector
+    /// yet? True iff `_fathomdb_embedder_profiles.mean_vec IS NOT NULL`.
+    /// When `embedder_mean_centering_required == true` AND this is
+    /// `false`, the workspace is in the pre-pin window (count < 256);
+    /// when both are `true`, the workspace is in steady state. When
+    /// `required == false`, this field is always `false` (no mean is
+    /// ever pinned for an identity that does not use MC) — callers
+    /// inspecting just this bool MUST also read `required` to interpret
+    /// it.
+    pub embedder_mean_vec_pinned: bool,
 }
 ```
 
-`embedder_mean_centering` is a static property of the embedder identity
-(true for the 0.7.1 default `fathomdb-bge-small-en-v1.5`). It is `false`
-for `fathomdb-noop` and for any caller-supplied embedder that does not
-opt in. `embedder_mean_vec_pinned` reflects per-workspace state: it is
-`false` during the pre-pin window even when MC is enabled, and `true`
-from the pin commit onward.
+**Truth-table for the two bools:**
+
+| `required` | `pinned` | meaning                                                                |
+|------------|----------|------------------------------------------------------------------------|
+| false      | false    | Embedder identity does not use MC (e.g. `fathomdb-noop`, custom impl). |
+| false      | true     | **Impossible by construction.** Engine asserts in debug; release falls back to treating as `(false, false)`. |
+| true       | false    | MC-required identity, workspace in pre-pin window (count < 256).        |
+| true       | true     | MC-required identity, steady state. Sign-quant bits centered everywhere.|
+
+The `(false, true)` cell is impossible because pinning `mean_vec` is
+only performed by the projection worker after observing an MC-required
+identity. EU-5 includes a regression test that asserts this combination
+cannot occur via any public API.
 
 A `MeanVecPinned { dim, doc_count }` event is appended to
 `embedder_events` (see §7) on the commit that materializes the pinned
-mean. This is the only structured visibility into the pin transition.
+mean (and atomically performs the §0.5 re-quantize pass). This is the
+only structured visibility into the pin transition.
 
 ### §0.7 Invariant summary
 
 - Pinned `mean_vec` length in bytes equals `4 × embedder_identity.dimension`.
 - f32 BLOBs stored in the index are un-centered.
 - The f32 rerank distance is cosine over un-centered, L2-normed vectors.
-- Centering is applied if and only if (`embedder_mean_centering == true`
-  AND `mean_vec IS NOT NULL`); else the sign-quantize path runs on
-  un-centered vectors.
+- Centering is applied if and only if
+  (`embedder_mean_centering_required == true` AND `mean_vec IS NOT NULL`);
+  else the sign-quantize path runs on un-centered vectors.
+- After the pin commit's atomic re-quantize pass (§0.5), every row in
+  the workspace's vector tables has sign-quant bits computed under the
+  same pinned mean — no row uses a different centering than any other.
 
 ---
 
@@ -491,7 +569,7 @@ pub struct OpenReport {
     pub embedder_warmup_ms: u64,                       // already exists
     pub embedder_download_ms: Option<u64>,             // NEW
     pub embedder_events: Vec<EmbedderEvent>,           // NEW
-    pub embedder_mean_centering: bool,                 // NEW (§0.6)
+    pub embedder_mean_centering_required: bool,        // NEW (§0.6)
     pub embedder_mean_vec_pinned: bool,                // NEW (§0.6)
     // ...
 }
