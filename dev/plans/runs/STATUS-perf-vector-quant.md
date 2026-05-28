@@ -328,18 +328,27 @@ Interpretation per the correction above:
 
 #### What to do with the ADRs
 
-The campaign can lock-flip the *latency* claims now (AC-013 p50/p99
+The campaign can lock-flip the *latency* claims (AC-013 p50/p99
 budgets, AC-019 stress bound) since those are insensitive to fixture
-distribution. The *recall* claim in ADR-0.7.0-vector-binary-quant § 2
-point 4 must either:
+distribution and are honestly met:
 
-- (a) be re-worded to "structural correctness validated on synthetic
-  fixture; real-corpus recall floor validated in 0.7.1 EU-7", or
-- (b) be deferred entirely until 0.7.1 EU-7 lands and either passes
-  or triggers fallback (raise K, mean-centering, alternate model).
+- **AC-013 latency**: MET (p50=16, p99=19 ms at dev-box N=10K vs
+  80/300 budget; canonical-CI N=1M dispatch can confirm at scale).
+- **AC-019 stress**: MET (p99=131 ms vs 175 ms bound at dev-box
+  post-P2-IMPL).
+- **AC-013b recall@10 ≥ 0.90**: **NOT MET** at 0.5124 on the dense
+  isotropic fixture; cannot be honestly tested until real
+  embeddings land (0.7.1 EMBEDDER-UNDEFER EU-7).
 
-Option (a) is the recommended path — it lets 0.7.0 ship the latency
-win, which is the load-bearing closure for AC-013.
+The recall claim in ADR-0.7.0-vector-binary-quant § 2 point 4
+("recall@10 ≥ 0.90 vs f32 brute-force ground truth on the AC-013
+fixture") stays as written. It is **NOT MET** at 0.7.0 ship.
+Do NOT re-word the ADR to fit — the floor is the floor, the
+fixture pathology is documented, and the real-embedder validation
+is sequenced into 0.7.1 EU-7.
+
+0.7.0 ships with AC-013b held open as a known gap, not retconned
+as a pass. The 0.7.0 release notes must surface this explicitly.
 
 
 ## Open HITL items (awaits user)
