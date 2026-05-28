@@ -23,7 +23,7 @@
     "test": "npm run build:native:debug && tsc -p tsconfig.json && node --test dist/tests/*.test.js"
   },
   "devDependencies": {
-    "@napi-rs/cli": "^2.18.4",
+    "@napi-rs/cli": "^3.7.0",
     "@types/node": "^25.6.0",
     "typescript": "^5.8.3"
   },
