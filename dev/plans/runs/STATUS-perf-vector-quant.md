@@ -134,40 +134,175 @@ shape, the K=64 choice, or the binary-quant ADR — it's a fault of
 using a sparse-by-construction synthetic embedder to validate a
 fixture designed for dense embeddings.
 
-**Next-step options (pick one before P2-CANONICAL dispatch):**
+### Fixture-replacement evaluation (2026-05-27)
 
-1. **Switch the perf_gates fixture to a denser synthetic embedder.**
-   Replace VaryingEmbedder with one that fills every coordinate
-   (e.g. deterministic Gaussian / sign-balanced random, seeded by
-   FNV hash). Re-measure dev-box AC-013b; expect recall ≥ 0.90.
-   Then dispatch canonical-CI. Cheapest path.
+Two fixture replacements are being considered; this section records
+the research, the value each option provides, and the recommendation.
 
-2. **Switch the perf_gates fixture to the real corpus** via the new
-   `examples/ingest_corpus.rs` + `data/corpus-data/raw/*.jsonl`
-   path. Real-embedding cost dominates and the corpus is small
-   (~7,667 docs), so N=1M canonical-CI would still need a synthetic
-   amplification. Best for fidelity, more work.
+#### Important context: no production embedder is shipped
 
-3. **Re-evaluate K=64.** Only meaningful AFTER (1) or (2) — until
-   the fixture supports bit-quantization, K can't be tuned.
+Per ADR-0.6.0-default-embedder (deferred) and ADR-0.6.0-embedder-
+protocol (contract), fathomdb defines an `Embedder` trait
+(`fathomdb-embedder-api`) but ships only `NoopEmbedder`
+(`fathomdb-embedder`, returns `[1.0, 0.0, ...]` for all inputs).
+Neither the Python (`fathomdb-py`) nor TypeScript (`fathomdb-napi`)
+bindings expose an `Embedder` parameter — both call `Engine::open()`
+with no embedder wiring. The candle-based default embedder ADR-
+0.6.0 intended was never built.
 
-4. **HITL re-decision.** Re-open ADR § 6 open question with the
-   above context.
+**Implication for Option 2:** there is no "real production embedder"
+to test against. Choosing one is an open, HITL-gated architectural
+decision (the same one that ADR-0.6.0-default-embedder deferred).
 
-The campaign **must not** lock-flip the ADRs (open HITL item 3)
-until AC-013b is honestly ≥ 0.90 against a representative fixture.
+#### Research summary — sign-bit + f32 rerank, recall@10, K~4–6×
+
+Empirical recall@10 on real 768d-class embedders, ~4× oversampling
+(HuggingFace MTEB; Qdrant; Elastic):
+
+| Model (768d-class)          | NDCG@10 retention at K≈4× |
+|-----------------------------|---------------------------|
+| mxbai-embed-large-v1        | 96.4%                     |
+| all-MiniLM-L6-v2 (384d)     | 93.8%                     |
+| nomic-embed-text-v1.5       | 87.7%                     |
+| **e5-base-v2 (768d)**       | **74.8%**                 |
+
+Range across modern 768d embedders: **75%–96%**. Vendors hitting
+≥0.95 at low oversampling (Qdrant, Elastic BBQ, Azure) all do
+centering or learned rotation; none use raw sign-bit. Elastic
+explicitly: "naive binary quantization is exceptionally lossy and
+achieving adequate recall requires gathering 10x or 100x additional
+neighbors." ITQ (Gong 2011) exists *because* plain sign-bit
+underperforms on anisotropic real embeddings (~15% mAP gap at 64
+bits). No published rule of thumb for an isotropic-vs-real delta;
+gap depends on embedding-distribution eigenspectrum.
+
+Citations:
+- https://huggingface.co/blog/embedding-quantization
+- https://qdrant.tech/articles/binary-quantization/
+- https://www.elastic.co/search-labs/blog/better-binary-quantization-lucene-elasticsearch
+- https://slazebni.cs.illinois.edu/publications/ITQ.pdf (Gong 2011)
+- https://arxiv.org/pdf/1802.03936 (rotations for hypercubic quant)
+- Charikar 2002 SimHash — `1 − θ/π` isotropic-regime bound
+
+#### What each option's output answers
+
+| Question Pack 2 needs answered                    | Option 1 (dense isotropic) | Option 2 (real corpus + real embedder) |
+|---------------------------------------------------|----------------------------|-----------------------------------------|
+| Does Pack 2's two-phase SQL plumb correctly?      | Yes                        | Yes (also)                              |
+| Is recall ≥ 0.90 on isotropic vectors at K=64?    | Yes                        | N/A                                     |
+| Is recall ≥ 0.90 on real workloads?               | **No** — bounds it from above | Yes                                  |
+| Does ADR lock-flip survive production scrutiny?   | No (over-claims)           | Yes (if it passes)                      |
+| Right K-value for production?                     | Lower bound only           | Direct                                  |
+
+Critical asymmetry: **isotropic synthetic is the optimistic case**
+for sign-bit LSH (Charikar's `1 − θ/π` bound assumes equal per-
+coordinate variance). Real embeddings degrade — high-variance
+coordinates dominate Hamming distance, low-variance ones contribute
+near-random bits. The e5-base-v2 data point (75% retention at 4×
+oversampling on 768d) is a concrete counter-example: a real 768d
+embedder where Pack 2's K=64 would fail the 0.90 floor.
+
+Option 1's output is therefore:
+- **Necessary condition** — if Option 1 < 0.90, Option 2 is guaranteed < 0.90.
+- **Not sufficient** — Option 1 ≥ 0.90 does NOT imply Option 2 ≥ 0.90.
+
+#### Cost / risk
+
+|                       | Option 1                  | Option 2                                                  |
+|-----------------------|---------------------------|-----------------------------------------------------------|
+| Engineering cost      | 1–2 hours                 | days (embedder selection + integration + N=1M scaling)    |
+| Time to result        | minutes after code        | hours after code                                          |
+| Lock-flip strength    | "isotropic synthetic"     | "real text"                                               |
+| Pre-req               | none                      | HITL on embedder choice (reopens ADR-0.6.0-default-embedder) |
+| Risk if passes        | false confidence on prod  | none                                                      |
+| Risk if fails         | Pack 2 SQL shape is broken (rare) | may require Pack 3 (centering, larger K, PQ)      |
+
+#### Recommendation
+
+**Run Option 1 first as a structural-correctness gate. Use its
+result as a NECESSARY-but-not-SUFFICIENT condition. Do NOT
+unconditionally lock-flip the ADRs on Option 1 alone. Schedule
+Option 2 as a 0.7.1 slice gated on HITL embedder selection.**
+
+Objective reasoning:
+
+1. Option 1 isolates the failure mode that the research predicts is
+   responsible for the current 0.1572 reading (VaryingEmbedder
+   sparsity → 762 of 768 bits encoding the sign of 0.0). It
+   disambiguates between "fixture pathology" and "Pack 2 SQL bug"
+   cheaply.
+
+2. Option 1 alone cannot support the recall-floor lock-flip because
+   the literature shows real 768d embedders span 75%–96% retention at
+   the oversampling Pack 2 uses. The current ADR § 2 point 4 wording
+   ("recall@10 ≥ 0.90 vs f32 brute-force ground truth on the AC-013
+   fixture") is faithfully tested by Option 1 only if the AC-013
+   fixture's distribution is representative of production —
+   currently it is not.
+
+3. Option 2 requires choosing an embedder for the test fixture that
+   is **representative of an embedder that does not yet exist** in
+   the project. That selection is the same load-bearing decision
+   that ADR-0.6.0-default-embedder deferred. Doing it inside this
+   campaign is scope creep; doing it separately with HITL is the
+   right shape.
+
+4. K=64 was sourced from "Kyle Howells and Cohere binary-quant
+   benches" (ADR § 2 point 2). Those benches use modern well-
+   conditioned embedders (Cohere v3 = 94.6% retention at 4×). If
+   production eventually picks an e5-class embedder, K=64 is too
+   aggressive. `TOP_K_BIT_CANDIDATES` being a named constant means
+   K is already tunable — but the tuning data requires Option 2.
+
+5. **Most defensible ADR lock-flip wording given Option 1 only:**
+   "Pack 2's SQL shape and the K=64 default meet the recall floor
+   on isotropic synthetic vectors. The floor against production
+   embeddings is validated in a follow-up slice gated on HITL
+   embedder selection." This is honest and lets 0.7.0 ship the
+   latency win (the load-bearing closure for AC-013) without
+   over-claiming on recall.
+
+#### Concrete next step (after user OK)
+
+Run Option 1: replace `VaryingEmbedder` in `perf_gates.rs` and
+`tests/support/corpus_subset.rs` with a deterministic dense embedder
+(per-coordinate Gaussian seeded by FNV hash of body, L2-normalize).
+Re-measure dev-box AC-013b at N=10K.
+
+- If recall ≥ 0.90 at K=64: Pack 2 SQL is correct; commit limited
+  ADR lock-flip per § 5 above; open 0.7.1 slice for Option 2.
+- If recall < 0.90 at K=64: K=64 or Pack 2 SQL is at fault; revisit
+  Pack 2 before any lock-flip.
 
 
 ## Open HITL items (awaits user)
 
-1. **Canonical-CI dispatch** — run the perf-canonical workflow with `targets="ac013 ac019"` and the locked W4.1-stacked-O1 env knobs. Confirm:
-   - AC-013 p50 ≤ 80 ms, p99 ≤ 300 ms at N=1M.
-   - AC-013b recall@10 ≥ 0.90 at N=1M.
-   - AC-019 GREEN.
-2. **Numeric budget lock** — fill the placeholder AC-013/AC-019 budget rows in `dev/adr/ADR-0.7.0-text-query-latency-gates-revised.md` with canonical-CI measurements + ~10% headroom (per ADR-vector-binary-quant § 6 open question).
-3. **ADR lock-flip** — both ADRs from `draft, HITL-required` → `locked`.
-4. **Update `dev/notes/pcache2-followups.md`** — reference AC-013/019 closure under the new lever.
-5. **Push to origin** — explicit user OK required (per handoff constraint).
+1. **Fixture replacement (Option 1)** — replace VaryingEmbedder
+   with a dense isotropic synthetic embedder; re-measure dev-box
+   AC-013b. Necessary-condition gate for any ADR lock-flip. See
+   "Fixture-replacement evaluation" above.
+2. **Canonical-CI dispatch** — run the perf-canonical workflow with
+   `targets="ac013 ac019"` and the locked W4.1-stacked-O1 env knobs.
+   Confirm AC-013 p50 ≤ 80 ms, p99 ≤ 300 ms at N=1M; AC-019 GREEN.
+   (Note: AC-013b at N=1M will only be meaningful post Option 1.)
+3. **Numeric budget lock** — fill the placeholder AC-013/AC-019
+   budget rows in `dev/adr/ADR-0.7.0-text-query-latency-gates-
+   revised.md` with canonical-CI measurements + ~10% headroom.
+4. **ADR lock-flip — LIMITED.** Both ADRs from `draft, HITL-
+   required` → `locked` **with the recall claim qualified as
+   "validated on isotropic synthetic"** per the recommendation
+   above. Full real-embedding recall validation deferred to a
+   follow-up slice (Option 2) gated on HITL embedder selection
+   (reopens ADR-0.6.0-default-embedder).
+5. **Update `dev/notes/pcache2-followups.md`** — reference AC-013/
+   019 closure under the new lever and the Option-2 follow-up.
+6. **Push to origin** — explicit user OK required (per handoff
+   constraint).
+7. **Schedule 0.7.1 "production-embedder + real-corpus recall"
+   slice** — choose embedder (HITL), wire into bindings (revives
+   ADR-0.6.0-default-embedder work), run AC-013b against real
+   embeddings on `data/corpus-data/raw/*.jsonl` (amplified to N=1M
+   via deterministic permutation if needed).
 
 ## Compaction-resume checklist
 
