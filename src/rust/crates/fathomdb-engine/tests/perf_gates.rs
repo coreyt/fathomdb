@@ -297,10 +297,32 @@ fn seed_ac012_corpus(engine: &Engine, n: usize) -> Duration {
     started.elapsed()
 }
 
-/// Deterministic varying-vector embedder. Projects an input token's
-/// stable hash onto a single coordinate per call so vec0 ANN search
-/// returns distinct k=10 neighbors (a constant-vector embedder would
-/// collapse all distances to 0). Reproducible byte-for-byte across runs.
+/// Deterministic dense isotropic embedder. Seeds an xorshift64 PRNG
+/// from FNV-1a of the input and fills every coordinate with a
+/// uniformly-distributed value in [-1, 1), then L2-normalizes.
+///
+/// **Why dense, not sparse.** A prior version of this struct placed
+/// mass on only 6 of `dim` coordinates (FNV-driven slot picks). That
+/// is pathological for binary quantization: `vec_quantize_binary`
+/// takes the sign bit of every coordinate, so for a dim-768 sparse
+/// vector with 6 non-zero coords, ~762 of 768 sign bits encode the
+/// IEEE sign of an exact 0.0 (positive). The bit-distance between
+/// any two corpus vectors then carries only ~6 bits of signal — bit-
+/// KNN top-K=64 returns near-random candidates and AC-013b recall@10
+/// collapsed to 0.157 on N=10K once the unrelated batch-collapse bug
+/// was fixed. See `dev/plans/runs/STATUS-perf-vector-quant.md`
+/// "Fixture-replacement evaluation" for the full analysis.
+///
+/// **Why isotropic.** Per-coordinate variance is uniform across
+/// dim, which is the regime where Charikar's `1 − θ/π` SimHash
+/// collision-probability bound is tight. Real embeddings are
+/// anisotropic (Ethayarajh 2019; Gao 2019 "cone effect") and will
+/// score *lower* than this fixture under sign-bit quantization —
+/// see the e5-base-v2 reference at 74.8% NDCG@10 retention. So this
+/// fixture's recall@10 is a NECESSARY-but-not-SUFFICIENT condition
+/// for the AC-013b 0.90 HITL-locked floor against real embeddings;
+/// real-embedding validation is deferred to 0.7.1 EMBEDDER-UNDEFER
+/// per `dev/plans/prompts/0.7.1-EMBEDDER-UNDEFER-HANDOFF.md`.
 #[derive(Clone, Debug)]
 struct VaryingEmbedder {
     identity: EmbedderIdentity,
@@ -309,26 +331,33 @@ struct VaryingEmbedder {
 
 impl VaryingEmbedder {
     fn new(dim: u32) -> Self {
-        Self { identity: EmbedderIdentity::new("varying", "perf-gates", dim), dim }
+        Self { identity: EmbedderIdentity::new("varying", "perf-gates-dense", dim), dim }
     }
 
     fn vector_for(&self, text: &str) -> Vector {
         let dim = self.dim as usize;
-        let mut v = vec![0.0_f32; dim];
-        // FNV-1a 64-bit on the input; spread across coordinates with
-        // deterministic small magnitudes so distance is meaningful.
+        // FNV-1a 64-bit on the input — same hash as the prior sparse
+        // version, so seed determinism is unchanged.
         let mut h: u64 = 0xcbf29ce484222325;
         for &b in text.as_bytes() {
             h ^= b as u64;
             h = h.wrapping_mul(0x100000001b3);
         }
-        // Place mass on a small handful of coordinates derived from h.
-        for k in 0..6 {
-            let coord = ((h >> (k * 8)) as usize) % dim;
-            let sign = if (h >> (k * 8 + 7)) & 1 == 0 { 1.0 } else { -1.0 };
-            v[coord] += sign * 0.5_f32;
+        // Avoid the all-zero xorshift fixed point for empty input.
+        if h == 0 {
+            h = 0xdeadbeef_cafebabe;
         }
-        // Normalize-ish so all vectors have similar magnitude.
+        let mut state = h;
+        let mut v = Vec::with_capacity(dim);
+        for _ in 0..dim {
+            // xorshift64 — full-period, zero-pole-avoidance above.
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            // Map u64 → [-1, 1) via the i32 cast of the low 32 bits.
+            let x = ((state as u32) as i32 as f32) / (i32::MAX as f32 + 1.0);
+            v.push(x);
+        }
         let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-6);
         for x in &mut v {
             *x /= norm;
