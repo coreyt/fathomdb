@@ -2580,14 +2580,20 @@ impl MeanAccumulator {
 /// the unit test exercises the math without needing a live workspace
 /// (NoopEmbedder is not MC-required, so the end-to-end path is
 /// dormant in EU-5a2 — the real flow lights up in EU-5b).
+// EU-5a2 ships only the count+emit shape of this helper. The actual
+// sign_quantize(f32 - mean) math and the in-tx UPDATE against the
+// sign-bit column land in EU-5b alongside the loader + identity flip,
+// where the helper graduates into a transactional pin-and-requantize
+// routine. The unit test covers the row-bounding contract that EU-5b
+// will preserve.
+//
+// TODO(EU-5b): perform the sign_quantize math here and issue the in-tx
+// UPDATE statement; rename to `run_pin_and_requantize_pass` once the
+// helper does what its name implies.
 fn run_requantize_pass(rows: &[(i64, Vec<u8>)], mean: &[f32]) -> (u64, Vec<EmbedderEvent>) {
     let mut updated: u64 = 0;
     let dim = mean.len();
     for (_rowid, blob) in rows {
-        // Each row's f32 BLOB has length `4 * dim`. The re-quantize is
-        // sign-quantize(f32 - mean); we don't need to materialize the
-        // bit pattern here (the production code path runs an UPDATE
-        // with vec_quantize_binary in SQL). Bound the loop and tally.
         if blob.len() != dim * 4 {
             // Skip rows with the wrong shape; production path treats
             // this as a fail-closed error, but the bound is still the
@@ -4059,10 +4065,9 @@ fn check_embedder_profile(
             let expected_len = (dimension as usize).saturating_mul(4);
             // `dev/design/embedder.md` §0.2 invariant: when populated,
             // `mean_vec` byte length MUST equal `4 * dimension`. Fail
-            // closed via the existing identity-drift channel; the
-            // `debug_assert` is intentionally a no-op in test builds
-            // (tests deliberately poke malformed values to exercise
-            // the fail-closed branch).
+            // closed via the existing identity-drift channel in both
+            // debug and release builds — tests deliberately poke
+            // malformed values to exercise this branch.
             if bytes.len() != expected_len {
                 return Err(EngineOpenError::EmbedderIdentityMismatch {
                     stored,
