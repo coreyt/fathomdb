@@ -13,12 +13,16 @@ fn set_user_version(conn: &Connection, version: u32) {
 }
 
 fn create_profile(conn: &Connection, name: &str, revision: &str, dimension: u32) {
+    // EU-5a2 — `mean_vec BLOB NULL` column (schema migration step 10).
+    // The test simulates a workspace at SCHEMA_VERSION, so the shape
+    // must match what the engine reads.
     conn.execute(
         "CREATE TABLE IF NOT EXISTS _fathomdb_embedder_profiles(
             profile TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             revision TEXT NOT NULL,
-            dimension INTEGER NOT NULL
+            dimension INTEGER NOT NULL,
+            mean_vec BLOB
         )",
         [],
     )
@@ -84,7 +88,7 @@ fn engine_open_emits_migration_step_events() {
     opened.engine.close().unwrap();
 
     let step_ids: Vec<u32> = events.iter().map(|event| event.step_id).collect();
-    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9]);
+    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10]);
     assert!(events.iter().all(|event| event.duration_ms.is_some()));
     assert!(events.iter().all(|event| !event.failed));
     assert_eq!(opened.report.migration_steps, events);

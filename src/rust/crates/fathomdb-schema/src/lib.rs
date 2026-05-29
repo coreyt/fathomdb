@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use rusqlite::Connection;
 
-pub const SCHEMA_VERSION: u32 = 9;
+pub const SCHEMA_VERSION: u32 = 10;
 
 /// SQLite `PRAGMA` name carrying the on-disk schema-version sentinel.
 ///
@@ -240,6 +240,17 @@ pub const MIGRATIONS: &[Migration] = &[
                       WHERE kind NOT IN ('email','article','paper','meeting','note','todo','doc')
                   ) THEN 0 ELSE 1 END;
               DROP TABLE _vec0_migration_assertion;",
+    },
+    // 0.7.1 EU-5a2 — mean-centering schema column.
+    // Per `dev/design/embedder.md` §0.2: nullable BLOB holding the
+    // pinned per-workspace mean vector for the default profile. Byte
+    // length, when non-NULL, MUST equal `4 * dimension` (f32 little-endian).
+    // Pure additive ALTER; SQLite stores NULL for the pre-existing row.
+    // Lifecycle (compute-once-on-first-ingest threshold-pin) is in the
+    // engine crate, not the schema layer.
+    Migration {
+        step_id: 10,
+        sql: "ALTER TABLE _fathomdb_embedder_profiles ADD COLUMN mean_vec BLOB",
     },
 ];
 

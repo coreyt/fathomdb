@@ -25,6 +25,17 @@ pub enum EmbedderEvent {
     },
     /// A file was found in the cache and verified by sha256. No network.
     DefaultEmbedderCacheHit { file: String, sha256: String, cache_path: PathBuf },
+    /// EU-5a2 — emitted at the commit that materializes the per-workspace
+    /// mean vector into `_fathomdb_embedder_profiles.mean_vec`. `dim`
+    /// matches the default embedder identity's dimension; `doc_count` is
+    /// the number of pre-pin rows the same transaction's re-quantize
+    /// pass updated (per `dev/design/embedder.md` §0.5, §7).
+    ///
+    /// EU-5a2's only live identity is NoopEmbedder, which does NOT
+    /// request mean-centering, so this event is dormant until EU-5b
+    /// flips the default identity. Defined now so EU-5b is a no-op
+    /// addition to this enum.
+    MeanVecPinned { dim: u32, doc_count: u64 },
 }
 
 #[cfg(feature = "default-embedder")]

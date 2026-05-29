@@ -39,7 +39,7 @@ fn ac_046a_applies_ordered_migrations_to_current_version() {
     assert_eq!(report.schema_version_before, 1);
     assert_eq!(report.schema_version_after, SCHEMA_VERSION);
     assert_eq!(user_version(&conn), SCHEMA_VERSION);
-    assert_eq!(report.migration_steps.len(), 8);
+    assert_eq!(report.migration_steps.len(), 9);
     assert!(report.migration_steps.iter().all(|step| !step.failed));
 }
 
@@ -52,7 +52,7 @@ fn ac_046b_success_report_contains_step_ids_and_durations() {
     let report = migrate(&conn).unwrap();
 
     let step_ids: Vec<u32> = report.migration_steps.iter().map(|step| step.step_id).collect();
-    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9]);
+    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10]);
     assert!(report.migration_steps.iter().all(|step| step.duration_ms.is_some()));
 }
 
@@ -69,7 +69,7 @@ fn ac_046b_success_emits_structured_step_events() {
     .unwrap();
 
     let step_ids: Vec<u32> = events.iter().map(|step| step.step_id).collect();
-    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9]);
+    assert_eq!(step_ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10]);
     assert!(events.iter().all(|step| step.duration_ms.is_some()));
     assert!(events.iter().all(|step| !step.failed));
 }

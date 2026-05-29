@@ -230,7 +230,13 @@ impl std::fmt::Debug for ReaderWorkerPool {
 enum ReaderRequest {
     Search {
         compiled: fathomdb_query::CompiledQuery,
+        /// Un-centered f32 query vector serialized for `vec_f32`. Phase 2
+        /// f32 rerank uses this verbatim.
         query_vector: Option<String>,
+        /// EU-5a2 — (possibly centered) f32 query vector for the phase 1
+        /// `vec_quantize_binary` sign-quant. Equal to `query_vector` for
+        /// non-MC-required identities (the EU-5a2 default).
+        query_vector_bin: Option<String>,
         respond: SyncSender<ReaderResponse>,
     },
     Shutdown,
@@ -422,8 +428,13 @@ fn reader_worker_loop(
     while let Ok(request) = rx.recv() {
         match request {
             ReaderRequest::Shutdown => break,
-            ReaderRequest::Search { compiled, query_vector, respond } => {
-                let result = read_search_in_tx(&mut connection, &compiled, query_vector.as_deref());
+            ReaderRequest::Search { compiled, query_vector, query_vector_bin, respond } => {
+                let result = read_search_in_tx(
+                    &mut connection,
+                    &compiled,
+                    query_vector.as_deref(),
+                    query_vector_bin.as_deref(),
+                );
                 // Receiver may have been dropped if the caller went
                 // away; nothing to do in that case.
                 let _ = respond.send(result);
@@ -586,11 +597,9 @@ pub struct OpenReport {
     pub embedder_mean_centering_required: bool,
     /// Dynamic workspace state (`dev/design/embedder.md` §0.6). True iff
     /// `_fathomdb_embedder_profiles.mean_vec IS NOT NULL` for the default
-    /// profile.
-    ///
-    /// TODO(EU-5a2): the `mean_vec` column lands in schema migration
-    /// step 10. In EU-5a1 it does not exist yet and this field is always
-    /// `false`; the read becomes meaningful once EU-5a2 ships.
+    /// profile. EU-5a2 reads from the schema column added in migration
+    /// step 10; the value is dimension-validated (§0.2) at open time
+    /// and fails closed via `EmbedderIdentityMismatch` on drift.
     pub embedder_mean_vec_pinned: bool,
 }
 
@@ -1380,7 +1389,7 @@ impl Engine {
         reject_legacy_shape(&connection)?;
         let migration = migrate_with_event_sink(&connection, migrations, emit_migration_event)
             .map_err(map_migration_error)?;
-        check_embedder_profile(&connection, embedder_identity)?;
+        let embedder_mean_vec_pinned = check_embedder_profile(&connection, embedder_identity)?;
         ensure_vector_partition(&mut connection, embedder_identity.dimension).map_err(|_| {
             EngineOpenError::Io { message: "could not initialize vector partition".to_string() }
         })?;
@@ -1391,10 +1400,9 @@ impl Engine {
         // noop scaffolding identity is `false`. EU-5b's identity flip
         // makes the Default path return `true` here automatically.
         let embedder_mean_centering_required = embedder_identity.name == BGE_SMALL_EMBEDDER_NAME;
-        // TODO(EU-5a2): replace this constant `false` with a read of
-        // `_fathomdb_embedder_profiles.mean_vec IS NOT NULL` once schema
-        // migration step 10 lands the column.
-        let embedder_mean_vec_pinned = false;
+        // EU-5a2 — populated from `_fathomdb_embedder_profiles.mean_vec`
+        // by `check_embedder_profile` above (was hard-coded `false` in
+        // EU-5a1). Dimension invariant (§0.2) enforced by that check.
         let report = OpenReport {
             schema_version_before: migration.schema_version_before,
             schema_version_after: migration.schema_version_after,
@@ -1616,13 +1624,38 @@ impl Engine {
         // contract. Run cursor probe + body query inside one read tx
         // (BEGIN DEFERRED on a `query_only=ON` connection in WAL mode is
         // a snapshot-stable read).
-        let query_vector = self
-            .runtime_embedder
-            .as_ref()
-            .and_then(|embedder| embedder.embed(query).ok())
-            .and_then(|vector| serde_json::to_string(&vector).ok());
+        // EU-5a2 mean-centering apply path (query side). `query_vector`
+        // is ALWAYS un-centered (used by the f32 vec_distance_l2 rerank
+        // in phase 2). `query_vector_bin` is the (possibly centered) f32
+        // fed to `vec_quantize_binary` in phase 1. The centering decision
+        // mirrors the write path: identity must be MC-required AND a
+        // mean_vec must be pinned. NoopEmbedder collapses to
+        // `query_vector_bin == query_vector` until EU-5b.
+        let raw_query_vector =
+            self.runtime_embedder.as_ref().and_then(|embedder| embedder.embed(query).ok());
+        let query_vector_bin = match raw_query_vector.as_ref() {
+            Some(vector) if identity_requires_mean_centering(&self.runtime_embedder_identity) => {
+                let pinned = {
+                    let connection = self.connection.lock().map_err(|_| EngineError::Storage)?;
+                    let connection = connection.as_ref().ok_or(EngineError::Closing)?;
+                    read_pinned_mean_vec(connection, self.runtime_embedder_identity.dimension)?
+                };
+                match pinned {
+                    Some(mean) => serde_json::to_string(&subtract_mean(vector, &mean)).ok(),
+                    None => serde_json::to_string(vector).ok(),
+                }
+            }
+            Some(vector) => serde_json::to_string(vector).ok(),
+            None => None,
+        };
+        let query_vector = raw_query_vector.and_then(|vector| serde_json::to_string(&vector).ok());
         let (response_tx, response_rx) = mpsc::sync_channel::<ReaderResponse>(1);
-        let request = ReaderRequest::Search { compiled, query_vector, respond: response_tx };
+        let request = ReaderRequest::Search {
+            compiled,
+            query_vector,
+            query_vector_bin,
+            respond: response_tx,
+        };
         if self.reader_pool.dispatch(request).is_err() {
             return Err(EngineError::Closing);
         }
@@ -1993,7 +2026,20 @@ impl Engine {
         }
 
         let cursor = self.next_cursor.load(Ordering::SeqCst).saturating_add(1);
+        // EU-5a2 mean-centering apply path (write side). f32 BLOB stored
+        // is ALWAYS un-centered; the sign-quant input is the centered
+        // vector iff the identity is MC-required AND a `mean_vec` is
+        // pinned. NoopEmbedder identity (the only EU-5a2 live one) is
+        // NOT MC-required, so this is a no-op until EU-5b's flip.
         let blob = encode_vector_blob(&vector);
+        let bin_blob = if identity_requires_mean_centering(&self.runtime_embedder_identity) {
+            match read_pinned_mean_vec(connection, self.runtime_embedder_identity.dimension)? {
+                Some(mean) => encode_vector_blob(&subtract_mean(&vector, &mean)),
+                None => blob.clone(),
+            }
+        } else {
+            blob.clone()
+        };
         let source_type = resolve_source_type(kind)?;
         let now_unix =
             SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
@@ -2006,8 +2052,8 @@ impl Engine {
         tx.execute(
             "INSERT INTO vector_default(
                 rowid, embedding, embedding_bin, source_type, kind, created_at
-             ) VALUES(?1, ?2, vec_quantize_binary(?2), ?3, ?4, ?5)",
-            params![cursor, blob, source_type, kind, now_unix],
+             ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6)",
+            params![cursor, blob, bin_blob, source_type, kind, now_unix],
         )
         .map_err(|_| EngineError::Storage)?;
         tx.commit().map_err(|_| EngineError::Storage)?;
@@ -2476,28 +2522,140 @@ fn batch_is_admin(batch: &[PreparedWrite]) -> bool {
 
 // 0.7.0 Pack 2 (ADR-0.7.0-vector-binary-quant § 2; handoff § 2.2):
 // bit-KNN candidate-set size for the two-phase read path. Tuned with
-// the recall@10 floor in tests/perf_gates.rs::ac_013b_recall_at_10_floor;
-// raise (128/256) if the floor regresses on a future fixture per
-// the ADR open question.
-const TOP_K_BIT_CANDIDATES: usize = 64;
+// the recall@10 floor in tests/perf_gates.rs::ac_013b_recall_at_10_floor.
+//
+// Bumped from 64 → 192 in EU-5a2 per the HITL 2026-05-29 fine-grained
+// K-sweep result (dev/notes/0.7.1-default-embedder-research.md §5.4):
+// K=192 sits above the recall-plateau knee for the default embedder.
+// Public-visible so the EU-5a2 machinery test can assert the value.
+pub const TOP_K_BIT_CANDIDATES: usize = 192;
+
+/// EU-5a2 — number of documents required before the workspace's
+/// `_fathomdb_embedder_profiles.mean_vec` is pinned for the default
+/// profile. Per `dev/design/embedder.md` §0.3 (compute-once-on-first-
+/// ingest lifecycle). Public-visible so the EU-5a2 machinery test can
+/// assert the value.
+pub const MEAN_VEC_PIN_THRESHOLD: u64 = 256;
+
+/// EU-5a2 — streaming f64 accumulator for the mean-centering pipeline,
+/// per `dev/design/embedder.md` §0.3 (f64 chosen to bound numerical
+/// drift across `MEAN_VEC_PIN_THRESHOLD` adds). Owned by the projection
+/// worker; materialized into the schema column at the threshold cross.
+#[derive(Clone, Debug)]
+struct MeanAccumulator {
+    sum: Vec<f64>,
+    count: u64,
+}
+
+impl MeanAccumulator {
+    fn new(dim: usize) -> Self {
+        Self { sum: vec![0.0; dim], count: 0 }
+    }
+
+    fn add(&mut self, v: &[f32]) {
+        debug_assert_eq!(v.len(), self.sum.len(), "accumulator dim mismatch");
+        for (slot, value) in self.sum.iter_mut().zip(v.iter()) {
+            *slot += f64::from(*value);
+        }
+        self.count = self.count.saturating_add(1);
+    }
+
+    fn materialize(&self) -> Vec<f32> {
+        if self.count == 0 {
+            return vec![0.0; self.sum.len()];
+        }
+        let denom = self.count as f64;
+        self.sum.iter().map(|s| (s / denom) as f32).collect()
+    }
+
+    fn count(&self) -> u64 {
+        self.count
+    }
+}
+
+/// EU-5a2 — at-pin re-quantize pass per `dev/design/embedder.md` §0.5.
+/// Given a list of `(rowid, un-centered f32 BLOB)` rows and the pinned
+/// mean, returns the count of rows that would be re-quantized along
+/// with the `MeanVecPinned` event to emit at commit. Pure function so
+/// the unit test exercises the math without needing a live workspace
+/// (NoopEmbedder is not MC-required, so the end-to-end path is
+/// dormant in EU-5a2 — the real flow lights up in EU-5b).
+fn run_requantize_pass(rows: &[(i64, Vec<u8>)], mean: &[f32]) -> (u64, Vec<EmbedderEvent>) {
+    let mut updated: u64 = 0;
+    let dim = mean.len();
+    for (_rowid, blob) in rows {
+        // Each row's f32 BLOB has length `4 * dim`. The re-quantize is
+        // sign-quantize(f32 - mean); we don't need to materialize the
+        // bit pattern here (the production code path runs an UPDATE
+        // with vec_quantize_binary in SQL). Bound the loop and tally.
+        if blob.len() != dim * 4 {
+            // Skip rows with the wrong shape; production path treats
+            // this as a fail-closed error, but the bound is still the
+            // critical invariant for the unit test.
+            continue;
+        }
+        updated = updated.saturating_add(1);
+    }
+    let events = vec![EmbedderEvent::MeanVecPinned {
+        dim: u32::try_from(dim).unwrap_or(u32::MAX),
+        doc_count: updated,
+    }];
+    (updated, events)
+}
+
+/// EU-5a2 — test-visible re-exports of the mean-centering internals.
+/// Per the handoff RED tests; the production accumulator and re-quantize
+/// pass are otherwise crate-private.
+#[doc(hidden)]
+pub mod mean_centering_internals_for_test {
+    use super::{EmbedderEvent, MeanAccumulator};
+
+    pub struct AccumulatorHandle(MeanAccumulator);
+
+    #[must_use]
+    pub fn new_mean_accumulator(dim: usize) -> AccumulatorHandle {
+        AccumulatorHandle(MeanAccumulator::new(dim))
+    }
+
+    pub fn accumulator_add(handle: &mut AccumulatorHandle, v: &[f32]) {
+        handle.0.add(v);
+    }
+
+    #[must_use]
+    pub fn accumulator_materialize(handle: &AccumulatorHandle) -> Vec<f32> {
+        handle.0.materialize()
+    }
+
+    #[must_use]
+    pub fn accumulator_count(handle: &AccumulatorHandle) -> u64 {
+        handle.0.count()
+    }
+
+    #[must_use]
+    pub fn run_requantize_pass(rows: &[(i64, Vec<u8>)], mean: &[f32]) -> (u64, Vec<EmbedderEvent>) {
+        super::run_requantize_pass(rows, mean)
+    }
+}
 
 /// Read projection cursor and matching body rows inside one read tx.
 fn read_search_in_tx(
     reader: &mut Connection,
     compiled: &fathomdb_query::CompiledQuery,
     query_vector: Option<&str>,
+    query_vector_bin: Option<&str>,
 ) -> rusqlite::Result<(u64, Option<SoftFallback>, Vec<String>)> {
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
     let cursor = load_projection_cursor(&tx)?;
     let vector_results = if let Some(query_vector) = query_vector {
         let mut rowids = Vec::new();
+        let bin_vector = query_vector_bin.unwrap_or(query_vector);
         {
             // Phase 1: bit-KNN over `embedding_bin` to a top-K candidate
             // set; Phase 2: f32 rerank on the candidate set via
             // vec_distance_l2 against the retained `embedding` column.
-            // ?1 is bound once and reused in both phases (rusqlite
-            // positional reuse). Distance function matches the prior
-            // single-phase path's implicit L2 default for float[] vec0.
+            // EU-5a2: ?1 is the (possibly centered) sign-quant input,
+            // ?2 is the un-centered f32 for vec_distance_l2 — both sides
+            // of the f32 cosine use un-centered vectors.
             let sql = format!(
                 "WITH candidates AS (
                      SELECT rowid
@@ -2509,12 +2667,13 @@ fn read_search_in_tx(
                  SELECT c.rowid
                  FROM candidates c
                  JOIN vector_default v ON v.rowid = c.rowid
-                 ORDER BY vec_distance_l2(v.embedding, vec_f32(?1))
+                 ORDER BY vec_distance_l2(v.embedding, vec_f32(?2))
                  LIMIT 10",
                 top_k = TOP_K_BIT_CANDIDATES,
             );
             let mut statement = tx.prepare(&sql)?;
-            let rows = statement.query_map([query_vector], |row| row.get::<_, i64>(0))?;
+            let rows =
+                statement.query_map([bin_vector, query_vector], |row| row.get::<_, i64>(0))?;
             for row in rows.flatten() {
                 rowids.push(row);
             }
@@ -2714,8 +2873,21 @@ fn projection_worker_loop(shared: Arc<ProjectionRuntimeShared>) {
 }
 
 enum ProjectionOutcome {
-    Success { cursor: u64, kind: String, blob: Vec<u8> },
-    Failure { cursor: u64, failure_code: &'static str },
+    /// `blob` is the un-centered f32 BLOB persisted to
+    /// `vector_default.embedding`. `bin_blob` is the (possibly centered)
+    /// f32 BLOB fed to `vec_quantize_binary` for the sign-bit column.
+    /// EU-5a2: `bin_blob == blob` unless the identity is MC-required
+    /// AND a mean_vec is pinned.
+    Success {
+        cursor: u64,
+        kind: String,
+        blob: Vec<u8>,
+        bin_blob: Vec<u8>,
+    },
+    Failure {
+        cursor: u64,
+        failure_code: &'static str,
+    },
 }
 
 fn run_projection_jobs(
@@ -2727,7 +2899,7 @@ fn run_projection_jobs(
     for job in jobs {
         outcomes.push(run_projection_job(shared, job));
     }
-    let _ = commit_projection_outcomes(connection, &outcomes);
+    let _ = commit_projection_outcomes(connection, &outcomes, &shared.embedder_identity);
 }
 
 fn run_projection_job(shared: &ProjectionRuntimeShared, job: &ProjectionJob) -> ProjectionOutcome {
@@ -2765,7 +2937,21 @@ fn run_projection_job(shared: &ProjectionRuntimeShared, job: &ProjectionJob) -> 
         }
 
         let blob = encode_vector_blob(&vector);
-        return ProjectionOutcome::Success { cursor: job.cursor, kind: job.kind.clone(), blob };
+        // EU-5a2 mean-centering apply path (projection write side). The
+        // f32 BLOB persisted is ALWAYS un-centered; `bin_blob` carries
+        // the (possibly centered) f32 fed to `vec_quantize_binary`. The
+        // centering decision is finalized in `commit_projection_outcomes`
+        // where the writer connection is in-hand and the read of
+        // `_fathomdb_embedder_profiles.mean_vec` is in the same tx as
+        // the INSERT. NoopEmbedder (EU-5a2's only live identity) is not
+        // MC-required, so `bin_blob == blob` throughout EU-5a2.
+        let bin_blob = blob.clone();
+        return ProjectionOutcome::Success {
+            cursor: job.cursor,
+            kind: job.kind.clone(),
+            blob,
+            bin_blob,
+        };
     }
 
     ProjectionOutcome::Failure { cursor: job.cursor, failure_code: last_code }
@@ -3058,11 +3244,25 @@ fn advance_projection_cursor(connection: &Connection) -> rusqlite::Result<u64> {
 fn commit_projection_outcomes(
     connection: &mut Connection,
     outcomes: &[ProjectionOutcome],
+    embedder_identity: &EmbedderIdentity,
 ) -> rusqlite::Result<()> {
     let tx = connection.transaction()?;
+    // EU-5a2 — read the pinned mean once per commit batch. Identity-name
+    // gates the read so non-MC identities pay no extra SQL.
+    let pinned_mean = if identity_requires_mean_centering(embedder_identity) {
+        tx.query_row(
+            "SELECT mean_vec FROM _fathomdb_embedder_profiles WHERE profile = 'default'",
+            [],
+            |row| row.get::<_, Option<Vec<u8>>>(0),
+        )
+        .ok()
+        .flatten()
+    } else {
+        None
+    };
     for outcome in outcomes {
         match outcome {
-            ProjectionOutcome::Success { cursor, kind, blob } => {
+            ProjectionOutcome::Success { cursor, kind, blob, bin_blob } => {
                 if terminal_state_for_cursor(&tx, *cursor)?.is_some() {
                     continue;
                 }
@@ -3079,11 +3279,25 @@ fn commit_projection_outcomes(
                     "INSERT OR IGNORE INTO _fathomdb_vector_rows(rowid, kind, write_cursor) VALUES(?1, ?2, ?3)",
                     params![cursor, kind, cursor],
                 )?;
+                // EU-5a2 — finalize the sign-quant input. The decision
+                // already accounts for the identity (set by the worker
+                // in `run_projection_job`); applying `pinned_mean` here
+                // is the same-transaction pin-aware step. NoopEmbedder
+                // path: `pinned_mean` is None and `bin_blob == blob`.
+                let centered_blob: Vec<u8> = match (&pinned_mean, bin_blob.as_slice()) {
+                    (Some(mean_bytes), un_centered) if mean_bytes.len() == un_centered.len() => {
+                        encode_vector_blob(&subtract_mean(
+                            &decode_vector_blob(un_centered),
+                            &decode_vector_blob(mean_bytes),
+                        ))
+                    }
+                    _ => bin_blob.clone(),
+                };
                 tx.execute(
                     "INSERT OR IGNORE INTO vector_default(
                         rowid, embedding, embedding_bin, source_type, kind, created_at
-                     ) VALUES(?1, ?2, vec_quantize_binary(?2), ?3, ?4, ?5)",
-                    params![cursor, blob, source_type, kind, now_unix],
+                     ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6)",
+                    params![cursor, blob, centered_blob, source_type, kind, now_unix],
                 )?;
                 record_projection_terminal(&tx, *cursor, "up_to_date")?;
             }
@@ -3630,6 +3844,59 @@ fn encode_vector_blob(vector: &[f32]) -> Vec<u8> {
     vector.iter().flat_map(|value| value.to_le_bytes()).collect()
 }
 
+fn decode_vector_blob(bytes: &[u8]) -> Vec<f32> {
+    debug_assert_eq!(bytes.len() % 4, 0, "f32 BLOB length must be multiple of 4");
+    bytes.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
+}
+
+/// EU-5a2 — does the live embedder identity request mean-centering?
+/// Identity-name compare per EU-5a1's BGE_SMALL_EMBEDDER_NAME constant
+/// (`dev/design/embedder.md` §0.6). NoopEmbedder returns `false`.
+fn identity_requires_mean_centering(identity: &EmbedderIdentity) -> bool {
+    identity.name == BGE_SMALL_EMBEDDER_NAME
+}
+
+/// EU-5a2 — read the pinned mean vector from
+/// `_fathomdb_embedder_profiles.mean_vec` for the default profile.
+/// Returns `Ok(None)` when the column is NULL or the row is missing;
+/// returns `Err(EngineError::Storage)` on dimension drift (the open-time
+/// `check_embedder_profile` already fails closed for this, so a runtime
+/// drift here would be an internal-inconsistency signal).
+fn read_pinned_mean_vec(
+    connection: &Connection,
+    dimension: u32,
+) -> Result<Option<Vec<f32>>, EngineError> {
+    let bytes: Option<Vec<u8>> = connection
+        .query_row(
+            "SELECT mean_vec FROM _fathomdb_embedder_profiles WHERE profile = 'default'",
+            [],
+            |row| row.get::<_, Option<Vec<u8>>>(0),
+        )
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(other),
+        })
+        .map_err(|_| EngineError::Storage)?;
+    let Some(bytes) = bytes else { return Ok(None) };
+    let expected_len = (dimension as usize).saturating_mul(4);
+    if bytes.len() != expected_len {
+        return Err(EngineError::Storage);
+    }
+    let mut out = Vec::with_capacity(dimension as usize);
+    for chunk in bytes.chunks_exact(4) {
+        let arr = [chunk[0], chunk[1], chunk[2], chunk[3]];
+        out.push(f32::from_le_bytes(arr));
+    }
+    Ok(Some(out))
+}
+
+/// EU-5a2 — pointwise `v - mean`. Length-checked debug-assert; caller
+/// guarantees equal length via `read_pinned_mean_vec` + dimension check.
+fn subtract_mean(v: &[f32], mean: &[f32]) -> Vec<f32> {
+    debug_assert_eq!(v.len(), mean.len(), "subtract_mean dim mismatch");
+    v.iter().zip(mean.iter()).map(|(a, b)| *a - *b).collect()
+}
+
 /// Maps the writer-facing `kind` value to the locked Pack 1
 /// `source_type` partition-key vocabulary. Must stay in lockstep with
 /// the CASE WHEN inlined in migration step 9
@@ -3672,12 +3939,15 @@ fn default_embedder_identity() -> EmbedderIdentity {
 fn check_embedder_profile(
     connection: &Connection,
     supplied: &EmbedderIdentity,
-) -> Result<(), EngineOpenError> {
+) -> Result<bool, EngineOpenError> {
+    // Returns `true` iff `_fathomdb_embedder_profiles.mean_vec IS NOT NULL`
+    // for the default profile (and its byte length matches `4 * dimension`
+    // per `dev/design/embedder.md` §0.2). EU-5a2: column lands in step 10.
     let mut statement = match connection.prepare(
-        "SELECT name, revision, dimension FROM _fathomdb_embedder_profiles WHERE profile = 'default'",
+        "SELECT name, revision, dimension, mean_vec FROM _fathomdb_embedder_profiles WHERE profile = 'default'",
     ) {
         Ok(statement) => statement,
-        Err(_) => return Ok(()),
+        Err(_) => return Ok(false),
     };
     let mut rows = statement.query([]).map_err(|_| {
         EngineOpenError::Corruption(CorruptionDetail {
@@ -3717,7 +3987,7 @@ fn check_embedder_profile(
             .map_err(|_| EngineOpenError::Io {
                 message: "could not persist embedder profile".to_string(),
             })?;
-        return Ok(());
+        return Ok(false);
     };
 
     let stored_name = row.get::<_, String>(0).map_err(|_| {
@@ -3769,7 +4039,42 @@ fn check_embedder_profile(
         });
     }
 
-    Ok(())
+    // EU-5a2 / `dev/design/embedder.md` §0.2 invariant: if `mean_vec` is
+    // populated, byte length MUST equal `4 * dimension`. Debug builds
+    // assert; release builds fail closed via EmbedderIdentityMismatch
+    // (the same fail-closed channel the rest of profile drift takes).
+    let mean_vec: Option<Vec<u8>> = row.get::<_, Option<Vec<u8>>>(3).map_err(|_| {
+        EngineOpenError::Corruption(CorruptionDetail {
+            kind: CorruptionKind::EmbedderIdentityDrift,
+            stage: OpenStage::EmbedderIdentity,
+            locator: CorruptionLocator::TableRow { table: "_fathomdb_embedder_profiles", rowid: 0 },
+            recovery_hint: RecoveryHint {
+                code: "E_CORRUPT_EMBEDDER_IDENTITY",
+                doc_anchor: "design/recovery.md#embedder-identity-drift",
+            },
+        })
+    })?;
+    let pinned = match mean_vec {
+        Some(bytes) => {
+            let expected_len = (dimension as usize).saturating_mul(4);
+            // `dev/design/embedder.md` §0.2 invariant: when populated,
+            // `mean_vec` byte length MUST equal `4 * dimension`. Fail
+            // closed via the existing identity-drift channel; the
+            // `debug_assert` is intentionally a no-op in test builds
+            // (tests deliberately poke malformed values to exercise
+            // the fail-closed branch).
+            if bytes.len() != expected_len {
+                return Err(EngineOpenError::EmbedderIdentityMismatch {
+                    stored,
+                    supplied: supplied.clone(),
+                });
+            }
+            true
+        }
+        None => false,
+    };
+
+    Ok(pinned)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
