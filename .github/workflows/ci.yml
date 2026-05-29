@@ -149,6 +149,101 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - run: cargo test --workspace
 
+  # EU-6 / ADR-0.6.0-default-embedder.md EMB-3 — wheel-size gate.
+  #
+  # Builds the Python wheel twice (no-feature and with-feature) on
+  # Linux x86_64 and macOS and asserts the no-feature wheel size has
+  # not regressed by more than 20 MB against the baseline. The
+  # with-feature delta is RECORDED (job summary) but NOT gated: the
+  # candle + tokenizers + safetensors stack is expected to grow the
+  # binary substantially, and the gate's job is to flag accidental
+  # bloat of the *default* (no-network-by-default) wheel.
+  #
+  # Linux aarch64 + Windows are TODO for a follow-up (EU-6b) — they
+  # require the maturin matrix from .github/workflows/release.yml and
+  # would double the CI minutes; the gate's signal-to-noise is best on
+  # the two most-used targets first.
+  wheel-size-gate:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            label: linux-x64
+            # Baseline = no-feature wheel size measured on EU-6 GREEN
+            # commit (Linux x86_64, abi3 cp310, ~3.06 MB; the headroom
+            # in the 3.1 MB baseline absorbs small Cargo.lock churn).
+            # With-feature wheel ~6.16 MB (~3.10 MB delta — candle +
+            # tokenizers + safetensors stack). Update only when the
+            # baseline genuinely shifts and ADR-0.6.0-default-embedder.md
+            # EMB-3 is re-locked.
+            baseline_bytes: 3100000
+          - runner: macos-latest
+            target: x86_64-apple-darwin
+            label: darwin-x64
+            baseline_bytes: 3100000
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.11"
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Install maturin
+        run: pip install maturin==1.13.1
+      # Build the no-feature wheel by overriding pyproject.toml's
+      # `features` list at the maturin CLI; we cannot edit the file
+      # under test on every CI run. `--features` here REPLACES the
+      # pyproject list.
+      - name: Build wheel (no default-embedder feature)
+        working-directory: src/python
+        run: |
+          maturin build --release --out dist-nofeature \
+            --target ${{ matrix.target }} \
+            -i python3.11 \
+            --features pyo3/extension-module
+      - name: Build wheel (with default-embedder feature)
+        working-directory: src/python
+        run: |
+          maturin build --release --out dist-feature \
+            --target ${{ matrix.target }} \
+            -i python3.11 \
+            --features pyo3/extension-module,default-embedder
+      - name: Assert wheel-size gate
+        shell: bash
+        working-directory: src/python
+        run: |
+          set -euo pipefail
+          BASELINE=${{ matrix.baseline_bytes }}
+          BUDGET=$((20 * 1024 * 1024)) # 20 MB
+          NOFEAT=$(stat -c%s dist-nofeature/*.whl 2>/dev/null || stat -f%z dist-nofeature/*.whl)
+          FEAT=$(stat -c%s dist-feature/*.whl 2>/dev/null || stat -f%z dist-feature/*.whl)
+          DELTA=$(( NOFEAT - BASELINE ))
+          FEATDELTA=$(( FEAT - NOFEAT ))
+          echo "::notice title=wheel-size (${{ matrix.label }})::no-feature=${NOFEAT}B baseline=${BASELINE}B delta=${DELTA}B; with-feature=${FEAT}B delta-vs-nofeature=${FEATDELTA}B"
+          {
+            echo "## Wheel-size gate (${{ matrix.label }})"
+            echo ""
+            echo "| metric | value |"
+            echo "| --- | --- |"
+            echo "| no-feature wheel | ${NOFEAT} B |"
+            echo "| baseline | ${BASELINE} B |"
+            echo "| delta vs baseline | ${DELTA} B |"
+            echo "| budget (blocking) | ${BUDGET} B |"
+            echo "| with-feature wheel | ${FEAT} B |"
+            echo "| with-feature delta vs no-feature | ${FEATDELTA} B (informational only) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$DELTA" -gt "$BUDGET" ]; then
+            echo "::error title=wheel-size regression::no-feature wheel grew ${DELTA} B vs baseline ${BASELINE} B (budget ${BUDGET} B)"
+            exit 1
+          fi
+
   # mkdocs --strict is the broader CI gate beyond agent-verify (per AGENTS.md §3).
   docs:
     runs-on: ubuntu-latest

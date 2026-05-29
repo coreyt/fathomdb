@@ -24,6 +24,16 @@ export interface EngineConfig {
 
 export interface EngineOpenOptions {
   engineConfig?: EngineConfig;
+  /**
+   * EU-6: opt-in to the engine's pinned default embedder
+   * (`fathomdb-bge-small-en-v1.5`). On first use, weights are downloaded
+   * from HuggingFace and cached under `~/.cache/fathomdb/embedders/`.
+   * `false` (the default) opens without an embedder; vector writes
+   * then fail with `EmbedderNotConfiguredError`. Caller-supplied
+   * custom embedders are deferred to a future release per
+   * ADR-0.6.0-embedder-protocol Invariant 3.
+   */
+  useDefaultEmbedder?: boolean;
 }
 
 export interface WriteReceipt {
@@ -54,6 +64,28 @@ export interface EmbedderIdentity {
   readonly dimension: number;
 }
 
+/**
+ * EU-6 — discriminated-union shape for `OpenReport.embedderEvents`.
+ *
+ * `kind` carries the variant name; the remaining optional fields carry
+ * the variant payload. Callers pattern-match on `event.kind`.
+ */
+export interface EmbedderEvent {
+  readonly kind:
+    | "DefaultEmbedderDownload"
+    | "DefaultEmbedderCacheHit"
+    | "MeanVecPinned"
+    | string;
+  readonly file?: string | null;
+  readonly url?: string | null;
+  readonly bytes?: number | null;
+  readonly sha256?: string | null;
+  readonly cachePath?: string | null;
+  readonly durationMs?: number | null;
+  readonly dim?: number | null;
+  readonly docCount?: number | null;
+}
+
 export interface OpenReport {
   readonly schemaVersionBefore: number;
   readonly schemaVersionAfter: number;
@@ -61,6 +93,18 @@ export interface OpenReport {
   readonly embedderWarmupMs: number;
   readonly queryBackend: string;
   readonly defaultEmbedder: EmbedderIdentity;
+  /** EU-5b — wall-time ms the loader spent fetching default-embedder
+   *  weights, or `null` on full cache hit / caller-supplied embedder. */
+  readonly embedderDownloadMs: number | null;
+  /** EU-5b — structured loader events (downloads, cache hits,
+   *  mean-vec pin). */
+  readonly embedderEvents: ReadonlyArray<EmbedderEvent>;
+  /** EU-5b — static identity capability (mean-centering required for
+   *  bge-small). */
+  readonly embedderMeanCenteringRequired: boolean;
+  /** EU-5a2 — dynamic workspace state (`mean_vec IS NOT NULL` after the
+   *  256-doc threshold crossing). */
+  readonly embedderMeanVecPinned: boolean;
 }
 
 export interface CounterSnapshot {

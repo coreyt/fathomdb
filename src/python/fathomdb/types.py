@@ -72,6 +72,21 @@ class OpenReport:
     Captured at `Engine.open` time and surfaced via the engine-attached
     accessor `engine.open_report()` (Shape D, locked HITL 2026-05-24).
     The accessor is idempotent — the report is a snapshot, not live state.
+
+    EU-5a1/5a2/5b added four embedder-related fields, surfaced by EU-6:
+
+    - ``embedder_download_ms``: wall-time milliseconds the EU-3 loader
+      spent fetching default-embedder weights, or ``None`` on full cache
+      hit / caller-supplied embedder.
+    - ``embedder_events``: list of structured loader event ``dict``s.
+      Each carries a ``"kind"`` discriminant (``"DefaultEmbedderDownload"``,
+      ``"DefaultEmbedderCacheHit"``, ``"MeanVecPinned"``) and a
+      variant-specific payload in snake_case.
+    - ``embedder_mean_centering_required``: static identity capability —
+      ``True`` for the bge-small default identity, ``False`` otherwise.
+    - ``embedder_mean_vec_pinned``: dynamic workspace state — ``True``
+      iff ``_fathomdb_embedder_profiles.mean_vec IS NOT NULL`` after the
+      256-doc threshold crossing.
     """
 
     schema_version_before: int
@@ -80,6 +95,10 @@ class OpenReport:
     embedder_warmup_ms: int
     query_backend: str
     default_embedder: EmbedderIdentity
+    embedder_download_ms: int | None = None
+    embedder_events: list[dict] = field(default_factory=list)
+    embedder_mean_centering_required: bool = False
+    embedder_mean_vec_pinned: bool = False
 
 
 @dataclass(frozen=True)

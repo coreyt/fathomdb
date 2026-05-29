@@ -83,6 +83,34 @@ Examples of caller-visible subclasses:
 Payload fields remain typed attributes; callers do not dispatch on message
 text.
 
+## Default embedder
+
+`Engine.open(path, use_default_embedder=True)` opts into the engine's
+default embedder (`fathomdb-bge-small-en-v1.5`). On first use, weights
+are downloaded from HuggingFace and cached under
+`~/.cache/fathomdb/embedders/`; subsequent opens hit the warm cache. See
+`dev/adr/ADR-0.7.1-default-embedder-weight-fetch.md` for the network-
+surface scope (opt-in only; sha256-verified; visible via
+`OpenReport.embedder_events`). The default (`use_default_embedder=False`)
+opens without an embedder; subsequent vector writes fail with
+`EmbedderNotConfiguredError`.
+
+`OpenReport` carries four embedder-related fields surfaced by EU-6:
+`embedder_download_ms`, `embedder_events`, `embedder_mean_centering_required`,
+and `embedder_mean_vec_pinned`. Each entry in `embedder_events` is a
+`dict` keyed by `"kind"` (`"DefaultEmbedderDownload"`,
+`"DefaultEmbedderCacheHit"`, or `"MeanVecPinned"`) with a variant-
+specific payload in snake_case.
+
+### Custom embedder implementations (deferred to 0.8.x)
+
+Supplying a custom Python `Embedder` implementation requires a PyO3
+callback bridge subject to ADR-0.6.0-embedder-protocol Invariant 3 (no
+`pyo3-log` emission during `embed()`). That bridge is a multi-slice
+campaign deferred to 0.8.x. In 0.7.1 the binding surface is binary:
+`use_default_embedder=True` (engine's bge-small) or `False` (no embedder;
+vector writes fail with `EmbedderNotConfiguredError`).
+
 ## Non-presence
 
 Python does not expose recovery verbs or doctor-only flags. In particular,

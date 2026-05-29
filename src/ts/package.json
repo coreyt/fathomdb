@@ -16,7 +16,7 @@
   ],
   "scripts": {
     "build:native": "napi build --platform --release --cargo-cwd ../rust/crates/fathomdb-napi --js false",
-    "build:native:debug": "napi build --platform --cargo-cwd ../rust/crates/fathomdb-napi --features test-hooks --js false",
+    "build:native:debug": "napi build --platform --cargo-cwd ../rust/crates/fathomdb-napi --features test-hooks,default-embedder --js false",
     "build": "npm run build:native && tsc -p tsconfig.build.json",
     "build:debug": "npm run build:native:debug && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",

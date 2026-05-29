@@ -89,6 +89,36 @@ concrete leaf class in the `design/errors.md` matrix extends it. Open-time and
 runtime leaf classes remain distinct, but callers can catch `FathomDbError`
 for both.
 
+## Default embedder
+
+`Engine.open(path, { useDefaultEmbedder: true })` opts into the engine's
+default embedder (`fathomdb-bge-small-en-v1.5`). On first use, weights
+are downloaded from HuggingFace and cached under
+`~/.cache/fathomdb/embedders/`; subsequent opens hit the warm cache. See
+`dev/adr/ADR-0.7.1-default-embedder-weight-fetch.md` for the network-
+surface scope (opt-in only; sha256-verified; visible via
+`OpenReport.embedderEvents`). The default (`useDefaultEmbedder: false`
+or omitted) opens without an embedder; subsequent vector writes reject
+with `EmbedderNotConfiguredError`.
+
+`OpenReport` carries four embedder-related fields surfaced by EU-6
+(camelCase per TS convention): `embedderDownloadMs`, `embedderEvents`,
+`embedderMeanCenteringRequired`, and `embedderMeanVecPinned`. Each entry
+in `embedderEvents` is a discriminated-union object: `kind` is one of
+`"DefaultEmbedderDownload"`, `"DefaultEmbedderCacheHit"`,
+`"MeanVecPinned"`; the remaining optional fields carry the variant
+payload in camelCase.
+
+### Custom embedder implementations (deferred to 0.8.x)
+
+Supplying a custom TypeScript `Embedder` implementation requires a
+napi-rs callback bridge subject to ADR-0.6.0-embedder-protocol
+Invariant 3 (no host-side log emission during `embed()`). That bridge
+is a multi-slice campaign deferred to 0.8.x. In 0.7.1 the binding
+surface is binary: `useDefaultEmbedder: true` (engine's bge-small) or
+omitted/`false` (no embedder; vector writes reject with
+`EmbedderNotConfiguredError`).
+
 ## Non-presence
 
 TypeScript does not expose recovery verbs or doctor-only flags. In particular,

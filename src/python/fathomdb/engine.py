@@ -57,12 +57,21 @@ class Engine:
         path: str,
         *,
         config: EngineConfig | None = None,
+        use_default_embedder: bool = False,
         **engine_config: Any,
     ) -> "Engine":
         """Open the database at `path`.
 
         Either `config` or per-knob keyword arguments may be supplied,
         but not both. Unknown keyword arguments are rejected.
+
+        EU-6: ``use_default_embedder`` opts into the engine's pinned
+        default embedder (``fathomdb-bge-small-en-v1.5``). On first use,
+        weights are downloaded from HuggingFace and cached under
+        ``~/.cache/fathomdb/embedders/``. The default (``False``) opens
+        without an embedder; subsequent vector writes fail with
+        ``EmbedderNotConfiguredError``. Caller-supplied custom embedders
+        are deferred to a later release (see ``dev/interfaces/python.md``).
         """
 
         if config is not None and engine_config:
@@ -77,7 +86,7 @@ class Engine:
             )
 
         resolved = config if config is not None else EngineConfig(**engine_config)
-        native = _NativeEngine.open(path)
+        native = _NativeEngine.open(path, use_default_embedder=use_default_embedder)
         return cls(native, path=path, config=resolved)
 
     @property
@@ -142,6 +151,10 @@ class Engine:
                 revision=native.default_embedder.revision,
                 dimension=native.default_embedder.dimension,
             ),
+            embedder_download_ms=native.embedder_download_ms,
+            embedder_events=list(native.embedder_events),
+            embedder_mean_centering_required=native.embedder_mean_centering_required,
+            embedder_mean_vec_pinned=native.embedder_mean_vec_pinned,
         )
 
     def counters(self) -> CounterSnapshot:

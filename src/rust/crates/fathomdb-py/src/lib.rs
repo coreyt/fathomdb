@@ -32,12 +32,13 @@
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
 
+use fathomdb_embedder::EmbedderEvent as RustEmbedderEvent;
 use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
 use fathomdb_engine::{
-    CorruptionDetail, CorruptionKind, Engine as RustEngine, EngineError as RustEngineError,
-    EngineOpenError, OpenReport as RustOpenReport, OpenStage, PreparedWrite,
-    SearchResult as RustSearchResult, SoftFallback as RustSoftFallback, SoftFallbackBranch,
-    WriteReceipt as RustWriteReceipt,
+    CorruptionDetail, CorruptionKind, EmbedderChoice, Engine as RustEngine,
+    EngineError as RustEngineError, EngineOpenError, OpenReport as RustOpenReport, OpenStage,
+    PreparedWrite, SearchResult as RustSearchResult, SoftFallback as RustSoftFallback,
+    SoftFallbackBranch, WriteReceipt as RustWriteReceipt,
 };
 use fathomdb_schema::MigrationStepReport as RustMigrationStepReport;
 use pyo3::create_exception;
@@ -356,7 +357,6 @@ impl PyEmbedderIdentity {
 }
 
 #[pyclass(module = "fathomdb._fathomdb", name = "OpenReport", frozen, get_all)]
-#[derive(Clone)]
 struct PyOpenReport {
     schema_version_before: u32,
     schema_version_after: u32,
@@ -364,10 +364,28 @@ struct PyOpenReport {
     embedder_warmup_ms: u64,
     query_backend: String,
     default_embedder: PyEmbedderIdentity,
+    // EU-5a1/5a2/5b — surfaced to Python verbatim (snake_case).
+    /// Wall-time milliseconds the EU-3 loader spent fetching default-
+    /// embedder weights, or `None` on full cache hit / caller-supplied
+    /// embedder. See `dev/design/embedder.md` §7.
+    embedder_download_ms: Option<u64>,
+    /// Structured loader events (downloads, cache hits, mean-vec pin).
+    /// Each item is a `dict` keyed by `"kind"` with variant-specific
+    /// payload keys. See [`embedder_event_to_py`] for the per-variant
+    /// shape.
+    embedder_events: Vec<PyObject>,
+    /// Static identity capability — true when the configured default
+    /// embedder requires mean-centering (e.g. bge-small).
+    embedder_mean_centering_required: bool,
+    /// Dynamic workspace state — true iff
+    /// `_fathomdb_embedder_profiles.mean_vec IS NOT NULL`.
+    embedder_mean_vec_pinned: bool,
 }
 
 impl PyOpenReport {
-    fn from_rust(r: &RustOpenReport) -> Self {
+    fn from_rust(py: Python<'_>, r: &RustOpenReport) -> Self {
+        let embedder_events =
+            r.embedder_events.iter().map(|ev| embedder_event_to_py(py, ev)).collect();
         Self {
             schema_version_before: r.schema_version_before,
             schema_version_after: r.schema_version_after,
@@ -379,8 +397,52 @@ impl PyOpenReport {
             embedder_warmup_ms: r.embedder_warmup_ms,
             query_backend: r.query_backend.to_string(),
             default_embedder: PyEmbedderIdentity::from_rust(&r.default_embedder),
+            embedder_download_ms: r.embedder_download_ms,
+            embedder_events,
+            embedder_mean_centering_required: r.embedder_mean_centering_required,
+            embedder_mean_vec_pinned: r.embedder_mean_vec_pinned,
         }
     }
+}
+
+/// Serialise one [`RustEmbedderEvent`] as a Python `dict`. The `kind`
+/// key carries the variant name (`"DefaultEmbedderDownload"`,
+/// `"DefaultEmbedderCacheHit"`, `"MeanVecPinned"`); the remaining keys
+/// carry the variant payload in snake_case. We pick a dict (rather than
+/// a per-variant `#[pyclass]`) so callers can pattern-match on the
+/// `"kind"` discriminant without importing leaf classes.
+fn embedder_event_to_py(py: Python<'_>, ev: &RustEmbedderEvent) -> PyObject {
+    let dict = PyDict::new(py);
+    match ev {
+        RustEmbedderEvent::DefaultEmbedderDownload {
+            file,
+            url,
+            bytes,
+            sha256,
+            cache_path,
+            duration_ms,
+        } => {
+            let _ = dict.set_item("kind", "DefaultEmbedderDownload");
+            let _ = dict.set_item("file", file);
+            let _ = dict.set_item("url", url);
+            let _ = dict.set_item("bytes", *bytes);
+            let _ = dict.set_item("sha256", sha256);
+            let _ = dict.set_item("cache_path", cache_path.display().to_string());
+            let _ = dict.set_item("duration_ms", *duration_ms);
+        }
+        RustEmbedderEvent::DefaultEmbedderCacheHit { file, sha256, cache_path } => {
+            let _ = dict.set_item("kind", "DefaultEmbedderCacheHit");
+            let _ = dict.set_item("file", file);
+            let _ = dict.set_item("sha256", sha256);
+            let _ = dict.set_item("cache_path", cache_path.display().to_string());
+        }
+        RustEmbedderEvent::MeanVecPinned { dim, doc_count } => {
+            let _ = dict.set_item("kind", "MeanVecPinned");
+            let _ = dict.set_item("dim", *dim);
+            let _ = dict.set_item("doc_count", *doc_count);
+        }
+    }
+    dict.into()
 }
 
 // ===== Engine =========================================================
@@ -388,25 +450,41 @@ impl PyOpenReport {
 #[pyclass(module = "fathomdb._fathomdb", name = "Engine")]
 struct PyEngine {
     inner: Arc<RustEngine>,
-    open_report: PyOpenReport,
+    open_report: Arc<RustOpenReport>,
 }
 
 #[pymethods]
 impl PyEngine {
     #[staticmethod]
-    #[pyo3(signature = (path))]
-    fn open(py: Python<'_>, path: String) -> PyResult<Self> {
+    #[pyo3(signature = (path, use_default_embedder = false))]
+    fn open(py: Python<'_>, path: String, use_default_embedder: bool) -> PyResult<Self> {
         validate_ffi_string_py(&path)?;
         let opened = py
-            .allow_threads(|| catch_unwind(AssertUnwindSafe(|| RustEngine::open(path))))
+            .allow_threads(|| {
+                catch_unwind(AssertUnwindSafe(|| {
+                    // EU-6: True → `EmbedderChoice::Default` (engine
+                    // materialises the pinned bge-small embedder via the
+                    // EU-3 loader); False → `EmbedderChoice::None`
+                    // (engine opens; vector writes fail
+                    // EmbedderNotConfigured). Caller-supplied custom
+                    // embedders are deferred to a future slice per
+                    // ADR-0.6.0-embedder-protocol Invariant 3.
+                    let choice = if use_default_embedder {
+                        EmbedderChoice::Default
+                    } else {
+                        EmbedderChoice::None
+                    };
+                    RustEngine::open_with_choice(path, choice)
+                }))
+            })
             .map_err(|_| PanicException::new_err("engine panic during open"))?
             .map_err(engine_open_error_to_py)?;
-        let open_report = PyOpenReport::from_rust(&opened.report);
-        Ok(Self { inner: Arc::new(opened.engine), open_report })
+        let _ = py; // used inside the conversion below via the GIL handle.
+        Ok(Self { inner: Arc::new(opened.engine), open_report: Arc::new(opened.report) })
     }
 
-    fn open_report(&self) -> PyOpenReport {
-        self.open_report.clone()
+    fn open_report(&self, py: Python<'_>) -> PyOpenReport {
+        PyOpenReport::from_rust(py, &self.open_report)
     }
 
     fn write(&self, py: Python<'_>, batch: Bound<'_, PyList>) -> PyResult<PyWriteReceipt> {
@@ -455,6 +533,30 @@ impl PyEngine {
 
     fn set_slow_threshold_ms(&self, value: u64) -> PyResult<()> {
         self.inner.set_slow_threshold_ms(value).map_err(engine_error_to_py)
+    }
+
+    // EU-6 — test-hooks-gated vector write seam. Lets Python tests
+    // exercise the 0.5/§7 mean-vec pin transition end-to-end through the
+    // binding (the public Python surface does not yet expose typed
+    // vector writes; that is its own multi-slice campaign). Compiled out
+    // of release wheels by the `test-hooks` cfg.
+    #[cfg(any(test, feature = "test-hooks"))]
+    fn _configure_vector_kind_for_test(&self, py: Python<'_>, kind: &str) -> PyResult<()> {
+        validate_ffi_string_py(kind)?;
+        let engine = Arc::clone(&self.inner);
+        let kind = kind.to_string();
+        call_engine(py, move || engine.configure_vector_kind_for_test(&kind))
+    }
+
+    #[cfg(any(test, feature = "test-hooks"))]
+    fn _write_vector_for_test(&self, py: Python<'_>, kind: &str, text: &str) -> PyResult<()> {
+        validate_ffi_string_py(kind)?;
+        validate_ffi_string_py(text)?;
+        let engine = Arc::clone(&self.inner);
+        let kind = kind.to_string();
+        let text = text.to_string();
+        let _ = call_engine(py, move || engine.write_vector_for_test(&kind, &text))?;
+        Ok(())
     }
 
     #[pyo3(signature = (logger, heartbeat_interval_ms = None))]

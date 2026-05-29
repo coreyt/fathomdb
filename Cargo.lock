@@ -1004,6 +1004,7 @@ dependencies = [
 name = "fathomdb-napi"
 version = "0.7.0"
 dependencies = [
+ "fathomdb-embedder",
  "fathomdb-embedder-api",
  "fathomdb-engine",
  "fathomdb-schema",
@@ -1019,6 +1020,7 @@ dependencies = [
 name = "fathomdb-py"
 version = "0.7.0"
 dependencies = [
+ "fathomdb-embedder",
  "fathomdb-embedder-api",
  "fathomdb-engine",
  "fathomdb-schema",

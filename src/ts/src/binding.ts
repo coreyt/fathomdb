@@ -75,6 +75,18 @@ interface NativeEmbedderIdentity {
   dimension: number;
 }
 
+interface NativeEmbedderEvent {
+  kind: string;
+  file?: string | null;
+  url?: string | null;
+  bytes?: number | null;
+  sha256?: string | null;
+  cachePath?: string | null;
+  durationMs?: number | null;
+  dim?: number | null;
+  docCount?: number | null;
+}
+
 interface NativeOpenReport {
   schemaVersionBefore: number;
   schemaVersionAfter: number;
@@ -82,6 +94,10 @@ interface NativeOpenReport {
   embedderWarmupMs: number;
   queryBackend: string;
   defaultEmbedder: NativeEmbedderIdentity;
+  embedderDownloadMs: number | null;
+  embedderEvents: NativeEmbedderEvent[];
+  embedderMeanCenteringRequired: boolean;
+  embedderMeanVecPinned: boolean;
 }
 
 interface NativeCounterSnapshot {
@@ -107,6 +123,7 @@ interface NativeEngineConfig {
 
 interface NativeEngineOpenOptions {
   engineConfig?: NativeEngineConfig;
+  useDefaultEmbedder?: boolean;
 }
 
 interface NativeAdminConfigureOptions {
@@ -124,6 +141,11 @@ export interface NativeEngine {
   setProfiling(enabled: boolean): void;
   setSlowThresholdMs(value: number): void;
   attachSubscriber(callback: unknown, options?: NativeAttachSubscriberOptions): void;
+  // EU-6 test-hooks-gated seam. Present only when the napi binding is
+  // built with `--features test-hooks`; the TS surface forwards calls
+  // unconditionally and the runtime fails fast if absent.
+  configureVectorKindForTest?(kind: string): Promise<void>;
+  writeVectorForTest?(kind: string, text: string): Promise<void>;
 }
 
 export interface NativeModule {

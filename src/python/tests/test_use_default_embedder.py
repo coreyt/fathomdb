@@ -77,16 +77,22 @@ def test_open_default_embedder_default_kwarg_is_false(db_path: str) -> None:
 
 
 def test_open_report_carries_mean_centering_required(db_path: str, tmp_path) -> None:
-    # use_default_embedder=False → MC-required is False.
+    """Workspace identity is bge-small (EU-5b lock-flip), so the static
+    capability flag is ``True`` regardless of whether the embedder is
+    materialised. Both the ``False`` and ``True`` kwarg paths must
+    surface the field — that's the EU-6 binding-coverage point."""
+
     engine_false = Engine.open(db_path, use_default_embedder=False)
     try:
         report_false = engine_false.open_report()
-        assert report_false.embedder_mean_centering_required is False
+        # Field type round-trips as a bool through the binding.
+        assert isinstance(report_false.embedder_mean_centering_required, bool)
+        # Per EU-5b lock-flip — workspace identity is bge-small.
+        assert report_false.embedder_mean_centering_required is True
     finally:
         engine_false.close()
 
     _skip_if_no_network()
-    # use_default_embedder=True → MC-required is True (bge-small identity).
     path_true = str(tmp_path / "mc_true.sqlite")
     engine_true = Engine.open(path_true, use_default_embedder=True)
     try:

@@ -54,7 +54,7 @@ test("engineOpen with useDefaultEmbedder: false makes no network call", async ()
   const engine = await Engine.open(freshDbPath(), { useDefaultEmbedder: false });
   try {
     const report = engine.openReport();
-    assert.equal(report.embedderDownloadMs, null);
+    assert.ok(report.embedderDownloadMs == null);
     for (const ev of report.embedderEvents) {
       assert.notEqual(ev.kind, "DefaultEmbedderDownload");
     }
@@ -67,7 +67,7 @@ test("engineOpen with no useDefaultEmbedder option defaults to no-network", asyn
   const engine = await Engine.open(freshDbPath());
   try {
     const report = engine.openReport();
-    assert.equal(report.embedderDownloadMs, null);
+    assert.ok(report.embedderDownloadMs == null);
     for (const ev of report.embedderEvents) {
       assert.notEqual(ev.kind, "DefaultEmbedderDownload");
     }
@@ -77,11 +77,15 @@ test("engineOpen with no useDefaultEmbedder option defaults to no-network", asyn
 });
 
 test("openReport carries embedder mean-centering booleans", async () => {
-  // useDefaultEmbedder: false → MC-required is false.
+  // Workspace identity is bge-small (EU-5b lock-flip), so the static
+  // capability flag is true regardless of whether the embedder is
+  // materialised. Both the false and true option paths must surface
+  // the field — that's the EU-6 binding-coverage point.
   const engineFalse = await Engine.open(freshDbPath(), { useDefaultEmbedder: false });
   try {
     const reportFalse = engineFalse.openReport();
-    assert.equal(reportFalse.embedderMeanCenteringRequired, false);
+    assert.equal(typeof reportFalse.embedderMeanCenteringRequired, "boolean");
+    assert.equal(reportFalse.embedderMeanCenteringRequired, true);
   } finally {
     await engineFalse.close();
   }

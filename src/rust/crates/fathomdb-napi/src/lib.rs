@@ -28,11 +28,13 @@
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
 
+use fathomdb_embedder::EmbedderEvent as RustEmbedderEvent;
 use fathomdb_embedder_api::EmbedderIdentity as RustEmbedderIdentity;
 use fathomdb_engine::{
-    CorruptionDetail, CorruptionKind, Engine as RustEngine, EngineError as RustEngineError,
-    EngineOpenError, OpenReport as RustOpenReport, OpenStage, PreparedWrite,
-    SearchResult as RustSearchResult, SoftFallbackBranch, WriteReceipt as RustWriteReceipt,
+    CorruptionDetail, CorruptionKind, EmbedderChoice, Engine as RustEngine,
+    EngineError as RustEngineError, EngineOpenError, OpenReport as RustOpenReport, OpenStage,
+    PreparedWrite, SearchResult as RustSearchResult, SoftFallbackBranch,
+    WriteReceipt as RustWriteReceipt,
 };
 use fathomdb_schema::MigrationStepReport as RustMigrationStepReport;
 use napi::{Error, JsUnknown, Result, Status};
@@ -370,6 +372,73 @@ impl EmbedderIdentity {
     }
 }
 
+/// EU-6 — discriminated-union shape for `OpenReport.embedderEvents`.
+///
+/// `kind` carries the variant name (`"DefaultEmbedderDownload"`,
+/// `"DefaultEmbedderCacheHit"`, `"MeanVecPinned"`); the remaining
+/// optional fields carry the variant payload in camelCase. We pick a
+/// flat object (rather than a per-variant `#[napi]` class) so callers
+/// can pattern-match on `event.kind` without importing leaf classes.
+#[napi(object)]
+pub struct EmbedderEvent {
+    pub kind: String,
+    pub file: Option<String>,
+    pub url: Option<String>,
+    pub bytes: Option<i64>,
+    pub sha256: Option<String>,
+    pub cache_path: Option<String>,
+    pub duration_ms: Option<i64>,
+    pub dim: Option<u32>,
+    pub doc_count: Option<i64>,
+}
+
+impl EmbedderEvent {
+    fn from_rust(ev: &RustEmbedderEvent) -> Self {
+        match ev {
+            RustEmbedderEvent::DefaultEmbedderDownload {
+                file,
+                url,
+                bytes,
+                sha256,
+                cache_path,
+                duration_ms,
+            } => Self {
+                kind: "DefaultEmbedderDownload".to_string(),
+                file: Some(file.clone()),
+                url: Some(url.clone()),
+                bytes: Some(*bytes as i64),
+                sha256: Some(sha256.clone()),
+                cache_path: Some(cache_path.display().to_string()),
+                duration_ms: Some(*duration_ms as i64),
+                dim: None,
+                doc_count: None,
+            },
+            RustEmbedderEvent::DefaultEmbedderCacheHit { file, sha256, cache_path } => Self {
+                kind: "DefaultEmbedderCacheHit".to_string(),
+                file: Some(file.clone()),
+                url: None,
+                bytes: None,
+                sha256: Some(sha256.clone()),
+                cache_path: Some(cache_path.display().to_string()),
+                duration_ms: None,
+                dim: None,
+                doc_count: None,
+            },
+            RustEmbedderEvent::MeanVecPinned { dim, doc_count } => Self {
+                kind: "MeanVecPinned".to_string(),
+                file: None,
+                url: None,
+                bytes: None,
+                sha256: None,
+                cache_path: None,
+                duration_ms: None,
+                dim: Some(*dim),
+                doc_count: Some(*doc_count as i64),
+            },
+        }
+    }
+}
+
 #[napi(object)]
 pub struct OpenReport {
     pub schema_version_before: u32,
@@ -378,6 +447,11 @@ pub struct OpenReport {
     pub embedder_warmup_ms: i64,
     pub query_backend: String,
     pub default_embedder: EmbedderIdentity,
+    // EU-5a1/5a2/5b — surfaced by EU-6.
+    pub embedder_download_ms: Option<i64>,
+    pub embedder_events: Vec<EmbedderEvent>,
+    pub embedder_mean_centering_required: bool,
+    pub embedder_mean_vec_pinned: bool,
 }
 
 impl OpenReport {
@@ -389,6 +463,10 @@ impl OpenReport {
             embedder_warmup_ms: r.embedder_warmup_ms as i64,
             query_backend: r.query_backend.to_string(),
             default_embedder: EmbedderIdentity::from_rust(&r.default_embedder),
+            embedder_download_ms: r.embedder_download_ms.map(|v| v as i64),
+            embedder_events: r.embedder_events.iter().map(EmbedderEvent::from_rust).collect(),
+            embedder_mean_centering_required: r.embedder_mean_centering_required,
+            embedder_mean_vec_pinned: r.embedder_mean_vec_pinned,
         }
     }
 }
@@ -420,6 +498,13 @@ pub struct EngineConfig {
 #[napi(object)]
 pub struct EngineOpenOptions {
     pub engine_config: Option<EngineConfig>,
+    /// EU-6: opt-in to the engine's pinned default embedder
+    /// (`fathomdb-bge-small-en-v1.5`). On first use, weights are
+    /// downloaded from HuggingFace and cached under
+    /// `~/.cache/fathomdb/embedders/`. `false` (the default) opens
+    /// without an embedder; vector writes then fail with
+    /// `EmbedderNotConfigured`.
+    pub use_default_embedder: Option<bool>,
 }
 
 #[napi(object)]
@@ -443,9 +528,23 @@ impl Engine {
     #[napi(factory)]
     pub async fn open(path: String, options: Option<EngineOpenOptions>) -> Result<Engine> {
         validate_ffi_string_napi(&path)?;
-        let _ = options; // engineConfig knobs are recognised but not yet plumbed; see fathomdb-py.
+        // EU-6: `useDefaultEmbedder: true` → EmbedderChoice::Default
+        // (engine materialises the pinned bge-small embedder via the
+        // EU-3 loader); `false`/unset → EmbedderChoice::None (engine
+        // opens; vector writes fail EmbedderNotConfigured). Caller-
+        // supplied custom embedders are deferred per
+        // ADR-0.6.0-embedder-protocol Invariant 3.
+        let use_default_embedder =
+            options.as_ref().and_then(|o| o.use_default_embedder).unwrap_or(false);
         let join_result = tokio::task::spawn_blocking(move || {
-            catch_unwind(AssertUnwindSafe(|| RustEngine::open(path)))
+            catch_unwind(AssertUnwindSafe(|| {
+                let choice = if use_default_embedder {
+                    EmbedderChoice::Default
+                } else {
+                    EmbedderChoice::None
+                };
+                RustEngine::open_with_choice(path, choice)
+            }))
         })
         .await;
         let opened = match join_result {
@@ -757,6 +856,33 @@ fn translate_admin_schema(item: &JsonValue) -> Result<PreparedWrite> {
 }
 
 // ===== Test hooks =====================================================
+
+/// EU-6 — test-hooks-gated vector write seam. Lets TS tests exercise
+/// the 0.5/§7 mean-vec pin transition end-to-end through the binding
+/// (the public TS surface does not yet expose typed vector writes; that
+/// is its own multi-slice campaign). Compiled out of release npm builds
+/// by the `test-hooks` cfg. Kept in a separate `#[napi] impl` block
+/// because napi-derive's per-method `#[cfg]` gating inside the
+/// production-surface impl block does not compose with the impl-level
+/// `#[napi]` glue table.
+#[cfg(any(test, feature = "test-hooks"))]
+#[napi]
+impl Engine {
+    #[napi]
+    pub async fn configure_vector_kind_for_test(&self, kind: String) -> Result<()> {
+        validate_ffi_string_napi(&kind)?;
+        let engine = Arc::clone(&self.inner);
+        call_engine(move || engine.configure_vector_kind_for_test(&kind)).await
+    }
+
+    #[napi]
+    pub async fn write_vector_for_test(&self, kind: String, text: String) -> Result<()> {
+        validate_ffi_string_napi(&kind)?;
+        validate_ffi_string_napi(&text)?;
+        let engine = Arc::clone(&self.inner);
+        call_engine(move || engine.write_vector_for_test(&kind, &text).map(|_| ())).await
+    }
+}
 
 /// AC-067 force-panic probe. Gated by `cfg(any(test, feature =
 /// "test-hooks"))` so release npm builds without the feature flag do
