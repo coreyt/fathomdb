@@ -796,10 +796,12 @@ pub enum EngineOpenError {
 /// EU-5b identity-constant flip and loader / candle wiring.
 #[derive(Clone)]
 pub enum EmbedderChoice {
-    /// Use the engine's default embedder. NOT YET IMPLEMENTED in EU-5a1;
-    /// returns `Err(EngineOpenError::Embedder(EmbedderError::DefaultEmbedderNotWired))`
+    /// Use the engine's default embedder. **Transitional**: NOT YET
+    /// IMPLEMENTED in EU-5a1; returns
+    /// `Err(EngineOpenError::Embedder(EmbedderError::DefaultEmbedderNotWired))`
     /// until EU-5b lands the `CandleBgeEmbedder` + loader wiring + the
-    /// `DEFAULT_EMBEDDER_*` constant flip.
+    /// `DEFAULT_EMBEDDER_*` constant flip. Grep `transitional` to find
+    /// all sites that disappear with EU-5b.
     Default,
     /// Caller supplies the embedder instance. The supplied embedder's
     /// `identity()` becomes the workspace's default-profile identity.
