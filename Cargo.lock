@@ -985,6 +985,7 @@ version = "0.6.0"
 name = "fathomdb-engine"
 version = "0.7.0"
 dependencies = [
+ "fathomdb-embedder",
  "fathomdb-embedder-api",
  "fathomdb-query",
  "fathomdb-schema",
