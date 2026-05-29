@@ -209,9 +209,9 @@ bge-small+mc is ~0.945.
 | | |
 |---|---|
 | **Status** | 🔒 Locked |
-| **Picked** | One f32 corpus-mean vector per embedder profile, stored in `_fathomdb_embedder_profiles` (new column) |
-| **Migration** | step 10 (Pack 1 was step 9) |
-| **Owning slice** | 0.7.1 EU-2 (loader sub-design) + EU-5 (engine wiring) |
+| **Picked** | One f32 corpus-mean vector per embedder profile, stored in `_fathomdb_embedder_profiles.mean_vec BLOB NULL` |
+| **Migration** | step 10 (Pack 1 was step 9); shipped in EU-5a2 |
+| **Owning slice** | 0.7.1 EU-2 (design) + EU-5a2 (schema migration) — **both closed on `origin/main`** |
 
 **Considered alternatives**:
 - Per-source-type mean (one mean per `source_type` partition_key) —
@@ -224,15 +224,33 @@ bge-small+mc is ~0.945.
 
 | | |
 |---|---|
-| **Status** | ⏳ TBD — owning slice **0.7.1 EU-2** |
-| **Recommended** | Recompute when corpus row count changes by **> 25%** since last write, OR on explicit operator command |
-| **Open questions** | (a) Is row-count the right signal vs e.g. distribution-shift metric? (b) Should the recomputation happen in `Engine.open` (blocks startup) or via a background job? (c) What surface does "explicit operator command" use — CLI verb, Engine API, both? |
+| **Status** | 🔒 Locked — **no auto-recomputation in 0.7.1** |
+| **Picked** | Compute-once-on-first-ingest at `MEAN_VEC_PIN_THRESHOLD = 256` docs (`dev/design/embedder.md` §0.3 step 1); pin atomically at the threshold-crossing commit (§0.3 step 2); all subsequent writes leave `mean_vec` unchanged (§0.3 step 3). Refresh is **only** via explicit reindex (§0.3 step 4). Reindex itself is **deferred to a separate campaign** beyond 0.7.1. |
+| **Locked by** | `dev/design/embedder.md` §0.3 (EU-2 design, on `origin/main`) + EU-5a2 schema/apply paths (commit `49cdcf4`) |
+| **Owning slice** | 0.7.1 EU-2 (closed) |
 
-**Why 25% threshold**: ad hoc, derived from "small enough to catch
-meaningful corpus growth, large enough to avoid every-write
-recomputation." Not empirically validated. EU-2 design should sanity-
-check against a corpus-shift sensitivity study or accept that the
-threshold is a heuristic and pin it as such.
+**Considered but rejected**:
+- **> 25% row-count delta heuristic** — would require a background
+  recomputation job plus topic-drift telemetry. Rejected as scope creep
+  for 0.7.1: no background-worker infra exists for this kind of
+  long-running mutation, and the row-count signal is itself a proxy
+  (the real question is distribution-shift, not count-shift). The
+  documented failure mode is "topic-drift workspaces pin a skewed
+  mean and may underperform"; the documented remedy is reindex, not
+  silent re-derivation.
+- **Recompute on every `Engine.open`** — rejected because the mean is
+  O(N) over the workspace and would block startup proportional to corpus
+  size; also produces a moving target for the sign-bit cache (every
+  re-open would invalidate the at-pin re-quantize work from §0.5).
+- **Per-source-type mean** (one mean per `source_type` partition key)
+  — rejected as scope creep; corpus-wide mean is the standard approach
+  and is what the EU-0 empirical work measured.
+
+**Known limitation carried forward**: topic-drift workspaces (e.g. user
+ingests 256 docs about topic A, then pivots to topic B) pin a topic-A-
+skewed mean and may underperform on topic B. Documented at
+`dev/design/embedder.md` §0.3 "Documented failure mode: topic drift"
+and §0.5 alternatives. Resolution path is reindex (deferred).
 
 ---
 
@@ -264,7 +282,7 @@ threshold is a heuristic and pin it as such.
 |---|---|
 | **Status** | 🔒 Locked |
 | **Picked** | `vec_distance_l2` over the retained f32 `embedding` column |
-| **Locked by** | `dev/adr/ADR-0.7.0-vector-binary-quant.md` § 2 point 2; Pack 2 SQL at `lib.rs:2348-2362` |
+| **Locked by** | `dev/adr/ADR-0.7.0-vector-binary-quant.md` § 2 point 2; Pack 2 SQL at `fathomdb-engine/src/lib.rs:2879-2895` (post-EU-5a2 + EU-5b shift; grep `vec_distance_l2` to find current location) |
 
 **Considered alternatives**:
 - `vec_distance_cosine` — equivalent on unit vectors (which we
@@ -276,28 +294,43 @@ threshold is a heuristic and pin it as such.
 
 | | |
 |---|---|
-| **Status** | 🔒 Locked at **K=192** (2026-05-28) |
-| **Picked** | `TOP_K_BIT_CANDIDATES = 192` |
-| **Locked by** | Orchestrator+HITL decision 2026-05-28; supersedes the K=64 default in `dev/adr/ADR-0.7.0-vector-binary-quant.md` § 2 point 2 (ADR-amendment slice owns the cross-cite) |
-| **Research anchor** | EU-0 § 2.1 K-sweep; EU-0 mean-centering K-extended ablation 2026-05-28 |
-| **Empirical basis** | K=128 mc = 0.907 (measured); K=256 mc ≈ 0.945 (measured, mc lift n.s.); K=192 interpolated estimate ≈ 0.925 — ~2.5 pp cushion above the 0.90 floor |
+| **Status** | 🔒 Locked at **K=192** (2026-05-29) |
+| **Picked** | `TOP_K_BIT_CANDIDATES = 192` (engine constant at `fathomdb-engine/src/lib.rs`; shipped in EU-5a2 commit `49cdcf4`) |
+| **Locked by** | Orchestrator+HITL decision 2026-05-29 after the fine-grained K-sweep; supersedes the K=64 default in `dev/adr/ADR-0.7.0-vector-binary-quant.md` § 2 point 2 (ADR-amendment slice owns the cross-cite) |
+| **Research anchor** | EU-0 § 2.1 (original K∈{32,64,96,128,256} sweep); §2.2.1 (mc K-extended ablation 2026-05-28); **§5.4 (fine-grained K∈{128,160,192,224,256} sweep 2026-05-29)** — the §5.4 measurement is what locked K=192 |
+| **Empirical basis** | K=128 mc = 0.907 (measured; thin 0.7 pp cushion, lower CI 0.877 below floor); **K=192 mc = 0.933 (measured, 95% CI 0.912–0.953; lower CI bound clears 0.90 statistically)**; K=256 mc = 0.945 (measured; mc lift +1.2 pp non-significant; technique-ceiling territory) |
+
+**Why the K=192 measurement matters**: the original K-sweep covered
+K∈{32,64,96,128,256}. K=192 was an interpolation point. HITL pushed
+back asking whether K=128 vs K=256 had been sufficiently bounded; the
+fine-grained sweep ran on the saved bge-small doc/query vectors (no
+re-embed) via `dev/research/eu-0/run_k192_check.py`. Result: K=192
+measured 0.933, +0.007 pp above linear interpolation between K=128 and
+K=256 — the recall curve has a beneficial bend in that region, and
+K=192 is the smallest K where the **lower CI bound** (not just the point
+estimate) clears the 0.90 floor.
 
 **Considered alternatives**:
 
-| K | bge-small + mc recall@10 | Pros | Cons |
+| K | bge-small + mc recall@10 (95% CI) | Pros | Cons |
 |---|---|---|---|
-| 64 | 0.843 | Cheapest rerank; matches PVQ-default | Below 0.90 floor |
-| 96 | 0.880 | Marginal cost over 64 | Below 0.90 floor |
-| 128 | 0.907 | Cheapest K that clears 0.90 | Thin 0.7 pp cushion; sensitive to corpus-shape variance |
-| **192** | **~0.925** (interp) | **2.5 pp cushion above floor; small absolute rerank cost vs K=128** | Marginal CPU vs K=128 |
-| 256 | ~0.945 | Maximum recall on bge-small+mc | Diminishing returns; mc lift n.s.; rerank cost grows |
+| 64 | 0.843 (0.809–0.877) | Cheapest rerank; matches PVQ-default | Below 0.90 floor |
+| 96 | 0.880 (0.848–0.911) | Marginal cost over 64 | Below 0.90 floor |
+| 128 | 0.907 (0.877–0.933) | Cheapest K that clears 0.90 in expectation | Thin 0.7 pp cushion; lower CI 0.877 below floor; sensitive to corpus-shape variance |
+| 160 | 0.919 (0.892–0.943) | Cushion +0.019 | Lower CI 0.892 still below floor |
+| **192** | **0.933 (0.912–0.953)** | **Lower CI 0.912 clears 0.90 statistically; +3.3 pp cushion** | Marginal CPU vs K=128 |
+| 224 | 0.941 (0.921–0.959) | More headroom | +0.008 pp recall for 17% more rerank work vs 192 |
+| 256 | 0.945 (0.926–0.961) | Maximum recall on bge-small+mc | Diminishing returns; mc lift n.s.; rerank cost grows |
 
 **Why K=192 over K=128**:
-- Measured K=128 clears 0.90 by only 0.7 pp. EU-0 § 3 flags two
-  measurement biases that push real-corpus recall *down* from the
-  research number: (a) synthetic queries are noisier than relevance-
-  judged sets, (b) the 7,667-doc corpus is smaller than canonical-CI
-  N=1M. A 2 pp cushion is prudent against both.
+- Measured K=128 mc point estimate clears 0.90 by only 0.7 pp, **but
+  the lower 95% CI bound (0.877) sits below the floor**. K=192's lower
+  CI bound (0.912) clears the floor statistically — meaningful
+  difference under the 100-query sample size.
+- EU-0 § 3 flags two measurement biases that push real-corpus recall
+  *down* from the research number: (a) synthetic queries are noisier
+  than relevance-judged sets, (b) the 7,667-doc corpus is smaller than
+  canonical-CI N=1M. A statistically-clearing K is prudent against both.
 - Cost asymmetry: K is cheap (linear in Phase-2 rerank only; embed +
   Hamming are K-independent). On bge-small (384d) the K=64→192
   rerank-cost delta is much smaller than the storage/embed cost of
@@ -315,7 +348,7 @@ threshold is a heuristic and pin it as such.
 |---|---|
 | **Status** | 🔒 Locked |
 | **Picked** | 10 (fixed) |
-| **Locked by** | Pack 2 SQL `LIMIT 10` at `lib.rs:2360` |
+| **Locked by** | Pack 2 SQL `LIMIT 10` at `fathomdb-engine/src/lib.rs:2895` (post-EU-5a2/5b shift; grep `LIMIT 10` for current location) |
 
 Not currently configurable. Out of scope for 0.7.x.
 
@@ -360,23 +393,45 @@ measurement — **the floor is not gerrymandered to fit a desired pass**.
 
 | | |
 |---|---|
-| **Status** | ⏳ TBD — owning slice **0.7.1 EU-5** |
-| **Recommended** | Either `"0.7.1"` (release-axis) or the HF snapshot SHA prefix `5c38ec7c` (full model provenance) |
-| **Locked by (eventually)** | `default_embedder_identity()` in `fathomdb-engine/src/lib.rs:3507` |
+| **Status** | 🔒 Locked (shipped in EU-5b commit `1c0b760` on `origin/main`) |
+| **Picked** | `name = "fathomdb-bge-small-en-v1.5"`, `revision = "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a"`, `dimension = 384` |
+| **Locked by** | `DEFAULT_EMBEDDER_NAME` / `DEFAULT_EMBEDDER_REVISION` / `DEFAULT_EMBEDDER_DIMENSION` constants at `fathomdb-engine/src/lib.rs` (search `DEFAULT_EMBEDDER_`); also returned from `default_embedder_identity()` and written into `_fathomdb_embedder_profiles` on first profile-pin |
 
-**Trade-off**:
-- Release-axis (`"0.7.1"`) — bumps every release; any 0.7.x→0.7.y open
-  fails-closed on identity mismatch even when weights are unchanged.
-  Cleaner narrative for "this was shipped in 0.7.1".
-- HF SHA (`5c38ec7c`) — only bumps when weights actually change.
-  Better matches the load-bearing fact (the model is the model
-  regardless of release line). Slightly opaque for humans.
+**What shipped vs the original recommendation**:
 
-**Recommendation**: HF SHA prefix as `revision`, release line in
-`name` (`"fathomdb-bge-small-en-v1.5"`). Lets the identity reflect
-"weights changed" without re-pinning on every release.
+The pre-EU-5b recommendation was "HF SHA **prefix** (`5c38ec7c`) as
+`revision`, release line in `name`." EU-5b implementation tightened
+both:
 
-EU-5 owns the final call.
+- **Full HF SHA in `revision`** (not prefix): the resolve URL accepts
+  both, and the full SHA is unambiguous to future readers who don't
+  know the prefix convention. No downside; strictly more information.
+- **No release-line component in `name`**: the name stays
+  `"fathomdb-bge-small-en-v1.5"` — model identity only, no release
+  axis. Matches the intent of the original recommendation
+  ("weights changed" triggers a re-pin; not every release). Parallels
+  the EU-5d decision to drop the K reference from
+  `ADR-0.7.1-default-embedder-weight-fetch` because "K is mutable
+  across releases" — the same reasoning applies to the identity name.
+
+**Considered but not picked**:
+- **Release-axis revision (`"0.7.1"`)** — would force a profile-pin
+  re-derivation on every 0.7.x release even when weights are unchanged.
+  Bad for workspaces that survive releases.
+- **HF SHA prefix only** — used in cache directory layout
+  (`<dirs::cache_dir>/fathomdb/embedders/<sha256("<repo>@<rev>")[..12]>/`
+  per design §4) but not in the identity string. Cache-prefix
+  collision risk is lower than identity-string collision risk; the
+  identity gets the full SHA.
+
+**Consequences**:
+- A future bge-small-en-v1.5 SHA bump on HuggingFace (e.g. v1.5.1)
+  changes `DEFAULT_EMBEDDER_REVISION` and triggers fail-closed re-pin
+  on every existing workspace per ADR-0.6.0-vector-identity-embedder-owned.
+  Documented as the correct behavior; release-notes must call out.
+- Migration of pre-0.7.1 workspaces pinned to `fathomdb-noop`: same
+  fail-closed posture; release-notes for 0.7.1 must call out the
+  one-time identity change.
 
 ### 6.2 Profile-pinning behavior
 
@@ -393,19 +448,52 @@ EU-5 owns the final call.
 
 | | |
 |---|---|
-| **Status** | ⏳ TBD — owning slice **0.7.1 EU-2** (sub-design) → **EU-3** (impl) |
-| **Legal basis** | `dev/adr/ADR-0.7.1-default-embedder-weight-fetch.md` *(EU-1)* — NEED-017 / REQ-033 exception |
-| **Sub-design** | Will live in `dev/design/embedder.md` post-EU-2 (10 sections enumerated in `dev/plans/prompts/0.7.1-EMBEDDER-UNDEFER-HANDOFF.md` § EU-2) |
+| **Status** | 🔒 Locked (design + implementation both on `origin/main`) |
+| **Legal basis** | `dev/adr/ADR-0.7.1-default-embedder-weight-fetch.md` (EU-1, commit `b99c203`) — NEED-017 / REQ-033 opt-in exception |
+| **Sub-design** | `dev/design/embedder.md` §§1–10 (EU-2, commit `fae2799` + K=192 follow-ups) — 10 concrete sections covering loader scope, transport, auth, cache layout, atomic write, verification, cold-load timing, endianness, failure taxonomy, concurrency |
+| **Implementation** | `fathomdb-embedder/src/loader.rs` (EU-3 GREEN `af2e6e7` + FIX-1 `dc70704` + FIX-2 `b77798f` + FIX-3 `6c2a2b1` + EU-5d cleanup `ea57fdf`) |
 
-Headlines (subject to EU-2 confirmation):
-- Transport: `ureq` blocking client; HF resolve URL pattern; 302 →
-  CloudFront handling.
-- Cache: `<dirs::cache_dir>/fathomdb/embedders/<model-sha-prefix>/<file>`.
-- Verification: sha256 against pinned constants; no "trust on first
-  use."
-- Concurrency: `fs2::FileExt::lock_exclusive` on a `.lock` sibling.
-- Visibility: `default_embedder_download` event in
-  `OpenReport.embedder_events`.
+**What shipped** (cross-cites to design §§ for the contract):
+
+- **Transport (§2)**: `ureq` blocking client; explicit `redirects(3)`;
+  10s connect / 60s read timeouts overridable via
+  `FATHOMDB_EMBEDDER_CONNECT_TIMEOUT_S` /
+  `FATHOMDB_EMBEDDER_READ_TIMEOUT_S`; 3-attempt backoff with `1s, 2s`
+  between attempts; retry policy gates on connect failure / 5xx /
+  read-timeout / 408 / 429 only.
+- **Auth (§3)**: `HF_TOKEN` env var → `Authorization: Bearer <token>`.
+  No keychain, no `~/.huggingface/token`, no on-disk persistence.
+- **Cache layout (§4)**:
+  `<dirs::cache_dir>()/fathomdb/embedders/<sha256("<repo>@<rev>")[..12]>/<file>`.
+  Best-effort read-only HF-hub compat probe at
+  `$HF_HOME/hub/models--<repo-encoded>/snapshots/<revision>/<file>`
+  with hardlink (POSIX) or copy fallback; never writes into the HF-hub
+  layout.
+- **Atomic write (§5)**: `<file>.partial` → `fsync` → `rename` →
+  parent-dir `fsync` (POSIX). `create_new` on non-resume open.
+  Same-volume invariant documented for Win32.
+- **Verification (§6)**: streaming sha256 in 64 KiB chunks against
+  pinned `pub(crate) const` SHAs (`CONFIG_JSON_SHA256`,
+  `TOKENIZER_JSON_SHA256`, `MODEL_SAFETENSORS_SHA256`). Mismatch →
+  remove partial → fail closed with `EmbedderLoadError::ChecksumMismatch`.
+  **No env var or feature flag disables verification.**
+- **Concurrency (§10)**: `fs2::FileExt::lock_exclusive` on
+  `<cache_dir>/.lock`; held only during fetch + verify + rename
+  (cache-hit reads bypass the lock); 120s default timeout via
+  `FATHOMDB_EMBEDDER_LOCK_TIMEOUT_S`; RAII release on drop / process
+  death.
+- **Failure taxonomy (§9)**: `EmbedderLoadError::{NetworkUnavailable,
+  ChecksumMismatch, CacheIoError, ModelDeserialize, TokenizerLoad,
+  LockTimeout, DimensionMismatch}` (the last added by EU-3/4 FIX-3
+  for `CandleBgeEmbedder::new`'s runtime dim check).
+- **Visibility (§7)**: `DefaultEmbedderDownload` / `DefaultEmbedderCacheHit`
+  / `MeanVecPinned` events surfaced via the loader's `LoadedWeights.events`
+  field; the engine splices these into `OpenReport.embedder_events`
+  (EU-5b). The total loader envelope (HF GETs + sha verify + atomic
+  rename + cache I/O) reports as `OpenReport.embedder_download_ms`.
+- **Endianness (§8)**: `#[cfg(target_endian = "big")] compile_error!`
+  at the top of `candle_bge.rs` so BE builds fail at `cargo build`
+  (tightened from `debug_assert!` in EU-5d).
 
 ---
 
@@ -454,14 +542,17 @@ N=100 queries):
 | Per-query Hamming Phase 1 (N=7.7K) | sub-ms |
 | Per-query f32 rerank Phase 2 (K=192) | sub-ms |
 
-Canonical-CI N=1M projections (PR-3 will measure):
-- Corpus embed: ~10 hours on a 24-core CPU without GPU. CI step "warm
+Canonical-CI N=1M **projections** (extrapolated from the 7,667-doc
+sample, NOT measured at scale; PR-3 will measure):
+
+- Corpus embed: ~10 hours on a 24-core CPU without GPU
+  (extrapolated linearly from 289 s for 7,667 docs). CI step "warm
   embedder cache before AC-013 runs" amortizes this across all
   perf-canonical dispatches.
 - Per-query end-to-end: dominated by embed (~9 ms) + Hamming
-  (~N×384/8 = 48 MB scan, ~10-30 ms depending on cache) + rerank
-  (~K×384 = 74 K ops, sub-ms) ≈ 25–50 ms / query CPU. Well within
-  the 80/300 ms AC-013 budget.
+  (~N×384/8 = 48 MB scan, ~10–30 ms depending on cache) + rerank at
+  K=192 (~K×384 = 74 K ops, sub-ms) ≈ 25–50 ms / query CPU.
+  **Projected within the 80/300 ms AC-013 budget**; PR-3 will confirm.
 
 ---
 
@@ -470,6 +561,34 @@ Canonical-CI N=1M projections (PR-3 will measure):
 - **2026-05-29** — Initial decision register. Locks K=192, real
   embedder for AC-013/AC-019, mean-centering ON. Defers floor,
   identity revision string, recomputation trigger, loader headlines.
+- **2026-05-29** — Reconcile against 0.7.1 EU-* commits already on
+  `origin/main`:
+  - §3.3 owning slice: noted as closed in EU-2 design + EU-5a2 schema
+    migration.
+  - §3.4 recomputation trigger: TBD → 🔒 Locked at "no
+    auto-recomputation in 0.7.1; reindex only (reindex itself
+    deferred)" per `dev/design/embedder.md` §0.3 step 4. The 25%
+    heuristic moved to "considered but rejected" with rationale.
+  - §4.2 line refs: updated from `lib.rs:2348-2362` to current
+    `:2879-2895` (grep `vec_distance_l2` for runtime location).
+  - §4.3 K=192 empirical basis: "interpolated estimate ≈ 0.925" →
+    **measured 0.933 (95% CI 0.912–0.953)** via the new fine-grained
+    K-sweep on 2026-05-29. Lock date 2026-05-28 → 2026-05-29.
+    Considered-alternatives table extended with K=160 and K=224
+    measurements. "Why K=192 over K=128" updated with lower-CI-bound
+    statistical reasoning.
+  - §4.4 line ref: updated from `lib.rs:2360` to current `:2895`.
+  - §6.1 identity revision string: TBD → 🔒 Locked at the EU-5b
+    triple. Documents the tightening of the original recommendation
+    (full HF SHA over prefix; no release line in name) and the
+    reasoning.
+  - §7 loader behavior: TBD → 🔒 Locked. Replaces "Headlines (subject
+    to EU-2 confirmation)" with concrete "What shipped" enumeration
+    cross-citing design §§1–10 and the EU-3 commit chain
+    (`af2e6e7` GREEN + FIX-1/2/3 + EU-5d cleanup).
+  - §10 canonical-CI numbers: relabeled as **projections** (not
+    measurements) with explicit "extrapolated, NOT measured at scale"
+    callouts; PR-3 will measure.
 
 Future amendments: append a dated bullet; each bullet must cite the
 HITL message-id or commit SHA that authorized the change.
