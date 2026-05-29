@@ -19,5 +19,5 @@ test-hooks = []
 fathomdb-embedder-api.workspace = true
 fathomdb-engine.workspace = true
 fathomdb-schema.workspace = true
-pyo3 = { version = "0.24", features = ["extension-module", "abi3-py310"] }
+pyo3 = { version = "0.28", features = ["extension-module", "abi3-py310"] }
 serde_json = "1"
