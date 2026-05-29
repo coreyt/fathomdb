@@ -88,6 +88,11 @@ jobs:
         shell: bash
         run: |
           set +e
+          # Surface cache-hit outcome as a GitHub Actions notice so it
+          # shows up in the run summary without log-diving. A regression
+          # that breaks the cache key (silently forcing cold downloads
+          # on every run) becomes visible at a glance here.
+          echo "::notice title=BGE cache::hit=${{ steps.bge-cache.outputs.cache-hit }}"
           cargo run --quiet -p fathomdb-cli --features default-embedder \
             --bin fathomdb -- doctor warm-cache --json
           rc=$?

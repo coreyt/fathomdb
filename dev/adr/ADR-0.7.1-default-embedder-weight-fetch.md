@@ -23,12 +23,17 @@ The 0.7.1 EMBEDDER-UNDEFER campaign (handoff:
 `dev/plans/prompts/0.7.1-EMBEDDER-UNDEFER-HANDOFF.md`) introduces an
 opt-in default embedder. EU-0
 (`dev/notes/0.7.1-default-embedder-research.md`) chose
-`BAAI/bge-small-en-v1.5` at K=128 with mean-centering. Shipping that model
-without first-use weight fetch would require either (a) bundling ~133 MB
-of weights into every wheel even for users who do not opt in, or (b)
-forcing the caller to supply the weights out-of-band — both of which
-nullify the "default embedder = on" happy path that ADR-0.6.0-default-embedder
-established for 0.6.0+.
+`BAAI/bge-small-en-v1.5` with mean-centering enabled. (The rerank K
+value is an EU-5 implementation parameter and may change across
+releases; see the research note's §5 for current values. This ADR is
+not load-bearing on the K choice — its scope is "is the network
+surface legal at all?", not "how is the binary-quant pipeline
+tuned?".) Shipping that model without first-use weight fetch would
+require either (a) bundling ~133 MB of weights into every wheel even
+for users who do not opt in, or (b) forcing the caller to supply the
+weights out-of-band — both of which nullify the "default embedder =
+on" happy path that ADR-0.6.0-default-embedder established for
+0.6.0+.
 
 The original NEED-017 / REQ-033 rule must therefore admit a tightly-scoped
 exception, narrow enough that it cannot be read as license to fetch
@@ -128,6 +133,37 @@ and remain forbidden by NEED-017 / REQ-033 unchanged:
 - **Bindings (EU-6)** expose only the opt-in boolean, not URL or model
   name. The exception's "no arbitrary URL" guarantee is structurally
   enforced by the absence of a parameter for it.
+
+## Telemetry boundary
+
+This exception covers **weight fetch only**. No other outbound network
+traffic is authorized by this ADR — specifically: no usage telemetry,
+no error reporting, no analytics, no update-checks, no "phone home"
+beacons. The `default-embedder` Cargo feature gates the loader's
+network surface; nothing else under that feature may open a socket.
+Adding any new outbound channel requires a separate ADR with its own
+scope guardrails. This boundary preserves the local-first / agentic-
+backend posture even after the weight-fetch exception lands.
+
+## Reversibility
+
+This exception can be withdrawn at any time by:
+
+1. Removing the `default-embedder` feature from `fathomdb-embedder`'s
+   Cargo manifest (the loader code becomes unreachable from any
+   feature combination).
+2. Reverting the EU-5b lock-flip so `DEFAULT_EMBEDDER_*` constants
+   return to a non-network identity (e.g. `fathomdb-noop`), and
+   `EmbedderChoice::Default` returns a typed error instead of
+   materializing `CandleBgeEmbedder`.
+3. Removing the binding-surface flags (`use_default_embedder`).
+
+Pre-existing workspaces pinned to `fathomdb-bge-small-en-v1.5` would
+fail-closed on re-open per ADR-0.6.0-vector-identity-embedder-owned —
+that is the correct behaviour and matches the
+ADR-0.8.0-embedder-identity-change-workflow posture. There is no
+in-place silent revocation; revocation is observable to every existing
+workspace.
 
 ## Audit posture
 

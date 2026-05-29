@@ -601,11 +601,19 @@ pub struct OpenReport {
     pub embedder_warmup_ms: u64,
     pub query_backend: &'static str,
     pub default_embedder: EmbedderIdentity,
-    /// Time spent fetching default-embedder weights from the loader, if
-    /// any. `None` for caller-supplied embedders (which bypass the
-    /// loader entirely) and on warm-cache opens where the loader served
-    /// every file without network work. `Some(ms)` when the loader did
-    /// at least some download envelope (`bytes_downloaded > 0`).
+    /// Total wall time the loader spent materializing default-embedder
+    /// weights — covers HF GETs, sha256 verification, atomic rename,
+    /// parent-dir fsync (POSIX), and cache directory writes. This is
+    /// the "engine open paid by the embedder" envelope, useful for SLA
+    /// budgeting; it is intentionally wider than just the bytes-flowing
+    /// time so callers see the full first-use cost.
+    ///
+    /// `Some(ms)` when network bytes flowed (`bytes_downloaded > 0`);
+    /// `None` for caller-supplied embedders (loader bypassed) and on
+    /// full cache hits (no bytes flowed). For pure per-file network
+    /// analysis, use the `DefaultEmbedderDownload` events on
+    /// [`embedder_events`](Self::embedder_events) — each event carries
+    /// the file's bytes + sha256 + cache path.
     pub embedder_download_ms: Option<u64>,
     /// Structured loader events (`dev/design/embedder.md` §7). Empty for
     /// caller-supplied embedders; populated from `LoadedWeights.events`

@@ -26,7 +26,7 @@
 
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -84,10 +84,10 @@ fn resolve_path(file: &str) -> String {
     format!("/BAAI/bge-small-en-v1.5/resolve/{HF_REVISION}/{file}")
 }
 
-fn test_config(server_base: &str, cache_root: &PathBuf, fix: &Fixture) -> LoaderConfig {
+fn test_config(server_base: &str, cache_root: &Path, fix: &Fixture) -> LoaderConfig {
     LoaderConfig::for_tests()
         .with_base_url(server_base.to_string())
-        .with_cache_root(cache_root.clone())
+        .with_cache_root(cache_root.to_path_buf())
         .with_test_pins(fix.config_sha(), fix.tokenizer_sha(), fix.model_sha())
 }
 
@@ -331,8 +331,7 @@ fn auth_token_sent_when_env_set() {
         then.status(200).body(&fix.model_bytes);
     });
 
-    let cfg2 =
-        test_config(&server2.base_url(), &tmp2.path().to_path_buf(), &fix).with_hf_token(None);
+    let cfg2 = test_config(&server2.base_url(), tmp2.path(), &fix).with_hf_token(None);
     load_with_config(cfg2).expect("loads without token");
     m_cfg2.assert();
     m_tok2.assert();

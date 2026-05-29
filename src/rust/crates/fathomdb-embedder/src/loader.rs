@@ -227,8 +227,11 @@ pub enum EmbedderLoadError {
 /// immediately.
 enum DownloadAttemptError {
     /// Network-class failure (connect, read, HTTP status). Classified into
-    /// `RetryDecision` via `retry_decision_ureq`.
-    Network(ureq::Error),
+    /// `RetryDecision` via `retry_decision_ureq`. Boxed because
+    /// `ureq::Error` carries a `Response` (with its own buffer state),
+    /// making the bare variant much larger than its peers — clippy
+    /// `large_enum_variant`. Boxing keeps the enum compact.
+    Network(Box<ureq::Error>),
     /// Mid-stream read failure on the response body. ureq does not expose
     /// a public `Transport` constructor, so we cannot package this as a
     /// `ureq::Error::Transport` directly; instead we keep the raw
@@ -718,11 +721,11 @@ fn download_with_retries(
             Err(DownloadAttemptError::Network(e)) => {
                 if retry_decision_ureq(&e) == RetryDecision::FailFast {
                     return Err(EmbedderLoadError::NetworkUnavailable {
-                        source: Box::new(e),
+                        source: e,
                         attempts: completed_attempts,
                     });
                 }
-                last_net_err = Some(Box::new(e));
+                last_net_err = Some(e);
                 if attempt + 1 < MAX_ATTEMPTS {
                     // Design §2: 1s, 2s, (4s) — for MAX_ATTEMPTS=3 that's
                     // 1s then 2s before the second and third tries.
@@ -777,14 +780,14 @@ fn download_once(
         req = req.set("Range", &format!("bytes={existing}-"));
     }
 
-    let resp = req.call().map_err(DownloadAttemptError::Network)?;
+    let resp = req.call().map_err(|e| DownloadAttemptError::Network(Box::new(e)))?;
 
     let status = resp.status();
     if !(status == 200 || status == 206) {
         // Convert into a synthetic ureq::Status error so it goes through
         // the same retry-decision path as a directly-surfaced HTTP error.
         // `resp.into()` builds the Status variant with the response payload.
-        return Err(DownloadAttemptError::Network(ureq::Error::Status(status, resp)));
+        return Err(DownloadAttemptError::Network(Box::new(ureq::Error::Status(status, resp))));
     }
 
     let mk_io = |source: std::io::Error| DownloadAttemptError::CacheIo {

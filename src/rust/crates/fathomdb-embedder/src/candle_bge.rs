@@ -11,11 +11,21 @@
 //! - `dev/design/embedder.md` §1 — pinned identity.
 //! - `dev/design/embedder.md` §7 — embedder does NOT append to
 //!   `embedder_events`; that is the engine's job.
-//! - `dev/design/embedder.md` §8 — `debug_assert!(little-endian)` lives
-//!   in `new()`.
+//! - `dev/design/embedder.md` §8 — little-endian invariant; enforced as
+//!   a `compile_error!` at the top of this module so BE builds fail at
+//!   `cargo build` rather than at runtime.
 //! - `ADR-0.6.0-embedder-protocol.md` Invariants 1–4 — unit-norm output,
 //!   no re-entrancy into the engine, no log/tracing/println in `embed()`,
 //!   trait method is synchronous.
+
+// Design §8: safetensors weight format is little-endian; pinned
+// workspace targets (x86_64, aarch64) are LE on all supported OSes.
+// BE platforms are explicitly out of scope for 0.7.1 — they would need
+// an additional byte-swap pass during weight load. Enforce at compile
+// time so a BE build fails fast rather than silently producing garbage
+// f32 vectors.
+#[cfg(target_endian = "big")]
+compile_error!("fathomdb-embedder default path requires a little-endian target");
 
 use std::path::Path;
 
@@ -63,7 +73,9 @@ impl CandleBgeEmbedder {
     /// `LoadedWeights` to this constructor.
     pub fn new_from_weights(weights: LoadedWeights) -> Result<Self, EmbedderLoadError> {
         // Design §8: safetensors are little-endian; we never run on BE.
-        debug_assert!(cfg!(target_endian = "little"));
+        // Tightened in EU-5d follow-up from a debug_assert into a
+        // compile-time error so BE builds fail at `cargo build` rather
+        // than panicking at runtime in debug mode.
 
         // 1. Parse config.json.
         let config_bytes = std::fs::read(&weights.config_json_path).map_err(|source| {
