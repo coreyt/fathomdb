@@ -6,7 +6,7 @@ Field names owned by `dev/interfaces/python.md` § Caller-visible data shapes.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal, TypedDict, Union
+from typing import Literal, TypedDict, TypeGuard, Union
 
 #: Typed soft-fallback branch values per `dev/design/retrieval.md`.
 SoftFallbackBranch = Literal["vector", "text"]
@@ -90,12 +90,13 @@ class MeanVecPinnedEvent(TypedDict):
 
 class UnknownEmbedderEvent(TypedDict, total=False):
     """Forward-compat fallback. Any `kind` not recognised by this build
-    surfaces at runtime under this shape. NOT included in the
-    `EmbedderEvent` discriminated union — including an open-`kind: str`
-    member would defeat literal narrowing on the known variants. User
-    code that does not match a known `kind` in its `if/elif` chain
-    can pattern-match on `event["kind"]` further in the final `else`
-    branch."""
+    surfaces at runtime under this shape. Part of the public
+    `EmbedderEvent` union for soundness (a future or replaced native
+    extension may emit kinds this build does not know about). Because
+    its `kind` field is the open type ``str``, pyright cannot exclude
+    this member purely from a literal ``event["kind"] == "..."`` check
+    — wrap such checks in :func:`is_known_embedder_event` first to
+    recover precise narrowing on the three known variants."""
 
     kind: str
 
@@ -104,9 +105,42 @@ EmbedderEvent = Union[
     DefaultEmbedderDownloadEvent,
     DefaultEmbedderCacheHitEvent,
     MeanVecPinnedEvent,
+    UnknownEmbedderEvent,
 ]
-"""Discriminated union surfaced by `OpenReport.embedder_events`. Pyright
-narrows the payload keys inside `if event["kind"] == "..."` branches."""
+"""Discriminated union surfaced by `OpenReport.embedder_events`. Includes
+`UnknownEmbedderEvent` for forward-compat soundness. For precise literal
+narrowing on the three known variants, gate the `if event["kind"] == "..."`
+chain on :func:`is_known_embedder_event` first."""
+
+
+def is_known_embedder_event(
+    event: EmbedderEvent,
+) -> TypeGuard[
+    Union[
+        DefaultEmbedderDownloadEvent,
+        DefaultEmbedderCacheHitEvent,
+        MeanVecPinnedEvent,
+    ]
+]:
+    """Narrow an :data:`EmbedderEvent` to the three known variants.
+
+    Used as a guard before discriminating on ``event["kind"]``. Pyright
+    cannot exclude :class:`UnknownEmbedderEvent` (whose ``kind`` is the
+    open type ``str``) from a literal ``kind == "..."`` check on the
+    bare union — so the two-step pattern is::
+
+        if is_known_embedder_event(event):
+            if event["kind"] == "DefaultEmbedderDownload":
+                bytes_: int = event["bytes"]  # narrowed precisely
+
+    See ``dev/interfaces/python.md`` and
+    ``dev/design/0.7.1-EU-6-FIX-2-design.md`` §6.3.
+    """
+    return event["kind"] in (
+        "DefaultEmbedderDownload",
+        "DefaultEmbedderCacheHit",
+        "MeanVecPinned",
+    )
 
 
 @dataclass(frozen=True)
@@ -188,4 +222,5 @@ __all__ = [
     "SoftFallbackBranch",
     "UnknownEmbedderEvent",
     "WriteReceipt",
+    "is_known_embedder_event",
 ]

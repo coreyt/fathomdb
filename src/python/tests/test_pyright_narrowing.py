@@ -25,6 +25,11 @@ from pathlib import Path
 import pytest
 
 _FIXTURE = Path(__file__).resolve().parent / "_pyright_narrowing_fixture.py"
+# The Python SDK's `pyproject.toml` carries the pyright config
+# (pythonVersion = "3.10", include paths). Without `--project`, pyright
+# loads the workspace-root cwd defaults and cannot resolve
+# `fathomdb.types` on a non-editable checkout.
+_PYRIGHT_PROJECT = Path(__file__).resolve().parents[1] / "pyproject.toml"
 
 # Expected ``reveal_type`` outputs. Pyright emits a message of the form
 # ``Type of "expr" is "Type"`` as an information diagnostic. We assert
@@ -53,7 +58,13 @@ def _run_pyright() -> dict:
         pytest.skip("pyright not installed; install via `pip install pyright`")
 
     proc = subprocess.run(
-        [pyright, "--outputjson", str(_FIXTURE)],
+        [
+            pyright,
+            "--project",
+            str(_PYRIGHT_PROJECT),
+            "--outputjson",
+            str(_FIXTURE),
+        ],
         capture_output=True,
         text=True,
         check=False,

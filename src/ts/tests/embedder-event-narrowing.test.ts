@@ -29,10 +29,12 @@ import assert from "node:assert/strict";
 
 import {
   Engine,
+  isKnownEmbedderEvent,
   type EmbedderEvent,
   type DefaultEmbedderDownloadEvent,
   type DefaultEmbedderCacheHitEvent,
   type MeanVecPinnedEvent,
+  type UnknownEmbedderEvent,
 } from "../src/index.js";
 import { freshDbPath } from "./helpers.js";
 
@@ -63,32 +65,40 @@ function _unnarrowedAccess(_event: EmbedderEvent): void {
 }
 void _unnarrowedAccess;
 
+// Guard-then-discriminate: `isKnownEmbedderEvent` excludes
+// `UnknownEmbedderEvent` so the inner `event.kind === "..."` checks
+// narrow precisely to one variant interface. Without the outer guard,
+// the open `kind: string` on `UnknownEmbedderEvent` keeps it in the
+// union after a literal check, widening payload field access to
+// `unknown` (this is what motivated EU-6 FIX-2 codex follow-ups).
 function _exhaustiveNarrowing(event: EmbedderEvent): void {
-  if (event.kind === "DefaultEmbedderDownload") {
-    const file: string = event.file;
-    const url: string = event.url;
-    const bytes: number = event.bytes;
-    const sha256: string = event.sha256;
-    const cachePath: string = event.cachePath;
-    const durationMs: number = event.durationMs;
-    void file;
-    void url;
-    void bytes;
-    void sha256;
-    void cachePath;
-    void durationMs;
-  } else if (event.kind === "DefaultEmbedderCacheHit") {
-    const file: string = event.file;
-    const sha256: string = event.sha256;
-    const cachePath: string = event.cachePath;
-    void file;
-    void sha256;
-    void cachePath;
-  } else if (event.kind === "MeanVecPinned") {
-    const dim: number = event.dim;
-    const docCount: number = event.docCount;
-    void dim;
-    void docCount;
+  if (isKnownEmbedderEvent(event)) {
+    if (event.kind === "DefaultEmbedderDownload") {
+      const file: string = event.file;
+      const url: string = event.url;
+      const bytes: number = event.bytes;
+      const sha256: string = event.sha256;
+      const cachePath: string = event.cachePath;
+      const durationMs: number = event.durationMs;
+      void file;
+      void url;
+      void bytes;
+      void sha256;
+      void cachePath;
+      void durationMs;
+    } else if (event.kind === "DefaultEmbedderCacheHit") {
+      const file: string = event.file;
+      const sha256: string = event.sha256;
+      const cachePath: string = event.cachePath;
+      void file;
+      void sha256;
+      void cachePath;
+    } else if (event.kind === "MeanVecPinned") {
+      const dim: number = event.dim;
+      const docCount: number = event.docCount;
+      void dim;
+      void docCount;
+    }
   }
 }
 void _exhaustiveNarrowing;
@@ -101,10 +111,12 @@ function _variantInterfacesImportable(
   _download: DefaultEmbedderDownloadEvent,
   _cacheHit: DefaultEmbedderCacheHitEvent,
   _meanVec: MeanVecPinnedEvent,
+  _unknown: UnknownEmbedderEvent,
 ): void {
   void _download;
   void _cacheHit;
   void _meanVec;
+  void _unknown;
 }
 void _variantInterfacesImportable;
 

@@ -103,29 +103,41 @@ and `embedder_mean_vec_pinned`. Each entry in `embedder_events` is a
 specific payload in snake_case.
 
 EU-6 FIX-2 declared `embedder_events` as a typed `TypedDict` union
-(`fathomdb.types.EmbedderEvent`). Pyright (and other PEP-589-aware
-checkers) narrow the payload key access inside `if event["kind"] ==
-"..."` branches — the runtime shape is unchanged from EU-6 GREEN, so
-existing dict-pattern-matching code keeps working as a strict type
-refinement:
+(`fathomdb.types.EmbedderEvent`). The union includes `UnknownEmbedderEvent`
+as a forward-compat fallback so a future or replaced native extension
+emitting a new `kind` value remains type-sound. Because the unknown
+fallback's `kind` field is the open type `str`, pyright cannot exclude
+it purely from a literal `event["kind"] == "..."` check on the bare
+union — gate the discriminant chain on `is_known_embedder_event` first
+to recover precise narrowing on the three known variants:
 
 ```python
 from fathomdb import Engine
+from fathomdb.types import is_known_embedder_event
 
 engine = Engine.open(path, use_default_embedder=True)
 report = engine.open_report()
 for event in report.embedder_events:
-    if event["kind"] == "DefaultEmbedderDownload":
-        # pyright narrows: event["bytes"] is int, event["url"] is str.
-        log(f"downloaded {event['bytes']} bytes from {event['url']}")
-    elif event["kind"] == "MeanVecPinned":
-        log(f"mean vec pinned at {event['doc_count']} docs (dim={event['dim']})")
+    if is_known_embedder_event(event):
+        if event["kind"] == "DefaultEmbedderDownload":
+            # pyright narrows: event["bytes"] is int, event["url"] is str.
+            log(f"downloaded {event['bytes']} bytes from {event['url']}")
+        elif event["kind"] == "MeanVecPinned":
+            log(f"mean vec pinned at {event['doc_count']} docs (dim={event['dim']})")
+    else:
+        # `event` is `UnknownEmbedderEvent` — only `event["kind"]` is
+        # typed; treat as opaque or log for diagnostics.
+        log(f"unknown embedder event kind: {event['kind']}")
 ```
 
-Unknown `kind` values (e.g. a variant introduced by a newer engine
-build) surface under the `UnknownEmbedderEvent` fallback member of the
-union — callers can still read `event["kind"]` and decide how to handle
-the unrecognised event.
+The two-step pattern (guard, then discriminate) is required because TS/
+pyright literal narrowing on a discriminated union cannot remove an
+open-typed member from the union when the discriminant is a literal —
+`"DefaultEmbedderDownload"` could equal *any* `str`, so the unknown
+fallback stays in the narrowed type and widens payload field access to
+`object`. The exported `is_known_embedder_event` `TypeGuard` excludes
+the unknown member up front, and the inner `if event["kind"] == "..."`
+chain then narrows precisely to one variant `TypedDict`.
 
 ### Shipped feature axis (EU-6 FIX-1)
 

@@ -112,31 +112,44 @@ payload in camelCase.
 EU-6 FIX-2 refined the `EmbedderEvent` type from a wide
 `Option`-collapsed interface to a true discriminated union of
 per-variant interfaces (`DefaultEmbedderDownloadEvent`,
-`DefaultEmbedderCacheHitEvent`, `MeanVecPinnedEvent`,
-`UnknownEmbedderEvent`). `tsc --strict` narrows payload field access
-inside `if (event.kind === "...")` branches — the runtime shape is
-unchanged from EU-6 GREEN, so existing callers keep compiling as a
-strict refinement:
+`DefaultEmbedderCacheHitEvent`, `MeanVecPinnedEvent`) plus an
+`UnknownEmbedderEvent` forward-compat fallback. The unknown member is
+part of the published union for soundness: a future or replaced native
+extension may emit kinds this build does not know about. Because the
+fallback's `kind` field is the open type `string`, tsc cannot exclude
+it purely from a literal `event.kind === "..."` check on the bare
+union — gate the discriminant chain on `isKnownEmbedderEvent` first to
+recover precise narrowing on the three known variants:
 
 ```typescript
-import { Engine } from "fathomdb";
+import { Engine, isKnownEmbedderEvent } from "fathomdb";
 
 const engine = await Engine.open(path, { useDefaultEmbedder: true });
 const report = engine.openReport();
 for (const event of report.embedderEvents) {
-  if (event.kind === "DefaultEmbedderDownload") {
-    // tsc narrows: event.bytes is number, event.url is string.
-    log(`downloaded ${event.bytes} bytes from ${event.url}`);
-  } else if (event.kind === "MeanVecPinned") {
-    log(`mean vec pinned at ${event.docCount} docs (dim=${event.dim})`);
+  if (isKnownEmbedderEvent(event)) {
+    if (event.kind === "DefaultEmbedderDownload") {
+      // tsc narrows: event.bytes is number, event.url is string.
+      log(`downloaded ${event.bytes} bytes from ${event.url}`);
+    } else if (event.kind === "MeanVecPinned") {
+      log(`mean vec pinned at ${event.docCount} docs (dim=${event.dim})`);
+    }
+  } else {
+    // `event` is `UnknownEmbedderEvent` — only `event.kind` is typed;
+    // other fields are `unknown` via the index signature.
+    log(`unknown embedder event kind: ${event.kind}`);
   }
 }
 ```
 
-Unknown `kind` values (e.g. a variant introduced by a newer engine
-build) surface under the `UnknownEmbedderEvent` fallback member of the
-union — callers can still read `event.kind` and decide how to handle
-the unrecognised event without a runtime cast failure.
+The two-step pattern (guard, then discriminate) is required because
+TS literal narrowing on a discriminated union cannot remove an open-
+typed member from the union when the discriminant is a literal —
+`"DefaultEmbedderDownload"` could equal *any* `string`, so the unknown
+fallback stays in the narrowed type and widens payload field access to
+`unknown`. The exported `isKnownEmbedderEvent` type guard excludes the
+unknown member up front, and the inner `if (event.kind === "...")` chain
+then narrows precisely to one variant interface.
 
 ### Shipped feature axis (EU-6 FIX-1)
 

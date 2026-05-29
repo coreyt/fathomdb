@@ -97,13 +97,14 @@ export interface MeanVecPinnedEvent {
 
 /**
  * Forward-compat fallback for `kind` values not known to this build.
- * Not included in the `EmbedderEvent` discriminated union — including
- * an open-`kind: string` member would defeat literal narrowing on the
- * known variants. Instead, `mapEmbedderEvent()` returns a value of this
- * shape under an unsafe cast to `EmbedderEvent` for unknown kinds; user
- * code that does NOT match any known `case` in its switch / if-chain
- * lands in the `default` / final `else` branch at runtime and can
- * pattern-match on `event.kind` further if needed.
+ * Part of the public `EmbedderEvent` union for soundness: a future or
+ * replaced native extension may emit kinds this build does not know
+ * about, and exposing them under a typed fallback member is more honest
+ * than pretending the runtime is exhaustive at compile time. Because
+ * `kind` here is the open type `string`, tsc cannot exclude this member
+ * purely from a literal `event.kind === "..."` check on the bare union
+ * — wrap such checks in {@link isKnownEmbedderEvent} first to recover
+ * precise narrowing on the three known variants.
  */
 export interface UnknownEmbedderEvent {
   readonly kind: string;
@@ -113,7 +114,38 @@ export interface UnknownEmbedderEvent {
 export type EmbedderEvent =
   | DefaultEmbedderDownloadEvent
   | DefaultEmbedderCacheHitEvent
-  | MeanVecPinnedEvent;
+  | MeanVecPinnedEvent
+  | UnknownEmbedderEvent;
+
+/**
+ * Type guard that narrows an {@link EmbedderEvent} to the three known
+ * variants, excluding {@link UnknownEmbedderEvent}. Use as a gate before
+ * discriminating on `event.kind`:
+ *
+ * ```ts
+ * if (isKnownEmbedderEvent(event)) {
+ *   if (event.kind === "DefaultEmbedderDownload") {
+ *     const bytes: number = event.bytes; // narrowed precisely
+ *   }
+ * }
+ * ```
+ *
+ * Without this guard, the open `kind: string` on `UnknownEmbedderEvent`
+ * prevents tsc from removing it from the union on a literal-equality
+ * check, so payload field access widens to `unknown`.
+ */
+export function isKnownEmbedderEvent(
+  event: EmbedderEvent,
+): event is
+  | DefaultEmbedderDownloadEvent
+  | DefaultEmbedderCacheHitEvent
+  | MeanVecPinnedEvent {
+  return (
+    event.kind === "DefaultEmbedderDownload" ||
+    event.kind === "DefaultEmbedderCacheHit" ||
+    event.kind === "MeanVecPinned"
+  );
+}
 
 /**
  * @internal — maps the wide napi-rs `NativeEmbedderEvent` into the
@@ -153,15 +185,15 @@ export function mapEmbedderEvent(n: NativeEmbedderEvent): EmbedderEvent {
     default: {
       // Forward-compat: surface unknown kinds verbatim, dropping any
       // nullish wide-shape fields so the resulting object has only the
-      // keys the emitter actually populated. Cast through `unknown`
-      // because `UnknownEmbedderEvent` is not part of the declared
-      // `EmbedderEvent` union (keeping it out preserves literal
-      // narrowing on the known variants).
-      const out: Record<string, unknown> = {};
+      // keys the emitter actually populated. `UnknownEmbedderEvent` is
+      // part of the declared `EmbedderEvent` union, so no cast through
+      // `unknown` is required — callers recover precise narrowing on
+      // the known variants via `isKnownEmbedderEvent`.
+      const out: Record<string, unknown> = { kind: n.kind };
       for (const [k, v] of Object.entries(n)) {
-        if (v !== null && v !== undefined) out[k] = v;
+        if (k !== "kind" && v !== null && v !== undefined) out[k] = v;
       }
-      return out as unknown as EmbedderEvent;
+      return out as UnknownEmbedderEvent;
     }
   }
 }

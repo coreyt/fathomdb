@@ -18,28 +18,34 @@ from __future__ import annotations
 # analysis-only.
 from typing import reveal_type  # type: ignore[attr-defined]
 
-from fathomdb.types import EmbedderEvent
+from fathomdb.types import EmbedderEvent, is_known_embedder_event
 
 
 def consume(events: list[EmbedderEvent]) -> None:
     for event in events:
         # Negative: without narrowing, accessing a variant-specific key
         # on the raw `EmbedderEvent` union must be a type error
-        # (TypedDict key not present in every union member).
+        # (TypedDict key not present in every union member — including
+        # `UnknownEmbedderEvent`, which only declares `kind`).
         _unsafe = event["bytes"]  # pyright: error
         del _unsafe
 
-        if event["kind"] == "DefaultEmbedderDownload":
-            reveal_type(event["file"])         # expect: str
-            reveal_type(event["url"])          # expect: str
-            reveal_type(event["bytes"])        # expect: int
-            reveal_type(event["sha256"])       # expect: str
-            reveal_type(event["cache_path"])   # expect: str
-            reveal_type(event["duration_ms"])  # expect: int
-        elif event["kind"] == "DefaultEmbedderCacheHit":
-            reveal_type(event["file"])         # expect: str
-            reveal_type(event["sha256"])       # expect: str
-            reveal_type(event["cache_path"])   # expect: str
-        elif event["kind"] == "MeanVecPinned":
-            reveal_type(event["dim"])          # expect: int
-            reveal_type(event["doc_count"])    # expect: int
+        # Guard-then-discriminate: `is_known_embedder_event` excludes
+        # `UnknownEmbedderEvent` (whose `kind: str` would otherwise
+        # defeat literal narrowing on the inner `if event["kind"] == ...`
+        # checks).
+        if is_known_embedder_event(event):
+            if event["kind"] == "DefaultEmbedderDownload":
+                reveal_type(event["file"])         # expect: str
+                reveal_type(event["url"])          # expect: str
+                reveal_type(event["bytes"])        # expect: int
+                reveal_type(event["sha256"])       # expect: str
+                reveal_type(event["cache_path"])   # expect: str
+                reveal_type(event["duration_ms"])  # expect: int
+            elif event["kind"] == "DefaultEmbedderCacheHit":
+                reveal_type(event["file"])         # expect: str
+                reveal_type(event["sha256"])       # expect: str
+                reveal_type(event["cache_path"])   # expect: str
+            elif event["kind"] == "MeanVecPinned":
+                reveal_type(event["dim"])          # expect: int
+                reveal_type(event["doc_count"])    # expect: int
