@@ -14,6 +14,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use fathomdb_embedder::EmbedderEvent;
 use fathomdb_embedder_api::{Embedder, EmbedderError as RuntimeEmbedderError, EmbedderIdentity};
 use fathomdb_query::compile_text_query;
 use fathomdb_schema::{
@@ -32,6 +33,17 @@ use std::os::unix::fs::OpenOptionsExt;
 const DEFAULT_EMBEDDER_NAME: &str = "fathomdb-noop";
 const DEFAULT_EMBEDDER_REVISION: &str = "0.6.0-scaffold";
 const DEFAULT_EMBEDDER_DIMENSION: u32 = 384;
+
+/// Identity name of the bge-small embedder. `OpenReport.embedder_mean_centering_required`
+/// is `true` iff the live embedder identity reports this name. NoopEmbedder
+/// is `false`. Lifted out as a constant so the EU-5b lock-flip (when the
+/// engine's default identity becomes bge-small) is a single-line change.
+///
+/// TODO(EU-5b): when `DEFAULT_EMBEDDER_NAME` flips to this constant, the
+/// Default path will populate `embedder_mean_centering_required = true`
+/// without further engine work. Caller-supplied bge-small (rare today)
+/// already does the right thing.
+const BGE_SMALL_EMBEDDER_NAME: &str = "fathomdb-bge-small-en-v1.5";
 
 /// REQ-006a / AC-007a default slow-statement threshold. Mutated at runtime
 /// via [`Engine::set_slow_threshold_ms`].
@@ -552,6 +564,34 @@ pub struct OpenReport {
     pub embedder_warmup_ms: u64,
     pub query_backend: &'static str,
     pub default_embedder: EmbedderIdentity,
+    /// Time spent fetching default-embedder weights from the loader, if
+    /// any. `None` for caller-supplied embedders (which bypass the
+    /// loader entirely) and in EU-5a1 unconditionally — the Default
+    /// path returns `DefaultEmbedderNotWired` before opening.
+    ///
+    /// TODO(EU-5b): populate from `LoadedWeights.download_ms` once the
+    /// loader is wired into the `EmbedderChoice::Default` materializer.
+    pub embedder_download_ms: Option<u64>,
+    /// Structured loader events (`dev/design/embedder.md` §7). Empty for
+    /// caller-supplied embedders. Empty unconditionally in EU-5a1.
+    ///
+    /// TODO(EU-5b): populate from `LoadedWeights.events`.
+    pub embedder_events: Vec<EmbedderEvent>,
+    /// Static identity capability (`dev/design/embedder.md` §0.6). True
+    /// iff the live embedder identity is the bge-small default, which is
+    /// the only identity that ships with the EU-5a2 mean-centering apply
+    /// paths. `false` for `fathomdb-noop` and for any other
+    /// caller-supplied identity. EU-5b's identity flip makes the Default
+    /// path return `true` here.
+    pub embedder_mean_centering_required: bool,
+    /// Dynamic workspace state (`dev/design/embedder.md` §0.6). True iff
+    /// `_fathomdb_embedder_profiles.mean_vec IS NOT NULL` for the default
+    /// profile.
+    ///
+    /// TODO(EU-5a2): the `mean_vec` column lands in schema migration
+    /// step 10. In EU-5a1 it does not exist yet and this field is always
+    /// `false`; the read becomes meaningful once EU-5a2 ships.
+    pub embedder_mean_vec_pinned: bool,
 }
 
 #[derive(Debug)]
@@ -715,13 +755,59 @@ pub struct RecoveryHint {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EngineOpenError {
-    DatabaseLocked { holder_pid: Option<u32> },
+    DatabaseLocked {
+        holder_pid: Option<u32>,
+    },
     Corruption(CorruptionDetail),
-    IncompatibleSchemaVersion { seen: u32, supported: u32 },
-    MigrationError { schema_version_before: u32, schema_version_current: u32, step_id: u32 },
-    EmbedderIdentityMismatch { stored: EmbedderIdentity, supplied: EmbedderIdentity },
-    EmbedderDimensionMismatch { stored: u32, supplied: u32 },
-    Io { message: String },
+    IncompatibleSchemaVersion {
+        seen: u32,
+        supported: u32,
+    },
+    MigrationError {
+        schema_version_before: u32,
+        schema_version_current: u32,
+        step_id: u32,
+    },
+    EmbedderIdentityMismatch {
+        stored: EmbedderIdentity,
+        supplied: EmbedderIdentity,
+    },
+    EmbedderDimensionMismatch {
+        stored: u32,
+        supplied: u32,
+    },
+    /// Embedder runtime returned a typed error during `Engine::open`.
+    ///
+    /// In EU-5a1 the only inhabited variant routed through this carrier
+    /// is `EmbedderError::DefaultEmbedderNotWired`, raised when the
+    /// caller passes `EmbedderChoice::Default` before EU-5b ships the
+    /// `CandleBgeEmbedder` + loader wiring + identity-constant flip.
+    Embedder(RuntimeEmbedderError),
+    Io {
+        message: String,
+    },
+}
+
+/// Caller-facing selector for the embedder used by an opened engine
+/// (`dev/design/embedder.md` §0).
+///
+/// `Default` returns a typed `DefaultEmbedderNotWired` error in EU-5a1.
+/// The runtime materialization of `Default` lands atomically with the
+/// EU-5b identity-constant flip and loader / candle wiring.
+#[derive(Clone)]
+pub enum EmbedderChoice {
+    /// Use the engine's default embedder. NOT YET IMPLEMENTED in EU-5a1;
+    /// returns `Err(EngineOpenError::Embedder(EmbedderError::DefaultEmbedderNotWired))`
+    /// until EU-5b lands the `CandleBgeEmbedder` + loader wiring + the
+    /// `DEFAULT_EMBEDDER_*` constant flip.
+    Default,
+    /// Caller supplies the embedder instance. The supplied embedder's
+    /// `identity()` becomes the workspace's default-profile identity.
+    Caller(Arc<dyn Embedder>),
+    /// No embedder configured. Engine opens; subsequent vector writes
+    /// fail with `EngineError::EmbedderNotConfigured`. Useful for
+    /// read-only or canonical-only flows.
+    None,
 }
 
 impl Display for EngineOpenError {
@@ -759,6 +845,16 @@ impl Display for EngineOpenError {
                 f,
                 "embedder vector dimension mismatch: stored {stored}, supplied {supplied}",
             ),
+            Self::Embedder(err) => match err {
+                RuntimeEmbedderError::DefaultEmbedderNotWired => write!(
+                    f,
+                    "EmbedderChoice::Default is not wired in this build (EU-5b will land it)"
+                ),
+                RuntimeEmbedderError::Timeout => write!(f, "embedder timeout during open"),
+                RuntimeEmbedderError::Failed { message } => {
+                    write!(f, "embedder failure during open: {message}")
+                }
+            },
             Self::Io { message } => write!(f, "database I/O error: {message}"),
         }
     }
@@ -1039,6 +1135,45 @@ impl Engine {
         )
     }
 
+    /// Open an engine with an explicit [`EmbedderChoice`].
+    ///
+    /// Per `dev/design/embedder.md` §0 + the 0.7.1 EU-5 campaign, this is
+    /// the canonical entry point for selecting how the workspace's
+    /// default embedder is supplied. `EmbedderChoice::Default` returns a
+    /// typed `DefaultEmbedderNotWired` error until EU-5b lands the
+    /// `CandleBgeEmbedder` + loader wiring.
+    pub fn open_with_choice(
+        path: impl Into<PathBuf>,
+        choice: EmbedderChoice,
+    ) -> Result<OpenedEngine, EngineOpenError> {
+        match choice {
+            EmbedderChoice::Default => {
+                // Deliberate: do not touch the database before this
+                // typed error is returned. EU-5b atomically lands the
+                // CandleBgeEmbedder materialization + identity flip and
+                // removes this arm.
+                Err(EngineOpenError::Embedder(RuntimeEmbedderError::DefaultEmbedderNotWired))
+            }
+            EmbedderChoice::Caller(embedder) => {
+                let identity = embedder.identity();
+                Self::open_with_embedder_and_subscriber(
+                    path,
+                    identity,
+                    Some(embedder),
+                    None,
+                    &mut |_| {},
+                )
+            }
+            EmbedderChoice::None => Self::open_with_embedder_and_subscriber(
+                path,
+                default_embedder_identity(),
+                None,
+                None,
+                &mut |_| {},
+            ),
+        }
+    }
+
     pub fn open_with_migration_event_sink(
         path: impl Into<PathBuf>,
         mut emit_migration_event: impl FnMut(&MigrationStepReport),
@@ -1249,6 +1384,15 @@ impl Engine {
         })?;
 
         let warmup_started = Instant::now();
+        // Static identity capability — see `dev/design/embedder.md`
+        // §0.6. Today only the bge-small identity reports `true`; the
+        // noop scaffolding identity is `false`. EU-5b's identity flip
+        // makes the Default path return `true` here automatically.
+        let embedder_mean_centering_required = embedder_identity.name == BGE_SMALL_EMBEDDER_NAME;
+        // TODO(EU-5a2): replace this constant `false` with a read of
+        // `_fathomdb_embedder_profiles.mean_vec IS NOT NULL` once schema
+        // migration step 10 lands the column.
+        let embedder_mean_vec_pinned = false;
         let report = OpenReport {
             schema_version_before: migration.schema_version_before,
             schema_version_after: migration.schema_version_after,
@@ -1257,6 +1401,13 @@ impl Engine {
                 .unwrap_or(u64::MAX),
             query_backend: "fathomdb-query + sqlite-vec",
             default_embedder: embedder_identity.clone(),
+            // TODO(EU-5b): surface `LoadedWeights.download_ms` from the
+            // loader once the Default path materializes through it.
+            embedder_download_ms: None,
+            // TODO(EU-5b): surface `LoadedWeights.events` from the loader.
+            embedder_events: Vec::new(),
+            embedder_mean_centering_required,
+            embedder_mean_vec_pinned,
         };
 
         let mut readers = Vec::with_capacity(READER_POOL_SIZE);
@@ -2594,7 +2745,8 @@ fn run_projection_job(shared: &ProjectionRuntimeShared, job: &ProjectionJob) -> 
                     last_code = "EmbedderError";
                     continue;
                 }
-                Err(RuntimeEmbedderError::Failed { .. }) => {
+                Err(RuntimeEmbedderError::Failed { .. })
+                | Err(RuntimeEmbedderError::DefaultEmbedderNotWired) => {
                     last_code = "EmbedderError";
                     continue;
                 }
@@ -3498,9 +3650,12 @@ fn resolve_source_type(kind: &str) -> Result<&'static str, EngineError> {
 
 fn map_runtime_embedder_error(err: RuntimeEmbedderError) -> EngineError {
     match err {
-        RuntimeEmbedderError::Failed { .. } | RuntimeEmbedderError::Timeout => {
-            EngineError::Embedder
-        }
+        RuntimeEmbedderError::Failed { .. }
+        | RuntimeEmbedderError::Timeout
+        // `DefaultEmbedderNotWired` cannot reach runtime embed calls in
+        // EU-5a1 (it's raised at open-time, before any embedder is
+        // wired). Map defensively so the match stays exhaustive.
+        | RuntimeEmbedderError::DefaultEmbedderNotWired => EngineError::Embedder,
     }
 }
 

@@ -249,6 +249,11 @@ fn engine_open_error_to_napi(err: EngineOpenError) -> Error {
             ),
             json!({ "stored": stored, "supplied": supplied }),
         ),
+        EngineOpenError::Embedder(err) => typed_error(
+            CODE_EMBEDDER,
+            format!("embedder error during open: {err:?}"),
+            JsonValue::Null,
+        ),
         EngineOpenError::Io { message } => typed_error(
             CODE_STORAGE,
             format!("database I/O error: {message}"),

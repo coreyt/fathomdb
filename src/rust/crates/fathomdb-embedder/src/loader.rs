@@ -154,26 +154,10 @@ pub struct LoadedWeights {
     pub events: Vec<EmbedderEvent>,
 }
 
-/// Structured event surfaced through `OpenReport.embedder_events` (design §7).
-///
-/// Only two variants ship in this slice; EU-5 may add more as the engine
-/// wiring matures. Field types are kept JSON-friendly (`String`, `u64`,
-/// `PathBuf`-as-`String`) so the binding layer can round-trip them without
-/// schema work.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EmbedderEvent {
-    /// A file was fetched from the network and written to the cache.
-    DefaultEmbedderDownload {
-        file: String,
-        url: String,
-        bytes: u64,
-        sha256: String,
-        cache_path: PathBuf,
-        duration_ms: u64,
-    },
-    /// A file was found in the cache and verified by sha256. No network.
-    DefaultEmbedderCacheHit { file: String, sha256: String, cache_path: PathBuf },
-}
+// `EmbedderEvent` lives at the crate root (`super::EmbedderEvent`) so the
+// engine can reference it without enabling the `default-embedder` feature.
+// Re-exported here for ergonomic use in loader.rs.
+pub use super::EmbedderEvent;
 
 /// Failure taxonomy (design §9). Engine-level mapping is owned by EU-5.
 #[derive(Debug, Error)]

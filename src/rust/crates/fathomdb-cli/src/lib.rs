@@ -499,6 +499,7 @@ fn engine_open_error_code(err: &EngineOpenError) -> &'static str {
         EngineOpenError::MigrationError { .. } => "MigrationError",
         EngineOpenError::EmbedderIdentityMismatch { .. } => "EmbedderIdentityMismatchError",
         EngineOpenError::EmbedderDimensionMismatch { .. } => "EmbedderDimensionMismatchError",
+        EngineOpenError::Embedder(_) => "EmbedderError",
         EngineOpenError::Io { .. } => "IoError",
     }
 }

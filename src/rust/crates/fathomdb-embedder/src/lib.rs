@@ -1,7 +1,31 @@
+use std::path::PathBuf;
+
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 
 #[cfg(feature = "default-embedder")]
 pub mod loader;
+
+/// Structured event surfaced through `OpenReport.embedder_events`
+/// (`dev/design/embedder.md` §7).
+///
+/// Defined unconditionally at the crate root so the engine can reference
+/// it regardless of the `default-embedder` feature; the loader (under
+/// `default-embedder`) emits these variants and re-exports the enum for
+/// ergonomic in-module use.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EmbedderEvent {
+    /// A file was fetched from the network and written to the cache.
+    DefaultEmbedderDownload {
+        file: String,
+        url: String,
+        bytes: u64,
+        sha256: String,
+        cache_path: PathBuf,
+        duration_ms: u64,
+    },
+    /// A file was found in the cache and verified by sha256. No network.
+    DefaultEmbedderCacheHit { file: String, sha256: String, cache_path: PathBuf },
+}
 
 #[cfg(feature = "default-embedder")]
 mod candle_bge;

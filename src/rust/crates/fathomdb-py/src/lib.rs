@@ -222,6 +222,11 @@ fn engine_open_error_to_py(err: EngineOpenError) -> PyErr {
             });
             exc
         }
+        EngineOpenError::Embedder(err) => {
+            // EU-5a1 plumbing: only DefaultEmbedderNotWired flows here in
+            // practice; the other variants stay defensive.
+            EmbedderError::new_err(format!("{err:?}"))
+        }
         EngineOpenError::Io { message } => {
             StorageError::new_err(format!("database I/O error: {message}"))
         }
