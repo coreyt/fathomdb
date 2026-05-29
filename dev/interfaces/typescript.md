@@ -109,6 +109,35 @@ in `embedderEvents` is a discriminated-union object: `kind` is one of
 `"MeanVecPinned"`; the remaining optional fields carry the variant
 payload in camelCase.
 
+EU-6 FIX-2 refined the `EmbedderEvent` type from a wide
+`Option`-collapsed interface to a true discriminated union of
+per-variant interfaces (`DefaultEmbedderDownloadEvent`,
+`DefaultEmbedderCacheHitEvent`, `MeanVecPinnedEvent`,
+`UnknownEmbedderEvent`). `tsc --strict` narrows payload field access
+inside `if (event.kind === "...")` branches — the runtime shape is
+unchanged from EU-6 GREEN, so existing callers keep compiling as a
+strict refinement:
+
+```typescript
+import { Engine } from "fathomdb";
+
+const engine = await Engine.open(path, { useDefaultEmbedder: true });
+const report = engine.openReport();
+for (const event of report.embedderEvents) {
+  if (event.kind === "DefaultEmbedderDownload") {
+    // tsc narrows: event.bytes is number, event.url is string.
+    log(`downloaded ${event.bytes} bytes from ${event.url}`);
+  } else if (event.kind === "MeanVecPinned") {
+    log(`mean vec pinned at ${event.docCount} docs (dim=${event.dim})`);
+  }
+}
+```
+
+Unknown `kind` values (e.g. a variant introduced by a newer engine
+build) surface under the `UnknownEmbedderEvent` fallback member of the
+union — callers can still read `event.kind` and decide how to handle
+the unrecognised event without a runtime cast failure.
+
 ### Shipped feature axis (EU-6 FIX-1)
 
 Released `.node` binaries published to npm are compiled with the `default-embedder`

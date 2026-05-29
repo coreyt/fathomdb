@@ -6,7 +6,7 @@ Field names owned by `dev/interfaces/python.md` § Caller-visible data shapes.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal, TypedDict, Union
 
 #: Typed soft-fallback branch values per `dev/design/retrieval.md`.
 SoftFallbackBranch = Literal["vector", "text"]
@@ -53,6 +53,62 @@ class MigrationStepReport:
     failed: bool
 
 
+class DefaultEmbedderDownloadEvent(TypedDict):
+    """`embedder_events` entry emitted when the loader downloads a weight
+    file from HuggingFace. Per `dev/design/0.7.1-EU-6-FIX-2-design.md`
+    §2.1. Mirrors the Rust emitter at
+    `src/rust/crates/fathomdb-py/src/lib.rs:417-432`."""
+
+    kind: Literal["DefaultEmbedderDownload"]
+    file: str
+    url: str
+    bytes: int
+    sha256: str
+    cache_path: str
+    duration_ms: int
+
+
+class DefaultEmbedderCacheHitEvent(TypedDict):
+    """`embedder_events` entry emitted on a cache hit for a weight file.
+    Per `dev/design/0.7.1-EU-6-FIX-2-design.md` §2.1."""
+
+    kind: Literal["DefaultEmbedderCacheHit"]
+    file: str
+    sha256: str
+    cache_path: str
+
+
+class MeanVecPinnedEvent(TypedDict):
+    """`embedder_events` entry emitted after the 256-doc threshold pins
+    the workspace mean vector. Per
+    `dev/design/0.7.1-EU-6-FIX-2-design.md` §2.1."""
+
+    kind: Literal["MeanVecPinned"]
+    dim: int
+    doc_count: int
+
+
+class UnknownEmbedderEvent(TypedDict, total=False):
+    """Forward-compat fallback. Any `kind` not recognised by this build
+    surfaces at runtime under this shape. NOT included in the
+    `EmbedderEvent` discriminated union — including an open-`kind: str`
+    member would defeat literal narrowing on the known variants. User
+    code that does not match a known `kind` in its `if/elif` chain
+    can pattern-match on `event["kind"]` further in the final `else`
+    branch."""
+
+    kind: str
+
+
+EmbedderEvent = Union[
+    DefaultEmbedderDownloadEvent,
+    DefaultEmbedderCacheHitEvent,
+    MeanVecPinnedEvent,
+]
+"""Discriminated union surfaced by `OpenReport.embedder_events`. Pyright
+narrows the payload keys inside `if event["kind"] == "..."` branches."""
+
+
 @dataclass(frozen=True)
 class EmbedderIdentity:
     """Embedder identity payload carried on `OpenReport.default_embedder`.
@@ -96,7 +152,7 @@ class OpenReport:
     query_backend: str
     default_embedder: EmbedderIdentity
     embedder_download_ms: int | None = None
-    embedder_events: list[dict] = field(default_factory=list)
+    embedder_events: list[EmbedderEvent] = field(default_factory=list)
     embedder_mean_centering_required: bool = False
     embedder_mean_vec_pinned: bool = False
 
@@ -120,11 +176,16 @@ class CounterSnapshot:
 
 __all__ = [
     "CounterSnapshot",
+    "DefaultEmbedderCacheHitEvent",
+    "DefaultEmbedderDownloadEvent",
+    "EmbedderEvent",
     "EmbedderIdentity",
+    "MeanVecPinnedEvent",
     "MigrationStepReport",
     "OpenReport",
     "SearchResult",
     "SoftFallback",
     "SoftFallbackBranch",
+    "UnknownEmbedderEvent",
     "WriteReceipt",
 ]

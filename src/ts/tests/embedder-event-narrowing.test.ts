@@ -41,23 +41,27 @@ import { freshDbPath } from "./helpers.js";
 // they exist purely so tsc type-checks them.
 // -----------------------------------------------------------------------------
 
-declare const _event: EmbedderEvent;
+// Wrapped in an uncalled function so the body is purely a compile-time
+// check; tsc still validates the `@ts-expect-error` directives but
+// `node --test` does not hit a ReferenceError on module load.
+function _unnarrowedAccess(_event: EmbedderEvent): void {
+  // Negative: without narrowing, accessing a variant-specific payload
+  // field must be a type error. On the discriminated union, `bytes`
+  // only exists on `DefaultEmbedderDownloadEvent` — reading it on the
+  // bare union is a property-does-not-exist error.
+  // @ts-expect-error — bytes is not on every union member
+  const _unnarrowedBytes: number = _event.bytes;
+  void _unnarrowedBytes;
 
-// Negative: without narrowing, accessing a variant-specific payload
-// field must be a type error. On the discriminated union, `bytes` only
-// exists on `DefaultEmbedderDownloadEvent` — reading it on the bare
-// union is a property-does-not-exist error.
-// @ts-expect-error — bytes is not on every union member
-const _unnarrowedBytes: number = _event.bytes;
-void _unnarrowedBytes;
+  // @ts-expect-error — docCount is not on every union member
+  const _unnarrowedDocCount: number = _event.docCount;
+  void _unnarrowedDocCount;
 
-// @ts-expect-error — docCount is not on every union member
-const _unnarrowedDocCount: number = _event.docCount;
-void _unnarrowedDocCount;
-
-// @ts-expect-error — cachePath is not on every union member
-const _unnarrowedCachePath: string = _event.cachePath;
-void _unnarrowedCachePath;
+  // @ts-expect-error — cachePath is not on every union member
+  const _unnarrowedCachePath: string = _event.cachePath;
+  void _unnarrowedCachePath;
+}
+void _unnarrowedAccess;
 
 function _exhaustiveNarrowing(event: EmbedderEvent): void {
   if (event.kind === "DefaultEmbedderDownload") {
@@ -90,13 +94,19 @@ function _exhaustiveNarrowing(event: EmbedderEvent): void {
 void _exhaustiveNarrowing;
 
 // The variant-specific interfaces are part of the public surface — they
-// must be importable as named exports.
-declare const _download: DefaultEmbedderDownloadEvent;
-declare const _cacheHit: DefaultEmbedderCacheHitEvent;
-declare const _meanVec: MeanVecPinnedEvent;
-void _download;
-void _cacheHit;
-void _meanVec;
+// must be importable as named exports. Wrapped in an uncalled function
+// so the references are compile-time only (the `declare` produces no
+// runtime binding).
+function _variantInterfacesImportable(
+  _download: DefaultEmbedderDownloadEvent,
+  _cacheHit: DefaultEmbedderCacheHitEvent,
+  _meanVec: MeanVecPinnedEvent,
+): void {
+  void _download;
+  void _cacheHit;
+  void _meanVec;
+}
+void _variantInterfacesImportable;
 
 // -----------------------------------------------------------------------------
 // Runtime shape consistency (AC-FIX2-6).

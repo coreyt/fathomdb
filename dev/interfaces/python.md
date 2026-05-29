@@ -102,6 +102,31 @@ and `embedder_mean_vec_pinned`. Each entry in `embedder_events` is a
 `"DefaultEmbedderCacheHit"`, or `"MeanVecPinned"`) with a variant-
 specific payload in snake_case.
 
+EU-6 FIX-2 declared `embedder_events` as a typed `TypedDict` union
+(`fathomdb.types.EmbedderEvent`). Pyright (and other PEP-589-aware
+checkers) narrow the payload key access inside `if event["kind"] ==
+"..."` branches — the runtime shape is unchanged from EU-6 GREEN, so
+existing dict-pattern-matching code keeps working as a strict type
+refinement:
+
+```python
+from fathomdb import Engine
+
+engine = Engine.open(path, use_default_embedder=True)
+report = engine.open_report()
+for event in report.embedder_events:
+    if event["kind"] == "DefaultEmbedderDownload":
+        # pyright narrows: event["bytes"] is int, event["url"] is str.
+        log(f"downloaded {event['bytes']} bytes from {event['url']}")
+    elif event["kind"] == "MeanVecPinned":
+        log(f"mean vec pinned at {event['doc_count']} docs (dim={event['dim']})")
+```
+
+Unknown `kind` values (e.g. a variant introduced by a newer engine
+build) surface under the `UnknownEmbedderEvent` fallback member of the
+union — callers can still read `event["kind"]` and decide how to handle
+the unrecognised event.
+
 ### Shipped feature axis (EU-6 FIX-1)
 
 Released wheels published to PyPI are compiled with the `default-embedder`

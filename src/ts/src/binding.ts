@@ -75,7 +75,13 @@ interface NativeEmbedderIdentity {
   dimension: number;
 }
 
-interface NativeEmbedderEvent {
+// EU-6 FIX-2: Wide native shape emitted by the napi-rs binding. napi-rs
+// has no first-class tagged-union support, so every variant payload
+// field is modelled here as `Option<T>` (collapsed to `T | null |
+// undefined`). The canonical narrow public surface — the discriminated
+// `EmbedderEvent` union — lives in `index.ts` and is built by
+// `mapEmbedderEvent()` at the napi → SDK seam.
+export interface NativeEmbedderEvent {
   kind: string;
   file?: string | null;
   url?: string | null;

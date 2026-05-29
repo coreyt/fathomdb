@@ -7,6 +7,8 @@ Hand-maintained — keep in sync with the binding's `#[pyclass]` /
 
 from typing import Any, Iterable
 
+from fathomdb.types import EmbedderEvent
+
 class WriteReceipt:
     cursor: int
 
@@ -45,7 +47,7 @@ class OpenReport:
     default_embedder: EmbedderIdentity
     # EU-5a1/5a2/5b — surfaced by EU-6.
     embedder_download_ms: int | None
-    embedder_events: list[dict[str, Any]]
+    embedder_events: list[EmbedderEvent]
     embedder_mean_centering_required: bool
     embedder_mean_vec_pinned: bool
 

@@ -8,7 +8,7 @@
 // thin TS wrapper that funnels every native error through
 // `rethrowTyped`.
 
-import { native, type NativeEngine } from "./binding.js";
+import { native, type NativeEmbedderEvent, type NativeEngine } from "./binding.js";
 import { rethrowTyped } from "./errors.js";
 import { validateFfiString, validateFfiTree } from "./validation.js";
 
@@ -65,25 +65,105 @@ export interface EmbedderIdentity {
 }
 
 /**
- * EU-6 — discriminated-union shape for `OpenReport.embedderEvents`.
+ * EU-6 FIX-2 — discriminated-union shape for `OpenReport.embedderEvents`.
  *
- * `kind` carries the variant name; the remaining optional fields carry
- * the variant payload. Callers pattern-match on `event.kind`.
+ * Each variant interface carries a closed `kind` literal + the
+ * variant-specific payload fields (non-optional). Callers pattern-match
+ * with `if (event.kind === "...")` and tsc narrows the payload access
+ * accordingly. See `dev/design/0.7.1-EU-6-FIX-2-design.md` §6.3.
  */
-export interface EmbedderEvent {
-  readonly kind:
-    | "DefaultEmbedderDownload"
-    | "DefaultEmbedderCacheHit"
-    | "MeanVecPinned"
-    | string;
-  readonly file?: string | null;
-  readonly url?: string | null;
-  readonly bytes?: number | null;
-  readonly sha256?: string | null;
-  readonly cachePath?: string | null;
-  readonly durationMs?: number | null;
-  readonly dim?: number | null;
-  readonly docCount?: number | null;
+export interface DefaultEmbedderDownloadEvent {
+  readonly kind: "DefaultEmbedderDownload";
+  readonly file: string;
+  readonly url: string;
+  readonly bytes: number;
+  readonly sha256: string;
+  readonly cachePath: string;
+  readonly durationMs: number;
+}
+
+export interface DefaultEmbedderCacheHitEvent {
+  readonly kind: "DefaultEmbedderCacheHit";
+  readonly file: string;
+  readonly sha256: string;
+  readonly cachePath: string;
+}
+
+export interface MeanVecPinnedEvent {
+  readonly kind: "MeanVecPinned";
+  readonly dim: number;
+  readonly docCount: number;
+}
+
+/**
+ * Forward-compat fallback for `kind` values not known to this build.
+ * Not included in the `EmbedderEvent` discriminated union — including
+ * an open-`kind: string` member would defeat literal narrowing on the
+ * known variants. Instead, `mapEmbedderEvent()` returns a value of this
+ * shape under an unsafe cast to `EmbedderEvent` for unknown kinds; user
+ * code that does NOT match any known `case` in its switch / if-chain
+ * lands in the `default` / final `else` branch at runtime and can
+ * pattern-match on `event.kind` further if needed.
+ */
+export interface UnknownEmbedderEvent {
+  readonly kind: string;
+  readonly [field: string]: unknown;
+}
+
+export type EmbedderEvent =
+  | DefaultEmbedderDownloadEvent
+  | DefaultEmbedderCacheHitEvent
+  | MeanVecPinnedEvent;
+
+/**
+ * @internal — maps the wide napi-rs `NativeEmbedderEvent` into the
+ * narrow discriminated `EmbedderEvent` union at the binding → SDK
+ * seam. The non-null assertions are sound under the Rust emitter
+ * invariant codified by AC-FIX2-6's runtime shape consistency test:
+ * for each known `kind`, the emitter populates exactly the variant-
+ * appropriate fields. Unknown `kind` values pass through as
+ * `UnknownEmbedderEvent` so a forward-compatible variant addition
+ * remains a strict refinement, not a breaking change.
+ */
+export function mapEmbedderEvent(n: NativeEmbedderEvent): EmbedderEvent {
+  switch (n.kind) {
+    case "DefaultEmbedderDownload":
+      return {
+        kind: "DefaultEmbedderDownload",
+        file: n.file!,
+        url: n.url!,
+        bytes: n.bytes!,
+        sha256: n.sha256!,
+        cachePath: n.cachePath!,
+        durationMs: n.durationMs!,
+      };
+    case "DefaultEmbedderCacheHit":
+      return {
+        kind: "DefaultEmbedderCacheHit",
+        file: n.file!,
+        sha256: n.sha256!,
+        cachePath: n.cachePath!,
+      };
+    case "MeanVecPinned":
+      return {
+        kind: "MeanVecPinned",
+        dim: n.dim!,
+        docCount: n.docCount!,
+      };
+    default: {
+      // Forward-compat: surface unknown kinds verbatim, dropping any
+      // nullish wide-shape fields so the resulting object has only the
+      // keys the emitter actually populated. Cast through `unknown`
+      // because `UnknownEmbedderEvent` is not part of the declared
+      // `EmbedderEvent` union (keeping it out preserves literal
+      // narrowing on the known variants).
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(n)) {
+        if (v !== null && v !== undefined) out[k] = v;
+      }
+      return out as unknown as EmbedderEvent;
+    }
+  }
 }
 
 export interface OpenReport {
@@ -192,7 +272,21 @@ export class Engine {
   }
 
   openReport(): OpenReport {
-    return interceptSync(() => this.#native.openReport());
+    return interceptSync(() => {
+      const r = this.#native.openReport();
+      return {
+        schemaVersionBefore: r.schemaVersionBefore,
+        schemaVersionAfter: r.schemaVersionAfter,
+        migrationSteps: r.migrationSteps,
+        embedderWarmupMs: r.embedderWarmupMs,
+        queryBackend: r.queryBackend,
+        defaultEmbedder: r.defaultEmbedder,
+        embedderDownloadMs: r.embedderDownloadMs,
+        embedderEvents: r.embedderEvents.map(mapEmbedderEvent),
+        embedderMeanCenteringRequired: r.embedderMeanCenteringRequired,
+        embedderMeanVecPinned: r.embedderMeanVecPinned,
+      };
+    });
   }
 
   setProfiling(enabled: boolean): void {
