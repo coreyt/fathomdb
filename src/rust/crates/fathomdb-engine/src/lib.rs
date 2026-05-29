@@ -603,16 +603,13 @@ pub struct OpenReport {
     pub default_embedder: EmbedderIdentity,
     /// Time spent fetching default-embedder weights from the loader, if
     /// any. `None` for caller-supplied embedders (which bypass the
-    /// loader entirely) and in EU-5a1 unconditionally — the Default
-    /// path returns `DefaultEmbedderNotWired` before opening.
-    ///
-    /// TODO(EU-5b): populate from `LoadedWeights.download_ms` once the
-    /// loader is wired into the `EmbedderChoice::Default` materializer.
+    /// loader entirely) and on warm-cache opens where the loader served
+    /// every file without network work. `Some(ms)` when the loader did
+    /// at least some download envelope (`bytes_downloaded > 0`).
     pub embedder_download_ms: Option<u64>,
     /// Structured loader events (`dev/design/embedder.md` §7). Empty for
-    /// caller-supplied embedders. Empty unconditionally in EU-5a1.
-    ///
-    /// TODO(EU-5b): populate from `LoadedWeights.events`.
+    /// caller-supplied embedders; populated from `LoadedWeights.events`
+    /// for the Default path.
     pub embedder_events: Vec<EmbedderEvent>,
     /// Static identity capability (`dev/design/embedder.md` §0.6). True
     /// iff the live embedder identity is the bge-small default, which is
@@ -820,11 +817,6 @@ pub enum EngineOpenError {
         supplied: u32,
     },
     /// Embedder runtime returned a typed error during `Engine::open`.
-    ///
-    /// In EU-5a1 the only inhabited variant routed through this carrier
-    /// is `EmbedderError::DefaultEmbedderNotWired`, raised when the
-    /// caller passes `EmbedderChoice::Default` before EU-5b ships the
-    /// `CandleBgeEmbedder` + loader wiring + identity-constant flip.
     Embedder(RuntimeEmbedderError),
     Io {
         message: String,
@@ -833,18 +825,16 @@ pub enum EngineOpenError {
 
 /// Caller-facing selector for the embedder used by an opened engine
 /// (`dev/design/embedder.md` §0).
-///
-/// `Default` returns a typed `DefaultEmbedderNotWired` error in EU-5a1.
-/// The runtime materialization of `Default` lands atomically with the
-/// EU-5b identity-constant flip and loader / candle wiring.
 #[derive(Clone)]
 pub enum EmbedderChoice {
-    /// Use the engine's default embedder. **Transitional**: NOT YET
-    /// IMPLEMENTED in EU-5a1; returns
-    /// `Err(EngineOpenError::Embedder(EmbedderError::DefaultEmbedderNotWired))`
-    /// until EU-5b lands the `CandleBgeEmbedder` + loader wiring + the
-    /// `DEFAULT_EMBEDDER_*` constant flip. Grep `transitional` to find
-    /// all sites that disappear with EU-5b.
+    /// Use the engine's default embedder. With the `default-embedder`
+    /// Cargo feature enabled, this materializes a `CandleBgeEmbedder`
+    /// via the EU-3 loader at `Engine::open`; on first use the loader
+    /// downloads pinned bge-small-en-v1.5 weights from HuggingFace per
+    /// `ADR-0.7.1-default-embedder-weight-fetch`. Without the feature,
+    /// this returns `EmbedderError::Failed` directing the caller to
+    /// rebuild with `--features default-embedder` or supply
+    /// `EmbedderChoice::Caller`.
     Default,
     /// Caller supplies the embedder instance. The supplied embedder's
     /// `identity()` becomes the workspace's default-profile identity.
@@ -1181,9 +1171,10 @@ impl Engine {
     ///
     /// Per `dev/design/embedder.md` §0 + the 0.7.1 EU-5 campaign, this is
     /// the canonical entry point for selecting how the workspace's
-    /// default embedder is supplied. `EmbedderChoice::Default` returns a
-    /// typed `DefaultEmbedderNotWired` error until EU-5b lands the
-    /// `CandleBgeEmbedder` + loader wiring.
+    /// default embedder is supplied. See [`EmbedderChoice`] for the
+    /// semantics of each variant; in particular `Default` materializes
+    /// the pinned BGE embedder via the loader when the `default-embedder`
+    /// feature is enabled.
     pub fn open_with_choice(
         path: impl Into<PathBuf>,
         choice: EmbedderChoice,

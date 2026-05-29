@@ -1,9 +1,11 @@
-//! EU-5a1 RED tests — plumbing-only first half of EU-5a.
+//! EU-5a1 plumbing tests — plumbing-only first half of EU-5a.
 //!
 //! These tests assert the type-system plumbing for the EU-5 campaign:
 //! the public `EmbedderChoice` enum exposed on `Engine.open`, the four
 //! new `OpenReport` fields (per `dev/design/embedder.md` §0.6 + §7), and
-//! the transitional `DefaultEmbedderNotWired` typed error path.
+//! the `EmbedderChoice::Default` materialization path (success once
+//! EU-5b lands the lock-flip; gated behind the `default-embedder`
+//! feature).
 //!
 //! See `dev/plans/prompts/0.7.1-EMBEDDER-UNDEFER-HANDOFF.md` §EU-5 step 2,
 //! step 3, step 7.

@@ -393,48 +393,67 @@ fn run_doctor(cmd: DoctorCommand) -> i32 {
 /// EU-5b — invoke the default-embedder loader directly (no engine open)
 /// so users + CI can warm the on-disk cache before the first
 /// `Engine::open` triggers a download.
-fn run_doctor_warm_cache(_args: WarmCacheArgs) -> i32 {
+fn run_doctor_warm_cache(args: WarmCacheArgs) -> i32 {
     #[cfg(feature = "default-embedder")]
     {
         match fathomdb_embedder::loader::load_pinned_default_embedder() {
             Ok(weights) => {
-                let payload = json!({
-                    "verb": "warm-cache",
-                    "status": "ok",
-                    "config_json": weights.config_json_path.to_string_lossy(),
-                    "tokenizer_json": weights.tokenizer_json_path.to_string_lossy(),
-                    "model_safetensors": weights.model_safetensors_path.to_string_lossy(),
-                    "bytes_downloaded": weights.bytes_downloaded,
-                    "events": weights
-                        .events
-                        .iter()
-                        .map(warm_cache_event_json)
-                        .collect::<Vec<_>>(),
-                });
-                println!("{payload}");
+                if args.json {
+                    let payload = json!({
+                        "verb": "warm-cache",
+                        "status": "ok",
+                        "config_json": weights.config_json_path.to_string_lossy(),
+                        "tokenizer_json": weights.tokenizer_json_path.to_string_lossy(),
+                        "model_safetensors": weights.model_safetensors_path.to_string_lossy(),
+                        "bytes_downloaded": weights.bytes_downloaded,
+                        "events": weights
+                            .events
+                            .iter()
+                            .map(warm_cache_event_json)
+                            .collect::<Vec<_>>(),
+                    });
+                    println!("{payload}");
+                } else {
+                    let kind = if weights.bytes_downloaded > 0 { "cold" } else { "warm" };
+                    println!("warm-cache: ok ({kind})");
+                    println!("  config.json:       {}", weights.config_json_path.display());
+                    println!("  tokenizer.json:    {}", weights.tokenizer_json_path.display());
+                    println!("  model.safetensors: {}", weights.model_safetensors_path.display());
+                    println!("  bytes downloaded:  {}", weights.bytes_downloaded);
+                    println!("  events:            {}", weights.events.len());
+                }
                 exit_code::OK
             }
             Err(err) => {
-                let payload = json!({
-                    "verb": "warm-cache",
-                    "status": "error",
-                    "code": "EmbedderLoadError",
-                    "detail": err.to_string(),
-                });
-                println!("{payload}");
+                if args.json {
+                    let payload = json!({
+                        "verb": "warm-cache",
+                        "status": "error",
+                        "code": "EmbedderLoadError",
+                        "detail": err.to_string(),
+                    });
+                    println!("{payload}");
+                } else {
+                    eprintln!("warm-cache: error: {err}");
+                }
                 exit_code::UNRECOVERABLE
             }
         }
     }
     #[cfg(not(feature = "default-embedder"))]
     {
-        let payload = json!({
-            "verb": "warm-cache",
-            "status": "error",
-            "code": "DefaultEmbedderFeatureDisabled",
-            "detail": "fathomdb CLI was built without the `default-embedder` feature; rebuild with --features default-embedder",
-        });
-        println!("{payload}");
+        let detail = "fathomdb CLI was built without the `default-embedder` feature; rebuild with --features default-embedder";
+        if args.json {
+            let payload = json!({
+                "verb": "warm-cache",
+                "status": "error",
+                "code": "DefaultEmbedderFeatureDisabled",
+                "detail": detail,
+            });
+            println!("{payload}");
+        } else {
+            eprintln!("warm-cache: error: {detail}");
+        }
         exit_code::UNRECOVERABLE
     }
 }
