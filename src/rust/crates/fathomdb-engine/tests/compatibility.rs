@@ -148,7 +148,15 @@ fn ac_048_rejects_stored_embedder_identity_mismatch() {
     match err {
         EngineOpenError::EmbedderIdentityMismatch { stored, supplied } => {
             assert_eq!(stored, EmbedderIdentity::new("other-embedder", "rev-b", 384));
-            assert_eq!(supplied, EmbedderIdentity::new("fathomdb-noop", "0.6.0-scaffold", 384));
+            // EU-5b: default identity flipped to bge-small.
+            assert_eq!(
+                supplied,
+                EmbedderIdentity::new(
+                    "fathomdb-bge-small-en-v1.5",
+                    "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+                    384,
+                ),
+            );
         }
         other => panic!("expected EmbedderIdentityMismatch, got {other:?}"),
     }
@@ -160,7 +168,15 @@ fn ac_048b_rejects_stored_embedder_dimension_mismatch() {
     let path = db_path(&dir, "dimension");
     let conn = Connection::open(&path).unwrap();
     set_user_version(&conn, SCHEMA_VERSION);
-    create_profile(&conn, "fathomdb-noop", "0.6.0-scaffold", 768);
+    // EU-5b: store the bge-small identity at a non-default dimension so the
+    // open path surfaces `EmbedderDimensionMismatch` (the name+revision both
+    // match the engine's default; only the dimension drifts).
+    create_profile(
+        &conn,
+        "fathomdb-bge-small-en-v1.5",
+        "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+        768,
+    );
     drop(conn);
 
     let err = Engine::open(&path).expect_err("dimension mismatch must fail open");

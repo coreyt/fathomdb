@@ -21,7 +21,7 @@
 
 use std::sync::Arc;
 
-use fathomdb_embedder::{EmbedderEvent, NoopEmbedder};
+use fathomdb_embedder::EmbedderEvent;
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 use fathomdb_engine::{EmbedderChoice, Engine, MEAN_VEC_PIN_THRESHOLD};
 use rusqlite::Connection;
@@ -195,7 +195,9 @@ fn write_docs(engine: &Engine, count: u64) {
     engine.configure_vector_kind_for_test("doc").expect("configure vector kind");
     for i in 0..count {
         let txt = format!("doc-{i}");
-        engine.write_vector_for_test("doc", &txt).expect("write_vector_for_test must succeed");
+        engine
+            .write_vector_for_test("doc", &txt)
+            .unwrap_or_else(|err| panic!("write_vector_for_test failed at i={i}: {err:?}"));
     }
 }
 
@@ -231,9 +233,9 @@ fn mean_accumulator_emits_mean_vec_pinned_event() {
         opened.engine.drain_mean_centering_events_for_test().expect("drain mean-centering events");
     let mut saw_pin = false;
     for ev in &events {
-        if let EmbedderEvent::MeanVecPinned { dim, doc_count } = ev {
-            assert_eq!(*dim, 384u32);
-            assert!(*doc_count >= 1u64, "doc_count must be >= 1 at pin commit");
+        if let EmbedderEvent::MeanVecPinned { dim, doc_count } = ev.clone() {
+            assert_eq!(dim, 384u32);
+            assert!(doc_count >= 1u64, "doc_count must be >= 1 at pin commit");
             saw_pin = true;
         }
     }

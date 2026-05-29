@@ -11,8 +11,7 @@
 use std::sync::Arc;
 
 use fathomdb_embedder::NoopEmbedder;
-use fathomdb_embedder_api::EmbedderError;
-use fathomdb_engine::{EmbedderChoice, Engine, EngineError, EngineOpenError};
+use fathomdb_engine::{EmbedderChoice, Engine, EngineError};
 use tempfile::TempDir;
 
 fn fixture_path(name: &str) -> (TempDir, std::path::PathBuf) {
@@ -21,18 +20,17 @@ fn fixture_path(name: &str) -> (TempDir, std::path::PathBuf) {
     (dir, path)
 }
 
+#[cfg(feature = "default-embedder")]
 #[test]
-fn open_with_embedder_choice_default_returns_default_embedder_not_wired() {
-    // EU-5a1: EmbedderChoice::Default is a deliberate, typed compile-time
-    // hole until EU-5b lands CandleBgeEmbedder wiring + the identity
-    // constant flip. NO noop fallback.
-    let (_dir, path) = fixture_path("eu5a1_default");
-    let err = Engine::open_with_choice(&path, EmbedderChoice::Default)
-        .expect_err("EmbedderChoice::Default must error in EU-5a1");
-    match err {
-        EngineOpenError::Embedder(EmbedderError::DefaultEmbedderNotWired) => {}
-        other => panic!("unexpected error: {other:?}"),
-    }
+fn open_with_embedder_choice_default_succeeds_with_bge_identity() {
+    // EU-5b: EmbedderChoice::Default materialises the pinned bge-small
+    // embedder via the EU-3 loader + EU-4 CandleBgeEmbedder. The opened
+    // workspace reports the bge-small identity. Cold-open downloads
+    // ~133 MB from huggingface.co.
+    let (_dir, path) = fixture_path("eu5a1_default_success");
+    let opened = Engine::open_with_choice(&path, EmbedderChoice::Default)
+        .expect("EmbedderChoice::Default must succeed after EU-5b lands");
+    assert_eq!(opened.report.default_embedder.name, "fathomdb-bge-small-en-v1.5");
 }
 
 #[test]

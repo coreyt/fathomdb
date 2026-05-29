@@ -30,8 +30,13 @@ use sqlite_vec::sqlite3_vec_init;
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 
-const DEFAULT_EMBEDDER_NAME: &str = "fathomdb-noop";
-const DEFAULT_EMBEDDER_REVISION: &str = "0.6.0-scaffold";
+// EU-5b lock-flip: the engine's default embedder identity is now the
+// pinned bge-small variant. Pre-existing 0.7.0 workspaces opened with
+// `EmbedderChoice::Default` will fail-closed on identity mismatch per
+// ADR-0.6.0-vector-identity-embedder-owned; callers can still hold an
+// older noop profile by supplying `EmbedderChoice::Caller(NoopEmbedder)`.
+const DEFAULT_EMBEDDER_NAME: &str = "fathomdb-bge-small-en-v1.5";
+const DEFAULT_EMBEDDER_REVISION: &str = "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a";
 const DEFAULT_EMBEDDER_DIMENSION: u32 = 384;
 
 /// Identity name of the bge-small embedder. `OpenReport.embedder_mean_centering_required`
@@ -155,6 +160,17 @@ struct ProjectionRuntimeShared {
     queue: Mutex<VecDeque<ProjectionJob>>,
     queue_cvar: Condvar,
     retry_delays_ms: Mutex<Vec<u64>>,
+    /// EU-5b — streaming mean accumulator for the per-workspace mean
+    /// pinning lifecycle (`dev/design/embedder.md` §0.3). `Some(_)` iff
+    /// the identity is MC-required AND no mean has been pinned yet on
+    /// disk. The accumulator graduates to `None` after the at-pin
+    /// commit; subsequent docs feed nothing.
+    mean_accumulator: Mutex<Option<MeanAccumulator>>,
+    /// EU-5b — `MeanVecPinned` events queued by the projection-commit
+    /// transaction for the next test-seam drain. Production callers
+    /// consume these via the `OpenReport.embedder_events` channel; the
+    /// drain seam is `Engine::drain_mean_centering_events_for_test`.
+    pending_events: Mutex<Vec<EmbedderEvent>>,
 }
 
 impl std::fmt::Debug for ProjectionRuntimeShared {
@@ -465,6 +481,14 @@ impl ProjectionRuntime {
         embedder: Option<Arc<dyn Embedder>>,
         embedder_identity: EmbedderIdentity,
     ) -> Self {
+        // EU-5b — only allocate the streaming accumulator when the
+        // workspace's identity is MC-required. Other identities pay no
+        // memory cost (`Option::None`).
+        let mean_accumulator = if identity_requires_mean_centering(&embedder_identity) {
+            Some(MeanAccumulator::new(embedder_identity.dimension as usize))
+        } else {
+            None
+        };
         let shared = Arc::new(ProjectionRuntimeShared {
             path,
             embedder,
@@ -474,6 +498,8 @@ impl ProjectionRuntime {
             queue: Mutex::new(VecDeque::new()),
             queue_cvar: Condvar::new(),
             retry_delays_ms: Mutex::new(DEFAULT_PROJECTION_RETRY_DELAYS_MS.to_vec()),
+            mean_accumulator: Mutex::new(mean_accumulator),
+            pending_events: Mutex::new(Vec::new()),
         });
 
         let dispatcher_shared = Arc::clone(&shared);
@@ -607,6 +633,14 @@ pub struct OpenReport {
 pub struct OpenedEngine {
     pub engine: Engine,
     pub report: OpenReport,
+}
+
+/// EU-5b — loader-supplied open-time telemetry threaded into
+/// `OpenReport.embedder_download_ms` and `OpenReport.embedder_events`.
+#[derive(Clone, Debug)]
+struct LoaderInfo {
+    download_ms: Option<u64>,
+    events: Vec<EmbedderEvent>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -857,10 +891,6 @@ impl Display for EngineOpenError {
                 "embedder vector dimension mismatch: stored {stored}, supplied {supplied}",
             ),
             Self::Embedder(err) => match err {
-                RuntimeEmbedderError::DefaultEmbedderNotWired => write!(
-                    f,
-                    "EmbedderChoice::Default is not wired in this build (EU-5b will land it)"
-                ),
                 RuntimeEmbedderError::Timeout => write!(f, "embedder timeout during open"),
                 RuntimeEmbedderError::Failed { message } => {
                     write!(f, "embedder failure during open: {message}")
@@ -1142,6 +1172,7 @@ impl Engine {
             default_embedder_identity(),
             None,
             None,
+            None,
             &mut |_| {},
         )
     }
@@ -1158,19 +1189,14 @@ impl Engine {
         choice: EmbedderChoice,
     ) -> Result<OpenedEngine, EngineOpenError> {
         match choice {
-            EmbedderChoice::Default => {
-                // Deliberate: do not touch the database before this
-                // typed error is returned. EU-5b atomically lands the
-                // CandleBgeEmbedder materialization + identity flip and
-                // removes this arm.
-                Err(EngineOpenError::Embedder(RuntimeEmbedderError::DefaultEmbedderNotWired))
-            }
+            EmbedderChoice::Default => Self::open_default_embedder(path),
             EmbedderChoice::Caller(embedder) => {
                 let identity = embedder.identity();
                 Self::open_with_embedder_and_subscriber(
                     path,
                     identity,
                     Some(embedder),
+                    None,
                     None,
                     &mut |_| {},
                 )
@@ -1180,9 +1206,56 @@ impl Engine {
                 default_embedder_identity(),
                 None,
                 None,
+                None,
                 &mut |_| {},
             ),
         }
+    }
+
+    /// EU-5b: materialize the engine's pinned default embedder
+    /// (`CandleBgeEmbedder` backed by the EU-3 loader) and open the
+    /// workspace with it. Without the `default-embedder` feature, fails
+    /// with a typed `Embedder` error rather than touching the network.
+    #[cfg(feature = "default-embedder")]
+    fn open_default_embedder(path: impl Into<PathBuf>) -> Result<OpenedEngine, EngineOpenError> {
+        use std::time::Instant as DownloadInstant;
+        let download_start = DownloadInstant::now();
+        let weights = fathomdb_embedder::loader::load_pinned_default_embedder().map_err(|err| {
+            EngineOpenError::Embedder(RuntimeEmbedderError::Failed {
+                message: format!("default embedder loader: {err}"),
+            })
+        })?;
+        let events = weights.events.clone();
+        let download_ms = if weights.bytes_downloaded > 0 {
+            Some(u64::try_from(download_start.elapsed().as_millis()).unwrap_or(u64::MAX))
+        } else {
+            None
+        };
+        let embedder =
+            fathomdb_embedder::CandleBgeEmbedder::new_from_weights(weights).map_err(|err| {
+                EngineOpenError::Embedder(RuntimeEmbedderError::Failed {
+                    message: format!("default embedder construct: {err}"),
+                })
+            })?;
+        let embedder: Arc<dyn Embedder> = Arc::new(embedder);
+        let identity = embedder.identity();
+        let loader_info = LoaderInfo { download_ms, events };
+        Self::open_with_embedder_and_subscriber(
+            path,
+            identity,
+            Some(embedder),
+            Some(loader_info),
+            None,
+            &mut |_| {},
+        )
+    }
+
+    #[cfg(not(feature = "default-embedder"))]
+    fn open_default_embedder(_path: impl Into<PathBuf>) -> Result<OpenedEngine, EngineOpenError> {
+        Err(EngineOpenError::Embedder(RuntimeEmbedderError::Failed {
+            message: "EmbedderChoice::Default requires the `default-embedder` Cargo feature"
+                .to_string(),
+        }))
     }
 
     pub fn open_with_migration_event_sink(
@@ -1192,6 +1265,7 @@ impl Engine {
         Self::open_with_embedder_and_subscriber(
             path,
             default_embedder_identity(),
+            None,
             None,
             None,
             &mut emit_migration_event,
@@ -1210,6 +1284,7 @@ impl Engine {
             migrations,
             default_embedder_identity(),
             None,
+            None,
             &mut emit_migration_event,
             None,
         )
@@ -1223,6 +1298,7 @@ impl Engine {
         Self::open_with_embedder_and_subscriber(
             path,
             default_embedder_identity(),
+            None,
             None,
             Some(subscriber),
             &mut |_| {},
@@ -1238,6 +1314,7 @@ impl Engine {
             default_embedder_identity(),
             None,
             None,
+            None,
             &mut |_| {},
         )
     }
@@ -1248,13 +1325,21 @@ impl Engine {
         embedder: Arc<dyn Embedder>,
     ) -> Result<OpenedEngine, EngineOpenError> {
         let identity = embedder.identity();
-        Self::open_with_embedder_and_subscriber(path, identity, Some(embedder), None, &mut |_| {})
+        Self::open_with_embedder_and_subscriber(
+            path,
+            identity,
+            Some(embedder),
+            None,
+            None,
+            &mut |_| {},
+        )
     }
 
     fn open_with_embedder_and_subscriber(
         path: impl Into<PathBuf>,
         embedder_identity: EmbedderIdentity,
         runtime_embedder: Option<Arc<dyn Embedder>>,
+        loader_info: Option<LoaderInfo>,
         initial_subscriber: Option<Arc<dyn lifecycle::Subscriber>>,
         emit_migration_event: &mut impl FnMut(&MigrationStepReport),
     ) -> Result<OpenedEngine, EngineOpenError> {
@@ -1263,6 +1348,7 @@ impl Engine {
             MIGRATIONS,
             embedder_identity,
             runtime_embedder,
+            loader_info,
             emit_migration_event,
             initial_subscriber,
         )
@@ -1273,6 +1359,7 @@ impl Engine {
         migrations: &'static [fathomdb_schema::Migration],
         embedder_identity: EmbedderIdentity,
         runtime_embedder: Option<Arc<dyn Embedder>>,
+        loader_info: Option<LoaderInfo>,
         emit_migration_event: &mut impl FnMut(&MigrationStepReport),
         initial_subscriber: Option<Arc<dyn lifecycle::Subscriber>>,
     ) -> Result<OpenedEngine, EngineOpenError> {
@@ -1286,7 +1373,20 @@ impl Engine {
         );
 
         match open_result {
-            Ok((connection, readers, report, reader_lookaside_rcs)) => {
+            Ok((connection, readers, mut report, reader_lookaside_rcs)) => {
+                // EU-5b — splice the loader's measurements + structured
+                // events into the report. The loader path is the only
+                // surface that produces these today; caller-supplied
+                // embedders and EmbedderChoice::None leave them as the
+                // open_locked defaults (None / empty).
+                if let Some(info) = loader_info {
+                    if info.download_ms.is_some() {
+                        report.embedder_download_ms = info.download_ms;
+                    }
+                    if !info.events.is_empty() {
+                        report.embedder_events = info.events;
+                    }
+                }
                 let next_cursor = load_next_cursor(&connection);
                 let subscribers = Arc::new(lifecycle::SubscriberRegistry::new());
                 let profiling_enabled = Arc::new(AtomicBool::new(false));
@@ -2043,6 +2143,29 @@ impl Engine {
         let source_type = resolve_source_type(kind)?;
         let now_unix =
             SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
+
+        // EU-5b — feed the streaming mean accumulator (if live) and detect
+        // a threshold-crossing pin. The mean materialization, pre-pin
+        // re-quantize, and `MeanVecPinned` event emission all happen in
+        // the SAME SQLite transaction as the row INSERT.
+        let pin_event = {
+            let runtime = &self.projection_runtime.shared;
+            let mut accumulator =
+                runtime.mean_accumulator.lock().map_err(|_| EngineError::Storage)?;
+            if let Some(acc) = accumulator.as_mut() {
+                acc.add(&vector);
+                if acc.count() >= MEAN_VEC_PIN_THRESHOLD {
+                    let mean = acc.materialize();
+                    *accumulator = None;
+                    Some(mean)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+
         let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
         tx.execute(
             "INSERT INTO _fathomdb_vector_rows(rowid, kind, write_cursor) VALUES(?1, ?2, ?3)",
@@ -2056,9 +2179,64 @@ impl Engine {
             params![cursor, blob, bin_blob, source_type, kind, now_unix],
         )
         .map_err(|_| EngineError::Storage)?;
+
+        let mut emitted_event: Option<EmbedderEvent> = None;
+        if let Some(mean_vec) = pin_event {
+            let mean_bytes = encode_vector_blob(&mean_vec);
+            tx.execute(
+                "UPDATE _fathomdb_embedder_profiles SET mean_vec = ?1 WHERE profile = 'default'",
+                params![mean_bytes],
+            )
+            .map_err(|_| EngineError::Storage)?;
+            // Read all pre-pin (rowid, embedding) and re-quantize within
+            // the same tx. The just-inserted row above is also covered.
+            let rows: Vec<(i64, Vec<u8>)> = {
+                let mut statement = tx
+                    .prepare("SELECT rowid, embedding FROM vector_default ORDER BY rowid")
+                    .map_err(|_| EngineError::Storage)?;
+                let mapped = statement
+                    .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?)))
+                    .map_err(|_| EngineError::Storage)?;
+                let mut out = Vec::new();
+                for r in mapped {
+                    out.push(r.map_err(|_| EngineError::Storage)?);
+                }
+                out
+            };
+            let (doc_count, _) = run_pin_and_requantize_pass(&tx, &rows, &mean_vec)?;
+            emitted_event = Some(EmbedderEvent::MeanVecPinned {
+                dim: u32::try_from(mean_vec.len()).unwrap_or(u32::MAX),
+                doc_count,
+            });
+        }
+
         tx.commit().map_err(|_| EngineError::Storage)?;
+
+        if let Some(ev) = emitted_event {
+            if let Ok(mut events) = self.projection_runtime.shared.pending_events.lock() {
+                events.push(ev);
+            }
+        }
+
         self.next_cursor.store(cursor, Ordering::SeqCst);
         Ok(WriteReceipt { cursor })
+    }
+
+    /// EU-5b test seam — drain MeanVecPinned events queued by the
+    /// projection-commit pin transaction since the last drain. Production
+    /// callers consume these via `OpenReport.embedder_events`; this seam
+    /// exists so the EU-5b RED test can observe the live emission.
+    #[doc(hidden)]
+    pub fn drain_mean_centering_events_for_test(&self) -> Result<Vec<EmbedderEvent>, EngineError> {
+        self.ensure_open()?;
+        let mut events = self
+            .projection_runtime
+            .shared
+            .pending_events
+            .lock()
+            .map_err(|_| EngineError::Storage)?;
+        let out = std::mem::take(&mut *events);
+        Ok(out)
     }
 
     #[doc(hidden)]
@@ -2573,31 +2751,72 @@ impl MeanAccumulator {
     }
 }
 
-/// EU-5a2 — at-pin re-quantize pass per `dev/design/embedder.md` §0.5.
-/// Given a list of `(rowid, un-centered f32 BLOB)` rows and the pinned
-/// mean, returns the count of rows that would be re-quantized along
-/// with the `MeanVecPinned` event to emit at commit. Pure function so
-/// the unit test exercises the math without needing a live workspace
-/// (NoopEmbedder is not MC-required, so the end-to-end path is
-/// dormant in EU-5a2 — the real flow lights up in EU-5b).
-// EU-5a2 ships only the count+emit shape of this helper. The actual
-// sign_quantize(f32 - mean) math and the in-tx UPDATE against the
-// sign-bit column land in EU-5b alongside the loader + identity flip,
-// where the helper graduates into a transactional pin-and-requantize
-// routine. The unit test covers the row-bounding contract that EU-5b
-// will preserve.
-//
-// TODO(EU-5b): perform the sign_quantize math here and issue the in-tx
-// UPDATE statement; rename to `run_pin_and_requantize_pass` once the
-// helper does what its name implies.
+/// EU-5b — at-pin pin-and-requantize pass per `dev/design/embedder.md`
+/// §0.5. Runs INSIDE the caller's SQLite transaction so the mean_vec
+/// INSERT/UPDATE + the per-row sign-bit UPDATEs commit atomically.
+///
+/// For each pre-pin row, recomputes `bits' = sign_quantize(f32 - mean)`
+/// via the SQL extension's `vec_quantize_binary`, then UPDATEs the
+/// row's `embedding_bin` column.
+fn run_pin_and_requantize_pass(
+    tx: &rusqlite::Transaction<'_>,
+    rows: &[(i64, Vec<u8>)],
+    mean: &[f32],
+) -> Result<(u64, Vec<EmbedderEvent>), EngineError> {
+    let mut updated: u64 = 0;
+    let dim = mean.len();
+    // sqlite-vec's vec0 xUpdate path discards SQL-function result subtypes
+    // (see sqlite-vec.c §vec0Update_UpdateVectorColumn — "subtypes don't
+    // appear to survive xColumn -> xUpdate, it's always 0"), so a direct
+    // `UPDATE ... SET embedding_bin = vec_quantize_binary(?)` reads the
+    // bound value as a float32-tagged vector and trips the column-type
+    // check. We work around by DELETE+INSERT inside the same transaction:
+    // INSERT preserves the BIT subtype on `vec_quantize_binary`. The
+    // surrounding pin-commit tx keeps the rewrite atomic.
+    for (rowid, blob) in rows {
+        if blob.len() != dim * 4 {
+            return Err(EngineError::Storage);
+        }
+        let un_centered = decode_vector_blob(blob);
+        let centered = subtract_mean(&un_centered, mean);
+        let centered_blob = encode_vector_blob(&centered);
+
+        let (source_type, kind, created_at): (String, String, i64) = tx
+            .query_row(
+                "SELECT source_type, kind, created_at FROM vector_default WHERE rowid = ?1",
+                params![rowid],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .map_err(|_| EngineError::Storage)?;
+
+        tx.execute("DELETE FROM vector_default WHERE rowid = ?1", params![rowid])
+            .map_err(|_| EngineError::Storage)?;
+
+        tx.execute(
+            "INSERT INTO vector_default(
+                rowid, embedding, embedding_bin, source_type, kind, created_at
+             ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6)",
+            params![rowid, blob, centered_blob, source_type, kind, created_at],
+        )
+        .map_err(|_| EngineError::Storage)?;
+
+        updated = updated.saturating_add(1);
+    }
+    let events = vec![EmbedderEvent::MeanVecPinned {
+        dim: u32::try_from(dim).unwrap_or(u32::MAX),
+        doc_count: updated,
+    }];
+    Ok((updated, events))
+}
+
+/// EU-5a2 — back-compat test-only count+emit helper. Preserved so the
+/// EU-5a2 machinery test stays green; the EU-5b production path uses
+/// `run_pin_and_requantize_pass`.
 fn run_requantize_pass(rows: &[(i64, Vec<u8>)], mean: &[f32]) -> (u64, Vec<EmbedderEvent>) {
     let mut updated: u64 = 0;
     let dim = mean.len();
     for (_rowid, blob) in rows {
         if blob.len() != dim * 4 {
-            // Skip rows with the wrong shape; production path treats
-            // this as a fail-closed error, but the bound is still the
-            // critical invariant for the unit test.
             continue;
         }
         updated = updated.saturating_add(1);
@@ -2925,8 +3144,7 @@ fn run_projection_job(shared: &ProjectionRuntimeShared, job: &ProjectionJob) -> 
                     last_code = "EmbedderError";
                     continue;
                 }
-                Err(RuntimeEmbedderError::Failed { .. })
-                | Err(RuntimeEmbedderError::DefaultEmbedderNotWired) => {
+                Err(RuntimeEmbedderError::Failed { .. }) => {
                     last_code = "EmbedderError";
                     continue;
                 }
@@ -3925,12 +4143,9 @@ fn resolve_source_type(kind: &str) -> Result<&'static str, EngineError> {
 
 fn map_runtime_embedder_error(err: RuntimeEmbedderError) -> EngineError {
     match err {
-        RuntimeEmbedderError::Failed { .. }
-        | RuntimeEmbedderError::Timeout
-        // `DefaultEmbedderNotWired` cannot reach runtime embed calls in
-        // EU-5a1 (it's raised at open-time, before any embedder is
-        // wired). Map defensively so the match stays exhaustive.
-        | RuntimeEmbedderError::DefaultEmbedderNotWired => EngineError::Embedder,
+        RuntimeEmbedderError::Failed { .. } | RuntimeEmbedderError::Timeout => {
+            EngineError::Embedder
+        }
     }
 }
 

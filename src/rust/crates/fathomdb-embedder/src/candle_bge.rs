@@ -25,7 +25,7 @@ use candle_transformers::models::bert::{BertModel, Config as BertConfig};
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
 use tokenizers::Tokenizer;
 
-use crate::loader::{load_pinned_default_embedder, EmbedderLoadError, HF_REVISION};
+use crate::loader::{load_pinned_default_embedder, EmbedderLoadError, LoadedWeights, HF_REVISION};
 
 /// Engine-facing identity name (per
 /// `dev/plans/prompts/0.7.1-EMBEDDER-UNDEFER-HANDOFF.md` §0.5). EU-5 will
@@ -53,10 +53,17 @@ impl CandleBgeEmbedder {
     /// Per `dev/design/embedder.md` §8 this constructor asserts the host is
     /// little-endian (safetensors layout assumption).
     pub fn new() -> Result<Self, EmbedderLoadError> {
+        let weights = load_pinned_default_embedder()?;
+        Self::new_from_weights(weights)
+    }
+
+    /// EU-5b — construct from already-fetched weights. The engine path
+    /// invokes the loader directly (so it can splice the loader's
+    /// `bytes_downloaded` + `events` into `OpenReport`), then hands the
+    /// `LoadedWeights` to this constructor.
+    pub fn new_from_weights(weights: LoadedWeights) -> Result<Self, EmbedderLoadError> {
         // Design §8: safetensors are little-endian; we never run on BE.
         debug_assert!(cfg!(target_endian = "little"));
-
-        let weights = load_pinned_default_embedder()?;
 
         // 1. Parse config.json.
         let config_bytes = std::fs::read(&weights.config_json_path).map_err(|source| {

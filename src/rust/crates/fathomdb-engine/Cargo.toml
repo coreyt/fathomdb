@@ -18,6 +18,15 @@ serde_json = "1"
 sha2 = "0.10"
 sqlite-vec = "=0.1.7"
 
+[features]
+default = []
+# EU-5b: turning on this feature causes `EmbedderChoice::Default` to
+# materialize a real `CandleBgeEmbedder` via the loader at `Engine::open`.
+# Without it, `EmbedderChoice::Default` returns a typed `EmbedderError`
+# rather than attempting a network fetch (preserves the no-network build
+# closure per ADR-0.7.1-default-embedder-weight-fetch).
+default-embedder = ["fathomdb-embedder/default-embedder"]
+
 [dev-dependencies]
 libc = "0.2"
 proptest = "1"

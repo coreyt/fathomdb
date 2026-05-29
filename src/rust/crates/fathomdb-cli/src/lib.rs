@@ -120,6 +120,18 @@ pub enum DoctorCommand {
     DumpRowCounts(SimpleDoctorArgs),
     /// Dump the response-cycle profile recorded by the engine.
     DumpProfile(SimpleDoctorArgs),
+    /// EU-5b — fetch and verify the pinned default embedder weights so the
+    /// next `Engine::open` with `EmbedderChoice::Default` runs against a
+    /// warm cache without touching the network.
+    WarmCache(WarmCacheArgs),
+}
+
+/// EU-5b — `fathomdb doctor warm-cache` argument set.
+#[derive(Debug, Args)]
+pub struct WarmCacheArgs {
+    /// Emit machine-readable JSON output.
+    #[arg(long)]
+    pub json: bool,
 }
 
 /// Shared args for doctor verbs whose only options are `--json` and a
@@ -373,6 +385,90 @@ fn run_doctor(cmd: DoctorCommand) -> i32 {
         }
         DoctorCommand::DumpProfile(args) => run_doctor_verb(&args.db_path, "dump-profile", |e| {
             e.dump_profile().map(|r| (dump_profile_report_json(&r), CliOutcome::Clean))
+        }),
+        DoctorCommand::WarmCache(args) => run_doctor_warm_cache(args),
+    }
+}
+
+/// EU-5b — invoke the default-embedder loader directly (no engine open)
+/// so users + CI can warm the on-disk cache before the first
+/// `Engine::open` triggers a download.
+fn run_doctor_warm_cache(_args: WarmCacheArgs) -> i32 {
+    #[cfg(feature = "default-embedder")]
+    {
+        match fathomdb_embedder::loader::load_pinned_default_embedder() {
+            Ok(weights) => {
+                let payload = json!({
+                    "verb": "warm-cache",
+                    "status": "ok",
+                    "config_json": weights.config_json_path.to_string_lossy(),
+                    "tokenizer_json": weights.tokenizer_json_path.to_string_lossy(),
+                    "model_safetensors": weights.model_safetensors_path.to_string_lossy(),
+                    "bytes_downloaded": weights.bytes_downloaded,
+                    "events": weights
+                        .events
+                        .iter()
+                        .map(warm_cache_event_json)
+                        .collect::<Vec<_>>(),
+                });
+                println!("{payload}");
+                exit_code::OK
+            }
+            Err(err) => {
+                let payload = json!({
+                    "verb": "warm-cache",
+                    "status": "error",
+                    "code": "EmbedderLoadError",
+                    "detail": err.to_string(),
+                });
+                println!("{payload}");
+                exit_code::UNRECOVERABLE
+            }
+        }
+    }
+    #[cfg(not(feature = "default-embedder"))]
+    {
+        let payload = json!({
+            "verb": "warm-cache",
+            "status": "error",
+            "code": "DefaultEmbedderFeatureDisabled",
+            "detail": "fathomdb CLI was built without the `default-embedder` feature; rebuild with --features default-embedder",
+        });
+        println!("{payload}");
+        exit_code::UNRECOVERABLE
+    }
+}
+
+#[cfg(feature = "default-embedder")]
+fn warm_cache_event_json(ev: &fathomdb_embedder::EmbedderEvent) -> Value {
+    use fathomdb_embedder::EmbedderEvent;
+    match ev {
+        EmbedderEvent::DefaultEmbedderDownload {
+            file,
+            url,
+            bytes,
+            sha256,
+            cache_path,
+            duration_ms,
+        } => json!({
+            "kind": "download",
+            "file": file,
+            "url": url,
+            "bytes": bytes,
+            "sha256": sha256,
+            "cache_path": cache_path.to_string_lossy(),
+            "duration_ms": duration_ms,
+        }),
+        EmbedderEvent::DefaultEmbedderCacheHit { file, sha256, cache_path } => json!({
+            "kind": "cache_hit",
+            "file": file,
+            "sha256": sha256,
+            "cache_path": cache_path.to_string_lossy(),
+        }),
+        EmbedderEvent::MeanVecPinned { dim, doc_count } => json!({
+            "kind": "mean_vec_pinned",
+            "dim": dim,
+            "doc_count": doc_count,
         }),
     }
 }

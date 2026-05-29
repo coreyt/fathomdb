@@ -16,16 +16,8 @@ impl EmbedderIdentity {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EmbedderError {
-    Failed {
-        message: String,
-    },
+    Failed { message: String },
     Timeout,
-    /// `EmbedderChoice::Default` was selected but the default-embedder
-    /// runtime is not wired in this build/release.
-    ///
-    /// Transitional: removed by EU-5b when `EmbedderChoice::Default`
-    /// starts materializing the real CandleBgeEmbedder via the loader.
-    DefaultEmbedderNotWired,
 }
 
 pub trait Embedder: Send + Sync {

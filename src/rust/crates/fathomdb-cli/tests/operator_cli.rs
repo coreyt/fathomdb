@@ -141,7 +141,9 @@ fn doctor_invocation(verb: &str, db_path: &str, out_path: &str) -> Vec<String> {
         }
         "verify-embedder" => {
             argv.push("--identity".to_string());
-            argv.push("fathomdb-noop:0.6.0-scaffold".to_string());
+            argv.push(
+                "fathomdb-bge-small-en-v1.5:5c38ec7c405ec4b44b94cc5a9bb96e735b38267a".to_string(),
+            );
             argv.push("--dimension".to_string());
             argv.push("384".to_string());
         }
@@ -391,7 +393,7 @@ fn t_040a_verify_embedder_cli_emits_match_status_on_matching_input() {
             "doctor",
             "verify-embedder",
             "--identity",
-            "fathomdb-noop:0.6.0-scaffold",
+            "fathomdb-bge-small-en-v1.5:5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
             "--dimension",
             "384",
             "--json",
@@ -405,12 +407,12 @@ fn t_040a_verify_embedder_cli_emits_match_status_on_matching_input() {
     assert_eq!(parsed.get("verb").and_then(Value::as_str), Some("verify-embedder"));
     assert_eq!(
         parsed.get("stored_identity").and_then(Value::as_str),
-        Some("fathomdb-noop:0.6.0-scaffold"),
+        Some("fathomdb-bge-small-en-v1.5:5c38ec7c405ec4b44b94cc5a9bb96e735b38267a"),
     );
     assert_eq!(parsed.get("stored_dimension").and_then(Value::as_u64), Some(384));
     assert_eq!(
         parsed.get("supplied_identity").and_then(Value::as_str),
-        Some("fathomdb-noop:0.6.0-scaffold"),
+        Some("fathomdb-bge-small-en-v1.5:5c38ec7c405ec4b44b94cc5a9bb96e735b38267a"),
     );
     assert_eq!(parsed.get("supplied_dimension").and_then(Value::as_u64), Some(384));
     assert_eq!(parsed.get("status").and_then(Value::as_str), Some("match"));
