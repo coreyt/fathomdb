@@ -164,7 +164,7 @@ empirically (research artifact: `dev/notes/0.7.1-default-embedder-research.md`).
 | Dimension              | 384                                  |
 | Pooling                | mean-pool over attention mask (EMB-1) |
 | Post-pool norm         | L2 (EMB-2)                           |
-| Rerank K (sign-bit → f32) | **128**                           |
+| Rerank K (sign-bit → f32) | **192** (revised 2026-05-29 from K=128; see research §5.4) |
 | Mean-centering         | **ON** — subtract corpus-mean f32 vector before sign-quantize, at both write and query |
 
 **New architectural element introduced by 0.7.1 (mean-centering).** The
@@ -183,15 +183,17 @@ workspace sizes, topic-drift caveat) recorded in
 `dev/design/embedder.md` §0.3.
 
 **Why this model + K + mc combination.** Empirically (N=100 synthetic
-queries against the 7,667-doc 0.7.0 corpus): bge-small + mc at K=128 reaches
-recall@10 = 0.907 (95% CI overlapping 0.90); bge-base at K=96 reaches 0.914
-at ~2× storage and ~3× per-query embed latency. CIs overlap; the cost
-delta does not. HITL accepted the thinner floor headroom in exchange for
-the storage/latency win, with the explicit follow-up that
-`AC013B_RECALL_FLOOR` is re-derived against real bge-small embeddings
-before the EU-5 lock-flip (the existing floor was calibrated on the
-isotropic AC-013b fixture and is not directly portable to real anisotropic
-embeddings).
+queries against the 7,667-doc 0.7.0 corpus): bge-small + mc at K=192 reaches
+recall@10 = **0.933** (95% CI 0.912–0.953; lower CI bound clears the 0.90
+floor); bge-base at K=96 reaches 0.914 at ~2× storage and ~3× per-query
+embed latency. CIs overlap on point estimate but the bge-small + K=192
+path delivers ~0.033 cushion above the floor at materially lower cost.
+The K=128 → K=192 revision (2026-05-29, after a fine-grained K-sweep)
+moved the chosen K from "clears floor in expectation, marginal under CI"
+to "clears floor statistically" — see `dev/notes/0.7.1-default-embedder-research.md`
+§5.4. The follow-up to re-derive `AC013B_RECALL_FLOOR` against real
+bge-small embeddings (instead of the isotropic AC-013b fixture) remains
+the right thing to do before the EU-5b lock-flip.
 
 **Status update.** This ADR's "accepted but unimplemented" posture
 transitions to "implemented in 0.7.1" once EU-5 lands. The EMB-5 loader
