@@ -180,6 +180,7 @@ jobs:
           - runner: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             label: linux-x64
+            manylinux: "2_28"
             # Measured on FIX-1 GREEN commit (Linux x86_64, abi3 cp310):
             # no-feature ≈ 3.06 MB, with-feature ≈ 6.16 MB. Baseline
             # = with-feature + ~20% headroom so Cargo.lock churn does
@@ -189,6 +190,7 @@ jobs:
           - runner: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             label: linux-aarch64
+            manylinux: "2_28"
             # Seeded from Linux x86_64 with ~5% padding (aarch64 wheels
             # are typically near-parity, occasionally a hair larger).
             # TO RECALIBRATE.
@@ -223,28 +225,33 @@ jobs:
           toolchain: stable
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - name: Install maturin
-        run: pip install maturin==1.13.1
+      # Use PyO3/maturin-action (same SHA as release.yml's build-python)
+      # so the linux-aarch64 leg gets a working cross-toolchain via the
+      # action's container. A bare `maturin build --target
+      # aarch64-unknown-linux-gnu` on ubuntu-latest has no aarch64
+      # sysroot/linker; the action handles that. This also harmonizes
+      # the build path with release.yml.
+      #
       # Build the with-feature wheel first — this is the shipped
       # artifact and the GATED build. `--features` REPLACES the
       # pyproject list, so the explicit list here is what gets built
       # regardless of what pyproject.toml carries.
       - name: Build wheel (with default-embedder feature; shipped artifact)
-        working-directory: src/python
-        run: |
-          maturin build --release --out dist-feature \
-            --target ${{ matrix.target }} \
-            -i python3.11 \
-            --features pyo3/extension-module,default-embedder
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist-feature -i python3.11 --features pyo3/extension-module,default-embedder
+          manylinux: ${{ matrix.manylinux || 'auto' }}
+          working-directory: src/python
       # No-feature wheel: informational only. Recorded to detect
       # accidental dependency creep on the minimal-deps tree.
       - name: Build wheel (no default-embedder feature; informational)
-        working-directory: src/python
-        run: |
-          maturin build --release --out dist-nofeature \
-            --target ${{ matrix.target }} \
-            -i python3.11 \
-            --features pyo3/extension-module
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist-nofeature -i python3.11 --features pyo3/extension-module
+          manylinux: ${{ matrix.manylinux || 'auto' }}
+          working-directory: src/python
       - name: Assert wheel-size gate
         shell: bash
         working-directory: src/python

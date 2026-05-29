@@ -17,7 +17,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { mkdtempSync, readdirSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -86,8 +86,9 @@ function buildAndLoadReleaseNative(): ReleaseNative {
   const stagingDir = mkdtempSync(join(tmpdir(), "fathomdb-rel-surface-"));
   const stagedPath = join(stagingDir, "fathomdb-release.node");
   // Use copyFileSync to avoid symlink quirks on Windows.
-  const fs = require("node:fs") as typeof import("node:fs");
-  fs.copyFileSync(join(targetReleaseDir, candidate!), stagedPath);
+  // ESM import at top of file: package.json has "type": "module", so
+  // a CJS `require("node:fs")` would be undefined at runtime.
+  copyFileSync(join(targetReleaseDir, candidate!), stagedPath);
 
   const requireFromHere = createRequire(import.meta.url);
   const loaded = requireFromHere(stagedPath) as Record<string, unknown>;
