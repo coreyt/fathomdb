@@ -45,6 +45,60 @@ jobs:
       - name: agent-verify (lint -> typecheck -> test)
         run: bash scripts/agent-verify.sh
 
+  # EU-5c — pre-warm the BGE-small embedder weight cache (~133 MB from HF)
+  # via actions/cache, then run the network-hitting EU-5b tests against the
+  # warm cache. If the warm step fails (e.g. HF unreachable), the env-gate
+  # `FATHOMDB_SKIP_NETWORK_TESTS=1` is exported and the gated tests skip
+  # cleanly with a log line instead of failing the job. On the happy path
+  # the env var stays unset and the tests run normally — fast on warm cache.
+  default-embedder-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Configure per-session TMPDIR
+        shell: bash
+        run: |
+          TMPDIR="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$TMPDIR"
+          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      # H-5: pin third-party actions to commit SHAs. Cache key is
+      # runner.os + model identity + HF revision (see
+      # fathomdb-embedder/src/loader.rs::HF_REVISION). Bumping the
+      # revision invalidates the cache cleanly.
+      - name: Restore BGE embedder weight cache
+        id: bge-cache
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ~/.cache/fathomdb/embedders
+          key: ${{ runner.os }}-fathomdb-embedder-bge-small-en-v1.5-5c38ec7c405ec4b44b94cc5a9bb96e735b38267a
+      - name: Warm BGE embedder cache (no-op on cache hit)
+        id: warm
+        shell: bash
+        run: |
+          set +e
+          cargo run --quiet -p fathomdb-cli --features default-embedder \
+            --bin fathomdb -- doctor warm-cache --json
+          rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "warm-cache failed (rc=$rc); will skip network-hitting tests"
+            echo "FATHOMDB_SKIP_NETWORK_TESTS=1" >> "$GITHUB_ENV"
+          fi
+          # Never fail the job on warm-cache failure — the env gate covers it.
+          exit 0
+      - name: Network-hitting EU-5b tests (engine)
+        run: |
+          cargo test -p fathomdb-engine --features default-embedder \
+            --test eu5b_lockflip
+      - name: Network-hitting EU-5b tests (cli warm-cache)
+        run: |
+          cargo test -p fathomdb-cli --features default-embedder \
+            --test cli_warm_cache
+
   # Platform-sensitive engine code regresses on Windows/macOS often enough
   # that pre-0.6.0 carried these matrix legs. Keep them.
   rust-windows:

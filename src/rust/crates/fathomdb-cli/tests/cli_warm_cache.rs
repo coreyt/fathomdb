@@ -11,6 +11,19 @@ fn fathomdb() -> Command {
     Command::new(env!("CARGO_BIN_EXE_fathomdb"))
 }
 
+// EU-5c — env-gate the network-hitting warm-cache integration test. CI
+// sets `FATHOMDB_SKIP_NETWORK_TESTS=1` only when the pre-warm step
+// fails; the default path runs against the warm cache.
+#[allow(unused_macros)]
+macro_rules! skip_if_no_network {
+    () => {
+        if std::env::var("FATHOMDB_SKIP_NETWORK_TESTS").is_ok() {
+            eprintln!("[skip] FATHOMDB_SKIP_NETWORK_TESTS set; skipping test");
+            return;
+        }
+    };
+}
+
 #[test]
 fn warm_cache_help_exits_zero() {
     let output = fathomdb()
@@ -25,6 +38,7 @@ fn warm_cache_help_exits_zero() {
 #[cfg(feature = "default-embedder")]
 #[test]
 fn cli_doctor_warm_cache_succeeds() {
+    skip_if_no_network!();
     // Invokes the loader; should exit 0 and surface a structured summary.
     let output = fathomdb()
         .args(["doctor", "warm-cache", "--json"])

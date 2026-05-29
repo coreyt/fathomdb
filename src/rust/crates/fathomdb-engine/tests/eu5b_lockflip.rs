@@ -27,6 +27,22 @@ use fathomdb_engine::{EmbedderChoice, Engine, MEAN_VEC_PIN_THRESHOLD};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
+// EU-5c — env-gate the network-hitting tests below. CI sets
+// `FATHOMDB_SKIP_NETWORK_TESTS=1` only when the cache-warm step fails
+// (HF unreachable, etc.); the default path is "tests run against warm
+// cache". Local dev with internet runs them normally. cargo has no
+// first-class "skipped" status — early-return with a log line is the
+// idiomatic pattern.
+#[allow(unused_macros)]
+macro_rules! skip_if_no_network {
+    () => {
+        if std::env::var("FATHOMDB_SKIP_NETWORK_TESTS").is_ok() {
+            eprintln!("[skip] FATHOMDB_SKIP_NETWORK_TESTS set; skipping test");
+            return;
+        }
+    };
+}
+
 fn fixture_path(name: &str) -> (TempDir, std::path::PathBuf) {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join(format!("{name}.sqlite"));
@@ -59,6 +75,7 @@ fn default_embedder_constants_flipped_to_bge_small() {
 #[cfg(feature = "default-embedder")]
 #[test]
 fn embedder_choice_default_succeeds_with_bge_identity() {
+    skip_if_no_network!();
     let (_dir, path) = fixture_path("eu5b_default_succeeds");
     let opened = Engine::open_with_choice(&path, EmbedderChoice::Default)
         .expect("EmbedderChoice::Default must succeed after EU-5b");
@@ -68,6 +85,7 @@ fn embedder_choice_default_succeeds_with_bge_identity() {
 #[cfg(feature = "default-embedder")]
 #[test]
 fn open_report_embedder_mean_centering_required_true_for_default() {
+    skip_if_no_network!();
     let (_dir, path) = fixture_path("eu5b_mc_required");
     let opened = Engine::open_with_choice(&path, EmbedderChoice::Default)
         .expect("EmbedderChoice::Default must succeed after EU-5b");
@@ -80,6 +98,7 @@ fn open_report_embedder_mean_centering_required_true_for_default() {
 #[cfg(feature = "default-embedder")]
 #[test]
 fn open_report_embedder_events_populated_for_default() {
+    skip_if_no_network!();
     let (_dir, path) = fixture_path("eu5b_events");
     let opened = Engine::open_with_choice(&path, EmbedderChoice::Default)
         .expect("EmbedderChoice::Default must succeed");
@@ -92,6 +111,7 @@ fn open_report_embedder_events_populated_for_default() {
 #[cfg(feature = "default-embedder")]
 #[test]
 fn open_report_embedder_download_ms_some_on_cold_open() {
+    skip_if_no_network!();
     // Cold open: download_ms must be Some(>0) when any file was fetched.
     // (We can't force a cold cache portably without overriding the loader
     //  cache root; this test asserts only the non-`None` shape on first
