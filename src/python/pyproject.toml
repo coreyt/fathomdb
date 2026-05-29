@@ -21,13 +21,26 @@ dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.6", "pyright>=1.1.380"]
 manifest-path = "../rust/crates/fathomdb-py/Cargo.toml"
 module-name = "fathomdb._fathomdb"
 python-source = "."
-# EU-6: `default-embedder` is enabled for the editable/dev wheels so the
-# `use_default_embedder=True` kwarg materialises a real bge-small
-# embedder against pytest. Production wheel features are owned by the
-# release workflow (`.github/workflows/release.yml`) and intentionally
-# keep both no-feature and with-feature builds in the per-platform
-# size-gate matrix per ADR-0.6.0-default-embedder.md EMB-3.
-features = ["pyo3/extension-module", "test-hooks", "default-embedder"]
+# EU-6 FIX-1: this list is what BOTH editable installs (`pip install -e .`,
+# `maturin develop`) AND the release workflow's `PyO3/maturin-action`
+# inherit unless they pass an explicit `--features` override. Therefore
+# it must match the SHIPPED feature surface exactly:
+#
+#   * `pyo3/extension-module` — required for the abi3 extension build.
+#   * `default-embedder` — kept ON so editable installs have parity with
+#     the shipped wheel (the `use_default_embedder=True` opt-in must
+#     work against `pip install -e .` without any extra step).
+#
+# `test-hooks` is intentionally NOT listed here: it is dev-only (exposes
+# `_write_vector_for_test` etc. on `Engine`) and would leak onto every
+# wheel `release.yml`'s build-python job emits to PyPI. Tests that need
+# the hook surface (`test_use_default_embedder.py`, `test_ffi_safety.py`,
+# the AC-067 force-panic probe) trigger a session-scoped pytest fixture
+# in `tests/conftest.py` that runs
+#   `maturin develop --features pyo3/extension-module,test-hooks,default-embedder`
+# before the suite. The release workflow's `args:` pins its own explicit
+# feature list, so this file never gates the shipped artifact.
+features = ["pyo3/extension-module", "default-embedder"]
 
 [tool.ruff]
 line-length = 100

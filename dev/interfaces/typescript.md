@@ -109,6 +109,22 @@ in `embedderEvents` is a discriminated-union object: `kind` is one of
 `"MeanVecPinned"`; the remaining optional fields carry the variant
 payload in camelCase.
 
+### Shipped feature axis (EU-6 FIX-1)
+
+Released `.node` binaries published to npm are compiled with the `default-embedder`
+Cargo feature ON (see `src/ts/package.json`'s
+`build:native` script, consumed by `release.yml`'s build-napi job), so
+`useDefaultEmbedder: true` materialises a real bge-small embedder
+against the published artifact without any extra install step. The no-
+feature build path is preserved as a CI sanity check (informational
+wheel-size signal on the minimal-deps tree), not a shipped artifact.
+
+The `test-hooks` Cargo feature is dev-only and never ships: methods
+like `writeVectorForTest` and the force-panic probe do not exist on
+installed `.node` binaries. They are exposed only when the binding is
+built via `npm run build:native:debug` (the script the vitest suite
+uses). End-user callers should not rely on these symbols.
+
 ### Custom embedder implementations (deferred to 0.8.x)
 
 Supplying a custom TypeScript `Embedder` implementation requires a

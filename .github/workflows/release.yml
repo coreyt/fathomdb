@@ -94,7 +94,13 @@ jobs:
           # Explicit -i: cross-compile Docker containers can pick up
           # python3.14 which pyo3 0.23 does not support. Bump alongside the
           # pyo3 upgrade landing in dev/notes/pyo3-0.28-upgrade-plan.md.
-          args: --release --out dist -i python3.10 python3.11 python3.12
+          #
+          # EU-6 FIX-1: explicit `--features` list (NOT pyproject discovery).
+          # The shipped feature axis is locked here per
+          # `dev/design/0.7.1-EU-6-FIX-1-design.md` D1: `default-embedder`
+          # ON (so `use_default_embedder=True` works on the published
+          # wheel), `test-hooks` deliberately absent (dev-only surface).
+          args: --release --out dist --features pyo3/extension-module,default-embedder -i python3.10 python3.11 python3.12
           manylinux: ${{ matrix.manylinux || 'auto' }}
           working-directory: src/python
       - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0

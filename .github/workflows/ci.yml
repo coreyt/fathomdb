@@ -149,20 +149,29 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - run: cargo test --workspace
 
-  # EU-6 / ADR-0.6.0-default-embedder.md EMB-3 — wheel-size gate.
+  # EU-6 FIX-1 / ADR-0.6.0-default-embedder.md EMB-3 — wheel-size gate.
   #
-  # Builds the Python wheel twice (no-feature and with-feature) on
-  # Linux x86_64 and macOS and asserts the no-feature wheel size has
-  # not regressed by more than 20 MB against the baseline. The
-  # with-feature delta is RECORDED (job summary) but NOT gated: the
-  # candle + tokenizers + safetensors stack is expected to grow the
-  # binary substantially, and the gate's job is to flag accidental
-  # bloat of the *default* (no-network-by-default) wheel.
+  # Per `dev/design/0.7.1-EU-6-FIX-1-design.md` D2:
+  #   * The SHIPPED wheel (with `default-embedder` feature ON, the
+  #     surface a `pip install fathomdb` user actually consumes) is the
+  #     GATED artifact. Each platform has its own `baseline_bytes`;
+  #     regression > 20 MB blocks. This is the canary that matters.
+  #   * The NO-FEATURE wheel is built informationally per matrix entry
+  #     and recorded in the job summary so accidental dependency creep
+  #     on the minimal-deps build path is still visible — but not gated.
   #
-  # Linux aarch64 + Windows are TODO for a follow-up (EU-6b) — they
-  # require the maturin matrix from .github/workflows/release.yml and
-  # would double the CI minutes; the gate's signal-to-noise is best on
-  # the two most-used targets first.
+  # Matrix covers all 5 release-target platforms emitted by
+  # `release.yml`'s build-python job: Linux x86_64, Linux aarch64,
+  # macOS x86_64, macOS arm64, Windows x86_64. AC-FIX1-5.
+  #
+  # Baselines: Linux x86_64 measured on the FIX-1 GREEN commit
+  # (with-feature wheel ≈ 6.16 MB; ~20% padding → 7.4 MB). Non-Linux
+  # baselines are seeded at conservative numbers derived from the
+  # Linux measurement; the first CI run will surface the real per-
+  # platform numbers and any baseline that's too low can be bumped
+  # within EMB-3's 20 MB regression budget. BASELINES TO RE-CALIBRATE
+  # IN FIRST CI RUN — bump in a follow-up commit once the first run
+  # emits real `::notice title=wheel-size::` values.
   wheel-size-gate:
     strategy:
       fail-fast: false
@@ -171,18 +180,37 @@ jobs:
           - runner: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             label: linux-x64
-            # Baseline = no-feature wheel size measured on EU-6 GREEN
-            # commit (Linux x86_64, abi3 cp310, ~3.06 MB; the headroom
-            # in the 3.1 MB baseline absorbs small Cargo.lock churn).
-            # With-feature wheel ~6.16 MB (~3.10 MB delta — candle +
-            # tokenizers + safetensors stack). Update only when the
-            # baseline genuinely shifts and ADR-0.6.0-default-embedder.md
-            # EMB-3 is re-locked.
-            baseline_bytes: 3100000
+            # Measured on FIX-1 GREEN commit (Linux x86_64, abi3 cp310):
+            # no-feature ≈ 3.06 MB, with-feature ≈ 6.16 MB. Baseline
+            # = with-feature + ~20% headroom so Cargo.lock churn does
+            # not whip the gate; the 20 MB regression budget on top of
+            # this absorbs intentional dependency bumps.
+            baseline_bytes: 7400000
+          - runner: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            label: linux-aarch64
+            # Seeded from Linux x86_64 with ~5% padding (aarch64 wheels
+            # are typically near-parity, occasionally a hair larger).
+            # TO RECALIBRATE.
+            baseline_bytes: 7700000
           - runner: macos-latest
             target: x86_64-apple-darwin
             label: darwin-x64
-            baseline_bytes: 3100000
+            # Seeded from Linux x86_64 with ~5% padding (Mach-O vs ELF
+            # overhead is small at this scale). TO RECALIBRATE.
+            baseline_bytes: 7700000
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+            label: darwin-arm64
+            # Seeded from Linux x86_64 with ~5% padding. TO RECALIBRATE.
+            baseline_bytes: 7700000
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            label: win32-x64
+            # Seeded from Linux x86_64 with ~10% padding (PE/COFF
+            # sections + MSVC runtime imports add a small overhead vs
+            # ELF). TO RECALIBRATE.
+            baseline_bytes: 8000000
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
@@ -197,50 +225,52 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Install maturin
         run: pip install maturin==1.13.1
-      # Build the no-feature wheel by overriding pyproject.toml's
-      # `features` list at the maturin CLI; we cannot edit the file
-      # under test on every CI run. `--features` here REPLACES the
-      # pyproject list.
-      - name: Build wheel (no default-embedder feature)
-        working-directory: src/python
-        run: |
-          maturin build --release --out dist-nofeature \
-            --target ${{ matrix.target }} \
-            -i python3.11 \
-            --features pyo3/extension-module
-      - name: Build wheel (with default-embedder feature)
+      # Build the with-feature wheel first — this is the shipped
+      # artifact and the GATED build. `--features` REPLACES the
+      # pyproject list, so the explicit list here is what gets built
+      # regardless of what pyproject.toml carries.
+      - name: Build wheel (with default-embedder feature; shipped artifact)
         working-directory: src/python
         run: |
           maturin build --release --out dist-feature \
             --target ${{ matrix.target }} \
             -i python3.11 \
             --features pyo3/extension-module,default-embedder
+      # No-feature wheel: informational only. Recorded to detect
+      # accidental dependency creep on the minimal-deps tree.
+      - name: Build wheel (no default-embedder feature; informational)
+        working-directory: src/python
+        run: |
+          maturin build --release --out dist-nofeature \
+            --target ${{ matrix.target }} \
+            -i python3.11 \
+            --features pyo3/extension-module
       - name: Assert wheel-size gate
         shell: bash
         working-directory: src/python
         run: |
           set -euo pipefail
           BASELINE=${{ matrix.baseline_bytes }}
-          BUDGET=$((20 * 1024 * 1024)) # 20 MB
-          NOFEAT=$(stat -c%s dist-nofeature/*.whl 2>/dev/null || stat -f%z dist-nofeature/*.whl)
+          BUDGET=$((20 * 1024 * 1024)) # 20 MB, per EMB-3
           FEAT=$(stat -c%s dist-feature/*.whl 2>/dev/null || stat -f%z dist-feature/*.whl)
-          DELTA=$(( NOFEAT - BASELINE ))
+          NOFEAT=$(stat -c%s dist-nofeature/*.whl 2>/dev/null || stat -f%z dist-nofeature/*.whl)
+          DELTA=$(( FEAT - BASELINE ))
           FEATDELTA=$(( FEAT - NOFEAT ))
-          echo "::notice title=wheel-size (${{ matrix.label }})::no-feature=${NOFEAT}B baseline=${BASELINE}B delta=${DELTA}B; with-feature=${FEAT}B delta-vs-nofeature=${FEATDELTA}B"
+          echo "::notice title=wheel-size (${{ matrix.label }})::with-feature=${FEAT}B baseline=${BASELINE}B delta=${DELTA}B; no-feature=${NOFEAT}B (informational)"
           {
             echo "## Wheel-size gate (${{ matrix.label }})"
             echo ""
             echo "| metric | value |"
             echo "| --- | --- |"
-            echo "| no-feature wheel | ${NOFEAT} B |"
+            echo "| with-feature wheel (shipped, GATED) | ${FEAT} B |"
             echo "| baseline | ${BASELINE} B |"
             echo "| delta vs baseline | ${DELTA} B |"
             echo "| budget (blocking) | ${BUDGET} B |"
-            echo "| with-feature wheel | ${FEAT} B |"
+            echo "| no-feature wheel | ${NOFEAT} B (informational only) |"
             echo "| with-feature delta vs no-feature | ${FEATDELTA} B (informational only) |"
           } >> "$GITHUB_STEP_SUMMARY"
           if [ "$DELTA" -gt "$BUDGET" ]; then
-            echo "::error title=wheel-size regression::no-feature wheel grew ${DELTA} B vs baseline ${BASELINE} B (budget ${BUDGET} B)"
+            echo "::error title=wheel-size regression::with-feature wheel grew ${DELTA} B vs baseline ${BASELINE} B (budget ${BUDGET} B)"
             exit 1
           fi
 

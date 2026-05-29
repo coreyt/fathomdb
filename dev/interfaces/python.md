@@ -102,6 +102,23 @@ and `embedder_mean_vec_pinned`. Each entry in `embedder_events` is a
 `"DefaultEmbedderCacheHit"`, or `"MeanVecPinned"`) with a variant-
 specific payload in snake_case.
 
+### Shipped feature axis (EU-6 FIX-1)
+
+Released wheels published to PyPI are compiled with the `default-embedder`
+Cargo feature ON, so `use_default_embedder=True`
+materialises a real bge-small embedder against the published artifact
+without any extra install step. The no-feature build path is preserved
+as a CI sanity check (informational wheel-size signal on the minimal-
+deps tree), not a shipped artifact — there is no
+`pip install fathomdb[no-default-embedder]` extra in 0.7.1.
+
+The `test-hooks` Cargo feature is dev-only and never ships: methods
+like `_write_vector_for_test` and `_configure_vector_kind_for_test` do
+not exist on installed wheels. They are exposed only when the editable
+binding is rebuilt with `--features test-hooks` (the
+`src/python/tests/conftest.py` session fixture does this for the
+pytest suite). End-user callers should not rely on these symbols.
+
 ### Custom embedder implementations (deferred to 0.8.x)
 
 Supplying a custom Python `Embedder` implementation requires a PyO3
