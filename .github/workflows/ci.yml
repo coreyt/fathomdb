@@ -76,6 +76,13 @@ jobs:
         with:
           path: ~/.cache/fathomdb/embedders
           key: ${{ runner.os }}-fathomdb-embedder-bge-small-en-v1.5-5c38ec7c405ec4b44b94cc5a9bb96e735b38267a
+          # Future revision bumps should still benefit from partial
+          # restoration (the loader will sha-verify each file and refetch
+          # only mismatched ones). Without this, a SHA bump = 100% cold
+          # miss (~133 MB redownload from HF).
+          restore-keys: |
+            ${{ runner.os }}-fathomdb-embedder-bge-small-en-v1.5-
+            ${{ runner.os }}-fathomdb-embedder-
       - name: Warm BGE embedder cache (no-op on cache hit)
         id: warm
         shell: bash
