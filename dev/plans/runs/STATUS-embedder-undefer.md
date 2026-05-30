@@ -40,8 +40,8 @@ Commit SHAs from `git log --oneline v0.7.0..HEAD`. RED/GREEN/FIX chain per
 | EU-5c | CI BGE cache pre-warm + network-test gate | **CLOSED** | `30d68ce`, `b3e5025` (FIX-1) | PASS |
 | EU-5d | Post-review follow-ups (ADR + clippy + endianness compile_error) | **CLOSED** | `ea57fdf` | PASS |
 | EU-6 | Python + TS `use_default_embedder` + wheel-size gate | **CLOSED** | `c27712f` (GREEN), `ed20816` (FIX-1), `63886fc` (FIX-2 EmbedderEvent union), `c8c7d43` (FIX-2 follow) | PASS |
-| EU-5f | Production mean-centering pin + projection fault-isolation + 512-token truncation (engine fixes surfaced by EU-7; see findings A/B/C) | **CLOSED** | `fbdd613` (findings), `2270520` (RED), `574ef28` (GREEN A+B), `c719a12` (Finding C truncation) | pending codex |
-| EU-7 | Real-corpus AC validation + recall@10 anchor | **MEASURED (AC-013b RED vs 0.90, surfaced)** | harness in `2270520`; results JSON in closure commit | pending codex |
+| EU-5f | Production mean-centering pin + projection fault-isolation + 512-token truncation (engine fixes surfaced by EU-7; see findings A/B/C) | **CLOSED** | `fbdd613` (findings), `2270520` (RED), `574ef28` (GREEN A+B), `c719a12` (Finding C truncation) | **PASS** (`...review-20260530T130438Z.md`) |
+| EU-7 | Real-corpus AC validation + recall@10 anchor | **MEASURED (AC-013b RED vs 0.90, surfaced)** | harness in `2270520`; results JSON in `aff565f` | **PASS** (HITL owns floor via PR-2) |
 | EU-8 | Docs + release prep + `v0.7.1` tag | **OPEN** | — | — |
 
 **EU-5f context.** EU-7 could not validly measure the locked config until three
