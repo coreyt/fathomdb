@@ -1,0 +1,57 @@
+{
+  "phase": "0.7.1-EU-7",
+  "baseline_sha": "c8c7d43",
+  "branch": "main",
+  "head_sha": "<closure commit (this file + STATUS)>",
+  "commits": [
+    "fbdd613: docs(0.7.1) EU-7 findings -- production mean-centering gap + projection wedge",
+    "2270520: test(0.7.1) EU-5f RED -- production-path mean pin + fault-isolation tests fail (+ EU-7 harness)",
+    "574ef28: feat(0.7.1) EU-5f GREEN -- pin mean-centering in projection commit + panic guard",
+    "c719a12: fix(0.7.1) EU-5f Finding C -- truncate embedder input to 512 tokens"
+  ],
+  "findings_addressed": [
+    "Finding A: projection workers had no panic/fault guard -> a faulting worker wedged drain into EngineError::Scheduler. Fixed (catch_unwind guard).",
+    "Finding B: mean-centering (locked ON) only pinned via the write_vector_for_test test seam; the production engine.write->projection path never pinned. Fixed (pin in commit_projection_outcomes, commit-gate-serialized, + open-time recovery pin).",
+    "Finding C (the actual EU-7 stall): CandleBgeEmbedder did not truncate to 512 tokens; >512-token docs errored and error-retried past the per-batch drain timeout. Fixed (tokenizer with_truncation(512))."
+  ],
+  "blockers_encountered": [
+    {
+      "id": "EU7-BLOCK-1",
+      "description": "EU-7 could not validly measure the locked bge-small + mean-centering + K=192 config because mean-centering was inert on the production write path (Finding B) and the real corpus could not be seeded past ~512-768 docs (Finding C).",
+      "resolution": "Engine fix slice EU-5f (commits above) landed before the measurement; harness also serializes the embedder (SerializedBge) as defensive isolation for candle concurrent forward."
+    }
+  ],
+  "additional_changes_made_in_scope": [
+    "New engine integration test tests/eu5f_production_pin.rs (6 tests) for the production pin + fault-isolation + recovery.",
+    "New embedder test embed_truncates_documents_over_512_tokens in tests/candle_bge.rs.",
+    "New EU-7 measurement harness tests/eu7_real_corpus_ac.rs (feature- + AGENT_LONG-gated)."
+  ],
+  "agent_verify_result": "pass -- eu5f_production_pin (6) GREEN; candle_bge (7) GREEN incl. truncation; full fathomdb-engine suite green except the pre-existing runner-speed-calibrated ac_007b (fails on this x86_64 box independent of this change); clippy clean; default-embedder feature build clean. End-to-end EU-7 run completed in 6127s with no Scheduler stall; measurements written.",
+
+  "measurement_scale": "dev-box scouting over the real corpus (data/corpus-data/raw/*.jsonl, 7667 real docs). NOT canonical N=1M -- that is 0.7.2 PR-3. Config: bge-small-en-v1.5, dim 384, mean-centering ON (pinned at first 256 docs, production behaviour), rerank K=192 (locked). 100 synthesized queries (EU-0 1.2 title-or-lead-sentence, target excluded from GT and prod). Ground truth: in-Rust brute-force f32 over the same model's uncentered vectors. Bootstrap 1000 resamples.",
+
+  "ac_013_real_dev_box": [
+    { "n": 1000, "p50_ms": 16, "p99_ms": 30, "budget_p50_ms": 80, "budget_p99_ms": 300, "passed": true },
+    { "n": 7667, "p50_ms": 25, "p99_ms": 40, "budget_p50_ms": 80, "budget_p99_ms": 300, "passed": true }
+  ],
+  "ac_013b_real_dev_box": [
+    { "n": 1000, "recall_at_10": 0.831, "ci_lo": 0.803, "ci_hi": 0.856, "sigma_bootstrap": 0.014, "current_floor_0_90": 0.90, "passes_current_floor": false },
+    { "n": 7667, "recall_at_10": 0.828, "ci_lo": 0.796, "ci_hi": 0.858, "sigma_bootstrap": 0.0165, "current_floor_0_90": 0.90, "passes_current_floor": false }
+  ],
+  "ac_019_real_dev_box": [
+    { "n": 1000, "p99_ms": 205, "baseline_p99_ms": 30, "bound_ms": 307, "passed": true },
+    { "n": 7667, "p99_ms": 343, "baseline_p99_ms": 40, "bound_ms": 405, "passed": true }
+  ],
+  "r_canonical_anchor": {
+    "n": 7667,
+    "recall_at_10": 0.828,
+    "ci_lo": 0.796,
+    "ci_hi": 0.858,
+    "sigma_bootstrap": 0.0165,
+    "recommended_pr2_floor_R_minus_2sigma": 0.795,
+    "recommended_pr2_floor_rounded_down_0_01": 0.79,
+    "note": "Largest all-real-corpus haystack (7667 docs). Recall is nearly flat from N=1000 (0.831) to N=7667 (0.828) because the query set is fixed (drawn from the first 1000 docs) and the additional ~6667 cnn_dailymail docs are topically distinct distractors that rarely intrude. This is a dev-box scouting number; 0.7.2 PR-3's canonical N=1M (with relevance-judged or larger held-out queries) is the verdict-quality signal."
+  },
+  "honesty_report": "AC-013b recall@10 does NOT meet the current 0.90 floor: 0.828 at the full real corpus (N=7667), 95% CI 0.796-0.858, well below 0.90 (gap ~0.072; the entire CI sits below the floor). AC-013 latency (p50 25 ms / p99 40 ms vs 80/300 ms) and AC-019 stress (p99 343 ms vs 405 ms bound) both PASS on the dev box. The recall gap is consistent with EU-0 3's literature expectation for real BGE under sign-bit quantization (~79-90% retention), but it is materially below EU-0's synthetic-pipeline estimate of 0.933 at K=192+mc. Three drivers, in likely order of impact: (1) production mean-centering pins the corpus mean on the FIRST 256 ingested docs -- here all bahmutov_dailylogs, a single non-representative source -- not the full-corpus mean EU-0 used; this is the documented topic-drift limitation (embedder-decision.md 3.4) and depresses centering quality for the rest of the corpus; (2) 512-token truncation (EU-5f Finding C) drops content from long cnn_dailymail articles; (3) the EU-7 query synthesis (title-or-lead-sentence) and the production engine path differ from EU-0's Python harness. Per the EU-7 mandate this slice does NOT re-pin AC013B_RECALL_FLOOR and does NOT re-word the ADR. Recommended PR-2 floor from this dev-box anchor is R - 2*sigma = 0.795, rounded down to 0.79; PR-2 should re-derive against canonical N=1M (PR-3) and, with HITL, decide whether to (a) accept a ~0.79-0.83 floor, (b) revisit mean-pin representativeness (e.g. pin on a stratified sample or re-derive after first-ingest), or (c) escalate the embedder ladder (K=256 / bge-base). The mean-pin-on-first-256 representativeness issue is itself a finding worth HITL attention beyond the floor number.",
+  "next_step_for_orchestrator": "Spawn codex reviewer on EU-5f + EU-7. AC-013 and AC-019 are GREEN (dev-box); AC-013b is honestly reported BELOW 0.90 and surfaced to HITL (not a silent pass, not a floor re-pin). Do NOT advance to EU-8 as a clean pass: route the recall RED + the mean-pin-representativeness finding to HITL / 0.7.2 PR-2 before the floor lock-flip. EU-8 (docs + v0.7.1 tag) and PR-2 (floor re-derivation) consume this anchor."
+}
