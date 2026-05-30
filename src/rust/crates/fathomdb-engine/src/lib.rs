@@ -171,6 +171,14 @@ struct ProjectionRuntimeShared {
     /// consume these via the `OpenReport.embedder_events` channel; the
     /// drain seam is `Engine::drain_mean_centering_events_for_test`.
     pending_events: Mutex<Vec<EmbedderEvent>>,
+    /// EU-5f — serializes the body of `commit_projection_outcomes` across
+    /// the `PROJECTION_WORKERS` worker connections. Each worker commits on
+    /// its own connection; holding this gate for the whole commit makes the
+    /// commit transactions totally ordered, which is what makes the at-pin
+    /// re-quantize pass provably complete (every row is wholly before or
+    /// after the unique pin tx, so none can survive un-centered). Embedding
+    /// (`run_projection_job`) runs OUTSIDE the gate and stays parallel.
+    commit_gate: Mutex<()>,
 }
 
 impl std::fmt::Debug for ProjectionRuntimeShared {
@@ -480,15 +488,20 @@ impl ProjectionRuntime {
         path: PathBuf,
         embedder: Option<Arc<dyn Embedder>>,
         embedder_identity: EmbedderIdentity,
+        mean_already_pinned: bool,
     ) -> Self {
-        // EU-5b — only allocate the streaming accumulator when the
-        // workspace's identity is MC-required. Other identities pay no
-        // memory cost (`Option::None`).
-        let mean_accumulator = if identity_requires_mean_centering(&embedder_identity) {
-            Some(MeanAccumulator::new(embedder_identity.dimension as usize))
-        } else {
-            None
-        };
+        // EU-5b/EU-5f — only allocate the streaming accumulator when the
+        // workspace's identity is MC-required AND no mean has been pinned
+        // yet on disk. Allocating it for an already-pinned workspace would
+        // let a later 256-doc run RE-pin and overwrite the compute-once
+        // mean (violating `dev/design/embedder.md` §0.3). Other identities
+        // pay no memory cost (`Option::None`).
+        let mean_accumulator =
+            if identity_requires_mean_centering(&embedder_identity) && !mean_already_pinned {
+                Some(MeanAccumulator::new(embedder_identity.dimension as usize))
+            } else {
+                None
+            };
         let shared = Arc::new(ProjectionRuntimeShared {
             path,
             embedder,
@@ -500,6 +513,7 @@ impl ProjectionRuntime {
             retry_delays_ms: Mutex::new(DEFAULT_PROJECTION_RETRY_DELAYS_MS.to_vec()),
             mean_accumulator: Mutex::new(mean_accumulator),
             pending_events: Mutex::new(Vec::new()),
+            commit_gate: Mutex::new(()),
         });
 
         let dispatcher_shared = Arc::clone(&shared);
@@ -1395,6 +1409,7 @@ impl Engine {
                     canonical_path.clone(),
                     runtime_embedder.clone(),
                     embedder_identity.clone(),
+                    report.embedder_mean_vec_pinned,
                 );
 
                 install_profile_callback(
@@ -1488,10 +1503,31 @@ impl Engine {
         reject_legacy_shape(&connection)?;
         let migration = migrate_with_event_sink(&connection, migrations, emit_migration_event)
             .map_err(map_migration_error)?;
-        let embedder_mean_vec_pinned = check_embedder_profile(&connection, embedder_identity)?;
+        let mut embedder_mean_vec_pinned = check_embedder_profile(&connection, embedder_identity)?;
         ensure_vector_partition(&mut connection, embedder_identity.dimension).map_err(|_| {
             EngineOpenError::Io { message: "could not initialize vector partition".to_string() }
         })?;
+
+        // EU-5f — recovery pin (`dev/design/embedder.md` §0.3, Hazard 4). If
+        // the identity is MC-required, no mean is pinned, yet the workspace
+        // already holds >= MEAN_VEC_PIN_THRESHOLD vector rows (e.g. a crash
+        // between the threshold-crossing write and its pin commit), derive
+        // the mean from the existing un-centered rows and pin+re-quantize
+        // now, single-threaded, before the projection workers spawn. The
+        // NULL guard makes this idempotent on subsequent opens.
+        if identity_requires_mean_centering(embedder_identity) && !embedder_mean_vec_pinned {
+            let row_count: u64 = connection
+                .query_row("SELECT COUNT(*) FROM vector_default", [], |row| row.get(0))
+                .unwrap_or(0);
+            if row_count >= MEAN_VEC_PIN_THRESHOLD {
+                recover_mean_vec_pin(&mut connection, embedder_identity).map_err(|_| {
+                    EngineOpenError::Io {
+                        message: "could not recover mean-centering pin".to_string(),
+                    }
+                })?;
+                embedder_mean_vec_pinned = true;
+            }
+        }
 
         let warmup_started = Instant::now();
         // Static identity capability — see `dev/design/embedder.md`
@@ -3081,7 +3117,19 @@ fn projection_worker_loop(shared: Arc<ProjectionRuntimeShared>) {
             }
         };
 
-        run_projection_jobs(&shared, &mut connection, &jobs);
+        // EU-5f — isolate worker faults. A panic inside `embed()` (or the
+        // commit) must not skip the state cleanup below, or `active_jobs`
+        // would stay elevated forever and `wait_for_idle` / `drain` would
+        // wedge into `EngineError::Scheduler` (Finding A). Mirrors the
+        // reader pool's `LiveGuard` panic-safety. The local commit tx rolls
+        // back on unwind, leaving the connection clean for reuse.
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            run_projection_jobs(&shared, &mut connection, &jobs);
+        }))
+        .is_err();
+        if panicked {
+            commit_projection_panic_failures(&shared, &mut connection, &jobs);
+        }
 
         if let Ok(mut state) = shared.state.lock() {
             state.active_jobs = state.active_jobs.saturating_sub(jobs.len());
@@ -3123,7 +3171,25 @@ fn run_projection_jobs(
     for job in jobs {
         outcomes.push(run_projection_job(shared, job));
     }
-    let _ = commit_projection_outcomes(connection, &outcomes, &shared.embedder_identity);
+    let _ = commit_projection_outcomes(connection, &outcomes, shared);
+}
+
+/// EU-5f — record every job in a panicked batch as a terminal projection
+/// failure so the scheduler does not re-enqueue and re-panic on the same
+/// cursors. Best-effort; runs after the worker caught a panic.
+fn commit_projection_panic_failures(
+    shared: &ProjectionRuntimeShared,
+    connection: &mut Connection,
+    jobs: &[ProjectionJob],
+) {
+    let outcomes: Vec<ProjectionOutcome> = jobs
+        .iter()
+        .map(|job| ProjectionOutcome::Failure {
+            cursor: job.cursor,
+            failure_code: "ProjectionPanic",
+        })
+        .collect();
+    let _ = commit_projection_outcomes(connection, &outcomes, shared);
 }
 
 fn run_projection_job(shared: &ProjectionRuntimeShared, job: &ProjectionJob) -> ProjectionOutcome {
@@ -3467,12 +3533,17 @@ fn advance_projection_cursor(connection: &Connection) -> rusqlite::Result<u64> {
 fn commit_projection_outcomes(
     connection: &mut Connection,
     outcomes: &[ProjectionOutcome],
-    embedder_identity: &EmbedderIdentity,
+    shared: &ProjectionRuntimeShared,
 ) -> rusqlite::Result<()> {
+    let embedder_identity = &shared.embedder_identity;
+    let mc = identity_requires_mean_centering(embedder_identity);
+    // EU-5f — serialize the whole commit across workers so the at-pin
+    // re-quantize sees a totally-ordered history (see `commit_gate`).
+    let _gate = shared.commit_gate.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let tx = connection.transaction()?;
-    // EU-5a2 — read the pinned mean once per commit batch. Identity-name
-    // gates the read so non-MC identities pay no extra SQL.
-    let pinned_mean = if identity_requires_mean_centering(embedder_identity) {
+    // EU-5a2/EU-5f — the live pinned mean. Read once at the top; may pin
+    // mid-batch (set to `Some` after a threshold-crossing row below).
+    let mut current_mean: Option<Vec<f32>> = if mc {
         tx.query_row(
             "SELECT mean_vec FROM _fathomdb_embedder_profiles WHERE profile = 'default'",
             [],
@@ -3480,15 +3551,40 @@ fn commit_projection_outcomes(
         )
         .ok()
         .flatten()
+        .map(|bytes| decode_vector_blob(&bytes))
     } else {
         None
     };
+    let mut staged_events: Vec<EmbedderEvent> = Vec::new();
     for outcome in outcomes {
         match outcome {
             ProjectionOutcome::Success { cursor, kind, blob, bin_blob } => {
                 if terminal_state_for_cursor(&tx, *cursor)?.is_some() {
                     continue;
                 }
+                // EU-5f — feed the streaming accumulator and decide the pin
+                // atomically under the accumulator lock (add -> count ->
+                // take), so exactly one row/worker can cross the threshold.
+                // Only while MC-required and not yet pinned.
+                let pin_mean: Option<Vec<f32>> = if mc && current_mean.is_none() {
+                    let mut acc = shared.mean_accumulator.lock().unwrap_or_else(|p| p.into_inner());
+                    match acc.as_mut() {
+                        Some(a) => {
+                            a.add(&decode_vector_blob(bin_blob));
+                            if a.count() >= MEAN_VEC_PIN_THRESHOLD {
+                                let mean = a.materialize();
+                                *acc = None;
+                                Some(mean)
+                            } else {
+                                None
+                            }
+                        }
+                        None => None,
+                    }
+                } else {
+                    None
+                };
+
                 let source_type = resolve_source_type(kind).map_err(|_| {
                     rusqlite::Error::SqliteFailure(
                         rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
@@ -3502,17 +3598,14 @@ fn commit_projection_outcomes(
                     "INSERT OR IGNORE INTO _fathomdb_vector_rows(rowid, kind, write_cursor) VALUES(?1, ?2, ?3)",
                     params![cursor, kind, cursor],
                 )?;
-                // EU-5a2 — finalize the sign-quant input. The decision
-                // already accounts for the identity (set by the worker
-                // in `run_projection_job`); applying `pinned_mean` here
-                // is the same-transaction pin-aware step. NoopEmbedder
-                // path: `pinned_mean` is None and `bin_blob == blob`.
-                let centered_blob: Vec<u8> = match (&pinned_mean, bin_blob.as_slice()) {
-                    (Some(mean_bytes), un_centered) if mean_bytes.len() == un_centered.len() => {
-                        encode_vector_blob(&subtract_mean(
-                            &decode_vector_blob(un_centered),
-                            &decode_vector_blob(mean_bytes),
-                        ))
+                // EU-5a2/EU-5f — sign-quant input is the mean-subtracted
+                // vector iff a mean is live (`current_mean`); otherwise the
+                // un-centered `bin_blob`. A row inserted just before the
+                // crossing is centered retroactively by the re-quantize
+                // pass below.
+                let centered_blob: Vec<u8> = match &current_mean {
+                    Some(mean) if mean.len() * 4 == bin_blob.len() => {
+                        encode_vector_blob(&subtract_mean(&decode_vector_blob(bin_blob), mean))
                     }
                     _ => bin_blob.clone(),
                 };
@@ -3523,6 +3616,42 @@ fn commit_projection_outcomes(
                     params![cursor, blob, centered_blob, source_type, kind, now_unix],
                 )?;
                 record_projection_terminal(&tx, *cursor, "up_to_date")?;
+
+                // EU-5f — this row crossed the threshold: pin the mean and
+                // re-quantize every row written so far (incl. earlier rows
+                // in this same tx, which are visible to the SELECT) within
+                // the same transaction so the pin is atomic.
+                if let Some(mean) = pin_mean {
+                    tx.execute(
+                        "UPDATE _fathomdb_embedder_profiles SET mean_vec = ?1 WHERE profile = 'default'",
+                        params![encode_vector_blob(&mean)],
+                    )?;
+                    let rows: Vec<(i64, Vec<u8>)> = {
+                        let mut statement = tx.prepare(
+                            "SELECT rowid, embedding FROM vector_default ORDER BY rowid",
+                        )?;
+                        let mapped = statement.query_map([], |row| {
+                            Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
+                        })?;
+                        let mut out = Vec::new();
+                        for r in mapped {
+                            out.push(r?);
+                        }
+                        out
+                    };
+                    let (doc_count, _) =
+                        run_pin_and_requantize_pass(&tx, &rows, &mean).map_err(|_| {
+                            rusqlite::Error::SqliteFailure(
+                                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
+                                Some("mean-centering re-quantize pass failed".to_string()),
+                            )
+                        })?;
+                    staged_events.push(EmbedderEvent::MeanVecPinned {
+                        dim: u32::try_from(mean.len()).unwrap_or(u32::MAX),
+                        doc_count,
+                    });
+                    current_mean = Some(mean);
+                }
             }
             ProjectionOutcome::Failure { cursor, failure_code } => {
                 if terminal_state_for_cursor(&tx, *cursor)?.is_some() {
@@ -3551,7 +3680,58 @@ fn commit_projection_outcomes(
         }
     }
     advance_projection_cursor(&tx)?;
-    tx.commit()
+    tx.commit()?;
+    // EU-5f — publish MeanVecPinned only after the pin tx is durable, so a
+    // rolled-back pin never emits a spurious event.
+    if !staged_events.is_empty() {
+        if let Ok(mut events) = shared.pending_events.lock() {
+            events.extend(staged_events);
+        }
+    }
+    Ok(())
+}
+
+/// EU-5f — open-time recovery pin (`dev/design/embedder.md` §0.3, Hazard 4).
+/// Derives the corpus mean from the existing un-centered `vector_default`
+/// rows, pins it, and re-quantizes every row, all in one transaction on the
+/// single-threaded open connection (no workers running yet, so no gate is
+/// needed). Called only when MC is required, no mean is pinned, and the row
+/// count already meets the threshold.
+fn recover_mean_vec_pin(
+    connection: &mut Connection,
+    identity: &EmbedderIdentity,
+) -> Result<(), EngineError> {
+    let dim = identity.dimension as usize;
+    let tx = connection.transaction().map_err(|_| EngineError::Storage)?;
+    let rows: Vec<(i64, Vec<u8>)> = {
+        let mut statement = tx
+            .prepare("SELECT rowid, embedding FROM vector_default ORDER BY rowid")
+            .map_err(|_| EngineError::Storage)?;
+        let mapped = statement
+            .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?)))
+            .map_err(|_| EngineError::Storage)?;
+        let mut out = Vec::new();
+        for r in mapped {
+            out.push(r.map_err(|_| EngineError::Storage)?);
+        }
+        out
+    };
+    let mut accumulator = MeanAccumulator::new(dim);
+    for (_rowid, blob) in &rows {
+        if blob.len() != dim * 4 {
+            return Err(EngineError::Storage);
+        }
+        accumulator.add(&decode_vector_blob(blob));
+    }
+    let mean = accumulator.materialize();
+    tx.execute(
+        "UPDATE _fathomdb_embedder_profiles SET mean_vec = ?1 WHERE profile = 'default'",
+        params![encode_vector_blob(&mean)],
+    )
+    .map_err(|_| EngineError::Storage)?;
+    run_pin_and_requantize_pass(&tx, &rows, &mean)?;
+    tx.commit().map_err(|_| EngineError::Storage)?;
+    Ok(())
 }
 
 fn enforce_provenance_retention(connection: &Connection, cap: u64) -> rusqlite::Result<()> {
