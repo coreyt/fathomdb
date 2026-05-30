@@ -36,6 +36,7 @@ const DOCTOR_VERBS: &[&str] = &[
     "dump-schema",
     "dump-row-counts",
     "dump-profile",
+    "recompute-mean",
 ];
 
 const RECOVER_FLAGS: &[&str] = &[
@@ -252,6 +253,66 @@ fn t_037_doctor_verbs_emit_single_json_object() {
             "doctor {verb} --json must not contain blank lines (NDJSON guard)",
         );
     }
+    drop(dir);
+}
+
+#[test]
+fn t_pr2b_recompute_mean_happy_path_json_contract() {
+    // 0.7.2 PR-2b: `doctor recompute-mean --json` on an MC-required
+    // workspace exits Clean (OK) and emits the normative JSON contract:
+    // verb + the recompute fields. Seeded DB has the bge identity (MC) and
+    // zero vector rows, so the recompute is a trivial first pin.
+    let (dir, db) = seeded_db();
+    let output = fathomdb()
+        .args(["doctor", "recompute-mean", "--json", db.to_str().unwrap()])
+        .output()
+        .expect("spawn");
+    assert_eq!(
+        output.status.code(),
+        Some(exit_code::OK),
+        "recompute-mean must exit OK; got {:?} stderr={}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("recompute-mean --json must be JSON; err={e} stdout={stdout}"));
+    let obj = parsed.as_object().expect("object");
+    assert_eq!(obj.get("verb").and_then(Value::as_str), Some("recompute-mean"));
+    assert_eq!(obj.get("status").and_then(Value::as_str), Some("ok"));
+    for key in ["dim", "old_doc_count", "doc_count_requantized", "drift_cos_before", "elapsed_ms"] {
+        assert!(obj.contains_key(key), "recompute-mean --json must carry `{key}`; got {parsed:?}");
+    }
+    drop(dir);
+}
+
+#[test]
+fn t_pr2b_recompute_mean_lock_held_exits_71() {
+    // 0.7.2 PR-2b: non-clean exit path consistent with the other doctor
+    // verbs — a lock-held DB surfaces LOCK_HELD (71) with the shared error
+    // JSON envelope.
+    let dir = TempDir::new().expect("tempdir");
+    let db = dir.path().join("recompute_locked.sqlite");
+    let opened = Engine::open(db.clone()).expect("engine open");
+    let output = fathomdb()
+        .args(["doctor", "recompute-mean", "--json", db.to_str().unwrap()])
+        .output()
+        .expect("spawn");
+    assert_eq!(
+        output.status.code(),
+        Some(exit_code::LOCK_HELD),
+        "lock-held recompute-mean must exit LOCK_HELD (71); got {:?} stderr={}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("lock-held stdout must be JSON; err={e} stdout={stdout}"));
+    let obj = parsed.as_object().expect("object");
+    assert_eq!(obj.get("status").and_then(Value::as_str), Some("error"));
+    assert_eq!(obj.get("code").and_then(Value::as_str), Some("DatabaseLockedError"));
+    opened.engine.close().expect("close");
+    drop(opened);
     drop(dir);
 }
 

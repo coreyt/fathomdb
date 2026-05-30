@@ -54,6 +54,7 @@ application surface and does not ship `search` / `get` / `list` query verbs.
 | `dump-schema`     | `fathomdb doctor dump-schema`                                                  | `doctor-check-*`                    |
 | `dump-row-counts` | `fathomdb doctor dump-row-counts`                                              | `doctor-check-*`                    |
 | `dump-profile`    | `fathomdb doctor dump-profile`                                                 | `doctor-check-*`                    |
+| `recompute-mean`  | `fathomdb doctor recompute-mean <db_path> [--json]`                            | `doctor-check-*` = 0 / 70 / 71      |
 
 `doctor-check-*` means the verb may use the exit-code class set `{0, 65, 70,
 71}` depending on clean/findings/unrecoverable/lock-held outcome.

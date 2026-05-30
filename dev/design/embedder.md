@@ -99,9 +99,13 @@ Concretely:
    that point onward the column is considered pinned.
 3. All **subsequent** writes leave `mean_vec` unchanged. There is no
    silent drift; the pinned mean is a workspace constant after pin.
-4. Refresh is **only** via an explicit reindex path. That path is **not
-   implemented in 0.7.1** — reindex is a separate campaign. Documented
-   as a known limitation in this design and in the 0.7.1 release notes.
+4. Refresh of the pinned mean is, **as of 0.7.2 PR-2b**, available via
+   two synchronous in-transaction triggers (see "Adaptive mean refresh"
+   below); refresh of anything OTHER than the mean (full reindex,
+   per-source means) remains via an explicit reindex path that is **not
+   implemented** and deferred to a separate campaign. In 0.7.1 the mean
+   was likewise refresh-only-via-reindex; PR-2b opened the escape hatch
+   for the mean alone.
 
 The constant lives in `fathomdb-engine` as
 `MEAN_VEC_PIN_THRESHOLD: u64 = 256`.
@@ -149,17 +153,43 @@ and EU-5 have a single number to implement against.
 
 **Documented failure mode: topic drift.** A workspace that ingests 256
 documents about topic A and then pivots to topic B pins a topic-A-skewed
-mean and may underperform on topic B. §0.5 and the lifecycle rule above
-acknowledge this: reindex is the only refresh path, and reindex is
-deferred to a separate campaign.
+mean and may underperform on topic B. PR-2a quantified this on the real
+corpus (the one-source pinned mean sits ~0.82 cosine to the true corpus
+mean and costs -10.9pp recall@10). **As of 0.7.2 PR-2b this is mitigated**
+by the adaptive mean refresh below — the pinned mean is no longer frozen
+for the workspace's lifetime.
 
-**Could-be-adaptive escape hatch.** The threshold could be replaced by
-an adaptive rule — pin when the running mean estimate stabilizes within
-ε for K consecutive batches — but it is locked at the constant 256
-because (a) the statistical case for 256 is solid on its own, (b) the
-§0.5 backfill makes early-pin cheap to correct if needed via reindex,
-and (c) a single constant is testable. If real-world drift becomes a
-problem, the next campaign can revisit.
+**Adaptive mean refresh (0.7.2 PR-2b — the escape hatch, now taken for the
+mean).** The threshold-pin remains the initial event, but the pinned mean
+MAY now be re-derived after pin by either trigger:
+
+1. **Automatic in-ingest drift detector.** The projection commit path
+   maintains a cheap running estimate of the RECENT vector mean (an EWMA,
+   `alpha = 1/256`; O(dim) memory, O(dim)/row). On each commit it computes
+   `cos(recent_mean, pinned_mean)`; when that falls below
+   `MEAN_DRIFT_COS_THRESHOLD` (PROPOSED 0.95, HITL-gated) it triggers a
+   recompute SYNCHRONOUSLY in the same commit transaction, under
+   `commit_gate`, reusing the §0.5 re-quantize pass over every row. A
+   falling-edge re-arm latch + a `MEAN_RECOMPUTE_DEBOUNCE_ROWS` (256) floor
+   ensure one drift episode triggers at most one recompute. This path is
+   SUPPRESSED at/above `MEAN_RECOMPUTE_DYNAMIC_MAX = 200_000` rows, where a
+   `MeanRecomputeDeferred` notification (carrying the drift cosine) is
+   surfaced instead.
+2. **Explicit `doctor recompute-mean` verb.** Re-derives + re-quantizes on
+   demand; ALWAYS allowed, including above the 200k cap.
+
+Both triggers call the SAME core (`recompute_mean_in_tx`, a generalization
+of the EU-5f recovery pin with its "no mean pinned yet" guard dropped), so
+there is exactly one re-derive + re-quantize implementation. Events
+(`MeanVecRecomputed { trigger }`, `MeanRecomputeDeferred`) publish strictly
+AFTER the recompute transaction is durable.
+
+**Explicitly NOT covered by PR-2b:** full reindex (re-embedding documents)
+and per-source / per-topic means. Those remain deferred.
+
+The constant 256 threshold itself is still locked because (a) the
+statistical case for 256 is solid on its own, (b) the §0.5 backfill makes
+early-pin cheap, and (c) a single constant is testable.
 
 **Provenance of N=256.** This number is **new in EU-2**. No prior
 document (EU-0 research note, EU-1 ADR, handoff §0/§EU-2) pinned a
@@ -247,6 +277,17 @@ entire batch back: `mean_vec` is still `NULL`, the sign-bit columns are
 unchanged, and the next ingest will simply retry the pin attempt when
 its commit pushes `count ≥ 256` again. The recovery surface is
 unchanged from any other transactional write.
+
+**Reused by 0.7.2 PR-2b mean refresh.** The same re-quantize pass is the
+core of the PR-2b adaptive mean refresh (§0.3 "Adaptive mean refresh"):
+when the drift detector or `doctor recompute-mean` re-derives the mean, it
+re-runs THIS pass over every row inside one transaction. The atomicity and
+crash-recovery guarantees above carry over unchanged — a fault between the
+`mean_vec` UPDATE and the re-quantize completion rolls the whole refresh
+back, so the corpus is never left half-recentered. The only difference
+from the initial pin is that the refresh has no "mean is NULL" precondition
+(it overwrites an already-pinned mean) and the pass touches the full corpus
+rather than only the pre-pin window.
 
 **Cost.** At N=256 with dim=384, the re-quantize pass reads at most
 255 × 1536 bytes = ~384 KB of f32 BLOBs, does 255 × 384 = ~98k f32

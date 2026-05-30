@@ -224,33 +224,58 @@ bge-small+mc is ~0.945.
 
 | | |
 |---|---|
-| **Status** | 🔒 Locked — **no auto-recomputation in 0.7.1** |
-| **Picked** | Compute-once-on-first-ingest at `MEAN_VEC_PIN_THRESHOLD = 256` docs (`dev/design/embedder.md` §0.3 step 1); pin atomically at the threshold-crossing commit (§0.3 step 2); all subsequent writes leave `mean_vec` unchanged (§0.3 step 3). Refresh is **only** via explicit reindex (§0.3 step 4). Reindex itself is **deferred to a separate campaign** beyond 0.7.1. |
-| **Locked by** | `dev/design/embedder.md` §0.3 (EU-2 design, on `origin/main`) + EU-5a2 schema/apply paths (commit `49cdcf4`) |
-| **Owning slice** | 0.7.1 EU-2 (closed) |
+| **Status** | 🔒 Locked for 0.7.1 (no auto-recomputation); **AMENDED in 0.7.2 PR-2b** — the escape hatch is taken for the MEAN ONLY. Drift threshold + debounce numbers below are **PROPOSED, pending HITL ratification.** |
+| **Picked (0.7.1 baseline)** | Compute-once-on-first-ingest at `MEAN_VEC_PIN_THRESHOLD = 256` docs (`dev/design/embedder.md` §0.3 step 1); pin atomically at the threshold-crossing commit (§0.3 step 2); all subsequent writes leave `mean_vec` unchanged (§0.3 step 3). |
+| **Picked (0.7.2 PR-2b amendment)** | The pinned mean MAY now be REFRESHED after the initial 256-doc pin, by either: (a) an automatic in-ingest distribution-drift detector (`cos(recent_mean, pinned_mean) < MEAN_DRIFT_COS_THRESHOLD`), suppressed at/above `MEAN_RECOMPUTE_DYNAMIC_MAX = 200_000` rows; or (b) the explicit `fathomdb doctor recompute-mean` verb (always allowed). Both run the SAME re-derive + `run_pin_and_requantize_pass` core SYNCHRONOUSLY in one transaction. Refresh of anything OTHER than the mean (full reindex, per-source means) remains out of scope and deferred. |
+| **Locked by** | `dev/design/embedder.md` §0.3 (EU-2) + EU-5a2/EU-5f apply paths; **0.7.2 PR-2b** engine slice (drift detector + `Engine::recompute_mean` + `doctor recompute-mean`). |
+| **Owning slice** | 0.7.1 EU-2 (closed); 0.7.2 PR-2b (this amendment). |
 
-**Considered but rejected**:
-- **> 25% row-count delta heuristic** — would require a background
-  recomputation job plus topic-drift telemetry. Rejected as scope creep
-  for 0.7.1: no background-worker infra exists for this kind of
-  long-running mutation, and the row-count signal is itself a proxy
-  (the real question is distribution-shift, not count-shift). The
-  documented failure mode is "topic-drift workspaces pin a skewed
-  mean and may underperform"; the documented remedy is reindex, not
-  silent re-derivation.
-- **Recompute on every `Engine.open`** — rejected because the mean is
-  O(N) over the workspace and would block startup proportional to corpus
-  size; also produces a moving target for the sign-bit cache (every
-  re-open would invalidate the at-pin re-quantize work from §0.5).
-- **Per-source-type mean** (one mean per `source_type` partition key)
-  — rejected as scope creep; corpus-wide mean is the standard approach
-  and is what the EU-0 empirical work measured.
+**PROPOSED drift policy (HITL-gated):**
+- `MEAN_DRIFT_COS_THRESHOLD = 0.95`. Calibrated from PR-2a's evidence: a
+  pathological topic-skewed pinned mean sits ~0.82 cosine to the true
+  corpus mean (the EU-7 -10.9pp recall failure); a representative/healthy
+  mean ~0.998. 0.95 sits inside that gap, biased toward the healthy end so
+  the detector fires on genuine sustained drift, not benign jitter.
+- `MEAN_RECOMPUTE_DEBOUNCE_ROWS = 256` + falling-edge re-arm latch: after
+  one recompute (or deferred notification) the detector will not fire again
+  until ≥256 further rows commit AND it has re-armed (cos recovered above
+  threshold). One drift episode therefore triggers at most one recompute.
+- Recent-mean estimator: an EWMA with `alpha = 1/256` (O(dim) memory,
+  O(dim)/row, no history buffer) — chosen over a hard sliding window which
+  would need a W·dim ring buffer for the same responsiveness.
 
-**Known limitation carried forward**: topic-drift workspaces (e.g. user
-ingests 256 docs about topic A, then pivots to topic B) pin a topic-A-
-skewed mean and may underperform on topic B. Documented at
-`dev/design/embedder.md` §0.3 "Documented failure mode: topic drift"
-and §0.5 alternatives. Resolution path is reindex (deferred).
+**Why SYNCHRONOUS in-transaction (and not the originally-rejected
+background worker):** PR-2b reuses the EU-5f at-pin re-quantize machinery
+verbatim, which is already transactional and serialized under `commit_gate`.
+Doing the refresh in the same tx inherits that crash-atomicity for free (a
+fault between the `mean_vec` UPDATE and the re-quantize rolls back wholesale
+— no half-recentered corpus) and needs NO new background-worker
+infrastructure, which was the specific reason auto-recomputation was
+rejected for 0.7.1. The cost is bounded by the `MEAN_RECOMPUTE_DYNAMIC_MAX`
+cap on the automatic path; the unbounded case (the doctor verb at very large
+N) is an explicit operator action.
+
+**Considered but rejected (0.7.1 — re-examined for PR-2b):**
+- **> 25% row-count delta heuristic** — still rejected as the *trigger*:
+  row-count delta is a proxy; the real signal is distribution shift. PR-2b
+  triggers on the distribution signal DIRECTLY (cosine drift of a running
+  recent-vector mean against the pinned mean), which is what that heuristic
+  was a stand-in for. The "no background-worker infra" objection is mooted
+  by the synchronous-in-tx choice above.
+- **Recompute on every `Engine.open`** — still rejected; O(N) startup cost
+  and a moving target for the sign-bit cache. PR-2b recomputes only on a
+  detected drift edge or an explicit verb, never unconditionally at open.
+  (The EU-5f open-time *recovery* pin — only when a mean is unexpectedly
+  NULL above threshold — is unchanged and remains the only open-time path.)
+- **Per-source-type mean** — still rejected and explicitly NOT covered by
+  PR-2b; corpus-wide mean only.
+
+**Known limitation carried forward (now mitigated, not closed):** topic-
+drift workspaces pin a skewed mean and may underperform until the drift
+detector fires (or an operator runs `doctor recompute-mean`). Above
+`MEAN_RECOMPUTE_DYNAMIC_MAX` the automatic path is suppressed (a
+`MeanRecomputeDeferred` notification is surfaced instead) and refresh
+becomes operator-driven. Full reindex and per-source means remain deferred.
 
 ---
 

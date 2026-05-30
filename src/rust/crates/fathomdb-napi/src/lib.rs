@@ -390,6 +390,10 @@ pub struct EmbedderEvent {
     pub duration_ms: Option<i64>,
     pub dim: Option<u32>,
     pub doc_count: Option<i64>,
+    /// 0.7.2 PR-2b — `"drift_auto"` | `"manual"` on `MeanVecRecomputed`.
+    pub trigger: Option<String>,
+    /// 0.7.2 PR-2b — cosine drift carried on `MeanRecomputeDeferred`.
+    pub drift_cos: Option<f64>,
 }
 
 impl EmbedderEvent {
@@ -412,6 +416,8 @@ impl EmbedderEvent {
                 duration_ms: Some(*duration_ms as i64),
                 dim: None,
                 doc_count: None,
+                trigger: None,
+                drift_cos: None,
             },
             RustEmbedderEvent::DefaultEmbedderCacheHit { file, sha256, cache_path } => Self {
                 kind: "DefaultEmbedderCacheHit".to_string(),
@@ -423,6 +429,8 @@ impl EmbedderEvent {
                 duration_ms: None,
                 dim: None,
                 doc_count: None,
+                trigger: None,
+                drift_cos: None,
             },
             RustEmbedderEvent::MeanVecPinned { dim, doc_count } => Self {
                 kind: "MeanVecPinned".to_string(),
@@ -434,6 +442,34 @@ impl EmbedderEvent {
                 duration_ms: None,
                 dim: Some(*dim),
                 doc_count: Some(*doc_count as i64),
+                trigger: None,
+                drift_cos: None,
+            },
+            RustEmbedderEvent::MeanVecRecomputed { dim, doc_count, trigger } => Self {
+                kind: "MeanVecRecomputed".to_string(),
+                file: None,
+                url: None,
+                bytes: None,
+                sha256: None,
+                cache_path: None,
+                duration_ms: None,
+                dim: Some(*dim),
+                doc_count: Some(*doc_count as i64),
+                trigger: Some(trigger.as_str().to_string()),
+                drift_cos: None,
+            },
+            RustEmbedderEvent::MeanRecomputeDeferred { doc_count, .. } => Self {
+                kind: "MeanRecomputeDeferred".to_string(),
+                file: None,
+                url: None,
+                bytes: None,
+                sha256: None,
+                cache_path: None,
+                duration_ms: None,
+                dim: None,
+                doc_count: Some(*doc_count as i64),
+                trigger: None,
+                drift_cos: ev.deferred_drift_cos().map(f64::from),
             },
         }
     }

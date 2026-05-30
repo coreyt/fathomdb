@@ -441,6 +441,17 @@ fn embedder_event_to_py(py: Python<'_>, ev: &RustEmbedderEvent) -> PyObject {
             let _ = dict.set_item("dim", *dim);
             let _ = dict.set_item("doc_count", *doc_count);
         }
+        RustEmbedderEvent::MeanVecRecomputed { dim, doc_count, trigger } => {
+            let _ = dict.set_item("kind", "MeanVecRecomputed");
+            let _ = dict.set_item("dim", *dim);
+            let _ = dict.set_item("doc_count", *doc_count);
+            let _ = dict.set_item("trigger", trigger.as_str());
+        }
+        RustEmbedderEvent::MeanRecomputeDeferred { doc_count, .. } => {
+            let _ = dict.set_item("kind", "MeanRecomputeDeferred");
+            let _ = dict.set_item("doc_count", *doc_count);
+            let _ = dict.set_item("drift_cos", ev.deferred_drift_cos());
+        }
     }
     dict.into()
 }

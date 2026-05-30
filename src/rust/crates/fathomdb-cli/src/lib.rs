@@ -13,8 +13,8 @@ use clap::{Args, Parser, Subcommand};
 use fathomdb::{
     CheckIntegrityOpts, CorruptionLocator, DumpProfileReport, DumpRowCountsReport,
     DumpSchemaReport, Engine, EngineError, EngineOpenError, ExciseReport, Finding, IntegrityReport,
-    RebuildKind, RebuildReport, SafeExportArtifact, SchemaObject, Section, TraceReport,
-    TruncateWalReport, TruncateWalStatus, VerifyEmbedderReport, VerifyEmbedderStatus,
+    MeanRecomputeReport, RebuildKind, RebuildReport, SafeExportArtifact, SchemaObject, Section,
+    TraceReport, TruncateWalReport, TruncateWalStatus, VerifyEmbedderReport, VerifyEmbedderStatus,
 };
 use serde_json::{json, Value};
 
@@ -124,6 +124,10 @@ pub enum DoctorCommand {
     /// next `Engine::open` with `EmbedderChoice::Default` runs against a
     /// warm cache without touching the network.
     WarmCache(WarmCacheArgs),
+    /// 0.7.2 PR-2b — re-derive and re-pin the corpus mean from the current
+    /// vectors, re-quantizing every row in one transaction. Always allowed
+    /// (exempt from the automatic-path 200k cap).
+    RecomputeMean(SimpleDoctorArgs),
 }
 
 /// EU-5b — `fathomdb doctor warm-cache` argument set.
@@ -387,6 +391,11 @@ fn run_doctor(cmd: DoctorCommand) -> i32 {
             e.dump_profile().map(|r| (dump_profile_report_json(&r), CliOutcome::Clean))
         }),
         DoctorCommand::WarmCache(args) => run_doctor_warm_cache(args),
+        DoctorCommand::RecomputeMean(args) => {
+            run_doctor_verb(&args.db_path, "recompute-mean", |e| {
+                e.recompute_mean().map(|r| (recompute_mean_report_json(&r), CliOutcome::Clean))
+            })
+        }
     }
 }
 
@@ -488,6 +497,17 @@ fn warm_cache_event_json(ev: &fathomdb_embedder::EmbedderEvent) -> Value {
             "kind": "mean_vec_pinned",
             "dim": dim,
             "doc_count": doc_count,
+        }),
+        EmbedderEvent::MeanVecRecomputed { dim, doc_count, trigger } => json!({
+            "kind": "mean_vec_recomputed",
+            "dim": dim,
+            "doc_count": doc_count,
+            "trigger": trigger.as_str(),
+        }),
+        EmbedderEvent::MeanRecomputeDeferred { doc_count, .. } => json!({
+            "kind": "mean_recompute_deferred",
+            "doc_count": doc_count,
+            "drift_cos": ev.deferred_drift_cos(),
         }),
     }
 }
@@ -751,6 +771,20 @@ fn dump_schema_report_json(r: &DumpSchemaReport) -> Value {
         "user_version": r.user_version,
         "tables": r.tables.iter().map(schema_object_json).collect::<Vec<_>>(),
         "indexes": r.indexes.iter().map(schema_object_json).collect::<Vec<_>>(),
+    })
+}
+
+/// 0.7.2 PR-2b — `doctor recompute-mean` `--json` normative contract.
+fn recompute_mean_report_json(r: &MeanRecomputeReport) -> Value {
+    json!({
+        "verb": "recompute-mean",
+        "status": "ok",
+        "dim": r.dim,
+        "old_doc_count": r.old_doc_count,
+        "doc_count_requantized": r.doc_count_requantized,
+        "drift_cos_before": r.drift_cos_before,
+        "mean_was_pinned": r.mean_was_pinned,
+        "elapsed_ms": r.elapsed_ms,
     })
 }
 
