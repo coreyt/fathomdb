@@ -33,7 +33,7 @@ use candle_core::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::models::bert::{BertModel, Config as BertConfig};
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
-use tokenizers::Tokenizer;
+use tokenizers::{Tokenizer, TruncationParams};
 
 use crate::loader::{load_pinned_default_embedder, EmbedderLoadError, LoadedWeights, HF_REVISION};
 
@@ -46,6 +46,15 @@ pub const DEFAULT_EMBEDDER_NAME: &str = "fathomdb-bge-small-en-v1.5";
 /// Output dimension for `bge-small-en-v1.5`. Must match the hidden_size
 /// field of the pinned `config.json`; `new()` enforces this at runtime.
 pub const DEFAULT_EMBEDDER_DIM: u32 = 384;
+
+/// Maximum sequence length (in tokens, INCLUDING the `[CLS]`/`[SEP]`
+/// specials) the tokenizer truncates to. BGE-small's learned position
+/// embeddings have exactly 512 slots (`config.json` `max_position_
+/// embeddings`); feeding a longer sequence trips an out-of-bounds
+/// index-select inside `BertModel::forward`. Per
+/// `dev/design/embedder-decision.md` §2.1 the tokenizer runs with
+/// `truncation True` / max 512.
+const MAX_SEQUENCE_TOKENS: usize = 512;
 
 /// Default embedder backed by `candle-transformers` BERT.
 pub struct CandleBgeEmbedder {
@@ -102,8 +111,19 @@ impl CandleBgeEmbedder {
             });
         }
 
-        // 2. Load tokenizer.json.
-        let tokenizer = Tokenizer::from_file(&weights.tokenizer_json_path)
+        // 2. Load tokenizer.json and pin truncation to the model's 512-slot
+        // position-embedding window (design §2.1). `tokenizer.json` does not
+        // always carry a truncation policy, so set it programmatically; the
+        // tokenizer truncates AND re-applies `[SEP]` correctly (a raw token
+        // truncate would drop the trailing special token). Without this a
+        // >512-token document errors with "index-select invalid index 512".
+        let mut tokenizer = Tokenizer::from_file(&weights.tokenizer_json_path)
+            .map_err(|e| EmbedderLoadError::TokenizerLoad { source: e })?;
+        tokenizer
+            .with_truncation(Some(TruncationParams {
+                max_length: MAX_SEQUENCE_TOKENS,
+                ..Default::default()
+            }))
             .map_err(|e| EmbedderLoadError::TokenizerLoad { source: e })?;
 
         // 3. mmap safetensors and build a BertModel via VarBuilder.

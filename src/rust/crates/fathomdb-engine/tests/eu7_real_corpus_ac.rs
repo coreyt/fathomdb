@@ -87,16 +87,17 @@ use tempfile::TempDir;
 /// Serializes `CandleBgeEmbedder::embed` behind a `Mutex`.
 ///
 /// The engine's projection pool runs `PROJECTION_WORKERS` (=2) worker
-/// threads that call `embed()` concurrently. `candle_transformers`
-/// `BertModel` forward passes are not safe under concurrent invocation
-/// on a shared instance (interior state), which wedges the projection
-/// scheduler after a few hundred sustained writes (observed: reliable to
-/// ~512 docs, then a `drain` -> `EngineError::Scheduler` stall). Forcing
-/// one embed at a time across the pool side-steps that without touching
-/// the engine's writer/projection contracts (out of EU-7's scope). It is
-/// a measurement-fidelity wrapper only: the produced vectors, identity,
-/// and mean-centering behaviour are byte-identical to the bare embedder;
-/// only concurrency is constrained. The serialization cost is reported.
+/// threads that call `embed()` concurrently on one shared instance.
+/// candle's own guidance is to guard a shared model (`Arc<RwLock<Model>>`)
+/// for concurrent CPU inference; this `Mutex` is that guard, applied
+/// harness-side without touching the engine's writer/projection contracts.
+/// It is a measurement-fidelity wrapper only: the produced vectors,
+/// identity, and mean-centering behaviour are byte-identical to the bare
+/// embedder; only concurrency is constrained.
+///
+/// (The original EU-7 seeding stall was NOT this — it was Finding C, the
+/// missing 512-token truncation, now fixed in `CandleBgeEmbedder`. This
+/// guard remains as defensive isolation against concurrent candle forward.)
 struct SerializedBge {
     inner: Mutex<CandleBgeEmbedder>,
     identity: EmbedderIdentity,

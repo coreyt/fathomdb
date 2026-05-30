@@ -126,3 +126,24 @@ fn embed_does_not_panic_on_empty_string() {
     let n = v.iter().map(|x| x * x).sum::<f32>().sqrt();
     assert!((n - 1.0).abs() < 1e-5, "empty-string vector not unit-norm: ‖v‖ = {n}");
 }
+
+/// EU-5f / Finding C — a document longer than the model's 512-token
+/// position-embedding window must be TRUNCATED, not error. Without
+/// `with_truncation`, BertModel::forward trips
+/// "index-select invalid index 512 with dim size 512". Real corpus docs
+/// (e.g. cnn_dailymail articles) routinely exceed 512 tokens; the
+/// projection pipeline retried these to a `drain` timeout, which surfaced
+/// as the EU-7 seeding stall. Per `dev/design/embedder-decision.md` §2.1
+/// the BGE tokenizer is configured with `truncation True` / max 512.
+#[test]
+fn embed_truncates_documents_over_512_tokens() {
+    let e = make_embedder();
+    // ~4000 whitespace-delimited words -> well over 512 WordPiece tokens.
+    let long_doc = "lorem ipsum dolor sit amet consectetur ".repeat(700);
+    let r = e.embed(&long_doc);
+    assert!(r.is_ok(), "embed of a >512-token document must truncate and succeed, got {r:?}");
+    let v = r.unwrap();
+    assert_eq!(v.len(), 384, "truncated embedding must still be dim 384");
+    let n = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+    assert!((n - 1.0).abs() < 1e-5, "long-doc vector not unit-norm: ‖v‖ = {n}");
+}
