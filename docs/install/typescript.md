@@ -42,6 +42,22 @@ npm run build
 `fathomdb-napi` and emits `fathomdb.<platform>-<arch>.node` plus the
 TypeScript output in `dist/`.
 
+## Default embedder (optional)
+
+To let FathomDB embed documents for you, use the embedder-enabled native binary
+and opt in at open:
+
+```ts
+const engine = await engineOpen("mydb.sqlite", { useDefaultEmbedder: true });
+```
+
+This enables the in-process `bge-small-en-v1.5` model and, on first use,
+downloads + sha256-verifies ~133 MB of weights into your platform cache
+(visible in `engine.openReport().embedderEvents`). The flag defaults to
+`false`, and the embedder-enabled binary is larger. See the
+[Default Embedder guide](../embedder.md) for the opt-in contract,
+offline/`HF_TOKEN` notes, caveats, and migration.
+
 ## Verify
 
 ```ts

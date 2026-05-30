@@ -41,6 +41,25 @@ produces the native PyO3 extension `fathomdb._fathomdb`. **Do not run
 `cargo build` and copy the `.so` manually.** Editable install is the
 only supported native-build path for development.
 
+## Default embedder (optional)
+
+To let FathomDB embed documents for you, install the embedder extra and opt in
+at `open`:
+
+```bash
+pip install "fathomdb[default-embedder]"
+```
+
+```python
+engine = Engine.open("mydb.sqlite", use_default_embedder=True)
+```
+
+This pulls in the in-process `bge-small-en-v1.5` model and, on first use,
+downloads + sha256-verifies ~133 MB of weights into your platform cache
+(visible in `engine.open_report().embedder_events`). The flag defaults to
+`False`. See the [Default Embedder guide](../embedder.md) for the opt-in
+contract, offline/`HF_TOKEN` notes, caveats, and migration.
+
 ## Verify
 
 ```python

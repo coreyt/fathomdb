@@ -12,6 +12,91 @@ AC-050c) gates merges against this invariant.
 
 (none yet)
 
+## 0.7.1 - unreleased
+
+EMBEDDER-UNDEFER: the default embedder is no longer deferred. fathomdb now
+ships a real in-process default embedder (`BAAI/bge-small-en-v1.5`, 384d, via
+`candle-transformers`), opt-in per binding, feeding the 0.7.0 sign-bit +
+f32-rerank retrieval pipeline with mean-centering. Date/tag intentionally
+unset: the real-corpus recall floor (`AC013B_RECALL_FLOOR`) re-derivation and
+canonical N=1M acceptance validation are owned by the 0.7.2 RELEASE-HARDENING
+campaign; the `v0.7.1` tag/push is cut there. See
+`dev/plans/0.7.1-implementation.md`.
+
+### Added
+
+- **Default embedder (opt-in).** `BAAI/bge-small-en-v1.5` (384d) runs in
+  process via `candle-transformers`; WordPiece tokenization (truncated to 512
+  tokens) → mean-pool → L2-norm → mean-centering → sign-bit quantization →
+  bit-KNN (K=192) → f32 rerank → top-10. Opt in with Python
+  `Engine.open(path, use_default_embedder=True)` or TypeScript
+  `engineOpen(path, { useDefaultEmbedder: true })`; default is OFF (no embedder
+  configured, vector writes fail with `EmbedderNotConfigured` as before).
+  Caller-supplied embedders remain available in Rust; custom Python/TS embedder
+  bridges are deferred to 0.8.x.
+- **First-use weight download (visible, verified).** With the default embedder
+  enabled, first use downloads the pinned weight set from a fixed Hugging Face
+  URL set, caches it under the platform cache directory, and verifies every
+  file by sha256 (no trust-on-first-use). The activity is surfaced in
+  `OpenReport.embedder_events` (per-file url + bytes + sha256 + cache path) and
+  `OpenReport.embedder_download_ms`. `HF_TOKEN` is honored for token-gated
+  mirrors; public bge-small needs none. This is the scoped opt-in exception to
+  NEED-017 / REQ-033 (see `ADR-0.7.1-default-embedder-weight-fetch`).
+- **Mean-centering.** A per-workspace corpus-mean f32 vector is stored in
+  `_fathomdb_embedder_profiles.mean_vec` and subtracted before sign-bit
+  quantization (the f32 rerank stays un-centered). It is pinned once at the
+  first 256 ingested vectors and never silently recomputed.
+- **Bindings.** Python `use_default_embedder` / TypeScript `useDefaultEmbedder`
+  open flags; `OpenReport` gains `embedder_download_ms`, `embedder_events`
+  (typed union), `embedder_mean_centering_required`, `embedder_mean_vec_pinned`.
+- **Docs.** `docs/embedder.md` user guide (opt-in, first-use download, cache,
+  offline notes, caveats, migration).
+
+### Changed
+
+- `OpenReport.default_embedder` now reports the real bge-small identity
+  (`fathomdb-bge-small-en-v1.5` / HF snapshot `5c38ec7c...` / dim 384) instead
+  of the `fathomdb-noop` scaffold identity.
+- Schema migration step 10 adds the nullable `mean_vec BLOB` column.
+- Wheel / `.node` binary size: the `default-embedder` feature pulls in candle +
+  tokenizers and the ~133 MB weight set is fetched at first use (not bundled).
+  The feature is opt-in, so builds without it pay no size cost; a per-platform
+  wheel-size gate guards regressions.
+
+### Fixed
+
+- **Mean-centering is now applied on the production write path.** Prior to this
+  release the corpus-mean pin/apply only ran via an internal test seam; the
+  async `engine.write` → projection path never pinned, so real ingests were
+  sign-quantized un-centered. The pin + re-quantize now run inside the
+  projection commit (serialized for cross-worker correctness), with an
+  open-time recovery pin for crash-before-pin workspaces.
+- **Embedder inputs over 512 tokens are truncated** instead of erroring. Long
+  documents previously failed the BGE forward pass
+  (`index-select invalid index 512`).
+- **Projection workers are fault-isolated.** A panic inside an embedder no
+  longer wedges the projection scheduler (`drain` could previously hang into a
+  scheduler timeout); the faulted batch is recorded and the worker recovers.
+
+### Removed
+
+(none)
+
+### Known limitations
+
+- **Real-corpus recall caveat.** Dev-box scouting over the 7,667-doc corpus
+  measured recall@10 ~0.83 (95% CI ~0.80–0.86) — below the synthetic-fixture
+  0.90 gate. The synthetic AC-013b gate still passes; the real-corpus floor has
+  not been re-derived and canonical N=1M validation has not run. Both are 0.7.2
+  work (RELEASE-HARDENING PR-2/PR-3). Do not rely on a specific real-corpus
+  recall number from this pre-release.
+- **Topic-drift mean.** Because the mean is pinned on the first 256 ingested
+  docs and never recomputed, a workspace whose first 256 docs are
+  unrepresentative may under-center. Remedy is reindex (a later campaign).
+- **Migration.** Workspaces previously opened with the `fathomdb-noop` profile
+  fail closed when re-opened with the default embedder (identity mismatch, by
+  design). The remedy is wipe-and-rewrite; there is no in-place swap.
+
 ## 0.6.1 - 2026-05-25
 
 Promotion of `0.6.1-rc.1` to GA following V-slice fresh-install

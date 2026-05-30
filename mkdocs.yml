@@ -22,6 +22,7 @@ nav:
       - Errors: reference/errors.md
       - Config: reference/config.md
   - Concepts: concepts/index.md
+  - Default Embedder: embedder.md
   - Compatibility: compatibility/index.md
   - Operations: operations/index.md
   - Guides: guides/index.md
