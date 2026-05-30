@@ -2897,7 +2897,7 @@ pub const MEAN_VEC_PIN_THRESHOLD: u64 = 256;
 /// `dev/design/embedder-decision.md` §3.4.
 pub const MEAN_RECOMPUTE_DYNAMIC_MAX: u64 = 200_000;
 
-/// 0.7.2 PR-2b (PROPOSED, HITL-gated) — the automatic drift detector
+/// 0.7.2 PR-2b (ratified by HITL 2026-05-30) — the automatic drift detector
 /// fires when `cos(recent_mean, pinned_mean)` falls BELOW this value.
 /// Calibrated from the PR-2a evidence base: a pathological topic-skewed
 /// pinned mean sits ~0.82 cos to the true corpus mean, a healthy one

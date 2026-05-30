@@ -224,13 +224,13 @@ bge-small+mc is ~0.945.
 
 | | |
 |---|---|
-| **Status** | 🔒 Locked for 0.7.1 (no auto-recomputation); **AMENDED in 0.7.2 PR-2b** — the escape hatch is taken for the MEAN ONLY. Drift threshold + debounce numbers below are **PROPOSED, pending HITL ratification.** |
+| **Status** | 🔒 Locked for 0.7.1 (no auto-recomputation); **AMENDED in 0.7.2 PR-2b** — the escape hatch is taken for the MEAN ONLY. Drift threshold + debounce numbers below were **ratified by HITL 2026-05-30.** |
 | **Picked (0.7.1 baseline)** | Compute-once-on-first-ingest at `MEAN_VEC_PIN_THRESHOLD = 256` docs (`dev/design/embedder.md` §0.3 step 1); pin atomically at the threshold-crossing commit (§0.3 step 2); all subsequent writes leave `mean_vec` unchanged (§0.3 step 3). |
 | **Picked (0.7.2 PR-2b amendment)** | The pinned mean MAY now be REFRESHED after the initial 256-doc pin, by either: (a) an automatic in-ingest distribution-drift detector (`cos(recent_mean, pinned_mean) < MEAN_DRIFT_COS_THRESHOLD`), suppressed at/above `MEAN_RECOMPUTE_DYNAMIC_MAX = 200_000` rows; or (b) the explicit `fathomdb doctor recompute-mean` verb (always allowed). Both run the SAME re-derive + `run_pin_and_requantize_pass` core SYNCHRONOUSLY in one transaction. Refresh of anything OTHER than the mean (full reindex, per-source means) remains out of scope and deferred. |
 | **Locked by** | `dev/design/embedder.md` §0.3 (EU-2) + EU-5a2/EU-5f apply paths; **0.7.2 PR-2b** engine slice (drift detector + `Engine::recompute_mean` + `doctor recompute-mean`). |
 | **Owning slice** | 0.7.1 EU-2 (closed); 0.7.2 PR-2b (this amendment). |
 
-**PROPOSED drift policy (HITL-gated):**
+**Drift policy (ratified by HITL 2026-05-30):**
 - `MEAN_DRIFT_COS_THRESHOLD = 0.95`. Calibrated from PR-2a's evidence: a
   pathological topic-skewed pinned mean sits ~0.82 cosine to the true
   corpus mean (the EU-7 -10.9pp recall failure); a representative/healthy

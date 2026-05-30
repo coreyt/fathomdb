@@ -167,7 +167,7 @@ MAY now be re-derived after pin by either trigger:
    maintains a cheap running estimate of the RECENT vector mean (an EWMA,
    `alpha = 1/256`; O(dim) memory, O(dim)/row). On each commit it computes
    `cos(recent_mean, pinned_mean)`; when that falls below
-   `MEAN_DRIFT_COS_THRESHOLD` (PROPOSED 0.95, HITL-gated) it triggers a
+   `MEAN_DRIFT_COS_THRESHOLD` (0.95, ratified by HITL 2026-05-30) it triggers a
    recompute SYNCHRONOUSLY in the same commit transaction, under
    `commit_gate`, reusing the §0.5 re-quantize pass over every row. A
    falling-edge re-arm latch + a `MEAN_RECOMPUTE_DEBOUNCE_ROWS` (256) floor
