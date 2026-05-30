@@ -4,12 +4,14 @@ date: 2026-04-27
 target_release: 0.6.0
 desc: Default-embedder = candle + tokenizers + sqlite-vec; mean-pool + L2-normalize; zerocopy BLOB
 blast_radius: src/rust/crates/fathomdb-engine feature `default-embedder` (model load + inference + vector write); deps candle-core, candle-nn, candle-transformers, tokenizers, hf-hub, sqlite-vec
-status: accepted
+status: implemented
 ---
 
 # ADR-0.6.0 — Default embedder architecture
 
-**Status:** accepted (HITL 2026-04-25, decision-recording)
+**Status:** implemented in 0.7.1 (accepted HITL 2026-04-25, decision-recording;
+implemented by the 0.7.1 EMBEDDER-UNDEFER campaign — see the "Status update"
+section below).
 
 ## Context
 
@@ -195,9 +197,22 @@ to "clears floor statistically" — see `dev/notes/0.7.1-default-embedder-resear
 bge-small embeddings (instead of the isotropic AC-013b fixture) remains
 the right thing to do before the EU-5b lock-flip.
 
-**Status update.** This ADR's "accepted but unimplemented" posture
-transitions to "implemented in 0.7.1" once EU-5 lands. The EMB-5 loader
-sub-design (cited at line 106-109) is still required and is the EU-2
-deliverable; the 0.7.1 weight-fetch exception to NEED-017 / REQ-033 is
-captured separately in `ADR-0.7.1-default-embedder-weight-fetch.md`
-(EU-1 deliverable).
+**Status update (implemented in 0.7.1).** This ADR's "accepted but
+unimplemented" posture is now **implemented in 0.7.1**. The EMB-5 loader
+sub-design landed in `dev/design/embedder.md` (EU-2); the weight-fetch exception
+to NEED-017 / REQ-033 is captured in `ADR-0.7.1-default-embedder-weight-fetch.md`
+(EU-1); the real embedder + engine wiring landed across EU-3..EU-6, and the
+production-path mean-centering pin, open-time recovery pin, projection
+fault-isolation, and 512-token truncation landed in EU-5f (see
+`dev/plans/runs/0.7.1-EU-7-findings.md`).
+
+Two items remain for the 0.7.2 RELEASE-HARDENING campaign, NOT this ADR:
+- **`AC013B_RECALL_FLOOR` re-derivation.** EU-7 measured real-corpus recall@10
+  ~0.83 (dev-box, N=7667; below the synthetic 0.90 fixture). The floor is
+  re-derived from this anchor in 0.7.2 PR-2 (with HITL), and canonical N=1M
+  acceptance validation runs in PR-3. The 0.90 figure in this ADR / the
+  AC-013b fixture is NOT claimed to be met on real data.
+- **`v0.7.1` tag/push** is cut in 0.7.2 PR-4.
+
+See `dev/plans/0.7.1-implementation.md` for the campaign closure record and
+`dev/plans/runs/0.7.1-EU-7-output.json` for the recall anchor + honesty report.
