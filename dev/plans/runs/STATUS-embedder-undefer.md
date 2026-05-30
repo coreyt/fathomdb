@@ -1,6 +1,6 @@
 # STATUS — 0.7.1 EMBEDDER-UNDEFER
 
-_Last updated: 2026-05-30 — EU-0 through EU-6 CLOSED on `origin/main`. EU-5f (engine fixes A/B/C surfaced by EU-7) landed. EU-7 measured on the dev box: AC-013 latency + AC-019 stress GREEN; AC-013b recall@10 = 0.828 at the full real corpus — RED vs the current 0.90 floor, measured and surfaced to HITL (floor re-pin deferred to 0.7.2 PR-2 per the EU-7 honesty mandate). EU-8 (docs + release prep) and the `v0.7.1` tag remain open. NOT pushed._
+_Last updated: 2026-05-30 — campaign CLOSED (docs done; tag deferred). EU-0..EU-6 CLOSED on `origin/main`; EU-5f (engine fixes A/B/C) + EU-7 (measurement) codex-PASS; EU-8 (docs + release prep) CLOSED. EU-7: AC-013 latency + AC-019 stress GREEN (dev-box); AC-013b recall@10 = 0.828 — RED vs the 0.90 floor, surfaced to HITL (floor re-pin = 0.7.2 PR-2). HITL (2026-05-30) deferred the version bump + `v0.7.1` tag entirely to 0.7.2 PR-4; workspace stays at 0.7.0. NOT pushed (9 commits ahead of origin/main)._
 
 Orchestrator: main thread (Claude Code session). Pattern per `dev/design/orchestration.md`.
 
@@ -42,7 +42,7 @@ Commit SHAs from `git log --oneline v0.7.0..HEAD`. RED/GREEN/FIX chain per
 | EU-6 | Python + TS `use_default_embedder` + wheel-size gate | **CLOSED** | `c27712f` (GREEN), `ed20816` (FIX-1), `63886fc` (FIX-2 EmbedderEvent union), `c8c7d43` (FIX-2 follow) | PASS |
 | EU-5f | Production mean-centering pin + projection fault-isolation + 512-token truncation (engine fixes surfaced by EU-7; see findings A/B/C) | **CLOSED** | `fbdd613` (findings), `2270520` (RED), `574ef28` (GREEN A+B), `c719a12` (Finding C truncation) | **PASS** (`...review-20260530T130438Z.md`) |
 | EU-7 | Real-corpus AC validation + recall@10 anchor | **MEASURED (AC-013b RED vs 0.90, surfaced)** | harness in `2270520`; results JSON in `aff565f` | **PASS** (HITL owns floor via PR-2) |
-| EU-8 | Docs + release prep + `v0.7.1` tag | **OPEN** | — | — |
+| EU-8 | Docs + release prep (CHANGELOG, docs/embedder.md, ADR flip, closure doc); tag deferred to 0.7.2 PR-4 | **CLOSED** | `9cb44c3` (prompt), `2916626` (CHANGELOG+docs), `2776164` (ADR+closure), closure in this commit | optional |
 
 **EU-5f context.** EU-7 could not validly measure the locked config until three
 engine defects surfaced during harness construction were fixed (full writeup:
@@ -139,10 +139,13 @@ representativeness issue is itself a finding for HITL beyond the floor number.
 
 ## Open items
 
-- **EU-8 (docs + release prep)** — PENDING. 0.7.1 CHANGELOG section;
-  `docs/embedder.md` user-facing copy; `ADR-0.6.0-default-embedder.md`
-  status flip to "implemented in 0.7.1" with chosen-model + chosen-K +
-  chosen-centering decisions; tag `v0.7.1` locally.
+- **EU-8 (docs + release prep)** — CLOSED (2026-05-30). 0.7.1 CHANGELOG
+  section; `docs/embedder.md` user guide (+ install opt-in pointers + nav);
+  `ADR-0.6.0-default-embedder.md` status → "implemented in 0.7.1";
+  `dev/plans/0.7.1-implementation.md` closure doc. NEED-017/REQ-033 cross-cites
+  verified. The version bump + `v0.7.1` tag were **deferred to 0.7.2 PR-4** by
+  HITL (2026-05-30) rather than tagged locally (recall RED vs 0.90; floor lock +
+  canonical validation are 0.7.2); workspace stays at 0.7.0.
 - **`AC013B_RECALL_FLOOR` re-pinning** — DEFERRED to **0.7.2 PR-2**. PR-2
   derives the new floor as `R_canonical - 2*sigma_bootstrap` (rounded down
   to 0.01) via an ADR amendment to
