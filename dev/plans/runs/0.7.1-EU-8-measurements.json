@@ -1,21 +1,21 @@
 {
   "_comment": "EU-8 IR (relevance-judged) recall measurements. Orthogonal to the ANN recall in 0.7.1-EU-7-measurements.json: scores engine.search() against externally-labelled relevant doc_ids from chain ground_truth_queries (NOT the embedder's self KNN). Regenerable: AGENT_LONG=1 cargo test --release -p fathomdb-engine --features default-embedder --test eu8_ir_validation. EU8_SMOKE=1 seeds only chain docs (small smoke); unset = full corpus.",
   "aggregate": {
-    "ci_hi": 0.9,
-    "ci_lo": 0.575,
-    "mrr": 0.6231,
-    "ndcg_at_10": 0.6323,
-    "precision_at_10": 0.2,
-    "queries_with_zero_hits": 3,
-    "query_count": 20,
-    "recall_at_10": 0.75,
-    "sigma": 0.0824
+    "ci_hi": 0.6135,
+    "ci_lo": 0.5299,
+    "mrr": 0.6859,
+    "ndcg_at_10": 0.5609,
+    "precision_at_10": 0.1618,
+    "queries_with_zero_hits": 66,
+    "query_count": 301,
+    "recall_at_10": 0.5714,
+    "sigma": 0.0215
   },
   "config": {
     "bootstrap_resamples": 1000,
     "bootstrap_seed_hex": "0xe88b007574a9001",
-    "chains_loaded": 10,
-    "corpus_docs": 30,
+    "chains_loaded": 200,
+    "corpus_docs": 7667,
     "dimension": 768,
     "embedder": "fathomdb-bge-small-en-v1.5",
     "ground_truth_source": "chain.ground_truth_queries.expected_top_k_doc_ids (labelled)",
@@ -26,33 +26,96 @@
       "MRR",
       "NDCG@10"
     ],
-    "query_count": 20,
-    "smoke_chain_docs_only": true,
+    "query_count": 301,
+    "smoke_chain_docs_only": false,
     "target_exclusion": false
   },
   "diagnostics": {
-    "duplicate_bodies": 0,
-    "expected_doc_ids_present_in_corpus": 30,
-    "expected_doc_ids_total": 30,
-    "queries_with_zero_hits": 3,
+    "duplicate_bodies": 428,
+    "expected_doc_ids_present_in_corpus": 593,
+    "expected_doc_ids_total": 593,
+    "queries_with_zero_hits": 66,
     "unmapped_retrieval_results": 0
   },
   "per_chain_shape": {
     "ARTICLE->NOTE->EMAIL": {
-      "mrr": 0.6231,
-      "ndcg_at_10": 0.6323,
-      "precision_at_10": 0.2,
-      "query_count": 20,
-      "recall_at_10": 0.75
+      "mrr": 0.4939,
+      "ndcg_at_10": 0.4501,
+      "precision_at_10": 0.1358,
+      "query_count": 68,
+      "recall_at_10": 0.4436
+    },
+    "ARTICLE->NOTE->TODO": {
+      "mrr": 1.0,
+      "ndcg_at_10": 0.8749,
+      "precision_at_10": 0.2641,
+      "query_count": 33,
+      "recall_at_10": 0.8586
+    },
+    "EMAIL->MEETING->TODO": {
+      "mrr": 0.8667,
+      "ndcg_at_10": 0.4187,
+      "precision_at_10": 0.097,
+      "query_count": 33,
+      "recall_at_10": 0.3232
+    },
+    "EMAIL->NOTE->TODO": {
+      "mrr": 0.7847,
+      "ndcg_at_10": 0.7092,
+      "precision_at_10": 0.1897,
+      "query_count": 68,
+      "recall_at_10": 0.7598
+    },
+    "MEETING->TODO->NOTE(contradicts)": {
+      "mrr": 0.3853,
+      "ndcg_at_10": 0.2612,
+      "precision_at_10": 0.079,
+      "query_count": 66,
+      "recall_at_10": 0.3106
+    },
+    "TODO->NOTE->EMAIL": {
+      "mrr": 0.9848,
+      "ndcg_at_10": 0.9115,
+      "precision_at_10": 0.2864,
+      "query_count": 33,
+      "recall_at_10": 0.9293
     }
   },
   "per_relation_type": {
+    "action_from": {
+      "mrr": 0.8266,
+      "ndcg_at_10": 0.7533,
+      "precision_at_10": 0.2077,
+      "query_count": 67,
+      "recall_at_10": 0.8109
+    },
+    "contradicts": {
+      "mrr": 0.2005,
+      "ndcg_at_10": 0.1777,
+      "precision_at_10": 0.0576,
+      "query_count": 33,
+      "recall_at_10": 0.2879
+    },
+    "follows_up_on": {
+      "mrr": 0.9258,
+      "ndcg_at_10": 0.6651,
+      "precision_at_10": 0.1917,
+      "query_count": 66,
+      "recall_at_10": 0.6263
+    },
     "mentions": {
-      "mrr": 0.6231,
-      "ndcg_at_10": 0.6323,
-      "precision_at_10": 0.2,
-      "query_count": 20,
-      "recall_at_10": 0.75
+      "mrr": 0.4939,
+      "ndcg_at_10": 0.4501,
+      "precision_at_10": 0.1358,
+      "query_count": 68,
+      "recall_at_10": 0.4436
+    },
+    "summarizes": {
+      "mrr": 0.7431,
+      "ndcg_at_10": 0.5671,
+      "precision_at_10": 0.1643,
+      "query_count": 67,
+      "recall_at_10": 0.5473
     }
   }
 }

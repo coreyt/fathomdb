@@ -55,14 +55,15 @@ mod corpus_subset;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use corpus_subset::{
-    extract_ground_truth_queries, ingest, load_chain_docs, load_chains_or_skip, repo_root, Doc,
-    IRQuery, CORPUS_DIM, VECTOR_KIND,
+    extract_ground_truth_queries, load_chain_docs, load_chains_or_skip, repo_root, Doc, IRQuery,
+    CORPUS_DIM, VECTOR_KIND,
 };
 use fathomdb_embedder::CandleBgeEmbedder;
 use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
-use fathomdb_engine::{EmbedderChoice, Engine};
+use fathomdb_engine::{EmbedderChoice, Engine, PreparedWrite};
 use serde_json::json;
 use tempfile::TempDir;
 
@@ -515,9 +516,41 @@ fn eu8_ir_validation() {
     let engine = opened.engine;
     engine.configure_vector_kind_for_test(VECTOR_KIND).expect("configure vector kind");
 
-    // Seed via the shared `ingest` helper (source_id = doc_id). Returns
-    // (nodes, edges, by_relation) -- we only need that it drained.
-    let (nodes, _edges, _by_rel) = ingest(&engine, &docs);
+    // Seed doc bodies in 256-doc batches with a per-batch 600s drain (mirrors
+    // eu7's seed_slice). The shared `ingest()` helper drains only 30s, which is
+    // fine for the smoke but trips `Scheduler` on the full ~7,667-doc corpus
+    // (candle embed ~50 min >> 30s). IR recall scores against labelled
+    // expected_doc_ids and never traverses edges, so seeding nodes (bodies)
+    // only is sufficient; body->doc_id mapping is in-harness.
+    {
+        const BATCH: usize = 256;
+        let started = Instant::now();
+        let mut last_report = Instant::now();
+        let mut written = 0usize;
+        while written < docs.len() {
+            let take = BATCH.min(docs.len() - written);
+            let batch: Vec<PreparedWrite> = docs[written..written + take]
+                .iter()
+                .map(|d| PreparedWrite::Node {
+                    kind: VECTOR_KIND.to_string(),
+                    body: d.body.clone(),
+                    source_id: Some(d.doc_id.clone()),
+                })
+                .collect();
+            engine.write(&batch).expect("seed write");
+            engine.drain(600_000).expect("seed drain (batch)");
+            written += take;
+            if last_report.elapsed() >= Duration::from_secs(30) {
+                let rate = written as f64 / started.elapsed().as_secs_f64().max(1e-3);
+                eprintln!(
+                    "EU8_SEED_PROGRESS seeded={written}/{} rate_docs_per_s={rate:.1}",
+                    docs.len()
+                );
+                last_report = Instant::now();
+            }
+        }
+    }
+    let nodes = docs.len();
     eprintln!("EU8_SEEDED nodes={nodes}");
 
     // body -> doc_id mapping (first-occurrence rule + dup count).
