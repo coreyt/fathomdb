@@ -1,0 +1,2939 @@
+OpenAI Codex v0.120.0 (research preview)
+--------
+workdir: /tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 019e7e45-4282-7910-ae7c-277d9dcb336d
+--------
+user
+You are reviewing slice S3 (read-only) of fathomdb 0.7.2 PR-2bc: the PR-2 floor reframe.
+
+Branch HEAD 78164b91813d2cb44bdd2affe9a47cbe4beb6e47, baseline 62c161e. This slice KEEPS the 0.90 recall floor and
+amends the ADR to cite the CORRECTED ANN-fidelity measurement (0.937), explicitly
+labeled ANN/quantization-fidelity NOT IR-relevance.
+
+Required reading (in the worktree):
+- dev/plans/prompts/0.7.2-PR-2bc-S3-floor-reframe.md (the spec)
+- dev/plans/runs/0.7.2-PR-2bc-decision.md (section 4: PR-2 reframe)
+- dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md ("The measure under discussion" defines ANN recall)
+- dev/plans/runs/0.7.2-EU-8-ir-recall-results.md (IR 0.571 ceiling + ANN-vs-IR synthesis)
+- dev/plans/runs/0.7.2-PR-2bc-S3-output.json (closure artifact)
+- dev/adr/ADR-0.7.0-vector-binary-quant.md (amended: §2 point 4, §4, §6)
+- commits 62c161e..78164b91813d2cb44bdd2affe9a47cbe4beb6e47 chronologically
+
+Focus the review on:
+- AC013B_RECALL_FLOOR is UNCHANGED at 0.90 (perf_gates.rs); NOT raised.
+- The ADR amendment is HONEST: it cites 0.937 (CI 0.913-0.957) as the validating
+  ANN-FIDELITY anchor (GT = exact f32 top-10 over the SAME model), does NOT retcon, and
+  does NOT imply IR quality is 0.937. The ANN-vs-IR distinction is explicit.
+- The EU-8 IR number 0.571 is documented strictly as a SEPARATE embedder/task ceiling,
+  NOT turned into a gate.
+- The harness-methodology finding (+7.8pp = exclude-before+dedupGT vs exclude-after+
+  body-string-GT) is cited to the root-cause doc.
+- The sentinel test ac_013b_floor_matches_adr genuinely asserts the floor == the ADR
+  value (0.90) and is fast/non-gated.
+- No §6/§7 lock-flip criterion was left inconsistent with keeping 0.90. Nothing pushed.
+
+Verdict format: `## Verdict: PASS|CONCERN|BLOCK` header; findings as
+`### N. [severity] short title` + `Refs:` (file:line) + 2-4 lines; "What passed on
+inspection" + "Reviewer process notes" wraps. Read-only; do NOT write any file.
+
+codex
+I’m reviewing slice S3 against the stated acceptance criteria, starting with the repo invariants in `MEMORY.md` and the required planning/ADR artifacts before I inspect the commit range and gate/test changes.
+exec
+/bin/bash -lc "sed -n '1,220p' MEMORY.md" in /tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z
+ exited 2 in 0ms:
+sed: can't read MEMORY.md: No such file or directory
+
+exec
+/bin/bash -lc "rg --files -g 'feedback_*.md'" in /tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z
+ exited 1 in 0ms:
+codex
+`MEMORY.md` is not at repo root in this worktree, so I’m locating the memory files and the review artifacts directly before reading them.
+exec
+/bin/bash -lc "rg --files | rg '("'^|/)MEMORY'"\\.md"'$|(''^|/)feedback_.*'"\\.md"'$|0'"\\.7\\.2-PR-2bc-S3-floor-reframe\\.md|0\\.7\\.2-PR-2bc-decision\\.md|0\\.7\\.2-PR-2c-recall-rootcause\\.md|0\\.7\\.2-EU-8-ir-recall-results\\.md|0\\.7\\.2-PR-2bc-S3-output\\.json|ADR-0\\.7\\.0-vector-binary-quant\\.md'" in /tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z
+ succeeded in 0ms:
+dev/adr/ADR-0.7.0-vector-binary-quant.md
+dev/plans/prompts/0.7.2-PR-2bc-S3-floor-reframe.md
+dev/plans/runs/0.7.2-PR-2bc-S3-output.json
+dev/plans/runs/0.7.2-EU-8-ir-recall-results.md
+dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md
+dev/plans/runs/0.7.2-PR-2bc-decision.md
+
+exec
+/bin/bash -lc 'git log --oneline --reverse 62c161e..78164b91813d2cb44bdd2affe9a47cbe4beb6e47' in /tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z
+ succeeded in 0ms:
+a154037 test(0.7.2): PR-2 reframe -- add ac_013b_floor_matches_adr sentinel; refresh recall-floor comment to corrected ANN-fidelity 0.937 (S3)
+78164b9 docs(0.7.2): PR-2 reframe -- amend ADR floor to cite corrected ANN-fidelity 0.937 (keep 0.90); ANN vs IR clarified (S3)
+
+codex
+The slice is only two commits, so I’m reading the spec, decision notes, root-cause writeups, ADR, and the output artifact next, then I’ll verify the exact lines changed in `perf_gates.rs` and the sentinel test.
+exec
+/bin/bash -lc "sed -n '1,220p' dev/plans/prompts/0.7.2-PR-2bc-S3-floor-reframe.md" in /tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z
+ succeeded in 0ms:
+# Slice S3 -- PR-2 floor reframe: keep 0.90, amend the ADR (ANN-fidelity, not IR)
+
+## Model + effort
+Launched as `claude -p --model claude-opus-4-7 --effort high` inside a git worktree
+branched from main HEAD **after S1 has landed** (so the corrected harness it cites is on main).
+
+## Context (why -- read first)
+PR-2's original job was "lower the 0.90 floor against the real-embedder EU-7 number
+(0.828)." The root-cause investigation overturned that: the corrected ANN recall@10 is
+**0.937 (CI 0.913-0.957)** -- the 0.828 was a measurement artifact. So PR-2's job shifts
+from "lower the floor" to "**keep 0.90 and amend the ADR to cite the CORRECTED
+measurement, being explicit that 0.937 is an ANN/quantization-FIDELITY number, NOT
+IR-relevance.**" HITL ruling (2026-05-31): keep 0.90; amend the ADR slightly.
+
+Required reading (do not re-derive):
+- `dev/plans/runs/0.7.2-PR-2bc-decision.md` section "4. PR-2 reframe".
+- `dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md` -- esp. "The measure under
+  discussion" (defines ANN recall: GT = exact f32 KNN over the SAME model) and the
+  decomposition table.
+- `dev/plans/runs/0.7.2-EU-8-ir-recall-results.md` -- the IR recall 0.571 and the
+  ANN-vs-IR synthesis (ANN 0.937 fidelity >> IR 0.571 ceiling => quantization is not
+  the bottleneck; do NOT chase K/ANN tuning).
+- `dev/adr/ADR-0.7.0-vector-binary-quant.md` §2 point 4 (lines ~124-131) and §4
+  ("Recall floor enforced as a RED test", ~244-248) and §6/§7 recall-floor mentions.
+
+## Mandate (light touch -- "amend slightly")
+
+### 1. Keep the floor at 0.90
+- `src/rust/crates/fathomdb-engine/tests/perf_gates.rs:159` `AC013B_RECALL_FLOOR = 0.90`
+  -- UNCHANGED. (A mechanical R-2sigma on the corrected number gives 0.937-0.0232=0.914
+  -> 0.91, ABOVE 0.90, so 0.90 is conservative; do NOT raise it -- preserve headroom for
+  production variance and the still-pending N=1M canonical run.)
+- Update the comment near `perf_gates.rs:577` to point at the corrected measurement +
+  this ADR amendment instead of any stale 0.828 narrative.
+
+### 2. Amend ADR `§2 point 4` (the floor decision)
+Add to point 4 (keep the existing 0.90 statement; append the validating provenance):
+- The floor is now VALIDATED against the real default embedder (bge-small, candle):
+  corrected ANN recall@10 = **0.937 (CI 0.913-0.957, sigma 0.0116)** on the EU-7 real
+  corpus (N=7667), measured the standard ANN way (exclude the query-source doc BEFORE
+  top-10; dedup-by-id GT). Full CI clears 0.90.
+- **Explicit definition**: this floor is an **ANN / quantization-FIDELITY** recall --
+  GT = the exact full-precision f32 top-10 over the SAME model; it measures how
+  faithfully the 1-bit sign-quant index reproduces the brute-force neighbors. It is
+  **NOT IR-relevance** (whether results are semantically relevant to a query).
+- The **harness-methodology finding**: the earlier 0.828 was a conservative-measurement
+  artifact (+7.8pp recovered by excluding-before vs excluding-after + dedup-GT vs
+  body-string GT over a corpus with 5.6% duplicate bodies). Cite
+  `dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md`.
+- **Separate IR note**: EU-8 measured the embedder's IR-relevance ceiling at
+  recall@10 = 0.571 -- far below the 0.937 ANN fidelity. This is the embedder/task
+  ceiling, NOT a quantization gate; the lever for end-to-end quality is a better
+  embedder or the graph, NOT K / ANN tuning. Cite
+  `dev/plans/runs/0.7.2-EU-8-ir-recall-results.md`. Do NOT turn 0.571 into a gate.
+
+Mirror a one-line pointer in §4's "Recall floor enforced as a RED test" and update §6/§7
+recall-floor mentions if they still imply the floor is unvalidated or might drop below 0.90.
+
+### 3. Add a lightweight floor-vs-ADR sentinel test
+In `perf_gates.rs`, add `ac_013b_floor_matches_adr` (a fast, non-gated unit test):
+assert `AC013B_RECALL_FLOOR == 0.90` with a comment that this value is the figure
+documented in `ADR-0.7.0-vector-binary-quant §2 point 4`, so future drift between the
+gate constant and the ADR is caught. (This realizes the PR-2 "Method item 5" sentinel.)
+
+## Honesty constraint (carried-forward hard rule)
+"Do not re-word ADRs to retcon a failure into a pass." Here the honest move is the
+reverse -- the number was always fine; you are correcting the ADR to cite the RIGHT
+measurement (0.937, ANN-fidelity) and clearly stating what the floor is and is NOT.
+Do not imply IR quality is 0.937; keep the ANN/IR distinction sharp.
+
+## Verification
+- `cargo build --tests -p fathomdb-engine` clean; `ac_013b_floor_matches_adr` passes.
+- No change to `AC013B_RECALL_FLOOR`'s value. Do NOT run `AGENT_LONG` real-corpus tests.
+
+## Commit policy
+One or two commits: `docs(0.7.2): PR-2 reframe -- amend ADR floor to cite corrected
+ANN-fidelity 0.937 (keep 0.90); ANN vs IR clarified (S3)` (+ a test commit if separate),
+Co-Authored-By trailer. Do not push.
+
+## Required output
+Write `dev/plans/runs/0.7.2-PR-2bc-S3-output.json`:
+```
+{
+  "slice": "S3-floor-reframe",
+  "branch": "<branch>", "head_sha": "<sha>", "commits": [...],
+  "floor_unchanged": "AC013B_RECALL_FLOOR == 0.90",
+  "adr_sections_amended": ["§2 point 4", "§4", "§6/§7 (if needed)"],
+  "ann_vs_ir_clarified": true,
+  "sentinel_test": "ac_013b_floor_matches_adr",
+  "notes": "..."
+}
+```
+
+## Hard constraints
+- Keep 0.90. Do not introduce an IR gate. Do not push. Do not spawn agents.
+- If §6/§7 contain HITL gates that conflict with keeping 0.90, STOP and report rather
+  than silently resolving them.
+
+## Reviewer pass after implementer (orchestrator runs codex; informational)
+codex verifies: floor value unchanged; the ADR amendment is honest (no
+sleight-of-hand making R_measured == floor); the ANN-vs-IR distinction is explicit and
+correct; 0.571 is documented as a ceiling, not a gate; the sentinel test is real.
+
+exec
+/bin/bash -lc "sed -n '1,260p' dev/plans/runs/0.7.2-PR-2bc-decision.md" in /tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z
+ succeeded in 0ms:
+# PR-2b / PR-2c keep-vs-shelve decision memo (for HITL sign-off)
+
+**Date:** 2026-05-31. **Status:** RATIFIED by HITL 2026-05-31.
+
+## HITL rulings (2026-05-31)
+
+1. **PR-2c: SHELVE** -- confirmed. Park branch, do not merge.
+2. **PR-2b: carve out the automatic drift detector + 200k cap + `MeanRecomputeDeferred`
+   and DEFER to 0.8.x.** KEEP the recompute core + `doctor recompute-mean` verb.
+3. **LAND both** the ANN harness fix (`a601d1c`) and the EU-8 IR harness (`5658d39`).
+4. **PR-2 reframe: keep the 0.90 floor; amend the ADR slightly, being explicit that
+   the 0.937 anchor is the ANN/quantization-fidelity measure (NOT IR-relevance).**
+5. Working directly on `main` is acceptable for these slices.
+
+Execution: orchestrated -- informed `claude -p` implementers (TDD) per
+`dev/design/orchestration.md`, `codex exec` review on every implementation slice,
+orchestrator cherry-picks to `main` on PASS. See "Execution plan" at the end.
+
+---
+
+**(original proposal below; superseded where it offered alternatives -- the rulings
+above are authoritative)**
+**Decision slice prompt:** `dev/plans/prompts/0.7.2-PR-2bc-reassessment.md`.
+**Authoritative evidence:** `dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md`,
+`dev/plans/runs/0.7.2-EU-8-ir-recall-results.md`.
+
+## Premise (settled; not re-argued here)
+
+The EU-7 "recall gap" (0.828 < 0.90 floor) was root-caused as a MEASUREMENT
+ARTIFACT, not an engine/mean/embedder defect:
+
+- Corrected ANN recall@10 = **0.937** (CI 0.913-0.957); full CI clears the 0.90
+  floor. +7.8pp over the old harness number was pure measurement methodology.
+- The mean is a **non-lever**: forcing the full-corpus mean on the real engine
+  gives 0.847, only +1.9pp over the worst pin; `drift_cos_before = 1.0000` showed
+  PR-2b had ALREADY converged the pinned mean to the true full-corpus mean during
+  seeding.
+- candle vs HF embeddings are bit-identical. IR recall 0.571 (embedder semantic
+  ceiling) << ANN 0.937 -> the quantization is not the bottleneck.
+
+So both PR-2b and PR-2c were built to solve a problem that does not exist for
+recall. The question below is decided on NON-recall merits only.
+
+## Decisions at a glance
+
+| Slice | Verdict | One-line rationale |
+|---|---|---|
+| PR-2c (representative initial pin) | **SHELVE** | Zero recall benefit; recall-NEGATIVE for typical workspaces; reopens a deliberately-locked design constant; redundant with PR-2b's recompute. |
+| PR-2b core + `doctor recompute-mean` verb | **KEEP** | User explicitly wanted a production recompute capability independent of recall; clean operator tool for the documented topic-drift failure mode. |
+| PR-2b automatic in-ingest drift detector + 200k cap | **MODIFY (carve out / defer)** | Permanent hot-commit-path complexity for an UNMEASURED benefit; its ratification rationale (recall) has collapsed. |
+| ANN harness fix `a601d1c` | **LAND** | Corrects the measurement that caused this entire detour; cherry-picks onto main clean. |
+| EU-8 IR harness `5658d39` | **LAND** | Orthogonal IR signal; engine byte-unchanged. |
+| PR-2 (floor) | **REFRAME** | 0.90 floor HOLDS; job shifts from "lower it" to "land harness fix + keep 0.90 + amend ADR to cite the corrected measurement." |
+
+---
+
+## 1. PR-2c -- representative initial pin: SHELVE (confirm the recommendation)
+
+**Verdict: SHELVE** (revert to compute-once-pin-at-256). The reassessment
+recommendation is CONFIRMED, and on a stronger basis than "recall-neutral": PR-2c
+is recall-NEGATIVE for the most common workspace size.
+
+Non-recall (and recall-cost) reasoning:
+
+1. **No recall upside.** The mean moves real recall +1.9pp at most; recall was
+   never broken. PR-2c's entire justification was the single-source-pin story
+   (cos 0.82, -10.9pp) which was an offline artifact that does not transfer.
+2. **It is recall-NEGATIVE for typical workspaces.** PR-2c extends the un-centered
+   cold-start window from `[0, 256)` to `[0, 2048)` (settle threshold 2048). EU-0
+   measured the un-centered path at ~-5pp recall@10. embedder.md §0.3 states most
+   realistic agentic-memory workspaces are "100s-1000s of docs total" -- i.e. a
+   large fraction of real workspaces would live entirely or mostly inside the
+   longer un-centered window. PR-2c therefore trades a non-existent benefit for a
+   real regression on exactly the workspace sizes we target.
+3. **It reopens a deliberately-locked constant.** embedder.md §0.3 locks
+   `MEAN_VEC_PIN_THRESHOLD = 256` with an explicit statistical + operational
+   justification and the note "the choice is not load-bearing to within a factor
+   of 2 ... but it is locked here." PR-2c changes WHEN the pin fires (256 -> 2048),
+   reopening that lock for no measured gain.
+4. **It is redundant with PR-2b.** Even granting that pin representativeness
+   mattered, the root-cause run showed PR-2b's recompute ALREADY drives the pinned
+   mean to the true full-corpus mean during seeding (`drift_cos_before = 1.0000`).
+   The initial-pin representativeness PR-2c buys is subsumed by the recompute.
+5. **Added standing state for nothing.** `MeanReservoir` (Algorithm R, seeded) +
+   `MEAN_PIN_SETTLE_THRESHOLD` + deferred-pin logic in both pin sites is permanent
+   engine surface whose only purpose was the disproven recall fix.
+
+PR-2c is NOT on `main` (branch `0.7.2-PR-2c-representative-pin`, `e8d5538`), so
+"shelve" requires no revert on main -- just do not merge it. Park the branch with
+a pointer to this memo. The ANN harness fix that lives on top of it (`a601d1c`)
+lands independently (see section 3).
+
+## 2. PR-2b -- production mean recompute: KEEP core + verb, MODIFY out the auto-detector
+
+Split the slice into two parts and decide them separately:
+
+### 2a. Recompute core + `doctor recompute-mean` verb -- KEEP
+
+The user explicitly wanted a production recompute capability INDEPENDENT of recall
+("I do want the recompute mean function for production"). This stands on its own
+non-recall merits:
+
+- It addresses the **genuine, documented topic-drift failure mode** (§0.3): a
+  workspace that pins on topic A then pivots to topic B. That failure is real even
+  though it was not the EU-7 cause.
+- The manual verb is **operator-invoked only** -- zero standing cost on the hot
+  path, no speculative complexity. It is a clean tool an operator reaches for when
+  they observe drift.
+- It reuses the proven `run_pin_and_requantize_pass` (no forked re-quantize),
+  inherits the §0.5 crash-atomicity guarantees, and is already GREEN + tested
+  (`tests/pr2b_mean_recompute.rs`).
+
+**KEEP** the `recompute_mean_in_tx` core, the `doctor recompute-mean` verb (incl.
+the normative `--json` contract), and the `MeanVecRecomputed { trigger: Manual }`
+event.
+
+### 2b. Automatic in-ingest drift detector + 200k cap -- MODIFY (carve out / defer)
+
+**Recommendation: defer the automatic path.** Reasoning on non-recall merits:
+
+- **Its benefit is unmeasured.** The only evidence it works is a SYNTHETIC
+  topic-drift efficacy test. There is no production or real-corpus signal that
+  auto-drift firing improves anything users see -- and the recall premise that
+  justified building it has collapsed (mean is a non-lever).
+- **It is permanent complexity on the hottest path.** Per-commit EWMA
+  (`alpha = 1/256`) maintenance, a `cos(recent, pinned)` check every commit, the
+  falling-edge re-arm latch + `MEAN_RECOMPUTE_DEBOUNCE_ROWS` debounce, the
+  `MEAN_RECOMPUTE_DYNAMIC_MAX = 200_000` cap branch, and the
+  `MeanRecomputeDeferred` event plumbing -- all live in `commit_projection_outcomes`
+  forever, for a speculative trigger.
+- **Its ratification is now unmoored.** HITL ratified the drift policy
+  (0.95 / debounce 256 / EWMA 1/256) on 2026-05-30 under the belief it helped
+  recall. That belief is gone; the calibrated numbers were never validated against
+  a real drift event, only chosen to sit in the 0.82-0.998 gap PR-2a reported.
+- **The manual verb already gives operators the lever.** An operator who observes
+  drift runs `doctor recompute-mean`. Auto-firing inside ingest is the part that
+  earns the least and costs the most.
+
+**MODIFY = ship 2a now; carve 2b (auto-detector + 200k cap + `MeanRecomputeDeferred`)
+out into a parked, ready-to-revive follow-up slice** ("PR-2b-auto"), to be revived
+only when there is a measured production/real-corpus drift case that the manual
+verb demonstrably fails to cover.
+
+Caveat for HITL: PR-2b (both parts) is ALREADY on local `main` (`b96c850` feat +
+`e187add` ratify), unpushed. So "carve out 2b" is itself a small engine edit
+(RED-first, HITL-gated) against main -- it is NOT free. If HITL prefers, the
+alternative is **KEEP 2b as-is** (it is built, GREEN, ratified, and the per-row
+cost is genuinely O(dim)) and simply re-document its rationale as "topic-drift
+safety, not recall." This is a close call and a legitimate HITL choice; my
+recommendation is the carve-out because shipping permanently-on speculative
+hot-path machinery, whose sole original justification has been refuted, is the
+higher long-term cost. Either way: **no engine change until HITL rules.**
+
+## 3. ANN harness fix + EU-8 IR harness -- LAND (confirmed)
+
+Both LAND regardless of the keep/shelve outcome.
+
+- **ANN harness fix `a601d1c`** (corrected `measure_recall` OLD+NEW +
+  `EU7_SEARCH_LIMIT` seam + `candle_dump`). This is the deliverable that corrects
+  the measurement which triggered this entire detour -- without it the recall gate
+  measures ~6-8pp low. I verified it **cherry-picks onto current `main`
+  (`e1834e8`) with zero conflicts** (auto-merge clean on both `lib.rs` and
+  `eu7_real_corpus_ac.rs`).
+  - Note on the "engine byte-unchanged" framing: `a601d1c` DOES touch engine
+    `lib.rs` (+12 lines), but the change is an **env-gated `EU7_SEARCH_LIMIT` seam
+    in `read_search_in_tx`** that defaults to `LIMIT 10` -- a genuine production
+    no-op (the env var is only ever set by the recall harness). It is independent
+    of the PR-2c reservoir/pin sites. Safe to land. Run a `cargo build`/`cargo test`
+    post-cherry-pick to confirm the textual auto-merge also compiles (the
+    `EU7_SUPPRESS_AUTO_RECOMPUTE` / `set_mean_recompute_dynamic_max_for_test`
+    seams it references already exist on main via PR-2b).
+- **EU-8 IR harness `5658d39`** (branch `worktree-agent-af07339f77147979f`, also
+  `07f1a76`). Orthogonal IR-relevance signal, engine byte-unchanged. LAND.
+- **Fold in** the EU-7 harness follow-up TODO (the silent GT-embed phase needs an
+  `EU7_GT_EMBED_PROGRESS` periodic log line; see root-cause doc tail) when the
+  harness fix lands -- cheap, test-only.
+
+## 4. PR-2 reframe -- floor HOLDS at 0.90
+
+With corrected ANN recall 0.937 (CI-low 0.913, sigma 0.0116), PR-2's job is no
+longer "lower the floor." Reframe:
+
+1. **Land the harness fix** (section 3) so `eu7_real_corpus_ac.rs` measures the
+   gate the standard ANN way.
+2. **Keep `AC013B_RECALL_FLOOR = 0.90`.** A mechanical `R - 2*sigma` derivation now
+   gives `0.937 - 0.0232 = 0.914 -> 0.91`, which is ABOVE the current 0.90 floor.
+   So 0.90 is comfortably defensible and conservative; do NOT raise it to 0.91
+   (that would spend the headroom we want for production variance, and the N=1M
+   canonical run (PR-3) is still pending). Keep 0.90; document 0.937 as the anchor
+   with ~3.7pp point / ~1.4pp CI-low margin.
+3. **Amend the ADR** (`ADR-0.7.0-vector-binary-quant.md §2 point 4`) to cite the
+   corrected 0.937 measurement AND the harness-methodology finding (exclude-before
+   vs exclude-after; dedup-GT vs body-string GT), so the floor's provenance is the
+   correct number, not the artifact 0.828. Keep the existing sentinel test
+   (`ac_013b_floor_matches_adr`).
+4. **Record the EU-8 IR ceiling (0.571) as a separate story** in the ADR/notes: it
+   is the embedder/task ceiling, not a quantization gate; future work is
+   semantic/graph, NOT K/ANN tuning.
+
+This keeps faith with the carried-forward hard constraint "do not re-word ADRs to
+retcon a failure into a pass" -- here the honest move is the reverse: the number
+was always fine; we are correcting the ADR to cite the right measurement.
+
+## Concrete landing / revert / park plan
+
+**Lands on `main` (each its own HITL-gated step; no push):**
+
+1. Cherry-pick `a601d1c` onto `main` (verified clean). `cargo test -p
+   fathomdb-engine` + a release `eu7_real_corpus_ac` smoke to confirm compile +
+   the OLD/NEW split prints. Add the `EU7_GT_EMBED_PROGRESS` log line.
+2. Cherry-pick / merge the EU-8 IR harness (`5658d39` + `07f1a76`) from
+   `worktree-agent-af07339f77147979f`.
+3. PR-2 reframe: keep 0.90; ADR `§2 point 4` amendment + EU-8 IR ceiling note.
+   (After step 1, so the ADR cites the landed harness.)
+
+**Parked / reverted:**
+
+4. **PR-2c** -- do NOT merge `0.7.2-PR-2c-representative-pin` (`e8d5538`). Park the
+   branch with a pointer to this memo. Nothing to revert on main (never landed).
+5. **PR-2b auto-detector (2b)** -- IF HITL approves the carve-out: a small RED-first
+   engine slice against `main` removing the in-ingest drift detector + 200k cap +
+   `MeanRecomputeDeferred` from `commit_projection_outcomes`, keeping the recompute
+   core + `doctor` verb + `MeanVecRecomputed{Manual}`. Park the removed logic as
+   "PR-2b-auto" pending a measured drift case. IF HITL prefers keep-as-is: no code
+   change, only re-document the rationale.
+
+**Doc / ADR amendments that follow the decisions:**
+
+- `embedder.md §0.3` -- currently documents PR-2b's adaptive refresh as landed and
+  keeps N=256 locked (PR-2c never reached committed §0.3, so nothing to revert
+  there). IF 2b is carved out, drop the "Automatic in-ingest drift detector"
+  paragraph, keep the `doctor recompute-mean` paragraph + the topic-drift
+  failure-mode note (now mitigated by the manual verb only).
+- `embedder-decision.md §3.4` -- mirror the §0.3 change; record that the auto-path
+  was deferred (not because it is wrong, but because its benefit is unmeasured and
+  the recall premise collapsed).
+- `ADR-0.7.0-vector-binary-quant.md §2 point 4` -- per PR-2 reframe (item 4.3).
+- Campaign handoff `0.7.2-RELEASE-HARDENING-HANDOFF.md` already carries the
+  root-cause banner; update the PR-2 family DoD (lines ~762-767) to the reframed
+  scope once HITL rules.
+
+## Open item carried forward (not part of this decision)
+
+- **AC-019 stress MISS (p99 1201 ms vs 499 ms bound)** is contention-inflated
+  dev-box scouting, NOT a regression. Flag a clean idle-box re-run; do not treat as
+  a gate failure. (Latency AC-013 PASSes: p50 36 / p99 49 ms.)
+
+## What I need from HITL
+
+1. **PR-2c: confirm SHELVE** (park branch, do not merge).
+2. **PR-2b: choose** -- (a) carve out the auto-detector (my recommendation), or
+   (b) keep PR-2b as-is and re-document. Either keeps the `doctor recompute-mean`
+   verb.
+3. **Confirm LAND** for `a601d1c` + EU-8 IR harness.
+4. **Confirm the PR-2 reframe** -- keep 0.90, amend ADR to cite 0.937 + methodology.
+
+No engine code changes and no pushes until this memo is approved.
+
+---
+
+
+exec
+/bin/bash -lc "sed -n '1,260p' dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md" in /tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z
+ succeeded in 0ms:
+# 0.7.2 recall root-cause investigation — the EU-7 gap is a MEASUREMENT ARTIFACT
+
+**Date:** 2026-05-30. **Status:** root cause identified; gold-standard re-measure
+pending. **Author:** PR-2c diagnostic chain (post PR-2a/PR-2b/PR-2c).
+
+## TL;DR (the headline, stated plainly)
+
+The 0.7.2 recall campaign was triggered by EU-7 measuring real-corpus recall@10 =
+**0.828** (< the 0.90 floor), which PR-2a attributed to a *fixable mean-centering
+artifact*. **That attribution was wrong.** Rigorous decomposition on the real
+engine shows:
+
+- The **mean was never the driver** — forcing the *full-corpus* mean on the real
+  engine yields **0.847**, only +1.9pp over the worst mean (0.828).
+- **candle and HF embeddings are bit-identical** (cos = 1.00000, 100% sign-bit
+  agreement) — embeddings are not the cause.
+- **Title vs body representation** contributes ~0 (+0.7pp).
+- The offline→real gap is **~6pp of conservative EU-7 harness measurement
+  methodology**, not an engine deficiency:
+  - **−4.4pp** from excluding the self-retrieving target *after* the top-10
+    (64/100 synthetic queries self-retrieve their source doc → a slot is spent on
+    it → recall capped at 0.9 for those).
+  - **−1.4pp** from body-STRING ground-truth matching against a corpus with 5.6%
+    duplicate bodies (synthetic_notes 20%).
+  - remaining ~3.9pp: query-set differences (offline numpy-shuffle vs harness
+    SplitMix64) + minor sqlite-vec candidate noise — within bootstrap CIs.
+
+**Measured the standard ANN way (exclude the query-source doc BEFORE top-10,
+match GT by id/dedup), the engine's real recall@10 is ~0.93 — it CLEARS the 0.90
+floor.** PR-2b (mean recompute) and PR-2c (representative pin) are correctly
+engineered but address a non-problem for recall.
+
+## Provenance / commit IDs
+
+- `main` (local, NOT pushed):
+  - `6f3d038` PR-2a recall-investigation slice + handoff reconcile (pre-existing)
+  - `8b31724` docs: PR-2a report (GO) + PR-2b/PR-2c launch prompts + handoff re-sequence
+  - `b96c850` feat: **PR-2b** GREEN — adaptive mean recompute (drift detector + doctor verb)
+  - `e187add` docs: PR-2b — ratify drift policy (HITL 2026-05-30)
+- PR-2c branch `0.7.2-PR-2c-representative-pin` (worktree `.claude/worktrees/agent-af9f5a6ca35c0b19b`):
+  - `e8d5538` feat: **PR-2c** GREEN — representative initial mean pin (reservoir + deferred settle 2048)
+  - uncommitted diagnostic edits in that worktree:
+    - `tests/eu7_real_corpus_ac.rs` — `EU7_FORCE_FULL_RECOMPUTE` seam (force full mean before measure) + `EU7_SUPPRESS_AUTO_RECOMPUTE` seam (PR-2b attribution)
+    - `tests/candle_dump.rs` (new) — dumps candle vectors for the agreement check
+- Offline scripts + raw numbers (gitignored under `dev/research/`, regenerable):
+  `dev/research/pr-2a/run_{mean_decomp,queryset_sensitivity,m2_eu7queries,bodyonly_offline,gt_accounting}.py`
+  and `result_*.json`; `dev/research/eu-0/` saved HF vectors + venv.
+
+## The measure under discussion (so the numbers are interpretable)
+
+`recall@10` here is the **ANN / quantization-fidelity** flavor (FAISS / ANN-
+Benchmarks sense), NOT the IR-relevance sense:
+`recall@10 = |retrieved_top10 ∩ exact_f32_top10| / 10`, where ground truth = the
+exact top-10 by full-precision cosine over the SAME model, and retrieved = the
+sign-bit binary-quant (K=192 Hamming candidates) + f32 rerank pipeline. It
+measures how faithfully the lossy 1-bit index reproduces the brute-force
+neighbors — not whether results are "relevant". Percentile bootstrap (1000
+resamples, SEED=0xE0) for CIs throughout.
+
+## Experiment chain (each step, with numbers)
+
+All real-engine runs: bge-small (candle), dim 384, K=192, N=7667, release build,
+`AGENT_LONG=1 ... --features default-embedder`. Offline: HF transformers, same
+config, `dev/research/eu-0` saved vectors.
+
+### 0. Anchors
+- EU-7 (old first-256 pin, real engine): **0.828** (CI 0.796–0.858, σ 0.0165).
+- EU-0 / PR-2a offline full mean: **0.933** (EU-0 queries) / **0.951** (EU-7-style queries).
+
+### 1. PR-2a offline mean decomposition (`run_mean_decomp.py`, `run_m2_eu7queries.py`)
+Reservoir/strategy on offline HF vectors (title+body docs):
+- M0 first-256 (single source, all bahmutov): 0.886 (EU-0 q) / 0.842 (EU-7 q), cos-to-full-mean 0.82
+- M1 full corpus: 0.933 / 0.951
+- M2 representative-256: 0.945–0.952, cos-to-full 0.998
+- M3 no centering: 0.910 / 0.918
+PR-2a concluded GO (mean fix recovers ~0.945). **This held only offline.**
+
+### 2. PR-2b + PR-2c real-engine re-measure (shipping config, N=7667)
+- recall@10 = **0.844** (CI 0.815–0.871, σ 0.0145). seed 3078s; AC-013 p50 25 / p99 41 PASS; AC-019 PASS.
+- Far below the offline 0.945 projection → premise in doubt.
+
+### 3. Forced-full-mean diagnostic (`EU7_FORCE_FULL_RECOMPUTE=1`, real engine)
+- recall@10 = **0.847** (CI 0.817–0.875, σ 0.0145).
+- `drift_cos_before = 1.0000` — PR-2b had ALREADY converged the pinned mean to the
+  true full-corpus mean during seeding; the forced recompute was a no-op.
+- **Verdict: the best-possible mean gives 0.847. The mean is not the driver.**
+
+### 4. candle-vs-HF embedding agreement (`tests/candle_dump.rs` + HF compare; 13 inputs incl. 147K-char qmsum bodies)
+- cos(candle, HF) = **1.00000** for all 13; L2 = 0.0000; **sign-bit agreement = 100%**.
+- **Verdict: embeddings identical; not the cause.**
+
+### 5. Body-only vs title+body offline (`run_bodyonly_offline.py`)
+- title+body docs: 0.951; **body-only docs (production repr): 0.944**; delta +0.7pp.
+- **Verdict: title-in-doc representation confound is NOT the driver** (refuted a
+  leading hypothesis).
+
+### 6. GT-accounting + target-exclusion decomposition (`run_gt_accounting.py` + follow-up)
+Same body-only HF vectors, same numpy retrieval, vary only the scoring method:
+- (A) INDEX GT, exclude-target-BEFORE top-10 (standard ANN): **0.944**
+- (B) + body-STRING GT (dup bodies; 26/100 queries had shrunk GT sets): **0.930** (−1.4pp)
+- (C) + exclude-target-AFTER top-10 (≤9 slots; 64/100 queries self-retrieve target): **0.886** (−4.4pp)
+- real engine (full harness method): **0.847** (residual ~3.9pp = query-set + sqlite-vec, within noise)
+
+Corpus duplicate-body density (drives the −1.4pp): 5.6% overall (742 docs);
+synthetic_notes 20%, cnn/chain 6%, enron 1%.
+
+## Decomposition table (the bottom line)
+
+| Step | recall@10 | Δ | nature |
+|---|---|---|---|
+| Offline, standard ANN method | 0.944 | — | true binary-quant recall |
+| + body-string GT w/ dup bodies | 0.930 | −1.4pp | harness measurement artifact |
+| + exclude target AFTER top-10 | 0.886 | −4.4pp | harness measurement artifact (conservative) |
+| + query-set diff + sqlite-vec noise | 0.847 | −3.9pp | residual, within CI |
+
+**~6pp of the ~10pp offline→real gap is harness methodology.** Engine real recall,
+measured the standard way, ≈ **0.93** → clears the 0.90 floor.
+
+## What was ruled OUT (with evidence)
+- Mean strategy — forced full mean = 0.847 (drift_cos_before = 1.0).
+- candle vs HF embeddings — bit-identical, 100% sign-bit agreement.
+- Title/body representation — +0.7pp.
+- Query centering bug — verified correct (`lib.rs` search_inner: phase-1 query is
+  `subtract_mean`'d when a mean is pinned; phase-2 rerank un-centered).
+
+## What is the actual root cause
+The EU-7 harness (`eu7_real_corpus_ac.rs::measure_recall`) understates recall by ~6pp:
+1. **Excludes the self-retrieving target AFTER taking the engine's top-10** — the
+   synthetic query is the target doc's own title/lead, so the target self-retrieves
+   into the top-10 for 64% of queries; dropping it post-hoc leaves ≤9 comparable
+   slots, capping recall at 0.9. (The docstring flags this as "conservative".)
+2. **Matches ground truth by body STRING** against a corpus with 5.6% duplicate
+   bodies, shrinking GT sets below 10 unique entries.
+
+Standard ANN-recall practice excludes the query-source doc *before* ranking (so the
+engine gets 10 clean slots) and matches by id (dup-robust).
+
+## Implications
+- **The 0.90 floor likely needs NO change** — it needs the harness measured correctly.
+- **PR-2b (recompute)** and **PR-2c (representative pin)** address a non-problem for
+  recall. They remain correct code with possible value only as hygiene / genuine
+  topic-drift safety — to be reassessed (see below).
+- PR-2a's GO verdict was based on an offline number (0.945) that does not transfer
+  to the production retrieval+measurement path.
+
+## Next actions (per HITL 2026-05-30)
+1. **(this doc)** capture findings. ✅
+2. **Fix the harness + re-measure** (gold-standard confirmation): patch
+   `eu7_real_corpus_ac.rs` to exclude the query-source doc *before* the top-10
+   (retrieve top-(10+1), drop target, take 10) and match GT by id/dedup, then
+   re-run release. Expect ~0.90–0.93.
+3. **Reassess PR-2b/PR-2c** — measure whether each makes a positive / negative /
+   neutral difference to (correctly-measured) recall, and decide ship vs shelve.
+
+## Residual risks / caveats
+- The ~3.9pp residual (offline harness-method 0.886 vs real 0.847) is not fully
+  isolated; attributed to query-set RNG difference + minor sqlite-vec vec0 bit-KNN
+  candidate suboptimality. The fixed-harness re-measure will tighten this.
+- All real-engine numbers are dev-box scouting (N=7667, 100 synthetic queries);
+  canonical N=1M with relevance-judged queries remains PR-3.
+
+## Follow-up TODO: log the silent ground-truth-embed phase in the EU-7 harness
+
+**Symptom:** during a full run, `eu7_real_corpus_ac.rs` goes silent for ~25-45 min
+*after* the last `EU7_SEED_PROGRESS` line and *before* `seed_done`. Twice this
+looked like a hang and once prompted a premature kill. It is NOT a hang: the
+harness re-embeds the entire corpus single-threaded to build the in-Rust f32
+ground truth (`for body in &bodies[seeded..actual_n] { doc_vecs.push(embedder.embed(body)) }`),
+which emits no output. At ~0.3-0.4 s/doc single-threaded that is ~45 min for 7667
+docs, with zero log lines.
+
+**Fix (minimal but useful):** a single line literally *between* the loop and the
+`seed_done` print only fires once (an end-marker) and does NOT break the silence
+*during* the loop -- so "between" alone is not the useful placement. Add instead:
+1. a `GT_EMBED_START n=<n>` line before the loop, and
+2. a **periodic progress line inside the loop**, mirroring `EU7_SEED_PROGRESS`
+   (every ~30 s or every K docs: `EU7_GT_EMBED_PROGRESS embedded=i/n rate_docs_per_s=...`).
+   A throttled `Instant`-based report like the seed loop already uses is enough.
+This makes the longest unlogged stretch observable and stops it reading as a wedge.
+Cheap, test-only, no behavior change. (The single end-marker between the loop and
+`seed_done` is a fine additional cheap minimum, but the in-loop periodic line is
+the one that matters.)
+
+exec
+/bin/bash -lc "sed -n '1,260p' dev/plans/runs/0.7.2-EU-8-ir-recall-results.md" in /tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z
+ succeeded in 0ms:
+# EU-8 IR-recall results + ANN/IR synthesis
+
+**Date:** 2026-05-31. **Status:** full-corpus run complete. **Companion to:**
+`dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md` (the ANN root-cause).
+
+## What was run
+- **ANN recall** (fidelity): `eu7_real_corpus_ac.rs`, corrected harness (NEW method:
+  exclude query-source before top-10, dedup-GT), full corpus N=7667, K=192, real
+  candle bge-small. Commit `a601d1c` (worktree `agent-af9f5a6ca35c0b19b`, branch
+  `0.7.2-PR-2c-representative-pin`).
+- **IR recall** (relevance): `eu8_ir_validation.rs`, full corpus 7667 docs + all 200
+  chains, 301 labeled queries (`ground_truth_queries.expected_top_k_doc_ids`), real
+  candle bge-small. Commit `5658d39` (worktree `agent-af07339f77147979f`, branch
+  `worktree-agent-af07339f77147979f`). Raw: `dev/plans/runs/0.7.1-EU-8-measurements.json`.
+
+## ANN recall (the fidelity signal) — confirmed
+Same run, scoring method varied:
+- **OLD** (exclude-after + set-GT, the original harness): **0.859** (CI 0.832-0.885, sigma 0.0137); target_in_top10 = 70/100.
+- **NEW** (exclude-before + dedup-GT, standard ANN): **0.937** (CI 0.913-0.957, sigma 0.0116).
+- **+7.8pp** is pure measurement-methodology artifact. NEW's full CI sits above the 0.90 floor.
+- Latency AC-013 PASS (p50 36 / p99 49 ms). Stress AC-019 MISS (p99 1201 ms vs 499 bound) -- contention-inflated dev-box scouting, NOT a gate; re-run clean on an idle box.
+
+## IR recall (the relevance signal) — full corpus, 301 queries
+**Overall: recall@10 = 0.5714** (CI 0.530-0.614, sigma 0.0215), precision@10 = 0.162,
+**MRR = 0.686**, NDCG@10 = 0.561; zero-hit queries 66/301; coverage 593/593 expected
+ids present; duplicate_bodies = 428; unmapped_results = 0.
+
+By relation type (the informative cut):
+
+| relation | n | recall@10 | MRR | NDCG@10 |
+|---|---|---|---|---|
+| action_from | 67 | **0.811** | 0.827 | 0.753 |
+| follows_up_on | 66 | 0.626 | 0.926 | 0.665 |
+| summarizes | 67 | 0.547 | 0.743 | 0.567 |
+| mentions | 68 | 0.444 | 0.494 | 0.450 |
+| contradicts | 33 | **0.288** | 0.201 | 0.178 |
+
+By chain shape: `TODO->NOTE->EMAIL` 0.929 / `ARTICLE->NOTE->TODO` 0.859 /
+`EMAIL->NOTE->TODO` 0.760 / `ARTICLE->NOTE->EMAIL` 0.444 / `EMAIL->MEETING->TODO`
+0.323 / `MEETING->TODO->NOTE(contradicts)` 0.311.
+
+## Synthesis (in the IR-vs-ANN framework)
+
+| Signal | Value | Tests | Reading |
+|---|---|---|---|
+| ANN recall | **0.937** | index / sign-bit quantization fidelity (GT = exact f32 KNN, same model) | healthy; clears 0.90 floor |
+| IR recall | **0.571** | embedder semantic relevance (GT = labeled relevant doc ids) | the ceiling; relation-dependent |
+
+**ANN (0.937) exceeds IR (0.571) by +37pp.** By the standard rule (once ANN fidelity
+exceeds the embedder's IR ceiling by ~15-20%, further index/quantization tuning yields
+no perceptible user gain), the verdict is unambiguous:
+
+- **The quantization is NOT the bottleneck.** It faithfully returns ~94% of the exact
+  neighbors. Chasing ANN recall higher (bumping K / `TOP_K_BIT_CANDIDATES`, tighter
+  index) is wasted compute.
+- **The embedder/task is the ceiling.** The levers that move end-to-end quality are a
+  better embedder (semantic) or **using the graph** for relation-following -- NOT the
+  vector pipeline.
+
+### Important caveats on the IR number
+1. **Synthetic relationship task, not human qrels.** Chains are generated by
+   `tests/corpus/scripts/generate_chain_corpus.py`. Some relations are *inherently
+   wrong for pure vector search*: **contradicts** (0.29) -- a contradicting doc is not
+   reliably *near* in embedding space; cosine cannot capture logical negation. Those
+   relations are precisely what the engine's **graph edges** exist for, and EU-8 search
+   deliberately does not traverse them. So the 0.571 understates pure-semantic
+   retrieval: the similarity-friendly relations (action_from / follows_up_on /
+   summarizes) average ~0.66.
+2. **Duplicate-body mapping.** 428 dup bodies; the body->doc_id first-occurrence rule
+   can map a content-correct retrieval to a different id than expected, modestly
+   undercounting. Clean fix (same lesson as the ANN harness): have the engine search
+   return doc ids, not just bodies.
+3. Dev-box scouting (synthetic queries). Canonical relevance eval remains future work.
+
+## Bottom line for the campaign
+- **Quantization/ANN story: CLOSED.** Fidelity 0.937, 0.90 floor holds, no K-tuning warranted.
+- **Embedder/IR story: OPENED.** Real, relation-dependent headroom; future work is
+  semantic/graph, not quantization.
+- **PR-2b (mean recompute) + PR-2c (representative pin): both confirmed to address a
+  NON-problem for recall** (the mean moves real recall only +1.9pp; recall was never
+  broken). Keep-vs-shelve decision: see `dev/plans/prompts/0.7.2-PR-2bc-reassessment.md`.
+
+exec
+/bin/bash -lc "sed -n '1,260p' dev/plans/runs/0.7.2-PR-2bc-S3-output.json" in /tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z
+ succeeded in 0ms:
+{
+  "slice": "S3-floor-reframe",
+  "branch": "phase-0.7.2-PR-2bc-S3-20260531T131418Z",
+  "head_sha": "HEAD (docs+closure commit; this artifact commit is HEAD itself)",
+  "commits": [
+    "a154037f360cb8cfe564b42cda56641d8b383d8c (test: sentinel + comment)",
+    "HEAD (docs: ADR amendment + this closure artifact)"
+  ],
+  "floor_unchanged": "AC013B_RECALL_FLOOR == 0.90",
+  "adr_sections_amended": ["§2 point 4", "§4", "§6 (K-value selection + vec_quantize_binary headroom note)"],
+  "ann_vs_ir_clarified": true,
+  "sentinel_test": "ac_013b_floor_matches_adr",
+  "notes": "PR-2 reframe: kept the 0.90 recall floor (unchanged at perf_gates.rs:159) and amended ADR-0.7.0-vector-binary-quant.md to cite the CORRECTED ANN/quantization-FIDELITY measurement (recall@10 = 0.937, CI 0.913-0.957, sigma 0.0116; bge-small candle, EU-7 N=7667, K=192, standard ANN method: exclude query-source before top-10 + dedup-by-id GT). Full CI clears 0.90; R-2sigma = 0.914 -> floor NOT raised (headroom for production variance + pending N=1M PR-3). The earlier 0.828 documented as a conservative-measurement artifact (+7.8pp), citing 0.7.2-PR-2c-recall-rootcause.md. ANN-vs-IR distinction kept sharp: the floor is fidelity (GT = exact f32 top-10 over same model), explicitly NOT IR-relevance. EU-8 IR ceiling recall@10 = 0.571 recorded as a separate embedder/task ceiling (NOT a gate), citing 0.7.2-EU-8-ir-recall-results.md; lever is a better embedder/graph, not K/ANN tuning. Added fast non-gated sentinel ac_013b_floor_matches_adr asserting the constant == 0.90 tied to ADR §2 point 4. cargo build --tests clean; sentinel passes. No IR gate introduced. No §6/§7 HITL gate conflicts with keeping 0.90."
+}
+
+exec
+/bin/bash -lc "sed -n '1,260p' dev/adr/ADR-0.7.0-vector-binary-quant.md" in /tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z
+ succeeded in 0ms:
+---
+title: ADR-0.7.0-vector-binary-quant
+date: 2026-05-27
+target_release: 0.7.0
+desc: Binary quantization (bit[768]) plus f32 rerank on the existing sqlite-vec extension, with metadata + partition_key schema migration, as the data-encoding change that closes AC-013 within the proposed 80 / 300 ms latency envelope. AC-019 keeps its existing 10× bound and is collaterally re-measured under the new query path. Architectural-lever accounting reaffirmed: PCACHE2 remains the 0.7.0 architectural lever; this is a data-encoding change.
+blast_radius: src/rust/crates/fathomdb-engine/src/lib.rs:2317-2323 (read_search_in_tx hot SQL; Pack 2 rewrite); src/rust/crates/fathomdb-engine/src/lib.rs:2846 (_fathomdb_vector_rows writer insert; Pack 1 double-write); src/rust/crates/fathomdb-engine/src/lib.rs:3278-3283 (vector_default CREATE VIRTUAL TABLE; Pack 1 schema migration); src/rust/crates/fathomdb-engine/src/lib.rs:3107 (register_sqlite_vec_extension; unchanged but inspected); src/rust/crates/fathomdb-engine/src/lib.rs:3248-3260 (_fathomdb_embedder_profiles; UNCHANGED — embedder contract preserved); src/rust/crates/fathomdb-engine/src/lib.rs:2174,2242 (writer-loop pins; unchanged); src/rust/crates/fathomdb-engine/tests/perf_gates.rs:149-150 (AC013_BUDGET_P50/P99 re-pin in Pack 2); src/rust/crates/fathomdb-engine/tests/perf_gates.rs:487 (ac_013_vector_retrieval_latency); src/rust/crates/fathomdb-engine/tests/perf_gates.rs:609 (ac_019_mixed_retrieval_stress_workload_tail); src/rust/crates/fathomdb-engine/tests/perf_gates.rs new ac_NNN_recall_at_10 test (Pack 2); src/rust/crates/fathomdb-engine/Cargo.toml:18 (sqlite-vec pin; stays =0.1.7); dev/adr/ADR-0.7.0-text-query-latency-gates-revised.md (numeric lock-flip target, post Pack 2); dev/notes/pcache2-followups.md (post-0.7.0 ANN follow-ups)
+status: draft, HITL-required
+---
+
+# ADR-0.7.0 — Vector binary quantization (Pack 1 + Pack 2)
+
+**Status:** draft, HITL-required.
+
+This ADR records the data-encoding decision that closes AC-013
+within the proposed 80 / 300 ms envelope in 0.7.0. AC-019 is
+collaterally re-measured under the new query path — its existing
+10× stress-bound is expected to improve proportionally but its
+budget shape is unchanged and its numeric row in the budgets ADR
+remains a placeholder pending the post-Pack-2 canonical-CI run
+(see § 6). It is paired with — and feeds into — the numeric
+lock-flip that will be made post-Pack-2 against
+`dev/adr/ADR-0.7.0-text-query-latency-gates-revised.md`. That ADR
+remains the budget owner; this ADR commits the architectural shape
+that makes those budgets reachable.
+
+## 1. Problem
+
+Canonical-CI measurement on 2026-05-27 under the locked
+W4.1-stacked-O1 (`L-Y1+L-Y2+L-B5+L-B4+L-D1-pcache2-O1`) stack
+(`dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json`)
+reports AC-013 at **p50 = 2048 ms, p99 = 2327 ms** on the
+N = 1,000,000 / dim 768 f32 fixture seeded by `VaryingEmbedder`
+(`src/rust/crates/fathomdb-engine/tests/perf_gates.rs:296` and
+`:317`). AC-019 stress p99 = 8388 ms under bound 20964 ms; the
+bound is met today but the underlying per-query cost is the same
+hot path.
+
+The proposed budgets in
+`dev/adr/ADR-0.7.0-text-query-latency-gates-revised.md` are
+**80 ms p50 / 300 ms p99**. The measurement is therefore
+**~25–40× over** the budget envelope. The current
+`AC013_BUDGET_P50 = 50ms` / `AC013_BUDGET_P99 = 200ms` constants in
+`src/rust/crates/fathomdb-engine/tests/perf_gates.rs:149-150` are
+the unindexed-path-pre-lock values; the revised budgets ADR drafts
+80 / 300 ms but they have not yet been pinned in the test, by
+design (the re-pin is itself the Pack 2 RED gate).
+
+**Root cause.** The hot SQL at
+`src/rust/crates/fathomdb-engine/src/lib.rs:2317-2323`
+
+```
+SELECT rowid FROM vector_default
+WHERE embedding MATCH vec_f32(?1)
+ORDER BY distance
+LIMIT 10
+```
+
+drives a per-query O(N) brute-force scan over the
+`vector_default` vec0 table declared at
+`src/rust/crates/fathomdb-engine/src/lib.rs:3278-3283` as
+`USING vec0(embedding float[<dim>])` — i.e. a single global f32
+table with no metadata columns, no partition keys, no auxiliary
+index. At N = 1 M × dim 768 × 4 B that is 3.0 GB of memory
+streamed per query; the observed 2048 ms p50 corresponds to
+~1.5 GB/s, which sits at the single-thread memory-read ceiling
+on the canonical AMD EPYC 7763 runner. No SQLite engine knob can
+move this — the bytes-per-row × rows-per-query product is the
+floor. To close the gate we must either shrink the bytes per row,
+shrink the row count visited per query, or both.
+
+Cross-reference: `dev/notes/0.7.0-vector-cost-research.md`
+§ "Problem restated" through § "Tier 1 combined estimate" enumerates
+the lever surface; the present ADR commits to the Tier-1 #4 +
+Tier-1 #1/#2 bundle as the load-bearing decision.
+
+## 2. Decision
+
+Adopt the following, to ship in two packs within the 0.7.0 release
+line (Pack 1 then Pack 2; pack boundary is for review granularity,
+not release-boundary):
+
+1. **Binary quantization** of the f32 embedding into a sibling
+   `bit[768]` column on the existing `vector_default` vec0 table
+   (Pack 1.1 default per
+   `dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md`
+   § 1.1). The bit column is computed via sqlite-vec's
+   `vec_quantize_binary(embedding)` and written inside the same
+   writer transaction as the existing f32 insert. Sibling-table
+   fallback (`vector_default_bin`) is selected only if the
+   sibling-column shape hits the vec0 metadata column limit
+   (16 cols). The f32 `embedding` column is **retained** for
+   the rerank phase and for the recall-floor ground-truth pass —
+   it has two jobs after Pack 1.
+
+2. **Two-phase query** (Pack 2): bit-KNN top-K=64 candidates →
+   f32 rerank → top-10. The exact SQL shape (subject to the
+   sqlite-vec syntax confirmation called out in
+   `dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md` § 2.2)
+   replaces the single-phase scan at
+   `src/rust/crates/fathomdb-engine/src/lib.rs:2317-2323`. K is
+   a named constant / config knob so future tuning is cheap; the
+   K = 64 default is taken from the Kyle Howells and Cohere
+   binary-quant benches cited in
+   `dev/notes/0.7.0-vector-cost-research.md` § Tier 1 #4.
+
+3. **Schema extension shipped on the same migration** (Pack 1):
+   - `source_type TEXT` as a vec0 **partition_key**
+     (HITL-locked 2026-05-27 in
+     `dev/plans/0.7.0-HITL-recommendations.md`; cardinality ~6:
+     email, article, paper, meeting, note, todo). Maps from the
+     existing chunk-record vector kind at write time
+     (deterministic 1:1 mapping for the current single-kind
+     fixture; `source_type` is the authoritative going-forward
+     vocabulary).
+   - Additional metadata columns (`kind`, `created_at`, `tags`,
+     `project_mentions`, …) populated from the existing chunk
+     record. Per HITL Q5 in
+     `dev/plans/0.7.0-HITL-recommendations.md` and
+     `dev/notes/0.7.0-vector-cost-research.md` Tier 1 #1,
+     descriptive retrieval filters live in metadata columns +
+     WHERE predicates, not in partition keys. The vec0 limit is
+     16 metadata columns; the Pack 1 schema MUST budget headroom.
+
+4. **Recall floor: ≥ 0.90 recall@10** vs f32 brute-force ground
+   truth on the AC-013 fixture
+   (`dev/plans/0.7.0-HITL-recommendations.md`,
+   `dev/notes/0.7.0-vector-cost-research.md` § HITL responses #1).
+   Enforced by a new perf-gates test (`ac_NNN_recall_at_10`)
+   landed RED in Pack 2 before the query rewrite. Ground truth
+   is computed at test-setup via a one-pass brute-force scan
+   through the retained f32 column — single corpus, two jobs.
+
+   **0.7.2 amendment — floor VALIDATED against the real default
+   embedder (keep 0.90).** The 0.90 floor is retained, now backed
+   by the corrected real-embedder measurement rather than the
+   earlier artifact:
+
+   - **Validated number.** On the real default embedder
+     (bge-small, candle) over the EU-7 real corpus (N = 7667,
+     K = 192), the corrected **ANN recall@10 = 0.937
+     (CI 0.913–0.957, sigma 0.0116)**, measured the standard ANN
+     way (exclude the query-source doc *before* taking top-10;
+     dedup-by-id ground truth). The full CI clears 0.90, so 0.90
+     is conservative and is **not raised** (a mechanical R − 2σ
+     gives 0.914 → 0.91, still above the floor; the headroom is
+     preserved for production variance and the still-pending
+     N = 1M canonical run, PR-3).
+
+   - **What this floor IS (explicit).** This is an **ANN /
+     quantization-FIDELITY** recall: ground truth = the exact
+     full-precision f32 top-10 over the *same* model, and it
+     measures how faithfully the 1-bit sign-quant index (K = 192
+     Hamming candidates + f32 rerank) reproduces the brute-force
+     neighbors. It is **NOT IR-relevance** — it says nothing about
+     whether the retrieved results are semantically relevant to a
+     query.
+
+   - **Harness-methodology finding.** The earlier real-corpus
+     number (0.828) was a *conservative-measurement artifact*, not
+     an engine deficiency: +7.8pp is recovered by excluding the
+     self-retrieving query-source doc *before* the top-10 (vs
+     after) and by matching ground truth by id/dedup (vs
+     body-string GT over a corpus with 5.6% duplicate bodies). See
+     `dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md` (esp. "The
+     measure under discussion" + the decomposition table).
+
+   - **Separate IR note (a ceiling, NOT a gate).** EU-8 measured
+     the embedder's **IR-relevance** ceiling at recall@10 = **0.571**
+     (CI 0.530–0.614) on 301 labeled queries — far below the 0.937
+     ANN fidelity. ANN fidelity exceeding the IR ceiling by ~37pp
+     means **quantization is not the bottleneck**: chasing ANN
+     recall higher (K / candidate tuning, tighter index) yields no
+     perceptible user gain. The lever for end-to-end quality is a
+     **better embedder or the graph**, NOT K / ANN tuning. This
+     0.571 is the embedder/task ceiling and is deliberately **not**
+     turned into a gate. See
+     `dev/plans/runs/0.7.2-EU-8-ir-recall-results.md`.
+
+5. **sqlite-vec pin stays `=0.1.7`**
+   (`src/rust/crates/fathomdb-engine/Cargo.toml:18`). 0.1.7
+   already ships `bit[N]` and `vec_quantize_binary` per the
+   sqlite-vec release notes
+   (`dev/notes/0.7.0-vector-cost-research.md` Tier 1 #4
+   citation). Bump to `=0.1.9` is allowed in Pack 1 **only if
+   needed** for constraint-column refinements; not required and
+   not recommended without justification.
+
+6. **Embedder unchanged.** The `EmbedderIdentity` contract,
+   `VaryingEmbedder`, and the profile-pinning logic at
+   `src/rust/crates/fathomdb-engine/src/lib.rs:3248-3260` are
+   not touched. HITL Q2 in
+   `dev/notes/0.7.0-vector-cost-research.md` § HITL responses
+   locked: KEEP existing embedder. Tier-1 #3 (smaller
+   embeddings) and Tier-1 #5 (matryoshka) are out of scope
+   for 0.7.0.
+
+7. **Single-writer + projection-cursor contracts preserved.**
+   Both column inserts commit in the same writer transaction at
+   the `_fathomdb_vector_rows` insert site near
+   `src/rust/crates/fathomdb-engine/src/lib.rs:2846`. The
+   writer-loop pins at `:2174` and `:2242` are not touched.
+   AC-017 / AC-018 / AC-020 behavior is preserved.
+
+## 3. Alternatives considered (and rejected)
+
+Each alternative below was considered against the AC-013 gap; the
+research doc carries the long-form analysis.
+
+- **Vectorlite (HNSW SQLite extension).** Mechanism: load a
+  separate `USING vectorlite(...)` virtual table backed by an
+  HNSW graph stored in shadow tables. Rejected because the
+  upstream has had no release since 2024-08-19, has no
+  published 1 M × 768 benchmark, and counts as a structural
+  architectural lever stacked on top of PCACHE2 — violates the
+  one-architectural-lever-per-release rule. Cited:
+  `dev/notes/0.7.0-vector-cost-research.md` § Tier 2.
+
+- **sqlite-vec ANN alpha (v0.1.10-alpha.1).** Mechanism: use
+  the upstream-experimental ANN indices (`rescore`, `ivf`,
+  `DiskANN`). Rejected because the release is alpha-tagged and
+  upstream classifies it as not production-ready. Cited:
+  `dev/notes/0.7.0-vector-cost-research.md` § Tier 3,
+  sqlite-vec releases.
+
+- **Rust-side `usearch` / `instant-distance`.** Mechanism:
+  pull KNN out of SQLite into a Rust-side ANN library and
+  rebuild the search verb around it. Rejected because the
+  blast radius (leaving SQLite for the KNN step, snapshot /
+  freshness handshake redesign, AC-017 cursor-freshness
+  re-derivation) is far larger than two packs of in-place
+  schema + query work, and the data-encoding lever closes the
+  gap without it. Cited:
+  `dev/notes/0.7.0-vector-cost-research.md` § Tier 3 (integration
+  shape C).
+
+- **Embedder swap (dim reduction 768 → 384 or 256).**
+  Mechanism: replace `VaryingEmbedder` with a smaller embedder
+  to shrink bytes-per-row. Rejected by HITL Q2 lock 2026-05-27:
+  keep existing embedder. Rationale: switching embedders
+  requires a profile rotation through
+  `_fathomdb_embedder_profiles` and a corpus rebuild
+  (writer-cooperation cost), and even at dim 128 the
+  arithmetic-only saving is ~6× — well short of the ~25–40×
+  gap. Cited:
+  `dev/notes/0.7.0-vector-cost-research.md` § Tier 1 #3,
+  § HITL responses.
+
+- **Partitioning alone (metadata prefilter / partition_key
+  without quantization).** Mechanism: keep the f32 column,
+  add `source_type` partition_key + metadata columns, push
+  filters into the WHERE clause. Rejected as load-bearing:
+  the AC-013 fixture is single-kind, so partitioning yields
+  zero benefit at the gate. Partitioning is **kept** as a
+  bundled deliverable in Pack 1 because it is the correct
+  shape for real workloads and avoids a second migration in
+  0.7.1 — but it does not close the gate on its own. Cited:
+  `dev/notes/0.7.0-vector-cost-research.md` § Tier 1 #1, #2.
+
+## 4. Consequences
+
+
+codex
+I have the governing documents. Next I’m checking the concrete implementation: commit diffs, `perf_gates.rs` constant/comment/test, and the amended ADR sections around §4 and §6 to confirm there’s no hidden gate drift.
+exec
+/bin/bash -lc 'git diff --stat 62c161e..78164b91813d2cb44bdd2affe9a47cbe4beb6e47' in /tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z
+ succeeded in 0ms:
+ dev/adr/ADR-0.7.0-vector-binary-quant.md           | 64 +++++++++++++++++++++-
+ dev/plans/runs/0.7.2-PR-2bc-S3-output.json         | 14 +++++
+ .../crates/fathomdb-engine/tests/perf_gates.rs     | 26 +++++++++
+ 3 files changed, 101 insertions(+), 3 deletions(-)
+
+exec
+/bin/bash -lc 'git diff 62c161e..78164b91813d2cb44bdd2affe9a47cbe4beb6e47 -- src/rust/crates/fathomdb-engine/tests/perf_gates.rs dev/adr/ADR-0.7.0-vector-binary-quant.md' in /tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z
+ succeeded in 0ms:
+diff --git a/dev/adr/ADR-0.7.0-vector-binary-quant.md b/dev/adr/ADR-0.7.0-vector-binary-quant.md
+index 7df86de..8362a93 100644
+--- a/dev/adr/ADR-0.7.0-vector-binary-quant.md
++++ b/dev/adr/ADR-0.7.0-vector-binary-quant.md
+@@ -130,6 +130,52 @@ not release-boundary):
+    is computed at test-setup via a one-pass brute-force scan
+    through the retained f32 column — single corpus, two jobs.
+ 
++   **0.7.2 amendment — floor VALIDATED against the real default
++   embedder (keep 0.90).** The 0.90 floor is retained, now backed
++   by the corrected real-embedder measurement rather than the
++   earlier artifact:
++
++   - **Validated number.** On the real default embedder
++     (bge-small, candle) over the EU-7 real corpus (N = 7667,
++     K = 192), the corrected **ANN recall@10 = 0.937
++     (CI 0.913–0.957, sigma 0.0116)**, measured the standard ANN
++     way (exclude the query-source doc *before* taking top-10;
++     dedup-by-id ground truth). The full CI clears 0.90, so 0.90
++     is conservative and is **not raised** (a mechanical R − 2σ
++     gives 0.914 → 0.91, still above the floor; the headroom is
++     preserved for production variance and the still-pending
++     N = 1M canonical run, PR-3).
++
++   - **What this floor IS (explicit).** This is an **ANN /
++     quantization-FIDELITY** recall: ground truth = the exact
++     full-precision f32 top-10 over the *same* model, and it
++     measures how faithfully the 1-bit sign-quant index (K = 192
++     Hamming candidates + f32 rerank) reproduces the brute-force
++     neighbors. It is **NOT IR-relevance** — it says nothing about
++     whether the retrieved results are semantically relevant to a
++     query.
++
++   - **Harness-methodology finding.** The earlier real-corpus
++     number (0.828) was a *conservative-measurement artifact*, not
++     an engine deficiency: +7.8pp is recovered by excluding the
++     self-retrieving query-source doc *before* the top-10 (vs
++     after) and by matching ground truth by id/dedup (vs
++     body-string GT over a corpus with 5.6% duplicate bodies). See
++     `dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md` (esp. "The
++     measure under discussion" + the decomposition table).
++
++   - **Separate IR note (a ceiling, NOT a gate).** EU-8 measured
++     the embedder's **IR-relevance** ceiling at recall@10 = **0.571**
++     (CI 0.530–0.614) on 301 labeled queries — far below the 0.937
++     ANN fidelity. ANN fidelity exceeding the IR ceiling by ~37pp
++     means **quantization is not the bottleneck**: chasing ANN
++     recall higher (K / candidate tuning, tighter index) yields no
++     perceptible user gain. The lever for end-to-end quality is a
++     **better embedder or the graph**, NOT K / ANN tuning. This
++     0.571 is the embedder/task ceiling and is deliberately **not**
++     turned into a gate. See
++     `dev/plans/runs/0.7.2-EU-8-ir-recall-results.md`.
++
+ 5. **sqlite-vec pin stays `=0.1.7`**
+    (`src/rust/crates/fathomdb-engine/Cargo.toml:18`). 0.1.7
+    already ships `bit[N]` and `vec_quantize_binary` per the
+@@ -250,7 +296,11 @@ research doc carries the long-form analysis.
+   (`tests/perf_gates.rs:149-150` → 80 / 300 ms) and must
+   remain RED at canonical-CI N = 1 M scale until Pack 2.2's
+   query rewrite lands. Both gates GREEN at canonical-CI is
+-  the Pack 2 close criterion.
++  the Pack 2 close criterion. (0.7.2: the 0.90 floor is kept and
++  now VALIDATED against the real embedder — corrected ANN-fidelity
++  recall@10 = 0.937, full CI above 0.90; see § 2 point 4. A fast
++  sentinel `ac_013b_floor_matches_adr` pins the constant to this
++  ADR.)
+ 
+ - **AC-019 carry.** The existing 10× bound on AC-019 stays
+   unchanged; the same two-phase query shape benefits AC-019
+@@ -321,7 +371,11 @@ items the implementing agent should escalate to HITL".
+   (per `dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md`
+   § "Open items"). K may need to rise to 128 or 256; the choice
+   is documented in the closing slice JSON and reflected in the
+-  named constant.
++  named constant. (0.7.2 update: K shipped at 192; the corrected
++  ANN-fidelity measurement is 0.937 — well clear of 0.90 — so no
++  K-tuning is warranted on recall grounds. ANN fidelity already
++  exceeds the embedder IR ceiling (0.571), so higher K buys no
++  user-visible gain. See § 2 point 4.)
+ 
+ - **vec0 metadata column budget.** The vec0 16-column cap
+   constrains the Pack 1 schema. If the desired metadata schema
+@@ -348,7 +402,11 @@ items the implementing agent should escalate to HITL".
+   (`src/rust/crates/fathomdb-engine/tests/perf_gates.rs:317`),
+   which is atypically friendly to sign-pattern quantisation —
+   HITL is owed the note that AC-013's recall headroom may
+-  overstate real-workload headroom.
++  overstate real-workload headroom. (0.7.2 update: this concern
++  is now largely addressed empirically — the real default embedder
++  (bge-small, candle) over the EU-7 real corpus measures
++  ANN-fidelity recall@10 = 0.937, full CI above 0.90; see § 2
++  point 4.)
+ 
+ ## 7. Status / next actions
+ 
+diff --git a/src/rust/crates/fathomdb-engine/tests/perf_gates.rs b/src/rust/crates/fathomdb-engine/tests/perf_gates.rs
+index 3eb0544..38bb466 100644
+--- a/src/rust/crates/fathomdb-engine/tests/perf_gates.rs
++++ b/src/rust/crates/fathomdb-engine/tests/perf_gates.rs
+@@ -575,6 +575,15 @@ fn ac_013b_recall_at_10_floor() {
+     // P2-IMPL the production path switches to bit-KNN + f32 rerank; this
+     // test then measures how well the candidate set preserves the f32
+     // top-10. HITL-locked floor is 0.90 (see AC013B_RECALL_FLOOR).
++    //
++    // 0.7.2 reframe: the corrected ANN / quantization-FIDELITY measurement
++    // on the real default embedder (bge-small, candle; EU-7 corpus N=7667)
++    // is recall@10 = 0.937 (CI 0.913-0.957, sigma 0.0116) — full CI above
++    // 0.90. The earlier 0.828 was a conservative-measurement artifact
++    // (exclude-after + body-string GT); see ADR-0.7.0-vector-binary-quant.md
++    // § 2 point 4 and dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md. This
++    // is ANN fidelity (GT = exact f32 top-10 over the SAME model), NOT
++    // IR-relevance — the separate EU-8 IR ceiling (0.571) is not a gate.
+     if !long_run_enabled() {
+         return;
+     }
+@@ -646,6 +655,23 @@ fn ac_013b_recall_at_10_floor() {
+     );
+ }
+ 
++/// Fast, non-gated sentinel: the recall-floor constant must stay in lockstep
++/// with the value documented in ADR-0.7.0-vector-binary-quant.md § 2 point 4
++/// (HITL-locked ≥ 0.90 recall@10 vs f32 brute-force ground truth). The ADR § 2
++/// point 4 amendment cites the corrected ANN-fidelity anchor 0.937 but keeps
++/// the floor itself at 0.90 (conservative; R-2sigma = 0.914). If anyone changes
++/// AC013B_RECALL_FLOOR without re-ratifying the ADR (or vice versa), this test
++/// catches the drift. It does NOT seed a corpus, so it always runs.
++#[test]
++fn ac_013b_floor_matches_adr() {
++    assert_eq!(
++        AC013B_RECALL_FLOOR, 0.90,
++        "AC013B_RECALL_FLOOR must remain 0.90 to match the HITL-locked value in \
++         ADR-0.7.0-vector-binary-quant.md § 2 point 4; changing it requires \
++         re-ratifying that ADR section."
++    );
++}
++
+ #[test]
+ fn ac_017_vector_projection_freshness_p99_le_five_seconds() {
+     let (_dir, path) = fixture_path("projection_freshness");
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/tests/perf_gates.rs | sed -n '145,640p'" in /tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z
+ succeeded in 0ms:
+   145	const AC019_THREADS: usize = 8;
+   146	const AC019_QUERIES_PER_THREAD: usize = 250;
+   147	const AC012_BUDGET_P50: Duration = Duration::from_millis(20);
+   148	const AC012_BUDGET_P99: Duration = Duration::from_millis(150);
+   149	// Pack 2 RED re-pin (dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md
+   150	// § Pack 2.1): canonical-CI N=1M observed p50=2048 ms / p99=2327 ms on the
+   151	// f32-brute-force read path (dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-
+   152	// canonical-output.json). HITL-locked target post bit-quant + rerank is
+   153	// ≤ 80 / 300 ms — RED at canonical scale until P2-IMPL lands.
+   154	const AC013_BUDGET_P50: Duration = Duration::from_millis(80);
+   155	const AC013_BUDGET_P99: Duration = Duration::from_millis(300);
+   156	// Recall floor for AC-013b: HITL-locked ≥ 0.90 at k=10 vs f32 ground truth
+   157	// (dev/plans/0.7.0-HITL-recommendations.md:89; ADR-0.7.0-vector-binary-
+   158	// quant.md § 2 point 4).
+   159	const AC013B_RECALL_FLOOR: f64 = 0.90;
+   160	const AC019_STRESS_FLOOR: Duration = Duration::from_millis(150);
+   161	const AC019_STRESS_MULT: u32 = 10;
+   162	const RETRIEVAL_VECTOR_DIM: u32 = 768;
+   163	
+   164	fn env_usize(key: &str, default_full: usize, default_short: usize) -> usize {
+   165	    if let Ok(raw) = std::env::var(key) {
+   166	        if let Ok(parsed) = raw.parse::<usize>() {
+   167	            return parsed;
+   168	        }
+   169	    }
+   170	    if std::env::var_os("AC_FULL_SCALE").is_some() {
+   171	        default_full
+   172	    } else {
+   173	        default_short
+   174	    }
+   175	}
+   176	
+   177	fn ac012_corpus_n() -> usize {
+   178	    env_usize("AC012_CORPUS_N", 1_000_000, AC012_DEFAULT_N)
+   179	}
+   180	
+   181	fn ac013_corpus_n() -> usize {
+   182	    env_usize("AC013_CORPUS_N", 1_000_000, AC013_DEFAULT_N)
+   183	}
+   184	
+   185	/// Deterministic seeded LCG. Generates reproducible token streams so the
+   186	/// AC-012 corpus and the held-out query set are both byte-stable across
+   187	/// runs (per ADR-0.6.0-text-query-latency-gates "synthetic-English-like
+   188	/// text with a Zipfian token-frequency distribution").
+   189	struct SeededRng {
+   190	    state: u64,
+   191	}
+   192	
+   193	impl SeededRng {
+   194	    fn new(seed: u64) -> Self {
+   195	        Self { state: seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(1) }
+   196	    }
+   197	
+   198	    fn next_u64(&mut self) -> u64 {
+   199	        self.state = self.state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+   200	        self.state
+   201	    }
+   202	
+   203	    fn next_in(&mut self, bound: usize) -> usize {
+   204	        (self.next_u64() as usize) % bound
+   205	    }
+   206	
+   207	    fn next_f64(&mut self) -> f64 {
+   208	        (self.next_u64() >> 11) as f64 / ((1u64 << 53) as f64)
+   209	    }
+   210	}
+   211	
+   212	/// Vocabulary of synthetic English-like tokens. Size ~1024 keeps the
+   213	/// FTS index dense; tokens are short, ASCII, lowercase, deterministic.
+   214	fn perf_vocab() -> Vec<String> {
+   215	    let mut out = Vec::with_capacity(1024);
+   216	    for i in 0..1024 {
+   217	        let a = (b'a' + ((i / 26 / 26) % 26) as u8) as char;
+   218	        let b = (b'a' + ((i / 26) % 26) as u8) as char;
+   219	        let c = (b'a' + (i % 26) as u8) as char;
+   220	        out.push(format!("{a}{b}{c}{i:04}"));
+   221	    }
+   222	    out
+   223	}
+   224	
+   225	/// Sample a token index under a Zipfian-ish distribution with shape s=1.0,
+   226	/// using inverse-CDF on a precomputed cumulative weight table. Returns an
+   227	/// index into the vocabulary in [0, vocab_size).
+   228	fn zipf_index(rng: &mut SeededRng, cumulative: &[f64]) -> usize {
+   229	    let r = rng.next_f64() * cumulative[cumulative.len() - 1];
+   230	    match cumulative.binary_search_by(|w| w.partial_cmp(&r).unwrap_or(std::cmp::Ordering::Equal)) {
+   231	        Ok(idx) => idx,
+   232	        Err(idx) => idx.min(cumulative.len() - 1),
+   233	    }
+   234	}
+   235	
+   236	fn zipf_cumulative(vocab_size: usize) -> Vec<f64> {
+   237	    let mut cumulative = Vec::with_capacity(vocab_size);
+   238	    let mut acc = 0.0_f64;
+   239	    for k in 1..=vocab_size {
+   240	        acc += 1.0_f64 / k as f64;
+   241	        cumulative.push(acc);
+   242	    }
+   243	    cumulative
+   244	}
+   245	
+   246	/// Generate one synthetic chunk body of approximately `target_bytes`
+   247	/// (~500 B per ADR) using the Zipfian sampler. Tokens are space-joined.
+   248	fn synth_chunk_body(rng: &mut SeededRng, vocab: &[String], cumulative: &[f64]) -> String {
+   249	    // Tokens average ~7 chars + 1 separator, target ~500 B => ~63 tokens.
+   250	    let mut body = String::with_capacity(512);
+   251	    let token_count = 55 + rng.next_in(20);
+   252	    for i in 0..token_count {
+   253	        if i > 0 {
+   254	            body.push(' ');
+   255	        }
+   256	        body.push_str(&vocab[zipf_index(rng, cumulative)]);
+   257	    }
+   258	    body
+   259	}
+   260	
+   261	/// Choose a held-out query token from the 50th–90th percentile
+   262	/// term-frequency band per ADR-0.6.0-text-query-latency-gates. Vocab is
+   263	/// indexed by descending frequency rank (rank 0 most frequent), so the
+   264	/// band maps to indices [0.10*vocab, 0.50*vocab) (frequency rank space).
+   265	/// The Zipfian sampler yields rank 0 most often, so this band carves out
+   266	/// the body of the distribution.
+   267	fn ac012_query_token_band(vocab: &[String]) -> Vec<String> {
+   268	    let lo = vocab.len() / 10;
+   269	    let hi = vocab.len() / 2;
+   270	    vocab[lo..hi].to_vec()
+   271	}
+   272	
+   273	/// AC-012 deterministic seeder: 1 chunk body per write batch (4096 nodes
+   274	/// per `engine.write()`). Returns elapsed seed time for diagnostics.
+   275	fn seed_ac012_corpus(engine: &Engine, n: usize) -> Duration {
+   276	    const BATCH: usize = 4096;
+   277	    let vocab = perf_vocab();
+   278	    let cumulative = zipf_cumulative(vocab.len());
+   279	    let mut rng = SeededRng::new(0x0AC0_12C0_12C0);
+   280	    let started = Instant::now();
+   281	    let mut written = 0usize;
+   282	    while written < n {
+   283	        let take = BATCH.min(n - written);
+   284	        let mut batch = Vec::with_capacity(take);
+   285	        for _ in 0..take {
+   286	            batch.push(PreparedWrite::Node {
+   287	                kind: "doc".to_string(),
+   288	                body: synth_chunk_body(&mut rng, &vocab, &cumulative),
+   289	                source_id: None,
+   290	            });
+   291	        }
+   292	        engine.write(&batch).expect("ac-012 seed write");
+   293	        written += take;
+   294	    }
+   295	    // No vector kind configured -> projection runtime still drains FTS index.
+   296	    engine.drain(600_000).expect("ac-012 drain");
+   297	    started.elapsed()
+   298	}
+   299	
+   300	/// Deterministic dense isotropic embedder. Seeds an xorshift64 PRNG
+   301	/// from FNV-1a of the input and fills every coordinate with a
+   302	/// uniformly-distributed value in [-1, 1), then L2-normalizes.
+   303	///
+   304	/// **Why dense, not sparse.** A prior version of this struct placed
+   305	/// mass on only 6 of `dim` coordinates (FNV-driven slot picks). That
+   306	/// is pathological for binary quantization: `vec_quantize_binary`
+   307	/// takes the sign bit of every coordinate, so for a dim-768 sparse
+   308	/// vector with 6 non-zero coords, ~762 of 768 sign bits encode the
+   309	/// IEEE sign of an exact 0.0 (positive). The bit-distance between
+   310	/// any two corpus vectors then carries only ~6 bits of signal — bit-
+   311	/// KNN top-K=64 returns near-random candidates and AC-013b recall@10
+   312	/// collapsed to 0.157 on N=10K once the unrelated batch-collapse bug
+   313	/// was fixed. See `dev/plans/runs/STATUS-perf-vector-quant.md`
+   314	/// "Fixture-replacement evaluation" for the full analysis.
+   315	///
+   316	/// **Why isotropic.** Per-coordinate variance is uniform across
+   317	/// dim, which is the regime where Charikar's `1 − θ/π` SimHash
+   318	/// collision-probability bound is tight. Real embeddings are
+   319	/// anisotropic (Ethayarajh 2019; Gao 2019 "cone effect") and will
+   320	/// score *lower* than this fixture under sign-bit quantization —
+   321	/// see the e5-base-v2 reference at 74.8% NDCG@10 retention. So this
+   322	/// fixture's recall@10 is a NECESSARY-but-not-SUFFICIENT condition
+   323	/// for the AC-013b 0.90 HITL-locked floor against real embeddings;
+   324	/// real-embedding validation is deferred to 0.7.1 EMBEDDER-UNDEFER
+   325	/// per `dev/plans/prompts/0.7.1-EMBEDDER-UNDEFER-HANDOFF.md`.
+   326	#[derive(Clone, Debug)]
+   327	struct VaryingEmbedder {
+   328	    identity: EmbedderIdentity,
+   329	    dim: u32,
+   330	}
+   331	
+   332	impl VaryingEmbedder {
+   333	    fn new(dim: u32) -> Self {
+   334	        Self { identity: EmbedderIdentity::new("varying", "perf-gates-dense", dim), dim }
+   335	    }
+   336	
+   337	    fn vector_for(&self, text: &str) -> Vector {
+   338	        let dim = self.dim as usize;
+   339	        // FNV-1a 64-bit on the input — same hash as the prior sparse
+   340	        // version, so seed determinism is unchanged.
+   341	        let mut h: u64 = 0xcbf29ce484222325;
+   342	        for &b in text.as_bytes() {
+   343	            h ^= b as u64;
+   344	            h = h.wrapping_mul(0x100000001b3);
+   345	        }
+   346	        // Avoid the all-zero xorshift fixed point for empty input.
+   347	        if h == 0 {
+   348	            h = 0xdeadbeef_cafebabe;
+   349	        }
+   350	        let mut state = h;
+   351	        let mut v = Vec::with_capacity(dim);
+   352	        for _ in 0..dim {
+   353	            // xorshift64 — full-period, zero-pole-avoidance above.
+   354	            state ^= state << 13;
+   355	            state ^= state >> 7;
+   356	            state ^= state << 17;
+   357	            // Map u64 → [-1, 1) via the i32 cast of the low 32 bits.
+   358	            let x = ((state as u32) as i32 as f32) / (i32::MAX as f32 + 1.0);
+   359	            v.push(x);
+   360	        }
+   361	        let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-6);
+   362	        for x in &mut v {
+   363	            *x /= norm;
+   364	        }
+   365	        v
+   366	    }
+   367	}
+   368	
+   369	impl Embedder for VaryingEmbedder {
+   370	    fn identity(&self) -> EmbedderIdentity {
+   371	        self.identity.clone()
+   372	    }
+   373	
+   374	    fn embed(&self, text: &str) -> Result<Vector, EmbedderError> {
+   375	        Ok(self.vector_for(text))
+   376	    }
+   377	}
+   378	
+   379	/// AC-013 deterministic seeder: N vector rows with varying embeddings.
+   380	/// Returns elapsed seed time. Bodies double as both FTS5 documents and
+   381	/// the input to the embedder, so the same fixture supports AC-019's
+   382	/// FTS+vector mixed workload.
+   383	fn seed_ac013_corpus(engine: &Engine, n: usize) -> Duration {
+   384	    const BATCH: usize = 1024;
+   385	    let vocab = perf_vocab();
+   386	    let cumulative = zipf_cumulative(vocab.len());
+   387	    let mut rng = SeededRng::new(0x0AC0_13D0_13D0);
+   388	    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+   389	    let started = Instant::now();
+   390	    let mut written = 0usize;
+   391	    while written < n {
+   392	        let take = BATCH.min(n - written);
+   393	        let mut batch = Vec::with_capacity(take);
+   394	        for _ in 0..take {
+   395	            batch.push(PreparedWrite::Node {
+   396	                kind: "doc".to_string(),
+   397	                body: synth_chunk_body(&mut rng, &vocab, &cumulative),
+   398	                source_id: None,
+   399	            });
+   400	        }
+   401	        engine.write(&batch).expect("ac-013 seed write");
+   402	        written += take;
+   403	    }
+   404	    engine.drain(1_800_000).expect("ac-013 drain");
+   405	    started.elapsed()
+   406	}
+   407	
+   408	/// Build a held-out reproducible query set drawn from the same
+   409	/// distribution as the indexed corpus (ADR-0.6.0-retrieval-latency-gates
+   410	/// "Query vectors drawn from a held-out slice of the same distribution").
+   411	fn ac013_query_bodies(count: usize) -> Vec<String> {
+   412	    let vocab = perf_vocab();
+   413	    let cumulative = zipf_cumulative(vocab.len());
+   414	    // Use a different seed than the corpus so the query set is held out
+   415	    // (not byte-equal to seeded chunks but drawn from same distribution).
+   416	    let mut rng = SeededRng::new(0x0AC0_130D_EC0D_E000);
+   417	    (0..count).map(|_| synth_chunk_body(&mut rng, &vocab, &cumulative)).collect()
+   418	}
+   419	
+   420	/// Bounded-size histogram for AC-019 tail-latency capture. Single
+   421	/// power-of-two bucketing in microseconds; avoids unbounded
+   422	/// `Vec<Duration>` per the Pack D plan (`Histogram::record` style).
+   423	struct LatencyHistogram {
+   424	    /// Bucket i spans [2^i us, 2^(i+1) us). 32 buckets covers 1 us .. ~71 minutes.
+   425	    buckets: [u64; 32],
+   426	    count: u64,
+   427	}
+   428	
+   429	impl LatencyHistogram {
+   430	    fn new() -> Self {
+   431	        Self { buckets: [0; 32], count: 0 }
+   432	    }
+   433	
+   434	    fn record(&mut self, d: Duration) {
+   435	        let us = d.as_micros().max(1) as u64;
+   436	        let bucket = (63 - us.leading_zeros()) as usize;
+   437	        let bucket = bucket.min(self.buckets.len() - 1);
+   438	        self.buckets[bucket] += 1;
+   439	        self.count += 1;
+   440	    }
+   441	
+   442	    fn merge(&mut self, other: &LatencyHistogram) {
+   443	        for i in 0..self.buckets.len() {
+   444	            self.buckets[i] += other.buckets[i];
+   445	        }
+   446	        self.count += other.count;
+   447	    }
+   448	
+   449	    /// Return the upper bound of the bucket containing the requested
+   450	    /// percentile (numerator/denominator). Conservative ceiling.
+   451	    fn percentile_ceil(&self, numerator: u64, denominator: u64) -> Duration {
+   452	        if self.count == 0 {
+   453	            return Duration::ZERO;
+   454	        }
+   455	        let target = (self.count * numerator).div_ceil(denominator);
+   456	        let mut acc: u64 = 0;
+   457	        for (i, count) in self.buckets.iter().enumerate() {
+   458	            acc += count;
+   459	            if acc >= target {
+   460	                let upper_us = 1u64 << (i + 1);
+   461	                return Duration::from_micros(upper_us);
+   462	            }
+   463	        }
+   464	        let i = self.buckets.len() - 1;
+   465	        Duration::from_micros(1u64 << (i + 1))
+   466	    }
+   467	}
+   468	
+   469	#[test]
+   470	fn ac_012_text_query_latency_on_fts5_path() {
+   471	    if !long_run_enabled() {
+   472	        return;
+   473	    }
+   474	
+   475	    let n = ac012_corpus_n();
+   476	    let (_dir, path) = fixture_path("ac012_text_query");
+   477	    let opened = Engine::open_without_embedder_for_test(&path).expect("open");
+   478	    let seed_elapsed = seed_ac012_corpus(&opened.engine, n);
+   479	
+   480	    // Build the held-out query token band (50th–90th percentile term
+   481	    // frequency per the ADR). Reproducible: seeded from the vocab order.
+   482	    let vocab = perf_vocab();
+   483	    let band = ac012_query_token_band(&vocab);
+   484	    let mut rng = SeededRng::new(0x0AC0_120D_EC0D_E000);
+   485	    let queries: Vec<String> =
+   486	        (0..PERF_SAMPLES).map(|_| band[rng.next_in(band.len())].clone()).collect();
+   487	
+   488	    // Warmup: full pass discarded, per ADR ("run the full query suite
+   489	    // once and discard; measure on the second pass").
+   490	    for q in &queries {
+   491	        let _ = opened.engine.search(q).expect("warmup search");
+   492	    }
+   493	
+   494	    // Measurement pass.
+   495	    let mut samples = Vec::with_capacity(PERF_SAMPLES);
+   496	    for q in &queries {
+   497	        let started = Instant::now();
+   498	        let _ = opened.engine.search(q).expect("measure search");
+   499	        samples.push(started.elapsed());
+   500	    }
+   501	
+   502	    let p50 = percentile_ceil(&samples, 50, 100);
+   503	    let p99 = percentile_ceil(&samples, 99, 100);
+   504	    eprintln!(
+   505	        "AC012_NUMBERS n={n} samples={s} seed_ms={seed} p50_ms={p50} p99_ms={p99}",
+   506	        s = samples.len(),
+   507	        seed = seed_elapsed.as_millis(),
+   508	        p50 = p50.as_millis(),
+   509	        p99 = p99.as_millis(),
+   510	    );
+   511	
+   512	    assert!(
+   513	        p50 <= AC012_BUDGET_P50,
+   514	        "AC-012 failed: p50={p50:?} > budget {budget:?} at n={n}",
+   515	        budget = AC012_BUDGET_P50,
+   516	    );
+   517	    assert!(
+   518	        p99 <= AC012_BUDGET_P99,
+   519	        "AC-012 failed: p99={p99:?} > budget {budget:?} at n={n}",
+   520	        budget = AC012_BUDGET_P99,
+   521	    );
+   522	}
+   523	
+   524	#[test]
+   525	fn ac_013_vector_retrieval_latency() {
+   526	    if !long_run_enabled() {
+   527	        return;
+   528	    }
+   529	
+   530	    let n = ac013_corpus_n();
+   531	    let (_dir, path) = fixture_path("ac013_vector_retrieval");
+   532	    let embedder = Arc::new(VaryingEmbedder::new(RETRIEVAL_VECTOR_DIM));
+   533	    let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
+   534	    let seed_elapsed = seed_ac013_corpus(&opened.engine, n);
+   535	
+   536	    let queries = ac013_query_bodies(PERF_SAMPLES);
+   537	
+   538	    for q in &queries {
+   539	        let _ = opened.engine.search(q).expect("warmup search");
+   540	    }
+   541	
+   542	    let mut samples = Vec::with_capacity(PERF_SAMPLES);
+   543	    for q in &queries {
+   544	        let started = Instant::now();
+   545	        let _ = opened.engine.search(q).expect("measure search");
+   546	        samples.push(started.elapsed());
+   547	    }
+   548	
+   549	    let p50 = percentile_ceil(&samples, 50, 100);
+   550	    let p99 = percentile_ceil(&samples, 99, 100);
+   551	    eprintln!(
+   552	        "AC013_NUMBERS n={n} samples={s} seed_ms={seed} p50_ms={p50} p99_ms={p99}",
+   553	        s = samples.len(),
+   554	        seed = seed_elapsed.as_millis(),
+   555	        p50 = p50.as_millis(),
+   556	        p99 = p99.as_millis(),
+   557	    );
+   558	
+   559	    assert!(
+   560	        p50 <= AC013_BUDGET_P50,
+   561	        "AC-013 failed: p50={p50:?} > budget {budget:?} at n={n}",
+   562	        budget = AC013_BUDGET_P50,
+   563	    );
+   564	    assert!(
+   565	        p99 <= AC013_BUDGET_P99,
+   566	        "AC-013 failed: p99={p99:?} > budget {budget:?} at n={n}",
+   567	        budget = AC013_BUDGET_P99,
+   568	    );
+   569	}
+   570	
+   571	#[test]
+   572	fn ac_013b_recall_at_10_floor() {
+   573	    // Pack 2 RED: pre-IMPL the production read path is byte-equal to the
+   574	    // brute-force f32 ground truth, so recall = 1.0 at land time. Post-
+   575	    // P2-IMPL the production path switches to bit-KNN + f32 rerank; this
+   576	    // test then measures how well the candidate set preserves the f32
+   577	    // top-10. HITL-locked floor is 0.90 (see AC013B_RECALL_FLOOR).
+   578	    //
+   579	    // 0.7.2 reframe: the corrected ANN / quantization-FIDELITY measurement
+   580	    // on the real default embedder (bge-small, candle; EU-7 corpus N=7667)
+   581	    // is recall@10 = 0.937 (CI 0.913-0.957, sigma 0.0116) — full CI above
+   582	    // 0.90. The earlier 0.828 was a conservative-measurement artifact
+   583	    // (exclude-after + body-string GT); see ADR-0.7.0-vector-binary-quant.md
+   584	    // § 2 point 4 and dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md. This
+   585	    // is ANN fidelity (GT = exact f32 top-10 over the SAME model), NOT
+   586	    // IR-relevance — the separate EU-8 IR ceiling (0.571) is not a gate.
+   587	    if !long_run_enabled() {
+   588	        return;
+   589	    }
+   590	
+   591	    let n = ac013_corpus_n();
+   592	    let (_dir, path) = fixture_path("ac013b_recall");
+   593	    let embedder = Arc::new(VaryingEmbedder::new(RETRIEVAL_VECTOR_DIM));
+   594	    let opened = Engine::open_with_embedder_for_test(&path, embedder.clone()).expect("open");
+   595	    let _seed_elapsed = seed_ac013_corpus(&opened.engine, n);
+   596	
+   597	    let queries = ac013_query_bodies(PERF_SAMPLES);
+   598	
+   599	    // Raw read-only connection for the f32 ground-truth pass. sqlite_vec
+   600	    // is process-global after Engine::open, so vec0 vtabs are reachable.
+   601	    // Mirrors the SQL at src/rust/crates/fathomdb-engine/src/lib.rs:2317-
+   602	    // 2342 (rowid lookup against vector_default, body fetch against
+   603	    // canonical_nodes by write_cursor).
+   604	    let db_path = opened.engine.path().to_path_buf();
+   605	    let conn = rusqlite::Connection::open(&db_path).expect("raw ground-truth conn");
+   606	    conn.pragma_update(None, "query_only", "ON").ok();
+   607	
+   608	    let mut total_hits = 0usize;
+   609	    let mut total_queries = 0usize;
+   610	
+   611	    for q in &queries {
+   612	        let vector = embedder.embed(q).expect("embed");
+   613	        let vector_json = serde_json::to_string(&vector).expect("json");
+   614	
+   615	        let mut gt_rowid_stmt = conn
+   616	            .prepare(
+   617	                "SELECT rowid
+   618	                 FROM vector_default
+   619	                 WHERE embedding MATCH vec_f32(?1)
+   620	                 ORDER BY distance
+   621	                 LIMIT 10",
+   622	            )
+   623	            .expect("prepare gt rowid");
+   624	        let gt_rowids: Vec<i64> = gt_rowid_stmt
+   625	            .query_map([&vector_json], |row| row.get::<_, i64>(0))
+   626	            .expect("gt rowid query")
+   627	            .filter_map(|r| r.ok())
+   628	            .collect();
+   629	
+   630	        let mut body_stmt = conn
+   631	            .prepare("SELECT body FROM canonical_nodes WHERE write_cursor = ?1 LIMIT 1")
+   632	            .expect("prepare body");
+   633	        let mut gt_bodies = Vec::with_capacity(gt_rowids.len());
+   634	        for rowid in &gt_rowids {
+   635	            if let Ok(body) = body_stmt.query_row([rowid], |row| row.get::<_, String>(0)) {
+   636	                gt_bodies.push(body);
+   637	            }
+   638	        }
+   639	
+   640	        let prod = opened.engine.search(q).expect("measure search").results;
+
+exec
+/bin/bash -lc "nl -ba dev/adr/ADR-0.7.0-vector-binary-quant.md | sed -n '115,360p'" in /tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z
+ succeeded in 0ms:
+   115	   - Additional metadata columns (`kind`, `created_at`, `tags`,
+   116	     `project_mentions`, …) populated from the existing chunk
+   117	     record. Per HITL Q5 in
+   118	     `dev/plans/0.7.0-HITL-recommendations.md` and
+   119	     `dev/notes/0.7.0-vector-cost-research.md` Tier 1 #1,
+   120	     descriptive retrieval filters live in metadata columns +
+   121	     WHERE predicates, not in partition keys. The vec0 limit is
+   122	     16 metadata columns; the Pack 1 schema MUST budget headroom.
+   123	
+   124	4. **Recall floor: ≥ 0.90 recall@10** vs f32 brute-force ground
+   125	   truth on the AC-013 fixture
+   126	   (`dev/plans/0.7.0-HITL-recommendations.md`,
+   127	   `dev/notes/0.7.0-vector-cost-research.md` § HITL responses #1).
+   128	   Enforced by a new perf-gates test (`ac_NNN_recall_at_10`)
+   129	   landed RED in Pack 2 before the query rewrite. Ground truth
+   130	   is computed at test-setup via a one-pass brute-force scan
+   131	   through the retained f32 column — single corpus, two jobs.
+   132	
+   133	   **0.7.2 amendment — floor VALIDATED against the real default
+   134	   embedder (keep 0.90).** The 0.90 floor is retained, now backed
+   135	   by the corrected real-embedder measurement rather than the
+   136	   earlier artifact:
+   137	
+   138	   - **Validated number.** On the real default embedder
+   139	     (bge-small, candle) over the EU-7 real corpus (N = 7667,
+   140	     K = 192), the corrected **ANN recall@10 = 0.937
+   141	     (CI 0.913–0.957, sigma 0.0116)**, measured the standard ANN
+   142	     way (exclude the query-source doc *before* taking top-10;
+   143	     dedup-by-id ground truth). The full CI clears 0.90, so 0.90
+   144	     is conservative and is **not raised** (a mechanical R − 2σ
+   145	     gives 0.914 → 0.91, still above the floor; the headroom is
+   146	     preserved for production variance and the still-pending
+   147	     N = 1M canonical run, PR-3).
+   148	
+   149	   - **What this floor IS (explicit).** This is an **ANN /
+   150	     quantization-FIDELITY** recall: ground truth = the exact
+   151	     full-precision f32 top-10 over the *same* model, and it
+   152	     measures how faithfully the 1-bit sign-quant index (K = 192
+   153	     Hamming candidates + f32 rerank) reproduces the brute-force
+   154	     neighbors. It is **NOT IR-relevance** — it says nothing about
+   155	     whether the retrieved results are semantically relevant to a
+   156	     query.
+   157	
+   158	   - **Harness-methodology finding.** The earlier real-corpus
+   159	     number (0.828) was a *conservative-measurement artifact*, not
+   160	     an engine deficiency: +7.8pp is recovered by excluding the
+   161	     self-retrieving query-source doc *before* the top-10 (vs
+   162	     after) and by matching ground truth by id/dedup (vs
+   163	     body-string GT over a corpus with 5.6% duplicate bodies). See
+   164	     `dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md` (esp. "The
+   165	     measure under discussion" + the decomposition table).
+   166	
+   167	   - **Separate IR note (a ceiling, NOT a gate).** EU-8 measured
+   168	     the embedder's **IR-relevance** ceiling at recall@10 = **0.571**
+   169	     (CI 0.530–0.614) on 301 labeled queries — far below the 0.937
+   170	     ANN fidelity. ANN fidelity exceeding the IR ceiling by ~37pp
+   171	     means **quantization is not the bottleneck**: chasing ANN
+   172	     recall higher (K / candidate tuning, tighter index) yields no
+   173	     perceptible user gain. The lever for end-to-end quality is a
+   174	     **better embedder or the graph**, NOT K / ANN tuning. This
+   175	     0.571 is the embedder/task ceiling and is deliberately **not**
+   176	     turned into a gate. See
+   177	     `dev/plans/runs/0.7.2-EU-8-ir-recall-results.md`.
+   178	
+   179	5. **sqlite-vec pin stays `=0.1.7`**
+   180	   (`src/rust/crates/fathomdb-engine/Cargo.toml:18`). 0.1.7
+   181	   already ships `bit[N]` and `vec_quantize_binary` per the
+   182	   sqlite-vec release notes
+   183	   (`dev/notes/0.7.0-vector-cost-research.md` Tier 1 #4
+   184	   citation). Bump to `=0.1.9` is allowed in Pack 1 **only if
+   185	   needed** for constraint-column refinements; not required and
+   186	   not recommended without justification.
+   187	
+   188	6. **Embedder unchanged.** The `EmbedderIdentity` contract,
+   189	   `VaryingEmbedder`, and the profile-pinning logic at
+   190	   `src/rust/crates/fathomdb-engine/src/lib.rs:3248-3260` are
+   191	   not touched. HITL Q2 in
+   192	   `dev/notes/0.7.0-vector-cost-research.md` § HITL responses
+   193	   locked: KEEP existing embedder. Tier-1 #3 (smaller
+   194	   embeddings) and Tier-1 #5 (matryoshka) are out of scope
+   195	   for 0.7.0.
+   196	
+   197	7. **Single-writer + projection-cursor contracts preserved.**
+   198	   Both column inserts commit in the same writer transaction at
+   199	   the `_fathomdb_vector_rows` insert site near
+   200	   `src/rust/crates/fathomdb-engine/src/lib.rs:2846`. The
+   201	   writer-loop pins at `:2174` and `:2242` are not touched.
+   202	   AC-017 / AC-018 / AC-020 behavior is preserved.
+   203	
+   204	## 3. Alternatives considered (and rejected)
+   205	
+   206	Each alternative below was considered against the AC-013 gap; the
+   207	research doc carries the long-form analysis.
+   208	
+   209	- **Vectorlite (HNSW SQLite extension).** Mechanism: load a
+   210	  separate `USING vectorlite(...)` virtual table backed by an
+   211	  HNSW graph stored in shadow tables. Rejected because the
+   212	  upstream has had no release since 2024-08-19, has no
+   213	  published 1 M × 768 benchmark, and counts as a structural
+   214	  architectural lever stacked on top of PCACHE2 — violates the
+   215	  one-architectural-lever-per-release rule. Cited:
+   216	  `dev/notes/0.7.0-vector-cost-research.md` § Tier 2.
+   217	
+   218	- **sqlite-vec ANN alpha (v0.1.10-alpha.1).** Mechanism: use
+   219	  the upstream-experimental ANN indices (`rescore`, `ivf`,
+   220	  `DiskANN`). Rejected because the release is alpha-tagged and
+   221	  upstream classifies it as not production-ready. Cited:
+   222	  `dev/notes/0.7.0-vector-cost-research.md` § Tier 3,
+   223	  sqlite-vec releases.
+   224	
+   225	- **Rust-side `usearch` / `instant-distance`.** Mechanism:
+   226	  pull KNN out of SQLite into a Rust-side ANN library and
+   227	  rebuild the search verb around it. Rejected because the
+   228	  blast radius (leaving SQLite for the KNN step, snapshot /
+   229	  freshness handshake redesign, AC-017 cursor-freshness
+   230	  re-derivation) is far larger than two packs of in-place
+   231	  schema + query work, and the data-encoding lever closes the
+   232	  gap without it. Cited:
+   233	  `dev/notes/0.7.0-vector-cost-research.md` § Tier 3 (integration
+   234	  shape C).
+   235	
+   236	- **Embedder swap (dim reduction 768 → 384 or 256).**
+   237	  Mechanism: replace `VaryingEmbedder` with a smaller embedder
+   238	  to shrink bytes-per-row. Rejected by HITL Q2 lock 2026-05-27:
+   239	  keep existing embedder. Rationale: switching embedders
+   240	  requires a profile rotation through
+   241	  `_fathomdb_embedder_profiles` and a corpus rebuild
+   242	  (writer-cooperation cost), and even at dim 128 the
+   243	  arithmetic-only saving is ~6× — well short of the ~25–40×
+   244	  gap. Cited:
+   245	  `dev/notes/0.7.0-vector-cost-research.md` § Tier 1 #3,
+   246	  § HITL responses.
+   247	
+   248	- **Partitioning alone (metadata prefilter / partition_key
+   249	  without quantization).** Mechanism: keep the f32 column,
+   250	  add `source_type` partition_key + metadata columns, push
+   251	  filters into the WHERE clause. Rejected as load-bearing:
+   252	  the AC-013 fixture is single-kind, so partitioning yields
+   253	  zero benefit at the gate. Partitioning is **kept** as a
+   254	  bundled deliverable in Pack 1 because it is the correct
+   255	  shape for real workloads and avoids a second migration in
+   256	  0.7.1 — but it does not close the gate on its own. Cited:
+   257	  `dev/notes/0.7.0-vector-cost-research.md` § Tier 1 #1, #2.
+   258	
+   259	## 4. Consequences
+   260	
+   261	- **Schema change (Pack 1).** `vector_default` gains the
+   262	  `embedding_bin bit[768]` column, the `source_type` vec0
+   263	  partition_key, and additional metadata columns (within the
+   264	  vec0 16-column budget). Migration is a one-pass
+   265	  `INSERT … SELECT vec_quantize_binary(embedding) FROM
+   266	  vector_default` populating the bit column for the existing
+   267	  corpus. Migration cost: ~3 GB read + ~96 MB write on the
+   268	  1 M-row test corpus; ~64 s on the dev box per the handoff
+   269	  estimate, well under the workflow timeout.
+   270	
+   271	- **Ingest cost (Pack 1).** The writer at the
+   272	  `_fathomdb_vector_rows` insert site near
+   273	  `src/rust/crates/fathomdb-engine/src/lib.rs:2846` performs
+   274	  a single additional `vec_quantize_binary()` and one extra
+   275	  column write per row inside the same writer transaction.
+   276	  No new commit; no new lock; no new SQLite handle. The
+   277	  single-writer + projection-cursor freshness contract is
+   278	  preserved bit-for-bit. Storage grows by ~3 % (96 B per row
+   279	  on top of the 3072 B f32 footprint).
+   280	
+   281	- **Query-path rewrite (Pack 2).** Replace
+   282	  `src/rust/crates/fathomdb-engine/src/lib.rs:2317-2323` with
+   283	  the two-phase shape outlined in
+   284	  `dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md` § 2.2.
+   285	  No change to the writer side, no change to the projection-
+   286	  cursor handshake, no change to `register_sqlite_vec_extension`
+   287	  at `src/rust/crates/fathomdb-engine/src/lib.rs:3107`. K = 64
+   288	  is named as a constant for future tuning.
+   289	
+   290	- **Recall floor enforced as a RED test.** A new perf-gates
+   291	  test (e.g. `ac_NNN_recall_at_10`) computes brute-force f32
+   292	  ground truth at test-setup against the retained f32 column,
+   293	  runs the production search path, and asserts
+   294	  `recall@10 ≥ 0.90` on the AC-013 fixture. Lands RED in
+   295	  Pack 2.1 alongside the latency budget re-pin
+   296	  (`tests/perf_gates.rs:149-150` → 80 / 300 ms) and must
+   297	  remain RED at canonical-CI N = 1 M scale until Pack 2.2's
+   298	  query rewrite lands. Both gates GREEN at canonical-CI is
+   299	  the Pack 2 close criterion. (0.7.2: the 0.90 floor is kept and
+   300	  now VALIDATED against the real embedder — corrected ANN-fidelity
+   301	  recall@10 = 0.937, full CI above 0.90; see § 2 point 4. A fast
+   302	  sentinel `ac_013b_floor_matches_adr` pins the constant to this
+   303	  ADR.)
+   304	
+   305	- **AC-019 carry.** The existing 10× bound on AC-019 stays
+   306	  unchanged; the same two-phase query shape benefits AC-019
+   307	  proportionally. AC-019 is expected to improve substantially
+   308	  but no new bound is pinned here.
+   309	
+   310	- **AC-012 / AC-017 / AC-018 / AC-020 unchanged.** The
+   311	  writer-loop pins (`:2174`, `:2242`), the embedder profile
+   312	  table, and the reader-pool concurrency surface are all
+   313	  untouched. Pack 1 changes schema but not query semantics, so
+   314	  these tests stay GREEN through both packs.
+   315	
+   316	- **Post-0.7.0 follow-ups.** Graph-index ANN (vectorlite,
+   317	  sqlite-vec ANN alpha, Rust-side `usearch`) and
+   318	  matryoshka / smaller-embedder work are tracked in
+   319	  `dev/notes/pcache2-followups.md` for 0.7.1+ if real-workload
+   320	  telemetry shows the binary-quant scan is insufficient.
+   321	
+   322	## 5. Architectural-lever accounting
+   323	
+   324	The 0.7.0 architectural lever is **`SQLITE_CONFIG_PCACHE2`**, locked
+   325	by `dev/adr/ADR-0.7.0-ac020-architectural-lever.md`. The decision
+   326	in § 2 of this ADR is a **data-encoding change** (schema +
+   327	quantization function + two-phase SQL), not a second architectural
+   328	lever:
+   329	
+   330	- It does not change the SQLite build, the SQLite vendor, the WAL
+   331	  format, or the page-cache allocator.
+   332	- It does not change the reader-pool topology, the writer-lock
+   333	  shape, the projection-cursor contract, or the snapshot-freshness
+   334	  contract.
+   335	- It does not change the embedder identity or the profile-pinning
+   336	  protocol.
+   337	- It changes only the bytes stored per row in the vec0 table and
+   338	  the SQL the reader emits against it.
+   339	
+   340	This disposition is reaffirmed verbatim from
+   341	`dev/notes/0.7.0-vector-cost-research.md` § "Architectural-lever
+   342	accounting". The HITL doc records the same call.
+   343	
+   344	**Fallback.** If a future reviewer (codex or HITL) counts
+   345	binary-quant + rerank as a second architectural lever stacked on
+   346	PCACHE2, the agreed fallback per the handoff and the research doc
+   347	is to ship **Pack 1 only in 0.7.0** (schema migration + ingest
+   348	double-write; no reader behavior change; AC-013 stays at
+   349	2048 / 2327 ms) and slip **Pack 2 to 0.7.1** (query rewrite + RED
+   350	tests + lock-flip). The Pack 1-only shape preserves the on-disk
+   351	shape for the future Pack 2 cutover and avoids a second migration.
+   352	Escalation trigger is called out in
+   353	`dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md` § "Open
+   354	items the implementing agent should escalate to HITL".
+   355	
+   356	## 6. Open questions / HITL gates
+   357	
+   358	- **Final numeric AC-013 / AC-019 budgets.** The 80 / 300 ms
+   359	  numbers in § 1 are the proposed envelope from
+   360	  `dev/adr/ADR-0.7.0-text-query-latency-gates-revised.md`; the
+
+exec
+/bin/bash -lc 'git show --stat --format=fuller a154037' in /tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z
+ succeeded in 0ms:
+commit a154037f360cb8cfe564b42cda56641d8b383d8c
+Author:     Corey Thompson <coreyt@gmail.com>
+AuthorDate: Sun May 31 08:17:35 2026 -0500
+Commit:     Corey Thompson <coreyt@gmail.com>
+CommitDate: Sun May 31 08:17:35 2026 -0500
+
+    test(0.7.2): PR-2 reframe -- add ac_013b_floor_matches_adr sentinel; refresh recall-floor comment to corrected ANN-fidelity 0.937 (S3)
+    
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+ .../crates/fathomdb-engine/tests/perf_gates.rs     | 26 ++++++++++++++++++++++
+ 1 file changed, 26 insertions(+)
+
+exec
+/bin/bash -lc 'git show --stat --format=fuller 78164b91813d2cb44bdd2affe9a47cbe4beb6e47' in /tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z
+ succeeded in 0ms:
+commit 78164b91813d2cb44bdd2affe9a47cbe4beb6e47
+Author:     Corey Thompson <coreyt@gmail.com>
+AuthorDate: Sun May 31 08:17:42 2026 -0500
+Commit:     Corey Thompson <coreyt@gmail.com>
+CommitDate: Sun May 31 08:18:17 2026 -0500
+
+    docs(0.7.2): PR-2 reframe -- amend ADR floor to cite corrected ANN-fidelity 0.937 (keep 0.90); ANN vs IR clarified (S3)
+    
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+ dev/adr/ADR-0.7.0-vector-binary-quant.md   | 64 ++++++++++++++++++++++++++++--
+ dev/plans/runs/0.7.2-PR-2bc-S3-output.json | 14 +++++++
+ 2 files changed, 75 insertions(+), 3 deletions(-)
+
+exec
+/bin/bash -lc "nl -ba dev/adr/ADR-0.7.0-vector-binary-quant.md | sed -n '356,470p'" in /tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z
+ succeeded in 0ms:
+   356	## 6. Open questions / HITL gates
+   357	
+   358	- **Final numeric AC-013 / AC-019 budgets.** The 80 / 300 ms
+   359	  numbers in § 1 are the proposed envelope from
+   360	  `dev/adr/ADR-0.7.0-text-query-latency-gates-revised.md`; the
+   361	  final pinned values land after the P2-CANONICAL run, HITL
+   362	  signs the numeric budgets, and the lock-flip is applied to the
+   363	  budgets ADR. The Pack 2 perf-gates re-pin
+   364	  (`src/rust/crates/fathomdb-engine/tests/perf_gates.rs:149-150`)
+   365	  uses 80 / 300 ms initially; HITL may tighten by ~10 % headroom
+   366	  against the measured numbers at lock time.
+   367	
+   368	- **K-value selection.** Default K = 64 from the binary-quant
+   369	  literature. If the recall-floor test falls below 0.90 at K = 64
+   370	  on canonical-CI scale, escalate before Pack 2 GREEN-test commit
+   371	  (per `dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md`
+   372	  § "Open items"). K may need to rise to 128 or 256; the choice
+   373	  is documented in the closing slice JSON and reflected in the
+   374	  named constant. (0.7.2 update: K shipped at 192; the corrected
+   375	  ANN-fidelity measurement is 0.937 — well clear of 0.90 — so no
+   376	  K-tuning is warranted on recall grounds. ANN fidelity already
+   377	  exceeds the embedder IR ceiling (0.571), so higher K buys no
+   378	  user-visible gain. See § 2 point 4.)
+   379	
+   380	- **vec0 metadata column budget.** The vec0 16-column cap
+   381	  constrains the Pack 1 schema. If the desired metadata schema
+   382	  (including future fields for the corpus / API work tracked
+   383	  separately) cannot fit alongside the partition_key + bit
+   384	  column, escalate before Pack 1 schema design freezes. Fallback
+   385	  is the sibling-table shape (`vector_default_bin`) called out
+   386	  in § 2 / Pack 1.1.
+   387	
+   388	- **`vec_quantize_binary()` input expectations.** `VaryingEmbedder`
+   389	  produces L2-normalised f32 vectors
+   390	  (`src/rust/crates/fathomdb-engine/tests/perf_gates.rs:322-326`),
+   391	  and the research note records the same
+   392	  (`dev/notes/0.7.0-vector-cost-research.md:164-165`). Binary
+   393	  quantization via `vec_quantize_binary()` is a sign-pattern
+   394	  transform that is invariant to positive scaling, so L2 norm
+   395	  itself is not load-bearing, but the function's exact input
+   396	  contract (signed-zero handling, NaN behaviour) has not been
+   397	  validated against `VaryingEmbedder` output. If sqlite-vec 0.1.7's
+   398	  `vec_quantize_binary()` rejects the f32 blobs produced by the
+   399	  current writer path or returns degenerate bit patterns, escalate
+   400	  before Pack 1 ingest changes land (per the handoff § "Open
+   401	  items"). The fixture concentrates mass on 6 of 768 coordinates
+   402	  (`src/rust/crates/fathomdb-engine/tests/perf_gates.rs:317`),
+   403	  which is atypically friendly to sign-pattern quantisation —
+   404	  HITL is owed the note that AC-013's recall headroom may
+   405	  overstate real-workload headroom. (0.7.2 update: this concern
+   406	  is now largely addressed empirically — the real default embedder
+   407	  (bge-small, candle) over the EU-7 real corpus measures
+   408	  ANN-fidelity recall@10 = 0.937, full CI above 0.90; see § 2
+   409	  point 4.)
+   410	
+   411	## 7. Status / next actions
+   412	
+   413	- **Status: `draft, HITL-required`.** No lock-flip happens in this
+   414	  ADR until canonical-CI is GREEN at the re-pinned budgets and
+   415	  the recall floor and HITL signs the numeric budgets in
+   416	  `dev/adr/ADR-0.7.0-text-query-latency-gates-revised.md`.
+   417	
+   418	- **Immediate next slice.** Orchestrator spawns a codex reviewer
+   419	  on this ADR draft, then promotes the verdict per
+   420	  `dev/design/orchestration.md` § 4. If review is PASS, Pack 1
+   421	  schema-migration + ingest-double-write slice is next.
+   422	
+   423	- **Lock-flip sequencing.** Per the handoff § "Done = ?", this
+   424	  ADR moves to `status: locked` only after: Pack 1 lands;
+   425	  Pack 2 lands; canonical-CI dispatch shows AC-013 GREEN at the
+   426	  re-pinned 80 / 300 ms (or HITL-revised) budgets; the new
+   427	  recall-floor test is GREEN at ≥ 0.90; AC-019 verdict is
+   428	  re-measured under the new query path; HITL signs off on the
+   429	  numeric budgets in the revised-budgets ADR. Lock-flip is
+   430	  orchestrator's; this draft does not flip prematurely.
+   431	
+   432	## Citations
+   433	
+   434	- `dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md`
+   435	  (this ADR's mandating handoff; § Step 0 enumerates the
+   436	  must-cover items).
+   437	- `dev/notes/0.7.0-vector-cost-research.md` (HITL-RESPONDED;
+   438	  Tier 1 / 2 / 3 catalogue; Pack 1 / 2 split locked).
+   439	- `dev/plans/0.7.0-HITL-recommendations.md` (HITL decision
+   440	  record: recall floor 0.90 @ k=10; `source_type` partition_key;
+   441	  cardinality ~6; sqlite-vec 0.1.7).
+   442	- `dev/adr/ADR-0.7.0-ac020-architectural-lever.md` (PCACHE2 is
+   443	  the 0.7.0 architectural lever; pattern reference for this
+   444	  ADR's structure).
+   445	- `dev/adr/ADR-0.7.0-text-query-latency-gates-revised.md`
+   446	  (numeric budget owner; lock-flip target post-Pack-2).
+   447	- `dev/plans/runs/0.7.0-PERF-EXP-W4.1-ac013-canonical-output.json`
+   448	  (canonical-CI measurement: p50 = 2048 ms, p99 = 2327 ms at
+   449	  N = 1 M, W4.1-stacked-O1 stack, 2026-05-27).
+   450	- `src/rust/crates/fathomdb-engine/src/lib.rs:2317-2323` (hot
+   451	  SQL; Pack 2 rewrite site).
+   452	- `src/rust/crates/fathomdb-engine/src/lib.rs:2846`
+   453	  (`_fathomdb_vector_rows` writer insert; Pack 1 double-write
+   454	  site).
+   455	- `src/rust/crates/fathomdb-engine/src/lib.rs:3278-3283`
+   456	  (`vector_default` CREATE VIRTUAL TABLE; Pack 1 schema
+   457	  migration site).
+   458	- `src/rust/crates/fathomdb-engine/src/lib.rs:3107`
+   459	  (`register_sqlite_vec_extension`; inspected, unchanged).
+   460	- `src/rust/crates/fathomdb-engine/src/lib.rs:3248-3260`
+   461	  (`_fathomdb_embedder_profiles`; UNCHANGED — embedder identity
+   462	  contract preserved).
+   463	- `src/rust/crates/fathomdb-engine/tests/perf_gates.rs:149-150`
+   464	  (`AC013_BUDGET_P50` / `AC013_BUDGET_P99`; Pack 2 re-pin
+   465	  target).
+   466	- `src/rust/crates/fathomdb-engine/tests/perf_gates.rs:487`
+   467	  (`ac_013_vector_retrieval_latency`).
+   468	- `src/rust/crates/fathomdb-engine/tests/perf_gates.rs:609`
+   469	  (`ac_019_mixed_retrieval_stress_workload_tail`).
+   470	- `src/rust/crates/fathomdb-engine/Cargo.toml:18`
+
+exec
+/bin/bash -lc 'git show a154037 -- src/rust/crates/fathomdb-engine/tests/perf_gates.rs' in /tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z
+ succeeded in 0ms:
+commit a154037f360cb8cfe564b42cda56641d8b383d8c
+Author: Corey Thompson <coreyt@gmail.com>
+Date:   Sun May 31 08:17:35 2026 -0500
+
+    test(0.7.2): PR-2 reframe -- add ac_013b_floor_matches_adr sentinel; refresh recall-floor comment to corrected ANN-fidelity 0.937 (S3)
+    
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+diff --git a/src/rust/crates/fathomdb-engine/tests/perf_gates.rs b/src/rust/crates/fathomdb-engine/tests/perf_gates.rs
+index 3eb0544..38bb466 100644
+--- a/src/rust/crates/fathomdb-engine/tests/perf_gates.rs
++++ b/src/rust/crates/fathomdb-engine/tests/perf_gates.rs
+@@ -575,6 +575,15 @@ fn ac_013b_recall_at_10_floor() {
+     // P2-IMPL the production path switches to bit-KNN + f32 rerank; this
+     // test then measures how well the candidate set preserves the f32
+     // top-10. HITL-locked floor is 0.90 (see AC013B_RECALL_FLOOR).
++    //
++    // 0.7.2 reframe: the corrected ANN / quantization-FIDELITY measurement
++    // on the real default embedder (bge-small, candle; EU-7 corpus N=7667)
++    // is recall@10 = 0.937 (CI 0.913-0.957, sigma 0.0116) — full CI above
++    // 0.90. The earlier 0.828 was a conservative-measurement artifact
++    // (exclude-after + body-string GT); see ADR-0.7.0-vector-binary-quant.md
++    // § 2 point 4 and dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md. This
++    // is ANN fidelity (GT = exact f32 top-10 over the SAME model), NOT
++    // IR-relevance — the separate EU-8 IR ceiling (0.571) is not a gate.
+     if !long_run_enabled() {
+         return;
+     }
+@@ -646,6 +655,23 @@ fn ac_013b_recall_at_10_floor() {
+     );
+ }
+ 
++/// Fast, non-gated sentinel: the recall-floor constant must stay in lockstep
++/// with the value documented in ADR-0.7.0-vector-binary-quant.md § 2 point 4
++/// (HITL-locked ≥ 0.90 recall@10 vs f32 brute-force ground truth). The ADR § 2
++/// point 4 amendment cites the corrected ANN-fidelity anchor 0.937 but keeps
++/// the floor itself at 0.90 (conservative; R-2sigma = 0.914). If anyone changes
++/// AC013B_RECALL_FLOOR without re-ratifying the ADR (or vice versa), this test
++/// catches the drift. It does NOT seed a corpus, so it always runs.
++#[test]
++fn ac_013b_floor_matches_adr() {
++    assert_eq!(
++        AC013B_RECALL_FLOOR, 0.90,
++        "AC013B_RECALL_FLOOR must remain 0.90 to match the HITL-locked value in \
++         ADR-0.7.0-vector-binary-quant.md § 2 point 4; changing it requires \
++         re-ratifying that ADR section."
++    );
++}
++
+ #[test]
+ fn ac_017_vector_projection_freshness_p99_le_five_seconds() {
+     let (_dir, path) = fixture_path("projection_freshness");
+
+exec
+/bin/bash -lc 'git show 78164b91813d2cb44bdd2affe9a47cbe4beb6e47 -- dev/adr/ADR-0.7.0-vector-binary-quant.md dev/plans/runs/0.7.2-PR-2bc-S3-output.json' in /tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z
+ succeeded in 0ms:
+commit 78164b91813d2cb44bdd2affe9a47cbe4beb6e47
+Author: Corey Thompson <coreyt@gmail.com>
+Date:   Sun May 31 08:17:42 2026 -0500
+
+    docs(0.7.2): PR-2 reframe -- amend ADR floor to cite corrected ANN-fidelity 0.937 (keep 0.90); ANN vs IR clarified (S3)
+    
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+diff --git a/dev/adr/ADR-0.7.0-vector-binary-quant.md b/dev/adr/ADR-0.7.0-vector-binary-quant.md
+index 7df86de..8362a93 100644
+--- a/dev/adr/ADR-0.7.0-vector-binary-quant.md
++++ b/dev/adr/ADR-0.7.0-vector-binary-quant.md
+@@ -130,6 +130,52 @@ not release-boundary):
+    is computed at test-setup via a one-pass brute-force scan
+    through the retained f32 column — single corpus, two jobs.
+ 
++   **0.7.2 amendment — floor VALIDATED against the real default
++   embedder (keep 0.90).** The 0.90 floor is retained, now backed
++   by the corrected real-embedder measurement rather than the
++   earlier artifact:
++
++   - **Validated number.** On the real default embedder
++     (bge-small, candle) over the EU-7 real corpus (N = 7667,
++     K = 192), the corrected **ANN recall@10 = 0.937
++     (CI 0.913–0.957, sigma 0.0116)**, measured the standard ANN
++     way (exclude the query-source doc *before* taking top-10;
++     dedup-by-id ground truth). The full CI clears 0.90, so 0.90
++     is conservative and is **not raised** (a mechanical R − 2σ
++     gives 0.914 → 0.91, still above the floor; the headroom is
++     preserved for production variance and the still-pending
++     N = 1M canonical run, PR-3).
++
++   - **What this floor IS (explicit).** This is an **ANN /
++     quantization-FIDELITY** recall: ground truth = the exact
++     full-precision f32 top-10 over the *same* model, and it
++     measures how faithfully the 1-bit sign-quant index (K = 192
++     Hamming candidates + f32 rerank) reproduces the brute-force
++     neighbors. It is **NOT IR-relevance** — it says nothing about
++     whether the retrieved results are semantically relevant to a
++     query.
++
++   - **Harness-methodology finding.** The earlier real-corpus
++     number (0.828) was a *conservative-measurement artifact*, not
++     an engine deficiency: +7.8pp is recovered by excluding the
++     self-retrieving query-source doc *before* the top-10 (vs
++     after) and by matching ground truth by id/dedup (vs
++     body-string GT over a corpus with 5.6% duplicate bodies). See
++     `dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md` (esp. "The
++     measure under discussion" + the decomposition table).
++
++   - **Separate IR note (a ceiling, NOT a gate).** EU-8 measured
++     the embedder's **IR-relevance** ceiling at recall@10 = **0.571**
++     (CI 0.530–0.614) on 301 labeled queries — far below the 0.937
++     ANN fidelity. ANN fidelity exceeding the IR ceiling by ~37pp
++     means **quantization is not the bottleneck**: chasing ANN
++     recall higher (K / candidate tuning, tighter index) yields no
++     perceptible user gain. The lever for end-to-end quality is a
++     **better embedder or the graph**, NOT K / ANN tuning. This
++     0.571 is the embedder/task ceiling and is deliberately **not**
++     turned into a gate. See
++     `dev/plans/runs/0.7.2-EU-8-ir-recall-results.md`.
++
+ 5. **sqlite-vec pin stays `=0.1.7`**
+    (`src/rust/crates/fathomdb-engine/Cargo.toml:18`). 0.1.7
+    already ships `bit[N]` and `vec_quantize_binary` per the
+@@ -250,7 +296,11 @@ research doc carries the long-form analysis.
+   (`tests/perf_gates.rs:149-150` → 80 / 300 ms) and must
+   remain RED at canonical-CI N = 1 M scale until Pack 2.2's
+   query rewrite lands. Both gates GREEN at canonical-CI is
+-  the Pack 2 close criterion.
++  the Pack 2 close criterion. (0.7.2: the 0.90 floor is kept and
++  now VALIDATED against the real embedder — corrected ANN-fidelity
++  recall@10 = 0.937, full CI above 0.90; see § 2 point 4. A fast
++  sentinel `ac_013b_floor_matches_adr` pins the constant to this
++  ADR.)
+ 
+ - **AC-019 carry.** The existing 10× bound on AC-019 stays
+   unchanged; the same two-phase query shape benefits AC-019
+@@ -321,7 +371,11 @@ items the implementing agent should escalate to HITL".
+   (per `dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md`
+   § "Open items"). K may need to rise to 128 or 256; the choice
+   is documented in the closing slice JSON and reflected in the
+-  named constant.
++  named constant. (0.7.2 update: K shipped at 192; the corrected
++  ANN-fidelity measurement is 0.937 — well clear of 0.90 — so no
++  K-tuning is warranted on recall grounds. ANN fidelity already
++  exceeds the embedder IR ceiling (0.571), so higher K buys no
++  user-visible gain. See § 2 point 4.)
+ 
+ - **vec0 metadata column budget.** The vec0 16-column cap
+   constrains the Pack 1 schema. If the desired metadata schema
+@@ -348,7 +402,11 @@ items the implementing agent should escalate to HITL".
+   (`src/rust/crates/fathomdb-engine/tests/perf_gates.rs:317`),
+   which is atypically friendly to sign-pattern quantisation —
+   HITL is owed the note that AC-013's recall headroom may
+-  overstate real-workload headroom.
++  overstate real-workload headroom. (0.7.2 update: this concern
++  is now largely addressed empirically — the real default embedder
++  (bge-small, candle) over the EU-7 real corpus measures
++  ANN-fidelity recall@10 = 0.937, full CI above 0.90; see § 2
++  point 4.)
+ 
+ ## 7. Status / next actions
+ 
+diff --git a/dev/plans/runs/0.7.2-PR-2bc-S3-output.json b/dev/plans/runs/0.7.2-PR-2bc-S3-output.json
+new file mode 100644
+index 0000000..cf5cc99
+--- /dev/null
++++ b/dev/plans/runs/0.7.2-PR-2bc-S3-output.json
+@@ -0,0 +1,14 @@
++{
++  "slice": "S3-floor-reframe",
++  "branch": "phase-0.7.2-PR-2bc-S3-20260531T131418Z",
++  "head_sha": "HEAD (docs+closure commit; this artifact commit is HEAD itself)",
++  "commits": [
++    "a154037f360cb8cfe564b42cda56641d8b383d8c (test: sentinel + comment)",
++    "HEAD (docs: ADR amendment + this closure artifact)"
++  ],
++  "floor_unchanged": "AC013B_RECALL_FLOOR == 0.90",
++  "adr_sections_amended": ["§2 point 4", "§4", "§6 (K-value selection + vec_quantize_binary headroom note)"],
++  "ann_vs_ir_clarified": true,
++  "sentinel_test": "ac_013b_floor_matches_adr",
++  "notes": "PR-2 reframe: kept the 0.90 recall floor (unchanged at perf_gates.rs:159) and amended ADR-0.7.0-vector-binary-quant.md to cite the CORRECTED ANN/quantization-FIDELITY measurement (recall@10 = 0.937, CI 0.913-0.957, sigma 0.0116; bge-small candle, EU-7 N=7667, K=192, standard ANN method: exclude query-source before top-10 + dedup-by-id GT). Full CI clears 0.90; R-2sigma = 0.914 -> floor NOT raised (headroom for production variance + pending N=1M PR-3). The earlier 0.828 documented as a conservative-measurement artifact (+7.8pp), citing 0.7.2-PR-2c-recall-rootcause.md. ANN-vs-IR distinction kept sharp: the floor is fidelity (GT = exact f32 top-10 over same model), explicitly NOT IR-relevance. EU-8 IR ceiling recall@10 = 0.571 recorded as a separate embedder/task ceiling (NOT a gate), citing 0.7.2-EU-8-ir-recall-results.md; lever is a better embedder/graph, not K/ANN tuning. Added fast non-gated sentinel ac_013b_floor_matches_adr asserting the constant == 0.90 tied to ADR §2 point 4. cargo build --tests clean; sentinel passes. No IR gate introduced. No §6/§7 HITL gate conflicts with keeping 0.90."
++}
+
+codex
+I’ve finished the implementation-side inspection. I’m pulling exact line numbers from the decision and evidence docs now so the review can tie each acceptance point back to both the source rationale and the landed changes.
+exec
+/bin/bash -lc "nl -ba dev/plans/runs/0.7.2-PR-2bc-decision.md | sed -n '1,260p'" in /tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z
+ succeeded in 0ms:
+     1	# PR-2b / PR-2c keep-vs-shelve decision memo (for HITL sign-off)
+     2	
+     3	**Date:** 2026-05-31. **Status:** RATIFIED by HITL 2026-05-31.
+     4	
+     5	## HITL rulings (2026-05-31)
+     6	
+     7	1. **PR-2c: SHELVE** -- confirmed. Park branch, do not merge.
+     8	2. **PR-2b: carve out the automatic drift detector + 200k cap + `MeanRecomputeDeferred`
+     9	   and DEFER to 0.8.x.** KEEP the recompute core + `doctor recompute-mean` verb.
+    10	3. **LAND both** the ANN harness fix (`a601d1c`) and the EU-8 IR harness (`5658d39`).
+    11	4. **PR-2 reframe: keep the 0.90 floor; amend the ADR slightly, being explicit that
+    12	   the 0.937 anchor is the ANN/quantization-fidelity measure (NOT IR-relevance).**
+    13	5. Working directly on `main` is acceptable for these slices.
+    14	
+    15	Execution: orchestrated -- informed `claude -p` implementers (TDD) per
+    16	`dev/design/orchestration.md`, `codex exec` review on every implementation slice,
+    17	orchestrator cherry-picks to `main` on PASS. See "Execution plan" at the end.
+    18	
+    19	---
+    20	
+    21	**(original proposal below; superseded where it offered alternatives -- the rulings
+    22	above are authoritative)**
+    23	**Decision slice prompt:** `dev/plans/prompts/0.7.2-PR-2bc-reassessment.md`.
+    24	**Authoritative evidence:** `dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md`,
+    25	`dev/plans/runs/0.7.2-EU-8-ir-recall-results.md`.
+    26	
+    27	## Premise (settled; not re-argued here)
+    28	
+    29	The EU-7 "recall gap" (0.828 < 0.90 floor) was root-caused as a MEASUREMENT
+    30	ARTIFACT, not an engine/mean/embedder defect:
+    31	
+    32	- Corrected ANN recall@10 = **0.937** (CI 0.913-0.957); full CI clears the 0.90
+    33	  floor. +7.8pp over the old harness number was pure measurement methodology.
+    34	- The mean is a **non-lever**: forcing the full-corpus mean on the real engine
+    35	  gives 0.847, only +1.9pp over the worst pin; `drift_cos_before = 1.0000` showed
+    36	  PR-2b had ALREADY converged the pinned mean to the true full-corpus mean during
+    37	  seeding.
+    38	- candle vs HF embeddings are bit-identical. IR recall 0.571 (embedder semantic
+    39	  ceiling) << ANN 0.937 -> the quantization is not the bottleneck.
+    40	
+    41	So both PR-2b and PR-2c were built to solve a problem that does not exist for
+    42	recall. The question below is decided on NON-recall merits only.
+    43	
+    44	## Decisions at a glance
+    45	
+    46	| Slice | Verdict | One-line rationale |
+    47	|---|---|---|
+    48	| PR-2c (representative initial pin) | **SHELVE** | Zero recall benefit; recall-NEGATIVE for typical workspaces; reopens a deliberately-locked design constant; redundant with PR-2b's recompute. |
+    49	| PR-2b core + `doctor recompute-mean` verb | **KEEP** | User explicitly wanted a production recompute capability independent of recall; clean operator tool for the documented topic-drift failure mode. |
+    50	| PR-2b automatic in-ingest drift detector + 200k cap | **MODIFY (carve out / defer)** | Permanent hot-commit-path complexity for an UNMEASURED benefit; its ratification rationale (recall) has collapsed. |
+    51	| ANN harness fix `a601d1c` | **LAND** | Corrects the measurement that caused this entire detour; cherry-picks onto main clean. |
+    52	| EU-8 IR harness `5658d39` | **LAND** | Orthogonal IR signal; engine byte-unchanged. |
+    53	| PR-2 (floor) | **REFRAME** | 0.90 floor HOLDS; job shifts from "lower it" to "land harness fix + keep 0.90 + amend ADR to cite the corrected measurement." |
+    54	
+    55	---
+    56	
+    57	## 1. PR-2c -- representative initial pin: SHELVE (confirm the recommendation)
+    58	
+    59	**Verdict: SHELVE** (revert to compute-once-pin-at-256). The reassessment
+    60	recommendation is CONFIRMED, and on a stronger basis than "recall-neutral": PR-2c
+    61	is recall-NEGATIVE for the most common workspace size.
+    62	
+    63	Non-recall (and recall-cost) reasoning:
+    64	
+    65	1. **No recall upside.** The mean moves real recall +1.9pp at most; recall was
+    66	   never broken. PR-2c's entire justification was the single-source-pin story
+    67	   (cos 0.82, -10.9pp) which was an offline artifact that does not transfer.
+    68	2. **It is recall-NEGATIVE for typical workspaces.** PR-2c extends the un-centered
+    69	   cold-start window from `[0, 256)` to `[0, 2048)` (settle threshold 2048). EU-0
+    70	   measured the un-centered path at ~-5pp recall@10. embedder.md §0.3 states most
+    71	   realistic agentic-memory workspaces are "100s-1000s of docs total" -- i.e. a
+    72	   large fraction of real workspaces would live entirely or mostly inside the
+    73	   longer un-centered window. PR-2c therefore trades a non-existent benefit for a
+    74	   real regression on exactly the workspace sizes we target.
+    75	3. **It reopens a deliberately-locked constant.** embedder.md §0.3 locks
+    76	   `MEAN_VEC_PIN_THRESHOLD = 256` with an explicit statistical + operational
+    77	   justification and the note "the choice is not load-bearing to within a factor
+    78	   of 2 ... but it is locked here." PR-2c changes WHEN the pin fires (256 -> 2048),
+    79	   reopening that lock for no measured gain.
+    80	4. **It is redundant with PR-2b.** Even granting that pin representativeness
+    81	   mattered, the root-cause run showed PR-2b's recompute ALREADY drives the pinned
+    82	   mean to the true full-corpus mean during seeding (`drift_cos_before = 1.0000`).
+    83	   The initial-pin representativeness PR-2c buys is subsumed by the recompute.
+    84	5. **Added standing state for nothing.** `MeanReservoir` (Algorithm R, seeded) +
+    85	   `MEAN_PIN_SETTLE_THRESHOLD` + deferred-pin logic in both pin sites is permanent
+    86	   engine surface whose only purpose was the disproven recall fix.
+    87	
+    88	PR-2c is NOT on `main` (branch `0.7.2-PR-2c-representative-pin`, `e8d5538`), so
+    89	"shelve" requires no revert on main -- just do not merge it. Park the branch with
+    90	a pointer to this memo. The ANN harness fix that lives on top of it (`a601d1c`)
+    91	lands independently (see section 3).
+    92	
+    93	## 2. PR-2b -- production mean recompute: KEEP core + verb, MODIFY out the auto-detector
+    94	
+    95	Split the slice into two parts and decide them separately:
+    96	
+    97	### 2a. Recompute core + `doctor recompute-mean` verb -- KEEP
+    98	
+    99	The user explicitly wanted a production recompute capability INDEPENDENT of recall
+   100	("I do want the recompute mean function for production"). This stands on its own
+   101	non-recall merits:
+   102	
+   103	- It addresses the **genuine, documented topic-drift failure mode** (§0.3): a
+   104	  workspace that pins on topic A then pivots to topic B. That failure is real even
+   105	  though it was not the EU-7 cause.
+   106	- The manual verb is **operator-invoked only** -- zero standing cost on the hot
+   107	  path, no speculative complexity. It is a clean tool an operator reaches for when
+   108	  they observe drift.
+   109	- It reuses the proven `run_pin_and_requantize_pass` (no forked re-quantize),
+   110	  inherits the §0.5 crash-atomicity guarantees, and is already GREEN + tested
+   111	  (`tests/pr2b_mean_recompute.rs`).
+   112	
+   113	**KEEP** the `recompute_mean_in_tx` core, the `doctor recompute-mean` verb (incl.
+   114	the normative `--json` contract), and the `MeanVecRecomputed { trigger: Manual }`
+   115	event.
+   116	
+   117	### 2b. Automatic in-ingest drift detector + 200k cap -- MODIFY (carve out / defer)
+   118	
+   119	**Recommendation: defer the automatic path.** Reasoning on non-recall merits:
+   120	
+   121	- **Its benefit is unmeasured.** The only evidence it works is a SYNTHETIC
+   122	  topic-drift efficacy test. There is no production or real-corpus signal that
+   123	  auto-drift firing improves anything users see -- and the recall premise that
+   124	  justified building it has collapsed (mean is a non-lever).
+   125	- **It is permanent complexity on the hottest path.** Per-commit EWMA
+   126	  (`alpha = 1/256`) maintenance, a `cos(recent, pinned)` check every commit, the
+   127	  falling-edge re-arm latch + `MEAN_RECOMPUTE_DEBOUNCE_ROWS` debounce, the
+   128	  `MEAN_RECOMPUTE_DYNAMIC_MAX = 200_000` cap branch, and the
+   129	  `MeanRecomputeDeferred` event plumbing -- all live in `commit_projection_outcomes`
+   130	  forever, for a speculative trigger.
+   131	- **Its ratification is now unmoored.** HITL ratified the drift policy
+   132	  (0.95 / debounce 256 / EWMA 1/256) on 2026-05-30 under the belief it helped
+   133	  recall. That belief is gone; the calibrated numbers were never validated against
+   134	  a real drift event, only chosen to sit in the 0.82-0.998 gap PR-2a reported.
+   135	- **The manual verb already gives operators the lever.** An operator who observes
+   136	  drift runs `doctor recompute-mean`. Auto-firing inside ingest is the part that
+   137	  earns the least and costs the most.
+   138	
+   139	**MODIFY = ship 2a now; carve 2b (auto-detector + 200k cap + `MeanRecomputeDeferred`)
+   140	out into a parked, ready-to-revive follow-up slice** ("PR-2b-auto"), to be revived
+   141	only when there is a measured production/real-corpus drift case that the manual
+   142	verb demonstrably fails to cover.
+   143	
+   144	Caveat for HITL: PR-2b (both parts) is ALREADY on local `main` (`b96c850` feat +
+   145	`e187add` ratify), unpushed. So "carve out 2b" is itself a small engine edit
+   146	(RED-first, HITL-gated) against main -- it is NOT free. If HITL prefers, the
+   147	alternative is **KEEP 2b as-is** (it is built, GREEN, ratified, and the per-row
+   148	cost is genuinely O(dim)) and simply re-document its rationale as "topic-drift
+   149	safety, not recall." This is a close call and a legitimate HITL choice; my
+   150	recommendation is the carve-out because shipping permanently-on speculative
+   151	hot-path machinery, whose sole original justification has been refuted, is the
+   152	higher long-term cost. Either way: **no engine change until HITL rules.**
+   153	
+   154	## 3. ANN harness fix + EU-8 IR harness -- LAND (confirmed)
+   155	
+   156	Both LAND regardless of the keep/shelve outcome.
+   157	
+   158	- **ANN harness fix `a601d1c`** (corrected `measure_recall` OLD+NEW +
+   159	  `EU7_SEARCH_LIMIT` seam + `candle_dump`). This is the deliverable that corrects
+   160	  the measurement which triggered this entire detour -- without it the recall gate
+   161	  measures ~6-8pp low. I verified it **cherry-picks onto current `main`
+   162	  (`e1834e8`) with zero conflicts** (auto-merge clean on both `lib.rs` and
+   163	  `eu7_real_corpus_ac.rs`).
+   164	  - Note on the "engine byte-unchanged" framing: `a601d1c` DOES touch engine
+   165	    `lib.rs` (+12 lines), but the change is an **env-gated `EU7_SEARCH_LIMIT` seam
+   166	    in `read_search_in_tx`** that defaults to `LIMIT 10` -- a genuine production
+   167	    no-op (the env var is only ever set by the recall harness). It is independent
+   168	    of the PR-2c reservoir/pin sites. Safe to land. Run a `cargo build`/`cargo test`
+   169	    post-cherry-pick to confirm the textual auto-merge also compiles (the
+   170	    `EU7_SUPPRESS_AUTO_RECOMPUTE` / `set_mean_recompute_dynamic_max_for_test`
+   171	    seams it references already exist on main via PR-2b).
+   172	- **EU-8 IR harness `5658d39`** (branch `worktree-agent-af07339f77147979f`, also
+   173	  `07f1a76`). Orthogonal IR-relevance signal, engine byte-unchanged. LAND.
+   174	- **Fold in** the EU-7 harness follow-up TODO (the silent GT-embed phase needs an
+   175	  `EU7_GT_EMBED_PROGRESS` periodic log line; see root-cause doc tail) when the
+   176	  harness fix lands -- cheap, test-only.
+   177	
+   178	## 4. PR-2 reframe -- floor HOLDS at 0.90
+   179	
+   180	With corrected ANN recall 0.937 (CI-low 0.913, sigma 0.0116), PR-2's job is no
+   181	longer "lower the floor." Reframe:
+   182	
+   183	1. **Land the harness fix** (section 3) so `eu7_real_corpus_ac.rs` measures the
+   184	   gate the standard ANN way.
+   185	2. **Keep `AC013B_RECALL_FLOOR = 0.90`.** A mechanical `R - 2*sigma` derivation now
+   186	   gives `0.937 - 0.0232 = 0.914 -> 0.91`, which is ABOVE the current 0.90 floor.
+   187	   So 0.90 is comfortably defensible and conservative; do NOT raise it to 0.91
+   188	   (that would spend the headroom we want for production variance, and the N=1M
+   189	   canonical run (PR-3) is still pending). Keep 0.90; document 0.937 as the anchor
+   190	   with ~3.7pp point / ~1.4pp CI-low margin.
+   191	3. **Amend the ADR** (`ADR-0.7.0-vector-binary-quant.md §2 point 4`) to cite the
+   192	   corrected 0.937 measurement AND the harness-methodology finding (exclude-before
+   193	   vs exclude-after; dedup-GT vs body-string GT), so the floor's provenance is the
+   194	   correct number, not the artifact 0.828. Keep the existing sentinel test
+   195	   (`ac_013b_floor_matches_adr`).
+   196	4. **Record the EU-8 IR ceiling (0.571) as a separate story** in the ADR/notes: it
+   197	   is the embedder/task ceiling, not a quantization gate; future work is
+   198	   semantic/graph, NOT K/ANN tuning.
+   199	
+   200	This keeps faith with the carried-forward hard constraint "do not re-word ADRs to
+   201	retcon a failure into a pass" -- here the honest move is the reverse: the number
+   202	was always fine; we are correcting the ADR to cite the right measurement.
+   203	
+   204	## Concrete landing / revert / park plan
+   205	
+   206	**Lands on `main` (each its own HITL-gated step; no push):**
+   207	
+   208	1. Cherry-pick `a601d1c` onto `main` (verified clean). `cargo test -p
+   209	   fathomdb-engine` + a release `eu7_real_corpus_ac` smoke to confirm compile +
+   210	   the OLD/NEW split prints. Add the `EU7_GT_EMBED_PROGRESS` log line.
+   211	2. Cherry-pick / merge the EU-8 IR harness (`5658d39` + `07f1a76`) from
+   212	   `worktree-agent-af07339f77147979f`.
+   213	3. PR-2 reframe: keep 0.90; ADR `§2 point 4` amendment + EU-8 IR ceiling note.
+   214	   (After step 1, so the ADR cites the landed harness.)
+   215	
+   216	**Parked / reverted:**
+   217	
+   218	4. **PR-2c** -- do NOT merge `0.7.2-PR-2c-representative-pin` (`e8d5538`). Park the
+   219	   branch with a pointer to this memo. Nothing to revert on main (never landed).
+   220	5. **PR-2b auto-detector (2b)** -- IF HITL approves the carve-out: a small RED-first
+   221	   engine slice against `main` removing the in-ingest drift detector + 200k cap +
+   222	   `MeanRecomputeDeferred` from `commit_projection_outcomes`, keeping the recompute
+   223	   core + `doctor` verb + `MeanVecRecomputed{Manual}`. Park the removed logic as
+   224	   "PR-2b-auto" pending a measured drift case. IF HITL prefers keep-as-is: no code
+   225	   change, only re-document the rationale.
+   226	
+   227	**Doc / ADR amendments that follow the decisions:**
+   228	
+   229	- `embedder.md §0.3` -- currently documents PR-2b's adaptive refresh as landed and
+   230	  keeps N=256 locked (PR-2c never reached committed §0.3, so nothing to revert
+   231	  there). IF 2b is carved out, drop the "Automatic in-ingest drift detector"
+   232	  paragraph, keep the `doctor recompute-mean` paragraph + the topic-drift
+   233	  failure-mode note (now mitigated by the manual verb only).
+   234	- `embedder-decision.md §3.4` -- mirror the §0.3 change; record that the auto-path
+   235	  was deferred (not because it is wrong, but because its benefit is unmeasured and
+   236	  the recall premise collapsed).
+   237	- `ADR-0.7.0-vector-binary-quant.md §2 point 4` -- per PR-2 reframe (item 4.3).
+   238	- Campaign handoff `0.7.2-RELEASE-HARDENING-HANDOFF.md` already carries the
+   239	  root-cause banner; update the PR-2 family DoD (lines ~762-767) to the reframed
+   240	  scope once HITL rules.
+   241	
+   242	## Open item carried forward (not part of this decision)
+   243	
+   244	- **AC-019 stress MISS (p99 1201 ms vs 499 ms bound)** is contention-inflated
+   245	  dev-box scouting, NOT a regression. Flag a clean idle-box re-run; do not treat as
+   246	  a gate failure. (Latency AC-013 PASSes: p50 36 / p99 49 ms.)
+   247	
+   248	## What I need from HITL
+   249	
+   250	1. **PR-2c: confirm SHELVE** (park branch, do not merge).
+   251	2. **PR-2b: choose** -- (a) carve out the auto-detector (my recommendation), or
+   252	   (b) keep PR-2b as-is and re-document. Either keeps the `doctor recompute-mean`
+   253	   verb.
+   254	3. **Confirm LAND** for `a601d1c` + EU-8 IR harness.
+   255	4. **Confirm the PR-2 reframe** -- keep 0.90, amend ADR to cite 0.937 + methodology.
+   256	
+   257	No engine code changes and no pushes until this memo is approved.
+   258	
+   259	---
+   260	
+
+exec
+/bin/bash -lc "nl -ba dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md | sed -n '1,240p'" in /tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z
+ succeeded in 0ms:
+     1	# 0.7.2 recall root-cause investigation — the EU-7 gap is a MEASUREMENT ARTIFACT
+     2	
+     3	**Date:** 2026-05-30. **Status:** root cause identified; gold-standard re-measure
+     4	pending. **Author:** PR-2c diagnostic chain (post PR-2a/PR-2b/PR-2c).
+     5	
+     6	## TL;DR (the headline, stated plainly)
+     7	
+     8	The 0.7.2 recall campaign was triggered by EU-7 measuring real-corpus recall@10 =
+     9	**0.828** (< the 0.90 floor), which PR-2a attributed to a *fixable mean-centering
+    10	artifact*. **That attribution was wrong.** Rigorous decomposition on the real
+    11	engine shows:
+    12	
+    13	- The **mean was never the driver** — forcing the *full-corpus* mean on the real
+    14	  engine yields **0.847**, only +1.9pp over the worst mean (0.828).
+    15	- **candle and HF embeddings are bit-identical** (cos = 1.00000, 100% sign-bit
+    16	  agreement) — embeddings are not the cause.
+    17	- **Title vs body representation** contributes ~0 (+0.7pp).
+    18	- The offline→real gap is **~6pp of conservative EU-7 harness measurement
+    19	  methodology**, not an engine deficiency:
+    20	  - **−4.4pp** from excluding the self-retrieving target *after* the top-10
+    21	    (64/100 synthetic queries self-retrieve their source doc → a slot is spent on
+    22	    it → recall capped at 0.9 for those).
+    23	  - **−1.4pp** from body-STRING ground-truth matching against a corpus with 5.6%
+    24	    duplicate bodies (synthetic_notes 20%).
+    25	  - remaining ~3.9pp: query-set differences (offline numpy-shuffle vs harness
+    26	    SplitMix64) + minor sqlite-vec candidate noise — within bootstrap CIs.
+    27	
+    28	**Measured the standard ANN way (exclude the query-source doc BEFORE top-10,
+    29	match GT by id/dedup), the engine's real recall@10 is ~0.93 — it CLEARS the 0.90
+    30	floor.** PR-2b (mean recompute) and PR-2c (representative pin) are correctly
+    31	engineered but address a non-problem for recall.
+    32	
+    33	## Provenance / commit IDs
+    34	
+    35	- `main` (local, NOT pushed):
+    36	  - `6f3d038` PR-2a recall-investigation slice + handoff reconcile (pre-existing)
+    37	  - `8b31724` docs: PR-2a report (GO) + PR-2b/PR-2c launch prompts + handoff re-sequence
+    38	  - `b96c850` feat: **PR-2b** GREEN — adaptive mean recompute (drift detector + doctor verb)
+    39	  - `e187add` docs: PR-2b — ratify drift policy (HITL 2026-05-30)
+    40	- PR-2c branch `0.7.2-PR-2c-representative-pin` (worktree `.claude/worktrees/agent-af9f5a6ca35c0b19b`):
+    41	  - `e8d5538` feat: **PR-2c** GREEN — representative initial mean pin (reservoir + deferred settle 2048)
+    42	  - uncommitted diagnostic edits in that worktree:
+    43	    - `tests/eu7_real_corpus_ac.rs` — `EU7_FORCE_FULL_RECOMPUTE` seam (force full mean before measure) + `EU7_SUPPRESS_AUTO_RECOMPUTE` seam (PR-2b attribution)
+    44	    - `tests/candle_dump.rs` (new) — dumps candle vectors for the agreement check
+    45	- Offline scripts + raw numbers (gitignored under `dev/research/`, regenerable):
+    46	  `dev/research/pr-2a/run_{mean_decomp,queryset_sensitivity,m2_eu7queries,bodyonly_offline,gt_accounting}.py`
+    47	  and `result_*.json`; `dev/research/eu-0/` saved HF vectors + venv.
+    48	
+    49	## The measure under discussion (so the numbers are interpretable)
+    50	
+    51	`recall@10` here is the **ANN / quantization-fidelity** flavor (FAISS / ANN-
+    52	Benchmarks sense), NOT the IR-relevance sense:
+    53	`recall@10 = |retrieved_top10 ∩ exact_f32_top10| / 10`, where ground truth = the
+    54	exact top-10 by full-precision cosine over the SAME model, and retrieved = the
+    55	sign-bit binary-quant (K=192 Hamming candidates) + f32 rerank pipeline. It
+    56	measures how faithfully the lossy 1-bit index reproduces the brute-force
+    57	neighbors — not whether results are "relevant". Percentile bootstrap (1000
+    58	resamples, SEED=0xE0) for CIs throughout.
+    59	
+    60	## Experiment chain (each step, with numbers)
+    61	
+    62	All real-engine runs: bge-small (candle), dim 384, K=192, N=7667, release build,
+    63	`AGENT_LONG=1 ... --features default-embedder`. Offline: HF transformers, same
+    64	config, `dev/research/eu-0` saved vectors.
+    65	
+    66	### 0. Anchors
+    67	- EU-7 (old first-256 pin, real engine): **0.828** (CI 0.796–0.858, σ 0.0165).
+    68	- EU-0 / PR-2a offline full mean: **0.933** (EU-0 queries) / **0.951** (EU-7-style queries).
+    69	
+    70	### 1. PR-2a offline mean decomposition (`run_mean_decomp.py`, `run_m2_eu7queries.py`)
+    71	Reservoir/strategy on offline HF vectors (title+body docs):
+    72	- M0 first-256 (single source, all bahmutov): 0.886 (EU-0 q) / 0.842 (EU-7 q), cos-to-full-mean 0.82
+    73	- M1 full corpus: 0.933 / 0.951
+    74	- M2 representative-256: 0.945–0.952, cos-to-full 0.998
+    75	- M3 no centering: 0.910 / 0.918
+    76	PR-2a concluded GO (mean fix recovers ~0.945). **This held only offline.**
+    77	
+    78	### 2. PR-2b + PR-2c real-engine re-measure (shipping config, N=7667)
+    79	- recall@10 = **0.844** (CI 0.815–0.871, σ 0.0145). seed 3078s; AC-013 p50 25 / p99 41 PASS; AC-019 PASS.
+    80	- Far below the offline 0.945 projection → premise in doubt.
+    81	
+    82	### 3. Forced-full-mean diagnostic (`EU7_FORCE_FULL_RECOMPUTE=1`, real engine)
+    83	- recall@10 = **0.847** (CI 0.817–0.875, σ 0.0145).
+    84	- `drift_cos_before = 1.0000` — PR-2b had ALREADY converged the pinned mean to the
+    85	  true full-corpus mean during seeding; the forced recompute was a no-op.
+    86	- **Verdict: the best-possible mean gives 0.847. The mean is not the driver.**
+    87	
+    88	### 4. candle-vs-HF embedding agreement (`tests/candle_dump.rs` + HF compare; 13 inputs incl. 147K-char qmsum bodies)
+    89	- cos(candle, HF) = **1.00000** for all 13; L2 = 0.0000; **sign-bit agreement = 100%**.
+    90	- **Verdict: embeddings identical; not the cause.**
+    91	
+    92	### 5. Body-only vs title+body offline (`run_bodyonly_offline.py`)
+    93	- title+body docs: 0.951; **body-only docs (production repr): 0.944**; delta +0.7pp.
+    94	- **Verdict: title-in-doc representation confound is NOT the driver** (refuted a
+    95	  leading hypothesis).
+    96	
+    97	### 6. GT-accounting + target-exclusion decomposition (`run_gt_accounting.py` + follow-up)
+    98	Same body-only HF vectors, same numpy retrieval, vary only the scoring method:
+    99	- (A) INDEX GT, exclude-target-BEFORE top-10 (standard ANN): **0.944**
+   100	- (B) + body-STRING GT (dup bodies; 26/100 queries had shrunk GT sets): **0.930** (−1.4pp)
+   101	- (C) + exclude-target-AFTER top-10 (≤9 slots; 64/100 queries self-retrieve target): **0.886** (−4.4pp)
+   102	- real engine (full harness method): **0.847** (residual ~3.9pp = query-set + sqlite-vec, within noise)
+   103	
+   104	Corpus duplicate-body density (drives the −1.4pp): 5.6% overall (742 docs);
+   105	synthetic_notes 20%, cnn/chain 6%, enron 1%.
+   106	
+   107	## Decomposition table (the bottom line)
+   108	
+   109	| Step | recall@10 | Δ | nature |
+   110	|---|---|---|---|
+   111	| Offline, standard ANN method | 0.944 | — | true binary-quant recall |
+   112	| + body-string GT w/ dup bodies | 0.930 | −1.4pp | harness measurement artifact |
+   113	| + exclude target AFTER top-10 | 0.886 | −4.4pp | harness measurement artifact (conservative) |
+   114	| + query-set diff + sqlite-vec noise | 0.847 | −3.9pp | residual, within CI |
+   115	
+   116	**~6pp of the ~10pp offline→real gap is harness methodology.** Engine real recall,
+   117	measured the standard way, ≈ **0.93** → clears the 0.90 floor.
+   118	
+   119	## What was ruled OUT (with evidence)
+   120	- Mean strategy — forced full mean = 0.847 (drift_cos_before = 1.0).
+   121	- candle vs HF embeddings — bit-identical, 100% sign-bit agreement.
+   122	- Title/body representation — +0.7pp.
+   123	- Query centering bug — verified correct (`lib.rs` search_inner: phase-1 query is
+   124	  `subtract_mean`'d when a mean is pinned; phase-2 rerank un-centered).
+   125	
+   126	## What is the actual root cause
+   127	The EU-7 harness (`eu7_real_corpus_ac.rs::measure_recall`) understates recall by ~6pp:
+   128	1. **Excludes the self-retrieving target AFTER taking the engine's top-10** — the
+   129	   synthetic query is the target doc's own title/lead, so the target self-retrieves
+   130	   into the top-10 for 64% of queries; dropping it post-hoc leaves ≤9 comparable
+   131	   slots, capping recall at 0.9. (The docstring flags this as "conservative".)
+   132	2. **Matches ground truth by body STRING** against a corpus with 5.6% duplicate
+   133	   bodies, shrinking GT sets below 10 unique entries.
+   134	
+   135	Standard ANN-recall practice excludes the query-source doc *before* ranking (so the
+   136	engine gets 10 clean slots) and matches by id (dup-robust).
+   137	
+   138	## Implications
+   139	- **The 0.90 floor likely needs NO change** — it needs the harness measured correctly.
+   140	- **PR-2b (recompute)** and **PR-2c (representative pin)** address a non-problem for
+   141	  recall. They remain correct code with possible value only as hygiene / genuine
+   142	  topic-drift safety — to be reassessed (see below).
+   143	- PR-2a's GO verdict was based on an offline number (0.945) that does not transfer
+   144	  to the production retrieval+measurement path.
+   145	
+   146	## Next actions (per HITL 2026-05-30)
+   147	1. **(this doc)** capture findings. ✅
+   148	2. **Fix the harness + re-measure** (gold-standard confirmation): patch
+   149	   `eu7_real_corpus_ac.rs` to exclude the query-source doc *before* the top-10
+   150	   (retrieve top-(10+1), drop target, take 10) and match GT by id/dedup, then
+   151	   re-run release. Expect ~0.90–0.93.
+   152	3. **Reassess PR-2b/PR-2c** — measure whether each makes a positive / negative /
+   153	   neutral difference to (correctly-measured) recall, and decide ship vs shelve.
+   154	
+   155	## Residual risks / caveats
+   156	- The ~3.9pp residual (offline harness-method 0.886 vs real 0.847) is not fully
+   157	  isolated; attributed to query-set RNG difference + minor sqlite-vec vec0 bit-KNN
+   158	  candidate suboptimality. The fixed-harness re-measure will tighten this.
+   159	- All real-engine numbers are dev-box scouting (N=7667, 100 synthetic queries);
+   160	  canonical N=1M with relevance-judged queries remains PR-3.
+   161	
+   162	## Follow-up TODO: log the silent ground-truth-embed phase in the EU-7 harness
+   163	
+   164	**Symptom:** during a full run, `eu7_real_corpus_ac.rs` goes silent for ~25-45 min
+   165	*after* the last `EU7_SEED_PROGRESS` line and *before* `seed_done`. Twice this
+   166	looked like a hang and once prompted a premature kill. It is NOT a hang: the
+   167	harness re-embeds the entire corpus single-threaded to build the in-Rust f32
+   168	ground truth (`for body in &bodies[seeded..actual_n] { doc_vecs.push(embedder.embed(body)) }`),
+   169	which emits no output. At ~0.3-0.4 s/doc single-threaded that is ~45 min for 7667
+   170	docs, with zero log lines.
+   171	
+   172	**Fix (minimal but useful):** a single line literally *between* the loop and the
+   173	`seed_done` print only fires once (an end-marker) and does NOT break the silence
+   174	*during* the loop -- so "between" alone is not the useful placement. Add instead:
+   175	1. a `GT_EMBED_START n=<n>` line before the loop, and
+   176	2. a **periodic progress line inside the loop**, mirroring `EU7_SEED_PROGRESS`
+   177	   (every ~30 s or every K docs: `EU7_GT_EMBED_PROGRESS embedded=i/n rate_docs_per_s=...`).
+   178	   A throttled `Instant`-based report like the seed loop already uses is enough.
+   179	This makes the longest unlogged stretch observable and stops it reading as a wedge.
+   180	Cheap, test-only, no behavior change. (The single end-marker between the loop and
+   181	`seed_done` is a fine additional cheap minimum, but the in-loop periodic line is
+   182	the one that matters.)
+
+exec
+/bin/bash -lc "nl -ba dev/plans/runs/0.7.2-EU-8-ir-recall-results.md | sed -n '1,220p'" in /tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z
+ succeeded in 0ms:
+     1	# EU-8 IR-recall results + ANN/IR synthesis
+     2	
+     3	**Date:** 2026-05-31. **Status:** full-corpus run complete. **Companion to:**
+     4	`dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md` (the ANN root-cause).
+     5	
+     6	## What was run
+     7	- **ANN recall** (fidelity): `eu7_real_corpus_ac.rs`, corrected harness (NEW method:
+     8	  exclude query-source before top-10, dedup-GT), full corpus N=7667, K=192, real
+     9	  candle bge-small. Commit `a601d1c` (worktree `agent-af9f5a6ca35c0b19b`, branch
+    10	  `0.7.2-PR-2c-representative-pin`).
+    11	- **IR recall** (relevance): `eu8_ir_validation.rs`, full corpus 7667 docs + all 200
+    12	  chains, 301 labeled queries (`ground_truth_queries.expected_top_k_doc_ids`), real
+    13	  candle bge-small. Commit `5658d39` (worktree `agent-af07339f77147979f`, branch
+    14	  `worktree-agent-af07339f77147979f`). Raw: `dev/plans/runs/0.7.1-EU-8-measurements.json`.
+    15	
+    16	## ANN recall (the fidelity signal) — confirmed
+    17	Same run, scoring method varied:
+    18	- **OLD** (exclude-after + set-GT, the original harness): **0.859** (CI 0.832-0.885, sigma 0.0137); target_in_top10 = 70/100.
+    19	- **NEW** (exclude-before + dedup-GT, standard ANN): **0.937** (CI 0.913-0.957, sigma 0.0116).
+    20	- **+7.8pp** is pure measurement-methodology artifact. NEW's full CI sits above the 0.90 floor.
+    21	- Latency AC-013 PASS (p50 36 / p99 49 ms). Stress AC-019 MISS (p99 1201 ms vs 499 bound) -- contention-inflated dev-box scouting, NOT a gate; re-run clean on an idle box.
+    22	
+    23	## IR recall (the relevance signal) — full corpus, 301 queries
+    24	**Overall: recall@10 = 0.5714** (CI 0.530-0.614, sigma 0.0215), precision@10 = 0.162,
+    25	**MRR = 0.686**, NDCG@10 = 0.561; zero-hit queries 66/301; coverage 593/593 expected
+    26	ids present; duplicate_bodies = 428; unmapped_results = 0.
+    27	
+    28	By relation type (the informative cut):
+    29	
+    30	| relation | n | recall@10 | MRR | NDCG@10 |
+    31	|---|---|---|---|---|
+    32	| action_from | 67 | **0.811** | 0.827 | 0.753 |
+    33	| follows_up_on | 66 | 0.626 | 0.926 | 0.665 |
+    34	| summarizes | 67 | 0.547 | 0.743 | 0.567 |
+    35	| mentions | 68 | 0.444 | 0.494 | 0.450 |
+    36	| contradicts | 33 | **0.288** | 0.201 | 0.178 |
+    37	
+    38	By chain shape: `TODO->NOTE->EMAIL` 0.929 / `ARTICLE->NOTE->TODO` 0.859 /
+    39	`EMAIL->NOTE->TODO` 0.760 / `ARTICLE->NOTE->EMAIL` 0.444 / `EMAIL->MEETING->TODO`
+    40	0.323 / `MEETING->TODO->NOTE(contradicts)` 0.311.
+    41	
+    42	## Synthesis (in the IR-vs-ANN framework)
+    43	
+    44	| Signal | Value | Tests | Reading |
+    45	|---|---|---|---|
+    46	| ANN recall | **0.937** | index / sign-bit quantization fidelity (GT = exact f32 KNN, same model) | healthy; clears 0.90 floor |
+    47	| IR recall | **0.571** | embedder semantic relevance (GT = labeled relevant doc ids) | the ceiling; relation-dependent |
+    48	
+    49	**ANN (0.937) exceeds IR (0.571) by +37pp.** By the standard rule (once ANN fidelity
+    50	exceeds the embedder's IR ceiling by ~15-20%, further index/quantization tuning yields
+    51	no perceptible user gain), the verdict is unambiguous:
+    52	
+    53	- **The quantization is NOT the bottleneck.** It faithfully returns ~94% of the exact
+    54	  neighbors. Chasing ANN recall higher (bumping K / `TOP_K_BIT_CANDIDATES`, tighter
+    55	  index) is wasted compute.
+    56	- **The embedder/task is the ceiling.** The levers that move end-to-end quality are a
+    57	  better embedder (semantic) or **using the graph** for relation-following -- NOT the
+    58	  vector pipeline.
+    59	
+    60	### Important caveats on the IR number
+    61	1. **Synthetic relationship task, not human qrels.** Chains are generated by
+    62	   `tests/corpus/scripts/generate_chain_corpus.py`. Some relations are *inherently
+    63	   wrong for pure vector search*: **contradicts** (0.29) -- a contradicting doc is not
+    64	   reliably *near* in embedding space; cosine cannot capture logical negation. Those
+    65	   relations are precisely what the engine's **graph edges** exist for, and EU-8 search
+    66	   deliberately does not traverse them. So the 0.571 understates pure-semantic
+    67	   retrieval: the similarity-friendly relations (action_from / follows_up_on /
+    68	   summarizes) average ~0.66.
+    69	2. **Duplicate-body mapping.** 428 dup bodies; the body->doc_id first-occurrence rule
+    70	   can map a content-correct retrieval to a different id than expected, modestly
+    71	   undercounting. Clean fix (same lesson as the ANN harness): have the engine search
+    72	   return doc ids, not just bodies.
+    73	3. Dev-box scouting (synthetic queries). Canonical relevance eval remains future work.
+    74	
+    75	## Bottom line for the campaign
+    76	- **Quantization/ANN story: CLOSED.** Fidelity 0.937, 0.90 floor holds, no K-tuning warranted.
+    77	- **Embedder/IR story: OPENED.** Real, relation-dependent headroom; future work is
+    78	  semantic/graph, not quantization.
+    79	- **PR-2b (mean recompute) + PR-2c (representative pin): both confirmed to address a
+    80	  NON-problem for recall** (the mean moves real recall only +1.9pp; recall was never
+    81	  broken). Keep-vs-shelve decision: see `dev/plans/prompts/0.7.2-PR-2bc-reassessment.md`.
+
+exec
+/bin/bash -lc "nl -ba dev/plans/prompts/0.7.2-PR-2bc-S3-floor-reframe.md | sed -n '1,220p'" in /tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z
+ succeeded in 0ms:
+     1	# Slice S3 -- PR-2 floor reframe: keep 0.90, amend the ADR (ANN-fidelity, not IR)
+     2	
+     3	## Model + effort
+     4	Launched as `claude -p --model claude-opus-4-7 --effort high` inside a git worktree
+     5	branched from main HEAD **after S1 has landed** (so the corrected harness it cites is on main).
+     6	
+     7	## Context (why -- read first)
+     8	PR-2's original job was "lower the 0.90 floor against the real-embedder EU-7 number
+     9	(0.828)." The root-cause investigation overturned that: the corrected ANN recall@10 is
+    10	**0.937 (CI 0.913-0.957)** -- the 0.828 was a measurement artifact. So PR-2's job shifts
+    11	from "lower the floor" to "**keep 0.90 and amend the ADR to cite the CORRECTED
+    12	measurement, being explicit that 0.937 is an ANN/quantization-FIDELITY number, NOT
+    13	IR-relevance.**" HITL ruling (2026-05-31): keep 0.90; amend the ADR slightly.
+    14	
+    15	Required reading (do not re-derive):
+    16	- `dev/plans/runs/0.7.2-PR-2bc-decision.md` section "4. PR-2 reframe".
+    17	- `dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md` -- esp. "The measure under
+    18	  discussion" (defines ANN recall: GT = exact f32 KNN over the SAME model) and the
+    19	  decomposition table.
+    20	- `dev/plans/runs/0.7.2-EU-8-ir-recall-results.md` -- the IR recall 0.571 and the
+    21	  ANN-vs-IR synthesis (ANN 0.937 fidelity >> IR 0.571 ceiling => quantization is not
+    22	  the bottleneck; do NOT chase K/ANN tuning).
+    23	- `dev/adr/ADR-0.7.0-vector-binary-quant.md` §2 point 4 (lines ~124-131) and §4
+    24	  ("Recall floor enforced as a RED test", ~244-248) and §6/§7 recall-floor mentions.
+    25	
+    26	## Mandate (light touch -- "amend slightly")
+    27	
+    28	### 1. Keep the floor at 0.90
+    29	- `src/rust/crates/fathomdb-engine/tests/perf_gates.rs:159` `AC013B_RECALL_FLOOR = 0.90`
+    30	  -- UNCHANGED. (A mechanical R-2sigma on the corrected number gives 0.937-0.0232=0.914
+    31	  -> 0.91, ABOVE 0.90, so 0.90 is conservative; do NOT raise it -- preserve headroom for
+    32	  production variance and the still-pending N=1M canonical run.)
+    33	- Update the comment near `perf_gates.rs:577` to point at the corrected measurement +
+    34	  this ADR amendment instead of any stale 0.828 narrative.
+    35	
+    36	### 2. Amend ADR `§2 point 4` (the floor decision)
+    37	Add to point 4 (keep the existing 0.90 statement; append the validating provenance):
+    38	- The floor is now VALIDATED against the real default embedder (bge-small, candle):
+    39	  corrected ANN recall@10 = **0.937 (CI 0.913-0.957, sigma 0.0116)** on the EU-7 real
+    40	  corpus (N=7667), measured the standard ANN way (exclude the query-source doc BEFORE
+    41	  top-10; dedup-by-id GT). Full CI clears 0.90.
+    42	- **Explicit definition**: this floor is an **ANN / quantization-FIDELITY** recall --
+    43	  GT = the exact full-precision f32 top-10 over the SAME model; it measures how
+    44	  faithfully the 1-bit sign-quant index reproduces the brute-force neighbors. It is
+    45	  **NOT IR-relevance** (whether results are semantically relevant to a query).
+    46	- The **harness-methodology finding**: the earlier 0.828 was a conservative-measurement
+    47	  artifact (+7.8pp recovered by excluding-before vs excluding-after + dedup-GT vs
+    48	  body-string GT over a corpus with 5.6% duplicate bodies). Cite
+    49	  `dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md`.
+    50	- **Separate IR note**: EU-8 measured the embedder's IR-relevance ceiling at
+    51	  recall@10 = 0.571 -- far below the 0.937 ANN fidelity. This is the embedder/task
+    52	  ceiling, NOT a quantization gate; the lever for end-to-end quality is a better
+    53	  embedder or the graph, NOT K / ANN tuning. Cite
+    54	  `dev/plans/runs/0.7.2-EU-8-ir-recall-results.md`. Do NOT turn 0.571 into a gate.
+    55	
+    56	Mirror a one-line pointer in §4's "Recall floor enforced as a RED test" and update §6/§7
+    57	recall-floor mentions if they still imply the floor is unvalidated or might drop below 0.90.
+    58	
+    59	### 3. Add a lightweight floor-vs-ADR sentinel test
+    60	In `perf_gates.rs`, add `ac_013b_floor_matches_adr` (a fast, non-gated unit test):
+    61	assert `AC013B_RECALL_FLOOR == 0.90` with a comment that this value is the figure
+    62	documented in `ADR-0.7.0-vector-binary-quant §2 point 4`, so future drift between the
+    63	gate constant and the ADR is caught. (This realizes the PR-2 "Method item 5" sentinel.)
+    64	
+    65	## Honesty constraint (carried-forward hard rule)
+    66	"Do not re-word ADRs to retcon a failure into a pass." Here the honest move is the
+    67	reverse -- the number was always fine; you are correcting the ADR to cite the RIGHT
+    68	measurement (0.937, ANN-fidelity) and clearly stating what the floor is and is NOT.
+    69	Do not imply IR quality is 0.937; keep the ANN/IR distinction sharp.
+    70	
+    71	## Verification
+    72	- `cargo build --tests -p fathomdb-engine` clean; `ac_013b_floor_matches_adr` passes.
+    73	- No change to `AC013B_RECALL_FLOOR`'s value. Do NOT run `AGENT_LONG` real-corpus tests.
+    74	
+    75	## Commit policy
+    76	One or two commits: `docs(0.7.2): PR-2 reframe -- amend ADR floor to cite corrected
+    77	ANN-fidelity 0.937 (keep 0.90); ANN vs IR clarified (S3)` (+ a test commit if separate),
+    78	Co-Authored-By trailer. Do not push.
+    79	
+    80	## Required output
+    81	Write `dev/plans/runs/0.7.2-PR-2bc-S3-output.json`:
+    82	```
+    83	{
+    84	  "slice": "S3-floor-reframe",
+    85	  "branch": "<branch>", "head_sha": "<sha>", "commits": [...],
+    86	  "floor_unchanged": "AC013B_RECALL_FLOOR == 0.90",
+    87	  "adr_sections_amended": ["§2 point 4", "§4", "§6/§7 (if needed)"],
+    88	  "ann_vs_ir_clarified": true,
+    89	  "sentinel_test": "ac_013b_floor_matches_adr",
+    90	  "notes": "..."
+    91	}
+    92	```
+    93	
+    94	## Hard constraints
+    95	- Keep 0.90. Do not introduce an IR gate. Do not push. Do not spawn agents.
+    96	- If §6/§7 contain HITL gates that conflict with keeping 0.90, STOP and report rather
+    97	  than silently resolving them.
+    98	
+    99	## Reviewer pass after implementer (orchestrator runs codex; informational)
+   100	codex verifies: floor value unchanged; the ADR amendment is honest (no
+   101	sleight-of-hand making R_measured == floor); the ANN-vs-IR distinction is explicit and
+   102	correct; 0.571 is documented as a ceiling, not a gate; the sentinel test is real.
+
+exec
+/bin/bash -lc "nl -ba dev/plans/runs/0.7.2-PR-2bc-S3-output.json | sed -n '1,120p'" in /tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z
+ succeeded in 0ms:
+     1	{
+     2	  "slice": "S3-floor-reframe",
+     3	  "branch": "phase-0.7.2-PR-2bc-S3-20260531T131418Z",
+     4	  "head_sha": "HEAD (docs+closure commit; this artifact commit is HEAD itself)",
+     5	  "commits": [
+     6	    "a154037f360cb8cfe564b42cda56641d8b383d8c (test: sentinel + comment)",
+     7	    "HEAD (docs: ADR amendment + this closure artifact)"
+     8	  ],
+     9	  "floor_unchanged": "AC013B_RECALL_FLOOR == 0.90",
+    10	  "adr_sections_amended": ["§2 point 4", "§4", "§6 (K-value selection + vec_quantize_binary headroom note)"],
+    11	  "ann_vs_ir_clarified": true,
+    12	  "sentinel_test": "ac_013b_floor_matches_adr",
+    13	  "notes": "PR-2 reframe: kept the 0.90 recall floor (unchanged at perf_gates.rs:159) and amended ADR-0.7.0-vector-binary-quant.md to cite the CORRECTED ANN/quantization-FIDELITY measurement (recall@10 = 0.937, CI 0.913-0.957, sigma 0.0116; bge-small candle, EU-7 N=7667, K=192, standard ANN method: exclude query-source before top-10 + dedup-by-id GT). Full CI clears 0.90; R-2sigma = 0.914 -> floor NOT raised (headroom for production variance + pending N=1M PR-3). The earlier 0.828 documented as a conservative-measurement artifact (+7.8pp), citing 0.7.2-PR-2c-recall-rootcause.md. ANN-vs-IR distinction kept sharp: the floor is fidelity (GT = exact f32 top-10 over same model), explicitly NOT IR-relevance. EU-8 IR ceiling recall@10 = 0.571 recorded as a separate embedder/task ceiling (NOT a gate), citing 0.7.2-EU-8-ir-recall-results.md; lever is a better embedder/graph, not K/ANN tuning. Added fast non-gated sentinel ac_013b_floor_matches_adr asserting the constant == 0.90 tied to ADR §2 point 4. cargo build --tests clean; sentinel passes. No IR gate introduced. No §6/§7 HITL gate conflicts with keeping 0.90."
+    14	}
+
+codex
+## Verdict: PASS
+
+### 1. [info] No findings in requested scope
+Refs: [perf_gates.rs:156](/tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z/src/rust/crates/fathomdb-engine/tests/perf_gates.rs:156), [perf_gates.rs:572](/tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z/src/rust/crates/fathomdb-engine/tests/perf_gates.rs:572), [perf_gates.rs:662](/tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z/src/rust/crates/fathomdb-engine/tests/perf_gates.rs:662), [ADR §2 pt 4](/tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z/dev/adr/ADR-0.7.0-vector-binary-quant.md:124), [ADR §4](/tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z/dev/adr/ADR-0.7.0-vector-binary-quant.md:290), [ADR §6-§7](/tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z/dev/adr/ADR-0.7.0-vector-binary-quant.md:356)
+`AC013B_RECALL_FLOOR` remains `0.90` and was not raised. The new sentinel is genuinely fast and non-gated: it does not seed data, does not branch on `long_run_enabled()`, and asserts the constant stays `0.90` as documented in the ADR.
+
+The ADR amendment is honest and explicit. It anchors validation on corrected ANN-fidelity `0.937 (CI 0.913-0.957)` against exact f32 top-10 over the same model, cites the harness-methodology correction to the root-cause doc, and separately frames EU-8 IR `0.571` as an embedder/task ceiling, not a gate or an ANN-quality claim.
+
+I found no inconsistency in §6 or §7 with keeping the floor at `0.90`. The lock-flip language still requires the recall-floor test to be green at `>= 0.90`, and the §6 K-selection note now argues against further K-tuning on the basis of ANN-fidelity already exceeding the IR ceiling.
+
+**What passed on inspection**
+- The slice matches the ratified reframe in [decision memo §4](/tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z/dev/plans/runs/0.7.2-PR-2bc-decision.md:178) and the S3 spec in [floor-reframe prompt](/tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z/dev/plans/prompts/0.7.2-PR-2bc-S3-floor-reframe.md:28).
+- The ANN-vs-IR distinction is consistent with the evidence docs: [root-cause “measure under discussion”](/tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z/dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md:49) and [EU-8 synthesis](/tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z/dev/plans/runs/0.7.2-EU-8-ir-recall-results.md:42).
+- The `+7.8pp` methodology explanation is carried into the ADR in the requested form, tied back to exclude-before plus dedup-GT versus exclude-after plus body-string GT.
+- The two commits in scope are cleanly separated: `a154037` for test/comment work, then `78164b9` for ADR/output-artifact docs.
+
+**Reviewer process notes**
+- `MEMORY.md` was not present in this worktree, so I reviewed from the provided `AGENTS.md` instructions plus the required slice documents.
+- I did not rerun `cargo build` or tests in this read-only review; the PASS is based on source inspection of the landed changes and the cited artifacts.
+tokens used
+114,169
+## Verdict: PASS
+
+### 1. [info] No findings in requested scope
+Refs: [perf_gates.rs:156](/tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z/src/rust/crates/fathomdb-engine/tests/perf_gates.rs:156), [perf_gates.rs:572](/tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z/src/rust/crates/fathomdb-engine/tests/perf_gates.rs:572), [perf_gates.rs:662](/tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z/src/rust/crates/fathomdb-engine/tests/perf_gates.rs:662), [ADR §2 pt 4](/tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z/dev/adr/ADR-0.7.0-vector-binary-quant.md:124), [ADR §4](/tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z/dev/adr/ADR-0.7.0-vector-binary-quant.md:290), [ADR §6-§7](/tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z/dev/adr/ADR-0.7.0-vector-binary-quant.md:356)
+`AC013B_RECALL_FLOOR` remains `0.90` and was not raised. The new sentinel is genuinely fast and non-gated: it does not seed data, does not branch on `long_run_enabled()`, and asserts the constant stays `0.90` as documented in the ADR.
+
+The ADR amendment is honest and explicit. It anchors validation on corrected ANN-fidelity `0.937 (CI 0.913-0.957)` against exact f32 top-10 over the same model, cites the harness-methodology correction to the root-cause doc, and separately frames EU-8 IR `0.571` as an embedder/task ceiling, not a gate or an ANN-quality claim.
+
+I found no inconsistency in §6 or §7 with keeping the floor at `0.90`. The lock-flip language still requires the recall-floor test to be green at `>= 0.90`, and the §6 K-selection note now argues against further K-tuning on the basis of ANN-fidelity already exceeding the IR ceiling.
+
+**What passed on inspection**
+- The slice matches the ratified reframe in [decision memo §4](/tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z/dev/plans/runs/0.7.2-PR-2bc-decision.md:178) and the S3 spec in [floor-reframe prompt](/tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z/dev/plans/prompts/0.7.2-PR-2bc-S3-floor-reframe.md:28).
+- The ANN-vs-IR distinction is consistent with the evidence docs: [root-cause “measure under discussion”](/tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z/dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md:49) and [EU-8 synthesis](/tmp/fdb-0.7.2-PR-2bc-S3-20260531T131418Z/dev/plans/runs/0.7.2-EU-8-ir-recall-results.md:42).
+- The `+7.8pp` methodology explanation is carried into the ADR in the requested form, tied back to exclude-before plus dedup-GT versus exclude-after plus body-string GT.
+- The two commits in scope are cleanly separated: `a154037` for test/comment work, then `78164b9` for ADR/output-artifact docs.
+
+**Reviewer process notes**
+- `MEMORY.md` was not present in this worktree, so I reviewed from the provided `AGENTS.md` instructions plus the required slice documents.
+- I did not rerun `cargo build` or tests in this read-only review; the PASS is based on source inspection of the landed changes and the cited artifacts.

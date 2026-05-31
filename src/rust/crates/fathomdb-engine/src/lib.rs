@@ -2331,8 +2331,8 @@ impl Engine {
     }
 
     /// 0.7.2 PR-2b — NON-test observation seam. Drains and returns every
-    /// `EmbedderEvent` queued since the last drain (mean pin, mean
-    /// recompute, deferred-recompute notification). Production callers use
+    /// `EmbedderEvent` queued since the last drain (mean pin, manual mean
+    /// recompute). Production callers use
     /// this to observe the synchronous recompute work; events are queued
     /// only AFTER the recompute transaction is durable, so a rolled-back
     /// recompute never surfaces. Mirrors the at-open

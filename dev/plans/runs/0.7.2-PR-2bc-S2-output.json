@@ -1,12 +1,13 @@
 {
   "slice": "S2-carve-auto-drift",
   "branch": "phase-0.7.2-PR-2bc-S2-20260531T131418Z",
-  "head_sha": "639d04c (closure-artifact commit; preceded by RED/GREEN/docs below)",
+  "head_sha": "CORRECTED (orchestrator, codex CONCERN #1): worktree branch HEAD was 1492f46 (not 639d04c); landed on main via cherry-pick as 2ef8c3d (RED) -> 64f72e0 (GREEN/removal) -> 7b6965e (docs+0.8.x stub) -> d2c0bf4 (this artifact), then an orchestrator remediation commit fixing the stale drain_embedder_events comment (codex CONCERN #2).",
   "commits": [
     "75e13bcae4bcc5b4c98b1ecafeb5004a2b70d162",
     "5e3cabba427f64ce18df1f277b92bc59c01c0ddf",
     "895461c3f1cc29790c72d02b88c15f3cbff81677"
   ],
+  "landed_on_main_as": ["2ef8c3d", "64f72e0", "7b6965e", "d2c0bf4"],
   "commit_roles": {
     "75e13bcae4bcc5b4c98b1ecafeb5004a2b70d162": "RED guard test",
     "5e3cabba427f64ce18df1f277b92bc59c01c0ddf": "GREEN / removal",
