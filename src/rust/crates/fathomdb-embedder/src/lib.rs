@@ -39,44 +39,26 @@ pub enum EmbedderEvent {
     /// 0.7.2 PR-2b — emitted after the transaction that REFRESHES an
     /// already-pinned `mean_vec` is durable. `dim` is the embedder
     /// identity dimension; `doc_count` is the number of rows the
-    /// re-quantize pass re-centered; `trigger` distinguishes the
-    /// automatic drift detector from the explicit `doctor recompute-mean`
-    /// verb. See `dev/design/embedder.md` §0.3/§0.5 and
+    /// re-quantize pass re-centered; `trigger` records what drove the
+    /// refresh. As of 0.7.2 PR-2bc the only trigger is the explicit
+    /// `doctor recompute-mean` verb (`Manual`); the automatic in-ingest
+    /// drift detector was carved out and deferred to 0.8.x. See
+    /// `dev/design/embedder.md` §0.3/§0.5 and
     /// `dev/design/embedder-decision.md` §3.4.
     MeanVecRecomputed { dim: u32, doc_count: u64, trigger: MeanRecomputeTrigger },
-    /// 0.7.2 PR-2b — emitted when the automatic drift detector WOULD have
-    /// fired but the workspace is at/above `MEAN_RECOMPUTE_DYNAMIC_MAX`
-    /// rows, so the auto path is suppressed. The drift is still surfaced
-    /// so an operator can run `doctor recompute-mean` explicitly.
-    ///
-    /// `drift_cos` is carried as raw IEEE-754 `f32` bits (`drift_cos_bits`)
-    /// so the enum can keep deriving `Eq` (an `f32` field would force the
-    /// enum off `Eq`/`Hash`); read it back via [`Self::deferred_drift_cos`].
-    MeanRecomputeDeferred { doc_count: u64, drift_cos_bits: u32 },
 }
 
-impl EmbedderEvent {
-    /// Decode the `drift_cos` carried on a [`Self::MeanRecomputeDeferred`]
-    /// event from its stored `f32` bits. Returns `None` for any other
-    /// variant.
-    #[must_use]
-    pub fn deferred_drift_cos(&self) -> Option<f32> {
-        match self {
-            EmbedderEvent::MeanRecomputeDeferred { drift_cos_bits, .. } => {
-                Some(f32::from_bits(*drift_cos_bits))
-            }
-            _ => None,
-        }
-    }
-}
-
-/// 0.7.2 PR-2b — which trigger drove a [`EmbedderEvent::MeanVecRecomputed`].
-/// The automatic in-ingest drift detector vs the explicit
-/// `doctor recompute-mean` CLI verb.
+/// 0.7.2 PR-2b — what drove a [`EmbedderEvent::MeanVecRecomputed`].
+///
+/// As of 0.7.2 PR-2bc the only variant is `Manual` (the explicit
+/// `doctor recompute-mean` CLI verb). The `DriftAuto` variant for the
+/// automatic in-ingest drift detector was REMOVED when that path was carved
+/// out and deferred to 0.8.x (see
+/// `dev/plans/prompts/0.8.x-auto-mean-drift-DEFERRED.md`); the enum is kept
+/// (rather than collapsed to a unit) so reviving the auto path in 0.8.x is a
+/// pure additive re-introduction of a variant + tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MeanRecomputeTrigger {
-    /// Fired automatically by the in-ingest distribution-drift detector.
-    DriftAuto,
     /// Fired explicitly by the `doctor recompute-mean` CLI verb.
     Manual,
 }
@@ -86,7 +68,6 @@ impl MeanRecomputeTrigger {
     #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
-            MeanRecomputeTrigger::DriftAuto => "drift_auto",
             MeanRecomputeTrigger::Manual => "manual",
         }
     }

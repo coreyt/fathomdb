@@ -179,18 +179,6 @@ struct ProjectionRuntimeShared {
     /// after the unique pin tx, so none can survive un-centered). Embedding
     /// (`run_projection_job`) runs OUTSIDE the gate and stays parallel.
     commit_gate: Mutex<()>,
-    /// 0.7.2 PR-2b — running recent-vector-mean estimate feeding the
-    /// in-ingest distribution-drift detector. `Some(_)` iff the identity
-    /// is MC-required (otherwise no mean is ever pinned, so drift is
-    /// undefined). Mutated only under `commit_gate` in
-    /// `commit_projection_outcomes`.
-    recent_mean: Mutex<Option<RecentMeanTracker>>,
-    /// 0.7.2 PR-2b — overridable cap for the AUTOMATIC drift path. Equals
-    /// `MEAN_RECOMPUTE_DYNAMIC_MAX` in production; a test seam
-    /// (`set_mean_recompute_dynamic_max_for_test`) can lower it so the cap
-    /// behavior is exercised without seeding 200k rows. The doctor verb is
-    /// exempt and never consults this.
-    mean_recompute_dynamic_max: AtomicU64,
     /// 0.7.2 PR-2bc S1 fix-1 — overridable phase-2 rerank `LIMIT` for the
     /// search hot path. Equals `SEARCH_RERANK_LIMIT` (10) in production; a
     /// test seam (`set_search_limit_for_test`) can RAISE it (clamped to >=10,
@@ -540,10 +528,6 @@ impl ProjectionRuntime {
         } else {
             None
         };
-        // 0.7.2 PR-2b — the recent-mean drift tracker exists for any
-        // MC-required workspace (it only matters once a mean is pinned, but
-        // allocating it up front keeps the hot commit path branch-free).
-        let recent_mean = mc_required.then(RecentMeanTracker::new);
         let shared = Arc::new(ProjectionRuntimeShared {
             path,
             embedder,
@@ -556,8 +540,6 @@ impl ProjectionRuntime {
             mean_accumulator: Mutex::new(mean_accumulator),
             pending_events: Mutex::new(Vec::new()),
             commit_gate: Mutex::new(()),
-            recent_mean: Mutex::new(recent_mean),
-            mean_recompute_dynamic_max: AtomicU64::new(MEAN_RECOMPUTE_DYNAMIC_MAX),
             search_limit_override: AtomicUsize::new(SEARCH_RERANK_LIMIT),
             #[cfg(debug_assertions)]
             force_recompute_failure: AtomicBool::new(false),
@@ -2369,8 +2351,9 @@ impl Engine {
     /// 0.7.2 PR-2b — explicit `doctor recompute-mean` path. Re-derives the
     /// pinned corpus mean from the current `vector_default` rows and
     /// re-quantizes every row, SYNCHRONOUSLY in one transaction. ALWAYS
-    /// allowed, including at/above `MEAN_RECOMPUTE_DYNAMIC_MAX` (the cap
-    /// suppresses only the AUTOMATIC drift path).
+    /// allowed at any corpus size — this is the ONLY mean-refresh path as of
+    /// 0.7.2 (the automatic in-ingest drift detector was carved out / deferred
+    /// to 0.8.x; see `dev/design/embedder.md` §0.3).
     ///
     /// Serializes against the projection workers via `commit_gate` so the
     /// re-quantize sees a totally-ordered history, exactly like the at-pin
@@ -2408,14 +2391,7 @@ impl Engine {
             tx.commit().map_err(|_| EngineError::Storage)?;
             report
         };
-        // Post-durable-commit publish + debounce reset (manual recompute
-        // re-centers the corpus, so the auto detector should re-arm fresh).
-        if let Ok(mut tracker) = self.projection_runtime.shared.recent_mean.lock() {
-            if let Some(t) = tracker.as_mut() {
-                t.note_action();
-                t.armed = true;
-            }
-        }
+        // Post-durable-commit publish.
         if let Ok(mut events) = self.projection_runtime.shared.pending_events.lock() {
             events.push(EmbedderEvent::MeanVecRecomputed {
                 dim: report.dim,
@@ -2424,14 +2400,6 @@ impl Engine {
             });
         }
         Ok(report)
-    }
-
-    /// 0.7.2 PR-2b test seam — lower the AUTOMATIC drift cap so the
-    /// suppression path is exercised without seeding 200k rows. Production
-    /// keeps `MEAN_RECOMPUTE_DYNAMIC_MAX`; the doctor verb ignores this.
-    #[doc(hidden)]
-    pub fn set_mean_recompute_dynamic_max_for_test(&self, cap: u64) {
-        self.projection_runtime.shared.mean_recompute_dynamic_max.store(cap, Ordering::SeqCst);
     }
 
     /// 0.7.2 PR-2bc S1 fix-1 test seam — RAISE the phase-2 rerank `LIMIT`
@@ -2931,44 +2899,11 @@ pub const TOP_K_BIT_CANDIDATES: usize = 192;
 /// assert the value.
 pub const MEAN_VEC_PIN_THRESHOLD: u64 = 256;
 
-/// 0.7.2 PR-2b — automatic mean-recompute is SUPPRESSED at/above this row
-/// count. Above the cap the drift detector still SURFACES a
-/// `MeanRecomputeDeferred` notification but does not recompute in-line;
-/// the explicit `doctor recompute-mean` verb is exempt and always
-/// recomputes. The cap bounds the worst-case synchronous in-transaction
-/// re-quantize latency on the ingest path. See
-/// `dev/design/embedder-decision.md` §3.4.
-pub const MEAN_RECOMPUTE_DYNAMIC_MAX: u64 = 200_000;
-
 /// 0.7.2 PR-2bc S1 fix-1 — production phase-2 rerank `LIMIT` for engine
 /// search. This is the original hardcoded `LIMIT 10`; it is the default and
 /// the floor for `search_limit_override` (a test seam may RAISE it but never
 /// shrink it below this). There is NO env-var override on the hot path.
 pub const SEARCH_RERANK_LIMIT: usize = 10;
-
-/// 0.7.2 PR-2b (ratified by HITL 2026-05-30) — the automatic drift detector
-/// fires when `cos(recent_mean, pinned_mean)` falls BELOW this value.
-/// Calibrated from the PR-2a evidence base: a pathological topic-skewed
-/// pinned mean sits ~0.82 cos to the true corpus mean, a healthy one
-/// ~0.998; 0.95 sits inside that gap, near the healthy end, so the
-/// detector fires on genuine drift without tripping on benign jitter.
-pub const MEAN_DRIFT_COS_THRESHOLD: f32 = 0.95;
-
-/// 0.7.2 PR-2b — debounce floor: after a recompute (or a deferred
-/// notification), the auto detector will not fire again until at least
-/// this many further rows have committed. Combined with the re-arm rule
-/// (the detector also disarms while cos stays recovered), this prevents a
-/// single drift episode from triggering a recompute storm. Set to one pin
-/// window so a recompute amortizes over a meaningful ingest volume.
-pub const MEAN_RECOMPUTE_DEBOUNCE_ROWS: u64 = MEAN_VEC_PIN_THRESHOLD;
-
-/// 0.7.2 PR-2b — EWMA smoothing factor for the recent-vector-mean tracker.
-/// `new = alpha * vec + (1 - alpha) * old`. At 1/256 the tracker's
-/// effective window is ~one pin threshold of recent rows: responsive
-/// enough to detect a sustained topic pivot within a few hundred docs,
-/// damped enough that a handful of outliers do not move it. O(dim) memory,
-/// O(dim) per row — strictly cheaper than re-deriving a windowed mean.
-const RECENT_MEAN_EWMA_ALPHA: f32 = 1.0 / (MEAN_VEC_PIN_THRESHOLD as f32);
 
 /// EU-5a2 — streaming f64 accumulator for the mean-centering pipeline,
 /// per `dev/design/embedder.md` §0.3 (f64 chosen to bound numerical
@@ -3003,59 +2938,6 @@ impl MeanAccumulator {
 
     fn count(&self) -> u64 {
         self.count
-    }
-}
-
-/// 0.7.2 PR-2b — running estimate of the RECENT vector mean, used by the
-/// in-ingest distribution-drift detector. An EWMA (not a hard sliding
-/// window) is chosen deliberately: it is O(dim) memory and O(dim)/row with
-/// no per-row history buffer, and its exponential decay naturally weights
-/// the most recent docs (the ones a topic pivot shows up in first) while
-/// damping single-row outliers. A hard window of W rows would need a
-/// W*dim ring buffer for identical responsiveness. See
-/// `dev/design/embedder.md` §0.3.
-#[derive(Clone, Debug)]
-struct RecentMeanTracker {
-    /// `None` until the first vector is observed; thereafter the EWMA.
-    mean: Option<Vec<f32>>,
-    /// Rows observed since the last recompute / deferred notification.
-    /// Drives the debounce floor (`MEAN_RECOMPUTE_DEBOUNCE_ROWS`).
-    rows_since_action: u64,
-    /// Re-arm latch: the detector only fires on a falling edge through the
-    /// threshold. Set when cos drops below the threshold and fires; cleared
-    /// once cos recovers back above it, so one sustained drift episode
-    /// triggers at most one action until the corpus genuinely re-centers.
-    armed: bool,
-}
-
-impl RecentMeanTracker {
-    fn new() -> Self {
-        Self { mean: None, rows_since_action: 0, armed: true }
-    }
-
-    /// Fold one un-centered vector into the EWMA and advance the debounce
-    /// counter. Cheap: O(dim), no allocation after the first observation.
-    fn observe(&mut self, v: &[f32]) {
-        match self.mean.as_mut() {
-            None => self.mean = Some(v.to_vec()),
-            Some(mean) => {
-                for (slot, value) in mean.iter_mut().zip(v.iter()) {
-                    *slot =
-                        RECENT_MEAN_EWMA_ALPHA * *value + (1.0 - RECENT_MEAN_EWMA_ALPHA) * *slot;
-                }
-            }
-        }
-        self.rows_since_action = self.rows_since_action.saturating_add(1);
-    }
-
-    /// Snapshot of the current recent-mean estimate, if any rows seen.
-    fn snapshot(&self) -> Option<Vec<f32>> {
-        self.mean.clone()
-    }
-
-    /// Reset the debounce window after a recompute or deferred notification.
-    fn note_action(&mut self) {
-        self.rows_since_action = 0;
     }
 }
 
@@ -3859,13 +3741,6 @@ fn commit_projection_outcomes(
         None
     };
     let mut staged_events: Vec<EmbedderEvent> = Vec::new();
-    // 0.7.2 PR-2b — un-centered vectors committed this batch, fed to the
-    // recent-mean drift tracker AFTER the tx commits durably (so a rolled-
-    // back batch never moves the tracker).
-    let mut observed_vectors: Vec<Vec<f32>> = Vec::new();
-    // 0.7.2 PR-2b — a mean was (re)pinned in THIS tx (initial pin OR drift
-    // recompute); the auto detector must not also fire on the same tx.
-    let mut pinned_this_tx = false;
     for outcome in outcomes {
         match outcome {
             ProjectionOutcome::Success { cursor, kind, blob, bin_blob } => {
@@ -3927,12 +3802,6 @@ fn commit_projection_outcomes(
                 )?;
                 record_projection_terminal(&tx, *cursor, "up_to_date")?;
 
-                // 0.7.2 PR-2b — remember the un-centered vector for the
-                // recent-mean tracker (folded post-commit).
-                if mc {
-                    observed_vectors.push(decode_vector_blob(bin_blob));
-                }
-
                 // EU-5f — this row crossed the threshold: pin the mean and
                 // re-quantize every row written so far (incl. earlier rows
                 // in this same tx, which are visible to the SELECT) within
@@ -3967,7 +3836,6 @@ fn commit_projection_outcomes(
                         doc_count,
                     });
                     current_mean = Some(mean);
-                    pinned_this_tx = true;
                 }
             }
             ProjectionOutcome::Failure { cursor, failure_code } => {
@@ -3996,115 +3864,25 @@ fn commit_projection_outcomes(
             }
         }
     }
-    // 0.7.2 PR-2b — automatic distribution-drift detector. Runs only when
-    // the workspace already has a pinned mean and did NOT (re)pin in this
-    // same tx. Decision is made on a PROJECTED tracker (the persistent
-    // tracker is folded post-commit so a rolled-back batch never moves it);
-    // any recompute happens INSIDE this tx so it is atomic with the batch.
-    //
-    // Re-arm / debounce: the detector fires only on a falling edge through
-    // `MEAN_DRIFT_COS_THRESHOLD` (the `armed` latch) AND only after
-    // `MEAN_RECOMPUTE_DEBOUNCE_ROWS` rows since the last action — so one
-    // sustained drift episode triggers at most one recompute.
-    let mut drift_action: Option<DriftAction> = None;
-    if mc && !pinned_this_tx && !observed_vectors.is_empty() {
-        if let Some(pinned) = &current_mean {
-            // Project the persistent tracker forward over this batch.
-            let mut projected = {
-                let guard = shared.recent_mean.lock().unwrap_or_else(|p| p.into_inner());
-                guard.clone().unwrap_or_else(RecentMeanTracker::new)
-            };
-            for v in &observed_vectors {
-                projected.observe(v);
-            }
-            if let Some(recent) = projected.snapshot() {
-                let cos = cosine_similarity(&recent, pinned);
-                let debounce_ok = projected.rows_since_action >= MEAN_RECOMPUTE_DEBOUNCE_ROWS;
-                if cos < MEAN_DRIFT_COS_THRESHOLD && projected.armed && debounce_ok {
-                    let cap = shared.mean_recompute_dynamic_max.load(Ordering::SeqCst);
-                    let row_count: u64 = tx
-                        .query_row("SELECT COUNT(*) FROM vector_default", [], |row| row.get(0))
-                        .unwrap_or(0);
-                    if row_count >= cap {
-                        // Above the cap: SUPPRESS the auto recompute, surface
-                        // a deferred notification carrying the drift cos.
-                        staged_events.push(EmbedderEvent::MeanRecomputeDeferred {
-                            doc_count: row_count,
-                            drift_cos_bits: cos.to_bits(),
-                        });
-                        drift_action = Some(DriftAction::Deferred);
-                    } else {
-                        // Below the cap: recompute SYNCHRONOUSLY in this tx.
-                        let report =
-                            recompute_mean_in_tx(&tx, embedder_identity).map_err(|_| {
-                                rusqlite::Error::SqliteFailure(
-                                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
-                                    Some("drift mean-recompute failed".to_string()),
-                                )
-                            })?;
-                        staged_events.push(EmbedderEvent::MeanVecRecomputed {
-                            dim: report.dim,
-                            doc_count: report.doc_count_requantized,
-                            trigger: MeanRecomputeTrigger::DriftAuto,
-                        });
-                        drift_action = Some(DriftAction::Recomputed);
-                    }
-                }
-            }
-        }
-    }
+    // 0.7.2 PR-2bc S2 — the AUTOMATIC in-ingest drift detector (EWMA recent
+    // mean + cos-threshold + debounce + 200k cap + `MeanRecomputeDeferred`)
+    // was CARVED OUT and DEFERRED to 0.8.x; its recall premise was refuted
+    // (the mean is a non-lever) and the benefit is unmeasured. The mean is
+    // refreshed only on demand via `Engine::recompute_mean` (the
+    // `doctor recompute-mean` verb). See `dev/design/embedder.md` §0.3 and
+    // `dev/plans/prompts/0.8.x-auto-mean-drift-DEFERRED.md`. Nothing here
+    // mutates `mean_vec` after the initial pin.
 
     advance_projection_cursor(&tx)?;
     tx.commit()?;
     // EU-5f — publish MeanVecPinned only after the pin tx is durable, so a
-    // rolled-back pin never emits a spurious event. PR-2b recompute /
-    // deferred events ride the same post-durable-commit channel.
+    // rolled-back pin never emits a spurious event.
     if !staged_events.is_empty() {
         if let Ok(mut events) = shared.pending_events.lock() {
             events.extend(staged_events);
         }
     }
-    // 0.7.2 PR-2b — fold this (now-durable) batch into the persistent
-    // recent-mean tracker and apply the debounce / re-arm transitions.
-    if mc && !observed_vectors.is_empty() {
-        if let Ok(mut guard) = shared.recent_mean.lock() {
-            let tracker = guard.get_or_insert_with(RecentMeanTracker::new);
-            for v in &observed_vectors {
-                tracker.observe(v);
-            }
-            match drift_action {
-                Some(DriftAction::Recomputed) => {
-                    // The corpus is freshly re-centered; reset the window and
-                    // re-arm for the NEXT drift episode.
-                    tracker.note_action();
-                    tracker.armed = true;
-                }
-                Some(DriftAction::Deferred) => {
-                    // Above the cap: do not recompute, but disarm + reset the
-                    // window so we do not re-notify every batch.
-                    tracker.note_action();
-                    tracker.armed = false;
-                }
-                None => {
-                    // No action this batch. Re-arm once cos recovers above the
-                    // threshold (falling-edge trigger).
-                    if let (Some(recent), Some(pinned)) = (tracker.snapshot(), &current_mean) {
-                        if cosine_similarity(&recent, pinned) >= MEAN_DRIFT_COS_THRESHOLD {
-                            tracker.armed = true;
-                        }
-                    }
-                }
-            }
-        }
-    }
     Ok(())
-}
-
-/// 0.7.2 PR-2b — what the auto drift detector did this commit, used to
-/// drive the post-commit tracker transition.
-enum DriftAction {
-    Recomputed,
-    Deferred,
 }
 
 /// EU-5f — open-time recovery pin (`dev/design/embedder.md` §0.3, Hazard 4).

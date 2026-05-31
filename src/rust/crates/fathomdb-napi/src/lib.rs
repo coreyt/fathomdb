@@ -390,9 +390,11 @@ pub struct EmbedderEvent {
     pub duration_ms: Option<i64>,
     pub dim: Option<u32>,
     pub doc_count: Option<i64>,
-    /// 0.7.2 PR-2b — `"drift_auto"` | `"manual"` on `MeanVecRecomputed`.
+    /// 0.7.2 PR-2b — `"manual"` on `MeanVecRecomputed` (the automatic
+    /// `"drift_auto"` trigger was carved out / deferred to 0.8.x).
     pub trigger: Option<String>,
-    /// 0.7.2 PR-2b — cosine drift carried on `MeanRecomputeDeferred`.
+    /// Reserved (always `None` as of 0.7.2 PR-2bc — the `MeanRecomputeDeferred`
+    /// event that carried this was removed with the automatic drift path).
     pub drift_cos: Option<f64>,
 }
 
@@ -457,19 +459,6 @@ impl EmbedderEvent {
                 doc_count: Some(*doc_count as i64),
                 trigger: Some(trigger.as_str().to_string()),
                 drift_cos: None,
-            },
-            RustEmbedderEvent::MeanRecomputeDeferred { doc_count, .. } => Self {
-                kind: "MeanRecomputeDeferred".to_string(),
-                file: None,
-                url: None,
-                bytes: None,
-                sha256: None,
-                cache_path: None,
-                duration_ms: None,
-                dim: None,
-                doc_count: Some(*doc_count as i64),
-                trigger: None,
-                drift_cos: ev.deferred_drift_cos().map(f64::from),
             },
         }
     }

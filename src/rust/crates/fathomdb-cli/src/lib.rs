@@ -504,11 +504,6 @@ fn warm_cache_event_json(ev: &fathomdb_embedder::EmbedderEvent) -> Value {
             "doc_count": doc_count,
             "trigger": trigger.as_str(),
         }),
-        EmbedderEvent::MeanRecomputeDeferred { doc_count, .. } => json!({
-            "kind": "mean_recompute_deferred",
-            "doc_count": doc_count,
-            "drift_cos": ev.deferred_drift_cos(),
-        }),
     }
 }
 

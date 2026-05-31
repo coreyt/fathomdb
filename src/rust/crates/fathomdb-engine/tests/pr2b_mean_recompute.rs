@@ -1,19 +1,19 @@
-//! 0.7.2 PR-2b RED -> GREEN — production mean-recompute engine slice.
+//! 0.7.2 PR-2b / PR-2bc S2 RED -> GREEN — manual mean-recompute engine slice.
 //!
-//! Covers the two recompute triggers (automatic in-ingest drift detector +
-//! the `doctor recompute-mean` verb's `Engine::recompute_mean`), the
-//! N>=200k dynamic cap (via the lowerable test seam), crash-atomicity of the
-//! recompute tx, the `EmbedderEvent` surface (trigger / dim / doc_count /
-//! deferred drift cos), no-drift stability, and the drift EFFICACY test that
-//! PR-2a could not do (a SYNTHETIC topic-drift corpus where topic-B recall
-//! improves after recompute).
+//! As of PR-2bc S2 the AUTOMATIC in-ingest drift detector is CARVED OUT and
+//! deferred to 0.8.x, so the only mean-refresh path is the explicit
+//! `doctor recompute-mean` verb (`Engine::recompute_mean`). This suite
+//! covers: the new no-auto-recompute guard on a synthetic topic pivot
+//! (`topic_pivot_does_not_auto_recompute_mid_ingest`), the manual
+//! recompute's mechanical correctness (full-corpus mean + re-quantize every
+//! row), crash-atomicity of the recompute tx, the `MeanVecRecomputed{Manual}`
+//! event surface, and the non-MC rejection path.
 //!
 //! All tests use a deterministic in-process embedder that reports the
 //! bge-small identity (so the engine treats it as mean-centering-required)
 //! without candle or the network, so the suite runs under a plain
 //! `cargo test -p fathomdb-engine`.
 
-use std::collections::HashSet;
 use std::sync::Arc;
 
 use fathomdb_embedder::{EmbedderEvent, MeanRecomputeTrigger};
@@ -215,19 +215,15 @@ fn topic_pivot_does_not_auto_recompute_mid_ingest() {
     write_docs(&engine, 600, 64, |i| format!("B:{i}"));
     let events = engine.drain_embedder_events().expect("drain events");
 
-    // No automatic recompute event of any kind may be emitted mid-ingest.
-    let auto_recomputed = events.iter().any(|e| {
-        matches!(
-            e,
-            EmbedderEvent::MeanVecRecomputed { trigger: MeanRecomputeTrigger::DriftAuto, .. }
-        )
-    });
-    assert!(!auto_recomputed, "auto drift detector must NOT fire mid-ingest; events={events:?}");
+    // No automatic recompute event of any kind may be emitted mid-ingest: the
+    // automatic drift detector that used to stage `MeanVecRecomputed{DriftAuto}`
+    // (and, above the 200k cap, `MeanRecomputeDeferred`) is carved out. The
+    // only event a topic-B flood may produce post-pin is none at all.
     let any_recomputed =
         events.iter().any(|e| matches!(e, EmbedderEvent::MeanVecRecomputed { .. }));
     assert!(
         !any_recomputed,
-        "no MeanVecRecomputed may be emitted during ingest; events={events:?}"
+        "no MeanVecRecomputed may be emitted during ingest (auto detector carved out); events={events:?}"
     );
 
     // The pinned mean must be untouched by the topic-B flood.
@@ -324,176 +320,7 @@ fn recompute_fault_rolls_back_fully() {
     }
 }
 
-/// (3) Drift efficacy — the test PR-2a could not do. Build a synthetic
-/// topic-drift corpus: pin a topic-A-skewed mean, then ingest many topic-B
-/// docs. Assert (a) the auto detector fires (MeanVecRecomputed) AND
-/// (b) topic-B recall@10 (engine path, target-excluded GT) improves after
-/// recompute vs the wrong-mean baseline measured at the moment of pin.
-#[test]
-fn drift_recompute_improves_topic_b_recall() {
-    // Part 1 — the auto detector fires on a topic pivot (A then B).
-    {
-        let (_dir, path) = fixture_path("pr2b_efficacy_auto");
-        let opened = open_caller(&path, Arc::new(SimulatedBgeEmbedder::default()));
-        let engine = opened.engine;
-        engine.configure_vector_kind_for_test("doc").expect("vector kind");
-        write_docs(&engine, MEAN_VEC_PIN_THRESHOLD as usize, 64, |i| format!("A:{i}"));
-        let _ = engine.drain_embedder_events();
-        write_docs(&engine, 600, 64, |i| format!("B:{i}"));
-        let events = engine.drain_embedder_events().expect("drain events");
-        engine.close().expect("close");
-        let recomputed = events.iter().any(|e| {
-            matches!(
-                e,
-                EmbedderEvent::MeanVecRecomputed { trigger: MeanRecomputeTrigger::DriftAuto, .. }
-            )
-        });
-        assert!(recomputed, "auto drift detector must fire on a topic pivot; events={events:?}");
-    }
-
-    // Part 2 — EFFICACY on a FIXED drifted corpus: with the A-skewed mean
-    // still pinned, topic-B recall is depressed; a manual recompute (the
-    // same core the auto path uses) repairs it. The corpus is held constant
-    // across the two measurements so the mean is the only variable. The auto
-    // cap seam is set so the drift detector does NOT silently recompute
-    // before we take the wrong-mean baseline.
-    let (_dir, path) = fixture_path("pr2b_efficacy_fixed");
-    let opened = open_caller(&path, Arc::new(SimulatedBgeEmbedder::default()));
-    let engine = opened.engine;
-    engine.configure_vector_kind_for_test("doc").expect("vector kind");
-    // Suppress the auto path entirely (cap = 0) so the A-skewed mean persists.
-    engine.set_mean_recompute_dynamic_max_for_test(0);
-
-    write_docs(&engine, MEAN_VEC_PIN_THRESHOLD as usize, 64, |i| format!("A:{i}"));
-    // Many more B docs than A so the corpus is B-dominated: the A-skewed mean
-    // is now wrong for the majority topic, depressing B sign-bit candidates.
-    write_docs(&engine, 800, 64, |i| format!("B:{i}"));
-    let _ = engine.drain_embedder_events();
-
-    let embedder = SimulatedBgeEmbedder::default();
-    let b_queries: Vec<String> = (0..60).map(|i| format!("B:{i}")).collect();
-    let recall_before = measure_recall(&engine, &embedder, &b_queries);
-
-    let report = engine.recompute_mean().expect("manual recompute");
-    assert!(report.mean_was_pinned && report.drift_cos_before < 0.95);
-    let recall_after = measure_recall(&engine, &embedder, &b_queries);
-    engine.close().expect("close");
-
-    assert!(
-        recall_after > recall_before + 0.02,
-        "topic-B recall@10 must improve measurably after recompute: before={recall_before:.3} after={recall_after:.3}"
-    );
-}
-
-/// recall@10 over a query set, target-excluded, comparing the engine's
-/// production path (sign-bit K + f32 rerank) against a brute-force f32 GT.
-fn measure_recall(engine: &Engine, embedder: &dyn Embedder, queries: &[String]) -> f64 {
-    // Snapshot all stored un-centered vectors + their bodies for GT.
-    let conn = Connection::open(engine.path()).expect("reopen for GT");
-    let mut stmt = conn
-        .prepare(
-            "SELECT canonical_nodes.body, vector_default.embedding
-             FROM vector_default JOIN canonical_nodes
-               ON canonical_nodes.write_cursor = vector_default.rowid
-             ORDER BY vector_default.rowid",
-        )
-        .expect("prep gt");
-    let docs: Vec<(String, Vec<f32>)> = stmt
-        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?)))
-        .expect("gt query")
-        .filter_map(Result::ok)
-        .map(|(b, blob)| (b, decode_f32(&blob)))
-        .collect();
-
-    let mut per_query = Vec::with_capacity(queries.len());
-    for q in queries {
-        let qv = embedder.embed(q).expect("embed query");
-        let mut idx: Vec<usize> = (0..docs.len()).collect();
-        let dist = |v: &[f32]| -> f32 { v.iter().zip(&qv).map(|(a, b)| (a - b) * (a - b)).sum() };
-        idx.sort_by(|&a, &b| {
-            dist(&docs[a].1).partial_cmp(&dist(&docs[b].1)).unwrap_or(std::cmp::Ordering::Equal)
-        });
-        let mut gt: Vec<&String> = Vec::new();
-        for &i in idx.iter() {
-            if &docs[i].0 == q {
-                continue; // target exclusion
-            }
-            gt.push(&docs[i].0);
-            if gt.len() == 10 {
-                break;
-            }
-        }
-        let gt_set: HashSet<&String> = gt.into_iter().collect();
-        let prod = engine.search(q).expect("prod search").results;
-        let hits = prod.iter().filter(|b| *b != q).filter(|b| gt_set.contains(b)).count();
-        per_query.push(hits as f64 / 10.0);
-    }
-    per_query.iter().sum::<f64>() / per_query.len().max(1) as f64
-}
-
-/// (4) No-drift stability: a homogeneous corpus does NOT trigger spurious
-/// recomputes (threshold + debounce are not over-sensitive).
-#[test]
-fn homogeneous_corpus_does_not_recompute() {
-    let (_dir, path) = fixture_path("pr2b_stable");
-    let opened = open_caller(&path, Arc::new(SimulatedBgeEmbedder::default()));
-    let engine = opened.engine;
-    engine.configure_vector_kind_for_test("doc").expect("vector kind");
-    // Keep ingesting the SAME topic well past the pin + several debounce
-    // windows.
-    write_docs(&engine, MEAN_VEC_PIN_THRESHOLD as usize + 1200, 64, |i| format!("A:{i}"));
-    let events = engine.drain_embedder_events().expect("drain");
-    engine.close().expect("close");
-
-    let recomputes =
-        events.iter().filter(|e| matches!(e, EmbedderEvent::MeanVecRecomputed { .. })).count();
-    assert_eq!(recomputes, 0, "homogeneous corpus must not auto-recompute; events={events:?}");
-}
-
-/// (5) N>=cap: at/above the (lowered) cap the auto path is SUPPRESSED and
-/// emits MeanRecomputeDeferred carrying the drift cos; `recompute_mean`
-/// still recomputes regardless of the cap.
-#[test]
-fn cap_suppresses_auto_but_not_manual() {
-    let (_dir, path) = fixture_path("pr2b_cap");
-    let opened = open_caller(&path, Arc::new(SimulatedBgeEmbedder::default()));
-    let engine = opened.engine;
-    engine.configure_vector_kind_for_test("doc").expect("vector kind");
-    // Lower the cap so the workspace is already "above 200k" by row count.
-    engine.set_mean_recompute_dynamic_max_for_test(MEAN_VEC_PIN_THRESHOLD);
-
-    write_docs(&engine, MEAN_VEC_PIN_THRESHOLD as usize, 64, |i| format!("A:{i}"));
-    let _ = engine.drain_embedder_events();
-    // Now drift with topic B past the debounce floor; the auto path is capped.
-    write_docs(&engine, 400, 64, |i| format!("B:{i}"));
-    let events = engine.drain_embedder_events().expect("drain");
-
-    let deferred: Vec<&EmbedderEvent> = events
-        .iter()
-        .filter(|e| matches!(e, EmbedderEvent::MeanRecomputeDeferred { .. }))
-        .collect();
-    let auto_recomputes =
-        events.iter().filter(|e| matches!(e, EmbedderEvent::MeanVecRecomputed { .. })).count();
-    assert_eq!(auto_recomputes, 0, "auto recompute must be suppressed above the cap");
-    assert!(!deferred.is_empty(), "a deferred notification must be surfaced; events={events:?}");
-    let cos = deferred[0].deferred_drift_cos().expect("deferred drift cos");
-    assert!((-1.0..=1.0).contains(&cos), "deferred drift cos must be a valid cosine, got {cos}");
-
-    // The doctor verb is exempt: it recomputes even above the cap.
-    let report = engine.recompute_mean().expect("manual recompute exempt from cap");
-    assert!(report.doc_count_requantized >= MEAN_VEC_PIN_THRESHOLD);
-    let after = engine.drain_embedder_events().expect("drain manual");
-    assert!(
-        after.iter().any(|e| matches!(
-            e,
-            EmbedderEvent::MeanVecRecomputed { trigger: MeanRecomputeTrigger::Manual, .. }
-        )),
-        "manual recompute must emit MeanVecRecomputed{{Manual}}; events={after:?}"
-    );
-    engine.close().expect("close");
-}
-
-/// (6) Events: MeanVecRecomputed carries the correct trigger/dim/doc_count
+/// (3) Events: MeanVecRecomputed carries the correct trigger/dim/doc_count
 /// and is published only after the recompute is durable; deferred event
 /// carries a drift cos.
 #[test]
