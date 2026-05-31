@@ -1,10 +1,11 @@
 # STATUS — 0.7.2 RELEASE-HARDENING
 
 _Last updated: 2026-05-31 — PR-2 family RESOLVED + **PR-1 (doc drift sweep) CLOSED**
-(codex PASS) on local `main` (unpushed, HEAD `10a0e24`, 43 ahead of `origin/main`).
-Remaining Phase A (PR-9, PR-3, PR-4) and Phase B (PR-5/6/7) NOT STARTED. `v0.7.0` held
-locally; `v0.7.1` not yet tagged (PR-4 creates it); workspace version still `0.7.0`.
-Nothing pushed to origin._
+(codex PASS) on local `main` (unpushed, HEAD `860a662`, 44 ahead of `origin/main`).
+**PR-9 (embedder robustness) IN FLIGHT.** Remaining Phase A (PR-3, PR-4) and Phase B
+(PR-5/6/7) NOT STARTED. `v0.7.0` held locally; `v0.7.1` not yet tagged (PR-4 creates
+it); workspace version still `0.7.0`. Nothing pushed to origin. Stale PR-2 worktrees/
+branches cleaned up 2026-05-31 (PR-2c branch parked/kept; locked EU-3 worktree left)._
 
 Orchestrator: main-thread Claude Code session. Pattern per `dev/design/orchestration.md`
 (per-slice prompt → informed subagent implementer/orchestrator (TDD) → codex review →
