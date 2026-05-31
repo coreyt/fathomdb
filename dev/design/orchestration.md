@@ -1,6 +1,7 @@
 ---
 title: Multi-Agent Orchestration Pattern
 date: 2026-05-17
+revised: 2026-05-31
 target_release: 0.6.0
 desc: Canonical Claude-implementer + Codex-reviewer spawn discipline for orchestrated work
 blast_radius: dev/plans/prompts/*; .github/workflows/release.yml; release engineering; all multi-agent slices
@@ -9,6 +10,7 @@ supersedes:
   - dev/plans/0.6.0-Phase-9-Pack-5-performance-diagnostics.md § 0.1 (Pack-5-era invocation pattern)
   - dev/plans/prompts/01-orchestrator-resume.md § 4 (lifted here; resume doc now points back)
   - dev/plans/prompts/00-handoff-execute.md § 3-5 (Pack-5-era handoff)
+  - § 2 (this doc) — the `claude -p` subprocess implementer pattern, superseded 2026-05-31 by the `implementer` subagent (clean replacement; old bash recipe removed)
 ---
 
 # Multi-Agent Orchestration Pattern
@@ -25,84 +27,128 @@ principles; this file owns the mechanics.
 | Role             | Who                                              | Tools                                                      | Output                                                                     |
 | ---------------- | ------------------------------------------------ | ---------------------------------------------------------- | -------------------------------------------------------------------------- |
 | **Orchestrator** | Main thread (you). Always.                       | Bash, Edit, Read, Write. May spawn subagents.              | Plan files, cherry-picks, verdict promotions, commit decisions.            |
-| **Implementer**  | Fresh `claude -p` process in a git worktree.     | Read, Edit, Write, Bash, Grep, Glob. **NEVER Task/Agent.** | Commits on a `phase-<id>-<ts>` branch + structured `<phase>-output.json`.  |
+| **Implementer**  | `implementer` subagent in a main-thread-owned worktree. | Read, Edit, Write, Bash, Grep, Glob. **No Task/Agent** (omitted from the agent def). | Commits on a `phase-<id>-<ts>` branch + structured `<phase>-output.json`.  |
 | **Reviewer**     | `codex exec` against the implementer's worktree. | Read-only sandbox.                                         | Verdict body (PASS / CONCERN / BLOCK) in log; main thread promotes to .md. |
 
 Anti-patterns (do not violate):
 
 - **Do not spawn an "orchestrator" subagent.** The main thread IS
   the orchestrator. (`feedback_orchestrator_thread.md`)
-- **Do not use the Agent tool to spawn implementers.** It lacks
-  per-spawn `--model` / `--effort` knobs.
-- **Do not chain subagents to each other.** Implementer never spawns
-  another agent (PREAMBLE + `--disallowedTools Task Agent` enforce
-  this; B.1 incident 2026-05-03 lost work when wrapper agent
-  misread "Spawn from main thread" as instruction to spawn-again).
+- **Do not chain subagents to each other.** The implementer never
+  spawns another agent — the `implementer` agent type omits Agent/Task
+  (the physical guard; replaces the old `--disallowedTools Task Agent`).
+  B.1 incident 2026-05-03 lost work when a wrapper agent misread
+  "Spawn from main thread" as instruction to spawn-again.
+- **Do not let the implementer own its worktree.** The main thread
+  creates it (`git worktree add` from a chosen baseline); never use
+  Agent-native isolation — it forfeits baseline control and § 11 cleanup.
 - **Do not edit in a subagent's worktree from the main thread.**
   Worktree is the unit of isolation.
 
+## 1.5 State spine
+
+The per-slice flow below (§§ 2–11) is a state machine. Keep it
+honest by deriving position from the repo, not from memory:
+
+**State is a derived function of durable on-disk witnesses.
+`STATUS-<phase>.md` is a cache of that derivation, not the source of
+truth.** A slice's current state is the furthest state whose witness
+exists and verifies:
+
+| State              | Witness (what proves it on disk)                                              |
+| ------------------ | ---------------------------------------------------------------------------- |
+| `WORKTREE_CREATED` | `git worktree list` shows WT + branch at the chosen baseline                 |
+| `IMPLEMENTING`     | *(sole transient state — Agent task active; no durable witness)*             |
+| `IMPLEMENTED`      | `output.json` present at its path **and** branch head advanced past baseline |
+| `CHERRY_PICKED`    | equivalent commit verified on mainline (`git log --grep` / SHA)              |
+| `REVIEWED`         | `<phase>-review-<rts>.md` exists with a `## Verdict:` line                   |
+| `CLOSED`           | plan has `Phase <id> CLOSED` block + promoted verdict                        |
+| `CLEANED`          | `git worktree list` no longer shows the WT                                   |
+
+Each transition's **guard** = the prior state's witness exists and
+verifies; its **effect** = produce the next witness. §§ 5–11 are the
+transition bodies; § 9 is the transition function.
+
+Four invariants (the entire added formality):
+
+1. **Derived position.** State = furthest state whose witness exists
+   and verifies. On any conflict, **witnesses win over `STATUS`.**
+2. **Artifact-gated transitions, never belief-gated.** Advance only
+   when the prior witness is present. Never cherry-pick before
+   `output.json`; never spawn fix-N before the implementer's
+   completion event **and** its commits exist.
+3. **No undefined transition.** Any state with no satisfiable next
+   step — expected witness missing (failed implementer), a BLOCK
+   fix-N can't clear, fix-N past a small bound — **halts to HITL**
+   rather than improvising.
+4. **Idempotent re-entry.** On resume, re-derive from witnesses and
+   continue at the first incomplete transition; a transition whose
+   witness already exists is a verified no-op.
+
 ## 2. Implementer (Claude writes code)
+
+> **Superseded 2026-05-31.** Implementers were previously launched as
+> `claude -p` subprocesses piped a PREAMBLE+prompt over stdin. That
+> recipe is retired and removed. Implementers are now Claude Code
+> subagents (`subagent_type: implementer`). Branch-point and worktree
+> ownership stay with the main thread — only the spawn mechanism
+> changed.
+
+The main thread creates the worktree (unchanged — this is what gives
+branch-point control), then spawns the `implementer` subagent into it:
 
 ```bash
 PHASE=<id>                       # e.g. 11d-release-workflow, 11d-fix-1
 TS=$(date -u +%Y%m%dT%H%M%SZ)
-LOG=/home/coreyt/projects/fathomdb/dev/plans/runs/${PHASE}-${TS}.log
 WT=/tmp/fdb-${PHASE}-${TS}
 
 git -C /home/coreyt/projects/fathomdb worktree add "$WT" \
     -b "phase-${PHASE}-${TS}" <BASELINE_COMMIT_SHA>
-
-PREAMBLE=$(cat <<'EOF'
-============================================================
-YOU ARE THE IMPLEMENTER. Not the orchestrator.
-
-The "## Model + effort" section in this prompt describes how YOU
-were just launched (claude -p with the listed model/effort). Do NOT
-re-spawn yourself. Do NOT spawn other agents.
-
-The "Reviewer pass after implementer" block (if present) describes
-what the orchestrator (the human-facing main thread that launched
-you) will run AFTER you exit. You do NOT spawn the reviewer either.
-
-You are running inside the worktree shown by `pwd`. Do the work
-described under "## Mandate" / "## What to do", write the output
-JSON to the path under "## Log destination" / "## Required output",
-commit any code changes per the prompt's commit policy, then exit.
-
-If the spec is ambiguous or impossible (e.g. an assertion that
-SQLite docs prove cannot pass), STOP and report in your final
-result text — do not silently change the spec.
-============================================================
-EOF
-)
-
-( cd "$WT" && \
-  ( echo "$PREAMBLE"; cat /home/coreyt/projects/fathomdb/dev/plans/prompts/<id>.md ) \
-  | claude -p \
-      --model claude-sonnet-4-6|claude-opus-4-7 \
-      --effort medium|high|xhigh \
-      --add-dir "$WT" \
-      --allowedTools Read Edit Write Bash Grep Glob \
-      --disallowedTools Task Agent \
-      --permission-mode bypassPermissions \
-      --output-format stream-json --include-partial-messages --verbose \
-  > "$LOG" 2>&1 )
 ```
+
+Then one `Agent` call from the main thread:
+
+- `subagent_type: "implementer"` — tool contract (Read, Edit, Write,
+  Bash, Grep, Glob; **no Agent/Task**) lives in
+  `.claude/agents/implementer.md`. Do not re-list tools here.
+- `model: "opus"` or `"sonnet"` per slice. (Tier, not exact pin;
+  `--effort` no longer applies — it was always intent-only.)
+- `run_in_background: true` — runtime notifies on completion; do not
+  poll. The completion notification is the sole
+  `IMPLEMENTING → IMPLEMENTED` trigger (§ 1.5 invariant 2).
+- `isolation` is **not** set. The worktree already exists and is
+  main-thread-owned; Agent-native isolation would forfeit baseline
+  control and § 11 cleanup.
+- Prompt body carries the per-spawn facts the subagent cannot infer:
+
+      worktree: <ABS_WT_PATH>          (operate only here; not your cwd)
+      branch:   phase-<id>-<ts>
+      baseline: <BASELINE_COMMIT_SHA>
+      output:   <ABS_PATH to <phase>-output.json>   (§ 8 schema)
+      <then the slice spec: ## Mandate / ## What to do / commit policy>
 
 Invocation rules:
 
-- Prompt body via stdin (`echo PREAMBLE; cat <prompt>` piped into
-  `claude -p`). NOT positional.
-- No `--bare` — breaks keychain-only OAuth path.
-- No `--cwd` on claude — use `--add-dir` plus shell-side `cd`.
-- `--effort` is intent-only; JSON envelope does not surface it.
-- `--disallowedTools Task Agent` is the physical anti-chain guard.
-- `--output-format stream-json --include-partial-messages --verbose`
-  so the log grows continuously; monitor mid-flight via `tail -f` /
-  `wc -l`. Final result is the last `result` event; parse with `jq`.
-- Cross-worktree paths must be absolute.
-- Spawn as `run_in_background: true` Bash; runtime notifies on
-  completion. Do not poll.
+- Worktree is created by the main thread, never by the subagent and
+  never via Agent isolation. Cross-worktree paths must be absolute.
+- The `implementer` agent omits Agent/Task — the physical anti-chain
+  guard (replaces the old `--disallowedTools Task Agent`). Never grant
+  them.
+- Per-spawn facts go in the Agent prompt (worktree/branch/baseline/
+  output), not a stdin PREAMBLE. The durable role contract lives in
+  the agent definition.
+- Monitor mid-flight with `TaskOutput` / `TaskGet` or `/workflows`;
+  the durable artifact is still `<phase>-output.json` on disk (§ 8).
+  Final subagent result text returns directly to the main thread — no
+  `jq` log-parsing.
+- On completion, gate the transition (§ 1.5 invariant 2): if
+  `output.json` is absent **or** the result text reports a blocker,
+  the slice is FAILED (no witness — an off-spine halt per invariant 3,
+  not a § 1.5 state row) — triage (fix-N or abandon), never
+  cherry-pick (§ 1.5 invariant 3).
+- `git commit` / `git add` for the slice are allowlisted in
+  `.claude/settings.local.json`; the `wake commit-check` PreToolUse
+  hook is non-blocking (exits 0).
 
 ## 3. Reviewer (Codex reads diff, returns verdict)
 
@@ -231,18 +277,31 @@ land state during reviewer execution.
 
 ## 6. Fix-1 remediation pass (on BLOCK / CONCERN)
 
-If reviewer returns BLOCK or an actionable CONCERN, write a
-targeted remediation prompt `dev/plans/prompts/<id>-fix-1.md` and
-re-spawn the implementer in the **existing** worktree on the
-**existing** branch (don't add a new worktree). Build new commits
-on top of the prior head.
+If reviewer returns BLOCK or an actionable CONCERN, write a targeted
+remediation prompt `dev/plans/prompts/<id>-fix-1.md`, then re-spawn a
+**fresh** `implementer` subagent into the **existing** worktree on the
+**existing** branch — same Agent spawn as § 2 but with no
+`git worktree add`, `baseline` set to the prior head, and an
+`address:` line pointing at the promoted verdict .md:
 
-Spawn pattern: same as § 2 but with `WT=<existing-wt-path>` (no
-`git worktree add`). Prompt operates additively — no rewrites of
-landed commits.
+      worktree: <ABS_EXISTING_WT_PATH>    (operate only here)
+      branch:   phase-<id>-<ts>           (existing — build on top)
+      baseline: <PRIOR_HEAD_SHA>          (the head the fix extends)
+      output:   <ABS_PATH to <phase>-output.json>
+      address:  dev/plans/runs/<phase>-review-<rts>.md   (the findings)
 
-After fix-1: cherry-pick the new commit(s), respawn the reviewer
-for re-verdict. Iterate until PASS or orchestrator override.
+Commits are additive; never rewrite landed commits.
+
+Fresh-spawn is the intended mechanism, **not** a fallback for missing
+conversational continuity: per § 12.1 the implementer's state lives on
+disk (worktree diff + output.json + verdict.md), so a fresh subagent
+reading the verdict has everything it needs. Do not wait on / reach
+for SendMessage.
+
+After fix-N: cherry-pick the new commit(s), re-spawn the reviewer for
+re-verdict. Iterate until PASS or orchestrator override. A BLOCK that
+fix-N cannot clear, or fix-N past a small bound, halts to HITL
+(§ 1.5 invariant 3) rather than looping indefinitely.
 
 Numbering convention: `<id>-fix-1.md`, `<id>-fix-2.md`, etc. Past
 practice: ~1 fix-N pass per BLOCK; CONCERN often accepted via
@@ -289,9 +348,10 @@ Implementer may commit the JSON itself as a final docs commit OR
 leave it untracked (orchestrator promotes via Write tool before
 worktree removal — see § 11).
 
-## 9. Decision loop (per slice)
+## 9. Decision loop (per slice) — the transition function
 
-After implementer returns:
+This is the transition function for the § 1.5 state spine; each step
+is gated on the prior state's witness. After implementer returns:
 
 1. Read `dev/plans/runs/<phase>-output.json` (per § 8 schema).
 2. Cherry-pick implementer commits from WT branch onto mainline
@@ -316,9 +376,15 @@ advance to <next>`.
 ## 10. Hard rules summary
 
 1. Main thread orchestrates. No orchestrator subagent.
-2. Bash to spawn `claude -p`. Never Agent tool.
-3. PREAMBLE prepended via stdin. Always.
-4. `--disallowedTools Task Agent` on every implementer spawn.
+2. Main thread spawns implementers via the Agent tool,
+   `subagent_type: implementer`. Worktree is main-thread-owned
+   (`git worktree add`); never use Agent isolation. (The `claude -p`
+   subprocess pattern is retired — § 2.)
+3. Per-spawn facts (worktree path, branch, baseline SHA, output path)
+   passed in the Agent prompt. Always. Durable role lives in the agent
+   definition.
+4. The `implementer` agent type omits Agent/Task — the physical
+   anti-chain guard. Never add them to its tool list.
 5. Codex reviewer is read-only. Always `--sandbox read-only`.
 6. Verdict promoted by main thread (codex can't write).
 7. Cherry-pick to mainline, never merge from WT branch.
@@ -368,7 +434,7 @@ sessions.
 
 | Tier                                | Lifetime                                                     | What lives there                                                                                                        |
 | ----------------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| **Subagent (implementer/reviewer)** | Single slice spawn (~10-30min)                               | Per-slice prompt + worktree files only. Fresh `claude -p` / `codex exec` every spawn — never grows.                     |
+| **Subagent (implementer/reviewer)** | Single slice spawn (~10-30min)                               | Per-slice prompt + worktree files only. Fresh `implementer` subagent / `codex exec` every spawn — never grows.          |
 | **Main-thread conversation**        | Single session (hours-days, until `/compact` or new session) | Plan-update decisions, codex verdict promotion, cherry-picks, HITL escalation. Limited by Claude Code's context window. |
 | **On-disk**                         | Survives forever (compaction-safe)                           | Plan doc, prompts/, runs/, design docs, MEMORY, progress log, STATUS-<phase>.md.                                        |
 
