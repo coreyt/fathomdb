@@ -433,9 +433,15 @@ fn measure_recall(
     //   OLD: literal top-10, exclude target AFTER (-> <=9 slots when target
     //        self-retrieves), GT as a HashSet (duplicate bodies collapse).
     //   NEW: exclude the query-source target BEFORE truncating to 10 (needs
-    //        EU7_SEARCH_LIMIT>10 so the engine returns >10), and dedup bodies
-    //        on both prod and GT. This is the standard ANN-recall convention
-    //        and matches the offline numpy pipeline (index/exclude-before).
+    //        the engine to return >10), and dedup bodies on both prod and GT.
+    //        This is the standard ANN-recall convention and matches the
+    //        offline numpy pipeline (index/exclude-before).
+    // PR-2bc S1 fix-1: raise the engine's phase-2 rerank LIMIT via the
+    // test seam (NOT an env var) so prod search returns 10+slack, leaving 10
+    // unique non-target hits after exclude-before. The seam clamps to the
+    // production floor (10), so this can only RAISE fanout, never shrink it.
+    const RECALL_SEARCH_SLACK: usize = 5;
+    engine.set_search_limit_for_test(10 + RECALL_SEARCH_SLACK);
     let mut per_query_old = Vec::with_capacity(queries.len());
     let mut per_query_new = Vec::with_capacity(queries.len());
     let mut target_in_top10 = 0usize;

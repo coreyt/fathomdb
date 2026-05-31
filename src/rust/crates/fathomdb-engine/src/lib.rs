@@ -191,6 +191,14 @@ struct ProjectionRuntimeShared {
     /// behavior is exercised without seeding 200k rows. The doctor verb is
     /// exempt and never consults this.
     mean_recompute_dynamic_max: AtomicU64,
+    /// 0.7.2 PR-2bc S1 fix-1 — overridable phase-2 rerank `LIMIT` for the
+    /// search hot path. Equals `SEARCH_RERANK_LIMIT` (10) in production; a
+    /// test seam (`set_search_limit_for_test`) can RAISE it (clamped to >=10,
+    /// so it can never shrink below production semantics) so the recall
+    /// harness can pull top-(10+slack) and exclude the self-retrieving
+    /// query-source doc before truncating to 10. Production reads this atomic
+    /// (default 10) — there is NO env var read on the hot path.
+    search_limit_override: AtomicUsize,
     /// 0.7.2 PR-2b — debug-only fault injection: when set, `recompute_mean_in_tx`
     /// errors AFTER writing `mean_vec` but BEFORE finishing the re-quantize
     /// pass, so the crash-atomicity test can prove the whole recompute rolls
@@ -279,6 +287,11 @@ enum ReaderRequest {
         /// `vec_quantize_binary` sign-quant. Equal to `query_vector` for
         /// non-MC-required identities (the EU-5a2 default).
         query_vector_bin: Option<String>,
+        /// 0.7.2 PR-2bc S1 fix-1 — phase-2 rerank `LIMIT`. Read from
+        /// `ProjectionRuntimeShared::search_limit_override` (default
+        /// `SEARCH_RERANK_LIMIT` = 10, clamped >=10) by `search_inner`
+        /// before dispatch, so the worker never reads any env var.
+        search_limit: usize,
         respond: SyncSender<ReaderResponse>,
     },
     Shutdown,
@@ -470,12 +483,19 @@ fn reader_worker_loop(
     while let Ok(request) = rx.recv() {
         match request {
             ReaderRequest::Shutdown => break,
-            ReaderRequest::Search { compiled, query_vector, query_vector_bin, respond } => {
+            ReaderRequest::Search {
+                compiled,
+                query_vector,
+                query_vector_bin,
+                search_limit,
+                respond,
+            } => {
                 let result = read_search_in_tx(
                     &mut connection,
                     &compiled,
                     query_vector.as_deref(),
                     query_vector_bin.as_deref(),
+                    search_limit,
                 );
                 // Receiver may have been dropped if the caller went
                 // away; nothing to do in that case.
@@ -538,6 +558,7 @@ impl ProjectionRuntime {
             commit_gate: Mutex::new(()),
             recent_mean: Mutex::new(recent_mean),
             mean_recompute_dynamic_max: AtomicU64::new(MEAN_RECOMPUTE_DYNAMIC_MAX),
+            search_limit_override: AtomicUsize::new(SEARCH_RERANK_LIMIT),
             #[cfg(debug_assertions)]
             force_recompute_failure: AtomicBool::new(false),
         });
@@ -1827,11 +1848,21 @@ impl Engine {
             None => None,
         };
         let query_vector = raw_query_vector.and_then(|vector| serde_json::to_string(&vector).ok());
+        // 0.7.2 PR-2bc S1 fix-1 — phase-2 rerank LIMIT. Production default is
+        // `SEARCH_RERANK_LIMIT` (10); the test seam may RAISE it, clamped to
+        // the production floor so a test can never shrink search semantics.
+        let search_limit = self
+            .projection_runtime
+            .shared
+            .search_limit_override
+            .load(Ordering::SeqCst)
+            .max(SEARCH_RERANK_LIMIT);
         let (response_tx, response_rx) = mpsc::sync_channel::<ReaderResponse>(1);
         let request = ReaderRequest::Search {
             compiled,
             query_vector,
             query_vector_bin,
+            search_limit,
             respond: response_tx,
         };
         if self.reader_pool.dispatch(request).is_err() {
@@ -2403,6 +2434,18 @@ impl Engine {
         self.projection_runtime.shared.mean_recompute_dynamic_max.store(cap, Ordering::SeqCst);
     }
 
+    /// 0.7.2 PR-2bc S1 fix-1 test seam — RAISE the phase-2 rerank `LIMIT`
+    /// above the production `SEARCH_RERANK_LIMIT` (10) so the recall harness
+    /// can pull top-(10+slack) and exclude the self-retrieving query-source
+    /// doc before truncating to 10. The search path clamps the stored value
+    /// to the production floor, so a test can never shrink search fanout
+    /// below production semantics. Production reads the same atomic and never
+    /// consults any env var.
+    #[doc(hidden)]
+    pub fn set_search_limit_for_test(&self, limit: usize) {
+        self.projection_runtime.shared.search_limit_override.store(limit, Ordering::SeqCst);
+    }
+
     /// 0.7.2 PR-2b test seam — arm a one-shot fault inside the NEXT
     /// `recompute_mean` so it errors after the `mean_vec` UPDATE but before
     /// the re-quantize completes. Proves the recompute tx rolls back whole.
@@ -2897,6 +2940,12 @@ pub const MEAN_VEC_PIN_THRESHOLD: u64 = 256;
 /// `dev/design/embedder-decision.md` §3.4.
 pub const MEAN_RECOMPUTE_DYNAMIC_MAX: u64 = 200_000;
 
+/// 0.7.2 PR-2bc S1 fix-1 — production phase-2 rerank `LIMIT` for engine
+/// search. This is the original hardcoded `LIMIT 10`; it is the default and
+/// the floor for `search_limit_override` (a test seam may RAISE it but never
+/// shrink it below this). There is NO env-var override on the hot path.
+pub const SEARCH_RERANK_LIMIT: usize = 10;
+
 /// 0.7.2 PR-2b (ratified by HITL 2026-05-30) — the automatic drift detector
 /// fires when `cos(recent_mean, pinned_mean)` falls BELOW this value.
 /// Calibrated from the PR-2a evidence base: a pathological topic-skewed
@@ -3148,6 +3197,7 @@ fn read_search_in_tx(
     compiled: &fathomdb_query::CompiledQuery,
     query_vector: Option<&str>,
     query_vector_bin: Option<&str>,
+    final_limit: usize,
 ) -> rusqlite::Result<(u64, Option<SoftFallback>, Vec<String>)> {
     let tx = reader.transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
     let cursor = load_projection_cursor(&tx)?;
@@ -3161,16 +3211,14 @@ fn read_search_in_tx(
             // EU-5a2: ?1 is the (possibly centered) sign-quant input,
             // ?2 is the un-centered f32 for vec_distance_l2 — both sides
             // of the f32 cosine use un-centered vectors.
-            // PR-2c DIAGNOSTIC seam (test-only): the phase-2 rerank LIMIT is 10
-            // in production; `EU7_SEARCH_LIMIT` lets the recall harness pull
-            // top-(10+slack) so it can exclude the self-retrieving query-source
-            // doc BEFORE truncating to 10 (standard ANN-recall practice). No-op
-            // by default (10) -> production semantics unchanged.
-            let final_limit: usize = std::env::var("EU7_SEARCH_LIMIT")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .filter(|k| *k >= 10)
-                .unwrap_or(10);
+            // PR-2bc S1 fix-1: the phase-2 rerank LIMIT is `SEARCH_RERANK_LIMIT`
+            // (10) in production. `final_limit` is supplied by the caller from
+            // `ProjectionRuntimeShared::search_limit_override` (default 10,
+            // clamped >=10) — there is NO env-var read on this hot path. A test
+            // seam (`set_search_limit_for_test`) may RAISE it so the recall
+            // harness can pull top-(10+slack) and exclude the self-retrieving
+            // query-source doc BEFORE truncating to 10 (standard ANN-recall
+            // practice); it can never shrink below production semantics.
             let sql = format!(
                 "WITH candidates AS (
                      SELECT rowid
