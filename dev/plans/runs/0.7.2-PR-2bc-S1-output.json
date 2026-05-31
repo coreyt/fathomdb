@@ -1,0 +1,18 @@
+{
+  "slice": "S1-land-harness",
+  "branch": "phase-0.7.2-PR-2bc-S1-20260531T125459Z",
+  "head_sha": "f5bd6865a65e365714d54de925d0c9bdc8e007a3",
+  "cherry_picked": ["a601d1c", "07f1a76", "5658d39"],
+  "cherry_picked_new_shas": {
+    "a601d1c": "26b2f958c1d0b9471d95ba8e77987e20b7631657",
+    "07f1a76": "519079c9a28ced843c30b5289fc98595f01d5c5e",
+    "5658d39": "75251fef3dd3e387200925bbebe645b8b7b514b1"
+  },
+  "new_commits": ["f5bd6865a65e365714d54de925d0c9bdc8e007a3"],
+  "conflicts_resolved": [],
+  "build_clean": true,
+  "test_targets_compiled": ["eu7_real_corpus_ac", "eu8_ir_validation", "candle_dump"],
+  "fast_tests": "cargo test -p fathomdb-engine --lib: ok. 2 passed; 0 failed; 0 ignored",
+  "search_limit_is_noop_confirmed": true,
+  "notes": "All three cherry-picks (a601d1c, 07f1a76, 5658d39) applied with ZERO conflicts (textual auto-merge on lib.rs + eu7_real_corpus_ac.rs for a601d1c; corpus_subset.rs applied cleanly with no conflict so no additive resolution was needed). EU7_SEARCH_LIMIT seam at lib.rs:3169 is a verified production no-op: env-unset => std::env::var Err => .ok()=None => .unwrap_or(10), and .filter(|k| *k >= 10) clamps any sub-10 value back to the 10 default; production phase-2 rerank LIMIT stays 10. GT-embed logging is test-only, added to the doc_vecs build loop in eu7_real_corpus_ac.rs: a GT_EMBED_START n=<n> marker before the loop + a throttled (30s Instant cadence, mirroring EU7_SEED_PROGRESS) EU7_GT_EMBED_PROGRESS embedded=<i>/<n> rate_docs_per_s=<r> line inside; gated to the GT-embed phase only, no engine behavior change. Did NOT run AGENT_LONG real-corpus recall or EU-8 full-corpus (needs weights + ~45min). cargo build (engine+embedder+cli) clean; cargo build --tests --features default-embedder clean; all three test targets compile (eu7/eu8 in engine crate, candle_dump in embedder crate). The GT-embed commit passed the cargo fmt --check pre-commit hook. The output.json commit follows this one."
+}
