@@ -3161,6 +3161,16 @@ fn read_search_in_tx(
             // EU-5a2: ?1 is the (possibly centered) sign-quant input,
             // ?2 is the un-centered f32 for vec_distance_l2 — both sides
             // of the f32 cosine use un-centered vectors.
+            // PR-2c DIAGNOSTIC seam (test-only): the phase-2 rerank LIMIT is 10
+            // in production; `EU7_SEARCH_LIMIT` lets the recall harness pull
+            // top-(10+slack) so it can exclude the self-retrieving query-source
+            // doc BEFORE truncating to 10 (standard ANN-recall practice). No-op
+            // by default (10) -> production semantics unchanged.
+            let final_limit: usize = std::env::var("EU7_SEARCH_LIMIT")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .filter(|k| *k >= 10)
+                .unwrap_or(10);
             let sql = format!(
                 "WITH candidates AS (
                      SELECT rowid
@@ -3173,7 +3183,7 @@ fn read_search_in_tx(
                  FROM candidates c
                  JOIN vector_default v ON v.rowid = c.rowid
                  ORDER BY vec_distance_l2(v.embedding, vec_f32(?2))
-                 LIMIT 10",
+                 LIMIT {final_limit}",
                 top_k = TOP_K_BIT_CANDIDATES,
             );
             let mut statement = tx.prepare(&sql)?;

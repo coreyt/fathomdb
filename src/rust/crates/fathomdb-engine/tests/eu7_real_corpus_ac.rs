@@ -428,35 +428,88 @@ fn measure_recall(
     bootstrap_resamples: usize,
 ) -> RecallResult {
     assert_eq!(bodies.len(), doc_vecs.len(), "bodies/doc_vecs must align");
-    let mut per_query = Vec::with_capacity(queries.len());
+    // PR-2c root-cause re-measure: compute BOTH the original (conservative)
+    // method and the corrected ANN-recall method per query, in one run.
+    //   OLD: literal top-10, exclude target AFTER (-> <=9 slots when target
+    //        self-retrieves), GT as a HashSet (duplicate bodies collapse).
+    //   NEW: exclude the query-source target BEFORE truncating to 10 (needs
+    //        EU7_SEARCH_LIMIT>10 so the engine returns >10), and dedup bodies
+    //        on both prod and GT. This is the standard ANN-recall convention
+    //        and matches the offline numpy pipeline (index/exclude-before).
+    let mut per_query_old = Vec::with_capacity(queries.len());
+    let mut per_query_new = Vec::with_capacity(queries.len());
+    let mut target_in_top10 = 0usize;
     for q in queries {
         let qv = embedder.embed(&q.text).expect("embed query");
-        // Brute-force f32 nearest neighbours by squared-L2 over the same
-        // uncentered vectors the engine reranks on. Partial top-11.
-        let mut idx: Vec<usize> = (0..doc_vecs.len()).collect();
         let dist = |v: &[f32]| -> f32 { v.iter().zip(&qv).map(|(a, b)| (a - b) * (a - b)).sum() };
+        let mut idx: Vec<usize> = (0..doc_vecs.len()).collect();
         idx.sort_by(|&a, &b| {
             dist(&doc_vecs[a]).partial_cmp(&dist(&doc_vecs[b])).unwrap_or(std::cmp::Ordering::Equal)
         });
-        let mut gt_bodies: Vec<&String> = Vec::with_capacity(11);
-        for &i in idx.iter().take(11) {
-            gt_bodies.push(&bodies[i]);
-        }
-        if let Some(pos) = gt_bodies.iter().position(|b| **b == q.target_body) {
-            gt_bodies.remove(pos);
-        }
-        gt_bodies.truncate(10);
-        let gt_set: HashSet<&String> = gt_bodies.into_iter().collect();
+        let target = q.target_body.as_str();
 
-        // Production path (sign-bit K=192 + f32 rerank), target excluded.
+        // OLD GT: top-11, remove target, truncate 10, set-collapse dup bodies.
+        let mut gt_old: Vec<&str> = idx.iter().take(11).map(|&i| bodies[i].as_str()).collect();
+        if let Some(pos) = gt_old.iter().position(|b| *b == target) {
+            gt_old.remove(pos);
+        }
+        gt_old.truncate(10);
+        let gt_old_set: HashSet<&str> = gt_old.into_iter().collect();
+
+        // NEW GT: the 10 nearest UNIQUE non-target bodies (exclude-before + dedup).
+        let mut gt_new_set: HashSet<&str> = HashSet::new();
+        for &i in idx.iter() {
+            let b = bodies[i].as_str();
+            if b == target {
+                continue;
+            }
+            if gt_new_set.insert(b) && gt_new_set.len() == 10 {
+                break;
+            }
+        }
+
         let prod = engine.search(&q.text).expect("prod search").results;
-        let hits =
-            prod.iter().filter(|b| **b != q.target_body).filter(|b| gt_set.contains(b)).count();
-        per_query.push(hits as f64 / 10.0);
+
+        // OLD recall: literal top-10, exclude target after, /10.
+        let prod_top10: Vec<&str> = prod.iter().take(10).map(|s| s.as_str()).collect();
+        if prod_top10.iter().any(|b| *b == target) {
+            target_in_top10 += 1;
+        }
+        let hits_old =
+            prod_top10.iter().filter(|b| **b != target).filter(|b| gt_old_set.contains(*b)).count();
+        per_query_old.push(hits_old as f64 / 10.0);
+
+        // NEW recall: exclude target before, dedup, take 10, /10.
+        let mut seen_prod: HashSet<&str> = HashSet::new();
+        let mut hits_new = 0usize;
+        let mut taken = 0usize;
+        for s in prod.iter() {
+            let b = s.as_str();
+            if b == target || !seen_prod.insert(b) {
+                continue;
+            }
+            if gt_new_set.contains(b) {
+                hits_new += 1;
+            }
+            taken += 1;
+            if taken == 10 {
+                break;
+            }
+        }
+        per_query_new.push(hits_new as f64 / 10.0);
     }
 
-    let mean = per_query.iter().sum::<f64>() / per_query.len().max(1) as f64;
-    let (ci_lo, ci_hi, sigma) = bootstrap_ci(&per_query, bootstrap_resamples);
+    let mean_old = per_query_old.iter().sum::<f64>() / per_query_old.len().max(1) as f64;
+    let (lo_old, hi_old, sg_old) = bootstrap_ci(&per_query_old, bootstrap_resamples);
+    eprintln!(
+        "EU7_RECALL_OLD exclude-after+setGT recall@10={mean_old:.4} ci=[{lo_old:.4},{hi_old:.4}] sigma={sg_old:.4} target_in_top10={target_in_top10}/{}",
+        queries.len()
+    );
+    let mean = per_query_new.iter().sum::<f64>() / per_query_new.len().max(1) as f64;
+    let (ci_lo, ci_hi, sigma) = bootstrap_ci(&per_query_new, bootstrap_resamples);
+    eprintln!(
+        "EU7_RECALL_NEW exclude-before+dedupGT recall@10={mean:.4} ci=[{ci_lo:.4},{ci_hi:.4}] sigma={sigma:.4}"
+    );
     RecallResult { mean, ci_lo, ci_hi, sigma }
 }
 
@@ -658,6 +711,20 @@ fn eu7_real_corpus_ac_validation() {
         let rows = engine.vector_row_count_for_test().expect("row count");
         assert_eq!(rows as usize, actual_n, "vector_default rows must equal seeded docs");
         eprintln!("EU7_PHASE n={actual_n} seed_done seed_ms={}", seed.as_millis());
+
+        // 0.7.2 PR-2c DIAGNOSTIC seam (not production): force the FULL-corpus
+        // mean via the PR-2b recompute path after all docs are seeded, to test
+        // whether a known-good mean recovers real-engine recall (PR-2a offline
+        // projected ~0.945 with EU-7 queries) or whether the offline number
+        // simply does not transfer to the candle path.
+        if std::env::var_os("EU7_FORCE_FULL_RECOMPUTE").is_some() {
+            let rep = engine.recompute_mean().expect("force full recompute");
+            eprintln!(
+                "EU7_FORCE_FULL_RECOMPUTE n={actual_n} doc_count={} \
+                 drift_cos_before={:.4} mean_was_pinned={} dim={}",
+                rep.doc_count_requantized, rep.drift_cos_before, rep.mean_was_pinned, rep.dim
+            );
+        }
 
         let lat = measure_latency(&engine, &queries, latency_samples);
         eprintln!(

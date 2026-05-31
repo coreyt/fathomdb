@@ -4,60 +4,33 @@
     {
       "budget_p50_ms": 80,
       "budget_p99_ms": 300,
-      "n": 1000,
-      "p50_ms": 16,
-      "p99_ms": 30,
-      "padded_with_synthetic_distractors": false,
-      "passed": true
-    },
-    {
-      "budget_p50_ms": 80,
-      "budget_p99_ms": 300,
       "n": 7667,
-      "p50_ms": 25,
-      "p99_ms": 40,
+      "p50_ms": 36,
+      "p99_ms": 49,
       "padded_with_synthetic_distractors": false,
       "passed": true
     }
   ],
   "ac_013b_real_dev_box": [
     {
-      "ci_hi": 0.856,
-      "ci_lo": 0.803,
-      "current_floor_0_90": 0.9,
-      "n": 1000,
-      "padded_with_synthetic_distractors": false,
-      "passes_current_floor": false,
-      "recall_at_10": 0.831,
-      "sigma_bootstrap": 0.014
-    },
-    {
-      "ci_hi": 0.858,
-      "ci_lo": 0.796,
+      "ci_hi": 0.957,
+      "ci_lo": 0.913,
       "current_floor_0_90": 0.9,
       "n": 7667,
       "padded_with_synthetic_distractors": false,
-      "passes_current_floor": false,
-      "recall_at_10": 0.828,
-      "sigma_bootstrap": 0.0165
+      "passes_current_floor": true,
+      "recall_at_10": 0.937,
+      "sigma_bootstrap": 0.0116
     }
   ],
   "ac_019_real_dev_box": [
     {
-      "baseline_p99_ms": 30,
-      "bound_ms": 307,
-      "n": 1000,
-      "p99_ms": 205,
-      "padded_with_synthetic_distractors": false,
-      "passed": true
-    },
-    {
-      "baseline_p99_ms": 40,
-      "bound_ms": 405,
+      "baseline_p99_ms": 49,
+      "bound_ms": 499,
       "n": 7667,
-      "p99_ms": 343,
+      "p99_ms": 1201,
       "padded_with_synthetic_distractors": false,
-      "passed": true
+      "passed": false
     }
   ],
   "config": {
@@ -71,7 +44,6 @@
     "latency_samples": 1000,
     "mean_centering": true,
     "n_values_requested": [
-      1000,
       7667
     ],
     "query_count": 100,
@@ -81,12 +53,12 @@
     "rerank_k_locked": 192
   },
   "r_canonical_anchor": {
-    "ci_lo": 0.796,
+    "ci_lo": 0.913,
     "n": 7667,
     "note": "Largest all-real-corpus haystack; recall DECREASES with N, so this dev-box anchor is an upper-ish bound on PR-3's canonical N=1M number. K=192 locked.",
-    "recall_at_10": 0.828,
-    "recommended_pr2_floor_R_minus_2sigma": 0.7949,
-    "recommended_pr2_floor_rounded_down_0_01": 0.79,
-    "sigma_bootstrap": 0.0165
+    "recall_at_10": 0.937,
+    "recommended_pr2_floor_R_minus_2sigma": 0.9138,
+    "recommended_pr2_floor_rounded_down_0_01": 0.91,
+    "sigma_bootstrap": 0.0116
   }
 }
