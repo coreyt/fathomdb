@@ -1,9 +1,10 @@
 # STATUS — 0.7.2 RELEASE-HARDENING
 
-_Last updated: 2026-05-31 — PR-2 family RESOLVED + landed on local `main` (unpushed,
-39 ahead of `origin/main`, HEAD `5dd0b52`). Remaining Phase A (PR-1, PR-9, PR-3, PR-4)
-and Phase B (PR-5/6/7) NOT STARTED. `v0.7.0` held locally; `v0.7.1` not yet tagged
-(PR-4 creates it); workspace version still `0.7.0`. Nothing pushed to origin._
+_Last updated: 2026-05-31 — PR-2 family RESOLVED + **PR-1 (doc drift sweep) CLOSED**
+(codex PASS) on local `main` (unpushed, HEAD `10a0e24`, 43 ahead of `origin/main`).
+Remaining Phase A (PR-9, PR-3, PR-4) and Phase B (PR-5/6/7) NOT STARTED. `v0.7.0` held
+locally; `v0.7.1` not yet tagged (PR-4 creates it); workspace version still `0.7.0`.
+Nothing pushed to origin._
 
 Orchestrator: main-thread Claude Code session. Pattern per `dev/design/orchestration.md`
 (per-slice prompt → informed subagent implementer/orchestrator (TDD) → codex review →
@@ -42,7 +43,7 @@ as-needed from the handoff section; — = not yet authored).
 | — | PR-0 | Inherited-state reconciliation | **FOLDED** | — | — | — | Never run as a discrete slice; its facts are captured here + in the decision memo. Tags/version confirmed (`v0.7.0` only; ws 0.7.0). Treat as satisfied. |
 | — | PR-2a | Mean-centering recall investigation | **CLOSED (GO, later reframed)** | — | done | `…/prompts/0.7.2-PR-2a-recall-investigation.md` | GO verdict; later shown to address a measurement artifact. |
 | — | PR-2(bc) | Recall floor + mean recompute family | **CLOSED / RESOLVED** | PR-2a | ratified | `…/prompts/0.7.2-PR-2bc-{reassessment,S1,S2,S3}.md` | S1 land-harness + S2 carve-auto-drift + S3 floor-reframe landed (`5b69568`/`2ef8c3d..d2c0bf4`/`78164b9`); PR-2c SHELVED. Floor HOLDS 0.90. See decision memo. |
-| **1** | PR-1 | Architecture/design doc drift sweep | **NOT STARTED** | PR-0 | drift-list approval before fixes land | — | Read-only audit → drift list → HITL review → single batched fix commit. No cost gate. |
+| **1** | PR-1 | Architecture/design doc drift sweep | **CLOSED** | PR-0 | drift-list approved 2026-05-31 | `…/prompts/0.7.2-PR-1-doc-drift-sweep.md` | Audit→drift list (10 items, `4beca5b`)→HITL approved all→corrections `aebf959` + closure `10a0e24` on `main`. Codex **PASS** (`…/runs/0.7.2-PR-1-review-20260531T165936Z.md`). Docs-only; nothing pushed. |
 | **2** | PR-9 | Embedder robustness (concurrent-embed safety + Invariant-5 watchdog) | **NOT STARTED** | PR-1 | diff+tests | — | **Gates PR-3's N=1M seed.** RED-first; sequence ahead of PR-3. |
 | **3** | PR-3 | Real-corpus canonical-CI N=1M dispatch | **NOT STARTED** | PR-2(bc), PR-9 | **dispatch approval (cost)**; budget approval before ADR | — | Pre-flight: ~10K-doc unserialized real-corpus seed before the N=1M dispatch. Fills `ADR-0.7.0-text-query-latency-gates-revised.md`. |
 | **4** | PR-4 | Release notes + **push v0.7.0 + v0.7.1** | **NOT STARTED** | PR-1, PR-2(bc), PR-3 | **explicit push approval — irreversible** | — | CHANGELOG v0.7.0 + v0.7.1 sections; docs/embedder.md; creates `v0.7.1` tag; pushes `main` + both tags. |
@@ -80,6 +81,9 @@ as-needed from the handoff section; — = not yet authored).
 
 ## Pointer forward
 
-Next actionable slice: **PR-1 (doc drift sweep)** and **PR-9 (embedder robustness)** —
-both independent of the held release push, PR-9 gates PR-3. Author per-slice prompts
-from the handoff sections as each is picked up; update this scoreboard on landing.
+Next actionable slice: **PR-9 (embedder robustness)** — PR-1 is now CLOSED. PR-9 is
+independent of the held release push and **gates PR-3's N=1M seed** (concurrent-embed
+safety + the Invariant-5 embed watchdog); it is RED-first (engine behavior change).
+Author its per-slice prompt from the handoff PR-9 section. After PR-9: PR-3 (dispatch
+cost gate) → PR-4 (push gate). Author per-slice prompts from the handoff sections as
+each is picked up; update this scoreboard on landing.
