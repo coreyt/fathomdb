@@ -224,13 +224,15 @@ bge-small+mc is ~0.945.
 
 | | |
 |---|---|
-| **Status** | 🔒 Locked for 0.7.1 (no auto-recomputation); **AMENDED in 0.7.2 PR-2b** — the escape hatch is taken for the MEAN ONLY. Drift threshold + debounce numbers below were **ratified by HITL 2026-05-30.** |
+| **Status** | 🔒 Locked for 0.7.1 (no auto-recomputation); **AMENDED in 0.7.2 PR-2b** (escape hatch taken for the MEAN), then **NARROWED in 0.7.2 PR-2bc S2**: the automatic in-ingest drift detector + 200k cap + `MeanRecomputeDeferred` were BUILT under PR-2b and then **DEFERRED to 0.8.x** after the recall premise was refuted; only the explicit `doctor recompute-mean` verb ships in 0.7.2. The drift threshold/debounce numbers below (ratified by HITL 2026-05-30) describe the DEFERRED auto path, retained for the 0.8.x revival. |
 | **Picked (0.7.1 baseline)** | Compute-once-on-first-ingest at `MEAN_VEC_PIN_THRESHOLD = 256` docs (`dev/design/embedder.md` §0.3 step 1); pin atomically at the threshold-crossing commit (§0.3 step 2); all subsequent writes leave `mean_vec` unchanged (§0.3 step 3). |
-| **Picked (0.7.2 PR-2b amendment)** | The pinned mean MAY now be REFRESHED after the initial 256-doc pin, by either: (a) an automatic in-ingest distribution-drift detector (`cos(recent_mean, pinned_mean) < MEAN_DRIFT_COS_THRESHOLD`), suppressed at/above `MEAN_RECOMPUTE_DYNAMIC_MAX = 200_000` rows; or (b) the explicit `fathomdb doctor recompute-mean` verb (always allowed). Both run the SAME re-derive + `run_pin_and_requantize_pass` core SYNCHRONOUSLY in one transaction. Refresh of anything OTHER than the mean (full reindex, per-source means) remains out of scope and deferred. |
-| **Locked by** | `dev/design/embedder.md` §0.3 (EU-2) + EU-5a2/EU-5f apply paths; **0.7.2 PR-2b** engine slice (drift detector + `Engine::recompute_mean` + `doctor recompute-mean`). |
-| **Owning slice** | 0.7.1 EU-2 (closed); 0.7.2 PR-2b (this amendment). |
+| **Picked (0.7.2 — PR-2b core, narrowed by PR-2bc S2)** | The pinned mean MAY now be REFRESHED after the initial 256-doc pin via the explicit `fathomdb doctor recompute-mean` verb (always allowed, any corpus size). It runs the re-derive + `run_pin_and_requantize_pass` core SYNCHRONOUSLY in one transaction. The AUTOMATIC in-ingest distribution-drift detector (`cos(recent_mean, pinned_mean) < MEAN_DRIFT_COS_THRESHOLD`, suppressed at/above `MEAN_RECOMPUTE_DYNAMIC_MAX = 200_000` rows with a `MeanRecomputeDeferred` notification) was built in PR-2b but **carved out and DEFERRED to 0.8.x** (PR-2bc S2). Refresh of anything OTHER than the mean (full reindex, per-source means) remains out of scope and deferred. |
+| **Why the auto path was deferred (PR-2bc, HITL 2026-05-31)** | Its sole original justification — recall — collapsed: the mean is a non-lever (forcing the full-corpus mean moved real recall only +1.9pp; `drift_cos_before = 1.0000` showed PR-2b had already converged the pin during seeding). The auto path was permanent hot-commit-path complexity (per-commit EWMA + cos check + debounce latch + cap branch + deferred-event plumbing) for an UNMEASURED benefit. The manual verb gives operators the same lever on demand at zero standing cost. See `dev/plans/runs/0.7.2-PR-2bc-decision.md` §2b and `dev/plans/prompts/0.8.x-auto-mean-drift-DEFERRED.md`. |
+| **Locked by** | `dev/design/embedder.md` §0.3 (EU-2) + EU-5a2/EU-5f apply paths; **0.7.2 PR-2b** engine slice (`Engine::recompute_mean` + `doctor recompute-mean`); **0.7.2 PR-2bc S2** carved out the auto detector. |
+| **Owning slice** | 0.7.1 EU-2 (closed); 0.7.2 PR-2b (amendment); 0.7.2 PR-2bc S2 (carve-out/defer). |
 
-**Drift policy (ratified by HITL 2026-05-30):**
+**Drift policy (ratified by HITL 2026-05-30; describes the DEFERRED 0.8.x
+auto path, NOT shipped in 0.7.2):**
 - `MEAN_DRIFT_COS_THRESHOLD = 0.95`. Calibrated from PR-2a's evidence: a
   pathological topic-skewed pinned mean sits ~0.82 cosine to the true
   corpus mean (the EU-7 -10.9pp recall failure); a representative/healthy
@@ -270,12 +272,12 @@ N) is an explicit operator action.
 - **Per-source-type mean** — still rejected and explicitly NOT covered by
   PR-2b; corpus-wide mean only.
 
-**Known limitation carried forward (now mitigated, not closed):** topic-
-drift workspaces pin a skewed mean and may underperform until the drift
-detector fires (or an operator runs `doctor recompute-mean`). Above
-`MEAN_RECOMPUTE_DYNAMIC_MAX` the automatic path is suppressed (a
-`MeanRecomputeDeferred` notification is surfaced instead) and refresh
-becomes operator-driven. Full reindex and per-source means remain deferred.
+**Known limitation carried forward (now mitigated on demand, not closed):**
+topic-drift workspaces pin a skewed mean and may underperform until an
+operator runs `doctor recompute-mean`. As of 0.7.2 (PR-2bc S2) refresh is
+ENTIRELY operator-driven — the automatic in-ingest detector and its
+`MeanRecomputeDeferred`/200k-cap surfaces were deferred to 0.8.x. Full
+reindex and per-source means remain deferred.
 
 ---
 
