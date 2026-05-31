@@ -130,6 +130,52 @@ not release-boundary):
    is computed at test-setup via a one-pass brute-force scan
    through the retained f32 column — single corpus, two jobs.
 
+   **0.7.2 amendment — floor VALIDATED against the real default
+   embedder (keep 0.90).** The 0.90 floor is retained, now backed
+   by the corrected real-embedder measurement rather than the
+   earlier artifact:
+
+   - **Validated number.** On the real default embedder
+     (bge-small, candle) over the EU-7 real corpus (N = 7667,
+     K = 192), the corrected **ANN recall@10 = 0.937
+     (CI 0.913–0.957, sigma 0.0116)**, measured the standard ANN
+     way (exclude the query-source doc *before* taking top-10;
+     dedup-by-id ground truth). The full CI clears 0.90, so 0.90
+     is conservative and is **not raised** (a mechanical R − 2σ
+     gives 0.914 → 0.91, still above the floor; the headroom is
+     preserved for production variance and the still-pending
+     N = 1M canonical run, PR-3).
+
+   - **What this floor IS (explicit).** This is an **ANN /
+     quantization-FIDELITY** recall: ground truth = the exact
+     full-precision f32 top-10 over the *same* model, and it
+     measures how faithfully the 1-bit sign-quant index (K = 192
+     Hamming candidates + f32 rerank) reproduces the brute-force
+     neighbors. It is **NOT IR-relevance** — it says nothing about
+     whether the retrieved results are semantically relevant to a
+     query.
+
+   - **Harness-methodology finding.** The earlier real-corpus
+     number (0.828) was a *conservative-measurement artifact*, not
+     an engine deficiency: +7.8pp is recovered by excluding the
+     self-retrieving query-source doc *before* the top-10 (vs
+     after) and by matching ground truth by id/dedup (vs
+     body-string GT over a corpus with 5.6% duplicate bodies). See
+     `dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md` (esp. "The
+     measure under discussion" + the decomposition table).
+
+   - **Separate IR note (a ceiling, NOT a gate).** EU-8 measured
+     the embedder's **IR-relevance** ceiling at recall@10 = **0.571**
+     (CI 0.530–0.614) on 301 labeled queries — far below the 0.937
+     ANN fidelity. ANN fidelity exceeding the IR ceiling by ~37pp
+     means **quantization is not the bottleneck**: chasing ANN
+     recall higher (K / candidate tuning, tighter index) yields no
+     perceptible user gain. The lever for end-to-end quality is a
+     **better embedder or the graph**, NOT K / ANN tuning. This
+     0.571 is the embedder/task ceiling and is deliberately **not**
+     turned into a gate. See
+     `dev/plans/runs/0.7.2-EU-8-ir-recall-results.md`.
+
 5. **sqlite-vec pin stays `=0.1.7`**
    (`src/rust/crates/fathomdb-engine/Cargo.toml:18`). 0.1.7
    already ships `bit[N]` and `vec_quantize_binary` per the
@@ -250,7 +296,11 @@ research doc carries the long-form analysis.
   (`tests/perf_gates.rs:149-150` → 80 / 300 ms) and must
   remain RED at canonical-CI N = 1 M scale until Pack 2.2's
   query rewrite lands. Both gates GREEN at canonical-CI is
-  the Pack 2 close criterion.
+  the Pack 2 close criterion. (0.7.2: the 0.90 floor is kept and
+  now VALIDATED against the real embedder — corrected ANN-fidelity
+  recall@10 = 0.937, full CI above 0.90; see § 2 point 4. A fast
+  sentinel `ac_013b_floor_matches_adr` pins the constant to this
+  ADR.)
 
 - **AC-019 carry.** The existing 10× bound on AC-019 stays
   unchanged; the same two-phase query shape benefits AC-019
@@ -321,7 +371,11 @@ items the implementing agent should escalate to HITL".
   (per `dev/plans/prompts/0.7.0-PERF-VECTOR-QUANT-HANDOFF.md`
   § "Open items"). K may need to rise to 128 or 256; the choice
   is documented in the closing slice JSON and reflected in the
-  named constant.
+  named constant. (0.7.2 update: K shipped at 192; the corrected
+  ANN-fidelity measurement is 0.937 — well clear of 0.90 — so no
+  K-tuning is warranted on recall grounds. ANN fidelity already
+  exceeds the embedder IR ceiling (0.571), so higher K buys no
+  user-visible gain. See § 2 point 4.)
 
 - **vec0 metadata column budget.** The vec0 16-column cap
   constrains the Pack 1 schema. If the desired metadata schema
@@ -348,7 +402,11 @@ items the implementing agent should escalate to HITL".
   (`src/rust/crates/fathomdb-engine/tests/perf_gates.rs:317`),
   which is atypically friendly to sign-pattern quantisation —
   HITL is owed the note that AC-013's recall headroom may
-  overstate real-workload headroom.
+  overstate real-workload headroom. (0.7.2 update: this concern
+  is now largely addressed empirically — the real default embedder
+  (bge-small, candle) over the EU-7 real corpus measures
+  ANN-fidelity recall@10 = 0.937, full CI above 0.90; see § 2
+  point 4.)
 
 ## 7. Status / next actions
 
