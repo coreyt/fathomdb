@@ -703,8 +703,23 @@ fn eu7_real_corpus_ac_validation() {
         eprintln!("EU7_PHASE n={actual_n} seed_start (from {seeded})");
         let seed = seed_slice(&engine, &bodies, seeded, actual_n);
         // Mirror the newly-seeded bodies into the in-Rust GT vector cache.
-        for body in &bodies[seeded..actual_n] {
+        // This single-threaded re-embed is silent for ~25-45 min on the full
+        // corpus and has twice read as a hang; emit a start marker + a throttled
+        // progress line (mirrors the EU7_SEED_PROGRESS Instant cadence above).
+        let gt_n = actual_n - seeded;
+        eprintln!("EU7_PHASE n={actual_n} GT_EMBED_START n={gt_n}");
+        let gt_started = Instant::now();
+        let mut gt_last_report = Instant::now();
+        for (i, body) in bodies[seeded..actual_n].iter().enumerate() {
             doc_vecs.push(embedder.embed(body).expect("embed body for GT"));
+            if gt_last_report.elapsed() >= Duration::from_secs(30) {
+                let embedded = i + 1;
+                let rate = embedded as f64 / gt_started.elapsed().as_secs_f64().max(1e-3);
+                eprintln!(
+                    "EU7_GT_EMBED_PROGRESS embedded={embedded}/{gt_n} rate_docs_per_s={rate:.1}"
+                );
+                gt_last_report = Instant::now();
+            }
         }
         seeded = actual_n;
         // Confirm every row is indexed before measuring.
