@@ -1,0 +1,58 @@
+{
+  "_comment": "EU-8 IR (relevance-judged) recall measurements. Orthogonal to the ANN recall in 0.7.1-EU-7-measurements.json: scores engine.search() against externally-labelled relevant doc_ids from chain ground_truth_queries (NOT the embedder's self KNN). Regenerable: AGENT_LONG=1 cargo test --release -p fathomdb-engine --features default-embedder --test eu8_ir_validation. EU8_SMOKE=1 seeds only chain docs (small smoke); unset = full corpus.",
+  "aggregate": {
+    "ci_hi": 0.9,
+    "ci_lo": 0.575,
+    "mrr": 0.6231,
+    "ndcg_at_10": 0.6323,
+    "precision_at_10": 0.2,
+    "queries_with_zero_hits": 3,
+    "query_count": 20,
+    "recall_at_10": 0.75,
+    "sigma": 0.0824
+  },
+  "config": {
+    "bootstrap_resamples": 1000,
+    "bootstrap_seed_hex": "0xe88b007574a9001",
+    "chains_loaded": 10,
+    "corpus_docs": 30,
+    "dimension": 768,
+    "embedder": "fathomdb-bge-small-en-v1.5",
+    "ground_truth_source": "chain.ground_truth_queries.expected_top_k_doc_ids (labelled)",
+    "k": 10,
+    "metrics": [
+      "recall@10",
+      "precision@10",
+      "MRR",
+      "NDCG@10"
+    ],
+    "query_count": 20,
+    "smoke_chain_docs_only": true,
+    "target_exclusion": false
+  },
+  "diagnostics": {
+    "duplicate_bodies": 0,
+    "expected_doc_ids_present_in_corpus": 30,
+    "expected_doc_ids_total": 30,
+    "queries_with_zero_hits": 3,
+    "unmapped_retrieval_results": 0
+  },
+  "per_chain_shape": {
+    "ARTICLE->NOTE->EMAIL": {
+      "mrr": 0.6231,
+      "ndcg_at_10": 0.6323,
+      "precision_at_10": 0.2,
+      "query_count": 20,
+      "recall_at_10": 0.75
+    }
+  },
+  "per_relation_type": {
+    "mentions": {
+      "mrr": 0.6231,
+      "ndcg_at_10": 0.6323,
+      "precision_at_10": 0.2,
+      "query_count": 20,
+      "recall_at_10": 0.75
+    }
+  }
+}

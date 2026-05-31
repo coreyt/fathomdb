@@ -202,6 +202,66 @@ pub fn load_chains_or_skip(max_chains: usize) -> Option<Vec<Chain>> {
     Some(out)
 }
 
+/// A relevance-judged IR query extracted from a chain's
+/// `ground_truth_queries` field (the eval-only signal that
+/// `examples/ingest_corpus.rs:18` deliberately does NOT ingest).
+///
+/// Used by the EU-8 IR-recall harness (`tests/eu8_ir_validation.rs`).
+/// `expected_doc_ids` are EXTERNALLY-LABELLED relevant doc_ids (not the
+/// embedder's self-referential KNN), making IR recall orthogonal to the
+/// ANN recall measured by `eu7_real_corpus_ac.rs`.
+#[derive(Clone, Debug)]
+pub struct IRQuery {
+    pub text: String,
+    pub expected_doc_ids: HashSet<String>,
+    pub relation_type: String,
+    pub chain_id: String,
+    pub chain_shape: String,
+}
+
+/// Parse each chain's `ground_truth_queries` into a flat list of
+/// [`IRQuery`]. Re-reads the chain JSONs (the `Chain` struct intentionally
+/// does NOT carry the eval-only `ground_truth_queries` field, so we parse
+/// it here additively). Chains with no parseable queries are skipped.
+///
+/// This is a purely additive helper: it adds no fields to `Chain`, changes
+/// no existing signature, and is only referenced by the EU-8 harness.
+pub fn extract_ground_truth_queries(chains: &[Chain]) -> Vec<IRQuery> {
+    let Some(root) = repo_root() else { return Vec::new() };
+    let chains_dir = root.join("tests/corpus/chains");
+    let mut out = Vec::new();
+    for chain in chains {
+        let path = chains_dir.join(format!("{}.json", chain.chain_id));
+        let Ok(text) = fs::read_to_string(&path) else { continue };
+        let Ok(v) = serde_json::from_str::<Value>(&text) else { continue };
+        let Some(gtq) = v.get("ground_truth_queries").and_then(Value::as_array) else { continue };
+        for q in gtq {
+            let Some(query_text) = q.get("query").and_then(Value::as_str) else { continue };
+            if query_text.trim().is_empty() {
+                continue;
+            }
+            let expected_doc_ids: HashSet<String> = q
+                .get("expected_top_k_doc_ids")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+                .unwrap_or_default();
+            if expected_doc_ids.is_empty() {
+                continue;
+            }
+            let relation_type =
+                q.get("relation_type").and_then(Value::as_str).unwrap_or("unknown").to_string();
+            out.push(IRQuery {
+                text: query_text.to_string(),
+                expected_doc_ids,
+                relation_type,
+                chain_id: chain.chain_id.clone(),
+                chain_shape: chain.chain_shape.clone(),
+            });
+        }
+    }
+    out
+}
+
 /// Load docs needed to cover a set of chains: pulls every doc whose
 /// `doc_id` appears in `wanted` from the per-source JSONLs.
 pub fn load_chain_docs(wanted: &HashSet<String>) -> Option<Vec<Doc>> {
