@@ -1,7 +1,7 @@
 # STATUS — 0.7.2 RELEASE-HARDENING
 
 _Last updated: 2026-05-31 — PR-2 family RESOLVED + **PR-1 (doc drift sweep) CLOSED**
-(codex PASS) on local `main` (unpushed, HEAD `860a662`, 44 ahead of `origin/main`).
+(codex PASS) on local `main` (unpushed, HEAD `63bb7f3`, 46 ahead of `origin/main`).
 **PR-9 (embedder robustness) IN FLIGHT.** Remaining Phase A (PR-3, PR-4) and Phase B
 (PR-5/6/7) NOT STARTED. `v0.7.0` held locally; `v0.7.1` not yet tagged (PR-4 creates
 it); workspace version still `0.7.0`. Nothing pushed to origin. Stale PR-2 worktrees/
@@ -29,7 +29,7 @@ cherry-pick/ff to `main` on PASS). **No push without explicit HITL OK.**
 - Branch: `main` (slices work directly on `main` per the PR-2bc precedent, or in
   per-slice worktrees per orchestration.md § 2 — orchestrator's choice per slice).
 - Pre-0.7.2 anchor: `v0.7.0` (held, unpushed). PR-1+ branch from `main` HEAD.
-- Current `main` HEAD: `5dd0b52`. Ahead of `origin/main` by 39 commits.
+- Current `main` HEAD: `63bb7f3`. Ahead of `origin/main` by 46 commits.
 
 ## Slice scoreboard (ordered run-sheet — this is the to-do list)
 
@@ -45,7 +45,7 @@ as-needed from the handoff section; — = not yet authored).
 | — | PR-2a | Mean-centering recall investigation | **CLOSED (GO, later reframed)** | — | done | `…/prompts/0.7.2-PR-2a-recall-investigation.md` | GO verdict; later shown to address a measurement artifact. |
 | — | PR-2(bc) | Recall floor + mean recompute family | **CLOSED / RESOLVED** | PR-2a | ratified | `…/prompts/0.7.2-PR-2bc-{reassessment,S1,S2,S3}.md` | S1 land-harness + S2 carve-auto-drift + S3 floor-reframe landed (`5b69568`/`2ef8c3d..d2c0bf4`/`78164b9`); PR-2c SHELVED. Floor HOLDS 0.90. See decision memo. |
 | **1** | PR-1 | Architecture/design doc drift sweep | **CLOSED** | PR-0 | drift-list approved 2026-05-31 | `…/prompts/0.7.2-PR-1-doc-drift-sweep.md` | Audit→drift list (10 items, `4beca5b`)→HITL approved all→corrections `aebf959` + closure `10a0e24` on `main`. Codex **PASS** (`…/runs/0.7.2-PR-1-review-20260531T165936Z.md`). Docs-only; nothing pushed. |
-| **2** | PR-9 | Embedder robustness (concurrent-embed safety + Invariant-5 watchdog) | **NOT STARTED** | PR-1 | diff+tests | — | **Gates PR-3's N=1M seed.** RED-first; sequence ahead of PR-3. |
+| **2** | PR-9 | Embedder robustness (concurrent-embed safety + Invariant-5 watchdog) | **NOT STARTED** | PR-1 | diff+tests | `…/prompts/0.7.2-PR-9-embedder-robustness.md` | **Gates PR-3's N=1M seed.** RED-first; sequence ahead of PR-3. Prompt authored (surface recon persisted); slice not yet executed. |
 | **3** | PR-3 | Real-corpus canonical-CI N=1M dispatch | **NOT STARTED** | PR-2(bc), PR-9 | **dispatch approval (cost)**; budget approval before ADR | — | Pre-flight: ~10K-doc unserialized real-corpus seed before the N=1M dispatch. Fills `ADR-0.7.0-text-query-latency-gates-revised.md`. |
 | **4** | PR-4 | Release notes + **push v0.7.0 + v0.7.1** | **NOT STARTED** | PR-1, PR-2(bc), PR-3 | **explicit push approval — irreversible** | — | CHANGELOG v0.7.0 + v0.7.1 sections; docs/embedder.md; creates `v0.7.1` tag; pushes `main` + both tags. |
 
