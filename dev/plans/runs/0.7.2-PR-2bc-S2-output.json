@@ -1,0 +1,71 @@
+{
+  "slice": "S2-carve-auto-drift",
+  "branch": "phase-0.7.2-PR-2bc-S2-20260531T131418Z",
+  "head_sha": "639d04c (closure-artifact commit; preceded by RED/GREEN/docs below)",
+  "commits": [
+    "75e13bcae4bcc5b4c98b1ecafeb5004a2b70d162",
+    "5e3cabba427f64ce18df1f277b92bc59c01c0ddf",
+    "895461c3f1cc29790c72d02b88c15f3cbff81677"
+  ],
+  "commit_roles": {
+    "75e13bcae4bcc5b4c98b1ecafeb5004a2b70d162": "RED guard test",
+    "5e3cabba427f64ce18df1f277b92bc59c01c0ddf": "GREEN / removal",
+    "895461c3f1cc29790c72d02b88c15f3cbff81677": "docs + 0.8.x stub"
+  },
+  "removed_symbols": [
+    "RecentMeanTracker",
+    "RecentMeanTracker::observe/snapshot/note_action/armed/new",
+    "RECENT_MEAN_EWMA_ALPHA",
+    "MEAN_RECOMPUTE_DYNAMIC_MAX",
+    "MEAN_DRIFT_COS_THRESHOLD",
+    "MEAN_RECOMPUTE_DEBOUNCE_ROWS",
+    "DriftAction",
+    "ProjectionRuntimeShared.recent_mean",
+    "ProjectionRuntimeShared.mean_recompute_dynamic_max",
+    "Engine::set_mean_recompute_dynamic_max_for_test",
+    "commit_projection_outcomes auto-drift block (observed_vectors plumbing, pinned_this_tx flag, projected-tracker cos/debounce/armed check, 200k-cap branch, post-commit tracker fold)",
+    "recent_mean reset in Engine::recompute_mean",
+    "MeanRecomputeTrigger::DriftAuto (+ \"drift_auto\" tag)",
+    "EmbedderEvent::MeanRecomputeDeferred",
+    "EmbedderEvent::deferred_drift_cos",
+    "CLI/py/napi MeanRecomputeDeferred serializer arms"
+  ],
+  "kept_symbols": [
+    "Engine::recompute_mean",
+    "recompute_mean_in_tx",
+    "recompute_mean_in_tx_inner",
+    "MeanRecomputeReport (incl. drift_cos_before)",
+    "run_pin_and_requantize_pass",
+    "cosine_similarity (now used only by the manual recompute report)",
+    "doctor recompute-mean CLI verb + --json contract",
+    "EmbedderEvent::MeanVecRecomputed { trigger: Manual }",
+    "MeanRecomputeTrigger (single Manual variant kept; DriftAuto removed)",
+    "debug fault-injection seam (force_next_recompute_failure_for_test)",
+    "initial pin-at-256 (MEAN_VEC_PIN_THRESHOLD) + at-pin re-quantize",
+    "commit_gate single-writer ordering"
+  ],
+  "trigger_enum_decision": "Removed the DriftAuto variant (the spec's preferred option; it was unconstructed after the carve-out and is unpushed/internal). Kept the MeanRecomputeTrigger enum itself with its single Manual variant rather than collapsing it to a unit, so reviving the 0.8.x auto path is a purely additive re-introduction of a variant + tag. The CLI/py/napi `trigger` surfaces are unchanged for Manual.",
+  "tests_removed": [
+    "drift_recompute_improves_topic_b_recall (+ its measure_recall helper)",
+    "homogeneous_corpus_does_not_recompute",
+    "cap_suppresses_auto_but_not_manual"
+  ],
+  "tests_kept": [
+    "manual_recompute_matches_closed_form_and_requantizes_all",
+    "recompute_fault_rolls_back_fully",
+    "recompute_event_fields_and_post_commit_publish (MeanVecRecomputed{Manual})",
+    "recompute_rejects_non_mc_identity",
+    "CLI t_pr2b_recompute_mean_happy_path_json_contract",
+    "CLI t_pr2b_recompute_mean_lock_held_exits_71"
+  ],
+  "red_test": "topic_pivot_does_not_auto_recompute_mid_ingest -- pins a topic-A-skewed mean, floods topic-B past the old debounce window, and asserts the engine emits NO MeanVecRecomputed (DriftAuto / any) and leaves mean_vec byte-identical. Guards against the automatic in-ingest mean-recompute ever returning. RED-FAILED on pre-removal code: the auto detector fired twice (MeanVecRecomputed{DriftAuto} @ doc_count 352 and 608). GREEN after the carve-out.",
+  "harness_seam_cleanup": "EU7_SUPPRESS_AUTO_RECOMPUTE / set_mean_recompute_dynamic_max_for_test were NOT present in eu7_real_corpus_ac.rs on this base -- S1 fix-1 (codex BLOCK) replaced the env-gated seam with set_search_limit_for_test, so there was no suppress block to remove. EU7_FORCE_FULL_RECOMPUTE (which calls the MANUAL engine.recompute_mean()) is untouched and still compiles. The only consumers of set_mean_recompute_dynamic_max_for_test were the two removed pr2b auto-path tests; the seam itself is now removed from the engine.",
+  "docs_amended": [
+    "embedder.md §0.3 (+ §0.5 reuse note)",
+    "embedder-decision.md §3.4",
+    "dev/plans/prompts/0.8.x-auto-mean-drift-DEFERRED.md (new 0.8.x stub)"
+  ],
+  "build_clean": true,
+  "suite_green": true,
+  "notes": "cargo build -p fathomdb-engine -p fathomdb-embedder -p fathomdb-cli (also -p fathomdb-py -p fathomdb-napi for the ripple) is clean with no warnings. cargo test -p fathomdb-engine is green except ac_007b_slow_threshold_reconfigurable in lifecycle_observability.rs -- a pre-existing wall-clock flake (the 'slow' CTE finishes under the 500ms threshold on this dev box so no slow-statement signal fires); it FAILS IDENTICALLY on the clean baseline (stash-verified) and touches none of the mean-centering surface. cargo test -p fathomdb-cli and -p fathomdb-embedder fully green; the doctor recompute-mean happy-path/--json + lock-held tests pass. eu7/eu8 long harnesses compile and self-skip without AGENT_LONG, confirming the harness still builds against the carved engine. Manual recompute path correctness/crash-atomicity unchanged (reuses run_pin_and_requantize_pass; events post-durable-commit; commit_gate preserved); initial pin behavior unchanged. NOT pushed."
+}
