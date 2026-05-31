@@ -185,6 +185,60 @@ fn cosine(a: &[f32], b: &[f32]) -> f32 {
 
 // ── Tests ───────────────────────────────────────────────────────────────
 
+/// (0) 0.7.2 PR-2bc S2 GUARD — the AUTOMATIC in-ingest drift detector is
+/// CARVED OUT (deferred to 0.8.x). On a synthetic topic pivot (pin a
+/// topic-A-skewed mean, then flood topic-B docs well past the old debounce
+/// window) the engine must NOT auto-recompute mid-ingest: no
+/// `MeanVecRecomputed { DriftAuto }`, no `MeanRecomputeDeferred`, and the
+/// pinned `mean_vec` must be byte-identical before and after the B-flood.
+/// The manual `doctor recompute-mean` path is unaffected (covered elsewhere).
+///
+/// RED on pre-carve-out code: the auto-detector fires on this exact pivot
+/// (it is the old `drift_recompute_improves_topic_b_recall` Part 1 scenario),
+/// staging a `MeanVecRecomputed { DriftAuto }` event and overwriting the
+/// pinned mean — so the no-auto-event assertion (and the unchanged-mean
+/// assertion) fail. GREEN after the detector is removed.
+#[test]
+fn topic_pivot_does_not_auto_recompute_mid_ingest() {
+    let (_dir, path) = fixture_path("pr2bc_no_auto_drift");
+    let opened = open_caller(&path, Arc::new(SimulatedBgeEmbedder::default()));
+    let engine = opened.engine;
+    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+
+    // Pin a topic-A-skewed mean, then snapshot the pinned mean.
+    write_docs(&engine, MEAN_VEC_PIN_THRESHOLD as usize, 64, |i| format!("A:{i}"));
+    let _ = engine.drain_embedder_events();
+    let mean_after_pin = read_mean_vec(&path).expect("mean pinned after topic-A");
+
+    // Flood topic-B far past the old debounce floor (256). Pre-carve-out this
+    // is exactly what tripped the auto drift detector.
+    write_docs(&engine, 600, 64, |i| format!("B:{i}"));
+    let events = engine.drain_embedder_events().expect("drain events");
+
+    // No automatic recompute event of any kind may be emitted mid-ingest.
+    let auto_recomputed = events.iter().any(|e| {
+        matches!(
+            e,
+            EmbedderEvent::MeanVecRecomputed { trigger: MeanRecomputeTrigger::DriftAuto, .. }
+        )
+    });
+    assert!(!auto_recomputed, "auto drift detector must NOT fire mid-ingest; events={events:?}");
+    let any_recomputed =
+        events.iter().any(|e| matches!(e, EmbedderEvent::MeanVecRecomputed { .. }));
+    assert!(
+        !any_recomputed,
+        "no MeanVecRecomputed may be emitted during ingest; events={events:?}"
+    );
+
+    // The pinned mean must be untouched by the topic-B flood.
+    let mean_after_flood = read_mean_vec(&path).expect("mean still pinned after topic-B flood");
+    assert_eq!(
+        mean_after_pin, mean_after_flood,
+        "pinned mean must be unchanged after the topic-B flood (no auto-recompute)"
+    );
+    engine.close().expect("close");
+}
+
 /// (1) Mechanical: `recompute_mean` produces the full-corpus mean (within
 /// fp tolerance of an independent closed-form mean), re-quantizes every row,
 /// and the pinned mean + stored sign-bits are mutually consistent after.
