@@ -1,0 +1,87 @@
+{
+  "phase": "0.7.2-PR-1",
+  "baseline_sha": "4beca5b",
+  "branch": "main",
+  "head_sha": "aebf959",
+  "commits": [
+    {
+      "sha": "aebf959",
+      "subject": "docs(0.7.2): PR-1 drift sweep — align design/arch/ADR docs to shipped 0.7.x reality"
+    }
+  ],
+  "findings_addressed": [
+    {
+      "id": "A1",
+      "file": "dev/architecture.md",
+      "treatment": "applied PROPOSED wording",
+      "summary": "Crate row 'Current state (0.7.0): ships only NoopEmbedder ... no model weights' replaced with 'Current state (0.7.1): ships the candle BAAI/bge-small-en-v1.5 default (mean-pool + L2-norm; first-use sha256-verified weight fetch) plus NoopEmbedder; un-deferred by the 0.7.1 EMBEDDER-UNDEFER campaign.'"
+    },
+    {
+      "id": "A2",
+      "file": "dev/architecture.md",
+      "treatment": "applied FULL proposed wording incl. the 'not bundled' clause",
+      "summary": "§10 'Default embedder ships with engine' bullet now names the candle BAAI/bge-small-en-v1.5 default (implemented 0.7.1), weights fetched on first use (opt-in, sha256-verified, cached) per ADR-0.7.1, NOT bundled in the wheel."
+    },
+    {
+      "id": "A3",
+      "file": "dev/architecture.md",
+      "treatment": "applied FULL corrected wording; named the real loader",
+      "summary": "Engine deps-out line: 'hf-hub model-resolver is owned by FU-EMB5 and not committed here' replaced with 'the hf-hub model-resolver was replaced by a thin first-use weight fetcher — a ureq blocking client — in 0.7.1 EU-1/EU-3 per ADR-0.7.1-default-embedder-weight-fetch; see dev/design/embedder.md §§1–10.' Loader confirmed as ureq blocking client (embedder.md §2, NOT hf-hub)."
+    },
+    {
+      "id": "A4",
+      "file": "dev/architecture.md",
+      "treatment": "applied FULL corrected wording; cited the REAL §4 cache path",
+      "summary": "On-disk layout 'Embedder model files' now says caller-supplied embedders use a caller-supplied path; the default embedder caches first-use-fetched weights under the <dirs::cache_dir>()/fathomdb/embedders/<model-sha-prefix>/ cache root (per dev/design/embedder.md §4), NOT under <db-name>. Verified §4: the documented path uses .../fathomdb/embedders/... (NOT .../models/... as the drift-list example loosely suggested); used the real path."
+    },
+    {
+      "id": "E1",
+      "file": "dev/design/embedder-decision.md",
+      "treatment": "applied PROPOSED wording",
+      "summary": "§5.1 AC013B_RECALL_FLOOR status table re-stated from '⏳ TBD — owning slice 0.7.2 PR-2 / 0.90 no longer the right shape' to '🔒 Locked at 0.90 — resolved by PR-2bc-S3'; current value RETAINED with the 0.828-artifact / 0.937 root-cause and R−2σ⇒0.91; Locked by ADR-0.7.0 §2.4/§4/§6 + sentinel ac_013b_floor_matches_adr."
+    },
+    {
+      "id": "E2",
+      "file": "dev/design/embedder-decision.md",
+      "treatment": "applied PROPOSED wording",
+      "summary": "§5.1 'Why the current 0.90 is wrong-shape' + forward-looking 'Decision process for the new floor' + 'Honesty constraint' converted to a past-tense resolution: floor decision MADE (0.90 retained, not lowered); wrong-shape block re-labelled as the historical rationale for re-examining the isotropic-synthetic provenance (conclusion: real-embedder 0.937 still clears 0.90); honesty constraint preserved as historical context."
+    },
+    {
+      "id": "E3",
+      "file": "dev/design/embedder-decision.md",
+      "treatment": "applied PROPOSED wording",
+      "summary": "Companion-documents entry for ADR-0.7.1-default-embedder-weight-fetch.md: stale '*(pending)*' marker replaced with '(status: accepted, HITL 2026-05-28)'."
+    },
+    {
+      "id": "D1",
+      "file": "dev/adr/ADR-0.6.0-default-embedder.md",
+      "treatment": "applied PROPOSED wording",
+      "summary": "'Two items remain ...' block re-stated: AC013B_RECALL_FLOOR marked RESOLVED (PR-2bc-S3) — EU-7 ~0.83 was a measurement-harness artifact, corrected ANN-fidelity recall@10 = 0.937 (CI 0.913–0.957), 0.90 RETAINED (R−2σ⇒0.91), provenance amended in ADR-0.7.0 §2.4, EU-8 IR 0.571 a separate ceiling, canonical N=1M still pending in PR-3; v0.7.1 tag bullet kept (not yet tagged; workspace version remains 0.7.0)."
+    },
+    {
+      "id": "D2",
+      "file": "dev/adr/ADR-0.6.0-default-embedder.md",
+      "treatment": "LEFT FROZEN + APPENDED one-line pointer (additive only)",
+      "summary": "Historical sentence body ('... remains the right thing to do before the EU-5b lock-flip.') left unchanged; a single one-line pointer 'Resolved in PR-2bc-S3 (2026-05-31).' appended immediately after it."
+    },
+    {
+      "id": "N1",
+      "file": "dev/notes/0.7.0-vector-cost-research.md",
+      "treatment": "ADDITIVE dated re-status note (no body edit)",
+      "summary": "Added a 'Re-status (0.7.1)' blockquote (after the #5 Matryoshka verdict, before '### 6. Caching') covering #3: the 384d BAAI/bge-small-en-v1.5 default effectively realised #3 in 0.7.1 via the embedder-identity route (corpus rebuild + profile rotation), with mean-centering + K=192 rerank; the 0.7.0 keep-existing-embedder disposition was correct for 0.7.0."
+    },
+    {
+      "id": "N2",
+      "file": "dev/notes/0.7.0-vector-cost-research.md",
+      "treatment": "ADDITIVE dated re-status note (folded into the N1 note; no body edit)",
+      "summary": "Same 'Re-status (0.7.1)' blockquote clarifies #5 (Matryoshka) was NOT adopted — the shipped 384d model is a full-dim small model, not a truncated-dimension MRL prefix — so #5's 'skip' verdict still stands; only #3 changed status."
+    }
+  ],
+  "blockers_encountered": [
+    "Drift-list A4 example path used '/models/' but the authoritative dev/design/embedder.md §4 documents '/embedders/' under <dirs::cache_dir>()/fathomdb/ — used the real §4 path per the HITL gate's 'verify §4 path before writing' instruction.",
+    "Drift-list N1 referenced 'HITL responses (2026-05-26)' but the actual section header is 'HITL responses (locked 2026-05-27)'; the additive note was placed after the #5 verdict (before '### 6. Caching') and cites the section generically. No body of the 0.7.0 verdicts or HITL dispositions was edited."
+  ],
+  "additional_changes_made_in_scope": [],
+  "agent_verify_result": "n/a (docs only); git diff reviewed, no code touched",
+  "next_step_for_orchestrator": "orchestrator runs codex review on the committed diff 4beca5b..HEAD, then closes PR-1"
+}
