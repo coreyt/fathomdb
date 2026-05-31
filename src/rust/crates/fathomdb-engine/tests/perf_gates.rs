@@ -575,6 +575,15 @@ fn ac_013b_recall_at_10_floor() {
     // P2-IMPL the production path switches to bit-KNN + f32 rerank; this
     // test then measures how well the candidate set preserves the f32
     // top-10. HITL-locked floor is 0.90 (see AC013B_RECALL_FLOOR).
+    //
+    // 0.7.2 reframe: the corrected ANN / quantization-FIDELITY measurement
+    // on the real default embedder (bge-small, candle; EU-7 corpus N=7667)
+    // is recall@10 = 0.937 (CI 0.913-0.957, sigma 0.0116) — full CI above
+    // 0.90. The earlier 0.828 was a conservative-measurement artifact
+    // (exclude-after + body-string GT); see ADR-0.7.0-vector-binary-quant.md
+    // § 2 point 4 and dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md. This
+    // is ANN fidelity (GT = exact f32 top-10 over the SAME model), NOT
+    // IR-relevance — the separate EU-8 IR ceiling (0.571) is not a gate.
     if !long_run_enabled() {
         return;
     }
@@ -643,6 +652,23 @@ fn ac_013b_recall_at_10_floor() {
         recall >= AC013B_RECALL_FLOOR,
         "AC-013b failed: recall@10 {recall:.4} < floor {floor:.2} at n={n}",
         floor = AC013B_RECALL_FLOOR,
+    );
+}
+
+/// Fast, non-gated sentinel: the recall-floor constant must stay in lockstep
+/// with the value documented in ADR-0.7.0-vector-binary-quant.md § 2 point 4
+/// (HITL-locked ≥ 0.90 recall@10 vs f32 brute-force ground truth). The ADR § 2
+/// point 4 amendment cites the corrected ANN-fidelity anchor 0.937 but keeps
+/// the floor itself at 0.90 (conservative; R-2sigma = 0.914). If anyone changes
+/// AC013B_RECALL_FLOOR without re-ratifying the ADR (or vice versa), this test
+/// catches the drift. It does NOT seed a corpus, so it always runs.
+#[test]
+fn ac_013b_floor_matches_adr() {
+    assert_eq!(
+        AC013B_RECALL_FLOOR, 0.90,
+        "AC013B_RECALL_FLOOR must remain 0.90 to match the HITL-locked value in \
+         ADR-0.7.0-vector-binary-quant.md § 2 point 4; changing it requires \
+         re-ratifying that ADR section."
     );
 }
 
