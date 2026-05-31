@@ -196,6 +196,7 @@ to "clears floor statistically" — see `dev/notes/0.7.1-default-embedder-resear
 §5.4. The follow-up to re-derive `AC013B_RECALL_FLOOR` against real
 bge-small embeddings (instead of the isotropic AC-013b fixture) remains
 the right thing to do before the EU-5b lock-flip.
+Resolved in PR-2bc-S3 (2026-05-31).
 
 **Status update (implemented in 0.7.1).** This ADR's "accepted but
 unimplemented" posture is now **implemented in 0.7.1**. The EMB-5 loader
@@ -206,13 +207,15 @@ production-path mean-centering pin, open-time recovery pin, projection
 fault-isolation, and 512-token truncation landed in EU-5f (see
 `dev/plans/runs/0.7.1-EU-7-findings.md`).
 
-Two items remain for the 0.7.2 RELEASE-HARDENING campaign, NOT this ADR:
-- **`AC013B_RECALL_FLOOR` re-derivation.** EU-7 measured real-corpus recall@10
-  ~0.83 (dev-box, N=7667; below the synthetic 0.90 fixture). The floor is
-  re-derived from this anchor in 0.7.2 PR-2 (with HITL), and canonical N=1M
-  acceptance validation runs in PR-3. The 0.90 figure in this ADR / the
-  AC-013b fixture is NOT claimed to be met on real data.
-- **`v0.7.1` tag/push** is cut in 0.7.2 PR-4.
+Status of the two items that were carried into the 0.7.2 RELEASE-HARDENING campaign:
+- **`AC013B_RECALL_FLOOR` — RESOLVED (PR-2bc-S3, 2026-05-31).** The EU-7 ~0.83
+  dev-box number was root-caused as a measurement-harness artifact, not a
+  real-data shortfall; corrected ANN-fidelity recall@10 = 0.937 (CI 0.913–0.957).
+  The 0.90 floor was RETAINED (R−2σ ⇒ 0.91, above the floor) and the provenance
+  amended in `ADR-0.7.0-vector-binary-quant.md` §2.4. EU-8 IR recall 0.571 is a
+  separate embedder/task ceiling. Canonical N=1M validation is still pending in PR-3.
+- **`v0.7.1` tag/push** is still cut in 0.7.2 PR-4 (not yet tagged; workspace
+  version remains 0.7.0).
 
 See `dev/plans/0.7.1-implementation.md` for the campaign closure record and
 `dev/plans/runs/0.7.1-EU-7-output.json` for the recall anchor + honesty report.

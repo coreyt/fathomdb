@@ -43,7 +43,7 @@ implementation phase):**
 | `src/rust/crates/fathomdb-cli`          | new in 0.6.0        | Single binary: two-root operator surface (`fathomdb recover` for lossy recovery; `fathomdb doctor <verb>` for bit-preserving inspection/export) per ADR-0.6.0-cli-scope. Does NOT mirror full SDK 5-verb surface.                                      |
 | `src/ts/` (cdylib package `fathomdb`)   | new in 0.6.0        | napi-rs binding: Promise surface per ADR-0.6.0-typescript-api-shape (Path 2 TS binding-owned ThreadsafeFunction handoff pool sized at `num_cpus::get()` per ADR-0.6.0-async-surface)                                                                   |
 | `src/rust/crates/fathomdb-embedder-api` | new in 0.6.0        | Sibling: shared trait crate — semver-stable surface pinning `Embedder` + `EmbedderIdentity` per ADR-0.6.0-embedder-protocol; enables version-skew detection at resolution time (REQ-047). Authorized by ADR-0.6.0-crate-topology 2026-04-27 amendment. |
-| `src/rust/crates/fathomdb-embedder`     | new in 0.6.0        | Sibling: operator-installable embedder package; depends on `fathomdb-embedder-api`. **Current state (0.7.0):** ships only `NoopEmbedder` (test/scaffold). The candle BGE-small-en-v1.5 default per ADR-0.6.0-default-embedder was deferred 0.6.0 → 0.6.1 → 0.7.0; un-deferral plan is `dev/plans/prompts/0.7.1-EMBEDDER-UNDEFER-HANDOFF.md`. Until that lands, this crate has no model weights.                |
+| `src/rust/crates/fathomdb-embedder`     | new in 0.6.0        | Sibling: operator-installable embedder package; depends on `fathomdb-embedder-api`. **Current state (0.7.1):** ships the candle `BAAI/bge-small-en-v1.5` default embedder (mean-pool + L2-norm; first-use sha256-verified weight fetch per ADR-0.7.1-default-embedder-weight-fetch) plus `NoopEmbedder` (test/scaffold). The default was deferred 0.6.0 → 0.6.1 → 0.7.0 and un-deferred by the 0.7.1 EMBEDDER-UNDEFER campaign (`dev/plans/prompts/0.7.1-EMBEDDER-UNDEFER-HANDOFF.md`).                |
 
 `fathomdb-query` disposition resolved 2026-04-29 (HITL): **kept separate**.
 Rationale = pure AST-to-plan compiler with no `dyn` trait objects and no
@@ -67,8 +67,10 @@ is built from `src/ts/` analogously).
 
 **Engine deps-out (informational):** `rusqlite`, `sqlite-vec` (loadable
 extension), `tokio`, `serde`, `thiserror`, `tracing`, `candle`,
-`tokenizers`. (`hf-hub` model-resolver is owned by FU-EMB5 and not
-committed here.)
+`tokenizers`. (The `hf-hub` model-resolver was replaced by a thin
+first-use weight fetcher — a `ureq` blocking client — in 0.7.1 EU-1/EU-3
+per ADR-0.7.1-default-embedder-weight-fetch; see `dev/design/embedder.md`
+§§1–10.)
 
 ## 2. Module subsystems inside `fathomdb-engine`
 
@@ -266,10 +268,10 @@ locked-DB second open surfaces as typed `DatabaseLocked { holder_pid:
 Option<u32> }`. Acquisition invariants Inv-Lock-1..4 in the ADR;
 runtime open-path step ordering owned by `design/engine.md`.
 
-**Embedder model files:** caller-supplied path; default-embedder per
-ADR-0.6.0-default-embedder loads from a path the operator provides
-(via FU-EMB5 model-resolver design). Model files live under
-`design/embedder.md`-named cache root, NOT under `<db-name>` — the DB
+**Embedder model files:** caller-supplied embedders use a caller-supplied
+path; the default embedder caches first-use-fetched weights under the
+`<dirs::cache_dir>()/fathomdb/embedders/<model-sha-prefix>/` cache root
+(per `dev/design/embedder.md` §4), NOT under `<db-name>` — the DB
 file is the entire database, the model is operator infrastructure.
 
 **`fathomdb doctor safe-export` artifacts:** `<export-name>.fathomdb-export` +
@@ -478,7 +480,10 @@ These do not block lock; answered in named follow-on docs.
 - **Five-verb application SDK surface** (REQ-053); recovery moved to
   CLI-only (REQ-037 / REQ-054).
 - **No 0.5.x compat shims.**
-- **Default embedder ships with engine** (candle + tokenizers via
-  `fathomdb-embedder` sibling crate per ADR-0.6.0-default-embedder).
+- **Default embedder ships with engine** — the candle
+  `BAAI/bge-small-en-v1.5` default (via the `fathomdb-embedder` sibling
+  crate per ADR-0.6.0-default-embedder, implemented in 0.7.1). Weights
+  are fetched on first use (opt-in, sha256-verified, cached) per
+  ADR-0.7.1-default-embedder-weight-fetch — not bundled in the wheel.
 - **Vector index ships with engine** (`sqlite-vec` extension per
   ADR-0.6.0-sqlite-vec-acceptance).

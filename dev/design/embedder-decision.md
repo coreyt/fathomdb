@@ -20,7 +20,7 @@ research notebook.
   belongs to the embedder; profile-pinning is fail-closed.
 - `dev/adr/ADR-0.7.0-vector-binary-quant.md` — the binary-quant +
   rerank pipeline this embedder feeds.
-- `dev/adr/ADR-0.7.1-default-embedder-weight-fetch.md` *(pending)* —
+- `dev/adr/ADR-0.7.1-default-embedder-weight-fetch.md` (`status: accepted`, HITL 2026-05-28) —
   the NEED-017/REQ-033 download-exception ADR (0.7.1 EU-1).
 - `dev/notes/0.7.1-default-embedder-research.md` — EU-0 empirical
   research report (recall@10 K-sweep + mean-centering ablation).
@@ -387,30 +387,39 @@ Not currently configurable. Out of scope for 0.7.x.
 
 | | |
 |---|---|
-| **Status** | ⏳ TBD — owning slice **0.7.2 PR-2** |
-| **Current value** | 0.90 (calibrated for isotropic synthetic, no longer the right shape) |
-| **Recommended derivation** | `R_canonical_CI - 2σ_bootstrap`, rounded down to 0.01 |
-| **Locked by (eventually)** | ADR amendment to `dev/adr/ADR-0.7.0-vector-binary-quant.md` § 2 point 4 |
+| **Status** | 🔒 Locked at **0.90** — resolved by 0.7.2 PR-2bc-S3 (HITL 2026-05-31) |
+| **Current value** | 0.90 — RETAINED. The EU-7 "0.828 gap" was root-caused as a measurement artifact; corrected ANN-fidelity recall@10 = 0.937 (CI 0.913–0.957), and a mechanical `R − 2σ` derivation gives 0.91 (above the floor), so 0.90 is conservative and HOLDS. |
+| **Locked by** | ADR-0.7.0-vector-binary-quant §2.4/§4/§6 amendment + sentinel test `ac_013b_floor_matches_adr` (PR-2bc-S3). |
 
-**Why the current 0.90 is wrong-shape**:
-- 0.90 was set when the AC-013 fixture used `VaryingEmbedder` (sparse
-  6-coord, then dense isotropic post-2026-05-27 Option 1). Isotropic
-  random vectors are the noise-limited case for sign-bit ANN (see
-  `dev/plans/runs/STATUS-perf-vector-quant.md` § Fixture-replacement
-  evaluation, post-correction). The 0.90 number doesn't translate to
-  real-embedder data.
+**Resolution (PR-2bc-S3, 2026-05-31).** The recall-floor decision was MADE:
+0.90 was RETAINED, not lowered. The floor decision is no longer open — the
+forward-looking "decision process" below has completed with the floor kept.
 
-**Decision process for the new floor**:
-1. EU-7 measures recall@10 on real bge-small+mc at K=192, canonical-CI
-   N=1M. Call this `R_canonical`.
-2. PR-2 derives the floor as `R_canonical - 2σ_bootstrap` (one-sided
-   lower bound; ~95% confidence production lands ≥ floor).
-3. PR-2 rounds down to the nearest 0.01.
-4. ADR amendment + HITL sign-off.
+**Historical rationale for re-examining 0.90's provenance.** 0.90 was
+originally set when the AC-013 fixture used `VaryingEmbedder` (sparse
+6-coord, then dense isotropic post-2026-05-27 Option 1). Isotropic random
+vectors are the noise-limited case for sign-bit ANN (see
+`dev/plans/runs/STATUS-perf-vector-quant.md` § Fixture-replacement
+evaluation, post-correction), so the isotropic-synthetic provenance was
+re-examined against real-embedder data. **Conclusion:** the real-embedder
+number (corrected ANN-fidelity recall@10 = 0.937, CI 0.913–0.957) still
+clears 0.90 comfortably, so the floor holds.
 
-**Honesty constraint**: per the 0.7.0 ship precedent (commit `38d5f4f`
-message), if `R_canonical < 0.90` the floor drops to match the honest
-measurement — **the floor is not gerrymandered to fit a desired pass**.
+**What the (now-completed) decision process was**:
+1. EU-7 measured recall@10 on real bge-small+mc at K=192. (The first
+   dev-box number, ~0.83, was later root-caused as a measurement-harness
+   artifact, not a real-data shortfall.)
+2. The floor was derived as `R_canonical − 2σ_bootstrap` (one-sided lower
+   bound) → 0.91, which is above 0.90; 0.90 was retained as the
+   conservative floor.
+3. ADR-0.7.0-vector-binary-quant was amended (§2.4) + HITL sign-off
+   (PR-2bc-S3).
+
+**Honesty constraint (preserved as historical context)**: per the 0.7.0
+ship precedent (commit `38d5f4f` message), the floor is not gerrymandered
+to fit a desired pass — the 0.828 was an artifact and the corrected number
+0.937 clears 0.90 comfortably, so retaining the floor is honest, not a
+defence of a number the data could not support.
 
 ---
 
