@@ -8,6 +8,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use fathomdb_engine::lifecycle::{
     Event, EventCategory, EventSource, Phase, ProfileRecord, ProjectionStatus, SlowStatement,
@@ -500,41 +501,78 @@ fn ac_007a_slow_statement_event_at_default_threshold() {
 
 // AC-007b: Slow threshold reconfigurable at runtime.
 //
-// Measurement: set threshold = 500 ms; fast-fixture (≤ 200 ms) emits no
-// slow-statement signal; slow-fixture (≥ 600 ms) emits exactly one.
+// At threshold = 500 ms, a sub-threshold statement emits no slow-statement
+// signal and a super-threshold statement emits exactly one. The CTE sizes are
+// CALIBRATED to this host at runtime (`calibrate_cte_n`) rather than pinned to
+// fixed N, so the test holds across hardware speeds (a fixed N=1_000_000 ran
+// ~800 ms on the aarch64 probe but only ~144 ms on a fast x86_64 box, which
+// silently dropped the "slow" fixture under the 500 ms threshold).
 #[test]
 fn ac_007b_slow_threshold_reconfigurable() {
+    const THRESHOLD_MS: u64 = 500;
     let (_dir, engine) = fixture();
+    // Calibrate BEFORE subscribing so the probe runs are not captured.
+    let fast_n = calibrate_cte_n(&engine, THRESHOLD_MS / 5); // ~100 ms, well under
+    let slow_n = calibrate_cte_n(&engine, THRESHOLD_MS * 3); // ~1500 ms, well over
+
     let sink = Arc::new(CapturingSubscriber::default());
     let _sub = engine.subscribe(sink.clone());
-    engine.set_slow_threshold_ms(500).expect("set threshold");
+    engine.set_slow_threshold_ms(THRESHOLD_MS).expect("set threshold");
 
-    engine.execute_for_test(FAST_CTE).expect("fast cte");
+    engine.execute_for_test(&cte_sql(fast_n)).expect("fast cte");
     assert_eq!(
         sink.slow_statements.lock().unwrap().len(),
         0,
-        "fast fixture must not emit a slow-statement signal at threshold=500 ms"
+        "sub-threshold statement (calibrated ~{} ms) must not emit a slow-statement \
+         signal at threshold={THRESHOLD_MS} ms",
+        THRESHOLD_MS / 5,
     );
 
-    engine.execute_for_test(SLOW_CTE).expect("slow cte");
+    engine.execute_for_test(&cte_sql(slow_n)).expect("slow cte");
     let signals = sink.slow_statements.lock().unwrap();
     assert_eq!(
         signals.len(),
         1,
-        "slow fixture must emit exactly one slow-statement signal at threshold=500 ms"
+        "super-threshold statement (calibrated ~{} ms) must emit exactly one \
+         slow-statement signal at threshold={THRESHOLD_MS} ms",
+        THRESHOLD_MS * 3,
     );
-    assert!(signals[0].wall_clock_ms >= 500);
+    assert!(signals[0].wall_clock_ms >= THRESHOLD_MS);
 }
 
-// Deterministic-slow-cte fixture (AC-007a/b). Recursive CTE counter
-// scales linearly with N. N values pinned to this runner's measured
-// baseline (probe captured 2026-05-02 on aarch64 Linux):
-//
-// - N=100_000 → ~89 ms (FAST: < 200 ms required by AC-007b)
-// - N=1_000_000 → ~800 ms (SLOW: ≥ 200 ms for AC-007a, ≥ 600 ms for AC-007b)
-const FAST_CTE: &str = "WITH RECURSIVE c(x) AS (VALUES(1) UNION ALL \
-                        SELECT x + 1 FROM c WHERE x < 100000) \
-                        SELECT count(*) FROM c";
+/// Recursive-CTE counter SQL whose runtime scales linearly with `n`.
+fn cte_sql(n: u64) -> String {
+    format!(
+        "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x < {n}) \
+         SELECT count(*) FROM c"
+    )
+}
+
+/// Measure this host's recursive-CTE cost and return an `n` whose CTE runs for
+/// approximately `target_ms`. Makes timing-threshold tests hardware-independent
+/// instead of pinning fixed iteration counts to one CI runner's speed. Runs a
+/// probe twice and uses the faster sample to damp transient load. The returned
+/// `n` is clamped to a sane range.
+fn calibrate_cte_n(engine: &Engine, target_ms: u64) -> u64 {
+    const PROBE_N: u64 = 1_000_000;
+    let probe = cte_sql(PROBE_N);
+    let mut best = Duration::from_secs(3600);
+    for _ in 0..2 {
+        let start = Instant::now();
+        engine.execute_for_test(&probe).expect("calibration probe cte");
+        best = best.min(start.elapsed());
+    }
+    let per_probe_ms = (best.as_secs_f64() * 1000.0).max(0.1);
+    let n = (PROBE_N as f64 * (target_ms as f64) / per_probe_ms) as u64;
+    n.clamp(10_000, 500_000_000)
+}
+
+// Deterministic recursive-CTE fixture. `SLOW_CTE` (N=1_000_000) is used where a
+// statement need only clear a low threshold (AC-007a default 100 ms; AC-008).
+// AC-007b instead CALIBRATES its CTE sizes to the host at runtime
+// (`cte_sql` + `calibrate_cte_n`) because its 500 ms threshold is sensitive to
+// host speed — the fixed N=1_000_000 ran ~800 ms on the original aarch64 probe
+// but only ~144 ms on a fast x86_64 box, silently falling under 500 ms.
 const SLOW_CTE: &str = "WITH RECURSIVE c(x) AS (VALUES(1) UNION ALL \
                         SELECT x + 1 FROM c WHERE x < 1000000) \
                         SELECT count(*) FROM c";
