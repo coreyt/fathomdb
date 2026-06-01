@@ -237,7 +237,8 @@ jobs:
           # Export the consolidated FATHOMDB_PERF_* env knobs (space-separated
           # KEY=VAL list) so the harness child processes inherit them.
           if [ -n "$SQLITE_PERF_ENV" ]; then
-            for kv in $SQLITE_PERF_ENV; do export "$kv"; done
+            # shellcheck disable=SC2163  # each token is a literal KEY=VAL pair
+            for kv in $SQLITE_PERF_ENV; do export "${kv?}"; done
           fi
           if [ "${{ inputs.perf_record }}" = "true" ]; then
             # Wrap the harness in perf record for L-A1 diagnostic.
