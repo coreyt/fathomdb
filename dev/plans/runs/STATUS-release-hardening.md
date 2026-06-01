@@ -54,7 +54,7 @@ as-needed from the handoff section; — = not yet authored).
 | Order | ID | Subject | Status | Dep | Gate | Prompt | Notes |
 |---|---|---|---|---|---|---|---|
 | **5** | PR-5 | Corpus-driven test harness (`tests/support/corpus_harness.rs`) | **✅ CLOSED (`c605a18`, local main, unpushed)** | PR-4 | diff+tests ✅; cache-dir confirmed (HITL 2026-06-01) | `…/prompts/0.7.2-PR-5-corpus-harness.md`; closure `…/runs/0.7.2-PR-5-output.json`; review `…/runs/0.7.2-PR-5-review-20260601T203321Z.md` | `CorpusFixture` (small/medium/full + per_source + from_docs), synthetic/real embedder toggle, one-line `ingest_into` (reuses `corpus_subset::ingest` — 4a95cfd batched pattern), `query_set` (EU-0 §1.2), 3 assert helpers. **Per-(model,subset) embedding cache** under `data/corpus-data/.cache/embeddings/` (gitignored; `$FATHOMDB_CORPUS_CACHE_DIR`-overridable): key=sha256(identity+label+doc-manifest), byte-deterministic blob, atomic write, hit-path re-verifies identity+manifest, **every miss (cold/partial/stale) is loud** (`CORPUS_CACHE_MISS` + `IngestReport.cache_miss_reason`). Pack-4 `corpus_vector`/`corpus_fts`/`corpus_graph` migrated **no behavior change**; eu7 migration deferred (PR-6/7). Added `VaryingEmbedder::with_identity` test seam (prod `EmbedderIdentity` untouched). **codex BLOCK→BLOCK→CONCERN→PASS** (no BLOCK overridden — loud-miss contract + both stale-cache branches locked by tests). Matrix GREEN: default & `--features default-embedder`, corpus-present & -absent; clippy clean. AGENT_LONG-gated real-embedder smoke added. **No push.** |
-| **6** | PR-6 | Dev-loop perf gates (`perf_gates_devloop.rs`) | **NOT STARTED** | PR-5 | devloop budget shape | — | ≤30 s warm; catches batch-collapse + scanner regressions. |
+| **6** | PR-6 | Dev-loop perf gates (`perf_gates_devloop.rs`) | **✅ CLOSED (`e2c886d`, local main, unpushed)** | PR-5 | budget shape HITL-locked 2026-06-01 (perf NOTIFIES, structural BLOCKS, +1 catastrophic hard assert) | `…/prompts/0.7.2-PR-6-devloop-perf-gates.md`; closure `…/runs/0.7.2-PR-6-output.json`; review `…/runs/0.7.2-PR-6-review-20260601T221430Z.md` | 3 always-on devloop ACs (NOT AGENT_LONG-gated) at N≈1000 via PR-5 `CorpusFixture::medium`, same production read path. **Structural invariants HARD** (vec0 row count + FTS) catch batch-collapse `4a95cfd`; **soft latency** p50≤50/p99≤150ms (synthetic) + **recall floor** 0.85 (real) NOTIFY-only; **one hard catastrophic ceiling** (10× soft = p50>500/p99>1500ms, synthetic) catches scanner-throughput `53a270d`. **Signal split:** synthetic isolates LATENCY (instant embed) + recall report-only (~0.35 @ N=1000, sparse-vector artifact); real carries RECALL + latency report-only. **RED-shows verified** (throwaway, reverted): batch-collapse→structural panic (1 row vs 1000), scanner→catastrophic panic (p50=616>500ms). Synthetic warm wall ≈16s ≤30s ✓; clippy clean (default + `default-embedder`). Stable `DEVLOOP_NUMBERS` line for PR-7. **codex pass-1 BLOCK→pass-2 PASS** (no BLOCK overridden: AC-019 schema normalized, real cold-cache reconciled as allowed + latency report-only, latency comment corrected). Doc `dev/design/perf-gates.md`. **No push.** |
 | **6** | PR-7 | Perf regression detection (`dev/perf-history/` + check bin) | **NOT STARTED** | PR-6 | threshold constants (10% lat / 0.02 recall) | — | PR-6 and PR-7 independent of each other; parallelizable. |
 | **7** | PR-8 | Campaign closure | **NOT STARTED** | PR-7, PR-9 | v0.7.2 push | — | Final scoreboard here; CHANGELOG 0.7.2 section; HITL sign-off. |
 
@@ -107,3 +107,15 @@ test harness, `tests/support/corpus_harness.rs`)** — begins Phase B
 (testing/perf hardening): PR-5 → PR-6 (dev-loop perf gates) / PR-7 (perf-
 regression detection, parallelizable) → PR-8 (campaign closure + 0.7.2 release).
 Update this scoreboard on landing.
+
+**PR-6 CLOSED (`e2c886d`, local `main`, unpushed; codex pass-1 BLOCK → pass-2
+PASS, no BLOCK overridden).** Dev-loop perf gates (`tests/perf_gates_devloop.rs`)
++ two-tier doc (`dev/design/perf-gates.md`). HITL-locked disposition: **perf
+NOTIFIES, structural BLOCKS**, with one hard catastrophic latency ceiling (10×
+soft) so an orders-of-magnitude scanner regression still RED-fails. Both named
+regressions RED-shows-verified (batch-collapse via structural assert;
+scanner-throughput via catastrophic ceiling). Synthetic isolates latency + real
+carries recall (each path's off-signal report-only). Stable `DEVLOOP_NUMBERS`
+line is the **PR-7 ingestion contract**. Synthetic warm wall ≈16s ≤30s; clippy
+clean. Closure `…/runs/0.7.2-PR-6-output.json`. **Next: PR-7 (perf-regression
+detection) — now unblocked; then PR-8 (campaign closure + 0.7.2 push).** No push.

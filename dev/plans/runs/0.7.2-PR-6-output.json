@@ -1,0 +1,109 @@
+{
+  "slice": "PR-6",
+  "title": "Dev-loop perf gates (perf_gates_devloop.rs) + two-tier perf-gates design doc",
+  "phase": "B (testing/perf hardening)",
+  "status": "CLOSED",
+  "branch": "main (local; unpushed)",
+  "baseline": "41aa6b2 (PR-6/PR-7 prompt-authoring; PR-5 closure 384389a)",
+  "code_commit": "e2c886d",
+  "prompt": "dev/plans/prompts/0.7.2-PR-6-devloop-perf-gates.md",
+  "closed_at": "2026-06-01T22:20Z",
+
+  "deliverables": {
+    "devloop_tests": "src/rust/crates/fathomdb-engine/tests/perf_gates_devloop.rs (3 ACs: ac_013_devloop, ac_013b_devloop, ac_019_devloop)",
+    "design_doc": "dev/design/perf-gates.md (two-tier model: devloop vs canonical)",
+    "review_record": "dev/plans/runs/0.7.2-PR-6-review-20260601T221430Z.md (+ 2 codex logs: 220523Z BLOCK, 221430Z PASS)"
+  },
+
+  "n_choice": {
+    "value": "~1000 docs via CorpusFixture::medium()",
+    "rationale": "Handoff specified ~1K. CorpusFixture::small() is ~100 (insufficient); medium() is the closest first-class fixture (~1000). per_source/from_docs were available for a tuned size but medium() met the bar with no custom selection."
+  },
+
+  "gate_disposition": {
+    "hitl_rule": "perf signals NOTIFY, structural invariants BLOCK (HITL 2026-06-01); plus 'keep one hard latency assert' so an orders-of-magnitude regression still RED-fails.",
+    "structural_BLOCK": "assert_vec0_row_count_matches_ingest + assert_fts_index_populated (hard assert in setup()) — catch batch-collapse 4a95cfd.",
+    "soft_latency_NOTIFY": "p50<=50ms / p99<=150ms (synthetic path) -> DEVLOOP_PERF_WARN status=OVER, never fails.",
+    "catastrophic_BLOCK": "p50>500ms / p99>1500ms (10x soft; synthetic path) -> hard assert — catches scanner-throughput 53a270d (orders-of-magnitude inflation).",
+    "recall_NOTIFY": "recall@10 >= 0.85 floor WARN on the REAL path only.",
+    "embedder_signal_split": "Synthetic isolates LATENCY (instant embed -> measured time is pure retrieval) and carries the latency gates; its recall is report-only (~0.35 @ N=1000 — a property of the sparse synthetic vectors, not a regression; mirrors AC-019). Real carries RECALL (dense vectors make ANN-fidelity meaningful); its latency is report-only (candle-influenced)."
+  },
+
+  "budget_numbers": {
+    "hitl_approved_at": "2026-06-01 (gate 1 'Approve recommended' + 'perf notifies not blocks' + 'perf notifies/structural blocks' + 'keep one hard latency assert')",
+    "soft_p50_ms": 50,
+    "soft_p99_ms": 150,
+    "recall_floor": 0.85,
+    "catastrophic_mult": 10,
+    "samples": 100,
+    "seed": "0x0DEF_1009_0DEF_1009",
+    "ac019_threads": 4,
+    "ac019_queries_per_thread": 50,
+    "canonical_anchor_for_reference": "10k tier AC-013 p50<=80 / p99<=300; recall floor 0.90 @ N=7667 (ANN-fidelity anchor 0.937)"
+  },
+
+  "timing": {
+    "synthetic_warm_wall_s": "~16 (well under the 30s budget; default `cargo test perf_gates_devloop`)",
+    "synthetic_cache": "na — synthetic embed is instant, the PR-5 embed cache is irrelevant on this path (so cold==warm timing).",
+    "measured_synthetic": {
+      "ac_013": "p50 14-15ms / p99 16-18ms (within soft budget)",
+      "ac_013b_recall_at_10": "0.347 (report-only on synthetic; below the 0.85 real-path floor by design — sparse synthetic vectors quantize poorly)",
+      "ac_019": "baseline_p99 ~17ms, stress_p99 ~154-163ms (4 threads x 50, report-only)"
+    },
+    "real_embedder": "NOT measured this slice — opt-in (DEVLOOP_REAL_EMBEDDER=1 + default-embedder feature). Compiles clean under --features default-embedder. Real-path WALL time is candle-bound (warmup + GT query embeds are live), NOT <=30s; documented as an occasional end-to-end exercise, not the inner-loop signal."
+  },
+
+  "red_shows_experiment": {
+    "method": "Throwaway tests appended to perf_gates_devloop.rs, run, then REVERTED (not landed). Symptom-injected at the seam each devloop gate watches.",
+    "batch_collapse_4a95cfd": "Wrote a SINGLE doc into a medium (~1000) fixture; assert_vec0_row_count_matches_ingest PANICKED: 'vector_default has 1 rows but 1000 non-empty-body docs were ingested — projection apparently dropped some'. RED-shows confirmed via structural assert.",
+    "scanner_throughput_53a270d": "Injected a 600ms per-query delay (proxy for the throughput regression's orders-of-magnitude p50 inflation); enforce_catastrophic_ceiling PANICKED: 'DEVLOOP CATASTROPHIC (013): p50=616ms > 500ms (10x soft budget)'. RED-shows confirmed via the hard catastrophic ceiling.",
+    "note": "Symptom-injection at the gate seam (not a literal revert of the engine commits) because the gates key on the observable symptom — row-count shortfall / orders-of-magnitude latency — which ANY underlying cause of these regressions produces. Both should_panic experiments passed (panicked as expected) then were removed."
+  },
+
+  "devloop_numbers_contract": {
+    "stable_line": "DEVLOOP_NUMBERS ac=<013|013b|019> n=<N> samples=<S> p50_ms=<..> p99_ms=<..> recall_at_10=<NA|float> cache=<na|hit|cold|reason> embedder=<synthetic|real>",
+    "uniform_across_acs": "All three ACs emit the SAME keyed schema via emit_numbers(); for AC-019 the percentiles are the stress tail. AC-019 extra detail (baseline, thread shape, wall time) is on a separate DEVLOOP_AC019_DETAIL line so the common contract stays uniform (codex pass-1 finding 1).",
+    "warn_lines": "DEVLOOP_PERF_WARN ac=.. metric=.. value(_ms)=.. budget_ms=|floor=.. status=OVER|UNDER (notify-only). DEVLOOP_PERF_INFO ..disposition=report_only.. for the report-only paths.",
+    "pr7_handoff": "PR-7 parses the keyed DEVLOOP_NUMBERS fields per (ac, embedder); adding fields is safe, renaming/reordering keyed fields is breaking."
+  },
+
+  "knobs": {
+    "DEVLOOP_REAL_EMBEDDER": "=1 -> real BGE (requires default-embedder feature; cold-cache allowed, warm re-run faster). Default unset -> synthetic.",
+    "FATHOMDB_CORPUS_CACHE_DIR": "shared with the PR-5 harness; overrides the embed-cache dir.",
+    "not_AGENT_LONG": "Devloop is NOT gated behind AGENT_LONG (that is the canonical tier's switch); devloop runs unconditionally on every cargo test."
+  },
+
+  "codex_review": {
+    "tool": "codex exec --model gpt-5.4 --sandbox read-only -c model_reasoning_effort=high",
+    "pass_1": "BLOCK — (1) DEVLOOP_NUMBERS schema not uniform across ACs (AC-019 differed); (2) real 'requires warm cache' documented but not enforced; (3) comment wrongly claimed measured real pass is live query inference.",
+    "pass_2": "PASS — all three resolved; no BLOCK overridden. Re-confirmed catastrophic ceiling RED-shows scanner on synthetic, structural asserts guard batch-collapse, no production read-path bypass.",
+    "fixes": "AC-019 normalized onto emit_numbers() + separate DETAIL line; real cold-cache reconciled as ALLOWED + real latency made report-only; comment corrected + latency gates made synthetic-only / recall floor real-only (principled signal split)."
+  },
+
+  "verification": {
+    "cargo_test_perf_gates_devloop": "3/3 PASS (synthetic, default features); warm wall ~16s <= 30s.",
+    "clippy": "clean — default features AND --features default-embedder, --tests.",
+    "fmt": "cargo fmt applied (pre-commit hook enforced).",
+    "production_read_path": "No bypass: writes via public harness/Engine API, reads via Engine::search (FTS5 + bit-KNN + f32 rerank); the raw rusqlite connection in ac_013b is read-only ground-truth only. The PR-5 cache caches embed INPUTS, not query RESULTS."
+  },
+
+  "hard_constraints_respected": {
+    "no_push": "Nothing pushed to origin; PR-8 owns the 0.7.2 push.",
+    "tdd_red_first": "RED-shows experiment is the RED phase (both regressions confirmed to fail before the gates were trusted).",
+    "codex_not_overridden": "pass-1 BLOCK fixed -> pass-2 PASS; no BLOCK overridden.",
+    "embedder_identity_immutable": "Untouched (synthetic GT reconstruction uses VaryingEmbedder::new, whose vectors depend only on dim+text).",
+    "single_writer_projection_freshness": "Preserved — public Engine API only, no bypass (codex-confirmed)."
+  },
+
+  "footprint_discipline": {
+    "pr7_files_untouched": "dev/perf-history/, perf-regression-check crate, root Cargo.toml, .github/workflows/perf-canonical.yml, PR-7 STATUS row — all untouched.",
+    "status_edit": "PR-6 row only (line 57); PR-7 row + header left as-is.",
+    "worktree": "Implemented directly on local main (no parallel PR-7 in flight -> no collision risk; 'orchestrator's choice per slice' per STATUS baseline note)."
+  },
+
+  "follow_ups": [
+    "PR-7 (perf regression detection) consumes the DEVLOOP_NUMBERS line — runs next (parallelizable pair with PR-6, now unblocked).",
+    "eu7_real_corpus_ac.rs SerializedBge Mutex holdover migration still deferred (noted in PR-5 closure; not in PR-6 scope).",
+    "Real-embedder devloop numbers are unmeasured this slice (opt-in); a future run with warm cache + default-embedder can record them."
+  ]
+}
