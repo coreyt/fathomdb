@@ -1,0 +1,123 @@
+{
+  "slice": "PR-4",
+  "campaign": "0.7.2 RELEASE-HARDENING",
+  "subject": "Release notes + push v0.7.0 + v0.7.1",
+  "status": "CLOSED",
+  "closed_at": "2026-06-01T18:01:33Z",
+  "outcome": "fathomdb 0.7.1 published to crates.io + PyPI + npm + GitHub release. v0.7.0 intentionally NOT published (held as a local historical marker per HITL); 0.7.1 is the first published 0.7.x.",
+
+  "commits": {
+    "docs_finalize_changelog": "4773845",
+    "version_bump_axis_w": "e24b7a1",
+    "codex_review_record": "fc206aa",
+    "fix_clippy_doc_lazy_continuation": "484042b",
+    "fix_perf_canonical_inputs_13_to_8": "365bc54",
+    "fix_perf_canonical_shellcheck_sc2163": "365bc54",
+    "status_dryrun_green_recut": "074a3f4",
+    "fix_publish_tier_order_embedder_before_engine": "c893d8b"
+  },
+  "final_state": {
+    "main_head": "c893d8b2ad0875744bd7933ca9465e86fc8c063d",
+    "origin_main": "c893d8b2ad0875744bd7933ca9465e86fc8c063d",
+    "main_in_sync": true,
+    "tags": {
+      "v0.7.1": {
+        "commit": "c893d8b2ad0875744bd7933ca9465e86fc8c063d",
+        "pushed": true,
+        "note": "Re-cut twice: first onto the release-consistent tip (074a3f4), then force-moved to the publish-tier-order fix (c893d8b) after the first publish attempt partial-failed."
+      },
+      "v0.7.0": {
+        "commit": "38d5f4f3dd3ec540145607069e0f3ec7a700eea8",
+        "pushed": false,
+        "note": "NOT pushed/published per HITL decision. Its tree predates the finalized CHANGELOG/version (python/ts at 0.6.1, no 0.7.0 CHANGELOG section) so it cannot pass the release-gate preflight; left as a local historical marker."
+      }
+    }
+  },
+
+  "codex_review": {
+    "record": "dev/plans/runs/0.7.2-PR-4-review-20260601T154644Z.md",
+    "logs": [
+      "dev/plans/runs/0.7.2-PR-4-review-20260601T154210Z.log",
+      "dev/plans/runs/0.7.2-PR-4-review-20260601T154644Z.log"
+    ],
+    "pass1": "BLOCK — version bump missed the [workspace.dependencies] Axis-W sibling pins (a 0.7.1 publish would declare 0.7.0 sibling deps). FIXED via scripts/set-version.sh --workspace 0.7.1 (also covered python/ts 0.6.1->0.7.1). NOT overridden.",
+    "pass2": "CONCERN — cut-before-push publish wording. ADDRESSED: publish claims tied to the push; dated section retained per changelog convention.",
+    "net": "BLOCK fixed, CONCERN addressed."
+  },
+
+  "hitl_gates": [
+    {
+      "gate": "push scope",
+      "decision": "Push main only, then dry-run rehearse v0.7.1 publish before any real tag push.",
+      "at": "2026-06-01"
+    },
+    {
+      "gate": "v0.7.0 disposition",
+      "decision": "Do NOT publish v0.7.0; 0.7.1 is the first published 0.7.x.",
+      "at": "2026-06-01"
+    },
+    {
+      "gate": "real publish",
+      "decision": "Yes — push v0.7.1, publish for real.",
+      "at": "2026-06-01T17:20:09Z",
+      "quote": "Yes — push v0.7.1, publish for real"
+    },
+    {
+      "gate": "partial-failure recovery (force-move tag + re-fire)",
+      "decision": "Yes — force-move v0.7.1 + re-fire.",
+      "at": "2026-06-01"
+    }
+  ],
+
+  "release_runs": [
+    {
+      "id": 26770446544,
+      "trigger": "push tag v0.7.1 @ 074a3f4",
+      "conclusion": "failure (PARTIAL)",
+      "url": "https://github.com/coreyt/fathomdb/actions/runs/26770446544",
+      "detail": "Builds + cargo tiers t1-t3 succeeded (schema 0.7.1, query 0.7.1 UPLOADED to crates.io — irreversible; embedder-api 0.6.0 skipped). t4-engine FAILED: engine requires fathomdb-embedder ^0.7.1 not yet on the index (embedder was scheduled at t5, after engine). embedder/facade/cli, PyPI, npm, github-release skipped."
+    },
+    {
+      "id": 26771399059,
+      "trigger": "force-push tag v0.7.1 @ c893d8b (tier-order fix)",
+      "conclusion": "success",
+      "url": "https://github.com/coreyt/fathomdb/actions/runs/26771399059",
+      "detail": "All jobs green: 5-platform builds; cargo tiers t1-t7 in corrected order (t1 embedder-api skip, t2 schema skip, t3 query skip, t4 embedder, t5 engine, t6 facade, t7 cli); publish-pypi; publish-npm; post-publish-smoke x3 (crates-cli, pypi-wheel, npm-package); co-tagging-assert; github-release."
+    }
+  ],
+
+  "dry_run_rehearsal": {
+    "id": 26769746003,
+    "conclusion": "success",
+    "detail": "workflow_dispatch dry_run=true against main; verify-release + builds + cargo/npm dry-runs green; pypi/smoke/github-release skipped by design."
+  },
+
+  "release_unblockers_fixed": [
+    "clippy::doc_lazy_continuation in PR-9 test docs (pr9_concurrent_embed.rs, pr9_embed_watchdog.rs) — pre-existing, blocked pre-push hook + CI (484042b).",
+    "perf-canonical.yml had 13 workflow_dispatch inputs > GitHub max 10 — consolidated 6 SQLite env-knob inputs into one sqlite_perf_env string (13->8); shellcheck SC2163 quieted (365bc54).",
+    "release.yml cargo-publish tier order: embedder published AFTER engine despite engine depending on embedder — reordered T4=embedder/T5=engine + rewired facade/pypi/npm needs; dev/design/release.md tier table corrected (c893d8b)."
+  ],
+
+  "published": {
+    "crates_io_0_7_1": ["fathomdb-schema", "fathomdb-query", "fathomdb-embedder", "fathomdb-engine", "fathomdb", "fathomdb-cli"],
+    "crates_io_axis_e_held": {"fathomdb-embedder-api": "0.6.0"},
+    "pypi": "fathomdb 0.7.1 (latest)",
+    "npm": "fathomdb 0.7.1 (latest)",
+    "github_release": "https://github.com/coreyt/fathomdb/releases/tag/v0.7.1"
+  },
+
+  "verification": {
+    "removal_changelog_linter": "PASS",
+    "set_version_check_files": "ok (Axis W = 0.7.1; Axis E = 0.6.0)",
+    "actionlint_all_workflows": "PASS",
+    "registries_confirmed_via": "crates.io sparse index + PyPI/npm JSON API + gh release view"
+  },
+
+  "honesty_notes": [
+    "0.7.0 recall gap kept in v0.7.0 notes as a known gap on the synthetic fixture; corrected 0.937 framed as a 0.7.1+ datum, not a retroactive 0.7.0 pass.",
+    "First publish attempt partial-failed; schema 0.7.1 + query 0.7.1 were already irreversibly on crates.io before the fix. Recovery relied on cargo-publish-if-new.sh idempotency (skip-if-exists), not republish.",
+    "v0.7.1 tag was force-moved after the partial publish; the two already-published crates have byte-identical source in the new tree (only CI/docs changed), so no source divergence between the tag and the published crates."
+  ],
+
+  "next_slice": "PR-5 (corpus-driven test harness) — begins Phase B."
+}
