@@ -1,0 +1,1230 @@
+OpenAI Codex v0.120.0 (research preview)
+--------
+workdir: /home/coreyt/projects/fathomdb
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 019e83dd-b0be-7c72-bbd2-99b13d34f268
+--------
+user
+You are a read-only release re-reviewer for fathomdb PR-4 (release notes for
+v0.7.0 + v0.7.1 + workspace version bump). This is PASS-2, re-reviewing after a
+pass-1 BLOCK fix. The diff under review is everything on top of 8241ab0:
+
+    git diff 8241ab0..HEAD
+
+PASS-1 BLOCK (now claimed fixed): the version bump touched only
+[workspace.package].version (0.7.0 -> 0.7.1) but left the [workspace.dependencies]
+sibling pins at 0.7.0, which are the publish-time version requirements and must
+move lockstep. Verify this is RESOLVED:
+
+1. Cargo.toml [workspace.dependencies] Axis-W sibling pins (fathomdb,
+   fathomdb-embedder, fathomdb-engine, fathomdb-query, fathomdb-schema) are now
+   0.7.1; fathomdb-embedder-api (Axis E) stays 0.6.0.
+2. [workspace.package].version is 0.7.1.
+3. Cargo.lock reflects 0.7.1 for all workspace crates, 0.6.0 for embedder-api.
+4. The Axis-W bump also covers src/python/pyproject.toml and src/ts/package.json
+   (both should now be 0.7.1; they were 0.6.1 because 0.7.0 was held and never
+   published to PyPI/npm — a 0.6.1 -> 0.7.1 lockstep jump is correct, not a skip
+   defect).
+5. No NEW inconsistency introduced; the docs/CHANGELOG content from pass-1 is
+   unchanged and still honest (0.7.0 recall gap present; 0.828->0.937 framed as a
+   0.7.1+ datum; v0.7.2 left unreleased/in-progress).
+
+Confine your review to `git diff 8241ab0..HEAD`. Do NOT grep unrelated log files.
+Sandbox is read-only; do NOT write a verdict file. End with a clear
+"Verdict: PASS|CONCERN|BLOCK" line.
+
+codex
+Reviewing `git diff 8241ab0..HEAD` for the claimed version-alignment fix. I’m starting with the repo’s persisted invariants in `MEMORY.md`, then I’ll inspect the diff and the versioned manifests/lockfile only.
+exec
+/bin/bash -lc "sed -n '1,220p' MEMORY.md" in /home/coreyt/projects/fathomdb
+ exited 2 in 0ms:
+sed: can't read MEMORY.md: No such file or directory
+
+exec
+/bin/bash -lc 'git diff --stat 8241ab0..HEAD' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+ CHANGELOG.md                               | 45 +++++++++++++++++++++---------
+ Cargo.lock                                 | 16 +++++------
+ Cargo.toml                                 | 12 ++++----
+ dev/plans/runs/STATUS-release-hardening.md |  2 +-
+ docs/embedder.md                           | 25 +++++++++++------
+ src/python/pyproject.toml                  |  2 +-
+ src/ts/package.json                        |  2 +-
+ 7 files changed, 65 insertions(+), 39 deletions(-)
+
+codex
+`MEMORY.md` is not at repo root, so I’m locating the canonical file the repo expects before continuing. After that I’ll read the exact files touched in the diff and nothing outside that scope.
+exec
+/bin/bash -lc "rg --files -g 'MEMORY.md' -g 'feedback_*.md'" in /home/coreyt/projects/fathomdb
+ exited 1 in 0ms:
+exec
+/bin/bash -lc 'git diff --name-only 8241ab0..HEAD' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+CHANGELOG.md
+Cargo.lock
+Cargo.toml
+dev/plans/runs/STATUS-release-hardening.md
+docs/embedder.md
+src/python/pyproject.toml
+src/ts/package.json
+
+codex
+I’m not finding any `MEMORY.md` or `feedback_*.md` in this checkout, so there’s nothing persisted on disk to load for that rule. I’m proceeding with the review against the requested diff and the touched release/version files only.
+exec
+/bin/bash -lc 'git diff 8241ab0..HEAD -- Cargo.toml Cargo.lock src/python/pyproject.toml src/ts/package.json CHANGELOG.md docs/embedder.md dev/plans/runs/STATUS-release-hardening.md' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 715923a..954d665 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -127,16 +127,17 @@ held locally until PR-4. Ledger: `dev/plans/runs/STATUS-release-hardening.md`.
+   (recall decreases slowly with N) and the 1M latency tier is an O(N)
+   extrapolation off the 0.7.0 W4.1 anchor, not a fresh run.
+ 
+-## 0.7.1 - unreleased
++## 0.7.1 - 2026-06-01
+ 
+ EMBEDDER-UNDEFER: the default embedder is no longer deferred. fathomdb now
+ ships a real in-process default embedder (`BAAI/bge-small-en-v1.5`, 384d, via
+ `candle-transformers`), opt-in per binding, feeding the 0.7.0 sign-bit +
+-f32-rerank retrieval pipeline with mean-centering. Date/tag intentionally
+-unset: the real-corpus recall floor (`AC013B_RECALL_FLOOR`) re-derivation and
+-canonical N=1M acceptance validation are owned by the 0.7.2 RELEASE-HARDENING
+-campaign; the `v0.7.1` tag/push is cut there. See
+-`dev/plans/0.7.1-implementation.md`.
++f32-rerank retrieval pipeline with mean-centering. The tag was intentionally
++held until the 0.7.2 RELEASE-HARDENING campaign re-derived the real-corpus
++recall floor (`AC013B_RECALL_FLOOR`): that work found the apparent 0.828 recall
++"gap" was a measurement artifact, the corrected ANN-fidelity number is 0.937,
++and the 0.90 floor holds (see the 0.7.2 "Changed" section). `v0.7.1` is cut and
++published here alongside `v0.7.0`. See `dev/plans/0.7.1-implementation.md`.
+ 
+ ### Added
+ 
+@@ -212,17 +213,21 @@ campaign; the `v0.7.1` tag/push is cut there. See
+   docs and never recomputed, a workspace whose first 256 docs are
+   unrepresentative may under-center. Remedy is reindex (a later campaign).
+ - **Migration.** Workspaces previously opened with the `fathomdb-noop` profile
+-  fail closed when re-opened with the default embedder (identity mismatch, by
+-  design). The remedy is wipe-and-rewrite; there is no in-place swap.
++  (0.6.x / 0.7.0) fail closed when re-opened with the default embedder (identity
++  mismatch, by design per `ADR-0.6.0-vector-identity-embedder-owned` +
++  `ADR-0.8.0-embedder-identity-change-workflow`). The remedy is wipe-and-rewrite;
++  there is no in-place swap.
+ 
+-## 0.7.0 - unreleased
++## 0.7.0 - 2026-06-01
+ 
+ PERF-VECTOR-QUANT (PVQ). A perf-focused release line whose load-bearing change
+ is **binary vector quantization + f32 rerank** to bring vector retrieval latency
+ (AC-013) within budget. The workspace was bumped to `0.7.0` (`38d5f4f`) and a
+-local `v0.7.0` tag was cut, **but the tag is HELD locally and not pushed** —
+-0.7.2 PR-4 pushes `main` and both the `v0.7.0` and `v0.7.1` tags together. Do
+-not treat 0.7.0 as shipped. AC-013b recall was held OPEN at 0.7.0 ship
++local `v0.7.0` tag was cut, then **held unpushed pending 0.7.1's embedder work**
++(per the 2026-05-27 instruction). It is published here together with `v0.7.1` so
++the release narrative is coherent: 0.7.0 ships the latency win; 0.7.1 ships the
++default embedder that finally lets recall be measured on real text. AC-013b
++recall was held OPEN at 0.7.0 ship
+ (synthetic isotropic fixture cannot reach the floor; real-embedder validation
+ deferred to 0.7.1). Ledger: `dev/plans/runs/STATUS-perf-vector-quant.md`;
+ decision: `ADR-0.7.0-vector-binary-quant.md`.
+@@ -250,7 +255,8 @@ decision: `ADR-0.7.0-vector-binary-quant.md`.
+   via `vec_distance_l2`**, in a single Deferred read transaction. Commit
+   `26ef3dc`.
+ - **Real-corpus test corpora (CORPUS-1..4).** ~7,667-doc multi-source corpus
+-  under `data/corpus-data/` (CNN/DailyMail, Enron, QMSum, EnronQA, synthetic
++  with raw source assets under `data/corpus-data/raw/` (CNN/DailyMail, Enron,
++  QMSum, EnronQA, synthetic
+   notes/todos/daily-logs) + cross-doc chain generator + ingest harness +
+   search-validation gates. Commits across `5c1e92a`..`d9a219d`.
+ - **New perf-gates recall test.** `ac_013b_recall_at_10_floor` asserts
+@@ -258,6 +264,19 @@ decision: `ADR-0.7.0-vector-binary-quant.md`.
+ 
+ ### Changed
+ 
++- **AC-013 latency closed (the load-bearing win).** Replacing the single-phase
++  f32 brute-force scan with two-phase bit-KNN + f32 rerank (plus the
++  `4a95cfd` batch-collapse fix below) brought AC-013 well within budget: at the
++  dev-box anchor, p50 fell from the W4.1 single-phase 2048 ms / p99 2327 ms (at
++  N=1M) to p50 12 ms / p99 16 ms (post-batch-fix), and the scanner fix below cut
++  the AC-013 seed ~11×. (These are dev-box figures; canonical N=1M validation
++  was deferred and later reframed to a tiered, local-measurement posture in
++  0.7.2 PR-3 — see the 0.7.2 "Changed" section.)
++- **AC-019 mixed-retrieval stress budget maintained.** The two-phase path also
++  brought the AC-019 stress tail within budget at the dev-box anchor (p99 8388 ms
++  at N=1M W4.1 → 131 ms, under the 175 ms dev-box bound). The AC-019 budget was
++  later restructured in 0.7.2 PR-3 (synthetic gate report-only; real-corpus
++  harness is the asserting signal).
+ - **AC-013 latency budget re-pinned to 80 / 300 ms** (`AC013_BUDGET_P50/P99`,
+   `d468999`), superseding the 50 / 200 ms unindexed-path values. Tracked in
+   `ADR-0.7.0-text-query-latency-gates-revised.md`.
+diff --git a/Cargo.lock b/Cargo.lock
+index 0291eff..a1a2a98 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -943,14 +943,14 @@ checksum = "9f1f227452a390804cdb637b74a86990f2a7d7ba4b7d5693aac9b4dd6defd8d6"
+ 
+ [[package]]
+ name = "fathomdb"
+-version = "0.7.0"
++version = "0.7.1"
+ dependencies = [
+  "fathomdb-engine",
+ ]
+ 
+ [[package]]
+ name = "fathomdb-cli"
+-version = "0.7.0"
++version = "0.7.1"
+ dependencies = [
+  "clap",
+  "fathomdb",
+@@ -961,7 +961,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "fathomdb-embedder"
+-version = "0.7.0"
++version = "0.7.1"
+ dependencies = [
+  "candle-core",
+  "candle-nn",
+@@ -984,7 +984,7 @@ version = "0.6.0"
+ 
+ [[package]]
+ name = "fathomdb-engine"
+-version = "0.7.0"
++version = "0.7.1"
+ dependencies = [
+  "fathomdb-embedder",
+  "fathomdb-embedder-api",
+@@ -1002,7 +1002,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "fathomdb-napi"
+-version = "0.7.0"
++version = "0.7.1"
+ dependencies = [
+  "fathomdb-embedder",
+  "fathomdb-embedder-api",
+@@ -1018,7 +1018,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "fathomdb-py"
+-version = "0.7.0"
++version = "0.7.1"
+ dependencies = [
+  "fathomdb-embedder",
+  "fathomdb-embedder-api",
+@@ -1030,14 +1030,14 @@ dependencies = [
+ 
+ [[package]]
+ name = "fathomdb-query"
+-version = "0.7.0"
++version = "0.7.1"
+ dependencies = [
+  "proptest",
+ ]
+ 
+ [[package]]
+ name = "fathomdb-schema"
+-version = "0.7.0"
++version = "0.7.1"
+ dependencies = [
+  "proptest",
+  "rusqlite",
+diff --git a/Cargo.toml b/Cargo.toml
+index a8c61a0..8571633 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -25,7 +25,7 @@ resolver = "2"
+ # plus embedder-api at `0.6.0`. Post-GA, axis-E is independent —
+ # embedder-api bumps on its own cadence when the trait surface changes,
+ # decoupled from axis-W bumps.
+-version = "0.7.0"
++version = "0.7.1"
+ edition = "2021"
+ license = "Apache-2.0"
+ repository = "https://github.com/coreyt/fathomdb"
+@@ -45,9 +45,9 @@ internal_docs = ["dev"]
+ # Axis E (fathomdb-embedder-api) carries its independent version per
+ # dev/design/release.md § Version axes.
+ [workspace.dependencies]
+-fathomdb              = { path = "src/rust/crates/fathomdb",              version = "0.7.0" }
+-fathomdb-embedder     = { path = "src/rust/crates/fathomdb-embedder",     version = "0.7.0" }
++fathomdb              = { path = "src/rust/crates/fathomdb",              version = "0.7.1" }
++fathomdb-embedder     = { path = "src/rust/crates/fathomdb-embedder",     version = "0.7.1" }
+ fathomdb-embedder-api = { path = "src/rust/crates/fathomdb-embedder-api", version = "0.6.0" }
+-fathomdb-engine       = { path = "src/rust/crates/fathomdb-engine",       version = "0.7.0" }
+-fathomdb-query        = { path = "src/rust/crates/fathomdb-query",        version = "0.7.0" }
+-fathomdb-schema       = { path = "src/rust/crates/fathomdb-schema",       version = "0.7.0" }
++fathomdb-engine       = { path = "src/rust/crates/fathomdb-engine",       version = "0.7.1" }
++fathomdb-query        = { path = "src/rust/crates/fathomdb-query",        version = "0.7.1" }
++fathomdb-schema       = { path = "src/rust/crates/fathomdb-schema",       version = "0.7.1" }
+diff --git a/dev/plans/runs/STATUS-release-hardening.md b/dev/plans/runs/STATUS-release-hardening.md
+index ad284fc..dbaeb94 100644
+--- a/dev/plans/runs/STATUS-release-hardening.md
++++ b/dev/plans/runs/STATUS-release-hardening.md
+@@ -47,7 +47,7 @@ as-needed from the handoff section; — = not yet authored).
+ | **1** | PR-1 | Architecture/design doc drift sweep | **CLOSED** | PR-0 | drift-list approved 2026-05-31 | `…/prompts/0.7.2-PR-1-doc-drift-sweep.md` | Audit→drift list (10 items, `4beca5b`)→HITL approved all→corrections `aebf959` + closure `10a0e24` on `main`. Codex **PASS** (`…/runs/0.7.2-PR-1-review-20260531T165936Z.md`). Docs-only; nothing pushed. |
+ | **2** | PR-9 | Embedder robustness (concurrent-embed safety + Invariant-5 watchdog) | **✅ CLOSED (`21f4df6`, local main, unpushed)** | PR-1 | diff+tests ✅ (HITL 2026-05-31) | `…/prompts/0.7.2-PR-9-embedder-robustness.md`; closure `…/runs/0.7.2-PR-9-output.json`; review `…/runs/0.7.2-PR-9-review-20260531T205810Z.md` | Watchdog (Invariant 5) + engine-side embed **serialization** (re-justified on SAFETY — throughput-neutral, candle global rayon pool; false "~13×" withdrawn) + **circuit breaker** keyed on concurrent **live embed threads** (bounds abandoned-thread leak for persistent AND intermittent hangs). RED→GREEN each. **codex 5 passes → PASS** (pass-4 BLOCK on the original consecutive-timeout breaker design was NOT overridden — redesigned to live-thread-count + intermittent regression test; pass-5 PASS). Tests: serialization 1/1, watchdog 5/5, eu5f 6/6, projection 12/12; release e2e seed N=2000 complete+correct. Uncommitted; **no push**. (`ac_007b` flake is PRE-EXISTING — fails at baseline `ff7b008`, unrelated to PR-9.) |
+ | **3** | PR-3 | Real-corpus latency/recall measurement + tiered ADR | **✅ CLOSED (`e00991f`, local main, unpushed)** | PR-2(bc), PR-9 | dispatch reframed to local (HITL 2026-06-01); budget HITL-locked tiered | `…/prompts/0.7.2-PR-3-canonical-ci-dispatch.md`; review `…/runs/0.7.2-PR-3-review-20260601T122419Z.md` | Commits `d9f9b65`→`68e1bf0`→`e00991f`. Codex pass-1 **BLOCK** (smoke could pass via FTS path) → FIXED (FTS-isolated smoke), NOT overridden; pass-2 re-review skipped per HITL → **PASS-by-inspection**. **Reframed (HITL):** real-embedder N=1M is infeasible on CI (~166 h seed) → heavy measurement is **local-only**; CI gets a fast read-path smoke (`perf_gates::ac_013_vector_read_path_smoke`). Budget is now **tiered (10k binding for 0.x/1.x; 100k/1M tracked post-1.0 ANN work)**. **10k tier MET** (AC-013 real bge p50 36/p99 49 @ N≈7667; recall@10 0.937 ≥ 0.90; AC-019 real 343 < 405 bound). Data: `…/runs/0.7.2-PR-3-perf-data.md`; ADR amended (AC-013/AC-019 tiered, HITL-locked); closure `…/runs/0.7.2-PR-3-output.json`. AC-019 idle-box item resolved (real 1201 ms = contention; clean real run 343 < 405). **Synthetic AC-019 is report-only** (HITL: synthetic data can't meet the baseline-relative bound; real-corpus path is the verdict). AC-013 keeps its hard 10k gate. Nothing pushed. |
+-| **4** | PR-4 | Release notes + **push v0.7.0 + v0.7.1** | **NOT STARTED** | PR-1, PR-2(bc), PR-3 | **explicit push approval — irreversible** | — | CHANGELOG v0.7.0 + v0.7.1 sections; docs/embedder.md; creates `v0.7.1` tag; pushes `main` + both tags. |
++| **4** | PR-4 | Release notes + **push v0.7.0 + v0.7.1** | **🔶 IN PROGRESS (authoring landed; awaiting HITL push gate)** | PR-1, PR-2(bc), PR-3 | **explicit push approval — irreversible** | `…/prompts/0.7.2-PR-4-release-notes-and-push.md` | CHANGELOG v0.7.0 + v0.7.1 finalized + dated 2026-06-01; `docs/embedder.md` recall caveat reframed to corrected 0.937; workspace bumped 0.7.0→0.7.1 (Axis W lockstep, 8 crates; Axis E embedder-api stays 0.6.0); `v0.7.1` tag pending on version-bump commit. Removal linter PASS. **STOPPED at HITL push gate — nothing pushed.** Final flip to CLOSED after push lands. |
+ 
+ ### Phase B — testing/perf hardening (after PR-4)
+ 
+diff --git a/docs/embedder.md b/docs/embedder.md
+index 89860a7..ebf4048 100644
+--- a/docs/embedder.md
++++ b/docs/embedder.md
+@@ -6,10 +6,11 @@ fresh engine has no embedder configured and vector writes fail with
+ `EmbedderNotConfigured` until you either enable the default embedder or supply
+ your own (Rust only, today).
+ 
+-> Status: the default embedder ships in 0.7.1. The real-corpus recall floor and
+-> full-scale acceptance validation are being finalized in the 0.7.2 hardening
+-> release — see [Caveats](#caveats-and-limitations). Treat the retrieval-quality
+-> numbers in this release as preliminary.
++> Status: the default embedder ships in 0.7.1. The real-corpus recall floor was
++> re-derived in the 0.7.2 hardening release: the apparent recall "gap" seen
++> during 0.7.1 scouting was a measurement artifact, the corrected ANN-fidelity
++> recall@10 is **0.937** on the reference corpus, and the 0.90 floor holds — see
++> [Caveats](#caveats-and-limitations).
+ 
+ ## What it is
+ 
+@@ -109,11 +110,17 @@ for a later release.
+ 
+ ## Caveats and limitations
+ 
+-- **Retrieval quality is still being validated.** In 0.7.1, dev-box measurement
+-  over the reference corpus put recall@10 around 0.83 — below the 0.90 figure
+-  used by the synthetic test fixture. The real-corpus recall floor and
+-  full-scale (N=1M) acceptance validation are being finalized in 0.7.2. Do not
+-  treat a specific recall number from this release as final.
++- **Recall — corrected in 0.7.2.** Dev-box scouting during 0.7.1 measured
++  recall@10 around 0.83 over the reference corpus, which looked like it was below
++  the 0.90 floor. The 0.7.2 hardening work showed that 0.83 was a **measurement
++  artifact** (exclude-after-top-10 plus body-string ground truth over a corpus
++  with duplicate bodies), not an engine deficiency. The corrected ANN-fidelity
++  measurement — how faithfully the 1-bit sign-quant index reproduces the same
++  model's exact f32 top-10 — is **recall@10 = 0.937** (95% CI 0.913–0.957) on the
++  real bge-small embedder (N=7,667, K=192, mean-centering), so the **0.90 floor
++  holds**. This is an ANN/quantization-fidelity number, not an IR-relevance
++  number. A full-scale N=1M run remains infeasible on commodity hardware; 0.937
++  at N≈7.7k is treated as a near-upper bound (recall declines slowly with N).
+ - **Topic-drift mean** (see above): pinned on the first 256 docs; reindex to
+   refresh.
+ - **Custom Python/TypeScript embedders** are deferred to a later release; the
+diff --git a/src/python/pyproject.toml b/src/python/pyproject.toml
+index 8002ac4..80f9024 100644
+--- a/src/python/pyproject.toml
++++ b/src/python/pyproject.toml
+@@ -4,7 +4,7 @@ build-backend = "maturin"
+ 
+ [project]
+ name = "fathomdb"
+-version = "0.6.1"
++version = "0.7.1"
+ description = "FathomDB Python SDK — PyO3 binding to the fathomdb-engine Rust core"
+ readme = "README.md"
+ requires-python = ">=3.10"
+diff --git a/src/ts/package.json b/src/ts/package.json
+index 5a616fb..8af6596 100644
+--- a/src/ts/package.json
++++ b/src/ts/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "fathomdb",
+-  "version": "0.6.1",
++  "version": "0.7.1",
+   "description": "TypeScript SDK for FathomDB — napi-rs binding to fathomdb-engine",
+   "license": "Apache-2.0",
+   "repository": {
+
+exec
+/bin/bash -lc "git show HEAD:Cargo.toml && printf '\\n---FILE-END---\\n' && git show HEAD:src/python/pyproject.toml && printf '\\n---FILE-END---\\n' && git show HEAD:src/ts/package.json" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+[workspace]
+members = [
+    "src/rust/crates/fathomdb",
+    "src/rust/crates/fathomdb-cli",
+    "src/rust/crates/fathomdb-embedder",
+    "src/rust/crates/fathomdb-embedder-api",
+    "src/rust/crates/fathomdb-engine",
+    "src/rust/crates/fathomdb-napi",
+    "src/rust/crates/fathomdb-py",
+    "src/rust/crates/fathomdb-query",
+    "src/rust/crates/fathomdb-schema",
+]
+resolver = "2"
+
+[workspace.package]
+# Axis W lockstep version per dev/design/release.md § Version axes.
+# Inherited by every workspace crate via `version.workspace = true` EXCEPT
+# `fathomdb-embedder-api`, which opts out and carries an independent
+# Axis E version in its own `[package]` block (semver-stable trait
+# surface — bumps only when the trait changes).
+#
+# Axis E note: axis-E (`fathomdb-embedder-api`) was held on axis-W
+# lockstep through the 0.6.0 RC bootstrap (rc.1) and the GA cut so a
+# single sentinel-publish established registry presence for all 7 crates
+# plus embedder-api at `0.6.0`. Post-GA, axis-E is independent —
+# embedder-api bumps on its own cadence when the trait surface changes,
+# decoupled from axis-W bumps.
+version = "0.7.1"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/coreyt/fathomdb"
+rust-version = "1.95"
+
+[workspace.metadata.fathomdb]
+public_docs = ["docs"]
+internal_docs = ["dev"]
+
+# In-workspace sibling crate dependencies. `cargo publish` requires every
+# dep to carry a `version` requirement so the registry resolver can find
+# them once `path` is stripped at publish time. Centralizing the version
+# pins here keeps the release substrate (`scripts/set-version.sh`) editing
+# one location per axis, not N call-sites.
+#
+# Axis W entries are bumped lockstep with [workspace.package].version.
+# Axis E (fathomdb-embedder-api) carries its independent version per
+# dev/design/release.md § Version axes.
+[workspace.dependencies]
+fathomdb              = { path = "src/rust/crates/fathomdb",              version = "0.7.1" }
+fathomdb-embedder     = { path = "src/rust/crates/fathomdb-embedder",     version = "0.7.1" }
+fathomdb-embedder-api = { path = "src/rust/crates/fathomdb-embedder-api", version = "0.6.0" }
+fathomdb-engine       = { path = "src/rust/crates/fathomdb-engine",       version = "0.7.1" }
+fathomdb-query        = { path = "src/rust/crates/fathomdb-query",        version = "0.7.1" }
+fathomdb-schema       = { path = "src/rust/crates/fathomdb-schema",       version = "0.7.1" }
+
+---FILE-END---
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "fathomdb"
+version = "0.7.1"
+description = "FathomDB Python SDK — PyO3 binding to the fathomdb-engine Rust core"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=8", "hypothesis>=6", "maturin>=1.7,<2", "pyyaml>=6"]
+lint = ["ruff>=0.6"]
+typecheck = ["pyright>=1.1.380"]
+dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.6", "pyright>=1.1.380", "maturin>=1.7,<2", "pyyaml>=6"]
+
+[tool.maturin]
+manifest-path = "../rust/crates/fathomdb-py/Cargo.toml"
+module-name = "fathomdb._fathomdb"
+python-source = "."
+# EU-6 FIX-1: this list is what BOTH editable installs (`pip install -e .`,
+# `maturin develop`) AND the release workflow's `PyO3/maturin-action`
+# inherit unless they pass an explicit `--features` override. Therefore
+# it must match the SHIPPED feature surface exactly:
+#
+#   * `pyo3/extension-module` — required for the abi3 extension build.
+#   * `default-embedder` — kept ON so editable installs have parity with
+#     the shipped wheel (the `use_default_embedder=True` opt-in must
+#     work against `pip install -e .` without any extra step).
+#
+# `test-hooks` is intentionally NOT listed here: it is dev-only (exposes
+# `_write_vector_for_test` etc. on `Engine`) and would leak onto every
+# wheel `release.yml`'s build-python job emits to PyPI. Tests that need
+# the hook surface (`test_use_default_embedder.py`, `test_ffi_safety.py`,
+# the AC-067 force-panic probe) trigger a session-scoped pytest fixture
+# in `tests/conftest.py` that runs
+#   `maturin develop --features pyo3/extension-module,test-hooks,default-embedder`
+# before the suite. The release workflow's `args:` pins its own explicit
+# feature list, so this file never gates the shipped artifact.
+features = ["pyo3/extension-module", "default-embedder"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pyright]
+include = ["fathomdb", "tests"]
+typeCheckingMode = "standard"
+pythonVersion = "3.10"
+venvPath = "../.."
+venv = ".venv"
+
+---FILE-END---
+{
+  "name": "fathomdb",
+  "version": "0.7.1",
+  "description": "TypeScript SDK for FathomDB — napi-rs binding to fathomdb-engine",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/coreyt/fathomdb"
+  },
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "fathomdb.*.node"
+  ],
+  "scripts": {
+    "build:native": "napi build --platform --release --cargo-cwd ../rust/crates/fathomdb-napi --features default-embedder --js false",
+    "build:native:debug": "napi build --platform --cargo-cwd ../rust/crates/fathomdb-napi --features test-hooks,default-embedder --js false",
+    "build": "npm run build:native && tsc -p tsconfig.build.json",
+    "build:debug": "npm run build:native:debug && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "npm run build:native:debug && tsc -p tsconfig.json && node --test dist/tests/*.test.js"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^2.18.4",
+    "@types/node": "^25.6.0",
+    "typescript": "^5.8.3"
+  },
+  "napi": {
+    "name": "fathomdb",
+    "triples": {
+      "defaults": true,
+      "additional": []
+    }
+  }
+}
+
+codex
+I have the touched manifests and release-note diff. I’m checking the lockfile/package graph next to make sure the claimed fix is complete and didn’t leave a second version split behind.
+exec
+/bin/bash -lc "rg -n '"'^name = "fathomdb(|-cli|-embedder|-embedder-api|-engine|-napi|-py|-query|-schema)"|''^version = "0'"\\.[67]\\.[0-9]+\"' Cargo.lock" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+351:version = "0.6.3"
+397:version = "0.6.9"
+589:version = "0.6.0"
+845:version = "0.6.1"
+945:name = "fathomdb"
+946:version = "0.7.1"
+952:name = "fathomdb-cli"
+953:version = "0.7.1"
+963:name = "fathomdb-embedder"
+964:version = "0.7.1"
+982:name = "fathomdb-embedder-api"
+983:version = "0.6.0"
+986:name = "fathomdb-engine"
+987:version = "0.7.1"
+1004:name = "fathomdb-napi"
+1005:version = "0.7.1"
+1020:name = "fathomdb-py"
+1021:version = "0.7.1"
+1032:name = "fathomdb-query"
+1033:version = "0.7.1"
+1039:name = "fathomdb-schema"
+1040:version = "0.7.1"
+1061:version = "0.7.0"
+1470:version = "0.7.0"
+1663:version = "0.6.3"
+2218:version = "0.6.5"
+2514:version = "0.6.4"
+2757:version = "0.7.0"
+2918:version = "0.6.3"
+3018:version = "0.6.0"
+3051:version = "0.7.0"
+3852:version = "0.6.3"
+
+exec
+/bin/bash -lc 'git diff 8241ab0..HEAD --unified=8 -- CHANGELOG.md docs/embedder.md' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 715923a..954d665 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -122,26 +122,27 @@ held locally until PR-4. Ledger: `dev/plans/runs/STATUS-release-hardening.md`.
+   ~147 ms p50 (synthetic 384-d) and 1M extrapolates to ~1.5 s — i.e. the 80 ms
+   p50 budget is not met above ~50k. The ANN index is the named post-1.0
+   (pre-2.1) follow-up, tracked in `dev/design/ann-index-vec0.md`.
+ - **1M real-corpus recall/latency not freshly measured.** ~166 h seed makes it
+   infeasible on this hardware; 0.937 @ N=7,667 is treated as an upper-ish bound
+   (recall decreases slowly with N) and the 1M latency tier is an O(N)
+   extrapolation off the 0.7.0 W4.1 anchor, not a fresh run.
+ 
+-## 0.7.1 - unreleased
++## 0.7.1 - 2026-06-01
+ 
+ EMBEDDER-UNDEFER: the default embedder is no longer deferred. fathomdb now
+ ships a real in-process default embedder (`BAAI/bge-small-en-v1.5`, 384d, via
+ `candle-transformers`), opt-in per binding, feeding the 0.7.0 sign-bit +
+-f32-rerank retrieval pipeline with mean-centering. Date/tag intentionally
+-unset: the real-corpus recall floor (`AC013B_RECALL_FLOOR`) re-derivation and
+-canonical N=1M acceptance validation are owned by the 0.7.2 RELEASE-HARDENING
+-campaign; the `v0.7.1` tag/push is cut there. See
+-`dev/plans/0.7.1-implementation.md`.
++f32-rerank retrieval pipeline with mean-centering. The tag was intentionally
++held until the 0.7.2 RELEASE-HARDENING campaign re-derived the real-corpus
++recall floor (`AC013B_RECALL_FLOOR`): that work found the apparent 0.828 recall
++"gap" was a measurement artifact, the corrected ANN-fidelity number is 0.937,
++and the 0.90 floor holds (see the 0.7.2 "Changed" section). `v0.7.1` is cut and
++published here alongside `v0.7.0`. See `dev/plans/0.7.1-implementation.md`.
+ 
+ ### Added
+ 
+ - **Default embedder (opt-in).** `BAAI/bge-small-en-v1.5` (384d) runs in
+   process via `candle-transformers`; WordPiece tokenization (truncated to 512
+   tokens) → mean-pool → L2-norm → mean-centering → sign-bit quantization →
+   bit-KNN (K=192) → f32 rerank → top-10. Opt in with Python
+   `Engine.open(path, use_default_embedder=True)` or TypeScript
+@@ -207,27 +208,31 @@ campaign; the `v0.7.1` tag/push is cut there. See
+   body-string ground truth). The corrected ANN-fidelity number is **0.937 (CI
+   0.913–0.957)** and the 0.90 floor HOLDS; see the 0.7.2 "Changed" section and
+   `dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md`. Do not cite the 0.828
+   number; it is superseded.
+ - **Topic-drift mean.** Because the mean is pinned on the first 256 ingested
+   docs and never recomputed, a workspace whose first 256 docs are
+   unrepresentative may under-center. Remedy is reindex (a later campaign).
+ - **Migration.** Workspaces previously opened with the `fathomdb-noop` profile
+-  fail closed when re-opened with the default embedder (identity mismatch, by
+-  design). The remedy is wipe-and-rewrite; there is no in-place swap.
++  (0.6.x / 0.7.0) fail closed when re-opened with the default embedder (identity
++  mismatch, by design per `ADR-0.6.0-vector-identity-embedder-owned` +
++  `ADR-0.8.0-embedder-identity-change-workflow`). The remedy is wipe-and-rewrite;
++  there is no in-place swap.
+ 
+-## 0.7.0 - unreleased
++## 0.7.0 - 2026-06-01
+ 
+ PERF-VECTOR-QUANT (PVQ). A perf-focused release line whose load-bearing change
+ is **binary vector quantization + f32 rerank** to bring vector retrieval latency
+ (AC-013) within budget. The workspace was bumped to `0.7.0` (`38d5f4f`) and a
+-local `v0.7.0` tag was cut, **but the tag is HELD locally and not pushed** —
+-0.7.2 PR-4 pushes `main` and both the `v0.7.0` and `v0.7.1` tags together. Do
+-not treat 0.7.0 as shipped. AC-013b recall was held OPEN at 0.7.0 ship
++local `v0.7.0` tag was cut, then **held unpushed pending 0.7.1's embedder work**
++(per the 2026-05-27 instruction). It is published here together with `v0.7.1` so
++the release narrative is coherent: 0.7.0 ships the latency win; 0.7.1 ships the
++default embedder that finally lets recall be measured on real text. AC-013b
++recall was held OPEN at 0.7.0 ship
+ (synthetic isotropic fixture cannot reach the floor; real-embedder validation
+ deferred to 0.7.1). Ledger: `dev/plans/runs/STATUS-perf-vector-quant.md`;
+ decision: `ADR-0.7.0-vector-binary-quant.md`.
+ 
+ ### Added
+ 
+ - **Binary vector quantization (Pack 1).** `vector_default` gains a sibling
+   `embedding_bin bit[768]` column computed via sqlite-vec `vec_quantize_binary`
+@@ -245,24 +250,38 @@ decision: `ADR-0.7.0-vector-binary-quant.md`.
+   correct shape for real workloads (single-kind AC-013 fixture sees no benefit;
+   bundled to avoid a second migration).
+ - **Two-phase query path (Pack 2).** `read_search_in_tx` replaced the
+   single-phase f32 brute-force scan with two-phase **bit-KNN
+   (`TOP_K_BIT_CANDIDATES`, K=64 at 0.7.0; raised to 192 in 0.7.1) + f32 rerank
+   via `vec_distance_l2`**, in a single Deferred read transaction. Commit
+   `26ef3dc`.
+ - **Real-corpus test corpora (CORPUS-1..4).** ~7,667-doc multi-source corpus
+-  under `data/corpus-data/` (CNN/DailyMail, Enron, QMSum, EnronQA, synthetic
++  with raw source assets under `data/corpus-data/raw/` (CNN/DailyMail, Enron,
++  QMSum, EnronQA, synthetic
+   notes/todos/daily-logs) + cross-doc chain generator + ingest harness +
+   search-validation gates. Commits across `5c1e92a`..`d9a219d`.
+ - **New perf-gates recall test.** `ac_013b_recall_at_10_floor` asserts
+   recall@10 ≥ 0.90 against in-test f32 brute-force ground truth (`d468999`).
+ 
+ ### Changed
+ 
++- **AC-013 latency closed (the load-bearing win).** Replacing the single-phase
++  f32 brute-force scan with two-phase bit-KNN + f32 rerank (plus the
++  `4a95cfd` batch-collapse fix below) brought AC-013 well within budget: at the
++  dev-box anchor, p50 fell from the W4.1 single-phase 2048 ms / p99 2327 ms (at
++  N=1M) to p50 12 ms / p99 16 ms (post-batch-fix), and the scanner fix below cut
++  the AC-013 seed ~11×. (These are dev-box figures; canonical N=1M validation
++  was deferred and later reframed to a tiered, local-measurement posture in
++  0.7.2 PR-3 — see the 0.7.2 "Changed" section.)
++- **AC-019 mixed-retrieval stress budget maintained.** The two-phase path also
++  brought the AC-019 stress tail within budget at the dev-box anchor (p99 8388 ms
++  at N=1M W4.1 → 131 ms, under the 175 ms dev-box bound). The AC-019 budget was
++  later restructured in 0.7.2 PR-3 (synthetic gate report-only; real-corpus
++  harness is the asserting signal).
+ - **AC-013 latency budget re-pinned to 80 / 300 ms** (`AC013_BUDGET_P50/P99`,
+   `d468999`), superseding the 50 / 200 ms unindexed-path values. Tracked in
+   `ADR-0.7.0-text-query-latency-gates-revised.md`.
+ - **Projection scanner throughput fix** (`53a270d`): `PROJECTION_INFLIGHT_LIMIT`
+   raised 8→32 and the dispatcher now fills the full inflight budget per scan
+   cycle (was one job per cycle). Dev-box AC-013 seed dropped ~11× (28.1 s → 2.5 s
+   at N=10K).
+ 
+diff --git a/docs/embedder.md b/docs/embedder.md
+index 89860a7..ebf4048 100644
+--- a/docs/embedder.md
++++ b/docs/embedder.md
+@@ -1,20 +1,21 @@
+ # Default Embedder
+ 
+ FathomDB can embed your documents for you with a built-in, in-process embedder,
+ so you do not have to wire up an embedding model yourself. It is **opt-in**: a
+ fresh engine has no embedder configured and vector writes fail with
+ `EmbedderNotConfigured` until you either enable the default embedder or supply
+ your own (Rust only, today).
+ 
+-> Status: the default embedder ships in 0.7.1. The real-corpus recall floor and
+-> full-scale acceptance validation are being finalized in the 0.7.2 hardening
+-> release — see [Caveats](#caveats-and-limitations). Treat the retrieval-quality
+-> numbers in this release as preliminary.
++> Status: the default embedder ships in 0.7.1. The real-corpus recall floor was
++> re-derived in the 0.7.2 hardening release: the apparent recall "gap" seen
++> during 0.7.1 scouting was a measurement artifact, the corrected ANN-fidelity
++> recall@10 is **0.937** on the reference corpus, and the 0.90 floor holds — see
++> [Caveats](#caveats-and-limitations).
+ 
+ ## What it is
+ 
+ | | |
+ |---|---|
+ | Model | `BAAI/bge-small-en-v1.5` |
+ | Dimensions | 384 |
+ | Runtime | `candle-transformers` BERT, pure-Rust, in process (no Python, no sidecar) |
+@@ -104,21 +105,27 @@ pinned in the workspace, and not silently recomputed thereafter.
+ A consequence worth knowing: if the **first 256 documents** you ingest are not
+ representative of the rest of your corpus (for example, you load one topic
+ first and pivot later), the pinned mean can be skewed and retrieval quality may
+ suffer. The remedy is to reindex; an automatic reindex/refresh path is planned
+ for a later release.
+ 
+ ## Caveats and limitations
+ 
+-- **Retrieval quality is still being validated.** In 0.7.1, dev-box measurement
+-  over the reference corpus put recall@10 around 0.83 — below the 0.90 figure
+-  used by the synthetic test fixture. The real-corpus recall floor and
+-  full-scale (N=1M) acceptance validation are being finalized in 0.7.2. Do not
+-  treat a specific recall number from this release as final.
++- **Recall — corrected in 0.7.2.** Dev-box scouting during 0.7.1 measured
++  recall@10 around 0.83 over the reference corpus, which looked like it was below
++  the 0.90 floor. The 0.7.2 hardening work showed that 0.83 was a **measurement
++  artifact** (exclude-after-top-10 plus body-string ground truth over a corpus
++  with duplicate bodies), not an engine deficiency. The corrected ANN-fidelity
++  measurement — how faithfully the 1-bit sign-quant index reproduces the same
++  model's exact f32 top-10 — is **recall@10 = 0.937** (95% CI 0.913–0.957) on the
++  real bge-small embedder (N=7,667, K=192, mean-centering), so the **0.90 floor
++  holds**. This is an ANN/quantization-fidelity number, not an IR-relevance
++  number. A full-scale N=1M run remains infeasible on commodity hardware; 0.937
++  at N≈7.7k is treated as a near-upper bound (recall declines slowly with N).
+ - **Topic-drift mean** (see above): pinned on the first 256 docs; reindex to
+   refresh.
+ - **Custom Python/TypeScript embedders** are deferred to a later release; the
+   0.7.1 binding surface is binary (default-on or none).
+ 
+ ## Upgrading an existing workspace
+ 
+ A workspace that was previously opened **without** the default embedder recorded
+
+codex
+The manifest-side fix looks present. I’m checking one last release-notes detail now: that the new wording still preserves the held-then-published 0.7.0/0.7.1 narrative and leaves 0.7.2 explicitly unreleased.
+exec
+/bin/bash -lc "git show HEAD:CHANGELOG.md | sed -n '90,150p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+  `AC019_REPORT_ONLY`). The synthetic isotropic fixture cannot meet the
+  `max(baseline_p99 × 10, 150 ms)` bound — a property of the synthetic data
+  (instant embed → unrealistically fast baseline → too-tight 10× bound), not the
+  engine. The asserting AC-019 signal lives in the real-corpus harness
+  `eu7_real_corpus_ac.rs`, which PASSES at the 10k tier (clean run 343 ms <
+  405 ms bound). AC-013 keeps its hard 10k-tier gate.
+- **Architecture/design/ADR docs aligned to shipped 0.7.x reality (PR-1,
+  `aebf959`).** Doc-drift sweep: 10 HITL-approved corrections across design,
+  architecture, and ADR docs. Docs-only.
+
+### Deferred
+
+- **Automatic in-ingest mean-drift detector → 0.8.x** (PR-2 family,
+  `64f72e0`/`2ef8c3d`). The adaptive mean-recompute drift detector was built and
+  ratified, then **carved out** because its sole justification (recall) collapsed
+  with the measurement-artifact finding and its benefit is unmeasured. It is
+  parked for 0.8.x behind a RED guard (`dev/plans/prompts/0.8.x-auto-mean-drift-
+  DEFERRED.md`), not silently dropped. The **manual doctor verb** (operator-
+  triggered mean recompute) ships.
+- **AC-013/AC-019 at 100k and 1M corpus** — tracked, not gated, pending a
+  post-1.0 ANN index (HNSW/IVF/DiskANN) on the vec0 table to take per-query cost
+  from O(N) to O(log N)/O(√N). (See Known limitations.)
+
+### Removed
+
+(none)
+
+### Known limitations
+
+- **No ANN index — vector search is O(N).** The vec0 bit-KNN candidate stage is
+  a per-query linear scan over all N rows; there is no HNSW/IVF/DiskANN index.
+  The 10k latency tier is met (real bge p50 36 / p99 49 ms at N≈7,667); 100k is
+  ~147 ms p50 (synthetic 384-d) and 1M extrapolates to ~1.5 s — i.e. the 80 ms
+  p50 budget is not met above ~50k. The ANN index is the named post-1.0
+  (pre-2.1) follow-up, tracked in `dev/design/ann-index-vec0.md`.
+- **1M real-corpus recall/latency not freshly measured.** ~166 h seed makes it
+  infeasible on this hardware; 0.937 @ N=7,667 is treated as an upper-ish bound
+  (recall decreases slowly with N) and the 1M latency tier is an O(N)
+  extrapolation off the 0.7.0 W4.1 anchor, not a fresh run.
+
+## 0.7.1 - 2026-06-01
+
+EMBEDDER-UNDEFER: the default embedder is no longer deferred. fathomdb now
+ships a real in-process default embedder (`BAAI/bge-small-en-v1.5`, 384d, via
+`candle-transformers`), opt-in per binding, feeding the 0.7.0 sign-bit +
+f32-rerank retrieval pipeline with mean-centering. The tag was intentionally
+held until the 0.7.2 RELEASE-HARDENING campaign re-derived the real-corpus
+recall floor (`AC013B_RECALL_FLOOR`): that work found the apparent 0.828 recall
+"gap" was a measurement artifact, the corrected ANN-fidelity number is 0.937,
+and the 0.90 floor holds (see the 0.7.2 "Changed" section). `v0.7.1` is cut and
+published here alongside `v0.7.0`. See `dev/plans/0.7.1-implementation.md`.
+
+### Added
+
+- **Default embedder (opt-in).** `BAAI/bge-small-en-v1.5` (384d) runs in
+  process via `candle-transformers`; WordPiece tokenization (truncated to 512
+  tokens) → mean-pool → L2-norm → mean-centering → sign-bit quantization →
+  bit-KNN (K=192) → f32 rerank → top-10. Opt in with Python
+  `Engine.open(path, use_default_embedder=True)` or TypeScript
+  `engineOpen(path, { useDefaultEmbedder: true })`; default is OFF (no embedder
+  configured, vector writes fail with `EmbedderNotConfigured` as before).
+
+exec
+/bin/bash -lc "git show HEAD:Cargo.lock | sed -n '940,1045p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+version = "2.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f1f227452a390804cdb637b74a86990f2a7d7ba4b7d5693aac9b4dd6defd8d6"
+
+[[package]]
+name = "fathomdb"
+version = "0.7.1"
+dependencies = [
+ "fathomdb-engine",
+]
+
+[[package]]
+name = "fathomdb-cli"
+version = "0.7.1"
+dependencies = [
+ "clap",
+ "fathomdb",
+ "fathomdb-embedder",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "fathomdb-embedder"
+version = "0.7.1"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "candle-transformers",
+ "dirs",
+ "fathomdb-embedder-api",
+ "fs2",
+ "httpmock",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokenizers 0.20.4",
+ "ureq",
+]
+
+[[package]]
+name = "fathomdb-embedder-api"
+version = "0.6.0"
+
+[[package]]
+name = "fathomdb-engine"
+version = "0.7.1"
+dependencies = [
+ "fathomdb-embedder",
+ "fathomdb-embedder-api",
+ "fathomdb-query",
+ "fathomdb-schema",
+ "jsonschema",
+ "libc",
+ "proptest",
+ "rusqlite",
+ "serde_json",
+ "sha2",
+ "sqlite-vec",
+ "tempfile",
+]
+
+[[package]]
+name = "fathomdb-napi"
+version = "0.7.1"
+dependencies = [
+ "fathomdb-embedder",
+ "fathomdb-embedder-api",
+ "fathomdb-engine",
+ "fathomdb-schema",
+ "napi",
+ "napi-build",
+ "napi-derive",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "fathomdb-py"
+version = "0.7.1"
+dependencies = [
+ "fathomdb-embedder",
+ "fathomdb-embedder-api",
+ "fathomdb-engine",
+ "fathomdb-schema",
+ "pyo3",
+ "serde_json",
+]
+
+[[package]]
+name = "fathomdb-query"
+version = "0.7.1"
+dependencies = [
+ "proptest",
+]
+
+[[package]]
+name = "fathomdb-schema"
+version = "0.7.1"
+dependencies = [
+ "proptest",
+ "rusqlite",
+ "sqlite-vec",
+]
+
+exec
+/bin/bash -lc "rg -n '"'^## 0'"\\.7\\.2' CHANGELOG.md" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+15:## 0.7.2 - unreleased (IN PROGRESS)
+
+codex
+The original pass-1 version-pin issue is resolved. I found one separate release-state mismatch in the same diff, and I’m pulling exact line references before I give the verdict.
+exec
+/bin/bash -lc "nl -ba Cargo.toml | sed -n '20,60p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+    20	# surface — bumps only when the trait changes).
+    21	#
+    22	# Axis E note: axis-E (`fathomdb-embedder-api`) was held on axis-W
+    23	# lockstep through the 0.6.0 RC bootstrap (rc.1) and the GA cut so a
+    24	# single sentinel-publish established registry presence for all 7 crates
+    25	# plus embedder-api at `0.6.0`. Post-GA, axis-E is independent —
+    26	# embedder-api bumps on its own cadence when the trait surface changes,
+    27	# decoupled from axis-W bumps.
+    28	version = "0.7.1"
+    29	edition = "2021"
+    30	license = "Apache-2.0"
+    31	repository = "https://github.com/coreyt/fathomdb"
+    32	rust-version = "1.95"
+    33	
+    34	[workspace.metadata.fathomdb]
+    35	public_docs = ["docs"]
+    36	internal_docs = ["dev"]
+    37	
+    38	# In-workspace sibling crate dependencies. `cargo publish` requires every
+    39	# dep to carry a `version` requirement so the registry resolver can find
+    40	# them once `path` is stripped at publish time. Centralizing the version
+    41	# pins here keeps the release substrate (`scripts/set-version.sh`) editing
+    42	# one location per axis, not N call-sites.
+    43	#
+    44	# Axis W entries are bumped lockstep with [workspace.package].version.
+    45	# Axis E (fathomdb-embedder-api) carries its independent version per
+    46	# dev/design/release.md § Version axes.
+    47	[workspace.dependencies]
+    48	fathomdb              = { path = "src/rust/crates/fathomdb",              version = "0.7.1" }
+    49	fathomdb-embedder     = { path = "src/rust/crates/fathomdb-embedder",     version = "0.7.1" }
+    50	fathomdb-embedder-api = { path = "src/rust/crates/fathomdb-embedder-api", version = "0.6.0" }
+    51	fathomdb-engine       = { path = "src/rust/crates/fathomdb-engine",       version = "0.7.1" }
+    52	fathomdb-query        = { path = "src/rust/crates/fathomdb-query",        version = "0.7.1" }
+    53	fathomdb-schema       = { path = "src/rust/crates/fathomdb-schema",       version = "0.7.1" }
+
+exec
+/bin/bash -lc "nl -ba Cargo.lock | sed -n '943,1045p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+   943	
+   944	[[package]]
+   945	name = "fathomdb"
+   946	version = "0.7.1"
+   947	dependencies = [
+   948	 "fathomdb-engine",
+   949	]
+   950	
+   951	[[package]]
+   952	name = "fathomdb-cli"
+   953	version = "0.7.1"
+   954	dependencies = [
+   955	 "clap",
+   956	 "fathomdb",
+   957	 "fathomdb-embedder",
+   958	 "serde_json",
+   959	 "tempfile",
+   960	]
+   961	
+   962	[[package]]
+   963	name = "fathomdb-embedder"
+   964	version = "0.7.1"
+   965	dependencies = [
+   966	 "candle-core",
+   967	 "candle-nn",
+   968	 "candle-transformers",
+   969	 "dirs",
+   970	 "fathomdb-embedder-api",
+   971	 "fs2",
+   972	 "httpmock",
+   973	 "serde_json",
+   974	 "sha2",
+   975	 "tempfile",
+   976	 "thiserror 1.0.69",
+   977	 "tokenizers 0.20.4",
+   978	 "ureq",
+   979	]
+   980	
+   981	[[package]]
+   982	name = "fathomdb-embedder-api"
+   983	version = "0.6.0"
+   984	
+   985	[[package]]
+   986	name = "fathomdb-engine"
+   987	version = "0.7.1"
+   988	dependencies = [
+   989	 "fathomdb-embedder",
+   990	 "fathomdb-embedder-api",
+   991	 "fathomdb-query",
+   992	 "fathomdb-schema",
+   993	 "jsonschema",
+   994	 "libc",
+   995	 "proptest",
+   996	 "rusqlite",
+   997	 "serde_json",
+   998	 "sha2",
+   999	 "sqlite-vec",
+  1000	 "tempfile",
+  1001	]
+  1002	
+  1003	[[package]]
+  1004	name = "fathomdb-napi"
+  1005	version = "0.7.1"
+  1006	dependencies = [
+  1007	 "fathomdb-embedder",
+  1008	 "fathomdb-embedder-api",
+  1009	 "fathomdb-engine",
+  1010	 "fathomdb-schema",
+  1011	 "napi",
+  1012	 "napi-build",
+  1013	 "napi-derive",
+  1014	 "serde",
+  1015	 "serde_json",
+  1016	 "tokio",
+  1017	]
+  1018	
+  1019	[[package]]
+  1020	name = "fathomdb-py"
+  1021	version = "0.7.1"
+  1022	dependencies = [
+  1023	 "fathomdb-embedder",
+  1024	 "fathomdb-embedder-api",
+  1025	 "fathomdb-engine",
+  1026	 "fathomdb-schema",
+  1027	 "pyo3",
+  1028	 "serde_json",
+  1029	]
+  1030	
+  1031	[[package]]
+  1032	name = "fathomdb-query"
+  1033	version = "0.7.1"
+  1034	dependencies = [
+  1035	 "proptest",
+  1036	]
+  1037	
+  1038	[[package]]
+  1039	name = "fathomdb-schema"
+  1040	version = "0.7.1"
+  1041	dependencies = [
+  1042	 "proptest",
+  1043	 "rusqlite",
+  1044	 "sqlite-vec",
+  1045	]
+
+exec
+/bin/bash -lc "nl -ba src/python/pyproject.toml | sed -n '1,20p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+     1	[build-system]
+     2	requires = ["maturin>=1.7,<2"]
+     3	build-backend = "maturin"
+     4	
+     5	[project]
+     6	name = "fathomdb"
+     7	version = "0.7.1"
+     8	description = "FathomDB Python SDK — PyO3 binding to the fathomdb-engine Rust core"
+     9	readme = "README.md"
+    10	requires-python = ">=3.10"
+    11	license = { text = "Apache-2.0" }
+    12	dependencies = []
+    13	
+    14	[project.optional-dependencies]
+    15	test = ["pytest>=8", "hypothesis>=6", "maturin>=1.7,<2", "pyyaml>=6"]
+    16	lint = ["ruff>=0.6"]
+    17	typecheck = ["pyright>=1.1.380"]
+    18	dev = ["pytest>=8", "hypothesis>=6", "ruff>=0.6", "pyright>=1.1.380", "maturin>=1.7,<2", "pyyaml>=6"]
+    19	
+    20	[tool.maturin]
+
+exec
+/bin/bash -lc "nl -ba src/ts/package.json | sed -n '1,12p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+     1	{
+     2	  "name": "fathomdb",
+     3	  "version": "0.7.1",
+     4	  "description": "TypeScript SDK for FathomDB — napi-rs binding to fathomdb-engine",
+     5	  "license": "Apache-2.0",
+     6	  "repository": {
+     7	    "type": "git",
+     8	    "url": "https://github.com/coreyt/fathomdb"
+     9	  },
+    10	  "type": "module",
+    11	  "main": "dist/index.js",
+    12	  "types": "dist/index.d.ts",
+
+exec
+/bin/bash -lc "nl -ba CHANGELOG.md | sed -n '126,235p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+   126	  infeasible on this hardware; 0.937 @ N=7,667 is treated as an upper-ish bound
+   127	  (recall decreases slowly with N) and the 1M latency tier is an O(N)
+   128	  extrapolation off the 0.7.0 W4.1 anchor, not a fresh run.
+   129	
+   130	## 0.7.1 - 2026-06-01
+   131	
+   132	EMBEDDER-UNDEFER: the default embedder is no longer deferred. fathomdb now
+   133	ships a real in-process default embedder (`BAAI/bge-small-en-v1.5`, 384d, via
+   134	`candle-transformers`), opt-in per binding, feeding the 0.7.0 sign-bit +
+   135	f32-rerank retrieval pipeline with mean-centering. The tag was intentionally
+   136	held until the 0.7.2 RELEASE-HARDENING campaign re-derived the real-corpus
+   137	recall floor (`AC013B_RECALL_FLOOR`): that work found the apparent 0.828 recall
+   138	"gap" was a measurement artifact, the corrected ANN-fidelity number is 0.937,
+   139	and the 0.90 floor holds (see the 0.7.2 "Changed" section). `v0.7.1` is cut and
+   140	published here alongside `v0.7.0`. See `dev/plans/0.7.1-implementation.md`.
+   141	
+   142	### Added
+   143	
+   144	- **Default embedder (opt-in).** `BAAI/bge-small-en-v1.5` (384d) runs in
+   145	  process via `candle-transformers`; WordPiece tokenization (truncated to 512
+   146	  tokens) → mean-pool → L2-norm → mean-centering → sign-bit quantization →
+   147	  bit-KNN (K=192) → f32 rerank → top-10. Opt in with Python
+   148	  `Engine.open(path, use_default_embedder=True)` or TypeScript
+   149	  `engineOpen(path, { useDefaultEmbedder: true })`; default is OFF (no embedder
+   150	  configured, vector writes fail with `EmbedderNotConfigured` as before).
+   151	  Caller-supplied embedders remain available in Rust; custom Python/TS embedder
+   152	  bridges are deferred to 0.8.x.
+   153	- **First-use weight download (visible, verified).** With the default embedder
+   154	  enabled, first use downloads the pinned weight set from a fixed Hugging Face
+   155	  URL set, caches it under the platform cache directory, and verifies every
+   156	  file by sha256 (no trust-on-first-use). The activity is surfaced in
+   157	  `OpenReport.embedder_events` (per-file url + bytes + sha256 + cache path) and
+   158	  `OpenReport.embedder_download_ms`. `HF_TOKEN` is honored for token-gated
+   159	  mirrors; public bge-small needs none. This is the scoped opt-in exception to
+   160	  NEED-017 / REQ-033 (see `ADR-0.7.1-default-embedder-weight-fetch`).
+   161	- **Mean-centering.** A per-workspace corpus-mean f32 vector is stored in
+   162	  `_fathomdb_embedder_profiles.mean_vec` and subtracted before sign-bit
+   163	  quantization (the f32 rerank stays un-centered). It is pinned once at the
+   164	  first 256 ingested vectors and never silently recomputed.
+   165	- **Bindings.** Python `use_default_embedder` / TypeScript `useDefaultEmbedder`
+   166	  open flags; `OpenReport` gains `embedder_download_ms`, `embedder_events`
+   167	  (typed union), `embedder_mean_centering_required`, `embedder_mean_vec_pinned`.
+   168	- **Docs.** `docs/embedder.md` user guide (opt-in, first-use download, cache,
+   169	  offline notes, caveats, migration).
+   170	
+   171	### Changed
+   172	
+   173	- `OpenReport.default_embedder` now reports the real bge-small identity
+   174	  (`fathomdb-bge-small-en-v1.5` / HF snapshot `5c38ec7c...` / dim 384) instead
+   175	  of the `fathomdb-noop` scaffold identity.
+   176	- Schema migration step 10 adds the nullable `mean_vec BLOB` column.
+   177	- Wheel / `.node` binary size: the `default-embedder` feature pulls in candle +
+   178	  tokenizers and the ~133 MB weight set is fetched at first use (not bundled).
+   179	  The feature is opt-in, so builds without it pay no size cost; a per-platform
+   180	  wheel-size gate guards regressions.
+   181	
+   182	### Fixed
+   183	
+   184	- **Mean-centering is now applied on the production write path.** Prior to this
+   185	  release the corpus-mean pin/apply only ran via an internal test seam; the
+   186	  async `engine.write` → projection path never pinned, so real ingests were
+   187	  sign-quantized un-centered. The pin + re-quantize now run inside the
+   188	  projection commit (serialized for cross-worker correctness), with an
+   189	  open-time recovery pin for crash-before-pin workspaces.
+   190	- **Embedder inputs over 512 tokens are truncated** instead of erroring. Long
+   191	  documents previously failed the BGE forward pass
+   192	  (`index-select invalid index 512`).
+   193	- **Projection workers are fault-isolated.** A panic inside an embedder no
+   194	  longer wedges the projection scheduler (`drain` could previously hang into a
+   195	  scheduler timeout); the faulted batch is recorded and the worker recovers.
+   196	
+   197	### Removed
+   198	
+   199	(none)
+   200	
+   201	### Known limitations
+   202	
+   203	- **Real-corpus recall caveat (SUPERSEDED in 0.7.2 — see below).** At 0.7.1
+   204	  measurement time, dev-box scouting over the 7,667-doc corpus measured
+   205	  recall@10 ~0.828 (95% CI ~0.80–0.86) — below the 0.90 floor — and the floor
+   206	  re-derivation + canonical validation were deferred to 0.7.2 (PR-2/PR-3).
+   207	  **This 0.828 was later shown to be a measurement artifact** (exclude-after +
+   208	  body-string ground truth). The corrected ANN-fidelity number is **0.937 (CI
+   209	  0.913–0.957)** and the 0.90 floor HOLDS; see the 0.7.2 "Changed" section and
+   210	  `dev/plans/runs/0.7.2-PR-2c-recall-rootcause.md`. Do not cite the 0.828
+   211	  number; it is superseded.
+   212	- **Topic-drift mean.** Because the mean is pinned on the first 256 ingested
+   213	  docs and never recomputed, a workspace whose first 256 docs are
+   214	  unrepresentative may under-center. Remedy is reindex (a later campaign).
+   215	- **Migration.** Workspaces previously opened with the `fathomdb-noop` profile
+   216	  (0.6.x / 0.7.0) fail closed when re-opened with the default embedder (identity
+   217	  mismatch, by design per `ADR-0.6.0-vector-identity-embedder-owned` +
+   218	  `ADR-0.8.0-embedder-identity-change-workflow`). The remedy is wipe-and-rewrite;
+   219	  there is no in-place swap.
+   220	
+   221	## 0.7.0 - 2026-06-01
+   222	
+   223	PERF-VECTOR-QUANT (PVQ). A perf-focused release line whose load-bearing change
+   224	is **binary vector quantization + f32 rerank** to bring vector retrieval latency
+   225	(AC-013) within budget. The workspace was bumped to `0.7.0` (`38d5f4f`) and a
+   226	local `v0.7.0` tag was cut, then **held unpushed pending 0.7.1's embedder work**
+   227	(per the 2026-05-27 instruction). It is published here together with `v0.7.1` so
+   228	the release narrative is coherent: 0.7.0 ships the latency win; 0.7.1 ships the
+   229	default embedder that finally lets recall be measured on real text. AC-013b
+   230	recall was held OPEN at 0.7.0 ship
+   231	(synthetic isotropic fixture cannot reach the floor; real-embedder validation
+   232	deferred to 0.7.1). Ledger: `dev/plans/runs/STATUS-perf-vector-quant.md`;
+   233	decision: `ADR-0.7.0-vector-binary-quant.md`.
+   234	
+   235	### Added
+
+exec
+/bin/bash -lc "nl -ba dev/plans/runs/STATUS-release-hardening.md | sed -n '46,52p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+    46	| — | PR-2(bc) | Recall floor + mean recompute family | **CLOSED / RESOLVED** | PR-2a | ratified | `…/prompts/0.7.2-PR-2bc-{reassessment,S1,S2,S3}.md` | S1 land-harness + S2 carve-auto-drift + S3 floor-reframe landed (`5b69568`/`2ef8c3d..d2c0bf4`/`78164b9`); PR-2c SHELVED. Floor HOLDS 0.90. See decision memo. |
+    47	| **1** | PR-1 | Architecture/design doc drift sweep | **CLOSED** | PR-0 | drift-list approved 2026-05-31 | `…/prompts/0.7.2-PR-1-doc-drift-sweep.md` | Audit→drift list (10 items, `4beca5b`)→HITL approved all→corrections `aebf959` + closure `10a0e24` on `main`. Codex **PASS** (`…/runs/0.7.2-PR-1-review-20260531T165936Z.md`). Docs-only; nothing pushed. |
+    48	| **2** | PR-9 | Embedder robustness (concurrent-embed safety + Invariant-5 watchdog) | **✅ CLOSED (`21f4df6`, local main, unpushed)** | PR-1 | diff+tests ✅ (HITL 2026-05-31) | `…/prompts/0.7.2-PR-9-embedder-robustness.md`; closure `…/runs/0.7.2-PR-9-output.json`; review `…/runs/0.7.2-PR-9-review-20260531T205810Z.md` | Watchdog (Invariant 5) + engine-side embed **serialization** (re-justified on SAFETY — throughput-neutral, candle global rayon pool; false "~13×" withdrawn) + **circuit breaker** keyed on concurrent **live embed threads** (bounds abandoned-thread leak for persistent AND intermittent hangs). RED→GREEN each. **codex 5 passes → PASS** (pass-4 BLOCK on the original consecutive-timeout breaker design was NOT overridden — redesigned to live-thread-count + intermittent regression test; pass-5 PASS). Tests: serialization 1/1, watchdog 5/5, eu5f 6/6, projection 12/12; release e2e seed N=2000 complete+correct. Uncommitted; **no push**. (`ac_007b` flake is PRE-EXISTING — fails at baseline `ff7b008`, unrelated to PR-9.) |
+    49	| **3** | PR-3 | Real-corpus latency/recall measurement + tiered ADR | **✅ CLOSED (`e00991f`, local main, unpushed)** | PR-2(bc), PR-9 | dispatch reframed to local (HITL 2026-06-01); budget HITL-locked tiered | `…/prompts/0.7.2-PR-3-canonical-ci-dispatch.md`; review `…/runs/0.7.2-PR-3-review-20260601T122419Z.md` | Commits `d9f9b65`→`68e1bf0`→`e00991f`. Codex pass-1 **BLOCK** (smoke could pass via FTS path) → FIXED (FTS-isolated smoke), NOT overridden; pass-2 re-review skipped per HITL → **PASS-by-inspection**. **Reframed (HITL):** real-embedder N=1M is infeasible on CI (~166 h seed) → heavy measurement is **local-only**; CI gets a fast read-path smoke (`perf_gates::ac_013_vector_read_path_smoke`). Budget is now **tiered (10k binding for 0.x/1.x; 100k/1M tracked post-1.0 ANN work)**. **10k tier MET** (AC-013 real bge p50 36/p99 49 @ N≈7667; recall@10 0.937 ≥ 0.90; AC-019 real 343 < 405 bound). Data: `…/runs/0.7.2-PR-3-perf-data.md`; ADR amended (AC-013/AC-019 tiered, HITL-locked); closure `…/runs/0.7.2-PR-3-output.json`. AC-019 idle-box item resolved (real 1201 ms = contention; clean real run 343 < 405). **Synthetic AC-019 is report-only** (HITL: synthetic data can't meet the baseline-relative bound; real-corpus path is the verdict). AC-013 keeps its hard 10k gate. Nothing pushed. |
+    50	| **4** | PR-4 | Release notes + **push v0.7.0 + v0.7.1** | **🔶 IN PROGRESS (authoring landed; awaiting HITL push gate)** | PR-1, PR-2(bc), PR-3 | **explicit push approval — irreversible** | `…/prompts/0.7.2-PR-4-release-notes-and-push.md` | CHANGELOG v0.7.0 + v0.7.1 finalized + dated 2026-06-01; `docs/embedder.md` recall caveat reframed to corrected 0.937; workspace bumped 0.7.0→0.7.1 (Axis W lockstep, 8 crates; Axis E embedder-api stays 0.6.0); `v0.7.1` tag pending on version-bump commit. Removal linter PASS. **STOPPED at HITL push gate — nothing pushed.** Final flip to CLOSED after push lands. |
+    51	
+    52	### Phase B — testing/perf hardening (after PR-4)
+
+codex
+1. `CONCERN`: the version-pin block is fixed, but the release-state wording is now internally inconsistent. [CHANGELOG.md](/home/coreyt/projects/fathomdb/CHANGELOG.md:130) and [CHANGELOG.md](/home/coreyt/projects/fathomdb/CHANGELOG.md:221) date `0.7.1` and `0.7.0` as released on `2026-06-01`, and [CHANGELOG.md](/home/coreyt/projects/fathomdb/CHANGELOG.md:139) says ``v0.7.1` is cut and published here alongside `v0.7.0``. But [STATUS-release-hardening.md](/home/coreyt/projects/fathomdb/dev/plans/runs/STATUS-release-hardening.md:50) still says PR-4 is `IN PROGRESS`, the `v0.7.1` tag is pending, and `nothing pushed`. Until the push/tag gate actually lands, one side of that story is overstating release state.
+
+The pass-1 BLOCK itself is resolved. [Cargo.toml](/home/coreyt/projects/fathomdb/Cargo.toml:28) has `[workspace.package].version = "0.7.1"`, and [Cargo.toml](/home/coreyt/projects/fathomdb/Cargo.toml:47) through [Cargo.toml](/home/coreyt/projects/fathomdb/Cargo.toml:53) move the Axis-W sibling pins to `0.7.1` while keeping `fathomdb-embedder-api` at `0.6.0`. [Cargo.lock](/home/coreyt/projects/fathomdb/Cargo.lock:945) through [Cargo.lock](/home/coreyt/projects/fathomdb/Cargo.lock:1040) show all workspace crates at `0.7.1` and `fathomdb-embedder-api` at `0.6.0`. [pyproject.toml](/home/coreyt/projects/fathomdb/src/python/pyproject.toml:7) and [package.json](/home/coreyt/projects/fathomdb/src/ts/package.json:3) are both `0.7.1`. The `0.828 -> 0.937` framing remains present, and `0.7.2` is still marked unreleased/in progress.
+
+Verdict: CONCERN
+tokens used
+55,022
+1. `CONCERN`: the version-pin block is fixed, but the release-state wording is now internally inconsistent. [CHANGELOG.md](/home/coreyt/projects/fathomdb/CHANGELOG.md:130) and [CHANGELOG.md](/home/coreyt/projects/fathomdb/CHANGELOG.md:221) date `0.7.1` and `0.7.0` as released on `2026-06-01`, and [CHANGELOG.md](/home/coreyt/projects/fathomdb/CHANGELOG.md:139) says ``v0.7.1` is cut and published here alongside `v0.7.0``. But [STATUS-release-hardening.md](/home/coreyt/projects/fathomdb/dev/plans/runs/STATUS-release-hardening.md:50) still says PR-4 is `IN PROGRESS`, the `v0.7.1` tag is pending, and `nothing pushed`. Until the push/tag gate actually lands, one side of that story is overstating release state.
+
+The pass-1 BLOCK itself is resolved. [Cargo.toml](/home/coreyt/projects/fathomdb/Cargo.toml:28) has `[workspace.package].version = "0.7.1"`, and [Cargo.toml](/home/coreyt/projects/fathomdb/Cargo.toml:47) through [Cargo.toml](/home/coreyt/projects/fathomdb/Cargo.toml:53) move the Axis-W sibling pins to `0.7.1` while keeping `fathomdb-embedder-api` at `0.6.0`. [Cargo.lock](/home/coreyt/projects/fathomdb/Cargo.lock:945) through [Cargo.lock](/home/coreyt/projects/fathomdb/Cargo.lock:1040) show all workspace crates at `0.7.1` and `fathomdb-embedder-api` at `0.6.0`. [pyproject.toml](/home/coreyt/projects/fathomdb/src/python/pyproject.toml:7) and [package.json](/home/coreyt/projects/fathomdb/src/ts/package.json:3) are both `0.7.1`. The `0.828 -> 0.937` framing remains present, and `0.7.2` is still marked unreleased/in progress.
+
+Verdict: CONCERN
