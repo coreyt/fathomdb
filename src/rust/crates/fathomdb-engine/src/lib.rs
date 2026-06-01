@@ -64,6 +64,20 @@ const REBUILD_DRAIN_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_PROVENANCE_ROW_CAP: u64 = 1_000_000;
 const PROJECTION_CURSOR_KEY: &str = "projection_cursor";
 const PROJECTION_WORKERS: usize = 2;
+/// PR-9 — ADR-0.6.0-embedder-protocol **Invariant 5** default per-`embed()`
+/// watchdog deadline. Every projection-path embed runs under this timeout;
+/// a hung embed surfaces `RuntimeEmbedderError::Timeout` (engaging the
+/// existing retry/failure path) rather than parking a worker forever. The
+/// EU-5f `catch_unwind` only catches *panics*; this catches *hangs*.
+const DEFAULT_EMBED_TIMEOUT_MS: u64 = 30_000;
+/// PR-9 — embed circuit-breaker threshold: the maximum number of watchdog
+/// embed threads allowed alive at once before the breaker latches and
+/// projection jobs fail fast (see `embed_circuit_open` / `live_embed_threads`).
+/// Healthy serialized operation keeps the live count at 0–1, so reaching this
+/// many concurrently-alive embed threads means timed-out embeds are piling up
+/// (a hung/wedged embedder); the breaker then caps the abandoned-thread leak
+/// at roughly this count.
+const DEFAULT_EMBED_CIRCUIT_THRESHOLD: u64 = 8;
 const PROJECTION_COMMIT_BATCH: usize = 16;
 // Each worker should be able to grab a full commit batch while another
 // worker has the same waiting in the queue. Below this, the dispatcher
@@ -160,6 +174,74 @@ struct ProjectionRuntimeShared {
     queue: Mutex<VecDeque<ProjectionJob>>,
     queue_cvar: Condvar,
     retry_delays_ms: Mutex<Vec<u64>>,
+    /// PR-9 — ADR-0.6.0-embedder-protocol Invariant 5 per-`embed()` watchdog
+    /// deadline (ms). Read lock-free on the projection hot path. Default
+    /// `DEFAULT_EMBED_TIMEOUT_MS` (30s); the test seam
+    /// `set_embed_timeout_ms_for_test` lowers it so the hanging-embedder
+    /// test need not wait 30s. A hung embed surfaces
+    /// `RuntimeEmbedderError::Timeout`, engaging the existing retry/failure
+    /// path in `run_projection_job`.
+    embed_timeout_ms: AtomicU64,
+    /// PR-9 — engine-side embed serialization guard. The pool runs
+    /// `PROJECTION_WORKERS` workers; this guard ensures the shared
+    /// `Arc<dyn Embedder>` is invoked by at most one worker at a time.
+    ///
+    /// Rationale is SAFETY, not throughput. The engine accepts arbitrary
+    /// caller-supplied embedders (the pyo3 / napi bridges, per ADR-0.6.0)
+    /// whose `embed` is `Sync` only by trait contract; many real impls (a
+    /// GIL-bound Python model, a non-reentrant native lib, an internal cache)
+    /// are not actually safe under concurrent calls. Serializing engine-side
+    /// makes the projection robust to embedders that are not truly
+    /// concurrency-safe, without the engine having to trust each impl. The
+    /// default `CandleBgeEmbedder` was shown safe under concurrent forwards
+    /// in the PR-9 pre-flight, so for it the guard is belt-and-suspenders.
+    ///
+    /// Throughput is ~neutral: `candle` fans every `BertModel::forward` onto a
+    /// single process-wide rayon pool, so two concurrent forwards merely
+    /// share that pool (trading per-embed latency, not aggregate work) rather
+    /// than getting 2x — serializing avoids some scheduler/cache thrash but is
+    /// not a large win. (An earlier "~13x" figure compared a debug-build
+    /// unserialized run against a release-build number and was withdrawn; a
+    /// PR-9 micro-benchmark put release embeds at ~14 ms short / ~960 ms for a
+    /// 512-token doc, watchdog overhead ~0.)
+    ///
+    /// Commit/IO stays parallel across workers (see `commit_gate`); this guard
+    /// wraps only the embed call. It is held by the worker across the watchdog
+    /// call and released here, so a timed-out (abandoned) embed frees it and
+    /// cannot stall the pool — the guard owns no data, so a panic-resumed
+    /// embed that poisons it is recovered via `into_inner`.
+    ///
+    /// Deliberate trade-off (codex PR-9 CONCERN-1, accepted): on the *timeout*
+    /// path the worker drops this guard while the abandoned detached embed
+    /// thread is still running lock-free, so serialization is briefly relaxed
+    /// until that thread finishes. This is the prescribed choice over holding
+    /// the guard inside the embed thread — which would let a genuinely-hung
+    /// embed hold it forever and deadlock the whole pool, exactly the wedge
+    /// ADR-0.6.0 Invariant 5 and this slice's spec forbid. Timeouts are the
+    /// fault path only; the embed circuit breaker (`embed_circuit_open`) caps
+    /// how many such abandoned threads can be alive at once. A future slice may
+    /// replace this hard serialize with an operator-configurable embed
+    /// concurrency limit (ADR-0.6.0 Invariant 4 pool-size override) for I/O-
+    /// or GPU-bound embedders; that knob is out of PR-9 scope.
+    embed_serialize: Mutex<()>,
+    /// PR-9 — embed circuit breaker. `live_embed_threads` counts watchdog embed
+    /// threads currently alive (incremented when one is spawned, decremented
+    /// when it finishes — see `embed_with_watchdog`). Under healthy serialized
+    /// operation this is 0 or 1; it only grows when timed-out embeds are
+    /// abandoned and keep running (ADR-0.6.0 Invariant 5 forbids aborting a
+    /// running embed). When a new embed would push the live count to
+    /// `embed_circuit_threshold`, the breaker latches `embed_circuit_open` and
+    /// projection jobs fail fast WITHOUT spawning further embeds — bounding the
+    /// abandoned-thread leak to ~threshold REGARDLESS of whether the embedder
+    /// hangs on every input or only intermittently (a returning embed
+    /// decrements the count rather than resetting a streak, so an
+    /// intermittently-hanging embedder still latches as its hung threads pile
+    /// up, and a merely-slow-but-returning embedder self-clears and never
+    /// false-trips). Latches for the engine session (a reopen resets it); a
+    /// half-open/cool-down retry is future work. `threshold == 0` disables it.
+    live_embed_threads: Arc<AtomicU64>,
+    embed_circuit_open: AtomicBool,
+    embed_circuit_threshold: AtomicU64,
     /// EU-5b — streaming mean accumulator for the per-workspace mean
     /// pinning lifecycle (`dev/design/embedder.md` §0.3). `Some(_)` iff
     /// the identity is MC-required AND no mean has been pinned yet on
@@ -537,6 +619,11 @@ impl ProjectionRuntime {
             queue: Mutex::new(VecDeque::new()),
             queue_cvar: Condvar::new(),
             retry_delays_ms: Mutex::new(DEFAULT_PROJECTION_RETRY_DELAYS_MS.to_vec()),
+            embed_timeout_ms: AtomicU64::new(DEFAULT_EMBED_TIMEOUT_MS),
+            embed_serialize: Mutex::new(()),
+            live_embed_threads: Arc::new(AtomicU64::new(0)),
+            embed_circuit_open: AtomicBool::new(false),
+            embed_circuit_threshold: AtomicU64::new(DEFAULT_EMBED_CIRCUIT_THRESHOLD),
             mean_accumulator: Mutex::new(mean_accumulator),
             pending_events: Mutex::new(Vec::new()),
             commit_gate: Mutex::new(()),
@@ -607,6 +694,18 @@ impl ProjectionRuntime {
         if let Ok(mut delays) = self.shared.retry_delays_ms.lock() {
             *delays = delays_ms.to_vec();
         }
+    }
+
+    fn set_embed_timeout_ms_for_test(&self, timeout_ms: u64) {
+        self.shared.embed_timeout_ms.store(timeout_ms, Ordering::Relaxed);
+    }
+
+    fn set_embed_circuit_threshold_for_test(&self, threshold: u64) {
+        self.shared.embed_circuit_threshold.store(threshold, Ordering::Relaxed);
+    }
+
+    fn embed_circuit_open_for_test(&self) -> bool {
+        self.shared.embed_circuit_open.load(Ordering::Relaxed)
     }
 
     fn stop(&self) {
@@ -2101,6 +2200,26 @@ impl Engine {
         self.projection_runtime.set_retry_delays_for_test(delays_ms);
     }
 
+    /// PR-9 — lower the ADR-0.6.0 Invariant 5 per-`embed()` watchdog deadline
+    /// for tests (production default is `DEFAULT_EMBED_TIMEOUT_MS` = 30s).
+    #[doc(hidden)]
+    pub fn set_embed_timeout_ms_for_test(&self, timeout_ms: u64) {
+        self.projection_runtime.set_embed_timeout_ms_for_test(timeout_ms);
+    }
+
+    /// PR-9 — lower the embed circuit-breaker threshold for tests (production
+    /// default `DEFAULT_EMBED_CIRCUIT_THRESHOLD`); 0 disables the breaker.
+    #[doc(hidden)]
+    pub fn set_embed_circuit_threshold_for_test(&self, threshold: u64) {
+        self.projection_runtime.set_embed_circuit_threshold_for_test(threshold);
+    }
+
+    /// PR-9 — whether the embed circuit breaker has latched open.
+    #[doc(hidden)]
+    pub fn embed_circuit_open_for_test(&self) -> bool {
+        self.projection_runtime.embed_circuit_open_for_test()
+    }
+
     #[doc(hidden)]
     pub fn projection_status_for_test(
         &self,
@@ -3377,7 +3496,74 @@ fn commit_projection_panic_failures(
     let _ = commit_projection_outcomes(connection, &outcomes, shared);
 }
 
+/// PR-9 — ADR-0.6.0-embedder-protocol **Invariant 5**: run one `embed()`
+/// under a per-call deadline. A hung (non-panicking) embed would otherwise
+/// park a projection worker forever — the EU-5f `catch_unwind` only catches
+/// *panics*. On timeout we return `RuntimeEmbedderError::Timeout`, which the
+/// caller's existing retry/failure path already handles.
+///
+/// Cancellation follows Invariant 5 exactly: the embed runs on a detached
+/// thread that is allowed to *finish + discard* its result — never aborted
+/// mid-call (there is no safe thread-cancel API). The caller (the projection
+/// worker) holds `embed_serialize` across this call, but DROPS it the moment
+/// this returns — including on timeout — so the abandoned detached thread
+/// runs lock-free and a hung embed can neither hold the serialization guard
+/// forever nor deadlock the pool. (The commit happens later, outside this
+/// call, under the separate `commit_gate`.)
+///
+/// Panic-transparent: if `embed()` panics, the panic payload is captured on
+/// the watchdog thread and resumed on the worker thread, so the existing
+/// batch-level `catch_unwind` records `ProjectionPanic` exactly as before.
+///
+/// `live` counts embed threads currently alive: incremented before the spawn
+/// and decremented by the thread when it finishes (even if its result was
+/// abandoned on timeout). The caller reads it to bound the abandoned-thread
+/// leak via the circuit breaker.
+fn embed_with_watchdog(
+    embedder: &Arc<dyn Embedder>,
+    body: &str,
+    timeout: Duration,
+    live: &Arc<AtomicU64>,
+) -> Result<Vec<f32>, RuntimeEmbedderError> {
+    let (tx, rx) = mpsc::channel();
+    let embedder = Arc::clone(embedder);
+    let body = body.to_string();
+    // Count this embed thread as live before spawning; the thread decrements
+    // when it finishes, whether or not its result is still wanted.
+    live.fetch_add(1, Ordering::Relaxed);
+    let live_thread = Arc::clone(live);
+    thread::spawn(move || {
+        let outcome =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| embedder.embed(&body)));
+        // The receiver may already be gone (this call timed out): an async
+        // channel send never blocks, and a send to a dropped receiver is a
+        // no-op error we deliberately ignore — the result is discarded.
+        let _ = tx.send(outcome);
+        live_thread.fetch_sub(1, Ordering::Relaxed);
+    });
+    match rx.recv_timeout(timeout) {
+        Ok(Ok(result)) => result,
+        Ok(Err(panic_payload)) => std::panic::resume_unwind(panic_payload),
+        Err(mpsc::RecvTimeoutError::Timeout) => Err(RuntimeEmbedderError::Timeout),
+        // The watchdog thread dropped its sender without sending — should not
+        // happen (panics are captured above), but treat as a failed embed so
+        // the retry/failure path engages rather than silently succeeding.
+        Err(mpsc::RecvTimeoutError::Disconnected) => Err(RuntimeEmbedderError::Failed {
+            message: "embed watchdog thread dropped its result channel".to_string(),
+        }),
+    }
+}
+
 fn run_projection_job(shared: &ProjectionRuntimeShared, job: &ProjectionJob) -> ProjectionOutcome {
+    // PR-9 — embed circuit breaker (see `embed_circuit_open`). Once abandoned
+    // (timed-out) embed threads have piled up to the threshold the embedder is
+    // treated as broken; fail subsequent jobs fast WITHOUT attempting an embed,
+    // so a wedged embedder cannot keep leaking abandoned watchdog threads. This
+    // entry check is the fast path; the latch decision itself is made under the
+    // embed guard below (race-free against other workers).
+    if shared.embed_circuit_open.load(Ordering::Relaxed) {
+        return ProjectionOutcome::Failure { cursor: job.cursor, failure_code: "EmbedderError" };
+    }
     let delays = shared.retry_delays_ms.lock().map(|delays| delays.clone()).unwrap_or_default();
     let mut last_code = "EmbedderError";
     for (attempt, delay_ms) in std::iter::once(0_u64).chain(delays.iter().copied()).enumerate() {
@@ -3387,18 +3573,70 @@ fn run_projection_job(shared: &ProjectionRuntimeShared, job: &ProjectionJob) -> 
             }
             thread::sleep(Duration::from_millis(delay_ms));
         }
+        // PR-9 — re-check the breaker on every attempt, not just at entry:
+        // another worker (or an earlier attempt of this job) may have latched
+        // it while we were sleeping between retries. Bail before spawning yet
+        // another timeout-bound watchdog thread, so the abandoned-thread leak
+        // stays bounded even on the multi-retry path.
+        if shared.embed_circuit_open.load(Ordering::Relaxed) {
+            return ProjectionOutcome::Failure { cursor: job.cursor, failure_code: last_code };
+        }
+        // PR-9 / ADR-0.6.0 Invariant 5 — every embed runs under the per-call
+        // watchdog deadline so a hung embed surfaces Timeout instead of
+        // parking this worker forever.
+        let embed_timeout = Duration::from_millis(shared.embed_timeout_ms.load(Ordering::Relaxed));
         let vector = match shared.embedder.as_ref() {
-            Some(embedder) => match embedder.embed(&job.body) {
-                Ok(vector) => vector,
-                Err(RuntimeEmbedderError::Timeout) => {
-                    last_code = "EmbedderError";
-                    continue;
+            Some(embedder) => {
+                // PR-9 — serialize the embed call engine-side (see
+                // `embed_serialize`): the shared embedder is invoked one call
+                // at a time, for SAFETY with arbitrary caller-supplied
+                // embedders (throughput is ~neutral on the candle default).
+                // The guard is held across the watchdog call and released
+                // here, so commit/IO below stays parallel and a timed-out
+                // embed frees it. The guard owns no data; a panic-resumed
+                // embed poisons it, so we recover the inner guard rather than
+                // wedge the whole pool.
+                let _embed_permit =
+                    shared.embed_serialize.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                // PR-9 — breaker decision, made WITH the guard held so it is
+                // race-free against other workers: if abandoned embed threads
+                // from earlier timeouts have piled up to the threshold, latch
+                // the breaker and fail fast WITHOUT spawning another one. The
+                // live count is checked here (also covers a breaker latched by
+                // another worker while we were queued on the lock), bounding
+                // the abandoned-thread leak to ~threshold regardless of whether
+                // the embedder hangs always or only intermittently.
+                let threshold = shared.embed_circuit_threshold.load(Ordering::Relaxed);
+                if shared.embed_circuit_open.load(Ordering::Relaxed)
+                    || (threshold != 0
+                        && shared.live_embed_threads.load(Ordering::Relaxed) >= threshold)
+                {
+                    shared.embed_circuit_open.store(true, Ordering::Relaxed);
+                    return ProjectionOutcome::Failure {
+                        cursor: job.cursor,
+                        failure_code: last_code,
+                    };
                 }
-                Err(RuntimeEmbedderError::Failed { .. }) => {
-                    last_code = "EmbedderError";
-                    continue;
+                match embed_with_watchdog(
+                    embedder,
+                    &job.body,
+                    embed_timeout,
+                    &shared.live_embed_threads,
+                ) {
+                    Ok(vector) => vector,
+                    Err(RuntimeEmbedderError::Timeout) => {
+                        // The embed thread is now abandoned (still counted in
+                        // live_embed_threads until it returns); the breaker
+                        // check above caps how many can accumulate.
+                        last_code = "EmbedderError";
+                        continue;
+                    }
+                    Err(RuntimeEmbedderError::Failed { .. }) => {
+                        last_code = "EmbedderError";
+                        continue;
+                    }
                 }
-            },
+            }
             None => {
                 last_code = "EmbedderNotConfiguredError";
                 continue;
