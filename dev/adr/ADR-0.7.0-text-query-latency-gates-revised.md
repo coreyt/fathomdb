@@ -116,6 +116,15 @@ author-step waiting on AC-020's lever choice.
 > the actual numbers are chosen at HITL Q1 lock, informed by the
 > `0.7.0-PERF-DIAG` slice output. The proposals below are the
 > drafter's recommendation, not the lock.
+>
+> **0.7.2 PR-3 update (HITL 2026-06-01):** the **AC-013 and AC-019**
+> budgets below are now filled and **HITL-locked** as a **tiered
+> (10k / 100k / 1M)** budget against local measurements — the binding
+> release gate for the 0.x and 1.x lines is the **10k tier**, with 100k
+> and 1M as tracked post-1.0 (pre-2.1) ANN-index targets. See those
+> sections and `dev/plans/runs/0.7.2-PR-3-perf-data.md`. AC-012 and
+> AC-020 remain as originally drafted (owned by their own slices); this
+> PR-3 amendment does not flip their status.
 
 ### AC-012 — text-query single-token / phrase MATCH latency
 
@@ -157,28 +166,78 @@ canonical-runner has not measured AC-013 at N=1,000,000 because
 the seed cost itself is the gate — Pack 7 Track 2 (bulk-vec seed
 seam) is the prerequisite measurement-enabler.
 
-**Proposed revised budget (HITL Q1, contingent on DIAG):**
+**Revised budget — tiered by corpus size N (HITL 2026-06-01, measured).**
 
-- p50 ≤ 80 ms (current ADR-0.6.0-retrieval-latency-gates: ≤ 50 ms).
-- p99 ≤ 300 ms (current: ≤ 200 ms).
+The vec0 bit-KNN candidate stage is a per-query **O(N) linear scan** (there is
+no ANN index on the virtual table — that index is the named post-1.0
+follow-up; see `dev/notes/ac013-ac019-canonical-scale-policy.md`). Latency
+grows ~linearly with N, so a single N-independent budget is not meaningful.
+The budget is **tiered**, and only the **10k tier is the binding release gate
+for the 0.x and 1.x lines.** The 100k and 1M tiers are **tracked targets**
+that post-1.0 (pre-2.1) ANN-index work will bring under the gate. Measured
+0.7.2 PR-3 numbers (full settings, host, logs in
+`dev/plans/runs/0.7.2-PR-3-perf-data.md`):
 
-Pinned against a canonical-runner measurement that has not yet
-been taken. If the `0.7.0-PERF-DIAG` slice cannot enable a
-canonical AC-013 measurement (bulk-seed seam not yet landed), the
-AC-013 revision is **descoped** from 0.7.0 and AC-013 stays
-DEFERRED with the deferral target moved from "0.7.0" to "0.8.0".
+| Tier (N) | Binding? | p50 (measured) | p99 (measured) | Budget p50 / p99 | Verdict |
+| -------- | -------- | -------------- | -------------- | ---------------- | ------- |
+| **10,000** | **YES — 0.x/1.x gate** | 36 ms (real bge, N≈7,667) · 15 ms (synthetic 384-d) | 49 ms · 17 ms | **≤ 80 / ≤ 300 ms** | **MET** |
+| 100,000 | tracked (post-1.0) | 147 ms (synthetic 384-d) | 198 ms | ≤ 80 / ≤ 300 (aspirational) | not met (O(N) scan) |
+| 1,000,000 | tracked (post-1.0) | ~1,500 ms (O(N) extrapolation; 0.7.0 W4.1 f32-brute anchor 2,048 ms) | ~1,900 ms | ≤ 80 / ≤ 300 (aspirational) | not met; ANN-index-gated |
+
+- **Dimension.** The shipped default embedder `bge-small-en-v1.5` is
+  **384-d**; the synthetic perf fixture defaults to 768-d (legacy) and
+  over-states latency by ~25–30 %. Production-faithful rows above use 384-d /
+  real bge.
+- **The 10k binding number is the real-corpus + real-embedder anchor**
+  (p50 36 / p99 49 ms at N=7,667, HITL-accepted as ≈10k), which **includes**
+  the bge query forward-pass slice (~14 ms). Synthetic 384-d N=10K corroborates
+  at p50 15 / p99 17 ms.
+- **N=1M was not freshly measured locally:** the default per-row projection
+  seed did not drain within 3 h (super-linear seed cost; `Err(Scheduler)` =
+  `wait_for_idle` timeout, **not** a wedge). The 1M tier is recorded from the
+  0.7.0 W4.1 historical anchor + the O(N) extrapolation. Real-embedder N=1M is
+  infeasible on any CI runner (~166 h seed at 1.67 docs/s) — hence the
+  local-only measurement posture and the per-push read-path smoke
+  (`perf_gates::ac_013_vector_read_path_smoke`).
+
+**Post-1.0 obligation.** Holding 80/300 at 100k and 1M is scheduled after 1.0
+and before 2.1 via an ANN index (HNSW/IVF/DiskANN) on the vec0 table, dropping
+per-query cost from O(N) to O(log N)/O(√N). Until then the 100k/1M tiers are
+tracked, not gated. The in-code gate enforces this split:
+`perf_gates::ac_013_vector_retrieval_latency` asserts the budget only at
+`n <= AC013_GATE_N` (10,000) and reports (`AC013_TIER_INFO`) above it.
 
 ### AC-019 — concurrent-mixed read tail latency
 
-AC-019 reruns AC-013's protocol under 8 concurrent reader threads.
-Inherits AC-013's seed cost; no canonical-runner number yet.
+AC-019 reruns AC-013's protocol under 8 concurrent reader threads;
+bound = max(baseline_p99 × 10, 150 ms).
 
-**Proposed revised budget (HITL Q1, contingent on DIAG):**
+**Revised budget — tiered, same posture as AC-013 (HITL 2026-06-01, measured).**
+Binding at the **10k tier only** for 0.x/1.x; 100k/1M tracked post-1.0
+(they inherit AC-013's O(N) growth). Measured (see
+`dev/plans/runs/0.7.2-PR-3-perf-data.md`):
 
-- Baseline p99 ≤ AC-013 revised p99.
-- Stressed p99 ≤ 2× baseline p99 (current bound; preserved).
+| Tier (N) | Binding? | baseline p99 | stress p99 | bound | Verdict |
+| -------- | -------- | ------------ | ---------- | ----- | ------- |
+| **10,000** (≈7,667, **real bge** — verdict) | **YES** | 40 ms | 343 ms (clean) | 405 ms | **MET** |
+| 100,000 / 1,000,000 | tracked (post-1.0) | — | inherits AC-013 O(N) growth | — | ANN-index-gated |
 
-If AC-013 descopes from 0.7.0, AC-019 descopes with it.
+**Verdict signal = the real-corpus harness `eu7_real_corpus_ac.rs`**, which
+PASSES at the 10k tier (343 ms < 405 ms). The earlier real-path 1,201 ms number
+was concurrent-CPU contention (same fixture/N), not a regression — this
+resolves the carried "AC-019 idle-box re-run" item.
+
+**The synthetic `perf_gates` AC-019 is REPORT-ONLY, not a gate** (HITL
+2026-06-01). The synthetic isotropic fixture **cannot** meet the
+`max(baseline_p99 × 10, 150 ms)` bound — a property of the synthetic DATA, not
+the box: its embed is instant, so the single-thread baseline (16–28 ms) is
+unrealistically fast and the 10× bound (168–282 ms) is far tighter than the
+production bound (405 ms), while the absolute 8-thread tail (~520 ms @384-d /
+~1,050 ms @768-d) is the same order as the real path. Per
+`dev/notes/ac013-ac019-canonical-scale-policy.md` synthetic dev-box numbers are
+scouting, not verdicts, so
+`perf_gates::ac_019_mixed_retrieval_stress_workload_tail` measures and reports
+(`AC019_REPORT_ONLY`) without asserting. (AC-013 keeps its hard 10k-tier gate.)
 
 ### AC-020 — single-reader concurrency ratio
 

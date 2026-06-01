@@ -1,0 +1,60 @@
+=== PR-3 local canonical synthetic N=1M latency run ===
+host: Linux 6.17.0-29-generic x86_64 nproc=24
+start_utc=2026-06-01T03:51:29Z
+--- build release perf_gates ---
+warning: `fathomdb-engine` (lib) generated 2 warnings
+    Finished `release` profile [optimized] target(s) in 3.61s
+  Executable tests/perf_gates.rs (target/release/deps/perf_gates-47d882c5926a4ac2)
+--- run AC-013 latency + AC-019 stress at N=1M (synthetic fast-seed, latency only) ---
+warning: methods `worker_count` and `live_count` are never used
+   --> src/rust/crates/fathomdb-engine/src/lib.rs:434:8
+    |
+410 | impl ReaderWorkerPool {
+    | --------------------- methods in this implementation
+...
+434 |     fn worker_count(&self) -> usize {
+    |        ^^^^^^^^^^^^
+...
+438 |     fn live_count(&self) -> usize {
+    |        ^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `dispatch_stress_failure` is never used
+   --> src/rust/crates/fathomdb-engine/src/lifecycle.rs:173:19
+    |
+129 | impl SubscriberRegistry {
+    | ----------------------- method in this implementation
+...
+173 |     pub(crate) fn dispatch_stress_failure(&self, context: &StressFailureContext) {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `fathomdb-engine` (lib) generated 2 warnings
+    Finished `release` profile [optimized] target(s) in 0.08s
+     Running tests/perf_gates.rs (target/release/deps/perf_gates-47d882c5926a4ac2)
+
+running 2 tests
+test ac_013_vector_retrieval_latency ... 
+thread 'ac_013_vector_retrieval_latency' (2813222) panicked at src/rust/crates/fathomdb-engine/tests/perf_gates.rs:404:29:
+ac-013 drain: Scheduler
+stack backtrace:
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+FAILED
+test ac_019_mixed_retrieval_stress_workload_tail ... 
+thread 'ac_019_mixed_retrieval_stress_workload_tail' (2913759) panicked at src/rust/crates/fathomdb-engine/tests/perf_gates.rs:404:29:
+ac-013 drain: Scheduler
+stack backtrace:
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+FAILED
+
+failures:
+
+failures:
+    ac_013_vector_retrieval_latency
+    ac_019_mixed_retrieval_stress_workload_tail
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 11 filtered out; finished in 3669.86s
+
+error: test failed, to rerun pass `-p fathomdb-engine --test perf_gates`
+end_utc=2026-06-01T04:52:43Z
+=== DONE ===

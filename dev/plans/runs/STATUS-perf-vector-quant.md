@@ -26,7 +26,30 @@ Orchestrator: main thread (Claude Code session). Pattern per `dev/design/orchest
 | P1-IMPL | Pack 1 schema + ingest | **CLOSED** | `d96c4b0`, `9b9f840`, `f5da3e4`, `7d4aa2c`, `b533f61`, `cc5d15e` (inline fixup) | CONCERN → fixed inline |
 | P2-RED | Pack 2 RED tests | **CLOSED** | `d468999`, `4060a54` (closure) | **PASS** |
 | P2-IMPL | Pack 2 query rewrite | **CLOSED** | `26ef3dc`, `28c2d6d`, `d500d66` (closure) | CONCERN (scope-precision nit, override) |
-| P2-CANONICAL | canonical-CI dispatch + lock-flip | **AWAITS USER** | — | — |
+| P2-CANONICAL | canonical-CI dispatch + lock-flip | **CLOSED (0.7.2 PR-3, 2026-06-01)** | — | — |
+
+## P2-CANONICAL closure (0.7.2 PR-3, 2026-06-01)
+
+The canonical-CI dispatch + lock-flip is **CLOSED** by 0.7.2 PR-3, but **not**
+as originally shaped. Real-embedder N=1M on the canonical runner is infeasible
+(~166 h seed at the PR-9-measured 1.67 docs/s vs a 240-min timeout), so HITL
+(2026-06-01) reframed it: heavy latency/recall measurement is a **local
+once-per-release exercise**; CI carries only a fast read-path smoke
+(`perf_gates::ac_013_vector_read_path_smoke`). The AC-013/AC-019 latency budget
+is now **tiered (10k binding for 0.x/1.x; 100k/1M tracked post-1.0 ANN work)**
+and HITL-locked in `ADR-0.7.0-text-query-latency-gates-revised.md`.
+
+Measured (full detail: `dev/plans/runs/0.7.2-PR-3-perf-data.md`):
+- **AC-013 latency, 10k tier — MET.** Real bge p50 36 / p99 49 ms (N≈7667);
+  synthetic 384-d p50 15 / p99 17 ms. 100k = 147/198 ms (384-d), 1M ≈ 1.5 s
+  (O(N) extrapolation; 0.7.0 W4.1 anchor 2048 ms) — tracked, not gated.
+- **AC-013b recall@10 — MET.** 0.937 (CI 0.913–0.957) real bge @ N=7667 ≥ 0.90.
+- **AC-019 stress, 10k tier — MET on the real-corpus path** (clean run 343 ms <
+  405 ms bound; the 1201 ms real-path MISS was contention, not a regression).
+  The synthetic `perf_gates` AC-019 is **report-only** (HITL 2026-06-01):
+  the synthetic isotropic data cannot meet the baseline-relative bound (instant
+  embed → too-fast baseline → too-tight 10× bound); the verdict signal is the
+  real-corpus harness `eu7_real_corpus_ac.rs`.
 
 ## Per-AC scoreboard
 

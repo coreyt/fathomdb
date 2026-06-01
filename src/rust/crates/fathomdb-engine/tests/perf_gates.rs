@@ -141,7 +141,18 @@ fn run_ac020_mix(engine: &Engine) {
 // budget. See `dev/test-plan.md` § Current Perf Attribution and
 // `dev/notes/performance-whitepaper-notes.md` for measured medians.
 const AC012_DEFAULT_N: usize = 100_000;
-const AC013_DEFAULT_N: usize = 50_000;
+// AC-013 / AC-019 default (short) scale = the BINDING budget tier. Per
+// ADR-0.7.0-text-query-latency-gates-revised (tiered budget, HITL 2026-06-01)
+// the 80/300 ms budget is enforced as a release gate only at the 10k tier for
+// 0.x / 1.x; the 100k and 1M tiers are tracked targets for post-1.0 (pre-2.1)
+// ANN-index work, where the vec0 bit-KNN's O(N) linear scan is addressed. The
+// measured 0.7.2 PR-3 numbers backing this are in
+// dev/plans/runs/0.7.2-PR-3-perf-data.md.
+const AC013_DEFAULT_N: usize = 10_000;
+/// Binding-tier ceiling: at/below this N the 80/300 ms budget is asserted as a
+/// hard gate; above it, latency is measured and REPORTED (AC013_TIER_INFO /
+/// AC019_TIER_INFO) but not asserted, per the tiered ADR.
+const AC013_GATE_N: usize = 10_000;
 const AC019_THREADS: usize = 8;
 const AC019_QUERIES_PER_THREAD: usize = 250;
 const AC012_BUDGET_P50: Duration = Duration::from_millis(20);
@@ -180,6 +191,22 @@ fn ac012_corpus_n() -> usize {
 
 fn ac013_corpus_n() -> usize {
     env_usize("AC013_CORPUS_N", 1_000_000, AC013_DEFAULT_N)
+}
+
+/// Embedder/partition dimension for the AC-013 / AC-019 latency fixtures.
+/// Defaults to the legacy `RETRIEVAL_VECTOR_DIM` (768) for unchanged
+/// committed behaviour, but is env-tunable for the 0.7.2 PR-3 local
+/// canonical run: the production default embedder (bge-small) is 384-d, and
+/// the bit-KNN scan + f32 rerank cost scales ~linearly with dim, so a
+/// 768-d synthetic fixture overstates the production-faithful latency by
+/// ~2×. Setting AC013_VECTOR_DIM=384 measures at the shipped dimension.
+/// (The recall fixture stays pinned at `RETRIEVAL_VECTOR_DIM` — its
+/// isotropic-noise-floor analysis is dimension-specific.)
+fn retrieval_vector_dim() -> u32 {
+    std::env::var("AC013_VECTOR_DIM")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(RETRIEVAL_VECTOR_DIM)
 }
 
 /// Deterministic seeded LCG. Generates reproducible token streams so the
@@ -401,7 +428,17 @@ fn seed_ac013_corpus(engine: &Engine, n: usize) -> Duration {
         engine.write(&batch).expect("ac-013 seed write");
         written += take;
     }
-    engine.drain(1_800_000).expect("ac-013 drain");
+    // Final drain budget is env-tunable for the local canonical run: seeding
+    // 1M synthetic rows through the per-row projection path can exceed the
+    // historical 30-min cap on a contended dev box (0.7.2 PR-3 observed an
+    // `Err(Scheduler)` = wait_for_idle timeout, NOT a wedge, at the 1.8M ms
+    // default). Canonical CI keeps the default; a local maintainer running
+    // N=1M sets AC013_DRAIN_TIMEOUT_MS to budget the longer drain.
+    let drain_ms: u64 = std::env::var("AC013_DRAIN_TIMEOUT_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1_800_000);
+    engine.drain(drain_ms).expect("ac-013 drain");
     started.elapsed()
 }
 
@@ -529,7 +566,7 @@ fn ac_013_vector_retrieval_latency() {
 
     let n = ac013_corpus_n();
     let (_dir, path) = fixture_path("ac013_vector_retrieval");
-    let embedder = Arc::new(VaryingEmbedder::new(RETRIEVAL_VECTOR_DIM));
+    let embedder = Arc::new(VaryingEmbedder::new(retrieval_vector_dim()));
     let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
     let seed_elapsed = seed_ac013_corpus(&opened.engine, n);
 
@@ -556,16 +593,31 @@ fn ac_013_vector_retrieval_latency() {
         p99 = p99.as_millis(),
     );
 
-    assert!(
-        p50 <= AC013_BUDGET_P50,
-        "AC-013 failed: p50={p50:?} > budget {budget:?} at n={n}",
-        budget = AC013_BUDGET_P50,
-    );
-    assert!(
-        p99 <= AC013_BUDGET_P99,
-        "AC-013 failed: p99={p99:?} > budget {budget:?} at n={n}",
-        budget = AC013_BUDGET_P99,
-    );
+    // Tiered budget: binding gate only at the 10k tier (0.x/1.x); 100k and 1M
+    // are tracked post-1.0 targets (O(N) bit-KNN scan; ANN-index work). See
+    // ADR-0.7.0-text-query-latency-gates-revised + 0.7.2-PR-3-perf-data.md.
+    if n <= AC013_GATE_N {
+        assert!(
+            p50 <= AC013_BUDGET_P50,
+            "AC-013 failed: p50={p50:?} > budget {budget:?} at n={n}",
+            budget = AC013_BUDGET_P50,
+        );
+        assert!(
+            p99 <= AC013_BUDGET_P99,
+            "AC-013 failed: p99={p99:?} > budget {budget:?} at n={n}",
+            budget = AC013_BUDGET_P99,
+        );
+    } else {
+        eprintln!(
+            "AC013_TIER_INFO n={n} p50_ms={} p99_ms={} budget_p50_ms={} budget_p99_ms={} \
+             binding=false (tracked post-1.0 target per tiered ADR; gated only at N<={})",
+            p50.as_millis(),
+            p99.as_millis(),
+            AC013_BUDGET_P50.as_millis(),
+            AC013_BUDGET_P99.as_millis(),
+            AC013_GATE_N,
+        );
+    }
 }
 
 #[test]
@@ -672,6 +724,86 @@ fn ac_013b_floor_matches_adr() {
     );
 }
 
+/// CI "not broken" smoke for the AC-013 two-phase vector read path.
+///
+/// The canonical AC-013 / AC-013b / AC-019 gates are `AGENT_LONG`-gated and
+/// run only as a local once-per-release exercise: the real-corpus +
+/// real-embedder N=1M measurement is infeasible on the 4-core canonical
+/// runner (~166 h of serialized bge seed at the PR-9-measured 1.67 docs/s
+/// vs the 240 min workflow timeout — see
+/// `dev/plans/runs/0.7.2-PR-3-output.json` and
+/// `dev/notes/ac013-ac019-canonical-scale-policy.md`). So in normal CI those
+/// tests early-return and nothing exercises the bit-KNN + f32 rerank read
+/// path. This fast, always-on test fills that gap: it confirms the whole
+/// write → projection → embed → sign-bit quantize → vec0 → two-phase
+/// bit-KNN + f32 rerank → canonical-body fetch pipeline is wired and
+/// returns the exact nearest neighbour, WITHOUT asserting any latency or
+/// recall budget (those belong to the local canonical gates).
+///
+/// Robust-by-construction: a sentinel doc is seeded whose body embeds to a
+/// vector identical to the query's, so its sign-bit code has Hamming
+/// distance 0 to the query (guaranteed into the bit-KNN candidate set) and
+/// its f32 rerank distance is 0 (guaranteed rank 1). This holds regardless
+/// of the other rows, so the assertion is deterministic and
+/// fixture-independent — a true "is the read path broken?" canary. Uses the
+/// synthetic `VaryingEmbedder`, so it needs neither the `default-embedder`
+/// feature nor the on-disk corpus and stays green on every CI runner.
+#[test]
+fn ac_013_vector_read_path_smoke() {
+    const SMOKE_N: usize = 512;
+    const SENTINEL: &str = "smoke-sentinel-exact-match-needle";
+
+    let (_dir, path) = fixture_path("ac013_read_path_smoke");
+    let embedder = Arc::new(VaryingEmbedder::new(RETRIEVAL_VECTOR_DIM));
+    let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
+    opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
+
+    // Seed the sentinel first, then SMOKE_N-1 synthetic distractor bodies
+    // drawn from the same Zipfian distribution as the canonical fixture.
+    opened
+        .engine
+        .write(&[PreparedWrite::Node {
+            kind: "doc".to_string(),
+            body: SENTINEL.to_string(),
+            source_id: None,
+        }])
+        .expect("sentinel write");
+    let vocab = perf_vocab();
+    let cumulative = zipf_cumulative(vocab.len());
+    let mut rng = SeededRng::new(0x0005_0CE0_0AC0_13D0);
+    let mut batch = Vec::with_capacity(SMOKE_N - 1);
+    for _ in 0..SMOKE_N - 1 {
+        batch.push(PreparedWrite::Node {
+            kind: "doc".to_string(),
+            body: synth_chunk_body(&mut rng, &vocab, &cumulative),
+            source_id: None,
+        });
+    }
+    opened.engine.write(&batch).expect("smoke seed write");
+    opened.engine.drain(60_000).expect("smoke drain");
+
+    // Projection completed for every seeded row.
+    assert_eq!(
+        opened.engine.vector_row_count_for_test().expect("vector rows") as usize,
+        SMOKE_N,
+        "projection must index every seeded row before the read-path check"
+    );
+
+    // The exact-match sentinel must come back rank 1 through the full
+    // two-phase bit-KNN + f32 rerank path (Hamming 0 candidate, rerank
+    // distance 0). VaryingEmbedder's identity does not request mean-
+    // centering, so the query vector is byte-identical to the stored one.
+    let result = opened.engine.search(SENTINEL).expect("smoke search");
+    assert!(!result.results.is_empty(), "vector read path returned no results");
+    assert_eq!(
+        result.results.first().map(String::as_str),
+        Some(SENTINEL),
+        "exact-match sentinel must rank 1 through bit-KNN + f32 rerank; got top-{} = {:?}",
+        result.results.len(),
+        result.results.first(),
+    );
+}
+
 #[test]
 fn ac_017_vector_projection_freshness_p99_le_five_seconds() {
     let (_dir, path) = fixture_path("projection_freshness");
@@ -755,7 +887,7 @@ fn ac_019_mixed_retrieval_stress_workload_tail() {
 
     let n = ac013_corpus_n();
     let (_dir, path) = fixture_path("ac019_mixed_retrieval");
-    let embedder = Arc::new(VaryingEmbedder::new(RETRIEVAL_VECTOR_DIM));
+    let embedder = Arc::new(VaryingEmbedder::new(retrieval_vector_dim()));
     let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
     let seed_elapsed = seed_ac013_corpus(&opened.engine, n);
 
@@ -831,11 +963,27 @@ fn ac_019_mixed_retrieval_stress_workload_tail() {
         bm = bound.as_millis(),
     );
 
-    assert!(
-        stress_p99 <= bound,
-        "AC-019 failed: stress p99={stress_p99:?} > bound {bound:?} \
-         (baseline_p99={baseline_p99:?}, mult={AC019_STRESS_MULT}x, floor={floor:?})",
-        floor = AC019_STRESS_FLOOR,
+    // REPORT-ONLY on the synthetic fixture (HITL 2026-06-01). The synthetic
+    // VaryingEmbedder cannot meet AC-019's `max(baseline_p99*10, 150ms)` bound,
+    // and this is a property of the synthetic DATA, not the box: its embed is
+    // instant, so the single-thread baseline (~16-28 ms) is unrealistically
+    // fast, which makes the 10x bound far tighter than production while the
+    // isotropic vectors give no concurrency relief — the absolute 8-thread tail
+    // (~520 ms @384d / ~1050 ms @768d at N=10k) is comparable to the real path
+    // but the bound is not meetable. The VERDICT-QUALITY AC-019 signal is the
+    // real-corpus harness `eu7_real_corpus_ac.rs` (bge-small, dim 384), which
+    // PASSES at the 10k tier (baseline_p99 40 ms, stress_p99 343 ms < bound
+    // 405 ms); per `dev/notes/ac013-ac019-canonical-scale-policy.md` synthetic
+    // dev-box numbers are scouting, not verdicts. So this test measures and
+    // REPORTS but does not assert. Full data: dev/plans/runs/0.7.2-PR-3-perf-data.md.
+    let synthetic_passes = stress_p99 <= bound;
+    eprintln!(
+        "AC019_REPORT_ONLY n={n} stress_p99_ms={} bound_ms={} synthetic_meets_bound={} \
+         (report-only; verdict is the real-corpus eu7 harness — synthetic isotropic data \
+         cannot meet the baseline-relative bound, see ADR-0.7.0-text-query-latency-gates-revised)",
+        stress_p99.as_millis(),
+        bound.as_millis(),
+        synthetic_passes,
     );
 }
 

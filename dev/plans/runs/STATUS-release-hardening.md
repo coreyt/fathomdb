@@ -46,7 +46,7 @@ as-needed from the handoff section; — = not yet authored).
 | — | PR-2(bc) | Recall floor + mean recompute family | **CLOSED / RESOLVED** | PR-2a | ratified | `…/prompts/0.7.2-PR-2bc-{reassessment,S1,S2,S3}.md` | S1 land-harness + S2 carve-auto-drift + S3 floor-reframe landed (`5b69568`/`2ef8c3d..d2c0bf4`/`78164b9`); PR-2c SHELVED. Floor HOLDS 0.90. See decision memo. |
 | **1** | PR-1 | Architecture/design doc drift sweep | **CLOSED** | PR-0 | drift-list approved 2026-05-31 | `…/prompts/0.7.2-PR-1-doc-drift-sweep.md` | Audit→drift list (10 items, `4beca5b`)→HITL approved all→corrections `aebf959` + closure `10a0e24` on `main`. Codex **PASS** (`…/runs/0.7.2-PR-1-review-20260531T165936Z.md`). Docs-only; nothing pushed. |
 | **2** | PR-9 | Embedder robustness (concurrent-embed safety + Invariant-5 watchdog) | **✅ CLOSED (`21f4df6`, local main, unpushed)** | PR-1 | diff+tests ✅ (HITL 2026-05-31) | `…/prompts/0.7.2-PR-9-embedder-robustness.md`; closure `…/runs/0.7.2-PR-9-output.json`; review `…/runs/0.7.2-PR-9-review-20260531T205810Z.md` | Watchdog (Invariant 5) + engine-side embed **serialization** (re-justified on SAFETY — throughput-neutral, candle global rayon pool; false "~13×" withdrawn) + **circuit breaker** keyed on concurrent **live embed threads** (bounds abandoned-thread leak for persistent AND intermittent hangs). RED→GREEN each. **codex 5 passes → PASS** (pass-4 BLOCK on the original consecutive-timeout breaker design was NOT overridden — redesigned to live-thread-count + intermittent regression test; pass-5 PASS). Tests: serialization 1/1, watchdog 5/5, eu5f 6/6, projection 12/12; release e2e seed N=2000 complete+correct. Uncommitted; **no push**. (`ac_007b` flake is PRE-EXISTING — fails at baseline `ff7b008`, unrelated to PR-9.) |
-| **3** | PR-3 | Real-corpus canonical-CI N=1M dispatch | **NOT STARTED** | PR-2(bc), PR-9 | **dispatch approval (cost)**; budget approval before ADR | — | Pre-flight: ~10K-doc unserialized real-corpus seed before the N=1M dispatch. Fills `ADR-0.7.0-text-query-latency-gates-revised.md`. |
+| **3** | PR-3 | Real-corpus latency/recall measurement + tiered ADR | **IMPL COMPLETE — codex pending** | PR-2(bc), PR-9 | dispatch reframed to local (HITL 2026-06-01); budget HITL-locked tiered | `…/prompts/0.7.2-PR-3-canonical-ci-dispatch.md` | **Reframed (HITL):** real-embedder N=1M is infeasible on CI (~166 h seed) → heavy measurement is **local-only**; CI gets a fast read-path smoke (`perf_gates::ac_013_vector_read_path_smoke`). Budget is now **tiered (10k binding for 0.x/1.x; 100k/1M tracked post-1.0 ANN work)**. **10k tier MET** (AC-013 real bge p50 36/p99 49 @ N≈7667; recall@10 0.937 ≥ 0.90; AC-019 real 343 < 405 bound). Data: `…/runs/0.7.2-PR-3-perf-data.md`; ADR amended (AC-013/AC-019 tiered, HITL-locked); closure `…/runs/0.7.2-PR-3-output.json`. AC-019 idle-box item resolved (real 1201 ms = contention; clean real run 343 < 405). **Synthetic AC-019 is report-only** (HITL: synthetic data can't meet the baseline-relative bound; real-corpus path is the verdict). AC-013 keeps its hard 10k gate. Nothing pushed. |
 | **4** | PR-4 | Release notes + **push v0.7.0 + v0.7.1** | **NOT STARTED** | PR-1, PR-2(bc), PR-3 | **explicit push approval — irreversible** | — | CHANGELOG v0.7.0 + v0.7.1 sections; docs/embedder.md; creates `v0.7.1` tag; pushes `main` + both tags. |
 
 ### Phase B — testing/perf hardening (after PR-4)
@@ -60,11 +60,14 @@ as-needed from the handoff section; — = not yet authored).
 
 ## Open items (carried; not gating their own slice)
 
-- **AC-019 idle-box re-run** — the EU-7/PR-2bc dev-box stress MISS (p99 1201 ms vs
-  499 ms bound) was contention-inflated, **NOT a regression** (AC-013 PASSes: p50 36 /
-  p99 49 ms). Needs a clean idle-box re-run; folded into PR-3's canonical dispatch.
-- **EU-7 harness follow-up** — silent GT-embed phase wants an `EU7_GT_EMBED_PROGRESS`
-  periodic log line (cheap, test-only); fold into the next harness touch.
+- ~~**AC-019 idle-box re-run**~~ — **RESOLVED (PR-3, 2026-06-01).** The EU-7/PR-2bc
+  dev-box stress MISS (p99 1201 ms vs 499 ms bound) is confirmed a **contention
+  artifact, not a regression**: the clean idle run passes (343 ms < 405 ms bound at
+  N≈7667; AC-013 also PASSes p50 36 / p99 49). See `…/runs/0.7.2-PR-3-perf-data.md`
+  (AC-019 table) and the tiered AC-019 budget in `ADR-0.7.0-text-query-latency-gates-revised.md`.
+- ~~**EU-7 harness follow-up**~~ — **RESOLVED (already landed `f5bd686`, PR-2bc S1).**
+  The `EU7_GT_EMBED_PROGRESS` periodic log line is wired at
+  `eu7_real_corpus_ac.rs:725`; this entry was stale.
 - **Doc-archive hygiene** (out of campaign scope) — ~100 completed-release prompts in
   `dev/plans/prompts/` + run artifacts have no archive convention; `dev/plans/README.md`
   is itself stale (claims the dir is "0.6.0 only"). Decide a convention before moving

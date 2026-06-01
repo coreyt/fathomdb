@@ -17,6 +17,18 @@ name: perf-canonical (AC-012 / AC-013 / AC-019 long-run gate)
 # add push: / pull_request: / schedule: triggers that invoke
 # AC-013 or AC-019 at N=1M. The canonical-scale measurement is a
 # once-per-release exercise, not a per-slice gate.
+#
+# 0.7.2 PR-3 SCOPE NOTE (HITL 2026-05-31): this workflow exercises only
+# the SYNTHETIC fixture (VaryingEmbedder, deterministic Zipfian corpus).
+# The REAL default-embedder (bge-small) + real-corpus measurement at
+# N=1M is a LOCAL-ONLY exercise — seeding 1M docs through the serialized
+# candle projection path is ~166 h at the PR-9-measured 1.67 docs/s, vastly
+# beyond any runner timeout (see dev/plans/runs/0.7.2-PR-3-output.json). The
+# real-embedder AC-013/AC-013b/AC-019 numbers are pinned from local runs
+# (perf_gates synthetic N=1M for latency + eu7_real_corpus_ac.rs for the
+# real query-embed slice and the recall anchor). The per-push CI "is the
+# read path broken?" guard is perf_gates::ac_013_vector_read_path_smoke
+# (always-on, fast, fixture-independent) in the normal ci.yml suite.
 
 on:
   workflow_dispatch:

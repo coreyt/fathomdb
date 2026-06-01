@@ -1,0 +1,51 @@
+start_utc=2026-06-01T04:54:49Z
+  Executable tests/perf_gates.rs (target/release/deps/perf_gates-47d882c5926a4ac2)
+warning: methods `worker_count` and `live_count` are never used
+   --> src/rust/crates/fathomdb-engine/src/lib.rs:434:8
+    |
+410 | impl ReaderWorkerPool {
+    | --------------------- methods in this implementation
+...
+434 |     fn worker_count(&self) -> usize {
+    |        ^^^^^^^^^^^^
+...
+438 |     fn live_count(&self) -> usize {
+    |        ^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `dispatch_stress_failure` is never used
+   --> src/rust/crates/fathomdb-engine/src/lifecycle.rs:173:19
+    |
+129 | impl SubscriberRegistry {
+    | ----------------------- method in this implementation
+...
+173 |     pub(crate) fn dispatch_stress_failure(&self, context: &StressFailureContext) {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `fathomdb-engine` (lib) generated 2 warnings
+    Finished `release` profile [optimized] target(s) in 0.08s
+     Running tests/perf_gates.rs (target/release/deps/perf_gates-47d882c5926a4ac2)
+
+running 1 test
+test ac_013_vector_retrieval_latency ... AC013_NUMBERS n=100000 samples=1000 seed_ms=180312 p50_ms=190 p99_ms=244
+
+thread 'ac_013_vector_retrieval_latency' (3013417) panicked at src/rust/crates/fathomdb-engine/tests/perf_gates.rs:569:5:
+AC-013 failed: p50=190.760561ms > budget 80ms at n=100000
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::ops::function::FnOnce::call_once
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+FAILED
+
+failures:
+
+failures:
+    ac_013_vector_retrieval_latency
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 13 filtered out; finished in 562.70s
+
+error: test failed, to rerun pass `-p fathomdb-engine --test perf_gates`
+end_utc=2026-06-01T05:04:13Z
+=== DONE100K ===
