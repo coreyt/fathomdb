@@ -136,8 +136,22 @@ fn parse_rfc3339_epoch(s: &str) -> Result<i64, String> {
     let year: i64 = d[0].parse().map_err(|_| format!("bad year: {s}"))?;
     let month: i64 = d[1].parse().map_err(|_| format!("bad month: {s}"))?;
     let day: i64 = d[2].parse().map_err(|_| format!("bad day: {s}"))?;
-    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
-        return Err(format!("date out of range: {s}"));
+    if !(1..=12).contains(&month) {
+        return Err(format!("month out of range: {s}"));
+    }
+    // Month-specific day count with proleptic-Gregorian leap-year handling, so
+    // impossible dates (2026-02-31, 2026-02-29 in a non-leap year) are rejected
+    // rather than silently normalized by days_from_civil.
+    let leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+    let days_in_month = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => 0,
+    };
+    if !(1..=days_in_month).contains(&day) {
+        return Err(format!("day out of range for month: {s}"));
     }
 
     // Split the time-of-day from the zone designator (Z or ±HH:MM).
@@ -151,11 +165,25 @@ fn parse_rfc3339_epoch(s: &str) -> Result<i64, String> {
         let (oh, om) = off[1..].split_once(':').ok_or_else(|| format!("bad zone offset: {s}"))?;
         let oh: i64 = oh.parse().map_err(|_| format!("bad offset hour: {s}"))?;
         let om: i64 = om.parse().map_err(|_| format!("bad offset minute: {s}"))?;
+        if oh > 23 || om > 59 {
+            return Err(format!("zone offset out of range: {s}"));
+        }
         (t, sign * (oh * 3600 + om * 60))
     };
 
-    // HH:MM:SS, ignoring any fractional-second suffix.
-    let time_core = time_part.split('.').next().unwrap_or(time_part);
+    // HH:MM:SS with an optional fractional-second suffix. The fraction is not
+    // needed for second-resolution ordering, but it must be well-formed
+    // (non-empty, digits only) — a malformed suffix (e.g. "27.badZ") is a
+    // strict-RFC3339 violation, not something to silently discard.
+    let (time_core, frac) = match time_part.split_once('.') {
+        Some((core, f)) => (core, Some(f)),
+        None => (time_part, None),
+    };
+    if let Some(f) = frac {
+        if f.is_empty() || !f.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(format!("bad fractional seconds: {s}"));
+        }
+    }
     let tp: Vec<&str> = time_core.split(':').collect();
     if tp.len() != 3 {
         return Err(format!("bad time: {s}"));
@@ -486,14 +514,33 @@ mod tests {
     }
 
     #[test]
+    fn rfc3339_accepts_valid_edge_cases() {
+        // Leap day in a leap year, fractional seconds, and a leap second.
+        assert!(parse_rfc3339_epoch("2024-02-29T00:00:00Z").is_ok());
+        assert!(parse_rfc3339_epoch("2026-06-01T07:23:39.500Z").is_ok());
+        assert!(parse_rfc3339_epoch("2026-06-30T23:59:60Z").is_ok());
+        // Fractional seconds must not change the second-resolution instant.
+        assert_eq!(
+            parse_rfc3339_epoch("2026-06-01T07:23:39.999Z").unwrap(),
+            parse_rfc3339_epoch("2026-06-01T07:23:39Z").unwrap()
+        );
+    }
+
+    #[test]
     fn rfc3339_rejects_malformed() {
         for bad in [
             "not-a-date",
-            "2026-05-27",           // missing time
-            "2026-05-27 21:54:27Z", // space instead of 'T'
-            "2026-13-01T00:00:00Z", // month out of range
-            "2026-05-27T25:00:00Z", // hour out of range
-            "2026-05-27T21:54:27",  // no zone designator
+            "2026-05-27",                // missing time
+            "2026-05-27 21:54:27Z",      // space instead of 'T'
+            "2026-13-01T00:00:00Z",      // month out of range
+            "2026-05-27T25:00:00Z",      // hour out of range
+            "2026-05-27T21:54:27",       // no zone designator
+            "2026-02-31T00:00:00Z",      // impossible day (Feb has <= 29)
+            "2026-02-29T00:00:00Z",      // 2026 is not a leap year
+            "2026-05-27T21:54:27+24:00", // offset hour out of range
+            "2026-05-27T21:54:27-05:99", // offset minute out of range
+            "2026-06-01T07:23:39.badZ",  // non-digit fractional seconds
+            "2026-06-01T07:23:39.Z",     // empty fractional seconds
         ] {
             assert!(parse_rfc3339_epoch(bad).is_err(), "should reject: {bad}");
         }
