@@ -1,0 +1,2498 @@
+OpenAI Codex v0.120.0 (research preview)
+--------
+workdir: /home/coreyt/projects/fathomdb
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 019e7fec-fdc6-7d71-b0c3-9fd18df6b98c
+--------
+user
+Final full review of fathomdb slice PR-9 (embedder robustness), local `main` working tree, baseline ff7b008. Three prior passes (logs in dev/plans/runs/0.7.2-PR-9-review-*.log) drove fixes; this is a clean full review of the CURRENT diff, which includes one fix NO prior pass has seen (the post-lock breaker re-check added in response to pass 3).
+
+Read:
+- `git --no-pager diff -- src/rust/crates/fathomdb-engine/src/lib.rs`
+- New tests (untracked, by path): src/rust/crates/fathomdb-engine/tests/{pr9_embed_watchdog.rs, pr9_embed_serialization.rs, pr9_concurrent_embed.rs, pr9_embed_microbench.rs}
+- Spec: dev/plans/prompts/0.7.2-PR-9-embedder-robustness.md ; ADR-0.6.0-embedder-protocol.md Invariants 4 & 5
+- Consolidated prior verdict: dev/plans/runs/0.7.2-PR-9-review-20260531T205810Z.md
+- Closure: dev/plans/runs/0.7.2-PR-9-output.json
+
+What PR-9 does (current final state):
+1. Watchdog (Invariant 5): embed_with_watchdog runs each embed on a detached thread; recv_timeout (30s default, configurable) -> RuntimeEmbedderError::Timeout on hang, feeding the existing retry/failure path. Panic-transparent (catch_unwind on the watchdog thread + resume_unwind on the worker so EU-5f ProjectionPanic is unchanged). Cancellation is Invariant-5 "finish + discard".
+2. Engine-side embed serialization: embed_serialize: Mutex<()> held by the worker across the embed call (commit/IO stays parallel under commit_gate). Justified on SAFETY (never invoke arbitrary caller-supplied pyo3/napi embedders concurrently); throughput-neutral (candle uses one process-wide rayon pool). Released on timeout so an abandoned embed can't hold it / deadlock the pool; poison-recovered via into_inner.
+3. Embed circuit breaker: consecutive_embed_timeouts / embed_circuit_open / embed_circuit_threshold (default 8). Latches after N consecutive watchdog timeouts; once latched, jobs fail fast without embedding -> bounds the abandoned-thread leak (Invariant 5 forbids aborting a running embed). Breaker is checked at job entry, before each retry attempt, AND immediately after acquiring embed_serialize (this last check is the post-pass-3 fix closing the residual spawn window). Counter resets on any returning embed (Ok or typed error).
+
+Review the WHOLE thing fresh. Focus:
+1. Correctness of the serialize + watchdog + circuit-breaker composition end to end (no deadlock, no lock poisoning that wedges, leak genuinely bounded now, breaker latch/reset logic sound, no new races introduced by the post-lock check).
+2. Panic transparency + EU-5f ProjectionPanic path intact.
+3. Single-writer + projection-cursor freshness contracts preserved; commit stays outside the embed mutex.
+4. Are the rationale/comments accurate (no over-claim; the withdrawn "13x" stays withdrawn)?
+5. Test honesty/coverage (RED->GREEN claims real; circuit-breaker test exercises the retry path).
+Call out anything that should block a land on `main`.
+
+Verdict format: `## Verdict: PASS|CONCERN|BLOCK` header; findings as `### N. [severity] title` + `Refs:` (file:line) + 2-4 lines; "What passed on inspection"; "Reviewer process notes". Read-only sandbox; do not write the verdict file.
+
+codex
+Reviewing the current `main` diff against the cited spec and prior verdict, starting with repo memory/invariants and then the exact engine diff plus the new tests.
+exec
+/bin/bash -lc "sed -n '1,220p' MEMORY.md" in /home/coreyt/projects/fathomdb
+exec
+/bin/bash -lc "rg -n \"feedback_.*\\.md|project_vector_identity_invariant\\.md\" MEMORY.md" in /home/coreyt/projects/fathomdb
+ exited 2 in 0ms:
+sed: can't read MEMORY.md: No such file or directory
+
+ exited 2 in 0ms:
+rg: MEMORY.md: IO error for operation on MEMORY.md: No such file or directory (os error 2)
+
+codex
+`MEMORY.md` is not at repo root in this checkout. I’m locating the repo-local memory file and then I’ll read the engine diff, specs, and test additions in parallel.
+exec
+/bin/bash -lc "rg --files -g 'MEMORY.md' -g 'feedback_*.md' -g 'project_vector_identity_invariant.md'" in /home/coreyt/projects/fathomdb
+ exited 1 in 0ms:
+exec
+/bin/bash -lc 'git --no-pager diff -- src/rust/crates/fathomdb-engine/src/lib.rs' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+diff --git a/src/rust/crates/fathomdb-engine/src/lib.rs b/src/rust/crates/fathomdb-engine/src/lib.rs
+index 2187e55..2fc5136 100644
+--- a/src/rust/crates/fathomdb-engine/src/lib.rs
++++ b/src/rust/crates/fathomdb-engine/src/lib.rs
+@@ -64,6 +64,18 @@ const REBUILD_DRAIN_TIMEOUT_MS: u64 = 30_000;
+ const DEFAULT_PROVENANCE_ROW_CAP: u64 = 1_000_000;
+ const PROJECTION_CURSOR_KEY: &str = "projection_cursor";
+ const PROJECTION_WORKERS: usize = 2;
++/// PR-9 — ADR-0.6.0-embedder-protocol **Invariant 5** default per-`embed()`
++/// watchdog deadline. Every projection-path embed runs under this timeout;
++/// a hung embed surfaces `RuntimeEmbedderError::Timeout` (engaging the
++/// existing retry/failure path) rather than parking a worker forever. The
++/// EU-5f `catch_unwind` only catches *panics*; this catches *hangs*.
++const DEFAULT_EMBED_TIMEOUT_MS: u64 = 30_000;
++/// PR-9 — embed circuit-breaker threshold: after this many consecutive
++/// watchdog timeouts the embedder is treated as broken and projection jobs
++/// fail fast (see `embed_circuit_open`), bounding the abandoned-embed-thread
++/// leak. A legitimate embed never approaches a 30s timeout, so consecutive
++/// timeouts at this count indicate a genuinely-hung embedder.
++const DEFAULT_EMBED_CIRCUIT_THRESHOLD: u64 = 8;
+ const PROJECTION_COMMIT_BATCH: usize = 16;
+ // Each worker should be able to grab a full commit batch while another
+ // worker has the same waiting in the queue. Below this, the dispatcher
+@@ -160,6 +172,70 @@ struct ProjectionRuntimeShared {
+     queue: Mutex<VecDeque<ProjectionJob>>,
+     queue_cvar: Condvar,
+     retry_delays_ms: Mutex<Vec<u64>>,
++    /// PR-9 — ADR-0.6.0-embedder-protocol Invariant 5 per-`embed()` watchdog
++    /// deadline (ms). Read lock-free on the projection hot path. Default
++    /// `DEFAULT_EMBED_TIMEOUT_MS` (30s); the test seam
++    /// `set_embed_timeout_ms_for_test` lowers it so the hanging-embedder
++    /// test need not wait 30s. A hung embed surfaces
++    /// `RuntimeEmbedderError::Timeout`, engaging the existing retry/failure
++    /// path in `run_projection_job`.
++    embed_timeout_ms: AtomicU64,
++    /// PR-9 — engine-side embed serialization guard. The pool runs
++    /// `PROJECTION_WORKERS` workers; this guard ensures the shared
++    /// `Arc<dyn Embedder>` is invoked by at most one worker at a time.
++    ///
++    /// Rationale is SAFETY, not throughput. The engine accepts arbitrary
++    /// caller-supplied embedders (the pyo3 / napi bridges, per ADR-0.6.0)
++    /// whose `embed` is `Sync` only by trait contract; many real impls (a
++    /// GIL-bound Python model, a non-reentrant native lib, an internal cache)
++    /// are not actually safe under concurrent calls. Serializing engine-side
++    /// makes the projection robust to embedders that are not truly
++    /// concurrency-safe, without the engine having to trust each impl. The
++    /// default `CandleBgeEmbedder` was shown safe under concurrent forwards
++    /// in the PR-9 pre-flight, so for it the guard is belt-and-suspenders.
++    ///
++    /// Throughput is ~neutral: `candle` fans every `BertModel::forward` onto a
++    /// single process-wide rayon pool, so two concurrent forwards merely
++    /// share that pool (trading per-embed latency, not aggregate work) rather
++    /// than getting 2x — serializing avoids some scheduler/cache thrash but is
++    /// not a large win. (An earlier "~13x" figure compared a debug-build
++    /// unserialized run against a release-build number and was withdrawn; a
++    /// PR-9 micro-benchmark put release embeds at ~14 ms short / ~960 ms for a
++    /// 512-token doc, watchdog overhead ~0.)
++    ///
++    /// Commit/IO stays parallel across workers (see `commit_gate`); this guard
++    /// wraps only the embed call. It is held by the worker across the watchdog
++    /// call and released here, so a timed-out (abandoned) embed frees it and
++    /// cannot stall the pool — the guard owns no data, so a panic-resumed
++    /// embed that poisons it is recovered via `into_inner`.
++    ///
++    /// Deliberate trade-off (codex PR-9 CONCERN-1, accepted): on the *timeout*
++    /// path the worker drops this guard while the abandoned detached embed
++    /// thread is still running lock-free, so serialization is briefly relaxed
++    /// until that thread finishes. This is the prescribed choice over holding
++    /// the guard inside the embed thread — which would let a genuinely-hung
++    /// embed hold it forever and deadlock the whole pool, exactly the wedge
++    /// ADR-0.6.0 Invariant 5 and this slice's spec forbid. Timeouts are the
++    /// fault path only; the embed circuit breaker (`embed_circuit_open`) bounds
++    /// how many such abandoned threads can accumulate. A future slice may
++    /// replace this hard serialize with an operator-configurable embed
++    /// concurrency limit (ADR-0.6.0 Invariant 4 pool-size override) for I/O-
++    /// or GPU-bound embedders; that knob is out of PR-9 scope.
++    embed_serialize: Mutex<()>,
++    /// PR-9 — embed circuit breaker. `consecutive_embed_timeouts` counts
++    /// watchdog timeouts since the last embed that actually returned (Ok or a
++    /// typed error); on reaching `embed_circuit_threshold` the breaker latches
++    /// `embed_circuit_open`, after which projection jobs fail fast WITHOUT
++    /// attempting an embed. This bounds the abandoned-thread leak from a
++    /// persistently-hung embedder: ADR-0.6.0 Invariant 5 forbids aborting a
++    /// running embed, so every timeout detaches one embed thread that lives
++    /// until it returns — left unbounded a wedged embedder would leak one per
++    /// job. The breaker latches for the engine session (a reopen resets it);
++    /// a half-open/cool-down retry is future work. `threshold == 0` disables
++    /// the breaker.
++    consecutive_embed_timeouts: AtomicU64,
++    embed_circuit_open: AtomicBool,
++    embed_circuit_threshold: AtomicU64,
+     /// EU-5b — streaming mean accumulator for the per-workspace mean
+     /// pinning lifecycle (`dev/design/embedder.md` §0.3). `Some(_)` iff
+     /// the identity is MC-required AND no mean has been pinned yet on
+@@ -537,6 +613,11 @@ impl ProjectionRuntime {
+             queue: Mutex::new(VecDeque::new()),
+             queue_cvar: Condvar::new(),
+             retry_delays_ms: Mutex::new(DEFAULT_PROJECTION_RETRY_DELAYS_MS.to_vec()),
++            embed_timeout_ms: AtomicU64::new(DEFAULT_EMBED_TIMEOUT_MS),
++            embed_serialize: Mutex::new(()),
++            consecutive_embed_timeouts: AtomicU64::new(0),
++            embed_circuit_open: AtomicBool::new(false),
++            embed_circuit_threshold: AtomicU64::new(DEFAULT_EMBED_CIRCUIT_THRESHOLD),
+             mean_accumulator: Mutex::new(mean_accumulator),
+             pending_events: Mutex::new(Vec::new()),
+             commit_gate: Mutex::new(()),
+@@ -609,6 +690,18 @@ impl ProjectionRuntime {
+         }
+     }
+ 
++    fn set_embed_timeout_ms_for_test(&self, timeout_ms: u64) {
++        self.shared.embed_timeout_ms.store(timeout_ms, Ordering::Relaxed);
++    }
++
++    fn set_embed_circuit_threshold_for_test(&self, threshold: u64) {
++        self.shared.embed_circuit_threshold.store(threshold, Ordering::Relaxed);
++    }
++
++    fn embed_circuit_open_for_test(&self) -> bool {
++        self.shared.embed_circuit_open.load(Ordering::Relaxed)
++    }
++
+     fn stop(&self) {
+         if let Ok(mut state) = self.shared.state.lock() {
+             if state.stopping {
+@@ -2101,6 +2194,26 @@ impl Engine {
+         self.projection_runtime.set_retry_delays_for_test(delays_ms);
+     }
+ 
++    /// PR-9 — lower the ADR-0.6.0 Invariant 5 per-`embed()` watchdog deadline
++    /// for tests (production default is `DEFAULT_EMBED_TIMEOUT_MS` = 30s).
++    #[doc(hidden)]
++    pub fn set_embed_timeout_ms_for_test(&self, timeout_ms: u64) {
++        self.projection_runtime.set_embed_timeout_ms_for_test(timeout_ms);
++    }
++
++    /// PR-9 — lower the embed circuit-breaker threshold for tests (production
++    /// default `DEFAULT_EMBED_CIRCUIT_THRESHOLD`); 0 disables the breaker.
++    #[doc(hidden)]
++    pub fn set_embed_circuit_threshold_for_test(&self, threshold: u64) {
++        self.projection_runtime.set_embed_circuit_threshold_for_test(threshold);
++    }
++
++    /// PR-9 — whether the embed circuit breaker has latched open.
++    #[doc(hidden)]
++    pub fn embed_circuit_open_for_test(&self) -> bool {
++        self.projection_runtime.embed_circuit_open_for_test()
++    }
++
+     #[doc(hidden)]
+     pub fn projection_status_for_test(
+         &self,
+@@ -3377,7 +3490,61 @@ fn commit_projection_panic_failures(
+     let _ = commit_projection_outcomes(connection, &outcomes, shared);
+ }
+ 
++/// PR-9 — ADR-0.6.0-embedder-protocol **Invariant 5**: run one `embed()`
++/// under a per-call deadline. A hung (non-panicking) embed would otherwise
++/// park a projection worker forever — the EU-5f `catch_unwind` only catches
++/// *panics*. On timeout we return `RuntimeEmbedderError::Timeout`, which the
++/// caller's existing retry/failure path already handles.
++///
++/// Cancellation follows Invariant 5 exactly: the embed runs on a detached
++/// thread that is allowed to *finish + discard* its result — never aborted
++/// mid-call (there is no safe thread-cancel API). The caller (the projection
++/// worker) holds `embed_serialize` across this call, but DROPS it the moment
++/// this returns — including on timeout — so the abandoned detached thread
++/// runs lock-free and a hung embed can neither hold the serialization guard
++/// forever nor deadlock the pool. (The commit happens later, outside this
++/// call, under the separate `commit_gate`.)
++///
++/// Panic-transparent: if `embed()` panics, the panic payload is captured on
++/// the watchdog thread and resumed on the worker thread, so the existing
++/// batch-level `catch_unwind` records `ProjectionPanic` exactly as before.
++fn embed_with_watchdog(
++    embedder: &Arc<dyn Embedder>,
++    body: &str,
++    timeout: Duration,
++) -> Result<Vec<f32>, RuntimeEmbedderError> {
++    let (tx, rx) = mpsc::channel();
++    let embedder = Arc::clone(embedder);
++    let body = body.to_string();
++    thread::spawn(move || {
++        let outcome =
++            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| embedder.embed(&body)));
++        // The receiver may already be gone (this call timed out): an async
++        // channel send never blocks, and a send to a dropped receiver is a
++        // no-op error we deliberately ignore — the result is discarded.
++        let _ = tx.send(outcome);
++    });
++    match rx.recv_timeout(timeout) {
++        Ok(Ok(result)) => result,
++        Ok(Err(panic_payload)) => std::panic::resume_unwind(panic_payload),
++        Err(mpsc::RecvTimeoutError::Timeout) => Err(RuntimeEmbedderError::Timeout),
++        // The watchdog thread dropped its sender without sending — should not
++        // happen (panics are captured above), but treat as a failed embed so
++        // the retry/failure path engages rather than silently succeeding.
++        Err(mpsc::RecvTimeoutError::Disconnected) => Err(RuntimeEmbedderError::Failed {
++            message: "embed watchdog thread dropped its result channel".to_string(),
++        }),
++    }
++}
++
+ fn run_projection_job(shared: &ProjectionRuntimeShared, job: &ProjectionJob) -> ProjectionOutcome {
++    // PR-9 — embed circuit breaker (see `embed_circuit_open`). Once the
++    // embedder has timed out too many times in a row it is treated as broken;
++    // fail subsequent jobs fast WITHOUT attempting an embed, so a wedged
++    // embedder cannot keep leaking abandoned watchdog threads (one per job).
++    if shared.embed_circuit_open.load(Ordering::Relaxed) {
++        return ProjectionOutcome::Failure { cursor: job.cursor, failure_code: "EmbedderError" };
++    }
+     let delays = shared.retry_delays_ms.lock().map(|delays| delays.clone()).unwrap_or_default();
+     let mut last_code = "EmbedderError";
+     for (attempt, delay_ms) in std::iter::once(0_u64).chain(delays.iter().copied()).enumerate() {
+@@ -3387,18 +3554,75 @@ fn run_projection_job(shared: &ProjectionRuntimeShared, job: &ProjectionJob) ->
+             }
+             thread::sleep(Duration::from_millis(delay_ms));
+         }
++        // PR-9 — re-check the breaker on every attempt, not just at entry:
++        // another worker (or an earlier attempt of this job) may have latched
++        // it while we were sleeping between retries. Bail before spawning yet
++        // another timeout-bound watchdog thread, so the abandoned-thread leak
++        // stays bounded even on the multi-retry path.
++        if shared.embed_circuit_open.load(Ordering::Relaxed) {
++            return ProjectionOutcome::Failure { cursor: job.cursor, failure_code: last_code };
++        }
++        // PR-9 / ADR-0.6.0 Invariant 5 — every embed runs under the per-call
++        // watchdog deadline so a hung embed surfaces Timeout instead of
++        // parking this worker forever.
++        let embed_timeout = Duration::from_millis(shared.embed_timeout_ms.load(Ordering::Relaxed));
+         let vector = match shared.embedder.as_ref() {
+-            Some(embedder) => match embedder.embed(&job.body) {
+-                Ok(vector) => vector,
+-                Err(RuntimeEmbedderError::Timeout) => {
+-                    last_code = "EmbedderError";
+-                    continue;
++            Some(embedder) => {
++                // PR-9 — serialize the embed call engine-side (see
++                // `embed_serialize`): the shared embedder is invoked one call
++                // at a time, for SAFETY with arbitrary caller-supplied
++                // embedders (throughput is ~neutral on the candle default).
++                // The guard is held across the watchdog call and released
++                // here, so commit/IO below stays parallel and a timed-out
++                // embed frees it. The guard owns no data; a panic-resumed
++                // embed poisons it, so we recover the inner guard rather than
++                // wedge the whole pool.
++                let _embed_permit = shared
++                    .embed_serialize
++                    .lock()
++                    .unwrap_or_else(|poisoned| poisoned.into_inner());
++                // PR-9 — final breaker check after acquiring the guard: a
++                // worker that was queued on the lock may find the breaker
++                // latched by another worker by the time it acquires it; bail
++                // before spawning one more watchdog thread (closes the last
++                // post-latch spawn window).
++                if shared.embed_circuit_open.load(Ordering::Relaxed) {
++                    return ProjectionOutcome::Failure {
++                        cursor: job.cursor,
++                        failure_code: last_code,
++                    };
+                 }
+-                Err(RuntimeEmbedderError::Failed { .. }) => {
+-                    last_code = "EmbedderError";
+-                    continue;
++                match embed_with_watchdog(embedder, &job.body, embed_timeout) {
++                    Ok(vector) => {
++                        // A returning embed breaks the consecutive-timeout run.
++                        shared.consecutive_embed_timeouts.store(0, Ordering::Relaxed);
++                        vector
++                    }
++                    Err(RuntimeEmbedderError::Timeout) => {
++                        last_code = "EmbedderError";
++                        // PR-9 circuit breaker: count consecutive timeouts and
++                        // latch the breaker once the embedder looks broken, so
++                        // we stop spawning (and abandoning) embed threads.
++                        let prior =
++                            shared.consecutive_embed_timeouts.fetch_add(1, Ordering::Relaxed);
++                        let threshold = shared.embed_circuit_threshold.load(Ordering::Relaxed);
++                        if threshold != 0 && prior + 1 >= threshold {
++                            shared.embed_circuit_open.store(true, Ordering::Relaxed);
++                            return ProjectionOutcome::Failure {
++                                cursor: job.cursor,
++                                failure_code: last_code,
++                            };
++                        }
++                        continue;
++                    }
++                    Err(RuntimeEmbedderError::Failed { .. }) => {
++                        last_code = "EmbedderError";
++                        // A typed error means the embedder responded (not hung).
++                        shared.consecutive_embed_timeouts.store(0, Ordering::Relaxed);
++                        continue;
++                    }
+                 }
+-            },
++            }
+             None => {
+                 last_code = "EmbedderNotConfiguredError";
+                 continue;
+
+exec
+/bin/bash -lc "sed -n '1,260p' dev/plans/prompts/0.7.2-PR-9-embedder-robustness.md" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+# PR-9 — Embedder robustness (concurrent-embed safety + Invariant-5 embed watchdog)
+
+You are an informed implementer/sub-orchestrator for ONE slice of the 0.7.2
+RELEASE-HARDENING campaign (fathomdb, `/home/coreyt/projects/fathomdb`). You have
+**none of the prior session's context** — everything you need is below or linked.
+Work on `main` (per the PR-2bc/PR-1 precedent) or a per-slice worktree per
+`dev/design/orchestration.md` § 2 — your choice; this is an engine behavior change,
+so prefer a worktree if running concurrent seeds locally.
+
+**SLICE:** PR-9 — embedder robustness.
+**GOAL:** close the two engine-robustness items EU-5f surfaced but left open —
+(1) **concurrent-embed safety** on the projection pool, and (2) the **Invariant-5
+embed watchdog** (per-`embed()` timeout) on the projection path. **PR-9 gates
+PR-3's N=1M seed.** RED-first.
+
+---
+
+## Context you MUST load first
+
+Read these before touching code:
+
+1. `dev/plans/prompts/0.7.2-RELEASE-HARDENING-HANDOFF.md` § "PR-9" — the full spec
+   (mandate, both items, TDD surface, codex focus, dependencies, sequencing). Also
+   re-read the **PR-3 risk note** (concurrent-embed at N=1M) — PR-9 exists to retire
+   that risk before the canonical dispatch.
+2. `dev/plans/runs/STATUS-release-hardening.md` — where this slice sits; update its
+   PR-9 row on landing.
+3. `dev/design/orchestration.md` — the RED→GREEN→codex→land pattern you MUST follow.
+4. `dev/plans/runs/0.7.1-EU-7-findings.md` — **Finding A** is PR-9 item 1 verbatim;
+   the watchdog is the named deferred follow-up (line ~128: "The 30s embed watchdog
+   (ADR Invariant 5) is noted as a follow-up, out of EU-5f scope"). **Finding C** is
+   load-bearing for scope (see "Pre-flight" below).
+5. `dev/adr/ADR-0.6.0-embedder-protocol.md` **Invariant 5** (lines 100-102) — the
+   normative spec for item 2: every `embed()` is wrapped in a timeout (default 30s,
+   configurable); timeout fails the call with `EmbedderError::Timeout`; must **not
+   corrupt writer state**. The ADR even names the test (lines 150-151: "mock embedder
+   sleeping > 30s returns typed `EmbedderError::Timeout`; does not corrupt subsequent
+   writes").
+
+---
+
+## Surface findings (recon already done — DO NOT re-derive; verify only if you touch)
+
+> **Why this section exists (retention):** these facts were grep-verified during a
+> prior scouting pass that produced no committed artifact. They are persisted here so
+> this slice does not have to re-explore. Line numbers are as of `main` ~`860a662`;
+> re-confirm with grep before editing, since earlier slices may have shifted them.
+
+All paths below are under `src/rust/crates/`.
+
+### Item 1 — concurrent-embed safety (the exposure is real, safety unproven)
+
+- **`PROJECTION_WORKERS` is a hardcoded `const`, NOT an env knob.**
+  `fathomdb-engine/src/lib.rs:66` → `const PROJECTION_WORKERS: usize = 2;`
+  (The handoff/board offhand-mention it as if a tunable `PROJECTION_WORKERS=2`
+  environment knob — that is wrong; it is a compile-time const. Treat the handoff
+  wording as a doc nit, not a contract.)
+- Workers spawned at `lib.rs:551-554` (`for _ in 0..PROJECTION_WORKERS`); each calls
+  `embedder.embed(&job.body)` on **one shared** `Arc<dyn Embedder>`
+  (`ProjectionRuntimeShared.embedder`, field at `lib.rs:156`; call site `lib.rs:3391`).
+  **No production serialization** around the embedder.
+- `CandleBgeEmbedder::embed(&self)` (`fathomdb-embedder/src/candle_bge.rs:155-197`)
+  calls `self.model.forward(...)` (`:176`) on a shared `BertModel` with **no interior
+  locking** → the concurrency exposure is real and unproven-safe.
+- The ONLY place embeds are serialized today is the **test harness**: `SerializedBge`
+  (a `Mutex` wrapper) at `tests/eu7_real_corpus_ac.rs:101-121`, used at `:667`.
+  Production has no equivalent.
+- EU-5f's `catch_unwind` (`lib.rs:3311-3317`) catches **panics only** — a *hung*
+  (non-panicking) embed still parks a worker forever. That is item 2's territory.
+
+### Item 2 — embed watchdog (plumbing exists; the trigger does not)
+
+- `EmbedderError::Timeout` already exists: `fathomdb-embedder-api/src/lib.rs:20`.
+- The projection path **already handles** `RuntimeEmbedderError::Timeout` by retrying:
+  `lib.rs:3393-3396` (`Err(RuntimeEmbedderError::Timeout) => { last_code = "EmbedderError"; continue; }`).
+  **But nothing ever produces a `Timeout`** — there is no watchdog. So item 2 is:
+  add the watchdog that actually *emits* `Timeout` on the projection path; the
+  downstream retry/failure plumbing (`lib.rs:3393`, and `:4573` in the error map) is
+  already in place.
+- **No hanging/parking test double exists.** Existing doubles and where they live:
+  `VaryingEmbedder` (`batch_write_per_row_cursor.rs:22`, `perf_gates.rs:327`),
+  `SleepingEmbedder` (`projection_runtime.rs:51` — *delays but returns `Ok`*, does
+  NOT hang), `PanickingBgeEmbedder` (`eu5f_production_pin.rs:80`),
+  `SimulatedBgeEmbedder` (`eu5f_production_pin.rs:37`), `DeterministicEmbedder`,
+  `StubEmbedder`, `FixedEmbedder`. The watchdog RED test needs a **new** parking/
+  hanging embedder double (blocks indefinitely, e.g. on a channel or long sleep ≫
+  the configured timeout).
+
+---
+
+## Pre-flight (do this FIRST — it scopes item 1)
+
+**Finding C changes the risk calculus.** The original EU-7 "stall" was root-caused to
+the **512-token truncation bug** (since fixed in EU-5f), **not** concurrency itself.
+So item 1 may already be empirically safe and reduce to "add the regression test."
+Resolve this empirically before committing to a serialization design:
+
+1. Run a **single-shot ~10K-doc real-corpus seed through the UNSERIALIZED production
+   projection path** (real `CandleBgeEmbedder`, `PROJECTION_WORKERS = 2`, no
+   `SerializedBge`). Corpus: `data/corpus-data/raw/*.jsonl`.
+2. **Branch on the outcome — record which branch you took in the closure artifact:**
+   - **If it completes clean** (no wedge, no corruption, vectors correct): item 1
+     reduces to **adding the sustained-concurrent-seed RED regression test** (no
+     production serialization needed). Document that production concurrent-embed was
+     empirically proven safe on this hardware at 10K scale, and *why* (Finding C: the
+     prior stall was truncation, not a data race).
+   - **If it wedges or corrupts:** item 1 requires a real fix. The handoff explicitly
+     allows **either** (a) serialize embeds engine-side (guard the shared embedder),
+     **or** (b) make `CandleBgeEmbedder` internally concurrency-safe (e.g. per-call
+     clone of forward state / interior lock). Pick one, justify it, and surface the
+     choice as a HITL note before landing.
+
+---
+
+## Design tension to pre-load (decide explicitly in the slice)
+
+**The two items interact.** A per-embed watchdog typically needs the embed to run
+where the caller can time it out (separate thread / cancellable task). But if item 1
+is solved by **serializing embeds engine-side** (a `Mutex` around the shared
+embedder), a hung embed must **not** be allowed to hold the serialization lock
+forever — otherwise the watchdog times out the call but the worker pool still
+deadlocks on the poisoned/held lock. So:
+
+- If the pre-flight says item 1 = "just add the regression test" (no engine
+  serialization), the watchdog is structurally simpler — design it independently.
+- If item 1 introduces engine-side serialization, the watchdog design MUST account
+  for lock release on timeout (drop the guard before/at timeout, treat a timed-out
+  embed's worker as recoverable, no poisoned `Mutex` wedge).
+
+State which case you are in and how the watchdog interacts with it, in both the diff
+and the closure artifact.
+
+---
+
+## Scope
+
+**IN:**
+- Pre-flight 10K unserialized seed + its recorded verdict (above).
+- **Item 1:** either the sustained-concurrent-seed RED regression test alone (if
+  proven safe) OR the concurrency fix + that test (if not).
+- **Item 2:** the embed watchdog on the **projection path** that emits
+  `EmbedderError::Timeout` / `RuntimeEmbedderError::Timeout` so the existing retry/
+  failure plumbing engages; default 30s, **configurable** (per Invariant 5); a
+  hanging-embedder RED test asserting `drain` returns via timeout rather than wedging
+  forever, and that writer state is not corrupted (subsequent writes succeed).
+
+**OUT:**
+- Anything beyond the mean/embedder robustness: no K/ANN tuning, no recall work, no
+  ADR floor changes (those are settled — see `0.7.2-PR-2bc-decision.md`).
+- The N=1M canonical dispatch itself (that is PR-3, gated on this slice).
+- Changing `PROJECTION_WORKERS` from a const to an env knob (out of scope; only fix
+  the doc wording if you touch the relevant doc).
+
+---
+
+## TDD surface (RED-first, per `orchestration.md`)
+
+1. **Sustained-concurrent-seed regression test** (item 1): drives ≥10K docs through
+   the unserialized production path (no `SerializedBge`); asserts completion +
+   vector correctness + no wedge. RED-first only if a fix is needed; if the
+   pre-flight proves safety, this test is the deliverable and should pass against the
+   current engine (document that it is a *guard*, not a fix-driver).
+2. **Hanging-embedder watchdog test** (item 2): a NEW parking embedder double that
+   blocks ≫ the timeout; assert the projection `drain` returns via
+   `EmbedderError::Timeout` (engaging the existing `lib.rs:3393` retry) rather than
+   hanging; assert no writer-state corruption (a subsequent normal write succeeds).
+   Must be RED before the watchdog exists.
+3. Watchdog must **not** false-timeout a legitimately-slow cold embed — add/keep a
+   test that a slow-but-under-budget embed (cf. `SleepingEmbedder`) still succeeds.
+
+---
+
+## Codex review focus (call out in the review request)
+
+- The chosen item-1 approach does **not regress projection throughput** (esp. if you
+  serialize — show the per-row cost is acceptable).
+- The watchdog **cannot false-timeout** a legitimately-slow cold embed.
+- If serialization + watchdog coexist: **no lock-poisoning / no deadlock** when an
+  embed times out while holding the serialization guard.
+- Single-writer + projection-cursor freshness contracts preserved (hard constraint).
+
+---
+
+## HITL gates (STOP and surface — do not act past these)
+
+- **The item-1 design choice IF the pre-flight wedges** (serialize engine-side vs.
+  make `CandleBgeEmbedder` concurrency-safe) — surface the trade-off and your
+  recommendation before landing.
+- **Diff + tests** before landing on `main` (standard slice gate).
+- **No push to origin** (campaign-wide hard constraint).
+
+---
+
+## Hard constraints (inherited; do not weaken)
+
+- No push to origin without explicit HITL OK.
+- TDD: every behavior change lands RED-first.
+- Codex review on this slice; never override a BLOCK (fix-N and re-review).
+- Single-writer + projection-cursor freshness contracts preserved.
+- `EmbedderIdentity` contract is immutable — do not touch.
+- Honest reporting: if the pre-flight wedges, say so and fix it; do not paper over.
+
+---
+
+## Deliverables
+
+- Code: item-2 watchdog (always); item-1 fix (only if the pre-flight wedges).
+- Tests: the three TDD-surface tests above (RED-first where applicable).
+- Closure artifact: `dev/plans/runs/0.7.2-PR-9-output.json` — record the pre-flight
+  verdict (which branch), the item-1 disposition (test-only vs. fix + which fix), the
+  watchdog design + its interaction with item 1, key commit(s), test results, and the
+  codex verdict.
+- If you touch the handoff/board PR-9 wording, fix the `PROJECTION_WORKERS` "env knob"
+  nit (it is a const at `lib.rs:66`).
+
+---
+
+## Procedure
+
+Load context → run the pre-flight 10K seed → write RED test(s) → implement (watchdog
+always; item-1 fix only if needed) → build + test green → request codex review on the
+diff → on PASS/CONCERN(accepted) prepare the closure artifact and hand back to the
+orchestrator for cherry-pick/ff to `main` → update the PR-9 row in
+`STATUS-release-hardening.md` (status CLOSED, commits, codex verdict, prompt path).
+Report progress; stop at any HITL gate above. **No push.**
+
+## Success criteria (from the handoff)
+
+Concurrent-embed safety resolved (proven safe with a sustained-concurrent RED
+regression test, OR serialized/made-safe engine-side); the Invariant-5 embed watchdog
+implemented on the projection path (hung embed surfaces `EmbedderError::Timeout` and
+the existing retry/failure path engages, no writer-state corruption). PR-3's N=1M seed
+risk is retired.
+
+exec
+/bin/bash -lc "sed -n '1,260p' dev/plans/runs/0.7.2-PR-9-review-20260531T205810Z.md" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+# PR-9 Review (consolidated, final) — codex gpt-5.4
+
+Reviewer: `codex --model gpt-5.4 --sandbox read-only`, reasoning effort high.
+Slice: 0.7.2-PR-9 (embedder robustness). Baseline `ff7b008`, local `main` working tree.
+Three review passes; this file is the authoritative record and supersedes the
+interim promotion in `0.7.2-PR-9-review-20260531T195801Z.md`.
+
+Logs:
+- Pass 1: `0.7.2-PR-9-review-20260531T195801Z.log`
+- Pass 2: `0.7.2-PR-9-review-20260531T205238Z.log`
+- Pass 3: `0.7.2-PR-9-review-20260531T205810Z.log`
+
+## Final disposition: CONCERN — all findings RESOLVED (orchestrator-accepted per orchestration.md §6/§7)
+
+### Pass 1 — CONCERN-1 [medium]: timeout relaxes strict serialization
+On the timeout path the worker drops `embed_serialize` while the abandoned
+detached embed thread keeps running, so a later embed can briefly overlap it.
+**Disposition: ACCEPTED as the spec-mandated trade-off.** The PR-9 prompt
+explicitly requires "drop the guard before/at timeout … no poisoned Mutex
+wedge"; the alternative (hold the guard inside the embed thread) is what the
+spec/ADR forbid because a hung embed would then deadlock the pool. The
+relaxation is fault-path only. (Also drove the circuit breaker, below.)
+
+### Pass 2 — CONCERN-1 [medium]: unbounded abandoned-thread leak; CONCERN-2 [low]: comment drift
+- **Leak → FIXED** by adding the embed circuit breaker (`embed_circuit_open`,
+  threshold `DEFAULT_EMBED_CIRCUIT_THRESHOLD = 8`): consecutive watchdog
+  timeouts latch the breaker, after which jobs fail fast without embedding.
+- **Comment drift → FIXED**: removed the withdrawn "~13x" claim and the
+  "no serialization lock held during embed" inaccuracy.
+
+### Pass 3 — CONCERN-1 [medium]: residual post-latch spawn window
+The per-attempt re-check closed the retry-sleep gap, but a worker blocked on
+`embed_serialize.lock()` at the moment of latch could still spawn one more
+watchdog thread (≤1 with PROJECTION_WORKERS=2 — already bounded, not the
+original unbounded leak). **FIXED** by adding a final breaker re-check
+immediately after acquiring the guard and before the embed call
+(`run_projection_job`). Pass-3 explicitly confirmed: the retry-loop re-check is
+correctly placed, the test now exercises the multi-retry path (`[10,10]`), and
+both comment fixes are accurate.
+
+## Net engineering changes driven by this review (and by HITL challenge)
+- Serialization re-justified on **safety** (never invoke arbitrary
+  caller-supplied pyo3/napi embedders concurrently), not throughput. A
+  micro-benchmark (`pr9_embed_microbench.rs`) proved the watchdog thread-spawn
+  is perf-neutral (release: 14.2ms direct vs 13.7ms watchdog) and candle uses
+  one process-wide rayon pool, so serialization is throughput-neutral; the
+  earlier "~13x" figure (a debug-vs-release artifact) was withdrawn everywhere.
+- Circuit breaker added (bounds abandoned-thread leak from a persistently-hung
+  embedder); breaker re-checked at entry, per retry attempt, and post-lock.
+
+## What passed on inspection (across passes)
+- Commit/IO stays outside `embed_serialize` (parallel under `commit_gate`).
+- Single-writer + projection-cursor freshness contracts preserved.
+- Panic transparency intact: watchdog-thread panics resume_unwind on the worker
+  thread → existing EU-5f `ProjectionPanic` machinery unchanged (eu5f 6/6).
+- Tests honestly assert their claims (serialization peak==1; watchdog drain
+  return / terminal failure / recovery / no false-timeout; breaker latch +
+  bounded embed-call count on the retry path).
+
+## Tests (run by main thread; codex sandbox is read-only)
+- `pr9_embed_serialization` 1/1, `pr9_embed_watchdog` 4/4 (incl. circuit
+  breaker), `eu5f_production_pin` 6/6, `projection_runtime` 12/12 — all green.
+- Release micro-benchmark + release end-to-end seed: see closure artifact.
+
+exec
+/bin/bash -lc "sed -n '1,260p' dev/plans/runs/0.7.2-PR-9-output.json" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+{
+  "phase": "0.7.2-PR-9",
+  "title": "Embedder robustness — concurrent-embed safety + Invariant-5 embed watchdog",
+  "baseline_sha": "ff7b008",
+  "branch": "main",
+  "head_sha": "ff7b008",
+  "land_status": "PRE-LAND — implemented + green + codex-resolved on local working tree; awaiting HITL diff+tests approval, then commit to main. No push (campaign-wide hard constraint).",
+  "commits": [],
+  "files_changed": {
+    "src/rust/crates/fathomdb-engine/src/lib.rs": "+233/-9 — watchdog (embed_with_watchdog), embed serialization guard (embed_serialize), embed circuit breaker (consecutive_embed_timeouts/embed_circuit_open/embed_circuit_threshold), constants, test seams, wired into run_projection_job",
+    "src/rust/crates/fathomdb-engine/tests/pr9_embed_watchdog.rs": "NEW — item-2 watchdog + circuit-breaker tests (4)",
+    "src/rust/crates/fathomdb-engine/tests/pr9_embed_serialization.rs": "NEW — item-1 serialization mechanism test (peak in-flight == 1)",
+    "src/rust/crates/fathomdb-engine/tests/pr9_concurrent_embed.rs": "NEW — item-1 end-to-end real-corpus seed guard + measurement (AGENT_LONG, release)",
+    "src/rust/crates/fathomdb-engine/tests/pr9_embed_microbench.rs": "NEW — diagnostic micro-benchmark (AGENT_LONG): watchdog overhead + doc-length cost"
+  },
+
+  "preflight": {
+    "design": "Seed the UNSERIALIZED production projection path (bare CandleBgeEmbedder, PROJECTION_WORKERS=2, no SerializedBge) with a sustained real-corpus seed and observe wedge/corruption/throughput.",
+    "branch_taken": "NEITHER clean-complete NOR wedge/corrupt — a third outcome. Two concurrent candle forwards did NOT wedge or corrupt (CPU pegged ~11 cores, vector rows progressed steadily, no futex-park / Finding-A signature). But a 10K debug seed did not complete in 45 min (drain returned Err(Scheduler) at the timeout).",
+    "root_cause": "NOT a data race and NOT (materially) CPU oversubscription. The slowness was a debug build (~14x slower candle) compounded with document length: a 512-token corpus doc (cnn_dailymail/qmsum) costs ~68x a short doc. Confirmed by micro-benchmark.",
+    "throughput_finding": "candle 0.10.2 fans every BertModel::forward onto a single process-wide rayon pool (gemm par_for_each, no MKL/Accelerate), so two concurrent forwards SHARE that pool — concurrency trades per-embed latency, not aggregate work. Serialization is therefore ~throughput-neutral, not the ~13x win an earlier (debug-unserialized vs release-EU7) comparison implied. The ~13x figure was WITHDRAWN from all code/docs.",
+    "correction_note": "Initial pre-flight run was contaminated by concurrent CPU load from other test runs; a clean instrumented re-run (row-count sampling + plateau detection) established the no-wedge / oversubscription-not-deadlock verdict."
+  },
+
+  "item1_disposition": {
+    "decision": "FIX — serialize embeds engine-side (HITL-approved option a, 2026-05-31).",
+    "mechanism": "embed_serialize: Mutex<()> in ProjectionRuntimeShared, acquired by the projection worker around the embed call in run_projection_job; commit/IO stays parallel under the separate commit_gate. PROJECTION_WORKERS stays 2.",
+    "justification": "SAFETY, not throughput. The engine accepts arbitrary caller-supplied embedders (pyo3/napi bridges) that are Sync only by contract and may not be truly concurrency-safe; serializing engine-side makes the projection robust to them. Throughput-neutral on the candle default (see preflight.throughput_finding). The default CandleBgeEmbedder was also empirically shown safe under concurrent forwards, so for it the guard is belt-and-suspenders.",
+    "watchdog_interaction": "The worker holds embed_serialize ACROSS the watchdog call and drops it on return — including on timeout — so a timed-out (abandoned) embed thread runs lock-free and can neither hold the guard forever nor deadlock the pool (the wedge ADR Invariant 5 + the slice spec forbid). Strict one-at-a-time holds on the common path; serialization is relaxed only transiently on the fault (timeout) path. The guard owns no data, so a panic-resumed embed that poisons it is recovered via into_inner.",
+    "deferred": "An operator-configurable embed-concurrency limit (ADR-0.6.0 Invariant 4 pool-size override) for I/O-/GPU-bound embedders is out of PR-9 scope (handoff: PROJECTION_WORKERS const->env is out of scope); noted as future work. A half-open/cool-down breaker reset is also future work."
+  },
+
+  "item2_watchdog": {
+    "design": "embed_with_watchdog(embedder, body, timeout): runs embed on a detached std::thread, caller waits on mpsc recv_timeout (default DEFAULT_EMBED_TIMEOUT_MS=30s, configurable via set_embed_timeout_ms_for_test). On timeout returns RuntimeEmbedderError::Timeout, which the existing retry/failure path in run_projection_job already handles. Cancellation is Invariant-5-compliant 'finish + discard' (no thread-abort).",
+    "panic_transparency": "embed panics are caught on the watchdog thread and resume_unwind'd on the worker thread, so the existing EU-5f batch-level catch_unwind still records ProjectionPanic unchanged (eu5f_production_pin 6/6).",
+    "perf": "Watchdog thread-spawn overhead is ~0 (release micro-bench: 14.2ms direct vs 13.7ms watchdog; candle uses one global rayon pool so the caller thread is irrelevant)."
+  },
+
+  "circuit_breaker": {
+    "why": "ADR Invariant 5 forbids aborting a running embed, so every timeout detaches one embed thread that lives until it returns. Left unbounded, a persistently-hung embedder would leak one thread per job.",
+    "mechanism": "consecutive_embed_timeouts (AtomicU64) increments on each watchdog timeout and resets on any returning embed (Ok or typed error); at DEFAULT_EMBED_CIRCUIT_THRESHOLD=8 consecutive timeouts it latches embed_circuit_open. Once latched, jobs fail fast WITHOUT embedding. Breaker is re-checked at job entry, before each retry attempt, and after acquiring embed_serialize (closes all post-latch spawn windows). Latches for the engine session; reopen resets. threshold==0 disables.",
+    "test": "persistent_hang_trips_circuit_breaker_and_bounds_thread_leak (ParkingEmbedder, retry delays [10,10] to exercise the multi-attempt path): asserts the breaker latches and embed-call count stays <=16 across 40 hung docs."
+  },
+
+  "tests": {
+    "red_green": [
+      "item2 watchdog: RED captured (drain wedged into Err(Scheduler) without the watchdog) -> GREEN.",
+      "item1 serialization: RED captured (peak concurrent embeds == 2) -> GREEN (peak == 1).",
+      "circuit breaker: RED captured (breaker never latched; calls unbounded) -> GREEN."
+    ],
+    "results": {
+      "pr9_embed_serialization": "1/1",
+      "pr9_embed_watchdog": "4/4 (watchdog x3 + circuit breaker)",
+      "eu5f_production_pin": "6/6 (panic path intact)",
+      "projection_runtime": "12/12",
+      "full_engine_suite": "all green EXCEPT ac_007b_slow_threshold_reconfigurable — see known_issues"
+    },
+    "micro_benchmark_release": {
+      "short_embed_ms": 14.2,
+      "short_watchdog_ms": 13.7,
+      "watchdog_overhead": "~0 (ratio 0.967, noise)",
+      "long_512token_embed_ms": 963.0,
+      "long_over_short": "68x"
+    },
+    "e2e_release_seed": {
+      "n": 2000,
+      "path": "serialized production projection path, real CandleBgeEmbedder",
+      "drain": "ok=true, drain_s=1200 (completed, no wedge; ~1.67 docs/s serialized release, corpus mix)",
+      "vectors": "all 2000 finite + unit-norm (dim 384)",
+      "correctness": "first 16 stored vectors match single-threaded re-embed (cosine > 0.9999)",
+      "note": "Handoff specifies >=10K; validated at N=2000 for tractability (a 10K release seed at corpus-mix rate is ~80-100 min). Default PR9_SEED_N is 10000; run in --release."
+    }
+  },
+
+  "codex_review": {
+    "model": "gpt-5.4, high effort, read-only sandbox",
+    "passes": 3,
+    "final": "CONCERN — all findings RESOLVED (consolidated verdict: dev/plans/runs/0.7.2-PR-9-review-20260531T205810Z.md)",
+    "arc": [
+      "Pass 1 CONCERN-1 (timeout relaxes serialization): ACCEPTED as the spec-mandated trade-off (drop guard on timeout, no deadlock).",
+      "Pass 2 CONCERN-1 (unbounded thread leak): FIXED via circuit breaker. CONCERN-2 (comment drift / 13x claim): FIXED.",
+      "Pass 3 CONCERN-1 (residual post-lock spawn window, <=1 thread): FIXED via post-lock breaker re-check.",
+      "Confirmed by codex on inspection: commit/cursor outside the embed mutex, single-writer + projection-cursor freshness preserved, panic transparency intact, tests honest."
+    ]
+  },
+
+  "known_issues": [
+    {
+      "id": "ac_007b_slow_threshold_reconfigurable",
+      "status": "PRE-EXISTING, NOT caused by PR-9",
+      "detail": "Timing-calibration test: its recursive-CTE N values are explicitly pinned to a 2026-05-02 aarch64 probe; on this x86_64 dev box the FAST/SLOW fixtures fall on the wrong side of the 500ms threshold so the slow-signal count assertion fails. PR-9 touches only the projection embed path (run_projection_job/embed_with_watchdog/seams) and shares NO code with set_slow_threshold_ms / execute_for_test CTE timing. Verified to fail at baseline ff7b008 (clean worktree, see review notes). Not a PR-9 regression; flagged for a separate calibration fix."
+    }
+  ],
+
+  "hard_constraints_honored": {
+    "no_push": true,
+    "tdd_red_first": true,
+    "codex_review": "3 passes, no BLOCK; all CONCERNs resolved",
+    "single_writer_projection_cursor_freshness": "preserved (codex-confirmed)",
+    "embedder_identity_immutable": "untouched",
+    "honest_reporting": "pre-flight non-completion reported and root-caused; false ~13x throughput claim withdrawn; ac_007b flake disclosed as pre-existing"
+  },
+
+  "doc_nit_fixed": "PROJECTION_WORKERS is a compile-time const (lib.rs), not an env knob — confirmed; no doc touched needed correction in this slice's surface."
+}
+
+codex
+I have the intended design and the current diff. Next I’m reading the exact line-level implementation, the new test files, and the ADR invariant text that governs the watchdog/cancellation behavior.
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/src/lib.rs | sed -n '150,260p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+   150	struct ProjectionJob {
+   151	    cursor: u64,
+   152	    kind: String,
+   153	    body: String,
+   154	}
+   155	
+   156	#[derive(Debug, Default)]
+   157	struct ProjectionRuntimeState {
+   158	    active_jobs: usize,
+   159	    queued_jobs: usize,
+   160	    frozen: bool,
+   161	    pending_scan: bool,
+   162	    stopping: bool,
+   163	    in_flight: BTreeSet<u64>,
+   164	}
+   165	
+   166	struct ProjectionRuntimeShared {
+   167	    path: PathBuf,
+   168	    embedder: Option<Arc<dyn Embedder>>,
+   169	    embedder_identity: EmbedderIdentity,
+   170	    state: Mutex<ProjectionRuntimeState>,
+   171	    state_cvar: Condvar,
+   172	    queue: Mutex<VecDeque<ProjectionJob>>,
+   173	    queue_cvar: Condvar,
+   174	    retry_delays_ms: Mutex<Vec<u64>>,
+   175	    /// PR-9 — ADR-0.6.0-embedder-protocol Invariant 5 per-`embed()` watchdog
+   176	    /// deadline (ms). Read lock-free on the projection hot path. Default
+   177	    /// `DEFAULT_EMBED_TIMEOUT_MS` (30s); the test seam
+   178	    /// `set_embed_timeout_ms_for_test` lowers it so the hanging-embedder
+   179	    /// test need not wait 30s. A hung embed surfaces
+   180	    /// `RuntimeEmbedderError::Timeout`, engaging the existing retry/failure
+   181	    /// path in `run_projection_job`.
+   182	    embed_timeout_ms: AtomicU64,
+   183	    /// PR-9 — engine-side embed serialization guard. The pool runs
+   184	    /// `PROJECTION_WORKERS` workers; this guard ensures the shared
+   185	    /// `Arc<dyn Embedder>` is invoked by at most one worker at a time.
+   186	    ///
+   187	    /// Rationale is SAFETY, not throughput. The engine accepts arbitrary
+   188	    /// caller-supplied embedders (the pyo3 / napi bridges, per ADR-0.6.0)
+   189	    /// whose `embed` is `Sync` only by trait contract; many real impls (a
+   190	    /// GIL-bound Python model, a non-reentrant native lib, an internal cache)
+   191	    /// are not actually safe under concurrent calls. Serializing engine-side
+   192	    /// makes the projection robust to embedders that are not truly
+   193	    /// concurrency-safe, without the engine having to trust each impl. The
+   194	    /// default `CandleBgeEmbedder` was shown safe under concurrent forwards
+   195	    /// in the PR-9 pre-flight, so for it the guard is belt-and-suspenders.
+   196	    ///
+   197	    /// Throughput is ~neutral: `candle` fans every `BertModel::forward` onto a
+   198	    /// single process-wide rayon pool, so two concurrent forwards merely
+   199	    /// share that pool (trading per-embed latency, not aggregate work) rather
+   200	    /// than getting 2x — serializing avoids some scheduler/cache thrash but is
+   201	    /// not a large win. (An earlier "~13x" figure compared a debug-build
+   202	    /// unserialized run against a release-build number and was withdrawn; a
+   203	    /// PR-9 micro-benchmark put release embeds at ~14 ms short / ~960 ms for a
+   204	    /// 512-token doc, watchdog overhead ~0.)
+   205	    ///
+   206	    /// Commit/IO stays parallel across workers (see `commit_gate`); this guard
+   207	    /// wraps only the embed call. It is held by the worker across the watchdog
+   208	    /// call and released here, so a timed-out (abandoned) embed frees it and
+   209	    /// cannot stall the pool — the guard owns no data, so a panic-resumed
+   210	    /// embed that poisons it is recovered via `into_inner`.
+   211	    ///
+   212	    /// Deliberate trade-off (codex PR-9 CONCERN-1, accepted): on the *timeout*
+   213	    /// path the worker drops this guard while the abandoned detached embed
+   214	    /// thread is still running lock-free, so serialization is briefly relaxed
+   215	    /// until that thread finishes. This is the prescribed choice over holding
+   216	    /// the guard inside the embed thread — which would let a genuinely-hung
+   217	    /// embed hold it forever and deadlock the whole pool, exactly the wedge
+   218	    /// ADR-0.6.0 Invariant 5 and this slice's spec forbid. Timeouts are the
+   219	    /// fault path only; the embed circuit breaker (`embed_circuit_open`) bounds
+   220	    /// how many such abandoned threads can accumulate. A future slice may
+   221	    /// replace this hard serialize with an operator-configurable embed
+   222	    /// concurrency limit (ADR-0.6.0 Invariant 4 pool-size override) for I/O-
+   223	    /// or GPU-bound embedders; that knob is out of PR-9 scope.
+   224	    embed_serialize: Mutex<()>,
+   225	    /// PR-9 — embed circuit breaker. `consecutive_embed_timeouts` counts
+   226	    /// watchdog timeouts since the last embed that actually returned (Ok or a
+   227	    /// typed error); on reaching `embed_circuit_threshold` the breaker latches
+   228	    /// `embed_circuit_open`, after which projection jobs fail fast WITHOUT
+   229	    /// attempting an embed. This bounds the abandoned-thread leak from a
+   230	    /// persistently-hung embedder: ADR-0.6.0 Invariant 5 forbids aborting a
+   231	    /// running embed, so every timeout detaches one embed thread that lives
+   232	    /// until it returns — left unbounded a wedged embedder would leak one per
+   233	    /// job. The breaker latches for the engine session (a reopen resets it);
+   234	    /// a half-open/cool-down retry is future work. `threshold == 0` disables
+   235	    /// the breaker.
+   236	    consecutive_embed_timeouts: AtomicU64,
+   237	    embed_circuit_open: AtomicBool,
+   238	    embed_circuit_threshold: AtomicU64,
+   239	    /// EU-5b — streaming mean accumulator for the per-workspace mean
+   240	    /// pinning lifecycle (`dev/design/embedder.md` §0.3). `Some(_)` iff
+   241	    /// the identity is MC-required AND no mean has been pinned yet on
+   242	    /// disk. The accumulator graduates to `None` after the at-pin
+   243	    /// commit; subsequent docs feed nothing.
+   244	    mean_accumulator: Mutex<Option<MeanAccumulator>>,
+   245	    /// EU-5b — `MeanVecPinned` events queued by the projection-commit
+   246	    /// transaction for the next test-seam drain. Production callers
+   247	    /// consume these via the `OpenReport.embedder_events` channel; the
+   248	    /// drain seam is `Engine::drain_mean_centering_events_for_test`.
+   249	    pending_events: Mutex<Vec<EmbedderEvent>>,
+   250	    /// EU-5f — serializes the body of `commit_projection_outcomes` across
+   251	    /// the `PROJECTION_WORKERS` worker connections. Each worker commits on
+   252	    /// its own connection; holding this gate for the whole commit makes the
+   253	    /// commit transactions totally ordered, which is what makes the at-pin
+   254	    /// re-quantize pass provably complete (every row is wholly before or
+   255	    /// after the unique pin tx, so none can survive un-centered). Embedding
+   256	    /// (`run_projection_job`) runs OUTSIDE the gate and stays parallel.
+   257	    commit_gate: Mutex<()>,
+   258	    /// 0.7.2 PR-2bc S1 fix-1 — overridable phase-2 rerank `LIMIT` for the
+   259	    /// search hot path. Equals `SEARCH_RERANK_LIMIT` (10) in production; a
+   260	    /// test seam (`set_search_limit_for_test`) can RAISE it (clamped to >=10,
+
+exec
+/bin/bash -lc "find .. -name MEMORY.md -o -name 'feedback_*.md' -o -name project_vector_identity_invariant.md | sed -n '1,120p'" in /home/coreyt/projects/fathomdb
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/src/lib.rs | sed -n '3360,3625p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+  3360	                    for job in jobs {
+  3361	                        queue.push_back(job);
+  3362	                    }
+  3363	                    shared.queue_cvar.notify_all();
+  3364	                }
+  3365	            }
+  3366	            Ok(_) => {}
+  3367	            Err(_) => {
+  3368	                if let Ok(mut state) = shared.state.lock() {
+  3369	                    state.pending_scan = false;
+  3370	                    shared.state_cvar.notify_all();
+  3371	                }
+  3372	            }
+  3373	        }
+  3374	    }
+  3375	}
+  3376	
+  3377	fn projection_worker_loop(shared: Arc<ProjectionRuntimeShared>) {
+  3378	    let mut connection = match open_runtime_connection(&shared.path) {
+  3379	        Ok(connection) => connection,
+  3380	        Err(_) => return,
+  3381	    };
+  3382	    if ensure_vector_partition(&mut connection, shared.embedder_identity.dimension).is_err() {
+  3383	        return;
+  3384	    }
+  3385	    loop {
+  3386	        let jobs = {
+  3387	            let mut queue = match shared.queue.lock() {
+  3388	                Ok(queue) => queue,
+  3389	                Err(_) => return,
+  3390	            };
+  3391	            loop {
+  3392	                let stopping = shared.state.lock().map(|state| state.stopping).unwrap_or(true);
+  3393	                if stopping && queue.is_empty() {
+  3394	                    return;
+  3395	                }
+  3396	                if let Some(job) = queue.pop_front() {
+  3397	                    let mut jobs = vec![job];
+  3398	                    while jobs.len() < PROJECTION_COMMIT_BATCH {
+  3399	                        let Some(job) = queue.pop_front() else {
+  3400	                            break;
+  3401	                        };
+  3402	                        jobs.push(job);
+  3403	                    }
+  3404	                    if let Ok(mut state) = shared.state.lock() {
+  3405	                        state.queued_jobs = state.queued_jobs.saturating_sub(jobs.len());
+  3406	                        state.active_jobs = state.active_jobs.saturating_add(jobs.len());
+  3407	                        shared.state_cvar.notify_all();
+  3408	                    }
+  3409	                    break jobs;
+  3410	                }
+  3411	                queue = match shared.queue_cvar.wait(queue) {
+  3412	                    Ok(queue) => queue,
+  3413	                    Err(_) => return,
+  3414	                };
+  3415	            }
+  3416	        };
+  3417	
+  3418	        // EU-5f — isolate worker faults. A panic inside `embed()` (or the
+  3419	        // commit) must not skip the state cleanup below, or `active_jobs`
+  3420	        // would stay elevated forever and `wait_for_idle` / `drain` would
+  3421	        // wedge into `EngineError::Scheduler` (Finding A). Mirrors the
+  3422	        // reader pool's `LiveGuard` panic-safety. The local commit tx rolls
+  3423	        // back on unwind, leaving the connection clean for reuse.
+  3424	        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+  3425	            run_projection_jobs(&shared, &mut connection, &jobs);
+  3426	        }))
+  3427	        .is_err();
+  3428	        if panicked {
+  3429	            commit_projection_panic_failures(&shared, &mut connection, &jobs);
+  3430	        }
+  3431	
+  3432	        if let Ok(mut state) = shared.state.lock() {
+  3433	            state.active_jobs = state.active_jobs.saturating_sub(jobs.len());
+  3434	            for job in &jobs {
+  3435	                state.in_flight.remove(&job.cursor);
+  3436	            }
+  3437	            if !state.stopping {
+  3438	                state.pending_scan = true;
+  3439	            }
+  3440	            shared.state_cvar.notify_all();
+  3441	        }
+  3442	    }
+  3443	}
+  3444	
+  3445	enum ProjectionOutcome {
+  3446	    /// `blob` is the un-centered f32 BLOB persisted to
+  3447	    /// `vector_default.embedding`. `bin_blob` is the (possibly centered)
+  3448	    /// f32 BLOB fed to `vec_quantize_binary` for the sign-bit column.
+  3449	    /// EU-5a2: `bin_blob == blob` unless the identity is MC-required
+  3450	    /// AND a mean_vec is pinned.
+  3451	    Success {
+  3452	        cursor: u64,
+  3453	        kind: String,
+  3454	        blob: Vec<u8>,
+  3455	        bin_blob: Vec<u8>,
+  3456	    },
+  3457	    Failure {
+  3458	        cursor: u64,
+  3459	        failure_code: &'static str,
+  3460	    },
+  3461	}
+  3462	
+  3463	fn run_projection_jobs(
+  3464	    shared: &ProjectionRuntimeShared,
+  3465	    connection: &mut Connection,
+  3466	    jobs: &[ProjectionJob],
+  3467	) {
+  3468	    let mut outcomes = Vec::with_capacity(jobs.len());
+  3469	    for job in jobs {
+  3470	        outcomes.push(run_projection_job(shared, job));
+  3471	    }
+  3472	    let _ = commit_projection_outcomes(connection, &outcomes, shared);
+  3473	}
+  3474	
+  3475	/// EU-5f — record every job in a panicked batch as a terminal projection
+  3476	/// failure so the scheduler does not re-enqueue and re-panic on the same
+  3477	/// cursors. Best-effort; runs after the worker caught a panic.
+  3478	fn commit_projection_panic_failures(
+  3479	    shared: &ProjectionRuntimeShared,
+  3480	    connection: &mut Connection,
+  3481	    jobs: &[ProjectionJob],
+  3482	) {
+  3483	    let outcomes: Vec<ProjectionOutcome> = jobs
+  3484	        .iter()
+  3485	        .map(|job| ProjectionOutcome::Failure {
+  3486	            cursor: job.cursor,
+  3487	            failure_code: "ProjectionPanic",
+  3488	        })
+  3489	        .collect();
+  3490	    let _ = commit_projection_outcomes(connection, &outcomes, shared);
+  3491	}
+  3492	
+  3493	/// PR-9 — ADR-0.6.0-embedder-protocol **Invariant 5**: run one `embed()`
+  3494	/// under a per-call deadline. A hung (non-panicking) embed would otherwise
+  3495	/// park a projection worker forever — the EU-5f `catch_unwind` only catches
+  3496	/// *panics*. On timeout we return `RuntimeEmbedderError::Timeout`, which the
+  3497	/// caller's existing retry/failure path already handles.
+  3498	///
+  3499	/// Cancellation follows Invariant 5 exactly: the embed runs on a detached
+  3500	/// thread that is allowed to *finish + discard* its result — never aborted
+  3501	/// mid-call (there is no safe thread-cancel API). The caller (the projection
+  3502	/// worker) holds `embed_serialize` across this call, but DROPS it the moment
+  3503	/// this returns — including on timeout — so the abandoned detached thread
+  3504	/// runs lock-free and a hung embed can neither hold the serialization guard
+  3505	/// forever nor deadlock the pool. (The commit happens later, outside this
+  3506	/// call, under the separate `commit_gate`.)
+  3507	///
+  3508	/// Panic-transparent: if `embed()` panics, the panic payload is captured on
+  3509	/// the watchdog thread and resumed on the worker thread, so the existing
+  3510	/// batch-level `catch_unwind` records `ProjectionPanic` exactly as before.
+  3511	fn embed_with_watchdog(
+  3512	    embedder: &Arc<dyn Embedder>,
+  3513	    body: &str,
+  3514	    timeout: Duration,
+  3515	) -> Result<Vec<f32>, RuntimeEmbedderError> {
+  3516	    let (tx, rx) = mpsc::channel();
+  3517	    let embedder = Arc::clone(embedder);
+  3518	    let body = body.to_string();
+  3519	    thread::spawn(move || {
+  3520	        let outcome =
+  3521	            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| embedder.embed(&body)));
+  3522	        // The receiver may already be gone (this call timed out): an async
+  3523	        // channel send never blocks, and a send to a dropped receiver is a
+  3524	        // no-op error we deliberately ignore — the result is discarded.
+  3525	        let _ = tx.send(outcome);
+  3526	    });
+  3527	    match rx.recv_timeout(timeout) {
+  3528	        Ok(Ok(result)) => result,
+  3529	        Ok(Err(panic_payload)) => std::panic::resume_unwind(panic_payload),
+  3530	        Err(mpsc::RecvTimeoutError::Timeout) => Err(RuntimeEmbedderError::Timeout),
+  3531	        // The watchdog thread dropped its sender without sending — should not
+  3532	        // happen (panics are captured above), but treat as a failed embed so
+  3533	        // the retry/failure path engages rather than silently succeeding.
+  3534	        Err(mpsc::RecvTimeoutError::Disconnected) => Err(RuntimeEmbedderError::Failed {
+  3535	            message: "embed watchdog thread dropped its result channel".to_string(),
+  3536	        }),
+  3537	    }
+  3538	}
+  3539	
+  3540	fn run_projection_job(shared: &ProjectionRuntimeShared, job: &ProjectionJob) -> ProjectionOutcome {
+  3541	    // PR-9 — embed circuit breaker (see `embed_circuit_open`). Once the
+  3542	    // embedder has timed out too many times in a row it is treated as broken;
+  3543	    // fail subsequent jobs fast WITHOUT attempting an embed, so a wedged
+  3544	    // embedder cannot keep leaking abandoned watchdog threads (one per job).
+  3545	    if shared.embed_circuit_open.load(Ordering::Relaxed) {
+  3546	        return ProjectionOutcome::Failure { cursor: job.cursor, failure_code: "EmbedderError" };
+  3547	    }
+  3548	    let delays = shared.retry_delays_ms.lock().map(|delays| delays.clone()).unwrap_or_default();
+  3549	    let mut last_code = "EmbedderError";
+  3550	    for (attempt, delay_ms) in std::iter::once(0_u64).chain(delays.iter().copied()).enumerate() {
+  3551	        if attempt > 0 {
+  3552	            if shared.state.lock().map(|state| state.stopping).unwrap_or(true) {
+  3553	                return ProjectionOutcome::Failure { cursor: job.cursor, failure_code: last_code };
+  3554	            }
+  3555	            thread::sleep(Duration::from_millis(delay_ms));
+  3556	        }
+  3557	        // PR-9 — re-check the breaker on every attempt, not just at entry:
+  3558	        // another worker (or an earlier attempt of this job) may have latched
+  3559	        // it while we were sleeping between retries. Bail before spawning yet
+  3560	        // another timeout-bound watchdog thread, so the abandoned-thread leak
+  3561	        // stays bounded even on the multi-retry path.
+  3562	        if shared.embed_circuit_open.load(Ordering::Relaxed) {
+  3563	            return ProjectionOutcome::Failure { cursor: job.cursor, failure_code: last_code };
+  3564	        }
+  3565	        // PR-9 / ADR-0.6.0 Invariant 5 — every embed runs under the per-call
+  3566	        // watchdog deadline so a hung embed surfaces Timeout instead of
+  3567	        // parking this worker forever.
+  3568	        let embed_timeout = Duration::from_millis(shared.embed_timeout_ms.load(Ordering::Relaxed));
+  3569	        let vector = match shared.embedder.as_ref() {
+  3570	            Some(embedder) => {
+  3571	                // PR-9 — serialize the embed call engine-side (see
+  3572	                // `embed_serialize`): the shared embedder is invoked one call
+  3573	                // at a time, for SAFETY with arbitrary caller-supplied
+  3574	                // embedders (throughput is ~neutral on the candle default).
+  3575	                // The guard is held across the watchdog call and released
+  3576	                // here, so commit/IO below stays parallel and a timed-out
+  3577	                // embed frees it. The guard owns no data; a panic-resumed
+  3578	                // embed poisons it, so we recover the inner guard rather than
+  3579	                // wedge the whole pool.
+  3580	                let _embed_permit = shared
+  3581	                    .embed_serialize
+  3582	                    .lock()
+  3583	                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+  3584	                // PR-9 — final breaker check after acquiring the guard: a
+  3585	                // worker that was queued on the lock may find the breaker
+  3586	                // latched by another worker by the time it acquires it; bail
+  3587	                // before spawning one more watchdog thread (closes the last
+  3588	                // post-latch spawn window).
+  3589	                if shared.embed_circuit_open.load(Ordering::Relaxed) {
+  3590	                    return ProjectionOutcome::Failure {
+  3591	                        cursor: job.cursor,
+  3592	                        failure_code: last_code,
+  3593	                    };
+  3594	                }
+  3595	                match embed_with_watchdog(embedder, &job.body, embed_timeout) {
+  3596	                    Ok(vector) => {
+  3597	                        // A returning embed breaks the consecutive-timeout run.
+  3598	                        shared.consecutive_embed_timeouts.store(0, Ordering::Relaxed);
+  3599	                        vector
+  3600	                    }
+  3601	                    Err(RuntimeEmbedderError::Timeout) => {
+  3602	                        last_code = "EmbedderError";
+  3603	                        // PR-9 circuit breaker: count consecutive timeouts and
+  3604	                        // latch the breaker once the embedder looks broken, so
+  3605	                        // we stop spawning (and abandoning) embed threads.
+  3606	                        let prior =
+  3607	                            shared.consecutive_embed_timeouts.fetch_add(1, Ordering::Relaxed);
+  3608	                        let threshold = shared.embed_circuit_threshold.load(Ordering::Relaxed);
+  3609	                        if threshold != 0 && prior + 1 >= threshold {
+  3610	                            shared.embed_circuit_open.store(true, Ordering::Relaxed);
+  3611	                            return ProjectionOutcome::Failure {
+  3612	                                cursor: job.cursor,
+  3613	                                failure_code: last_code,
+  3614	                            };
+  3615	                        }
+  3616	                        continue;
+  3617	                    }
+  3618	                    Err(RuntimeEmbedderError::Failed { .. }) => {
+  3619	                        last_code = "EmbedderError";
+  3620	                        // A typed error means the embedder responded (not hung).
+  3621	                        shared.consecutive_embed_timeouts.store(0, Ordering::Relaxed);
+  3622	                        continue;
+  3623	                    }
+  3624	                }
+  3625	            }
+
+exec
+/bin/bash -lc "nl -ba dev/adr/ADR-0.6.0-embedder-protocol.md | sed -n '85,130p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+    85	**Invariant 4 — Engine-owned thread.** Embedder dispatch is on a
+    86	dedicated thread pool owned by the engine, sized `num_cpus::get()`,
+    87	configurable per engine via `Engine.open(... embedder_pool_size: N)`.
+    88	Asyncio worker threads, libuv blocking pool, V8 main thread, JS
+    89	worker_threads — none ever run an embedder call directly. Enforced by
+    90	the bindings layer.
+    91	
+    92	The pool-size override exists because embedded deployments vary
+    93	substantially: some colocate FathomDB with latency-sensitive app code
+    94	and need to cap embedder concurrency to preserve host responsiveness,
+    95	while others run bulkier local models and need to raise or lower
+    96	parallelism to match actual CPU / memory pressure. This is an
+    97	operator-facing throughput-vs-contention control, not a binding-only
+    98	escape hatch.
+    99	
+   100	**Invariant 5 — Per-call timeout.** Every `embed()` call is wrapped in
+   101	a timeout (default 30s; configurable). Timeout fails the call with
+   102	`EmbedderError::Timeout`; does not corrupt writer state; cancels by
+   103	allowing the embedder thread to finish + discard, never by aborting
+   104	mid-call (no thread-cancel API in standard pthreads / Tokio joinhandle
+   105	abort is best-effort).
+   106	
+   107	## Options considered
+   108	
+   109	**A — Sync trait with five invariants (chosen).** Pros: smallest
+   110	contract surface; deadlock vectors closed by structural rules + tests;
+   111	language-agnostic. Cons: Python/TS users with naturally-async
+   112	embedders pay an `asyncio.run` / `await` cost per call; documented.
+   113	
+   114	**B — Async trait with `async fn embed(&self, text: &str)`.** Pros:
+   115	matches modern Rust / Python / TS idiom for I/O-bound embedders. Cons:
+   116	forces tokio in the engine surface (which Option A of
+   117	ADR-0.6.0-async-surface.md explicitly rejected); doubles every binding's
+   118	adapter; reopens GIL-vs-runtime questions. Rejected.
+   119	
+   120	**C — Two traits (sync + async, user picks).** Pros: flexibility. Cons:
+   121	"two shapes for one verb" — same Stop-doing pattern as 0.5.x's
+   122	`configure_vec(kind_or_embedder)`. Doubles tests, docs, dispatch
+   123	paths. Rejected.
+   124	
+   125	**D — Thread-isolated impl (Python sub-interpreter per PEP 684).**
+   126	Pros: real GIL isolation across embedder calls. Cons: requires CPython
+   127	3.12+; ecosystem not ready (most pyo3 / numpy / torch don't yet
+   128	support sub-interpreters). Premature; revisit in 0.7+.
+   129	
+   130	## Consequences
+
+exec
+/bin/bash -lc "nl -ba dev/adr/ADR-0.6.0-embedder-protocol.md | sed -n '145,165p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+   145	    `pyo3-log-gil-deadlock-evidence` class).
+   146	  - Embedder returning non-unit-norm vector triggers debug-build
+   147	    assertion (and a typed error in release).
+   148	  - Embedder calling back into engine triggers debug-build re-entrancy
+   149	    panic.
+   150	  - Embedder timeout (mock embedder sleeping > 30s) returns typed
+   151	    `EmbedderError::Timeout`; does not corrupt subsequent writes.
+   152	- Stop-doing: enforces "embedder owns identity" (Invariant in
+   153	  `dev/notes/project-vector-identity-invariant.md`); embedders never
+   154	  carry identity strings on vector configs.
+   155	
+   156	## Citations
+   157	
+   158	- HITL decision 2026-04-27 (Path 2 + Path 1 invariants from
+   159	  ADR-0.6.0-async-surface.md).
+   160	- Critic-3 ASYNC-3 (GIL re-entrancy class) + EMB-2 (L2-norm enforcement)
+   161	  - EMB-4 (engine-owned thread) + EMB-1 (mean-pool decision).
+   162	- Memory `project_vector_identity_invariant`.
+   163	- Memory pattern from `dev/archive/pyo3-log-gil-deadlock-evidence.md`,
+   164	  commits `cf0b190`, `d09deb4`.
+
+ succeeded in 620ms:
+../ado-mcp/MEMORY.md
+
+codex
+The ADR lines match the implementation intent. I’m on the test surface now, especially the breaker/retry-path test and the panic-path coverage.
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/tests/pr9_embed_watchdog.rs | sed -n '1,320p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+     1	//! PR-9 item 2 — ADR-0.6.0-embedder-protocol **Invariant 5** (per-`embed()`
+     2	//! watchdog) on the projection path.
+     3	//!
+     4	//! Context: EU-5f's `catch_unwind` guard (Finding A) catches a *panicking*
+     5	//! projection worker, but a *hung* (non-panicking) embed still parks a
+     6	//! worker forever — `drain` never reaches idle and wedges into
+     7	//! `EngineError::Scheduler`. Invariant 5 says every `embed()` runs under a
+     8	//! per-call deadline (default 30s, configurable); a timeout fails the call
+     9	//! with `EmbedderError::Timeout` and MUST NOT corrupt writer state.
+    10	//!
+    11	//! These tests drive the PRODUCTION path only (`engine.write` + `drain`),
+    12	//! with a configurable, lowered watchdog deadline so they need not wait 30s.
+    13	//!
+    14	//! RED before the watchdog exists:
+    15	//!   * `hung_embed_times_out_instead_of_wedging_drain` — `drain` wedges into
+    16	//!     `EngineError::Scheduler` because the parked worker never decrements
+    17	//!     `active_jobs`.
+    18	//! GREEN after: the hung embed surfaces `Timeout`, the existing retry path
+    19	//! records a terminal failure, `drain` returns, and writer state is intact.
+    20	
+    21	use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    22	use std::sync::Arc;
+    23	use std::thread;
+    24	use std::time::{Duration, Instant};
+    25	
+    26	use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
+    27	use fathomdb_engine::lifecycle::ProjectionStatus;
+    28	use fathomdb_engine::{Engine, PreparedWrite};
+    29	use fathomdb_schema::SQLITE_SUFFIX;
+    30	use tempfile::TempDir;
+    31	
+    32	const DIM: u32 = 8;
+    33	
+    34	fn unit_vector(dim: u32) -> Vector {
+    35	    let mut v = vec![0.0_f32; dim as usize];
+    36	    v[0] = 1.0;
+    37	    v
+    38	}
+    39	
+    40	/// Embedder whose `embed()` blocks while `park` is true (simulating a hung
+    41	/// forward pass), then returns a valid unit vector once the test releases
+    42	/// it. `calls` counts entries so a test can assert the embed was actually
+    43	/// attempted. The park loop sleeps in small increments so releasing it is
+    44	/// observed promptly.
+    45	#[derive(Debug)]
+    46	struct ParkingEmbedder {
+    47	    identity: EmbedderIdentity,
+    48	    park: Arc<AtomicBool>,
+    49	    calls: AtomicU64,
+    50	}
+    51	
+    52	impl ParkingEmbedder {
+    53	    fn new(park: Arc<AtomicBool>) -> Self {
+    54	        Self {
+    55	            identity: EmbedderIdentity::new("parking", "rev-a", DIM),
+    56	            park,
+    57	            calls: AtomicU64::new(0),
+    58	        }
+    59	    }
+    60	}
+    61	
+    62	impl Embedder for ParkingEmbedder {
+    63	    fn identity(&self) -> EmbedderIdentity {
+    64	        self.identity.clone()
+    65	    }
+    66	
+    67	    fn embed(&self, _text: &str) -> Result<Vector, EmbedderError> {
+    68	        self.calls.fetch_add(1, Ordering::Relaxed);
+    69	        // Block while parked, simulating a hung forward pass. The watchdog
+    70	        // must abandon this call (finish + discard per Invariant 5); we never
+    71	        // abort the thread. The block is bounded (~20s, well above both the
+    72	        // lowered watchdog deadline and the test's drain timeout) purely as a
+    73	        // safety valve so a regression that removes the watchdog cannot hang
+    74	        // the test binary forever on a parked worker — it surfaces as a
+    75	        // wedged `drain` (the RED signal) instead.
+    76	        let mut waited = Duration::ZERO;
+    77	        let cap = Duration::from_secs(20);
+    78	        while self.park.load(Ordering::Relaxed) && waited < cap {
+    79	            thread::sleep(Duration::from_millis(10));
+    80	            waited += Duration::from_millis(10);
+    81	        }
+    82	        Ok(unit_vector(DIM))
+    83	    }
+    84	}
+    85	
+    86	/// Embedder that sleeps a fixed sub-budget delay then returns Ok — models a
+    87	/// legitimately-slow cold embed. The watchdog MUST NOT false-timeout this.
+    88	#[derive(Debug)]
+    89	struct SlowEmbedder {
+    90	    identity: EmbedderIdentity,
+    91	    delay: Duration,
+    92	}
+    93	
+    94	impl SlowEmbedder {
+    95	    fn new(delay: Duration) -> Self {
+    96	        Self { identity: EmbedderIdentity::new("slow", "rev-a", DIM), delay }
+    97	    }
+    98	}
+    99	
+   100	impl Embedder for SlowEmbedder {
+   101	    fn identity(&self) -> EmbedderIdentity {
+   102	        self.identity.clone()
+   103	    }
+   104	
+   105	    fn embed(&self, _text: &str) -> Result<Vector, EmbedderError> {
+   106	        thread::sleep(self.delay);
+   107	        Ok(unit_vector(DIM))
+   108	    }
+   109	}
+   110	
+   111	fn fixture_path(name: &str) -> (TempDir, std::path::PathBuf) {
+   112	    let dir = TempDir::new().expect("tempdir");
+   113	    let path = dir.path().join(format!("{name}{SQLITE_SUFFIX}"));
+   114	    (dir, path)
+   115	}
+   116	
+   117	fn doc(body: &str) -> PreparedWrite {
+   118	    PreparedWrite::Node { kind: "doc".to_string(), body: body.to_string(), source_id: None }
+   119	}
+   120	
+   121	fn wait_for_status(
+   122	    engine: &Engine,
+   123	    kind: &str,
+   124	    expected: ProjectionStatus,
+   125	    timeout: Duration,
+   126	) -> bool {
+   127	    let started = Instant::now();
+   128	    loop {
+   129	        let observed = engine.projection_status_for_test(kind).expect("projection status");
+   130	        if observed == expected {
+   131	            return true;
+   132	        }
+   133	        if started.elapsed() >= timeout {
+   134	            return false;
+   135	        }
+   136	        thread::sleep(Duration::from_millis(10));
+   137	    }
+   138	}
+   139	
+   140	/// Invariant 5 core: a hung embed must surface a timeout so `drain` reaches
+   141	/// idle, rather than parking a worker until `drain` wedges into
+   142	/// `EngineError::Scheduler`. RED before the watchdog (drain wedges); GREEN
+   143	/// after (the job is recorded as a terminal failure and drain returns).
+   144	#[test]
+   145	fn hung_embed_times_out_instead_of_wedging_drain() {
+   146	    let (_dir, path) = fixture_path("pr9_watchdog_hang");
+   147	    let park = Arc::new(AtomicBool::new(true));
+   148	    let embedder = Arc::new(ParkingEmbedder::new(park.clone()));
+   149	    let opened = Engine::open_with_embedder_for_test(&path, embedder.clone()).expect("open");
+   150	    let engine = opened.engine;
+   151	    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+   152	
+   153	    // Lower the watchdog deadline + shorten retry backoff so the test runs
+   154	    // in well under a second rather than the 30s production default.
+   155	    engine.set_embed_timeout_ms_for_test(150);
+   156	    engine.set_projection_retry_delays_for_test(&[10, 10]);
+   157	
+   158	    let receipt = engine.write(&[doc("hung-doc")]).expect("write");
+   159	
+   160	    // RED (no watchdog): the worker parks forever, active_jobs stays > 0,
+   161	    // and drain times out into EngineError::Scheduler.
+   162	    // GREEN (watchdog): each attempt times out, the job is recorded as a
+   163	    // terminal EmbedderError failure, the scheduler reaches idle, drain Ok.
+   164	    let drained = engine.drain(8_000);
+   165	    assert!(
+   166	        drained.is_ok(),
+   167	        "drain must not wedge on a hung embed (Invariant 5 watchdog); got {drained:?}"
+   168	    );
+   169	    assert!(
+   170	        wait_for_status(&engine, "doc", ProjectionStatus::Failed, Duration::from_secs(2)),
+   171	        "the hung doc must be recorded as a terminal projection failure"
+   172	    );
+   173	    assert_eq!(
+   174	        engine.projection_failure_count_for_test(receipt.cursor).expect("failure count"),
+   175	        1,
+   176	        "the timed-out embed must record exactly one terminal failure"
+   177	    );
+   178	    assert!(
+   179	        !engine.has_vector_for_cursor_for_test(receipt.cursor).expect("has_vector"),
+   180	        "no vector should be stored for the timed-out doc"
+   181	    );
+   182	
+   183	    // Release the park so the abandoned watchdog threads exit cleanly.
+   184	    park.store(false, Ordering::Relaxed);
+   185	    assert!(
+   186	        embedder.calls.load(Ordering::Relaxed) >= 1,
+   187	        "the embedder must have been called at least once"
+   188	    );
+   189	}
+   190	
+   191	/// Invariant 5: a timed-out embed must NOT corrupt writer state — a
+   192	/// subsequent normal write projects cleanly. (ADR test: "mock embedder
+   193	/// sleeping > 30s ... does not corrupt subsequent writes".)
+   194	#[test]
+   195	fn timed_out_embed_does_not_corrupt_subsequent_writes() {
+   196	    let (_dir, path) = fixture_path("pr9_watchdog_nocorrupt");
+   197	    let park = Arc::new(AtomicBool::new(true));
+   198	    let embedder = Arc::new(ParkingEmbedder::new(park.clone()));
+   199	    let opened = Engine::open_with_embedder_for_test(&path, embedder.clone()).expect("open");
+   200	    let engine = opened.engine;
+   201	    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+   202	    engine.set_embed_timeout_ms_for_test(150);
+   203	    engine.set_projection_retry_delays_for_test(&[10, 10]);
+   204	
+   205	    // First doc hangs and times out.
+   206	    engine.write(&[doc("hung-doc")]).expect("write hung");
+   207	    engine.drain(8_000).expect("drain after hung embed must return");
+   208	
+   209	    // Release the hang; a fresh write must project successfully — proving
+   210	    // the timed-out embed left the writer / projection cursor uncorrupted.
+   211	    park.store(false, Ordering::Relaxed);
+   212	    let receipt = engine.write(&[doc("healthy-doc")]).expect("write healthy");
+   213	    engine.drain(8_000).expect("drain healthy doc");
+   214	    assert!(
+   215	        wait_for_status(&engine, "doc", ProjectionStatus::UpToDate, Duration::from_secs(2)),
+   216	        "a normal write after a timed-out embed must project to UpToDate"
+   217	    );
+   218	    assert!(
+   219	        engine.has_vector_for_cursor_for_test(receipt.cursor).expect("has_vector"),
+   220	        "the post-timeout healthy doc must have a stored vector"
+   221	    );
+   222	}
+   223	
+   224	/// PR-9 circuit breaker: a persistently-hung embedder must trip the breaker
+   225	/// after a bounded number of consecutive timeouts, after which jobs fail fast
+   226	/// WITHOUT attempting an embed — so abandoned watchdog threads cannot leak
+   227	/// without bound (one per timed-out job). RED before the breaker exists: the
+   228	/// circuit never opens and every doc spawns/abandons an embed. GREEN after:
+   229	/// the circuit latches and embed calls stop well short of the doc count.
+   230	#[test]
+   231	fn persistent_hang_trips_circuit_breaker_and_bounds_thread_leak() {
+   232	    let (_dir, path) = fixture_path("pr9_circuit");
+   233	    let park = Arc::new(AtomicBool::new(true)); // hang for the whole test
+   234	    let embedder = Arc::new(ParkingEmbedder::new(park.clone()));
+   235	    let opened = Engine::open_with_embedder_for_test(&path, embedder.clone()).expect("open");
+   236	    let engine = opened.engine;
+   237	    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+   238	    engine.set_embed_timeout_ms_for_test(80); // fast timeouts
+   239	    // Non-empty retry delays so the breaker is exercised on the MULTI-attempt
+   240	    // retry path (a single job retries here), not just at job entry — the
+   241	    // per-attempt re-check must bail mid-retry once the breaker latches.
+   242	    engine.set_projection_retry_delays_for_test(&[10, 10]);
+   243	    engine.set_embed_circuit_threshold_for_test(4); // trip after 4 in a row
+   244	
+   245	    let nodes: Vec<PreparedWrite> =
+   246	        (0..40).map(|i| doc(&format!("hang-{i}"))).collect();
+   247	    engine.write(&nodes).expect("write");
+   248	    engine.drain(20_000).expect("drain must return despite the hung embedder");
+   249	
+   250	    assert!(
+   251	        engine.embed_circuit_open_for_test(),
+   252	        "circuit breaker must latch open after the consecutive-timeout threshold"
+   253	    );
+   254	    let calls = embedder.calls.load(Ordering::Relaxed);
+   255	    assert!(
+   256	        calls <= 16,
+   257	        "breaker must stop further embed attempts (bounding abandoned threads) \
+   258	         even across the retry path; saw {calls} embed calls across 40 docs"
+   259	    );
+   260	
+   261	    // Release the park so the abandoned watchdog threads exit cleanly.
+   262	    park.store(false, Ordering::Relaxed);
+   263	}
+   264	
+   265	/// Invariant 5: the watchdog must NOT false-timeout a legitimately-slow
+   266	/// (under-budget) embed. A 100ms embed under a generous deadline succeeds.
+   267	#[test]
+   268	fn slow_but_under_budget_embed_succeeds() {
+   269	    let (_dir, path) = fixture_path("pr9_watchdog_slow_ok");
+   270	    let embedder = Arc::new(SlowEmbedder::new(Duration::from_millis(100)));
+   271	    let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
+   272	    let engine = opened.engine;
+   273	    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+   274	    engine.set_embed_timeout_ms_for_test(5_000);
+   275	
+   276	    let receipt = engine.write(&[doc("slow-doc")]).expect("write");
+   277	    engine.drain(8_000).expect("drain slow-but-under-budget doc");
+   278	    assert!(
+   279	        wait_for_status(&engine, "doc", ProjectionStatus::UpToDate, Duration::from_secs(2)),
+   280	        "a slow-but-under-budget embed must succeed, not false-timeout"
+   281	    );
+   282	    assert!(
+   283	        engine.has_vector_for_cursor_for_test(receipt.cursor).expect("has_vector"),
+   284	        "the slow-but-under-budget doc must have a stored vector"
+   285	    );
+   286	}
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/tests/pr9_embed_serialization.rs | sed -n '1,260p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+     1	//! PR-9 item 1 — engine-side embed serialization.
+     2	//!
+     3	//! The projection pool runs `PROJECTION_WORKERS` (2) workers. PR-9 serializes
+     4	//! the embed *call* engine-side so the shared `Arc<dyn Embedder>` is invoked
+     5	//! by at most one worker at a time, while commit/IO stays parallel.
+     6	//!
+     7	//! Rationale is SAFETY, not throughput: the engine accepts arbitrary
+     8	//! caller-supplied embedders (pyo3 / napi bridges) that are `Sync` only by
+     9	//! contract and may not be truly concurrency-safe; serializing engine-side
+    10	//! makes the projection robust to them. (Throughput is ~neutral — candle
+    11	//! fans every forward onto one process-wide rayon pool, so concurrent
+    12	//! forwards share it rather than getting 2x; the PR-9 pre-flight also
+    13	//! confirmed concurrent CandleBge embeds neither wedge nor corrupt.)
+    14	//!
+    15	//! This test proves serialization mechanically with a fast mock embedder
+    16	//! that records the maximum number of `embed()` calls in flight at once.
+    17	//!
+    18	//! RED (no guard): two workers embed concurrently → max in flight == 2.
+    19	//! GREEN (guard):  embeds run one at a time   → max in flight == 1.
+    20	
+    21	use std::sync::atomic::{AtomicUsize, Ordering};
+    22	use std::sync::Arc;
+    23	use std::thread;
+    24	use std::time::Duration;
+    25	
+    26	use fathomdb_embedder_api::{Embedder, EmbedderError, EmbedderIdentity, Vector};
+    27	use fathomdb_engine::lifecycle::ProjectionStatus;
+    28	use fathomdb_engine::{Engine, PreparedWrite};
+    29	use fathomdb_schema::SQLITE_SUFFIX;
+    30	use tempfile::TempDir;
+    31	
+    32	const DIM: u32 = 8;
+    33	
+    34	fn unit_vector() -> Vector {
+    35	    let mut v = vec![0.0_f32; DIM as usize];
+    36	    v[0] = 1.0;
+    37	    v
+    38	}
+    39	
+    40	/// Records peak concurrency of `embed()`. Each call bumps an in-flight
+    41	/// counter, holds it for `delay` (so overlapping calls are observable),
+    42	/// and updates the shared `max_in_flight` high-water mark.
+    43	#[derive(Debug)]
+    44	struct ConcurrencyProbeEmbedder {
+    45	    identity: EmbedderIdentity,
+    46	    in_flight: AtomicUsize,
+    47	    max_in_flight: Arc<AtomicUsize>,
+    48	    delay: Duration,
+    49	}
+    50	
+    51	impl ConcurrencyProbeEmbedder {
+    52	    fn new(max_in_flight: Arc<AtomicUsize>, delay: Duration) -> Self {
+    53	        Self {
+    54	            identity: EmbedderIdentity::new("probe", "rev-a", DIM),
+    55	            in_flight: AtomicUsize::new(0),
+    56	            max_in_flight,
+    57	            delay,
+    58	        }
+    59	    }
+    60	}
+    61	
+    62	impl Embedder for ConcurrencyProbeEmbedder {
+    63	    fn identity(&self) -> EmbedderIdentity {
+    64	        self.identity.clone()
+    65	    }
+    66	
+    67	    fn embed(&self, _text: &str) -> Result<Vector, EmbedderError> {
+    68	        let cur = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+    69	        self.max_in_flight.fetch_max(cur, Ordering::SeqCst);
+    70	        thread::sleep(self.delay);
+    71	        self.in_flight.fetch_sub(1, Ordering::SeqCst);
+    72	        Ok(unit_vector())
+    73	    }
+    74	}
+    75	
+    76	fn fixture_path(name: &str) -> (TempDir, std::path::PathBuf) {
+    77	    let dir = TempDir::new().expect("tempdir");
+    78	    let path = dir.path().join(format!("{name}{SQLITE_SUFFIX}"));
+    79	    (dir, path)
+    80	}
+    81	
+    82	/// Item 1: the production projection path must embed one-at-a-time. With two
+    83	/// projection workers and a deliberately-slow embed, an unserialized engine
+    84	/// would show two concurrent `embed()` calls; the engine-side guard pins the
+    85	/// peak at exactly one.
+    86	#[test]
+    87	fn embeds_are_serialized_engine_side() {
+    88	    let (_dir, path) = fixture_path("pr9_serialize");
+    89	    let max_in_flight = Arc::new(AtomicUsize::new(0));
+    90	    let embedder =
+    91	        Arc::new(ConcurrencyProbeEmbedder::new(max_in_flight.clone(), Duration::from_millis(50)));
+    92	    let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
+    93	    let engine = opened.engine;
+    94	    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+    95	
+    96	    // A worker grabs a whole PROJECTION_COMMIT_BATCH (16) at once, and the
+    97	    // dispatcher enqueues up to PROJECTION_INFLIGHT_LIMIT (32) per scan — so
+    98	    // we write > one batch (40 docs) to ensure both workers pick up work and
+    99	    // would embed concurrently if the engine permitted it.
+   100	    let nodes: Vec<PreparedWrite> = (0..40)
+   101	        .map(|i| PreparedWrite::Node {
+   102	            kind: "doc".to_string(),
+   103	            body: format!("serialize-doc-{i}"),
+   104	            source_id: None,
+   105	        })
+   106	        .collect();
+   107	    engine.write(&nodes).expect("write");
+   108	    engine.drain(30_000).expect("drain");
+   109	    assert_eq!(
+   110	        engine.projection_status_for_test("doc").expect("status"),
+   111	        ProjectionStatus::UpToDate,
+   112	        "all docs must project successfully"
+   113	    );
+   114	
+   115	    let peak = max_in_flight.load(Ordering::SeqCst);
+   116	    assert_eq!(
+   117	        peak, 1,
+   118	        "embeds must run one at a time engine-side (PR-9 oversubscription fix); \
+   119	         observed {peak} concurrent embed() calls"
+   120	    );
+   121	}
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/tests/pr9_concurrent_embed.rs | sed -n '1,320p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+     1	//! PR-9 item 1 — sustained real-corpus seed through the production
+     2	//! projection path (now engine-serialized).
+     3	//!
+     4	//! `PROJECTION_WORKERS = 2` workers drive the real `CandleBgeEmbedder`. The
+     5	//! PR-9 pre-flight established that letting the two workers call the shared
+     6	//! `BertModel::forward` *concurrently* does not wedge or corrupt. PR-9 still
+     7	//! serializes the embed engine-side (`lib.rs::run_projection_job`'s
+     8	//! `embed_serialize` guard, commit/IO stays parallel) — for SAFETY with
+     9	//! arbitrary caller-supplied embedders, not throughput (candle fans every
+    10	//! forward onto one process-wide rayon pool, so serialization is
+    11	//! throughput-neutral on the candle default). The fast mechanism test for
+    12	//! that guard is `pr9_embed_serialization.rs`.
+    13	//!
+    14	//! This test is the end-to-end *guard + measurement*: it seeds ≥10K real
+    15	//! docs through the serialized production path and asserts:
+    16	//!   * `drain` returns (the serialized seed completes in bounded time),
+    17	//!   * every seeded row produced a vector (no drops),
+    18	//!   * the projection reaches `UpToDate`, and
+    19	//!   * stored vectors are finite + unit-norm, with a direct spot-check that
+    20	//!     the first rows' stored vectors equal a single-threaded re-embed.
+    21	//! It also logs the serialized embed rate (`PR9_PROGRESS` / `PR9_DRAINED`)
+    22	//! for the record. NOTE: run in `--release`; in a debug build a 512-token
+    23	//! candle forward is ~14x slower (PR-9 micro-benchmark), so a 10K seed of
+    24	//! long corpus docs takes hours in debug. Lower `PR9_SEED_N` for a quick
+    25	//! debug end-to-end.
+    26	//!
+    27	//! Opt-in (real candle weights, slow ~45 min at 10K): requires the
+    28	//! `default-embedder` feature AND `AGENT_LONG=1`:
+    29	//!   AGENT_LONG=1 cargo test -p fathomdb-engine --features default-embedder \
+    30	//!     --test pr9_concurrent_embed -- --nocapture
+    31	//! Override the seed size with `PR9_SEED_N` (default 10000).
+    32	
+    33	#![cfg(feature = "default-embedder")]
+    34	
+    35	use std::sync::atomic::{AtomicBool, Ordering};
+    36	use std::sync::Arc;
+    37	use std::thread;
+    38	use std::time::{Duration, Instant};
+    39	
+    40	use fathomdb_embedder::CandleBgeEmbedder;
+    41	use fathomdb_embedder_api::Embedder;
+    42	use fathomdb_engine::lifecycle::ProjectionStatus;
+    43	use fathomdb_engine::{EmbedderChoice, Engine, PreparedWrite};
+    44	use tempfile::TempDir;
+    45	
+    46	#[path = "support/corpus_subset.rs"]
+    47	mod corpus_subset;
+    48	use corpus_subset::load_subset_or_skip;
+    49	
+    50	const DEFAULT_SEED_N: usize = 10_000;
+    51	const WRITE_BATCH: usize = 256;
+    52	// Generous ceiling so the (real, serialized) seed completes rather than
+    53	// being cut off: release embeds are ~14ms short / ~960ms for a 512-token doc
+    54	// (PR-9 micro-benchmark), so a 10K corpus-mix seed is well under this. A
+    55	// genuine wedge would surface as drain RETURNING Err, not as a timeout.
+    56	const DRAIN_TIMEOUT_MS: u64 = 90 * 60 * 1000;
+    57	
+    58	fn env_usize(key: &str, default: usize) -> usize {
+    59	    std::env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+    60	}
+    61	
+    62	fn cosine(a: &[f32], b: &[f32]) -> f32 {
+    63	    let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
+    64	    let na: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+    65	    let nb: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+    66	    dot / (na * nb).max(1e-12)
+    67	}
+    68	
+    69	#[test]
+    70	fn sustained_seed_serialized_path_completes_and_is_correct() {
+    71	    if std::env::var_os("AGENT_LONG").is_none() {
+    72	        eprintln!("[skip] AGENT_LONG not set; PR-9 sustained-seed measurement is opt-in");
+    73	        return;
+    74	    }
+    75	    if std::env::var("FATHOMDB_SKIP_NETWORK_TESTS").is_ok() {
+    76	        eprintln!("[skip] FATHOMDB_SKIP_NETWORK_TESTS set; embedder cache unavailable");
+    77	        return;
+    78	    }
+    79	    let Some(docs) = load_subset_or_skip(usize::MAX) else {
+    80	        eprintln!("[skip] corpus not present; cannot run PR-9 concurrent-embed seed");
+    81	        return;
+    82	    };
+    83	
+    84	    // Build the ≥N-body haystack by cycling the real corpus (duplicates are
+    85	    // fine: identical inputs still drive concurrent forward passes on the
+    86	    // shared model and let us spot-check determinism).
+    87	    let target_n = env_usize("PR9_SEED_N", DEFAULT_SEED_N);
+    88	    let real_bodies: Vec<String> =
+    89	        docs.iter().map(|d| d.body.clone()).filter(|b| !b.trim().is_empty()).collect();
+    90	    assert!(!real_bodies.is_empty(), "corpus yielded no non-empty bodies");
+    91	    let bodies: Vec<String> =
+    92	        (0..target_n).map(|i| real_bodies[i % real_bodies.len()].clone()).collect();
+    93	    eprintln!(
+    94	        "PR9_SETUP target_n={target_n} real_docs={} (cycled to fill)",
+    95	        real_bodies.len()
+    96	    );
+    97	
+    98	    // Bare CandleBgeEmbedder — NO harness-side SerializedBge wrapper: embed
+    99	    // serialization is now the engine's job (`embed_serialize`), so this
+   100	    // exercises the real production path. Reused below as the single-threaded
+   101	    // ground-truth encoder for the determinism spot-check.
+   102	    let embedder: Arc<dyn Embedder> =
+   103	        Arc::new(CandleBgeEmbedder::new().expect("construct real bge embedder"));
+   104	
+   105	    let dir = TempDir::new().expect("tempdir");
+   106	    let path = dir.path().join("pr9_concurrent.sqlite");
+   107	    let opened = Engine::open_with_choice(&path, EmbedderChoice::Caller(embedder.clone()))
+   108	        .expect("open with real bge embedder");
+   109	    let engine = Arc::new(opened.engine);
+   110	    assert_eq!(
+   111	        opened.report.default_embedder.name, "fathomdb-bge-small-en-v1.5",
+   112	        "must run against the real bge-small identity"
+   113	    );
+   114	    engine.configure_vector_kind_for_test("doc").expect("configure vector kind");
+   115	
+   116	    // Write the whole haystack WITHOUT draining between batches so the two
+   117	    // projection workers stay saturated and concurrently embed throughout —
+   118	    // a single end-of-seed drain proves the pool reaches idle.
+   119	    let started = Instant::now();
+   120	    let mut written = 0usize;
+   121	    while written < bodies.len() {
+   122	        let take = WRITE_BATCH.min(bodies.len() - written);
+   123	        let batch: Vec<PreparedWrite> = bodies[written..written + take]
+   124	            .iter()
+   125	            .map(|b| PreparedWrite::Node {
+   126	                kind: "doc".to_string(),
+   127	                body: b.clone(),
+   128	                source_id: None,
+   129	            })
+   130	            .collect();
+   131	        engine.write(&batch).expect("seed write");
+   132	        written += take;
+   133	    }
+   134	    eprintln!("PR9_WROTE n={written} enqueue_s={}", started.elapsed().as_secs());
+   135	
+   136	    // Progress monitor: sample committed vector row count via the engine's
+   137	    // own seam every 20s while `drain` blocks. This is the wedge-vs-slow
+   138	    // discriminator — a healthy unserialized seed climbs steadily to
+   139	    // `written`; a true concurrency wedge plateaus (workers park, CPU → 0).
+   140	    // We log each sample + the per-interval delta; a zero delta for several
+   141	    // consecutive intervals is the wedge signature.
+   142	    let monitor_engine = engine.clone();
+   143	    let monitor_done = Arc::new(AtomicBool::new(false));
+   144	    let monitor_flag = monitor_done.clone();
+   145	    let monitor = thread::spawn(move || {
+   146	        let started = Instant::now();
+   147	        let mut prev = 0u64;
+   148	        let mut stalls = 0u32;
+   149	        while !monitor_flag.load(Ordering::Relaxed) {
+   150	            thread::sleep(Duration::from_secs(20));
+   151	            let count = monitor_engine.vector_row_count_for_test().unwrap_or(u64::MAX);
+   152	            let delta = count.saturating_sub(prev);
+   153	            if delta == 0 {
+   154	                stalls += 1;
+   155	            } else {
+   156	                stalls = 0;
+   157	            }
+   158	            eprintln!(
+   159	                "PR9_PROGRESS elapsed_s={} vector_rows={count} delta={delta} stalls={stalls}",
+   160	                started.elapsed().as_secs()
+   161	            );
+   162	            prev = count;
+   163	        }
+   164	    });
+   165	
+   166	    let drain_started = Instant::now();
+   167	    let drained = engine.drain(DRAIN_TIMEOUT_MS);
+   168	    monitor_done.store(true, Ordering::Relaxed);
+   169	    let _ = monitor.join();
+   170	    eprintln!(
+   171	        "PR9_DRAINED ok={} drain_s={}",
+   172	        drained.is_ok(),
+   173	        drain_started.elapsed().as_secs()
+   174	    );
+   175	    assert!(
+   176	        drained.is_ok(),
+   177	        "serialized seed must complete drain in bounded time; got {drained:?}"
+   178	    );
+   179	
+   180	    // Completion: the projection must reach UpToDate and every row vectorized.
+   181	    assert_eq!(
+   182	        engine.projection_status_for_test("doc").expect("projection status"),
+   183	        ProjectionStatus::UpToDate,
+   184	        "projection must reach UpToDate after the concurrent seed"
+   185	    );
+   186	    let row_count = engine.vector_row_count_for_test().expect("vector row count");
+   187	    assert_eq!(
+   188	        row_count as usize, written,
+   189	        "every seeded doc must produce exactly one vector row (no concurrency drops)"
+   190	    );
+   191	
+   192	    // Corruption guard: every stored vector must be finite + unit-norm. A
+   193	    // forward()-state data race would yield NaN/Inf or off-norm vectors.
+   194	    let dim = opened.report.default_embedder.dimension as usize;
+   195	    let mut checked = 0u64;
+   196	    for rowid in 1..=row_count as i64 {
+   197	        let blob = engine.read_vector_blob_for_test(rowid).expect("read vector blob");
+   198	        let v: Vec<f32> = blob
+   199	            .chunks_exact(4)
+   200	            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+   201	            .collect();
+   202	        assert_eq!(v.len(), dim, "row {rowid} vector has wrong dimension");
+   203	        assert!(v.iter().all(|x| x.is_finite()), "row {rowid} vector has non-finite values");
+   204	        let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+   205	        assert!(
+   206	            (norm - 1.0).abs() < 1e-3,
+   207	            "row {rowid} vector not unit-norm (got {norm}); concurrency corruption suspected"
+   208	        );
+   209	        checked += 1;
+   210	    }
+   211	    eprintln!("PR9_NORM_OK checked={checked} dim={dim}");
+   212	
+   213	    // Determinism spot-check: the first rows' stored vectors must equal a
+   214	    // single-threaded re-embed of the same body (rowids are assigned in
+   215	    // write order, so rowid i ↔ bodies[i-1]). A race that swapped/garbled a
+   216	    // forward pass would break the cosine match.
+   217	    let spot = (row_count as usize).min(16);
+   218	    for i in 0..spot {
+   219	        let rowid = (i + 1) as i64;
+   220	        let blob = engine.read_vector_blob_for_test(rowid).expect("read vector blob");
+   221	        let stored: Vec<f32> = blob
+   222	            .chunks_exact(4)
+   223	            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+   224	            .collect();
+   225	        let expected = embedder.embed(&bodies[i]).expect("re-embed for spot-check");
+   226	        let cos = cosine(&stored, &expected);
+   227	        assert!(
+   228	            cos > 0.9999,
+   229	            "row {rowid} stored vector diverges from single-threaded re-embed (cos={cos}); \
+   230	             concurrent-embed produced a wrong vector"
+   231	        );
+   232	    }
+   233	    eprintln!("PR9_SPOTCHECK_OK rows={spot} verdict=SERIALIZED_SEED_COMPLETE_AND_CORRECT");
+   234	}
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/tests/pr9_embed_microbench.rs | sed -n '1,280p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+     1	//! PR-9 diagnostic micro-benchmark (NOT a gate; opt-in via AGENT_LONG).
+     2	//!
+     3	//! Isolates two questions the PR-9 pre-flight raised:
+     4	//!   1. Does the watchdog's spawn-a-thread-per-embed add material overhead vs
+     5	//!      a direct `embed()` call? (Hypothesis under test: per-call std::thread
+     6	//!      spawn is perf-neutral because candle's matmul fans out onto a single
+     7	//!      process-wide rayon pool regardless of the caller thread.)
+     8	//!   2. Is the ~seconds-per-embed seen in the seed a debug-build artifact and
+     9	//!      a function of document length? (short vs long input, same build.)
+    10	//!
+    11	//! Run:
+    12	//!   AGENT_LONG=1 cargo test -p fathomdb-engine --features default-embedder \
+    13	//!     --test pr9_embed_microbench -- --nocapture
+    14	//! Compare debug vs release by adding `--release`.
+    15	
+    16	#![cfg(feature = "default-embedder")]
+    17	
+    18	use std::sync::mpsc;
+    19	use std::sync::Arc;
+    20	use std::thread;
+    21	use std::time::{Duration, Instant};
+    22	
+    23	use fathomdb_embedder::CandleBgeEmbedder;
+    24	use fathomdb_embedder_api::Embedder;
+    25	
+    26	/// Mirror of `embed_with_watchdog` in lib.rs: spawn a thread per embed, wait
+    27	/// on a channel with a timeout. Used to measure the spawn overhead in
+    28	/// isolation against a direct call.
+    29	fn watchdog_embed(embedder: &Arc<dyn Embedder>, body: &str, timeout: Duration) -> Vec<f32> {
+    30	    let (tx, rx) = mpsc::channel();
+    31	    let e = Arc::clone(embedder);
+    32	    let b = body.to_string();
+    33	    thread::spawn(move || {
+    34	        let _ = tx.send(e.embed(&b));
+    35	    });
+    36	    rx.recv_timeout(timeout).expect("recv").expect("embed ok")
+    37	}
+    38	
+    39	fn mean_ms(times: &[Duration]) -> f64 {
+    40	    times.iter().map(|d| d.as_secs_f64() * 1000.0).sum::<f64>() / times.len() as f64
+    41	}
+    42	
+    43	#[test]
+    44	fn pr9_microbench_watchdog_overhead() {
+    45	    if std::env::var_os("AGENT_LONG").is_none() {
+    46	        eprintln!("[skip] AGENT_LONG not set; PR-9 micro-benchmark is opt-in");
+    47	        return;
+    48	    }
+    49	    if std::env::var("FATHOMDB_SKIP_NETWORK_TESTS").is_ok() {
+    50	        eprintln!("[skip] FATHOMDB_SKIP_NETWORK_TESTS set");
+    51	        return;
+    52	    }
+    53	    let build = if cfg!(debug_assertions) { "debug" } else { "release" };
+    54	    let embedder: Arc<dyn Embedder> =
+    55	        Arc::new(CandleBgeEmbedder::new().expect("construct real bge embedder"));
+    56	
+    57	    let short = "the quick brown fox jumps over the lazy dog";
+    58	    // ~ a few hundred tokens, to approach the 512-token truncation ceiling
+    59	    // that the long corpus docs (cnn_dailymail / qmsum) hit.
+    60	    let long = short.repeat(80);
+    61	
+    62	    // Warm up (first call pays any one-time init).
+    63	    let _ = embedder.embed(short).expect("warmup");
+    64	
+    65	    const N: usize = 30;
+    66	    let mut direct = Vec::with_capacity(N);
+    67	    for _ in 0..N {
+    68	        let t = Instant::now();
+    69	        let _ = embedder.embed(short).expect("direct embed");
+    70	        direct.push(t.elapsed());
+    71	    }
+    72	    let mut watchdog = Vec::with_capacity(N);
+    73	    for _ in 0..N {
+    74	        let t = Instant::now();
+    75	        let _ = watchdog_embed(&embedder, short, Duration::from_secs(30));
+    76	        watchdog.push(t.elapsed());
+    77	    }
+    78	
+    79	    const LN: usize = 8;
+    80	    let mut long_direct = Vec::with_capacity(LN);
+    81	    for _ in 0..LN {
+    82	        let t = Instant::now();
+    83	        let _ = embedder.embed(&long).expect("long embed");
+    84	        long_direct.push(t.elapsed());
+    85	    }
+    86	
+    87	    let d = mean_ms(&direct);
+    88	    let w = mean_ms(&watchdog);
+    89	    let l = mean_ms(&long_direct);
+    90	    eprintln!("PR9_BENCH build={build}");
+    91	    eprintln!("PR9_BENCH short_direct_ms={d:.1} (n={N})");
+    92	    eprintln!("PR9_BENCH short_watchdog_ms={w:.1} (n={N})");
+    93	    eprintln!("PR9_BENCH watchdog_overhead_ms={:.2} ratio={:.3}", w - d, w / d);
+    94	    eprintln!("PR9_BENCH long_direct_ms={l:.1} (n={LN}) long/short={:.1}x", l / d);
+    95	}
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/src/lib.rs | sed -n '3625,3695p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+  3625	            }
+  3626	            None => {
+  3627	                last_code = "EmbedderNotConfiguredError";
+  3628	                continue;
+  3629	            }
+  3630	        };
+  3631	
+  3632	        if u32::try_from(vector.len()).unwrap_or(u32::MAX) != shared.embedder_identity.dimension {
+  3633	            last_code = "EmbedderDimensionMismatchError";
+  3634	            continue;
+  3635	        }
+  3636	
+  3637	        let blob = encode_vector_blob(&vector);
+  3638	        // EU-5a2 mean-centering apply path (projection write side). The
+  3639	        // f32 BLOB persisted is ALWAYS un-centered; `bin_blob` carries
+  3640	        // the (possibly centered) f32 fed to `vec_quantize_binary`. The
+  3641	        // centering decision is finalized in `commit_projection_outcomes`
+  3642	        // where the writer connection is in-hand and the read of
+  3643	        // `_fathomdb_embedder_profiles.mean_vec` is in the same tx as
+  3644	        // the INSERT. NoopEmbedder (EU-5a2's only live identity) is not
+  3645	        // MC-required, so `bin_blob == blob` throughout EU-5a2.
+  3646	        let bin_blob = blob.clone();
+  3647	        return ProjectionOutcome::Success {
+  3648	            cursor: job.cursor,
+  3649	            kind: job.kind.clone(),
+  3650	            blob,
+  3651	            bin_blob,
+  3652	        };
+  3653	    }
+  3654	
+  3655	    ProjectionOutcome::Failure { cursor: job.cursor, failure_code: last_code }
+  3656	}
+  3657	
+  3658	fn next_pending_projection_jobs(
+  3659	    connection: &Connection,
+  3660	    in_flight: &BTreeSet<u64>,
+  3661	    max_jobs: usize,
+  3662	) -> rusqlite::Result<Vec<ProjectionJob>> {
+  3663	    if max_jobs == 0 {
+  3664	        return Ok(Vec::new());
+  3665	    }
+  3666	    let cursor = load_projection_cursor(connection)?;
+  3667	    // Over-fetch by `in_flight.len()` so the post-filter still returns
+  3668	    // up to `max_jobs` after skipping cursors already in-flight.
+  3669	    let sql_limit = max_jobs.saturating_add(in_flight.len()).min(256);
+  3670	    let sql = format!(
+  3671	        "SELECT canonical_nodes.write_cursor, canonical_nodes.kind, canonical_nodes.body
+  3672	         FROM canonical_nodes
+  3673	         JOIN _fathomdb_vector_kinds ON _fathomdb_vector_kinds.kind = canonical_nodes.kind
+  3674	         LEFT JOIN _fathomdb_projection_terminal
+  3675	           ON _fathomdb_projection_terminal.write_cursor = canonical_nodes.write_cursor
+  3676	         WHERE canonical_nodes.write_cursor > ?1
+  3677	           AND _fathomdb_projection_terminal.write_cursor IS NULL
+  3678	         ORDER BY canonical_nodes.write_cursor
+  3679	         LIMIT {sql_limit}"
+  3680	    );
+  3681	    let mut statement = connection.prepare_cached(&sql)?;
+  3682	    let rows = statement.query_map([cursor], |row| {
+  3683	        Ok(ProjectionJob { cursor: row.get(0)?, kind: row.get(1)?, body: row.get(2)? })
+  3684	    })?;
+  3685	    let mut jobs = Vec::with_capacity(max_jobs);
+  3686	    for row in rows {
+  3687	        let job = row?;
+  3688	        if in_flight.contains(&job.cursor) {
+  3689	            continue;
+  3690	        }
+  3691	        jobs.push(job);
+  3692	        if jobs.len() >= max_jobs {
+  3693	            break;
+  3694	        }
+  3695	    }
+
+exec
+/bin/bash -lc 'rg -n "enum RuntimeEmbedderError|type RuntimeEmbedderError|ProjectionPanic|projection_failure_count_for_test|embed_circuit_open_for_test|set_projection_retry_delays_for_test" src/rust/crates/fathomdb-engine/src/lib.rs src/rust/crates/fathomdb-embedder-api/src/lib.rs' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+src/rust/crates/fathomdb-engine/src/lib.rs:701:    fn embed_circuit_open_for_test(&self) -> bool {
+src/rust/crates/fathomdb-engine/src/lib.rs:2193:    pub fn set_projection_retry_delays_for_test(&self, delays_ms: &[u64]) {
+src/rust/crates/fathomdb-engine/src/lib.rs:2213:    pub fn embed_circuit_open_for_test(&self) -> bool {
+src/rust/crates/fathomdb-engine/src/lib.rs:2214:        self.projection_runtime.embed_circuit_open_for_test()
+src/rust/crates/fathomdb-engine/src/lib.rs:2239:    pub fn projection_failure_count_for_test(&self, cursor: u64) -> Result<u64, EngineError> {
+src/rust/crates/fathomdb-engine/src/lib.rs:3487:            failure_code: "ProjectionPanic",
+src/rust/crates/fathomdb-engine/src/lib.rs:3510:/// batch-level `catch_unwind` records `ProjectionPanic` exactly as before.
+
+exec
+/bin/bash -lc 'git status --short' in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+ M dev/plans/runs/STATUS-release-hardening.md
+ M src/rust/crates/fathomdb-engine/src/lib.rs
+?? dev/design/agent-memory-fit.md
+?? dev/plans/runs/0.7.2-PR-9-output.json
+?? dev/plans/runs/0.7.2-PR-9-review-20260531T195801Z.log
+?? dev/plans/runs/0.7.2-PR-9-review-20260531T195801Z.md
+?? dev/plans/runs/0.7.2-PR-9-review-20260531T205238Z.log
+?? dev/plans/runs/0.7.2-PR-9-review-20260531T205810Z.log
+?? dev/plans/runs/0.7.2-PR-9-review-20260531T205810Z.md
+?? dev/plans/runs/0.7.2-PR-9-review-20260531T212457Z.log
+?? src/rust/crates/fathomdb-engine/tests/pr9_concurrent_embed.rs
+?? src/rust/crates/fathomdb-engine/tests/pr9_embed_microbench.rs
+?? src/rust/crates/fathomdb-engine/tests/pr9_embed_serialization.rs
+?? src/rust/crates/fathomdb-engine/tests/pr9_embed_watchdog.rs
+
+codex
+The repo-local review surface is loaded. I also found the session memory file outside this checkout, so I’m reading the referenced feedback now to make sure prior corrections don’t change the review bar.
+exec
+/bin/bash -lc "sed -n '1,220p' /home/coreyt/ado-mcp/MEMORY.md" in /home/coreyt/projects/fathomdb
+ exited 2 in 0ms:
+sed: can't read /home/coreyt/ado-mcp/MEMORY.md: No such file or directory
+
+exec
+/bin/bash -lc "rg -n \"feedback_.*\\.md|project_vector_identity_invariant|orchestrator|tdd|reliability|cross_platform|python_native_build|workflow_validation|release_verification|no_data_migration\" /home/coreyt/ado-mcp/MEMORY.md" in /home/coreyt/projects/fathomdb
+ exited 2 in 0ms:
+rg: /home/coreyt/ado-mcp/MEMORY.md: IO error for operation on /home/coreyt/ado-mcp/MEMORY.md: No such file or directory (os error 2)
+
+codex
+The memory file sits in the sibling workspace under `/home/coreyt/projects/ado-mcp`. I’m reading only the pointers relevant to review discipline and release correctness.
+exec
+/bin/bash -lc "sed -n '1,240p' /home/coreyt/projects/ado-mcp/MEMORY.md" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+# ado-mcp Project Memory
+
+## Project Overview
+Azure DevOps CLI/TUI/MCP server. Located at `/home/coreyt/projects/ado-mcp`.
+
+## Architecture
+- **Single client layer** (`WorkItemClient`, `RepoClient`) shared by CLI, TUI, MCP
+- **Sync SDK + anyio**: `azure-devops` SDK is sync; wrapped with `anyio.to_thread.run_sync` via `run_in_thread()` in `client/base.py`
+- **Pydantic models** as contract — SDK objects converted immediately in client layer
+- **FastMCP** (v3+) for MCP server with decorator-based tool registration
+
+## Key Files
+- `src/ado_mcp/config.py` — Pydantic Settings, env vars + TOML, `get_settings()` with `@lru_cache`
+- `src/ado_mcp/client/work_items.py` — WIQL two-step pattern (IDs → batch fetch)
+- `src/ado_mcp/client/repos.py` — Git repos, branches, commits, PRs, file content
+- `src/ado_mcp/mcp/server.py` — FastMCP instance; tools registered via `register(mcp)` in tools/
+- `src/ado_mcp/tui/app.py` — `AdoApp(App)` root; screens pushed via `push_screen()`
+
+## Entry Points
+- `ado` → `ado_mcp.cli.app:main`
+- `ado-tui` → `ado_mcp.tui.app:main`
+- `ado-mcp` → `ado_mcp.mcp.server:main`
+
+## Dev Workflow
+- Use `uv` for package management
+- `uv pip install -e ".[dev]"` to install editable with dev deps
+- `uv run pytest tests/ -v` — 29 tests, all pass
+- `uv run ado --help` to verify CLI
+
+## Config
+- `ADO_ORG_URL`, `ADO_PROJECT`, `ADO_PAT` env vars (highest priority)
+- Fallback: `~/.ado-mcp/config.toml`
+- `settings.validate_auth()` raises `ConfigError` if any required field missing
+
+## WIQL Two-Step Pattern
+```python
+# Step 1: returns IDs only
+result = wit_client.query_by_wiql(Wiql(query=wiql_str), project=project)
+ids = [wi.id for wi in result.work_items]
+# Step 2: batch fetch fields (200 per batch)
+items = wit_client.get_work_items(ids=batch, fields=[...], error_policy="omit")
+```
+
+## FastMCP Tool Registration
+Tools use `register(mcp: FastMCP)` pattern — each module has a `register()` function
+called from `mcp/server.py` to keep tools modular.
+
+exec
+/bin/bash -lc "rg -n \"feedback_.*\\.md|project_vector_identity_invariant\" /home/coreyt/projects/ado-mcp/MEMORY.md" in /home/coreyt/projects/fathomdb
+ exited 1 in 0ms:
+exec
+/bin/bash -lc "rg -n \"ac_007b_slow_threshold_reconfigurable|ProjectionPanic|ProjectionStatus::Failed|EngineError::Scheduler|commit_gate|wait_for_idle|drain\\(\" src/rust/crates/fathomdb-engine/src/lib.rs src/rust/crates/fathomdb-engine/tests -g '"'!src/rust/crates/fathomdb-engine/tests/pr9_*'"'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+src/rust/crates/fathomdb-engine/src/lib.rs:206:    /// Commit/IO stays parallel across workers (see `commit_gate`); this guard
+src/rust/crates/fathomdb-engine/src/lib.rs:257:    commit_gate: Mutex<()>,
+src/rust/crates/fathomdb-engine/src/lib.rs:623:            commit_gate: Mutex::new(()),
+src/rust/crates/fathomdb-engine/src/lib.rs:658:    fn wait_for_idle(&self, timeout_ms: u64) -> bool {
+src/rust/crates/fathomdb-engine/src/lib.rs:725:            for handle in workers.drain(..) {
+src/rust/crates/fathomdb-engine/src/lib.rs:1989:    pub fn drain(&self, timeout_ms: u64) -> Result<(), EngineError> {
+src/rust/crates/fathomdb-engine/src/lib.rs:1991:        if self.projection_runtime.wait_for_idle(timeout_ms) {
+src/rust/crates/fathomdb-engine/src/lib.rs:1994:            Err(EngineError::Scheduler)
+src/rust/crates/fathomdb-engine/src/lib.rs:2168:            Ok(lifecycle::ProjectionStatus::Failed) => "Failed",
+src/rust/crates/fathomdb-engine/src/lib.rs:2471:    /// Serializes against the projection workers via `commit_gate` so the
+src/rust/crates/fathomdb-engine/src/lib.rs:2489:                .commit_gate
+src/rust/crates/fathomdb-engine/src/lib.rs:2719:        let drain_result = self.drain(REBUILD_DRAIN_TIMEOUT_MS);
+src/rust/crates/fathomdb-engine/src/lib.rs:2938:        let drain_result = self.drain(REBUILD_DRAIN_TIMEOUT_MS);
+src/rust/crates/fathomdb-engine/src/lib.rs:3420:        // would stay elevated forever and `wait_for_idle` / `drain` would
+src/rust/crates/fathomdb-engine/src/lib.rs:3421:        // wedge into `EngineError::Scheduler` (Finding A). Mirrors the
+src/rust/crates/fathomdb-engine/src/lib.rs:3487:            failure_code: "ProjectionPanic",
+src/rust/crates/fathomdb-engine/src/lib.rs:3506:/// call, under the separate `commit_gate`.)
+src/rust/crates/fathomdb-engine/src/lib.rs:3510:/// batch-level `catch_unwind` records `ProjectionPanic` exactly as before.
+src/rust/crates/fathomdb-engine/src/lib.rs:3950:    // re-quantize sees a totally-ordered history (see `commit_gate`).
+src/rust/crates/fathomdb-engine/src/lib.rs:3951:    let _gate = shared.commit_gate.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+src/rust/crates/fathomdb-engine/src/lib.rs:4263:        Some(state) if state == "failed" => Ok(lifecycle::ProjectionStatus::Failed),
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:120:    engine.drain(10_000).expect("drain");
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:296:    engine.drain(600_000).expect("ac-012 drain");
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:404:    engine.drain(1_800_000).expect("ac-013 drain");
+src/rust/crates/fathomdb-engine/tests/perf_gates.rs:737:    opened.engine.drain(5_000).expect("drain");
+src/rust/crates/fathomdb-engine/tests/eu7_real_corpus_ac.rs:376:        engine.drain(600_000).expect("seed drain (batch)");
+src/rust/crates/fathomdb-engine/tests/error_taxonomy.rs:22:        EngineError::Scheduler,
+src/rust/crates/fathomdb-engine/tests/eu5f_production_pin.rs:14://! wedges into `EngineError::Scheduler`.
+src/rust/crates/fathomdb-engine/tests/eu5f_production_pin.rs:140:        engine.drain(60_000).expect("drain");
+src/rust/crates/fathomdb-engine/tests/eu5f_production_pin.rs:318:/// permanent `EngineError::Scheduler`. After the fix, the faulted job is
+src/rust/crates/fathomdb-engine/tests/eu5f_production_pin.rs:321:fn panicking_embedder_does_not_wedge_drain() {
+src/rust/crates/fathomdb-engine/tests/eu5f_production_pin.rs:336:    // stays elevated and drain times out into EngineError::Scheduler.
+src/rust/crates/fathomdb-engine/tests/eu5f_production_pin.rs:337:    let drained = engine.drain(15_000);
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:212:    opened.engine.drain(30_000).expect("baseline drain");
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:272:    opened.engine.drain(10_000).expect("drain");
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:294:    opened.engine.drain(10_000).expect("drain");
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:322:    opened.engine.drain(10_000).expect("drain");
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:346:    let err = opened.engine.drain(100).expect_err("drain must time out");
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:348:    assert_eq!(err, EngineError::Scheduler);
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:410:    opened.engine.drain(10_000).expect("drain");
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:412:        wait_for_status(&opened.engine, "doc", ProjectionStatus::Failed, Duration::from_secs(2)),
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:413:        ProjectionStatus::Failed
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:437:    opened.engine.drain(10_000).expect("drain");
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:448:        ProjectionStatus::Failed
+src/rust/crates/fathomdb-engine/tests/projection_runtime.rs:468:    opened.engine.drain(10_000).expect("note drain");
+src/rust/crates/fathomdb-engine/tests/lifecycle_observability.rs:506:fn ac_007b_slow_threshold_reconfigurable() {
+src/rust/crates/fathomdb-engine/tests/lifecycle_observability.rs:640:        [ProjectionStatus::Pending, ProjectionStatus::Failed, ProjectionStatus::UpToDate];
+src/rust/crates/fathomdb-engine/tests/lifecycle_observability.rs:643:            ProjectionStatus::Pending | ProjectionStatus::Failed | ProjectionStatus::UpToDate => {}
+src/rust/crates/fathomdb-engine/tests/lifecycle_observability.rs:646:    assert_ne!(ProjectionStatus::Pending, ProjectionStatus::Failed);
+src/rust/crates/fathomdb-engine/tests/lifecycle_observability.rs:648:    assert_ne!(ProjectionStatus::Failed, ProjectionStatus::UpToDate);
+src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:96:        opened.engine.drain(10_000).expect("drain");
+src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:130:        opened.engine.drain(10_000).expect("post-rebuild drain");
+src/rust/crates/fathomdb-engine/tests/rebuild_projections.rs:170:                .map(|s| s == ProjectionStatus::Failed)
+src/rust/crates/fathomdb-engine/tests/eu8_ir_validation.rs:541:            engine.drain(600_000).expect("seed drain (batch)");
+src/rust/crates/fathomdb-engine/tests/batch_write_per_row_cursor.rs:79:    engine.drain(15_000).expect("drain");
+src/rust/crates/fathomdb-engine/tests/batch_write_per_row_cursor.rs:103:    engine.drain(15_000).expect("drain");
+src/rust/crates/fathomdb-engine/tests/rebuild_vec0.rs:67:    opened.engine.drain(10_000).expect("drain");
+src/rust/crates/fathomdb-engine/tests/rebuild_report.rs:56:    opened.engine.drain(10_000).expect("drain");
+src/rust/crates/fathomdb-engine/tests/rebuild_report.rs:94:    opened.engine.drain(10_000).expect("drain");
+src/rust/crates/fathomdb-engine/tests/excise_source.rs:240:    opened.engine.drain(10_000).expect("drain projections");
+src/rust/crates/fathomdb-engine/tests/corpus_graph.rs:74:    engine.drain(15_000).expect("drain");
+src/rust/crates/fathomdb-engine/tests/pr2b_mean_recompute.rs:135:        engine.drain(60_000).expect("drain");
+src/rust/crates/fathomdb-engine/tests/instrumentation_methods.rs:26:    engine.drain(0).expect("idle engine drain should return Ok");
+src/rust/crates/fathomdb-engine/tests/corpus_vector.rs:95:    engine.drain(15_000).expect("drain");
+src/rust/crates/fathomdb-engine/tests/support/corpus_subset.rs:402:    engine.drain(30_000).expect("drain after ingest");
+
+exec
+/bin/bash -lc "rg --files -g 'feedback_*.md' -g 'project_vector_identity_invariant.md' -g 'MEMORY.md' . .. | sed -n '1,200p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+../ado-mcp/MEMORY.md
+
+codex
+I’ve isolated one substantive correctness question and I’m verifying whether it’s just comment drift or an actual safety gap in the breaker design. After that I can close with a clean land/no-land verdict.
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/src/lib.rs | sed -n '60,90p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+    60	/// the only outstanding work is whatever workers were mid-flight when
+    61	/// the call landed; 30 s is generous for normal job sizes and bounded
+    62	/// for tests.
+    63	const REBUILD_DRAIN_TIMEOUT_MS: u64 = 30_000;
+    64	const DEFAULT_PROVENANCE_ROW_CAP: u64 = 1_000_000;
+    65	const PROJECTION_CURSOR_KEY: &str = "projection_cursor";
+    66	const PROJECTION_WORKERS: usize = 2;
+    67	/// PR-9 — ADR-0.6.0-embedder-protocol **Invariant 5** default per-`embed()`
+    68	/// watchdog deadline. Every projection-path embed runs under this timeout;
+    69	/// a hung embed surfaces `RuntimeEmbedderError::Timeout` (engaging the
+    70	/// existing retry/failure path) rather than parking a worker forever. The
+    71	/// EU-5f `catch_unwind` only catches *panics*; this catches *hangs*.
+    72	const DEFAULT_EMBED_TIMEOUT_MS: u64 = 30_000;
+    73	/// PR-9 — embed circuit-breaker threshold: after this many consecutive
+    74	/// watchdog timeouts the embedder is treated as broken and projection jobs
+    75	/// fail fast (see `embed_circuit_open`), bounding the abandoned-embed-thread
+    76	/// leak. A legitimate embed never approaches a 30s timeout, so consecutive
+    77	/// timeouts at this count indicate a genuinely-hung embedder.
+    78	const DEFAULT_EMBED_CIRCUIT_THRESHOLD: u64 = 8;
+    79	const PROJECTION_COMMIT_BATCH: usize = 16;
+    80	// Each worker should be able to grab a full commit batch while another
+    81	// worker has the same waiting in the queue. Below this, the dispatcher
+    82	// throttles below the workers' commit-batch capacity.
+    83	const PROJECTION_INFLIGHT_LIMIT: usize = PROJECTION_WORKERS * PROJECTION_COMMIT_BATCH;
+    84	// SQL fetch cap inside the dispatcher: enough to fill the in-flight
+    85	// budget in a single scan so we don't pay one SQL roundtrip per job.
+    86	const PROJECTION_SCAN_FETCH: usize = PROJECTION_INFLIGHT_LIMIT;
+    87	const DEFAULT_PROJECTION_RETRY_DELAYS_MS: [u64; 3] = [1_000, 4_000, 16_000];
+    88	
+    89	/// Reader pool size. Per `dev/design/engine.md` § Writer / reader split,
+    90	/// reader connections are pooled and never serialize behind one
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/tests/eu5f_production_pin.rs | sed -n '300,375p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+   300	    // Every row must equal its centered quantization (no uncentered survivors).
+   301	    let conn = Connection::open(&path).expect("reopen");
+   302	    let mean = decode_mean(&read_mean_vec(&path).expect("mean pinned"));
+   303	    let mut stmt =
+   304	        conn.prepare("SELECT rowid, embedding, embedding_bin FROM vector_default").expect("prep");
+   305	    let rows: Vec<(i64, Vec<u8>, Vec<u8>)> = stmt
+   306	        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+   307	        .expect("query")
+   308	        .filter_map(Result::ok)
+   309	        .collect();
+   310	    assert!(rows.len() >= 600, "all docs indexed");
+   311	    for (rid, emb, bin) in &rows {
+   312	        let want = quantize_binary(&conn, &subtract(&decode_f32(emb), &mean));
+   313	        assert_eq!(bin, &want, "row {rid} must be centered (no uncentered survivor)");
+   314	    }
+   315	}
+   316	
+   317	/// (5) Finding A — a panicking embedder must not wedge `drain` into a
+   318	/// permanent `EngineError::Scheduler`. After the fix, the faulted job is
+   319	/// recorded and `drain` returns.
+   320	#[test]
+   321	fn panicking_embedder_does_not_wedge_drain() {
+   322	    let (_dir, path) = fixture_path("eu5f_panic");
+   323	    let opened = open_caller(&path, Arc::new(PanickingBgeEmbedder::new(3)));
+   324	    let engine = opened.engine;
+   325	    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+   326	    let nodes: Vec<PreparedWrite> = (0..8)
+   327	        .map(|i| PreparedWrite::Node {
+   328	            kind: "doc".to_string(),
+   329	            body: format!("panic-doc-{i}"),
+   330	            source_id: None,
+   331	        })
+   332	        .collect();
+   333	    engine.write(&nodes).expect("write");
+   334	    // With the fault-isolation guard, the panicked job is recorded and the
+   335	    // scheduler reaches idle, so drain returns Ok. Without it, active_jobs
+   336	    // stays elevated and drain times out into EngineError::Scheduler.
+   337	    let drained = engine.drain(15_000);
+   338	    assert!(
+   339	        drained.is_ok(),
+   340	        "drain must not wedge on a panicking embedder (Finding A); got {drained:?}"
+   341	    );
+   342	}
+   343	
+   344	/// (6) Recovery — a workspace with >= threshold rows but mean_vec NULL
+   345	/// (e.g. crash before the pin committed) must re-pin on the next open.
+   346	#[test]
+   347	fn recovery_pins_on_open_when_mean_null() {
+   348	    let (_dir, path) = fixture_path("eu5f_recovery");
+   349	    let opened = open_caller(&path, Arc::new(SimulatedBgeEmbedder::default()));
+   350	    let engine = opened.engine;
+   351	    engine.configure_vector_kind_for_test("doc").expect("vector kind");
+   352	    write_docs_production(&engine, 0, MEAN_VEC_PIN_THRESHOLD as usize + 4, 64);
+   353	    engine.close().expect("close");
+   354	
+   355	    // Simulate a crash-before-pin: blank the pinned mean out of band.
+   356	    {
+   357	        let conn = Connection::open(&path).expect("reopen raw");
+   358	        conn.execute(
+   359	            "UPDATE _fathomdb_embedder_profiles SET mean_vec = NULL WHERE profile = 'default'",
+   360	            [],
+   361	        )
+   362	        .expect("blank mean");
+   363	    }
+   364	    assert!(read_mean_vec(&path).is_none(), "precondition: mean blanked");
+   365	
+   366	    // Reopen: recovery must re-pin because rows >= threshold and mean NULL.
+   367	    let reopened = open_caller(&path, Arc::new(SimulatedBgeEmbedder::default()));
+   368	    assert!(
+   369	        reopened.report.embedder_mean_vec_pinned,
+   370	        "open must recover-pin when rows >= threshold and mean_vec NULL (Hazard 4)"
+   371	    );
+   372	    assert!(read_mean_vec(&path).is_some(), "mean_vec must be repinned after recovery open");
+   373	}
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-engine/src/lib.rs | sed -n '3928,4025p'" in /home/coreyt/projects/fathomdb
+ succeeded in 0ms:
+  3928	fn advance_projection_cursor(connection: &Connection) -> rusqlite::Result<u64> {
+  3929	    let mut cursor = load_projection_cursor(connection)?;
+  3930	    loop {
+  3931	        let next = cursor.saturating_add(1);
+  3932	        if terminal_state_for_cursor(connection, next)?.is_some() {
+  3933	            cursor = next;
+  3934	        } else {
+  3935	            break;
+  3936	        }
+  3937	    }
+  3938	    store_projection_cursor(connection, cursor)?;
+  3939	    Ok(cursor)
+  3940	}
+  3941	
+  3942	fn commit_projection_outcomes(
+  3943	    connection: &mut Connection,
+  3944	    outcomes: &[ProjectionOutcome],
+  3945	    shared: &ProjectionRuntimeShared,
+  3946	) -> rusqlite::Result<()> {
+  3947	    let embedder_identity = &shared.embedder_identity;
+  3948	    let mc = identity_requires_mean_centering(embedder_identity);
+  3949	    // EU-5f — serialize the whole commit across workers so the at-pin
+  3950	    // re-quantize sees a totally-ordered history (see `commit_gate`).
+  3951	    let _gate = shared.commit_gate.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+  3952	    let tx = connection.transaction()?;
+  3953	    // EU-5a2/EU-5f — the live pinned mean. Read once at the top; may pin
+  3954	    // mid-batch (set to `Some` after a threshold-crossing row below).
+  3955	    let mut current_mean: Option<Vec<f32>> = if mc {
+  3956	        tx.query_row(
+  3957	            "SELECT mean_vec FROM _fathomdb_embedder_profiles WHERE profile = 'default'",
+  3958	            [],
+  3959	            |row| row.get::<_, Option<Vec<u8>>>(0),
+  3960	        )
+  3961	        .ok()
+  3962	        .flatten()
+  3963	        .map(|bytes| decode_vector_blob(&bytes))
+  3964	    } else {
+  3965	        None
+  3966	    };
+  3967	    let mut staged_events: Vec<EmbedderEvent> = Vec::new();
+  3968	    for outcome in outcomes {
+  3969	        match outcome {
+  3970	            ProjectionOutcome::Success { cursor, kind, blob, bin_blob } => {
+  3971	                if terminal_state_for_cursor(&tx, *cursor)?.is_some() {
+  3972	                    continue;
+  3973	                }
+  3974	                // EU-5f — feed the streaming accumulator and decide the pin
+  3975	                // atomically under the accumulator lock (add -> count ->
+  3976	                // take), so exactly one row/worker can cross the threshold.
+  3977	                // Only while MC-required and not yet pinned.
+  3978	                let pin_mean: Option<Vec<f32>> = if mc && current_mean.is_none() {
+  3979	                    let mut acc = shared.mean_accumulator.lock().unwrap_or_else(|p| p.into_inner());
+  3980	                    match acc.as_mut() {
+  3981	                        Some(a) => {
+  3982	                            a.add(&decode_vector_blob(bin_blob));
+  3983	                            if a.count() >= MEAN_VEC_PIN_THRESHOLD {
+  3984	                                let mean = a.materialize();
+  3985	                                *acc = None;
+  3986	                                Some(mean)
+  3987	                            } else {
+  3988	                                None
+  3989	                            }
+  3990	                        }
+  3991	                        None => None,
+  3992	                    }
+  3993	                } else {
+  3994	                    None
+  3995	                };
+  3996	
+  3997	                let source_type = resolve_source_type(kind).map_err(|_| {
+  3998	                    rusqlite::Error::SqliteFailure(
+  3999	                        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
+  4000	                        Some(format!("unknown kind for source_type mapping: {kind}")),
+  4001	                    )
+  4002	                })?;
+  4003	                let now_unix =
+  4004	                    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+  4005	                        as i64;
+  4006	                tx.execute(
+  4007	                    "INSERT OR IGNORE INTO _fathomdb_vector_rows(rowid, kind, write_cursor) VALUES(?1, ?2, ?3)",
+  4008	                    params![cursor, kind, cursor],
+  4009	                )?;
+  4010	                // EU-5a2/EU-5f — sign-quant input is the mean-subtracted
+  4011	                // vector iff a mean is live (`current_mean`); otherwise the
+  4012	                // un-centered `bin_blob`. A row inserted just before the
+  4013	                // crossing is centered retroactively by the re-quantize
+  4014	                // pass below.
+  4015	                let centered_blob: Vec<u8> = match &current_mean {
+  4016	                    Some(mean) if mean.len() * 4 == bin_blob.len() => {
+  4017	                        encode_vector_blob(&subtract_mean(&decode_vector_blob(bin_blob), mean))
+  4018	                    }
+  4019	                    _ => bin_blob.clone(),
+  4020	                };
+  4021	                tx.execute(
+  4022	                    "INSERT OR IGNORE INTO vector_default(
+  4023	                        rowid, embedding, embedding_bin, source_type, kind, created_at
+  4024	                     ) VALUES(?1, ?2, vec_quantize_binary(?3), ?4, ?5, ?6)",
+  4025	                    params![cursor, blob, centered_blob, source_type, kind, now_unix],
+
+codex
+## Verdict: BLOCK
+
+### 1. [blocker] Breaker bounds only consecutive timeouts, not total abandoned embed threads
+Refs: [lib.rs](/home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/src/lib.rs:225), [lib.rs](/home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/src/lib.rs:236), [lib.rs](/home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/src/lib.rs:3598), [lib.rs](/home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/src/lib.rs:3601), [lib.rs](/home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/src/lib.rs:3618), [pr9_embed_watchdog.rs](/home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/tests/pr9_embed_watchdog.rs:224)
+
+`consecutive_embed_timeouts` is reset by any later returning embed, even though previously timed-out detached threads are still alive. That means an embedder that hangs on some inputs but returns `Ok` or typed errors on others can leak one abandoned thread per timed-out call indefinitely and never latch the breaker. The timeout-path lock release was only safe because the breaker was supposed to cap that leak; as implemented, it only caps the persistently-all-timeout case, and the test suite covers only that narrower case.
+
+### 2. [low] A few comments still overstate the behavior after PR-9
+Refs: [lib.rs](/home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/src/lib.rs:75), [lib.rs](/home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/src/lib.rs:76), [pr9_concurrent_embed.rs](/home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/tests/pr9_concurrent_embed.rs:116), [pr9_concurrent_embed.rs](/home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/tests/pr9_concurrent_embed.rs:137)
+
+The threshold comment says the breaker “bounds” the leak and that a legitimate embed “never approaches” 30s; both are stronger than the current design justifies. The long-seed test still says the two workers “concurrently embed throughout” and discusses a “healthy unserialized seed,” but this PR serializes embeds engine-side.
+
+**What passed on inspection**
+- The new post-lock breaker re-check is correctly placed; a worker queued on `embed_serialize` now bails before spawning another watchdog thread.
+- Panic propagation before the deadline is intact: `resume_unwind` still feeds the existing EU-5f `ProjectionPanic` path, and commit work remains outside the embed mutex under `commit_gate`.
+- The timeout path does not wedge the pool on mutex poisoning or lock retention; `embed_serialize` is recovered with `into_inner`, and timed-out calls do free the guard.
+- The new watchdog tests are honest for the cases they actually exercise, and the breaker test does hit the retry path via non-empty retry delays.
+
+**Reviewer process notes**
+- Reviewed the current [lib.rs](/home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/src/lib.rs:1) diff, all four new PR-9 tests, [ADR-0.6.0-embedder-protocol.md](/home/coreyt/projects/fathomdb/dev/adr/ADR-0.6.0-embedder-protocol.md:100), the PR-9 prompt, the consolidated prior verdict, and the closure artifact.
+- Read-only sandbox: no edits, no verdict file write, no local test execution.
+- The repo-local `MEMORY.md` referenced by `AGENTS.md` is not present in this checkout; only a sibling-project memory file exists and is unrelated.
+tokens used
+59,822
+## Verdict: BLOCK
+
+### 1. [blocker] Breaker bounds only consecutive timeouts, not total abandoned embed threads
+Refs: [lib.rs](/home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/src/lib.rs:225), [lib.rs](/home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/src/lib.rs:236), [lib.rs](/home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/src/lib.rs:3598), [lib.rs](/home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/src/lib.rs:3601), [lib.rs](/home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/src/lib.rs:3618), [pr9_embed_watchdog.rs](/home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/tests/pr9_embed_watchdog.rs:224)
+
+`consecutive_embed_timeouts` is reset by any later returning embed, even though previously timed-out detached threads are still alive. That means an embedder that hangs on some inputs but returns `Ok` or typed errors on others can leak one abandoned thread per timed-out call indefinitely and never latch the breaker. The timeout-path lock release was only safe because the breaker was supposed to cap that leak; as implemented, it only caps the persistently-all-timeout case, and the test suite covers only that narrower case.
+
+### 2. [low] A few comments still overstate the behavior after PR-9
+Refs: [lib.rs](/home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/src/lib.rs:75), [lib.rs](/home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/src/lib.rs:76), [pr9_concurrent_embed.rs](/home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/tests/pr9_concurrent_embed.rs:116), [pr9_concurrent_embed.rs](/home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/tests/pr9_concurrent_embed.rs:137)
+
+The threshold comment says the breaker “bounds” the leak and that a legitimate embed “never approaches” 30s; both are stronger than the current design justifies. The long-seed test still says the two workers “concurrently embed throughout” and discusses a “healthy unserialized seed,” but this PR serializes embeds engine-side.
+
+**What passed on inspection**
+- The new post-lock breaker re-check is correctly placed; a worker queued on `embed_serialize` now bails before spawning another watchdog thread.
+- Panic propagation before the deadline is intact: `resume_unwind` still feeds the existing EU-5f `ProjectionPanic` path, and commit work remains outside the embed mutex under `commit_gate`.
+- The timeout path does not wedge the pool on mutex poisoning or lock retention; `embed_serialize` is recovered with `into_inner`, and timed-out calls do free the guard.
+- The new watchdog tests are honest for the cases they actually exercise, and the breaker test does hit the retry path via non-empty retry delays.
+
+**Reviewer process notes**
+- Reviewed the current [lib.rs](/home/coreyt/projects/fathomdb/src/rust/crates/fathomdb-engine/src/lib.rs:1) diff, all four new PR-9 tests, [ADR-0.6.0-embedder-protocol.md](/home/coreyt/projects/fathomdb/dev/adr/ADR-0.6.0-embedder-protocol.md:100), the PR-9 prompt, the consolidated prior verdict, and the closure artifact.
+- Read-only sandbox: no edits, no verdict file write, no local test execution.
+- The repo-local `MEMORY.md` referenced by `AGENTS.md` is not present in this checkout; only a sibling-project memory file exists and is unrelated.

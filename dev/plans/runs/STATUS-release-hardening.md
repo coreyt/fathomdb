@@ -2,7 +2,7 @@
 
 _Last updated: 2026-05-31 — PR-2 family RESOLVED + **PR-1 (doc drift sweep) CLOSED**
 (codex PASS) on local `main` (unpushed, HEAD `63bb7f3`, 46 ahead of `origin/main`).
-**PR-9 (embedder robustness) IN FLIGHT.** Remaining Phase A (PR-3, PR-4) and Phase B
+**PR-9 (embedder robustness) CLOSED — codex PASS (5 passes, BLOCK→PASS); landed `21f4df6` on local `main` (unpushed).** Remaining Phase A (PR-3, PR-4) and Phase B
 (PR-5/6/7) NOT STARTED. `v0.7.0` held locally; `v0.7.1` not yet tagged (PR-4 creates
 it); workspace version still `0.7.0`. Nothing pushed to origin. Stale PR-2 worktrees/
 branches cleaned up 2026-05-31 (PR-2c branch parked/kept; locked EU-3 worktree left)._
@@ -45,7 +45,7 @@ as-needed from the handoff section; — = not yet authored).
 | — | PR-2a | Mean-centering recall investigation | **CLOSED (GO, later reframed)** | — | done | `…/prompts/0.7.2-PR-2a-recall-investigation.md` | GO verdict; later shown to address a measurement artifact. |
 | — | PR-2(bc) | Recall floor + mean recompute family | **CLOSED / RESOLVED** | PR-2a | ratified | `…/prompts/0.7.2-PR-2bc-{reassessment,S1,S2,S3}.md` | S1 land-harness + S2 carve-auto-drift + S3 floor-reframe landed (`5b69568`/`2ef8c3d..d2c0bf4`/`78164b9`); PR-2c SHELVED. Floor HOLDS 0.90. See decision memo. |
 | **1** | PR-1 | Architecture/design doc drift sweep | **CLOSED** | PR-0 | drift-list approved 2026-05-31 | `…/prompts/0.7.2-PR-1-doc-drift-sweep.md` | Audit→drift list (10 items, `4beca5b`)→HITL approved all→corrections `aebf959` + closure `10a0e24` on `main`. Codex **PASS** (`…/runs/0.7.2-PR-1-review-20260531T165936Z.md`). Docs-only; nothing pushed. |
-| **2** | PR-9 | Embedder robustness (concurrent-embed safety + Invariant-5 watchdog) | **NOT STARTED** | PR-1 | diff+tests | `…/prompts/0.7.2-PR-9-embedder-robustness.md` | **Gates PR-3's N=1M seed.** RED-first; sequence ahead of PR-3. Prompt authored (surface recon persisted); slice not yet executed. |
+| **2** | PR-9 | Embedder robustness (concurrent-embed safety + Invariant-5 watchdog) | **✅ CLOSED (`21f4df6`, local main, unpushed)** | PR-1 | diff+tests ✅ (HITL 2026-05-31) | `…/prompts/0.7.2-PR-9-embedder-robustness.md`; closure `…/runs/0.7.2-PR-9-output.json`; review `…/runs/0.7.2-PR-9-review-20260531T205810Z.md` | Watchdog (Invariant 5) + engine-side embed **serialization** (re-justified on SAFETY — throughput-neutral, candle global rayon pool; false "~13×" withdrawn) + **circuit breaker** keyed on concurrent **live embed threads** (bounds abandoned-thread leak for persistent AND intermittent hangs). RED→GREEN each. **codex 5 passes → PASS** (pass-4 BLOCK on the original consecutive-timeout breaker design was NOT overridden — redesigned to live-thread-count + intermittent regression test; pass-5 PASS). Tests: serialization 1/1, watchdog 5/5, eu5f 6/6, projection 12/12; release e2e seed N=2000 complete+correct. Uncommitted; **no push**. (`ac_007b` flake is PRE-EXISTING — fails at baseline `ff7b008`, unrelated to PR-9.) |
 | **3** | PR-3 | Real-corpus canonical-CI N=1M dispatch | **NOT STARTED** | PR-2(bc), PR-9 | **dispatch approval (cost)**; budget approval before ADR | — | Pre-flight: ~10K-doc unserialized real-corpus seed before the N=1M dispatch. Fills `ADR-0.7.0-text-query-latency-gates-revised.md`. |
 | **4** | PR-4 | Release notes + **push v0.7.0 + v0.7.1** | **NOT STARTED** | PR-1, PR-2(bc), PR-3 | **explicit push approval — irreversible** | — | CHANGELOG v0.7.0 + v0.7.1 sections; docs/embedder.md; creates `v0.7.1` tag; pushes `main` + both tags. |
 
@@ -82,9 +82,13 @@ as-needed from the handoff section; — = not yet authored).
 
 ## Pointer forward
 
-Next actionable slice: **PR-9 (embedder robustness)** — PR-1 is now CLOSED. PR-9 is
-independent of the held release push and **gates PR-3's N=1M seed** (concurrent-embed
-safety + the Invariant-5 embed watchdog); it is RED-first (engine behavior change).
-Author its per-slice prompt from the handoff PR-9 section. After PR-9: PR-3 (dispatch
-cost gate) → PR-4 (push gate). Author per-slice prompts from the handoff sections as
+PR-9 LANDED (`21f4df6`, local `main`, unpushed; codex PASS).
+
+Next actionable slice: **PR-3 (real-corpus canonical-CI N=1M
+dispatch)** — PR-9 retired its concurrent-embed risk (embeds are now serialized
+engine-side + watchdog-guarded + circuit-broken; a release N=2000 real-corpus seed
+completed clean at ~1.67 docs/s serialized). PR-3's own ~10K-doc pre-flight can reuse
+the `pr9_concurrent_embed` harness (set `PR9_SEED_N`, run `--release`). PR-3 still
+needs **dispatch cost approval** + **numeric-budget approval** before the ADR.
+After PR-3: PR-4 (push gate). Author per-slice prompts from the handoff sections as
 each is picked up; update this scoreboard on landing.
