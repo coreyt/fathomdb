@@ -91,8 +91,10 @@ The real fix for AC-013 cost at canonical scale is an **ANN
 index** (HNSW / IVF / DiskANN) on the `vec0` virtual table.
 Per-query cost drops from O(N) to O(log N) or O(sqrt(N)).
 Tracked outside 0.7.0 — neither in scope nor a 0.7.0 budget
-dependency. When that lands, AC-013 / AC-019 at N=1M may become
-fast enough to gate on routinely; revisit the policy then.
+dependency — in `dev/design/ann-index-vec0.md` (target post-1.0,
+pre-2.1; unblocks the AC-072/AC-073 100k & 1M tiers). When that
+lands, AC-013 / AC-019 at N=1M may become fast enough to gate on
+routinely; revisit the policy then.
 
 ## Related
 

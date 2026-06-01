@@ -94,10 +94,12 @@ this table to either an ADR or to an acceptance.md self-owned bullet.
 | ----------- | ---------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | AC-011a/b   | REQ-009a/b | P-WTP-WARMUP, P-WTP-RUN                                                                 | ADR-0.6.0-write-throughput-sli (gate); acceptance.md (protocol)                    |
 | AC-012      | REQ-010    | P-PERF-SAMPLES                                                                          | ADR-0.6.0-text-query-latency-gates                                                 |
-| AC-013      | REQ-011    | P-PERF-SAMPLES                                                                          | ADR-0.6.0-retrieval-latency-gates                                                  |
+| AC-013      | REQ-011    | P-PERF-SAMPLES                                                                          | ADR-0.6.0-retrieval-latency-gates (budget superseded by AC-072)                    |
 | AC-017      | REQ-015    | P-PERF-SAMPLES                                                                          | ADR-0.6.0-projection-freshness-sli                                                 |
-| AC-019      | REQ-017    | P-PERF-SAMPLES, P-STRESS-MULT, P-STRESS-FLOOR                                           | acceptance.md                                                                      |
+| AC-019      | REQ-017    | P-PERF-SAMPLES, P-STRESS-MULT, P-STRESS-FLOOR                                           | acceptance.md (budget superseded by AC-073)                                        |
 | AC-020      | REQ-018    | P-PARALLEL-TOL                                                                          | acceptance.md                                                                      |
+| AC-072      | REQ-011    | P-PERF-SAMPLES                                                                          | ADR-0.7.0-text-query-latency-gates-revised (tiered; 10k binding, HITL 2026-06-01)  |
+| AC-073      | REQ-017    | P-PERF-SAMPLES, P-STRESS-MULT, P-STRESS-FLOOR                                           | ADR-0.7.0-text-query-latency-gates-revised (tiered; real-corpus verdict)           |
 | AC-022b     | REQ-020a   | P-FD-TOL                                                                                | acceptance.md                                                                      |
 | AC-024a     | REQ-022a   | P-LOCK-BOUND                                                                            | acceptance.md                                                                      |
 | AC-027d     | REQ-025c   | P-TAU, P-TAU-PASS                                                                       | ADR-0.6.0-recovery-rank-correlation                                                |
@@ -294,6 +296,7 @@ the only test-plan.md responsibility for this section.)
 **Assertion:** Vector retrieval on the documented vector fixture meets p50 ≤ 50 ms AND p99 ≤ 200 ms over ≥ P-PERF-SAMPLES samples.
 **Measurement:** Per ADR-0.6.0-retrieval-latency-gates workload (warmup discard + second-pass, QPS=1); CI gate fails if either percentile exceeds.
 **Fixture:** vector-1m-768d (test-plan.md fixture spec — pending).
+**Status:** budget **superseded by AC-072** (revised, tiered) per `ADR-0.7.0-text-query-latency-gates-revised` (HITL-locked 2026-06-01). The p50 ≤ 50 / p99 ≤ 200 ms above is the legacy 0.6.0 budget, retained for history.
 
 ## AC-014: `doctor safe-export` ≤ 500 ms on seeded dataset
 
@@ -342,6 +345,7 @@ the only test-plan.md responsibility for this section.)
 **Assertion:** Under the documented mixed-retrieval stress workload, read p99 ≤ `max(P-STRESS-MULT × baseline_p99, P-STRESS-FLOOR)` over ≥ P-PERF-SAMPLES samples, where `baseline_p99` is captured by re-running AC-013's protocol immediately preceding this AC in the same CI job.
 **Measurement:** Run baseline first; freeze workload; run stress; assert bound.
 **Fixture:** mixed-retrieval-stress (test-plan.md fixture spec — pending).
+**Status:** budget **superseded by AC-073** (revised, tiered; real-corpus is the verdict, synthetic `perf_gates` AC-019 is report-only) per `ADR-0.7.0-text-query-latency-gates-revised` (HITL-locked 2026-06-01).
 
 ## AC-020: Reads do not serialize on a single reader connection
 
@@ -1084,6 +1088,26 @@ Added 2026-05-02 as an HITL amendment to the locked corpus per
 **Measurement:** Open a fresh DB at user_version `N`; register a migration to `N+1` whose body contains a forced failing statement before the user_version bump; call `Engine.open`; assert `MigrationError`; reopen via a side-channel (or read user_version directly via raw rusqlite without the engine); assert `PRAGMA user_version` == `N`.
 **Fixture:** failing-migration fixture (test-plan.md fixture spec — pending).
 
+## AC-072: Vector retrieval latency (revised, tiered) — supersedes the AC-013 budget
+
+**Requirement ref:** REQ-011
+**Test id:** T-013 (`perf_gates::ac_013_vector_retrieval_latency`) + per-push canary `perf_gates::ac_013_vector_read_path_smoke`
+**Supersedes:** the AC-013 numeric budget (legacy `ADR-0.6.0-retrieval-latency-gates`: p50 ≤ 50 / p99 ≤ 200 ms). HITL-locked 2026-06-01 (0.7.2 PR-3) per `ADR-0.7.0-text-query-latency-gates-revised`.
+**Assertion (tiered by corpus size N; the binding release gate for the 0.x and 1.x lines is the 10k tier):**
+- **10,000-row tier — BINDING:** p50 ≤ 80 ms AND p99 ≤ 300 ms over ≥ P-PERF-SAMPLES samples. MET (real bge p50 36 / p99 49 ms at N≈7,667; synthetic 384-d 15/17 ms).
+- **100,000 / 1,000,000 tiers — TRACKED, not gated:** same 80/300 target, deferred to post-1.0 (pre-2.1) ANN-index work — the vec0 bit-KNN is a per-query O(N) linear scan. Measured 100k ≈ 147 ms p50; 1M ≈ 1.5 s (O(N) extrapolation). See `dev/design/ann-index-vec0.md`.
+**Measurement:** LOCAL once-per-release exercise (real-embedder canonical N=1M is infeasible on CI — ~166 h seed at 1.67 docs/s vs a 240-min timeout); per-push CI runs only the FTS-isolated read-path smoke. In code the budget is asserted only at `n ≤ AC013_GATE_N` (10,000); larger N is reported (`AC013_TIER_INFO`). Full data: `dev/plans/runs/0.7.2-PR-3-perf-data.md`.
+**Fixture:** real-corpus (`data/corpus-data`) via `eu7_real_corpus_ac.rs` for the verdict anchor; synthetic `VaryingEmbedder` in `perf_gates` for the gate + smoke.
+
+## AC-073: Mixed-retrieval stress tail (revised, tiered) — supersedes the AC-019 budget
+
+**Requirement ref:** REQ-017
+**Test id:** T-019 (`perf_gates::ac_019_mixed_retrieval_stress_workload_tail`, REPORT-ONLY) + `eu7_real_corpus_ac.rs` (asserting verdict). Conditional on AC-072.
+**Supersedes:** the AC-019 budget basis. HITL-locked 2026-06-01 (0.7.2 PR-3) per `ADR-0.7.0-text-query-latency-gates-revised`.
+**Assertion (tiered; binding = 10k tier):** stress p99 ≤ `max(P-STRESS-MULT × baseline_p99, P-STRESS-FLOOR)` measured on the REAL-corpus path (the verdict-quality signal). MET at the 10k tier: clean run 343 ms < 405 ms bound (N≈7,667). 100k/1M tracked post-1.0 (inherit AC-072's O(N) growth).
+**Measurement:** the real-corpus harness is the verdict; the synthetic `perf_gates` AC-019 is REPORT-ONLY (`AC019_REPORT_ONLY`) — its instant-embed baseline makes the baseline-relative 10× bound unmeetable by the synthetic data (a fixture property, not a regression). See `dev/plans/runs/0.7.2-PR-3-perf-data.md`.
+**Fixture:** real-corpus (`eu7_real_corpus_ac.rs`) for the verdict; synthetic mixed-retrieval-stress in `perf_gates` for scouting.
+
 ---
 
 ## Coverage trace
@@ -1104,13 +1128,13 @@ Every REQ in `requirements.md` has ≥1 AC:
 | REQ-009a | AC-011a               |
 | REQ-009b | AC-011b               |
 | REQ-010  | AC-012                |
-| REQ-011  | AC-013                |
+| REQ-011  | AC-013, AC-072        |
 | REQ-012  | AC-014                |
 | REQ-013  | AC-015                |
 | REQ-014  | AC-016                |
 | REQ-015  | AC-017                |
 | REQ-016  | AC-018                |
-| REQ-017  | AC-019                |
+| REQ-017  | AC-019, AC-073        |
 | REQ-018  | AC-020                |
 | REQ-019  | AC-021                |
 | REQ-020a | AC-022a/b             |

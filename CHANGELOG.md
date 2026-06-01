@@ -120,9 +120,8 @@ held locally until PR-4. Ledger: `dev/plans/runs/STATUS-release-hardening.md`.
   a per-query linear scan over all N rows; there is no HNSW/IVF/DiskANN index.
   The 10k latency tier is met (real bge p50 36 / p99 49 ms at N≈7,667); 100k is
   ~147 ms p50 (synthetic 384-d) and 1M extrapolates to ~1.5 s — i.e. the 80 ms
-  p50 budget is not met above ~50k. The ANN index is the named post-1.0,
-  pre-2.1 follow-up. (unverified: the exact post-1.0 milestone for the ANN index
-  is named as "post-1.0 / pre-2.1" in the ADRs but no dated milestone exists.)
+  p50 budget is not met above ~50k. The ANN index is the named post-1.0
+  (pre-2.1) follow-up, tracked in `dev/design/ann-index-vec0.md`.
 - **1M real-corpus recall/latency not freshly measured.** ~166 h seed makes it
   infeasible on this hardware; 0.937 @ N=7,667 is treated as an upper-ish bound
   (recall decreases slowly with N) and the 1M latency tier is an O(N)

@@ -204,8 +204,9 @@ that post-1.0 (pre-2.1) ANN-index work will bring under the gate. Measured
 
 **Post-1.0 obligation.** Holding 80/300 at 100k and 1M is scheduled after 1.0
 and before 2.1 via an ANN index (HNSW/IVF/DiskANN) on the vec0 table, dropping
-per-query cost from O(N) to O(log N)/O(√N). Until then the 100k/1M tiers are
-tracked, not gated. The in-code gate enforces this split:
+per-query cost from O(N) to O(log N)/O(√N) — tracked in
+`dev/design/ann-index-vec0.md`. Until then the 100k/1M tiers are tracked, not
+gated. The in-code gate enforces this split:
 `perf_gates::ac_013_vector_retrieval_latency` asserts the budget only at
 `n <= AC013_GATE_N` (10,000) and reports (`AC013_TIER_INFO`) above it.
 

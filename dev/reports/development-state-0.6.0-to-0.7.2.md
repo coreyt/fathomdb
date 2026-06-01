@@ -158,21 +158,23 @@ exists at `38d5f4f` but is **HELD / unpushed** (pushed by 0.7.2 PR-4). Commit ar
 
 ### ADRs
 
-- **ADR-0.7.0-vector-binary-quant** (new; date 2026-05-27) — status `draft,
-  HITL-required` (later amended in 0.7.2 PR-2 to cite the corrected recall; still
-  carries the draft front-matter `(unverified: whether it was ever flipped to
-  "locked" — the file header still reads draft, HITL-required while § 2/§ 6
-  carry 0.7.2 amendments)`). Decision: binary quantization to a sibling
+- **ADR-0.7.0-vector-binary-quant** (new; date 2026-05-27) — **status `locked`**
+  (flipped 2026-06-01 after the 0.7.2 PR-2 recall reframe; § 2 cites the
+  corrected ANN-fidelity 0.937, floor kept 0.90). Decision: binary quantization
+  to a sibling
   `bit[768]` column + two-phase bit-KNN (K=64) + f32 rerank; `source_type`
   partition_key + metadata columns; recall floor ≥ 0.90 recall@10; sqlite-vec
   pin stays `=0.1.7`; embedder unchanged; single-writer/projection-cursor
   contracts preserved. Explicitly a **data-encoding change, not a second
   architectural lever**.
-- **ADR-0.7.0-text-query-latency-gates-revised** (new; date 2026-05-25) — status
-  `draft, HITL-required`. Supersedes ADR-0.6.0-text-query-latency-gates for
-  AC-012; pins budgets against canonical-runner measurement. AC-013/AC-019
-  sections were filled and HITL-locked later (0.7.2 PR-3, tiered). Proposes new
-  AC ids AC-071..AC-075.
+- **ADR-0.7.0-text-query-latency-gates-revised** (new; date 2026-05-25) — **status
+  `locked` for AC-013/AC-019** (tiered budget, HITL 2026-06-01, 0.7.2 PR-3);
+  AC-012/AC-020 remain as drafted (owned by their own slices). Supersedes
+  ADR-0.6.0-text-query-latency-gates for AC-012; pins budgets against
+  canonical-runner measurement. Of the proposed AC ids AC-071..AC-075, **AC-072
+  (revised AC-013) and AC-073 (revised AC-019) were appended to
+  `dev/acceptance.md`** (2026-06-01); AC-071/AC-074/AC-075 remain proposed (their
+  ACs not yet locked / not built).
 - **ADR-0.7.0-ac020-architectural-lever** (new) — status `draft, HITL-required`.
   Names **PCACHE2** as the single 0.7.0 architectural lever; AC-020 speedup gap
   (measured 3.530× vs ≥ 5.33× bound) is this lever's job.
@@ -193,12 +195,12 @@ No ADRs removed.
   (`STATUS-perf-vector-quant.md` "Critical finding").
 - **AC-019 stress** — dev-box MET (p99 131 ms post-Pack-2). AC-020/AC-012/
   AC-017/AC-018 unchanged.
-- New proposed AC ids in the revised-budgets ADR: **AC-071** (AC-012 revised),
-  **AC-072** (AC-013 revised), **AC-073** (AC-019 revised), **AC-074** (AC-020
-  revised), **AC-075** (top-K LIMIT, if landed). `(unverified: whether AC-071..
-  075 were actually appended to dev/acceptance.md — they are described as
-  "proposed" in the ADR and dev/acceptance.md still references AC-012/013/019/020
-  against the 0.6.0 ADRs at lines 96–100.)`
+- New AC ids in the revised-budgets ADR: **AC-072** (AC-013 revised) and
+  **AC-073** (AC-019 revised) were **appended to `dev/acceptance.md`** (2026-06-01,
+  resolved later in the 0.7.2 line) with supersede pointers on AC-013/AC-019 and
+  traceability + coverage-trace rows. **AC-071** (AC-012 revised), **AC-074**
+  (AC-020 revised), **AC-075** (top-K LIMIT) remain *proposed* — their underlying
+  ACs are owned by other slices / not yet built.
 
 ### Architecture & design changes
 
@@ -334,14 +336,13 @@ PR-5/6/7/8 NOT started. Local `main` ~55 commits ahead of `origin/main`. Ledger:
   point 4 now cites the corrected real-embedder ANN-fidelity recall@10 = **0.937
   (CI 0.913–0.957, σ=0.0116)**; the 0.90 floor is kept (a mechanical R−2σ gives
   0.914). Explicitly distinguishes ANN/quantization fidelity (the gate) from IR
-  relevance (the embedder ceiling ~0.571, NOT a gate). `(unverified: the file's
-  YAML front-matter still reads status: draft, HITL-required even though it
-  carries 0.7.2 amendments — whether a formal "locked" flip was intended is
-  ambiguous.)`
+  relevance (the embedder ceiling ~0.571, NOT a gate). Front-matter **flipped to
+  `status: locked`** 2026-06-01 (HITL-ratified recall reframe).
 - **ADR-0.7.0-text-query-latency-gates-revised** — **amended** (PR-3): AC-013 and
   AC-019 sections filled and **HITL-locked (2026-06-01)** as a **tiered**
-  budget (10k binding for 0.x/1.x; 100k/1M tracked post-1.0). AC-012/AC-020
-  unchanged. Same draft-front-matter caveat applies `(unverified)`.
+  budget (10k binding for 0.x/1.x; 100k/1M tracked post-1.0). Front-matter
+  flipped to `status: locked` for AC-013/AC-019; AC-012/AC-020 remain as drafted
+  (their own slices).
 - **ADR-0.8.0-agent-memory-retrieval-and-identity** (new; status `draft,
   HITL-required`) and **ADR-0.8.0-embedder-identity-change-workflow** (new;
   status `draft`) — seeded under 0.7.2's tail (`25ab3ee`) but belong to the
@@ -386,10 +387,10 @@ PR-5/6/7/8 NOT started. Local `main` ~55 commits ahead of `origin/main`. Ledger:
   Drift list: `dev/plans/runs/0.7.2-RHC-PR-1-drift-list.md`.
 - **Tiered latency policy** + local-measurement posture: `dev/notes/
   ac013-ac019-canonical-scale-policy.md` (real-corpus is the verdict; synthetic
-  dev-box is scouting) — `(unverified: file path cited by PR-3 artifacts; not
-  directly opened during this report.)`
-- Vector search remains a per-query **O(N) linear scan** (no ANN index); ANN
-  index is the named post-1.0, pre-2.1 follow-up.
+  dev-box is scouting).
+- Vector search remains a per-query **O(N) linear scan** (no ANN index); the ANN
+  index is the named post-1.0 (pre-2.1) follow-up, tracked in
+  `dev/design/ann-index-vec0.md`.
 
 ### Key code changes (commits)
 
@@ -438,8 +439,8 @@ PR-5/6/7/8 NOT started. Local `main` ~55 commits ahead of `origin/main`. Ledger:
 - **Nothing in 0.7.x is shipped.** `v0.7.0` is a held local tag; `v0.7.1` is
   untagged; 0.7.2 is in progress. 0.7.2 PR-4 is the push gate and has not run.
 - **Latency above ~50k is not gated and not met.** O(N) vec0 scan; 100k ~147 ms
-  p50, 1M ~1.5 s. ANN index is the named post-1.0 (pre-2.1) follow-up — no dated
-  milestone `(unverified)`.
+  p50, 1M ~1.5 s. ANN index is the named post-1.0 (pre-2.1) follow-up, tracked in
+  `dev/design/ann-index-vec0.md` (no dated milestone yet — target window only).
 - **1M real-corpus recall/latency never freshly measured** (~166 h seed). 0.937 @
   N=7,667 is treated as an upper-ish bound; the 1M latency tier is an O(N)
   extrapolation.
