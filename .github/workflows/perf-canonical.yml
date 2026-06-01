@@ -70,6 +70,9 @@ on:
 
 permissions:
   contents: read
+  # PR-7: post the perf-regression-check verdict as a comment on the PR/push
+  # that triggered the canonical run.
+  pull-requests: write
 
 jobs:
   ac012-canonical-measure:
@@ -153,6 +156,59 @@ jobs:
           name: perf-canonical-ac012-log
           path: perf-canonical-ac012.log
           retention-days: 30
+      # PR-7 — perf regression detection. Read the append-only
+      # dev/perf-history/ store, group by (ac_id, n), and flag the latest run
+      # vs the rolling median of prior runs. See
+      # dev/design/perf-regression-detection.md.
+      #   exit 0 = clean; exit 1 = regression flagged (NOT a hard fail — the
+      #   PR/push comment is the signal); exit 2 = data integrity (fail loudly).
+      - name: Perf regression check
+        id: perf_regression
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          OUT="$(cargo run --quiet -p fathomdb-cli --bin perf-regression-check -- dev/perf-history)"
+          CODE=$?
+          echo "$OUT"
+          # Stash the human-readable report + exit code for the comment step.
+          {
+            echo 'report<<PERF_EOF'
+            echo "$OUT"
+            echo 'PERF_EOF'
+          } >> "$GITHUB_OUTPUT"
+          echo "exit_code=$CODE" >> "$GITHUB_OUTPUT"
+          if [ "$CODE" -eq 2 ]; then
+            echo "::error::perf-regression-check exit 2 — perf-history data missing/malformed (integrity failure)"
+            exit 2
+          fi
+          # exit 0 or 1: do not fail the step; the comment carries the signal.
+          exit 0
+      - name: Post perf-regression comment
+        if: ${{ always() && github.event.pull_request.number }}
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const report = ${{ toJSON(steps.perf_regression.outputs.report) }};
+            const code = ${{ toJSON(steps.perf_regression.outputs.exit_code) }};
+            const verdict = code === '1'
+              ? '⚠️ regression(s) flagged'
+              : 'no regressions';
+            const body = [
+              '## perf-regression-check',
+              '',
+              `**Verdict:** ${verdict} (exit ${code})`,
+              '',
+              '```',
+              report || '(no output)',
+              '```',
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body,
+            });
       - name: Summarize verdict
         if: always()
         shell: bash

@@ -9,7 +9,7 @@
 //! - `regression/`      — known degradations; MUST flag (exit 1).
 //! - `jitter/`          — normal noise within thresholds; MUST NOT flag (exit 0).
 //! - `backfill-dirty/`  — real history ending at the 2026-05-27 batch-collapse
-//!                        bug (`035cfa3`); MUST flag (exit 1).
+//!   bug (`035cfa3`); MUST flag (exit 1).
 //! - `backfill-clean/`  — clean history (excluding the bug); MUST NOT flag.
 //! - `insufficient/`    — one row in a group (no median possible); graceful, no flag.
 //! - `malformed/`       — a record violating the schema; MUST exit 2.

@@ -955,6 +955,7 @@ dependencies = [
  "clap",
  "fathomdb",
  "fathomdb-embedder",
+ "serde",
  "serde_json",
  "tempfile",
 ]
