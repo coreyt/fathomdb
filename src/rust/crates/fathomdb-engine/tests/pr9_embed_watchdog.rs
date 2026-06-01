@@ -15,6 +15,7 @@
 //!   * `hung_embed_times_out_instead_of_wedging_drain` — `drain` wedges into
 //!     `EngineError::Scheduler` because the parked worker never decrements
 //!     `active_jobs`.
+//!
 //! GREEN after: the hung embed surfaces `Timeout`, the existing retry path
 //! records a terminal failure, `drain` returns, and writer state is intact.
 

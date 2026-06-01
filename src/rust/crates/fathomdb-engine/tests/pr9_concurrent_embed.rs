@@ -18,6 +18,7 @@
 //!   * the projection reaches `UpToDate`, and
 //!   * stored vectors are finite + unit-norm, with a direct spot-check that
 //!     the first rows' stored vectors equal a single-threaded re-embed.
+//!
 //! It also logs the serialized embed rate (`PR9_PROGRESS` / `PR9_DRAINED`)
 //! for the record. NOTE: run in `--release`; in a debug build a 512-token
 //! candle forward is ~14x slower (PR-9 micro-benchmark), so a 10K seed of
