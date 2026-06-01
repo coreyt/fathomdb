@@ -63,30 +63,8 @@ on:
         required: false
         type: boolean
         default: false
-      memstatus_off:
-        description: "FATHOMDB_PERF_SQLITE_MEMSTATUS_OFF=1 (W4.0d+ lever)"
-        required: false
-        type: boolean
-        default: false
-      pcache2:
-        description: "FATHOMDB_PERF_SQLITE_PCACHE2=1 (W4.1 lever — custom page-cache)"
-        required: false
-        type: boolean
-        default: false
-      pagecache_spec:
-        description: "FATHOMDB_PERF_SQLITE_PAGECACHE=<page_size>:<count> (W4.0i/j lever; empty=off; ignored under pcache2)"
-        required: false
-        default: ""
-      writer_pragmas:
-        description: "FATHOMDB_PERF_WRITER_PRAGMAS (e.g. 'page_size=8192')"
-        required: false
-        default: ""
-      reader_pragmas:
-        description: "FATHOMDB_PERF_READER_PRAGMAS (e.g. 'cache_size=-262144,mmap_size=268435456,temp_store=MEMORY,synchronous=NORMAL')"
-        required: false
-        default: ""
-      search_limit:
-        description: "FATHOMDB_PERF_SEARCH_LIMIT (e.g. 1000); empty=off"
+      sqlite_perf_env:
+        description: "Space-separated KEY=VAL list of FATHOMDB_PERF_* env knobs, exported verbatim. Consolidates the former memstatus_off/pcache2/pagecache_spec/writer_pragmas/reader_pragmas/search_limit inputs (GitHub caps workflow_dispatch at 10 inputs). E.g. 'FATHOMDB_PERF_SQLITE_PCACHE2=1 FATHOMDB_PERF_SQLITE_PAGECACHE=8192:32768 FATHOMDB_PERF_SEARCH_LIMIT=1000'"
         required: false
         default: ""
 
@@ -251,16 +229,16 @@ jobs:
           TARGETS: ${{ inputs.targets }}
           RUN_LOCATION: canonical-ci
           FATHOMDB_PERF_EXPERIMENTS: "1"
-          FATHOMDB_PERF_SQLITE_MEMSTATUS_OFF: ${{ inputs.memstatus_off && '1' || '' }}
-          FATHOMDB_PERF_SQLITE_PCACHE2: ${{ inputs.pcache2 && '1' || '' }}
-          FATHOMDB_PERF_SQLITE_PAGECACHE: ${{ inputs.pagecache_spec }}
-          FATHOMDB_PERF_WRITER_PRAGMAS: ${{ inputs.writer_pragmas }}
-          FATHOMDB_PERF_READER_PRAGMAS: ${{ inputs.reader_pragmas }}
-          FATHOMDB_PERF_SEARCH_LIMIT: ${{ inputs.search_limit }}
+          SQLITE_PERF_ENV: ${{ inputs.sqlite_perf_env }}
         shell: bash
         run: |
           set -o pipefail
           mkdir -p dev/plans/runs
+          # Export the consolidated FATHOMDB_PERF_* env knobs (space-separated
+          # KEY=VAL list) so the harness child processes inherit them.
+          if [ -n "$SQLITE_PERF_ENV" ]; then
+            for kv in $SQLITE_PERF_ENV; do export "$kv"; done
+          fi
           if [ "${{ inputs.perf_record }}" = "true" ]; then
             # Wrap the harness in perf record for L-A1 diagnostic.
             # The driver itself runs the harness; we wrap the driver.
