@@ -14,6 +14,13 @@ path = "src/lib.rs"
 name = "fathomdb"
 path = "src/main.rs"
 
+# 0.7.2 PR-7 — perf regression detector. Reads dev/perf-history/, groups by
+# (ac_id, n), flags the latest run vs the rolling median of prior runs.
+# See dev/design/perf-regression-detection.md.
+[[bin]]
+name = "perf-regression-check"
+path = "src/bin/perf-regression-check.rs"
+
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
 fathomdb.workspace = true
