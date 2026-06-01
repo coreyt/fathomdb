@@ -1,0 +1,3095 @@
+OpenAI Codex v0.120.0 (research preview)
+--------
+workdir: /tmp/fdb-PR-7-20260601T215338Z
+model: gpt-5.4
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 019e8566-b546-7663-a23a-bfdbc8e67464
+--------
+user
+You are an independent, skeptical reviewer doing **pass 3** of the PR-7 perf-regression-detection slice (fathomdb 0.7.2). Passes 1-2 returned BLOCK; pass-2's two remaining items besides the parser were confirmed fixed. This pass verifies the final fix and does a last full re-scan. Verdict MUST be `PASS`, `CONCERN`, or `BLOCK` on its own line at the end as `VERDICT: <X>`.
+
+## Diff vs baseline `41aa6b2`
+Run `git diff 41aa6b2 HEAD`. Commits: RED `60878e9`, GREEN `857efd6`, FIX-1 `dda30b4`, FIX-2 `e0a5919`.
+
+## Pass-2 BLOCK (the only open item) — verify it is fully fixed
+`parse_rfc3339_epoch` was not strictly validating. FIX-2 should now:
+- reject impossible dates via month-specific day counts + leap-year handling (2026-02-31, 2026-02-29 non-leap);
+- bound zone offset hour (<=23) and minute (<=59);
+- require the fractional-second suffix to be non-empty and digits-only.
+VERIFY each in `src/rust/crates/fathomdb-cli/src/bin/perf-regression-check.rs`, and that the unit tests (`rfc3339_accepts_valid_edge_cases`, `rfc3339_rejects_malformed`) actually cover these. Look for any remaining lenient path (e.g. a still-acceptable malformed input).
+
+## Already-confirmed fixed (pass-2) — spot-check only, do not re-litigate
+Backfill chronology (true git order, committed store clean, AC-013b@10000 arc sorts bug→fix→dense→ship); CI via `$GITHUB_STEP_SUMMARY` with `contents: read` only; honesty rework (degradation detector flags the correction, not the bug; design doc states it).
+
+## Final full re-scan
+Median/window/off-by-one, exit-code consistency (0/1/2), panic paths, forward-extensible schema (unknown fields incl. `note` ignored), tier-aware (ac_id,n) grouping + K-regime separation, append-only/read-only invariant, clippy, actionlint.
+
+## Locked (do not flag): 15%/0.03/window-10/single-latest; bin under fathomdb-cli; local-only heavy measurement.
+
+Cite file:line. Do not pass anything you cannot verify. End with `VERDICT: PASS|CONCERN|BLOCK`.
+
+codex
+Review pass 3 is focused on the final parser fix first, then a full diff re-scan against `41aa6b2`. I’m reading repo memory/invariants, pulling the exact diff, and then I’ll verify the parser logic and tests before checking the broader regression-detection surface.
+exec
+/bin/bash -lc "sed -n '1,220p' MEMORY.md" in /tmp/fdb-PR-7-20260601T215338Z
+ exited 2 in 0ms:
+sed: can't read MEMORY.md: No such file or directory
+
+exec
+/bin/bash -lc "rg --files -g 'feedback_*.md'" in /tmp/fdb-PR-7-20260601T215338Z
+ exited 1 in 0ms:
+exec
+/bin/bash -lc 'git diff --stat 41aa6b2 HEAD' in /tmp/fdb-PR-7-20260601T215338Z
+ succeeded in 0ms:
+ .github/workflows/perf-canonical.yml               |   42 +
+ Cargo.lock                                         |    1 +
+ dev/design/perf-regression-detection.md            |  243 ++
+ dev/perf-history/AC-012-603a4bc0-1000000.json      |    1 +
+ dev/perf-history/AC-013-c893d8b0-10000.json        |    1 +
+ dev/perf-history/AC-013-c893d8b0-7667.json         |    1 +
+ dev/perf-history/AC-013b-035cfa30-10000.json       |    1 +
+ dev/perf-history/AC-013b-38d5f4f0-10000.json       |    1 +
+ dev/perf-history/AC-013b-38f5e3a0-10000.json       |    1 +
+ dev/perf-history/AC-013b-4a95cfd0-10000.json       |    1 +
+ dev/perf-history/AC-013b-c893d8b0-7667.json        |    1 +
+ dev/perf-history/AC-019-c893d8b0-7667.json         |    1 +
+ dev/perf-history/README.md                         |   41 +
+ .../runs/0.7.2-PR-7-review-20260601T220645Z.log    | 2412 ++++++++++++++
+ .../runs/0.7.2-PR-7-review-20260601T224904Z.log    | 3394 ++++++++++++++++++++
+ src/rust/crates/fathomdb-cli/Cargo.toml            |    8 +
+ .../fathomdb-cli/src/bin/perf-regression-check.rs  |  548 ++++
+ .../backfill-clean/AC-013-aaaaaaa0-7667.json       |    1 +
+ .../backfill-clean/AC-013-c893d8b0-7667.json       |    1 +
+ .../backfill-clean/AC-013b-38d5f4f0-10000.json     |    1 +
+ .../backfill-clean/AC-013b-38f5e3a0-10000.json     |    1 +
+ .../backfill-dirty/AC-013b-035cfa30-10000.json     |    1 +
+ .../backfill-dirty/AC-013b-4a95cfd0-10000.json     |    1 +
+ .../insufficient/AC-012-603a4bc0-1000000.json      |    1 +
+ .../fixtures/jitter/AC-013-bbb00001-10000.json     |    1 +
+ .../fixtures/jitter/AC-013-bbb00002-10000.json     |    1 +
+ .../fixtures/jitter/AC-013-bbb00003-10000.json     |    1 +
+ .../fixtures/jitter/AC-013-bbb00004-10000.json     |    1 +
+ .../fixtures/jitter/AC-013b-bbb10001-7667.json     |    1 +
+ .../fixtures/jitter/AC-013b-bbb10002-7667.json     |    1 +
+ .../fixtures/jitter/AC-013b-bbb10003-7667.json     |    1 +
+ .../fixtures/jitter/AC-013b-bbb10004-7667.json     |    1 +
+ .../malformed-timestamp/AC-013-feedface-10000.json |    1 +
+ .../fixtures/malformed/AC-013-deadbeef-10000.json  |    1 +
+ .../fixtures/regression/AC-013-aaa00001-10000.json |    1 +
+ .../fixtures/regression/AC-013-aaa00002-10000.json |    1 +
+ .../fixtures/regression/AC-013-aaa00003-10000.json |    1 +
+ .../fixtures/regression/AC-013-aaa00004-10000.json |    1 +
+ .../fathomdb-cli/tests/perf_regression_check.rs    |  196 ++
+ 39 files changed, 6915 insertions(+)
+
+exec
+/bin/bash -lc 'git rev-parse --short HEAD && git log --oneline --decorate -n 8' in /tmp/fdb-PR-7-20260601T215338Z
+ succeeded in 0ms:
+e0a5919
+e0a5919 (HEAD -> phase-0.7.2-PR-7-20260601T215338Z) fix(0.7.2): PR-7 FIX-2 — strict RFC3339 validation (codex pass-2 BLOCK)
+dda30b4 fix(0.7.2): PR-7 FIX-1 — codex BLOCK fixes + honest batch-collapse arc
+857efd6 feat(0.7.2): PR-7 GREEN — perf-regression-check bin + CI integration
+60878e9 test(0.7.2): PR-7 RED — perf-regression-check fixtures + bin tests
+41aa6b2 (main) docs(0.7.2): author PR-6 + PR-7 slice prompts (Phase B parallel pair)
+384389a docs(0.7.2): PR-5 CLOSED — corpus harness landed; closure artifact + STATUS
+c605a18 test(0.7.2): PR-5 corpus-driven test harness + per-(model,subset) embed cache
+9a8e11b (origin/main, origin/HEAD) docs(0.7.2): PR-4 CLOSED — fathomdb 0.7.1 published; closure artifact + STATUS
+
+codex
+`MEMORY.md` is not at the repo root in this worktree, so I’m locating the canonical memory file before I continue. In parallel I have the exact commit sequence and diff scope; next I’m drilling into the CLI binary and tests that implement the parser fix.
+exec
+/bin/bash -lc "rg --files | rg '("'^|/)MEMORY'"\\.md"'$|feedback_.*'"\\.md"'$'"'" in /tmp/fdb-PR-7-20260601T215338Z
+ exited 1 in 0ms:
+exec
+/bin/bash -lc 'git diff 41aa6b2 HEAD -- src/rust/crates/fathomdb-cli/src/bin/perf-regression-check.rs src/rust/crates/fathomdb-cli/tests/perf_regression_check.rs .github/workflows/perf-canonical.yml dev/design/perf-regression-detection.md' in /tmp/fdb-PR-7-20260601T215338Z
+ succeeded in 0ms:
+diff --git a/.github/workflows/perf-canonical.yml b/.github/workflows/perf-canonical.yml
+index cfe335a..58df0bb 100644
+--- a/.github/workflows/perf-canonical.yml
++++ b/.github/workflows/perf-canonical.yml
+@@ -70,6 +70,10 @@ on:
+ 
+ permissions:
+   contents: read
++  # PR-7: this workflow is workflow_dispatch-only, so there is no PR/push event
++  # to comment on. The perf-regression-check verdict is surfaced via
++  # $GITHUB_STEP_SUMMARY (always available on dispatch). No pull-requests scope
++  # is requested — adding one would be an unused over-grant.
+ 
+ jobs:
+   ac012-canonical-measure:
+@@ -153,6 +157,44 @@ jobs:
+           name: perf-canonical-ac012-log
+           path: perf-canonical-ac012.log
+           retention-days: 30
++      # PR-7 — perf regression detection. Read the append-only
++      # dev/perf-history/ store, group by (ac_id, n), and flag the latest run
++      # vs the rolling median of prior runs. See
++      # dev/design/perf-regression-detection.md.
++      #   exit 0 = clean; exit 1 = regression flagged (NOT a hard fail — the
++      #   step-summary verdict is the signal); exit 2 = data integrity (fail loudly).
++      # This workflow is workflow_dispatch-only, so there is no PR to comment on:
++      # the report is written to $GITHUB_STEP_SUMMARY (the dispatch-safe channel)
++      # and the step log. A flagged regression (exit 1) is surfaced, not failed,
++      # so a human reads the summary; a data-integrity failure (exit 2) fails the
++      # step loudly.
++      - name: Perf regression check
++        id: perf_regression
++        if: always()
++        shell: bash
++        run: |
++          set +e
++          OUT="$(cargo run --quiet -p fathomdb-cli --bin perf-regression-check -- dev/perf-history)"
++          CODE=$?
++          echo "$OUT"
++          VERDICT="no regressions"
++          [ "$CODE" -eq 1 ] && VERDICT="⚠️ regression(s) flagged"
++          [ "$CODE" -eq 2 ] && VERDICT="❌ data missing/malformed (integrity failure)"
++          {
++            echo "## perf-regression-check"
++            echo ""
++            echo "**Verdict:** ${VERDICT} (exit ${CODE})"
++            echo ""
++            echo '```'
++            echo "$OUT"
++            echo '```'
++          } >> "$GITHUB_STEP_SUMMARY"
++          if [ "$CODE" -eq 2 ]; then
++            echo "::error::perf-regression-check exit 2 — perf-history data missing/malformed (integrity failure)"
++            exit 2
++          fi
++          # exit 0 or 1: do not fail the step; the step summary carries the signal.
++          exit 0
+       - name: Summarize verdict
+         if: always()
+         shell: bash
+diff --git a/dev/design/perf-regression-detection.md b/dev/design/perf-regression-detection.md
+new file mode 100644
+index 0000000..c122237
+--- /dev/null
++++ b/dev/design/perf-regression-detection.md
+@@ -0,0 +1,243 @@
++# Perf regression detection (0.7.2 PR-7)
++
++**Status:** landed (0.7.2 PR-7). Owns `dev/perf-history/` + the
++`perf-regression-check` binary (`fathomdb-cli` crate, layout (A) — a
++`[[bin]]` entry, NOT a new workspace crate).
++
++## Purpose
++
++Persist canonical-CI / release-time performance numbers per commit and
++surface regressions automatically with a deliberately **low false-positive
++rate**. The store is the ship-verdict history; the bin reads it, groups by
++`(ac_id, n)`, and compares the single most-recent run in each group against
++the rolling median of the prior runs in that group.
++
++## Append-only invariant
++
++`dev/perf-history/` is **append-only**. The `perf-regression-check` binary
++**only reads** the directory — it never writes, mutates, or deletes any
++file. New rows are written by CI (or by a human at release time, for the
++locally-measured AC-013 / AC-013b / AC-019 numbers). This keeps the history
++a tamper-evident, git-tracked audit trail: a regression is a new file whose
++numbers the bin flags, not an edit to an old file.
++
++## Record schema
++
++One JSON file per canonical run (filename convention:
++`<ac_id>-<commit_sha:8>-<n>.json`, e.g. `AC-013-c893d8b0-10000.json`). The
++bin globs `*.json` in the directory and parses each file as one record:
++
++```json
++{
++  "commit_sha": "c893d8b0",
++  "ac_id": "AC-013",
++  "n": 10000,
++  "p50_ms": 36.0,
++  "p99_ms": 49.0,
++  "recall": 0.937,
++  "timestamp": "2026-06-01T07:23:39Z"
++}
++```
++
++| field        | type            | required | notes |
++|--------------|-----------------|----------|-------|
++| `commit_sha` | string          | yes      | commit the run was measured at |
++| `ac_id`      | string          | yes      | `AC-012` \| `AC-013` \| `AC-013b` \| `AC-019` \| … |
++| `n`          | integer         | yes      | corpus row count; part of the grouping key |
++| `p50_ms`     | number          | no\*     | median latency; omit for recall-only ACs |
++| `p99_ms`     | number          | no\*     | tail latency; omit for recall-only ACs |
++| `recall`     | number \| null  | no       | recall@10; omit/null for latency-only ACs (AC-012, AC-019) |
++| `timestamp`  | RFC3339 string  | yes      | run time; used to pick the single latest run per group |
++
++\* A record must carry at least one comparable metric (a latency pair or a
++recall value), else it is malformed.
++
++**Forward-extensibility:** unknown fields are **ignored, not rejected**.
++Adding fields to the schema later does not break older readers or invalidate
++older files. (`serde` with default `deny_unknown_fields` OFF.)
++
++## Grouping — tier-aware
++
++Records are grouped by the **`(ac_id, n)`** pair. This is deliberate:
++
++- AC-013 @ N=10k is never compared against AC-013 @ N=100k (different
++  latency tier — see `ADR-0.7.0-text-query-latency-gates-revised.md`, the
++  10k binding tier vs the 100k/1M tracked tiers).
++- The real-corpus anchor (N=7667) is a **different group** from the
++  synthetic N=10000 run — real bge and synthetic isotropic data have
++  different absolute numbers and must not cross-contaminate a median.
++
++**Regime caveat (grouping is necessary but not sufficient).** `(ac_id, n)`
++does not capture every comparability axis. The K-sweep that landed in 0.7.1
++(top-K bit-candidates 64 → 192, the EU-7/PR-2 recall fix) raised rerank cost,
++so pre-0.7.1 (K=64) latency is **not** directly comparable to 0.7.1+ (K=192)
++latency even at the same `(ac_id, n)`. The committed store therefore does
++**not** mix K=64 and K=192 latency in one group — the synthetic AC-013 @
++N=10000 latency history begins at the K=192 PR-3 baseline (`c893d8b`). The
++K=64-era synthetic recall arc (AC-013b @ N=10000) is kept as one
++internally-consistent group because every point in it is K=64. When a future
++regime change (a new K, an ANN index) lands, start a fresh comparison rather
++than letting the detector flag the deliberate step as a regression.
++
++## Detection thresholds (HITL Gate 1 — LOCKED 2026-06-01)
++
++Per HITL sign-off on 2026-06-01, the thresholds are:
++
++| metric  | flag condition                                            |
++|---------|-----------------------------------------------------------|
++| latency | `p50` **or** `p99` degraded **> 15%** vs the rolling median |
++| recall  | recall degraded **> 0.03 absolute** vs the rolling median   |
++| window  | rolling median of the prior **up to 10** runs per group     |
++| latest  | the **single most-recent** run (by timestamp) per group     |
++
++**Rationale (false-positive resistance is the design priority — codex's
++review focus):**
++
++- Recall σ = **0.0116** (PR-3 measured, N=7667 anchor;
++  `0.7.2-PR-3-perf-data.md`). A **0.03** absolute threshold is ≈ **2.4σ**,
++  i.e. roughly a **~1% jitter false-flag rate** — the deliberate
++  low-cry-wolf choice. We would rather miss a marginal real drift than fire
++  on noise, because a fired flag costs human triage on every canonical run.
++- **Tradeoff acknowledged:** a 0.03 recall drop from the 0.937 anchor lands
++  at **0.907**, which is right above the **0.90** floor. So this threshold
++  favours **false-positive resistance over early-warning sensitivity**: a
++  recall decay that creeps toward the floor in <0.03 steps will not trip the
++  detector before it nears 0.90. That is an accepted limitation; the hard
++  recall floor is enforced separately by the AC-013b gate, not by this
++  drift detector.
++- **15% latency** allows for normal run-to-run variance on shared CI
++  hardware (the canonical runner is a 4-core EPYC slice; cold-cache and
++  neighbour-noise swing latency more than recall).
++
++The "latest = single most-recent run vs the median of the prior runs in the
++window" definition means a one-off bad run flags immediately (good for catch
++latency) but a single good run after a bad streak does not mask the streak
++(the median is robust to one outlier).
++
++## Insufficient history
++
++A group with **fewer than 2 runs** (i.e. no prior runs to form a median
++after removing the latest) is reported as **insufficient-history** — NOT a
++regression and NOT a crash. The AC-012 @ N=1M group is exactly this case
++today (one documented canonical run, v0.6.1 `603a4bc`).
++
++## Timestamp parsing
++
++`timestamp` is parsed as **strict RFC3339** (`YYYY-MM-DDTHH:MM:SS(.frac)?(Z|±HH:MM)`)
++to UTC epoch seconds at load time, and the **parsed epoch** — not the raw
++string — is the ordering key for "latest run". A lexical string sort would
++silently mis-order offset-bearing or differently-formatted timestamps and
++thus pick the wrong "latest" run; instead, a timestamp that does not parse is
++a **data-integrity failure (exit 2)**, surfaced loudly rather than tolerated.
++The parser is dependency-free (the workspace pulls in no date crate); see
++`parse_rfc3339_epoch` + its unit tests in the bin source. Ties on the same
++instant break deterministically on `commit_sha`.
++
++## Exit codes
++
++| code | meaning |
++|------|---------|
++| `0`  | no regression flagged (includes all-insufficient-history) |
++| `1`  | at least one group flagged a regression |
++| `2`  | data missing or malformed (directory absent, unreadable JSON, record with no comparable metric, **or an unparseable timestamp**) |
++
++## Output
++
++- Default: human-readable report to stdout (one block per group; flagged
++  groups marked clearly).
++- `--json`: machine-parseable JSON object to stdout (per-group verdicts +
++  an overall `flagged` boolean), for CI and tooling to consume.
++
++## CI integration (`.github/workflows/perf-canonical.yml`)
++
++After the AC-012 canonical run, the workflow builds and runs
++`perf-regression-check dev/perf-history/`, echoes the report to the step log,
++and writes it to **`$GITHUB_STEP_SUMMARY`**.
++
++- **Channel choice:** this workflow is **`workflow_dispatch`-only**, so there
++  is no `pull_request`/`push` event to comment on — a PR-comment step would be
++  dead code on every real run, and `pull-requests: write` would be an unused
++  permission over-grant. The step summary is the `workflow_dispatch`-safe
++  surface, always present, and visible on the run page. The workflow keeps
++  only `contents: read`.
++- Exit **1** (regression flagged): the step **continues** — the summary is
++  the signal, not a hard failure. (A regression on a diagnostic dispatch run
++  should not red-X the run; a human reads the summary.)
++- Exit **2** (data integrity): the step **fails loudly** (`::error::` + non-zero
++  exit) — malformed history is a real defect in the store and must block.
++
++The workflow stays `workflow_dispatch`-only (no push/PR/schedule triggers
++added) and keeps within GitHub's workflow_dispatch input cap (≤ 8 inputs, per
++the prior consolidation fix).
++
++## Backfill provenance
++
++The committed `dev/perf-history/` rows are backfilled from:
++
++- **AC-012 @ N=1M** — v0.6.1 canonical CI run `603a4bc` (run 26346417896,
++  2026-05-23): p50=140.95, p99=458, verdict RED (over the 20/150 ADR
++  budget). Source: `dev/notes/perf-canonical-runner-2026-MM.md`. **This is
++  the only documented AC-012 canonical run → its group is sparse
++  (insufficient history).** It is an honestly-RED historical point, not a
++  regression the detector should flag (no prior to compare against).
++- **AC-013b synthetic @ N=10000** — the 2026-05-27 PERF-VECTOR-QUANT recall
++  arc (K=64 throughout), the full four-point sequence:
++  - `035cfa3` (the buggy parent of the fix): recall **1.0** — **DEGENERATE**.
++    The batch-collapse left ~10 distinct vec0 rows per 10K writes, so the
++    brute-force ground truth and production both returned the same
++    trivially-small set, making recall *falsely perfect*
++    (`STATUS-perf-vector-quant.md:138`). This is a **measurement artifact, not
++    a verdict** (so marked in the row's `note`).
++  - `4a95cfd` (the fix) + scanner fix `53a270d`: recall **0.1572** — the
++    *honest* number once the collapse was repaired. Low not because of the
++    bug but because `VaryingEmbedder` produces sparse vectors (6/768 non-zero)
++    — a synthetic-fixture pathology (`:143`).
++  - `38f5e3a` (Option-1 dense fixture): recall **0.5124**.
++  - `38d5f4f` (v0.7.0 ship): recall **0.5124** — AC-013b NOT MET on the
++    synthetic fixture (deferred to 0.7.1 EMBEDDER-UNDEFER).
++- **AC-013 / AC-013b / AC-019 real bge @ N=7667** and **AC-013 synthetic @
++  N=10000 (K=192)** forward baseline — v0.7.1 / 0.7.2 (`c893d8b`, 2026-06-01) +
++  PR-3 local data. Source: `dev/plans/runs/0.7.2-PR-3-perf-data.md`. AC-013
++  rows are latency-only; AC-013b rows are recall-only (the two ACs measure
++  different things).
++
++### Honesty note — what the batch-collapse bug actually did, and what this detector can and cannot catch
++
++The handoff success criterion says the bin should "flag the 2026-05-27
++batch-collapse bug." Tracing the real numbers (`STATUS-perf-vector-quant.md`)
++shows the premise needs correcting, and we record the truth rather than
++contorting the data to fit it:
++
++**The batch-collapse bug masqueraded as an *improvement*, not a regression.**
++With the index collapsed to ~10 rows, recall read a *false* 1.0 and latency
++was *anomalously fast* (the bit-KNN searched a ~10-row partition instead of
++10K). A degradation-only detector — flag recall *drops* and latency *rises*,
++which is exactly what HITL locked — **structurally cannot flag that bug**;
++the bug's signature is the opposite of a degradation. What the detector *does*
++catch is the **regression-shaped correction** that follows: when `4a95cfd`
++repaired the collapse, recall fell from the degenerate 1.0 to the honest
++0.1572 — a 0.84 drop the detector flags (the `backfill-dirty` fixture proves
++this; the flagged commit is the *fix*, `4a95cfd`, which is counter-intuitive
++but honest). The committed store keeps the full arc; its latest run per group
++(v0.7.0, 0.5124) is healthy, so the committed store itself is **clean**.
++
++Catching the *bug itself* would require a different check — a row-count /
++vec0-population invariant, or an "implausible perfection" anomaly rule (recall
++== 1.0 exactly, or latency falling as N rises). That is **deliberately out of
++scope** for this degradation detector (it would expand past the HITL-locked
++15%/0.03 thresholds and risk false positives on legitimately-perfect small-N
++recall) and is logged here as **future work**.
++
++**The v0.6.1 AC-012 @ N=1M run was a real RED verdict** (7× over the p50
++budget) — preserved faithfully in the store, not smoothed away. It does not
++flag as a *regression* only because it is the sole point in its group
++(insufficient history); its RED-ness is a separate budget fact recorded in
++`perf-canonical-runner-2026-MM.md`.
++
++**Sparse history is the honest current state.** Because of the regime changes
++above (K=64 → K=192, synthetic → real bge) and the once-per-release cadence,
++most `(ac_id, n)` groups today hold a single comparable point and report
++*insufficient-history*. The only group with a real multi-point comparison is
++the K=64 AC-013b @ N=10000 arc. The store accrues comparability as new
++canonical runs are appended on a stable regime; the detector is wired and
++correct now, and gets more sensitive as history deepens.
+diff --git a/src/rust/crates/fathomdb-cli/src/bin/perf-regression-check.rs b/src/rust/crates/fathomdb-cli/src/bin/perf-regression-check.rs
+new file mode 100644
+index 0000000..cba6cc7
+--- /dev/null
++++ b/src/rust/crates/fathomdb-cli/src/bin/perf-regression-check.rs
+@@ -0,0 +1,548 @@
++//! 0.7.2 PR-7 — perf regression detector.
++//!
++//! Reads the append-only `dev/perf-history/` store (one JSON file per
++//! canonical / release-time run), groups records by `(ac_id, n)`, and flags
++//! the single most-recent run in each group against the rolling median of
++//! the prior runs in that group. Tier-aware: `n` is part of the grouping key
++//! so a 10k-tier run is never compared against a 100k/1M-tier run, and the
++//! real-corpus (N=7667) group is distinct from the synthetic N=10000 group.
++//!
++//! Design + thresholds + provenance:
++//! `dev/design/perf-regression-detection.md`.
++//!
++//! ## Append-only invariant
++//!
++//! This binary **only reads** the history directory — it never writes,
++//! mutates, or deletes any file. CI (or a human, for the locally-measured
++//! AC-013/AC-013b/AC-019 numbers) writes new files. A regression is a new
++//! file whose numbers this bin flags, not an edit to an old file.
++//!
++//! ## Record schema (one JSON object per file)
++//!
++//! ```json
++//! {
++//!   "commit_sha": "c893d8b0",
++//!   "ac_id": "AC-013",
++//!   "n": 10000,
++//!   "p50_ms": 36.0,
++//!   "p99_ms": 49.0,
++//!   "recall": 0.937,
++//!   "timestamp": "2026-06-01T07:23:39Z"
++//! }
++//! ```
++//!
++//! - `commit_sha`, `ac_id`, `n`, `timestamp` are required.
++//! - `p50_ms` / `p99_ms` are omitted for recall-only ACs (AC-013b).
++//! - `recall` is omitted/null for latency-only ACs (AC-012, AC-019).
++//! - A record MUST carry at least one comparable metric (a latency pair or a
++//!   recall value), else it is malformed (exit 2).
++//! - **Unknown fields are ignored, not rejected** (forward-extensible).
++//!
++//! ## Exit codes
++//!
++//! - `0` = no regression flagged (includes all-insufficient-history).
++//! - `1` = at least one group flagged a regression.
++//! - `2` = data missing / malformed (directory absent, unreadable/invalid
++//!   JSON, record with no comparable metric).
++
++use std::collections::BTreeMap;
++use std::path::{Path, PathBuf};
++use std::process::ExitCode;
++
++use serde::Deserialize;
++
++// ===========================================================================
++// Detection thresholds — HITL Gate 1, LOCKED 2026-06-01.
++//
++// These are the ONLY tuning knobs for the detector. Keep them here as named,
++// commented constants — do NOT scatter numeric literals through the logic.
++// Rationale (full text in dev/design/perf-regression-detection.md):
++//   * Recall sigma = 0.0116 (PR-3 measured, N=7667 anchor). A 0.03 absolute
++//     recall threshold is ~2.4 sigma (~1% jitter false-flag rate) — the
++//     deliberate low-cry-wolf choice; codex's review focus is false-positive
++//     resistance. Tradeoff: a 0.03 drop from 0.937 lands at 0.907, near the
++//     0.90 floor, so this favours false-positive resistance over early-
++//     warning sensitivity (the hard floor is enforced by the AC-013b gate,
++//     not by this drift detector).
++//   * 15% latency absorbs normal run-to-run variance on the shared 4-core
++//     canonical CI runner (cold-cache + neighbour noise swing latency more
++//     than recall).
++//   * Window = the prior up-to-10 runs per (ac_id, n) group; "latest" is the
++//     single most-recent run by timestamp, compared against the median of the
++//     prior runs in the window.
++// ===========================================================================
++
++/// Flag a latency metric if the latest run exceeds the rolling median by more
++/// than this fraction (15%).
++const LATENCY_DEGRADATION_FRACTION: f64 = 0.15;
++
++/// Flag recall if the latest run is below the rolling median by more than this
++/// absolute amount (0.03).
++const RECALL_DEGRADATION_ABSOLUTE: f64 = 0.03;
++
++/// Rolling-median window: the most-recent run is compared against the median
++/// of up to this many prior runs in its group.
++const ROLLING_WINDOW: usize = 10;
++
++/// A group needs at least this many runs to evaluate (1 latest + >=1 prior).
++const MIN_RUNS_FOR_MEDIAN: usize = 2;
++
++// ===========================================================================
++
++#[derive(Debug, Deserialize)]
++struct RawRecord {
++    commit_sha: String,
++    ac_id: String,
++    n: u64,
++    #[serde(default)]
++    p50_ms: Option<f64>,
++    #[serde(default)]
++    p99_ms: Option<f64>,
++    #[serde(default)]
++    recall: Option<f64>,
++    timestamp: String,
++    // Forward-extensible: any unknown field is ignored, not rejected
++    // (serde's deny_unknown_fields is intentionally OFF).
++}
++
++#[derive(Debug, Clone)]
++struct Record {
++    commit_sha: String,
++    ac_id: String,
++    n: u64,
++    p50_ms: Option<f64>,
++    p99_ms: Option<f64>,
++    recall: Option<f64>,
++    timestamp: String,
++    /// UTC epoch seconds parsed from `timestamp`. This — not the raw string —
++    /// is the ordering key, so a malformed/offset timestamp cannot silently
++    /// reorder latest-run selection (a lexical sort would).
++    ts_epoch: i64,
++}
++
++/// Parse a strict RFC3339 timestamp to UTC epoch seconds for ordering.
++///
++/// Accepts `YYYY-MM-DDTHH:MM:SS(.fraction)?(Z|±HH:MM)`. Any deviation returns
++/// `Err`, so a malformed timestamp fails loudly (exit 2) instead of corrupting
++/// "latest by timestamp" via a lexical string sort. Dependency-free (the
++/// workspace pulls in no date crate); uses Howard Hinnant's days-from-civil
++/// algorithm for the proleptic-Gregorian day count.
++fn parse_rfc3339_epoch(s: &str) -> Result<i64, String> {
++    let (date, rest) = s.split_once('T').ok_or_else(|| format!("missing 'T': {s}"))?;
++    let d: Vec<&str> = date.split('-').collect();
++    if d.len() != 3 {
++        return Err(format!("bad date: {s}"));
++    }
++    let year: i64 = d[0].parse().map_err(|_| format!("bad year: {s}"))?;
++    let month: i64 = d[1].parse().map_err(|_| format!("bad month: {s}"))?;
++    let day: i64 = d[2].parse().map_err(|_| format!("bad day: {s}"))?;
++    if !(1..=12).contains(&month) {
++        return Err(format!("month out of range: {s}"));
++    }
++    // Month-specific day count with proleptic-Gregorian leap-year handling, so
++    // impossible dates (2026-02-31, 2026-02-29 in a non-leap year) are rejected
++    // rather than silently normalized by days_from_civil.
++    let leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
++    let days_in_month = match month {
++        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
++        4 | 6 | 9 | 11 => 30,
++        2 if leap => 29,
++        2 => 28,
++        _ => 0,
++    };
++    if !(1..=days_in_month).contains(&day) {
++        return Err(format!("day out of range for month: {s}"));
++    }
++
++    // Split the time-of-day from the zone designator (Z or ±HH:MM).
++    let (time_part, offset_secs) = if let Some(t) = rest.strip_suffix('Z') {
++        (t, 0i64)
++    } else {
++        let sign_idx =
++            rest.rfind(['+', '-']).ok_or_else(|| format!("missing zone designator: {s}"))?;
++        let (t, off) = rest.split_at(sign_idx);
++        let sign = if off.starts_with('-') { -1 } else { 1 };
++        let (oh, om) = off[1..].split_once(':').ok_or_else(|| format!("bad zone offset: {s}"))?;
++        let oh: i64 = oh.parse().map_err(|_| format!("bad offset hour: {s}"))?;
++        let om: i64 = om.parse().map_err(|_| format!("bad offset minute: {s}"))?;
++        if oh > 23 || om > 59 {
++            return Err(format!("zone offset out of range: {s}"));
++        }
++        (t, sign * (oh * 3600 + om * 60))
++    };
++
++    // HH:MM:SS with an optional fractional-second suffix. The fraction is not
++    // needed for second-resolution ordering, but it must be well-formed
++    // (non-empty, digits only) — a malformed suffix (e.g. "27.badZ") is a
++    // strict-RFC3339 violation, not something to silently discard.
++    let (time_core, frac) = match time_part.split_once('.') {
++        Some((core, f)) => (core, Some(f)),
++        None => (time_part, None),
++    };
++    if let Some(f) = frac {
++        if f.is_empty() || !f.bytes().all(|b| b.is_ascii_digit()) {
++            return Err(format!("bad fractional seconds: {s}"));
++        }
++    }
++    let tp: Vec<&str> = time_core.split(':').collect();
++    if tp.len() != 3 {
++        return Err(format!("bad time: {s}"));
++    }
++    let hh: i64 = tp[0].parse().map_err(|_| format!("bad hour: {s}"))?;
++    let mi: i64 = tp[1].parse().map_err(|_| format!("bad minute: {s}"))?;
++    let ss: i64 = tp[2].parse().map_err(|_| format!("bad second: {s}"))?;
++    if hh > 23 || mi > 59 || ss > 60 {
++        return Err(format!("time out of range: {s}"));
++    }
++
++    // days_from_civil (Howard Hinnant): days since 1970-01-01, proleptic Gregorian.
++    let y = if month <= 2 { year - 1 } else { year };
++    let era = (if y >= 0 { y } else { y - 399 }) / 400;
++    let yoe = y - era * 400;
++    let mp = (month + 9) % 12;
++    let doy = (153 * mp + 2) / 5 + day - 1;
++    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
++    let days = era * 146097 + doe - 719468;
++    Ok(days * 86400 + hh * 3600 + mi * 60 + ss - offset_secs)
++}
++
++/// A loaded record paired with the file it came from (for error messages).
++fn load_record(path: &Path) -> Result<Record, String> {
++    let text = std::fs::read_to_string(path)
++        .map_err(|e| format!("{}: cannot read: {e}", path.display()))?;
++    let raw: RawRecord = serde_json::from_str(&text)
++        .map_err(|e| format!("{}: invalid JSON / schema: {e}", path.display()))?;
++    // A record must carry at least one comparable metric.
++    if raw.p50_ms.is_none() && raw.p99_ms.is_none() && raw.recall.is_none() {
++        return Err(format!(
++            "{}: record has no comparable metric (need p50_ms/p99_ms or recall)",
++            path.display()
++        ));
++    }
++    // Timestamp must be a parseable RFC3339 instant — a bad one is a data-
++    // integrity failure (exit 2), not something to sort lexically and hope.
++    let ts_epoch = parse_rfc3339_epoch(&raw.timestamp)
++        .map_err(|e| format!("{}: malformed timestamp: {e}", path.display()))?;
++    Ok(Record {
++        commit_sha: raw.commit_sha,
++        ac_id: raw.ac_id,
++        n: raw.n,
++        p50_ms: raw.p50_ms,
++        p99_ms: raw.p99_ms,
++        recall: raw.recall,
++        timestamp: raw.timestamp,
++        ts_epoch,
++    })
++}
++
++/// Median of a slice (sorted copy; mean of the two middle elements for an even
++/// count). Returns `None` for an empty slice.
++fn median(values: &[f64]) -> Option<f64> {
++    if values.is_empty() {
++        return None;
++    }
++    let mut v = values.to_vec();
++    v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
++    let mid = v.len() / 2;
++    if v.len() % 2 == 1 {
++        Some(v[mid])
++    } else {
++        Some((v[mid - 1] + v[mid]) / 2.0)
++    }
++}
++
++#[derive(Debug, serde::Serialize)]
++struct GroupVerdict {
++    ac_id: String,
++    n: u64,
++    latest_commit: String,
++    latest_timestamp: String,
++    runs: usize,
++    flagged: bool,
++    /// "ok" | "insufficient-history" | "regression"
++    status: String,
++    reasons: Vec<String>,
++}
++
++#[derive(Debug, serde::Serialize)]
++struct Report {
++    flagged: bool,
++    groups: Vec<GroupVerdict>,
++}
++
++/// Evaluate one group's runs (already sorted oldest -> newest by timestamp).
++fn evaluate_group(ac_id: &str, n: u64, runs: &[Record]) -> GroupVerdict {
++    let latest = runs.last().expect("group is never empty");
++    let mut verdict = GroupVerdict {
++        ac_id: ac_id.to_string(),
++        n,
++        latest_commit: latest.commit_sha.clone(),
++        latest_timestamp: latest.timestamp.clone(),
++        runs: runs.len(),
++        flagged: false,
++        status: "ok".to_string(),
++        reasons: Vec::new(),
++    };
++
++    if runs.len() < MIN_RUNS_FOR_MEDIAN {
++        verdict.status = "insufficient-history".to_string();
++        verdict.reasons.push(format!(
++            "only {} run(s) in group; need >= {} to form a median",
++            runs.len(),
++            MIN_RUNS_FOR_MEDIAN
++        ));
++        return verdict;
++    }
++
++    // Prior runs = the up-to-ROLLING_WINDOW runs immediately before the latest.
++    let prior = &runs[..runs.len() - 1];
++    let window_start = prior.len().saturating_sub(ROLLING_WINDOW);
++    let window = &prior[window_start..];
++
++    // Latency: flag if p50 OR p99 degraded > LATENCY_DEGRADATION_FRACTION.
++    for (label, get) in [
++        ("p50_ms", &Record::p50_ms as &dyn Fn(&Record) -> Option<f64>),
++        ("p99_ms", &Record::p99_ms as &dyn Fn(&Record) -> Option<f64>),
++    ] {
++        let prior_vals: Vec<f64> = window.iter().filter_map(get).collect();
++        if let (Some(latest_v), Some(med)) = (get(latest), median(&prior_vals)) {
++            if med > 0.0 {
++                let frac = (latest_v - med) / med;
++                if frac > LATENCY_DEGRADATION_FRACTION {
++                    verdict.flagged = true;
++                    verdict.reasons.push(format!(
++                        "{label} {latest_v:.2} ms is {:.1}% over rolling median {med:.2} ms (threshold {:.0}%) at commit {}",
++                        frac * 100.0,
++                        LATENCY_DEGRADATION_FRACTION * 100.0,
++                        latest.commit_sha,
++                    ));
++                }
++            }
++        }
++    }
++
++    // Recall: flag if degraded > RECALL_DEGRADATION_ABSOLUTE (absolute drop).
++    let prior_recall: Vec<f64> = window.iter().filter_map(|r| r.recall).collect();
++    if let (Some(latest_r), Some(med)) = (latest.recall, median(&prior_recall)) {
++        let drop = med - latest_r;
++        if drop > RECALL_DEGRADATION_ABSOLUTE {
++            verdict.flagged = true;
++            verdict.reasons.push(format!(
++                "recall {latest_r:.4} is {drop:.4} below rolling median {med:.4} (threshold {RECALL_DEGRADATION_ABSOLUTE}) at commit {}",
++                latest.commit_sha,
++            ));
++        }
++    }
++
++    if verdict.flagged {
++        verdict.status = "regression".to_string();
++    }
++    verdict
++}
++
++impl Record {
++    fn p50_ms(&self) -> Option<f64> {
++        self.p50_ms
++    }
++    fn p99_ms(&self) -> Option<f64> {
++        self.p99_ms
++    }
++}
++
++fn build_report(dir: &Path) -> Result<Report, String> {
++    if !dir.is_dir() {
++        return Err(format!("perf-history directory not found: {}", dir.display()));
++    }
++
++    // Group by (ac_id, n). BTreeMap gives deterministic, sorted output.
++    let mut groups: BTreeMap<(String, u64), Vec<Record>> = BTreeMap::new();
++
++    let entries =
++        std::fs::read_dir(dir).map_err(|e| format!("cannot read dir {}: {e}", dir.display()))?;
++    for entry in entries {
++        let entry = entry.map_err(|e| format!("dir entry error: {e}"))?;
++        let path = entry.path();
++        if path.extension().and_then(|s| s.to_str()) != Some("json") {
++            continue;
++        }
++        let rec = load_record(&path)?;
++        groups.entry((rec.ac_id.clone(), rec.n)).or_default().push(rec);
++    }
++
++    if groups.is_empty() {
++        return Err(format!("no *.json perf records found in {}", dir.display()));
++    }
++
++    let mut report = Report { flagged: false, groups: Vec::new() };
++    for ((ac_id, n), mut runs) in groups {
++        // Sort oldest -> newest by parsed UTC epoch (not the raw string, which
++        // would mis-order offset/Z-mixed timestamps). Tie-break on commit_sha
++        // for a deterministic "latest" when two runs share an instant.
++        runs.sort_by(|a, b| {
++            a.ts_epoch.cmp(&b.ts_epoch).then_with(|| a.commit_sha.cmp(&b.commit_sha))
++        });
++        let v = evaluate_group(&ac_id, n, &runs);
++        report.flagged |= v.flagged;
++        report.groups.push(v);
++    }
++    Ok(report)
++}
++
++fn print_human(report: &Report) {
++    println!("perf-regression-check — {} group(s)\n", report.groups.len());
++    for g in &report.groups {
++        let marker = if g.flagged {
++            "REGRESSION"
++        } else if g.status == "insufficient-history" {
++            "insufficient"
++        } else {
++            "ok"
++        };
++        println!(
++            "[{marker}] {} @ n={} — {} run(s), latest {} ({})",
++            g.ac_id, g.n, g.runs, g.latest_commit, g.latest_timestamp
++        );
++        for reason in &g.reasons {
++            println!("    - {reason}");
++        }
++    }
++    println!();
++    if report.flagged {
++        println!("RESULT: regression(s) flagged.");
++    } else {
++        println!("RESULT: no regressions.");
++    }
++}
++
++fn print_usage() {
++    eprintln!(
++        "usage: perf-regression-check <perf-history-dir> [--json]\n\
++         \n\
++         Reads the append-only perf-history directory, groups runs by\n\
++         (ac_id, n), and flags the latest run vs the rolling median of the\n\
++         prior up-to-{ROLLING_WINDOW} runs.\n\
++         Exit: 0 = clean, 1 = regression flagged, 2 = data missing/malformed."
++    );
++}
++
++fn main() -> ExitCode {
++    let mut dir: Option<PathBuf> = None;
++    let mut json = false;
++    for arg in std::env::args().skip(1) {
++        match arg.as_str() {
++            "--json" => json = true,
++            "-h" | "--help" => {
++                print_usage();
++                return ExitCode::from(0);
++            }
++            other if other.starts_with('-') => {
++                eprintln!("unknown flag: {other}");
++                print_usage();
++                return ExitCode::from(2);
++            }
++            other => {
++                if dir.is_some() {
++                    eprintln!("unexpected extra argument: {other}");
++                    print_usage();
++                    return ExitCode::from(2);
++                }
++                dir = Some(PathBuf::from(other));
++            }
++        }
++    }
++
++    let dir = match dir {
++        Some(d) => d,
++        None => {
++            print_usage();
++            return ExitCode::from(2);
++        }
++    };
++
++    match build_report(&dir) {
++        Ok(report) => {
++            if json {
++                match serde_json::to_string_pretty(&report) {
++                    Ok(s) => println!("{s}"),
++                    Err(e) => {
++                        eprintln!("failed to serialize report: {e}");
++                        return ExitCode::from(2);
++                    }
++                }
++            } else {
++                print_human(&report);
++            }
++            if report.flagged {
++                ExitCode::from(1)
++            } else {
++                ExitCode::from(0)
++            }
++        }
++        Err(e) => {
++            eprintln!("perf-regression-check: {e}");
++            ExitCode::from(2)
++        }
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn rfc3339_utc_epoch() {
++        // 1970-01-01T00:00:00Z is epoch 0; one day later is 86400.
++        assert_eq!(parse_rfc3339_epoch("1970-01-01T00:00:00Z").unwrap(), 0);
++        assert_eq!(parse_rfc3339_epoch("1970-01-02T00:00:00Z").unwrap(), 86_400);
++    }
++
++    #[test]
++    fn rfc3339_offset_normalizes_to_utc() {
++        // 16:54:27-05:00 == 21:54:27Z — the two must parse to the same instant.
++        let z = parse_rfc3339_epoch("2026-05-27T21:54:27Z").unwrap();
++        let off = parse_rfc3339_epoch("2026-05-27T16:54:27-05:00").unwrap();
++        assert_eq!(z, off);
++    }
++
++    #[test]
++    fn rfc3339_orders_the_batch_collapse_arc() {
++        // The committed AC-013b@10000 chronology must sort bug -> fix -> ship.
++        let bug = parse_rfc3339_epoch("2026-05-27T21:47:35Z").unwrap(); // 035cfa3
++        let fix = parse_rfc3339_epoch("2026-05-27T21:54:27Z").unwrap(); // 4a95cfd
++        let v070 = parse_rfc3339_epoch("2026-05-28T01:18:00Z").unwrap(); // 38d5f4f
++        assert!(bug < fix && fix < v070);
++    }
++
++    #[test]
++    fn rfc3339_accepts_valid_edge_cases() {
++        // Leap day in a leap year, fractional seconds, and a leap second.
++        assert!(parse_rfc3339_epoch("2024-02-29T00:00:00Z").is_ok());
++        assert!(parse_rfc3339_epoch("2026-06-01T07:23:39.500Z").is_ok());
++        assert!(parse_rfc3339_epoch("2026-06-30T23:59:60Z").is_ok());
++        // Fractional seconds must not change the second-resolution instant.
++        assert_eq!(
++            parse_rfc3339_epoch("2026-06-01T07:23:39.999Z").unwrap(),
++            parse_rfc3339_epoch("2026-06-01T07:23:39Z").unwrap()
++        );
++    }
++
++    #[test]
++    fn rfc3339_rejects_malformed() {
++        for bad in [
++            "not-a-date",
++            "2026-05-27",                // missing time
++            "2026-05-27 21:54:27Z",      // space instead of 'T'
++            "2026-13-01T00:00:00Z",      // month out of range
++            "2026-05-27T25:00:00Z",      // hour out of range
++            "2026-05-27T21:54:27",       // no zone designator
++            "2026-02-31T00:00:00Z",      // impossible day (Feb has <= 29)
++            "2026-02-29T00:00:00Z",      // 2026 is not a leap year
++            "2026-05-27T21:54:27+24:00", // offset hour out of range
++            "2026-05-27T21:54:27-05:99", // offset minute out of range
++            "2026-06-01T07:23:39.badZ",  // non-digit fractional seconds
++            "2026-06-01T07:23:39.Z",     // empty fractional seconds
++        ] {
++            assert!(parse_rfc3339_epoch(bad).is_err(), "should reject: {bad}");
++        }
++    }
++}
+diff --git a/src/rust/crates/fathomdb-cli/tests/perf_regression_check.rs b/src/rust/crates/fathomdb-cli/tests/perf_regression_check.rs
+new file mode 100644
+index 0000000..5bd19b3
+--- /dev/null
++++ b/src/rust/crates/fathomdb-cli/tests/perf_regression_check.rs
+@@ -0,0 +1,196 @@
++//! 0.7.2 PR-7 — `perf-regression-check` bin behaviour tests.
++//!
++//! TDD surface for the perf-regression detector (see
++//! `dev/design/perf-regression-detection.md`). Each test drives the bin
++//! against a JSON-per-run fixture directory and asserts the exit code + the
++//! flag verdict.
++//!
++//! Fixture directories (`tests/fixtures/`):
++//! - `regression/`      — known degradations; MUST flag (exit 1).
++//! - `jitter/`          — normal noise within thresholds; MUST NOT flag (exit 0).
++//! - `backfill-dirty/`  — the 2026-05-27 batch-collapse arc: a degenerate
++//!   recall=1.0 (`035cfa3`, the bug masquerading as perfection) followed by the
++//!   honest post-fix 0.1572 (`4a95cfd`). The detector flags the regression-
++//!   shaped *correction* (the 0.84 recall drop) at the fix commit — see the
++//!   honesty note in `dev/design/perf-regression-detection.md`. MUST flag (exit 1).
++//! - `backfill-clean/`  — clean history (excluding the bug); MUST NOT flag.
++//! - `insufficient/`    — one row in a group (no median possible); graceful, no flag.
++//! - `malformed/`       — a record with a non-numeric metric; MUST exit 2.
++//! - `malformed-timestamp/` — a record with an unparseable timestamp; MUST exit 2.
++
++use std::path::PathBuf;
++use std::process::Command;
++
++fn bin() -> Command {
++    Command::new(env!("CARGO_BIN_EXE_perf-regression-check"))
++}
++
++fn fixture(name: &str) -> PathBuf {
++    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name)
++}
++
++/// Repo-root-relative `dev/perf-history/` (the committed, append-only store).
++/// CARGO_MANIFEST_DIR is `src/rust/crates/fathomdb-cli`; walk up to repo root.
++fn committed_perf_history() -> PathBuf {
++    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../..").join("dev/perf-history")
++}
++
++fn run_on(dir: PathBuf, extra: &[&str]) -> std::process::Output {
++    let mut cmd = bin();
++    cmd.arg(dir);
++    cmd.args(extra);
++    cmd.output().expect("spawn perf-regression-check")
++}
++
++fn code(out: &std::process::Output) -> i32 {
++    out.status.code().expect("process exited via code, not signal")
++}
++
++// 1. Synthetic-regression fixture: known degradations -> flag, exit 1.
++#[test]
++fn regression_fixture_flags_and_exits_1() {
++    let out = run_on(fixture("regression"), &[]);
++    assert_eq!(
++        code(&out),
++        1,
++        "regression fixture must exit 1 (stderr={})",
++        String::from_utf8_lossy(&out.stderr)
++    );
++}
++
++// 2. Synthetic-jitter fixture: normal noise -> NO flag, exit 0. (false-positive proof)
++#[test]
++fn jitter_fixture_does_not_flag_and_exits_0() {
++    let out = run_on(fixture("jitter"), &[]);
++    assert_eq!(
++        code(&out),
++        0,
++        "jitter fixture must NOT flag (exit 0); stdout={}",
++        String::from_utf8_lossy(&out.stdout)
++    );
++}
++
++// 3. Batch-collapse arc: the bug (035cfa3) read a degenerate recall=1.0; the
++//    fix (4a95cfd) revealed the honest 0.1572. A degradation detector cannot
++//    flag the bug (it looked like an improvement) — it flags the regression-
++//    shaped *correction* (the 0.84 recall drop) at the fix commit. exit 1.
++#[test]
++fn correction_after_batch_collapse_flags_as_recall_drop() {
++    let out = run_on(fixture("backfill-dirty"), &[]);
++    assert_eq!(code(&out), 1, "the recall correction after the batch-collapse must flag (exit 1)");
++    let stdout = String::from_utf8_lossy(&out.stdout);
++    assert!(
++        stdout.contains("AC-013b") && stdout.contains("4a95cfd") && stdout.contains("recall"),
++        "flag output should name the AC, the correction commit, and the recall drop; got: {stdout}"
++    );
++}
++
++// 4. No false positives on clean backfill: -> NO flag, exit 0.
++#[test]
++fn backfill_clean_does_not_flag() {
++    let out = run_on(fixture("backfill-clean"), &[]);
++    assert_eq!(
++        code(&out),
++        0,
++        "clean backfill must NOT flag (exit 0); stdout={}",
++        String::from_utf8_lossy(&out.stdout)
++    );
++}
++
++// 5. Insufficient-history: a group with too few points -> graceful, no flag, no crash.
++#[test]
++fn insufficient_history_is_graceful() {
++    let out = run_on(fixture("insufficient"), &[]);
++    assert_eq!(code(&out), 0, "insufficient-history must be graceful (exit 0, no flag)");
++    let stdout = String::from_utf8_lossy(&out.stdout);
++    assert!(
++        stdout.to_lowercase().contains("insufficient"),
++        "insufficient-history should be noted distinctly; got: {stdout}"
++    );
++}
++
++// 6. Malformed data (non-numeric metric) -> exit 2.
++#[test]
++fn malformed_data_exits_2() {
++    let out = run_on(fixture("malformed"), &[]);
++    assert_eq!(code(&out), 2, "malformed record must exit 2 (data integrity)");
++}
++
++// 6b. Malformed timestamp -> exit 2 (must fail loudly, not sort lexically and
++//     silently mis-select the latest run).
++#[test]
++fn malformed_timestamp_exits_2() {
++    let out = run_on(fixture("malformed-timestamp"), &[]);
++    assert_eq!(code(&out), 2, "unparseable timestamp must exit 2 (data integrity)");
++    let stderr = String::from_utf8_lossy(&out.stderr);
++    assert!(
++        stderr.to_lowercase().contains("timestamp"),
++        "exit-2 reason should name the timestamp; got: {stderr}"
++    );
++}
++
++// Missing directory -> exit 2 (data missing).
++#[test]
++fn missing_directory_exits_2() {
++    let out = run_on(fixture("does-not-exist"), &[]);
++    assert_eq!(code(&out), 2, "missing directory must exit 2");
++}
++
++// --json emits machine-parseable JSON with an overall `flagged` boolean.
++#[test]
++fn json_output_is_parseable() {
++    let out = run_on(fixture("jitter"), &["--json"]);
++    assert_eq!(code(&out), 0);
++    let stdout = String::from_utf8_lossy(&out.stdout);
++    let v: serde_json::Value =
++        serde_json::from_str(stdout.trim()).expect("--json must emit valid JSON");
++    assert_eq!(v["flagged"], serde_json::Value::Bool(false), "jitter -> flagged=false");
++}
++
++#[test]
++fn json_output_marks_regression_flagged_true() {
++    let out = run_on(fixture("regression"), &["--json"]);
++    assert_eq!(code(&out), 1);
++    let stdout = String::from_utf8_lossy(&out.stdout);
++    let v: serde_json::Value =
++        serde_json::from_str(stdout.trim()).expect("--json must emit valid JSON");
++    assert_eq!(v["flagged"], serde_json::Value::Bool(true), "regression -> flagged=true");
++}
++
++// The committed, append-only store MUST be clean (no false positive) at HEAD.
++// The batch-collapse arc lives in it, but the latest run per group is healthy
++// (the recovery / forward baseline), so the detector must NOT flag it.
++#[test]
++fn committed_perf_history_does_not_flag() {
++    let dir = committed_perf_history();
++    assert!(dir.is_dir(), "committed dev/perf-history/ must exist at {dir:?}");
++    let out = run_on(dir, &[]);
++    assert_eq!(
++        code(&out),
++        0,
++        "committed perf-history must be clean (exit 0); stdout={}",
++        String::from_utf8_lossy(&out.stdout)
++    );
++}
++
++// The committed store carries the full batch-collapse arc in the AC-013b@10000
++// group (degenerate 1.0 -> honest 0.1572 -> dense 0.5124 -> v0.7.0 0.5124). The
++// latest run (v0.7.0) is healthy, so the group is clean — but the arc must
++// actually be present (4 runs), not silently dropped. This exercises the arc
++// rather than just asserting a blanket exit 0.
++#[test]
++fn committed_batch_collapse_arc_present_and_clean() {
++    let out = run_on(committed_perf_history(), &["--json"]);
++    assert_eq!(code(&out), 0, "committed store must be clean");
++    let v: serde_json::Value =
++        serde_json::from_str(String::from_utf8_lossy(&out.stdout).trim()).expect("valid --json");
++    let group = v["groups"]
++        .as_array()
++        .expect("groups array")
++        .iter()
++        .find(|g| g["ac_id"] == "AC-013b" && g["n"] == 10000)
++        .expect("AC-013b@10000 group must exist in the committed store");
++    assert_eq!(group["runs"], 4, "the full bug->fix->dense->ship arc must be present");
++    assert_eq!(group["flagged"], serde_json::Value::Bool(false), "latest (v0.7.0) is healthy");
++    assert_eq!(group["status"], "ok");
++}
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-cli/src/bin/perf-regression-check.rs | sed -n '1,420p'" in /tmp/fdb-PR-7-20260601T215338Z
+ succeeded in 0ms:
+     1	//! 0.7.2 PR-7 — perf regression detector.
+     2	//!
+     3	//! Reads the append-only `dev/perf-history/` store (one JSON file per
+     4	//! canonical / release-time run), groups records by `(ac_id, n)`, and flags
+     5	//! the single most-recent run in each group against the rolling median of
+     6	//! the prior runs in that group. Tier-aware: `n` is part of the grouping key
+     7	//! so a 10k-tier run is never compared against a 100k/1M-tier run, and the
+     8	//! real-corpus (N=7667) group is distinct from the synthetic N=10000 group.
+     9	//!
+    10	//! Design + thresholds + provenance:
+    11	//! `dev/design/perf-regression-detection.md`.
+    12	//!
+    13	//! ## Append-only invariant
+    14	//!
+    15	//! This binary **only reads** the history directory — it never writes,
+    16	//! mutates, or deletes any file. CI (or a human, for the locally-measured
+    17	//! AC-013/AC-013b/AC-019 numbers) writes new files. A regression is a new
+    18	//! file whose numbers this bin flags, not an edit to an old file.
+    19	//!
+    20	//! ## Record schema (one JSON object per file)
+    21	//!
+    22	//! ```json
+    23	//! {
+    24	//!   "commit_sha": "c893d8b0",
+    25	//!   "ac_id": "AC-013",
+    26	//!   "n": 10000,
+    27	//!   "p50_ms": 36.0,
+    28	//!   "p99_ms": 49.0,
+    29	//!   "recall": 0.937,
+    30	//!   "timestamp": "2026-06-01T07:23:39Z"
+    31	//! }
+    32	//! ```
+    33	//!
+    34	//! - `commit_sha`, `ac_id`, `n`, `timestamp` are required.
+    35	//! - `p50_ms` / `p99_ms` are omitted for recall-only ACs (AC-013b).
+    36	//! - `recall` is omitted/null for latency-only ACs (AC-012, AC-019).
+    37	//! - A record MUST carry at least one comparable metric (a latency pair or a
+    38	//!   recall value), else it is malformed (exit 2).
+    39	//! - **Unknown fields are ignored, not rejected** (forward-extensible).
+    40	//!
+    41	//! ## Exit codes
+    42	//!
+    43	//! - `0` = no regression flagged (includes all-insufficient-history).
+    44	//! - `1` = at least one group flagged a regression.
+    45	//! - `2` = data missing / malformed (directory absent, unreadable/invalid
+    46	//!   JSON, record with no comparable metric).
+    47	
+    48	use std::collections::BTreeMap;
+    49	use std::path::{Path, PathBuf};
+    50	use std::process::ExitCode;
+    51	
+    52	use serde::Deserialize;
+    53	
+    54	// ===========================================================================
+    55	// Detection thresholds — HITL Gate 1, LOCKED 2026-06-01.
+    56	//
+    57	// These are the ONLY tuning knobs for the detector. Keep them here as named,
+    58	// commented constants — do NOT scatter numeric literals through the logic.
+    59	// Rationale (full text in dev/design/perf-regression-detection.md):
+    60	//   * Recall sigma = 0.0116 (PR-3 measured, N=7667 anchor). A 0.03 absolute
+    61	//     recall threshold is ~2.4 sigma (~1% jitter false-flag rate) — the
+    62	//     deliberate low-cry-wolf choice; codex's review focus is false-positive
+    63	//     resistance. Tradeoff: a 0.03 drop from 0.937 lands at 0.907, near the
+    64	//     0.90 floor, so this favours false-positive resistance over early-
+    65	//     warning sensitivity (the hard floor is enforced by the AC-013b gate,
+    66	//     not by this drift detector).
+    67	//   * 15% latency absorbs normal run-to-run variance on the shared 4-core
+    68	//     canonical CI runner (cold-cache + neighbour noise swing latency more
+    69	//     than recall).
+    70	//   * Window = the prior up-to-10 runs per (ac_id, n) group; "latest" is the
+    71	//     single most-recent run by timestamp, compared against the median of the
+    72	//     prior runs in the window.
+    73	// ===========================================================================
+    74	
+    75	/// Flag a latency metric if the latest run exceeds the rolling median by more
+    76	/// than this fraction (15%).
+    77	const LATENCY_DEGRADATION_FRACTION: f64 = 0.15;
+    78	
+    79	/// Flag recall if the latest run is below the rolling median by more than this
+    80	/// absolute amount (0.03).
+    81	const RECALL_DEGRADATION_ABSOLUTE: f64 = 0.03;
+    82	
+    83	/// Rolling-median window: the most-recent run is compared against the median
+    84	/// of up to this many prior runs in its group.
+    85	const ROLLING_WINDOW: usize = 10;
+    86	
+    87	/// A group needs at least this many runs to evaluate (1 latest + >=1 prior).
+    88	const MIN_RUNS_FOR_MEDIAN: usize = 2;
+    89	
+    90	// ===========================================================================
+    91	
+    92	#[derive(Debug, Deserialize)]
+    93	struct RawRecord {
+    94	    commit_sha: String,
+    95	    ac_id: String,
+    96	    n: u64,
+    97	    #[serde(default)]
+    98	    p50_ms: Option<f64>,
+    99	    #[serde(default)]
+   100	    p99_ms: Option<f64>,
+   101	    #[serde(default)]
+   102	    recall: Option<f64>,
+   103	    timestamp: String,
+   104	    // Forward-extensible: any unknown field is ignored, not rejected
+   105	    // (serde's deny_unknown_fields is intentionally OFF).
+   106	}
+   107	
+   108	#[derive(Debug, Clone)]
+   109	struct Record {
+   110	    commit_sha: String,
+   111	    ac_id: String,
+   112	    n: u64,
+   113	    p50_ms: Option<f64>,
+   114	    p99_ms: Option<f64>,
+   115	    recall: Option<f64>,
+   116	    timestamp: String,
+   117	    /// UTC epoch seconds parsed from `timestamp`. This — not the raw string —
+   118	    /// is the ordering key, so a malformed/offset timestamp cannot silently
+   119	    /// reorder latest-run selection (a lexical sort would).
+   120	    ts_epoch: i64,
+   121	}
+   122	
+   123	/// Parse a strict RFC3339 timestamp to UTC epoch seconds for ordering.
+   124	///
+   125	/// Accepts `YYYY-MM-DDTHH:MM:SS(.fraction)?(Z|±HH:MM)`. Any deviation returns
+   126	/// `Err`, so a malformed timestamp fails loudly (exit 2) instead of corrupting
+   127	/// "latest by timestamp" via a lexical string sort. Dependency-free (the
+   128	/// workspace pulls in no date crate); uses Howard Hinnant's days-from-civil
+   129	/// algorithm for the proleptic-Gregorian day count.
+   130	fn parse_rfc3339_epoch(s: &str) -> Result<i64, String> {
+   131	    let (date, rest) = s.split_once('T').ok_or_else(|| format!("missing 'T': {s}"))?;
+   132	    let d: Vec<&str> = date.split('-').collect();
+   133	    if d.len() != 3 {
+   134	        return Err(format!("bad date: {s}"));
+   135	    }
+   136	    let year: i64 = d[0].parse().map_err(|_| format!("bad year: {s}"))?;
+   137	    let month: i64 = d[1].parse().map_err(|_| format!("bad month: {s}"))?;
+   138	    let day: i64 = d[2].parse().map_err(|_| format!("bad day: {s}"))?;
+   139	    if !(1..=12).contains(&month) {
+   140	        return Err(format!("month out of range: {s}"));
+   141	    }
+   142	    // Month-specific day count with proleptic-Gregorian leap-year handling, so
+   143	    // impossible dates (2026-02-31, 2026-02-29 in a non-leap year) are rejected
+   144	    // rather than silently normalized by days_from_civil.
+   145	    let leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+   146	    let days_in_month = match month {
+   147	        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+   148	        4 | 6 | 9 | 11 => 30,
+   149	        2 if leap => 29,
+   150	        2 => 28,
+   151	        _ => 0,
+   152	    };
+   153	    if !(1..=days_in_month).contains(&day) {
+   154	        return Err(format!("day out of range for month: {s}"));
+   155	    }
+   156	
+   157	    // Split the time-of-day from the zone designator (Z or ±HH:MM).
+   158	    let (time_part, offset_secs) = if let Some(t) = rest.strip_suffix('Z') {
+   159	        (t, 0i64)
+   160	    } else {
+   161	        let sign_idx =
+   162	            rest.rfind(['+', '-']).ok_or_else(|| format!("missing zone designator: {s}"))?;
+   163	        let (t, off) = rest.split_at(sign_idx);
+   164	        let sign = if off.starts_with('-') { -1 } else { 1 };
+   165	        let (oh, om) = off[1..].split_once(':').ok_or_else(|| format!("bad zone offset: {s}"))?;
+   166	        let oh: i64 = oh.parse().map_err(|_| format!("bad offset hour: {s}"))?;
+   167	        let om: i64 = om.parse().map_err(|_| format!("bad offset minute: {s}"))?;
+   168	        if oh > 23 || om > 59 {
+   169	            return Err(format!("zone offset out of range: {s}"));
+   170	        }
+   171	        (t, sign * (oh * 3600 + om * 60))
+   172	    };
+   173	
+   174	    // HH:MM:SS with an optional fractional-second suffix. The fraction is not
+   175	    // needed for second-resolution ordering, but it must be well-formed
+   176	    // (non-empty, digits only) — a malformed suffix (e.g. "27.badZ") is a
+   177	    // strict-RFC3339 violation, not something to silently discard.
+   178	    let (time_core, frac) = match time_part.split_once('.') {
+   179	        Some((core, f)) => (core, Some(f)),
+   180	        None => (time_part, None),
+   181	    };
+   182	    if let Some(f) = frac {
+   183	        if f.is_empty() || !f.bytes().all(|b| b.is_ascii_digit()) {
+   184	            return Err(format!("bad fractional seconds: {s}"));
+   185	        }
+   186	    }
+   187	    let tp: Vec<&str> = time_core.split(':').collect();
+   188	    if tp.len() != 3 {
+   189	        return Err(format!("bad time: {s}"));
+   190	    }
+   191	    let hh: i64 = tp[0].parse().map_err(|_| format!("bad hour: {s}"))?;
+   192	    let mi: i64 = tp[1].parse().map_err(|_| format!("bad minute: {s}"))?;
+   193	    let ss: i64 = tp[2].parse().map_err(|_| format!("bad second: {s}"))?;
+   194	    if hh > 23 || mi > 59 || ss > 60 {
+   195	        return Err(format!("time out of range: {s}"));
+   196	    }
+   197	
+   198	    // days_from_civil (Howard Hinnant): days since 1970-01-01, proleptic Gregorian.
+   199	    let y = if month <= 2 { year - 1 } else { year };
+   200	    let era = (if y >= 0 { y } else { y - 399 }) / 400;
+   201	    let yoe = y - era * 400;
+   202	    let mp = (month + 9) % 12;
+   203	    let doy = (153 * mp + 2) / 5 + day - 1;
+   204	    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+   205	    let days = era * 146097 + doe - 719468;
+   206	    Ok(days * 86400 + hh * 3600 + mi * 60 + ss - offset_secs)
+   207	}
+   208	
+   209	/// A loaded record paired with the file it came from (for error messages).
+   210	fn load_record(path: &Path) -> Result<Record, String> {
+   211	    let text = std::fs::read_to_string(path)
+   212	        .map_err(|e| format!("{}: cannot read: {e}", path.display()))?;
+   213	    let raw: RawRecord = serde_json::from_str(&text)
+   214	        .map_err(|e| format!("{}: invalid JSON / schema: {e}", path.display()))?;
+   215	    // A record must carry at least one comparable metric.
+   216	    if raw.p50_ms.is_none() && raw.p99_ms.is_none() && raw.recall.is_none() {
+   217	        return Err(format!(
+   218	            "{}: record has no comparable metric (need p50_ms/p99_ms or recall)",
+   219	            path.display()
+   220	        ));
+   221	    }
+   222	    // Timestamp must be a parseable RFC3339 instant — a bad one is a data-
+   223	    // integrity failure (exit 2), not something to sort lexically and hope.
+   224	    let ts_epoch = parse_rfc3339_epoch(&raw.timestamp)
+   225	        .map_err(|e| format!("{}: malformed timestamp: {e}", path.display()))?;
+   226	    Ok(Record {
+   227	        commit_sha: raw.commit_sha,
+   228	        ac_id: raw.ac_id,
+   229	        n: raw.n,
+   230	        p50_ms: raw.p50_ms,
+   231	        p99_ms: raw.p99_ms,
+   232	        recall: raw.recall,
+   233	        timestamp: raw.timestamp,
+   234	        ts_epoch,
+   235	    })
+   236	}
+   237	
+   238	/// Median of a slice (sorted copy; mean of the two middle elements for an even
+   239	/// count). Returns `None` for an empty slice.
+   240	fn median(values: &[f64]) -> Option<f64> {
+   241	    if values.is_empty() {
+   242	        return None;
+   243	    }
+   244	    let mut v = values.to_vec();
+   245	    v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+   246	    let mid = v.len() / 2;
+   247	    if v.len() % 2 == 1 {
+   248	        Some(v[mid])
+   249	    } else {
+   250	        Some((v[mid - 1] + v[mid]) / 2.0)
+   251	    }
+   252	}
+   253	
+   254	#[derive(Debug, serde::Serialize)]
+   255	struct GroupVerdict {
+   256	    ac_id: String,
+   257	    n: u64,
+   258	    latest_commit: String,
+   259	    latest_timestamp: String,
+   260	    runs: usize,
+   261	    flagged: bool,
+   262	    /// "ok" | "insufficient-history" | "regression"
+   263	    status: String,
+   264	    reasons: Vec<String>,
+   265	}
+   266	
+   267	#[derive(Debug, serde::Serialize)]
+   268	struct Report {
+   269	    flagged: bool,
+   270	    groups: Vec<GroupVerdict>,
+   271	}
+   272	
+   273	/// Evaluate one group's runs (already sorted oldest -> newest by timestamp).
+   274	fn evaluate_group(ac_id: &str, n: u64, runs: &[Record]) -> GroupVerdict {
+   275	    let latest = runs.last().expect("group is never empty");
+   276	    let mut verdict = GroupVerdict {
+   277	        ac_id: ac_id.to_string(),
+   278	        n,
+   279	        latest_commit: latest.commit_sha.clone(),
+   280	        latest_timestamp: latest.timestamp.clone(),
+   281	        runs: runs.len(),
+   282	        flagged: false,
+   283	        status: "ok".to_string(),
+   284	        reasons: Vec::new(),
+   285	    };
+   286	
+   287	    if runs.len() < MIN_RUNS_FOR_MEDIAN {
+   288	        verdict.status = "insufficient-history".to_string();
+   289	        verdict.reasons.push(format!(
+   290	            "only {} run(s) in group; need >= {} to form a median",
+   291	            runs.len(),
+   292	            MIN_RUNS_FOR_MEDIAN
+   293	        ));
+   294	        return verdict;
+   295	    }
+   296	
+   297	    // Prior runs = the up-to-ROLLING_WINDOW runs immediately before the latest.
+   298	    let prior = &runs[..runs.len() - 1];
+   299	    let window_start = prior.len().saturating_sub(ROLLING_WINDOW);
+   300	    let window = &prior[window_start..];
+   301	
+   302	    // Latency: flag if p50 OR p99 degraded > LATENCY_DEGRADATION_FRACTION.
+   303	    for (label, get) in [
+   304	        ("p50_ms", &Record::p50_ms as &dyn Fn(&Record) -> Option<f64>),
+   305	        ("p99_ms", &Record::p99_ms as &dyn Fn(&Record) -> Option<f64>),
+   306	    ] {
+   307	        let prior_vals: Vec<f64> = window.iter().filter_map(get).collect();
+   308	        if let (Some(latest_v), Some(med)) = (get(latest), median(&prior_vals)) {
+   309	            if med > 0.0 {
+   310	                let frac = (latest_v - med) / med;
+   311	                if frac > LATENCY_DEGRADATION_FRACTION {
+   312	                    verdict.flagged = true;
+   313	                    verdict.reasons.push(format!(
+   314	                        "{label} {latest_v:.2} ms is {:.1}% over rolling median {med:.2} ms (threshold {:.0}%) at commit {}",
+   315	                        frac * 100.0,
+   316	                        LATENCY_DEGRADATION_FRACTION * 100.0,
+   317	                        latest.commit_sha,
+   318	                    ));
+   319	                }
+   320	            }
+   321	        }
+   322	    }
+   323	
+   324	    // Recall: flag if degraded > RECALL_DEGRADATION_ABSOLUTE (absolute drop).
+   325	    let prior_recall: Vec<f64> = window.iter().filter_map(|r| r.recall).collect();
+   326	    if let (Some(latest_r), Some(med)) = (latest.recall, median(&prior_recall)) {
+   327	        let drop = med - latest_r;
+   328	        if drop > RECALL_DEGRADATION_ABSOLUTE {
+   329	            verdict.flagged = true;
+   330	            verdict.reasons.push(format!(
+   331	                "recall {latest_r:.4} is {drop:.4} below rolling median {med:.4} (threshold {RECALL_DEGRADATION_ABSOLUTE}) at commit {}",
+   332	                latest.commit_sha,
+   333	            ));
+   334	        }
+   335	    }
+   336	
+   337	    if verdict.flagged {
+   338	        verdict.status = "regression".to_string();
+   339	    }
+   340	    verdict
+   341	}
+   342	
+   343	impl Record {
+   344	    fn p50_ms(&self) -> Option<f64> {
+   345	        self.p50_ms
+   346	    }
+   347	    fn p99_ms(&self) -> Option<f64> {
+   348	        self.p99_ms
+   349	    }
+   350	}
+   351	
+   352	fn build_report(dir: &Path) -> Result<Report, String> {
+   353	    if !dir.is_dir() {
+   354	        return Err(format!("perf-history directory not found: {}", dir.display()));
+   355	    }
+   356	
+   357	    // Group by (ac_id, n). BTreeMap gives deterministic, sorted output.
+   358	    let mut groups: BTreeMap<(String, u64), Vec<Record>> = BTreeMap::new();
+   359	
+   360	    let entries =
+   361	        std::fs::read_dir(dir).map_err(|e| format!("cannot read dir {}: {e}", dir.display()))?;
+   362	    for entry in entries {
+   363	        let entry = entry.map_err(|e| format!("dir entry error: {e}"))?;
+   364	        let path = entry.path();
+   365	        if path.extension().and_then(|s| s.to_str()) != Some("json") {
+   366	            continue;
+   367	        }
+   368	        let rec = load_record(&path)?;
+   369	        groups.entry((rec.ac_id.clone(), rec.n)).or_default().push(rec);
+   370	    }
+   371	
+   372	    if groups.is_empty() {
+   373	        return Err(format!("no *.json perf records found in {}", dir.display()));
+   374	    }
+   375	
+   376	    let mut report = Report { flagged: false, groups: Vec::new() };
+   377	    for ((ac_id, n), mut runs) in groups {
+   378	        // Sort oldest -> newest by parsed UTC epoch (not the raw string, which
+   379	        // would mis-order offset/Z-mixed timestamps). Tie-break on commit_sha
+   380	        // for a deterministic "latest" when two runs share an instant.
+   381	        runs.sort_by(|a, b| {
+   382	            a.ts_epoch.cmp(&b.ts_epoch).then_with(|| a.commit_sha.cmp(&b.commit_sha))
+   383	        });
+   384	        let v = evaluate_group(&ac_id, n, &runs);
+   385	        report.flagged |= v.flagged;
+   386	        report.groups.push(v);
+   387	    }
+   388	    Ok(report)
+   389	}
+   390	
+   391	fn print_human(report: &Report) {
+   392	    println!("perf-regression-check — {} group(s)\n", report.groups.len());
+   393	    for g in &report.groups {
+   394	        let marker = if g.flagged {
+   395	            "REGRESSION"
+   396	        } else if g.status == "insufficient-history" {
+   397	            "insufficient"
+   398	        } else {
+   399	            "ok"
+   400	        };
+   401	        println!(
+   402	            "[{marker}] {} @ n={} — {} run(s), latest {} ({})",
+   403	            g.ac_id, g.n, g.runs, g.latest_commit, g.latest_timestamp
+   404	        );
+   405	        for reason in &g.reasons {
+   406	            println!("    - {reason}");
+   407	        }
+   408	    }
+   409	    println!();
+   410	    if report.flagged {
+   411	        println!("RESULT: regression(s) flagged.");
+   412	    } else {
+   413	        println!("RESULT: no regressions.");
+   414	    }
+   415	}
+   416	
+   417	fn print_usage() {
+   418	    eprintln!(
+   419	        "usage: perf-regression-check <perf-history-dir> [--json]\n\
+   420	         \n\
+
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-cli/tests/perf_regression_check.rs | sed -n '1,320p'" in /tmp/fdb-PR-7-20260601T215338Z
+ succeeded in 0ms:
+     1	//! 0.7.2 PR-7 — `perf-regression-check` bin behaviour tests.
+     2	//!
+     3	//! TDD surface for the perf-regression detector (see
+     4	//! `dev/design/perf-regression-detection.md`). Each test drives the bin
+     5	//! against a JSON-per-run fixture directory and asserts the exit code + the
+     6	//! flag verdict.
+     7	//!
+     8	//! Fixture directories (`tests/fixtures/`):
+     9	//! - `regression/`      — known degradations; MUST flag (exit 1).
+    10	//! - `jitter/`          — normal noise within thresholds; MUST NOT flag (exit 0).
+    11	//! - `backfill-dirty/`  — the 2026-05-27 batch-collapse arc: a degenerate
+    12	//!   recall=1.0 (`035cfa3`, the bug masquerading as perfection) followed by the
+    13	//!   honest post-fix 0.1572 (`4a95cfd`). The detector flags the regression-
+    14	//!   shaped *correction* (the 0.84 recall drop) at the fix commit — see the
+    15	//!   honesty note in `dev/design/perf-regression-detection.md`. MUST flag (exit 1).
+    16	//! - `backfill-clean/`  — clean history (excluding the bug); MUST NOT flag.
+    17	//! - `insufficient/`    — one row in a group (no median possible); graceful, no flag.
+    18	//! - `malformed/`       — a record with a non-numeric metric; MUST exit 2.
+    19	//! - `malformed-timestamp/` — a record with an unparseable timestamp; MUST exit 2.
+    20	
+    21	use std::path::PathBuf;
+    22	use std::process::Command;
+    23	
+    24	fn bin() -> Command {
+    25	    Command::new(env!("CARGO_BIN_EXE_perf-regression-check"))
+    26	}
+    27	
+    28	fn fixture(name: &str) -> PathBuf {
+    29	    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name)
+    30	}
+    31	
+    32	/// Repo-root-relative `dev/perf-history/` (the committed, append-only store).
+    33	/// CARGO_MANIFEST_DIR is `src/rust/crates/fathomdb-cli`; walk up to repo root.
+    34	fn committed_perf_history() -> PathBuf {
+    35	    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../..").join("dev/perf-history")
+    36	}
+    37	
+    38	fn run_on(dir: PathBuf, extra: &[&str]) -> std::process::Output {
+    39	    let mut cmd = bin();
+    40	    cmd.arg(dir);
+    41	    cmd.args(extra);
+    42	    cmd.output().expect("spawn perf-regression-check")
+    43	}
+    44	
+    45	fn code(out: &std::process::Output) -> i32 {
+    46	    out.status.code().expect("process exited via code, not signal")
+    47	}
+    48	
+    49	// 1. Synthetic-regression fixture: known degradations -> flag, exit 1.
+    50	#[test]
+    51	fn regression_fixture_flags_and_exits_1() {
+    52	    let out = run_on(fixture("regression"), &[]);
+    53	    assert_eq!(
+    54	        code(&out),
+    55	        1,
+    56	        "regression fixture must exit 1 (stderr={})",
+    57	        String::from_utf8_lossy(&out.stderr)
+    58	    );
+    59	}
+    60	
+    61	// 2. Synthetic-jitter fixture: normal noise -> NO flag, exit 0. (false-positive proof)
+    62	#[test]
+    63	fn jitter_fixture_does_not_flag_and_exits_0() {
+    64	    let out = run_on(fixture("jitter"), &[]);
+    65	    assert_eq!(
+    66	        code(&out),
+    67	        0,
+    68	        "jitter fixture must NOT flag (exit 0); stdout={}",
+    69	        String::from_utf8_lossy(&out.stdout)
+    70	    );
+    71	}
+    72	
+    73	// 3. Batch-collapse arc: the bug (035cfa3) read a degenerate recall=1.0; the
+    74	//    fix (4a95cfd) revealed the honest 0.1572. A degradation detector cannot
+    75	//    flag the bug (it looked like an improvement) — it flags the regression-
+    76	//    shaped *correction* (the 0.84 recall drop) at the fix commit. exit 1.
+    77	#[test]
+    78	fn correction_after_batch_collapse_flags_as_recall_drop() {
+    79	    let out = run_on(fixture("backfill-dirty"), &[]);
+    80	    assert_eq!(code(&out), 1, "the recall correction after the batch-collapse must flag (exit 1)");
+    81	    let stdout = String::from_utf8_lossy(&out.stdout);
+    82	    assert!(
+    83	        stdout.contains("AC-013b") && stdout.contains("4a95cfd") && stdout.contains("recall"),
+    84	        "flag output should name the AC, the correction commit, and the recall drop; got: {stdout}"
+    85	    );
+    86	}
+    87	
+    88	// 4. No false positives on clean backfill: -> NO flag, exit 0.
+    89	#[test]
+    90	fn backfill_clean_does_not_flag() {
+    91	    let out = run_on(fixture("backfill-clean"), &[]);
+    92	    assert_eq!(
+    93	        code(&out),
+    94	        0,
+    95	        "clean backfill must NOT flag (exit 0); stdout={}",
+    96	        String::from_utf8_lossy(&out.stdout)
+    97	    );
+    98	}
+    99	
+   100	// 5. Insufficient-history: a group with too few points -> graceful, no flag, no crash.
+   101	#[test]
+   102	fn insufficient_history_is_graceful() {
+   103	    let out = run_on(fixture("insufficient"), &[]);
+   104	    assert_eq!(code(&out), 0, "insufficient-history must be graceful (exit 0, no flag)");
+   105	    let stdout = String::from_utf8_lossy(&out.stdout);
+   106	    assert!(
+   107	        stdout.to_lowercase().contains("insufficient"),
+   108	        "insufficient-history should be noted distinctly; got: {stdout}"
+   109	    );
+   110	}
+   111	
+   112	// 6. Malformed data (non-numeric metric) -> exit 2.
+   113	#[test]
+   114	fn malformed_data_exits_2() {
+   115	    let out = run_on(fixture("malformed"), &[]);
+   116	    assert_eq!(code(&out), 2, "malformed record must exit 2 (data integrity)");
+   117	}
+   118	
+   119	// 6b. Malformed timestamp -> exit 2 (must fail loudly, not sort lexically and
+   120	//     silently mis-select the latest run).
+   121	#[test]
+   122	fn malformed_timestamp_exits_2() {
+   123	    let out = run_on(fixture("malformed-timestamp"), &[]);
+   124	    assert_eq!(code(&out), 2, "unparseable timestamp must exit 2 (data integrity)");
+   125	    let stderr = String::from_utf8_lossy(&out.stderr);
+   126	    assert!(
+   127	        stderr.to_lowercase().contains("timestamp"),
+   128	        "exit-2 reason should name the timestamp; got: {stderr}"
+   129	    );
+   130	}
+   131	
+   132	// Missing directory -> exit 2 (data missing).
+   133	#[test]
+   134	fn missing_directory_exits_2() {
+   135	    let out = run_on(fixture("does-not-exist"), &[]);
+   136	    assert_eq!(code(&out), 2, "missing directory must exit 2");
+   137	}
+   138	
+   139	// --json emits machine-parseable JSON with an overall `flagged` boolean.
+   140	#[test]
+   141	fn json_output_is_parseable() {
+   142	    let out = run_on(fixture("jitter"), &["--json"]);
+   143	    assert_eq!(code(&out), 0);
+   144	    let stdout = String::from_utf8_lossy(&out.stdout);
+   145	    let v: serde_json::Value =
+   146	        serde_json::from_str(stdout.trim()).expect("--json must emit valid JSON");
+   147	    assert_eq!(v["flagged"], serde_json::Value::Bool(false), "jitter -> flagged=false");
+   148	}
+   149	
+   150	#[test]
+   151	fn json_output_marks_regression_flagged_true() {
+   152	    let out = run_on(fixture("regression"), &["--json"]);
+   153	    assert_eq!(code(&out), 1);
+   154	    let stdout = String::from_utf8_lossy(&out.stdout);
+   155	    let v: serde_json::Value =
+   156	        serde_json::from_str(stdout.trim()).expect("--json must emit valid JSON");
+   157	    assert_eq!(v["flagged"], serde_json::Value::Bool(true), "regression -> flagged=true");
+   158	}
+   159	
+   160	// The committed, append-only store MUST be clean (no false positive) at HEAD.
+   161	// The batch-collapse arc lives in it, but the latest run per group is healthy
+   162	// (the recovery / forward baseline), so the detector must NOT flag it.
+   163	#[test]
+   164	fn committed_perf_history_does_not_flag() {
+   165	    let dir = committed_perf_history();
+   166	    assert!(dir.is_dir(), "committed dev/perf-history/ must exist at {dir:?}");
+   167	    let out = run_on(dir, &[]);
+   168	    assert_eq!(
+   169	        code(&out),
+   170	        0,
+   171	        "committed perf-history must be clean (exit 0); stdout={}",
+   172	        String::from_utf8_lossy(&out.stdout)
+   173	    );
+   174	}
+   175	
+   176	// The committed store carries the full batch-collapse arc in the AC-013b@10000
+   177	// group (degenerate 1.0 -> honest 0.1572 -> dense 0.5124 -> v0.7.0 0.5124). The
+   178	// latest run (v0.7.0) is healthy, so the group is clean — but the arc must
+   179	// actually be present (4 runs), not silently dropped. This exercises the arc
+   180	// rather than just asserting a blanket exit 0.
+   181	#[test]
+   182	fn committed_batch_collapse_arc_present_and_clean() {
+   183	    let out = run_on(committed_perf_history(), &["--json"]);
+   184	    assert_eq!(code(&out), 0, "committed store must be clean");
+   185	    let v: serde_json::Value =
+   186	        serde_json::from_str(String::from_utf8_lossy(&out.stdout).trim()).expect("valid --json");
+   187	    let group = v["groups"]
+   188	        .as_array()
+   189	        .expect("groups array")
+   190	        .iter()
+   191	        .find(|g| g["ac_id"] == "AC-013b" && g["n"] == 10000)
+   192	        .expect("AC-013b@10000 group must exist in the committed store");
+   193	    assert_eq!(group["runs"], 4, "the full bug->fix->dense->ship arc must be present");
+   194	    assert_eq!(group["flagged"], serde_json::Value::Bool(false), "latest (v0.7.0) is healthy");
+   195	    assert_eq!(group["status"], "ok");
+   196	}
+
+codex
+The FIX-2 additions are visible, but I’m not stopping at those three cases. I’m now checking for residual parser leniency and verifying the detector behavior against fixtures and the committed `dev/perf-history` store, because a “strict RFC3339” claim only holds if malformed forms are still rejected in practice.
+exec
+/bin/bash -lc "nl -ba src/rust/crates/fathomdb-cli/src/bin/perf-regression-check.rs | sed -n '420,620p'" in /tmp/fdb-PR-7-20260601T215338Z
+ succeeded in 0ms:
+   420	         \n\
+   421	         Reads the append-only perf-history directory, groups runs by\n\
+   422	         (ac_id, n), and flags the latest run vs the rolling median of the\n\
+   423	         prior up-to-{ROLLING_WINDOW} runs.\n\
+   424	         Exit: 0 = clean, 1 = regression flagged, 2 = data missing/malformed."
+   425	    );
+   426	}
+   427	
+   428	fn main() -> ExitCode {
+   429	    let mut dir: Option<PathBuf> = None;
+   430	    let mut json = false;
+   431	    for arg in std::env::args().skip(1) {
+   432	        match arg.as_str() {
+   433	            "--json" => json = true,
+   434	            "-h" | "--help" => {
+   435	                print_usage();
+   436	                return ExitCode::from(0);
+   437	            }
+   438	            other if other.starts_with('-') => {
+   439	                eprintln!("unknown flag: {other}");
+   440	                print_usage();
+   441	                return ExitCode::from(2);
+   442	            }
+   443	            other => {
+   444	                if dir.is_some() {
+   445	                    eprintln!("unexpected extra argument: {other}");
+   446	                    print_usage();
+   447	                    return ExitCode::from(2);
+   448	                }
+   449	                dir = Some(PathBuf::from(other));
+   450	            }
+   451	        }
+   452	    }
+   453	
+   454	    let dir = match dir {
+   455	        Some(d) => d,
+   456	        None => {
+   457	            print_usage();
+   458	            return ExitCode::from(2);
+   459	        }
+   460	    };
+   461	
+   462	    match build_report(&dir) {
+   463	        Ok(report) => {
+   464	            if json {
+   465	                match serde_json::to_string_pretty(&report) {
+   466	                    Ok(s) => println!("{s}"),
+   467	                    Err(e) => {
+   468	                        eprintln!("failed to serialize report: {e}");
+   469	                        return ExitCode::from(2);
+   470	                    }
+   471	                }
+   472	            } else {
+   473	                print_human(&report);
+   474	            }
+   475	            if report.flagged {
+   476	                ExitCode::from(1)
+   477	            } else {
+   478	                ExitCode::from(0)
+   479	            }
+   480	        }
+   481	        Err(e) => {
+   482	            eprintln!("perf-regression-check: {e}");
+   483	            ExitCode::from(2)
+   484	        }
+   485	    }
+   486	}
+   487	
+   488	#[cfg(test)]
+   489	mod tests {
+   490	    use super::*;
+   491	
+   492	    #[test]
+   493	    fn rfc3339_utc_epoch() {
+   494	        // 1970-01-01T00:00:00Z is epoch 0; one day later is 86400.
+   495	        assert_eq!(parse_rfc3339_epoch("1970-01-01T00:00:00Z").unwrap(), 0);
+   496	        assert_eq!(parse_rfc3339_epoch("1970-01-02T00:00:00Z").unwrap(), 86_400);
+   497	    }
+   498	
+   499	    #[test]
+   500	    fn rfc3339_offset_normalizes_to_utc() {
+   501	        // 16:54:27-05:00 == 21:54:27Z — the two must parse to the same instant.
+   502	        let z = parse_rfc3339_epoch("2026-05-27T21:54:27Z").unwrap();
+   503	        let off = parse_rfc3339_epoch("2026-05-27T16:54:27-05:00").unwrap();
+   504	        assert_eq!(z, off);
+   505	    }
+   506	
+   507	    #[test]
+   508	    fn rfc3339_orders_the_batch_collapse_arc() {
+   509	        // The committed AC-013b@10000 chronology must sort bug -> fix -> ship.
+   510	        let bug = parse_rfc3339_epoch("2026-05-27T21:47:35Z").unwrap(); // 035cfa3
+   511	        let fix = parse_rfc3339_epoch("2026-05-27T21:54:27Z").unwrap(); // 4a95cfd
+   512	        let v070 = parse_rfc3339_epoch("2026-05-28T01:18:00Z").unwrap(); // 38d5f4f
+   513	        assert!(bug < fix && fix < v070);
+   514	    }
+   515	
+   516	    #[test]
+   517	    fn rfc3339_accepts_valid_edge_cases() {
+   518	        // Leap day in a leap year, fractional seconds, and a leap second.
+   519	        assert!(parse_rfc3339_epoch("2024-02-29T00:00:00Z").is_ok());
+   520	        assert!(parse_rfc3339_epoch("2026-06-01T07:23:39.500Z").is_ok());
+   521	        assert!(parse_rfc3339_epoch("2026-06-30T23:59:60Z").is_ok());
+   522	        // Fractional seconds must not change the second-resolution instant.
+   523	        assert_eq!(
+   524	            parse_rfc3339_epoch("2026-06-01T07:23:39.999Z").unwrap(),
+   525	            parse_rfc3339_epoch("2026-06-01T07:23:39Z").unwrap()
+   526	        );
+   527	    }
+   528	
+   529	    #[test]
+   530	    fn rfc3339_rejects_malformed() {
+   531	        for bad in [
+   532	            "not-a-date",
+   533	            "2026-05-27",                // missing time
+   534	            "2026-05-27 21:54:27Z",      // space instead of 'T'
+   535	            "2026-13-01T00:00:00Z",      // month out of range
+   536	            "2026-05-27T25:00:00Z",      // hour out of range
+   537	            "2026-05-27T21:54:27",       // no zone designator
+   538	            "2026-02-31T00:00:00Z",      // impossible day (Feb has <= 29)
+   539	            "2026-02-29T00:00:00Z",      // 2026 is not a leap year
+   540	            "2026-05-27T21:54:27+24:00", // offset hour out of range
+   541	            "2026-05-27T21:54:27-05:99", // offset minute out of range
+   542	            "2026-06-01T07:23:39.badZ",  // non-digit fractional seconds
+   543	            "2026-06-01T07:23:39.Z",     // empty fractional seconds
+   544	        ] {
+   545	            assert!(parse_rfc3339_epoch(bad).is_err(), "should reject: {bad}");
+   546	        }
+   547	    }
+   548	}
+
+exec
+/bin/bash -lc "rg -n '\"note\"|timestamp|ac_id|n|p50_ms|p99_ms|recall' dev/perf-history src/rust/crates/fathomdb-cli/tests/fixtures -g '*.json'" in /tmp/fdb-PR-7-20260601T215338Z
+ succeeded in 0ms:
+dev/perf-history/AC-013b-c893d8b0-7667.json:1:{ "commit_sha": "c893d8b0", "ac_id": "AC-013b", "n": 7667, "recall": 0.937, "timestamp": "2026-06-01T07:23:39Z" }
+dev/perf-history/AC-013b-38f5e3a0-10000.json:1:{ "commit_sha": "38f5e3a0", "ac_id": "AC-013b", "n": 10000, "recall": 0.5124, "timestamp": "2026-05-28T01:10:18Z", "note": "Option 1 dense-isotropic VaryingEmbedder fixture for AC-013b (test commit 38f5e3a, 2026-05-27). 3.3x recall over the sparse 0.1572 isotropic; still < 0.90 (synthetic noise-limited)." }
+src/rust/crates/fathomdb-cli/tests/fixtures/backfill-clean/AC-013b-38f5e3a0-10000.json:1:{ "commit_sha": "38f5e3a0", "ac_id": "AC-013b", "n": 10000, "recall": 0.5124, "timestamp": "2026-05-28T01:10:18Z" }
+dev/perf-history/AC-013b-035cfa30-10000.json:1:{ "commit_sha": "035cfa30", "ac_id": "AC-013b", "n": 10000, "recall": 1.0, "timestamp": "2026-05-27T21:47:35Z", "note": "DEGENERATE — batch-collapse bug (035cfa3 is the parent of fix 4a95cfd) left ~10 distinct vec0 rows per 10K writes; brute-force GT and production returned the same trivially-small set, so recall=1.0 is a measurement artifact, NOT a real verdict. Retained for the faithful arc: the bug masqueraded as an IMPROVEMENT, so this degradation detector flags the regression-shaped correction that follows it, not the bug itself (see dev/design/perf-regression-detection.md)." }
+dev/perf-history/AC-013b-38d5f4f0-10000.json:1:{ "commit_sha": "38d5f4f0", "ac_id": "AC-013b", "n": 10000, "recall": 0.5124, "timestamp": "2026-05-28T01:18:00Z", "note": "v0.7.0 ship verdict — Option 1 dense-isotropic fixture. AC-013b NOT MET on the synthetic fixture (deferred to 0.7.1 EMBEDDER-UNDEFER, where the real bge measurement at n=7667 reaches 0.937)." }
+src/rust/crates/fathomdb-cli/tests/fixtures/backfill-clean/AC-013-aaaaaaa0-7667.json:1:{ "commit_sha": "aaaaaaa0", "ac_id": "AC-013", "n": 7667, "p50_ms": 35.0, "p99_ms": 48.0, "recall": 0.940, "timestamp": "2026-05-31T07:00:00Z" }
+dev/perf-history/AC-019-c893d8b0-7667.json:1:{ "commit_sha": "c893d8b0", "ac_id": "AC-019", "n": 7667, "p99_ms": 343.0, "timestamp": "2026-06-01T07:23:39Z" }
+dev/perf-history/AC-012-603a4bc0-1000000.json:1:{ "commit_sha": "603a4bc0", "ac_id": "AC-012", "n": 1000000, "p50_ms": 140.95, "p99_ms": 458.0, "timestamp": "2026-05-23T23:40:28Z", "note": "0.6.1 canonical-CI re-measurement (run 26346417896). RED vs the 0.6.0 ADR budget (p50 <=20, p99 <=150) — 7x/3x over. Honest historical anchor; sole point in its (AC-012, 1000000) group, so the detector reports insufficient-history rather than a regression. See dev/notes/perf-canonical-runner-2026-MM.md." }
+src/rust/crates/fathomdb-cli/tests/fixtures/backfill-clean/AC-013b-38d5f4f0-10000.json:1:{ "commit_sha": "38d5f4f0", "ac_id": "AC-013b", "n": 10000, "recall": 0.5124, "timestamp": "2026-05-28T01:18:00Z" }
+src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013-bbb00002-10000.json:1:{ "commit_sha": "bbb00002", "ac_id": "AC-013", "n": 10000, "p50_ms": 15.5, "p99_ms": 17.5, "timestamp": "2026-02-02T00:00:00Z" }
+dev/perf-history/AC-013b-4a95cfd0-10000.json:1:{ "commit_sha": "4a95cfd0", "ac_id": "AC-013b", "n": 10000, "recall": 0.1572, "timestamp": "2026-05-27T21:54:27Z", "note": "Honest isotropic-fixture recall after the batch-collapse fix (4a95cfd) + scanner fix (53a270d). NOT MET (< 0.90 floor) — VaryingEmbedder produces sparse vectors (6/768 non-zero), a known synthetic-fixture pathology, not a Pack-2 SQL fault. The 0.84 drop from the prior degenerate 1.0 is what the detector flags." }
+src/rust/crates/fathomdb-cli/tests/fixtures/backfill-clean/AC-013-c893d8b0-7667.json:1:{ "commit_sha": "c893d8b0", "ac_id": "AC-013", "n": 7667, "p50_ms": 36.0, "p99_ms": 49.0, "recall": 0.937, "timestamp": "2026-06-01T07:23:39Z" }
+dev/perf-history/AC-013-c893d8b0-10000.json:1:{ "commit_sha": "c893d8b0", "ac_id": "AC-013", "n": 10000, "p50_ms": 15.0, "p99_ms": 17.0, "timestamp": "2026-06-01T07:23:39Z" }
+src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013-bbb00001-10000.json:1:{ "commit_sha": "bbb00001", "ac_id": "AC-013", "n": 10000, "p50_ms": 15.0, "p99_ms": 17.0, "timestamp": "2026-02-01T00:00:00Z" }
+src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013-bbb00003-10000.json:1:{ "commit_sha": "bbb00003", "ac_id": "AC-013", "n": 10000, "p50_ms": 14.6, "p99_ms": 16.5, "timestamp": "2026-02-03T00:00:00Z" }
+src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013b-bbb10003-7667.json:1:{ "commit_sha": "bbb10003", "ac_id": "AC-013b", "n": 7667, "recall": 0.928, "timestamp": "2026-02-03T00:00:00Z" }
+dev/perf-history/AC-013-c893d8b0-7667.json:1:{ "commit_sha": "c893d8b0", "ac_id": "AC-013", "n": 7667, "p50_ms": 36.0, "p99_ms": 49.0, "timestamp": "2026-06-01T07:23:39Z", "note": "Real bge-small-en-v1.5 (dim 384, K=192) over the all-real corpus, PR-3 local measurement. AC-013 latency 10k-tier MET (p50 36 / p99 49 vs 80/300). Recall for this run lives in AC-013b-c893d8b0-7667." }
+src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013-bbb00004-10000.json:1:{ "commit_sha": "bbb00004", "ac_id": "AC-013", "n": 10000, "p50_ms": 16.0, "p99_ms": 18.0, "timestamp": "2026-02-04T00:00:00Z" }
+src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013b-bbb10001-7667.json:1:{ "commit_sha": "bbb10001", "ac_id": "AC-013b", "n": 7667, "recall": 0.937, "timestamp": "2026-02-01T00:00:00Z" }
+src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013b-bbb10004-7667.json:1:{ "commit_sha": "bbb10004", "ac_id": "AC-013b", "n": 7667, "recall": 0.920, "timestamp": "2026-02-04T00:00:00Z" }
+src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013b-bbb10002-7667.json:1:{ "commit_sha": "bbb10002", "ac_id": "AC-013b", "n": 7667, "recall": 0.945, "timestamp": "2026-02-02T00:00:00Z" }
+src/rust/crates/fathomdb-cli/tests/fixtures/malformed-timestamp/AC-013-feedface-10000.json:1:{ "commit_sha": "feedface", "ac_id": "AC-013", "n": 10000, "p50_ms": 15.0, "p99_ms": 17.0, "timestamp": "2026-05-27 19:00:00" }
+src/rust/crates/fathomdb-cli/tests/fixtures/regression/AC-013-aaa00002-10000.json:1:{ "commit_sha": "aaa00002", "ac_id": "AC-013", "n": 10000, "p50_ms": 15.0, "p99_ms": 18.0, "timestamp": "2026-01-02T00:00:00Z" }
+src/rust/crates/fathomdb-cli/tests/fixtures/insufficient/AC-012-603a4bc0-1000000.json:1:{ "commit_sha": "603a4bc0", "ac_id": "AC-012", "n": 1000000, "p50_ms": 140.95, "p99_ms": 458.0, "timestamp": "2026-05-23T00:00:00Z" }
+src/rust/crates/fathomdb-cli/tests/fixtures/regression/AC-013-aaa00003-10000.json:1:{ "commit_sha": "aaa00003", "ac_id": "AC-013", "n": 10000, "p50_ms": 16.0, "p99_ms": 17.0, "timestamp": "2026-01-03T00:00:00Z" }
+src/rust/crates/fathomdb-cli/tests/fixtures/backfill-dirty/AC-013b-035cfa30-10000.json:1:{ "commit_sha": "035cfa30", "ac_id": "AC-013b", "n": 10000, "recall": 1.0, "timestamp": "2026-05-27T21:47:35Z" }
+src/rust/crates/fathomdb-cli/tests/fixtures/regression/AC-013-aaa00001-10000.json:1:{ "commit_sha": "aaa00001", "ac_id": "AC-013", "n": 10000, "p50_ms": 15.0, "p99_ms": 17.0, "timestamp": "2026-01-01T00:00:00Z" }
+src/rust/crates/fathomdb-cli/tests/fixtures/malformed/AC-013-deadbeef-10000.json:1:{ "commit_sha": "deadbeef", "ac_id": "AC-013", "n": 10000, "p50_ms": "not-a-number", "timestamp": "2026-03-01T00:00:00Z" }
+src/rust/crates/fathomdb-cli/tests/fixtures/regression/AC-013-aaa00004-10000.json:1:{ "commit_sha": "aaa00004", "ac_id": "AC-013", "n": 10000, "p50_ms": 25.0, "p99_ms": 30.0, "timestamp": "2026-01-04T00:00:00Z" }
+src/rust/crates/fathomdb-cli/tests/fixtures/backfill-dirty/AC-013b-4a95cfd0-10000.json:1:{ "commit_sha": "4a95cfd0", "ac_id": "AC-013b", "n": 10000, "recall": 0.1572, "timestamp": "2026-05-27T21:54:27Z" }
+
+exec
+/bin/bash -lc "sed -n '1,220p' src/rust/crates/fathomdb-cli/Cargo.toml" in /tmp/fdb-PR-7-20260601T215338Z
+ succeeded in 0ms:
+[package]
+name = "fathomdb-cli"
+description = "FathomDB CLI — operator and diagnostics binary (fathomdb doctor, fathomdb export, ...)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "fathomdb"
+path = "src/main.rs"
+
+# 0.7.2 PR-7 — perf regression detector. Reads dev/perf-history/, groups by
+# (ac_id, n), flags the latest run vs the rolling median of prior runs.
+# See dev/design/perf-regression-detection.md.
+[[bin]]
+name = "perf-regression-check"
+path = "src/bin/perf-regression-check.rs"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+fathomdb.workspace = true
+fathomdb-embedder.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+default = []
+# EU-5b — enable the `fathomdb doctor warm-cache` subcommand to actually
+# invoke the default-embedder loader. Without the feature, the subcommand
+# still parses but reports that the binary was built without
+# `default-embedder` support.
+default-embedder = ["fathomdb-embedder/default-embedder"]
+
+[dev-dependencies]
+tempfile = "3"
+
+exec
+/bin/bash -lc 'srcdir=src/rust/crates/fathomdb-cli/tests/fixtures; for f in "$srcdir"/malformed-timestamp/*.json "$srcdir"/malformed/*.json dev/perf-history/*.json; do echo "FILE:$f"; sed -n '"'1,120p' \""'$f"; done' in /tmp/fdb-PR-7-20260601T215338Z
+ succeeded in 0ms:
+FILE:src/rust/crates/fathomdb-cli/tests/fixtures/malformed-timestamp/AC-013-feedface-10000.json
+{ "commit_sha": "feedface", "ac_id": "AC-013", "n": 10000, "p50_ms": 15.0, "p99_ms": 17.0, "timestamp": "2026-05-27 19:00:00" }
+FILE:src/rust/crates/fathomdb-cli/tests/fixtures/malformed/AC-013-deadbeef-10000.json
+{ "commit_sha": "deadbeef", "ac_id": "AC-013", "n": 10000, "p50_ms": "not-a-number", "timestamp": "2026-03-01T00:00:00Z" }
+FILE:dev/perf-history/AC-012-603a4bc0-1000000.json
+{ "commit_sha": "603a4bc0", "ac_id": "AC-012", "n": 1000000, "p50_ms": 140.95, "p99_ms": 458.0, "timestamp": "2026-05-23T23:40:28Z", "note": "0.6.1 canonical-CI re-measurement (run 26346417896). RED vs the 0.6.0 ADR budget (p50 <=20, p99 <=150) — 7x/3x over. Honest historical anchor; sole point in its (AC-012, 1000000) group, so the detector reports insufficient-history rather than a regression. See dev/notes/perf-canonical-runner-2026-MM.md." }
+FILE:dev/perf-history/AC-013-c893d8b0-10000.json
+{ "commit_sha": "c893d8b0", "ac_id": "AC-013", "n": 10000, "p50_ms": 15.0, "p99_ms": 17.0, "timestamp": "2026-06-01T07:23:39Z" }
+FILE:dev/perf-history/AC-013-c893d8b0-7667.json
+{ "commit_sha": "c893d8b0", "ac_id": "AC-013", "n": 7667, "p50_ms": 36.0, "p99_ms": 49.0, "timestamp": "2026-06-01T07:23:39Z", "note": "Real bge-small-en-v1.5 (dim 384, K=192) over the all-real corpus, PR-3 local measurement. AC-013 latency 10k-tier MET (p50 36 / p99 49 vs 80/300). Recall for this run lives in AC-013b-c893d8b0-7667." }
+FILE:dev/perf-history/AC-013b-035cfa30-10000.json
+{ "commit_sha": "035cfa30", "ac_id": "AC-013b", "n": 10000, "recall": 1.0, "timestamp": "2026-05-27T21:47:35Z", "note": "DEGENERATE — batch-collapse bug (035cfa3 is the parent of fix 4a95cfd) left ~10 distinct vec0 rows per 10K writes; brute-force GT and production returned the same trivially-small set, so recall=1.0 is a measurement artifact, NOT a real verdict. Retained for the faithful arc: the bug masqueraded as an IMPROVEMENT, so this degradation detector flags the regression-shaped correction that follows it, not the bug itself (see dev/design/perf-regression-detection.md)." }
+FILE:dev/perf-history/AC-013b-38d5f4f0-10000.json
+{ "commit_sha": "38d5f4f0", "ac_id": "AC-013b", "n": 10000, "recall": 0.5124, "timestamp": "2026-05-28T01:18:00Z", "note": "v0.7.0 ship verdict — Option 1 dense-isotropic fixture. AC-013b NOT MET on the synthetic fixture (deferred to 0.7.1 EMBEDDER-UNDEFER, where the real bge measurement at n=7667 reaches 0.937)." }
+FILE:dev/perf-history/AC-013b-38f5e3a0-10000.json
+{ "commit_sha": "38f5e3a0", "ac_id": "AC-013b", "n": 10000, "recall": 0.5124, "timestamp": "2026-05-28T01:10:18Z", "note": "Option 1 dense-isotropic VaryingEmbedder fixture for AC-013b (test commit 38f5e3a, 2026-05-27). 3.3x recall over the sparse 0.1572 isotropic; still < 0.90 (synthetic noise-limited)." }
+FILE:dev/perf-history/AC-013b-4a95cfd0-10000.json
+{ "commit_sha": "4a95cfd0", "ac_id": "AC-013b", "n": 10000, "recall": 0.1572, "timestamp": "2026-05-27T21:54:27Z", "note": "Honest isotropic-fixture recall after the batch-collapse fix (4a95cfd) + scanner fix (53a270d). NOT MET (< 0.90 floor) — VaryingEmbedder produces sparse vectors (6/768 non-zero), a known synthetic-fixture pathology, not a Pack-2 SQL fault. The 0.84 drop from the prior degenerate 1.0 is what the detector flags." }
+FILE:dev/perf-history/AC-013b-c893d8b0-7667.json
+{ "commit_sha": "c893d8b0", "ac_id": "AC-013b", "n": 7667, "recall": 0.937, "timestamp": "2026-06-01T07:23:39Z" }
+FILE:dev/perf-history/AC-019-c893d8b0-7667.json
+{ "commit_sha": "c893d8b0", "ac_id": "AC-019", "n": 7667, "p99_ms": 343.0, "timestamp": "2026-06-01T07:23:39Z" }
+
+codex
+I have a concrete review hypothesis now: the new checks fix the pass-2 cases, but the parser still looks structurally permissive on field widths. I’m compiling the CLI into a temp target dir and exercising the binary with synthetic malformed timestamps so I can confirm whether that leniency is real rather than inferred.
+exec
+/bin/bash -lc 'command -v actionlint || true' in /tmp/fdb-PR-7-20260601T215338Z
+ succeeded in 0ms:
+exec
+/bin/bash -lc 'CARGO_TARGET_DIR=/tmp/fdb-target cargo test -p fathomdb-cli --bin perf-regression-check rfc3339_rejects_malformed -- --nocapture' in /tmp/fdb-PR-7-20260601T215338Z
+2026-06-01T22:57:09.346300Z ERROR codex_core::tools::router: error=exec_command failed for `/bin/bash -lc 'CARGO_TARGET_DIR=/tmp/fdb-target cargo test -p fathomdb-cli --bin perf-regression-check rfc3339_rejects_malformed -- --nocapture'`: SandboxDenied { message: "error: Read-only file system (os error 30) at path \"/tmp/fdb-targetEHImXh\"\n", output: ExecToolCallOutput { exit_code: 101, stdout: StreamOutput { text: "", truncated_after_lines: None }, stderr: StreamOutput { text: "error: Read-only file system (os error 30) at path \"/tmp/fdb-targetEHImXh\"\n", truncated_after_lines: None }, aggregated_output: StreamOutput { text: "error: Read-only file system (os error 30) at path \"/tmp/fdb-targetEHImXh\"\n", truncated_after_lines: None }, duration: 0ns, timed_out: false } }
+exec
+/bin/bash -lc 'CARGO_TARGET_DIR=/tmp/fdb-target cargo test -p fathomdb-cli --test perf_regression_check -- --nocapture' in /tmp/fdb-PR-7-20260601T215338Z
+2026-06-01T22:57:09.360951Z ERROR codex_core::tools::router: error=exec_command failed for `/bin/bash -lc 'CARGO_TARGET_DIR=/tmp/fdb-target cargo test -p fathomdb-cli --test perf_regression_check -- --nocapture'`: SandboxDenied { message: "error: Read-only file system (os error 30) at path \"/tmp/fdb-targetmzs5hN\"\n", output: ExecToolCallOutput { exit_code: 101, stdout: StreamOutput { text: "", truncated_after_lines: None }, stderr: StreamOutput { text: "error: Read-only file system (os error 30) at path \"/tmp/fdb-targetmzs5hN\"\n", truncated_after_lines: None }, aggregated_output: StreamOutput { text: "error: Read-only file system (os error 30) at path \"/tmp/fdb-targetmzs5hN\"\n", truncated_after_lines: None }, duration: 0ns, timed_out: false } }
+ exited 101 in 106ms:
+error: Read-only file system (os error 30) at path "/tmp/fdb-targetEHImXh"
+
+ exited 101 in 110ms:
+error: Read-only file system (os error 30) at path "/tmp/fdb-targetmzs5hN"
+
+exec
+/bin/bash -lc "nl -ba .github/workflows/perf-canonical.yml | sed -n '60,240p'" in /tmp/fdb-PR-7-20260601T215338Z
+ succeeded in 0ms:
+    60	        default: "ac012"
+    61	      perf_record:
+    62	        description: "Capture perf record -g --call-graph dwarf + perf report (L-A1 diagnostic)"
+    63	        required: false
+    64	        type: boolean
+    65	        default: false
+    66	      sqlite_perf_env:
+    67	        description: "Space-separated KEY=VAL list of FATHOMDB_PERF_* env knobs, exported verbatim. Consolidates the former memstatus_off/pcache2/pagecache_spec/writer_pragmas/reader_pragmas/search_limit inputs (GitHub caps workflow_dispatch at 10 inputs). E.g. 'FATHOMDB_PERF_SQLITE_PCACHE2=1 FATHOMDB_PERF_SQLITE_PAGECACHE=8192:32768 FATHOMDB_PERF_SEARCH_LIMIT=1000'"
+    68	        required: false
+    69	        default: ""
+    70	
+    71	permissions:
+    72	  contents: read
+    73	  # PR-7: this workflow is workflow_dispatch-only, so there is no PR/push event
+    74	  # to comment on. The perf-regression-check verdict is surfaced via
+    75	  # $GITHUB_STEP_SUMMARY (always available on dispatch). No pull-requests scope
+    76	  # is requested — adding one would be an unused over-grant.
+    77	
+    78	jobs:
+    79	  ac012-canonical-measure:
+    80	    name: AC-012 canonical re-measurement (legacy)
+    81	    if: inputs.experiment_id == ''
+    82	    runs-on: ubuntu-latest
+    83	    timeout-minutes: 180
+    84	    steps:
+    85	      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+    86	      - name: Configure per-session TMPDIR
+    87	        shell: bash
+    88	        run: |
+    89	          TMPDIR="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+    90	          mkdir -p "$TMPDIR"
+    91	          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
+    92	      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+    93	        with:
+    94	          toolchain: stable
+    95	          components: rustfmt, clippy
+    96	      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+    97	      - name: Capture canonical-runner spec
+    98	        shell: bash
+    99	        run: |
+   100	          echo "=== Runner spec (paste into dev/notes/perf-canonical-runner-2026-MM.md) ==="
+   101	          echo "CPU model:"
+   102	          grep "model name" /proc/cpuinfo | head -1
+   103	          echo ""
+   104	          echo "Core count / threads:"
+   105	          nproc
+   106	          echo ""
+   107	          echo "OS:"
+   108	          lsb_release -d 2>/dev/null || grep PRETTY_NAME /etc/os-release
+   109	          echo ""
+   110	          echo "Kernel:"
+   111	          uname -a
+   112	          echo ""
+   113	          echo "glibc:"
+   114	          ldd --version | head -1
+   115	          echo ""
+   116	          echo "rustc:"
+   117	          rustc --version
+   118	          echo ""
+   119	          echo "Runner identifier: ${RUNNER_NAME:-ubuntu-latest} (${RUNNER_OS}/${RUNNER_ARCH})"
+   120	          echo "Workflow run URL: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+   121	          echo ""
+   122	          echo "=== SQLite version (compiled-in via rusqlite) ==="
+   123	          cargo run -q --manifest-path scripts/sqlite-version/Cargo.toml 2>/dev/null \
+   124	            || echo "(scripts/sqlite-version helper not present; run a small rust snippet locally to extract)"
+   125	      - name: Build perf_gates (release; only the perf_gates test binary)
+   126	        shell: bash
+   127	        run: |
+   128	          # Scope to the perf_gates integration test binary only.
+   129	          # Other integration tests (e.g. tests/compatibility.rs) use
+   130	          # `#[cfg(debug_assertions)]`-gated helpers that disappear in
+   131	          # --release, so `--tests` (which builds ALL test binaries)
+   132	          # fails the release build despite perf_gates itself being
+   133	          # release-clean.
+   134	          cargo test --release --no-run -p fathomdb-engine --test perf_gates
+   135	      - name: Run AC-012 canonical re-measurement
+   136	        env:
+   137	          AGENT_LONG: "1"
+   138	          AC_FULL_SCALE: ${{ inputs.run_full_scale && '1' || '' }}
+   139	          AC012_CORPUS_N: ${{ inputs.ac012_corpus_n }}
+   140	          AC013_CORPUS_N: ${{ inputs.ac013_corpus_n }}
+   141	          RUST_BACKTRACE: "1"
+   142	        shell: bash
+   143	        run: |
+   144	          set -o pipefail
+   145	          # Run only the AC-012 perf gate; explicit test filter so we don't
+   146	          # also drag in AC-013 / AC-019 / AC-020 (Pack 7 territory).
+   147	          # Test is `#[test]` (not `#[ignore]`); long-run-gated via
+   148	          # `AGENT_LONG=1` env. Filter to AC-012 only — AC-013/019/020 stay
+   149	          # deferred per Pack 7 trigger evaluation.
+   150	          cargo test --release -p fathomdb-engine --test perf_gates -- \
+   151	            --nocapture ac_012 \
+   152	            2>&1 | tee perf-canonical-ac012.log
+   153	      - name: Upload measurement log
+   154	        if: always()
+   155	        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+   156	        with:
+   157	          name: perf-canonical-ac012-log
+   158	          path: perf-canonical-ac012.log
+   159	          retention-days: 30
+   160	      # PR-7 — perf regression detection. Read the append-only
+   161	      # dev/perf-history/ store, group by (ac_id, n), and flag the latest run
+   162	      # vs the rolling median of prior runs. See
+   163	      # dev/design/perf-regression-detection.md.
+   164	      #   exit 0 = clean; exit 1 = regression flagged (NOT a hard fail — the
+   165	      #   step-summary verdict is the signal); exit 2 = data integrity (fail loudly).
+   166	      # This workflow is workflow_dispatch-only, so there is no PR to comment on:
+   167	      # the report is written to $GITHUB_STEP_SUMMARY (the dispatch-safe channel)
+   168	      # and the step log. A flagged regression (exit 1) is surfaced, not failed,
+   169	      # so a human reads the summary; a data-integrity failure (exit 2) fails the
+   170	      # step loudly.
+   171	      - name: Perf regression check
+   172	        id: perf_regression
+   173	        if: always()
+   174	        shell: bash
+   175	        run: |
+   176	          set +e
+   177	          OUT="$(cargo run --quiet -p fathomdb-cli --bin perf-regression-check -- dev/perf-history)"
+   178	          CODE=$?
+   179	          echo "$OUT"
+   180	          VERDICT="no regressions"
+   181	          [ "$CODE" -eq 1 ] && VERDICT="⚠️ regression(s) flagged"
+   182	          [ "$CODE" -eq 2 ] && VERDICT="❌ data missing/malformed (integrity failure)"
+   183	          {
+   184	            echo "## perf-regression-check"
+   185	            echo ""
+   186	            echo "**Verdict:** ${VERDICT} (exit ${CODE})"
+   187	            echo ""
+   188	            echo '```'
+   189	            echo "$OUT"
+   190	            echo '```'
+   191	          } >> "$GITHUB_STEP_SUMMARY"
+   192	          if [ "$CODE" -eq 2 ]; then
+   193	            echo "::error::perf-regression-check exit 2 — perf-history data missing/malformed (integrity failure)"
+   194	            exit 2
+   195	          fi
+   196	          # exit 0 or 1: do not fail the step; the step summary carries the signal.
+   197	          exit 0
+   198	      - name: Summarize verdict
+   199	        if: always()
+   200	        shell: bash
+   201	        run: |
+   202	          echo "=== Verdict guidance ==="
+   203	          echo "ADR-0.6.0-text-query-latency-gates budgets: p50 ≤ 20 ms; p99 ≤ 150 ms"
+   204	          echo ""
+   205	          echo "Copy the measured numbers from perf-canonical-ac012.log into:"
+   206	          echo "  dev/notes/perf-canonical-runner-2026-MM.md § Measured numbers"
+   207	          echo ""
+   208	          echo "Then flip the file's status: template -> status: measured,"
+   209	          echo "and update dev/test-plan.md § Current Perf Attribution AC-012"
+   210	          echo "to lift the DEFERRED label if GREEN."
+   211	          echo ""
+   212	          echo "If RED on p50 or p99: do NOT lift the deferral. Surface to"
+   213	          echo "orchestrator — Pack 7 un-defer trigger fires (per"
+   214	          echo "dev/plans/0.6.0-implementation.md § Pack 7 un-defer trigger)."
+   215	
+   216	  perf-experiment:
+   217	    name: 0.7.0 perf-experiment (${{ inputs.experiment_id }} ${{ inputs.lever_id }})
+   218	    if: inputs.experiment_id != ''
+   219	    runs-on: ubuntu-latest
+   220	    timeout-minutes: 240
+   221	    steps:
+   222	      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+   223	      - name: Configure per-session TMPDIR
+   224	        shell: bash
+   225	        run: |
+   226	          TMPDIR="$RUNNER_TEMP/fathomdb-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+   227	          mkdir -p "$TMPDIR"
+   228	          echo "TMPDIR=$TMPDIR" >> "$GITHUB_ENV"
+   229	      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
+   230	        with:
+   231	          toolchain: stable
+   232	          components: rustfmt, clippy
+   233	      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+   234	      - name: Capture canonical-runner spec
+   235	        shell: bash
+   236	        run: |
+   237	          echo "=== Runner spec ==="
+   238	          grep "model name" /proc/cpuinfo | head -1
+   239	          echo "cores=$(nproc)"
+   240	          uname -srm
+
+exec
+/bin/bash -lc "nl -ba dev/design/perf-regression-detection.md | sed -n '1,260p'" in /tmp/fdb-PR-7-20260601T215338Z
+ succeeded in 0ms:
+     1	# Perf regression detection (0.7.2 PR-7)
+     2	
+     3	**Status:** landed (0.7.2 PR-7). Owns `dev/perf-history/` + the
+     4	`perf-regression-check` binary (`fathomdb-cli` crate, layout (A) — a
+     5	`[[bin]]` entry, NOT a new workspace crate).
+     6	
+     7	## Purpose
+     8	
+     9	Persist canonical-CI / release-time performance numbers per commit and
+    10	surface regressions automatically with a deliberately **low false-positive
+    11	rate**. The store is the ship-verdict history; the bin reads it, groups by
+    12	`(ac_id, n)`, and compares the single most-recent run in each group against
+    13	the rolling median of the prior runs in that group.
+    14	
+    15	## Append-only invariant
+    16	
+    17	`dev/perf-history/` is **append-only**. The `perf-regression-check` binary
+    18	**only reads** the directory — it never writes, mutates, or deletes any
+    19	file. New rows are written by CI (or by a human at release time, for the
+    20	locally-measured AC-013 / AC-013b / AC-019 numbers). This keeps the history
+    21	a tamper-evident, git-tracked audit trail: a regression is a new file whose
+    22	numbers the bin flags, not an edit to an old file.
+    23	
+    24	## Record schema
+    25	
+    26	One JSON file per canonical run (filename convention:
+    27	`<ac_id>-<commit_sha:8>-<n>.json`, e.g. `AC-013-c893d8b0-10000.json`). The
+    28	bin globs `*.json` in the directory and parses each file as one record:
+    29	
+    30	```json
+    31	{
+    32	  "commit_sha": "c893d8b0",
+    33	  "ac_id": "AC-013",
+    34	  "n": 10000,
+    35	  "p50_ms": 36.0,
+    36	  "p99_ms": 49.0,
+    37	  "recall": 0.937,
+    38	  "timestamp": "2026-06-01T07:23:39Z"
+    39	}
+    40	```
+    41	
+    42	| field        | type            | required | notes |
+    43	|--------------|-----------------|----------|-------|
+    44	| `commit_sha` | string          | yes      | commit the run was measured at |
+    45	| `ac_id`      | string          | yes      | `AC-012` \| `AC-013` \| `AC-013b` \| `AC-019` \| … |
+    46	| `n`          | integer         | yes      | corpus row count; part of the grouping key |
+    47	| `p50_ms`     | number          | no\*     | median latency; omit for recall-only ACs |
+    48	| `p99_ms`     | number          | no\*     | tail latency; omit for recall-only ACs |
+    49	| `recall`     | number \| null  | no       | recall@10; omit/null for latency-only ACs (AC-012, AC-019) |
+    50	| `timestamp`  | RFC3339 string  | yes      | run time; used to pick the single latest run per group |
+    51	
+    52	\* A record must carry at least one comparable metric (a latency pair or a
+    53	recall value), else it is malformed.
+    54	
+    55	**Forward-extensibility:** unknown fields are **ignored, not rejected**.
+    56	Adding fields to the schema later does not break older readers or invalidate
+    57	older files. (`serde` with default `deny_unknown_fields` OFF.)
+    58	
+    59	## Grouping — tier-aware
+    60	
+    61	Records are grouped by the **`(ac_id, n)`** pair. This is deliberate:
+    62	
+    63	- AC-013 @ N=10k is never compared against AC-013 @ N=100k (different
+    64	  latency tier — see `ADR-0.7.0-text-query-latency-gates-revised.md`, the
+    65	  10k binding tier vs the 100k/1M tracked tiers).
+    66	- The real-corpus anchor (N=7667) is a **different group** from the
+    67	  synthetic N=10000 run — real bge and synthetic isotropic data have
+    68	  different absolute numbers and must not cross-contaminate a median.
+    69	
+    70	**Regime caveat (grouping is necessary but not sufficient).** `(ac_id, n)`
+    71	does not capture every comparability axis. The K-sweep that landed in 0.7.1
+    72	(top-K bit-candidates 64 → 192, the EU-7/PR-2 recall fix) raised rerank cost,
+    73	so pre-0.7.1 (K=64) latency is **not** directly comparable to 0.7.1+ (K=192)
+    74	latency even at the same `(ac_id, n)`. The committed store therefore does
+    75	**not** mix K=64 and K=192 latency in one group — the synthetic AC-013 @
+    76	N=10000 latency history begins at the K=192 PR-3 baseline (`c893d8b`). The
+    77	K=64-era synthetic recall arc (AC-013b @ N=10000) is kept as one
+    78	internally-consistent group because every point in it is K=64. When a future
+    79	regime change (a new K, an ANN index) lands, start a fresh comparison rather
+    80	than letting the detector flag the deliberate step as a regression.
+    81	
+    82	## Detection thresholds (HITL Gate 1 — LOCKED 2026-06-01)
+    83	
+    84	Per HITL sign-off on 2026-06-01, the thresholds are:
+    85	
+    86	| metric  | flag condition                                            |
+    87	|---------|-----------------------------------------------------------|
+    88	| latency | `p50` **or** `p99` degraded **> 15%** vs the rolling median |
+    89	| recall  | recall degraded **> 0.03 absolute** vs the rolling median   |
+    90	| window  | rolling median of the prior **up to 10** runs per group     |
+    91	| latest  | the **single most-recent** run (by timestamp) per group     |
+    92	
+    93	**Rationale (false-positive resistance is the design priority — codex's
+    94	review focus):**
+    95	
+    96	- Recall σ = **0.0116** (PR-3 measured, N=7667 anchor;
+    97	  `0.7.2-PR-3-perf-data.md`). A **0.03** absolute threshold is ≈ **2.4σ**,
+    98	  i.e. roughly a **~1% jitter false-flag rate** — the deliberate
+    99	  low-cry-wolf choice. We would rather miss a marginal real drift than fire
+   100	  on noise, because a fired flag costs human triage on every canonical run.
+   101	- **Tradeoff acknowledged:** a 0.03 recall drop from the 0.937 anchor lands
+   102	  at **0.907**, which is right above the **0.90** floor. So this threshold
+   103	  favours **false-positive resistance over early-warning sensitivity**: a
+   104	  recall decay that creeps toward the floor in <0.03 steps will not trip the
+   105	  detector before it nears 0.90. That is an accepted limitation; the hard
+   106	  recall floor is enforced separately by the AC-013b gate, not by this
+   107	  drift detector.
+   108	- **15% latency** allows for normal run-to-run variance on shared CI
+   109	  hardware (the canonical runner is a 4-core EPYC slice; cold-cache and
+   110	  neighbour-noise swing latency more than recall).
+   111	
+   112	The "latest = single most-recent run vs the median of the prior runs in the
+   113	window" definition means a one-off bad run flags immediately (good for catch
+   114	latency) but a single good run after a bad streak does not mask the streak
+   115	(the median is robust to one outlier).
+   116	
+   117	## Insufficient history
+   118	
+   119	A group with **fewer than 2 runs** (i.e. no prior runs to form a median
+   120	after removing the latest) is reported as **insufficient-history** — NOT a
+   121	regression and NOT a crash. The AC-012 @ N=1M group is exactly this case
+   122	today (one documented canonical run, v0.6.1 `603a4bc`).
+   123	
+   124	## Timestamp parsing
+   125	
+   126	`timestamp` is parsed as **strict RFC3339** (`YYYY-MM-DDTHH:MM:SS(.frac)?(Z|±HH:MM)`)
+   127	to UTC epoch seconds at load time, and the **parsed epoch** — not the raw
+   128	string — is the ordering key for "latest run". A lexical string sort would
+   129	silently mis-order offset-bearing or differently-formatted timestamps and
+   130	thus pick the wrong "latest" run; instead, a timestamp that does not parse is
+   131	a **data-integrity failure (exit 2)**, surfaced loudly rather than tolerated.
+   132	The parser is dependency-free (the workspace pulls in no date crate); see
+   133	`parse_rfc3339_epoch` + its unit tests in the bin source. Ties on the same
+   134	instant break deterministically on `commit_sha`.
+   135	
+   136	## Exit codes
+   137	
+   138	| code | meaning |
+   139	|------|---------|
+   140	| `0`  | no regression flagged (includes all-insufficient-history) |
+   141	| `1`  | at least one group flagged a regression |
+   142	| `2`  | data missing or malformed (directory absent, unreadable JSON, record with no comparable metric, **or an unparseable timestamp**) |
+   143	
+   144	## Output
+   145	
+   146	- Default: human-readable report to stdout (one block per group; flagged
+   147	  groups marked clearly).
+   148	- `--json`: machine-parseable JSON object to stdout (per-group verdicts +
+   149	  an overall `flagged` boolean), for CI and tooling to consume.
+   150	
+   151	## CI integration (`.github/workflows/perf-canonical.yml`)
+   152	
+   153	After the AC-012 canonical run, the workflow builds and runs
+   154	`perf-regression-check dev/perf-history/`, echoes the report to the step log,
+   155	and writes it to **`$GITHUB_STEP_SUMMARY`**.
+   156	
+   157	- **Channel choice:** this workflow is **`workflow_dispatch`-only**, so there
+   158	  is no `pull_request`/`push` event to comment on — a PR-comment step would be
+   159	  dead code on every real run, and `pull-requests: write` would be an unused
+   160	  permission over-grant. The step summary is the `workflow_dispatch`-safe
+   161	  surface, always present, and visible on the run page. The workflow keeps
+   162	  only `contents: read`.
+   163	- Exit **1** (regression flagged): the step **continues** — the summary is
+   164	  the signal, not a hard failure. (A regression on a diagnostic dispatch run
+   165	  should not red-X the run; a human reads the summary.)
+   166	- Exit **2** (data integrity): the step **fails loudly** (`::error::` + non-zero
+   167	  exit) — malformed history is a real defect in the store and must block.
+   168	
+   169	The workflow stays `workflow_dispatch`-only (no push/PR/schedule triggers
+   170	added) and keeps within GitHub's workflow_dispatch input cap (≤ 8 inputs, per
+   171	the prior consolidation fix).
+   172	
+   173	## Backfill provenance
+   174	
+   175	The committed `dev/perf-history/` rows are backfilled from:
+   176	
+   177	- **AC-012 @ N=1M** — v0.6.1 canonical CI run `603a4bc` (run 26346417896,
+   178	  2026-05-23): p50=140.95, p99=458, verdict RED (over the 20/150 ADR
+   179	  budget). Source: `dev/notes/perf-canonical-runner-2026-MM.md`. **This is
+   180	  the only documented AC-012 canonical run → its group is sparse
+   181	  (insufficient history).** It is an honestly-RED historical point, not a
+   182	  regression the detector should flag (no prior to compare against).
+   183	- **AC-013b synthetic @ N=10000** — the 2026-05-27 PERF-VECTOR-QUANT recall
+   184	  arc (K=64 throughout), the full four-point sequence:
+   185	  - `035cfa3` (the buggy parent of the fix): recall **1.0** — **DEGENERATE**.
+   186	    The batch-collapse left ~10 distinct vec0 rows per 10K writes, so the
+   187	    brute-force ground truth and production both returned the same
+   188	    trivially-small set, making recall *falsely perfect*
+   189	    (`STATUS-perf-vector-quant.md:138`). This is a **measurement artifact, not
+   190	    a verdict** (so marked in the row's `note`).
+   191	  - `4a95cfd` (the fix) + scanner fix `53a270d`: recall **0.1572** — the
+   192	    *honest* number once the collapse was repaired. Low not because of the
+   193	    bug but because `VaryingEmbedder` produces sparse vectors (6/768 non-zero)
+   194	    — a synthetic-fixture pathology (`:143`).
+   195	  - `38f5e3a` (Option-1 dense fixture): recall **0.5124**.
+   196	  - `38d5f4f` (v0.7.0 ship): recall **0.5124** — AC-013b NOT MET on the
+   197	    synthetic fixture (deferred to 0.7.1 EMBEDDER-UNDEFER).
+   198	- **AC-013 / AC-013b / AC-019 real bge @ N=7667** and **AC-013 synthetic @
+   199	  N=10000 (K=192)** forward baseline — v0.7.1 / 0.7.2 (`c893d8b`, 2026-06-01) +
+   200	  PR-3 local data. Source: `dev/plans/runs/0.7.2-PR-3-perf-data.md`. AC-013
+   201	  rows are latency-only; AC-013b rows are recall-only (the two ACs measure
+   202	  different things).
+   203	
+   204	### Honesty note — what the batch-collapse bug actually did, and what this detector can and cannot catch
+   205	
+   206	The handoff success criterion says the bin should "flag the 2026-05-27
+   207	batch-collapse bug." Tracing the real numbers (`STATUS-perf-vector-quant.md`)
+   208	shows the premise needs correcting, and we record the truth rather than
+   209	contorting the data to fit it:
+   210	
+   211	**The batch-collapse bug masqueraded as an *improvement*, not a regression.**
+   212	With the index collapsed to ~10 rows, recall read a *false* 1.0 and latency
+   213	was *anomalously fast* (the bit-KNN searched a ~10-row partition instead of
+   214	10K). A degradation-only detector — flag recall *drops* and latency *rises*,
+   215	which is exactly what HITL locked — **structurally cannot flag that bug**;
+   216	the bug's signature is the opposite of a degradation. What the detector *does*
+   217	catch is the **regression-shaped correction** that follows: when `4a95cfd`
+   218	repaired the collapse, recall fell from the degenerate 1.0 to the honest
+   219	0.1572 — a 0.84 drop the detector flags (the `backfill-dirty` fixture proves
+   220	this; the flagged commit is the *fix*, `4a95cfd`, which is counter-intuitive
+   221	but honest). The committed store keeps the full arc; its latest run per group
+   222	(v0.7.0, 0.5124) is healthy, so the committed store itself is **clean**.
+   223	
+   224	Catching the *bug itself* would require a different check — a row-count /
+   225	vec0-population invariant, or an "implausible perfection" anomaly rule (recall
+   226	== 1.0 exactly, or latency falling as N rises). That is **deliberately out of
+   227	scope** for this degradation detector (it would expand past the HITL-locked
+   228	15%/0.03 thresholds and risk false positives on legitimately-perfect small-N
+   229	recall) and is logged here as **future work**.
+   230	
+   231	**The v0.6.1 AC-012 @ N=1M run was a real RED verdict** (7× over the p50
+   232	budget) — preserved faithfully in the store, not smoothed away. It does not
+   233	flag as a *regression* only because it is the sole point in its group
+   234	(insufficient history); its RED-ness is a separate budget fact recorded in
+   235	`perf-canonical-runner-2026-MM.md`.
+   236	
+   237	**Sparse history is the honest current state.** Because of the regime changes
+   238	above (K=64 → K=192, synthetic → real bge) and the once-per-release cadence,
+   239	most `(ac_id, n)` groups today hold a single comparable point and report
+   240	*insufficient-history*. The only group with a real multi-point comparison is
+   241	the K=64 AC-013b @ N=10000 arc. The store accrues comparability as new
+   242	canonical runs are appended on a stable regime; the detector is wired and
+   243	correct now, and gets more sensitive as history deepens.
+
+exec
+/bin/bash -lc 'git diff 41aa6b2 HEAD -- src/rust/crates/fathomdb-cli/Cargo.toml .github/workflows/perf-canonical.yml dev/design/perf-regression-detection.md src/rust/crates/fathomdb-cli/tests/fixtures dev/perf-history' in /tmp/fdb-PR-7-20260601T215338Z
+ succeeded in 0ms:
+diff --git a/.github/workflows/perf-canonical.yml b/.github/workflows/perf-canonical.yml
+index cfe335a..58df0bb 100644
+--- a/.github/workflows/perf-canonical.yml
++++ b/.github/workflows/perf-canonical.yml
+@@ -70,6 +70,10 @@ on:
+ 
+ permissions:
+   contents: read
++  # PR-7: this workflow is workflow_dispatch-only, so there is no PR/push event
++  # to comment on. The perf-regression-check verdict is surfaced via
++  # $GITHUB_STEP_SUMMARY (always available on dispatch). No pull-requests scope
++  # is requested — adding one would be an unused over-grant.
+ 
+ jobs:
+   ac012-canonical-measure:
+@@ -153,6 +157,44 @@ jobs:
+           name: perf-canonical-ac012-log
+           path: perf-canonical-ac012.log
+           retention-days: 30
++      # PR-7 — perf regression detection. Read the append-only
++      # dev/perf-history/ store, group by (ac_id, n), and flag the latest run
++      # vs the rolling median of prior runs. See
++      # dev/design/perf-regression-detection.md.
++      #   exit 0 = clean; exit 1 = regression flagged (NOT a hard fail — the
++      #   step-summary verdict is the signal); exit 2 = data integrity (fail loudly).
++      # This workflow is workflow_dispatch-only, so there is no PR to comment on:
++      # the report is written to $GITHUB_STEP_SUMMARY (the dispatch-safe channel)
++      # and the step log. A flagged regression (exit 1) is surfaced, not failed,
++      # so a human reads the summary; a data-integrity failure (exit 2) fails the
++      # step loudly.
++      - name: Perf regression check
++        id: perf_regression
++        if: always()
++        shell: bash
++        run: |
++          set +e
++          OUT="$(cargo run --quiet -p fathomdb-cli --bin perf-regression-check -- dev/perf-history)"
++          CODE=$?
++          echo "$OUT"
++          VERDICT="no regressions"
++          [ "$CODE" -eq 1 ] && VERDICT="⚠️ regression(s) flagged"
++          [ "$CODE" -eq 2 ] && VERDICT="❌ data missing/malformed (integrity failure)"
++          {
++            echo "## perf-regression-check"
++            echo ""
++            echo "**Verdict:** ${VERDICT} (exit ${CODE})"
++            echo ""
++            echo '```'
++            echo "$OUT"
++            echo '```'
++          } >> "$GITHUB_STEP_SUMMARY"
++          if [ "$CODE" -eq 2 ]; then
++            echo "::error::perf-regression-check exit 2 — perf-history data missing/malformed (integrity failure)"
++            exit 2
++          fi
++          # exit 0 or 1: do not fail the step; the step summary carries the signal.
++          exit 0
+       - name: Summarize verdict
+         if: always()
+         shell: bash
+diff --git a/dev/design/perf-regression-detection.md b/dev/design/perf-regression-detection.md
+new file mode 100644
+index 0000000..c122237
+--- /dev/null
++++ b/dev/design/perf-regression-detection.md
+@@ -0,0 +1,243 @@
++# Perf regression detection (0.7.2 PR-7)
++
++**Status:** landed (0.7.2 PR-7). Owns `dev/perf-history/` + the
++`perf-regression-check` binary (`fathomdb-cli` crate, layout (A) — a
++`[[bin]]` entry, NOT a new workspace crate).
++
++## Purpose
++
++Persist canonical-CI / release-time performance numbers per commit and
++surface regressions automatically with a deliberately **low false-positive
++rate**. The store is the ship-verdict history; the bin reads it, groups by
++`(ac_id, n)`, and compares the single most-recent run in each group against
++the rolling median of the prior runs in that group.
++
++## Append-only invariant
++
++`dev/perf-history/` is **append-only**. The `perf-regression-check` binary
++**only reads** the directory — it never writes, mutates, or deletes any
++file. New rows are written by CI (or by a human at release time, for the
++locally-measured AC-013 / AC-013b / AC-019 numbers). This keeps the history
++a tamper-evident, git-tracked audit trail: a regression is a new file whose
++numbers the bin flags, not an edit to an old file.
++
++## Record schema
++
++One JSON file per canonical run (filename convention:
++`<ac_id>-<commit_sha:8>-<n>.json`, e.g. `AC-013-c893d8b0-10000.json`). The
++bin globs `*.json` in the directory and parses each file as one record:
++
++```json
++{
++  "commit_sha": "c893d8b0",
++  "ac_id": "AC-013",
++  "n": 10000,
++  "p50_ms": 36.0,
++  "p99_ms": 49.0,
++  "recall": 0.937,
++  "timestamp": "2026-06-01T07:23:39Z"
++}
++```
++
++| field        | type            | required | notes |
++|--------------|-----------------|----------|-------|
++| `commit_sha` | string          | yes      | commit the run was measured at |
++| `ac_id`      | string          | yes      | `AC-012` \| `AC-013` \| `AC-013b` \| `AC-019` \| … |
++| `n`          | integer         | yes      | corpus row count; part of the grouping key |
++| `p50_ms`     | number          | no\*     | median latency; omit for recall-only ACs |
++| `p99_ms`     | number          | no\*     | tail latency; omit for recall-only ACs |
++| `recall`     | number \| null  | no       | recall@10; omit/null for latency-only ACs (AC-012, AC-019) |
++| `timestamp`  | RFC3339 string  | yes      | run time; used to pick the single latest run per group |
++
++\* A record must carry at least one comparable metric (a latency pair or a
++recall value), else it is malformed.
++
++**Forward-extensibility:** unknown fields are **ignored, not rejected**.
++Adding fields to the schema later does not break older readers or invalidate
++older files. (`serde` with default `deny_unknown_fields` OFF.)
++
++## Grouping — tier-aware
++
++Records are grouped by the **`(ac_id, n)`** pair. This is deliberate:
++
++- AC-013 @ N=10k is never compared against AC-013 @ N=100k (different
++  latency tier — see `ADR-0.7.0-text-query-latency-gates-revised.md`, the
++  10k binding tier vs the 100k/1M tracked tiers).
++- The real-corpus anchor (N=7667) is a **different group** from the
++  synthetic N=10000 run — real bge and synthetic isotropic data have
++  different absolute numbers and must not cross-contaminate a median.
++
++**Regime caveat (grouping is necessary but not sufficient).** `(ac_id, n)`
++does not capture every comparability axis. The K-sweep that landed in 0.7.1
++(top-K bit-candidates 64 → 192, the EU-7/PR-2 recall fix) raised rerank cost,
++so pre-0.7.1 (K=64) latency is **not** directly comparable to 0.7.1+ (K=192)
++latency even at the same `(ac_id, n)`. The committed store therefore does
++**not** mix K=64 and K=192 latency in one group — the synthetic AC-013 @
++N=10000 latency history begins at the K=192 PR-3 baseline (`c893d8b`). The
++K=64-era synthetic recall arc (AC-013b @ N=10000) is kept as one
++internally-consistent group because every point in it is K=64. When a future
++regime change (a new K, an ANN index) lands, start a fresh comparison rather
++than letting the detector flag the deliberate step as a regression.
++
++## Detection thresholds (HITL Gate 1 — LOCKED 2026-06-01)
++
++Per HITL sign-off on 2026-06-01, the thresholds are:
++
++| metric  | flag condition                                            |
++|---------|-----------------------------------------------------------|
++| latency | `p50` **or** `p99` degraded **> 15%** vs the rolling median |
++| recall  | recall degraded **> 0.03 absolute** vs the rolling median   |
++| window  | rolling median of the prior **up to 10** runs per group     |
++| latest  | the **single most-recent** run (by timestamp) per group     |
++
++**Rationale (false-positive resistance is the design priority — codex's
++review focus):**
++
++- Recall σ = **0.0116** (PR-3 measured, N=7667 anchor;
++  `0.7.2-PR-3-perf-data.md`). A **0.03** absolute threshold is ≈ **2.4σ**,
++  i.e. roughly a **~1% jitter false-flag rate** — the deliberate
++  low-cry-wolf choice. We would rather miss a marginal real drift than fire
++  on noise, because a fired flag costs human triage on every canonical run.
++- **Tradeoff acknowledged:** a 0.03 recall drop from the 0.937 anchor lands
++  at **0.907**, which is right above the **0.90** floor. So this threshold
++  favours **false-positive resistance over early-warning sensitivity**: a
++  recall decay that creeps toward the floor in <0.03 steps will not trip the
++  detector before it nears 0.90. That is an accepted limitation; the hard
++  recall floor is enforced separately by the AC-013b gate, not by this
++  drift detector.
++- **15% latency** allows for normal run-to-run variance on shared CI
++  hardware (the canonical runner is a 4-core EPYC slice; cold-cache and
++  neighbour-noise swing latency more than recall).
++
++The "latest = single most-recent run vs the median of the prior runs in the
++window" definition means a one-off bad run flags immediately (good for catch
++latency) but a single good run after a bad streak does not mask the streak
++(the median is robust to one outlier).
++
++## Insufficient history
++
++A group with **fewer than 2 runs** (i.e. no prior runs to form a median
++after removing the latest) is reported as **insufficient-history** — NOT a
++regression and NOT a crash. The AC-012 @ N=1M group is exactly this case
++today (one documented canonical run, v0.6.1 `603a4bc`).
++
++## Timestamp parsing
++
++`timestamp` is parsed as **strict RFC3339** (`YYYY-MM-DDTHH:MM:SS(.frac)?(Z|±HH:MM)`)
++to UTC epoch seconds at load time, and the **parsed epoch** — not the raw
++string — is the ordering key for "latest run". A lexical string sort would
++silently mis-order offset-bearing or differently-formatted timestamps and
++thus pick the wrong "latest" run; instead, a timestamp that does not parse is
++a **data-integrity failure (exit 2)**, surfaced loudly rather than tolerated.
++The parser is dependency-free (the workspace pulls in no date crate); see
++`parse_rfc3339_epoch` + its unit tests in the bin source. Ties on the same
++instant break deterministically on `commit_sha`.
++
++## Exit codes
++
++| code | meaning |
++|------|---------|
++| `0`  | no regression flagged (includes all-insufficient-history) |
++| `1`  | at least one group flagged a regression |
++| `2`  | data missing or malformed (directory absent, unreadable JSON, record with no comparable metric, **or an unparseable timestamp**) |
++
++## Output
++
++- Default: human-readable report to stdout (one block per group; flagged
++  groups marked clearly).
++- `--json`: machine-parseable JSON object to stdout (per-group verdicts +
++  an overall `flagged` boolean), for CI and tooling to consume.
++
++## CI integration (`.github/workflows/perf-canonical.yml`)
++
++After the AC-012 canonical run, the workflow builds and runs
++`perf-regression-check dev/perf-history/`, echoes the report to the step log,
++and writes it to **`$GITHUB_STEP_SUMMARY`**.
++
++- **Channel choice:** this workflow is **`workflow_dispatch`-only**, so there
++  is no `pull_request`/`push` event to comment on — a PR-comment step would be
++  dead code on every real run, and `pull-requests: write` would be an unused
++  permission over-grant. The step summary is the `workflow_dispatch`-safe
++  surface, always present, and visible on the run page. The workflow keeps
++  only `contents: read`.
++- Exit **1** (regression flagged): the step **continues** — the summary is
++  the signal, not a hard failure. (A regression on a diagnostic dispatch run
++  should not red-X the run; a human reads the summary.)
++- Exit **2** (data integrity): the step **fails loudly** (`::error::` + non-zero
++  exit) — malformed history is a real defect in the store and must block.
++
++The workflow stays `workflow_dispatch`-only (no push/PR/schedule triggers
++added) and keeps within GitHub's workflow_dispatch input cap (≤ 8 inputs, per
++the prior consolidation fix).
++
++## Backfill provenance
++
++The committed `dev/perf-history/` rows are backfilled from:
++
++- **AC-012 @ N=1M** — v0.6.1 canonical CI run `603a4bc` (run 26346417896,
++  2026-05-23): p50=140.95, p99=458, verdict RED (over the 20/150 ADR
++  budget). Source: `dev/notes/perf-canonical-runner-2026-MM.md`. **This is
++  the only documented AC-012 canonical run → its group is sparse
++  (insufficient history).** It is an honestly-RED historical point, not a
++  regression the detector should flag (no prior to compare against).
++- **AC-013b synthetic @ N=10000** — the 2026-05-27 PERF-VECTOR-QUANT recall
++  arc (K=64 throughout), the full four-point sequence:
++  - `035cfa3` (the buggy parent of the fix): recall **1.0** — **DEGENERATE**.
++    The batch-collapse left ~10 distinct vec0 rows per 10K writes, so the
++    brute-force ground truth and production both returned the same
++    trivially-small set, making recall *falsely perfect*
++    (`STATUS-perf-vector-quant.md:138`). This is a **measurement artifact, not
++    a verdict** (so marked in the row's `note`).
++  - `4a95cfd` (the fix) + scanner fix `53a270d`: recall **0.1572** — the
++    *honest* number once the collapse was repaired. Low not because of the
++    bug but because `VaryingEmbedder` produces sparse vectors (6/768 non-zero)
++    — a synthetic-fixture pathology (`:143`).
++  - `38f5e3a` (Option-1 dense fixture): recall **0.5124**.
++  - `38d5f4f` (v0.7.0 ship): recall **0.5124** — AC-013b NOT MET on the
++    synthetic fixture (deferred to 0.7.1 EMBEDDER-UNDEFER).
++- **AC-013 / AC-013b / AC-019 real bge @ N=7667** and **AC-013 synthetic @
++  N=10000 (K=192)** forward baseline — v0.7.1 / 0.7.2 (`c893d8b`, 2026-06-01) +
++  PR-3 local data. Source: `dev/plans/runs/0.7.2-PR-3-perf-data.md`. AC-013
++  rows are latency-only; AC-013b rows are recall-only (the two ACs measure
++  different things).
++
++### Honesty note — what the batch-collapse bug actually did, and what this detector can and cannot catch
++
++The handoff success criterion says the bin should "flag the 2026-05-27
++batch-collapse bug." Tracing the real numbers (`STATUS-perf-vector-quant.md`)
++shows the premise needs correcting, and we record the truth rather than
++contorting the data to fit it:
++
++**The batch-collapse bug masqueraded as an *improvement*, not a regression.**
++With the index collapsed to ~10 rows, recall read a *false* 1.0 and latency
++was *anomalously fast* (the bit-KNN searched a ~10-row partition instead of
++10K). A degradation-only detector — flag recall *drops* and latency *rises*,
++which is exactly what HITL locked — **structurally cannot flag that bug**;
++the bug's signature is the opposite of a degradation. What the detector *does*
++catch is the **regression-shaped correction** that follows: when `4a95cfd`
++repaired the collapse, recall fell from the degenerate 1.0 to the honest
++0.1572 — a 0.84 drop the detector flags (the `backfill-dirty` fixture proves
++this; the flagged commit is the *fix*, `4a95cfd`, which is counter-intuitive
++but honest). The committed store keeps the full arc; its latest run per group
++(v0.7.0, 0.5124) is healthy, so the committed store itself is **clean**.
++
++Catching the *bug itself* would require a different check — a row-count /
++vec0-population invariant, or an "implausible perfection" anomaly rule (recall
++== 1.0 exactly, or latency falling as N rises). That is **deliberately out of
++scope** for this degradation detector (it would expand past the HITL-locked
++15%/0.03 thresholds and risk false positives on legitimately-perfect small-N
++recall) and is logged here as **future work**.
++
++**The v0.6.1 AC-012 @ N=1M run was a real RED verdict** (7× over the p50
++budget) — preserved faithfully in the store, not smoothed away. It does not
++flag as a *regression* only because it is the sole point in its group
++(insufficient history); its RED-ness is a separate budget fact recorded in
++`perf-canonical-runner-2026-MM.md`.
++
++**Sparse history is the honest current state.** Because of the regime changes
++above (K=64 → K=192, synthetic → real bge) and the once-per-release cadence,
++most `(ac_id, n)` groups today hold a single comparable point and report
++*insufficient-history*. The only group with a real multi-point comparison is
++the K=64 AC-013b @ N=10000 arc. The store accrues comparability as new
++canonical runs are appended on a stable regime; the detector is wired and
++correct now, and gets more sensitive as history deepens.
+diff --git a/dev/perf-history/AC-012-603a4bc0-1000000.json b/dev/perf-history/AC-012-603a4bc0-1000000.json
+new file mode 100644
+index 0000000..006c783
+--- /dev/null
++++ b/dev/perf-history/AC-012-603a4bc0-1000000.json
+@@ -0,0 +1 @@
++{ "commit_sha": "603a4bc0", "ac_id": "AC-012", "n": 1000000, "p50_ms": 140.95, "p99_ms": 458.0, "timestamp": "2026-05-23T23:40:28Z", "note": "0.6.1 canonical-CI re-measurement (run 26346417896). RED vs the 0.6.0 ADR budget (p50 <=20, p99 <=150) — 7x/3x over. Honest historical anchor; sole point in its (AC-012, 1000000) group, so the detector reports insufficient-history rather than a regression. See dev/notes/perf-canonical-runner-2026-MM.md." }
+diff --git a/dev/perf-history/AC-013-c893d8b0-10000.json b/dev/perf-history/AC-013-c893d8b0-10000.json
+new file mode 100644
+index 0000000..da6d4d7
+--- /dev/null
++++ b/dev/perf-history/AC-013-c893d8b0-10000.json
+@@ -0,0 +1 @@
++{ "commit_sha": "c893d8b0", "ac_id": "AC-013", "n": 10000, "p50_ms": 15.0, "p99_ms": 17.0, "timestamp": "2026-06-01T07:23:39Z" }
+diff --git a/dev/perf-history/AC-013-c893d8b0-7667.json b/dev/perf-history/AC-013-c893d8b0-7667.json
+new file mode 100644
+index 0000000..7236ae2
+--- /dev/null
++++ b/dev/perf-history/AC-013-c893d8b0-7667.json
+@@ -0,0 +1 @@
++{ "commit_sha": "c893d8b0", "ac_id": "AC-013", "n": 7667, "p50_ms": 36.0, "p99_ms": 49.0, "timestamp": "2026-06-01T07:23:39Z", "note": "Real bge-small-en-v1.5 (dim 384, K=192) over the all-real corpus, PR-3 local measurement. AC-013 latency 10k-tier MET (p50 36 / p99 49 vs 80/300). Recall for this run lives in AC-013b-c893d8b0-7667." }
+diff --git a/dev/perf-history/AC-013b-035cfa30-10000.json b/dev/perf-history/AC-013b-035cfa30-10000.json
+new file mode 100644
+index 0000000..0e7123a
+--- /dev/null
++++ b/dev/perf-history/AC-013b-035cfa30-10000.json
+@@ -0,0 +1 @@
++{ "commit_sha": "035cfa30", "ac_id": "AC-013b", "n": 10000, "recall": 1.0, "timestamp": "2026-05-27T21:47:35Z", "note": "DEGENERATE — batch-collapse bug (035cfa3 is the parent of fix 4a95cfd) left ~10 distinct vec0 rows per 10K writes; brute-force GT and production returned the same trivially-small set, so recall=1.0 is a measurement artifact, NOT a real verdict. Retained for the faithful arc: the bug masqueraded as an IMPROVEMENT, so this degradation detector flags the regression-shaped correction that follows it, not the bug itself (see dev/design/perf-regression-detection.md)." }
+diff --git a/dev/perf-history/AC-013b-38d5f4f0-10000.json b/dev/perf-history/AC-013b-38d5f4f0-10000.json
+new file mode 100644
+index 0000000..50f8a1e
+--- /dev/null
++++ b/dev/perf-history/AC-013b-38d5f4f0-10000.json
+@@ -0,0 +1 @@
++{ "commit_sha": "38d5f4f0", "ac_id": "AC-013b", "n": 10000, "recall": 0.5124, "timestamp": "2026-05-28T01:18:00Z", "note": "v0.7.0 ship verdict — Option 1 dense-isotropic fixture. AC-013b NOT MET on the synthetic fixture (deferred to 0.7.1 EMBEDDER-UNDEFER, where the real bge measurement at n=7667 reaches 0.937)." }
+diff --git a/dev/perf-history/AC-013b-38f5e3a0-10000.json b/dev/perf-history/AC-013b-38f5e3a0-10000.json
+new file mode 100644
+index 0000000..e2c3a05
+--- /dev/null
++++ b/dev/perf-history/AC-013b-38f5e3a0-10000.json
+@@ -0,0 +1 @@
++{ "commit_sha": "38f5e3a0", "ac_id": "AC-013b", "n": 10000, "recall": 0.5124, "timestamp": "2026-05-28T01:10:18Z", "note": "Option 1 dense-isotropic VaryingEmbedder fixture for AC-013b (test commit 38f5e3a, 2026-05-27). 3.3x recall over the sparse 0.1572 isotropic; still < 0.90 (synthetic noise-limited)." }
+diff --git a/dev/perf-history/AC-013b-4a95cfd0-10000.json b/dev/perf-history/AC-013b-4a95cfd0-10000.json
+new file mode 100644
+index 0000000..3739b21
+--- /dev/null
++++ b/dev/perf-history/AC-013b-4a95cfd0-10000.json
+@@ -0,0 +1 @@
++{ "commit_sha": "4a95cfd0", "ac_id": "AC-013b", "n": 10000, "recall": 0.1572, "timestamp": "2026-05-27T21:54:27Z", "note": "Honest isotropic-fixture recall after the batch-collapse fix (4a95cfd) + scanner fix (53a270d). NOT MET (< 0.90 floor) — VaryingEmbedder produces sparse vectors (6/768 non-zero), a known synthetic-fixture pathology, not a Pack-2 SQL fault. The 0.84 drop from the prior degenerate 1.0 is what the detector flags." }
+diff --git a/dev/perf-history/AC-013b-c893d8b0-7667.json b/dev/perf-history/AC-013b-c893d8b0-7667.json
+new file mode 100644
+index 0000000..0886718
+--- /dev/null
++++ b/dev/perf-history/AC-013b-c893d8b0-7667.json
+@@ -0,0 +1 @@
++{ "commit_sha": "c893d8b0", "ac_id": "AC-013b", "n": 7667, "recall": 0.937, "timestamp": "2026-06-01T07:23:39Z" }
+diff --git a/dev/perf-history/AC-019-c893d8b0-7667.json b/dev/perf-history/AC-019-c893d8b0-7667.json
+new file mode 100644
+index 0000000..b49a2ff
+--- /dev/null
++++ b/dev/perf-history/AC-019-c893d8b0-7667.json
+@@ -0,0 +1 @@
++{ "commit_sha": "c893d8b0", "ac_id": "AC-019", "n": 7667, "p99_ms": 343.0, "timestamp": "2026-06-01T07:23:39Z" }
+diff --git a/dev/perf-history/README.md b/dev/perf-history/README.md
+new file mode 100644
+index 0000000..c8ba727
+--- /dev/null
++++ b/dev/perf-history/README.md
+@@ -0,0 +1,41 @@
++# `dev/perf-history/` — append-only canonical perf history
++
++One JSON file per canonical / release-time performance run. The
++`perf-regression-check` binary (`fathomdb-cli` crate) reads this directory,
++groups records by `(ac_id, n)`, and flags regressions of the most-recent run
++in each group against the rolling median of the prior runs.
++
++**This directory is append-only.** The bin only ever *reads* it; CI (or a
++human, for the locally-measured AC-013/AC-013b/AC-019 numbers) *writes* new
++files. Never edit or delete an existing row — a regression is a new file
++whose numbers the bin flags, not a mutation of history.
++
++Filename convention: `<ac_id>-<commit_sha:8>-<n>.json`
++(e.g. `AC-013-c893d8b0-10000.json`).
++
++Schema, thresholds, and provenance: `dev/design/perf-regression-detection.md`.
++
++```json
++{
++  "commit_sha": "c893d8b0",
++  "ac_id": "AC-013",
++  "n": 10000,
++  "p50_ms": 36.0,
++  "p99_ms": 49.0,
++  "recall": 0.937,
++  "timestamp": "2026-06-01T07:23:39Z"
++}
++```
++
++Unknown fields are ignored (forward-extensible) — e.g. the optional `note`
++field used to annotate provenance / artifacts is not interpreted by the bin.
++`recall` is omitted/null for latency-only ACs (AC-012, AC-019);
++`p50_ms`/`p99_ms` are omitted for recall-only ACs (AC-013b). `timestamp` must
++be strict RFC3339 — an unparseable one is a data-integrity failure (exit 2),
++because the parsed instant (not the raw string) selects the latest run.
++
++The 2026-05-27 `AC-013b` arc records a known artifact: the batch-collapse bug
++(`035cfa3`) read a *degenerate* recall=1.0 (it masqueraded as perfection), and
++the fix (`4a95cfd`) revealed the honest 0.1572. See the honesty note in
++`dev/design/perf-regression-detection.md` — a degradation detector flags the
++*correction*, not the bug itself.
+diff --git a/src/rust/crates/fathomdb-cli/Cargo.toml b/src/rust/crates/fathomdb-cli/Cargo.toml
+index 8981338..99de541 100644
+--- a/src/rust/crates/fathomdb-cli/Cargo.toml
++++ b/src/rust/crates/fathomdb-cli/Cargo.toml
+@@ -14,10 +14,18 @@ path = "src/lib.rs"
+ name = "fathomdb"
+ path = "src/main.rs"
+ 
++# 0.7.2 PR-7 — perf regression detector. Reads dev/perf-history/, groups by
++# (ac_id, n), flags the latest run vs the rolling median of prior runs.
++# See dev/design/perf-regression-detection.md.
++[[bin]]
++name = "perf-regression-check"
++path = "src/bin/perf-regression-check.rs"
++
+ [dependencies]
+ clap = { version = "4.5", features = ["derive"] }
+ fathomdb.workspace = true
+ fathomdb-embedder.workspace = true
++serde = { version = "1", features = ["derive"] }
+ serde_json = "1"
+ 
+ [features]
+diff --git a/src/rust/crates/fathomdb-cli/tests/fixtures/backfill-clean/AC-013-aaaaaaa0-7667.json b/src/rust/crates/fathomdb-cli/tests/fixtures/backfill-clean/AC-013-aaaaaaa0-7667.json
+new file mode 100644
+index 0000000..c315ee8
+--- /dev/null
++++ b/src/rust/crates/fathomdb-cli/tests/fixtures/backfill-clean/AC-013-aaaaaaa0-7667.json
+@@ -0,0 +1 @@
++{ "commit_sha": "aaaaaaa0", "ac_id": "AC-013", "n": 7667, "p50_ms": 35.0, "p99_ms": 48.0, "recall": 0.940, "timestamp": "2026-05-31T07:00:00Z" }
+diff --git a/src/rust/crates/fathomdb-cli/tests/fixtures/backfill-clean/AC-013-c893d8b0-7667.json b/src/rust/crates/fathomdb-cli/tests/fixtures/backfill-clean/AC-013-c893d8b0-7667.json
+new file mode 100644
+index 0000000..0c66e6f
+--- /dev/null
++++ b/src/rust/crates/fathomdb-cli/tests/fixtures/backfill-clean/AC-013-c893d8b0-7667.json
+@@ -0,0 +1 @@
++{ "commit_sha": "c893d8b0", "ac_id": "AC-013", "n": 7667, "p50_ms": 36.0, "p99_ms": 49.0, "recall": 0.937, "timestamp": "2026-06-01T07:23:39Z" }
+diff --git a/src/rust/crates/fathomdb-cli/tests/fixtures/backfill-clean/AC-013b-38d5f4f0-10000.json b/src/rust/crates/fathomdb-cli/tests/fixtures/backfill-clean/AC-013b-38d5f4f0-10000.json
+new file mode 100644
+index 0000000..9644aef
+--- /dev/null
++++ b/src/rust/crates/fathomdb-cli/tests/fixtures/backfill-clean/AC-013b-38d5f4f0-10000.json
+@@ -0,0 +1 @@
++{ "commit_sha": "38d5f4f0", "ac_id": "AC-013b", "n": 10000, "recall": 0.5124, "timestamp": "2026-05-28T01:18:00Z" }
+diff --git a/src/rust/crates/fathomdb-cli/tests/fixtures/backfill-clean/AC-013b-38f5e3a0-10000.json b/src/rust/crates/fathomdb-cli/tests/fixtures/backfill-clean/AC-013b-38f5e3a0-10000.json
+new file mode 100644
+index 0000000..92d5c6b
+--- /dev/null
++++ b/src/rust/crates/fathomdb-cli/tests/fixtures/backfill-clean/AC-013b-38f5e3a0-10000.json
+@@ -0,0 +1 @@
++{ "commit_sha": "38f5e3a0", "ac_id": "AC-013b", "n": 10000, "recall": 0.5124, "timestamp": "2026-05-28T01:10:18Z" }
+diff --git a/src/rust/crates/fathomdb-cli/tests/fixtures/backfill-dirty/AC-013b-035cfa30-10000.json b/src/rust/crates/fathomdb-cli/tests/fixtures/backfill-dirty/AC-013b-035cfa30-10000.json
+new file mode 100644
+index 0000000..6894933
+--- /dev/null
++++ b/src/rust/crates/fathomdb-cli/tests/fixtures/backfill-dirty/AC-013b-035cfa30-10000.json
+@@ -0,0 +1 @@
++{ "commit_sha": "035cfa30", "ac_id": "AC-013b", "n": 10000, "recall": 1.0, "timestamp": "2026-05-27T21:47:35Z" }
+diff --git a/src/rust/crates/fathomdb-cli/tests/fixtures/backfill-dirty/AC-013b-4a95cfd0-10000.json b/src/rust/crates/fathomdb-cli/tests/fixtures/backfill-dirty/AC-013b-4a95cfd0-10000.json
+new file mode 100644
+index 0000000..0c78609
+--- /dev/null
++++ b/src/rust/crates/fathomdb-cli/tests/fixtures/backfill-dirty/AC-013b-4a95cfd0-10000.json
+@@ -0,0 +1 @@
++{ "commit_sha": "4a95cfd0", "ac_id": "AC-013b", "n": 10000, "recall": 0.1572, "timestamp": "2026-05-27T21:54:27Z" }
+diff --git a/src/rust/crates/fathomdb-cli/tests/fixtures/insufficient/AC-012-603a4bc0-1000000.json b/src/rust/crates/fathomdb-cli/tests/fixtures/insufficient/AC-012-603a4bc0-1000000.json
+new file mode 100644
+index 0000000..1c54335
+--- /dev/null
++++ b/src/rust/crates/fathomdb-cli/tests/fixtures/insufficient/AC-012-603a4bc0-1000000.json
+@@ -0,0 +1 @@
++{ "commit_sha": "603a4bc0", "ac_id": "AC-012", "n": 1000000, "p50_ms": 140.95, "p99_ms": 458.0, "timestamp": "2026-05-23T00:00:00Z" }
+diff --git a/src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013-bbb00001-10000.json b/src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013-bbb00001-10000.json
+new file mode 100644
+index 0000000..27e9f84
+--- /dev/null
++++ b/src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013-bbb00001-10000.json
+@@ -0,0 +1 @@
++{ "commit_sha": "bbb00001", "ac_id": "AC-013", "n": 10000, "p50_ms": 15.0, "p99_ms": 17.0, "timestamp": "2026-02-01T00:00:00Z" }
+diff --git a/src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013-bbb00002-10000.json b/src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013-bbb00002-10000.json
+new file mode 100644
+index 0000000..a3928c3
+--- /dev/null
++++ b/src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013-bbb00002-10000.json
+@@ -0,0 +1 @@
++{ "commit_sha": "bbb00002", "ac_id": "AC-013", "n": 10000, "p50_ms": 15.5, "p99_ms": 17.5, "timestamp": "2026-02-02T00:00:00Z" }
+diff --git a/src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013-bbb00003-10000.json b/src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013-bbb00003-10000.json
+new file mode 100644
+index 0000000..d38daea
+--- /dev/null
++++ b/src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013-bbb00003-10000.json
+@@ -0,0 +1 @@
++{ "commit_sha": "bbb00003", "ac_id": "AC-013", "n": 10000, "p50_ms": 14.6, "p99_ms": 16.5, "timestamp": "2026-02-03T00:00:00Z" }
+diff --git a/src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013-bbb00004-10000.json b/src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013-bbb00004-10000.json
+new file mode 100644
+index 0000000..3f768a2
+--- /dev/null
++++ b/src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013-bbb00004-10000.json
+@@ -0,0 +1 @@
++{ "commit_sha": "bbb00004", "ac_id": "AC-013", "n": 10000, "p50_ms": 16.0, "p99_ms": 18.0, "timestamp": "2026-02-04T00:00:00Z" }
+diff --git a/src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013b-bbb10001-7667.json b/src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013b-bbb10001-7667.json
+new file mode 100644
+index 0000000..0b99425
+--- /dev/null
++++ b/src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013b-bbb10001-7667.json
+@@ -0,0 +1 @@
++{ "commit_sha": "bbb10001", "ac_id": "AC-013b", "n": 7667, "recall": 0.937, "timestamp": "2026-02-01T00:00:00Z" }
+diff --git a/src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013b-bbb10002-7667.json b/src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013b-bbb10002-7667.json
+new file mode 100644
+index 0000000..671d0e5
+--- /dev/null
++++ b/src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013b-bbb10002-7667.json
+@@ -0,0 +1 @@
++{ "commit_sha": "bbb10002", "ac_id": "AC-013b", "n": 7667, "recall": 0.945, "timestamp": "2026-02-02T00:00:00Z" }
+diff --git a/src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013b-bbb10003-7667.json b/src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013b-bbb10003-7667.json
+new file mode 100644
+index 0000000..36bb666
+--- /dev/null
++++ b/src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013b-bbb10003-7667.json
+@@ -0,0 +1 @@
++{ "commit_sha": "bbb10003", "ac_id": "AC-013b", "n": 7667, "recall": 0.928, "timestamp": "2026-02-03T00:00:00Z" }
+diff --git a/src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013b-bbb10004-7667.json b/src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013b-bbb10004-7667.json
+new file mode 100644
+index 0000000..a245a8e
+--- /dev/null
++++ b/src/rust/crates/fathomdb-cli/tests/fixtures/jitter/AC-013b-bbb10004-7667.json
+@@ -0,0 +1 @@
++{ "commit_sha": "bbb10004", "ac_id": "AC-013b", "n": 7667, "recall": 0.920, "timestamp": "2026-02-04T00:00:00Z" }
+diff --git a/src/rust/crates/fathomdb-cli/tests/fixtures/malformed-timestamp/AC-013-feedface-10000.json b/src/rust/crates/fathomdb-cli/tests/fixtures/malformed-timestamp/AC-013-feedface-10000.json
+new file mode 100644
+index 0000000..b4687dc
+--- /dev/null
++++ b/src/rust/crates/fathomdb-cli/tests/fixtures/malformed-timestamp/AC-013-feedface-10000.json
+@@ -0,0 +1 @@
++{ "commit_sha": "feedface", "ac_id": "AC-013", "n": 10000, "p50_ms": 15.0, "p99_ms": 17.0, "timestamp": "2026-05-27 19:00:00" }
+diff --git a/src/rust/crates/fathomdb-cli/tests/fixtures/malformed/AC-013-deadbeef-10000.json b/src/rust/crates/fathomdb-cli/tests/fixtures/malformed/AC-013-deadbeef-10000.json
+new file mode 100644
+index 0000000..262d245
+--- /dev/null
++++ b/src/rust/crates/fathomdb-cli/tests/fixtures/malformed/AC-013-deadbeef-10000.json
+@@ -0,0 +1 @@
++{ "commit_sha": "deadbeef", "ac_id": "AC-013", "n": 10000, "p50_ms": "not-a-number", "timestamp": "2026-03-01T00:00:00Z" }
+diff --git a/src/rust/crates/fathomdb-cli/tests/fixtures/regression/AC-013-aaa00001-10000.json b/src/rust/crates/fathomdb-cli/tests/fixtures/regression/AC-013-aaa00001-10000.json
+new file mode 100644
+index 0000000..8096c19
+--- /dev/null
++++ b/src/rust/crates/fathomdb-cli/tests/fixtures/regression/AC-013-aaa00001-10000.json
+@@ -0,0 +1 @@
++{ "commit_sha": "aaa00001", "ac_id": "AC-013", "n": 10000, "p50_ms": 15.0, "p99_ms": 17.0, "timestamp": "2026-01-01T00:00:00Z" }
+diff --git a/src/rust/crates/fathomdb-cli/tests/fixtures/regression/AC-013-aaa00002-10000.json b/src/rust/crates/fathomdb-cli/tests/fixtures/regression/AC-013-aaa00002-10000.json
+new file mode 100644
+index 0000000..9f56e2e
+--- /dev/null
++++ b/src/rust/crates/fathomdb-cli/tests/fixtures/regression/AC-013-aaa00002-10000.json
+@@ -0,0 +1 @@
++{ "commit_sha": "aaa00002", "ac_id": "AC-013", "n": 10000, "p50_ms": 15.0, "p99_ms": 18.0, "timestamp": "2026-01-02T00:00:00Z" }
+diff --git a/src/rust/crates/fathomdb-cli/tests/fixtures/regression/AC-013-aaa00003-10000.json b/src/rust/crates/fathomdb-cli/tests/fixtures/regression/AC-013-aaa00003-10000.json
+new file mode 100644
+index 0000000..73e7429
+--- /dev/null
++++ b/src/rust/crates/fathomdb-cli/tests/fixtures/regression/AC-013-aaa00003-10000.json
+@@ -0,0 +1 @@
++{ "commit_sha": "aaa00003", "ac_id": "AC-013", "n": 10000, "p50_ms": 16.0, "p99_ms": 17.0, "timestamp": "2026-01-03T00:00:00Z" }
+diff --git a/src/rust/crates/fathomdb-cli/tests/fixtures/regression/AC-013-aaa00004-10000.json b/src/rust/crates/fathomdb-cli/tests/fixtures/regression/AC-013-aaa00004-10000.json
+new file mode 100644
+index 0000000..ffef80d
+--- /dev/null
++++ b/src/rust/crates/fathomdb-cli/tests/fixtures/regression/AC-013-aaa00004-10000.json
+@@ -0,0 +1 @@
++{ "commit_sha": "aaa00004", "ac_id": "AC-013", "n": 10000, "p50_ms": 25.0, "p99_ms": 30.0, "timestamp": "2026-01-04T00:00:00Z" }
+
+codex
+**Findings**
+1. `parse_rfc3339_epoch` is still not strict RFC3339, so the pass-2 parser blocker is not fully closed. The new code now rejects the specific cases you called out: impossible dates, out-of-range zone offsets, and bad fractional-second suffixes. But it still accepts malformed non-canonical shapes because it only splits and numeric-parses components, without enforcing fixed widths for year/month/day/time/offset fields. By inspection, forms like `2026-6-1T7:3:9Z`, `2026-06-01T07:23:39+5:00`, and `12026-06-01T07:23:39Z` would pass the current checks at [perf-regression-check.rs](/tmp/fdb-PR-7-20260601T215338Z/src/rust/crates/fathomdb-cli/src/bin/perf-regression-check.rs:132), [perf-regression-check.rs](/tmp/fdb-PR-7-20260601T215338Z/src/rust/crates/fathomdb-cli/src/bin/perf-regression-check.rs:165), and [perf-regression-check.rs](/tmp/fdb-PR-7-20260601T215338Z/src/rust/crates/fathomdb-cli/src/bin/perf-regression-check.rs:187), then be treated as valid history rows by [perf-regression-check.rs](/tmp/fdb-PR-7-20260601T215338Z/src/rust/crates/fathomdb-cli/src/bin/perf-regression-check.rs:224). That contradicts the documented “strict RFC3339” contract in [perf-regression-detection.md](/tmp/fdb-PR-7-20260601T215338Z/dev/design/perf-regression-detection.md:124). The unit tests do cover the newly added pass-2 cases, but they do not cover these remaining lenient paths: [perf-regression-check.rs](/tmp/fdb-PR-7-20260601T215338Z/src/rust/crates/fathomdb-cli/src/bin/perf-regression-check.rs:516) and [perf-regression-check.rs](/tmp/fdb-PR-7-20260601T215338Z/src/rust/crates/fathomdb-cli/src/bin/perf-regression-check.rs:529).
+
+The rest of the slice looked aligned on static re-scan: latest-vs-prior windowing/off-by-one, exit-code mapping, append-only read-only behavior, `(ac_id, n)` grouping, and unknown-field tolerance for `note` all read correctly in the diff. I could not re-run `cargo test`, `clippy`, or `actionlint` in this harness because the sandbox is read-only and denied writes even under `/tmp`, so this pass is based on code/diff inspection rather than live execution.
+
+VERDICT: BLOCK
+tokens used
+179,939
+**Findings**
+1. `parse_rfc3339_epoch` is still not strict RFC3339, so the pass-2 parser blocker is not fully closed. The new code now rejects the specific cases you called out: impossible dates, out-of-range zone offsets, and bad fractional-second suffixes. But it still accepts malformed non-canonical shapes because it only splits and numeric-parses components, without enforcing fixed widths for year/month/day/time/offset fields. By inspection, forms like `2026-6-1T7:3:9Z`, `2026-06-01T07:23:39+5:00`, and `12026-06-01T07:23:39Z` would pass the current checks at [perf-regression-check.rs](/tmp/fdb-PR-7-20260601T215338Z/src/rust/crates/fathomdb-cli/src/bin/perf-regression-check.rs:132), [perf-regression-check.rs](/tmp/fdb-PR-7-20260601T215338Z/src/rust/crates/fathomdb-cli/src/bin/perf-regression-check.rs:165), and [perf-regression-check.rs](/tmp/fdb-PR-7-20260601T215338Z/src/rust/crates/fathomdb-cli/src/bin/perf-regression-check.rs:187), then be treated as valid history rows by [perf-regression-check.rs](/tmp/fdb-PR-7-20260601T215338Z/src/rust/crates/fathomdb-cli/src/bin/perf-regression-check.rs:224). That contradicts the documented “strict RFC3339” contract in [perf-regression-detection.md](/tmp/fdb-PR-7-20260601T215338Z/dev/design/perf-regression-detection.md:124). The unit tests do cover the newly added pass-2 cases, but they do not cover these remaining lenient paths: [perf-regression-check.rs](/tmp/fdb-PR-7-20260601T215338Z/src/rust/crates/fathomdb-cli/src/bin/perf-regression-check.rs:516) and [perf-regression-check.rs](/tmp/fdb-PR-7-20260601T215338Z/src/rust/crates/fathomdb-cli/src/bin/perf-regression-check.rs:529).
+
+The rest of the slice looked aligned on static re-scan: latest-vs-prior windowing/off-by-one, exit-code mapping, append-only read-only behavior, `(ac_id, n)` grouping, and unknown-field tolerance for `note` all read correctly in the diff. I could not re-run `cargo test`, `clippy`, or `actionlint` in this harness because the sandbox is read-only and denied writes even under `/tmp`, so this pass is based on code/diff inspection rather than live execution.
+
+VERDICT: BLOCK

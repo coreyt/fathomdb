@@ -120,22 +120,35 @@ struct Record {
     ts_epoch: i64,
 }
 
+/// Parse exactly `width` ASCII digits to an integer. Enforces the fixed-width,
+/// digits-only shape RFC3339 mandates for each field (so `7`, `+7`, `007`, or a
+/// 5-digit year are all rejected — only `07` / `2026`-style fields pass).
+fn fixed_digits(field: &str, width: usize) -> Option<i64> {
+    if field.len() == width && field.bytes().all(|b| b.is_ascii_digit()) {
+        field.parse().ok()
+    } else {
+        None
+    }
+}
+
 /// Parse a strict RFC3339 timestamp to UTC epoch seconds for ordering.
 ///
-/// Accepts `YYYY-MM-DDTHH:MM:SS(.fraction)?(Z|±HH:MM)`. Any deviation returns
-/// `Err`, so a malformed timestamp fails loudly (exit 2) instead of corrupting
-/// "latest by timestamp" via a lexical string sort. Dependency-free (the
-/// workspace pulls in no date crate); uses Howard Hinnant's days-from-civil
-/// algorithm for the proleptic-Gregorian day count.
+/// Accepts only the canonical fixed-width form
+/// `YYYY-MM-DDTHH:MM:SS(.fraction)?(Z|±HH:MM)`. Any deviation — wrong field
+/// width, non-digit field, impossible date, out-of-range offset, malformed
+/// fraction — returns `Err`, so a bad timestamp fails loudly (exit 2) instead
+/// of corrupting "latest by timestamp" via a lexical string sort.
+/// Dependency-free (the workspace pulls in no date crate); uses Howard
+/// Hinnant's days-from-civil algorithm for the proleptic-Gregorian day count.
 fn parse_rfc3339_epoch(s: &str) -> Result<i64, String> {
     let (date, rest) = s.split_once('T').ok_or_else(|| format!("missing 'T': {s}"))?;
     let d: Vec<&str> = date.split('-').collect();
     if d.len() != 3 {
         return Err(format!("bad date: {s}"));
     }
-    let year: i64 = d[0].parse().map_err(|_| format!("bad year: {s}"))?;
-    let month: i64 = d[1].parse().map_err(|_| format!("bad month: {s}"))?;
-    let day: i64 = d[2].parse().map_err(|_| format!("bad day: {s}"))?;
+    let year = fixed_digits(d[0], 4).ok_or_else(|| format!("bad year (need YYYY): {s}"))?;
+    let month = fixed_digits(d[1], 2).ok_or_else(|| format!("bad month (need MM): {s}"))?;
+    let day = fixed_digits(d[2], 2).ok_or_else(|| format!("bad day (need DD): {s}"))?;
     if !(1..=12).contains(&month) {
         return Err(format!("month out of range: {s}"));
     }
@@ -163,8 +176,8 @@ fn parse_rfc3339_epoch(s: &str) -> Result<i64, String> {
         let (t, off) = rest.split_at(sign_idx);
         let sign = if off.starts_with('-') { -1 } else { 1 };
         let (oh, om) = off[1..].split_once(':').ok_or_else(|| format!("bad zone offset: {s}"))?;
-        let oh: i64 = oh.parse().map_err(|_| format!("bad offset hour: {s}"))?;
-        let om: i64 = om.parse().map_err(|_| format!("bad offset minute: {s}"))?;
+        let oh = fixed_digits(oh, 2).ok_or_else(|| format!("bad offset hour (need HH): {s}"))?;
+        let om = fixed_digits(om, 2).ok_or_else(|| format!("bad offset minute (need MM): {s}"))?;
         if oh > 23 || om > 59 {
             return Err(format!("zone offset out of range: {s}"));
         }
@@ -188,9 +201,9 @@ fn parse_rfc3339_epoch(s: &str) -> Result<i64, String> {
     if tp.len() != 3 {
         return Err(format!("bad time: {s}"));
     }
-    let hh: i64 = tp[0].parse().map_err(|_| format!("bad hour: {s}"))?;
-    let mi: i64 = tp[1].parse().map_err(|_| format!("bad minute: {s}"))?;
-    let ss: i64 = tp[2].parse().map_err(|_| format!("bad second: {s}"))?;
+    let hh = fixed_digits(tp[0], 2).ok_or_else(|| format!("bad hour (need HH): {s}"))?;
+    let mi = fixed_digits(tp[1], 2).ok_or_else(|| format!("bad minute (need MM): {s}"))?;
+    let ss = fixed_digits(tp[2], 2).ok_or_else(|| format!("bad second (need SS): {s}"))?;
     if hh > 23 || mi > 59 || ss > 60 {
         return Err(format!("time out of range: {s}"));
     }
@@ -541,6 +554,10 @@ mod tests {
             "2026-05-27T21:54:27-05:99", // offset minute out of range
             "2026-06-01T07:23:39.badZ",  // non-digit fractional seconds
             "2026-06-01T07:23:39.Z",     // empty fractional seconds
+            "2026-6-1T7:3:9Z",           // non-canonical field widths
+            "2026-06-01T07:23:39+5:00",  // 1-digit offset hour
+            "12026-06-01T07:23:39Z",     // 5-digit year
+            "2026-06-01T07:23:39+7Z",    // missing offset colon / width
         ] {
             assert!(parse_rfc3339_epoch(bad).is_err(), "should reject: {bad}");
         }
