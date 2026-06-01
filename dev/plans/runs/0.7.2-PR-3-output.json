@@ -3,12 +3,12 @@
   "title": "Real-corpus latency/recall measurement + tiered ADR (canonical-CI dispatch reframed to local)",
   "baseline_sha": "25ab3ee",
   "branch": "main",
-  "head_sha": "8dbe0da",
+  "head_sha": "68e1bf0",
   "commits_local_main": [
     "d9f9b65 — test(0.7.2): PR-3 tiered budget + local-measurement reframe (initial)",
-    "8dbe0da — fix(0.7.2): PR-3 codex BLOCK remediation — FTS-isolate the read-path smoke + closure consistency"
+    "68e1bf0 — fix(0.7.2): PR-3 codex BLOCK remediation — FTS-isolate the read-path smoke + closure consistency"
   ],
-  "land_status": "Committed on local `main` (d9f9b65 then fix 92e9b1c after codex BLOCK); NOT pushed (campaign-wide hard constraint: no push without explicit HITL OK). codex re-review after the BLOCK fix.",
+  "land_status": "Committed on local `main` (d9f9b65 then fix 68e1bf0 after codex BLOCK); NOT pushed (campaign-wide hard constraint: no push without explicit HITL OK). codex re-review after the BLOCK fix.",
 
   "reframe_hitl_2026_06_01": {
     "problem": "The literal mandate (seed real corpus through the real bge embedder at N=1M on canonical CI) is physically infeasible: ~166 h of serialized candle seed at the PR-9-measured 1.67 docs/s vs a 240-min workflow timeout. Real-embedder N=1M is also not obtainable locally (same seed wall). The synthetic N=1M seed did not even drain within 3 h on the default per-row projection path (super-linear seed cost; Err(Scheduler) = wait_for_idle timeout, NOT a wedge).",
