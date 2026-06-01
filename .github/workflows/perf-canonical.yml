@@ -70,9 +70,10 @@ on:
 
 permissions:
   contents: read
-  # PR-7: post the perf-regression-check verdict as a comment on the PR/push
-  # that triggered the canonical run.
-  pull-requests: write
+  # PR-7: this workflow is workflow_dispatch-only, so there is no PR/push event
+  # to comment on. The perf-regression-check verdict is surfaced via
+  # $GITHUB_STEP_SUMMARY (always available on dispatch). No pull-requests scope
+  # is requested — adding one would be an unused over-grant.
 
 jobs:
   ac012-canonical-measure:
@@ -161,7 +162,12 @@ jobs:
       # vs the rolling median of prior runs. See
       # dev/design/perf-regression-detection.md.
       #   exit 0 = clean; exit 1 = regression flagged (NOT a hard fail — the
-      #   PR/push comment is the signal); exit 2 = data integrity (fail loudly).
+      #   step-summary verdict is the signal); exit 2 = data integrity (fail loudly).
+      # This workflow is workflow_dispatch-only, so there is no PR to comment on:
+      # the report is written to $GITHUB_STEP_SUMMARY (the dispatch-safe channel)
+      # and the step log. A flagged regression (exit 1) is surfaced, not failed,
+      # so a human reads the summary; a data-integrity failure (exit 2) fails the
+      # step loudly.
       - name: Perf regression check
         id: perf_regression
         if: always()
@@ -171,44 +177,24 @@ jobs:
           OUT="$(cargo run --quiet -p fathomdb-cli --bin perf-regression-check -- dev/perf-history)"
           CODE=$?
           echo "$OUT"
-          # Stash the human-readable report + exit code for the comment step.
+          VERDICT="no regressions"
+          [ "$CODE" -eq 1 ] && VERDICT="⚠️ regression(s) flagged"
+          [ "$CODE" -eq 2 ] && VERDICT="❌ data missing/malformed (integrity failure)"
           {
-            echo 'report<<PERF_EOF'
+            echo "## perf-regression-check"
+            echo ""
+            echo "**Verdict:** ${VERDICT} (exit ${CODE})"
+            echo ""
+            echo '```'
             echo "$OUT"
-            echo 'PERF_EOF'
-          } >> "$GITHUB_OUTPUT"
-          echo "exit_code=$CODE" >> "$GITHUB_OUTPUT"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
           if [ "$CODE" -eq 2 ]; then
             echo "::error::perf-regression-check exit 2 — perf-history data missing/malformed (integrity failure)"
             exit 2
           fi
-          # exit 0 or 1: do not fail the step; the comment carries the signal.
+          # exit 0 or 1: do not fail the step; the step summary carries the signal.
           exit 0
-      - name: Post perf-regression comment
-        if: ${{ always() && github.event.pull_request.number }}
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
-        with:
-          script: |
-            const report = ${{ toJSON(steps.perf_regression.outputs.report) }};
-            const code = ${{ toJSON(steps.perf_regression.outputs.exit_code) }};
-            const verdict = code === '1'
-              ? '⚠️ regression(s) flagged'
-              : 'no regressions';
-            const body = [
-              '## perf-regression-check',
-              '',
-              `**Verdict:** ${verdict} (exit ${code})`,
-              '',
-              '```',
-              report || '(no output)',
-              '```',
-            ].join('\n');
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.payload.pull_request.number,
-              body,
-            });
       - name: Summarize verdict
         if: always()
         shell: bash

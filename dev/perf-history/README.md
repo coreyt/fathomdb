@@ -27,6 +27,15 @@ Schema, thresholds, and provenance: `dev/design/perf-regression-detection.md`.
 }
 ```
 
-Unknown fields are ignored (forward-extensible). `recall` is omitted/null
-for latency-only ACs (AC-012, AC-019); `p50_ms`/`p99_ms` are omitted for
-recall-only ACs (AC-013b).
+Unknown fields are ignored (forward-extensible) — e.g. the optional `note`
+field used to annotate provenance / artifacts is not interpreted by the bin.
+`recall` is omitted/null for latency-only ACs (AC-012, AC-019);
+`p50_ms`/`p99_ms` are omitted for recall-only ACs (AC-013b). `timestamp` must
+be strict RFC3339 — an unparseable one is a data-integrity failure (exit 2),
+because the parsed instant (not the raw string) selects the latest run.
+
+The 2026-05-27 `AC-013b` arc records a known artifact: the batch-collapse bug
+(`035cfa3`) read a *degenerate* recall=1.0 (it masqueraded as perfection), and
+the fix (`4a95cfd`) revealed the honest 0.1572. See the honesty note in
+`dev/design/perf-regression-detection.md` — a degradation detector flags the
+*correction*, not the bug itself.

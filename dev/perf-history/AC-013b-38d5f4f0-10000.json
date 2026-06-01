@@ -1,1 +1,1 @@
-{ "commit_sha": "38d5f4f0", "ac_id": "AC-013b", "n": 10000, "recall": 0.5124, "timestamp": "2026-05-27T18:05:00Z" }
+{ "commit_sha": "38d5f4f0", "ac_id": "AC-013b", "n": 10000, "recall": 0.5124, "timestamp": "2026-05-28T01:18:00Z", "note": "v0.7.0 ship verdict — Option 1 dense-isotropic fixture. AC-013b NOT MET on the synthetic fixture (deferred to 0.7.1 EMBEDDER-UNDEFER, where the real bge measurement at n=7667 reaches 0.937)." }

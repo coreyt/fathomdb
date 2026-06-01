@@ -114,6 +114,68 @@ struct Record {
     p99_ms: Option<f64>,
     recall: Option<f64>,
     timestamp: String,
+    /// UTC epoch seconds parsed from `timestamp`. This — not the raw string —
+    /// is the ordering key, so a malformed/offset timestamp cannot silently
+    /// reorder latest-run selection (a lexical sort would).
+    ts_epoch: i64,
+}
+
+/// Parse a strict RFC3339 timestamp to UTC epoch seconds for ordering.
+///
+/// Accepts `YYYY-MM-DDTHH:MM:SS(.fraction)?(Z|±HH:MM)`. Any deviation returns
+/// `Err`, so a malformed timestamp fails loudly (exit 2) instead of corrupting
+/// "latest by timestamp" via a lexical string sort. Dependency-free (the
+/// workspace pulls in no date crate); uses Howard Hinnant's days-from-civil
+/// algorithm for the proleptic-Gregorian day count.
+fn parse_rfc3339_epoch(s: &str) -> Result<i64, String> {
+    let (date, rest) = s.split_once('T').ok_or_else(|| format!("missing 'T': {s}"))?;
+    let d: Vec<&str> = date.split('-').collect();
+    if d.len() != 3 {
+        return Err(format!("bad date: {s}"));
+    }
+    let year: i64 = d[0].parse().map_err(|_| format!("bad year: {s}"))?;
+    let month: i64 = d[1].parse().map_err(|_| format!("bad month: {s}"))?;
+    let day: i64 = d[2].parse().map_err(|_| format!("bad day: {s}"))?;
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return Err(format!("date out of range: {s}"));
+    }
+
+    // Split the time-of-day from the zone designator (Z or ±HH:MM).
+    let (time_part, offset_secs) = if let Some(t) = rest.strip_suffix('Z') {
+        (t, 0i64)
+    } else {
+        let sign_idx =
+            rest.rfind(['+', '-']).ok_or_else(|| format!("missing zone designator: {s}"))?;
+        let (t, off) = rest.split_at(sign_idx);
+        let sign = if off.starts_with('-') { -1 } else { 1 };
+        let (oh, om) = off[1..].split_once(':').ok_or_else(|| format!("bad zone offset: {s}"))?;
+        let oh: i64 = oh.parse().map_err(|_| format!("bad offset hour: {s}"))?;
+        let om: i64 = om.parse().map_err(|_| format!("bad offset minute: {s}"))?;
+        (t, sign * (oh * 3600 + om * 60))
+    };
+
+    // HH:MM:SS, ignoring any fractional-second suffix.
+    let time_core = time_part.split('.').next().unwrap_or(time_part);
+    let tp: Vec<&str> = time_core.split(':').collect();
+    if tp.len() != 3 {
+        return Err(format!("bad time: {s}"));
+    }
+    let hh: i64 = tp[0].parse().map_err(|_| format!("bad hour: {s}"))?;
+    let mi: i64 = tp[1].parse().map_err(|_| format!("bad minute: {s}"))?;
+    let ss: i64 = tp[2].parse().map_err(|_| format!("bad second: {s}"))?;
+    if hh > 23 || mi > 59 || ss > 60 {
+        return Err(format!("time out of range: {s}"));
+    }
+
+    // days_from_civil (Howard Hinnant): days since 1970-01-01, proleptic Gregorian.
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = (if y >= 0 { y } else { y - 399 }) / 400;
+    let yoe = y - era * 400;
+    let mp = (month + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    Ok(days * 86400 + hh * 3600 + mi * 60 + ss - offset_secs)
 }
 
 /// A loaded record paired with the file it came from (for error messages).
@@ -129,6 +191,10 @@ fn load_record(path: &Path) -> Result<Record, String> {
             path.display()
         ));
     }
+    // Timestamp must be a parseable RFC3339 instant — a bad one is a data-
+    // integrity failure (exit 2), not something to sort lexically and hope.
+    let ts_epoch = parse_rfc3339_epoch(&raw.timestamp)
+        .map_err(|e| format!("{}: malformed timestamp: {e}", path.display()))?;
     Ok(Record {
         commit_sha: raw.commit_sha,
         ac_id: raw.ac_id,
@@ -137,6 +203,7 @@ fn load_record(path: &Path) -> Result<Record, String> {
         p99_ms: raw.p99_ms,
         recall: raw.recall,
         timestamp: raw.timestamp,
+        ts_epoch,
     })
 }
 
@@ -280,8 +347,12 @@ fn build_report(dir: &Path) -> Result<Report, String> {
 
     let mut report = Report { flagged: false, groups: Vec::new() };
     for ((ac_id, n), mut runs) in groups {
-        // Sort oldest -> newest by timestamp (RFC3339 sorts lexically).
-        runs.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+        // Sort oldest -> newest by parsed UTC epoch (not the raw string, which
+        // would mis-order offset/Z-mixed timestamps). Tie-break on commit_sha
+        // for a deterministic "latest" when two runs share an instant.
+        runs.sort_by(|a, b| {
+            a.ts_epoch.cmp(&b.ts_epoch).then_with(|| a.commit_sha.cmp(&b.commit_sha))
+        });
         let v = evaluate_group(&ac_id, n, &runs);
         report.flagged |= v.flagged;
         report.groups.push(v);
@@ -382,6 +453,49 @@ fn main() -> ExitCode {
         Err(e) => {
             eprintln!("perf-regression-check: {e}");
             ExitCode::from(2)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rfc3339_utc_epoch() {
+        // 1970-01-01T00:00:00Z is epoch 0; one day later is 86400.
+        assert_eq!(parse_rfc3339_epoch("1970-01-01T00:00:00Z").unwrap(), 0);
+        assert_eq!(parse_rfc3339_epoch("1970-01-02T00:00:00Z").unwrap(), 86_400);
+    }
+
+    #[test]
+    fn rfc3339_offset_normalizes_to_utc() {
+        // 16:54:27-05:00 == 21:54:27Z — the two must parse to the same instant.
+        let z = parse_rfc3339_epoch("2026-05-27T21:54:27Z").unwrap();
+        let off = parse_rfc3339_epoch("2026-05-27T16:54:27-05:00").unwrap();
+        assert_eq!(z, off);
+    }
+
+    #[test]
+    fn rfc3339_orders_the_batch_collapse_arc() {
+        // The committed AC-013b@10000 chronology must sort bug -> fix -> ship.
+        let bug = parse_rfc3339_epoch("2026-05-27T21:47:35Z").unwrap(); // 035cfa3
+        let fix = parse_rfc3339_epoch("2026-05-27T21:54:27Z").unwrap(); // 4a95cfd
+        let v070 = parse_rfc3339_epoch("2026-05-28T01:18:00Z").unwrap(); // 38d5f4f
+        assert!(bug < fix && fix < v070);
+    }
+
+    #[test]
+    fn rfc3339_rejects_malformed() {
+        for bad in [
+            "not-a-date",
+            "2026-05-27",           // missing time
+            "2026-05-27 21:54:27Z", // space instead of 'T'
+            "2026-13-01T00:00:00Z", // month out of range
+            "2026-05-27T25:00:00Z", // hour out of range
+            "2026-05-27T21:54:27",  // no zone designator
+        ] {
+            assert!(parse_rfc3339_epoch(bad).is_err(), "should reject: {bad}");
         }
     }
 }
