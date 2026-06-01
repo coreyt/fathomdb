@@ -1,0 +1,121 @@
+{
+  "slice": "PR-7",
+  "title": "Perf regression detection (dev/perf-history/ + perf-regression-check bin)",
+  "phase": "B (testing/perf hardening)",
+  "status": "CLOSED",
+  "branch": "main (local; unpushed) via ff from phase-0.7.2-PR-7-20260601T215338Z",
+  "baseline": "41aa6b2",
+  "commits": {
+    "RED": "60878e9",
+    "GREEN": "857efd6",
+    "FIX-1": "dda30b4 (codex pass-1 BLOCK x3 + honesty rework)",
+    "FIX-2": "e0a5919 (codex pass-2 BLOCK — strict RFC3339 value checks)",
+    "FIX-3": "06789b8 (codex pass-3 BLOCK — fixed-width RFC3339 fields)"
+  },
+  "prompt": "dev/plans/prompts/0.7.2-PR-7-perf-regression-detection.md",
+  "closed_at": "2026-06-01T23:10Z",
+
+  "layout_choice": {
+    "decision": "(A) — [[bin]] perf-regression-check under fathomdb-cli; NO new workspace crate.",
+    "rationale": "Lowest blast radius: touches only the CLI crate's manifest (added serde derive + the [[bin]] entry), no workspace-member edit, no version-axis churn (version.workspace=true inherited). Cargo.lock change is the serde wiring only.",
+    "files": {
+      "bin": "src/rust/crates/fathomdb-cli/src/bin/perf-regression-check.rs",
+      "tests": "src/rust/crates/fathomdb-cli/tests/perf_regression_check.rs (+ tests/fixtures/**)",
+      "store": "dev/perf-history/ (9 rows + README.md)",
+      "design": "dev/design/perf-regression-detection.md",
+      "ci": ".github/workflows/perf-canonical.yml (regression step -> $GITHUB_STEP_SUMMARY)",
+      "manifest": "src/rust/crates/fathomdb-cli/Cargo.toml + Cargo.lock"
+    }
+  },
+
+  "thresholds_hitl_gate1": {
+    "approved_at": "2026-06-01 (HITL Gate 1)",
+    "latency_degradation_fraction": 0.15,
+    "recall_degradation_absolute": 0.03,
+    "rolling_window": 10,
+    "latest_definition": "single most-recent run by parsed timestamp vs median of prior up-to-10 in group",
+    "constants_location": "perf-regression-check.rs — single named/commented block (LATENCY_DEGRADATION_FRACTION / RECALL_DEGRADATION_ABSOLUTE / ROLLING_WINDOW / MIN_RUNS_FOR_MEDIAN)",
+    "rationale": "Conservative pick (vs the 10%/0.02 handoff default). Recall sigma=0.0116 (PR-3) => 0.03 ~= 2.4 sigma ~= ~1% jitter false-flag rate. Codex's review focus is false-positive resistance. Tradeoff documented: a 0.03 drop from 0.937 lands at 0.907 (near the 0.90 floor) — favours FP-resistance over early-warning sensitivity; the hard floor is enforced by the AC-013b gate, not this drift detector."
+  },
+
+  "bin_behavior": {
+    "groups_by": "(ac_id, n) — tier-aware; never cross-tier or real-vs-synthetic-N",
+    "regime_caveat": "K=64 (<=0.7.0) vs K=192 (>=0.7.1) latency NOT mixed in one group; the synthetic AC-013@10000 latency history begins at the K=192 PR-3 baseline. K=64 AC-013b@10000 recall arc kept as one internally-consistent group.",
+    "timestamp": "strict fixed-width RFC3339 -> UTC epoch at load (dependency-free parser); parsed epoch is the sort key (not lexical string); unparseable timestamp => exit 2; ties broken on commit_sha",
+    "exit_codes": "0 = no regression (incl. all-insufficient-history); 1 = regression flagged; 2 = data missing/malformed (absent dir, bad JSON, no comparable metric, OR unparseable timestamp)",
+    "output": "human-readable default; --json (per-group verdicts + overall flagged bool)",
+    "append_only": "bin ONLY reads dev/perf-history/; never writes/mutates/deletes"
+  },
+
+  "backfill_scope": {
+    "AC-012@1000000": "603a4bc0 p50=140.95/p99=458 (0.6.1 canonical run 26346417896, RED vs 20/150 ADR budget). Sole point => insufficient-history (honest RED preserved, not a flagged regression).",
+    "AC-013b@10000 (K=64 arc, the only multi-point comparison)": "035cfa30 recall=1.0 DEGENERATE (batch-collapse artifact, noted) -> 4a95cfd0 recall=0.1572 (honest post-fix, isotropic-sparsity pathology) -> 38f5e3a0 recall=0.5124 (dense fixture) -> 38d5f4f0 recall=0.5124 (v0.7.0 ship). Latest healthy => committed group CLEAN.",
+    "AC-013@10000": "c893d8b0 p50=15/p99=17 (PR-3 synthetic 384-d, K=192). Latency-only. Insufficient-history.",
+    "AC-013@7667 / AC-013b@7667 / AC-019@7667": "c893d8b0 real bge: latency 36/49, recall 0.937, stress p99 343. AC-013 latency-only, AC-013b recall-only. Each insufficient-history (forward baseline).",
+    "honest_state": "Most groups are single-point (insufficient-history) — the real consequence of sparse once-per-release cadence + K-regime + synthetic->real transitions. Store accrues comparability going forward."
+  },
+
+  "batch_collapse_honesty": {
+    "hitl_decision": "Option A (faithful arc + flag-the-correction), 2026-06-01.",
+    "finding": "The 2026-05-27 batch-collapse bug masqueraded as an IMPROVEMENT (index collapsed to ~10 vec0 rows => recall falsely 1.0, latency anomalously fast). A degradation-only detector (the HITL-locked design) STRUCTURALLY cannot flag the bug itself — it flags the regression-shaped CORRECTION after the fix (recall 1.0 -> 0.1572, a 0.84 drop at commit 4a95cfd).",
+    "implementer_error_corrected": "The original GREEN backfill mis-attributed the numbers (modeled 035cfa3 as a 0.1572 'drop' and 4a95cfd as 0.5124 recovery). Real numbers per STATUS-perf-vector-quant.md: collapse read degenerate 1.0; 0.1572 is the honest post-fix isotropic number; 0.5124 is the later dense fixture.",
+    "future_work": "Catching the bug ITSELF needs a row-count / vec0-population invariant or an implausible-perfection anomaly rule (recall==1.0, latency falling as N rises). Deliberately out of scope here (would expand past the locked 15%/0.03 thresholds + risk FPs on legitimately-perfect small-N recall). Logged in the design doc."
+  },
+
+  "tests": {
+    "bin_unit_rfc3339": "5/5 (utc epoch, offset normalization, arc ordering, valid edge cases incl. leap day/fractional/leap second, reject set incl. impossible date / out-of-range offset / bad fraction / non-canonical widths)",
+    "integration_perf_regression_check": "12/12",
+    "fixtures": {
+      "regression": "known degradations -> exit 1 (flag)",
+      "jitter": "normal noise within thresholds -> exit 0 (false-positive proof)",
+      "backfill-dirty": "degenerate 1.0 @035cfa3 -> honest 0.1572 @4a95cfd -> exit 1, flags the correction at 4a95cfd (recall 0.8428 below median 1.0)",
+      "backfill-clean": "clean history -> exit 0",
+      "insufficient": "1 run in a group -> exit 0, 'insufficient' note",
+      "malformed": "non-numeric metric -> exit 2",
+      "malformed-timestamp": "unparseable timestamp -> exit 2"
+    },
+    "committed_store": "exit 0 (clean); AC-013b@10000 arc present (4 runs) and healthy at latest",
+    "clippy": "clean (-p fathomdb-cli --all-targets)",
+    "fmt": "clean",
+    "actionlint": "clean (perf-canonical.yml; workflow_dispatch-only, 8 inputs, contents:read only)"
+  },
+
+  "ci_integration": {
+    "channel": "$GITHUB_STEP_SUMMARY (workflow_dispatch-safe) + step log",
+    "removed": "the dead PR-comment github-script step + the unused pull-requests: write permission (workflow has no PR/push event to comment on)",
+    "exit_handling": "exit 1 -> step continues (summary is the signal); exit 2 -> ::error:: + non-zero (data-integrity fails loudly)",
+    "constraints_preserved": "workflow_dispatch-only; <=8 inputs; actionlint clean"
+  },
+
+  "codex_review": {
+    "reviewer": "codex gpt-5.4, codex exec --sandbox read-only, model_reasoning_effort=high",
+    "arc": "BLOCK -> BLOCK -> BLOCK -> PASS (no BLOCK overridden)",
+    "pass1_BLOCK": "backfill chronology inverted; lexical-sorted unparsed timestamps; CI comment dead on workflow_dispatch + pull-requests:write over-grant",
+    "pass2_BLOCK": "parser not strict — impossible dates normalized, unbounded offsets, unvalidated fractional suffix",
+    "pass3_BLOCK": "parser accepted non-canonical field widths (1-digit fields, 5-digit year)",
+    "pass4_PASS": "no findings",
+    "verdict_record": "dev/plans/runs/0.7.2-PR-7-review-20260601T230046Z.md",
+    "logs": [
+      "dev/plans/runs/0.7.2-PR-7-review-20260601T220645Z.log",
+      "dev/plans/runs/0.7.2-PR-7-review-20260601T224904Z.log",
+      "dev/plans/runs/0.7.2-PR-7-review-20260601T225601Z.log",
+      "dev/plans/runs/0.7.2-PR-7-review-20260601T230046Z.log"
+    ]
+  },
+
+  "honesty_notes": [
+    "RED commit 60878e9 was authored before GREEN (7/10 failing against a stub).",
+    "The GREEN backfill had a real honesty defect (batch-collapse numbers mis-attributed + inverted chronology) caught by codex pass-1 + main-thread cross-check against STATUS-perf-vector-quant.md; corrected under HITL option A. Recorded rather than smoothed.",
+    "Most committed groups are insufficient-history — surfaced honestly, not padded with fabricated comparison points.",
+    "The detector cannot flag the batch-collapse bug itself (it looked like an improvement); it flags the correction. Stated plainly in the design doc + README; the true bug-catch is logged as future work."
+  ],
+
+  "hitl_gates": {
+    "gate1_thresholds": "CLEARED 2026-06-01 (15% / 0.03 / window 10 / single-latest)",
+    "gate1b_batch_collapse_representation": "CLEARED 2026-06-01 (option A — faithful arc + flag-the-correction)",
+    "gate2_diff_tests": "CLEARED 2026-06-01 (land approved)"
+  },
+
+  "push": "NONE — campaign-wide no-push without HITL OK; PR-8 owns the 0.7.2 closure push.",
+  "pointer_forward": "PR-6 (dev-loop perf gates) is the remaining Phase-B sibling; then PR-8 (campaign closure + 0.7.2 push)."
+}
