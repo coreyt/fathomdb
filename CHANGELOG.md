@@ -127,16 +127,17 @@ held locally until PR-4. Ledger: `dev/plans/runs/STATUS-release-hardening.md`.
   (recall decreases slowly with N) and the 1M latency tier is an O(N)
   extrapolation off the 0.7.0 W4.1 anchor, not a fresh run.
 
-## 0.7.1 - unreleased
+## 0.7.1 - 2026-06-01
 
 EMBEDDER-UNDEFER: the default embedder is no longer deferred. fathomdb now
 ships a real in-process default embedder (`BAAI/bge-small-en-v1.5`, 384d, via
 `candle-transformers`), opt-in per binding, feeding the 0.7.0 sign-bit +
-f32-rerank retrieval pipeline with mean-centering. Date/tag intentionally
-unset: the real-corpus recall floor (`AC013B_RECALL_FLOOR`) re-derivation and
-canonical N=1M acceptance validation are owned by the 0.7.2 RELEASE-HARDENING
-campaign; the `v0.7.1` tag/push is cut there. See
-`dev/plans/0.7.1-implementation.md`.
+f32-rerank retrieval pipeline with mean-centering. The tag was intentionally
+held until the 0.7.2 RELEASE-HARDENING campaign re-derived the real-corpus
+recall floor (`AC013B_RECALL_FLOOR`): that work found the apparent 0.828 recall
+"gap" was a measurement artifact, the corrected ANN-fidelity number is 0.937,
+and the 0.90 floor holds (see the 0.7.2 "Changed" section). `v0.7.1` is cut and
+published here alongside `v0.7.0`. See `dev/plans/0.7.1-implementation.md`.
 
 ### Added
 
@@ -212,17 +213,21 @@ campaign; the `v0.7.1` tag/push is cut there. See
   docs and never recomputed, a workspace whose first 256 docs are
   unrepresentative may under-center. Remedy is reindex (a later campaign).
 - **Migration.** Workspaces previously opened with the `fathomdb-noop` profile
-  fail closed when re-opened with the default embedder (identity mismatch, by
-  design). The remedy is wipe-and-rewrite; there is no in-place swap.
+  (0.6.x / 0.7.0) fail closed when re-opened with the default embedder (identity
+  mismatch, by design per `ADR-0.6.0-vector-identity-embedder-owned` +
+  `ADR-0.8.0-embedder-identity-change-workflow`). The remedy is wipe-and-rewrite;
+  there is no in-place swap.
 
-## 0.7.0 - unreleased
+## 0.7.0 - 2026-06-01
 
 PERF-VECTOR-QUANT (PVQ). A perf-focused release line whose load-bearing change
 is **binary vector quantization + f32 rerank** to bring vector retrieval latency
 (AC-013) within budget. The workspace was bumped to `0.7.0` (`38d5f4f`) and a
-local `v0.7.0` tag was cut, **but the tag is HELD locally and not pushed** —
-0.7.2 PR-4 pushes `main` and both the `v0.7.0` and `v0.7.1` tags together. Do
-not treat 0.7.0 as shipped. AC-013b recall was held OPEN at 0.7.0 ship
+local `v0.7.0` tag was cut, then **held unpushed pending 0.7.1's embedder work**
+(per the 2026-05-27 instruction). It is published here together with `v0.7.1` so
+the release narrative is coherent: 0.7.0 ships the latency win; 0.7.1 ships the
+default embedder that finally lets recall be measured on real text. AC-013b
+recall was held OPEN at 0.7.0 ship
 (synthetic isotropic fixture cannot reach the floor; real-embedder validation
 deferred to 0.7.1). Ledger: `dev/plans/runs/STATUS-perf-vector-quant.md`;
 decision: `ADR-0.7.0-vector-binary-quant.md`.
@@ -250,7 +255,8 @@ decision: `ADR-0.7.0-vector-binary-quant.md`.
   via `vec_distance_l2`**, in a single Deferred read transaction. Commit
   `26ef3dc`.
 - **Real-corpus test corpora (CORPUS-1..4).** ~7,667-doc multi-source corpus
-  under `data/corpus-data/` (CNN/DailyMail, Enron, QMSum, EnronQA, synthetic
+  with raw source assets under `data/corpus-data/raw/` (CNN/DailyMail, Enron,
+  QMSum, EnronQA, synthetic
   notes/todos/daily-logs) + cross-doc chain generator + ingest harness +
   search-validation gates. Commits across `5c1e92a`..`d9a219d`.
 - **New perf-gates recall test.** `ac_013b_recall_at_10_floor` asserts
@@ -258,6 +264,19 @@ decision: `ADR-0.7.0-vector-binary-quant.md`.
 
 ### Changed
 
+- **AC-013 latency closed (the load-bearing win).** Replacing the single-phase
+  f32 brute-force scan with two-phase bit-KNN + f32 rerank (plus the
+  `4a95cfd` batch-collapse fix below) brought AC-013 well within budget: at the
+  dev-box anchor, p50 fell from the W4.1 single-phase 2048 ms / p99 2327 ms (at
+  N=1M) to p50 12 ms / p99 16 ms (post-batch-fix), and the scanner fix below cut
+  the AC-013 seed ~11×. (These are dev-box figures; canonical N=1M validation
+  was deferred and later reframed to a tiered, local-measurement posture in
+  0.7.2 PR-3 — see the 0.7.2 "Changed" section.)
+- **AC-019 mixed-retrieval stress budget maintained.** The two-phase path also
+  brought the AC-019 stress tail within budget at the dev-box anchor (p99 8388 ms
+  at N=1M W4.1 → 131 ms, under the 175 ms dev-box bound). The AC-019 budget was
+  later restructured in 0.7.2 PR-3 (synthetic gate report-only; real-corpus
+  harness is the asserting signal).
 - **AC-013 latency budget re-pinned to 80 / 300 ms** (`AC013_BUDGET_P50/P99`,
   `d468999`), superseding the 50 / 200 ms unindexed-path values. Tracked in
   `ADR-0.7.0-text-query-latency-gates-revised.md`.

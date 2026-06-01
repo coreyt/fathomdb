@@ -6,10 +6,11 @@ fresh engine has no embedder configured and vector writes fail with
 `EmbedderNotConfigured` until you either enable the default embedder or supply
 your own (Rust only, today).
 
-> Status: the default embedder ships in 0.7.1. The real-corpus recall floor and
-> full-scale acceptance validation are being finalized in the 0.7.2 hardening
-> release — see [Caveats](#caveats-and-limitations). Treat the retrieval-quality
-> numbers in this release as preliminary.
+> Status: the default embedder ships in 0.7.1. The real-corpus recall floor was
+> re-derived in the 0.7.2 hardening release: the apparent recall "gap" seen
+> during 0.7.1 scouting was a measurement artifact, the corrected ANN-fidelity
+> recall@10 is **0.937** on the reference corpus, and the 0.90 floor holds — see
+> [Caveats](#caveats-and-limitations).
 
 ## What it is
 
@@ -109,11 +110,17 @@ for a later release.
 
 ## Caveats and limitations
 
-- **Retrieval quality is still being validated.** In 0.7.1, dev-box measurement
-  over the reference corpus put recall@10 around 0.83 — below the 0.90 figure
-  used by the synthetic test fixture. The real-corpus recall floor and
-  full-scale (N=1M) acceptance validation are being finalized in 0.7.2. Do not
-  treat a specific recall number from this release as final.
+- **Recall — corrected in 0.7.2.** Dev-box scouting during 0.7.1 measured
+  recall@10 around 0.83 over the reference corpus, which looked like it was below
+  the 0.90 floor. The 0.7.2 hardening work showed that 0.83 was a **measurement
+  artifact** (exclude-after-top-10 plus body-string ground truth over a corpus
+  with duplicate bodies), not an engine deficiency. The corrected ANN-fidelity
+  measurement — how faithfully the 1-bit sign-quant index reproduces the same
+  model's exact f32 top-10 — is **recall@10 = 0.937** (95% CI 0.913–0.957) on the
+  real bge-small embedder (N=7,667, K=192, mean-centering), so the **0.90 floor
+  holds**. This is an ANN/quantization-fidelity number, not an IR-relevance
+  number. A full-scale N=1M run remains infeasible on commodity hardware; 0.937
+  at N≈7.7k is treated as a near-upper bound (recall declines slowly with N).
 - **Topic-drift mean** (see above): pinned on the first 256 docs; reindex to
   refresh.
 - **Custom Python/TypeScript embedders** are deferred to a later release; the
