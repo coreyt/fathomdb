@@ -3,8 +3,12 @@
   "title": "Real-corpus latency/recall measurement + tiered ADR (canonical-CI dispatch reframed to local)",
   "baseline_sha": "25ab3ee",
   "branch": "main",
-  "head_sha": "<closure commit (these changes + STATUS)>",
-  "land_status": "IMPL COMPLETE on local `main` working tree; codex review pending; NOT committed/pushed at time of writing (campaign-wide hard constraint: no push without explicit HITL OK).",
+  "head_sha": "8dbe0da",
+  "commits_local_main": [
+    "d9f9b65 — test(0.7.2): PR-3 tiered budget + local-measurement reframe (initial)",
+    "8dbe0da — fix(0.7.2): PR-3 codex BLOCK remediation — FTS-isolate the read-path smoke + closure consistency"
+  ],
+  "land_status": "Committed on local `main` (d9f9b65 then fix 92e9b1c after codex BLOCK); NOT pushed (campaign-wide hard constraint: no push without explicit HITL OK). codex re-review after the BLOCK fix.",
 
   "reframe_hitl_2026_06_01": {
     "problem": "The literal mandate (seed real corpus through the real bge embedder at N=1M on canonical CI) is physically infeasible: ~166 h of serialized candle seed at the PR-9-measured 1.67 docs/s vs a 240-min workflow timeout. Real-embedder N=1M is also not obtainable locally (same seed wall). The synthetic N=1M seed did not even drain within 3 h on the default per-row projection path (super-linear seed cost; Err(Scheduler) = wait_for_idle timeout, NOT a wedge).",
@@ -18,7 +22,7 @@
   },
 
   "files_changed": {
-    "src/rust/crates/fathomdb-engine/tests/perf_gates.rs": "NEW always-on CI smoke `ac_013_vector_read_path_smoke` (fixture-independent exact-match-sentinel canary for the two-phase bit-KNN + f32 rerank read path; no AGENT_LONG/feature/corpus). Tiered budget: AC013_DEFAULT_N 50000->10000 (binding tier); new AC013_GATE_N=10000; AC-013 + AC-019 assert 80/300 only at n<=AC013_GATE_N, else report AC013_TIER_INFO / AC019_TIER_INFO. Env knobs AC013_VECTOR_DIM (default 768) + AC013_DRAIN_TIMEOUT_MS (default 1_800_000) for the local canonical exercise.",
+    "src/rust/crates/fathomdb-engine/tests/perf_gates.rs": "NEW always-on CI smoke `ac_013_vector_read_path_smoke` (FTS-isolated canary: FTS-absent query so results come only from bit-KNN + f32 rerank; SMOKE_N<K exact rerank => true nearest rank 1; no AGENT_LONG/feature/corpus). Tiered budget: AC013_DEFAULT_N 50000->10000 (binding tier); new AC013_GATE_N=10000; AC-013 + AC-019 assert 80/300 only at n<=AC013_GATE_N, else report AC013_TIER_INFO / AC019_TIER_INFO. Env knobs AC013_VECTOR_DIM (default 768) + AC013_DRAIN_TIMEOUT_MS (default 1_800_000) for the local canonical exercise.",
     ".github/workflows/perf-canonical.yml": "Header SCOPE NOTE: real-embedder + N=1M real-corpus is local-only (infeasible on the runner); this workflow exercises only the synthetic fixture; per-push read-path guard is the perf_gates smoke in ci.yml.",
     "dev/adr/ADR-0.7.0-text-query-latency-gates-revised.md": "AC-013 + AC-019 sections filled with the HITL-locked TIERED budget (10k binding; 100k/1M tracked post-1.0) + measured numbers; Decision-block note records the PR-3 amendment (AC-012/AC-020 untouched).",
     "dev/plans/runs/0.7.2-PR-3-perf-data.md": "NEW comprehensive empirical-data record (every measurement with full settings: N, dim, K=192, samples, seed_ms, env, host, log path, verdict; O(N) scaling; recall anchor; AC-019 contention analysis).",
@@ -78,14 +82,14 @@
 
   "ci_smoke": {
     "test": "perf_gates::ac_013_vector_read_path_smoke",
-    "design": "Seeds 512 rows (synthetic VaryingEmbedder) incl. an exact-match sentinel whose body embeds to the query vector -> Hamming-0 candidate + f32 rerank distance 0 -> guaranteed rank 1. Asserts vector_row_count==N and sentinel ranks first through the full two-phase path. No AGENT_LONG / default-embedder feature / corpus needed; runs in normal ci.yml on every runner.",
-    "result": "PASS (0.11 s)"
+    "design": "FTS-ISOLATED (codex BLOCK fix): queries an FTS-absent token so the FTS5 stage matches zero rows -> any result comes SOLELY from the vector (bit-KNN + f32 rerank) stage; if that stage is dead and returns nothing the test fails. Seeds SMOKE_N=64 < TOP_K_BIT_CANDIDATES=192 so every row is a candidate and the rerank is exact -> the true f32-nearest body (computed in-test) is rank 1 deterministically (no lossiness flake). Asserts vector_row_count==N, non-empty results, all results are seeded bodies, and the nearest ranks first. No AGENT_LONG / default-embedder feature / corpus needed; runs in normal ci.yml on every runner. (The earlier body-as-query design could pass via the FTS path alone even with a dead vector stage — codex BLOCK 2026-06-01.)",
+    "result": "PASS (0.05 s)"
   },
 
   "tests": {
     "always_on_default_suite": "9 passed / 0 failed / 5 ignored (perf_gates, no AGENT_LONG) incl. new smoke + floor sentinel",
     "binding_tier_AGENT_LONG_n10k": {
-      "ac_013_vector_retrieval_latency": "PASS (p50 23 / p99 28 ms at N=10k, dim 768 default)",
+      "ac_013_vector_retrieval_latency": "PASS at N=10k binding tier (synthetic 768-d default p50 22-23 / p99 27 ms across runs; production-faithful 384-d 15/17; real bge anchor 36/49 — all within 80/300)",
       "ac_019_mixed_retrieval_stress_workload_tail": "REPORT-ONLY (no assertion). Verdict = MET via real-corpus eu7 harness (343<405). Synthetic cannot meet the baseline-relative bound due to the synthetic data (524>168 @384d, 1048>282 @768d on a clean box)."
     }
   },
@@ -99,6 +103,6 @@
     "embedder_identity_immutable": "untouched"
   },
 
-  "codex_review": "PENDING",
+  "codex_review": "Pass 1 (codex gpt-5.4, high effort, read-only; 0.7.2-PR-3-review-20260601T122419Z.log): BLOCK — the read-path smoke could pass via the FTS path alone even if the vector stage returned nothing (body-as-query + search appends FTS hits). NOT overridden. FIXED: smoke rewritten to query an FTS-absent token (FTS=0 -> vector-only) with SMOKE_N<K exact rerank. Plus the CONCERN (stale head_sha / 'NOT committed' / inconsistent 23/28 in this closure) fixed. Re-review pending on the fix commit.",
   "next": "codex review on the full diff (test wiring + workflow note + ADR + STATUS + data file); on PASS, flip STATUS PR-3 row to CLOSED and commit on local main (no push). Then PR-4 (release notes + push gate)."
 }

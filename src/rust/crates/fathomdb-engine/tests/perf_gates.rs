@@ -740,45 +740,45 @@ fn ac_013b_floor_matches_adr() {
 /// returns the exact nearest neighbour, WITHOUT asserting any latency or
 /// recall budget (those belong to the local canonical gates).
 ///
-/// Robust-by-construction: a sentinel doc is seeded whose body embeds to a
-/// vector identical to the query's, so its sign-bit code has Hamming
-/// distance 0 to the query (guaranteed into the bit-KNN candidate set) and
-/// its f32 rerank distance is 0 (guaranteed rank 1). This holds regardless
-/// of the other rows, so the assertion is deterministic and
-/// fixture-independent — a true "is the read path broken?" canary. Uses the
-/// synthetic `VaryingEmbedder`, so it needs neither the `default-embedder`
-/// feature nor the on-disk corpus and stays green on every CI runner.
+/// **FTS-isolated by construction.** The query is a token that appears in NO
+/// seeded document, so the FTS5 stage of `search()` matches zero rows and any
+/// result can ONLY have come from the vector (bit-KNN + f32 rerank) stage. A
+/// naive body-as-query form would NOT isolate the vector path: `search()`
+/// appends FTS5 hits after vector hits (even when the vector stage returns
+/// nothing) and the query is compiled to a quoted FTS phrase, so an exact body
+/// match can be returned via the text path alone — the smoke would pass even if
+/// bit-KNN/rerank were dead (codex BLOCK, 2026-06-01; this is the fix).
+///
+/// **Deterministic, non-flaky correctness.** `SMOKE_N < TOP_K_BIT_CANDIDATES`
+/// (64 < 192), so the bit-KNN candidate stage returns *every* row and the f32
+/// rerank is therefore exact — the true f32-nearest body (computed in-test) is
+/// guaranteed rank 1, with none of the candidate-set lossiness that makes
+/// recall < 1 at scale. Uses the synthetic `VaryingEmbedder` (whose identity
+/// does not request mean-centering, so the query vector is byte-identical to
+/// the stored vectors), so it needs neither the `default-embedder` feature nor
+/// the on-disk corpus and stays green on every CI runner.
 #[test]
 fn ac_013_vector_read_path_smoke() {
-    const SMOKE_N: usize = 512;
-    const SENTINEL: &str = "smoke-sentinel-exact-match-needle";
+    // < TOP_K_BIT_CANDIDATES (192): every row is a bit-KNN candidate -> exact rerank.
+    const SMOKE_N: usize = 64;
+    // A single FTS token present in NO seeded body (bodies are space-joined
+    // `perf_vocab` tokens like "abc0001"). FTS5 MATCH on it returns zero rows.
+    const VECTOR_PROBE_QUERY: &str = "zzvectorpathprobezz";
 
     let (_dir, path) = fixture_path("ac013_read_path_smoke");
     let embedder = Arc::new(VaryingEmbedder::new(RETRIEVAL_VECTOR_DIM));
-    let opened = Engine::open_with_embedder_for_test(&path, embedder).expect("open");
+    let opened = Engine::open_with_embedder_for_test(&path, embedder.clone()).expect("open");
     opened.engine.configure_vector_kind_for_test("doc").expect("vector kind");
 
-    // Seed the sentinel first, then SMOKE_N-1 synthetic distractor bodies
-    // drawn from the same Zipfian distribution as the canonical fixture.
-    opened
-        .engine
-        .write(&[PreparedWrite::Node {
-            kind: "doc".to_string(),
-            body: SENTINEL.to_string(),
-            source_id: None,
-        }])
-        .expect("sentinel write");
     let vocab = perf_vocab();
     let cumulative = zipf_cumulative(vocab.len());
     let mut rng = SeededRng::new(0x0005_0CE0_0AC0_13D0);
-    let mut batch = Vec::with_capacity(SMOKE_N - 1);
-    for _ in 0..SMOKE_N - 1 {
-        batch.push(PreparedWrite::Node {
-            kind: "doc".to_string(),
-            body: synth_chunk_body(&mut rng, &vocab, &cumulative),
-            source_id: None,
-        });
-    }
+    let bodies: Vec<String> =
+        (0..SMOKE_N).map(|_| synth_chunk_body(&mut rng, &vocab, &cumulative)).collect();
+    let batch: Vec<PreparedWrite> = bodies
+        .iter()
+        .map(|b| PreparedWrite::Node { kind: "doc".to_string(), body: b.clone(), source_id: None })
+        .collect();
     opened.engine.write(&batch).expect("smoke seed write");
     opened.engine.drain(60_000).expect("smoke drain");
 
@@ -789,16 +789,39 @@ fn ac_013_vector_read_path_smoke() {
         "projection must index every seeded row before the read-path check"
     );
 
-    // The exact-match sentinel must come back rank 1 through the full
-    // two-phase bit-KNN + f32 rerank path (Hamming 0 candidate, rerank
-    // distance 0). VaryingEmbedder's identity does not request mean-
-    // centering, so the query vector is byte-identical to the stored one.
-    let result = opened.engine.search(SENTINEL).expect("smoke search");
-    assert!(!result.results.is_empty(), "vector read path returned no results");
+    // True f32-nearest seeded body to the probe query's embedding (in-test).
+    let qv = embedder.embed(VECTOR_PROBE_QUERY).expect("embed probe");
+    let body_vecs: Vec<Vector> = bodies.iter().map(|b| embedder.embed(b).expect("embed")).collect();
+    let dist = |v: &[f32]| -> f32 { v.iter().zip(&qv).map(|(a, b)| (a - b) * (a - b)).sum() };
+    let nearest_idx = (0..SMOKE_N)
+        .min_by(|&a, &b| {
+            dist(&body_vecs[a])
+                .partial_cmp(&dist(&body_vecs[b]))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .expect("nearest");
+    let nearest = &bodies[nearest_idx];
+
+    // FTS5 matches zero rows for the probe token, so these results come SOLELY
+    // from bit-KNN + f32 rerank. If that stage is broken and returns nothing,
+    // `search()` returns empty here and the test fails (the property the old
+    // body-as-query form could not guarantee).
+    let result = opened.engine.search(VECTOR_PROBE_QUERY).expect("smoke search");
+    assert!(
+        !result.results.is_empty(),
+        "vector read path returned no results for an FTS-absent query — bit-KNN/rerank is broken"
+    );
+    assert!(
+        result.results.iter().all(|b| bodies.contains(b)),
+        "vector results must be seeded corpus bodies; got {:?}",
+        result.results
+    );
+    // SMOKE_N < K => exact rerank => the true f32-nearest is rank 1.
     assert_eq!(
-        result.results.first().map(String::as_str),
-        Some(SENTINEL),
-        "exact-match sentinel must rank 1 through bit-KNN + f32 rerank; got top-{} = {:?}",
+        result.results.first(),
+        Some(nearest),
+        "exact f32-nearest must rank 1 through bit-KNN + f32 rerank (SMOKE_N<K => exact rerank); \
+         got top-{} = {:?}",
         result.results.len(),
         result.results.first(),
     );
