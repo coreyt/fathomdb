@@ -103,6 +103,6 @@
     "embedder_identity_immutable": "untouched"
   },
 
-  "codex_review": "Pass 1 (codex gpt-5.4, high effort, read-only; 0.7.2-PR-3-review-20260601T122419Z.log): BLOCK — the read-path smoke could pass via the FTS path alone even if the vector stage returned nothing (body-as-query + search appends FTS hits). NOT overridden. FIXED: smoke rewritten to query an FTS-absent token (FTS=0 -> vector-only) with SMOKE_N<K exact rerank. Plus the CONCERN (stale head_sha / 'NOT committed' / inconsistent 23/28 in this closure) fixed. Re-review pending on the fix commit.",
-  "next": "codex review on the full diff (test wiring + workflow note + ADR + STATUS + data file); on PASS, flip STATUS PR-3 row to CLOSED and commit on local main (no push). Then PR-4 (release notes + push gate)."
+  "codex_review": "PASS-by-inspection (codex pass-1 BLOCK remediated; pass-2 re-review skipped per HITL 2026-06-01). Pass 1 (gpt-5.4, high effort, read-only; 0.7.2-PR-3-review-20260601T122419Z.log) = BLOCK: the read-path smoke could pass via the FTS path alone even with a dead vector stage (body-as-query + search appends FTS hits). NOT overridden. FIXED (68e1bf0): smoke queries an FTS-absent token (FTS=0 -> vector-only) with SMOKE_N<K exact rerank; CONCERN (stale head_sha / 'NOT committed' / inconsistent 23/28) fixed. Pass-2 re-review (…T123556Z.log) ran ~42 min read-only without a verdict and was terminated by HITL, who accepted the fix by inspection (BLOCK closed by construction: FTS cannot contribute to an FTS-absent query). Recorded as PASS-by-inspection, NOT a codex PASS. Disposition: 0.7.2-PR-3-review-20260601T122419Z.md.",
+  "next": "PR-3 CLOSED on local main (no push). Next: PR-4 (release notes + push v0.7.0 + v0.7.1 — the irreversible push gate)."
 }

@@ -46,7 +46,7 @@ as-needed from the handoff section; — = not yet authored).
 | — | PR-2(bc) | Recall floor + mean recompute family | **CLOSED / RESOLVED** | PR-2a | ratified | `…/prompts/0.7.2-PR-2bc-{reassessment,S1,S2,S3}.md` | S1 land-harness + S2 carve-auto-drift + S3 floor-reframe landed (`5b69568`/`2ef8c3d..d2c0bf4`/`78164b9`); PR-2c SHELVED. Floor HOLDS 0.90. See decision memo. |
 | **1** | PR-1 | Architecture/design doc drift sweep | **CLOSED** | PR-0 | drift-list approved 2026-05-31 | `…/prompts/0.7.2-PR-1-doc-drift-sweep.md` | Audit→drift list (10 items, `4beca5b`)→HITL approved all→corrections `aebf959` + closure `10a0e24` on `main`. Codex **PASS** (`…/runs/0.7.2-PR-1-review-20260531T165936Z.md`). Docs-only; nothing pushed. |
 | **2** | PR-9 | Embedder robustness (concurrent-embed safety + Invariant-5 watchdog) | **✅ CLOSED (`21f4df6`, local main, unpushed)** | PR-1 | diff+tests ✅ (HITL 2026-05-31) | `…/prompts/0.7.2-PR-9-embedder-robustness.md`; closure `…/runs/0.7.2-PR-9-output.json`; review `…/runs/0.7.2-PR-9-review-20260531T205810Z.md` | Watchdog (Invariant 5) + engine-side embed **serialization** (re-justified on SAFETY — throughput-neutral, candle global rayon pool; false "~13×" withdrawn) + **circuit breaker** keyed on concurrent **live embed threads** (bounds abandoned-thread leak for persistent AND intermittent hangs). RED→GREEN each. **codex 5 passes → PASS** (pass-4 BLOCK on the original consecutive-timeout breaker design was NOT overridden — redesigned to live-thread-count + intermittent regression test; pass-5 PASS). Tests: serialization 1/1, watchdog 5/5, eu5f 6/6, projection 12/12; release e2e seed N=2000 complete+correct. Uncommitted; **no push**. (`ac_007b` flake is PRE-EXISTING — fails at baseline `ff7b008`, unrelated to PR-9.) |
-| **3** | PR-3 | Real-corpus latency/recall measurement + tiered ADR | **IMPL COMPLETE — codex pending** | PR-2(bc), PR-9 | dispatch reframed to local (HITL 2026-06-01); budget HITL-locked tiered | `…/prompts/0.7.2-PR-3-canonical-ci-dispatch.md` | **Reframed (HITL):** real-embedder N=1M is infeasible on CI (~166 h seed) → heavy measurement is **local-only**; CI gets a fast read-path smoke (`perf_gates::ac_013_vector_read_path_smoke`). Budget is now **tiered (10k binding for 0.x/1.x; 100k/1M tracked post-1.0 ANN work)**. **10k tier MET** (AC-013 real bge p50 36/p99 49 @ N≈7667; recall@10 0.937 ≥ 0.90; AC-019 real 343 < 405 bound). Data: `…/runs/0.7.2-PR-3-perf-data.md`; ADR amended (AC-013/AC-019 tiered, HITL-locked); closure `…/runs/0.7.2-PR-3-output.json`. AC-019 idle-box item resolved (real 1201 ms = contention; clean real run 343 < 405). **Synthetic AC-019 is report-only** (HITL: synthetic data can't meet the baseline-relative bound; real-corpus path is the verdict). AC-013 keeps its hard 10k gate. Nothing pushed. |
+| **3** | PR-3 | Real-corpus latency/recall measurement + tiered ADR | **✅ CLOSED (`e00991f`, local main, unpushed)** | PR-2(bc), PR-9 | dispatch reframed to local (HITL 2026-06-01); budget HITL-locked tiered | `…/prompts/0.7.2-PR-3-canonical-ci-dispatch.md`; review `…/runs/0.7.2-PR-3-review-20260601T122419Z.md` | Commits `d9f9b65`→`68e1bf0`→`e00991f`. Codex pass-1 **BLOCK** (smoke could pass via FTS path) → FIXED (FTS-isolated smoke), NOT overridden; pass-2 re-review skipped per HITL → **PASS-by-inspection**. **Reframed (HITL):** real-embedder N=1M is infeasible on CI (~166 h seed) → heavy measurement is **local-only**; CI gets a fast read-path smoke (`perf_gates::ac_013_vector_read_path_smoke`). Budget is now **tiered (10k binding for 0.x/1.x; 100k/1M tracked post-1.0 ANN work)**. **10k tier MET** (AC-013 real bge p50 36/p99 49 @ N≈7667; recall@10 0.937 ≥ 0.90; AC-019 real 343 < 405 bound). Data: `…/runs/0.7.2-PR-3-perf-data.md`; ADR amended (AC-013/AC-019 tiered, HITL-locked); closure `…/runs/0.7.2-PR-3-output.json`. AC-019 idle-box item resolved (real 1201 ms = contention; clean real run 343 < 405). **Synthetic AC-019 is report-only** (HITL: synthetic data can't meet the baseline-relative bound; real-corpus path is the verdict). AC-013 keeps its hard 10k gate. Nothing pushed. |
 | **4** | PR-4 | Release notes + **push v0.7.0 + v0.7.1** | **NOT STARTED** | PR-1, PR-2(bc), PR-3 | **explicit push approval — irreversible** | — | CHANGELOG v0.7.0 + v0.7.1 sections; docs/embedder.md; creates `v0.7.1` tag; pushes `main` + both tags. |
 
 ### Phase B — testing/perf hardening (after PR-4)
@@ -85,13 +85,16 @@ as-needed from the handoff section; — = not yet authored).
 
 ## Pointer forward
 
-PR-9 LANDED (`21f4df6`, local `main`, unpushed; codex PASS).
+PR-3 CLOSED (`e00991f`, local `main`, unpushed; codex pass-1 BLOCK fixed →
+PASS-by-inspection, pass-2 re-review skipped per HITL). Latency budget is now
+**tiered** (10k binding for 0.x/1.x; 100k/1M tracked post-1.0 ANN-index work);
+real-embedder canonical N=1M is infeasible so measurement is local-only + a CI
+read-path smoke; recall anchor 0.937 (floor 0.90 holds); AC-019 synthetic is
+report-only (real-corpus is the verdict). Data: `…/runs/0.7.2-PR-3-perf-data.md`.
 
-Next actionable slice: **PR-3 (real-corpus canonical-CI N=1M
-dispatch)** — PR-9 retired its concurrent-embed risk (embeds are now serialized
-engine-side + watchdog-guarded + circuit-broken; a release N=2000 real-corpus seed
-completed clean at ~1.67 docs/s serialized). PR-3's own ~10K-doc pre-flight can reuse
-the `pr9_concurrent_embed` harness (set `PR9_SEED_N`, run `--release`). PR-3 still
-needs **dispatch cost approval** + **numeric-budget approval** before the ADR.
-After PR-3: PR-4 (push gate). Author per-slice prompts from the handoff sections as
-each is picked up; update this scoreboard on landing.
+Next actionable slice: **PR-4 (release notes + push v0.7.0 + v0.7.1 — the
+irreversible push gate)**. CHANGELOG 0.7.0 + 0.7.1 sections; docs/embedder.md;
+creates the `v0.7.1` tag; pushes `main` + both tags. **Requires explicit push
+approval.** After PR-4: Phase B (PR-5 corpus harness, PR-6 dev-loop perf gates,
+PR-7 perf-regression detection, PR-8 campaign closure). Update this scoreboard on
+landing.
